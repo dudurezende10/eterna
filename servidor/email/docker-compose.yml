@@ -1,0 +1,21 @@
+# Na VM vm-site-viva-maracana-prod-02, em /opt/eterna-email.
+# Entra na rede do proxy Caddy existente, que publica em https://parceiros.vivamaracana.com.br/eterna-api/*.
+# Usa o mesmo app do Graph e certificado do Viva Parceiros (somente leitura).
+services:
+  eterna-email:
+    build: .
+    image: eterna-email:latest
+    container_name: eterna-email
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - /opt/viva-parceiros/segredos/graph.crt:/run/segredos/graph.crt:ro
+      - /opt/viva-parceiros/segredos/graph.key:/run/segredos/graph.key:ro
+    networks: [interna]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+networks:
+  interna:
+    name: viva-parceiros_interna
+    external: true

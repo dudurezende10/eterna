@@ -345,7 +345,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v27 · 26/10 19:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v27</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v28 · 26/10 19:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v27</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -1400,8 +1400,22 @@ function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.sessi
 function login(email){const u=userFor(email);if(!u){state.auth.err='Este e-mail não tem acesso ao Eterna.';return false;}state.user=u;if(!u.guest){USERS[u.email].lastLogin=now().toISOString();saveUsers(u.email);}try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
   state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();render();window.scrollTo({top:0});return true;}
 function logout(){camStop();state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
-function sendCode(){const e=normEmail(state.auth.email);if(!emailOk(e)){state.auth.err='Digite um e-mail válido.';render();return;}const code=String(Math.floor(100000+Math.random()*900000));state.auth.pending={email:e,code,at:now().toISOString(),exp:new Date(now().getTime()+10*60e3).toISOString()};state.auth.step='code';state.auth.code='';state.auth.err=null;render();const i=$('[data-act="login-code"]');if(i)i.focus();}
-function checkCode(){const p=state.auth.pending;const c=(state.auth.code||'').replace(/\D/g,'');if(!p){state.auth.step='email';render();return;}if(new Date(p.exp)<now()){state.auth.err='Código expirado. Peça outro.';state.auth.step='email';state.auth.pending=null;render();return;}if(c!==p.code){state.auth.err='Código incorreto.';render();return;}login(p.email);}
+// Código de acesso: gerado, enviado (ti@maracatour.com.br, Microsoft 365) e conferido pelo serviço eterna-email na VM.
+// Sem o serviço (rede bloqueada, artefato), o código é gerado no navegador e aparece na caixa simulada.
+const MAIL_API='https://parceiros.vivamaracana.com.br/eterna-api';
+async function mailApi(rota,corpo){try{const r=await fetch(MAIL_API+rota,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpo)});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
+async function sendCode(){const e=normEmail(state.auth.email);if(!emailOk(e)){state.auth.err='Digite um e-mail válido.';render();return;}if(state.auth.busy)return;state.auth.busy=true;state.auth.err=null;render();
+  const r=await mailApi('/auth/codigo',{email:e});state.auth.busy=false;
+  if(r.status===429){state.auth.err='Aguarde um pouco antes de pedir outro código.';render();return;}
+  if(r.status===400){state.auth.err='Digite um e-mail válido.';render();return;}
+  const real=r.status===202;const code=real?null:String(Math.floor(100000+Math.random()*900000));
+  state.auth.pending={email:e,code,real,at:now().toISOString(),exp:new Date(now().getTime()+10*60e3).toISOString()};state.auth.step='code';state.auth.code='';state.auth.err=null;render();const i=$('[data-act="login-code"]');if(i)i.focus();}
+async function checkCode(){const p=state.auth.pending;const c=(state.auth.code||'').replace(/\D/g,'');if(!p){state.auth.step='email';render();return;}if(new Date(p.exp)<now()){state.auth.err='Código expirado. Peça outro.';state.auth.step='email';state.auth.pending=null;render();return;}
+  if(p.real){if(state.auth.busy)return;state.auth.busy=true;const r=await mailApi('/auth/verificar',{email:p.email,codigo:c});state.auth.busy=false;
+    if(r.status===200&&r.ok){try{localStorage.setItem('eterna.token',r.token)}catch(e){}login(p.email);return;}
+    if(r.erro==='expirado'){state.auth.err='Código expirado. Peça outro.';state.auth.step='email';state.auth.pending=null;render();return;}
+    state.auth.err=r.status===0?'Sem conexão. Tente de novo.':'Código incorreto.';render();return;}
+  if(c!==p.code){state.auth.err='Código incorreto.';render();return;}login(p.email);}
 function vEntrar(){
   const a=state.auth;const logo=`<div class="login-mark">${venueLogo(84,'dark')}</div><div class="note" style="text-align:center">Fotos · equipe e convidados</div>`;
   if(a.step==='code'&&a.pending){const p=a.pending;const u=USERS[p.email];
@@ -1410,8 +1424,8 @@ function vEntrar(){
       <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="code" data-act="login-code" value="${esc(a.code)}" placeholder="000 000" aria-label="Código de 6 dígitos">
       ${a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:''}
       <div class="row"><button class="btn primary big" type="submit">Entrar</button><button class="btn ghost" type="button" data-act="login-back">Trocar e-mail</button><button class="btn ghost" type="button" data-act="login-resend">Reenviar</button></div></form>
-    <div class="inbox" aria-label="Caixa de entrada simulada"><div class="eyebrow">Caixa de entrada · ${esc(p.email)}</div>
-      <div class="mail"><div class="from"><b>${esc(venueName())}</b> <span class="note">fotos@eterna.photo</span><span class="note" style="margin-left:auto">${hhmm(new Date(p.at))}</span></div><div class="subj">Seu código de acesso · ${esc(venueName())}</div><div class="body">Olá${u?', '+esc(u.name.split(' ')[0]):''}. Use o código abaixo para entrar. Ele vale por 10 minutos e só funciona uma vez.</div><div class="otp">${p.code.slice(0,3)} ${p.code.slice(3)}</div><div class="note">Se você não pediu este código, ignore este e-mail.</div></div></div>
+    ${p.real?'':`<div class="inbox" aria-label="Caixa de entrada simulada"><div class="eyebrow">Caixa de entrada · ${esc(p.email)}</div>
+      <div class="mail"><div class="from"><b>${esc(venueName())}</b> <span class="note">fotos@eterna.photo</span><span class="note" style="margin-left:auto">${hhmm(new Date(p.at))}</span></div><div class="subj">Seu código de acesso · ${esc(venueName())}</div><div class="body">Olá${u?', '+esc(u.name.split(' ')[0]):''}. Use o código abaixo para entrar. Ele vale por 10 minutos e só funciona uma vez.</div><div class="otp">${p.code.slice(0,3)} ${p.code.slice(3)}</div><div class="note">Se você não pediu este código, ignore este e-mail.</div></div></div>`}
     <div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div></div>`;}
   return `<div class="enter login">${logo}
     <form class="panel" data-form="login-email"><h2>Entrar</h2><div class="note">Você recebe um código por e-mail. Sem senha.</div>
