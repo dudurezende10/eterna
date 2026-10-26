@@ -8,10 +8,10 @@ Cada versão é um commit em `main`. Para abrir uma versão: `git checkout <comm
 | – | `89d1ba0` | README |
 | – | `beb38b1` | Fluxo do sistema, validação por IA, maquininha/TEF, pós-visita web+RD, domínio eterna.photo |
 | – | `8666b42` | Checkout em uma tela, lista de vendas com CSV, quiosque com facial automático |
-| v | `a557511` | Carimbo de versão no menu |
+| – | `a557511` | Carimbo de versão no menu |
 | – | `84a8db9` | Agente do ponto: leitor automático de cartão + integração na Ingestão |
 | – | `58beae9` | Treino da IA: rotular 189 fotos reais (pode / não pode / dúvida), com motivos e exportação |
-| – | `e2c2c09` | Cara de app: entrada por perfil (admin, foto, venda, valida, cliente, quiosque), navegação por perfil, sem textos explicativos nem comparativos |
+| v18 | `e2c2c09` | Cara de app: entrada por perfil (admin, foto, venda, valida, cliente, quiosque), navegação por perfil, sem textos explicativos nem comparativos |
 | – | `2a11a58` | docs: documentação técnica v1 (arquitetura, stack, dados, fluxos, design system) |
 | v19 | `268951d` | app: login por e-mail e código, permissões CRUD por módulo, tela Usuários |
 | – | `7735cfb` | docs: acesso por e-mail e código, permissões CRUD por módulo (v1.1) |
