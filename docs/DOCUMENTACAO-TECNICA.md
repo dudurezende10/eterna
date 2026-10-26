@@ -20,13 +20,13 @@ Eterna é o sistema de captura, validação, venda e entrega de fotos do Tour do
 1. Local primeiro. Ingestão, validação, venda, impressão e relatórios funcionam sem internet. A nuvem recebe cópia e serve a galeria e a venda online.
 2. Zero toque no set. O fotógrafo só fotografa. Nada de pasta, botão, formulário ou foto preta.
 3. Nada se perde. Original sempre guardado; a correção gera uma derivada; exclusão é registrada, nunca apagada sem log.
-4. Um domínio, perfis separados. `eterna.photo/#admin`, `#foto`, `#venda`, `#valida`, `#cliente`, `#quiosque`.
+4. Um domínio, um login. Todo mundo entra em `eterna.photo` com e-mail e código; o que aparece depois depende das permissões daquele e-mail, módulo a módulo (C, R, U, D).
 
 **Estado em 26/10/2026**
 
 | Peça | Estado | Onde |
 | --- | --- | --- |
-| App web (protótipo funcional, todos os perfis) | no ar, v18 | eterna.photo, GitHub Pages |
+| App web (protótipo funcional, todos os perfis) | no ar, v19 (login por e-mail e código, permissões por módulo) | eterna.photo, GitHub Pages |
 | Agente do ponto (leitor automático de cartão) | funcional, v1 | `agente/eterna-agente.py` |
 | Servidor do ponto (API, banco, pipeline) | especificado; código inicial de 29/09 (FastAPI, 14 entidades, 14 testes) | a migrar para o repositório |
 | Pipeline de IA | regras v1 definidas; correção de exposição testada em 28 fotos | seção 7 |
@@ -570,7 +570,7 @@ Números sempre com `font-variant-numeric: tabular-nums`. Tabelas em 13 px.
 
 ## 11. Segurança, LGPD, backup e observabilidade
 
-**Acesso**: login por perfil (admin, fotógrafo, vendedor, validador) com senha e sessão JWT de 12 h; quiosque e iPads do set entram por token de dispositivo preso ao ponto; cliente entra pelo código da galeria ou pela selfie, sem senha. Hoje o protótipo não tem login; é o primeiro item da próxima rodada.
+**Acesso**: entrada por e-mail e código de uso único (sem senha). O usuário digita o e-mail, recebe um código de 6 dígitos válido por 10 minutos e entra; a sessão dura 12 h. O que cada e-mail vê e faz vem do cadastro de usuários: permissão **C, R, U, D por módulo** (Set e ingestão, Venda, Quiosque, Galeria do convidado, Qualidade e IA, Relatórios, Configuração do set, Catálogo e preços, Estoque e bandeiras, Usuários e permissões), com perfis base (Admin, Fotógrafo, Vendedor, Validador, Supervisor, Quiosque, Cliente) que preenchem a matriz e podem ser ajustados por pessoa. Desligar ou remover o e-mail corta o acesso na hora. E-mail sem cadastro entra como Cliente e vê só a própria galeria. Quiosque e iPads do set entram com o e-mail do dispositivo. No protótipo (v19) o e-mail é simulado na tela; em produção o envio sai por Amazon SES ou Resend a partir da API, com o código guardado em Redis com expiração.
 
 **Dados pessoais (LGPD)**: rosto é dado biométrico. O sistema guarda embedding e hash, nunca a imagem recortada do rosto; consentimento registrado em `CONSENT` no primeiro contato (checkout ou quiosque), com texto e versão; quem não autoriza usa QR ou código; embeddings apagados 60 dias depois da visita ou no pedido do titular; fotos não vendidas apagadas da nuvem em 60 dias; vendidas ficam 12 meses para reimpressão. Nome, e-mail e telefone só na venda e na galeria, com finalidade declarada; RD Station recebe apenas quem autorizou campanha.
 
@@ -627,3 +627,4 @@ Fontes: protótipo em [eterna.photo](https://eterna.photo) e repositório [githu
 | Versão | Data | O que mudou |
 | --- | --- | --- |
 | v1 | 26/10/2026 | primeira versão: arquitetura, stack, repositório, modelo de dados, fluxos, integrações, infraestrutura, design system, segurança, ambientes |
+| v1.1 | 26/10/2026 | acesso: login por e-mail e código substitui a tela de perfis; permissões CRUD por módulo; tela Usuários; app v19 |
