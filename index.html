@@ -153,7 +153,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .note{font-size:12px;color:var(--muted)}
 .twocol{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
 .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
-.role{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:22px;display:flex;flex-direction:column;gap:8px;text-align:left;min-height:150px}
+.role{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:20px 22px;display:flex;flex-direction:column;gap:6px;text-align:left;min-height:96px}
 .role:hover{border-color:var(--fg)}
 .role .t{font-family:var(--display);font-size:28px;line-height:1}
 .role .d{color:var(--muted);font-size:13px;line-height:1.45}
@@ -217,6 +217,11 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .flow .split{display:flex;flex-direction:column;gap:8px;flex:1 1 170px;min-width:170px}
 .flow .split .stage{flex:1}
 #st-nao{border-style:dashed}
+body[data-bare] .rail{display:none}
+body[data-bare] .app{grid-template-columns:minmax(0,1fr)}
+.enter{max-width:760px;margin:8vh auto 0;display:flex;flex-direction:column;gap:10px}
+.enter .role{text-decoration:none;min-height:120px}
+.enter .go{text-transform:none;letter-spacing:0;color:var(--muted)}
 .train{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:14px}
 .phbig{position:relative;width:100%;aspect-ratio:3/2;background:#1a1917;border-radius:6px;overflow:hidden}
 .phbig::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp)}
@@ -236,9 +241,9 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 
 <div class="app">
   <aside class="rail">
-    <button class="brand" data-act="view" data-v="perfis" aria-label="Eterna, início"><svg width="26" height="26" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span>ETERNA</span></button>
+    <button class="brand" data-act="role-home" aria-label="Eterna, início"><svg width="26" height="26" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span>ETERNA</span></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v17 · 26/10 15:20</span></div>
+    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v18 · 26/10 16:10</span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -295,6 +300,7 @@ const poolOf=k=>DATA.sampled.filter(s=>s.key===k).flatMap(s=>s.photos.filter(p=>
 const state={view:'perfis',person:null,session:null,personDay:null,period:'all',imp:{key:'samuel',point:'campo4',photos:[],sent:0,mode:'cartao',timer:null},revFilter:{key:'all',date:'all'},reviews:{},db:null,
   set:{point:'campo4',open:null,timer:null},fila:{session:null},caixa:{session:null,pay:'PIX',tef:false,tefStatus:null},guest:{code:'',fav:{}},kiosk:{code:'',step:'code'}};
 try{const v=localStorage.getItem('eterna.view');if(v)state.view=v;}catch(e){}
+state.role=null;try{const r=localStorage.getItem('eterna.role');if(r&&r!=='null')state.role=r;}catch(e){}
 // a URL com # manda: um link compartilhado abre direto na tela, fotógrafo, dia e período (lido depois de stats existir)
 const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'}});
 let SIM=SIM0();
@@ -315,7 +321,7 @@ function sessionObj(card){return demoSessions().find(s=>s.card===card)}
 function cartTotal(cart){return (cart||[]).reduce((a,c)=>a+priceOf(c.id),0)}
 
 const VIEWS=[
- ['perfis','Perfis','início',''],
+ ['perfis','Início','visão geral',''],
  ['fluxo','Fluxo','do clique à venda','Operação'],
  ['set','Anfitrião no set','abrir sessão, capturar','Operação'],
  ['importar','Ingestão','cartão, Wi‑Fi e 5G','Operação'],
@@ -366,34 +372,13 @@ const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phSty
 // ---------- Perfis ----------
 function vPerfis(){
   const ss=Object.values(SIM.sessions);const cnt=st=>ss.filter(s=>s.status===st).length;
-  return `<div class="head"><div><div class="eyebrow">Protótipo funcional · Tour do Maracanã</div><h1>Captura, curadoria, venda e memória, num sistema só.</h1></div><div class="note">Dados reais do Roverpix (${DATA.period.short}) na gestão; operação simulada neste navegador.</div></div>
-  <div class="sub">Escolha um perfil. O fluxo completo funciona como hoje, só que medido: o primeiro clique abre a sessão e o servidor fecha sozinho, por pausa e troca de rostos, sem foto preta; o convidado se identifica pelo rosto na fila, escolhe fotos, fundo e pacote; o caixa recebe, imprime e entrega o recibo com QR; o convidado abre a galeria no celular. O que você fizer aqui aparece na gestão.</div>
-  <div class="roles">
-    <button class="role" data-act="view" data-v="fluxo"><span class="t">Fluxo do sistema</span><span class="d">O quadro de 26/10 ao vivo: pontos → fila única → validar (técnica e IA) → checkout → vendeu (maquininha hoje, TEF depois) ou não vendeu (web e RD).</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="set"><span class="t">Anfitrião no set</span><span class="d">iPad no ponto de captura. Primeiro clique abre, o servidor fecha sozinho. Sem foto preta, sem botão; vê as fotos chegarem e o roteiro de quadros.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="importar"><span class="t">Ingestão</span><span class="d">Cartão, Wi‑Fi ou 5G: a foto sai da câmera e chega na fila sem o fotógrafo tocar em nada. Repetida é ignorada, grupo fecha sozinho sem foto preta, bandeira reconhecida.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="checkout"><span class="t">Checkout</span><span class="d">Vendedor, uma tela só: o rosto acha a sessão, o convidado escolhe fotos e pacote, paga (maquininha hoje, TEF depois) e sai com recibo e galeria.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="fila"><span class="t">Fila da loja</span><span class="d">Vendedor com iPad. Acha as fotos pelo rosto, o convidado escolhe, troca o fundo do Chroma e monta o pacote antes do caixa.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="caixa"><span class="t">Caixa</span><span class="d">Recebe o carrinho pronto, cobra, dispara a impressão e entrega o recibo com o QR da galeria.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="quiosque"><span class="t">Quiosque</span><span class="d">Self-service: a câmera já está ligada, o rosto abre as fotos sem apertar nada. Código e QR só como emergência.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="convidado"><span class="t">Convidado</span><span class="d">Galeria no celular: selfie, QR ou código para achar as fotos; ver, favoritar, comprar o restante, baixar em alta, 60 dias.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="revisao"><span class="t">Qualidade</span><span class="d">Revisão por amostragem: foto a foto, nota da sessão, tags. Vira nota do fotógrafo.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="semana"><span class="t">Gestão</span><span class="d">Semana, fotógrafos, lista de vendas, Chroma, vestiário, escala, catálogo, estoque, bandeiras e alertas. Dados reais.</span><span class="go">Abrir →</span></button>
-  </div>
-  <div class="panel"><div class="head"><h2>Estado da demonstração</h2><button class="btn ghost" data-act="reset">Zerar simulação</button></div>
-  <div class="tiles"><div class="tile"><span class="eyebrow">Abertas no set</span><span class="v">${cnt('aberta')}</span></div><div class="tile"><span class="eyebrow">Na fila</span><span class="v">${cnt('fechada')}</span></div><div class="tile"><span class="eyebrow">No caixa</span><span class="v">${cnt('no caixa')}</span></div><div class="tile"><span class="eyebrow">Pagas hoje</span><span class="v">${cnt('paga')}</span><span class="d">${fmtR(ss.filter(s=>s.status==='paga').reduce((a,s)=>a+cartTotal(s.cart),0))}</span></div></div>
-  <div class="note">As 24 sessões de amostra (12 e 13/10, fotos reais) já estão prontas na fila. Sessões abertas no set usam fotos reais do mesmo fotógrafo.</div></div>
-  <div class="panel"><h2>O que o Eterna tem que o Roverpix não tem</h2><div class="tablewrap"><table><thead><tr><th>Lacuna</th><th>Evidência desta semana</th><th>No Eterna</th></tr></thead><tbody>
-  <tr><td>Depende da foto preta, e ela é esquecida</td><td>193 fotos fora de sessão do Márcio em 12/10 (3 por grupo) e 95 fotos numa sessão do Carlos em 10/10</td><td>Foto preta não existe. O servidor separa os grupos por pausa entre cliques e troca de rostos; dúvida se resolve no PDV com um toque</td></tr>
-  <tr><td>Sem duração de sessão</td><td>O Roverpix só grava o minuto de chegada</td><td>Primeiro ao último clique de cada grupo, por ponto e por hora</td></tr>
-  <tr><td>Comparação injusta</td><td>Dias de R$ 5,8 mil a R$ 18,7 mil somados</td><td>Índice vs colegas no mesmo dia</td></tr>
-  <tr><td>Sem qualidade</td><td>Nenhuma nota ou amostra</td><td>Revisão por amostragem, nota por fotógrafo</td></tr>
-  <tr><td>Sem alertas</td><td>95 fotos por sessão e Chroma parado passaram em branco</td><td>Regras rodando sobre os dados</td></tr>
-  <tr><td>Chroma sem diagnóstico</td><td>1.009 sessões a 24%, R$ 13 por sessão</td><td>Funil por estação, fundo e pose; fundos de IA no checkout</td></tr>
-  <tr><td>Upload manual que falha</td><td>Vídeo de 26/10 no Foto Campo 4: Explorer, arrastar 48 fotos, "associação automática" em branco, formulário de CPF, grade vazia</td><td>Ingestão automática por cartão, Wi‑Fi e 5G; repetida ignorada; sessão montada no servidor</td></tr>
-  <tr><td>Bandeiras invisíveis</td><td>84 unidades, 73 peças únicas, ninguém sabe qual vende</td><td>Inventário com estado e ponto; IA reconhece a bandeira na foto e cruza com a venda</td></tr>
-  <tr><td>Sem estoque, PAX, pré-venda, escala</td><td>Não existem</td><td>Existem</td></tr>
-  </tbody></table></div></div>`;
+  const r=ROLES[state.role]||ROLES.admin;
+  const card=(v)=>{const d=VIEWS.find(x=>x[0]===v);if(!d)return '';return `<button class="role" data-act="view" data-v="${v}"><span class="t">${esc(d[1])}</span><span class="d">${esc(d[2])}</span></button>`};
+  const ops=['fluxo','set','importar','checkout','fila','caixa','quiosque','convidado'].filter(v=>r.views.includes(v));
+  const ges=r.views.filter(v=>!ops.includes(v)&&v!=='perfis');
+  return `<div class="head"><div><div class="eyebrow">Tour do Maracanã</div><h1>${esc(r.name)}</h1></div><div class="row"><span class="pill neutral">${cnt('aberta')} no set</span><span class="pill neutral">${cnt('fechada')} na fila</span><span class="pill neutral">${cnt('no caixa')+cnt('no checkout')} no checkout</span><span class="pill good">${cnt('paga')} pagas · ${fmtR(ss.filter(s=>s.status==='paga').reduce((a,s)=>a+cartTotal(s.cart),0))}</span></div></div>
+  ${ops.length?`<div class="eyebrow">Operação</div><div class="roles">${ops.map(card).join('')}</div>`:''}
+  ${ges.length?`<div class="eyebrow">Gestão</div><div class="roles">${ges.map(card).join('')}</div>`:''}`;
 }
 
 // ---------- Anfitrião no set ----------
@@ -422,11 +407,11 @@ function vSet(){
       </div></div>`;
   }else{
     body=`<div class="twocol">
-      <div class="panel"><h2>Nenhuma sessão aberta</h2><div class="sub">O primeiro clique abre a sessão; o servidor fecha quando os cliques param e o quadro seguinte traz rostos novos. Não existe foto preta nem botão. O iPad só mostra o que está acontecendo; o vínculo com o convidado é pelo rosto, no PDV, e o vendedor junta ou separa grupos com um toque se o servidor errar.</div>
+      <div class="panel"><h2>Nenhuma sessão aberta</h2>
         <div class="row"><button class="btn primary big" data-act="set-open">Simular primeiro clique</button><button class="btn ghost big" data-act="set-open" data-manual="1">Abrir pelo QR do ingresso</button></div>
         <div class="note">Na demonstração, as fotos que chegam são fotos reais de ${esc(name)} na semana passada.</div></div>
       <div class="panel"><h2>Agora no ${esc(pt.name)}</h2>
-        <div class="tiles"><div class="tile"><span class="eyebrow">Sessões hoje</span><span class="v">${today.length+simToday.length}</span></div><div class="tile"><span class="eyebrow">Fotos fora de sessão</span><span class="v" style="color:${unl>=100?'var(--bad)':'inherit'}">${unl}</span><span class="d">${unl>=100?'no Roverpix de hoje; no Eterna não existe':'separação em dia'}</span></div><div class="tile"><span class="eyebrow">Ritmo</span><span class="v">2,5 min</span><span class="d">por sessão, alvo</span></div></div>
+        <div class="tiles"><div class="tile"><span class="eyebrow">Sessões hoje</span><span class="v">${today.length+simToday.length}</span></div><div class="tile"><span class="eyebrow">Fotos fora de sessão</span><span class="v" style="color:${unl>=100?'var(--bad)':'inherit'}">${unl}</span><span class="d">${unl>=100?'conferir':'em dia'}</span></div><div class="tile"><span class="eyebrow">Ritmo</span><span class="v">2,5 min</span><span class="d">por sessão, alvo</span></div></div>
       </div></div>`;
   }
   return `<div class="head"><div><div class="eyebrow">Anfitrião · ${esc(name)}</div><h1>${esc(pt.name)}</h1></div>
@@ -435,7 +420,7 @@ function vSet(){
   <div class="panel"><h2>Sessões de hoje neste ponto</h2><div class="tablewrap"><table><thead><tr><th>Hora</th><th>Sessão</th><th class="num">Fotos</th><th>Estado</th></tr></thead><tbody>
   ${simToday.map(s=>`<tr><td>${esc(s.time)}</td><td class="name">${esc(s.card)}</td><td class="num">${(s.photos||[]).length}</td><td><span class="pill ${s.status==='paga'?'good':s.status==='aberta'?'warn':'neutral'}">${esc(s.status)}</span></td></tr>`).join('')}
   ${today.slice(0,12).map(s=>`<tr><td>${esc(s.time)}</td><td class="name">${esc(s.card)}</td><td class="num">${s.n}</td><td><span class="pill ${s.sold?'good':'neutral'}">${s.sold?s.sold+' vendidas':'sem venda'}</span></td></tr>`).join('')}
-  </tbody></table></div><div class="note">Linhas com "vendidas" ou "sem venda" são sessões reais de ${dlabel(DATA.period.end)} (Roverpix).</div></div>`;
+  </tbody></table></div></div>`;
 }
 function idleText(open){const last=(open.photos||[]).length?state.set.lastAt:null;if(!last)return 'Aguardando cliques';const sec=Math.max(0,Math.round((now()-last)/1000));return sec<8?`Último clique há ${sec} s`:'Fechando: pausa longa';}
 function setOpen(manual){
@@ -463,7 +448,7 @@ function vFila(){
     return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="fila-back">← Fila</button></div><h1>${esc(s.card)}</h1></div><div class="note">${esc(P[s.key]?P[s.key].name:'')} · ${esc(s.pdv)} · ${dlabel(s.date)} ${esc(s.time)} · ${s.photos.length} fotos ${sim.status==='paga'?'· <span class="pill good">paga</span>':''}</div></div>
     <div class="review">
       <div class="panel"><div class="head"><h2>O convidado escolhe</h2><span class="note">${sel.size} escolhidas. Toque para incluir.</span></div>
-        <div class="photos">${s.photos.map(p=>photoBtn(p,{act:'fila-sel',sel:sel.has(p.id),tag:p.sold?'VENDIDA NO ROVERPIX':''})).join('')}</div>
+        <div class="photos">${s.photos.map(p=>photoBtn(p,{act:'fila-sel',sel:sel.has(p.id),tag:p.sold?'VENDIDA':''})).join('')}</div>
         <h3>Fundo da foto do Chroma</h3><div class="note">O grupo passou pelos dois Chromas. O convidado escolhe aqui qual fundo leva (+ ${fmtR(priceOf('fundo'))}). Prévia com a família-modelo; na operação a prévia é com a foto do grupo.</div>
         <div class="bgs">${DATA.backgrounds.map(b=>`<button class="bg" data-act="fila-bg" data-bg="${b.id}" aria-pressed="${sim.bg===b.id}"><img src="${b.file}" alt="${esc(b.name)}"><span class="n"><span>${esc(b.name)}</span><span class="note">${esc(b.note)}</span></span></button>`).join('')}</div>
       </div>
@@ -480,9 +465,9 @@ function vFila(){
   }
   const ready=all.filter(s=>s.status==='fechada'),pronta=all.filter(s=>s.status==='pronta'),rest=all.filter(s=>s.status==='no caixa'||s.status==='paga'||s.status==='no checkout');
   const card=s=>`<button class="scard" data-act="fila-open" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key]?P[s.key].name:'')}</span><span>${esc(s.time)}</span></div><div class="meta"><span>${s.photos.length} fotos</span><span class="pill ${s.status==='paga'?'good':s.status==='no caixa'?'warn':'neutral'}">${esc(s.status)}</span></div></button>`;
-  return `<div class="head"><div><div class="eyebrow">Vendedor · fila da loja</div><h1>Sessões prontas</h1></div><div class="sub">Busca pelo rosto, como hoje. O convidado escolhe na fila, com calma; o caixa só cobra. Sessões fechadas no set aparecem aqui na hora.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Vendedor · fila da loja</div><h1>Sessões prontas</h1></div></div>
   ${ready.length?`<h2>Vindas do set agora</h2><div class="sess">${ready.map(card).join('')}</div>`:''}
-  <h2>Sessões de amostra (fotos reais)</h2><div class="sess">${pronta.map(card).join('')}</div>
+  <h2>Sessões</h2><div class="sess">${pronta.map(card).join('')}</div>
   ${rest.length?`<h2>No caixa ou pagas</h2><div class="sess">${rest.map(card).join('')}</div>`:''}`;
 }
 
@@ -535,11 +520,11 @@ function vCheckout(){
   const stepbar=`<div class="steps">${steps.map((t,i)=>`<span class="step" data-on="${ck.step===i+1}" data-done="${ck.step>i+1}">${i+1}. ${t}</span>`).join('')}</div>`;
   if(!ck.session||ck.step===1){
     const q=(ck.code||'').toUpperCase();const list=all.filter(s=>s.status!=='paga'&&(!q||s.card.includes(q))).slice(0,16);
-    return `<div class="head"><div><div class="eyebrow">Vendedor · checkout</div><h1>Checkout</h1></div><div class="sub">Uma tela só, do rosto ao recibo. O vendedor identifica o convidado, ele escolhe as fotos e o pacote, paga e sai com o recibo e a galeria. Duas estações (fila e caixa separados) continuam disponíveis para dia cheio.</div></div>
+    return `<div class="head"><div><div class="eyebrow">Vendedor · checkout</div><h1>Checkout</h1></div></div>
     ${stepbar}
     <div class="grid2">
-      <div class="panel"><h2>Pelo rosto</h2><div class="note">O convidado olha para a câmera do iPad. O Eterna acha a sessão dele entre as de hoje.</div>
-        <label class="drop"><input type="file" accept="image/*" capture="user" data-act="checkout-selfie"><div style="font-family:var(--display);font-size:22px;color:var(--fg)">Tirar selfie</div><div style="margin-top:6px">Na demonstração, abre uma sessão de amostra.</div></label>
+      <div class="panel"><h2>Pelo rosto</h2>
+        <label class="drop"><input type="file" accept="image/*" capture="user" data-act="checkout-selfie"><div style="font-family:var(--display);font-size:22px;color:var(--fg)">Tirar selfie</div></label>
         <div class="row" style="margin-top:10px"><button class="btn ghost" data-act="checkout-face">Simular reconhecimento</button></div></div>
       <div class="panel"><h2>Pelo código ou pela lista</h2><input type="text" class="code" data-act="checkout-code" value="${esc(ck.code)}" placeholder="LP..." aria-label="Código da sessão">
         <div class="sess" style="margin-top:12px">${list.map(s=>`<button class="scard" data-act="checkout-pick" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key]?P[s.key].name:'')}</span><span>${esc(s.time)}</span></div><div class="meta"><span>${s.photos.length} fotos</span><span class="pill ${s.status==='no checkout'||s.status==='no caixa'?'warn':'neutral'}">${esc(s.status)}</span></div></button>`).join('')||'<div class="note">Nenhuma sessão com esse código.</div>'}</div></div>
@@ -562,12 +547,12 @@ function vCheckout(){
         ${state.caixa.tef&&state.caixa.pay!=='Dinheiro'?`<div class="panel" style="background:var(--surface2)"><div class="row" style="justify-content:space-between"><span class="eyebrow">Maquininha · TEF</span><span class="pill ${state.caixa.tefStatus==='aprovado'?'good':state.caixa.tefStatus?'warn':'neutral'}">${state.caixa.tefStatus||'pronta'}</span></div><div class="note">O Eterna manda ${fmtR(total)} para a maquininha. A venda só fecha quando a adquirente confirma.</div>
         <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="caixa-tef" ${state.caixa.tefStatus&&state.caixa.tefStatus!=='recusado'?'disabled':''}>Enviar ${fmtR(total)} para a maquininha</button></div></div>`
         :`<div class="row"><button class="btn primary big" data-act="caixa-confirm" ${cart.length?'':'disabled'}>Receber ${fmtR(total)} e imprimir</button></div>${state.caixa.pay!=='Dinheiro'?`<div class="note">Hoje: o vendedor digita ${fmtR(total)} na maquininha avulsa e confirma aqui quando aprovar.</div>`:''}`}
-        <div class="note">Recibo com QR da galeria sai na confirmação. A venda entra na lista de vendas com vendedor, fotógrafo, produto e pagamento.</div></div>
+        </div>
     </div>`;
   }
   return head+`<div class="review">
     <div class="panel"><div class="head"><h2>O convidado escolhe</h2><span class="note">${sel.size} escolhidas. Toque para incluir.</span></div>
-      <div class="photos">${s.photos.map(p=>photoBtn(p,{act:'fila-sel',sel:sel.has(p.id),tag:p.sold?'VENDIDA NO ROVERPIX':''})).join('')}</div>
+      <div class="photos">${s.photos.map(p=>photoBtn(p,{act:'fila-sel',sel:sel.has(p.id),tag:p.sold?'VENDIDA':''})).join('')}</div>
       <h3>Fundo da foto do Chroma</h3>
       <div class="bgs">${DATA.backgrounds.map(b=>`<button class="bg" data-act="fila-bg" data-bg="${b.id}" aria-pressed="${sim.bg===b.id}"><img src="${b.file}" alt="${esc(b.name)}"><span class="n"><span>${esc(b.name)}</span><span class="note">${esc(b.note)}</span></span></button>`).join('')}</div>
     </div>
@@ -614,7 +599,7 @@ function vVendasLista(){
   const byPay={};ok.forEach(r=>{const k=r.pay.split(' · ')[0];byPay[k]=(byPay[k]||0)+r.total});
   const chip=(act,k,v,l)=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${f[k]===v}">${l}</button>`;
   return `<div class="head"><div><div class="eyebrow">Gestão · ${DATA.period.label}</div><h1>Lista de vendas</h1></div><div class="row"><button class="btn ghost" data-act="sales-csv">Exportar CSV (${rows.length})</button>${shareBtn()}</div></div>
-  <div class="sub">Cada venda, uma linha: sessão, ponto, fotógrafo, vendedor, itens, pagamento e total. As de hoje vêm do checkout desta simulação. As de 12 a 15/10 são as sessões reais vendidas no Roverpix; produto, vendedor e pagamento dessas são estimados a partir dos totais da semana, porque o Roverpix não guarda isso por venda.</div>
+  
   <div class="tiles"><div class="tile"><span class="eyebrow">Vendas</span><span class="v">${fmtN(ok.length)}</span></div><div class="tile"><span class="eyebrow">Receita</span><span class="v">${fmtR(rev)}</span></div><div class="tile"><span class="eyebrow">Ticket</span><span class="v">${ok.length?fmtR(rev/ok.length):'–'}</span></div><div class="tile"><span class="eyebrow">Fotos vendidas</span><span class="v">${fmtN(ok.reduce((a,r)=>a+r.photos,0))}</span></div><div class="tile"><span class="eyebrow">Impressões</span><span class="v">${fmtN(ok.reduce((a,r)=>a+r.prints,0))}</span></div><div class="tile"><span class="eyebrow">Canceladas</span><span class="v">${rows.length-ok.length}</span></div></div>
   <div class="panel"><div class="chips">${days.map(d=>chip('sales-day','day',d,d==='all'?'Todos os dias':d==='hoje'?'Hoje (simulação)':dlabel(d))).join('')}</div>
     <div class="chips"><span class="note">Vendedor</span>${chip('sales-seller','seller','all','Todos')}${SELLERS.map(n=>chip('sales-seller','seller',n,n)).join('')}<span style="width:12px"></span><span class="note">Pagamento</span>${chip('sales-pay','pay','all','Todos')}${PAY_W.map(([n])=>chip('sales-pay','pay',n,n)).join('')}</div>
@@ -634,10 +619,10 @@ function vQuiosque(){
     ${emerg?`<h1 style="font-size:40px">Digite o código do recibo</h1><div class="sub" style="text-align:center">Ou aproxime o QR do recibo do leitor. Esta é a saída de emergência; o normal é a câmera achar você.</div>
     <div style="width:min(420px,100%)"><input type="text" class="code" id="kcode" placeholder="LP..." value="${esc(k.code)}" aria-label="Código da sessão" autofocus></div>
     <div class="row" style="justify-content:center"><button class="btn primary big" data-act="kiosk-go">Ver minhas fotos</button><button class="btn ghost big" data-act="kiosk-back">Voltar para a câmera</button></div>
-    <div class="note">Para testar: ${DATA.sampled.slice(0,3).map(s=>s.card).join(' · ')}</div>`
+    `
     :`<h1 style="font-size:44px">Olhe para a câmera</h1><div class="sub" style="text-align:center">Suas fotos aparecem sozinhas. Nada para apertar.</div>
     <div class="face" aria-label="Câmera procurando o rosto"><div class="ring"></div><div class="scan"></div></div>
-    <div class="note">Procurando entre as sessões de hoje... Na operação a câmera já está ligada quando você chega; na demonstração, uma sessão de amostra abre em alguns segundos.</div>
+    <div class="note">Procurando...</div>
     <button class="chip" data-act="kiosk-emerg" style="opacity:.7">Não me achou? Código ou QR do recibo</button>`}
     </div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="kiosk"><div class="screen"><h2>Não achamos a sessão ${esc(k.code)}</h2><div class="note">Confira o código no ingresso ou procure um anfitrião.</div><div class="row" style="margin-top:12px"><button class="btn ghost" data-act="kiosk-back">Voltar</button></div></div></div>`;
@@ -654,7 +639,7 @@ function vConvidado(){
   const phone=inner=>`<div class="phone"><div class="pin">${inner}</div></div>`;
   const brand='<div class="brand"><svg width="20" height="20" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:15px">ETERNA</span></div>';
   if(!s){const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);
-    return `<div class="head"><div><div class="eyebrow">Convidado · celular</div><h1>Galeria</h1></div><div class="sub">O que o convidado vê ao ler o QR do recibo ou do ingresso. Teste com uma sessão paga no caixa ou com uma de amostra.</div></div>
+    return `<div class="head"><div><div class="eyebrow">Convidado · celular</div><h1>Galeria</h1></div></div>
     ${phone(`${brand}<div><div class="eyebrow">Tour do Maracanã</div><h2 style="font-size:30px">Sua visita, guardada.</h2></div>
     <div class="note">Três jeitos de achar suas fotos, em casa ou no estádio.</div>
     <label class="btn primary big" for="gselfie" style="cursor:pointer">Tirar uma selfie<input type="file" id="gselfie" accept="image/*" capture="user" data-act="guest-selfie" hidden></label>
@@ -694,11 +679,11 @@ function vRevisao(){
       </div></div>`;
   }
   const qs=humans.map(k=>({k,q:quality(k)})).filter(x=>x.q.sessions);
-  return `<div class="head"><div><div class="eyebrow">Amostra · 12 e 13/10 · lista até ${dlabel(DATA.period.end)}</div><h1>Revisão de fotos</h1></div><div class="sub">Quatro sessões inteiras por fotógrafo e dia: uma toda vendida, uma parcial, uma sem venda e uma aleatória. Foto a foto, nota da sessão e tags. O resultado vira a nota de qualidade de cada fotógrafo.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Amostra · 12 e 13/10 · lista até ${dlabel(DATA.period.end)}</div><h1>Revisão de fotos</h1></div></div>
   ${qs.length?`<div class="tiles">${qs.map(x=>`<div class="tile"><span class="eyebrow">${esc(P[x.k].name)}</span><span class="v">${x.q.goodPct!=null?x.q.goodPct+'%':'–'}</span><span class="d">${x.q.good} boas · ${x.q.bad} ruins · ${x.q.sessions} sessões${x.q.score?' · nota '+x.q.score.toFixed(1):''}</span></div>`).join('')}</div>`:''}
   <div class="chips"><button class="chip" data-act="fkey" data-k="all" aria-pressed="${f.key==='all'}">Todos</button>${humans.map(k=>`<button class="chip" data-act="fkey" data-k="${k}" aria-pressed="${f.key===k}">${esc(P[k].name)}</button>`).join('')}<span style="width:8px"></span><button class="chip" data-act="fdate" data-d="all" aria-pressed="${f.date==='all'}">Todos os dias</button>${DATA.period.sessionDays.map(d=>`<button class="chip" data-act="fdate" data-d="${d}" aria-pressed="${f.date===d}">${dlabel(d)}</button>`).join('')}</div>
   <div class="sess">${samp.map(s=>{const r=state.reviews[s.card];const rated=r?Object.values(r.photos||{}).filter(v=>v).length:0;const kind=s.soldTotal===s.total?'toda vendida':s.soldTotal===0?'sem venda':'parcial';return `<button class="scard" data-act="session" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key].name)}</span><span>${dlabel(s.date)} ${s.time}</span></div><div class="meta"><span>${s.total} fotos · ${s.soldTotal} vendidas</span><span class="pill ${s.soldTotal===0?'bad':s.soldTotal===s.total?'good':'neutral'}">${kind}</span></div><div class="meta"><span>${r?(rated+' avaliadas'+(r.score?' · nota '+r.score:'')):'não revisada'}</span></div></button>`}).join('')}</div>
-  <div class="panel"><h2>Todas as sessões de ${dlabel(DATA.period.sessionDays[0])} a ${dlabel(DATA.period.end)}</h2><div class="note">Lista completa do Roverpix. Sessões sem cartão aparecem como "sem vínculo".</div><div class="tablewrap"><table><thead><tr><th>Dia</th><th>Hora</th><th>Fotógrafo</th><th>Sessão</th><th>Ponto</th><th class="num">Fotos</th><th class="num">Vendidas</th></tr></thead><tbody>
+  <div class="panel"><h2>Todas as sessões de ${dlabel(DATA.period.sessionDays[0])} a ${dlabel(DATA.period.end)}</h2><div class="tablewrap"><table><thead><tr><th>Dia</th><th>Hora</th><th>Fotógrafo</th><th>Sessão</th><th>Ponto</th><th class="num">Fotos</th><th class="num">Vendidas</th></tr></thead><tbody>
   ${DATA.sessions.filter(s=>P[s.key].human&&(f.key==='all'||s.key===f.key)&&(f.date==='all'||s.date===f.date)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(s=>`<tr><td>${dlabel(s.date)}</td><td>${s.time}</td><td>${esc(P[s.key].name)}</td><td>${s.card?esc(s.card):'<span class="pill warn">sem vínculo</span>'}</td><td>${esc(s.pdv)}</td><td class="num">${s.n}</td><td class="num">${s.sold}</td></tr>`).join('')}
   </tbody></table></div></div>`;
 }
@@ -769,36 +754,28 @@ function vImportar(){
   const phone=`<div class="phone"><div class="pin">
     <div class="row" style="justify-content:space-between"><span class="eyebrow">Eterna · ${esc(name)}</span><span class="note">${hhmm(now())}</span></div>
     <div style="font-family:var(--display);font-size:30px;line-height:1.05">${g.running?(pending?`${pending} na fila`:'Fechando a leva'):(g.n.arrived?'Tudo no servidor':'Pronto para receber')}</div>
-    <div class="note">${im.mode==='cartao'?'Cartão no leitor do ponto. Ao inserir, as fotos sobem sozinhas.':`A câmera passa cada foto ao celular; o app manda ao Eterna por ${srcName()} em segundo plano.`}</div>
+    
     <div class="check"><div data-ok><span class="dot">${CHECK}</span>Câmera → ${im.mode==='cartao'?'cartão':'celular'}</div><div ${g.n.arrived||g.running?'data-ok':''}><span class="dot">${CHECK}</span>${im.mode==='cartao'?'Leitor':'Celular'} → servidor do ponto</div><div ${g.done.length?'data-ok':''}><span class="dot">${CHECK}</span>Sessões na fila da loja</div></div>
     <div class="tiles" style="grid-template-columns:1fr 1fr"><div class="tile"><span class="eyebrow">Enviadas</span><span class="v">${g.n.arrived}</span></div><div class="tile"><span class="eyebrow">Sessões</span><span class="v">${g.done.length}</span></div></div>
-    <div class="note" style="text-align:center">Nenhum botão para apertar. Nenhuma pasta. Nenhum formulário.</div>
+    
   </div></div>`;
-  return `<div class="head"><div><div class="eyebrow">Operação · ${esc(name)} · ${esc(pt.name)}</div><h1>Ingestão automática</h1></div><div class="sub">A foto sai da câmera e aparece na fila da loja sem o fotógrafo tocar no computador. Cartão, Wi‑Fi e 5G se comportam igual: o servidor do ponto recebe, ignora o que já chegou, separa os grupos sem foto preta (pausa entre cliques e troca de rostos), reconhece a bandeira e avisa só se algo ficar pendente.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Operação · ${esc(name)} · ${esc(pt.name)}</div><h1>Ingestão automática</h1></div></div>
   ${picker}
   <div class="panel" style="background:${state.agent.on?'var(--good-bg)':'var(--surface)'}"><div class="head"><div><div class="eyebrow">Leitor automático · agente do ponto</div><h2 style="margin-top:4px">${state.agent.on?`Conectado${state.agent.card?' · cartão '+esc(state.agent.card)+' inserido':' · aguardando cartão'}`:'Não encontrado neste computador'}</h2></div>${state.agent.on?`<span class="note">${state.agent.copied} fotos baixadas · ${state.agent.dups} repetidas ignoradas · pasta ~/Eterna/inbox</span>`:''}</div>
-    ${state.agent.on?'<div class="note">Insira o cartão e não faça mais nada. O agente copia cada foto nova para o computador, ignora o que já tem, e ela aparece aqui embaixo e nas sessões sozinha. Grupos fecham por pausa entre cliques.</div>':`<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
+    ${state.agent.on?'':`<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
   </div>
-  <div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?'Recebendo...':`Simular uma leva de ${esc(name)} por ${srcName()}`}</button>${g.running?'<button class="btn ghost" data-act="ing-stop">Parar</button>':''}<label class="btn ghost" style="cursor:pointer">Testar com fotos suas<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>${g.n.arrived||g.done.length?'<button class="btn ghost" data-act="ing-reset">Limpar esta leva</button>':''}</div>
+  <div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?'Recebendo...':`Simular leva · ${esc(name)} · ${srcName()}`}</button>${g.running?'<button class="btn ghost" data-act="ing-stop">Parar</button>':''}<label class="btn ghost" style="cursor:pointer">Testar com fotos suas<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>${g.n.arrived||g.done.length?'<button class="btn ghost" data-act="ing-reset">Limpar esta leva</button>':''}</div>
   <div class="twocol" style="margin-top:4px">
     <div class="panel"><h2>O que o fotógrafo vê</h2>${phone}</div>
     <div class="panel"><h2>O que o servidor faz</h2>
       <div class="tiles">${tile('Chegaram',g.n.arrived)}${tile('Repetidas',g.n.dup,'ignoradas')}${tile('Sessões',g.done.length)}${tile('Fechadas sozinhas',g.n.auto,'pausa + rostos')}${tile('Não válidas',g.n.invalid||0,'IA barrou')}${tile('Com bandeira',g.n.flagged,g.n.unsure?`${g.n.unsure} para confirmar`:'')}</div>
-      ${g.feed.length?`<div class="tablewrap"><table><tbody>${g.feed.slice(0,14).map(f=>`<tr><td><span class="pill ${ico[f.k]}">${f.k==='ok'?'foto':f.k==='dup'?'repetida':f.k==='warn'?'validar':'auto'}</span></td><td style="white-space:normal"><div>${esc(f.t)}</div><div class="note">${esc(f.s)}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Clique em simular. A leva traz 4 famílias sem nenhuma foto preta, um cartão relido com 3 fotos repetidas e um caso difícil (criança sozinha, depois com os pais).</div>'}
+      ${g.feed.length?`<div class="tablewrap"><table><tbody>${g.feed.slice(0,14).map(f=>`<tr><td><span class="pill ${ico[f.k]}">${f.k==='ok'?'foto':f.k==='dup'?'repetida':f.k==='warn'?'validar':'auto'}</span></td><td style="white-space:normal"><div>${esc(f.t)}</div><div class="note">${esc(f.s)}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Nenhuma foto ainda.</div>'}
     </div>
   </div>
   ${cur?`<div class="panel"><div class="head"><h2>Sessão em formação</h2><span class="note">${cur} fotos · fecha sozinha quando os cliques param e o quadro seguinte traz rostos novos</span></div><div class="photos small">${g.cur.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.flag?p.flag:'',label:'Foto '+(i+1)})).join('')}</div></div>`:''}
-  ${g.done.length?`<div class="panel"><div class="head"><h2>Sessões criadas nesta leva</h2><span class="note">Já estão na Fila da loja e no Caixa, com a bandeira gravada para o cruzamento com venda.</span></div>
+  ${g.done.length?`<div class="panel"><div class="head"><h2>Sessões criadas nesta leva</h2><span class="note">na fila</span></div>
     ${g.done.map(s=>`<div class="eyebrow" style="margin:6px 0 8px">${s.card} · ${s.n} fotos · fechada por ${esc(s.how)} · ${s.flag?`<span class="pill good">bandeira: ${esc(s.flag)}</span>`:'<span class="pill neutral">sem bandeira</span>'}</div><div class="photos small">${s.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.invalid?'NÃO VÁLIDA · '+p.invalid:(p.conf&&p.conf<70?`${p.flag}? ${p.conf}%`:''),label:'Foto '+(i+1)}).replace('<button class="ph"',`<button class="ph" data-off="${p.invalid?1:0}"`)).join('')}</div>`).join('')}</div>`:''}
-  <div class="panel"><h2>Hoje no Roverpix, amanhã no Eterna</h2><div class="note">O que apareceu no vídeo do Foto Campo 4 em 26/10, e o que muda.</div><div class="tablewrap"><table style="min-width:600px"><thead><tr><th>Etapa</th><th>Roverpix hoje</th><th>Eterna</th></tr></thead><tbody>
-    <tr class="wrapcells"><td>Chegada da foto</td><td>Fotógrafo abre o Explorer, acha a pasta do cartão, seleciona 48 fotos e arrasta para o programa</td><td>Cartão no leitor, ou câmera → celular → servidor. Ninguém arrasta nada</td></tr>
-    <tr><td>Cartão relido</td><td>Reenvia o cartão inteiro porque não lembra o que já subiu; duplica</td><td>O servidor reconhece o arquivo repetido e ignora</td></tr>
-    <tr><td>Espera</td><td>Barra "Enviando 39 de 48" na frente do fotógrafo, família já foi embora</td><td>Sobe em segundo plano; o celular mostra só "N na fila"</td></tr>
-    <tr><td>Sessão</td><td>"Associação automática" em branco; cai no formulário de nome, email, telefone, CPF</td><td>Sem foto preta: pausa entre cliques e troca de rostos fecham o grupo. Dúvida vai para o vendedor, um toque. Zero formulário no set</td></tr>
-    <tr><td>Validação</td><td>Nenhuma: foto desfocada ou de olho fechado vai para a venda</td><td>Técnica e IA barram antes da fila; a não válida fica no acervo</td></tr>
-    <tr><td>Bandeira</td><td>Ninguém sabe qual bandeira apareceu</td><td>Reconhecida na chegada e cruzada com a venda</td></tr>
-    <tr><td>Falha</td><td>Grade volta vazia, fotos sem sessão</td><td>Fica na fila e sobe depois; nada bloqueia a próxima família</td></tr>
-  </tbody></table></div></div>`;
+  `;
 }
 // ---------- Gestão: semana ----------
 function vSemana(){
@@ -811,7 +788,7 @@ function vSemana(){
   const perLabel=per==='7d'?`últimos 7 dias (${dlabel(d[0].date)} a ${dlabel(d[d.length-1].date)})`:per==='1d'?`último dia (${dlabel(d[0].date)})`:DATA.period.label;
   const best=[...d].sort((a,b)=>b.revenue-a.revenue)[0],worst=[...d].sort((a,b)=>a.revenue-b.revenue)[0];
   const simRev=Object.values(SIM.sessions).filter(s=>s.status==='paga').reduce((a,s)=>a+cartTotal(s.cart),0);
-  return `<div class="head"><div><div class="eyebrow">Semana · ${perLabel}</div><h1>Operação da semana</h1></div><div class="note">Fonte: Roverpix e catracas, lido em ${DATA.period.generated.split('-').reverse().join('/')}${simRev?` · demonstração de hoje: ${fmtR(simRev)}`:''}</div></div>
+  return `<div class="head"><div><div class="eyebrow">Semana · ${perLabel}</div><h1>Operação da semana</h1></div><div class="note">Fonte: sistema e catracas, lido em ${DATA.period.generated.split('-').reverse().join('/')}${simRev?` · demonstração de hoje: ${fmtR(simRev)}`:''}</div></div>
   <div class="chips"><button class="chip" data-act="period" data-p="1d" aria-pressed="${per==='1d'}">Último dia</button><button class="chip" data-act="period" data-p="7d" aria-pressed="${per==='7d'}">7 dias</button><button class="chip" data-act="period" data-p="all" aria-pressed="${per==='all'}">Tudo (${DATA.daily.length} dias)</button><span style="width:8px"></span>${shareBtn()}</div>
   <div class="tiles">
     <div class="tile"><span class="eyebrow">Spend per guest</span><span class="v">${fmtR(t.revenue/paxTotal)}</span><span class="d">receita por visitante · ${fmtN(paxTotal)} visitantes nas catracas</span></div>
@@ -854,7 +831,7 @@ function vFotografos(){
     ${dayPanel}
     <div class="row"><button class="btn primary" data-act="review-person" data-key="${s.key}">Revisar fotos de ${esc(s.name)}</button></div>`;
   }
-  return `<div class="head"><div><div class="eyebrow">Semana · ${DATA.period.label}</div><h1>Fotógrafos</h1></div><div class="sub">O índice compara a receita de cada um com a média dos colegas que trabalharam no mesmo dia. 100 é a média. Os dias têm tráfego muito diferente, então o índice é a comparação justa.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Semana · ${DATA.period.label}</div><h1>Fotógrafos</h1></div></div>
   <div class="cards">${list.map(s=>{const q=quality(s.key);return `<button class="pcard" data-act="person" data-key="${s.key}"><div class="top"><span class="nm">${esc(s.name)}</span><span class="idx" style="color:${s.index>=110?'var(--good)':s.index<85?'var(--bad)':'inherit'}">${s.index}</span></div>${sparkIdx(s.perDay)}<div class="kv"><span>Receita <b>${fmtR(s.revenue)}</b></span><span>Por dia <b>${fmtR(s.rpd)}</b></span><span>Sessões/dia <b>${s.cpd.toFixed(0)}</b></span><span>Conv. sessão <b>${pct(s.cardsSold,s.cards)}</b></span><span>R$/sessão <b>${fmtR(s.rpc)}</b></span><span>Fotos vendidas <b>${pct(s.photosSold,s.photos)}</b></span><span>Qualidade <b>${q.goodPct!=null?q.goodPct+'% boas':'sem revisão'}</b></span><span>Ticket <b>${fmtR(s.ticket)}</b></span></div></button>`}).join('')}</div>
   <div class="panel"><h2>Tabela completa</h2><div class="tablewrap"><table><thead><tr><th>Fotógrafo</th><th class="num">Índice</th><th class="num">Dias</th><th class="num">Fotos</th><th class="num">Sessões</th><th class="num">Sessões/dia</th><th class="num">Conv.</th><th class="num">Fotos vendidas</th><th class="num">Vend./venda</th><th class="num">Receita</th><th class="num">R$/dia</th><th class="num">R$/sessão</th><th class="num">Ticket</th><th class="num">Cliques/sessão</th></tr></thead><tbody>
   ${list.map(s=>`<tr class="click" data-act="person" data-key="${s.key}"><td class="name">${esc(s.name)}</td><td class="num">${idxPill(s.index)}</td><td class="num">${s.days}</td><td class="num">${fmtN(s.photos)}</td><td class="num">${s.cards}</td><td class="num">${s.cpd.toFixed(0)}</td><td class="num">${pct(s.cardsSold,s.cards)}</td><td class="num">${fmtN(s.photosSold)} (${pct(s.photosSold,s.photos)})</td><td class="num">${s.psc.toFixed(1)}</td><td class="num">${fmtR(s.revenue)}</td><td class="num">${fmtR(s.rpd)}</td><td class="num">${fmtR(s.rpc)}</td><td class="num">${fmtR(s.ticket)}</td><td class="num">${s.ppc.toFixed(1)}</td></tr>`).join('')}
@@ -885,7 +862,7 @@ function vVendas(){
 // ---------- Gestão: chroma ----------
 function vChroma(){
   const c1=stats.chroma1,c2=stats.chroma2;
-  return `<div class="head"><div><div class="eyebrow">Semana · ${DATA.period.label}</div><h1>Chroma IA</h1></div><div class="sub">Duas estações automáticas. Entregam mais sessões que os cinco fotógrafos juntos, mas uma em quatro vira venda. Os cinco fundos de IA entram como escolha no checkout.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Semana · ${DATA.period.label}</div><h1>Chroma IA</h1></div></div>
   <div class="tiles">
     <div class="tile"><span class="eyebrow">Sessões</span><span class="v">${fmtN(chromaTot.cards)}</span><span class="d">${pct(chromaTot.cardsSold,chromaTot.cards)} viraram venda</span></div>
     <div class="tile"><span class="eyebrow">Receita</span><span class="v">${fmtR(chromaTot.revenue)}</span><span class="d">${Math.round(100*chromaTot.revenue/DATA.totals.photographersRevenue)}% do atribuído</span></div>
@@ -898,14 +875,14 @@ function vChroma(){
     ${[c1,c2].map(c=>`<div class="panel"><h2>${esc(c.name)}</h2>${barChart(c.perDay.map(p=>({label:dlabel(p.date).slice(4),v:p.off?0:p.photos})),{h:160,label:'Fotos por dia'})}<div class="note">Fotos por dia. ${c.cards} sessões · ${pct(c.cardsSold,c.cards)} vendem · ${fmtR(c.revenue)} · ${fmtR(c.rpc)} por sessão</div></div>`).join('')}
   </div>
   <div class="grid2">
-    <div class="panel"><h2>Fundos atuais do Roverpix (share das vendas)</h2>${hbars(DATA.chroma.templates.map(t=>({label:t.name,v:t.share})),v=>v+'%')}</div>
+    <div class="panel"><h2>Fundos atuais (share das vendas)</h2>${hbars(DATA.chroma.templates.map(t=>({label:t.name,v:t.share})),v=>v+'%')}</div>
     <div class="panel"><h2>Poses (share das vendas)</h2>${hbars(DATA.chroma.poses.map(t=>({label:t.name,v:t.share})),v=>v+'%')}<div class="note">"Clique 01 Movimento" não vendeu nada na semana.</div></div>
   </div>`;
 }
 
 // ---------- Gestão: vestiário ----------
 function vVestiario(){
-  return `<div class="head"><div><div class="eyebrow">Novo set · meta: fim de outubro</div><h1>Vestiário</h1></div><div class="sub">Set no vestiário real dos jogadores. Só camisas do Brasil nos armários (jogadores e goleiro), bolas, garrafas, chuteiras. A mesma luz Godox do campo.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Novo set · meta: fim de outubro</div><h1>Vestiário</h1></div></div>
   <div class="hero"><button class="bg" data-act="zoom-img" data-src="img/vestiario.jpg" data-cap="Referência do set Vestiário"><img src="img/vestiario.jpg" alt="Referência do set do vestiário"></button>
     <div class="panel"><h2>Roteiro de captura</h2><div class="check">${FRAMES.vestiario.map(f=>`<div data-ok><span class="dot">${CHECK}</span><span>${esc(f)}</span></div>`).join('')}<div><span class="dot"></span><span>2 a 3 livres · cap de 2:30</span></div></div>
     <div class="note">Luz: softbox Godox como principal a 45°, uma luz de contorno para separar do fundo escuro, downlights dos armários ligados. f/4 a f/5,6 para o número da camisa ler.</div></div></div>
@@ -921,9 +898,9 @@ function vVestiario(){
 function vEscala(){
   const days=DATA.days.slice(-7);const need=4;
   const cover=days.map(d=>(byDay[d]||[]).filter(r=>P[r.key].human).length);
-  return `<div class="head"><div><div class="eyebrow">Escala 5x2 · últimos 7 dias (${dlabel(days[0])} a ${dlabel(days[6])}) ${shareBtn()}</div><h1>Escala e cobertura</h1></div><div class="sub">Cinco fotógrafos em 5x2 dão 25 turnos por semana. Quatro pontos por sete dias pedem 28; com o vestiário, 35. O sistema mostra o dia descoberto antes de ele acontecer.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Escala 5x2 · últimos 7 dias (${dlabel(days[0])} a ${dlabel(days[6])}) ${shareBtn()}</div><h1>Escala e cobertura</h1></div></div>
   <div class="tiles"><div class="tile"><span class="eyebrow">Turnos disponíveis</span><span class="v">25</span><span class="d">5 pessoas x 5 dias</span></div><div class="tile"><span class="eyebrow">Turnos necessários</span><span class="v">28</span><span class="d">4 pontos x 7 dias</span></div><div class="tile"><span class="eyebrow">Com vestiário</span><span class="v">35</span><span class="d">5 pontos x 7 dias</span></div><div class="tile"><span class="eyebrow">Fotógrafos para 5 pontos</span><span class="v">7</span><span class="d">em 5x2</span></div></div>
-  <div class="panel"><h2>Quem trabalhou (real, Roverpix)</h2><div class="tablewrap"><div class="grid-week"><div class="hd"></div>${days.map(d=>`<div class="hd">${dlabel(d)}</div>`).join('')}
+  <div class="panel"><h2>Quem trabalhou</h2><div class="tablewrap"><div class="grid-week"><div class="hd"></div>${days.map(d=>`<div class="hd">${dlabel(d)}</div>`).join('')}
   ${humans.map(k=>`<div class="lab">${esc(P[k].name)}</div>${stats[k].perDay.map(p=>`<div class="${p.off?'off':'on'}">${p.off?'folga':fmtR(p.revenue).replace('R$ ','')}</div>`).join('')}`).join('')}
   <div class="lab">Cobertura</div>${cover.map(c=>`<div class="${c>=need?'on':'off'}" style="${c<need?'color:var(--bad);background:var(--bad-bg)':''}">${c} de ${need}</div>`).join('')}</div></div>
   <div class="note">Quinta 08/10 (5 em campo, dia fraco) e domingo 11/10 (4) mostram o problema invertido: gente demais no dia fraco e justo no forte. A escala deveria seguir a previsão de PAX.</div></div>`;
@@ -931,7 +908,7 @@ function vEscala(){
 
 // ---------- Gestão: catálogo ----------
 function vCatalogo(){
-  return `<div class="head"><div><div class="eyebrow">Catálogo do venue</div><h1>Catálogo e preços</h1></div><div class="sub">Preço editável sem desenvolvedor. Mude aqui e a fila, o caixa e o quiosque usam na hora. Catálogo Viva Maracanã (novo modelo de pacotes, outubro de 2026); o fundo de IA é proposta.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Catálogo do venue</div><h1>Catálogo e preços</h1></div></div>
   <div class="panel"><div class="tablewrap"><table><thead><tr><th>Produto</th><th>Tipo</th><th>Conteúdo</th><th class="num">Preço</th><th class="num">Vendidos na semana</th></tr></thead><tbody>
   ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="Preço de ${esc(c.name)}"></td><td class="num">${real?real.units:'novo'}</td></tr>`}).join('')}
   </tbody></table></div><div class="row"><button class="btn ghost" data-act="price-reset">Voltar aos preços de hoje</button><span class="note">Próximo: preço por dia da semana, dia de jogo e temporada; passe de foto por tipo de ingresso.</span></div></div>`;
@@ -954,7 +931,7 @@ function vRepo(){
    ['  catalogo/','molduras, fundos, logos',''],
    ['  exportacao/','relatórios XLSX gerados','BI'],
   ];
-  return `<div class="head"><div><div class="eyebrow">Gestão · nuvem e acervo</div><h1>Repositório</h1></div><div class="sub">O estádio guarda tudo por 30 dias no NAS. A nuvem recebe o que vendeu na hora e o resto depois, para venda online. O acervo é da Maracatour: fica no bucket dela, exportável.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Gestão · nuvem e acervo</div><h1>Repositório</h1></div></div>
   <div class="tiles">
     <div class="tile"><span class="eyebrow">Conta</span><span class="v" style="font-size:22px">${rp.connected?'Conectada':'A criar'}</span><span class="d">${prov[rp.provider]} · ${esc(rp.bucket)} · ${esc(rp.region)}</span></div>
     <div class="tile"><span class="eyebrow">Sobe na hora (vendidas)</span><span class="v">${fmtN(sold)}</span><span class="d">${gb(sold)} GB no período</span></div>
@@ -977,7 +954,7 @@ function vRepo(){
   </tbody></table></div><div class="note">Volume do período: ${gb(t.photos)} GB locais. Na nuvem, com a regra atual, ${gb(rp.rule==='so-vendidas'?sold:t.photos)} GB. Referência de custo S3 padrão: cerca de US$ 0,023 por GB por mês.</div></div>`;
 }
 function vEstoque(){
-  return `<div class="head"><div><div class="eyebrow">Insumos</div><h1>Estoque</h1></div><div class="sub">Rolo da ASK-400 por caixa, contado a cada impressão. O Roverpix não tem isso; a reunião de 28/09 pediu.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Insumos</div><h1>Estoque</h1></div></div>
   <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · rolo</span><span class="v" style="color:${v<60?'var(--bad)':'inherit'}">${v}</span><span class="d">${v<60?'Trocar antes das 17h':'de 200'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">Ímãs 15 x 20</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">Sacolas</span><span class="v" style="color:var(--bad)">310</span><span class="d">pedir</span></div></div>
   <div class="panel"><h2>Consumo</h2>${hbars([{label:'Impressões semana',v:DATA.totals.prints},{label:'Reimpressões',v:DATA.totals.reprints},{label:'Rolos usados',v:Math.round(DATA.totals.prints/200)}],fmtN)}<div class="note">${fmtN(DATA.totals.prints)} impressões na semana = ${Math.ceil(DATA.totals.prints/200)} rolos. Estoque mínimo sugerido: 10 rolos.</div></div>
   <div class="row"><button class="btn ghost" data-act="stock-swap">Registrar troca de rolo no Caixa 1</button><button class="btn ghost" data-act="view" data-v="bandeiras">Bandeiras e material de cena →</button></div>`;
@@ -997,7 +974,7 @@ function vFluxo(){
   const pv=SIM.postvisit||{};
   const stage=(id,view,t,big,sub,lines)=>`<button class="stage" data-act="view" data-v="${view}" id="st-${id}"><span class="eyebrow">${t}</span><span class="v">${big}</span><span class="d">${sub}</span>${lines?`<ul>${lines.map(l=>`<li>${l}</li>`).join('')}</ul>`:''}</button>`;
   const arrow='<span class="arrow" aria-hidden="true">→</span>';
-  return `<div class="head"><div><div class="eyebrow">Operação · do clique à venda</div><h1>Fluxo do sistema</h1></div><div class="sub">O quadro de 26/10, ao vivo. Cada etapa mostra o que está acontecendo agora nesta simulação e abre a tela correspondente. Nenhuma etapa depende do fotógrafo apertar nada.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Operação · do clique à venda</div><h1>Fluxo do sistema</h1></div></div>
   <div class="flow">
     ${stage('pontos','set','Pontos',`${humans.length}+2`,'fotógrafos e chromas',['cartão, Wi‑Fi ou 5G','sem foto preta'])}${arrow}
     ${stage('fila','importar','Fila única',fmtN(simPhotos+(state.ing.cur?state.ing.cur.photos.length:0)),'fotos recebidas hoje',[`${state.ing.n.dup} repetidas ignoradas`,`${ss.length} grupos montados`])}${arrow}
@@ -1009,10 +986,10 @@ function vFluxo(){
     </div>
   </div>
   <div class="grid2">
-    <div class="panel"><h2>A semana real, no mesmo fluxo</h2><div class="note">Dados do Roverpix, ${DATA.period.label}. O Eterna mede cada etapa; o Roverpix só a última.</div>
+    <div class="panel"><h2>Semana · ${DATA.period.label}</h2>
       ${hbars([{label:'Visitantes (PAX)',v:paxTotal},{label:'Fotografados (sessões)',v:humanTot.cards+chromaTot.cards},{label:'Chegaram ao caixa',v:DATA.totals.approaches},{label:'Venderam',v:DATA.totals.sales},{label:'Não venderam',v:humanTot.cards+chromaTot.cards-DATA.totals.sales}],fmtN)}
-      <div class="note">${fmtN(humanTot.cards+chromaTot.cards-DATA.totals.sales)} grupos fotografados saíram sem comprar nesta semana. Hoje viram nada; no Eterna viram galeria web e campanha.</div></div>
-    <div class="panel"><h2>Validar: o que a IA barra</h2><div class="note">Toda foto passa aqui antes da fila da loja. A não válida não some: fica no acervo, fora da venda, e conta para a nota do fotógrafo.</div>
+      </div>
+    <div class="panel"><h2>Validar: o que a IA barra</h2>
       <div class="tablewrap"><table><thead><tr><th>Peneira</th><th>Regra</th><th>Resultado</th></tr></thead><tbody>
       <tr><td>Técnica</td><td>sem rosto, repetida, arquivo corrompido</td><td>não válida</td></tr>
       <tr><td>IA · foco</td><td>nitidez no rosto abaixo do limiar</td><td>não válida</td></tr>
@@ -1025,7 +1002,7 @@ function vFluxo(){
     </div>
   </div>
   <div class="panel"><div class="head"><h2>Não vendeu: web e RD</h2><button class="btn ghost" data-act="postvisit-all" ${notSold.length?'':'disabled'}>Simular pós-visita para ${notSold.length} grupos</button></div>
-    <div class="note">Grupo que saiu sem comprar recebe a galeria das próprias fotos pelo rosto (selfie no celular) e entra na régua do RD: 24 h depois, 7 dias depois e no próximo jogo do time da bandeira. Fotos continuam à venda por 60 dias.</div>
+    
     <div class="tablewrap"><table><thead><tr><th>Sessão</th><th>Fotógrafo</th><th class="num">Fotos</th><th>Galeria web</th><th>RD · 24 h</th><th>RD · 7 dias</th><th>RD · jogo</th></tr></thead><tbody>
     ${notSold.map(s=>{const p=pv[s.card];const pill=(k,txt)=>p&&p[k]?`<span class="pill good">${txt}</span>`:'<span class="pill neutral">—</span>';return `<tr><td class="name">${esc(s.card)}</td><td>${esc(P[s.key]?P[s.key].name:'')}</td><td class="num">${(s.photos||[]).length||s.total||''}</td><td>${pill('web','enviada')}</td><td>${pill('d1','agendado')}</td><td>${pill('d7','agendado')}</td><td>${pill('game',s.flag?s.flag:'sem bandeira')}</td></tr>`}).join('')||'<tr><td colspan="7" class="note">Nenhum grupo sem venda ainda.</td></tr>'}
     </tbody></table></div></div>`;
@@ -1050,11 +1027,11 @@ function vTreino(){
   const byKey={};TRAIN.forEach(x=>{const l=t.labels[x.id];if(!l)return;byKey[x.key]=byKey[x.key]||{n:0,nao:0};byKey[x.key].n++;if(l.verdict==='nao')byKey[x.key].nao++;});
   const rs=new Set(lab&&lab.verdict==='nao'?lab.reasons||[]:[]);
   return `<div class="head"><div><div class="eyebrow">Gestão · treino da IA · ${done} de ${n} rotuladas</div><h1>O que pode e o que não pode</h1></div><div class="row"><button class="chip" data-act="train-export">Exportar rótulos (JSON)</button><label class="chip" style="cursor:pointer">Importar<input type="file" accept="application/json" data-act="train-import" style="display:none"></label>${shareBtn()}</div></div>
-  <div class="sub">${n} fotos reais de ${DATA.sampled.length} sessões (12 e 13/10, cinco fotógrafos, das 10h às 17h, grupo e sozinho). Para cada uma: Pode, Não pode (e por quê) ou Dúvida. Os rótulos viram as regras da validação por IA e o gabarito para medir a IA depois. Teclado: P pode · N não pode · D dúvida · 1 a 9 motivos · ← → navegar.</div>
+  
   <div class="bar" style="grid-template-columns:1fr 90px"><div class="track"><div class="fill" style="width:${100*done/n}%"></div></div><span class="val">${Math.round(100*done/n)}%</span></div>
   <div class="train">
     <div class="panel" style="gap:10px">
-      <div class="head"><div><div class="eyebrow">Foto ${t.i+1} de ${n} · ${esc(P[p.key]?P[p.key].name:'')} · ${dlabel(p.date)} ${esc(p.time)} · ${esc(p.pdv)}</div><div class="note">Sessão ${esc(p.card)}${p.sold?' · vendida no Roverpix':' · não vendida'}${lab?` · <span class="pill ${lab.verdict==='pode'?'good':lab.verdict==='nao'?'bad':'warn'}">${lab.verdict==='pode'?'pode':lab.verdict==='nao'?'não pode':'dúvida'}</span>`:''}</div></div><div class="row"><button class="chip" data-act="train-prev">← Anterior</button><button class="chip" data-act="train-skip">Próxima →</button></div></div>
+      <div class="head"><div><div class="eyebrow">Foto ${t.i+1} de ${n} · ${esc(P[p.key]?P[p.key].name:'')} · ${dlabel(p.date)} ${esc(p.time)} · ${esc(p.pdv)}</div><div class="note">Sessão ${esc(p.card)}${p.sold?' · vendida':' · não vendida'}${lab?` · <span class="pill ${lab.verdict==='pode'?'good':lab.verdict==='nao'?'bad':'warn'}">${lab.verdict==='pode'?'pode':lab.verdict==='nao'?'não pode':'dúvida'}</span>`:''}</div></div><div class="row"><button class="chip" data-act="train-prev">← Anterior</button><button class="chip" data-act="train-skip">Próxima →</button></div></div>
       <div class="phbig" style="${phStyle(p.id)}" role="img" aria-label="Foto para rotular"></div>
       <div class="row" style="justify-content:center"><button class="btn big ${lab&&lab.verdict==='pode'?'primary':''}" data-act="train-v" data-v="pode">Pode <small>(P)</small></button><button class="btn big" style="${lab&&lab.verdict==='nao'?'background:var(--bad);color:#fff;border-color:var(--bad)':''}" data-act="train-v" data-v="nao">Não pode <small>(N)</small></button><button class="btn big ghost" style="${lab&&lab.verdict==='duvida'?'background:var(--warn-bg);border-color:var(--warn)':''}" data-act="train-v" data-v="duvida">Dúvida <small>(D)</small></button></div>
       ${lab&&lab.verdict==='nao'?`<div class="eyebrow">Por quê? (pode marcar mais de um)</div><div class="chips">${TRAIN_REASONS.map(([k,l],i)=>`<button class="chip" data-act="train-r" data-r="${k}" aria-pressed="${rs.has(k)}">${i<9?`<small>${i+1}</small> `:''}${l}</button>`).join('')}</div>
@@ -1093,10 +1070,10 @@ function vBandeiras(){
   const stSel=r=>`<select data-act="flag-state" data-n="${esc(r.f[1])}">${FLAG_STATES.map(s=>`<option ${s===r.st.state?'selected':''}>${s}</option>`).join('')}</select>`;
   const ptSel=r=>`<select data-act="flag-point" data-n="${esc(r.f[1])}">${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===r.st.point?'selected':''}>${p.name}</option>`).join('')}</select>`;
   const stPill=r=>{const s=r.st.state;const c=s==='defeito'||s==='fora de uso'?'bad':s==='desgastada'?'warn':s==='nova'?'good':'neutral';return `<span class="pill ${c}">${s}</span>`};
-  return `<div class="head"><div><div class="eyebrow">Material de cena · lista Maraca Fly de 26/10</div><h1>Bandeiras</h1></div><div class="sub">Cada bandeira física cadastrada com estado e ponto. A IA reconhece qual aparece em cada foto na chegada e cruza com a venda. Uso e venda por bandeira abaixo são estimativa de demonstração até a IA rodar sobre as fotos reais; estado e ponto você edita aqui.</div></div>
+  return `<div class="head"><div><div class="eyebrow">Material de cena · lista Maraca Fly de 26/10</div><h1>Bandeiras</h1></div></div>
   <div class="tiles">${[['Unidades físicas',units,`${act.length} modelos ativos`],['Modelos no catálogo',rows.length,`${noStock.length} sem estoque`],['Peça única',single.length,'uma unidade só'],['Atenção',attn.length,'desgastada ou com defeito'],['Tipo B',act.filter(r=>r.f[4]==='B').length,'pano diferente'],['Sessões com bandeira',fmtN(totalSess),'estimativa da semana']].map(([l,v,d])=>`<div class="tile"><span class="eyebrow">${l}</span><span class="v"${l==='Atenção'&&attn.length?' style="color:var(--bad)"':''}>${v}</span><span class="d">${d}</span></div>`).join('')}</div>
   <div class="grid2">
-    <div class="panel"><h2>Mais usadas na semana</h2>${hbars(top.map(r=>({label:r.f[1].replace(/ \(.*\)$/,''),v:r.s.sessions})),fmtN)}<div class="note">Brasil e Flamengo somam ${pct(top[0].s.sessions+top[1].s.sessions,totalSess)} das sessões com bandeira. Fluminense, Vasco e Botafogo têm uma unidade cada.</div></div>
+    <div class="panel"><h2>Mais usadas na semana</h2>${hbars(top.map(r=>({label:r.f[1].replace(/ \(.*\)$/,''),v:r.s.sessions})),fmtN)}</div>
     <div class="panel"><h2>Lista de compra sugerida</h2>${buy.length?`<div class="alerts">${buy.map(b=>`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>${esc(b.t)}</b><p>${esc(b.d)}</p></div></div>`).join('')}</div>`:'<div class="note">Nada a repor.</div>'}
       <h3 style="margin-top:6px">Unidades por ponto</h3>${hbars(byPoint,fmtN)}</div>
   </div>
@@ -1105,7 +1082,7 @@ function vBandeiras(){
     ${list.map(r=>`<tr><td>${thumb(r)}</td><td class="name">${esc(r.f[1])}${r.f[1]===r.f[2]?'':'<span class="note"> · clube</span>'}</td><td class="note">${esc(r.f[2])}</td><td class="num">${r.f[3]}</td><td>${r.f[4]}</td><td>${r.f[3]?stSel(r)+(r.st.note?`<div class="note">${esc(r.st.note)}</div>`:''):'<span class="pill neutral">sem estoque</span>'}</td><td>${r.f[3]?ptSel(r):''}</td><td class="num">${r.f[3]?fmtN(r.s.sessions):'–'}</td><td class="num">${r.f[3]?fmtN(r.s.sold):'–'}</td><td class="num">${r.f[3]?pct(r.s.sold,r.s.sessions):'–'}</td><td class="num">${r.f[3]?fmtR(r.s.revenue):'–'}</td></tr>`).join('')}
     </tbody></table></div></div>
   <div class="grid2">
-    <div class="panel"><h2>Como a IA reconhece</h2><div class="note">Cada bandeira entra com 3 a 5 fotos da peça física (frente, dobrada, em uso), além da imagem do catálogo. Na chegada de cada foto o servidor compara com essas referências por similaridade visual, no mesmo passo do agrupamento por rosto e do recorte. Conjunto pequeno e conhecido, roda local, sem internet. Dúvida entre duas parecidas vai para a revisão de qualidade com um clique de confirmação. O fotógrafo não marca nada.</div><div class="note">O que a IA não faz: dizer se a bandeira está velha ou rasgada. Isso é contagem do supervisor, semanal, cinco minutos; o sistema aponta as que estão há mais tempo em uso.</div></div>
+    
     <div class="panel"><h2>Inconsistências na lista recebida</h2><div class="alerts">
       <div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Figueirense ("figueira", linha 44)</b><p>Marcado ativo com quantidade 0 e sem imagem. Tem a bandeira ou não?</p></div></div>
       <div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Irã ativo sem imagem; Iraque sem imagem</b><p>Fotografar a peça para o cadastro.</p></div></div>
@@ -1122,7 +1099,7 @@ function alerts(){
     if(s.index!=null&&s.index<85)out.push({sev:'bad',t:`${s.name}: índice ${s.index}, abaixo dos colegas em todos os dias`,d:`Dias: ${s.perDay.filter(p=>!p.off).map(p=>p.index).join(', ')}. ${s.psc.toFixed(1)} fotos vendidas por venda e R$ ${Math.round(s.rpc)} por sessão. O problema está na venda, não só no volume.`});
     const last=s.perDay.filter(p=>!p.off).slice(-2);if(last.length===2&&last.every(p=>p.index<95)&&s.index>=95)out.push({sev:'warn',t:`${s.name}: caiu nos dois últimos dias`,d:`Índice ${last.map(p=>p.index).join(' e ')} depois de uma semana na média ou acima.`});
   }
-  Object.entries(unlinked).forEach(([kd,n])=>{const [k,d]=kd.split('|');const ses=DATA.sessions.filter(s=>s.key===k&&s.date===d&&s.card).length||1;const r=n/ses;if(r>=2)out.push({sev:r>=3?'bad':'warn',t:`${P[k].name}: ${n} fotos fora de sessão em ${dlabel(d)}, ${r.toFixed(1)} por grupo`,d:`No Roverpix, foto preta esquecida entre grupos; Carlos fica em 0,6 por grupo. No Eterna esse número deixa de existir: o servidor separa sozinho.`})});
+  Object.entries(unlinked).forEach(([kd,n])=>{const [k,d]=kd.split('|');const ses=DATA.sessions.filter(s=>s.key===k&&s.date===d&&s.card).length||1;const r=n/ses;if(r>=2)out.push({sev:r>=3?'bad':'warn',t:`${P[k].name}: ${n} fotos fora de sessão em ${dlabel(d)}, ${r.toFixed(1)} por grupo`,d:`Separação automática resolve; conferir no Fluxo.`})});
   const c2=stats.chroma2;const avg=c2.photos/c2.days;c2.perDay.forEach(p=>{if(!p.off&&p.photos<avg*.4)out.push({sev:'bad',t:`Chroma 2: só ${p.photos} fotos em ${dlabel(p.date)}`,d:`Média da semana é ${Math.round(avg)} por dia. Estação parada, mal posicionada ou com problema.`})});
   out.push({sev:'warn',t:`Chroma 1 converte ${pct(stats.chroma1.cardsSold,stats.chroma1.cards)} das sessões`,d:`${fmtN(stats.chroma1.cards)} sessões, mais que os cinco fotógrafos juntos (${fmtN(humanTot.cards)}), a ${fmtR(stats.chroma1.rpc)} por sessão. O funil é grande e vaza.`});
   if(SIM.stock['Caixa 1']<60)out.push({sev:'warn',t:`Caixa 1: rolo com ${SIM.stock['Caixa 1']} impressões`,d:'Trocar antes do pico da tarde.'});
@@ -1131,24 +1108,42 @@ function alerts(){
   const best=humans.map(k=>stats[k]).sort((a,b)=>b.index-a.index)[0];out.push({sev:'good',t:`${best.name} lidera a semana com índice ${best.index}`,d:`${fmtR(best.revenue)} em ${best.days} dias, ticket ${fmtR(best.ticket)}.`});
   const order={bad:0,warn:1,good:2};return out.sort((a,b)=>order[a.sev]-order[b.sev]);
 }
-function vAlertas(){const a=alerts();return `<div class="head"><div><div class="eyebrow">Semana · ${DATA.period.label}</div><h1>Alertas</h1></div><div class="sub">Regras rodadas sobre os dados: fotos por sessão fora do normal, conversão baixa, fotos sem vínculo, estação parada, estoque, escala, queda no fim da semana.</div></div>
+function vAlertas(){const a=alerts();return `<div class="head"><div><div class="eyebrow">Semana · ${DATA.period.label}</div><h1>Alertas</h1></div></div>
   <div class="alerts">${a.map(x=>`<div class="alert ${x.sev}"><span class="sev" aria-hidden="true"></span><div><b>${esc(x.t)}</b><p>${esc(x.d)}</p></div></div>`).join('')}</div>
   ${SIM.log.length?`<div class="panel"><h2>Registro da demonstração</h2><div class="tablewrap"><table><tbody>${SIM.log.slice(0,15).map(l=>`<tr><td class="note">${new Date(l.at).toLocaleTimeString('pt-BR')}</td><td>${esc(l.t)}</td></tr>`).join('')}</tbody></table></div></div>`:''}`}
 
 // ---------- render ----------
-const VIEWFN={perfis:vPerfis,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const ROLES={
+ admin:{name:'Admin',views:['perfis','fluxo','set','importar','checkout','fila','caixa','quiosque','convidado','revisao','treino','semana','fotografos','vendas-lista','vendas','chroma','vestiario','escala','catalogo','estoque','bandeiras','repo','alertas']},
+ foto:{name:'Fotógrafo',views:['set','importar','fotografos']},
+ venda:{name:'Vendedor',views:['checkout','fila','caixa','vendas-lista']},
+ valida:{name:'Validador',views:['revisao','treino','importar']},
+ cliente:{name:'Cliente',views:['convidado'],bare:true},
+ quiosque:{name:'Quiosque',views:['quiosque'],bare:true},
+};
+const VIEWFN={perfis:vPerfis,entrar:vEntrar,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+function vEntrar(){
+  const tiles=[['admin','Admin','tudo'],['foto','Fotógrafo','set e ingestão'],['venda','Vendedor','checkout, fila, caixa'],['valida','Validador','qualidade e treino'],['cliente','Cliente','galeria'],['quiosque','Quiosque','self-service']];
+  return `<div class="enter"><div class="brand" style="justify-content:center"><svg width="34" height="34" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:28px">ETERNA</span></div><div class="note" style="text-align:center">Tour do Maracanã</div>
+  <div class="roles" style="margin-top:22px">${tiles.map(([k,t,d])=>`<a class="role" href="#${k}"><span class="t">${t}</span><span class="d">${d}</span><span class="go">eterna.photo/#${k}</span></a>`).join('')}</div></div>`;
+}
+function roleViews(){const r=ROLES[state.role];return r?VIEWS.filter(v=>r.views.includes(v[0])):[];}
 function render(){
-  let html='',grp='';VIEWS.forEach(v=>{if(v[3]&&v[3]!==grp){grp=v[3];html+=`<div class="grp">${grp}</div>`}html+=`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}"><span>${v[1]}</span><small>${v[2]}</small></button>`});
-  $('#nav').innerHTML=html;
-  $('#venue-sub').textContent=`${humans.length} fotógrafos · 2 chromas · ${DATA.sellers.filter(s=>s.total>=10).length} vendedores`;
-  const fn=VIEWFN[state.view]||vPerfis;
+  const r=ROLES[state.role];const bare=!r||r.bare||state.view==='entrar';
+  document.body.toggleAttribute('data-bare',bare);
+  if(r&&!bare){let html='',grp='';roleViews().forEach(v=>{if(v[3]&&v[3]!==grp){grp=v[3];html+=`<div class="grp">${grp}</div>`}html+=`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}"><span>${v[1]}</span><small>${v[2]}</small></button>`});
+    $('#nav').innerHTML=html;$('#venue-sub').innerHTML=`${esc(r.name)} · <button class="chip" data-act="role-exit" style="min-height:26px;padding:2px 9px">trocar</button>`;}
+  if(r&&!r.views.includes(state.view)&&state.view!=='entrar')state.view=r.views[0];
+  const fn=state.role?(VIEWFN[state.view]||vPerfis):vEntrar;
   try{$('#main').innerHTML=fn();}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div><div class="row"><button class="btn ghost" data-act="reset">Zerar simulação</button></div></div>`;}
   if(state.view==='caixa'||state.view==='checkout')drawQR();
   syncHash();
 }
 function go(v){const changed=state.view!==v;state.view=v;state.person=null;state.session=null;state.personDay=null;try{localStorage.setItem('eterna.view',v)}catch(e){}render();if(changed)window.scrollTo({top:0});}
-function syncHash(){const parts=[state.view];if(state.view==='fotografos'&&state.person){parts.push(state.person);if(state.personDay)parts.push(state.personDay);}if(state.view==='semana'&&state.period!=='all')parts.push(state.period);const h='#'+parts.join('/');if(location.hash!==h)history.replaceState(null,'',h);}
-function readHash(){const h=location.hash.replace(/^#/,'');if(!h)return false;const [v,a,b]=h.split('/');if(!VIEWFN[v])return false;state.view=v;if(v==='fotografos'&&a&&stats[a]){state.person=a;if(b&&DATA.days.includes(b))state.personDay=b;}if(v==='semana'&&['7d','1d'].includes(a))state.period=a;return true;}
+function setRole(k){state.role=k;try{localStorage.setItem('eterna.role',k||'')}catch(e){}const r=ROLES[k];if(r&&!r.views.includes(state.view))state.view=r.views[0];if(!k)state.view='entrar';render();window.scrollTo({top:0});}
+function syncHash(){if(!state.role){if(location.hash&&location.hash!=='#')history.replaceState(null,'','#');return;}const parts=[state.role];if(state.view!==(ROLES[state.role].views[0])||state.person||state.period!=='all')parts.push(state.view);if(state.view==='fotografos'&&state.person){parts.push(state.person);if(state.personDay)parts.push(state.personDay);}if(state.view==='semana'&&state.period!=='all')parts.push(state.period);const h='#'+parts.join('/');if(location.hash!==h)history.replaceState(null,'',h);}
+function readHash(){const h=location.hash.replace(/^#/,'');if(!h)return false;let segs=h.split('/');if(ROLES[segs[0]]){state.role=segs[0];segs=segs.slice(1);if(!segs.length){state.view=ROLES[state.role].views[0];return true;}}else if(VIEWFN[segs[0]]&&!state.role){state.role='admin';}
+  const [v,a,b]=segs;if(!VIEWFN[v])return true;state.view=v;if(v==='fotografos'&&a&&stats[a]){state.person=a;if(b&&DATA.days.includes(b))state.personDay=b;}if(v==='semana'&&['7d','1d'].includes(a))state.period=a;return true;}
 function shareLink(){syncHash();const url=location.href;const done=()=>toast('Link desta tela copiado');if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(done,()=>prompt('Copie o link:',url));else prompt('Copie o link:',url);}
 const shareBtn=()=>`<button class="chip" data-act="share-view" title="Copia o endereço desta tela, com fotógrafo, dia e período">Compartilhar esta tela</button>`;
 function toast(msg){const t=$('#toast');t.textContent=msg;t.setAttribute('data-on','');clearTimeout(t._t);t._t=setTimeout(()=>t.removeAttribute('data-on'),2400)}
@@ -1174,6 +1169,8 @@ document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act;const d=el.dataset;
   switch(a){
     case 'view':go(d.v);break;
+    case 'role-exit':setRole(null);break;
+    case 'role-home':go(ROLES[state.role]?ROLES[state.role].views[0]:'entrar');break;
     case 'reset':SIM=SIM0();saveSim();ingStop();state.ing=ING0();clearInterval(state.set.timer);state.set.open=null;state.fila.session=null;state.caixa.session=null;state.guest.code='';state.kiosk={code:'',step:'code'};toast('Simulação zerada');render();break;
     case 'person':state.person=d.key;state.personDay=null;render();window.scrollTo({top:0});break;
     case 'person-day':state.personDay=state.personDay===d.d?null:d.d;render();break;
@@ -1279,8 +1276,8 @@ function draft(){const s=DATA.sampled.find(x=>x.card===state.session);if(!state.
 async function save(){if(!state.db)return;const r=draft();const body={...r,updatedAt:new Date().toISOString()};try{await state.db.doc('reviews/'+r.card).set(body);state.reviews[r.card]=body;toast('Sessão salva');render();}catch(err){toast('Não salvou: '+(err&&err.code||'erro'));}}
 
 // ---------- boot ----------
-readHash();
-window.addEventListener('hashchange',()=>{if(readHash())render();});
+if(!readHash()&&!state.role)state.view='entrar';if(state.role&&!ROLES[state.role])state.role=null;
+window.addEventListener('hashchange',()=>{const h=location.hash.replace(/^#/,'');if(!h){setRole(null);return;}const r0=h.split('/')[0];if(ROLES[r0]&&r0!==state.role){state.role=r0;try{localStorage.setItem('eterna.role',r0)}catch(e){}state.view=ROLES[r0].views[0];}if(readHash())render();});
 const openCard=Object.keys(SIM.sessions).find(c=>SIM.sessions[c].status==='aberta');
 if(openCard){state.set.open=openCard;state.set.point=SIM.sessions[openCard].point||state.set.point;startArrivals(openCard,SIM.sessions[openCard].key);}
 render();
