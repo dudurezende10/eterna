@@ -1,9 +1,10 @@
 # Mantém MaracaTour/eterna igual ao repositório de desenvolvimento (dudurezende10/eterna).
-# Roda só dentro do MaracaTour/eterna: a cada 10 minutos e quando alguém aperta "Run workflow".
+# Roda só dentro do MaracaTour/eterna (backup): a cada hora e quando alguém aperta "Run workflow".
+# Quem trabalha pelo terminal já envia para os dois (git push origin), então o backup costuma estar em dia antes disso.
 name: espelho-maracatour
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 permissions:
   contents: write
