@@ -231,6 +231,9 @@ body[data-bare] .app{grid-template-columns:minmax(0,1fr)}
 .mail .subj{font-weight:600}
 .mail .otp{font-family:var(--display);font-size:34px;letter-spacing:.18em;padding:6px 0 2px}
 .bare-exit{position:fixed;right:14px;top:10px;z-index:5}
+.wrap td{white-space:normal}
+.scards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.scards .scard{cursor:pointer}
 table.perms td.num input{width:18px;height:18px;accent-color:var(--accent)}
 table.perms th.num,table.perms td.num{width:84px;text-align:center}
 table.perms{max-width:720px}
@@ -260,7 +263,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="brand" data-act="role-home" aria-label="Eterna, início"><svg width="26" height="26" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span>ETERNA</span></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v19 · 26/10 16:40</span></div>
+    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v20 · 26/10 17:05</span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -318,7 +321,7 @@ const state={view:'perfis',person:null,session:null,personDay:null,period:'all',
   set:{point:'campo4',open:null,timer:null},fila:{session:null},caixa:{session:null,pay:'PIX',tef:false,tefStatus:null},guest:{code:'',fav:{}},kiosk:{code:'',step:'code'}};
 try{const v=localStorage.getItem('eterna.view');if(v)state.view=v;}catch(e){}
 // a URL com # manda: um link compartilhado abre direto na tela, fotógrafo, dia e período (lido depois de stats existir)
-const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'}});
+const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'},diario:[]});
 let SIM=SIM0();
 try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}
 function saveSim(){try{localStorage.setItem('eterna.sim.v1',JSON.stringify(SIM))}catch(e){}}
@@ -341,6 +344,8 @@ const VIEWS=[
  ['fluxo','Fluxo','do clique à venda','Operação'],
  ['set','Anfitrião no set','abrir sessão, capturar','Operação'],
  ['importar','Ingestão','cartão, Wi‑Fi e 5G','Operação'],
+ ['ajustes','Ajustes','acertar as fotos','Operação'],
+ ['diario','Diário do set','equipamento e ocorrências','Operação'],
  ['checkout','Checkout','rosto, fotos, pacote, pagamento','Operação'],
  ['fila','Fila da loja','escolher e montar','Operação'],
  ['caixa','Caixa','receber e imprimir','Operação'],
@@ -1132,12 +1137,14 @@ function vAlertas(){const a=alerts();return `<div class="head"><div><div class="
 // ---------- render ----------
 // ---------- acesso: login por e-mail e código, permissão CRUD por módulo ----------
 const MODULES=[
- ['set','Set e ingestão',['set','importar']],
+ ['set','Set e fotos',['set','importar','ajustes']],
+ ['diario','Diário do set',['diario']],
+ ['desempenho','Índice do fotógrafo',['fotografos']],
  ['venda','Venda',['checkout','fila','caixa','vendas-lista']],
  ['quiosque','Quiosque',['quiosque']],
  ['galeria','Galeria do convidado',['convidado']],
  ['qualidade','Qualidade e IA',['revisao','treino']],
- ['relatorios','Relatórios',['fluxo','semana','fotografos','vendas','alertas']],
+ ['relatorios','Relatórios',['fluxo','semana','vendas','alertas']],
  ['configuracao','Configuração do set',['chroma','vestiario','escala','repo']],
  ['catalogo','Catálogo e preços',['catalogo']],
  ['estoque','Estoque e bandeiras',['estoque','bandeiras']],
@@ -1149,17 +1156,17 @@ const perm=(c,r,u,d)=>({c:!!c,r:!!r,u:!!u,d:!!d});
 const ALL=perm(1,1,1,1),RO=perm(0,1,0,0),RW=perm(1,1,1,0),NONE=perm(0,0,0,0);
 const PRESETS={
  admin:{name:'Admin',perms:Object.fromEntries(MODULES.map(([m])=>[m,{...ALL}]))},
- foto:{name:'Fotógrafo',perms:{set:{...RW},relatorios:{...RO},estoque:{...RO}}},
+ foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},desempenho:{...RO}}},
  venda:{name:'Vendedor',perms:{venda:{...RW},catalogo:{...RO},galeria:{...RO}}},
- valida:{name:'Validador',perms:{qualidade:{...ALL},set:{...RO}}},
- supervisor:{name:'Supervisor',perms:{relatorios:{...RO},set:{...RO},venda:{...RW},qualidade:{...RO},estoque:{...ALL},configuracao:{...RW},catalogo:{...RO}}},
+ valida:{name:'Validador',perms:{qualidade:{...ALL},set:{...RO},diario:{...RO}}},
+ supervisor:{name:'Supervisor',perms:{relatorios:{...RO},desempenho:{...RO},diario:{...ALL},set:{...RO},venda:{...RW},qualidade:{...RO},estoque:{...ALL},configuracao:{...RW},catalogo:{...RO}}},
  quiosque:{name:'Quiosque',perms:{quiosque:{...RW}}},
  cliente:{name:'Cliente',perms:{galeria:{...RO}}},
 };
 const SEED_USERS=[
  ['eduardo@eduardorezende.com','Eduardo Rezende','admin'],
  ['admin@eterna.photo','Administração','admin'],
- ['carlos@eterna.photo','Carlos','foto'],['marinara@eterna.photo','Marinara','foto'],['samuel@eterna.photo','Samuel','foto'],['yago@eterna.photo','Yago','foto'],['marcio@eterna.photo','Márcio','foto'],
+ ['carlos@eterna.photo','Carlos','foto','carlos'],['marinara@eterna.photo','Marinara','foto','marinara'],['samuel@eterna.photo','Samuel','foto','samuel'],['yago@eterna.photo','Yago','foto','yago'],['marcio@eterna.photo','Márcio','foto','marcio'],
  ['loja@eterna.photo','Loja · vendedores','venda'],
  ['qualidade@eterna.photo','Validação','valida'],
  ['supervisor@eterna.photo','Supervisão','supervisor'],
@@ -1169,9 +1176,9 @@ const presetPerms=k=>{const p=PRESETS[k]||PRESETS.cliente;return Object.fromEntr
 const normEmail=e=>String(e||'').trim().toLowerCase();
 const emailOk=e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 let USERS={};
-function seedUsers(){USERS={};SEED_USERS.forEach(([e,n,p])=>{USERS[e]={email:e,name:n,preset:p,perms:presetPerms(p),active:true,createdAt:'2026-10-26T12:00:00.000Z',lastLogin:null}});}
+function seedUsers(){USERS={};SEED_USERS.forEach(([e,n,p,k])=>{USERS[e]={email:e,name:n,preset:p,key:k||null,perms:presetPerms(p),active:true,createdAt:'2026-10-26T12:00:00.000Z',lastLogin:null}});}
 seedUsers();
-try{const u=localStorage.getItem('eterna.users.v1');if(u){const o=JSON.parse(u);if(o&&Object.keys(o).length)USERS=o;}}catch(e){}
+try{const u=localStorage.getItem('eterna.users.v1');if(u){const o=JSON.parse(u);if(o&&Object.keys(o).length){USERS=o;Object.values(USERS).forEach(x=>{if(x.preset&&x.preset!=='custom'&&PRESETS[x.preset]){const base=presetPerms(x.preset);MODULES.forEach(([m])=>{if(!x.perms[m])x.perms[m]={...base[m]}});}else MODULES.forEach(([m])=>{if(!x.perms[m])x.perms[m]={...NONE}});const sd=SEED_USERS.find(y=>y[0]===x.email);if(sd&&sd[3]&&!x.key)x.key=sd[3];});}}}catch(e){}
 function saveUsers(changed){try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}if(state.db&&changed){try{const id=encodeURIComponent(changed);const u=USERS[changed];if(u)state.db.doc('usuarios/'+id).set(u);else state.db.doc('usuarios/'+id).set({email:changed,deleted:true,at:now().toISOString()});}catch(e){console.warn('db usuarios',e)}}}
 function userFor(email){const e=normEmail(email);const u=USERS[e];if(u&&u.active)return u;if(u&&!u.active)return null;return {email:e,name:e.split('@')[0],preset:'cliente',perms:presetPerms('cliente'),active:true,guest:true};}
 function can(mod,op){const u=state.user;if(!u)return false;const p=u.perms&&u.perms[mod];return !!(p&&p[op||'r']);}
@@ -1180,14 +1187,14 @@ function allowedViews(){return VIEWS.map(v=>v[0]).filter(v=>v!=='perfis'&&canVie
 function isBare(){const u=state.user;if(!u)return true;const mods=MODULES.filter(([m])=>can(m,'r')).map(([m])=>m);return mods.length>0&&mods.every(m=>m==='galeria'||m==='quiosque');}
 function homeView(){const av=allowedViews();if(!av.length)return 'entrar';if(isBare())return av[0];return 'perfis';}
 function roleViews(){return VIEWS.filter(v=>v[0]!=='perfis'&&canView(v[0]));}
-const WRITE_OPS={save:'u',note:'u',score:'u',tag:'u','m-rate':'u','m-adjust':'u','m-reset':'u','m-discard':'d','caixa-confirm':'c','caixa-pay':'c','caixa-reprint':'c','caixa-mode':'u','caixa-tef':'u','checkout-pick':'u','checkout-lost':'u','checkout-seller':'u','checkout-step':'u','checkout-face':'u','checkout-selfie':'u','checkout-next-guest':'u','fila-add':'u','fila-bg':'u','fila-send':'u','set-open':'c','set-cancel':'d','set-next':'c','ing-start':'c','ing-stop':'u','ing-reset':'d','imp-files':'c','postvisit-all':'c',price:'u','price-reset':'u','repo-set':'u','repo-toggle':'u',reset:'d','sales-cancel':'d','stock-swap':'u','flag-state':'u','flag-point':'u','train-v':'u','train-r':'u','train-next':'u','train-import':'c','kiosk-buy':'c','user-new':'c','user-save':'u','user-del':'d','user-perm':'u','user-active':'u'};
+const WRITE_OPS={save:'u',note:'u',score:'u',tag:'u','m-rate':'u','m-adjust':'u','m-reset':'u','m-discard':'u','caixa-confirm':'c','caixa-pay':'c','caixa-reprint':'c','caixa-mode':'u','caixa-tef':'u','checkout-pick':'u','checkout-lost':'u','checkout-seller':'u','checkout-step':'u','checkout-face':'u','checkout-selfie':'u','checkout-next-guest':'u','fila-add':'u','fila-bg':'u','fila-send':'u','set-open':'c','set-cancel':'d','set-next':'c','ing-start':'c','ing-stop':'u','ing-reset':'d','imp-files':'c','postvisit-all':'c',price:'u','price-reset':'u','repo-set':'u','repo-toggle':'u',reset:'d','sales-cancel':'d','stock-swap':'u','flag-state':'u','flag-point':'u','train-v':'u','train-r':'u','train-next':'u','train-import':'c','kiosk-buy':'c','aj-open':'u','di-add':'c','di-done':'u','user-new':'c','user-save':'u','user-del':'d','user-perm':'u','user-active':'u'};
 function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;const m=MODULE_OF[state.view];if(!m)return true;if(can(m,op))return true;toast(`Sem permissão para ${OPS.find(o=>o[0]===op)[1].toLowerCase()} em ${MODULES.find(x=>x[0]===m)[1]}`);return false;}
 
 state.user=null;state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};
 function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;state.user=u;return true;}catch(e){return false}}
 function login(email){const u=userFor(email);if(!u){state.auth.err='Este e-mail não tem acesso ao Eterna.';return false;}state.user=u;if(!u.guest){USERS[u.email].lastLogin=now().toISOString();saveUsers(u.email);}try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
   state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();render();window.scrollTo({top:0});return true;}
-function logout(){state.user=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
+function logout(){state.user=null;state.ajustes={key:null,card:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 function sendCode(){const e=normEmail(state.auth.email);if(!emailOk(e)){state.auth.err='Digite um e-mail válido.';render();return;}const code=String(Math.floor(100000+Math.random()*900000));state.auth.pending={email:e,code,at:now().toISOString(),exp:new Date(now().getTime()+10*60e3).toISOString()};state.auth.step='code';state.auth.code='';state.auth.err=null;render();const i=$('[data-act="login-code"]');if(i)i.focus();}
 function checkCode(){const p=state.auth.pending;const c=(state.auth.code||'').replace(/\D/g,'');if(!p){state.auth.step='email';render();return;}if(new Date(p.exp)<now()){state.auth.err='Código expirado. Peça outro.';state.auth.step='email';state.auth.pending=null;render();return;}if(c!==p.code){state.auth.err='Código incorreto.';render();return;}login(p.email);}
 function vEntrar(){
@@ -1218,6 +1225,7 @@ function vUsuarios(){
   const editor=!d?`<div class="panel"><h2>Usuários</h2><div class="note">Selecione um usuário ou crie um novo. O acesso é cortado na hora em que o e-mail é removido ou desativado.</div></div>`:
   `<div class="panel" style="gap:12px"><div class="head"><h2>${isNew?'Novo usuário':esc(d.name||d.email)}</h2>${!isNew?`<span class="pill ${d.active?'good':'bad'}">${d.active?'ativo':'desativado'}</span>`:''}</div>
     <div class="grid2" style="grid-template-columns:1fr 1fr"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}"></label><label><span class="eyebrow">E-mail</span><input type="text" inputmode="email" data-act="user-field" data-k="email" value="${esc(d.email||'')}" ${d.email0===me.email?'readonly':''}></label></div>
+    <label><span class="eyebrow">Fotógrafo vinculado</span><select data-act="user-key"><option value="">Nenhum</option>${humans.map(k=>`<option value="${k}" ${d.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
     <label><span class="eyebrow">Perfil base</span><select data-act="user-preset">${Object.entries(PRESETS).map(([k,p])=>`<option value="${k}" ${d.preset===k?'selected':''}>${p.name}</option>`).join('')}<option value="custom" ${d.preset==='custom'?'selected':''}>Personalizado</option></select></label>
     <div class="eyebrow">Permissões por módulo</div>
     <div class="tablewrap"><table class="perms"><thead><tr><th>Módulo</th>${OPS.map(([k,l])=>`<th class="num">${l}</th>`).join('')}</tr></thead><tbody>
@@ -1237,11 +1245,68 @@ function vUsuarios(){
 function userDraft(email){const u=USERS[email];if(!u)return;state.users.draft={...u,perms:Object.fromEntries(MODULES.map(([m])=>[m,{...(u.perms[m]||NONE)}])),email0:u.email};}
 function userSave(){const d=state.users.draft;if(!d)return;const e=normEmail(d.email);if(!emailOk(e)){toast('E-mail inválido');return;}if(!d.name||!d.name.trim()){toast('Dê um nome ao usuário');return;}if(e!==d.email0&&USERS[e]){toast('Este e-mail já tem acesso');return;}
   if(d.email0&&d.email0!==e){delete USERS[d.email0];saveUsers(d.email0);}
-  const prev=USERS[e];USERS[e]={email:e,name:d.name.trim(),preset:d.preset,perms:d.perms,active:d.active!==false,createdAt:prev?prev.createdAt:now().toISOString(),lastLogin:prev?prev.lastLogin:(d.lastLogin||null)};saveUsers(e);
+  const prev=USERS[e];USERS[e]={email:e,name:d.name.trim(),preset:d.preset,key:d.key||null,perms:d.perms,active:d.active!==false,createdAt:prev?prev.createdAt:now().toISOString(),lastLogin:prev?prev.lastLogin:(d.lastLogin||null)};saveUsers(e);
   if(e===state.user.email){state.user=userFor(e);}
   state.users.draft=null;toast(prev?'Acesso salvo':'Acesso criado');render();}
 
-const VIEWFN={perfis:vPerfis,entrar:vEntrar,usuarios:vUsuarios,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+// ---------- Ajustes: o fotógrafo acerta as próprias fotos ----------
+state.ajustes={key:null,card:null};
+function fotoKey(){return (state.user&&state.user.key&&P[state.user.key])?state.user.key:null;}
+function isEdited(id){const e=SIM.edits&&SIM.edits[id];return !!e&&((e.b||100)!==100||(e.c||100)!==100||(e.s||100)!==100||(e.z||100)!==100||(e.x||0)!==0||(e.y||0)!==0);}
+function vAjustes(){
+  const own=fotoKey();const key=own||state.ajustes.key||humans[0];
+  const all=demoSessions().filter(s=>s.key===key);
+  const today=all.filter(s=>!s.demo);const base=today.length?today:all;
+  const sessions=base.slice().sort((a,b)=>String(b.time).localeCompare(String(a.time)));
+  const cur=state.ajustes.card&&sessions.find(s=>s.card===state.ajustes.card);
+  const photosOf=s=>{const d=DATA.sampled.find(x=>x.card===s.card);const raw=d?d.photos:(SIM.sessions[s.card]&&SIM.sessions[s.card].photos)||[];return raw.filter(p=>hasImg(p.id));};
+  const nEd=sessions.reduce((a,s)=>a+photosOf(s).filter(p=>isEdited(p.id)).length,0);const nOff=sessions.reduce((a,s)=>a+photosOf(s).filter(p=>SIM.discarded[p.id]).length,0);
+  const who=own?'':`<div class="chips">${humans.map(k=>`<button class="chip" data-act="aj-key" data-k="${k}" aria-pressed="${k===key}">${esc(P[k].name)}</button>`).join('')}</div>`;
+  if(cur){const ph=photosOf(cur);
+    return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="aj-back">← Sessões</button></div><h1>${esc(cur.card)}</h1></div><div class="row"><span class="pill neutral">${esc(cur.time)} · ${esc(cur.pdv)}</span><span class="pill ${cur.status==='paga'?'good':'neutral'}">${esc(cur.status)}</span></div></div>
+    <div class="photos">${ph.map(p=>photoBtn(p,{act:'aj-open',tag:SIM.discarded[p.id]?'descartada':isEdited(p.id)?'ajustada':'',label:'Ajustar foto',zoom:false}).replace('<button class="ph"',`<button class="ph" ${SIM.discarded[p.id]?'data-off="1"':''}`)).join('')}</div>`;}
+  return `<div class="head"><div><div class="eyebrow">Set · ${esc(P[key].name)}</div><h1>Ajustes</h1></div><div class="row"><span class="pill neutral">${sessions.length} sessões</span><span class="pill ${nEd?'good':'neutral'}">${nEd} ajustadas</span><span class="pill ${nOff?'bad':'neutral'}">${nOff} descartadas</span></div></div>
+  ${who}
+  <div class="scards">${sessions.map(s=>{const ph=photosOf(s);const ed=ph.filter(p=>isEdited(p.id)).length;const off=ph.filter(p=>SIM.discarded[p.id]).length;
+    return `<button class="scard" data-act="aj-sess" data-card="${esc(s.card)}"><div class="row" style="justify-content:space-between"><b>${esc(s.card)}</b><span class="note">${esc(s.time)}</span></div><div class="note">${esc(s.pdv)} · ${ph.length} fotos${ed?` · ${ed} ajustadas`:''}${off?` · ${off} descartadas`:''}</div><div class="photos small" style="margin-top:8px;pointer-events:none">${ph.slice(0,6).map(p=>photoBtn(p,{zoom:false,tag:SIM.discarded[p.id]?'descartada':isEdited(p.id)?'ajustada':''})).join('')}</div></button>`}).join('')||'<div class="note">Nenhuma sessão deste fotógrafo ainda.</div>'}</div>`;
+}
+// ---------- Diário do set: equipamento, defeitos e ocorrências ----------
+const DIARIO_TYPES=[['equip','Equipamento'],['bandeira','Bandeira'],['cenario','Fundo e cenário'],['convidado','Ocorrência com convidado'],['clima','Chuva e clima'],['sistema','Sistema e transferência'],['outro','Outro']];
+const DIARIO_ITEMS={equip:['Câmera','Lente','Flash','Bateria','Cartão de memória','Celular','Cabo','Tripé'],bandeira:['Bandeira rasgada','Bandeira suja','Bandeira faltando','Mastro'],cenario:['Fundo','Iluminação','Piso','Sinalização'],convidado:['Reclamação','Acidente','Recusa de foto','Perdido'],clima:['Chuva','Sol forte','Vento'],sistema:['Wi‑Fi','5G','Agente do ponto','Cartão não lido'],outro:['Outro']};
+const DIARIO_SEV=[['baixa','Baixa'],['media','Média'],['alta','Alta']];
+state.diario={type:'equip',item:'',sev:'media',point:'',text:'',filter:'hoje'};
+function diarioAdd(){const d=state.diario;if(!d.text.trim()&&!d.item){toast('Descreva o que aconteceu');return;}
+  const key=fotoKey();const point=d.point||(key?(DATA.points.find(p=>p.photographer===key)||{}).id||'':'');
+  const e={id:'d'+Date.now().toString(36),at:now().toISOString(),date:now().toISOString().slice(0,10),key,by:state.user.email,name:state.user.name,point,type:d.type,item:d.item,sev:d.sev,text:d.text.trim(),status:'aberto'};
+  SIM.diario=SIM.diario||[];SIM.diario.unshift(e);saveSim();if(state.db){try{state.db.doc('diario/'+e.id).set(e)}catch(x){console.warn('db diario',x)}}
+  state.diario={...state.diario,item:'',text:'',sev:'media'};log(`Diário: ${e.name} registrou ${e.item||e.type}`);toast('Registrado no diário');render();}
+function diarioSet(id,patch){const e=(SIM.diario||[]).find(x=>x.id===id);if(!e)return;Object.assign(e,patch);saveSim();if(state.db){try{state.db.doc('diario/'+e.id).set(e)}catch(x){}}render();}
+function vDiario(){
+  const d=state.diario;const key=fotoKey();const mine=!!key&&!can('diario','d');
+  const all=(SIM.diario||[]).filter(e=>!mine||e.by===state.user.email||e.key===key);
+  const todayS=now().toISOString().slice(0,10);
+  const list=all.filter(e=>d.filter==='hoje'?e.date===todayS:d.filter==='abertos'?e.status==='aberto':true);
+  const typeName=t=>(DIARIO_TYPES.find(x=>x[0]===t)||[t,t])[1];const ptName=id=>{const p=DATA.points.find(x=>x.id===id);return p?p.name:'—'};
+  const sevPill=s=>`<span class="pill ${s==='alta'?'bad':s==='media'?'warn':'neutral'}">${(DIARIO_SEV.find(x=>x[0]===s)||[s,s])[1]}</span>`;
+  const items=DIARIO_ITEMS[d.type]||[];const myPoint=key?(DATA.points.find(p=>p.photographer===key)||{}).id:'';
+  const open=all.filter(e=>e.status==='aberto').length;const alta=all.filter(e=>e.status==='aberto'&&e.sev==='alta').length;
+  return `<div class="head"><div><div class="eyebrow">Set · ${dlabel(todayS)}</div><h1>Diário do set</h1></div><div class="row"><span class="pill ${alta?'bad':'neutral'}">${alta} alta${alta===1?'':'s'} em aberto</span><span class="pill neutral">${open} em aberto</span></div></div>
+  <div class="grid2" style="grid-template-columns:minmax(0,400px) minmax(0,1fr)">
+    <div class="panel" style="gap:12px"><h2>Registrar</h2>
+      <div class="chips">${DIARIO_TYPES.map(([k,l])=>`<button class="chip" data-act="di-type" data-k="${k}" aria-pressed="${d.type===k}">${l}</button>`).join('')}</div>
+      <div class="chips">${items.map(it=>`<button class="chip" data-act="di-item" data-k="${esc(it)}" aria-pressed="${d.item===it}">${esc(it)}</button>`).join('')}</div>
+      <div class="grid2" style="grid-template-columns:1fr 1fr"><label><span class="eyebrow">Gravidade</span><div class="chips">${DIARIO_SEV.map(([k,l])=>`<button class="chip" data-act="di-sev" data-k="${k}" aria-pressed="${d.sev===k}">${l}</button>`).join('')}</div></label>
+      <label><span class="eyebrow">Ponto</span><select data-act="di-point"><option value="">${key?esc(ptName(myPoint)):'Escolher'}</option>${DATA.points.map(p=>`<option value="${p.id}" ${d.point===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+      <textarea rows="3" data-act="di-text" placeholder="O que aconteceu, quando e o que você fez">${esc(d.text)}</textarea>
+      <div class="row"><button class="btn primary big" data-act="di-add">Registrar</button></div></div>
+    <div class="panel"><div class="head"><h2>Registros</h2><div class="chips">${[['hoje','Hoje'],['abertos','Em aberto'],['todos','Todos']].map(([k,l])=>`<button class="chip" data-act="di-filter" data-k="${k}" aria-pressed="${d.filter===k}">${l}</button>`).join('')}</div></div>
+      ${list.length?`<div class="tablewrap"><table class="wrap"><thead><tr><th>Hora</th>${mine?'':'<th>Quem</th>'}<th>Ponto</th><th>Tipo</th><th>Registro</th><th>Grav.</th><th>Status</th></tr></thead><tbody>
+      ${list.map(e=>`<tr><td class="note">${e.date!==todayS?e.date.split('-').reverse().slice(0,2).join('/')+' ':''}${hhmm(new Date(e.at))}</td>${mine?'':`<td>${esc(e.name||e.by)}</td>`}<td>${esc(ptName(e.point))}</td><td>${esc(typeName(e.type))}</td><td><b>${esc(e.item||'')}</b>${e.item&&e.text?' · ':''}${esc(e.text)}</td><td>${sevPill(e.sev)}</td><td>${e.status==='aberto'?`<button class="chip" data-act="di-done" data-id="${e.id}">Resolver</button>`:`<span class="pill good">resolvido${e.resolvedBy?' · '+esc(e.resolvedBy.split('@')[0]):''}</span>`}</td></tr>`).join('')}
+      </tbody></table></div>`:'<div class="note">Nada registrado neste filtro.</div>'}</div>
+  </div>`;
+}
+
+const VIEWFN={perfis:vPerfis,entrar:vEntrar,usuarios:vUsuarios,ajustes:vAjustes,diario:vDiario,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   const u=state.user;if(!u)state.view='entrar';
   if(u&&state.view!=='entrar'&&!canView(state.view))state.view=homeView();
@@ -1249,6 +1314,7 @@ function render(){
   document.body.toggleAttribute('data-bare',bare);
   if(u&&!bare){let html='',grp='';roleViews().forEach(v=>{if(v[3]&&v[3]!==grp){grp=v[3];html+=`<div class="grp">${grp}</div>`}html+=`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}"><span>${v[1]}</span><small>${v[2]}</small></button>`});
     $('#nav').innerHTML=html;const m=MODULE_OF[state.view];const ro=m&&!can(m,'u')&&!can(m,'c');$('#venue-sub').innerHTML=`${esc(u.name)}${ro?' · <span class="pill neutral">somente leitura</span>':''}<br><span class="note">${esc(u.email)}</span> · <button class="chip" data-act="role-exit" style="min-height:26px;padding:2px 9px">sair</button>`;}
+  if(u&&state.view==='fotografos'&&fotoKey()){state.person=fotoKey();}
   const fn=u?(VIEWFN[state.view]||vPerfis):vEntrar;
   try{$('#main').innerHTML=fn()+(u&&bare&&MODULE_OF[state.view]==='galeria'?`<div class="bare-exit"><button class="chip" data-act="role-exit">Sair</button></div>`:'');}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div><div class="row"><button class="btn ghost" data-act="reset">Zerar simulação</button></div></div>`;}
   if(state.view==='caixa'||state.view==='checkout')drawQR();
@@ -1289,6 +1355,16 @@ document.addEventListener('click',e=>{
     case 'role-home':go(homeView());break;
     case 'login-back':state.auth.step='email';state.auth.pending=null;state.auth.err=null;render();break;
     case 'login-resend':sendCode();toast('Novo código enviado');break;
+    case 'aj-key':state.ajustes.key=d.k;state.ajustes.card=null;render();break;
+    case 'aj-sess':state.ajustes.card=d.card;render();window.scrollTo({top:0});break;
+    case 'aj-back':state.ajustes.card=null;render();break;
+    case 'aj-open':{e.stopPropagation();const s=demoSessions().find(x=>x.card===state.ajustes.card);const dd=DATA.sampled.find(x=>x.card===state.ajustes.card);const list=(dd?dd.photos:(s?s.photos:[])).filter(p=>hasImg(p.id));openGallery(list,d.id,`${esc(state.ajustes.card)} · ajustes`,{edit:true});break;}
+    case 'di-type':state.diario.type=d.k;state.diario.item='';render();break;
+    case 'di-item':state.diario.item=state.diario.item===d.k?'':d.k;render();break;
+    case 'di-sev':state.diario.sev=d.k;render();break;
+    case 'di-filter':state.diario.filter=d.k;render();break;
+    case 'di-add':diarioAdd();break;
+    case 'di-done':diarioSet(d.id,{status:'resolvido',resolvedBy:state.user.email,resolvedAt:now().toISOString()});toast('Resolvido');break;
     case 'user-new':state.users.draft={email:'',email0:null,name:'',preset:'foto',perms:presetPerms('foto'),active:true};render();break;
     case 'user-sel':userDraft(d.e);render();break;
     case 'user-cancel':state.users.draft=null;render();break;
@@ -1382,13 +1458,14 @@ document.addEventListener('click',e=>{
     case 'stock-swap':SIM.stock['Caixa 1']=200;log('Rolo trocado no Caixa 1');saveSim();toast('Rolo do Caixa 1 zerado em 200');render();break;
   }
 });
-document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train-note'){state.train.note=e.target.value;return;}if(a==='login-email'){state.auth.email=e.target.value;return;}if(a==='login-code'){state.auth.code=e.target.value;if(e.target.value.replace(/\D/g,'').length===6)checkCode();return;}if(a==='user-field'){if(state.users.draft)state.users.draft[e.target.dataset.k]=e.target.value;return;}if(a==='user-q'){state.users.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="user-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
-document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='user-preset'){const dr=state.users.draft;if(dr){dr.preset=e.target.value;if(e.target.value!=='custom')dr.perms=presetPerms(e.target.value);render();}return;}if(a==='user-perm'){const dr=state.users.draft;if(!can('usuarios','u')){e.target.checked=!e.target.checked;return;}if(dr){const m=e.target.dataset.m,op=e.target.dataset.op;dr.perms[m]=dr.perms[m]||{...NONE};dr.perms[m][op]=e.target.checked;if(op!=='r'&&e.target.checked)dr.perms[m].r=true;if(op==='r'&&!e.target.checked){dr.perms[m]={...NONE};}dr.preset='custom';render();}return;}if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
+document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train-note'){state.train.note=e.target.value;return;}if(a==='login-email'){state.auth.email=e.target.value;return;}if(a==='login-code'){state.auth.code=e.target.value;if(e.target.value.replace(/\D/g,'').length===6)checkCode();return;}if(a==='user-field'){if(state.users.draft)state.users.draft[e.target.dataset.k]=e.target.value;return;}if(a==='di-text'){state.diario.text=e.target.value;return;}if(a==='user-q'){state.users.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="user-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
+document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr){dr.preset=e.target.value;if(e.target.value!=='custom')dr.perms=presetPerms(e.target.value);render();}return;}if(a==='user-perm'){const dr=state.users.draft;if(!can('usuarios','u')){e.target.checked=!e.target.checked;return;}if(dr){const m=e.target.dataset.m,op=e.target.dataset.op;dr.perms[m]=dr.perms[m]||{...NONE};dr.perms[m][op]=e.target.checked;if(op!=='r'&&e.target.checked)dr.perms[m].r=true;if(op==='r'&&!e.target.checked){dr.perms[m]={...NONE};}dr.preset='custom';render();}return;}if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-email')sendCode();if(f==='login-code')checkCode();});
-document.addEventListener('keydown',e=>{if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape')$('#modal').removeAttribute('data-open');if($('#modal').hasAttribute('data-open')&&MODAL.list.length>1&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){showModal(MODAL.i-1);e.preventDefault();}}
+document.addEventListener('keydown',e=>{if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&MODAL.list.length>1&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){showModal(MODAL.i-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}if(e.key==='Enter'&&e.target.id==='gcode'){state.guest.code=e.target.value.trim().toUpperCase();render();}});
-$('#modal-close').addEventListener('click',()=>$('#modal').removeAttribute('data-open'));
-$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')$('#modal').removeAttribute('data-open')});
+function closeModal(){$('#modal').removeAttribute('data-open');if(state.view==='ajustes'||state.view==='fila'||state.view==='caixa')render();}
+$('#modal-close').addEventListener('click',closeModal);
+$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 $('#modal-prev').addEventListener('click',e=>{e.stopPropagation();showModal(MODAL.i-1)});
 $('#modal-next').addEventListener('click',e=>{e.stopPropagation();showModal(MODAL.i+1)});
 let swipeX=null;$('#modal').addEventListener('touchstart',e=>{const p=curPhoto();swipeX=(MODAL.adjust&&p&&editOf(p.id).z>100)?null:e.touches[0].clientX},{passive:true});$('#modal').addEventListener('touchend',e=>{if(swipeX==null||MODAL.list.length<2)return;const dx=e.changedTouches[0].clientX-swipeX;if(Math.abs(dx)>40)showModal(MODAL.i+(dx<0?1:-1));swipeX=null;});
@@ -1412,6 +1489,7 @@ setInterval(()=>{if(state.view==='set'&&state.set.open){const t=$('#timer');cons
   try{const db=await claude.use('db');if(!db)return;state.db=db;
     db.collection('treino').onSnapshot(snap=>{snap.docs.forEach(d=>{if(d.exists){const x=d.data();if(x&&x.id)state.train.labels[x.id]=x;}});try{localStorage.setItem('eterna.treino.v1',JSON.stringify(state.train.labels))}catch(e){}render();},err=>{console.warn('db',err)});
     db.collection('usuarios').onSnapshot(snap=>{let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.email)return;if(x.deleted){if(USERS[x.email]){delete USERS[x.email];ch=true;}return;}USERS[x.email]=x;ch=true;});if(ch){try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}if(state.user&&!state.user.guest){const u=userFor(state.user.email);if(!u){logout();toast('Seu acesso foi removido');return;}state.user=u;}render();}},err=>{console.warn('db',err)});
+    db.collection('diario').onSnapshot(snap=>{SIM.diario=SIM.diario||[];let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.id)return;const i=SIM.diario.findIndex(y=>y.id===x.id);if(i<0)SIM.diario.unshift(x);else SIM.diario[i]=x;ch=true;});if(ch){SIM.diario.sort((a,b)=>b.at.localeCompare(a.at));saveSim();render();}},err=>{console.warn('db',err)});
     db.collection('reviews').onSnapshot(snap=>{const m={};snap.docs.forEach(d=>{if(d.exists)m[d.id]=d.data()});state.reviews=m;render();},err=>{console.warn('db',err)});
     render();
   }catch(e){console.warn('db',e)}
