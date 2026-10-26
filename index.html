@@ -345,7 +345,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v28 · 26/10 19:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v27</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v29 · 26/10 19:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v29</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -366,6 +366,8 @@ const hhmm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).pa
 
 // ---------- stats (dados reais Roverpix) ----------
 // nomes de pessoas sempre no mesmo padrão (Thais Rodrigues, não THAIS RODRIGUES)
+// e-mail oficial do Eterna: remetente dos códigos e contato do convidado
+const MAIL_FROM='hello@eterna.photo';
 const NAME_LOW=new Set(['da','de','do','das','dos','e']);
 function nameCase(n){return String(n||'').trim().toLowerCase().split(/\s+/).map((w,i)=>i>0&&NAME_LOW.has(w)?w:w.charAt(0).toUpperCase()+w.slice(1)).join(' ');}
 DATA.sellers.forEach(x=>x.name=nameCase(x.name));Object.values(DATA.people).forEach(p=>{if(p.human)p.name=nameCase(p.name);});
@@ -591,7 +593,7 @@ function vCaixa(){
     if(sim.status==='paga'){
       detail=`<div class="panel"><div class="head"><h2>Recibo · ${esc(s.card)}</h2><span class="pill good">pago · ${esc(sim.payment)}</span></div>
         <div class="qr"><div id="qrbox"></div><div><div class="eyebrow">Galeria do convidado</div><div class="note">eterna.photo/g/${esc(s.card)}<br>${(sim.selected||[]).length} fotos em alta · 60 dias para baixar · arquivos 3.000 px</div><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="go-guest" data-card="${s.card}">Abrir como o convidado</button><button class="btn ghost" data-act="caixa-reprint">Reimprimir</button></div></div></div>
-        <div class="receipt">${esc(venueName().toUpperCase())}\nSessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour</div></div>`;
+        <div class="receipt">${esc(venueName().toUpperCase())}\nSessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour ou ${MAIL_FROM}</div></div>`;
     }else{
       detail=`<div class="panel"><div class="head"><h2>${esc(s.card)}</h2><span class="note">${esc(P[s.key]?P[s.key].name:'')} · ${(sim.selected||[]).length} fotos escolhidas · ${prints} impressões</span></div>
         <div class="photos small">${s.photos.filter(p=>(sim.selected||[]).includes(p.id)).map(p=>photoBtn(p)).join('')||'<div class="note">Nenhuma foto escolhida na fila.</div>'}</div>
@@ -623,7 +625,7 @@ function checkoutPick(card){state.checkout.session=card;state.checkout.step=2;st
 function receiptPanel(s,sim){const total=cartTotal(sim.cart);const prints=(sim.cart||[]).reduce((a,c)=>{const p=DATA.catalog.find(x=>x.id===c.id);return a+(p?p.prints:0)},0);
   return `<div class="panel"><div class="head"><h2>Recibo · ${esc(s.card)}</h2><span class="pill good">pago · ${esc(sim.payment)}</span></div>
     <div class="qr"><div id="qrbox"></div><div><div class="eyebrow">Galeria do convidado</div><div class="note">eterna.photo/g/${esc(s.card)}<br>${(sim.selected||[]).length} fotos em alta · 60 dias para baixar · arquivos 3.000 px</div><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="go-guest" data-card="${s.card}">Abrir como o convidado</button><button class="btn ghost" data-act="caixa-reprint">Reimprimir</button><button class="btn ghost" data-act="view" data-v="vendas-lista">Ver na lista de vendas</button></div></div></div>
-    <div class="receipt">${esc(venueName().toUpperCase())}\nVenda ${esc(sim.saleNo||'')} · Sessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\nVendedor: ${esc(sim.seller||'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour\n\nSistema Eterna</div></div>`;}
+    <div class="receipt">${esc(venueName().toUpperCase())}\nVenda ${esc(sim.saleNo||'')} · Sessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\nVendedor: ${esc(sim.seller||'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour ou ${MAIL_FROM}\n\nSistema Eterna</div></div>`;}
 function vCheckout(){
   const ck=state.checkout;
   const all=demoSessions().filter(s=>s.status!=='aberta');
@@ -782,7 +784,7 @@ function vConvidado(){
     ${left?`<button class="btn primary big" data-act="guest-buyall">Levar todas em digital · ${fmtR(priceOf('mais'))}</button>`:''}
     <div class="row"><button class="btn ghost" style="flex:1" data-act="guest-download">Baixar compradas</button><button class="btn ghost" style="flex:1" data-act="guest-share">Compartilhar</button></div>
     <div class="row"><button class="chip" data-act="guest-notme">Não sou eu nesta foto</button><button class="chip" data-act="guest-help">Falar com o Tour</button></div>
-    <div class="note">Arquivos de 3.000 px, sem marca d'água. Dúvidas por WhatsApp. Seus dados: LGPD, apagados em 60 dias.</div></div>`)}`;
+    <div class="note">Arquivos de 3.000 px, sem marca d'água. Dúvidas por WhatsApp ou ${MAIL_FROM}. Seus dados: LGPD, apagados em 60 dias.</div></div>`)}`;
 }
 
 // ---------- Qualidade ----------
@@ -1370,7 +1372,7 @@ const PRESETS={
 };
 const SEED_USERS=[
  ['eduardo@eduardorezende.com','Eduardo Rezende','admin'],
- ['admin@eterna.photo','Administração','admin'],
+ ['hello@eterna.photo','Eterna (hello@)','admin'],
  ['carlos@eterna.photo','Carlos','foto','carlos'],['marinara@eterna.photo','Marinara','foto','marinara'],['samuel@eterna.photo','Samuel','foto','samuel'],['yago@eterna.photo','Yago','foto','yago'],['marcio@eterna.photo','Márcio','foto','marcio'],
  ['loja@eterna.photo','Loja · vendedores','venda'],
  ['qualidade@eterna.photo','Validação','valida'],
@@ -1383,7 +1385,7 @@ const emailOk=e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 let USERS={};
 function seedUsers(){USERS={};SEED_USERS.forEach(([e,n,p,k])=>{USERS[e]={email:e,name:n,preset:p,key:k||null,perms:presetPerms(p),active:true,createdAt:'2026-10-26T12:00:00.000Z',lastLogin:null}});}
 seedUsers();
-try{const u=localStorage.getItem('eterna.users.v1');if(u){const o=JSON.parse(u);if(o&&Object.keys(o).length){USERS=o;Object.values(USERS).forEach(x=>{if(x.preset&&x.preset!=='custom'&&PRESETS[x.preset]){const base=presetPerms(x.preset);MODULES.forEach(([m])=>{if(!x.perms[m])x.perms[m]={...base[m]}});}else MODULES.forEach(([m])=>{if(!x.perms[m])x.perms[m]={...NONE}});const sd=SEED_USERS.find(y=>y[0]===x.email);if(sd&&sd[3]&&!x.key)x.key=sd[3];});}}}catch(e){}
+try{const u=localStorage.getItem('eterna.users.v1');if(u){const o=JSON.parse(u);if(o&&Object.keys(o).length){USERS=o;Object.values(USERS).forEach(x=>{if(x.preset&&x.preset!=='custom'&&PRESETS[x.preset]){const base=presetPerms(x.preset);MODULES.forEach(([m])=>{if(!x.perms[m])x.perms[m]={...base[m]}});}else MODULES.forEach(([m])=>{if(!x.perms[m])x.perms[m]={...NONE}});const sd=SEED_USERS.find(y=>y[0]===x.email);if(sd&&sd[3]&&!x.key)x.key=sd[3];});if(USERS['admin@eterna.photo']&&!USERS['hello@eterna.photo']){const u=USERS['admin@eterna.photo'];delete USERS['admin@eterna.photo'];u.email='hello@eterna.photo';u.name='Eterna (hello@)';USERS[u.email]=u;}}}}catch(e){}
 function saveUsers(changed){try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}if(state.db&&changed){try{const id=encodeURIComponent(changed);const u=USERS[changed];if(u)state.db.doc('usuarios/'+id).set(u);else state.db.doc('usuarios/'+id).set({email:changed,deleted:true,at:now().toISOString()});}catch(e){console.warn('db usuarios',e)}}}
 function userFor(email){const e=normEmail(email);const u=USERS[e];if(u&&u.active)return u;if(u&&!u.active)return null;return {email:e,name:e.split('@')[0],preset:'cliente',perms:presetPerms('cliente'),active:true,guest:true};}
 function can(mod,op){const u=state.user;if(!u)return false;const p=u.perms&&u.perms[mod];return !!(p&&p[op||'r']);}
@@ -1425,7 +1427,7 @@ function vEntrar(){
       ${a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:''}
       <div class="row"><button class="btn primary big" type="submit">Entrar</button><button class="btn ghost" type="button" data-act="login-back">Trocar e-mail</button><button class="btn ghost" type="button" data-act="login-resend">Reenviar</button></div></form>
     ${p.real?'':`<div class="inbox" aria-label="Caixa de entrada simulada"><div class="eyebrow">Caixa de entrada · ${esc(p.email)}</div>
-      <div class="mail"><div class="from"><b>${esc(venueName())}</b> <span class="note">fotos@eterna.photo</span><span class="note" style="margin-left:auto">${hhmm(new Date(p.at))}</span></div><div class="subj">Seu código de acesso · ${esc(venueName())}</div><div class="body">Olá${u?', '+esc(u.name.split(' ')[0]):''}. Use o código abaixo para entrar. Ele vale por 10 minutos e só funciona uma vez.</div><div class="otp">${p.code.slice(0,3)} ${p.code.slice(3)}</div><div class="note">Se você não pediu este código, ignore este e-mail.</div></div></div>`}
+      <div class="mail"><div class="from"><b>${esc(venueName())}</b> <span class="note">${MAIL_FROM}</span><span class="note" style="margin-left:auto">${hhmm(new Date(p.at))}</span></div><div class="subj">Seu código de acesso · ${esc(venueName())}</div><div class="body">Olá${u?', '+esc(u.name.split(' ')[0]):''}. Use o código abaixo para entrar. Ele vale por 10 minutos e só funciona uma vez.</div><div class="otp">${p.code.slice(0,3)} ${p.code.slice(3)}</div><div class="note">Se você não pediu este código, ignore este e-mail.</div></div></div>`}
     <div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div></div>`;}
   return `<div class="enter login">${logo}
     <form class="panel" data-form="login-email"><h2>Entrar</h2><div class="note">Você recebe um código por e-mail. Sem senha.</div>
