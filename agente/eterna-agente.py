@@ -18,7 +18,7 @@ sem nenhum dos dois, serve o JPG original.
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
-import urllib.request, mimetypes
+import urllib.request, urllib.error, mimetypes
 
 PORT = 8765
 APP_ORIGIN = "https://eterna.photo"
@@ -453,6 +453,219 @@ def watcher():
         time.sleep(POLL)
 
 
+# ------------------------------------------------------------ Roverpix -------
+# Sincroniza os relatórios da API Roverpix (vendas, pagamentos, fotos) enquanto o
+# Eterna não opera sozinho. A chave fica só em ~/Eterna/roverpix.json (nunca vai
+# para o site nem para o GitHub). Os dados brutos, que têm dados de clientes,
+# ficam em ~/Eterna/roverpix/raw. O app recebe só totais agregados, sem cliente.
+import datetime as _dt
+from urllib.parse import urlencode
+
+ROVER_CFG = os.path.join(HOME, "roverpix.json")
+ROVER_DIR = os.path.join(HOME, "roverpix")
+os.makedirs(os.path.join(ROVER_DIR, "raw"), exist_ok=True)
+os.makedirs(os.path.join(ROVER_DIR, "agg"), exist_ok=True)
+ROVER_DAYS = 30          # janela mantida
+ROVER_EVERY = 300        # segundos entre sincronizações
+rover = {"status": "sem chave", "last": None, "error": None, "days": 0, "syncing": False}
+rover_wake = threading.Event()
+
+
+def rover_cfg():
+    try:
+        c = json.load(open(ROVER_CFG))
+        if c.get("api_key"):
+            c.setdefault("base_url", "https://beta.api.roverpix.com/api/v1")
+            return c
+    except Exception:
+        pass
+    return None
+
+
+def rover_save_cfg(base_url, api_key):
+    base_url = (base_url or "https://beta.api.roverpix.com").rstrip("/")
+    if not base_url.endswith("/api/v1"):
+        base_url += "/api/v1"
+    with open(ROVER_CFG, "w") as f:
+        json.dump({"base_url": base_url, "api_key": api_key.strip()}, f)
+    try:
+        os.chmod(ROVER_CFG, 0o600)
+    except Exception:
+        pass
+    rover_wake.set()
+
+
+def rv_num(v):
+    try:
+        return float(str(v).replace(",", ".")) if v not in (None, "") else 0.0
+    except Exception:
+        return 0.0
+
+
+def rv_get(cfg, route, params):
+    q = urlencode(params)
+    req = urllib.request.Request(f"{cfg['base_url']}/reports/{route}?{q}",
+                                 headers={"ApiKey": cfg["api_key"], "Accept": "application/json",
+                                          "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def rv_all(cfg, route, day):
+    out, page = [], 1
+    while True:
+        j = rv_get(cfg, route, {"from_date": day, "to_date": day, "per_page": 2000, "page": page})
+        if not j.get("success", True):
+            raise RuntimeError(f"{route}: resposta sem sucesso")
+        out += j.get(route, [])
+        pg = j.get("pagination") or {}
+        if not pg.get("has_more"):
+            return out
+        page = pg.get("next_page") or page + 1
+
+
+def rv_aggregate(day, orders, payments, photos):
+    ok = [o for o in orders if str(o.get("status")) != "3" and not o.get("deleted")]
+    sold = [o for o in ok if str(o.get("status")) == "1"]
+    agg = {"daily": {"approaches": len(ok), "viewed": len(ok), "converted": len(sold), "sales": len(sold),
+                     "revenue": round(sum(rv_num(o.get("total")) for o in sold), 2),
+                     "prints": sum(int(rv_num(o.get("print_count"))) for o in sold),
+                     "reprints": sum(int(rv_num(o.get("re_print_count"))) for o in sold),
+                     "photos": len(photos), "photosSold": sum(1 for p in photos if int(rv_num(p.get("order_count"))) > 0),
+                     "pax": None},
+           "sellers": {}, "payments": {}, "products": {}, "rows": {}, "people": {}}
+    for o in ok:
+        n = (o.get("vendor_name") or "Site").strip()
+        s = agg["sellers"].setdefault(n, {"total": 0, "done": 0, "pending": 0, "discarded": 0, "canceled": 0,
+                                          "revenue": 0.0, "photosSold": 0, "prints": 0, "reprints": 0})
+        st = str(o.get("status"))
+        s["total"] += 1
+        if st == "1":
+            s["done"] += 1
+            s["revenue"] += rv_num(o.get("total"))
+            s["photosSold"] += int(rv_num(o.get("sold_photos")))
+            s["prints"] += int(rv_num(o.get("print_count")))
+            s["reprints"] += int(rv_num(o.get("re_print_count")))
+        elif st == "4":
+            s["discarded"] += 1
+        elif st == "2":
+            s["canceled"] += 1
+        else:
+            s["pending"] += 1
+    for o in sold:
+        prods = [x.strip() for x in str(o.get("products_in_order") or "").split(";") if x.strip()]
+        for pn in prods:
+            pr = agg["products"].setdefault(pn, {"units": 0, "revenue": 0.0})
+            pr["units"] += 1
+            pr["revenue"] += rv_num(o.get("total")) / len(prods)
+    for p in payments:
+        if str(p.get("status")) not in ("1", "2"):
+            continue
+        m = (p.get("modality") or "outro").strip()
+        pm = agg["payments"].setdefault(m, {"count": 0, "amount": 0.0})
+        pm["count"] += 1
+        pm["amount"] += rv_num(p.get("value"))
+    # fotos por fotógrafo (ou estação de chroma); receita pelo cartão vendido
+    card_key, cards, sold_cards = {}, {}, {}
+    for p in photos:
+        nm = (p.get("photographer_name") or "").strip()
+        pdv = (p.get("pdv_name") or "").strip()
+        if nm:
+            key, human, name = rv_key(nm), True, nm
+        else:
+            key, human, name = rv_key(pdv or "sem fotógrafo"), False, pdv or "Sem fotógrafo"
+        agg["people"].setdefault(key, {"name": name, "human": human, "pdv": pdv})
+        r = agg["rows"].setdefault(key, {"photos": 0, "cards": 0, "cardsSold": 0, "photosSold": 0, "revenue": 0.0})
+        r["photos"] += 1
+        c = p.get("card") or ""
+        if c:
+            card_key[c] = key
+            cards.setdefault(key, set()).add(c)
+        if int(rv_num(p.get("order_count"))) > 0:
+            r["photosSold"] += 1
+            if c:
+                sold_cards.setdefault(key, set()).add(c)
+    for k, r in agg["rows"].items():
+        r["cards"] = len(cards.get(k, ()))
+        r["cardsSold"] = len(sold_cards.get(k, ()))
+    for o in sold:
+        k = card_key.get(o.get("card_code") or "")
+        if k:
+            agg["rows"][k]["revenue"] += rv_num(o.get("total"))
+    for d in (agg["sellers"], agg["payments"], agg["products"], agg["rows"]):
+        for v in d.values():
+            for f in ("revenue", "amount"):
+                if f in v:
+                    v[f] = round(v[f], 2)
+    return agg
+
+
+def rv_key(name):
+    import unicodedata
+    n = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    first = "".join(ch for ch in n.split()[0] if ch.isalnum()) if n.split() else "x"
+    if "chroma" in n:
+        return "chroma" + "".join(ch for ch in n if ch.isdigit())[:2]
+    return first or "x"
+
+
+def rover_sync_day(cfg, day):
+    orders = rv_all(cfg, "orders", day)
+    payments = rv_all(cfg, "payments", day)
+    photos = rv_all(cfg, "photos", day)
+    with open(os.path.join(ROVER_DIR, "raw", day + ".json"), "w") as f:
+        json.dump({"orders": orders, "payments": payments, "photos": photos}, f)
+    agg = rv_aggregate(day, orders, payments, photos)
+    with open(os.path.join(ROVER_DIR, "agg", day + ".json"), "w") as f:
+        json.dump(agg, f)
+    return agg
+
+
+def rover_loop():
+    while True:
+        cfg = rover_cfg()
+        if not cfg:
+            rover["status"] = "sem chave"
+        else:
+            rover["syncing"] = True
+            rover["status"] = "sincronizando"
+            try:
+                today = _dt.date.today()
+                for i in range(ROVER_DAYS - 1, -1, -1):
+                    day = (today - _dt.timedelta(days=i)).isoformat()
+                    path = os.path.join(ROVER_DIR, "agg", day + ".json")
+                    if os.path.exists(path) and i > 1:
+                        continue          # dias fechados não mudam
+                    rover_sync_day(cfg, day)
+                rover["status"] = "ok"
+                rover["error"] = None
+                rover["last"] = _dt.datetime.now().isoformat(timespec="seconds")
+                print(f"roverpix: sincronizado às {rover['last'][11:16]}")
+            except urllib.error.HTTPError as ex:
+                rover["status"] = "erro"
+                rover["error"] = f"HTTP {ex.code}" + (" (chave recusada)" if ex.code in (401, 403) else "")
+                print("roverpix:", rover["error"])
+            except Exception as ex:
+                rover["status"] = "erro"
+                rover["error"] = str(ex)[:200]
+                print("roverpix:", rover["error"])
+            rover["syncing"] = False
+        rover["days"] = len([f for f in os.listdir(os.path.join(ROVER_DIR, "agg")) if f.endswith(".json")])
+        rover_wake.wait(ROVER_EVERY)
+        rover_wake.clear()
+
+
+def rover_data():
+    days = {}
+    for fn in sorted(os.listdir(os.path.join(ROVER_DIR, "agg"))):
+        if fn.endswith(".json"):
+            try:
+                days[fn[:-5]] = json.load(open(os.path.join(ROVER_DIR, "agg", fn)))
+            except Exception:
+                pass
+    return {"ok": True, "updated": rover["last"], "status": rover["status"], "error": rover["error"], "days": days}
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -461,7 +674,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -509,6 +722,11 @@ class H(BaseHTTPRequestHandler):
                         o["thumb"] = f"/thumb/{e['id']}"
                         o["url"] = f"/file/{e['id']}"
                 return self.js({"events": out, "next": since + len(evs), "total": len(events)})
+        if u.path == "/roverpix/status":
+            c = rover_cfg()
+            return self.js({**{k: v for k, v in rover.items()}, "configured": bool(c), "base_url": c["base_url"] if c else None})
+        if u.path == "/roverpix/data":
+            return self.js(rover_data())
         if u.path.startswith("/thumb/") or u.path.startswith("/file/"):
             pid = u.path.rsplit("/", 1)[1]
             with lock:
@@ -517,6 +735,28 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "not found"}, 404)
             return self.file(e["thumb"] if u.path.startswith("/thumb/") else e["file"])
         return self.app(u.path)
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        origin = self.headers.get("Origin") or ""
+        if u.path == "/roverpix/config":
+            # só o app aberto pelo próprio agente pode trocar a chave
+            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+                return self.js({"error": "origem não autorizada"}, 403)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+            except Exception:
+                return self.js({"error": "corpo inválido"}, 400)
+            key = (body.get("api_key") or "").strip()
+            if not key:
+                return self.js({"error": "informe a chave"}, 400)
+            rover_save_cfg(body.get("base_url"), key)
+            return self.js({"ok": True})
+        if u.path == "/roverpix/sync":
+            rover_wake.set()
+            return self.js({"ok": True})
+        return self.js({"error": "not found"}, 404)
 
     # O app servido pelo próprio agente: o navegador abre http://127.0.0.1:8765 e
     # conversa com o agente na mesma origem (sem bloqueio de rede local do Chrome).
@@ -554,6 +794,8 @@ def main():
     print(f"  abra o Eterna em:  http://127.0.0.1:{PORT}   (mesmo Mac)")
     threading.Thread(target=watcher, daemon=True).start()
     threading.Thread(target=ftp_server, daemon=True).start()
+    threading.Thread(target=rover_loop, daemon=True).start()
+    print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")
     try:
