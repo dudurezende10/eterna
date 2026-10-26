@@ -1400,10 +1400,10 @@ function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.sessi
 function login(email){const u=userFor(email);if(!u){state.auth.err='Este e-mail não tem acesso ao Eterna.';return false;}state.user=u;if(!u.guest){USERS[u.email].lastLogin=now().toISOString();saveUsers(u.email);}try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
   state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();render();window.scrollTo({top:0});return true;}
 function logout(){camStop();state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
-// Código de acesso: gerado, enviado (ti@maracatour.com.br, Microsoft 365) e conferido pelo serviço eterna-email na VM.
-// Sem o serviço (rede bloqueada, artefato), o código é gerado no navegador e aparece na caixa simulada.
-const MAIL_API='https://parceiros.vivamaracana.com.br/eterna-api';
-async function mailApi(rota,corpo){try{const r=await fetch(MAIL_API+rota,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpo)});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
+// Código de acesso: quando MAIL_API aponta para um serviço de e-mail (POST /auth/codigo e /auth/verificar, contrato em
+// servidor/email/README.md), o código sai por e-mail. Vazio: o código é gerado no navegador e aparece na caixa simulada.
+const MAIL_API='';
+async function mailApi(rota,corpo){if(!MAIL_API)return {status:0};try{const r=await fetch(MAIL_API+rota,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpo)});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
 async function sendCode(){const e=normEmail(state.auth.email);if(!emailOk(e)){state.auth.err='Digite um e-mail válido.';render();return;}if(state.auth.busy)return;state.auth.busy=true;state.auth.err=null;render();
   const r=await mailApi('/auth/codigo',{email:e});state.auth.busy=false;
   if(r.status===429){state.auth.err='Aguarde um pouco antes de pedir outro código.';render();return;}

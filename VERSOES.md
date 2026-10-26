@@ -27,5 +27,6 @@ Cada versão é um commit em `main`. Para abrir uma versão: `git checkout <comm
 | v27 | `3e30f06` | app: Ingestão vira Upload, filtro de datas (de/até) nos relatórios, nomes de pessoas padronizados |
 | – | `7507235` | ci: espelho automático para MaracaTour/eterna |
 | v28 | – | login: código enviado por e-mail de verdade (serviço eterna-email na VM, remetente ti@maracatour.com.br) |
+| – | – | login volta ao código na tela; envio da VM desligado (e-mail vai sair de @eterna.photo) |
 
 Regra do projeto: toda alteração pedida vira commit, por padrão.

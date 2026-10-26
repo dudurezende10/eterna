@@ -1,5 +1,7 @@
 # eterna-email
 
+> **Fora de uso desde 26/10/2026.** O envio de e-mail do Eterna vai sair de uma conta @eterna.photo. O contrato das rotas abaixo continua valendo para o serviço que substituir este: basta preencher `MAIL_API` no `index.html`.
+
 Serviço de comunicação do Eterna. Gera, envia e confere o código de acesso do login.
 O e-mail sai de **ti@maracatour.com.br** pelo Microsoft 365 (Graph, app-only com certificado),
 o mesmo app e certificado do Viva Parceiros.
