@@ -33,3 +33,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v32 | `f457136` | Convidado: fundos de IA na galeria (5 fundos aprovados), lista guardada por 60 dias, paga agora ou depois |
 | Lolla V1 | `4072e7f` (branch `lolla-v1`) | Conceito Lollapalooza Brasil, sistema separado, fora do main |
 | v33 | `9a19e7a` | Convidado: selfie liga a câmera frontal do celular ou a webcam do computador; sem câmera, escolhe foto do aparelho |
+| v34 | `baa9202` | Fotógrafo de campo ou volante (acompanha o grupo, chute a gol, livre com lugar), troca no set e na Escala, sessões separadas do campo |
