@@ -4,7 +4,7 @@
 # Rodar na VM: sh /opt/eterna-email/publicar-rota.sh
 set -e
 cd /opt/viva-parceiros/deploy/parceiros
-grep -q eterna-api Caddyfile && { echo "Rota já existe."; exit 0; }
+if ! grep -q eterna-api Caddyfile; then
 cp Caddyfile "Caddyfile.bak-$(date +%Y%m%d%H%M)"
 python3 - <<'EOF'
 p = "Caddyfile"; s = open(p).read()
@@ -21,8 +21,10 @@ bloco = """\t# Eterna (fotos do Tour): serviço de e-mail do login, container et
 assert s.count(marca) == 1
 open(p, "w").write(s.replace(marca, bloco + marca))
 EOF
-sudo docker exec viva-parceiros-proxy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-sudo docker exec viva-parceiros-proxy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
-sleep 2
-curl -s -o /dev/null -w "parceiros: %{http_code}\n" https://parceiros.vivamaracana.com.br/guias/healthz
+fi
+sudo docker run --rm -v /opt/viva-parceiros/deploy/parceiros/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+# O Caddyfile é montado como arquivo: quando ele é substituído, o container continua vendo o antigo até reiniciar.
+sudo docker exec viva-parceiros-proxy grep -q eterna-api /etc/caddy/Caddyfile || sudo docker restart viva-parceiros-proxy
+sleep 4
+curl -s -o /dev/null -w "parceiros: %{http_code}\n" https://parceiros.vivamaracana.com.br/healthz
 curl -s -w "  eterna-api: %{http_code}\n" https://parceiros.vivamaracana.com.br/eterna-api/healthz
