@@ -206,6 +206,17 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 }
 @media (prefers-reduced-motion:reduce){.toast{transition:none}.ph.arrive{animation:none}}
 .wrapcells td,.wrapcells ~ tr td{white-space:normal;vertical-align:top}
+.flow{display:flex;align-items:stretch;gap:8px;overflow-x:auto;padding:4px 2px 10px}
+.flow .stage{flex:1 1 150px;min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:4px;text-align:left}
+.flow .stage:hover{border-color:var(--fg)}
+.flow .stage .v{font-family:var(--display);font-size:34px;line-height:1;font-variant-numeric:tabular-nums;font-weight:500}
+.flow .stage .d{font-size:12px;color:var(--muted)}
+.flow .stage ul{margin:8px 0 0;padding:0;list-style:none;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.flow .stage ul li::before{content:'· '}
+.flow .arrow{align-self:center;font-size:22px;color:var(--muted);flex:none}
+.flow .split{display:flex;flex-direction:column;gap:8px;flex:1 1 170px;min-width:170px}
+.flow .split .stage{flex:1}
+#st-nao{border-style:dashed}
 </style>
 
 <div class="app">
@@ -267,10 +278,10 @@ const poolOf=k=>DATA.sampled.filter(s=>s.key===k).flatMap(s=>s.photos.filter(p=>
 
 // ---------- state ----------
 const state={view:'perfis',person:null,session:null,personDay:null,period:'all',imp:{key:'samuel',point:'campo4',photos:[],sent:0,mode:'cartao',timer:null},revFilter:{key:'all',date:'all'},reviews:{},db:null,
-  set:{point:'campo4',open:null,timer:null},fila:{session:null},caixa:{session:null,pay:'PIX'},guest:{code:'',fav:{}},kiosk:{code:'',step:'code'}};
+  set:{point:'campo4',open:null,timer:null},fila:{session:null},caixa:{session:null,pay:'PIX',tef:false,tefStatus:null},guest:{code:'',fav:{}},kiosk:{code:'',step:'code'}};
 try{const v=localStorage.getItem('eterna.view');if(v)state.view=v;}catch(e){}
 // a URL com # manda: um link compartilhado abre direto na tela, fotógrafo, dia e período (lido depois de stats existir)
-const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'}});
+const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'}});
 let SIM=SIM0();
 try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}
 function saveSim(){try{localStorage.setItem('eterna.sim.v1',JSON.stringify(SIM))}catch(e){}}
@@ -281,7 +292,7 @@ function log(t){SIM.log.unshift({t,at:now().toISOString()});SIM.log=SIM.log.slic
 function demoSessions(){
   const list=[];
   for(const s of DATA.sampled){const sim=SIM.sessions[s.card];list.push({card:s.card,key:s.key,pdv:s.pdv,time:s.time,date:s.date,photos:s.photos.filter(p=>hasImg(p.id)&&!SIM.discarded[p.id]).map(p=>({id:p.id,sold:p.sold})),total:s.total,soldTotal:s.soldTotal,demo:true,status:sim?sim.status:'pronta'});}
-  for(const [card,sim] of Object.entries(SIM.sessions)){if(!DATA.sampled.find(s=>s.card===card))list.push({card,key:sim.key,pdv:sim.pdv,time:sim.time,date:sim.date,photos:(sim.photos||[]).filter(p=>!SIM.discarded[p.id]),total:(sim.photos||[]).length,soldTotal:0,demo:false,status:sim.status});}
+  for(const [card,sim] of Object.entries(SIM.sessions)){if(!DATA.sampled.find(s=>s.card===card))list.push({card,key:sim.key,pdv:sim.pdv,time:sim.time,date:sim.date,photos:(sim.photos||[]).filter(p=>!SIM.discarded[p.id]&&!(SIM.invalid&&SIM.invalid[p.id])),total:(sim.photos||[]).length,soldTotal:0,demo:false,status:sim.status});}
   return list;
 }
 function simOf(card){if(!SIM.sessions[card]){const d=DATA.sampled.find(s=>s.card===card);SIM.sessions[card]={key:d?d.key:null,pdv:d?d.pdv:'',time:d?d.time:hhmm(now()),date:d?d.date:'hoje',status:'pronta',selected:[],bg:null,cart:[]};}return SIM.sessions[card]}
@@ -290,6 +301,7 @@ function cartTotal(cart){return (cart||[]).reduce((a,c)=>a+priceOf(c.id),0)}
 
 const VIEWS=[
  ['perfis','Perfis','início',''],
+ ['fluxo','Fluxo','do clique à venda','Operação'],
  ['set','Anfitrião no set','abrir sessão, capturar','Operação'],
  ['importar','Ingestão','cartão, Wi‑Fi e 5G','Operação'],
  ['fila','Fila da loja','escolher e montar','Operação'],
@@ -339,6 +351,7 @@ function vPerfis(){
   return `<div class="head"><div><div class="eyebrow">Protótipo funcional · Tour do Maracanã</div><h1>Captura, curadoria, venda e memória, num sistema só.</h1></div><div class="note">Dados reais do Roverpix (${DATA.period.short}) na gestão; operação simulada neste navegador.</div></div>
   <div class="sub">Escolha um perfil. O fluxo completo funciona como hoje, só que medido: o primeiro clique abre a sessão e o servidor fecha sozinho, por pausa e troca de rostos, sem foto preta; o convidado se identifica pelo rosto na fila, escolhe fotos, fundo e pacote; o caixa recebe, imprime e entrega o recibo com QR; o convidado abre a galeria no celular. O que você fizer aqui aparece na gestão.</div>
   <div class="roles">
+    <button class="role" data-act="view" data-v="fluxo"><span class="t">Fluxo do sistema</span><span class="d">O quadro de 26/10 ao vivo: pontos → fila única → validar (técnica e IA) → checkout → vendeu (maquininha hoje, TEF depois) ou não vendeu (web e RD).</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="set"><span class="t">Anfitrião no set</span><span class="d">iPad no ponto de captura. Primeiro clique abre, o servidor fecha sozinho. Sem foto preta, sem botão; vê as fotos chegarem e o roteiro de quadros.</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="importar"><span class="t">Ingestão</span><span class="d">Cartão, Wi‑Fi ou 5G: a foto sai da câmera e chega na fila sem o fotógrafo tocar em nada. Repetida é ignorada, grupo fecha sozinho sem foto preta, bandeira reconhecida.</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="fila"><span class="t">Fila da loja</span><span class="d">Vendedor com iPad. Acha as fotos pelo rosto, o convidado escolhe, troca o fundo do Chroma e monta o pacote antes do caixa.</span><span class="go">Abrir →</span></button>
@@ -462,15 +475,19 @@ function vCaixa(){
   if(s){const sim=simOf(s.card);const total=cartTotal(sim.cart);const prints=(sim.cart||[]).reduce((a,c)=>{const p=DATA.catalog.find(x=>x.id===c.id);return a+(p?p.prints:0)},0);
     if(sim.status==='paga'){
       detail=`<div class="panel"><div class="head"><h2>Recibo · ${esc(s.card)}</h2><span class="pill good">pago · ${esc(sim.payment)}</span></div>
-        <div class="qr"><div id="qrbox"></div><div><div class="eyebrow">Galeria do convidado</div><div class="note">eterna.app/g/${esc(s.card)}<br>${(sim.selected||[]).length} fotos em alta · 60 dias para baixar · arquivos 3.000 px</div><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="go-guest" data-card="${s.card}">Abrir como o convidado</button><button class="btn ghost" data-act="caixa-reprint">Reimprimir</button></div></div></div>
-        <div class="receipt">TOUR DO MARACANÃ · ETERNA\nSessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.app/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour</div></div>`;
+        <div class="qr"><div id="qrbox"></div><div><div class="eyebrow">Galeria do convidado</div><div class="note">eterna.photo/g/${esc(s.card)}<br>${(sim.selected||[]).length} fotos em alta · 60 dias para baixar · arquivos 3.000 px</div><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="go-guest" data-card="${s.card}">Abrir como o convidado</button><button class="btn ghost" data-act="caixa-reprint">Reimprimir</button></div></div></div>
+        <div class="receipt">TOUR DO MARACANÃ · ETERNA\nSessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour</div></div>`;
     }else{
       detail=`<div class="panel"><div class="head"><h2>${esc(s.card)}</h2><span class="note">${esc(P[s.key]?P[s.key].name:'')} · ${(sim.selected||[]).length} fotos escolhidas · ${prints} impressões</span></div>
         <div class="photos small">${s.photos.filter(p=>(sim.selected||[]).includes(p.id)).map(p=>photoBtn(p)).join('')||'<div class="note">Nenhuma foto escolhida na fila.</div>'}</div>
         <div class="cart">${(sim.cart||[]).map(c=>`<div class="cartline"><span>${esc(catName(c.id))}</span><b>${fmtR(priceOf(c.id))}</b></div>`).join('')}${sim.bg?`<div class="cartline"><span>Fundo: ${esc((DATA.backgrounds.find(b=>b.id===sim.bg)||{}).name)}</span><b>incluso</b></div>`:''}</div>
         <div class="total"><span class="note">Total</span><b>${fmtR(total)}</b></div>
         <div class="eyebrow">Pagamento</div><div class="chips">${['PIX','Cartão de crédito','Cartão de débito','Dinheiro'].map(m=>`<button class="chip" data-act="caixa-pay" data-m="${m}" aria-pressed="${state.caixa.pay===m}">${m}</button>`).join('')}</div>
-        <div class="row"><button class="btn primary big" data-act="caixa-confirm">Receber ${fmtR(total)} e imprimir</button><button class="btn ghost" data-act="caixa-back-fila">Voltar para a fila</button></div>
+        <div class="chips"><button class="chip" data-act="caixa-mode" data-m="pos" aria-pressed="${!state.caixa.tef}">Maquininha avulsa (hoje)</button><button class="chip" data-act="caixa-mode" data-m="tef" aria-pressed="${state.caixa.tef}">TEF integrado (futuro)</button></div>
+        ${state.caixa.tef&&state.caixa.pay!=='Dinheiro'?`<div class="panel" style="background:var(--surface2)"><div class="row" style="justify-content:space-between"><span class="eyebrow">Maquininha · TEF</span><span class="pill ${state.caixa.tefStatus==='aprovado'?'good':state.caixa.tefStatus?'warn':'neutral'}">${state.caixa.tefStatus||'pronta'}</span></div><div class="note">O Eterna manda ${fmtR(total)} para a maquininha. Ninguém digita valor. A venda só fecha quando a adquirente confirma; o recibo e a impressão saem na confirmação.</div>
+        <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="caixa-tef" ${state.caixa.tefStatus&&state.caixa.tefStatus!=='recusado'?'disabled':''}>Enviar ${fmtR(total)} para a maquininha</button><button class="btn ghost" data-act="caixa-back-fila">Voltar para a fila</button></div></div>`
+        :`<div class="row"><button class="btn primary big" data-act="caixa-confirm">Receber ${fmtR(total)} e imprimir</button><button class="btn ghost" data-act="caixa-back-fila">Voltar para a fila</button></div>
+        ${state.caixa.pay!=='Dinheiro'?`<div class="note">Hoje: o vendedor digita ${fmtR(total)} na maquininha avulsa e confirma aqui quando aprovar. A conciliação com a adquirente é manual, no fim do dia.</div>`:''}`}
         <div class="note">A impressão dispara no pagamento, na ASK-400 do Caixa 1 (${SIM.stock['Caixa 1']} no rolo). O recibo sai com o QR da galeria.</div></div>`;
     }
   }
@@ -482,7 +499,7 @@ function vCaixa(){
   </div>`;
 }
 function caixaConfirm(){const c=state.caixa.session;const s=simOf(c);const prints=(s.cart||[]).reduce((a,x)=>{const p=DATA.catalog.find(y=>y.id===x.id);return a+(p?p.prints:0)},0);s.status='paga';s.payment=state.caixa.pay;s.paidAt=now().toISOString();SIM.stock['Caixa 1']=Math.max(0,SIM.stock['Caixa 1']-prints);log(`Sessão ${c} paga: ${fmtR(cartTotal(s.cart))} em ${s.payment}, ${prints} impressões`);saveSim();toast('Pagamento recebido. Imprimindo.');render();}
-function drawQR(){const el=$('#qrbox');if(!el)return;el.innerHTML='';if(!window.QRCode){el.textContent='QR';return}try{new QRCode(el,{text:'https://eterna.app/g/'+state.caixa.session,width:110,height:110,correctLevel:QRCode.CorrectLevel.M});}catch(e){el.textContent='QR'}}
+function drawQR(){const el=$('#qrbox');if(!el)return;el.innerHTML='';if(!window.QRCode){el.textContent='QR';return}try{new QRCode(el,{text:'https://eterna.photo/g/'+state.caixa.session,width:110,height:110,correctLevel:QRCode.CorrectLevel.M});}catch(e){el.textContent='QR'}}
 
 // ---------- Quiosque ----------
 function vQuiosque(){
@@ -581,7 +598,9 @@ function ingClose(how){const g=state.ing;const c=g.cur;g.cur=null;if(!c||!c.phot
   const top=Object.entries(c.flags).sort((a,b)=>b[1]-a[1])[0];const flag=top?top[0]:null;
   SIM.sessions[card]={key:state.imp.key,pdv:pt?pt.name:'',point:state.imp.point,time:hhmm(now()),date:'hoje',status:'fechada',selected:[],bg:null,cart:[],photos:c.photos.map(p=>({id:p.id,sold:0})),openedAt:c.start,closedAt:now().toISOString(),source:state.imp.mode,closedBy:how,flag};
   if(flag){if(!SIM.flagUse)SIM.flagUse={};SIM.flagUse[flag]=(SIM.flagUse[flag]||0)+1;}
-  g.done.unshift({card,n:c.photos.length,how,flag,photos:c.photos});
+  if(!SIM.invalid)SIM.invalid={};let bad=[];c.photos.forEach(p=>{const r=validatePhoto(p.id);if(r){SIM.invalid[p.id]=r;p.invalid=r;bad.push(r);}});g.n.invalid=(g.n.invalid||0)+bad.length;
+  g.feed.unshift({k:bad.length?'warn':'ok',t:`Validação: ${c.photos.length-bad.length} válidas${bad.length?`, ${bad.length} não ${bad.length===1?'válida':'válidas'}`:''}`,s:bad.length?`IA barrou: ${[...new Set(bad)].join(', ')}. Ficam no acervo, fora da fila.`:'técnica e IA aprovaram todas'});
+  g.done.unshift({card,n:c.photos.length-bad.length,how,flag,photos:c.photos});
   log(`Ingestão por ${srcName()}: sessão ${card} de ${P[state.imp.key].name}, ${c.photos.length} fotos, fechada por ${how}${flag?', bandeira '+flag:''}`);saveSim();
 }
 const srcName=()=>state.imp.mode==='cartao'?'cartão':state.imp.mode==='5g'?'5G':'Wi‑Fi';
@@ -604,7 +623,7 @@ function vImportar(){
   const pending=g.queue.filter(x=>x.kind==='photo'||x.kind==='dup').length;const cur=g.cur?g.cur.photos.length:0;
   const picker=`<div class="chips"><button class="chip" data-act="imp-mode" data-m="cartao" aria-pressed="${im.mode==='cartao'}">Cartão no computador do ponto</button><button class="chip" data-act="imp-mode" data-m="wifi" aria-pressed="${im.mode==='wifi'}">Celular, Wi‑Fi do estádio</button><button class="chip" data-act="imp-mode" data-m="5g" aria-pressed="${im.mode==='5g'}">Celular, 5G</button><span style="width:8px"></span><label class="note">Fotógrafo <select data-act="imp-key" class="chip">${humans.map(k=>`<option value="${k}" ${k===im.key?'selected':''}>${P[k].name}</option>`).join('')}</select></label><label class="note">Ponto <select data-act="imp-point" class="chip">${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===im.point?'selected':''}>${p.name}</option>`).join('')}</select></label></div>`;
   const tile=(l,v,d)=>`<div class="tile"><span class="eyebrow">${l}</span><span class="v">${v}</span>${d?`<span class="d">${d}</span>`:''}</div>`;
-  const ico={ok:'good',dup:'neutral',black:'bad',auto:'warn'};
+  const ico={ok:'good',dup:'neutral',black:'bad',auto:'warn',warn:'bad'};
   const phone=`<div class="phone"><div class="pin">
     <div class="row" style="justify-content:space-between"><span class="eyebrow">Eterna · ${esc(name)}</span><span class="note">${hhmm(now())}</span></div>
     <div style="font-family:var(--display);font-size:30px;line-height:1.05">${g.running?(pending?`${pending} na fila`:'Fechando a leva'):(g.n.arrived?'Tudo no servidor':'Pronto para receber')}</div>
@@ -619,18 +638,19 @@ function vImportar(){
   <div class="twocol" style="margin-top:4px">
     <div class="panel"><h2>O que o fotógrafo vê</h2>${phone}</div>
     <div class="panel"><h2>O que o servidor faz</h2>
-      <div class="tiles">${tile('Chegaram',g.n.arrived)}${tile('Repetidas',g.n.dup,'ignoradas')}${tile('Sessões',g.done.length)}${tile('Fechadas sozinhas',g.n.auto,'pausa + rostos')}${tile('Em dúvida',0,'para o PDV decidir')}${tile('Com bandeira',g.n.flagged,g.n.unsure?`${g.n.unsure} para confirmar`:'')}</div>
-      ${g.feed.length?`<div class="tablewrap"><table><tbody>${g.feed.slice(0,14).map(f=>`<tr><td><span class="pill ${ico[f.k]}">${f.k==='ok'?'foto':f.k==='dup'?'repetida':'auto'}</span></td><td style="white-space:normal"><div>${esc(f.t)}</div><div class="note">${esc(f.s)}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Clique em simular. A leva traz 4 famílias sem nenhuma foto preta, um cartão relido com 3 fotos repetidas e um caso difícil (criança sozinha, depois com os pais).</div>'}
+      <div class="tiles">${tile('Chegaram',g.n.arrived)}${tile('Repetidas',g.n.dup,'ignoradas')}${tile('Sessões',g.done.length)}${tile('Fechadas sozinhas',g.n.auto,'pausa + rostos')}${tile('Não válidas',g.n.invalid||0,'IA barrou')}${tile('Com bandeira',g.n.flagged,g.n.unsure?`${g.n.unsure} para confirmar`:'')}</div>
+      ${g.feed.length?`<div class="tablewrap"><table><tbody>${g.feed.slice(0,14).map(f=>`<tr><td><span class="pill ${ico[f.k]}">${f.k==='ok'?'foto':f.k==='dup'?'repetida':f.k==='warn'?'validar':'auto'}</span></td><td style="white-space:normal"><div>${esc(f.t)}</div><div class="note">${esc(f.s)}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Clique em simular. A leva traz 4 famílias sem nenhuma foto preta, um cartão relido com 3 fotos repetidas e um caso difícil (criança sozinha, depois com os pais).</div>'}
     </div>
   </div>
   ${cur?`<div class="panel"><div class="head"><h2>Sessão em formação</h2><span class="note">${cur} fotos · fecha sozinha quando os cliques param e o quadro seguinte traz rostos novos</span></div><div class="photos small">${g.cur.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.flag?p.flag:'',label:'Foto '+(i+1)})).join('')}</div></div>`:''}
   ${g.done.length?`<div class="panel"><div class="head"><h2>Sessões criadas nesta leva</h2><span class="note">Já estão na Fila da loja e no Caixa, com a bandeira gravada para o cruzamento com venda.</span></div>
-    ${g.done.map(s=>`<div class="eyebrow" style="margin:6px 0 8px">${s.card} · ${s.n} fotos · fechada por ${esc(s.how)} · ${s.flag?`<span class="pill good">bandeira: ${esc(s.flag)}</span>`:'<span class="pill neutral">sem bandeira</span>'}</div><div class="photos small">${s.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.conf&&p.conf<70?`${p.flag}? ${p.conf}%`:'',label:'Foto '+(i+1)})).join('')}</div>`).join('')}</div>`:''}
+    ${g.done.map(s=>`<div class="eyebrow" style="margin:6px 0 8px">${s.card} · ${s.n} fotos · fechada por ${esc(s.how)} · ${s.flag?`<span class="pill good">bandeira: ${esc(s.flag)}</span>`:'<span class="pill neutral">sem bandeira</span>'}</div><div class="photos small">${s.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.invalid?'NÃO VÁLIDA · '+p.invalid:(p.conf&&p.conf<70?`${p.flag}? ${p.conf}%`:''),label:'Foto '+(i+1)}).replace('<button class="ph"',`<button class="ph" data-off="${p.invalid?1:0}"`)).join('')}</div>`).join('')}</div>`:''}
   <div class="panel"><h2>Hoje no Roverpix, amanhã no Eterna</h2><div class="note">O que apareceu no vídeo do Foto Campo 4 em 26/10, e o que muda.</div><div class="tablewrap"><table style="min-width:600px"><thead><tr><th>Etapa</th><th>Roverpix hoje</th><th>Eterna</th></tr></thead><tbody>
     <tr class="wrapcells"><td>Chegada da foto</td><td>Fotógrafo abre o Explorer, acha a pasta do cartão, seleciona 48 fotos e arrasta para o programa</td><td>Cartão no leitor, ou câmera → celular → servidor. Ninguém arrasta nada</td></tr>
     <tr><td>Cartão relido</td><td>Reenvia o cartão inteiro porque não lembra o que já subiu; duplica</td><td>O servidor reconhece o arquivo repetido e ignora</td></tr>
     <tr><td>Espera</td><td>Barra "Enviando 39 de 48" na frente do fotógrafo, família já foi embora</td><td>Sobe em segundo plano; o celular mostra só "N na fila"</td></tr>
     <tr><td>Sessão</td><td>"Associação automática" em branco; cai no formulário de nome, email, telefone, CPF</td><td>Sem foto preta: pausa entre cliques e troca de rostos fecham o grupo. Dúvida vai para o vendedor, um toque. Zero formulário no set</td></tr>
+    <tr><td>Validação</td><td>Nenhuma: foto desfocada ou de olho fechado vai para a venda</td><td>Técnica e IA barram antes da fila; a não válida fica no acervo</td></tr>
     <tr><td>Bandeira</td><td>Ninguém sabe qual bandeira apareceu</td><td>Reconhecida na chegada e cruzada com a venda</td></tr>
     <tr><td>Falha</td><td>Grade volta vazia, fotos sem sessão</td><td>Fica na fila e sobe depois; nada bloqueia a próxima família</td></tr>
   </tbody></table></div></div>`;
@@ -818,6 +838,53 @@ function vEstoque(){
   <div class="row"><button class="btn ghost" data-act="stock-swap">Registrar troca de rolo no Caixa 1</button><button class="btn ghost" data-act="view" data-v="bandeiras">Bandeiras e material de cena →</button></div>`;
 }
 
+// ---------- Fluxo do sistema (quadro de 26/10) ----------
+const INVALID_REASONS=['desfocada','olhos fechados','sem rosto','cortada'];
+function validatePhoto(id){const h=h32(id+'v');if(h%12!==0)return null;return INVALID_REASONS[(h>>4)%INVALID_REASONS.length];}
+function vFluxo(){
+  const ss=Object.entries(SIM.sessions).map(([card,s])=>({card,...s}));
+  const simPhotos=ss.reduce((a,s)=>a+(s.photos||[]).length,0);
+  const inv=Object.keys(SIM.invalid||{}).length;
+  const cnt=st=>ss.filter(s=>s.status===st).length;
+  const paid=ss.filter(s=>s.status==='paga');const paidR=paid.reduce((a,s)=>a+cartTotal(s.cart),0);
+  const real=DATA.sessions.filter(s=>s.card);const realSold=real.filter(s=>s.sold>0).length,realNot=real.length-realSold;
+  const notSold=[...demoSessions().filter(s=>s.demo&&s.soldTotal===0),...ss.filter(s=>s.status==='fechada'&&s.lost)].slice(0,8);
+  const pv=SIM.postvisit||{};
+  const stage=(id,view,t,big,sub,lines)=>`<button class="stage" data-act="view" data-v="${view}" id="st-${id}"><span class="eyebrow">${t}</span><span class="v">${big}</span><span class="d">${sub}</span>${lines?`<ul>${lines.map(l=>`<li>${l}</li>`).join('')}</ul>`:''}</button>`;
+  const arrow='<span class="arrow" aria-hidden="true">→</span>';
+  return `<div class="head"><div><div class="eyebrow">Operação · do clique à venda</div><h1>Fluxo do sistema</h1></div><div class="sub">O quadro de 26/10, ao vivo. Cada etapa mostra o que está acontecendo agora nesta simulação e abre a tela correspondente. Nenhuma etapa depende do fotógrafo apertar nada.</div></div>
+  <div class="flow">
+    ${stage('pontos','set','Pontos',`${humans.length}+2`,'fotógrafos e chromas',['cartão, Wi‑Fi ou 5G','sem foto preta'])}${arrow}
+    ${stage('fila','importar','Fila única',fmtN(simPhotos+(state.ing.cur?state.ing.cur.photos.length:0)),'fotos recebidas hoje',[`${state.ing.n.dup} repetidas ignoradas`,`${ss.length} grupos montados`])}${arrow}
+    ${stage('validar','revisao','Validar',inv?`${fmtN(simPhotos-inv)}<small style="font-size:16px;color:var(--bad)"> · ${inv} não</small>`:fmtN(simPhotos),'válidas · não válidas',['técnica: sem rosto, repetida','IA: foco, olhos, corte'])}${arrow}
+    ${stage('checkout','fila','Checkout',`${cnt('fechada')+cnt('no caixa')}`,'com o vendedor',[`${cnt('fechada')} na fila`,`${cnt('no caixa')} no caixa`])}${arrow}
+    <div class="split">
+      ${stage('vendeu','caixa','Vendeu',`${paid.length}`,fmtR(paidR)+' hoje',['hoje: maquininha avulsa','futuro: TEF integrado'])}
+      ${stage('nao','fluxo','Não vendeu',`${Object.keys(pv).length}`,'galerias enviadas',['web: galeria pelo rosto','RD: 24 h · 7 dias · jogo'])}
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><h2>A semana real, no mesmo fluxo</h2><div class="note">Dados do Roverpix, ${DATA.period.label}. O Eterna mede cada etapa; o Roverpix só a última.</div>
+      ${hbars([{label:'Visitantes (PAX)',v:paxTotal},{label:'Fotografados (sessões)',v:humanTot.cards+chromaTot.cards},{label:'Chegaram ao caixa',v:DATA.totals.approaches},{label:'Venderam',v:DATA.totals.sales},{label:'Não venderam',v:humanTot.cards+chromaTot.cards-DATA.totals.sales}],fmtN)}
+      <div class="note">${fmtN(humanTot.cards+chromaTot.cards-DATA.totals.sales)} grupos fotografados saíram sem comprar nesta semana. Hoje viram nada; no Eterna viram galeria web e campanha.</div></div>
+    <div class="panel"><h2>Validar: o que a IA barra</h2><div class="note">Toda foto passa aqui antes da fila da loja. A não válida não some: fica no acervo, fora da venda, e conta para a nota do fotógrafo.</div>
+      <div class="tablewrap"><table><thead><tr><th>Peneira</th><th>Regra</th><th>Resultado</th></tr></thead><tbody>
+      <tr><td>Técnica</td><td>sem rosto, repetida, arquivo corrompido</td><td>não válida</td></tr>
+      <tr><td>IA · foco</td><td>nitidez no rosto abaixo do limiar</td><td>não válida</td></tr>
+      <tr><td>IA · olhos</td><td>olhos fechados em quem está em primeiro plano</td><td>não válida</td></tr>
+      <tr><td>IA · corte</td><td>cabeça ou pés cortados no quadro principal</td><td>não válida</td></tr>
+      <tr><td>IA · bandeira</td><td>qual bandeira aparece</td><td>etiqueta na foto</td></tr>
+      <tr><td>Dúvida</td><td>confiança baixa em qualquer regra</td><td>vai para a revisão de qualidade</td></tr>
+      </tbody></table></div>
+      ${inv?`<div class="eyebrow" style="margin-top:6px">Não válidas nesta simulação</div><div class="photos small">${Object.entries(SIM.invalid).slice(0,12).map(([id,r])=>photoBtn({id},{tag:r,label:'Não válida: '+r}).replace('<button class="ph"','<button class="ph" data-off="1"')).join('')}</div>`:'<div class="note">Rode uma leva na Ingestão para ver a validação acontecer.</div>'}
+    </div>
+  </div>
+  <div class="panel"><div class="head"><h2>Não vendeu: web e RD</h2><button class="btn ghost" data-act="postvisit-all" ${notSold.length?'':'disabled'}>Simular pós-visita para ${notSold.length} grupos</button></div>
+    <div class="note">Grupo que saiu sem comprar recebe a galeria das próprias fotos pelo rosto (selfie no celular) e entra na régua do RD: 24 h depois, 7 dias depois e no próximo jogo do time da bandeira. Fotos continuam à venda por 60 dias.</div>
+    <div class="tablewrap"><table><thead><tr><th>Sessão</th><th>Fotógrafo</th><th class="num">Fotos</th><th>Galeria web</th><th>RD · 24 h</th><th>RD · 7 dias</th><th>RD · jogo</th></tr></thead><tbody>
+    ${notSold.map(s=>{const p=pv[s.card];const pill=(k,txt)=>p&&p[k]?`<span class="pill good">${txt}</span>`:'<span class="pill neutral">—</span>';return `<tr><td class="name">${esc(s.card)}</td><td>${esc(P[s.key]?P[s.key].name:'')}</td><td class="num">${(s.photos||[]).length||s.total||''}</td><td>${pill('web','enviada')}</td><td>${pill('d1','agendado')}</td><td>${pill('d7','agendado')}</td><td>${pill('game',s.flag?s.flag:'sem bandeira')}</td></tr>`}).join('')||'<tr><td colspan="7" class="note">Nenhum grupo sem venda ainda.</td></tr>'}
+    </tbody></table></div></div>`;
+}
 // ---------- Gestão: bandeiras e material de cena ----------
 const FLAG_STATES=['nova','boa','desgastada','defeito','fora de uso'];
 const FLAG_W={'Brasil':412,'Flamengo':388,'Fluminense':121,'Vasco':97,'Botafogo':64,'Argentina':58,'Colômbia':44,'Chile':39,'Corinthians':31,'Palmeiras':28,'Estados Unidos da América (EUA/USA)':22,'Boca Juniors':19,'River Plate':17,'Portugal':15,'México':14,'Peru':13,'Uruguai':12,'Atlético Mineiro':11,'Grêmio':11,'São Paulo':10,'Santos':9,'Internacional de Porto Alegre':9,'Cruzeiro':8,'França':8,'Espanha':7};
@@ -885,7 +952,7 @@ function vAlertas(){const a=alerts();return `<div class="head"><div><div class="
   ${SIM.log.length?`<div class="panel"><h2>Registro da demonstração</h2><div class="tablewrap"><table><tbody>${SIM.log.slice(0,15).map(l=>`<tr><td class="note">${new Date(l.at).toLocaleTimeString('pt-BR')}</td><td>${esc(l.t)}</td></tr>`).join('')}</tbody></table></div></div>`:''}`}
 
 // ---------- render ----------
-const VIEWFN={perfis:vPerfis,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,alertas:vAlertas};
+const VIEWFN={perfis:vPerfis,fluxo:vFluxo,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,alertas:vAlertas};
 function render(){
   let html='',grp='';VIEWS.forEach(v=>{if(v[3]&&v[3]!==grp){grp=v[3];html+=`<div class="grp">${grp}</div>`}html+=`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}"><span>${v[1]}</span><small>${v[2]}</small></button>`});
   $('#nav').innerHTML=html;
@@ -965,7 +1032,10 @@ document.addEventListener('click',e=>{
     case 'fila-add':{const s=simOf(state.fila.session);s.cart=s.cart||[];const c=DATA.catalog.find(x=>x.id===d.id);if(s.cart.find(x=>x.id===d.id))s.cart=s.cart.filter(x=>x.id!==d.id);else{if(c.kind==='pacote')s.cart=s.cart.filter(x=>{const y=DATA.catalog.find(z=>z.id===x.id);return !y||y.kind!=='pacote'});s.cart.push({id:d.id});}saveSim();render();break;}
     case 'fila-send':{const c=state.fila.session;const s=simOf(c);s.status='no caixa';s.sentAt=now().toISOString();log(`Sessão ${c} enviada ao caixa: ${fmtR(cartTotal(s.cart))}`);saveSim();toast('Carrinho enviado ao caixa');state.fila.session=null;render();break;}
     case 'caixa-open':state.caixa.session=d.card;render();break;
-    case 'caixa-pay':state.caixa.pay=d.m;render();break;
+    case 'caixa-pay':state.caixa.pay=d.m;state.caixa.tefStatus=null;render();break;
+    case 'caixa-mode':state.caixa.tef=d.m==='tef';state.caixa.tefStatus=null;render();break;
+    case 'caixa-tef':{const c=state.caixa.session;const steps=state.caixa.pay==='PIX'?['QR dinâmico na maquininha','aguardando o convidado pagar','confirmado pelo banco']:['enviando valor','aguardando cartão','senha digitada','autorizando'];let i=0;state.caixa.tefStatus=steps[0];render();const t=setInterval(()=>{i++;if(i<steps.length){state.caixa.tefStatus=steps[i];render();}else{clearInterval(t);state.caixa.tefStatus='aprovado';const nsu=String(100000+Math.floor(Math.random()*899999));state.caixa.pay=state.caixa.pay+' · TEF · NSU '+nsu;caixaConfirm();state.caixa.pay=state.caixa.pay.split(' · ')[0];}},1100);break;}
+    case 'postvisit-all':{if(!SIM.postvisit)SIM.postvisit={};const ss=Object.entries(SIM.sessions).map(([card,s])=>({card,...s}));[...demoSessions().filter(s=>s.demo&&s.soldTotal===0),...ss.filter(s=>s.status==='fechada'&&s.lost)].slice(0,8).forEach(s=>{SIM.postvisit[s.card]={web:true,d1:true,d7:true,game:true};});log(`Pós-visita: galeria web e régua do RD para ${Object.keys(SIM.postvisit).length} grupos sem venda`);saveSim();toast('Galerias enviadas e régua do RD agendada');render();break;}
     case 'caixa-confirm':caixaConfirm();break;
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':SIM.stock['Caixa 1']=Math.max(0,SIM.stock['Caixa 1']-1);log(`Reimpressão ${state.caixa.session}`);saveSim();toast('Reimpressão enviada');render();break;
