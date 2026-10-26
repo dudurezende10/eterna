@@ -217,6 +217,16 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .flow .split{display:flex;flex-direction:column;gap:8px;flex:1 1 170px;min-width:170px}
 .flow .split .stage{flex:1}
 #st-nao{border-style:dashed}
+.steps{display:flex;gap:6px;flex-wrap:wrap}
+.steps .step{padding:6px 12px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted)}
+.steps .step[data-on="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.steps .step[data-done="true"]{color:var(--good);border-color:var(--good)}
+.face{position:relative;width:min(420px,100%);aspect-ratio:4/3;margin:0 auto;border-radius:12px;background:radial-gradient(ellipse at center,#2a2622 0%,#141311 70%);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.face .ring{width:46%;aspect-ratio:3/4;border:3px solid rgba(250,250,248,.85);border-radius:50%;animation:ring 1.6s ease-in-out infinite}
+.face .scan{position:absolute;left:10%;right:10%;height:2px;background:var(--accent);top:20%;animation:scan 2.2s linear infinite;opacity:.9}
+@keyframes ring{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.04);opacity:1}}
+@keyframes scan{from{top:18%}to{top:82%}}
+@media (prefers-reduced-motion:reduce){.face .ring,.face .scan{animation:none}}
 </style>
 
 <div class="app">
@@ -304,6 +314,7 @@ const VIEWS=[
  ['fluxo','Fluxo','do clique à venda','Operação'],
  ['set','Anfitrião no set','abrir sessão, capturar','Operação'],
  ['importar','Ingestão','cartão, Wi‑Fi e 5G','Operação'],
+ ['checkout','Checkout','rosto, fotos, pacote, pagamento','Operação'],
  ['fila','Fila da loja','escolher e montar','Operação'],
  ['caixa','Caixa','receber e imprimir','Operação'],
  ['quiosque','Quiosque','self-service','Operação'],
@@ -311,6 +322,7 @@ const VIEWS=[
  ['revisao','Qualidade','revisão de fotos','Gestão'],
  ['semana','Semana','visão geral','Gestão'],
  ['fotografos','Fotógrafos','índice e métricas','Gestão'],
+ ['vendas-lista','Lista de vendas','venda a venda','Gestão'],
  ['vendas','Vendas e caixa','vendedores, pagamentos','Gestão'],
  ['chroma','Chroma IA','estações e fundos','Gestão'],
  ['vestiario','Vestiário','novo set','Gestão'],
@@ -354,12 +366,13 @@ function vPerfis(){
     <button class="role" data-act="view" data-v="fluxo"><span class="t">Fluxo do sistema</span><span class="d">O quadro de 26/10 ao vivo: pontos → fila única → validar (técnica e IA) → checkout → vendeu (maquininha hoje, TEF depois) ou não vendeu (web e RD).</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="set"><span class="t">Anfitrião no set</span><span class="d">iPad no ponto de captura. Primeiro clique abre, o servidor fecha sozinho. Sem foto preta, sem botão; vê as fotos chegarem e o roteiro de quadros.</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="importar"><span class="t">Ingestão</span><span class="d">Cartão, Wi‑Fi ou 5G: a foto sai da câmera e chega na fila sem o fotógrafo tocar em nada. Repetida é ignorada, grupo fecha sozinho sem foto preta, bandeira reconhecida.</span><span class="go">Abrir →</span></button>
+    <button class="role" data-act="view" data-v="checkout"><span class="t">Checkout</span><span class="d">Vendedor, uma tela só: o rosto acha a sessão, o convidado escolhe fotos e pacote, paga (maquininha hoje, TEF depois) e sai com recibo e galeria.</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="fila"><span class="t">Fila da loja</span><span class="d">Vendedor com iPad. Acha as fotos pelo rosto, o convidado escolhe, troca o fundo do Chroma e monta o pacote antes do caixa.</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="caixa"><span class="t">Caixa</span><span class="d">Recebe o carrinho pronto, cobra, dispara a impressão e entrega o recibo com o QR da galeria.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="quiosque"><span class="t">Quiosque</span><span class="d">Self-service: o convidado digita o código ou lê o QR, vê as fotos e compra sozinho.</span><span class="go">Abrir →</span></button>
+    <button class="role" data-act="view" data-v="quiosque"><span class="t">Quiosque</span><span class="d">Self-service: a câmera já está ligada, o rosto abre as fotos sem apertar nada. Código e QR só como emergência.</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="convidado"><span class="t">Convidado</span><span class="d">Galeria no celular: selfie, QR ou código para achar as fotos; ver, favoritar, comprar o restante, baixar em alta, 60 dias.</span><span class="go">Abrir →</span></button>
     <button class="role" data-act="view" data-v="revisao"><span class="t">Qualidade</span><span class="d">Revisão por amostragem: foto a foto, nota da sessão, tags. Vira nota do fotógrafo.</span><span class="go">Abrir →</span></button>
-    <button class="role" data-act="view" data-v="semana"><span class="t">Gestão</span><span class="d">Semana, fotógrafos, vendas, Chroma, vestiário, escala, catálogo, estoque, bandeiras e alertas. Dados reais.</span><span class="go">Abrir →</span></button>
+    <button class="role" data-act="view" data-v="semana"><span class="t">Gestão</span><span class="d">Semana, fotógrafos, lista de vendas, Chroma, vestiário, escala, catálogo, estoque, bandeiras e alertas. Dados reais.</span><span class="go">Abrir →</span></button>
   </div>
   <div class="panel"><div class="head"><h2>Estado da demonstração</h2><button class="btn ghost" data-act="reset">Zerar simulação</button></div>
   <div class="tiles"><div class="tile"><span class="eyebrow">Abertas no set</span><span class="v">${cnt('aberta')}</span></div><div class="tile"><span class="eyebrow">Na fila</span><span class="v">${cnt('fechada')}</span></div><div class="tile"><span class="eyebrow">No caixa</span><span class="v">${cnt('no caixa')}</span></div><div class="tile"><span class="eyebrow">Pagas hoje</span><span class="v">${cnt('paga')}</span><span class="d">${fmtR(ss.filter(s=>s.status==='paga').reduce((a,s)=>a+cartTotal(s.cart),0))}</span></div></div>
@@ -459,7 +472,7 @@ function vFila(){
       </div>
     </div>`;
   }
-  const ready=all.filter(s=>s.status==='fechada'),pronta=all.filter(s=>s.status==='pronta'),rest=all.filter(s=>s.status==='no caixa'||s.status==='paga');
+  const ready=all.filter(s=>s.status==='fechada'),pronta=all.filter(s=>s.status==='pronta'),rest=all.filter(s=>s.status==='no caixa'||s.status==='paga'||s.status==='no checkout');
   const card=s=>`<button class="scard" data-act="fila-open" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key]?P[s.key].name:'')}</span><span>${esc(s.time)}</span></div><div class="meta"><span>${s.photos.length} fotos</span><span class="pill ${s.status==='paga'?'good':s.status==='no caixa'?'warn':'neutral'}">${esc(s.status)}</span></div></button>`;
   return `<div class="head"><div><div class="eyebrow">Vendedor · fila da loja</div><h1>Sessões prontas</h1></div><div class="sub">Busca pelo rosto, como hoje. O convidado escolhe na fila, com calma; o caixa só cobra. Sessões fechadas no set aparecem aqui na hora.</div></div>
   ${ready.length?`<h2>Vindas do set agora</h2><div class="sess">${ready.map(card).join('')}</div>`:''}
@@ -498,18 +511,129 @@ function vCaixa(){
     <div style="min-width:0">${detail||'<div class="panel"><div class="note">Selecione uma sessão da fila.</div></div>'}</div>
   </div>`;
 }
-function caixaConfirm(){const c=state.caixa.session;const s=simOf(c);const prints=(s.cart||[]).reduce((a,x)=>{const p=DATA.catalog.find(y=>y.id===x.id);return a+(p?p.prints:0)},0);s.status='paga';s.payment=state.caixa.pay;s.paidAt=now().toISOString();SIM.stock['Caixa 1']=Math.max(0,SIM.stock['Caixa 1']-prints);log(`Sessão ${c} paga: ${fmtR(cartTotal(s.cart))} em ${s.payment}, ${prints} impressões`);saveSim();toast('Pagamento recebido. Imprimindo.');render();}
+function caixaConfirm(){const c=state.caixa.session;const s=simOf(c);const prints=(s.cart||[]).reduce((a,x)=>{const p=DATA.catalog.find(y=>y.id===x.id);return a+(p?p.prints:0)},0);s.status='paga';s.payment=state.caixa.pay;s.paidAt=now().toISOString();s.saleNo=s.saleNo||('E'+String(Object.values(SIM.sessions).filter(x=>x.saleNo).length+1).padStart(3,'0'));if(!s.seller&&state.view==='checkout')s.seller=SELLERS[0];SIM.stock['Caixa 1']=Math.max(0,SIM.stock['Caixa 1']-prints);log(`Sessão ${c} paga: ${fmtR(cartTotal(s.cart))} em ${s.payment}, ${prints} impressões`);saveSim();toast('Pagamento recebido. Imprimindo.');render();}
 function drawQR(){const el=$('#qrbox');if(!el)return;el.innerHTML='';if(!window.QRCode){el.textContent='QR';return}try{new QRCode(el,{text:'https://eterna.photo/g/'+state.caixa.session,width:110,height:110,correctLevel:QRCode.CorrectLevel.M});}catch(e){el.textContent='QR'}}
+
+// ---------- Checkout (vendedor, uma tela só) ----------
+state.checkout={session:null,step:1,code:''};
+const SELLERS=DATA.sellers.filter(x=>x.total>=100).map(x=>x.name.split(' ')[0].replace(/^THAIN.*/,'Thainá'));
+function checkoutPick(card){state.checkout.session=card;state.checkout.step=2;state.fila.session=card;state.caixa.session=card;state.caixa.tefStatus=null;const sim=simOf(card);if(!sim.seller)sim.seller=SELLERS[0];if(sim.status==='pronta'||sim.status==='fechada'){sim.status='no checkout';}saveSim();render();window.scrollTo({top:0});}
+function receiptPanel(s,sim){const total=cartTotal(sim.cart);const prints=(sim.cart||[]).reduce((a,c)=>{const p=DATA.catalog.find(x=>x.id===c.id);return a+(p?p.prints:0)},0);
+  return `<div class="panel"><div class="head"><h2>Recibo · ${esc(s.card)}</h2><span class="pill good">pago · ${esc(sim.payment)}</span></div>
+    <div class="qr"><div id="qrbox"></div><div><div class="eyebrow">Galeria do convidado</div><div class="note">eterna.photo/g/${esc(s.card)}<br>${(sim.selected||[]).length} fotos em alta · 60 dias para baixar · arquivos 3.000 px</div><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="go-guest" data-card="${s.card}">Abrir como o convidado</button><button class="btn ghost" data-act="caixa-reprint">Reimprimir</button><button class="btn ghost" data-act="view" data-v="vendas-lista">Ver na lista de vendas</button></div></div></div>
+    <div class="receipt">TOUR DO MARACANÃ · ETERNA\nVenda ${esc(sim.saleNo||'')} · Sessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\nVendedor: ${esc(sim.seller||'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour</div></div>`;}
+function vCheckout(){
+  const ck=state.checkout;
+  const all=demoSessions().filter(s=>s.status!=='aberta');
+  const steps=['Identificar','Escolher e montar','Pagar','Recibo'];
+  const stepbar=`<div class="steps">${steps.map((t,i)=>`<span class="step" data-on="${ck.step===i+1}" data-done="${ck.step>i+1}">${i+1}. ${t}</span>`).join('')}</div>`;
+  if(!ck.session||ck.step===1){
+    const q=(ck.code||'').toUpperCase();const list=all.filter(s=>s.status!=='paga'&&(!q||s.card.includes(q))).slice(0,16);
+    return `<div class="head"><div><div class="eyebrow">Vendedor · checkout</div><h1>Checkout</h1></div><div class="sub">Uma tela só, do rosto ao recibo. O vendedor identifica o convidado, ele escolhe as fotos e o pacote, paga e sai com o recibo e a galeria. Duas estações (fila e caixa separados) continuam disponíveis para dia cheio.</div></div>
+    ${stepbar}
+    <div class="grid2">
+      <div class="panel"><h2>Pelo rosto</h2><div class="note">O convidado olha para a câmera do iPad. O Eterna acha a sessão dele entre as de hoje.</div>
+        <label class="drop"><input type="file" accept="image/*" capture="user" data-act="checkout-selfie"><div style="font-family:var(--display);font-size:22px;color:var(--fg)">Tirar selfie</div><div style="margin-top:6px">Na demonstração, abre uma sessão de amostra.</div></label>
+        <div class="row" style="margin-top:10px"><button class="btn ghost" data-act="checkout-face">Simular reconhecimento</button></div></div>
+      <div class="panel"><h2>Pelo código ou pela lista</h2><input type="text" class="code" data-act="checkout-code" value="${esc(ck.code)}" placeholder="LP..." aria-label="Código da sessão">
+        <div class="sess" style="margin-top:12px">${list.map(s=>`<button class="scard" data-act="checkout-pick" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key]?P[s.key].name:'')}</span><span>${esc(s.time)}</span></div><div class="meta"><span>${s.photos.length} fotos</span><span class="pill ${s.status==='no checkout'||s.status==='no caixa'?'warn':'neutral'}">${esc(s.status)}</span></div></button>`).join('')||'<div class="note">Nenhuma sessão com esse código.</div>'}</div></div>
+    </div>`;
+  }
+  const s=sessionObj(ck.session);if(!s){ck.session=null;ck.step=1;return vCheckout();}
+  const sim=simOf(s.card);const sel=new Set(sim.selected||[]);const cart=sim.cart||[];const total=cartTotal(cart);
+  const prints=cart.reduce((a,c)=>{const p=DATA.catalog.find(x=>x.id===c.id);return a+(p?p.prints:0)},0);
+  const head=`<div class="head"><div><div class="eyebrow"><button class="chip" data-act="checkout-back">← Checkout</button> &nbsp; Vendedor <select data-act="checkout-seller" class="chip">${SELLERS.map(n=>`<option ${n===sim.seller?'selected':''}>${esc(n)}</option>`).join('')}</select></div><h1>${esc(s.card)}</h1></div><div class="note">${esc(P[s.key]?P[s.key].name:'')} · ${esc(s.pdv)} · ${dlabel(s.date)} ${esc(s.time)} · ${s.photos.length} fotos${s.flag?` · <span class="pill good">bandeira: ${esc(s.flag)}</span>`:''}</div></div>${stepbar}`;
+  if(sim.status==='paga'){return head+receiptPanel(s,sim)+`<div class="row"><button class="btn primary big" data-act="checkout-next-guest">Próximo convidado</button></div>`;}
+  if(ck.step===3){
+    return head+`<div class="twocol">
+      <div class="panel"><h2>Resumo</h2><div class="photos small">${s.photos.filter(p=>sel.has(p.id)).map(p=>photoBtn(p)).join('')||'<div class="note">Nenhuma foto escolhida.</div>'}</div>
+        <div class="cart">${cart.map(c=>`<div class="cartline"><span>${esc(catName(c.id))}</span><b>${fmtR(priceOf(c.id))}</b></div>`).join('')}${sim.bg?`<div class="cartline"><span>Fundo: ${esc((DATA.backgrounds.find(b=>b.id===sim.bg)||{}).name)}</span><b>incluso</b></div>`:''}</div>
+        <div class="total"><span class="note">Total · ${prints} impressões</span><b>${fmtR(total)}</b></div>
+        <div class="row"><button class="btn ghost" data-act="checkout-step" data-s="2">← Mudar fotos ou pacote</button></div></div>
+      <div class="panel"><h2>Pagamento</h2>
+        <div class="chips">${['PIX','Cartão de crédito','Cartão de débito','Dinheiro'].map(m=>`<button class="chip" data-act="caixa-pay" data-m="${m}" aria-pressed="${state.caixa.pay===m}">${m}</button>`).join('')}</div>
+        <div class="chips"><button class="chip" data-act="caixa-mode" data-m="pos" aria-pressed="${!state.caixa.tef}">Maquininha avulsa (hoje)</button><button class="chip" data-act="caixa-mode" data-m="tef" aria-pressed="${state.caixa.tef}">TEF integrado (futuro)</button></div>
+        ${state.caixa.tef&&state.caixa.pay!=='Dinheiro'?`<div class="panel" style="background:var(--surface2)"><div class="row" style="justify-content:space-between"><span class="eyebrow">Maquininha · TEF</span><span class="pill ${state.caixa.tefStatus==='aprovado'?'good':state.caixa.tefStatus?'warn':'neutral'}">${state.caixa.tefStatus||'pronta'}</span></div><div class="note">O Eterna manda ${fmtR(total)} para a maquininha. A venda só fecha quando a adquirente confirma.</div>
+        <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="caixa-tef" ${state.caixa.tefStatus&&state.caixa.tefStatus!=='recusado'?'disabled':''}>Enviar ${fmtR(total)} para a maquininha</button></div></div>`
+        :`<div class="row"><button class="btn primary big" data-act="caixa-confirm" ${cart.length?'':'disabled'}>Receber ${fmtR(total)} e imprimir</button></div>${state.caixa.pay!=='Dinheiro'?`<div class="note">Hoje: o vendedor digita ${fmtR(total)} na maquininha avulsa e confirma aqui quando aprovar.</div>`:''}`}
+        <div class="note">Recibo com QR da galeria sai na confirmação. A venda entra na lista de vendas com vendedor, fotógrafo, produto e pagamento.</div></div>
+    </div>`;
+  }
+  return head+`<div class="review">
+    <div class="panel"><div class="head"><h2>O convidado escolhe</h2><span class="note">${sel.size} escolhidas. Toque para incluir.</span></div>
+      <div class="photos">${s.photos.map(p=>photoBtn(p,{act:'fila-sel',sel:sel.has(p.id),tag:p.sold?'VENDIDA NO ROVERPIX':''})).join('')}</div>
+      <h3>Fundo da foto do Chroma</h3>
+      <div class="bgs">${DATA.backgrounds.map(b=>`<button class="bg" data-act="fila-bg" data-bg="${b.id}" aria-pressed="${sim.bg===b.id}"><img src="${b.file}" alt="${esc(b.name)}"><span class="n"><span>${esc(b.name)}</span><span class="note">${esc(b.note)}</span></span></button>`).join('')}</div>
+    </div>
+    <div class="panel"><h2>Pacote</h2>
+      <div class="cart">${DATA.catalog.filter(c=>c.kind==='pacote').map(c=>`<button class="prod" data-act="fila-add" data-id="${c.id}" aria-pressed="${!!cart.find(x=>x.id===c.id)}"><span><span class="pn">${esc(c.name)}</span><br><span class="pd">${esc(c.desc)}</span></span><span class="pp">${fmtR(priceOf(c.id))}</span></button>`).join('')}</div>
+      <div class="eyebrow">Adicionais</div>
+      <div class="chips">${DATA.catalog.filter(c=>c.kind==='adicional'&&c.id!=='fundo').map(c=>`<button class="chip" data-act="fila-add" data-id="${c.id}" aria-pressed="${!!cart.find(x=>x.id===c.id)}">${esc(c.name)} · ${fmtR(priceOf(c.id))}</button>`).join('')}</div>
+      <div class="cart">${cart.map(c=>`<div class="cartline"><span>${esc(catName(c.id))}</span><b>${fmtR(priceOf(c.id))}</b></div>`).join('')||'<div class="note">Carrinho vazio.</div>'}</div>
+      <div class="total"><span class="note">Total</span><b>${fmtR(total)}</b></div>
+      <button class="btn primary big" data-act="checkout-step" data-s="3" ${cart.length?'':'disabled'}>Ir para o pagamento</button>
+      <button class="btn ghost" data-act="checkout-lost">Não quis comprar: galeria web + RD</button>
+      <div class="note">${sel.size>0&&cart.length?`${sel.size} fotos escolhidas para ${cart.map(c=>catName(c.id)).join(' + ')}.`:'Escolha as fotos e um pacote.'}</div>
+    </div>
+  </div>`;
+}
+
+// ---------- Gestão: lista de vendas ----------
+state.sales={day:'all',seller:'all',pay:'all',q:''};
+const PAY_W=[['Cartão de crédito',56],['PIX',24],['Cartão de débito',12],['Dinheiro',8]];
+function reconSale(s,i){
+  const h=h32(s.card+'s');const sold=s.sold;let items=[];
+  if(sold>=s.n&&sold>=7)items=['mais'];else if(sold>=6){items=['maracana'];for(let k=6;k<Math.min(sold,9);k++)items.push('extra');}
+  else if(sold>=3){items=['zona'];for(let k=3;k<sold;k++)items.push('extra');}else{items=['arq'];for(let k=1;k<sold;k++)items.push('extra');}
+  let r=h%100,pay=PAY_W[0][0],acc=0;for(const [n,w] of PAY_W){acc+=w;if(r<acc){pay=n;break;}}
+  const seller=SELLERS[(h>>>3)%SELLERS.length];
+  const total=items.reduce((a,id)=>a+priceOf(id),0);const prints=items.reduce((a,id)=>{const c=DATA.catalog.find(x=>x.id===id);return a+(c?c.prints:0)},0);
+  return {no:`R${s.date.slice(5).replace('-','')}-${String(i+1).padStart(3,'0')}`,date:s.date,time:s.time,card:s.card,key:s.key,pdv:s.pdv,seller,items,photos:sold,prints,pay,total,status:'paga',est:true};
+}
+function allSales(){
+  const real=DATA.sessions.filter(s=>s.card&&s.sold>0).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(reconSale);
+  const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'||s.status==='cancelada').map(([card,s],i)=>{const items=(s.cart||[]).map(c=>c.id);const pt=DATA.points.find(p=>p.id===s.point);return {no:s.saleNo||('E'+String(i+1).padStart(3,'0')),date:'hoje',time:s.paidAt?hhmm(new Date(s.paidAt)):s.time,card,key:s.key,pdv:s.pdv||(pt?pt.name:''),seller:s.seller||SELLERS[0],items,photos:(s.selected||[]).length,prints:items.reduce((a,id)=>{const c=DATA.catalog.find(x=>x.id===id);return a+(c?c.prints:0)},0),pay:s.payment||'',total:cartTotal(s.cart),status:s.status,est:false};});
+  return [...sim.reverse(),...real.reverse()];
+}
+function salesCSV(rows){const h=['venda','data','hora','sessao','ponto','fotografo','vendedor','itens','fotos','impressoes','pagamento','total','status'];const esc2=v=>'"'+String(v).replace(/"/g,'""')+'"';return [h.join(';'),...rows.map(r=>[r.no,r.date,r.time,r.card,r.pdv,P[r.key]?P[r.key].name:r.key,r.seller,r.items.map(catName).join(' + '),r.photos,r.prints,r.pay,String(r.total).replace('.',','),r.status].map(esc2).join(';'))].join('\n');}
+function vVendasLista(){
+  const f=state.sales;let rows=allSales();
+  const days=['all','hoje',...DATA.period.sessionDays.slice().reverse()];
+  if(f.day!=='all')rows=rows.filter(r=>r.date===f.day);
+  if(f.seller!=='all')rows=rows.filter(r=>r.seller===f.seller);
+  if(f.pay!=='all')rows=rows.filter(r=>r.pay.startsWith(f.pay));
+  if(f.q)rows=rows.filter(r=>(r.card+r.no).toUpperCase().includes(f.q.toUpperCase()));
+  const ok=rows.filter(r=>r.status==='paga');const rev=ok.reduce((a,r)=>a+r.total,0);
+  const bySeller={};ok.forEach(r=>{bySeller[r.seller]=(bySeller[r.seller]||0)+r.total});
+  const byPay={};ok.forEach(r=>{const k=r.pay.split(' · ')[0];byPay[k]=(byPay[k]||0)+r.total});
+  const chip=(act,k,v,l)=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${f[k]===v}">${l}</button>`;
+  return `<div class="head"><div><div class="eyebrow">Gestão · ${DATA.period.label}</div><h1>Lista de vendas</h1></div><div class="row"><button class="btn ghost" data-act="sales-csv">Exportar CSV (${rows.length})</button>${shareBtn()}</div></div>
+  <div class="sub">Cada venda, uma linha: sessão, ponto, fotógrafo, vendedor, itens, pagamento e total. As de hoje vêm do checkout desta simulação. As de 12 a 15/10 são as sessões reais vendidas no Roverpix; produto, vendedor e pagamento dessas são estimados a partir dos totais da semana, porque o Roverpix não guarda isso por venda.</div>
+  <div class="tiles"><div class="tile"><span class="eyebrow">Vendas</span><span class="v">${fmtN(ok.length)}</span></div><div class="tile"><span class="eyebrow">Receita</span><span class="v">${fmtR(rev)}</span></div><div class="tile"><span class="eyebrow">Ticket</span><span class="v">${ok.length?fmtR(rev/ok.length):'–'}</span></div><div class="tile"><span class="eyebrow">Fotos vendidas</span><span class="v">${fmtN(ok.reduce((a,r)=>a+r.photos,0))}</span></div><div class="tile"><span class="eyebrow">Impressões</span><span class="v">${fmtN(ok.reduce((a,r)=>a+r.prints,0))}</span></div><div class="tile"><span class="eyebrow">Canceladas</span><span class="v">${rows.length-ok.length}</span></div></div>
+  <div class="panel"><div class="chips">${days.map(d=>chip('sales-day','day',d,d==='all'?'Todos os dias':d==='hoje'?'Hoje (simulação)':dlabel(d))).join('')}</div>
+    <div class="chips"><span class="note">Vendedor</span>${chip('sales-seller','seller','all','Todos')}${SELLERS.map(n=>chip('sales-seller','seller',n,n)).join('')}<span style="width:12px"></span><span class="note">Pagamento</span>${chip('sales-pay','pay','all','Todos')}${PAY_W.map(([n])=>chip('sales-pay','pay',n,n)).join('')}</div>
+    <input type="text" data-act="sales-q" value="${esc(f.q)}" placeholder="Buscar por sessão ou nº da venda" aria-label="Buscar">
+    <div class="tablewrap"><table><thead><tr><th>Venda</th><th>Data</th><th>Sessão</th><th>Ponto</th><th>Fotógrafo</th><th>Vendedor</th><th>Itens</th><th class="num">Fotos</th><th class="num">Impr.</th><th>Pagamento</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody>
+    ${rows.slice(0,200).map(r=>`<tr><td class="name">${esc(r.no)}${r.est?'':' <span class="pill good" style="font-size:10px">hoje</span>'}</td><td>${r.date==='hoje'?'hoje':dlabel(r.date)} ${esc(r.time)}</td><td>${esc(r.card)}</td><td class="note">${esc(r.pdv)}</td><td>${esc(P[r.key]?P[r.key].name:r.key)}</td><td>${esc(r.seller)}</td><td style="white-space:normal;min-width:180px">${esc(r.items.map(catName).join(' + '))}</td><td class="num">${r.photos}</td><td class="num">${r.prints}</td><td>${esc(r.pay)}</td><td class="num">${fmtR(r.total)}</td><td><span class="pill ${r.status==='paga'?'good':'bad'}">${esc(r.status)}</span></td><td>${r.est?`<button class="chip" data-act="sales-open-session" data-card="${r.card}">Sessão</button>`:`<button class="chip" data-act="sales-receipt" data-card="${r.card}">Recibo</button>${r.status==='paga'?`<button class="chip" data-act="sales-cancel" data-card="${r.card}">Cancelar</button>`:''}`}</td></tr>`).join('')}
+    </tbody></table></div>${rows.length>200?`<div class="note">Mostrando 200 de ${rows.length}. Use os filtros ou o CSV.</div>`:''}</div>
+  <div class="grid2"><div class="panel"><h2>Por vendedor</h2>${hbars(Object.entries(bySeller).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:k,v})),fmtR)}</div><div class="panel"><h2>Por pagamento</h2>${hbars(Object.entries(byPay).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:k,v})),fmtR)}</div></div>`;
+}
 
 // ---------- Quiosque ----------
 function vQuiosque(){
   const k=state.kiosk;
-  if(k.step==='code'){return `<div class="kiosk"><div class="screen" style="text-align:center;display:flex;flex-direction:column;gap:18px;align-items:center">
+  if(k.step==='code'||k.step==='emerg'){const emerg=k.step==='emerg';if(!emerg&&!k.timer){k.timer=setTimeout(()=>{k.timer=null;if(state.view!=='quiosque'||state.kiosk.step!=='code')return;const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='paga');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){state.kiosk.code=pick.card;state.kiosk.step='gallery';toast('Achamos você: '+pick.card);render();}},4500);}
+    return `<div class="kiosk"><div class="screen" style="text-align:center;display:flex;flex-direction:column;gap:18px;align-items:center">
     <div class="brand" style="justify-content:center"><svg width="34" height="34" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:26px">ETERNA</span></div>
-    <h1 style="font-size:44px">Suas fotos do Maracanã</h1><div class="sub" style="text-align:center">Olhe para a câmera para encontrar suas fotos, ou digite o código do recibo.</div>
-    <div style="width:min(420px,100%)"><input type="text" class="code" id="kcode" placeholder="ETN-00000" value="${esc(k.code)}" aria-label="Código da sessão"></div>
-    <div class="row" style="justify-content:center"><button class="btn ghost big" data-act="kiosk-go">Tenho um código</button><button class="btn primary big" data-act="kiosk-face">Buscar pelo rosto</button></div>
-    <div class="note">Para testar: ${DATA.sampled.slice(0,3).map(s=>s.card).join(' · ')}</div></div></div>`;}
+    ${emerg?`<h1 style="font-size:40px">Digite o código do recibo</h1><div class="sub" style="text-align:center">Ou aproxime o QR do recibo do leitor. Esta é a saída de emergência; o normal é a câmera achar você.</div>
+    <div style="width:min(420px,100%)"><input type="text" class="code" id="kcode" placeholder="LP..." value="${esc(k.code)}" aria-label="Código da sessão" autofocus></div>
+    <div class="row" style="justify-content:center"><button class="btn primary big" data-act="kiosk-go">Ver minhas fotos</button><button class="btn ghost big" data-act="kiosk-back">Voltar para a câmera</button></div>
+    <div class="note">Para testar: ${DATA.sampled.slice(0,3).map(s=>s.card).join(' · ')}</div>`
+    :`<h1 style="font-size:44px">Olhe para a câmera</h1><div class="sub" style="text-align:center">Suas fotos aparecem sozinhas. Nada para apertar.</div>
+    <div class="face" aria-label="Câmera procurando o rosto"><div class="ring"></div><div class="scan"></div></div>
+    <div class="note">Procurando entre as sessões de hoje... Na operação a câmera já está ligada quando você chega; na demonstração, uma sessão de amostra abre em alguns segundos.</div>
+    <button class="chip" data-act="kiosk-emerg" style="opacity:.7">Não me achou? Código ou QR do recibo</button>`}
+    </div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="kiosk"><div class="screen"><h2>Não achamos a sessão ${esc(k.code)}</h2><div class="note">Confira o código no ingresso ou procure um anfitrião.</div><div class="row" style="margin-top:12px"><button class="btn ghost" data-act="kiosk-back">Voltar</button></div></div></div>`;
   const sim=simOf(s.card);const sel=new Set(sim.selected||[]);
   return `<div class="kiosk"><div class="screen" style="display:flex;flex-direction:column;gap:16px"><div class="head"><div><div class="eyebrow">Sessão ${esc(s.card)} · ${s.photos.length} fotos</div><h2>Toque nas fotos que quer levar</h2></div><button class="chip" data-act="kiosk-back">Sair</button></div>
@@ -840,7 +964,7 @@ function vEstoque(){
 
 // ---------- Fluxo do sistema (quadro de 26/10) ----------
 const INVALID_REASONS=['desfocada','olhos fechados','sem rosto','cortada'];
-function validatePhoto(id){const h=h32(id+'v');if(h%12!==0)return null;return INVALID_REASONS[(h>>4)%INVALID_REASONS.length];}
+function validatePhoto(id){const h=h32(id+'v');if(h%12!==0)return null;return INVALID_REASONS[(h>>>4)%INVALID_REASONS.length];}
 function vFluxo(){
   const ss=Object.entries(SIM.sessions).map(([card,s])=>({card,...s}));
   const simPhotos=ss.reduce((a,s)=>a+(s.photos||[]).length,0);
@@ -952,14 +1076,14 @@ function vAlertas(){const a=alerts();return `<div class="head"><div><div class="
   ${SIM.log.length?`<div class="panel"><h2>Registro da demonstração</h2><div class="tablewrap"><table><tbody>${SIM.log.slice(0,15).map(l=>`<tr><td class="note">${new Date(l.at).toLocaleTimeString('pt-BR')}</td><td>${esc(l.t)}</td></tr>`).join('')}</tbody></table></div></div>`:''}`}
 
 // ---------- render ----------
-const VIEWFN={perfis:vPerfis,fluxo:vFluxo,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,alertas:vAlertas};
+const VIEWFN={perfis:vPerfis,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,alertas:vAlertas};
 function render(){
   let html='',grp='';VIEWS.forEach(v=>{if(v[3]&&v[3]!==grp){grp=v[3];html+=`<div class="grp">${grp}</div>`}html+=`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}"><span>${v[1]}</span><small>${v[2]}</small></button>`});
   $('#nav').innerHTML=html;
   $('#venue-sub').textContent=`${humans.length} fotógrafos · 2 chromas · ${DATA.sellers.filter(s=>s.total>=10).length} vendedores`;
   const fn=VIEWFN[state.view]||vPerfis;
   try{$('#main').innerHTML=fn();}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div><div class="row"><button class="btn ghost" data-act="reset">Zerar simulação</button></div></div>`;}
-  if(state.view==='caixa')drawQR();
+  if(state.view==='caixa'||state.view==='checkout')drawQR();
   syncHash();
 }
 function go(v){const changed=state.view!==v;state.view=v;state.person=null;state.session=null;state.personDay=null;try{localStorage.setItem('eterna.view',v)}catch(e){}render();if(changed)window.scrollTo({top:0});}
@@ -1033,6 +1157,19 @@ document.addEventListener('click',e=>{
     case 'fila-send':{const c=state.fila.session;const s=simOf(c);s.status='no caixa';s.sentAt=now().toISOString();log(`Sessão ${c} enviada ao caixa: ${fmtR(cartTotal(s.cart))}`);saveSim();toast('Carrinho enviado ao caixa');state.fila.session=null;render();break;}
     case 'caixa-open':state.caixa.session=d.card;render();break;
     case 'caixa-pay':state.caixa.pay=d.m;state.caixa.tefStatus=null;render();break;
+    case 'checkout-pick':checkoutPick(d.card);break;
+    case 'checkout-face':{toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);break;}
+    case 'checkout-back':{const sim=state.checkout.session?simOf(state.checkout.session):null;if(sim&&sim.status==='no checkout'){sim.status=DATA.sampled.find(x=>x.card===state.checkout.session)?'pronta':'fechada';saveSim();}state.checkout.session=null;state.checkout.step=1;state.fila.session=null;state.caixa.session=null;render();break;}
+    case 'checkout-step':state.checkout.step=+d.s;state.caixa.tefStatus=null;render();window.scrollTo({top:0});break;
+    case 'checkout-next-guest':state.checkout.session=null;state.checkout.step=1;state.checkout.code='';state.fila.session=null;state.caixa.session=null;state.caixa.tefStatus=null;render();window.scrollTo({top:0});break;
+    case 'checkout-lost':{const c=state.checkout.session;const sim=simOf(c);sim.status='fechada';sim.lost=true;if(!SIM.postvisit)SIM.postvisit={};SIM.postvisit[c]={web:true,d1:true,d7:true,game:true};log(`Sessão ${c} saiu sem comprar: galeria web enviada e régua do RD agendada`);saveSim();toast('Galeria web enviada. RD agendado: 24 h, 7 dias, jogo.');state.checkout.session=null;state.checkout.step=1;render();break;}
+    case 'sales-day':state.sales.day=d.v;render();break;
+    case 'sales-seller':state.sales.seller=d.v;render();break;
+    case 'sales-pay':state.sales.pay=d.v;render();break;
+    case 'sales-csv':{const rows=allSales();const blob=new Blob(['\ufeff'+salesCSV(rows)],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='eterna-vendas.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);toast(`CSV com ${rows.length} vendas`);break;}
+    case 'sales-open-session':state.view='revisao';state.session=d.card;state.revFilter={key:'all',date:'all'};render();window.scrollTo({top:0});break;
+    case 'sales-receipt':state.checkout.session=d.card;state.checkout.step=4;state.caixa.session=d.card;go('checkout');break;
+    case 'sales-cancel':{const sim=simOf(d.card);sim.status='cancelada';log(`Venda ${sim.saleNo||d.card} cancelada`);saveSim();toast('Venda cancelada');render();break;}
     case 'caixa-mode':state.caixa.tef=d.m==='tef';state.caixa.tefStatus=null;render();break;
     case 'caixa-tef':{const c=state.caixa.session;const steps=state.caixa.pay==='PIX'?['QR dinâmico na maquininha','aguardando o convidado pagar','confirmado pelo banco']:['enviando valor','aguardando cartão','senha digitada','autorizando'];let i=0;state.caixa.tefStatus=steps[0];render();const t=setInterval(()=>{i++;if(i<steps.length){state.caixa.tefStatus=steps[i];render();}else{clearInterval(t);state.caixa.tefStatus='aprovado';const nsu=String(100000+Math.floor(Math.random()*899999));state.caixa.pay=state.caixa.pay+' · TEF · NSU '+nsu;caixaConfirm();state.caixa.pay=state.caixa.pay.split(' · ')[0];}},1100);break;}
     case 'postvisit-all':{if(!SIM.postvisit)SIM.postvisit={};const ss=Object.entries(SIM.sessions).map(([card,s])=>({card,...s}));[...demoSessions().filter(s=>s.demo&&s.soldTotal===0),...ss.filter(s=>s.status==='fechada'&&s.lost)].slice(0,8).forEach(s=>{SIM.postvisit[s.card]={web:true,d1:true,d7:true,game:true};});log(`Pós-visita: galeria web e régua do RD para ${Object.keys(SIM.postvisit).length} grupos sem venda`);saveSim();toast('Galerias enviadas e régua do RD agendada');render();break;}
@@ -1041,8 +1178,8 @@ document.addEventListener('click',e=>{
     case 'caixa-reprint':SIM.stock['Caixa 1']=Math.max(0,SIM.stock['Caixa 1']-1);log(`Reimpressão ${state.caixa.session}`);saveSim();toast('Reimpressão enviada');render();break;
     case 'go-guest':state.guest.code=d.card;go('convidado');break;
     case 'kiosk-go':{const v=($('#kcode')||{}).value||'';state.kiosk.code=v.trim().toUpperCase();state.kiosk.step='gallery';render();break;}
-    case 'kiosk-back':state.kiosk.step='code';render();break;
-    case 'kiosk-face':toast('Na operação, a câmera do quiosque acha as fotos pelo rosto, com consentimento (LGPD). Na demonstração, use um código.');break;
+    case 'kiosk-back':state.kiosk.step='code';state.kiosk.code='';render();break;
+    case 'kiosk-emerg':{if(state.kiosk.timer){clearTimeout(state.kiosk.timer);state.kiosk.timer=null;}state.kiosk.step='emerg';render();const el=$('#kcode');if(el)el.focus();break;}
     case 'kiosk-sel':toggleSel(state.kiosk.code,d.id);render();break;
     case 'kiosk-buy':{const s=simOf(state.kiosk.code);s.cart=[{id:d.id}];s.status='paga';s.payment='Aproximação (quiosque)';s.paidAt=now().toISOString();log(`Quiosque: ${state.kiosk.code} comprou ${catName(d.id)}`);saveSim();toast('Compra feita. Impressas saem no balcão.');state.guest.code=state.kiosk.code;state.kiosk.step='code';go('convidado');break;}
     case 'guest-go':{const v=($('#gcode')||{}).value||'';state.guest.code=v.trim().toUpperCase();render();break;}
@@ -1057,8 +1194,8 @@ document.addEventListener('click',e=>{
     case 'stock-swap':SIM.stock['Caixa 1']=200;log('Rolo trocado no Caixa 1');saveSim();toast('Rolo do Caixa 1 zerado em 200');render();break;
   }
 });
-document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
-document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
+document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
+document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#modal').removeAttribute('data-open');if($('#modal').hasAttribute('data-open')&&MODAL.list.length>1&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){showModal(MODAL.i-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}if(e.key==='Enter'&&e.target.id==='gcode'){state.guest.code=e.target.value.trim().toUpperCase();render();}});
 $('#modal-close').addEventListener('click',()=>$('#modal').removeAttribute('data-open'));
