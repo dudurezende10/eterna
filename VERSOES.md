@@ -30,3 +30,5 @@ Cada versão é um commit em `main`. Para abrir uma versão: `git checkout <comm
 | – | – | login volta ao código na tela; envio da VM desligado (e-mail vai sair de @eterna.photo) |
 
 Regra do projeto: toda alteração pedida vira commit, por padrão.
+| v32 | `f457136` | Convidado: fundos de IA na galeria (5 fundos aprovados), lista guardada por 60 dias, paga agora ou depois |
+| Lolla V1 | `4072e7f` (branch `lolla-v1`) | Conceito Lollapalooza Brasil, sistema separado, fora do main |
