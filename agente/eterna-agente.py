@@ -57,6 +57,19 @@ def load_lib():
                 pid = fn.split("_", 1)[0]
                 th = os.path.join(THUMBS, pid + ".jpg")
                 lib[pid] = {"file": os.path.join(root, fn), "thumb": th if os.path.exists(th) else os.path.join(root, fn)}
+    # fotos de hoje que já estão na inbox voltam para a tela Ingestão quando o agente reinicia
+    today = time.strftime("%Y-%m-%d")
+    ddir = os.path.join(INBOX, today)
+    if os.path.isdir(ddir):
+        files = []
+        for fn in os.listdir(ddir):
+            if "_" in fn and fn.endswith(EXT):
+                p = os.path.join(ddir, fn)
+                files.append((os.path.getmtime(p), fn, p))
+        for mt, fn, p in sorted(files):
+            pid, name = fn.split("_", 1)
+            events.append({"type": "photo", "id": pid, "name": name, "size": os.path.getsize(p), "t": mt,
+                           "card": "inbox", "src": "inbox", "file": p, "thumb": lib.get(pid, {}).get("thumb", p)})
 
 
 load_lib()
