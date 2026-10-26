@@ -217,6 +217,11 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .flow .split{display:flex;flex-direction:column;gap:8px;flex:1 1 170px;min-width:170px}
 .flow .split .stage{flex:1}
 #st-nao{border-style:dashed}
+.train{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:14px}
+.phbig{position:relative;width:100%;aspect-ratio:3/2;background:#1a1917;border-radius:6px;overflow:hidden}
+.phbig::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp)}
+.photos .ph[aria-label^="Foto"]:focus-visible{outline-offset:0}
+@media (max-width:900px){.train{grid-template-columns:1fr}}
 .steps{display:flex;gap:6px;flex-wrap:wrap}
 .steps .step{padding:6px 12px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted)}
 .steps .step[data-on="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
@@ -233,7 +238,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
   <aside class="rail">
     <button class="brand" data-act="view" data-v="perfis" aria-label="Eterna, início"><svg width="26" height="26" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span>ETERNA</span></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v16 · 26/10 15:05</span></div>
+    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v17 · 26/10 15:20</span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -330,6 +335,7 @@ const VIEWS=[
  ['catalogo','Catálogo','preços e pacotes','Gestão'],
  ['estoque','Estoque','rolos e insumos','Gestão'],
  ['bandeiras','Bandeiras','inventário e IA','Gestão'],
+ ['treino','Treino da IA','pode e não pode','Gestão'],
  ['repo','Repositório','nuvem e acervo','Gestão'],
  ['alertas','Alertas','o que precisa de olho','Gestão'],
 ];
@@ -1024,6 +1030,45 @@ function vFluxo(){
     ${notSold.map(s=>{const p=pv[s.card];const pill=(k,txt)=>p&&p[k]?`<span class="pill good">${txt}</span>`:'<span class="pill neutral">—</span>';return `<tr><td class="name">${esc(s.card)}</td><td>${esc(P[s.key]?P[s.key].name:'')}</td><td class="num">${(s.photos||[]).length||s.total||''}</td><td>${pill('web','enviada')}</td><td>${pill('d1','agendado')}</td><td>${pill('d7','agendado')}</td><td>${pill('game',s.flag?s.flag:'sem bandeira')}</td></tr>`}).join('')||'<tr><td colspan="7" class="note">Nenhum grupo sem venda ainda.</td></tr>'}
     </tbody></table></div></div>`;
 }
+// ---------- Treino da IA: o que pode e o que não pode ----------
+const TRAIN_REASONS=[['desfocada','Desfocada'],['olhos','Olhos fechados'],['cortada','Cortada'],['semrosto','Sem rosto'],['estourada','Estourada / contraluz'],['escura','Escura'],['chuva','Chuva / gota na lente'],['expressao','Expressão ruim'],['torta','Torta / enquadramento'],['repetida','Repetida'],['fundo','Fundo poluído / gente atrás'],['outro','Outro']];
+function trainSet(){
+  const out=[];DATA.sampled.forEach(s=>{const ph=s.photos.filter(p=>spriteOf[p.id]);const n=Math.min(ph.length,Math.max(6,Math.round(200/DATA.sampled.length)));const step=ph.length/n;for(let i=0;i<n;i++){const p=ph[Math.min(ph.length-1,Math.floor(i*step))];out.push({id:p.id,card:s.card,key:s.key,date:s.date,time:s.time,pdv:s.pdv,sold:p.sold});}});
+  const seen=new Set();return out.filter(x=>!seen.has(x.id)&&seen.add(x.id)).slice(0,200);
+}
+const TRAIN=trainSet();
+state.train={i:0,labels:{},note:''};
+try{const t=localStorage.getItem('eterna.treino.v1');if(t)state.train.labels=JSON.parse(t);}catch(e){}
+function trainSave(id,body){state.train.labels[id]=body;try{localStorage.setItem('eterna.treino.v1',JSON.stringify(state.train.labels))}catch(e){}if(state.db){try{state.db.doc('treino/'+id).set(body)}catch(e){console.warn('db treino',e)}}}
+function trainNext(){const n=TRAIN.length;let i=state.train.i+1;for(let k=0;k<n;k++){const j=(i+k)%n;if(!state.train.labels[TRAIN[j].id]){state.train.i=j;render();return;}}state.train.i=Math.min(n-1,i);render();}
+function trainVerdict(v,reasons){const p=TRAIN[state.train.i];const prev=state.train.labels[p.id]||{};const body={id:p.id,card:p.card,key:p.key,date:p.date,time:p.time,verdict:v,reasons:reasons||(v==='nao'?(prev.reasons||[]):[]),note:state.train.note||prev.note||'',at:now().toISOString()};trainSave(p.id,body);if(v==='pode'||v==='duvida'){state.train.note='';trainNext();}else render();}
+function trainToggleReason(r){const p=TRAIN[state.train.i];const prev=state.train.labels[p.id]||{verdict:'nao',reasons:[]};const rs=new Set(prev.reasons||[]);if(rs.has(r))rs.delete(r);else rs.add(r);trainSave(p.id,{...prev,id:p.id,card:p.card,key:p.key,date:p.date,time:p.time,verdict:'nao',reasons:[...rs],at:now().toISOString()});render();}
+function vTreino(){
+  const t=state.train;const n=TRAIN.length;const p=TRAIN[t.i];const lab=t.labels[p.id];
+  const done=TRAIN.filter(x=>t.labels[x.id]).length;const cnt=v=>TRAIN.filter(x=>t.labels[x.id]&&t.labels[x.id].verdict===v).length;
+  const reasonCount={};TRAIN.forEach(x=>{const l=t.labels[x.id];if(l&&l.verdict==='nao')(l.reasons||[]).forEach(r=>reasonCount[r]=(reasonCount[r]||0)+1)});
+  const byKey={};TRAIN.forEach(x=>{const l=t.labels[x.id];if(!l)return;byKey[x.key]=byKey[x.key]||{n:0,nao:0};byKey[x.key].n++;if(l.verdict==='nao')byKey[x.key].nao++;});
+  const rs=new Set(lab&&lab.verdict==='nao'?lab.reasons||[]:[]);
+  return `<div class="head"><div><div class="eyebrow">Gestão · treino da IA · ${done} de ${n} rotuladas</div><h1>O que pode e o que não pode</h1></div><div class="row"><button class="chip" data-act="train-export">Exportar rótulos (JSON)</button><label class="chip" style="cursor:pointer">Importar<input type="file" accept="application/json" data-act="train-import" style="display:none"></label>${shareBtn()}</div></div>
+  <div class="sub">${n} fotos reais de ${DATA.sampled.length} sessões (12 e 13/10, cinco fotógrafos, das 10h às 17h, grupo e sozinho). Para cada uma: Pode, Não pode (e por quê) ou Dúvida. Os rótulos viram as regras da validação por IA e o gabarito para medir a IA depois. Teclado: P pode · N não pode · D dúvida · 1 a 9 motivos · ← → navegar.</div>
+  <div class="bar" style="grid-template-columns:1fr 90px"><div class="track"><div class="fill" style="width:${100*done/n}%"></div></div><span class="val">${Math.round(100*done/n)}%</span></div>
+  <div class="train">
+    <div class="panel" style="gap:10px">
+      <div class="head"><div><div class="eyebrow">Foto ${t.i+1} de ${n} · ${esc(P[p.key]?P[p.key].name:'')} · ${dlabel(p.date)} ${esc(p.time)} · ${esc(p.pdv)}</div><div class="note">Sessão ${esc(p.card)}${p.sold?' · vendida no Roverpix':' · não vendida'}${lab?` · <span class="pill ${lab.verdict==='pode'?'good':lab.verdict==='nao'?'bad':'warn'}">${lab.verdict==='pode'?'pode':lab.verdict==='nao'?'não pode':'dúvida'}</span>`:''}</div></div><div class="row"><button class="chip" data-act="train-prev">← Anterior</button><button class="chip" data-act="train-skip">Próxima →</button></div></div>
+      <div class="phbig" style="${phStyle(p.id)}" role="img" aria-label="Foto para rotular"></div>
+      <div class="row" style="justify-content:center"><button class="btn big ${lab&&lab.verdict==='pode'?'primary':''}" data-act="train-v" data-v="pode">Pode <small>(P)</small></button><button class="btn big" style="${lab&&lab.verdict==='nao'?'background:var(--bad);color:#fff;border-color:var(--bad)':''}" data-act="train-v" data-v="nao">Não pode <small>(N)</small></button><button class="btn big ghost" style="${lab&&lab.verdict==='duvida'?'background:var(--warn-bg);border-color:var(--warn)':''}" data-act="train-v" data-v="duvida">Dúvida <small>(D)</small></button></div>
+      ${lab&&lab.verdict==='nao'?`<div class="eyebrow">Por quê? (pode marcar mais de um)</div><div class="chips">${TRAIN_REASONS.map(([k,l],i)=>`<button class="chip" data-act="train-r" data-r="${k}" aria-pressed="${rs.has(k)}">${i<9?`<small>${i+1}</small> `:''}${l}</button>`).join('')}</div>
+      <div class="row"><input type="text" data-act="train-note" value="${esc(lab.note||'')}" placeholder="Observação (opcional): o que a IA deveria olhar aqui"><button class="btn" data-act="train-next">Confirmar e próxima <small>(Enter)</small></button></div>`:''}
+    </div>
+    <div class="panel"><h2>Até agora</h2>
+      <div class="tiles" style="grid-template-columns:1fr 1fr 1fr"><div class="tile"><span class="eyebrow">Pode</span><span class="v" style="color:var(--good)">${cnt('pode')}</span></div><div class="tile"><span class="eyebrow">Não pode</span><span class="v" style="color:var(--bad)">${cnt('nao')}</span></div><div class="tile"><span class="eyebrow">Dúvida</span><span class="v" style="color:var(--warn)">${cnt('duvida')}</span></div></div>
+      ${Object.keys(reasonCount).length?`<h3>Motivos</h3>${hbars(Object.entries(reasonCount).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:(TRAIN_REASONS.find(x=>x[0]===k)||[k,k])[1],v})),fmtN)}`:''}
+      ${Object.keys(byKey).length?`<h3>Por fotógrafo</h3><div class="tablewrap"><table><thead><tr><th>Fotógrafo</th><th class="num">Rotuladas</th><th class="num">Não pode</th><th class="num">%</th></tr></thead><tbody>${Object.entries(byKey).map(([k,v])=>`<tr><td>${esc(P[k]?P[k].name:k)}</td><td class="num">${v.n}</td><td class="num">${v.nao}</td><td class="num">${pct(v.nao,v.n)}</td></tr>`).join('')}</tbody></table></div>`:''}
+      <h3>Miniaturas</h3><div class="note">Clique para ir direto. Verde pode, vermelho não pode, amarelo dúvida.</div>
+      <div class="photos" style="grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:4px">${TRAIN.map((x,i)=>{const l=t.labels[x.id];return `<button class="ph" style="${phStyle(x.id)};border-color:${l?(l.verdict==='pode'?'var(--good)':l.verdict==='nao'?'var(--bad)':'var(--warn)'):(i===t.i?'var(--accent)':'transparent')}" data-act="train-go" data-i="${i}" aria-label="Foto ${i+1}"></button>`}).join('')}</div>
+    </div>
+  </div>`;
+}
 // ---------- Gestão: bandeiras e material de cena ----------
 const FLAG_STATES=['nova','boa','desgastada','defeito','fora de uso'];
 const FLAG_W={'Brasil':412,'Flamengo':388,'Fluminense':121,'Vasco':97,'Botafogo':64,'Argentina':58,'Colômbia':44,'Chile':39,'Corinthians':31,'Palmeiras':28,'Estados Unidos da América (EUA/USA)':22,'Boca Juniors':19,'River Plate':17,'Portugal':15,'México':14,'Peru':13,'Uruguai':12,'Atlético Mineiro':11,'Grêmio':11,'São Paulo':10,'Santos':9,'Internacional de Porto Alegre':9,'Cruzeiro':8,'França':8,'Espanha':7};
@@ -1091,7 +1136,7 @@ function vAlertas(){const a=alerts();return `<div class="head"><div><div class="
   ${SIM.log.length?`<div class="panel"><h2>Registro da demonstração</h2><div class="tablewrap"><table><tbody>${SIM.log.slice(0,15).map(l=>`<tr><td class="note">${new Date(l.at).toLocaleTimeString('pt-BR')}</td><td>${esc(l.t)}</td></tr>`).join('')}</tbody></table></div></div>`:''}`}
 
 // ---------- render ----------
-const VIEWFN={perfis:vPerfis,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,alertas:vAlertas};
+const VIEWFN={perfis:vPerfis,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   let html='',grp='';VIEWS.forEach(v=>{if(v[3]&&v[3]!==grp){grp=v[3];html+=`<div class="grp">${grp}</div>`}html+=`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}"><span>${v[1]}</span><small>${v[2]}</small></button>`});
   $('#nav').innerHTML=html;
@@ -1178,6 +1223,13 @@ document.addEventListener('click',e=>{
     case 'checkout-step':state.checkout.step=+d.s;state.caixa.tefStatus=null;render();window.scrollTo({top:0});break;
     case 'checkout-next-guest':state.checkout.session=null;state.checkout.step=1;state.checkout.code='';state.fila.session=null;state.caixa.session=null;state.caixa.tefStatus=null;render();window.scrollTo({top:0});break;
     case 'checkout-lost':{const c=state.checkout.session;const sim=simOf(c);sim.status='fechada';sim.lost=true;if(!SIM.postvisit)SIM.postvisit={};SIM.postvisit[c]={web:true,d1:true,d7:true,game:true};log(`Sessão ${c} saiu sem comprar: galeria web enviada e régua do RD agendada`);saveSim();toast('Galeria web enviada. RD agendado: 24 h, 7 dias, jogo.');state.checkout.session=null;state.checkout.step=1;render();break;}
+    case 'train-v':trainVerdict(d.v);break;
+    case 'train-r':trainToggleReason(d.r);break;
+    case 'train-next':{const p=TRAIN[state.train.i];const l=state.train.labels[p.id];if(l){l.note=state.train.note||l.note||'';trainSave(p.id,l);}state.train.note='';trainNext();break;}
+    case 'train-skip':state.train.i=(state.train.i+1)%TRAIN.length;state.train.note='';render();break;
+    case 'train-prev':state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;state.train.note='';render();break;
+    case 'train-go':state.train.i=+d.i;state.train.note='';render();break;
+    case 'train-export':{const rows=Object.values(state.train.labels);const blob=new Blob([JSON.stringify({exported:now().toISOString(),total:TRAIN.length,labels:rows},null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='eterna-treino.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);toast(`${rows.length} rótulos exportados`);break;}
     case 'sales-day':state.sales.day=d.v;render();break;
     case 'sales-seller':state.sales.seller=d.v;render();break;
     case 'sales-pay':state.sales.pay=d.v;render();break;
@@ -1209,9 +1261,9 @@ document.addEventListener('click',e=>{
     case 'stock-swap':SIM.stock['Caixa 1']=200;log('Rolo trocado no Caixa 1');saveSim();toast('Rolo do Caixa 1 zerado em 200');render();break;
   }
 });
-document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
-document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#modal').removeAttribute('data-open');if($('#modal').hasAttribute('data-open')&&MODAL.list.length>1&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){showModal(MODAL.i-1);e.preventDefault();}}
+document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train-note'){state.train.note=e.target.value;return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
+document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
+document.addEventListener('keydown',e=>{if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape')$('#modal').removeAttribute('data-open');if($('#modal').hasAttribute('data-open')&&MODAL.list.length>1&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){showModal(MODAL.i-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}if(e.key==='Enter'&&e.target.id==='gcode'){state.guest.code=e.target.value.trim().toUpperCase();render();}});
 $('#modal-close').addEventListener('click',()=>$('#modal').removeAttribute('data-open'));
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')$('#modal').removeAttribute('data-open')});
@@ -1236,6 +1288,7 @@ setInterval(()=>{if(state.view==='set'&&state.set.open){const t=$('#timer');cons
 (async()=>{
   if(!window.claude||!window.claude.use)return;
   try{const db=await claude.use('db');if(!db)return;state.db=db;
+    db.collection('treino').onSnapshot(snap=>{snap.docs.forEach(d=>{if(d.exists){const x=d.data();if(x&&x.id)state.train.labels[x.id]=x;}});try{localStorage.setItem('eterna.treino.v1',JSON.stringify(state.train.labels))}catch(e){}render();},err=>{console.warn('db',err)});
     db.collection('reviews').onSnapshot(snap=>{const m={};snap.docs.forEach(d=>{if(d.exists)m[d.id]=d.data()});state.reviews=m;render();},err=>{console.warn('db',err)});
     render();
   }catch(e){console.warn('db',e)}
