@@ -311,6 +311,9 @@ body[data-bare] .app{grid-template-columns:minmax(0,1fr)}
 :root[data-venue="lolla"] .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 :root[data-venue="lolla"] .pill.good{color:#0b0a12;background:var(--venue2)}
 :root[data-venue="lolla"] .nav button[aria-current="page"]{box-shadow:inset 3px 0 0 var(--accent)}
+.rangebar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
+.rangebar label{display:flex;flex-direction:column;gap:4px}
+.rangebar input[type=date]{border:1px solid var(--line);border-radius:5px;padding:8px 10px;background:var(--surface);color:var(--fg);font:inherit;min-height:42px}
 .scards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .scards .scard{cursor:pointer}
 table.perms td.num input{width:18px;height:18px;accent-color:var(--accent)}
@@ -342,7 +345,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v26 · 26/10 18:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v26</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v27 · 26/10 19:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v27</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -362,14 +365,18 @@ const now=()=>new Date();
 const hhmm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 
 // ---------- stats (dados reais Roverpix) ----------
+// nomes de pessoas sempre no mesmo padrão (Thais Rodrigues, não THAIS RODRIGUES)
+const NAME_LOW=new Set(['da','de','do','das','dos','e']);
+function nameCase(n){return String(n||'').trim().toLowerCase().split(/\s+/).map((w,i)=>i>0&&NAME_LOW.has(w)?w:w.charAt(0).toUpperCase()+w.slice(1)).join(' ');}
+DATA.sellers.forEach(x=>x.name=nameCase(x.name));Object.values(DATA.people).forEach(p=>{if(p.human)p.name=nameCase(p.name);});
 const P=DATA.people, humans=Object.keys(P).filter(k=>P[k].human), chromas=Object.keys(P).filter(k=>!P[k].human);
 const byDay={}; DATA.rows.forEach(r=>{(byDay[r.date]=byDay[r.date]||[]).push(r)});
-const stats={};
+function buildStats(days){const dset=new Set(days);const stats={};const byDay={};DATA.rows.filter(r=>dset.has(r.date)).forEach(r=>{(byDay[r.date]=byDay[r.date]||[]).push(r)});
 for(const k of Object.keys(P)){
-  const rs=DATA.rows.filter(r=>r.key===k);
+  const rs=DATA.rows.filter(r=>r.key===k&&dset.has(r.date));
   const s={key:k,name:P[k].name,human:P[k].human,days:rs.length,photos:0,cards:0,cardsSold:0,photosSold:0,revenue:0,perDay:[]};
   rs.forEach(r=>{s.photos+=r.photos;s.cards+=r.cards;s.cardsSold+=r.cardsSold;s.photosSold+=r.photosSold;s.revenue+=r.revenue;});
-  for(const d of DATA.days){
+  for(const d of days){
     const r=rs.find(x=>x.date===d); if(!r){s.perDay.push({date:d,off:true});continue;}
     const peers=(byDay[d]||[]).filter(x=>P[x.key].human);
     const avg=peers.reduce((a,x)=>a+x.revenue,0)/(peers.length||1);
@@ -381,6 +388,8 @@ for(const k of Object.keys(P)){
   s.psc=s.cardsSold?s.photosSold/s.cardsSold:0; s.rpc=s.cards?s.revenue/s.cards:0; s.ticket=s.cardsSold?s.revenue/s.cardsSold:0; s.rpd=s.days?s.revenue/s.days:0; s.cpd=s.days?s.cards/s.days:0;
   stats[k]=s;
 }
+return stats;}
+const stats=buildStats(DATA.days);
 const sum=(ks,f)=>ks.reduce((a,k)=>a+f(stats[k]),0);
 const humanTot={cards:sum(humans,s=>s.cards),cardsSold:sum(humans,s=>s.cardsSold),photos:sum(humans,s=>s.photos),photosSold:sum(humans,s=>s.photosSold),revenue:sum(humans,s=>s.revenue)};
 const chromaTot={cards:sum(chromas,s=>s.cards),cardsSold:sum(chromas,s=>s.cardsSold),photos:sum(chromas,s=>s.photos),photosSold:sum(chromas,s=>s.photosSold),revenue:sum(chromas,s=>s.revenue)};
@@ -422,7 +431,7 @@ const VIEWS=[
  ['perfis','Início','visão geral',''],
  ['fluxo','Fluxo','do clique à venda','Operação'],
  ['set','Anfitrião no set','abrir sessão, capturar','Operação'],
- ['importar','Ingestão','cartão, Wi‑Fi e 5G','Operação'],
+ ['importar','Upload','cartão, Wi‑Fi e 5G','Operação'],
  ['ajustes','Ajustes','acertar as fotos','Operação'],
  ['diario','Diário do set','equipamento e ocorrências','Operação'],
  ['checkout','Checkout','rosto, fotos, pacote, pagamento','Operação'],
@@ -681,6 +690,20 @@ function reconSale(s,i){
   const total=items.reduce((a,id)=>a+priceOf(id),0);const prints=items.reduce((a,id)=>{const c=DATA.catalog.find(x=>x.id===id);return a+(c?c.prints:0)},0);
   return {no:`R${s.date.slice(5).replace('-','')}-${String(i+1).padStart(3,'0')}`,date:s.date,time:s.time,card:s.card,key:s.key,pdv:s.pdv,seller,items,photos:sold,prints,pay,total,status:'paga',est:true};
 }
+// ---------- período escolhido (de / até) ----------
+const DMIN=DATA.days[0],DMAX=DATA.days[DATA.days.length-1];
+const todayISO=()=>{const d=now();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+state.range={from:DMIN,to:DMAX};try{const r=JSON.parse(localStorage.getItem('eterna.range')||'null');if(r&&r.from&&r.to)state.range=r;}catch(e){}
+function setRange(from,to){if(from>to){const t=from;from=to;to=t;}state.range={from,to};try{localStorage.setItem('eterna.range',JSON.stringify(state.range))}catch(e){}render();}
+function rangeDays(){return DATA.days.filter(d=>d>=state.range.from&&d<=state.range.to);}
+const dBR=d=>d.split('-').reverse().join('/');
+function rangeLabel(){const r=state.range;return r.from===r.to?dlabel(r.from):`${dBR(r.from).slice(0,5)} a ${dBR(r.to)}`;}
+function rangeBar(note){const r=state.range;const days=rangeDays();const q=(l,f,t)=>`<button class="chip" data-act="range" data-f="${f}" data-t="${t}" aria-pressed="${r.from===f&&r.to===t}">${l}</button>`;
+  const last=DMAX,l7=DATA.days[Math.max(0,DATA.days.length-7)];
+  return `<div class="rangebar"><label><span class="eyebrow">De</span><input type="date" data-act="range-from" value="${r.from}"></label><label><span class="eyebrow">Até</span><input type="date" data-act="range-to" value="${r.to}"></label>
+  <div class="chips">${q('Hoje',todayISO(),todayISO())}${q('Último dia com dados',last,last)}${q('7 dias',l7,last)}${q('Tudo importado',DMIN,DMAX)}</div>
+  ${days.length?'':`<div class="alert warn" style="width:100%"><span class="sev" aria-hidden="true"></span><div><b>Sem dados nesse período</b><p>Os números importados do Roverpix vão de ${dBR(DMIN)} a ${dBR(DMAX)}. Datas novas entram quando a operação rodar no Eterna.</p></div></div>`}
+  ${note?`<div class="note" style="width:100%">${note}</div>`:''}</div>`;}
 function allSales(){
   const real=DATA.sessions.filter(s=>s.card&&s.sold>0).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(reconSale);
   const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'||s.status==='cancelada').map(([card,s],i)=>{const items=(s.cart||[]).map(c=>c.id);const pt=DATA.points.find(p=>p.id===s.point);return {no:s.saleNo||('E'+String(i+1).padStart(3,'0')),date:'hoje',time:s.paidAt?hhmm(new Date(s.paidAt)):s.time,card,key:s.key,pdv:s.pdv||(pt?pt.name:''),seller:s.seller||SELLERS[0],items,photos:(s.selected||[]).length,prints:items.reduce((a,id)=>{const c=DATA.catalog.find(x=>x.id===id);return a+(c?c.prints:0)},0),pay:s.payment||'',total:cartTotal(s.cart),status:s.status,est:false};});
@@ -690,6 +713,7 @@ function salesCSV(rows){const h=['venda','data','hora','sessao','ponto','fotogra
 function vVendasLista(){
   const f=state.sales;let rows=allSales();
   const days=['all','hoje',...DATA.period.sessionDays.slice().reverse()];
+  rows=rows.filter(r=>{const d=r.date==='hoje'?todayISO():r.date;return d>=state.range.from&&d<=state.range.to;});
   if(f.day!=='all')rows=rows.filter(r=>r.date===f.day);
   if(f.seller!=='all')rows=rows.filter(r=>r.seller===f.seller);
   if(f.pay!=='all')rows=rows.filter(r=>r.pay.startsWith(f.pay));
@@ -698,7 +722,8 @@ function vVendasLista(){
   const bySeller={};ok.forEach(r=>{bySeller[r.seller]=(bySeller[r.seller]||0)+r.total});
   const byPay={};ok.forEach(r=>{const k=r.pay.split(' · ')[0];byPay[k]=(byPay[k]||0)+r.total});
   const chip=(act,k,v,l)=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${f[k]===v}">${l}</button>`;
-  return `<div class="head"><div><div class="eyebrow">Gestão · ${DATA.period.label}</div><h1>Lista de vendas</h1></div><div class="row"><button class="btn ghost" data-act="sales-csv">Exportar CSV (${rows.length})</button>${shareBtn()}</div></div>
+  return `<div class="head"><div><div class="eyebrow">Período · ${rangeLabel()}</div><h1>Lista de vendas</h1></div><div class="row"><button class="btn ghost" data-act="sales-csv">Exportar CSV (${rows.length})</button>${shareBtn()}</div></div>
+  ${rangeBar()}
   
   <div class="tiles"><div class="tile"><span class="eyebrow">Vendas</span><span class="v">${fmtN(ok.length)}</span></div><div class="tile"><span class="eyebrow">Receita</span><span class="v">${fmtR(rev)}</span></div><div class="tile"><span class="eyebrow">Ticket</span><span class="v">${ok.length?fmtR(rev/ok.length):'–'}</span></div><div class="tile"><span class="eyebrow">Fotos vendidas</span><span class="v">${fmtN(ok.reduce((a,r)=>a+r.photos,0))}</span></div><div class="tile"><span class="eyebrow">Impressões</span><span class="v">${fmtN(ok.reduce((a,r)=>a+r.prints,0))}</span></div><div class="tile"><span class="eyebrow">Canceladas</span><span class="v">${rows.length-ok.length}</span></div></div>
   <div class="panel"><div class="chips">${days.map(d=>chip('sales-day','day',d,d==='all'?'Todos os dias':d==='hoje'?'Hoje (simulação)':dlabel(d))).join('')}</div>
@@ -827,7 +852,7 @@ function ingClose(how){const g=state.ing;const c=g.cur;g.cur=null;if(!c||!c.phot
   if(!SIM.invalid)SIM.invalid={};let bad=[];c.photos.forEach(p=>{const r=validatePhoto(p.id);if(r){SIM.invalid[p.id]=r;p.invalid=r;bad.push(r);}});g.n.invalid=(g.n.invalid||0)+bad.length;
   g.feed.unshift({k:bad.length?'warn':'ok',t:`Validação: ${c.photos.length-bad.length} válidas${bad.length?`, ${bad.length} não ${bad.length===1?'válida':'válidas'}`:''}`,s:bad.length?`IA barrou: ${[...new Set(bad)].join(', ')}. Ficam no acervo, fora da fila.`:'técnica e IA aprovaram todas'});
   g.done.unshift({card,n:c.photos.length-bad.length,how,flag,photos:c.photos});
-  log(`Ingestão por ${srcName()}: sessão ${card} de ${P[state.imp.key].name}, ${c.photos.length} fotos, fechada por ${how}${flag?', bandeira '+flag:''}`);saveSim();
+  log(`Upload por ${srcName()}: sessão ${card} de ${P[state.imp.key].name}, ${c.photos.length} fotos, fechada por ${how}${flag?', bandeira '+flag:''}`);saveSim();
 }
 const srcName=()=>state.imp.mode==='cartao'?'cartão':state.imp.mode==='5g'?'5G':'Wi‑Fi';
 function ingTick(){
@@ -859,7 +884,7 @@ function vImportar(){
     <div class="tiles" style="grid-template-columns:1fr 1fr"><div class="tile"><span class="eyebrow">Enviadas</span><span class="v">${g.n.arrived}</span></div><div class="tile"><span class="eyebrow">Sessões</span><span class="v">${g.done.length}</span></div></div>
     
   </div></div>`;
-  return `<div class="head"><div><div class="eyebrow">Operação · ${esc(name)} · ${esc(pt.name)}</div><h1>Ingestão automática</h1></div></div>
+  return `<div class="head"><div><div class="eyebrow">Operação · ${esc(name)} · ${esc(pt.name)}</div><h1>Upload automático</h1></div></div>
   ${picker}
   <div class="panel" style="background:${state.agent.on?'var(--good-bg)':'var(--surface)'}"><div class="head"><div><div class="eyebrow">Leitor automático · agente do ponto</div><h2 style="margin-top:4px">${state.agent.on?`Conectado${state.agent.card?' · cartão '+esc(state.agent.card)+' inserido':' · aguardando cartão'}`:'Não encontrado neste computador'}</h2></div>${state.agent.on?`<span class="note">${state.agent.copied} fotos baixadas · ${state.agent.dups} repetidas ignoradas · pasta ~/Eterna/inbox</span>`:''}</div>
     ${state.agent.on&&state.agent.ftp&&state.agent.ftp.port?`<div class="row" style="margin-top:8px"><span class="pill good">FTP ligado</span><span class="note">Servidor <b>${esc(state.agent.ftp.ip)}</b> · porta <b>${state.agent.ftp.port}</b> · usuários ${state.agent.ftp.users.map(esc).join(', ')} · ${state.agent.ftp.received} fotos recebidas${state.agent.ftp.last_user?' · última de '+esc(state.agent.ftp.last_user):''}</span></div>`:''}
@@ -880,17 +905,17 @@ function vImportar(){
 }
 // ---------- Gestão: semana ----------
 function vSemana(){
-  const per=state.period;const d=per==='7d'?DATA.daily.slice(-7):per==='1d'?DATA.daily.slice(-1):DATA.daily;const dayset=new Set(d.map(x=>x.date));
+  const per='range';const d0=DATA.daily.filter(x=>x.date>=state.range.from&&x.date<=state.range.to);const d=d0.length?d0:[{date:state.range.from,approaches:0,viewed:0,converted:0,photos:0,photosSold:0,sales:0,revenue:0,pax:0}];const dayset=new Set(d0.map(x=>x.date));
   const rowsP=DATA.rows.filter(r=>dayset.has(r.date));const sumR=(f,fn)=>rowsP.filter(f).reduce((a,r)=>a+fn(r),0);
   const humanTot={cards:sumR(r=>P[r.key].human,r=>r.cards),cardsSold:sumR(r=>P[r.key].human,r=>r.cardsSold)},chromaTot={cards:sumR(r=>!P[r.key].human,r=>r.cards),cardsSold:sumR(r=>!P[r.key].human,r=>r.cardsSold)};
-  const paxTotal=d.reduce((a,x)=>a+(x.pax||0),0)||PAX*d.length;
-  const t=per==='all'?DATA.totals:{revenue:d.reduce((a,x)=>a+x.revenue,0),sales:d.reduce((a,x)=>a+x.sales,0),photos:d.reduce((a,x)=>a+x.photos,0),photosSold:d.reduce((a,x)=>a+x.photosSold,0)};t.ticket=t.sales?Math.round(t.revenue/t.sales):0;
+  const paxTotal=d.reduce((a,x)=>a+(x.pax||0),0)||1;
+  const t={revenue:d.reduce((a,x)=>a+x.revenue,0),sales:d.reduce((a,x)=>a+x.sales,0),photos:d.reduce((a,x)=>a+x.photos,0),photosSold:d.reduce((a,x)=>a+x.photosSold,0)};t.ticket=t.sales?Math.round(t.revenue/t.sales):0;
   const approaches=d.reduce((a,x)=>a+x.approaches,0),viewed=d.reduce((a,x)=>a+x.viewed,0),conv=d.reduce((a,x)=>a+x.converted,0);
-  const perLabel=per==='7d'?`últimos 7 dias (${dlabel(d[0].date)} a ${dlabel(d[d.length-1].date)})`:per==='1d'?`último dia (${dlabel(d[0].date)})`:DATA.period.label;
+  const perLabel=rangeLabel();const _unused=per==='7d'?`últimos 7 dias (${dlabel(d[0].date)} a ${dlabel(d[d.length-1].date)})`:per==='1d'?`último dia (${dlabel(d[0].date)})`:DATA.period.label;
   const best=[...d].sort((a,b)=>b.revenue-a.revenue)[0],worst=[...d].sort((a,b)=>a.revenue-b.revenue)[0];
   const simRev=Object.values(SIM.sessions).filter(s=>s.status==='paga').reduce((a,s)=>a+cartTotal(s.cart),0);
-  return `<div class="head"><div><div class="eyebrow">Semana · ${perLabel}</div><h1>Operação da semana</h1></div><div class="note">Fonte: sistema e catracas, lido em ${DATA.period.generated.split('-').reverse().join('/')}${simRev?` · demonstração de hoje: ${fmtR(simRev)}`:''}</div></div>
-  <div class="chips"><button class="chip" data-act="period" data-p="1d" aria-pressed="${per==='1d'}">Último dia</button><button class="chip" data-act="period" data-p="7d" aria-pressed="${per==='7d'}">7 dias</button><button class="chip" data-act="period" data-p="all" aria-pressed="${per==='all'}">Tudo (${DATA.daily.length} dias)</button><span style="width:8px"></span>${shareBtn()}</div>
+  return `<div class="head"><div><div class="eyebrow">Período · ${perLabel}</div><h1>Operação</h1></div><div class="note">Fonte: sistema e catracas, lido em ${DATA.period.generated.split('-').reverse().join('/')}${simRev?` · demonstração de hoje: ${fmtR(simRev)}`:''}</div></div>
+  ${rangeBar()}
   <div class="tiles">
     <div class="tile"><span class="eyebrow">Spend per guest</span><span class="v">${fmtR(t.revenue/paxTotal)}</span><span class="d">receita por visitante · ${fmtN(paxTotal)} visitantes nas catracas</span></div>
     <div class="tile"><span class="eyebrow">Receita</span><span class="v">${fmtR(t.revenue)}</span><span class="d">${t.sales} vendas · ticket ${fmtR(t.ticket)}</span></div>
@@ -912,6 +937,7 @@ function vSemana(){
 
 // ---------- Gestão: fotógrafos ----------
 function vFotografos(){
+  const stats=buildStats(rangeDays());
   const list=humans.map(k=>stats[k]).sort((a,b)=>(b.index||0)-(a.index||0));
   const idxPill=i=>i==null?'':i>=110?`<span class="pill good">${i}</span>`:i<85?`<span class="pill bad">${i}</span>`:`<span class="pill neutral">${i}</span>`;
   if(state.person&&stats[state.person]){const s=stats[state.person];const q=quality(s.key);
@@ -932,7 +958,8 @@ function vFotografos(){
     ${dayPanel}
     <div class="row"><button class="btn primary" data-act="review-person" data-key="${s.key}">Revisar fotos de ${esc(s.name)}</button></div>`;
   }
-  return `<div class="head"><div><div class="eyebrow">Semana · ${DATA.period.label}</div><h1>Fotógrafos</h1></div></div>
+  return `<div class="head"><div><div class="eyebrow">Período · ${rangeLabel()}</div><h1>Fotógrafos</h1></div></div>
+  ${rangeBar()}
   <div class="cards">${list.map(s=>{const q=quality(s.key);return `<button class="pcard" data-act="person" data-key="${s.key}"><div class="top"><span class="nm">${esc(s.name)}</span><span class="idx" style="color:${s.index>=110?'var(--good)':s.index<85?'var(--bad)':'inherit'}">${s.index}</span></div>${sparkIdx(s.perDay)}<div class="kv"><span>Receita <b>${fmtR(s.revenue)}</b></span><span>Por dia <b>${fmtR(s.rpd)}</b></span><span>Sessões/dia <b>${s.cpd.toFixed(0)}</b></span><span>Conv. sessão <b>${pct(s.cardsSold,s.cards)}</b></span><span>R$/sessão <b>${fmtR(s.rpc)}</b></span><span>Fotos vendidas <b>${pct(s.photosSold,s.photos)}</b></span><span>Qualidade <b>${q.goodPct!=null?q.goodPct+'% boas':'sem revisão'}</b></span><span>Ticket <b>${fmtR(s.ticket)}</b></span></div></button>`}).join('')}</div>
   <div class="panel"><h2>Tabela completa</h2><div class="tablewrap"><table><thead><tr><th>Fotógrafo</th><th class="num">Índice</th><th class="num">Dias</th><th class="num">Fotos</th><th class="num">Sessões</th><th class="num">Sessões/dia</th><th class="num">Conv.</th><th class="num">Fotos vendidas</th><th class="num">Vend./venda</th><th class="num">Receita</th><th class="num">R$/dia</th><th class="num">R$/sessão</th><th class="num">Ticket</th><th class="num">Cliques/sessão</th></tr></thead><tbody>
   ${list.map(s=>`<tr class="click" data-act="person" data-key="${s.key}"><td class="name">${esc(s.name)}</td><td class="num">${idxPill(s.index)}</td><td class="num">${s.days}</td><td class="num">${fmtN(s.photos)}</td><td class="num">${s.cards}</td><td class="num">${s.cpd.toFixed(0)}</td><td class="num">${pct(s.cardsSold,s.cards)}</td><td class="num">${fmtN(s.photosSold)} (${pct(s.photosSold,s.photos)})</td><td class="num">${s.psc.toFixed(1)}</td><td class="num">${fmtR(s.revenue)}</td><td class="num">${fmtR(s.rpd)}</td><td class="num">${fmtR(s.rpc)}</td><td class="num">${fmtR(s.ticket)}</td><td class="num">${s.ppc.toFixed(1)}</td></tr>`).join('')}
@@ -941,9 +968,10 @@ function vFotografos(){
 
 // ---------- Gestão: vendas ----------
 function vVendas(){
-  const t=DATA.totals,sl=DATA.sellers.filter(s=>s.total>=10).sort((a,b)=>b.revenue-a.revenue);const others=DATA.sellers.filter(s=>s.total<10);
+  const _d=DATA.daily.filter(x=>x.date>=state.range.from&&x.date<=state.range.to);const _rv=_d.reduce((a,x)=>a+x.revenue,0),_sv=_d.reduce((a,x)=>a+x.sales,0);const t={...DATA.totals,revenue:_rv,sales:_sv,ticket:_sv?Math.round(_rv/_sv):0},sl=DATA.sellers.filter(s=>s.total>=10).sort((a,b)=>b.revenue-a.revenue);const others=DATA.sellers.filter(s=>s.total<10);
   const payTot=DATA.payments.reduce((a,p)=>a+p.amount,0);
-  return `<div class="head"><div><div class="eyebrow">Semana · ${DATA.period.label}</div><h1>Vendas e caixa</h1></div></div>
+  return `<div class="head"><div><div class="eyebrow">Período · ${rangeLabel()}</div><h1>Vendas e caixa</h1></div></div>
+  ${rangeBar('Receita e vendas seguem o período. O detalhe por vendedor e por forma de pagamento veio do Roverpix só como total de '+dBR(DMIN)+' a '+dBR(DMAX)+'; no Eterna ele também segue as datas.')}
   <div class="tiles">
     <div class="tile"><span class="eyebrow">Receita</span><span class="v">${fmtR(t.revenue)}</span><span class="d">${t.sales} vendas finalizadas</span></div>
     <div class="tile"><span class="eyebrow">Ticket médio</span><span class="v">${fmtR(t.ticket)}</span><span class="d">por venda</span></div>
@@ -1099,7 +1127,7 @@ function vFluxo(){
       <tr><td>IA · bandeira</td><td>qual bandeira aparece</td><td>etiqueta na foto</td></tr>
       <tr><td>Dúvida</td><td>confiança baixa em qualquer regra</td><td>vai para a revisão de qualidade</td></tr>
       </tbody></table></div>
-      ${inv?`<div class="eyebrow" style="margin-top:6px">Não válidas nesta simulação</div><div class="photos small">${Object.entries(SIM.invalid).slice(0,12).map(([id,r])=>photoBtn({id},{tag:r,label:'Não válida: '+r}).replace('<button class="ph"','<button class="ph" data-off="1"')).join('')}</div>`:'<div class="note">Rode uma leva na Ingestão para ver a validação acontecer.</div>'}
+      ${inv?`<div class="eyebrow" style="margin-top:6px">Não válidas nesta simulação</div><div class="photos small">${Object.entries(SIM.invalid).slice(0,12).map(([id,r])=>photoBtn({id},{tag:r,label:'Não válida: '+r}).replace('<button class="ph"','<button class="ph" data-off="1"')).join('')}</div>`:'<div class="note">Rode uma leva no Upload para ver a validação acontecer.</div>'}
     </div>
   </div>
   <div class="panel"><div class="head"><h2>Não vendeu: web e RD</h2><button class="btn ghost" data-act="postvisit-all" ${notSold.length?'':'disabled'}>Simular pós-visita para ${notSold.length} grupos</button></div>
@@ -1608,6 +1636,7 @@ document.addEventListener('click',e=>{
     case 'person':state.person=d.key;state.personDay=null;render();window.scrollTo({top:0});break;
     case 'person-day':state.personDay=state.personDay===d.d?null:d.d;render();break;
     case 'period':state.period=d.p;render();break;
+    case 'range':setRange(d.f,d.t);break;
     case 'share-view':shareLink();break;
     case 'back':state.person=null;state.personDay=null;render();break;
     case 'review-person':state.view='revisao';state.revFilter.key=d.key;state.session=null;render();window.scrollTo({top:0});break;
@@ -1698,7 +1727,7 @@ document.addEventListener('click',e=>{
   }
 });
 document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train-note'){state.train.note=e.target.value;return;}if(a==='login-email'){state.auth.email=e.target.value;return;}if(a==='login-code'){state.auth.code=e.target.value;if(e.target.value.replace(/\D/g,'').length===6)checkCode();return;}if(a==='user-field'){if(state.users.draft)state.users.draft[e.target.dataset.k]=e.target.value;return;}if(a==='di-text'){state.diario.text=e.target.value;return;}if(a==='fe-field'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='venue-field'){VENUE_CFG[e.target.dataset.k]=e.target.value||null;saveVenue();return;}if(a==='venue-color'){VENUE_CFG[e.target.dataset.k]=e.target.value;saveVenue();const b=e.target.parentElement.querySelector('b');if(b)b.textContent=e.target.value;return;}if(a==='aj-range'){if(can('set','u'))ajSet(state.ajustes.photo,e.target.dataset.k,+e.target.value);return;}if(a==='user-q'){state.users.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="user-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
-document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='fe-sel'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='fe-active'){if(state.flagEd)state.flagEd.active=e.target.checked;return;}if(a==='fe-img'){const fl=e.target.files&&e.target.files[0];if(!fl||!state.flagEd)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');const w=360,h=Math.round(360*im.height/im.width);c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);state.flagEd.imgData=c.toDataURL('image/jpeg',.82);render();};im.src=rd.result;};rd.readAsDataURL(fl);return;}if(a==='venue-powered'){VENUE_CFG.powered=e.target.checked;saveVenue();render();return;}if(a==='venue-logo'){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>600*1024){toast('Logo acima de 600 KB: exporte menor');return;}const rd=new FileReader();rd.onload=()=>{VENUE_CFG.logo=rd.result;saveVenue();toast('Logo aplicada');render();};rd.readAsDataURL(f);return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr){dr.preset=e.target.value;if(e.target.value!=='custom')dr.perms=presetPerms(e.target.value);render();}return;}if(a==='user-perm'){const dr=state.users.draft;if(!can('usuarios','u')){e.target.checked=!e.target.checked;return;}if(dr){const m=e.target.dataset.m,op=e.target.dataset.op;dr.perms[m]=dr.perms[m]||{...NONE};dr.perms[m][op]=e.target.checked;if(op!=='r'&&e.target.checked)dr.perms[m].r=true;if(op==='r'&&!e.target.checked){dr.perms[m]={...NONE};}dr.preset='custom';render();}return;}if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
+document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='range-from'&&e.target.value){setRange(e.target.value,state.range.to<e.target.value?e.target.value:state.range.to);return;}if(a==='range-to'&&e.target.value){setRange(state.range.from>e.target.value?e.target.value:state.range.from,e.target.value);return;}if(a==='fe-sel'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='fe-active'){if(state.flagEd)state.flagEd.active=e.target.checked;return;}if(a==='fe-img'){const fl=e.target.files&&e.target.files[0];if(!fl||!state.flagEd)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');const w=360,h=Math.round(360*im.height/im.width);c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);state.flagEd.imgData=c.toDataURL('image/jpeg',.82);render();};im.src=rd.result;};rd.readAsDataURL(fl);return;}if(a==='venue-powered'){VENUE_CFG.powered=e.target.checked;saveVenue();render();return;}if(a==='venue-logo'){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>600*1024){toast('Logo acima de 600 KB: exporte menor');return;}const rd=new FileReader();rd.onload=()=>{VENUE_CFG.logo=rd.result;saveVenue();toast('Logo aplicada');render();};rd.readAsDataURL(f);return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr){dr.preset=e.target.value;if(e.target.value!=='custom')dr.perms=presetPerms(e.target.value);render();}return;}if(a==='user-perm'){const dr=state.users.draft;if(!can('usuarios','u')){e.target.checked=!e.target.checked;return;}if(dr){const m=e.target.dataset.m,op=e.target.dataset.op;dr.perms[m]=dr.perms[m]||{...NONE};dr.perms[m][op]=e.target.checked;if(op!=='r'&&e.target.checked)dr.perms[m].r=true;if(op==='r'&&!e.target.checked){dr.perms[m]={...NONE};}dr.preset='custom';render();}return;}if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-email')sendCode();if(f==='login-code')checkCode();});
 document.addEventListener('keydown',e=>{if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&MODAL.list.length>1&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){showModal(MODAL.i-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}if(e.key==='Enter'&&e.target.id==='gcode'){state.guest.code=e.target.value.trim().toUpperCase();render();}});
