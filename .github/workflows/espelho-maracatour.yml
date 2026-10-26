@@ -1,0 +1,27 @@
+# Mantém MaracaTour/eterna igual ao repositório de desenvolvimento (dudurezende10/eterna).
+# Roda só dentro do MaracaTour/eterna: a cada 10 minutos e quando alguém aperta "Run workflow".
+name: espelho-maracatour
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  espelho:
+    if: github.repository == 'MaracaTour/eterna'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Trazer commits novos
+        run: |
+          git remote add origem https://github.com/dudurezende10/eterna.git
+          git fetch origem main
+          if git merge-base --is-ancestor HEAD origem/main; then
+            git push origin origem/main:main
+            echo "Espelho atualizado até $(git rev-parse --short origem/main)"
+          else
+            echo "::warning::MaracaTour/eterna tem commits que não estão na origem; nada foi sobrescrito."
+          fi
