@@ -2,7 +2,7 @@
 <title>Eterna Maracanã</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&family=Archivo+Black&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 /* Layout: fixed left rail with wordmark, the perfis and the gestão sub-sections; one scrolling column of content, summary before detail. */
@@ -245,6 +245,29 @@ body[data-bare] .app{grid-template-columns:minmax(0,1fr)}
 .ajctl{gap:14px}
 .ajrow input[type=range]{flex:1;min-width:0;accent-color:var(--fg)}
 .ajrow .btn{min-width:44px;padding:0;font-size:20px}
+.vword{font-family:var(--display);font-weight:600;letter-spacing:.02em;white-space:nowrap}
+.cobrand{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cobrand .by{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.cobrand .x{color:var(--muted)}
+.logobox{min-width:120px;min-height:48px;display:flex;align-items:center;padding:6px 10px;border:1px dashed var(--line);border-radius:6px}
+.sws{display:flex;gap:10px;flex-wrap:wrap}
+.sw{display:flex;flex-direction:column;gap:3px;font-size:12px}
+.sw span{display:block;width:72px;height:40px;border-radius:5px;border:1px solid var(--line)}
+.sw b{font-variant-numeric:tabular-nums}
+.sw small{color:var(--muted)}
+.pv{border:1px solid var(--line);border-radius:8px;padding:18px;background:var(--bg);display:flex;flex-direction:column;gap:10px;align-items:stretch;margin-top:8px}
+.pv-input{border:1px solid var(--line);border-radius:5px;padding:10px;color:var(--muted);background:var(--surface);font-size:13px;margin-top:8px}
+.pv-btn{background:var(--fg);color:var(--bg);border-radius:5px;padding:10px;text-align:center;font-size:13px}
+.pv-h{font-family:var(--display);font-size:24px;text-align:center}
+.pv-face{height:90px;border-radius:8px;background:radial-gradient(ellipse at center,#2a2622 0%,#141311 70%);display:flex;align-items:center;justify-content:center}
+.pv-face span{width:48px;height:62px;border:2px solid var(--accent);border-radius:50%}
+.pv-by{display:flex;justify-content:center}
+.app::before{content:'';position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--venue2,var(--accent)));z-index:9}
+:root[data-venue="lolla"]{--bg:#0b0a12;--surface:#15131f;--surface2:#1e1b2b;--fg:#f6f3ff;--muted:#a79fbf;--line:#2b2740;--bar:#f6f3ff;--bar2:#3a3552;--good:#8ef0a6;--warn:#ffd166;--bad:#ff7a7a;--good-bg:#17301f;--warn-bg:#332a10;--bad-bg:#3a1a1a;color-scheme:dark}
+:root[data-venue="lolla"] .brand span,:root[data-venue="lolla"] h1,:root[data-venue="lolla"] h2{letter-spacing:.01em}
+:root[data-venue="lolla"] .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+:root[data-venue="lolla"] .pill.good{color:#0b0a12;background:var(--venue2)}
+:root[data-venue="lolla"] .nav button[aria-current="page"]{box-shadow:inset 3px 0 0 var(--accent)}
 .scards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .scards .scard{cursor:pointer}
 table.perms td.num input{width:18px;height:18px;accent-color:var(--accent)}
@@ -276,7 +299,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="brand" data-act="role-home" aria-label="Eterna, início"><svg width="26" height="26" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span>ETERNA</span></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v22 · 26/10 17:35</span></div>
+    <div class="venue"><span>Venue</span><b id="venue-name">Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v23 · 26/10 17:55</span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -377,6 +400,7 @@ const VIEWS=[
  ['bandeiras','Bandeiras','inventário e IA','Gestão'],
  ['treino','Treino da IA','pode e não pode','Gestão'],
  ['repo','Repositório','nuvem e acervo','Gestão'],
+ ['identidade','Identidade','marca do venue','Gestão'],
  ['alertas','Alertas','o que precisa de olho','Gestão'],
  ['usuarios','Usuários','acessos e permissões','Acesso'],
 ];
@@ -411,7 +435,7 @@ function vPerfis(){
   const card=(v)=>{const d=VIEWS.find(x=>x[0]===v);if(!d)return '';return `<button class="role" data-act="view" data-v="${v}"><span class="t">${esc(d[1])}</span><span class="d">${esc(d[2])}</span></button>`};
   const ops=['fluxo','set','importar','checkout','fila','caixa','quiosque','convidado'].filter(v=>r.views.includes(v));
   const ges=r.views.filter(v=>!ops.includes(v)&&v!=='perfis');
-  return `<div class="head"><div><div class="eyebrow">Tour do Maracanã · ${esc((PRESETS[state.user.preset]||{name:'Personalizado'}).name)}</div><h1>${esc(r.name)}</h1></div><div class="row"><span class="pill neutral">${cnt('aberta')} no set</span><span class="pill neutral">${cnt('fechada')} na fila</span><span class="pill neutral">${cnt('no caixa')+cnt('no checkout')} no checkout</span><span class="pill good">${cnt('paga')} pagas · ${fmtR(ss.filter(s=>s.status==='paga').reduce((a,s)=>a+cartTotal(s.cart),0))}</span></div></div>
+  return `<div class="head"><div><div class="eyebrow">${esc(venueName())} · ${esc((PRESETS[state.user.preset]||{name:'Personalizado'}).name)}</div><h1>${esc(r.name)}</h1></div><div class="row"><span class="pill neutral">${cnt('aberta')} no set</span><span class="pill neutral">${cnt('fechada')} na fila</span><span class="pill neutral">${cnt('no caixa')+cnt('no checkout')} no checkout</span><span class="pill good">${cnt('paga')} pagas · ${fmtR(ss.filter(s=>s.status==='paga').reduce((a,s)=>a+cartTotal(s.cart),0))}</span></div></div>
   ${ops.length?`<div class="eyebrow">Operação</div><div class="roles">${ops.map(card).join('')}</div>`:''}
   ${ges.length?`<div class="eyebrow">Gestão</div><div class="roles">${ges.map(card).join('')}</div>`:''}`;
 }
@@ -515,7 +539,7 @@ function vCaixa(){
     if(sim.status==='paga'){
       detail=`<div class="panel"><div class="head"><h2>Recibo · ${esc(s.card)}</h2><span class="pill good">pago · ${esc(sim.payment)}</span></div>
         <div class="qr"><div id="qrbox"></div><div><div class="eyebrow">Galeria do convidado</div><div class="note">eterna.photo/g/${esc(s.card)}<br>${(sim.selected||[]).length} fotos em alta · 60 dias para baixar · arquivos 3.000 px</div><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="go-guest" data-card="${s.card}">Abrir como o convidado</button><button class="btn ghost" data-act="caixa-reprint">Reimprimir</button></div></div></div>
-        <div class="receipt">TOUR DO MARACANÃ · ETERNA\nSessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour</div></div>`;
+        <div class="receipt">${esc(venueName().toUpperCase())} · ETERNA\nSessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour</div></div>`;
     }else{
       detail=`<div class="panel"><div class="head"><h2>${esc(s.card)}</h2><span class="note">${esc(P[s.key]?P[s.key].name:'')} · ${(sim.selected||[]).length} fotos escolhidas · ${prints} impressões</span></div>
         <div class="photos small">${s.photos.filter(p=>(sim.selected||[]).includes(p.id)).map(p=>photoBtn(p)).join('')||'<div class="note">Nenhuma foto escolhida na fila.</div>'}</div>
@@ -547,7 +571,7 @@ function checkoutPick(card){state.checkout.session=card;state.checkout.step=2;st
 function receiptPanel(s,sim){const total=cartTotal(sim.cart);const prints=(sim.cart||[]).reduce((a,c)=>{const p=DATA.catalog.find(x=>x.id===c.id);return a+(p?p.prints:0)},0);
   return `<div class="panel"><div class="head"><h2>Recibo · ${esc(s.card)}</h2><span class="pill good">pago · ${esc(sim.payment)}</span></div>
     <div class="qr"><div id="qrbox"></div><div><div class="eyebrow">Galeria do convidado</div><div class="note">eterna.photo/g/${esc(s.card)}<br>${(sim.selected||[]).length} fotos em alta · 60 dias para baixar · arquivos 3.000 px</div><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="go-guest" data-card="${s.card}">Abrir como o convidado</button><button class="btn ghost" data-act="caixa-reprint">Reimprimir</button><button class="btn ghost" data-act="view" data-v="vendas-lista">Ver na lista de vendas</button></div></div></div>
-    <div class="receipt">TOUR DO MARACANÃ · ETERNA\nVenda ${esc(sim.saleNo||'')} · Sessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\nVendedor: ${esc(sim.seller||'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour</div></div>`;}
+    <div class="receipt">${esc(venueName().toUpperCase())} · ETERNA\nVenda ${esc(sim.saleNo||'')} · Sessão ${esc(s.card)} · ${esc(sim.paidAt?new Date(sim.paidAt).toLocaleString('pt-BR'):'')}\nVendedor: ${esc(sim.seller||'')}\n${(sim.cart||[]).map(c=>catName(c.id).padEnd(34)+fmtR(priceOf(c.id)).padStart(12)).join('\n')}\n${'TOTAL'.padEnd(34)+fmtR(total).padStart(12)}\nPagamento: ${esc(sim.payment)}\nImpressões: ${prints} · Caixa 1\nSuas fotos: eterna.photo/g/${esc(s.card)} · 60 dias\nDúvidas: WhatsApp do Tour</div></div>`;}
 function vCheckout(){
   const ck=state.checkout;
   const all=demoSessions().filter(s=>s.status!=='aberta');
@@ -648,7 +672,7 @@ function vQuiosque(){
   const k=state.kiosk;
   if(k.step==='code'||k.step==='emerg'){const emerg=k.step==='emerg';
     return `<div class="kiosk"><div class="screen" style="text-align:center;display:flex;flex-direction:column;gap:18px;align-items:center">
-    <div class="brand" style="justify-content:center"><svg width="34" height="34" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:26px">ETERNA</span></div>
+    <div style="display:flex;justify-content:center">${venueLogo(44)}</div>
     ${emerg?`<h1 style="font-size:40px">Digite o código do recibo</h1><div class="sub" style="text-align:center">Ou aproxime o QR do recibo do leitor. Esta é a saída de emergência; o normal é a câmera achar você.</div>
     <div style="width:min(420px,100%)"><input type="text" class="code" id="kcode" placeholder="LP..." value="${esc(k.code)}" aria-label="Código da sessão" autofocus></div>
     <div class="row" style="justify-content:center"><button class="btn primary big" data-act="kiosk-go">Ver minhas fotos</button><button class="btn ghost big" data-act="kiosk-back">Voltar para a câmera</button></div>
@@ -656,6 +680,7 @@ function vQuiosque(){
     :`<h1 style="font-size:44px">Olhe para a câmera</h1><div class="sub" style="text-align:center">Suas fotos aparecem sozinhas. Nada para apertar.</div>
     ${camBox()}
     <button class="chip" data-act="kiosk-emerg" style="opacity:.7">Não me achou? Código ou QR do recibo</button>`}
+    <div style="margin-top:8px">${cobrand(18)}</div>
     </div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="kiosk"><div class="screen"><h2>Não achamos a sessão ${esc(k.code)}</h2><div class="note">Confira o código no ingresso ou procure um anfitrião.</div><div class="row" style="margin-top:12px"><button class="btn ghost" data-act="kiosk-back">Voltar</button></div></div></div>`;
   const sim=simOf(s.card);const sel=new Set(sim.selected||[]);
@@ -669,10 +694,10 @@ function vQuiosque(){
 function vConvidado(){
   const g=state.guest;const s=g.code?sessionObj(g.code):null;
   const phone=inner=>`<div class="phone"><div class="pin">${inner}</div></div>`;
-  const brand='<div class="brand"><svg width="20" height="20" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:15px">ETERNA</span></div>';
+  const brand='<div class="brand"><svg width="20" height="20" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:15px">ETERNA</span></div>';const gbrand=cobrand(22);
   if(!s){const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);
     return `<div class="head"><div><div class="eyebrow">Convidado · celular</div><h1>Galeria</h1></div></div>
-    ${phone(`${brand}<div><div class="eyebrow">Tour do Maracanã</div><h2 style="font-size:30px">Sua visita, guardada.</h2></div>
+    ${phone(`${gbrand}<div><div class="eyebrow">${esc(venue().guestEyebrow)}</div><h2 style="font-size:30px">${esc(venue().tagline)}</h2></div>
     <div class="note">Três jeitos de achar suas fotos, em casa ou no estádio.</div>
     <label class="btn primary big" for="gselfie" style="cursor:pointer">Tirar uma selfie<input type="file" id="gselfie" accept="image/*" capture="user" data-act="guest-selfie" hidden></label>
     <label class="btn ghost big" for="gqr" style="cursor:pointer">Ler o QR do recibo ou do ingresso<input type="file" id="gqr" accept="image/*" capture="environment" data-act="guest-qr" hidden></label>
@@ -681,8 +706,8 @@ function vConvidado(){
   const sim=simOf(s.card);const bought=new Set(sim.status==='paga'?(sim.selected||[]):[]);
   const left=s.photos.filter(p=>!bought.has(p.id)).length;
   return `<div class="head"><div><div class="eyebrow">Convidado · celular</div><h1>Galeria ${esc(s.card)}</h1></div><button class="chip" data-act="guest-exit">Trocar sessão</button></div>
-  ${phone(`<div style="display:flex;justify-content:space-between;align-items:center">${brand}<span class="note">${esc(s.card)}</span></div>
-  <div><div class="eyebrow">Tour do Maracanã · ${dlabel(s.date)}</div><h2 style="font-size:28px">Sua visita, guardada.</h2><div class="note">${bought.size} fotos compradas em alta, download até ${new Date(Date.now()+60*864e5).toLocaleDateString('pt-BR')}. ${left?`As outras ${left} continuam aqui, se você quiser levar.`:''}</div></div>
+  ${phone(`<div style="display:flex;justify-content:space-between;align-items:center">${gbrand}<span class="note">${esc(s.card)}</span></div>
+  <div><div class="eyebrow">${esc(venue().guestEyebrow)} · ${dlabel(s.date)}</div><h2 style="font-size:28px">${esc(venue().tagline)}</h2><div class="note">${bought.size} fotos compradas em alta, download até ${new Date(Date.now()+60*864e5).toLocaleDateString('pt-BR')}. ${left?`As outras ${left} continuam aqui, se você quiser levar.`:''}</div></div>
   ${sim.bg?`<div><div class="eyebrow">Seu fundo</div><img src="${(DATA.backgrounds.find(b=>b.id===sim.bg)||{}).file}" alt="" style="width:100%;border-radius:6px;display:block;margin-top:6px"></div>`:''}
   <div style="display:flex;flex-direction:column;gap:10px">${s.photos.map(p=>{const b=bought.has(p.id);return `<div style="position:relative">${photoBtn(p,{act:'guest-fav',tag:b?'COMPRADA':'',wm:!b,zoom:false})}<span style="position:absolute;right:10px;bottom:8px;font-size:20px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)">${g.fav[p.id]?'♥':'♡'}</span></div>`}).join('')}</div>
   <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px">
@@ -1146,6 +1171,61 @@ function vAlertas(){const a=alerts();return `<div class="head"><div><div class="
   ${SIM.log.length?`<div class="panel"><h2>Registro da demonstração</h2><div class="tablewrap"><table><tbody>${SIM.log.slice(0,15).map(l=>`<tr><td class="note">${new Date(l.at).toLocaleTimeString('pt-BR')}</td><td>${esc(l.t)}</td></tr>`).join('')}</tbody></table></div></div>`:''}`}
 
 // ---------- render ----------
+// ---------- Identidade do venue: cores, logos, nomes ----------
+// O Eterna é a plataforma; cada venue entra com a própria marca. A logo oficial é enviada pelo admin (arquivo do venue);
+// o Eterna não redesenha marcas de terceiros.
+const VENUES={
+ maracana:{id:'maracana',name:'Tour do Maracanã',short:'Maracanã',org:'Maracatour',city:'Rio de Janeiro',dark:false,
+   accent:'#1d4f8f',accent2:'#f0a33a',display:"'Cormorant Garamond',Georgia,serif",tagline:'Sua visita, guardada.',guestEyebrow:'Tour do Maracanã',
+   notes:'Paleta provisória inspirada no rebranding dos 75 anos (concreto, céu do Rio ao entardecer, camisas históricas). Troque pelos hex do manual oficial da Maracatour.',
+   points:{}},
+ lolla:{id:'lolla',name:'Lollapalooza Brasil',short:'Lolla',org:'Rock World',city:'São Paulo · Interlagos',dark:true,
+   accent:'#ff2e88',accent2:'#c8ff2e',display:"'Archivo Black','Arial Black',sans-serif",tagline:'Seu festival, guardado.',guestEyebrow:'Lollapalooza Brasil 2027',
+   notes:'Variante de apresentação: fundo escuro, rosa e lima vibrantes, tipografia pesada. Paleta e logo oficiais vêm do kit de marca do festival.',
+   points:{terminal:'Entrada principal',campo2:'Palco Principal',campo3:'Roda-gigante',campo4:'Palco Alternativo',vestiario:'Lounge VIP',chroma1:'Chroma 1',chroma2:'Chroma 2'}},
+};
+const VENUE_CFG0=()=>({id:'maracana',accent:null,accent2:null,logo:null,logoDark:null,name:null});
+let VENUE_CFG=VENUE_CFG0();
+try{const v=localStorage.getItem('eterna.venue.v1');if(v)VENUE_CFG=Object.assign(VENUE_CFG0(),JSON.parse(v));}catch(e){}
+const POINT_NAMES0={};DATA.points.forEach(p=>POINT_NAMES0[p.id]=p.name);
+function venue(){return VENUES[VENUE_CFG.id]||VENUES.maracana;}
+function venueName(){return VENUE_CFG.name||venue().name;}
+function venueAccent(){return VENUE_CFG.accent||venue().accent;}
+function venueAccent2(){return VENUE_CFG.accent2||venue().accent2;}
+function venueLogo(h){const v=venue();const src=VENUE_CFG.logo;if(src)return `<img src="${src}" alt="${esc(venueName())}" style="height:${h||28}px;max-width:220px;object-fit:contain;display:block">`;return `<span class="vword" style="font-size:${Math.round((h||28)*.72)}px">${esc(venueName())}</span>`;}
+function cobrand(h){return `<div class="cobrand">${venueLogo(h)}<span class="x">·</span><span class="by">fotos por</span><span class="brand" style="gap:6px"><svg width="${Math.round((h||28)*.6)}" height="${Math.round((h||28)*.6)}" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:${Math.round((h||28)*.5)}px">ETERNA</span></span></div>`;}
+function hexInk(hex){const h=(hex||'#000').replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (0.2126*r+0.7152*g+0.0722*b)>150?'#141311':'#fafaf8';}
+function applyVenue(){const v=venue();const root=document.documentElement;root.dataset.venue=v.id;
+  if(v.dark)root.dataset.theme='dark';else root.removeAttribute('data-theme');
+  root.style.setProperty('--accent',venueAccent());root.style.setProperty('--accent-ink',hexInk(venueAccent()));root.style.setProperty('--venue2',venueAccent2());root.style.setProperty('--display',v.display);
+  DATA.points.forEach(p=>{p.name=(v.points&&v.points[p.id])||POINT_NAMES0[p.id];});
+  const vn=$('#venue-name');if(vn)vn.innerHTML=venueLogo(26);
+  document.title=`Eterna · ${venueName()}`;}
+function saveVenue(){try{localStorage.setItem('eterna.venue.v1',JSON.stringify(VENUE_CFG))}catch(e){}if(state.db){try{state.db.doc('config/venue').set({...VENUE_CFG,at:now().toISOString()})}catch(e){}}applyVenue();}
+function vIdentidade(){
+  const v=venue();const cfg=VENUE_CFG;const sw=(hex,l)=>`<div class="sw"><span style="background:${hex}"></span><b>${hex}</b><small>${l}</small></div>`;
+  return `<div class="head"><div><div class="eyebrow">Configuração · marca</div><h1>Identidade</h1></div><div class="row"><button class="btn ghost" data-act="venue-reset">Voltar ao padrão do venue</button></div></div>
+  <div class="chips">${Object.values(VENUES).map(x=>`<button class="chip" data-act="venue-pick" data-id="${x.id}" aria-pressed="${cfg.id===x.id}">${esc(x.name)}</button>`).join('')}</div>
+  <div class="grid2">
+    <div class="panel" style="gap:12px"><h2>${esc(v.name)}</h2><div class="note">${esc(v.org)} · ${esc(v.city)} · ${v.dark?'tema escuro':'tema claro'}</div>
+      <label><span class="eyebrow">Nome exibido</span><input type="text" data-act="venue-field" data-k="name" value="${esc(cfg.name||'')}" placeholder="${esc(v.name)}"></label>
+      <div class="grid2" style="grid-template-columns:1fr 1fr"><label><span class="eyebrow">Cor principal</span><div class="row"><input type="color" data-act="venue-color" data-k="accent" value="${venueAccent()}"><b>${venueAccent()}</b></div></label><label><span class="eyebrow">Cor de apoio</span><div class="row"><input type="color" data-act="venue-color" data-k="accent2" value="${venueAccent2()}"><b>${venueAccent2()}</b></div></label></div>
+      <div><span class="eyebrow">Logo do venue</span><div class="row" style="margin-top:6px"><div class="logobox">${venueLogo(40)}</div><label class="btn ghost" style="cursor:pointer">Enviar logo (PNG ou SVG)<input type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" data-act="venue-logo" hidden></label>${cfg.logo?`<button class="btn ghost" data-act="venue-logo-clear">Remover</button>`:''}</div><div class="note" style="margin-top:6px">Use o arquivo oficial do manual de marca. Sem arquivo, o nome aparece em texto.</div></div>
+      <div class="note">${esc(v.notes)}</div></div>
+    <div class="panel" style="gap:12px"><h2>Marca Eterna</h2><div class="row" style="align-items:center;gap:14px"><div class="brand"><svg width="44" height="44" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:30px">ETERNA</span></div></div>
+      <div class="note">Símbolo: o anel e o ponto, a lente e o instante. Fica pequeno nas telas do convidado ("fotos por Eterna") e grande nas telas da equipe. A marca do venue vem primeiro em tudo que o público vê.</div>
+      <div class="eyebrow">Paleta em uso</div><div class="sws">${sw(venueAccent(),'principal')}${sw(venueAccent2(),'apoio')}${sw(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),'fundo')}${sw(getComputedStyle(document.documentElement).getPropertyValue('--fg').trim(),'texto')}</div>
+      <div class="eyebrow">Assinatura</div>${cobrand(30)}</div>
+  </div>
+  <h2 style="margin-top:4px">Como aparece</h2>
+  <div class="grid2">
+    <div class="panel"><div class="eyebrow">Entrada da equipe</div><div class="pv login-pv"><div class="brand" style="justify-content:center"><svg width="26" height="26" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:22px">ETERNA</span></div><div style="display:flex;justify-content:center;margin-top:8px">${venueLogo(22)}</div><div class="pv-input">seu@email.com</div><div class="pv-btn">Receber código</div></div></div>
+    <div class="panel"><div class="eyebrow">Quiosque e galeria do convidado</div><div class="pv kiosk-pv"><div style="display:flex;justify-content:center">${venueLogo(34)}</div><div class="pv-h">${esc(v.tagline)}</div><div class="pv-face"><span></span></div><div class="pv-by">${cobrand(18)}</div></div></div>
+    <div class="panel"><div class="eyebrow">Recibo</div><div class="receipt">${esc(venueName().toUpperCase())} · ETERNA\nVenda E001 · Sessão LP6ZM8K74\nVendedor: Thais\nPacote 2 fotos                       R$ 120,00\nTOTAL                               R$ 120,00\nSuas fotos: eterna.photo/g/LP6ZM8K74 · 60 dias</div></div>
+    <div class="panel"><div class="eyebrow">Pontos de captura neste venue</div><div class="chips">${DATA.points.map(p=>`<span class="pill neutral">${esc(p.name)}</span>`).join('')}</div><div class="note" style="margin-top:8px">Os nomes dos pontos, pacotes e fundos mudam por venue; o fluxo é o mesmo.</div></div>
+  </div>`;
+}
+
 // ---------- acesso: login por e-mail e código, permissão CRUD por módulo ----------
 const MODULES=[
  ['set','Set e fotos',['set','importar','ajustes']],
@@ -1156,7 +1236,7 @@ const MODULES=[
  ['galeria','Galeria do convidado',['convidado']],
  ['qualidade','Qualidade e IA',['revisao','treino']],
  ['relatorios','Relatórios',['fluxo','semana','vendas','alertas']],
- ['configuracao','Configuração do set',['chroma','vestiario','escala','repo']],
+ ['configuracao','Configuração',['chroma','vestiario','escala','repo','identidade']],
  ['catalogo','Catálogo e preços',['catalogo']],
  ['estoque','Estoque e bandeiras',['estoque','bandeiras']],
  ['usuarios','Usuários e permissões',['usuarios']],
@@ -1198,7 +1278,7 @@ function allowedViews(){return VIEWS.map(v=>v[0]).filter(v=>v!=='perfis'&&canVie
 function isBare(){const u=state.user;if(!u)return true;const mods=MODULES.filter(([m])=>can(m,'r')).map(([m])=>m);return mods.length>0&&mods.every(m=>m==='galeria'||m==='quiosque');}
 function homeView(){const av=allowedViews();if(!av.length)return 'entrar';if(isBare())return av[0];return 'perfis';}
 function roleViews(){return VIEWS.filter(v=>v[0]!=='perfis'&&canView(v[0]));}
-const WRITE_OPS={save:'u',note:'u',score:'u',tag:'u','m-rate':'u','m-adjust':'u','m-reset':'u','m-discard':'u','caixa-confirm':'c','caixa-pay':'c','caixa-reprint':'c','caixa-mode':'u','caixa-tef':'u','checkout-pick':'u','checkout-lost':'u','checkout-seller':'u','checkout-step':'u','checkout-face':'u','checkout-selfie':'u','checkout-next-guest':'u','fila-add':'u','fila-bg':'u','fila-send':'u','set-open':'c','set-cancel':'d','set-next':'c','ing-start':'c','ing-stop':'u','ing-reset':'d','imp-files':'c','postvisit-all':'c',price:'u','price-reset':'u','repo-set':'u','repo-toggle':'u',reset:'d','sales-cancel':'d','stock-swap':'u','flag-state':'u','flag-point':'u','train-v':'u','train-r':'u','train-next':'u','train-import':'c','kiosk-buy':'c','aj-open':'u','aj-step':'u','aj-reset':'u','aj-discard':'u','di-add':'c','di-done':'u','user-new':'c','user-save':'u','user-del':'d','user-perm':'u','user-active':'u'};
+const WRITE_OPS={save:'u',note:'u',score:'u',tag:'u','m-rate':'u','m-adjust':'u','m-reset':'u','m-discard':'u','caixa-confirm':'c','caixa-pay':'c','caixa-reprint':'c','caixa-mode':'u','caixa-tef':'u','checkout-pick':'u','checkout-lost':'u','checkout-seller':'u','checkout-step':'u','checkout-face':'u','checkout-selfie':'u','checkout-next-guest':'u','fila-add':'u','fila-bg':'u','fila-send':'u','set-open':'c','set-cancel':'d','set-next':'c','ing-start':'c','ing-stop':'u','ing-reset':'d','imp-files':'c','postvisit-all':'c',price:'u','price-reset':'u','repo-set':'u','repo-toggle':'u',reset:'d','sales-cancel':'d','stock-swap':'u','flag-state':'u','flag-point':'u','train-v':'u','train-r':'u','train-next':'u','train-import':'c','kiosk-buy':'c','venue-pick':'u','venue-reset':'u','venue-logo-clear':'u','aj-open':'u','aj-step':'u','aj-reset':'u','aj-discard':'u','di-add':'c','di-done':'u','user-new':'c','user-save':'u','user-del':'d','user-perm':'u','user-active':'u'};
 function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;const m=MODULE_OF[state.view];if(!m)return true;if(can(m,op))return true;toast(`Sem permissão para ${OPS.find(o=>o[0]===op)[1].toLowerCase()} em ${MODULES.find(x=>x[0]===m)[1]}`);return false;}
 
 state.user=null;state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};
@@ -1209,7 +1289,7 @@ function logout(){camStop();state.user=null;state.ajustes={key:null,card:null,ph
 function sendCode(){const e=normEmail(state.auth.email);if(!emailOk(e)){state.auth.err='Digite um e-mail válido.';render();return;}const code=String(Math.floor(100000+Math.random()*900000));state.auth.pending={email:e,code,at:now().toISOString(),exp:new Date(now().getTime()+10*60e3).toISOString()};state.auth.step='code';state.auth.code='';state.auth.err=null;render();const i=$('[data-act="login-code"]');if(i)i.focus();}
 function checkCode(){const p=state.auth.pending;const c=(state.auth.code||'').replace(/\D/g,'');if(!p){state.auth.step='email';render();return;}if(new Date(p.exp)<now()){state.auth.err='Código expirado. Peça outro.';state.auth.step='email';state.auth.pending=null;render();return;}if(c!==p.code){state.auth.err='Código incorreto.';render();return;}login(p.email);}
 function vEntrar(){
-  const a=state.auth;const logo=`<div class="brand" style="justify-content:center"><svg width="34" height="34" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:28px">ETERNA</span></div><div class="note" style="text-align:center">Tour do Maracanã</div>`;
+  const a=state.auth;const logo=`<div class="brand" style="justify-content:center"><svg width="34" height="34" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span style="font-size:28px">ETERNA</span></div><div style="display:flex;justify-content:center;margin-top:4px">${venueLogo(24)}</div>`;
   if(a.step==='code'&&a.pending){const p=a.pending;const u=USERS[p.email];
     return `<div class="enter login">${logo}
     <form class="panel" data-form="login-code"><h2>Digite o código</h2><div class="note">Enviado para <b>${esc(p.email)}</b>. Vale por 10 minutos.</div>
@@ -1364,7 +1444,7 @@ function vDiario(){
   </div>`;
 }
 
-const VIEWFN={perfis:vPerfis,entrar:vEntrar,usuarios:vUsuarios,ajustes:vAjustes,diario:vDiario,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const VIEWFN={perfis:vPerfis,entrar:vEntrar,usuarios:vUsuarios,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,fluxo:vFluxo,checkout:vCheckout,'vendas-lista':vVendasLista,set:vSet,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,quiosque:vQuiosque,convidado:vConvidado,revisao:vRevisao,semana:vSemana,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   const u=state.user;if(!u)state.view='entrar';
   if(u&&state.view!=='entrar'&&!canView(state.view))state.view=homeView();
@@ -1428,6 +1508,9 @@ document.addEventListener('click',e=>{
     case 'di-filter':state.diario.filter=d.k;render();break;
     case 'di-add':diarioAdd();break;
     case 'di-done':diarioSet(d.id,{status:'resolvido',resolvedBy:state.user.email,resolvedAt:now().toISOString()});toast('Resolvido');break;
+    case 'venue-pick':VENUE_CFG={...VENUE_CFG0(),id:d.id,logo:null};saveVenue();toast('Identidade: '+venueName());render();break;
+    case 'venue-reset':VENUE_CFG={...VENUE_CFG0(),id:VENUE_CFG.id};saveVenue();render();break;
+    case 'venue-logo-clear':VENUE_CFG.logo=null;saveVenue();render();break;
     case 'user-new':state.users.draft={email:'',email0:null,name:'',preset:'foto',perms:presetPerms('foto'),active:true};render();break;
     case 'user-sel':userDraft(d.e);render();break;
     case 'user-cancel':state.users.draft=null;render();break;
@@ -1521,8 +1604,8 @@ document.addEventListener('click',e=>{
     case 'stock-swap':SIM.stock['Caixa 1']=200;log('Rolo trocado no Caixa 1');saveSim();toast('Rolo do Caixa 1 zerado em 200');render();break;
   }
 });
-document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train-note'){state.train.note=e.target.value;return;}if(a==='login-email'){state.auth.email=e.target.value;return;}if(a==='login-code'){state.auth.code=e.target.value;if(e.target.value.replace(/\D/g,'').length===6)checkCode();return;}if(a==='user-field'){if(state.users.draft)state.users.draft[e.target.dataset.k]=e.target.value;return;}if(a==='di-text'){state.diario.text=e.target.value;return;}if(a==='aj-range'){if(can('set','u'))ajSet(state.ajustes.photo,e.target.dataset.k,+e.target.value);return;}if(a==='user-q'){state.users.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="user-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
-document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr){dr.preset=e.target.value;if(e.target.value!=='custom')dr.perms=presetPerms(e.target.value);render();}return;}if(a==='user-perm'){const dr=state.users.draft;if(!can('usuarios','u')){e.target.checked=!e.target.checked;return;}if(dr){const m=e.target.dataset.m,op=e.target.dataset.op;dr.perms[m]=dr.perms[m]||{...NONE};dr.perms[m][op]=e.target.checked;if(op!=='r'&&e.target.checked)dr.perms[m].r=true;if(op==='r'&&!e.target.checked){dr.perms[m]={...NONE};}dr.preset='custom';render();}return;}if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
+document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train-note'){state.train.note=e.target.value;return;}if(a==='login-email'){state.auth.email=e.target.value;return;}if(a==='login-code'){state.auth.code=e.target.value;if(e.target.value.replace(/\D/g,'').length===6)checkCode();return;}if(a==='user-field'){if(state.users.draft)state.users.draft[e.target.dataset.k]=e.target.value;return;}if(a==='di-text'){state.diario.text=e.target.value;return;}if(a==='venue-field'){VENUE_CFG[e.target.dataset.k]=e.target.value||null;saveVenue();return;}if(a==='venue-color'){VENUE_CFG[e.target.dataset.k]=e.target.value;saveVenue();const b=e.target.parentElement.querySelector('b');if(b)b.textContent=e.target.value;return;}if(a==='aj-range'){if(can('set','u'))ajSet(state.ajustes.photo,e.target.dataset.k,+e.target.value);return;}if(a==='user-q'){state.users.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="user-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
+document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='venue-logo'){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>600*1024){toast('Logo acima de 600 KB: exporte menor');return;}const rd=new FileReader();rd.onload=()=>{VENUE_CFG.logo=rd.result;saveVenue();toast('Logo aplicada');render();};rd.readAsDataURL(f);return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr){dr.preset=e.target.value;if(e.target.value!=='custom')dr.perms=presetPerms(e.target.value);render();}return;}if(a==='user-perm'){const dr=state.users.draft;if(!can('usuarios','u')){e.target.checked=!e.target.checked;return;}if(dr){const m=e.target.dataset.m,op=e.target.dataset.op;dr.perms[m]=dr.perms[m]||{...NONE};dr.perms[m][op]=e.target.checked;if(op!=='r'&&e.target.checked)dr.perms[m].r=true;if(op==='r'&&!e.target.checked){dr.perms[m]={...NONE};}dr.preset='custom';render();}return;}if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-email')sendCode();if(f==='login-code')checkCode();});
 document.addEventListener('keydown',e=>{if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&MODAL.list.length>1&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){showModal(MODAL.i-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}if(e.key==='Enter'&&e.target.id==='gcode'){state.guest.code=e.target.value.trim().toUpperCase();render();}});
@@ -1541,7 +1624,7 @@ function draft(){const s=DATA.sampled.find(x=>x.card===state.session);if(!state.
 async function save(){if(!state.db)return;const r=draft();const body={...r,updatedAt:new Date().toISOString()};try{await state.db.doc('reviews/'+r.card).set(body);state.reviews[r.card]=body;toast('Sessão salva');render();}catch(err){toast('Não salvou: '+(err&&err.code||'erro'));}}
 
 // ---------- boot ----------
-sessionLoad();if(!readHash()){state.view=state.user?(canView(state.view)&&state.view!=='entrar'?state.view:homeView()):'entrar';}
+applyVenue();sessionLoad();if(!readHash()){state.view=state.user?(canView(state.view)&&state.view!=='entrar'?state.view:homeView()):'entrar';}
 window.addEventListener('hashchange',()=>{if(readHash()){render();return;}const h=location.hash.replace(/^#/,'');if(!state.user){render();return;}if(!h){go(homeView());return;}if(VIEWFN[h.split('/')[0]])toast('Sem acesso a esta tela');render();});
 const openCard=Object.keys(SIM.sessions).find(c=>SIM.sessions[c].status==='aberta');
 if(openCard){state.set.open=openCard;state.set.point=SIM.sessions[openCard].point||state.set.point;startArrivals(openCard,SIM.sessions[openCard].key);}
@@ -1553,6 +1636,7 @@ setInterval(()=>{if(state.view==='set'&&state.set.open){const t=$('#timer');cons
     db.collection('treino').onSnapshot(snap=>{snap.docs.forEach(d=>{if(d.exists){const x=d.data();if(x&&x.id)state.train.labels[x.id]=x;}});try{localStorage.setItem('eterna.treino.v1',JSON.stringify(state.train.labels))}catch(e){}render();},err=>{console.warn('db',err)});
     db.collection('usuarios').onSnapshot(snap=>{let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.email)return;if(x.deleted){if(USERS[x.email]){delete USERS[x.email];ch=true;}return;}USERS[x.email]=x;ch=true;});if(ch){try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}if(state.user&&!state.user.guest){const u=userFor(state.user.email);if(!u){logout();toast('Seu acesso foi removido');return;}state.user=u;}render();}},err=>{console.warn('db',err)});
     db.collection('diario').onSnapshot(snap=>{SIM.diario=SIM.diario||[];let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.id)return;const i=SIM.diario.findIndex(y=>y.id===x.id);if(i<0)SIM.diario.unshift(x);else SIM.diario[i]=x;ch=true;});if(ch){SIM.diario.sort((a,b)=>b.at.localeCompare(a.at));saveSim();render();}},err=>{console.warn('db',err)});
+    db.doc('config/venue').onSnapshot(d=>{if(d&&d.exists){const x=d.data();if(x&&x.id&&VENUES[x.id]){VENUE_CFG=Object.assign(VENUE_CFG0(),x);try{localStorage.setItem('eterna.venue.v1',JSON.stringify(VENUE_CFG))}catch(e){}applyVenue();render();}}},err=>{console.warn('db',err)});
     db.collection('reviews').onSnapshot(snap=>{const m={};snap.docs.forEach(d=>{if(d.exists)m[d.id]=d.data()});state.reviews=m;render();},err=>{console.warn('db',err)});
     render();
   }catch(e){console.warn('db',e)}
