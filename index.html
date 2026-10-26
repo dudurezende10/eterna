@@ -233,7 +233,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
   <aside class="rail">
     <button class="brand" data-act="view" data-v="perfis" aria-label="Eterna, início"><svg width="26" height="26" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span>ETERNA</span></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v15 · 26/10 14:45</span></div>
+    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v16 · 26/10 15:05</span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -716,6 +716,17 @@ function ingQueue(){
   return q;
 }
 function ingStart(queue){const g=state.ing;if(g.timer)clearInterval(g.timer);g.queue=queue||ingQueue();g.total=g.queue.length;g.running=true;g.timer=setInterval(ingTick,650);render();}
+function ingPush(items){const g=state.ing;g.queue.push(...items);g.total+=items.length;if(!g.running){g.running=true;g.timer=setInterval(ingTick,650);}}
+// agente do ponto: programa local que vigia o cartão e entrega as fotos (agente/eterna-agente.py)
+state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:'http://127.0.0.1:8765',tried:false,err:null};
+async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on)return;
+  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;if(!was){toast('Agente do ponto conectado');render();}
+    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];ev.events.forEach(e=>{if(e.type==='photo'){const id='ag_'+e.id;UP[id]={src:a.url+e.thumb,name:e.name};items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true});}else if(e.type==='dup'){const id='ag_'+e.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};items.push({id,kind:'dup',real:true});}});a.cursor=ev.next;ingPush(items);state.ing.lastReal=Date.now();render();}
+    else if(state.ing.cur&&state.ing.lastReal&&!state.ing.running&&Date.now()-state.ing.lastReal>45000){state.ing.n.auto++;ingClose('pausa de 45 s sem foto nova');state.ing.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:'pausa de 45 s sem foto nova no cartão'});render();}
+    if(a.card!==(st.card||null)){a.card=st.card;render();}
+  }catch(e){if(a.on){a.on=false;render();}a.err=String(e&&e.message||e);a.tried=true;}
+}
+setInterval(agentPoll,2500);
 function ingStop(){const g=state.ing;if(g.timer)clearInterval(g.timer);g.timer=null;g.running=false;}
 function ingClose(how){const g=state.ing;const c=g.cur;g.cur=null;if(!c||!c.photos.length)return;
   const pt=DATA.points.find(p=>p.id===state.imp.point);const card='LP'+Math.random().toString(36).slice(2,9).toUpperCase();
@@ -730,12 +741,13 @@ function ingClose(how){const g=state.ing;const c=g.cur;g.cur=null;if(!c||!c.phot
 const srcName=()=>state.imp.mode==='cartao'?'cartão':state.imp.mode==='5g'?'5G':'Wi‑Fi';
 function ingTick(){
   const g=state.ing;const it=g.queue.shift();
-  if(!it){ingClose('fim da leva');ingStop();render();return;}
+  if(!it){if(state.agent.on){ingStop();render();return;}ingClose('fim da leva');ingStop();render();return;}
   if(it.kind==='photo'){
-    if(!g.cur)g.cur={photos:[],flags:{},start:now().toISOString()};
+    if(it.t&&g.cur&&g.cur.lastT&&it.t-g.cur.lastT>45){const gap=Math.round(it.t-g.cur.lastT);g.n.auto++;ingClose(`pausa de ${gap>120?Math.round(gap/60)+' min':gap+' s'} entre cliques`);g.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:`pausa de ${gap>120?Math.round(gap/60)+' min':gap+' s'} entre o último clique e este`});}
+    if(!g.cur)g.cur={photos:[],flags:{},start:now().toISOString()};if(it.t)g.cur.lastT=it.t;
     g.cur.photos.push({id:it.id,sold:0,flag:it.flag,conf:it.conf});if(it.flag)g.cur.flags[it.flag]=(g.cur.flags[it.flag]||0)+1;
     g.n.arrived++;if(it.flag){g.n.flagged++;if(it.conf<70)g.n.unsure++;}
-    const mb=(6.8+(h32(it.id)%22)/10).toFixed(1).replace('.',',');
+    const mb=(it.size?it.size/1e6:6.8+(h32(it.id)%22)/10).toFixed(1).replace('.',',');
     g.feed.unshift({k:'ok',t:`${fileName(it.id)} chegou por ${srcName()} · ${mb} MB · 0,${5+(h32(it.id)%4)} s`,s:it.flag?`bandeira: ${it.flag} ${it.conf}%${it.conf<70?' · incerta, vai para a revisão':''}`:'sem bandeira na foto'});
   }else if(it.kind==='dup'){g.n.dup++;g.feed.unshift({k:'dup',t:`${fileName(it.id)} chegou de novo (cartão relido)`,s:'mesmo arquivo: ignorada, nada duplica'});}
   else if(it.kind==='skip'){g.feed.unshift({k:'dup',t:`${fileName(it.id)} é um quadro preto`,s:'não é mais separador; ignorado'});}
@@ -758,6 +770,9 @@ function vImportar(){
   </div></div>`;
   return `<div class="head"><div><div class="eyebrow">Operação · ${esc(name)} · ${esc(pt.name)}</div><h1>Ingestão automática</h1></div><div class="sub">A foto sai da câmera e aparece na fila da loja sem o fotógrafo tocar no computador. Cartão, Wi‑Fi e 5G se comportam igual: o servidor do ponto recebe, ignora o que já chegou, separa os grupos sem foto preta (pausa entre cliques e troca de rostos), reconhece a bandeira e avisa só se algo ficar pendente.</div></div>
   ${picker}
+  <div class="panel" style="background:${state.agent.on?'var(--good-bg)':'var(--surface)'}"><div class="head"><div><div class="eyebrow">Leitor automático · agente do ponto</div><h2 style="margin-top:4px">${state.agent.on?`Conectado${state.agent.card?' · cartão '+esc(state.agent.card)+' inserido':' · aguardando cartão'}`:'Não encontrado neste computador'}</h2></div>${state.agent.on?`<span class="note">${state.agent.copied} fotos baixadas · ${state.agent.dups} repetidas ignoradas · pasta ~/Eterna/inbox</span>`:''}</div>
+    ${state.agent.on?'<div class="note">Insira o cartão e não faça mais nada. O agente copia cada foto nova para o computador, ignora o que já tem, e ela aparece aqui embaixo e nas sessões sozinha. Grupos fecham por pausa entre cliques.</div>':`<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
+  </div>
   <div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?'Recebendo...':`Simular uma leva de ${esc(name)} por ${srcName()}`}</button>${g.running?'<button class="btn ghost" data-act="ing-stop">Parar</button>':''}<label class="btn ghost" style="cursor:pointer">Testar com fotos suas<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>${g.n.arrived||g.done.length?'<button class="btn ghost" data-act="ing-reset">Limpar esta leva</button>':''}</div>
   <div class="twocol" style="margin-top:4px">
     <div class="panel"><h2>O que o fotógrafo vê</h2>${phone}</div>
