@@ -276,7 +276,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="brand" data-act="role-home" aria-label="Eterna, início"><svg width="26" height="26" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.5"></circle><circle cx="20" cy="20" r="5.5" fill="currentColor"></circle></svg><span>ETERNA</span></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v21 · 26/10 17:25</span></div>
+    <div class="venue"><span>Venue</span><b>Tour do Maracanã</b><span id="venue-sub"></span><span style="margin-top:6px">Eterna v22 · 26/10 17:35</span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -743,8 +743,8 @@ function ingPush(items){const g=state.ing;g.queue.push(...items);g.total+=items.
 // agente do ponto: programa local que vigia o cartão e entrega as fotos (agente/eterna-agente.py)
 state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:'http://127.0.0.1:8765',tried:false,err:null};
 async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on)return;
-  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;if(!was){toast('Agente do ponto conectado');render();}
-    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];ev.events.forEach(e=>{if(e.type==='photo'){const id='ag_'+e.id;UP[id]={src:a.url+e.thumb,name:e.name};items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true});}else if(e.type==='dup'){const id='ag_'+e.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};items.push({id,kind:'dup',real:true});}});a.cursor=ev.next;ingPush(items);state.ing.lastReal=Date.now();render();}
+  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;if(!was){toast('Agente do ponto conectado');render();}
+    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];ev.events.forEach(e=>{if(e.type==='photo'){const id='ag_'+e.id;UP[id]={src:a.url+e.thumb,name:e.name};items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){const id='ag_'+e.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};items.push({id,kind:'dup',real:true});}});a.cursor=ev.next;ingPush(items);state.ing.lastReal=Date.now();render();}
     else if(state.ing.cur&&state.ing.lastReal&&!state.ing.running&&Date.now()-state.ing.lastReal>45000){state.ing.n.auto++;ingClose('pausa de 45 s sem foto nova');state.ing.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:'pausa de 45 s sem foto nova no cartão'});render();}
     if(a.card!==(st.card||null)){a.card=st.card;render();}
   }catch(e){if(a.on){a.on=false;render();}a.err=String(e&&e.message||e);a.tried=true;}
@@ -794,6 +794,7 @@ function vImportar(){
   return `<div class="head"><div><div class="eyebrow">Operação · ${esc(name)} · ${esc(pt.name)}</div><h1>Ingestão automática</h1></div></div>
   ${picker}
   <div class="panel" style="background:${state.agent.on?'var(--good-bg)':'var(--surface)'}"><div class="head"><div><div class="eyebrow">Leitor automático · agente do ponto</div><h2 style="margin-top:4px">${state.agent.on?`Conectado${state.agent.card?' · cartão '+esc(state.agent.card)+' inserido':' · aguardando cartão'}`:'Não encontrado neste computador'}</h2></div>${state.agent.on?`<span class="note">${state.agent.copied} fotos baixadas · ${state.agent.dups} repetidas ignoradas · pasta ~/Eterna/inbox</span>`:''}</div>
+    ${state.agent.on&&state.agent.ftp&&state.agent.ftp.port?`<div class="row" style="margin-top:8px"><span class="pill good">FTP ligado</span><span class="note">Servidor <b>${esc(state.agent.ftp.ip)}</b> · porta <b>${state.agent.ftp.port}</b> · usuários ${state.agent.ftp.users.map(esc).join(', ')} · ${state.agent.ftp.received} fotos recebidas${state.agent.ftp.last_user?' · última de '+esc(state.agent.ftp.last_user):''}</span></div>`:''}
     ${state.agent.on?'':`<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
   </div>
   <div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?'Recebendo...':`Simular leva · ${esc(name)} · ${srcName()}`}</button>${g.running?'<button class="btn ghost" data-act="ing-stop">Parar</button>':''}<label class="btn ghost" style="cursor:pointer">Testar com fotos suas<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>${g.n.arrived||g.done.length?'<button class="btn ghost" data-act="ing-reset">Limpar esta leva</button>':''}</div>

@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Eterna · agente do ponto de captura.
+"""Eterna · agente do ponto.
 
-Vigia cartões de memória inseridos no computador, baixa as fotos novas para a
-pasta do Eterna (~/Eterna/inbox) e entrega para o app em eterna.photo, que
-mostra tudo chegando sozinho na tela Ingestão.
+1) Vigia cartões de memória inseridos no computador e baixa as fotos novas.
+2) Recebe fotos por FTP (Canon Content Transfer Professional no celular, ou a
+   câmera direto por Wi-Fi) na mesma pasta.
+Tudo cai em ~/Eterna/inbox e aparece sozinho na tela Ingestão de eterna.photo.
 
 Uso: python3 eterna-agente.py        (deixe rodando; Ctrl+C para parar)
+     sudo python3 eterna-agente.py   (para o FTP usar a porta 21 padrão)
+
+Credenciais do FTP ficam em ~/Eterna/ftp.json (criadas na primeira vez) e são
+mostradas na tela ao iniciar.
 
 Só biblioteca padrão. Miniaturas via `sips` no Mac e via Pillow se instalado;
 sem nenhum dos dois, serve o JPG original.
 """
-import hashlib, json, os, shutil, subprocess, sys, threading, time, glob
+import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -19,18 +24,21 @@ HOME = os.path.expanduser("~/Eterna")
 INBOX = os.path.join(HOME, "inbox")
 THUMBS = os.path.join(HOME, "thumbs")
 INDEX = os.path.join(HOME, "index.json")
+FTPCFG = os.path.join(HOME, "ftp.json")
+FTPTMP = os.path.join(HOME, "ftp-tmp")
 EXT = (".jpg", ".jpeg", ".JPG", ".JPEG")
 POLL = 2.0
 
 os.makedirs(INBOX, exist_ok=True)
 os.makedirs(THUMBS, exist_ok=True)
+os.makedirs(FTPTMP, exist_ok=True)
 
 lock = threading.Lock()
 events = []            # [{type, id, name, size, t, card}]
 seen = {}              # hash -> id
 lib = {}               # id -> {file, thumb}  (tudo que já está na inbox)
 cards = {}             # volume path -> hashes já tratados nesta inserção
-state = {"started": time.time(), "card": None, "copied": 0, "dups": 0}
+state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None}}
 
 if os.path.exists(INDEX):
     try:
@@ -103,6 +111,46 @@ def list_volumes():
     return [v for v in vols if os.path.isdir(os.path.join(v, "DCIM"))]
 
 
+def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
+    """Leva um arquivo para a inbox. Devolve 'new', 'dup' ou None."""
+    h = quick_hash(src, st.st_size)
+    with lock:
+        if dedupe_set is not None:
+            if h in dedupe_set:
+                return None             # já tratado nesta inserção
+            dedupe_set.add(h)
+        if h in seen:
+            pid = seen[h]               # repetida: ignorada, mas avisada
+            events.append({"type": "dup", "id": pid, "name": fn, "size": st.st_size,
+                           "t": st.st_mtime, "card": origin, "src": src_kind})
+            state["dups"] += 1
+            return "dup"
+    pid = h[:12]
+    day = time.strftime("%Y-%m-%d", time.localtime(st.st_mtime))
+    ddir = os.path.join(INBOX, day)
+    os.makedirs(ddir, exist_ok=True)
+    dst = os.path.join(ddir, f"{pid}_{fn}")
+    try:
+        if move:
+            shutil.move(src, dst)
+        else:
+            shutil.copy2(src, dst)
+    except Exception as ex:
+        print("erro ao copiar", fn, ex)
+        return None
+    thumb = os.path.join(THUMBS, pid + ".jpg")
+    if not make_thumb(dst, thumb):
+        thumb = dst
+    with lock:
+        seen[h] = pid
+        lib[pid] = {"file": dst, "thumb": thumb}
+        events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
+                       "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb})
+        state["copied"] += 1
+    print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
+    return "new"
+
+
 def scan_card(vol):
     name = os.path.basename(vol.rstrip("/\\")) or vol
     state["card"] = name
@@ -119,43 +167,254 @@ def scan_card(vol):
             # espera o arquivo parar de crescer (câmera ainda gravando)
             if time.time() - st.st_mtime < 2:
                 continue
-            h = quick_hash(src, st.st_size)
-            with lock:
-                done = cards.setdefault(vol, set())
-                if h in done:
-                    continue            # já tratado nesta inserção
-                done.add(h)
-                if h in seen:
-                    pid = seen[h]       # cartão relido: repetida, ignorada (uma vez por inserção)
-                    events.append({"type": "dup", "id": pid, "name": fn, "size": st.st_size,
-                                   "t": st.st_mtime, "card": name})
-                    state["dups"] += 1
-                    dup += 1
-                    continue
-            pid = h[:12]
-            day = time.strftime("%Y-%m-%d", time.localtime(st.st_mtime))
-            ddir = os.path.join(INBOX, day)
-            os.makedirs(ddir, exist_ok=True)
-            dst = os.path.join(ddir, f"{pid}_{fn}")
-            try:
-                shutil.copy2(src, dst)
-            except Exception as ex:
-                print("erro ao copiar", fn, ex)
-                continue
-            thumb = os.path.join(THUMBS, pid + ".jpg")
-            if not make_thumb(dst, thumb):
-                thumb = dst
-            with lock:
-                seen[h] = pid
-                lib[pid] = {"file": dst, "thumb": thumb}
-                events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
-                               "t": st.st_mtime, "card": name, "file": dst, "thumb": thumb})
-                state["copied"] += 1
+            r = ingest_file(src, fn, st, name, "cartao", move=False, dedupe_set=cards.setdefault(vol, set()))
+            if r == "new":
                 new += 1
-            print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)")
+            elif r == "dup":
+                dup += 1
     if new or dup:
         save_index()
         print(f"cartão {name}: {new} novas, {dup} repetidas ignoradas")
+
+
+# ---------------------------------------------------------------- FTP --------
+# Receptor FTP mínimo (só biblioteca padrão) para o Canon Content Transfer
+# Professional e para câmeras com FTP embutido. Modo passivo e ativo, STOR,
+# pastas aceitas e ignoradas (tudo cai na inbox por data).
+
+PHOTOGRAPHERS = ["carlos", "marinara", "samuel", "yago", "marcio", "dudu"]
+
+
+def load_ftp_cfg():
+    cfg = None
+    if os.path.exists(FTPCFG):
+        try:
+            cfg = json.load(open(FTPCFG))
+        except Exception:
+            cfg = None
+    if not cfg or not cfg.get("users"):
+        alphabet = string.ascii_lowercase + string.digits
+        for c in "lo01":
+            alphabet = alphabet.replace(c, "")
+        cfg = {"users": {u: "".join(random.choice(alphabet) for _ in range(8)) for u in PHOTOGRAPHERS}}
+        json.dump(cfg, open(FTPCFG, "w"), indent=2)
+    return cfg
+
+
+def lan_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return "127.0.0.1"
+
+
+class FTPSession(threading.Thread):
+    def __init__(self, conn, addr, users):
+        super().__init__(daemon=True)
+        self.conn, self.addr, self.users = conn, addr, users
+        self.user = None
+        self.ok = False
+        self.cwd = "/"
+        self.pasv = None       # socket de escuta (modo passivo)
+        self.port_addr = None  # (ip, porta) do modo ativo
+        self.rest = 0
+
+    def send(self, line):
+        try:
+            self.conn.sendall((line + "\r\n").encode("utf-8", "replace"))
+        except Exception:
+            pass
+
+    def data_conn(self):
+        if self.pasv:
+            self.pasv.settimeout(20)
+            d, _ = self.pasv.accept()
+            self.pasv.close()
+            self.pasv = None
+            return d
+        if self.port_addr:
+            d = socket.create_connection(self.port_addr, timeout=20)
+            self.port_addr = None
+            return d
+        return None
+
+    def run(self):
+        self.send("220 Eterna FTP pronto")
+        f = self.conn.makefile("rb")
+        try:
+            while True:
+                raw = f.readline()
+                if not raw:
+                    break
+                line = raw.decode("utf-8", "replace").strip()
+                if not line:
+                    continue
+                parts = line.split(" ", 1)
+                cmd = parts[0].upper()
+                arg = parts[1] if len(parts) > 1 else ""
+                self.handle(cmd, arg)
+                if cmd == "QUIT":
+                    break
+        except Exception as ex:
+            print("ftp sessão:", ex)
+        finally:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+
+    def handle(self, cmd, arg):
+        if cmd == "USER":
+            self.user = arg.strip().lower()
+            self.send("331 Senha")
+            return
+        if cmd == "PASS":
+            if self.user in self.users and self.users[self.user] == arg:
+                self.ok = True
+                with lock:
+                    state["ftp"]["last_user"] = self.user
+                print(f"ftp: {self.user} conectado de {self.addr[0]}")
+                self.send("230 Bem-vindo ao Eterna, " + self.user)
+            else:
+                print(f"ftp: login recusado para '{self.user}' de {self.addr[0]}")
+                self.send("530 Usuário ou senha incorretos")
+            return
+        if cmd == "SYST":
+            self.send("215 UNIX Type: L8"); return
+        if cmd == "FEAT":
+            for l in ("211-Recursos", " UTF8", " PASV", " EPSV", " REST STREAM", "211 Fim"):
+                self.send(l)
+            return
+        if cmd in ("OPTS", "NOOP"):
+            self.send("200 OK"); return
+        if cmd == "QUIT":
+            self.send("221 Até logo"); return
+        if not self.ok:
+            self.send("530 Faça login"); return
+        if cmd in ("PWD", "XPWD"):
+            self.send(f'257 "{self.cwd}"'); return
+        if cmd in ("CWD", "XCWD"):
+            a = arg.strip() or "/"
+            self.cwd = a if a.startswith("/") else (self.cwd.rstrip("/") + "/" + a)
+            self.send("250 OK"); return
+        if cmd in ("CDUP", "XCUP"):
+            self.cwd = "/" + "/".join(self.cwd.strip("/").split("/")[:-1])
+            self.send("250 OK"); return
+        if cmd in ("MKD", "XMKD"):
+            self.send(f'257 "{arg}" criada'); return
+        if cmd == "TYPE":
+            self.send("200 OK"); return
+        if cmd == "REST":
+            try:
+                self.rest = int(arg)
+            except Exception:
+                self.rest = 0
+            self.send("350 OK"); return
+        if cmd in ("PASV", "EPSV"):
+            if self.pasv:
+                self.pasv.close()
+            self.pasv = socket.socket()
+            self.pasv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.pasv.bind(("0.0.0.0", 0))
+            self.pasv.listen(1)
+            port = self.pasv.getsockname()[1]
+            if cmd == "EPSV":
+                self.send(f"229 Modo passivo (|||{port}|)")
+            else:
+                ip = self.conn.getsockname()[0].replace(".", ",")
+                self.send(f"227 Modo passivo ({ip},{port // 256},{port % 256})")
+            return
+        if cmd == "PORT":
+            p = arg.split(",")
+            self.port_addr = (".".join(p[:4]), int(p[4]) * 256 + int(p[5]))
+            self.send("200 OK"); return
+        if cmd == "EPRT":
+            p = arg.split("|")
+            self.port_addr = (p[2], int(p[3]))
+            self.send("200 OK"); return
+        if cmd in ("LIST", "NLST", "MLSD"):
+            d = self.data_conn()
+            self.send("150 Lista")
+            if d:
+                d.close()
+            self.send("226 OK"); return
+        if cmd == "SIZE":
+            self.send("550 Sem tamanho"); return
+        if cmd in ("DELE", "RMD", "RNFR", "RNTO", "RETR"):
+            self.send("550 Não permitido"); return
+        if cmd == "STOR":
+            name = os.path.basename(arg.strip().replace("\\", "/")) or f"foto_{int(time.time())}.jpg"
+            d = self.data_conn()
+            if not d:
+                self.send("425 Abra a conexão de dados (modo passivo)"); return
+            self.send("150 Pode enviar")
+            tmpdir = os.path.join(FTPTMP, self.user)
+            os.makedirs(tmpdir, exist_ok=True)
+            tmp = os.path.join(tmpdir, name)
+            size = 0
+            try:
+                with open(tmp, "ab" if self.rest else "wb") as out:
+                    while True:
+                        chunk = d.recv(256 * 1024)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        size += len(chunk)
+            finally:
+                d.close()
+            self.rest = 0
+            st = os.stat(tmp)
+            if name.lower().endswith((".jpg", ".jpeg")):
+                r = ingest_file(tmp, name, st, self.user, "ftp", move=True)
+                if r:
+                    save_index()
+                with lock:
+                    state["ftp"]["received"] += 1
+            else:
+                print(f"ftp: {name} recebido ({size/1e6:.1f} MB), não é JPG; guardado em {tmp}")
+            self.send(f"226 Recebido {name}")
+            return
+        self.send("502 Comando não suportado: " + cmd)
+
+
+def ftp_server():
+    cfg = load_ftp_cfg()
+    users = cfg["users"]
+    srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    port = None
+    for p in (21, 2121):
+        try:
+            srv.bind(("0.0.0.0", p))
+            port = p
+            break
+        except Exception:
+            continue
+    if port is None:
+        print("FTP: não consegui abrir as portas 21 nem 2121")
+        return
+    srv.listen(8)
+    ip = lan_ip()
+    with lock:
+        state["ftp"].update({"port": port, "ip": ip, "users": sorted(users)})
+    print(f"  FTP ligado em:     {ip}  porta {port}" + ("" if port == 21 else "  (porta 21 pede sudo; use 2121 no app)"))
+    print("  usuários do FTP (senhas em ~/Eterna/ftp.json):")
+    for u, pw in users.items():
+        print(f"     {u:10s} senha {pw}")
+    print()
+    while True:
+        try:
+            conn, addr = srv.accept()
+            FTPSession(conn, addr, users).start()
+        except Exception as ex:
+            print("ftp:", ex)
 
 
 def watcher():
@@ -221,9 +480,9 @@ class H(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         if u.path == "/status":
             with lock:
-                return self.js({"ok": True, "agent": "eterna-agente", "version": 1, "card": state["card"],
+                return self.js({"ok": True, "agent": "eterna-agente", "version": 2, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
-                                "inbox": INBOX, "platform": sys.platform})
+                                "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"]})
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
             with lock:
@@ -248,8 +507,10 @@ def main():
     print("Eterna · agente do ponto")
     print(f"  fotos baixadas em: {INBOX}")
     print(f"  escutando em:      http://127.0.0.1:{PORT}")
-    print("  insira o cartão. Ctrl+C para parar.\n")
     threading.Thread(target=watcher, daemon=True).start()
+    threading.Thread(target=ftp_server, daemon=True).start()
+    time.sleep(0.4)
+    print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")
     try:
         ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
     except KeyboardInterrupt:
