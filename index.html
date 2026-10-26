@@ -179,6 +179,21 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .bg .n{padding:8px 10px;font-size:13px;display:flex;flex-direction:column;gap:2px}
 .bg[aria-pressed="true"]{border-color:var(--accent)}
 .phone{width:390px;max-width:100%;margin:0 auto;border:1px solid var(--line);border-radius:28px;overflow:hidden;background:var(--surface);box-shadow:0 10px 40px rgba(0,0,0,.12)}
+.aicard{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:10px;padding:14px;background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
+.aiprev{position:relative;aspect-ratio:4/5;border-radius:6px;overflow:hidden;background:#222 center/cover no-repeat;flex:0 0 auto}
+.aiprev.big{width:100%}
+.aiyou{position:absolute;right:10px;bottom:10px;width:38%;display:flex;flex-direction:column;gap:3px;background:rgba(20,19,17,.72);padding:5px;border-radius:6px;color:#fafaf8;font-size:11px;letter-spacing:.04em}
+.aiyou .ph{cursor:default;border:0;pointer-events:none}
+.aipair{display:inline-flex;gap:3px;align-items:center}.aipair .ph{width:48px;border:0;pointer-events:none}.aipair .aiprev{width:26px}
+.aistripi{display:flex;flex-direction:column;gap:3px;font-size:11px;width:92px;flex:0 0 auto;line-height:1.2}
+.aiprev .aitag{position:absolute;left:8px;top:8px;font-size:11px;letter-spacing:.06em;padding:3px 8px;border-radius:3px;background:rgba(20,19,17,.72);color:#fafaf8}
+.aistrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}.aistrip .aiprev{width:92px}.aistrip .aipair .aiprev{width:26px}
+.aibgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin-top:6px}
+.aibg{display:flex;flex-direction:column;gap:4px;padding:0;border:2px solid transparent;border-radius:6px;background:none;cursor:pointer;text-align:left;color:var(--fg);font:inherit;font-size:12px}
+.aibg img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:4px;display:block}
+.aibg span{padding:0 2px 4px;line-height:1.2}
+.aibg[aria-pressed="true"]{border-color:var(--accent)}
+.aiphotos{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
 .phone .pin{padding:18px 18px 22px;display:flex;flex-direction:column;gap:14px}
 .receipt{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--surface2);padding:16px;border-radius:6px;white-space:pre-wrap;line-height:1.5}
 .qr{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
@@ -345,7 +360,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v31 · 26/10 20:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v32 · 26/10 20:25"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -408,7 +423,7 @@ const poolOf=k=>DATA.sampled.filter(s=>s.key===k).flatMap(s=>s.photos.filter(p=>
 
 // ---------- state ----------
 const state={view:'perfis',person:null,session:null,personDay:null,period:'all',imp:{key:'samuel',point:'campo4',photos:[],sent:0,mode:'cartao',timer:null},revFilter:{key:'all',date:'all'},reviews:{},db:null,
-  set:{point:'campo4',open:null,timer:null},fila:{session:null},caixa:{session:null,pay:'PIX',tef:false,tefStatus:null},guest:{code:'',fav:{}},kiosk:{code:'',step:'code'}};
+  set:{point:'campo4',open:null,timer:null},fila:{session:null},caixa:{session:null,pay:'PIX',tef:false,tefStatus:null},guest:{code:'',fav:{},ai:null},kiosk:{code:'',step:'code'}};
 try{const v=localStorage.getItem('eterna.view');if(v)state.view=v;}catch(e){}
 // a URL com # manda: um link compartilhado abre direto na tela, fotógrafo, dia e período (lido depois de stats existir)
 const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'},diario:[]});
@@ -794,7 +809,37 @@ function vQuiosque(){
 }
 
 // ---------- Convidado ----------
+// ---------- Convidado: fundos de IA (escolhe agora, compra depois) ----------
+function aiBgs(){return DATA.backgrounds;}
+function aiOf(card){SIM.ai=SIM.ai||{};SIM.ai[card]=SIM.ai[card]||{cart:[],bought:[]};return SIM.ai[card];}
+function aiBg(id){return aiBgs().find(b=>b.id===id)||{};}
+function aiPreview(photoId,bgId,big){const b=aiBg(bgId);
+  if(big)return `<div class="aiprev big" style="background-image:url(${b.file||''})"><span class="aitag">Exemplo · ${esc(b.name||'')}</span><div class="aiyou"><div class="ph" style="${phStyle(photoId)}"></div><span>Sua foto</span></div></div>`;
+  return `<div class="aiprev" style="background-image:url(${b.file||''})"></div>`;}
+function aiPair(photoId,bgId){return `<span class="aipair"><span class="ph" style="${phStyle(photoId)}"></span><span class="aiprev" style="background-image:url(${aiBg(bgId).file||''})"></span></span>`;}
+function vGuestAI(s){const g=state.guest;const a=g.ai;const ai=aiOf(s.card);const ph=s.photos.filter(p=>hasImg(p.id));
+  if(!a.photo)a.photo=(ph[0]||{}).id;if(!a.bg)a.bg=aiBgs()[0].id;
+  const inCart=ai.cart.some(x=>x.photo===a.photo&&x.bg===a.bg);const isBought=ai.bought.some(x=>x.photo===a.photo&&x.bg===a.bg);
+  return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← Minhas fotos</button></div><h1>Fundos com IA</h1></div><span class="pill neutral">${aiBgs().length} fundos</span></div>
+  <div class="phone"><div class="pin">
+    ${aiPreview(a.photo,a.bg,true)}
+    <div><div class="eyebrow">1 · Escolha o fundo</div><div class="aibgs">${aiBgs().map(b=>`<button class="aibg" data-act="gai-bg" data-id="${b.id}" aria-pressed="${a.bg===b.id}"><img src="${b.file}" alt=""><span>${esc(b.name)}</span></button>`).join('')}</div></div>
+    <div><div class="eyebrow">2 · Escolha a foto</div><div class="aiphotos">${ph.map(p=>`<button class="ph" data-act="gai-photo" data-id="${p.id}" data-sel="${a.photo===p.id?1:0}" style="${phStyle(p.id)}" aria-label="Usar esta foto"><span class="mark">✓</span></button>`).join('')}</div></div>
+    ${isBought?`<div class="pill good" style="align-self:flex-start">Você já comprou esta combinação</div>`:inCart?`<button class="btn ghost big" data-act="gai-remove" data-photo="${a.photo}" data-bg="${a.bg}">Tirar da minha lista</button>`:`<button class="btn primary big" data-act="gai-add">Guardar para comprar · ${fmtR(priceOf('fundo'))}</button>`}
+    <div class="note">${b2n(ai.cart.length)} na sua lista. Fica salva nesta galeria por 60 dias: dá para comprar agora ou depois, de casa. A IA recorta o seu grupo da foto escolhida e coloca neste fundo, com a luz acertada. Arquivo de 3.000 px.</div>
+    ${ai.cart.length?`<button class="btn ghost big" data-act="gai-close">Ver minha lista e pagar</button>`:''}
+  </div></div>`;}
+function b2n(n){return n===0?'Nenhuma foto':n===1?'1 foto':n+' fotos';}
+function guestAICard(s){const ai=aiOf(s.card);const tot=ai.cart.length*priceOf('fundo');const ph=s.photos.filter(p=>hasImg(p.id));const first=(ph[0]||{}).id;
+  return `<div class="aicard"><div class="row" style="justify-content:space-between;align-items:baseline"><div><div class="eyebrow">Novo</div><h3 style="margin:2px 0 0">Suas fotos com fundos de IA</h3></div><span class="note">${fmtR(priceOf('fundo'))} cada</span></div>
+    <div class="aistrip">${aiBgs().map(b=>`<div class="aistripi">${aiPreview(first,b.id,false)}<span>${esc(b.name)}</span></div>`).join('')}</div>
+    <button class="btn primary big" data-act="gai-open">Escolher fundo</button>
+    ${ai.cart.length?`<div class="cart">${ai.cart.map(x=>`<div class="cartline"><span class="row" style="gap:8px;align-items:center">${aiPair(x.photo,x.bg)}${esc(aiBg(x.bg).name||'')}</span><span class="row" style="gap:8px;align-items:center"><b>${fmtR(priceOf('fundo'))}</b><button class="chip" data-act="gai-remove" data-photo="${x.photo}" data-bg="${x.bg}" aria-label="Remover">✕</button></span></div>`).join('')}<div class="cartline"><span><b>Total</b></span><b>${fmtR(tot)}</b></div></div>
+    <button class="btn primary big" data-act="gai-pay">Pagar agora · ${fmtR(tot)} (Pix ou cartão)</button><div class="note">Ou feche esta página: a lista fica guardada e você paga depois.</div>`:''}
+    ${ai.bought.length?`<div><div class="eyebrow">Compradas com fundo de IA</div><div class="aistrip">${ai.bought.map(x=>aiPair(x.photo,x.bg)).join('')}</div></div>`:''}
+  </div>`;}
 function vConvidado(){
+  const g0=state.guest;if(g0.ai&&g0.code){const s0=sessionObj(g0.code);if(s0)return vGuestAI(s0);}
   const g=state.guest;const s=g.code?sessionObj(g.code):null;
   const phone=inner=>`<div class="phone"><div class="pin">${inner}</div></div>`;
   const gbrand=cobrand(50);
@@ -812,6 +857,7 @@ function vConvidado(){
   ${phone(`<div style="display:flex;justify-content:space-between;align-items:center">${gbrand}<span class="note">${esc(s.card)}</span></div>
   <div><div class="eyebrow">Visita de ${dlabel(s.date)}</div><h2 style="font-size:28px">${esc(venue().tagline)}</h2><div class="note">${bought.size} fotos compradas em alta, download até ${new Date(Date.now()+60*864e5).toLocaleDateString('pt-BR')}. ${left?`As outras ${left} continuam aqui, se você quiser levar.`:''}</div></div>
   ${sim.bg?`<div><div class="eyebrow">Seu fundo</div><img src="${(DATA.backgrounds.find(b=>b.id===sim.bg)||{}).file}" alt="" style="width:100%;border-radius:6px;display:block;margin-top:6px"></div>`:''}
+  ${guestAICard(s)}
   <div style="display:flex;flex-direction:column;gap:10px">${s.photos.map(p=>{const b=bought.has(p.id);return `<div style="position:relative">${photoBtn(p,{act:'guest-fav',tag:b?'COMPRADA':'',wm:!b,zoom:false})}<span style="position:absolute;right:10px;bottom:8px;font-size:20px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)">${g.fav[p.id]?'♥':'♡'}</span></div>`}).join('')}</div>
   <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px">
     ${left?`<button class="btn primary big" data-act="guest-buyall">Levar todas em digital · ${fmtR(priceOf('mais'))}</button>`:''}
@@ -1769,7 +1815,14 @@ document.addEventListener('click',e=>{
     case 'kiosk-sel':toggleSel(state.kiosk.code,d.id);render();break;
     case 'kiosk-buy':{const s=simOf(state.kiosk.code);s.cart=[{id:d.id}];s.status='paga';s.payment='Aproximação (quiosque)';s.paidAt=now().toISOString();log(`Quiosque: ${state.kiosk.code} comprou ${catName(d.id)}`);saveSim();toast('Compra feita. Impressas saem no balcão.');state.guest.code=state.kiosk.code;state.kiosk.step='code';go('convidado');break;}
     case 'guest-go':{const v=($('#gcode')||{}).value||'';state.guest.code=v.trim().toUpperCase();render();break;}
-    case 'guest-exit':state.guest.code='';render();break;
+    case 'guest-exit':state.guest.code='';state.guest.ai=null;render();break;
+    case 'gai-open':state.guest.ai={photo:null,bg:null};render();scrollTo(0,0);break;
+    case 'gai-close':state.guest.ai=null;render();break;
+    case 'gai-bg':state.guest.ai.bg=d.id;render();break;
+    case 'gai-photo':state.guest.ai.photo=d.id;render();break;
+    case 'gai-add':{const a=state.guest.ai;const ai=aiOf(state.guest.code);if(!ai.cart.some(x=>x.photo===a.photo&&x.bg===a.bg))ai.cart.push({photo:a.photo,bg:a.bg,at:now().toISOString()});saveSim();toast('Guardada na sua lista');render();break;}
+    case 'gai-remove':{const ai=aiOf(state.guest.code);ai.cart=ai.cart.filter(x=>!(x.photo===d.photo&&x.bg===d.bg));saveSim();render();break;}
+    case 'gai-pay':{const ai=aiOf(state.guest.code);const n=ai.cart.length;if(!n)break;ai.bought.push(...ai.cart.map(x=>({...x,paidAt:now().toISOString()})));ai.cart=[];saveSim();log(`Convidado ${state.guest.code} comprou ${n} foto${n>1?'s':''} com fundo de IA (${fmtR(n*priceOf('fundo'))})`);toast('Pago. A IA monta as fotos e elas aparecem aqui em alguns minutos.');render();break;}
     case 'guest-fav':{state.guest.fav[d.id]=!state.guest.fav[d.id];render();break;}
     case 'guest-buyall':{const s=simOf(state.guest.code);const sess=sessionObj(state.guest.code);s.selected=sess.photos.map(p=>p.id);s.cart=[...(s.cart||[]),{id:'mais'}];s.status='paga';s.payment=s.payment||'PIX online';s.paidAt=s.paidAt||now().toISOString();log(`Galeria: ${state.guest.code} levou todas em digital`);saveSim();toast('Pagamento aprovado. Todas liberadas em alta.');render();break;}
     case 'guest-download':toast('Na operação, baixa um ZIP com as fotos em 3.000 px.');break;
