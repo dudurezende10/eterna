@@ -592,12 +592,40 @@ def rv_aggregate(day, orders, payments, photos):
         k = card_key.get(o.get("card_code") or "")
         if k:
             agg["rows"][k]["revenue"] += rv_num(o.get("total"))
+    # lista de vendas sem dados de cliente (para a tela Lista de vendas)
+    pay_by_order = {}
+    for p in payments:
+        if str(p.get("status")) in ("1", "2"):
+            pay_by_order.setdefault(p.get("order_id"), []).append(p.get("modality") or "")
+    agg["orders"] = []
+    for o in ok:
+        st = str(o.get("status"))
+        if st not in ("1", "2"):
+            continue
+        k = card_key.get(o.get("card_code") or "")
+        agg["orders"].append({"id": o.get("id"), "time": rv_hhmm(o.get("order_created_at")), "card": o.get("card_code") or "",
+                              "vendor": (o.get("vendor_name") or "Site").strip(), "total": round(rv_num(o.get("total")), 2),
+                              "status": "paga" if st == "1" else "cancelada", "prints": int(rv_num(o.get("print_count"))),
+                              "photos": int(rv_num(o.get("sold_photos"))),
+                              "products": [x.strip() for x in str(o.get("products_in_order") or "").split(";") if x.strip()],
+                              "pay": sorted(set(pay_by_order.get(o.get("id"), []))) or [m.strip() for m in str(o.get("modality") or "").split(",") if m.strip()][:1],
+                              "key": k, "pdv": agg["people"].get(k, {}).get("pdv", "") if k else ""})
     for d in (agg["sellers"], agg["payments"], agg["products"], agg["rows"]):
         for v in d.values():
             for f in ("revenue", "amount"):
                 if f in v:
                     v[f] = round(v[f], 2)
     return agg
+
+
+def rv_hhmm(v):
+    try:
+        t = _dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        if t.tzinfo:
+            t = t.astimezone(_dt.timezone(_dt.timedelta(hours=-3)))
+        return t.strftime("%H:%M")
+    except Exception:
+        return ""
 
 
 def rv_key(name):
@@ -635,6 +663,13 @@ def rover_loop():
                     day = (today - _dt.timedelta(days=i)).isoformat()
                     path = os.path.join(ROVER_DIR, "agg", day + ".json")
                     if os.path.exists(path) and i > 1:
+                        try:
+                            if "orders" not in json.load(open(path)):
+                                raw = json.load(open(os.path.join(ROVER_DIR, "raw", day + ".json")))
+                                with open(path, "w") as f:
+                                    json.dump(rv_aggregate(day, raw["orders"], raw["payments"], raw["photos"]), f)
+                        except Exception:
+                            pass
                         continue          # dias fechados não mudam
                     rover_sync_day(cfg, day)
                 rover["status"] = "ok"

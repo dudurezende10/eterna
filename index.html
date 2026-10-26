@@ -345,7 +345,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v30 · 26/10 20:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v30</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v31 · 26/10 20:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -704,7 +704,7 @@ function rangeBar(note){const r=state.range;const days=rangeDays();const q=(l,f,
   const last=DMAX,l7=DATA.days[Math.max(0,DATA.days.length-7)];
   return `<div class="rangebar"><label><span class="eyebrow">De</span><input type="date" data-act="range-from" value="${r.from}"></label><label><span class="eyebrow">Até</span><input type="date" data-act="range-to" value="${r.to}"></label>
   <div class="chips">${q('Hoje',todayISO(),todayISO())}${q('Último dia com dados',last,last)}${q('7 dias',l7,last)}${q(LIVE?`Tudo (${DATA.days.length} dias)`:'Tudo importado',DMIN,DMAX)}</div>
-  ${days.length?'':`<div class="alert warn" style="width:100%"><span class="sev" aria-hidden="true"></span><div><b>Sem dados nesse período</b><p>Os números importados do Roverpix vão de ${dBR(DMIN)} a ${dBR(DMAX)}. Datas novas entram quando a operação rodar no Eterna.</p></div></div>`}
+  ${days.length?'':`<div class="alert warn" style="width:100%"><span class="sev" aria-hidden="true"></span><div><b>Sem dados nesse período</b><p>${LIVE?`Os dados do Roverpix cobrem de ${dBR(DMIN)} a ${dBR(DMAX)}.`:`Os números importados vão de ${dBR(DMIN)} a ${dBR(DMAX)}. Para ver hoje e os últimos 30 dias, conecte a Roverpix em <a href="#repo">Repositório</a>.`}</p></div></div>`}
   ${note?`<div class="note" style="width:100%">${note}</div>`:''}</div>`;}
 // ---------- Roverpix ao vivo (pelo agente do ponto) ----------
 // O agente sincroniza a API Roverpix e entrega só totais por dia (sem dados de cliente).
@@ -734,15 +734,20 @@ function roverPanel(){const r=state.rover;const ok=r&&r.configured;
     <div class="note">Enquanto o Eterna não opera sozinho, o agente do ponto busca vendas, pagamentos e fotos na API Roverpix a cada 5 minutos (últimos 30 dias). A chave fica só neste computador; o site e o GitHub recebem apenas totais, sem dados de clientes.</div>
     ${r?`<div class="grid2" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:end;gap:10px"><label><span class="eyebrow">Endereço da API</span><input type="text" data-act="rv-field" data-k="base_url" value="${esc((state.rvForm&&state.rvForm.base_url)||(r.base_url||'https://beta.api.roverpix.com'))}"></label><label><span class="eyebrow">Chave (ApiKey)</span><input type="password" autocomplete="off" data-act="rv-field" data-k="api_key" value="" placeholder="${ok?'chave salva · digite para trocar':'cole a chave da Roverpix'}"></label><button class="btn primary" data-act="rv-save">${ok?'Trocar chave':'Conectar'}</button></div>
     <div class="row"><button class="chip" data-act="rv-sync" ${ok?'':'disabled'}>Sincronizar agora</button><span class="note">${r.days||0} dias em cache${LIVE?' · telas usando os dados ao vivo':''}</span></div>`:`<div class="note">Abra o Eterna pelo agente (http://127.0.0.1:8765) neste computador para conectar.</div>`}</div>`;}
+function liveSales(){const out=[];let n=0;Object.keys(LIVE.days).sort().forEach(d=>{(LIVE.days[d].orders||[]).forEach(o=>{n++;out.push({no:'R'+String(n).padStart(4,'0'),date:d,time:o.time||'',card:o.card,key:o.key||'',pdv:o.pdv||'',seller:nameCase(o.vendor),items:o.products||[],photos:o.photos,prints:o.prints,pay:(o.pay||[]).map(m=>PAY_NAMES[m]||m).join(' + '),total:o.total,status:o.status,est:false});});});return out.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));}
 function allSales(){
-  const real=DATA.sessions.filter(s=>s.card&&s.sold>0).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(reconSale);
+  if(LIVE){const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'||s.status==='cancelada').length?allSalesSim():[];return [...sim,...liveSales().reverse()];}
+  return [...allSalesSim(),...DATA.sessions.filter(s=>s.card&&s.sold>0).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(reconSale).reverse()];
+}
+function allSalesSim(){
+  const real=[];const _unused=DATA.sessions.filter(s=>s.card&&s.sold>0).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(reconSale);
   const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'||s.status==='cancelada').map(([card,s],i)=>{const items=(s.cart||[]).map(c=>c.id);const pt=DATA.points.find(p=>p.id===s.point);return {no:s.saleNo||('E'+String(i+1).padStart(3,'0')),date:'hoje',time:s.paidAt?hhmm(new Date(s.paidAt)):s.time,card,key:s.key,pdv:s.pdv||(pt?pt.name:''),seller:s.seller||SELLERS[0],items,photos:(s.selected||[]).length,prints:items.reduce((a,id)=>{const c=DATA.catalog.find(x=>x.id===id);return a+(c?c.prints:0)},0),pay:s.payment||'',total:cartTotal(s.cart),status:s.status,est:false};});
-  return [...sim.reverse(),...real.reverse()];
+  return sim.reverse();
 }
 function salesCSV(rows){const h=['venda','data','hora','sessao','ponto','fotografo','vendedor','itens','fotos','impressoes','pagamento','total','status'];const esc2=v=>'"'+String(v).replace(/"/g,'""')+'"';return [h.join(';'),...rows.map(r=>[r.no,r.date,r.time,r.card,r.pdv,P[r.key]?P[r.key].name:r.key,r.seller,r.items.map(catName).join(' + '),r.photos,r.prints,r.pay,String(r.total).replace('.',','),r.status].map(esc2).join(';'))].join('\n');}
 function vVendasLista(){
   const f=state.sales;let rows=allSales();
-  const days=['all','hoje',...DATA.period.sessionDays.slice().reverse()];
+  const days=LIVE?['all']:['all','hoje',...DATA.period.sessionDays.slice().reverse()];
   rows=rows.filter(r=>{const d=r.date==='hoje'?todayISO():r.date;return d>=state.range.from&&d<=state.range.to;});
   if(f.day!=='all')rows=rows.filter(r=>r.date===f.day);
   if(f.seller!=='all')rows=rows.filter(r=>r.seller===f.seller);
@@ -752,7 +757,7 @@ function vVendasLista(){
   const bySeller={};ok.forEach(r=>{bySeller[r.seller]=(bySeller[r.seller]||0)+r.total});
   const byPay={};ok.forEach(r=>{const k=r.pay.split(' · ')[0];byPay[k]=(byPay[k]||0)+r.total});
   const chip=(act,k,v,l)=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${f[k]===v}">${l}</button>`;
-  return `<div class="head"><div><div class="eyebrow">Período · ${rangeLabel()}</div><h1>Lista de vendas</h1></div><div class="row"><button class="btn ghost" data-act="sales-csv">Exportar CSV (${rows.length})</button>${shareBtn()}</div></div>
+  return `<div class="head"><div><div class="eyebrow">Período · ${rangeLabel()}</div><h1>Lista de vendas</h1></div><div class="row">${liveBadge()}<button class="btn ghost" data-act="sales-csv">Exportar CSV (${rows.length})</button>${shareBtn()}</div></div>
   ${rangeBar()}
   
   <div class="tiles"><div class="tile"><span class="eyebrow">Vendas</span><span class="v">${fmtN(ok.length)}</span></div><div class="tile"><span class="eyebrow">Receita</span><span class="v">${fmtR(rev)}</span></div><div class="tile"><span class="eyebrow">Ticket</span><span class="v">${ok.length?fmtR(rev/ok.length):'–'}</span></div><div class="tile"><span class="eyebrow">Fotos vendidas</span><span class="v">${fmtN(ok.reduce((a,r)=>a+r.photos,0))}</span></div><div class="tile"><span class="eyebrow">Impressões</span><span class="v">${fmtN(ok.reduce((a,r)=>a+r.prints,0))}</span></div><div class="tile"><span class="eyebrow">Canceladas</span><span class="v">${rows.length-ok.length}</span></div></div>
