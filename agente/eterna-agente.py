@@ -18,8 +18,11 @@ sem nenhum dos dois, serve o JPG original.
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+import urllib.request, mimetypes
 
 PORT = 8765
+APP_ORIGIN = "https://eterna.photo"
+app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
 INBOX = os.path.join(HOME, "inbox")
 THUMBS = os.path.join(HOME, "thumbs")
@@ -500,13 +503,42 @@ class H(BaseHTTPRequestHandler):
             if not e:
                 return self.js({"error": "not found"}, 404)
             return self.file(e["thumb"] if u.path.startswith("/thumb/") else e["file"])
-        return self.js({"error": "not found"}, 404)
+        return self.app(u.path)
+
+    # O app servido pelo próprio agente: o navegador abre http://127.0.0.1:8765 e
+    # conversa com o agente na mesma origem (sem bloqueio de rede local do Chrome).
+    def app(self, path):
+        if path in ("", "/"):
+            path = "/index.html"
+        if ".." in path:
+            return self.js({"error": "not found"}, 404)
+        key = path
+        hit = app_cache.get(key)
+        if not hit or (path == "/index.html" and time.time() - hit[2] > 60):
+            try:
+                req = urllib.request.Request(APP_ORIGIN + path + ("?t=%d" % int(time.time()) if path == "/index.html" else ""),
+                                             headers={"User-Agent": "eterna-agente"})
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    data = r.read()
+                    ctype = r.headers.get("Content-Type") or mimetypes.guess_type(path)[0] or "application/octet-stream"
+                hit = (data, ctype, time.time())
+                app_cache[key] = hit
+            except Exception as ex:
+                if not hit:
+                    return self.js({"error": "app indisponível: %s" % ex}, 502)
+        data, ctype, _ = hit
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache" if path == "/index.html" else "max-age=3600")
+        self.end_headers()
+        self.wfile.write(data)
 
 
 def main():
     print("Eterna · agente do ponto")
     print(f"  fotos baixadas em: {INBOX}")
-    print(f"  escutando em:      http://127.0.0.1:{PORT}")
+    print(f"  abra o Eterna em:  http://127.0.0.1:{PORT}   (mesmo Mac)")
     threading.Thread(target=watcher, daemon=True).start()
     threading.Thread(target=ftp_server, daemon=True).start()
     time.sleep(0.4)
