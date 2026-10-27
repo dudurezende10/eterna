@@ -69,3 +69,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v66 | `bcbd8df` | Fundo Noite de campeão · Argentina |
 | v67 | `b37a9d5` | Quiosque: revisão foto a foto em tela cheia com setas e Quero essa; depois só as escolhidas e o pacote |
 | v68 | `479f7b7` | Campos De/Até abrem o calendário ao toque |
+| v69 | `4d7bf00` | Revisão de fotos com menus de fotógrafo, data e venda, filtro de foto vendida/não vendida; sessões reais incluídas |
