@@ -46,3 +46,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v44 | – | Reconhecimento no servidor do ponto: agente lê os rostos na chegada (YuNet + SFace, OpenCV, MIT/Apache), índice por dia, busca em < 1 s; app usa o agente quando ligado e o navegador nas fotos de exemplo; medição no servidor |
 | v45 | – | Câmera do quiosque e checkout dispara ao ver um rosto (sem precisar se mexer); quiosque abre sessões fechadas; validação real de olhos fechados no lugar da sorteada |
 | v46 | – | Fotos enviadas pelo navegador ficam guardadas no aparelho (voltam depois de recarregar e entram no reconhecimento); aviso da câmera abaixo do quadro; quiosque cabe na tela sem rolagem |
+| v47 | – | Sessões cujas fotos não estão mais no aparelho somem das listas, do quiosque e do reconhecimento (sem quadros vazios) |

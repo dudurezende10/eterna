@@ -388,7 +388,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v46 · 26/10 22:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v47 · 26/10 22:35"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -472,7 +472,8 @@ function log(t){SIM.log.unshift({t,at:now().toISOString()});SIM.log=SIM.log.slic
 function demoSessions(){
   const list=[];
   for(const s of DATA.sampled){const sim=SIM.sessions[s.card];list.push({card:s.card,key:s.key,pdv:s.pdv,time:s.time,date:s.date,photos:s.photos.filter(p=>hasImg(p.id)&&!SIM.discarded[p.id]).map(p=>({id:p.id,sold:p.sold})),total:s.total,soldTotal:s.soldTotal,demo:true,status:sim?sim.status:'pronta'});}
-  for(const [card,sim] of Object.entries(SIM.sessions)){if(!DATA.sampled.find(s=>s.card===card))list.push({card,key:sim.key,pdv:sim.pdv,time:sim.time,date:sim.date,photos:(sim.photos||[]).filter(p=>!SIM.discarded[p.id]&&!(SIM.invalid&&SIM.invalid[p.id])),total:(sim.photos||[]).length,soldTotal:0,demo:false,status:sim.status});}
+  for(const [card,sim] of Object.entries(SIM.sessions)){const ok=(sim.photos||[]).filter(p=>hasImg(p.id)&&!SIM.discarded[p.id]&&!(SIM.invalid&&SIM.invalid[p.id]));if(sim.photos&&sim.photos.length&&!ok.length)continue; // fotos que não estão mais neste aparelho: sessão some da lista
+    if(!DATA.sampled.find(s=>s.card===card))list.push({card,key:sim.key,pdv:sim.pdv,time:sim.time,date:sim.date,photos:ok,total:(sim.photos||[]).length,soldTotal:0,demo:false,status:sim.status});}
   return list;
 }
 function simOf(card){if(!SIM.sessions[card]){const d=DATA.sampled.find(s=>s.card===card);SIM.sessions[card]={key:d?d.key:null,pdv:d?d.pdv:'',time:d?d.time:hhmm(now()),date:d?d.date:'hoje',status:'pronta',selected:[],bg:null,cart:[]};}return SIM.sessions[card]}
