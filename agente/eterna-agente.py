@@ -1187,6 +1187,8 @@ def rv_key(name):
     first = "".join(ch for ch in n.split()[0] if ch.isalnum()) if n.split() else "x"
     if "chroma" in n:
         return "chroma" + "".join(ch for ch in n if ch.isdigit())[:2]
+    # grafias da Roverpix que diferem do cadastro do Eterna
+    first = {"klacius": "klassius", "classius": "klassius", "clacius": "klassius"}.get(first, first)
     return first or "x"
 
 
