@@ -51,3 +51,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v49 | – | Câmera do checkout procura em toda sessão ainda não paga (antes pulava as que já estavam "no checkout"); quiosque procura em todas |
 | v50 | `0536e38` | Photoroom ligado ao Eterna pelo agente: recorte, luz e sombra nos 10 fundos; chave em Fundos de IA; sem recorte no navegador (recorte do v39 e v40 removido) |
 | v51 | `e8d1a11` | Correção: a chave colada em Fundos de IA (Photoroom) e em Repositório (Roverpix) não some mais com as atualizações automáticas da tela |
+| v52 | `5d06aca` | Correção do erro 400 do Photoroom: sem forçar JPEG; aceita PNG transparente e o app monta o fundo por baixo |
