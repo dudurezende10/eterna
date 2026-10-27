@@ -200,6 +200,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .compimg.pend{filter:grayscale(.6) brightness(.8)}
 .compimg.big{position:absolute;inset:0;aspect-ratio:auto;background-size:contain;background-color:#141311}
 .aiprev.big{aspect-ratio:3/2}
+.setwho{display:flex;gap:16px;align-items:center;padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.setwho b{font-size:16px}
 .libf{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.libf .eyebrow{width:84px}
 .bg.comp .czoom{position:absolute;left:8px;top:8px;width:34px;height:34px;border-radius:6px;background:rgba(20,19,17,.75);color:#fff;display:flex;align-items:center;justify-content:center;cursor:zoom-in}
 .bg.comp .czoom:hover{background:rgba(20,19,17,.95)}
@@ -392,7 +393,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v60 · 27/10 18:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v61 · 27/10 18:05"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v61</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -628,7 +629,9 @@ function vSet(){
       ${f.modo==='livre'?`<div><div class="eyebrow">Onde você está agora</div><div class="chips" style="margin-top:6px">${VOL_SPOTS.map(sp=>`<button class="chip" data-act="set-spot" data-v="${esc(sp)}" aria-pressed="${state.set.spot===sp}">${esc(sp)}</button>`).join('')}</div><div class="note" style="margin-top:6px">Cada sessão guarda o lugar. Dá para trocar com a sessão aberta.</div></div>`:''}
       <div class="note">${f.modo==='chute'?'Chute a gol sai separado das fotos do campo, com sessão e venda próprias.':f.modo==='grupo'?'Uma sessão do começo ao fim do tour: as fotos de todos os pontos ficam juntas para o grupo.':'Fotos sem pose pelo Maracanã. Ninguém fica preso a um ponto.'}</div>`:''}
   </div>`;
-  return `<div class="head"><div><div class="eyebrow">Anfitrião · ${esc(name)} · ${vol?'volante':'campo'}</div><h1>${esc(vol?pt.name.replace('Volante · ',''):pt.name)}</h1></div></div>
+  const who=state.user;const whoP=fotoKey()?P[fotoKey()].name:who.name;
+  return `<div class="head"><div><div class="eyebrow">Anfitrião · ${esc(name)} · ${vol?'volante':'campo'}</div><h1>${esc(vol?pt.name.replace('Volante · ',''):pt.name)}</h1></div>
+    <div class="setwho"><div><div class="eyebrow">Neste computador</div><b>${esc(whoP)}</b><div class="note">${esc(who.email)}</div></div><div class="row"><button class="btn primary" data-act="set-switch" ${open?'disabled title="Feche a sessão aberta antes de trocar"':''}>Trocar fotógrafo</button><button class="btn ghost" data-act="set-logout" ${open?'disabled':''}>Sair</button></div></div></div>
   ${funcBar}
   ${camPanel(key)}
   ${body}
@@ -1877,7 +1880,7 @@ function vEntrar(){
       <div class="mail"><div class="from"><b>${esc(venueName())}</b> <span class="note">${MAIL_FROM}</span><span class="note" style="margin-left:auto">${hhmm(new Date(p.at))}</span></div><div class="subj">Seu código de acesso · ${esc(venueName())}</div><div class="body">Olá${u?', '+esc(u.name.split(' ')[0]):''}. Use o código abaixo para entrar. Ele vale por 10 minutos e só funciona uma vez.</div><div class="otp">${p.code.slice(0,3)} ${p.code.slice(3)}</div><div class="note">Se você não pediu este código, ignore este e-mail.</div></div></div>`}
     <div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div></div>`;}
   return `<div class="enter login">${logo}
-    <form class="panel" data-form="login-email"><h2>Entrar</h2><div class="note">Você recebe um código por e-mail. Sem senha.</div>
+    <form class="panel" data-form="login-email"><h2>${a.switching!=null&&state.auth_next==='set'?'Trocar fotógrafo do set':'Entrar'}</h2>${a.switching&&state.auth_next==='set'?`<div class="note"><b>${esc(a.switching)}</b> saiu. O próximo fotógrafo entra com o e-mail dele e volta direto para o Anfitrião no set.</div>`:''}<div class="note">Você recebe um código por e-mail. Sem senha.</div>
       <input type="text" inputmode="email" autocomplete="email" data-act="login-email" value="${esc(a.email)}" placeholder="seu@email.com" aria-label="E-mail" autofocus>
       ${a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:''}
       <button class="btn primary big" type="submit">Receber código</button></form>
@@ -2216,6 +2219,7 @@ document.addEventListener('click',e=>{
     case 'comp-zoom':{e.preventDefault&&e.preventDefault();const keys=[...document.querySelectorAll('[data-act="comp-zoom"]')].map(x=>({k:x.dataset.k,cap:x.dataset.cap})).filter(x=>COMPURL[x.k]);const i=keys.findIndex(x=>x.k===d.k);if(i<0){toast('A montagem ainda está sendo feita');break;}compModal(keys,i);break;}
     case 'cam-mine':{const m=camDay(localDay(Date.now()/1000));Object.keys(m).forEach(s=>{if(m[s]===d.k)delete m[s];});m[d.s]=d.k;saveSim();log(`${P[d.k].name} fez check-in com ${camName(d.s)}`);toast('Câmera registrada para hoje');render();break;}
     case 'rf-save':{const v=id=>(($('#'+id)||{}).value||'').trim();const body={host:v('rf-host'),port:v('rf-port')||'21',user:v('rf-user'),password:($('#rf-pass')||{}).value||'',dir:v('rf-dir'),tls:!!($('#rf-tls')||{}).checked};if(!body.host||!body.user){toast('Informe servidor e usuário');break;}toast('Testando conexão...');fetch(state.agent.url+'/ftp-remoto/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#rf-pass');if(f)f.value='';toast('Conectado. Buscando fotos novas no servidor.');rftpPoll.t=0;rftpPoll();}else toast(j.error||'Não conectou');}).catch(()=>toast('Agente não encontrado'));break;}
+    case 'set-switch':case 'set-logout':{const old=state.user&&state.user.name;if(state.set.open){toast('Feche a sessão aberta antes de trocar');break;}log(`${old} saiu do set`);state.set.key=null;logout();if(a==='set-switch'){state.auth_next='set';state.auth.switching=old||'';render();}break;}
     case 'lib-f':{state.libF[d.k]=d.v;if(d.k==='day'){state.libF.per='dia';state.libF.who='todos';}render();break;}
     case 'pr-save':{const inp=$('#pr-key');const key=(inp&&inp.value||'').trim();if(!key){toast('Cole a chave do Photoroom');break;}fetch(state.agent.url+'/photoroom/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#pr-key');if(f)f.value='';toast(j.sandbox?'Photoroom conectado (modo de testes)':'Photoroom conectado');Object.keys(COMP).forEach(k=>delete COMP[k]);prPoll(true);}else toast(j.error||'Não deu para salvar');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'comp-all':state.compAll=state.compAll===d.card?null:d.card;render();break;
