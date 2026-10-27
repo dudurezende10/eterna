@@ -66,3 +66,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v63 | `874d321` | Enquadramento lido pelos rostos; Mirante só fechada/meio corpo; asa-delta fora do automático (precisa de montagem generativa) |
 | v64 | `5284276` | Sala de imprensa: grupo na altura das cadeiras, atrás da bancada |
 | v65 | `8eddc1a` | Fundo Noite de campeão substituído pela versão nova |
+| v66 | `bcbd8df` | Fundo Noite de campeão · Argentina |
