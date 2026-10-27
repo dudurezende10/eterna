@@ -436,7 +436,7 @@ def scan_card(vol):
 # Professional e para câmeras com FTP embutido. Modo passivo e ativo, STOR,
 # pastas aceitas e ignoradas (tudo cai na inbox por data).
 
-PHOTOGRAPHERS = ["carlos", "marinara", "samuel", "yago", "marcio", "dudu"]
+PHOTOGRAPHERS = ["carlos", "marinara", "samuel", "yago", "marcio", "klassius", "andressa", "dudu"]
 
 
 def load_ftp_cfg():
