@@ -389,7 +389,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v52 · 27/10 16:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v53 · 27/10 17:05"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -1191,9 +1191,22 @@ function ingStart(queue){const g=state.ing;if(g.timer)clearInterval(g.timer);g.q
 function ingPush(items){const g=state.ing;g.queue.push(...items);g.total+=items.length;if(!g.running){g.running=true;g.timer=setInterval(ingTick,650);}}
 // agente do ponto: programa local que vigia o cartão e entrega as fotos (agente/eterna-agente.py)
 state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:((location.hostname==='127.0.0.1'||location.hostname==='localhost')&&location.port)?location.origin:'http://127.0.0.1:8765',tried:false,err:null};
-async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on)return;
-  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;if(!was){toast('Agente do ponto conectado');render();}
-    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];ev.events.forEach(e=>{if(e.type==='photo'){const id='ag_'+e.id;UP[id]={src:a.url+e.thumb,name:e.name};items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){const id='ag_'+e.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};items.push({id,kind:'dup',real:true});}});a.cursor=ev.next;ingPush(items);state.ing.lastReal=Date.now();render();}
+// ---------- Biblioteca do agente: tudo o que já está no computador do ponto, por dia ----------
+state.lib=[];state.libDay=null;
+async function libLoad(){const a=state.agent;try{const j=await (await fetch(a.url+'/biblioteca',{cache:'no-store'})).json();state.lib=j.fotos||[];state.lib.forEach(f=>{const id='ag_'+f.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+f.id,name:f.name};});}catch(e){}}
+function photosInSessions(){const k=new Set();Object.values(SIM.sessions||{}).forEach(s=>(s.photos||[]).forEach(p=>k.add(p.id)));return k;}
+function libPanel(){if(!state.agent.on||!state.lib.length)return '';const days={};state.lib.forEach(f=>{days[f.day]=(days[f.day]||0)+1;});const list=Object.keys(days).sort().reverse();const day=state.libDay&&days[state.libDay]?state.libDay:list[0];
+  const ph=state.lib.filter(f=>f.day===day).slice(-300).reverse();
+  return `<div class="panel"><div class="head"><div><div class="eyebrow">Guardadas neste computador</div><h2>Biblioteca</h2></div><span class="pill neutral">${fmtN(state.lib.length)} fotos</span></div>
+    <div class="note">Tudo o que já veio do cartão e do celular fica aqui. Reabrir o Eterna ou ligar o cartão de novo não baixa outra vez: foto repetida é reconhecida e ignorada.</div>
+    <div class="chips">${list.slice(0,14).map(d=>`<button class="chip" data-act="lib-day" data-d="${d}" aria-pressed="${d===day}">${dlabel(d)} · ${days[d]}</button>`).join('')}</div>
+    <div class="photos small">${ph.map(f=>photoBtn({id:'ag_'+f.id},{label:f.name})).join('')}</div></div>`;}
+async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
+  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;await libLoad();if(first)toast('Agente do ponto conectado');render();}
+    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id))state.lib.push({id:e.id,name:e.name,day:new Date(e.t*1000).toISOString().slice(0,10),t:e.t,size:e.size});
+      // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
+      if(e.src==='inbox'||known.has(id)||was)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
+      if(dups)toast(dups+(dups>1?' fotos já estavam':' foto já estava')+' no computador. Não baixei de novo.');if(items.length){ingPush(items);state.ing.lastReal=Date.now();}render();}
     else if(state.ing.cur&&state.ing.lastReal&&!state.ing.running&&Date.now()-state.ing.lastReal>45000){state.ing.n.auto++;ingClose('pausa de 45 s sem foto nova');state.ing.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:'pausa de 45 s sem foto nova no cartão'});render();}
     if(a.card!==(st.card||null)){a.card=st.card;render();}
   }catch(e){if(a.on){a.on=false;render();}a.err=String(e&&e.message||e);a.tried=true;}
@@ -1230,7 +1243,8 @@ function ingTick(){
   else if(it.kind==='gap'){g.n.auto++;ingClose(it.how);g.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:it.how});}
   g.feed=g.feed.slice(0,60);render();
 }
-function vImportar(){
+function vImportar(){return vImportarCore()+libPanel();}
+function vImportarCore(){
   const im=state.imp,g=state.ing;const pt=DATA.points.find(p=>p.id===im.point)||DATA.points[0];const name=P[im.key].name;
   const pending=g.queue.filter(x=>x.kind==='photo'||x.kind==='dup').length;const cur=g.cur?g.cur.photos.length:0;
   const picker=`<div class="chips"><button class="chip" data-act="imp-mode" data-m="cartao" aria-pressed="${im.mode==='cartao'}">Cartão no computador do ponto</button><button class="chip" data-act="imp-mode" data-m="wifi" aria-pressed="${im.mode==='wifi'}">Celular, Wi‑Fi do estádio</button><button class="chip" data-act="imp-mode" data-m="5g" aria-pressed="${im.mode==='5g'}">Celular, 5G</button><span style="width:8px"></span><label class="note">Fotógrafo <select data-act="imp-key" class="chip">${humans.map(k=>`<option value="${k}" ${k===im.key?'selected':''}>${P[k].name}</option>`).join('')}</select></label><label class="note">Ponto <select data-act="imp-point" class="chip">${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===im.point?'selected':''}>${p.name}</option>`).join('')}</select></label></div>`;
@@ -2144,6 +2158,7 @@ document.addEventListener('click',e=>{
     case 'gself-snap':{const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v||!v.videoWidth)break;const c=document.createElement('canvas');const w=Math.min(720,v.videoWidth);c.width=w;c.height=Math.round(w*v.videoHeight/v.videoWidth);const x=c.getContext('2d');x.translate(c.width,0);x.scale(-1,1);x.drawImage(v,0,0,c.width,c.height);sf.shot=c.toDataURL('image/jpeg',.85);if(sf.stream){sf.stream.getTracks().forEach(t=>t.stop());sf.stream=null;}render();selfieFound();break;}
     case 'gai-open':state.guest.ai={photo:null,bg:null};render();scrollTo(0,0);break;
     case 'gai-close':state.guest.ai=null;render();break;
+    case 'lib-day':state.libDay=d.d;render();break;
     case 'pr-save':{const inp=$('#pr-key');const key=(inp&&inp.value||'').trim();if(!key){toast('Cole a chave do Photoroom');break;}fetch(state.agent.url+'/photoroom/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#pr-key');if(f)f.value='';toast(j.sandbox?'Photoroom conectado (modo de testes)':'Photoroom conectado');Object.keys(COMP).forEach(k=>delete COMP[k]);prPoll(true);}else toast(j.error||'Não deu para salvar');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'comp-all':state.compAll=state.compAll===d.card?null:d.card;render();break;
     case 'gai-more':state.guest.ai.more=true;render();break;

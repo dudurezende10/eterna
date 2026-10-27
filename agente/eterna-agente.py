@@ -49,6 +49,7 @@ os.makedirs(FTPTMP, exist_ok=True)
 lock = threading.Lock()
 events = []            # [{type, id, name, size, t, card}]
 seen = {}              # hash -> id
+BOOT = "%x" % int(time.time())   # muda a cada vez que o agente abre
 lib = {}               # id -> {file, thumb}  (tudo que já está na inbox)
 cards = {}             # volume path -> hashes já tratados nesta inserção
 state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None}}
@@ -998,6 +999,7 @@ def pr_compose(photo, bg, W, H, pad):
         "outputSize": "%dx%d" % (W, H),
         "horizontalAlignment": "center",
         "verticalAlignment": "bottom",
+        "export.format": "png",
     }
     for side in ("Top", "Bottom", "Left", "Right"):
         v = int(max(0, pad.get(side.lower(), 0)))
@@ -1075,7 +1077,7 @@ class H(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         if u.path == "/status":
             with lock:
-                return self.js({"ok": True, "agent": "eterna-agente", "version": 2, "card": state["card"],
+                return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
                                 "rostos": {**rostos, "fila": fila_rostos.qsize()}})
@@ -1094,6 +1096,22 @@ class H(BaseHTTPRequestHandler):
             return self.js({**{k: v for k, v in rover.items()}, "configured": bool(c), "base_url": c["base_url"] if c else None})
         if u.path == "/roverpix/data":
             return self.js(rover_data())
+        if u.path == "/biblioteca":
+            # tudo o que já está guardado neste Mac, por dia (o app mostra sem baixar de novo)
+            out = []
+            with lock:
+                items = list(lib.items())
+            for pid, e in items:
+                f = e.get("file") or ""
+                try:
+                    st = os.stat(f)
+                except OSError:
+                    continue
+                day = os.path.basename(os.path.dirname(f))
+                name = os.path.basename(f).split("_", 1)[-1]
+                out.append({"id": pid, "name": name, "day": day, "t": st.st_mtime, "size": st.st_size})
+            out.sort(key=lambda x: x["t"])
+            return self.js({"fotos": out, "total": len(out), "boot": BOOT})
         if u.path == "/photoroom/status":
             c = pr_cfg()
             with pr_lock:
