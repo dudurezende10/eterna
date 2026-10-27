@@ -414,7 +414,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v69 · 27/10 19:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v69</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v70 · 27/10 19:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v70</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -465,7 +465,7 @@ for(const k of Object.keys(P)){
   stats[k]=s;
 }
 return stats;}
-const stats=buildStats(DATA.days);
+let stats=buildStats(DATA.days);
 const sum=(ks,f)=>ks.reduce((a,k)=>a+f(stats[k]),0);
 const humanTot={cards:sum(humans,s=>s.cards),cardsSold:sum(humans,s=>s.cardsSold),photos:sum(humans,s=>s.photos),photosSold:sum(humans,s=>s.photosSold),revenue:sum(humans,s=>s.revenue)};
 const chromaTot={cards:sum(chromas,s=>s.cards),cardsSold:sum(chromas,s=>s.cardsSold),photos:sum(chromas,s=>s.photos),photosSold:sum(chromas,s=>s.photosSold),revenue:sum(chromas,s=>s.revenue)};
@@ -841,7 +841,7 @@ function applyLive(j){const days=Object.keys(j.days||{}).sort();if(!days.length)
   DATA.days=days;DMIN=days[0];DMAX=days[days.length-1];
   DATA.daily=days.map(d=>({date:d,...j.days[d].daily,pax:PAX_BY_DAY[d]||null}));
   const rows=[];days.forEach(d=>{const a=j.days[d];Object.entries(a.people||{}).forEach(([k,p])=>{if(!P[k]){P[k]={name:p.human?nameCase(p.name):p.name,human:p.human,started:null};if(p.human){if(!hiddenPerson(k,p.name))humans.push(k);}else chromas.push(k);}});Object.entries(a.rows||{}).forEach(([k,r])=>rows.push({date:d,key:k,...r}));});
-  DATA.rows=rows;DATA.period={...DATA.period,start:DMIN,end:DMAX,label:'Roverpix ao vivo',short:'ao vivo',generated:(j.updated||'').slice(0,10)||todayISO()};
+  DATA.rows=rows;stats=buildStats(DATA.days);DATA.period={...DATA.period,start:DMIN,end:DMAX,label:'Roverpix ao vivo',short:'ao vivo',generated:(j.updated||'').slice(0,10)||todayISO()};
   if(state.range.to<DMIN||state.range.from>DMAX)state.range={from:DMAX,to:DMAX};liveRangeAgg();}
 function liveRangeAgg(){if(!LIVE)return;const ds=rangeDays();const S={},PM={},PR={};let t={revenue:0,sales:0,photos:0,photosSold:0,approaches:0,prints:0,reprints:0};
   ds.forEach(d=>{const a=LIVE.days[d];if(!a)return;const x=a.daily;t.revenue+=x.revenue;t.sales+=x.sales;t.photos+=x.photos;t.photosSold+=x.photosSold;t.approaches+=x.approaches;t.prints+=x.prints;t.reprints+=x.reprints;
@@ -1198,12 +1198,29 @@ function vConvidado(){
 // ---------- Qualidade ----------
 const TAGS=['Luz','Enquadramento','Pose','Expressão','Foco','Fundo','Horizonte','Grupo cortado'];
 // sessões para revisão: a amostra importada + as sessões reais montadas neste computador
-function revSessions(){const out=DATA.sampled.slice();Object.entries(SIM.sessions||{}).forEach(([card,x])=>{const ph=(x.photos||[]).filter(p=>hasImg(p.id));if(!ph.length||out.find(o=>o.card===card))return;const paid=x.status==='paga';const sel=new Set(x.selected||[]);const photos=ph.map(p=>({id:p.id,sold:(p.sold||(paid&&sel.has(p.id)))?1:0}));const date=x.date==='hoje'?localDay((x.openedAt?new Date(x.openedAt).getTime():Date.now())/1000):x.date;out.push({card,key:x.key||'carlos',date,time:x.time||'',pdv:x.pdv||'',total:photos.length,soldTotal:photos.filter(p=>p.sold).length,photos,real:true});});return out;}
+function revSessions(){const out=DATA.sampled.slice();const seen=new Set(out.map(o=>o.card));
+  Object.entries(SIM.sessions||{}).forEach(([card,x])=>{const ph=(x.photos||[]).filter(p=>hasImg(p.id));if(!ph.length||seen.has(card))return;seen.add(card);const paid=x.status==='paga';const sel=new Set(x.selected||[]);const photos=ph.map(p=>({id:p.id,sold:(p.sold||(paid&&sel.has(p.id)))?1:0}));const date=x.date==='hoje'?localDay((x.openedAt?new Date(x.openedAt).getTime():Date.now())/1000):x.date;out.push({card,key:x.key||'carlos',date,time:x.time||'',pdv:x.pdv||'',total:photos.length,soldTotal:photos.filter(p=>p.sold).length,photos,real:true});});
+  // sessões da Roverpix (ao vivo, até hoje): as fotos vêm da biblioteca deste computador quando batem com o fotógrafo e a hora
+  if(LIVE&&LIVE.days){Object.keys(LIVE.days).sort().forEach(d=>{const ses=LIVE.days[d].sessions||[];if(!ses.length)return;const match=liveMatch(d,ses);ses.forEach(x=>{if(seen.has(x.card))return;seen.add(x.card);const key=x.key&&P[x.key]?x.key:(x.key||'sem');const ph=(match[x.card]||[]).map(f=>({id:'ag_'+f.id,sold:0}));out.push({card:x.card,key,date:d,time:x.t0?hhmm(new Date(x.t0*1000)):'',pdv:x.pdv||'',total:x.n,soldTotal:x.sold,photos:ph,live:true,t0:x.t0,t1:x.t1});});});}
+  return out;}
+// Casa as sessões da Roverpix de um dia com as fotos guardadas aqui: pelo fotógrafo (câmera do dia) e pela ordem dos cliques;
+// se a quantidade do dia bate, vai em sequência; senão, pela hora da captura perto da hora do envio.
+function liveMatch(day,ses){const out={};const lib=state.lib.filter(f=>(f.cap?localDay(f.cap):f.day)===day);if(!lib.length)return out;const ix=libIndex();
+  const byKey={};ses.forEach(x=>{const k=x.key||'?';(byKey[k]=byKey[k]||[]).push(x);});
+  const bySerie={};lib.forEach(f=>{const s=f.serie||('ftp:'+(f.origem||''));(bySerie[s]=bySerie[s]||[]).push(f);});Object.values(bySerie).forEach(a=>a.sort((p,q)=>(p.cap||p.t)-(q.cap||q.t)));
+  const used=new Set();
+  Object.entries(byKey).forEach(([k,list])=>{list.sort((a,b)=>(a.t0||0)-(b.t0||0));const need=list.reduce((a,x)=>a+x.n,0);
+    let pool=Object.entries(bySerie).filter(([sr,a])=>{const who=libWho(a[0],ix);return who===k;}).flatMap(([sr,a])=>a);
+    if(!pool.length){const eq=Object.entries(bySerie).filter(([sr,a])=>a.length===need&&!a.some(f=>used.has(f.id)));if(eq.length===1)pool=eq[0][1];}
+    pool=pool.filter(f=>!used.has(f.id)).sort((p,q)=>(p.cap||p.t)-(q.cap||q.t));
+    if(pool.length===need){let i=0;list.forEach(x=>{out[x.card]=pool.slice(i,i+x.n);i+=x.n;});pool.forEach(f=>used.add(f.id));return;}
+    list.forEach(x=>{if(!x.t0)return;const got=pool.filter(f=>!used.has(f.id)&&f.cap&&f.cap>=x.t0-15*60&&f.cap<=x.t1+120).slice(0,x.n);if(got.length){out[x.card]=got;got.forEach(f=>used.add(f.id));}});});
+  return out;}
 function vRevisao(){
   const f=state.revFilter;const all=revSessions();const samp=all.filter(s=>(f.key==='all'||s.key===f.key)&&(f.date==='all'||s.date===f.date)&&(f.venda==='all'||(f.venda==='com'?s.soldTotal>0:f.venda==='sem'?s.soldTotal===0:s.soldTotal===s.total)));
   if(state.session){const s=all.find(x=>x.card===state.session);if(!s){state.session=null;return vRevisao();}
     const r=state.reviews[s.card]||{photos:{},score:0,tags:[],note:''};const rated=Object.values(r.photos||{}).filter(v=>v).length;
-    return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="back-sessions">← Sessões</button></div><h1>${esc(P[s.key].name)} · ${esc(s.card)}</h1></div><div class="note">${dlabel(s.date)} ${s.time} · ${esc(s.pdv)} · ${s.total} fotos na sessão, ${s.soldTotal} vendidas${s.photos.length<s.total?' · mostrando as primeiras '+s.photos.length:''}</div></div>
+    return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="back-sessions">← Sessões</button></div><h1>${esc(P[s.key]?P[s.key].name:s.key)} · ${esc(s.card)}</h1></div><div class="note">${dlabel(s.date)} ${s.time} · ${esc(s.pdv)} · ${s.total} fotos na sessão, ${s.soldTotal} vendidas${s.live&&!s.photos.length?' · as fotos desta sessão não estão neste computador (só os números da Roverpix)':s.photos.length<s.total?' · mostrando '+s.photos.length:''}</div></div>
     <div class="review">
       <div class="panel"><div class="head"><h2>Fotos</h2><span class="note">Toque: boa → ruim → sem nota. ${rated} de ${s.photos.length} avaliadas.</span></div>
         <div class="chips">${[['all','Todas as fotos'],['sold','Só vendidas'],['unsold','Só não vendidas']].map(([k,l])=>`<button class="chip" data-act="rev-foto" data-k="${k}" aria-pressed="${f.foto===k}">${l}</button>`).join('')}</div>
@@ -1217,16 +1234,16 @@ function vRevisao(){
       </div></div>`;
   }
   const qs=humans.map(k=>({k,q:quality(k)})).filter(x=>x.q.sessions);
-  return `<div class="head"><div><div class="eyebrow">Amostra · 12 e 13/10 · lista até ${dlabel(DATA.period.end)}</div><h1>Revisão de fotos</h1></div></div>
+  return `<div class="head"><div><div class="eyebrow">${LIVE?'Roverpix ao vivo · até hoje':'Amostra · 12 e 13/10'}${state.agent.on?' · fotos deste computador':''}</div><h1>Revisão de fotos</h1></div></div>
   ${qs.length?`<div class="tiles">${qs.map(x=>`<div class="tile"><span class="eyebrow">${esc(P[x.k].name)}</span><span class="v">${x.q.goodPct!=null?x.q.goodPct+'%':'–'}</span><span class="d">${x.q.good} boas · ${x.q.bad} ruins · ${x.q.sessions} sessões${x.q.score?' · nota '+x.q.score.toFixed(1):''}</span></div>`).join('')}</div>`:''}
   <div class="revbar">
     <label><span class="eyebrow">Fotógrafo</span><select data-act="rev-key"><option value="all" ${f.key==='all'?'selected':''}>Todos</option>${humans.map(k=>`<option value="${k}" ${f.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
     <label><span class="eyebrow">Data</span><div class="row" style="flex-wrap:nowrap;gap:6px"><input type="date" data-act="rev-date" data-pick="1" value="${f.date==='all'?'':f.date}" max="${localDay(Date.now()/1000)}" style="min-width:170px"><button class="chip" data-act="rev-date-all" aria-pressed="${f.date==='all'}">Todas</button></div></label>
     <label><span class="eyebrow">Venda</span><select data-act="rev-venda"><option value="all" ${f.venda==='all'?'selected':''}>Todas as sessões</option><option value="com" ${f.venda==='com'?'selected':''}>Com venda</option><option value="toda" ${f.venda==='toda'?'selected':''}>Toda vendida</option><option value="sem" ${f.venda==='sem'?'selected':''}>Sem venda</option></select></label>
     <span class="pill neutral">${samp.length} sess${samp.length===1?'ão':'ões'}</span></div>
-  <div class="sess">${samp.map(s=>{const r=state.reviews[s.card];const rated=r?Object.values(r.photos||{}).filter(v=>v).length:0;const kind=s.soldTotal===s.total?'toda vendida':s.soldTotal===0?'sem venda':'parcial';return `<button class="scard" data-act="session" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key].name)}</span><span>${dlabel(s.date)} ${s.time}</span></div><div class="meta"><span>${s.total} fotos · ${s.soldTotal} vendidas</span><span class="pill ${s.soldTotal===0?'bad':s.soldTotal===s.total?'good':'neutral'}">${kind}</span></div><div class="meta"><span>${r?(rated+' avaliadas'+(r.score?' · nota '+r.score:'')):'não revisada'}</span></div></button>`}).join('')}</div>
-  <div class="panel"><h2>Todas as sessões de ${dlabel(DATA.period.sessionDays[0])} a ${dlabel(DATA.period.end)}</h2><div class="tablewrap"><table><thead><tr><th>Dia</th><th>Hora</th><th>Fotógrafo</th><th>Sessão</th><th>Ponto</th><th class="num">Fotos</th><th class="num">Vendidas</th></tr></thead><tbody>
-  ${DATA.sessions.filter(s=>P[s.key].human&&(f.key==='all'||s.key===f.key)&&(f.date==='all'||s.date===f.date)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(s=>`<tr><td>${dlabel(s.date)}</td><td>${s.time}</td><td>${esc(P[s.key].name)}</td><td>${s.card?esc(s.card):'<span class="pill warn">sem vínculo</span>'}</td><td>${esc(s.pdv)}</td><td class="num">${s.n}</td><td class="num">${s.sold}</td></tr>`).join('')}
+  <div class="sess">${samp.slice().sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).slice(0,80).map(s=>{const r=state.reviews[s.card];const rated=r?Object.values(r.photos||{}).filter(v=>v).length:0;const kind=s.soldTotal===s.total?'toda vendida':s.soldTotal===0?'sem venda':'parcial';return `<button class="scard" data-act="session" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key].name)}</span><span>${dlabel(s.date)} ${s.time}</span></div><div class="meta"><span>${s.total} fotos · ${s.soldTotal} vendidas${s.live&&!s.photos.length?' · sem as fotos aqui':''}</span><span class="pill ${s.soldTotal===0?'bad':s.soldTotal===s.total?'good':'neutral'}">${kind}</span></div><div class="meta"><span>${r?(rated+' avaliadas'+(r.score?' · nota '+r.score:'')):'não revisada'}</span></div></button>`}).join('')}</div>
+  <div class="panel"><h2>Todas as sessões${f.date==='all'?' (últimas 300)':' de '+dlabel(f.date)}</h2><div class="tablewrap"><table><thead><tr><th>Dia</th><th>Hora</th><th>Fotógrafo</th><th>Sessão</th><th>Ponto</th><th class="num">Fotos</th><th class="num">Vendidas</th></tr></thead><tbody>
+  ${samp.slice().sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).slice(0,300).map(s=>`<tr class="click" data-act="session" data-card="${esc(s.card)}"><td>${dlabel(s.date)}</td><td>${esc(s.time)}</td><td>${esc(P[s.key]?P[s.key].name:s.key)}</td><td>${esc(s.card)}</td><td>${esc(s.pdv)}</td><td class="num">${s.total}</td><td class="num">${s.soldTotal}</td></tr>`).join('')}
   </tbody></table></div></div>`;
 }
 
@@ -1297,7 +1314,7 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
     <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pela câmera (check-in do dia ou nome gravado na câmera), pela sessão da foto ou pelo usuário do FTP. Vendida = foto escolhida numa venda paga.</div></div>`;}
 async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
   try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;await libLoad();if(first)toast('Agente do ponto conectado');render();}
-    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
+    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
       if(e.src==='inbox'||known.has(id)||was)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
       if(dups)toast(dups+(dups>1?' fotos já estavam':' foto já estava')+' no computador. Não baixei de novo.');if(items.length){ingPush(items);state.ing.lastReal=Date.now();}render();}
@@ -2326,7 +2343,7 @@ setInterval(()=>{if(state.view==='set'&&state.set.open){const t=$('#timer');cons
     render();
   }catch(e){console.warn('db',e)}
 })();
-window.ETERNA={get state(){return state},camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas};
+window.ETERNA={get state(){return state},render,revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas};
 })();
 </script>
 

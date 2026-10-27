@@ -124,6 +124,12 @@ def _exif_tiff(t):
         ex = ifd(num(i0[0x8769]))
         if 0xA431 in ex:
             out["serie"] = txt(ex[0xA431])
+        if 0x9003 in ex:
+            try:
+                tt = time.strptime(txt(ex[0x9003])[:19], "%Y:%m:%d %H:%M:%S")
+                out["cap"] = time.mktime(tt)
+            except Exception:
+                pass
         if 0xA430 in ex and not out.get("dono"):
             out["dono"] = txt(ex[0xA430])
         if 0x927C in ex:
@@ -510,7 +516,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
                        "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb,
-                       "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
+                       "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
         state["copied"] += 1
         m = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(),
              "copia_ms": round((time.time() - t_ini) * 1000, 1)}
@@ -1131,12 +1137,38 @@ def rv_aggregate(day, orders, payments, photos):
                               "products": [x.strip() for x in str(o.get("products_in_order") or "").split(";") if x.strip()],
                               "pay": sorted(set(pay_by_order.get(o.get("id"), []))) or [m.strip() for m in str(o.get("modality") or "").split(",") if m.strip()][:1],
                               "key": k, "pdv": agg["people"].get(k, {}).get("pdv", "") if k else ""})
+    # sessões (um cartão = uma sessão): hora da primeira e da última foto, quantas, quantas vendidas
+    ses = {}
+    for p in photos:
+        c = p.get("card") or ""
+        if not c:
+            continue
+        k = card_key.get(c)
+        x = ses.setdefault(c, {"card": c, "key": k, "pdv": (p.get("pdv_name") or "").strip(), "n": 0, "sold": 0, "t0": None, "t1": None})
+        x["n"] += 1
+        if int(rv_num(p.get("order_count"))) > 0:
+            x["sold"] += 1
+        ts = rv_epoch(p.get("date"))
+        if ts:
+            x["t0"] = ts if x["t0"] is None or ts < x["t0"] else x["t0"]
+            x["t1"] = ts if x["t1"] is None or ts > x["t1"] else x["t1"]
+    agg["sessions"] = sorted(ses.values(), key=lambda x: x["t0"] or 0)
     for d in (agg["sellers"], agg["payments"], agg["products"], agg["rows"]):
         for v in d.values():
             for f in ("revenue", "amount"):
                 if f in v:
                     v[f] = round(v[f], 2)
     return agg
+
+
+def rv_epoch(v):
+    try:
+        t = _dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        if not t.tzinfo:
+            t = t.replace(tzinfo=_dt.timezone(_dt.timedelta(hours=-3)))
+        return t.timestamp()
+    except Exception:
+        return None
 
 
 def rv_hhmm(v):
@@ -1185,7 +1217,7 @@ def rover_loop():
                     path = os.path.join(ROVER_DIR, "agg", day + ".json")
                     if os.path.exists(path) and i > 1:
                         try:
-                            if "orders" not in json.load(open(path)):
+                            if "sessions" not in json.load(open(path)):
                                 raw = json.load(open(os.path.join(ROVER_DIR, "raw", day + ".json")))
                                 with open(path, "w") as f:
                                     json.dump(rv_aggregate(day, raw["orders"], raw["payments"], raw["photos"]), f)
@@ -1420,14 +1452,14 @@ class H(BaseHTTPRequestHandler):
                 if day not in (hoje, ontem):
                     continue                            # a biblioteca mostra só hoje e ontem
                 name = os.path.basename(f).split("_", 1)[-1]
-                if "serie" not in m and "x" not in m:
+                if ("serie" not in m and "x" not in m) or "cap" not in m:
                     m = meta.setdefault(pid, {})
                     m.update(exif_info(f))
                     m["x"] = 1          # já lido, mesmo sem EXIF
                     meta_dirty[0] = True
                 out.append({"id": pid, "name": name, "day": day, "t": u, "size": st.st_size,
                             "origem": m.get("o") or "", "via": m.get("s") or "",
-                            "serie": m.get("serie") or "", "autor": m.get("autor") or "",
+                            "cap": m.get("cap") or 0, "serie": m.get("serie") or "", "autor": m.get("autor") or "",
                             "dono": m.get("dono") or "", "modelo": m.get("modelo") or ""})
             out.sort(key=lambda x: x["t"])
             if meta_dirty[0]:
