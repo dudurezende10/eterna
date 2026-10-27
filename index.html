@@ -190,6 +190,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .selfcam .ring{position:relative;width:62%;aspect-ratio:3/4;border:3px solid rgba(250,250,248,.9);border-radius:50%;box-shadow:0 0 0 999px rgba(10,9,8,.35)}
 .selfcam.off .ring{border-style:dashed;box-shadow:none}
 .selfshot{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:14px;display:block;animation:pop .35s ease-out}
+.aipick{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start}.aipick .ph{cursor:default;border:0;pointer-events:none}
 .aicard{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:10px;padding:14px;background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
 .aiprev{position:relative;aspect-ratio:4/5;border-radius:6px;overflow:hidden;background:#222 center/cover no-repeat;flex:0 0 auto}
 .aiprev.big{width:100%}
@@ -371,7 +372,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v36 · 26/10 21:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v37 · 26/10 21:15"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -620,7 +621,7 @@ function vFila(){
     <div class="review">
       <div class="panel"><div class="head"><h2>O convidado escolhe</h2><span class="note">${sel.size} escolhidas. Toque para incluir.</span></div>
         <div class="photos">${s.photos.map(p=>photoBtn(p,{act:'fila-sel',sel:sel.has(p.id),tag:p.sold?'VENDIDA':''})).join('')}</div>
-        <h3>Fundo de IA</h3><div class="note">A IA recorta o grupo de uma foto do campo e coloca no fundo escolhido (+ ${fmtR(priceOf('fundo'))} por foto). Prévia com a família-modelo; na operação a prévia é com a foto do grupo.</div>
+        <h3>Fundo de IA</h3><div class="note">A IA escolhe sozinha a melhor foto da sessão para recorte e coloca o grupo no fundo escolhido (+ ${fmtR(priceOf('fundo'))} por foto). Prévia com a família-modelo; na operação a prévia é com a foto do grupo.</div>${(()=>{const pk=aiPick(s.card);return pk?`<div class="aipick"><div class="ph" style="${phStyle(pk.id)}"></div><div><div class="eyebrow">Foto escolhida pela IA · nota ${pk.tot}</div><div class="note">A melhor da sessão para recorte. O fundo vai nesta foto.</div></div></div>`:'<span class="pill warn">Nenhuma foto desta sessão serve para fundo de IA</span>'})()}
         <div class="bgs">${DATA.backgrounds.map(b=>`<button class="bg" data-act="fila-bg" data-bg="${b.id}" aria-pressed="${sim.bg===b.id}"><img src="${b.file}" alt="${esc(b.name)}"><span class="n"><span>${esc(b.name)}</span><span class="note">${esc(b.note)}</span></span></button>`).join('')}</div>
       </div>
       <div class="panel"><h2>Pacote</h2>
@@ -722,7 +723,7 @@ function vCheckout(){
   return head+`<div class="review">
     <div class="panel"><div class="head"><h2>O convidado escolhe</h2><span class="note">${sel.size} escolhidas. Toque para incluir.</span></div>
       <div class="photos">${s.photos.map(p=>photoBtn(p,{act:'fila-sel',sel:sel.has(p.id),tag:p.sold?'VENDIDA':''})).join('')}</div>
-      <h3>Fundo de IA</h3><div class="note">Recorte do grupo a partir de uma foto do campo.</div>
+      <h3>Fundo de IA</h3>${(()=>{const pk=aiPick(s.card);return pk?`<div class="aipick"><div class="ph" style="${phStyle(pk.id)}"></div><div><div class="eyebrow">Foto escolhida pela IA · nota ${pk.tot}</div><div class="note">A melhor da sessão para recorte. O fundo vai nesta foto.</div></div></div>`:'<span class="pill warn">Nenhuma foto desta sessão serve para fundo de IA</span>'})()}
       <div class="bgs">${DATA.backgrounds.map(b=>`<button class="bg" data-act="fila-bg" data-bg="${b.id}" aria-pressed="${sim.bg===b.id}"><img src="${b.file}" alt="${esc(b.name)}"><span class="n"><span>${esc(b.name)}</span><span class="note">${esc(b.note)}</span></span></button>`).join('')}</div>
     </div>
     <div class="panel"><h2>Pacote</h2>
@@ -852,6 +853,18 @@ function vQuiosque(){
 }
 
 // ---------- Convidado ----------
+// ---------- Escolha automática da foto para fundo de IA ----------
+// Na operação roda na ingestão (IA local): detecção de pessoas e pose, segmentação e nitidez. Aqui a nota é simulada, estável por foto.
+const AI_CRIT=[['corpo','Corpo inteiro no quadro','pés e topo da cabeça de todos dentro, com folga'],['borda','Ninguém cortado na borda','nenhuma pessoa do grupo encostando na margem'],['rosto','Rostos visíveis, olhos abertos','todo mundo de frente, sem piscada'],['foco','Foco e exposição','grupo nítido, pele bem exposta'],['recorte','Recorte limpo','borda da pessoa separada do fundo, sem gente de fora atrás']];
+const AI_MIN=70;
+function aiScore(id){const h=h32('ia'+id);const c={};AI_CRIT.forEach(([k],i)=>{c[k]=((h>>>(i*5))%40)+60;});
+  // close, meio corpo e grupo cortado são comuns no campo: corpo inteiro e borda reprovam boa parte das fotos
+  if(h%5<3){c.corpo=35+(h>>>7)%30;}if((h>>>3)%4===0){c.borda=40+(h>>>11)%25;}
+  const tot=Math.round((c.corpo*.3+c.borda*.25+c.rosto*.2+c.foco*.15+c.recorte*.1));return {tot,c};}
+function aiCands(card){const s=sessionObj(card);if(!s)return [];return s.photos.filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]).map(p=>({id:p.id,...aiScore(p.id)})).sort((a,b)=>b.tot-a.tot);}
+const aiOk=c=>c.tot>=AI_MIN&&c.c.corpo>=70&&c.c.borda>=70;
+function aiPick(card){return aiCands(card).find(aiOk)||null;}
+function aiWhy(c){return AI_CRIT.map(([k,n])=>`<span class="pill ${c.c[k]>=80?'good':c.c[k]>=70?'neutral':'warn'}">${esc(n)} ${c.c[k]}</span>`).join('');}
 // ---------- Convidado: fundos de IA (escolhe agora, compra depois) ----------
 function aiBgs(){return DATA.backgrounds;}
 function aiOf(card){SIM.ai=SIM.ai||{};SIM.ai[card]=SIM.ai[card]||{cart:[],bought:[]};return SIM.ai[card];}
@@ -861,22 +874,24 @@ function aiPreview(photoId,bgId,big){const b=aiBg(bgId);
   return `<div class="aiprev" style="background-image:url(${b.file||''})"></div>`;}
 function aiPair(photoId,bgId){return `<span class="aipair"><span class="ph" style="${phStyle(photoId)}"></span><span class="aiprev" style="background-image:url(${aiBg(bgId).file||''})"></span></span>`;}
 function vGuestAI(s){const g=state.guest;const a=g.ai;const ai=aiOf(s.card);const ph=s.photos.filter(p=>hasImg(p.id));
-  if(!a.photo)a.photo=(ph[0]||{}).id;if(!a.bg)a.bg=aiBgs()[0].id;
+  const pick=aiPick(s.card);if(!a.photo)a.photo=pick?pick.id:null;if(!a.bg)a.bg=aiBgs()[0].id;
+  if(!a.photo)return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← Minhas fotos</button></div><h1>Fundos com IA</h1></div></div><div class="phone"><div class="pin"><h2>Nenhuma foto boa para fundo</h2><div class="note">Para trocar o fundo, a IA precisa de uma foto com o grupo inteiro, sem ninguém cortado. Nesta sessão nenhuma passou.</div></div></div>`;
   const inCart=ai.cart.some(x=>x.photo===a.photo&&x.bg===a.bg);const isBought=ai.bought.some(x=>x.photo===a.photo&&x.bg===a.bg);
   return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← Minhas fotos</button></div><h1>Fundos com IA</h1></div><span class="pill neutral">${aiBgs().length} fundos</span></div>
   <div class="phone"><div class="pin">
     ${aiPreview(a.photo,a.bg,true)}
-    <div><div class="eyebrow">1 · Escolha o fundo</div><div class="aibgs">${aiBgs().map(b=>`<button class="aibg" data-act="gai-bg" data-id="${b.id}" aria-pressed="${a.bg===b.id}"><img src="${b.file}" alt=""><span>${esc(b.name)}</span></button>`).join('')}</div></div>
-    <div><div class="eyebrow">2 · Escolha a foto</div><div class="aiphotos">${ph.map(p=>`<button class="ph" data-act="gai-photo" data-id="${p.id}" data-sel="${a.photo===p.id?1:0}" style="${phStyle(p.id)}" aria-label="Usar esta foto"><span class="mark">✓</span></button>`).join('')}</div></div>
+    <div><div class="eyebrow">Escolha o fundo</div><div class="aibgs">${aiBgs().map(b=>`<button class="aibg" data-act="gai-bg" data-id="${b.id}" aria-pressed="${a.bg===b.id}"><img src="${b.file}" alt=""><span>${esc(b.name)}</span></button>`).join('')}</div></div>
+    <div class="aipick"><div class="ph" style="${phStyle(a.photo)}"></div><div><div class="eyebrow">${pick&&a.photo===pick.id?'Foto escolhida pela IA':'Foto escolhida por você'}</div><div class="note">${pick&&a.photo===pick.id?'A melhor da sessão para trocar o fundo: grupo inteiro e ninguém cortado.':'Você trocou a foto sugerida.'}</div>${a.more?'':`<button class="chip" data-act="gai-more" style="margin-top:6px">Usar outra foto</button>`}</div></div>
+    ${a.more?`<div><div class="eyebrow">Fotos boas para fundo nesta sessão</div><div class="aiphotos">${aiCands(s.card).filter(aiOk).map(c=>`<button class="ph" data-act="gai-photo" data-id="${c.id}" data-sel="${a.photo===c.id?1:0}" style="${phStyle(c.id)}" aria-label="Usar esta foto"><span class="mark">✓</span></button>`).join('')}</div><div class="note" style="margin-top:6px">Só aparecem as fotos em que o recorte sai bom.</div></div>`:''}
     ${isBought?`<div class="pill good" style="align-self:flex-start">Você já comprou esta combinação</div>`:inCart?`<button class="btn ghost big" data-act="gai-remove" data-photo="${a.photo}" data-bg="${a.bg}">Tirar da minha lista</button>`:`<button class="btn primary big" data-act="gai-add">Guardar para comprar · ${fmtR(priceOf('fundo'))}</button>`}
     <div class="note">${b2n(ai.cart.length)} na sua lista. Fica salva nesta galeria por 60 dias: dá para comprar agora ou depois, de casa. A IA recorta o seu grupo da foto escolhida e coloca neste fundo, com a luz acertada. Arquivo de 3.000 px.</div>
     ${ai.cart.length?`<button class="btn ghost big" data-act="gai-close">Ver minha lista e pagar</button>`:''}
   </div></div>`;}
 function b2n(n){return n===0?'Nenhuma foto':n===1?'1 foto':n+' fotos';}
-function guestAICard(s){const ai=aiOf(s.card);const tot=ai.cart.length*priceOf('fundo');const ph=s.photos.filter(p=>hasImg(p.id));const first=(ph[0]||{}).id;
+function guestAICard(s){const ai=aiOf(s.card);const tot=ai.cart.length*priceOf('fundo');const pk=aiPick(s.card);if(!pk&&!ai.bought.length)return '';const first=pk?pk.id:null;
   return `<div class="aicard"><div class="row" style="justify-content:space-between;align-items:baseline"><div><div class="eyebrow">Novo</div><h3 style="margin:2px 0 0">Suas fotos com fundos de IA</h3></div><span class="note">${fmtR(priceOf('fundo'))} cada</span></div>
     <div class="aistrip">${aiBgs().map(b=>`<div class="aistripi">${aiPreview(first,b.id,false)}<span>${esc(b.name)}</span></div>`).join('')}</div>
-    <button class="btn primary big" data-act="gai-open">Escolher fundo</button>
+    ${pk?`<button class="btn primary big" data-act="gai-open">Escolher fundo</button>`:''}
     ${ai.cart.length?`<div class="cart">${ai.cart.map(x=>`<div class="cartline"><span class="row" style="gap:8px;align-items:center">${aiPair(x.photo,x.bg)}${esc(aiBg(x.bg).name||'')}</span><span class="row" style="gap:8px;align-items:center"><b>${fmtR(priceOf('fundo'))}</b><button class="chip" data-act="gai-remove" data-photo="${x.photo}" data-bg="${x.bg}" aria-label="Remover">✕</button></span></div>`).join('')}<div class="cartline"><span><b>Total</b></span><b>${fmtR(tot)}</b></div></div>
     <button class="btn primary big" data-act="gai-pay">Pagar agora · ${fmtR(tot)} (Pix ou cartão)</button><div class="note">Ou feche esta página: a lista fica guardada e você paga depois.</div>`:''}
     ${ai.bought.length?`<div><div class="eyebrow">Compradas com fundo de IA</div><div class="aistrip">${ai.bought.map(x=>aiPair(x.photo,x.bg)).join('')}</div></div>`:''}
@@ -1149,6 +1164,10 @@ function vChroma(){
     <div class="tile"><span class="eyebrow">Guardadas para depois</span><span class="v">${fmtN(wait)}</span><span class="d">na lista do convidado</span></div>
     <div class="tile"><span class="eyebrow">Escolhidas no balcão</span><span class="v">${fmtN(fila)}</span><span class="d">sessões com fundo</span></div>
   </div>
+  ${(()=>{const ss=DATA.sampled;const ok=ss.filter(x=>aiPick(x.card));const byK={};ss.forEach(x=>{byK[x.key]=byK[x.key]||[0,0];byK[x.key][1]++;if(aiPick(x.card))byK[x.key][0]++;});
+    return `<div class="panel"><h2>Como o sistema escolhe a foto</h2><div class="note" style="font-size:13px">Automático, na hora em que as fotos chegam. A IA dá nota a cada foto da sessão nos cinco critérios abaixo e separa a de maior nota. Se ela passar de ${AI_MIN} e não tiver ninguém cortado nem sem corpo inteiro, vira a foto da sessão para fundo de IA e já aparece com os fundos no balcão e na galeria. Se nenhuma passar, a sessão não recebe oferta de fundo. O convidado pode trocar por outra foto que também tenha passado.</div>
+      <div class="tablewrap"><table><thead><tr><th>Critério</th><th>O que a IA olha</th><th class="num">Peso</th></tr></thead><tbody>${AI_CRIT.map(([k,n,d],i)=>`<tr><td class="name">${esc(n)}</td><td class="note">${esc(d)}</td><td class="num">${[30,25,20,15,10][i]}%</td></tr>`).join('')}</tbody></table></div>
+      <div class="note">Na amostra: ${ok.length} de ${ss.length} sessões (${pct(ok.length,ss.length)}) têm foto apta. Por fotógrafo: ${Object.entries(byK).map(([k,[a,b]])=>`${esc(P[k].name)} ${pct(a,b)}`).join(' · ')}. Fotógrafo com taxa baixa está esquecendo o quadro de corpo inteiro do roteiro.</div></div>`;})()}
   <div class="panel"><h2>Fundos</h2><div class="note">Decisão de 15/10: nos fundos "Sala de imprensa" e "No telão" entra só o logo do Maracanã, sem marcas de terceiros. As prévias abaixo ainda mostram a versão de referência.</div>
     <div class="bgs">${DATA.backgrounds.map(b=>`<button class="bg" data-act="zoom-img" data-src="${b.file}" data-cap="${esc(b.name)}"><img src="${b.file}" alt="${esc(b.name)}"><span class="n"><span>${esc(b.name)}${byBg[b.id]?` · <b>${byBg[b.id]} vendida${byBg[b.id]>1?'s':''}</b>`:''}</span><span class="note">${esc(b.note)}</span></span></button>`).join('')}</div></div>
   ${old.length?`<div class="panel"><h2>Histórico do Chroma (até 26/10)</h2><div class="note">${old.map(c=>`${esc(c.name)}: ${fmtN(c.cards)} sessões, ${pct(c.cardsSold,c.cards)} vendem, ${fmtR(c.revenue)}`).join(' · ')}. Fica nos totais do período; não entra mais na operação.</div></div>`:''}`;
@@ -1894,6 +1913,7 @@ document.addEventListener('click',e=>{
     case 'gself-snap':{const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v||!v.videoWidth)break;const c=document.createElement('canvas');const w=Math.min(720,v.videoWidth);c.width=w;c.height=Math.round(w*v.videoHeight/v.videoWidth);const x=c.getContext('2d');x.translate(c.width,0);x.scale(-1,1);x.drawImage(v,0,0,c.width,c.height);sf.shot=c.toDataURL('image/jpeg',.85);if(sf.stream){sf.stream.getTracks().forEach(t=>t.stop());sf.stream=null;}render();selfieFound();break;}
     case 'gai-open':state.guest.ai={photo:null,bg:null};render();scrollTo(0,0);break;
     case 'gai-close':state.guest.ai=null;render();break;
+    case 'gai-more':state.guest.ai.more=true;render();break;
     case 'gai-bg':state.guest.ai.bg=d.id;render();break;
     case 'gai-photo':state.guest.ai.photo=d.id;render();break;
     case 'gai-add':{const a=state.guest.ai;const ai=aiOf(state.guest.code);if(!ai.cart.some(x=>x.photo===a.photo&&x.bg===a.bg))ai.cart.push({photo:a.photo,bg:a.bg,at:now().toISOString()});saveSim();toast('Guardada na sua lista');render();break;}
