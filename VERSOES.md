@@ -56,3 +56,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v54 | `038adef` | Montagens dos fundos de IA abrem em tamanho grande pela lupa, com setas para passar entre os fundos |
 | v55 | `93dd973` | Biblioteca do Upload: hoje e ontem, filtros por hora, últimas 1 e 2 horas, fotógrafo e vendidas/não vendidas |
 | v56 | `2f1d11c` | Fotógrafos Klássius e Andressa (telas, login e FTP); Biblioteca mostra a equipe toda no filtro |
+| v57 | `b191b7c` | Correção do nome: Sandessa (telas, login e FTP) |
