@@ -414,7 +414,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v71 · 27/10 20:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v71</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v72 · 27/10 20:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v72</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -1206,15 +1206,20 @@ function revSessions(){const out=DATA.sampled.slice();const seen=new Set(out.map
 // Casa as sessões da Roverpix de um dia com as fotos guardadas aqui: pelo fotógrafo (câmera do dia) e pela ordem dos cliques;
 // se a quantidade do dia bate, vai em sequência; senão, pela hora da captura perto da hora do envio.
 function liveMatch(day,ses){const out={};const lib=state.lib.filter(f=>(f.cap?localDay(f.cap):f.day)===day);if(!lib.length)return out;const ix=libIndex();
-  const byKey={};ses.forEach(x=>{const k=x.key||'?';(byKey[k]=byKey[k]||[]).push(x);});
-  const bySerie={};lib.forEach(f=>{const s=f.serie||('ftp:'+(f.origem||''));(bySerie[s]=bySerie[s]||[]).push(f);});Object.values(bySerie).forEach(a=>a.sort((p,q)=>(p.cap||p.t)-(q.cap||q.t)));
-  const used=new Set();
-  Object.entries(byKey).forEach(([k,list])=>{list.sort((a,b)=>(a.t0||0)-(b.t0||0));const need=list.reduce((a,x)=>a+x.n,0);
-    let pool=Object.entries(bySerie).filter(([sr,a])=>{const who=libWho(a[0],ix);return who===k;}).flatMap(([sr,a])=>a);
-    if(!pool.length){const eq=Object.entries(bySerie).filter(([sr,a])=>a.length===need&&!a.some(f=>used.has(f.id)));if(eq.length===1)pool=eq[0][1];}
-    pool=pool.filter(f=>!used.has(f.id)).sort((p,q)=>(p.cap||p.t)-(q.cap||q.t));
-    if(pool.length===need){let i=0;list.forEach(x=>{out[x.card]=pool.slice(i,i+x.n);i+=x.n;});pool.forEach(f=>used.add(f.id));return;}
-    list.forEach(x=>{if(!x.t0)return;const got=pool.filter(f=>!used.has(f.id)&&f.cap&&f.cap>=x.t0-15*60&&f.cap<=x.t1+120).slice(0,x.n);if(got.length){out[x.card]=got;got.forEach(f=>used.add(f.id));}});});
+  // A Roverpix só sabe a hora em que a foto chegou lá (o cartão é lido depois de 1 a 3 famílias), não a hora do clique.
+  // Então as sessões de um fotógrafo, em ordem, consomem as fotos da câmera dele em ordem de captura: cada sessão
+  // leva as próximas n fotos clicadas antes de ela ter chegado. Câmera sem check-in: fica com o fotógrafo cujas
+  // sessões acumuladas batem com a contagem de fotos da câmera ao longo do dia.
+  const FOLGA=5*60;
+  const byKey={};ses.forEach(x=>{if(!x.t0)return;const k=x.key||'?';(byKey[k]=byKey[k]||[]).push(x);});Object.values(byKey).forEach(l=>l.sort((a,b)=>(a.t0-b.t0)||(a.t1-b.t1)));
+  const humanKey=k=>!/^chroma/.test(k)&&k!=='?'&&k!=='sem';
+  const bySerie={};lib.forEach(f=>{if(!f.cap)return;const s=f.serie||('ftp:'+(f.origem||''));(bySerie[s]=bySerie[s]||[]).push(f);});Object.values(bySerie).forEach(a=>a.sort((p,q)=>p.cap-q.cap));
+  const erro=(k,a)=>{let cum=0,e=0;const l=byKey[k];l.forEach(x=>{cum+=x.n;const got=a.filter(f=>f.cap<=x.t1+FOLGA).length;e+=Math.abs(got-cum);});return e/l.length;};
+  const taken=new Set();const who={};
+  Object.entries(bySerie).forEach(([sr,a])=>{const w=libWho(a[0],ix);if(w&&byKey[w]){who[sr]=w;taken.add(w);}});
+  Object.entries(bySerie).forEach(([sr,a])=>{if(who[sr]||a.length<10)return;let best=null,be=Infinity;Object.keys(byKey).forEach(k=>{if(taken.has(k)||!humanKey(k))return;const e=erro(k,a);if(e<be){be=e;best=k;}});
+    if(best&&be<=a.length*.2){who[sr]=best;taken.add(best);}});
+  Object.entries(bySerie).forEach(([sr,a])=>{const k=who[sr];if(!k)return;let i=0;byKey[k].forEach(x=>{const got=[];while(i<a.length&&got.length<x.n&&a[i].cap<=x.t1+FOLGA){got.push(a[i]);i++;}if(got.length)out[x.card]=got;});});
   return out;}
 function vRevisao(){
   const f=state.revFilter;const all=revSessions();const samp=all.filter(s=>(f.key==='all'||s.key===f.key)&&(f.date==='all'||s.date===f.date)&&(f.venda==='all'||(f.venda==='com'?s.soldTotal>0:f.venda==='sem'?s.soldTotal===0:s.soldTotal===s.total)));

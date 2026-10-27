@@ -1153,6 +1153,7 @@ def rv_aggregate(day, orders, payments, photos):
             x["t0"] = ts if x["t0"] is None or ts < x["t0"] else x["t0"]
             x["t1"] = ts if x["t1"] is None or ts > x["t1"] else x["t1"]
     agg["sessions"] = sorted(ses.values(), key=lambda x: x["t0"] or 0)
+    agg["sv"] = 2  # versão do cálculo das sessões; muda → dias antigos são refeitos
     for d in (agg["sellers"], agg["payments"], agg["products"], agg["rows"]):
         for v in d.values():
             for f in ("revenue", "amount"):
@@ -1165,7 +1166,8 @@ def rv_epoch(v):
     try:
         t = _dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
         if not t.tzinfo:
-            t = t.replace(tzinfo=_dt.timezone(_dt.timedelta(hours=-3)))
+            # a Roverpix grava em UTC sem fuso (fotos de 08h em Brasília chegam como 11h)
+            t = t.replace(tzinfo=_dt.timezone.utc)
         return t.timestamp()
     except Exception:
         return None
@@ -1219,7 +1221,7 @@ def rover_loop():
                     path = os.path.join(ROVER_DIR, "agg", day + ".json")
                     if os.path.exists(path) and i > 1:
                         try:
-                            if "sessions" not in json.load(open(path)):
+                            if json.load(open(path)).get("sv") != 2:
                                 raw = json.load(open(os.path.join(ROVER_DIR, "raw", day + ".json")))
                                 with open(path, "w") as f:
                                     json.dump(rv_aggregate(day, raw["orders"], raw["payments"], raw["photos"]), f)
