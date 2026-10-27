@@ -414,7 +414,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v72 · 27/10 20:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v72</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v73 · 27/10 20:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v73</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -1262,7 +1262,7 @@ const ING0=()=>({running:false,timer:null,queue:[],feed:[],cur:null,done:[],n:{a
 state.ing=ING0();
 const ING_FLAGS=['Flamengo','Brasil',null,'Fluminense','Vasco','Argentina'];
 function ingQueue(){
-  const sess=DATA.sampled.filter(x=>x.key===state.imp.key).slice(0,4);const q=[];
+  const sess=DATA.sampled.filter(x=>state.imp.key==='todos'||x.key===state.imp.key).slice(0,4);const q=[];
   sess.forEach((x,i)=>{const ph=x.photos.filter(p=>hasImg(p.id)).slice(0,7);const flag=ING_FLAGS[i%ING_FLAGS.length];
     ph.forEach((p,j)=>q.push({id:p.id,kind:'photo',flag,conf:flag?((i===3&&j===2)?61:84+(h32(p.id)%14)):0}));
     if(i===1)ph.slice(0,3).forEach(p=>q.push({id:p.id,kind:'dup'}));
@@ -1333,7 +1333,8 @@ function ingStop(){const g=state.ing;if(g.timer)clearInterval(g.timer);g.timer=n
 function ingClose(how){const g=state.ing;const c=g.cur;g.cur=null;if(!c||!c.photos.length)return;
   const pt=DATA.points.find(p=>p.id===state.imp.point);const card='LP'+Math.random().toString(36).slice(2,9).toUpperCase();
   const top=Object.entries(c.flags).sort((a,b)=>b[1]-a[1])[0];const flag=top?top[0]:null;
-  SIM.sessions[card]={key:state.imp.key,pdv:pt?pt.name:'',point:state.imp.point,time:hhmm(now()),date:'hoje',status:'fechada',selected:[],bg:null,cart:[],photos:c.photos.map(p=>({id:p.id,sold:0})),openedAt:c.start,closedAt:now().toISOString(),source:state.imp.mode,closedBy:how,flag};
+  const skey=state.imp.key!=='todos'?state.imp.key:impWho(c.photos);
+  SIM.sessions[card]={key:skey,pdv:pt?pt.name:'',point:pt?state.imp.point:'',time:hhmm(now()),date:'hoje',status:'fechada',selected:[],bg:null,cart:[],photos:c.photos.map(p=>({id:p.id,sold:0})),openedAt:c.start,closedAt:now().toISOString(),source:state.imp.mode,closedBy:how,flag};
   if(flag){if(!SIM.flagUse)SIM.flagUse={};SIM.flagUse[flag]=(SIM.flagUse[flag]||0)+1;}
   if(!SIM.invalid)SIM.invalid={};let bad=[];c.photos.forEach(p=>{const r=validatePhoto(p.id);if(r){SIM.invalid[p.id]=r;p.invalid=r;bad.push(r);}});g.n.invalid=(g.n.invalid||0)+bad.length;
   const real=c.photos.filter(p=>/^(ag_|up_)/.test(p.id)||UP[p.id]).map(p=>p.id);
@@ -1341,8 +1342,12 @@ function ingClose(how){const g=state.ing;const c=g.cur;g.cur=null;if(!c||!c.phot
       g.feed.unshift({k:b.length?'warn':'ok',t:`Validação ${card}: ${real.length-b.length} válidas${b.length?`, ${b.length} não ${b.length===1?'válida':'válidas'}`:''}`,s:b.length?`IA barrou: ${[...new Set(b.map(x=>x[1]))].join(', ')}. Ficam no acervo, fora da fila.`:'rosto e olhos aprovados em todas'});render();});}
   else g.feed.unshift({k:bad.length?'warn':'ok',t:`Validação: ${c.photos.length-bad.length} válidas${bad.length?`, ${bad.length} não ${bad.length===1?'válida':'válidas'}`:''}`,s:bad.length?`IA barrou: ${[...new Set(bad)].join(', ')}. Ficam no acervo, fora da fila.`:'técnica e IA aprovaram todas'});
   g.done.unshift({card,n:c.photos.length-bad.length,how,flag,photos:c.photos});
-  log(`Upload por ${srcName()}: sessão ${card} de ${P[state.imp.key].name}, ${c.photos.length} fotos, fechada por ${how}${flag?', bandeira '+flag:''}`);saveSim();
+  log(`Upload por ${srcName()}: sessão ${card} de ${P[skey]?P[skey].name:'fotógrafo não identificado'}, ${c.photos.length} fotos, fechada por ${how}${flag?', bandeira '+flag:''}`);saveSim();
 }
+// Upload com "Todos": cada grupo fica com o fotógrafo das fotos (check-in da câmera, nome na câmera, sessão ou usuário do FTP)
+function impName(){const k=state.imp.key;return k==='todos'?'Todos os fotógrafos':(P[k]?P[k].name:k);}
+function impWho(photos){const ix=libIndex();const n={};photos.forEach(p=>{let k=null;const f=state.lib.find(x=>'ag_'+x.id===p.id);if(f)k=libWho(f,ix);else{const s=DATA.sampled.find(x=>x.photos.some(q=>q.id===p.id));if(s)k=s.key;}if(k)n[k]=(n[k]||0)+1;});
+  const top=Object.entries(n).sort((a,b)=>b[1]-a[1])[0];if(top)return top[0];if(!P.sem)P.sem={name:'Sem fotógrafo',human:false,started:null};return 'sem';}
 const srcName=()=>state.imp.mode==='cartao'?'cartão':state.imp.mode==='5g'?'5G':'Wi‑Fi';
 function ingTick(){
   const g=state.ing;const it=g.queue.shift();
@@ -1361,9 +1366,9 @@ function ingTick(){
 }
 function vImportar(){return vImportarCore()+rftpPanel()+libPanel();}
 function vImportarCore(){
-  const im=state.imp,g=state.ing;const pt=DATA.points.find(p=>p.id===im.point)||DATA.points[0];const name=P[im.key].name;
+  const im=state.imp,g=state.ing;const pt=im.point==='todos'?{id:'todos',name:'Todos os pontos'}:(DATA.points.find(p=>p.id===im.point)||DATA.points[0]);const name=impName();
   const pending=g.queue.filter(x=>x.kind==='photo'||x.kind==='dup').length;const cur=g.cur?g.cur.photos.length:0;
-  const picker=`<div class="chips"><button class="chip" data-act="imp-mode" data-m="cartao" aria-pressed="${im.mode==='cartao'}">Cartão no computador do ponto</button><button class="chip" data-act="imp-mode" data-m="wifi" aria-pressed="${im.mode==='wifi'}">Celular, Wi‑Fi do estádio</button><button class="chip" data-act="imp-mode" data-m="5g" aria-pressed="${im.mode==='5g'}">Celular, 5G</button><span style="width:8px"></span><label class="note">Fotógrafo <select data-act="imp-key" class="chip">${humans.map(k=>`<option value="${k}" ${k===im.key?'selected':''}>${P[k].name}</option>`).join('')}</select></label><label class="note">Ponto <select data-act="imp-point" class="chip">${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===im.point?'selected':''}>${p.name}</option>`).join('')}</select></label></div>`;
+  const picker=`<div class="chips"><button class="chip" data-act="imp-mode" data-m="cartao" aria-pressed="${im.mode==='cartao'}">Cartão no computador do ponto</button><button class="chip" data-act="imp-mode" data-m="wifi" aria-pressed="${im.mode==='wifi'}">Celular, Wi‑Fi do estádio</button><button class="chip" data-act="imp-mode" data-m="5g" aria-pressed="${im.mode==='5g'}">Celular, 5G</button><span style="width:8px"></span><label class="note">Fotógrafo <select data-act="imp-key" class="chip"><option value="todos" ${im.key==='todos'?'selected':''}>Todos</option>${humans.map(k=>`<option value="${k}" ${k===im.key?'selected':''}>${P[k].name}</option>`).join('')}</select></label><label class="note">Ponto <select data-act="imp-point" class="chip"><option value="todos" ${im.point==='todos'?'selected':''}>Todos</option>${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===im.point?'selected':''}>${p.name}</option>`).join('')}</select></label></div>`;
   const tile=(l,v,d)=>`<div class="tile"><span class="eyebrow">${l}</span><span class="v">${v}</span>${d?`<span class="d">${d}</span>`:''}</div>`;
   const ico={ok:'good',dup:'neutral',black:'bad',auto:'warn',warn:'bad'};
   const phone=`<div class="phone"><div class="pin">
@@ -2198,7 +2203,7 @@ document.addEventListener('click',e=>{
     case 'session':state.session=d.card;render();window.scrollTo({top:0});break;
     case 'back-sessions':state.session=null;render();break;
     case 'zoom':{e.stopPropagation();const id=d.id;
-      if(state.view==='importar'){const all=[...(state.ing.cur?state.ing.cur.photos:[]),...state.ing.done.flatMap(x=>x.photos)];openGallery(all,id,`${P[state.imp.key].name} · ingestão`,{});break;}
+      if(state.view==='importar'){const all=[...(state.ing.cur?state.ing.cur.photos:[]),...state.ing.done.flatMap(x=>x.photos)];openGallery(all,id,`${impName()} · ingestão`,{});break;}
       if(state.view==='revisao'&&state.session){const ss=revSessions().find(x=>x.card===state.session);openGallery(ss.photos.filter(p=>hasImg(p.id)),id,`${P[ss.key].name} · ${ss.card}`,{review:true});break;}
       const s=demoSessions().find(x=>x.photos.find(p=>p.id===id));if(s)openGallery(s.photos.filter(p=>hasImg(p.id)),id,`${P[s.key]?P[s.key].name:''} · ${s.card}`,(state.view==='fila'||state.view==='caixa')?{edit:true,quick:true}:{});else openModal(phStyle(id),'');break;}
     case 'm-rate':{e.stopPropagation();const p=curPhoto();const r=draft();const v=+d.v;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();break;}
