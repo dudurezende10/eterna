@@ -54,3 +54,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v52 | `5d06aca` | Correção do erro 400 do Photoroom: sem forçar JPEG; aceita PNG transparente e o app monta o fundo por baixo |
 | v53 | `580a0f6` | Biblioteca no Upload (tudo o que já está no computador, por dia); reabrir o Eterna ou religar o cartão não baixa de novo; Photoroom com saída PNG |
 | v54 | `038adef` | Montagens dos fundos de IA abrem em tamanho grande pela lupa, com setas para passar entre os fundos |
+| v55 | `93dd973` | Biblioteca do Upload: hoje e ontem, filtros por hora, últimas 1 e 2 horas, fotógrafo e vendidas/não vendidas |
