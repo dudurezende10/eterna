@@ -392,7 +392,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v56 · 27/10 17:25"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v57 · 27/10 17:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -419,7 +419,7 @@ const NAME_LOW=new Set(['da','de','do','das','dos','e']);
 function nameCase(n){return String(n||'').trim().toLowerCase().split(/\s+/).map((w,i)=>i>0&&NAME_LOW.has(w)?w:w.charAt(0).toUpperCase()+w.slice(1)).join(' ');}
 DATA.sellers.forEach(x=>x.name=nameCase(x.name));Object.values(DATA.people).forEach(p=>{if(p.human)p.name=nameCase(p.name);});
 // Equipe de fotógrafos atual (out/2026): além dos que vieram no histórico da Roverpix
-[['klassius','Klássius'],['andressa','Andressa']].forEach(([k,n])=>{if(!DATA.people[k])DATA.people[k]={name:n,human:true,started:'2026-10-27'};});
+[['klassius','Klássius'],['sandessa','Sandessa']].forEach(([k,n])=>{if(!DATA.people[k])DATA.people[k]={name:n,human:true,started:'2026-10-27'};});
 const P=DATA.people, humans=Object.keys(P).filter(k=>P[k].human), chromas=Object.keys(P).filter(k=>!P[k].human);
 const byDay={}; DATA.rows.forEach(r=>{(byDay[r.date]=byDay[r.date]||[]).push(r)});
 function buildStats(days){const dset=new Set(days);const stats={};const byDay={};DATA.rows.filter(r=>dset.has(r.date)).forEach(r=>{(byDay[r.date]=byDay[r.date]||[]).push(r)});
@@ -1784,7 +1784,7 @@ const PRESETS={
 const SEED_USERS=[
  ['eduardo@eduardorezende.com','Eduardo Rezende','admin'],
  ['hello@eterna.photo','Eterna (hello@)','admin'],
- ['carlos@eterna.photo','Carlos','foto','carlos'],['marinara@eterna.photo','Marinara','foto','marinara'],['samuel@eterna.photo','Samuel','foto','samuel'],['yago@eterna.photo','Yago','foto','yago'],['marcio@eterna.photo','Márcio','foto','marcio'],['klassius@eterna.photo','Klássius','foto','klassius'],['andressa@eterna.photo','Andressa','foto','andressa'],
+ ['carlos@eterna.photo','Carlos','foto','carlos'],['marinara@eterna.photo','Marinara','foto','marinara'],['samuel@eterna.photo','Samuel','foto','samuel'],['yago@eterna.photo','Yago','foto','yago'],['marcio@eterna.photo','Márcio','foto','marcio'],['klassius@eterna.photo','Klássius','foto','klassius'],['sandessa@eterna.photo','Sandessa','foto','sandessa'],
  ['loja@eterna.photo','Loja · vendedores','venda'],
  ['qualidade@eterna.photo','Validação','valida'],
  ['supervisor@eterna.photo','Supervisão','supervisor'],
@@ -1798,7 +1798,8 @@ function seedUsers(){USERS={};SEED_USERS.forEach(([e,n,p,k])=>{USERS[e]={email:e
 seedUsers();
 try{const u=localStorage.getItem('eterna.users.v1');if(u){const o=JSON.parse(u);if(o&&Object.keys(o).length){USERS=o;Object.values(USERS).forEach(x=>{if(x.preset&&x.preset!=='custom'&&PRESETS[x.preset]){const base=presetPerms(x.preset);MODULES.forEach(([m])=>{if(!x.perms[m])x.perms[m]={...base[m]}});}else MODULES.forEach(([m])=>{if(!x.perms[m])x.perms[m]={...NONE}});const sd=SEED_USERS.find(y=>y[0]===x.email);if(sd&&sd[3]&&!x.key)x.key=sd[3];});if(USERS['admin@eterna.photo']&&!USERS['hello@eterna.photo']){const u=USERS['admin@eterna.photo'];delete USERS['admin@eterna.photo'];u.email='hello@eterna.photo';u.name='Eterna (hello@)';USERS[u.email]=u;}}}}catch(e){}
 // fotógrafos novos da equipe entram uma vez nos usuários já salvos (se apagados depois, não voltam)
-try{if(localStorage.getItem('eterna.users.seed')!=='2'){['klassius@eterna.photo','andressa@eterna.photo'].forEach(e=>{const sd=SEED_USERS.find(y=>y[0]===e);if(sd&&!USERS[e])USERS[e]={email:e,name:sd[1],preset:sd[2],key:sd[3],perms:presetPerms(sd[2]),active:true,createdAt:new Date().toISOString(),lastLogin:null};});localStorage.setItem('eterna.users.seed','2');localStorage.setItem('eterna.users.v1',JSON.stringify(USERS));}}catch(e){}
+try{const a=USERS['andressa@eterna.photo'];if(a&&a.key==='andressa'){delete USERS['andressa@eterna.photo'];localStorage.setItem('eterna.users.seed','1');}
+  if(localStorage.getItem('eterna.users.seed')!=='3'){['klassius@eterna.photo','sandessa@eterna.photo'].forEach(e=>{const sd=SEED_USERS.find(y=>y[0]===e);if(sd&&!USERS[e])USERS[e]={email:e,name:sd[1],preset:sd[2],key:sd[3],perms:presetPerms(sd[2]),active:true,createdAt:new Date().toISOString(),lastLogin:null};});localStorage.setItem('eterna.users.seed','3');localStorage.setItem('eterna.users.v1',JSON.stringify(USERS));}}catch(e){}
 function saveUsers(changed){try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}if(state.db&&changed){try{const id=encodeURIComponent(changed);const u=USERS[changed];if(u)state.db.doc('usuarios/'+id).set(u);else state.db.doc('usuarios/'+id).set({email:changed,deleted:true,at:now().toISOString()});}catch(e){console.warn('db usuarios',e)}}}
 function userFor(email){const e=normEmail(email);const u=USERS[e];if(u&&u.active)return u;if(u&&!u.active)return null;return {email:e,name:e.split('@')[0],preset:'cliente',perms:presetPerms('cliente'),active:true,guest:true};}
 function can(mod,op){const u=state.user;if(!u)return false;const p=u.perms&&u.perms[mod];return !!(p&&p[op||'r']);}
