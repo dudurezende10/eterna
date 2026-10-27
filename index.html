@@ -1,4 +1,7 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}.facepick{margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.facecand{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card,#fff);border:1px solid var(--line,#ddd);border-radius:12px;padding:8px;cursor:pointer;font:inherit;color:inherit}
+.facecand .ph{width:120px;height:90px;border-radius:8px}
+</style></head><body>
 <title>Viva Maracanã · Fotos</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -890,6 +893,42 @@ function loadImg(src){return new Promise(res=>{const im=new Image();im.onload=()
 function plateImg(id){return PLATES[id]||(PLATES[id]=loadImg(`img/plate-${id}.jpg`));}
 async function photoCanvas(id){if(UP[id]){const im=await loadImg(UP[id].src);if(!im)return null;const sc=Math.min(1,1400/im.width);const c=mkc(im.width*sc,im.height*sc);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c;}
   const sp=spriteOf[id];if(!sp)return null;const im=await loadImg('sprites/'+sp.file);if(!im)return null;const cw=im.width/sp.cols,ch=im.height/sp.rows;const col=sp.i%sp.cols,row=Math.floor(sp.i/sp.cols);const c=mkc(cw*2,ch*2);const x=c.getContext('2d');x.imageSmoothingQuality='high';x.drawImage(im,col*cw,row*ch,cw,ch,0,0,c.width,c.height);return c;}
+// ---------- reconhecimento facial (face-api, MIT; roda no navegador do ponto, nenhuma foto sai do aparelho) ----------
+// Cada foto tem os rostos lidos uma vez; a impressão (128 números por rosto) fica guardada neste navegador.
+// Selfie do convidado e câmera do checkout/quiosque: o rosto é comparado com as impressões e abre a sessão com mais fotos da pessoa.
+let FACE=null;const FACEIDX={};const FACE_LIM=.42,FACE_MIN=40,FACE_MARGEM=.08;let FACEQ=Promise.resolve();
+state.face={done:0,total:0,busy:false,err:null};
+const f2b=a=>{const u=new Uint8Array(new Float32Array(a).buffer);let t='';for(let i=0;i<u.length;i++)t+=String.fromCharCode(u[i]);return btoa(t)};
+const b2f=t=>{const b=atob(t);const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Float32Array(u.buffer)};
+try{const j=JSON.parse(localStorage.getItem('eterna.faces.v2')||'{}');for(const [id,l] of Object.entries(j))FACEIDX[id]=l.map(b2f);}catch(e){}
+let faceSaveT=null;function faceSave(){clearTimeout(faceSaveT);faceSaveT=setTimeout(()=>{try{const o={};for(const [id,l] of Object.entries(FACEIDX))o[id]=l.map(f2b);localStorage.setItem('eterna.faces.v2',JSON.stringify(o))}catch(e){}},1500)}
+function faceLoad(){if(FACE)return FACE;FACE=new Promise((res,rej)=>{const go=async()=>{try{const f=window.faceapi;await f.tf.ready();const u='vendor/faceapi/model';await Promise.all([f.nets.ssdMobilenetv1.loadFromUri(u),f.nets.faceLandmark68Net.loadFromUri(u),f.nets.faceRecognitionNet.loadFromUri(u)]);res(f);}catch(e){FACE=null;rej(e)}};
+  if(window.faceapi){go();return;}const sc=document.createElement('script');sc.src='vendor/faceapi/face-api.js';sc.onload=go;sc.onerror=()=>{FACE=null;rej(new Error('sem reconhecimento'))};document.head.appendChild(sc);});return FACE;}
+async function faceRead(src){const f=await faceLoad();const r=await f.detectAllFaces(src,new f.SsdMobilenetv1Options({minConfidence:.4,maxResults:30})).withFaceLandmarks().withFaceDescriptors();return r.filter(x=>x.detection.box.width>=FACE_MIN).map(x=>({d:x.descriptor,a:x.detection.box.area}));}
+function faceStatus(){const el=$('#face-st');if(!el)return;const f=state.face;el.textContent=f.err?'Reconhecimento indisponível':f.busy?`Lendo rostos ${f.done}/${f.total}`:'';}
+function faceIndexAll(){if(state.face.busy)return;const ids=[...new Set(demoSessions().flatMap(x=>x.photos.map(p=>p.id)))].filter(id=>!FACEIDX[id]&&hasImg(id));if(!ids.length)return;
+  const f=state.face;f.busy=true;f.total=ids.length;f.done=0;f.err=null;faceStatus();
+  FACEQ=FACEQ.then(async()=>{for(const id of ids){if(!FACEIDX[id]){try{const c=await photoCanvas(id);FACEIDX[id]=c?(await faceRead(c)).map(x=>x.d):[];}catch(e){f.err=String(e&&e.message||e);break;}}
+    f.done++;if(f.done%5===0){faceStatus();faceSave();}await new Promise(r=>setTimeout(r,0));}f.busy=false;faceSave();faceStatus();});}
+// Devolve as sessões onde o rosto aparece, da que tem mais fotos da pessoa para a que tem menos.
+// Várias imagens da mesma pessoa (quadros da câmera) viram uma leitura só, pela média. "clara" = pode abrir sem perguntar.
+async function faceFind(srcs,ok){srcs=[].concat(srcs);const ds=[];for(const im of srcs){const fs=await faceRead(im);if(fs.length)ds.push(fs.sort((a,b)=>b.a-a.a)[0].d);}
+  if(!ds.length)return {semRosto:true,list:[]};const me=new Float32Array(128);for(const d of ds)for(let i=0;i<128;i++)me[i]+=d[i]/ds.length;
+  faceIndexAll();await FACEQ;const res={};
+  for(const x of demoSessions()){if(ok&&!ok(x))continue;for(const p of x.photos){const l=FACEIDX[p.id];if(!l)continue;let best=9;for(const d of l){let t=0;for(let i=0;i<128;i++){const q=d[i]-me[i];t+=q*q}t=Math.sqrt(t);if(t<best)best=t}
+    if(best<FACE_LIM){const r=res[x.card]||(res[x.card]={card:x.card,fotos:[],best:9});r.fotos.push(p.id);r.best=Math.min(r.best,best)}}}
+  const list=Object.values(res).sort((a,b)=>b.fotos.length-a.fotos.length||a.best-b.best);
+  const clara=list.length===1||(list.length>1&&(list[0].fotos.length>list[1].fotos.length||list[1].best-list[0].best>=FACE_MARGEM));
+  return {list,clara};}
+// Medição: cada foto tem o maior rosto procurado nas outras fotos; acerto = a sessão dela vem em primeiro.
+async function faceMeasure(){faceIndexAll();await FACEQ;const ph=[];for(const x of demoSessions())for(const p of x.photos)if(FACEIDX[p.id]&&FACEIDX[p.id].length)ph.push({card:x.card,id:p.id,f:FACEIDX[p.id]});
+  const per={};ph.forEach(p=>per[p.card]=(per[p.card]||0)+1);let q=0,certo=0,errado=0,duvida=0,nada=0;
+  for(const p of ph){if(per[p.card]<2)continue;for(const me of p.f){q++;const res={};
+    for(const o of ph){if(o.id===p.id)continue;let best=9;for(const d of o.f){let t=0;for(let i=0;i<128;i++){const z=d[i]-me[i];t+=z*z}t=Math.sqrt(t);if(t<best)best=t}
+      if(best<FACE_LIM){const r=res[o.card]||(res[o.card]={card:o.card,n:0,best:9});r.n++;r.best=Math.min(r.best,best)}}
+    const L=Object.values(res).sort((a,b)=>b.n-a.n||a.best-b.best);if(!L.length){nada++;continue;}
+    const clara=L.length===1||L[0].n>L[1].n||L[1].best-L[0].best>=FACE_MARGEM;if(!clara){duvida++;continue;}if(L[0].card===p.card)certo++;else errado++;}}
+  return {fotos:ph.length,rostos:q,certo,errado,duvida,nada,acerto:q?certo/(certo+errado||1):0};}
 function maskOf(src){return SEGQ=SEGQ.then(async()=>{const z=await segLoad();return await new Promise(res=>{z.onResults(r=>{const m=mkc(src.width,src.height);m.getContext('2d').drawImage(r.segmentationMask,0,0,m.width,m.height);res(m);});z.send({image:src});});});}
 function maskBox(m){const d=m.getContext('2d').getImageData(0,0,m.width,m.height).data;let x0=m.width,y0=m.height,x1=-1,y1=-1;for(let y=0;y<m.height;y+=2)for(let x=0;x<m.width;x+=2){if(d[(y*m.width+x)*4+3]>140){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}}return x1<0?null:{x0,y0,x1,y1,w:x1-x0+1,h:y1-y0+1};}
 async function compose(photoId,bgId){const key=photoId+'|'+bgId;if(COMP[key])return COMP[key];
@@ -946,8 +985,8 @@ function vGuestSelfie(){const sf=state.guest.selfie;
   const body=sf.shot?`<img class="selfshot" src="${sf.shot}" alt="Sua selfie">`:sf.err?`<div class="selfcam off"><div class="ring"></div></div>`:`<div class="selfcam"><video id="gself-video" autoplay muted playsinline></video><div class="ring"></div></div>`;
   return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gself-close">← Voltar</button></div><h1>Selfie</h1></div></div>
   <div class="phone"><div class="pin">${cobrand(40)}
-    <div><h2 style="font-size:26px">${sf.shot?'Procurando suas fotos...':sf.err?'Mande uma selfie':'Olhe para a câmera'}</h2><div class="note">${sf.shot?'Comparando o seu rosto com as fotos do dia.':sf.err?esc(sf.err):'Encaixe o rosto no círculo, sem óculos escuros nem boné.'}</div></div>
-    ${body}
+    <div><h2 style="font-size:26px">${sf.cands?'É uma destas?':sf.shot?'Procurando suas fotos...':sf.err?'Mande uma selfie':'Olhe para a câmera'}</h2><div class="note">${sf.shot?'Comparando o seu rosto com as fotos do dia.':sf.err?esc(sf.err):'Encaixe o rosto no círculo, sem óculos escuros nem boné.'}</div></div>
+    ${sf.cands?faceCands(sf.cands,'gself-pick'):body}
     ${sf.shot?'':sf.err?`<label class="btn primary big" for="gselfie" style="cursor:pointer">Escolher uma foto do aparelho<input type="file" id="gselfie" accept="image/*" capture="user" data-act="guest-selfie" hidden></label>`:`<button class="btn primary big" data-act="gself-snap" ${sf.ready?'':'disabled'}>Tirar foto</button>`}
     <div class="note">A selfie serve só para achar as suas fotos (LGPD). Não fica guardada.</div>
   </div></div>`;}
@@ -956,11 +995,17 @@ async function selfieStart(){const sf=state.guest.selfie;if(!sf||sf.stream||sf.e
   try{const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:960}},audio:false});
     if(!state.guest.selfie){st.getTracks().forEach(t=>t.stop());return;}sf.stream=st;selfieMount();}
   catch(e){sf.err=e&&e.name==='NotAllowedError'?'A câmera foi bloqueada. Libere o acesso no navegador ou escolha uma foto do aparelho.':'Nenhuma câmera encontrada. Escolha uma foto do aparelho.';render();}}
-function selfieMount(){const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v)return;if(!sf.stream){selfieStart();return;}
+function selfieMount(){const sf=state.guest.selfie;faceIndexAll();const v=$('#gself-video');if(!sf||!v)return;if(!sf.stream){selfieStart();return;}
   if(v.srcObject!==sf.stream){v.srcObject=sf.stream;v.onloadeddata=()=>{if(!sf.ready){sf.ready=true;const b=$('[data-act="gself-snap"]');if(b)b.disabled=false;}};v.play().catch(()=>{});}
   if(sf.ready){const b=$('[data-act="gself-snap"]');if(b)b.disabled=false;}}
 function selfieStop(){const sf=state.guest.selfie;if(sf&&sf.stream)sf.stream.getTracks().forEach(t=>t.stop());state.guest.selfie=null;}
-function selfieFound(){setTimeout(()=>{if(!state.guest.selfie)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);selfieStop();state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1400);}
+function selfieFound(){const sf=state.guest.selfie;if(!sf||!sf.shot)return;
+  (async()=>{let r=null;try{const im=await loadImg(sf.shot);r=im?await faceFind(im):null;}catch(e){r=null}
+    if(!state.guest.selfie)return;
+    if(r&&r.list.length&&!r.clara){state.guest.selfie.cands=r.list.slice(0,4);render();return;}
+    if(r&&r.list.length){selfieStop();state.guest.code=r.list[0].card;toast(r.list.length>1?`Encontramos você em ${r.list.length} sessões`:'Encontramos a sua sessão');render();return;}
+    if(r){state.guest.selfie={stream:null,ready:false,shot:null,err:null};toast(r.semRosto?'Não encontramos um rosto. Tente de frente e com boa luz.':'Não achamos fotos com esse rosto. Use o QR do recibo ou o código.');render();return;}
+    const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);selfieStop();state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();})();}
 function vConvidado(){
   if(state.guest.selfie)return vGuestSelfie();
   const g0=state.guest;if(g0.ai&&g0.code){const s0=sessionObj(g0.code);if(s0)return vGuestAI(s0);}
@@ -974,7 +1019,7 @@ function vConvidado(){
     <button class="btn primary big" data-act="gself-open">Tirar uma selfie</button>
     <label class="btn ghost big" for="gqr" style="cursor:pointer">Ler o QR do recibo ou do ingresso<input type="file" id="gqr" accept="image/*" capture="environment" data-act="guest-qr" hidden></label>
     <div class="row" style="gap:6px"><input type="text" class="code" id="gcode" placeholder="ETN-00000" value="${esc(g.code)}" aria-label="Código" style="flex:1;min-width:0"><button class="btn ghost" data-act="guest-go" style="min-height:52px">Abrir</button></div>
-    <div class="note">Selfie: o rosto encontra todas as fotos do grupo, com consentimento (LGPD). Na demonstração, a selfie e o QR abrem uma sessão de exemplo.<br>Pagas: ${paid.join(' · ')||'nenhuma ainda'} · Amostra: ${DATA.sampled.slice(0,2).map(x=>x.card).join(' · ')}</div>`)}`;}
+    <div class="note">Selfie: o rosto encontra todas as fotos do grupo, com consentimento (LGPD).<br>Pagas: ${paid.join(' · ')||'nenhuma ainda'} · Amostra: ${DATA.sampled.slice(0,2).map(x=>x.card).join(' · ')}</div>`)}`;}
   const sim=simOf(s.card);const bought=new Set(sim.status==='paga'?(sim.selected||[]):[]);
   const left=s.photos.filter(p=>!bought.has(p.id)).length;
   return `<div class="head"><div><div class="eyebrow">Convidado · celular</div><h1>Galeria ${esc(s.card)}</h1></div><button class="chip" data-act="guest-exit">Trocar sessão</button></div>
@@ -1374,7 +1419,8 @@ function vTreino(){
   const reasonCount={};TRAIN.forEach(x=>{const l=t.labels[x.id];if(l&&l.verdict==='nao')(l.reasons||[]).forEach(r=>reasonCount[r]=(reasonCount[r]||0)+1)});
   const byKey={};TRAIN.forEach(x=>{const l=t.labels[x.id];if(!l)return;byKey[x.key]=byKey[x.key]||{n:0,nao:0};byKey[x.key].n++;if(l.verdict==='nao')byKey[x.key].nao++;});
   const rs=new Set(lab&&lab.verdict==='nao'?lab.reasons||[]:[]);
-  return `<div class="head"><div><div class="eyebrow">Gestão · treino da IA · ${done} de ${n} rotuladas</div><h1>O que pode e o que não pode</h1></div><div class="row"><button class="chip" data-act="train-export">Exportar rótulos (JSON)</button><label class="chip" style="cursor:pointer">Importar<input type="file" accept="application/json" data-act="train-import" style="display:none"></label>${shareBtn()}</div></div>
+  const fm=state.face.medida;const medida=`<div class="panel"><div class="head"><h2>Reconhecimento facial</h2><button class="btn" data-act="face-measure" ${fm&&fm.rodando?'disabled':''}>${fm&&fm.rodando?'Medindo...':'Medir acerto'}</button></div>${fm&&!fm.rodando?(fm.erro?`<div class="note">${esc(fm.erro)}</div>`:`<div class="row" style="gap:18px;flex-wrap:wrap"><div><div class="eyebrow">Acerto</div><b style="font-size:28px">${(100*fm.acerto).toFixed(1)}%</b></div><div><div class="eyebrow">Rostos testados</div><b>${fm.rostos}</b></div><div><div class="eyebrow">Certos</div><b>${fm.certo}</b></div><div><div class="eyebrow">Errados</div><b>${fm.errado}</b></div><div><div class="eyebrow">Pergunta antes</div><b>${fm.duvida}</b></div><div><div class="eyebrow">Sem par</div><b>${fm.nada}</b></div></div>`):''}</div>`;
+  return `${medida}<div class="head"><div><div class="eyebrow">Gestão · treino da IA · ${done} de ${n} rotuladas</div><h1>O que pode e o que não pode</h1></div><div class="row"><button class="chip" data-act="train-export">Exportar rótulos (JSON)</button><label class="chip" style="cursor:pointer">Importar<input type="file" accept="application/json" data-act="train-import" style="display:none"></label>${shareBtn()}</div></div>
   
   <div class="bar" style="grid-template-columns:1fr 90px"><div class="track"><div class="fill" style="width:${100*done/n}%"></div></div><span class="val">${Math.round(100*done/n)}%</span></div>
   <div class="train">
@@ -1702,6 +1748,7 @@ function camMount(){const c=state.cam;const v=$('#cam-video');
   if(!camWanted()||!$('#cam-face')){clearInterval(c.timer);c.timer=null;clearTimeout(c.sim);c.sim=null;if(c.status!=='off')c.status='idle';return;}
   if(c.err||!navigator.mediaDevices){ // sem câmera: simula alguém chegando e parando
     if(!c.sim){c.status='sim';c.sim=setTimeout(()=>{c.sim=null;camFound();},4500);}return;}
+  faceIndexAll();
   if(!c.stream){camStart();return;}
   if(!v)return;
   if(v.srcObject!==c.stream){v.srcObject=c.stream;v.play().catch(()=>{});}
@@ -1715,14 +1762,22 @@ function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c
     if(m>7){c.moved+=m;c.still=0;if(c.moved>40&&!c.armed){c.armed=true;c.status='present';camStatus();}}
     else{c.still++;if(c.armed&&c.still>=5){c.armed=false;c.moved=0;camFound();}else if(!c.armed&&c.still>12){c.moved=0;if(c.status!=='idle'&&c.status!=='searching'&&c.status!=='found'){c.status='idle';camStatus();}}}}
   c.prev=g;}
-function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;const t={off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',sim:'Câmera indisponível · simulando'}[c.status]||'';el.textContent=t;if(f)f.dataset.st=c.status;}
+function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;const t={off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando'}[c.status]||'';el.textContent=t;if(f)f.dataset.st=c.status;}
 function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.status='searching';camStatus();
-  setTimeout(()=>{c.busy=false;const cands=demoSessions().filter(x=>state.view==='quiosque'?(x.status==='pronta'||x.status==='paga'):(x.status==='pronta'||x.status==='fechada'));const pick=cands[Math.floor(Math.random()*cands.length)];
-    if(!pick){c.status='idle';camStatus();return;}c.status='found';camStatus();
-    if(state.view==='quiosque'){state.kiosk.code=pick.card;state.kiosk.step='gallery';toast('Achamos você: '+pick.card);render();}
-    else if(state.view==='checkout'){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}
-    else{c.status='idle';}},900);}
-function camBox(){const c=state.cam;const noCam=!!c.err;return `<div class="face live" id="cam-face" data-st="${c.status}" aria-label="Câmera do checkout">${noCam?'<div class="ring"></div><div class="scan"></div>':'<video id="cam-video" autoplay muted playsinline></video><div class="ring"></div>'}<div class="st" id="cam-st"></div></div>`;}
+  const ok=x=>state.view==='quiosque'?(x.status==='pronta'||x.status==='paga'):(x.status==='pronta'||x.status==='fechada');
+  const open=card=>{c.busy=false;c.status='found';camStatus();
+    if(state.view==='quiosque'){state.kiosk.code=card;state.kiosk.step='gallery';toast('Achamos você: '+card);render();}
+    else if(state.view==='checkout'){toast('Encontramos: '+card);checkoutPick(card);}
+    else{c.status='idle';}};
+  const v=$('#cam-video');
+  if(c.stream&&v&&v.videoWidth){(async()=>{const fr=[];for(let k=0;k<3;k++){const cv=mkc(v.videoWidth,v.videoHeight);cv.getContext('2d').drawImage(v,0,0);fr.push(cv);if(k<2)await new Promise(r=>setTimeout(r,250));}return faceFind(fr,ok);})()
+    .then(r=>{if(!camWanted()){c.busy=false;return;}if(r.list.length&&r.clara){open(r.list[0].card);return;}
+      if(r.list.length){c.busy=false;c.status='pick';c.cands=r.list.slice(0,4);render();return;}
+      c.busy=false;c.status=r.semRosto?'noface':'nomatch';camStatus();setTimeout(()=>{if(c.status==='noface'||c.status==='nomatch'){c.status='idle';camStatus();}},3000);})
+    .catch(()=>{c.busy=false;c.status='idle';camStatus();toast('Reconhecimento indisponível. Use o código.');});return;}
+  setTimeout(()=>{const cands=demoSessions().filter(ok);const pick=cands[Math.floor(Math.random()*cands.length)];if(!pick){c.busy=false;c.status='idle';camStatus();return;}open(pick.card);},900);}
+function camBox(){const c=state.cam;const noCam=!!c.err;return `<div class="face live" id="cam-face" data-st="${c.status}" aria-label="Câmera do checkout">${noCam?'<div class="ring"></div><div class="scan"></div>':'<video id="cam-video" autoplay muted playsinline></video><div class="ring"></div>'}<div class="st" id="cam-st"></div></div>${c.status==='pick'&&c.cands?faceCands(c.cands,'cam-pick'):''}`;}
+function faceCands(list,act){return `<div class="facepick"><div class="eyebrow">É uma destas?</div><div class="row" style="gap:10px;flex-wrap:wrap;justify-content:center">${list.map(r=>`<button class="facecand" data-act="${act}" data-card="${r.card}"><div class="ph" style="${phStyle(r.fotos[0])}"></div><span>${esc(r.card)} · ${r.fotos.length} ${r.fotos.length>1?'fotos':'foto'}</span></button>`).join('')}<button class="chip" data-act="${act}" data-card="">Nenhuma</button></div></div>`;}
 // ---------- Ajustes manuais: exposição, contraste, saturação e corte ----------
 const AJ_CTRL=[['b','Exposição',40,180,5],['c','Contraste',50,160,5],['s','Saturação',0,200,10],['z','Corte',100,250,5]];
 function ajPhotos(card){const d=DATA.sampled.find(x=>x.card===card);const s=SIM.sessions[card];return (d?d.photos:(s&&s.photos)||[]).filter(p=>hasImg(p.id));}
@@ -1919,6 +1974,9 @@ document.addEventListener('click',e=>{
     case 'caixa-open':state.caixa.session=d.card;render();break;
     case 'caixa-pay':state.caixa.pay=d.m;state.caixa.tefStatus=null;render();break;
     case 'checkout-pick':checkoutPick(d.card);break;
+    case 'cam-pick':{const c=state.cam;c.cands=null;if(!d.card){c.status='idle';render();break;}c.status='found';if(state.view==='quiosque'){state.kiosk.code=d.card;state.kiosk.step='gallery';render();}else checkoutPick(d.card);break;}
+    case 'gself-pick':{if(!d.card){state.guest.selfie={stream:null,ready:false,shot:null,err:null};render();break;}selfieStop();state.guest.code=d.card;render();break;}
+    case 'face-measure':{state.face.medida={rodando:true};render();faceMeasure().then(m=>{state.face.medida=m;render();}).catch(e=>{state.face.medida={erro:String(e&&e.message||e)};render();});break;}
     case 'checkout-face':{toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);break;}
     case 'checkout-back':{const sim=state.checkout.session?simOf(state.checkout.session):null;if(sim&&sim.status==='no checkout'){sim.status=DATA.sampled.find(x=>x.card===state.checkout.session)?'pronta':'fechada';saveSim();}state.checkout.session=null;state.checkout.step=1;state.fila.session=null;state.caixa.session=null;render();break;}
     case 'checkout-step':state.checkout.step=+d.s;state.caixa.tefStatus=null;render();window.scrollTo({top:0});break;
@@ -2013,7 +2071,7 @@ setInterval(()=>{if(state.view==='set'&&state.set.open){const t=$('#timer');cons
     render();
   }catch(e){console.warn('db',e)}
 })();
-window.ETERNA={get state(){return state},camStatus,camFound};
+window.ETERNA={get state(){return state},camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas};
 })();
 </script>
 
