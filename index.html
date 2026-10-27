@@ -200,6 +200,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .compimg.pend{filter:grayscale(.6) brightness(.8)}
 .compimg.big{position:absolute;inset:0;aspect-ratio:auto;background-size:contain;background-color:#141311}
 .aiprev.big{aspect-ratio:3/2}
+.libf{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.libf .eyebrow{width:84px}
 .bg.comp .czoom{position:absolute;left:8px;top:8px;width:34px;height:34px;border-radius:6px;background:rgba(20,19,17,.75);color:#fff;display:flex;align-items:center;justify-content:center;cursor:zoom-in}
 .bg.comp .czoom:hover{background:rgba(20,19,17,.95)}
 .bg.comp{position:relative}.cmatch{position:absolute;right:8px;top:8px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;background:rgba(20,19,17,.8);color:#fff}.cmatch.hi{background:var(--good);color:#fff}.cmatch.mid{background:#8a6200;color:#fff}
@@ -391,7 +392,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v54 · 27/10 17:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v55 · 27/10 17:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -1197,15 +1198,28 @@ state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:((locati
 state.lib=[];state.libDay=null;
 async function libLoad(){const a=state.agent;try{const j=await (await fetch(a.url+'/biblioteca',{cache:'no-store'})).json();state.lib=j.fotos||[];state.lib.forEach(f=>{const id='ag_'+f.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+f.id,name:f.name};});}catch(e){}}
 function photosInSessions(){const k=new Set();Object.values(SIM.sessions||{}).forEach(s=>(s.photos||[]).forEach(p=>k.add(p.id)));return k;}
-function libPanel(){if(!state.agent.on||!state.lib.length)return '';const days={};state.lib.forEach(f=>{days[f.day]=(days[f.day]||0)+1;});const list=Object.keys(days).sort().reverse();const day=state.libDay&&days[state.libDay]?state.libDay:list[0];
-  const ph=state.lib.filter(f=>f.day===day).slice(-300).reverse();
-  return `<div class="panel"><div class="head"><div><div class="eyebrow">Guardadas neste computador</div><h2>Biblioteca</h2></div><span class="pill neutral">${fmtN(state.lib.length)} fotos</span></div>
-    <div class="note">Tudo o que já veio do cartão e do celular fica aqui. Reabrir o Eterna ou ligar o cartão de novo não baixa outra vez: foto repetida é reconhecida e ignorada.</div>
-    <div class="chips">${list.slice(0,14).map(d=>`<button class="chip" data-act="lib-day" data-d="${d}" aria-pressed="${d===day}">${dlabel(d)} · ${days[d]}</button>`).join('')}</div>
-    <div class="photos small">${ph.map(f=>photoBtn({id:'ag_'+f.id},{label:f.name})).join('')}</div></div>`;}
+const localDay=t=>{const d=new Date(t*1000);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+state.libF={day:'hoje',per:'dia',who:'todos',venda:'todas'};
+function libIndex(){const ses={},sold=new Set();Object.values(SIM.sessions||{}).forEach(x=>{const paid=x.status==='paga';const sel=new Set(x.selected||[]);(x.photos||[]).forEach(p=>{ses[p.id]=x;if(p.sold||(paid&&sel.has(p.id)))sold.add(p.id);});});return {ses,sold};}
+function libWho(f,ix){const x=ix.ses['ag_'+f.id];if(x&&x.key&&P[x.key])return x.key;const o=(f.origem||'').toLowerCase();if(f.via==='ftp'){const k=Object.keys(P).find(k=>k===o||P[k].name.toLowerCase()===o);return k||('ftp:'+o);}return 'sem';}
+function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=Date.now()/1000;const hoje=localDay(nowS),ontem=localDay(nowS-86400);const day=F.day==='ontem'?ontem:hoje;const ix=libIndex();
+  const all=state.lib.filter(f=>f.day===day);
+  const whoName=k=>k==='sem'?'Sem fotógrafo':k.startsWith('ftp:')?k.slice(4):(P[k]?P[k].name:k);
+  const whos=[...new Set(all.map(f=>libWho(f,ix)))];
+  const hours=[...new Set(all.map(f=>new Date(f.t*1000).getHours()))].sort((a,b)=>a-b);
+  let ph=all.filter(f=>{const h=new Date(f.t*1000).getHours();if(F.per==='1h'&&!(day===hoje&&nowS-f.t<=3600))return false;if(F.per==='2h'&&!(day===hoje&&nowS-f.t<=7200))return false;if(/^\d+$/.test(F.per)&&h!==+F.per)return false;if(F.who!=='todos'&&libWho(f,ix)!==F.who)return false;const v=ix.sold.has('ag_'+f.id);if(F.venda==='vendidas'&&!v)return false;if(F.venda==='nao'&&v)return false;return true;});
+  const nSold=ph.filter(f=>ix.sold.has('ag_'+f.id)).length;ph=ph.slice().sort((a,b)=>b.t-a.t);
+  const chip=(k,v,l)=>`<button class="chip" data-act="lib-f" data-k="${k}" data-v="${esc(String(v))}" aria-pressed="${String(F[k])===String(v)}">${l}</button>`;
+  return `<div class="panel"><div class="head"><div><div class="eyebrow">Guardadas neste computador</div><h2>Biblioteca</h2></div><div class="row"><span class="pill neutral">${fmtN(ph.length)} fotos</span><span class="pill good">${fmtN(nSold)} vendidas</span><span class="pill warn">${fmtN(ph.length-nSold)} não vendidas</span></div></div>
+    <div class="libf"><span class="eyebrow">Dia</span>${chip('day','hoje','Hoje · '+state.lib.filter(f=>f.day===hoje).length)}${chip('day','ontem','Ontem · '+state.lib.filter(f=>f.day===ontem).length)}</div>
+    <div class="libf"><span class="eyebrow">Hora</span>${chip('per','dia','Dia todo')}${day===hoje?chip('per','1h','Última hora')+chip('per','2h','Últimas 2 horas'):''}${hours.map(h=>chip('per',h,String(h).padStart(2,'0')+'h')).join('')}</div>
+    <div class="libf"><span class="eyebrow">Fotógrafo</span>${chip('who','todos','Todos')}${whos.map(k=>chip('who',k,esc(whoName(k)))).join('')}</div>
+    <div class="libf"><span class="eyebrow">Venda</span>${chip('venda','todas','Todas')}${chip('venda','vendidas','Vendidas')}${chip('venda','nao','Não vendidas')}</div>
+    ${ph.length?`<div class="photos small">${ph.slice(0,400).map(f=>{const v=ix.sold.has('ag_'+f.id);return photoBtn({id:'ag_'+f.id},{label:f.name,tag:(v?'VENDIDA · ':'')+new Date(f.t*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});}).join('')}</div>${ph.length>400?'<div class="note">Mostrando as 400 mais recentes deste filtro.</div>':''}`:'<div class="note">Nenhuma foto neste filtro.</div>'}
+    <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pela sessão da foto ou pelo usuário do FTP. Vendida = foto escolhida numa venda paga.</div></div>`;}
 async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
   try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;await libLoad();if(first)toast('Agente do ponto conectado');render();}
-    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id))state.lib.push({id:e.id,name:e.name,day:new Date(e.t*1000).toISOString().slice(0,10),t:e.t,size:e.size});
+    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,size:e.size,origem:e.card||'',via:e.src||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
       if(e.src==='inbox'||known.has(id)||was)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
       if(dups)toast(dups+(dups>1?' fotos já estavam':' foto já estava')+' no computador. Não baixei de novo.');if(items.length){ingPush(items);state.ing.lastReal=Date.now();}render();}
@@ -2162,7 +2176,7 @@ document.addEventListener('click',e=>{
     case 'gai-open':state.guest.ai={photo:null,bg:null};render();scrollTo(0,0);break;
     case 'gai-close':state.guest.ai=null;render();break;
     case 'comp-zoom':{e.preventDefault&&e.preventDefault();const keys=[...document.querySelectorAll('[data-act="comp-zoom"]')].map(x=>({k:x.dataset.k,cap:x.dataset.cap})).filter(x=>COMPURL[x.k]);const i=keys.findIndex(x=>x.k===d.k);if(i<0){toast('A montagem ainda está sendo feita');break;}compModal(keys,i);break;}
-    case 'lib-day':state.libDay=d.d;render();break;
+    case 'lib-f':{state.libF[d.k]=d.v;if(d.k==='day'){state.libF.per='dia';state.libF.who='todos';}render();break;}
     case 'pr-save':{const inp=$('#pr-key');const key=(inp&&inp.value||'').trim();if(!key){toast('Cole a chave do Photoroom');break;}fetch(state.agent.url+'/photoroom/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#pr-key');if(f)f.value='';toast(j.sandbox?'Photoroom conectado (modo de testes)':'Photoroom conectado');Object.keys(COMP).forEach(k=>delete COMP[k]);prPoll(true);}else toast(j.error||'Não deu para salvar');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'comp-all':state.compAll=state.compAll===d.card?null:d.card;render();break;
     case 'gai-more':state.guest.ai.more=true;render();break;

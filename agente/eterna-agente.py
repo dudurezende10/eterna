@@ -50,6 +50,21 @@ lock = threading.Lock()
 events = []            # [{type, id, name, size, t, card}]
 seen = {}              # hash -> id
 BOOT = "%x" % int(time.time())   # muda a cada vez que o agente abre
+META = os.path.join(os.path.expanduser("~/Eterna"), "meta.json")   # de onde veio cada foto e quando chegou
+meta = {}
+try:
+    meta.update(json.load(open(META)))
+except Exception:
+    pass
+
+
+def save_meta():
+    try:
+        tmp = META + ".tmp"
+        json.dump(meta, open(tmp, "w"))
+        os.replace(tmp, META)
+    except Exception:
+        pass
 lib = {}               # id -> {file, thumb}  (tudo que já está na inbox)
 cards = {}             # volume path -> hashes já tratados nesta inserção
 state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None}}
@@ -380,6 +395,8 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
     with lock:
         seen[h] = pid
         lib[pid] = {"file": dst, "thumb": thumb}
+        meta[pid] = {"o": origin, "s": src_kind, "u": time.time()}
+        save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
                        "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb})
         state["copied"] += 1
@@ -1101,15 +1118,22 @@ class H(BaseHTTPRequestHandler):
             out = []
             with lock:
                 items = list(lib.items())
+            hoje = time.strftime("%Y-%m-%d")
+            ontem = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
             for pid, e in items:
                 f = e.get("file") or ""
                 try:
                     st = os.stat(f)
                 except OSError:
                     continue
-                day = os.path.basename(os.path.dirname(f))
+                m = meta.get(pid) or {}
+                u = m.get("u") or st.st_mtime          # hora em que chegou ao computador
+                day = time.strftime("%Y-%m-%d", time.localtime(u))
+                if day not in (hoje, ontem):
+                    continue                            # a biblioteca mostra só hoje e ontem
                 name = os.path.basename(f).split("_", 1)[-1]
-                out.append({"id": pid, "name": name, "day": day, "t": st.st_mtime, "size": st.st_size})
+                out.append({"id": pid, "name": name, "day": day, "t": u, "size": st.st_size,
+                            "origem": m.get("o") or "", "via": m.get("s") or ""})
             out.sort(key=lambda x: x["t"])
             return self.js({"fotos": out, "total": len(out), "boot": BOOT})
         if u.path == "/photoroom/status":
