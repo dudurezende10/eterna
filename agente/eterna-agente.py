@@ -52,10 +52,85 @@ seen = {}              # hash -> id
 BOOT = "%x" % int(time.time())   # muda a cada vez que o agente abre
 META = os.path.join(os.path.expanduser("~/Eterna"), "meta.json")   # de onde veio cada foto e quando chegou
 meta = {}
+meta_dirty = [False]
 try:
     meta.update(json.load(open(META)))
 except Exception:
     pass
+
+
+# ---------- EXIF: de qual câmera e de quem é a foto ----------
+# Lê o número de série do corpo (automático na R6 Mark II), o nome do autor (Artist, "Informações de copyright"
+# no menu da câmera) e o dono (Canon "Owner's name"). Só biblioteca padrão.
+def exif_info(path):
+    try:
+        with open(path, "rb") as f:
+            data = f.read(256 * 1024)
+        if data[:2] != b"\xff\xd8":
+            return {}
+        i = 2
+        while i + 4 < len(data):
+            if data[i] != 0xFF:
+                break
+            marker = data[i + 1]
+            ln = int.from_bytes(data[i + 2:i + 4], "big")
+            if marker == 0xE1 and data[i + 4:i + 10] == b"Exif\x00\x00":
+                return _exif_tiff(data[i + 10:i + 2 + ln])
+            if marker == 0xDA:
+                break
+            i += 2 + ln
+    except Exception:
+        pass
+    return {}
+
+
+def _exif_tiff(t):
+    if len(t) < 8:
+        return {}
+    E = "little" if t[:2] == b"II" else "big"
+    u16 = lambda o: int.from_bytes(t[o:o + 2], E)
+    u32 = lambda o: int.from_bytes(t[o:o + 4], E)
+
+    def ifd(off):
+        r = {}
+        if off <= 0 or off + 2 > len(t):
+            return r
+        for k in range(u16(off)):
+            e = off + 2 + 12 * k
+            if e + 12 > len(t):
+                break
+            tag, typ, cnt = u16(e), u16(e + 2), u32(e + 4)
+            size = {1: 1, 2: 1, 3: 2, 4: 4, 7: 1}.get(typ, 8) * cnt
+            r[tag] = (typ, cnt, e + 8 if size <= 4 else u32(e + 8))
+        return r
+
+    def txt(ent):
+        typ, cnt, vo = ent
+        return t[vo:vo + cnt].split(b"\x00")[0].decode("utf-8", "ignore").strip()
+
+    def num(ent):
+        typ, cnt, vo = ent
+        return u32(vo) if typ == 4 else u16(vo)
+
+    out = {}
+    i0 = ifd(u32(4))
+    if 0x0110 in i0:
+        out["modelo"] = txt(i0[0x0110])
+    if 0x013B in i0:
+        out["autor"] = txt(i0[0x013B])
+    if 0x8769 in i0:
+        ex = ifd(num(i0[0x8769]))
+        if 0xA431 in ex:
+            out["serie"] = txt(ex[0xA431])
+        if 0xA430 in ex and not out.get("dono"):
+            out["dono"] = txt(ex[0xA430])
+        if 0x927C in ex:
+            mn = ifd(ex[0x927C][2])
+            if 0x0009 in mn:
+                out["dono"] = txt(mn[0x0009]) or out.get("dono", "")
+            if 0x000C in mn and not out.get("serie"):
+                out["serie"] = str(num(mn[0x000C]))
+    return {k: v for k, v in out.items() if v}
 
 
 def save_meta():
@@ -395,10 +470,11 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
     with lock:
         seen[h] = pid
         lib[pid] = {"file": dst, "thumb": thumb}
-        meta[pid] = {"o": origin, "s": src_kind, "u": time.time()}
+        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), **exif_info(dst)}
         save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
-                       "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb})
+                       "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb,
+                       "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
         state["copied"] += 1
     fila_rostos.put((pid, dst))
     print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
@@ -1132,9 +1208,19 @@ class H(BaseHTTPRequestHandler):
                 if day not in (hoje, ontem):
                     continue                            # a biblioteca mostra só hoje e ontem
                 name = os.path.basename(f).split("_", 1)[-1]
+                if "serie" not in m and "x" not in m:
+                    m = meta.setdefault(pid, {})
+                    m.update(exif_info(f))
+                    m["x"] = 1          # já lido, mesmo sem EXIF
+                    meta_dirty[0] = True
                 out.append({"id": pid, "name": name, "day": day, "t": u, "size": st.st_size,
-                            "origem": m.get("o") or "", "via": m.get("s") or ""})
+                            "origem": m.get("o") or "", "via": m.get("s") or "",
+                            "serie": m.get("serie") or "", "autor": m.get("autor") or "",
+                            "dono": m.get("dono") or "", "modelo": m.get("modelo") or ""})
             out.sort(key=lambda x: x["t"])
+            if meta_dirty[0]:
+                meta_dirty[0] = False
+                save_meta()
             return self.js({"fotos": out, "total": len(out), "boot": BOOT})
         if u.path == "/photoroom/status":
             c = pr_cfg()
