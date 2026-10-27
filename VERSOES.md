@@ -58,3 +58,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v56 | `2f1d11c` | Fotógrafos Klássius e Andressa (telas, login e FTP); Biblioteca mostra a equipe toda no filtro |
 | v57 | `b191b7c` | Correção do nome: Sandessa (telas, login e FTP) |
 | v58 | `f193805` | Removidos das listas: Igor, Durval, Fictix, Andressa e Enzo (histórico mantido nos totais) |
+| v59 | `959866e` | Check-in da câmera no Set (número de série no EXIF); nome do autor gravado na câmera reconhecido sozinho; Biblioteca atribui o fotógrafo pela câmera |
