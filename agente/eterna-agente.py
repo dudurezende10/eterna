@@ -28,10 +28,10 @@ Para outros computadores da rede (checkout, quiosque) usarem este agente:
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
-import urllib.request, urllib.error, mimetypes
+import urllib.request, urllib.error, mimetypes, re, base64
 
 PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
-APP_ORIGIN = "https://eterna.photo"
+APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
 INBOX = os.path.join(HOME, "inbox")
@@ -921,6 +921,115 @@ def rover_data():
     return {"ok": True, "updated": rover["last"], "status": rover["status"], "error": rover["error"], "days": days}
 
 
+
+# ---------- Photoroom: recorte da pessoa e montagem nos fundos de IA ----------
+# A chave fica só neste Mac (~/Eterna/photoroom.json, permissão 600). O app pede a montagem,
+# o agente chama a API do Photoroom e guarda o resultado em ~/Eterna/fundos-ia.
+PR_CFG = os.path.join(HOME, "photoroom.json")
+PR_DIR = os.path.join(HOME, "fundos-ia")
+BG_DIR = os.path.join(HOME, "fundos")
+PR_URL = os.environ.get("ETERNA_PR_URL", "https://image-api.photoroom.com/v2/edit")
+pr = {"calls": 0, "cached": 0, "last_error": None, "last_ok": None}
+pr_lock = threading.Lock()
+
+
+def pr_cfg():
+    try:
+        c = json.load(open(PR_CFG))
+        return c if c.get("api_key") else None
+    except Exception:
+        return None
+
+
+def pr_save(key):
+    with pr_lock:
+        pr["last_error"] = None
+    with open(PR_CFG, "w") as f:
+        json.dump({"api_key": key.strip()}, f)
+    try:
+        os.chmod(PR_CFG, 0o600)
+    except Exception:
+        pass
+
+
+def multipart(fields, files):
+    b = "----eterna%d" % int(time.time() * 1000)
+    out = []
+    for k, v in fields.items():
+        out.append(("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n" % (b, k, v)).encode())
+    for k, (fn, data, ct) in files.items():
+        out.append(("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\nContent-Type: %s\r\n\r\n" % (b, k, fn, ct)).encode())
+        out.append(data)
+        out.append(b"\r\n")
+    out.append(("--%s--\r\n" % b).encode())
+    return b"".join(out), "multipart/form-data; boundary=" + b
+
+
+def bg_bytes(bg):
+    if not re.match(r"^[a-z0-9]{2,40}$", bg or ""):
+        raise ValueError("fundo inválido")
+    os.makedirs(BG_DIR, exist_ok=True)
+    path = os.path.join(BG_DIR, "bg-%s.jpg" % bg)
+    if not os.path.exists(path):
+        req = urllib.request.Request(APP_ORIGIN + "/img/bg-%s.jpg" % bg, headers={"User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = r.read()
+        with open(path, "wb") as f:
+            f.write(data)
+    return open(path, "rb").read()
+
+
+def pr_compose(photo, bg, W, H, pad):
+    cfg = pr_cfg()
+    if not cfg:
+        raise RuntimeError("Photoroom não conectado")
+    h = hashlib.sha1(photo).hexdigest()[:16]
+    tag = hashlib.sha1(json.dumps([W, H, pad], sort_keys=True).encode()).hexdigest()[:6]
+    name = "%s_%s_%s.jpg" % (h, bg, tag)
+    os.makedirs(PR_DIR, exist_ok=True)
+    out = os.path.join(PR_DIR, name)
+    if os.path.exists(out):
+        with pr_lock:
+            pr["cached"] += 1
+        return name
+    fields = {
+        "lighting.mode": "ai.auto",
+        "shadow.mode": "ai.soft",
+        "outputSize": "%dx%d" % (W, H),
+        "horizontalAlignment": "center",
+        "verticalAlignment": "bottom",
+        "export.format": "jpeg",
+    }
+    for side in ("Top", "Bottom", "Left", "Right"):
+        v = int(max(0, pad.get(side.lower(), 0)))
+        fields["padding" + side] = "%dpx" % v
+    body, ctype = multipart(fields, {"imageFile": ("foto.jpg", photo, "image/jpeg"),
+                                     "background.imageFile": ("fundo.jpg", bg_bytes(bg), "image/jpeg")})
+    req = urllib.request.Request(PR_URL, data=body, method="POST",
+                                 headers={"x-api-key": cfg["api_key"], "Content-Type": ctype,
+                                          "Accept": "image/jpeg, application/json", "User-Agent": "eterna-agente"})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            data = r.read()
+    except urllib.error.HTTPError as ex:
+        msg = ex.read().decode("utf-8", "ignore")[:300]
+        try:
+            j = json.loads(msg)
+            msg = j.get("detail") or j.get("message") or j.get("error", {}).get("message") or msg
+        except Exception:
+            pass
+        with pr_lock:
+            pr["last_error"] = "HTTP %s: %s" % (ex.code, msg)
+        raise RuntimeError(pr["last_error"])
+    with open(out, "wb") as f:
+        f.write(data)
+    with pr_lock:
+        pr["calls"] += 1
+        pr["last_ok"] = time.strftime("%H:%M:%S")
+        pr["last_error"] = None
+    return name
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -983,6 +1092,15 @@ class H(BaseHTTPRequestHandler):
             return self.js({**{k: v for k, v in rover.items()}, "configured": bool(c), "base_url": c["base_url"] if c else None})
         if u.path == "/roverpix/data":
             return self.js(rover_data())
+        if u.path == "/photoroom/status":
+            c = pr_cfg()
+            with pr_lock:
+                return self.js({**pr, "configured": bool(c), "sandbox": bool(c and c["api_key"].startswith("sandbox_"))})
+        if u.path.startswith("/photoroom/result/"):
+            name = u.path.rsplit("/", 1)[1]
+            if not re.match(r"^[0-9a-f]{16}_[a-z0-9]{2,40}_[0-9a-f]{6}\.jpg$", name):
+                return self.js({"error": "not found"}, 404)
+            return self.file(os.path.join(PR_DIR, name))
         if u.path.startswith("/thumb/") or u.path.startswith("/file/"):
             pid = u.path.rsplit("/", 1)[1]
             with lock:
@@ -1009,6 +1127,37 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "informe a chave"}, 400)
             rover_save_cfg(body.get("base_url"), key)
             return self.js({"ok": True})
+        if u.path in ("/photoroom/config", "/photoroom/compose"):
+            # só o app aberto pelo próprio agente usa a chave (ninguém de fora gasta os créditos)
+            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+                return self.js({"error": "origem não autorizada"}, 403)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+            except Exception:
+                return self.js({"error": "corpo inválido"}, 400)
+            if u.path == "/photoroom/config":
+                key = (body.get("api_key") or "").strip()
+                if not key:
+                    return self.js({"error": "informe a chave"}, 400)
+                pr_save(key)
+                return self.js({"ok": True, "sandbox": key.startswith("sandbox_")})
+            try:
+                if body.get("pid"):
+                    with lock:
+                        e = lib.get(str(body["pid"]))
+                    if not e:
+                        return self.js({"error": "foto não encontrada no agente"}, 404)
+                    photo = open(e["file"], "rb").read()
+                else:
+                    b64 = (body.get("image_b64") or "").split(",")[-1]
+                    photo = base64.b64decode(b64)
+                if not photo or len(photo) > 30 * 1024 * 1024:
+                    return self.js({"error": "foto inválida"}, 400)
+                name = pr_compose(photo, body.get("bg"), int(body.get("W") or 2000), int(body.get("H") or 1429), body.get("pad") or {})
+                return self.js({"ok": True, "url": "/photoroom/result/" + name})
+            except Exception as ex:
+                return self.js({"error": str(ex)}, 502)
         if u.path == "/roverpix/sync":
             rover_wake.set()
             return self.js({"ok": True})
@@ -1068,6 +1217,7 @@ def main():
     threading.Thread(target=ftp_server, daemon=True).start()
     threading.Thread(target=rover_loop, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
+    print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")

@@ -389,7 +389,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v49 · 26/10 23:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v50 · 27/10 15:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -935,9 +935,6 @@ function aiBgsFor(card){return DATA.backgrounds.map(b=>({b,pk:aiPick(card,b.id)}
 // Fundos limpos: img/plate-<id>.jpg. Sem o arquivo, a montagem daquele fundo fica pendente.
 const COMP={},PLATES={};let SEG=null,SEGQ=Promise.resolve();
 const mkc=(w,h)=>{const c=document.createElement('canvas');c.width=Math.round(w);c.height=Math.round(h);return c;};
-// Os arquivos do modelo vão em base64 (.b64.json) para qualquer hospedagem servir; o fetch do MediaPipe é atendido aqui.
-let SEGFETCH=false;function segFetchPatch(){if(SEGFETCH)return;SEGFETCH=true;const of=window.fetch.bind(window);window.fetch=(u,o)=>{const url=typeof u==='string'?u:(u&&u.url)||'';if(/vendor\/mediapipe\/[^?]+\.(binarypb|tflite)$/.test(url))return of(url+'.b64.json').then(r=>r.json()).then(j=>{const b=atob(j.b64);const a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new Response(a.buffer,{status:200,headers:{'Content-Type':'application/octet-stream'}});});return of(u,o);};}
-function segLoad(){if(SEG)return SEG;segFetchPatch();SEG=new Promise((res,rej)=>{if(window.SelfieSegmentation){const z=new SelfieSegmentation({locateFile:f=>'vendor/mediapipe/'+f});z.setOptions({modelSelection:1});res(z);return;}const sc=document.createElement('script');sc.src='vendor/mediapipe/selfie_segmentation.js';sc.onload=()=>{try{const z=new SelfieSegmentation({locateFile:f=>'vendor/mediapipe/'+f});z.setOptions({modelSelection:1});res(z)}catch(e){rej(e)}};sc.onerror=()=>rej(new Error('sem recorte'));document.head.appendChild(sc);});return SEG;}
 function loadImg(src){return new Promise(res=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>res(null);im.src=src;});}
 function plateImg(id){const b=bgOf(id);return PLATES[id]||(PLATES[id]=b?loadImg(b.file):Promise.resolve(null));}
 async function photoCanvas(id){if(UP[id]){const im=await loadImg(UP[id].src);if(!im)return null;const sc=Math.min(1,1400/im.width);const c=mkc(im.width*sc,im.height*sc);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c;}
@@ -1029,34 +1026,28 @@ async function faceMeasureLocal(){await facePre();faceIndexAll();await FACEQ;con
     const L=Object.values(res).sort((a,b)=>b.n-a.n||a.best-b.best);if(!L.length){nada++;continue;}
     const clara=L.length===1||L[0].n>L[1].n||L[1].best-L[0].best>=FACE_MARGEM;if(!clara){duvida++;continue;}if(L[0].card===p.card)certo++;else errado++;}}
   return {fotos:ph.length,rostos:q,certo,errado,duvida,nada,acerto:q?certo/(certo+errado||1):0};}
-function maskOf(src){return SEGQ=SEGQ.then(async()=>{const z=await segLoad();return await new Promise(res=>{z.onResults(r=>{const m=mkc(src.width,src.height);m.getContext('2d').drawImage(r.segmentationMask,0,0,m.width,m.height);res(m);});z.send({image:src});});});}
-function maskBox(m){const d=m.getContext('2d').getImageData(0,0,m.width,m.height).data;let x0=m.width,y0=m.height,x1=-1,y1=-1;for(let y=0;y<m.height;y+=2)for(let x=0;x<m.width;x+=2){if(d[(y*m.width+x)*4+3]>140){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}}return x1<0?null:{x0,y0,x1,y1,w:x1-x0+1,h:y1-y0+1};}
-function colorMatch(cut,box,plate,W,H,dx,dy,dw,dh,b){const x=cut.getContext('2d');const id=x.getImageData(box.x0,box.y0,box.w,box.h);const d=id.data;let r=0,g=0,bl=0,n=0;for(let k=0;k<d.length;k+=16){if(d[k+3]>200){r+=d[k];g+=d[k+1];bl+=d[k+2];n++;}}if(!n)return id;r/=n;g/=n;bl/=n;
-  const pc=mkc(64,64);const px=pc.getContext('2d');px.drawImage(plate,Math.max(0,dx-dw*.3)*plate.width/W,Math.max(0,dy-dh*.1)*plate.height/H,dw*1.6*plate.width/W,dh*1.2*plate.height/H,0,0,64,64);const pd=px.getImageData(0,0,64,64).data;let R=0,G=0,B=0;for(let k=0;k<pd.length;k+=4){R+=pd[k];G+=pd[k+1];B+=pd[k+2];}R/=4096;G/=4096;B/=4096;
-  const lum=v=>.299*v[0]+.587*v[1]+.114*v[2];const Ls=lum([r,g,bl]),Lp=lum([R,G,B]);const kL=Math.max(.7,Math.min(1.25,1+.35*(Lp/Ls-1)));
-  const gr=Math.max(.85,Math.min(1.18,1+.3*((R/Lp)/(r/Ls)-1))),gg=Math.max(.85,Math.min(1.18,1+.3*((G/Lp)/(g/Ls)-1))),gb=Math.max(.85,Math.min(1.18,1+.3*((B/Lp)/(bl/Ls)-1)));
-  for(let k=0;k<d.length;k+=4){if(!d[k+3])continue;let R1=d[k]*kL,G1=d[k+1]*kL,B1=d[k+2]*kL;
-    if(b.mono){const l=.299*R1+.587*G1+.114*B1;if(b.mono==='sepia'){R1=l*1.07+8;G1=l*.98+2;B1=l*.84;}else{R1=G1=B1=l;} }else{R1*=gr;G1*=gg;B1*=gb;}
-    d[k]=Math.min(255,R1);d[k+1]=Math.min(255,G1);d[k+2]=Math.min(255,B1);}return id;}
+// Montagem feita pelo Photoroom, pelo agente do ponto (a chave fica só no Mac). O Eterna só pede, guarda e mostra.
+function bgPad(b,W,H){const p=b.pos;if(p.box){const [x,y,w,h]=p.box;return {top:y*H,bottom:(1-y-h)*H,left:x*W,right:(1-x-w)*W};}
+  const wa=Math.min(p.cx,1-p.cx)*2*W*.95;const left=p.cx*W-wa/2;return {top:p.top*H,bottom:(1-p.base)*H,left,right:W-left-wa};}
 async function compose(photoId,bgId){const key=photoId+'|'+bgId;if(COMP[key])return COMP[key];
-  return COMP[key]=(async()=>{const bg=bgOf(bgId);const plate=await plateImg(bgId);if(!plate||!bg)return {pending:true};const src=await photoCanvas(photoId);if(!src)return {err:'sem foto'};
-    const m=await maskOf(src);const soft=mkc(m.width,m.height);const sx=soft.getContext('2d');sx.filter='blur(1.2px)';sx.drawImage(m,0,0);
-    const box=maskBox(soft);if(!box)return {err:'ninguém encontrado'};
-    const cut=mkc(src.width,src.height);const cx=cut.getContext('2d');cx.drawImage(soft,0,0);cx.globalCompositeOperation='source-in';cx.drawImage(src,0,0);
-    const W=Math.min(1400,plate.width),H=Math.round(W*plate.height/plate.width);const out=mkc(W,H);const o=out.getContext('2d');o.drawImage(plate,0,0,W,H);
-    const pl=bg.pos;const cutBottom=box.y1>=src.height-6;let dx,dy,dw,dh,base=H;
-    if(pl.box){const [sx0,sy0,sw,sh]=pl.box;const k=Math.min(sw*W/box.w,sh*H/box.h);dw=box.w*k;dh=box.h*k;dx=sx0*W+(sw*W-dw)/2;dy=sy0*H+sh*H-dh;}
-    else{base=cutBottom?Math.max(pl.base,pl.fg?pl.base:1)*H:pl.base*H;dh=base-pl.top*H;const k=dh/box.h;dw=box.w*k;if(dw>W*.9){const q=W*.9/dw;dw*=q;dh*=q;}dx=pl.cx*W-dw/2;dy=base-dh;
-      if(!cutBottom&&!pl.fg){o.save();o.filter='blur(12px)';o.fillStyle=bg.luz==='noite'?'rgba(0,0,0,.45)':'rgba(0,0,0,.32)';o.beginPath();o.ellipse(dx+dw/2+(bg.dir==='esquerda'?dw*.08:bg.dir==='direita'?-dw*.08:0),base-3,dw*.46,Math.max(6,dh*.03),0,0,7);o.fill();o.restore();}}
-    const id=colorMatch(cut,box,plate,W,H,dx,dy,dw,dh,bg);const cc=mkc(box.w,box.h);cc.getContext('2d').putImageData(id,0,0);
-    // luz do fundo sobre o grupo: brilho do lado de onde vem a luz
-    const lc=cc.getContext('2d');lc.globalCompositeOperation='source-atop';const tone=bg.mono?'rgba(255,255,255,':bg.luz==='fim'?'rgba(255,165,80,':bg.luz==='noite'?'rgba(170,190,255,':'rgba(255,250,235,';const amt=bg.luz==='fim'?.22:bg.luz==='sol'?.1:.07;
-    const gx=bg.dir==='esquerda'?lc.createLinearGradient(0,0,box.w,0):bg.dir==='direita'?lc.createLinearGradient(box.w,0,0,0):lc.createLinearGradient(0,0,0,box.h);gx.addColorStop(0,tone+amt+')');gx.addColorStop(1,tone+'0)');lc.fillStyle=gx;lc.fillRect(0,0,box.w,box.h);
-    o.drawImage(cc,dx,dy,dw,dh);
-    if(pl.fg){const fy=pl.fg*H;o.drawImage(plate,0,pl.fg*plate.height,plate.width,plate.height*(1-pl.fg),0,fy,W,H-fy);}
-    return {url:out.toDataURL('image/jpeg',.88)};})();}
-function compTile(photoId,b,sel,act){const a=ANAV[photoId];const m=bgMatch(a,b);return `<button class="bg comp" data-act="${act||'fila-bg'}" data-bg="${b.id}" aria-pressed="${sel}"><span class="compimg" data-comp="${photoId}|${b.id}" style="background-image:url(${b.file})"><span class="compst">Montando com IA...</span></span>${m!=null?`<span class="cmatch ${m>=85?'hi':m>=70?'mid':'lo'}">Combina ${m}%</span>`:''}<span class="n"><span>${esc(b.name)}</span><span class="note">${esc(matchWhy(a,b)||FRAMING[aiScore(photoId).f])} · ${fmtR(priceOf('fundo'))}</span></span></button>`;}
-function compHydrate(){document.querySelectorAll('[data-comp]:not([data-done])').forEach(el=>{el.dataset.done='1';const [ph,bg]=el.dataset.comp.split('|');compose(ph,bg).then(r=>{if(r.url){el.style.backgroundImage=`url(${r.url})`;el.classList.add('ok');el.innerHTML='';el.dataset.url=r.url;}else{el.classList.add('pend');el.innerHTML=`<span class="compst">${r.pending?'Falta o fundo limpo':esc(r.err||'não deu')}</span>`;}}).catch(()=>{el.classList.add('pend');el.innerHTML='<span class="compst">Recorte indisponível</span>';});});}
+  const job=(async()=>{const bg=bgOf(bgId);const plate=await plateImg(bgId);if(!plate||!bg)return {err:'fundo não encontrado'};
+    const pr=state.pr;if(!pr)return {pending:'agente'};if(!pr.configured)return {pending:'photoroom'};
+    const W=plate.naturalWidth,H=plate.naturalHeight;const body={bg:bgId,W,H,pad:bgPad(bg,W,H)};
+    if(/^ag_/.test(photoId))body.pid=photoId.slice(3);else{const c=await photoCanvas(photoId);if(!c)return {err:'sem foto'};body.image_b64=c.toDataURL('image/jpeg',.92);}
+    let r;try{r=await (await fetch(state.agent.url+'/photoroom/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){return {pending:'agente'};}
+    if(!r.ok)return {err:r.error||'Photoroom não respondeu'};
+    const url=state.agent.url+r.url;
+    if(bg.pos.fg){const im=await loadImg(url);if(!im)return {url};const c=mkc(im.width,im.height);const x=c.getContext('2d');x.drawImage(im,0,0);const fy=bg.pos.fg;x.drawImage(plate,0,fy*plate.naturalHeight,plate.naturalWidth,plate.naturalHeight*(1-fy),0,fy*c.height,c.width,c.height*(1-fy));return {url:c.toDataURL('image/jpeg',.9)};}
+    return {url};})();
+  COMP[key]=job;job.then(r=>{if(r.pending||r.err)delete COMP[key];});return job;}
+function compTile(photoId,b,sel,act){const a=ANAV[photoId];const m=bgMatch(a,b);return `<button class="bg comp" data-act="${act||'fila-bg'}" data-bg="${b.id}" aria-pressed="${sel}"><span class="compimg" data-comp="${photoId}|${b.id}" style="background-image:url(${b.file})"><span class="compst">Montando no Photoroom...</span></span>${m!=null?`<span class="cmatch ${m>=85?'hi':m>=70?'mid':'lo'}">Combina ${m}%</span>`:''}<span class="n"><span>${esc(b.name)}</span><span class="note">${esc(matchWhy(a,b)||FRAMING[aiScore(photoId).f])} · ${fmtR(priceOf('fundo'))}</span></span></button>`;}
+state.pr=null;function prPoll(force){if(prPoll.t&&!force&&Date.now()-prPoll.t<15000)return;prPoll.t=Date.now();fetch(state.agent.url+'/photoroom/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=!state.pr||state.pr.configured!==j.configured||state.pr.calls!==j.calls||state.pr.last_error!==j.last_error;state.pr=j;if(ch)render();}).catch(()=>{if(state.pr!==null){state.pr=null;render();}});}
+function prPanel(){const p=state.pr;
+  return `<div class="panel" style="gap:10px"><div class="head"><h2>Photoroom</h2>${p?(p.configured?`<span class="pill ${p.last_error?'bad':'good'}">${p.last_error?esc(p.last_error):'conectado'+(p.sandbox?' · modo de testes':'')}</span>`:'<span class="pill warn">sem chave</span>'):'<span class="pill neutral">agente não encontrado</span>'}</div>
+    <div class="note">O Photoroom recorta o grupo da foto do campo e monta nos fundos de IA, com luz e sombra. O agente do ponto faz as chamadas; a chave fica só neste computador. A chave de testes (começa com sandbox_) é grátis, até 1.000 montagens por mês, com marca d'água.</div>
+    ${p?`<div class="grid2" style="grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:10px"><label><span class="eyebrow">Chave da API Photoroom</span><input type="password" autocomplete="off" id="pr-key" value="" placeholder="${p.configured?'chave salva · digite para trocar':'cole a chave do Photoroom'}"></label><button class="btn primary" data-act="pr-save">${p.configured?'Trocar chave':'Conectar'}</button></div>
+    <div class="note">${p.calls||0} montagens feitas desde que o agente abriu${p.cached?' · '+p.cached+' reaproveitadas sem custo':''}${p.last_ok?' · última às '+p.last_ok:''}.</div>`:`<div class="note">Abra o Eterna pelo agente (http://127.0.0.1:8765) neste computador para conectar.</div>`}</div>`;}
+function compHydrate(){if(document.querySelector('[data-comp]:not([data-done])')&&!state.pr)prPoll();document.querySelectorAll('[data-comp]:not([data-done])').forEach(el=>{el.dataset.done='1';const [ph,bg]=el.dataset.comp.split('|');compose(ph,bg).then(r=>{if(r.url){el.style.backgroundImage=`url(${r.url})`;el.classList.add('ok');el.innerHTML='';el.dataset.url=r.url;}else{el.classList.add('pend');el.innerHTML=`<span class="compst">${r.pending==='photoroom'?'Conecte o Photoroom em Fundos de IA':r.pending==='agente'?'Abra o Eterna pelo agente do ponto':esc(r.err||'não deu')}</span>`;}}).catch(()=>{el.classList.add('pend');el.innerHTML='<span class="compst">Montagem indisponível</span>';});});}
 function compGrid(card,sel){if(!aiPrep(card))return '<div class="note">Lendo o ângulo e a luz das fotos da sessão...</div>';const bgs=aiBgsFor(card);if(!bgs.length)return '<span class="pill warn">Nenhuma foto desta sessão serve para fundo de IA</span>';
   const all=state.compAll===card;const top=all?bgs:bgs.slice(0,5);if(sel&&!top.find(b=>b.id===sel)){const x=bgs.find(b=>b.id===sel);if(x)top.push(x);}
   return `<div class="bgs">${top.map(b=>{const pk=aiPick(card,b.id);return compTile(pk.id,b,sel===b.id);}).join('')}</div><div class="row" style="align-items:center"><span class="note">A IA leu o ângulo e a luz das fotos, escolheu a melhor para cada fundo e montou ${all?'todas as versões':'as que mais combinam'}. O convidado olha e decide se compra.</span>${bgs.length>5?`<button class="chip" data-act="comp-all" data-card="${esc(card)}">${all?'Mostrar só as 5 melhores':'Ver os outros '+(bgs.length-5)+' fundos'}</button>`:''}</div>`;}
@@ -1065,7 +1056,7 @@ function aiBgs(){return DATA.backgrounds;}
 function aiOf(card){SIM.ai=SIM.ai||{};SIM.ai[card]=SIM.ai[card]||{cart:[],bought:[]};return SIM.ai[card];}
 function aiBg(id){return aiBgs().find(b=>b.id===id)||{};}
 function aiPreview(photoId,bgId,big){const b=aiBg(bgId);
-  if(big)return `<div class="aiprev big"><span class="compimg big" data-comp="${photoId}|${bgId}" style="background-image:url(${b.file||''})"><span class="compst">Montando com IA...</span></span><span class="aitag">Prévia · ${esc(b.name||'')}</span></div>`;
+  if(big)return `<div class="aiprev big"><span class="compimg big" data-comp="${photoId}|${bgId}" style="background-image:url(${b.file||''})"><span class="compst">Montando no Photoroom...</span></span><span class="aitag">Prévia · ${esc(b.name||'')}</span></div>`;
   return `<div class="aiprev" style="background-image:url(${b.file||''})"></div>`;}
 function aiPair(photoId,bgId){return `<span class="aipair"><span class="ph" style="${phStyle(photoId)}"></span><span class="aiprev" style="background-image:url(${aiBg(bgId).file||''})"></span></span>`;}
 function vGuestAI(s){const g=state.guest;const a=g.ai;const ai=aiOf(s.card);const ph=s.photos.filter(p=>hasImg(p.id));
@@ -1356,14 +1347,15 @@ function vVendas(){
 }
 
 // ---------- Gestão: fundos de IA (sem Chroma: recorte a partir das fotos do campo) ----------
-function vChroma(){
+function vChroma(){prPoll();
   const ai=Object.values(SIM.ai||{});const sold=ai.reduce((a,x)=>a+x.bought.length,0);const wait=ai.reduce((a,x)=>a+x.cart.length,0);
   const byBg={};ai.forEach(x=>x.bought.forEach(b=>byBg[b.bg]=(byBg[b.bg]||0)+1));
   const fila=Object.values(SIM.sessions).filter(x=>x.bg).length;
   const old=chromas.map(k=>stats[k]).filter(Boolean);
   return `<div class="head"><div><div class="eyebrow">Gestão · fundos de IA</div><h1>Fundos de IA</h1></div><span class="pill neutral">Chroma desativado em 26/10</span></div>
-  <div class="panel"><h2>Como funciona agora</h2><div class="note" style="font-size:13px">Não existe mais estação de Chroma. Qualquer foto do campo (ou do volante) pode virar foto com fundo de IA: a IA recorta o grupo, coloca no fundo escolhido e acerta a luz. O convidado escolhe no balcão (checkout e fila) ou depois, na galeria do celular. Preço: ${fmtR(priceOf('fundo'))} por foto.</div>
+  <div class="panel"><h2>Como funciona agora</h2><div class="note" style="font-size:13px">Não existe mais estação de Chroma. Qualquer foto do campo (ou do volante) pode virar foto com fundo de IA: o Photoroom recorta o grupo, coloca no fundo escolhido e acerta a luz e a sombra. O convidado escolhe no balcão (checkout e fila) ou depois, na galeria do celular. Preço: ${fmtR(priceOf('fundo'))} por foto.</div>
     <div class="note">O roteiro de cada ponto de campo (e do volante que acompanha o grupo) tem um quadro para isso: grupo com folga nas laterais, sem cortar ninguém. Corpo inteiro abre todos os fundos; meio corpo e fechada abrem parte deles.</div></div>
+  ${prPanel()}
   <div class="tiles">
     <div class="tile"><span class="eyebrow">Fundos ativos</span><span class="v">${DATA.backgrounds.length}</span><span class="d">meta: 20</span></div>
     <div class="tile"><span class="eyebrow">Vendidas na galeria</span><span class="v">${fmtN(sold)}</span><span class="d">${fmtR(sold*priceOf('fundo'))}</span></div>
@@ -1371,7 +1363,7 @@ function vChroma(){
     <div class="tile"><span class="eyebrow">Escolhidas no balcão</span><span class="v">${fmtN(fila)}</span><span class="d">sessões com fundo</span></div>
   </div>
   ${(()=>{const ss=DATA.sampled;const ok=ss.filter(x=>aiPick(x.card));const byK={};ss.forEach(x=>{byK[x.key]=byK[x.key]||[0,0];byK[x.key][1]++;if(aiPick(x.card))byK[x.key][0]++;});
-    return `<div class="panel"><h2>Como o sistema escolhe a foto</h2><div class="note" style="font-size:13px">Automático, na hora em que as fotos chegam. A IA dá nota a cada foto da sessão nos quatro critérios abaixo e classifica o enquadramento (corpo inteiro, meio corpo ou fechada). Passa a foto com nota acima de ${AI_MIN} e ninguém cortado pela lateral. Depois lê o ângulo da câmera (pela linha do gramado na foto) e a luz (dia de sol, luz difusa, fim de tarde ou noite, e de que lado ela vem) e compara com a leitura de cada fundo: ângulo pesa 45%, tipo de luz 35% e direção da luz 20%. Para cada fundo, fica a foto aprovada que mais combina; o checkout mostra primeiro os 5 fundos com maior combinação. Na montagem, a IA ajusta cor e brilho do grupo ao fundo, aplica a luz do lado certo, sombra nos pés, e converte para sépia ou preto e branco quando o fundo pede.</div>
+    return `<div class="panel"><h2>Como o sistema escolhe a foto</h2><div class="note" style="font-size:13px">Automático, na hora em que as fotos chegam. A IA dá nota a cada foto da sessão nos quatro critérios abaixo e classifica o enquadramento (corpo inteiro, meio corpo ou fechada). Passa a foto com nota acima de ${AI_MIN} e ninguém cortado pela lateral. Depois lê o ângulo da câmera (pela linha do gramado na foto) e a luz (dia de sol, luz difusa, fim de tarde ou noite, e de que lado ela vem) e compara com a leitura de cada fundo: ângulo pesa 45%, tipo de luz 35% e direção da luz 20%. Para cada fundo, fica a foto aprovada que mais combina; o checkout mostra primeiro os 5 fundos com maior combinação. A montagem é feita pelo Photoroom: recorte, luz casada com o fundo e sombra no chão.</div>
       <div class="tablewrap"><table><thead><tr><th>Critério</th><th>O que a IA olha</th><th class="num">Peso</th></tr></thead><tbody>${AI_CRIT.map(([k,n,d],i)=>`<tr><td class="name">${esc(n)}</td><td class="note">${esc(d)}</td><td class="num">${Math.round(AI_W[k]*100)}%</td></tr>`).join('')}</tbody></table></div>
       <div class="note">Na amostra: ${ok.length} de ${ss.length} sessões (${pct(ok.length,ss.length)}) têm foto apta. Por fotógrafo: ${Object.entries(byK).map(([k,[a,b]])=>`${esc(P[k].name)} ${pct(a,b)}`).join(' · ')}. Fotógrafo com taxa baixa está cortando gente na lateral ou entregando foto sem foco.</div>
       <div class="eyebrow" style="margin-top:6px">Leitura de cada fundo: ângulo, luz e enquadramento</div><div class="tablewrap"><table><thead><tr><th>Fundo</th><th>Câmera</th><th>Luz</th><th>Direção</th><th>Cor</th><th>Enquadramentos</th></tr></thead><tbody>${DATA.backgrounds.map(b=>`<tr><td class="name">${esc(b.name)}</td><td>${ANG_N[b.ang]}</td><td>${LUZ_N[b.luz]}</td><td>${DIR_N[b.dir]}</td><td>${b.mono==='sepia'?'sépia':b.mono?'preto e branco':'cor'}</td><td class="note">${b.fit.map(f=>FRAMING[f].toLowerCase()).join(', ')}</td></tr>`).join('')}</tbody></table></div></div>`;})()}
@@ -2147,6 +2139,7 @@ document.addEventListener('click',e=>{
     case 'gself-snap':{const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v||!v.videoWidth)break;const c=document.createElement('canvas');const w=Math.min(720,v.videoWidth);c.width=w;c.height=Math.round(w*v.videoHeight/v.videoWidth);const x=c.getContext('2d');x.translate(c.width,0);x.scale(-1,1);x.drawImage(v,0,0,c.width,c.height);sf.shot=c.toDataURL('image/jpeg',.85);if(sf.stream){sf.stream.getTracks().forEach(t=>t.stop());sf.stream=null;}render();selfieFound();break;}
     case 'gai-open':state.guest.ai={photo:null,bg:null};render();scrollTo(0,0);break;
     case 'gai-close':state.guest.ai=null;render();break;
+    case 'pr-save':{const inp=$('#pr-key');const key=(inp&&inp.value||'').trim();if(!key){toast('Cole a chave do Photoroom');break;}fetch(state.agent.url+'/photoroom/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){toast(j.sandbox?'Photoroom conectado (modo de testes)':'Photoroom conectado');Object.keys(COMP).forEach(k=>delete COMP[k]);prPoll(true);}else toast(j.error||'Não deu para salvar');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'comp-all':state.compAll=state.compAll===d.card?null:d.card;render();break;
     case 'gai-more':state.guest.ai.more=true;render();break;
     case 'gai-bg':state.guest.ai.bg=d.id;render();break;
