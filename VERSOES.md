@@ -38,3 +38,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v36 | `54503c6` | Roteiro do set ganha o quadro obrigatório para fundo de IA (campo e volante acompanhando grupo) |
 | v37 | `7447079` | Escolha automática da foto para fundo de IA (5 critérios com peso, nota mínima 70, corpo inteiro e borda obrigatórios); taxa de foto apta por fotógrafo |
 | v38 | `6459808` | Escolha da foto para fundo de IA por fundo: corpo inteiro, meio corpo ou fechada, cada fundo aceita os seus enquadramentos; critérios: lateral, rostos, foco, recorte |
+| v39 | `c0da032` | Recorte real do grupo e montagem automática nos 5 fundos (checkout, fila, galeria); aguarda os fundos limpos img/plate-<id>.jpg |
