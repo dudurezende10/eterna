@@ -394,7 +394,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v62 · 27/10 18:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v62</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v63 · 27/10 18:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v63</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -912,14 +912,14 @@ const FRAMING={inteiro:'Corpo inteiro',meio:'Meio corpo',close:'Fechada'};
 DATA.backgrounds=[
  {id:'imprensa',name:'Sala de imprensa',file:'img/bg-imprensa.jpg',note:'Painel Maracanã, bancada com microfones',ang:'olho',luz:'interna',dir:'frontal',mono:false,fit:['meio','close'],pos:{cx:.5,top:.1,base:.7,fg:.585}},
  {id:'arq1950',name:'Arquibancada 1950',file:'img/bg-arq1950.jpg',note:'Sépia, do alto da arquibancada, Pão de Açúcar ao fundo',ang:'alto',luz:'nublado',dir:'difusa',mono:'sepia',fit:['inteiro','meio'],pos:{cx:.34,top:.3,base:1}},
- {id:'mirante',name:'Mirante do Rio',file:'img/bg-mirante.jpg',note:'Pôr do sol, Cristo e o Maracanã aceso',ang:'olho',luz:'fim',dir:'esquerda',mono:false,fit:['inteiro','meio','close'],pos:{cx:.42,top:.24,base:1}},
+ {id:'mirante',name:'Mirante do Rio',file:'img/bg-mirante.jpg',note:'Pôr do sol, Cristo e o Maracanã aceso · só foto fechada ou meio corpo',ang:'olho',luz:'fim',dir:'esquerda',mono:false,fit:['close','meio'],pos:{cx:.42,top:.3,base:.72}},
  {id:'noite',name:'Maracanã à noite',file:'img/bg-noite.jpg',note:'Gramado, refletores e torcida verde e amarela',ang:'baixo',luz:'noite',dir:'frontal',mono:false,fit:['inteiro','meio'],pos:{cx:.5,top:.3,base:.95}},
  {id:'terraco',name:'Terraço ao pôr do sol',file:'img/bg-terraco.jpg',note:'Terraço com vista para o Maracanã e o Cristo',ang:'olho',luz:'fim',dir:'esquerda',mono:false,fit:['inteiro','meio'],pos:{cx:.52,top:.3,base:.9}},
  {id:'campeao',name:'Noite de campeão',file:'img/bg-campeao.jpg',note:'Confete verde e dourado, taça no gramado',ang:'baixo',luz:'noite',dir:'frontal',mono:false,fit:['inteiro','meio'],pos:{cx:.42,top:.3,base:.93}},
  {id:'gramado1950',name:'Gramado 1950',file:'img/bg-gramado1950.jpg',note:'Preto e branco, rente ao gramado, estádio lotado',ang:'baixo',luz:'nublado',dir:'difusa',mono:'pb',fit:['inteiro','meio'],pos:{cx:.45,top:.3,base:.95}},
  {id:'alto1950',name:'Maracanã 1950 do alto',file:'img/bg-alto1950.jpg',note:'Preto e branco, vista do anel superior',ang:'alto',luz:'sol',dir:'difusa',mono:'pb',fit:['inteiro','meio'],pos:{cx:.5,top:.38,base:.98}},
  {id:'escanteio1950',name:'Escanteio 1950',file:'img/bg-escanteio1950.jpg',note:'Preto e branco, bandeirinha de escanteio',ang:'olho',luz:'sol',dir:'difusa',mono:'pb',fit:['inteiro','meio'],pos:{cx:.64,top:.3,base:.95}},
- {id:'asadelta',name:'Voo de asa-delta',file:'img/bg-asadelta.jpg',note:'Sobre a Lagoa, Maracanã e Cristo ao fundo',ang:'olho',luz:'sol',dir:'esquerda',mono:false,fit:['meio','close'],pos:{box:[.35,.3,.3,.42]}}];
+ {id:'asadelta',name:'Voo de asa-delta',file:'img/bg-asadelta.jpg',note:'Precisa de montagem generativa (só a cabeça, corpo no arnês); fora do automático até ter essa ferramenta',ang:'olho',luz:'sol',dir:'esquerda',mono:false,fit:[],inativo:true,pos:{box:[.35,.3,.3,.42]}}];
 const ANG_N={olho:'altura dos olhos',alto:'de cima',baixo:'rente ao chão'},LUZ_N={sol:'dia de sol',nublado:'luz difusa',fim:'fim de tarde',noite:'noite, refletores',interna:'luz interna'},DIR_N={esquerda:'vem da esquerda',direita:'vem da direita',frontal:'frontal',difusa:'difusa'};
 function bgOf(id){return DATA.backgrounds.find(b=>b.id===id)||null;}
 function bgFits(id){const b=bgOf(id);return b?b.fit:['inteiro','meio','close'];}
@@ -937,21 +937,23 @@ async function aiAnalyze(id){if(ANA[id])return ANA[id];return ANA[id]=(async()=>
   const ang=hz==null?'olho':hz<.35?'alto':hz>.74?'baixo':'olho';
   const luz=bright<65?'noite':wb>.045?'fim':sd>50?'sol':'nublado';
   const dir=dl>.08?'esquerda':dl<-.08?'direita':'frontal';
-  return ANAV[id]={hz,ang,luz,dir,wb:+wb.toFixed(3),warm:+warm.toFixed(3),bright:Math.round(bright),contrast:Math.round(sd)};})();}
+  // enquadramento pelos rostos: onde o corpo terminaria (cerca de 8 alturas de rosto abaixo do topo da cabeça)
+  let f=null,faces=0;try{if(typeof ynDetect==='function'){const fs=(await ynDetect(c,.6)).filter(b=>b.w>=24);faces=fs.length;if(fs.length){const H0=c.height;const low=fs.reduce((m,b)=>Math.max(m,b.y+b.h*8),0)/H0;const mid=fs.reduce((m,b)=>Math.max(m,b.y+b.h*4.5),0)/H0;const big=Math.max(...fs.map(b=>b.h))/H0;f=(low<=1.04&&big<.16)?'inteiro':(mid<=1.02&&big<.3)?'meio':'close';}}}catch(e){}
+  return ANAV[id]={hz,ang,luz,dir,f,faces,wb:+wb.toFixed(3),warm:+warm.toFixed(3),bright:Math.round(bright),contrast:Math.round(sd)};})();}
 const ANG_M={olho:{olho:1,alto:.75,baixo:.65},alto:{alto:1,olho:.7,baixo:.35},baixo:{baixo:1,olho:.7,alto:.35}};
 const LUZ_M={sol:{sol:1,nublado:.7,fim:.55,interna:.6,noite:.3},nublado:{nublado:1,sol:.75,interna:.8,fim:.5,noite:.45},fim:{fim:1,sol:.6,nublado:.5,interna:.5,noite:.5},noite:{noite:1,interna:.75,fim:.5,nublado:.4,sol:.25},interna:{interna:1,nublado:.8,noite:.7,sol:.55,fim:.5}};
 function bgMatch(a,b){if(!a||!b)return null;const ang=ANG_M[a.ang][b.ang];const lz=LUZ_M[a.luz][b.luz];const luz=b.mono?Math.max(.75,lz):lz;const dir=(b.dir==='difusa'||b.dir==='frontal'||a.dir==='frontal')?.9:(a.dir===b.dir?1:.5);return Math.round(100*(ang*.45+luz*.35+dir*.2));}
 function matchWhy(a,b){if(!a||!b)return '';const p=[];p.push(ANG_M[a.ang][b.ang]>=.95?'ângulo casa':'ângulo '+(a.ang===b.ang?'casa':'diferente'));p.push((b.mono?Math.max(.75,LUZ_M[a.luz][b.luz]):LUZ_M[a.luz][b.luz])>=.95?'luz casa':b.mono?'luz ok no P&B':'luz '+LUZ_N[a.luz]);return p.join(' · ');}
 function aiPrep(card){const s=sessionObj(card);if(!s)return true;const ph=s.photos.filter(p=>hasImg(p.id));const miss=ph.filter(p=>!ANAV[p.id]);if(!miss.length)return true;
   if(!aiPrep.busy){aiPrep.busy=1;Promise.all(miss.map(p=>aiAnalyze(p.id).catch(()=>null))).then(()=>{aiPrep.busy=0;miss.forEach(p=>{if(!ANAV[p.id])ANAV[p.id]={ang:'olho',luz:'sol',dir:'frontal',hz:null,warm:0,bright:120,contrast:40,fail:1};});render();});}return false;}
-function aiScore(id){const h=h32('ia'+id);const c={};AI_CRIT.forEach(([k],i)=>{c[k]=((h>>>(i*5))%40)+60;});
+function aiScore(id){const h=h32('ia'+id);const c={};AI_CRIT.forEach(([k],i)=>{c[k]=((h>>>(i*5))%40)+60;});const an=ANAV[id];
   if((h>>>3)%4===0){c.borda=40+(h>>>11)%25;}
-  const f=h%20<8?'inteiro':h%20<15?'meio':'close';
+  const f=(an&&an.f)||(h%20<8?'inteiro':h%20<15?'meio':'close');
   const tot=Math.round(AI_CRIT.reduce((a,[k])=>a+c[k]*AI_W[k],0));return {tot,c,f};}
 function aiCands(card,bg){const s=sessionObj(card);if(!s)return [];const b=bg?bgOf(bg):null;return s.photos.filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]).map(p=>{const sc=aiScore(p.id);const m=b?bgMatch(ANAV[p.id],b):null;return {id:p.id,...sc,match:m,rank:sc.tot*(m==null?1:.4)+(m==null?0:m*.6)+(sc.f==='inteiro'?2:0)};}).filter(c=>!b||b.fit.includes(c.f)).sort((a,b)=>b.rank-a.rank);}
 const aiOk=c=>c.tot>=AI_MIN&&c.c.borda>=70;
 function aiPick(card,bg){return aiCands(card,bg).find(aiOk)||null;}
-function aiBgsFor(card){return DATA.backgrounds.map(b=>({b,pk:aiPick(card,b.id)})).filter(x=>x.pk).sort((x,y)=>(y.pk.match||0)-(x.pk.match||0)).map(x=>x.b);}
+function aiBgsFor(card){return DATA.backgrounds.filter(b=>!b.inativo).map(b=>({b,pk:aiPick(card,b.id)})).filter(x=>x.pk).sort((x,y)=>(y.pk.match||0)-(x.pk.match||0)).map(x=>x.b);}
 // ---------- Montagem com IA: recorte do grupo + fundo limpo ----------
 // Recorte por segmentação de pessoas (MediaPipe, roda no navegador ou no computador do ponto) e montagem sobre o fundo limpo (sem pessoas).
 // Fundos limpos: img/plate-<id>.jpg. Sem o arquivo, a montagem daquele fundo fica pendente.
@@ -1431,16 +1433,16 @@ function vChroma(){prPoll();
     <div class="note">O roteiro de cada ponto de campo (e do volante que acompanha o grupo) tem um quadro para isso: grupo com folga nas laterais, sem cortar ninguém. Corpo inteiro abre todos os fundos; meio corpo e fechada abrem parte deles.</div></div>
   ${prPanel()}
   <div class="tiles">
-    <div class="tile"><span class="eyebrow">Fundos ativos</span><span class="v">${DATA.backgrounds.length}</span><span class="d">meta: 20</span></div>
+    <div class="tile"><span class="eyebrow">Fundos ativos</span><span class="v">${DATA.backgrounds.filter(b=>!b.inativo).length}</span><span class="d">meta: 20</span></div>
     <div class="tile"><span class="eyebrow">Vendidas na galeria</span><span class="v">${fmtN(sold)}</span><span class="d">${fmtR(sold*priceOf('fundo'))}</span></div>
     <div class="tile"><span class="eyebrow">Guardadas para depois</span><span class="v">${fmtN(wait)}</span><span class="d">na lista do convidado</span></div>
     <div class="tile"><span class="eyebrow">Escolhidas no balcão</span><span class="v">${fmtN(fila)}</span><span class="d">sessões com fundo</span></div>
   </div>
   ${(()=>{const ss=DATA.sampled;const ok=ss.filter(x=>aiPick(x.card));const byK={};ss.forEach(x=>{byK[x.key]=byK[x.key]||[0,0];byK[x.key][1]++;if(aiPick(x.card))byK[x.key][0]++;});
-    return `<div class="panel"><h2>Como o sistema escolhe a foto</h2><div class="note" style="font-size:13px">Automático, na hora em que as fotos chegam. A IA dá nota a cada foto da sessão nos quatro critérios abaixo e classifica o enquadramento (corpo inteiro, meio corpo ou fechada). Passa a foto com nota acima de ${AI_MIN} e ninguém cortado pela lateral. Depois lê o ângulo da câmera (pela linha do gramado na foto) e a luz (dia de sol, luz difusa, fim de tarde ou noite, e de que lado ela vem) e compara com a leitura de cada fundo: ângulo pesa 45%, tipo de luz 35% e direção da luz 20%. Para cada fundo, fica a foto aprovada que mais combina; o checkout mostra primeiro os 5 fundos com maior combinação. A montagem é feita pelo Photoroom: recorte, luz casada com o fundo e sombra no chão.</div>
+    return `<div class="panel"><h2>Como o sistema escolhe a foto</h2><div class="note" style="font-size:13px">Automático, na hora em que as fotos chegam. A IA dá nota a cada foto da sessão nos quatro critérios abaixo e classifica o enquadramento pelos rostos que encontra na foto: pelo tamanho e pela posição do rosto ela estima onde o corpo termina (corpo inteiro, meio corpo ou fechada). Passa a foto com nota acima de ${AI_MIN} e ninguém cortado pela lateral. Depois lê o ângulo da câmera (pela linha do gramado na foto) e a luz (dia de sol, luz difusa, fim de tarde ou noite, e de que lado ela vem) e compara com a leitura de cada fundo: ângulo pesa 45%, tipo de luz 35% e direção da luz 20%. Para cada fundo, fica a foto aprovada que mais combina; o checkout mostra primeiro os 5 fundos com maior combinação. A montagem é feita pelo Photoroom: recorte, luz casada com o fundo e sombra no chão.</div>
       <div class="tablewrap"><table><thead><tr><th>Critério</th><th>O que a IA olha</th><th class="num">Peso</th></tr></thead><tbody>${AI_CRIT.map(([k,n,d],i)=>`<tr><td class="name">${esc(n)}</td><td class="note">${esc(d)}</td><td class="num">${Math.round(AI_W[k]*100)}%</td></tr>`).join('')}</tbody></table></div>
       <div class="note">Na amostra: ${ok.length} de ${ss.length} sessões (${pct(ok.length,ss.length)}) têm foto apta. Por fotógrafo: ${Object.entries(byK).map(([k,[a,b]])=>`${esc(P[k].name)} ${pct(a,b)}`).join(' · ')}. Fotógrafo com taxa baixa está cortando gente na lateral ou entregando foto sem foco.</div>
-      <div class="eyebrow" style="margin-top:6px">Leitura de cada fundo: ângulo, luz e enquadramento</div><div class="tablewrap"><table><thead><tr><th>Fundo</th><th>Câmera</th><th>Luz</th><th>Direção</th><th>Cor</th><th>Enquadramentos</th></tr></thead><tbody>${DATA.backgrounds.map(b=>`<tr><td class="name">${esc(b.name)}</td><td>${ANG_N[b.ang]}</td><td>${LUZ_N[b.luz]}</td><td>${DIR_N[b.dir]}</td><td>${b.mono==='sepia'?'sépia':b.mono?'preto e branco':'cor'}</td><td class="note">${b.fit.map(f=>FRAMING[f].toLowerCase()).join(', ')}</td></tr>`).join('')}</tbody></table></div></div>`;})()}
+      <div class="eyebrow" style="margin-top:6px">Leitura de cada fundo: ângulo, luz e enquadramento</div><div class="tablewrap"><table><thead><tr><th>Fundo</th><th>Câmera</th><th>Luz</th><th>Direção</th><th>Cor</th><th>Enquadramentos</th></tr></thead><tbody>${DATA.backgrounds.map(b=>`<tr${b.inativo?' style="opacity:.55"':''}><td class="name">${esc(b.name)}${b.inativo?' <span class="pill warn">fora do automático</span>':''}</td><td>${ANG_N[b.ang]}</td><td>${LUZ_N[b.luz]}</td><td>${DIR_N[b.dir]}</td><td>${b.mono==='sepia'?'sépia':b.mono?'preto e branco':'cor'}</td><td class="note">${b.fit.map(f=>FRAMING[f].toLowerCase()).join(', ')||'—'}</td></tr>`).join('')}</tbody></table></div></div>`;})()}
   <div class="panel"><h2>Fundos</h2><div class="note">Decisão de 15/10: nos fundos "Sala de imprensa" e "No telão" entra só o logo do Maracanã, sem marcas de terceiros. As prévias abaixo ainda mostram a versão de referência.</div>
     <div class="bgs">${DATA.backgrounds.map(b=>`<button class="bg" data-act="zoom-img" data-src="${b.file}" data-cap="${esc(b.name)}"><img src="${b.file}" alt="${esc(b.name)}"><span class="n"><span>${esc(b.name)}${byBg[b.id]?` · <b>${byBg[b.id]} vendida${byBg[b.id]>1?'s':''}</b>`:''}</span><span class="note">${esc(b.note)}</span></span></button>`).join('')}</div></div>
   ${old.length?`<div class="panel"><h2>Histórico do Chroma (até 26/10)</h2><div class="note">${old.map(c=>`${esc(c.name)}: ${fmtN(c.cards)} sessões, ${pct(c.cardsSold,c.cards)} vendem, ${fmtR(c.revenue)}`).join(' · ')}. Fica nos totais do período; não entra mais na operação.</div></div>`:''}`;
