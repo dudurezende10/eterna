@@ -275,6 +275,10 @@ body[data-bare] .app{grid-template-columns:minmax(0,1fr)}
 .face[data-st="present"] .ring{border-color:var(--warn);animation:none}
 .face[data-st="searching"] .ring{border-color:var(--accent);animation:ring .6s ease-in-out infinite}
 .face[data-st="found"] .ring{border-color:var(--good);animation:none}
+.face[data-st="found"] .st,.face[data-st="searching"] .st,.face[data-st="noface"] .st,.face[data-st="nomatch"] .st,.face[data-st="pick"] .st{left:12px;right:12px;bottom:12px;padding:12px 14px;border-radius:10px;font-size:18px;font-weight:700;text-shadow:none;background:rgba(12,35,64,.88)}
+.face[data-st="found"] .st{background:var(--good)}
+.face[data-st="noface"] .st,.face[data-st="nomatch"] .st{background:#b3261e}
+.face[data-st="noface"] .ring,.face[data-st="nomatch"] .ring{border-color:#b3261e;animation:none}
 .ajed{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:14px;align-items:start}
 @media (max-width:900px){.ajed{grid-template-columns:1fr}}
 .ajpv::before{filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
@@ -382,7 +386,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v42 · 26/10 22:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v43 · 26/10 22:15"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -1822,7 +1826,7 @@ function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.status='sea
   if(c.stream&&v&&v.videoWidth){(async()=>{const fr=[];for(let k=0;k<3;k++){const cv=mkc(v.videoWidth,v.videoHeight);cv.getContext('2d').drawImage(v,0,0);fr.push(cv);if(k<2)await new Promise(r=>setTimeout(r,250));}return faceFind(fr,ok);})()
     .then(r=>{if(!camWanted()){c.busy=false;return;}if(r.list.length&&r.clara){open(r.list[0].card);return;}
       if(r.list.length){c.busy=false;c.status='pick';c.cands=r.list.slice(0,4);render();return;}
-      c.busy=false;c.status=r.semRosto?'noface':'nomatch';camStatus();setTimeout(()=>{if(c.status==='noface'||c.status==='nomatch'){c.status='idle';camStatus();}},3000);})
+      c.busy=false;c.status=r.semRosto?'noface':'nomatch';camStatus();setTimeout(()=>{if(c.status==='noface'||c.status==='nomatch'){c.status='idle';camStatus();}},6000);})
     .catch(()=>{c.busy=false;c.status='idle';camStatus();toast('Reconhecimento indisponível. Use o código.');});return;}
   setTimeout(()=>{const cands=demoSessions().filter(ok);const pick=cands[Math.floor(Math.random()*cands.length)];if(!pick){c.busy=false;c.status='idle';camStatus();return;}open(pick.card);},900);}
 function camBox(){const c=state.cam;const noCam=!!c.err;return `<div class="face live" id="cam-face" data-st="${c.status}" aria-label="Câmera do checkout">${noCam?'<div class="ring"></div><div class="scan"></div>':'<video id="cam-video" autoplay muted playsinline></video><div class="ring"></div>'}<div class="st" id="cam-st"></div></div>${c.status==='pick'&&c.cands?faceCands(c.cands,'cam-pick'):''}`;}

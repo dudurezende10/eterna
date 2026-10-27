@@ -42,3 +42,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v40 | `63f3e81` | 10 fundos limpos; casamento por ângulo e luz entre foto e fundo; montagem com ajuste de cor, luz lateral, sombra e P&B/sépia |
 | v41 | `a32fbaa` | Reconhecimento facial de verdade (face-api, MIT, no navegador): selfie do convidado e câmera do checkout/quiosque acham a sessão pelo rosto; pergunta "é uma destas?" na dúvida; medição de acerto em Treino da IA (94,1% nas fotos de exemplo) |
 | v42 | – | Reconhecimento facial instantâneo: rostos das fotos de exemplo já vêm lidos (vendor/faceapi/indice-exemplos.json); busca não espera a leitura das fotos novas |
+| v43 | – | Câmera do quiosque e checkout: avisos em faixa grande (vermelha quando não acha, verde quando acha), 6 segundos na tela |
