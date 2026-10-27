@@ -36,3 +36,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v34 | `baa9202` | Fotógrafo de campo ou volante (acompanha o grupo, chute a gol, livre com lugar), troca no set e na Escala, sessões separadas do campo |
 | v35 | `f53c2ac` | Chroma cortado; os mesmos 5 fundos de IA passam a ser aplicados nas fotos do campo (e do volante); histórico do Chroma mantido nos totais |
 | v36 | `54503c6` | Roteiro do set ganha o quadro obrigatório para fundo de IA (campo e volante acompanhando grupo) |
+| v37 | `7447079` | Escolha automática da foto para fundo de IA (5 critérios com peso, nota mínima 70, corpo inteiro e borda obrigatórios); taxa de foto apta por fotógrafo |
