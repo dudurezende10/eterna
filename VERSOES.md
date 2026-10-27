@@ -63,3 +63,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v60 | `5542a33` | Fotos em tempo real por um servidor FTP da rede: o agente busca as novas, pasta por fotógrafo; conexão no Upload |
 | v61 | `db36f1c` | Anfitrião no set: quem está logado, Trocar fotógrafo e Sair na própria tela |
 | v62 | `e779f0d` | Fundos P&B e sépia deixam a foto inteira no mesmo tom; aviso de miniatura nas sessões de exemplo |
+| v63 | `874d321` | Enquadramento lido pelos rostos; Mirante só fechada/meio corpo; asa-delta fora do automático (precisa de montagem generativa) |
