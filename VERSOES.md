@@ -72,3 +72,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v69 | `4d7bf00` | Revisão de fotos com menus de fotógrafo, data e venda, filtro de foto vendida/não vendida; sessões reais incluídas |
 | v70 | `1b949e5` | Revisão de fotos até hoje: sessões da Roverpix por cartão, fotos locais casadas por fotógrafo e hora de captura; correção de Escala/Alertas com fotógrafo novo |
 | v71 | `534ce8d` | Fundo Noite de campeão · Colômbia; grafia Klacius da Roverpix mapeada para Klássius |
+| v72 | `d80a1a6` | Revisão: fotos casadas com as sessões da Roverpix pela sequência de captura; horários Roverpix em UTC; câmera sem check-in inferida |
