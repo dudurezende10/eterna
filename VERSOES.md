@@ -61,3 +61,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v59 | `959866e` | Check-in da câmera no Set (número de série no EXIF); nome do autor gravado na câmera reconhecido sozinho; Biblioteca atribui o fotógrafo pela câmera |
 | – | `8d74cf6` | Teste de carga da operação (agente/teste-carga.py: enviar, selfies, monitorar, relatorio); agente com leitores em paralelo, /metricas, vigia de pasta FTP (ETERNA_PASTA); agente/iniciar-eterna.bat |
 | v60 | `5542a33` | Fotos em tempo real por um servidor FTP da rede: o agente busca as novas, pasta por fotógrafo; conexão no Upload |
+| v61 | `db36f1c` | Anfitrião no set: quem está logado, Trocar fotógrafo e Sair na própria tela |
