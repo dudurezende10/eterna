@@ -74,3 +74,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v71 | `534ce8d` | Fundo Noite de campeão · Colômbia; grafia Klacius da Roverpix mapeada para Klássius |
 | v72 | `d80a1a6` | Revisão: fotos casadas com as sessões da Roverpix pela sequência de captura; horários Roverpix em UTC; câmera sem check-in inferida |
 | v73 | `ee6cd2a` | Upload automático: opção Todos no fotógrafo e no ponto; grupo fica com o fotógrafo das fotos |
+| v74 | `6112327` | Loja única com escolha por símbolos e fundos de IA na sequência; Ajustes com IA automática e manual em alta; até 5 fundos; Klássius único |
