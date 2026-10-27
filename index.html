@@ -389,7 +389,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v48 · 26/10 22:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v49 · 26/10 23:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -1893,7 +1893,7 @@ function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c
   c.prev=g;}
 function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;el.dataset.st=c.status;const t={off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando'}[c.status]||'';el.textContent=t;if(f)f.dataset.st=c.status;}
 function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Date.now();c.status='searching';camStatus();
-  const ok=x=>state.view==='quiosque'?(x.status==='pronta'||x.status==='paga'||x.status==='fechada'):(x.status==='pronta'||x.status==='fechada');
+  const ok=x=>state.view==='quiosque'||x.status!=='paga'; // checkout: toda sessão ainda não paga (como a lista ao lado); quiosque: todas
   const open=card=>{c.busy=false;c.status='found';camStatus();
     if(state.view==='quiosque'){state.kiosk.code=card;state.kiosk.step='gallery';toast('Achamos você: '+card);render();}
     else if(state.view==='checkout'){toast('Encontramos: '+card);checkoutPick(card);}
