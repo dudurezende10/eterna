@@ -24,6 +24,8 @@ sem nenhum dos dois, serve o JPG original.
 
 Para outros computadores da rede (checkout, quiosque) usarem este agente:
      ETERNA_REDE=1 python3 eterna-agente.py
+Para receber de um servidor FTP que já existe na máquina, vigiando a pasta dele:
+     ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -67,6 +69,8 @@ def save_meta():
         pass
 lib = {}               # id -> {file, thumb}  (tudo que já está na inbox)
 cards = {}             # volume path -> hashes já tratados nesta inserção
+metricas = []           # uma linha por foto recebida (teste de carga e operação): ver /metricas
+metricas_por_pid = {}
 state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None}}
 
 if os.path.exists(INDEX):
@@ -159,7 +163,8 @@ _mat_lock = threading.Lock()
 
 
 def rostos_db():
-    c = sqlite3.connect(ROSTOS_DB, timeout=30)
+    c = sqlite3.connect(ROSTOS_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
     c.execute("create table if not exists foto (pid text primary key, dia text, n int, lida real)")
     c.execute("create table if not exists rosto (pid text, dia text, larg real, emb blob)")
     c.execute("create index if not exists rosto_dia on rosto(dia)")
@@ -226,12 +231,26 @@ def rostos_thread():
     with lock:
         pend = [(pid, e["file"]) for pid, e in lib.items() if pid not in feitas]
     for x in sorted(pend, key=lambda t: t[1], reverse=True):     # mais recentes primeiro
-        fila_rostos.put(x)
+        fila_rostos.put((x[0], x[1], None))
     rostos["ligado"] = True; rostos["motivo"] = None
-    print(f"  Rostos:            ligado · {rostos['lidas']} fotos lidas · {len(pend)} na fila")
+    n = max(1, int(os.environ.get("ETERNA_LEITORES") or max(1, (os.cpu_count() or 2) // 2)))
+    rostos["leitores"] = n
+    print(f"  Rostos:            ligado · {rostos['lidas']} fotos lidas · {len(pend)} na fila · {n} leitores em paralelo")
+    for k in range(1, n):
+        threading.Thread(target=leitor_loop, args=leitor() + (rostos_db(),), daemon=True).start()
+    leitor_loop(det, rec, db)
+
+
+_cont_lock = threading.Lock()
+
+
+def leitor_loop(det, rec, db):
+    """Um leitor: tira da fila, lê os rostos e grava. Vários rodam em paralelo (ETERNA_LEITORES)."""
+    cv2 = _cv["cv2"]
     while True:
-        pid, path = fila_rostos.get()
+        pid, path, t_fila = fila_rostos.get()
         rostos["fila"] = fila_rostos.qsize()
+        t_ini = time.time()
         try:
             img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)
             if img is None:
@@ -242,7 +261,13 @@ def rostos_thread():
             db.execute("delete from rosto where pid=?", (pid,))
             db.executemany("insert into rosto values (?,?,?,?)", [(pid, dia, w, e.tobytes()) for w, e in fs])
             db.commit()
-            rostos["lidas"] += 1; rostos["rostos"] += len(fs)
+            with _cont_lock:
+                rostos["lidas"] += 1; rostos["rostos"] += len(fs)
+            m = metricas_por_pid.get(pid)
+            if m is not None:
+                agora = time.time()
+                m.update(lida=agora, leitura_ms=round((agora - t_ini) * 1000, 1), rostos=len(fs),
+                         espera_ms=round((t_ini - t_fila) * 1000, 1) if t_fila else None)
             with _mat_lock:
                 _mat.pop(dia, None)
         except Exception as ex:
@@ -350,6 +375,15 @@ def medir(sessoes):
             "acerto": certo / max(1, certo + errado), "modelo": rostos["modelo"]}
 
 
+def uso_maquina():
+    try:
+        import psutil
+        return {"cpu": psutil.cpu_percent(interval=None), "memoria": psutil.virtual_memory().percent,
+                "disco_livre_gb": round(psutil.disk_usage(HOME).free / 1e9, 1)}
+    except Exception:
+        return {"disco_livre_gb": round(shutil.disk_usage(HOME).free / 1e9, 1)}
+
+
 def list_volumes():
     vols = []
     if sys.platform == "darwin":
@@ -364,6 +398,7 @@ def list_volumes():
 
 def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
     """Leva um arquivo para a inbox. Devolve 'new', 'dup' ou None."""
+    t_ini = time.time()
     h = quick_hash(src, st.st_size)
     with lock:
         if dedupe_set is not None:
@@ -375,6 +410,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
             events.append({"type": "dup", "id": pid, "name": fn, "size": st.st_size,
                            "t": st.st_mtime, "card": origin, "src": src_kind})
             state["dups"] += 1
+            metricas.append({"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(), "dup": True})
             return "dup"
     pid = h[:12]
     day = time.strftime("%Y-%m-%d", time.localtime(st.st_mtime))
@@ -400,7 +436,10 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
                        "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb})
         state["copied"] += 1
-    fila_rostos.put((pid, dst))
+        m = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(),
+             "copia_ms": round((time.time() - t_ini) * 1000, 1)}
+        metricas.append(m); metricas_por_pid[pid] = m
+    fila_rostos.put((pid, dst, time.time()))
     print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
     return "new"
 
@@ -453,6 +492,46 @@ def load_ftp_cfg():
         cfg = {"users": {u: "".join(random.choice(alphabet) for _ in range(8)) for u in PHOTOGRAPHERS}}
         json.dump(cfg, open(FTPCFG, "w"), indent=2)
     return cfg
+
+
+def pasta_vigiada():
+    """ETERNA_PASTA: pasta de um servidor FTP que já existe (ex.: FileZilla Server). Cada foto que termina de chegar
+    entra no Eterna como se viesse do próprio FTP do agente. O arquivo original fica onde está."""
+    pasta = os.environ.get("ETERNA_PASTA")
+    if not pasta:
+        return
+    if not os.path.isdir(pasta):
+        print(f"  Pasta vigiada:     {pasta} não existe"); return
+    print(f"  Pasta vigiada:     {pasta}")
+    state["pasta"] = pasta
+    vistos = {}                                   # caminho -> (tamanho, mtime) já tratado
+    tamanhos = {}                                 # caminho -> tamanho da última volta (espera o arquivo parar de crescer)
+    for root, _, files in os.walk(pasta):         # o que já estava lá antes de ligar não entra
+        for fn in files:
+            p = os.path.join(root, fn)
+            try:
+                st = os.stat(p); vistos[p] = (st.st_size, st.st_mtime)
+            except OSError:
+                pass
+    while True:
+        for root, _, files in os.walk(pasta):
+            for fn in files:
+                if not fn.endswith(EXT):
+                    continue
+                p = os.path.join(root, fn)
+                try:
+                    st = os.stat(p)
+                except OSError:
+                    continue
+                chave = (st.st_size, st.st_mtime)
+                if vistos.get(p) == chave:
+                    continue
+                if tamanhos.get(p) != st.st_size or time.time() - st.st_mtime < 0.5:
+                    tamanhos[p] = st.st_size; continue           # ainda chegando
+                vistos[p] = chave; tamanhos.pop(p, None)
+                quem = os.path.basename(root) if root != pasta else "pasta"
+                ingest_file(p, fn, st, quem, "ftp")
+        time.sleep(0.5)
 
 
 def lan_ip():
@@ -1108,6 +1187,11 @@ class H(BaseHTTPRequestHandler):
                         o["thumb"] = f"/thumb/{e['id']}"
                         o["url"] = f"/file/{e['id']}"
                 return self.js({"events": out, "next": since + len(evs), "total": len(events)})
+        if u.path == "/metricas":
+            desde = float(q.get("desde", ["0"])[0] or 0)
+            with lock:
+                linhas = [dict(m) for m in metricas if m["chegada"] >= desde]
+            return self.js({"agora": time.time(), "fila_rostos": fila_rostos.qsize(), "maquina": uso_maquina(), "fotos": linhas})
         if u.path == "/roverpix/status":
             c = rover_cfg()
             return self.js({**{k: v for k, v in rover.items()}, "configured": bool(c), "base_url": c["base_url"] if c else None})
@@ -1261,6 +1345,7 @@ def main():
     threading.Thread(target=ftp_server, daemon=True).start()
     threading.Thread(target=rover_loop, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
+    threading.Thread(target=pasta_vigiada, daemon=True).start()
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)

@@ -1195,7 +1195,7 @@ function ingQueue(){
 function ingStart(queue){const g=state.ing;if(g.timer)clearInterval(g.timer);g.queue=queue||ingQueue();g.total=g.queue.length;g.running=true;g.timer=setInterval(ingTick,650);render();}
 function ingPush(items){const g=state.ing;g.queue.push(...items);g.total+=items.length;if(!g.running){g.running=true;g.timer=setInterval(ingTick,650);}}
 // agente do ponto: programa local que vigia o cartão e entrega as fotos (agente/eterna-agente.py)
-state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:((location.hostname==='127.0.0.1'||location.hostname==='localhost')&&location.port)?location.origin:'http://127.0.0.1:8765',tried:false,err:null};
+state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:(location.protocol==='http:'&&location.port)?location.origin:'http://127.0.0.1:8765' /* aberto pelo próprio agente (este computador ou o servidor do ponto na rede) */,tried:false,err:null};
 // ---------- Biblioteca do agente: tudo o que já está no computador do ponto, por dia ----------
 state.lib=[];state.libDay=null;
 async function libLoad(){const a=state.agent;try{const j=await (await fetch(a.url+'/biblioteca',{cache:'no-store'})).json();state.lib=j.fotos||[];state.lib.forEach(f=>{const id='ag_'+f.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+f.id,name:f.name};});}catch(e){}}
