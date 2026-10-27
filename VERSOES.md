@@ -43,3 +43,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v41 | `a32fbaa` | Reconhecimento facial de verdade (face-api, MIT, no navegador): selfie do convidado e câmera do checkout/quiosque acham a sessão pelo rosto; pergunta "é uma destas?" na dúvida; medição de acerto em Treino da IA (94,1% nas fotos de exemplo) |
 | v42 | – | Reconhecimento facial instantâneo: rostos das fotos de exemplo já vêm lidos (vendor/faceapi/indice-exemplos.json); busca não espera a leitura das fotos novas |
 | v43 | – | Câmera do quiosque e checkout: avisos em faixa grande (vermelha quando não acha, verde quando acha), 6 segundos na tela |
+| v44 | – | Reconhecimento no servidor do ponto: agente lê os rostos na chegada (YuNet + SFace, OpenCV, MIT/Apache), índice por dia, busca em < 1 s; app usa o agente quando ligado e o navegador nas fotos de exemplo; medição no servidor |

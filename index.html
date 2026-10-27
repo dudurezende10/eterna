@@ -386,7 +386,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v43 · 26/10 22:15"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v44 · 26/10 22:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -951,17 +951,32 @@ function faceIndexAll(){if(!FACEPRE){facePre().then(()=>faceIndexAll());faceLoad
   FACEQ=FACEQ.then(async()=>{for(const id of ids){if(!FACEIDX[id]){try{const c=await photoCanvas(id);FACEIDX[id]=c?(await faceRead(c)).map(x=>x.d):[];}catch(e){f.err=String(e&&e.message||e);break;}}
     f.done++;if(f.done%5===0){faceStatus();faceSave();}await new Promise(r=>setTimeout(r,0));}f.busy=false;faceSave();faceStatus();});}
 // Devolve as sessões onde o rosto aparece, da que tem mais fotos da pessoa para a que tem menos.
+// Fotos que vieram do agente do ponto: busca no servidor (YuNet + SFace). Fotos de exemplo: busca no navegador (face-api).
 // Várias imagens da mesma pessoa (quadros da câmera) viram uma leitura só, pela média. "clara" = pode abrir sem perguntar.
-async function faceFind(srcs,ok){srcs=[].concat(srcs);const ds=[];for(const im of srcs){const fs=await faceRead(im);if(fs.length)ds.push(fs.sort((a,b)=>b.a-a.a)[0].d);}
-  if(!ds.length)return {semRosto:true,list:[]};const me=new Float32Array(128);for(const d of ds)for(let i=0;i<128;i++)me[i]+=d[i]/ds.length;
-  await facePre();faceIndexAll();if(state.face.busy&&state.face.total-state.face.done<=20)await FACEQ;const res={};
-  for(const x of demoSessions()){if(ok&&!ok(x))continue;for(const p of x.photos){const l=FACEIDX[p.id];if(!l)continue;let best=9;for(const d of l){let t=0;for(let i=0;i<128;i++){const q=d[i]-me[i];t+=q*q}t=Math.sqrt(t);if(t<best)best=t}
-    if(best<FACE_LIM){const r=res[x.card]||(res[x.card]={card:x.card,fotos:[],best:9});r.fotos.push(p.id);r.best=Math.min(r.best,best)}}}
-  const list=Object.values(res).sort((a,b)=>b.fotos.length-a.fotos.length||a.best-b.best);
-  const clara=list.length===1||(list.length>1&&(list[0].fotos.length>list[1].fotos.length||list[1].best-list[0].best>=FACE_MARGEM));
-  return {list,clara};}
+const toJpeg=im=>{const c=im instanceof HTMLCanvasElement?im:(()=>{const k=mkc(im.naturalWidth||im.width,im.naturalHeight||im.height);k.getContext('2d').drawImage(im,0,0);return k})();return c.toDataURL('image/jpeg',.9)};
+async function faceAgente(srcs){const a=state.agent;if(!a.on||!a.rostos||!a.rostos.ligado)return null;
+  try{const r=await fetch(a.url+'/rostos/buscar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imagens:srcs.map(toJpeg)})});return r.ok?await r.json():null;}catch(e){return null}}
+async function faceFind(srcs,ok){srcs=[].concat(srcs);
+  const sess=demoSessions().filter(x=>!ok||ok(x));const temLocal=sess.some(x=>x.photos.some(p=>!/^ag_/.test(p.id)));
+  const ag=await faceAgente(srcs);const agSim={};if(ag&&ag.fotos)for(const f of ag.fotos)agSim['ag_'+f.id]=f.sim;
+  let me=null;if(temLocal){try{const ds=[];for(const im of srcs){const fs=await faceRead(im);if(fs.length)ds.push(fs.sort((a,b)=>b.a-a.a)[0].d);}
+    if(ds.length){me=new Float32Array(128);for(const d of ds)for(let i=0;i<128;i++)me[i]+=d[i]/ds.length;}}catch(e){if(!ag)throw e}}
+  if(!me&&!(ag&&ag.rosto))return {semRosto:true,list:[]};
+  if(me){await facePre();faceIndexAll();if(state.face.busy&&state.face.total-state.face.done<=20)await FACEQ;}
+  const res={};
+  for(const x of sess){for(const p of x.photos){let sc=null;
+      if(/^ag_/.test(p.id)){if(agSim[p.id]!=null)sc=agSim[p.id];}
+      else if(me){const l=FACEIDX[p.id];if(l){let best=9;for(const d of l){let t=0;for(let i=0;i<128;i++){const q=d[i]-me[i];t+=q*q}t=Math.sqrt(t);if(t<best)best=t}if(best<FACE_LIM)sc=1-best;}}
+      if(sc!=null){const r=res[x.card]||(res[x.card]={card:x.card,fotos:[],sc:0});r.fotos.push(p.id);r.sc=Math.max(r.sc,sc)}}}
+  const list=Object.values(res).sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);
+  const clara=list.length===1||(list.length>1&&(list[0].fotos.length>list[1].fotos.length||list[0].sc-list[1].sc>=FACE_MARGEM));
+  return {list,clara,servidor:!!ag};}
 // Medição: cada foto tem o maior rosto procurado nas outras fotos; acerto = a sessão dela vem em primeiro.
-async function faceMeasure(){await facePre();faceIndexAll();await FACEQ;const ph=[];for(const x of demoSessions())for(const p of x.photos)if(FACEIDX[p.id]&&FACEIDX[p.id].length)ph.push({card:x.card,id:p.id,f:FACEIDX[p.id]});
+async function faceMeasure(){const a=state.agent;
+  if(a.on&&a.rostos&&a.rostos.ligado){const sessoes={};for(const x of demoSessions()){const ids=x.photos.filter(p=>/^ag_/.test(p.id)).map(p=>p.id.slice(3));if(ids.length)sessoes[x.card]=ids;}
+    if(Object.keys(sessoes).length){const r=await fetch(a.url+'/rostos/medir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessoes})});if(r.ok){const m=await r.json();m.onde='servidor do ponto · '+m.modelo;return m;}}}
+  return {...(await faceMeasureLocal()),onde:'navegador · fotos de exemplo'};}
+async function faceMeasureLocal(){await facePre();faceIndexAll();await FACEQ;const ph=[];for(const x of demoSessions())for(const p of x.photos)if(FACEIDX[p.id]&&FACEIDX[p.id].length)ph.push({card:x.card,id:p.id,f:FACEIDX[p.id]});
   const per={};ph.forEach(p=>per[p.card]=(per[p.card]||0)+1);let q=0,certo=0,errado=0,duvida=0,nada=0;
   for(const p of ph){if(per[p.card]<2)continue;for(const me of p.f){q++;const res={};
     for(const o of ph){if(o.id===p.id)continue;let best=9;for(const d of o.f){let t=0;for(let i=0;i<128;i++){const z=d[i]-me[i];t+=z*z}t=Math.sqrt(t);if(t<best)best=t}
@@ -1139,7 +1154,7 @@ function ingPush(items){const g=state.ing;g.queue.push(...items);g.total+=items.
 // agente do ponto: programa local que vigia o cartão e entrega as fotos (agente/eterna-agente.py)
 state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:((location.hostname==='127.0.0.1'||location.hostname==='localhost')&&location.port)?location.origin:'http://127.0.0.1:8765',tried:false,err:null};
 async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on)return;
-  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;if(!was){toast('Agente do ponto conectado');render();}
+  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;if(!was){toast('Agente do ponto conectado');render();}
     const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];ev.events.forEach(e=>{if(e.type==='photo'){const id='ag_'+e.id;UP[id]={src:a.url+e.thumb,name:e.name};items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){const id='ag_'+e.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};items.push({id,kind:'dup',real:true});}});a.cursor=ev.next;ingPush(items);state.ing.lastReal=Date.now();render();}
     else if(state.ing.cur&&state.ing.lastReal&&!state.ing.running&&Date.now()-state.ing.lastReal>45000){state.ing.n.auto++;ingClose('pausa de 45 s sem foto nova');state.ing.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:'pausa de 45 s sem foto nova no cartão'});render();}
     if(a.card!==(st.card||null)){a.card=st.card;render();}
@@ -1472,7 +1487,7 @@ function vTreino(){
   const reasonCount={};TRAIN.forEach(x=>{const l=t.labels[x.id];if(l&&l.verdict==='nao')(l.reasons||[]).forEach(r=>reasonCount[r]=(reasonCount[r]||0)+1)});
   const byKey={};TRAIN.forEach(x=>{const l=t.labels[x.id];if(!l)return;byKey[x.key]=byKey[x.key]||{n:0,nao:0};byKey[x.key].n++;if(l.verdict==='nao')byKey[x.key].nao++;});
   const rs=new Set(lab&&lab.verdict==='nao'?lab.reasons||[]:[]);
-  const fm=state.face.medida;const medida=`<div class="panel"><div class="head"><h2>Reconhecimento facial</h2><button class="btn" data-act="face-measure" ${fm&&fm.rodando?'disabled':''}>${fm&&fm.rodando?'Medindo...':'Medir acerto'}</button></div>${fm&&!fm.rodando?(fm.erro?`<div class="note">${esc(fm.erro)}</div>`:`<div class="row" style="gap:18px;flex-wrap:wrap"><div><div class="eyebrow">Acerto</div><b style="font-size:28px">${(100*fm.acerto).toFixed(1)}%</b></div><div><div class="eyebrow">Rostos testados</div><b>${fm.rostos}</b></div><div><div class="eyebrow">Certos</div><b>${fm.certo}</b></div><div><div class="eyebrow">Errados</div><b>${fm.errado}</b></div><div><div class="eyebrow">Pergunta antes</div><b>${fm.duvida}</b></div><div><div class="eyebrow">Sem par</div><b>${fm.nada}</b></div></div>`):''}</div>`;
+  const fm=state.face.medida;const medida=`<div class="panel"><div class="head"><h2>Reconhecimento facial</h2><button class="btn" data-act="face-measure" ${fm&&fm.rodando?'disabled':''}>${fm&&fm.rodando?'Medindo...':'Medir acerto'}</button></div>${fm&&!fm.rodando?(fm.erro?`<div class="note">${esc(fm.erro)}</div>`:`<div class="row" style="gap:18px;flex-wrap:wrap"><div><div class="eyebrow">Acerto</div><b style="font-size:28px">${(100*fm.acerto).toFixed(1)}%</b></div><div><div class="eyebrow">Rostos testados</div><b>${fm.rostos}</b></div><div><div class="eyebrow">Certos</div><b>${fm.certo}</b></div><div><div class="eyebrow">Errados</div><b>${fm.errado}</b></div><div><div class="eyebrow">Pergunta antes</div><b>${fm.duvida}</b></div><div><div class="eyebrow">Sem par</div><b>${fm.nada}</b></div></div><div class="note">${esc(fm.onde||'')}</div>`):''}</div>`;
   return `${medida}<div class="head"><div><div class="eyebrow">Gestão · treino da IA · ${done} de ${n} rotuladas</div><h1>O que pode e o que não pode</h1></div><div class="row"><button class="chip" data-act="train-export">Exportar rótulos (JSON)</button><label class="chip" style="cursor:pointer">Importar<input type="file" accept="application/json" data-act="train-import" style="display:none"></label>${shareBtn()}</div></div>
   
   <div class="bar" style="grid-template-columns:1fr 90px"><div class="track"><div class="fill" style="width:${100*done/n}%"></div></div><span class="val">${Math.round(100*done/n)}%</span></div>

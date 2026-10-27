@@ -14,13 +14,23 @@ mostradas na tela ao iniciar.
 
 Só biblioteca padrão. Miniaturas via `sips` no Mac e via Pillow se instalado;
 sem nenhum dos dois, serve o JPG original.
+
+3) Reconhecimento facial (opcional): cada foto que chega tem os rostos lidos
+   (YuNet + SFace, OpenCV, licenças MIT e Apache 2.0) e entra no índice do dia.
+   O checkout, o quiosque e a selfie do convidado buscam aqui. Liga sozinho se
+   houver OpenCV:  python3 -m pip install opencv-python-headless numpy
+   A selfie usada na busca não é gravada. Leituras de rosto: ~/Eterna/rostos.db,
+   apagadas depois de 30 dias.
+
+Para outros computadores da rede (checkout, quiosque) usarem este agente:
+     ETERNA_REDE=1 python3 eterna-agente.py
 """
-import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string
+import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request, urllib.error, mimetypes
 
-PORT = 8765
+PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
 APP_ORIGIN = "https://eterna.photo"
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
@@ -115,6 +125,214 @@ def make_thumb(src, dst):
     return False
 
 
+# ---------- reconhecimento facial ----------
+ROSTOS_DB = os.path.join(HOME, "rostos.db")
+MODELOS = os.path.join(HOME, "modelos")
+MOD_DET = "face_detection_yunet_2023mar.onnx"
+MOD_REC = "face_recognition_sface_2021dec.onnx"
+LIMITE = 0.45          # semelhança mínima (cosseno SFace) para dizer "é a mesma pessoa"; calibrado nas fotos do Tour
+ROSTO_MIN = 40         # rostos menores que isso (px, foto reduzida a 1600) são fundo/arquibancada: ignorados
+LADO = 1600
+RETENCAO_DIAS = 30
+rostos = {"ligado": False, "motivo": "iniciando", "lidas": 0, "rostos": 0, "fila": 0, "modelo": "YuNet + SFace (OpenCV)", "limite": LIMITE}
+fila_rostos = queue.Queue()
+_cv = {}               # cv2, np, det, rec (um par por thread de leitura)
+_mat = {}              # dia -> (matriz N x 128, [pid...]) para busca
+_mat_lock = threading.Lock()
+
+
+def rostos_db():
+    c = sqlite3.connect(ROSTOS_DB, timeout=30)
+    c.execute("create table if not exists foto (pid text primary key, dia text, n int, lida real)")
+    c.execute("create table if not exists rosto (pid text, dia text, larg real, emb blob)")
+    c.execute("create index if not exists rosto_dia on rosto(dia)")
+    return c
+
+
+def modelos_ok():
+    os.makedirs(MODELOS, exist_ok=True)
+    for m in (MOD_DET, MOD_REC):
+        dst = os.path.join(MODELOS, m)
+        if not os.path.exists(dst) or os.path.getsize(dst) < 100000:
+            print(f"  baixando modelo {m}...")
+            urllib.request.urlretrieve(APP_ORIGIN + "/vendor/rostos/" + m, dst + ".tmp")
+            os.replace(dst + ".tmp", dst)
+
+
+def leitor():
+    """Um detector e um reconhecedor por thread (os objetos do OpenCV não são compartilháveis)."""
+    import cv2
+    det = cv2.FaceDetectorYN.create(os.path.join(MODELOS, MOD_DET), "", (320, 320), 0.7, 0.3, 5000)
+    rec = cv2.FaceRecognizerSF.create(os.path.join(MODELOS, MOD_REC), "")
+    return det, rec
+
+
+def ler_rostos(img, det, rec, minimo=ROSTO_MIN):
+    """img BGR -> [(largura, vetor 128 normalizado)] do maior para o menor rosto."""
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    h, w = img.shape[:2]
+    k = min(1.0, LADO / max(h, w))
+    if k < 1:
+        img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
+    det.setInputSize((img.shape[1], img.shape[0]))
+    _, f = det.detect(img)
+    out = []
+    for r in (f if f is not None else []):
+        if r[2] < minimo:
+            continue
+        e = rec.feature(rec.alignCrop(img, r)).flatten().astype("float32")
+        out.append((float(r[2]), e / (np.linalg.norm(e) or 1)))
+    return sorted(out, key=lambda x: -x[0])
+
+
+def rostos_thread():
+    try:
+        import cv2, numpy as np
+        _cv.update(cv2=cv2, np=np)
+    except Exception:
+        rostos["motivo"] = "sem OpenCV: python3 -m pip install opencv-python-headless numpy"
+        print("  Rostos:            desligado (" + rostos["motivo"] + ")")
+        return
+    try:
+        modelos_ok()
+        det, rec = leitor()
+    except Exception as ex:
+        rostos["motivo"] = "modelos indisponíveis: %s" % ex
+        print("  Rostos:            desligado (" + rostos["motivo"] + ")")
+        return
+    db = rostos_db()
+    lim = time.strftime("%Y-%m-%d", time.localtime(time.time() - RETENCAO_DIAS * 86400))
+    db.execute("delete from rosto where dia < ?", (lim,)); db.execute("delete from foto where dia < ?", (lim,)); db.commit()
+    feitas = {r[0] for r in db.execute("select pid from foto")}
+    rostos["lidas"] = len(feitas)
+    rostos["rostos"] = db.execute("select count(*) from rosto").fetchone()[0]
+    with lock:
+        pend = [(pid, e["file"]) for pid, e in lib.items() if pid not in feitas]
+    for x in sorted(pend, key=lambda t: t[1], reverse=True):     # mais recentes primeiro
+        fila_rostos.put(x)
+    rostos["ligado"] = True; rostos["motivo"] = None
+    print(f"  Rostos:            ligado · {rostos['lidas']} fotos lidas · {len(pend)} na fila")
+    while True:
+        pid, path = fila_rostos.get()
+        rostos["fila"] = fila_rostos.qsize()
+        try:
+            img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)
+            if img is None:
+                continue
+            fs = ler_rostos(img, det, rec)
+            dia = os.path.basename(os.path.dirname(path))
+            db.execute("insert or replace into foto values (?,?,?,?)", (pid, dia, len(fs), time.time()))
+            db.execute("delete from rosto where pid=?", (pid,))
+            db.executemany("insert into rosto values (?,?,?,?)", [(pid, dia, w, e.tobytes()) for w, e in fs])
+            db.commit()
+            rostos["lidas"] += 1; rostos["rostos"] += len(fs)
+            with _mat_lock:
+                _mat.pop(dia, None)
+        except Exception as ex:
+            print("  erro ao ler rostos", path, ex)
+
+
+def matriz(dias):
+    np = _cv["np"]
+    vs, ps = [], []
+    db = rostos_db()
+    for d in dias:
+        with _mat_lock:
+            m = _mat.get(d)
+        if m is None:
+            rows = db.execute("select pid, emb from rosto where dia=?", (d,)).fetchall()
+            m = (np.frombuffer(b"".join(r[1] for r in rows), dtype="float32").reshape(-1, 128) if rows else np.zeros((0, 128), "float32"), [r[0] for r in rows])
+            with _mat_lock:
+                _mat[d] = m
+        vs.append(m[0]); ps += m[1]
+    return (np.vstack(vs) if vs else np.zeros((0, 128), "float32")), ps
+
+
+_busca = {"m": None}
+_busca_lock = threading.Lock()
+
+
+def buscar(imagens, dias=1):
+    """Lê o maior rosto de cada imagem (dataURL/base64), faz a média e devolve as fotos com o rosto."""
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    with _busca_lock:
+        if not _busca["m"]:
+            _busca["m"] = leitor()
+        return _buscar(imagens, dias, *_busca["m"])
+
+
+def _buscar(imagens, dias, det, rec):
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    vs = []
+    for b in imagens[:5]:
+        raw = base64.b64decode(b.split(",", 1)[-1])
+        img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+        if img is None:
+            continue
+        fs = ler_rostos(img, det, rec, minimo=60)
+        if fs:
+            vs.append(fs[0][1])
+    del imagens
+    if not vs:
+        return {"rosto": False, "fotos": []}
+    me = np.mean(vs, axis=0); me /= np.linalg.norm(me) or 1
+    hoje = time.time()
+    M, ps = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
+    melhor = {}
+    if len(ps):
+        sims = M @ me
+        for i in np.nonzero(sims >= LIMITE)[0]:
+            pid = ps[i]; s_ = float(sims[i])
+            if s_ > melhor.get(pid, 0):
+                melhor[pid] = s_
+    fotos = sorted(({"id": k, "sim": round(v, 3)} for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
+    return {"rosto": True, "fotos": fotos, "limite": LIMITE}
+
+
+def medir(sessoes):
+    """Medição: o maior rosto de cada foto procurado nas outras fotos; acerto = a sessão dela vem em primeiro."""
+    np = _cv["np"]
+    db = rostos_db()
+    dono = {}
+    for card, pids in sessoes.items():
+        for pid in pids:
+            dono[pid] = card
+    if not dono:
+        return {"fotos": 0, "rostos": 0, "certo": 0, "errado": 0, "duvida": 0, "nada": 0, "acerto": 0}
+    q = ",".join("?" * len(dono))
+    rows = db.execute(f"select pid, emb from rosto where pid in ({q})", list(dono)).fetchall()
+    fotos = {}
+    for pid, emb in rows:
+        fotos.setdefault(pid, []).append(np.frombuffer(emb, "float32"))
+    per = {}
+    for pid in fotos:
+        per[dono[pid]] = per.get(dono[pid], 0) + 1
+    certo = errado = duvida = nada = n = 0
+    pids = list(fotos)
+    for pid in pids:
+        if per[dono[pid]] < 2:
+            continue
+        for me in fotos[pid]:
+            n += 1; res = {}
+            for o in pids:
+                if o == pid:
+                    continue
+                b = max(float(e @ me) for e in fotos[o])
+                if b >= LIMITE:
+                    r = res.setdefault(dono[o], [0, 0.0]); r[0] += 1; r[1] = max(r[1], b)
+            L = sorted(res.items(), key=lambda kv: (-kv[1][0], -kv[1][1]))
+            if not L:
+                nada += 1; continue
+            if len(L) > 1 and L[0][1][0] == L[1][1][0] and L[0][1][1] - L[1][1][1] < 0.05:
+                duvida += 1; continue
+            if L[0][0] == dono[pid]:
+                certo += 1
+            else:
+                errado += 1
+    return {"fotos": len(fotos), "rostos": n, "certo": certo, "errado": errado, "duvida": duvida, "nada": nada,
+            "acerto": certo / max(1, certo + errado), "modelo": rostos["modelo"]}
+
+
 def list_volumes():
     vols = []
     if sys.platform == "darwin":
@@ -163,6 +381,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
                        "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb})
         state["copied"] += 1
+    fila_rostos.put((pid, dst))
     print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
     return "new"
 
@@ -746,7 +965,8 @@ class H(BaseHTTPRequestHandler):
             with lock:
                 return self.js({"ok": True, "agent": "eterna-agente", "version": 2, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
-                                "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"]})
+                                "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
+                                "rostos": {**rostos, "fila": fila_rostos.qsize()}})
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
             with lock:
@@ -791,6 +1011,22 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/roverpix/sync":
             rover_wake.set()
             return self.js({"ok": True})
+        if u.path in ("/rostos/buscar", "/rostos/medir"):
+            if not rostos["ligado"]:
+                return self.js({"error": rostos["motivo"] or "reconhecimento desligado"}, 503)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if n > 12 * 1024 * 1024:
+                    return self.js({"error": "imagem grande demais"}, 413)
+                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+            except Exception:
+                return self.js({"error": "corpo inválido"}, 400)
+            try:
+                if u.path == "/rostos/buscar":
+                    return self.js(buscar(body.get("imagens") or [], body.get("dias") or 1))
+                return self.js(medir(body.get("sessoes") or {}))
+            except Exception as ex:
+                return self.js({"error": str(ex)}, 500)
         return self.js({"error": "not found"}, 404)
 
     # O app servido pelo próprio agente: o navegador abre http://127.0.0.1:8765 e
@@ -830,11 +1066,12 @@ def main():
     threading.Thread(target=watcher, daemon=True).start()
     threading.Thread(target=ftp_server, daemon=True).start()
     threading.Thread(target=rover_loop, daemon=True).start()
+    threading.Thread(target=rostos_thread, daemon=True).start()
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")
     try:
-        ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+        ThreadingHTTPServer(("0.0.0.0" if os.environ.get("ETERNA_REDE") else "127.0.0.1", PORT), H).serve_forever()
     except KeyboardInterrupt:
         print("\nparado.")
 
