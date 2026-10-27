@@ -826,6 +826,134 @@ def ftp_server():
             print("ftp:", ex)
 
 
+# ---------- Servidor FTP do estádio (receptor externo) ----------
+# Quando o CTP manda as fotos para um servidor FTP da rede (e não para o FTP embutido neste agente),
+# o agente busca ali as fotos novas a cada poucos segundos e coloca na biblioteca. Nada é apagado no servidor.
+import ftplib
+RFTP_CFG = os.path.join(HOME, "ftp-remoto.json")
+RFTP_SEEN = os.path.join(HOME, "ftp-remoto-vistos.json")
+rftp = {"ok": False, "erro": None, "ultima": None, "baixadas": 0, "na_fila": 0, "checado": None}
+rftp_wake = threading.Event()
+
+
+def rftp_cfg():
+    try:
+        c = json.load(open(RFTP_CFG))
+        return c if c.get("host") and c.get("user") else None
+    except Exception:
+        return None
+
+
+def rftp_save(c):
+    with open(RFTP_CFG, "w") as f:
+        json.dump(c, f)
+    try:
+        os.chmod(RFTP_CFG, 0o600)
+    except Exception:
+        pass
+    rftp["erro"] = None
+    rftp_wake.set()
+
+
+def rftp_connect(c):
+    cls = ftplib.FTP_TLS if c.get("tls") else ftplib.FTP
+    f = cls()
+    f.connect(c["host"], int(c.get("port") or 21), timeout=20)
+    f.login(c["user"], c.get("password") or "")
+    if c.get("tls"):
+        f.prot_p()
+    f.set_pasv(True)
+    f.encoding = "utf-8"
+    return f
+
+
+def rftp_list(f, path, depth=0):
+    """Lista JPGs (caminho, tamanho) a partir de path, até 3 níveis de pasta."""
+    out = []
+    try:
+        items = list(f.mlsd(path or "/", facts=["type", "size", "modify"]))
+        for name, fa in items:
+            if name in (".", ".."):
+                continue
+            full = (path.rstrip("/") + "/" + name) if path else name
+            if fa.get("type") == "dir" and depth < 3:
+                out += rftp_list(f, full, depth + 1)
+            elif fa.get("type") == "file" and name.lower().endswith((".jpg", ".jpeg")):
+                out.append((full, int(fa.get("size") or 0)))
+    except ftplib.error_perm:
+        # servidor sem MLSD: NLST simples, sem subpastas
+        for full in f.nlst(path or "."):
+            if full.lower().endswith((".jpg", ".jpeg")):
+                try:
+                    out.append((full, f.size(full) or 0))
+                except Exception:
+                    out.append((full, 0))
+    return out
+
+
+def rftp_loop():
+    try:
+        seen_r = set(json.load(open(RFTP_SEEN)))
+    except Exception:
+        seen_r = set()
+    pend = {}          # caminho -> tamanho visto na volta anterior (espera parar de crescer)
+    conn = None
+    while True:
+        c = rftp_cfg()
+        if not c:
+            rftp.update(ok=False)
+            rftp_wake.wait(10)
+            rftp_wake.clear()
+            continue
+        try:
+            if conn is None:
+                conn = rftp_connect(c)
+            files = rftp_list(conn, c.get("dir") or "")
+            rftp.update(ok=True, erro=None, checado=time.strftime("%H:%M:%S"))
+            novos = [(p, sz) for p, sz in files if p + "|" + str(sz) not in seen_r]
+            rftp["na_fila"] = len(novos)
+            got = False
+            for path, sz in novos:
+                if pend.get(path) != sz:          # ainda chegando
+                    pend[path] = sz
+                    continue
+                os.makedirs(FTPTMP, exist_ok=True)
+                name = os.path.basename(path)
+                tmp = os.path.join(FTPTMP, "r_%d_%s" % (int(time.time() * 1000), name))
+                with open(tmp, "wb") as out:
+                    conn.retrbinary("RETR " + path, out.write)
+                st = os.stat(tmp)
+                parts = [x for x in path.strip("/").split("/") if x]
+                base = (c.get("dir") or "").strip("/").split("/")
+                sub = [x for x in parts[:-1] if x not in base]
+                origem = sub[0] if sub else "ftp-estadio"   # subpasta = fotógrafo, se o CTP usar uma por pessoa
+                r = ingest_file(tmp, name, st, origem, "ftp", move=True)
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                seen_r.add(path + "|" + str(sz))
+                pend.pop(path, None)
+                got = True
+                if r == "new":
+                    rftp["baixadas"] += 1
+                    rftp["ultima"] = time.strftime("%H:%M:%S") + " · " + name
+                json.dump(sorted(seen_r), open(RFTP_SEEN, "w"))
+            if got:
+                save_index()
+        except Exception as ex:
+            rftp.update(ok=False, erro=str(ex)[:200])
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+            conn = None
+            rftp_wake.wait(8)
+            rftp_wake.clear()
+            continue
+        rftp_wake.wait(2.5)
+        rftp_wake.clear()
+
+
 def watcher():
     while True:
         try:
@@ -1306,6 +1434,10 @@ class H(BaseHTTPRequestHandler):
                 meta_dirty[0] = False
                 save_meta()
             return self.js({"fotos": out, "total": len(out), "boot": BOOT})
+        if u.path == "/ftp-remoto/status":
+            c = rftp_cfg()
+            return self.js({**rftp, "configurado": bool(c), "host": c and c.get("host"), "port": c and c.get("port"),
+                            "user": c and c.get("user"), "dir": c and c.get("dir"), "tls": bool(c and c.get("tls"))})
         if u.path == "/photoroom/status":
             c = pr_cfg()
             with pr_lock:
@@ -1340,6 +1472,27 @@ class H(BaseHTTPRequestHandler):
             if not key:
                 return self.js({"error": "informe a chave"}, 400)
             rover_save_cfg(body.get("base_url"), key)
+            return self.js({"ok": True})
+        if u.path == "/ftp-remoto/config":
+            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+                return self.js({"error": "origem não autorizada"}, 403)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+            except Exception:
+                return self.js({"error": "corpo inválido"}, 400)
+            old = rftp_cfg() or {}
+            c = {"host": (body.get("host") or "").strip(), "port": int(body.get("port") or 21),
+                 "user": (body.get("user") or "").strip(), "password": body.get("password") or old.get("password", ""),
+                 "dir": (body.get("dir") or "").strip(), "tls": bool(body.get("tls"))}
+            if not c["host"] or not c["user"]:
+                return self.js({"error": "informe servidor e usuário"}, 400)
+            try:
+                t = rftp_connect(c)
+                t.quit()
+            except Exception as ex:
+                return self.js({"error": "não conectou: %s" % ex}, 502)
+            rftp_save(c)
             return self.js({"ok": True})
         if u.path in ("/photoroom/config", "/photoroom/compose"):
             # só o app aberto pelo próprio agente usa a chave (ninguém de fora gasta os créditos)
@@ -1430,8 +1583,10 @@ def main():
     threading.Thread(target=watcher, daemon=True).start()
     threading.Thread(target=ftp_server, daemon=True).start()
     threading.Thread(target=rover_loop, daemon=True).start()
+    threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
+    print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
