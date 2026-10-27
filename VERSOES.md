@@ -65,3 +65,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v62 | `e779f0d` | Fundos P&B e sépia deixam a foto inteira no mesmo tom; aviso de miniatura nas sessões de exemplo |
 | v63 | `874d321` | Enquadramento lido pelos rostos; Mirante só fechada/meio corpo; asa-delta fora do automático (precisa de montagem generativa) |
 | v64 | `5284276` | Sala de imprensa: grupo na altura das cadeiras, atrás da bancada |
+| v65 | `8eddc1a` | Fundo Noite de campeão substituído pela versão nova |
