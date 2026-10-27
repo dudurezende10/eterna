@@ -371,7 +371,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v35 · 26/10 21:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v36 · 26/10 21:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -521,7 +521,7 @@ function vPerfis(){
 }
 
 // ---------- Anfitrião no set ----------
-const FRAMES={campo:['Grupo inteiro no gramado, estádio ao fundo','Comemoração: braços para cima','Foto com a taça ou bandeira','Close do grupo, meio corpo'],vestiario:['Sentado no banco calçando a chuteira','De pé com a camisa do armário ao lado','Grupo no banco, vestiário inteiro']};
+const FRAMES={campo:['Grupo inteiro no gramado, estádio ao fundo','Para fundo de IA: grupo inteiro dos pés à cabeça, com folga em volta, sem cortar ninguém','Comemoração: braços para cima','Foto com a taça ou bandeira','Close do grupo, meio corpo'],vestiario:['Sentado no banco calçando a chuteira','De pé com a camisa do armário ao lado','Grupo no banco, vestiário inteiro']};
 
 // ---------- Função do dia: campo ou volante ----------
 // Volante não fica no campo: acompanha um grupo do início ao fim, faz só chute a gol, ou fotos livres (voyeur) em vários pontos.
@@ -531,7 +531,7 @@ const VOL_SPOTS=['Portão e fachada','Rampa','Túnel','Arquibancada','Tribuna','
 // Chroma cortado em 26/10: as estações saem da operação; o histórico do Roverpix continua nos números.
 DATA.points=DATA.points.filter(p=>p.kind!=='chroma');
 VOL_MODES.forEach(([id,name])=>{if(!DATA.points.find(p=>p.id==='vol-'+id))DATA.points.push({id:'vol-'+id,name:'Volante · '+name,kind:'volante',photographer:null});});
-FRAMES['vol-grupo']=['Chegada no portão, grupo inteiro','Rampa ou túnel, andando','Gramado com o grupo','Vestiário ou sala de imprensa','Despedida na saída'];
+FRAMES['vol-grupo']=['Chegada no portão, grupo inteiro','Para fundo de IA: grupo inteiro dos pés à cabeça, com folga em volta','Rampa ou túnel, andando','Gramado com o grupo','Vestiário ou sala de imprensa','Despedida na saída'];
 FRAMES['vol-chute']=['Bola na marca, preparação','O chute, pé na bola','Comemoração do gol'];
 FRAMES['vol-livre']=['Momento espontâneo, sem pose','Detalhe: mãos, camisa, bandeira','O grupo dentro do cenário'];
 const todayKey=()=>now().toISOString().slice(0,10);
@@ -1142,7 +1142,7 @@ function vChroma(){
   const old=chromas.map(k=>stats[k]).filter(Boolean);
   return `<div class="head"><div><div class="eyebrow">Gestão · fundos de IA</div><h1>Fundos de IA</h1></div><span class="pill neutral">Chroma desativado em 26/10</span></div>
   <div class="panel"><h2>Como funciona agora</h2><div class="note" style="font-size:13px">Não existe mais estação de Chroma. Qualquer foto do campo (ou do volante) pode virar foto com fundo de IA: a IA recorta o grupo, coloca no fundo escolhido e acerta a luz. O convidado escolhe no balcão (checkout e fila) ou depois, na galeria do celular. Preço: ${fmtR(priceOf('fundo'))} por foto.</div>
-    <div class="note">Para o recorte sair bom, a foto de campo precisa de grupo inteiro no quadro, sem cortar pés e cabeças, e com separação do fundo. Vale incluir um quadro assim no roteiro de cada ponto.</div></div>
+    <div class="note">O roteiro de cada ponto de campo (e do volante que acompanha o grupo) tem um quadro obrigatório para isso: grupo inteiro dos pés à cabeça, com folga em volta, sem cortar ninguém.</div></div>
   <div class="tiles">
     <div class="tile"><span class="eyebrow">Fundos ativos</span><span class="v">${DATA.backgrounds.length}</span><span class="d">meta: 20</span></div>
     <div class="tile"><span class="eyebrow">Vendidas na galeria</span><span class="v">${fmtN(sold)}</span><span class="d">${fmtR(sold*priceOf('fundo'))}</span></div>
