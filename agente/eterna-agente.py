@@ -985,20 +985,19 @@ def pr_compose(photo, bg, W, H, pad):
         raise RuntimeError("Photoroom não conectado")
     h = hashlib.sha1(photo).hexdigest()[:16]
     tag = hashlib.sha1(json.dumps([W, H, pad], sort_keys=True).encode()).hexdigest()[:6]
-    name = "%s_%s_%s.jpg" % (h, bg, tag)
+    base = "%s_%s_%s" % (h, bg, tag)
     os.makedirs(PR_DIR, exist_ok=True)
-    out = os.path.join(PR_DIR, name)
-    if os.path.exists(out):
-        with pr_lock:
-            pr["cached"] += 1
-        return name
+    for ext in (".png", ".jpg"):
+        if os.path.exists(os.path.join(PR_DIR, base + ext)):
+            with pr_lock:
+                pr["cached"] += 1
+            return base + ext
     fields = {
         "lighting.mode": "ai.auto",
         "shadow.mode": "ai.soft",
         "outputSize": "%dx%d" % (W, H),
         "horizontalAlignment": "center",
         "verticalAlignment": "bottom",
-        "export.format": "jpeg",
     }
     for side in ("Top", "Bottom", "Left", "Right"):
         v = int(max(0, pad.get(side.lower(), 0)))
@@ -1011,6 +1010,7 @@ def pr_compose(photo, bg, W, H, pad):
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             data = r.read()
+            ctype_out = r.headers.get("Content-Type") or ""
     except urllib.error.HTTPError as ex:
         msg = ex.read().decode("utf-8", "ignore")[:300]
         try:
@@ -1021,7 +1021,9 @@ def pr_compose(photo, bg, W, H, pad):
         with pr_lock:
             pr["last_error"] = "HTTP %s: %s" % (ex.code, msg)
         raise RuntimeError(pr["last_error"])
-    with open(out, "wb") as f:
+    # PNG pode vir com transparência (só o grupo recortado); o app põe o fundo por baixo
+    name = base + (".png" if (data[:8] == b"\x89PNG\r\n\x1a\n" or "png" in ctype_out) else ".jpg")
+    with open(os.path.join(PR_DIR, name), "wb") as f:
         f.write(data)
     with pr_lock:
         pr["calls"] += 1
@@ -1062,7 +1064,7 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "not found"}, 404)
         self.send_response(200)
         self.cors()
-        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Type", "image/png" if path.endswith(".png") else "image/jpeg")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "max-age=86400")
         self.end_headers()
@@ -1098,7 +1100,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({**pr, "configured": bool(c), "sandbox": bool(c and c["api_key"].startswith("sandbox_"))})
         if u.path.startswith("/photoroom/result/"):
             name = u.path.rsplit("/", 1)[1]
-            if not re.match(r"^[0-9a-f]{16}_[a-z0-9]{2,40}_[0-9a-f]{6}\.jpg$", name):
+            if not re.match(r"^[0-9a-f]{16}_[a-z0-9]{2,40}_[0-9a-f]{6}\.(jpg|png)$", name):
                 return self.js({"error": "not found"}, 404)
             return self.file(os.path.join(PR_DIR, name))
         if u.path.startswith("/thumb/") or u.path.startswith("/file/"):
