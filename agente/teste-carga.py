@@ -59,11 +59,21 @@ def get_json(url, timeout=30):
 # A pausa entre ensaios é calculada para fechar a produção do dia (--meta-dia em --horas com --fotografos).
 # --acelerar 4 faz o mesmo dia em 1/4 do tempo (pico 4x maior), para testar o limite.
 def enviar(a):
-    fotos = sorted(f for f in glob.glob(os.path.join(a.fotos, "**", "*"), recursive=True) if f.lower().endswith((".jpg", ".jpeg")))
-    if not fotos:
+    jpg = lambda d: sorted((f for f in glob.glob(os.path.join(d, "**", "*"), recursive=True) if f.lower().endswith((".jpg", ".jpeg"))),
+                           key=lambda f: (os.path.getmtime(f), f))          # ordem em que a câmera gravou
+    subs = sorted(d for d in glob.glob(os.path.join(a.fotos, "*")) if os.path.isdir(d) and jpg(d))
+    # uma subpasta por fotógrafo/câmera: cada fotógrafo simulado manda só as fotos dela, na ordem dos cliques
+    cameras = [(os.path.basename(d), jpg(d)) for d in subs] if subs else [(None, jpg(a.fotos))]
+    if not any(c[1] for c in cameras):
         sys.exit("nenhuma foto .jpg em " + a.fotos)
+    fotos = [f for _, l in cameras for f in l]
     senha = os.environ.get("ETERNA_FTP_SENHA") or getpass.getpass(f"senha FTP de {a.usuario}@{a.host}: ")
-    dados = [open(f, "rb").read() for f in fotos]
+    cache = {}
+    def ler(f):
+        if f not in cache:
+            cache[f] = open(f, "rb").read()
+        return cache[f]
+    dados = [ler(f) for f in fotos[:50]]
     fmin, fmax = a.fotos_ensaio; dmin, dmax = a.duracao_ensaio
     por_min = a.meta_dia / (a.fotografos * a.horas * 60)            # fotos/min por fotógrafo para fechar a meta
     ciclo = ((fmin + fmax) / 2) / por_min                            # minutos entre o início de um ensaio e o do próximo
@@ -77,7 +87,14 @@ def enviar(a):
     tot = {"ok": 0, "erro": 0, "bytes": 0, "ensaios": 0}
 
     def fotografo(i):
-        nome_fot = f"fot{i + 1}"
+        cam_nome, cam_fotos = cameras[i % len(cameras)]
+        volta_cam = i // len(cameras)                                 # mais fotógrafos que pastas: dividem a câmera, cada um na sua pasta
+        nome_fot = (cam_nome + (f"-{volta_cam + 1}" if volta_cam else "")) if cam_nome else f"fot{i + 1}"
+        if not subs:                                                  # sem subpastas: divide as fotos entre os fotógrafos
+            cam_fotos = cam_fotos[i::a.fotografos] or cam_fotos
+        else:
+            dividem = len(range(i % len(cameras), a.fotografos, len(cameras)))
+            cam_fotos = cam_fotos[volta_cam::dividem] or cam_fotos
         ftp = None
         n = 0
         ens = 0
@@ -93,14 +110,23 @@ def enviar(a):
                 if alvo > agora():
                     time.sleep(alvo - agora())
                 n += 1
-                corpo = dados[(i * 7 + n) % len(dados)] + os.urandom(16)   # bytes depois do fim do JPEG: imagem igual, arquivo único
-                arq = f"T{rodada}_{nome_fot}_e{ens:04d}_{j + 1:02d}.JPG"
+                orig = cam_fotos[(n - 1) % len(cam_fotos)]
+                volta = (n - 1) // len(cam_fotos)
+                corpo = ler(orig) + (os.urandom(16) if volta else b"")       # repetindo a pasta: bytes no fim do JPEG, arquivo único
+                base, ext = os.path.splitext(os.path.basename(orig))
+                arq = f"{base}{'_r%d' % (volta + 1) if volta else ''}{ext}"  # nome que a câmera deu
                 t0 = agora()
-                lin = {"arquivo": arq, "fotografo": nome_fot, "ensaio": f"{nome_fot}-{ens}", "foto_do_ensaio": j + 1, "fotos_no_ensaio": nf,
+                lin = {"arquivo": arq, "origem": orig, "fotografo": nome_fot, "ensaio": f"{nome_fot}-{ens}", "foto_do_ensaio": j + 1, "fotos_no_ensaio": nf,
                        "bytes": len(corpo), "inicio": t0}
                 try:
                     if ftp is None:
                         ftp = ftplib.FTP(); ftp.connect(a.host, a.porta, timeout=60); ftp.login(a.usuario, senha); ftp.set_pasv(True)
+                        if a.pasta_por_fotografo:                         # como o CTP: cada fotógrafo na sua pasta do servidor
+                            try:
+                                ftp.mkd(nome_fot)
+                            except Exception:
+                                pass
+                            ftp.cwd(nome_fot)
                     ftp.storbinary("STOR " + arq, io.BytesIO(corpo), blocksize=256 * 1024)
                     dt = agora() - t0
                     lin.update(seg=round(dt, 3), mbps=round(len(corpo) * 8 / 1e6 / dt, 1) if dt else None, ok=True)
@@ -219,17 +245,20 @@ def relatorio(a):
     except Exception:
         p = os.path.join(a.saida, "metricas-eterna.json")
         met = json.load(open(p, encoding="utf8")) if os.path.exists(p) else {"fotos": []}
-    rec = [f for f in met["fotos"] if not f.get("dup") and f["nome"].startswith("T")]
-    nomes_env = {e["arquivo"] for e in env if e["ok"]}
-    rec = [f for f in rec if f["nome"] in nomes_env] or rec
-    ini_env = {e["arquivo"]: e for e in env}
+    # cada envio casa com a foto recebida pelo par (fotógrafo, nome do arquivo); sem pasta por fotógrafo, só pelo nome
+    chave_env = lambda e: (e["fotografo"], e["arquivo"])
+    env_por = {chave_env(e): e for e in env if e["ok"]}
+    so_nome = {e["arquivo"]: e for e in env if e["ok"]}
+    def envio_de(f):
+        return env_por.get((f.get("quem"), f["nome"])) or so_nome.get(f["nome"])
+    rec = [f for f in met["fotos"] if not f.get("dup") and envio_de(f)]
     ok = [e for e in env if e["ok"]]; err = [e for e in env if not e["ok"]]
     t_ini = min([e["inicio"] for e in env] or [0]); t_fim = max([e["inicio"] + e["seg"] for e in env] or [1])
     dur_min = max(1e-9, (t_fim - t_ini) / 60)
     lidas = [f for f in rec if f.get("lida")]
     ponta = []
     for f in lidas:
-        e = ini_env.get(f["nome"])
+        e = envio_de(f)
         if e:
             ponta.append(f["lida"] - e["inicio"])                # clique enviado -> foto procurável pelo rosto
     fim_leit = max([f["lida"] for f in lidas] or [t_fim])
@@ -249,12 +278,16 @@ def relatorio(a):
         pico_obs = max(pico_obs, i_ - j + 1)
     pico_min = max(pico_min, pico_obs)
     # ensaio pronto para o checkout: do último clique enviado até a última foto do ensaio ficar procurável
-    lida_por_nome = {f["nome"]: f.get("lida") for f in rec}
+    lida_por_envio = {}
+    for f in rec:
+        e = envio_de(f)
+        if e:
+            lida_por_envio[chave_env(e)] = f.get("lida")
     ens = {}
     for e in ok:
         if "ensaio" in e:
             d = ens.setdefault(e["ensaio"], {"ult": 0, "lidas": [], "n": 0}); d["n"] += 1
-            d["ult"] = max(d["ult"], e["inicio"] + e["seg"]); d["lidas"].append(lida_por_nome.get(e["arquivo"]))
+            d["ult"] = max(d["ult"], e["inicio"] + e["seg"]); d["lidas"].append(lida_por_envio.get(chave_env(e)))
     prontos = [max(d["lidas"]) - d["ult"] for d in ens.values() if d["lidas"] and all(d["lidas"])]
     par_p = os.path.join(a.saida, "parametros.json")
     par = json.load(open(par_p, encoding="utf8")) if os.path.exists(par_p) else {}
@@ -330,6 +363,7 @@ def main():
     e.add_argument("--fotos-ensaio", type=int, nargs=2, default=[10, 20], metavar=("MIN", "MAX"))
     e.add_argument("--duracao-ensaio", type=float, nargs=2, default=[1.5, 2.5], metavar=("MIN", "MAX"), help="minutos")
     e.add_argument("--acelerar", type=float, default=1, help="2 = o mesmo dia na metade do tempo"); e.add_argument("--minutos", type=float, default=30)
+    e.add_argument("--pasta-por-fotografo", action=argparse.BooleanOptionalAction, default=True, help="cada fotógrafo numa pasta do FTP (padrão)")
     s = sp.add_parser("selfies"); s.add_argument("--agente", required=True); s.add_argument("--por-minuto", type=float, default=20); s.add_argument("--minutos", type=float, default=10)
     m = sp.add_parser("monitorar"); m.add_argument("--agente", required=True); m.add_argument("--minutos", type=float, default=12)
     r = sp.add_parser("relatorio"); r.add_argument("--agente", default="http://127.0.0.1:8765"); r.add_argument("--meta-dia", type=int, default=15000)
