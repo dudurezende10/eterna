@@ -392,7 +392,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v57 · 27/10 17:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v58 · 27/10 17:35"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -420,7 +420,10 @@ function nameCase(n){return String(n||'').trim().toLowerCase().split(/\s+/).map(
 DATA.sellers.forEach(x=>x.name=nameCase(x.name));Object.values(DATA.people).forEach(p=>{if(p.human)p.name=nameCase(p.name);});
 // Equipe de fotógrafos atual (out/2026): além dos que vieram no histórico da Roverpix
 [['klassius','Klássius'],['sandessa','Sandessa']].forEach(([k,n])=>{if(!DATA.people[k])DATA.people[k]={name:n,human:true,started:'2026-10-27'};});
-const P=DATA.people, humans=Object.keys(P).filter(k=>P[k].human), chromas=Object.keys(P).filter(k=>!P[k].human);
+// Quem não é mais da equipe de fotógrafos sai das listas (as vendas antigas continuam nos totais)
+const HIDE_PEOPLE=['igor','durval','fictix','andressa','enzo'];
+const hiddenPerson=(k,name)=>{const n=String(name||k).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();const f=n.split(/[\s._-]+/)[0];return HIDE_PEOPLE.includes(f)||HIDE_PEOPLE.includes(String(k).toLowerCase());};
+const P=DATA.people, humans=Object.keys(P).filter(k=>P[k].human&&!hiddenPerson(k,P[k].name)), chromas=Object.keys(P).filter(k=>!P[k].human);
 const byDay={}; DATA.rows.forEach(r=>{(byDay[r.date]=byDay[r.date]||[]).push(r)});
 function buildStats(days){const dset=new Set(days);const stats={};const byDay={};DATA.rows.filter(r=>dset.has(r.date)).forEach(r=>{(byDay[r.date]=byDay[r.date]||[]).push(r)});
 for(const k of Object.keys(P)){
@@ -803,7 +806,7 @@ const PAX_BY_DAY={};DATA.daily.forEach(x=>{if(x.pax)PAX_BY_DAY[x.date]=x.pax;});
 function applyLive(j){const days=Object.keys(j.days||{}).sort();if(!days.length)return;LIVE=j;
   DATA.days=days;DMIN=days[0];DMAX=days[days.length-1];
   DATA.daily=days.map(d=>({date:d,...j.days[d].daily,pax:PAX_BY_DAY[d]||null}));
-  const rows=[];days.forEach(d=>{const a=j.days[d];Object.entries(a.people||{}).forEach(([k,p])=>{if(!P[k]){P[k]={name:p.human?nameCase(p.name):p.name,human:p.human,started:null};(p.human?humans:chromas).push(k);}});Object.entries(a.rows||{}).forEach(([k,r])=>rows.push({date:d,key:k,...r}));});
+  const rows=[];days.forEach(d=>{const a=j.days[d];Object.entries(a.people||{}).forEach(([k,p])=>{if(!P[k]){P[k]={name:p.human?nameCase(p.name):p.name,human:p.human,started:null};if(p.human){if(!hiddenPerson(k,p.name))humans.push(k);}else chromas.push(k);}});Object.entries(a.rows||{}).forEach(([k,r])=>rows.push({date:d,key:k,...r}));});
   DATA.rows=rows;DATA.period={...DATA.period,start:DMIN,end:DMAX,label:'Roverpix ao vivo',short:'ao vivo',generated:(j.updated||'').slice(0,10)||todayISO()};
   if(state.range.to<DMIN||state.range.from>DMAX)state.range={from:DMAX,to:DMAX};liveRangeAgg();}
 function liveRangeAgg(){if(!LIVE)return;const ds=rangeDays();const S={},PM={},PR={};let t={revenue:0,sales:0,photos:0,photosSold:0,approaches:0,prints:0,reprints:0};
@@ -1215,7 +1218,7 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
   return `<div class="panel"><div class="head"><div><div class="eyebrow">Guardadas neste computador</div><h2>Biblioteca</h2></div><div class="row"><span class="pill neutral">${fmtN(ph.length)} fotos</span><span class="pill good">${fmtN(nSold)} vendidas</span><span class="pill warn">${fmtN(ph.length-nSold)} não vendidas</span></div></div>
     <div class="libf"><span class="eyebrow">Dia</span>${chip('day','hoje','Hoje · '+state.lib.filter(f=>f.day===hoje).length)}${chip('day','ontem','Ontem · '+state.lib.filter(f=>f.day===ontem).length)}</div>
     <div class="libf"><span class="eyebrow">Hora</span>${chip('per','dia','Dia todo')}${day===hoje?chip('per','1h','Última hora')+chip('per','2h','Últimas 2 horas'):''}${hours.map(h=>chip('per',h,String(h).padStart(2,'0')+'h')).join('')}</div>
-    <div class="libf"><span class="eyebrow">Fotógrafo</span>${chip('who','todos','Todos')}${[...humans,...whos.filter(k=>!humans.includes(k))].map(k=>{const n=all.filter(f=>libWho(f,ix)===k).length;return chip('who',k,esc(whoName(k))+(n?' · '+n:''));}).join('')}</div>
+    <div class="libf"><span class="eyebrow">Fotógrafo</span>${chip('who','todos','Todos')}${[...humans,...whos.filter(k=>!humans.includes(k)&&!(P[k]&&hiddenPerson(k,P[k].name)))].map(k=>{const n=all.filter(f=>libWho(f,ix)===k).length;return chip('who',k,esc(whoName(k))+(n?' · '+n:''));}).join('')}</div>
     <div class="libf"><span class="eyebrow">Venda</span>${chip('venda','todas','Todas')}${chip('venda','vendidas','Vendidas')}${chip('venda','nao','Não vendidas')}</div>
     ${ph.length?`<div class="photos small">${ph.slice(0,400).map(f=>{const v=ix.sold.has('ag_'+f.id);return photoBtn({id:'ag_'+f.id},{label:f.name,tag:(v?'VENDIDA · ':'')+new Date(f.t*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});}).join('')}</div>${ph.length>400?'<div class="note">Mostrando as 400 mais recentes deste filtro.</div>':''}`:'<div class="note">Nenhuma foto neste filtro.</div>'}
     <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pela sessão da foto ou pelo usuário do FTP. Vendida = foto escolhida numa venda paga.</div></div>`;}
@@ -1373,7 +1376,7 @@ function vVendas(){
   </div>
   <div class="panel"><h2>Vendedores</h2><div class="tablewrap"><table><thead><tr><th>Vendedor</th><th class="num">Atendimentos</th><th class="num">Finalizadas</th><th class="num">Descartadas</th><th class="num">Fechamento</th><th class="num">Fotos vendidas</th><th class="num">Fotos/venda</th><th class="num">Ticket</th><th class="num">Receita</th><th class="num">Tempo médio</th></tr></thead><tbody>
   ${sl.map(s=>`<tr><td class="name">${esc(s.name)}</td><td class="num">${s.total}</td><td class="num">${s.done}</td><td class="num">${s.discarded}</td><td class="num">${pct(s.done,s.total)}</td><td class="num">${fmtN(s.photosSold)}</td><td class="num">${s.avgPhotos}</td><td class="num">${fmtR(s.ticket)}</td><td class="num">${fmtR(s.revenue)}</td><td class="num">${s.avgTime}</td></tr>`).join('')}
-  </tbody></table></div><div class="note">${others.length?`Fora da tabela, com menos de 10 atendimentos: ${others.map(o=>o.name).join(', ')}. `:''}Fechamento = finalizadas sobre atendimentos; cerca de um terço dos atendimentos é descartado no caixa. A escolha na fila (perfil Fila da loja) ataca exatamente isso.</div></div>
+  </tbody></table></div><div class="note">${others.length?`Fora da tabela, com menos de 10 atendimentos: ${others.filter(o=>!hiddenPerson(o.name,o.name)).map(o=>o.name).join(', ')}. `:''}Fechamento = finalizadas sobre atendimentos; cerca de um terço dos atendimentos é descartado no caixa. A escolha na fila (perfil Fila da loja) ataca exatamente isso.</div></div>
   <div class="grid2">
     <div class="panel"><h2>Pagamentos</h2>${hbars(DATA.payments.map(p=>({label:p.name,v:p.amount})),v=>fmtR(v)+' · '+Math.round(100*v/payTot)+'%')}</div>
     <div class="panel"><h2>Produtos</h2><div class="tablewrap"><table><thead><tr><th>Produto</th><th class="num">Unid.</th><th class="num">Fotos</th><th class="num">Receita</th><th class="num">Share</th></tr></thead><tbody>${DATA.products.map(p=>`<tr><td>${esc(p.name)}</td><td class="num">${p.units}</td><td class="num">${fmtN(p.photos)}</td><td class="num">${fmtR(p.revenue)}</td><td class="num">${Math.round(100*p.revenue/t.revenue)}%</td></tr>`).join('')}</tbody></table></div></div>
