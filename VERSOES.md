@@ -47,3 +47,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v45 | – | Câmera do quiosque e checkout dispara ao ver um rosto (sem precisar se mexer); quiosque abre sessões fechadas; validação real de olhos fechados no lugar da sorteada |
 | v46 | – | Fotos enviadas pelo navegador ficam guardadas no aparelho (voltam depois de recarregar e entram no reconhecimento); aviso da câmera abaixo do quadro; quiosque cabe na tela sem rolagem |
 | v47 | – | Sessões cujas fotos não estão mais no aparelho somem das listas, do quiosque e do reconhecimento (sem quadros vazios) |
+| v48 | – | SFace + YuNet também no navegador (ONNX Runtime Web, MIT): mesma régua do servidor (semelhança 0,45; 0,38 a 0,45 pergunta); fila única de inferência; selfie sem rolagem; índice pronto refeito (93,5% nas miniaturas, 9/9 com fotos reais) |

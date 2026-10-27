@@ -131,6 +131,7 @@ MODELOS = os.path.join(HOME, "modelos")
 MOD_DET = "face_detection_yunet_2023mar.onnx"
 MOD_REC = "face_recognition_sface_2021dec.onnx"
 LIMITE = 0.45          # semelhança mínima (cosseno SFace) para dizer "é a mesma pessoa"; calibrado nas fotos do Tour
+LIMITE_TALVEZ = 0.38   # entre este e LIMITE a busca devolve como "talvez": o app pergunta "é uma destas?"
 ROSTO_MIN = 40         # rostos menores que isso (px, foto reduzida a 1600) são fundo/arquibancada: ignorados
 LADO = 1600
 RETENCAO_DIAS = 30
@@ -281,7 +282,7 @@ def _buscar(imagens, dias, det, rec):
     melhor = {}
     if len(ps):
         sims = M @ me
-        for i in np.nonzero(sims >= LIMITE)[0]:
+        for i in np.nonzero(sims >= LIMITE_TALVEZ)[0]:
             pid = ps[i]; s_ = float(sims[i])
             if s_ > melhor.get(pid, 0):
                 melhor[pid] = s_

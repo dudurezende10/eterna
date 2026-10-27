@@ -192,6 +192,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .selfcam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 .selfcam .ring{position:relative;width:62%;aspect-ratio:3/4;border:3px solid rgba(250,250,248,.9);border-radius:50%;box-shadow:0 0 0 999px rgba(10,9,8,.35)}
 .selfcam.off .ring{border-style:dashed;box-shadow:none}
+.selfcam,.selfshot{width:min(100%,calc(50vh*3/4));margin:0 auto} /* cabe na tela sem rolagem */
 .selfshot{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:14px;display:block;animation:pop .35s ease-out}
 .aipick{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start}.aipick .ph{cursor:default;border:0;pointer-events:none}
 .bg.comp .compimg{display:block;position:relative;width:100%;aspect-ratio:3/2;background:#222 center/cover no-repeat}
@@ -388,7 +389,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v47 · 26/10 22:35"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v48 · 26/10 22:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -944,22 +945,54 @@ async function photoCanvas(id){if(UP[id]){const im=await loadImg(UP[id].src);if(
 // ---------- reconhecimento facial (face-api, MIT; roda no navegador do ponto, nenhuma foto sai do aparelho) ----------
 // Cada foto tem os rostos lidos uma vez; a impressão (128 números por rosto) fica guardada neste navegador.
 // Selfie do convidado e câmera do checkout/quiosque: o rosto é comparado com as impressões e abre a sessão com mais fotos da pessoa.
-let FACE=null;const FACEIDX={};const FACE_LIM=.42,FACE_MIN=40,FACE_MARGEM=.08;let FACEQ=Promise.resolve();
+let FACE=null;const FACEIDX={};const FACE_SIM=.45,FACE_DUV=.38,FACE_LIM=Math.sqrt(2-2*FACE_SIM),FACE_MIN=40,FACE_MARGEM=.08; let FACEQ=Promise.resolve(); // SFace: mesma régua do servidor do ponto
 state.face={done:0,total:0,busy:false,err:null};
 const f2b=a=>{const u=new Uint8Array(new Float32Array(a).buffer);let t='';for(let i=0;i<u.length;i++)t+=String.fromCharCode(u[i]);return btoa(t)};
 const b2f=t=>{const b=atob(t);const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Float32Array(u.buffer)};
-try{const j=JSON.parse(localStorage.getItem('eterna.faces.v2')||'{}');for(const [id,l] of Object.entries(j))FACEIDX[id]=l.map(b2f);}catch(e){}
-let faceSaveT=null;function faceSave(){clearTimeout(faceSaveT);faceSaveT=setTimeout(()=>{try{const o={};for(const [id,l] of Object.entries(FACEIDX))o[id]=l.map(f2b);localStorage.setItem('eterna.faces.v2',JSON.stringify(o))}catch(e){}},1500)}
+try{const j=JSON.parse(localStorage.getItem('eterna.faces.v3')||'{}');for(const [id,l] of Object.entries(j))FACEIDX[id]=l.map(b2f);}catch(e){}
+let faceSaveT=null;function faceSave(){clearTimeout(faceSaveT);faceSaveT=setTimeout(()=>{try{const o={};for(const [id,l] of Object.entries(FACEIDX))o[id]=l.map(f2b);localStorage.setItem('eterna.faces.v3',JSON.stringify(o))}catch(e){}},1500)}
 function faceLoad(){if(FACE)return FACE;FACE=new Promise((res,rej)=>{const go=async()=>{try{const f=window.faceapi;await f.tf.ready();const u='vendor/faceapi/model';await Promise.all([f.nets.ssdMobilenetv1.loadFromUri(u),f.nets.faceLandmark68Net.loadFromUri(u),f.nets.faceRecognitionNet.loadFromUri(u)]);res(f);}catch(e){FACE=null;rej(e)}};
   if(window.faceapi){go();return;}const sc=document.createElement('script');sc.src='vendor/faceapi/face-api.js';sc.onload=go;sc.onerror=()=>{FACE=null;rej(new Error('sem reconhecimento'))};document.head.appendChild(sc);});return FACE;}
-async function faceRead(src){const f=await faceLoad();const r=await f.detectAllFaces(src,new f.SsdMobilenetv1Options({minConfidence:.4,maxResults:30})).withFaceLandmarks().withFaceDescriptors();return r.filter(x=>x.detection.box.width>=FACE_MIN).map(x=>({d:x.descriptor,a:x.detection.box.area}));}
+// Reconhecimento: SFace (OpenCV Zoo, Apache 2.0) rodando no navegador pelo ONNX Runtime Web (MIT), o mesmo modelo do servidor do ponto.
+// O rosto é alinhado em 112x112 pelos 5 pontos, como o OpenCV faz, e vira um vetor de 128 números.
+let ORTS=null;
+function sfLoad(){if(ORTS)return ORTS;ORTS=new Promise((res,rej)=>{const go=async()=>{try{ort.env.wasm.wasmPaths=new URL('vendor/ort/',location.href).href;ort.env.wasm.numThreads=1;res(await ort.InferenceSession.create('vendor/rostos/face_recognition_sface_2021dec.onnx',{executionProviders:['wasm']}));}catch(e){ORTS=null;rej(e)}};
+  if(window.ort){go();return;}const sc=document.createElement('script');sc.src='vendor/ort/ort.min.js';sc.onload=go;sc.onerror=()=>{ORTS=null;rej(new Error('sem ONNX Runtime'))};document.head.appendChild(sc);});return ORTS;}
+// O ONNX Runtime no navegador não roda duas inferências ao mesmo tempo na mesma sessão: tudo passa por uma fila.
+const yieldUI=()=>new Promise(r=>{const m=new MessageChannel();m.port1.onmessage=()=>r();m.port2.postMessage(0);}); // devolve a vez à tela sem depender de temporizador (que o navegador segura em segundo plano)
+let ORTQ=Promise.resolve();const ortRun=(sess,feeds)=>{const p=ORTQ.then(()=>sess.run(feeds));ORTQ=p.catch(()=>{});return p;};
+const SF_T=[[38.2946,51.6963],[73.5318,51.5014],[56.0252,71.7366],[41.5493,92.3655],[70.7299,92.2041]];
+function simil(src,dst){const n=src.length;let mx=0,my=0,ux=0,uy=0;for(let i=0;i<n;i++){mx+=src[i][0];my+=src[i][1];ux+=dst[i][0];uy+=dst[i][1];}mx/=n;my/=n;ux/=n;uy/=n;
+  let p=0,q=0,v=0;for(let i=0;i<n;i++){const x=src[i][0]-mx,y=src[i][1]-my,u=dst[i][0]-ux,w=dst[i][1]-uy;p+=x*u+y*w;q+=x*w-y*u;v+=x*x+y*y;}const a=p/v,b=q/v;return {a,b,tx:ux-(a*mx-b*my),ty:uy-(b*mx+a*my)};}
+// Detector: YuNet (OpenCV Zoo, MIT), o mesmo do servidor; devolve caixa e 5 pontos (olhos, nariz, cantos da boca) na ordem do alinhamento do SFace.
+// Entrada fixa 640x640 (BGR, 0-255). Fotos grandes também são lidas em 4 quadrantes, para não perder rostos pequenos de grupo.
+let YNS=null;function ynLoad(){return YNS||(YNS=sfLoad().then(()=>ort.InferenceSession.create('vendor/rostos/face_detection_yunet_2023mar.onnx',{executionProviders:['wasm']})).catch(e=>{YNS=null;throw e}));}
+const dimsOf=src=>[src.videoWidth||src.naturalWidth||src.width,src.videoHeight||src.naturalHeight||src.height];
+async function ynRegion(src,sx,sy,sw,sh,thr){const k=640/Math.max(sw,sh);const c=mkc(640,640);const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(src,sx,sy,sw,sh,0,0,sw*k,sh*k);
+  const d=x.getImageData(0,0,640,640).data;const N=409600;const f=new Float32Array(3*N);for(let i=0;i<N;i++){f[i]=d[i*4+2];f[i+N]=d[i*4+1];f[i+2*N]=d[i*4];}
+  const sess=await ynLoad();const o=await ortRun(sess,{[sess.inputNames[0]]:new ort.Tensor('float32',f,[1,3,640,640])});const out=[];const cl01=v=>Math.min(1,Math.max(0,v));
+  for(const st of [8,16,32]){const cols=640/st,n=cols*cols;const cl=o['cls_'+st].data,ob=o['obj_'+st].data,bb=o['bbox_'+st].data,kp=o['kps_'+st].data;
+    for(let i=0;i<n;i++){const sc=Math.sqrt(cl01(cl[i])*cl01(ob[i]));if(sc<thr)continue;const r=Math.floor(i/cols),cc=i%cols;
+      const cx=(cc+bb[i*4])*st,cy=(r+bb[i*4+1])*st,w=Math.exp(bb[i*4+2])*st,h=Math.exp(bb[i*4+3])*st;const pts=[];for(let j=0;j<5;j++)pts.push([sx+(kp[i*10+2*j]+cc)*st/k,sy+(kp[i*10+2*j+1]+r)*st/k]);
+      out.push({x:sx+(cx-w/2)/k,y:sy+(cy-h/2)/k,w:w/k,h:h/k,score:sc,pts});}}
+  return out;}
+async function ynDetect(src,thr=.6){const [W,H]=dimsOf(src);let all=await ynRegion(src,0,0,W,H,thr);
+  if(Math.max(W,H)>1000){const tw=W*.6,th=H*.6;for(const [sx,sy] of [[0,0],[W-tw,0],[0,H-th],[W-tw,H-th]])all=all.concat(await ynRegion(src,sx,sy,tw,th,thr));}
+  all.sort((a,b)=>b.score-a.score);const iou=(a,b)=>{const x1=Math.max(a.x,b.x),y1=Math.max(a.y,b.y),x2=Math.min(a.x+a.w,b.x+b.w),y2=Math.min(a.y+a.h,b.y+b.h);const I=Math.max(0,x2-x1)*Math.max(0,y2-y1);return I/(a.w*a.h+b.w*b.h-I||1)};
+  const keep=[];for(const b of all)if(keep.every(q=>iou(q,b)<.3))keep.push(b);return keep;}
+async function sfEmbed(src,pts){const T=simil(pts,SF_T);
+  const c=mkc(112,112);const x=c.getContext('2d',{willReadFrequently:true});x.setTransform(T.a,T.b,-T.b,T.a,T.tx,T.ty);x.drawImage(src,0,0);
+  const d=x.getImageData(0,0,112,112).data;const f=new Float32Array(3*12544);for(let i=0;i<12544;i++){f[i]=d[i*4];f[i+12544]=d[i*4+1];f[i+25088]=d[i*4+2];}
+  const sess=await sfLoad();const out=await ortRun(sess,{[sess.inputNames[0]]:new ort.Tensor('float32',f,[1,3,112,112])});const e=out[sess.outputNames[0]].data;
+  let n=0;for(let i=0;i<e.length;i++)n+=e[i]*e[i];n=Math.sqrt(n)||1;const r=new Float32Array(128);for(let i=0;i<128;i++)r[i]=e[i]/n;return r;}
+async function faceRead(src){const fs=(await ynDetect(src)).filter(b=>b.w>=FACE_MIN);const out=[];for(const b of fs)out.push({d:await sfEmbed(src,b.pts),a:b.w*b.h});return out;}
 function faceStatus(){const el=$('#face-st');if(!el)return;const f=state.face;el.textContent=f.err?'Reconhecimento indisponível':f.busy?`Lendo rostos ${f.done}/${f.total}`:'';}
 // Rostos das fotos de exemplo já vêm lidos (vendor/faceapi/indice-exemplos.json); só as fotos novas são lidas no aparelho.
-let FACEPRE=null;function facePre(){return FACEPRE||(FACEPRE=fetch('vendor/faceapi/indice-exemplos.json').then(r=>r.ok?r.json():null).then(j=>{if(j&&j.fotos)for(const [id,l] of Object.entries(j.fotos))if(!FACEIDX[id])FACEIDX[id]=l.map(b2f);}).catch(()=>{}));}
-function faceIndexAll(){if(!FACEPRE){facePre().then(()=>faceIndexAll());faceLoad().catch(()=>{});return;}if(state.face.busy)return;const ids=[...new Set(demoSessions().flatMap(x=>x.photos.map(p=>p.id)))].filter(id=>!FACEIDX[id]&&hasImg(id));if(!ids.length)return;
+let FACEPRE=null;function facePre(){return FACEPRE||(FACEPRE=fetch('vendor/faceapi/indice-exemplos.json').then(r=>r.ok?r.json():null).then(j=>{if(j&&j.v===3&&j.fotos)for(const [id,l] of Object.entries(j.fotos))if(!FACEIDX[id])FACEIDX[id]=l.map(b2f);}).catch(()=>{}));}
+function faceIndexAll(){if(!FACEPRE){facePre().then(()=>faceIndexAll());ynLoad().catch(()=>{});return;}if(state.face.busy)return;const ids=[...new Set(demoSessions().flatMap(x=>x.photos.map(p=>p.id)))].filter(id=>!FACEIDX[id]&&hasImg(id));if(!ids.length)return;
   const f=state.face;f.busy=true;f.total=ids.length;f.done=0;f.err=null;faceStatus();
   FACEQ=FACEQ.then(async()=>{for(const id of ids){if(!FACEIDX[id]){try{const c=await photoCanvas(id);FACEIDX[id]=c?(await faceRead(c)).map(x=>x.d):[];}catch(e){f.err=String(e&&e.message||e);break;}}
-    f.done++;if(f.done%5===0){faceStatus();faceSave();}await new Promise(r=>setTimeout(r,0));}f.busy=false;faceSave();faceStatus();});}
+    f.done++;if(f.done%5===0){faceStatus();faceSave();}await yieldUI();}f.busy=false;faceSave();faceStatus();});}
 // Devolve as sessões onde o rosto aparece, da que tem mais fotos da pessoa para a que tem menos.
 // Fotos que vieram do agente do ponto: busca no servidor (YuNet + SFace). Fotos de exemplo: busca no navegador (face-api).
 // Várias imagens da mesma pessoa (quadros da câmera) viram uma leitura só, pela média. "clara" = pode abrir sem perguntar.
@@ -970,16 +1003,18 @@ async function faceFind(srcs,ok){srcs=[].concat(srcs);
   const sess=demoSessions().filter(x=>!ok||ok(x));const temLocal=sess.some(x=>x.photos.some(p=>!/^ag_/.test(p.id)));
   const ag=await faceAgente(srcs);const agSim={};if(ag&&ag.fotos)for(const f of ag.fotos)agSim['ag_'+f.id]=f.sim;
   let me=null;if(temLocal){try{const ds=[];for(const im of srcs){const fs=await faceRead(im);if(fs.length)ds.push(fs.sort((a,b)=>b.a-a.a)[0].d);}
-    if(ds.length){me=new Float32Array(128);for(const d of ds)for(let i=0;i<128;i++)me[i]+=d[i]/ds.length;}}catch(e){if(!ag)throw e}}
+    if(ds.length){me=new Float32Array(128);for(const d of ds)for(let i=0;i<128;i++)me[i]+=d[i]/ds.length;let n=0;for(let i=0;i<128;i++)n+=me[i]*me[i];n=Math.sqrt(n)||1;for(let i=0;i<128;i++)me[i]/=n;}}catch(e){if(!ag)throw e}}
   if(!me&&!(ag&&ag.rosto))return {semRosto:true,list:[]};
   if(me){await facePre();faceIndexAll();if(state.face.busy&&state.face.total-state.face.done<=20)await FACEQ;}
-  const res={};
+  // semelhança >= 0,45: é a pessoa; entre 0,38 e 0,45: talvez, só entra perguntando "é uma destas?"
+  const res={},talvez={};
   for(const x of sess){for(const p of x.photos){let sc=null;
       if(/^ag_/.test(p.id)){if(agSim[p.id]!=null)sc=agSim[p.id];}
-      else if(me){const l=FACEIDX[p.id];if(l){let best=9;for(const d of l){let t=0;for(let i=0;i<128;i++){const q=d[i]-me[i];t+=q*q}t=Math.sqrt(t);if(t<best)best=t}if(best<FACE_LIM)sc=1-best;}}
-      if(sc!=null){const r=res[x.card]||(res[x.card]={card:x.card,fotos:[],sc:0});r.fotos.push(p.id);r.sc=Math.max(r.sc,sc)}}}
-  const list=Object.values(res).sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);
-  const clara=list.length===1||(list.length>1&&(list[0].fotos.length>list[1].fotos.length||list[0].sc-list[1].sc>=FACE_MARGEM));
+      else if(me){const l=FACEIDX[p.id];if(l){let best=-1;for(const d of l){let t=0;for(let i=0;i<128;i++)t+=d[i]*me[i];if(t>best)best=t}sc=best;}}
+      if(sc==null||sc<FACE_DUV)continue;const alvo=sc>=FACE_SIM?res:talvez;const r=alvo[x.card]||(alvo[x.card]={card:x.card,fotos:[],sc:0});r.fotos.push(p.id);r.sc=Math.max(r.sc,sc)}}
+  const ord=o=>Object.values(o).sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);let list=ord(res);
+  let clara=list.length===1||(list.length>1&&(list[0].fotos.length>list[1].fotos.length||list[0].sc-list[1].sc>=FACE_MARGEM));
+  if(!list.length){list=ord(talvez).slice(0,4);clara=false;}
   return {list,clara,servidor:!!ag};}
 // Medição: cada foto tem o maior rosto procurado nas outras fotos; acerto = a sessão dela vem em primeiro.
 async function faceMeasure(){const a=state.agent;
@@ -1846,8 +1881,8 @@ function camMount(){const c=state.cam;const v=$('#cam-video');
 let camFaceT=0;
 async function camFaceCheck(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||c.looking||v.readyState<2||!camWanted())return;
   if(c.status==='found'||c.status==='pick'||c.status==='searching')return;if(Date.now()-(c.lastTry||0)<8000&&!c.armed)return;
-  c.looking=true;try{const f=await faceLoad();const d=await f.detectSingleFace(v,new f.SsdMobilenetv1Options({minConfidence:.6}));
-    if(d&&d.box.width>=v.videoWidth*.12&&camWanted()&&!c.busy){c.lastTry=Date.now();c.armed=false;c.moved=0;camFound();}}catch(e){}finally{c.looking=false;}}
+  c.looking=true;try{const d=(await ynDetect(v,.7))[0];
+    if(d&&d.w>=v.videoWidth*.12&&camWanted()&&!c.busy){c.lastTry=Date.now();c.armed=false;c.moved=0;camFound();}}catch(e){}finally{c.looking=false;}}
 function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||v.readyState<2)return;if(Date.now()-camFaceT>1200){camFaceT=Date.now();camFaceCheck();}
   if(!c.cv){c.cv=document.createElement('canvas');c.cv.width=48;c.cv.height=36;}
   const ctx=c.cv.getContext('2d',{willReadFrequently:true});ctx.drawImage(v,0,0,48,36);const d=ctx.getImageData(8,4,32,28).data;
