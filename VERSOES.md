@@ -50,3 +50,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v48 | – | SFace + YuNet também no navegador (ONNX Runtime Web, MIT): mesma régua do servidor (semelhança 0,45; 0,38 a 0,45 pergunta); fila única de inferência; selfie sem rolagem; índice pronto refeito (93,5% nas miniaturas, 9/9 com fotos reais) |
 | v49 | – | Câmera do checkout procura em toda sessão ainda não paga (antes pulava as que já estavam "no checkout"); quiosque procura em todas |
 | v50 | `0536e38` | Photoroom ligado ao Eterna pelo agente: recorte, luz e sombra nos 10 fundos; chave em Fundos de IA; sem recorte no navegador (recorte do v39 e v40 removido) |
+| v51 | `e8d1a11` | Correção: a chave colada em Fundos de IA (Photoroom) e em Repositório (Roverpix) não some mais com as atualizações automáticas da tela |
