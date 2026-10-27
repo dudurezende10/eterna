@@ -44,3 +44,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v42 | – | Reconhecimento facial instantâneo: rostos das fotos de exemplo já vêm lidos (vendor/faceapi/indice-exemplos.json); busca não espera a leitura das fotos novas |
 | v43 | – | Câmera do quiosque e checkout: avisos em faixa grande (vermelha quando não acha, verde quando acha), 6 segundos na tela |
 | v44 | – | Reconhecimento no servidor do ponto: agente lê os rostos na chegada (YuNet + SFace, OpenCV, MIT/Apache), índice por dia, busca em < 1 s; app usa o agente quando ligado e o navegador nas fotos de exemplo; medição no servidor |
+| v45 | – | Câmera do quiosque e checkout dispara ao ver um rosto (sem precisar se mexer); quiosque abre sessões fechadas; validação real de olhos fechados no lugar da sorteada |

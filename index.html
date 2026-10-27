@@ -386,7 +386,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v44 · 26/10 22:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v45 · 26/10 22:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v31</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -1169,7 +1169,10 @@ function ingClose(how){const g=state.ing;const c=g.cur;g.cur=null;if(!c||!c.phot
   SIM.sessions[card]={key:state.imp.key,pdv:pt?pt.name:'',point:state.imp.point,time:hhmm(now()),date:'hoje',status:'fechada',selected:[],bg:null,cart:[],photos:c.photos.map(p=>({id:p.id,sold:0})),openedAt:c.start,closedAt:now().toISOString(),source:state.imp.mode,closedBy:how,flag};
   if(flag){if(!SIM.flagUse)SIM.flagUse={};SIM.flagUse[flag]=(SIM.flagUse[flag]||0)+1;}
   if(!SIM.invalid)SIM.invalid={};let bad=[];c.photos.forEach(p=>{const r=validatePhoto(p.id);if(r){SIM.invalid[p.id]=r;p.invalid=r;bad.push(r);}});g.n.invalid=(g.n.invalid||0)+bad.length;
-  g.feed.unshift({k:bad.length?'warn':'ok',t:`Validação: ${c.photos.length-bad.length} válidas${bad.length?`, ${bad.length} não ${bad.length===1?'válida':'válidas'}`:''}`,s:bad.length?`IA barrou: ${[...new Set(bad)].join(', ')}. Ficam no acervo, fora da fila.`:'técnica e IA aprovaram todas'});
+  const real=c.photos.filter(p=>/^(ag_|up_)/.test(p.id)||UP[p.id]).map(p=>p.id);
+  if(real.length){validateReal(real).then(res=>{const b=Object.entries(res);b.forEach(([id,r])=>{SIM.invalid[id]=r;const ph=c.photos.find(p=>p.id===id);if(ph)ph.invalid=r;});g.n.invalid=(g.n.invalid||0)+b.length;
+      g.feed.unshift({k:b.length?'warn':'ok',t:`Validação ${card}: ${real.length-b.length} válidas${b.length?`, ${b.length} não ${b.length===1?'válida':'válidas'}`:''}`,s:b.length?`IA barrou: ${[...new Set(b.map(x=>x[1]))].join(', ')}. Ficam no acervo, fora da fila.`:'rosto e olhos aprovados em todas'});render();});}
+  else g.feed.unshift({k:bad.length?'warn':'ok',t:`Validação: ${c.photos.length-bad.length} válidas${bad.length?`, ${bad.length} não ${bad.length===1?'válida':'válidas'}`:''}`,s:bad.length?`IA barrou: ${[...new Set(bad)].join(', ')}. Ficam no acervo, fora da fila.`:'técnica e IA aprovaram todas'});
   g.done.unshift({card,n:c.photos.length-bad.length,how,flag,photos:c.photos});
   log(`Upload por ${srcName()}: sessão ${card} de ${P[state.imp.key].name}, ${c.photos.length} fotos, fechada por ${how}${flag?', bandeira '+flag:''}`);saveSim();
 }
@@ -1423,7 +1426,15 @@ function vEstoque(){
 
 // ---------- Fluxo do sistema (quadro de 26/10) ----------
 const INVALID_REASONS=['desfocada','olhos fechados','sem rosto','cortada'];
-function validatePhoto(id){const h=h32(id+'v');if(h%12!==0)return null;return INVALID_REASONS[(h>>>4)%INVALID_REASONS.length];}
+function validatePhoto(id){return null;}
+// Validação real, depois que o grupo fecha: olhos fechados em quem está em primeiro plano.
+// Abertura do olho = altura/largura dos pontos do olho (68 pontos); abaixo de 0,19 nos dois olhos = fechado.
+function eyeOpen(pts){const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);return (d(pts[1],pts[5])+d(pts[2],pts[4]))/(2*d(pts[0],pts[3])||1);}
+async function validateReal(ids){const f=await faceLoad();const out={};for(const id of ids){try{const c=await photoCanvas(id);if(!c)continue;
+    const r=await f.detectAllFaces(c,new f.SsdMobilenetv1Options({minConfidence:.5})).withFaceLandmarks();
+    if(!r.length)continue; // o detector do navegador perde rostos de ângulo difícil: "sem rosto" só pelo servidor do pontoconst big=r.sort((a,b)=>b.detection.box.area-a.detection.box.area);const lim=big[0].detection.box.width*.6;
+    for(const x of big){if(x.detection.box.width<lim)break;const lm=x.landmarks;if(Math.max(eyeOpen(lm.getLeftEye()),eyeOpen(lm.getRightEye()))<.19){out[id]='olhos fechados';break;}}}catch(e){}}
+  return out;}
 function vFluxo(){
   const ss=Object.entries(SIM.sessions).map(([card,s])=>({card,...s}));
   const simPhotos=ss.reduce((a,s)=>a+(s.photos||[]).length,0);
@@ -1822,7 +1833,12 @@ function camMount(){const c=state.cam;const v=$('#cam-video');
   if(v.srcObject!==c.stream){v.srcObject=c.stream;v.play().catch(()=>{});}
   if(!c.timer){c.prev=null;c.armed=false;c.still=0;c.moved=0;c.timer=setInterval(camTick,250);}
   camStatus();}
-function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||v.readyState<2)return;
+let camFaceT=0;
+async function camFaceCheck(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||c.looking||v.readyState<2||!camWanted())return;
+  if(c.status==='found'||c.status==='pick'||c.status==='searching')return;if(Date.now()-(c.lastTry||0)<8000&&!c.armed)return;
+  c.looking=true;try{const f=await faceLoad();const d=await f.detectSingleFace(v,new f.SsdMobilenetv1Options({minConfidence:.6}));
+    if(d&&d.box.width>=v.videoWidth*.12&&camWanted()&&!c.busy){c.lastTry=Date.now();c.armed=false;c.moved=0;camFound();}}catch(e){}finally{c.looking=false;}}
+function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||v.readyState<2)return;if(Date.now()-camFaceT>1200){camFaceT=Date.now();camFaceCheck();}
   if(!c.cv){c.cv=document.createElement('canvas');c.cv.width=48;c.cv.height=36;}
   const ctx=c.cv.getContext('2d',{willReadFrequently:true});ctx.drawImage(v,0,0,48,36);const d=ctx.getImageData(8,4,32,28).data;
   const g=new Float32Array(32*28);for(let i=0;i<g.length;i++)g[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;
@@ -1831,8 +1847,8 @@ function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c
     else{c.still++;if(c.armed&&c.still>=5){c.armed=false;c.moved=0;camFound();}else if(!c.armed&&c.still>12){c.moved=0;if(c.status!=='idle'&&c.status!=='searching'&&c.status!=='found'){c.status='idle';camStatus();}}}}
   c.prev=g;}
 function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;const t={off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando'}[c.status]||'';el.textContent=t;if(f)f.dataset.st=c.status;}
-function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.status='searching';camStatus();
-  const ok=x=>state.view==='quiosque'?(x.status==='pronta'||x.status==='paga'):(x.status==='pronta'||x.status==='fechada');
+function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Date.now();c.status='searching';camStatus();
+  const ok=x=>state.view==='quiosque'?(x.status==='pronta'||x.status==='paga'||x.status==='fechada'):(x.status==='pronta'||x.status==='fechada');
   const open=card=>{c.busy=false;c.status='found';camStatus();
     if(state.view==='quiosque'){state.kiosk.code=card;state.kiosk.step='gallery';toast('Achamos você: '+card);render();}
     else if(state.view==='checkout'){toast('Encontramos: '+card);checkoutPick(card);}
