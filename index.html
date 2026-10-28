@@ -244,48 +244,117 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .krev .kth{position:relative;flex:0 0 auto;width:96px;aspect-ratio:3/2;border-radius:4px;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);border:2px solid transparent;opacity:.6}
 .krev .kth.cur{opacity:1;border-color:#fff}.krev .kth.on{opacity:1;border-color:var(--good)}
 @media (max-width:700px){.krev .kpic{grid-template-columns:48px minmax(0,1fr) 48px}.krev .knav{font-size:44px}}
-.lrev .ktop{min-height:64px}
-.lrev .kimg{width:min(100%,calc((100vh - 330px) * 1.5))}
-.lsmall{width:52px;height:52px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid var(--line);background:var(--card);color:var(--ink)}
-.lsmall[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
-.lsmall.dark{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25);color:#fff}
-.lcartb{position:relative;width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.3);color:#fff;display:inline-flex;align-items:center;justify-content:center}
-.lcartb b{position:absolute;top:-4px;right:-4px;min-width:26px;height:26px;padding:0 6px;border-radius:13px;background:var(--good);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center}
-.lround{width:96px;height:96px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:3px solid currentColor;background:transparent;transition:transform .12s,background .12s}
-.lround:active{transform:scale(.94)}
-.lround.no{color:#e5484d}.lround.fav{color:#ff6b9a}.lround.ok{color:#30a46c}.lround.ghost{color:var(--ink-2,#888)}
-.krev .lround.ghost{color:#cfc8bf}
-.lround.on{color:#fff}.lround.no.on{background:#e5484d;border-color:#e5484d}.lround.fav.on{background:#ff6b9a;border-color:#ff6b9a}.lround.ok.on{background:#30a46c;border-color:#30a46c}
-.lround.big{width:128px;height:128px}.lround.big svg{width:64px;height:64px}
-.lbar{gap:clamp(18px,5vw,56px)!important}
-.krev .kmark svg{width:38px;height:38px}.krev .kmark.fav{background:#ff6b9a}.krev .kmark.no{background:#e5484d}
-.krev .kimg.ok,.krev .kimg.fav{outline:4px solid var(--good);outline-offset:-4px}.krev .kimg.fav{outline-color:#ff6b9a}.krev .kimg.no{opacity:.35}
-.krev .kth.ok{opacity:1;border-color:var(--good)}.krev .kth.fav{opacity:1;border-color:#ff6b9a}.krev .kth.no{opacity:.25}.krev .kmark.small.fav{background:#ff6b9a}
-.krev .kth.ai,.lct.ai,.krev .kimg.lai{background:#1a1917;overflow:hidden}
-.krev .kimg.lai{display:block}
-.krev .kimg .compimg,.krev .kth .compimg,.lct .compimg{position:absolute;inset:0;background-size:cover;background-position:center;border-radius:inherit}
-.laibadge{position:absolute;left:8px;bottom:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);color:#ffd36b;display:flex;align-items:center;justify-content:center;z-index:2}
-.krev .kth .laibadge{width:18px;height:18px;left:3px;bottom:3px}.krev .kth .laibadge svg{width:12px;height:12px}
-.lcart{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:22px;padding:8px 4px 20px}
-.lcts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;width:min(1100px,100%)}
-.lct{position:relative;aspect-ratio:3/2;border-radius:6px;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none)}
-.lrm{position:absolute;top:6px;right:6px;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;z-index:3}.lrm svg{width:18px;height:18px}
-.lfav{position:absolute;top:6px;left:6px;color:#ff6b9a;z-index:3}.lfav svg{width:24px;height:24px}
-.lpkgs{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
-.lpkg{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:138px;padding:14px 16px;border-radius:14px;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.05);color:#fff}
-.lpkg[aria-pressed="true"]{border-color:var(--good);background:rgba(48,164,108,.18)}
-.lpkg .lpn{font-family:var(--display);font-size:48px;line-height:1}.lpkg .lpu{font-size:11px;letter-spacing:.18em;color:#a69d92;margin-top:-2px}.lpkg .lpi{display:flex;gap:10px;margin:4px 0}.lpkg .lpt{display:flex;flex-direction:column;align-items:center;gap:2px}.lpkg .lpt small{font-size:10px;letter-spacing:.14em;color:#cfc8bf;font-weight:600}.lpkg .lpp{font-size:20px;font-weight:700}
-.lsum{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;color:#cfc8bf;font-size:20px;align-items:center}.lsum span{display:inline-flex;align-items:center;gap:6px}.lsum svg{width:22px;height:22px}
-.ltotal{font-family:var(--display);font-size:clamp(44px,8vw,80px);line-height:1}
-.lpays{display:flex;gap:22px;flex-wrap:wrap;justify-content:center}
-.lpay{width:150px;height:104px;border-radius:14px;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.05);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:15px}
-.lpay[aria-pressed="true"]{border-color:var(--good);background:rgba(48,164,108,.2);box-shadow:0 0 0 2px var(--good) inset}
-.lfinal{display:flex;align-items:center;gap:28px;flex-wrap:wrap;justify-content:center}.lround.dim{opacity:.3;cursor:default}
-.ldone{justify-content:center}.lqr{background:#fff;padding:10px;border-radius:10px;min-width:170px;min-height:170px;display:flex;align-items:center;justify-content:center;color:#000}
-.lface{color:var(--ink-2,#999);display:flex;justify-content:center}.lface svg{width:72px;height:72px}.krev .lface{color:#cfc8bf}
-.lcode .camst{display:none}
-.lwait{width:min(720px,100%);text-align:left}
-@media (max-width:700px){.lround{width:76px;height:76px}.lround svg{width:36px;height:36px}.lpay{width:104px;height:92px}}
+.lj.lj-embed{position:relative;inset:auto;z-index:auto;height:calc(100vh - 48px);min-height:560px;border-radius:18px}
+.lj{position:fixed;inset:0;z-index:15;overflow:hidden;color:#fff;font-family:'Inter',system-ui,sans-serif;display:flex;flex-direction:column;padding:max(14px,env(safe-area-inset-top,0px)) clamp(14px,3vw,36px) max(14px,env(safe-area-inset-bottom,0px));
+  background:radial-gradient(ellipse 70% 55% at 50% -8%,rgba(48,127,226,.55),transparent 65%),radial-gradient(ellipse 50% 40% at 100% 100%,rgba(255,184,0,.16),transparent 70%),linear-gradient(180deg,#134078 0%,#0e2d58 55%,#0C2340 100%)}
+.lj>*{position:relative;z-index:1}
+.lj .lj-stripe{position:absolute;left:0;right:0;top:0;height:5px;z-index:2;background:linear-gradient(90deg,#134078 0 50%,#FFB800 50% 75%,#005500 75%)}
+.lj .lj-v{position:absolute;z-index:0;right:-4%;top:6%;width:min(46vw,560px);height:auto;opacity:.5;filter:blur(1px);pointer-events:none}
+.lj .lj-dots{position:absolute;z-index:0;left:-8vw;bottom:-14vw;width:min(60vw,720px);aspect-ratio:1;border-radius:50%;opacity:.35;pointer-events:none;background:radial-gradient(circle,#43B02A 1.4px,transparent 1.8px) 0 0/14px 14px;-webkit-mask:radial-gradient(circle,#000 30%,transparent 70%);mask:radial-gradient(circle,#000 30%,transparent 70%)}
+.lj-top{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;flex-shrink:0}
+.lj-checkout .lj-co,.lj-title,.lj-actions,.lj-foot{flex-shrink:0}
+.lj-logo .vlogo{height:34px!important;width:auto!important}
+.lj-eyebrow{font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.14em;font-size:15px;color:#FFB800}
+.lj i{font-style:normal;opacity:.6}
+.lj-h1{font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:800;text-transform:uppercase;letter-spacing:.08em;line-height:.95;font-size:clamp(44px,8vw,96px);margin:6px 0 4px;color:#fff}
+.lj-h2{font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:800;text-transform:uppercase;letter-spacing:.08em;font-size:clamp(26px,3.6vw,40px);line-height:1;margin:0;color:#fff}
+.lj-sub{font-size:clamp(15px,1.6vw,18px);color:#d6e2f3;margin:4px 0 0;line-height:1.5}
+.lj-row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.lj-cta{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:58px;padding:0 28px;border-radius:999px;border:0;background:#FFB800;color:#0C2340;font-weight:700;font-size:18px;letter-spacing:.02em;box-shadow:0 10px 30px -10px rgba(255,184,0,.7);cursor:pointer;transition:transform .12s,box-shadow .12s}
+.lj-cta:hover{transform:translateY(-1px)}.lj-cta:active{transform:scale(.98)}
+.lj-cta small{font-weight:600;opacity:.75;font-size:15px}
+.lj-cta[disabled]{background:rgba(255,255,255,.12);color:#c7d5ea;box-shadow:none;cursor:default;font-weight:500;font-size:16px}
+.lj-cta svg,.lj-ghost svg{width:22px;height:22px}
+.lj-ghost{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 20px;border-radius:999px;border:1.5px solid rgba(255,255,255,.55);background:transparent;color:#fff;font-weight:600;font-size:15px;cursor:pointer}
+.lj-ghost.sm{min-height:42px;padding:0 16px;font-size:14px}
+.lj-ic{width:48px;height:48px;border-radius:50%;border:1.5px solid rgba(255,255,255,.35);background:transparent;color:#fff;display:inline-flex;align-items:center;justify-content:center}.lj-ic[aria-pressed="true"]{background:#fff;color:#134078}
+.lj-heroin{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:10px 0}
+.lj-cam{position:relative;padding:14px;border-radius:50%;background:radial-gradient(circle,rgba(255,184,0,0) 58%,rgba(255,184,0,.35) 60%,rgba(255,184,0,0) 62%,rgba(255,184,0,0) 66%,rgba(255,184,0,.22) 68%,rgba(255,184,0,0) 70%)}
+.lj-cam .face{width:min(300px,62vw);aspect-ratio:1;border-radius:50%;border:4px solid #FFB800;background:#0C2340;box-shadow:0 20px 60px -20px rgba(0,0,0,.6)}
+.lj-cam .camst{background:transparent;color:#fff;font-weight:600}
+.lj-cam .camst[data-st="found"]{background:#005500}.lj-cam .camst[data-st="noface"],.lj-cam .camst[data-st="nomatch"]{background:#b3261e}
+.lj-code{width:min(420px,90vw);font-size:28px;text-align:center;letter-spacing:.12em;padding:14px;border-radius:14px;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.08);color:#fff}
+.lj-wait{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;width:min(760px,100%)}
+.lj-wait button{text-align:left;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:#fff;display:flex;flex-direction:column;gap:2px}.lj-wait span{font-size:13px;color:#c7d5ea}
+.lj-steps{display:flex;align-items:center;gap:8px;font-size:13px;color:#a9bddb;font-weight:600}
+.lj-steps span{display:inline-flex;align-items:center;gap:6px}.lj-steps b{width:24px;height:24px;border-radius:50%;border:1.5px solid currentColor;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+.lj-steps .cur{color:#fff}.lj-steps .cur b{background:#FFB800;border-color:#FFB800;color:#0C2340}.lj-steps .done{color:#9fe0b0}.lj-steps i{width:22px;height:1.5px;background:rgba(255,255,255,.3)}
+.lj-cartpill{display:inline-flex;align-items:center;gap:8px;height:50px;padding:0 16px;border-radius:999px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.06);color:#fff;font-weight:700}
+.lj-cartpill b{min-width:24px;height:24px;border-radius:12px;background:rgba(255,255,255,.2);display:inline-flex;align-items:center;justify-content:center;font-size:13px;padding:0 6px}
+.lj-cartpill.on{background:#fff;color:#134078;border-color:#fff}.lj-cartpill.on b{background:#FFB800;color:#0C2340}.lj-cartpill svg{width:24px;height:24px}
+.lj-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0 8px}.lj-count{white-space:nowrap;font-family:'Big Shoulders Display',sans-serif;font-weight:700;font-size:22px;letter-spacing:.08em;color:#c7d5ea}
+.lj-stage{flex:1;min-height:0;display:grid;grid-template-columns:56px minmax(0,1fr) 56px;align-items:center;gap:10px}
+.lj-mid{height:100%;min-height:0;display:flex;align-items:center;justify-content:center}
+.lj-nav{height:72px;width:56px;border-radius:999px;border:1.5px solid rgba(255,255,255,.3);background:rgba(255,255,255,.06);color:#fff;font-size:40px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer}.lj-nav[disabled]{opacity:.2;cursor:default}
+.lj-print{position:relative;background:#fff;padding:clamp(6px,1vw,12px);border-radius:6px;box-shadow:0 30px 70px -25px rgba(0,0,0,.75);width:min(100%,calc((100vh - 360px) * 1.5));transition:transform .2s}
+.lj-print.ok{outline:5px solid #FFB800;outline-offset:3px}.lj-print.no{opacity:.4;transform:scale(.97)}
+.lj-print .lj-img{position:relative;aspect-ratio:3/2;border-radius:2px;overflow:hidden;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none)}
+.lj-print .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:clamp(22px,4vw,48px);letter-spacing:.3em;color:rgba(255,255,255,.3);transform:rotate(-14deg);pointer-events:none}
+.lj-mark{position:absolute;right:-14px;top:-14px;width:58px;height:58px;border-radius:50%;background:#FFB800;color:#0C2340;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px -6px rgba(0,0,0,.5)}.lj-mark svg{width:32px;height:32px}
+.lj-tag{position:absolute;left:clamp(14px,2vw,22px);bottom:clamp(14px,2vw,22px);display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:rgba(12,35,64,.85);color:#FFB800;font-size:13px;font-weight:700;letter-spacing:.04em}
+.lj .compimg{position:absolute;inset:0;background-size:cover;background-position:center}.lj .compimg .compst{display:none}.lj .laibadge{display:none}
+.lj-actions{display:flex;justify-content:center;align-items:center;gap:clamp(24px,6vw,64px);padding:12px 0 6px}
+.lj-no,.lj-yes{border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .12s}
+.lj-no{width:72px;height:72px;border:2px solid rgba(255,255,255,.6);background:transparent;color:#fff}.lj-no svg{width:30px;height:30px}.lj-no.on{background:#fff;color:#134078}
+.lj-yes{width:96px;height:96px;border:0;background:#FFB800;color:#0C2340;box-shadow:0 14px 36px -12px rgba(255,184,0,.8)}.lj-yes svg{width:46px;height:46px}.lj-yes.on{background:#43B02A;color:#fff;box-shadow:0 14px 36px -12px rgba(67,176,42,.8)}
+.lj-no:active,.lj-yes:active{transform:scale(.93)}
+.lj-foot{display:flex;align-items:center;gap:14px;padding-top:6px}
+.lj-strip{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;padding:6px 2px}
+.lj-th{position:relative;flex:0 0 auto;width:84px;aspect-ratio:3/2;border-radius:4px;border:2px solid transparent;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);opacity:.55;overflow:hidden;cursor:pointer}
+.lj-th.cur{opacity:1;border-color:#fff}.lj-th.ok{opacity:1;border-color:#FFB800}.lj-th.no{opacity:.2}
+.lj-thok{position:absolute;right:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#FFB800;color:#0C2340;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;z-index:2}
+.lj-next{flex:0 0 auto}
+.lj-checkout{overflow:auto}
+.lj-co{flex:1;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr);gap:clamp(18px,3vw,40px);align-items:start;padding:10px 0 20px;max-width:1280px;width:100%;margin:0 auto}
+.lj-mem{display:flex;flex-direction:column;gap:12px}
+.lj-minis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-top:6px}
+.lj-mini{position:relative;background:#fff;padding:6px;border-radius:4px;box-shadow:0 16px 36px -18px rgba(0,0,0,.7)}
+.lj-mini:nth-child(3n+1){transform:rotate(-1.2deg)}.lj-mini:nth-child(3n+2){transform:rotate(.8deg)}
+.lj-mini .lj-img{position:relative;aspect-ratio:3/2;overflow:hidden;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none)}
+.lj-rm{position:absolute;top:-10px;right:-10px;width:32px;height:32px;border-radius:50%;border:0;background:#fff;color:#134078;box-shadow:0 4px 12px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;cursor:pointer}.lj-rm svg{width:16px;height:16px}
+.lj-order{background:#fff;color:#0C2340;border-radius:18px;padding:clamp(18px,2.4vw,28px);box-shadow:0 30px 80px -30px rgba(0,0,0,.7);display:flex;flex-direction:column;gap:14px;position:sticky;top:0}
+.lj-oh{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}.lj-oh b{width:26px;height:26px;border-radius:50%;background:#134078;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px}.lj-oh i{color:#5b6b83;font-weight:500}
+.lj-pkgs{display:flex;flex-direction:column;gap:8px}
+.lj-pkg{display:grid;grid-template-columns:22px 64px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;border:1.5px solid #D9D9D6;background:#fff;color:#0C2340;text-align:left;cursor:pointer}
+.lj-pkg.on{border-color:#134078;background:#eef4fc;box-shadow:0 0 0 1.5px #134078 inset}
+.lj-radio{width:20px;height:20px;border-radius:50%;border:2px solid #9aa8bd}.lj-pkg.on .lj-radio{border:6px solid #134078}
+.lj-pkgn{font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:32px;letter-spacing:.04em;color:#134078;line-height:1;text-align:center}
+.lj-pkgd{display:flex;flex-direction:column;gap:2px}.lj-pkgd b{font-size:16px}.lj-pkgd small{font-size:12.5px;color:#5b6b83}
+.lj-badge{padding:3px 8px;border-radius:999px;background:#FFB800;color:#0C2340;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.lj-pkgp{font-weight:800;font-size:18px;white-space:nowrap}
+.lj-incl{list-style:none;margin:0;padding:12px 14px;border-radius:12px;background:#f4f7fb;display:flex;flex-direction:column;gap:10px}
+.lj-incl li{display:flex;gap:12px;align-items:center}.lj-incl b{display:block;font-size:14.5px}.lj-incl small{font-size:12.5px;color:#5b6b83}
+.lj-ii{width:40px;height:40px;flex:0 0 40px;border-radius:10px;background:#134078;color:#FFB800;display:flex;align-items:center;justify-content:center}.lj-ii svg{width:24px;height:24px}
+.lj-save{align-self:flex-start;padding:6px 12px;border-radius:999px;background:#e3f3df;color:#005500;font-weight:700;font-size:14px}
+.lj-pays{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.lj-pay{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:84px;border-radius:12px;border:1.5px solid #D9D9D6;background:#fff;color:#0C2340;font-weight:700;font-size:14px;cursor:pointer}
+.lj-pay svg{width:40px;height:40px}.lj-pay.on{border-color:#134078;background:#eef4fc;box-shadow:0 0 0 1.5px #134078 inset}
+.lj-total{display:flex;justify-content:space-between;align-items:baseline;border-top:1.5px dashed #D9D9D6;padding-top:12px}.lj-total span{font-weight:600;color:#5b6b83}.lj-total b{font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:44px;letter-spacing:.04em;color:#134078;line-height:1}
+.lj-paybtn{width:100%;min-height:64px;font-size:20px}.lj-order .lj-cta[disabled]{background:#e6ebf2;color:#6b7a90}
+.lj-fine{font-size:12.5px;color:#5b6b83;text-align:center}
+.lj-done .lj-heroin{gap:12px}
+.lj-okbig{width:110px;height:110px;border-radius:50%;background:#43B02A;color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 14px rgba(67,176,42,.2),0 0 0 30px rgba(255,184,0,.12)}.lj-okbig svg{width:58px;height:58px}
+.lj-qrcard{background:#fff;color:#0C2340;border-radius:16px;padding:14px 14px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;font-weight:700;font-size:14px}.lj-qrcard span{display:inline-flex;align-items:center;gap:6px}.lj-qrcard svg{width:20px;height:20px;color:#134078}
+.lj-qr{width:150px;height:150px;display:flex;align-items:center;justify-content:center}
+@media (max-width:900px){.lj-co{grid-template-columns:1fr}.lj-order{position:static}.lj-steps span{font-size:0;gap:0}.lj-steps i{width:12px}}
+@media (max-width:640px){.lj-stage{grid-template-columns:minmax(0,1fr)}.lj-nav{display:none}.lj-print{width:100%}.lj-foot{flex-direction:column;align-items:stretch}.lj-next{width:100%}.lj-strip{order:2}.lj-cartpill span{display:none}.lj-steps{display:none}.lj-pkg{grid-template-columns:20px 44px minmax(0,1fr) auto;}.lj-pkg .lj-badge{display:none}.lj-pkgn{font-size:26px}.lj-minis{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.lj-no{width:64px;height:64px}.lj-yes{width:84px;height:84px}.lj .lj-v{opacity:.3}}
+@media (max-height:700px) and (min-width:641px){.lj-print{width:min(100%,calc((100vh - 300px) * 1.5))}.lj-title{margin:0 0 4px}.lj-h1{font-size:clamp(36px,6vw,64px)}}
+.lj .lj-photo{position:absolute;inset:0;z-index:0;background:url(img/bg-noite.jpg) center 30%/cover no-repeat;opacity:.2;mix-blend-mode:luminosity;-webkit-mask:linear-gradient(180deg,transparent 0%,#000 30%,#000 70%,transparent 100%);mask:linear-gradient(180deg,transparent 0%,#000 30%,#000 70%,transparent 100%);pointer-events:none}
+.lj-topr{display:flex;align-items:center;gap:10px}
+.lj-langs{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18)}
+.lj-langs button{min-width:38px;height:32px;padding:0 8px;border-radius:999px;border:0;background:transparent;color:#c7d5ea;font-weight:700;font-size:12.5px;letter-spacing:.06em;cursor:pointer}
+.lj-langs button[aria-pressed="true"]{background:#FFB800;color:#0C2340}
+.lj-langs:not(.dark){background:#eef2f8;border-color:#d9dee6}.lj-langs:not(.dark) button{color:#3b4b63}.lj-langs:not(.dark) button[aria-pressed="true"]{background:#134078;color:#fff}
+.lj-incl{list-style:none;margin:0;padding:14px 16px;border-radius:14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.lj-incl li{display:flex;gap:12px;align-items:center}.lj-incl b{display:block;font-size:14.5px;color:#fff}.lj-incl small{font-size:12.5px;color:#b9cbe6}
+.lj-ii{width:40px;height:40px;flex:0 0 40px;border-radius:10px;background:#0C2340;color:#FFB800;display:flex;align-items:center;justify-content:center}.lj-ii svg{width:26px;height:26px}
+.lj-save{display:inline-block;margin-left:10px;padding:4px 10px;border-radius:999px;background:#e3f3df;color:#005500;font-weight:700;font-size:13px;font-style:normal}
+.lj-pkg{padding:9px 14px;grid-template-columns:22px 48px minmax(0,1fr) auto auto}
+.lj-order{gap:12px;padding:clamp(16px,2vw,24px)}
+.lj-pay{min-height:74px;gap:4px}
+.lj-total b{font-size:40px}
+@media (max-width:1100px){.lj-steps span{font-size:0;gap:0}.lj-steps i{width:10px}}
+@media (max-width:640px){.lj-langs button{min-width:30px;padding:0 5px;font-size:11px;height:28px}.lj-top{flex-wrap:wrap}.lj-logo .vlogo{height:26px!important}}
 .ajpv.orig{--flt:none!important}
 
 .kiosk{max-width:900px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:18px}
@@ -458,7 +527,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v75 · 27/10 21:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v75</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v76 · 27/10 22:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v76</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -986,9 +1055,12 @@ const ICO={
   cash:'<svg viewBox="0 0 48 30" width="56" height="36" aria-hidden="true"><rect x="1" y="1" width="46" height="28" rx="3" fill="#3a9a5b"/><rect x="5" y="5" width="38" height="20" rx="2" fill="none" stroke="#bfe8c9" stroke-width="1.2"/><circle cx="24" cy="15" r="6.5" fill="#bfe8c9"/><text x="24" y="18.6" text-anchor="middle" font-size="9" font-weight="700" fill="#2a7444" font-family="Arial,sans-serif">R$</text></svg>',
   face:'<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="9" cy="10" r=".8" fill="currentColor"/><circle cx="15" cy="10" r=".8" fill="currentColor"/><path d="M9 15c1.6 1.4 4.4 1.4 6 0"/></svg>',
   keys:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>',
+  arrow:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  cloud:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 9.5z"/><path d="M12 11v6M9.5 14.5L12 17l2.5-2.5"/></svg>',
+  full:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   list:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'};
 const PAYS=[['card','Cartão'],['pix','PIX'],['cash','Dinheiro']];
-function lojaReset(){const k=state.kiosk;if(k.timer){clearTimeout(k.timer);k.timer=null;}Object.assign(k,{step:'code',code:'',i:0,pkg:null,pay:null,list:false});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
+function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearTimeout(k.timer);k.timer=null;}Object.assign(k,{step:'code',code:'',i:0,pkg:null,pay:null,list:false});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 function lojaPay(m){const k=state.kiosk;const card=k.code;const s=simOf(card);const c=lojaCart(card);if(!c.ch.length)return;lojaSync(card);
   s.cart=c.cart;s.status='paga';s.payment=(PAYS.find(p=>p[0]===m)||[0,m])[1];s.paidAt=now().toISOString();s.saleNo=s.saleNo||('E'+String(Object.values(SIM.sessions).filter(x=>x.saleNo).length+1).padStart(3,'0'));
   if(c.nAI){const ai=aiOf(card);c.ch.filter(x=>x.t==='ai').forEach(x=>{if(!ai.bought.some(b=>b.ph===x.id&&b.bg===x.bg))ai.bought.push({ph:x.id,bg:x.bg,paidAt:s.paidAt,where:'loja'});});}
@@ -996,47 +1068,196 @@ function lojaPay(m){const k=state.kiosk;const card=k.code;const s=simOf(card);co
   log(`Loja: ${card} pagou ${fmtR(c.total)} em ${s.payment} · ${c.nPh} foto${c.nPh===1?'':'s'}${c.nAI?`, ${c.nAI} com fundo de IA`:''}, ${c.prints} impressões`);saveSim();
   k.step='done';k.paid={total:c.total,prints:c.prints,n:c.ch.length};render();setTimeout(drawLojaQR,60);k.timer=setTimeout(()=>{if(state.view==='quiosque'&&state.kiosk.step==='done'){lojaReset();render();}},20000);}
 function drawLojaQR(){const el=$('#lqr');if(!el)return;el.innerHTML='';if(!window.QRCode){el.textContent='QR';return;}try{new QRCode(el,{text:'https://eterna.photo/g/'+state.kiosk.code,width:150,height:150,correctLevel:QRCode.CorrectLevel.M});}catch(e){el.textContent='QR';}}
+// ---------- Idiomas da Loja e da galeria do convidado: português, inglês, espanhol, francês e alemão ----------
+const LANGS=[['pt','Português'],['en','English'],['es','Español'],['fr','Français'],['de','Deutsch']];
+const PL=(n,a,b)=>n===1?a:b;
+const I18N={
+ relive:['Viva essa história','Relive the moment','Revive la historia','Revivez l’histoire','Erlebe die Geschichte'],
+ yourPhotos:['Suas fotos<br>estão aqui','Your photos<br>are here','Tus fotos<br>están aquí','Vos photos<br>sont ici','Deine Fotos<br>sind hier'],
+ lookCam:['Olhe para a câmera','Look at the camera','Mira a la cámara','Regardez la caméra','Schau in die Kamera'],
+ typeCode:['Digite o código do recibo','Type the code on your receipt','Escribe el código de tu recibo','Saisissez le code de votre reçu','Gib den Code von deinem Beleg ein'],
+ receiptCode:['Código do recibo','Receipt code','Código del recibo','Code du reçu','Belegcode'],
+ seeMine:['Ver minhas fotos','See my photos','Ver mis fotos','Voir mes photos','Meine Fotos ansehen'],
+ camera:['Câmera','Camera','Cámara','Caméra','Kamera'],
+ notFound:['Não achamos','We couldn’t find','No encontramos','Introuvable :','Nicht gefunden:'],
+ back:['Voltar','Back','Volver','Retour','Zurück'],
+ steps:[['Fotos','Pagamento','Pronto'],['Photos','Payment','Done'],['Fotos','Pago','Listo'],['Photos','Paiement','Terminé'],['Fotos','Zahlung','Fertig']],
+ choose:['Escolha suas fotos','Choose your photos','Elige tus fotos','Choisissez vos photos','Wähle deine Fotos'],
+ aiTag:['Fundo de IA','AI background','Fondo con IA','Fond IA','KI-Hintergrund'],
+ cont:['Continuar','Continue','Continuar','Continuer','Weiter'],
+ tapCheck:['Toque em ✓ nas fotos que quer levar','Tap ✓ on the photos you want','Toca ✓ en las fotos que quieres','Touchez ✓ sur les photos que vous voulez','Tippe ✓ bei den Fotos, die du möchtest'],
+ nPhotos:[n=>n+' '+PL(n,'foto','fotos'),n=>n+' '+PL(n,'photo','photos'),n=>n+' '+PL(n,'foto','fotos'),n=>n+' '+PL(n,'photo','photos'),n=>n+' '+PL(n,'Foto','Fotos')],
+ memories:['Suas memórias','Your memories','Tus recuerdos','Vos souvenirs','Deine Erinnerungen'],
+ chosen:[n=>n+' '+PL(n,'foto escolhida','fotos escolhidas'),n=>n+' '+PL(n,'photo selected','photos selected'),n=>n+' '+PL(n,'foto elegida','fotos elegidas'),n=>n+' '+PL(n,'photo choisie','photos choisies'),n=>n+' '+PL(n,'Foto ausgewählt','Fotos ausgewählt')],
+ emptyCart:['Nenhuma foto no carrinho.','Your cart is empty.','Tu carrito está vacío.','Votre panier est vide.','Dein Warenkorb ist leer.'],
+ choosePhotos:['Escolher fotos','Choose photos','Elegir fotos','Choisir des photos','Fotos wählen'],
+ whatYouGet:['O que você leva','What you get','Lo que te llevas','Ce que vous recevez','Das bekommst du'],
+ incPrint:[n=>n+' '+PL(n,'foto impressa','fotos impressas')+' 15×20',n=>n+' '+PL(n,'printed photo','printed photos')+' (15×20 cm)',n=>n+' '+PL(n,'foto impresa','fotos impresas')+' 15×20',n=>n+' '+PL(n,'photo imprimée','photos imprimées')+' 15×20',n=>n+' '+PL(n,'gedrucktes Foto','gedruckte Fotos')+' 15×20'],
+ incPrintD:['prontas no balcão em 2 minutos','ready at the counter in 2 minutes','listas en el mostrador en 2 minutos','prêtes au comptoir en 2 minutes','in 2 Minuten an der Theke fertig'],
+ incDig:[n=>n+' '+PL(n,'foto digital','fotos digitais')+' em alta',n=>n+' high-res digital '+PL(n,'photo','photos'),n=>n+' '+PL(n,'foto digital','fotos digitales')+' en alta',n=>n+' '+PL(n,'photo numérique','photos numériques')+' HD',n=>n+' '+PL(n,'digitales Foto','digitale Fotos')+' in HD'],
+ incDigAll:['Todas as fotos digitais em alta','All high-res digital photos','Todas las fotos digitales en alta','Toutes les photos numériques HD','Alle digitalen Fotos in HD'],
+ incDigD:['direto no seu celular','straight to your phone','directo a tu móvil','directement sur votre téléphone','direkt aufs Handy'],
+ incAI:[n=>n+' '+PL(n,'foto com fundo de IA','fotos com fundo de IA'),n=>n+' '+PL(n,'photo','photos')+' with AI background',n=>n+' '+PL(n,'foto con fondo IA','fotos con fondo IA'),n=>n+' '+PL(n,'photo avec fond IA','photos avec fond IA'),n=>n+' '+PL(n,'Foto mit KI-Hintergrund','Fotos mit KI-Hintergrund')],
+ incAID:['montada pelo nosso estúdio','composed by our studio','montada por nuestro estudio','composée par notre studio','von unserem Studio gestaltet'],
+ gallery:['Galeria online por 60 dias','Online gallery for 60 days','Galería online por 60 días','Galerie en ligne pendant 60 jours','Online-Galerie für 60 Tage'],
+ galleryD:['baixe quando quiser','download anytime','descarga cuando quieras','téléchargez quand vous voulez','jederzeit herunterladen'],
+ pkgH:['Escolha o pacote','Choose your package','Elige tu paquete','Choisissez votre formule','Wähle dein Paket'],
+ pkgAll:['Todas as fotos do tour','All photos from your tour','Todas las fotos del tour','Toutes les photos de la visite','Alle Fotos deiner Tour'],
+ pkgPD:['Impressa 15×20 + digital','Print 15×20 + digital','Impresa 15×20 + digital','Tirage 15×20 + numérique','Druck 15×20 + digital'],
+ pkgD:['Só digital','Digital only','Solo digital','Numérique uniquement','Nur digital'],
+ ideal:['Ideal','Best fit','Ideal','Idéal','Passt'],
+ payH:['Como prefere pagar?','How would you like to pay?','¿Cómo prefieres pagar?','Comment souhaitez-vous payer ?','Wie möchtest du bezahlen?'],
+ card:['Cartão','Card','Tarjeta','Carte','Karte'],pix:['PIX','PIX','PIX','PIX','PIX'],cash:['Dinheiro','Cash','Efectivo','Espèces','Bargeld'],
+ total:['Total','Total','Total','Total','Gesamt'],
+ save:[x=>'economia de '+x,x=>'you save '+x,x=>'ahorras '+x,x=>'économie de '+x,x=>'du sparst '+x],
+ extra:[(n,p)=>`Inclui ${n} ${PL(n,'foto extra','fotos extras')} além do pacote (${p} cada).`,(n,p)=>`Includes ${n} extra ${PL(n,'photo','photos')} beyond the package (${p} each).`,(n,p)=>`Incluye ${n} ${PL(n,'foto extra','fotos extra')} además del paquete (${p} c/u).`,(n,p)=>`Comprend ${n} ${PL(n,'photo','photos')} en plus de la formule (${p} chacune).`,(n,p)=>`Enthält ${n} ${PL(n,'Extrafoto','Extrafotos')} zusätzlich zum Paket (je ${p}).`],
+ payBtn:[x=>'Pagar '+x,x=>'Pay '+x,x=>'Pagar '+x,x=>'Payer '+x,x=>x+' bezahlen'],
+ choosePay:['Escolha como pagar','Choose how to pay','Elige cómo pagar','Choisissez le paiement','Zahlungsart wählen'],
+ secure:['Pagamento seguro no balcão. As impressas ficam prontas em 2 minutos.','Secure payment at the counter. Prints are ready in 2 minutes.','Pago seguro en el mostrador. Las impresas están listas en 2 minutos.','Paiement sécurisé au comptoir. Tirages prêts en 2 minutes.','Sichere Zahlung an der Theke. Drucke sind in 2 Minuten fertig.'],
+ thanks:['Obrigado','Thank you','Gracias','Merci','Danke'],
+ storyGoes:['Sua história<br>vai com você','Your story<br>goes with you','Tu historia<br>va contigo','Votre histoire<br>vous accompagne','Deine Geschichte<br>geht mit dir'],
+ printsReady:[n=>`${PL(n,'Sua foto impressa sai','Suas '+n+' fotos impressas saem')} no balcão em 2 minutos.`,n=>`Your ${PL(n,'print','{n} prints').replace('{n}',n)} will be ready at the counter in 2 minutes.`,n=>`${PL(n,'Tu foto impresa sale','Tus '+n+' fotos impresas salen')} en el mostrador en 2 minutos.`,n=>`${PL(n,'Votre tirage sera prêt','Vos '+n+' tirages seront prêts')} au comptoir dans 2 minutes.`,n=>`${PL(n,'Dein Druck ist','Deine '+n+' Drucke sind')} in 2 Minuten an der Theke fertig.`],
+ scanQR:['Aponte a câmera do celular para baixar as digitais.','Scan with your phone camera to download your digital photos.','Escanea con la cámara del móvil para descargar tus fotos digitales.','Scannez avec votre téléphone pour télécharger vos photos.','Mit der Handykamera scannen und deine Fotos herunterladen.'],
+ download:['Baixe suas fotos','Download your photos','Descarga tus fotos','Téléchargez vos photos','Fotos herunterladen'],
+ nextGuest:['Próximo cliente','Next guest','Siguiente cliente','Client suivant','Nächster Gast'],
+ isOne:['É uma destas?','Is it one of these?','¿Es una de estas?','Est-ce l’une de celles-ci ?','Ist es eines davon?'],
+ none:['Nenhuma','None','Ninguna','Aucune','Keine'],
+ cam_off:['Ligando a câmera...','Starting the camera...','Encendiendo la cámara...','Démarrage de la caméra...','Kamera startet...'],
+ cam_idle:['Olhe para a câmera','Look at the camera','Mira a la cámara','Regardez la caméra','Schau in die Kamera'],
+ cam_present:['Fique parado um instante','Hold still for a moment','Quédate quieto un momento','Ne bougez pas un instant','Kurz stillhalten'],
+ cam_searching:['Procurando suas fotos...','Finding your photos...','Buscando tus fotos...','Recherche de vos photos...','Deine Fotos werden gesucht...'],
+ cam_found:['Encontramos você!','Found you!','¡Te encontramos!','Trouvé !','Gefunden!'],
+ cam_noface:['Não vi um rosto. Olhe para a câmera','No face seen. Look at the camera','No vemos un rostro. Mira a la cámara','Aucun visage détecté. Regardez la caméra','Kein Gesicht erkannt. Schau in die Kamera'],
+ cam_pick:['É uma destas?','Is it one of these?','¿Es una de estas?','Est-ce l’une de celles-ci ?','Ist es eines davon?'],
+ cam_nomatch:['Não achamos fotos suas. Use o código','No photos found. Use your receipt code','No encontramos fotos. Usa el código','Aucune photo trouvée. Utilisez le code','Keine Fotos gefunden. Nutze den Code'],
+ cam_sim:['Câmera indisponível · simulando','Camera unavailable · demo','Cámara no disponible · demo','Caméra indisponible · démo','Kamera nicht verfügbar · Demo'],
+ // galeria do convidado
+ g_yourPhotos:['Suas fotos','Your photos','Tus fotos','Vos photos','Deine Fotos'],
+ g_threeWays:['Três jeitos de achar suas fotos, em casa ou no estádio.','Three ways to find your photos, at home or at the stadium.','Tres formas de encontrar tus fotos, en casa o en el estadio.','Trois façons de retrouver vos photos, chez vous ou au stade.','Drei Wege zu deinen Fotos, zu Hause oder im Stadion.'],
+ g_selfie:['Tirar uma selfie','Take a selfie','Hacerse una selfie','Prendre un selfie','Selfie machen'],
+ g_qr:['Ler o QR do recibo ou do ingresso','Scan the QR on your receipt or ticket','Escanear el QR del recibo o la entrada','Scanner le QR du reçu ou du billet','QR-Code auf Beleg oder Ticket scannen'],
+ g_open:['Abrir','Open','Abrir','Ouvrir','Öffnen'],
+ g_selfieNote:['Selfie: o rosto encontra todas as fotos do grupo, com consentimento (LGPD).','Selfie: your face finds every photo of your group, with your consent (LGPD).','Selfie: tu rostro encuentra todas las fotos del grupo, con tu consentimiento (LGPD).','Selfie : votre visage retrouve toutes les photos du groupe, avec votre accord (LGPD).','Selfie: dein Gesicht findet alle Fotos deiner Gruppe, mit deiner Zustimmung (LGPD).'],
+ g_visit:[d=>'Visita de '+d,d=>'Visit on '+d,d=>'Visita del '+d,d=>'Visite du '+d,d=>'Besuch am '+d],
+ g_bought:[(n,d)=>`${n} ${PL(n,'foto comprada','fotos compradas')} em alta, download até ${d}.`,(n,d)=>`${n} high-res ${PL(n,'photo','photos')} purchased, download until ${d}.`,(n,d)=>`${n} ${PL(n,'foto comprada','fotos compradas')} en alta, descarga hasta el ${d}.`,(n,d)=>`${n} ${PL(n,'photo achetée','photos achetées')} en HD, téléchargement jusqu’au ${d}.`,(n,d)=>`${n} ${PL(n,'Foto','Fotos')} in HD gekauft, Download bis ${d}.`],
+ g_left:[n=>`As outras ${n} continuam aqui, se você quiser levar.`,n=>`The other ${n} are still here if you want them.`,n=>`Las otras ${n} siguen aquí, por si las quieres.`,n=>`Les ${n} autres sont toujours là si vous les voulez.`,n=>`Die anderen ${n} sind noch hier, falls du sie möchtest.`],
+ g_yourBg:['Seu fundo','Your background','Tu fondo','Votre fond','Dein Hintergrund'],
+ g_boughtTag:['COMPRADA','PURCHASED','COMPRADA','ACHETÉE','GEKAUFT'],
+ g_buyAll:[x=>'Levar todas em digital · '+x,x=>'Get all in digital · '+x,x=>'Llevar todas en digital · '+x,x=>'Toutes en numérique · '+x,x=>'Alle digital · '+x],
+ g_dl:['Baixar compradas','Download purchased','Descargar compradas','Télécharger mes achats','Gekaufte herunterladen'],
+ g_share:['Compartilhar','Share','Compartir','Partager','Teilen'],
+ g_notMe:['Não sou eu nesta foto','That’s not me','No soy yo en esta foto','Ce n’est pas moi','Das bin nicht ich'],
+ g_help:['Falar com o Tour','Contact the Tour','Hablar con el Tour','Contacter le Tour','Tour kontaktieren'],
+ g_foot:[m=>`Arquivos de 3.000 px, sem marca d'água. Dúvidas por WhatsApp ou ${m}. Seus dados: LGPD, apagados em 60 dias.`,m=>`3,000 px files, no watermark. Questions: WhatsApp or ${m}. Your data is deleted after 60 days (LGPD).`,m=>`Archivos de 3.000 px, sin marca de agua. Dudas por WhatsApp o ${m}. Tus datos se borran a los 60 días (LGPD).`,m=>`Fichiers de 3 000 px, sans filigrane. Questions : WhatsApp ou ${m}. Vos données sont effacées après 60 jours (LGPD).`,m=>`Dateien mit 3.000 px, ohne Wasserzeichen. Fragen per WhatsApp oder ${m}. Deine Daten werden nach 60 Tagen gelöscht (LGPD).`],
+ g_new:['Novo','New','Nuevo','Nouveau','Neu'],
+ g_aiTitle:['Suas fotos com fundos de IA','Your photos with AI backgrounds','Tus fotos con fondos de IA','Vos photos avec fonds IA','Deine Fotos mit KI-Hintergründen'],
+ g_each:[x=>x+' cada',x=>x+' each',x=>x+' c/u',x=>x+' chacune',x=>'je '+x],
+ g_chooseBg:['Escolher fundo','Choose a background','Elegir fondo','Choisir un fond','Hintergrund wählen'],
+ g_payNow:[x=>`Pagar agora · ${x} (Pix ou cartão)`,x=>`Pay now · ${x} (Pix or card)`,x=>`Pagar ahora · ${x} (Pix o tarjeta)`,x=>`Payer maintenant · ${x} (Pix ou carte)`,x=>`Jetzt bezahlen · ${x} (Pix oder Karte)`],
+ g_later:['Ou feche esta página: a lista fica guardada e você paga depois.','Or close this page: your list is saved and you can pay later.','O cierra esta página: tu lista queda guardada y pagas después.','Ou fermez cette page : votre liste est gardée, vous paierez plus tard.','Oder schließe die Seite: deine Liste bleibt gespeichert, du zahlst später.'],
+ g_aiBought:['Compradas com fundo de IA','Purchased with AI background','Compradas con fondo IA','Achetées avec fond IA','Mit KI-Hintergrund gekauft'],
+ g_myPhotos:['Minhas fotos','My photos','Mis fotos','Mes photos','Meine Fotos'],
+ g_aiBgs:['Fundos com IA','AI backgrounds','Fondos con IA','Fonds IA','KI-Hintergründe'],
+ g_reading:['Lendo suas fotos...','Reading your photos...','Leyendo tus fotos...','Lecture de vos photos...','Deine Fotos werden gelesen...'],
+ g_readingD:['A IA está vendo o ângulo e a luz de cada foto para escolher os fundos que combinam.','The AI is checking the angle and light of each photo to pick matching backgrounds.','La IA está viendo el ángulo y la luz de cada foto para elegir los fondos que combinan.','L’IA analyse l’angle et la lumière de chaque photo pour choisir les fonds assortis.','Die KI prüft Winkel und Licht jedes Fotos, um passende Hintergründe zu wählen.'],
+ g_noGood:['Nenhuma foto boa para fundo','No photo suits a new background','Ninguna foto sirve para fondo','Aucune photo adaptée à un fond','Kein Foto passt für einen Hintergrund'],
+ g_noGoodD:['Para trocar o fundo, a IA precisa de uma foto nítida, com os rostos visíveis e ninguém cortado pela lateral. Nesta sessão nenhuma passou.','To change the background the AI needs a sharp photo with every face visible and nobody cut off at the sides. None in this session qualified.','Para cambiar el fondo, la IA necesita una foto nítida, con los rostros visibles y nadie cortado en los lados. Ninguna de esta sesión sirvió.','Pour changer le fond, l’IA a besoin d’une photo nette, visages visibles, personne coupé sur les côtés. Aucune ne convient dans cette séance.','Für einen neuen Hintergrund braucht die KI ein scharfes Foto mit sichtbaren Gesichtern, niemand am Rand abgeschnitten. Keines in dieser Sitzung passt.'],
+ g_bgs:[n=>n+' fundos',n=>n+' backgrounds',n=>n+' fondos',n=>n+' fonds',n=>n+' Hintergründe'],
+ g_pickBg:['Escolha o fundo','Choose the background','Elige el fondo','Choisissez le fond','Wähle den Hintergrund'],
+ g_match:[n=>'combina '+n+'%',n=>n+'% match',n=>'combina '+n+'%',n=>'compatible à '+n+'%',n=>n+'% passend'],
+ g_noMatch:['sem foto que combine','no matching photo','sin foto que combine','aucune photo assortie','kein passendes Foto'],
+ g_aiPicked:['Foto escolhida pela IA','Photo picked by the AI','Foto elegida por la IA','Photo choisie par l’IA','Von der KI gewähltes Foto'],
+ g_youPicked:['Foto escolhida por você','Photo picked by you','Foto elegida por ti','Photo choisie par vous','Von dir gewähltes Foto'],
+ g_aiPickedD:['A melhor foto da sessão para este fundo. Muda sozinha quando você troca o fundo.','The best photo of your session for this background. It changes when you switch backgrounds.','La mejor foto de la sesión para este fondo. Cambia sola cuando cambias el fondo.','La meilleure photo de la séance pour ce fond. Elle change si vous changez de fond.','Das beste Foto deiner Sitzung für diesen Hintergrund. Wechselt mit dem Hintergrund.'],
+ g_youPickedD:['Você trocou a foto sugerida.','You changed the suggested photo.','Cambiaste la foto sugerida.','Vous avez changé la photo suggérée.','Du hast das vorgeschlagene Foto geändert.'],
+ g_other:['Usar outra foto','Use another photo','Usar otra foto','Utiliser une autre photo','Anderes Foto nehmen'],
+ g_goodHere:['Fotos boas para fundo nesta sessão','Photos that work for this background','Fotos buenas para fondo en esta sesión','Photos adaptées à ce fond','Passende Fotos für diesen Hintergrund'],
+ g_goodHereD:['Só aparecem as fotos em que o recorte sai bom e que combinam com este fundo.','Only photos that cut out cleanly and match this background are shown.','Solo aparecen las fotos con buen recorte que combinan con este fondo.','Seules les photos bien détourées et assorties à ce fond apparaissent.','Nur Fotos mit sauberem Freisteller, die zu diesem Hintergrund passen.'],
+ g_already:['Você já comprou esta combinação','You already bought this one','Ya compraste esta combinación','Vous avez déjà acheté cette version','Diese Kombination hast du schon gekauft'],
+ g_remove:['Tirar da minha lista','Remove from my list','Quitar de mi lista','Retirer de ma liste','Von meiner Liste entfernen'],
+ g_save:[x=>'Guardar para comprar · '+x,x=>'Save to buy · '+x,x=>'Guardar para comprar · '+x,x=>'Garder pour acheter · '+x,x=>'Zum Kaufen merken · '+x],
+ g_listNote:[n=>`${n} na sua lista. Fica salva nesta galeria por 60 dias: dá para comprar agora ou depois, de casa. A IA recorta o seu grupo da foto escolhida e coloca neste fundo, com a luz acertada. Arquivo de 3.000 px.`,n=>`${n} on your list. It stays in this gallery for 60 days: buy now or later from home. The AI cuts your group out of the chosen photo and places it on this background with matched light. 3,000 px file.`,n=>`${n} en tu lista. Queda guardada 60 días: compra ahora o después desde casa. La IA recorta tu grupo de la foto elegida y lo pone en este fondo con la luz ajustada. Archivo de 3.000 px.`,n=>`${n} dans votre liste. Elle reste 60 jours dans cette galerie : achetez maintenant ou plus tard. L’IA détoure votre groupe et le place sur ce fond avec la bonne lumière. Fichier de 3 000 px.`,n=>`${n} auf deiner Liste. Sie bleibt 60 Tage in der Galerie: jetzt oder später kaufen. Die KI stellt deine Gruppe frei und setzt sie mit passendem Licht auf diesen Hintergrund. Datei mit 3.000 px.`],
+ g_listN:[n=>n===0?'Nenhuma foto':n+' '+PL(n,'foto','fotos'),n=>n===0?'No photos':n+' '+PL(n,'photo','photos'),n=>n===0?'Ninguna foto':n+' '+PL(n,'foto','fotos'),n=>n===0?'Aucune photo':n+' '+PL(n,'photo','photos'),n=>n===0?'Keine Fotos':n+' '+PL(n,'Foto','Fotos')],
+ g_seeList:['Ver minha lista e pagar','See my list and pay','Ver mi lista y pagar','Voir ma liste et payer','Liste ansehen und bezahlen'],
+ g_back:['Voltar','Back','Volver','Retour','Zurück'],
+ g_searching:['Procurando suas fotos...','Finding your photos...','Buscando tus fotos...','Recherche de vos photos...','Deine Fotos werden gesucht...'],
+ g_sendSelfie:['Mande uma selfie','Send a selfie','Envía una selfie','Envoyez un selfie','Schick ein Selfie'],
+ g_comparing:['Comparando o seu rosto com as fotos do dia.','Comparing your face with today’s photos.','Comparando tu rostro con las fotos del día.','Comparaison de votre visage avec les photos du jour.','Dein Gesicht wird mit den Fotos des Tages verglichen.'],
+ g_fit:['Encaixe o rosto no círculo, sem óculos escuros nem boné.','Fit your face in the circle, no sunglasses or cap.','Encaja tu rostro en el círculo, sin gafas de sol ni gorra.','Placez votre visage dans le cercle, sans lunettes de soleil ni casquette.','Gesicht in den Kreis, ohne Sonnenbrille und Kappe.'],
+ g_pickFile:['Escolher uma foto do aparelho','Choose a photo from your device','Elegir una foto del dispositivo','Choisir une photo de l’appareil','Foto vom Gerät wählen'],
+ g_snap:['Tirar foto','Take photo','Tomar foto','Prendre la photo','Foto aufnehmen'],
+ g_lgpd:['A selfie serve só para achar as suas fotos (LGPD). Não fica guardada.','The selfie is used only to find your photos (LGPD). It is not stored.','La selfie solo sirve para encontrar tus fotos (LGPD). No se guarda.','Le selfie sert uniquement à retrouver vos photos (LGPD). Il n’est pas conservé.','Das Selfie dient nur zum Finden deiner Fotos (LGPD). Es wird nicht gespeichert.'],
+ f_inteiro:['Corpo inteiro','Full body','Cuerpo entero','En pied','Ganzkörper'],f_meio:['Meio corpo','Half body','Medio cuerpo','Mi-corps','Halbkörper'],f_close:['Fechada','Close-up','Primer plano','Gros plan','Nahaufnahme'],
+};
+function lang(){const l=state.lang;return LANGS.some(x=>x[0]===l)?l:'pt';}
+function T(k,...a){const e=I18N[k];if(!e)return k;const i=Math.max(0,LANGS.findIndex(x=>x[0]===lang()));const v=e[i]!=null?e[i]:e[0];return typeof v==='function'?v(...a):v;}
+function fmtD(d){try{return new Date(d).toLocaleDateString({pt:'pt-BR',en:'en-GB',es:'es-ES',fr:'fr-FR',de:'de-DE'}[lang()]);}catch(e){return String(d);}}
+function langPick(dark){return `<div class="lj-langs ${dark?'dark':''}" role="group" aria-label="Idioma · Language">${LANGS.map(([c,n])=>`<button data-act="lang" data-l="${c}" aria-pressed="${lang()===c}" title="${n}" lang="${c}">${c.toUpperCase()}</button>`).join('')}</div>`;}
+(function(){try{const s=localStorage.getItem('eterna.lang');if(s)state.lang=s;else{const n=(navigator.language||'pt').slice(0,2).toLowerCase();state.lang=LANGS.some(x=>x[0]===n)?n:'pt';}}catch(e){state.lang='pt';}})();
+
+function ljMode(){return isBare()||state.kiosk.full?'lj-full':'lj-embed';}
 function vQuiosque(){
-  const k=state.kiosk;
+  const k=state.kiosk;if(!k.langInit){k.langInit=1;state.lang='pt';}const logo=venueLogo(30,'dark');
+  const deco=`<svg class="lj-v" viewBox="0 0 200 200" aria-hidden="true"><defs><linearGradient id="ljv" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#307FE2" stop-opacity="0"/><stop offset=".55" stop-color="#307FE2" stop-opacity=".55"/><stop offset="1" stop-color="#9cc6ff" stop-opacity=".9"/></linearGradient></defs><path d="M28 0L100 190L172 0" fill="none" stroke="url(#ljv)" stroke-width="16" stroke-linecap="round"/></svg><div class="lj-dots" aria-hidden="true"></div>`;
+  const stripe='<div class="lj-stripe" aria-hidden="true"></div>';const photo='<div class="lj-photo" aria-hidden="true"></div>';
   if(k.step==='code'||k.step==='emerg'){const emerg=k.step==='emerg';
     const waiting=k.list?demoSessions().filter(x=>(SIM.sessions[x.card]||{}).status!=='paga').slice(0,24):[];
-    return `<div class="kiosk lcode"><div class="screen" style="text-align:center;display:flex;flex-direction:column;gap:18px;align-items:center">
-    <div style="display:flex;justify-content:center">${venueLogo(64)}</div>
-    ${emerg?`<div class="lface">${ICO.keys}</div>
-    <div style="width:min(420px,100%)"><input type="text" class="code" id="kcode" placeholder="LP..." value="${esc(k.code)}" aria-label="Código da sessão" autofocus></div>
-    <div class="row" style="justify-content:center"><button class="lround ok" data-act="kiosk-go" aria-label="Ver minhas fotos">${ICO.ok}</button><button class="lround ghost" data-act="kiosk-back" aria-label="Voltar para a câmera">${ICO.back}</button></div>`
-    :`<div class="lface" aria-hidden="true">${ICO.face}</div>${camBox()}
-    <div class="row" style="justify-content:center;gap:10px"><button class="lsmall" data-act="kiosk-emerg" aria-label="Digitar o código do recibo">${ICO.keys}</button><button class="lsmall" data-act="loja-list" aria-label="Sessões esperando" aria-pressed="${!!k.list}">${ICO.list}</button></div>
-    ${k.list?`<div class="sess lwait">${waiting.map(x=>`<button class="scard" data-act="loja-open" data-card="${x.card}"><div class="code">${esc(x.card)}</div><div class="meta"><span class="name">${esc(P[x.key]?P[x.key].name:'')}</span><span>${esc(x.time||'')}</span></div></button>`).join('')||'<div class="note">Nenhuma sessão esperando.</div>'}</div>`:''}`}
-    ${VENUE_CFG.powered?`<div style="margin-top:8px">${powered()}</div>`:''}
-    </div></div>`;}
-  const s=sessionObj(k.code);if(!s)return `<div class="kiosk"><div class="screen" style="text-align:center"><div class="lface">${ICO.face}</div><h2>${esc(k.code)} ?</h2><div class="row" style="justify-content:center;margin-top:12px"><button class="lround ghost" data-act="kiosk-back" aria-label="Voltar">${ICO.back}</button></div></div></div>`;
-  const items=lojaItems(k.code);const pk=lojaPick(k.code);const nSel=items.filter(x=>pk[x.k]==='ok'||pk[x.k]==='fav').length;
-  const top=(left)=>`<div class="ktop"><button class="lsmall dark" data-act="loja-exit" aria-label="Sair">${ICO.home}</button>${left}<button class="lcartb" data-act="loja-cart" aria-label="Carrinho, ${nSel}">${ICO.cart}<b>${nSel}</b></button></div>`;
-  if(k.step==='gallery'||k.step==='pick')k.step='review';
-  if(k.step==='review'){const n=items.length;if(!n)return `<div class="krev">${top('')}<div class="kpic"><div></div><div class="mid lface">${ICO.face}</div><div></div></div></div>`;
-    k.i=Math.max(0,Math.min(n-1,k.i||0));const x=items[k.i];const st=pk[x.k]||'';
-    const img=x.t==='ai'?`<div class="kimg lai ${st}">${lojaThumb(x)}${st?`<span class="kmark ${st}">${st==='fav'?ICO.fav:ICO.ok}</span>`:''}</div>`:`<div class="kimg ${st}" style="${bigStyle(x.id)}">${st?`<span class="kmark ${st}">${st==='fav'?ICO.fav:st==='no'?ICO.no:ICO.ok}</span>`:'<span class="wm">ETERNA</span>'}</div>`;
-    return `<div class="krev lrev">${top(`<div class="kcount">${k.i+1} / ${n}</div>`)}
-      <div class="kpic" id="lswipe"><button class="knav prev" data-act="kiosk-prev" aria-label="Anterior" ${k.i===0?'disabled':''}>‹</button><div class="mid">${img}</div><button class="knav next" data-act="kiosk-next" aria-label="Próxima" ${k.i>=n-1?'disabled':''}>›</button></div>
-      <div class="kbar lbar"><button class="lround no ${st==='no'?'on':''}" data-act="kiosk-no" aria-label="Não quero">${ICO.no}</button><button class="lround ok ${st==='ok'?'on':''}" data-act="kiosk-ok" aria-label="Quero">${ICO.ok}</button></div>
-      <div class="kstrip">${items.map((q,i)=>{const s2=pk[q.k]||'';return `<button class="kth ${i===k.i?'cur':''} ${s2} ${q.t==='ai'?'ai':''}" data-act="kiosk-jump" data-i="${i}" style="${q.t==='ph'?phStyle(q.id):''}" aria-label="Foto ${i+1}">${q.t==='ai'?lojaThumb(q):''}${s2==='ok'||s2==='fav'?`<span class="kmark small ${s2}">${s2==='fav'?'♥':'✓'}</span>`:''}</button>`;}).join('')}</div></div>`;}
-  if(k.step==='pay')k.step='cart';
-  if(k.step==='cart'){const c=lojaCart(k.code);const ps=DATA.catalog.filter(x=>x.kind==='pacote');
-    const thumbs=c.ch.map(x=>`<div class="lct ${x.t==='ai'?'ai':''}" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}<button class="lrm" data-act="loja-rm" data-k="${esc(x.k)}" aria-label="Tirar">${ICO.no}</button></div>`).join('');
-    const pkgs=c.nPh?ps.map(p=>{const dg=p.digital==='todas'?'∞':p.digital;return `<button class="lpkg" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${p.id===c.pkg}" aria-label="${esc(p.name)}"><span class="lpn">${dg}</span><span class="lpu">${p.digital==='todas'?'ALL':p.digital===1?'FOTO':'FOTOS'}</span><span class="lpi">${p.prints?`<span class="lpt">${ICO.print}<small>PRINT</small></span>`:''}<span class="lpt">${ICO.phone}<small>DIGITAL</small></span></span><span class="lpp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
-    return `<div class="krev lrev">${top(`<button class="lsmall dark" data-act="kiosk-review" aria-label="Voltar às fotos">${ICO.back}</button>`)}
-      <div class="lcart">${c.ch.length?`<div class="lcts">${thumbs}</div>
-        ${pkgs?`<div class="lpkgs">${pkgs}</div>`:''}
-        ${c.extra||c.nAI?`<div class="lsum">${c.extra?`<span>+${c.extra} ${ICO.print} × ${fmtR(priceOf('extra'))}</span>`:''}${c.nAI?`<span>+${c.nAI} ${ICO.spark} × ${fmtR(priceOf('fundo'))}</span>`:''}</div>`:''}
-        <div class="lpays">${PAYS.map(([m,n])=>`<button class="lpay" data-act="loja-paym" data-m="${m}" aria-pressed="${k.pay===m}">${ICO[m]}<span>${esc(n)}</span></button>`).join('')}</div>
-        <div class="lfinal"><div class="ltotal">${fmtR(c.total)}</div><button class="lround ok big ${k.pay?'':'dim'}" data-act="loja-checkout" aria-label="Fechar compra" ${k.pay?'':'disabled'}>${ICO.ok}</button></div>`
-      :`<div class="lface">${ICO.cart}</div><button class="lround ghost" data-act="kiosk-review" aria-label="Voltar às fotos">${ICO.back}</button>`}</div></div>`;}
-  if(k.step==='pay')k.step='cart';
+    return `<div class="lj ${ljMode()} lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo">${logo}</div>${langPick(true)}<span class="lj-topr">${isBare()?'':`<button class="lj-ic" data-act="loja-full" aria-label="Tela cheia" aria-pressed="${!!k.full}">${ICO.full}</button>`}<button class="lj-ic" data-act="loja-list" aria-label="Sessões esperando" aria-pressed="${!!k.list}">${ICO.list}</button></span></div>
+      <div class="lj-heroin">
+        <div class="lj-eyebrow">${T('relive')}</div>
+        <h1 class="lj-h1">${T('yourPhotos')}</h1>
+        ${emerg?`<p class="lj-sub">${T('typeCode')}</p>
+          <input type="text" class="lj-code" id="kcode" placeholder="LP..." value="${esc(k.code)}" aria-label="${T('receiptCode')}" autofocus>
+          <div class="lj-row"><button class="lj-cta" data-act="kiosk-go">${T('seeMine')} ${ICO.arrow}</button><button class="lj-ghost" data-act="kiosk-back">${ICO.back} ${T('camera')}</button></div>`
+        :`<p class="lj-sub">${T('lookCam')}</p>
+          <div class="lj-cam">${camBox()}</div>
+          <button class="lj-ghost" data-act="kiosk-emerg">${ICO.keys} ${T('receiptCode')}</button>`}
+        ${k.list?`<div class="lj-wait">${waiting.map(x=>`<button data-act="loja-open" data-card="${x.card}"><b>${esc(x.card)}</b><span>${esc(P[x.key]?P[x.key].name:'')} · ${esc(x.time||'')}</span></button>`).join('')||'<span>Nenhuma sessão esperando.</span>'}</div>`:''}
+      </div></div>`;}
+  const s=sessionObj(k.code);if(!s)return `<div class="lj ${ljMode()} lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo">${logo}</div>${langPick(true)}<span></span></div><div class="lj-heroin"><h1 class="lj-h1">${T('notFound')}<br>${esc(k.code)}</h1><button class="lj-cta" data-act="kiosk-back">${ICO.back} ${T('back')}</button></div></div>`;
+  const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);const nSel=c.ch.length;
+  const cartPill=`<button class="lj-cartpill ${nSel?'on':''}" data-act="loja-cart" aria-label="Carrinho">${ICO.cart}<b>${nSel}</b>${nSel?`<span>${fmtR(c.total)}</span>`:''}</button>`;
+  const steps=n=>`<div class="lj-steps">${T('steps').map((t,i)=>`<span class="${i+1<n?'done':i+1===n?'cur':''}"><b>${i+1<n?'✓':i+1}</b>${t}</span>`).join('<i></i>')}</div>`;
+  const topR=x=>`<div class="lj-topr">${langPick(true)}${x}</div>`;
+  if(k.step==='gallery'||k.step==='pick'||k.step==='pay')k.step=k.step==='pay'?'cart':'review';
+  if(k.step==='review'){const n=items.length;k.i=Math.max(0,Math.min(n-1,k.i||0));const x=items[k.i];const st=x?pk[x.k]||'':'';
+    const frame=!x?'':x.t==='ai'?`<div class="lj-print ${st}"><div class="lj-img">${lojaThumb(x)}</div><span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>${st==='ok'?`<span class="lj-mark">${ICO.ok}</span>`:''}</div>`
+      :`<div class="lj-print ${st}"><div class="lj-img" style="${bigStyle(x.id)}">${st?'':'<span class="wm">VIVA MARACANÃ</span>'}</div>${st==='ok'?`<span class="lj-mark">${ICO.ok}</span>`:''}</div>`;
+    return `<div class="lj ${ljMode()} lj-review">${stripe}${deco}<div class="lj-top"><div class="lj-logo">${logo}</div>${steps(1)}${topR(cartPill)}</div>
+      <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n?k.i+1:0} / ${n}</span></div>
+      <div class="lj-stage" id="lswipe"><button class="lj-nav" data-act="kiosk-prev" aria-label="‹" ${k.i===0?'disabled':''}>‹</button><div class="lj-mid">${frame}</div><button class="lj-nav" data-act="kiosk-next" aria-label="›" ${k.i>=n-1?'disabled':''}>›</button></div>
+      <div class="lj-actions"><button class="lj-no ${st==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${st==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div>
+      <div class="lj-foot"><div class="lj-strip">${items.map((q,i)=>{const s2=pk[q.k]||'';return `<button class="lj-th ${i===k.i?'cur':''} ${s2}" data-act="kiosk-jump" data-i="${i}" style="${q.t==='ph'?phStyle(q.id):''}" aria-label="${i+1}">${q.t==='ai'?lojaThumb(q):''}${s2==='ok'?'<span class="lj-thok">✓</span>':''}</button>`;}).join('')}</div>
+        <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div></div>`;}
+  if(k.step==='cart'){const ps=DATA.catalog.filter(x=>x.kind==='pacote');const auto=c.nPh?lojaPkgAuto(c.nPh):null;const P0=c.pkg&&DATA.catalog.find(x=>x.id===c.pkg);
+    const one=priceOf('arq');const inc=P0&&typeof P0.digital==='number'?Math.min(c.nPh,P0.digital):0;const save=P0&&inc>1?inc*one-priceOf(P0.id):0;
+    const prints=c.ch.map(x=>`<div class="lj-mini"><div class="lj-img" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}</div><button class="lj-rm" data-act="loja-rm" data-k="${esc(x.k)}" aria-label="✗">${ICO.no}</button></div>`).join('');
+    const pkgs=c.nPh?ps.map(p=>{const dg=p.digital==='todas';const on=p.id===c.pkg;return `<button class="lj-pkg ${on?'on':''}" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${on}"><span class="lj-radio"></span><span class="lj-pkgn">${dg?'∞':p.digital}</span><span class="lj-pkgd"><b>${dg?T('pkgAll'):T('nPhotos',p.digital)}</b><small>${p.prints?T('pkgPD'):T('pkgD')}</small></span>${p.id===auto?`<span class="lj-badge">${T('ideal')}</span>`:''}<span class="lj-pkgp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
+    const incl=[c.prints?[ICO.print,T('incPrint',c.prints),T('incPrintD')]:null,
+      c.nPh?[ICO.phone,P0&&P0.digital==='todas'?T('incDigAll'):T('incDig',c.nPh),T('incDigD')]:null,
+      c.nAI?[ICO.spark,T('incAI',c.nAI),T('incAID')]:null,
+      [ICO.cloud,T('gallery'),T('galleryD')]].filter(Boolean);
+    return `<div class="lj ${ljMode()} lj-checkout">${stripe}${deco}<div class="lj-top"><div class="lj-logo">${logo}</div>${steps(2)}${topR(`<button class="lj-ghost sm" data-act="kiosk-review">${ICO.back} ${T('steps')[0]}</button>`)}</div>
+      <div class="lj-co">
+        <section class="lj-mem"><div class="lj-eyebrow">${T('memories')}</div><h2 class="lj-h2">${T('chosen',nSel)}</h2>
+          ${nSel?`<div class="lj-minis">${prints}</div><div class="lj-eyebrow" style="margin-top:12px">${T('whatYouGet')}</div><ul class="lj-incl">${incl.map(([ic,t,d])=>`<li><span class="lj-ii">${ic}</span><span><b>${t}</b><small>${d}</small></span></li>`).join('')}</ul>`
+            :`<p class="lj-sub">${T('emptyCart')}</p><button class="lj-cta" data-act="kiosk-review">${ICO.back} ${T('choosePhotos')}</button>`}</section>
+        ${nSel?`<section class="lj-order">
+          ${pkgs?`<div class="lj-oh"><b>1</b>${T('pkgH')}</div><div class="lj-pkgs">${pkgs}</div>`:''}
+          <div class="lj-oh"><b>${pkgs?2:1}</b>${T('payH')}</div>
+          <div class="lj-pays">${PAYS.map(([m])=>`<button class="lj-pay ${k.pay===m?'on':''}" data-act="loja-paym" data-m="${m}" aria-pressed="${k.pay===m}">${ICO[m]}<span>${T(m)}</span></button>`).join('')}</div>
+          <div class="lj-total"><span>${T('total')}${save>0?`<em class="lj-save">${T('save',fmtR(save))}</em>`:''}</span><b>${fmtR(c.total)}</b></div>
+          ${c.extra?`<div class="lj-fine">${T('extra',c.extra,fmtR(priceOf('extra')))}</div>`:''}
+          <button class="lj-cta lj-paybtn" data-act="loja-checkout" ${k.pay?'':'disabled'}>${k.pay?`${T('payBtn',fmtR(c.total))} ${ICO.arrow}`:T('choosePay')}</button>
+          <div class="lj-fine">${T('secure')}</div>
+        </section>`:''}
+      </div></div>`;}
   if(k.step==='done'){const p=k.paid||{};
-    return `<div class="krev lrev"><div class="ktop"><span></span><span></span><button class="lsmall dark" data-act="loja-new" aria-label="Próximo cliente">${ICO.home}</button></div>
-      <div class="lcart ldone"><div class="lround ok big on" aria-hidden="true">${ICO.ok}</div><div class="ltotal">${fmtR(p.total||0)}</div>
-      <div class="row" style="justify-content:center;gap:28px;align-items:center"><div id="lqr" class="lqr" aria-label="QR da galeria"></div><div class="lsum">${p.prints?`<span>${ICO.print} ${p.prints}</span>`:''}<span>${ICO.phone} ${p.n||0}</span></div></div></div></div>`;}
+    return `<div class="lj ${ljMode()} lj-done">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo">${logo}</div>${steps(3)}${topR(`<button class="lj-ic" data-act="loja-new" aria-label="${T('nextGuest')}">${ICO.home}</button>`)}</div>
+      <div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><div class="lj-eyebrow">${T('thanks')}</div><h1 class="lj-h1">${T('storyGoes')}</h1>
+        <p class="lj-sub">${p.prints?T('printsReady',p.prints)+'<br>':''}${T('scanQR')}</p>
+        <div class="lj-qrcard"><div id="lqr" class="lj-qr" aria-label="QR"></div><span>${ICO.phone} ${T('download')}</span></div>
+        <button class="lj-ghost" data-act="loja-new">${T('nextGuest')} ${ICO.arrow}</button></div></div>`;}
   lojaReset();return vQuiosque();
 }
 function bigStyle(id){let st=phStyle(id);if(/^ag_/.test(id)&&state.agent&&state.agent.url)st=st.replace('/thumb/','/file/');return st;}
@@ -1237,39 +1458,39 @@ function aiPreview(photoId,bgId,big){const b=aiBg(bgId);
   return `<div class="aiprev" style="background-image:url(${b.file||''})"></div>`;}
 function aiPair(photoId,bgId){return `<span class="aipair"><span class="ph" style="${phStyle(photoId)}"></span><span class="aiprev" style="background-image:url(${aiBg(bgId).file||''})"></span></span>`;}
 function vGuestAI(s){const g=state.guest;const a=g.ai;const ai=aiOf(s.card);const ph=s.photos.filter(p=>hasImg(p.id));
-  if(!aiPrep(s.card))return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← Minhas fotos</button></div><h1>Fundos com IA</h1></div></div><div class="phone"><div class="pin"><h2>Lendo suas fotos...</h2><div class="note">A IA está vendo o ângulo e a luz de cada foto para escolher os fundos que combinam.</div></div></div>`;
+  if(!aiPrep(s.card))return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← ${T('g_myPhotos')}</button></div><h1>${T('g_aiBgs')}</h1></div></div><div class="phone"><div class="pin">${langPick()}<h2>${T('g_reading')}</h2><div class="note">${T('g_readingD')}</div></div></div>`;
   const okBgs=aiBgsFor(s.card);if(!a.bg||!okBgs.find(b=>b.id===a.bg))a.bg=(okBgs[0]||{}).id;
   const pick=a.bg?aiPick(s.card,a.bg):null;if(a.manual){const sc=aiScore(a.manual);if(!bgFits(a.bg).includes(sc.f))a.manual=null;}a.photo=a.manual||(pick?pick.id:null);
-  if(!a.photo)return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← Minhas fotos</button></div><h1>Fundos com IA</h1></div></div><div class="phone"><div class="pin"><h2>Nenhuma foto boa para fundo</h2><div class="note">Para trocar o fundo, a IA precisa de uma foto nítida, com os rostos visíveis e ninguém cortado pela lateral. Nesta sessão nenhuma passou.</div></div></div>`;
+  if(!a.photo)return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← ${T('g_myPhotos')}</button></div><h1>${T('g_aiBgs')}</h1></div></div><div class="phone"><div class="pin">${langPick()}<h2>${T('g_noGood')}</h2><div class="note">${T('g_noGoodD')}</div></div></div>`;
   const inCart=ai.cart.some(x=>x.photo===a.photo&&x.bg===a.bg);const isBought=ai.bought.some(x=>x.photo===a.photo&&x.bg===a.bg);
-  return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← Minhas fotos</button></div><h1>Fundos com IA</h1></div><span class="pill neutral">${aiBgs().length} fundos</span></div>
-  <div class="phone"><div class="pin">
+  return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gai-close">← ${T('g_myPhotos')}</button></div><h1>${T('g_aiBgs')}</h1></div><span class="pill neutral">${T('g_bgs',aiBgs().length)}</span></div>
+  <div class="phone"><div class="pin">${langPick()}
     ${aiPreview(a.photo,a.bg,true)}
-    <div><div class="eyebrow">Escolha o fundo</div><div class="aibgs">${[...okBgs,...aiBgs().filter(b=>!okBgs.includes(b))].map(b=>{const ok=okBgs.find(x=>x.id===b.id);return `<button class="aibg" data-act="gai-bg" data-id="${b.id}" aria-pressed="${a.bg===b.id}" ${ok?'':'disabled'}><img src="${b.file}" alt=""><span>${esc(b.name)}${ok?(()=>{const p=aiPick(s.card,b.id);return p&&p.match!=null?`<br><small class="note">combina ${p.match}%</small>`:''})():'<br><small class="note">sem foto que combine</small>'}</span></button>`}).join('')}</div></div>
-    <div class="aipick"><div class="ph" style="${phStyle(a.photo)}"></div><div><div class="eyebrow">${!a.manual?'Foto escolhida pela IA':'Foto escolhida por você'} · ${FRAMING[aiScore(a.photo).f]}</div><div class="note">${!a.manual?'A melhor foto da sessão para este fundo. Muda sozinha quando você troca o fundo.':'Você trocou a foto sugerida.'}</div>${a.more?'':`<button class="chip" data-act="gai-more" style="margin-top:6px">Usar outra foto</button>`}</div></div>
-    ${a.more?`<div><div class="eyebrow">Fotos boas para fundo nesta sessão</div><div class="aiphotos">${aiCands(s.card,a.bg).filter(aiOk).map(c=>`<button class="ph" data-act="gai-photo" data-id="${c.id}" data-sel="${a.photo===c.id?1:0}" style="${phStyle(c.id)}" aria-label="Usar esta foto"><span class="mark">✓</span></button>`).join('')}</div><div class="note" style="margin-top:6px">Só aparecem as fotos em que o recorte sai bom e que combinam com este fundo.</div></div>`:''}
-    ${isBought?`<div class="pill good" style="align-self:flex-start">Você já comprou esta combinação</div>`:inCart?`<button class="btn ghost big" data-act="gai-remove" data-photo="${a.photo}" data-bg="${a.bg}">Tirar da minha lista</button>`:`<button class="btn primary big" data-act="gai-add">Guardar para comprar · ${fmtR(priceOf('fundo'))}</button>`}
-    <div class="note">${b2n(ai.cart.length)} na sua lista. Fica salva nesta galeria por 60 dias: dá para comprar agora ou depois, de casa. A IA recorta o seu grupo da foto escolhida e coloca neste fundo, com a luz acertada. Arquivo de 3.000 px.</div>
-    ${ai.cart.length?`<button class="btn ghost big" data-act="gai-close">Ver minha lista e pagar</button>`:''}
+    <div><div class="eyebrow">${T('g_pickBg')}</div><div class="aibgs">${[...okBgs,...aiBgs().filter(b=>!okBgs.includes(b))].map(b=>{const ok=okBgs.find(x=>x.id===b.id);return `<button class="aibg" data-act="gai-bg" data-id="${b.id}" aria-pressed="${a.bg===b.id}" ${ok?'':'disabled'}><img src="${b.file}" alt=""><span>${esc(b.name)}${ok?(()=>{const p=aiPick(s.card,b.id);return p&&p.match!=null?`<br><small class="note">${T('g_match',p.match)}</small>`:''})():`<br><small class="note">${T('g_noMatch')}</small>`}</span></button>`}).join('')}</div></div>
+    <div class="aipick"><div class="ph" style="${phStyle(a.photo)}"></div><div><div class="eyebrow">${!a.manual?T('g_aiPicked'):T('g_youPicked')} · ${T('f_'+aiScore(a.photo).f)}</div><div class="note">${!a.manual?T('g_aiPickedD'):T('g_youPickedD')}</div>${a.more?'':`<button class="chip" data-act="gai-more" style="margin-top:6px">${T('g_other')}</button>`}</div></div>
+    ${a.more?`<div><div class="eyebrow">${T('g_goodHere')}</div><div class="aiphotos">${aiCands(s.card,a.bg).filter(aiOk).map(c=>`<button class="ph" data-act="gai-photo" data-id="${c.id}" data-sel="${a.photo===c.id?1:0}" style="${phStyle(c.id)}" aria-label="Usar esta foto"><span class="mark">✓</span></button>`).join('')}</div><div class="note" style="margin-top:6px">${T('g_goodHereD')}</div></div>`:''}
+    ${isBought?`<div class="pill good" style="align-self:flex-start">${T('g_already')}</div>`:inCart?`<button class="btn ghost big" data-act="gai-remove" data-photo="${a.photo}" data-bg="${a.bg}">${T('g_remove')}</button>`:`<button class="btn primary big" data-act="gai-add">${T('g_save',fmtR(priceOf('fundo')))}</button>`}
+    <div class="note">${T('g_listNote',T('g_listN',ai.cart.length))}</div>
+    ${ai.cart.length?`<button class="btn ghost big" data-act="gai-close">${T('g_seeList')}</button>`:''}
   </div></div>`;}
 function b2n(n){return n===0?'Nenhuma foto':n===1?'1 foto':n+' fotos';}
 function guestAICard(s){const ai=aiOf(s.card);const tot=ai.cart.length*priceOf('fundo');aiPrep(s.card);const okB=aiBgsFor(s.card).slice(0,6);const pk=okB.length;if(!pk&&!ai.bought.length)return '';const first=null;
-  return `<div class="aicard"><div class="row" style="justify-content:space-between;align-items:baseline"><div><div class="eyebrow">Novo</div><h3 style="margin:2px 0 0">Suas fotos com fundos de IA</h3></div><span class="note">${fmtR(priceOf('fundo'))} cada</span></div>
+  return `<div class="aicard"><div class="row" style="justify-content:space-between;align-items:baseline"><div><div class="eyebrow">${T('g_new')}</div><h3 style="margin:2px 0 0">${T('g_aiTitle')}</h3></div><span class="note">${T('g_each',fmtR(priceOf('fundo')))}</span></div>
     <div class="aistrip">${okB.map(b=>`<div class="aistripi">${aiPreview(first,b.id,false)}<span>${esc(b.name)}</span></div>`).join('')}</div>
-    ${pk?`<button class="btn primary big" data-act="gai-open">Escolher fundo</button>`:''}
-    ${ai.cart.length?`<div class="cart">${ai.cart.map(x=>`<div class="cartline"><span class="row" style="gap:8px;align-items:center">${aiPair(x.photo,x.bg)}${esc(aiBg(x.bg).name||'')}</span><span class="row" style="gap:8px;align-items:center"><b>${fmtR(priceOf('fundo'))}</b><button class="chip" data-act="gai-remove" data-photo="${x.photo}" data-bg="${x.bg}" aria-label="Remover">✕</button></span></div>`).join('')}<div class="cartline"><span><b>Total</b></span><b>${fmtR(tot)}</b></div></div>
-    <button class="btn primary big" data-act="gai-pay">Pagar agora · ${fmtR(tot)} (Pix ou cartão)</button><div class="note">Ou feche esta página: a lista fica guardada e você paga depois.</div>`:''}
-    ${ai.bought.length?`<div><div class="eyebrow">Compradas com fundo de IA</div><div class="aistrip">${ai.bought.map(x=>aiPair(x.photo,x.bg)).join('')}</div></div>`:''}
+    ${pk?`<button class="btn primary big" data-act="gai-open">${T('g_chooseBg')}</button>`:''}
+    ${ai.cart.length?`<div class="cart">${ai.cart.map(x=>`<div class="cartline"><span class="row" style="gap:8px;align-items:center">${aiPair(x.photo,x.bg)}${esc(aiBg(x.bg).name||'')}</span><span class="row" style="gap:8px;align-items:center"><b>${fmtR(priceOf('fundo'))}</b><button class="chip" data-act="gai-remove" data-photo="${x.photo}" data-bg="${x.bg}" aria-label="Remover">✕</button></span></div>`).join('')}<div class="cartline"><span><b>${T('total')}</b></span><b>${fmtR(tot)}</b></div></div>
+    <button class="btn primary big" data-act="gai-pay">${T('g_payNow',fmtR(tot))}</button><div class="note">${T('g_later')}</div>`:''}
+    ${ai.bought.length?`<div><div class="eyebrow">${T('g_aiBought')}</div><div class="aistrip">${ai.bought.map(x=>aiPair(x.photo,x.bg)).join('')}</div></div>`:''}
   </div>`;}
 // ---------- Convidado: selfie com a câmera (frontal do celular ou webcam do computador) ----------
 function vGuestSelfie(){const sf=state.guest.selfie;
   const body=sf.shot?`<img class="selfshot" src="${sf.shot}" alt="Sua selfie">`:sf.err?`<div class="selfcam off"><div class="ring"></div></div>`:`<div class="selfcam"><video id="gself-video" autoplay muted playsinline></video><div class="ring"></div></div>`;
-  return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gself-close">← Voltar</button></div><h1>Selfie</h1></div></div>
-  <div class="phone"><div class="pin">${cobrand(40)}
-    <div><h2 style="font-size:26px">${sf.cands?'É uma destas?':sf.shot?'Procurando suas fotos...':sf.err?'Mande uma selfie':'Olhe para a câmera'}</h2><div class="note">${sf.shot?'Comparando o seu rosto com as fotos do dia.':sf.err?esc(sf.err):'Encaixe o rosto no círculo, sem óculos escuros nem boné.'}</div></div>
+  return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="gself-close">← ${T('g_back')}</button></div><h1>Selfie</h1></div></div>
+  <div class="phone"><div class="pin"><div class="row" style="justify-content:space-between;align-items:center">${cobrand(40)}${langPick()}</div>
+    <div><h2 style="font-size:26px">${sf.cands?T('isOne'):sf.shot?T('g_searching'):sf.err?T('g_sendSelfie'):T('lookCam')}</h2><div class="note">${sf.shot?T('g_comparing'):sf.err?esc(sf.err):T('g_fit')}</div></div>
     ${sf.cands?faceCands(sf.cands,'gself-pick'):body}
-    ${sf.shot?'':sf.err?`<label class="btn primary big" for="gselfie" style="cursor:pointer">Escolher uma foto do aparelho<input type="file" id="gselfie" accept="image/*" capture="user" data-act="guest-selfie" hidden></label>`:`<button class="btn primary big" data-act="gself-snap" ${sf.ready?'':'disabled'}>Tirar foto</button>`}
-    <div class="note">A selfie serve só para achar as suas fotos (LGPD). Não fica guardada.</div>
+    ${sf.shot?'':sf.err?`<label class="btn primary big" for="gselfie" style="cursor:pointer">${T('g_pickFile')}<input type="file" id="gselfie" accept="image/*" capture="user" data-act="guest-selfie" hidden></label>`:`<button class="btn primary big" data-act="gself-snap" ${sf.ready?'':'disabled'}>${T('g_snap')}</button>`}
+    <div class="note">${T('g_lgpd')}</div>
   </div></div>`;}
 async function selfieStart(){const sf=state.guest.selfie;if(!sf||sf.stream||sf.err)return;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){sf.err='Este navegador não abre a câmera. Escolha uma foto do aparelho.';render();return;}
@@ -1295,25 +1516,25 @@ function vConvidado(){
   const gbrand=cobrand(50);
   if(!s){const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);
     return `<div class="head"><div><div class="eyebrow">Convidado · celular</div><h1>Galeria</h1></div></div>
-    ${phone(`${gbrand}<div><div class="eyebrow">Suas fotos</div><h2 style="font-size:30px">${esc(venue().tagline)}</h2></div>
-    <div class="note">Três jeitos de achar suas fotos, em casa ou no estádio.</div>
-    <button class="btn primary big" data-act="gself-open">Tirar uma selfie</button>
-    <label class="btn ghost big" for="gqr" style="cursor:pointer">Ler o QR do recibo ou do ingresso<input type="file" id="gqr" accept="image/*" capture="environment" data-act="guest-qr" hidden></label>
-    <div class="row" style="gap:6px"><input type="text" class="code" id="gcode" placeholder="ETN-00000" value="${esc(g.code)}" aria-label="Código" style="flex:1;min-width:0"><button class="btn ghost" data-act="guest-go" style="min-height:52px">Abrir</button></div>
-    <div class="note">Selfie: o rosto encontra todas as fotos do grupo, com consentimento (LGPD).<br>Pagas: ${paid.join(' · ')||'nenhuma ainda'} · Amostra: ${DATA.sampled.slice(0,2).map(x=>x.card).join(' · ')}</div>`)}`;}
+    ${phone(`<div class="row" style="justify-content:space-between;align-items:center">${gbrand}${langPick()}</div><div><div class="eyebrow">${T('g_yourPhotos')}</div><h2 style="font-size:30px">${T('relive')}</h2></div>
+    <div class="note">${T('g_threeWays')}</div>
+    <button class="btn primary big" data-act="gself-open">${T('g_selfie')}</button>
+    <label class="btn ghost big" for="gqr" style="cursor:pointer">${T('g_qr')}<input type="file" id="gqr" accept="image/*" capture="environment" data-act="guest-qr" hidden></label>
+    <div class="row" style="gap:6px"><input type="text" class="code" id="gcode" placeholder="ETN-00000" value="${esc(g.code)}" aria-label="Código" style="flex:1;min-width:0"><button class="btn ghost" data-act="guest-go" style="min-height:52px">${T('g_open')}</button></div>
+    <div class="note">${T('g_selfieNote')}<br>Pagas: ${paid.join(' · ')||'nenhuma ainda'} · Amostra: ${DATA.sampled.slice(0,2).map(x=>x.card).join(' · ')}</div>`)}`;}
   const sim=simOf(s.card);const bought=new Set(sim.status==='paga'?(sim.selected||[]):[]);
   const left=s.photos.filter(p=>!bought.has(p.id)).length;
   return `<div class="head"><div><div class="eyebrow">Convidado · celular</div><h1>Galeria ${esc(s.card)}</h1></div><button class="chip" data-act="guest-exit">Trocar sessão</button></div>
-  ${phone(`<div style="display:flex;justify-content:space-between;align-items:center">${gbrand}<span class="note">${esc(s.card)}</span></div>
-  <div><div class="eyebrow">Visita de ${dlabel(s.date)}</div><h2 style="font-size:28px">${esc(venue().tagline)}</h2><div class="note">${bought.size} fotos compradas em alta, download até ${new Date(Date.now()+60*864e5).toLocaleDateString('pt-BR')}. ${left?`As outras ${left} continuam aqui, se você quiser levar.`:''}</div></div>
-  ${sim.bg?`<div><div class="eyebrow">Seu fundo</div><img src="${(DATA.backgrounds.find(b=>b.id===sim.bg)||{}).file}" alt="" style="width:100%;border-radius:6px;display:block;margin-top:6px"></div>`:''}
+  ${phone(`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">${gbrand}${langPick()}</div>
+  <div><div class="eyebrow">${T('g_visit',lang()==='pt'||!/^\d{4}-/.test(String(s.date))?dlabel(s.date):fmtD(s.date+'T12:00'))}</div><h2 style="font-size:28px">${T('relive')}</h2><div class="note">${T('g_bought',bought.size,fmtD(Date.now()+60*864e5))} ${left?T('g_left',left):''}</div></div>
+  ${sim.bg?`<div><div class="eyebrow">${T('g_yourBg')}</div><img src="${(DATA.backgrounds.find(b=>b.id===sim.bg)||{}).file}" alt="" style="width:100%;border-radius:6px;display:block;margin-top:6px"></div>`:''}
   ${guestAICard(s)}
-  <div style="display:flex;flex-direction:column;gap:10px">${s.photos.map(p=>{const b=bought.has(p.id);return `<div style="position:relative">${photoBtn(p,{act:'guest-fav',tag:b?'COMPRADA':'',wm:!b,zoom:false})}<span style="position:absolute;right:10px;bottom:8px;font-size:20px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)">${g.fav[p.id]?'♥':'♡'}</span></div>`}).join('')}</div>
+  <div style="display:flex;flex-direction:column;gap:10px">${s.photos.map(p=>{const b=bought.has(p.id);return `<div style="position:relative">${photoBtn(p,{act:'guest-fav',tag:b?T('g_boughtTag'):'',wm:!b,zoom:false})}<span style="position:absolute;right:10px;bottom:8px;font-size:20px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)">${g.fav[p.id]?'♥':'♡'}</span></div>`}).join('')}</div>
   <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px">
-    ${left?`<button class="btn primary big" data-act="guest-buyall">Levar todas em digital · ${fmtR(priceOf('mais'))}</button>`:''}
-    <div class="row"><button class="btn ghost" style="flex:1" data-act="guest-download">Baixar compradas</button><button class="btn ghost" style="flex:1" data-act="guest-share">Compartilhar</button></div>
-    <div class="row"><button class="chip" data-act="guest-notme">Não sou eu nesta foto</button><button class="chip" data-act="guest-help">Falar com o Tour</button></div>
-    <div class="note">Arquivos de 3.000 px, sem marca d'água. Dúvidas por WhatsApp ou ${MAIL_FROM}. Seus dados: LGPD, apagados em 60 dias.</div></div>`)}`;
+    ${left?`<button class="btn primary big" data-act="guest-buyall">${T('g_buyAll',fmtR(priceOf('mais')))}</button>`:''}
+    <div class="row"><button class="btn ghost" style="flex:1" data-act="guest-download">${T('g_dl')}</button><button class="btn ghost" style="flex:1" data-act="guest-share">${T('g_share')}</button></div>
+    <div class="row"><button class="chip" data-act="guest-notme">${T('g_notMe')}</button><button class="chip" data-act="guest-help">${T('g_help')}</button></div>
+    <div class="note">${T('g_foot',MAIL_FROM)}</div></div>`)}`;
 }
 
 // ---------- Qualidade ----------
@@ -2150,7 +2371,7 @@ function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c
     if(m>7){c.moved+=m;c.still=0;if(c.moved>40&&!c.armed){c.armed=true;c.status='present';camStatus();}}
     else{c.still++;if(c.armed&&c.still>=5){c.armed=false;c.moved=0;camFound();}else if(!c.armed&&c.still>12){c.moved=0;if(c.status!=='idle'&&c.status!=='searching'&&c.status!=='found'){c.status='idle';camStatus();}}}}
   c.prev=g;}
-function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;el.dataset.st=c.status;const t={off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando'}[c.status]||'';el.textContent=t;if(f)f.dataset.st=c.status;}
+function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;el.dataset.st=c.status;const t=state.view==='quiosque'?(I18N['cam_'+c.status]?T('cam_'+c.status):''):({off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando'}[c.status]||'');el.textContent=t;if(f)f.dataset.st=c.status;}
 function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Date.now();c.status='searching';camStatus();
   const ok=x=>state.view==='quiosque'||x.status!=='paga'; // checkout: toda sessão ainda não paga (como a lista ao lado); quiosque: todas
   const open=card=>{c.busy=false;c.status='found';camStatus();
@@ -2165,7 +2386,7 @@ function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Dat
     .catch(()=>{c.busy=false;c.status='idle';camStatus();toast('Reconhecimento indisponível. Use o código.');});return;}
   setTimeout(()=>{const cands=demoSessions().filter(ok);const pick=cands[Math.floor(Math.random()*cands.length)];if(!pick){c.busy=false;c.status='idle';camStatus();return;}open(pick.card);},900);}
 function camBox(){const c=state.cam;const noCam=!!c.err;return `<div class="face live" id="cam-face" data-st="${c.status}" aria-label="Câmera do checkout">${noCam?'<div class="ring"></div><div class="scan"></div>':'<video id="cam-video" autoplay muted playsinline></video><div class="ring"></div>'}</div><div class="camst" id="cam-st" data-st="${c.status}"></div>${c.status==='pick'&&c.cands?faceCands(c.cands,'cam-pick'):''}`;}
-function faceCands(list,act){return `<div class="facepick"><div class="eyebrow">É uma destas?</div><div class="row" style="gap:10px;flex-wrap:wrap;justify-content:center">${list.map(r=>`<button class="facecand" data-act="${act}" data-card="${r.card}"><div class="ph" style="${phStyle(r.fotos[0])}"></div><span>${esc(r.card)} · ${r.fotos.length} ${r.fotos.length>1?'fotos':'foto'}</span></button>`).join('')}<button class="chip" data-act="${act}" data-card="">Nenhuma</button></div></div>`;}
+function faceCands(list,act){const gl=state.view==='quiosque'||state.view==='convidado';return `<div class="facepick"><div class="eyebrow">${gl?T('isOne'):'É uma destas?'}</div><div class="row" style="gap:10px;flex-wrap:wrap;justify-content:center">${list.map(r=>`<button class="facecand" data-act="${act}" data-card="${r.card}"><div class="ph" style="${phStyle(r.fotos[0])}"></div><span>${esc(r.card)} · ${r.fotos.length} ${r.fotos.length>1?'fotos':'foto'}</span></button>`).join('')}<button class="chip" data-act="${act}" data-card="">${gl?T('none'):'Nenhuma'}</button></div></div>`;}
 // ---------- Ajustes: a IA acerta toda foto que chega (exposição, contraste, temperatura); aqui dá para refinar à mão ----------
 const AJ_CTRL=[['b','Exposição',40,180,5],['c','Contraste',50,160,5],['s','Saturação',0,200,10],['t','Temperatura',-40,40,5],['z','Corte',100,250,5]];
 const AJ_DEF={b:100,c:100,s:100,t:0,z:100};
@@ -2452,7 +2673,9 @@ document.addEventListener('click',e=>{
     case 'loja-open':state.kiosk.code=d.card;state.kiosk.step='review';state.kiosk.i=0;state.kiosk.pkg=null;state.kiosk.pay=null;state.kiosk.list=false;render();break;
     case 'loja-rm':{const pk=lojaPick(state.kiosk.code);delete pk[d.k];lojaSync(state.kiosk.code);render();break;}
     case 'loja-pkg':state.kiosk.pkg=d.id;render();break;
+    case 'loja-full':{const k=state.kiosk;k.full=!k.full;try{if(k.full&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{});else if(!k.full&&document.fullscreenElement)document.exitFullscreen();}catch(e){}render();break;}
     case 'loja-paym':state.kiosk.pay=d.m;render();break;
+    case 'lang':state.lang=d.l;if(state.view!=='quiosque'){try{localStorage.setItem('eterna.lang',d.l)}catch(e){}}render();break;
     case 'loja-checkout':if(state.kiosk.pay)lojaPay(state.kiosk.pay);break;
     case 'loja-pay':lojaPay(d.m);break;
     case 'bg-on':{let a=bgOn();if(a.includes(d.id))a=a.filter(x=>x!==d.id);else{if(a.length>=BG_MAX){toast('No máximo 5 fundos na loja. Tire um antes.');break;}a.push(d.id);}SIM.bgOn=a;saveSim();render();break;}
@@ -2494,7 +2717,7 @@ document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train
 document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('input[data-pick]');if(el&&typeof el.showPicker==='function'){try{el.showPicker()}catch(x){}}},true);
 document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='set-key'){state.set.key=e.target.value;render();return;}if(a==='rev-key'){state.revFilter.key=e.target.value;render();return;}if(a==='rev-venda'){state.revFilter.venda=e.target.value;render();return;}if(a==='rev-date'){state.revFilter.date=e.target.value||'all';render();return;}if(a==='cam-who'){const m=camDay(localDay(Date.now()/1000));if(e.target.value)m[e.target.dataset.s]=e.target.value;else delete m[e.target.dataset.s];saveSim();render();return;}if(a==='func-point'){setFunc(e.target.dataset.k,{tipo:'campo',point:e.target.value});render();return;}if(a==='func-set'){const k=e.target.dataset.k,v=e.target.value;const f=funcOf(k);if(!v)setFunc(k,{tipo:'folga'});else if(v[0]==='c')setFunc(k,{tipo:'campo',point:v.slice(2)});else setFunc(k,{tipo:'volante',modo:v.slice(2),from:f.point||f.from||null});render();return;}if(a==='range-from'&&e.target.value){setRange(e.target.value,state.range.to<e.target.value?e.target.value:state.range.to);return;}if(a==='range-to'&&e.target.value){setRange(state.range.from>e.target.value?e.target.value:state.range.from,e.target.value);return;}if(a==='fe-sel'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='fe-active'){if(state.flagEd)state.flagEd.active=e.target.checked;return;}if(a==='fe-img'){const fl=e.target.files&&e.target.files[0];if(!fl||!state.flagEd)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');const w=360,h=Math.round(360*im.height/im.width);c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);state.flagEd.imgData=c.toDataURL('image/jpeg',.82);render();};im.src=rd.result;};rd.readAsDataURL(fl);return;}if(a==='venue-powered'){VENUE_CFG.powered=e.target.checked;saveVenue();render();return;}if(a==='venue-logo'){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>600*1024){toast('Logo acima de 600 KB: exporte menor');return;}const rd=new FileReader();rd.onload=()=>{VENUE_CFG.logo=rd.result;saveVenue();toast('Logo aplicada');render();};rd.readAsDataURL(f);return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr){dr.preset=e.target.value;if(e.target.value!=='custom')dr.perms=presetPerms(e.target.value);render();}return;}if(a==='user-perm'){const dr=state.users.draft;if(!can('usuarios','u')){e.target.checked=!e.target.checked;return;}if(dr){const m=e.target.dataset.m,op=e.target.dataset.op;dr.perms[m]=dr.perms[m]||{...NONE};dr.perms[m][op]=e.target.checked;if(op!=='r'&&e.target.checked)dr.perms[m].r=true;if(op==='r'&&!e.target.checked){dr.perms[m]={...NONE};}dr.preset='custom';render();}return;}if(a==='set-point'){state.set.point=e.target.value;render();}else if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};upSave(id,f,f.name);return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='guest-selfie'||a==='guest-qr'){if(!e.target.files||!e.target.files.length)return;const paid=Object.entries(SIM.sessions).filter(([c,x])=>x.status==='paga').map(([c])=>c);toast(a==='guest-selfie'?'Procurando pelo rosto...':'Lendo o QR...');setTimeout(()=>{selfieStop();state.guest.code=paid[0]||DATA.sampled[0].card;toast('Encontramos a sua sessão');render();},1200);}});
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-email')sendCode();if(f==='login-code')checkCode();});
-document.addEventListener('keydown',e=>{if(state.view==='quiosque'&&state.kiosk.step==='review'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){if(e.key==='ArrowRight'){state.kiosk.i=(state.kiosk.i||0)+1;render();e.preventDefault();return;}if(e.key==='ArrowLeft'){state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();e.preventDefault();return;}if(e.key==='Enter'||e.key===' '){const b=$('[data-act="kiosk-ok"]');if(b){b.click();e.preventDefault();return;}}}if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&(MODAL.list.length>1||MODAL.comp)&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i+1);else showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i-1);else showModal(MODAL.i-1);e.preventDefault();}}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.view==='quiosque'&&state.kiosk.full&&!isBare()){state.kiosk.full=false;render();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){if(e.key==='ArrowRight'){state.kiosk.i=(state.kiosk.i||0)+1;render();e.preventDefault();return;}if(e.key==='ArrowLeft'){state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();e.preventDefault();return;}if(e.key==='Enter'||e.key===' '){const b=$('[data-act="kiosk-ok"]');if(b){b.click();e.preventDefault();return;}}}if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&(MODAL.list.length>1||MODAL.comp)&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i+1);else showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i-1);else showModal(MODAL.i-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}if(e.key==='Enter'&&e.target.id==='gcode'){state.guest.code=e.target.value.trim().toUpperCase();render();}});
 function closeModal(){$('#modal').removeAttribute('data-open');if(state.view==='ajustes'||state.view==='fila'||state.view==='caixa')render();}
 $('#modal-close').addEventListener('click',closeModal);
