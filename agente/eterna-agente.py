@@ -741,6 +741,11 @@ def pasta_vigiada():
                     continue
                 if tamanhos.get(p) != st.st_size or time.time() - st.st_mtime < 0.5:
                     tamanhos[p] = st.st_size; continue           # ainda chegando
+                if not jpeg_completo(p, st.st_size):
+                    if time.time() - st.st_mtime < 600:
+                        continue                                  # cortada (conexão caiu): espera a câmera mandar de novo
+                    print(f"pasta: {fn} continua incompleto depois de 10 min; ignorado")
+                    vistos[p] = chave; continue
                 vistos[p] = chave; tamanhos.pop(p, None)
                 quem = os.path.basename(root) if root != pasta else "pasta"
                 ingest_file(p, fn, st, quem, "ftp")
