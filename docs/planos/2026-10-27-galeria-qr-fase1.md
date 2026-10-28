@@ -443,3 +443,9 @@ A Loja é a área do cliente: não depende de login, não tem menu lateral, abre
 - A6. Botão "Voltar" manual visível em todas as etapas da Loja (fotos, carrinho, código): volta para a câmera (facial) na hora, limpando a sessão do cliente.
 - A7. Seletor de idiomas com BANDEIRAS em vez de PT/EN/ES/FR/DE, na Loja e na galeria pública: Brasil (português), Estados Unidos (inglês), Espanha (espanhol), França (francês), Alemanha (alemão). Bandeiras em SVG desenhado no próprio código (emoji de bandeira não aparece no Chrome do Windows), com `title` e `aria-label` com o nome do idioma; a selecionada com anel amarelo.
 - Critério 23 passa a ser: com `page.clock`, 5 minutos parado nas fotos NÃO mudam de etapa. Critério 26: o seletor mostra 5 SVGs de bandeira, sem os textos PT/EN/ES/FR/DE visíveis, e trocar de bandeira troca o idioma.
+
+### Adendo 3 do Eduardo (27/10, 22:30)
+- A4 ajustado: depois da compra, a tela final com o QR fica **30 s** (não 5 s) e volta sozinha para a câmera; o botão "Voltar ao início" continua para voltar antes.
+- A8. O tempo é configurável: no Catálogo e preços, seção "Checkout", campo "Tempo da tela final com o QR (segundos)", padrão 30, mínimo 5, máximo 120, gravado em `SIM` (permissão `catalogo.u`). A Loja lê esse valor.
+- Preço da foto avulsa online confirmado pelo Eduardo (ver relatório: confirmar se R$ 39 ou R$ 30; a transcrição veio como "30 notas").
+- Critério 24 passa a ser: com `page.clock`, a tela final ainda está visível aos 25 s e volta à câmera aos 30 s; trocar o valor no Catálogo para 10 faz voltar aos 10 s.
