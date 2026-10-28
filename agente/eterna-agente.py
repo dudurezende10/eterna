@@ -238,15 +238,20 @@ def quick_hash(path, size):
 
 
 def jpeg_completo(path, size):
-    """JPEG termina no marcador FFD9; algumas câmeras deixam uns bytes depois dele."""
+    """Foto inteira? JPEG termina no marcador FFD9 (algumas câmeras deixam uns bytes depois dele); PNG no bloco IEND.
+    Há fotos PNG com nome .jpeg (exportações do Roverpix). Formato desconhecido passa: só barra o que dá para conferir."""
     try:
         with open(path, "rb") as f:
-            if f.read(2) != b"\xff\xd8":
-                return False
+            ini = f.read(8)
             f.seek(max(0, size - 4096))
-            return b"\xff\xd9" in f.read()
+            fim = f.read()
     except OSError:
         return False
+    if ini[:2] == b"\xff\xd8":
+        return b"\xff\xd9" in fim
+    if ini == b"\x89PNG\r\n\x1a\n":
+        return b"IEND" in fim[-16:]
+    return size > 0
 
 
 def has_pillow():
