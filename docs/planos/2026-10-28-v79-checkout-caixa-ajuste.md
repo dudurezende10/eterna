@@ -326,3 +326,55 @@ Nenhuma (tela da equipe, em português).
 11. **Ajuste automático.** Por computador: um fotógrafo desliga para o ponto todo, de propósito, e fica registrado. Sem dano de segurança, além da brecha atual do Supervisor, que este plano fecha.
 
 **Para guardar na memória do projeto:** os itens 3 e 4 entraram na v79 por pedido do Eduardo. Ficaram em aberto para ele as decisões (a) fundo de IA dentro do pacote ou adicional, (b) Ideal só por preço a partir de 9 fotos e (c) Checkout e Caixa no mesmo computador na v79.
+---
+
+## Decisões do Eduardo (28/10 09:44)
+- **(a) Fotos com fundo de IA contam dentro do pacote.** Não são mais adicionais de R$ 40 no Checkout. O número de fotos para o pacote é fotos do campo + fotos com fundo de IA; `lojaIdeal`, adicionais, impressas, economia e o resumo linha a linha usam esse total. A linha "N fotos com fundo de IA × R$ 40" sai do resumo; "O que você leva" mantém a linha informativa "N fotos com fundo de IA", sem preço. A compra continua registrando quais fotos são de IA (`aiOf(card).bought`, `s.aiSel`). O carrinho do Checkout não leva mais itens `fundo`.
+- **(b) Ideal só pelo preço**, inclusive contra o "Todas". Confirmado.
+- **(c) Checkout e Caixa no mesmo computador** continua valendo na v79; o multiterminal vem numa versão seguinte (contrato do servidor no item 1).
+- Critérios 4.x reescritos com a regra (a) e com o catálogo novo abaixo em `testes/v79-regressao.js`.
+
+## Catálogo novo do Tour (28/10 10:14)
+| id | produto | conteúdo | preço | digital | impressas |
+|---|---|---|---|---|---|
+| mais | Pacote Maracanã Mais | todas as fotos digitais | R$ 250 | todas | 0 |
+| tribuna | Pacote Tribuna de Honra (novo) | 12 fotos, digitais e impressas | R$ 220 | 12 | 12 |
+| maracana | Pacote Maracanã | 9 fotos, digitais e impressas (era 6 por R$ 149) | R$ 190 | 9 | 9 |
+| gramado | Pacote Gramado (novo) | 6 fotos, digitais e impressas | R$ 150 | 6 | 6 |
+| zona | Pacote Zona Mista | 3 fotos, só digitais (antes com impressas) | R$ 110 | 3 | 0 |
+| arq | Pacote Arquibancada | 1 foto, digital e impressa | R$ 70 | 1 | 1 |
+| extra | Foto adicional | digital e impressa (correção das 10:44) | R$ 35 | 1 | 1 |
+| fundo, dig | sem mudança | | R$ 40, R$ 39 | | |
+
+- **Correção do Eduardo (28/10 10:44):** a foto adicional é digital e impressa (R$ 35). Impressas de uma compra = min(fotos escolhidas, impressas do pacote) + adicionais; cada adicional baixa 1 do rolo no caixa. Formato de impressão do Tour: 10×15 cm (textos do Checkout atualizados).
+- Ideal = menor preço entre todos os pacotes + adicionais; empate: mais impressas; depois o pacote menor. Com os preços padrão: 1 → Arquibancada R$ 70 (1 impressa); 2 → Arquibancada + 1 R$ 105 (2); 3 → Zona Mista R$ 110 (0, só digital); 4 → Zona Mista + 1 R$ 145 (1) contra Gramado R$ 150 (4); 5 e 6 → Gramado R$ 150; 7 → Gramado + 1 R$ 185 (7) contra Maracanã R$ 190; 8 e 9 → Maracanã R$ 190; 10 a 12 → Tribuna R$ 220; 13 ou mais → Todas R$ 250 (0 impressas) contra Tribuna + 1 R$ 255 (13).
+- Caso do print (4 do campo + 4 com fundo de IA = 8): Ideal Maracanã R$ 190, 8 impressas, "Cabem mais 1 foto"; Gramado + 2 adicionais = R$ 220, também com 8 impressas.
+- Economia (D12 ajustada ao catálogo novo): cada foto impressa vale o avulso com impressa (`arq`) e cada foto só digital vale a digital avulsa (`dig`); no "Todas" contam todas as fotos da sessão. Economia = esse valor − o que a pessoa paga, mostrada só quando > 0 (caso do print: 8 × 70 − 190 = R$ 370).
+- Preços editados antes para `maracana`, `zona`, `arq` e `extra` são descartados uma vez (`SIM.catalogoV=2`), com registro no log. `tribuna`, `gramado`, `mais`, `fundo` e `dig` mantêm o preço editado.
+- As vendas antigas reconstruídas a partir da Roverpix (`reconSale`, estimadas) passam a usar o pacote Ideal do catálogo atual para as fotos vendidas.
+
+## Correções da revisão (28/10)
+Revisor (DEVOLVER) e segurança (REPROVADO) corrigidos na mesma v79. Cada item tem caso em `testes/v79-regressao.js`.
+
+**Segurança**
+- **B1 (bloqueante).** O botão da equipe no `#loja` só aparece na tela da câmera (`lojaEquipeOn` exige `state.kiosk.step==='code'`) e some para sempre na primeira interação de cliente: `kiosk-go`, `kiosk-emerg`, Enter no código, `cam-pick` e a câmera achando o rosto (`camFound`), `loja-exit`/`loja-new` (todos chamam `lojaCliente()`, que zera `state.lojaEquipeAte`). Saiu dos cabeçalhos da escolha e do carrinho. Rótulo fixo em português, sem `T()`: "Equipe: voltar ao app"; armado: "Toque de novo: voltar ao app da equipe". As chaves `ljStaffHome`/`ljStaffHomeSure` saíram do I18N.
+- **I1.** `lojaAbrir` grava `sessionStorage['eterna.lojaTab']='1'`. No boot, com essa marca, o app não chama `sessionLoad()` e vai para `#loja` (recarregar, `#caixa` digitado ou aba duplicada não entram logados). A marca sai só no login feito nessa aba e no botão da equipe (`lojaVoltarApp`). Para o computador do cliente, usar o modo quiosque do Chrome (fica para o Guia).
+- **I2.** A versão do catálogo fica em `localStorage['eterna.catalogo.v']` (a migração de preços não se repete por causa de um SIM antigo). O ouvinte de `storage` não adota SIM sem `caixaDin` ou sem `catalogoV` (janela v78 aberta) e avisa "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas." (toast e alerta).
+- **I3.** `saveSim()` devolve true/false; sem espaço, poda o registro antigo e os ajustes automáticos de fotos que não estão no computador e tenta de novo. `lojaDinheiro` desfaz tudo e mostra ao cliente `ljSaveFail` ("Não conseguimos registrar o pedido. Fale com a equipe no balcão.", 5 línguas); `dinConfirmar`/`dinCancelar` desfazem e mostram "Não gravou, tente de novo". Alerta "Armazenamento do navegador cheio" em Alertas.
+- **I4.** A venda grava o total (`s.total`) e o preço de cada item (`{id,v}`) em `lojaPay`, `lojaDinheiro` (registro), `dinConfirmar` (de `r.total`) e `caixaConfirm`. Lista de vendas, CSV, recibo, Início e Caixa leem o gravado (`saleTotal`, `itemV`); o preço atual só vale para vendas antigas sem total.
+- **I5 (requisito de produção, não implementado).** Cartão e PIX no Checkout ainda fecham a venda na hora, sem confirmação real do pagamento. Antes de operar com dinheiro de verdade: TEF/adquirente ou PIX com confirmação do PSP (webhook no servidor), e a venda só vira `paga` com a confirmação; até lá, o Checkout opera com a equipe ao lado.
+- **I6.** O ouvinte de `storage` sempre adota o SIM, mas só redesenha quando muda o que aparece (`simResumo`: pendências do caixa, status das sessões e da sessão aberta, ajuste automático e rolo). `ajQueue` não roda na janela do Checkout.
+- **N1.** `ajAutoSet` confere `can('set','u')` por dentro. **N4.** No CSV, célula que começa com `= + - @` ganha `'` na frente. **N6.** Economia contra a compra avulsa de verdade: Arquibancada + (fotos − 1) × Foto adicional, com `priceOf` (caso do print: 70 + 7 × 35 = 315 − 190 = R$ 125; no "Todas" contam as fotos da sessão).
+
+**Revisor**
+1. Nenhuma forma de pagamento tira uma sessão de `paga`. Sessão paga reaberta no Checkout mostra `ljAlreadyPaid` ("Estas fotos já foram compradas. Fale com a equipe para comprar mais.", 5 línguas) e não deixa pagar; `lojaPay`/`lojaDinheiro` recusam.
+2. Tela final do dinheiro em 390×844: código numa linha (`white-space:nowrap`, `clamp(22px,7vw,34px)`), ícone menor e abaixo do cabeçalho, conteúdo do topo para baixo e botão inteiro na tela (pt e de, conferido no teste).
+3. Fundos de IA: no Checkout "incluídas no pacote"; a receita de fundo só soma o que foi pago no balcão; texto do preço explica as duas regras.
+5. Código morto removido: `lojaChosen`, `incl`, chave I18N `extra`, `autoOn`, `setTimeout(drawLojaQR)` (o `render` desenha o QR).
+4 e 7. Duplicação: `lojaFim` (tela final comum a cartão, PIX e dinheiro) e `dinPegar` (travas comuns de Confirmar e Cancelar).
+6. Ajudante único de impressas: `printsVenda(cart,n)` (pacote até n impressas + 1 por adicional), usado em `lojaCart`, `reconSale`, `caixaConfirm`, `simPrints` e na Venda no balcão.
+9. `lojaVoltarApp` zera `state.lojaSaidaEquipe` depois do `go()` e volta para a tela de origem ou `homeView()`.
+10. Com a galeria `#g` aberta em "esperando o caixa", a confirmação no Caixa chama `pubLoad()` e a galeria segue sozinha.
+11. Fotos da venda iguais na pendente e na paga (`r.n` / `s.nFotos`); Galerias online usa `statusLabel`.
+12. `fmtR` com espaço fixo entre R$ e o valor; ícone do celular no cartão do QR não encolhe; o aviso "impressas prontas em 2 minutos" só aparece quando a compra tem impressas e não em Dinheiro.
+- **I1 (complemento, aprovação da segurança).** A aba aberta direto em `/#loja` (sem `lojaAbrir`) também vira aba do Checkout: no boot, com `#loja`, o app grava `sessionStorage['eterna.lojaTab']='1'` e não chama `sessionLoad()`; o mesmo vale ao entrar em `#loja` pelo `hashchange`. Recarregar com `?y#caixa` continua no Checkout sem login.
