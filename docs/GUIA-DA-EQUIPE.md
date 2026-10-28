@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v78 (28/10/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v79 (28/10/2026).
 
 Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
 
@@ -74,6 +74,20 @@ Para a administração: quem não é fotógrafo vê a coluna **De quem** e escol
 
 Para só sair, sem trocar, toque em **Sair**.
 
+### Ligar e desligar o ajuste automático
+
+O ajuste automático da IA clareia a foto escura, segura a estourada e acerta a cor de toda foto que chega.
+
+1. No topo do **Upload automático** fica o painel **Ajuste automático da IA**.
+2. Toque no botão para trocar entre **Ligado** e **Desligado**.
+3. Embaixo aparece quem mexeu e a hora. Exemplo: "Desligado por Carlos às 14:02".
+
+Bom saber:
+- Vale para o computador do ponto inteiro, não só para você. O próximo fotógrafo encontra do jeito que você deixou.
+- Ao religar, as fotos que chegaram com ele desligado também são ajustadas, em alguns segundos.
+- Toda troca fica registrada com o seu nome.
+- O supervisor vê o painel, mas não consegue mudar.
+
 ---
 
 ## 3. Checkout (caixa e atendimento)
@@ -84,20 +98,101 @@ Para só sair, sem trocar, toque em **Sair**.
 2. Em outro computador, toque em **Abrir Checkout**. No celular, é o ícone de tela ao lado do botão Menu.
 3. O Checkout abre em tela cheia, sem menu e sem login. É a tela do cliente.
 
+**A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu e-mail e o código, ou use outra janela.
+
+### Computador do cliente: Chrome em modo quiosque
+
+No terminal que fica virado para o cliente, abra o Chrome em modo quiosque. Assim o cliente não vê a barra de endereço, as abas nem os botões do navegador.
+
+1. Entre com o perfil **Checkout** (o e-mail do aparelho) ou abra direto `eterna.photo/#loja`.
+2. Abra o Chrome em modo quiosque (atalho do Chrome com a opção `--kiosk`). A TI do ponto deixa o atalho pronto.
+3. Para sair do modo quiosque, a equipe usa Alt+F4 no Windows ou Cmd+Q no Mac.
+
+### Checkout e Caixa no mesmo computador
+
+Nesta versão o Checkout e o Caixa precisam estar **no mesmo computador e no mesmo navegador**, em duas janelas: uma com o Checkout, na tela do cliente, e outra com o Caixa, na tela da equipe. Em computadores diferentes o dinheiro não aparece no Caixa. Isso muda numa próxima versão.
+
+### Depois de cada atualização: feche as janelas antigas
+
+Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eterna abertas naquele computador (Checkout, Caixa e as outras). Uma janela antiga aberta pode atrapalhar o caixa. Se aparecer o aviso "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.", faça isso na hora.
+
 ### Atender um cliente
 
 1. O cliente olha para a câmera. O Checkout encontra as fotos dele.
 2. Se a câmera não encontrar, ele digita o código da sessão (começa com LP).
 3. O cliente passa as fotos e toca em ✓ nas que quer levar e em ✗ nas que não quer.
-4. Na tela seguinte ele escolhe o pacote e a forma de pagamento.
-5. **Antes de ele tocar em pagar, confira o pagamento.** Hoje o Checkout dá a venda como paga assim que o cliente toca, inclusive em Dinheiro. Receba o dinheiro ou veja a maquininha aprovar primeiro.
-6. Aparece a tela final com o QR e o código da galeria (exemplo: `Código K7QM-4WXR`).
-7. A tela final fica 30 segundos e volta sozinha para a câmera, com contagem. Para atender o próximo antes disso, toque em **Voltar ao início**.
+4. Na tela seguinte ele escolhe o pacote e a forma de pagamento. O Checkout já marca o pacote **Ideal**, o mais barato para o número de fotos que ele escolheu.
+5. **Cartão e PIX: confira antes de ele tocar em pagar.** O Checkout dá a venda como paga assim que o cliente toca. Veja a maquininha ou o PIX aprovar primeiro.
+6. **Dinheiro:** a compra fica **aguardando caixa**. Veja abaixo.
+7. Aparece a tela final com o QR e o código da galeria (exemplo: `Código K7QM-4WXR`).
+8. A tela final fica 30 segundos e volta sozinha para a câmera, com contagem. Para atender o próximo antes disso, toque em **Voltar ao início**.
 
 Outras coisas que o cliente pode fazer:
 - Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha.
 - Desistir a qualquer momento com **Voltar ao início**. A escolha dele é apagada e a tela volta para a câmera.
 - Ficar o tempo que precisar escolhendo. O Checkout não volta sozinho no meio da escolha, só depois da compra.
+
+### O carrinho: pacote, adicionais e economia
+
+O catálogo do Tour mudou na v79:
+
+| Pacote | O que leva | Preço |
+| --- | --- | --- |
+| Maracanã Mais | todas as fotos, só digitais | R$ 250 |
+| Tribuna de Honra | 12 fotos, digitais e impressas | R$ 220 |
+| Maracanã | 9 fotos, digitais e impressas | R$ 190 |
+| Gramado | 6 fotos, digitais e impressas | R$ 150 |
+| Zona Mista | 3 fotos, só digitais | R$ 110 |
+| Arquibancada | 1 foto, digital e impressa | R$ 70 |
+| Foto adicional | 1 foto, digital e impressa | R$ 35 |
+
+Todas as impressas são 10×15 cm.
+
+O que o cliente vê no carrinho:
+- **Ideal**: o pacote mais barato para as fotos que ele escolheu, já somando as adicionais. Exemplo: 4 fotos saem por Zona Mista + 1 adicional (R$ 145), mais barato que o Gramado (R$ 150).
+- **Fotos com fundo de IA contam dentro do pacote.** Não são mais cobradas à parte no Checkout.
+- **Resumo linha a linha** antes do total: o pacote e as adicionais, cada um com o valor.
+- **Economia**: quanto ele economiza em comparação a comprar avulso (uma Arquibancada e o resto como Foto adicional). Exemplo: 8 fotos avulsas custariam R$ 70 + 7 × R$ 35 = R$ 315. No Pacote Maracanã ele paga R$ 190 e economiza R$ 125. Só aparece quando há economia.
+- "Cabem mais N fotos neste pacote sem pagar mais", quando ele escolheu menos fotos do que o pacote leva.
+- Impressas: o pacote imprime até o número de fotos escolhidas, mais uma por adicional. Cada adicional sai do rolo do caixa.
+
+Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Catálogo e preços**.
+
+### Sessão que já foi paga
+
+Se o cliente volta ao Checkout com fotos que já comprou, aparece "Estas fotos já foram compradas. Fale com a equipe para comprar mais." O Checkout **não deixa pagar de novo**. Para vender mais fotos para ele, use a Venda no balcão.
+
+### Dinheiro: aguardando caixa (vendedor e caixa)
+
+Quando o cliente escolhe **Dinheiro** no Checkout, a compra não é dada como paga. Ela espera alguém da equipe receber.
+
+**O que o cliente vê**
+1. O botão vira "Finalizar e pagar R$ X no caixa".
+2. Na tela final aparece um ícone amarelo de dinheiro, "Pague no caixa em dinheiro", o valor, um **código** (exemplo: `K7QM-4WXR`) e o QR.
+3. Ele vai ao caixa e mostra o código.
+4. Se ele abrir o QR antes de pagar, aparece "Seu pagamento em dinheiro está esperando o caixa". As fotos só aparecem depois da confirmação.
+
+**Como confirmar (caixa)**
+1. Na barra da equipe, toque em **Caixa**. O número ao lado mostra quantos pagamentos estão esperando.
+2. No topo aparece **Aguardando caixa · dinheiro do Checkout**. A lista atualiza sozinha.
+3. Digite o código que o cliente mostrou no campo de busca. Pode ser com ou sem hífen.
+4. Confira o valor, o número de fotos e de impressas e as miniaturas.
+5. Receba o dinheiro.
+6. Toque em **Recebi R$ X**. A venda fica paga, as impressas saem do estoque, a galeria do cliente libera as fotos e aparece o recibo com "Recebido por <seu nome>".
+
+**Se o cliente desistir**
+1. Toque em **Cancelar** no item.
+2. Confirme em "Cancelar esta compra? Ela não vira venda."
+3. A sessão volta a ficar livre. O cliente pode voltar ao Checkout e comprar de outro jeito.
+
+**Bom saber**
+- Só quem registra pagamento confirma: Atendimento e venda, Supervisor e Admin. O fotógrafo e o computador do Checkout não confirmam.
+- Se duas pessoas tentarem confirmar o mesmo pagamento, a segunda vê "Já confirmada por <nome> às hh:mm". Não duplica a venda.
+- Pagamento esperando há mais de 15 minutos fica amarelo e aparece em **Alertas**.
+- Se o cliente pagar a mesma sessão com cartão ou PIX, a espera some do Caixa sozinha.
+- Na virada do dia, o que ficou esperando vira **não paga** automaticamente.
+- Na **Lista de vendas**, use o filtro **Status** (Pagas, Aguardando caixa, Não pagas, Canceladas). A receita só conta o que foi confirmado.
+- Se aparecer "Não gravou, tente de novo", toque outra vez. Se continuar, avise a administração (o armazenamento do navegador pode estar cheio).
 
 ### Recibo com o QR
 
@@ -106,6 +201,23 @@ Outras coisas que o cliente pode fazer:
 - O QR aparece mesmo sem internet.
 
 ### Painel da equipe e saída (só a equipe usa)
+
+**Botão "Equipe: voltar ao app"**
+
+Quando alguém da equipe abre o Checkout pelo botão **Abrir Checkout**, aparece no alto da tela da câmera o botão **Equipe: voltar ao app**. Ele serve para voltar ao sistema sem precisar entrar de novo.
+
+1. Toque uma vez. O botão muda para "Toque de novo: voltar ao app da equipe".
+2. Toque de novo em até 3 segundos. Você volta para a tela de onde saiu, ainda logado.
+
+O botão só aparece na tela da câmera e **some de vez** assim que o Checkout começa a atender:
+- quando a câmera acha um rosto, **qualquer rosto, inclusive o seu**;
+- quando alguém digita um código, abre a lista de sessões ou toca em uma foto;
+- depois de 10 minutos;
+- depois da primeira compra.
+
+Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o seu e-mail e o código. No computador do perfil Checkout esse botão nunca aparece.
+
+**Painel do logo e Esc**
 
 - **3 toques rápidos no logo** abrem o painel da equipe. Ali estão:
   - **Sessões esperando**: abre as fotos de um cliente pela lista, quando a câmera não acha e ele não tem o código.
@@ -275,15 +387,18 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 
 ---
 
-## 7. Limitações de hoje (v78)
+## 7. Limitações de hoje (v79)
 
 - **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
 - **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.
 - **Compras na galeria online são de teste.** Nada é cobrado. Elas aparecem na Lista de vendas como "teste" e não entram na receita.
-- **Pagamento no Checkout**: a venda fica paga quando o cliente toca em pagar, inclusive em Dinheiro. Confira antes, sempre.
+- **Cartão e PIX no Checkout**: a venda fica paga quando o cliente toca em pagar. O sistema ainda não recebe a confirmação da maquininha nem do banco. Confira antes, sempre, e mantenha alguém da equipe perto do Checkout. Dinheiro já espera o caixa.
+- **Checkout e Caixa no mesmo computador**: o dinheiro só aparece no Caixa se as duas janelas estiverem no mesmo computador e no mesmo navegador.
+- **Ícone do celular no cartão do QR** está quase invisível na tela final. Ajuste previsto.
+- **No celular (tela estreita)**, na tela "Estas fotos já foram compradas", o botão **Voltar ao início** aparece só como ícone. Ajuste previsto.
 - **Cancelar uma venda do Checkout** tira o download no sistema, mas a foto pode continuar liberada no computador do ponto. Avise a administração quando cancelar.
 - **Compra feita na galeria da escola** não aparece na galeria da sessão da família, e vice-versa.
 - **"Baixar todas"** baixa as fotos uma por uma (ainda não há arquivo ZIP).
 - **Fotos com fundo de IA** ainda não aparecem na galeria por QR. A compra de fundo de IA depois da visita, que existia na tela Convidado, volta na galeria online numa próxima fase.
-- **Permissões**: nesta fase elas organizam o que cada pessoa vê e faz, mas ainda são conferidas só no navegador. Ainda não são uma trava de segurança no servidor. Isso entra na próxima etapa (v79).
-- **Fotógrafo sem o próprio índice**: no perfil pronto, o fotógrafo não vê mais a tela Fotógrafos. Está em confirmação com o Eduardo. Se precisar, a administração libera em Permissões.
+- **Permissões e confirmação do caixa**: nesta fase organizam o que cada pessoa vê e faz, mas ainda são conferidas só no navegador. Ainda não são uma trava de segurança no servidor. Isso entra quando o servidor entrar.
+- **Fotógrafo sem o próprio índice**: no perfil pronto, o fotógrafo não vê a tela Fotógrafos. Decisão confirmada pelo Eduardo.

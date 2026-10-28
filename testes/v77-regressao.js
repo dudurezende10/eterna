@@ -309,7 +309,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     const depois=await receita();const linha=await A1.evaluate(()=>{ETERNA.state.sales.canal='online';ETERNA.render();return 1;}).then(()=>A1.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(t=>t.innerText.replace(/\s+/g,' ')).find(t=>/O901/.test(t))));await A1.evaluate(()=>{ETERNA.state.sales.canal='all';ETERNA.render();});
     ok(antes.rec&&antes.rec===depois.rec&&antes.vendas===depois.vendas&&linha&&/teste/.test(linha)&&/Online/.test(linha),'S3: venda online de teste deveria aparecer como teste e ficar fora da receita: '+JSON.stringify({antes,depois,linha:String(linha)}));
     const [dl]=await Promise.all([A1.waitForEvent('download'),A1.click('[data-act="sales-csv"]')]);const csv=fs.readFileSync(await dl.path(),'utf8').split('\n');
-    ok(/;"?canal"?$/.test(csv[0].trim())&&csv.some(l=>/"O901".*"teste";"online"/.test(l))&&csv.some(l=>/"loja"\s*$/.test(l)),'CSV: coluna canal e venda de teste: '+csv[0]+' / '+(csv.find(l=>/O901/.test(l))||'sem O901'));
+    ok(/;"?canal"?;"?caixa"?;"?caixa_em"?$/.test(csv[0].trim())&&csv.some(l=>/"O901".*"teste";"online"/.test(l))&&csv.some(l=>/"loja";"[^"]*";"[^"]*"\s*$/.test(l)),'CSV: colunas canal, caixa e caixa_em (v79) e venda de teste: '+csv[0]+' / '+(csv.find(l=>/O901/.test(l))||'sem O901'));
     await A1.screenshot({path:PR+'/v77-lista-vendas.png'});
     // Catálogo › Checkout: campo novo, limites 5 a 120
     await A1.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});const vals=[];

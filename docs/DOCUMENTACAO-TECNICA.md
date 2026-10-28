@@ -639,7 +639,8 @@ Fontes: protótipo em [eterna.photo](https://eterna.photo) e repositório [githu
 | v1.5 | 26/10/2026 | hello@eterna.photo vira o e-mail oficial do Eterna (códigos de login e contato) |
 | v1.6 | 26/10/2026 | sincronização Roverpix pelo agente (chave local, só agregados no app) |
 | v1.7 | 28/10/2026 | galeria online por QR, fase 1 (app v77): rotas `#loja` e `#g`, manifesto, adaptadores, links HMAC, lápide, limites, CORS e Host, retenção 60 dias, administração Galerias online, canal Online, tempo da tela final, segurança e pendências da fase 2 |
-| v1.8 | 28/10/2026 | acesso, permissões e menus (app v78): módulos novos, `MODULE_INFO`, duas camadas módulo e menu, `permValidate`, `ACT_MOD`, auditoria, `loginMark`, migração v2, tela "sem acesso", menus em grupos e gaveta no celular, telas removidas, contrato de servidor da v79 e pendências de segurança |
+| v1.8 | 28/10/2026 | acesso, permissões e menus (app v78): módulos novos, `MODULE_INFO`, duas camadas módulo e menu, `permValidate`, `ACT_MOD`, auditoria, `loginMark`, migração v2, tela "sem acesso", menus em grupos e gaveta no celular, telas removidas, contrato de servidor e pendências de segurança |
+| v1.9 | 28/10/2026 | Checkout, caixa e ajuste automático (app v79): dinheiro aguardando caixa (`SIM.caixaDin`, estados, Caixa, Lista de vendas, CSV, Alertas, contrato futuro), sincronização entre janelas, aba do Checkout sem login, saída da equipe só na câmera, interruptor do ajuste automático, catálogo novo do Tour, `lojaIdeal`, `printsVenda`, economia, valor gravado na venda e pendências |
 
 
 ## Fundos de IA com Photoroom (v41, 27/10/2026)
@@ -889,7 +890,7 @@ Catálogo e preços › seção Checkout › "Tempo da tela final com o QR (segu
 - O celular do cliente não alcança o agente (127.0.0.1 no computador do ponto, e o navegador bloqueia https chamando IP de rede local). No celular, o QR mostra "Suas fotos estão chegando" até a nuvem (fase 2). A galeria funciona de verdade só no computador do ponto e nos testes.
 - Pagamento simulado é o padrão: nada é cobrado e toda venda online sai com `teste:true`, fora da receita.
 - Modo SIM: sem agente, toda a decisão (rosto, direito, compra) fica no navegador e é fácil de contornar. Só vale no navegador que tem o SIM e não expõe nada a terceiros, mas `window.ETERNA` expõe `SIM`. Precisa de uma chave para desligar em produção.
-- Permissões da administração são verificadas só no navegador (o servidor passa a verificar a partir da v79).
+- Permissões da administração são verificadas só no navegador (o servidor passa a verificar quando entrar; ainda sem versão marcada).
 - Estado em memória no agente (`acessos`, `_janelas`, `_falhas`, `_evento_acertos`): reiniciar o agente derruba os acessos, e o cliente volta para a selfie.
 - Vendas e consentimentos em jsonl, com id de venda pela contagem de linhas.
 - Sem prova de vida (liveness) na selfie. Risco aceito: quem tem o QR normalmente é o comprador.
@@ -899,7 +900,7 @@ Catálogo e preços › seção Checkout › "Tempo da tela final com o QR (segu
 **Pendências para a fase 2**
 
 - **IMPORTANTE.** Grupo de escola: quem já abriu as fotos de uma criança pode recortar o rosto de outra da vitrine e abrir as fotos dela. A v77 só reduz o risco (2 crianças por IP e galeria em 24 h, 60 acessos por galeria por hora). Decisão do Eduardo: PIN por criança ou família, ou desfoque dos outros rostos na vitrine.
-- **IMPORTANTE.** Pagamento na Loja: `lojaPay` marca a venda como paga pelo que o cliente toca, inclusive Dinheiro, e isso libera o original na galeria. Sem TEF, a venda deve ficar "aguardando caixa" até um operador confirmar, com terminal e operador registrados. Decisão pendente do Eduardo.
+- **IMPORTANTE.** Pagamento na Loja: Dinheiro fica "aguardando caixa" desde a v79 (seção "Checkout, caixa e ajuste automático"). Cartão e PIX ainda viram `paga` pelo que o cliente toca e liberam o original na galeria (I5 da v79).
 - **IMPORTANTE.** Limite de selfies por `(ip, token)` no lugar de só por IP: hoje 10 por minuto num IP bloqueiam todos atrás do mesmo NAT (o Wi-Fi do estádio). Juntar com teto global na fila do `_busca_lock` e `X-Forwarded-For` só de proxy confiável.
 - **IMPORTANTE.** Limite de concorrência nas rotas `/g/*` (a v77 já tem `timeout` de 20 s por conexão).
 - **IMPORTANTE.** Adquirente real (Mercado Pago ou Asaas): liberar só pelo webhook com assinatura validada ou pela consulta, nunca pelo retorno do navegador.
@@ -1088,7 +1089,7 @@ const ACT_MOD={'user-new':'usuarios','user-save':'usuarios','user-active':'usuar
 - **IMPORTANTE.** O `state.db` aceita escrita de qualquer pessoa, inclusive em `usuarios/`, `usuarios_login/` e `usuarios_log/`. O histórico pode ser apagado ou forjado, e o campo `por` é declarado pelo próprio navegador.
 - O agente do ponto não confere usuário nas rotas (já registrado na v77).
 
-### Contrato do servidor (alvo da v79, ainda não implementado)
+### Contrato do servidor (ainda não implementado)
 
 | Rota (Bearer do `/auth/verificar`) | Função |
 | --- | --- |
@@ -1101,7 +1102,7 @@ const ACT_MOD={'user-new':'usuarios','user-save':'usuarios','user-active':'usuar
 - O retrato `/auth/eu` vem assinado (Ed25519) com validade de 12 h. O agente valida com a chave pública. Offline, uma revogação demora no máximo até essa validade vencer.
 - Mudar permissão exige servidor (fica bloqueado offline); o ponto opera com o último retrato assinado.
 
-### Pendências de segurança (para a v79)
+### Pendências de segurança (para o servidor)
 
 - **IMPORTANTE.** Servidor como fonte da verdade: contrato acima, `permValidate` no servidor e auditoria só de acréscimo. Fecha os três riscos aceitos do protótipo.
 - **IMPORTANTE.** Recuperação de admin (D12) sem trava: o `ensureAdmin` roda sempre que o app carrega, só localmente, e um `onSnapshot('usuarios')` posterior pode sobrescrever o admin recuperado. Pôr atrás de uma marca de protótipo e trocar por um comando no servidor.
@@ -1111,9 +1112,147 @@ const ACT_MOD={'user-new':'usuarios','user-save':'usuarios','user-active':'usuar
 
 Corrigido na volta da v78: `permValidate` com `sem_permissao`, `ACT_MOD` no `guardAct` e bloqueio de gravação em tela sem módulo (bloqueante da segurança); login grava só `lastLogin`; e-mail inválido (`__proto__`) não entra pelo `onSnapshot` nem pelo `localStorage`.
 
-### Decisões pendentes do Eduardo
+### Decisões do Eduardo (fechadas em 28/10)
 
-- Perfil Fotógrafo sem o Índice do fotógrafo e sem o Ajuste automático no menu.
+- Perfil Fotógrafo sem o Índice do fotógrafo e sem a tela Ajuste automático no menu. Ele liga e desliga o ajuste pelo Upload automático (v79).
 - Ajuste automático no grupo Configurações, com a tela no módulo `set`.
-- Módulos novos `escala`, `laboratorio` e `financeiro`.
-- Mensagem cortada no pedido: "Aí ele vai passar para o...". Se for uma passagem do fotógrafo para outra etapa, vira a v79.
+- Módulos novos `escala`, `laboratorio` e `financeiro` mantidos.
+- A mensagem cortada "Aí ele vai passar para o..." foi descartada.
+
+## Checkout, caixa e ajuste automático (v79, 28/10/2026)
+
+A v79 muda quatro coisas. Dinheiro no Checkout fica "aguardando caixa" até a equipe confirmar. O fotógrafo liga e desliga o ajuste automático no Upload. A equipe tem uma saída do Checkout só na tela da câmera. O carrinho calcula o pacote ideal, as impressas e a economia pelo catálogo novo do Tour.
+
+Plano com todas as decisões e as correções da revisão: `docs/planos/2026-10-28-v79-checkout-caixa-ajuste.md`. Testes: `testes/v79-regressao.js`.
+
+### Limite desta versão
+
+Checkout e Caixa funcionam **no mesmo computador e no mesmo navegador**, em duas janelas (`#loja` na tela do cliente, Caixa na tela da equipe). Entre computadores diferentes só com o agente ou o servidor (plano v80, vários terminais).
+
+### Dinheiro aguardando caixa
+
+**Fluxo**
+
+1. Cliente escolhe Dinheiro no carrinho. O botão vira "Finalizar e pagar R$ X no caixa" e aparece a nota "Em dinheiro, a compra é confirmada no caixa."
+2. `lojaDinheiro(card)`: `simFresh()`, fecha uma pendência anterior da mesma sessão como `substituida`/`novo_pedido`, cria o token da galeria **sem publicar** (`galDaSessao(card,true)`), grava o registro em `SIM.caixaDin` e põe a sessão em `status:'aguardando'`, `din:<id>`. Não baixa estoque, não grava `aiOf().bought`, não gera `saleNo`.
+3. Tela final do cliente (`lj-wait`, ícone de dinheiro em amarelo): "Pague no caixa em dinheiro", valor, código `XXXX-XXXX` (o mesmo da galeria) e QR. Volta à câmera em `SIM.lojaFimSeg` segundos, como as outras.
+4. Na janela do Caixa a pendência aparece sozinha (evento `storage`) em **Caixa › Aguardando caixa · dinheiro do Checkout**.
+5. **Recebi R$ X** (`dinConfirmar`) ou **Cancelar** com segunda confirmação (`dinCancelar`).
+
+**Contrato `SIM.caixaDin`** (lista, mais novo primeiro)
+
+```json
+{"id":"D<ts36><rand4>","venue":"maracana","card":"LP...","token":"<galeria>","codigo":"ABCD-2345",
+ "criada":"ISO","total":190,"prints":8,"n":8,"nPh":4,"nAI":4,
+ "cart":[{"id":"maracana","v":190}],"selected":["..."],"aiSel":["ph|bg"],
+ "estado":"aguardando|confirmada|cancelada|nao_paga|substituida",
+ "fechada":"ISO|null","por":"email|sistema|null","porNome":"Thainá|null",
+ "motivo":"null|cancelada_no_caixa|fim_do_dia|novo_pedido|pago_de_outro_jeito","saleNo":"E012|null"}
+```
+
+Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din:<id>`. Confirmada: `status:'paga'`, `payment:'Dinheiro'`, `paidAt` (hora da confirmação), `saleNo`, `caixaPor` (nome), `caixaEm`, `prints`, `total`.
+
+| Estado | Quando | Sessão volta para |
+| --- | --- | --- |
+| `aguardando` | cliente finalizou em Dinheiro | fica `aguardando` |
+| `confirmada` | Recebi R$ X no Caixa | `paga` |
+| `cancelada` | Cancelar no Caixa (`cancelada_no_caixa`) | `pronta` |
+| `nao_paga` | virada do dia local, `por:'sistema'`, `fim_do_dia` (`dinVirada`, no boot e a cada 60 s) | `pronta` |
+| `substituida` | novo pedido em Dinheiro (`novo_pedido`) ou pago com cartão, PIX ou no balcão (`pago_de_outro_jeito`) | conforme o novo pagamento |
+
+**Regras**
+
+- Uma pendência aberta por sessão.
+- `dinPegar(id)` concentra as travas de Confirmar e Cancelar: recusa com `state.lojaRota` ou `state.pub` ("Confirme no Caixa da equipe"), exige `can('venda','c')`, roda `simFresh()` e é idempotente ("Já confirmada por <nome> às hh:mm"). Estoque, `saleNo` e receita mudam uma vez só.
+- Confirmar aplica `cart`, `selected` e `aiSel` do registro, grava `aiOf(card).bought` com `where:'loja'`, baixa `prints` de `SIM.stock['Caixa 1']`, publica a galeria (`galDaVenda`) e mostra o recibo com "Recebido por <nome> às hh:mm". Se a galeria `#g` estiver aberta em "esperando o caixa", ela recarrega sozinha (`pubLoad`).
+- Cancelar não publica a galeria. O token é reaproveitado numa compra futura.
+- Retenção: registros fechados ficam 30 dias, no máximo 1000 (`DIN_DIAS`, `DIN_MAX`). Sem dado do cliente.
+- `CAIXA_ALERTA_MIN=15`: pendência com mais de 15 min vira alerta "Dinheiro esperando no caixa há N min · código X" e a pill fica amarela.
+
+**Onde aparece**
+
+| Lugar | O que mostra |
+| --- | --- |
+| Caixa (`vCaixa`) | painel no topo: busca por código ou sessão (ignora hífen e maiúsculas), código grande, sessão, valor, hora, "há N min", fotos e impressas, até 4 miniaturas. Botões só com `venda.c`; sem ela, "Só quem registra pagamento confirma." |
+| Barra da equipe (`#rail-ck`) | botão Caixa com o número de pendências, para quem tem `canView('caixa')` e `venda.c` |
+| Início (`vPerfis`) | cartão "Caixa · N aguardando dinheiro" e pill "N aguardando caixa" |
+| Lista de vendas | status "aguardando caixa" e "não paga" (`statusLabel`), filtro Status (Todos, Pagas, Aguardando caixa, Não pagas, Canceladas, `sales-status`), bloco "Aguardando caixa" com N e R$. Receita só soma `paga` |
+| CSV | `status` `aguardando` ou `nao_paga`; colunas novas no fim: `caixa` (nome) e `caixa_em` (ISO). Nunca o e-mail. Célula que começa com `= + - @` ganha `'` na frente |
+| Galeria `#g` | passo `aguarda_caixa`: "Seu pagamento em dinheiro está esperando o caixa", sem foto liberada e sem compra |
+| Alertas | pendência acima de 15 min; janela antiga aberta; armazenamento cheio |
+
+**Permissões**: `din-confirm`, `din-cancel` e `din-cancel-ok` em `WRITE_OPS` com `c` e `ACT_MOD` `venda`. Podem Atendimento e venda, Supervisor e Admin. Fotógrafo, Validador e o perfil Checkout não. `din-q`, `din-cancel-no` e `sales-status` não gravam. `MODULE_INFO.venda.c`: "registrar pagamento, reimprimir, confirmar ou cancelar dinheiro do Checkout".
+
+**Contrato futuro do servidor** (documentado, não implementado)
+
+| Rota | Função |
+| --- | --- |
+| `POST /caixa/pendentes` | cria a pendência com o corpo do registro, sem `por` |
+| `GET /caixa/pendentes?venue=&estado=aguardando` | lista do caixa |
+| `POST /caixa/pendentes/<id>/confirmar` e `/cancelar` | corpo `{"esperado":"aguardando"}`; 409 com `{estado,porNome,fechada}` se já fechada; `por` vem do token, nunca do corpo |
+
+### Sincronização entre janelas
+
+- `SIM` continua um bloco único em `localStorage['eterna.sim.v1']`.
+- `simFresh()` relê o `SIM` gravado pela outra janela antes de qualquer ação de caixa.
+- Ouvinte `storage`: sempre adota o `SIM` novo, mas só redesenha quando muda o que aparece (`simResumo`: pendências do caixa, status das sessões e da sessão aberta, ajuste automático e rolo). Com um campo em foco, não redesenha.
+- **Janela antiga (I2).** `SIM` sem `caixaDin` ou sem `catalogoV` vem de uma janela v78. Não é adotado. Aparecem o toast e o alerta "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas."
+- `ajQueue` não roda na janela do Checkout.
+- **Armazenamento cheio (I3).** `saveSim()` devolve `true`/`false`. Sem espaço, poda o registro antigo e os ajustes automáticos de fotos que não estão no computador e tenta de novo. Se falhar: `lojaDinheiro` desfaz e mostra ao cliente `ljSaveFail` ("Não conseguimos registrar o pedido. Fale com a equipe no balcão.", 5 línguas); Confirmar e Cancelar desfazem e mostram "Não gravou, tente de novo". Alerta "Armazenamento do navegador cheio".
+- Continua "último que grava ganha" no `SIM` inteiro. O servidor resolve.
+
+### Aba do Checkout sem login (D7 e I1)
+
+- Sair do `#loja` por qualquer caminho (Esc, painel, trocar o endereço, voltar do navegador, ir para `#g`) passa por `lojaSair`, que sempre remove `eterna.session` e zera `state.user`.
+- `sessionStorage['eterna.lojaTab']='1'` marca a aba como tela do cliente. É gravada por `lojaAbrir`, no boot com `#loja` e ao entrar em `#loja` pelo `hashchange`. Com a marca, o boot não chama `sessionLoad()` e vai para `#loja`. Recarregar, digitar `#caixa` ou duplicar a aba não entra logado.
+- A marca só sai com um login feito nessa aba ou pelo botão da equipe (`lojaVoltarApp`).
+- Para o computador do cliente: Chrome em modo quiosque (Guia da equipe).
+
+### Saída da equipe no Checkout
+
+- `lojaAbrir` liga o modo equipe (`state.lojaEquipeAte`, `LOJA_EQUIPE_MS` = 10 min) quando quem abre é da equipe e não é o perfil Checkout. Guarda a tela de origem em `state.lojaDe`.
+- `lojaEquipeOn()` exige `#loja`, usuário, não ser o perfil Checkout, `state.kiosk.step==='code'` (só na câmera) e o prazo.
+- `lojaCliente()` encerra o modo equipe para sempre na primeira interação de cliente: `kiosk-go`, `kiosk-emerg`, Enter no código, `cam-pick`, a câmera achando um rosto (`camFound`, qualquer rosto, inclusive o da equipe), `loja-exit`, `loja-new`. Também zeram `lojaPay` e `lojaDinheiro`. Recarregar a página zera.
+- Botão `loja-inicio`, rótulo fixo em português: "Equipe: voltar ao app". Primeiro toque arma por 3 s ("Toque de novo: voltar ao app da equipe"). Segundo toque no prazo chama `lojaVoltarApp()`: desliga timer e câmera, limpa a marca da aba, `replaceState('#')` e volta para `state.lojaDe` ou `homeView()`, **logado**. É o único caminho do `#loja` para o app logado.
+
+### Ajuste automático: interruptor do fotógrafo
+
+- `ajAutoPanel()` no topo do Upload automático (`vImportarCore`) e em Configurações › Ajuste automático (`vAjustes`). Título "Ajuste automático da IA", botão Ligado/Desligado e a linha "Desligado por Carlos às 14:02".
+- `ajAutoSet(on)` grava `SIM.autoAj` e `SIM.autoAjPor={on,por,nome,em}`, registra no log e confere `can('set','u')` por dentro.
+- Vale para o computador do ponto inteiro (D9). Ao religar, o `ajQueue` ajusta as fotos que chegaram com ele desligado.
+- `WRITE_OPS['aj-autotoggle']='u'`, `ACT_MOD` `set`. Fecha a brecha da v78 em que o Supervisor (só leitura em `set`) mexia no ajuste.
+- O menu do Fotógrafo não muda: a tela Ajuste automático continua só em Configurações.
+
+### Catálogo novo e carrinho
+
+| id | Produto | Preço | Digitais | Impressas 10×15 |
+| --- | --- | --- | --- | --- |
+| `mais` | Pacote Maracanã Mais | R$ 250 | todas | 0 |
+| `tribuna` | Pacote Tribuna de Honra (novo) | R$ 220 | 12 | 12 |
+| `maracana` | Pacote Maracanã | R$ 190 | 9 | 9 |
+| `gramado` | Pacote Gramado (novo) | R$ 150 | 6 | 6 |
+| `zona` | Pacote Zona Mista | R$ 110 | 3 | 0 |
+| `arq` | Pacote Arquibancada | R$ 70 | 1 | 1 |
+| `extra` | Foto adicional | R$ 35 | 1 | 1 |
+| `fundo`, `dig` | sem mudança | R$ 40, R$ 39 | | |
+
+- **Migração única.** Preços editados antes para `maracana`, `zona`, `arq` e `extra` são descartados uma vez, com registro no log. A versão fica em `localStorage['eterna.catalogo.v']` e em `SIM.catalogoV=2`, para um `SIM` antigo não repetir a migração.
+- **Fotos com fundo de IA contam dentro do pacote** no Checkout (decisão do Eduardo). Número de fotos = fotos do campo + fotos com fundo de IA. O carrinho não leva mais itens `fundo`. A compra continua registrando quais são de IA (`aiOf(card).bought`, `s.aiSel`). A receita de fundo só soma o que foi pago no balcão.
+- `lojaIdeal(n)`: menor custo de pacote + adicionais (`priceOf`, então vale com preço editado). Empate: mais impressas; depois o pacote menor. Só preço, inclusive contra o "Todas". Com os preços padrão: 1 Arquibancada R$ 70; 2 Arquibancada + 1 R$ 105; 3 Zona Mista R$ 110; 4 Zona Mista + 1 R$ 145; 5 e 6 Gramado R$ 150; 7 Gramado + 1 R$ 185; 8 e 9 Maracanã R$ 190; 10 a 12 Tribuna R$ 220; 13 ou mais Todas R$ 250.
+- `printsVenda(cart,n)`: impressas = min(fotos, impressas do pacote) + 1 por adicional. Usado em `lojaCart`, `reconSale`, `caixaConfirm`, `simPrints` e na Venda no balcão.
+- **Economia (N6):** compra avulsa de verdade = Arquibancada + (fotos − 1) × Foto adicional, menos o que a pessoa paga. No "Todas" contam as fotos da sessão. Só aparece quando é maior que zero. Exemplo: 8 fotos no Maracanã, 70 + 7 × 35 = 315 − 190 = R$ 125.
+- Carrinho: selo Ideal, linha "+ N adicionais de R$ X" por pacote, resumo linha a linha (`.lj-sum`) antes do Total, "Cabem mais N fotos neste pacote sem pagar mais" quando sobra espaço. "Impressas prontas em 2 minutos" só aparece com impressas e fora do Dinheiro.
+- **Valor gravado (I4).** A venda grava `s.total` e o preço de cada item (`{id,v}`) em `lojaPay`, `lojaDinheiro`, `dinConfirmar` e `caixaConfirm`. Lista de vendas, CSV, recibo, Início e Caixa leem o gravado (`saleTotal`, `itemV`). O preço atual só vale para venda antiga sem total.
+- Vendas antigas reconstruídas da Roverpix (`reconSale`) usam o Ideal do catálogo atual.
+- **Sessão paga não paga de novo.** Nenhuma forma de pagamento tira uma sessão de `paga`. Reaberta no Checkout, mostra `ljAlreadyPaid` ("Estas fotos já foram compradas. Fale com a equipe para comprar mais.", 5 línguas); `lojaPay` e `lojaDinheiro` recusam.
+- `fmtR` usa espaço fixo entre R$ e o valor.
+
+### Pendências de segurança e de tela (v79)
+
+- **IMPORTANTE (I5, requisito de produção).** Cartão e PIX no Checkout ainda fecham a venda na hora, sem confirmação real do pagamento. Antes de operar com dinheiro de verdade: TEF ou adquirente, ou PIX com confirmação do PSP (webhook no servidor), e a venda só vira `paga` com a confirmação. Até lá, o Checkout opera com a equipe ao lado.
+- **IMPORTANTE.** Confirmação, permissão, `por` e idempotência valem só dentro do mesmo navegador. Quem mexe no `localStorage` forja uma confirmação. Corrige com o contrato do servidor acima.
+- **IMPORTANTE.** Risco que sobra no botão da equipe: um cliente na tela da câmera, nos primeiros 10 min de um Checkout aberto pela equipe e antes de qualquer interação. Mitigação: no terminal do cliente, usar o perfil Checkout ou `#loja` direto, em Chrome modo quiosque.
+- Compra em dobro: se a galeria da sessão já estava publicada antes, o cliente pode comprar online enquanto o dinheiro espera. Risco baixo na fase 1; rever na fase 2.
+- Sugestão para depois: relatório "canceladas no caixa por operador".
+- Tela: o ícone do celular no cartão do QR está quase invisível.
+- Tela: em 390 px, na tela "já compradas", o botão "Voltar ao início" aparece só como ícone.
