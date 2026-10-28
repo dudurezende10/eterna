@@ -1,17 +1,87 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v77 (28/10/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v78 (28/10/2026).
 
-Nomes: a tela do cliente na loja se chama **Checkout**. No menu de hoje ela ainda aparece como **Loja**; a partir da v78 vira o botão **Abrir Checkout**. É a mesma tela.
+Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
 
 ---
 
-## 1. Checkout (caixa e atendimento)
+## 1. O menu (todos)
+
+### Como funciona
+
+O menu fica do lado esquerdo e é dividido em grupos:
+
+| Grupo | O que tem |
+| --- | --- |
+| Dashboard | Bandeiras, Estoque, Semana, Fotógrafos, Vendas e caixa, Lista de vendas, Galerias online |
+| Curadoria | Qualidade, Treino da IA, Alertas |
+| Fotógrafo | Diário do set, Upload automático, Escala 5×2 |
+| Configurações | Repositório, Identidade, Catálogo e preços, Fundos de IA, Ajuste automático, Usuários, Permissões |
+| Laboratório | Vestiário |
+
+1. Toque no nome do grupo para abrir. Toque de novo para fechar.
+2. O grupo da tela em que você está fica sempre aberto.
+3. Para voltar ao **Início**, toque no logo.
+4. O botão **Abrir Checkout** fica fora dos grupos, logo abaixo do logo.
+
+Cada pessoa só vê as telas que pode usar. Se faltar uma tela de que você precisa, peça à administração.
+
+### No celular
+
+1. No alto da tela ficam o logo, o ícone do Checkout e o botão **Menu**.
+2. Toque em **Menu**. Os grupos abrem por cima da tela.
+3. Toque no grupo e depois na tela. O menu fecha sozinho.
+4. Para fechar sem escolher, toque na parte escura ao lado ou em **Menu** de novo.
+
+### O que mudou na v78
+
+- **Loja** virou **Checkout**, com o botão **Abrir Checkout**.
+- **Fluxo**, **Anfitrião no set** e **Convidado** saíram do menu.
+- O check-in da câmera e a troca de fotógrafo estão agora no **Upload automático** (parte 2).
+- O cliente vê as fotos só pela galeria online, com o QR do recibo. Não existe mais login de cliente.
+- Se ao entrar aparecer "Seu acesso ainda não foi liberado", a administração ainda não liberou nenhuma tela para você. Peça ao administrador.
+
+---
+
+## 2. Fotógrafo (Upload automático)
+
+### O que o fotógrafo vê
+
+- Ao entrar, cai direto no **Upload automático**.
+- No menu, só o grupo **Fotógrafo**: Diário do set, Upload automático e Escala 5×2.
+- Não vê Checkout, vendas, números de outros fotógrafos, Curadoria nem Configurações.
+
+### Check-in da câmera (todo dia, ao ligar a câmera)
+
+1. Ligue a câmera e faça um clique de teste.
+2. Abra **Upload automático**. No painel **Check-in**, a câmera aparece em poucos segundos, com o número de série e as fotos de hoje.
+3. Na linha da sua câmera, toque em **É a minha**. Aparece **sua**.
+4. Pronto. Toda foto daquela câmera no dia é sua, pelo Wi-Fi ou pelo 5G.
+
+Sem o check-in, as fotos caem em **Sem fotógrafo**.
+
+Dica: se o seu nome estiver gravado na câmera (menu da câmera › Informações de copyright › Nome do autor), o Eterna reconhece sozinho.
+
+Para a administração: quem não é fotógrafo vê a coluna **De quem** e escolhe o fotógrafo de cada câmera na lista. Para isso a pessoa precisa poder **Alterar** o Upload.
+
+### Trocar de fotógrafo no mesmo computador
+
+1. No alto do Upload automático aparece **Neste computador**, com o nome de quem está logado.
+2. Toque em **Trocar fotógrafo**. Quem estava sai.
+3. O próximo fotógrafo entra com o e-mail dele e o código.
+4. Ele volta direto para o Upload automático e faz o check-in da câmera dele.
+
+Para só sair, sem trocar, toque em **Sair**.
+
+---
+
+## 3. Checkout (caixa e atendimento)
 
 ### Abrir
 
-1. No computador do Checkout, entre com o e-mail do aparelho. Se ele tiver o perfil Quiosque, o Checkout abre sozinho.
-2. Em outro computador, toque em **Loja** no menu.
+1. No computador do Checkout, entre com o e-mail do aparelho. Se ele tiver o perfil Checkout, a tela abre sozinha.
+2. Em outro computador, toque em **Abrir Checkout**. No celular, é o ícone de tela ao lado do botão Menu.
 3. O Checkout abre em tela cheia, sem menu e sem login. É a tela do cliente.
 
 ### Atender um cliente
@@ -32,14 +102,14 @@ Outras coisas que o cliente pode fazer:
 ### Recibo com o QR
 
 - O QR e o código aparecem na tela final logo depois da compra. Peça para o cliente fotografar o QR com o celular.
-- Se ele saiu sem fotografar, abra **Lista de vendas**, ache a venda e toque em **Recibo**. O recibo mostra o mesmo QR e o mesmo código, e dá para reimprimir.
+- Se ele saiu sem fotografar, abra **Lista de vendas**, ache a venda e toque em **Recibo**. O recibo mostra o mesmo QR e o mesmo código, e dá para reimprimir. Ali também tem **Abrir a galeria online**.
 - O QR aparece mesmo sem internet.
 
 ### Painel da equipe e saída (só a equipe usa)
 
 - **3 toques rápidos no logo** abrem o painel da equipe. Ali estão:
   - **Sessões esperando**: abre as fotos de um cliente pela lista, quando a câmera não acha e ele não tem o código.
-  - **Sair da Loja**: fecha o Checkout.
+  - **Sair do Checkout**: fecha o Checkout.
   - **Fechar**: volta para o cliente.
 - **Esc** no teclado sai do Checkout na hora.
 - Sair sempre leva para a tela de login. Para voltar ao sistema, entre de novo com o seu e-mail e o código.
@@ -47,9 +117,9 @@ Outras coisas que o cliente pode fazer:
 
 ---
 
-## 2. Administração (Galerias online)
+## 4. Administração (Galerias online)
 
-Fica no menu **Galerias online** (no Dashboard a partir da v78). Admin e supervisor veem. Vendedor e Checkout não veem.
+Fica no grupo **Dashboard** › **Galerias online**. Admin e supervisor veem. Vendedor, fotógrafo e o computador do Checkout não veem.
 
 ### Dar uma cortesia
 
@@ -105,7 +175,84 @@ Em **Lista de vendas**, use o filtro **Canal: Online**. Hoje elas aparecem como 
 
 ---
 
-## 3. O que dizer ao cliente
+## 5. Administração (Usuários e Permissões)
+
+Fica no grupo **Configurações**. **Usuários** é o cadastro da equipe. **Permissões** é onde se decide o que cada pessoa vê e faz. Só o admin vê as duas telas.
+
+### As quatro palavras
+
+Em Permissões, cada parte do sistema tem quatro caixas:
+
+| Caixa | Quer dizer |
+| --- | --- |
+| **Criar** (C) | incluir algo novo |
+| **Ver** (R) | abrir a tela e consultar |
+| **Alterar** (U) | mudar o que já existe |
+| **Excluir** (D) | apagar ou cancelar |
+
+As letras vêm do inglês (Create, Read, Update, Delete). Embaixo do nome de cada parte, uma linha explica o que cada caixa faz ali. Exemplo: em Números de vendas, **Excluir** é cancelar venda. Um traço no lugar da caixa quer dizer que ela não se aplica àquela parte.
+
+### Cadastrar uma pessoa
+
+1. Abra **Configurações** › **Usuários** › **Novo usuário**.
+2. Escreva o nome e o e-mail.
+3. Se for fotógrafo, escolha o nome dele em **Fotógrafo vinculado**.
+4. Em **Perfil**, escolha um perfil pronto (tabela abaixo). Se ainda não souber o que liberar, escolha **Sem acesso ainda**.
+5. Toque em **Criar acesso**.
+
+Quem entra com "Sem acesso ainda" vê a mensagem "Seu acesso ainda não foi liberado" até alguém liberar em Permissões.
+
+### Dar ou tirar acesso
+
+1. Abra **Configurações** › **Permissões** › aba **Por usuário**.
+2. Busque a pessoa pelo nome ou e-mail e toque nela.
+3. **Jeito rápido:** escolha um **Perfil pronto**, toque em **Aplicar perfil** e depois em **Salvar**.
+4. **Jeito fino:** em cada linha, marque o que a pessoa pode fazer.
+   - Marcar Criar, Alterar ou Excluir marca **Ver** sozinho.
+   - Desmarcar **Ver** limpa a linha inteira e tira as telas dela do menu.
+   - Em Permissões, Ver e Alterar andam juntos.
+5. Com **Ver** marcado, aparece **Aparece no menu:** embaixo da linha. Marque as telas que a pessoa deve ver. Tela desmarcada some do menu dela e não abre nem pelo link.
+6. Em **Tela inicial**, escolha a tela que abre quando ela entra. **Padrão** deixa o sistema decidir.
+7. Toque em **Salvar**. Enquanto não salvar, aparece **alterações não salvas**. **Descartar** volta como estava.
+
+Ao mudar uma caixa à mão, o perfil vira **Personalizado**. É normal.
+
+### O que o sistema não deixa fazer
+
+- Tirar de você mesmo o acesso a Usuários ou a Permissões. Peça a outro administrador.
+- Ficar sem nenhum administrador ativo.
+- Dar a alguém um acesso que você não tem.
+- Mudar quem tem mais acesso do que você. A pessoa abre só para ver, com o aviso "Esta pessoa tem acessos que você não tem".
+
+### Desativar, reativar e excluir
+
+1. Abra **Usuários** e toque na pessoa.
+2. **Desativar** corta o acesso na hora. Se ela estiver no sistema, volta para a tela de login. É o caminho recomendado.
+3. **Reativar** devolve o acesso como estava.
+4. **Excluir acesso** apaga o cadastro. Toque e depois confirme em **Confirmar exclusão**. **Cancelar** desiste.
+
+Na sua própria linha não aparecem Desativar nem Excluir.
+
+### Histórico
+
+A aba **Histórico** em Permissões mostra toda mudança: quando, quem mudou, a ação, a pessoa e o que mudou. Dá para buscar por nome ou mudança. Exclusão também fica registrada, com quem era a pessoa.
+
+### Perfis prontos
+
+| Perfil | Vê | Não vê |
+| --- | --- | --- |
+| Admin | tudo, inclusive Usuários e Permissões | nada fica de fora |
+| Fotógrafo | Diário do set, Upload automático (check-in e troca de fotógrafo), Escala 5×2 | Checkout, Dashboard, Curadoria, Configurações |
+| Atendimento e venda | Checkout, venda no balcão, Fila, Caixa, Catálogo (só para ver os preços) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
+| Validador | Qualidade, Treino da IA, Diário do set (só para ver) | vendas, Checkout, Configurações |
+| Supervisor | Dashboard, Curadoria (só para ver), grupo Fotógrafo, Configurações do venue, Laboratório | Usuários e Permissões; não cancela venda |
+| Checkout | só a tela do cliente, em tela cheia | todo o resto |
+
+A aba **Perfis prontos** mostra cada perfil em detalhe.
+
+---
+
+## 6. O que dizer ao cliente
 
 **Sobre o QR**
 - "Aponte a câmera do celular para este QR. Suas fotos ficam disponíveis por 60 dias."
@@ -128,7 +275,7 @@ Em **Lista de vendas**, use o filtro **Canal: Online**. Hoje elas aparecem como 
 
 ---
 
-## 4. Limitações de hoje (v77)
+## 7. Limitações de hoje (v78)
 
 - **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
 - **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.
@@ -137,4 +284,6 @@ Em **Lista de vendas**, use o filtro **Canal: Online**. Hoje elas aparecem como 
 - **Cancelar uma venda do Checkout** tira o download no sistema, mas a foto pode continuar liberada no computador do ponto. Avise a administração quando cancelar.
 - **Compra feita na galeria da escola** não aparece na galeria da sessão da família, e vice-versa.
 - **"Baixar todas"** baixa as fotos uma por uma (ainda não há arquivo ZIP).
-- **Fotos com fundo de IA** ainda não aparecem na galeria por QR.
+- **Fotos com fundo de IA** ainda não aparecem na galeria por QR. A compra de fundo de IA depois da visita, que existia na tela Convidado, volta na galeria online numa próxima fase.
+- **Permissões**: nesta fase elas organizam o que cada pessoa vê e faz, mas ainda são conferidas só no navegador. Ainda não são uma trava de segurança no servidor. Isso entra na próxima etapa (v79).
+- **Fotógrafo sem o próprio índice**: no perfil pronto, o fotógrafo não vê mais a tela Fotógrafos. Está em confirmação com o Eduardo. Se precisar, a administração libera em Permissões.
