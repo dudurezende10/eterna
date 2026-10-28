@@ -381,3 +381,18 @@ Modelo no servidor: `usuarios(email)`, `acessos(email, venue, perfil, perms, men
   - no protótipo, as mudanças ficam locais e sincronizam depois pelo `state.db`, com a última gravação vencendo;
   - em produção, mudar permissão exige servidor (fica bloqueado offline) e o ponto opera com o último retrato assinado.
 - **Troca de venue na Identidade**: hoje é só a marca. Quando as permissões forem por venue, trocar de venue vai exigir trocar o retrato de acesso, senão quem troca fica trancado fora.
+## Pendências para a v79
+Registradas na revisão de segurança da v78 (`2026-10-28-v78-seguranca.md`). Não bloqueiam a v78 (protótipo), mas precisam entrar antes de produção.
+1. **Riscos aceitos do protótipo:**
+   - permissões e login são verificados só no navegador;
+   - o `sessionLoad` confia no e-mail gravado no `localStorage`;
+   - o `state.db` aceita escrita de qualquer um, inclusive em `usuarios/`, `usuarios_login/` e `usuarios_log/`. O histórico pode ser apagado ou forjado, e o `por` é declarado pelo próprio navegador.
+   - Correção: servidor como fonte da verdade (contrato acima), `permValidate` rodando no servidor (já com o motivo `sem_permissao`), auditoria só de acréscimo com `por` vindo do token.
+2. **Recuperação de admin (D12) sem trava:** o `ensureAdmin` roda sempre que o app carrega, só localmente, e um `onSnapshot('usuarios')` posterior pode sobrescrever o admin recuperado. Pôr atrás de uma marca de protótipo e trocar por um comando no servidor.
+3. **LGPD no histórico:** nomes e e-mails ficam no `localStorage` (`eterna.users.log.v1`) e em `usuarios_log` sem prazo de retenção definido. Definir a retenção. O `onSnapshot` da coleção inteira vira consulta paginada no servidor.
+4. Sugestão da revisão de código: chamar `permValidate` na migração só para registrar no histórico (hoje a migração não dá acesso novo a ninguém).
+
+Já corrigido na volta da v78:
+- B1: `permValidate` com o motivo `sem_permissao`; `userApply` e `permSave` conferem a permissão no início; `guardAct` usa módulo fixo por ação (`ACT_MOD`) e barra ação de gravação em tela sem módulo.
+- Login grava só a última entrada (`loginMark`, coleção `usuarios_login/`), não o cadastro inteiro.
+- E-mail inválido (ex.: `__proto__`) não entra pelo `onSnapshot` nem pelo `localStorage`.
