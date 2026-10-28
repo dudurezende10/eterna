@@ -416,3 +416,7 @@ Sem conta, ARN, chave, nome de coleção ou mensagem crua da AWS (só `codigo`).
 - Bug achado: a retenção de 60 dias é furada a cada reinício do agente, porque as fotos antigas são lidas de novo. A correção está no item H.
 
 Arquivos lidos: `/home/claude/eterna/docs/CONTEXTO-ETERNA.md`, `/home/claude/eterna/agente/eterna-agente.py`, `/home/claude/eterna/index.html`, `/home/claude/eterna/docs/planos/2026-10-28-v80-multiterminal.md`, `/home/claude/eterna/docs/planos/2026-10-27-galeria-qr-fase1.md`, `/home/claude/eterna/docs/planos/2026-10-27-galeria-qr-fase1-seguranca.md`, `/home/claude/eterna/docs/planos/2026-10-28-v79-checkout-caixa-ajuste.md` e `/home/claude/eterna/testes/galeria-agente.js`. Arquivo sugerido para o documentador: `/home/claude/eterna/docs/planos/2026-10-28-v81-rostos-provedor.md`.
+
+## Decisões do Eduardo (28/10 11:08), substituem D12 e D13
+- D12: escola só com QR geral do grupo. Sem código individual por criança ou família, nem sob pedido; o link "Prefiro não usar foto do rosto" e a rota `/g/<t>/abrir`/`sem_rosto` saem do escopo. Risco aceito pelo Eduardo: um responsável com o QR pode enviar o rosto de outra criança; seguem as mitigações (limiar de menor, limites por IP, "Estas fotos não são minhas" com revisão).
+- D13: retenção local das leituras de rosto = 60 dias para todas as fotos, inclusive de quem não comprou (para o pós-venda da v82). `retencao_sem_galeria` sai; a correção do item H (não reler fotos com mais de 60 dias no boot) continua obrigatória.
