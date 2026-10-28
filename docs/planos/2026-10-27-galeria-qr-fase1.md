@@ -449,3 +449,17 @@ A Loja é a área do cliente: não depende de login, não tem menu lateral, abre
 - A8. O tempo é configurável: no Catálogo e preços, seção "Checkout", campo "Tempo da tela final com o QR (segundos)", padrão 30, mínimo 5, máximo 120, gravado em `SIM` (permissão `catalogo.u`). A Loja lê esse valor.
 - Preço da foto avulsa online confirmado pelo Eduardo: **R$ 39** (22:33).
 - Critério 24 passa a ser: com `page.clock`, a tela final ainda está visível aos 25 s e volta à câmera aos 30 s; trocar o valor no Catálogo para 10 faz voltar aos 10 s.
+
+## Pendências para a fase 2 (registradas na volta de correções da v77)
+
+Itens apontados pela revisão de segurança e pelo revisor que ficaram de fora da v77 por decisão do orquestrador ou por dependerem do Eduardo:
+
+- **Limite de tentativas por `(ip, token)`** no lugar de só por IP (segurança IMPORTANTE 7): hoje 10 selfies por minuto por IP bloqueiam todos atrás do mesmo NAT; juntar com teto global na fila do `_busca_lock` e `X-Forwarded-For` só de proxy confiável.
+- **Banco em vez de jsonl** (segurança NOTA 4 e 13, revisor 15): `vendas-online.jsonl` e `consentimentos.jsonl` viram SQLite (ou o banco da nuvem) com `UNIQUE(token, idem)`; `acessos`, `_janelas`, `_falhas` e `_evento_acertos` saem da memória.
+- **Grupo de escola: PIN por criança ou família, ou desfoque dos outros rostos na vitrine** (segurança IMPORTANTE 1, decisão do Eduardo). A v77 limita a 2 crianças diferentes por IP e galeria em 24 h e 60 acessos por galeria por hora, mas isso só reduz o risco do rosto recortado da vitrine.
+- **Pagamento em Dinheiro na Loja "aguardando caixa"** até o operador confirmar, com terminal e operador registrados (segurança IMPORTANTE 4c): decisão pendente do Eduardo, não mexido na v77.
+- **Adquirente real** (Mercado Pago ou Asaas): liberar só pelo webhook assinado ou pela consulta; enquanto `ETERNA_PAGAMENTO` não existir, o pagamento continua simulado e toda venda sai com `teste:true`, fora da receita.
+- **Limite de concorrência nas rotas `/g/*`** (segurança IMPORTANTE 6, segunda parte). A v77 já tem `timeout=20` por conexão.
+- **Compra online por foto em todas as galerias da sessão** (revisor 7): hoje a compra fica só no manifesto onde aconteceu (grupo ou sessão).
+- **Cancelamento de venda da Loja no agente** (revisor 2): o app já tira o `comprada/loja` da galeria ao cancelar, mas `gal_mesclar` não deixa uma compra regredir no agente; precisa de uma ação explícita de estorno.
+- Segurança NOTA 3, 5 a 13: limpeza de `_falhas`; acesso perdido quando o agente reinicia; faixa de preços no manifesto; código curto repetido entre tokens recusado; versão do consentimento definida pelo servidor e retenção dos logs; `menor` no `/info`; vitrine sem marca quando o `imread` falha; `os.link` para não duplicar originais; chave para desligar o modo SIM em produção; http puro com `ETERNA_REDE=1`; "não sou eu" e pedido de remoção na sessão de adulto (D2).

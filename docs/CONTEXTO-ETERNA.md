@@ -21,7 +21,10 @@ Eterna é o sistema de captura, validação, venda e entrega de fotos do Tour do
 | Agente do ponto | `agente/eterna-agente.py` | Python stdlib (OpenCV opcional, do Ronaldo). Roda no computador do ponto: cartão, FTP, biblioteca, Roverpix, Photoroom. HTTP em 127.0.0.1:8765 e serve o app (proxy de `ETERNA_APP_ORIGIN`) |
 | Lançador do agente (Mac) | `agente/Eterna.command` | mata o agente antigo na porta 8765, abre o novo e o navegador |
 | Lançador (Windows) | `agente/iniciar-eterna.bat` | do Ronaldo |
-| Documentação técnica | `docs/DOCUMENTACAO-TECNICA.md` | arquitetura, modelo de dados, fluxos |
+| Documentação técnica | `docs/DOCUMENTACAO-TECNICA.md` | arquitetura, modelo de dados, fluxos; galeria por QR na seção "Galeria online por QR, fase 1" |
+| Guia da equipe | `docs/GUIA-DA-EQUIPE.md` | passo a passo do Checkout e das Galerias online, em linguagem simples |
+| Planos | `docs/planos/` | um plano por entrega, com as revisões de código e de segurança ao lado |
+| Lib de QR | `vendor/qrcode/qrcode.min.js` | qrcodejs 1.0.0 (MIT), cópia local para o ponto offline |
 | Versões | `VERSOES.md` | uma linha por versão (vNN, commit, o que entrou) |
 | Testes | `testes/` | `testes/rodar.sh` roda tudo |
 | Fundos de IA | `img/bg-*.jpg` | metadados em `DATA.backgrounds` no index.html |
@@ -36,9 +39,11 @@ Eterna é o sistema de captura, validação, venda e entrega de fotos do Tour do
 - Cliques: um único `document.addEventListener('click',...)` com `switch(a)` sobre `data-act`. Novo botão = `data-act="algo"` + `case 'algo':` no switch. Ações que gravam entram em `WRITE_OPS` com a operação exigida.
 - Fotos: `phStyle(id)` devolve as variáveis CSS (`--img`, `--bs`, `--bp`, `--flt` dos ajustes). Fotos de exemplo vêm de sprites (`sprites/cNN.webp`); fotos reais do agente têm id `ag_<id>` e `UP[id].src` = `<agente>/thumb/<id>`; `bigStyle(id)` usa o original (`/file/<id>`).
 - Sessões: `demoSessions()`, `sessionObj(card)`, `simOf(card)` (estado da sessão em `SIM.sessions[card]`), `revSessions()` (amostra + Roverpix ao vivo + fotos casadas).
-- Loja (view `quiosque`): `vQuiosque()`, etapas `state.kiosk.step` = code → review → cart → done; `lojaItems`, `lojaCart`, `lojaPay`, `lojaReset`. Classes CSS com prefixo `lj-`.
+- Loja (view `quiosque`; na v78 o nome na tela passa a ser **Checkout**, a mesma coisa): rota pública `#loja` (`state.lojaRota`), sem login, sempre em tela cheia, sem menu. `vQuiosque()`, etapas `state.kiosk.step` = code → review → cart → done; `lojaItems`, `lojaCart`, `lojaPay`, `lojaReset`, `lojaAbrir`, `lojaSair` (Esc, ou o botão Sair do painel da equipe; sempre leva ao login, nunca ao app logado), `lojaLogo` (3 toques no logo abrem o painel escondido da equipe com "Sessões esperando" e "Sair"), `lojaTick` (único timer: a tela final com o QR volta à câmera em `SIM.lojaFimSeg` segundos, padrão 30, de 5 a 120, editável em Catálogo e preços › Checkout). O item Loja do menu e o perfil quiosque levam para `#loja`; recarregar a página nunca abre a Loja para a equipe (só com `#loja` ou perfil quiosque). Classes CSS com prefixo `lj-`.
+- Galeria online por QR: rota pública `#g/<token>` (`state.pub`, `pubRead`, `pubLoad`, `pubMatch`, `pubGaleria`, `pubPagar`, `pubBaixar`, `vGaleriaQR`, classes `gq-`). `render()` trata `state.pub` e `state.lojaRota` antes de tudo (sem login, sem `syncHash`). Manifesto por galeria em `SIM.galerias[token]` (`galDaSessao`, `galAtualizar`, `galPublicar`, `galFilaTick`; a venda paga cria e publica por `galDaVenda`, e o `render` só lê); também `SIM.cortesiaLog`, `SIM.vendasOnline`, `SIM.galFila` e a cortesia por foto em `SIM.sessions[card].cort`. QR sempre por `qrDraw(el,texto,tamanho)` com `vendor/qrcode/qrcode.min.js`.
+- Administração das galerias (view `galerias`, módulo `galerias`): `vGalerias()` com abas Sessões, Grupos e escolas, Envio e Cortesias.
 - Galeria do convidado (view `convidado`): `vConvidado()`, `vGuestAI()`, `vGuestSelfie()`, `guestAICard()`.
-- Idiomas das telas do cliente: `T('chave',...args)` com o dicionário `I18N` (pt, en, es, fr, de), seletor `langPick()`. Todo texto novo de tela de cliente entra no `I18N` nas 5 línguas.
+- Idiomas das telas do cliente: `T('chave',...args)` com o dicionário `I18N` (pt, en, es, fr, de), seletor `langPick()` com bandeiras em SVG (`LANG_FLAGS`). Todo texto novo de tela de cliente entra no `I18N` nas 5 línguas.
 - Depuração/testes: `window.ETERNA` expõe `state`, `render`, `revSessions`, `demoSessions`, `photoCanvas` e outros.
 - Carimbo de versão: duas ocorrências a atualizar a cada versão: `title="Eterna vNN · dd/mm hh:mm"` e `powered by <b>Eterna</b> · vNN`.
 
@@ -46,9 +51,11 @@ Eterna é o sistema de captura, validação, venda e entrega de fotos do Tour do
 
 - Endpoints GET: `/status`, `/events?since=`, `/biblioteca`, `/thumb/<id>`, `/file/<id>`, `/roverpix/status|data`, `/photoroom/status|result/<n>`, `/ftp-remoto/status`, `/metricas`.
 - Endpoints POST com chave (Roverpix, Photoroom, FTP remoto): só aceitam origem `http://127.0.0.1:8765` ou `localhost`.
+- `/biblioteca`, `/thumb/`, `/file/`: CORS só para a origem do agente e `ETERNA_APP_ORIGIN` (outra origem recebe 403). `/rostos/*` e as rotas locais da galeria: só origem local, e o `Host` precisa ser `127.0.0.1:PORTA` ou `localhost:PORTA` (DNS rebinding). Conexões com `timeout` de 20 s; imagens acima de 40 MP são recusadas (`OPENCV_IO_MAX_IMAGE_PIXELS`).
+- Galeria online (detalhes na DOCUMENTACAO-TECNICA). Fase 1: o celular do cliente não alcança o agente (127.0.0.1), então no celular aparece "Suas fotos estão chegando" até a nuvem; a galeria funciona no computador do ponto e nos testes. Rotas públicas `/g/<token>/info|rosto|galeria|pagamento`, `/g/codigo/<CODIGO>` e a foto com link HMAC de 15 min; rotas locais `/galerias/publicar|encerrar|vendas|status`; webhook `/pagamento/webhook/<provedor>` responde 501. Pagamento simulado (padrão) grava `teste:true` e a venda fica fora da receita. Limites: 5 falhas por `(ip, token)` bloqueiam 15 min; 10 selfies por minuto por IP; grupo de escola com no máximo 2 crianças diferentes por IP em 24 h e 60 acessos por hora. "Encerrar" não é desfeito por republicação; a limpeza diária deixa lápide em `~/Eterna/galerias/encerradas.json` (republicar dá 410, código dá 404). Arquivos em `~/Eterna/galerias/` (`<token>/`, `vendas-online.jsonl`, `consentimentos.jsonl` sem IP e sem imagem); segredo em `~/Eterna/galeria-segredo.json`.
 - Chaves ficam só em `~/Eterna/*.json` com chmod 600. Nunca no código, nunca no git, nunca no navegador.
 - Pastas: `~/Eterna/inbox/<dia>/` (fotos), `~/Eterna/roverpix/{raw,agg}/`, `~/Eterna/fundos-ia/` (cache Photoroom).
-- Variáveis: `ETERNA_PORTA`, `ETERNA_APP_ORIGIN`, `ETERNA_PASTA`, `ETERNA_REDE`.
+- Variáveis: `ETERNA_PORTA`, `ETERNA_APP_ORIGIN`, `ETERNA_PASTA`, `ETERNA_REDE`, `ETERNA_REPO` (`local`; `s3`/`azure` na fase 2), `ETERNA_PAGAMENTO` (`simulado`), `ETERNA_SEM_OPENCV` (testes: desliga OpenCV).
 - Depois de mudar o agente, ele precisa ir para o Mac do Eduardo em `~/Documents/ETERNA/eterna/eterna-agente.py` e `~/Downloads/Eterna/eterna-agente.py` (o deploy faz).
 
 ## 5. Decisões já tomadas (não reabrir sem o Eduardo)
@@ -57,7 +64,11 @@ Eterna é o sistema de captura, validação, venda e entrega de fotos do Tour do
 - Checkout por reconhecimento facial; QR e código como contingência.
 - Loja única (Checkout, Fila, Caixa e Quiosque viraram um menu): rosto → fotos com ✗ e ✓ → pacote + pagamento numa tela → pronto com QR. Sem texto do tipo "quero essa" na escolha.
 - Fundos de IA: no máximo 5 na loja e na galeria; Photoroom faz o recorte (chave só no agente).
-- Galeria do convidado 60 dias; menores sem busca facial (LGPD art. 14).
+- Galeria do convidado 60 dias; menores sem busca facial aberta (LGPD art. 14). Exceção da v77: grupo de escola, com consentimento do responsável e só as fotos em que o rosto da criança bate.
+- Galeria por QR (v77): selfie antes de tudo, nem as compradas aparecem antes. Escola: um QR geral por grupo, impresso pela administração; mostra só as fotos em que o rosto da criança bate, com limite 0,50 (`LIMITE_MENOR`), nunca a sessão inteira (D3). Retenção das leituras de rosto no agente: 60 dias (D10), para a selfie funcionar até o fim da galeria.
+- Foto avulsa online: R$ 39 (item `dig` do catálogo); "todas" pelo preço do Pacote Maracanã Mais. Total sempre `min(n × dig, todas)`, recalculado no agente.
+- Checkout apartado (v77): `#loja` sem login e em tela cheia; sem volta automática por inatividade; só depois da compra a tela do QR volta sozinha à câmera, em 30 s configuráveis (5 a 120, Catálogo e preços › Checkout); botão Voltar ao início em todas as etapas; idiomas por bandeiras em SVG nas telas do cliente.
+- Menus da v78 (planejado, `docs/planos/2026-10-27-menus-v78.md`): grupos Dashboard, Curadoria, Fotógrafo, Configurações e Laboratório; Loja vira Checkout (botão "Abrir Checkout" na barra da equipe); saem Fluxo, Anfitrião no set e Convidado (a galeria por QR substitui); Galerias online no Dashboard. Permissões na v78: `docs/planos/2026-10-27-permissoes-v78.md`.
 - Nuvem: AWS, preferência S3 São Paulo (sa-east-1), bucket privado, links assinados.
 - Marca: manual Viva Maracanã 09/10/2026. Azul #134078 (mais peso), verde #005500, amarelo #FFB800; secundárias azul luz #307FE2, azul noite #0C2340, verde luz #43B02A, amarelo luz #FCE300, cinza museu #D9D9D6, grafite #25282A. Títulos Big Shoulders Display com tracking 100 (letter-spacing ~.1em), textos Inter. Logo branco sobre azul. Grafismos: multidão (pontos), radialidade (anéis amarelos), foco/spot (V de luz).
 - Telas do cliente: 5 idiomas, responsivas (notebook, tablet, celular), quentes, que mostrem o valor do que a pessoa leva.
