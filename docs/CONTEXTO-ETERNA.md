@@ -1,6 +1,6 @@
 # Contexto do Eterna para os agentes
 
-Leia este arquivo inteiro antes de qualquer tarefa. Ele é a memória comum da esteira (planejador, programador, testador, segurança, deploy). Se algo aqui estiver desatualizado, o agente que perceber atualiza este arquivo no mesmo commit.
+Leia este arquivo inteiro antes de qualquer tarefa. Ele é a memória comum da esteira (planejador, programador, revisor, testador, segurança, documentador, deploy). Se algo aqui estiver desatualizado, o agente que perceber atualiza este arquivo no mesmo commit.
 
 ## 1. O que é
 
