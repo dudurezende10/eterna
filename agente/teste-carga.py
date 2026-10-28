@@ -63,6 +63,18 @@ def get_json(url, timeout=30):
 # Simula a operação real: cada fotógrafo faz ensaios (10 a 20 fotos, clicadas ao longo de 1,5 a 2,5 min), para e começa o próximo.
 # A pausa entre ensaios é calculada para fechar a produção do dia (--meta-dia em --horas com --fotografos).
 # --acelerar 4 faz o mesmo dia em 1/4 do tempo (pico 4x maior), para testar o limite.
+def hora_clique(f):
+    """Hora do clique gravada pela câmera (EXIF DateTimeOriginal), em segundos; None se a foto não tiver."""
+    try:
+        from PIL import Image
+        with Image.open(f) as im:
+            ex = im.getexif()
+            v = ex.get_ifd(0x8769).get(36867) or ex.get(306)
+        return datetime.strptime(str(v).strip()[:19], "%Y:%m:%d %H:%M:%S").timestamp() if v else None
+    except Exception:
+        return None
+
+
 def enviar(a):
     jpg = lambda d, rec=True: sorted((f for f in glob.glob(os.path.join(d, "**", "*") if rec else os.path.join(d, "*"), recursive=rec)
                                       if f.lower().endswith((".jpg", ".jpeg"))), key=lambda f: (os.path.getmtime(f), f))  # ordem em que a câmera gravou
@@ -116,14 +128,21 @@ def enviar(a):
     trava = threading.Lock()
     limite_b = a.limite_gb * 1e9 if a.limite_gb else None
 
+    sem_pasta = {"aviso": False}
     def conecta(nome_fot):
         ftp = ftplib.FTP(); ftp.connect(a.host, a.porta, timeout=60); ftp.login(a.usuario, senha); ftp.set_pasv(True)
-        if a.pasta_por_fotografo:                                     # como o CTP: cada fotógrafo na sua pasta do servidor
+        if a.pasta_por_fotografo and not sem_pasta.get("sem"):        # como o CTP: cada fotógrafo na sua pasta do servidor
             try:
                 ftp.mkd(nome_fot)
             except Exception:
                 pass
-            ftp.cwd(nome_fot)
+            try:
+                ftp.cwd(nome_fot)
+            except Exception as ex:                                   # usuário sem permissão de criar pasta: manda na raiz
+                sem_pasta["sem"] = True
+                if not sem_pasta["aviso"]:
+                    sem_pasta["aviso"] = True
+                    print(f"  aviso: o FTP não deixou criar a pasta do fotógrafo ({ex}); mandando todos na pasta principal")
         return ftp
 
     def manda(estado, nome_fot, arq, corpo):
@@ -156,6 +175,8 @@ def enviar(a):
                 if agora() - desde > a.reenvio_min * 60 or agora() >= fim + 600:
                     return False, tent, quedas, str(ex)[:200]
                 if not str(ex).startswith("queda simulada"):
+                    if tent in (1, 3) or tent % 10 == 0:
+                        print(f"  {nome_fot}: {arq} falhou ({str(ex)[:120]}); tentativa {tent}, tentando de novo")
                     time.sleep(espera); espera = min(30, espera * 2)
 
     def fotografo(i):
@@ -188,9 +209,17 @@ def enviar(a):
             ens += 1; tot["ensaios"] += 1
             k, deg = ritmo()
             nf = len(lista); dur = random.uniform(dmin, dmax) * 60 / k
+            # sessão real: os cliques seguem os intervalos que a câmera gravou (sessão de mais de --duracao-max min é encurtada)
+            hs = [hora_clique(f) for f in lista] if a.sessoes and a.cliques_reais else []
+            reais = len(hs) > 1 and all(hs)
+            if reais:
+                lista = [f for _, f in sorted(zip(hs, lista))]; hs.sort()
+                total = hs[-1] - hs[0]
+                encolhe = min(1.0, a.duracao_max * 60 / total) if total > 0 else 1.0
+                offs = [(h - hs[0]) * encolhe / k for h in hs]
             ini = agora()
             for j, orig in enumerate(lista):
-                alvo = ini + dur * j / max(1, nf - 1) + random.uniform(-.15, .15) * dur / nf
+                alvo = ini + (offs[j] if reais else dur * j / max(1, nf - 1) + random.uniform(-.15, .15) * dur / nf)
                 if agora() >= fim and not a.sessoes:
                     break
                 if alvo > agora():
@@ -457,7 +486,32 @@ def relatorio(a):
     for e in ok:
         d = ens.setdefault(e["ensaio"], {"ult": 0, "lidas": [], "n": 0}); d["n"] += 1
         d["ult"] = max(d["ult"], e["inicio"] + e["seg"]); d["lidas"].append(lida_de.get(id(e)))
-    prontos = [max(d["lidas"]) - d["ult"] for d in ens.values() if d["lidas"] and all(d["lidas"])]
+    prontos = [max(0, max(d["lidas"]) - d["ult"]) for d in ens.values() if d["lidas"] and all(d["lidas"])]   # foto repetida já lida antes conta como pronta
+
+    # ---- estatísticas das sessões: cliques, duração real (hora gravada pela câmera), volume e tempos no teste ----
+    sess = {}
+    for e in ok:
+        d = sess.setdefault(e.get("sessao") or e["ensaio"], {"n": 0, "b": 0, "ini": 1e18, "fim": 0, "origens": [], "ens": e["ensaio"]})
+        d["n"] += 1; d["b"] += e["bytes"]; d["ini"] = min(d["ini"], e["inicio"]); d["fim"] = max(d["fim"], e["inicio"] + e["seg"])
+        d["origens"].append(e.get("origem"))
+    for d in sess.values():
+        hs = sorted(h for h in (hora_clique(o) for o in d["origens"] if o and os.path.exists(o)) if h)
+        d["dur_real"] = (hs[-1] - hs[0]) / 60 if len(hs) > 1 else None
+        d["int_real"] = statistics.mean(b - a_ for a_, b in zip(hs, hs[1:])) if len(hs) > 1 else None
+        de = ens.get(d["ens"])
+        d["pronta"] = max(0, max(de["lidas"]) - de["ult"]) if de and de["lidas"] and all(de["lidas"]) else None
+    sv = list(sess.values())
+    def est(v, casas=1, suf=""):
+        v = [x for x in v if x is not None]
+        return [fmt(statistics.mean(v), casas, suf), fmt(statistics.median(v), casas, suf), fmt(min(v), casas, suf), fmt(max(v), casas, suf)] if v else ["–"] * 4
+    tab_sess = [("Cliques (fotos) por sessão", est([d["n"] for d in sv], 1)),
+                ("Duração real da sessão (1º ao último clique, pela câmera)", est([d["dur_real"] for d in sv], 1, " min")),
+                ("Intervalo entre cliques", est([d["int_real"] for d in sv], 1, " s")),
+                ("Volume da sessão", est([d["b"] / 1e6 for d in sv], 1, " MB")),
+                ("Tempo para enviar a sessão no teste", est([(d["fim"] - d["ini"]) / 60 for d in sv], 1, " min")),
+                ("Pronta no checkout após o último clique", est([d["pronta"] for d in sv], 1, " s"))]
+    faixas = [(1, 1, "1 foto"), (2, 5, "2 a 5"), (6, 10, "6 a 10"), (11, 20, "11 a 20"), (21, 40, "21 a 40"), (41, 10 ** 6, "mais de 40")]
+    dist = [(r, sum(1 for d in sv if lo <= d["n"] <= hi), sum(d["n"] for d in sv if lo <= d["n"] <= hi)) for lo, hi, r in faixas]
 
     leitores = max([m.get("leitores") or 0 for m in monok] or [0]) or 1
     leit_med = media([f["leitura_ms"] for f in lidas])
@@ -726,6 +780,9 @@ th{{font-weight:600}}.kv th{{width:52%}}.v{{padding:14px 16px;border-radius:10px
 <tr><th>Não viu rosto na selfie</th><td>{n_sem_rosto} ({pc(n_sem_rosto)})</td></tr>
 {f"<tr><th>Fotos da sessão trazidas pela selfie (média)</th><td>{fmt(frac_med * 100 if frac_med is not None else None, 1, '%')} (numa família, a selfie de um traz as fotos em que ele aparece)</td></tr>" if modo_sessao else ""}
 {f"<tr><th>Selfies que trouxeram foto de outra sessão</th><td>{n_estranho} ({pc(n_estranho)}) · conferir abaixo</td></tr>" if modo_sessao else ""}</table>
+<h2>Sessões</h2><p class="mu">{len(sv)} sessões · {sum(d["n"] for d in sv)} cliques.</p>
+<div class="tw"><table><tr><th>Medida</th><th>Média</th><th>Mediana</th><th>Menor</th><th>Maior</th></tr>{"".join(f"<tr><td>{esc(n)}</td>" + "".join(f"<td>{x}</td>" for x in v) + "</tr>" for n, v in tab_sess)}</table></div>
+<div class="tw"><table><tr><th>Cliques na sessão</th><th>Sessões</th><th>% das sessões</th><th>Fotos</th></tr>{"".join(f"<tr><td>{r}</td><td>{n}</td><td>{fmt(100 * n / len(sv) if sv else None, 1, '%')}</td><td>{f}</td></tr>" for r, n, f in dist)}</table></div>
 <h2>Integridade das fotos</h2><table class="kv">{tr(integ)}</table>
 {html_deg}
 <h2>Operação</h2><table class="kv">{tr(linhas)}</table>
@@ -758,6 +815,8 @@ def main():
     e.add_argument("--degraus", help="ex.: 1,1.5,2,3,4 (sobe o ritmo a cada --minutos-degrau)"); e.add_argument("--minutos-degrau", type=float, default=10)
     e.add_argument("--rajada-a-cada", type=float, default=0, help="minutos; todos os fotógrafos começam um ensaio juntos")
     e.add_argument("--quedas", type=float, default=0, help="fração dos envios que cai no meio (0.01 = 1%%)")
+    e.add_argument("--cliques-reais", action=argparse.BooleanOptionalAction, default=True, help="nas sessões, usa a hora de cada clique gravada na foto")
+    e.add_argument("--duracao-max", type=float, default=10, help="minutos; sessão real mais longa que isso é encurtada")
     e.add_argument("--reenvio-min", type=float, default=10, help="por quanto tempo uma foto que falhou é tentada de novo")
     e.add_argument("--limite-gb", type=float, help="para depois de mandar este volume")
     e.add_argument("--pasta-por-fotografo", action=argparse.BooleanOptionalAction, default=True, help="cada fotógrafo numa pasta do FTP (padrão)")
