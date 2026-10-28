@@ -447,5 +447,5 @@ A Loja é a área do cliente: não depende de login, não tem menu lateral, abre
 ### Adendo 3 do Eduardo (27/10, 22:30)
 - A4 ajustado: depois da compra, a tela final com o QR fica **30 s** (não 5 s) e volta sozinha para a câmera; o botão "Voltar ao início" continua para voltar antes.
 - A8. O tempo é configurável: no Catálogo e preços, seção "Checkout", campo "Tempo da tela final com o QR (segundos)", padrão 30, mínimo 5, máximo 120, gravado em `SIM` (permissão `catalogo.u`). A Loja lê esse valor.
-- Preço da foto avulsa online confirmado pelo Eduardo (ver relatório: confirmar se R$ 39 ou R$ 30; a transcrição veio como "30 notas").
+- Preço da foto avulsa online confirmado pelo Eduardo: **R$ 39** (22:33).
 - Critério 24 passa a ser: com `page.clock`, a tela final ainda está visível aos 25 s e volta à câmera aos 30 s; trocar o valor no Catálogo para 10 faz voltar aos 10 s.
