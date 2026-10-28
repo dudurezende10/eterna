@@ -3,7 +3,7 @@
 Arquivo sugerido para o documentador: `/home/claude/eterna/docs/planos/2026-10-28-v80-multiterminal.md`. Não editei nenhum arquivo. Este plano parte da v79 já implementada (`SIM.caixaDin`, `dinConfirmar`, `dinFechar`, `lojaDinheiro`, `simFresh`, `lojaIdeal`, `s.prints`).
 
 ## Objetivo
-Cada terminal de Checkout do ponto (Terminal 1 a N) manda as vendas para o agente. Um ou mais caixas veem todas as vendas ao vivo, da mais nova para a mais antiga, acham a do cliente pelo terminal, pelo valor ou pelo código, confirmam o dinheiro e imprimem as fotos em 15×20 no próprio computador. Tudo na rede local, sem internet.
+Cada terminal de Checkout do ponto (Terminal 1 a N) manda as vendas para o agente. Um ou mais caixas veem todas as vendas ao vivo, da mais nova para a mais antiga, acham a do cliente pelo terminal, pelo valor ou pelo código, confirmam o dinheiro e imprimem as fotos em 10×15 no próprio computador. Tudo na rede local, sem internet.
 
 ## Achados no código que mudam o desenho (o revisor precisa saber)
 1. **Hoje um terminal em outro computador não acha nenhuma foto real.** As sessões (`SIM.sessions`, ids `LP...`) nascem em `ingClose` e ficam no `localStorage` do computador do agente. Os preços editados (`SIM.prices`) e os ajustes (`SIM.edits`, incluindo o recorte `z/x/y`) também ficam só nele. Por isso a v80 precisa de um feed de sessões e de configuração vindo do agente.
@@ -29,7 +29,7 @@ Cada terminal de Checkout do ponto (Terminal 1 a N) manda as vendas para o agent
 - **C. Feed do ponto:** sessões, preços e ajustes publicados pelo computador do ponto e lidos pelos aparelhos. Reconhecimento facial e fotos liberados para aparelhos pareados.
 - **D. Vendas no agente:** fila local no terminal, envio idempotente, galeria publicada pelo agente a partir da venda.
 - **E. Tela "Vendas ao vivo"** (view `vivo`): polling com ETag, filtros e busca, detalhe da venda, confirmar e cancelar dinheiro (a v79 entre computadores).
-- **F. Imprimir pelo navegador em 15×20:**
+- **F. Imprimir pelo navegador em 10×15:**
   - reserva no agente, para dois caixas não imprimirem a mesma venda;
   - "Saiu certo";
   - reimpressão com motivo;
@@ -60,7 +60,7 @@ Cada terminal de Checkout do ponto (Terminal 1 a N) manda as vendas para o agent
 | D7 | O id da venda nasce no terminal: `<dispId>-<ts36><rand4>`, e o agente confere o prefixo. Reenviar o mesmo id com o mesmo conteúdo dá 200 `ja:true`; conteúdo diferente dá 409. Toda ação tem `idem`, e repetir devolve o mesmo resultado. |
 | D8 | O total é recalculado no agente com os preços do feed. Se divergir, **aceita e marca `divergente`**, com alerta para a equipe. Recusar perderia uma venda já paga (nada se perde). |
 | D9 | **Confirmar ou cancelar dinheiro e imprimir exigem o agente no ar** quando o modo ponto está ativo. O agente é local; sem ele o ponto inteiro já está parado. A v79 local continua valendo só sem agente (modo `off`). |
-| D10 | Impressão desta fase pelo navegador:<br>• página 152×203 mm, uma foto por página, foto deitada girada 90°;<br>• original `/file/` com o ajuste copiado no momento da venda (`ed`);<br>• o caixa abre o Chrome com `--kiosk-printing` e imprime direto na impressora padrão (driver do fabricante instalado no sistema, com papel 15×20 como padrão);<br>• como o navegador não sabe se a impressão saiu, quem opera confirma com "Saiu certo" ou "Não saiu". |
+| D10 | Impressão desta fase pelo navegador:<br>• página 102×152 mm, uma foto por página, foto deitada girada 90°;<br>• original `/file/` com o ajuste copiado no momento da venda (`ed`);<br>• o caixa abre o Chrome com `--kiosk-printing` e imprime direto na impressora padrão (driver do fabricante instalado no sistema, com papel 10×15 como padrão);<br>• como o navegador não sabe se a impressão saiu, quem opera confirma com "Saiu certo" ou "Não saiu". |
 | D11 | Imprime as fotos do campo da venda (`selected`, favoritas primeiro), até `prints`. Quem opera pode trocar quais, dentro do limite. O estoque baixa no "Saiu certo", no rolo do caixa que imprimiu, uma vez só. A reimpressão baixa N, com motivo. **O terminal deixa de baixar estoque** no modo ponto. |
 | D12 | Reserva de impressão: "Imprimir" deixa a venda em `imprimindo` por aquele caixa. Outro caixa recebe 409 "Imprimindo no Caixa 2 por X". Depois de 5 min, qualquer caixa com `venda.c` pode liberar. Não há liberação automática (evita imprimir em dobro). |
 | D13 | Quem vê Vendas ao vivo: módulo `venda`. `venda.r` vê, `venda.c` age. O vendedor vê o valor **de cada venda de hoje**, sem somatório, ticket ou receita (isso continua só para quem tem `financeiro.r`). |
@@ -266,7 +266,7 @@ Todo POST em `/ponto/*` exige o cabeçalho `X-Eterna: 1`, Host em `HOSTS_OK` e `
     | estado | botões |
     |---|---|
     | `aguardando` | `pv-confirm` "Recebi R$ X", `pv-cancel` (depois `pv-cancel-ok` / `pv-cancel-no`) |
-    | paga e `pendente` | `pv-print` "Imprimir N fotos (15×20)" |
+    | paga e `pendente` | `pv-print` "Imprimir N fotos (10×15)" |
     | `imprimindo` por este aparelho | `pv-printed` "Saiu certo", `pv-print-fail` "Não saiu, liberar" |
     | `imprimindo` por outro | texto "Imprimindo no Caixa 2 por X há N min"; depois de 5 min, `pv-print-fail` "Liberar" |
     | `impressa` | "Impressa por X no Caixa 1 às hh:mm", `pv-reprint` (depois número + chips de motivo + `pv-reprint-ok`) |
@@ -329,10 +329,10 @@ Todo POST em `/ponto/*` exige o cabeçalho `X-Eterna: 1`, Host em `HOSTS_OK` e `
 - `#print-root{display:none}` e o bloco de impressão:
 ```css
 @media print{body>*:not(#print-root){display:none!important}#print-root{display:block}
-@page{size:152mm 203mm;margin:0}
-.pr-pg{width:152mm;height:203mm;overflow:hidden;position:relative;break-after:page;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@page{size:102mm 152mm;margin:0}
+.pr-pg{width:102mm;height:152mm;overflow:hidden;position:relative;break-after:page;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .pr-pg img{width:100%;height:100%;object-fit:cover;filter:var(--flt);transform:var(--tf)}
-.pr-pg.land img{position:absolute;width:203mm;height:152mm;left:-25.5mm;top:25.5mm;transform:rotate(90deg) var(--tf)}}
+.pr-pg.land img{position:absolute;width:152mm;height:102mm;left:-25mm;top:25mm;transform:rotate(90deg) var(--tf)}}
 ```
 
 ## Outros arquivos
@@ -450,7 +450,7 @@ Os critérios 1 a 25 rodam em `testes/v80-multiterminal.js`, com os contextos: *
 19. Uma pendência com `criada` de ontem vira `nao_paga` no boot do agente.
 
 **Impressão**
-20. Em C2, "Imprimir 4 fotos" deixa o estado `imprimindo · Caixa 2`. `#print-root` tem 4 `.pr-pg` com `img` apontando para `/file/<hex>`. `page.pdf({preferCSSPageSize:true})` gera 4 páginas de 152×203 mm. Uma foto deitada sai girada e preenchendo a página.
+20. Em C2, "Imprimir 4 fotos" deixa o estado `imprimindo · Caixa 2`. `#print-root` tem 4 `.pr-pg` com `img` apontando para `/file/<hex>`. `page.pdf({preferCSSPageSize:true})` gera 4 páginas de 102×152 mm. Uma foto deitada sai girada e preenchendo a página.
 21. C1, ao mesmo tempo, vê "Imprimindo no Caixa 2 por <nome>", e "Imprimir" dá 409. Depois de 5 min (relógio adiantado), C1 vê "Liberar".
 22. "Saiu certo" deixa a venda `impressa` com nome, caixa e hora. O estoque do Caixa 2 cai exatamente 4. Recarregar C2 e tentar de novo não baixa outra vez. "Não saiu" volta a venda para `pendente` sem baixar.
 23. "Reimprimir" 1 com o motivo "falhou" baixa 1, fica registrado na venda, e a reimpressão aparece no detalhe e no CSV (coluna `impressao`).
@@ -512,3 +512,6 @@ Os critérios 1 a 25 rodam em `testes/v80-multiterminal.js`, com os contextos: *
 - A v80 (multiterminal) foi desenhada com pareamento por código e cookie de aparelho, vendas no agente com polling e ETag, e impressão pelo navegador com `--kiosk-printing`.
 - Três achados importantes: as sessões e os preços existiam só no navegador do computador do ponto; a câmera em http na rede exige a flag do Chrome; havia brechas abertas com `ETERNA_REDE=1`.
 - Decisões em aberto para o Eduardo: (a) o vendedor vê o valor de cada venda (padrão: sim, sem totais); (b) fundo de IA não imprime; (c) confirmar e imprimir em dois toques; (d) manter ou não os textos de "2 minutos".
+
+## Correção (28/10 10:29)
+O Eduardo confirmou: as impressões do Tour são só no formato 10×15 cm. Todo o plano usa página de 102×152 mm (rolo de 400 fotos 10×15 na ASK-400, cerca de 8,4 s por foto).
