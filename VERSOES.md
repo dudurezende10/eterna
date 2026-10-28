@@ -76,3 +76,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v73 | `ee6cd2a` | Upload automático: opção Todos no fotógrafo e no ponto; grupo fica com o fotógrafo das fotos |
 | v74 | `6112327` | Loja única com escolha por símbolos e fundos de IA na sequência; Ajustes com IA automática e manual em alta; até 5 fundos; Klássius único |
 | v75 | `c769026` | Loja: só ✗ e ✓; pagamento no carrinho; ícones novos de impressa, digital e pagamento |
+| v76 | `55527a2` | Loja com o manual da marca, checkout numa tela, responsiva; 5 idiomas na Loja e na galeria do convidado |
