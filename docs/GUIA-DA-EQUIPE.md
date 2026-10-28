@@ -414,6 +414,15 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 
 ---
 
+## Novidades da v81
+
+- **Checkout no segundo monitor.** "Abrir Checkout" abre uma janela separada. Arraste essa janela para o monitor do cliente. A sua tela continua logada no admin. Se o cliente apertar Esc ou mexer no endereço da janela dele, o Checkout volta ao início e o seu login não cai.
+- **Fundos de IA.** O cliente vê só 4 fundos: Noite de campeão (sem a taça), Mirante ao pôr do sol, Arquibancada 1950 em preto e branco e Saída do túnel. Os outros ficam em Laboratório › Fundos em teste, onde o admin pode Ativar ou Mover para o Laboratório.
+- **Bandeiras.** As imagens foram corrigidas. A bandeira que ainda não tem a imagem certa fica sem foto, de propósito, até a imagem certa chegar.
+- **Fotógrafos.** Klassius e Sandessa já estão na lista.
+
+---
+
 ## 6. O que dizer ao cliente
 
 **Sobre o QR**
@@ -437,7 +446,7 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 
 ---
 
-## 7. Limitações de hoje (v80)
+## 7. Limitações de hoje (v81)
 
 - **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
 - **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.

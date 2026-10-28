@@ -114,7 +114,7 @@ try{
   const ruim=/\b(null|NaN|undefined|Infinity)\b/;const chips=async()=>pg.$$eval('.rangebar [data-act="range"]',e=>e.slice(0,4).map(x=>[x.dataset.f,x.dataset.t]));
   for(const [f,t] of await chips())for(const fo of ['tudo','roverpix','eterna']){await abrir(pg,f,t,fo);const m=await main(pg);ok(!ruim.test(m),`14: Painel sem LIVE ${f}..${t} ${fo}: `+(m.match(ruim)||[''])[0]);}
   await pg.evaluate(()=>{ETERNA.state.range={from:'2026-10-07',to:'2026-10-15'};ETERNA.state.view='fotografos';ETERNA.render();});await pg.waitForTimeout(100);ok(!ruim.test(await main(pg)),'14: Fotógrafos com null/NaN');
-  const kl=await pg.evaluate(()=>[...document.querySelectorAll('.pcard')].filter(c=>/Klássius|Sandessa/.test(c.querySelector('.nm').textContent)).map(c=>{const i=c.querySelector('.idx');return [i.textContent,i.classList.contains('none'),getComputedStyle(i).color];}));
+  const kl=await pg.evaluate(()=>[...document.querySelectorAll('.pcard')].filter(c=>/Kl[aá]ssius|Sandessa/.test(c.querySelector('.nm').textContent)).map(c=>{const i=c.querySelector('.idx');return [i.textContent,i.classList.contains('none'),getComputedStyle(i).color];}));
   ok(kl.length===2&&kl.every(([t,n,c])=>t==='sem dados'&&n&&c!=='rgb(179, 64, 42)'),'14: Klássius e Sandessa '+J(kl));
   await pg.screenshot({path:P+'/fotografos-1440.png',fullPage:true});
   // 16: tabelas de Fotógrafos e Vendas sem corte a 1440

@@ -67,10 +67,33 @@ try{
   r=ftp(ftpP,[['login','ctp','ctp-compartilhado-123'],['cwd','/marinara'],['stor','IMG_C1.jpg',jpeg2],['cwd','/ninguem'],['stor','IMG_C2.jpg',jpeg3]]);
   let c1=null,c2=null;for(let i=0;i<20&&!(c1&&c2);i++){await sleep(250);const L=await bib(porta);c1=L.find(f=>f.name==='IMG_C1.jpg');c2=L.find(f=>f.name==='IMG_C2.jpg');}
   ok(c1&&c1.origem==='marinara','B1: login compartilhado em /marinara deveria gravar marinara: '+J(c1&&c1.origem)+' '+J(r));ok(c2&&c2.origem==='ctp','B1: subpasta que não é fotógrafo deveria ficar com o login: '+J(c2&&c2.origem));
+  // ---------- v81 B1 (FTP do estádio): NLST com /outro/x.jpg e /../x.jpg; subpasta só vira dono se cadastrada; 450 = pasta vazia; sem tamanho não baixa ----------
+  {const py=`
+import importlib.util,sys,os,json,ftplib
+spec=importlib.util.spec_from_file_location('ag',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+class F:
+    def mlsd(self,*a,**k): raise ftplib.error_perm('500 sem MLSD')
+    def nlst(self,p):
+        if p in ('.',''): return ['/outro/x.jpg','/../x.jpg','/marinara/y.jpg','/ctp/z.jpg','vazia']
+        raise ftplib.error_temp('450 pasta vazia')
+    def size(self,p):
+        if 'y.jpg' in p: raise ftplib.error_perm('550 SIZE')
+        return 1234
+L=m.rftp_list(F(),'')
+O={p:m.rftp_origem(p,'') for p in ['/outro/x.jpg','/../x.jpg','/marinara/y.jpg','/ctp/z.jpg','/../marinara/x.jpg']}
+O['base']=m.rftp_origem('/fotos/marinara/a.jpg','/fotos');O['acento']=m.rftp_origem('/Márcio/a.jpg','');O['fora']=m.rftp_origem('/outro/marinara/a.jpg','/fotos')
+O['aviso_key']='aviso' in m.rftp
+print(json.dumps({'L':L,'O':O}))`;
+  let v=null;try{v=JSON.parse(execFileSync('python3',['-I','-c',py,AG],{env:{...process.env,HOME:home,ETERNA_SEM_OPENCV:'1'},timeout:30000}).toString().trim().split('\n').pop());}catch(e){fails.push('v81 B1: python falhou '+e.message.slice(0,200));}
+  if(v){const O=v.O;ok(O['/outro/x.jpg']==='ftp-estadio','v81 B1: /outro/x.jpg deveria ser ftp-estadio: '+O['/outro/x.jpg']);ok(O['/../x.jpg']==='ftp-estadio','v81 B1: /../x.jpg deveria ser ftp-estadio: '+O['/../x.jpg']);
+    ok(O['/../marinara/x.jpg']==='ftp-estadio','v81 B1: /../marinara deveria ser ftp-estadio');ok(O['/marinara/y.jpg']==='marinara','v81 B1: /marinara cadastrada deveria ser marinara: '+O['/marinara/y.jpg']);
+    ok(O['/ctp/z.jpg']==='ctp','v81 B1: login do ftp.json (ctp) conta como cadastrado: '+O['/ctp/z.jpg']);ok(O.aviso_key===true,'v81: status do FTP remoto sem o campo aviso');ok(O.acento==='marcio','v81 B1: Márcio deveria bater com marcio: '+O.acento);ok(O.base==='marinara'&&O.fora==='ftp-estadio','v81 B1: subpasta pelo prefixo da pasta configurada: '+J([O.base,O.fora]));
+    ok(!v.L.some(x=>x[0].includes('..')),'v81 B1: NLST com /../ não deveria ser listado: '+J(v.L));ok(v.L.some(x=>x[0]==='/outro/x.jpg'),'v81: /outro/x.jpg deveria ser listado (com dono ftp-estadio)');
+    const y=v.L.find(x=>x[0]==='/marinara/y.jpg');ok(y&&y[1]===0,'v81: SIZE que falha fica 0 (o loop não baixa): '+J(y));}}
   // ---------- I1: no app, o login do FTP vem antes da câmera ----------
   const {chromium}=require('playwright');const b=await chromium.launch();const pg=await b.newPage();await pg.goto(U);await pg.waitForTimeout(400);
   const w=await pg.evaluate(()=>{const d=ETERNA.SIM.camDia=ETERNA.SIM.camDia||{};const day='2026-10-20';d[day]={SERIE1:'marinara'};return ETERNA.libWho({id:'x',day,serie:'SERIE1',autor:'Yago',via:'ftp',origem:'carlos'},{ses:{},sold:new Set()});});
   ok(w==='carlos','I1: FTP de carlos com câmera da Marinara deveria ser carlos: '+w);await b.close();
 }catch(e){fails.push('erro: '+e.message.split('\n')[0]);}
 procs.forEach(p=>{try{p.kill('SIGKILL')}catch(e){}});try{fs.rmSync(home,{recursive:true,force:true});}catch(e){}
-const ok2=!fails.length;console.log(`${ok2?'OK':'FALHA'} agente-seguranca: B1, I1, I2, I3, I4, I5, I7${fails.length?' · '+fails.slice(0,10).join(' | '):''}`);process.exit(ok2?0:1);})();
+const ok2=!fails.length;console.log(`${ok2?'OK':'FALHA'} agente-seguranca: B1, I1, I2, I3, I4, I5, I7, v81 FTP do estádio${fails.length?' · '+fails.slice(0,10).join(' | '):''}`);process.exit(ok2?0:1);})();
