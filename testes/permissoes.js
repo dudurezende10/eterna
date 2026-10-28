@@ -15,7 +15,7 @@ const toastTxt=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent)
 async function abrirPerm(pg,email){await pg.evaluate(()=>{ETERNA.state.perm.tab='usuario';ETERNA.state.view='permissoes';ETERNA.render();});await pg.click(`[data-act="perm-sel"][data-e="${email}"]`);await pg.waitForTimeout(120);}
 const ck=(pg,m,op)=>pg.click(`.perm-tbl input[data-act="perm-op"][data-m="${m}"][data-op="${op}"]`);
 const draft=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.state.perm.draft)));
-const MENUS={Dashboard:['bandeiras','estoque','semana','fotografos','vendas','vendas-lista','galerias'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','escala'],'Configurações':['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes'],'Laboratório':['vestiario']};
+const MENUS={Dashboard:['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','escala'],'Configurações':['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes'],'Laboratório':['vestiario']};
 (async()=>{const b=await chromium.launch();
 try{
   // ---------- 1, 2, 3, 4, 19 e menus: admin ----------
@@ -26,8 +26,9 @@ try{
     const vs=await nav(pg);['set','fluxo','convidado','quiosque','perfis'].forEach(v=>ok(!vs.includes(v),'menus: '+v+' não deveria estar no menu'));
     ok(await pg.$('#rail-ck [data-act="loja-abrir"]'),'menus: botão Abrir Checkout fora dos menus');
     // menus abrem e fecham: o do item atual fica aberto
-    ok(await pg.$eval('#nav [data-v="semana"]',e=>e.offsetParent===null),'menus: no Início os menus começam fechados');await pg.click('#nav .grp[data-g="Dashboard"]');await pg.click('#nav [data-v="semana"]');await pg.waitForTimeout(100);
-    let ab=await pg.$$eval('#nav .navg',gs=>gs.map(g=>!g.querySelector('.navitems').hidden));ok(ab[0]&&!ab[1]&&!ab[3],'menus: só o Dashboard aberto na Semana '+JSON.stringify(ab));
+    await pg.evaluate(()=>ETERNA.go('perfis'));await pg.waitForTimeout(100); // v80: o admin começa no Painel; os menus fechados valem no Início
+    ok(await pg.$eval('#nav [data-v="painel"]',e=>e.offsetParent===null),'menus: no Início os menus começam fechados');await pg.click('#nav .grp[data-g="Dashboard"]');await pg.click('#nav [data-v="painel"]');await pg.waitForTimeout(100);
+    let ab=await pg.$$eval('#nav .navg',gs=>gs.map(g=>!g.querySelector('.navitems').hidden));ok(ab[0]&&!ab[1]&&!ab[3],'menus: só o Dashboard aberto no Painel '+JSON.stringify(ab));
     await pg.click('#nav .grp[data-g="Curadoria"]');await pg.waitForTimeout(80);ab=await pg.$$eval('#nav .navg',gs=>gs.map(g=>!g.querySelector('.navitems').hidden));ok(ab[1],'menus: clicar em Curadoria abre');
     await pg.click('#nav .grp[data-g="Curadoria"]');await pg.waitForTimeout(80);ab=await pg.$$eval('#nav .navg',gs=>gs.map(g=>!g.querySelector('.navitems').hidden));ok(!ab[1],'menus: clicar de novo fecha');
     // Início pelo logo, sem item no menu
@@ -54,8 +55,8 @@ try{
     await ck(pg,'set','r');d4=await draft(pg);ok(!d4.perms.set.r&&!d4.perms.set.c&&!d4.perms.set.u&&!d4.perms.set.d&&!d4.menu.includes('importar'),'4: desligar Ver deveria limpar C/U/D e as telas '+JSON.stringify(d4.perms.set));
     // a linha "Aparece no menu" só existe com Ver ligado: liga uma tela de Relatórios (Ver desligado) direto pelo evento
     d4=await draft(pg);ok(!d4.perms.relatorios.r,'4: pré Relatórios desligado');
-    await pg.evaluate(()=>{const i=document.createElement('input');i.type='checkbox';i.dataset.act='perm-view';i.dataset.v='semana';document.querySelector('#main').appendChild(i);i.checked=true;i.dispatchEvent(new Event('change',{bubbles:true}));});
-    d4=await draft(pg);ok(d4.perms.relatorios.r&&d4.menu.includes('semana'),'4: ligar uma tela deveria ligar Ver');
+    await pg.evaluate(()=>{const i=document.createElement('input');i.type='checkbox';i.dataset.act='perm-view';i.dataset.v='alertas';document.querySelector('#main').appendChild(i);i.checked=true;i.dispatchEvent(new Event('change',{bubbles:true}));});
+    d4=await draft(pg);ok(d4.perms.relatorios.r&&d4.menu.includes('alertas'),'4: ligar uma tela deveria ligar Ver');
     await ck(pg,'permissoes','r');d4=await draft(pg);ok(d4.perms.permissoes.r&&d4.perms.permissoes.u,'4: em Permissões, Ver liga Alterar');
     await ck(pg,'permissoes','u');d4=await draft(pg);ok(!d4.perms.permissoes.r&&!d4.perms.permissoes.u,'4: em Permissões, desligar Alterar desliga Ver');
     await pg.click('[data-act="perm-discard"]');await pg.waitForTimeout(100);
@@ -105,11 +106,10 @@ try{
     ok(!(await pg.$$eval('#nav .grp',e=>e.map(x=>x.textContent.trim()))).includes('Dashboard'),'6: fotógrafo não vê o Dashboard (nem Fotógrafos)');
     ok(await pg.evaluate(()=>ETERNA.state.view)==='importar','6: depois do login o fotógrafo cai no Upload automático: '+await pg.evaluate(()=>ETERNA.state.view));
     ok(!(await pg.$('#rail-ck [data-act="loja-abrir"]')),'6: fotógrafo não vê Abrir Checkout');
-    const m6=await pg.textContent('#main');ok(/Check-in/.test(m6)&&/Câmera de Carlos hoje/.test(m6),'6: check-in da câmera no Upload automático');ok(await pg.$('[data-act="set-switch"]')&&await pg.$('[data-act="set-logout"]'),'6: troca e saída do fotógrafo no Upload automático');
-    // check-in: uma câmera mandou foto hoje; "É a minha" grava a série para o Carlos
+    const m6=await pg.textContent('#main');ok(!/Check-in/.test(m6)&&!/Câmera de Carlos hoje/.test(m6)&&!/sem câmera/.test(m6),'6: o cartão de check-in da câmera saiu do Upload automático (v80)');ok(!/Servidor FTP do estádio/.test(m6),'6: o FTP do estádio saiu do Upload automático (v80)');ok(await pg.$('[data-act="set-switch"]')&&await pg.$('[data-act="set-logout"]'),'6: troca e saída do fotógrafo no Upload automático');
+    // v80: sem check-in; uma câmera que mandou foto hoje não pede "É a minha"
     const serie='R6TESTE0042';await pg.evaluate(s=>{const d=new Date();const day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');ETERNA.state.lib.push({id:'t1',day,serie:s,t:Date.now()/1000,autor:'',modelo:'EOS R6'});ETERNA.render();},serie);
-    await pg.click(`[data-act="cam-mine"][data-s="${serie}"]`);await pg.waitForTimeout(100);
-    ok(await pg.evaluate(s=>{const m=ETERNA.SIM.camDia||{};return Object.values(m).some(x=>x[s]==='carlos');},serie),'check-in: "É a minha" não gravou a câmera para o Carlos');
+    ok(!(await pg.$('[data-act="cam-mine"]'))&&!(await pg.$('select[data-act="cam-who"]')),'upload: botão "É a minha" e select de câmera não deveriam existir mais');
     await pg.screenshot({path:P+'/permissoes-upload-checkin.png'});
     await pg.evaluate(()=>{ETERNA.state.view='perfis';ETERNA.render();});ok(!/R\$/.test(await pg.textContent('#main')),'6: Início do fotógrafo com R$');
     // troca de fotógrafo volta para o Upload automático
@@ -122,7 +122,7 @@ try{
     await ctx.close();}
   // ---------- 7: atendimento e venda ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'loja@eterna.photo');const v7=await nav(pg);
-    ['vendas-lista','vendas','fotografos','semana','alertas','revisao','usuarios','permissoes','bandeiras','galerias'].forEach(v=>ok(!v7.includes(v),'7: atendimento vê '+v));
+    ['vendas-lista','vendas','fotografos','painel','alertas','revisao','usuarios','permissoes','bandeiras','galerias'].forEach(v=>ok(!v7.includes(v),'7: atendimento vê '+v));
     ok(!(await pg.$$eval('#nav .grp',e=>e.map(x=>x.textContent.trim()))).includes('Dashboard'),'7: atendimento sem Dashboard');
     ok(await pg.$('#rail-ck [data-act="loja-abrir"]'),'7: atendimento tem Abrir Checkout');ok(await pg.evaluate(()=>ETERNA.canView('vendas-lista'))===false,'7: canView(vendas-lista)');
     await pg.evaluate(()=>{ETERNA.state.view='perfis';ETERNA.render();});ok(!/R\$/.test(await pg.textContent('#main')),'7: Início do atendimento com R$');
@@ -257,8 +257,8 @@ try{
     const f1=await pg.evaluate(()=>{const g=document.querySelector('#railgav');const vis=x=>!!x.getClientRects().length;return {exp:document.querySelector('#menu-btn').getAttribute('aria-expanded'),grupos:[...document.querySelectorAll('#nav .grp')].filter(vis).map(x=>x.textContent.trim()),atual:vis(document.querySelector('#nav [data-v="usuarios"]')),foco:g.contains(document.activeElement),sw:document.documentElement.scrollWidth<=innerWidth};});
     ok(f1.exp==='true'&&f1.grupos.length===5&&f1.atual&&f1.foco&&f1.sw,`${t}: gaveta aberta ${JSON.stringify(f1)}`);
     await pg.screenshot({path:`${P}/v78-cel-gaveta-${w}-aberta.png`});
-    await pg.click('#nav .grp[data-g="Dashboard"]');await pg.click('#nav [data-v="semana"]');await pg.waitForTimeout(150);
-    ok(await pg.evaluate(()=>ETERNA.state.view==='semana'&&!document.body.hasAttribute('data-drawer')&&getComputedStyle(document.querySelector('#railgav')).display==='none'),`${t}: tocar num item deveria navegar e fechar a gaveta`);
+    await pg.click('#nav .grp[data-g="Dashboard"]');await pg.click('#nav [data-v="painel"]');await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>ETERNA.state.view==='painel'&&!document.body.hasAttribute('data-drawer')&&getComputedStyle(document.querySelector('#railgav')).display==='none'),`${t}: tocar num item deveria navegar e fechar a gaveta`);
     await pg.click('#menu-btn');await pg.keyboard.press('Escape');await pg.waitForTimeout(100);
     ok(await pg.evaluate(()=>!document.body.hasAttribute('data-drawer')&&document.activeElement===document.querySelector('#menu-btn')),`${t}: Esc deveria fechar e devolver o foco ao Menu`);
     await pg.click('#menu-btn');await pg.mouse.click(w-15,h-60);await pg.waitForTimeout(100);

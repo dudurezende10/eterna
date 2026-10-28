@@ -17,10 +17,10 @@ const abrirTodos=pg=>pg.evaluate(()=>document.querySelectorAll('#nav .navitems')
 const view=pg=>pg.evaluate(()=>ETERNA.state.view);
 const J=JSON.stringify;
 const PERFIS={
-  'eduardo@eduardorezende.com':{n:'admin',g:[['Dashboard',['bandeiras','estoque','semana','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes']],['Laboratório',['vestiario']]],ini:'perfis',ck:true},
+  'eduardo@eduardorezende.com':{n:'admin',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes']],['Laboratório',['vestiario']]],ini:'painel',ck:true},
   'carlos@eterna.photo':{n:'fotografo',g:[['Fotógrafo',['diario','importar','escala']]],ini:'importar',ck:false},
   'loja@eterna.photo':{n:'atendimento',g:[['Configurações',['catalogo']]],ini:'perfis',ck:true},
-  'supervisor@eterna.photo':{n:'supervisor',g:[['Dashboard',['bandeiras','estoque','semana','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes']],['Laboratório',['vestiario']]],ini:'perfis',ck:true},
+  'supervisor@eterna.photo':{n:'supervisor',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes']],['Laboratório',['vestiario']]],ini:'painel',ck:true},
   'qualidade@eterna.photo':{n:'validador',g:[['Curadoria',['revisao','treino']],['Fotógrafo',['diario']]],ini:'revisao',ck:false},
 };
 (async()=>{const b=await chromium.launch();
@@ -51,7 +51,7 @@ try{
     const q=await pg.evaluate(()=>({lj:!!ETERNA.state.lojaRota,h:location.hash,nav:document.querySelector('#nav').offsetParent!==null}));ok(q.lj&&q.h==='#loja'&&!q.nav,'A quiosque: deveria abrir #loja em tela cheia '+J(q));
     await ctx.close();}
   // ---------- B. abrir e fechar: aria-expanded, o grupo da tela atual abre, os outros fecham ao trocar ----------
-  {const {ctx,pg}=await nova(b);await entrar(pg,'eduardo@eduardorezende.com');
+  {const {ctx,pg}=await nova(b);await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>ETERNA.go('perfis'));await pg.waitForTimeout(100); // v80: o admin começa no Painel
     const est=()=>pg.$$eval('#nav .navg',gs=>gs.map(g=>[g.querySelector('.grp').getAttribute('aria-expanded'),g.querySelector('.navitems').hidden]));
     let s=await est();ok(s.every(([a,h])=>a==='false'&&h),'B: no Início todos fechados '+J(s));
     await pg.click('#nav .grp[data-g="Configurações"]');await pg.waitForTimeout(60);s=await est();ok(s[3][0]==='true'&&!s[3][1],'B: Configurações abre com aria-expanded=true '+J(s[3]));
@@ -64,31 +64,29 @@ try{
     await ctx.close();}
   // ---------- C. links antigos ----------
   {const {ctx,pg}=await nova(b);
-    const casos=[['eduardo@eduardorezende.com','set','importar'],['eduardo@eduardorezende.com','fluxo','perfis'],['eduardo@eduardorezende.com','convidado','perfis'],['carlos@eterna.photo','convidado','importar'],['carlos@eterna.photo','fluxo','importar'],['loja@eterna.photo','set','perfis']];
+    const casos=[['eduardo@eduardorezende.com','set','importar'],['eduardo@eduardorezende.com','fluxo','painel'],['eduardo@eduardorezende.com','convidado','painel'],['carlos@eterna.photo','convidado','importar'],['carlos@eterna.photo','fluxo','importar'],['loja@eterna.photo','set','perfis']];
     for(const [email,h,esp] of casos){await pg.goto(U);await pg.waitForTimeout(200);await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto('about:blank');await pg.goto(U+'#'+h);await pg.waitForTimeout(300);
       await codigo(pg,email);const r=await pg.evaluate(()=>({v:ETERNA.state.view,h:location.hash,f:/Algo falhou/.test(document.querySelector('#main').textContent)}));
       ok(r.v===esp&&!r.f&&r.h==='#'+esp,`C: sem login, #${h} e entrar como ${email} deveria cair em ${esp}: ${J(r)}`);}
     // já logado, abrir a página com o link antigo
     await entrar(pg,'eduardo@eduardorezende.com');
-    for(const [h,esp] of [['fluxo','perfis'],['convidado','perfis'],['set','importar'],['set/x','importar'],['venda','checkout']]){await pg.goto('about:blank');await pg.goto(U+'#'+h);await pg.waitForTimeout(300);const r=await pg.evaluate(()=>({v:ETERNA.state.view,h:location.hash,u:!!ETERNA.state.user}));ok(r.v===esp&&r.u,`C: logado, abrir #${h} deveria cair em ${esp}: ${J(r)}`);}
+    for(const [h,esp] of [['fluxo','painel'],['convidado','painel'],['set','importar'],['set/x','importar'],['venda','checkout']]){await pg.goto('about:blank');await pg.goto(U+'#'+h);await pg.waitForTimeout(300);const r=await pg.evaluate(()=>({v:ETERNA.state.view,h:location.hash,u:!!ETERNA.state.user}));ok(r.v===esp&&r.u,`C: logado, abrir #${h} deveria cair em ${esp}: ${J(r)}`);}
     await ctx.close();}
   // ---------- D. Upload automático: check-in pelo admin (select), supervisor só leitura, Sair ----------
   {const {ctx,pg}=await nova(b,1440,1000);await entrar(pg,'eduardo@eduardorezende.com');const serie='R6ADMIN0007';
     const poe=s=>pg.evaluate(s=>{const d=new Date();const day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');ETERNA.state.lib.push({id:'t'+s,day,serie:s,t:Date.now()/1000,autor:'',modelo:'EOS R6'});ETERNA.state.view='importar';ETERNA.render();},s);
-    await poe(serie);const sel=`select[data-act="cam-who"][data-s="${serie}"]`;ok(await pg.$(sel),'D: admin sem select de fotógrafo da câmera no Upload');
-    if(await pg.$(sel)){await pg.selectOption(sel,'marinara');await pg.waitForTimeout(100);ok(await pg.evaluate(s=>Object.values(ETERNA.SIM.camDia||{}).some(x=>x[s]==='marinara'),serie),'D: admin escolheu a Marinara e não gravou');}
+    // v80: o cartão de check-in da câmera saiu do Upload; o fotógrafo vem do usuário/subpasta do FTP e do nome gravado na câmera
+    await poe(serie);let mu=await pg.textContent('#main');ok(!(await pg.$('select[data-act="cam-who"]'))&&!(await pg.$('[data-act="cam-mine"]'))&&!/Check-in ·|Câmeras de hoje/.test(mu),'D: admin ainda vê o check-in da câmera no Upload');
+    ok(!/Servidor FTP do estádio/.test(mu),'D: o FTP do estádio saiu do Upload (vai para o Painel de controle)');
     ok(!(await pg.$('[data-act="set-switch"]'))&&!(await pg.$('[data-act="set-logout"]')),'D: admin (sem fotógrafo vinculado) não deveria ver Trocar fotógrafo nem Sair do fotógrafo');
     await pg.screenshot({path:`${P}/v78-upload-checkin-admin.png`,fullPage:true});
-    await entrar(pg,'supervisor@eterna.photo');await poe('R6SUP0001');const dis=await pg.$eval('select[data-act="cam-who"][data-s="R6SUP0001"]',e=>e.disabled).catch(()=>null);ok(dis===true,'D: supervisor (Upload só Ver) deveria ver o select desativado: '+dis);
-    // forçar o change pelo DOM não grava
-    await pg.evaluate(()=>{const s=document.querySelector('select[data-act="cam-who"][data-s="R6SUP0001"]');s.disabled=false;s.value='yago';s.dispatchEvent(new Event('change',{bubbles:true}));});await pg.waitForTimeout(80);
-    ok(!(await pg.evaluate(()=>Object.values(ETERNA.SIM.camDia||{}).some(x=>x['R6SUP0001']==='yago'))),'D: supervisor gravou o check-in pelo DOM');
+    await entrar(pg,'supervisor@eterna.photo');await poe('R6SUP0001');ok(!(await pg.$('select[data-act="cam-who"]')),'D: supervisor ainda vê o select de câmera');
     // Carlos: Sair volta ao login
     await entrar(pg,'carlos@eterna.photo');ok(await view(pg)==='importar','D: Carlos não entrou no Upload');await pg.screenshot({path:`${P}/v78-upload-checkin-fotografo.png`,fullPage:true});
     await pg.click('[data-act="set-logout"]');await pg.waitForTimeout(150);const r=await pg.evaluate(()=>({u:!!ETERNA.state.user,login:!!document.querySelector('[data-act="login-email"]'),s:localStorage.getItem('eterna.session')}));ok(!r.u&&r.login&&!r.s,'D: Sair do Upload deveria voltar ao login '+J(r));
     // Trocar fotógrafo: Marinara entra e cai no Upload automático
     await codigo(pg,'carlos@eterna.photo');await pg.click('[data-act="set-switch"]');await pg.waitForTimeout(150);await codigo(pg,'marinara@eterna.photo');
-    ok(await pg.evaluate(()=>ETERNA.state.user&&ETERNA.state.user.email)==='marinara@eterna.photo'&&await view(pg)==='importar'&&/Câmera de Marinara hoje/.test(await pg.textContent('#main')),'D: depois de Trocar fotógrafo a Marinara deveria cair no Upload com o check-in dela');
+    ok(await pg.evaluate(()=>ETERNA.state.user&&ETERNA.state.user.email)==='marinara@eterna.photo'&&await view(pg)==='importar','D: depois de Trocar fotógrafo a Marinara deveria cair no Upload');
     await ctx.close();}
   // ---------- E. Permissões: "não se aplica" legível, tela inicial e menu pela tela; prints desktop e celular ----------
   for(const [n,w,h] of [['desk',1440,900],['cel',390,844]]){const {ctx,pg}=await nova(b,w,h);await entrar(pg,'eduardo@eduardorezende.com');

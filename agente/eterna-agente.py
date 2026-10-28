@@ -186,6 +186,22 @@ def metricas_carrega(dias=3):
                 metricas_por_pid[x["pid"]].update(x)
     except Exception as ex:
         print("métricas antigas não lidas:", ex)
+        return
+    # v80 (I6): poda o arquivo para os últimos dias, senão cresce sem limite
+    try:
+        guardar = set(metricas_por_pid)
+        tmp = METRICAS_ARQ + ".tmp"
+        with open(METRICAS_ARQ, encoding="utf8") as src, open(tmp, "w", encoding="utf8") as out:
+            for l in src:
+                try:
+                    x = json.loads(l)
+                except Exception:
+                    continue
+                if ("chegada" in x and x["chegada"] >= lim) or ("chegada" not in x and x.get("pid") in guardar):
+                    out.write(l if l.endswith("\n") else l + "\n")
+        os.replace(tmp, METRICAS_ARQ)
+    except Exception:
+        pass
 
 
 metricas_carrega()
@@ -239,7 +255,7 @@ def quick_hash(path, size):
 
 def jpeg_completo(path, size):
     """Foto inteira? JPEG termina no marcador FFD9 (algumas câmeras deixam uns bytes depois dele); PNG no bloco IEND.
-    Há fotos PNG com nome .jpeg (exportações do Roverpix). Formato desconhecido passa: só barra o que dá para conferir."""
+    Há fotos PNG com nome .jpeg (exportações do Roverpix). v80 (segurança I2): arquivo que não começa como JPEG nem PNG é recusado."""
     try:
         with open(path, "rb") as f:
             ini = f.read(8)
@@ -251,7 +267,7 @@ def jpeg_completo(path, size):
         return b"\xff\xd9" in fim
     if ini == b"\x89PNG\r\n\x1a\n":
         return b"IEND" in fim[-16:]
-    return size > 0
+    return False
 
 
 def has_pillow():
@@ -576,10 +592,14 @@ def uso_eterna():
             "ftp_incompletas": state["ftp"].get("incompletas", 0), "leitores": rostos.get("leitores")}
 
 
+PROJECAO_MAX = 200_000   # v80 (segurança I4): a medição aloca n × 512 bytes; acima disso a máquina do ponto engasga
+
+
 def projecao_busca(n):
-    """Mede, nesta máquina, quanto tempo a busca leva com n rostos no índice (ex.: 60 dias de operação)."""
+    """Mede, nesta máquina, quanto tempo a busca leva com n rostos no índice (ex.: 60 dias de operação).
+    v80: só com ETERNA_TESTE_CARGA=1, por POST e no máximo 200 mil rostos (o teste de carga extrapola acima disso)."""
     np = _cv["np"]
-    n = max(1000, min(int(n), 6_000_000))
+    n = max(1000, min(int(n), PROJECAO_MAX))
     M = np.random.default_rng(1).standard_normal((n, 128), dtype="float32")
     M /= np.linalg.norm(M, axis=1, keepdims=True)
     v = M[0].copy(); ts = []
@@ -702,9 +722,39 @@ def load_ftp_cfg():
         alphabet = string.ascii_lowercase + string.digits
         for c in "lo01":
             alphabet = alphabet.replace(c, "")
-        cfg = {"users": {u: "".join(random.choice(alphabet) for _ in range(8)) for u in PHOTOGRAPHERS}}
-        json.dump(cfg, open(FTPCFG, "w"), indent=2)
+        # v80 (segurança I7): secrets e 12 caracteres. "compartilhado": logins que podem usar subpasta = fotógrafo
+        cfg = {"users": {u: "".join(secrets.choice(alphabet) for _ in range(12)) for u in PHOTOGRAPHERS}, "compartilhado": []}
+        with open(FTPCFG, "w") as f:
+            json.dump(cfg, f, indent=2)
+    try:
+        os.chmod(FTPCFG, 0o600)
+    except OSError:
+        pass
+    curtas = [u for u, pw in cfg["users"].items() if len(str(pw)) < 12]
+    if curtas:
+        print(f"  FTP: {len(curtas)} senha(s) com menos de 12 caracteres em ~/Eterna/ftp.json; troque quando der")
     return cfg
+
+
+# v80 (segurança I7): 5 senhas erradas seguidas bloqueiam o IP por 15 min
+FTP_FALHAS = {}          # ip -> [erros, bloqueado_até]
+FTP_MAX_FALHAS, FTP_BLOQUEIO_S = 5, 900
+
+
+def ftp_bloqueado(ip):
+    with lock:
+        f = FTP_FALHAS.get(ip)
+        return bool(f and f[1] > time.time())
+
+
+def ftp_falhou(ip):
+    with lock:
+        f = FTP_FALHAS.setdefault(ip, [0, 0])
+        if f[1] and f[1] <= time.time():
+            f[0], f[1] = 0, 0
+        f[0] += 1
+        if f[0] >= FTP_MAX_FALHAS:
+            f[1] = time.time() + FTP_BLOQUEIO_S
 
 
 def pasta_vigiada():
@@ -767,9 +817,10 @@ def lan_ip():
 
 
 class FTPSession(threading.Thread):
-    def __init__(self, conn, addr, users):
+    def __init__(self, conn, addr, users, compartilhado=()):
         super().__init__(daemon=True)
         self.conn, self.addr, self.users = conn, addr, users
+        self.compartilhado = {str(x).lower() for x in (compartilhado or ())}
         self.user = None
         self.ok = False
         self.cwd = "/"
@@ -827,20 +878,27 @@ class FTPSession(threading.Thread):
             self.send("331 Senha")
             return
         if cmd == "PASS":
-            if self.user in self.users and self.users[self.user] == arg:
+            if ftp_bloqueado(self.addr[0]):
+                self.ok = False
+                self.send("421 Muitas tentativas erradas; tente de novo em 15 minutos")
+                return
+            if self.user in self.users and hmac.compare_digest(str(self.users[self.user]), arg):
+                with lock:
+                    FTP_FALHAS.pop(self.addr[0], None)
                 self.ok = True
                 with lock:
                     state["ftp"]["last_user"] = self.user
                 print(f"ftp: {self.user} conectado de {self.addr[0]}")
                 self.send("230 Bem-vindo ao Eterna, " + self.user)
             else:
+                ftp_falhou(self.addr[0])
                 print(f"ftp: login recusado para '{self.user}' de {self.addr[0]}")
                 self.send("530 Usuário ou senha incorretos")
             return
         if cmd == "SYST":
             self.send("215 UNIX Type: L8"); return
         if cmd == "FEAT":
-            for l in ("211-Recursos", " UTF8", " PASV", " EPSV", " REST STREAM", "211 Fim"):
+            for l in ("211-Recursos", " UTF8", " PASV", " EPSV", "211 Fim"):   # v80 (I2): sem REST STREAM
                 self.send(l)
             return
         if cmd in ("OPTS", "NOOP"):
@@ -863,11 +921,15 @@ class FTPSession(threading.Thread):
         if cmd == "TYPE":
             self.send("200 OK"); return
         if cmd == "REST":
+            # v80 (segurança I2): sem retomada; um pedaço solto nunca é emendado em outro arquivo. A câmera manda a foto inteira de novo.
             try:
-                self.rest = int(arg)
+                n = int(arg)
             except Exception:
-                self.rest = 0
-            self.send("350 OK"); return
+                n = -1
+            self.rest = 0
+            if n == 0:
+                self.send("350 OK"); return
+            self.send("550 Retomada não suportada; envie o arquivo inteiro"); return
         if cmd in ("PASV", "EPSV"):
             if self.pasv:
                 self.pasv.close()
@@ -912,7 +974,7 @@ class FTPSession(threading.Thread):
             size = 0
             caiu = False
             try:
-                with open(tmp, "ab" if self.rest else "wb") as out:
+                with open(tmp, "wb") as out:
                     while True:
                         chunk = d.recv(256 * 1024)
                         if not chunk:
@@ -937,7 +999,12 @@ class FTPSession(threading.Thread):
                 self.send("426 Transferência incompleta, envie de novo")
                 return
             if jpg:
-                quem = self.cwd.strip("/").split("/")[-1] or self.user   # subpasta = fotógrafo
+                # v80 (segurança B1): o dono é sempre o login. Subpasta = fotógrafo só para login marcado como "compartilhado"
+                # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
+                quem = self.user
+                sub = self.cwd.strip("/").split("/")[-1].lower()
+                if self.user in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
+                    quem = sub
                 r = ingest_file(tmp, name, st, quem, "ftp", move=True)
                 if r:
                     save_index()
@@ -956,7 +1023,8 @@ def ftp_server():
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     port = None
-    for p in (21, 2121):
+    portas = (int(os.environ["ETERNA_FTP_PORTA"]),) if os.environ.get("ETERNA_FTP_PORTA") else (21, 2121)   # ETERNA_FTP_PORTA: testes
+    for p in portas:
         try:
             srv.bind(("0.0.0.0", p))
             port = p
@@ -971,14 +1039,13 @@ def ftp_server():
     with lock:
         state["ftp"].update({"port": port, "ip": ip, "users": sorted(users)})
     print(f"  FTP ligado em:     {ip}  porta {port}" + ("" if port == 21 else "  (porta 21 pede sudo; use 2121 no app)"))
-    print("  usuários do FTP (senhas em ~/Eterna/ftp.json):")
-    for u, pw in users.items():
-        print(f"     {u:10s} senha {pw}")
+    # v80 (segurança I7): senhas nunca no console nem no log; ficam só em ~/Eterna/ftp.json (chmod 600)
+    print("  usuários do FTP: " + ", ".join(sorted(users)) + "  (senhas em ~/Eterna/ftp.json)")
     print()
     while True:
         try:
             conn, addr = srv.accept()
-            FTPSession(conn, addr, users).start()
+            FTPSession(conn, addr, users, cfg.get("compartilhado") or ()).start()
         except Exception as ex:
             print("ftp:", ex)
 
@@ -2057,8 +2124,10 @@ if os.environ.get("ETERNA_REDE"):
 
 
 def rota_privada(path):
-    """Rotas que expõem fotos ou o índice de rostos: sem CORS aberto."""
-    return path == "/biblioteca" or path.startswith(("/thumb/", "/file/", "/rostos/"))
+    """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
+    v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
+    do agente e ETERNA_APP_ORIGIN."""
+    return path in ("/biblioteca", "/metricas", "/photoroom/status") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -2411,10 +2480,6 @@ class H(BaseHTTPRequestHandler):
                         o["thumb"] = f"/thumb/{e['id']}"
                         o["url"] = f"/file/{e['id']}"
                 return self.js({"events": out, "next": since + len(evs), "total": len(events)})
-        if u.path == "/rostos/projecao":
-            if not _cv.get("np"):
-                return self.js({"erro": "reconhecimento desligado"})
-            return self.js(projecao_busca(q.get("n", ["1000000"])[0]))
         if u.path == "/metricas":
             desde = float(q.get("desde", ["0"])[0] or 0)
             with lock:
@@ -2508,11 +2573,21 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 return self.js({"error": "corpo inválido"}, 400)
             old = rftp_cfg() or {}
-            c = {"host": (body.get("host") or "").strip(), "port": int(body.get("port") or 21),
-                 "user": (body.get("user") or "").strip(), "password": body.get("password") or old.get("password", ""),
+            try:
+                porta_n = int(body.get("port") or 21)
+            except Exception:
+                return self.js({"error": "porta inválida"}, 400)
+            c = {"host": (body.get("host") or "").strip(), "port": porta_n,
+                 "user": (body.get("user") or "").strip(), "password": body.get("password") or "",
                  "dir": (body.get("dir") or "").strip(), "tls": bool(body.get("tls"))}
             if not c["host"] or not c["user"]:
                 return self.js({"error": "informe servidor e usuário"}, 400)
+            # v80 (segurança I5): a senha salva só vale para o mesmo servidor, porta e usuário (não manda a senha para outro host)
+            mesmo = old and old.get("host") == c["host"] and int(old.get("port") or 21) == c["port"] and old.get("user") == c["user"]
+            if not c["password"]:
+                if not mesmo or not old.get("password"):
+                    return self.js({"error": "servidor, porta ou usuário mudou: digite a senha de novo"}, 400)
+                c["password"] = old["password"]
             try:
                 t = rftp_connect(c)
                 t.quit()
@@ -2554,6 +2629,20 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/roverpix/sync":
             rover_wake.set()
             return self.js({"ok": True})
+        if u.path == "/rostos/projecao":
+            if not os.environ.get("ETERNA_TESTE_CARGA"):
+                return self.js({"error": "not found"}, 404)
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            if not _cv.get("np"):
+                return self.js({"erro": "reconhecimento desligado"})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(min(n, 4096)).decode("utf-8") or "{}")
+                pedido = int(body.get("n") or 100000)
+            except Exception:
+                return self.js({"error": "corpo inválido"}, 400)
+            return self.js(projecao_busca(pedido))
         if u.path in ("/rostos/buscar", "/rostos/medir"):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)

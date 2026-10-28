@@ -14,10 +14,10 @@ O menu fica do lado esquerdo e é dividido em grupos:
 
 | Grupo | O que tem |
 | --- | --- |
-| Dashboard | Bandeiras, Estoque, Semana, Fotógrafos, Vendas e caixa, Lista de vendas, Galerias online |
+| Dashboard | Painel, Bandeiras, Estoque, Fotógrafos, Vendas e caixa, Lista de vendas, Galerias online |
 | Curadoria | Qualidade, Treino da IA, Alertas |
 | Fotógrafo | Diário do set, Upload automático, Escala 5×2 |
-| Configurações | Repositório, Identidade, Catálogo e preços, Fundos de IA, Ajuste automático, Usuários, Permissões |
+| Configurações | Repositório, Identidade, Painel de controle (catálogo, preços, Checkout e FTP), Fundos de IA, Ajuste automático, Usuários, Permissões |
 | Laboratório | Vestiário |
 
 1. Toque no nome do grupo para abrir. Toque de novo para fechar.
@@ -34,6 +34,16 @@ Cada pessoa só vê as telas que pode usar. Se faltar uma tela de que você prec
 3. Toque no grupo e depois na tela. O menu fecha sozinho.
 4. Para fechar sem escolher, toque na parte escura ao lado ou em **Menu** de novo.
 
+### O que mudou na v80
+
+- A **Semana** virou o **Painel**, a primeira tela do Dashboard. Admin e Supervisor começam nele (parte 1A).
+- **Vendas e caixa** ficou só com os vendedores. Totais, produtos e pagamentos estão no Painel.
+- **Catálogo e preços** passou a se chamar **Painel de controle** (catálogo, preços, Checkout e o FTP do estádio). Não confunda com o **Painel** do Dashboard.
+- O cartão de **check-in da câmera** saiu do Upload automático. O fotógrafo de cada foto vem do usuário do FTP (cada fotógrafo tem o seu login) e do nome gravado na câmera.
+- O cartão **Servidor FTP do estádio** saiu do Upload automático e foi para **Configurações › Painel de controle**.
+- Em Permissões e no cadastro de Usuários: **Copiar permissões de…** (parte 5).
+- As datas aparecem sempre como dia/mês/ano (07/10/2026), mesmo com o navegador em inglês.
+
 ### O que mudou na v78
 
 - **Loja** virou **Checkout**, com o botão **Abrir Checkout**.
@@ -41,6 +51,36 @@ Cada pessoa só vê as telas que pode usar. Se faltar uma tela de que você prec
 - O check-in da câmera e a troca de fotógrafo estão agora no **Upload automático** (parte 2).
 - O cliente vê as fotos só pela galeria online, com o QR do recibo. Não existe mais login de cliente.
 - Se ao entrar aparecer "Seu acesso ainda não foi liberado", a administração ainda não liberou nenhuma tela para você. Peça ao administrador.
+
+---
+
+## 1A. Painel (Admin e Supervisor)
+
+O Painel responde em poucos segundos "como foi o período": faturamento, fotos, sessões, o que vendeu e como pagaram.
+
+### Escolher o período, o ponto e a fonte
+
+1. Toque em **Hoje**, **Ontem**, **7 dias** ou **30 dias**. Os dias seguem o horário do Rio, mesmo abrindo de outro país.
+2. Para outras datas, toque em **Personalizado** ou direto nas datas **De** e **Até**.
+3. **Ponto**: filtra pelo ponto onde a foto foi tirada. Só liga com a Roverpix ao vivo (agente do ponto) ou com a fonte **Eterna**.
+4. **Fonte**: **Tudo** (Roverpix + Eterna), só **Roverpix** ou só **Eterna**. A parte Eterna são as vendas deste computador.
+5. **Exportar CSV** baixa um dia por linha e uma linha de total.
+
+### Como ler
+
+- **Os 4 cartões**: Faturamento (com ticket médio e vendas), Fotos tiradas (e quantas foram vendidas), Sessões (e quantas compraram) e Gasto por visitante (só com a leitura das catracas; sem catraca aparece "—").
+- **Seta verde ▲ ou cinza ▼**: comparação com o período anterior de mesma duração. Só aparece quando esse período anterior está inteiro nos dados. Abaixo de 1% aparece "estável".
+- **Receita por dia**: o melhor dia em azul, com o valor; o pior só com o valor. Passe o mouse ou toque numa coluna para ver o valor do dia.
+- **Vendas**: quantos atendimentos viraram venda, foram descartados ou cancelados, e os brindes.
+- **Fotos**: quanto das fotos vendidas saiu impressa, e as reimpressões.
+- **Sessões**: de cada 100 sessões, quantas chegaram ao balcão e quantas compraram. A frase diz onde está a maior perda.
+- **Ranking de produtos**: sempre os 7 itens do catálogo do Tour; o que vem de nomes antigos da Roverpix fica em "Outros (catálogo antigo)". Cortesias não entram.
+- **Pagamentos**: quanto entrou por modalidade. Dinheiro aguardando caixa aparece numa nota e não entra no total.
+- **Dia a dia**: toque para abrir a tabela.
+- **"total de 07/10 a 15/10"**: com os números importados, Vendas, Fotos, Ranking e Pagamentos só existem como total do período inteiro.
+- **"Roverpix desatualizado desde hh:mm"**: o agente não atualiza há mais de 15 minutos. Confira se o computador do ponto está ligado.
+
+Atendimento e venda, Fotógrafo, Validador e Checkout não veem o Painel.
 
 ---
 
@@ -52,25 +92,23 @@ Cada pessoa só vê as telas que pode usar. Se faltar uma tela de que você prec
 - No menu, só o grupo **Fotógrafo**: Diário do set, Upload automático e Escala 5×2.
 - Não vê Checkout, vendas, números de outros fotógrafos, Curadoria nem Configurações.
 
-### Check-in da câmera (todo dia, ao ligar a câmera)
+### De quem é cada foto (v80)
 
-1. Ligue a câmera e faça um clique de teste.
-2. Abra **Upload automático**. No painel **Check-in**, a câmera aparece em poucos segundos, com o número de série e as fotos de hoje.
-3. Na linha da sua câmera, toque em **É a minha**. Aparece **sua**.
-4. Pronto. Toda foto daquela câmera no dia é sua, pelo Wi-Fi ou pelo 5G.
+O fotógrafo não precisa mais fazer check-in da câmera. O Eterna sabe de quem é cada foto assim:
 
-Sem o check-in, as fotos caem em **Sem fotógrafo**.
+1. Pelo **usuário do FTP**: cada fotógrafo manda as fotos com o seu login (ou para a sua pasta) no FTP do estádio.
+2. Pelo **nome gravado na câmera** (menu da câmera › Informações de copyright › Nome do autor), se houver.
 
-Dica: se o seu nome estiver gravado na câmera (menu da câmera › Informações de copyright › Nome do autor), o Eterna reconhece sozinho.
+Check-ins feitos antes da v80 continuam valendo para aquelas fotos. Foto sem nenhuma dessas pistas cai em **Sem fotógrafo**.
 
-Para a administração: quem não é fotógrafo vê a coluna **De quem** e escolhe o fotógrafo de cada câmera na lista. Para isso a pessoa precisa poder **Alterar** o Upload.
+O FTP do estádio é configurado pela administração em **Configurações › Painel de controle**. Fora do computador do ponto, o cartão aparece com **agente desconectado**: abra o Eterna pelo agente (http://127.0.0.1:8765) naquele computador para configurar.
 
 ### Trocar de fotógrafo no mesmo computador
 
 1. No alto do Upload automático aparece **Neste computador**, com o nome de quem está logado.
 2. Toque em **Trocar fotógrafo**. Quem estava sai.
 3. O próximo fotógrafo entra com o e-mail dele e o código.
-4. Ele volta direto para o Upload automático e faz o check-in da câmera dele.
+4. Ele volta direto para o Upload automático.
 
 Para só sair, sem trocar, toque em **Sair**.
 
@@ -156,7 +194,7 @@ O que o cliente vê no carrinho:
 - "Cabem mais N fotos neste pacote sem pagar mais", quando ele escolheu menos fotos do que o pacote leva.
 - Impressas: o pacote imprime até o número de fotos escolhidas, mais uma por adicional. Cada adicional sai do rolo do caixa.
 
-Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Catálogo e preços**.
+Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Painel de controle**.
 
 ### Sessão que já foi paga
 
@@ -278,7 +316,7 @@ A aba **Envio** mostra se cada galeria chegou ao computador do ponto:
 
 ### Ajustes no Catálogo
 
-- **Tempo da tela final do Checkout**: Catálogo e preços › Checkout › "Tempo da tela final com o QR (segundos)". Padrão 30, de 5 a 120.
+- **Tempo da tela final do Checkout**: Painel de controle › Checkout › "Tempo da tela final com o QR (segundos)". Padrão 30, de 5 a 120.
 - **Preço da foto avulsa na galeria**: item "Foto digital avulsa (galeria online)", hoje R$ 39. "Todas as fotos" custa o mesmo que o Pacote Maracanã Mais.
 
 ### Ver as vendas da galeria
@@ -312,6 +350,8 @@ As letras vêm do inglês (Create, Read, Update, Delete). Embaixo do nome de cad
 4. Em **Perfil**, escolha um perfil pronto (tabela abaixo). Se ainda não souber o que liberar, escolha **Sem acesso ainda**.
 5. Toque em **Criar acesso**.
 
+Para começar igual a alguém da equipe, escolha a pessoa em **Começar com as permissões de…** antes de **Criar acesso**. A tela mostra o que a pessoa nova vai ter e o que ficou de fora.
+
 Quem entra com "Sem acesso ainda" vê a mensagem "Seu acesso ainda não foi liberado" até alguém liberar em Permissões.
 
 ### Dar ou tirar acesso
@@ -328,6 +368,16 @@ Quem entra com "Sem acesso ainda" vê a mensagem "Seu acesso ainda não foi libe
 7. Toque em **Salvar**. Enquanto não salvar, aparece **alterações não salvas**. **Descartar** volta como estava.
 
 Ao mudar uma caixa à mão, o perfil vira **Personalizado**. É normal.
+
+### Copiar permissões de outra pessoa
+
+1. Em **Permissões**, toque na pessoa e depois em **Copiar permissões de…** (ou, em **Usuários**, abra a pessoa e toque em **Copiar permissões de…**).
+2. Escolha de quem copiar. Vêm as caixas de cada parte, o menu e a tela inicial. Nome, e-mail e status não mudam.
+3. Confira a lista **O que muda**. Nada é gravado antes de confirmar.
+4. Se a outra pessoa tiver acessos que você não tem, eles ficam de fora e aparecem no aviso **Ficou de fora**. O resto é copiado.
+5. Toque em **Confirmar e salvar**. A cópia fica no Histórico, com de quem foi copiada.
+
+As regras de sempre valem: você não dá o que não tem, não muda quem tem mais acesso que você e não tira de você mesmo Usuários e Permissões.
 
 ### O que o sistema não deixa fazer
 
@@ -353,11 +403,11 @@ A aba **Histórico** em Permissões mostra toda mudança: quando, quem mudou, a 
 
 | Perfil | Vê | Não vê |
 | --- | --- | --- |
-| Admin | tudo, inclusive Usuários e Permissões | nada fica de fora |
-| Fotógrafo | Diário do set, Upload automático (check-in e troca de fotógrafo), Escala 5×2 | Checkout, Dashboard, Curadoria, Configurações |
+| Admin | tudo, inclusive Usuários e Permissões; começa no Painel | nada fica de fora |
+| Fotógrafo | Diário do set, Upload automático (troca de fotógrafo), Escala 5×2 | Checkout, Dashboard, Curadoria, Configurações |
 | Atendimento e venda | Checkout, venda no balcão, Fila, Caixa, Catálogo (só para ver os preços) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
 | Validador | Qualidade, Treino da IA, Diário do set (só para ver) | vendas, Checkout, Configurações |
-| Supervisor | Dashboard, Curadoria (só para ver), grupo Fotógrafo, Configurações do venue, Laboratório | Usuários e Permissões; não cancela venda |
+| Supervisor | Dashboard (começa no Painel), Curadoria (só para ver), grupo Fotógrafo, Configurações do venue, Laboratório | Usuários e Permissões; não cancela venda |
 | Checkout | só a tela do cliente, em tela cheia | todo o resto |
 
 A aba **Perfis prontos** mostra cada perfil em detalhe.
@@ -387,7 +437,7 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 
 ---
 
-## 7. Limitações de hoje (v79)
+## 7. Limitações de hoje (v80)
 
 - **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
 - **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.
@@ -401,4 +451,5 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 - **"Baixar todas"** baixa as fotos uma por uma (ainda não há arquivo ZIP).
 - **Fotos com fundo de IA** ainda não aparecem na galeria por QR. A compra de fundo de IA depois da visita, que existia na tela Convidado, volta na galeria online numa próxima fase.
 - **Permissões e confirmação do caixa**: nesta fase organizam o que cada pessoa vê e faz, mas ainda são conferidas só no navegador. Ainda não são uma trava de segurança no servidor. Isso entra quando o servidor entrar.
+- **Painel: a parte Eterna são as vendas deste computador.** Dois computadores podem mostrar totais diferentes até as vendas irem para o servidor.
 - **Fotógrafo sem o próprio índice**: no perfil pronto, o fotógrafo não vê a tela Fotógrafos. Decisão confirmada pelo Eduardo.

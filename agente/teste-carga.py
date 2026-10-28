@@ -610,7 +610,15 @@ def relatorio(a):
     n_proj = int(rostos_foto * a.meta_dia * a.retencao)
     proj_p = os.path.join(a.saida, "projecao.json")
     try:
-        proj = get_json(a.agente + "/rostos/projecao?n=%d" % n_proj, timeout=300)
+        # v80 (segurança I4): POST, só com o agente aberto com ETERNA_TESTE_CARGA=1, e o agente mede no máximo 200 mil rostos;
+        # acima disso a busca cresce linear com n, então extrapola a partir da medida
+        rq = urllib.request.Request(a.agente + "/rostos/projecao", data=json.dumps({"n": n_proj}).encode(), method="POST",
+                                    headers={"User-Agent": "eterna-teste", "Content-Type": "application/json"})
+        with urllib.request.urlopen(rq, timeout=300) as r:
+            proj = json.loads(r.read().decode("utf8"))
+        if proj.get("rostos") and proj["rostos"] < n_proj and proj.get("busca_ms") is not None:
+            k = n_proj / proj["rostos"]
+            proj = {**proj, "medido_com": proj["rostos"], "rostos": n_proj, "busca_ms": round(proj["busca_ms"] * k, 1), "memoria_mb": round(n_proj * 512 / 1e6), "extrapolado": True}
         json.dump(proj, open(proj_p, "w", encoding="utf8"))
     except Exception:
         proj = json.load(open(proj_p, encoding="utf8")) if os.path.exists(proj_p) else {}
