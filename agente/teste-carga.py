@@ -75,6 +75,18 @@ def hora_clique(f):
         return None
 
 
+def senha_do_eterna(host, usuario):
+    """Senha já salva no Eterna desta máquina (Upload → FTP do estádio) para o mesmo servidor e usuário."""
+    try:
+        c = json.load(open(os.path.join(os.path.expanduser("~/Eterna"), "ftp-remoto.json"), encoding="utf8"))
+        if c.get("host") == host and c.get("user") == usuario and c.get("password"):
+            print(f"usando a senha de {usuario}@{host} salva no Eterna desta máquina")
+            return c["password"]
+    except Exception:
+        pass
+    return None
+
+
 def enviar(a):
     jpg = lambda d, rec=True: sorted((f for f in glob.glob(os.path.join(d, "**", "*") if rec else os.path.join(d, "*"), recursive=rec)
                                       if f.lower().endswith((".jpg", ".jpeg"))), key=lambda f: (os.path.getmtime(f), f))  # ordem em que a câmera gravou
@@ -96,7 +108,11 @@ def enviar(a):
         if not any(c[1] for c in cameras):
             sys.exit("nenhuma foto .jpg em " + a.fotos)
         amostra = [f for _, l in cameras for f in l][:50]
-    senha = os.environ.get("ETERNA_FTP_SENHA") or getpass.getpass(f"senha FTP de {a.usuario}@{a.host}: ")
+    senha = os.environ.get("ETERNA_FTP_SENHA") or senha_do_eterna(a.host, a.usuario) or getpass.getpass(f"senha FTP de {a.usuario}@{a.host}: ")
+    try:                                                              # confere o login uma vez antes de soltar os fotógrafos
+        t = ftplib.FTP(); t.connect(a.host, a.porta, timeout=30); t.login(a.usuario, senha); t.quit()
+    except ftplib.error_perm as ex:
+        sys.exit(f"o FTP recusou o login de {a.usuario}@{a.host}: {ex}")
     cache = {}
     def ler(f):
         if a.sessoes:                                                 # HD inteiro: não cabe na memória, lê na hora
@@ -167,6 +183,9 @@ def enviar(a):
                 ftp.storbinary("STOR " + arq, io.BytesIO(corpo), blocksize=256 * 1024)
                 return True, tent, quedas, None
             except Exception as ex:
+                if str(ex).startswith("530"):                         # senha recusada: repetir só bloquearia o usuário no servidor
+                    print(f"  login recusado pelo FTP ({ex}); parando o envio para não bloquear o usuário {a.usuario}")
+                    os._exit(2)
                 try:
                     estado["ftp"].close()
                 except Exception:
