@@ -20,7 +20,7 @@ sem nenhum dos dois, serve o JPG original.
    O checkout, o quiosque e a selfie do convidado buscam aqui. Liga sozinho se
    houver OpenCV:  python3 -m pip install opencv-python-headless numpy
    A selfie usada na busca não é gravada. Leituras de rosto: ~/Eterna/rostos.db,
-   apagadas depois de 30 dias.
+   apagadas depois de 60 dias (validade da galeria online).
 
 Para outros computadores da rede (checkout, quiosque) usarem este agente:
      ETERNA_REDE=1 python3 eterna-agente.py
@@ -32,6 +32,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request, urllib.error, mimetypes, re, base64
 
+# imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
+os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", "40000000")
+MAX_PIXELS = 40_000_000
 PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
 APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
 app_cache = {}
@@ -124,6 +127,12 @@ def _exif_tiff(t):
         ex = ifd(num(i0[0x8769]))
         if 0xA431 in ex:
             out["serie"] = txt(ex[0xA431])
+        if 0x9003 in ex:
+            try:
+                tt = time.strptime(txt(ex[0x9003])[:19], "%Y:%m:%d %H:%M:%S")
+                out["cap"] = time.mktime(tt)
+            except Exception:
+                pass
         if 0xA430 in ex and not out.get("dono"):
             out["dono"] = txt(ex[0xA430])
         if 0x927C in ex:
@@ -229,7 +238,7 @@ LIMITE = 0.45          # semelhança mínima (cosseno SFace) para dizer "é a me
 LIMITE_TALVEZ = 0.38   # entre este e LIMITE a busca devolve como "talvez": o app pergunta "é uma destas?"
 ROSTO_MIN = 40         # rostos menores que isso (px, foto reduzida a 1600) são fundo/arquibancada: ignorados
 LADO = 1600
-RETENCAO_DIAS = 30
+RETENCAO_DIAS = 60     # D10: a selfie da galeria online precisa achar as fotos até o dia 60
 rostos = {"ligado": False, "motivo": "iniciando", "lidas": 0, "rostos": 0, "fila": 0, "modelo": "YuNet + SFace (OpenCV)", "limite": LIMITE}
 fila_rostos = queue.Queue()
 _cv = {}               # cv2, np, det, rec (um par por thread de leitura)
@@ -254,6 +263,34 @@ def modelos_ok():
             print(f"  baixando modelo {m}...")
             urllib.request.urlretrieve(APP_ORIGIN + "/vendor/rostos/" + m, dst + ".tmp")
             os.replace(dst + ".tmp", dst)
+
+
+def img_dims(raw):
+    """Largura e altura de um JPEG ou PNG lendo só o cabeçalho (None se não reconhecer)."""
+    try:
+        if raw[:8] == b"\x89PNG\r\n\x1a\n":
+            return int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
+        if raw[:2] == b"\xff\xd8":
+            i = 2
+            while i + 9 < len(raw):
+                if raw[i] != 0xFF:
+                    i += 1; continue
+                mk = raw[i + 1]
+                if mk in (0xD8, 0x01) or 0xD0 <= mk <= 0xD7:
+                    i += 2; continue
+                ln = int.from_bytes(raw[i + 2:i + 4], "big")
+                if mk in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    return int.from_bytes(raw[i + 7:i + 9], "big"), int.from_bytes(raw[i + 5:i + 7], "big")
+                i += 2 + ln
+    except Exception:
+        pass
+    return None
+
+
+def img_aceita(raw):
+    """Só JPEG/PNG com até MAX_PIXELS. Outros formatos o OpenCV ainda limita por OPENCV_IO_MAX_IMAGE_PIXELS."""
+    d = img_dims(raw)
+    return d is None or (d[0] * d[1] <= MAX_PIXELS)
 
 
 def leitor():
@@ -282,8 +319,20 @@ def ler_rostos(img, det, rec, minimo=ROSTO_MIN):
     return sorted(out, key=lambda x: -x[0])
 
 
+def limpar_rostos(db=None):
+    """Apaga as leituras de rosto com mais de RETENCAO_DIAS (no início e uma vez por dia, pelo galeria_loop)."""
+    db = db or rostos_db()
+    lim = time.strftime("%Y-%m-%d", time.localtime(time.time() - RETENCAO_DIAS * 86400))
+    db.execute("delete from rosto where dia < ?", (lim,)); db.execute("delete from foto where dia < ?", (lim,)); db.commit()
+    with _mat_lock:
+        for d in [d for d in _mat if d < lim]:
+            _mat.pop(d, None)
+
+
 def rostos_thread():
     try:
+        if os.environ.get("ETERNA_SEM_OPENCV"):
+            raise ImportError("ETERNA_SEM_OPENCV")
         import cv2, numpy as np
         _cv.update(cv2=cv2, np=np)
     except Exception:
@@ -298,8 +347,7 @@ def rostos_thread():
         print("  Rostos:            desligado (" + rostos["motivo"] + ")")
         return
     db = rostos_db()
-    lim = time.strftime("%Y-%m-%d", time.localtime(time.time() - RETENCAO_DIAS * 86400))
-    db.execute("delete from rosto where dia < ?", (lim,)); db.execute("delete from foto where dia < ?", (lim,)); db.commit()
+    limpar_rostos(db)
     feitas = {r[0] for r in db.execute("select pid from foto")}
     rostos["lidas"] = len(feitas)
     rostos["rostos"] = db.execute("select count(*) from rosto").fetchone()[0]
@@ -383,7 +431,12 @@ def _buscar(imagens, dias, det, rec):
     vs = []
     for b in imagens[:5]:
         raw = base64.b64decode(b.split(",", 1)[-1])
-        img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+        if not img_aceita(raw):
+            continue
+        try:
+            img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+        except Exception:
+            img = None
         if img is None:
             continue
         fs = ler_rostos(img, det, rec, minimo=60)
@@ -510,7 +563,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
                        "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb,
-                       "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
+                       "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
         state["copied"] += 1
         m = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(),
              "copia_ms": round((time.time() - t_ini) * 1000, 1)}
@@ -826,6 +879,134 @@ def ftp_server():
             print("ftp:", ex)
 
 
+# ---------- Servidor FTP do estádio (receptor externo) ----------
+# Quando o CTP manda as fotos para um servidor FTP da rede (e não para o FTP embutido neste agente),
+# o agente busca ali as fotos novas a cada poucos segundos e coloca na biblioteca. Nada é apagado no servidor.
+import ftplib
+RFTP_CFG = os.path.join(HOME, "ftp-remoto.json")
+RFTP_SEEN = os.path.join(HOME, "ftp-remoto-vistos.json")
+rftp = {"ok": False, "erro": None, "ultima": None, "baixadas": 0, "na_fila": 0, "checado": None}
+rftp_wake = threading.Event()
+
+
+def rftp_cfg():
+    try:
+        c = json.load(open(RFTP_CFG))
+        return c if c.get("host") and c.get("user") else None
+    except Exception:
+        return None
+
+
+def rftp_save(c):
+    with open(RFTP_CFG, "w") as f:
+        json.dump(c, f)
+    try:
+        os.chmod(RFTP_CFG, 0o600)
+    except Exception:
+        pass
+    rftp["erro"] = None
+    rftp_wake.set()
+
+
+def rftp_connect(c):
+    cls = ftplib.FTP_TLS if c.get("tls") else ftplib.FTP
+    f = cls()
+    f.connect(c["host"], int(c.get("port") or 21), timeout=20)
+    f.login(c["user"], c.get("password") or "")
+    if c.get("tls"):
+        f.prot_p()
+    f.set_pasv(True)
+    f.encoding = "utf-8"
+    return f
+
+
+def rftp_list(f, path, depth=0):
+    """Lista JPGs (caminho, tamanho) a partir de path, até 3 níveis de pasta."""
+    out = []
+    try:
+        items = list(f.mlsd(path or "/", facts=["type", "size", "modify"]))
+        for name, fa in items:
+            if name in (".", ".."):
+                continue
+            full = (path.rstrip("/") + "/" + name) if path else name
+            if fa.get("type") == "dir" and depth < 3:
+                out += rftp_list(f, full, depth + 1)
+            elif fa.get("type") == "file" and name.lower().endswith((".jpg", ".jpeg")):
+                out.append((full, int(fa.get("size") or 0)))
+    except ftplib.error_perm:
+        # servidor sem MLSD: NLST simples, sem subpastas
+        for full in f.nlst(path or "."):
+            if full.lower().endswith((".jpg", ".jpeg")):
+                try:
+                    out.append((full, f.size(full) or 0))
+                except Exception:
+                    out.append((full, 0))
+    return out
+
+
+def rftp_loop():
+    try:
+        seen_r = set(json.load(open(RFTP_SEEN)))
+    except Exception:
+        seen_r = set()
+    pend = {}          # caminho -> tamanho visto na volta anterior (espera parar de crescer)
+    conn = None
+    while True:
+        c = rftp_cfg()
+        if not c:
+            rftp.update(ok=False)
+            rftp_wake.wait(10)
+            rftp_wake.clear()
+            continue
+        try:
+            if conn is None:
+                conn = rftp_connect(c)
+            files = rftp_list(conn, c.get("dir") or "")
+            rftp.update(ok=True, erro=None, checado=time.strftime("%H:%M:%S"))
+            novos = [(p, sz) for p, sz in files if p + "|" + str(sz) not in seen_r]
+            rftp["na_fila"] = len(novos)
+            got = False
+            for path, sz in novos:
+                if pend.get(path) != sz:          # ainda chegando
+                    pend[path] = sz
+                    continue
+                os.makedirs(FTPTMP, exist_ok=True)
+                name = os.path.basename(path)
+                tmp = os.path.join(FTPTMP, "r_%d_%s" % (int(time.time() * 1000), name))
+                with open(tmp, "wb") as out:
+                    conn.retrbinary("RETR " + path, out.write)
+                st = os.stat(tmp)
+                parts = [x for x in path.strip("/").split("/") if x]
+                base = (c.get("dir") or "").strip("/").split("/")
+                sub = [x for x in parts[:-1] if x not in base]
+                origem = sub[0] if sub else "ftp-estadio"   # subpasta = fotógrafo, se o CTP usar uma por pessoa
+                r = ingest_file(tmp, name, st, origem, "ftp", move=True)
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                seen_r.add(path + "|" + str(sz))
+                pend.pop(path, None)
+                got = True
+                if r == "new":
+                    rftp["baixadas"] += 1
+                    rftp["ultima"] = time.strftime("%H:%M:%S") + " · " + name
+                json.dump(sorted(seen_r), open(RFTP_SEEN, "w"))
+            if got:
+                save_index()
+        except Exception as ex:
+            rftp.update(ok=False, erro=str(ex)[:200])
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+            conn = None
+            rftp_wake.wait(8)
+            rftp_wake.clear()
+            continue
+        rftp_wake.wait(2.5)
+        rftp_wake.clear()
+
+
 def watcher():
     while True:
         try:
@@ -1003,12 +1184,40 @@ def rv_aggregate(day, orders, payments, photos):
                               "products": [x.strip() for x in str(o.get("products_in_order") or "").split(";") if x.strip()],
                               "pay": sorted(set(pay_by_order.get(o.get("id"), []))) or [m.strip() for m in str(o.get("modality") or "").split(",") if m.strip()][:1],
                               "key": k, "pdv": agg["people"].get(k, {}).get("pdv", "") if k else ""})
+    # sessões (um cartão = uma sessão): hora da primeira e da última foto, quantas, quantas vendidas
+    ses = {}
+    for p in photos:
+        c = p.get("card") or ""
+        if not c:
+            continue
+        k = card_key.get(c)
+        x = ses.setdefault(c, {"card": c, "key": k, "pdv": (p.get("pdv_name") or "").strip(), "n": 0, "sold": 0, "t0": None, "t1": None})
+        x["n"] += 1
+        if int(rv_num(p.get("order_count"))) > 0:
+            x["sold"] += 1
+        ts = rv_epoch(p.get("date"))
+        if ts:
+            x["t0"] = ts if x["t0"] is None or ts < x["t0"] else x["t0"]
+            x["t1"] = ts if x["t1"] is None or ts > x["t1"] else x["t1"]
+    agg["sessions"] = sorted(ses.values(), key=lambda x: x["t0"] or 0)
+    agg["sv"] = 2  # versão do cálculo das sessões; muda → dias antigos são refeitos
     for d in (agg["sellers"], agg["payments"], agg["products"], agg["rows"]):
         for v in d.values():
             for f in ("revenue", "amount"):
                 if f in v:
                     v[f] = round(v[f], 2)
     return agg
+
+
+def rv_epoch(v):
+    try:
+        t = _dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        if not t.tzinfo:
+            # a Roverpix grava em UTC sem fuso (fotos de 08h em Brasília chegam como 11h)
+            t = t.replace(tzinfo=_dt.timezone.utc)
+        return t.timestamp()
+    except Exception:
+        return None
 
 
 def rv_hhmm(v):
@@ -1027,6 +1236,8 @@ def rv_key(name):
     first = "".join(ch for ch in n.split()[0] if ch.isalnum()) if n.split() else "x"
     if "chroma" in n:
         return "chroma" + "".join(ch for ch in n if ch.isdigit())[:2]
+    # grafias da Roverpix que diferem do cadastro do Eterna
+    first = {"klacius": "klassius", "classius": "klassius", "clacius": "klassius"}.get(first, first)
     return first or "x"
 
 
@@ -1057,7 +1268,7 @@ def rover_loop():
                     path = os.path.join(ROVER_DIR, "agg", day + ".json")
                     if os.path.exists(path) and i > 1:
                         try:
-                            if "orders" not in json.load(open(path)):
+                            if json.load(open(path)).get("sv") != 2:
                                 raw = json.load(open(os.path.join(ROVER_DIR, "raw", day + ".json")))
                                 with open(path, "w") as f:
                                     json.dump(rv_aggregate(day, raw["orders"], raw["payments"], raw["photos"]), f)
@@ -1206,11 +1417,578 @@ def pr_compose(photo, bg, W, H, pad):
     return name
 
 
+# ---------- Galeria online por QR (fase 1) ----------
+# O app cria o token (16 bytes aleatórios, base64url) e publica aqui o manifesto `sessao.json`. O agente faz o
+# papel do bucket: guarda originais (só compradas e cortesias) e vitrines (900 px, com marca d'água se houver
+# OpenCV), assina os links (HMAC + validade), compara a selfie só com as fotos do token e registra a venda online.
+# Armazenamento e pagamento ficam atrás de adaptadores neutros (Repositorio, Pagamento): trocar por S3/Azure e por
+# um adquirente real não muda as rotas. A selfie nunca vai para disco nem para log.
+import hmac, secrets
+GALERIAS = os.path.join(HOME, "galerias")
+GAL_SEGREDO = os.path.join(HOME, "galeria-segredo.json")
+PAG_CFG = os.path.join(HOME, "pagamento.json")      # chaves do adquirente (fase 2), chmod 600
+LIMITE_MENOR = 0.50     # grupo de escola: só as fotos em que o rosto da criança bate (calibrar com fotos de escola)
+URL_TTL = 900           # link assinado de foto: 15 min
+ACESSO_TTL = 3600       # acesso depois da selfie: 1 h
+GAL_MAX_CORPO = 2 * 1024 * 1024
+GAL_FALHAS, GAL_BLOQUEIO = 5, 15 * 60
+GAL_EVENTO_DISTINTOS, GAL_EVENTO_JANELA = 2, 24 * 3600   # grupo de escola: crianças diferentes por (ip, token) em 24 h
+GAL_EVENTO_HORA = 60                                     # acessos por galeria de grupo por hora (todos os IPs)
+SEM_OPENCV = bool(os.environ.get("ETERNA_SEM_OPENCV"))
+os.makedirs(GALERIAS, exist_ok=True)
+_re_token = re.compile(r"^[A-Za-z0-9_-]{22}$")
+_re_pid = re.compile(r"^(ag_)?[0-9a-f]{6,40}$")
+_re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$")
+_re_sig = re.compile(r"^[0-9a-f]{64}$")
+gal_lock = threading.RLock()
+gal_fila = queue.Queue()
+gal_info = {"vitrine_marca": False}
+
+
+def token_ok(t):
+    return isinstance(t, str) and bool(_re_token.match(t))
+
+
+def pid_ok(p):
+    return isinstance(p, str) and bool(_re_pid.match(p))
+
+
+def pid_lib(p):
+    """id do manifesto (ag_<hex>) -> id da biblioteca do agente (<hex>)."""
+    return p[3:] if p.startswith("ag_") else p
+
+
+def _grava_privado(path, data):
+    fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(data)
+    os.replace(path + ".tmp", path)
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+
+def gal_segredo():
+    try:
+        s = bytes.fromhex(json.load(open(GAL_SEGREDO))["segredo"])
+        if len(s) >= 32:
+            return s
+    except Exception:
+        pass
+    s = secrets.token_bytes(32)
+    _grava_privado(GAL_SEGREDO, json.dumps({"segredo": s.hex()}))
+    return s
+
+
+SEGREDO = gal_segredo()
+
+
+def assinar(token, pid, v, exp):
+    return hmac.new(SEGREDO, ("%s|%s|%s|%d" % (token, pid, v, exp)).encode(), hashlib.sha256).hexdigest()
+
+
+class Repositorio:
+    """Interface neutra de armazenamento. Fase 1: RepositorioLocal (o agente é o bucket).
+    S3:    salvar/subir = put_object; url = generate_presigned_url('get_object', ExpiresIn=ttl); apagar = delete_objects no prefixo.
+    Azure: salvar/subir = upload_blob(overwrite=True); url = generate_blob_sas(permission=read, expiry=ttl); apagar = delete_blobs."""
+    def salvar_manifesto(self, token, m): raise NotImplementedError
+    def ler_manifesto(self, token): raise NotImplementedError
+    def subir(self, token, pid, variante, caminho): raise NotImplementedError
+    def existe(self, token, pid, variante): raise NotImplementedError
+    def url(self, token, pid, variante, ttl): raise NotImplementedError
+    def abrir(self, token, pid, variante): raise NotImplementedError
+    def apagar(self, token): raise NotImplementedError
+    def listar_expiradas(self, agora): raise NotImplementedError
+
+
+class RepositorioLocal(Repositorio):
+    def __init__(self, base):
+        self.base = base
+
+    def _dir(self, token):
+        if not token_ok(token):
+            raise ValueError("token inválido")
+        return os.path.join(self.base, token)
+
+    def _arq(self, token, pid, variante):
+        if variante not in ("original", "vitrine") or not pid_ok(pid):
+            raise ValueError("arquivo inválido")
+        return os.path.join(self._dir(token), variante, pid_lib(pid) + ".jpg")
+
+    def salvar_manifesto(self, token, m):
+        d = self._dir(token)
+        os.makedirs(d, exist_ok=True)
+        tmp = os.path.join(d, "sessao.json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(m, f)
+        os.replace(tmp, os.path.join(d, "sessao.json"))
+
+    def ler_manifesto(self, token):
+        try:
+            with open(os.path.join(self._dir(token), "sessao.json")) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def subir(self, token, pid, variante, caminho):
+        dst = self._arq(token, pid, variante)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copyfile(caminho, dst + ".tmp")
+        os.replace(dst + ".tmp", dst)
+
+    def existe(self, token, pid, variante):
+        try:
+            return os.path.exists(self._arq(token, pid, variante))
+        except ValueError:
+            return False
+
+    def url(self, token, pid, variante, ttl):
+        exp = int(time.time()) + int(ttl)
+        p = pid_lib(pid)
+        return "/g/%s/foto/%s?v=%s&exp=%d&sig=%s" % (token, p, variante, exp, assinar(token, p, variante, exp))
+
+    def abrir(self, token, pid, variante):
+        return self._arq(token, pid, variante)
+
+    def apagar(self, token):
+        shutil.rmtree(self._dir(token), ignore_errors=True)
+
+    def listar_expiradas(self, agora):
+        out = []
+        for t in os.listdir(self.base):
+            if not token_ok(t):
+                continue
+            m = self.ler_manifesto(t)
+            if m and gal_expirou(m, agora):
+                out.append(t)
+        return out
+
+
+def repo_escolhido():
+    tipo = (os.environ.get("ETERNA_REPO") or "local").lower()
+    if tipo == "local":
+        return RepositorioLocal(GALERIAS)
+    if tipo in ("s3", "azure"):
+        raise NotImplementedError("ETERNA_REPO=%s ainda não implementado (fase 2)" % tipo)
+    raise ValueError("ETERNA_REPO desconhecido: %s" % tipo)
+
+
+REPO = repo_escolhido()
+
+
+class Pagamento:
+    """Interface neutra de pagamento. Fase 1: PagamentoSimulado. Com adquirente real (Mercado Pago, Asaas), a foto só é
+    liberada pelo webhook com assinatura validada ou pela consulta, nunca pelo retorno do navegador."""
+    def criar(self, pedido): raise NotImplementedError      # -> {id,status,checkout_url,pix_copia_cola,expira}
+    def consultar(self, id): raise NotImplementedError
+    def webhook(self, corpo, cabecalhos): raise NotImplementedError   # -> {id,status}
+
+
+class PagamentoSimulado(Pagamento):
+    def criar(self, pedido):
+        # fase 1: nada é cobrado; a venda fica marcada como teste e o app a tira da receita
+        return {"id": "SIM-" + secrets.token_hex(6), "status": "aprovado", "checkout_url": None, "pix_copia_cola": None, "expira": None, "teste": True}
+
+    def consultar(self, id):
+        return {"id": id, "status": "aprovado"}
+
+    def webhook(self, corpo, cabecalhos):
+        raise NotImplementedError
+
+
+def pagamento_escolhido():
+    tipo = (os.environ.get("ETERNA_PAGAMENTO") or "simulado").lower()
+    if tipo == "simulado":
+        return PagamentoSimulado()
+    raise NotImplementedError("ETERNA_PAGAMENTO=%s ainda não implementado (fase 2; chaves em ~/Eterna/pagamento.json)" % tipo)
+
+
+PAGAMENTO = pagamento_escolhido()
+
+
+def _iso(t=None):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t if t is not None else time.time()))
+
+
+def _epoch(s):
+    try:
+        return _dt.datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0
+
+
+def gal_expirou(m, agora=None):
+    return bool(m.get("encerrada")) or _epoch(m.get("expira")) <= (agora if agora is not None else time.time())
+
+
+def gal_validar(m):
+    """Manifesto vindo do app: só os campos conhecidos, com tipos e tamanhos checados."""
+    if not isinstance(m, dict) or not token_ok(m.get("token")) or m.get("tipo") not in ("sessao", "evento"):
+        raise ValueError("manifesto inválido")
+    fotos = []
+    for f in (m.get("fotos") or [])[:2000]:
+        if not isinstance(f, dict) or not pid_ok(f.get("id")):
+            raise ValueError("foto inválida")
+        d = f.get("direito") if f.get("direito") in ("comprada", "cortesia", "venda") else "venda"
+        x = {"id": f["id"], "sessao": str(f.get("sessao") or "")[:40], "direito": d,
+             "canal": f.get("canal") if f.get("canal") in ("loja", "online") else None}
+        if d == "cortesia" and isinstance(f.get("cortesia"), dict):
+            c = f["cortesia"]
+            x["cortesia"] = {"motivo": str(c.get("motivo") or "")[:20], "por": str(c.get("por") or "")[:120], "em": str(c.get("em") or "")[:40]}
+        fotos.append(x)
+    pr = m.get("precos") or {}
+    try:
+        precos = {"dig": max(0.0, float(pr.get("dig"))), "todas": max(0.0, float(pr.get("todas")))}
+    except Exception:
+        raise ValueError("preços inválidos")
+    codigo = m.get("codigo") if isinstance(m.get("codigo"), str) and _re_codigo.match(m.get("codigo")) else None
+    return {"v": 1, "token": m["token"], "codigo": codigo, "tipo": m["tipo"], "venue": str(m.get("venue") or "")[:40],
+            "nome": (str(m["nome"])[:120] if m.get("nome") else None), "sessoes": [str(s)[:40] for s in (m.get("sessoes") or [])[:200]],
+            "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": str(m.get("expira") or "")[:40],
+            "precos": precos, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
+
+
+def gal_mesclar(novo, velho):
+    """Republicação: comprada nunca regride (nem a da Loja nem a online); a cortesia só sai se a foto não estiver comprada."""
+    if not velho:
+        return novo
+    antes = {f["id"]: f for f in velho.get("fotos") or []}
+    for f in novo["fotos"]:
+        a = antes.get(f["id"])
+        if a and a.get("direito") == "comprada" and f["direito"] != "comprada":
+            f["direito"] = "comprada"
+            f["canal"] = a.get("canal") or "online"
+            f.pop("cortesia", None)
+    novo["envio"] = velho.get("envio") or novo["envio"]
+    # a validade nunca aumenta por republicação, e "encerrada" só sai por uma ação explícita (que não existe na fase 1)
+    if velho.get("expira") and _epoch(velho["expira"]) < _epoch(novo.get("expira")):
+        novo["expira"] = velho["expira"]
+    if velho.get("encerrada"):
+        novo["encerrada"] = True
+    return novo
+
+
+codigos = {}           # código curto -> token (para quem digita o código quando o QR falha)
+# Lápides: galerias encerradas ou expiradas que a limpeza diária apagou. Republicar um manifesto antigo desse
+# token (outro aparelho, validade original) não pode ressuscitá-la: info dá 410 e o código curto dá 404.
+LAPIDES = os.path.join(GALERIAS, "encerradas.json")
+lapides = {}
+
+
+def lapides_ler():
+    try:
+        d = json.load(open(LAPIDES))
+        lapides.update({t: v for t, v in d.items() if token_ok(t) and isinstance(v, dict)})
+    except Exception:
+        pass
+
+
+def lapide_gravar(token, m):
+    with gal_lock:
+        lapides[token] = {"encerrada": True, "motivo": "encerrada" if (m or {}).get("encerrada") else "expirada",
+                          "em": _iso(), "codigo": (m or {}).get("codigo")}
+        tmp = LAPIDES + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(lapides, f)
+        os.replace(tmp, LAPIDES)
+
+
+def gal_indexar():
+    lapides_ler()
+    for t in os.listdir(GALERIAS):
+        if token_ok(t):
+            m = REPO.ler_manifesto(t)
+            if m and m.get("codigo"):
+                codigos[m["codigo"]] = t
+            if m and (m.get("envio") or {}).get("vitrine") != "ok" and not gal_expirou(m):
+                gal_fila.put(t)
+
+
+def _vitrine(src_file, src_thumb, dst):
+    """Miniatura de 900 px. Com OpenCV, grava a marca d'água; sem ele, a tela põe a sobreposição (.wm).
+    Nunca usa o original como vitrine: sem como reduzir, a foto fica 'chegando'."""
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    if not SEM_OPENCV:
+        try:
+            import cv2
+            img = cv2.imread(src_file, cv2.IMREAD_REDUCED_COLOR_2)
+            if img is not None:
+                h, w = img.shape[:2]
+                k = 900.0 / max(h, w)
+                if k < 1:
+                    img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
+                h, w = img.shape[:2]
+                over = img.copy()
+                esc_ = max(0.6, w / 900.0 * 1.1)
+                for i, y in enumerate(range(int(h * 0.18), h, max(60, int(h * 0.22)))):
+                    x0 = -int(w * 0.15) + (i % 2) * int(w * 0.18)
+                    cv2.putText(over, "VIVA MARACANA   VIVA MARACANA", (x0, y), cv2.FONT_HERSHEY_DUPLEX, esc_, (255, 255, 255), max(1, int(esc_ * 2)), cv2.LINE_AA)
+                img = cv2.addWeighted(over, 0.35, img, 0.65, 0)
+                cv2.imwrite(dst + ".tmp.jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                os.replace(dst + ".tmp.jpg", dst)
+                gal_info["vitrine_marca"] = True
+                return True
+        except Exception:
+            pass
+    if src_thumb and src_thumb != src_file and os.path.exists(src_thumb):
+        shutil.copyfile(src_thumb, dst)
+        return True
+    if make_thumb(src_file, dst + ".tmp.jpg"):
+        os.replace(dst + ".tmp.jpg", dst)
+        return True
+    return False
+
+
+def gal_processar(token):
+    """Primeiro os originais das compradas e cortesias, depois as vitrines de todas."""
+    with gal_lock:
+        m = REPO.ler_manifesto(token)
+    if not m:
+        return
+    falta_orig = falta_vit = 0
+    for f in m["fotos"]:
+        if f["direito"] in ("comprada", "cortesia") and not REPO.existe(token, f["id"], "original"):
+            with lock:
+                e = lib.get(pid_lib(f["id"]))
+            if e and os.path.exists(e["file"]):
+                REPO.subir(token, f["id"], "original", e["file"])
+            else:
+                falta_orig += 1
+    for f in m["fotos"]:
+        if not REPO.existe(token, f["id"], "vitrine"):
+            with lock:
+                e = lib.get(pid_lib(f["id"]))
+            if not (e and os.path.exists(e["file"]) and _vitrine(e["file"], e.get("thumb"), REPO.abrir(token, f["id"], "vitrine"))):
+                falta_vit += 1
+    with gal_lock:
+        m = REPO.ler_manifesto(token) or m
+        m["envio"] = {"compradas": "ok" if not falta_orig else "pendente", "vitrine": "ok" if not falta_vit else "pendente"}
+        REPO.salvar_manifesto(token, m)
+
+
+def galeria_loop():
+    ultima_limpeza = 0
+    while True:
+        try:
+            token = gal_fila.get(timeout=600)
+            try:
+                gal_processar(token)
+            except Exception as ex:
+                print("  galeria: erro ao preparar", token[:8], ex)
+        except queue.Empty:
+            pass
+        if time.time() - ultima_limpeza > 86400:
+            ultima_limpeza = time.time()
+            if rostos["ligado"]:
+                try:
+                    limpar_rostos()
+                except Exception as ex:
+                    print("  rostos: erro na limpeza", ex)
+            try:
+                for t in REPO.listar_expiradas(time.time()):
+                    lapide_gravar(t, REPO.ler_manifesto(t))   # antes de apagar: o token nunca mais reabre
+                    REPO.apagar(t)          # os originais em ~/Eterna/inbox continuam guardados
+                    for c, tk in list(codigos.items()):
+                        if tk == t:
+                            codigos.pop(c, None)
+            except Exception as ex:
+                print("  galeria: erro na limpeza", ex)
+
+
+def buscar_em(imagens, pids):
+    """Como buscar(), mas só compara com as fotos do token: {rosto, sims:{pid:max}} ou {processando:True}."""
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    db = rostos_db()
+    ps = [pid_lib(p) for p in pids]
+    lidas = set()
+    for i in range(0, len(ps), 500):
+        q = ps[i:i + 500]
+        lidas |= {r[0] for r in db.execute("select pid from foto where pid in (%s)" % ",".join("?" * len(q)), q)}
+    if not lidas:
+        return {"processando": True}
+    with _busca_lock:
+        if not _busca["m"]:
+            _busca["m"] = leitor()
+        det, rec = _busca["m"]
+        vs = []
+        for b in imagens[:1]:
+            raw = base64.b64decode(b.split(",", 1)[-1])
+            if not img_aceita(raw):
+                continue
+            try:
+                img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+            except Exception:
+                img = None
+            del raw
+            if img is None:
+                continue
+            fs = ler_rostos(img, det, rec, minimo=60)
+            del img
+            if fs:
+                vs.append(fs[0][1])
+    del imagens
+    if not vs:
+        return {"rosto": False, "sims": {}}
+    me = vs[0]
+    sims = {}
+    for i in range(0, len(ps), 500):
+        q = ps[i:i + 500]
+        for pid, emb in db.execute("select pid, emb from rosto where pid in (%s)" % ",".join("?" * len(q)), q):
+            s_ = float(np.frombuffer(emb, "float32") @ me)
+            if s_ > sims.get(pid, -1):
+                sims[pid] = s_
+    return {"rosto": True, "sims": sims}
+
+
+acessos = {}           # acesso -> {token, pids, exp}   (só em memória)
+_evento_acertos = {}   # (ip, token) -> [(conjunto de pids, instante)]
+_evento_hora = {}      # token -> [instantes dos acessos]
+_falhas = {}           # (ip, token) -> [n, bloqueado_ate]
+_janelas = {}          # (ip, rota) -> [instantes]
+vendas_lock = threading.Lock()
+VENDAS = os.path.join(GALERIAS, "vendas-online.jsonl")
+CONSENT = os.path.join(GALERIAS, "consentimentos.jsonl")
+
+
+def limite_ok(ip, rota, n, janela=60):
+    agora = time.time()
+    with gal_lock:
+        l = [t for t in _janelas.get((ip, rota), []) if agora - t < janela]
+        ok = len(l) < n
+        if ok:
+            l.append(agora)
+        _janelas[(ip, rota)] = l
+        if len(_janelas) > 5000:
+            for k in [k for k, v in _janelas.items() if not v or agora - v[-1] > janela]:
+                _janelas.pop(k, None)
+    return ok
+
+
+def bloqueio(ip, token):
+    with gal_lock:
+        f = _falhas.get((ip, token))
+        return f[1] if f and f[1] > time.time() else 0
+
+
+def falhou(ip, token):
+    with gal_lock:
+        f = _falhas.setdefault((ip, token), [0, 0])
+        f[0] += 1
+        if f[0] >= GAL_FALHAS:
+            f[0], f[1] = 0, time.time() + GAL_BLOQUEIO
+            return 0
+        return GAL_FALHAS - f[0]
+
+
+def evento_permite(ip, token, pids):
+    """Grupo de escola: o mesmo IP abre no máximo GAL_EVENTO_DISTINTOS crianças diferentes por galeria em 24 h
+    (quem já abriu as fotos de uma criança pode tentar o rosto de outra recortado da vitrine), e cada galeria aceita
+    no máximo GAL_EVENTO_HORA acessos por hora. Devolve 0 (pode) ou o instante em que libera."""
+    agora = time.time()
+    with gal_lock:
+        hs = [t for t in _evento_hora.get(token, []) if agora - t < 3600]
+        _evento_hora[token] = hs
+        if len(hs) >= GAL_EVENTO_HORA:
+            return hs[0] + 3600
+        l = [(s, t) for s, t in _evento_acertos.get((ip, token), []) if agora - t < GAL_EVENTO_JANELA]
+        _evento_acertos[(ip, token)] = l
+        mesma = any(s & pids for s, _ in l)
+        if not mesma and len(l) >= GAL_EVENTO_DISTINTOS:
+            return min(t for _, t in l) + GAL_EVENTO_JANELA
+        l.append((frozenset(pids), agora))
+        hs.append(agora)
+        return 0
+
+
+def galeria_obj(token, m, pids):
+    fotos = []
+    for f in m["fotos"]:
+        if f["id"] not in pids:
+            continue
+        tem = REPO.existe(token, f["id"], "vitrine")
+        livre = f["direito"] in ("comprada", "cortesia")
+        fotos.append({"pid": f["id"], "direito": f["direito"],
+                      "vitrine": REPO.url(token, f["id"], "vitrine", URL_TTL) if tem else None,
+                      "original": REPO.url(token, f["id"], "original", URL_TTL) if livre and REPO.existe(token, f["id"], "original") else None,
+                      "chegando": not tem})
+    return {"tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"], "estado": gal_estado(token, m),
+            "precos": m["precos"], "fotos": fotos}
+
+
+def gal_estado(token, m):
+    return "pronta" if any(REPO.existe(token, f["id"], "vitrine") for f in m["fotos"]) else "chegando"
+
+
+def acesso_de(token, acesso):
+    a = acessos.get(acesso) if isinstance(acesso, str) else None
+    if not a or a["token"] != token or a["exp"] < time.time():
+        return None
+    return a
+
+
+def vendas_ler():
+    out = []
+    try:
+        with open(VENDAS) as f:
+            for l in f:
+                try:
+                    out.append(json.loads(l))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return out
+
+
+def anexar(path, obj):
+    with vendas_lock:
+        with open(path, "a") as f:
+            f.write(json.dumps(obj) + "\n")
+
+
+HOSTS_OK = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
+if os.environ.get("ETERNA_REDE"):
+    HOSTS_OK.add("%s:%d" % (lan_ip(), PORT))
+
+
+def rota_privada(path):
+    """Rotas que expõem fotos ou o índice de rostos: sem CORS aberto."""
+    return path == "/biblioteca" or path.startswith(("/thumb/", "/file/", "/rostos/"))
+
+
 class H(BaseHTTPRequestHandler):
+    timeout = 20            # conexão que declara corpo e não manda não prende uma thread para sempre
+
     def log_message(self, *a):
         pass
 
+    def origens_ok(self, path):
+        locais = ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)
+        if path.startswith("/rostos/"):
+            return locais
+        return locais + (APP_ORIGIN.rstrip("/"),)   # o app publicado (https://eterna.photo) lê a biblioteca do agente
+
+    def origem_privada_ok(self, path):
+        o = self.headers.get("Origin")
+        if path.startswith("/rostos/"):
+            return self.origem_local()
+        # contra DNS rebinding: o Host precisa ser o do agente (127.0.0.1, localhost ou o IP da rede com ETERNA_REDE)
+        if (self.headers.get("Host") or "").lower() not in HOSTS_OK:
+            return False
+        return not o or o in self.origens_ok(path)
+
     def cors(self):
+        path = urlparse(self.path).path
+        if rota_privada(path):
+            o = self.headers.get("Origin") or ""
+            if o and o in self.origens_ok(path):
+                self.send_header("Access-Control-Allow-Origin", o)
+                self.send_header("Vary", "Origin")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            return
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Access-Control-Allow-Headers", "*")
@@ -1244,15 +2022,281 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    # ---------- galeria online por QR ----------
+    def origem_local(self):
+        o = self.headers.get("Origin") or ""
+        host = (self.headers.get("Host") or "").lower()
+        if host not in ("127.0.0.1:%d" % PORT, "localhost:%d" % PORT):
+            return False
+        return not o or o in ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)
+
+    def corpo(self, limite):
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n > limite:
+            # descarta o corpo (até 8 MB) para o cliente receber o 413 em vez de conexão cortada; acima disso, só fecha
+            if n <= 8 * 1024 * 1024:
+                resto = n
+                while resto > 0:
+                    ch = self.rfile.read(min(65536, resto))
+                    if not ch:
+                        break
+                    resto -= len(ch)
+            self.close_connection = True
+            return None, 413
+        if n < 0:
+            return None, 400
+        try:
+            b = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+            return (b, None) if isinstance(b, dict) else (None, 400)
+        except Exception:
+            return None, 400
+
+    def gal_get(self, u, q):
+        p = u.path
+        ip = self.client_address[0]
+        if p.startswith("/galerias/"):
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            if p == "/galerias/vendas":
+                try:
+                    desde = max(0, int(q.get("desde", ["0"])[0] or 0))
+                except ValueError:
+                    desde = 0
+                vs = vendas_ler()
+                return self.js({"vendas": [{k: v.get(k) for k in ("id", "token", "sessoes", "pids", "n", "total", "metodo", "em", "canal", "todas", "teste")} for v in vs[desde:desde + 500]],
+                                "next": min(len(vs), desde + 500)})
+            if p == "/galerias/status":
+                gs = []
+                for t in sorted(os.listdir(GALERIAS))[:2000]:
+                    if token_ok(t):
+                        m = REPO.ler_manifesto(t) or {}
+                        gs.append({"token8": t[:8], "estado": "expirada" if m and gal_expirou(m) else gal_estado(t, m) if m else "?", "envio": m.get("envio")})
+                return self.js({"fila": gal_fila.qsize(), "galerias": gs})
+            return self.js({"error": "not found"}, 404)
+        partes = p.split("/")          # ['', 'g', token, ação, ...]
+        if len(partes) == 4 and partes[2] == "codigo":
+            if not limite_ok(ip, "codigo", 30):
+                return self.js({"motivo": "bloqueado"}, 429)
+            c = partes[3].upper()
+            t = codigos.get(c) if _re_codigo.match(c) else None
+            m = REPO.ler_manifesto(t) if t and t not in lapides else None
+            if not m or gal_expirou(m) or any(v.get("codigo") == c for v in lapides.values()):
+                return self.js({"error": "not found"}, 404)
+            return self.js({"token": t})
+        if len(partes) < 4 or not token_ok(partes[2]):
+            return self.js({"error": "not found"}, 404)       # antes de qualquer caminho em disco
+        token, acao = partes[2], partes[3]
+        if acao == "info" and len(partes) == 4:
+            if token in lapides:
+                return self.js({"error": "expirada"}, 410)
+            m = REPO.ler_manifesto(token)
+            if not m:
+                return self.js({"error": "not found"}, 404)
+            if gal_expirou(m):
+                return self.js({"error": "expirada"}, 410)
+            return self.js({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
+                            "estado": gal_estado(token, m), "venue": m.get("venue")})
+        if acao == "foto" and len(partes) == 5:
+            pid = partes[4]
+            v = q.get("v", [""])[0]
+            sig = q.get("sig", [""])[0]
+            try:
+                exp = int(q.get("exp", ["0"])[0])
+            except ValueError:
+                exp = 0
+            if not pid_ok(pid) or v not in ("vitrine", "original") or exp < time.time() or not _re_sig.match(sig) \
+                    or not hmac.compare_digest(sig, assinar(token, pid_lib(pid), v, exp)):
+                return self.js({"error": "proibido"}, 403)
+            m = REPO.ler_manifesto(token)
+            f = next((x for x in (m or {}).get("fotos", []) if pid_lib(x["id"]) == pid_lib(pid)), None)
+            if not m or not f or gal_expirou(m) or (v == "original" and f["direito"] not in ("comprada", "cortesia")):
+                return self.js({"error": "proibido"}, 403)
+            path = REPO.abrir(token, f["id"], v)
+            try:
+                with open(path, "rb") as fh:
+                    data = fh.read()
+            except OSError:
+                return self.js({"error": "not found"}, 404)
+            self.send_response(200)
+            self.cors()
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, max-age=600")
+            self.end_headers()
+            self.wfile.write(data)
+            return None
+        return self.js({"error": "not found"}, 404)
+
+    def gal_post(self, u):
+        p = u.path
+        ip = self.client_address[0]
+        if p.startswith("/pagamento/webhook/"):
+            return self.js({"error": "webhook reservado para o adquirente real (fase 2)"}, 501)
+        if p in ("/galerias/publicar", "/galerias/encerrar"):
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(GAL_MAX_CORPO)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            if p == "/galerias/encerrar":
+                t = body.get("token")
+                if not token_ok(t):
+                    return self.js({"error": "not found"}, 404)
+                with gal_lock:
+                    m = REPO.ler_manifesto(t)
+                    if not m:
+                        return self.js({"error": "not found"}, 404)
+                    m["expira"] = _iso()
+                    m["encerrada"] = True
+                    REPO.salvar_manifesto(t, m)
+                return self.js({"ok": True})
+            try:
+                novo = gal_validar(body.get("manifesto"))
+            except ValueError as ex:
+                return self.js({"error": str(ex)}, 400)
+            t = novo["token"]
+            if t in lapides:
+                return self.js({"ok": False, "error": "galeria encerrada", "estado": "encerrada"}, 410)
+            with gal_lock:
+                m = gal_mesclar(novo, REPO.ler_manifesto(t))
+                REPO.salvar_manifesto(t, m)
+                if m.get("codigo"):
+                    codigos[m["codigo"]] = t
+            gal_fila.put(t)
+            return self.js({"ok": True, "token": t, "estado": gal_estado(t, m)})
+        partes = p.split("/")
+        if len(partes) != 4 or partes[1] != "g" or not token_ok(partes[2]):
+            return self.js({"error": "not found"}, 404)
+        token, acao = partes[2], partes[3]
+        if acao == "rosto":
+            if not limite_ok(ip, "rosto", 10):
+                return self.js({"motivo": "bloqueado", "ate": _iso(time.time() + 60)}, 429)
+            body, err = self.corpo(GAL_MAX_CORPO)
+            if err == 413:
+                return self.js({"error": "imagem grande demais"}, 413)
+            if err:
+                return self.js({"error": "corpo inválido"}, 400)
+            if body.get("consentimento") is not True:
+                return self.js({"error": "consentimento obrigatório"}, 400)
+            img = body.pop("imagem", None)
+            m = REPO.ler_manifesto(token)
+            if not m:
+                return self.js({"error": "not found"}, 404)
+            if gal_expirou(m):
+                return self.js({"error": "expirada"}, 410)
+            ate = bloqueio(ip, token)
+            if ate:
+                return self.js({"motivo": "bloqueado", "ate": _iso(ate)}, 429)
+            if not rostos["ligado"]:
+                return self.js({"motivo": "processando"}, 503)
+            if not isinstance(img, str) or not img:
+                return self.js({"error": "sem imagem"}, 400)
+            kid = m["tipo"] == "evento" or bool(m.get("menor"))
+            idioma = body.get("idioma") if body.get("idioma") in ("pt", "en", "es", "fr", "de") else "pt"
+            versao = str(body.get("versao") or "")[:20]
+            anexar(CONSENT, {"token": token, "tipo": "responsavel" if kid else "titular", "versao": versao, "idioma": idioma, "em": _iso()})
+            try:
+                r = buscar_em([img], [f["id"] for f in m["fotos"]])
+            except Exception:
+                return self.js({"motivo": "processando"}, 503)
+            finally:
+                img = None
+            if r.get("processando"):
+                return self.js({"motivo": "processando"}, 503)
+            if not r.get("rosto"):
+                return self.js({"ok": False, "motivo": "sem_rosto", "restam": falhou(ip, token)})
+            sims = r["sims"]
+            if m["tipo"] == "evento":
+                pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), -1) >= LIMITE_MENOR}
+            else:
+                pids = {f["id"] for f in m["fotos"]} if any(s >= LIMITE for s in sims.values()) else set()
+            if not pids:
+                restam = falhou(ip, token)
+                if not restam:
+                    return self.js({"motivo": "bloqueado", "ate": _iso(bloqueio(ip, token))}, 429)
+                return self.js({"ok": False, "motivo": "nao_encontrado", "restam": restam})
+            if m["tipo"] == "evento":
+                ate = evento_permite(ip, token, pids)
+                if ate:
+                    return self.js({"motivo": "bloqueado", "ate": _iso(ate)}, 429)
+            with gal_lock:                      # o acerto não zera as falhas anteriores
+                agora = time.time()
+                for k in [k for k, v in acessos.items() if v["exp"] < agora]:
+                    acessos.pop(k, None)
+                acesso = secrets.token_urlsafe(24)
+                acessos[acesso] = {"token": token, "pids": pids, "exp": agora + ACESSO_TTL}
+            return self.js({"ok": True, "acesso": acesso, "exp": _iso(acessos[acesso]["exp"]), "galeria": galeria_obj(token, m, pids)})
+        if acao in ("galeria", "pagamento"):
+            body, err = self.corpo(64 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            a = acesso_de(token, body.get("acesso"))
+            if not a:
+                return self.js({"error": "acesso inválido ou vencido"}, 401)
+            m = REPO.ler_manifesto(token)
+            if not m or gal_expirou(m):
+                return self.js({"error": "expirada"}, 410)
+            if acao == "galeria":
+                return self.js({"galeria": galeria_obj(token, m, a["pids"])})
+            pids = body.get("pids")
+            metodo = body.get("metodo")
+            idem = body.get("idem")
+            if not isinstance(idem, str) or not re.match(r"^[A-Za-z0-9-]{8,80}$", idem) or metodo not in ("pix", "cartao"):
+                return self.js({"error": "pedido inválido"}, 400)
+            with gal_lock:
+                ja = next((v for v in vendas_ler() if v.get("token") == token and v.get("idem") == idem), None)
+                if ja:
+                    m = REPO.ler_manifesto(token)
+                    return self.js({"ok": True, "pedido": {"id": ja["id"], "status": "aprovado", "total": ja["total"], "canal": "online", "teste": bool(ja.get("teste")),
+                                                           "checkout_url": None, "pix_copia_cola": None}, "galeria": galeria_obj(token, m, a["pids"])})
+                dire = {f["id"]: f["direito"] for f in m["fotos"]}
+                if not isinstance(pids, list) or not pids or len(pids) > 2000 or len(set(map(str, pids))) != len(pids) \
+                        or any(x not in a["pids"] or dire.get(x) != "venda" for x in pids):
+                    return self.js({"error": "foto fora do acesso ou não está à venda"}, 400)
+                n = len(pids)
+                dig, todas = float(m["precos"]["dig"]), float(m["precos"]["todas"])
+                total = round(min(n * dig, todas), 2)          # o total que o navegador mandar é ignorado
+                ped = PAGAMENTO.criar({"token": token, "pids": pids, "total": total, "metodo": metodo, "idem": idem})
+                if ped["status"] == "aprovado":
+                    for f in m["fotos"]:
+                        if f["id"] in pids:
+                            f["direito"], f["canal"] = "comprada", "online"
+                            f.pop("cortesia", None)
+                    REPO.salvar_manifesto(token, m)
+                    vid = "O%04d" % (len(vendas_ler()) + 1)
+                    anexar(VENDAS, {"id": vid, "token": token, "sessoes": sorted({f["sessao"] for f in m["fotos"] if f["id"] in pids}), "pids": pids,
+                                    "n": n, "total": total, "metodo": metodo, "em": _iso(), "canal": "online", "idem": idem, "todas": total < n * dig,
+                                    "pagamento": ped["id"], "teste": bool(ped.get("teste"))})
+                else:
+                    vid = ped["id"]
+            if ped["status"] == "aprovado":
+                try:
+                    gal_processar(token)      # originais das recém-compradas antes de devolver os links
+                except Exception:
+                    gal_fila.put(token)
+            m = REPO.ler_manifesto(token)
+            return self.js({"ok": True, "pedido": {"id": vid, "status": ped["status"], "total": total, "canal": "online", "teste": bool(ped.get("teste")),
+                                                   "checkout_url": ped.get("checkout_url"), "pix_copia_cola": ped.get("pix_copia_cola")},
+                            "galeria": galeria_obj(token, m, a["pids"])})
+        return self.js({"error": "not found"}, 404)
+
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path.startswith(("/g/", "/galerias/")):
+            return self.gal_get(u, q)
+        if rota_privada(u.path) and not self.origem_privada_ok(u.path):
+            return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/status":
             with lock:
                 return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()}})
+                                "rostos": {**rostos, "fila": fila_rostos.qsize()},
+                                "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
             with lock:
@@ -1292,20 +2336,24 @@ class H(BaseHTTPRequestHandler):
                 if day not in (hoje, ontem):
                     continue                            # a biblioteca mostra só hoje e ontem
                 name = os.path.basename(f).split("_", 1)[-1]
-                if "serie" not in m and "x" not in m:
+                if ("serie" not in m and "x" not in m) or "cap" not in m:
                     m = meta.setdefault(pid, {})
                     m.update(exif_info(f))
                     m["x"] = 1          # já lido, mesmo sem EXIF
                     meta_dirty[0] = True
                 out.append({"id": pid, "name": name, "day": day, "t": u, "size": st.st_size,
                             "origem": m.get("o") or "", "via": m.get("s") or "",
-                            "serie": m.get("serie") or "", "autor": m.get("autor") or "",
+                            "cap": m.get("cap") or 0, "serie": m.get("serie") or "", "autor": m.get("autor") or "",
                             "dono": m.get("dono") or "", "modelo": m.get("modelo") or ""})
             out.sort(key=lambda x: x["t"])
             if meta_dirty[0]:
                 meta_dirty[0] = False
                 save_meta()
             return self.js({"fotos": out, "total": len(out), "boot": BOOT})
+        if u.path == "/ftp-remoto/status":
+            c = rftp_cfg()
+            return self.js({**rftp, "configurado": bool(c), "host": c and c.get("host"), "port": c and c.get("port"),
+                            "user": c and c.get("user"), "dir": c and c.get("dir"), "tls": bool(c and c.get("tls"))})
         if u.path == "/photoroom/status":
             c = pr_cfg()
             with pr_lock:
@@ -1327,6 +2375,8 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
+        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")):
+            return self.gal_post(u)
         if u.path == "/roverpix/config":
             # só o app aberto pelo próprio agente pode trocar a chave
             if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
@@ -1340,6 +2390,27 @@ class H(BaseHTTPRequestHandler):
             if not key:
                 return self.js({"error": "informe a chave"}, 400)
             rover_save_cfg(body.get("base_url"), key)
+            return self.js({"ok": True})
+        if u.path == "/ftp-remoto/config":
+            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+                return self.js({"error": "origem não autorizada"}, 403)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+            except Exception:
+                return self.js({"error": "corpo inválido"}, 400)
+            old = rftp_cfg() or {}
+            c = {"host": (body.get("host") or "").strip(), "port": int(body.get("port") or 21),
+                 "user": (body.get("user") or "").strip(), "password": body.get("password") or old.get("password", ""),
+                 "dir": (body.get("dir") or "").strip(), "tls": bool(body.get("tls"))}
+            if not c["host"] or not c["user"]:
+                return self.js({"error": "informe servidor e usuário"}, 400)
+            try:
+                t = rftp_connect(c)
+                t.quit()
+            except Exception as ex:
+                return self.js({"error": "não conectou: %s" % ex}, 502)
+            rftp_save(c)
             return self.js({"ok": True})
         if u.path in ("/photoroom/config", "/photoroom/compose"):
             # só o app aberto pelo próprio agente usa a chave (ninguém de fora gasta os créditos)
@@ -1376,6 +2447,8 @@ class H(BaseHTTPRequestHandler):
             rover_wake.set()
             return self.js({"ok": True})
         if u.path in ("/rostos/buscar", "/rostos/medir"):
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
             if not rostos["ligado"]:
                 return self.js({"error": rostos["motivo"] or "reconhecimento desligado"}, 503)
             try:
@@ -1430,8 +2503,13 @@ def main():
     threading.Thread(target=watcher, daemon=True).start()
     threading.Thread(target=ftp_server, daemon=True).start()
     threading.Thread(target=rover_loop, daemon=True).start()
+    threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
+    gal_indexar()
+    threading.Thread(target=galeria_loop, daemon=True).start()
+    print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__, type(PAGAMENTO).__name__))
+    print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)

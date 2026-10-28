@@ -60,3 +60,22 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v58 | `f193805` | Removidos das listas: Igor, Durval, Fictix, Andressa e Enzo (histórico mantido nos totais) |
 | v59 | `959866e` | Check-in da câmera no Set (número de série no EXIF); nome do autor gravado na câmera reconhecido sozinho; Biblioteca atribui o fotógrafo pela câmera |
 | – | `8d74cf6` | Teste de carga da operação (agente/teste-carga.py: enviar, selfies, monitorar, relatorio); agente com leitores em paralelo, /metricas, vigia de pasta FTP (ETERNA_PASTA); agente/iniciar-eterna.bat |
+| v60 | `5542a33` | Fotos em tempo real por um servidor FTP da rede: o agente busca as novas, pasta por fotógrafo; conexão no Upload |
+| v61 | `db36f1c` | Anfitrião no set: quem está logado, Trocar fotógrafo e Sair na própria tela |
+| v62 | `e779f0d` | Fundos P&B e sépia deixam a foto inteira no mesmo tom; aviso de miniatura nas sessões de exemplo |
+| v63 | `874d321` | Enquadramento lido pelos rostos; Mirante só fechada/meio corpo; asa-delta fora do automático (precisa de montagem generativa) |
+| v64 | `5284276` | Sala de imprensa: grupo na altura das cadeiras, atrás da bancada |
+| v65 | `8eddc1a` | Fundo Noite de campeão substituído pela versão nova |
+| v66 | `bcbd8df` | Fundo Noite de campeão · Argentina |
+| v67 | `b37a9d5` | Quiosque: revisão foto a foto em tela cheia com setas e Quero essa; depois só as escolhidas e o pacote |
+| v68 | `479f7b7` | Campos De/Até abrem o calendário ao toque |
+| v69 | `4d7bf00` | Revisão de fotos com menus de fotógrafo, data e venda, filtro de foto vendida/não vendida; sessões reais incluídas |
+| v70 | `1b949e5` | Revisão de fotos até hoje: sessões da Roverpix por cartão, fotos locais casadas por fotógrafo e hora de captura; correção de Escala/Alertas com fotógrafo novo |
+| v71 | `534ce8d` | Fundo Noite de campeão · Colômbia; grafia Klacius da Roverpix mapeada para Klássius |
+| v72 | `d80a1a6` | Revisão: fotos casadas com as sessões da Roverpix pela sequência de captura; horários Roverpix em UTC; câmera sem check-in inferida |
+| v73 | `ee6cd2a` | Upload automático: opção Todos no fotógrafo e no ponto; grupo fica com o fotógrafo das fotos |
+| v74 | `6112327` | Loja única com escolha por símbolos e fundos de IA na sequência; Ajustes com IA automática e manual em alta; até 5 fundos; Klássius único |
+| v75 | `c769026` | Loja: só ✗ e ✓; pagamento no carrinho; ícones novos de impressa, digital e pagamento |
+| v76 | `55527a2` | Loja com o manual da marca, checkout numa tela, responsiva; 5 idiomas na Loja e na galeria do convidado |
+| v77 | `0cec13e` | Galeria online por QR (fase 1): selfie, cortesias, grupos de escola com QR geral, compra de teste a R$ 39; Checkout em tela cheia sem login, bandeiras, tela final de 30 s configurável; canal Online nas vendas |
+| v78 | `71b4510` | Menu em grupos (Dashboard, Curadoria, Fotógrafo, Configurações, Laboratório) com gaveta no celular; Loja vira Checkout (botão Abrir Checkout); área de Permissões com Criar, Ver, Alterar e Excluir por módulo, menu e tela inicial por pessoa, histórico e travas; check-in da câmera e troca de fotógrafo no Upload automático; saem Fluxo, Anfitrião no set, Convidado e o login de cliente |
