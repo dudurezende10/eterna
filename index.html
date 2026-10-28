@@ -272,19 +272,20 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .lrm{position:absolute;top:6px;right:6px;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;z-index:3}.lrm svg{width:18px;height:18px}
 .lfav{position:absolute;top:6px;left:6px;color:#ff6b9a;z-index:3}.lfav svg{width:24px;height:24px}
 .lpkgs{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
-.lpkg{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:128px;padding:14px 16px;border-radius:14px;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.05);color:#fff}
+.lpkg{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:138px;padding:14px 16px;border-radius:14px;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.05);color:#fff}
 .lpkg[aria-pressed="true"]{border-color:var(--good);background:rgba(48,164,108,.18)}
-.lpkg .lpn{font-family:var(--display);font-size:44px;line-height:1}.lpkg .lpi{display:flex;gap:6px;color:#cfc8bf}.lpkg .lpp{font-size:18px;font-weight:600}
+.lpkg .lpn{font-family:var(--display);font-size:48px;line-height:1}.lpkg .lpu{font-size:11px;letter-spacing:.18em;color:#a69d92;margin-top:-2px}.lpkg .lpi{display:flex;gap:10px;margin:4px 0}.lpkg .lpt{display:flex;flex-direction:column;align-items:center;gap:2px}.lpkg .lpt small{font-size:10px;letter-spacing:.14em;color:#cfc8bf;font-weight:600}.lpkg .lpp{font-size:20px;font-weight:700}
 .lsum{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;color:#cfc8bf;font-size:20px;align-items:center}.lsum span{display:inline-flex;align-items:center;gap:6px}.lsum svg{width:22px;height:22px}
 .ltotal{font-family:var(--display);font-size:clamp(44px,8vw,80px);line-height:1}
 .lpays{display:flex;gap:22px;flex-wrap:wrap;justify-content:center}
-.lpay{width:170px;height:150px;border-radius:18px;border:2px solid rgba(255,255,255,.3);background:rgba(255,255,255,.06);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-weight:700;letter-spacing:.08em}
-.lpay:active{background:rgba(48,164,108,.3)}
+.lpay{width:150px;height:104px;border-radius:14px;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.05);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:15px}
+.lpay[aria-pressed="true"]{border-color:var(--good);background:rgba(48,164,108,.2);box-shadow:0 0 0 2px var(--good) inset}
+.lfinal{display:flex;align-items:center;gap:28px;flex-wrap:wrap;justify-content:center}.lround.dim{opacity:.3;cursor:default}
 .ldone{justify-content:center}.lqr{background:#fff;padding:10px;border-radius:10px;min-width:170px;min-height:170px;display:flex;align-items:center;justify-content:center;color:#000}
 .lface{color:var(--ink-2,#999);display:flex;justify-content:center}.lface svg{width:72px;height:72px}.krev .lface{color:#cfc8bf}
 .lcode .camst{display:none}
 .lwait{width:min(720px,100%);text-align:left}
-@media (max-width:700px){.lround{width:76px;height:76px}.lround svg{width:36px;height:36px}.lpay{width:130px;height:120px}}
+@media (max-width:700px){.lround{width:76px;height:76px}.lround svg{width:36px;height:36px}.lpay{width:104px;height:92px}}
 .ajpv.orig{--flt:none!important}
 
 .kiosk{max-width:900px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:18px}
@@ -457,7 +458,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
   <aside class="rail">
     <button class="vbrand" data-act="role-home" aria-label="Início" id="rail-brand"></button>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v74 · 27/10 21:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v74</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v75 · 27/10 21:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v75</span></span></div>
   </aside>
   <main id="main"></main>
 </div>
@@ -978,15 +979,15 @@ const ICO={
   home:'<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>',
   back:'<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   spark:'<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z"/></svg>',
-  print:'<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z"/></svg>',
-  phone:'<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg>',
-  card:'<svg viewBox="0 0 24 24" width="54" height="54" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="2.5" y="6" width="15" height="11" rx="2"/><path d="M2.5 10h15M19.5 8.5c1 1 1.5 2.2 1.5 3.5s-.5 2.5-1.5 3.5M21.8 6.8c1.4 1.5 2.2 3.3 2.2 5.2"/></svg>',
-  pix:'<svg viewBox="0 0 24 24" width="54" height="54" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l4.2 4.2-4.2 4.2-4.2-4.2zM12 13.1l4.2 4.2-4.2 4.2-4.2-4.2zM6.7 7.8l4.2 4.2-4.2 4.2L2.5 12zM17.3 7.8l4.2 4.2-4.2 4.2-4.2-4.2z"/></svg>',
-  cash:'<svg viewBox="0 0 24 24" width="54" height="54" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="1.5"/><circle cx="12" cy="12" r="2.8"/><path d="M5.5 9v6M18.5 9v6"/></svg>',
+  print:'<svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true"><rect x="7" y="4" width="26" height="32" rx="1.5" fill="#fff"/><rect x="10" y="7" width="20" height="18" fill="#4a8fd8"/><path d="M10 25l6-7 4 4 3-3 7 6z" fill="#2f7d4f"/><circle cx="25" cy="11.5" r="2.2" fill="#ffd36b"/></svg>',
+  phone:'<svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true"><rect x="11" y="3" width="18" height="34" rx="3.5" fill="none" stroke="#fff" stroke-width="2.2"/><rect x="13.5" y="7.5" width="13" height="22" fill="#4a8fd8"/><path d="M13.5 29.5l4.5-6 3 3 2-2 3.5 5z" fill="#2f7d4f"/><circle cx="22.5" cy="11.5" r="1.7" fill="#ffd36b"/><path d="M18 33.5h4" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
+  card:'<svg viewBox="0 0 48 34" width="56" height="40" aria-hidden="true"><rect x="1" y="1" width="46" height="32" rx="4" fill="#3b6fd8"/><rect x="1" y="7" width="46" height="5" fill="#1d2b4f"/><rect x="6" y="16" width="9" height="7" rx="1.5" fill="#ffd36b"/><path d="M6 27h16" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".8"/><path d="M36 16.5c1.6 1.5 1.6 4.5 0 6M39.5 14.5c2.8 2.6 2.8 7.4 0 10" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  pix:'<svg viewBox="0 0 40 40" width="44" height="44" aria-hidden="true"><path d="M20 3l7 7-7 7-7-7zM20 23l7 7-7 7-7-7zM10 13l7 7-7 7-7-7zM30 13l7 7-7 7-7-7z" fill="#32bcad"/></svg>',
+  cash:'<svg viewBox="0 0 48 30" width="56" height="36" aria-hidden="true"><rect x="1" y="1" width="46" height="28" rx="3" fill="#3a9a5b"/><rect x="5" y="5" width="38" height="20" rx="2" fill="none" stroke="#bfe8c9" stroke-width="1.2"/><circle cx="24" cy="15" r="6.5" fill="#bfe8c9"/><text x="24" y="18.6" text-anchor="middle" font-size="9" font-weight="700" fill="#2a7444" font-family="Arial,sans-serif">R$</text></svg>',
   face:'<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="9" cy="10" r=".8" fill="currentColor"/><circle cx="15" cy="10" r=".8" fill="currentColor"/><path d="M9 15c1.6 1.4 4.4 1.4 6 0"/></svg>',
   keys:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>',
   list:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'};
-const PAYS=[['card','Cartão (aproximação)'],['pix','PIX'],['cash','Dinheiro']];
+const PAYS=[['card','Cartão'],['pix','PIX'],['cash','Dinheiro']];
 function lojaReset(){const k=state.kiosk;if(k.timer){clearTimeout(k.timer);k.timer=null;}Object.assign(k,{step:'code',code:'',i:0,pkg:null,pay:null,list:false});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 function lojaPay(m){const k=state.kiosk;const card=k.code;const s=simOf(card);const c=lojaCart(card);if(!c.ch.length)return;lojaSync(card);
   s.cart=c.cart;s.status='paga';s.payment=(PAYS.find(p=>p[0]===m)||[0,m])[1];s.paidAt=now().toISOString();s.saleNo=s.saleNo||('E'+String(Object.values(SIM.sessions).filter(x=>x.saleNo).length+1).padStart(3,'0'));
@@ -1018,21 +1019,20 @@ function vQuiosque(){
     const img=x.t==='ai'?`<div class="kimg lai ${st}">${lojaThumb(x)}${st?`<span class="kmark ${st}">${st==='fav'?ICO.fav:ICO.ok}</span>`:''}</div>`:`<div class="kimg ${st}" style="${bigStyle(x.id)}">${st?`<span class="kmark ${st}">${st==='fav'?ICO.fav:st==='no'?ICO.no:ICO.ok}</span>`:'<span class="wm">ETERNA</span>'}</div>`;
     return `<div class="krev lrev">${top(`<div class="kcount">${k.i+1} / ${n}</div>`)}
       <div class="kpic" id="lswipe"><button class="knav prev" data-act="kiosk-prev" aria-label="Anterior" ${k.i===0?'disabled':''}>‹</button><div class="mid">${img}</div><button class="knav next" data-act="kiosk-next" aria-label="Próxima" ${k.i>=n-1?'disabled':''}>›</button></div>
-      <div class="kbar lbar"><button class="lround no ${st==='no'?'on':''}" data-act="kiosk-no" aria-label="Não quero">${ICO.no}</button><button class="lround fav ${st==='fav'?'on':''}" data-act="kiosk-fav" aria-label="Favorita">${ICO.fav}</button><button class="lround ok ${st==='ok'?'on':''}" data-act="kiosk-ok" aria-label="Quero">${ICO.ok}</button></div>
+      <div class="kbar lbar"><button class="lround no ${st==='no'?'on':''}" data-act="kiosk-no" aria-label="Não quero">${ICO.no}</button><button class="lround ok ${st==='ok'?'on':''}" data-act="kiosk-ok" aria-label="Quero">${ICO.ok}</button></div>
       <div class="kstrip">${items.map((q,i)=>{const s2=pk[q.k]||'';return `<button class="kth ${i===k.i?'cur':''} ${s2} ${q.t==='ai'?'ai':''}" data-act="kiosk-jump" data-i="${i}" style="${q.t==='ph'?phStyle(q.id):''}" aria-label="Foto ${i+1}">${q.t==='ai'?lojaThumb(q):''}${s2==='ok'||s2==='fav'?`<span class="kmark small ${s2}">${s2==='fav'?'♥':'✓'}</span>`:''}</button>`;}).join('')}</div></div>`;}
+  if(k.step==='pay')k.step='cart';
   if(k.step==='cart'){const c=lojaCart(k.code);const ps=DATA.catalog.filter(x=>x.kind==='pacote');
-    const thumbs=c.ch.map(x=>`<div class="lct ${x.t==='ai'?'ai':''}" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}${pk[x.k]==='fav'?`<span class="lfav">${ICO.fav}</span>`:''}<button class="lrm" data-act="loja-rm" data-k="${esc(x.k)}" aria-label="Tirar">${ICO.no}</button></div>`).join('');
-    const pkgs=c.nPh?ps.map(p=>{const dg=p.digital==='todas'?'∞':p.digital;return `<button class="lpkg" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${p.id===c.pkg}" aria-label="${esc(p.name)}"><span class="lpn">${dg}</span><span class="lpi">${p.prints?ICO.print:''}${ICO.phone}</span><span class="lpp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
+    const thumbs=c.ch.map(x=>`<div class="lct ${x.t==='ai'?'ai':''}" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}<button class="lrm" data-act="loja-rm" data-k="${esc(x.k)}" aria-label="Tirar">${ICO.no}</button></div>`).join('');
+    const pkgs=c.nPh?ps.map(p=>{const dg=p.digital==='todas'?'∞':p.digital;return `<button class="lpkg" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${p.id===c.pkg}" aria-label="${esc(p.name)}"><span class="lpn">${dg}</span><span class="lpu">${p.digital==='todas'?'ALL':p.digital===1?'FOTO':'FOTOS'}</span><span class="lpi">${p.prints?`<span class="lpt">${ICO.print}<small>PRINT</small></span>`:''}<span class="lpt">${ICO.phone}<small>DIGITAL</small></span></span><span class="lpp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
     return `<div class="krev lrev">${top(`<button class="lsmall dark" data-act="kiosk-review" aria-label="Voltar às fotos">${ICO.back}</button>`)}
       <div class="lcart">${c.ch.length?`<div class="lcts">${thumbs}</div>
         ${pkgs?`<div class="lpkgs">${pkgs}</div>`:''}
-        <div class="lsum">${c.nPh?`<span>${c.nPh} × ${ICO.phone}${c.prints?` · ${c.prints} × ${ICO.print}`:''}${c.extra?` <small>(+${c.extra} × ${fmtR(priceOf('extra'))})</small>`:''}</span>`:''}${c.nAI?`<span>${c.nAI} × ${ICO.spark} ${fmtR(priceOf('fundo'))}</span>`:''}</div>
-        <div class="ltotal">${fmtR(c.total)}</div>
-        <button class="lround ok big" data-act="loja-checkout" aria-label="Fechar compra">${ICO.ok}</button>`
+        ${c.extra||c.nAI?`<div class="lsum">${c.extra?`<span>+${c.extra} ${ICO.print} × ${fmtR(priceOf('extra'))}</span>`:''}${c.nAI?`<span>+${c.nAI} ${ICO.spark} × ${fmtR(priceOf('fundo'))}</span>`:''}</div>`:''}
+        <div class="lpays">${PAYS.map(([m,n])=>`<button class="lpay" data-act="loja-paym" data-m="${m}" aria-pressed="${k.pay===m}">${ICO[m]}<span>${esc(n)}</span></button>`).join('')}</div>
+        <div class="lfinal"><div class="ltotal">${fmtR(c.total)}</div><button class="lround ok big ${k.pay?'':'dim'}" data-act="loja-checkout" aria-label="Fechar compra" ${k.pay?'':'disabled'}>${ICO.ok}</button></div>`
       :`<div class="lface">${ICO.cart}</div><button class="lround ghost" data-act="kiosk-review" aria-label="Voltar às fotos">${ICO.back}</button>`}</div></div>`;}
-  if(k.step==='pay'){const c=lojaCart(k.code);
-    return `<div class="krev lrev">${top(`<button class="lsmall dark" data-act="loja-cart" aria-label="Voltar ao carrinho">${ICO.back}</button>`)}
-      <div class="lcart"><div class="ltotal">${fmtR(c.total)}</div><div class="lpays">${PAYS.map(([m,n])=>`<button class="lpay" data-act="loja-pay" data-m="${m}" aria-label="${esc(n)}">${ICO[m]}${m==='pix'?'<span>PIX</span>':''}</button>`).join('')}</div></div></div>`;}
+  if(k.step==='pay')k.step='cart';
   if(k.step==='done'){const p=k.paid||{};
     return `<div class="krev lrev"><div class="ktop"><span></span><span></span><button class="lsmall dark" data-act="loja-new" aria-label="Próximo cliente">${ICO.home}</button></div>
       <div class="lcart ldone"><div class="lround ok big on" aria-hidden="true">${ICO.ok}</div><div class="ltotal">${fmtR(p.total||0)}</div>
@@ -2436,7 +2436,7 @@ document.addEventListener('click',e=>{
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':SIM.stock['Caixa 1']=Math.max(0,SIM.stock['Caixa 1']-1);log(`Reimpressão ${state.caixa.session}`);saveSim();toast('Reimpressão enviada');render();break;
     case 'go-guest':state.guest.code=d.card;go('convidado');break;
-    case 'kiosk-go':{const v=($('#kcode')||{}).value||'';state.kiosk.code=v.trim().toUpperCase();state.kiosk.step='review';state.kiosk.i=0;state.kiosk.pkg=null;render();break;}
+    case 'kiosk-go':{const v=($('#kcode')||{}).value||'';state.kiosk.code=v.trim().toUpperCase();state.kiosk.step='review';state.kiosk.i=0;state.kiosk.pkg=null;state.kiosk.pay=null;render();break;}
     case 'kiosk-back':lojaReset();render();break;
     case 'kiosk-emerg':{if(state.kiosk.timer){clearTimeout(state.kiosk.timer);state.kiosk.timer=null;}state.kiosk.step='emerg';render();const el=$('#kcode');if(el)el.focus();break;}
     case 'kiosk-sel':toggleSel(state.kiosk.code,d.id);render();break;
@@ -2445,15 +2445,15 @@ document.addEventListener('click',e=>{
     case 'kiosk-jump':state.kiosk.i=+d.i;render();break;
     case 'kiosk-ok':lojaMark('ok');break;
     case 'kiosk-no':lojaMark('no');break;
-    case 'kiosk-fav':lojaMark('fav');break;
     case 'kiosk-done':case 'loja-cart':state.kiosk.step='cart';render();window.scrollTo({top:0});break;
     case 'kiosk-review':state.kiosk.step='review';render();break;
     case 'loja-exit':case 'loja-new':lojaReset();render();break;
     case 'loja-list':state.kiosk.list=!state.kiosk.list;render();break;
-    case 'loja-open':state.kiosk.code=d.card;state.kiosk.step='review';state.kiosk.i=0;state.kiosk.pkg=null;state.kiosk.list=false;render();break;
+    case 'loja-open':state.kiosk.code=d.card;state.kiosk.step='review';state.kiosk.i=0;state.kiosk.pkg=null;state.kiosk.pay=null;state.kiosk.list=false;render();break;
     case 'loja-rm':{const pk=lojaPick(state.kiosk.code);delete pk[d.k];lojaSync(state.kiosk.code);render();break;}
     case 'loja-pkg':state.kiosk.pkg=d.id;render();break;
-    case 'loja-checkout':state.kiosk.step='pay';render();break;
+    case 'loja-paym':state.kiosk.pay=d.m;render();break;
+    case 'loja-checkout':if(state.kiosk.pay)lojaPay(state.kiosk.pay);break;
     case 'loja-pay':lojaPay(d.m);break;
     case 'bg-on':{let a=bgOn();if(a.includes(d.id))a=a.filter(x=>x!==d.id);else{if(a.length>=BG_MAX){toast('No máximo 5 fundos na loja. Tire um antes.');break;}a.push(d.id);}SIM.bgOn=a;saveSim();render();break;}
     case 'guest-go':{const v=($('#gcode')||{}).value||'';state.guest.code=v.trim().toUpperCase();render();break;}
