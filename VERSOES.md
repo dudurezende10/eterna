@@ -77,3 +77,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v74 | `6112327` | Loja única com escolha por símbolos e fundos de IA na sequência; Ajustes com IA automática e manual em alta; até 5 fundos; Klássius único |
 | v75 | `c769026` | Loja: só ✗ e ✓; pagamento no carrinho; ícones novos de impressa, digital e pagamento |
 | v76 | `55527a2` | Loja com o manual da marca, checkout numa tela, responsiva; 5 idiomas na Loja e na galeria do convidado |
+| v77 | `0cec13e` | Galeria online por QR (fase 1): selfie, cortesias, grupos de escola com QR geral, compra de teste a R$ 39; Checkout em tela cheia sem login, bandeiras, tela final de 30 s configurável; canal Online nas vendas |
