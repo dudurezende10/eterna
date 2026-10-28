@@ -435,3 +435,11 @@ A Loja é a área do cliente: não depende de login, não tem menu lateral, abre
   - 23. Com `page.clock`, nas fotos, 90 s parado mostram o aviso; mais 10 s voltam para a câmera (`state.kiosk.step==='code'`). Um toque no aviso mantém a etapa.
   - 24. Depois do pagamento, 5 s voltam para a câmera; o botão "Voltar ao início" volta antes.
   - 25. Esc (logado) sai da Loja para o app; 3 toques no logo idem.
+
+### Adendo 2 do Eduardo (27/10, 21:58): substitui A3 e ajusta A4
+
+- A3 CANCELADO: não existe volta automática por inatividade. A pessoa pode estar escolhendo foto; só volta pelo botão.
+- A4 mantido: só depois da compra a tela final volta sozinha para a câmera em 5 s (contagem visível) e tem o botão "Voltar ao início".
+- A6. Botão "Voltar" manual visível em todas as etapas da Loja (fotos, carrinho, código): volta para a câmera (facial) na hora, limpando a sessão do cliente.
+- A7. Seletor de idiomas com BANDEIRAS em vez de PT/EN/ES/FR/DE, na Loja e na galeria pública: Brasil (português), Estados Unidos (inglês), Espanha (espanhol), França (francês), Alemanha (alemão). Bandeiras em SVG desenhado no próprio código (emoji de bandeira não aparece no Chrome do Windows), com `title` e `aria-label` com o nome do idioma; a selecionada com anel amarelo.
+- Critério 23 passa a ser: com `page.clock`, 5 minutos parado nas fotos NÃO mudam de etapa. Critério 26: o seletor mostra 5 SVGs de bandeira, sem os textos PT/EN/ES/FR/DE visíveis, e trocar de bandeira troca o idioma.
