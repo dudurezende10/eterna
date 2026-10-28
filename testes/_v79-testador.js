@@ -24,7 +24,7 @@ try{
     ok(await codigo(A,'eduardo@eduardorezende.com'),`${tag}: admin não entrou`);
     // Abrir Checkout pelo botão (na 390 o menu é gaveta, mas o botão fica na barra)
     const temBtn=await A.evaluate(()=>!!document.querySelector('[data-act="loja-abrir"]'));ok(temBtn,`${tag}: sem botão Abrir Checkout`);
-    await A.evaluate(()=>document.querySelector('[data-act="loja-abrir"]').click());await A.waitForTimeout(700);
+    await A.evaluate(()=>ETERNA.go('quiosque')); /* v81: o botão abre janela à parte; Checkout na mesma aba por go('quiosque') */await A.waitForTimeout(700);
     await A.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
     const st=await A.evaluate(()=>({h:location.hash,v:ETERNA.state.view,btn:!!document.querySelector('.lj-staffhome'),txt:(document.querySelector('.lj-staffhome')||{}).innerText}));
     ok(st.h==='#loja'&&st.btn&&/Equipe: voltar ao app/.test(st.txt||''),`${tag}: na câmera o botão "Equipe: voltar ao app" deveria aparecer: `+J(st));
@@ -36,7 +36,7 @@ try{
     const volta=await A.evaluate(()=>({u:!!ETERNA.state.user,v:ETERNA.state.view,h:location.hash,tab:sessionStorage.getItem('eterna.lojaTab')}));
     ok(volta.u&&volta.v!=='quiosque'&&volta.v!=='entrar'&&volta.tab===null,`${tag}: dois toques deveriam voltar ao app logado: `+J(volta));
     // abrir de novo; primeiro toque de cliente (contingência) some com o botão
-    await A.evaluate(()=>document.querySelector('[data-act="loja-abrir"]').click());await A.waitForTimeout(600);
+    await A.evaluate(()=>ETERNA.go('quiosque')); /* v81: o botão abre janela à parte; Checkout na mesma aba por go('quiosque') */await A.waitForTimeout(600);
     await A.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
     await A.click('[data-act="kiosk-emerg"]');await A.waitForTimeout(250);
     ok(!(await A.$('.lj-staffhome')),`${tag}: depois do primeiro toque de cliente o botão deveria sumir`);

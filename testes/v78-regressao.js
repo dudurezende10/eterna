@@ -17,10 +17,10 @@ const abrirTodos=pg=>pg.evaluate(()=>document.querySelectorAll('#nav .navitems')
 const view=pg=>pg.evaluate(()=>ETERNA.state.view);
 const J=JSON.stringify;
 const PERFIS={
-  'eduardo@eduardorezende.com':{n:'admin',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes']],['Laboratório',['vestiario']]],ini:'painel',ck:true},
+  'eduardo@eduardorezende.com':{n:'admin',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
   'carlos@eterna.photo':{n:'fotografo',g:[['Fotógrafo',['diario','importar','escala']]],ini:'importar',ck:false},
   'loja@eterna.photo':{n:'atendimento',g:[['Configurações',['catalogo']]],ini:'perfis',ck:true},
-  'supervisor@eterna.photo':{n:'supervisor',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes']],['Laboratório',['vestiario']]],ini:'painel',ck:true},
+  'supervisor@eterna.photo':{n:'supervisor',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
   'qualidade@eterna.photo':{n:'validador',g:[['Curadoria',['revisao','treino']],['Fotógrafo',['diario']]],ini:'revisao',ck:false},
 };
 (async()=>{const b=await chromium.launch();

@@ -1054,9 +1054,10 @@ def ftp_server():
 # Quando o CTP manda as fotos para um servidor FTP da rede (e não para o FTP embutido neste agente),
 # o agente busca ali as fotos novas a cada poucos segundos e coloca na biblioteca. Nada é apagado no servidor.
 import ftplib
+import unicodedata
 RFTP_CFG = os.path.join(HOME, "ftp-remoto.json")
 RFTP_SEEN = os.path.join(HOME, "ftp-remoto-vistos.json")
-rftp = {"ok": False, "erro": None, "ultima": None, "baixadas": 0, "na_fila": 0, "checado": None}
+rftp = {"ok": False, "erro": None, "aviso": None, "ultima": None, "baixadas": 0, "na_fila": 0, "checado": None}
 rftp_wake = threading.Event()
 
 
@@ -1097,33 +1098,62 @@ def rftp_list(f, path, depth=0):
     try:
         items = list(f.mlsd(path or "/", facts=["type", "size", "modify"]))
         for name, fa in items:
-            if name in (".", ".."):
+            if name in (".", "..") or "/" in name or "\\" in name:
                 continue
             full = (path.rstrip("/") + "/" + name) if path else name
             if fa.get("type") == "dir" and depth < 3:
                 out += rftp_list(f, full, depth + 1)
             elif fa.get("type") == "file" and name.lower().endswith((".jpg", ".jpeg")):
                 out.append((full, int(fa.get("size") or 0)))
+    except ftplib.error_temp:
+        return out   # v81: 450 (pasta vazia ou ocupada) = nada nesta volta
     except ftplib.error_perm:
         # servidor sem MLSD (ex.: IIS): NLST; o que não é JPG e não tem extensão é tratado como subpasta (fotógrafo)
         try:
             nomes = f.nlst(path or ".")
-        except ftplib.error_perm:
-            return out
+        except (ftplib.error_perm, ftplib.error_temp):
+            return out   # v81: alguns servidores respondem 450 no NLST de pasta vazia
+
         for nome in nomes:
             nome = nome.replace("\\", "/")
             full = nome if (not path or nome.startswith(path.rstrip("/") + "/")) else path.rstrip("/") + "/" + nome
             base = full.rsplit("/", 1)[-1]
-            if base in (".", ".."):
-                continue
+            if base in (".", "..") or ".." in full.split("/"):
+                continue   # v81: nome com /../ vindo do servidor não é seguido nem baixado
             if base.lower().endswith((".jpg", ".jpeg")):
                 try:
                     out.append((full, f.size(full) or 0))
                 except Exception:
-                    out.append((full, 0))
+                    out.append((full, 0))   # tamanho desconhecido: rftp_loop não baixa (espera o tamanho real)
             elif "." not in base and depth < 3 and full != path:
                 out += rftp_list(f, full, depth + 1)
     return out
+
+
+def ftp_cadastrados():
+    """Fotógrafos cadastrados (PHOTOGRAPHERS + logins do ~/Eterna/ftp.json), em minúsculas. Não cria o arquivo."""
+    nomes = set(PHOTOGRAPHERS)
+    try:
+        nomes |= {str(u).lower() for u in (json.load(open(FTPCFG)).get("users") or {})}
+    except Exception:
+        pass
+    return nomes
+
+
+def sem_acento(t):
+    """minúsculas, sem acento (Márcio = marcio)"""
+    return "".join(ch for ch in unicodedata.normalize("NFD", str(t)) if not unicodedata.combining(ch)).lower()
+
+
+def rftp_origem(path, pasta):
+    """v81 (segurança B1): dono da foto do FTP do estádio. A subpasta logo abaixo da pasta configurada (prefixo de
+    c["dir"]) só vira o fotógrafo se estiver cadastrada; qualquer outro caso (pasta fora do prefixo, /outro, /../) é "ftp-estadio"."""
+    parts = [x for x in str(path).replace("\\", "/").split("/") if x]
+    base = [x for x in str(pasta or "").replace("\\", "/").split("/") if x]
+    if ".." in parts or "." in parts or parts[:len(base)] != base or len(parts) < len(base) + 2:
+        return "ftp-estadio"
+    sub = sem_acento(parts[len(base)])
+    return sub if sub in {sem_acento(x) for x in ftp_cadastrados()} else "ftp-estadio"
 
 
 def rftp_loop():
@@ -1148,7 +1178,12 @@ def rftp_loop():
             novos = [(p, sz) for p, sz in files if p + "|" + str(sz) not in seen_r]
             rftp["na_fila"] = len(novos)
             got = False
+            sem_tam = 0
             for path, sz in novos:
+                if not sz:                        # v81: tamanho 0 ou desconhecido (SIZE falhou) não baixa: espera o tamanho real
+                    pend.pop(path, None)
+                    sem_tam += 1
+                    continue
                 if pend.get(path) != sz:          # ainda chegando
                     pend[path] = sz
                     continue
@@ -1158,10 +1193,7 @@ def rftp_loop():
                 with open(tmp, "wb") as out:
                     conn.retrbinary("RETR " + path, out.write)
                 st = os.stat(tmp)
-                parts = [x for x in path.strip("/").split("/") if x]
-                base = (c.get("dir") or "").strip("/").split("/")
-                sub = [x for x in parts[:-1] if x not in base]
-                origem = sub[0] if sub else "ftp-estadio"   # subpasta = fotógrafo, se o CTP usar uma por pessoa
+                origem = rftp_origem(path, c.get("dir") or "")   # subpasta = fotógrafo só se cadastrado (B1)
                 r = ingest_file(tmp, name, st, origem, "ftp", move=True)
                 if os.path.exists(tmp):
                     os.remove(tmp)
@@ -1172,6 +1204,8 @@ def rftp_loop():
                     rftp["baixadas"] += 1
                     rftp["ultima"] = time.strftime("%H:%M:%S") + " · " + name
                 json.dump(sorted(seen_r), open(RFTP_SEEN, "w"))
+            # v81: aviso legível no painel do FTP quando o servidor não informa o tamanho (essas fotos esperam)
+            rftp["aviso"] = ("servidor não informa o tamanho dos arquivos; %d foto%s aguardando" % (sem_tam, "" if sem_tam == 1 else "s")) if sem_tam else None
             if got:
                 save_index()
         except Exception as ex:

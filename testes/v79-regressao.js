@@ -337,11 +337,14 @@ try{
   // ---- 1.15: sair do #loja por endereço, voltar do navegador ou #g leva ao login e apaga a sessão salva
   fase='1.15';
   for(const modo of ['hash-caixa','voltar','g']){const cx3=await nova(b,1280,900);const pg=await pagina(cx3,'1.15 '+modo);ok(await login(pg,'eduardo@eduardorezende.com'),'1.15: admin não entrou');
-    if(modo==='voltar'){await pg.click('#rail-ck [data-act="loja-abrir"]');await pg.waitForTimeout(300);ok(await pg.evaluate(()=>ETERNA.state.lojaRota),'1.15: Abrir Checkout');await pg.goBack();await pg.waitForTimeout(400);}
+    if(modo==='voltar'){await pg.evaluate(()=>ETERNA.go('quiosque'));await pg.waitForTimeout(300); /* v81: o botão abre janela à parte; o Checkout na mesma aba segue por go('quiosque') */ok(await pg.evaluate(()=>ETERNA.state.lojaRota),'1.15: Abrir Checkout');await pg.goBack();await pg.waitForTimeout(400);}
     else{await pg.goto(U+'#loja');await pg.reload();await pg.waitForTimeout(500);ok(await pg.evaluate(()=>ETERNA.state.lojaRota&&!ETERNA.state.user),'1.15/I1: #loja aberto direto não carrega a sessão salva');
       if(modo==='hash-caixa')await pg.evaluate(()=>{location.hash='#caixa';});else await pg.evaluate(t=>{location.hash='#g/'+t;},tok1);await pg.waitForTimeout(500);}
     const r=await pg.evaluate(()=>({u:!!ETERNA.state.user,s:localStorage.getItem('eterna.session'),v:ETERNA.state.view,loja:ETERNA.state.lojaRota,pub:!!ETERNA.pub,login:!!document.querySelector('[data-act="login-email"]'),din:!!document.querySelector('[data-act="din-confirm"]')}));
-    ok(!r.u&&!r.s&&!r.loja&&!r.din&&(modo==='g'?r.pub:r.login&&r.v==='entrar'),`1.15 ${modo}: ${J(r)}`);
+    // v81: na aba do Checkout aberta direto (sem login), trocar o endereço não apaga a sessão salva (é o mesmo navegador do admin): #caixa volta ao #loja; #g abre a galeria
+    if(modo==='voltar')ok(!r.u&&!r.s&&!r.loja&&!r.din&&r.login&&r.v==='entrar',`1.15 ${modo}: ${J(r)}`);
+    else if(modo==='hash-caixa'){const h=await pg.evaluate(()=>location.hash);ok(!r.u&&r.s&&r.loja&&!r.din&&r.v==='quiosque'&&h==='#loja',`1.15/v81 ${modo}: ${J(r)} ${h}`);}
+    else ok(!r.u&&r.s&&!r.loja&&!r.din&&r.pub,`1.15/v81 ${modo}: ${J(r)}`);
     if(modo==='g'){await pg.evaluate(()=>{location.hash='#caixa';});await pg.waitForTimeout(400);const r2=await pg.evaluate(()=>({u:!!ETERNA.state.user,v:ETERNA.state.view,din:!!document.querySelector('[data-act="din-confirm"]')}));ok(!r2.u&&!r2.din,'1.15: depois do #g, #caixa abriu a equipe: '+J(r2));}
     await cx3.close();}
   await ctx.close();}
@@ -390,7 +393,7 @@ try{
   fase='3.1';
   if(SO.includes('3')){const cx=await nova(b,1280,900);const pg=await pagina(cx,'3 admin');ok(await login(pg,'eduardo@eduardorezende.com'),'3: admin não entrou');
     await verView(pg,'vendas-lista');const card=await pg.evaluate(()=>ETERNA.demoSessions().find(s=>s.photos.length>=4).card);
-    const abrir=async()=>{await pg.evaluate(()=>{ETERNA.state.view='vendas-lista';ETERNA.render();});await pg.click('#rail-ck [data-act="loja-abrir"]');await pg.waitForTimeout(300);await pg.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});}; // a câmera simulada acha um rosto sozinha em ~5 s (isso é cliente e tira o botão)
+    const abrir=async()=>{await pg.evaluate(()=>{ETERNA.state.view='vendas-lista';ETERNA.render();});await pg.evaluate(()=>ETERNA.go('quiosque'));await pg.waitForTimeout(300); /* v81: Checkout na mesma aba (o botão abre janela à parte) */await pg.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});}; // a câmera simulada acha um rosto sozinha em ~5 s (isso é cliente e tira o botão)
     const btn=()=>pg.evaluate(()=>{const e=document.querySelector('.lj-staffhome');return e?{t:e.innerText.trim(),armed:e.classList.contains('armed')}:null;});
     await abrir();ok(J(await btn())===J({t:'Equipe: voltar ao app',armed:false}),'3.1/B1: botão fixo em português na câmera: '+J(await btn()));
     await pg.click('[data-act="lang"][data-l="en"]');await pg.waitForTimeout(80);ok((await btn()||{}).t==='Equipe: voltar ao app','B1: o rótulo não muda com o idioma do cliente');
@@ -425,12 +428,14 @@ try{
     r=await pg.evaluate(()=>({u:!!ETERNA.state.user,loja:ETERNA.state.lojaRota,h:location.hash,s:!!localStorage.getItem('eterna.session')}));ok(!r.u&&r.loja&&r.h==='#loja'&&r.s,'I1: recarregar o Checkout aberto pela equipe: '+J(r));
     await pg.goto(U+'#caixa');await pg.reload();await pg.waitForTimeout(600);
     r=await pg.evaluate(()=>({u:!!ETERNA.state.user,loja:ETERNA.state.lojaRota,din:!!document.querySelector('[data-act="din-confirm"]')}));ok(!r.u&&r.loja&&!r.din,'I1: #caixa recarregado na aba do Checkout: '+J(r));
-    // 3.6: Esc leva ao login e apaga a sessão salva
-    await pg.keyboard.press('Escape');await pg.waitForTimeout(250);r=await pg.evaluate(()=>({v:ETERNA.state.view,u:!!ETERNA.state.user,s:localStorage.getItem('eterna.session')}));ok(r.v==='entrar'&&!r.u&&!r.s,'3.6: Esc deveria ir ao login: '+J(r));
+    // 3.6 (v81): na aba do Checkout sem login, Esc só volta ao início do #loja e não apaga a sessão salva (o admin usa o mesmo navegador); a saída da equipe é pelo painel (3 toques no logo) › Sair do Checkout, que vai ao login e apaga
+    await pg.keyboard.press('Escape');await pg.waitForTimeout(250);r=await pg.evaluate(()=>({v:ETERNA.state.view,u:!!ETERNA.state.user,s:!!localStorage.getItem('eterna.session'),h:location.hash}));ok(r.v==='quiosque'&&!r.u&&r.s&&r.h==='#loja','3.6/v81: Esc na aba do Checkout deveria ficar no #loja: '+J(r));
+    await pg.evaluate(()=>{ETERNA.state.kiosk.equipe=true;ETERNA.render();});await pg.waitForTimeout(100);await pg.click('[data-act="loja-sair"]');await pg.waitForTimeout(250);
+    r=await pg.evaluate(()=>({v:ETERNA.state.view,u:!!ETERNA.state.user,s:localStorage.getItem('eterna.session')}));ok(r.v==='entrar'&&!r.u&&!r.s,'3.6: Sair do Checkout deveria ir ao login: '+J(r));
     // 3.4: depois de 10 min some e o clique não faz nada (login nesta aba devolve a aba à equipe)
     fase='3.4';
     await pg.reload();await pg.waitForTimeout(400);ok(await pg.evaluate(()=>ETERNA.state.lojaRota&&!ETERNA.state.user),'I1: depois do Esc, recarregar a aba do Checkout volta ao Checkout, sem login');
-    await pg.keyboard.press('Escape');await pg.waitForTimeout(200);ok(await codigo(pg,'eduardo@eduardorezende.com'),'3.4: admin não entrou');ok(await pg.evaluate(()=>!sessionStorage.getItem('eterna.lojaTab')),'I1: login na aba tira a marca do Checkout');
+    await pg.evaluate(()=>{ETERNA.state.kiosk.equipe=true;ETERNA.render();});await pg.waitForTimeout(100);await pg.click('[data-act="loja-sair"]');await pg.waitForTimeout(200);ok(await codigo(pg,'eduardo@eduardorezende.com'),'3.4: admin não entrou');ok(await pg.evaluate(()=>!sessionStorage.getItem('eterna.lojaTab')),'I1: login na aba tira a marca do Checkout');
     await abrir();ok(!!(await btn()),'3.4: botão deveria aparecer');
     await pg.evaluate(()=>{ETERNA.state.lojaEquipeAte=Date.now()-1;});await pg.click('.lj-staffhome');await pg.waitForTimeout(80);
     ok(!(await btn())&&await pg.evaluate(()=>ETERNA.state.lojaRota),'3.4: depois de 10 min o botão some e o clique não sai');

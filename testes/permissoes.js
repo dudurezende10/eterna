@@ -15,7 +15,7 @@ const toastTxt=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent)
 async function abrirPerm(pg,email){await pg.evaluate(()=>{ETERNA.state.perm.tab='usuario';ETERNA.state.view='permissoes';ETERNA.render();});await pg.click(`[data-act="perm-sel"][data-e="${email}"]`);await pg.waitForTimeout(120);}
 const ck=(pg,m,op)=>pg.click(`.perm-tbl input[data-act="perm-op"][data-m="${m}"][data-op="${op}"]`);
 const draft=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.state.perm.draft)));
-const MENUS={Dashboard:['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','escala'],'Configurações':['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes'],'Laboratório':['vestiario']};
+const MENUS={Dashboard:['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','escala'],'Configurações':['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes'],'Laboratório':['vestiario','fundos-teste']};
 (async()=>{const b=await chromium.launch();
 try{
   // ---------- 1, 2, 3, 4, 19 e menus: admin ----------
@@ -65,7 +65,7 @@ try{
       E.MODULES.forEach(([m,,vs])=>{const I=E.MODULE_INFO[m];if(!I||!I.desc)bad.push('sem MODULE_INFO '+m);vs.forEach(v=>{if(!E.VIEWS.find(x=>x[0]===v)&&!['checkout','fila','caixa'].includes(v))bad.push('tela sem VIEWS '+v);});});
       E.VIEWS.forEach(([v])=>{if(v!=='perfis'&&!E.MODULE_OF[v])bad.push('tela sem módulo '+v);});
       for(const [m,,vs] of E.MODULES){for(const v of vs){if(v==='quiosque')continue;E.state.view=v;E.render();await new Promise(r=>setTimeout(r,60));
-        const acts=new Set([...document.querySelectorAll('#main [data-act]')].map(x=>x.dataset.act));acts.forEach(a=>{if(a==='reset'||!W[a])return;if(!E.MODULE_INFO[m][W[a]])bad.push(`${v}: ${a} pede ${W[a]} e ${m} não tem a letra`);});
+        const acts=new Set([...document.querySelectorAll('#main [data-act]')].map(x=>x.dataset.act));acts.forEach(a=>{if(a==='reset'||!W[a])return;const mm=(E.ACT_MOD&&E.ACT_MOD[a])||m; /* v81: ação com módulo próprio (ACT_MOD), como o guardAct */if(!E.MODULE_INFO[mm][W[a]])bad.push(`${v}: ${a} pede ${W[a]} e ${mm} não tem a letra`);});
         if(/Algo falhou/.test(document.querySelector('#main').textContent))bad.push('quebrou '+v);}}
       return bad;});
     ok(!r19.length,'19: '+r19.join(' | '));
@@ -126,7 +126,8 @@ try{
     ok(!(await pg.$$eval('#nav .grp',e=>e.map(x=>x.textContent.trim()))).includes('Dashboard'),'7: atendimento sem Dashboard');
     ok(await pg.$('#rail-ck [data-act="loja-abrir"]'),'7: atendimento tem Abrir Checkout');ok(await pg.evaluate(()=>ETERNA.canView('vendas-lista'))===false,'7: canView(vendas-lista)');
     await pg.evaluate(()=>{ETERNA.state.view='perfis';ETERNA.render();});ok(!/R\$/.test(await pg.textContent('#main')),'7: Início do atendimento com R$');
-    await pg.click('#rail-ck [data-act="loja-abrir"]');await pg.waitForTimeout(250);ok(await pg.evaluate(()=>ETERNA.state.lojaRota&&location.hash==='#loja'),'7: Abrir Checkout deveria levar a #loja');
+    {const [J2]=await Promise.all([ctx.waitForEvent('page'),pg.click('#rail-ck [data-act="loja-abrir"]')]);await J2.waitForLoadState();await J2.waitForTimeout(300); // v81: janela à parte
+    ok(await J2.evaluate(()=>ETERNA.state.lojaRota&&location.hash==='#loja'),'7: Abrir Checkout deveria abrir #loja numa janela à parte');ok(await pg.evaluate(()=>!ETERNA.state.lojaRota&&!!ETERNA.state.user),'7: a aba do atendimento continua logada');}
     await ctx.close();}
   // ---------- 8, 16: supervisor ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'supervisor@eterna.photo');const v8=await nav(pg);
