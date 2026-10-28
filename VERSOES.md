@@ -78,3 +78,4 @@ Regra do projeto: toda alteração pedida vira commit, por padrão.
 | v75 | `c769026` | Loja: só ✗ e ✓; pagamento no carrinho; ícones novos de impressa, digital e pagamento |
 | v76 | `55527a2` | Loja com o manual da marca, checkout numa tela, responsiva; 5 idiomas na Loja e na galeria do convidado |
 | v77 | `0cec13e` | Galeria online por QR (fase 1): selfie, cortesias, grupos de escola com QR geral, compra de teste a R$ 39; Checkout em tela cheia sem login, bandeiras, tela final de 30 s configurável; canal Online nas vendas |
+| v78 | `71b4510` | Menu em grupos (Dashboard, Curadoria, Fotógrafo, Configurações, Laboratório) com gaveta no celular; Loja vira Checkout (botão Abrir Checkout); área de Permissões com Criar, Ver, Alterar e Excluir por módulo, menu e tela inicial por pessoa, histórico e travas; check-in da câmera e troca de fotógrafo no Upload automático; saem Fluxo, Anfitrião no set, Convidado e o login de cliente |
