@@ -920,10 +920,10 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 | Grupo | Itens (view) |
 | --- | --- |
 | (sem grupo) | Início (`perfis`, abre pelo logo) · Checkout (`quiosque`, botão "Abrir Checkout") |
-| Dashboard | Bandeiras (`bandeiras`) · Estoque (`estoque`) · Semana (`semana`) · Fotógrafos (`fotografos`) · Vendas e caixa (`vendas`) · Lista de vendas (`vendas-lista`) · Galerias online (`galerias`) |
+| Dashboard | Painel (`painel`, v80) · Bandeiras (`bandeiras`) · Estoque (`estoque`) · Fotógrafos (`fotografos`) · Vendas e caixa (`vendas`) · Lista de vendas (`vendas-lista`) · Galerias online (`galerias`) |
 | Curadoria | Qualidade (`revisao`) · Treino da IA (`treino`) · Alertas (`alertas`) |
 | Fotógrafo | Diário do set (`diario`) · Upload automático (`importar`) · Escala 5×2 (`escala`) |
-| Configurações | Repositório (`repo`) · Identidade (`identidade`) · Catálogo e preços (`catalogo`) · Fundos de IA (`chroma`) · Ajuste automático (`ajustes`) · Usuários (`usuarios`) · Permissões (`permissoes`) |
+| Configurações | Repositório (`repo`) · Identidade (`identidade`) · Painel de controle (`catalogo`, antes Catálogo e preços) · Fundos de IA (`chroma`) · Ajuste automático (`ajustes`) · Usuários (`usuarios`) · Permissões (`permissoes`) |
 | Laboratório | Vestiário (`vestiario`) |
 
 - O grupo é o 4º campo de cada linha de `VIEWS`. Grupo `''` é tela sem item no menu. Itens do mesmo grupo ficam contíguos, porque o `render()` abre um cabeçalho a cada troca de grupo.
@@ -944,16 +944,16 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 | Módulo | Nome na tela | Telas | Letras que se aplicam |
 | --- | --- | --- | --- |
 | `estoque` | Estoque e bandeiras | bandeiras, estoque | C R U D |
-| `relatorios` | Relatórios | semana, alertas | R |
+| `relatorios` | Relatórios | alertas (v80: a Semana saiu) | R |
 | `desempenho` | Índice do fotógrafo | fotografos | R |
-| `financeiro` (novo) | Números de vendas | vendas, vendas-lista | R D (D = cancelar venda) |
+| `financeiro` (novo) | Números de vendas | painel (v80), vendas, vendas-lista | R D (D = cancelar venda) |
 | `galerias` | Galerias online | galerias | C R U D |
 | `qualidade` | Qualidade e IA | revisao, treino | C R U |
 | `diario` | Diário do set | diario | C R U D (D = ver e tratar as ocorrências da equipe toda) |
-| `set` | Upload, câmeras e ajustes | importar, ajustes | C R U D (U inclui o check-in da câmera; D = limpar a leva) |
+| `set` | Upload, câmeras e ajustes | importar, ajustes | C R U D (D = limpar a leva; v80: o check-in da câmera saiu) |
 | `escala` (novo) | Escala 5×2 | escala | R U |
-| `configuracao` | Configurações do venue | repo, identidade, chroma | R U |
-| `catalogo` | Catálogo e preços | catalogo | R U |
+| `configuracao` | Configurações do venue | repo, identidade, chroma (e o FTP do estádio dentro do Painel de controle, v80) | R U |
+| `catalogo` | Painel de controle (catálogo e preços) | catalogo | R U |
 | `usuarios` | Cadastro de usuários | usuarios | C R U D |
 | `permissoes` (novo) | Permissões | permissoes | R U, sempre juntos |
 | `laboratorio` (novo) | Laboratório | vestiario | R |
@@ -1256,3 +1256,62 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 - Sugestão para depois: relatório "canceladas no caixa por operador".
 - Tela: o ícone do celular no cartão do QR está quase invisível.
 - Tela: em 390 px, na tela "já compradas", o botão "Voltar ao início" aparece só como ícone.
+
+
+## Painel, Painel de controle, cópia de permissões e upload sem check-in (v80, 28/10/2026)
+
+Plano: `docs/planos/2026-10-28-v83-painel.md` (escrito como v83; publicado como v80). Testes: `testes/painel.js` e `testes/copiar-permissoes.js`.
+
+### Painel (view `painel`, módulo `financeiro`)
+
+- Primeira tela do Dashboard e tela inicial de Admin e Supervisor (`PRESETS.*.inicio='painel'`). Substitui a Semana (`vSemana` e `barChart` saíram). `#semana` e `eterna.view='semana'` abrem o Painel (`LEGACY_HASH`).
+- Fica no módulo `financeiro` (D2): `relatorios` cobre só Alertas. Quem tinha só `relatorios.r` deixa de ver receita.
+- Migração única por usuário (`migraPainel`, marca `x.mv=83`, roda dentro de `migrateUser` antes do filtro `MODULE_OF`; quando muda algo e há servidor, grava o usuário de volta com a marca, para a cópia sincronizada não migrar e registrar de novo): `semana` no menu vira `painel` com `financeiro.r` (sem isso só sai); perfil pronto ganha as telas novas de `presetMenu`; início `semana` vira `painel`; admin e supervisor com início `perfis` (ou vazio) passam a `painel`; registra `migracao_v83` no histórico.
+- Tela inicial vazia ("Padrão") agora vale a do perfil: `homeView` usa `PRESETS[u.preset].inicio` e `presetMatch` trata início vazio como o do perfil.
+- Funções puras (não alteram `DATA` nem `state.range`): `painelRover(from,to,pdv)` lê `LIVE.days[d]` direto (não usa `liveRangeAgg`) ou, sem LIVE, `DATA.daily` e `DATA.rows`; `painelEterna(from,to,pdv,sales)` lê `allSalesSim()` (`date:'hoje'` vira `venueToday()`; `teste`, `est` e `aguardando` fora da receita; `aguardando` só em `aguardandoCaixa`; sessões `lost` contam como descartadas); `painelDados(f)` junta pela fonte e devolve o contrato do plano (mais `vazio`). Auxiliares: `prodKey`, `payKey`, `splitOrder`, `pctParts` (maior resto, "<1%"), `deltaOf`, `fmtRv`, `safeN`, `venueToday` (`America/Sao_Paulo`), `addDays`, `diasEntre`.
+- Filtro: `state.painel` em `localStorage 'eterna.painel.v1'`, validado por `painelFiltro` (fonte em {tudo, roverpix, eterna}; ponto precisa estar em `painelPontos`). O ponto só liga com LIVE ou fonte Eterna (D12). `eterna.range` adulterado é recusado na leitura.
+- Comparação (D9): período anterior de mesma duração, só se estiver inteiro nos dados da Roverpix e a fonte não for Eterna. Alta ▲ verde, queda ▼ grafite, abaixo de 1% "estável".
+- Modo importado com parte do período: Vendas, Fotos, Ranking e Pagamentos usam o total de 07 a 15/10 com a pill "total de 07/10 a 15/10".
+- Sem dado nenhum no período: só os 4 cartões com "—" e um alerta com "Ver 07/10 a 15/10".
+- Gráficos (template string, `esc()` em todo texto, inclusive `<title>`, `aria-label`, `data-tip`, `<option>`): `kpiCard`, `donut`, `stackBar`, `funnelBars`, `rankList`, `dayBars`. Dica única `#tip` (ouvintes delegados de `pointerover`, `pointerout`, `pointerdown`, `focusin`; escreve com `textContent`).
+- CSV: `painelCSV(D)` (`;`, uma linha por dia e uma de total, `'` antes de célula iniciada por `= + - @`), baixado por `painelBaixar` como `eterna-painel-<from>_<to>.csv`; exige `financeiro.r`; não é ação de gravação.
+- Tokens: `--pn-focus`, `--pn-focus2`, `--pn-rest`, `--pn-rest2`, `--pn-hl`, `--pn-up`, `--pn-up-bg`, `--pn-down`, `--pn-down-bg` (padrão para qualquer venue; valores do manual em `:root[data-venue="maracana"]`).
+- Período: `rangeBar(note,extra,semAlerta)` com Hoje, Ontem, 7 dias, 30 dias (fuso do venue), Importado (sem LIVE) e Personalizado; campos de data por `dateField(act,valor,rótulo,max,vazio)`, sempre dd/mm/aaaa (input nativo transparente por cima). Também em Qualidade (`rev-date`) e Galerias (`gal-ev-data`).
+- Desempenho (critério 28, abaixo de 50 ms com 30 dias × 400 pedidos): `prodKey` memoizado por nome (`PK_MEMO`), preços do catálogo lidos uma vez por `painelDados` (`PN_PRECO`), pontos da Roverpix recalculados só quando o LIVE muda (`PN_PONTOS`) e um `Intl.NumberFormat` único para `fmtN`/`fmtR` (`NF_BR`).
+- Fonte Tudo com venda do Eterna no período: a seta de Faturamento some (o período anterior só tem a Roverpix).
+- Escala: com muitos venues, o mesmo contrato vira `GET /painel?from&to&pdv&fonte` no servidor (venue da sessão, período até 366 dias, agregados diários por venue e ponto). `painelDados` e `vPainel` estão em `window.ETERNA` só para os testes; não podem ir para o build de produção.
+
+### Outras telas
+
+- Vendas e caixa: só a tabela de vendedores e o link para o Painel.
+- Fotógrafos: quem não tem sessão no período mostra "sem dados" em cor apagada, vai para o fim e não mostra o índice em vermelho; colunas secundárias com `c2` (somem até 1600 px) e `c3` (até 900 px).
+- Catálogo e preços passou a se chamar **Painel de controle** (view e hash continuam `catalogo`; subtítulo "catálogo, preços, Checkout e FTP").
+
+### FTP do estádio no Painel de controle
+
+- `rftpPanel` saiu do Upload automático (`vImportar`) e entrou no fim de `vCatalogo`. Ver: `configuracao.r`; alterar (`rf-save`, em `WRITE_OPS` e `ACT_MOD` com `configuracao`): `configuracao.u`; sem `.u` os campos ficam desativados e aparece "somente leitura". A senha continua só no agente (`~/Eterna/*.json`); o navegador nunca recebe a senha salva. Sem o agente conectado, o cartão aparece desligado (pílula "agente desconectado", campos desativados e a nota para abrir o Eterna pelo agente em http://127.0.0.1:8765).
+
+### Upload sem check-in da câmera
+
+- Saíram o cartão de check-in (`camPanel`), o botão "É a minha" (`cam-mine`), o select de fotógrafo por câmera (`cam-who`) e `camName`.
+- Ficaram: `camDay` e `camWho` (check-ins já gravados em `SIM.camDia` continuam valendo), o nome do autor gravado na câmera (`keyByName`), o palpite pela Roverpix (`camGuess`) e a sessão.
+- `libWho` usa primeiro o login do FTP (segurança I1), quando ele bate com um fotógrafo do cadastro; depois a câmera (check-in antigo ou nome gravado), o palpite pela Roverpix e a sessão. FTP com nome desconhecido continua em `ftp:<nome>`.
+
+### Copiar permissões de… (Permissões e Usuários)
+
+- `permCopia(de, alvo, editor)`: copia `perms` (C/R/U/D), `menu` e `inicio` da origem; nunca nome, e-mail, status. Letra ou tela que o editor não tem (e o alvo ainda não tem) fica de fora e volta em `fora`; tela inicial fora do menu vira vazia; `preset` por `presetMatch`.
+- Em Permissões: botão "Copiar permissões de…" (`perm-copy`), escolha da pessoa (`perm-copy-from`), prévia com `permDiff` e o que ficou de fora, "Confirmar e salvar" (`perm-copy-ok`, em `WRITE_OPS` `u` e `ACT_MOD` `permissoes`). `permCopiaSalvar` passa por `permRO` e `permValidate` como uma edição manual e grava `permissoes_copiadas` (`de`, `para`, `fora`, `mudancas`).
+- Em Usuários: no editor, "Copiar permissões de…" (`perm-copy-open`) abre Permissões com a cópia; no cadastro novo, "Começar com as permissões de…" (`user-copy-from`) troca o perfil pelo da pessoa escolhida (filtrado pelo que o editor pode dar) e registra `criar` e `permissoes_copiadas`.
+
+### Agente (revisão de segurança da v80)
+
+- **B1** FTP embutido: o dono da foto é sempre o login (`quem = self.user`). Subpasta = fotógrafo só para login listado em `"compartilhado": [...]` no `~/Eterna/ftp.json` e só se a subpasta for um fotógrafo cadastrado (usuário do FTP ou `PHOTOGRAPHERS`).
+- **I2** Foto cortada: `jpeg_completo` recusa o que não começa como JPEG nem PNG; o FTP não anuncia `REST STREAM` e responde 550 a `REST` maior que 0 (a câmera manda a foto inteira de novo).
+- **I3** `rota_privada` também cobre `/metricas`, `/ftp-remoto/*` e `/photoroom/status` (sem CORS `*`; `Host` do agente).
+- **I4** `/rostos/projecao`: só com `ETERNA_TESTE_CARGA=1`, por `POST {"n":...}`, origem local, no máximo 200 mil rostos (`PROJECAO_MAX`). O `teste-carga.py` passou a usar POST e extrapola acima de 200 mil.
+- **I5** `/ftp-remoto/config`: se servidor, porta ou usuário mudarem, a senha salva não é reaproveitada (400 "digite a senha de novo").
+- **I7** FTP embutido: senhas novas com `secrets.choice` e 12 caracteres, `ftp.json` com chmod 600, senha comparada com `hmac.compare_digest`, 5 erros seguidos bloqueiam o IP por 15 min (421), senhas fora do console. Senhas antigas com menos de 12 caracteres continuam valendo (para não derrubar câmeras configuradas) e geram um aviso no console.
+- **I6** (parcial) `metricas.jsonl` é podado para os últimos 3 dias ao abrir o agente. Pendentes: `pasta_vigiada` faz `os.walk` a cada 0,5 s e o hash relê o arquivo (ver o plano).
+- `ETERNA_FTP_PORTA`: porta do FTP embutido (testes); sem ela, 21 ou 2121.
+- Testes: `testes/agente-seguranca.js`.
+- `rota_privada` inclui `/roverpix/`: `/roverpix/status` e `/roverpix/data` só devolvem CORS para a origem do agente e `ETERNA_APP_ORIGIN`; outra origem recebe 403 sem `Access-Control-Allow-Origin` (e o `Host` precisa ser o do agente, contra DNS rebinding). O app aberto pelo agente (mesma origem) continua lendo.
