@@ -1105,13 +1105,24 @@ def rftp_list(f, path, depth=0):
             elif fa.get("type") == "file" and name.lower().endswith((".jpg", ".jpeg")):
                 out.append((full, int(fa.get("size") or 0)))
     except ftplib.error_perm:
-        # servidor sem MLSD: NLST simples, sem subpastas
-        for full in f.nlst(path or "."):
-            if full.lower().endswith((".jpg", ".jpeg")):
+        # servidor sem MLSD (ex.: IIS): NLST; o que não é JPG e não tem extensão é tratado como subpasta (fotógrafo)
+        try:
+            nomes = f.nlst(path or ".")
+        except ftplib.error_perm:
+            return out
+        for nome in nomes:
+            nome = nome.replace("\\", "/")
+            full = nome if (not path or nome.startswith(path.rstrip("/") + "/")) else path.rstrip("/") + "/" + nome
+            base = full.rsplit("/", 1)[-1]
+            if base in (".", ".."):
+                continue
+            if base.lower().endswith((".jpg", ".jpeg")):
                 try:
                     out.append((full, f.size(full) or 0))
                 except Exception:
                     out.append((full, 0))
+            elif "." not in base and depth < 3 and full != path:
+                out += rftp_list(f, full, depth + 1)
     return out
 
 
