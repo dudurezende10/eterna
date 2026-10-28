@@ -157,6 +157,8 @@ def enviar(a):
               open(os.path.join(a.saida, "parametros.json"), "w", encoding="utf8"))
 
 
+LIMITE = 0.45  # mesma semelhança mínima do Eterna para "é a pessoa"; abaixo disso ele pergunta
+
 # ---------- testador de selfie ----------
 def selfies(a):
     import cv2, numpy as np
@@ -266,7 +268,13 @@ def relatorio(a):
     taxa_leit = len(lidas) / max(1e-9, (fim_leit - t_ini) / 60)
     fila_max = max([m.get("fila") or 0 for m in mon] or [0])
     sel_ok = [s for s in sel if "erro" not in s and s.get("rosto")]
-    acerto = (sum(1 for s in sel_ok if s["achou"]) / len(sel_ok)) if sel_ok else None
+    # acurácia = selfies que encontraram a pessoa / todas as selfies testadas (só erro de rede fica de fora;
+    # selfie em que o Eterna não viu rosto conta como falha, porque o cliente sairia sem as fotos)
+    sel_val = [s for s in sel if "erro" not in s]
+    n_achou = sum(1 for s in sel_val if s.get("achou"))
+    n_certeza = sum(1 for s in sel_val if s.get("achou") and (s.get("semelhanca") or 0) >= LIMITE)
+    n_sem_rosto = sum(1 for s in sel_val if not s.get("rosto"))
+    acerto = (n_achou / len(sel_val)) if sel_val else None
     meta_min = a.meta_dia / (a.horas * 60)
     pico_min = meta_min * a.pico
     # pico observado: maior número de fotos enviadas em 1 minuto
@@ -316,7 +324,6 @@ def relatorio(a):
         ("Maior fila de leitura", f"{fila_max} fotos"),
         ("Rostos por foto (média)", fmt(statistics.mean([f['rostos'] for f in lidas]) if lidas else None, 1)),
         ("Buscas por selfie", f"{len(sel_ok)} ({len(sel) - len(sel_ok)} sem rosto ou com erro)"),
-        ("Selfie achou a foto de origem", fmt(acerto * 100 if acerto is not None else None, 1, "%")),
         ("Tempo da busca por selfie (mediana / 95%)", f"{fmt(pct([s['ms'] for s in sel_ok], 50), 0, ' ms')} / {fmt(pct([s['ms'] for s in sel_ok], 95), 0, ' ms')}"),
         ("CPU do servidor (média / máxima)", f"{fmt(statistics.mean([m['cpu'] for m in mon if m.get('cpu') is not None]) if any(m.get('cpu') is not None for m in mon) else None, 0, '%')} / {fmt(max([m['cpu'] for m in mon if m.get('cpu') is not None] or [None]) if any(m.get('cpu') is not None for m in mon) else None, 0, '%')}"),
         ("Memória do servidor (máxima)", fmt(max([m['memoria'] for m in mon if m.get('memoria') is not None]) if any(m.get('memoria') is not None for m in mon) else None, 0, "%")),
@@ -340,10 +347,18 @@ def relatorio(a):
 body{{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 Inter,Segoe UI,Arial,sans-serif}}main{{max-width:900px;margin:0 auto;padding:24px 16px}}
 h1{{font-size:26px;margin:0 0 4px}}.mu{{color:var(--mu)}}table{{width:100%;border-collapse:collapse;margin:14px 0}}th,td{{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}}
 th{{font-weight:600;width:52%}}.v{{padding:14px 16px;border-radius:10px;color:#fff;background:{'var(--ok)' if aguenta else 'var(--bad)'};font-weight:600}}
+.ac{{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:6px 0}}.ac b{{font-size:56px;line-height:1}}
 svg{{width:100%;height:auto;border:1px solid var(--line);border-radius:8px}}</style></head><body><main>
 <h1>Teste de carga do Eterna</h1><div class="mu">{datetime.fromtimestamp(t_ini):%d/%m/%Y %H:%M} · meta {a.meta_dia:,} fotos/dia em {fmt(a.horas, 0)} h · {par.get('fotografos', '?')} fotógrafos · ensaios de {'-'.join(str(x) for x in par.get('fotos_ensaio', [])) or '?'} fotos em {'-'.join(fmt(x, 1) for x in par.get('duracao_ensaio', [])) or '?'} min{' · tempo acelerado %gx' % par['acelerar'] if par.get('acelerar', 1) != 1 else ''}</div>
 <p class="v">{veredito}</p>
 <p>Capacidade medida do indexador: <b>{fmt(cap_dia, 0)} fotos por dia</b> em {a.horas} h de operação.</p>
+<h2>Acurácia do reconhecimento</h2>
+<p class="ac"><b style="color:{'var(--ok)' if acerto is not None and acerto * 100 >= a.meta_acerto else 'var(--bad)'}">{fmt(acerto * 100 if acerto is not None else None, 1, '%')}</b>
+<span>{n_achou} de {len(sel_val)} selfies encontraram a pessoa · meta {fmt(a.meta_acerto, 0, '%')}</span></p>
+<table><tr><th>Encontrou com certeza</th><td>{n_certeza} ({fmt(100 * n_certeza / len(sel_val) if sel_val else None, 1, '%')})</td></tr>
+<tr><th>Encontrou perguntando "é uma destas?"</th><td>{n_achou - n_certeza} ({fmt(100 * (n_achou - n_certeza) / len(sel_val) if sel_val else None, 1, '%')})</td></tr>
+<tr><th>Não encontrou</th><td>{len(sel_val) - n_achou - n_sem_rosto} ({fmt(100 * (len(sel_val) - n_achou - n_sem_rosto) / len(sel_val) if sel_val else None, 1, '%')})</td></tr>
+<tr><th>Não viu rosto na selfie</th><td>{n_sem_rosto} ({fmt(100 * n_sem_rosto / len(sel_val) if sel_val else None, 1, '%')})</td></tr></table>
 <h2>Resultados</h2><table>{tab}</table>
 <h2>Por fotógrafo simulado</h2><table><tr><th>Fotógrafo</th><th>Fotos</th><th>Volume</th><th>Upload mediano</th><th>Upload 95%</th></tr>{tabf}</table>
 <h2>Fila de leitura ao longo do teste</h2><svg viewBox="0 0 800 190" role="img" aria-label="Fila de leitura"><path d="{svg}" fill="none" stroke="#134078" stroke-width="2"/><text x="20" y="186" font-size="11" fill="#5b6573">0 min</text><text x="740" y="186" font-size="11" fill="#5b6573">{fmt(maxt / 60, 1)} min</text><text x="24" y="16" font-size="11" fill="#5b6573">{maxf} fotos</text></svg>
@@ -366,7 +381,7 @@ def main():
     e.add_argument("--pasta-por-fotografo", action=argparse.BooleanOptionalAction, default=True, help="cada fotógrafo numa pasta do FTP (padrão)")
     s = sp.add_parser("selfies"); s.add_argument("--agente", required=True); s.add_argument("--por-minuto", type=float, default=20); s.add_argument("--minutos", type=float, default=10)
     m = sp.add_parser("monitorar"); m.add_argument("--agente", required=True); m.add_argument("--minutos", type=float, default=12)
-    r = sp.add_parser("relatorio"); r.add_argument("--agente", default="http://127.0.0.1:8765"); r.add_argument("--meta-dia", type=int, default=15000)
+    r = sp.add_parser("relatorio"); r.add_argument("--agente", default="http://127.0.0.1:8765"); r.add_argument("--meta-dia", type=int, default=15000); r.add_argument("--meta-acerto", type=float, default=90)
     r.add_argument("--horas", type=float, default=8, help="horas de operação por dia"); r.add_argument("--pico", type=float, default=1.7, help="pico / média: ensaios de vários fotógrafos ao mesmo tempo")
     for x in (e, s, m, r):
         x.add_argument("--saida", default="./teste-carga")
