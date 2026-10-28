@@ -155,6 +155,40 @@ lib = {}               # id -> {file, thumb}  (tudo que já está na inbox)
 cards = {}             # volume path -> hashes já tratados nesta inserção
 metricas = []           # uma linha por foto recebida (teste de carga e operação): ver /metricas
 metricas_por_pid = {}
+METRICAS_ARQ = os.path.join(HOME, "metricas.jsonl")
+
+
+def metrica_grava(linha):
+    try:
+        with open(METRICAS_ARQ, "a", encoding="utf8") as f:
+            f.write(json.dumps(linha) + "\n")
+    except Exception:
+        pass
+
+
+def metricas_carrega(dias=3):
+    """Relê as métricas dos últimos dias (para o relatório não perder as fotos de antes de um reinício)."""
+    if not os.path.exists(METRICAS_ARQ):
+        return
+    lim = time.time() - dias * 86400
+    try:
+        for l in open(METRICAS_ARQ, encoding="utf8"):
+            try:
+                x = json.loads(l)
+            except Exception:
+                continue
+            if "chegada" in x:
+                if x["chegada"] >= lim:
+                    metricas.append(x)
+                    if not x.get("dup"):
+                        metricas_por_pid[x["pid"]] = x
+            elif x.get("pid") in metricas_por_pid:
+                metricas_por_pid[x["pid"]].update(x)
+    except Exception as ex:
+        print("métricas antigas não lidas:", ex)
+
+
+metricas_carrega()
 state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None}}
 
 if os.path.exists(INDEX):
@@ -201,6 +235,18 @@ def quick_hash(path, size):
     with open(path, "rb") as f:
         h.update(f.read(2 * 1024 * 1024))
     return h.hexdigest()
+
+
+def jpeg_completo(path, size):
+    """JPEG termina no marcador FFD9; algumas câmeras deixam uns bytes depois dele."""
+    try:
+        with open(path, "rb") as f:
+            if f.read(2) != b"\xff\xd8":
+                return False
+            f.seek(max(0, size - 4096))
+            return b"\xff\xd9" in f.read()
+    except OSError:
+        return False
 
 
 def has_pillow():
@@ -391,6 +437,7 @@ def leitor_loop(det, rec, db):
                 agora = time.time()
                 m.update(lida=agora, leitura_ms=round((agora - t_ini) * 1000, 1), rostos=len(fs),
                          espera_ms=round((t_ini - t_fila) * 1000, 1) if t_fila else None)
+                metrica_grava({"pid": pid, "lida": m["lida"], "leitura_ms": m["leitura_ms"], "rostos": m["rostos"], "espera_ms": m["espera_ms"]})
             with _mat_lock:
                 _mat.pop(dia, None)
         except Exception as ex:
@@ -506,10 +553,35 @@ def medir(sessoes):
 def uso_maquina():
     try:
         import psutil
-        return {"cpu": psutil.cpu_percent(interval=None), "memoria": psutil.virtual_memory().percent,
-                "disco_livre_gb": round(psutil.disk_usage(HOME).free / 1e9, 1)}
+        nucleos = psutil.cpu_percent(interval=None, percpu=True)
+        io = psutil.disk_io_counters(); rede = psutil.net_io_counters(); eu = psutil.Process()
+        return {"cpu": round(sum(nucleos) / max(1, len(nucleos)), 1), "cpu_nucleo_max": max(nucleos or [0]), "nucleos": len(nucleos),
+                "memoria": psutil.virtual_memory().percent, "memoria_eterna_mb": round(eu.memory_info().rss / 1e6),
+                "threads": eu.num_threads(), "disco_livre_gb": round(psutil.disk_usage(HOME).free / 1e9, 1),
+                "disco_escrita_b": io.write_bytes if io else None, "disco_leitura_b": io.read_bytes if io else None,
+                "disco_ocupado_ms": getattr(io, "busy_time", None) if io else None,
+                "rede_rx_b": rede.bytes_recv, "rede_tx_b": rede.bytes_sent, **uso_eterna()}
     except Exception:
-        return {"disco_livre_gb": round(shutil.disk_usage(HOME).free / 1e9, 1)}
+        return {"disco_livre_gb": round(shutil.disk_usage(HOME).free / 1e9, 1), **uso_eterna()}
+
+
+def uso_eterna():
+    tam = lambda p: os.path.getsize(p) if os.path.exists(p) else 0
+    return {"banco_rostos_mb": round((tam(ROSTOS_DB) + tam(ROSTOS_DB + "-wal")) / 1e6, 1), "iniciado": state["started"],
+            "ftp_incompletas": state["ftp"].get("incompletas", 0), "leitores": rostos.get("leitores")}
+
+
+def projecao_busca(n):
+    """Mede, nesta máquina, quanto tempo a busca leva com n rostos no índice (ex.: 60 dias de operação)."""
+    np = _cv["np"]
+    n = max(1000, min(int(n), 6_000_000))
+    M = np.random.default_rng(1).standard_normal((n, 128), dtype="float32")
+    M /= np.linalg.norm(M, axis=1, keepdims=True)
+    v = M[0].copy(); ts = []
+    for _ in range(5):
+        t0 = time.time(); s_ = M @ v; np.nonzero(s_ >= LIMITE_TALVEZ); ts.append((time.time() - t0) * 1000)
+    del M
+    return {"rostos": n, "busca_ms": round(sorted(ts)[2], 1), "memoria_mb": round(n * 512 / 1e6)}
 
 
 def list_volumes():
@@ -538,7 +610,8 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
             events.append({"type": "dup", "id": pid, "name": fn, "size": st.st_size,
                            "t": st.st_mtime, "card": origin, "src": src_kind})
             state["dups"] += 1
-            metricas.append({"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(), "dup": True})
+            md = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(), "dup": True}
+            metricas.append(md); metrica_grava(md)
             return "dup"
     pid = h[:12]
     day = time.strftime("%Y-%m-%d", time.localtime(st.st_mtime))
@@ -553,6 +626,11 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
     except Exception as ex:
         print("erro ao copiar", fn, ex)
         return None
+    sha = hashlib.sha256()                    # assinatura do arquivo gravado: o teste confere foto a foto se chegou íntegra
+    with open(dst, "rb") as f:
+        for bloco in iter(lambda: f.read(1 << 20), b""):
+            sha.update(bloco)
+    sha = sha.hexdigest()
     thumb = os.path.join(THUMBS, pid + ".jpg")
     if not make_thumb(dst, thumb):
         thumb = dst
@@ -566,8 +644,9 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
                        "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
         state["copied"] += 1
         m = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(),
-             "copia_ms": round((time.time() - t_ini) * 1000, 1)}
+             "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha}
         metricas.append(m); metricas_por_pid[pid] = m
+    metrica_grava(m)
     fila_rostos.put((pid, dst, time.time()))
     print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
     return "new"
@@ -819,8 +898,9 @@ class FTPSession(threading.Thread):
             self.send("150 Pode enviar")
             tmpdir = os.path.join(FTPTMP, self.user)
             os.makedirs(tmpdir, exist_ok=True)
-            tmp = os.path.join(tmpdir, name)
+            tmp = os.path.join(tmpdir, "%d_%s" % (self.ident, name))
             size = 0
+            caiu = False
             try:
                 with open(tmp, "ab" if self.rest else "wb") as out:
                     while True:
@@ -829,12 +909,26 @@ class FTPSession(threading.Thread):
                             break
                         out.write(chunk)
                         size += len(chunk)
+            except OSError:
+                caiu = True
             finally:
                 d.close()
             self.rest = 0
             st = os.stat(tmp)
-            if name.lower().endswith((".jpg", ".jpeg")):
-                r = ingest_file(tmp, name, st, self.user, "ftp", move=True)
+            jpg = name.lower().endswith((".jpg", ".jpeg"))
+            if jpg and (caiu or not jpeg_completo(tmp, st.st_size)):
+                with lock:
+                    state["ftp"]["incompletas"] = state["ftp"].get("incompletas", 0) + 1
+                print(f"ftp: {name} chegou incompleto ({size/1e6:.1f} MB), recusado; a câmera manda de novo")
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                self.send("426 Transferência incompleta, envie de novo")
+                return
+            if jpg:
+                quem = self.cwd.strip("/").split("/")[-1] or self.user   # subpasta = fotógrafo
+                r = ingest_file(tmp, name, st, quem, "ftp", move=True)
                 if r:
                     save_index()
                 with lock:
@@ -2307,6 +2401,10 @@ class H(BaseHTTPRequestHandler):
                         o["thumb"] = f"/thumb/{e['id']}"
                         o["url"] = f"/file/{e['id']}"
                 return self.js({"events": out, "next": since + len(evs), "total": len(events)})
+        if u.path == "/rostos/projecao":
+            if not _cv.get("np"):
+                return self.js({"erro": "reconhecimento desligado"})
+            return self.js(projecao_busca(q.get("n", ["1000000"])[0]))
         if u.path == "/metricas":
             desde = float(q.get("desde", ["0"])[0] or 0)
             with lock:
