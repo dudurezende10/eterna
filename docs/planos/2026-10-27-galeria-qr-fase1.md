@@ -421,3 +421,17 @@ Também são reaproveitadas as chaves que já existem: `payH`, `card`, `pix`, `t
   - o QR é gerado localmente e o token nasce no app, então a Loja nunca trava;
   - a fila guarda e reenvia;
   - o `app_cache` do agente fica só em memória: se o agente reiniciar sem internet, o app não abre. Nota para uma fase futura.
+## Adendo do Eduardo (27/10, 21:54): Loja apartada, em tela cheia, que volta sozinha
+
+A Loja é a área do cliente: não depende de login, não tem menu lateral, abre em tela cheia, "tela virgem".
+
+- A1. Rota pública própria `#loja` (como `#g/<token>`): abre sem login, ocupa a tela inteira, sem menu lateral, sem cabeçalho do app, sem `.bare-exit`. O usuário de perfil quiosque cai direto nela. O item "Loja" do menu da equipe leva para `#loja`. `ljMode()` passa a ser sempre tela cheia; o botão de tela cheia some (o navegador do quiosque roda em modo kiosk).
+- A2. Saída só para a equipe, escondida: tecla Esc ou 3 toques seguidos no logo voltam ao app (se houver usuário logado; senão, à tela de login). Nada visível para o cliente.
+- A3. Inatividade: nas etapas de fotos, carrinho e código, depois de `LOJA_INATIVO` = 90 s sem toque, clique, tecla ou movimento, aparece um aviso "Ainda está aí?" (5 idiomas) com contagem de 10 s e um botão grande para continuar. Sem resposta, `lojaReset()` e volta para a câmera (facial). Qualquer interação zera o contador.
+- A4. Depois do pagamento: a tela final volta sozinha para a câmera em `LOJA_POS_COMPRA` = 5 s (pedido do Eduardo; substitui a D9 de 45 s), com contagem visível (anel ou número). Botão grande "Voltar ao início" (ícone de rosto + texto nos 5 idiomas) volta na hora.
+- A5. Os timers não podem vazar: sair da Loja, trocar de etapa ou recarregar limpa todos; nenhum timer roda fora da rota `#loja`.
+- Critérios de aceite extras:
+  - 22. `U#loja` sem login mostra a câmera da Loja em tela cheia; não existe `#nav` visível nem menu lateral; `document.body` sem rolagem horizontal em 390, 1024 e 1440 px.
+  - 23. Com `page.clock`, nas fotos, 90 s parado mostram o aviso; mais 10 s voltam para a câmera (`state.kiosk.step==='code'`). Um toque no aviso mantém a etapa.
+  - 24. Depois do pagamento, 5 s voltam para a câmera; o botão "Voltar ao início" volta antes.
+  - 25. Esc (logado) sai da Loja para o app; 3 toques no logo idem.
