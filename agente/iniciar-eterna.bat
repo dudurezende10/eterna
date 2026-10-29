@@ -22,8 +22,11 @@ echo Baixando a versao mais nova do Eterna...
 curl -fsSL -o eterna-agente.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/eterna-agente.py
 curl -fsSL -o teste-carga.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/teste-carga.py
 
+rem v84: com o recorte local instalado (instalar-recorte.bat), usa o Python de %USERPROFILE%\Eterna\venv
+set "PY=python"
+if exist "%USERPROFILE%\Eterna\venv\Scripts\python.exe" set "PY=%USERPROFILE%\Eterna\venv\Scripts\python.exe"
 echo Conferindo bibliotecas (OpenCV, numpy, psutil; boto3 e cryptography para a nuvem)...
-python -m pip install --quiet --disable-pip-version-check opencv-python-headless numpy psutil boto3 cryptography
+"%PY%" -m pip install --quiet --disable-pip-version-check opencv-python-headless numpy psutil boto3 cryptography
 
 set ETERNA_REDE=1
 if "%ETERNA_LEITORES%"=="" set ETERNA_LEITORES=4
@@ -33,5 +36,5 @@ echo.
 echo Abra o Eterna em qualquer computador da rede:  http://%COMPUTERNAME%:8765  (ou pelo IP desta maquina)
 echo Se o Windows perguntar se o Python pode usar a rede, clique em Permitir (redes privadas).
 echo.
-python eterna-agente.py
+"%PY%" eterna-agente.py
 pause

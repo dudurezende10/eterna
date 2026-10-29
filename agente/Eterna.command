@@ -9,4 +9,7 @@ if [ -n "$PIDS" ]; then
   sleep 1
 fi
 ( sleep 3; open "http://127.0.0.1:8765/#chroma" ) &
-python3 eterna-agente.py
+# v84: com o recorte local instalado (instalar-recorte.command), usa o Python de ~/Eterna/venv
+PY=python3
+[ -x "$HOME/Eterna/venv/bin/python3" ] && PY="$HOME/Eterna/venv/bin/python3"
+"$PY" eterna-agente.py

@@ -485,6 +485,29 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 - Confirmar o pagamento não baixa mais o estoque; quem baixa é o **Saiu certo**.
 - O número da venda tem o formato `L0-012`.
 
+## Novidades da v84: fundos de IA montados no próprio computador
+
+As fotos com fundo de IA agora são montadas no computador do ponto, sem internet e sem custo. O agente recorta a pessoa e o Eterna coloca no fundo com as regras aprovadas (meio corpo encostado embaixo, corpo inteiro do joelho para cima, a Arquibancada 1950 toda em preto e branco). Vale para a prévia, o Checkout, o Posto de venda e a impressão 10×15.
+
+### Instalar o recorte (TI do ponto, uma vez por computador)
+
+1. Use um computador com **16 GB de memória** (recomendado). Com 8 GB funciona, mas fica no limite com o Chrome e o reconhecimento de rostos abertos.
+2. Na pasta do agente, dê dois cliques em **instalar-recorte.command** (Mac) ou **instalar-recorte.bat** (Windows). Ele cria um ambiente separado do Eterna (`Eterna/venv`, na pasta do usuário), instala as versões testadas do recorte e baixa os dois modelos (cerca de 350 MB). Precisa de internet só nesta hora. Depois disso, o Eterna.command e o iniciar-eterna.bat abrem o agente por esse ambiente.
+3. Feche o agente e abra de novo (Eterna.command ou iniciar-eterna.bat). Na janela do agente aparece **Recorte local: pronto**.
+4. Em **Configurações › Fundos de IA**, o quadro **Recorte local** mostra "pronto" e, depois das primeiras fotos, o tempo médio por foto.
+
+Se o recorte não estiver instalado, o Checkout não oferece foto com fundo de IA e o quadro mostra o motivo. Enquanto a foto está sendo montada, o cliente vê "Preparando sua foto especial..."; se a montagem falhar, a foto sai da venda. As outras fotos seguem normais.
+
+Os recortes ficam guardados no computador por 2 dias e depois são apagados sozinhos.
+
+### Tempo
+
+A primeira foto do dia demora mais (o agente abre os modelos). Depois, cada foto leva alguns segundos; o recorte fica guardado e não é refeito na impressão.
+
+### Photoroom
+
+O Photoroom continua configurado, só não é usado. Para voltar a ele: **Configurações › Painel de controle › Montagem dos fundos › Photoroom**. Cada montagem pelo Photoroom gasta crédito.
+
 ---
 
 ## 6. O que dizer ao cliente

@@ -1991,6 +1991,270 @@ def pr_compose(photo, bg, W, H, pad, hi=False, recorte=False):
     return name
 
 
+# ---------- v84: recorte local da pessoa (sem Photoroom, sem custo) ----------
+# rembg com duas sessões, ISNet (cabelo e bordas finas) e u2net_human_seg (pessoa inteira, com óculos e acessórios);
+# a máscara final é o maior valor das duas em cada ponto (docs/fundos-ia-regras.md, regra 12), depois limpa: níveis
+# (abaixo de 0,3 some, acima de 0,9 fica cheio), sólida por dentro (taça, bandeira e boné nunca semitransparentes, regra 13),
+# só sai mancha pequena e solta, longe do grupo (na dúvida, mantém), e 1 px de borda a menos (sem halo). O PNG leva só a pessoa:
+# o RGB fora da máscara é zerado (nada do fundo nem de quem estava ao redor). Lado maior até 3000 px (impressão 10×15) e
+# uma cópia de 2400 px para a prévia. Cache em ~/Eterna/recortes/ por até 2 dias (limpar_recortes). A montagem com as
+# regras de cada fundo é do app (canvas). Nada é importado no topo: sem rembg o agente segue e a rota responde 503.
+RECORTES = os.path.join(HOME, "recortes")
+REC_MODELOS = ("isnet-general-use", "u2net_human_seg")
+REC_VERSOES = "rembg==2.0.86 onnxruntime==1.29.0"
+REC_COMO = "rode agente/instalar-recorte (Mac: instalar-recorte.command; Windows: instalar-recorte.bat): cria ~/Eterna/venv com %s e baixa %s" % (REC_VERSOES, " e ".join(REC_MODELOS))
+REC_LADO_MAX = 3000      # maior lado do PNG da impressão
+REC_LADOS = (2400, 3000) # 2400 = prévia (cópia reduzida do de 3000, sem rodar os modelos de novo)
+REC_TRAB = 1600          # maior lado da imagem entregue aos modelos (eles trabalham em 1024 e 320 px); a máscara volta ao tamanho final
+REC_CONC = 2 if os.environ.get("ETERNA_RECORTE_CONC") == "2" else 1   # recortes ao mesmo tempo (1 ou 2): cada um ocupa memória
+REC_FILA_MAX = 24
+REC_TAXA = 60            # recortes novos por minuto por IP (o cache não conta)
+REC_DIAS = 2             # prazo do cache de recortes
+REC_TETO_GB = float(os.environ.get("ETERNA_RECORTES_GB") or 5)   # teto do cache: apaga os mais antigos acima disso
+REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos, tenta de novo passado este tempo
+rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None}
+rec_fila = queue.Queue(maxsize=REC_FILA_MAX)
+rec_lock = threading.Lock()        # só contadores e estado (o /status nunca espera a carga dos modelos)
+rec_carga = threading.Lock()       # abrir os modelos (só as threads de trabalho)
+rec_sess = []
+rec_threads = []
+_re_rec = re.compile(r"^(ag_)?([0-9a-f]{6,40})\.png$")
+
+
+def rec_modelo(nome):
+    """Arquivo do modelo já baixado (rembg 2.0.6x+ em ~/.rembg/models/<nome>/; versões antigas em ~/.u2net/), ou None.
+    O agente nunca baixa modelo sozinho: quem baixa é o instalador (instalar-recorte)."""
+    novos = os.path.expanduser(os.environ.get("REMBG_HOME") or "~/.rembg")
+    antigos = os.path.expanduser(os.environ.get("U2NET_HOME") or "~/.u2net")
+    for c in (os.path.join(novos, "models", nome, nome + ".onnx"), os.path.join(antigos, nome + ".onnx")):
+        if os.path.isfile(c) and os.path.getsize(c) > 1_000_000:
+            return c
+    return None
+
+
+def rec_estado():
+    """(ok, motivo): rembg, onnxruntime, Pillow, numpy e scipy instalados, os dois modelos baixados e sem erro recente."""
+    if os.environ.get("ETERNA_SEM_RECORTE"):
+        return False, "recorte desligado (ETERNA_SEM_RECORTE)"
+    import importlib.util
+    falta = [m for m in ("rembg", "onnxruntime", "PIL", "numpy", "scipy") if importlib.util.find_spec(m) is None]
+    if falta:
+        return False, "não instalado: faltam pacotes (" + ", ".join(falta) + ")"
+    sem = [n for n in REC_MODELOS if not rec_modelo(n)]
+    if sem:
+        return False, "não instalado: modelos não baixados (" + ", ".join(sem) + ")"
+    with rec_lock:
+        if rec["erro"]:
+            if time.time() - rec["erro_em"] < REC_ERRO_SEG:
+                return False, rec["erro"]
+            rec["erro"] = None         # passou o tempo: a próxima foto tenta abrir os modelos de novo
+    return True, None
+
+
+def rec_status():
+    ok, motivo = rec_estado()
+    with rec_lock:
+        n = rec["feitos"]
+        return {"ok": ok, "motivo": motivo, "carregado": rec["carregado"], "modelos": list(REC_MODELOS), "fila": rec_fila.qsize(),
+                "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC}
+
+
+def rec_carregar():
+    """Abre as duas sessões uma vez (na thread de trabalho, na primeira foto), fora do rec_lock."""
+    if rec_sess:
+        return rec_sess
+    with rec_carga:
+        if rec_sess:
+            return rec_sess
+        try:
+            import onnxruntime as ort
+            from rembg import new_session
+            so = ort.SessionOptions()
+            so.intra_op_num_threads = max(1, (os.cpu_count() or 2) - 1)   # deixa um núcleo para o FTP, os rostos e a tela
+            so.enable_cpu_mem_arena = False                                # menos memória presa entre um recorte e outro
+            novas = [new_session(n, sess_opts=so, providers=["CPUExecutionProvider"]) for n in REC_MODELOS]
+        except Exception as ex:
+            with rec_lock:
+                rec["erro"] = "erro ao abrir os modelos: %s" % str(ex)[:160]
+                rec["erro_em"] = time.time()
+            raise
+        rec_sess[:] = novas
+        with rec_lock:
+            rec["carregado"] = True
+            rec["erro"] = None
+        return rec_sess
+
+
+def rec_limpa_mascara(masks):
+    """Regras 12 e 13: máximo das máscaras (0-255, PIL L do mesmo tamanho) -> níveis 0,3-0,9 -> sólido por dentro -> só sai
+    mancha pequena e solta, longe do grupo. Tudo o que está com o convidado (bandeira, boné, óculos, taça) fica sólido."""
+    import numpy as np
+    from scipy import ndimage
+    bruta = np.maximum.reduce([np.asarray(x, dtype=np.float32) / 255.0 for x in masks])   # se uma das duas pega com alfa alto, fica
+    m = np.clip((bruta - 0.3) / 0.6, 0.0, 1.0)                 # abaixo de 0,3 vira 0; acima de 0,9 vira 1
+    lado = max(m.shape)
+    # o que pertence ao grupo: tudo o que tem algum sinal (>= 0,12) e está ligado a um ponto que uma das máscaras pega com
+    # alfa alto (>= 0,6). Assim a taça translúcida ou a ponta da bandeira entram inteiras; o que não tem sinal forte, não.
+    rot0, n0 = ndimage.label(bruta >= 0.12, structure=np.ones((3, 3), dtype=bool))
+    semente = np.zeros(n0 + 1, dtype=bool)
+    semente[np.unique(rot0[bruta >= 0.6])] = True
+    semente[0] = False
+    dentro = semente[rot0]
+    m = m * dentro
+    buracos = ndimage.binary_fill_holes(dentro) & ~dentro & (bruta >= 0.1)   # furo dentro de objeto (taça translúcida), não o fundo entre braço e corpo
+    dentro |= buracos
+    # sólido por dentro: só a borda (até 0,2% do lado) fica macia; objeto translúcido (taça, bandeira fina) não fica fantasma
+    funda = ndimage.distance_transform_edt(dentro) > max(2.0, 0.002 * lado)
+    m[funda | buracos] = 1.0
+    rot, n = ndimage.label(dentro, structure=np.ones((3, 3), dtype=bool))
+    if n > 1:
+        areas = ndimage.sum(np.ones_like(m), rot, index=np.arange(1, n + 1))
+        grandes = np.zeros(n + 1, dtype=bool)
+        grandes[1:] = areas >= 0.03 * areas.max()             # pedaço grande fica sempre (na dúvida, mantém)
+        perto = ndimage.distance_transform_edt(~grandes[rot]) <= max(4.0, 0.015 * lado)
+        manter = grandes.copy()
+        for k in np.flatnonzero(~grandes[1:]) + 1:            # pequeno só fica se encosta (ou quase) no grupo
+            manter[k] = bool(perto[rot == k].any())
+        m = m * manter[rot]
+    return (m * 255.0 + 0.5).astype(np.uint8)
+
+
+def rec_arquivo(pid, lado=REC_LADO_MAX):
+    return os.path.join(RECORTES, pid + (".png" if lado >= REC_LADO_MAX else "_%d.png" % lado))
+
+
+def _grava_png(im, destino):
+    os.makedirs(RECORTES, exist_ok=True)
+    tmp = destino + ".%d.tmp" % threading.get_ident()
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        im.save(f, "PNG", compress_level=3)
+    os.replace(tmp, destino)
+
+
+def rec_fazer(pid, origem, lado=REC_LADO_MAX):
+    """Recorta a foto `origem` e grava ~/Eterna/recortes/<pid>.png (3000 px) e, se pedido, <pid>_2400.png. Devolve o caminho."""
+    from PIL import Image, ImageOps, ImageFilter
+    lado = REC_LADO_MAX if lado not in REC_LADOS else lado
+    destino = rec_arquivo(pid, lado)
+    if os.path.exists(destino):
+        return destino
+    cheio = rec_arquivo(pid)
+    if not os.path.exists(cheio):
+        t0 = time.time()
+        sess = rec_carregar()
+        with Image.open(origem) as im0:
+            if im0.size[0] * im0.size[1] > MAX_PIXELS:
+                raise ValueError("imagem acima de %d MP" % (MAX_PIXELS // 1_000_000))
+            im = ImageOps.exif_transpose(im0).convert("RGB")   # o navegador mostra a foto já girada pelo EXIF; o PNG não tem EXIF
+        if max(im.size) > REC_LADO_MAX:
+            im.thumbnail((REC_LADO_MAX, REC_LADO_MAX), Image.LANCZOS)
+        trab = im.copy()
+        trab.thumbnail((REC_TRAB, REC_TRAB), Image.LANCZOS)
+        masks = [s.predict(trab)[0].convert("L") for s in sess]
+        del trab
+        mascara = Image.fromarray(rec_limpa_mascara(masks), "L")
+        if mascara.size != im.size:
+            mascara = mascara.resize(im.size, Image.LANCZOS)
+        mascara = mascara.filter(ImageFilter.MinFilter(3))       # 1 px de borda a menos: sem halo do fundo
+        im = Image.composite(im, Image.new("RGB", im.size), mascara.point(lambda v: 255 if v else 0))   # fora da pessoa, RGB zerado
+        im.putalpha(mascara)
+        _grava_png(im, cheio)
+        ms = int((time.time() - t0) * 1000)
+        with rec_lock:
+            rec["feitos"] += 1
+            rec["ms_total"] += ms
+            rec["ms_ultimo"] = ms
+    if destino != cheio:
+        with Image.open(cheio) as im:
+            im = im.copy()
+        im.thumbnail((lado, lado), Image.LANCZOS)
+        _grava_png(im, destino)
+    return destino
+
+
+def limpar_recortes(agora=None):
+    """Uma vez por dia (galeria_loop): apaga recortes com mais de REC_DIAS dias, os de foto que saiu da biblioteca e,
+    acima de REC_TETO_GB, os mais antigos. Devolve quantos apagou."""
+    agora = agora or time.time()
+    try:
+        nomes = os.listdir(RECORTES)
+    except OSError:
+        return 0
+    with lock:
+        vivas = {pid: e.get("file") for pid, e in lib.items()}
+    itens, n = [], 0
+    for nome in nomes:
+        p = os.path.join(RECORTES, nome)
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        pid = nome.split(".")[0].split("_")[0]
+        fonte = vivas.get(pid)
+        if agora - st.st_mtime > REC_DIAS * 86400 or nome.endswith(".tmp") and agora - st.st_mtime > 3600 \
+                or not fonte or not os.path.exists(fonte):
+            try:
+                os.remove(p)
+                n += 1
+            except OSError:
+                pass
+        else:
+            itens.append((st.st_mtime, st.st_size, p))
+    total = sum(x[1] for x in itens)
+    for _, tam, p in sorted(itens):
+        if total <= REC_TETO_GB * 1024 ** 3:
+            break
+        try:
+            os.remove(p)
+            total -= tam
+            n += 1
+        except OSError:
+            pass
+    return n
+
+
+def rec_trabalho():
+    while True:
+        job = rec_fila.get()
+        try:
+            job["res"] = rec_fazer(job["pid"], job["file"], job["lado"])
+        except Exception as ex:
+            job["err"] = str(ex)[:200]
+        finally:
+            job["ev"].set()
+
+
+def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180):
+    """Põe o recorte na fila (1 ou 2 de cada vez) e espera. Devolve (caminho, erro)."""
+    with rec_lock:
+        while len(rec_threads) < REC_CONC:
+            t = threading.Thread(target=rec_trabalho, daemon=True)
+            t.start()
+            rec_threads.append(t)
+    job = {"pid": pid, "file": origem, "lado": lado, "ev": threading.Event()}
+    try:
+        rec_fila.put_nowait(job)
+    except queue.Full:
+        return None, "fila_cheia"
+    if not job["ev"].wait(espera):
+        return None, "tempo"
+    return job.get("res"), job.get("err")
+
+
+# v84 (segurança): o Photoroom só monta quando o interruptor do Painel de controle estiver em "Photoroom" também aqui.
+# O app grava o modo pelo loopback (POST /fundos/modo); sem o arquivo, vale "local" e o /photoroom/compose dá 409.
+FUNDOS_MODO_CFG = os.path.join(HOME, "fundos-modo.json")
+
+
+def fundos_modo():
+    try:
+        with open(FUNDOS_MODO_CFG) as f:
+            return "photoroom" if json.load(f).get("modo") == "photoroom" else "local"
+    except Exception:
+        return "local"
+
+
 # ---------- Galeria online por QR (fase 1) ----------
 # O app cria o token (16 bytes aleatórios, base64url) e publica aqui o manifesto `sessao.json`. O agente faz o
 # papel do bucket: guarda originais (só compradas e cortesias) e vitrines (900 px, com marca d'água se houver
@@ -2360,6 +2624,10 @@ def galeria_loop():
                 except Exception as ex:
                     print("  rostos: erro na limpeza", ex)
             try:
+                limpar_recortes()
+            except Exception as ex:
+                print("  recortes: erro na limpeza", ex)
+            try:
                 for t in REPO.listar_expiradas(time.time()):
                     lapide_gravar(t, REPO.ler_manifesto(t))   # antes de apagar: o token nunca mais reabre
                     REPO.apagar(t)          # os originais em ~/Eterna/inbox continuam guardados
@@ -2605,7 +2873,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/photoroom/status") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/"))
+    return path in ("/biblioteca", "/metricas", "/photoroom/status", "/recorte") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -2672,6 +2940,70 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "max-age=86400")
         self.end_headers()
         self.wfile.write(data)
+
+    def loopback(self):
+        return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+    def png_bytes(self, path):
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError:
+            return self.js({"error": "not found"}, 404)
+        self.send_response(200)
+        self.cors()
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def recorte_post(self):
+        """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
+        agente; os postos pareados entram na etapa 2 com a mesma regra do /photoroom/compose) e só fotos da biblioteca."""
+        if not self.loopback() or not self.origem_local():
+            return self.js({"error": "origem não autorizada"}, 403)
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        pid = body.get("pid")
+        if not pid_ok(pid):
+            return self.js({"error": "pid inválido"}, 400)
+        pid = pid_lib(pid)
+        try:
+            lado = int(body.get("lado") or REC_LADO_MAX)
+        except (TypeError, ValueError):
+            lado = 0
+        if lado not in REC_LADOS:
+            return self.js({"error": "lado inválido"}, 400)
+        with lock:
+            e = lib.get(pid)
+        if not e or not e.get("file") or not os.path.exists(e["file"]):
+            for lx in REC_LADOS:                       # a foto saiu da biblioteca: o recorte dela sai também
+                try:
+                    os.remove(rec_arquivo(pid, lx))
+                except OSError:
+                    pass
+            return self.js({"error": "foto não encontrada no agente"}, 404)
+        pronto = rec_arquivo(pid, lado)
+        if os.path.exists(pronto):
+            return self.png_bytes(pronto)
+        ok, motivo = rec_estado()
+        if not ok:
+            return self.js({"error": "recorte_indisponivel", "motivo": motivo, "como": REC_COMO}, 503)
+        if not limite_ok(self.client_address[0], "recorte", REC_TAXA):
+            return self.js({"error": "muitos pedidos"}, 429)
+        path, erro = rec_pedir(pid, e["file"], lado)
+        if erro == "fila_cheia":
+            return self.js({"error": "fila_cheia"}, 429)
+        if erro == "tempo":
+            return self.js({"error": "recorte demorou demais"}, 504)
+        if erro or not path:
+            ok, motivo = rec_estado()
+            if not ok:
+                return self.js({"error": "recorte_indisponivel", "motivo": motivo, "como": REC_COMO}, 503)
+            return self.js({"error": "não deu para recortar"}, 500)
+        return self.png_bytes(path)
 
     # ---------- galeria online por QR ----------
     def origem_local(self):
@@ -2975,7 +3307,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem,
+                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "recorte": rec_status(), "fundos_modo": fundos_modo(),
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
@@ -3052,6 +3384,11 @@ class H(BaseHTTPRequestHandler):
             if not re.match(r"^[0-9a-f]{16}_[a-z0-9]{2,40}_[0-9a-f]{6}\.(jpg|png)$", name):
                 return self.js({"error": "not found"}, 404)
             return self.file(os.path.join(PR_DIR, name))
+        if u.path.startswith("/recorte/"):
+            m = _re_rec.match(u.path[len("/recorte/"):])
+            if not self.loopback() or not m:
+                return self.js({"error": "not found"}, 404)
+            return self.png_bytes(os.path.join(RECORTES, m.group(2) + ".png"))
         if u.path.startswith("/thumb/") or u.path.startswith("/file/"):
             pid = u.path.rsplit("/", 1)[1]
             with lock:
@@ -3066,6 +3403,20 @@ class H(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin") or ""
         if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path == "/imprimir":
             return self.gal_post(u)
+        if u.path == "/recorte":
+            return self.recorte_post()
+        if u.path == "/fundos/modo":
+            # o interruptor do Painel de controle grava aqui o modo da montagem; só deste computador
+            if not self.loopback() or not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            modo = body.get("modo")
+            if modo not in ("local", "photoroom"):
+                return self.js({"error": "modo inválido"}, 400)
+            _grava_privado(FUNDOS_MODO_CFG, json.dumps({"modo": modo, "em": time.strftime("%Y-%m-%dT%H:%M:%S")}))
+            return self.js({"ok": True, "modo": modo})
         if u.path == "/roverpix/config":
             # só o app aberto pelo próprio agente pode trocar a chave
             if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
@@ -3126,6 +3477,8 @@ class H(BaseHTTPRequestHandler):
                     return self.js({"error": "informe a chave"}, 400)
                 pr_save(key)
                 return self.js({"ok": True, "sandbox": key.startswith("sandbox_")})
+            if fundos_modo() != "photoroom":           # v84: montagem local é o padrão; o Photoroom só com o interruptor ligado
+                return self.js({"ok": False, "error": "photoroom_desligado"}, 409)
             try:
                 if body.get("pid"):
                     with lock:
@@ -3227,6 +3580,8 @@ def main():
     print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__, type(PAGAMENTO).__name__))
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
+    _rok, _rmot = rec_estado()
+    print("  Recorte local:     " + ("pronto (ISNet + u2net_human_seg, carrega na primeira foto)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")

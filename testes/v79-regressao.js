@@ -50,6 +50,8 @@ try{
   fase='preparação';
   const ctx=await nova(b,1366,900);
   const A=await pagina(ctx,'A #loja');await A.goto(U+'#loja');await A.evaluate(()=>{localStorage.clear();});await A.reload();await A.waitForTimeout(1200);
+  // v84: no modo local o Checkout só oferece fundo de IA com o recorte do agente; as sessões de exemplo usam o modo Photoroom (só a escolha, sem montar)
+  await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
   const cards=await A.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=10&&ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=10&&ETERNA.lojaItems(s.card).filter(x=>x.t==='ai').length>=4).map(s=>s.card).slice(0,6));
   ok(cards.length>=5,'pré: faltam sessões com 10 fotos e 4 fundos de IA: '+J(cards));
   const [C1,C2,C3,C4,C5]=cards;
