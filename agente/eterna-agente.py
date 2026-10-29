@@ -669,6 +669,26 @@ def nuvem_enfileira(pid, arquivo):
         db.commit(); db.close()
 
 
+def nuvem_reenviar():
+    """Manda para a nuvem o que chegou antes de ela ser ligada: todas as fotos da biblioteca e as galerias ainda abertas.
+    A fila ignora o que já foi (INSERT OR IGNORE), então rodar de novo não duplica."""
+    with lock:
+        itens = [(pid, e.get("file") or "") for pid, e in lib.items()]
+    fotos = 0
+    for pid, f in itens:
+        if f and os.path.exists(f):
+            nuvem_enfileira(pid, f)
+            fotos += 1
+    gals = 0
+    base = getattr(REPO, "base", None)
+    for t in (os.listdir(base) if base and os.path.isdir(base) else []):
+        m = REPO.ler_manifesto(t) if token_ok(t) else None
+        if m and not m.get("encerrada"):
+            nuvem_galeria_enfileira(t)
+            gals += 1
+    return {"ok": True, "fotos": fotos, "galerias": gals}
+
+
 def nuvem_versoes(arquivo, pid):
     """(alta, vitrine) em JPEG na memória. A alta sai sem EXIF de câmera e sem GPS (o OpenCV não grava metadados)."""
     import cv2
@@ -3134,6 +3154,12 @@ class H(BaseHTTPRequestHandler):
         ip = self.client_address[0]
         if p.startswith("/pagamento/webhook/"):
             return self.js({"error": "webhook reservado para o adquirente real (fase 2)"}, 501)
+        if p == "/nuvem/reenviar":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            if not nuvem["ligada"]:
+                return self.js({"error": "nuvem desligada"}, 503)
+            return self.js(nuvem_reenviar())
         if p == "/imprimir":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -3402,7 +3428,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path == "/imprimir":
+        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/nuvem/reenviar"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
