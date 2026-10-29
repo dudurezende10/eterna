@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v79 (28/10/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v83 (29/10/2026).
 
 Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
 
@@ -160,10 +160,10 @@ Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eter
 2. Se a câmera não encontrar, ele digita o código da sessão (começa com LP).
 3. O cliente passa as fotos e toca em ✓ nas que quer levar e em ✗ nas que não quer.
 4. Na tela seguinte ele escolhe o pacote e a forma de pagamento. O Checkout já marca o pacote **Ideal**, o mais barato para o número de fotos que ele escolheu.
-5. **Cartão e PIX: confira antes de ele tocar em pagar.** O Checkout dá a venda como paga assim que o cliente toca. Veja a maquininha ou o PIX aprovar primeiro.
-6. **Dinheiro:** a compra fica **aguardando caixa**. Veja abaixo.
-7. Aparece a tela final com o QR e o código da galeria (exemplo: `Código K7QM-4WXR`).
-8. A tela final fica 30 segundos e volta sozinha para a câmera, com contagem. Para atender o próximo antes disso, toque em **Voltar ao início**.
+5. **Cartão, PIX e Dinheiro ficam aguardando você.** O Checkout pede para o cliente pagar na sua maquininha (ou no dinheiro) e espera. A venda só vale depois que você confirma no **Posto de venda** (veja "Novidades da v83").
+6. Quando você confirma, aparece no Checkout a tela final com o QR e o código da galeria (exemplo: `Código K7QM-4WXR`). Se você cancelar, o Checkout volta ao carrinho do cliente com um aviso.
+7. Imprima as fotos no Posto de venda.
+8. A tela final com o QR fica 30 segundos e volta sozinha para a câmera, com contagem. Para atender o próximo antes disso, toque em **Voltar ao início**.
 
 Outras coisas que o cliente pode fazer:
 - Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha.
@@ -216,7 +216,7 @@ Quando o cliente escolhe **Dinheiro** no Checkout, a compra não é dada como pa
 3. Digite o código que o cliente mostrou no campo de busca. Pode ser com ou sem hífen.
 4. Confira o valor, o número de fotos e de impressas e as miniaturas.
 5. Receba o dinheiro.
-6. Toque em **Recebi R$ X**. A venda fica paga, as impressas saem do estoque, a galeria do cliente libera as fotos e aparece o recibo com "Recebido por <seu nome>".
+6. Toque em **Recebi R$ X**. A venda fica paga, as fotos vão para Impressão 10×15 no Posto de venda, a galeria do cliente libera as fotos e aparece o recibo com "Recebido por <seu nome>".
 
 **Se o cliente desistir**
 1. Toque em **Cancelar** no item.
@@ -427,6 +427,66 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 
 ---
 
+## Novidades da v83
+
+Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor é o **Posto de venda**. Ao tocar em **Abrir Checkout**, o Checkout abre na outra janela (para o monitor do cliente) e você cai no Posto de venda.
+
+### Preparar o notebook (TI do ponto, uma vez)
+
+1. Instale a DNP RX1HS com papel PR 4×6 (10×15) e deixe a **DNP como impressora padrão** do notebook.
+2. Abra o Chrome do Eterna com a opção `--kiosk-printing`. Assim a foto sai direto na DNP, sem a janela de impressão do Chrome. A TI do ponto deixa o atalho pronto.
+3. Com `--kiosk-printing`, tudo o que for impresso nesse Chrome sai na DNP. Cartaz A4 de grupo de escola: imprima no computador do ponto.
+
+### O que tem no Posto de venda
+
+- **No Checkout agora**: o que o cliente está vendo e escolhendo, ao vivo.
+- **Aguardando pagamento**: as compras de Cartão, PIX e Dinheiro esperando você.
+- **Impressão 10×15**: as vendas pagas, com as fotos para imprimir já marcadas, e o contador do rolo.
+- **Minhas vendas de hoje**: as suas vendas neste notebook, com o valor de cada uma. Não mostra total.
+
+### Confirmar na maquininha
+
+1. O cliente escolhe Cartão ou PIX no Checkout. A compra aparece em **Aguardando pagamento**, com o código, o valor e as fotos.
+2. Digite o valor na maquininha e espere aprovar.
+3. Toque em **Pago na maquininha**.
+4. Se quiser, digite o **NSU ou a autorização** do comprovante (só números, de 4 a 12). É opcional.
+5. **Nunca digite o número do cartão.** Se aparecer "Isso parece número de cartão", apague e digite só o NSU.
+6. Toque em **Confirmar R$ X**. O Checkout mostra o QR para o cliente.
+7. Dinheiro: receba e toque em **Recebi R$ X**.
+8. Se o cliente desistir ou a maquininha recusar de vez, toque em **Cancelar** e depois em **Sim, cancelar**. O Checkout volta ao carrinho dele.
+
+### Imprimir
+
+1. Depois de confirmar, a venda aparece em **Impressão 10×15** com as fotos já marcadas (favoritas primeiro, até o número de impressas do pacote). Fotos com fundo de IA também imprimem.
+2. Para trocar quais imprimir, toque nas fotos.
+3. Toque em **Imprimir N fotos (10×15)**.
+4. Pegue as fotos na DNP e confira.
+5. Saíram boas: toque em **Saiu certo**. Só aqui o rolo baixa.
+6. Não saíram (papel, cor, travou): toque em **Não saiu** e imprima de novo. O rolo não baixa.
+7. Se aparecer "Não deu para montar o fundo: tente de novo", imprima de novo; só a foto com fundo de IA ficou de fora.
+
+### Reimprimir
+
+1. Na venda já impressa, toque em **Reimprimir**.
+2. Marque as fotos que vão sair de novo.
+3. Escolha o motivo: Falhou, Outra cópia, Cor ou Outro.
+4. Toque em **Reimprimir N fotos** e depois em **Saiu certo** ou **Não saiu**.
+
+### Trocar o rolo de 700
+
+1. O rolo da DNP faz cerca de 700 fotos. O contador "Rolo: X de 700" fica no alto do Posto de venda.
+2. Abaixo de 40, o contador fica vermelho e aparece em **Alertas**. Troque antes do pico.
+3. Troque o rolo e a fita na DNP.
+4. Em **Dashboard › Estoque**, toque em **Registrar troca de rolo**. O contador volta a 700.
+
+### Outras mudanças
+
+- O cliente não vê mais "2 minutos" nem contagem na tela de pagamento.
+- Confirmar o pagamento não baixa mais o estoque; quem baixa é o **Saiu certo**.
+- O número da venda tem o formato `L0-012`.
+
+---
+
 ## 6. O que dizer ao cliente
 
 **Sobre o QR**
@@ -450,13 +510,13 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 
 ---
 
-## 7. Limitações de hoje (v81)
+## 7. Limitações de hoje (v83)
 
 - **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
 - **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.
 - **Compras na galeria online são de teste.** Nada é cobrado. Elas aparecem na Lista de vendas como "teste" e não entram na receita.
-- **Cartão e PIX no Checkout**: a venda fica paga quando o cliente toca em pagar. O sistema ainda não recebe a confirmação da maquininha nem do banco. Confira antes, sempre, e mantenha alguém da equipe perto do Checkout. Dinheiro já espera o caixa.
-- **Checkout e Caixa no mesmo computador**: o dinheiro só aparece no Caixa se as duas janelas estiverem no mesmo computador e no mesmo navegador.
+- **Cartão e PIX**: o sistema ainda não conversa com a maquininha (sem TEF). Quem confirma é você, depois de ver a maquininha aprovar.
+- **Checkout e Posto de venda no mesmo notebook**: nesta etapa o Checkout, o Posto de venda e o Caixa precisam estar no mesmo notebook e no mesmo navegador. Os notebooks ainda não conversam entre si; isso entra na próxima etapa.
 - **Ícone do celular no cartão do QR** está quase invisível na tela final. Ajuste previsto.
 - **No celular (tela estreita)**, na tela "Estas fotos já foram compradas", o botão **Voltar ao início** aparece só como ícone. Ajuste previsto.
 - **Cancelar uma venda do Checkout** tira o download no sistema, mas a foto pode continuar liberada no computador do ponto. Avise a administração quando cancelar.

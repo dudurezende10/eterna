@@ -1565,26 +1565,57 @@ def multipart(fields, files):
     return b"".join(out), "multipart/form-data; boundary=" + b
 
 
-def bg_bytes(bg):
+# v83 (revisão R1): o arquivo de cada fundo vem de um mapa fixo, com os fundos aprovados. Nunca "img/bg-<id>.jpg" direto:
+# para o campeao2 esse arquivo é o fundo antigo, com a taça. Prévia (2400 px) e impressão (5000 px, img/fundos-5k/).
+# Todos os fundos de DATA.backgrounds (os 4 ativos e os do Laboratório, que podem ser ativados), com o mesmo arquivo do app.
+FUNDOS_PREVIA = {"campeao2": "img/bg-campeao-v81.jpg", "mirante": "img/bg-mirantesol.jpg",
+                 "arq1950": "img/bg-pb1950.jpg", "tunel": "img/bg-tunel.jpg",
+                 "imprensa": "img/bg-imprensa.jpg", "noite": "img/bg-noite.jpg", "terraco": "img/bg-terraco.jpg",
+                 "campeaoarg": "img/bg-campeaoarg.jpg", "campeaocol": "img/bg-campeaocol.jpg",
+                 "gramado1950": "img/bg-gramado1950.jpg", "alto1950": "img/bg-alto1950.jpg",
+                 "escanteio1950": "img/bg-escanteio1950.jpg", "asadelta": "img/bg-asadelta.jpg"}
+FUNDOS_IMPRESSAO = {"campeao2": "img/fundos-5k/campeao.jpg", "mirante": "img/fundos-5k/mirantesol.jpg",
+                    "arq1950": "img/fundos-5k/pb1950.jpg", "tunel": "img/fundos-5k/tunel.jpg"}
+PR_LADO_MAX = 5000  # teto de W e H no /photoroom/compose
+
+
+def bg_arquivo(bg, hi=False):
+    """Caminho (relativo ao app) do fundo aprovado; fundo fora do mapa é recusado."""
     if not re.match(r"^[a-z0-9]{2,40}$", bg or ""):
         raise ValueError("fundo inválido")
+    # impressão sem arquivo de 5000 px: usa o da prévia (o app registra o aviso fundo_2400)
+    rel = (FUNDOS_IMPRESSAO.get(bg) if hi else None) or FUNDOS_PREVIA.get(bg)
+    if not rel:
+        raise ValueError("fundo não aprovado")
+    return rel
+
+
+def bg_bytes(bg, hi=False):
+    rel = bg_arquivo(bg, hi)
     os.makedirs(BG_DIR, exist_ok=True)
-    path = os.path.join(BG_DIR, "bg-%s.jpg" % bg)
+    # cache com o nome do arquivo aprovado (o cache antigo "bg-<id>.jpg" pode ser o fundo errado e não é lido)
+    path = os.path.join(BG_DIR, "v83-" + rel.replace("/", "_"))
     if not os.path.exists(path):
-        req = urllib.request.Request(APP_ORIGIN + "/img/bg-%s.jpg" % bg, headers={"User-Agent": "eterna-agente"})
-        with urllib.request.urlopen(req, timeout=30) as r:
+        req = urllib.request.Request(APP_ORIGIN + "/" + rel, headers={"User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(req, timeout=60) as r:
             data = r.read()
-        with open(path, "wb") as f:
+        with open(path + ".tmp", "wb") as f:
             f.write(data)
+        os.replace(path + ".tmp", path)
     return open(path, "rb").read()
 
 
-def pr_compose(photo, bg, W, H, pad):
+def pr_compose(photo, bg, W, H, pad, hi=False, recorte=False):
+    """recorte=True: só a pessoa recortada (PNG transparente, sem fundo), posicionada em W×H; o app monta sobre o fundo de 5000 px."""
+    if not (0 < W <= PR_LADO_MAX and 0 < H <= PR_LADO_MAX):
+        raise ValueError("tamanho acima de %d px" % PR_LADO_MAX)
+    rel = bg_arquivo(bg, hi)
     cfg = pr_cfg()
     if not cfg:
         raise RuntimeError("Photoroom não conectado")
     h = hashlib.sha1(photo).hexdigest()[:16]
-    tag = hashlib.sha1(json.dumps([W, H, pad], sort_keys=True).encode()).hexdigest()[:6]
+    # o arquivo do fundo e o modo entram na chave do cache: montagem antiga com o fundo errado não é reaproveitada
+    tag = hashlib.sha1(json.dumps([W, H, pad, rel, bool(recorte), "v83"], sort_keys=True).encode()).hexdigest()[:6]
     base = "%s_%s_%s" % (h, bg, tag)
     os.makedirs(PR_DIR, exist_ok=True)
     for ext in (".png", ".jpg"):
@@ -1593,7 +1624,6 @@ def pr_compose(photo, bg, W, H, pad):
                 pr["cached"] += 1
             return base + ext
     fields = {
-        "lighting.mode": "ai.auto",
         "shadow.mode": "ai.soft",
         "outputSize": "%dx%d" % (W, H),
         "horizontalAlignment": "center",
@@ -1603,8 +1633,13 @@ def pr_compose(photo, bg, W, H, pad):
     for side in ("Top", "Bottom", "Left", "Right"):
         v = int(max(0, pad.get(side.lower(), 0)))
         fields["padding" + side] = "%dpx" % v
-    body, ctype = multipart(fields, {"imageFile": ("foto.jpg", photo, "image/jpeg"),
-                                     "background.imageFile": ("fundo.jpg", bg_bytes(bg), "image/jpeg")})
+    files = {"imageFile": ("foto.jpg", photo, "image/jpeg")}
+    if recorte:
+        fields["background.color"] = "transparent"
+    else:
+        fields["lighting.mode"] = "ai.auto"
+        files["background.imageFile"] = ("fundo.jpg", bg_bytes(bg, hi), "image/jpeg")
+    body, ctype = multipart(fields, files)
     req = urllib.request.Request(PR_URL, data=body, method="POST",
                                  headers={"x-api-key": cfg["api_key"], "Content-Type": ctype,
                                           "Accept": "image/jpeg, application/json", "User-Agent": "eterna-agente"})
@@ -2667,7 +2702,8 @@ class H(BaseHTTPRequestHandler):
                     photo = base64.b64decode(b64)
                 if not photo or len(photo) > 30 * 1024 * 1024:
                     return self.js({"error": "foto inválida"}, 400)
-                name = pr_compose(photo, body.get("bg"), int(body.get("W") or 2000), int(body.get("H") or 1429), body.get("pad") or {})
+                name = pr_compose(photo, body.get("bg"), int(body.get("W") or 2000), int(body.get("H") or 1429), body.get("pad") or {},
+                                  hi=bool(body.get("hi")), recorte=bool(body.get("recorte")))
                 return self.js({"ok": True, "url": "/photoroom/result/" + name})
             except Exception as ex:
                 return self.js({"error": str(ex)}, 502)

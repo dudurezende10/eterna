@@ -83,7 +83,7 @@ try{
     const l=await L.evaluate(()=>({hash:location.hash,rota:ETERNA.state.lojaRota,user:!!ETERNA.state.user,view:ETERNA.state.view,tab:sessionStorage.getItem('eterna.lojaTab'),name:window.name}));
     ok(l.hash==='#loja'&&l.rota&&l.view==='quiosque'&&!l.user&&l.tab==='1'&&l.name==='eterna-checkout','3: janela nova deveria estar em #loja sem login: '+J(l));
     const a1=await A.evaluate(()=>({view:ETERNA.state.view,hash:location.hash,user:ETERNA.state.user&&ETERNA.state.user.email,rota:ETERNA.state.lojaRota}));
-    ok(a1.view===v0.view&&a1.user===v0.user&&!a1.rota&&a1.hash!=='#loja','3: aba do admin mudou: '+J([v0,a1]));
+    ok(a1.view==='posto'&&a1.user===v0.user&&!a1.rota&&a1.hash!=='#loja','3: aba do admin deveria ir para o Posto de venda (v83), logada: '+J([v0,a1]));
     // reabrir: reutiliza a mesma janela
     const n0=ctx.pages().length;await A.click('#rail-ck [data-act="loja-abrir"]');await A.waitForTimeout(500);ok(ctx.pages().length===n0,'3: segundo clique abriu outra janela: '+ctx.pages().length);
     // compra na janela do Checkout
@@ -92,10 +92,12 @@ try{
     for(const x of ['kiosk-ok','kiosk-ok','kiosk-no','kiosk-ok'])await L.click(`[data-act="${x}"]`);
     await L.click('.lj-next');await L.waitForTimeout(400);await L.click('[data-act="loja-paym"][data-m="pix"]');await L.waitForTimeout(300);await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(800);
     const lp=await L.evaluate(c=>({st:(JSON.parse(localStorage.getItem('eterna.sim.v1')).sessions[c]||{}).status,step:ETERNA.state.kiosk.step,user:!!ETERNA.state.user}),card);
-    ok(lp.st==='paga'&&lp.step==='done'&&!lp.user,'3: compra na janela do Checkout: '+J(lp));
-    await A.waitForTimeout(500);
+    ok(lp.st==='aguardando'&&lp.step==='done'&&!lp.user,'3: compra na janela do Checkout (v83: PIX aguardando): '+J(lp));
+    await A.waitForTimeout(500);const pid=await L.evaluate(()=>ETERNA.state.kiosk.paid.pend);
+    await A.click(`[data-act="pend-pos"][data-id="${pid}"]`);await A.click(`[data-act="pend-pos-ok"][data-id="${pid}"]`);await A.waitForTimeout(500);
+    ok(await L.evaluate(()=>!!document.querySelector('#lqr')),'3: Checkout deveria mostrar o QR depois do Pago na maquininha');
     const a2=await A.evaluate(c=>({st:(ETERNA.SIM.sessions[c]||{}).status,view:ETERNA.state.view,user:ETERNA.state.user&&ETERNA.state.user.email,txt:document.querySelector('#main').innerText.includes(c)}),card);
-    ok(a2.st==='paga','3: admin não recebeu a venda sem recarregar: '+J(a2));ok(a2.view==='vendas-lista'&&a2.user===v0.user,'3: admin perdeu a tela ou o login: '+J(a2));ok(a2.txt,'3: venda '+card+' não aparece na Lista de vendas do admin');
+    ok(a2.st==='paga','3: admin não recebeu a venda sem recarregar: '+J(a2));ok(a2.view==='posto'&&a2.user===v0.user,'3: admin perdeu a tela ou o login: '+J(a2));ok(a2.txt,'3: venda '+card+' não aparece no Posto de venda do admin');
     for(const v of ['painel','caixa']){const e=await A.evaluate(v=>{try{ETERNA.state.view=v;ETERNA.render();return document.querySelector('#main').innerText.length>50;}catch(x){return 'erro '+x.message;}},v);ok(e===true,'3: '+v+' no admin: '+e);}
     // v81 final: Esc na janela do Checkout volta ao início do #loja, sem apagar o login do admin; a janela não fica ligada ao admin (opener)
     await L.keyboard.press('Escape');await L.waitForTimeout(300);

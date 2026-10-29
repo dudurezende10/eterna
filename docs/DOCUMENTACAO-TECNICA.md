@@ -1340,3 +1340,43 @@ Testes: `testes/v82.js`.
 - Baixar os 30 PNG para `img/` antes de produção, para funcionar offline (hoje dependem da Wikimedia).
 - Usar `esc(r.f[7])` na miniatura da foto enviada.
 - Escudos de clubes são logos de uso restrito: só uso interno, como referência, nunca em produto vendido.
+
+## Multiterminal, etapa 1: pagamento na maquininha, Posto de venda e impressão 10×15 (v83, 29/10/2026)
+
+Plano: `docs/planos/2026-10-29-v83-multiterminal.md` (decisões D1 a D11, notas de D8 e da DNP). Esta etapa roda num notebook só, sem rede; pareamento, `/ponto/*` e envio da fila ao agente ficam para a etapa 2. Testes: `testes/v83.js`, `testes/v81.js` e `testes/agente-seguranca.js`.
+
+### Pagamento aguardando (parte D)
+
+- `lojaPay` só chama `lojaPedido(card,meio)`. Cartão, PIX e Dinheiro viram pendência em `SIM.caixaDin` com `meio`, `prov`, `saleNo` e `vendedor` (de `eterna.posto.vendedor`). Nada de venda, estoque, fundo comprado ou galeria até a confirmação.
+- `PAG_PROV`: `pos-manual` (maquininha avulsa, confirmação humana) e `tef:null`, reservado para o TEF real.
+- `pendConfirmar(id,{ref})`: "Pago na maquininha" com NSU ou autorização opcional (4 a 12 dígitos). `refErro` recusa 13 a 19 dígitos (parece número de cartão) e o valor nunca é gravado. Dinheiro usa "Recebi R$ X" (`dinConfirmar` é apelido). Confirmar não baixa estoque.
+- `lojaPendCheck`: o Checkout vai ao QR quando a pendência é confirmada, ou volta ao carrinho da mesma sessão com `ljPayCancelled` (5 línguas) quando é cancelada. Saíram as promessas de "2 minutos" e a contagem na tela de pagamento.
+- TEF simulado (`caixa-tef`) não marca venda como paga enquanto `PAG_PROV.tef` for `null`.
+
+### Tela Posto de venda (view `posto`)
+
+- Em `VIEWS_EXTRA`, módulo `venda`; tela inicial de Atendimento e venda (`mpv83` acrescenta `posto` ao menu dos perfis prontos com venda). `loja-abrir` abre a janela do Checkout e leva o admin ao Posto.
+- Colunas: "No Checkout agora" (`ecoPainel`), Aguardando pagamento (`pendPainel`), Impressão 10×15 (`impPainel`) e Minhas vendas de hoje (`minhasVendas`: valor de cada venda, sem total, ticket nem contagem em reais).
+- Venda acompanhada (parte E): o Checkout publica no BroadcastChannel `eterna-loja` o que o cliente vê; o Posto só lê e atualiza `#eco`. Só campos conhecidos são lidos, nunca HTML vindo do canal. Nada passa pelo agente.
+
+### Impressão 10×15 na DNP DS-RX1HS (parte F)
+
+- Uma DNP por notebook, pelo Chrome. `printMontar` monta `#print-root` com `body.pr-on` e `@page foto` de 102×152 mm sem margem; foto deitada é girada.
+- `impFotos`/`impSel` marcam as fotos (favoritas primeiro, até `prints`). Foto com fundo de IA imprime (D8, decisão do Eduardo em 29/10): `compHi` monta de novo com o fundo `fileHi` de 5000 px (`img/fundos-5k/`). Se a montagem falhar, só essa foto fica para tentar de novo. `semFoto` só conta quando o pacote prevê mais impressões que o total de fotos (campo mais IA).
+- `impOk` ("Saiu certo") baixa o rolo uma vez por foto; `impFalha` ("Não saiu") registra a tentativa sem baixar; `impReimprimir` imprime as fotos escolhidas com motivo (`IMP_MOTIVOS`: Falhou, Outra cópia, Cor, Outro) e só baixa no "Saiu certo". Todos com `simFresh`.
+- Rolo por `postoNome()` ("Caixa 1" em local/off), `ROLO_CAP=700`, alerta abaixo de `ROLO_ALERTA=40`; venda paga sem impressão há mais de 10 min vira alerta. A troca é `stock-swap` em Estoque. Venda no balcão também não baixa mais o estoque.
+- `galPrint` avisa que, num posto com `--kiosk-printing`, o cartaz A4 sairia na DNP.
+
+### Fila local de eventos (parte G, só o local)
+
+- `pvEvento` grava `criar`, `pagar`, `cancelar`, `impressao` e `rolo` em `eterna.ponto.fila.v1` (fora do SIM), com `navigator.locks`; até 7 dias ou 2000 eventos, descartes em `eterna.ponto.descartes.v1`. `pvId` = `<dispId>-<ts36><rand4>`; `pvSaleNo` (dentro do lock) gera `L0-NNN` por dia (`P<num>-NNN` nos postos da etapa 2).
+
+### Agente
+
+- Fundos do Photoroom por mapa fixo: `FUNDOS_PREVIA` (2400 px) e `FUNDOS_IMPRESSAO` (`img/fundos-5k/`, com `hi`). Nunca `img/bg-campeao2.jpg` (fundo antigo, com a taça). A prévia cobre todos os fundos de `DATA.backgrounds` (os 4 ativos e os do Laboratório, que podem ser ativados), com o mesmo arquivo do app; a impressão em 5000 px existe só para os 4 aprovados.
+- `recorte:true` pede só a pessoa em PNG transparente, para a impressão; W e H até 5000 (`PR_LADO_MAX`) no `/photoroom/compose`.
+
+### Pendências de segurança (v83)
+
+- A simulação do TEF continua no código, desligada (`PAG_PROV.tef=null`). Quando o TEF real entrar, ela precisa ser **trocada** pela integração real, não só religada.
+- Um número de venda (`L0-NNN`) pode ser pulado (por exemplo, quando a gravação falha depois de gerar o número). Não há número repetido, mas a sequência pode ter buracos.
