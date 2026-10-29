@@ -421,6 +421,10 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 - **Bandeiras.** As imagens foram corrigidas. A bandeira que ainda não tem a imagem certa fica sem foto, de propósito, até a imagem certa chegar.
 - **Fotógrafos.** Klassius e Sandessa já estão na lista.
 
+## Novidades da v82
+
+- **Bandeiras.** 30 bandeiras ganharam imagem da Wikipedia; são só referência, não a bandeira física.
+
 ---
 
 ## 6. O que dizer ao cliente

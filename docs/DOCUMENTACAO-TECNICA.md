@@ -1326,3 +1326,17 @@ Testes: `testes/v81.js` e `testes/agente-seguranca.js`.
 - **Menu.** Títulos dos grupos em maiúsculo, negrito, 12px, cor no token `--nav-grp`.
 - **Fotógrafos.** Klassius e Sandessa entram em `DATA.people` (lista oficial: Carlos, Klassius, Márcio, Marinara, Samuel, Sandessa, Yago).
 - **Agente, FTP do estádio (B1).** `rftp_origem(path, pasta)`: a subpasta logo abaixo da pasta configurada só vira o fotógrafo se estiver cadastrada (comparação `sem_acento`); qualquer outro caso (fora do prefixo, `/outro`, `/../`) fica como `ftp-estadio`. Pasta vazia (450) não é erro; arquivo com tamanho desconhecido não baixa e gera aviso.
+
+## Bandeiras com imagem da Wikimedia (v82, 28/10/2026)
+
+Testes: `testes/v82.js`.
+
+- **Imagens.** As 30 bandeiras sem imagem no maracafly recebem escudo ou bandeira da Wikimedia (`FLAG_WEB_V82`, fonte em `docs/bandeiras-web-2026-10-28.json`). `flagSrc` aceita URL completa só de `upload.wikimedia.org` e `maracafly.com.br` (allowlist); o resto continua sendo nome de arquivo do maracafly. Imagem que não carrega some sem quebrar o layout.
+- **Migração `flagMigraV82`.** Uma vez só (`eterna.flags.v=82`): item salvo com campo 6 vazio ou com o arquivo errado da v81 recebe a URL da Wikimedia; foto enviada (campo 7) e arquivo editado ficam. Registra `migracao_v82_bandeiras` no histórico.
+
+### Pendências de segurança (v82)
+
+- Pôr `referrerpolicy="no-referrer"` nas imagens das bandeiras.
+- Baixar os 30 PNG para `img/` antes de produção, para funcionar offline (hoje dependem da Wikimedia).
+- Usar `esc(r.f[7])` na miniatura da foto enviada.
+- Escudos de clubes são logos de uso restrito: só uso interno, como referência, nunca em produto vendido.
