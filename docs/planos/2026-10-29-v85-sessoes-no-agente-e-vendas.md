@@ -457,3 +457,21 @@ O que fica na sessão: `key`, `pdv`, `point`, `date`, `time`, `status` (calculad
   - comprada nunca regride, nem no cancelamento.
 - Achado novo: a pasta vigiada ignora o que chega com o agente parado (corrigido na A7).
 - Pergunta para o Eduardo: preço da cópia impressa (o plano assume R$ 35).
+---
+
+## Adendo (Eduardo, 29/10 18:48) · Parte G: hora de chegada de cada foto, com busca por horário
+
+Quando uma foto chega ao servidor, o Eterna registra a hora de chegada. A equipe precisa conseguir achar uma foto pela hora.
+
+- **Agente:** a hora de chegada já existe em `meta[pid].u`. Ela passa a ser devolvida também em `/biblioteca` e no feed `/sessoes`, por foto, junto com a hora do clique (`cap`, vinda do EXIF) e a origem (login FTP, pasta, cartão, FTP do estádio).
+- **Upload automático e Biblioteca:**
+  - cada foto mostra "chegou às hh:mm:ss" e, quando existe, "clique às hh:mm:ss", com o fotógrafo e a origem;
+  - **busca por horário:** campo "de hh:mm até hh:mm", mais data e fotógrafo opcionais. A busca filtra pela hora de chegada (padrão) ou pela hora do clique (alternância);
+  - a lista sai ordenada pela chegada, da mais nova para a mais antiga;
+  - clicar numa foto do resultado abre a sessão dela.
+- **Sessão:** o cartão da sessão mostra a primeira e a última chegada.
+- **Critérios de aceite:**
+  - **G1:** uma foto que chega às 17:13:05 aparece com "chegou às 17:13:05" no Upload e na Biblioteca;
+  - **G2:** a busca "17:10 até 17:15" mostra só as fotos que chegaram nesse intervalo; com a alternância para hora do clique, filtra pelo EXIF;
+  - **G3:** a busca funciona com o app aberto ou fechado na hora da chegada, porque a hora vem do agente;
+  - **G4:** com 15 mil fotos no dia, a busca responde em menos de 300 ms. O filtro roda no agente com `?de=&ate=&dia=`, ou em índice ordenado no app.
