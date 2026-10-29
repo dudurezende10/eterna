@@ -689,6 +689,75 @@ def nuvem_reenviar():
     return {"ok": True, "fotos": fotos, "galerias": gals}
 
 
+def lgpd_excluir(pids, tokens, quem=""):
+    """O cliente pediu para apagar as fotos dele (LGPD, art. 18): some do disco (foto, miniatura, recorte), do índice,
+    dos rostos lidos, da fila e do bucket da nuvem; as galerias são encerradas aqui e na nuvem (que apaga os rostos
+    da AWS). A venda continua no registro financeiro, sem as fotos. Fica uma linha em lgpd.log sem dado pessoal."""
+    fotos, nuvem_apagadas, falhas = 0, 0, []
+    dias = set()
+    for pid in pids:
+        pid = pid_lib(pid) if pid_ok(pid) else None
+        if not pid:
+            continue
+        with lock:
+            e = lib.pop(pid, None)
+            hs = [h for h, v in seen.items() if v == pid]
+            for h in hs:
+                seen.pop(h, None)
+                lgpd_excluidas.add(h)
+        for f in ((e or {}).get("file"), (e or {}).get("thumb"), os.path.join(RECORTES, pid + ".png")):
+            if f and os.path.exists(f):
+                try:
+                    os.remove(f)
+                except OSError as ex:
+                    falhas.append(str(ex)[:80])
+        try:
+            db = rostos_db()
+            r = db.execute("select dia from foto where pid=?", (pid,)).fetchone()
+            if r:
+                dias.add(r[0])
+            db.execute("delete from rosto where pid=?", (pid,)); db.execute("delete from foto where pid=?", (pid,)); db.commit(); db.close()
+        except Exception as ex:
+            falhas.append("rostos: " + str(ex)[:80])
+        if nuvem["ligada"]:
+            try:
+                with nuvem_lock:
+                    db = nuvem_db(); db.execute("delete from fila where pid=?", (pid,)); db.commit(); db.close()
+                c = _s3_cliente()
+                for k in ("alta/%s.jpg" % pid, "vitrine/%s.jpg" % pid):
+                    c.delete_object(Bucket=NUVEM_BUCKET, Key=k)
+                nuvem_apagadas += 1
+            except Exception as ex:
+                falhas.append("nuvem: " + str(ex)[:80])
+        if e:
+            fotos += 1
+    with _mat_lock:
+        for d in dias:
+            _mat.pop(d, None)                # a busca por rosto relê o dia sem as fotos apagadas
+    with lock:
+        save_index()
+        try:
+            _grava_privado(LGPD_EXCLUIDAS, json.dumps(sorted(lgpd_excluidas)))
+        except Exception as ex:
+            falhas.append(str(ex)[:80])
+    galerias = 0
+    for t in tokens:
+        if not token_ok(t):
+            continue
+        with gal_lock:
+            m = REPO.ler_manifesto(t)
+            if m:
+                m["expira"], m["encerrada"], m["lgpd"] = _iso(), True, True
+                REPO.salvar_manifesto(t, m)
+                galerias += 1
+        nuvem_galeria_enfileira(t)            # na nuvem: sai do ar, código curto e rostos apagados
+    with open(LGPD_LOG, "a", encoding="utf8") as fh:
+        fh.write("%s exclusão a pedido do cliente: %d foto(s), %d na nuvem, %d galeria(s), por %s%s\n" % (
+            time.strftime("%Y-%m-%d %H:%M:%S"), fotos, nuvem_apagadas, galerias, quem or "-", (" · falhas: " + "; ".join(falhas)) if falhas else ""))
+    print(f"  LGPD: {fotos} foto(s) e {galerias} galeria(s) apagadas a pedido do cliente")
+    return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "falhas": falhas[:5]}
+
+
 def nuvem_versoes(arquivo, pid):
     """(alta, vitrine) em JPEG na memória. A alta sai sem EXIF de câmera e sem GPS (o OpenCV não grava metadados)."""
     import cv2
@@ -951,10 +1020,25 @@ def list_volumes():
     return [v for v in vols if os.path.isdir(os.path.join(v, "DCIM"))]
 
 
+LGPD_EXCLUIDAS = os.path.join(HOME, "lgpd-excluidas.json")   # hashes das fotos apagadas a pedido do cliente
+LGPD_LOG = os.path.join(HOME, "lgpd.log")                   # registro de cada exclusão, sem dado pessoal
+try:
+    lgpd_excluidas = set(json.load(open(LGPD_EXCLUIDAS)))
+except Exception:
+    lgpd_excluidas = set()
+
+
 def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
     """Leva um arquivo para a inbox. Devolve 'new', 'dup' ou None."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
+    if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo
+        if move:
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+        return None
     with lock:
         if dedupe_set is not None:
             if h in dedupe_set:
@@ -3284,6 +3368,17 @@ class H(BaseHTTPRequestHandler):
         ip = self.client_address[0]
         if p.startswith("/pagamento/webhook/"):
             return self.js({"error": "webhook reservado para o adquirente real (fase 2)"}, 501)
+        if p == "/lgpd/excluir":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(256 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            pids = [str(x) for x in (body.get("pids") or [])][:500]
+            tokens = [str(x) for x in (body.get("tokens") or [])][:20]
+            if not pids and not tokens:
+                return self.js({"error": "nada para apagar"}, 400)
+            return self.js(lgpd_excluir(pids, tokens, str(body.get("quem") or "")[:80]))
         if p == "/nuvem/reenviar":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -3563,7 +3658,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/nuvem/reenviar"):
+        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
