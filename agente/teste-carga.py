@@ -199,12 +199,13 @@ def enviar(a):
                     time.sleep(espera); espera = min(30, espera * 2)
 
     def fotografo(i):
-        nome_fot = f"fot{i + 1}"
+        nome_fot = a.nomes[i] if a.nomes else f"fot{i + 1}"
         cam_fotos = []
         if not a.sessoes:
             cam_nome, cam_fotos = cameras[i % len(cameras)]
             volta_cam = i // len(cameras)                             # mais fotógrafos que pastas: dividem a câmera, cada um na sua pasta
-            nome_fot = (cam_nome + (f"-{volta_cam + 1}" if volta_cam else "")) if cam_nome else nome_fot
+            if not a.nomes:
+                nome_fot = (cam_nome + (f"-{volta_cam + 1}" if volta_cam else "")) if cam_nome else nome_fot
             if not subs:                                              # sem subpastas: divide as fotos entre os fotógrafos
                 cam_fotos = cam_fotos[i::a.fotografos] or cam_fotos
             else:
@@ -600,7 +601,8 @@ def relatorio(a):
     cpu = [m["cpu"] for m in monok if m.get("cpu") is not None]
     disco_w = [m["disco_escrita_mbs"] for m in monok if m.get("disco_escrita_mbs") is not None]
     disco_oc = [m["disco_ocupado_pct"] for m in monok if m.get("disco_ocupado_pct") is not None]
-    rede_rx = [m["rede_rx_mbit"] for m in monok if m.get("rede_rx_mbit") is not None]
+    # acima do próprio link é contador de placa de rede que zerou ou apareceu (VPN, Wi-Fi trocando), não tráfego
+    rede_rx = [m["rede_rx_mbit"] for m in monok if m.get("rede_rx_mbit") is not None and m["rede_rx_mbit"] <= a.link_mbit * 1.5]
     livre = ([m.get("disco_livre_gb") for m in monok if m.get("disco_livre_gb") is not None] or [None])[-1]
     gb_dia = (media([e["bytes"] for e in ok]) or 0) * a.meta_dia / 1e9
     dias_disco = livre / gb_dia if livre and gb_dia else None
@@ -622,6 +624,30 @@ def relatorio(a):
         json.dump(proj, open(proj_p, "w", encoding="utf8"))
     except Exception:
         proj = json.load(open(proj_p, encoding="utf8")) if os.path.exists(proj_p) else {}
+
+    # ---- nuvem (plano v85 E): cada foto recebida tem que estar no bucket, conferida pelo MD5 que o S3 devolve ----
+    mon_nv = [m for m in monok if m.get("nuvem_fila") is not None]
+    nv = [f for f in rec if f.get("nuvem")]
+    nv_atraso = [f["nuvem"] - f["chegada"] for f in nv]
+    nv_nao = len(rec) - len(nv)
+    nv_bytes = [f.get("nuvem_bytes") for f in nv if f.get("nuvem_bytes")]
+    nv_span = (max(f["nuvem"] for f in nv) - min(f["chegada"] for f in nv)) if nv else 0
+    seg_err = {}
+    for m in mon_nv:
+        v = seg_err.setdefault(m.get("iniciado"), [m.get("nuvem_erros") or 0, 0]); v[1] = m.get("nuvem_erros") or 0
+    nv_erros = sum(f - i for i, f in seg_err.values())
+    pausas, p0 = [], None                                    # queda de internet simulada (arquivo nuvem-pausa) e quanto a fila levou para esvaziar
+    for m in mon_nv:
+        if m.get("nuvem_pausada") and p0 is None:
+            p0 = m["t"]
+        elif not m.get("nuvem_pausada") and p0 is not None:
+            vazia = next((x["t"] for x in mon_nv if x["t"] >= m["t"] and (x.get("nuvem_fila") or 0) == 0), None)
+            pausas.append({"de": p0, "ate": m["t"], "fila": max([x.get("nuvem_fila") or 0 for x in mon_nv if p0 <= x["t"] <= m["t"]] or [0]),
+                           "esvaziou": (vazia - m["t"]) if vazia else None})
+            p0 = None
+    gb_nuvem_dia = (media(nv_bytes) or 0) * a.meta_dia / 1e9
+    custo_mes = gb_nuvem_dia * a.retencao * a.preco_gb + a.meta_dia * 30 * 2 * 0.005 / 1000   # armazenamento + 2 PUT por foto
+    nv_p95 = pct(nv_atraso, 95)
 
     # ---- degraus: até onde aguenta e o que estoura primeiro ----
     def gargalo(ms):
@@ -693,6 +719,15 @@ def relatorio(a):
         crit(f"Busca com {a.retencao} dias no índice ({fmt(n_proj, 0)} rostos)", f"até {a.alvo_busca:g} s", fmt(proj.get("busca_ms"), 0, " ms") + (f" · {fmt(proj.get('memoria_mb'), 0, ' MB')} de memória" if proj else ""),
              None if not proj.get("busca_ms") else proj["busca_ms"] <= a.alvo_busca * 1000),
     ]
+    if mon_nv:
+        criterios += [
+            crit("Foto online na nuvem depois de chegar ao estádio (95% das fotos)", f"até {a.alvo_nuvem:g} s", fmt(nv_p95, 1, " s"),
+                 None if nv_p95 is None else nv_p95 <= a.alvo_nuvem),
+            crit("Toda foto recebida está na nuvem, conferida pelo MD5", "todas", f"{len(nv)} de {len(rec)}", None if not rec else nv_nao == 0),
+            crit("Queda de internet: a fila da nuvem segura e esvazia sozinha", "esvazia", "; ".join(
+                f"{fmt((p['ate'] - p['de']) / 60, 0, ' min')} fora · fila {p['fila']} · " + (f"esvaziou em {fmt(p['esvaziou'] / 60, 1, ' min')}" if p["esvaziou"] is not None else "não esvaziou")
+                for p in pausas) or "sem queda simulada", None if not pausas else all(p["esvaziou"] is not None for p in pausas)),
+        ]
     reprovados = [c for c in criterios if c[3] == "Reprovado"]
     aprovado = not reprovados and any(c[3] == "Aprovado" for c in criterios)
     veredito = ("Aprovado: o sistema aguenta a operação em todos os critérios medidos." if aprovado else
@@ -747,6 +782,15 @@ def relatorio(a):
         ("Quedas do Eterna", "; ".join(f"{datetime.fromtimestamp(q['de']):%H:%M:%S} por {fmt((q['ate'] - q['de']) if q['ate'] else None, 0, ' s')}{' (reiniciou)' if q['reiniciou'] else ''}" + ("" if q["ate"] else " (não voltou)") for q in quedas_eterna) or "nenhuma"),
     ]
 
+    nuvem_lin = [
+        ("Fotos na nuvem (alta 3000 px + vitrine 900 px)", f"{len(nv)} de {len(rec)} recebidas · {nv_nao} faltando"),
+        ("Da chegada ao estádio até estar online (mediana / 95% / pior)", f"{fmt(pct(nv_atraso, 50), 1, ' s')} / {fmt(nv_p95, 1, ' s')} / {fmt(max(nv_atraso) if nv_atraso else None, 1, ' s')}"),
+        ("Volume enviado à nuvem", fmt(sum(nv_bytes) / 1e9, 2, " GB") + f" · média {fmt(media(nv_bytes) / 1e6 if nv_bytes else None, 2, ' MB')} por foto (as duas versões)"),
+        ("Upload médio para a nuvem", fmt(sum(nv_bytes) * 8 / 1e6 / nv_span if nv_span else None, 1, " Mbit/s")),
+        ("Maior fila da nuvem", fmt(max([m.get("nuvem_fila") or 0 for m in mon_nv] or [0]), 0, " fotos")),
+        ("Envios que falharam e foram repetidos", str(nv_erros)),
+        (f"Projeção: {a.meta_dia:,} fotos por dia".replace(",", "."), f"{fmt(gb_nuvem_dia, 1, ' GB')} por dia · {fmt(gb_nuvem_dia * a.retencao, 0, ' GB')} em {a.retencao} dias · ~US$ {fmt(custo_mes, 0)} por mês (armazenamento e envios, sem downloads)"),
+    ] if mon_nv else []
     tr = lambda rows: "".join(f"<tr><th>{esc(k)}</th><td>{esc(v)}</td></tr>" for k, v in rows)
     cor_st = {"Aprovado": "var(--ok)", "Reprovado": "var(--bad)", "Não testado": "var(--mu)", "Aguentou": "var(--ok)", "Quebrou": "var(--bad)"}
     tab_crit = "".join(f"<tr><td>{esc(n)}</td><td>{esc(al)}</td><td>{esc(v)}</td><td style='color:{cor_st[s_]};font-weight:600'>{s_}</td></tr>" for n, al, v, s_ in criterios)
@@ -811,6 +855,7 @@ th{{font-weight:600}}.kv th{{width:52%}}.v{{padding:14px 16px;border-radius:10px
 <div class="tw"><table><tr><th>Medida</th><th>Média</th><th>Mediana</th><th>Menor</th><th>Maior</th></tr>{"".join(f"<tr><td>{esc(n)}</td>" + "".join(f"<td>{x}</td>" for x in v) + "</tr>" for n, v in tab_sess)}</table></div>
 <div class="tw"><table><tr><th>Cliques na sessão</th><th>Sessões</th><th>% das sessões</th><th>Fotos</th></tr>{"".join(f"<tr><td>{r}</td><td>{n}</td><td>{fmt(100 * n / len(sv) if sv else None, 1, '%')}</td><td>{f}</td></tr>" for r, n, f in dist)}</table></div>
 <h2>Integridade das fotos</h2><table class="kv">{tr(integ)}</table>
+{f'<h2>Nuvem (bucket S3)</h2><table class="kv">{tr(nuvem_lin)}</table><h3>Fila da nuvem</h3>' + grafico([("fila da nuvem", "#005500", [(m["t"], m.get("nuvem_fila") or 0) for m in mon_nv])], "Fila da nuvem", "fotos", t_ini) if mon_nv else ""}
 {html_deg}
 <h2>Operação</h2><table class="kv">{tr(linhas)}</table>
 {html_hora}
@@ -827,6 +872,33 @@ th{{font-weight:600}}.kv th{{width:52%}}.v{{padding:14px 16px;border-radius:10px
     for n, al, v, s_ in criterios:
         print(f"  {s_:<12} {n}: {v}")
     print("relatório:", out)
+
+
+def nuvem_links(a):
+    """Sorteia fotos que já estão na nuvem e monta uma página com o QR de cada uma (link de 5 min).
+    Lido no celular fora da rede do estádio (4G), prova que a foto está online."""
+    met = get_json(a.agente + "/metricas?desde=%f" % (agora() - 3 * 86400), timeout=60)
+    na_nuvem = [f for f in met.get("fotos", []) if f.get("nuvem") and not f.get("dup")]
+    if not na_nuvem:
+        sys.exit("nenhuma foto na nuvem ainda (o Eterna está com ETERNA_NUVEM=s3 e ETERNA_TESTE_CARGA=1?)")
+    random.seed()
+    escolha = random.sample(na_nuvem, min(a.quantas, len(na_nuvem)))
+    links = []
+    for f in escolha:
+        for v in ("vitrine", "alta"):
+            links.append((f["pid"], v, get_json(f"{a.agente}/nuvem/link?pid={f['pid']}&v={v}")["url"]))
+    qr = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vendor", "qrcode", "qrcode.min.js"), encoding="utf8").read()
+    itens = "".join(f"<div class='q'><div id='q{i}'></div><p>{esc(pid)} · {v}<br><a href='{esc(u)}'>abrir</a></p></div>" for i, (pid, v, u) in enumerate(links))
+    js = "".join(f"new QRCode(document.getElementById('q{i}'),{{text:{json.dumps(u)},width:220,height:220}});" for i, (_, _, u) in enumerate(links))
+    html = (f"<!doctype html><meta charset='utf-8'><title>Fotos na nuvem</title><style>body{{font:15px Arial;margin:24px}}"
+            f".g{{display:flex;flex-wrap:wrap;gap:24px}}.q p{{margin:6px 0 0;font-size:13px}}</style>"
+            f"<h1>Fotos na nuvem: leia no celular, no 4G</h1><p>Links válidos por 5 minutos a partir de {datetime.now():%H:%M}. "
+            f"A alta é a foto digital entregue ao cliente (3000 px); a vitrine é a de escolher (900 px, com marca).</p>"
+            f"<div class='g'>{itens}</div><script>{qr}</script><script>{js}</script>")
+    out = os.path.join(a.saida, "links-nuvem.html")
+    os.makedirs(a.saida, exist_ok=True)
+    open(out, "w", encoding="utf8").write(html)
+    print(f"{len(escolha)} fotos sorteadas; abra {out} e leia os QR com o celular fora do Wi-Fi do estádio")
 
 
 def main():
@@ -855,12 +927,19 @@ def main():
     r.add_argument("--meta-acerto", type=float, default=90); r.add_argument("--alvo-pronto", type=float, default=60, help="segundos")
     r.add_argument("--alvo-busca", type=float, default=3, help="segundos"); r.add_argument("--alvo-memoria", type=float, default=20, help="%% de crescimento aceito")
     r.add_argument("--retencao", type=int, default=60, help="dias de fotos e rostos guardados"); r.add_argument("--link-mbit", type=float, default=1000, help="velocidade da rede do servidor")
-    for x in (e, s, m, r):
+    r.add_argument("--alvo-nuvem", type=float, default=120, help="segundos até a foto estar online"); r.add_argument("--preco-gb", type=float, default=0.023, help="US$ por GB por mês no S3")
+    nl = sp.add_parser("nuvem-links", help="página com QR de fotos sorteadas da nuvem (links de 5 min) para abrir no celular, fora da rede")
+    nl.add_argument("--agente", default="http://127.0.0.1:8765"); nl.add_argument("--quantas", type=int, default=10)
+    e.add_argument("--nomes", help="fotógrafos cadastrados no Eterna, separados por vírgula (o FTP do estádio só aceita pasta de fotógrafo cadastrado)")
+    for x in (e, s, m, r, nl):
         x.add_argument("--saida", default="./teste-carga")
     a = ap.parse_args()
     if getattr(a, "agente", None):
         a.agente = a.agente.rstrip("/")
-    {"enviar": enviar, "selfies": selfies, "monitorar": monitorar, "relatorio": relatorio}[a.cmd](a)
+    if getattr(a, "nomes", None):
+        a.nomes = [x.strip() for x in a.nomes.split(",") if x.strip()]
+        a.fotografos = len(a.nomes)
+    {"enviar": enviar, "selfies": selfies, "monitorar": monitorar, "relatorio": relatorio, "nuvem-links": nuvem_links}[a.cmd](a)
 
 
 if __name__ == "__main__":

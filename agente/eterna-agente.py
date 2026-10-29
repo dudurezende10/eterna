@@ -589,7 +589,9 @@ def uso_maquina():
 def uso_eterna():
     tam = lambda p: os.path.getsize(p) if os.path.exists(p) else 0
     return {"banco_rostos_mb": round((tam(ROSTOS_DB) + tam(ROSTOS_DB + "-wal")) / 1e6, 1), "iniciado": state["started"],
-            "ftp_incompletas": state["ftp"].get("incompletas", 0), "leitores": rostos.get("leitores")}
+            "ftp_incompletas": state["ftp"].get("incompletas", 0) + rftp.get("incompletas", 0), "leitores": rostos.get("leitores"),
+            **({"nuvem_fila": nuvem["fila"], "nuvem_enviadas": nuvem["enviadas"], "nuvem_bytes": nuvem["bytes"],
+                "nuvem_erros": nuvem["erros"], "nuvem_pausada": nuvem["pausada"]} if nuvem["ligada"] else {})}
 
 
 PROJECAO_MAX = 200_000   # v80 (segurança I4): a medição aloca n × 512 bytes; acima disso a máquina do ponto engasga
@@ -607,6 +609,150 @@ def projecao_busca(n):
         t0 = time.time(); s_ = M @ v; np.nonzero(s_ >= LIMITE_TALVEZ); ts.append((time.time() - t0) * 1000)
     del M
     return {"rostos": n, "busca_ms": round(sorted(ts)[2], 1), "memoria_mb": round(n * 512 / 1e6)}
+
+
+# ---------- Nuvem (plano v85, parte E): vitrine e alta de cada foto num bucket S3 ----------
+# Liga com ETERNA_NUVEM=s3 + ETERNA_BUCKET. A credencial vem de um perfil da AWS CLI (ETERNA_AWS_PERFIL), nunca do código.
+# O original não sobe (D2). A fila fica em ~/Eterna/nuvem.db: queda de internet ou reinício não perdem nada.
+NUVEM = os.environ.get("ETERNA_NUVEM", "")
+NUVEM_BUCKET = os.environ.get("ETERNA_BUCKET", "")
+NUVEM_PERFIL = os.environ.get("ETERNA_AWS_PERFIL") or None
+NUVEM_REGIAO = os.environ.get("ETERNA_AWS_REGIAO", "us-east-2")
+NUVEM_ENVIADORES = int(os.environ.get("ETERNA_NUVEM_ENVIADORES") or 4)
+NUVEM_DB = os.path.join(HOME, "nuvem.db")
+NUVEM_PAUSA = os.path.join(HOME, "nuvem-pausa")   # teste de queda de internet: com este arquivo, nada sobe
+ALTA_LADO = 3000
+nuvem = {"ligada": False, "motivo": None, "bucket": NUVEM_BUCKET, "regiao": NUVEM_REGIAO, "fila": 0, "enviadas": 0,
+         "bytes": 0, "erros": 0, "ultimo_erro": None, "pausada": False, "atraso_s": None}
+nuvem_lock = threading.Lock()
+
+
+def nuvem_db():
+    db = sqlite3.connect(NUVEM_DB, timeout=30, check_same_thread=False)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("""CREATE TABLE IF NOT EXISTS fila (pid TEXT PRIMARY KEY, arquivo TEXT, entrou REAL, tentativas INTEGER DEFAULT 0,
+                  prox REAL DEFAULT 0, feito REAL, bytes INTEGER, md5_alta TEXT, md5_vitrine TEXT, erro TEXT)""")
+    return db
+
+
+def nuvem_enfileira(pid, arquivo):
+    if not nuvem["ligada"]:
+        return
+    with nuvem_lock:
+        db = nuvem_db()
+        db.execute("INSERT OR IGNORE INTO fila (pid, arquivo, entrou) VALUES (?,?,?)", (pid, arquivo, time.time()))
+        db.commit(); db.close()
+
+
+def nuvem_versoes(arquivo, pid):
+    """(alta, vitrine) em JPEG na memória. A alta sai sem EXIF de câmera e sem GPS (o OpenCV não grava metadados)."""
+    import cv2
+    img = cv2.imread(arquivo, cv2.IMREAD_COLOR)            # aplica a orientação do EXIF
+    if img is None:
+        raise ValueError("não abriu a foto")
+    h, w = img.shape[:2]
+    k = ALTA_LADO / max(h, w)
+    alta = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA) if k < 1 else img
+    ok, alta_jpg = cv2.imencode(".jpg", alta, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+    vit = os.path.join(HOME, "nuvem-tmp", pid + ".jpg")
+    if not ok or not _vitrine(arquivo, None, vit):
+        raise ValueError("não gerou as versões")
+    with open(vit, "rb") as f:
+        vit_jpg = f.read()
+    os.remove(vit)
+    return alta_jpg.tobytes(), vit_jpg
+
+
+def nuvem_envia(s3, pid, arquivo):
+    alta, vit = nuvem_versoes(arquivo, pid)
+    md5s = []
+    for chave, corpo in (("alta/%s.jpg" % pid, alta), ("vitrine/%s.jpg" % pid, vit)):
+        md5 = hashlib.md5(corpo)
+        # Content-MD5: o S3 recusa o envio se o arquivo chegar diferente; o ETag devolvido confirma a integridade
+        r = s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="image/jpeg",
+                          ContentMD5=base64.b64encode(md5.digest()).decode())
+        if r.get("ETag", "").strip('"') != md5.hexdigest():
+            raise ValueError("ETag diferente em " + chave)
+        md5s.append(md5.hexdigest())
+    return len(alta) + len(vit), md5s[0], md5s[1]
+
+
+def nuvem_loop():
+    if NUVEM != "s3":
+        nuvem["motivo"] = "desligada (ETERNA_NUVEM)"
+        return
+    if not NUVEM_BUCKET:
+        nuvem["motivo"] = "falta ETERNA_BUCKET"
+        return
+    try:
+        import boto3
+        from botocore.config import Config
+        sessao = boto3.session.Session(profile_name=NUVEM_PERFIL, region_name=NUVEM_REGIAO)
+        s3 = sessao.client("s3", config=Config(retries={"max_attempts": 3, "mode": "standard"},
+                                               max_pool_connections=NUVEM_ENVIADORES * 2, connect_timeout=10, read_timeout=60))
+        s3.head_bucket(Bucket=NUVEM_BUCKET)
+    except Exception as ex:
+        nuvem["motivo"] = "não conectou: %s" % str(ex)[:160]
+        print("nuvem:", nuvem["motivo"])
+        return
+    os.makedirs(os.path.join(HOME, "nuvem-tmp"), exist_ok=True)
+    nuvem.update(ligada=True, motivo=None)
+    db = nuvem_db()
+    nuvem["enviadas"], nuvem["bytes"] = db.execute("SELECT COUNT(*), COALESCE(SUM(bytes),0) FROM fila WHERE feito IS NOT NULL").fetchone()
+    print(f"  Nuvem:             S3 {NUVEM_BUCKET} ({NUVEM_REGIAO}), {NUVEM_ENVIADORES} envios em paralelo")
+    trabalho = queue.Queue()
+    em_voo = set()
+
+    def enviador():
+        dbw = nuvem_db()
+        while True:
+            pid, arquivo, entrou, tent = trabalho.get()
+            t0 = time.time()
+            try:
+                n, md5a, md5v = nuvem_envia(s3, pid, arquivo)
+                agora = time.time()
+                with nuvem_lock:
+                    dbw.execute("UPDATE fila SET feito=?, bytes=?, md5_alta=?, md5_vitrine=?, erro=NULL WHERE pid=?", (agora, n, md5a, md5v, pid))
+                    dbw.commit()
+                nuvem["enviadas"] += 1; nuvem["bytes"] += n; nuvem["atraso_s"] = round(agora - entrou, 1)
+                metrica_grava({"pid": pid, "nuvem": agora, "nuvem_ms": round((agora - t0) * 1000, 1), "nuvem_bytes": n,
+                               "nuvem_md5": md5a, "nuvem_tentativas": tent + 1})
+                m = metricas_por_pid.get(pid)
+                if m:
+                    m.update(nuvem=agora, nuvem_bytes=n, nuvem_md5=md5a)
+            except Exception as ex:
+                espera = min(300, 5 * 2 ** min(tent, 6))
+                with nuvem_lock:
+                    dbw.execute("UPDATE fila SET tentativas=tentativas+1, prox=?, erro=? WHERE pid=?", (time.time() + espera, str(ex)[:200], pid))
+                    dbw.commit()
+                nuvem["erros"] += 1; nuvem["ultimo_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+            finally:
+                em_voo.discard(pid)
+
+    for _ in range(NUVEM_ENVIADORES):
+        threading.Thread(target=enviador, daemon=True).start()
+    while True:
+        try:
+            pausada = os.path.exists(NUVEM_PAUSA)
+            nuvem["pausada"] = pausada
+            nuvem["fila"] = db.execute("SELECT COUNT(*) FROM fila WHERE feito IS NULL").fetchone()[0]
+            if not pausada and trabalho.qsize() < NUVEM_ENVIADORES * 2:
+                for pid, arquivo, entrou, tent in db.execute(
+                        "SELECT pid, arquivo, entrou, tentativas FROM fila WHERE feito IS NULL AND prox <= ? ORDER BY entrou LIMIT 40", (time.time(),)):
+                    if pid in em_voo:
+                        continue
+                    em_voo.add(pid)
+                    trabalho.put((pid, arquivo, entrou, tent))
+        except Exception as ex:
+            nuvem["ultimo_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        time.sleep(1)
+
+
+def nuvem_link(pid, v):
+    """Link temporário (5 min) de uma versão na nuvem: para provar que a foto abre fora do estádio."""
+    import boto3
+    s3 = boto3.session.Session(profile_name=NUVEM_PERFIL, region_name=NUVEM_REGIAO).client("s3")
+    return s3.generate_presigned_url("get_object", Params={"Bucket": NUVEM_BUCKET, "Key": "%s/%s.jpg" % (v, pid)}, ExpiresIn=300)
 
 
 def list_volumes():
@@ -673,6 +819,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         metricas.append(m); metricas_por_pid[pid] = m
     metrica_grava(m)
     fila_rostos.put((pid, dst, time.time()))
+    nuvem_enfileira(pid, dst)
     print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
     return "new"
 
@@ -1156,6 +1303,9 @@ def rftp_origem(path, pasta):
     return sub if sub in {sem_acento(x) for x in ftp_cadastrados()} else "ftp-estadio"
 
 
+rftp_cortadas = {}      # caminho -> vezes que chegou cortado
+
+
 def rftp_loop():
     try:
         seen_r = set(json.load(open(RFTP_SEEN)))
@@ -1193,6 +1343,15 @@ def rftp_loop():
                 with open(tmp, "wb") as out:
                     conn.retrbinary("RETR " + path, out.write)
                 st = os.stat(tmp)
+                if not jpeg_completo(tmp, st.st_size):    # foto cortada no servidor (câmera caiu no meio): espera o reenvio
+                    os.remove(tmp)
+                    pend.pop(path, None)
+                    rftp["incompletas"] = rftp.get("incompletas", 0) + 1
+                    rftp_cortadas[path] = rftp_cortadas.get(path, 0) + 1
+                    if rftp_cortadas[path] >= 5:          # continua cortada depois de 5 voltas: não fica baixando para sempre
+                        seen_r.add(path + "|" + str(sz))
+                        print(f"ftp do estádio: {name} continua incompleta no servidor; ignorada")
+                    continue
                 origem = rftp_origem(path, c.get("dir") or "")   # subpasta = fotógrafo só se cadastrado (B1)
                 r = ingest_file(tmp, name, st, origem, "ftp", move=True)
                 if os.path.exists(tmp):
@@ -2172,7 +2331,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/photoroom/status") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/"))
+    return path in ("/biblioteca", "/metricas", "/photoroom/status") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -2189,7 +2348,7 @@ class H(BaseHTTPRequestHandler):
 
     def origem_privada_ok(self, path):
         o = self.headers.get("Origin")
-        if path.startswith("/rostos/"):
+        if path.startswith(("/rostos/", "/nuvem/")):
             return self.origem_local()
         # contra DNS rebinding: o Host precisa ser o do agente (127.0.0.1, localhost ou o IP da rede com ETERNA_REDE)
         if (self.headers.get("Host") or "").lower() not in HOSTS_OK:
@@ -2513,7 +2672,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()},
+                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem,
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
@@ -2674,6 +2833,13 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/roverpix/sync":
             rover_wake.set()
             return self.js({"ok": True})
+        if u.path == "/nuvem/link":              # teste de estanque: link de 5 min para abrir a foto da nuvem no celular
+            if not os.environ.get("ETERNA_TESTE_CARGA") or not nuvem["ligada"]:
+                return self.js({"error": "not found"}, 404)
+            pid, v = q.get("pid", [""])[0], q.get("v", ["vitrine"])[0]
+            if not pid_ok(pid) or v not in ("vitrine", "alta"):
+                return self.js({"error": "pid ou versão inválida"}, 400)
+            return self.js({"pid": pid, "v": v, "url": nuvem_link(pid, v)})
         if u.path == "/rostos/projecao":
             if not os.environ.get("ETERNA_TESTE_CARGA"):
                 return self.js({"error": "not found"}, 404)
@@ -2746,6 +2912,7 @@ def main():
     threading.Thread(target=ftp_server, daemon=True).start()
     threading.Thread(target=rover_loop, daemon=True).start()
     threading.Thread(target=rftp_loop, daemon=True).start()
+    threading.Thread(target=nuvem_loop, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
