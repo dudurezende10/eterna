@@ -11,6 +11,7 @@ Fechar o ciclo da venda no Tour:
 5. As fotos impressas saem na DNP do próprio notebook, cada uma identificada com a venda.
 6. O QR da tela final abre a galeria **no celular do cliente**, onde ele baixa o que comprou e compra o resto online.
 7. Tudo fica registrado: as vendas de todos os notebooks num lugar só, e os eventos da galeria (QR aberto, foto vista, foto baixada).
+8. Os fundos de IA saem a custo zero na prévia, e o provedor da foto final comprada é escolhido por teste comparativo (seção "Fundos de IA").
 
 ## Como a operação vai funcionar
 1. O cliente termina o Tour. O fotógrafo já enviou as fotos pelo FTP; elas chegam ao servidor do ponto, que lê os rostos.
@@ -150,6 +151,37 @@ Outros custos mensais estimados:
 - **J.** Adquirente real (Mercado Pago ou Asaas), liberando só por webhook assinado. Estorno e cancelamento chegam à galeria (pendências da fase 2 em `galeria-qr-fase1.md`).
 - **K.** Pós-venda do v82, que depende de E a I.
 
+### Fundos de IA: recorte e montagem (complementa o v84)
+O Photoroom foi considerado caro. O custo vem de **quando** ele é chamado, não do preço unitário.
+- Valores aproximados de 2026, a conferir: Plus (recorte, luz, sombra e fundo) ~US$ 0,10 por imagem; Basic (só recorte) ~US$ 0,02.
+- Nas **prévias** do Checkout (~1.500 sessões por dia × 6 montagens), daria ~US$ 900 por dia.
+- **Só na foto de IA vendida**, é ~US$ 0,10 numa venda de R$ 40 (~1,4%).
+
+O v84 já segue essa linha: prévia local e Photoroom só na foto comprada.
+
+**Opções avaliadas para recortar e montar:**
+
+| Opção | Custo por foto | Rosto | Observação |
+|---|---|---|---|
+| **Montagem local**: recorte BiRefNet + regras do v84 | R$ 0 | 100% original | o BiRefNet é o melhor recorte de código aberto (licença MIT, conferir); roda no servidor do ponto, sem internet |
+| **Photoroom Plus** | ~US$ 0,10 | 100% original (recorta e reilumina, não redesenha) | já integrado ao Eterna (v50) |
+| **Nano Banana** (Google Gemini 2.5 Flash Image) | ~US$ 0,04 (Pro: ~US$ 0,13 a 0,24) | **redesenhado**: preserva bem, mas pode mudar detalhes, mais visível em grupo e criança | montagem muito natural; toda imagem sai com marca d'água invisível do Google (SynthID); o rosto vai para o Google (API paga, sem treino com os dados); exige constar no consentimento, como a AWS no v81 |
+| fal.ai (BiRefNet hospedado / IC-Light) | recorte ~US$ 0,001–0,01; reiluminação ~US$ 0,10 | original / reiluminado | só o recorte fica mais barato; a reiluminação custa o mesmo que o Photoroom |
+| RMBG-2.0 (BRIA) | licença paga | original | é o BiRefNet com treino próprio; os pesos são CC BY-NC, então vender exige licença ou a API da BRIA |
+| Geradores de uso geral (OpenAI, Gemini do aplicativo) | — | redesenhado | descartados para a foto do cliente; o Gemini Plus é assinatura pessoal, sem API para o sistema |
+
+**Recomendação da TI:**
+- **L1. Prévias sempre locais e de graça.** Recorte com **BiRefNet no lugar do ISNet** do v84 D1 (bordas e cabelo melhores; mesmo caminho pelo onnxruntime no agente). A montagem segue as regras do v84.
+- **L2. Foto final comprada: decidir por teste comparativo.**
+  - Usar 20 fotos reais do campo, de adultos, grupos e crianças, com consentimento interno ou fotos da equipe.
+  - Montar cada uma nos 4 fundos aprovados de três jeitos: local, Photoroom e Nano Banana.
+  - O Eduardo compara lado a lado, às cegas, o rosto (igual ao original?), o realismo (luz, sombra, borda) e o custo.
+- **L3. Regra de decisão:**
+  - se a montagem local for aceitável, o Photoroom sai e o custo vira zero;
+  - se o Nano Banana passar no rosto em **todas** as fotos, vira a final comprada (mais barato que o Photoroom), com o consentimento atualizado;
+  - senão, fica o Photoroom só na foto vendida, como no v84.
+- **L4. Seja qual for o provedor, ele entra atrás de um adaptador** (como `Repositorio` e o provedor de rostos do v81), com a montagem local como reserva quando o serviço falha ou estoura o teto diário.
+
 ## Fora do escopo
 - TEF integrado à maquininha (fica o POS digitado).
 - Leitura automática do pedido pela API da Imply (ver risco 4).
@@ -180,11 +212,13 @@ Outros custos mensais estimados:
 4. Banco: DynamoDB (D9) ou Postgres?
 5. Modelo de impressora. A recomendação da TI é a **DNP DS-RX1HS**: menor custo por foto e rolo grande. A DS620A é mais rápida e mais cara. Uma por notebook, via USB, já decidido.
 6. Os textos do Checkout que prometem "prontas em 2 minutos" continuam? Um pacote com 12 impressas leva ~2,5 min na RX1HS.
+7. Fundos de IA: trocar o ISNet do v84 pelo BiRefNet (L1) e escolher o provedor da foto final pelo teste comparativo local × Photoroom × Nano Banana (L2, L3)?
 
 ## O que a TI e a Maracatour precisam providenciar
 - **Conta AWS da Maracatour** com Organization e política de opt-out de IA (v81), domínio `api.eterna.photo` (DNS na GoDaddy) e e-mail de envio no SES (v82).
 - **Imply:** um comprovante da maquininha para confirmar o conteúdo do QR (o pedido de 16 caracteres?), se a maquininha aceita uma referência digitada (para o código curto da venda) e se a ticketeira tem API ou exportação diária dos pedidos, para a conciliação.
 - **DNP:** uma impressora para teste, com o driver instalado num notebook do Checkout.
+- **Teste dos fundos de IA:** 20 fotos de campo com consentimento e uma chave da API do Google AI Studio (Nano Banana), colada no Eterna pela equipe, nunca no repositório.
 - **Internet do estádio:** pelo menos 10 Mbit/s de upload livres no horário do Tour (com folga sobre o ~1,5–5 Mbit/s médio).
 
 ## Contratos
@@ -260,3 +294,4 @@ Outros custos mensais estimados:
 | 2 | D (v80 A–D) | etapa 1 | só quando houver mais de um notebook no ponto |
 | 3 | E, F, G, H, I | conta AWS, domínio da API, SES | E e F tiram o "Suas fotos estão chegando"; G e H centralizam as vendas |
 | 4 | J, K | etapa 3, contrato do adquirente | pagamento online real e pós-venda |
+| em paralelo | L1–L4 (fundos de IA) | v84 | o teste comparativo pode rodar já, fora do app, com as 20 fotos |
