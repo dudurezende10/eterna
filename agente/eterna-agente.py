@@ -787,6 +787,72 @@ def _cdn_assinado(chave, ttl=LINK_TTL):
     return _assina["s"].generate_presigned_url("https://%s/%s" % (NUVEM_CDN, chave), date_less_than=datetime.now(timezone.utc) + timedelta(seconds=ttl))
 
 
+# Galeria na nuvem (v85 F): cada galeria publicada aqui também vai para a API da nuvem, que atende o celular do cliente.
+# Fila persistente no nuvem.db; o segredo do ponto fica em ~/Eterna/nuvem-segredo.txt (na nuvem só o SHA-256 dele).
+NUVEM_API = os.environ.get("ETERNA_GALERIA_API", "").rstrip("/")
+NUVEM_SEGREDO = os.path.join(HOME, "nuvem-segredo.txt")
+
+
+def nuvem_segredo():
+    if not os.path.exists(NUVEM_SEGREDO):
+        _grava_privado(NUVEM_SEGREDO, secrets.token_urlsafe(32))
+    return open(NUVEM_SEGREDO, encoding="utf8").read().strip()
+
+
+def nuvem_galeria_enfileira(token):
+    if not NUVEM_API:
+        return
+    with nuvem_lock:
+        db = nuvem_db()
+        db.execute("CREATE TABLE IF NOT EXISTS galerias (token TEXT PRIMARY KEY, prox REAL, tentativas INTEGER, feito REAL, erro TEXT)")
+        db.execute("INSERT OR REPLACE INTO galerias (token, prox, tentativas, feito) VALUES (?, 0, 0, NULL)", (token,))
+        db.commit(); db.close()
+    nuvem_gal_acorda.set()
+
+
+nuvem_gal_acorda = threading.Event()
+
+
+def nuvem_galerias_loop():
+    """Publica na API da nuvem as galerias da fila; sem internet, tenta de novo com espera crescente."""
+    if not NUVEM_API:
+        return
+    seg = nuvem_segredo()
+    print(f"  Galeria na nuvem:  {NUVEM_API}")
+    while True:
+        try:
+            with nuvem_lock:
+                db = nuvem_db()
+                db.execute("CREATE TABLE IF NOT EXISTS galerias (token TEXT PRIMARY KEY, prox REAL, tentativas INTEGER, feito REAL, erro TEXT)")
+                fila = db.execute("SELECT token, tentativas FROM galerias WHERE feito IS NULL AND prox <= ? LIMIT 20", (time.time(),)).fetchall()
+                db.close()
+            for token, tent in fila:
+                m = REPO.ler_manifesto(token)
+                erro = None
+                if m:
+                    try:
+                        rq = urllib.request.Request(NUVEM_API + "/ponto/galerias", data=json.dumps({"manifesto": m}).encode(), method="POST",
+                                                    headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+                        with urllib.request.urlopen(rq, timeout=20) as r:
+                            r.read()
+                    except Exception as ex:
+                        erro = str(ex)[:200]
+                with nuvem_lock:
+                    db = nuvem_db()
+                    if erro:
+                        db.execute("UPDATE galerias SET tentativas=tentativas+1, prox=?, erro=? WHERE token=?",
+                                   (time.time() + min(300, 5 * 2 ** min(tent, 6)), erro, token))
+                        nuvem["galeria_erro"] = time.strftime("%H:%M:%S ") + erro
+                    else:
+                        db.execute("UPDATE galerias SET feito=?, erro=NULL WHERE token=?", (time.time(), token))
+                        nuvem["galerias_publicadas"] = nuvem.get("galerias_publicadas", 0) + 1
+                    db.commit(); db.close()
+        except Exception as ex:
+            nuvem["galeria_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        nuvem_gal_acorda.wait(5)
+        nuvem_gal_acorda.clear()
+
+
 def nuvem_tem(pid):
     """A foto já subiu (vitrine e alta conferidas pelo MD5)?"""
     try:
@@ -2630,6 +2696,7 @@ class H(BaseHTTPRequestHandler):
                 if m.get("codigo"):
                     codigos[m["codigo"]] = t
             gal_fila.put(t)
+            nuvem_galeria_enfileira(t)
             return self.js({"ok": True, "token": t, "estado": gal_estado(t, m)})
         partes = p.split("/")
         if len(partes) != 4 or partes[1] != "g" or not token_ok(partes[2]):
@@ -3001,6 +3068,7 @@ def main():
     threading.Thread(target=rover_loop, daemon=True).start()
     threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=nuvem_loop, daemon=True).start()
+    threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()

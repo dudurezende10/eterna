@@ -1477,7 +1477,7 @@ const flagSvg=c=>`<svg class="lj-flag" viewBox="0 0 30 20" preserveAspectRatio="
 // ---------- Galeria online por QR (fase 1): token e código por sessão, manifesto, fila de envio ao agente ----------
 // O QR da Loja aponta para https://eterna.photo/#g/<token>. O token nasce aqui (crypto), então a Loja nunca trava sem internet.
 // Manifesto igual no SIM e no agente: {v,token,codigo,tipo:'sessao'|'evento',nome,sessoes,menor,criada,expira,precos,moeda,fotos,envio}.
-const GAL_BASE_PADRAO='https://eterna.photo/#g/',galBase=()=>(state.agent&&state.agent.galPublica?state.agent.galPublica.replace(/\/$/,'')+'/#g/':window.ETERNA_AGENTE?window.ETERNA_AGENTE+'/#g/':GAL_BASE_PADRAO),GAL_DIAS=60,GAL_ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',GAL_LIMITE_MENOR=.50,GQ_VERSAO='2026-10-27',GQ_MAX=5,GQ_BLOQ=15*60000;
+const GAL_BASE_PADRAO='https://eterna.photo/#g/',GAL_API='',galApi=()=>window.ETERNA_AGENTE||(GAL_API&&location.protocol==='https:'?GAL_API:state.agent.url),galUrl=u=>/^https?:/.test(u||'')?u:galApi()+u,galBase=()=>(state.agent&&state.agent.galPublica?state.agent.galPublica.replace(/\/$/,'')+'/#g/':window.ETERNA_AGENTE?window.ETERNA_AGENTE+'/#g/':GAL_BASE_PADRAO),GAL_DIAS=60,GAL_ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',GAL_LIMITE_MENOR=.50,GQ_VERSAO='2026-10-27',GQ_MAX=5,GQ_BLOQ=15*60000;
 function galRand(n){const u=new Uint8Array(n);crypto.getRandomValues(u);return u;}
 function galToken(){SIM.galerias=SIM.galerias||{};let t;do{let s='';for(const b of galRand(16))s+=String.fromCharCode(b);t=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}while(SIM.galerias[t]);return t;}
 function galCodigo(){const usados=new Set(Object.values(SIM.galerias||{}).map(m=>m.codigo));let c;do{const u=galRand(8);c='';for(let i=0;i<8;i++){c+=GAL_ALFA[u[i]%32];if(i===3)c+='-';}}while(usados.has(c));return c;}
@@ -1536,7 +1536,7 @@ function pubRead(){const h=location.hash;const m=h.match(/^#g\/(.*)$/);
   state.pub=null;state.lojaRota=h==='#loja';return false;}
 function pubRetry(p){clearTimeout(p.rt);p.rt=setTimeout(()=>{if(state.pub===p&&p.step==='chegando')pubLoad();},20000);}
 async function pubLoad(){const p=state.pub;if(!p||!p.token){render();return;}const tok=p.token;let r=null,net=false;
-  try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),2500);r=await fetch(state.agent.url+'/g/'+tok+'/info',{cache:'no-store',signal:ctl.signal});clearTimeout(t);}catch(e){net=true;}
+  try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),2500);r=await fetch(galApi()+'/g/'+tok+'/info',{cache:'no-store',signal:ctl.signal});clearTimeout(t);}catch(e){net=true;}
   if(state.pub!==p)return;let info=null;
   if(r&&r.status===200){try{info=await r.json();}catch(e){info=null;}}
   if(info&&info.ok){p.modo='agente';p.info=info;}
@@ -1557,7 +1557,7 @@ async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pu
   p.step='buscando';selfieStop();render();
   try{
     if(p.modo==='agente'){const body=JSON.stringify({consentimento:true,versao:GQ_VERSAO,idioma:lang(),imagem:src});src=null;
-      const r=await fetch(state.agent.url+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});const j=await r.json().catch(()=>({}));
+      const r=await fetch(galApi()+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});const j=await r.json().catch(()=>({}));
       if(state.pub!==p)return;
       if(r.status===429){p.step='nao';p.motivo='bloqueado';p.ate=Date.parse(j.ate)||Date.now()+GQ_BLOQ;}
       else if(r.status===503){p.step='nao';p.motivo='processando';}
@@ -1576,21 +1576,21 @@ function pubGaleria(){const p=state.pub;if(!p)return {fotos:[]};
   if(p.modo==='agente'){const g=p.gal||{fotos:[]};return {...g,fotos:(g.fotos||[]).map(f=>({...f}))};}
   const m=(SIM.galerias||{})[p.token];if(!m)return {fotos:[]};const ok=m.tipo==='evento'?new Set(p.match||[]):null;
   return {tipo:m.tipo,menor:!!m.menor,expira:m.expira,estado:'pronta',precos:{dig:priceOf('dig'),todas:priceOf('mais')},fotos:m.fotos.filter(f=>!ok||ok.has(f.id)).map(f=>({pid:f.id,direito:f.direito,sessao:f.sessao}))};}
-function pubImg(f){const p=state.pub;if(p.modo==='agente')return f.vitrine?`--img:url(&quot;${esc(state.agent.url+f.vitrine)}&quot;);--bs:cover;--bp:center`:'';return phStyle(f.pid);}
+function pubImg(f){const p=state.pub;if(p.modo==='agente')return f.vitrine?`--img:url(&quot;${esc(galUrl(f.vitrine))}&quot;);--bs:cover;--bp:center`:'';return phStyle(f.pid);}
 function pubTotal(n,g){const d=(g.precos||{}).dig||priceOf('dig'),all=(g.precos||{}).todas||priceOf('mais');return Math.min(n*d,all);}
 async function pubBaixar(pid,i){const p=state.pub;const g=pubGaleria();const f=g.fotos.find(x=>x.pid===pid);if(!f||(f.direito!=='comprada'&&f.direito!=='cortesia'))return;
   const nome=`viva-maracana-${i||1}.jpg`;const salva=href=>{const a=document.createElement('a');a.href=href;a.download=nome;document.body.appendChild(a);a.click();a.remove();};
   if(p.modo==='agente'){
     // links assinados valem 15 min: com mais de 12 min de galeria, ou se o download falhar, pede links novos e tenta de novo uma vez
-    const baixa=async ff=>{const r=await fetch(state.agent.url+ff.original);if(!r.ok)throw new Error('x');const u=URL.createObjectURL(await r.blob());salva(u);setTimeout(()=>URL.revokeObjectURL(u),4000);};
+    const baixa=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');const u=URL.createObjectURL(await r.blob());salva(u);setTimeout(()=>URL.revokeObjectURL(u),4000);};
     let ff=f;if(!p.galAt||Date.now()-p.galAt>12*60000){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid)||f;}
-    try{await baixa(ff);}catch(e){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid);try{if(!ff||!ff.original)throw new Error('x');await baixa(ff);}catch(e2){if(ff&&ff.original)window.open(state.agent.url+ff.original,'_blank','noopener');}}
+    try{await baixa(ff);}catch(e){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid);try{if(!ff||!ff.original)throw new Error('x');await baixa(ff);}catch(e2){if(ff&&ff.original)window.open(galUrl(ff.original),'_blank','noopener');}}
     return;}
   const c=await photoCanvas(pid);if(c)salva(c.toDataURL('image/jpeg',.92));}
 const pubUUID=()=>{const u=galRand(16);u[6]=u[6]&15|64;u[8]=u[8]&63|128;const h=[...u].map(b=>b.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;};
 async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGaleria();const venda=new Set(g.fotos.filter(f=>f.direito==='venda').map(f=>f.pid));const pids=Object.keys(p.sel).filter(k=>p.sel[k]&&venda.has(k));if(!pids.length||!p.pagM)return;
   p.paying=true;
-  try{if(p.modo==='agente'){const r=await fetch(state.agent.url+'/g/'+p.token+'/pagamento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,pids,metodo:p.pagM,idem:p.idem})});const j=await r.json().catch(()=>({}));
+  try{if(p.modo==='agente'){const r=await fetch(galApi()+'/g/'+p.token+'/pagamento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,pids,metodo:p.pagM,idem:p.idem})});const j=await r.json().catch(()=>({}));
       if(r.status===401){pubAcessoVenceu(p);return;}
       if(!j.ok){toast(T('gq_payFail'));return;}
       if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();}p.sel={};
@@ -1604,14 +1604,14 @@ async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGa
     p.sel={};p.step='galeria';render();toast(T('gq_paid'));}
   finally{p.paying=false;}}
 // Pede links novos (POST /galeria). Acesso vencido (401): volta para a selfie, com aviso próprio.
-async function pubRenovar(p){try{const r=await fetch(state.agent.url+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});
+async function pubRenovar(p){try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});
   if(r.status===401){pubAcessoVenceu(p);return false;}const j=await r.json();if(!j.galeria)return false;p.gal=j.galeria;p.galAt=Date.now();return true;}catch(e){return false;}}
 function pubAcessoVenceu(p){if(state.pub!==p)return;p.acesso=null;p.gal=null;p.sel={};p.aviso=T('gq_again');pubSelfieAbrir(p);render();}
 function pubAguardar(p){clearTimeout(p.at);p.at=setTimeout(async()=>{if(state.pub!==p||p.step!=='aguardando')return;
-  try{const r=await fetch(state.agent.url+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});if(r.status===401){pubAcessoVenceu(p);return;}const j=await r.json();if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();const ok=(p.esperando||[]).every(pid=>(j.galeria.fotos||[]).some(f=>f.pid===pid&&f.direito==='comprada'));if(ok){p.step='galeria';render();toast(T('gq_paid'));return;}}}catch(e){}
+  try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});if(r.status===401){pubAcessoVenceu(p);return;}const j=await r.json();if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();const ok=(p.esperando||[]).every(pid=>(j.galeria.fotos||[]).some(f=>f.pid===pid&&f.direito==='comprada'));if(ok){p.step='galeria';render();toast(T('gq_paid'));return;}}}catch(e){}
   pubAguardar(p);},5000);}
 async function pubCodigo(){const p=state.pub;const v=(($('#gq-code')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(v.length!==8){p.err=T('gq_notFound');render();return;}const c=v.slice(0,4)+'-'+v.slice(4);let tok=null;
-  try{const r=await fetch(state.agent.url+'/g/codigo/'+c,{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&/^[A-Za-z0-9_-]{22}$/.test(j.token||''))tok=j.token;}}catch(e){}
+  try{const r=await fetch(galApi()+'/g/codigo/'+c,{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&/^[A-Za-z0-9_-]{22}$/.test(j.token||''))tok=j.token;}}catch(e){}
   if(!tok){const m=Object.values(SIM.galerias||{}).find(x=>x.codigo===c);if(m)tok=m.token;}
   if(!tok){p.err=T('gq_notFound');render();return;}location.hash='#g/'+tok;}
 function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
