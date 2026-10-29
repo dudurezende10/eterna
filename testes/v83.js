@@ -15,8 +15,9 @@ Image.new('RGB',(1000,1500),(200,120,40)).save(d+'/port.jpg',quality=80)
 for w,h,n in ((5000,3333,'hi'),(2400,1600,'lo')):
   im=Image.new('RGBA',(w,h),(0,0,0,0));ImageDraw.Draw(im).rectangle([w*.4,h*.4,w*.6,h],fill=(250,30,30,255));im.save(d+'/rec-'+n+'.png',optimize=True)
 Image.new('RGB',(5000,3333),(20,160,60)).save(d+'/opaca.png',optimize=True)
+im=Image.new('RGBA',(1500,1000),(0,0,0,0));ImageDraw.Draw(im).rectangle([600,300,900,1000],fill=(250,30,30,255));im.save(d+'/cut.png',optimize=True)
 `,TMP]);
-const IMG={land:fs.readFileSync(TMP+'/land.jpg'),port:fs.readFileSync(TMP+'/port.jpg'),hi:fs.readFileSync(TMP+'/rec-hi.png'),lo:fs.readFileSync(TMP+'/rec-lo.png'),op:fs.readFileSync(TMP+'/opaca.png')};
+const IMG={land:fs.readFileSync(TMP+'/land.jpg'),port:fs.readFileSync(TMP+'/port.jpg'),hi:fs.readFileSync(TMP+'/rec-hi.png'),lo:fs.readFileSync(TMP+'/rec-lo.png'),op:fs.readFileSync(TMP+'/opaca.png'),cut:fs.readFileSync(TMP+'/cut.png')};
 const composeLog=[];let composeFalha=false,composeOpaca=false;
 async function rotas(ctx){
   await ctx.route(ORIG+'/file/**',r=>{const id=r.request().url().split('/').pop();r.fulfill({status:200,contentType:'image/jpeg',body:/^p/.test(id)?IMG.port:IMG.land});});
@@ -25,6 +26,9 @@ async function rotas(ctx){
   await ctx.route(ORIG+'/photoroom/compose',r=>{let b={};try{b=JSON.parse(r.request().postData()||'{}');}catch(e){}composeLog.push({W:b.W,H:b.H,bg:b.bg,pid:b.pid||null,b64:!!b.image_b64,hi:!!b.hi,recorte:!!b.recorte});
     if(composeFalha)return r.fulfill({status:200,contentType:'application/json',body:J({ok:false,error:'falha de teste'})});
     r.fulfill({status:200,contentType:'application/json',body:J({ok:true,url:'/photoroom/result/'+(composeOpaca?'op':b.W>=4000?'hi':'lo')+'.png'})});});
+  // v84: a montagem padrão é local (recorte do agente em POST /recorte); o Photoroom só com o interruptor do Painel de controle
+  await ctx.route(ORIG+'/recorte',r=>{let b={};try{b=JSON.parse(r.request().postData()||'{}');}catch(e){}composeLog.push({recorte:true,pid:b.pid||null});
+    if(composeFalha)return r.fulfill({status:500,contentType:'application/json',body:J({error:'falha de teste'})});r.fulfill({status:200,contentType:'image/png',body:IMG.cut});});
   await ctx.route(ORIG+'/photoroom/result/**',r=>{const u=r.request().url();r.fulfill({status:200,contentType:'image/png',body:/op\.png$/.test(u)?IMG.op:/hi\.png$/.test(u)?IMG.hi:IMG.lo});});}
 function vigia(pg,nome){pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(`${nome}: ${e.message}`));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API|ERR_|net::|onnxruntime|404|status of 50/.test(m.text()))errs.push(`${nome}: ${m.text()}`);});return pg;}
 async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
@@ -219,7 +223,7 @@ try{
   ok(await A.evaluate(()=>!!document.querySelector('[data-imp="LPV83C"] .imp-ia')),'25: a foto de IA aparece na grade com o selo IA');
   await imprimir(A,'LPV83C');const r25=await raiz(A);const ia=r25.find(x=>x.t==='ai');
   ok(r25.length===4&&ia&&/^data:image\/jpeg/.test(ia.src)&&ia.fundo==='img/fundos-5k/campeao.jpg'&&Math.max(ia.w,ia.h)>=1800,'25: 4 páginas, a de IA montada do fileHi com 1800 px ou mais: '+J(r25.map(x=>({k:x.k,t:x.t,fundo:x.fundo,w:x.w,h:x.h}))));
-  ok(composeLog.some(c=>c.W===5000&&c.bg==='campeao2'&&c.pid==='aaaa00000001'&&c.hi&&c.recorte),'25: montagem pedida na resolução do fundo de 5000 px com a foto original: '+J(composeLog));
+  ok(composeLog.some(c=>c.recorte&&c.pid==='aaaa00000001')&&!composeLog.some(c=>c.W),'25 (v84): montagem local, com o recorte da foto original e sem Photoroom: '+J(composeLog));
   const pdf25=await pdfImpresso(A);fs.writeFileSync(`${P}/v83-impressao-ia.pdf`,pdf25);ok(pdfPaginas(pdf25).n===4,'25: PDF com 4 páginas: '+J(pdfPaginas(pdf25)));
   const e25=(await sim(A)).stock['Caixa 1'];await A.click('[data-act="imp-ok"][data-card="LPV83C"]');await A.waitForTimeout(200);const s25b=await sim(A);
   ok(s25b.sessions.LPV83C.impressao.estado==='impressa'&&s25b.stock['Caixa 1']===e25-4,'25: Saiu certo baixa 4');
@@ -252,13 +256,13 @@ try{
     S.sessions.LPV83B.paidAt=new Date(Date.now()-15*60000).toISOString();S.stock['Caixa 1']=30;S.sessions.LPV83E.impressao.semFoto=1;return ETERNA.alerts().map(a=>a.sev+' '+a.t);});
   ok(al.some(t=>/maquininha há 2\d min/.test(t))&&al.some(t=>/LPV83B|L0-\d+.*sem impressão/.test(t)||/paga há 1\d min e ainda sem impressão/.test(t))&&al.some(t=>/Caixa 1: rolo com 30/.test(t))&&al.some(t=>/^bad .*sem foto/.test(t)),'alertas locais: '+J(al.filter(t=>/maquininha|impress|rolo|sem foto/.test(t))));
 
-  // ---- R1(c): o Photoroom devolve a foto já montada (opaca): imprime em 1800 px ou mais e registra o aviso
-  await A.evaluate(()=>{ETERNA.state.view='posto';ETERNA.render();});
+  // ---- R1(c): o Photoroom devolve a foto já montada (opaca): imprime em 1800 px ou mais e registra o aviso (v84: só com o interruptor em Photoroom)
+  await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';ETERNA.state.view='posto';ETERNA.render();});
   composeOpaca=true;composeLog.length=0;await injPend(A,{card:'LPV83F',id:'L00-v83f0000aaaa',sel:F5.slice(0,1),ai:['ag_aaaa00000005|campeao2'],cart:[{id:'arq',v:70},{id:'extra',v:35}],total:105,prints:2});await confirmar(A,'L00-v83f0000aaaa','');
   await imprimir(A,'LPV83F');const r25o=await raiz(A);const iao=r25o.find(x=>x.t==='ai');
   ok(r25o.length===2&&iao&&Math.max(iao.w,iao.h)>=1800&&composeLog.some(c=>c.hi&&c.recorte&&c.W===5000),'R1(c): resposta opaca imprime em alta: '+J({r25o,composeLog}));
   await A.click('[data-act="imp-ok"][data-card="LPV83F"]');await A.waitForTimeout(200);const s25o=(await sim(A)).sessions.LPV83F;
-  ok(s25o.impressao.estado==='impressa'&&s25o.impressoes.slice(-1)[0].avisos.includes('montagem_opaca'),'R1(c): aviso montagem_opaca no registro: '+J(s25o.impressoes.slice(-1)[0]));composeOpaca=false;
+  ok(s25o.impressao.estado==='impressa'&&s25o.impressoes.slice(-1)[0].avisos.includes('montagem_opaca'),'R1(c): aviso montagem_opaca no registro: '+J(s25o.impressoes.slice(-1)[0]));composeOpaca=false;await A.evaluate(()=>{ETERNA.SIM.fundosModo='local';localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
   // ---- R1(a): o agente usa o mapa fixo de fundos aprovados (Noite de campeão sem a taça na prévia e o de 5000 px na impressão)
   {const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v83-ag-'));let out='';
     try{out=execFileSync('python3',['-I','-c',`

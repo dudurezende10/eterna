@@ -1381,5 +1381,44 @@ Plano: `docs/planos/2026-10-29-v83-multiterminal.md` (decisões D1 a D11, notas 
 - A simulação do TEF continua no código, desligada (`PAG_PROV.tef=null`). Quando o TEF real entrar, ela precisa ser **trocada** pela integração real, não só religada.
 - Um número de venda (`L0-NNN`) pode ser pulado (por exemplo, quando a gravação falha depois de gerar o número). Não há número repetido, mas a sequência pode ter buracos.
 
+## Fundos de IA com recorte local, sem Photoroom (v84, 29/10/2026)
+Decisão do Eduardo (29/10): a montagem dos fundos sai do Photoroom. O agente recorta a pessoa no computador do ponto e o app monta no canvas com as regras de `docs/fundos-ia-regras.md`.
+
+### Agente (`eterna-agente.py`)
+- `POST /recorte` com `{pid, lado}` (só foto da biblioteca, `pid_ok` + `lib`; `lado` 3000, padrão, para a impressão, ou 2400 para a prévia): devolve a pessoa em PNG RGBA (lado maior até 3000 px, `REC_LADO_MAX`; EXIF de orientação aplicado). O RGB fora da máscara é zerado: o PNG não leva o fundo nem quem estava ao redor. Cache em `~/Eterna/recortes/<pid>.png` e `<pid>_2400.png` (chmod 600; a de 2400 sai da de 3000, sem rodar os modelos de novo). `GET /recorte/<pid>.png` devolve o de 3000 já feito.
+- Recorte: rembg com duas sessões, `isnet-general-use` e `u2net_human_seg`, sobre uma cópia de até 1600 px (`REC_TRAB`). Máscara (`rec_limpa_mascara`, regras 12 e 13): máximo das duas (o que uma delas pega com alfa alto fica), níveis (abaixo de 0,3 vira 0, de 0,3 a 0,9 estica, acima de 0,9 vira 1), entra tudo o que tem algum sinal (≥ 0,12) ligado a um ponto com alfa alto (≥ 0,6) em uma das máscaras, furos de objeto são preenchidos e o miolo fica sólido (só a borda, até 0,2% do lado, fica macia): taça, bandeira aberta, boné e óculos saem inteiros e sólidos. Pedaço com 3% ou mais da área do maior fica sempre; pedaço menor só sai se estiver solto, a mais de 1,5% do lado do grupo (na dúvida, mantém). Depois volta ao tamanho final e perde 1 px de borda (sem halo). Conferido com fotos de exemplo do repo: óculos escuros, taça segurada ou encostada e bandeira aberta saem sólidos.
+- Prazo do cache: `limpar_recortes()` uma vez por dia no `galeria_loop` (junto do `limpar_rostos`): apaga o que tem mais de 2 dias (mtime), o de foto que saiu da biblioteca e, acima de 5 GB (`ETERNA_RECORTES_GB`), os mais antigos. O `POST /recorte` também apaga o recorte quando a foto não está mais na biblioteca.
+- Sessões abertas uma vez, na primeira foto, dentro da thread de trabalho (`rec_carregar`, com trava própria: o `/status` nunca espera a carga), `intra_op_num_threads = núcleos − 1`, sem arena de memória. Erro ao abrir os modelos: 503 por 60 s e depois tenta de novo.
+- Fila `rec_fila` (até 24) com 1 trabalhador (`ETERNA_RECORTE_CONC=2` para 2). Fila cheia: 429 `fila_cheia`; mais de 180 s: 504.
+- Sem rembg, onnxruntime, Pillow, numpy, scipy ou os modelos: 503 `{error:"recorte_indisponivel", motivo, como}` (o `como` manda rodar `instalar-recorte`). Nada é importado no topo. O agente nunca baixa modelo sozinho; procura em `$REMBG_HOME/models/<nome>/<nome>.onnx` (padrão `~/.rembg`) e em `$U2NET_HOME/<nome>.onnx` (padrão `~/.u2net`). `ETERNA_SEM_RECORTE=1` desliga (testes).
+- `/status` traz `recorte:{ok,motivo,carregado,modelos,fila,feitos,ms_medio,ms_ultimo,simultaneos}` e `fundos_modo`; o console de abertura mostra "Recorte local".
+- Acesso: `/recorte` e `/recorte/` em `rota_privada`. `POST /recorte` só de loopback, com `Host` do agente e `Origin` vazia ou do agente (a regra do `/photoroom/compose`; os postos pareados entram na etapa 2 da v83 com a mesma regra). `GET /recorte/` também só de loopback. Limite de 60 recortes novos por minuto por IP (o cache não conta).
+- Trava do Photoroom: `POST /fundos/modo {modo:"local"|"photoroom"}` (só loopback e origem local) grava `~/Eterna/fundos-modo.json`. Sem o arquivo vale `local`, e o `/photoroom/compose` responde 409 `photoroom_desligado`.
+- Medido no ambiente de teste (2 vCPU, 7 GB, CPU): cerca de 1,1 GB residentes com as duas sessões abertas e pico de 1,7 GB durante o recorte; 5 a 6 s por foto de 3000×2000 (a primeira, com a abertura dos modelos, de 7 a 8 s). Recomendado: 16 GB de RAM no computador do ponto.
+
+### App (`index.html`)
+- `fiaMontar(photoId,bgId,{hi})`: única montagem para a prévia (`compose`, recorte de 2400 px e fundo `file` de 2400 px, imagem por `toBlob`), o Checkout, o Posto de venda e a impressão da v83 (`compHi`, recorte de 3000 px e fundo `fileHi` de 5000 px, saída `IMP_PX` 1844×1240 em 10×15, cortada na horizontal pelo centro e presa embaixo; a impressão espera até 60 s pela montagem). `fiaRecorte` (POST `/recorte`, até 8 recortes na memória), `fiaMedir` (máscara com alfa ≥ 128 numa cópia de até 600 px; meio corpo quando a máscara encosta embaixo), `fiaLayout` (pura) e `fiaDesenhar`. O cache `COMP` apaga a montagem que deu erro ou ficou pendente.
+- Rosto nunca cortado (D5, regra 10): quando a regra corta o recorte, o YuNet do app (`ynDetect`) lê os rostos do recorte (`fiaRostos`, uma vez por foto) e a linha de corte desce até a base do rosto mais baixo + 15% da altura dele (rostos com pelo menos 30% da altura do maior).
+- Regras em `FIA_REGRAS` (corte = fração da altura da pessoa mantida a partir do topo; alt e larg = teto no quadro; cx = centro; o grupo sempre encosta embaixo; sem sombra):
+
+| Fundo | Meio corpo | Corpo inteiro | Outros |
+| --- | --- | --- | --- |
+| Noite de campeão (`campeao2`) | inteiro, 88% alt., 92% larg. | joelho (62%), 85% alt., 95% larg. | sem sombra (regra 9) |
+| Mirante (`mirante`) | 80% alt., centro 45% | joelho (62%), 80% alt., centro 45% | |
+| Arquibancada 1950 (`arq1950`) | umbigo (72%), até 100% larg. | 60% e 78% alt. | grupo largo: zoom do fundo 80% preso no topo, corte 55%, até 105% larg. (regra 10); tudo P&B, grupo com +10% de contraste |
+| Saída do túnel (`tunel`) | teto 75% alt. | joelho (62%), teto 75% | |
+
+- `fit` do Campeão, do Mirante e do Túnel aceita `inteiro` (vira do joelho para cima).
+- Checkout: no modo local, `lojaAI` só oferece fundo de IA com `state.agent.recorte.ok` e só para fotos do agente (`fiaOferece`). A miniatura mostra `T('aiMaking')` com indicador (`.lj-aimk`, `.lj-spin`) até a montagem ficar pronta. Item que falhou (503, sem pessoa ou erro) entra em `FIA_RUIM` (`fiaFalhou`; falha do recorte vale para a foto inteira) e sai da venda e da escolha já feita.
+- Interruptor em Painel de controle › Montagem dos fundos (`SIM.fundosModo`: `local` padrão ou `photoroom`; ação `fundos-modo`, módulo `configuracao.u`), que também grava o modo no agente (`POST /fundos/modo`). O código do Photoroom ficou intacto como `composePR` e `compHiPR`, chamado só no modo Photoroom.
+- Fundos de IA ganhou o quadro "Recorte local" (`fiaPanel`), com o motivo real (não instalado, erro ao abrir os modelos ou desligado). Foto de exemplo (sem `ag_`) não é recortada.
+
+### Instalador
+`agente/instalar-recorte.command` (Mac) e `agente/instalar-recorte.bat` (Windows): criam `~/Eterna/venv` e instalam versões fixas (`rembg==2.0.86`, `onnxruntime==1.29.0`, `opencv-python-headless==4.10.0.84`, `psutil==7.2.2`, sem o extra `[cli]`), depois baixam os dois modelos por `rembg.new_session`. `Eterna.command` e `iniciar-eterna.bat` passam a usar o Python do venv quando ele existe.
+
+### Fora desta entrega
+- Zonas protegidas (Cristo, Pão de Açúcar). A escolha das fotos continua pela nota simulada e pelo `fit` de cada fundo.
+- Recorte pedido de outro posto da rede (etapa 2 da v83).
+
 ## Nuvem: fotos online, galeria do cliente e teste de estanque (plano v85, 29/10/2026)
 Documento próprio: [NUVEM.md](NUVEM.md) (recursos da AWS, variáveis do agente, API da galeria, DNS, custos, como recriar e como apagar).
