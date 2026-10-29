@@ -1100,11 +1100,16 @@ def pasta_vigiada():
     state["pasta"] = pasta
     vistos = {}                                   # caminho -> (tamanho, mtime) já tratado
     tamanhos = {}                                 # caminho -> tamanho da última volta (espera o arquivo parar de crescer)
-    for root, _, files in os.walk(pasta):         # o que já estava lá antes de ligar não entra
+    # O que chegou nas últimas ETERNA_PASTA_RETOMAR horas (padrão 12) entra de novo: foto que a câmera mandou com o
+    # Eterna desligado (queda de luz, reinício) não se perde. A que já estava no Eterna cai como repetida (mesmo SHA).
+    janela = float(os.environ.get("ETERNA_PASTA_RETOMAR") or 12) * 3600
+    for root, _, files in os.walk(pasta):
         for fn in files:
             p = os.path.join(root, fn)
             try:
-                st = os.stat(p); vistos[p] = (st.st_size, st.st_mtime)
+                st = os.stat(p)
+                if time.time() - st.st_mtime > janela or (fn.endswith(EXT) and quick_hash(p, st.st_size) in seen):
+                    vistos[p] = (st.st_size, st.st_mtime)          # antiga, ou já está no Eterna: não entra de novo
             except OSError:
                 pass
     while True:
@@ -2871,20 +2876,68 @@ imp_fila = []            # pedidos de impressão (memória): o painel da fila l�
 imp_seq = [0]
 
 
-def imp_pedido(venda, vendedor, posto, n):
+IMP_FILA = os.path.join(HOME, "impressao", "fila.json")
+
+
+def imp_salvar():
+    """Grava a fila em disco (chamada com `lock`): se o servidor reiniciar, o que faltava imprimir continua."""
+    try:
+        os.makedirs(os.path.dirname(IMP_FILA), exist_ok=True)
+        tmp = IMP_FILA + ".tmp"
+        with open(tmp, "w", encoding="utf8") as fh:
+            json.dump({"seq": imp_seq[0], "pedidos": imp_fila}, fh)
+        os.replace(tmp, IMP_FILA)
+    except Exception as ex:
+        print("  fila de impressão: não gravou:", ex)
+
+
+def imp_pedido(venda, vendedor, posto, arqs):
     with lock:
         imp_seq[0] += 1
-        j = {"id": imp_seq[0], "venda": venda or "-", "vendedor": vendedor or "", "posto": posto or "", "fotos": n, "feitas": 0,
-             "estado": "na_fila", "criado": time.time(), "inicio": None, "fim": None, "erro": None}
+        j = {"id": imp_seq[0], "venda": venda or "-", "vendedor": vendedor or "", "posto": posto or "", "fotos": len(arqs), "feitas": 0,
+             "estado": "na_fila", "criado": time.time(), "inicio": None, "fim": None, "erro": None, "arquivos": arqs}
         imp_fila.append(j)
         del imp_fila[:-200]
+        imp_salvar()
     return j
+
+
+def imp_retomar():
+    """Na partida: pedidos que estavam na fila ou imprimindo quando o servidor caiu voltam para a fila,
+    a partir da foto que ainda não tinha ido para a impressora."""
+    try:
+        d = json.load(open(IMP_FILA, encoding="utf8"))
+    except Exception:
+        return
+    ps1 = imp_ps1()
+    voltam = []
+    with lock:
+        imp_seq[0] = max(imp_seq[0], int(d.get("seq") or 0))
+        for j in d.get("pedidos") or []:
+            if j.get("estado") in ("na_fila", "imprimindo"):
+                j["estado"], j["retomado"] = "na_fila", True
+                voltam.append(j)
+            imp_fila.append(j)
+        imp_salvar()
+    for j in sorted(voltam, key=lambda x: x["id"]):
+        threading.Thread(target=imprimir_fila, args=(ps1, j.get("arquivos") or [], j["venda"], {"kb": 0}, j), daemon=True).start()
+    if voltam:
+        print(f"  Fila de impressão: {len(voltam)} pedido(s) retomado(s) depois do reinício")
+
+
+def imp_ps1():
+    os.makedirs(IMP_DIR, exist_ok=True)
+    ps1 = os.path.join(IMP_DIR, "imprimir.ps1")
+    with open(ps1, "w", encoding="utf-8-sig") as fh:
+        fh.write(IMP_PS1)
+    return ps1
 
 
 def imp_fila_json():
     agora = time.time()
     with lock:
-        jobs = [dict(j) for j in imp_fila if j["estado"] in ("na_fila", "imprimindo") or agora - (j["fim"] or agora) < 3 * 3600]
+        jobs = [{k: v for k, v in j.items() if k != "arquivos"} for j in imp_fila
+                if j["estado"] in ("na_fila", "imprimindo") or agora - (j["fim"] or agora) < 3 * 3600]
     return {"ok": True, "impressora": IMPRESSORA or None, "agora": agora, "pedidos": jobs}
 
 
@@ -2909,11 +2962,9 @@ def imprimir(imagens, venda, vendedor="", posto=""):
         arqs.append(f)
     if os.environ.get("ETERNA_IMPRESSORA_TESTE"):          # testes sem impressora: só grava os arquivos
         return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA, "teste": True}
-    ps1 = os.path.join(IMP_DIR, "imprimir.ps1")
-    with open(ps1, "w", encoding="utf-8-sig") as fh:
-        fh.write(IMP_PS1)
+    ps1 = imp_ps1()
     ms = {"gravar_ms": round((time.time() - t0) * 1000), "spooler_ms": 0, "kb": round(sum(os.path.getsize(a) for a in arqs) / 1024)}
-    job = imp_pedido(venda, vendedor, posto, len(arqs))
+    job = imp_pedido(venda, vendedor, posto, arqs)
     threading.Thread(target=imprimir_fila, args=(ps1, arqs, venda, ms, job), daemon=True).start()
     with lock:
         frente = sum(1 for j in imp_fila if j["estado"] in ("na_fila", "imprimindo") and j["id"] < job["id"])
@@ -2936,6 +2987,8 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
         t1 = time.time()
         with lock:
             job["estado"], job["inicio"] = "imprimindo", t1
+            arqs = [a for a in (job.get("arquivos") or arqs)[job["feitas"]:] if os.path.exists(a)]   # retomado: só o que faltava
+            imp_salvar()
         linhas = []
         try:
             pr = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
@@ -2948,6 +3001,7 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
                 if ln.startswith("FOTO"):
                     with lock:
                         job["feitas"] += 1
+                        imp_salvar()
             pr.wait(timeout=120 + 90 * len(arqs))
             saida = " ".join(" ".join(linhas).split())
             ok = pr.returncode == 0 and linhas and linhas[-1].startswith("OK")
@@ -2957,6 +3011,7 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
             job["estado"], job["fim"] = ("impresso" if ok else "erro"), time.time()
             if not ok:
                 job["erro"] = saida[-200:]
+            imp_salvar()
         print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {IMPRESSORA}, {ms['kb']} KB, "
               f"{time.time() - t1:.0f} s até a DNP terminar -> {saida[:300]}")
 
@@ -3676,6 +3731,8 @@ def main():
     threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=nuvem_loop, daemon=True).start()
     threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
+    if IMPRESSORA and not os.environ.get("ETERNA_IMPRESSORA_TESTE"):
+        imp_retomar()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
