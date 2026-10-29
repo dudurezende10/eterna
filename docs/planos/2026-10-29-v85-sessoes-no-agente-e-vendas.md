@@ -475,3 +475,14 @@ Quando uma foto chega ao servidor, o Eterna registra a hora de chegada. A equipe
   - **G2:** a busca "17:10 até 17:15" mostra só as fotos que chegaram nesse intervalo; com a alternância para hora do clique, filtra pelo EXIF;
   - **G3:** a busca funciona com o app aberto ou fechado na hora da chegada, porque a hora vem do agente;
   - **G4:** com 15 mil fotos no dia, a busca responde em menos de 300 ms. O filtro roda no agente com `?de=&ate=&dia=`, ou em índice ordenado no app.
+
+### Adendo G2 (Eduardo, 29/10 18:51) · miniatura e foto ampliada no feed do Upload
+Hoje a lista de chegadas do Upload automático (`index.html` perto da linha 2802, `g.feed`) é só texto e não dá para clicar.
+- Cada linha mostra a **miniatura** da foto (`/thumb/<pid>`, 56 px, `loading="lazy"`), a hora de chegada e a de clique, o fotógrafo, a origem e o card da sessão quando já houver.
+- **Um clique ou duplo clique** abre a foto **ampliada** no modal existente (`showModal`), com setas para as fotos vizinhas da mesma chegada e o botão "Abrir a sessão".
+- Na linha "repetida", a miniatura é a da foto que já estava na biblioteca, para mostrar com qual ela é igual.
+- Linha sem foto, como "Grupo fechado", mostra o card e abre a sessão.
+- **Critérios:**
+  - G5: toda foto nova no feed tem miniatura com `naturalWidth>0`;
+  - G6: clicar abre o modal com a foto em tamanho grande e as setas passam para a próxima chegada;
+  - G7: com 60 linhas, o feed continua rápido (miniaturas lazy, sem re-render ao passar o mouse).
