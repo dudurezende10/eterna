@@ -2802,7 +2802,8 @@ IMP_PS1 = r"""
 param([string]$Impressora, [string[]]$Arquivos)
 Add-Type -AssemblyName System.Drawing
 try {
-  $imgs = @($Arquivos | ForEach-Object { [System.Drawing.Image]::FromFile($_) })
+  # toda página em pé (a DS-RX1 só imprimia a primeira quando a orientação mudava no meio): foto deitada é girada 90°
+  $imgs = @($Arquivos | ForEach-Object { $im = [System.Drawing.Image]::FromFile($_); if ($im.Width -gt $im.Height) { $im.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipNone) }; $im })
   $doc = New-Object System.Drawing.Printing.PrintDocument
   $doc.PrinterSettings.PrinterName = $Impressora
   if (-not $doc.PrinterSettings.IsValid) { throw "impressora '$Impressora' não encontrada" }
@@ -2812,8 +2813,8 @@ try {
   $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)
   $doc.OriginAtMargins = $false
   $script:i = 0
-  # um trabalho só com uma página por foto (vários trabalhos seguidos a DNP descarta); cada página na orientação da foto
-  $doc.add_QueryPageSettings({ param($s, $e) $im = $imgs[$script:i]; $e.PageSettings.Landscape = ($im.Width -gt $im.Height) })
+  # um trabalho só com uma página por foto (vários trabalhos seguidos a DNP descarta)
+  $doc.DefaultPageSettings.Landscape = $false
   $doc.add_PrintPage({ param($s, $e)
     $im = $imgs[$script:i]
     $g = $e.Graphics
