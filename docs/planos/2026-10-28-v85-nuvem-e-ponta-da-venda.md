@@ -130,7 +130,15 @@ Outros custos mensais estimados:
 - **F. API e galeria na nuvem.**
   - `api.eterna.photo`: AWS Lambda (Python 3.12) atrás do API Gateway HTTP.
   - As rotas `/g/*` de hoje (`info`, `codigo`, `rosto`, `galeria`, `foto`, `pagamento`) passam para a API com o mesmo contrato. O app troca a base com `GAL_API` e não muda de tela.
-  - Links de foto são URLs assinadas do S3 que valem 5 min. A alta só sai para foto `comprada` ou `cortesia`.
+  - Links de foto valem 5 min. A alta só sai para foto `comprada` ou `cortesia`.
+  - **Endereço amigável `fotos.eterna.photo`:**
+    - um CloudFront fica na frente do bucket e só entrega com **link assinado**;
+    - a chave privada fica no ponto, e na AWS vai só a pública;
+    - o bucket continua privado: só essa distribuição lê, por OAC e política com `SourceArn`;
+    - na GoDaddy entram só dois CNAME novos, a validação do certificado e o `fotos`, sem tocar no `@` e no `www` do site;
+    - script reproduzível em `servidor/nuvem/cloudfront-fase2.sh`.
+  - **Plano B automático:** cada link sai em dupla, pelo CloudFront e uma reserva direto no S3, que é um serviço separado. A galeria tenta o CloudFront e, se a foto não carregar, troca sozinha para o S3. O cliente não percebe.
+  - **Sentinela:** a cada 2 min o agente abre um arquivo de teste (`saude/ok.txt`) pelos dois caminhos. Falhou: aviso no console e no status (`s3_ok`, `cdn_ok`). Na API, o mesmo teste vira alarme da AWS para a TI.
   - A selfie na galeria segue o v81 D3 (CompareFaces só dentro das fotos da galeria, teto diário). A busca 1:N do Checkout continua local (v81 D2).
 - **G. Vendas centrais.**
   - Toda venda (Loja, balcão, online) vai para a API com o id que nasce na origem (v80 D7), por uma **fila local no notebook ou no agente**. Sem internet, o ponto continua vendendo e sincroniza depois; reenviar é idempotente.
@@ -285,7 +293,8 @@ O v84 já segue essa linha: prévia local e Photoroom só na foto comprada.
 4. **Conciliação com a Imply:** sem API da Imply, a ligação depende do vendedor ler o comprovante. A auditoria diária de vendas da TI (Imply × MaracaFly × Roverpix) passa a incluir o Eterna, cruzando pelo pedido. Ela aponta venda paga sem pedido, pedido sem venda e valor divergente.
 5. **Login simulado até a parte H:** a API não pode abrir antes do login real. Até lá, só as rotas do cliente (`/g/*`) e as do agente (token de aparelho) ficam no ar.
 6. **Custo descontrolado:** alarme de orçamento na AWS (Budgets) em US$ 150 por mês. Teto diário do Rekognition (v81 D10). Limite por (token, IP) nas rotas `/g/*`.
-7. **Impressão silenciosa na impressora errada:** o `--kiosk-printing` usa a impressora padrão do Windows. O atalho do Checkout confere na abertura se a padrão é uma DNP e avisa se não for.
+7. **CloudFront fora do ar:** a operação do estádio não depende dele (checkout, impressão e venda são locais; a fila da nuvem segura as fotos). Na galeria, o link de reserva vai direto ao S3. O SLA do CloudFront é de 99,9%, e o cliente tem 60 dias para baixar, então uma queda de minutos não faz ninguém perder foto. A sentinela avisa a TI.
+8. **Impressão silenciosa na impressora errada:** o `--kiosk-printing` usa a impressora padrão do Windows. O atalho do Checkout confere na abertura se a padrão é uma DNP e avisa se não for.
 
 ## Ordem e dependências
 | Etapa | Partes | Depende de | Observação |
