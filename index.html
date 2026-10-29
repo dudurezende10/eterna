@@ -235,6 +235,25 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .mv-tab td,.mv-tab th{white-space:nowrap}
 #print-root{display:none}
 @page foto{size:102mm 152mm;margin:0}
+.if-board{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:16px;align-items:start}
+@media (max-width:900px){.if-board{grid-template-columns:1fr}}
+.if-col{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;min-height:260px}
+.if-col h2{display:flex;justify-content:space-between;align-items:center;margin:0}
+.if-col.agora{border-color:#FFB800;box-shadow:0 0 0 2px rgba(255,184,0,.25)}
+.if-col.pronta{border-color:#2e9e5b}
+.if-cnt{font-size:14px;background:var(--line);border-radius:999px;padding:2px 10px}
+.if-card{border-radius:10px;padding:12px 14px;background:rgba(0,0,0,.03);border:1px solid var(--line)}
+.if-card.imp{background:#fff7e0;border-color:#FFB800}
+.if-card.ok{background:#e9f7ef;border-color:#2e9e5b}
+.if-card.err{background:#fdecec;border-color:#d64545}
+.if-num{font-size:34px;font-weight:800;letter-spacing:.02em;line-height:1.1}
+.if-col.agora .if-num{font-size:48px}
+.if-meta{font-size:14px;color:var(--muted)}
+.if-sub{font-size:13px;margin-top:4px}
+.if-prog{height:10px;border-radius:6px;background:rgba(0,0,0,.08);overflow:hidden;margin-top:8px}.if-prog i{display:block;height:100%;background:#FFB800;transition:width .4s}
+.if-vazio{color:var(--muted);font-size:15px;padding:20px 0;text-align:center}
+.if-err-h{margin-top:12px!important;color:#d64545}
+body.if-tv .rail{display:none}body.if-tv main{padding:24px 32px}body.if-tv .if-num{font-size:44px}body.if-tv .if-col.agora .if-num{font-size:64px}
 @media print{
   html:has(body.pr-on),body.pr-on{height:auto!important;margin:0!important;background:#fff!important}
   body.pr-on>*:not(#print-root){display:none!important}
@@ -1012,6 +1031,7 @@ const VIEWS=[
  ['painel','Painel','faturamento, fotos e vendas','Dashboard'],
  ['bandeiras','Bandeiras','estoque e IA','Dashboard'],
  ['estoque','Estoque','rolos e insumos','Dashboard'],
+ ['impfila','Fila de impressão','acompanhar a DNP','Dashboard'],
  ['fotografos','Fotógrafos','índice e métricas','Dashboard'],
  ['vendas','Vendas e caixa','vendedores','Dashboard'],
  ['vendas-lista','Lista de vendas','venda a venda','Dashboard'],
@@ -1356,9 +1376,9 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
     job.fase='imprimindo';render();let tM=0;try{const imgs=[];for(const im of document.querySelectorAll('#print-root img')){ // 10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio
       const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
       tM=performance.now();
-      const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,imagens:imgs})})).json();
+      const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,vendedor:(state.user&&state.user.name)||'',posto:(DATA.points.find(p=>p.id===state.imp.point)||{}).name||'',imagens:imgs})})).json();
       if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';const tF=performance.now();
-      toast(`Enviado para ${rr.impressora}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.t0)/1000).toFixed(1)} s (montar ${((tM-job.t0)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
+      toast(`Enviado para ${rr.impressora}${rr.na_frente?` · ${rr.na_frente} ${rr.na_frente===1?'pedido':'pedidos'} na frente`:''}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.t0)/1000).toFixed(1)} s (montar ${((tM-job.t0)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
     document.getElementById('print-root')?.remove();render();return;}
   document.body.classList.add('pr-on');job.fase='imprimindo';
@@ -3240,6 +3260,24 @@ function vRepo(){
   ${byDay.map(x=>`<tr><td>${dlabel(x.date)}</td><td class="num">${x.cards}</td><td class="num">${fmtN(x.photos)}</td><td class="num">${fmtN(x.sold)}</td><td class="num">${fmtN(x.photos-x.sold)}</td><td class="num">${gb(x.photos)}</td><td>${rp.connected?`<span class="pill ${x.status==='sincronizado'?'good':'warn'}">${x.status}</span>`:'<span class="pill neutral">aguardando conta</span>'}</td></tr>`).join('')}
   </tbody></table></div><div class="note">Volume do período: ${gb(t.photos)} GB locais. Na nuvem, com a regra atual, ${gb(rp.rule==='so-vendidas'?sold:t.photos)} GB. Referência de custo S3 padrão: cerca de US$ 0,023 por GB por mês.</div></div>`;
 }
+// Fila de impressão no estilo painel de senhas: na fila, imprimindo agora e prontas para retirar. Lê o servidor a cada 2 s.
+state.impFila=null;let impFilaTimer=null;
+async function impFilaPoll(){if(state.view!=='impfila'){clearInterval(impFilaTimer);impFilaTimer=null;return;}
+  try{const j=await (await fetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();state.impFila=j;state.impFilaErro=null;}catch(e){state.impFilaErro='Sem conexão com o servidor de impressão';}
+  if(state.view==='impfila')render();}
+function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000);setTimeout(impFilaPoll,0);}
+  const F=state.impFila;const agora=F?F.agora:Date.now()/1000;const ps=(F&&F.pedidos)||[];const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?'agora':`há ${m} min`;};
+  const fila=ps.filter(p=>p.estado==='na_fila'),agoraP=ps.filter(p=>p.estado==='imprimindo'),prontas=ps.filter(p=>p.estado==='impresso').sort((a,b)=>b.fim-a.fim).slice(0,8),erros=ps.filter(p=>p.estado==='erro').sort((a,b)=>b.fim-a.fim).slice(0,4);
+  const espera=fila.reduce((a,p)=>a+p.fotos,0)+agoraP.reduce((a,p)=>a+p.fotos-p.feitas,0);
+  const card=(p,cls,extra)=>`<div class="if-card ${cls}"><div class="if-num">${esc(p.venda)}</div><div class="if-meta">${p.fotos} ${p.fotos===1?'foto':'fotos'}${p.vendedor?' · '+esc(p.vendedor.split(' ')[0]):''}${p.posto?' · '+esc(p.posto):''}</div>${extra||''}</div>`;
+  return `<div class="head"><div><div class="eyebrow">${esc((F&&F.impressora)||'Impressora do servidor')}</div><h1>Fila de impressão</h1></div><div class="row"><span class="pill ${espera?'warn':'good'}">${espera?`${espera} ${espera===1?'foto':'fotos'} · cerca de ${Math.ceil(espera*14/60)} min`:'Impressora livre'}</span><button class="btn" data-act="impfila-tv">Tela cheia</button></div></div>
+  ${state.impFilaErro?`<div class="note" role="alert">${esc(state.impFilaErro)}</div>`:''}
+  <div class="if-board">
+    <section class="if-col"><h2>Na fila <span class="if-cnt">${fila.length}</span></h2>${fila.map((p,i)=>card(p,'fila',`<div class="if-sub">${i===0?'próxima':i+1+'º'} · ${min(p.criado)}</div>`)).join('')||'<div class="if-vazio">Ninguém esperando</div>'}</section>
+    <section class="if-col agora"><h2>Imprimindo agora</h2>${agoraP.map(p=>card(p,'imp',`<div class="if-prog"><i style="width:${Math.round(100*p.feitas/p.fotos)}%"></i></div><div class="if-sub">foto ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos}</div>`)).join('')||'<div class="if-vazio">Impressora livre</div>'}</section>
+    <section class="if-col pronta"><h2>Prontas · retirar</h2>${prontas.map(p=>card(p,'ok',`<div class="if-sub">${min(p.fim)}</div>`)).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}
+      ${erros.length?`<h2 class="if-err-h">Com erro</h2>${erros.map(p=>card(p,'err',`<div class="if-sub">${esc((p.erro||'').slice(0,90))}</div>`)).join('')}`:''}</section>
+  </div>`;}
 function vEstoque(){
   return `<div class="head"><div><div class="eyebrow">Insumos</div><h1>Estoque</h1></div></div>
   <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · rolo</span><span class="v" style="color:${v<ROLO_ALERTA?'var(--bad)':'inherit'}">${v}</span><span class="d">${v<ROLO_ALERTA?'Trocar antes do pico':'de '+ROLO_CAP+' · DNP RX1HS'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">Ímãs 15 x 20</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">Sacolas</span><span class="v" style="color:var(--bad)">310</span><span class="d">pedir</span></div></div>
@@ -3485,7 +3523,7 @@ function vIdentidade(){
 // Uma tela só aparece com o "Ver" do módulo E estando no menu da pessoa. Tela nova entra em MODULES, MODULE_INFO e no menu dos perfis.
 // PROTÓTIPO: tudo isto é verificado só no navegador. Em produção o servidor é a fonte da verdade (plano de permissões, v79).
 const MODULES=[
- ['estoque','Estoque e bandeiras',['bandeiras','estoque']],
+ ['estoque','Estoque e bandeiras',['bandeiras','estoque','impfila']],
  ['relatorios','Relatórios',['alertas']],
  ['desempenho','Índice do fotógrafo',['fotografos']],
  ['financeiro','Números de vendas',['painel','vendas','vendas-lista']],
@@ -4009,7 +4047,7 @@ function vDiario(){
   </div>`;
 }
 
-const VIEWFN={perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,posto:vPosto,quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const VIEWFN={perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,posto:vPosto,quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
     try{$('#main').innerHTML=vGaleriaQR();}catch(err){console.error(err);$('#main').innerHTML=`<div class="gq"><div class="gq-mid"><h1 class="lj-h2">${esc(T('gq_notFound'))}</h1></div></div>`;}
@@ -4272,6 +4310,7 @@ document.addEventListener('click',e=>{
     case 'gal-open':state.gal.card=d.card||null;state.gal.cort=null;state.gal.qr=null;render();if(d.card){const el=$('#gal-det');if(el)el.scrollIntoView({block:'start'});}break;
     case 'gal-criar':{const tok=galDaSessao(d.card,true);galPublicar(tok);log(`Galeria criada para ${d.card}`);state.gal.qr=tok;toast('Galeria criada · código '+SIM.galerias[tok].codigo);render();break;}
     case 'gal-qr':state.gal.qr=state.gal.qr===d.t?null:d.t;render();break;
+    case 'impfila-tv':{document.body.classList.toggle('if-tv');try{if(document.body.classList.contains('if-tv'))document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();else document.fullscreenElement&&document.exitFullscreen();}catch(e){}break;}
     case 'eco-qr':{const tok=galDaSessao(d.card);const m=tok&&SIM.galerias&&SIM.galerias[tok];if(!m){toast('Esta venda não tem galeria online');break;}const sim=SIM.sessions[d.card]||{};
       if(!ECO_CH){toast('Este navegador não fala com a tela do cliente');break;}try{ECO_CH.postMessage({tipo:'mostrar-qr',em:Date.now(),card:d.card,token:tok,codigo:m.codigo||null,total:saleTotal(sim)});toast('QR enviado para a tela do cliente');}catch(e){toast('Não consegui falar com a tela do cliente');}break;}
     case 'gal-abrir':window.open(galLink(d.t),'_blank');break;

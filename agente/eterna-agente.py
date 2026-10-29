@@ -2867,7 +2867,28 @@ Write-Output "OK"
 """
 
 
-def imprimir(imagens, venda):
+imp_fila = []            # pedidos de impressão (memória): o painel da fila lê daqui
+imp_seq = [0]
+
+
+def imp_pedido(venda, vendedor, posto, n):
+    with lock:
+        imp_seq[0] += 1
+        j = {"id": imp_seq[0], "venda": venda or "-", "vendedor": vendedor or "", "posto": posto or "", "fotos": n, "feitas": 0,
+             "estado": "na_fila", "criado": time.time(), "inicio": None, "fim": None, "erro": None}
+        imp_fila.append(j)
+        del imp_fila[:-200]
+    return j
+
+
+def imp_fila_json():
+    agora = time.time()
+    with lock:
+        jobs = [dict(j) for j in imp_fila if j["estado"] in ("na_fila", "imprimindo") or agora - (j["fim"] or agora) < 3 * 3600]
+    return {"ok": True, "impressora": IMPRESSORA or None, "agora": agora, "pedidos": jobs}
+
+
+def imprimir(imagens, venda, vendedor="", posto=""):
     """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor."""
     if not isinstance(imagens, list) or not imagens or len(imagens) > 20:
         return {"ok": False, "error": "nenhuma foto (ou mais de 20)"}
@@ -2892,23 +2913,50 @@ def imprimir(imagens, venda):
     with open(ps1, "w", encoding="utf-8-sig") as fh:
         fh.write(IMP_PS1)
     ms = {"gravar_ms": round((time.time() - t0) * 1000), "spooler_ms": 0, "kb": round(sum(os.path.getsize(a) for a in arqs) / 1024)}
-    threading.Thread(target=imprimir_fila, args=(ps1, arqs, venda, ms), daemon=True).start()
-    return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA, **ms}
+    job = imp_pedido(venda, vendedor, posto, len(arqs))
+    threading.Thread(target=imprimir_fila, args=(ps1, arqs, venda, ms, job), daemon=True).start()
+    with lock:
+        frente = sum(1 for j in imp_fila if j["estado"] in ("na_fila", "imprimindo") and j["id"] < job["id"])
+    return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA, "pedido": job["id"], "na_frente": frente, **ms}
 
 
 imp_lock = threading.Lock()
 
 
-def imprimir_fila(ps1, arqs, venda, ms):
-    """Em segundo plano e uma venda por vez: a DNP imprime uma foto de cada vez (12 a 15 s cada)."""
+def imprimir_fila(ps1, arqs, venda, ms, job):
+    """Em segundo plano e uma venda por vez, na ordem de chegada: a DNP imprime uma foto de cada vez (12 a 15 s cada).
+    O PowerShell avisa cada foto entregue (linha FOTO), e o painel da fila acompanha."""
+    while True:                                            # ordem de chegada: espera os pedidos anteriores
+        with lock:
+            antes = [j for j in imp_fila if j["id"] < job["id"] and j["estado"] in ("na_fila", "imprimindo")]
+        if not antes:
+            break
+        time.sleep(0.5)
     with imp_lock:
         t1 = time.time()
+        with lock:
+            job["estado"], job["inicio"] = "imprimindo", t1
+        linhas = []
         try:
-            r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
-                                "-Arquivos"] + arqs, capture_output=True, text=True, timeout=120 + 90 * len(arqs))
-            saida = " ".join((r.stdout or "").split()) + (" " + r.stderr.strip() if r.returncode and r.stderr else "")
+            pr = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
+                                   "-Arquivos"] + arqs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            for ln in pr.stdout:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                linhas.append(ln)
+                if ln.startswith("FOTO"):
+                    with lock:
+                        job["feitas"] += 1
+            pr.wait(timeout=120 + 90 * len(arqs))
+            saida = " ".join(" ".join(linhas).split())
+            ok = pr.returncode == 0 and linhas and linhas[-1].startswith("OK")
         except Exception as ex:
-            saida = "ERRO " + str(ex)
+            saida, ok = "ERRO " + str(ex), False
+        with lock:
+            job["estado"], job["fim"] = ("impresso" if ok else "erro"), time.time()
+            if not ok:
+                job["erro"] = saida[-200:]
         print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {IMPRESSORA}, {ms['kb']} KB, "
               f"{time.time() - t1:.0f} s até a DNP terminar -> {saida[:300]}")
 
@@ -3192,7 +3240,8 @@ class H(BaseHTTPRequestHandler):
             if err:
                 return self.js({"error": "corpo inválido"}, err)
             try:
-                return self.js(imprimir(body.get("imagens") or [], str(body.get("venda") or "")[:40]))
+                return self.js(imprimir(body.get("imagens") or [], str(body.get("venda") or "")[:40],
+                                        str(body.get("vendedor") or "")[:60], str(body.get("posto") or "")[:40]))
             except Exception as ex:
                 return self.js({"ok": False, "error": str(ex)[:300]}, 500)
         if p in ("/galerias/publicar", "/galerias/encerrar"):
@@ -3388,6 +3437,10 @@ class H(BaseHTTPRequestHandler):
             return self.js({**{k: v for k, v in rover.items()}, "configured": bool(c), "base_url": c["base_url"] if c else None})
         if u.path == "/roverpix/data":
             return self.js(rover_data())
+        if u.path == "/impressao/fila":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js(imp_fila_json())
         if u.path == "/biblioteca":
             # tudo o que já está guardado neste Mac, por dia (o app mostra sem baixar de novo)
             out = []
