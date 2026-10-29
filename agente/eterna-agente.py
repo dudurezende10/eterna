@@ -3091,6 +3091,10 @@ class H(BaseHTTPRequestHandler):
     def loopback(self):
         return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 
+    def posto(self):
+        """Este computador ou um posto que abriu o Eterna pelo endereço da rede declarado em ETERNA_ORIGENS."""
+        return self.loopback() or (self.headers.get("Host") or "").lower() in ORIGENS_REDE_HOSTS
+
     def png_bytes(self, path):
         try:
             with open(path, "rb") as f:
@@ -3108,7 +3112,7 @@ class H(BaseHTTPRequestHandler):
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
         agente; os postos pareados entram na etapa 2 com a mesma regra do /photoroom/compose) e só fotos da biblioteca."""
-        if not self.loopback() or not self.origem_local():
+        if not self.posto() or not self.origem_local():
             return self.js({"error": "origem não autorizada"}, 403)
         body, err = self.corpo(4096)
         if err:
@@ -3544,7 +3548,7 @@ class H(BaseHTTPRequestHandler):
             return self.file(os.path.join(PR_DIR, name))
         if u.path.startswith("/recorte/"):
             m = _re_rec.match(u.path[len("/recorte/"):])
-            if not self.loopback() or not m:
+            if not self.posto() or not m:
                 return self.js({"error": "not found"}, 404)
             return self.png_bytes(os.path.join(RECORTES, m.group(2) + ".png"))
         if u.path.startswith("/thumb/") or u.path.startswith("/file/"):
