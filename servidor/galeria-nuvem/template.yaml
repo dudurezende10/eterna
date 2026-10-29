@@ -86,10 +86,30 @@ Resources:
               Action: [lambda:InvokeFunction]
               Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:eterna-galeria"
       Events:
-        Codigo: {Type: HttpApi, Properties: {ApiId: !Ref Api, Path: /g/codigo/{codigo}, Method: GET}}
-        Info: {Type: HttpApi, Properties: {ApiId: !Ref Api, Path: /g/{token}/info, Method: GET}}
-        Acoes: {Type: HttpApi, Properties: {ApiId: !Ref Api, Path: /g/{token}/{acao}, Method: POST}}
-        Publicar: {Type: HttpApi, Properties: {ApiId: !Ref Api, Path: /ponto/galerias, Method: POST}}
+        Codigo:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/codigo/{codigo}"
+            Method: GET
+        Info:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/{token}/info"
+            Method: GET
+        Acoes:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/{token}/{acao}"
+            Method: POST
+        Publicar:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/galerias
+            Method: POST
 
 Outputs:
   EnderecoApi:
