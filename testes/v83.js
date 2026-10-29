@@ -281,7 +281,7 @@ try:
 except ValueError: r['teto']='recusado'
 print(json.dumps(r))`,path.join(__dirname,'..','agente','eterna-agente.py')],{env:{...process.env,HOME:H,ETERNA_SEM_OPENCV:'1',ETERNA_APP_ORIGIN:ORIG},timeout:60000}).toString().trim().split('\n').pop();}catch(e){out='erro '+String(e.message).slice(0,200);}
     const sha=p=>require('crypto').createHash('sha256').update(fs.readFileSync(path.join(__dirname,'..',p))).digest('hex');let j={};try{j=JSON.parse(out);}catch(e){}
-    ok(j.previa===sha('img/bg-campeao-v81.jpg')&&j.previa!==sha('img/bg-campeao2.jpg')&&j.hi===sha('img/fundos-5k/campeao.jpg')&&j.fora==='recusado'&&j.teto==='recusado'&&j.cam==='recusado'&&j.noite==='img/bg-noite.jpg'&&j.noiteHi==='img/bg-noite.jpg'&&j.taca&&!j.taca.length&&j.n===13,'R1(a): mapa de fundos do agente (com os do Laboratório): '+out);
+    ok(j.previa===sha('img/bg-campeao-v81.jpg')&&j.previa!==sha('img/bg-campeao2.jpg')&&j.hi===sha('img/fundos-5k/campeao.jpg')&&j.fora==='recusado'&&j.teto==='recusado'&&j.cam==='recusado'&&j.noite==='img/bg-noite.jpg'&&j.noiteHi==='img/bg-noite.jpg'&&j.taca&&!j.taca.length&&j.n===14,'R1(a): mapa de fundos do agente (com os do Laboratório): '+out);
     fs.rmSync(H,{recursive:true,force:true});}
   // ---- S1: mensagem forjada no canal não injeta HTML no Posto de venda
   {await A.evaluate(()=>{ETERNA.state.view='posto';ETERNA.render();});const X=vigia(await ctx.newPage(),'X');await X.goto(U+'#loja');await X.waitForTimeout(400);

@@ -1915,15 +1915,16 @@ def multipart(fields, files):
 
 # v83 (revisão R1): o arquivo de cada fundo vem de um mapa fixo, com os fundos aprovados. Nunca "img/bg-<id>.jpg" direto:
 # para o campeao2 esse arquivo é o fundo antigo, com a taça. Prévia (2400 px) e impressão (5000 px, img/fundos-5k/).
-# Todos os fundos de DATA.backgrounds (os 4 ativos e os do Laboratório, que podem ser ativados), com o mesmo arquivo do app.
+# Todos os fundos de DATA.backgrounds (os 5 ativos, com o Pódio de campeão da v86, e os do Laboratório, que podem ser ativados), com o mesmo arquivo do app.
 FUNDOS_PREVIA = {"campeao2": "img/bg-campeao-v81.jpg", "mirante": "img/bg-mirantesol.jpg",
-                 "arq1950": "img/bg-pb1950.jpg", "tunel": "img/bg-tunel.jpg",
+                 "arq1950": "img/bg-pb1950.jpg", "tunel": "img/bg-tunel.jpg", "podio": "img/bg-podio.jpg",
                  "imprensa": "img/bg-imprensa.jpg", "noite": "img/bg-noite.jpg", "terraco": "img/bg-terraco.jpg",
                  "campeaoarg": "img/bg-campeaoarg.jpg", "campeaocol": "img/bg-campeaocol.jpg",
                  "gramado1950": "img/bg-gramado1950.jpg", "alto1950": "img/bg-alto1950.jpg",
                  "escanteio1950": "img/bg-escanteio1950.jpg", "asadelta": "img/bg-asadelta.jpg"}
 FUNDOS_IMPRESSAO = {"campeao2": "img/fundos-5k/campeao.jpg", "mirante": "img/fundos-5k/mirantesol.jpg",
-                    "arq1950": "img/fundos-5k/pb1950.jpg", "tunel": "img/fundos-5k/tunel.jpg"}
+                    "arq1950": "img/fundos-5k/pb1950.jpg", "tunel": "img/fundos-5k/tunel.jpg",
+                    "podio": "img/fundos-5k/podio.jpg"}
 PR_LADO_MAX = 5000  # teto de W e H no /photoroom/compose
 
 
