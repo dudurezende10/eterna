@@ -2533,33 +2533,33 @@ IMP_DIR = os.path.join(HOME, "impressao")
 IMP_PS1 = r"""
 param([string]$Impressora, [string[]]$Arquivos)
 Add-Type -AssemblyName System.Drawing
-$erros = @()
-foreach ($f in $Arquivos) {
-  try {
-    $img = [System.Drawing.Image]::FromFile($f)
-    $doc = New-Object System.Drawing.Printing.PrintDocument
-    $doc.PrinterSettings.PrinterName = $Impressora
-    if (-not $doc.PrinterSettings.IsValid) { throw "impressora '$Impressora' não encontrada" }
-    $doc.DocumentName = "Eterna " + [IO.Path]::GetFileNameWithoutExtension($f)
-    $ps = $doc.PrinterSettings.PaperSizes | Where-Object { $a=[Math]::Min($_.Width,$_.Height); $b=[Math]::Max($_.Width,$_.Height); $a -ge 395 -and $a -le 420 -and $b -ge 595 -and $b -le 625 } | Select-Object -First 1
-    if ($ps) { $doc.DefaultPageSettings.PaperSize = $ps }
-    $doc.DefaultPageSettings.Landscape = ($img.Width -gt $img.Height)
-    $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)
-    $doc.OriginAtMargins = $false
-    $doc.add_PrintPage({ param($s, $e)
-      $g = $e.Graphics
-      $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-      $pb = $e.PageBounds
-      $hx = $e.PageSettings.HardMarginX; $hy = $e.PageSettings.HardMarginY
-      $r = [Math]::Max($pb.Width / $img.Width, $pb.Height / $img.Height)
-      $w = $img.Width * $r; $h = $img.Height * $r
-      $g.DrawImage($img, [single](($pb.Width - $w) / 2 - $hx), [single](($pb.Height - $h) / 2 - $hy), [single]$w, [single]$h)
-      $e.HasMorePages = $false })
-    $doc.Print()
-    $img.Dispose()
-  } catch { $erros += ([IO.Path]::GetFileName($f) + ": " + $_.Exception.Message) }
-}
-if ($erros.Count) { Write-Output ("ERRO " + ($erros -join " | ")); exit 1 }
+try {
+  $imgs = @($Arquivos | ForEach-Object { [System.Drawing.Image]::FromFile($_) })
+  $doc = New-Object System.Drawing.Printing.PrintDocument
+  $doc.PrinterSettings.PrinterName = $Impressora
+  if (-not $doc.PrinterSettings.IsValid) { throw "impressora '$Impressora' não encontrada" }
+  $doc.DocumentName = "Eterna " + [IO.Path]::GetFileNameWithoutExtension($Arquivos[0])
+  $ps = $doc.PrinterSettings.PaperSizes | Where-Object { $a=[Math]::Min($_.Width,$_.Height); $b=[Math]::Max($_.Width,$_.Height); $a -ge 395 -and $a -le 420 -and $b -ge 595 -and $b -le 625 } | Select-Object -First 1
+  if ($ps) { $doc.DefaultPageSettings.PaperSize = $ps }
+  $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)
+  $doc.OriginAtMargins = $false
+  $script:i = 0
+  # um trabalho só com uma página por foto (vários trabalhos seguidos a DNP descarta); cada página na orientação da foto
+  $doc.add_QueryPageSettings({ param($s, $e) $im = $imgs[$script:i]; $e.PageSettings.Landscape = ($im.Width -gt $im.Height) })
+  $doc.add_PrintPage({ param($s, $e)
+    $im = $imgs[$script:i]
+    $g = $e.Graphics
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $pb = $e.PageBounds
+    $hx = $e.PageSettings.HardMarginX; $hy = $e.PageSettings.HardMarginY
+    $r = [Math]::Max($pb.Width / $im.Width, $pb.Height / $im.Height)
+    $w = $im.Width * $r; $h = $im.Height * $r
+    $g.DrawImage($im, [single](($pb.Width - $w) / 2 - $hx), [single](($pb.Height - $h) / 2 - $hy), [single]$w, [single]$h)
+    $script:i++
+    $e.HasMorePages = ($script:i -lt $imgs.Count) })
+  $doc.Print()
+  $imgs | ForEach-Object { $_.Dispose() }
+} catch { Write-Output ("ERRO " + $_.Exception.Message); exit 1 }
 Write-Output "OK"
 """
 
