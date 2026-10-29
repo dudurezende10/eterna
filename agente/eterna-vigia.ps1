@@ -25,7 +25,9 @@ function Liga {
 }
 
 function Responde {
-  try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri 'http://127.0.0.1:8765/status').StatusCode -eq 200 } catch { $false }
+  # curl com tempo máximo de verdade: o Invoke-WebRequest fica esperando para sempre quando o Eterna trava aceitando a conexão
+  $c = curl.exe -s -o NUL -w '%{http_code}' -m 10 http://127.0.0.1:8765/status
+  return ($c -eq '200')
 }
 
 Registra 'vigia iniciado'
