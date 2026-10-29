@@ -11,6 +11,8 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
 
 As fotos ficam no S3 (vitrine/<pid>.jpg e alta/<pid>.jpg, enviadas pelo agente) e saem por link assinado de 5 min.
 A selfie é comparada pelo Rekognition só com os rostos da própria galeria (coleção por galeria), nunca com a base inteira.
+Os rostos das fotos só são lidos depois do primeiro consentimento na galeria, e a coleção é apagada quando a galeria
+vence ou é encerrada (limpeza diária). Tetos diários de leituras e buscas seguram o custo.
 Sem dado pessoal nos eventos: o IP vira hash com sal do dia.
 """
 import base64, hashlib, hmac, json, os, re, secrets, time
@@ -18,6 +20,7 @@ from datetime import datetime, timezone
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 REGIAO = os.environ.get("AWS_REGION", "us-east-2")
 TABELA = boto3.resource("dynamodb").Table(os.environ["TABELA"])
@@ -27,6 +30,9 @@ COLECAO_PREFIXO = os.environ.get("COLECAO_PREFIXO", "et-maracana-")
 LIMIAR_ADULTO = float(os.environ.get("LIMIAR_ADULTO", "85"))    # semelhança do Rekognition (0 a 100)
 LIMIAR_CRIANCA = float(os.environ.get("LIMIAR_CRIANCA", "95"))  # grupo de escola e sessão de menor: mais rígido
 COMPRA_ONLINE = os.environ.get("COMPRA_ONLINE", "0") == "1"
+LIMITE_FOTOS_GALERIA = int(os.environ.get("LIMITE_FOTOS_GALERIA", "600"))   # teto de fotos lidas por galeria
+LIMITE_LEITURAS_DIA = int(os.environ.get("LIMITE_LEITURAS_DIA", "15000"))   # IndexFaces por dia (US$ 0,001 cada)
+LIMITE_BUSCAS_DIA = int(os.environ.get("LIMITE_BUSCAS_DIA", "10000"))       # SearchFacesByImage por dia (US$ 0,001 cada)
 s3 = boto3.client("s3", region_name=REGIAO, endpoint_url="https://s3.%s.amazonaws.com" % REGIAO,
                   config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}))
 rek = boto3.client("rekognition", region_name=REGIAO)
@@ -172,51 +178,118 @@ def estado(m):
 
 
 # ---------- rostos: uma coleção do Rekognition por galeria ----------
+# IDX#<token>: cons (houve consentimento), idx (pids lidos), lk (trava da leitura). COL#<coleção>: token e validade,
+# para a limpeza diária achar a galeria a partir da coleção (o id da coleção é um HMAC e não volta ao token).
 def colecao(token):
     # o token não vai para a AWS em claro (v81 D5): id = prefixo + HMAC do token
     return COLECAO_PREFIXO + hmac.new(SEGREDO_PONTO_SHA256.encode(), token.encode(), hashlib.sha256).hexdigest()[:16]
 
 
-def indexar(token, m, limite=400):
-    """Lê os rostos das fotos da galeria que já estão no S3 e ainda não foram lidas. Idempotente."""
-    col = colecao(token)
+def ttl_de(m):
+    return int(epoch(m["expira"]) + 7 * 86400) if m.get("expira") else int(time.time() + 70 * 86400)
+
+
+def indexar(token, m, ate):
+    """Lê os rostos das fotos da galeria que já estão no S3 e ainda não foram lidas, até o instante `ate`.
+    Só depois de um consentimento na galeria. Grava o progresso a cada foto: se o tempo acabar, a próxima chamada
+    continua de onde parou, sem pagar de novo. Devolve ok, tempo, teto (limite do dia), travado ou sem_consentimento."""
+    k = {"pk": "IDX#" + token, "sk": "M"}
+    g = item(k["pk"]) or {}
+    if not g.get("cons"):
+        return "sem_consentimento"
+    try:                                                  # uma leitura por galeria por vez
+        TABELA.update_item(Key=k, UpdateExpression="SET lk = :fim", ConditionExpression="attribute_not_exists(lk) OR lk < :agora",
+                           ExpressionAttributeValues={":fim": int(ate) + 5, ":agora": int(time.time())})
+    except ClientError as ex:
+        if ex.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return "travado"
+        raise
     try:
-        rek.create_collection(CollectionId=col)
-    except rek.exceptions.ResourceAlreadyExistsException:
-        pass
-    it = item("GAL#" + token) or {}
-    feitas = set(json.loads(it.get("idx") or "[]"))
-    novas = 0
-    for f in m["fotos"]:
-        pid = pid_lib(f["id"])
-        if pid in feitas or novas >= limite or not tem_s3("alta/%s.jpg" % pid):
-            continue
+        col = colecao(token)
+        TABELA.put_item(Item={"pk": "COL#" + col, "sk": "M", "token": token, "exp": int(epoch(m["expira"]))})
         try:
-            rek.index_faces(CollectionId=col, Image={"S3Object": {"Bucket": BUCKET, "Name": "alta/%s.jpg" % pid}},
-                            ExternalImageId=pid, MaxFaces=15, QualityFilter="AUTO", DetectionAttributes=[])
+            rek.create_collection(CollectionId=col)
+        except rek.exceptions.ResourceAlreadyExistsException:
+            pass
+        feitas = set(json.loads(g.get("idx") or "[]"))
+        for f in m["fotos"]:
+            pid = pid_lib(f["id"])
+            if pid in feitas:
+                continue
+            if len(feitas) >= LIMITE_FOTOS_GALERIA:
+                break
+            if time.time() > ate:
+                return "tempo"
+            if not tem_s3("alta/%s.jpg" % pid):
+                continue                                  # ainda chegando do estádio
+            if not contar("IDX", 86400, LIMITE_LEITURAS_DIA):
+                return "teto"
+            try:
+                rek.index_faces(CollectionId=col, Image={"S3Object": {"Bucket": BUCKET, "Name": "alta/%s.jpg" % pid}},
+                                ExternalImageId=pid, MaxFaces=15, QualityFilter="AUTO", DetectionAttributes=[])
+            except rek.exceptions.InvalidParameterException:
+                pass                                      # foto sem rosto (de costas, bandeira): não tenta de novo
             feitas.add(pid)
-            novas += 1
-        except rek.exceptions.InvalidParameterException:
-            feitas.add(pid)                              # foto sem rosto (de costas, bandeira): não tenta de novo
-    TABELA.update_item(Key={"pk": "GAL#" + token, "sk": "M"}, UpdateExpression="SET idx = :i",
-                       ExpressionAttributeValues={":i": json.dumps(sorted(feitas))})
-    return len(feitas)
+            TABELA.update_item(Key=k, UpdateExpression="SET idx = :i", ExpressionAttributeValues={":i": json.dumps(sorted(feitas))})
+        return "ok"
+    finally:
+        TABELA.update_item(Key=k, UpdateExpression="REMOVE lk")
 
 
-def buscar(token, m, selfie):
+def continuar(token):
+    """Continua a leitura em segundo plano (só depois do consentimento)."""
+    lam.invoke(FunctionName=os.environ["AWS_LAMBDA_FUNCTION_NAME"], InvocationType="Event",
+               Payload=json.dumps({"indexar": token}).encode())
+
+
+def buscar(token, selfie):
     """Semelhança (0 a 100) por pid da galeria. None se a selfie não tem rosto."""
     try:
         r = rek.search_faces_by_image(CollectionId=colecao(token), Image={"Bytes": selfie}, MaxFaces=100, FaceMatchThreshold=60)
     except rek.exceptions.InvalidParameterException:
         return None                                      # nenhum rosto na selfie
     except rek.exceptions.ResourceNotFoundException:
-        indexar(token, m)
-        return buscar(token, m, selfie)
+        TABELA.update_item(Key={"pk": "IDX#" + token, "sk": "M"}, UpdateExpression="REMOVE idx")   # coleção sumiu: ler de novo
+        return {}
     sims = {}
     for x in r.get("FaceMatches", []):
         pid = x["Face"].get("ExternalImageId")
         sims[pid] = max(sims.get(pid, 0), x["Similarity"])
     return sims
+
+
+def apagar_rostos(token):
+    col = colecao(token)
+    try:
+        rek.delete_collection(CollectionId=col)
+    except rek.exceptions.ResourceNotFoundException:
+        pass
+    TABELA.delete_item(Key={"pk": "COL#" + col, "sk": "M"})
+    TABELA.delete_item(Key={"pk": "IDX#" + token, "sk": "M"})
+
+
+def limpeza():
+    """Diária: apaga a coleção de rostos de galeria vencida, encerrada ou sem registro. Rosto não passa da validade da galeria."""
+    apagadas, prox = 0, None
+    while True:
+        r = rek.list_collections(**({"NextToken": prox} if prox else {}))
+        for col in r.get("CollectionIds", []):
+            if not col.startswith(COLECAO_PREFIXO):
+                continue
+            reg = item("COL#" + col)
+            m = manifesto(reg["token"]) if reg else None
+            if not m or expirou(m):
+                try:
+                    rek.delete_collection(CollectionId=col)
+                except rek.exceptions.ResourceNotFoundException:
+                    pass
+                TABELA.delete_item(Key={"pk": "COL#" + col, "sk": "M"})
+                if reg:
+                    TABELA.delete_item(Key={"pk": "IDX#" + reg["token"], "sk": "M"})
+                apagadas += 1
+        prox = r.get("NextToken")
+        if not prox:
+            return {"apagadas": apagadas}
 
 
 # ---------- rotas ----------
@@ -250,18 +323,23 @@ def publicar(ev, corpo):
             novo["expira"] = velho["expira"]
         if velho.get("encerrada"):
             novo["encerrada"] = True
-    ttl = int(epoch(novo["expira"]) + 7 * 86400) if novo["expira"] else int(time.time() + 70 * 86400)
+    if m.get("encerrada"):                                # encerrada no ponto: sai do ar na nuvem também
+        novo["encerrada"] = True
+    ttl = ttl_de(novo)
     TABELA.update_item(Key={"pk": "GAL#" + novo["token"], "sk": "M"}, UpdateExpression="SET m = :m, #t = :t",
                        ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":m": json.dumps(novo), ":t": ttl})
+    if novo.get("encerrada"):
+        apagar_rostos(novo["token"])
+        if novo["codigo"]:
+            TABELA.delete_item(Key={"pk": "COD#" + novo["codigo"], "sk": "M"})
+        return resp({"ok": True, "token": novo["token"], "estado": "encerrada"})
     if novo["codigo"]:
         TABELA.put_item(Item={"pk": "COD#" + novo["codigo"], "sk": "M", "token": novo["token"], "ttl": ttl})
-    # lê os rostos em segundo plano (a resposta ao ponto não espera)
-    lam.invoke(FunctionName=os.environ["AWS_LAMBDA_FUNCTION_NAME"], InvocationType="Event",
-               Payload=json.dumps({"indexar": novo["token"]}).encode())
+    # os rostos não são lidos aqui: só depois do primeiro consentimento na galeria (rota /rosto)
     return resp({"ok": True, "token": novo["token"], "estado": estado(novo)})
 
 
-def rosto(token, m, corpo, ip):
+def rosto(token, m, corpo, ip, ctx):
     if not contar("ROS#" + ip_hash(ip), 60, 10):
         return resp({"motivo": "bloqueado", "ate": iso(time.time() + 60)}, 429)
     if corpo.get("consentimento") is not True:
@@ -280,9 +358,16 @@ def rosto(token, m, corpo, ip):
     TABELA.put_item(Item={"pk": "CON#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "tipo": "responsavel" if kid else "titular",
                           "versao": str(corpo.get("versao") or "")[:20], "idioma": str(corpo.get("idioma") or "pt")[:2],
                           "ttl": int(time.time() + 400 * 86400)})
-    if not json.loads((item("GAL#" + token) or {}).get("idx") or "[]"):
-        indexar(token, m)                                 # primeira selfie antes da leitura em segundo plano terminar
-    sims = buscar(token, m, selfie)
+    TABELA.update_item(Key={"pk": "IDX#" + token, "sk": "M"}, UpdateExpression="SET cons = :um, #t = :ttl",
+                       ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":um": 1, ":ttl": ttl_de(m)})
+    # lê os rostos que faltam com o tempo que sobra desta chamada (o API Gateway corta em 30 s); o resto, em segundo plano
+    leitura = indexar(token, m, time.time() + max(2, ctx.get_remaining_time_in_millis() / 1000 - 9))
+    if leitura == "tempo":
+        continuar(token)
+    if not contar("BUS", 86400, LIMITE_BUSCAS_DIA):
+        evento(token, "selfie_teto", ip)
+        return resp({"ok": False, "motivo": "processando"}, 503)
+    sims = buscar(token, selfie)
     selfie = img = None
     if sims is None:
         restam, _ = falhas(ip, token, somar=True)
@@ -293,6 +378,9 @@ def rosto(token, m, corpo, ip):
     else:
         lim = LIMIAR_CRIANCA if m.get("menor") else LIMIAR_ADULTO
         pids = {f["id"] for f in m["fotos"]} if any(s >= lim for s in sims.values()) else set()
+    if not pids and leitura != "ok":
+        evento(token, "selfie_processando", ip)          # leitura incompleta: não conta como erro
+        return resp({"ok": False, "motivo": "processando"}, 503)
     if not pids:
         restam, ate = falhas(ip, token, somar=True)
         evento(token, "selfie_nao", ip)
@@ -311,10 +399,17 @@ def rosto(token, m, corpo, ip):
 
 
 def handler(ev, ctx):
+    if ev.get("limpeza"):                                 # agendada, uma vez por dia
+        return limpeza()
     if ev.get("indexar"):                                 # chamada interna em segundo plano
         t = ev["indexar"]
         m = manifesto(t)
-        return {"lidas": indexar(t, m) if m else 0}
+        if not m or expirou(m):
+            return {"leitura": "fora"}
+        r = indexar(t, m, time.time() + ctx.get_remaining_time_in_millis() / 1000 - 5)
+        if r == "tempo":
+            continuar(t)
+        return {"leitura": r}
     metodo = ev.get("requestContext", {}).get("http", {}).get("method", "GET")
     caminho = ev.get("rawPath") or "/"
     ip = ev.get("requestContext", {}).get("http", {}).get("sourceIp", "")
@@ -355,7 +450,7 @@ def handler(ev, ctx):
         return resp({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
                      "estado": estado(m), "venue": m.get("venue"), "compra": COMPRA_ONLINE})
     if acao == "rosto" and metodo == "POST":
-        return rosto(token, m, corpo, ip)
+        return rosto(token, m, corpo, ip, ctx)
     if acao in ("galeria", "pagamento") and metodo == "POST":
         a = item("ACE#" + str(corpo.get("acesso") or "")) if corpo.get("acesso") else None
         if not a or a["token"] != token or int(a["exp"]) < time.time():

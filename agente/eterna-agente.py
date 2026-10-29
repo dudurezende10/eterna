@@ -2717,6 +2717,7 @@ class H(BaseHTTPRequestHandler):
                     m["expira"] = _iso()
                     m["encerrada"] = True
                     REPO.salvar_manifesto(t, m)
+                nuvem_galeria_enfileira(t)                 # a nuvem tira do ar e apaga os rostos da galeria
                 return self.js({"ok": True})
             try:
                 novo = gal_validar(body.get("manifesto"))

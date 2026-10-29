@@ -16,8 +16,8 @@ flowchart LR
     AG -->|"fila nuvem.db"| UP["Envio S3<br>vitrine + alta"]
     AG -->|"fila nuvem.db"| PUB["Publica galeria"]
   end
-  subgraph AWS["AWS · conta 741796256738 · us-east-2"]
-    S3[("S3<br>eterna-teste-741796256738")]
+  subgraph AWS["AWS · us-east-2"]
+    S3[("S3<br>bucket de teste")]
     API["API Gateway HTTP + Lambda<br>eterna-galeria"]
     DB[("DynamoDB<br>eterna-galeria")]
     REK["Rekognition<br>coleção por galeria"]
@@ -37,12 +37,12 @@ flowchart LR
 
 | Recurso | Nome / valor | Como foi criado | Observação |
 |---|---|---|---|
-| Conta | `741796256738` ("Make It Happen", TI Maracatour) | já existia | o plano da conta só libera **us-east-2 (Ohio)**; São Paulo exige mudar o plano |
-| Bucket S3 | `eterna-teste-741796256738` (us-east-2) | script `eterna-setup.sh` no CloudShell (seção 8.1) | privado (Block Public Access), SSE-S3, **apaga tudo com 7 dias** (bucket de teste), tags `projeto=eterna`, `uso=teste-estanque` |
+| Conta | conta da TI Maracatour (número fora deste documento) | já existia | o plano da conta só libera **us-east-2 (Ohio)**; São Paulo exige mudar o plano |
+| Bucket S3 | `eterna-teste-<número da conta>` (us-east-2) | script `eterna-setup.sh` no CloudShell (seção 8.1) | privado (Block Public Access), SSE-S3, **apaga tudo com 7 dias** (bucket de teste), tags `projeto=eterna`, `uso=teste-estanque` |
 | CORS do bucket | GET/HEAD de qualquer origem | CloudShell (seção 8.2) | só permite o navegador baixar; a leitura continua exigindo link assinado |
 | Política IAM | `EternaAgenteTeste` | `eterna-setup.sh` | S3 Put/Get/Delete só neste bucket; ListBucket do bucket; Rekognition só em coleções `et-*` + DetectFaces/CompareFaces/ListCollections |
-| Usuário IAM | `eterna-agente-teste` | `eterna-setup.sh` | chave criada no console e salva no notebook com `aws configure --profile eterna-teste`. **A chave apareceu numa captura de tela em 29/10: trocar** (seção 10) |
-| Certificado | `fotos.eterna.photo`, ACM em **us-east-1** (exigência do CloudFront) | `aws acm request-certificate` (seção 8.3) | ARN `arn:aws:acm:us-east-1:741796256738:certificate/6a1d1424-24b1-445e-aecd-0bd442e6938e`; aguardando o CNAME de validação na GoDaddy |
+| Usuário IAM | `eterna-agente-teste` | `eterna-setup.sh` | chave criada no console e salva no ponto com `aws configure --profile eterna-teste`; trocada antes da produção |
+| Certificado | `fotos.eterna.photo`, ACM em **us-east-1** (exigência do CloudFront) | `aws acm request-certificate` (seção 8.3) | ARN no CloudShell (`cert-arn.txt`); aguardando o CNAME de validação na GoDaddy |
 | CloudFront | `fotos.eterna.photo` | `servidor/nuvem/cloudfront-fase2.sh` (pendente) | só entrega com link assinado; chave pública no CloudFront, privada no ponto; OAC + política do bucket com `SourceArn` |
 | Stack CloudFormation | `eterna-galeria` (us-east-2) | `sam deploy` de `servidor/galeria-nuvem/template.yaml` | cria a tabela, a função, o papel IAM da função e a API |
 | DynamoDB | `eterna-galeria` | stack | sob demanda, TTL em `ttl`, recuperação de 35 dias (PITR), criptografado |
@@ -65,7 +65,7 @@ Só se **adicionam** registros; nada do site (`@`, `www` do GitHub Pages, MX, TX
 | Variável | Exemplo | Efeito |
 |---|---|---|
 | `ETERNA_NUVEM` | `s3` | liga o envio das fotos para a nuvem |
-| `ETERNA_BUCKET` | `eterna-teste-741796256738` | bucket |
+| `ETERNA_BUCKET` | `eterna-teste-<número da conta>` | bucket |
 | `ETERNA_AWS_PERFIL` | `eterna-teste` | perfil da AWS CLI com a chave (nunca no código) |
 | `ETERNA_AWS_REGIAO` | `us-east-2` | região do bucket (padrão us-east-2) |
 | `ETERNA_NUVEM_ENVIADORES` | `4` | envios em paralelo |
@@ -103,6 +103,8 @@ Só se **adicionam** registros; nada do site (`@`, `www` do GitHub Pages, MX, TX
 ### 3.5 Publicação das galerias (parte F)
 - Ao publicar uma galeria (`POST /galerias/publicar` vindo do app), o agente grava o manifesto local e chama `nuvem_galeria_enfileira(token)`.
 - `nuvem_galerias_loop` envia o manifesto para `ETERNA_GALERIA_API/ponto/galerias`, com o cabeçalho `X-Eterna-Ponto: <segredo>`. Em caso de falha, tenta de novo com espera crescente.
+- **Encerrar** (`POST /galerias/encerrar`) também entra nessa fila: o manifesto vai com `encerrada: true` e a nuvem tira a galeria do ar e apaga os rostos dela.
+- **Desligado por padrão:** sem `ETERNA_GALERIA_API`, nenhuma galeria sai do ponto.
 
 ### 3.6 FTP do estádio
 - `rftp_list` entende servidores sem MLSD (IIS): lista por NLST e entra nas subpastas (uma por fotógrafo).
@@ -116,13 +118,18 @@ Mesmo contrato das rotas `/g/*` do agente (`galeria-qr-fase1.md`), para o app n�
 |---|---|
 | `GET /g/codigo/<XXXX-XXXX>` | código curto → token (30 por minuto por IP) |
 | `GET /g/<token>/info` | tipo, menor, validade, estado, `compra` |
-| `POST /g/<token>/rosto` | `{imagem, consentimento:true, versao, idioma}` → `{acesso, exp, galeria}` ou `{motivo: sem_rosto, nao_encontrado, bloqueado}` |
+| `POST /g/<token>/rosto` | `{imagem, consentimento:true, versao, idioma}` → `{acesso, exp, galeria}` ou `{motivo: sem_rosto, nao_encontrado, bloqueado}`; **503 `processando`** enquanto a leitura dos rostos não termina ou o teto do dia foi atingido (não conta como tentativa) |
 | `POST /g/<token>/galeria` | `{acesso}` → galeria com links novos |
 | `POST /g/<token>/pagamento` | **503 `compra_indisponivel`** enquanto `CompraOnline=0` |
-| `POST /ponto/galerias` | `{manifesto}` com `X-Eterna-Ponto` → grava e lê os rostos em segundo plano |
+| `POST /ponto/galerias` | `{manifesto}` com `X-Eterna-Ponto` → grava. **Não lê rostos.** Com `encerrada: true`, apaga a coleção e o código curto |
+| (agendada) `{"limpeza": true}` | uma vez por dia: apaga a coleção de toda galeria vencida, encerrada ou sem registro |
 
 **Regras de acesso:**
 - A selfie é comparada pelo Rekognition **só com a coleção da galeria**, `et-maracana-<HMAC-SHA256(token)[:16]>`: o token não vai para a AWS.
+- **Rostos só depois do consentimento.** Publicar não lê nada. A primeira selfie com consentimento marca `cons` e lê as fotos que faltam com o tempo que sobra da chamada (o API Gateway corta em 30 s). O que não couber continua em segundo plano (`{"indexar": token}`), que só roda em galeria com `cons`.
+- **Leitura sem repetir:** o progresso (`idx`) é gravado a cada foto e uma trava (`lk`) impede duas leituras da mesma galeria ao mesmo tempo. Uma foto nunca é paga duas vezes.
+- **Rostos com prazo:** a coleção é apagada quando a galeria é encerrada no ponto (na hora) ou vence (limpeza diária). Coleção sem registro também é apagada.
+- **Tetos de custo:** até 600 fotos lidas por galeria, `LimiteLeiturasDia` (15 mil) leituras e `LimiteBuscasDia` (10 mil) selfies por dia na conta. Passou do teto, o cliente vê "processando" e nada mais é cobrado. Alerta de orçamento por e-mail (`EmailOrcamento`, `OrcamentoMensalUsd`, padrão US$ 300): 80% do gasto real e 100% da previsão.
 - **Sessão de adulto:** semelhança ≥ 85 em qualquer foto libera a sessão inteira.
 - **Escola e sessão de menor:** ≥ 95, e só as fotos em que a criança aparece.
 - 5 selfies erradas por (IP, galeria) bloqueiam por 15 min.
@@ -134,21 +141,26 @@ Mesmo contrato das rotas `/g/*` do agente (`galeria-qr-fase1.md`), para o app n�
 
 | pk | sk | Conteúdo | Expira |
 |---|---|---|---|
-| `GAL#<token>` | `M` | `m` (manifesto JSON), `idx` (pids com rosto lido) | validade + 7 dias |
+| `GAL#<token>` | `M` | `m` (manifesto JSON) | validade + 7 dias |
+| `IDX#<token>` | `M` | `cons` (houve consentimento), `idx` (pids lidos), `lk` (trava) | validade + 7 dias; apagado com a coleção |
+| `COL#<coleção>` | `M` | `token`, `exp`: liga a coleção à galeria para a limpeza | apagado com a coleção |
 | `COD#<codigo>` | `M` | `token` | igual à galeria |
 | `ACE#<acesso>` | `M` | `token`, `pids`, `exp` | 1 h |
 | `FAL#<iphash>#<token>` | `M` | falhas e bloqueio | 1 dia |
 | `EVA#<iphash>#<token>` | `M` | crianças abertas por IP (escola) | 24 h |
-| `LIM#<chave>#<janela>` | `M` | contador de limite | 2 janelas |
+| `LIM#<chave>#<janela>` | `M` | contador de limite (inclui `IDX` e `BUS`, os tetos do dia) | 2 janelas |
 | `EVT#<token>` | `<iso>#<rand>` | evento: `tipo`, `ip` (hash com sal do dia), extras | 90 dias |
 | `CON#<token>` | `<iso>#<rand>` | consentimento: titular ou responsável, versão, idioma | 400 dias |
 
-Eventos registrados: `qr_aberto`, `codigo_digitado`, `selfie_ok`, `selfie_nao`, `selfie_sem_rosto`, `galeria_vista`, `compra_tentada`.
+Eventos registrados: `qr_aberto`, `codigo_digitado`, `selfie_ok`, `selfie_nao`, `selfie_sem_rosto`, `selfie_processando`, `selfie_teto`, `galeria_vista`, `compra_tentada`.
+
+Teste local sem AWS e sem custo: `python servidor/galeria-nuvem/teste_local.py servidor/galeria-nuvem` (consentimento, leitura interrompida e retomada, encerrar, limpeza e teto).
 
 ## 5. App (`index.html`)
 - `GAL_API` = `https://whe2hyve2j.execute-api.us-east-2.amazonaws.com` (até existir `api.eterna.photo`) define a base das rotas da galeria fora do estádio: `galApi()` usa `window.ETERNA_AGENTE` (porta pública de teste), depois `GAL_API` em https e, por último, o agente local.
 - `galUrl(u)` aceita link absoluto (S3 ou CloudFront) ou relativo (agente).
 - `galBase()` monta o link do QR: `state.agent.galPublica` (vindo de `/status`), depois `window.ETERNA_AGENTE` e, por último, `https://eterna.photo/#g/`.
+- `galNuvem()` diz se a galeria está sendo atendida pela nuvem. Nesse caso o consentimento usa `gq_consentSelfNuvem` / `gq_consentKidNuvem`, que citam a AWS nos Estados Unidos e o apagamento dos rostos, e a versão gravada é `GQ_VERSAO-aws`.
 - Sem essas configurações, o comportamento é igual ao da v82.
 
 ## 6. Ferramentas de teste
@@ -170,11 +182,21 @@ Só para demonstração, antes da API na nuvem existir.
 - Injeta `window.ETERNA_AGENTE` e é exposta por Cloudflare Tunnel, ligado pelo responsável da TI.
 - Desligada em 29/10. **Não faz parte da arquitetura final.**
 
-## 7. Custos (estimativa; conferir na calculadora da AWS)
-- **S3 (us-east-2):** cerca de 1,15 MB por foto (alta e vitrine). Com 15 mil fotos por dia são ~17 GB/dia; 60 dias somam ~1 TB, ~US$ 23/mês. Só as sessões com galeria (~30%) dão ~US$ 7/mês.
-- **CloudFront:** franquia gratuita de 1 TB e 10 milhões de requisições por mês.
-- **Rekognition:** IndexFaces a US$ 0,001 por foto da galeria (uma vez) e SearchFacesByImage a US$ 0,001 por selfie. Uma sessão de 11 fotos custa ~US$ 0,012.
-- **Lambda, API Gateway e DynamoDB:** centavos por mês no volume do Tour. Parado, ~zero.
+## 7. Dimensionamento e custos para 15 mil fotos por dia
+Estimativa com preços públicos da us-east-2; conferir na calculadora da AWS. Base: 15 mil fotos/dia, 7 fotógrafos, 8 h.
+
+| Peça | Volume diário | Limite que importa | Custo |
+|---|---|---|---|
+| **Internet do estádio (subida)** | ~17 GB/dia (1,15 MB por foto, alta + vitrine) | ~5 Mbit/s de média em 8 h; pico de ~15 Mbit/s. **É o gargalo real:** se a subida for menor, a fila do ponto cresce e esvazia depois do expediente | — |
+| S3 | 30 mil PUT/dia; ~1 TB guardado em 60 dias | sem limite prático | ~US$ 23/mês de espaço + ~US$ 5/mês de PUT |
+| Rekognition: leitura das fotos | só fotos de galeria com selfie. Ex.: 30% das sessões com galeria e metade delas com selfie ≈ 2.250 fotos/dia | teto `LimiteLeiturasDia` = 15 mil (um dia inteiro); cota de transações por segundo da conta (conferir no Service Quotas) | ~US$ 2/dia; **no máximo US$ 15/dia** pelo teto |
+| Rekognition: selfies | ~1.500/dia no exemplo | teto `LimiteBuscasDia` = 10 mil | ~US$ 1,50/dia; no máximo US$ 10/dia |
+| Rekognition: rostos guardados | somem no vencimento da galeria | — | centavos |
+| Lambda + API Gateway | algumas dezenas de milhares de chamadas/dia | 50 req/s (pico 100) na API; concorrência da conta | centavos a poucos dólares/mês |
+| DynamoDB | sob demanda | sem limite prático | centavos/mês |
+| CloudFront | downloads | franquia de 1 TB e 10 milhões de requisições/mês | ~zero |
+
+**No exemplo, ~US$ 130/mês; o pior caso pelos tetos fica em ~US$ 780/mês.** O alerta de orçamento avisa antes. O que ainda falta medir é o lado do estádio (subida da internet, disco e CPU do servidor do ponto num dia cheio), que é o objetivo do teste de estanque completo (R2/R3).
 
 ## 8. Como recriar do zero
 ### 8.1 Bucket e usuário do agente (CloudShell, us-east-2)
@@ -219,14 +241,5 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 5. desativar a distribuição do CloudFront e apagar o certificado;
 6. remover os CNAME da GoDaddy.
 
-## 10. Pendências e segurança
-- **Trocar a chave do `eterna-agente-teste`**, exposta numa captura de tela em 29/10.
-- **Trocar a senha do `ftpuser` da 218**, exposta no chat em 28/10, e as senhas dos fotógrafos no FTP do Eterna (menos de 12 caracteres).
-- Na conta 148761667207 (outra conta, configurada no PowerShell do notebook) ficou um usuário `eterna-agente-teste` sem permissão e sem chave, criado por engano: apagar.
-- **Antes de selfie de cliente na AWS:**
-  - conferir o opt-out de treino de IA (v81 D7);
-  - consentimento citando a AWS (v81 D11);
-  - RIPD com o DPO;
-  - até lá, só fotos da equipe.
-- **Produção:** bucket com 60 dias, região (São Paulo exige mudar o plano da conta), `api.eterna.photo`, login real da equipe (v85 H), vendas centrais (G).
-- Compra online: desligada até definir o canal. Por ora o pagamento é só pela maquininha Imply, com o localizador lido do QR do comprovante (12 caracteres, MMDD + 8). A leitura do QR entra depois do v83 do Eduardo.
+## 10. Antes da produção
+As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.

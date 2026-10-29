@@ -18,6 +18,25 @@ Parameters:
   OrigensApp:
     Type: CommaDelimitedList
     Default: "https://eterna.photo,http://127.0.0.1:8765"
+  LimiteLeiturasDia:
+    Type: Number
+    Default: 15000
+    Description: teto de fotos lidas pelo Rekognition por dia (US$ 0,001 cada; 15 mil = um dia inteiro de fotos)
+  LimiteBuscasDia:
+    Type: Number
+    Default: 10000
+    Description: teto de selfies comparadas por dia (US$ 0,001 cada)
+  EmailOrcamento:
+    Type: String
+    Default: ""
+    Description: e-mail que recebe o alerta de orçamento da conta (vazio = sem alerta)
+  OrcamentoMensalUsd:
+    Type: Number
+    Default: 300
+    Description: orçamento mensal da conta em dólar; alerta em 80% do gasto real e em 100% da previsão
+
+Conditions:
+  TemEmail: !Not [!Equals [!Ref EmailOrcamento, ""]]
 
 Globals:
   Function:
@@ -70,6 +89,9 @@ Resources:
           LIMIAR_ADULTO: "85"
           LIMIAR_CRIANCA: "95"
           COLECAO_PREFIXO: et-maracana-
+          LIMITE_FOTOS_GALERIA: "600"
+          LIMITE_LEITURAS_DIA: !Ref LimiteLeiturasDia
+          LIMITE_BUSCAS_DIA: !Ref LimiteBuscasDia
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref Banco}
         - Statement:
@@ -81,11 +103,20 @@ Resources:
               Effect: Allow
               Action: [rekognition:CreateCollection, rekognition:IndexFaces, rekognition:SearchFacesByImage, rekognition:DeleteCollection]
               Resource: !Sub "arn:aws:rekognition:${AWS::Region}:${AWS::AccountId}:collection/et-maracana-*"
+            - Sid: LimpezaDosRostos
+              Effect: Allow
+              Action: [rekognition:ListCollections]
+              Resource: "*"
             - Sid: LeituraEmSegundoPlano
               Effect: Allow
               Action: [lambda:InvokeFunction]
               Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:eterna-galeria"
       Events:
+        Limpeza:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 day)
+            Input: '{"limpeza": true}'
         Codigo:
           Type: HttpApi
           Properties:
@@ -110,6 +141,21 @@ Resources:
             ApiId: !Ref Api
             Path: /ponto/galerias
             Method: POST
+
+  Orcamento:
+    Type: AWS::Budgets::Budget
+    Condition: TemEmail
+    Properties:
+      Budget:
+        BudgetName: eterna-mensal
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: {Amount: !Ref OrcamentoMensalUsd, Unit: USD}
+      NotificationsWithSubscribers:
+        - Notification: {NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: EMAIL, Address: !Ref EmailOrcamento}]
+        - Notification: {NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: EMAIL, Address: !Ref EmailOrcamento}]
 
 Outputs:
   EnderecoApi:
