@@ -61,6 +61,8 @@ Só se **adicionam** registros; nada do site (`@`, `www` do GitHub Pages, MX, TX
 ## 3. Servidor do ponto (agente)
 
 ### 3.1 Variáveis de ambiente novas
+Também podem ficar no arquivo `~/Eterna/nuvem.env` (uma `CHAVE=valor` por linha; só `ETERNA_*`). O Eterna lê esse arquivo ao iniciar, e a variável definida no ambiente vale mais que a do arquivo. Assim a nuvem liga sem mexer nos iniciadores. O `iniciar-eterna.bat` já instala `boto3` e `cryptography`.
+
 
 | Variável | Exemplo | Efeito |
 |---|---|---|
@@ -81,6 +83,7 @@ Só se **adicionam** registros; nada do site (`@`, `www` do GitHub Pages, MX, TX
 |---|---|---|
 | `nuvem.db` | SQLite: tabela `fila` (pid, arquivo, entrou, tentativas, prox, feito, bytes, md5_alta, md5_vitrine, erro) e `galerias` (token, prox, tentativas, feito, erro) | interno |
 | `nuvem-pausa` | se existir, nada sobe (simula queda de internet nos testes) | — |
+| `nuvem.env` | configuração da nuvem (seção 3.1) | interno |
 | `nuvem-segredo.txt` | segredo do ponto para publicar galerias na API (na nuvem fica só o SHA-256) | **sigiloso**, criado com permissão 600 |
 | `cloudfront-privada.pem` | chave privada RSA 2048 que assina os links do CloudFront | **sigiloso**, nunca sai do ponto |
 | `cloudfront-publica.pem` | chave pública (vai para o CloudFront) | público |

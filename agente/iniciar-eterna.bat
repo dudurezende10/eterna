@@ -22,8 +22,8 @@ echo Baixando a versao mais nova do Eterna...
 curl -fsSL -o eterna-agente.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/eterna-agente.py
 curl -fsSL -o teste-carga.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/teste-carga.py
 
-echo Conferindo bibliotecas (OpenCV, numpy, psutil)...
-python -m pip install --quiet --disable-pip-version-check opencv-python-headless numpy psutil
+echo Conferindo bibliotecas (OpenCV, numpy, psutil; boto3 e cryptography para a nuvem)...
+python -m pip install --quiet --disable-pip-version-check opencv-python-headless numpy psutil boto3 cryptography
 
 set ETERNA_REDE=1
 if "%ETERNA_LEITORES%"=="" set ETERNA_LEITORES=4

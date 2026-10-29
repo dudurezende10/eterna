@@ -35,13 +35,28 @@ O objetivo é provar o caminho inteiro com **fotos da equipe**, nunca de cliente
 
 ### Antes de começar
 - Quem aparecer nas fotos precisa ser da equipe e concordar. A selfie vai para a AWS (Rekognition, Estados Unidos).
-- O Eterna ligado na nuvem é o do notebook do Ronaldo (`192.168.10.213`, porta 8765 para o app e porta 21 para o FTP). Está no ar.
-- O seu Eterna não tem a chave da AWS nem o segredo do ponto. Eles **não vão por Git nem por chat**: se quiser rodar no seu, peça ao Ronaldo pessoalmente.
+- O teste roda **no seu Eterna**, com a câmera mandando para ele como sempre.
+
+### Ligar o seu Eterna na nuvem (uma vez)
+O Ronaldo te entrega pessoalmente (pendrive), **nunca por Git, e-mail ou chat**, a pasta `kit-eduardo` com 3 arquivos:
+
+| Arquivo | Para onde vai | O que é |
+|---|---|---|
+| `nuvem.env` | pasta `Eterna` do seu usuário (Windows `C:\Users\<você>\Eterna`, Mac `~/Eterna`) | liga a nuvem: bucket, região, perfil e endereço da API |
+| `nuvem-segredo.txt` | mesma pasta `Eterna` | segredo do ponto, para publicar galerias na API |
+| `credentials` | `C:\Users\<você>\.aws\credentials` (Mac `~/.aws/credentials`); se o arquivo já existir, acrescente o bloco `[eterna-teste]` no fim | a sua chave da AWS, do usuário `eterna-agente-eduardo`, só sua |
+
+Depois:
+1. Feche o Eterna e abra de novo pelo `iniciar-eterna.bat`. Ele baixa a versão nova e instala `boto3` e `cryptography`. No Mac, rode antes `python3 -m pip install boto3 cryptography` e abra pelo `Eterna.command`.
+2. Na tela preta, devem aparecer as linhas `Nuvem: S3 ...` e `Galeria na nuvem: https://...`.
+3. Em `http://127.0.0.1:8765/status`, o bloco `nuvem` deve mostrar `"ligada": true` e, em até 2 minutos, `"s3_ok": true`.
+
+Para desligar a nuvem, apague ou renomeie o `nuvem.env` e reinicie o Eterna.
 
 ### Passo a passo
-1. **Câmera:** configure o FTP da câmera para `192.168.10.213`, porta 21, com o seu usuário de fotógrafo do Eterna (o mesmo da sua pasta de fotógrafo).
+1. **Câmera:** do jeito de sempre, mandando para o seu Eterna.
 2. **Fotos:** tire de 5 a 10 fotos de 1 ou 2 pessoas da equipe, de frente e de perfil. Sem cliente no fundo.
-3. **Chegada:** no app do Eterna (`http://192.168.10.213:8765`), confira se a sessão aparece. Em `/status`, `nuvem.fila` deve voltar a 0 em segundos. Esse é o sinal de que as fotos subiram.
+3. **Chegada:** no seu Eterna, confira se a sessão aparece. Em `/status`, `nuvem.fila` deve voltar a 0 em segundos. Esse é o sinal de que as fotos subiram.
 4. **Venda:** no Checkout, ache a pessoa pela câmera do balcão, escolha 2 fotos e marque como paga. Aparece o QR.
 5. **Celular no 4G, Wi-Fi desligado:** leia o QR. Deve abrir `eterna.photo/#g/...` com o texto de consentimento **citando a AWS**.
 6. **Selfie da pessoa fotografada:** deve liberar a sessão. As 2 compradas baixam em alta; as outras aparecem só na vitrine, com marca d'água. Se aparecer "processando" na primeira vez, tente de novo depois de alguns segundos: é a leitura dos rostos começando.

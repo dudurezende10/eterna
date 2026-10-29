@@ -34,6 +34,23 @@ import urllib.request, urllib.error, mimetypes, re, base64
 
 # imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
 os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", "40000000")
+
+
+def _ler_nuvem_env():
+    """~/Eterna/nuvem.env (CHAVE=valor por linha, # comenta): liga a nuvem sem mexer no iniciador.
+    Só aceita variáveis ETERNA_*; a variável já definida no ambiente vale mais que o arquivo."""
+    try:
+        with open(os.path.join(os.path.expanduser("~/Eterna"), "nuvem.env"), encoding="utf-8-sig") as f:
+            for linha in f:
+                k, _, v = linha.strip().partition("=")
+                k, v = k.strip(), v.strip().strip('"')
+                if k.startswith("ETERNA_") and v and not linha.lstrip().startswith("#"):
+                    os.environ.setdefault(k, v)
+    except FileNotFoundError:
+        pass
+
+
+_ler_nuvem_env()
 MAX_PIXELS = 40_000_000
 PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
 APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
