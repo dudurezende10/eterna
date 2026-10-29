@@ -591,7 +591,8 @@ def uso_eterna():
     return {"banco_rostos_mb": round((tam(ROSTOS_DB) + tam(ROSTOS_DB + "-wal")) / 1e6, 1), "iniciado": state["started"],
             "ftp_incompletas": state["ftp"].get("incompletas", 0) + rftp.get("incompletas", 0), "leitores": rostos.get("leitores"),
             **({"nuvem_fila": nuvem["fila"], "nuvem_enviadas": nuvem["enviadas"], "nuvem_bytes": nuvem["bytes"],
-                "nuvem_erros": nuvem["erros"], "nuvem_pausada": nuvem["pausada"]} if nuvem["ligada"] else {})}
+                "nuvem_erros": nuvem["erros"], "nuvem_pausada": nuvem["pausada"],
+                "nuvem_s3_ok": nuvem.get("s3_ok"), "nuvem_cdn_ok": nuvem.get("cdn_ok")} if nuvem["ligada"] else {})}
 
 
 PROJECAO_MAX = 200_000   # v80 (segurança I4): a medição aloca n × 512 bytes; acima disso a máquina do ponto engasga
@@ -731,6 +732,7 @@ def nuvem_loop():
 
     for _ in range(NUVEM_ENVIADORES):
         threading.Thread(target=enviador, daemon=True).start()
+    threading.Thread(target=nuvem_saude, daemon=True).start()
     while True:
         try:
             pausada = os.path.exists(NUVEM_PAUSA)
@@ -748,11 +750,72 @@ def nuvem_loop():
         time.sleep(1)
 
 
+# CloudFront (fotos.eterna.photo): só entrega com link assinado pela chave privada que fica no ponto.
+# Se o CloudFront cair, o link de reserva vai direto ao S3 (serviço separado): a galeria troca sozinha.
+NUVEM_CDN = os.environ.get("ETERNA_CDN", "")
+NUVEM_CDN_CHAVE_ID = os.environ.get("ETERNA_CDN_CHAVE_ID", "")
+NUVEM_CDN_PEM = os.path.join(HOME, "cloudfront-privada.pem")
+LINK_TTL = 300
+_assina = {}
+
+
+def _s3_cliente():
+    if "c" not in _assina:
+        import boto3
+        from botocore.config import Config
+        # endereço regional: o link assinado pelo endereço global (s3.amazonaws.com) é recusado fora da us-east-1
+        _assina["c"] = boto3.session.Session(profile_name=NUVEM_PERFIL, region_name=NUVEM_REGIAO).client(
+            "s3", endpoint_url="https://s3.%s.amazonaws.com" % NUVEM_REGIAO,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}))
+    return _assina["c"]
+
+
+def _s3_assinado(chave, ttl=LINK_TTL):
+    return _s3_cliente().generate_presigned_url("get_object", Params={"Bucket": NUVEM_BUCKET, "Key": chave}, ExpiresIn=ttl)
+
+
+def _cdn_assinado(chave, ttl=LINK_TTL):
+    if not (NUVEM_CDN and NUVEM_CDN_CHAVE_ID and os.path.exists(NUVEM_CDN_PEM)):
+        return None
+    if "s" not in _assina:
+        from botocore.signers import CloudFrontSigner
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        priv = serialization.load_pem_private_key(open(NUVEM_CDN_PEM, "rb").read(), password=None)
+        _assina["s"] = CloudFrontSigner(NUVEM_CDN_CHAVE_ID, lambda msg: priv.sign(msg, padding.PKCS1v15(), hashes.SHA1()))
+    from datetime import datetime, timedelta, timezone
+    return _assina["s"].generate_presigned_url("https://%s/%s" % (NUVEM_CDN, chave), date_less_than=datetime.now(timezone.utc) + timedelta(seconds=ttl))
+
+
 def nuvem_link(pid, v):
-    """Link temporário (5 min) de uma versão na nuvem: para provar que a foto abre fora do estádio."""
-    import boto3
-    s3 = boto3.session.Session(profile_name=NUVEM_PERFIL, region_name=NUVEM_REGIAO).client("s3")
-    return s3.generate_presigned_url("get_object", Params={"Bucket": NUVEM_BUCKET, "Key": "%s/%s.jpg" % (v, pid)}, ExpiresIn=300)
+    """Link temporário (5 min) de uma versão na nuvem: pelo CloudFront quando ligado, com a reserva direto no S3."""
+    chave = "%s/%s.jpg" % (v, pid)
+    s3 = _s3_assinado(chave)
+    return {"url": _cdn_assinado(chave) or s3, "reserva": s3}
+
+
+def nuvem_saude():
+    """Sentinela: a cada 2 min abre um arquivo de teste pelo S3 e pelo CloudFront. Falhou: aviso no console e no status."""
+    chave = "saude/ok.txt"
+    try:
+        _s3_cliente().put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=b"ok", ContentType="text/plain")
+    except Exception as ex:
+        nuvem["ultimo_erro"] = time.strftime("%H:%M:%S ") + "saúde: " + str(ex)[:120]
+    while True:
+        for nome, url in (("s3", _s3_assinado(chave, 60)), ("cdn", _cdn_assinado(chave, 60))):
+            if not url:
+                continue
+            try:
+                with urllib.request.urlopen(url, timeout=10) as r:
+                    ok = r.read() == b"ok"
+            except Exception:
+                ok = False
+            if not ok and nuvem.get(nome + "_ok") is not False:
+                print(f"nuvem: {nome.upper()} não respondeu às {time.strftime('%H:%M:%S')}" + (" (a galeria usa o S3)" if nome == "cdn" else ""))
+            nuvem[nome + "_ok"] = ok
+            nuvem[nome + "_falhas"] = nuvem.get(nome + "_falhas", 0) + (0 if ok else 1)
+        nuvem["saude_em"] = time.strftime("%H:%M:%S")
+        time.sleep(120)
 
 
 def list_volumes():
@@ -2684,6 +2747,13 @@ class H(BaseHTTPRequestHandler):
                         o["thumb"] = f"/thumb/{e['id']}"
                         o["url"] = f"/file/{e['id']}"
                 return self.js({"events": out, "next": since + len(evs), "total": len(events)})
+        if u.path == "/nuvem/link":              # teste de estanque: link de 5 min para abrir a foto da nuvem no celular
+            if not os.environ.get("ETERNA_TESTE_CARGA") or not nuvem["ligada"]:
+                return self.js({"error": "not found"}, 404)
+            pid, v = q.get("pid", [""])[0], q.get("v", ["vitrine"])[0]
+            if not pid_ok(pid) or v not in ("vitrine", "alta"):
+                return self.js({"error": "pid ou versão inválida"}, 400)
+            return self.js({"pid": pid, "v": v, **nuvem_link(pid, v)})
         if u.path == "/metricas":
             desde = float(q.get("desde", ["0"])[0] or 0)
             with lock:
@@ -2833,13 +2903,6 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/roverpix/sync":
             rover_wake.set()
             return self.js({"ok": True})
-        if u.path == "/nuvem/link":              # teste de estanque: link de 5 min para abrir a foto da nuvem no celular
-            if not os.environ.get("ETERNA_TESTE_CARGA") or not nuvem["ligada"]:
-                return self.js({"error": "not found"}, 404)
-            pid, v = q.get("pid", [""])[0], q.get("v", ["vitrine"])[0]
-            if not pid_ok(pid) or v not in ("vitrine", "alta"):
-                return self.js({"error": "pid ou versão inválida"}, 400)
-            return self.js({"pid": pid, "v": v, "url": nuvem_link(pid, v)})
         if u.path == "/rostos/projecao":
             if not os.environ.get("ETERNA_TESTE_CARGA"):
                 return self.js({"error": "not found"}, 404)

@@ -465,9 +465,13 @@ def relatorio(a):
     for f in rec_todas:
         if tem_sha and f.get("sha") not in sha_env:
             por_nome.setdefault((f.get("quem"), f["nome"]), []).append(f)
-    corrompidas, perdidas = [], []
+    corrompidas, perdidas, ja_tinha = [], [], []
+    dup_nomes = {(f.get("quem"), f["nome"]) for f in met["fotos"] if f.get("dup")}
     for e, f in par_env:
         if f:
+            continue
+        if chave_env(e) in dup_nomes:                      # chegou, mas o Eterna já tinha essa foto (massa reaproveitada): não é perda
+            ja_tinha.append(e)
             continue
         estragada = next((x for x in por_nome.get(chave_env(e), []) if x["chegada"] >= e["inicio"] - 5), None)
         (corrompidas if estragada else perdidas).append(e)
@@ -765,6 +769,7 @@ def relatorio(a):
         ("Perdidas (enviadas e não estão no Eterna)", str(len(perdidas))),
         ("Corrompidas ou pela metade", str(len(corrompidas)) if tem_sha else "–"),
         ("Recebidas em dobro (descartadas como repetidas)", str(n_dup)),
+        ("Já estavam no Eterna antes do teste (não contam como recebidas nem perdidas)", str(len(ja_tinha))),
         ("Envios que precisaram de nova tentativa", str(reenvios)),
         ("Quedas simuladas no meio do envio / recusadas pelo Eterna", f"{quedas_sim} / {incompletas}"),
         (f"Envios desistidos (falharam por mais de {fmt(par.get('reenvio_min'), 0)} min)", str(len(err))),
@@ -886,12 +891,16 @@ def nuvem_links(a):
     links = []
     for f in escolha:
         for v in ("vitrine", "alta"):
-            links.append((f["pid"], v, get_json(f"{a.agente}/nuvem/link?pid={f['pid']}&v={v}")["url"]))
+            r = get_json(f"{a.agente}/nuvem/link?pid={f['pid']}&v={v}")
+            links.append((f["pid"], v, r["url"], r.get("reserva") or r["url"]))
     qr = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vendor", "qrcode", "qrcode.min.js"), encoding="utf8").read()
-    itens = "".join(f"<div class='q'><div id='q{i}'></div><p>{esc(pid)} · {v}<br><a href='{esc(u)}'>abrir</a></p></div>" for i, (pid, v, u) in enumerate(links))
-    js = "".join(f"new QRCode(document.getElementById('q{i}'),{{text:{json.dumps(u)},width:220,height:220}});" for i, (_, _, u) in enumerate(links))
+    # a miniatura tenta o CloudFront e, se falhar, troca sozinha para o S3 (o mesmo plano B da galeria)
+    itens = "".join(f"<div class='q'><div id='q{i}'></div><img src='{esc(u)}' onerror=\"this.onerror=null;this.src=this.dataset.r;this.nextElementSibling.textContent+=' · veio pela reserva (S3)'\" data-r='{esc(r)}'>"
+                    f"<p>{esc(pid)} · {v}{' · CloudFront' if u != r else ' · S3'}<br><a href='{esc(u)}'>abrir</a> · <a href='{esc(r)}'>reserva</a></p></div>"
+                    for i, (pid, v, u, r) in enumerate(links))
+    js = "".join(f"new QRCode(document.getElementById('q{i}'),{{text:{json.dumps(u)},width:220,height:220}});" for i, (_, _, u, _) in enumerate(links))
     html = (f"<!doctype html><meta charset='utf-8'><title>Fotos na nuvem</title><style>body{{font:15px Arial;margin:24px}}"
-            f".g{{display:flex;flex-wrap:wrap;gap:24px}}.q p{{margin:6px 0 0;font-size:13px}}</style>"
+            f".g{{display:flex;flex-wrap:wrap;gap:24px}}.q p{{margin:6px 0 0;font-size:13px}}.q img{{display:block;width:220px;margin-top:8px;border-radius:6px}}</style>"
             f"<h1>Fotos na nuvem: leia no celular, no 4G</h1><p>Links válidos por 5 minutos a partir de {datetime.now():%H:%M}. "
             f"A alta é a foto digital entregue ao cliente (3000 px); a vitrine é a de escolher (900 px, com marca).</p>"
             f"<div class='g'>{itens}</div><script>{qr}</script><script>{js}</script>")
