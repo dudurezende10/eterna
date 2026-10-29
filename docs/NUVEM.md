@@ -196,6 +196,8 @@ Estimativa com preços públicos da us-east-2; conferir na calculadora da AWS. B
 | DynamoDB | sob demanda | sem limite prático | centavos/mês |
 | CloudFront | downloads | franquia de 1 TB e 10 milhões de requisições/mês | ~zero |
 
+**Plano da conta (29/10):** plano gratuito da AWS, com crédito de US$ 140 e prazo até 29/04/2027. Quando o crédito acaba, o acesso aos serviços é cortado. Na homologação os tetos ficam baixos (1.000 leituras e 1.000 selfies por dia, no máximo ~US$ 2/dia de Rekognition; orçamento de US$ 50). **Antes da produção é obrigatório passar a conta para o plano pago**, senão a galeria na nuvem para quando o crédito acabar.
+
 **No exemplo, ~US$ 130/mês; o pior caso pelos tetos fica em ~US$ 780/mês.** O alerta de orçamento avisa antes. O que ainda falta medir é o lado do estádio (subida da internet, disco e CPU do servidor do ponto num dia cheio), que é o objetivo do teste de estanque completo (R2/R3).
 
 ## 8. Como recriar do zero
