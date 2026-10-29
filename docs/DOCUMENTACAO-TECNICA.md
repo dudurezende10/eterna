@@ -1340,3 +1340,6 @@ Testes: `testes/v82.js`.
 - Baixar os 30 PNG para `img/` antes de produção, para funcionar offline (hoje dependem da Wikimedia).
 - Usar `esc(r.f[7])` na miniatura da foto enviada.
 - Escudos de clubes são logos de uso restrito: só uso interno, como referência, nunca em produto vendido.
+
+## Nuvem: fotos online, galeria do cliente e teste de estanque (plano v85, 29/10/2026)
+Documento próprio: [NUVEM.md](NUVEM.md) (recursos da AWS, variáveis do agente, API da galeria, DNS, custos, como recriar e como apagar).
