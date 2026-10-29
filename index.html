@@ -2618,8 +2618,13 @@ async function selfieStart(){const sf=state.guest.selfie;if(!sf||sf.stream||sf.e
   catch(e){sf.err=e&&e.name==='NotAllowedError'?'A câmera foi bloqueada. Libere o acesso no navegador ou escolha uma foto do aparelho.':'Nenhuma câmera encontrada. Escolha uma foto do aparelho.';render();}}
 function selfieMount(){const sf=state.guest.selfie;if(!(state.pub&&state.pub.modo==='agente'))faceIndexAll();const v=$('#gself-video');if(!sf||!v)return;if(!sf.stream){selfieStart();return;}
   if(v.srcObject!==sf.stream){v.srcObject=sf.stream;v.onloadeddata=()=>{if(!sf.ready){sf.ready=true;const b=$('[data-act="gself-snap"],[data-act="gq-snap"]');if(b)b.disabled=false;}};v.play().catch(()=>{});}
-  if(sf.ready){const b=$('[data-act="gself-snap"],[data-act="gq-snap"]');if(b)b.disabled=false;}}
-function selfieStop(){const sf=state.guest.selfie;if(sf&&sf.stream)sf.stream.getTracks().forEach(t=>t.stop());state.guest.selfie=null;}
+  if(sf.ready){const b=$('[data-act="gself-snap"],[data-act="gq-snap"]');if(b)b.disabled=false;}
+  // celular: tira a selfie sozinho quando vê um rosto de frente por 2 leituras seguidas (o botão continua como reserva)
+  if(sf.ready&&state.pub&&!sf.autoT&&!sf.done)sf.autoT=setInterval(async()=>{if(sf.busy||sf.done||state.guest.selfie!==sf)return;sf.busy=true;
+    try{const v=$('#gself-video');if(!v||!v.videoWidth)return;const c=mkc(480,480*v.videoHeight/v.videoWidth);c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+      const fs=(await ynDetect(c,.75)).filter(b=>b.w>=Math.max(FACE_MIN,c.width*.2));sf.hits=fs.length===1?(sf.hits||0)+1:0;
+      if(sf.hits>=2){sf.done=true;clearInterval(sf.autoT);const b=$('[data-act="gq-snap"]');if(b&&!b.disabled)b.click();}}catch(e){}finally{sf.busy=false;}},600);}
+function selfieStop(){const sf=state.guest.selfie;if(sf&&sf.autoT)clearInterval(sf.autoT);if(sf&&sf.stream)sf.stream.getTracks().forEach(t=>t.stop());state.guest.selfie=null;}
 // ---------- Qualidade ----------
 const TAGS=['Luz','Enquadramento','Pose','Expressão','Foco','Fundo','Horizonte','Grupo cortado'];
 // sessões para revisão: a amostra importada + as sessões reais montadas neste computador
