@@ -981,7 +981,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v84 · 29/10 18:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v84</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v86 · 29/10 20:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v86</span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1780,7 +1780,7 @@ function vVendasLista(){
 // ---------- Loja: rosto → escolha → carrinho → pagamento (substitui Checkout, Fila, Caixa e Quiosque) ----------
 // O convidado não lê nada: só símbolos (✗ não, ♥ favorita, ✓ quero). As duas primeiras fotos do campo (corpo inteiro e
 // mais fechada) entram no meio da sequência já montadas em 3 fundos de IA cada, escolhidos entre os até 5 fundos da loja.
-const BG_GROUP={campeao2:'campeao',campeaoarg:'campeao',campeaocol:'campeao'};const BG_MAX=5;const BG_DEF=['campeao','mirante','arq1950','tunel'];
+const BG_GROUP={campeao2:'campeao',campeaoarg:'campeao',campeaocol:'campeao'};const BG_MAX=5;const BG_DEF=['campeao','mirante','arq1950','tunel','podio']; // v86: Pódio de campeão aprovado direto (regra 14)
 function bgOpts(){const seen=new Set();const out=[];DATA.backgrounds.filter(bgAtivo).forEach(b=>{const g=BG_GROUP[b.id]||b.id;if(seen.has(g))return;seen.add(g);out.push({id:g,name:g==='campeao'?'Noite de campeão':b.name,b:g==='campeao'?bgOf('campeao2'):b,variants:g==='campeao'?DATA.backgrounds.filter(x=>BG_GROUP[x.id]==='campeao'&&bgAtivo(x)).length:1});});return out;}
 function bgOn(){const ok=new Set(bgOpts().map(o=>o.id));const src=SIM.bgOn||BG_DEF;const l=src.filter(id=>ok.has(id)).slice(0,BG_MAX);return l.length||!src.length?l:BG_DEF.filter(id=>ok.has(id));} // v81: escolha salva só com fundos ocultos volta ao padrão
 function bgFor(opt,card){if(opt!=='campeao')return bgOf(opt);const f=String((SIM.sessions[card]||{}).flag||'').toLowerCase();const v=bgOf(/argentin/.test(f)?'campeaoarg':/col[oô]mbia/.test(f)?'campeaocol':'campeao2');return v&&bgAtivo(v)?v:bgOf('campeao2');} // v81: variação oculta cai na Noite de campeão
@@ -2428,7 +2428,8 @@ const AI_MIN=70;
 // Enquadramento não reprova: decide em quais fundos a foto entra. Corpo inteiro abre mais fundos; foto fechada também vale.
 const FRAMING={inteiro:'Corpo inteiro',meio:'Meio corpo',close:'Fechada'};
 // v81 (Eduardo, 28/10): só 4 fundos visíveis (Noite de campeão sem a taça, Mirante ao pôr do sol, Arquibancada 1950 em P&B, Saída do túnel); os outros ficam com inativo:true, sem apagar.
-// pos é do caminho do Photoroom (bgPad). v84: a montagem local segue FIA_REGRAS (docs/fundos-ia-regras.md); fit decide em quais fundos a foto entra, e corpo inteiro vira do joelho para cima no Campeão, no Mirante e no Túnel.
+// v86 (Eduardo, 29/10): 5º fundo aprovado direto, Pódio de campeão (regra 14: grupo no pódio, à esquerda da taça do fundo, sem cobri-la).
+// pos é do caminho do Photoroom (bgPad). v84: a montagem local segue FIA_REGRAS (docs/fundos-ia-regras.md); fit decide em quais fundos a foto entra, e corpo inteiro vira do joelho para cima no Campeão, no Mirante, no Túnel e no Pódio.
 // Os 10 fundos limpos (sem pessoas). v83: fileHi = o mesmo fundo em 5000 px, só para a impressão 10×15 (a prévia usa o de 2400 px). Cada um tem ângulo de câmera, luz, direção da luz e enquadramentos aceitos.
 // A IA lê o ângulo e a luz da foto do campo e casa com o fundo que combina.
 DATA.backgrounds=[
@@ -2442,6 +2443,7 @@ DATA.backgrounds=[
  {id:'alto1950',name:'Maracanã 1950 do alto',file:'img/bg-alto1950.jpg',note:'Preto e branco, vista do anel superior',ang:'alto',luz:'sol',dir:'difusa',mono:'pb',fit:['inteiro','meio'],inativo:true,pos:{cx:.5,top:.38,base:.98}},
  {id:'escanteio1950',name:'Escanteio 1950',file:'img/bg-escanteio1950.jpg',note:'Preto e branco, bandeirinha de escanteio',ang:'olho',luz:'sol',dir:'difusa',mono:'pb',fit:['inteiro','meio'],inativo:true,pos:{cx:.64,top:.3,base:.95}},
  {id:'tunel',name:'Saída do túnel',file:'img/bg-tunel.jpg',fileHi:'img/fundos-5k/tunel.jpg',note:'Saída do túnel para o gramado, faixa Born to Score no alto · até 75% da altura; corpo inteiro vira do joelho para cima (regra 11)',ang:'olho',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.5,top:.25,base:1}}, // regra 11 (28/10 22:41): centralizado, encostado embaixo, até 75% da altura (faixa livre); v84: corpo inteiro vira do joelho para cima
+ {id:'podio',name:'Pódio de campeão',file:'img/bg-podio.jpg',fileHi:'img/fundos-5k/podio.jpg',note:'Estádio lotado, confete e faíscas, pódio dourado no centro e taça à direita · o grupo fica no pódio, à esquerda da taça, sem cobri-la; corpo inteiro vira do joelho para cima (regra 14)',ang:'baixo',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.45,top:.2,base:1,larg:.62}}, // regra 14 (29/10): aprovado direto; pos.larg: no Photoroom o grupo também não passa de 0,76 da largura
  {id:'asadelta',name:'Voo de asa-delta',file:'img/bg-asadelta.jpg',note:'Precisa de montagem generativa (só a cabeça, corpo no arnês); fora do automático até ter essa ferramenta',ang:'olho',luz:'sol',dir:'esquerda',mono:false,fit:[],inativo:true,pos:{box:[.35,.3,.3,.42]}}];
 const ANG_N={olho:'altura dos olhos',alto:'de cima',baixo:'rente ao chão'},LUZ_N={sol:'dia de sol',nublado:'luz difusa',fim:'fim de tarde',noite:'noite, refletores',interna:'luz interna'},DIR_N={esquerda:'vem da esquerda',direita:'vem da direita',frontal:'frontal',difusa:'difusa'};
 function bgOf(id){return DATA.backgrounds.find(b=>b.id===id)||null;}
@@ -2576,7 +2578,8 @@ async function faceMeasureLocal(){await facePre();faceIndexAll();await FACEQ;con
   return {fotos:ph.length,rostos:q,certo,errado,duvida,nada,acerto:q?certo/(certo+errado||1):0};}
 // Montagem feita pelo Photoroom, pelo agente do ponto (a chave fica só no Mac). O Eterna só pede, guarda e mostra.
 function bgPad(b,W,H){const p=b.pos;if(p.box){const [x,y,w,h]=p.box;return {top:y*H,bottom:(1-y-h)*H,left:x*W,right:(1-x-w)*W};}
-  const wa=Math.min(p.cx,1-p.cx)*2*W*.95;const left=p.cx*W-wa/2;return {top:p.top*H,bottom:(1-p.base)*H,left,right:W-left-wa};}
+  const wa=Math.min(Math.min(p.cx,1-p.cx)*2*.95,p.larg||1)*W; // v86: larg = teto da largura (Pódio: não invade a taça)
+  const left=p.cx*W-wa/2;return {top:p.top*H,bottom:(1-p.base)*H,left,right:W-left-wa};}
 async function composePR(photoId,bgId){const key='pr|'+photoId+'|'+bgId;if(COMP[key])return COMP[key];
   const job=(async()=>{const bg=bgOf(bgId);const plate=await plateImg(bgId);if(!plate||!bg)return {err:'fundo não encontrado'};
     const pr=state.pr;if(!pr)return {pending:'agente'};if(!pr.configured)return {pending:'photoroom'};
@@ -2604,7 +2607,8 @@ const FIA_REGRAS={
   mirante:{meio:{corte:1,alt:.80,larg:.92,cx:.45},inteiro:{corte:.62,alt:.80,larg:.92,cx:.45}},              // regra 5
   arq1950:{mono:{contraste:1.10},meio:{corte:.72,alt:.85,larg:1,cx:.5},inteiro:{corte:.60,alt:.78,larg:.92,cx:.5},
     largo:{corte:.55,alt:.85,larg:1.05,cx:.5,zoom:.8}},                                                      // regras 6, 7 e 10
-  tunel:{meio:{corte:1,alt:.75,larg:.92,cx:.5},inteiro:{corte:.62,alt:.75,larg:.92,cx:.5}}};                 // regra 11
+  tunel:{meio:{corte:1,alt:.75,larg:.92,cx:.5},inteiro:{corte:.62,alt:.75,larg:.92,cx:.5}},                  // regra 11
+  podio:{meio:{corte:1,alt:.80,larg:.62,cx:.45},inteiro:{corte:.62,alt:.80,larg:.62,cx:.45}}};               // regra 14: borda direita do grupo até 0,76 (a taça do fundo fica em 0,80 a 0,94)
 const FIA_PADRAO={meio:{corte:1,alt:.80,larg:.92,cx:.5},inteiro:{corte:.62,alt:.80,larg:.92,cx:.5}};       // fundos do Laboratório
 const fundosModo=()=>SIM.fundosModo==='photoroom'?'photoroom':'local';
 // recorte da pessoa pelo agente; guarda até 8 na memória (o PNG tem a resolução original)
@@ -3240,9 +3244,9 @@ function vChroma(){prPoll();
       <div class="tablewrap"><table><thead><tr><th>Critério</th><th>O que a IA olha</th><th class="num">Peso</th></tr></thead><tbody>${AI_CRIT.map(([k,n,d],i)=>`<tr><td class="name">${esc(n)}</td><td class="note">${esc(d)}</td><td class="num">${Math.round(AI_W[k]*100)}%</td></tr>`).join('')}</tbody></table></div>
       <div class="note">Na amostra: ${ok.length} de ${ss.length} sessões (${pct(ok.length,ss.length)}) têm foto apta. Por fotógrafo: ${Object.entries(byK).map(([k,[a,b]])=>`${esc(P[k].name)} ${pct(a,b)}`).join(' · ')}. Fotógrafo com taxa baixa está cortando gente na lateral ou entregando foto sem foco.</div>
       <div class="eyebrow" style="margin-top:6px">Leitura de cada fundo: ângulo, luz e enquadramento</div><div class="tablewrap"><table><thead><tr><th>Fundo</th><th>Câmera</th><th>Luz</th><th>Direção</th><th>Cor</th><th>Enquadramentos</th></tr></thead><tbody>${aiBgs().map(b=>`<tr><td class="name">${esc(b.name)}</td><td>${ANG_N[b.ang]}</td><td>${LUZ_N[b.luz]}</td><td>${DIR_N[b.dir]}</td><td>${b.mono==='sepia'?'sépia':b.mono?'preto e branco':'cor'}</td><td class="note">${b.fit.map(f=>FRAMING[f].toLowerCase()).join(', ')||'—'}</td></tr>`).join('')}</tbody></table></div></div>`;})()}
-  <div class="panel"><div class="head"><h2>No Checkout: até 5 fundos</h2><span class="pill ${bgOn().length===BG_MAX?'good':'neutral'}">${bgOn().length} de ${BG_MAX}</span></div><div class="note">Só estes aparecem para o convidado, no Checkout e na galeria. No Checkout, as duas primeiras fotos do campo (corpo inteiro e mais fechada) entram já montadas nos 3 que mais combinam com cada uma. Desde 28/10 só quatro fundos aprovados ficam disponíveis; a Noite de campeão sai sem a taça.</div>
+  <div class="panel"><div class="head"><h2>No Checkout: até 5 fundos</h2><span class="pill ${bgOn().length===BG_MAX?'good':'neutral'}">${bgOn().length} de ${BG_MAX}</span></div><div class="note">Só estes aparecem para o convidado, no Checkout e na galeria. No Checkout, as duas primeiras fotos do campo (corpo inteiro e mais fechada) entram já montadas nos 3 que mais combinam com cada uma. Desde 29/10 cinco fundos aprovados ficam disponíveis (o Pódio de campeão entrou); a Noite de campeão sai sem a taça.</div>
     <div class="bgs">${bgOpts().map(o=>{const on=bgOn().includes(o.id);return `<button class="bg" data-act="bg-on" data-id="${o.id}" aria-pressed="${on}" style="${on?'outline:3px solid var(--good);outline-offset:-3px':'opacity:.6'}"><img src="${o.b.file}" alt="${esc(o.name)}"><span class="n"><span>${on?'✓ ':''}${esc(o.name)}${o.variants>1?' · '+o.variants+' versões':''}</span><span class="note">${on?'no Checkout · toque para tirar':'fora · toque para pôr'}</span></span></button>`;}).join('')}</div></div>
-  <div class="panel"><h2>Fundos</h2><div class="note">Decisão de 28/10: só quatro fundos aprovados ficam visíveis (Noite de campeão, Mirante ao pôr do sol, Arquibancada 1950, esta em preto e branco, e Saída do túnel). Os outros estão em Laboratório › Fundos em teste, para uso futuro.</div>
+  <div class="panel"><h2>Fundos</h2><div class="note">Decisões de 28 e 29/10: só cinco fundos aprovados ficam visíveis (Noite de campeão, Mirante ao pôr do sol, Arquibancada 1950, esta em preto e branco, Saída do túnel e Pódio de campeão). Os outros estão em Laboratório › Fundos em teste, para uso futuro.</div>
     <div class="bgs">${aiBgs().map(b=>`<div class="bg bglab"><button class="bgz" data-act="zoom-img" data-src="${b.file}" data-cap="${esc(b.name)}"><img src="${b.file}" alt="${esc(b.name)}"></button><span class="n"><span>${esc(b.name)}${byBg[b.id]?` · <b>${byBg[b.id]} vendida${byBg[b.id]>1?'s':''}</b>`:''}</span><span class="note">${esc(b.note)}</span>${can('configuracao','u')?`<button class="chip" data-act="bg-lab" data-id="${b.id}">Mover para o Laboratório</button>`:''}</span></div>`).join('')}</div></div>
   ${old.length?`<div class="panel"><h2>Histórico do Chroma (até 26/10)</h2><div class="note">${old.map(c=>`${esc(c.name)}: ${fmtN(c.cards)} sessões, ${pct(c.cardsSold,c.cards)} vendem, ${fmtR(c.revenue)}`).join(' · ')}. Fica nos totais do período; não entra mais na operação.</div></div>`:''}`;
 }
@@ -4526,6 +4530,12 @@ window.addEventListener('hashchange',()=>{const wasLoja=state.lojaRota;
 // v78: o Anfitrião no set saiu; sessão que ficou aberta nele vai para a fila (nada se perde)
 dinVirada(); // v79: pendência de dinheiro de ontem vira não paga
 flagMigraV81();flagMigraV82();
+// v86: o Pódio de campeão entra sozinho para quem já tinha a escolha de fundos salva (4 fundos), uma vez só; se tirarem depois, não volta.
+// Marca no SIM (bgPodioV86) e numa chave própria (eterna.bgpodio.v), para um SIM antigo gravado por outra janela não refazer.
+function bgMigraPodio(){let v=null;try{v=localStorage.getItem('eterna.bgpodio.v');}catch(e){}if(SIM.bgPodioV86||v==='86')return false;
+  SIM.bgPodioV86=true;let add=false;if(Array.isArray(SIM.bgOn)&&!SIM.bgOn.includes('podio')&&SIM.bgOn.length<BG_MAX){SIM.bgOn=SIM.bgOn.concat('podio');add=true;}
+  try{localStorage.setItem('eterna.bgpodio.v','86')}catch(e){}saveSim();return add;}
+bgMigraPodio();
 // v79: catálogo novo do Tour (28/10). Maracanã, Zona Mista, Arquibancada e Foto adicional mudaram de definição ou de nome: preço editado antes não vale mais (uma vez só)
 // a versão do catálogo fica numa chave própria (eterna.catalogo.v): um SIM antigo gravado por outra janela não refaz a migração
 SIM.catalogoV=2;{let cv=null;try{cv=localStorage.getItem('eterna.catalogo.v');}catch(e){}
@@ -4567,7 +4577,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV};
+window.ETERNA={ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV};
 })();
 </script>
 

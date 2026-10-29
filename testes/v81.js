@@ -1,4 +1,4 @@
-// v81: (1) imagens das bandeiras corrigidas e migração da lista salva; (2) só os 4 fundos de IA aprovados; (3) Abrir Checkout em janela à parte, admin continua logado
+// v81: (1) imagens das bandeiras corrigidas e migração da lista salva; (2) só os fundos de IA aprovados (4 na v81, 5 com o Pódio da v86); (3) Abrir Checkout em janela à parte, admin continua logado
 const {chromium}=require('playwright');const fs=require('fs');const path=require('path');const login=require('./_login.js');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
@@ -12,6 +12,12 @@ async function A8(pg){
   const ad=await pg.evaluate(()=>{const c=[...document.querySelectorAll('#main .bglab')].find(x=>/Voo de asa-delta/.test(x.innerText));return c?{btn:!!c.querySelector('[data-act="bg-ativar"]'),txt:/precisa de montagem especial/.test(c.innerText)}:null;});
   ok(ad&&!ad.btn&&ad.txt,'8: asa-delta (sem enquadramento) sem Ativar e com aviso: '+J(ad));
   ok(await pg.evaluate(()=>ETERNA.bgOf('campeao2').luz==='sol'&&ETERNA.state&&true),'6: campeao2 com luz de dia');
+  // v86: com os 5 no Checkout, Ativar não passa do limite; com uma vaga, entra
+  await pg.click('[data-act="bg-ativar"][data-id="imprensa"]');await pg.waitForTimeout(200);
+  const t5=await pg.evaluate(()=>({on:ETERNA.bgOn(),opts:ETERNA.bgOpts().map(o=>o.id)}));
+  ok(t5.on.length===5&&!t5.on.includes('imprensa')&&t5.opts.includes('imprensa'),'8: Ativar com 5 no Checkout passou do limite: '+J(t5));
+  await pg.click('[data-act="bg-lab"][data-id="imprensa"]');await pg.waitForTimeout(200);
+  await pg.evaluate(()=>{ETERNA.SIM.bgOn=['campeao','mirante','arq1950','tunel'];localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));localStorage.removeItem('eterna.users.log.v1');ETERNA.render();});
   await pg.click('[data-act="bg-ativar"][data-id="imprensa"]');await pg.waitForTimeout(200);
   const t1=await pg.evaluate(()=>({on:ETERNA.bgOn(),opts:ETERNA.bgOpts().map(o=>o.id),sim:ETERNA.SIM.bgAtivo,log:ETERNA.auditRead().filter(e=>e.acao==='fundo_ativado'&&e.alvo==='fundo:imprensa').length}));
   ok(t1.opts.includes('imprensa')&&t1.on.includes('imprensa')&&t1.sim.imprensa===true&&t1.log===1,'8: Ativar deveria pôr no Checkout e no histórico: '+J(t1));
@@ -63,14 +69,14 @@ try{
     const r=await pg.evaluate(()=>{const S=ETERNA.SIM;delete S.bgOn;const at=ETERNA.BGS.filter(b=>!b.inativo);
       return {ativos:at.map(b=>b.id),nomes:at.map(b=>b.name),files:at.map(b=>b.file),opts:ETERNA.bgOpts().map(o=>o.name),on:ETERNA.bgOn(),ai:ETERNA.aiBgs().map(b=>b.id),total:ETERNA.BGS.length,
         pb:ETERNA.bgOf('arq1950').mono,camp:ETERNA.bgOf('campeao2').fit,mir:ETERNA.bgOf('mirante').pos.cx,tun:ETERNA.bgOf('tunel').pos,tunFit:ETERNA.bgOf('tunel').fit,tunMono:ETERNA.bgOf('tunel').mono,arg:ETERNA.bgFor('campeao','x').id};});
-    ok(J(r.ativos.sort())===J(['arq1950','campeao2','mirante','tunel']),'2: ativos deveriam ser 4: '+J(r.ativos));ok(r.total>=12,'2: fundos apagados em vez de ocultos');
-    ok(J(r.opts.sort())===J(['Arquibancada 1950','Mirante ao pôr do sol','Noite de campeão','Saída do túnel']),'2: bgOpts: '+J(r.opts));ok(r.ai.length===4&&r.on.length===4,'2: aiBgs/bgOn: '+J([r.ai,r.on]));
-    ok(r.files.every(f=>/bg-(campeao-v81|mirantesol|pb1950|tunel)\.jpg$/.test(f)),'2: arquivos novos: '+J(r.files));ok(r.pb==='pb','2: 1950 em preto e branco');ok(r.camp.includes('inteiro'),'2 (v84): Campeão aceita corpo inteiro, que vira do joelho para cima (regra 9)');ok(r.mir===.45,'2: Mirante centro 45%');ok(r.tun.cx===.5&&r.tun.top>=.25&&r.tun.base===1&&r.tunFit.includes('inteiro')&&r.tunMono===false,'2: túnel: '+J([r.tun,r.tunFit]));
+    ok(J(r.ativos.sort())===J(['arq1950','campeao2','mirante','podio','tunel']),'2: ativos deveriam ser 5 (v86: Pódio): '+J(r.ativos));ok(r.total>=12,'2: fundos apagados em vez de ocultos');
+    ok(J(r.opts.sort())===J(['Arquibancada 1950','Mirante ao pôr do sol','Noite de campeão','Pódio de campeão','Saída do túnel']),'2: bgOpts: '+J(r.opts));ok(r.ai.length===5&&r.on.length===5,'2: aiBgs/bgOn: '+J([r.ai,r.on]));
+    ok(r.files.length===5&&r.files.every(f=>/bg-(campeao-v81|mirantesol|pb1950|tunel|podio)\.jpg$/.test(f)),'2: arquivos novos: '+J(r.files));ok(r.pb==='pb','2: 1950 em preto e branco');ok(r.camp.includes('inteiro'),'2 (v84): Campeão aceita corpo inteiro, que vira do joelho para cima (regra 9)');ok(r.mir===.45,'2: Mirante centro 45%');ok(r.tun.cx===.5&&r.tun.top>=.25&&r.tun.base===1&&r.tunFit.includes('inteiro')&&r.tunMono===false,'2: túnel: '+J([r.tun,r.tunFit]));
     ok(r.arg==='campeao2','2: variação Argentina oculta cai na Noite de campeão: '+r.arg);
-    for(const f of ['bg-campeao-v81.jpg','bg-mirantesol.jpg','bg-pb1950.jpg','bg-tunel.jpg']){const x=await pg.evaluate(async f=>{const im=new Image();im.src='img/'+f;await im.decode().catch(()=>{});return Math.max(im.naturalWidth,im.naturalHeight);},f);ok(x===2400,'2: '+f+' deveria ter 2400 px: '+x);}
+    for(const f of ['bg-campeao-v81.jpg','bg-mirantesol.jpg','bg-pb1950.jpg','bg-tunel.jpg','bg-podio.jpg']){const x=await pg.evaluate(async f=>{const im=new Image();im.src='img/'+f;await im.decode().catch(()=>{});return Math.max(im.naturalWidth,im.naturalHeight);},f);ok(x===2400,'2: '+f+' deveria ter 2400 px: '+x);}
     await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(300);
     const t=await pg.evaluate(()=>({n:document.querySelectorAll('#main .bgs .bg').length,txt:document.querySelector('#main').innerText,rows:document.querySelectorAll('#main table tbody tr').length}));
-    ok(!/Sala de imprensa|Maracanã à noite|Gramado 1950|Terraço|Colômbia|Argentina/.test(t.txt),'2: tela Fundos de IA mostra fundo oculto');ok(/Mirante ao pôr do sol/.test(t.txt)&&/Arquibancada 1950/.test(t.txt)&&/Saída do túnel/.test(t.txt),'2: tela Fundos de IA sem os aprovados');
+    ok(!/Sala de imprensa|Maracanã à noite|Gramado 1950|Terraço|Colômbia|Argentina/.test(t.txt),'2: tela Fundos de IA mostra fundo oculto');ok(/Mirante ao pôr do sol/.test(t.txt)&&/Arquibancada 1950/.test(t.txt)&&/Saída do túnel/.test(t.txt)&&/Pódio de campeão/.test(t.txt),'2: tela Fundos de IA sem os aprovados');
     // ---------- 8. Fundos em teste (Laboratório): inativo não vai ao Checkout; Ativar põe; Mover tira ----------
     await A8(pg);
     await ctx.close();}
@@ -119,4 +125,4 @@ try{
     await c2.close();}
 }catch(e){fails.push('erro: '+e.message.split('\n')[0]);}
 await b.close();const fe=errs.filter(e=>!ignora(e));const okk=!fails.length&&!fe.length;
-console.log(`${okk?'OK':'FALHA'} v81: bandeiras, 4 fundos de IA, Checkout em janela à parte${fails.length?' · '+fails.slice(0,10).join(' | '):''}${fe.length?' · erros: '+fe.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();
+console.log(`${okk?'OK':'FALHA'} v81: bandeiras, 5 fundos de IA (v86: Pódio), Checkout em janela à parte${fails.length?' · '+fails.slice(0,10).join(' | '):''}${fe.length?' · erros: '+fe.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();
