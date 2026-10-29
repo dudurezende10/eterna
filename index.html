@@ -1345,7 +1345,7 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
   let fotos;if(re){if(im.estado!=='impressa'){toast('Reimpressão só depois da primeira impressão');render();return;}const feitas=im.feitas||[];fotos=impFotos(s).todas.filter(x=>feitas.includes(x.k)&&re.sel.includes(x.k)).slice(0,impReMax(s));}
   else{if(im.estado!=='pendente'){toast('Esta venda já foi impressa');state.impSel[card]=null;render();return;}fotos=impSel(card,s).sel;}
   if(!fotos.length){toast('Marque as fotos para imprimir');return;}
-  const job={card,fase:'montando',re:re?{motivo:re.motivo}:null,fotos:fotos.map(x=>x.k),at:Date.now()};state.impJob=job;render();
+  const job={card,fase:'montando',re:re?{motivo:re.motivo}:null,fotos:fotos.map(x=>x.k),at:Date.now(),t0:performance.now()};state.impJob=job;render();
   const r=await printMontar(fotos,SIM.edits);if(state.impJob!==job)return;job.res=r;
   if(!r.ok.length){job.fase='erro';document.body.classList.remove('pr-on');toast('Nenhuma foto ficou pronta para imprimir. Tente de novo.');render();return;}
   if(state.agent&&state.agent.on&&state.agent.impressora){ // servidor com impressora (ETERNA_IMPRESSORA): a foto sai lá, não na impressora de quem clicou
@@ -1354,7 +1354,7 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
       tM=performance.now();
       const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,imagens:imgs})})).json();
       if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';const tF=performance.now();
-      toast(`Enviado para ${rr.impressora}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.at)/1000).toFixed(1)} s (montar ${((tM-job.at)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
+      toast(`Enviado para ${rr.impressora}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.t0)/1000).toFixed(1)} s (montar ${((tM-job.t0)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
     document.getElementById('print-root')?.remove();render();return;}
   document.body.classList.add('pr-on');job.fase='imprimindo';
