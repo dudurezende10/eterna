@@ -32,6 +32,14 @@ Para: Eduardo. De: Ronaldo (TI Maracatour). 29/10/2026, 17:35.
 - A galeria junta os direitos de todas as vendas da sessão. Comprada nunca regride, e a nuvem já faz isso.
 - As listas de vendas, o caixa, o estoque do rolo e o relatório contam por venda, não por sessão.
 
+## Achado 2b · O cliente que volta não vê o QR de novo
+Com a sessão paga, a selfie no Checkout mostra só "Estas fotos já foram compradas. Fale com a equipe" (`ljAlreadyPaid`).
+- **Paliativo já no código (29/10):** o recibo do Caixa ganhou o botão **"Mostrar ao cliente"**. Ele manda pelo canal `eterna-loja` (BroadcastChannel) a mensagem `mostrar-qr` com token, código e total, e a janela do Checkout aberta naquele computador mostra a tela "Pronto" com o QR.
+- **Pedido:** quando a selfie achar uma sessão paga, o próprio Checkout mostra o QR e o código da galeria, junto com a opção de comprar mais (achado 2).
+
+## Achado 2c · Texto do "Aguardando pagamento"
+Depois de "Recebi o pagamento", a caixa continua dizendo "Nenhum pagamento esperando. Quando o cliente escolher…". Está certo, porque a fila esvaziou, mas confunde quem acabou de receber. **Pedido:** esconder a caixa quando estiver vazia, ou trocar por "Tudo recebido".
+
 ## Achado 3 · A impressão sai na impressora da máquina onde a venda é fechada
 **O que aconteceu:** a venda foi fechada no notebook do Ronaldo, e a janela de impressão mostrou as impressoras dele (Canon), não a DNP ligada no 218.
 
@@ -40,6 +48,17 @@ Esse é o comportamento esperado do `window.print()`. Fica registrado porque mex
 - **218 como posto de impressão:** o Checkout precisa abrir no Chrome do 218, com `--kiosk-printing`, a DNP como padrão e papel 10×15 sem borda. A outra saída seria compartilhar a DNP na rede, mas a porta 445 do 218 está fechada hoje e a impressão térmica compartilhada costuma travar.
 
 A prévia também mostrou cabeçalho e rodapé do Chrome (data e endereço) e a foto em preto e branco. O `@page foto{size:102mm 152mm;margin:0}` já existe. Cabeçalho, rodapé e cor são opções do Chrome e da impressora: no posto, desmarcar "Cabeçalhos e rodapés" uma vez antes de ligar o `--kiosk-printing`, que repete as últimas opções, e deixar a DNP em cores.
+
+**Resolvido no mesmo dia:** com `ETERNA_IMPRESSORA=DS-RX1` no Eterna do 218, o botão Imprimir de qualquer posto manda as fotos montadas para `POST /imprimir` e o 218 imprime na DNP dele (commit `7f7e997`). A janela de impressão do Chrome só aparece quando o servidor não tem impressora.
+
+## Achado 4 · Pela rede, o Eterna recusava a busca de rosto
+Aberto por `http://192.168.10.218:8765`, o Eterna recusava `/rostos/buscar` (só aceitava o próprio computador), e o Checkout dizia "não achamos". **Resolvido:** `ETERNA_ORIGENS` (commit `de480eb`).
+
+## Achado 5 · Sem câmera, o Checkout sorteava uma sessão
+Num endereço `http://` da rede o Chrome bloqueia a câmera, e o Checkout caía na simulação e mostrava uma sessão qualquer. **Resolvido:** com o Eterna ligado não sorteia mais (commit `43d63de`). A câmera em todos os postos depende de HTTPS no servidor definitivo.
+
+## Achado 6 · Mac na rede sem enxergar o servidor
+O Mac do Eduardo (192.168.10.84) não alcança o 218, e o notebook do Ronaldo também não alcança o Mac. É isolamento de clientes no Wi-Fi. A rede dos postos no estádio não pode ter isolamento.
 
 ## Próximo passo do teste
 O teste continua com o Eterna **rodando no 218**: ele vigia a pasta do FTP da Microsoft (`iniciar-eterna.bat "<pasta do FTP>"`), o Checkout fica aberto no Chrome do 218 e a impressão vai para a DNP. O notebook do Ronaldo parou de buscar fotos no 218 às 17:30.
