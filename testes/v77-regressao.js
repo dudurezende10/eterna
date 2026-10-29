@@ -29,6 +29,12 @@ const lerManifesto=(home,t)=>JSON.parse(fs.readFileSync(path.join(home,'Eterna',
 async function esperarEnvio(home,t){for(let i=0;i<80;i++){try{const m=lerManifesto(home,t);if(m.envio&&m.envio.vitrine==='ok'&&m.envio.compradas==='ok')return m;}catch(e){}await sleep(250);}return null;}
 const threads=pid=>{try{return +(/Threads:\s+(\d+)/.exec(fs.readFileSync('/proc/'+pid+'/status','utf8'))[1]);}catch(e){return -1;}};
 async function nova(ctx,nome,vp){const pg=await ctx.newPage();if(vp)await pg.setViewportSize(vp);pg.on('pageerror',e=>errs.push(nome+': '+e.message));pg.on('console',m=>{if(m.type()==='error'&&!ignora(m.text()))errs.push(nome+': '+m.text())});return pg;}
+// v83: cartão e PIX ficam aguardando; o vendedor confirma "Pago na maquininha" numa outra janela do mesmo navegador (logada só na memória)
+async function maquininha(pg){const ctx=pg.context();const base=pg.url().split('#')[0];let V=ctx.__vend;
+  if(!V||V.isClosed()){V=await nova(ctx,'vendedor',{width:1280,height:900});await login(V,base);await V.evaluate(()=>localStorage.removeItem('eterna.session'));ctx.__vend=V;}
+  const id=await pg.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id)return;
+  await V.evaluate(id=>{ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();return ETERNA.pendConfirmar(id,{ref:''});},id);
+  for(let i=0;i<30;i++){if(await pg.evaluate(()=>!!document.querySelector('#lqr canvas,#lqr img')))break;await sleep(100);}await sleep(600);} // a galeria é publicada logo depois da confirmação
 async function login(pg,U){await pg.goto(U);await pg.waitForTimeout(500);if(await pg.evaluate(()=>!!ETERNA.state.user))return;await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(200);
   const c=(await pg.textContent('.otp')).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(500);}
 // chaves de I18N que aparecem cruas no DOM (só as com cara de chave: camelCase ou com _)
@@ -241,7 +247,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     await pg.goto(UA+'#loja');await pg.waitForTimeout(800);const lj=await pg.evaluate(()=>({rota:ETERNA.state.lojaRota,step:ETERNA.state.kiosk.step}));ok(lj.rota&&lj.step==='code','com agente: #loja deveria abrir a câmera da Loja: '+JSON.stringify(lj));
     const card=await pg.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=8&&(ETERNA.SIM.sessions[s.card]||{}).status!=='paga')[0].card);
     await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(800);for(const a of ['kiosk-ok','kiosk-ok','kiosk-no','kiosk-ok'])await pg.click(`[data-act="${a}"]`);
-    await pg.click('.lj-next');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.click('[data-act="loja-checkout"]');await pg.waitForTimeout(600);
+    await pg.click('.lj-next');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.click('[data-act="loja-checkout"]');await pg.waitForTimeout(600);await maquininha(pg);
     const dn=await pg.evaluate(()=>({step:ETERNA.state.kiosk.step,qr:!!document.querySelector('#lqr canvas,#lqr img'),title:(document.querySelector('#lqr')||{}).title,fila:(ETERNA.SIM.galFila||[]).filter(x=>{const m=ETERNA.SIM.galerias[x.token];return m&&!m.fotos.every(f=>/^ag_/.test(f.id));}).map(x=>x.estado)}));
     ok(dn.step==='done'&&dn.qr&&/^https:\/\/eterna\.photo\/#g\/[A-Za-z0-9_-]{22}$/.test(dn.title||''),'com agente: compra na Loja deveria terminar com o QR da galeria: '+JSON.stringify(dn));
     ok(dn.fila.length&&dn.fila.every(e=>e==='local'),'com agente: sessão de exemplo (sprites) deveria ficar local na fila (D14): '+JSON.stringify(dn.fila));
@@ -266,7 +272,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
         if(await L.evaluate(()=>ETERNA.state.kiosk.step)!=='review'){fails.push(`Checkout ${w}px ${l}: código ${card} não abriu as fotos`);continue;}
         await L.click('[data-act="kiosk-ok"]');await L.click('[data-act="kiosk-ok"]');await L.click('[data-act="kiosk-no"]');await etapa('fotos');
         await L.click('.lj-next');await L.waitForTimeout(250);await L.click('[data-act="loja-paym"][data-m="pix"]');await etapa('pagamento');
-        await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);const fim=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,qr:!!document.querySelector('#lqr canvas,#lqr img'),cod:(document.querySelector('.lj-qrcode')||{}).textContent||''}));
+        await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);await maquininha(L);const fim=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,qr:!!document.querySelector('#lqr canvas,#lqr img'),cod:(document.querySelector('.lj-qrcode')||{}).textContent||''}));
         ok(fim.step==='done'&&fim.qr&&/[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}/.test(fim.cod),`Checkout ${w}px ${l}: tela final sem QR ou código `+JSON.stringify(fim));await etapa('pronto');
         await L.click('.lj-restart');}}
     await L.close();}
@@ -279,7 +285,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     ok(!caiu.length,'Reload: telas que caíram na Loja, perderam o login ou quebraram: '+caiu.join(' | '));
     // compra na Loja (SIM) para ter recibo: depois Recibo na Lista de vendas abre o Checkout com o QR da galeria
     const L=await nova(ctx,'loja2',{width:1280,height:900});await L.goto(U+'#loja');await L.waitForTimeout(500);const card=await L.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=6&&(ETERNA.SIM.sessions[s.card]||{}).status!=='paga')[0].card);
-    await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(700);for(const a of ['kiosk-ok','kiosk-ok','kiosk-ok'])await L.click(`[data-act="${a}"]`);await L.click('.lj-next');await L.waitForTimeout(250);await L.click('[data-act="loja-paym"][data-m="pix"]');await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);
+    await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(700);for(const a of ['kiosk-ok','kiosk-ok','kiosk-ok'])await L.click(`[data-act="${a}"]`);await L.click('.lj-next');await L.waitForTimeout(250);await L.click('[data-act="loja-paym"][data-m="pix"]');await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);await maquininha(L);
     const tokL=await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.token);await L.close();
     await A1.reload();await A1.waitForTimeout(400);await A1.evaluate(()=>{ETERNA.state.range={from:'2026-01-01',to:'2099-12-31'};ETERNA.state.sales.canal='all';ETERNA.state.view='vendas-lista';ETERNA.render();});
     await A1.click(`[data-act="sales-receipt"][data-card="${card}"]`);await A1.waitForTimeout(500);
@@ -291,7 +297,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     ok(/Vendedor: Checkout \(autoatendimento\)/.test(rc.txt),'(b): recibo da venda da Loja deveria ter "Vendedor: Checkout (autoatendimento)": '+(rc.txt.match(/Vendedor:.*/)||[''])[0]);
     {const sv=await A1.evaluate(c=>ETERNA.SIM.sessions[c].seller,card);ok(sv==='Checkout (autoatendimento)','(b): SIM.sessions.seller da venda da Loja: '+sv);}
     {const row=await A1.evaluate(c=>{ETERNA.state.range={from:'2026-01-01',to:'2099-12-31'};ETERNA.state.sales.q=c;ETERNA.state.sales.canal='all';ETERNA.state.view='vendas-lista';ETERNA.render();const r=[...document.querySelectorAll('#main tbody tr')].map(t=>t.innerText.replace(/\s+/g,' '));ETERNA.state.sales.q='';ETERNA.state.view='checkout';ETERNA.render();return r;},card);
-      ok(row.some(r=>/^E\d+ /.test(r)&&r.includes('Checkout (autoatendimento)')),'(b): Lista de vendas deveria mostrar o vendedor da Loja: '+JSON.stringify(row));}
+      ok(row.some(r=>/^(E|L0-)\d+ /.test(r)&&r.includes('Checkout (autoatendimento)')),'(b): Lista de vendas deveria mostrar o vendedor da Loja: '+JSON.stringify(row));}
     await A1.reload();await A1.waitForTimeout(450);ok(await A1.evaluate(()=>!ETERNA.state.lojaRota&&location.hash!=='#loja'&&ETERNA.state.view==='checkout'),'R1: reload depois do Recibo caiu na Loja ou saiu do Checkout');
     // Caixa: recibo da sessão paga com QR
     await A1.evaluate(c=>{ETERNA.state.caixa.session=c;ETERNA.state.view='caixa';ETERNA.render();},card);await A1.waitForTimeout(300);const cx=await A1.evaluate(()=>{const q=document.querySelector('#qrbox');return {qr:!!(q&&q.querySelector('canvas,img')),title:q&&q.title};});
@@ -309,7 +315,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     const depois=await receita();const linha=await A1.evaluate(()=>{ETERNA.state.sales.canal='online';ETERNA.render();return 1;}).then(()=>A1.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(t=>t.innerText.replace(/\s+/g,' ')).find(t=>/O901/.test(t))));await A1.evaluate(()=>{ETERNA.state.sales.canal='all';ETERNA.render();});
     ok(antes.rec&&antes.rec===depois.rec&&antes.vendas===depois.vendas&&linha&&/teste/.test(linha)&&/Online/.test(linha),'S3: venda online de teste deveria aparecer como teste e ficar fora da receita: '+JSON.stringify({antes,depois,linha:String(linha)}));
     const [dl]=await Promise.all([A1.waitForEvent('download'),A1.click('[data-act="sales-csv"]')]);const csv=fs.readFileSync(await dl.path(),'utf8').split('\n');
-    ok(/;"?canal"?;"?caixa"?;"?caixa_em"?$/.test(csv[0].trim())&&csv.some(l=>/"O901".*"teste";"online"/.test(l))&&csv.some(l=>/"loja";"[^"]*";"[^"]*"\s*$/.test(l)),'CSV: colunas canal, caixa e caixa_em (v79) e venda de teste: '+csv[0]+' / '+(csv.find(l=>/O901/.test(l))||'sem O901'));
+    ok(/;"?canal"?;"?caixa"?;"?caixa_em"?;"?posto"?;"?pagamento_ref"?;"?impressao"?$/.test(csv[0].trim())&&csv.some(l=>/"O901".*"teste";"online"/.test(l))&&csv.some(l=>/"loja";"[^"]*";"[^"]*";"[^"]*";"[^"]*";"[^"]*"\s*$/.test(l)),'CSV: colunas canal, caixa e caixa_em (v79) e venda de teste: '+csv[0]+' / '+(csv.find(l=>/O901/.test(l))||'sem O901'));
     await A1.screenshot({path:PR+'/v77-lista-vendas.png'});
     // Catálogo › Checkout: campo novo, limites 5 a 120
     await A1.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});const vals=[];

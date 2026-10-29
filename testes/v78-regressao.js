@@ -19,7 +19,7 @@ const J=JSON.stringify;
 const PERFIS={
   'eduardo@eduardorezende.com':{n:'admin',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
   'carlos@eterna.photo':{n:'fotografo',g:[['Fotógrafo',['diario','importar','escala']]],ini:'importar',ck:false},
-  'loja@eterna.photo':{n:'atendimento',g:[['Configurações',['catalogo']]],ini:'perfis',ck:true},
+  'loja@eterna.photo':{n:'atendimento',g:[['Configurações',['catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
   'supervisor@eterna.photo':{n:'supervisor',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
   'qualidade@eterna.photo':{n:'validador',g:[['Curadoria',['revisao','treino']],['Fotógrafo',['diario']]],ini:'revisao',ck:false},
 };
@@ -64,7 +64,7 @@ try{
     await ctx.close();}
   // ---------- C. links antigos ----------
   {const {ctx,pg}=await nova(b);
-    const casos=[['eduardo@eduardorezende.com','set','importar'],['eduardo@eduardorezende.com','fluxo','painel'],['eduardo@eduardorezende.com','convidado','painel'],['carlos@eterna.photo','convidado','importar'],['carlos@eterna.photo','fluxo','importar'],['loja@eterna.photo','set','perfis']];
+    const casos=[['eduardo@eduardorezende.com','set','importar'],['eduardo@eduardorezende.com','fluxo','painel'],['eduardo@eduardorezende.com','convidado','painel'],['carlos@eterna.photo','convidado','importar'],['carlos@eterna.photo','fluxo','importar'],['loja@eterna.photo','set','posto']];
     for(const [email,h,esp] of casos){await pg.goto(U);await pg.waitForTimeout(200);await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto('about:blank');await pg.goto(U+'#'+h);await pg.waitForTimeout(300);
       await codigo(pg,email);const r=await pg.evaluate(()=>({v:ETERNA.state.view,h:location.hash,f:/Algo falhou/.test(document.querySelector('#main').textContent)}));
       ok(r.v===esp&&!r.f&&r.h==='#'+esp,`C: sem login, #${h} e entrar como ${email} deveria cair em ${esp}: ${J(r)}`);}

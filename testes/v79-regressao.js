@@ -37,6 +37,9 @@ async function carrinho(pg){return pg.evaluate(()=>{const q=s=>[...document.quer
     extras:Object.fromEntries(q('.lj-pkg').map(b=>[b.dataset.id,T(b.querySelector('.lj-pkgx'))])),sum:q('.lj-sumrow').map(T),total:T(document.querySelector('.lj-total b')),
     save:T(document.querySelector('.lj-save')),incl:T(document.querySelector('.lj-incl')),fine:q('.lj-order .lj-fine').map(T),btn:T(document.querySelector('.lj-paybtn')),
     sw:document.documentElement.scrollWidth<=innerWidth+1,raw:/\b(sumPkg|sumExtra|roomFor|pkgPlusExtra|payBtnCash|cashNote|ljCash|ljStaff)/.test(document.body.innerText)};});}
+// v83: cartão e PIX ficam aguardando; o vendedor confirma "Pago na maquininha" na outra janela (Caixa)
+async function maquininha(A,B){await sleep(500);const id=await A.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);await B.waitForSelector(`[data-act="pend-pos"][data-id="${id}"]`,{timeout:3000}).catch(()=>null);
+  await B.click(`[data-act="pend-pos"][data-id="${id}"]`);await B.click(`[data-act="pend-pos-ok"][data-id="${id}"]`);await B.waitForTimeout(400);}
 async function pagar(pg,m){await pg.click(`[data-act="loja-paym"][data-m="${m}"]`);await pg.waitForTimeout(120);await pg.click('[data-act="loja-checkout"]');await pg.waitForTimeout(500);}
 
 (async()=>{const b=await chromium.launch();
@@ -66,7 +69,7 @@ try{
   const B=await pagina(ctx,'B caixa');ok(await login(B,'loja@eterna.photo'),'1.6: Atendimento não entrou');
   const rail0=await B.evaluate(()=>!!document.querySelector('#rail-ck [data-act="view"][data-v="caixa"]'));ok(rail0,'1.6: barra sem o botão Caixa para o Atendimento');
   await B.click('#rail-ck [data-v="caixa"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='caixa','1.6: botão Caixa não abriu o Caixa');
-  ok(/Nenhum pagamento em dinheiro esperando/.test(await txt(B,'#main')),'1.6: Caixa vazio deveria dizer "Nenhum pagamento em dinheiro esperando."');
+  ok(/Nenhum pagamento esperando/.test(await txt(B,'#main')),'1.6: Caixa vazio deveria dizer "Nenhum pagamento esperando." (v83)');
 
   // ---- 4.1 a 4.5: caso do print (4 do campo + 4 com fundo de IA)
   fase='4.1';
@@ -109,7 +112,7 @@ try{
   // ---- 1.1: Dinheiro mostra o botão e a nota; Cartão e PIX seguem iguais
   fase='1.1';
   await A.click('[data-act="loja-paym"][data-m="pix"]');await A.waitForTimeout(80);c=await carrinho(A);ok(/^Pagar R\$ 190/.test(c.btn)&&!c.fine.some(x=>/confirmada no caixa/.test(x)),'1.1: botão do PIX: '+c.btn);
-  ok(c.fine.some(x=>/impressas ficam prontas em 2 minutos/.test(x)),'rev 12: com impressas e PIX aparece o aviso das impressas: '+J(c.fine));
+  ok(c.fine.some(x=>/Pagamento seguro na maquininha do atendente/.test(x)),'rev 12 (v83, sem prometer tempo): com impressas e PIX aparece o aviso da maquininha: '+J(c.fine));
   ok(await A.evaluate(()=>document.querySelector('.lj-total b').textContent.includes('R$\u00a0')),'rev 12: fmtR com espaço fixo');
   await A.click('[data-act="loja-paym"][data-m="cash"]');await A.waitForTimeout(80);c=await carrinho(A);
   ok(!c.fine.some(x=>/2 minutos/.test(x)),'rev 12: em Dinheiro não aparece "impressas prontas em 2 minutos": '+J(c.fine));
@@ -122,16 +125,16 @@ try{
   await A.click('[data-act="loja-checkout"]');await A.waitForTimeout(500);
   const fim=await A.evaluate(()=>({step:ETERNA.state.kiosk.step,pend:!!document.querySelector('.lj-pendbig'),okbig:!!document.querySelector('.lj-okbig'),h1:document.querySelector('.lj-h1').innerText.replace(/\s+/g,' ').toLowerCase(),t:document.querySelector('#main').innerText.replace(/\s+/g,' '),cod:(document.querySelector('.lj-qrcode')||{}).innerText||'',qr:!!document.querySelector('#lqr')}));
   ok(fim.step==='done'&&fim.pend&&!fim.okbig,'1.2: tela final do dinheiro com ícone próprio e sem o check: '+J(fim));
-  ok(fim.h1==='pague no caixa em dinheiro'&&/pague R\$ 190/.test(fim.t)&&/8 impressas/.test(fim.t)&&/^Código [A-Z2-9]{4}-[A-Z2-9]{4}$/.test(fim.cod)&&fim.qr,'1.2: título, valor, código e QR: '+J(fim));
+  ok(fim.h1==='pague no caixa em dinheiro'&&/pague R\$ 190/.test(fim.t)&&/8 impressas/.test(fim.t)&&/^Código [A-Z2-9]{4}-[A-Z2-9]{4}$/.test(fim.cod)&&!fim.qr,'1.2 (v83: sem QR enquanto espera): título, valor e código: '+J(fim));
   ok(!/Obrigado|2 minutos/.test(fim.t),'1.2: não pode aparecer Obrigado nem "2 minutos" no dinheiro');
   await A.screenshot({path:`${P}/v79-dinheiro-pt.png`});
   for(const l of ['en','es','fr','de']){await A.click(`[data-act="lang"][data-l="${l}"]`);await A.waitForTimeout(80);const t=await txt(A,'#main');ok(!/ljCash|gq_codeIs|payBtnCash/.test(t)&&/190/.test(t),`1.2: tela do dinheiro em ${l}: ${t.slice(0,120)}`);if(l==='de')await A.screenshot({path:`${P}/v79-dinheiro-de.png`});}
-  ok(await A.evaluate(()=>!!document.querySelector('#lqr')&&document.querySelector('#lqr').children.length>0),'1.2: trocar de idioma não pode apagar o QR');
+  ok(await A.evaluate(()=>!document.querySelector('#lqr')&&/[A-Z2-9]{4}-[A-Z2-9]{4}/.test((document.querySelector('.lj-qrcode')||{}).innerText||'')),'1.2: trocar de idioma mantém o código (sem QR enquanto espera)');
   const depois=await sim(A);const r1=depois.caixaDin[0];const s1=depois.sessions[C1];
   ok(s1.status==='aguardando'&&s1.din===r1.id&&r1.estado==='aguardando'&&r1.card===C1&&r1.total===190&&r1.prints===8&&r1.n===8,'1.4: sessão aguardando e registro: '+J({st:s1.status,r1}));
   ok(depois.stock['Caixa 1']===antes.stock['Caixa 1'],'1.4: estoque não pode mudar antes da confirmação');
   ok(J((depois.ai||{})[C1]||null)===ai0||!((depois.ai||{})[C1]||{bought:[]}).bought.length,'1.4: aiOf().bought não pode mudar');
-  ok(!s1.saleNo&&!(depois.galFila||[]).some(x=>x.token===r1.token),'1.4: sem saleNo e sem galeria na fila de envio');
+  ok(!s1.saleNo&&/^L0-\d{3}$/.test(r1.saleNo||'')&&!(depois.galFila||[]).some(x=>x.token===r1.token),'1.4: sessão sem saleNo (v83: o número fica na pendência) e sem galeria na fila de envio');
   ok(!/@/.test(J(r1).replace(/"por":null/,'')),'D8: registro sem e-mail antes de fechar');
   const cod1=r1.codigo,tok1=r1.token;
 
@@ -148,8 +151,10 @@ try{
 
   // ---- 1.3: a tela final do dinheiro volta sozinha (tempo configurado)
   fase='1.3';
-  await A.evaluate(()=>{ETERNA.SIM.lojaFimSeg=5;ETERNA.state.kiosk.doneAt=Date.now()-1000;});await sleep(4800);
-  ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: tela final do dinheiro deveria voltar à câmera em 5 s');
+  // v83 (D5): enquanto espera o pagamento não há contagem; a tela fica até o vendedor confirmar ou o cliente tocar em Voltar ao início
+  await A.evaluate(()=>{ETERNA.SIM.lojaFimSeg=5;});await sleep(5600);
+  ok(await A.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.timer),'1.3: tela do dinheiro aguardando não pode voltar sozinha');
+  await A.click('[data-act="loja-new"]');await A.waitForTimeout(150);ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: Voltar ao início');
 
   // ---- 1.5: galeria no mesmo computador
   fase='1.5';
@@ -163,7 +168,7 @@ try{
   await B.click(`[data-act="din-confirm"][data-id="${r1.id}"]`);await B.waitForTimeout(400);
   const d7=await sim(B);const s7=d7.sessions[C1];const r7=d7.caixaDin.find(x=>x.id===r1.id);
   ok(s7.status==='paga'&&s7.payment==='Dinheiro'&&s7.saleNo&&s7.caixaPor==='Atendimento e venda'&&Math.abs(Date.parse(s7.paidAt)-Date.now())<10000&&s7.prints===8,'1.7: sessão paga em Dinheiro: '+J(s7));
-  ok(d7.stock['Caixa 1']===est0-8,`1.7: estoque deveria baixar 8 (de ${est0} para ${d7.stock['Caixa 1']})`);
+  ok(d7.stock['Caixa 1']===est0&&d7.sessions[C1].impressao&&d7.sessions[C1].impressao.estado==='pendente',`1.7 (v83): confirmar não baixa o rolo; a venda fica para imprimir (${est0} → ${d7.stock['Caixa 1']})`);
   ok(r7.estado==='confirmada'&&r7.porNome==='Atendimento e venda'&&r7.por==='loja@eterna.photo'&&r7.saleNo===s7.saleNo,'1.7: registro confirmado: '+J(r7));
   const gal7=d7.galerias[tok1];ok((d7.galFila||[]).some(x=>x.token===tok1),'1.7: galeria publicada (fila)');
   ok(J(gal7.fotos.filter(f=>f.direito==='comprada').map(f=>f.id).sort())===J(s7.selected.slice().sort()),'1.7: compradas = selected');
@@ -232,15 +237,17 @@ try{
   fase='1.13';
   await lojaSessao(A,C4,3,1);await pagar(A,'cash');const r13=(await sim(A)).caixaDin[0];
   await lojaSessao(A,C4,3,1);await pagar(A,'pix');await sleep(500);
+  const x13a=(await sim(B)).caixaDin.find(x=>x.id===r13.id);ok(x13a.estado==='substituida'&&x13a.motivo==='novo_pedido','1.13 (v83): o PIX vira pedido novo e substitui a pendência do dinheiro: '+J(x13a));
+  await maquininha(A,B);
   const d13=await sim(B);const x13=d13.caixaDin.find(x=>x.id===r13.id);
-  ok(x13.estado==='substituida'&&x13.motivo==='pago_de_outro_jeito'&&d13.sessions[C4].status==='paga'&&d13.sessions[C4].payment==='PIX','1.13: PIX deveria substituir a pendência: '+J(x13));
+  ok(x13.estado==='substituida'&&d13.sessions[C4].status==='paga'&&d13.sessions[C4].payment==='PIX (maquininha)','1.13: PIX confirmado na maquininha: '+J({x13,st:d13.sessions[C4].status,pay:d13.sessions[C4].payment}));
   ok(!(await B.evaluate(id=>!!document.querySelector(`[data-act="din-confirm"][data-id="${id}"]`),r13.id)),'1.13: substituída não pode ficar no Caixa');
   ok(d13.sessions[C4].prints===1,'4.8 (regra a, catálogo novo): 3 do campo + 1 de IA = Zona Mista (só digital) + 1 adicional impressa: '+d13.sessions[C4].prints);
 
   // ---- 4.8: PIX no caso do print baixa 8 impressas
   fase='4.8';
-  const e48=(await sim(A)).stock['Caixa 1'];await lojaSessao(A,C5,4,4);await pagar(A,'pix');const d48=await sim(A);
-  ok(d48.stock['Caixa 1']===e48-8&&d48.sessions[C5].prints===8&&d48.sessions[C5].status==='paga','4.8: PIX do caso do print: '+J({de:e48,para:d48.stock['Caixa 1'],p:d48.sessions[C5].prints}));
+  const e48=(await sim(A)).stock['Caixa 1'];await lojaSessao(A,C5,4,4);await pagar(A,'pix');await maquininha(A,B);const d48=await sim(A);
+  ok(d48.stock['Caixa 1']===e48&&d48.sessions[C5].impressao.estado==='pendente'&&d48.sessions[C5].impressao.alvo===8&&d48.sessions[C5].prints===8&&d48.sessions[C5].status==='paga','4.8: PIX do caso do print: '+J({de:e48,para:d48.stock['Caixa 1'],p:d48.sessions[C5].prints}));
   ok(await A.evaluate(()=>!ETERNA.lojaEquipeOn()),'3.5: #loja sem login não tem modo equipe');
   // ---- revisor 1: sessão paga (PIX) reaberta no Checkout não paga de novo, nem em Dinheiro
   fase='rev1';
@@ -249,7 +256,7 @@ try{
   ok(r1v.m==='Estas fotos já foram compradas. Fale com a equipe para comprar mais.'&&!r1v.pay,'rev 1: sessão paga reaberta: '+J(r1v));
   await A.click('[data-act="lang"][data-l="de"]');await A.waitForTimeout(80);ok(/schon gekauft/i.test(await txt(A,'.lj-paidmsg')||''),'rev 1: mensagem em alemão');await A.click('[data-act="lang"][data-l="pt"]');
   await A.evaluate(()=>{ETERNA.state.kiosk.pay='cash';const b=document.createElement('button');b.dataset.act='loja-checkout';b.id='forca1';document.body.appendChild(b);b.click();b.remove();});await A.waitForTimeout(200);
-  const depoisPago=await sim(A);ok(depoisPago.sessions[C5].status==='paga'&&depoisPago.sessions[C5].saleNo===pago.saleNo&&depoisPago.caixaDin[0].card!==C5,'rev 1: Dinheiro numa sessão paga não pode desfazer a venda: '+J({st:depoisPago.sessions[C5].status}));
+  const depoisPago=await sim(A);ok(depoisPago.sessions[C5].status==='paga'&&depoisPago.sessions[C5].saleNo===pago.saleNo&&!depoisPago.caixaDin.some(x=>x.card===C5&&x.estado==='aguardando'),'rev 1: Dinheiro numa sessão paga não pode desfazer a venda: '+J({st:depoisPago.sessions[C5].status}));
   await A.evaluate(()=>{ETERNA.state.kiosk.step='code';ETERNA.render();});
 
   // ---- 1.10 e 1.11: Lista de vendas, CSV e Alertas (admin, outra janela do mesmo navegador)
@@ -283,7 +290,7 @@ try{
   const Ln=await D.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(r=>r.innerText.replace(/\s+/g,' ')));ok(Ln.some(r=>r.includes(r9.id))&&Ln.every(r=>/não paga/.test(r)),'1.10: filtro Não pagas: '+J(Ln));
   await D.click('[data-act="sales-status"][data-v="all"]');await D.waitForTimeout(100);await D.screenshot({path:`${P}/v79-lista-vendas.png`});
   const csv=await D.evaluate(()=>ETERNA.salesCSV(ETERNA.allSales()));const lin=csv.split('\n');
-  ok(lin[0].endsWith(';caixa;caixa_em'),'1.10: CSV sem as colunas caixa e caixa_em: '+lin[0]);
+  ok(lin[0].includes(';caixa;caixa_em;')&&lin[0].endsWith(';posto;pagamento_ref;impressao'),'1.10: CSV sem as colunas caixa e caixa_em: '+lin[0]);
   ok(lin.some(l=>l.includes(r10.id)&&l.includes('"aguardando"'))&&lin.some(l=>l.includes(r9.id)&&l.includes('"nao_paga"')),'1.10: CSV com aguardando e nao_paga');
   const lC1=lin.find(l=>l.includes(`"${C1}"`)&&l.includes('"paga"'));ok(lC1&&lC1.includes('"Atendimento e venda"')&&!/@/.test(lC1),'1.10: CSV com o nome de quem recebeu, nunca o e-mail: '+lC1);
   ok(!/loja@eterna\.photo/.test(csv),'D8: e-mail do operador no CSV');

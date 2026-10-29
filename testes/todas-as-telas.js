@@ -10,6 +10,7 @@ const gq=await pp.evaluate(()=>({step:ETERNA.pub&&ETERNA.pub.step,h:location.has
 if(!vs.includes('galerias'))bad.push('menu sem galerias');
 // v78: Permissões no menu; Fluxo, Anfitrião no set, Convidado e o Checkout (Loja) fora do menu; telas sem item (Início, balcão, fila, caixa) abrem sem erro
 if(!vs.includes('permissoes'))bad.push('menu sem permissoes');['set','fluxo','convidado','quiosque','perfis'].forEach(v=>{if(vs.includes(v))bad.push('menu com '+v);});
-for(const v of ['perfis','checkout','fila','caixa']){await pg.evaluate(v=>{ETERNA.state.view=v;ETERNA.render();},v);await pg.waitForTimeout(120);if(/Algo falhou/.test(await pg.textContent('#main')))bad.push(v);}
+for(const v of ['perfis','checkout','fila','caixa','posto']){ // v83: Posto de venda (sem item no menu, aberto pelo Abrir Checkout)
+await pg.evaluate(v=>{ETERNA.state.view=v;ETERNA.render();},v);await pg.waitForTimeout(120);if(/Algo falhou/.test(await pg.textContent('#main')))bad.push(v);}
 if(!(await pg.$('#rail-ck [data-act="loja-abrir"]')))bad.push('sem botão Abrir Checkout');
 await b.close();const ok=!bad.length&&!errs.length;console.log(`${ok?'OK':'FALHA'} todas-as-telas: ${vs.length} telas${bad.length?' · quebradas: '+bad.join(', '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(ok?0:1);})();

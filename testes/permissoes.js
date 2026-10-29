@@ -62,7 +62,7 @@ try{
     await pg.click('[data-act="perm-discard"]');await pg.waitForTimeout(100);
     // 19 consistência
     const r19=await pg.evaluate(async()=>{const E=ETERNA;const bad=[];const W=E.WRITE_OPS;
-      E.MODULES.forEach(([m,,vs])=>{const I=E.MODULE_INFO[m];if(!I||!I.desc)bad.push('sem MODULE_INFO '+m);vs.forEach(v=>{if(!E.VIEWS.find(x=>x[0]===v)&&!['checkout','fila','caixa'].includes(v))bad.push('tela sem VIEWS '+v);});});
+      E.MODULES.forEach(([m,,vs])=>{const I=E.MODULE_INFO[m];if(!I||!I.desc)bad.push('sem MODULE_INFO '+m);vs.forEach(v=>{if(!E.VIEWS.find(x=>x[0]===v)&&!['checkout','fila','caixa','posto'].includes(v))bad.push('tela sem VIEWS '+v);});});
       E.VIEWS.forEach(([v])=>{if(v!=='perfis'&&!E.MODULE_OF[v])bad.push('tela sem módulo '+v);});
       for(const [m,,vs] of E.MODULES){for(const v of vs){if(v==='quiosque')continue;E.state.view=v;E.render();await new Promise(r=>setTimeout(r,60));
         const acts=new Set([...document.querySelectorAll('#main [data-act]')].map(x=>x.dataset.act));acts.forEach(a=>{if(a==='reset'||!W[a])return;const mm=(E.ACT_MOD&&E.ACT_MOD[a])||m; /* v81: ação com módulo próprio (ACT_MOD), como o guardAct */if(!E.MODULE_INFO[mm][W[a]])bad.push(`${v}: ${a} pede ${W[a]} e ${mm} não tem a letra`);});
