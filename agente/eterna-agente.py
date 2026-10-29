@@ -2821,34 +2821,48 @@ IMP_DIR = os.path.join(HOME, "impressao")
 IMP_PS1 = r"""
 param([string]$Impressora, [string[]]$Arquivos)
 Add-Type -AssemblyName System.Drawing
-try {
-  # toda página em pé (a DS-RX1 só imprimia a primeira quando a orientação mudava no meio): foto deitada é girada 90°
-  $imgs = @($Arquivos | ForEach-Object { $im = [System.Drawing.Image]::FromFile($_); if ($im.Width -gt $im.Height) { $im.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipNone) }; $im })
-  $doc = New-Object System.Drawing.Printing.PrintDocument
-  $doc.PrinterSettings.PrinterName = $Impressora
-  if (-not $doc.PrinterSettings.IsValid) { throw "impressora '$Impressora' não encontrada" }
-  $doc.DocumentName = "Eterna " + [IO.Path]::GetFileNameWithoutExtension($Arquivos[0])
-  $ps = $doc.PrinterSettings.PaperSizes | Where-Object { $a=[Math]::Min($_.Width,$_.Height); $b=[Math]::Max($_.Width,$_.Height); $a -ge 395 -and $a -le 420 -and $b -ge 595 -and $b -le 625 } | Select-Object -First 1
-  if ($ps) { $doc.DefaultPageSettings.PaperSize = $ps }
-  $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)
-  $doc.OriginAtMargins = $false
-  $script:i = 0
-  # um trabalho só com uma página por foto (vários trabalhos seguidos a DNP descarta)
-  $doc.DefaultPageSettings.Landscape = $false
-  $doc.add_PrintPage({ param($s, $e)
-    $im = $imgs[$script:i]
-    $g = $e.Graphics
-    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $pb = $e.PageBounds
-    $hx = $e.PageSettings.HardMarginX; $hy = $e.PageSettings.HardMarginY
-    $r = [Math]::Max($pb.Width / $im.Width, $pb.Height / $im.Height)
-    $w = $im.Width * $r; $h = $im.Height * $r
-    $g.DrawImage($im, [single](($pb.Width - $w) / 2 - $hx), [single](($pb.Height - $h) / 2 - $hy), [single]$w, [single]$h)
-    $script:i++
-    $e.HasMorePages = ($script:i -lt $imgs.Count) })
-  $doc.Print()
-  $imgs | ForEach-Object { $_.Dispose() }
-} catch { Write-Output ("ERRO " + $_.Exception.Message); exit 1 }
+# Uma foto por trabalho, e a próxima só depois que a anterior saiu da fila e a impressora voltou a ficar livre:
+# a DS-RX1 descartava o que chegava enquanto imprimia (vários trabalhos seguidos ou várias páginas no mesmo trabalho).
+function Espera-Livre {
+  $fim = (Get-Date).AddSeconds(90)
+  while ((Get-Date) -lt $fim) {
+    $fila = @(Get-PrintJob -PrinterName $Impressora -ErrorAction SilentlyContinue).Count
+    $st = (Get-CimInstance Win32_Printer -Filter ("Name='" + $Impressora + "'")).PrinterStatus
+    if ($fila -eq 0 -and $st -ne 4) { return }
+    Start-Sleep -Milliseconds 500
+  }
+}
+$erros = @()
+foreach ($f in $Arquivos) {
+  try {
+    Espera-Livre
+    $img = [System.Drawing.Image]::FromFile($f)
+    if ($img.Width -gt $img.Height) { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipNone) }
+    $doc = New-Object System.Drawing.Printing.PrintDocument
+    $doc.PrinterSettings.PrinterName = $Impressora
+    if (-not $doc.PrinterSettings.IsValid) { throw "impressora '$Impressora' não encontrada" }
+    $doc.DocumentName = "Eterna " + [IO.Path]::GetFileNameWithoutExtension($f)
+    $ps = $doc.PrinterSettings.PaperSizes | Where-Object { $a=[Math]::Min($_.Width,$_.Height); $b=[Math]::Max($_.Width,$_.Height); $a -ge 395 -and $a -le 420 -and $b -ge 595 -and $b -le 625 } | Select-Object -First 1
+    if ($ps) { $doc.DefaultPageSettings.PaperSize = $ps }
+    $doc.DefaultPageSettings.Landscape = $false
+    $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)
+    $doc.OriginAtMargins = $false
+    $doc.add_PrintPage({ param($s, $e)
+      $g = $e.Graphics
+      $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+      $pb = $e.PageBounds
+      $hx = $e.PageSettings.HardMarginX; $hy = $e.PageSettings.HardMarginY
+      $r = [Math]::Max($pb.Width / $img.Width, $pb.Height / $img.Height)
+      $w = $img.Width * $r; $h = $img.Height * $r
+      $g.DrawImage($img, [single](($pb.Width - $w) / 2 - $hx), [single](($pb.Height - $h) / 2 - $hy), [single]$w, [single]$h)
+      $e.HasMorePages = $false })
+    $doc.Print()
+    $img.Dispose()
+    Write-Output ("FOTO " + [IO.Path]::GetFileName($f) + " " + (Get-Date -Format HH:mm:ss))
+  } catch { $erros += ([IO.Path]::GetFileName($f) + ": " + $_.Exception.Message) }
+}
+Espera-Livre
+if ($erros.Count) { Write-Output ("ERRO " + ($erros -join " | ")); exit 1 }
 Write-Output "OK"
 """
 
@@ -2877,17 +2891,26 @@ def imprimir(imagens, venda):
     ps1 = os.path.join(IMP_DIR, "imprimir.ps1")
     with open(ps1, "w", encoding="utf-8-sig") as fh:
         fh.write(IMP_PS1)
-    t1 = time.time()
-    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
-                        "-Arquivos"] + arqs, capture_output=True, text=True, timeout=180)
-    saida = (r.stdout or "").strip() + (" " + r.stderr.strip() if r.returncode and r.stderr else "")
-    ms = {"gravar_ms": round((t1 - t0) * 1000), "spooler_ms": round((time.time() - t1) * 1000),
-          "kb": round(sum(os.path.getsize(a) for a in arqs) / 1024)}
-    print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {IMPRESSORA}, {ms['kb']} KB, gravar {ms['gravar_ms']} ms, "
-          f"Windows {ms['spooler_ms']} ms -> {saida[:200]}")
-    if r.returncode or not saida.startswith("OK"):
-        return {"ok": False, "error": saida[:300] or "falha na impressão", **ms}
+    ms = {"gravar_ms": round((time.time() - t0) * 1000), "spooler_ms": 0, "kb": round(sum(os.path.getsize(a) for a in arqs) / 1024)}
+    threading.Thread(target=imprimir_fila, args=(ps1, arqs, venda, ms), daemon=True).start()
     return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA, **ms}
+
+
+imp_lock = threading.Lock()
+
+
+def imprimir_fila(ps1, arqs, venda, ms):
+    """Em segundo plano e uma venda por vez: a DNP imprime uma foto de cada vez (12 a 15 s cada)."""
+    with imp_lock:
+        t1 = time.time()
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
+                                "-Arquivos"] + arqs, capture_output=True, text=True, timeout=120 + 90 * len(arqs))
+            saida = " ".join((r.stdout or "").split()) + (" " + r.stderr.strip() if r.returncode and r.stderr else "")
+        except Exception as ex:
+            saida = "ERRO " + str(ex)
+        print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {IMPRESSORA}, {ms['kb']} KB, "
+              f"{time.time() - t1:.0f} s até a DNP terminar -> {saida[:300]}")
 
 
 def rota_privada(path):
