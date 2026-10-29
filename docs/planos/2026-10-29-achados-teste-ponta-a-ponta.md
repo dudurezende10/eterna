@@ -38,7 +38,7 @@ Com a sessão paga, a selfie no Checkout mostra só "Estas fotos já foram compr
 - **Pedido:** quando a selfie achar uma sessão paga, o próprio Checkout mostra o QR e o código da galeria, junto com a opção de comprar mais (achado 2).
 
 ## Achado 2c · Texto do "Aguardando pagamento"
-Depois de "Recebi o pagamento", a caixa continua dizendo "Nenhum pagamento esperando. Quando o cliente escolher…". Está certo, porque a fila esvaziou, mas confunde quem acabou de receber. **Pedido:** esconder a caixa quando estiver vazia, ou trocar por "Tudo recebido".
+Depois de "Recebi o pagamento", a caixa continuava dizendo "Nenhum pagamento esperando…", o que confundia quem acabou de receber. **Resolvido:** a caixa some quando não há pagamento esperando.
 
 ## Achado 3 · A impressão sai na impressora da máquina onde a venda é fechada
 **O que aconteceu:** a venda foi fechada no notebook do Ronaldo, e a janela de impressão mostrou as impressoras dele (Canon), não a DNP ligada no 218.

@@ -1245,6 +1245,7 @@ function pendPainel(){const L=dinAbertas();const q=(state.caixa.dinQ||'').toUppe
       <div class="din-top"><b class="din-cod">${esc(r.codigo)}</b>${r.saleNo?`<span class="note">Venda ${esc(r.saleNo)}</span>`:''}</div>
       <div class="note">Sessão ${esc(r.card)} · ${hhmm(new Date(r.criada))} <span class="pill ${min>CAIXA_ALERTA_MIN?'warn':'neutral'}">há ${min} min</span> · ${r.n} ${r.n===1?'foto':'fotos'} · ${r.prints} ${r.prints===1?'impressa':'impressas'}</div>
       ${ph.length?`<div class="photos small">${ph.map(p=>photoBtn(p)).join('')}</div>`:''}${acts}</div>`;};
+  if(!L.length)return ''; // nada esperando: a caixa some (a venda recebida já aparece no recibo e em Pagas hoje)
   return `<div class="panel" id="pend-painel"><div class="head"><h2>Aguardando pagamento</h2>${L.length?`<span class="pill ${dinAtrasada()?'warn':'neutral'}">${L.length}</span>`:''}</div>
     ${L.length?`${`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="Código do cliente (XXXX-XXXX) ou sessão" aria-label="Buscar pagamento" autocomplete="off">`}${vis.length?`<div class="din-list">${vis.map(item).join('')}</div>`:'<div class="note">Nenhum pagamento com esse código.</div>'}`:'<div class="note">Nenhum pagamento esperando. Quando o cliente escolher Cartão, PIX ou Dinheiro no Checkout, a compra aparece aqui.</div>'}</div>`;}
 const dinPainel=pendPainel; // nome da v79
