@@ -2126,6 +2126,7 @@ const I18N={
  cam_noface:['Não vi um rosto. Olhe para a câmera','No face seen. Look at the camera','No vemos un rostro. Mira a la cámara','Aucun visage détecté. Regardez la caméra','Kein Gesicht erkannt. Schau in die Kamera'],
  cam_pick:['É uma destas?','Is it one of these?','¿Es una de estas?','Est-ce l’une de celles-ci ?','Ist es eines davon?'],
  cam_nomatch:['Não achamos fotos suas. Use o código','No photos found. Use your receipt code','No encontramos fotos. Usa el código','Aucune photo trouvée. Utilisez le code','Keine Fotos gefunden. Nutze den Code'],
+ cam_nocam:['Câmera indisponível. Use o código do recibo','Camera unavailable. Use your receipt code','Cámara no disponible. Usa el código del recibo','Caméra indisponible. Utilisez le code du reçu','Kamera nicht verfügbar. Nutze den Code vom Beleg'],
  cam_sim:['Câmera indisponível · simulando','Camera unavailable · demo','Cámara no disponible · demo','Caméra indisponible · démo','Kamera nicht verfügbar · Demo'],
  // galeria por QR: selfie (a #g reaproveita estes textos)
  g_fit:['Encaixe o rosto no círculo, sem óculos escuros nem boné.','Fit your face in the circle, no sunglasses or cap.','Encaja tu rostro en el círculo, sin gafas de sol ni gorra.','Placez votre visage dans le cercle, sans lunettes de soleil ni casquette.','Gesicht in den Kreis, ohne Sonnenbrille und Kappe.'],
@@ -3758,7 +3759,8 @@ async function camStart(){const c=state.cam;if(c.stream||c.err)return;if(!naviga
 function camStop(){const c=state.cam;if(c.stream){c.stream.getTracks().forEach(t=>t.stop());c.stream=null;}clearInterval(c.timer);c.timer=null;clearTimeout(c.sim);c.sim=null;c.status='off';c.prev=null;c.armed=false;}
 function camMount(){const c=state.cam;const v=$('#cam-video');
   if(!camWanted()||!$('#cam-face')){clearInterval(c.timer);c.timer=null;clearTimeout(c.sim);c.sim=null;if(c.status!=='off')c.status='idle';return;}
-  if(c.err||!navigator.mediaDevices){ // sem câmera: simula alguém chegando e parando
+  if(c.err||!navigator.mediaDevices){ // sem câmera: com o agente ligado (venda de verdade) nunca sorteia sessão; só a demonstração simula
+    if(state.agent&&state.agent.on){c.status='nocam';camStatus();return;}
     if(!c.sim){c.status='sim';c.sim=setTimeout(()=>{c.sim=null;camFound();},4500);}return;}
   faceIndexAll();
   if(!c.stream){camStart();return;}
@@ -3779,7 +3781,7 @@ function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c
     if(m>7){c.moved+=m;c.still=0;if(c.moved>40&&!c.armed){c.armed=true;c.status='present';camStatus();}}
     else{c.still++;if(c.armed&&c.still>=5){c.armed=false;c.moved=0;camFound();}else if(!c.armed&&c.still>12){c.moved=0;if(c.status!=='idle'&&c.status!=='searching'&&c.status!=='found'){c.status='idle';camStatus();}}}}
   c.prev=g;}
-function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;el.dataset.st=c.status;const t=state.view==='quiosque'?(I18N['cam_'+c.status]?T('cam_'+c.status):''):({off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando'}[c.status]||'');el.textContent=t;if(f)f.dataset.st=c.status;}
+function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;el.dataset.st=c.status;const t=state.view==='quiosque'?(I18N['cam_'+c.status]?T('cam_'+c.status):''):({off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando',nocam:'Câmera indisponível neste endereço (use HTTPS ou localhost). Escolha a sessão na lista ou digite o código'}[c.status]||'');el.textContent=t;if(f)f.dataset.st=c.status;}
 function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Date.now();c.status='searching';camStatus();
   const ok=x=>state.view==='quiosque'||x.status!=='paga'; // checkout: toda sessão ainda não paga (como a lista ao lado); quiosque: todas
   const open=card=>{c.busy=false;c.status='found';camStatus();
