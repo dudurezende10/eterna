@@ -56,6 +56,9 @@ PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
 APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
+# ETERNA_IMPRESSORA: nome da impressora 10x15 ligada neste computador (ex.: DS-RX1). Com ela, o botão Imprimir de
+# qualquer posto manda a foto para cá e ela sai aqui, em vez de sair na impressora do navegador de quem clicou.
+IMPRESSORA = os.environ.get("ETERNA_IMPRESSORA", "").strip()
 # ETERNA_ORIGENS: endereços pelos quais os postos abrem este Eterna na rede (ex.: http://192.168.10.218:8765).
 # Só eles ganham as rotas que antes eram só do próprio computador (busca de rosto, publicar galeria, vendas).
 ORIGENS_REDE = {x.strip().rstrip("/").lower() for x in os.environ.get("ETERNA_ORIGENS", "").split(",") if x.strip()}
@@ -2523,6 +2526,76 @@ if os.environ.get("ETERNA_REDE"):
     HOSTS_OK.add("%s:%d" % (lan_ip(), PORT))
 
 
+IMP_MAX_CORPO = 60 * 1024 * 1024
+IMP_DIR = os.path.join(HOME, "impressao")
+# Imprime cada JPEG numa folha 10x15 da impressora do servidor, sem margem e preenchendo a folha (corta o excesso,
+# como a DNP faz). Usa o .NET do próprio Windows (System.Drawing), sem programa extra.
+IMP_PS1 = r"""
+param([string]$Impressora, [string[]]$Arquivos)
+Add-Type -AssemblyName System.Drawing
+$erros = @()
+foreach ($f in $Arquivos) {
+  try {
+    $img = [System.Drawing.Image]::FromFile($f)
+    $doc = New-Object System.Drawing.Printing.PrintDocument
+    $doc.PrinterSettings.PrinterName = $Impressora
+    if (-not $doc.PrinterSettings.IsValid) { throw "impressora '$Impressora' não encontrada" }
+    $doc.DocumentName = "Eterna " + [IO.Path]::GetFileNameWithoutExtension($f)
+    $ps = $doc.PrinterSettings.PaperSizes | Where-Object { $a=[Math]::Min($_.Width,$_.Height); $b=[Math]::Max($_.Width,$_.Height); $a -ge 395 -and $a -le 420 -and $b -ge 595 -and $b -le 625 } | Select-Object -First 1
+    if ($ps) { $doc.DefaultPageSettings.PaperSize = $ps }
+    $doc.DefaultPageSettings.Landscape = ($img.Width -gt $img.Height)
+    $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)
+    $doc.OriginAtMargins = $false
+    $doc.add_PrintPage({ param($s, $e)
+      $g = $e.Graphics
+      $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+      $pb = $e.PageBounds
+      $hx = $e.PageSettings.HardMarginX; $hy = $e.PageSettings.HardMarginY
+      $r = [Math]::Max($pb.Width / $img.Width, $pb.Height / $img.Height)
+      $w = $img.Width * $r; $h = $img.Height * $r
+      $g.DrawImage($img, [single](($pb.Width - $w) / 2 - $hx), [single](($pb.Height - $h) / 2 - $hy), [single]$w, [single]$h)
+      $e.HasMorePages = $false })
+    $doc.Print()
+    $img.Dispose()
+  } catch { $erros += ([IO.Path]::GetFileName($f) + ": " + $_.Exception.Message) }
+}
+if ($erros.Count) { Write-Output ("ERRO " + ($erros -join " | ")); exit 1 }
+Write-Output "OK"
+"""
+
+
+def imprimir(imagens, venda):
+    """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor."""
+    if not isinstance(imagens, list) or not imagens or len(imagens) > 20:
+        return {"ok": False, "error": "nenhuma foto (ou mais de 20)"}
+    os.makedirs(IMP_DIR, exist_ok=True)
+    tag = time.strftime("%Y%m%d-%H%M%S") + "_" + re.sub(r"[^A-Za-z0-9-]", "", venda)[:20]
+    arqs = []
+    for i, im in enumerate(imagens):
+        try:
+            b = base64.b64decode(str(im).split(",", 1)[-1])
+        except Exception:
+            return {"ok": False, "error": "foto %d inválida" % (i + 1)}
+        if b[:3] != b"\xff\xd8\xff":
+            return {"ok": False, "error": "foto %d não é JPEG" % (i + 1)}
+        f = os.path.join(IMP_DIR, "%s_%d.jpg" % (tag, i + 1))
+        with open(f, "wb") as fh:
+            fh.write(b)
+        arqs.append(f)
+    if os.environ.get("ETERNA_IMPRESSORA_TESTE"):          # testes sem impressora: só grava os arquivos
+        return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA, "teste": True}
+    ps1 = os.path.join(IMP_DIR, "imprimir.ps1")
+    with open(ps1, "w", encoding="utf-8-sig") as fh:
+        fh.write(IMP_PS1)
+    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
+                        "-Arquivos"] + arqs, capture_output=True, text=True, timeout=180)
+    saida = (r.stdout or "").strip() + (" " + r.stderr.strip() if r.returncode and r.stderr else "")
+    print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {IMPRESSORA} -> {saida[:200]}")
+    if r.returncode or not saida.startswith("OK"):
+        return {"ok": False, "error": saida[:300] or "falha na impressão"}
+    return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA}
+
+
 def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
@@ -2723,6 +2796,18 @@ class H(BaseHTTPRequestHandler):
         ip = self.client_address[0]
         if p.startswith("/pagamento/webhook/"):
             return self.js({"error": "webhook reservado para o adquirente real (fase 2)"}, 501)
+        if p == "/imprimir":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            if not IMPRESSORA:
+                return self.js({"error": "sem impressora neste servidor (ETERNA_IMPRESSORA)"}, 503)
+            body, err = self.corpo(IMP_MAX_CORPO)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            try:
+                return self.js(imprimir(body.get("imagens") or [], str(body.get("venda") or "")[:40]))
+            except Exception as ex:
+                return self.js({"ok": False, "error": str(ex)[:300]}, 500)
         if p in ("/galerias/publicar", "/galerias/encerrar"):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -2887,6 +2972,7 @@ class H(BaseHTTPRequestHandler):
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
                                 "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem,
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
+                                "impressora": IMPRESSORA or None,
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
@@ -2973,7 +3059,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")):
+        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path == "/imprimir":
             return self.gal_post(u)
         if u.path == "/roverpix/config":
             # só o app aberto pelo próprio agente pode trocar a chave
