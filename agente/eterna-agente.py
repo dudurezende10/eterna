@@ -787,6 +787,17 @@ def _cdn_assinado(chave, ttl=LINK_TTL):
     return _assina["s"].generate_presigned_url("https://%s/%s" % (NUVEM_CDN, chave), date_less_than=datetime.now(timezone.utc) + timedelta(seconds=ttl))
 
 
+def nuvem_tem(pid):
+    """A foto já subiu (vitrine e alta conferidas pelo MD5)?"""
+    try:
+        db = nuvem_db()
+        r = db.execute("SELECT feito FROM fila WHERE pid=?", (pid,)).fetchone()
+        db.close()
+        return bool(r and r[0])
+    except Exception:
+        return False
+
+
 def nuvem_link(pid, v):
     """Link temporário (5 min) de uma versão na nuvem: pelo CloudFront quando ligado, com a reserva direto no S3."""
     chave = "%s/%s.jpg" % (v, pid)
@@ -2554,6 +2565,19 @@ class H(BaseHTTPRequestHandler):
             f = next((x for x in (m or {}).get("fotos", []) if pid_lib(x["id"]) == pid_lib(pid)), None)
             if not m or not f or gal_expirou(m) or (v == "original" and f["direito"] not in ("comprada", "cortesia")):
                 return self.js({"error": "proibido"}, 403)
+            # v85 E: foto já na nuvem sai de lá (CloudFront, ou S3 direto): o ponto só autoriza, não serve os bytes.
+            # Original da galeria = a alta de 3000 px (o original da câmera não sobe, D2).
+            if nuvem["ligada"] and nuvem_tem(pid_lib(f["id"])):
+                try:
+                    url = nuvem_link(pid_lib(f["id"]), "alta" if v == "original" else "vitrine")["url"]
+                    self.send_response(302)
+                    self.cors()
+                    self.send_header("Location", url)
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    return None
+                except Exception:
+                    pass                                   # nuvem indisponível: entrega do disco do ponto
             path = REPO.abrir(token, f["id"], v)
             try:
                 with open(path, "rb") as fh:
@@ -2736,6 +2760,7 @@ class H(BaseHTTPRequestHandler):
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
                                 "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem,
+                                "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
