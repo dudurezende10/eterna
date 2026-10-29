@@ -39,7 +39,7 @@ Esse é o comportamento esperado do `window.print()`. Fica registrado porque mex
 - **Uma DNP por notebook (combinado atual):** a venda é fechada no notebook que tem a DNP no USB.
 - **218 como posto de impressão:** o Checkout precisa abrir no Chrome do 218, com `--kiosk-printing`, a DNP como padrão e papel 10×15 sem borda. A outra saída seria compartilhar a DNP na rede, mas a porta 445 do 218 está fechada hoje e a impressão térmica compartilhada costuma travar.
 
-A prévia também mostrou cabeçalho e rodapé do Chrome (data e endereço) e a foto em preto e branco. Com `--kiosk-printing`, as margens e os cabeçalhos precisam ser garantidos pelo CSS de impressão (`@page { size: 4in 6in; margin: 0 }`).
+A prévia também mostrou cabeçalho e rodapé do Chrome (data e endereço) e a foto em preto e branco. O `@page foto{size:102mm 152mm;margin:0}` já existe. Cabeçalho, rodapé e cor são opções do Chrome e da impressora: no posto, desmarcar "Cabeçalhos e rodapés" uma vez antes de ligar o `--kiosk-printing`, que repete as últimas opções, e deixar a DNP em cores.
 
 ## Próximo passo do teste
 O teste continua com o Eterna **rodando no 218**: ele vigia a pasta do FTP da Microsoft (`iniciar-eterna.bat "<pasta do FTP>"`), o Checkout fica aberto no Chrome do 218 e a impressão vai para a DNP. O notebook do Ronaldo parou de buscar fotos no 218 às 17:30.
