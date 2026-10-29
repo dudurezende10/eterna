@@ -2,7 +2,7 @@
 const {chromium}=require('playwright');const fs=require('fs');const path=require('path');const login=require('./_login.js');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-const FIX=JSON.parse(fs.readFileSync(path.join(__dirname,'..','docs','bandeiras-correcao-2026-10-28.json'),'utf8'));
+const FIX=Object.assign(JSON.parse(fs.readFileSync(path.join(__dirname,'..','docs','bandeiras-correcao-2026-10-28.json'),'utf8')),JSON.parse(fs.readFileSync(path.join(__dirname,'..','docs','bandeiras-web-2026-10-28.json'),'utf8'))); // v82: as 30 sem imagem passaram a ter URL da Wikimedia
 const ignora=t=>/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(t);
 async function A8(pg){
   await pg.goto(U+'#fundos-teste');await pg.waitForTimeout(400);
@@ -48,7 +48,7 @@ try{
       const errado=Object.entries(fx).filter(([n,f])=>+n!==84&&by(+n)[6]!==f).map(([n])=>n);
       const log=ETERNA.auditRead().filter(e=>e.acao==='migracao_v81_bandeiras');return {errado,f83:by(83),f84:by(84)[6],log:log.length,itens:log[0]&&log[0].itens.length,mv:localStorage.getItem('eterna.flags.v')};},FIX);
     ok(!m.errado.length,'1: migração deixou itens com arquivo velho: '+m.errado.join(','));ok(m.f83[6]===FIX['83']&&m.f83[7]==='data:image/png;base64,FOTOUSUARIO','1: item 83 com foto do usuário: '+J(m.f83.slice(6)));
-    ok(m.f84==='meu-arquivo.jpg','1: item editado com outro arquivo não pode mudar: '+m.f84);ok(m.log===1&&m.mv==='81','1: histórico migracao_v81_bandeiras uma vez: '+J(m));
+    ok(m.f84==='meu-arquivo.jpg','1: item editado com outro arquivo não pode mudar: '+m.f84);ok(m.log===1&&(m.mv==='81'||m.mv==='82'),'1: histórico migracao_v81_bandeiras uma vez: '+J(m));
     // roda uma vez só: voltar um item ao arquivo velho e recarregar não refaz nem registra de novo
     await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));const f=s.flagList.find(x=>x[0]===83);f[6]=ETERNA.FLAG_FIX_V81['83'][0];localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
     await pg.reload();await pg.waitForTimeout(300);
