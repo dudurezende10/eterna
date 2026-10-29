@@ -56,6 +56,10 @@ PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
 APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
+# ETERNA_ORIGENS: endereços pelos quais os postos abrem este Eterna na rede (ex.: http://192.168.10.218:8765).
+# Só eles ganham as rotas que antes eram só do próprio computador (busca de rosto, publicar galeria, vendas).
+ORIGENS_REDE = {x.strip().rstrip("/").lower() for x in os.environ.get("ETERNA_ORIGENS", "").split(",") if x.strip()}
+ORIGENS_REDE_HOSTS = {urlparse(x).netloc for x in ORIGENS_REDE}
 INBOX = os.path.join(HOME, "inbox")
 THUMBS = os.path.join(HOME, "thumbs")
 INDEX = os.path.join(HOME, "index.json")
@@ -2595,6 +2599,8 @@ class H(BaseHTTPRequestHandler):
     def origem_local(self):
         o = self.headers.get("Origin") or ""
         host = (self.headers.get("Host") or "").lower()
+        if host in ORIGENS_REDE_HOSTS:                 # servidor do estádio aberto pela rede (ETERNA_ORIGENS)
+            return not o or o in ORIGENS_REDE
         if host not in ("127.0.0.1:%d" % PORT, "localhost:%d" % PORT):
             return False
         return not o or o in ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)
