@@ -2251,6 +2251,8 @@ function vQuiosque(){
   const steps=n=>`<div class="lj-steps">${T('steps').map((t,i)=>`<span class="${i+1<n?'done':i+1===n?'cur':''}"><b>${i+1<n?'✓':i+1}</b>${t}</span>`).join('<i></i>')}</div>`;
   const topR=x=>`<div class="lj-topr">${langPick(true)}${x}</div>`;
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay')k.step=k.step==='pay'?'cart':'review';
+  if((k.step==='review'||k.step==='cart')&&lojaJaPaga(k.code)){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (comprar mais é o achado 2 da v85)
+    const tok=galDaSessao(k.code);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){const sim=SIM.sessions[k.code]||{};setTimeout(()=>{if(state.kiosk===k&&lojaJaPaga(k.code)&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
   if((k.step==='review'||k.step==='cart')&&lojaJaPaga(k.code))return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljVoltar('loja-new','')}</div></div>`;
   if(k.step==='review'){const n=items.length;k.i=Math.max(0,Math.min(n-1,k.i||0));const x=items[k.i];const st=x?pk[x.k]||'':'';
     const frame=!x?'':x.t==='ai'?`<div class="lj-print ${st}"><div class="lj-img">${lojaThumb(x)}</div><span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>${st==='ok'?`<span class="lj-mark">${ICO.ok}</span>`:''}</div>`
