@@ -93,7 +93,7 @@ Outros custos mensais estimados:
 - **A. Maquininha Imply e vínculo do pedido.**
   - Cartão e PIX na Loja passam a `aguardando` (estado novo `aguardando_pos`), como o Dinheiro da v79. Nada é publicado nem impresso antes da confirmação.
   - No admin, um painel "Aguardando maquininha" (junto do `dinPainel`) com Confirmar e Cancelar.
-  - Confirmar abre a câmera para ler o QR do comprovante (jsQR). O campo também aceita o pedido digitado: 16 caracteres, maiúsculas, sem espaços, com máscara 4-4-4-4.
+  - Confirmar abre a câmera para ler o QR do comprovante (jsQR). O campo também aceita o localizador digitado. **Conferido num comprovante real (29/10):** o QR traz só o localizador, sem URL, com 12 caracteres: 4 dígitos do mês e dia + 8 letras e números (ex.: `1029URWB3N63` numa venda de 29/10). Validação `^[0-9]{4}[A-Z0-9]{8}$`, maiúsculas, sem espaços. O número de reimpressão impresso abaixo (ex.: `102972U3H6`) não é o localizador e é recusado. O Eterna confere se o MMDD do localizador bate com o dia da venda.
   - Um pedido Imply não pode ser usado em duas vendas: a segunda tentativa é recusada com o número da venda que já o tem.
   - A venda grava `pos: {pedido, metodo, parcelas, lido_por, em, por}`. A Lista de vendas e o CSV ganham as colunas `pedido_imply`, `metodo`, `parcelas`.
   - A tela final do cliente mostra o **código curto da venda** (ex.: `E-7K3Q`), que o vendedor pode digitar no campo de referência da maquininha, se a Imply tiver esse campo (a confirmar).
@@ -130,7 +130,15 @@ Outros custos mensais estimados:
 - **F. API e galeria na nuvem.**
   - `api.eterna.photo`: AWS Lambda (Python 3.12) atrás do API Gateway HTTP.
   - As rotas `/g/*` de hoje (`info`, `codigo`, `rosto`, `galeria`, `foto`, `pagamento`) passam para a API com o mesmo contrato. O app troca a base com `GAL_API` e não muda de tela.
-  - Links de foto são URLs assinadas do S3 que valem 5 min. A alta só sai para foto `comprada` ou `cortesia`.
+  - Links de foto valem 5 min. A alta só sai para foto `comprada` ou `cortesia`.
+  - **Endereço amigável `fotos.eterna.photo`:**
+    - um CloudFront fica na frente do bucket e só entrega com **link assinado**;
+    - a chave privada fica no ponto, e na AWS vai só a pública;
+    - o bucket continua privado: só essa distribuição lê, por OAC e política com `SourceArn`;
+    - na GoDaddy entram só dois CNAME novos, a validação do certificado e o `fotos`, sem tocar no `@` e no `www` do site;
+    - script reproduzível em `servidor/nuvem/cloudfront-fase2.sh`.
+  - **Plano B automático:** cada link sai em dupla, pelo CloudFront e uma reserva direto no S3, que é um serviço separado. A galeria tenta o CloudFront e, se a foto não carregar, troca sozinha para o S3. O cliente não percebe.
+  - **Sentinela:** a cada 2 min o agente abre um arquivo de teste (`saude/ok.txt`) pelos dois caminhos. Falhou: aviso no console e no status (`s3_ok`, `cdn_ok`). Na API, o mesmo teste vira alarme da AWS para a TI.
   - A selfie na galeria segue o v81 D3 (CompareFaces só dentro das fotos da galeria, teto diário). A busca 1:N do Checkout continua local (v81 D2).
 - **G. Vendas centrais.**
   - Toda venda (Loja, balcão, online) vai para a API com o id que nasce na origem (v80 D7), por uma **fila local no notebook ou no agente**. Sem internet, o ponto continua vendendo e sincroniza depois; reenviar é idempotente.
@@ -216,7 +224,7 @@ O v84 já segue essa linha: prévia local e Photoroom só na foto comprada.
 
 ## O que a TI e a Maracatour precisam providenciar
 - **Conta AWS da Maracatour** com Organization e política de opt-out de IA (v81), domínio `api.eterna.photo` (DNS na GoDaddy) e e-mail de envio no SES (v82).
-- **Imply:** um comprovante da maquininha para confirmar o conteúdo do QR (o pedido de 16 caracteres?), se a maquininha aceita uma referência digitada (para o código curto da venda) e se a ticketeira tem API ou exportação diária dos pedidos, para a conciliação.
+- **Imply:** ~~conteúdo do QR~~ (resolvido: só o localizador, 12 caracteres); se a maquininha aceita uma referência digitada (para o código curto da venda) e se a ticketeira tem API ou exportação diária dos pedidos, para a conciliação.
 - **DNP:** uma impressora para teste, com o driver instalado num notebook do Checkout.
 - **Teste dos fundos de IA:** 20 fotos de campo com consentimento e uma chave da API do Google AI Studio (Nano Banana), colada no Eterna pela equipe, nunca no repositório.
 - **Internet do estádio:** pelo menos 10 Mbit/s de upload livres no horário do Tour (com folga sobre o ~1,5–5 Mbit/s médio).
@@ -230,7 +238,7 @@ O v84 já segue essa linha: prévia local e Photoroom só na foto comprada.
   "codigo": "E-7K3Q",
   "status": "aguardando_pos | paga | cancelada | nao_paga",
   "pos": {
-    "pedido": "AB12CD34EF56GH78",
+    "pedido": "1029URWB3N63",
     "metodo": "credito | debito | pix",
     "parcelas": 1,
     "lido_por": "qr | digitado",
@@ -285,7 +293,17 @@ O v84 já segue essa linha: prévia local e Photoroom só na foto comprada.
 4. **Conciliação com a Imply:** sem API da Imply, a ligação depende do vendedor ler o comprovante. A auditoria diária de vendas da TI (Imply × MaracaFly × Roverpix) passa a incluir o Eterna, cruzando pelo pedido. Ela aponta venda paga sem pedido, pedido sem venda e valor divergente.
 5. **Login simulado até a parte H:** a API não pode abrir antes do login real. Até lá, só as rotas do cliente (`/g/*`) e as do agente (token de aparelho) ficam no ar.
 6. **Custo descontrolado:** alarme de orçamento na AWS (Budgets) em US$ 150 por mês. Teto diário do Rekognition (v81 D10). Limite por (token, IP) nas rotas `/g/*`.
-7. **Impressão silenciosa na impressora errada:** o `--kiosk-printing` usa a impressora padrão do Windows. O atalho do Checkout confere na abertura se a padrão é uma DNP e avisa se não for.
+7. **CloudFront fora do ar:** a operação do estádio não depende dele (checkout, impressão e venda são locais; a fila da nuvem segura as fotos). Na galeria, o link de reserva vai direto ao S3. O SLA do CloudFront é de 99,9%, e o cliente tem 60 dias para baixar, então uma queda de minutos não faz ninguém perder foto. A sentinela avisa a TI.
+8. **Impressão silenciosa na impressora errada:** o `--kiosk-printing` usa a impressora padrão do Windows. O atalho do Checkout confere na abertura se a padrão é uma DNP e avisa se não for.
+
+## Encaixe com o plano v83 do Eduardo (29/10)
+O v83 já faz o pagamento aguardando na maquininha ("Pago na maquininha", com o campo de referência opcional `pag.ref`) e deixou para este plano a leitura do QR e o pedido Imply. A parte A daqui passa a ser só:
+- o botão "Ler comprovante" ao lado do campo de referência;
+- a validação do localizador;
+- a trava de localizador único;
+- as colunas na lista e no CSV.
+
+Ela entra depois que o v83 estiver no código.
 
 ## Ordem e dependências
 | Etapa | Partes | Depende de | Observação |

@@ -1490,7 +1490,7 @@ function vPosto(){const a=state.agent;const pn=postoNome();const rolo=SIM.stock[
   return `<div class="head posto-head"><div><div class="eyebrow">Posto de venda</div><h1>${esc(postoTitulo())}</h1></div><div class="row">${ag}<span class="pill ${rolo<ROLO_ALERTA?'bad':'neutral'}">Rolo: ${rolo} de ${ROLO_CAP}</span>${canView('quiosque')?'<button class="btn ghost" data-act="loja-abrir">Abrir Checkout</button>':''}</div></div>
   <div class="posto-cols"><div><div class="panel"><div class="head"><h2>No Checkout agora</h2></div><div id="eco">${ecoBody()}</div></div></div>
     <div>${pendPainel()}${impPainel()}${minhasVendas()}</div></div>`;}
-function drawQR(){const el=$('#qrbox');if(!el)return;const card=state.caixa.session;const tok=card&&galDaSessao(card);if(!tok){el.innerHTML='';return;}qrDraw(el,GAL_BASE+tok,110,SIM.galerias[tok].codigo);}
+function drawQR(){const el=$('#qrbox');if(!el)return;const card=state.caixa.session;const tok=card&&galDaSessao(card);if(!tok){el.innerHTML='';return;}qrDraw(el,galBase()+tok,110,SIM.galerias[tok].codigo);}
 
 // ---------- Checkout (vendedor, uma tela só) ----------
 state.checkout={session:null,step:1,code:''};
@@ -1753,7 +1753,7 @@ function lojaPendCheck(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||
   if(r.estado==='confirmada'){const g=(SIM.galerias||{})[p.token];k.paid=Object.assign({},p,{wait:false,cash:false,codigo:(g&&g.codigo)||p.codigo});k.doneAt=Date.now();lojaTimerOff();k.timer=setInterval(lojaTick,250);return true;}
   if(r.estado==='cancelada'){lojaTimerOff();k.step='cart';k.pay=null;k.paid=null;k.doneAt=null;k.aviso='ljPayCancelled';return true;}
   lojaTimerOff();lojaReset();return true;}
-function drawLojaQR(){const el=$('#lqr');if(!el)return;const p=state.kiosk.paid||{};qrDraw(el,p.token?GAL_BASE+p.token:'https://eterna.photo/#g',150,p.codigo||'QR');}
+function drawLojaQR(){const el=$('#lqr');if(!el)return;const p=state.kiosk.paid||{};qrDraw(el,p.token?galBase()+p.token:'https://eterna.photo/#g',150,p.codigo||'QR');}
 // ---------- Loja apartada: rota pública #loja, sem login, sempre em tela cheia ----------
 // Saída só da equipe: Esc ou 3 toques seguidos no logo. Depois da compra volta sozinha à câmera em 5 s.
 // O único temporizador da Loja é o da tela final, e ele morre ao sair da rota, trocar de etapa ou recarregar.
@@ -1811,7 +1811,7 @@ const flagSvg=c=>`<svg class="lj-flag" viewBox="0 0 30 20" preserveAspectRatio="
 // ---------- Galeria online por QR (fase 1): token e código por sessão, manifesto, fila de envio ao agente ----------
 // O QR da Loja aponta para https://eterna.photo/#g/<token>. O token nasce aqui (crypto), então a Loja nunca trava sem internet.
 // Manifesto igual no SIM e no agente: {v,token,codigo,tipo:'sessao'|'evento',nome,sessoes,menor,criada,expira,precos,moeda,fotos,envio}.
-const GAL_BASE='https://eterna.photo/#g/',GAL_DIAS=60,GAL_ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',GAL_LIMITE_MENOR=.50,GQ_VERSAO='2026-10-27',GQ_MAX=5,GQ_BLOQ=15*60000;
+const GAL_BASE_PADRAO='https://eterna.photo/#g/',GAL_API='https://whe2hyve2j.execute-api.us-east-2.amazonaws.com',galApi=()=>window.ETERNA_AGENTE||(GAL_API&&location.protocol==='https:'?GAL_API:state.agent.url),galUrl=u=>/^https?:/.test(u||'')?u:galApi()+u,galBase=()=>(state.agent&&state.agent.galPublica?state.agent.galPublica.replace(/\/$/,'')+'/#g/':window.ETERNA_AGENTE?window.ETERNA_AGENTE+'/#g/':GAL_BASE_PADRAO),GAL_DIAS=60,GAL_ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',GAL_LIMITE_MENOR=.50,GQ_VERSAO='2026-10-27',GQ_MAX=5,GQ_BLOQ=15*60000;
 function galRand(n){const u=new Uint8Array(n);crypto.getRandomValues(u);return u;}
 function galToken(){SIM.galerias=SIM.galerias||{};let t;do{let s='';for(const b of galRand(16))s+=String.fromCharCode(b);t=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}while(SIM.galerias[t]);return t;}
 function galCodigo(){const usados=new Set(Object.values(SIM.galerias||{}).map(m=>m.codigo));let c;do{const u=galRand(8);c='';for(let i=0;i<8;i++){c+=GAL_ALFA[u[i]%32];if(i===3)c+='-';}}while(usados.has(c));return c;}
@@ -1870,7 +1870,7 @@ function pubRead(){const h=location.hash;const m=h.match(/^#g\/(.*)$/);
   state.pub=null;state.lojaRota=h==='#loja';return false;}
 function pubRetry(p){clearTimeout(p.rt);p.rt=setTimeout(()=>{if(state.pub===p&&p.step==='chegando')pubLoad();},20000);}
 async function pubLoad(){const p=state.pub;if(!p||!p.token){render();return;}const tok=p.token;let r=null,net=false;
-  try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),2500);r=await fetch(state.agent.url+'/g/'+tok+'/info',{cache:'no-store',signal:ctl.signal});clearTimeout(t);}catch(e){net=true;}
+  try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),2500);r=await fetch(galApi()+'/g/'+tok+'/info',{cache:'no-store',signal:ctl.signal});clearTimeout(t);}catch(e){net=true;}
   if(state.pub!==p)return;let info=null;
   if(r&&r.status===200){try{info=await r.json();}catch(e){info=null;}}
   if(info&&info.ok){p.modo='agente';p.info=info;}
@@ -1891,7 +1891,7 @@ async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pu
   p.step='buscando';selfieStop();render();
   try{
     if(p.modo==='agente'){const body=JSON.stringify({consentimento:true,versao:GQ_VERSAO,idioma:lang(),imagem:src});src=null;
-      const r=await fetch(state.agent.url+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});const j=await r.json().catch(()=>({}));
+      const r=await fetch(galApi()+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});const j=await r.json().catch(()=>({}));
       if(state.pub!==p)return;
       if(r.status===429){p.step='nao';p.motivo='bloqueado';p.ate=Date.parse(j.ate)||Date.now()+GQ_BLOQ;}
       else if(r.status===503){p.step='nao';p.motivo='processando';}
@@ -1910,21 +1910,21 @@ function pubGaleria(){const p=state.pub;if(!p)return {fotos:[]};
   if(p.modo==='agente'){const g=p.gal||{fotos:[]};return {...g,fotos:(g.fotos||[]).map(f=>({...f}))};}
   const m=(SIM.galerias||{})[p.token];if(!m)return {fotos:[]};const ok=m.tipo==='evento'?new Set(p.match||[]):null;
   return {tipo:m.tipo,menor:!!m.menor,expira:m.expira,estado:'pronta',precos:{dig:priceOf('dig'),todas:priceOf('mais')},fotos:m.fotos.filter(f=>!ok||ok.has(f.id)).map(f=>({pid:f.id,direito:f.direito,sessao:f.sessao}))};}
-function pubImg(f){const p=state.pub;if(p.modo==='agente')return f.vitrine?`--img:url(&quot;${esc(state.agent.url+f.vitrine)}&quot;);--bs:cover;--bp:center`:'';return phStyle(f.pid);}
+function pubImg(f){const p=state.pub;if(p.modo==='agente')return f.vitrine?`--img:url(&quot;${esc(galUrl(f.vitrine))}&quot;);--bs:cover;--bp:center`:'';return phStyle(f.pid);}
 function pubTotal(n,g){const d=(g.precos||{}).dig||priceOf('dig'),all=(g.precos||{}).todas||priceOf('mais');return Math.min(n*d,all);}
 async function pubBaixar(pid,i){const p=state.pub;const g=pubGaleria();const f=g.fotos.find(x=>x.pid===pid);if(!f||(f.direito!=='comprada'&&f.direito!=='cortesia'))return;
   const nome=`viva-maracana-${i||1}.jpg`;const salva=href=>{const a=document.createElement('a');a.href=href;a.download=nome;document.body.appendChild(a);a.click();a.remove();};
   if(p.modo==='agente'){
     // links assinados valem 15 min: com mais de 12 min de galeria, ou se o download falhar, pede links novos e tenta de novo uma vez
-    const baixa=async ff=>{const r=await fetch(state.agent.url+ff.original);if(!r.ok)throw new Error('x');const u=URL.createObjectURL(await r.blob());salva(u);setTimeout(()=>URL.revokeObjectURL(u),4000);};
+    const baixa=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');const u=URL.createObjectURL(await r.blob());salva(u);setTimeout(()=>URL.revokeObjectURL(u),4000);};
     let ff=f;if(!p.galAt||Date.now()-p.galAt>12*60000){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid)||f;}
-    try{await baixa(ff);}catch(e){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid);try{if(!ff||!ff.original)throw new Error('x');await baixa(ff);}catch(e2){if(ff&&ff.original)window.open(state.agent.url+ff.original,'_blank','noopener');}}
+    try{await baixa(ff);}catch(e){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid);try{if(!ff||!ff.original)throw new Error('x');await baixa(ff);}catch(e2){if(ff&&ff.original)window.open(galUrl(ff.original),'_blank','noopener');}}
     return;}
   const c=await photoCanvas(pid);if(c)salva(c.toDataURL('image/jpeg',.92));}
 const pubUUID=()=>{const u=galRand(16);u[6]=u[6]&15|64;u[8]=u[8]&63|128;const h=[...u].map(b=>b.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;};
 async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGaleria();const venda=new Set(g.fotos.filter(f=>f.direito==='venda').map(f=>f.pid));const pids=Object.keys(p.sel).filter(k=>p.sel[k]&&venda.has(k));if(!pids.length||!p.pagM)return;
   p.paying=true;
-  try{if(p.modo==='agente'){const r=await fetch(state.agent.url+'/g/'+p.token+'/pagamento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,pids,metodo:p.pagM,idem:p.idem})});const j=await r.json().catch(()=>({}));
+  try{if(p.modo==='agente'){const r=await fetch(galApi()+'/g/'+p.token+'/pagamento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,pids,metodo:p.pagM,idem:p.idem})});const j=await r.json().catch(()=>({}));
       if(r.status===401){pubAcessoVenceu(p);return;}
       if(!j.ok){toast(T('gq_payFail'));return;}
       if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();}p.sel={};
@@ -1938,14 +1938,14 @@ async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGa
     p.sel={};p.step='galeria';render();toast(T('gq_paid'));}
   finally{p.paying=false;}}
 // Pede links novos (POST /galeria). Acesso vencido (401): volta para a selfie, com aviso próprio.
-async function pubRenovar(p){try{const r=await fetch(state.agent.url+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});
+async function pubRenovar(p){try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});
   if(r.status===401){pubAcessoVenceu(p);return false;}const j=await r.json();if(!j.galeria)return false;p.gal=j.galeria;p.galAt=Date.now();return true;}catch(e){return false;}}
 function pubAcessoVenceu(p){if(state.pub!==p)return;p.acesso=null;p.gal=null;p.sel={};p.aviso=T('gq_again');pubSelfieAbrir(p);render();}
 function pubAguardar(p){clearTimeout(p.at);p.at=setTimeout(async()=>{if(state.pub!==p||p.step!=='aguardando')return;
-  try{const r=await fetch(state.agent.url+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});if(r.status===401){pubAcessoVenceu(p);return;}const j=await r.json();if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();const ok=(p.esperando||[]).every(pid=>(j.galeria.fotos||[]).some(f=>f.pid===pid&&f.direito==='comprada'));if(ok){p.step='galeria';render();toast(T('gq_paid'));return;}}}catch(e){}
+  try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});if(r.status===401){pubAcessoVenceu(p);return;}const j=await r.json();if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();const ok=(p.esperando||[]).every(pid=>(j.galeria.fotos||[]).some(f=>f.pid===pid&&f.direito==='comprada'));if(ok){p.step='galeria';render();toast(T('gq_paid'));return;}}}catch(e){}
   pubAguardar(p);},5000);}
 async function pubCodigo(){const p=state.pub;const v=(($('#gq-code')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(v.length!==8){p.err=T('gq_notFound');render();return;}const c=v.slice(0,4)+'-'+v.slice(4);let tok=null;
-  try{const r=await fetch(state.agent.url+'/g/codigo/'+c,{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&/^[A-Za-z0-9_-]{22}$/.test(j.token||''))tok=j.token;}}catch(e){}
+  try{const r=await fetch(galApi()+'/g/codigo/'+c,{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&/^[A-Za-z0-9_-]{22}$/.test(j.token||''))tok=j.token;}}catch(e){}
   if(!tok){const m=Object.values(SIM.galerias||{}).find(x=>x.codigo===c);if(m)tok=m.token;}
   if(!tok){p.err=T('gq_notFound');render();return;}location.hash='#g/'+tok;}
 function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
@@ -2001,14 +2001,14 @@ function galCortesia(card,pid,acao,motivo,nota){const sim=simOf(card);sim.cort=s
   SIM.cortesiaLog=SIM.cortesiaLog||[];SIM.cortesiaLog.unshift({token:tok,card,pid,acao,motivo:motivo||null,nota:nota||'',por:state.user.email,em:now().toISOString()});SIM.cortesiaLog=SIM.cortesiaLog.slice(0,500);
   log(`Galeria: cortesia ${acao==='deu'?'dada':'retirada'} em ${card}${motivo?' · '+motivo:''}`);
   galDasSessao(card).forEach(t=>{galAtualizar(t);galPublicar(t);});saveSim();}
-function galQrBox(tok){const m=SIM.galerias[tok];return `<div class="galqr"><div class="lj-qr" id="galqr" data-t="${esc(tok)}"></div><div><div class="eyebrow">Código para digitar</div><b class="galcode">${esc(m.codigo)}</b><div class="note">${esc(GAL_BASE+tok)}</div><div class="note">Disponível até ${esc(new Date(m.expira).toLocaleDateString('pt-BR'))}</div></div></div>`;}
+function galQrBox(tok){const m=SIM.galerias[tok];return `<div class="galqr"><div class="lj-qr" id="galqr" data-t="${esc(tok)}"></div><div><div class="eyebrow">Código para digitar</div><b class="galcode">${esc(m.codigo)}</b><div class="note">${esc(galBase()+tok)}</div><div class="note">Disponível até ${esc(new Date(m.expira).toLocaleDateString('pt-BR'))}</div></div></div>`;}
 function galPrint(tok){const m=SIM.galerias[tok];if(!m)return;
   // v83: nos notebooks dos postos o Chrome imprime sem diálogo (--kiosk-printing) na DNP: o cartaz A4 sairia no papel de foto
-  if(pontoModo()!=='local'&&!confirm('Neste notebook a impressão pode sair direto na DNP RX1HS, em papel de foto 10×15. Imprima o cartaz A4 no computador do ponto. Imprimir aqui mesmo assim?'))return;const png=qrPng(GAL_BASE+tok,640);const w=window.open('','_blank');if(!w){toast('Libere as janelas deste site para imprimir');return;}
+  if(pontoModo()!=='local'&&!confirm('Neste notebook a impressão pode sair direto na DNP RX1HS, em papel de foto 10×15. Imprima o cartaz A4 no computador do ponto. Imprimir aqui mesmo assim?'))return;const png=qrPng(galBase()+tok,640);const w=window.open('','_blank');if(!w){toast('Libere as janelas deste site para imprimir');return;}
   const logo=new URL('img/brand/viva-maracana-azul.png',location.href).href;
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(m.nome||'Galeria')}</title><style>body{font-family:Inter,system-ui,sans-serif;color:#0C2340;text-align:center;margin:40px}h1{font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase;font-size:40px;margin:18px 0 4px}img.qr{width:340px;height:340px;margin:24px auto;display:block}.code{font-size:30px;font-weight:800;letter-spacing:.12em}.how{font-size:18px;max-width:520px;margin:18px auto}.logo{height:60px}</style></head><body><img class="logo" src="${logo}" alt="Viva Maracanã"><h1>${esc(m.nome||'')}</h1><div>${esc(m.data?new Date(m.data+'T12:00').toLocaleDateString('pt-BR'):'')}</div>${png?`<img class="qr" src="${png}" alt="QR">`:''}<div class="code">${esc(m.codigo)}</div><p class="how">${esc(T('gq_printHow'))}</p></body></html>`);
   w.document.close();setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);}
-function galPng(tok){const m=SIM.galerias[tok];const png=m&&qrPng(GAL_BASE+tok,1024);if(!png){toast('QR indisponível');return;}const a=document.createElement('a');a.href=png;a.download=`qr-${(m.nome||m.codigo).replace(/[^\w-]+/g,'-').toLowerCase()}.png`;document.body.appendChild(a);a.click();a.remove();}
+function galPng(tok){const m=SIM.galerias[tok];const png=m&&qrPng(galBase()+tok,1024);if(!png){toast('QR indisponível');return;}const a=document.createElement('a');a.href=png;a.download=`qr-${(m.nome||m.codigo).replace(/[^\w-]+/g,'-').toLowerCase()}.png`;document.body.appendChild(a);a.click();a.remove();}
 function vGalerias(){const G=state.gal;const rw=can('galerias','u');
   const tab=(k,l,n)=>`<button class="chip" data-act="gal-tab" data-v="${k}" aria-pressed="${G.tab===k}">${l}${n!=null?' · '+n:''}</button>`;
   const evs=Object.values(SIM.galerias||{}).filter(m=>m.tipo==='evento');
@@ -2575,7 +2575,7 @@ function ingQueue(){
 function ingStart(queue){const g=state.ing;if(g.timer)clearInterval(g.timer);g.queue=queue||ingQueue();g.total=g.queue.length;g.running=true;g.timer=setInterval(ingTick,650);render();}
 function ingPush(items){const g=state.ing;g.queue.push(...items);g.total+=items.length;if(!g.running){g.running=true;g.timer=setInterval(ingTick,650);}}
 // agente do ponto: programa local que vigia o cartão e entrega as fotos (agente/eterna-agente.py)
-state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:(location.protocol==='http:'&&location.port)?location.origin:'http://127.0.0.1:8765' /* aberto pelo próprio agente (este computador ou o servidor do ponto na rede) */,tried:false,err:null};
+state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:window.ETERNA_AGENTE||((location.protocol==='http:'&&location.port)?location.origin:'http://127.0.0.1:8765') /* aberto pelo próprio agente (este computador ou o servidor do ponto na rede) */,tried:false,err:null};
 // ---------- Servidor FTP do estádio: o CTP manda para ele, o agente busca as fotos novas ----------
 state.rftp=null;function rftpPoll(){if(rftpPoll.t&&Date.now()-rftpPoll.t<4000)return;rftpPoll.t=Date.now();fetch(state.agent.url+'/ftp-remoto/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=JSON.stringify(j)!==JSON.stringify(state.rftp);state.rftp=j;if(ch&&state.view==='catalogo')render();}).catch(()=>{});}
 // v80: saiu do Upload automático e foi para Configurações › Painel de controle. Ver: configuracao.r; alterar: configuracao.u. A senha fica só no agente.
@@ -2626,7 +2626,7 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
     ${ph.length?`<div class="photos small">${ph.slice(0,400).map(f=>{const v=ix.sold.has('ag_'+f.id);return photoBtn({id:'ag_'+f.id},{label:f.name,tag:(v?'VENDIDA · ':'')+new Date(f.t*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});}).join('')}</div>${ph.length>400?'<div class="note">Mostrando as 400 mais recentes deste filtro.</div>':''}`:'<div class="note">Nenhuma foto neste filtro.</div>'}
     <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera, pelo usuário (subpasta) do FTP ou pela sessão da foto. Vendida = foto escolhida numa venda paga.</div></div>`;}
 async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
-  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
+  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.galPublica=st.galeria_publica||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
     const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
       if(e.src==='inbox'||known.has(id)||was)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
@@ -3926,7 +3926,7 @@ function render(){
   try{$('#main').innerHTML=fn();}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div><div class="row"><button class="btn ghost" data-act="reset">Zerar simulação</button></div></div>`;}
   Object.entries(keep).forEach(([id,v])=>{const el=document.getElementById(id);if(el&&!el.value)el.value=v;});if(keepFocus){const el=document.getElementById(keepFocus);if(el){el.focus();if(keepSel)try{el.setSelectionRange(keepSel[0],keepSel[1])}catch(e){}}}
   if(state.view==='caixa'||state.view==='checkout')drawQR();
-  {const gq=$('#galqr');if(gq){const m=(SIM.galerias||{})[gq.dataset.t];if(m)qrDraw(gq,GAL_BASE+m.token,150,m.codigo);}}
+  {const gq=$('#galqr');if(gq){const m=(SIM.galerias||{})[gq.dataset.t];if(m)qrDraw(gq,galBase()+m.token,150,m.codigo);}}
   syncHash();
   camMount();
   if(state.guest.selfie&&!state.pub)selfieStop();

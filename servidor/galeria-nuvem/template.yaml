@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Eterna - galeria na nuvem (plano v85, parte F). API do celular do cliente, banco e permissões mínimas.
+
+Parameters:
+  Bucket:
+    Type: String
+    Description: bucket das fotos (vitrine/ e alta/), o mesmo para onde o agente do estádio envia
+  SegredoPontoSha256:
+    Type: String
+    NoEcho: true
+    Description: SHA-256 do segredo do ponto (o segredo fica só no agente, em ~/Eterna/nuvem-segredo.txt)
+  CompraOnline:
+    Type: String
+    Default: "0"
+    AllowedValues: ["0", "1"]
+    Description: compra online desligada até haver canal de pagamento (por ora só maquininha Imply no balcão)
+  OrigensApp:
+    Type: CommaDelimitedList
+    Default: "https://eterna.photo,http://127.0.0.1:8765"
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    Timeout: 30
+    MemorySize: 512
+
+Resources:
+  Banco:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: eterna-galeria
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: pk, AttributeType: S}
+        - {AttributeName: sk, AttributeType: S}
+      KeySchema:
+        - {AttributeName: pk, KeyType: HASH}
+        - {AttributeName: sk, KeyType: RANGE}
+      TimeToLiveSpecification: {AttributeName: ttl, Enabled: true}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+      Tags: [{Key: projeto, Value: eterna}]
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: !Ref OrigensApp
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [content-type]
+        MaxAge: 3600
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+
+  Galeria:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: eterna-galeria
+      CodeUri: .
+      Handler: app.handler
+      Environment:
+        Variables:
+          TABELA: !Ref Banco
+          BUCKET: !Ref Bucket
+          SEGREDO_PONTO_SHA256: !Ref SegredoPontoSha256
+          COMPRA_ONLINE: !Ref CompraOnline
+          LIMIAR_ADULTO: "85"
+          LIMIAR_CRIANCA: "95"
+          COLECAO_PREFIXO: et-maracana-
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref Banco}
+        - Statement:
+            - Sid: FotosSoLeitura
+              Effect: Allow
+              Action: [s3:GetObject]
+              Resource: !Sub "arn:aws:s3:::${Bucket}/*"
+            - Sid: RostosDaGaleria
+              Effect: Allow
+              Action: [rekognition:CreateCollection, rekognition:IndexFaces, rekognition:SearchFacesByImage, rekognition:DeleteCollection]
+              Resource: !Sub "arn:aws:rekognition:${AWS::Region}:${AWS::AccountId}:collection/et-maracana-*"
+            - Sid: LeituraEmSegundoPlano
+              Effect: Allow
+              Action: [lambda:InvokeFunction]
+              Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:eterna-galeria"
+      Events:
+        Codigo:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/codigo/{codigo}"
+            Method: GET
+        Info:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/{token}/info"
+            Method: GET
+        Acoes:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/{token}/{acao}"
+            Method: POST
+        Publicar:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/galerias
+            Method: POST
+
+Outputs:
+  EnderecoApi:
+    Description: endereço da API (até existir api.eterna.photo)
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com"

@@ -1380,3 +1380,6 @@ Plano: `docs/planos/2026-10-29-v83-multiterminal.md` (decisões D1 a D11, notas 
 
 - A simulação do TEF continua no código, desligada (`PAG_PROV.tef=null`). Quando o TEF real entrar, ela precisa ser **trocada** pela integração real, não só religada.
 - Um número de venda (`L0-NNN`) pode ser pulado (por exemplo, quando a gravação falha depois de gerar o número). Não há número repetido, mas a sequência pode ter buracos.
+
+## Nuvem: fotos online, galeria do cliente e teste de estanque (plano v85, 29/10/2026)
+Documento próprio: [NUVEM.md](NUVEM.md) (recursos da AWS, variáveis do agente, API da galeria, DNS, custos, como recriar e como apagar).
