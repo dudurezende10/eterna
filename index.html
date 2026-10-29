@@ -1349,9 +1349,12 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
   const r=await printMontar(fotos,SIM.edits);if(state.impJob!==job)return;job.res=r;
   if(!r.ok.length){job.fase='erro';document.body.classList.remove('pr-on');toast('Nenhuma foto ficou pronta para imprimir. Tente de novo.');render();return;}
   if(state.agent&&state.agent.on&&state.agent.impressora){ // servidor com impressora (ETERNA_IMPRESSORA): a foto sai lá, não na impressora de quem clicou
-    job.fase='imprimindo';render();try{const imgs=[];for(const im of document.querySelectorAll('#print-root img')){const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.drawImage(im,0,0);imgs.push(c.toDataURL('image/jpeg',.93));}
+    job.fase='imprimindo';render();let tM=0;try{const imgs=[];for(const im of document.querySelectorAll('#print-root img')){ // 10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio
+      const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
+      tM=performance.now();
       const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,imagens:imgs})})).json();
-      if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';toast(`Enviado para ${rr.impressora}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'}`);}
+      if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';const tF=performance.now();
+      toast(`Enviado para ${rr.impressora}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.at)/1000).toFixed(1)} s (montar ${((tM-job.at)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
     document.getElementById('print-root')?.remove();render();return;}
   document.body.classList.add('pr-on');job.fase='imprimindo';

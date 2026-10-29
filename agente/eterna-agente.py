@@ -2568,6 +2568,7 @@ def imprimir(imagens, venda):
     """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor."""
     if not isinstance(imagens, list) or not imagens or len(imagens) > 20:
         return {"ok": False, "error": "nenhuma foto (ou mais de 20)"}
+    t0 = time.time()
     os.makedirs(IMP_DIR, exist_ok=True)
     tag = time.strftime("%Y%m%d-%H%M%S") + "_" + re.sub(r"[^A-Za-z0-9-]", "", venda)[:20]
     arqs = []
@@ -2587,13 +2588,17 @@ def imprimir(imagens, venda):
     ps1 = os.path.join(IMP_DIR, "imprimir.ps1")
     with open(ps1, "w", encoding="utf-8-sig") as fh:
         fh.write(IMP_PS1)
+    t1 = time.time()
     r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
                         "-Arquivos"] + arqs, capture_output=True, text=True, timeout=180)
     saida = (r.stdout or "").strip() + (" " + r.stderr.strip() if r.returncode and r.stderr else "")
-    print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {IMPRESSORA} -> {saida[:200]}")
+    ms = {"gravar_ms": round((t1 - t0) * 1000), "spooler_ms": round((time.time() - t1) * 1000),
+          "kb": round(sum(os.path.getsize(a) for a in arqs) / 1024)}
+    print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {IMPRESSORA}, {ms['kb']} KB, gravar {ms['gravar_ms']} ms, "
+          f"Windows {ms['spooler_ms']} ms -> {saida[:200]}")
     if r.returncode or not saida.startswith("OK"):
-        return {"ok": False, "error": saida[:300] or "falha na impressão"}
-    return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA}
+        return {"ok": False, "error": saida[:300] or "falha na impressão", **ms}
+    return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA, **ms}
 
 
 def rota_privada(path):
