@@ -74,11 +74,8 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 ## 7. Ligar sozinho
 
 - [ ] No usuário eterna: rodar `agente\instalar-vigia.ps1`. Ele cria o atalho "Eterna vigia" na pasta Inicializar, e o vigia religa o Eterna se cair ou travar.
-- [ ] O Windows entra sozinho no usuário eterna, com o Autologon da Sysinternals. Quem tem a senha faz:
-  ```powershell
-  winget install --id Microsoft.Sysinternals.Autologon -e
-  ```
-- [ ] Teste: reiniciar o servidor sem tocar em nada. Em até 2 minutos, `/status` responde.
+- [ ] Como administrador: rodar `agente\instalar-tarefa.ps1` e digitar a senha do usuário eterna na janela. Ele cria a tarefa agendada "Eterna", que liga o vigia com o Windows como usuário eterna, escondido, **sem ninguém entrar nesse usuário**. Quem usa o computador fica no próprio usuário (ex.: Rafael) e abre `http://localhost:8765`. Dispensa o Autologon e desliga o atalho da pasta Inicializar.
+- [ ] Teste: reiniciar o servidor e entrar no usuário de sempre. Em até 2 minutos, `/status` responde.
 
 ## 8. Acesso remoto (Tailscale)
 
