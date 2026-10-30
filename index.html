@@ -342,6 +342,17 @@ body.if-tv .rail{display:none}body.if-tv main{padding:24px 32px}body.if-tv .if-n
 .lj-no:active,.lj-yes:active{transform:scale(.93)}
 .lj-foot{display:flex;align-items:center;gap:14px;padding-top:6px}
 .lj-strip{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;padding:6px 2px}
+.lj-grade{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.lj-grid{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:clamp(10px,1.4vw,18px);padding:6px 4px 14px;align-content:start}
+.lj-gcard{position:relative;background:#fff;border:0;border-radius:10px;padding:6px;cursor:pointer;outline:4px solid transparent;outline-offset:-2px;transition:outline-color .15s,transform .15s}
+.lj-gcard.ok{outline-color:#FFB800}
+.lj-gcard:active{transform:scale(.98)}
+.lj-gimg{position:relative;aspect-ratio:4/5;border-radius:6px;overflow:hidden;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:center;filter:var(--flt,none)}
+.lj-gimg.ai>*{width:100%;height:100%}
+.lj-gcard .lj-tag{position:absolute;left:12px;bottom:12px}
+.lj-gok{position:absolute;right:12px;top:12px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.85);color:#0C2340;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px -6px rgba(0,0,0,.5);opacity:.55}
+.lj-gcard.ok .lj-gok{background:#FFB800;opacity:1}
+.lj-hint{color:rgba(255,255,255,.75);font-size:15px;flex:1}
 .lj-th{position:relative;flex:0 0 auto;width:84px;aspect-ratio:3/2;border-radius:4px;border:2px solid transparent;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);opacity:.55;overflow:hidden;cursor:pointer}
 .lj-th.cur{opacity:1;border-color:#fff}.lj-th.ok{opacity:1;border-color:#FFB800}.lj-th.no{opacity:.2}
 .lj-thok{position:absolute;right:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#FFB800;color:#0C2340;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;z-index:2}
@@ -2280,14 +2291,15 @@ function vQuiosque(){
   if((k.step==='review'||k.step==='cart')&&lojaJaPaga(k.code)){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (comprar mais é o achado 2 da v85)
     const tok=galDaSessao(k.code);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){const sim=SIM.sessions[k.code]||{};setTimeout(()=>{if(state.kiosk===k&&lojaJaPaga(k.code)&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
   if((k.step==='review'||k.step==='cart')&&lojaJaPaga(k.code))return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljVoltar('loja-new','')}</div></div>`;
-  if(k.step==='review'){const n=items.length;k.i=Math.max(0,Math.min(n-1,k.i||0));const x=items[k.i];const st=x?pk[x.k]||'':'';
-    const frame=!x?'':x.t==='ai'?`<div class="lj-print ${st}"><div class="lj-img">${lojaThumb(x)}</div><span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>${st==='ok'?`<span class="lj-mark">${ICO.ok}</span>`:''}</div>`
-      :`<div class="lj-print ${st}"><div class="lj-img" style="${bigStyle(x.id)}">${st?'':'<span class="wm">VIVA MARACANÃ</span>'}</div>${st==='ok'?`<span class="lj-mark">${ICO.ok}</span>`:''}</div>`;
-    return `<div class="lj lj-full lj-review">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljVoltar()}${cartPill}`)}</div>
-      <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n?k.i+1:0} / ${n}</span></div>
-      <div class="lj-stage" id="lswipe"><button class="lj-nav" data-act="kiosk-prev" aria-label="‹" ${k.i===0?'disabled':''}>‹</button><div class="lj-mid">${frame}</div><button class="lj-nav" data-act="kiosk-next" aria-label="›" ${k.i>=n-1?'disabled':''}>›</button></div>
-      <div class="lj-actions"><button class="lj-no ${st==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${st==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div>
-      <div class="lj-foot"><div class="lj-strip">${items.map((q,i)=>{const s2=pk[q.k]||'';return `<button class="lj-th ${i===k.i?'cur':''} ${s2}" data-act="kiosk-jump" data-i="${i}" style="${q.t==='ph'?phStyle(q.id):''}" aria-label="${i+1}">${q.t==='ai'?lojaThumb(q):''}${s2==='ok'?'<span class="lj-thok">✓</span>':''}</button>`;}).join('')}</div>
+  if(k.step==='review'){const n=items.length; // galeria em grade: todas as fotos inteiras (sem corte), um toque marca ou desmarca
+    const full=st0=>String(st0||'').replace('--bs:cover','--bs:contain');
+    const card=(q,i)=>{const s2=pk[q.k]||'';return `<button class="lj-gcard ${s2==='ok'?'ok':''}" data-act="kiosk-tog" data-i="${i}" aria-pressed="${s2==='ok'}" aria-label="${i+1}">
+        ${q.t==='ai'?`<div class="lj-gimg ai">${lojaThumb(q)}</div><span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>`:`<div class="lj-gimg" style="${full(bigStyle(q.id))}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}</div>`}
+        <span class="lj-gok">${ICO.ok}</span></button>`;};
+    return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljVoltar()}${cartPill}`)}</div>
+      <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n} ${n===1?'foto':'fotos'}</span></div>
+      <div class="lj-grid">${items.map(card).join('')}</div>
+      <div class="lj-foot"><span class="lj-hint">${nSel?T('tapCheck'):''}</span>
         <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div></div>`;}
   if(k.step==='cart'){const ps=DATA.catalog.filter(x=>x.kind==='pacote');const auto=c.n?lojaIdeal(c.n).pkg:null;const P0=c.pkg&&DATA.catalog.find(x=>x.id===c.pkg);const save=c.save;
     const prints=c.ch.map(x=>`<div class="lj-mini"><div class="lj-img" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}</div><button class="lj-rm" data-act="loja-rm" data-k="${esc(x.k)}" aria-label="✗">${ICO.no}</button></div>`).join('');
@@ -4284,6 +4296,8 @@ document.addEventListener('click',e=>{
     case 'kiosk-prev':state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();break;
     case 'kiosk-next':state.kiosk.i=(state.kiosk.i||0)+1;render();break;
     case 'kiosk-jump':state.kiosk.i=+d.i;render();break;
+    case 'kiosk-tog':{const k=state.kiosk;const items=lojaItems(k.code);const x=items[+d.i];if(!x)break;const pk=lojaPick(k.code);k.i=+d.i;
+      if(pk[x.k]==='ok')delete pk[x.k];else pk[x.k]='ok';lojaSync(k.code);render();break;}
     case 'kiosk-ok':lojaMark('ok');break;
     case 'kiosk-no':lojaMark('no');break;
     case 'kiosk-done':case 'loja-cart':state.kiosk.step='cart';render();window.scrollTo({top:0});break;
