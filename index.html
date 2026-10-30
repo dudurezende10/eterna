@@ -361,8 +361,27 @@ body.if-tv .if-wrap{height:calc(100vh - 40px)}body.if-tv .if-num{font-size:40px}
 .lj-gok{position:absolute;right:12px;top:12px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.85);color:#0C2340;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px -6px rgba(0,0,0,.5);opacity:.55}
 .lj-gcard.ok .lj-gok{background:#FFB800;opacity:1}
 .lj-hint{color:rgba(255,255,255,.75);font-size:15px;flex:1}
+.lj-gcard{display:block}.lj-gview{display:block;width:100%;border:0;padding:0;background:none;cursor:zoom-in;position:relative}
+.lj-gimg.spr{aspect-ratio:3/2}
+.lj-gok{border:0;cursor:pointer;z-index:2}
+.lj-lb{position:fixed;inset:0;z-index:60;background:rgba(6,18,36,.94);display:grid;grid-template-columns:72px minmax(0,1fr) 72px;grid-template-rows:minmax(0,1fr) auto;align-items:center;padding:24px 16px 18px;gap:12px}
+.lj-lbmid{grid-column:2;grid-row:1;height:100%;min-height:0;display:flex;align-items:center;justify-content:center}
+.lj-lbimg{width:100%;height:100%;background:transparent var(--img) no-repeat;background-size:var(--bs);background-position:center;filter:var(--flt,none);position:relative}
+.lj-lbimg.spr{aspect-ratio:3/2;height:auto;max-height:100%}
+.lj-lbimg.ai{display:flex;align-items:center;justify-content:center}.lj-lbimg.ai>*{max-width:100%;max-height:100%}
+.lj-lbnav{grid-row:1;width:60px;height:60px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.08);color:#fff;font-size:40px;line-height:1;cursor:pointer}
+.lj-lbnav.prev{grid-column:1}.lj-lbnav.next{grid-column:3}.lj-lbnav:disabled{opacity:.25;cursor:default}
+.lj-lbx{position:absolute;top:16px;right:16px;width:52px;height:52px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center}
+.lj-lbbar{grid-column:1/-1;grid-row:2;display:flex;justify-content:center;align-items:center;gap:18px}
+.lj-lbcnt{color:rgba(255,255,255,.8);font-size:18px;font-weight:700}
+.lj-lbon{background:#43B02A!important;color:#fff!important}
 /* tela de pacotes sem scroll no monitor do balcão: pacotes em 2 colunas compactas, pagamento e total sempre à vista */
-.btn.danger{background:#d64545;border-color:#d64545;color:#fff}.lgpd-ask{gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;padding:10px 12px;border:1px solid #d64545;border-radius:8px;background:#fdecec}
+.btn.danger{background:#d64545;border-color:#d64545;color:#fff}
+.mx-fundo{position:fixed;inset:0;background:rgba(6,18,36,.55);z-index:70;backdrop-filter:blur(2px)}
+.mx{position:fixed;z-index:71;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,460px);background:var(--surface,#fff);color:var(--fg,#0C2340);border-radius:14px;padding:26px 26px 20px;box-shadow:0 30px 80px -20px rgba(0,0,0,.6);text-align:center}
+.mx h2{margin:10px 0 8px}.mx p{margin:0 0 8px;line-height:1.45}
+.mx-ic{width:56px;height:56px;margin:0 auto;border-radius:50%;background:#fdecec;color:#d64545;display:flex;align-items:center;justify-content:center}
+.mx-acoes{display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap}
 .lj.lj-full{overflow-x:hidden}
 /* tela Pronto (QR) sem scroll no monitor: texto e botão à esquerda, QR grande à direita */
 @media (min-width:900px){
@@ -1164,8 +1183,12 @@ function vFila(){
   if(state.fila.session){const s=sessionObj(state.fila.session);if(!s){state.fila.session=null;return vFila();}const sim=simOf(s.card);
     const sel=new Set(sim.selected||[]);const cart=sim.cart||[];const total=cartTotal(cart);
     return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="fila-back">← Fila</button></div><h1>${esc(s.card)}</h1></div><div class="note">${esc(P[s.key]?P[s.key].name:'')} · ${esc(s.pdv)} · ${dlabel(s.date)} ${esc(s.time)} · ${s.photos.length} fotos ${sim.status==='paga'?'· <span class="pill good">paga</span>':''}</div>
-      ${sim.status!=='paga'&&can('galerias','u')?(state.lgpdAsk===s.card?`<div class="row lgpd-ask"><span class="note"><b>Apagar as ${s.photos.length} fotos desta sessão</b> deste servidor e da nuvem? Não dá para desfazer.</span><button class="btn danger" data-act="lgpd-excluir" data-card="${esc(s.card)}">Sim, apagar</button><button class="btn ghost" data-act="lgpd-nao">Cancelar</button></div>`
-        :`<button class="btn ghost" data-act="lgpd-pedir" data-card="${esc(s.card)}" title="O cliente não comprou e pediu para não guardar as fotos dele (LGPD)">Cliente pediu: apagar as fotos</button>`):''}</div>
+      ${sim.status!=='paga'&&can('galerias','u')?`<button class="btn ghost" data-act="lgpd-pedir" data-card="${esc(s.card)}" title="O cliente não comprou e pediu para não guardar as fotos dele (LGPD)">Cliente pediu: apagar as fotos</button>`:''}</div>
+      ${state.lgpdAsk===s.card?`<div class="mx-fundo" data-act="lgpd-nao"></div><div class="mx" role="dialog" aria-modal="true" aria-labelledby="mx-t"><div class="mx-ic">${ICO.no}</div>
+        <h2 id="mx-t">Apagar as fotos do cliente?</h2>
+        <p>As <b>${s.photos.length} fotos</b> da sessão <b>${esc(s.card)}</b> saem deste servidor e da nuvem, e o rosto lido nelas é apagado. O cliente não comprou e pediu para não guardar (LGPD).</p>
+        <p class="note">Não dá para desfazer.</p>
+        <div class="mx-acoes"><button class="btn ghost big" data-act="lgpd-nao">Cancelar</button><button class="btn danger big" data-act="lgpd-excluir" data-card="${esc(s.card)}">Sim, apagar as fotos</button></div></div>`:''}
     <div class="review">
       <div class="panel"><div class="head"><h2>O convidado escolhe</h2><span class="note">${sel.size} escolhidas. Toque para incluir.</span></div>
         <div class="photos">${s.photos.map(p=>photoBtn(p,{act:'fila-sel',sel:sel.has(p.id),tag:p.sold?'VENDIDA':''})).join('')}</div>
@@ -2330,13 +2353,19 @@ function vQuiosque(){
     const tok=galDaSessao(k.code);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){const sim=SIM.sessions[k.code]||{};setTimeout(()=>{if(state.kiosk===k&&lojaJaPaga(k.code)&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
   if((k.step==='review'||k.step==='cart')&&lojaJaPaga(k.code))return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljVoltar('loja-new','')}</div></div>`;
   if(k.step==='review'){const n=items.length; // galeria em grade: todas as fotos inteiras (sem corte), um toque marca ou desmarca
-    const full=st0=>String(st0||'').replace('--bs:cover','--bs:contain');
-    const card=(q,i)=>{const s2=pk[q.k]||'';return `<button class="lj-gcard ${s2==='ok'?'ok':''}" data-act="kiosk-tog" data-i="${i}" aria-pressed="${s2==='ok'}" aria-label="${i+1}">
-        ${q.t==='ai'?`<div class="lj-gimg ai">${lojaThumb(q)}</div><span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>`:`<div class="lj-gimg" style="${full(bigStyle(q.id))}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}</div>`}
-        <span class="lj-gok">${ICO.ok}</span></button>`;};
+    const full=st0=>String(st0||'').replace('--bs:cover','--bs:contain');const spr=st0=>/sprites\//.test(String(st0||''));
+    const img=(q,s2,cls)=>{if(q.t==='ai')return `<div class="${cls} ai">${lojaThumb(q)}</div>`;const st0=bigStyle(q.id);return `<div class="${cls}${spr(st0)?' spr':''}" style="${full(st0)}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}</div>`;};
+    const card=(q,i)=>{const s2=pk[q.k]||'';return `<div class="lj-gcard ${s2==='ok'?'ok':''}"><button class="lj-gview" data-act="kiosk-ver" data-i="${i}" aria-label="Ampliar foto ${i+1}">${img(q,s2,'lj-gimg')}${q.t==='ai'?`<span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>`:''}</button>
+        <button class="lj-gok" data-act="kiosk-tog" data-i="${i}" aria-pressed="${s2==='ok'}" aria-label="Marcar foto ${i+1}">${ICO.ok}</button></div>`;};
+    const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;const vs=vq?pk[vq.k]||'':'';
+    const caixa=vq?`<div class="lj-lb" id="lj-lb" role="dialog" aria-label="Foto ${v+1} de ${n}"><button class="lj-lbx" data-act="kiosk-fechar" aria-label="Fechar">${ICO.no}</button>
+        <button class="lj-lbnav prev" data-act="kiosk-ver" data-i="${v-1}" ${v===0?'disabled':''} aria-label="Anterior">‹</button>
+        <div class="lj-lbmid">${img(vq,vs,'lj-lbimg')}</div>
+        <button class="lj-lbnav next" data-act="kiosk-ver" data-i="${v+1}" ${v>=n-1?'disabled':''} aria-label="Próxima">›</button>
+        <div class="lj-lbbar"><span class="lj-lbcnt">${v+1} / ${n}</span><button class="lj-cta ${vs==='ok'?'lj-lbon':''}" data-act="kiosk-tog" data-i="${v}">${vs==='ok'?ICO.ok+' Escolhida · toque para tirar':'Quero esta foto'}</button></div></div>`:'';
     return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljVoltar()}${cartPill}`)}</div>
       <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n} ${n===1?'foto':'fotos'}</span></div>
-      <div class="lj-grid">${items.map(card).join('')}</div>
+      <div class="lj-grid">${items.map(card).join('')}</div>${caixa}
       <div class="lj-foot"><span class="lj-hint">${nSel?T('tapCheck'):''}</span>
         <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div></div>`;}
   if(k.step==='cart'){const ps=DATA.catalog.filter(x=>x.kind==='pacote');const auto=c.n?lojaIdeal(c.n).pkg:null;const P0=c.pkg&&DATA.catalog.find(x=>x.id===c.pkg);const save=c.save;
@@ -2383,8 +2412,8 @@ function lojaMark(v){const k=state.kiosk;const items=lojaItems(k.code);const x=i
   pk[x.k]=pk[x.k]===v?'':v;if(!pk[x.k])delete pk[x.k];lojaSync(k.code);
   if(pk[x.k]&&(k.i||0)<items.length-1)k.i++;render();}
 // deslizar o dedo na foto: esquerda = próxima, direita = anterior
-(function(){let x0=null,y0=null;document.addEventListener('touchstart',e=>{if(state.view!=='quiosque'||state.kiosk.step!=='review'||!e.target.closest('#lswipe'))return;x0=e.touches[0].clientX;y0=e.touches[0].clientY;},{passive:true});
-  document.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy))return;const k=state.kiosk;k.i=Math.max(0,(k.i||0)+(dx<0?1:-1));render();},{passive:true});})();
+(function(){let x0=null,y0=null;document.addEventListener('touchstart',e=>{if(state.view!=='quiosque'||state.kiosk.step!=='review'||!e.target.closest('#lswipe,#lj-lb'))return;x0=e.touches[0].clientX;y0=e.touches[0].clientY;},{passive:true});
+  document.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy))return;const k=state.kiosk;if(k.ver!=null){const n=lojaItems(k.code).length;k.ver=Math.max(0,Math.min(n-1,k.ver+(dx<0?1:-1)));k.i=k.ver;render();return;}k.i=Math.max(0,(k.i||0)+(dx<0?1:-1));render();},{passive:true});})();
 
 // ---------- Escolha automática da foto para fundo de IA ----------
 // Na operação roda na ingestão (IA local): detecção de pessoas e pose, segmentação e nitidez. Aqui a nota é simulada, estável por foto.
@@ -4339,6 +4368,8 @@ document.addEventListener('click',e=>{
     case 'kiosk-prev':state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();break;
     case 'kiosk-next':state.kiosk.i=(state.kiosk.i||0)+1;render();break;
     case 'kiosk-jump':state.kiosk.i=+d.i;render();break;
+    case 'kiosk-ver':{const k=state.kiosk;const n=lojaItems(k.code).length;const i=+d.i;if(i>=0&&i<n){k.ver=i;k.i=i;}render();break;}
+    case 'kiosk-fechar':state.kiosk.ver=null;render();break;
     case 'kiosk-tog':{const k=state.kiosk;const items=lojaItems(k.code);const x=items[+d.i];if(!x)break;const pk=lojaPick(k.code);k.i=+d.i;
       if(pk[x.k]==='ok')delete pk[x.k];else pk[x.k]='ok';lojaSync(k.code);render();break;}
     case 'kiosk-ok':lojaMark('ok');break;
@@ -4451,7 +4482,12 @@ document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-p
   if(a==='gal-ev-menor'){if(state.gal.ev)state.gal.ev.menor=e.target.checked;return;}
   if(a==='gal-ev-data'){if(state.gal.ev){const n=$('#gal-ev-nome');if(n)state.gal.ev.nome=n.value;state.gal.ev.data=e.target.value||todayISO();state.gal.ev.sel={};render();}return;}});
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-email')sendCode();if(f==='login-code')checkCode();});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){if(e.key==='ArrowRight'){state.kiosk.i=(state.kiosk.i||0)+1;render();e.preventDefault();return;}if(e.key==='ArrowLeft'){state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();e.preventDefault();return;}if(e.key==='Enter'||e.key===' '){const b=$('[data-act="kiosk-ok"]');if(b){b.click();e.preventDefault();return;}}}if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&(MODAL.list.length>1||MODAL.comp)&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i+1);else showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i-1);else showModal(MODAL.i-1);e.preventDefault();}}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
+    if(e.key==='ArrowRight'||e.key==='ArrowLeft'){k.ver=Math.max(0,Math.min(n-1,k.ver+(e.key==='ArrowRight'?1:-1)));k.i=k.ver;render();e.preventDefault();return;}
+    if(e.key==='Escape'){k.ver=null;render();e.preventDefault();e.stopPropagation();return;}
+    if(e.key==='Enter'||e.key===' '){const b=$('.lj-lbbar [data-act="kiosk-tog"]');if(b)b.click();e.preventDefault();return;}}
+  if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver==null&&(e.key==='Enter')&&!/INPUT|TEXTAREA|SELECT|BUTTON/.test(e.target.tagName)){state.kiosk.ver=state.kiosk.i||0;render();e.preventDefault();return;}
+  if(state.view==='quiosque'&&state.kiosk.step==='review'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){if(e.key==='ArrowRight'){state.kiosk.i=(state.kiosk.i||0)+1;render();e.preventDefault();return;}if(e.key==='ArrowLeft'){state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();e.preventDefault();return;}if(e.key==='Enter'||e.key===' '){const b=$('[data-act="kiosk-ok"]');if(b){b.click();e.preventDefault();return;}}}if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&(MODAL.list.length>1||MODAL.comp)&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i+1);else showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i-1);else showModal(MODAL.i-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){lojaCliente();state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}});
 function closeModal(){$('#modal').removeAttribute('data-open');if(state.view==='ajustes'||state.view==='fila'||state.view==='caixa')render();}
 $('#modal-close').addEventListener('click',closeModal);

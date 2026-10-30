@@ -724,6 +724,18 @@ def lgpd_excluir(pids, tokens, quem=""):
             for h in hs:
                 seen.pop(h, None)
                 lgpd_excluidas.add(h)
+        # o original que a câmera mandou para a pasta vigiada (FTP do servidor) também sai: mesmo nome e mesmo hash
+        orig = os.path.basename((e or {}).get("file") or "")[len(pid) + 1:]
+        pasta = os.environ.get("ETERNA_PASTA")
+        if orig and pasta and os.path.isdir(pasta):
+            for raiz, _, nomes in os.walk(pasta):
+                if orig in nomes:
+                    cand = os.path.join(raiz, orig)
+                    try:
+                        if quick_hash(cand, os.path.getsize(cand)) in hs:
+                            os.remove(cand)
+                    except OSError as ex:
+                        falhas.append("original: " + str(ex)[:80])
         for f in ((e or {}).get("file"), (e or {}).get("thumb"), os.path.join(RECORTES, pid + ".png")):
             if f and os.path.exists(f):
                 try:
