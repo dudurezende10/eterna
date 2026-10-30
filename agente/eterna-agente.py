@@ -64,9 +64,13 @@ IMPRESSORAS = [x.strip() for x in IMPRESSORA.split(",") if x.strip()]
 # Qual terminal imprime em qual DNP (qualquer combinação: 1 para 1, várias para 1 terminal, 1 dividida por vários terminais):
 # ETERNA_IMPRESSORA_POSTOS="Caixa 1=DS-RX1|DS-RX1 (2);Caixa 2=DS-RX1 (3);Caixa 3=DS-RX1 (3)". Terminal fora da lista usa
 # qualquer impressora livre. Cada venda sai inteira numa impressora só.
-IMP_POSTOS = {}
+# "Caixa 4=local": esse terminal imprime na DNP ligada nele mesmo (o navegador imprime, o servidor não entra).
+IMP_POSTOS, IMP_LOCAIS = {}, []
 for _x in os.environ.get("ETERNA_IMPRESSORA_POSTOS", "").split(";"):
     _k, _, _v = _x.partition("=")
+    if _k.strip() and _v.strip().lower() == "local":
+        IMP_LOCAIS.append(_k.strip().lower())
+        continue
     _ps = [p.strip() for p in _v.split("|") if p.strip() in IMPRESSORAS]
     if _k.strip() and _ps:
         IMP_POSTOS[_k.strip().lower()] = _ps
@@ -3593,6 +3597,7 @@ class H(BaseHTTPRequestHandler):
                                 "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "recorte": rec_status(), "fundos_modo": fundos_modo(),
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
+                                "impressora_locais": IMP_LOCAIS,
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
