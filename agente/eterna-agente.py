@@ -1278,6 +1278,16 @@ def pasta_vigiada():
 
 
 def lan_ip():
+    # servidor com duas redes (câmeras num roteador sem internet, internet pelo Wi-Fi): vale o primeiro IP de
+    # ETERNA_ORIGENS que é desta máquina; sem isso, o IP da rota de internet
+    try:
+        meus = {i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
+        for o in os.environ.get("ETERNA_ORIGENS", "").split(","):
+            h = urlparse(o.strip()).hostname or ""
+            if h in meus and not h.startswith("100."):
+                return h
+    except Exception:
+        pass
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
