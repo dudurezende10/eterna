@@ -38,7 +38,7 @@ Ainda dependem do administrador do servidor: entrada automática do Windows no u
 |---|---|
 | Recibo do Caixa: **Mostrar ao cliente** manda o QR da venda para a tela do Checkout (BroadcastChannel `eterna-loja`, mensagem `mostrar-qr`) | app |
 | Quem já comprou e volta à câmera vê de novo o QR e o código da galeria | app (quiosque) |
-| Recibo: **Apagar as fotos do cliente** (LGPD, art. 18), só com permissão de Galerias. Apaga foto, miniatura, recorte, rostos lidos, fila e bucket da nuvem, encerra a galeria (a nuvem apaga os rostos da AWS), bloqueia a foto para não voltar pelo FTP (`lgpd-excluidas.json`) e registra em `lgpd.log` sem dado pessoal. A venda continua no financeiro, sem as fotos | agente `POST /lgpd/excluir` + app |
+| Sessão **sem venda** (Fila do balcão): **Cliente pediu: apagar as fotos** (LGPD, art. 18), só com permissão de Galerias e confirmação dentro do app. Venda paga não apaga (as fotos são do cliente). Apaga foto, miniatura, recorte, rostos lidos, fila e bucket da nuvem, encerra a galeria (a nuvem apaga os rostos da AWS), bloqueia a foto para não voltar pelo FTP (`lgpd-excluidas.json`) e registra em `lgpd.log` sem dado pessoal. A venda continua no financeiro, sem as fotos | agente `POST /lgpd/excluir` + app |
 | A selfie não é guardada em lugar nenhum (balcão, servidor e nuvem); só fica o registro do consentimento, sem imagem | — |
 | Celular: selfie automática quando a câmera vê um rosto de frente por duas leituras seguidas; o botão continua como reserva | app (`selfieMount`) |
 | Celular: foto comprada aparece sem marca d'água | app (`pubImg`) |
