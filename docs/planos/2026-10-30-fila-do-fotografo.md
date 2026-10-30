@@ -13,7 +13,7 @@ Um painel de senhas, igual à Fila de impressão, que mostra cada grupo de fotos
 ## Escopo desta entrega
 - Agente: agrupamento de chegadas por fotógrafo, em memória e refeito a partir do `meta` no boot, com `GET /fila-fotografo` (só leitura) e `POST /fila-fotografo/funcao` (função do dia vinda da Escala).
 - App: view `fotofila` no grupo Fotógrafo, com 3 colunas, miniaturas chegando nas duas primeiras, fotógrafo com "(volante)" ou "(campo · ponto)" e tela cheia para TV.
-- Um módulo novo de permissão, só com Ver.
+- Um módulo novo de permissão: Ver para todos os perfis da D6; Alterar (só o interruptor das miniaturas) para Admin e Supervisor (segurança B1).
 - A Escala envia a função do dia ao agente.
 
 ## Fora do escopo
@@ -26,14 +26,14 @@ Um painel de senhas, igual à Fila de impressão, que mostra cada grupo de fotos
 ## Sinal objetivo de cada etapa (por grupo)
 **Grupo** = fotos do mesmo fotógrafo (chave D2 da v85) em que cada chegada `u` fica a no máximo `FF_PAUSA` = 20 s da anterior. O valor é o mesmo do `SESSAO_PAUSA_S`; `ETERNA_SESSAO_PAUSA` de 2 a 600 vale só para os testes.
 
-**Relógio da câmera:** por `serie`, `desvio` = mínimo de `u − cap` nas últimas 50 fotos do dia, com piso de 0. O último clique no relógio do agente é `ultimo_clique = cap_max + desvio`.
+**Relógio da câmera:** por `serie`, `desvio` = mínimo de `u − cap` nas últimas 50 fotos do dia, com sinal (revisão: relógio adiantado também é compensado); o último clique nunca passa da última chegada. O último clique no relógio do agente é `ultimo_clique = cap_max + desvio`.
 
 | Etapa | Regra | Observação |
 |---|---|---|
 | **Fotografando** | grupo aberto e `agora − ultimo_clique ≤ FF_PAUSA` (o fotógrafo ainda está clicando) | foto sem `cap` usa `u`, e Fotografando e Subindo viram uma etapa só |
 | **Subindo** | grupo aberto e `agora − ultimo_clique > FF_PAUSA`, com fotos ainda chegando (`agora − ultima_chegada ≤ FF_PAUSA`); ou uma leva de cartão (`s='cartao'`) em andamento | a contagem de fotos sobe a cada chegada |
 | **Pronta no caixa** | `agora − ultima_chegada > FF_PAUSA` e nenhuma foto do grupo na fila de rostos (`rostos_pendentes`) quando os rostos estão ligados | é o momento em que a selfie do Checkout já acha a pessoa no servidor |
-| **Sai da tela** | `FF_PRONTA_MIN` = 30 min depois de ficar pronta (D1), ou na virada do dia | — |
+| **Sai da tela** | `FF_PRONTA_MIN` = 15 min depois de ficar pronta (D1, Eduardo 30/10), ou na virada do dia | — |
 
 Com FTP ao vivo da câmera (4 a 5 s por foto), Subindo pode durar só alguns segundos. É o comportamento esperado. A etapa fica longa quando há fila de envio (Wi-Fi ruim) ou leitura de cartão.
 
@@ -63,17 +63,17 @@ Com FTP ao vivo da câmera (4 a 5 s por foto), Subindo pode durar só alguns seg
 ## Decisões para o Eduardo (com recomendação)
 | # | Pergunta | Recomendação |
 |---|---|---|
-| D1 | Quando o grupo sai de "Pronta"? | 30 min depois de ficar pronto, com até 24 cartões na coluna. "Sumir ao vender" só depois que as vendas forem para o servidor |
+| D1 | Quando o grupo sai de "Pronta"? | **Decidido (Eduardo, 30/10): 15 min depois de ficar pronto** (`FF_PRONTA_MIN = 15`), com até 24 cartões na coluna. "Sumir ao vender" só depois que as vendas forem para o servidor |
 | D2 | O que identifica o grupo na tela? | nesta entrega: o nome do fotógrafo em letra grande, a hora de início (hh:mm) e o número de fotos. Com a v85 A, o código LP passa a ser o número grande |
 | D3 | O fotógrafo aperta "comecei/terminei"? | não. Fica automático, pela premissa "zero toque no set" |
-| D4 | Miniaturas na TV do caixa | aparecem na tela da equipe. Na tela cheia, ficam **desligadas por padrão**, com um interruptor por aparelho. São rostos de turistas e de menores (LGPD art. 14), e uma TV voltada para a fila mostra as fotos de graça. Se ele quiser na TV, que seja virada para a equipe |
-| D5 | Nomes das colunas | Fotografando / Subindo / Pronta no caixa. Alternativas: "No set", "Clicando agora" · "Enviando", "Chegando ao servidor" · "Pronta para ver", "Já no Checkout" |
+| D4 | Miniaturas na TV do caixa | **Decidido (Eduardo, 30/10), com o ajuste da segurança (B1):** a escolha gravada no aparelho (`eterna.fotofila.tvmini` `1`/`0`) vale; sem escolha, ligadas só para perfil sem venda/quiosque e com a janela fora de tela cheia (botão do app, `fullscreenElement`, `display-mode: fullscreen` ou F11/quiosque); senão desligadas. O interruptor "Miniaturas neste aparelho" é só de quem tem `filafoto.u` (Admin e Supervisor) e fica no histórico. São rostos de turistas e de menores (LGPD art. 14) |
+| D5 | Nomes das colunas | **Decidido (Eduardo, 30/10): "Clicando agora" · "Chegando" · "Já no Checkout"** (estados internos `fotografando`, `subindo`, `pronta`) |
 | D6 | Quem vê | Admin, Supervisor, Fotógrafo e Atendimento e venda (a TV do caixa), por um módulo novo só de leitura |
 
 ## Mudanças por arquivo
 
 ### `/home/claude/eterna/agente/eterna-agente.py`
-- **Constantes:** `FF_PAUSA` (20; `ETERNA_SESSAO_PAUSA` de 2 a 600), `FF_PRONTA_MIN = 30`, `FF_MAX = 2000` grupos/dia, `FF_FUNCAO = ~/Eterna/ponto/funcao.json`.
+- **Constantes:** `FF_PAUSA` (20; `ETERNA_SESSAO_PAUSA` de 2 a 600), `FF_PRONTA_MIN = 15`, `FF_MAX = 2000` grupos/dia, `FF_FUNCAO = ~/Eterna/ponto/funcao.json`.
 - **Estado:** `ff_lock` (nunca segurar junto com o `lock`; ler o `meta` antes), `ff_grupos` (lista do dia), `ff_aberto` (chave → grupo), `ff_desvio` (série → deque de 50), `ff_rev = [0]`, `rostos_pendentes` (set).
 - `ff_quem(o, autor, dono, serie)` → `(chave|None, fonte)`, pela regra acima.
 - `ff_add(pid)`: chamada no fim de `ingest_file` (ramo novo, fora do `lock`). Lê `meta[pid]`, calcula a chave e acha o grupo aberto ou cria `{id:'G'+seq, chave, fonte, funcao:snapshot, inicio:u, ultima_chegada:u, cap_max, serie, n, pids:[últimos 6], via}`. Incrementa `ff_rev`.
@@ -90,9 +90,9 @@ Com FTP ao vivo da câmera (4 a 5 s por foto), Subindo pode durar só alguns seg
 
 ### `/home/claude/eterna/index.html`
 - `VIEWS`: `['fotofila','Fila do fotógrafo','fotografando, subindo e pronta','Fotógrafo']`, logo depois de `importar`.
-- `MODULES`: `['filafoto','Fila do fotógrafo',['fotofila']]`. `MODULE_INFO.filafoto = {desc:'Painel das fotos chegando, por fotógrafo e ponto', r:'ver a fila do fotógrafo (também na TV)'}`.
-- `PRESETS`: `filafoto:{...RO}` e `fotofila` no `menu` de `foto` e de `venda`; Supervisor `filafoto:{...RO}`; o Admin já ganha pelo `ALL`.
-- Nenhuma ação grava, então nada entra em `WRITE_OPS`.
+- `MODULES`: `['filafoto','Fila do fotógrafo',['fotofila']]`. `MODULE_INFO.filafoto = {desc:'Painel das fotos chegando, por fotógrafo e ponto', r:'ver a fila do fotógrafo (também na TV)', u:'ligar e desligar as miniaturas (rostos) neste aparelho'}` (o `u` entrou com a segurança B1).
+- `PRESETS`: `filafoto:{...RO}` e `fotofila` no `menu` de `foto` e de `venda`; Supervisor `filafoto` Ver e Alterar; o Admin já ganha pelo `ALL`.
+- Só `fotofila-mini` entra em `WRITE_OPS` (`u`, `ACT_MOD` `filafoto`), registrado no `auditLog` (segurança B1).
 - `VIEWFN.fotofila = vFotoFila`.
 - `state.fotoFila = null`, `fotoFilaTimer`.
 - `fotoFilaPoll()`: cópia de `impFilaPoll`, com `fetch(state.agent.url+'/fila-fotografo')` e `AbortController` de 4 s. Sem resposta, mantém o último dado e mostra "Sem conexão com o servidor · atualizado há N s".
@@ -101,10 +101,10 @@ Com FTP ao vivo da câmera (4 a 5 s por foto), Subindo pode durar só alguns seg
   - Nas duas primeiras colunas, até 6 `<img loading="lazy" src="${agent}/thumb/<pid>">` de 56 px, a mais nova primeiro, só se `ffMiniOn()`.
   - Tudo com `esc()`.
 - `ffOnde(f)` → `campo · <nome do ponto>` | `volante · <modo>` | `set interno · <nome>` | `sem ponto`.
-- `ffMiniOn()`: sempre ligado fora da tela cheia; na tela cheia, `localStorage['eterna.fotofila.tvmini']==='1'`.
+- `ffMiniOn()`: veja a D4 (escolha do aparelho; sem ela, ligado só para perfil sem venda/quiosque e fora de tela cheia).
 - `data-act`:
   - `fotofila-tv`: liga e desliga a classe `if-tv` mais o fullscreen, igual ao `impfila-tv`;
-  - `fotofila-mini`: o interruptor da miniatura na TV. Não grava no servidor.
+  - `fotofila-mini`: "Miniaturas neste aparelho", só com `filafoto.u`. Grava só no aparelho e no histórico, não no servidor.
 - **Correção pequena:** o ouvinte `fullscreenchange` tira `if-tv` quando o fullscreen termina, e `go()` tira `if-tv`. Hoje a classe fica presa depois do Esc.
 - `setFunc`: depois de `saveSim()`, `ffFuncaoEnviar()` faz o POST com `X-Eterna: 1`, sem bloquear e sem erro na tela. `agentPoll` chama a mesma função quando `a.boot` muda.
 - **CSS:** `.ff-thumbs{display:flex;gap:4px}`, `.ff-thumbs img{width:56px;height:56px;object-fit:cover;border-radius:6px}`, `.ff-onde{font-weight:500;color:var(--muted)}`, e `body.if-tv .ff-thumbs img{width:80px;height:80px}`.
@@ -118,7 +118,7 @@ Com FTP ao vivo da câmera (4 a 5 s por foto), Subindo pode durar só alguns seg
 ## Contratos
 `GET /fila-fotografo` → 200
 ```json
-{"ok":true,"agora":1761830000.1,"rev":88,"pausa":20,"pronta_min":30,
+{"ok":true,"agora":1761830000.1,"rev":88,"pausa":20,"pronta_min":15,
  "grupos":[{"id":"G014","estado":"subindo","fotografo":"carlos","fonte":"ftp",
    "funcao":{"tipo":"campo","point":"terminal"},"inicio":1761829900.0,"ultima_chegada":1761829995.2,
    "ultimo_clique":1761829970.0,"pronta_em":null,"n":11,"pids":["a1b2c3d4e5f6"]},
@@ -131,7 +131,7 @@ Com FTP ao vivo da câmera (4 a 5 s por foto), Subindo pode durar só alguns seg
 ```json
 {"dia":"2026-10-30","map":{"carlos":{"tipo":"campo","point":"terminal"},"yago":{"tipo":"volante","modo":"chute"}}}
 ```
-→ `{"ok":true}` · 400 se inválido · 403 sem posto, origem ou cabeçalho · 413 acima de 4 KB.
+→ `{"ok":true,"ignoradas":n}` (chave fora do cadastro, ou login compartilhado, é ignorada e contada) · 400 com dia errado, map que não é objeto, mais de 40 chaves ou campo inválido numa chave cadastrada · 403 sem posto, origem ou cabeçalho · 413 acima de 4 KB.
 
 Sem chaves de I18N.
 
@@ -153,7 +153,7 @@ Sem chaves de I18N.
     - com `Origin: https://evil.example` → 403;
     - POST sem `X-Eterna` → 403;
     - `point:"../x"` → 400;
-    - chave não cadastrada → 400;
+    - chave não cadastrada → ignorada, 200 com `ignoradas` (revisão 1); dia errado → 400;
     - corpo de 5 KB → 413.
 13. Pelo endereço de `ETERNA_ORIGENS`, a partir de outro IP da rede, o GET responde 200.
 
@@ -166,7 +166,7 @@ Sem chaves de I18N.
 19. Com o agente fora do ar: aviso "Sem conexão com o servidor", o último dado na tela e nenhum erro no console.
 20. Trocar a função na Escala gera um POST com `X-Eterna: 1`. Outro navegador (a TV) passa a mostrar o novo ponto nos grupos seguintes.
 21. Nenhum texto do painel vem de `T()`. Nenhum nome de convidado, e-mail ou nome de arquivo aparece no HTML.
-22. `testes/todas-as-telas.js` sem erro e `bash testes/rodar.sh` com `FALHAS: 0`. O teste do critério 19 de `testes/permissoes.js` passa (letra `r` em `MODULE_INFO.filafoto`).
+22. `testes/todas-as-telas.js` sem erro e `bash testes/rodar.sh` com `FALHAS: 0`. O teste do critério 19 de `testes/permissoes.js` passa (letras `r` e `u` em `MODULE_INFO.filafoto`).
 
 ## Riscos para o revisor de segurança e escala
 1. **Rostos na TV (LGPD, menores):** as miniaturas são dado pessoal. Pela D4, ficam desligadas na tela cheia por padrão. Conferir que nada de `pids` sai para os grupos `pronta`.

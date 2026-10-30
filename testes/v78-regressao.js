@@ -17,10 +17,10 @@ const abrirTodos=pg=>pg.evaluate(()=>document.querySelectorAll('#nav .navitems')
 const view=pg=>pg.evaluate(()=>ETERNA.state.view);
 const J=JSON.stringify;
 const PERFIS={
-  'eduardo@eduardorezende.com':{n:'admin',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
-  'carlos@eterna.photo':{n:'fotografo',g:[['Fotógrafo',['diario','importar','escala']]],ini:'importar',ck:false},
-  'loja@eterna.photo':{n:'atendimento',g:[['Configurações',['catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
-  'supervisor@eterna.photo':{n:'supervisor',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
+  'eduardo@eduardorezende.com':{n:'admin',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
+  'carlos@eterna.photo':{n:'fotografo',g:[['Fotógrafo',['diario','importar','fotofila','escala']]],ini:'importar',ck:false},
+  'loja@eterna.photo':{n:'atendimento',g:[['Fotógrafo',['fotofila']],['Configurações',['catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
+  'supervisor@eterna.photo':{n:'supervisor',g:[['Dashboard',['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala']],['Configurações',['repo','identidade','catalogo','chroma','ajustes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
   'qualidade@eterna.photo':{n:'validador',g:[['Curadoria',['revisao','treino']],['Fotógrafo',['diario']]],ini:'revisao',ck:false},
 };
 (async()=>{const b=await chromium.launch();
@@ -103,7 +103,7 @@ try{
       await pg.selectOption('[data-act="perm-inicio"]','diario');await pg.click('.perm-tbl input[data-act="perm-view"][data-v="escala"]');await pg.click('[data-act="perm-save"]');await pg.waitForTimeout(150);
       const cu=await pg.evaluate(()=>{const u=ETERNA.USERS['carlos@eterna.photo'];return {ini:u.inicio,menu:u.menu,preset:u.preset};});ok(cu.ini==='diario'&&!cu.menu.includes('escala')&&cu.preset==='custom','E: gravar tela inicial e menu '+J(cu));
       await pg.click('[data-act="perm-tab"][data-t="historico"]');await pg.waitForTimeout(100);await pg.screenshot({path:`${P}/v78-permissoes-historico.png`});
-      await entrar(pg,'carlos@eterna.photo');const g=await grupos(pg);ok(await view(pg)==='diario'&&J(g)===J([['Fotógrafo',['diario','importar']]]),'E: Carlos deveria entrar no Diário sem Escala: '+await view(pg)+' '+J(g));}
+      await entrar(pg,'carlos@eterna.photo');const g=await grupos(pg);ok(await view(pg)==='diario'&&J(g)===J([['Fotógrafo',['diario','importar','fotofila']]]),'E: Carlos deveria entrar no Diário sem Escala: '+await view(pg)+' '+J(g));}
     await ctx.close();}
   // ---------- F. cadastro: cancelar exclusão; e-mail fora do cadastro; tela "sem acesso" ----------
   {const {ctx,pg}=await nova(b,1280,900);await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});

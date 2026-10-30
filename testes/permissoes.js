@@ -15,7 +15,7 @@ const toastTxt=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent)
 async function abrirPerm(pg,email){await pg.evaluate(()=>{ETERNA.state.perm.tab='usuario';ETERNA.state.view='permissoes';ETERNA.render();});await pg.click(`[data-act="perm-sel"][data-e="${email}"]`);await pg.waitForTimeout(120);}
 const ck=(pg,m,op)=>pg.click(`.perm-tbl input[data-act="perm-op"][data-m="${m}"][data-op="${op}"]`);
 const draft=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.state.perm.draft)));
-const MENUS={Dashboard:['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','escala'],'Configurações':['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes'],'Laboratório':['vestiario','fundos-teste']};
+const MENUS={Dashboard:['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','fotofila','escala'],'Configurações':['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes'],'Laboratório':['vestiario','fundos-teste']};
 (async()=>{const b=await chromium.launch();
 try{
   // ---------- 1, 2, 3, 4, 19 e menus: admin ----------
@@ -102,7 +102,7 @@ try{
     await ctx.close();}
   // ---------- 6, 17 e o check-in da câmera no Upload automático: Carlos com a semente limpa ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'carlos@eterna.photo');
-    const v6=await nav(pg);ok(v6.length&&v6.every(v=>['diario','importar','escala'].includes(v)),'6: menu do fotógrafo '+JSON.stringify(v6));
+    const v6=await nav(pg);ok(v6.length&&v6.every(v=>['diario','importar','fotofila','escala'].includes(v)),'6: menu do fotógrafo '+JSON.stringify(v6));
     ok(!(await pg.$$eval('#nav .grp',e=>e.map(x=>x.textContent.trim()))).includes('Dashboard'),'6: fotógrafo não vê o Dashboard (nem Fotógrafos)');
     ok(await pg.evaluate(()=>ETERNA.state.view)==='importar','6: depois do login o fotógrafo cai no Upload automático: '+await pg.evaluate(()=>ETERNA.state.view));
     ok(!(await pg.$('#rail-ck [data-act="loja-abrir"]')),'6: fotógrafo não vê Abrir Checkout');
@@ -149,7 +149,7 @@ try{
     const r9=await pg.evaluate(()=>{const U=ETERNA.USERS;return {n:Object.keys(U).length,v2:Object.values(U).every(u=>u.v===2),mixFin:U['mix@eterna.photo'].perms.financeiro.r,mixMenu:U['mix@eterna.photo'].menu,mixEsc:U['mix@eterna.photo'].perms.escala.r,mixCfgU:U['mix@eterna.photo'].perms.configuracao.u,lojaFin:U['loja@eterna.photo'].perms.financeiro.r,carlosMenu:U['carlos@eterna.photo'].menu,carlosIni:U['carlos@eterna.photo'].inicio,saved:JSON.parse(localStorage.getItem('eterna.users.v1'))['mix@eterna.photo'].v};});
     ok(r9.n===4&&r9.v2,'9: usuários sumiram ou sem v:2 '+JSON.stringify(r9));ok(r9.mixFin===true&&r9.mixMenu.includes('vendas-lista')&&r9.mixMenu.includes('checkout'),'9: personalizado com venda deveria ganhar Números de vendas e a Lista '+JSON.stringify(r9.mixMenu));
     ok(r9.mixEsc===true&&r9.mixCfgU===false,'9: personalizado: Configuração R vira Escala R, sem ganhar Alterar');ok(r9.lojaFin===false,'9: loja@ (perfil venda) não deveria ver Números de vendas');
-    ok(JSON.stringify(r9.carlosMenu)===JSON.stringify(['diario','importar','escala'])&&r9.carlosIni==='importar','9: fotógrafo migrado '+JSON.stringify(r9.carlosMenu)+' '+r9.carlosIni);ok(r9.saved===2,'9: migração não gravou');
+    ok(JSON.stringify(r9.carlosMenu)===JSON.stringify(['diario','importar','fotofila','escala'])&&r9.carlosIni==='importar','9: fotógrafo migrado '+JSON.stringify(r9.carlosMenu)+' '+r9.carlosIni);ok(r9.saved===2,'9: migração não gravou');
     await ctx.close();}
   // ---------- 10, 11: travas do administrador ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'eduardo@eduardorezende.com');await abrirPerm(pg,'eduardo@eduardorezende.com');

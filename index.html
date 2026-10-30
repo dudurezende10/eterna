@@ -265,6 +265,16 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .if-err-h{margin-top:8px!important;color:#d64545}
 body.if-tv .app{grid-template-columns:minmax(0,1fr)}body.if-tv .rail{display:none}body.if-tv main{padding:20px 28px}
 body.if-tv .if-wrap{height:calc(100vh - 40px)}body.if-tv .if-num{font-size:40px}body.if-tv .if-col.agora .if-num{font-size:46px}body.if-tv .if-col h2{font-size:24px}
+/* v87: Fila do fotógrafo (mesma estrutura da Fila de impressão) */
+.ff-nome{white-space:normal;overflow-wrap:anywhere}
+.ff-onde{display:block;font-weight:500;color:var(--muted);font-size:15px;letter-spacing:0;line-height:1.25;margin-top:2px}
+.ff-fonte{font-size:.55em;font-weight:700}
+.ff-thumbs{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.ff-thumbs img{width:56px;height:56px;object-fit:cover;border-radius:6px;background:#0C2340}
+.ff-card.fot{background:#eef4ff;border-color:#307FE2}
+.ff-card.folga{border-color:#d64545}
+.ff-alerta{color:#d64545;font-weight:600}
+body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:22px}body.if-tv .if-col.agora .ff-onde{font-size:26px}
 @media print{
   html:has(body.pr-on),body.pr-on{height:auto!important;margin:0!important;background:#fff!important}
   body.pr-on>*:not(#print-root){display:none!important}
@@ -1000,7 +1010,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v86 · 29/10 20:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v86</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v87 · 30/10 12:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v87</span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1127,6 +1137,7 @@ const VIEWS=[
  ['alertas','Alertas','o que precisa de olho','Curadoria'],
  ['diario','Diário do set','equipamento e ocorrências','Fotógrafo'],
  ['importar','Upload automático','cartão, FTP, Wi‑Fi e 5G','Fotógrafo'],
+ ['fotofila','Fila do fotógrafo','clicando, chegando e no Checkout','Fotógrafo'],
  ['escala','Escala 5×2','cobertura dos pontos','Fotógrafo'],
  ['repo','Repositório','nuvem e acervo','Configurações'],
  ['identidade','Identidade','marca do venue','Configurações'],
@@ -1185,7 +1196,7 @@ VOL_MODES.forEach(([id,name])=>{if(!DATA.points.find(p=>p.id==='vol-'+id))DATA.p
 const todayKey=()=>now().toISOString().slice(0,10);
 function funcMap(){const f=SIM.funcao;return f&&f.date===todayKey()?f.map:{};}
 function funcOf(key){const f=funcMap()[key];if(f)return f;const p=DATA.points.find(x=>x.photographer===key&&x.kind!=='volante');return p?{tipo:'campo',point:p.id}:{tipo:'folga'};}
-function setFunc(key,f){const m=funcMap();m[key]=f;SIM.funcao={date:todayKey(),map:m};saveSim();log(`${P[key].name} agora é ${funcText(key)}`);if(state.db){try{state.db.doc('funcao/'+todayKey()).set(SIM.funcao)}catch(e){}}}
+function setFunc(key,f){const m=funcMap();m[key]=f;SIM.funcao={date:todayKey(),map:m};saveSim();ffFuncaoEnviar();log(`${P[key].name} agora é ${funcText(key)}`);if(state.db){try{state.db.doc('funcao/'+todayKey()).set(SIM.funcao)}catch(e){}}}
 function pointIdOf(key){const f=funcOf(key);return f.tipo==='volante'?'vol-'+(f.modo||'livre'):f.tipo==='campo'?f.point:null;}
 function whoAt(pid){return humans.filter(k=>pointIdOf(k)===pid);}
 function funcText(key){const f=funcOf(key);if(f.tipo==='volante'){const m=VOL_MODES.find(x=>x[0]===f.modo)||VOL_MODES[2];return 'volante · '+m[1].toLowerCase();}if(f.tipo==='folga')return 'folga';const p=DATA.points.find(x=>x.id===f.point);return p?'campo · '+p.name:'sem ponto';}
@@ -2885,7 +2896,7 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
     <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera, pelo usuário (subpasta) do FTP ou pela sessão da foto. Vendida = foto escolhida numa venda paga.</div></div>`;}
 const SESSAO_PAUSA_S=20; // sem foto nova por 20 s, a sessão fecha e o cliente já é achado pela selfie (era 45 s; medido em 29/10: câmera→Eterna leva 4 a 5 s)
 async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
-  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
+  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
     const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
       if(e.src==='inbox'||known.has(id)||was)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
@@ -3418,6 +3429,52 @@ function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000)
     <section class="if-col pronta"><h2>Prontas · retirar <span class="if-cnt">${prontas.length}</span></h2><div class="if-list">${prontas.map(p=>card(p,'ok',`${imps.length>1&&p.impressora?'<b>'+esc(p.impressora)+'</b> · ':''}pronta ${hm(p.fim)} · ${fotos(p.fotos)} · ${min(p.fim)}`)).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}</div>
       ${erros.length?`<h2 class="if-err-h">Com erro</h2>${erros.map(p=>card(p,'err',esc((p.erro||'').slice(0,90)))).join('')}`:''}</section>
   </div></div>`;}
+// ---------- Fila do fotógrafo (v87) ----------
+// Painel de senhas das fotos chegando, por fotógrafo, calculado no agente (GET /fila-fotografo, a cada 2 s). Só leitura; tela da
+// equipe, sem T(). D5 (Eduardo, 30/10): Clicando agora · Chegando · Já no Checkout (estados fotografando, subindo, pronta).
+// D4: miniaturas na tela da equipe; na tela cheia (TV) só com o interruptor deste aparelho (rostos de turistas e menores).
+const FF_TVMINI='eterna.fotofila.tvmini';
+state.fotoFila=null;state.fotoFilaOk=0;state.fotoFilaErro=null;let fotoFilaTimer=null;
+async function fotoFilaPoll(){if(state.view!=='fotofila'){clearInterval(fotoFilaTimer);fotoFilaTimer=null;return;}
+  const ac=new AbortController();const to=setTimeout(()=>ac.abort(),4000);
+  try{const r=await fetch(state.agent.url+'/fila-fotografo',{cache:'no-store',signal:ac.signal});if(!r.ok)throw new Error('http '+r.status);const j=await r.json();if(!j||!j.ok||!Array.isArray(j.grupos))throw new Error('resposta');state.fotoFila=j;state.fotoFilaOk=Date.now();state.fotoFilaErro=null;}
+  catch(e){state.fotoFilaErro='Sem conexão com o servidor';}finally{clearTimeout(to);}
+  if(state.view==='fotofila')render();}
+// ponto padrão (igual em todo navegador) quando a Escala não mandou a função do dia ao agente
+function ffPadrao(k){const p=DATA.points.find(x=>x.photographer===k&&x.kind!=='volante'&&x.kind!=='chroma');return p?{tipo:'campo',point:p.id}:null;}
+function ffOnde(f){if(!f||f.tipo==='folga')return 'sem ponto';if(f.tipo==='volante'){const m=VOL_MODES.find(x=>x[0]===f.modo)||VOL_MODES[2];return 'volante · '+m[1].toLowerCase();}
+  const p=DATA.points.find(x=>x.id===f.point);if(!p)return 'sem ponto';return (p.kind==='vestiario'?'set interno · ':'campo · ')+p.name;}
+// v87 (segurança B1): a escolha gravada neste aparelho vale; sem escolha, liga só para quem não é do caixa (sem venda/quiosque)
+// e com a janela fora de tela cheia (botão do app, F11, quiosque ou app instalado). Em qualquer outro caso, desligado.
+function ffTelaCheia(){try{return document.body.classList.contains('if-tv')||!!document.fullscreenElement||!!(window.matchMedia&&matchMedia('(display-mode: fullscreen)').matches)||(screen.height-window.innerHeight<2);}catch(e){return true;}}
+function ffMiniEscolha(){try{const v=localStorage.getItem(FF_TVMINI);return v==='1'?true:v==='0'?false:null;}catch(e){return null;}}
+function ffMiniOn(){const e=ffMiniEscolha();if(e!==null)return e;return !can('venda','r')&&!can('quiosque','r')&&!ffTelaCheia();}
+// a função do dia vai para o agente (a TV do caixa não vê o localStorage de quem abriu a Escala); sem bloquear e sem erro na tela
+function ffFuncaoEnviar(){const f=SIM.funcao;if(!f||f.date!==todayKey()||!state.agent||!state.agent.url)return;const map={};
+  Object.entries(f.map||{}).forEach(([k,v])=>{if(!humans.includes(k)||!v||!v.tipo)return;if(v.tipo==='campo'){if(v.point)map[k]={tipo:'campo',point:v.point};}else if(v.tipo==='volante')map[k]={tipo:'volante',modo:v.modo||'livre'};else if(v.tipo==='folga')map[k]={tipo:'folga'};});
+  try{fetch(state.agent.url+'/fila-fotografo/funcao',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({dia:localDay(Date.now()/1000),map})}).catch(()=>{});}catch(e){}}
+// revisão 7: a função vai de novo só quando o agente reabriu (boot diferente do último envio deste aparelho), não a cada recarga
+function ffBootNovo(boot){try{if(!boot||localStorage.getItem('eterna.fotofila.boot')===String(boot))return false;localStorage.setItem('eterna.fotofila.boot',String(boot));return true;}catch(e){return false;}}
+function vFotoFila(){if(!fotoFilaTimer){fotoFilaTimer=setInterval(fotoFilaPoll,2000);setTimeout(fotoFilaPoll,0);}
+  const F=state.fotoFila;const agora=F?F.agora:Date.now()/1000;const gs=(F&&Array.isArray(F.grupos))?F.grupos:[];const tv=document.body.classList.contains('if-tv');const mini=ffMiniOn();
+  const base=state.agent.url;const pidOk=p=>/^[0-9a-f]{6,40}$/.test(String(p||''));
+  const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?'agora':`há ${m} min`;};
+  const card=(g,col)=>{const k=g.fotografo;const nome=k?(P[k]?P[k].name:k):'Sem fotógrafo';const f=k?(g.funcao||ffPadrao(k)):null;const folga=!!(k&&g.funcao&&g.funcao.tipo==='folga');
+    const n=+g.n||0;const pids=(col!=='pronta'&&mini&&Array.isArray(g.pids))?g.pids.filter(pidOk).slice(0,6):[];
+    return `<div class="if-card ff-card ${col==='pronta'?'ok':col==='subindo'?'imp':'fot'}${folga?' folga':''}"><div class="if-num ff-nome">${esc(nome)}${k?'':`<span class="ff-fonte"> · ${esc(g.fonte||'')}</span>`} <span class="ff-onde">(${esc(ffOnde(f))})</span></div>
+      <div class="if-meta">início ${g.inicio?hhmm(new Date(g.inicio*1000)):'--:--'} · ${n} ${n===1?'foto':'fotos'} · ${min(col==='pronta'?(g.pronta_em||g.ultima_chegada):g.inicio)}</div>${folga?'<div class="if-sub ff-alerta">De folga na Escala e mandando fotos</div>':''}
+      ${pids.length?`<div class="ff-thumbs">${pids.map(p=>`<img loading="lazy" alt="" src="${esc(base)}/thumb/${p}">`).join('')}</div>`:''}</div>`;};
+  const fot=gs.filter(g=>g.estado==='fotografando').sort((a,b)=>b.inicio-a.inicio),sub=gs.filter(g=>g.estado==='subindo').sort((a,b)=>b.inicio-a.inicio),pr=gs.filter(g=>g.estado==='pronta').sort((a,b)=>(b.pronta_em||0)-(a.pronta_em||0)).slice(0,24);
+  const fotos=fot.concat(sub).reduce((a,g)=>a+(+g.n||0),0);
+  const seg=state.fotoFilaOk?Math.max(0,Math.round((Date.now()-state.fotoFilaOk)/1000)):null;
+  return `<div class="if-wrap"><div class="if-head"><div><div class="eyebrow">Fotos chegando ao servidor · por fotógrafo</div><h1>Fila do fotógrafo</h1></div>
+    <div class="row"><span class="pill ${fot.length+sub.length?'warn':'good'}">${fot.length+sub.length?`${fotos} ${fotos===1?'foto':'fotos'} chegando`:'Nada chegando agora'}</span>${can('filafoto','u')?`<button class="btn ghost" data-act="fotofila-mini" aria-pressed="${mini}">Miniaturas neste aparelho: ${mini?'ligadas':'desligadas'}</button>`:''}<button class="btn" data-act="fotofila-tv">${tv?'Sair da tela cheia':'Tela cheia'}</button></div></div>
+  ${state.fotoFilaErro?`<div class="note" role="alert">${esc(state.fotoFilaErro)}${seg!=null?` · atualizado há ${seg} s`:''}</div>`:''}
+  <div class="if-board">
+    <section class="if-col"><h2>Clicando agora <span class="if-cnt">${fot.length}</span></h2><div class="if-list">${fot.map(g=>card(g,'fotografando')).join('')||'<div class="if-vazio">Ninguém clicando agora</div>'}</div></section>
+    <section class="if-col agora"><h2>Chegando <span class="if-cnt">${sub.length}</span></h2><div class="if-list">${sub.map(g=>card(g,'subindo')).join('')||'<div class="if-vazio">Nada chegando</div>'}</div></section>
+    <section class="if-col pronta"><h2>Já no Checkout <span class="if-cnt">${pr.length}</span></h2><div class="if-list">${pr.map(g=>card(g,'pronta')).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}</div></section>
+  </div></div>`;}
 function vEstoque(){
   return `<div class="head"><div><div class="eyebrow">Insumos</div><h1>Estoque</h1></div></div>
   <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · rolo</span><span class="v" style="color:${v<ROLO_ALERTA?'var(--bad)':'inherit'}">${v}</span><span class="d">${v<ROLO_ALERTA?'Trocar antes do pico':'de '+ROLO_CAP+' · DNP RX1HS'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">Ímãs 15 x 20</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">Sacolas</span><span class="v" style="color:var(--bad)">310</span><span class="d">pedir</span></div></div>
@@ -3672,6 +3729,7 @@ const MODULES=[
  ['diario','Diário do set',['diario']],
  ['set','Upload, câmeras e ajustes',['importar','ajustes']],
  ['escala','Escala 5×2',['escala']],
+ ['filafoto','Fila do fotógrafo',['fotofila']],
  ['configuracao','Configurações do venue',['repo','identidade','chroma']],
  ['catalogo','Painel de controle (catálogo e preços)',['catalogo']],
  ['usuarios','Cadastro de usuários',['usuarios']],
@@ -3693,6 +3751,7 @@ const MODULE_INFO={
  diario:{desc:'Diário do set',c:'registrar ocorrência',r:'ver o diário',u:'marcar como resolvida',d:'ver e tratar as ocorrências da equipe toda (sem isso, só as próprias)'},
  set:{desc:'Upload automático (fotógrafo pelo usuário do FTP e pelo nome gravado na câmera) e Ajuste automático (o item do Ajuste fica no menu Configurações)',c:'receber fotos (leva e arquivos)',r:'ver o upload, as câmeras, as fotos e os ajustes',u:'parar o recebimento, ligar e desligar o ajuste automático, ajustar fotos',d:'limpar a leva'},
  escala:{desc:'Escala 5×2 e função do dia',r:'ver a escala',u:'mudar a escala e a função do dia'},
+ filafoto:{desc:'Painel das fotos chegando, por fotógrafo e ponto',r:'ver a fila do fotógrafo (também na TV)',u:'ligar e desligar as miniaturas (rostos) neste aparelho'},
  configuracao:{desc:'Repositório, Identidade, Fundos de IA e o FTP do estádio (no Painel de controle)',r:'ver as configurações e o status do FTP',u:'mudar repositório, identidade, integrações, FTP do estádio, os fundos do Checkout e a montagem dos fundos (local ou Photoroom)'},
  catalogo:{desc:'Painel de controle: catálogo e preços, tempo da tela final do Checkout',r:'ver os preços',u:'mudar preços e o tempo do Checkout'},
  usuarios:{desc:'Usuários: cadastro da equipe',c:'cadastrar pessoa',r:'ver a lista',u:'mudar nome, e-mail, fotógrafo, ativar e desativar',d:'excluir acesso'},
@@ -3710,10 +3769,10 @@ const ALL=perm(1,1,1,1),RO=perm(0,1,0,0),RW=perm(1,1,1,0),NONE=perm(0,0,0,0);
 function permNorm(perms){const o={};MODULES.forEach(([m])=>{const p=(perms&&perms[m])||{};const x={c:false,r:false,u:false,d:false};['c','r','u','d'].forEach(k=>{x[k]=!!p[k]&&opOk(m,k);});if(x.c||x.u||x.d)x.r=true;if(m==='permissoes'){const on=x.r&&x.u;x.r=x.u=on;}o[m]=x;});return o;}
 const PRESETS={
  admin:{name:'Admin',perms:Object.fromEntries(MODULES.map(([m])=>[m,{...ALL}])),menu:'*',inicio:'painel',desc:'Vê e faz tudo, inclusive Usuários e Permissões.'},
- foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},escala:{...RO}},menu:['diario','importar','escala'],inicio:'importar',desc:'Vê só o menu Fotógrafo: Diário do set, Upload automático (com a troca de fotógrafo) e a Escala 5×2. Não vê: Checkout, Dashboard (vendas, índice, outros fotógrafos), Curadoria, Configurações.'},
- venda:{name:'Atendimento e venda',perms:{venda:{...RW},quiosque:{...RW},catalogo:{...RO}},menu:['quiosque','checkout','fila','caixa','posto','catalogo'],inicio:'posto',desc:'Abre o Checkout e o Posto de venda (confirma pagamento e imprime), as telas de venda no balcão e vê os preços. Vê o valor de cada venda sua de hoje, sem totais. Não vê: Dashboard (vendas, números, fotógrafos), Curadoria, Usuários.'},
+ foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},escala:{...RO},filafoto:{...RO}},menu:['diario','importar','fotofila','escala'],inicio:'importar',desc:'Vê só o menu Fotógrafo: Diário do set, Upload automático (com a troca de fotógrafo), Fila do fotógrafo e a Escala 5×2. Não vê: Checkout, Dashboard (vendas, índice, outros fotógrafos), Curadoria, Configurações.'},
+ venda:{name:'Atendimento e venda',perms:{venda:{...RW},quiosque:{...RW},catalogo:{...RO},filafoto:{...RO}},menu:['quiosque','checkout','fila','caixa','posto','catalogo','fotofila'],inicio:'posto',desc:'Abre o Checkout e o Posto de venda (confirma pagamento e imprime), as telas de venda no balcão, a Fila do fotógrafo (também na TV do caixa) e vê os preços. Vê o valor de cada venda sua de hoje, sem totais. Não vê: Dashboard (vendas, números, fotógrafos), Curadoria, Usuários.'},
  valida:{name:'Validador',perms:{qualidade:{...ALL},diario:{...RO}},menu:['revisao','treino','diario'],inicio:'revisao',desc:'Qualidade e Treino da IA, e lê o Diário do set. Não vê: vendas, Checkout, Configurações.'},
- supervisor:{name:'Supervisor',perms:{relatorios:{...RO},desempenho:{...RO},financeiro:{...RO},diario:{...ALL},set:{...RO},venda:{...RW},qualidade:{...RO},estoque:{...ALL},configuracao:{...RW},escala:{...RW},laboratorio:{...RO},catalogo:{...RO},galerias:{...RW}},menu:'*',inicio:'painel',desc:'Dashboard inteiro (sem cancelar venda), Curadoria só para ver, menu Fotógrafo, Configurações do venue e Laboratório. Não vê: Usuários e Permissões.'},
+ supervisor:{name:'Supervisor',perms:{relatorios:{...RO},desempenho:{...RO},financeiro:{...RO},diario:{...ALL},set:{...RO},venda:{...RW},qualidade:{...RO},estoque:{...ALL},configuracao:{...RW},escala:{...RW},laboratorio:{...RO},catalogo:{...RO},galerias:{...RW},filafoto:perm(0,1,1,0)},menu:'*',inicio:'painel',desc:'Dashboard inteiro (sem cancelar venda), Curadoria só para ver, menu Fotógrafo, Configurações do venue e Laboratório. Não vê: Usuários e Permissões.'},
  quiosque:{name:'Checkout (tela do cliente)',perms:{quiosque:{...RW}},menu:['quiosque'],inicio:'quiosque',desc:'Só o Checkout em tela cheia, para o computador do cliente.'},
 };
 const SEED_USERS=[
@@ -3751,6 +3810,7 @@ function migrateUser(x){if(!x||typeof x!=='object')return x;const pr=x.preset;
     if(x.mv!==83)migraPainel(x);
     if(!x.mfl81){if(x.menu.includes('vestiario')&&!x.menu.includes('fundos-teste'))x.menu.push('fundos-teste');x.mfl81=1;} // v81
     if(!x.mpv83){if(pr&&pr!=='custom'&&PRESETS[pr]&&presetMenu(pr).includes('posto')&&!x.menu.includes('posto'))x.menu.push('posto');if(pr==='venda'&&(!x.inicio||x.inicio==='perfis'))x.inicio='posto';x.mpv83=1;} // v83: Posto de venda nos perfis com venda (uma vez)
+    if(!x.mff87){if(pr&&pr!=='custom'&&PRESETS[pr]&&presetMenu(pr).includes('fotofila')&&!x.menu.includes('fotofila'))x.menu.push('fotofila');x.mff87=1;} // v87: Fila do fotógrafo nos perfis da D6 (uma vez)
     x.menu=x.menu.filter(v=>MODULE_OF[v]);}
   x.mv=83;
   if(x.inicio&&x.inicio!=='perfis'&&!MODULE_OF[x.inicio])x.inicio=null;
@@ -3827,9 +3887,9 @@ function homeView(){const u=state.user;const ini=u&&(u.inicio||(PRESETS[u.preset
 // cadastro criado "sem acesso ainda": em vez de voltar ao login ou abrir um Início vazio
 function vSemAcesso(){return `<div class="enter login"><div class="login-mark">${venueLogo(84,'dark')}</div><div class="panel"><h2>Seu acesso ainda não foi liberado</h2><div class="note">Seu acesso ainda não foi liberado. Peça ao administrador.</div><div class="note">${esc(state.user?state.user.email:'')}</div><div class="row"><button class="btn ghost" data-act="role-exit">Sair</button></div></div></div>`;}
 function roleViews(){return VIEWS.filter(v=>v[3]&&canView(v[0]));}
-const WRITE_OPS={'bg-ativar':'u','bg-lab':'u',save:'u',note:'u',score:'u',tag:'u','m-rate':'u','m-adjust':'u','m-reset':'u','m-discard':'u','caixa-confirm':'c','caixa-pay':'c','caixa-reprint':'c','caixa-mode':'u','caixa-tef':'c','checkout-pick':'u','checkout-lost':'u','checkout-seller':'u','checkout-step':'u','checkout-face':'u','checkout-selfie':'u','checkout-next-guest':'u','fila-add':'u','fila-bg':'u','fila-send':'u','ing-start':'c','ing-stop':'u','ing-reset':'d','imp-files':'c',price:'u','price-reset':'u','repo-set':'u','repo-toggle':'u',reset:'d','sales-cancel':'d','stock-swap':'u','flag-state':'u','flag-point':'u','train-v':'u','train-r':'u','train-next':'u','train-import':'c','kiosk-buy':'c','rv-save':'u','rv-sync':'u','fe-new':'c','fe-edit':'u','fe-save':'u','fe-del':'d','fe-qty':'u','venue-pick':'u','venue-reset':'u','venue-logo-clear':'u','aj-open':'u','aj-step':'u','aj-reset':'u','aj-discard':'u','di-add':'c','di-done':'u','user-new':'c','user-del-ok':'d','bg-on':'u','user-active':'u','perm-save':'u','perm-preset-apply':'u','gal-criar':'c','gal-cort':'u','gal-cort-ok':'u','gal-cort-rm':'u','gal-menor':'u','gal-reenviar':'u','gal-ev-novo':'c','gal-ev-salvar':'c','gal-ev-editar':'u','gal-ev-encerrar':'d','aj-autotoggle':'u','din-confirm':'c','din-cancel':'c','din-cancel-ok':'c','pend-pos-ok':'c','imp-print':'c','imp-ok':'c','imp-falha':'c','imp-reprint-ok':'c','rf-save':'u','perm-copy-ok':'u','fundos-modo':'u'};
+const WRITE_OPS={'fotofila-mini':'u','bg-ativar':'u','bg-lab':'u',save:'u',note:'u',score:'u',tag:'u','m-rate':'u','m-adjust':'u','m-reset':'u','m-discard':'u','caixa-confirm':'c','caixa-pay':'c','caixa-reprint':'c','caixa-mode':'u','caixa-tef':'c','checkout-pick':'u','checkout-lost':'u','checkout-seller':'u','checkout-step':'u','checkout-face':'u','checkout-selfie':'u','checkout-next-guest':'u','fila-add':'u','fila-bg':'u','fila-send':'u','ing-start':'c','ing-stop':'u','ing-reset':'d','imp-files':'c',price:'u','price-reset':'u','repo-set':'u','repo-toggle':'u',reset:'d','sales-cancel':'d','stock-swap':'u','flag-state':'u','flag-point':'u','train-v':'u','train-r':'u','train-next':'u','train-import':'c','kiosk-buy':'c','rv-save':'u','rv-sync':'u','fe-new':'c','fe-edit':'u','fe-save':'u','fe-del':'d','fe-qty':'u','venue-pick':'u','venue-reset':'u','venue-logo-clear':'u','aj-open':'u','aj-step':'u','aj-reset':'u','aj-discard':'u','di-add':'c','di-done':'u','user-new':'c','user-del-ok':'d','bg-on':'u','user-active':'u','perm-save':'u','perm-preset-apply':'u','gal-criar':'c','gal-cort':'u','gal-cort-ok':'u','gal-cort-rm':'u','gal-menor':'u','gal-reenviar':'u','gal-ev-novo':'c','gal-ev-salvar':'c','gal-ev-editar':'u','gal-ev-encerrar':'d','aj-autotoggle':'u','din-confirm':'c','din-cancel':'c','din-cancel-ok':'c','pend-pos-ok':'c','imp-print':'c','imp-ok':'c','imp-falha':'c','imp-reprint-ok':'c','rf-save':'u','perm-copy-ok':'u','fundos-modo':'u'};
 // ações de cadastro e de permissões têm módulo fixo (não dependem da tela aberta); ação que grava em tela sem módulo é barrada
-const ACT_MOD={'bg-ativar':'configuracao','bg-lab':'configuracao','user-new':'usuarios','user-save':'usuarios','user-active':'usuarios','user-del-ok':'usuarios','perm-save':'permissoes','perm-preset-apply':'permissoes','aj-autotoggle':'set','din-confirm':'venda','din-cancel':'venda','din-cancel-ok':'venda','pend-pos-ok':'venda','imp-print':'venda','imp-ok':'venda','imp-falha':'venda','imp-reprint-ok':'venda','rf-save':'configuracao','perm-copy-ok':'permissoes','fundos-modo':'configuracao'};
+const ACT_MOD={'fotofila-mini':'filafoto','bg-ativar':'configuracao','bg-lab':'configuracao','user-new':'usuarios','user-save':'usuarios','user-active':'usuarios','user-del-ok':'usuarios','perm-save':'permissoes','perm-preset-apply':'permissoes','aj-autotoggle':'set','din-confirm':'venda','din-cancel':'venda','din-cancel-ok':'venda','pend-pos-ok':'venda','imp-print':'venda','imp-ok':'venda','imp-falha':'venda','imp-reprint-ok':'venda','rf-save':'configuracao','perm-copy-ok':'permissoes','fundos-modo':'configuracao'};
 function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;const m=ACT_MOD[a]||MODULE_OF[state.view];if(!m){toast('Sem permissão nesta tela');return false;}if(can(m,op))return true;toast(`Sem permissão para ${OPS.find(o=>o[0]===op)[1].toLowerCase()} em ${MODULES.find(x=>x[0]===m)[1]}`);return false;}
 
 state.user=null;state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};
@@ -4187,7 +4247,7 @@ function vDiario(){
   </div>`;
 }
 
-const VIEWFN={perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,posto:vPosto,quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const VIEWFN={perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,posto:vPosto,quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
     try{$('#main').innerHTML=vGaleriaQR();}catch(err){console.error(err);$('#main').innerHTML=`<div class="gq"><div class="gq-mid"><h1 class="lj-h2">${esc(T('gq_notFound'))}</h1></div></div>`;}
@@ -4248,7 +4308,7 @@ window.addEventListener('resize',()=>{if(state.drawer&&innerWidth>700)menuSet(fa
   document.addEventListener('pointerout',e=>{if(e.pointerType==='touch')return;/* no toque a dica fica até o próximo toque */const el=tipOf(e);if(el&&!(e.relatedTarget&&el.contains(e.relatedTarget)))hide();});
   document.addEventListener('focusin',e=>{const el=tipOf(e);if(el)show(el);else hide();});
   window.addEventListener('scroll',hide,{passive:true});}
-function go(v){if(!canView(v)){toast('Sem acesso a esta tela');return;}if(v==='quiosque'){lojaAbrir();return;}const changed=state.view!==v;state.view=v;state.person=null;state.session=null;state.personDay=null;try{localStorage.setItem('eterna.view',v)}catch(e){}render();if(changed)window.scrollTo({top:0});}
+function go(v){if(!canView(v)){toast('Sem acesso a esta tela');return;}if(v==='quiosque'){lojaAbrir();return;}const changed=state.view!==v;if(changed)tvSair();state.view=v;state.person=null;state.session=null;state.personDay=null;try{localStorage.setItem('eterna.view',v)}catch(e){}render();if(changed)window.scrollTo({top:0});}
 function syncHash(){if(state.pub||state.lojaRota)return;if(!state.user){if(location.hash&&location.hash!=='#')history.replaceState(null,'','#');return;}const parts=[state.view];if(state.view==='fotografos'&&state.person){parts.push(state.person);if(state.personDay)parts.push(state.personDay);}const h='#'+parts.join('/');if(location.hash!==h)history.replaceState(null,'',h);}
 const LEGACY_HASH={admin:'perfis',foto:'importar',venda:'checkout',valida:'revisao',set:'importar',semana:'painel'};
 function readHash(){const h=location.hash.replace(/^#/,'');if(!h)return false;let segs=h.split('/');if(LEGACY_HASH[segs[0]]){if(segs.length>1&&VIEWFN[segs[1]])segs=segs.slice(1);else segs[0]=LEGACY_HASH[segs[0]];}const [v,a,b]=segs;if(!VIEWFN[v]||v==='entrar')return false;if(v==='quiosque'&&!(state.user&&homeView()==='quiosque'))return false; // a Loja só abre por #loja
@@ -4455,6 +4515,8 @@ document.addEventListener('click',e=>{
     case 'gal-criar':{const tok=galDaSessao(d.card,true);galPublicar(tok);log(`Galeria criada para ${d.card}`);state.gal.qr=tok;toast('Galeria criada · código '+SIM.galerias[tok].codigo);render();break;}
     case 'gal-qr':state.gal.qr=state.gal.qr===d.t?null:d.t;render();break;
     case 'impfila-mini':try{localStorage.setItem('eterna-if-mini-tv',impMiniOn()?'0':'1')}catch(e){}render();break;
+    case 'fotofila-tv':{document.body.classList.toggle('if-tv');try{if(document.body.classList.contains('if-tv'))document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{});else document.fullscreenElement&&document.exitFullscreen();}catch(e){}render();break;}
+    case 'fotofila-mini':{const on=ffMiniOn();try{localStorage.setItem(FF_TVMINI,on?'0':'1');}catch(e){}auditLog('fotofila_miniaturas','este aparelho',[{campo:'Miniaturas da Fila do fotógrafo',de:on?'ligadas':'desligadas',para:on?'desligadas':'ligadas'}]);render();break;} // só neste aparelho (filafoto.u, WRITE_OPS); fica no histórico
     case 'impfila-tv':{document.body.classList.toggle('if-tv');try{if(document.body.classList.contains('if-tv'))document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();else document.fullscreenElement&&document.exitFullscreen();}catch(e){}render();break;}
     case 'lgpd-pedir':state.lgpdAsk=d.card;render();break;
     case 'lgpd-nao':state.lgpdAsk=null;render();break;
@@ -4577,6 +4639,11 @@ window.addEventListener('hashchange',()=>{const wasLoja=state.lojaRota;
 // v78: o Anfitrião no set saiu; sessão que ficou aberta nele vai para a fila (nada se perde)
 dinVirada(); // v79: pendência de dinheiro de ontem vira não paga
 flagMigraV81();flagMigraV82();
+// v87: a classe if-tv (tela cheia das filas) ficava presa depois do Esc; agora sai junto com a tela cheia
+function tvSair(){if(!document.body.classList.contains('if-tv'))return false;document.body.classList.remove('if-tv');try{document.fullscreenElement&&document.exitFullscreen();}catch(e){}return true;}
+window.addEventListener('resize',()=>{if(state.view==='fotofila'){clearTimeout(window.__ffRz);window.__ffRz=setTimeout(render,150);}});
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&document.body.classList.contains('if-tv')){document.body.classList.remove('if-tv');render();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.fullscreenElement&&tvSair())render();});
 // v86: o Pódio de campeão entra sozinho para quem já tinha a escolha de fundos salva (1 a 4 fundos; lista vazia de propósito fica vazia), uma vez só; se tirarem depois, não volta.
 // Marca no SIM (bgPodioV86) e numa chave própria (eterna.bgpodio.v), para um SIM antigo gravado por outra janela não refazer.
 function bgMigraPodio(){let v=null;try{v=localStorage.getItem('eterna.bgpodio.v');}catch(e){}if(SIM.bgPodioV86||v==='86')return false;
