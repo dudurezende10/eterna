@@ -61,6 +61,19 @@ HOME = os.path.expanduser("~/Eterna")
 IMPRESSORA = os.environ.get("ETERNA_IMPRESSORA", "").strip()
 # várias DNPs no mesmo servidor: ETERNA_IMPRESSORA="DS-RX1,DS-RX1 (2)". Cada venda sai inteira na primeira livre.
 IMPRESSORAS = [x.strip() for x in IMPRESSORA.split(",") if x.strip()]
+# Qual terminal imprime em qual DNP (qualquer combinação: 1 para 1, várias para 1 terminal, 1 dividida por vários terminais):
+# ETERNA_IMPRESSORA_POSTOS="Caixa 1=DS-RX1|DS-RX1 (2);Caixa 2=DS-RX1 (3);Caixa 3=DS-RX1 (3)". Terminal fora da lista usa
+# qualquer impressora livre. Cada venda sai inteira numa impressora só.
+IMP_POSTOS = {}
+for _x in os.environ.get("ETERNA_IMPRESSORA_POSTOS", "").split(";"):
+    _k, _, _v = _x.partition("=")
+    _ps = [p.strip() for p in _v.split("|") if p.strip() in IMPRESSORAS]
+    if _k.strip() and _ps:
+        IMP_POSTOS[_k.strip().lower()] = _ps
+
+
+def imp_destinos(j):
+    return IMP_POSTOS.get((j.get("posto") or "").strip().lower()) or IMPRESSORAS
 # ETERNA_ORIGENS: endereços pelos quais os postos abrem este Eterna na rede (ex.: http://192.168.10.218:8765).
 # Só eles ganham as rotas que antes eram só do próprio computador (busca de rosto, publicar galeria, vendas).
 ORIGENS_REDE = {x.strip().rstrip("/").lower() for x in os.environ.get("ETERNA_ORIGENS", "").split(",") if x.strip()}
@@ -3024,7 +3037,8 @@ def imp_fila_json():
     with lock:
         jobs = [{k: v for k, v in j.items() if k != "arquivos"} for j in imp_fila
                 if j["estado"] in ("na_fila", "imprimindo") or agora - (j["fim"] or agora) < 3 * 3600]
-    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": IMPRESSORAS, "agora": agora, "pedidos": jobs}
+    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": IMPRESSORAS,
+            "postos": {k: v for k, v in IMP_POSTOS.items()}, "agora": agora, "pedidos": jobs}
 
 
 def imprimir(imagens, venda, vendedor="", posto=""):
@@ -3064,8 +3078,10 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
     entregue (linha FOTO), e o painel da fila acompanha."""
     while True:            # vez deste pedido: nenhum anterior esperando, e uma impressora livre
         with lock:
-            antes = [j for j in imp_fila if j["id"] < job["id"] and j["estado"] == "na_fila"]
-            livres = [p for p in IMPRESSORAS if p not in imp_ocupadas]
+            meus = imp_destinos(job)                       # impressoras deste terminal (ou todas)
+            # ordem de chegada: só espera os pedidos anteriores que disputam alguma das mesmas impressoras
+            antes = [j for j in imp_fila if j["id"] < job["id"] and j["estado"] == "na_fila" and set(imp_destinos(j)) & set(meus)]
+            livres = [p for p in meus if p not in imp_ocupadas]
             if not antes and livres:
                 imp = livres[0]
                 imp_ocupadas.add(imp)
