@@ -155,6 +155,24 @@ Estatísticas, Localidades e Resumo do MaracaFly (docs 10, 13) e o Painel/Diári
 - Autorização de uso de imagem: hoje por texto no WhatsApp; no Eterna, a mesma tela de consentimento da selfie poderia valer para foto e vídeo.
 - Telefone e país do cliente passam a morar no Eterna: entram no apagamento a pedido.
 
+## 12b. Histórico do MaracaFly (migrar)
+
+Ronaldo quer migrar o histórico desde janeiro/2026. O que existe hoje, na pasta Downloads dele:
+
+| Arquivo | O que tem | Serve para |
+|---|---|---|
+| `RELATORIO_DIARIO_EXPERIENCIAS_MARACATOUR_2026_G.AGUIA.xlsx` | Totais por dia (vendas, valor, ticket médio) de Gol de Placa, Photo Tour e Maraca Fly, janeiro a abril/2026 | Números do painel por dia; não tem venda a venda |
+| `2026-10-02_17-28-27_Open_Dronelog.db.backup` (gzip, 329 MB) | Banco do Maraca Flights em 02/10: voos e telemetria | Voos, pilotos, drones e baterias (seção 9) |
+| `Guias-MaracaFly-2026-10-02.csv` | Guias com vendas, comissão, pago e saldo | Conferência com o Portal de Parceiros; o cadastro de guias já mora lá |
+
+**Falta a venda a venda** (cerca de 8.450 vendas desde janeiro, com cliente, itens, valores, vendedor, piloto e QR, doc 06). Ela só existe no banco do MaracaFly. Opções para extrair:
+
+- exportar pela própria tela de Vendas ou pela API interna do MaracaFly (doc 18, seção 6), com acesso de leitura;
+- pedir à RIO DRONE XP um dump do banco (PostgreSQL provável, doc 01);
+- os vídeos (1,05 TB) ficam no Dropbox; migrar só os links ou baixar e subir para o S3.
+
+Na migração: país como código ISO (de-para do doc 10), telefones e nomes entram nas regras de LGPD do Eterna, e cada venda antiga ganha a origem "MaracaFly" para não misturar com a operação nova.
+
 ## 13. Fases possíveis
 
 Uma ordem possível, para discutir:
@@ -174,4 +192,4 @@ Uma ordem possível, para discutir:
 4. Guia na venda: PDV da Imply, lançamento pela API ou portal lendo o Eterna (seção 7)?
 5. Comissão interna (vendedor, piloto, fundo) continua? Vale para fotógrafos?
 6. Por quanto tempo o vídeo fica disponível ao cliente, e em que qualidade?
-7. Histórico do MaracaFly (vendas, clientes, vídeos): migra para o Eterna ou fica só para consulta?
+7. Histórico: extrair a venda a venda pela tela/API do MaracaFly ou pedir o dump do banco (seção 12b)?
