@@ -153,19 +153,59 @@ ok(ri[100, 266] == 0 and ri[150, 160] == 255 and not ri[90:112, 255:280].any(), 
 ImageDraw.Draw(isn).rectangle([221, 90, 300, 140], fill=255)               # objeto grande encostado na pessoa: fica
 ok(m.rec_limpa_mascara([isn, hum])[115, 280] == 255, "objeto forte ligado à pessoa continua")
 
-# pedaço do fundo encostado na pessoa só por uma ponta (caixa do túnel embaixo do cotovelo): sai; objeto segurado com
-# contato largo fica. Só o ISNet pega os dois; o modelo de pessoa, não.
-isn, hum = Image.new("L", (400, 300), 0), Image.new("L", (400, 300), 0)
-for dd in (ImageDraw.Draw(isn), ImageDraw.Draw(hum)):
-    dd.rectangle([100, 40, 220, 299], fill=255)                              # a pessoa
-di = ImageDraw.Draw(isn)
-di.polygon([(221, 150), (228, 147), (228, 153)], fill=255)                 # ponta fina que encosta no braço...
-di.rectangle([228, 140, 247, 159], fill=255)                               # ...e a caixa de 20x20 px atrás dela (< 1,5% da pessoa)
-di.rectangle([80, 130, 99, 149], fill=255)                                 # objeto segurado: encosta de cima a baixo (20 px)
-re_ = m.rec_limpa_mascara([isn, hum], Image.new("RGB", (400, 300), (90, 90, 90)))
-ok(re_[150, 238] == 0 and not re_[135:165, 226:255].any(), "pedaço encostado só por uma ponta deveria sair: %r" % int(re_[135:165, 226:255].max()))
-ok(re_[140, 88] == 255, "objeto segurado com contato largo deveria ficar: %r" % re_[140, 75])
-ok(re_[150, 160] == 255, "a pessoa continua")
+# v88 (revisão): objeto segurado de lado fica, mesmo encostando pouco (casos do revisor, 1600x1067, só o ISNet os pega);
+# a caixa do túnel encostada no cotovelo, com a cor do fundo que continua por ela, sai.
+def corpo():
+    isn, hum = Image.new("L", (1600, 1067), 0), Image.new("L", (1600, 1067), 0)
+    for dd in (ImageDraw.Draw(isn), ImageDraw.Draw(hum)):
+        dd.rectangle([600, 150, 900, 1066], fill=255)                        # corpo
+        dd.rectangle([900, 400, 1100, 440], fill=255)                        # braço esticado
+        dd.rectangle([1100, 390, 1130, 450], fill=255)                       # mão
+    return isn, hum
+
+
+def foto_cor(obj=None, cor_obj=None):
+    f = Image.new("RGB", (1600, 1067), (60, 110, 170))                       # fundo azul (arquibancada)
+    dd = ImageDraw.Draw(f)
+    dd.rectangle([600, 150, 900, 1066], fill=(30, 30, 30))                   # camisa escura
+    dd.rectangle([900, 390, 1130, 450], fill=(190, 140, 110))                # braço e mão
+    if obj:
+        obj(dd, cor_obj)
+    return f
+
+
+segurados = [
+    ("bola d=80 com a mão por cima de 1/4", lambda d, c: d.ellipse([1110, 370, 1190, 450], fill=c), (1160, 410)),
+    ("bola d=60 encostada na mão", lambda d, c: d.ellipse([1128, 390, 1188, 450], fill=c), (1160, 420)),
+    ("celular 30x60 na ponta dos dedos", lambda d, c: d.rectangle([1131, 350, 1161, 410], fill=c), (1146, 370)),
+]
+for nome, desenha, (px_, py_) in segurados:
+    isn, hum = corpo()
+    desenha(ImageDraw.Draw(isn), 255)
+    cinza = m.rec_limpa_mascara([isn, hum], Image.new("RGB", (1600, 1067), (90, 90, 90)))
+    ok(cinza[py_, px_] == 255, "%s (foto cinza uniforme) deveria ficar: %r" % (nome, cinza[py_, px_]))
+    colorida = m.rec_limpa_mascara([isn, hum], foto_cor(desenha, (240, 240, 240)))
+    ok(colorida[py_, px_] == 255, "%s (objeto branco no fundo azul) deveria ficar: %r" % (nome, colorida[py_, px_]))
+    sem = m.rec_limpa_mascara([isn, hum])
+    ok(sem[py_, px_] == 255, "%s (sem a foto) deveria ficar: %r" % (nome, sem[py_, px_]))
+# a caixa: encosta no braço por uma ponta e tem a cor do fundo (a arquibancada continua por ela) -> sai
+isn, hum = corpo()
+caixa = lambda d, c: (d.polygon([(1000, 441), (994, 449), (1006, 449)], fill=c), d.rectangle([985, 449, 1024, 488], fill=c))
+caixa(ImageDraw.Draw(isn), 255)
+fc = foto_cor(caixa, (60, 110, 170))
+ImageDraw.Draw(fc).rectangle([995, 465, 1014, 472], fill=(230, 230, 230))   # a plaquinha
+rc = m.rec_limpa_mascara([isn, hum], fc)
+ok(rc[470, 1004] == 0 and not rc[452:490, 983:1027].any(), "caixa do fundo encostada por uma ponta deveria sair: %r" % int(rc[452:490, 983:1027].max()))
+ok(rc[420, 1000] == 255 and rc[600, 750] == 255, "o braço e o corpo continuam")
+ok(m.rec_limpa_mascara([isn, hum], Image.new("RGB", (1600, 1067), (90, 90, 90)))[470, 1004] == 255, "a mesma caixa numa foto sem informação (tudo cinza) fica: na dúvida, mantém")
+# ponta de bandeira afastada pelo vento, presa por tecido fino e fraco (0,2): continua ligada pelo miolo e fica
+isn, hum = corpo()
+dv = ImageDraw.Draw(isn)
+dv.rectangle([1131, 300, 1300, 500], fill=255)                              # bandeira segurada, larga na mão
+dv.rectangle([1300, 330, 1340, 334], fill=50)                               # tecido fino e fraco, 5 px
+dv.rectangle([1340, 310, 1380, 350], fill=255)                              # ponta afastada
+rv = m.rec_limpa_mascara([isn, hum], Image.new("RGB", (1600, 1067), (200, 200, 200)))
+ok(rv[330, 1360] == 255, "ponta de bandeira presa por tecido fraco (0,2) deveria ficar: %r" % rv[330, 1360])
 
 # teto de custo: milhares de furos e de manchas pequenas terminam em poucos segundos
 import numpy as _np

@@ -2244,7 +2244,7 @@ REC_ENC_AREA = 0.015     # pedaço só do ISNet encostado na pessoa por uma pont
 REC_ENC_PESSOA = 0.15    # ...o modelo de pessoa quase não o vê (média abaixo disto)...
 REC_ENC_CONTATO = 2.0    # ...contato curto: comprimento do contato / raiz da área abaixo disto (não depende da escala)...
 REC_ENC_FUNDO = 0.3      # ...a borda dele com o fundo não tem contraste em 30% ou mais (o fundo continua por ele)...
-REC_ENC_CORTE = 40       # ...e a borda de verdade está entre ele e a pessoa (diferença de cor >= 40 no contato)
+REC_ENC_CORTE = 15       # ...e a foto mostra uma borda entre ele e a pessoa (diferença de cor >= 15 no contato; a caixa tem 25)
 
 
 def _rec_furo_e_objeto(Hc, Fc, Cc, Ec, Dc, lado, rng):
@@ -2390,7 +2390,8 @@ def rec_limpa_mascara(masks, foto=None):
         if foto is not None and tuple(foto.size) == (W0, H0):
             from PIL import ImageFilter
             rgb = np.asarray(foto.convert("RGB").filter(ImageFilter.BoxBlur(2)), dtype=np.float32)[y0:y1, x0:x1]
-            m = _rec_encostados(m, isn, pessoa[y0:y1, x0:x1], bruta, rgb, lado)
+            m, tirado = _rec_encostados(m, isn, pessoa[y0:y1, x0:x1], bruta, rgb, lado)
+            dentro &= ~tirado                                   # o que saiu não liga mais nada à pessoa
     m = _rec_ilhas(m, semente_px, (m >= 0.5) | (dentro & (bruta >= REC_NUCLEO)))
     saida[y0:y1, x0:x1] = (m * 255.0 + 0.5).astype(np.uint8)
     return saida
@@ -2398,30 +2399,31 @@ def rec_limpa_mascara(masks, foto=None):
 
 def _rec_encostados(m, isn, pessoa, bruta, rgb, lado):
     """Pedaço do fundo que só encosta na pessoa (ex.: a caixa escura da entrada do túnel embaixo do cotovelo, 30/10).
-    Sai só com as quatro provas juntas (na dúvida, mantém):
+    Devolve (máscara, o que saiu). Sai só com as quatro provas juntas (na dúvida, mantém):
     1) só o ISNet o pega (alfa >= 0,5; modelo de pessoa com média < 0,15) e é pequeno (< 1,5% da pessoa);
     2) encosta curto: comprimento do contato / raiz da área < 2 (medida sem escala; a caixa tem 1,3);
     3) o fundo continua por ele: em 30% ou mais da borda dele com o fundo, a cor de dentro e a de fora são iguais
        (a caixa é estrutura do estádio; objeto segurado contrasta com o fundo em volta: 0 a 15% nas fotos de 30/10);
-    4) a borda de verdade está entre ele e a pessoa: a cor dele junto do contato difere da cor da pessoa ali (>= 40).
+    4) a foto mostra uma borda entre ele e a pessoa: a cor dele junto do contato difere da cor da pessoa ali (>= 15).
        Foto sem informação (tudo da mesma cor) não prova nada: fica."""
     import numpy as np
     from scipy import ndimage
     S = np.ones((3, 3), dtype=bool)
     pes = pessoa >= 0.5
     npes = int(pes.sum())
+    nada = np.zeros(m.shape, dtype=bool)
     if not npes:
-        return m
+        return m, nada
     dp = ndimage.distance_transform_edt(~pes)
     longe = dp > 2.0                                                 # fora da pessoa engordada 2 px
     lab, n = ndimage.label((isn >= 0.5) & longe & (m > 0), structure=S)
     if not n:
-        return m
+        return m, nada
     area = np.bincount(lab.ravel(), minlength=n + 1)
     minimo = max(30, 300 * (lado / 1600.0) ** 2)
     cand = [k for k in np.argsort(-area[1:])[:32] + 1 if minimo <= area[k] < REC_ENC_AREA * npes]
     if not cand:
-        return m
+        return m, nada
     media_pes = ndimage.mean(pessoa, lab, np.arange(n + 1))
     dentro_pes = ndimage.distance_transform_edt(pes)
     fatias = ndimage.find_objects(lab)
@@ -2461,7 +2463,7 @@ def _rec_encostados(m, isn, pessoa, bruta, rgb, lado):
         corte = float(np.sqrt(((np.median(cor[lado_obj], 0) - np.median(cor[lado_pes], 0)) ** 2).sum()))
         tirar[k] = corte >= REC_ENC_CORTE
     if not tirar.any():
-        return m
+        return m, nada
     sai = tirar[lab]
     perto = ndimage.distance_transform_edt(~sai) <= 4.0
     sai |= perto & longe                                            # e a borda macia dele
@@ -2469,7 +2471,7 @@ def _rec_encostados(m, isn, pessoa, bruta, rgb, lado):
     # na faixa de 2 px junto da pessoa, onde o pedaço encostava, vale o alfa do modelo de pessoa (sem filete do fundo)
     faixa = perto & ~longe & ~pes
     m[faixa] = np.minimum(m[faixa], np.clip((pessoa[faixa] - 0.3) / 0.6, 0.0, 1.0))
-    return m
+    return m, sai
 
 
 def _rec_ilhas(m, semente_px, liga=None):
