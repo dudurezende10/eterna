@@ -292,6 +292,68 @@ def limpeza():
             return {"apagadas": apagadas}
 
 
+# ---------- login da equipe: código de acesso por e-mail (contrato do servidor/email/README.md) ----------
+# POST /auth/codigo {email} -> 202 (enviado) · 400 · 429 · 502;  POST /auth/verificar {email, codigo} -> 200 {ok, token, exp} · 401 {erro}
+# Código de 6 dígitos, 10 min, 5 tentativas, uso único, guardado só como HMAC. Sai pelo Amazon SES com a permissão da própria
+# função (sem senha de e-mail em lugar nenhum). Limites: 1 pedido a cada 30 s e 6 por hora por e-mail, 30 por hora por IP, 400 por hora no total.
+MAIL_FROM = os.environ.get("MAIL_FROM", "")
+MAIL_NOME = os.environ.get("MAIL_NOME", "Viva Maracanã")
+_re_email = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", re.I)
+COD_TTL, COD_TENTATIVAS, TOKEN_TTL = 600, 5, 12 * 3600
+_ses = boto3.client("sesv2", region_name=REGIAO)
+
+
+def _hm(*partes):
+    return hmac.new(SEGREDO_PONTO_SHA256.encode(), "|".join(partes).encode(), hashlib.sha256).hexdigest()
+
+
+def auth_codigo(corpo, ip):
+    email = str(corpo.get("email") or "").strip().lower()
+    if not _re_email.match(email):
+        return resp({"erro": "email"}, 400)
+    he = hashlib.sha256(email.encode()).hexdigest()[:24]
+    if not (contar("AE30#" + he, 30, 1) and contar("AEH#" + he, 3600, 6) and contar("AIP#" + ip_hash(ip), 3600, 30) and contar("ATOT", 3600, 400)):
+        return resp({"erro": "aguarde"}, 429)
+    if not MAIL_FROM:
+        return resp({"erro": "envio desligado"}, 502)
+    codigo = "%06d" % secrets.randbelow(1000000)
+    agora = int(time.time())
+    TABELA.put_item(Item={"pk": "AUT#" + he, "sk": "M", "h": _hm(email, codigo), "n": 0, "exp": agora + COD_TTL, "ttl": agora + COD_TTL + 3600})
+    texto = ("Use o código abaixo para entrar no Eterna. Ele vale por 10 minutos e só funciona uma vez.\n\n%s\n\n"
+             "Se não foi você que pediu, ignore este e-mail.") % codigo
+    html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:480px'><p>Use o código abaixo para entrar no Eterna. "
+            "Ele vale por 10 minutos e só funciona uma vez.</p><p style='font-size:34px;letter-spacing:8px;font-weight:bold;margin:18px 0'>%s</p>"
+            "<p style='color:#666;font-size:13px'>Se não foi você que pediu, ignore este e-mail.</p></div>") % codigo
+    try:
+        _ses.send_email(FromEmailAddress="%s <%s>" % (MAIL_NOME, MAIL_FROM), Destination={"ToAddresses": [email]},
+                        Content={"Simple": {"Subject": {"Data": "Seu código de acesso · %s" % MAIL_NOME, "Charset": "UTF-8"},
+                                            "Body": {"Text": {"Data": texto, "Charset": "UTF-8"}, "Html": {"Data": html, "Charset": "UTF-8"}}}})
+    except Exception as ex:
+        print("auth: envio falhou:", str(ex)[:200])
+        return resp({"erro": "envio"}, 502)
+    return resp({"ok": True}, 202)
+
+
+def auth_verificar(corpo):
+    email = str(corpo.get("email") or "").strip().lower()
+    codigo = re.sub(r"\D", "", str(corpo.get("codigo") or ""))
+    if not _re_email.match(email) or len(codigo) != 6:
+        return resp({"erro": "incorreto"}, 401)
+    k = {"pk": "AUT#" + hashlib.sha256(email.encode()).hexdigest()[:24], "sk": "M"}
+    it = TABELA.get_item(Key=k).get("Item")
+    if not it or int(it["exp"]) < time.time() or int(it.get("n") or 0) >= COD_TENTATIVAS:
+        if it:
+            TABELA.delete_item(Key=k)
+        return resp({"erro": "expirado"}, 401)
+    if not hmac.compare_digest(it["h"], _hm(email, codigo)):
+        TABELA.update_item(Key=k, UpdateExpression="ADD n :um", ExpressionAttributeValues={":um": 1})
+        return resp({"erro": "incorreto"}, 401)
+    TABELA.delete_item(Key=k)                             # uso único
+    exp = int(time.time()) + TOKEN_TTL
+    token = base64.urlsafe_b64encode(("%s|%d|%s" % (email, exp, _hm("token", email, str(exp)))).encode()).decode()
+    return resp({"ok": True, "token": token, "exp": iso(exp)})
+
+
 # ---------- rotas ----------
 def publicar(ev, corpo):
     seg = (ev.get("headers") or {}).get("x-eterna-ponto", "")
@@ -426,6 +488,10 @@ def handler(ev, ctx):
             return resp({"error": "corpo inválido"}, 400)
     if caminho == "/ponto/galerias" and metodo == "POST":
         return publicar(ev, corpo)
+    if caminho == "/auth/codigo" and metodo == "POST":
+        return auth_codigo(corpo, ip)
+    if caminho == "/auth/verificar" and metodo == "POST":
+        return auth_verificar(corpo)
     partes = caminho.split("/")                           # ['', 'g', token, ação]
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "codigo" and metodo == "GET":
         if not contar("COD#" + ip_hash(ip), 60, 30):

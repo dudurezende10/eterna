@@ -17,7 +17,15 @@ Parameters:
     Description: compra online desligada até haver canal de pagamento (por ora só maquininha Imply no balcão)
   OrigensApp:
     Type: CommaDelimitedList
-    Default: "https://eterna.photo,http://127.0.0.1:8765"
+    Default: "https://eterna.photo,https://www.eterna.photo,http://127.0.0.1:8765,http://localhost:8765,http://192.168.10.218:8765"
+  MailFrom:
+    Type: String
+    Default: ""
+    Description: remetente do código de acesso do login (domínio verificado no Amazon SES)
+  MailDominio:
+    Type: String
+    Default: "vivamaracana.com.br"
+    Description: domínio verificado no Amazon SES (a função só pode enviar por ele)
   LimiteLeiturasDia:
     Type: Number
     Default: 15000
@@ -92,6 +100,8 @@ Resources:
           LIMITE_FOTOS_GALERIA: "600"
           LIMITE_LEITURAS_DIA: !Ref LimiteLeiturasDia
           LIMITE_BUSCAS_DIA: !Ref LimiteBuscasDia
+          MAIL_FROM: !Ref MailFrom
+          MAIL_NOME: "Viva Maracanã · Eterna"
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref Banco}
         - Statement:
@@ -103,6 +113,13 @@ Resources:
               Effect: Allow
               Action: [rekognition:CreateCollection, rekognition:IndexFaces, rekognition:SearchFacesByImage, rekognition:DeleteCollection]
               Resource: !Sub "arn:aws:rekognition:${AWS::Region}:${AWS::AccountId}:collection/et-maracana-*"
+            - Sid: CodigoDeAcessoPorEmail
+              Effect: Allow
+              Action: [ses:SendEmail]
+              Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+              Condition:
+                StringLike:
+                  ses:FromAddress: !Sub "*@${MailDominio}"
             - Sid: LimpezaDosRostos
               Effect: Allow
               Action: [rekognition:ListCollections]
@@ -134,6 +151,12 @@ Resources:
           Properties:
             ApiId: !Ref Api
             Path: "/g/{token}/{acao}"
+            Method: POST
+        Login:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/auth/{acao}"
             Method: POST
         Publicar:
           Type: HttpApi
