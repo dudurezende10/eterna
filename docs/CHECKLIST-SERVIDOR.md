@@ -1,55 +1,103 @@
-# Checklist do servidor do Eterna (estádio)
+# Subir um servidor do Eterna: passo a passo
 
-Lista para montar ou trocar o servidor do ponto. Saiu da montagem do servidor de teste em 30/10/2026: notebook MCTNBADM041, Windows 11 Business, corporativo no Azure AD. Cada item diz como conferir. Variáveis do `nuvem.env`: [NUVEM.md](NUVEM.md). Curadoria remota: [planos/2026-10-29-servidor-do-estadio-e-curadoria-remota.md](planos/2026-10-29-servidor-do-estadio-e-curadoria-remota.md).
+Ordem para montar o servidor do ponto do zero, ou trocar de máquina. Cada passo tem o comando e como conferir; marque ao terminar. Saiu da montagem do servidor de teste em 30/10/2026 (notebook MCTNBADM041, Windows 11 Business, corporativo no Azure AD). Variáveis do `nuvem.env`: [NUVEM.md](NUVEM.md). Curadoria remota: [planos/2026-10-29-servidor-do-estadio-e-curadoria-remota.md](planos/2026-10-29-servidor-do-estadio-e-curadoria-remota.md).
 
-## 1. Rede
+Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usuário eterna".
 
-- [ ] **Rede dos postos e das câmeras marcada como Privada.**
-  Conferir: `Get-NetConnectionProfile`.
-  Corrigir: `Set-NetConnectionProfile -InterfaceAlias <placa> -NetworkCategory Private`.
-  Por quê: em máquina corporativa, a política da empresa pode ignorar as regras locais do firewall em rede **Pública** (`AllowLocalFirewallRules = False`, ver com `Get-NetFirewallProfile -PolicyStore ActiveStore`). Nesse caso tudo o que chega pela rede é recusado, mesmo com a regra criada. O sintoma foi o celular dar `ERR_CONNECTION_ABORTED` no Eterna e a câmera dar "tempo expirado" no FTP, enquanto pelo Tailscale (rede Privada) funcionava. **Trocou de roteador ou de cabo, confira de novo:** o Windows marca a rede nova como Pública.
-- [ ] **IP fixo:** reservar o IP do servidor no roteador (DHCP reservado). Não mudar a placa para IP manual.
-- [ ] **Internet pela placa certa.** Com duas placas (cabo num roteador sem internet e Wi-Fi com internet), a placa sem internet não pode ter prioridade, senão Tailscale e nuvem não conectam (DNS falha).
-  Conferir: `Get-NetIPInterface -AddressFamily IPv4` (menor métrica ganha).
-  Corrigir: `Set-NetIPInterface -InterfaceAlias Ethernet -AddressFamily IPv4 -InterfaceMetric 100`.
-  Desfazer: `-AutomaticMetric Enabled`.
-- [ ] **Isolamento de Wi-Fi:** a rede de câmeras e postos não pode isolar os aparelhos entre si. A MARACATOUR_CORP e a VIVA-MARACANA isolam. Conferir abrindo `http://<ip-do-servidor>:8765` num celular dessa rede.
+## 0. Antes de começar
 
-## 2. Eterna
+- [ ] Máquina com Windows 11 Pro ou Business, 16 GB de memória (o recorte dos fundos de IA usa bastante) e disco com folga para as fotos do dia.
+- [ ] Roteador do ponto com internet, ou ao menos o servidor com uma segunda saída para a internet.
+- [ ] Em mãos: senha de administrador do Windows; acesso à conta da AWS (credencial do perfil do Eterna e segredo da nuvem); conta do Tailscale da TI (ti@maracatour.com.br); DNP e cabo USB; câmeras.
+- [ ] Usuário local **eterna**, com senha. É nele que o Eterna roda.
 
-- [ ] Python 3.12 e venv: `agente\iniciar-eterna.bat` (instala boto3, cryptography e o recorte).
-- [ ] `~/Eterna/nuvem.env` com `ETERNA_ORIGENS` (todos os endereços pelos quais o Eterna é aberto: IP da rede, IP e nome do Tailscale, separados por vírgula), `ETERNA_IMPRESSORA` e `ETERNA_PASTA`.
-- [ ] Segredo da nuvem e credenciais da AWS: quem tem o acesso coloca. Nunca copiar por chat.
-- [ ] Vigia: `agente\instalar-vigia.ps1` no usuário que roda o Eterna (atalho "Eterna vigia" na pasta Inicializar). Outro usuário do Windows pode ligar o mesmo Eterna com `ETERNA_BASE` (ver o cabeçalho de `eterna-vigia.ps1`).
-- [ ] Firewall: porta 8765 só para a rede local e o Tailscale (`agente\preparar-tailscale.ps1` cria a regra).
-- [ ] Conferir: `curl http://127.0.0.1:8765/status`, de um posto `http://<ip>:8765` e de fora `http://<nome-tailscale>:8765`.
+## 1. Windows e energia
 
-## 3. Câmeras (FTP)
+- [ ] Atualizações do Windows em dia, e reiniciar.
+- [ ] Nunca suspender nem hibernar na tomada:
+  ```powershell
+  powercfg /change standby-timeout-ac 0; powercfg /change hibernate-timeout-ac 0
+  ```
+- [ ] Notebook: fechar a tampa não faz nada:
+  ```powershell
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0; powercfg /setactive SCHEME_CURRENT
+  ```
+- [ ] BIOS: religar sozinho quando a energia voltar (AC Power Recovery = On).
 
-- [ ] Serviço FTP ligado na porta 21 (`Get-NetTCPConnection -LocalPort 21 -State Listen`), com regra de entrada no firewall.
-- [ ] Modo passivo ligado na câmera. Se conectar e travar no envio, abrir no firewall a faixa de portas passivas do servidor FTP.
-- [ ] Câmera no **mesmo Wi-Fi** do servidor. Ela precisa aparecer na lista de clientes do roteador. O app do celular só configura; quem conecta é a câmera.
-- [ ] Destino na câmera: IP do servidor, porta 21, usuário do FTP. Trocar quando o IP do servidor mudar.
+## 2. Rede
 
-## 4. Impressora
+- [ ] Ligar o servidor **no cabo** do roteador do ponto e reservar o IP dele no roteador (DHCP reservado). Não pôr IP manual na placa.
+- [ ] Marcar a rede do ponto como **Privada**:
+  ```powershell
+  Set-NetConnectionProfile -InterfaceAlias Ethernet -NetworkCategory Private
+  ```
+  Conferir com `Get-NetConnectionProfile`. **Por quê:** em máquina corporativa, a política pode ignorar as regras locais do firewall em rede Pública (`Get-NetFirewallProfile -PolicyStore ActiveStore` mostra `AllowLocalFirewallRules = False`). Aí o servidor recusa tudo o que chega pela rede, mesmo com as regras criadas: o celular dá `ERR_CONNECTION_ABORTED` e a câmera dá "tempo expirado". **Trocou de roteador ou de cabo, faça de novo:** o Windows marca rede nova como Pública.
+- [ ] Internet sai pela placa certa. Se o cabo vai para um roteador sem internet e o Wi-Fi tem internet, o cabo não pode ter prioridade, senão o Tailscale e a nuvem não conectam (o DNS falha):
+  ```powershell
+  Set-NetIPInterface -InterfaceAlias Ethernet -AddressFamily IPv4 -InterfaceMetric 100
+  ```
+  Conferir com `Test-NetConnection github.com -Port 443`. Para desfazer quando o roteador tiver internet: `-AutomaticMetric Enabled`.
+- [ ] O Wi-Fi do ponto **não pode isolar os aparelhos** entre si. A MARACATOUR_CORP e a VIVA-MARACANA isolam, então não servem para câmeras e postos.
 
-- [ ] DNP instalada (`Get-Printer`) com o mesmo nome do `ETERNA_IMPRESSORA`.
-- [ ] Teste de uma venda com 4 fotos: as 4 precisam sair.
+## 3. Eterna (no usuário eterna)
 
-## 5. Acesso remoto (Tailscale)
+- [ ] Instalar o Python 3.12 (python.org), marcando "Add python.exe to PATH".
+- [ ] Baixar e rodar `agente\instalar-recorte.bat`. Ele cria o venv e baixa os modelos do recorte (cerca de 350 MB).
+- [ ] Rodar `agente\iniciar-eterna.bat` uma vez. Ele baixa o agente mais novo, instala as bibliotecas e cria `~/Eterna`.
+- [ ] Conferir: `curl http://127.0.0.1:8765/status` responde `"ok": true`.
 
-- [ ] Rodar `agente\preparar-tailscale.ps1` como administrador. Se o login pelo navegador não abrir, usar uma chave de uso único (painel › Settings › Keys) com `tailscale up --unattended --authkey ...` e apagar o arquivo da chave depois.
-- [ ] No painel, **Disable key expiry** no servidor.
+## 4. Nuvem e configuração do ponto
+
+- [ ] Quem tem o acesso coloca o perfil da AWS (`~/.aws/credentials`, perfil do Eterna) e o segredo da nuvem. **Nunca por chat ou e-mail.**
+- [ ] `~/Eterna/nuvem.env` com nuvem, bucket, perfil, região e API da galeria (tabela em [NUVEM.md](NUVEM.md)), mais:
+  - `ETERNA_PASTA`: a pasta raiz do FTP (passo 6);
+  - `ETERNA_IMPRESSORA`: o nome exato da DNP (passo 5);
+  - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. O passo 8 acrescenta os do Tailscale.
+- [ ] Conferir em `/status`: `nuvem.ligada` = true e `s3_ok` = true.
+
+## 5. Impressora
+
+- [ ] Instalar o driver da DNP e ligar no USB. Conferir o nome com `Get-Printer` e copiar exatamente para o `ETERNA_IMPRESSORA`.
+- [ ] Teste: uma venda com 4 fotos, e as 4 precisam sair.
+
+## 6. FTP das câmeras
+
+- [ ] Ligar o FTP do Windows (IIS):
+  ```powershell
+  Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServerRole,IIS-FTPServer,IIS-FTPSvc,IIS-ManagementConsole -All
+  ```
+- [ ] No Gerenciador do IIS, criar o site FTP na porta 21, apontando para a pasta do `ETERNA_PASTA`. Usar autenticação básica, um usuário local de FTP com permissão de gravação e uma faixa de portas passivas. Abrir no firewall a 21 e essa faixa.
+- [ ] Uma **subpasta por fotógrafo** (ex.: `\carlos`). Na câmera, o destino aponta para a subpasta dela: é assim que o Eterna sabe quem tirou a foto.
+- [ ] Na câmera: Wi-Fi do ponto, servidor = IP reservado, porta 21, usuário do FTP, modo passivo ligado. A câmera precisa aparecer na lista de clientes do roteador; o app do celular só configura, quem conecta é a câmera.
+- [ ] Teste: tirar uma foto, e ela aparece em Upload automático em segundos, com o rosto lido.
+
+## 7. Ligar sozinho
+
+- [ ] No usuário eterna: rodar `agente\instalar-vigia.ps1`. Ele cria o atalho "Eterna vigia" na pasta Inicializar, e o vigia religa o Eterna se cair ou travar.
+- [ ] O Windows entra sozinho no usuário eterna, com o Autologon da Sysinternals. Quem tem a senha faz:
+  ```powershell
+  winget install --id Microsoft.Sysinternals.Autologon -e
+  ```
+- [ ] Teste: reiniciar o servidor sem tocar em nada. Em até 2 minutos, `/status` responde.
+
+## 8. Acesso remoto (Tailscale)
+
+- [ ] Rodar `agente\preparar-tailscale.ps1`. Ele instala o Tailscale, acrescenta os endereços no `ETERNA_ORIGENS`, libera a 8765 só para a rede local e o Tailscale, e reinicia o Eterna.
+- [ ] Se o login pelo navegador não abrir: no painel, Settings › Keys › Generate auth key (uso único). Salve num arquivo na área de trabalho do servidor e rode `tailscale up --unattended --authkey (Get-Content <arquivo>)`. Depois, apague o arquivo.
+- [ ] No painel, em Machines, no "…" do servidor: **Disable key expiry**.
 - [ ] Área de trabalho remota ligada, aberta só para a rede local e o Tailscale.
-- [ ] Conta Tailscale: sair do trial para o plano gratuito ou pago antes de vencer.
+- [ ] Conta do Tailscale fora do trial (plano gratuito ou pago).
 
-## 6. Energia e religar sozinho
+## 9. Teste final, de ponta a ponta
 
-- [ ] Nunca suspender nem hibernar na tomada: `powercfg /change standby-timeout-ac 0` e `hibernate-timeout-ac 0`. Se for notebook, fechar a tampa não faz nada: `LIDACTION 0`.
-- [ ] Windows entra sozinho no usuário do Eterna (Autologon da Sysinternals, feito por quem tem a senha).
-- [ ] BIOS: religar quando a energia voltar (AC Power Recovery = On).
+- [ ] Do servidor: `http://127.0.0.1:8765` abre.
+- [ ] De um posto ou celular no Wi-Fi do ponto: `http://<ip-reservado>:8765` abre, com as fotos visíveis.
+- [ ] De fora, com Tailscale: `http://<nome-do-servidor>:8765` abre, com as miniaturas e a foto ampliada.
+- [ ] Câmera → foto aparece → selfie no Checkout acha a pessoa → venda → impressão na DNP → QR abre a galeria no celular (eterna.photo).
+- [ ] Cartão com QR impresso: ler com a pistola dentro de uma venda, e o mesmo QR aparece na tela do cliente.
 
-## 7. Pegadinhas da montagem remota
+## 10. Pegadinhas da montagem remota
 
 - AnyDesk sem instalar não digita em janela de administrador. Use **Ações › Solicitar direitos de administrador**, e alguém aceita do outro lado.
-- No console do PowerShell, clicar dentro da janela ativa o modo "Selecionar" e **pausa** o comando que está rodando. Esc volta.
+- No PowerShell, clicar dentro da janela ativa o modo "Selecionar" e **pausa** o comando que está rodando. Esc volta.
+- Colar pelo AnyDesk: espere 2 a 3 segundos depois de copiar antes do Ctrl+V, até a área de transferência sincronizar.
