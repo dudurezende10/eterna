@@ -3280,6 +3280,9 @@ def ff_funcao_validar(body):
 HOSTS_OK = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 if os.environ.get("ETERNA_REDE"):
     HOSTS_OK.add("%s:%d" % (lan_ip(), PORT))
+# Endereços de ETERNA_ORIGENS (IP da rede do ponto, nome e IP do Tailscale): configurados no próprio servidor, então
+# valem como Host do agente. Sem isso, quem abre pelo nome do Tailscale (curadoria remota) não vê as fotos (403).
+HOSTS_OK |= ORIGENS_REDE_HOSTS
 
 
 IMP_MAX_CORPO = 60 * 1024 * 1024
