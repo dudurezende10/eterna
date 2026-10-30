@@ -27,7 +27,7 @@ if (Test-Path $atalho) { Rename-Item $atalho ($atalho + '.desligado') -Force; Wr
 
 # qualquer usuário do computador pode LIGAR a tarefa (ler e executar; não muda nem apaga): é o que o atalho faz
 $svc = New-Object -ComObject Schedule.Service; $svc.Connect()
-$tarefa = $svc.GetFolder('').GetTask('Eterna')
+$tarefa = $svc.GetFolder('\').GetTask('Eterna')
 $sd = $tarefa.GetSecurityDescriptor(0xF)
 if ($sd -notmatch '\(A;;GRGX;;;AU\)') { $tarefa.SetSecurityDescriptor($sd + '(A;;GRGX;;;AU)', 0) }
 
