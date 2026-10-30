@@ -55,6 +55,29 @@ O `wip/v84` (recorte local) foi juntado com o main por decisão do Ronaldo. Houv
 4. **Espera da sessão:** baixar os 45 s para 15 a 20 s.
 5. **HTTPS no servidor** com um nome do domínio (ex.: `maracana.eterna.photo` apontando para o IP interno, certificado por validação DNS): libera a câmera do balcão em todos os postos e tira o "Não seguro".
 
+## 2b. Para decidir juntos (Ronaldo e Eduardo)
+
+### Várias vendas por sessão (o cliente volta para comprar mais)
+Hoje `status`, `cart`, `selected`, `saleNo` e `impressao` ficam na própria sessão: uma sessão, uma venda.
+
+| Opção | Como | Prós | Contras |
+|---|---|---|---|
+| **A. `vendas[]` dentro da sessão** | cada compra vira um item de `sim.vendas` (número, itens, meio, localizador Imply, impressão); a sessão guarda o que já foi comprado (soma das vendas) | o Checkout, o recibo e a galeria continuam lendo a sessão | migrar Caixa, Posto, Lista de vendas, estoque do rolo e relatórios para contar por venda |
+| **B. Venda complementar em sessão-filha** | a segunda compra cria `LPxxxx-2`, apontando para as mesmas fotos | quase não mexe no código atual | duplica a sessão e confunde a galeria e os relatórios |
+| **C. Só no servidor (com a sessão no agente)** | junto com o item abaixo: vendas e sessões passam a morar no agente (SQLite), e o app só lê | resolve de vez, porque vários postos veem a mesma verdade | é o maior trabalho |
+
+Sugestão: **A** agora; **C** quando a sessão for para o servidor.
+
+### Sessão montada no servidor
+Hoje a sessão nasce no navegador (`agentPoll` → `ingPush` → `ingClose`) e mora no `localStorage` de quem estava com o app aberto.
+
+| Opção | Como | Prós | Contras |
+|---|---|---|---|
+| **A. Agente fecha a sessão** | o agente agrupa por fotógrafo com a pausa de `SESSAO_PAUSA_S` (20 s) e publica `GET /sessoes`; o app lê dali em vez de montar | não depende de navegador aberto; todos os postos veem as mesmas sessões | mover a regra de grupo (bandeira, validação) para o Python |
+| **B. Navegador "dono" no servidor** | um Chrome fixo no servidor, sempre aberto na tela de Upload | nenhuma mudança de código | frágil: se fechar, para; e os postos continuam com dados diferentes |
+
+Sugestão: **A**. A pausa de 20 s, a retomada no reinício e a pasta vigiada já estão no agente.
+
 ## 3. Curadoria remota (você em Miami)
 
 As fotos ficam no servidor do estádio, dentro da rede de lá. O eterna.photo, aberto de fora, procura o Eterna no próprio computador (`127.0.0.1`), e ele não está lá. Por isso hoje não dá para curar de fora.

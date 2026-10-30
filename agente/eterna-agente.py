@@ -3044,8 +3044,6 @@ def imprimir(imagens, venda, vendedor="", posto=""):
         with open(f, "wb") as fh:
             fh.write(b)
         arqs.append(f)
-    if os.environ.get("ETERNA_IMPRESSORA_TESTE"):          # testes sem impressora: só grava os arquivos
-        return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA, "teste": True}
     ps1 = imp_ps1()
     ms = {"gravar_ms": round((time.time() - t0) * 1000), "spooler_ms": 0, "kb": round(sum(os.path.getsize(a) for a in arqs) / 1024)}
     job = imp_pedido(venda, vendedor, posto, arqs)
@@ -3073,6 +3071,17 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
             job["estado"], job["inicio"] = "imprimindo", t1
             arqs = [a for a in (job.get("arquivos") or arqs)[job["feitas"]:] if os.path.exists(a)]   # retomado: só o que faltava
             imp_salvar()
+        if os.environ.get("ETERNA_IMPRESSORA_TESTE"):       # sem impressora: simula a DNP (6 s por foto) para ver a fila andar
+            for _ in arqs:
+                time.sleep(6)
+                with lock:
+                    job["feitas"] += 1
+                    imp_salvar()
+            with lock:
+                job["estado"], job["fim"] = "impresso", time.time()
+                imp_salvar()
+            print(f"  impressão {venda or '-'} (teste, sem DNP): {len(arqs)} foto(s)")
+            return
         linhas = []
         try:
             pr = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
