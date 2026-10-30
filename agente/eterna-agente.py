@@ -2380,8 +2380,35 @@ def rec_limpa_mascara(masks, foto=None):
         # pequeno só fica se encosta (ou quase) no grupo: menor distância de cada pedaço de uma vez (sem laço por pedaço)
         manter[1:] |= ndimage.minimum(dist, rot, idr) <= max(4.0, 0.015 * lado)
         m = m * manter[rot]
+    m = _rec_ilhas(m, semente_px)
     saida[y0:y1, x0:x1] = (m * 255.0 + 0.5).astype(np.uint8)
     return saida
+
+
+def _rec_ilhas(m, semente_px):
+    """Depois da máscara pronta: o que fica com alfa >= 0,5 tem que estar ligado (no próprio alfa >= 0,5) à pessoa.
+    Ilha pequena solta (ex.: pedaço do teto ao lado da barba, ligado à pessoa só pela borda macia) sai, com a borda macia
+    em volta dela. Ilha grande (3% ou mais da pessoa) fica: na dúvida, mantém."""
+    import numpy as np
+    from scipy import ndimage
+    forte = m >= 0.5
+    lab, n = ndimage.label(forte, structure=np.ones((3, 3), dtype=bool))
+    if n < 2:
+        return m
+    area = np.bincount(lab.ravel(), minlength=n + 1).astype(np.float64)
+    pessoa = np.zeros(n + 1, dtype=bool)
+    pessoa[np.unique(lab[semente_px & forte])] = True
+    pessoa[0] = False
+    if not pessoa.any():
+        return m                                               # semente sem alfa forte: não decide nada aqui
+    manter = pessoa | (area >= 0.03 * area[pessoa].max())
+    manter[0] = False
+    if manter[1:].all():
+        return m
+    # cada ponto macio vai com a ilha forte mais perto: a borda da ilha descartada sai junto com ela
+    _, ind = ndimage.distance_transform_edt(~forte, return_indices=True)
+    perto = lab[ind[0], ind[1]]
+    return m * manter[perto]
 
 
 def rec_arquivo(pid, lado=REC_LADO_MAX):

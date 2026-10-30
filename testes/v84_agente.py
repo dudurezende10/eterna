@@ -142,6 +142,17 @@ r1 = m.rec_limpa_mascara([isn])
 ok(r1[90, 70] == 255, "uma máscara só: a pessoa sai: %r" % r1[90, 70])
 r0 = m.rec_limpa_mascara([isn, Image.new("L", (200, 150), 0)])
 ok(r0[90, 70] == 255 and r0[100, 170] == 255, "modelo de pessoa vazio: cai para alfa alto em uma delas (não tira a foto da venda)")
+# ilha forte solta (pedaço do teto ao lado da barba) ligada à pessoa só por uma franja fraca: sai, com a borda macia
+isn, hum = Image.new("L", (400, 300), 0), Image.new("L", (400, 300), 0)
+for dd in (ImageDraw.Draw(isn), ImageDraw.Draw(hum)):
+    dd.rectangle([100, 60, 220, 299], fill=255)                              # a pessoa
+ImageDraw.Draw(isn).rectangle([221, 100, 260, 101], fill=20)               # franja fraca (~0,08), 2 px, até a ilha
+ImageDraw.Draw(isn).rectangle([261, 95, 272, 106], fill=255)               # ilha de 12x12 px com alfa alto
+ri = m.rec_limpa_mascara([isn, hum])
+ok(ri[100, 266] == 0 and ri[150, 160] == 255 and not ri[90:112, 255:280].any(), "ilha forte ligada só pela franja fraca deveria sair: %r" % [ri[100, 266], int(ri[90:112, 255:280].max())])
+ImageDraw.Draw(isn).rectangle([221, 90, 300, 140], fill=255)               # objeto grande encostado na pessoa: fica
+ok(m.rec_limpa_mascara([isn, hum])[115, 280] == 255, "objeto forte ligado à pessoa continua")
+
 # teto de custo: milhares de furos e de manchas pequenas terminam em poucos segundos
 import numpy as _np
 gi = _np.zeros((1067, 1600), _np.uint8)
