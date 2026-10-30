@@ -4,10 +4,13 @@
 # Windows (atalho na pasta Inicializar, criado por instalar-vigia.ps1). Registro em ~/Eterna/vigia.log.
 # A configuração do ponto fica em ~/Eterna/nuvem.env (ETERNA_PASTA, ETERNA_ORIGENS, ETERNA_IMPRESSORA, nuvem...).
 $ErrorActionPreference = 'SilentlyContinue'
-$dir = Join-Path $HOME 'Eterna\programa'
-$py = Join-Path $HOME 'Eterna\venv\Scripts\python.exe'                      # com o recorte local da v84
-if (-not (Test-Path $py)) { $py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe' }
-$log = Join-Path $HOME 'Eterna\vigia.log'
+# ETERNA_BASE: outro usuário do Windows liga o MESMO Eterna (pasta, fotos, nuvem e AWS do usuário dono), sem copiar nada.
+# Ex.: no atalho do usuário do dia a dia, ETERNA_BASE=C:\Users\eterna. O agente e o boto3 acham ~ pelo USERPROFILE.
+$base = if ($env:ETERNA_BASE) { $env:ETERNA_BASE } else { $HOME }
+$dir = Join-Path $base 'Eterna\programa'
+$py = Join-Path $base 'Eterna\venv\Scripts\python.exe'                      # com o recorte local da v84
+if (-not (Test-Path $py)) { $py = Join-Path $base 'AppData\Local\Programs\Python\Python312\python.exe' }
+$log = Join-Path $base 'Eterna\vigia.log'
 $fonte = 'https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/eterna-agente.py'
 
 function Registra($m) { Add-Content -Path $log -Value ('{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m) }
@@ -20,6 +23,7 @@ function Liga {
   curl.exe -fsSL -m 60 -o $novo $fonte
   if ((Test-Path $novo) -and (Get-Item $novo).Length -gt 50000) { Move-Item -Force $novo (Join-Path $dir 'eterna-agente.py') }
   $env:ETERNA_REDE = '1'
+  $env:USERPROFILE = $base                                                   # ~/Eterna e ~/.aws do usuário dono
   Start-Process -FilePath $py -ArgumentList 'eterna-agente.py' -WorkingDirectory $dir -WindowStyle Minimized
   Registra 'Eterna ligado'
 }
