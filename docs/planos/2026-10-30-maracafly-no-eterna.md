@@ -30,6 +30,20 @@ O MaracaFly vende e entrega **vídeos** (drone, chute a gol) pelo vendedor de ca
 
 Volume do MaracaFly para dimensionar: cerca de 450 vendas de drone e 1.500 de chute a gol por mês, **cerca de 120 GB de vídeo por mês** e 1,05 TB em 9 meses (doc 18, seção 5).
 
+## 2b. Snap Pop (visto no sistema em 30/10, depois da documentação de 02/10)
+
+Aba nova no MaracaFly (`/vendas/nova/snap-pop/` e `/vendas/snap-pop/`, 21 vendas até 30/10). É um **vídeo com IA**: o cliente vira o jogador que comemora o gol, com o nome dele na tela ("GOOOOL do …").
+
+- Demonstração por perfil: menino, menina, homem, mulher.
+- Tema: Brasil, Flamengo, Fluminense.
+- Preço: 1 vídeo R$ 110, 2 vídeos R$ 190, 3 vídeos R$ 290; a partir do 4º, + R$ 90 por vídeo.
+- Mesmos campos de cliente do drone (nome, país com DDI, WhatsApp, idioma, pagamento, pessoas no vídeo, guia) e o mesmo preço sugerido × cobrado.
+- A lista tem coluna Foto (o rosto usado) e Entrega.
+
+No Eterna, o rosto pode vir da selfie ou das fotos da sessão, sem tirar outra foto. O "CRM" do menu atual é o painel do WhatsApp (doc 15) com outro nome.
+
+Esboço visual das telas (vendedor, fila de produção e galeria): canvas "Eterna · Drone, Chute a Gol e Snap Pop" (link com o Ronaldo).
+
 ## 3. Como o MaracaFly cabe no modelo do Eterna
 
 A ideia comum é tratar tudo como **atividade** do visitante:
@@ -39,7 +53,7 @@ A ideia comum é tratar tudo como **atividade** do visitante:
 | Fotos do tour | foto | fotógrafo de ponto ou volante | FTP da câmera → agente (já existe) |
 | Chute a gol | foto e/ou vídeo | volante (foto), operador (vídeo) | foto: FTP; vídeo: pasta vigiada ou upload |
 | Drone | vídeo | piloto | cartão do drone → pasta vigiada no servidor do estádio |
-| Snap Pop | produto novo, com aba própria (mídia e fluxo a detalhar) | — | — |
+| Snap Pop | vídeo com IA | IA, a partir do rosto do cliente | gerado no servidor ou num serviço de IA; entra na galeria |
 
 Para isso o catálogo do Eterna precisaria, além de `pacote` e `adicional`:
 
