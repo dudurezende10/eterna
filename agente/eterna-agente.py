@@ -2240,6 +2240,9 @@ REC_FURO = 0.03          # furo fechado (sinal < 0,04) com sinal médio a partir
 REC_FECHA = 0.004        # reentrância mais estreita que 2x isto (fração do lado) entre partes sólidas é fechada
 REC_FUROS_MAX = 48       # teto de custo: só os 48 maiores furos sem sinal são decididos pela cor (o resto fica aberto)
 REC_FUROS_SEG = 2.0      # e no máximo 2 s decidindo furos por recorte
+REC_ENC_AREA = 0.015     # pedaço só do ISNet encostado na pessoa por uma ponta: até 1,5% da área da pessoa...
+REC_ENC_CONTATO = 0.07   # ...com contato/área abaixo disto (objeto segurado tem 0,08-0,13; a caixa do túnel, 0,055)
+REC_ENC_PESSOA = 0.15    # ...e o modelo de pessoa quase não o vê (média abaixo disto)
 
 
 def _rec_furo_e_objeto(Hc, Fc, Cc, Ec, Dc, lado, rng):
@@ -2380,9 +2383,58 @@ def rec_limpa_mascara(masks, foto=None):
         # pequeno só fica se encosta (ou quase) no grupo: menor distância de cada pedaço de uma vez (sem laço por pedaço)
         manter[1:] |= ndimage.minimum(dist, rot, idr) <= max(4.0, 0.015 * lado)
         m = m * manter[rot]
+    if len(masks) > 1:
+        isn = np.asarray(masks[0], dtype=np.float32)[y0:y1, x0:x1] / 255.0
+        m = _rec_encostados(m, isn, pessoa[y0:y1, x0:x1], lado)
     m = _rec_ilhas(m, semente_px)
     saida[y0:y1, x0:x1] = (m * 255.0 + 0.5).astype(np.uint8)
     return saida
+
+
+def _rec_encostados(m, isn, pessoa, lado):
+    """Pedaço do fundo que só encosta na pessoa por uma ponta (ex.: a caixa escura da entrada do túnel embaixo do cotovelo,
+    30/10): o ISNet pega com alfa alto (>= 0,5), o modelo de pessoa não (média < 0,15), é pequeno (< 1,5% da pessoa) e o
+    contato com a pessoa (o pedaço engordado 4 px que cai sobre ela) é menor que 7% da área dele. Objeto segurado encosta
+    largo na mão (taça da menina 0,13; pontas de bandeira 0,09-0,10) e fica. Pedaço que não encosta na pessoa (estrela da
+    bandeira, ligada pelo tecido) não é decidido aqui."""
+    import numpy as np
+    from scipy import ndimage
+    pes = pessoa >= 0.5
+    npes = int(pes.sum())
+    if not npes:
+        return m
+    longe = ndimage.distance_transform_edt(~pes) > 2.0             # fora da pessoa engordada 2 px
+    lab, n = ndimage.label((isn >= 0.5) & longe & (m > 0), structure=np.ones((3, 3), dtype=bool))
+    if not n:
+        return m
+    area = np.bincount(lab.ravel(), minlength=n + 1)
+    minimo = max(30, 300 * (lado / 1600.0) ** 2)
+    cand = [k for k in np.argsort(-area[1:])[:32] + 1 if minimo <= area[k] < REC_ENC_AREA * npes]
+    if not cand:
+        return m
+    media_pes = ndimage.mean(pessoa, lab, np.arange(n + 1))
+    fatias = ndimage.find_objects(lab)
+    hh, ww = lab.shape
+    tirar = np.zeros(n + 1, dtype=bool)
+    for k in cand:
+        if media_pes[k] >= REC_ENC_PESSOA:
+            continue
+        sy, sx = fatias[k - 1]
+        cy = slice(max(0, sy.start - 6), min(hh, sy.stop + 6))
+        cx = slice(max(0, sx.start - 6), min(ww, sx.stop + 6))
+        gordo = ndimage.distance_transform_edt(lab[cy, cx] != k) <= 4.0
+        contato = int((gordo & pes[cy, cx]).sum())
+        tirar[k] = 0 < contato < REC_ENC_CONTATO * area[k]        # encosta, mas só por uma ponta
+    if not tirar.any():
+        return m
+    sai = tirar[lab]
+    perto = ndimage.distance_transform_edt(~sai) <= 4.0
+    sai |= perto & longe                                            # e a borda macia dele
+    m = m * ~sai
+    # na faixa de 2 px junto da pessoa, onde o pedaço encostava, vale o alfa do modelo de pessoa (sem filete do fundo)
+    faixa = perto & ~longe & ~pes
+    m[faixa] = np.minimum(m[faixa], np.clip((pessoa[faixa] - 0.3) / 0.6, 0.0, 1.0))
+    return m
 
 
 def _rec_ilhas(m, semente_px):

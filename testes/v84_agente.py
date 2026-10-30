@@ -153,6 +153,20 @@ ok(ri[100, 266] == 0 and ri[150, 160] == 255 and not ri[90:112, 255:280].any(), 
 ImageDraw.Draw(isn).rectangle([221, 90, 300, 140], fill=255)               # objeto grande encostado na pessoa: fica
 ok(m.rec_limpa_mascara([isn, hum])[115, 280] == 255, "objeto forte ligado à pessoa continua")
 
+# pedaço do fundo encostado na pessoa só por uma ponta (caixa do túnel embaixo do cotovelo): sai; objeto segurado com
+# contato largo fica. Só o ISNet pega os dois; o modelo de pessoa, não.
+isn, hum = Image.new("L", (400, 300), 0), Image.new("L", (400, 300), 0)
+for dd in (ImageDraw.Draw(isn), ImageDraw.Draw(hum)):
+    dd.rectangle([100, 40, 220, 299], fill=255)                              # a pessoa
+di = ImageDraw.Draw(isn)
+di.polygon([(221, 150), (228, 147), (228, 153)], fill=255)                 # ponta fina que encosta no braço...
+di.rectangle([228, 140, 247, 159], fill=255)                               # ...e a caixa de 20x20 px atrás dela (< 1,5% da pessoa)
+di.rectangle([80, 130, 99, 149], fill=255)                                 # objeto segurado: encosta de cima a baixo (20 px)
+re_ = m.rec_limpa_mascara([isn, hum], Image.new("RGB", (400, 300), (90, 90, 90)))
+ok(re_[150, 238] == 0 and not re_[135:165, 226:255].any(), "pedaço encostado só por uma ponta deveria sair: %r" % int(re_[135:165, 226:255].max()))
+ok(re_[140, 88] == 255, "objeto segurado com contato largo deveria ficar: %r" % re_[140, 75])
+ok(re_[150, 160] == 255, "a pessoa continua")
+
 # teto de custo: milhares de furos e de manchas pequenas terminam em poucos segundos
 import numpy as _np
 gi = _np.zeros((1067, 1600), _np.uint8)
