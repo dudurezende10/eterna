@@ -375,6 +375,11 @@ def publicar(ev, corpo):
             "menor": bool(m.get("menor")), "criada": str(m.get("criada") or iso())[:40], "expira": str(m.get("expira") or "")[:40],
             "precos": {"dig": max(0.0, float(pr.get("dig") or 0)), "todas": max(0.0, float(pr.get("todas") or 0))}, "fotos": fotos}
     velho = manifesto(m["token"])
+    if velho:                                             # cartão com QR impresso já usado em outra venda: não troca de dono
+        s_velho = {f.get("sessao") for f in velho["fotos"] if f.get("sessao")}
+        s_novo = {f["sessao"] for f in novo["fotos"] if f["sessao"]}
+        if s_velho and s_novo and not (s_velho & s_novo):
+            return resp({"error": "token já usado por outra sessão"}, 409)
     if velho:                                             # comprada nunca regride; validade nunca aumenta; encerrada não volta
         antes = {f["id"]: f for f in velho["fotos"]}
         for f in novo["fotos"]:

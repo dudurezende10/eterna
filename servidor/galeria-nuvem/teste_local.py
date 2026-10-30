@@ -58,7 +58,7 @@ T, R = Tabela(), Rek()
 invocacoes = []
 import boto3
 boto3.resource = lambda *a, **k: types.SimpleNamespace(Table=lambda n: T)
-boto3.client = lambda svc, **k: {"rekognition": R, "s3": S3(), "lambda": types.SimpleNamespace(invoke=lambda **k: invocacoes.append(k))}[svc]
+boto3.client = lambda svc, **k: {"rekognition": R, "s3": S3(), "lambda": types.SimpleNamespace(invoke=lambda **k: invocacoes.append(k)), "sesv2": types.SimpleNamespace(send_email=lambda **k: None)}[svc]
 import app
 
 ctx = types.SimpleNamespace(get_remaining_time_in_millis=lambda: 29000)
