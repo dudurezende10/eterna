@@ -78,6 +78,8 @@ Hoje a sessão nasce no navegador (`agentPoll` → `ingPush` → `ingClose`) e m
 
 Sugestão: **A**. A pausa de 20 s, a retomada no reinício e a pasta vigiada já estão no agente.
 
+Visto no teste de 29/10: com **duas abas abertas na tela de Upload**, as mesmas 9 fotos viraram **duas sessões** (LPQ8QQRW6 e LPT8280WF), porque cada navegador monta a sua. No estádio, com vários postos abertos, as sessões duplicariam. Mais um motivo para a opção A.
+
 ## 3. Curadoria remota (você em Miami)
 
 As fotos ficam no servidor do estádio, dentro da rede de lá. O eterna.photo, aberto de fora, procura o Eterna no próprio computador (`127.0.0.1`), e ele não está lá. Por isso hoje não dá para curar de fora.

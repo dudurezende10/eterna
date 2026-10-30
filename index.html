@@ -364,14 +364,14 @@ body.if-tv .if-wrap{height:calc(100vh - 40px)}body.if-tv .if-num{font-size:40px}
 .lj-gcard{display:block}.lj-gview{display:block;width:100%;border:0;padding:0;background:none;cursor:zoom-in;position:relative}
 .lj-gimg.spr{aspect-ratio:3/2}
 .lj-gok{border:0;cursor:pointer;z-index:2}
-.lj-lb{position:fixed;inset:0;z-index:60;background:rgba(6,18,36,.94);display:grid;grid-template-columns:72px minmax(0,1fr) 72px;grid-template-rows:minmax(0,1fr) auto;align-items:center;padding:24px 16px 18px;gap:12px}
+.lj-lb{position:fixed;inset:var(--lj-topo,104px) 0 0 0;z-index:60;background:rgba(6,18,36,.94);display:grid;grid-template-columns:72px minmax(0,1fr) 72px;grid-template-rows:minmax(0,1fr) auto;align-items:center;padding:24px 16px 18px;gap:12px}
 .lj-lbmid{grid-column:2;grid-row:1;height:100%;min-height:0;display:flex;align-items:center;justify-content:center}
 .lj-lbimg{width:100%;height:100%;background:transparent var(--img) no-repeat;background-size:var(--bs);background-position:center;filter:var(--flt,none);position:relative}
 .lj-lbimg.spr{aspect-ratio:3/2;height:auto;max-height:100%}
 .lj-lbimg.ai{display:flex;align-items:center;justify-content:center}.lj-lbimg.ai>*{max-width:100%;max-height:100%}
 .lj-lbnav{grid-row:1;width:60px;height:60px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.08);color:#fff;font-size:40px;line-height:1;cursor:pointer}
 .lj-lbnav.prev{grid-column:1}.lj-lbnav.next{grid-column:3}.lj-lbnav:disabled{opacity:.25;cursor:default}
-.lj-lbx{position:absolute;top:16px;right:16px;width:52px;height:52px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center}
+.lj-lbx{position:absolute;top:10px;right:16px;width:52px;height:52px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center}
 .lj-lbbar{grid-column:1/-1;grid-row:2;display:flex;justify-content:center;align-items:center;gap:18px}
 .lj-lbcnt{color:rgba(255,255,255,.8);font-size:18px;font-weight:700}
 .lj-lbon{background:#43B02A!important;color:#fff!important}
@@ -2367,7 +2367,7 @@ function vQuiosque(){
         <button class="lj-lbnav prev" data-act="kiosk-ver" data-i="${v-1}" ${v===0?'disabled':''} aria-label="Anterior">‹</button>
         <div class="lj-lbmid">${img(vq,vs,'lj-lbimg')}</div>
         <button class="lj-lbnav next" data-act="kiosk-ver" data-i="${v+1}" ${v>=n-1?'disabled':''} aria-label="Próxima">›</button>
-        <div class="lj-lbbar"><span class="lj-lbcnt">${v+1} / ${n}</span><button class="lj-cta ${vs==='ok'?'lj-lbon':''}" data-act="kiosk-tog" data-i="${v}">${vs==='ok'?ICO.ok+' Escolhida · toque para tirar':'Quero esta foto'}</button></div></div>`:'';
+        <div class="lj-lbbar"><span class="lj-lbcnt">${v+1} / ${n}</span><div class="lj-actions"><button class="lj-no ${vs==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${vs==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div></div></div>`:'';
     return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljVoltar()}${cartPill}`)}</div>
       <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n} ${n===1?'foto':'fotos'}</span></div>
       <div class="lj-grid">${items.map(card).join('')}</div>${caixa}
@@ -2415,7 +2415,7 @@ function vQuiosque(){
 function bigStyle(id){let st=phStyle(id);if(/^ag_/.test(id)&&state.agent&&state.agent.url)st=st.replace('/thumb/','/file/');return st;}
 function lojaMark(v){const k=state.kiosk;const items=lojaItems(k.code);const x=items[k.i||0];if(!x)return;const pk=lojaPick(k.code);
   pk[x.k]=pk[x.k]===v?'':v;if(!pk[x.k])delete pk[x.k];lojaSync(k.code);
-  if(pk[x.k]&&(k.i||0)<items.length-1)k.i++;render();}
+  if(pk[x.k]&&(k.i||0)<items.length-1)k.i++;if(k.ver!=null)k.ver=k.i||0;render();}
 // deslizar o dedo na foto: esquerda = próxima, direita = anterior
 (function(){let x0=null,y0=null;document.addEventListener('touchstart',e=>{if(state.view!=='quiosque'||state.kiosk.step!=='review'||!e.target.closest('#lswipe,#lj-lb'))return;x0=e.touches[0].clientX;y0=e.touches[0].clientY;},{passive:true});
   document.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy))return;const k=state.kiosk;if(k.ver!=null){const n=lojaItems(k.code).length;k.ver=Math.max(0,Math.min(n-1,k.ver+(dx<0?1:-1)));k.i=k.ver;render();return;}k.i=Math.max(0,(k.i||0)+(dx<0?1:-1));render();},{passive:true});})();
@@ -4490,7 +4490,7 @@ document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)retur
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
     if(e.key==='ArrowRight'||e.key==='ArrowLeft'){k.ver=Math.max(0,Math.min(n-1,k.ver+(e.key==='ArrowRight'?1:-1)));k.i=k.ver;render();e.preventDefault();return;}
     if(e.key==='Escape'){k.ver=null;render();e.preventDefault();e.stopPropagation();return;}
-    if(e.key==='Enter'||e.key===' '){const b=$('.lj-lbbar [data-act="kiosk-tog"]');if(b)b.click();e.preventDefault();return;}}
+    if(e.key==='Enter'||e.key===' '){const b=$('.lj-lbbar [data-act="kiosk-ok"]');if(b)b.click();e.preventDefault();return;}}
   if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver==null&&(e.key==='Enter')&&!/INPUT|TEXTAREA|SELECT|BUTTON/.test(e.target.tagName)){state.kiosk.ver=state.kiosk.i||0;render();e.preventDefault();return;}
   if(state.view==='quiosque'&&state.kiosk.step==='review'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){if(e.key==='ArrowRight'){state.kiosk.i=(state.kiosk.i||0)+1;render();e.preventDefault();return;}if(e.key==='ArrowLeft'){state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();e.preventDefault();return;}if(e.key==='Enter'||e.key===' '){const b=$('[data-act="kiosk-ok"]');if(b){b.click();e.preventDefault();return;}}}if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&(MODAL.list.length>1||MODAL.comp)&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i+1);else showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i-1);else showModal(MODAL.i-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){lojaCliente();state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}});
