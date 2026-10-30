@@ -3056,6 +3056,29 @@ def imp_ps1():
     return ps1
 
 
+def imp_miniatura(pedido, n):
+    """Miniatura (200 px) da foto n do pedido, para o painel da fila. Gerada uma vez ao lado do arquivo de impressão."""
+    with lock:
+        j = next((x for x in imp_fila if x["id"] == pedido), None)
+        arqs = list((j or {}).get("arquivos") or [])
+    if not (0 <= n < len(arqs)):
+        return None
+    src = arqs[n]
+    mini = src[:-4] + "_m.jpg"
+    if not os.path.exists(mini):
+        if not os.path.exists(src):
+            return None
+        try:
+            from PIL import Image
+            with Image.open(src) as im:
+                im = im.convert("RGB")
+                im.thumbnail((200, 200))
+                im.save(mini, "JPEG", quality=70)
+        except Exception:
+            return None
+    return mini
+
+
 def imp_fila_json():
     agora = time.time()
     with lock:
@@ -3158,7 +3181,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/photoroom/status", "/recorte") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/photoroom/status", "/recorte", "/impressao/miniatura") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -3651,6 +3674,15 @@ class H(BaseHTTPRequestHandler):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             return self.js(imp_fila_json())
+        if u.path == "/impressao/miniatura":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            q = parse_qs(u.query)
+            try:
+                f = imp_miniatura(int((q.get("id") or ["0"])[0]), int((q.get("n") or ["0"])[0]))
+            except ValueError:
+                f = None
+            return self.file(f) if f else self.js({"error": "not found"}, 404)
         if u.path == "/biblioteca":
             # tudo o que já está guardado neste Mac, por dia (o app mostra sem baixar de novo)
             out = []
