@@ -2501,8 +2501,12 @@ def _rec_ilhas(m, semente_px, liga=None):
     forte = m >= 0.5
     if liga is None:
         liga = forte
-    lab, n = ndimage.label(liga | forte, structure=np.ones((3, 3), dtype=bool))
     forte = liga | forte
+    # fio de 1 px (reto ou diagonal) não liga ilha à pessoa: rotula o que sobra depois de abrir 1 px (cruz 3x3);
+    # o que a abertura tirou vai com o pedaço mais perto
+    aberto = ndimage.binary_opening(forte, structure=ndimage.generate_binary_structure(2, 1))
+    lab, n = ndimage.label(aberto, structure=np.ones((3, 3), dtype=bool))
+    forte = aberto
     if n < 2:
         return m
     area = np.bincount(lab.ravel(), minlength=n + 1).astype(np.float64)
@@ -2519,6 +2523,31 @@ def _rec_ilhas(m, semente_px, liga=None):
     _, ind = ndimage.distance_transform_edt(~forte, return_indices=True)
     perto = lab[ind[0], ind[1]]
     return m * manter[perto]
+
+
+def rec_sem_soltos(a):
+    """Máscara final (uint8, depois de voltar ao tamanho e perder 1 px de borda): pedaço opaco (>= 128) com menos de 3%
+    da área do maior que ficou solto sai, com a borda macia em volta (até 3 px). Ex.: o pedaço do teto ao lado da barba,
+    preso por um fio de 1 px que a redução e o MinFilter cortaram."""
+    import numpy as np
+    from scipy import ndimage
+    lab, n = ndimage.label(a >= 128, structure=np.ones((3, 3), dtype=bool))
+    if n < 2:
+        return a
+    area = np.bincount(lab.ravel(), minlength=n + 1)
+    area[0] = 0
+    pequeno = area < 0.03 * area.max()
+    pequeno[0] = False
+    if not pequeno.any():
+        return a
+    sai = pequeno[lab]
+    ys, xs = np.nonzero(sai)
+    y0, y1, x0, x1 = max(0, ys.min() - 4), min(a.shape[0], ys.max() + 5), max(0, xs.min() - 4), min(a.shape[1], xs.max() + 5)
+    sub = sai[y0:y1, x0:x1]
+    perto = sub | ((ndimage.distance_transform_edt(~sub) <= 3.0) & (lab[y0:y1, x0:x1] == 0))   # ele e a borda macia dele
+    a = a.copy()
+    a[y0:y1, x0:x1][perto] = 0
+    return a
 
 
 def rec_arquivo(pid, lado=REC_LADO_MAX):
@@ -2559,6 +2588,8 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
         if mascara.size != im.size:
             mascara = mascara.resize(im.size, Image.LANCZOS)
         mascara = mascara.filter(ImageFilter.MinFilter(3))       # 1 px de borda a menos: sem halo do fundo
+        import numpy as np
+        mascara = Image.fromarray(rec_sem_soltos(np.asarray(mascara)), "L")   # o fio que segurava uma ilha pode ter sumido
         im = Image.composite(im, Image.new("RGB", im.size), mascara.point(lambda v: 255 if v else 0))   # fora da pessoa, RGB zerado
         im.putalpha(mascara)
         _grava_png(im, cheio)

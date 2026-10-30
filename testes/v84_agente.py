@@ -207,6 +207,35 @@ dv.rectangle([1340, 310, 1380, 350], fill=255)                              # po
 rv = m.rec_limpa_mascara([isn, hum], Image.new("RGB", (1600, 1067), (200, 200, 200)))
 ok(rv[330, 1360] == 255, "ponta de bandeira presa por tecido fraco (0,2) deveria ficar: %r" % rv[330, 1360])
 
+# ilha presa à pessoa por um fio diagonal de 1 px de alfa cheio (teto ao lado da barba, foto do casal): sai
+isn, hum = Image.new("L", (400, 300), 0), Image.new("L", (400, 300), 0)
+for dd in (ImageDraw.Draw(isn), ImageDraw.Draw(hum)):
+    dd.rectangle([100, 60, 220, 299], fill=255)                              # a pessoa
+for t in range(1, 41):
+    isn.putpixel((220 + t, 100 - t), 255)                                    # fio diagonal de 1 px, 40 px
+ImageDraw.Draw(isn).rectangle([261, 48, 274, 61], fill=255)                # ilha de 14x14 px
+rfio = m.rec_limpa_mascara([isn, hum])
+ok(not rfio[46:64, 259:277].any() and rfio[150, 160] == 255, "ilha presa por fio diagonal de 1 px deveria sair: %r" % int(rfio[46:64, 259:277].max()))
+isn2 = isn.copy()
+for t in range(1, 41):
+    isn2.putpixel((220 + t, 100 - t), 0)
+ImageDraw.Draw(isn2).line([(221, 99), (221, 54), (260, 54)], fill=255)     # fio reto de 1 px (sobe junto do braço e vai até a ilha)
+rfio2 = m.rec_limpa_mascara([isn2, hum])
+ok(not rfio2[46:64, 259:277].any(), "ilha presa por fio reto de 1 px deveria sair: %r" % int(rfio2[46:64, 259:277].max()))
+ImageDraw.Draw(isn2).rectangle([221, 52, 226, 99], fill=255)               # haste de 6 px: liga de verdade, fica
+ImageDraw.Draw(isn2).rectangle([221, 52, 260, 57], fill=255)
+ok(m.rec_limpa_mascara([isn2, hum])[54, 267] == 255, "ilha presa por haste de 6 px continua")
+# depois do MinFilter: pedaço opaco pequeno solto sai da máscara final (com a borda macia); o grande fica
+import numpy as _np2
+fin = _np2.zeros((600, 900), _np2.uint8)
+fin[100:600, 100:500] = 255
+fin[50:70, 600:630] = 255                                                  # solto, 600 px (< 3% do maior)
+fin[48:50, 600:630] = 90                                                   # borda macia dele
+fin[300:400, 520:540] = 120                                                # macio solto sem nada opaco: não é decidido aqui
+lim = m.rec_sem_soltos(fin)
+ok(not lim[45:75, 595:635].any() and lim[300, 300] == 255 and lim[350, 530] == 120, "pedaço opaco solto pequeno sai da máscara final: %r" % int(lim[45:75, 595:635].max()))
+ok(m.rec_sem_soltos(fin[100:600, 100:500]) is not None and (m.rec_sem_soltos(fin[100:600, 100:500]) == 255).all(), "um pedaço só: nada muda")
+
 # teto de custo: milhares de furos e de manchas pequenas terminam em poucos segundos
 import numpy as _np
 gi = _np.zeros((1067, 1600), _np.uint8)
