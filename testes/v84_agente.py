@@ -269,6 +269,32 @@ lim = m.rec_sem_soltos(fin)
 ok(not lim[45:75, 595:635].any() and lim[300, 300] == 255 and lim[350, 530] == 120, "pedaço opaco solto pequeno sai da máscara final: %r" % int(lim[45:75, 595:635].max()))
 ok(m.rec_sem_soltos(fin[100:600, 100:500]) is not None and (m.rec_sem_soltos(fin[100:600, 100:500]) == 255).all(), "um pedaço só: nada muda")
 
+# teto de custo das pontes: molduras do quadro todo e grade de miolo fraco (pior caso desenhado) terminam em < 3 s
+import time as _tp
+import numpy as _np3
+_mm = _np3.zeros((1600, 1600), _np3.float32)
+_sem = _np3.zeros((1600, 1600), bool)
+_mm[760:840, 760:840] = 1
+_sem[770:830, 770:830] = True
+_liga = _np3.zeros((1600, 1600), bool)
+_liga[::8, :] = True
+_liga[:, ::8] = True
+for _i in range(30):
+    _o = 10 + _i * 12
+    if _o + 3 >= 740:
+        break
+    _mm[_o:_o + 3, _o:1600 - _o] = 1
+    _mm[1600 - _o - 3:1600 - _o, _o:1600 - _o] = 1
+    _mm[_o:1600 - _o, _o:_o + 3] = 1
+    _mm[_o:1600 - _o, 1600 - _o - 3:1600 - _o] = 1
+_mm[_liga & (_mm < 0.5)] = 0.2
+_liga |= _mm >= 0.5
+_t0 = _tp.time()
+m._rec_pontes(_mm, _sem, _liga, 1600)
+_dt = _tp.time() - _t0
+ok(_dt < 3, "pontes no pior caso desenhado: %.1f s (teto 1,5 s)" % _dt)
+print("tempo das pontes no pior caso: %.2f s" % _dt, file=sys.stderr)
+
 # teto de custo: milhares de furos e de manchas pequenas terminam em poucos segundos
 import numpy as _np
 gi = _np.zeros((1067, 1600), _np.uint8)

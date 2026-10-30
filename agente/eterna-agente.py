@@ -2257,6 +2257,8 @@ REC_FURO = 0.03          # furo fechado (sinal < 0,04) com sinal médio a partir
 REC_FECHA = 0.004        # reentrância mais estreita que 2x isto (fração do lado) entre partes sólidas é fechada
 REC_FUROS_MAX = 48       # teto de custo: só os 48 maiores furos sem sinal são decididos pela cor (o resto fica aberto)
 REC_FUROS_SEG = 2.0      # e no máximo 2 s decidindo furos por recorte
+REC_PONTES_SEG = 1.5     # teto de tempo para as pontes de miolo fraco (o resto fica como está)
+REC_ENC_SEG = 1.5        # teto de tempo para os pedaços encostados por uma ponta (o resto fica)
 REC_ENC_AREA = 0.015     # pedaço só do ISNet encostado na pessoa por uma ponta: até 1,5% da área da pessoa...
 REC_ENC_PESSOA = 0.15    # ...o modelo de pessoa quase não o vê (média abaixo disto)...
 REC_ENC_CONTATO = 2.0    # ...contato curto: comprimento do contato / raiz da área abaixo disto (não depende da escala)...
@@ -2452,7 +2454,11 @@ def _rec_encostados(m, isn, pessoa, bruta, rgb, lado):
     fatias = ndimage.find_objects(lab)
     hh, ww = lab.shape
     tirar = np.zeros(n + 1, dtype=bool)
+    import time as _tm
+    limite = _tm.monotonic() + REC_ENC_SEG
     for k in cand:
+        if _tm.monotonic() > limite:
+            break                                               # sem tempo: o resto fica (na dúvida, mantém)
         if media_pes[k] >= REC_ENC_PESSOA:
             continue
         sy, sx = fatias[k - 1]
@@ -2531,16 +2537,46 @@ def _rec_ilhas(m, semente_px, liga=None):
     return m * manter[perto]
 
 
+def _rec_geo(origem, L, passos, limite, alvo=None):
+    """Distância geodésica (em passos de 8-vizinhança) a partir de `origem`, andando só por `L`, até `passos` passos.
+    Com `alvo`, para no primeiro passo em que a frente toca o alvo. Devolve (distâncias, passo em que tocou o alvo ou
+    None); (None, None) se o relógio `limite` (time.monotonic) acabar no meio."""
+    import time as _tm
+    import numpy as np
+    from scipy import ndimage
+    tudo3 = np.ones((3, 3), dtype=bool)
+    d = np.full(L.shape, np.inf, dtype=np.float32)
+    atual = origem.copy()
+    d[atual] = 0
+    if alvo is not None and (atual & alvo).any():
+        return d, 0
+    for passo in range(1, passos + 1):
+        if _tm.monotonic() > limite:
+            return None, None
+        novo = ndimage.binary_dilation(atual, structure=tudo3, mask=L)
+        frente = novo & ~atual
+        if not frente.any():
+            break
+        d[frente] = passo
+        atual = novo
+        if alvo is not None and (frente & alvo).any():
+            return d, passo
+    return d, None
+
+
 def _rec_pontes(m, semente_px, liga, lado):
     """Pedaço opaco que ficou porque está ligado à pessoa só pelo miolo fraco (ex.: ponta de bandeira afastada pelo vento,
     presa por tecido de 0,2, que pelos níveis sairia transparente): o caminho mais curto de miolo entre ele e a pessoa fica
     opaco, para a ponta ficar presa de verdade (e não ser apagada como pedaço solto na máscara final). Até 16 pedaços,
-    caminho de até 5% do lado."""
+    caminho de até 5% do lado e no máximo 1,5 s (o que não der tempo fica como está)."""
+    import time as _tm
     import numpy as np
     from scipy import ndimage
+    limite = _tm.monotonic() + REC_PONTES_SEG
     cruz = ndimage.generate_binary_structure(2, 1)
+    tudo3 = np.ones((3, 3), dtype=bool)
     forte = ndimage.binary_opening(m >= 0.5, structure=cruz)
-    lab, n = ndimage.label(forte, structure=np.ones((3, 3), dtype=bool))
+    lab, n = ndimage.label(forte, structure=tudo3)
     if n < 2:
         return m
     pes = np.zeros(n + 1, dtype=bool)
@@ -2553,35 +2589,27 @@ def _rec_pontes(m, semente_px, liga, lado):
     if not ilhas:
         return m
     L = liga | forte
-    lpes, _ = ndimage.label(L, structure=np.ones((3, 3), dtype=bool))
     fatias = ndimage.find_objects(lab)
     R = int(0.05 * lado) + 4
     hh, ww = m.shape
-    tudo3 = np.ones((3, 3), dtype=bool)
     for k in ilhas:
+        if _tm.monotonic() > limite:
+            break                                               # sem tempo: o resto fica como está
         sy, sx = fatias[k - 1]
         cy = slice(max(0, sy.start - R), min(hh, sy.stop + R))
         cx = slice(max(0, sx.start - R), min(ww, sx.stop + R))
         Lc, labc = L[cy, cx], lab[cy, cx]
         alvo = pes[labc] & forte[cy, cx]
-        ilha = labc == k
-        if not alvo.any() or not (lpes[cy, cx][ilha] > 0).any():
+        if not alvo.any():
             continue
-        def geo(origem):
-            d = np.full(Lc.shape, np.inf, dtype=np.float32)
-            atual = origem.copy()
-            d[atual] = 0
-            for passo in range(1, R + 1):
-                novo = ndimage.binary_dilation(atual, structure=tudo3, mask=Lc)
-                if not (novo & ~atual).any():
-                    break
-                d[novo & ~atual] = passo
-                atual = novo
-            return d
-        di = geo(ilha)
-        if not np.isfinite(di[alvo]).any():
+        di, toque = _rec_geo(labc == k, Lc, R, limite, alvo)
+        if di is None:
+            break
+        if toque is None:
             continue                                            # a pessoa está longe demais por dentro do miolo
-        dp = geo(alvo)
+        dp, _ = _rec_geo(alvo, Lc, toque, limite)              # do outro lado, só até o mesmo número de passos
+        if dp is None:
+            break
         soma = di + dp
         melhor = float(soma[Lc].min())
         ponte = Lc & (soma <= melhor + 1) & ~(m[cy, cx] >= 0.5)
