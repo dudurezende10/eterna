@@ -40,7 +40,7 @@ foreach ($f in $envs) {
   $i = [array]::FindIndex([string[]]$linhas, [Predicate[string]]{ param($l) $l -match '^\s*ETERNA_ORIGENS\s*=' })
   $atuais = @()
   if ($i -ge 0) { $atuais = ($linhas[$i] -replace '^\s*ETERNA_ORIGENS\s*=\s*', '').Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
-  $todas = ($atuais + $novos) | Select-Object -Unique
+  $todas = (@($atuais) + @($novos)) | Select-Object -Unique   # @(): com um endereço só, $atuais vira texto e o + colava sem vírgula
   $linha = 'ETERNA_ORIGENS=' + ($todas -join ',')
   if ($i -ge 0) { $linhas[$i] = $linha } else { $linhas += $linha }
   Copy-Item $f.FullName ($f.FullName + '.bak') -Force
