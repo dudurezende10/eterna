@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v83 (29/10/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v87 (30/10/2026).
 
 Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
 
@@ -16,7 +16,7 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | --- | --- |
 | Dashboard | Painel, Bandeiras, Estoque, Fotógrafos, Vendas e caixa, Lista de vendas, Galerias online |
 | Curadoria | Qualidade, Treino da IA, Alertas |
-| Fotógrafo | Diário do set, Upload automático, Escala 5×2 |
+| Fotógrafo | Diário do set, Upload automático, Fila do fotógrafo, Escala 5×2 |
 | Configurações | Repositório, Identidade, Painel de controle (catálogo, preços, Checkout e FTP), Fundos de IA, Ajuste automático, Usuários, Permissões |
 | Laboratório | Vestiário |
 
@@ -404,8 +404,8 @@ A aba **Histórico** em Permissões mostra toda mudança: quando, quem mudou, a 
 | Perfil | Vê | Não vê |
 | --- | --- | --- |
 | Admin | tudo, inclusive Usuários e Permissões; começa no Painel | nada fica de fora |
-| Fotógrafo | Diário do set, Upload automático (troca de fotógrafo), Escala 5×2 | Checkout, Dashboard, Curadoria, Configurações |
-| Atendimento e venda | Checkout, venda no balcão, Fila, Caixa, Catálogo (só para ver os preços) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
+| Fotógrafo | Diário do set, Upload automático (troca de fotógrafo), Fila do fotógrafo, Escala 5×2 | Checkout, Dashboard, Curadoria, Configurações |
+| Atendimento e venda | Checkout, venda no balcão, Fila, Caixa, Catálogo (só para ver os preços), Fila do fotógrafo (só para ver) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
 | Validador | Qualidade, Treino da IA, Diário do set (só para ver) | vendas, Checkout, Configurações |
 | Supervisor | Dashboard (começa no Painel), Curadoria (só para ver), grupo Fotógrafo, Configurações do venue, Laboratório | Usuários e Permissões; não cancela venda |
 | Checkout | só a tela do cliente, em tela cheia | todo o resto |
@@ -518,6 +518,52 @@ O cliente ganhou um 5º fundo de IA: **Pódio de campeão**. Estádio lotado em 
 - **Como a foto sai.** A pessoa fica em cima do pódio, um pouco à esquerda, e nunca cobre a taça do fundo. Foto de corpo inteiro vira do joelho para cima, como no Campeão, no Mirante e no Túnel.
 - **Anfitrião e vendedor.** Na hora de oferecer, vale mostrar a prévia do Pódio para quem tirou foto comemorando ou segurando a taça. A taça que o cliente segura sai junto no recorte. A taça do fundo é outra e fica sempre à vista.
 - **Impressão 10×15.** Funciona igual aos outros fundos.
+
+## Novidades da v87: Fila do fotógrafo
+
+Fica em **Fotógrafo › Fila do fotógrafo**, logo abaixo do Upload automático. É um painel, como a Fila de impressão, que mostra as fotos chegando ao servidor, separadas por fotógrafo. Ninguém precisa apertar nada: o fotógrafo só fotografa e o painel se atualiza sozinho a cada 2 segundos. Veem: Admin, Supervisor, Fotógrafo e Atendimento e venda.
+
+### As três colunas
+
+| Coluna | Quer dizer |
+| --- | --- |
+| **Clicando agora** | o fotógrafo ainda está fotografando esse grupo |
+| **Chegando** | ele parou de clicar e as fotos ainda estão subindo para o servidor (fila do Wi-Fi ou leitura de cartão) |
+| **Já no Checkout** | as fotos estão no servidor e os rostos já foram lidos: a selfie do Checkout já acha o cliente |
+
+Um grupo vai para **Já no Checkout** 20 segundos depois da última foto. Sai da tela 15 minutos depois.
+
+Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segundos. É normal.
+
+### O que cada cartão mostra
+
+- O nome do fotógrafo em letra grande e, entre parênteses, de onde ele está fotografando: **(campo · Foto Campo 2)**, **(volante · chute a gol)**, **(set interno · Vestiário)** ou **(sem ponto)**. O ponto vem da **Escala 5×2** (função do dia). Trocou a função na Escala, os grupos seguintes já mostram o ponto novo; os que já estavam na tela não mudam.
+- A hora em que o grupo começou e quantas fotos tem.
+- Nas duas primeiras colunas, as últimas fotos que chegaram, em miniatura.
+- **De folga na Escala e mandando fotos**, em vermelho: a pessoa está de folga na Escala e as fotos dela estão chegando. Confira a Escala.
+- **Sem fotógrafo · câmera ···1234**: o Eterna não sabe de quem é a câmera (veja abaixo). Os 4 números são o final da série do corpo.
+
+### Na TV do caixa
+
+1. Abra o Eterna na TV pelo endereço do servidor do ponto e entre com o login de Atendimento e venda.
+2. Abra **Fila do fotógrafo** e toque em **Tela cheia**. O menu some.
+3. Na tela cheia, as miniaturas ficam **desligadas**. São rostos de turistas e de crianças, e uma TV virada para a fila mostraria as fotos de graça. Se a TV estiver virada só para a equipe, toque em **Miniaturas na tela cheia** para ligar. A escolha fica guardada naquele aparelho.
+4. Para sair da tela cheia, aperte **Esc** ou toque em **Sair da tela cheia**.
+
+Se aparecer **Sem conexão com o servidor**, o painel continua mostrando o último dado. Confira se o computador do ponto está ligado.
+
+### Para aparecer o nome do fotógrafo (TI e fotógrafos)
+
+O Eterna descobre o fotógrafo, nesta ordem: pelo usuário do FTP da câmera; pela subpasta do FTP (só se a subpasta tiver o nome de um fotógrafo cadastrado); pelo nome gravado na câmera. Câmera sem usuário próprio no FTP (cartão, FTP do estádio sem subpasta) aparece como **Sem fotógrafo**. Para resolver:
+
+- Grave o nome do fotógrafo na câmera, em **Informações de copyright › Nome do autor** (Canon). Use o mesmo nome do cadastro (Carlos, Yago, Marinara...).
+- No FileZilla (pasta vigiada), crie uma subpasta por fotógrafo, com o nome dele.
+
+### O que ainda não tem
+
+- O código LP da sessão não aparece nesta versão. Ele entra quando a sessão passar a ser montada no servidor.
+- Se o Checkout estava fechado quando as fotos chegaram, a TV pode mostrar o grupo em **Já no Checkout** e o Checkout ainda não achar o cliente. Isso também se resolve quando a sessão passar a ser montada no servidor.
+- Fotos mandadas pelo navegador (upload manual) não entram na fila.
 
 ---
 

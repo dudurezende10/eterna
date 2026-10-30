@@ -1436,3 +1436,46 @@ Teste: `testes/v86.js`. Regra 14 em [fundos-ia-regras.md](fundos-ia-regras.md).
 - **Agente.** `podio` entrou no mapa fixo `FUNDOS_PREVIA` (`img/bg-podio.jpg`) e `FUNDOS_IMPRESSAO` (`img/fundos-5k/podio.jpg`). O agente precisa ir para o Mac do Eduardo (o deploy faz).
 - **IMPORTANTE: trocar a imagem de um fundo exige trocar o nome do arquivo.** O agente guarda o fundo em cache pelo nome do arquivo. Se a imagem nova entrar com o mesmo nome, a prévia e a impressão podem sair com a imagem antiga. Novo nome no `file`/`fileHi` do `DATA.backgrounds` e no mapa do agente (como foi feito com `img/bg-campeao-v81.jpg`).
 
+## Fila do fotógrafo (v87, 30/10/2026)
+
+Plano: `docs/planos/2026-10-30-fila-do-fotografo.md`. Testes: `testes/fila-fotografo.js` (app, Playwright, `/fila-fotografo` simulado) e `testes/fila_fotografo_agente.py` (agente, chamado pelo .js, critérios 1 a 13).
+
+Decisões do Eduardo (30/10): D1 sai da coluna final 15 min depois de pronto (`FF_PRONTA_MIN = 15`); D2 nome do fotógrafo grande, hora de início e nº de fotos, sem código LP; D3 automático, sem botão; D4 miniaturas na tela da equipe e desligadas na tela cheia, com interruptor por aparelho; D5 colunas "Clicando agora" · "Chegando" · "Já no Checkout" (estados `fotografando`, `subindo`, `pronta`); D6 Admin, Supervisor, Fotógrafo e Atendimento e venda, módulo `filafoto` só com Ver. Adendo: cada grupo mostra o fotógrafo e, entre parênteses, de onde vem.
+
+### Agente
+
+- **Por que no agente.** A sessão LP ainda nasce no navegador (v85 A não está no main): cada navegador monta sessões e códigos diferentes. A chegada da foto no agente (`meta[pid].u`) é a única verdade comum, então a fila é calculada lá, por fotógrafo.
+- **Grupo.** Fotos da mesma chave em que cada chegada fica a no máximo `FF_PAUSA` (20 s; `ETERNA_SESSAO_PAUSA` de 2 a 600 só nos testes) da anterior. Chave: 1) a origem `o`, se `sem_acento(o)` estiver em `ftp_cadastrados()`; 2) `autor` ou `dono` do EXIF (inteiro ou o primeiro nome), se cadastrado; 3) sem fotógrafo, agrupado por série (`câmera ···1234`) ou pela fonte (`ftp-estadio`, `cartão`, `pasta`). Subpasta não cadastrada nunca vira nome na tela (L1).
+- **Relógio da câmera.** Por série, deque das últimas 50 diferenças `u − cap`; `desvio = max(0, min)`. `ultimo_clique = min(cap_max + desvio, ultima_chegada)`; sem `cap`, usa a chegada.
+- **Estado (`ff_estado`).** Chegada nos últimos `FF_PAUSA` s: sem `cap` = `fotografando` (as duas etapas viram uma); leva de cartão = `subindo`; senão `fotografando` se `agora − ultimo_clique ≤ FF_PAUSA`, `subindo` se não. Sem chegada: `subindo` enquanto houver foto do grupo na fila de rostos (só com os rostos ligados); depois `pronta`, com `pronta_em = max(ultima_chegada + FF_PAUSA, fim da última leitura de rosto)`; `fora` depois de `FF_PRONTA_MIN` min (podado em `ff_json`). Virada do dia limpa a lista.
+- **Estado em memória.** `ff_grupos`, `ff_aberto`, `ff_desvio`, `ff_pid_g`, `ff_rev`, `rostos_pendentes`, `ff_funcao`, todos sob `ff_lock`. **O `ff_lock` nunca é pego com o `lock` na mão**: `ingest_file` copia o meta dentro do `lock` e chama `ff_add` depois de soltar; `ff_carregar` copia o meta e solta antes. `ff_carregar()` roda no começo de `main()` e refaz os grupos de hoje a partir do meta (mesmos ids e `n`; cada pid num grupo só). `ff_rosto_fila` (junto de cada `fila_rostos.put`) e `ff_rosto_lido` (no `finally` do leitor, com erro também) contam as fotos na fila de rostos.
+- **Limites.** Até `FF_MAX = 2000` grupos por dia; até 24 grupos na coluna final; `pids` só nos grupos `fotografando` e `subindo`, até 6 (`FF_PIDS`); nos `pronta`, `pids: []`. Sem nome de arquivo, sem série completa, sem nome de convidado.
+- **Função do dia.** `~/Eterna/ponto/funcao.json` (`{dia, map, em}`, chmod 600, tmp + `os.replace`). A função é fotografada no grupo quando ele abre (trocar na Escala não muda grupo aberto). Reiniciar o agente refaz os grupos de hoje com a função atual do arquivo (a fotografia por grupo não é gravada em disco).
+
+`GET /fila-fotografo` → 200, `Cache-Control: no-store`. Exige `posto()` (loopback ou `Host` em `ORIGENS_REDE_HOSTS`) e `origem_local()`; senão 403.
+```json
+{"ok":true,"agora":1761830000.1,"rev":88,"pausa":20,"pronta_min":15,
+ "grupos":[{"id":"G014","estado":"subindo","fotografo":"carlos","fonte":"ftp","funcao":{"tipo":"campo","point":"terminal"},
+   "inicio":1761829900.0,"ultima_chegada":1761829995.2,"ultimo_clique":1761829970.0,"pronta_em":null,"n":11,"pids":["a1b2c3d4e5f6"]}]}
+```
+`fonte`: `ftp` ou `cartão` quando há fotógrafo; senão `câmera ···NNNN`, `ftp-estadio`, `cartão` ou `pasta`.
+
+`POST /fila-fotografo/funcao` com `X-Eterna: 1`, corpo até 4 KB: `{"dia":"AAAA-MM-DD","map":{"carlos":{"tipo":"campo","point":"terminal"},"yago":{"tipo":"volante","modo":"chute"}}}`. Exige `posto()`, `origem_local()` e o cabeçalho (403), `limite_ok` de 30 por minuto por IP (429), corpo até 4096 bytes (413). Validação (400): `dia` = hoje no fuso do agente (ou em UTC); até 40 chaves, todas em `ftp_cadastrados()` (sem acento); `tipo ∈ {campo, volante, folga}`; `point` `^[a-z0-9_-]{1,24}$`; `modo ∈ {grupo, chute, livre}`. Só `tipo`, `point` e `modo` são gravados (o resto, como `from`, sai). O console registra "função do dia atualizada por este computador" ou "por posto <IP>", sem conteúdo.
+
+**Miniatura pelo endereço da rede (risco 4).** `origem_privada_ok` aceita `/thumb/<pid>` com `Host` em `ORIGENS_REDE_HOSTS` (Origin vazia ou em `ETERNA_ORIGENS`), para a TV aberta pelo endereço do servidor do ponto. `/file/` continua só com `HOSTS_OK`.
+
+### App
+
+- View `fotofila` (`vFotoFila`) no grupo Fotógrafo, logo depois de `importar`; módulo `filafoto` (`MODULE_INFO.filafoto` só com `r`); `PRESETS`: `foto` e `venda` com `filafoto:{...RO}` e `fotofila` no `menu`, Supervisor com `filafoto:{...RO}`, Admin pelo `ALL`. Nada entra em `WRITE_OPS`. Migração única `x.mff87` põe `fotofila` no menu salvo de quem tem perfil pronto que inclui a tela.
+- `fotoFilaPoll` a cada 2 s, `AbortController` de 4 s; sem resposta, mantém o último dado e mostra "Sem conexão com o servidor · atualizado há N s". Estrutura `if-wrap`/`if-board` da Fila de impressão; coluna do meio (`Chegando`) destacada.
+- `ffOnde(f)`: `campo · <ponto>`, `volante · <modo>`, `set interno · <ponto>` (ponto `kind:'vestiario'`) ou `sem ponto`. Sem função no agente, `ffPadrao(chave)` usa o ponto fixo de `DATA.points` (igual em todo navegador). Fotógrafo de folga mandando fotos ganha o aviso "De folga na Escala e mandando fotos" (L4).
+- Miniaturas: até 6 `<img loading="lazy" src="<agente>/thumb/<pid>">` (pid conferido por regex) só em Clicando agora e Chegando, e só se `ffMiniOn()`: sempre fora da tela cheia; na tela cheia, `localStorage['eterna.fotofila.tvmini']==='1'` (botão `fotofila-mini`, só no aparelho).
+- Tela cheia (`fotofila-tv`, igual ao `impfila-tv`). Correção: a classe `if-tv` saía presa depois do Esc; agora `fullscreenchange` (fim da tela cheia), Esc sem tela cheia e `go()` (`tvSair`) tiram a classe. Vale também para a Fila de impressão.
+- `setFunc` chama `ffFuncaoEnviar()` (POST com `X-Eterna: 1`, `dia` local, só pessoas de `humans`, sem bloquear e sem erro na tela). `agentPoll` envia de novo quando o `boot` do agente muda, só para quem tem `escala.u`.
+- Sem `T()`: tela da equipe.
+
+### Limites e riscos (para a v85 A e o pareamento)
+
+- Sem código LP e sem "vendida" até a v85 A e as vendas no agente. "Já no Checkout" quer dizer fotos no servidor e rostos lidos; se o navegador do caixa estava fechado quando as fotos chegaram, o Checkout pode não achar a sessão (a sessão ainda é montada no navegador).
+- O agente não tem autenticação: qualquer máquina que passe na checagem de origem lê a fila e troca a função do dia (impacto só de exibição; POST com limite por minuto e registro do IP). O pid continua abrindo `/file/` para quem tem o `Host` certo (risco já existente, v85 risco 1); por isso só 6 pids por grupo aberto. A correção é o pareamento do posto (v83 A).
+- Polling de 2 s por tela; com mais de 5 telas, acrescentar 304 por `rev`.
