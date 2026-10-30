@@ -2,6 +2,8 @@
 
 30/10/2026. Documento de planejamento: junta o que o MaracaFly faz hoje e o que o Eterna já tem, e lista os caminhos possíveis para cada parte. **Não registra decisões.** As decisões saem da conversa entre Ronaldo e Eduardo.
 
+**Já definido pelo Ronaldo (30/10):** o Eterna é sistema da Viva Maracanã, e a operação do drone também passa a ser da Viva Maracanã; o WhatsApp será uma conta nova; a comissão do guia já existe por fora, no Portal de Parceiros (seção 7); o Snap Pop é um produto novo, com aba própria.
+
 Fonte do MaracaFly: a documentação de levantamento em `maracatour/maracafly-doc/docs` (docs 00 a 20). Este texto cita o número do doc em vez de repetir o detalhe.
 
 ## 1. Em uma frase
@@ -21,7 +23,7 @@ O MaracaFly vende e entrega **vídeos** (drone, chute a gol) pelo vendedor de ca
 | Equipe e escala | Escala mensal de 4 funções (host, operador, piloto, vendedor) · doc 11 | Escala/função do dia dos fotógrafos (campo ou volante) | Mesmo tipo de tela, cadastros separados |
 | Bandeiras | Inventário de 153 bandeiras · doc 08 | Já importadas do MaracaFly na v82 (imagens de `maracafly.com.br/static/bandeiras/` e Wikimedia) | O Eterna já é o lugar mais completo |
 | Chute a gol | Produto vendido e filmado | Volante no modo "Chute a gol" (fotos separadas do campo) | Já se tocam: foto e vídeo do mesmo chute |
-| Guias | 321 guias, comissão e saldo · doc 14 | Não existe | Só o MaracaFly tem |
+| Guias | 321 guias, comissão e saldo · doc 14 | Não existe | Já resolvido fora dos dois: Portal de Parceiros (seção 7) |
 | Voos | Maraca Flights: logs DJI, telemetria, classificação da manobra · docs 12, 20 | Não existe | Módulo à parte; ver seção 9 |
 | Números | Estatísticas, Localidades, Resumo · docs 10, 13 | Painel, Diário, Fotógrafos | Os relatórios poderiam somar foto e vídeo |
 | Mostruário | Página de 4 vídeos (~530 MB) para o vendedor · doc 16 | Fundos de IA, prévia no Checkout | Mostruário poderia virar uma tela do Checkout |
@@ -37,7 +39,7 @@ A ideia comum é tratar tudo como **atividade** do visitante:
 | Fotos do tour | foto | fotógrafo de ponto ou volante | FTP da câmera → agente (já existe) |
 | Chute a gol | foto e/ou vídeo | volante (foto), operador (vídeo) | foto: FTP; vídeo: pasta vigiada ou upload |
 | Drone | vídeo | piloto | cartão do drone → pasta vigiada no servidor do estádio |
-| Snap pop | **a definir** (ver seção 12) | — | — |
+| Snap Pop | produto novo, com aba própria (mídia e fluxo a detalhar) | — | — |
 
 Para isso o catálogo do Eterna precisaria, além de `pacote` e `adicional`:
 
@@ -52,7 +54,8 @@ Para isso o catálogo do Eterna precisaria, além de `pacote` e `adicional`:
 |---|---|---|---|
 | A. Um catálogo único | Fotos, drone e chute a gol no mesmo Painel de controle, com tipo de mídia e opções | Um carrinho, um relatório, um preço por lugar | O Painel de controle cresce; a tabela de preço do drone tem muitas combinações |
 | B. Catálogos por atividade | Cada atividade com a própria tela de preços, vendidas no mesmo carrinho | Cada operação cuida dos seus preços | Mais telas de configuração |
-| C. Drone fora do Eterna | Eterna só vende fotos e chute a gol; drone continua num sistema próprio | Menos mudança no Eterna | Dois sistemas para o mesmo cliente, que é o problema de hoje |
+
+A opção de deixar o drone fora do Eterna saiu: a operação do drone passa a ser da Viva Maracanã, no Eterna.
 
 ## 4. Venda pelos vendedores (ativações)
 
@@ -95,19 +98,32 @@ Regras do MaracaFly que valem em qualquer opção (doc 04): valores em centavos;
 | Opção | Como | Prós | Contras |
 |---|---|---|---|
 | A. Galeria única | Fotos e vídeos na galeria do eterna.photo; o QR leva a tudo | Um link para o cliente; S3 já está montado | Vídeo pesado: ~120 GB/mês no S3 e na transferência (seção 11) |
-| B. WhatsApp leva o link da galeria | Mantém os modelos do WhatsApp (6 idiomas, doc 07), mas o link aponta para a galeria | O cliente recebe no celular sem ler QR; recupera quem perdeu o QR | Exige a conta do WhatsApp Cloud API e modelos aprovados no Eterna |
+| B. WhatsApp leva o link da galeria | Modelos de mensagem como os do doc 07 (6 idiomas), mas o link aponta para a galeria | O cliente recebe no celular sem ler QR; recupera quem perdeu o QR | Modelos a aprovar na conta nova |
 | C. Como hoje | Vídeo pelo WhatsApp/Dropbox, foto pela galeria | Nada muda na entrega do vídeo | Dois links, dois sistemas, cliente confuso |
+
+**O WhatsApp será uma conta nova da Viva Maracanã** (WhatsApp Cloud API), sem herdar a do MaracaFly. Isso pede número próprio, verificação da empresa na Meta e aprovação dos modelos antes de entrar no ar; o histórico de conversas do MaracaFly não vem junto.
 
 Pontos do WhatsApp atual que precisam de dono em qualquer opção (doc 07): autorização de uso de imagem pedida por texto; selfie recebida pelo WhatsApp; conversas órfãs por telefone errado; recibo em imagem. Lembrete: os botões do WhatsApp no sistema legado mandam mensagem para clientes reais.
 
 ## 7. Guias e comissões
 
-| Assunto | Hoje (doc 14) | Opções no Eterna |
-|---|---|---|
-| Cadastro de guias | 321 guias no MaracaFly | Importar; cadastro único de pessoas (seção 8) |
-| Comissão do guia | 10% ou R$ 30 por vídeo (há conflito entre as duas regras) | Regra por produto; vale também para fotos? |
-| Comissão interna | Vendedor 2%, piloto 2%, fundo 1% | Calcular na venda e mostrar no relatório; fotos entram? |
-| Saldo e pagamento | Pago e em aberto por guia | Relatório de fechamento por período |
+**Já existe, por fora do Eterna:** o Portal de Parceiros (`parceiros.vivamaracana.com.br`). O guia se cadastra, o portal cria o filiado na Imply pela API e devolve link e QR próprios. O guia acompanha vendas e comissão no portal. As regras de lá:
+
+- 10% sobre ingressos e **ativações** (Chute a Gol, Foto, Drone, Gol de Placa e qualquer experiência nova da Imply), separadas em grupos no portal;
+- a venda no ponto de venda conta para o guia **se o guia for escolhido no PDV da Imply**;
+- fechamento no dia 10 (vendas de 1 ao fim do mês, sem as canceladas), pagamento no dia 20 por PIX, CSV para o Financeiro.
+
+O Eterna **não calcula comissão de guia**. A tela de Guias do MaracaFly (doc 14) não precisa ser refeita. O que o Eterna precisa é que a venda de foto, drone, chute a gol e Snap Pop chegue à Imply com o guia identificado:
+
+| Opção | Como | Prós | Contras |
+|---|---|---|---|
+| A. A venda passa pelo PDV da Imply | O vendedor registra no Eterna e cobra no PDV, escolhendo o guia lá | Nada muda no portal; é como já funciona com Chute a Gol e Foto | Duas telas por venda; o Eterna precisa do localizador da Imply para conferir |
+| B. O Eterna lança a venda na Imply | O Eterna envia a venda com o filiado do guia pela API | Uma tela só para o vendedor | Depende de a API da Imply aceitar venda de ativação com filiado |
+| C. O guia é escolhido no Eterna e o portal lê do Eterna | O portal soma as vendas do Eterna às da Imply | Independe da Imply | Duas fontes de comissão para conciliar |
+
+Em qualquer opção, o Eterna pode ler a lista de guias do portal, para o vendedor escolher pelo nome em vez de digitar.
+
+Comissão interna (vendedor 2%, piloto 2%, fundo 1%, doc 14) é outra regra, da equipe: precisa decidir se continua e se vale para os fotógrafos.
 
 ## 8. Equipe e escala
 
@@ -145,15 +161,15 @@ Uma ordem possível, para discutir:
 2. **Vendedor móvel**: tela de venda no celular e perfil de vendedor.
 3. **Fila de voo e vídeo na galeria**: pasta vigiada de vídeos, ligação vídeo ↔ venda, entrega pela galeria.
 4. **WhatsApp**: modelos apontando para a galeria.
-5. **Pessoas, escala, guias e comissões**.
+5. **Pessoas, escala e comissão interna** (a de guia já está no Portal de Parceiros).
 6. **Voos e telemetria**.
 
 ## 14. Perguntas em aberto
 
-1. **O que é o "snap pop"?** Não aparece na documentação do MaracaFly. É foto, vídeo, um produto novo?
-2. Drone fica dentro do Eterna (opção A ou B do catálogo) ou ao lado (opção C)?
+1. **Snap Pop**: o que entrega (foto, vídeo, impresso), preço, quem produz e onde fica no estádio.
+2. Catálogo único ou um por atividade (opção A ou B da seção 3)?
 3. A venda de campo precisa funcionar em 4G, fora do Wi-Fi do estádio?
-4. WhatsApp: a conta do WhatsApp Cloud API do MaracaFly passa para o Eterna ou fica com a RIO DRONE XP?
-5. Comissão de guia: 10% ou R$ 30 por vídeo? E vale para fotos?
+4. Guia na venda: PDV da Imply, lançamento pela API ou portal lendo o Eterna (seção 7)?
+5. Comissão interna (vendedor, piloto, fundo) continua? Vale para fotógrafos?
 6. Por quanto tempo o vídeo fica disponível ao cliente, e em que qualidade?
-7. O MaracaFly é da RIO DRONE XP Ltda (doc 05): quem é dono dos dados e do sistema novo?
+7. Histórico do MaracaFly (vendas, clientes, vídeos): migra para o Eterna ou fica só para consulta?
