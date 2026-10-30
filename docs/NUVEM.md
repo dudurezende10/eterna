@@ -76,7 +76,7 @@ Também podem ficar no arquivo `~/Eterna/nuvem.env` (uma `CHAVE=valor` por linha
 | `ETERNA_GALERIA_API` | `EnderecoApi` da stack | publica cada galeria na nuvem |
 | `ETERNA_GALERIA_PUBLICA` | endereço público | só para o teste com porta pública (seção 6.3) |
 | `ETERNA_ORIGENS` | `http://192.168.10.218:8765` | endereços pelos quais os postos abrem o Eterna do servidor na rede; só eles ganham as rotas antes restritas ao próprio computador (busca de rosto, publicar galeria). Sem a variável, nada muda |
-| `ETERNA_IMPRESSORA` | `DS-RX1` | impressora 10×15 ligada no servidor: o botão Imprimir de qualquer posto manda as fotos para `POST /imprimir` e elas saem nela (Windows, sem margem, preenchendo a folha). Com `ETERNA_IMPRESSORA_TESTE=1` só grava em `~/Eterna/impressao` |
+| `ETERNA_IMPRESSORA` | `DS-RX1` ou `DS-RX1,DS-RX1 (2)` | impressoras 10×15 ligadas no servidor (várias separadas por vírgula; cada venda sai inteira na primeira livre): o botão Imprimir de qualquer posto manda as fotos para `POST /imprimir` e elas saem nela (Windows, sem margem, preenchendo a folha). Com `ETERNA_IMPRESSORA_TESTE=1` só grava em `~/Eterna/impressao` |
 | `ETERNA_TESTE_CARGA` | `1` | libera `/rostos/projecao` e `/nuvem/link` (só para testes) |
 
 ### 3.2 Arquivos em `~/Eterna`

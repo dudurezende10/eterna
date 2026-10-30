@@ -59,6 +59,8 @@ HOME = os.path.expanduser("~/Eterna")
 # ETERNA_IMPRESSORA: nome da impressora 10x15 ligada neste computador (ex.: DS-RX1). Com ela, o botão Imprimir de
 # qualquer posto manda a foto para cá e ela sai aqui, em vez de sair na impressora do navegador de quem clicou.
 IMPRESSORA = os.environ.get("ETERNA_IMPRESSORA", "").strip()
+# várias DNPs no mesmo servidor: ETERNA_IMPRESSORA="DS-RX1,DS-RX1 (2)". Cada venda sai inteira na primeira livre.
+IMPRESSORAS = [x.strip() for x in IMPRESSORA.split(",") if x.strip()]
 # ETERNA_ORIGENS: endereços pelos quais os postos abrem este Eterna na rede (ex.: http://192.168.10.218:8765).
 # Só eles ganham as rotas que antes eram só do próprio computador (busca de rosto, publicar galeria, vendas).
 ORIGENS_REDE = {x.strip().rstrip("/").lower() for x in os.environ.get("ETERNA_ORIGENS", "").split(",") if x.strip()}
@@ -3022,7 +3024,7 @@ def imp_fila_json():
     with lock:
         jobs = [{k: v for k, v in j.items() if k != "arquivos"} for j in imp_fila
                 if j["estado"] in ("na_fila", "imprimindo") or agora - (j["fim"] or agora) < 3 * 3600]
-    return {"ok": True, "impressora": IMPRESSORA or None, "agora": agora, "pedidos": jobs}
+    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": IMPRESSORAS, "agora": agora, "pedidos": jobs}
 
 
 def imprimir(imagens, venda, vendedor="", posto=""):
@@ -3053,60 +3055,63 @@ def imprimir(imagens, venda, vendedor="", posto=""):
     return {"ok": True, "fotos": len(arqs), "impressora": IMPRESSORA, "pedido": job["id"], "na_frente": frente, **ms}
 
 
-imp_lock = threading.Lock()
+imp_ocupadas = set()       # impressoras imprimindo agora
 
 
 def imprimir_fila(ps1, arqs, venda, ms, job):
-    """Em segundo plano e uma venda por vez, na ordem de chegada: a DNP imprime uma foto de cada vez (12 a 15 s cada).
-    O PowerShell avisa cada foto entregue (linha FOTO), e o painel da fila acompanha."""
-    while True:                                            # ordem de chegada: espera os pedidos anteriores
+    """Em segundo plano, na ordem de chegada: cada venda vai inteira para a primeira impressora livre (as fotos do cliente
+    saem juntas, na mesma DNP), e cada DNP imprime uma foto de cada vez (12 a 15 s cada). O PowerShell avisa cada foto
+    entregue (linha FOTO), e o painel da fila acompanha."""
+    while True:            # vez deste pedido: nenhum anterior esperando, e uma impressora livre
         with lock:
-            antes = [j for j in imp_fila if j["id"] < job["id"] and j["estado"] in ("na_fila", "imprimindo")]
-        if not antes:
-            break
+            antes = [j for j in imp_fila if j["id"] < job["id"] and j["estado"] == "na_fila"]
+            livres = [p for p in IMPRESSORAS if p not in imp_ocupadas]
+            if not antes and livres:
+                imp = livres[0]
+                imp_ocupadas.add(imp)
+                t1 = time.time()
+                job["estado"], job["inicio"], job["impressora"] = "imprimindo", t1, imp
+                arqs = [a for a in (job.get("arquivos") or arqs)[job["feitas"]:] if os.path.exists(a)]   # retomado: só o que faltava
+                imp_salvar()
+                break
         time.sleep(0.5)
-    with imp_lock:
-        t1 = time.time()
-        with lock:
-            job["estado"], job["inicio"] = "imprimindo", t1
-            arqs = [a for a in (job.get("arquivos") or arqs)[job["feitas"]:] if os.path.exists(a)]   # retomado: só o que faltava
-            imp_salvar()
+    try:
         if os.environ.get("ETERNA_IMPRESSORA_TESTE"):       # sem impressora: simula a DNP (6 s por foto) para ver a fila andar
             for _ in arqs:
                 time.sleep(6)
                 with lock:
                     job["feitas"] += 1
                     imp_salvar()
-            with lock:
-                job["estado"], job["fim"] = "impresso", time.time()
-                imp_salvar()
-            print(f"  impressão {venda or '-'} (teste, sem DNP): {len(arqs)} foto(s)")
-            return
-        linhas = []
-        try:
-            pr = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", IMPRESSORA,
-                                   "-Arquivos"] + arqs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            for ln in pr.stdout:
-                ln = ln.strip()
-                if not ln:
-                    continue
-                linhas.append(ln)
-                if ln.startswith("FOTO"):
-                    with lock:
-                        job["feitas"] += 1
-                        imp_salvar()
-            pr.wait(timeout=120 + 90 * len(arqs))
-            saida = " ".join(" ".join(linhas).split())
-            ok = pr.returncode == 0 and linhas and linhas[-1].startswith("OK")
-        except Exception as ex:
-            saida, ok = "ERRO " + str(ex), False
+            ok, saida = True, "teste, sem DNP"
+        else:
+            linhas = []
+            try:
+                pr = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", imp,
+                                       "-Arquivos"] + arqs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                for ln in pr.stdout:
+                    ln = ln.strip()
+                    if not ln:
+                        continue
+                    linhas.append(ln)
+                    if ln.startswith("FOTO"):
+                        with lock:
+                            job["feitas"] += 1
+                            imp_salvar()
+                pr.wait(timeout=120 + 90 * len(arqs))
+                saida = " ".join(" ".join(linhas).split())
+                ok = pr.returncode == 0 and linhas and linhas[-1].startswith("OK")
+            except Exception as ex:
+                saida, ok = "ERRO " + str(ex), False
         with lock:
             job["estado"], job["fim"] = ("impresso" if ok else "erro"), time.time()
             if not ok:
                 job["erro"] = saida[-200:]
             imp_salvar()
-        print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {IMPRESSORA}, {ms['kb']} KB, "
+        print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {imp}, {ms.get('kb', 0)} KB, "
               f"{time.time() - t1:.0f} s até a DNP terminar -> {saida[:300]}")
+    finally:
+        with lock:
+            imp_ocupadas.discard(imp)
 
 
 def rota_privada(path):

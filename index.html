@@ -235,25 +235,33 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .mv-tab td,.mv-tab th{white-space:nowrap}
 #print-root{display:none}
 @page foto{size:102mm 152mm;margin:0}
-.if-board{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:16px;align-items:start}
-@media (max-width:900px){.if-board{grid-template-columns:1fr}}
-.if-col{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;min-height:260px}
-.if-col h2{display:flex;justify-content:space-between;align-items:center;margin:0}
+.if-wrap{display:flex;flex-direction:column;gap:14px;height:calc(100vh - 80px);min-height:420px}
+.if-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.if-head h1{margin:0}
+.if-board{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1.15fr);gap:14px}
+@media (max-width:900px){.if-wrap{height:auto}.if-board{grid-template-columns:1fr}}
+.if-col{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:0}
+.if-col h2{display:flex;justify-content:space-between;align-items:center;margin:0;font-size:18px}
+.if-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.if-prontas{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));align-content:start}
 .if-col.agora{border-color:#FFB800;box-shadow:0 0 0 2px rgba(255,184,0,.25)}
 .if-col.pronta{border-color:#2e9e5b}
-.if-cnt{font-size:14px;background:var(--line);border-radius:999px;padding:2px 10px}
-.if-card{border-radius:10px;padding:12px 14px;background:rgba(0,0,0,.03);border:1px solid var(--line)}
+.if-cnt{font-size:13px;background:var(--line);border-radius:999px;padding:2px 10px}
+.if-card{border-radius:10px;padding:10px 12px;background:rgba(0,0,0,.03);border:1px solid var(--line)}
 .if-card.imp{background:#fff7e0;border-color:#FFB800}
 .if-card.ok{background:#e9f7ef;border-color:#2e9e5b}
 .if-card.err{background:#fdecec;border-color:#d64545}
-.if-num{font-size:34px;font-weight:800;letter-spacing:.02em;line-height:1.1}
-.if-col.agora .if-num{font-size:48px}
-.if-meta{font-size:14px;color:var(--muted)}
+.if-num{font-size:28px;font-weight:800;letter-spacing:.02em;line-height:1.05;white-space:nowrap}
+.if-col.agora .if-num{font-size:42px}
+.if-meta{font-size:13px;color:var(--muted)}
 .if-sub{font-size:13px;margin-top:4px}
+.if-imp{display:flex;flex-direction:column;gap:6px}
+.if-impn{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .if-prog{height:10px;border-radius:6px;background:rgba(0,0,0,.08);overflow:hidden;margin-top:8px}.if-prog i{display:block;height:100%;background:#FFB800;transition:width .4s}
-.if-vazio{color:var(--muted);font-size:15px;padding:20px 0;text-align:center}
-.if-err-h{margin-top:12px!important;color:#d64545}
-body.if-tv .rail{display:none}body.if-tv main{padding:24px 32px}body.if-tv .if-num{font-size:44px}body.if-tv .if-col.agora .if-num{font-size:64px}
+.if-vazio{color:var(--muted);font-size:15px;padding:16px 0;text-align:center}
+.if-err-h{margin-top:8px!important;color:#d64545}
+body.if-tv .app{grid-template-columns:minmax(0,1fr)}body.if-tv .rail{display:none}body.if-tv main{padding:20px 28px}
+body.if-tv .if-wrap{height:calc(100vh - 40px)}body.if-tv .if-num{font-size:40px}body.if-tv .if-col.agora .if-num{font-size:64px}body.if-tv .if-col h2{font-size:24px}
 @media print{
   html:has(body.pr-on),body.pr-on{height:auto!important;margin:0!important;background:#fff!important}
   body.pr-on>*:not(#print-root){display:none!important}
@@ -3311,18 +3319,22 @@ async function impFilaPoll(){if(state.view!=='impfila'){clearInterval(impFilaTim
   try{const j=await (await fetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();state.impFila=j;state.impFilaErro=null;}catch(e){state.impFilaErro='Sem conexão com o servidor de impressão';}
   if(state.view==='impfila')render();}
 function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000);setTimeout(impFilaPoll,0);}
-  const F=state.impFila;const agora=F?F.agora:Date.now()/1000;const ps=(F&&F.pedidos)||[];const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?'agora':`há ${m} min`;};
-  const fila=ps.filter(p=>p.estado==='na_fila'),agoraP=ps.filter(p=>p.estado==='imprimindo'),prontas=ps.filter(p=>p.estado==='impresso').sort((a,b)=>b.fim-a.fim).slice(0,8),erros=ps.filter(p=>p.estado==='erro').sort((a,b)=>b.fim-a.fim).slice(0,4);
-  const espera=fila.reduce((a,p)=>a+p.fotos,0)+agoraP.reduce((a,p)=>a+p.fotos-p.feitas,0);
-  const card=(p,cls,extra)=>`<div class="if-card ${cls}"><div class="if-num">${esc(p.venda)}</div><div class="if-meta">${p.fotos} ${p.fotos===1?'foto':'fotos'}${p.vendedor?' · '+esc(p.vendedor.split(' ')[0]):''}${p.posto?' · '+esc(p.posto):''}</div>${extra||''}</div>`;
-  return `<div class="head"><div><div class="eyebrow">${esc((F&&F.impressora)||'Impressora do servidor')}</div><h1>Fila de impressão</h1></div><div class="row"><span class="pill ${espera?'warn':'good'}">${espera?`${espera} ${espera===1?'foto':'fotos'} · cerca de ${Math.ceil(espera*14/60)} min`:'Impressora livre'}</span><button class="btn" data-act="impfila-tv">Tela cheia</button></div></div>
+  const F=state.impFila;const agora=F?F.agora:Date.now()/1000;const ps=(F&&F.pedidos)||[];const imps=(F&&F.impressoras&&F.impressoras.length)?F.impressoras:[(F&&F.impressora)||'Impressora'];
+  const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?'agora':`há ${m} min`;};const curto=n=>imps.length>1?n:'';
+  const fila=ps.filter(p=>p.estado==='na_fila'),agoraP=ps.filter(p=>p.estado==='imprimindo'),prontas=ps.filter(p=>p.estado==='impresso').sort((a,b)=>b.fim-a.fim).slice(0,12),erros=ps.filter(p=>p.estado==='erro').sort((a,b)=>b.fim-a.fim).slice(0,3);
+  const espera=fila.reduce((a,p)=>a+p.fotos,0)+agoraP.reduce((a,p)=>a+p.fotos-p.feitas,0);const minEsp=Math.ceil(espera*14/60/Math.max(1,imps.length));
+  const quem=p=>`${p.fotos} ${p.fotos===1?'foto':'fotos'}${p.vendedor?' · '+esc(p.vendedor.split(' ')[0]):''}`;
+  const tv=document.body.classList.contains('if-tv');
+  return `<div class="if-wrap"><div class="if-head"><div><div class="eyebrow">${imps.length>1?imps.length+' impressoras · '+imps.map(esc).join(', '):esc(imps[0])}</div><h1>Fila de impressão</h1></div>
+    <div class="row"><span class="pill ${espera?'warn':'good'}">${espera?`${espera} ${espera===1?'foto':'fotos'} na fila · cerca de ${minEsp} min`:'Tudo impresso'}</span><button class="btn" data-act="impfila-tv">${tv?'Sair da tela cheia':'Tela cheia'}</button></div></div>
   ${state.impFilaErro?`<div class="note" role="alert">${esc(state.impFilaErro)}</div>`:''}
   <div class="if-board">
-    <section class="if-col"><h2>Na fila <span class="if-cnt">${fila.length}</span></h2>${fila.map((p,i)=>card(p,'fila',`<div class="if-sub">${i===0?'próxima':i+1+'º'} · ${min(p.criado)}</div>`)).join('')||'<div class="if-vazio">Ninguém esperando</div>'}</section>
-    <section class="if-col agora"><h2>Imprimindo agora</h2>${agoraP.map(p=>card(p,'imp',`<div class="if-prog"><i style="width:${Math.round(100*p.feitas/p.fotos)}%"></i></div><div class="if-sub">foto ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos}</div>`)).join('')||'<div class="if-vazio">Impressora livre</div>'}</section>
-    <section class="if-col pronta"><h2>Prontas · retirar</h2>${prontas.map(p=>card(p,'ok',`<div class="if-sub">${min(p.fim)}</div>`)).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}
-      ${erros.length?`<h2 class="if-err-h">Com erro</h2>${erros.map(p=>card(p,'err',`<div class="if-sub">${esc((p.erro||'').slice(0,90))}</div>`)).join('')}`:''}</section>
-  </div>`;}
+    <section class="if-col"><h2>Na fila <span class="if-cnt">${fila.length}</span></h2><div class="if-list">${fila.map((p,i)=>`<div class="if-card fila"><div class="if-num">${esc(p.venda)}</div><div class="if-meta">${quem(p)} · ${i===0?'próxima':i+1+'º'} · ${min(p.criado)}</div></div>`).join('')||'<div class="if-vazio">Ninguém esperando</div>'}</div></section>
+    <section class="if-col agora"><h2>Imprimindo agora</h2><div class="if-list">${imps.map(n=>{const p=agoraP.find(x=>x.impressora===n)||(imps.length===1?agoraP[0]:null);
+        return `<div class="if-imp">${imps.length>1?`<div class="if-impn">${esc(n)}</div>`:''}${p?`<div class="if-card imp"><div class="if-num">${esc(p.venda)}</div><div class="if-meta">${quem(p)}</div><div class="if-prog"><i style="width:${Math.round(100*p.feitas/p.fotos)}%"></i></div><div class="if-sub">foto ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos}</div></div>`:'<div class="if-vazio">Livre</div>'}</div>`;}).join('')}</div></section>
+    <section class="if-col pronta"><h2>Prontas · retirar <span class="if-cnt">${prontas.length}</span></h2><div class="if-list if-prontas">${prontas.map(p=>`<div class="if-card ok"><div class="if-num">${esc(p.venda)}</div><div class="if-meta">${quem(p)}${curto(p.impressora)?' · <b>'+esc(p.impressora)+'</b>':''} · ${min(p.fim)}</div></div>`).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}</div>
+      ${erros.length?`<h2 class="if-err-h">Com erro</h2>${erros.map(p=>`<div class="if-card err"><div class="if-num">${esc(p.venda)}</div><div class="if-meta">${esc((p.erro||'').slice(0,90))}</div></div>`).join('')}`:''}</section>
+  </div></div>`;}
 function vEstoque(){
   return `<div class="head"><div><div class="eyebrow">Insumos</div><h1>Estoque</h1></div></div>
   <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · rolo</span><span class="v" style="color:${v<ROLO_ALERTA?'var(--bad)':'inherit'}">${v}</span><span class="d">${v<ROLO_ALERTA?'Trocar antes do pico':'de '+ROLO_CAP+' · DNP RX1HS'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">Ímãs 15 x 20</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">Sacolas</span><span class="v" style="color:var(--bad)">310</span><span class="d">pedir</span></div></div>
@@ -4357,7 +4369,7 @@ document.addEventListener('click',e=>{
     case 'gal-open':state.gal.card=d.card||null;state.gal.cort=null;state.gal.qr=null;render();if(d.card){const el=$('#gal-det');if(el)el.scrollIntoView({block:'start'});}break;
     case 'gal-criar':{const tok=galDaSessao(d.card,true);galPublicar(tok);log(`Galeria criada para ${d.card}`);state.gal.qr=tok;toast('Galeria criada · código '+SIM.galerias[tok].codigo);render();break;}
     case 'gal-qr':state.gal.qr=state.gal.qr===d.t?null:d.t;render();break;
-    case 'impfila-tv':{document.body.classList.toggle('if-tv');try{if(document.body.classList.contains('if-tv'))document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();else document.fullscreenElement&&document.exitFullscreen();}catch(e){}break;}
+    case 'impfila-tv':{document.body.classList.toggle('if-tv');try{if(document.body.classList.contains('if-tv'))document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();else document.fullscreenElement&&document.exitFullscreen();}catch(e){}render();break;}
     case 'lgpd-excluir':{const card=d.card;const sim=SIM.sessions[card];if(!sim||!can('galerias','u'))break; // LGPD art. 18: o cliente pede para apagar
       const pids=(sim.photos||[]).map(p=>p.id);const toks=Object.values(SIM.galerias||{}).filter(m=>m.tipo==='sessao'&&(m.sessoes||[]).includes(card)).map(m=>m.token);
       if(!confirm(`Apagar TODAS as ${pids.length} fotos da sessão ${card} deste servidor e da nuvem, e tirar a galeria do ar?
