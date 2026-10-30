@@ -3909,7 +3909,9 @@ class H(BaseHTTPRequestHandler):
         locais = ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)
         if path.startswith("/rostos/"):
             return locais
-        return locais + (APP_ORIGIN.rstrip("/"),)   # o app publicado (https://eterna.photo) lê a biblioteca do agente
+        # o app publicado (https://eterna.photo) lê a biblioteca do agente; os endereços de ETERNA_ORIGENS (postos e
+        # Tailscale, configurados no próprio servidor) usam as telas da equipe, inclusive Biblioteca e FTP do estádio
+        return locais + (APP_ORIGIN.rstrip("/"),) + tuple(ORIGENS_REDE)
 
     def origem_privada_ok(self, path):
         o = self.headers.get("Origin")
