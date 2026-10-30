@@ -43,7 +43,7 @@ class Falsa:
         if self.lado == "esq":
             d.rectangle([0, 0, w // 2 - 1, h - 1], fill=255)                      # a pessoa
             d.rectangle([w - 12, 2, w - 4, 10], fill=255)                          # mancha pequena, solta e longe: sai
-            d.rectangle([w // 2, 10, w // 2 + 18, 18], fill=255)                  # objeto pequeno encostado na pessoa: fica
+            d.rectangle([w // 2, 10, w // 2 + 18, 18], fill=255)                  # objeto que encosta na pessoa na imagem: vai junto (segurado ou só sobreposto; limite da regra 13)
             d.rectangle([w // 2 + 30, 30, w // 2 + 38, 38], fill=255)             # objeto solto perto, sem pessoa: sai (v88)
         else:
             d.rectangle([w // 2, h // 2, w - 1, h - 1], fill=255)                  # a segunda máscara completa a pessoa
@@ -65,7 +65,7 @@ a = im.getchannel("A")
 px = lambda x, y: a.getpixel((x, y))
 ok(px(100, 100) == 255 and px(2900, 1900) == 255, "máscara final = máximo das duas: %r" % [px(100, 100), px(2900, 1900)])
 ok(px(1687, 500) == 255, "objeto translúcido encostado deveria ficar sólido (regra 13): %r" % px(1687, 500))
-ok(px(1520, 26) > 200, "objeto pequeno encostado deveria ficar: %r" % px(1520, 26))
+ok(px(1520, 26) > 200, "objeto que encosta na pessoa na imagem vai junto (limite da regra 13): %r" % px(1520, 26))
 ok(px(1564, 64) == 0, "objeto solto perto, sem pessoa, deveria sair (v88): %r" % px(1564, 64))
 ok(px(2990, 8) == 0, "mancha solta pequena e longe deveria sair: %r" % px(2990, 8))
 ok(px(2600, 450) == 0, "translúcido solto sem sinal forte deveria sair: %r" % px(2600, 450))
@@ -122,7 +122,40 @@ ok(r[145, 105] == 255, "furo sem sinal com a mesma cor da bandeira em volta deve
 ok(r[150, 280] == 0, "vão real entre braço e corpo (sem sinal, borda com contraste) não pode ser preenchido: %r" % r[150, 280])
 r2 = m.rec_limpa_mascara(mk)
 ok(r2[145, 105] == 0 and r2[80, 55] == 255 and r2[150, 280] == 0, "sem a foto: furo sem sinal fica aberto, o de sinal fraco fecha: %r" % [r2[145, 105], r2[80, 55]])
-ok(not m.rec_limpa_mascara([Image.new("L", (50, 40), 255), Image.new("L", (50, 40), 0)]).any(), "sem pessoa nenhuma: máscara vazia")
+ok(not m.rec_limpa_mascara([Image.new("L", (50, 40), 0), Image.new("L", (50, 40), 0)]).any(), "sem sinal nenhum: máscara vazia")
+# furo fechado com sinal médio >= 0,03 (abaixo do sinal mínimo de 0,04) fecha pelo REC_FURO, mesmo sem a foto
+ok(r2[150, 280] == 0, "furo sem sinal continua aberto sem a foto")
+mk9 = mascaras()[0]
+ImageDraw.Draw(mk9[0]).rectangle([90, 120, 120, 170], fill=9)          # ~0,035: abaixo de 0,04, acima de 0,03
+r9 = m.rec_limpa_mascara(mk9)
+ok(r9[145, 105] == 255, "furo com sinal médio 0,035 deveria fechar (REC_FURO): %r" % r9[145, 105])
+ImageDraw.Draw(mk9[0]).rectangle([90, 120, 120, 170], fill=6)          # ~0,024: abaixo de 0,03, sem foto: aberto
+ok(m.rec_limpa_mascara(mk9)[145, 105] == 0, "furo com sinal médio 0,024 sem a foto fica aberto")
+# semente: o modelo de pessoa não viu ninguém com 0,6 -> relativa (0,8 x máximo); nada -> como antes (alfa alto em uma delas)
+isn, hum = Image.new("L", (200, 150), 0), Image.new("L", (200, 150), 0)
+ImageDraw.Draw(isn).rectangle([40, 30, 100, 149], fill=255)               # pessoa no isnet
+ImageDraw.Draw(hum).rectangle([45, 40, 95, 149], fill=110)                # pessoa fraca no u2net_human_seg (0,43)
+ImageDraw.Draw(isn).rectangle([150, 60, 190, 140], fill=255)              # objeto solto ao lado
+rf = m.rec_limpa_mascara([isn, hum])
+ok(rf[90, 70] == 255 and rf[100, 170] == 0, "pessoa fraca: semente relativa leva a pessoa e deixa o objeto solto: %r" % [rf[90, 70], rf[100, 170]])
+r1 = m.rec_limpa_mascara([isn])
+ok(r1[90, 70] == 255, "uma máscara só: a pessoa sai: %r" % r1[90, 70])
+r0 = m.rec_limpa_mascara([isn, Image.new("L", (200, 150), 0)])
+ok(r0[90, 70] == 255 and r0[100, 170] == 255, "modelo de pessoa vazio: cai para alfa alto em uma delas (não tira a foto da venda)")
+# teto de custo: milhares de furos e de manchas pequenas terminam em poucos segundos
+import numpy as _np
+gi = _np.zeros((1067, 1600), _np.uint8)
+gi[50:1067, 200:1400] = 255
+for yy in range(80, 1040, 14):
+    for xx in range(230, 1380, 14):
+        gi[yy:yy + 7, xx:xx + 7] = 0                                        # ~5600 furos de 49 px sem sinal
+gi[0:20:3, 0:1600:3] = 255                                                 # ~3700 manchas soltas lá em cima, longe do grupo
+gc = Image.new("RGB", (1600, 1067), (230, 230, 230))
+t0 = __import__("time").time()
+rg = m.rec_limpa_mascara([Image.fromarray(gi), Image.fromarray(gi)], gc)
+dt = (__import__("time").time() - t0)
+ok(dt < 8 and rg[500, 800] == 255 and not rg[0:20, :].any(), "milhares de furos e manchas: %.1f s (teto ~2 s nos furos) %r" % (dt, [rg[500, 800], int(rg[0:20].sum())]))
+print("tempo com milhares de furos: %.2f s" % dt, file=sys.stderr)
 
 # erro ao abrir os modelos: limpa depois de 60 s
 os.environ["REMBG_HOME"] = "/root/.rembg"

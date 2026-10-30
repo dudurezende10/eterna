@@ -2234,25 +2234,23 @@ def rec_carregar():
 
 
 REC_SINAL = 0.04         # sinal mínimo para um ponto entrar no grupo (ligado à pessoa)
-REC_PESSOA = 0.6         # semente: só o que a máscara de PESSOA (u2net_human_seg) pega com este alfa
+REC_PESSOA = 0.6         # semente: o que a máscara de PESSOA (u2net_human_seg) pega com este alfa
 REC_NUCLEO = 0.10        # miolo sólido: sinal a partir daqui, ou cercado por ele
-REC_FURO = 0.03          # furo fechado com sinal médio a partir daqui é objeto (preenche)
+REC_FURO = 0.03          # furo fechado (sinal < 0,04) com sinal médio a partir daqui é objeto (preenche)
 REC_FECHA = 0.004        # reentrância mais estreita que 2x isto (fração do lado) entre partes sólidas é fechada
+REC_FUROS_MAX = 48       # teto de custo: só os 48 maiores furos sem sinal são decididos pela cor (o resto fica aberto)
+REC_FUROS_SEG = 2.0      # e no máximo 2 s decidindo furos por recorte
 
 
-def _rec_furo_e_objeto(H, fica, rgb, exterior, dext, lado, rng):
+def _rec_furo_e_objeto(Hc, Fc, Cc, Ec, Dc, lado, rng):
     """Furo fechado sem sinal (as duas máscaras dão ~0): é pedaço do objeto ou fundo de verdade visto por um vão?
+    Recebe só a fatia do furo com folga (Hc = furo, Fc = o que fica, Cc = cor, Ec = fundo de fora, Dc = distância ao grupo).
     1) borda falsa: compara a cor 3 px dentro do furo com a cor 3 px fora (no que fica). Se em 40% ou mais do perímetro
        não há contraste, é o mesmo material dos dois lados (branco da bandeira com o branco dela): preenche. Vão entre braço
        e corpo ou entre pessoas tem contraste em quase toda a volta (fundo x roupa/pele).
     2) borda meio falsa (15% a 40%): preenche só se a cor do furo não aparece no fundo de fora, perto do grupo."""
     import numpy as np
     from scipy import ndimage
-    h, w = H.shape
-    ys, xs = np.nonzero(H)
-    pad = int(0.12 * lado) + 8
-    y0, y1, x0, x1 = max(0, ys.min() - pad), min(h, ys.max() + pad + 1), max(0, xs.min() - pad), min(w, xs.max() + pad + 1)
-    Hc, Fc, Ec, Dc, Cc = H[y0:y1, x0:x1], fica[y0:y1, x0:x1], exterior[y0:y1, x0:x1], dext[y0:y1, x0:x1], rgb[y0:y1, x0:x1]
     d, ind = ndimage.distance_transform_edt(~Hc, return_indices=True)
     O = (d >= 2.5) & (d <= 4.5) & Fc
     oy, ox = np.nonzero(O)
@@ -2288,7 +2286,9 @@ def rec_limpa_mascara(masks, foto=None):
     mesmo tamanho (opcional: sem ela, furo sem sinal nenhum fica aberto).
     Máximo das duas máscaras -> níveis 0,3-0,9. Vai junto o que está NA pessoa (Eduardo, 30/10): entra o que tem algum sinal
     (>= 0,04) ligado a um ponto que a máscara de pessoa pega com alfa alto; objeto solto ao lado (taça num pedestal) sai,
-    mesmo perto. Miolo sólido (sinal >= 0,10 ou cercado por ele), furos de objeto preenchidos, só a borda fica macia."""
+    mesmo perto. Limite: o que encosta ou se sobrepõe à pessoa na imagem fica ligado a ela e vai junto, segurado ou não.
+    Miolo sólido (sinal >= 0,10 ou cercado por ele), furos de objeto preenchidos, só a borda fica macia."""
+    import time as _tm
     import numpy as np
     from scipy import ndimage
     S = np.ones((3, 3), dtype=bool)
@@ -2298,17 +2298,26 @@ def rec_limpa_mascara(masks, foto=None):
     lado = max(H0, W0)
     saida = np.zeros((H0, W0), dtype=np.uint8)
     sinal = bruta >= REC_SINAL
-    if not (sinal & (pessoa >= REC_PESSOA)).any():
+    # semente: pessoa com alfa alto; se o modelo de pessoa veio fraco, o que ele tem de mais forte; se não viu ninguém,
+    # o que uma das máscaras pega com alfa alto (como antes da v88): melhor levar a foto do que tirá-la da venda
+    semente_px = sinal & (pessoa >= REC_PESSOA)
+    if not semente_px.any():
+        pmax = float(pessoa.max()) if pessoa.size else 0.0
+        if pmax > 0.3:
+            semente_px = sinal & (pessoa >= 0.8 * pmax)
+        if not semente_px.any():
+            semente_px = bruta >= REC_PESSOA
+    if not semente_px.any():
         return saida
     # trabalha só no retângulo do que tem sinal, com folga (o resto é fundo): mais rápido
     ys, xs = np.nonzero(sinal)
     pad = int(0.13 * lado) + 10
     y0, y1, x0, x1 = max(0, ys.min() - pad), min(H0, ys.max() + pad + 1), max(0, xs.min() - pad), min(W0, xs.max() + pad + 1)
-    bruta, pessoa, sinal = bruta[y0:y1, x0:x1], pessoa[y0:y1, x0:x1], sinal[y0:y1, x0:x1]
+    bruta, sinal, semente_px = bruta[y0:y1, x0:x1], sinal[y0:y1, x0:x1], semente_px[y0:y1, x0:x1]
     m = np.clip((bruta - 0.3) / 0.6, 0.0, 1.0)                 # abaixo de 0,3 vira 0; acima de 0,9 vira 1
     rot0, n0 = ndimage.label(sinal, structure=S)
     semente = np.zeros(n0 + 1, dtype=bool)
-    semente[np.unique(rot0[pessoa >= REC_PESSOA])] = True
+    semente[np.unique(rot0[semente_px])] = True
     semente[0] = False
     dentro = semente[rot0]
     m = m * dentro
@@ -2325,12 +2334,22 @@ def rec_limpa_mascara(masks, foto=None):
         cand = cand[cand > 0]
         if foto is not None and len(cand) and tuple(foto.size) == (W0, H0):
             from PIL import ImageFilter
+            cand = cand[np.argsort(-area[cand], kind="stable")][:REC_FUROS_MAX]   # teto de custo: os maiores primeiro
             rgb = np.asarray(foto.convert("RGB").filter(ImageFilter.BoxBlur(2)), dtype=np.float32)[y0:y1, x0:x1]
             exterior = ~cheio
             dext = ndimage.distance_transform_edt(exterior)
             rng = np.random.default_rng(0)
+            fatias = ndimage.find_objects(rb)
+            folga = int(0.12 * lado) + 8
+            hh, ww = rb.shape
+            limite = _tm.monotonic() + REC_FUROS_SEG
             for k in cand:
-                ok[k] = _rec_furo_e_objeto(rb == k, dentro, rgb, exterior, dext, lado, rng)
+                if _tm.monotonic() > limite:
+                    break                                       # orçamento esgotado: o resto fica aberto
+                sy, sx = fatias[k - 1]
+                cy = slice(max(0, sy.start - folga), min(hh, sy.stop + folga))
+                cx = slice(max(0, sx.start - folga), min(ww, sx.stop + folga))
+                ok[k] = _rec_furo_e_objeto(rb[cy, cx] == k, dentro[cy, cx], rgb[cy, cx], exterior[cy, cx], dext[cy, cx], lado, rng)
         furos = ok[rb]
     dentro |= furos
     # miolo sólido: sinal >= 0,10 (franja fraca de fora, ex. teto do estádio atrás da bandeira, não vira sólido),
@@ -2351,14 +2370,15 @@ def rec_limpa_mascara(masks, foto=None):
     dentro |= solido
     rot, n = ndimage.label(dentro, structure=S)
     if n > 1:
+        idr = np.arange(1, n + 1)
         areas = np.bincount(rot.ravel(), minlength=n + 1).astype(np.float64)
         areas[0] = 0
         grandes = areas >= 0.03 * areas.max()                  # pedaço grande fica sempre (na dúvida, mantém)
         grandes[0] = False
-        perto = ndimage.distance_transform_edt(~grandes[rot]) <= max(4.0, 0.015 * lado)
+        dist = ndimage.distance_transform_edt(~grandes[rot])
         manter = grandes.copy()
-        for k in np.flatnonzero(~grandes[1:]) + 1:            # pequeno só fica se encosta (ou quase) no grupo
-            manter[k] = bool(perto[rot == k].any())
+        # pequeno só fica se encosta (ou quase) no grupo: menor distância de cada pedaço de uma vez (sem laço por pedaço)
+        manter[1:] |= ndimage.minimum(dist, rot, idr) <= max(4.0, 0.015 * lado)
         m = m * manter[rot]
     saida[y0:y1, x0:x1] = (m * 255.0 + 0.5).astype(np.uint8)
     return saida
