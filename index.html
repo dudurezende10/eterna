@@ -2343,7 +2343,7 @@ const AI_W={borda:.3,rosto:.3,foco:.2,recorte:.2};
 const AI_MIN=70;
 // Enquadramento não reprova: decide em quais fundos a foto entra. Corpo inteiro abre mais fundos; foto fechada também vale.
 const FRAMING={inteiro:'Corpo inteiro',meio:'Meio corpo',close:'Fechada'};
-// v81 (Eduardo, 28/10): só 4 fundos visíveis (Noite de campeão sem a taça, Mirante ao pôr do sol, Arquibancada 1950 em P&B, Saída do túnel); os outros ficam com inativo:true, sem apagar.
+// v81 (Eduardo, 28/10): 4 fundos visíveis (Noite de campeão sem a taça, Mirante ao pôr do sol, Arquibancada 1950 em P&B, Saída do túnel); v86 (29/10): + Pódio de campeão, 5 no total; os outros ficam com inativo:true, sem apagar.
 // v86 (Eduardo, 29/10): 5º fundo aprovado direto, Pódio de campeão (regra 14: grupo no pódio, à esquerda da taça do fundo, sem cobri-la).
 // pos é do caminho do Photoroom (bgPad). v84: a montagem local segue FIA_REGRAS (docs/fundos-ia-regras.md); fit decide em quais fundos a foto entra, e corpo inteiro vira do joelho para cima no Campeão, no Mirante, no Túnel e no Pódio.
 // Os 10 fundos limpos (sem pessoas). v83: fileHi = o mesmo fundo em 5000 px, só para a impressão 10×15 (a prévia usa o de 2400 px). Cada um tem ângulo de câmera, luz, direção da luz e enquadramentos aceitos.
@@ -4417,17 +4417,17 @@ window.addEventListener('hashchange',()=>{const wasLoja=state.lojaRota;
 // v78: o Anfitrião no set saiu; sessão que ficou aberta nele vai para a fila (nada se perde)
 dinVirada(); // v79: pendência de dinheiro de ontem vira não paga
 flagMigraV81();flagMigraV82();
-// v86: o Pódio de campeão entra sozinho para quem já tinha a escolha de fundos salva (4 fundos), uma vez só; se tirarem depois, não volta.
+// v86: o Pódio de campeão entra sozinho para quem já tinha a escolha de fundos salva (1 a 4 fundos; lista vazia de propósito fica vazia), uma vez só; se tirarem depois, não volta.
 // Marca no SIM (bgPodioV86) e numa chave própria (eterna.bgpodio.v), para um SIM antigo gravado por outra janela não refazer.
 function bgMigraPodio(){let v=null;try{v=localStorage.getItem('eterna.bgpodio.v');}catch(e){}if(SIM.bgPodioV86||v==='86')return false;
-  SIM.bgPodioV86=true;let add=false;if(Array.isArray(SIM.bgOn)&&!SIM.bgOn.includes('podio')&&SIM.bgOn.length<BG_MAX){SIM.bgOn=SIM.bgOn.concat('podio');add=true;}
+  SIM.bgPodioV86=true;let add=false;if(Array.isArray(SIM.bgOn)&&!SIM.bgOn.includes('podio')&&SIM.bgOn.length>0&&SIM.bgOn.length<BG_MAX){SIM.bgOn=SIM.bgOn.concat('podio');add=true;}
   try{localStorage.setItem('eterna.bgpodio.v','86')}catch(e){}saveSim();return add;}
-bgMigraPodio();
 // v79: catálogo novo do Tour (28/10). Maracanã, Zona Mista, Arquibancada e Foto adicional mudaram de definição ou de nome: preço editado antes não vale mais (uma vez só)
 // a versão do catálogo fica numa chave própria (eterna.catalogo.v): um SIM antigo gravado por outra janela não refaz a migração
 SIM.catalogoV=2;{let cv=null;try{cv=localStorage.getItem('eterna.catalogo.v');}catch(e){}
 if(cv!=='2'){const mud=['maracana','zona','arq','extra'].filter(id=>SIM.prices&&SIM.prices[id]!=null);mud.forEach(id=>delete SIM.prices[id]);try{localStorage.setItem('eterna.catalogo.v','2')}catch(e){}
   if(mud.length)log(`Catálogo novo do Tour: preços editados de ${mud.map(catName).join(', ')} voltaram ao preço do catálogo`);else saveSim();}}
+bgMigraPodio();   // depois do catálogo: a gravação já sai com catalogoV=2 (revisão v86)
 {let ch=false;Object.entries(SIM.sessions).forEach(([c,x])=>{if(x.status==='aberta'){x.status='fechada';x.closedAt=x.closedAt||now().toISOString();x.closedBy=x.closedBy||'v78: Anfitrião no set removido';ch=true;}});if(ch)saveSim();}
 render();
 (async()=>{
