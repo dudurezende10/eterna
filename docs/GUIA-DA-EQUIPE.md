@@ -417,7 +417,7 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 ## Novidades da v81
 
 - **Checkout no segundo monitor.** "Abrir Checkout" abre uma janela separada. Arraste essa janela para o monitor do cliente. A sua tela continua logada no admin. Se o cliente apertar Esc ou mexer no endereço da janela dele, o Checkout volta ao início e o seu login não cai.
-- **Fundos de IA.** O cliente vê só 4 fundos: Noite de campeão (sem a taça), Mirante ao pôr do sol, Arquibancada 1950 em preto e branco e Saída do túnel. Os outros ficam em Laboratório › Fundos em teste, onde o admin pode Ativar ou Mover para o Laboratório.
+- **Fundos de IA.** O cliente vê só 5 fundos: Noite de campeão (sem a taça), Mirante ao pôr do sol, Arquibancada 1950 em preto e branco, Saída do túnel e Pódio de campeão (desde a v86). Os outros ficam em Laboratório › Fundos em teste, onde o admin pode Ativar ou Mover para o Laboratório.
 - **Bandeiras.** As imagens foram corrigidas. A bandeira que ainda não tem a imagem certa fica sem foto, de propósito, até a imagem certa chegar.
 - **Fotógrafos.** Klassius e Sandessa já estão na lista.
 
@@ -507,6 +507,17 @@ A primeira foto do dia demora mais (o agente abre os modelos). Depois, cada foto
 ### Photoroom
 
 O Photoroom continua configurado, só não é usado. Para voltar a ele: **Configurações › Painel de controle › Montagem dos fundos › Photoroom**. Cada montagem pelo Photoroom gasta crédito.
+
+## Novidades da v86: fundo Pódio de campeão
+
+O cliente ganhou um 5º fundo de IA: **Pódio de campeão**. Estádio lotado em verde e amarelo, confete, um pódio dourado e uma taça à direita.
+
+- **Já vem ligado.** Não precisa fazer nada. Se o ponto já tinha uma escolha de fundos salva com 1 a 4 fundos, o Pódio entra sozinho na lista, uma vez só.
+- **Se a lista estava vazia de propósito**, continua vazia. Para ligar, use Configurações › Fundos de IA.
+- **Se a administração tirar o Pódio**, ele não volta sozinho.
+- **Como a foto sai.** A pessoa fica em cima do pódio, um pouco à esquerda, e nunca cobre a taça do fundo. Foto de corpo inteiro vira do joelho para cima, como no Campeão, no Mirante e no Túnel.
+- **Anfitrião e vendedor.** Na hora de oferecer, vale mostrar a prévia do Pódio para quem tirou foto comemorando ou segurando a taça. A taça que o cliente segura sai junto no recorte. A taça do fundo é outra e fica sempre à vista.
+- **Impressão 10×15.** Funciona igual aos outros fundos.
 
 ---
 

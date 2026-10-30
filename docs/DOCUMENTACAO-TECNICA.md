@@ -1321,7 +1321,7 @@ Plano: `docs/planos/2026-10-28-v83-painel.md` (escrito como v83; publicado como 
 Testes: `testes/v81.js` e `testes/agente-seguranca.js`.
 
 - **Checkout em janela separada.** "Abrir Checkout" faz `window.open(location.pathname+'#loja','eterna-checkout','popup,width=1280,height=800')`: a janela vai para o segundo monitor e a aba do admin continua logada. Na janela do cliente (sem login), Esc ou sair do `#loja` só volta ao início do Checkout e não apaga a sessão salva do admin no mesmo navegador; a janela do cliente não fica ligada à do admin (sem `opener`).
-- **Fundos em teste.** Só 4 fundos visíveis ao cliente: Noite de campeão (sem a taça, `img/bg-campeao-v81.jpg`), Mirante ao pôr do sol, Arquibancada 1950 em P&B e Saída do túnel. `DATA.backgrounds[].inativo` é o padrão; o estado por venue fica em `SIM.bgAtivo[id]`. Os inativos vão para Laboratório › Fundos em teste, com Ativar e Mover para o Laboratório (pedem Alterar em Configurações do venue; registram `fundo_ativado` e `fundo_laboratorio` no histórico). Fundo sem enquadramento aceito não se ativa. Escolha salva só com fundos ocultos volta ao padrão; variação oculta cai na Noite de campeão.
+- **Fundos em teste.** Só 5 fundos visíveis ao cliente: Noite de campeão (sem a taça, `img/bg-campeao-v81.jpg`), Mirante ao pôr do sol, Arquibancada 1950 em P&B, Saída do túnel e, desde a v86, Pódio de campeão. `DATA.backgrounds[].inativo` é o padrão; o estado por venue fica em `SIM.bgAtivo[id]`. Os inativos vão para Laboratório › Fundos em teste, com Ativar e Mover para o Laboratório (pedem Alterar em Configurações do venue; registram `fundo_ativado` e `fundo_laboratorio` no histórico). Fundo sem enquadramento aceito não se ativa. Escolha salva só com fundos ocultos volta ao padrão; variação oculta cai na Noite de campeão.
 - **Bandeiras.** As imagens do item 67 em diante estavam desalinhadas. Tabela de correção (arquivo antigo errado para o certo; `""` = sem imagem) com fonte em `docs/bandeiras-correcao-2026-10-28.json`. Migração única na cópia salva (`SIM.flagList`): troca só o arquivo antigo errado pelo certo; item editado com outro arquivo e foto enviada (campo 7) ficam. Registra `v81_bandeiras` no histórico. Bandeira sem imagem certa fica sem foto.
 - **Menu.** Títulos dos grupos em maiúsculo, negrito, 12px, cor no token `--nav-grp`.
 - **Fotógrafos.** Klassius e Sandessa entram em `DATA.people` (lista oficial: Carlos, Klassius, Márcio, Marinara, Samuel, Sandessa, Yago).
@@ -1407,8 +1407,9 @@ Decisão do Eduardo (29/10): a montagem dos fundos sai do Photoroom. O agente re
 | Mirante (`mirante`) | 80% alt., centro 45% | joelho (62%), 80% alt., centro 45% | |
 | Arquibancada 1950 (`arq1950`) | umbigo (72%), até 100% larg. | 60% e 78% alt. | grupo largo: zoom do fundo 80% preso no topo, corte 55%, até 105% larg. (regra 10); tudo P&B, grupo com +10% de contraste |
 | Saída do túnel (`tunel`) | teto 75% alt. | joelho (62%), teto 75% | |
+| Pódio de campeão (`podio`, v86) | inteiro, 80% alt., 62% larg., centro 45% | joelho (62%), 80% alt., 62% larg., centro 45% | borda direita do grupo até 76%; nunca cobre a taça do fundo (80% a 94%) |
 
-- `fit` do Campeão, do Mirante e do Túnel aceita `inteiro` (vira do joelho para cima).
+- `fit` do Campeão, do Mirante, do Túnel e do Pódio aceita `inteiro` (vira do joelho para cima).
 - Checkout: no modo local, `lojaAI` só oferece fundo de IA com `state.agent.recorte.ok` e só para fotos do agente (`fiaOferece`). A miniatura mostra `T('aiMaking')` com indicador (`.lj-aimk`, `.lj-spin`) até a montagem ficar pronta. Item que falhou (503, sem pessoa ou erro) entra em `FIA_RUIM` (`fiaFalhou`; falha do recorte vale para a foto inteira) e sai da venda e da escolha já feita.
 - Interruptor em Painel de controle › Montagem dos fundos (`SIM.fundosModo`: `local` padrão ou `photoroom`; ação `fundos-modo`, módulo `configuracao.u`), que também grava o modo no agente (`POST /fundos/modo`). O código do Photoroom ficou intacto como `composePR` e `compHiPR`, chamado só no modo Photoroom.
 - Fundos de IA ganhou o quadro "Recorte local" (`fiaPanel`), com o motivo real (não instalado, erro ao abrir os modelos ou desligado). Foto de exemplo (sem `ag_`) não é recortada.
@@ -1422,3 +1423,16 @@ Decisão do Eduardo (29/10): a montagem dos fundos sai do Photoroom. O agente re
 
 ## Nuvem: fotos online, galeria do cliente e teste de estanque (plano v85, 29/10/2026)
 Documento próprio: [NUVEM.md](NUVEM.md) (recursos da AWS, variáveis do agente, API da galeria, DNS, custos, como recriar e como apagar).
+
+## Fundo Pódio de campeão (v86, 29/10/2026)
+
+Teste: `testes/v86.js`. Regra 14 em [fundos-ia-regras.md](fundos-ia-regras.md).
+
+- **Fundo novo.** 5º fundo de IA, `id:'podio'`, "Pódio de campeão": estádio lotado verde e amarelo, confete, pódio dourado no centro e uma taça num pedestal à direita (de 80% a 94% da largura). Aprovado direto pelo Eduardo (29/10), sem passar pelo Laboratório. Arquivos: `img/bg-podio.jpg` (2400 px, prévia) e `img/fundos-5k/podio.jpg` (5000 px, impressão, `fileHi`). `fit:['meio','close','inteiro']`.
+- **Ativo por padrão.** `BG_DEF=['campeao','mirante','arq1950','tunel','podio']`, dentro do limite `BG_MAX=5`.
+- **Montagem local.** `FIA_REGRAS.podio`: `meio {corte:1, alt:.80, larg:.62, cx:.45}` e `inteiro {corte:.62, alt:.80, larg:.62, cx:.45}`. Com centro em 0,45 e largura até 0,62, a borda direita do grupo fica em até 0,76, antes da taça. A taça é zona protegida (regra 2): o grupo nunca a cobre.
+- **Photoroom (`bgPad`).** `pos` ganhou `larg` opcional, teto da largura do grupo em fração do quadro: a largura útil passa a ser `min(min(cx,1-cx)×2×0,95, larg)`. Sem `larg`, nada muda nos outros fundos. O Pódio usa `pos:{cx:.45, top:.2, base:1, larg:.62}`, com o mesmo limite de 0,76 da montagem local.
+- **Migração `bgMigraPodio`.** Uma vez só, depois da migração do catálogo (a gravação já sai com `catalogoV=2`). Quem tem a escolha de fundos salva (`SIM.bgOn`) com 1 a 4 fundos ganha o `podio` no fim da lista. Lista vazia fica vazia (foi escolha da pessoa). Se tirarem o Pódio depois, ele não volta. A marca fica em `SIM.bgPodioV86=true` e em `localStorage['eterna.bgpodio.v']='86'`, para um `SIM` antigo gravado por outra janela não refazer.
+- **Agente.** `podio` entrou no mapa fixo `FUNDOS_PREVIA` (`img/bg-podio.jpg`) e `FUNDOS_IMPRESSAO` (`img/fundos-5k/podio.jpg`). O agente precisa ir para o Mac do Eduardo (o deploy faz).
+- **IMPORTANTE: trocar a imagem de um fundo exige trocar o nome do arquivo.** O agente guarda o fundo em cache pelo nome do arquivo. Se a imagem nova entrar com o mesmo nome, a prévia e a impressão podem sair com a imagem antiga. Novo nome no `file`/`fileHi` do `DATA.backgrounds` e no mapa do agente (como foi feito com `img/bg-campeao-v81.jpg`).
+
