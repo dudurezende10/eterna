@@ -486,3 +486,31 @@ Hoje a lista de chegadas do Upload automático (`index.html` perto da linha 2802
   - G5: toda foto nova no feed tem miniatura com `naturalWidth>0`;
   - G6: clicar abre o modal com a foto em tamanho grande e as setas passam para a próxima chegada;
   - G7: com 60 linhas, o feed continua rápido (miniaturas lazy, sem re-render ao passar o mouse).
+
+## Adendo (Ronaldo, 30/10 17:40) · Parte A e o essencial da B implementados
+
+Motivo: com o servidor acessado por vários navegadores (Chrome do servidor, PC pelo Tailscale, Mac do Eduardo), cada um só via as sessões das fotos que chegaram com o Upload aberto nele, e a selfie no Checkout de outro navegador dava "não achamos".
+
+**O que entrou**
+- **Agente:** `sess_*`, perto da Fila do fotógrafo.
+  - Mesma regra de grupo da v87: `ff_quem` (D2) e pausa `FF_PAUSA`, que é 20 s e não 45, igual ao app desde o 7e1a04f.
+  - Código LP + 7 caracteres com `secrets` (D3).
+  - Arquivo `~/Eterna/ponto/sessoes/AAAA-MM-DD.json`, regravado inteiro a cada 2 s quando muda.
+  - Em memória ficam hoje e ontem. No boot, as fotos de hoje e ontem sem sessão são agrupadas (D7 simplificado).
+  - O LGPD tira a foto da sessão.
+  - `GET /sessoes?desde=<rev>`, com `gen` = `BOOT`.
+  - `/status.sessoes`.
+- **App:** `srvPull()`.
+  - Com `st.sessoes`, a foto real não entra mais em `ingPush`.
+  - Cada sessão fechada de hoje vira `SIM.sessions[card]` pelo próprio `ingClose(how, srv)`, com o mesmo código do servidor, fotógrafo por `impWho`, hora de abertura e validação como antes.
+  - Foto que já está numa sessão deste navegador não duplica.
+
+**Diferenças em relação ao plano**
+- D9: `/sessoes` passa pelo `origem_privada_ok`, então responde também aos endereços de `ETERNA_ORIGENS` (postos e Tailscale), não só ao loopback. É o objetivo desta mudança.
+- D4: as sessões continuam indo para o SIM (`localStorage`), como já iam pelo `ingClose`. O feed só em memória fica para quando o volume pedir.
+- Ficaram de fora: D1 por hora do clique (a regra continua a da chegada), `POST /sessoes/legado`, `POST /sessoes/ponto`, ETag/304, dias anteriores (`?dia=`) e as partes C, D, E e F.
+
+**Teste (30/10, notebook do Ronaldo, `ETERNA_SESSAO_PAUSA=4`)**
+- 6 fotos novas na pasta vigiada, em duas levas com 10 s entre elas.
+- O agente montou 2 sessões de 3, fechadas por pausa e gravadas em `2026-10-30.json`.
+- Um navegador sem nada guardado recebeu as duas sessões com os mesmos códigos (LPEMVX2GS, LP3MJ59NC).

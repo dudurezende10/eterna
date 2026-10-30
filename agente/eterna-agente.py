@@ -730,6 +730,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
                 lgpd_excluidas.add(h)
         try:
             ff_esquecer(pid)                    # v87: sai da fila do fotógrafo (fora do lock)
+            sess_esquecer(pid)                  # v85 A: sai da sessão
         except Exception:
             pass
         # o original que a câmera mandou para a pasta vigiada (FTP do servidor) também sai: mesmo nome e mesmo hash
@@ -1137,6 +1138,10 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         ff_add(pid, mm)
     except Exception as ex:
         print("  fila do fotógrafo: %s" % str(ex)[:80])
+    try:                                # v85 A: sessão montada aqui (fora do lock)
+        sess_add(pid, mm)
+    except Exception as ex:
+        print("  sessões: %s" % str(ex)[:80])
     try:
         ff_rosto_fila(pid)              # antes do put: a leitura não pode terminar antes de a foto contar como pendente
     except Exception as ex:
@@ -3612,6 +3617,206 @@ def ff_carregar():
     return n
 
 
+# ---------- Sessões montadas no agente (v85 parte A, adaptada) ----------
+# A sessão nasce aqui, igual em todos os navegadores (posto, Checkout, PC pelo Tailscale, Mac do curador): mesma regra da
+# Fila do fotógrafo (mesmo fotógrafo, pausa de FF_PAUSA s entre chegadas), código LP + 7 caracteres, lista completa das
+# fotos. Gravadas em ~/Eterna/ponto/sessoes/AAAA-MM-DD.json; em memória ficam hoje e ontem. O app lê GET /sessoes?desde=<rev>.
+SESS_DIR = os.path.join(HOME, "ponto", "sessoes")
+SESS_ALFA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+sess_lock = threading.Lock()     # nunca pego com o lock na mão (o meta é copiado antes)
+sess = {}                        # card -> sessão (hoje e ontem)
+sess_pid = {}                    # pid -> card
+sess_aberta = {}                 # dia|grupo -> card da sessão aberta
+sess_rev = [0]
+sess_sujo = set()                # dias com mudança ainda não gravada
+
+
+def _sess_codigo():
+    while True:
+        c = "LP" + "".join(secrets.choice(SESS_ALFA) for _ in range(7))
+        if c not in sess:
+            return c
+
+
+def _sess_toca(x):
+    sess_rev[0] += 1
+    x["rev"] = sess_rev[0]
+    sess_sujo.add(x["dia"])
+
+
+def _sess_add(pid, m, cad):
+    """Com o sess_lock na mão. m = cópia do meta[pid]."""
+    try:
+        u = float(m.get("u") or 0)
+    except (TypeError, ValueError):
+        return
+    if not u or pid in sess_pid:
+        return
+    dia = _ff_hoje(u)
+    chave, fonte = ff_quem(m.get("o"), m.get("autor"), m.get("dono"), m.get("serie"), m.get("s") or "", cad)
+    serie = str(m.get("serie") or "")
+    k = dia + "|" + (chave or ("cam:" + serie if serie else "src:" + fonte))
+    x = sess.get(sess_aberta.get(k) or "")
+    if x is not None and (x["status"] != "aberta" or u - x["ultima_chegada"] > FF_PAUSA):
+        if x["status"] == "aberta":
+            x.update(status="fechada", fechada_em=x["ultima_chegada"] + FF_PAUSA, fechada_por="pausa")
+            _sess_toca(x)
+        x = None
+    if x is None:
+        card = _sess_codigo()
+        x = {"card": card, "dia": dia, "k": k, "fotografo": chave, "fonte": fonte, "status": "aberta", "origem": "agente",
+             "aberta_em": u, "ultima_chegada": u, "fechada_em": None, "fechada_por": None, "fotos": []}
+        sess[card] = x
+        sess_aberta[k] = card
+    x["fotos"].append(pid)
+    x["ultima_chegada"] = max(x["ultima_chegada"], u)
+    x["aberta_em"] = min(x["aberta_em"], u)
+    sess_pid[pid] = x["card"]
+    _sess_toca(x)
+
+
+def sess_add(pid, m):
+    """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
+    cad = ff_cadastrados()
+    with sess_lock:
+        _sess_add(pid, m, cad)
+
+
+def sess_esquecer(pid):
+    """LGPD: a foto apagada sai da sessão; sessão sem foto vira removida."""
+    with sess_lock:
+        card = sess_pid.pop(pid, None)
+        x = sess.get(card or "")
+        if not x:
+            return
+        x["fotos"] = [p for p in x["fotos"] if p != pid]
+        if not x["fotos"]:
+            x["removida"] = True
+            x["status"] = "fechada"
+        _sess_toca(x)
+
+
+def _sess_fechar(agora):
+    """Com o sess_lock na mão: fecha as sessões paradas há mais que a pausa e as de dias anteriores."""
+    hoje = _ff_hoje(agora)
+    for x in sess.values():
+        if x["status"] != "aberta":
+            continue
+        if x["dia"] != hoje:
+            x.update(status="fechada", fechada_em=agora, fechada_por="virada_do_dia")
+            _sess_toca(x)
+        elif agora - x["ultima_chegada"] > FF_PAUSA:
+            x.update(status="fechada", fechada_em=x["ultima_chegada"] + FF_PAUSA, fechada_por="pausa")
+            _sess_toca(x)
+
+
+def sess_gravar():
+    with sess_lock:
+        dias = list(sess_sujo)
+        sess_sujo.clear()
+        lotes = {d: [dict(x, fotos=list(x["fotos"])) for x in sess.values() if x["dia"] == d] for d in dias}
+    for d, lista in lotes.items():
+        try:
+            os.makedirs(SESS_DIR, exist_ok=True)
+            f = os.path.join(SESS_DIR, d + ".json")
+            tmp = f + ".tmp"
+            with open(tmp, "w", encoding="utf8") as fh:
+                json.dump({"dia": d, "sessoes": lista}, fh)
+            os.replace(tmp, f)
+        except Exception as ex:
+            with sess_lock:
+                sess_sujo.add(d)
+            print("  sessões: não gravei %s (%s)" % (d, str(ex)[:80]))
+
+
+def sess_loop():
+    while True:
+        time.sleep(2)
+        try:
+            agora = time.time()
+            with sess_lock:
+                _sess_fechar(agora)
+                ontem = _ff_hoje(agora - 86400)
+                for card in [c for c, x in sess.items() if x["dia"] < ontem]:   # só hoje e ontem na memória
+                    x = sess.pop(card)
+                    for p in x["fotos"]:
+                        if sess_pid.get(p) == card:
+                            sess_pid.pop(p, None)
+                    if sess_aberta.get(x["k"]) == card:
+                        sess_aberta.pop(x["k"], None)
+            sess_gravar()
+        except Exception as ex:
+            print("  sessões: %s" % str(ex)[:120])
+
+
+def sess_carregar():
+    """No boot: lê as sessões gravadas de ontem e hoje e põe numa sessão as fotos que chegaram sem nenhuma (primeira
+    vez com esta versão, ou queda entre a chegada e a gravação), pela mesma regra."""
+    agora = time.time()
+    dias = [_ff_hoje(agora - 86400), _ff_hoje(agora)]
+    n_lidas = 0
+    with sess_lock:
+        for d in dias:
+            try:
+                j = json.load(open(os.path.join(SESS_DIR, d + ".json"), encoding="utf8"))
+            except Exception:
+                continue
+            for x in j.get("sessoes") or []:
+                if not isinstance(x, dict) or not x.get("card") or not x.get("k"):
+                    continue
+                x["fotos"] = [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+                sess[x["card"]] = x
+                for p in x["fotos"]:
+                    sess_pid[p] = x["card"]
+                if x.get("status") == "aberta":
+                    sess_aberta[x["k"]] = x["card"]
+                sess_rev[0] = max(sess_rev[0], int(x.get("rev") or 0))
+                n_lidas += 1
+    ini = time.mktime(time.strptime(dias[0], "%Y-%m-%d"))
+    itens = []
+    with lock:
+        for pid, m in meta.items():
+            try:
+                if isinstance(m, dict) and pid in lib and float(m.get("u") or 0) >= ini:
+                    itens.append((pid, dict(m)))
+            except (TypeError, ValueError):
+                continue
+    itens.sort(key=lambda x: float(x[1]["u"]))
+    cad = ff_cadastrados()
+    novas = 0
+    with sess_lock:
+        for pid, m in itens:
+            if pid in sess_pid:
+                continue
+            try:
+                _sess_add(pid, m, cad)
+                novas += 1
+            except Exception as ex:
+                print("  sessões: foto ignorada no boot (%s)" % str(ex)[:60])
+        _sess_fechar(agora)
+        hoje = sum(1 for x in sess.values() if x["dia"] == dias[1] and not x.get("removida"))
+    sess_gravar()
+    return n_lidas, novas, hoje
+
+
+def sess_feed(desde=0):
+    with sess_lock:
+        _sess_fechar(time.time())
+        lista = [{k: (list(v) if k == "fotos" else v) for k, v in x.items() if k != "k"}
+                 for x in sess.values() if x.get("rev", 0) > desde]
+        rev = sess_rev[0]
+    lista.sort(key=lambda x: x.get("rev", 0))
+    return {"ok": True, "gen": BOOT, "rev": rev, "pausa": FF_PAUSA, "completo": not desde, "sessoes": lista}
+
+
+def sess_status():
+    with sess_lock:
+        hoje = _ff_hoje()
+        return {"v": 1, "pausa": FF_PAUSA, "rev": sess_rev[0], "gen": BOOT,
+                "hoje": sum(1 for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
+                "abertas": sum(1 for x in sess.values() if x["status"] == "aberta")}
+
+
 def ff_funcao_validar(body):
     """Devolve (dia, map limpo, ignoradas) ou None. Só tipo, point e modo. Chave fora do cadastro é ignorada (conta em
     "ignoradas"); dia errado, map que não é objeto, mais de 40 chaves ou campo inválido numa chave cadastrada = None (400)."""
@@ -3896,7 +4101,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/photoroom/status", "/recorte", "/impressao/miniatura") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -4395,8 +4600,16 @@ class H(BaseHTTPRequestHandler):
                                 "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "recorte": rec_status(), "fundos_modo": fundos_modo(),
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
-                                "impressora_locais": IMP_LOCAIS,
+                                "impressora_locais": IMP_LOCAIS, "sessoes": sess_status(),
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
+        if u.path == "/sessoes":
+            if not self.origem_privada_ok(u.path):
+                return self.js({"error": "origem não autorizada"}, 403)
+            try:
+                desde = max(0, int(q.get("desde", ["0"])[0]))
+            except ValueError:
+                desde = 0
+            return self.js(sess_feed(desde))
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
             with lock:
@@ -4674,6 +4887,12 @@ def main():
     for x in ORIGENS_SEM_ESQUEMA:
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta
+    try:
+        lidas, novas, hoje = sess_carregar()
+        print(f"  Sessões: {hoje} hoje (montadas aqui, pausa de {FF_PAUSA} s; {novas} fotos agrupadas agora)")
+    except Exception as ex:
+        print("  sessões: não carreguei (%s)" % str(ex)[:120])
+    threading.Thread(target=sess_loop, daemon=True).start()
     print(f"  fotos baixadas em: {INBOX}")
     print(f"  abra o Eterna em:  http://127.0.0.1:{PORT}   (mesmo Mac)")
     threading.Thread(target=watcher, daemon=True).start()

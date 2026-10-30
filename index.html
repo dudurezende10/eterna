@@ -2896,23 +2896,41 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
     <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera, pelo usuário (subpasta) do FTP ou pela sessão da foto. Vendida = foto escolhida numa venda paga.</div></div>`;}
 const SESSAO_PAUSA_S=20; // sem foto nova por 20 s, a sessão fecha e o cliente já é achado pela selfie (era 45 s; medido em 29/10: câmera→Eterna leva 4 a 5 s)
 async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
-  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
+  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
     const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
-      if(e.src==='inbox'||known.has(id)||was)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
+      if(e.src==='inbox'||known.has(id)||was||a.sessoes)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
       if(dups&&!state.pub&&!state.lojaRota)toast(dups+(dups>1?' fotos já estavam':' foto já estava')+' no computador. Não baixei de novo.');if(items.length){ingPush(items);state.ing.lastReal=Date.now();}render();}
     else if(state.ing.cur&&state.ing.lastReal&&!state.ing.running&&Date.now()-state.ing.lastReal>SESSAO_PAUSA_S*1000){state.ing.n.auto++;ingClose(`pausa de ${SESSAO_PAUSA_S} s sem foto nova`);state.ing.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:`pausa de ${SESSAO_PAUSA_S} s sem foto nova no cartão`});render();}
     if(a.card!==(st.card||null)){a.card=st.card;render();}
+    if(a.sessoes)srvPull();
   }catch(e){if(a.on){a.on=false;a.offAt=Date.now();render();}a.err=String(e&&e.message||e);a.tried=true;}
 }
 setInterval(agentPoll,2500);
 setTimeout(livePoll,800);setInterval(livePoll,60000);setTimeout(upLoad,300);
+// v85 A: sessões montadas no agente. Cada sessão fechada vira a mesma sessão (mesmo código LP) em qualquer navegador:
+// posto, Checkout, PC pelo Tailscale, Mac do curador. Só a de hoje entra; foto que já está numa sessão deste navegador
+// (montada aqui antes desta versão) não duplica.
+const SRV={gen:null,rev:0,busy:false};
+async function srvPull(){const a=state.agent;if(SRV.busy||!a.sessoes)return;SRV.busy=true;
+  try{if(SRV.gen!==a.sessoes.gen){SRV.gen=a.sessoes.gen;SRV.rev=0;}
+    if(a.sessoes.rev===SRV.rev)return;
+    const j=await (await fetch(a.url+'/sessoes?desde='+SRV.rev,{cache:'no-store'})).json();if(!j||!j.ok)return;
+    if(j.gen!==SRV.gen){SRV.gen=j.gen;SRV.rev=0;return;}
+    const hoje=todayKey();let novas=0;const known=photosInSessions();
+    for(const x of j.sessoes||[]){if(x.removida||x.status!=='fechada'||x.dia!==hoje||SIM.sessions[x.card])continue;
+      const fotos=(x.fotos||[]).filter(pid=>!known.has('ag_'+pid));if(!fotos.length)continue;
+      fotos.forEach(pid=>{if(!UP['ag_'+pid])UP['ag_'+pid]={src:a.url+'/thumb/'+pid,name:pid};known.add('ag_'+pid);});
+      ingClose('pausa de '+(j.pausa||SESSAO_PAUSA_S)+' s sem foto nova (servidor)',{...x,fotos});
+      state.ing.feed.unshift({k:'auto',t:'Sessão '+x.card+' montada no servidor',s:fotos.length+(fotos.length===1?' foto':' fotos')+(x.fotografo?' · '+x.fotografo:'')});novas++;}
+    SRV.rev=j.rev;if(novas)render();
+  }catch(e){}finally{SRV.busy=false;}}
 function ingStop(){const g=state.ing;if(g.timer)clearInterval(g.timer);g.timer=null;g.running=false;}
-function ingClose(how){const g=state.ing;const c=g.cur;g.cur=null;if(!c||!c.photos.length)return;
-  const pt=DATA.points.find(p=>p.id===state.imp.point);const card='LP'+Math.random().toString(36).slice(2,9).toUpperCase();
+function ingClose(how,srv){const g=state.ing;const c=srv?{photos:srv.fotos.map(pid=>({id:'ag_'+pid})),flags:{},start:new Date(srv.aberta_em*1000).toISOString()}:g.cur;if(!srv)g.cur=null;if(!c||!c.photos.length)return;
+  const pt=DATA.points.find(p=>p.id===state.imp.point);const card=srv?srv.card:'LP'+Math.random().toString(36).slice(2,9).toUpperCase();
   const top=Object.entries(c.flags).sort((a,b)=>b[1]-a[1])[0];const flag=top?top[0]:null;
-  const skey=state.imp.key!=='todos'?state.imp.key:impWho(c.photos);
-  SIM.sessions[card]={key:skey,pdv:pt?pt.name:'',point:pt?state.imp.point:'',time:hhmm(now()),date:'hoje',status:'fechada',selected:[],bg:null,cart:[],photos:c.photos.map(p=>({id:p.id,sold:0})),openedAt:c.start,closedAt:now().toISOString(),source:state.imp.mode,closedBy:how,flag};
+  const skey=!srv&&state.imp.key!=='todos'?state.imp.key:impWho(c.photos);
+  SIM.sessions[card]={key:skey,pdv:pt?pt.name:'',point:pt?state.imp.point:'',time:hhmm(srv?new Date(srv.aberta_em*1000):now()),date:'hoje',srv:!!srv,status:'fechada',selected:[],bg:null,cart:[],photos:c.photos.map(p=>({id:p.id,sold:0})),openedAt:c.start,closedAt:now().toISOString(),source:state.imp.mode,closedBy:how,flag};
   if(flag){if(!SIM.flagUse)SIM.flagUse={};SIM.flagUse[flag]=(SIM.flagUse[flag]||0)+1;}
   if(!SIM.invalid)SIM.invalid={};let bad=[];c.photos.forEach(p=>{const r=validatePhoto(p.id);if(r){SIM.invalid[p.id]=r;p.invalid=r;bad.push(r);}});g.n.invalid=(g.n.invalid||0)+bad.length;
   const real=c.photos.filter(p=>/^(ag_|up_)/.test(p.id)||UP[p.id]).map(p=>p.id);
