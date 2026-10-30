@@ -366,7 +366,7 @@ flowchart TD
   DUV --> VAL
 ```
 
-Limiar de pausa aprendido por ponto (mediana dos intervalos entre sessões dos últimos 7 dias); valor inicial 45 s.
+Limiar de pausa aprendido por ponto (mediana dos intervalos entre sessões dos últimos 7 dias); valor inicial 20 s (`SESSAO_PAUSA_S`; era 45 s até 29/10).
 
 **7.2 Validação e correção** (regras v1, requisitos seção 13)
 
