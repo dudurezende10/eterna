@@ -179,11 +179,14 @@ Ronaldo quer migrar o histórico desde janeiro/2026. O que existe hoje, na pasta
 | `2026-10-02_17-28-27_Open_Dronelog.db.backup` (gzip, 329 MB) | Banco do Maraca Flights em 02/10: voos e telemetria | Voos, pilotos, drones e baterias (seção 9) |
 | `Guias-MaracaFly-2026-10-02.csv` | Guias com vendas, comissão, pago e saldo | Conferência com o Portal de Parceiros; o cadastro de guias já mora lá |
 
-**Falta a venda a venda** (cerca de 8.450 vendas desde janeiro, com cliente, itens, valores, vendedor, piloto e QR, doc 06). Ela só existe no banco do MaracaFly. Opções para extrair:
+**A venda a venda já foi extraída** pela auditoria de vendas (`maracatour/auditoria-vendas`, extrator `ferramentas/extrair_maracafly.js`, que lê as telas `/vendas/drone/`, `/vendas/chute-gol/` e `/vendas/snap-pop/` dia a dia). Arquivos em `auditoria-vendas/dados/maracafly_historico/`, extraídos em 27/10, de 01/12/2025 a 26/10/2026, sem erros:
 
-- exportar pela própria tela de Vendas ou pela API interna do MaracaFly (doc 18, seção 6), com acesso de leitura;
-- pedir à RIO DRONE XP um dump do banco (PostgreSQL provável, doc 01);
-- os vídeos (1,05 TB) ficam no Dropbox; migrar só os links ou baixar e subir para o S3.
+| Arquivo | Colunas | Linhas por mês |
+|---|---|---|
+| `maracafly_drone_historico_…json` | ID, criação, QR, cliente, WhatsApp, localidade, serviços, vendedor, vídeos, preço, foto, pagamento, resolução, pessoas, piloto, drone, bateria, hora da entrega, idioma, guia | jan 534 · fev 761 · mar 847 · abr 747 · mai 840 · jun 763 · jul 1.000 · ago 928 · set 416 · out (até 26) 889 |
+| `maracafly_chute_snap_historico_…json` | ID, foto, criação, QR, cliente, WhatsApp, localidade, itens, vendedor, vídeos, valor, pagamento, participantes, entrega, idioma, guia | chute a gol e Snap Pop só aparecem em outubro (1.535 e 38 linhas); nos meses anteriores sai uma linha por dia, provavelmente "sem vendas" (a conferir) |
+
+Antes de migrar, conferir: setembro do drone (416) parece baixo, e chute a gol antes de outubro pode ter ficado em outro sistema. De 27/10 em diante, a extração diária da auditoria continua cobrindo. Os vídeos (1,05 TB) ficam no Dropbox: migrar só os links ou baixar e subir para o S3.
 
 Na migração: país como código ISO (de-para do doc 10), telefones e nomes entram nas regras de LGPD do Eterna, e cada venda antiga ganha a origem "MaracaFly" para não misturar com a operação nova.
 
@@ -206,4 +209,4 @@ Uma ordem possível, para discutir:
 4. Guia na venda: PDV da Imply, lançamento pela API ou portal lendo o Eterna (seção 7)?
 5. Comissão interna (vendedor, piloto, fundo) continua? Vale para fotógrafos?
 6. Por quanto tempo o vídeo fica disponível ao cliente, e em que qualidade?
-7. Histórico: extrair a venda a venda pela tela/API do MaracaFly ou pedir o dump do banco (seção 12b)?
+7. Histórico: a venda a venda já está extraída (seção 12b); falta conferir setembro do drone e o chute a gol antes de outubro.
