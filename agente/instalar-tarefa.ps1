@@ -1,4 +1,4 @@
-# Eterna · liga o Eterna com o Windows, sem ninguém entrar no usuário dono (tarefa agendada "Eterna", ao iniciar).
+﻿# Eterna · liga o Eterna com o Windows, sem ninguém entrar no usuário dono (tarefa agendada "Eterna", ao iniciar).
 # O Eterna roda escondido como o usuário dono da pasta (ex.: eterna), qualquer que seja o usuário na tela: quem usa o
 # computador (ex.: o Rafael) abre http://localhost:8765 no próprio Chrome. Substitui o Autologon e o atalho do vigia.
 # Rodar UMA vez no PowerShell como administrador; a janela pede a senha do usuário dono (fica guardada no Agendador):
