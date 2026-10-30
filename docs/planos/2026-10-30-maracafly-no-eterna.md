@@ -2,7 +2,7 @@
 
 30/10/2026. Documento de planejamento: junta o que o MaracaFly faz hoje e o que o Eterna já tem, e lista os caminhos possíveis para cada parte. **Não registra decisões.** As decisões saem da conversa entre Ronaldo e Eduardo.
 
-**Já definido pelo Ronaldo (30/10):** o Eterna é sistema da Viva Maracanã, e a operação do drone também passa a ser da Viva Maracanã; o WhatsApp será uma conta nova; a comissão do guia já existe por fora, no Portal de Parceiros (seção 7); o Snap Pop é um produto novo, com aba própria.
+**Já definido pelo Ronaldo (30/10):** o Eterna é sistema da Viva Maracanã, e a operação do drone também passa a ser da Viva Maracanã; o WhatsApp será uma conta nova; a comissão do guia já existe por fora, no Portal de Parceiros (seção 7); o Snap Pop é um produto novo, com aba própria; a venda de campo acontece só dentro do estádio, com rede local e internet (sem 4G).
 
 Fonte do MaracaFly: a documentação de levantamento em `maracatour/maracafly-doc/docs` (docs 00 a 20). Este texto cita o número do doc em vez de repetir o detalhe.
 
@@ -64,8 +64,10 @@ No MaracaFly o vendedor anda pelo estádio com o celular e registra a venda na h
 | Opção | Como | Prós | Contras |
 |---|---|---|---|
 | A. Vendedor móvel no Eterna | Uma tela de venda no celular (perfil "vendedor"), ligada ao mesmo carrinho e à mesma sessão do cliente | Uma venda só, com fotos e vídeos juntos; aproveita perfis e permissões do Eterna | Exige o servidor do estádio acessível no Wi-Fi dos vendedores (o mesmo problema de isolamento visto no Mac) ou pela nuvem |
-| B. Vendedor móvel vendendo pela nuvem | A tela do vendedor fala com a API da nuvem; o servidor do estádio sincroniza | Funciona em 4G, fora da rede do estádio | Precisa da "sessão no servidor/nuvem" que ainda está em decisão (plano de 29/10, seção 2b) |
+| B. Vendedor móvel vendendo pela nuvem | A tela do vendedor fala com a API da nuvem; o servidor do estádio sincroniza | Não depende de o celular enxergar o servidor na rede local | Precisa da "sessão no servidor/nuvem" que ainda está em decisão (plano de 29/10, seção 2b); para de vender se a internet cair |
 | C. Só no Posto | Drone e chute a gol vendidos no Caixa, junto com as fotos | Nenhuma tela nova | Perde a venda de campo, que é a força do MaracaFly |
+
+**A venda acontece só dentro do estádio, com rede local e internet.** Não há caso de 4G. A opção A passa a ser a natural, com uma condição de rede: o Wi-Fi dos vendedores precisa enxergar o servidor do estádio. Hoje a rede MARACATOUR_CORP isola os aparelhos entre si (foi o que impediu o Mac de chegar ao 218). Caminhos: uma rede (SSID ou VLAN) da operação sem isolamento, ou uma regra que libere só a porta do Eterna no servidor. A internet fica para a galeria na nuvem e o WhatsApp; se cair, a venda continua na rede local e a nuvem sincroniza depois.
 
 Regras do MaracaFly que valem em qualquer opção (doc 04): valores em centavos; preço sugerido e cobrado gravados lado a lado, com desconto ou acréscimo explícito; itens da venda guardados como lista; bloqueio de venda duplicada; vendedor genérico substituído por login individual.
 
@@ -168,7 +170,7 @@ Uma ordem possível, para discutir:
 
 1. **Snap Pop**: o que entrega (foto, vídeo, impresso), preço, quem produz e onde fica no estádio.
 2. Catálogo único ou um por atividade (opção A ou B da seção 3)?
-3. A venda de campo precisa funcionar em 4G, fora do Wi-Fi do estádio?
+3. Rede dos vendedores: SSID/VLAN da operação sem isolamento, ou liberar só a porta do Eterna no servidor (seção 4)?
 4. Guia na venda: PDV da Imply, lançamento pela API ou portal lendo o Eterna (seção 7)?
 5. Comissão interna (vendedor, piloto, fundo) continua? Vale para fotógrafos?
 6. Por quanto tempo o vídeo fica disponível ao cliente, e em que qualidade?
