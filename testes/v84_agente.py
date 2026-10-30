@@ -204,8 +204,41 @@ dv = ImageDraw.Draw(isn)
 dv.rectangle([1131, 300, 1300, 500], fill=255)                              # bandeira segurada, larga na mão
 dv.rectangle([1300, 330, 1340, 334], fill=50)                               # tecido fino e fraco, 5 px
 dv.rectangle([1340, 310, 1380, 350], fill=255)                              # ponta afastada
-rv = m.rec_limpa_mascara([isn, hum], Image.new("RGB", (1600, 1067), (200, 200, 200)))
-ok(rv[330, 1360] == 255, "ponta de bandeira presa por tecido fraco (0,2) deveria ficar: %r" % rv[330, 1360])
+from PIL import ImageFilter as _IF
+
+
+def final(mk, foto_=None, tam=(3000, 2000)):
+    """O caminho do rec_fazer: máscara limpa -> ampliar -> 1 px de borda a menos -> sem pedaço opaco solto."""
+    r_ = m.rec_limpa_mascara(mk, foto_)
+    a_ = Image.fromarray(r_, "L").resize(tam, Image.LANCZOS).filter(_IF.MinFilter(3))
+    return r_, m.rec_sem_soltos(__import__("numpy").asarray(a_))
+
+
+fx, fy = 3000 / 1600, 2000 / 1067
+rv, fv = final([isn, hum], Image.new("RGB", (1600, 1067), (200, 200, 200)))
+ok(rv[332, 1320] > 0 and fv[int(332 * fy), int(1320 * fx)] > 0, "o tecido fraco que prende a ponta fica opaco: %r" % [rv[332, 1320], fv[int(332 * fy), int(1320 * fx)]])
+ok(rv[330, 1360] == 255 and fv[int(330 * fy), int(1360 * fx)] == 255, "ponta de bandeira presa por tecido fraco (0,2) fica até o PNG final: %r" % [rv[330, 1360], fv[int(330 * fy), int(1360 * fx)]])
+# pessoa separada do grupo (criança perto do adulto, sem encostar) nunca cai por tamanho, nem no PNG final
+for nome, cx_, larg, alt in (("criança a ~2%", 1165, 15, 200), ("criança a ~1%", 1160, 10, 130)):
+    isn, hum = corpo()
+    for dd in (ImageDraw.Draw(isn), ImageDraw.Draw(hum)):
+        dd.rectangle([cx_ - larg, 1066 - alt, cx_ + larg, 1066], fill=255)   # corpo da criança
+        dd.ellipse([cx_ - 20, 1066 - alt - 40, cx_ + 20, 1066 - alt], fill=255)   # cabeça
+    frac = (2 * larg + 1) * (alt + 1) / float((301 * 917) + 201 * 41 + 31 * 61)
+    rk, fk = final([isn, hum], Image.new("RGB", (1600, 1067), (200, 200, 200)))
+    yk = 1066 - alt // 2
+    ok(rk[yk, cx_] == 255 and fk[int(yk * fy), int(cx_ * fx)] == 255, "%s (%.1f%% da área) separada do adulto deveria ficar: %r" % (nome, 100 * frac, [rk[yk, cx_], fk[int(yk * fy), int(cx_ * fx)]]))
+# óculos numa pessoa pequena (grupo longe): a abertura de 1 px não corta lente nem haste
+isn, hum = Image.new("L", (1600, 1067), 0), Image.new("L", (1600, 1067), 0)
+for dd in (ImageDraw.Draw(isn), ImageDraw.Draw(hum)):
+    dd.ellipse([780, 600, 812, 640], fill=255)                               # cabeça de ~32 px
+    dd.rectangle([770, 640, 822, 800], fill=255)                             # corpo
+do = ImageDraw.Draw(isn)
+do.rectangle([776, 612, 816, 620], fill=255)                                 # óculos: lentes saem 4 px para cada lado
+do.line([(816, 614), (826, 612)], fill=255, width=2)                         # haste de 2 px para fora da cabeça
+ro, fo = final([isn, hum], Image.new("RGB", (1600, 1067), (200, 200, 200)))
+ok(ro[616, 778] == 255 and ro[616, 814] == 255, "óculos da pessoa pequena inteiros: %r" % [ro[616, 778], ro[616, 814]])
+ok(ro[613, 822] > 0, "haste fina dos óculos da pessoa pequena fica: %r" % ro[613, 822])
 
 # ilha presa à pessoa por um fio diagonal de 1 px de alfa cheio (teto ao lado da barba, foto do casal): sai
 isn, hum = Image.new("L", (400, 300), 0), Image.new("L", (400, 300), 0)

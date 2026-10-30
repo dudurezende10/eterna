@@ -2396,6 +2396,10 @@ def rec_limpa_mascara(masks, foto=None):
         areas = np.bincount(rot.ravel(), minlength=n + 1).astype(np.float64)
         areas[0] = 0
         grandes = areas >= 0.03 * areas.max()                  # pedaço grande fica sempre (na dúvida, mantém)
+        com_pessoa = np.zeros(n + 1, dtype=bool)
+        com_pessoa[np.unique(rot[semente_px])] = True
+        grandes |= com_pessoa & (areas >= 0.002 * areas.max())  # pedaço com pessoa não cai por tamanho (criança separada a 1%);
+                                                                # só ponto solto do modelo (< 0,2% do maior) não conta como pessoa
         grandes[0] = False
         dist = ndimage.distance_transform_edt(~grandes[rot])
         manter = grandes.copy()
@@ -2409,7 +2413,9 @@ def rec_limpa_mascara(masks, foto=None):
             rgb = np.asarray(foto.convert("RGB").filter(ImageFilter.BoxBlur(2)), dtype=np.float32)[y0:y1, x0:x1]
             m, tirado = _rec_encostados(m, isn, pessoa[y0:y1, x0:x1], bruta, rgb, lado)
             dentro &= ~tirado                                   # o que saiu não liga mais nada à pessoa
-    m = _rec_ilhas(m, semente_px, (m >= 0.5) | (dentro & (bruta >= REC_NUCLEO)))
+    liga = (m >= 0.5) | (dentro & (bruta >= REC_NUCLEO))
+    m = _rec_ilhas(m, semente_px, liga)
+    m = _rec_pontes(m, semente_px, liga, lado)
     saida[y0:y1, x0:x1] = (m * 255.0 + 0.5).astype(np.uint8)
     return saida
 
@@ -2525,8 +2531,68 @@ def _rec_ilhas(m, semente_px, liga=None):
     return m * manter[perto]
 
 
+def _rec_pontes(m, semente_px, liga, lado):
+    """Pedaço opaco que ficou porque está ligado à pessoa só pelo miolo fraco (ex.: ponta de bandeira afastada pelo vento,
+    presa por tecido de 0,2, que pelos níveis sairia transparente): o caminho mais curto de miolo entre ele e a pessoa fica
+    opaco, para a ponta ficar presa de verdade (e não ser apagada como pedaço solto na máscara final). Até 16 pedaços,
+    caminho de até 5% do lado."""
+    import numpy as np
+    from scipy import ndimage
+    cruz = ndimage.generate_binary_structure(2, 1)
+    forte = ndimage.binary_opening(m >= 0.5, structure=cruz)
+    lab, n = ndimage.label(forte, structure=np.ones((3, 3), dtype=bool))
+    if n < 2:
+        return m
+    pes = np.zeros(n + 1, dtype=bool)
+    pes[np.unique(lab[semente_px & forte])] = True
+    pes[0] = False
+    if not pes.any():
+        return m
+    area = np.bincount(lab.ravel(), minlength=n + 1)
+    ilhas = [k for k in np.argsort(-area[1:])[:16] + 1 if not pes[k] and area[k] >= 20]
+    if not ilhas:
+        return m
+    L = liga | forte
+    lpes, _ = ndimage.label(L, structure=np.ones((3, 3), dtype=bool))
+    fatias = ndimage.find_objects(lab)
+    R = int(0.05 * lado) + 4
+    hh, ww = m.shape
+    tudo3 = np.ones((3, 3), dtype=bool)
+    for k in ilhas:
+        sy, sx = fatias[k - 1]
+        cy = slice(max(0, sy.start - R), min(hh, sy.stop + R))
+        cx = slice(max(0, sx.start - R), min(ww, sx.stop + R))
+        Lc, labc = L[cy, cx], lab[cy, cx]
+        alvo = pes[labc] & forte[cy, cx]
+        ilha = labc == k
+        if not alvo.any() or not (lpes[cy, cx][ilha] > 0).any():
+            continue
+        def geo(origem):
+            d = np.full(Lc.shape, np.inf, dtype=np.float32)
+            atual = origem.copy()
+            d[atual] = 0
+            for passo in range(1, R + 1):
+                novo = ndimage.binary_dilation(atual, structure=tudo3, mask=Lc)
+                if not (novo & ~atual).any():
+                    break
+                d[novo & ~atual] = passo
+                atual = novo
+            return d
+        di = geo(ilha)
+        if not np.isfinite(di[alvo]).any():
+            continue                                            # a pessoa está longe demais por dentro do miolo
+        dp = geo(alvo)
+        soma = di + dp
+        melhor = float(soma[Lc].min())
+        ponte = Lc & (soma <= melhor + 1) & ~(m[cy, cx] >= 0.5)
+        ponte = ndimage.binary_dilation(ponte, structure=tudo3, mask=Lc)
+        sub = m[cy, cx]
+        sub[ponte] = 1.0
+    return m
+
+
 def rec_sem_soltos(a):
-    """Máscara final (uint8, depois de voltar ao tamanho e perder 1 px de borda): pedaço opaco (>= 128) com menos de 3%
+    """Máscara final (uint8, depois de voltar ao tamanho e perder 1 px de borda): pedaço opaco (>= 128) com menos de 0,5%
     da área do maior que ficou solto sai, com a borda macia em volta (até 3 px). Ex.: o pedaço do teto ao lado da barba,
     preso por um fio de 1 px que a redução e o MinFilter cortaram."""
     import numpy as np
@@ -2536,7 +2602,7 @@ def rec_sem_soltos(a):
         return a
     area = np.bincount(lab.ravel(), minlength=n + 1)
     area[0] = 0
-    pequeno = area < 0.03 * area.max()
+    pequeno = area < 0.005 * area.max()                         # bem pequeno: pessoa separada (criança a 1%) nunca cai aqui
     pequeno[0] = False
     if not pequeno.any():
         return a
