@@ -46,10 +46,19 @@ HA = tempfile.mkdtemp()
 os.environ["HOME"] = HA
 os.environ["ETERNA_SEM_OPENCV"] = "1"
 os.environ["ETERNA_SESSAO_PAUSA"] = "3"
+os.environ["ETERNA_ORIGENS"] = "eterna-sem-esquema:8765,http://Posto-1.local:8765"
+os.makedirs(os.path.join(HA, "Eterna"), exist_ok=True)
+json.dump({"users": {"carlos": "x" * 12, "equipe": "y" * 12}, "compartilhado": ["equipe"]}, open(os.path.join(HA, "Eterna", "ftp.json"), "w"))
 sp = importlib.util.spec_from_file_location("ag", AG)
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
 ok(m.FF_PAUSA == 3 and m.FF_PRONTA_MIN == 15, "constantes: pausa %r, pronta_min %r" % (m.FF_PAUSA, m.FF_PRONTA_MIN))
+# segurança I1: entrada de ETERNA_ORIGENS sem esquema não vira Host vazio e é avisada
+ok(m.ORIGENS_REDE_HOSTS == {"posto-1.local:8765"} and m.ORIGENS_SEM_ESQUEMA == ["eterna-sem-esquema:8765"],
+   "I1: %r %r" % (m.ORIGENS_REDE_HOSTS, m.ORIGENS_SEM_ESQUEMA))
+# sugestão 5: rostos "iniciando" contam como ligados
+ok(m.rostos.get("motivo") == "iniciando" and m.ff_rostos_ligados(), "rostos iniciando contam como ligados")
+m.rostos["ligado"], m.rostos["motivo"] = False, "sem OpenCV"
 m.ff_carregar()
 P = m.FF_PAUSA
 T = time.time()
@@ -82,8 +91,9 @@ def um(gs, **kw):
 
 
 # 2 e 8: cliques num segundo só, chegando devagar (fila de envio); a câmera da Sandessa com o relógio 2 h atrasado
-for nome, serie, atraso in (("marinara", "111100002222", 0), ("sandessa", "333300004444", 7200)):
-    base = T + (0 if nome == "marinara" else 100)
+# (revisão 4) e a câmera do Márcio com o relógio 1 h adiantado (desvio com sinal)
+for nome, serie, atraso in (("marinara", "111100002222", 0), ("sandessa", "333300004444", 7200), ("marcio", "777700008888", -3600)):
+    base = T + {"marinara": 0, "sandessa": 100, "marcio": 200}[nome]
     ns = []
     for i in range(8):
         foto(nome, "ftp", base + 0.5 + i, cap=base - atraso, serie=serie)
@@ -149,20 +159,47 @@ gs = sorted([g for g in grupos(t9 + P + 3) if g["fotografo"] == "klassius"], key
 ok([g["funcao"] for g in gs] == [{"tipo": "campo", "point": "campo2"}, {"tipo": "volante", "modo": "chute"}] and [g["n"] for g in gs] == [2, 1],
    "9: função fotografada na abertura do grupo: %r" % [(g["funcao"], g["n"]) for g in gs])
 
+# L3 (revisão 3): login compartilhado sem subpasta não vira fotógrafo
+t3 = time.time() + 1500
+foto("equipe", "ftp", t3)
+g = [g for g in grupos(t3 + 1) if g["inicio"] >= t3]
+ok(len(g) == 1 and g[0]["fotografo"] is None and g[0]["fonte"] == "pasta" and "equipe" not in json.dumps(g), "L3: login compartilhado: %r" % g)
+
+# revisão 11: LGPD tira a foto do grupo
+t12 = time.time() + 1700
+pa = foto("samuel", "ftp", t12)
+pb = foto("samuel", "ftp", t12 + 0.5)
+m.ff_esquecer(pa)
+g = um([g for g in grupos(t12 + 1) if g["inicio"] >= t12], fotografo="samuel")
+ok(g and g["n"] == 1 and pa not in g["pids"] and pb in g["pids"] and pa not in m.ff_pid_g, "LGPD: foto sai do grupo: %r" % g)
+
+# revisão 2: erro na fila não atrapalha a chegada da foto
+_orig = m.ff_add
+m.ff_add = lambda *a: 1 / 0
+f2 = os.path.join(tempfile.mkdtemp(), "IMG_0002.JPG")
+open(f2, "wb").write(jpeg(cor()))
+ok(m.ingest_file(f2, "IMG_0002.JPG", os.stat(f2), "carlos", "ftp") == "new", "erro no ff_add não pode barrar a foto")
+m.ff_add = _orig
+
 # 11: pronta há mais de FF_PRONTA_MIN sai; a virada do dia limpa
 t11 = time.time() + 2000
-foto("sandessa", "ftp", t11)
+ps11 = [foto("sandessa", "ftp", t11)]
 ok(um(grupos(t11 + P + 60), fotografo="sandessa"), "11: pronta há 1 min aparece")
 ok(not [g for g in grupos(t11 + P + 2 + 15 * 60) if g["fotografo"] == "sandessa"], "11: pronta há mais de 15 min não aparece")
+ok(ps11[0] not in m.ff_pid_g, "N3: a poda tira os pids do grupo podado de ff_pid_g")
 amanha = time.mktime(time.strptime(m._ff_hoje(), "%Y-%m-%d")) + 86400 + 3600
 ok(m.ff_json(amanha)["grupos"] == [], "11: a virada do dia limpa a lista")
 
 # 12 (validação do POST, sem rede)
 ok(m.ff_funcao_validar({"dia": m._ff_hoje(), "map": {"carlos": {"tipo": "campo", "point": "../x"}}}) is None, "point inválido")
-ok(m.ff_funcao_validar({"dia": m._ff_hoje(), "map": {"intruso": {"tipo": "folga"}}}) is None, "chave não cadastrada")
+ok(m.ff_funcao_validar({"dia": m._ff_hoje(), "map": {"intruso": {"tipo": "folga"}, "equipe": {"tipo": "folga"}, "carlos": {"tipo": "folga"}}})
+   == (m._ff_hoje(), {"carlos": {"tipo": "folga"}}, 2), "chave não cadastrada (e login compartilhado) é ignorada")
+ok(m.ff_funcao_validar({"dia": m._ff_hoje(), "map": {"carlos": "campo"}}) is None, "campo inválido em chave cadastrada = 400")
+ok(m.ff_funcao_validar({"dia": m._ff_hoje(), "map": {"k%d" % i: {"tipo": "folga"} for i in range(41)}}) is None, "mais de 40 chaves = 400")
+ok(m.ff_funcao_validar({"dia": m._ff_hoje(), "map": []}) is None, "map que não é objeto = 400")
 ok(m.ff_funcao_validar({"dia": "2020-01-01", "map": {}}) is None, "dia de outro dia")
 ok(m.ff_funcao_validar({"dia": m._ff_hoje(), "map": {"Márcio": {"tipo": "volante", "modo": "chute", "from": "terminal", "x": "<b>"}}})
-   == (m._ff_hoje(), {"marcio": {"tipo": "volante", "modo": "chute"}}), "função limpa (só tipo, point e modo; sem acento)")
+   == (m._ff_hoje(), {"marcio": {"tipo": "volante", "modo": "chute"}}, 0), "função limpa (só tipo, point e modo; sem acento)")
 
 # ======================= Parte B: o agente de verdade =======================
 HB = tempfile.mkdtemp()
@@ -267,7 +304,7 @@ try:
     # 9 e 12: POST da função
     H1 = {"X-Eterna": "1"}
     s, j, _ = req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {"samuel": {"tipo": "campo", "point": "campo4"}}}, H1)
-    ok(s == 200 and j == {"ok": True}, "POST da função: %r %r" % (s, j))
+    ok(s == 200 and j == {"ok": True, "ignoradas": 0}, "POST da função: %r %r" % (s, j))
     fj = os.path.join(HB, "Eterna", "ponto", "funcao.json")
     ok(os.path.exists(fj) and oct(os.stat(fj).st_mode & 0o777) == "0o600", "funcao.json com chmod 600")
     ftp_envia("samuel", [("S0.JPG", jpeg(cor()))])
@@ -285,13 +322,21 @@ try:
     ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}})[0] == 403, "12: POST sem X-Eterna")
     ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}}, {"X-Eterna": "1", "Origin": "https://evil.example"})[0] == 403, "12: POST de outra origem")
     ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {"carlos": {"tipo": "campo", "point": "../x"}}}, H1)[0] == 400, "12: point ../x")
-    ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {"intruso": {"tipo": "folga"}}}, H1)[0] == 400, "12: chave não cadastrada")
+    s, j, _ = req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {"intruso": {"tipo": "folga"}, "samuel": {"tipo": "volante", "modo": "chute"}}}, H1)
+    ok(s == 200 and j == {"ok": True, "ignoradas": 1}, "12: chave não cadastrada é ignorada: %r %r" % (s, j))
+    ok(req("POST", "/fila-fotografo/funcao", {"dia": "2020-01-01", "map": {}}, H1)[0] == 400, "12: dia errado")
     ok(req("POST", "/fila-fotografo/funcao", b'{"dia":"' + hoje.encode() + b'","map":{},"x":"' + b"a" * 5120 + b'"}', H1)[0] == 413, "12: corpo de 5 KB")
     # 13: pelo endereço de ETERNA_ORIGENS, de outro IP
     hostr = "eterna-tv.local:%d" % PORTA
     s, j, _ = req("GET", "/fila-fotografo", headers={"Host": hostr, "Origin": ORIG}, origem="127.0.0.2")
     ok(s == 200 and j and j["ok"], "13: GET pelo endereço da rede, de outro IP: %r" % s)
     ok(req("GET", "/fila-fotografo", origem="127.0.0.2")[0] == 403, "13: outro IP com o Host local não é posto")
+    _, _, hh = req("GET", "/fila-fotografo", headers={"Host": hostr, "Origin": ORIG}, origem="127.0.0.2")
+    ok(hh.get("Access-Control-Allow-Origin") == ORIG, "N1: CORS só para a origem de ETERNA_ORIGENS: %r" % hh.get("Access-Control-Allow-Origin"))
+    _, _, hh = req("GET", "/fila-fotografo")
+    ok("Access-Control-Allow-Origin" not in hh, "N1: sem CORS aberto (*): %r" % hh.get("Access-Control-Allow-Origin"))
+    _, _, hh = req("OPTIONS", "/fila-fotografo/funcao", headers={"Origin": "https://evil.example"})
+    ok("Access-Control-Allow-Origin" not in hh, "N1: preflight de outra origem sem CORS")
     pid = (g_de("samuel") or {"pids": ["x"]})["pids"][0]
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: miniatura pelo endereço de ETERNA_ORIGENS")
     ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 403, "risco 4: o original continua fechado pelo endereço da rede")

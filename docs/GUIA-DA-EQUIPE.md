@@ -531,7 +531,7 @@ Fica em **Fotógrafo › Fila do fotógrafo**, logo abaixo do Upload automático
 | **Chegando** | ele parou de clicar e as fotos ainda estão subindo para o servidor (fila do Wi-Fi ou leitura de cartão) |
 | **Já no Checkout** | as fotos estão no servidor e os rostos já foram lidos: a selfie do Checkout já acha o cliente |
 
-Um grupo vai para **Já no Checkout** 20 segundos depois da última foto. Sai da tela 15 minutos depois.
+Um grupo vai para **Já no Checkout** 20 segundos depois da última foto e depois da leitura dos rostos. Sai da tela 15 minutos depois.
 
 Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segundos. É normal.
 
@@ -539,7 +539,7 @@ Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segun
 
 - O nome do fotógrafo em letra grande e, entre parênteses, de onde ele está fotografando: **(campo · Foto Campo 2)**, **(volante · chute a gol)**, **(set interno · Vestiário)** ou **(sem ponto)**. O ponto vem da **Escala 5×2** (função do dia). Trocou a função na Escala, os grupos seguintes já mostram o ponto novo; os que já estavam na tela não mudam.
 - A hora em que o grupo começou e quantas fotos tem.
-- Nas duas primeiras colunas, as últimas fotos que chegaram, em miniatura.
+- Nas duas primeiras colunas, as últimas fotos que chegaram, em miniatura (no computador da equipe; na TV, não).
 - **De folga na Escala e mandando fotos**, em vermelho: a pessoa está de folga na Escala e as fotos dela estão chegando. Confira a Escala.
 - **Sem fotógrafo · câmera ···1234**: o Eterna não sabe de quem é a câmera (veja abaixo). Os 4 números são o final da série do corpo.
 
@@ -547,7 +547,7 @@ Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segun
 
 1. Abra o Eterna na TV pelo endereço do servidor do ponto e entre com o login de Atendimento e venda.
 2. Abra **Fila do fotógrafo** e toque em **Tela cheia**. O menu some.
-3. Na tela cheia, as miniaturas ficam **desligadas**. São rostos de turistas e de crianças, e uma TV virada para a fila mostraria as fotos de graça. Se a TV estiver virada só para a equipe, toque em **Miniaturas na tela cheia** para ligar. A escolha fica guardada naquele aparelho.
+3. Na TV as miniaturas ficam **desligadas**: no login de Atendimento e venda e em qualquer tela cheia (o botão, o F11 ou o modo quiosque). São rostos de turistas e de crianças, e uma TV virada para a fila mostraria as fotos de graça. Só Admin e Supervisor veem o botão **Miniaturas neste aparelho**, que liga ou desliga naquele aparelho; a escolha fica guardada nele e registrada no histórico.
 4. Para sair da tela cheia, aperte **Esc** ou toque em **Sair da tela cheia**.
 
 Se aparecer **Sem conexão com o servidor**, o painel continua mostrando o último dado. Confira se o computador do ponto está ligado.

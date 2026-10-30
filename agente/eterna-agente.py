@@ -81,7 +81,8 @@ def imp_destinos(j):
 # ETERNA_ORIGENS: endereços pelos quais os postos abrem este Eterna na rede (ex.: http://192.168.10.218:8765).
 # Só eles ganham as rotas que antes eram só do próprio computador (busca de rosto, publicar galeria, vendas).
 ORIGENS_REDE = {x.strip().rstrip("/").lower() for x in os.environ.get("ETERNA_ORIGENS", "").split(",") if x.strip()}
-ORIGENS_REDE_HOSTS = {urlparse(x).netloc for x in ORIGENS_REDE}
+ORIGENS_REDE_HOSTS = {urlparse(x).netloc for x in ORIGENS_REDE} - {""}   # v87 (segurança I1): entrada sem esquema não vira Host vazio
+ORIGENS_SEM_ESQUEMA = sorted(x for x in ORIGENS_REDE if not urlparse(x).netloc)
 INBOX = os.path.join(HOME, "inbox")
 THUMBS = os.path.join(HOME, "thumbs")
 INDEX = os.path.join(HOME, "index.json")
@@ -727,6 +728,10 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             for h in hs:
                 seen.pop(h, None)
                 lgpd_excluidas.add(h)
+        try:
+            ff_esquecer(pid)                    # v87: sai da fila do fotógrafo (fora do lock)
+        except Exception:
+            pass
         # o original que a câmera mandou para a pasta vigiada (FTP do servidor) também sai: mesmo nome e mesmo hash
         orig = os.path.basename((e or {}).get("file") or "")[len(pid) + 1:]
         pasta = os.environ.get("ETERNA_PASTA")
@@ -1128,8 +1133,14 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
              "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha}
         metricas.append(m); metricas_por_pid[pid] = m
     metrica_grava(m)
-    ff_add(pid, mm)                     # v87: fila do fotógrafo (fora do lock)
-    ff_rosto_fila(pid)
+    try:                                # v87: fila do fotógrafo (fora do lock); nunca atrapalha a chegada da foto
+        ff_add(pid, mm)
+    except Exception as ex:
+        print("  fila do fotógrafo: %s" % str(ex)[:80])
+    try:
+        ff_rosto_fila(pid)              # antes do put: a leitura não pode terminar antes de a foto contar como pendente
+    except Exception as ex:
+        print("  fila do fotógrafo (rostos): %s" % str(ex)[:80])
     fila_rostos.put((pid, dst, time.time()))
     nuvem_enfileira(pid, dst)
     print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
@@ -2983,7 +2994,7 @@ def _ff_hoje(t=None):
 def ff_quem(o, autor, dono, serie, s="", cad=None):
     """(fotógrafo|None, fonte). Regra D2 da v85: 1) a origem, se cadastrada; 2) o autor ou o dono gravado na câmera, se
     cadastrado; 3) nenhum, e a fonte diz de onde veio (nunca o nome de subpasta não cadastrada nem a série completa)."""
-    cad = cad if cad is not None else {sem_acento(x) for x in ftp_cadastrados()}
+    cad = cad if cad is not None else ff_cadastrados()
     via = "cartão" if s == "cartao" else "ftp"
     k = sem_acento(o or "").strip()
     if k and k in cad:
@@ -2998,6 +3009,17 @@ def ff_quem(o, autor, dono, serie, s="", cad=None):
     if o == "ftp-estadio":
         return None, "ftp-estadio"
     return None, ("cartão" if s == "cartao" else "pasta")
+
+
+def ff_cadastrados():
+    """Fotógrafos que a fila aceita como nome (sem acento): os cadastrados, menos os logins "compartilhado" do ftp.json
+    (L3: login compartilhado sem subpasta não é um fotógrafo)."""
+    cad = {sem_acento(x) for x in ftp_cadastrados()}
+    try:
+        cad -= {sem_acento(x) for x in (json.load(open(FTPCFG)).get("compartilhado") or [])}
+    except Exception:
+        pass
+    return cad
 
 
 def _ff_reset(dia):
@@ -3068,14 +3090,19 @@ def _ff_add(pid, m, cad):
 
 def ff_add(pid, m):
     """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
-    cad = {sem_acento(x) for x in ftp_cadastrados()}
+    cad = ff_cadastrados()
     with ff_lock:
         _ff_add(pid, m, cad)
 
 
+def ff_rostos_ligados():
+    """Rostos ligados, ou ainda iniciando (o leitor abre depois do boot): nos dois casos a foto espera a leitura."""
+    return bool(rostos.get("ligado") or rostos.get("motivo") == "iniciando")
+
+
 def ff_rosto_fila(pid):
     """A foto entrou na fila de rostos (só registra enquanto os rostos estão ligados ou iniciando)."""
-    if not (rostos.get("ligado") or rostos.get("motivo") == "iniciando"):
+    if not ff_rostos_ligados():
         return
     with ff_lock:
         if pid in rostos_pendentes:
@@ -3099,17 +3126,31 @@ def ff_rosto_lido(pid):
             ff_rev[0] += 1
 
 
+def ff_esquecer(pid):
+    """v87: a foto foi apagada a pedido do cliente (LGPD): sai do grupo (contagem e miniaturas)."""
+    with ff_lock:
+        g = ff_pid_g.pop(pid, None)
+        if pid in rostos_pendentes:
+            rostos_pendentes.discard(pid)
+            if g is not None:
+                g["pend"] = max(0, g["pend"] - 1)
+        if g is not None:
+            g["n"] = max(0, g["n"] - 1)
+            g["pids"] = [p for p in g["pids"] if p != pid]
+            ff_rev[0] += 1
+
+
 def ff_ultimo_clique(g):
     if not g["cap_max"]:
         return g["ultima_chegada"]
     d = ff_desvio.get(g["dk"])
-    desvio = max(0.0, min(d)) if d else 0.0
+    desvio = min(d) if d else 0.0          # com sinal: relógio da câmera adiantado também é compensado
     return min(g["cap_max"] + desvio, g["ultima_chegada"])
 
 
 def ff_estado(g, agora, rostos_ligados=None):
     """fotografando | subindo | pronta | fora (com o ff_lock na mão)."""
-    lig = rostos.get("ligado") if rostos_ligados is None else rostos_ligados
+    lig = ff_rostos_ligados() if rostos_ligados is None else rostos_ligados
     if agora - g["ultima_chegada"] <= FF_PAUSA:
         if not g["cap_max"]:
             return "fotografando"            # sem a hora do clique, Fotografando e Subindo viram uma etapa só
@@ -3128,7 +3169,7 @@ def ff_estado(g, agora, rostos_ligados=None):
 def ff_json(agora=None):
     agora = time.time() if agora is None else agora
     hoje = _ff_hoje(agora)
-    lig = bool(rostos.get("ligado"))
+    lig = ff_rostos_ligados()
     out = []
     with ff_lock:
         if ff_dia[0] != hoje:
@@ -3136,9 +3177,11 @@ def ff_json(agora=None):
         manter = []
         for g in ff_grupos:
             e = ff_estado(g, agora, lig)
-            if e == "fora":                  # poda
+            if e == "fora":                  # poda (o grupo sai da memória; o pid continua no meta)
                 if ff_aberto.get(g["k"]) is g:
                     ff_aberto.pop(g["k"], None)
+                for p in [p for p, gg in ff_pid_g.items() if gg is g]:
+                    ff_pid_g.pop(p, None)
                 ff_rev[0] += 1
                 continue
             manter.append(g)
@@ -3148,7 +3191,7 @@ def ff_json(agora=None):
         mostrar = {id(g) for g in prontas}
         grupos = []
         for e, g in out:
-            if e == "pronta" and id(g) not in mostrar:
+            if (e == "pronta" and id(g) not in mostrar) or g["n"] <= 0:
                 continue
             grupos.append({"id": g["id"], "estado": e, "fotografo": g["chave"], "fonte": g["fonte"],
                            "funcao": dict(g["funcao"]) if g["funcao"] else None, "inicio": g["inicio"],
@@ -3173,31 +3216,48 @@ def ff_carregar():
     """No boot: refaz os grupos de hoje a partir do meta (chegada de hoje, em ordem)."""
     ff_funcao_carregar()
     hoje = _ff_hoje()
-    with lock:
-        itens = [(pid, dict(m)) for pid, m in meta.items() if isinstance(m, dict) and m.get("u") and pid in lib]
+    ini = time.mktime(time.strptime(hoje, "%Y-%m-%d"))
+    itens = []
+    with lock:                                   # só o meta de hoje é copiado
+        for pid, m in meta.items():
+            try:
+                if isinstance(m, dict) and pid in lib and float(m.get("u") or 0) >= ini:
+                    itens.append((pid, dict(m)))
+            except (TypeError, ValueError):
+                continue
     itens = [(pid, m) for pid, m in itens if _ff_hoje(float(m["u"])) == hoje]
     itens.sort(key=lambda x: float(x[1]["u"]))
-    cad = {sem_acento(x) for x in ftp_cadastrados()}
+    cad = ff_cadastrados()
+    n = 0
     with ff_lock:
         _ff_reset(hoje)
         for pid, m in itens:
-            _ff_add(pid, m, cad)
-    return len(itens)
+            try:                                 # um meta estragado não derruba o boot
+                _ff_add(pid, m, cad)
+                n += 1
+            except Exception as ex:
+                print("  fila do fotógrafo: foto ignorada no boot (%s)" % str(ex)[:60])
+    return n
 
 
 def ff_funcao_validar(body):
-    """Devolve (dia, map limpo) ou None. Só tipo, point e modo; chave precisa estar cadastrada."""
+    """Devolve (dia, map limpo, ignoradas) ou None. Só tipo, point e modo. Chave fora do cadastro é ignorada (conta em
+    "ignoradas"); dia errado, map que não é objeto, mais de 40 chaves ou campo inválido numa chave cadastrada = None (400)."""
     dia = body.get("dia")
     if dia not in (_ff_hoje(), time.strftime("%Y-%m-%d", time.gmtime())):
         return None
     mp = body.get("map")
     if not isinstance(mp, dict) or len(mp) > 40:
         return None
-    cad = {sem_acento(x) for x in ftp_cadastrados()}
+    cad = ff_cadastrados()
     limpo = {}
+    ignoradas = 0
     for k, f in mp.items():
         kk = sem_acento(k)
-        if not isinstance(k, str) or kk not in cad or not isinstance(f, dict):
+        if kk not in cad:
+            ignoradas += 1
+            continue
+        if not isinstance(f, dict):
             return None
         tipo = f.get("tipo")
         if tipo not in FF_TIPOS:
@@ -3214,7 +3274,7 @@ def ff_funcao_validar(body):
                 return None
             x["modo"] = md
         limpo[kk] = x
-    return dia, limpo
+    return dia, limpo, ignoradas
 
 
 HOSTS_OK = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
@@ -3491,6 +3551,15 @@ class H(BaseHTTPRequestHandler):
 
     def cors(self):
         path = urlparse(self.path).path
+        if path.startswith("/fila-fotografo"):
+            # v87 (segurança N1): sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
+            o = (self.headers.get("Origin") or "").lower()
+            if o and o in ORIGENS_REDE:
+                self.send_header("Access-Control-Allow-Origin", o)
+                self.send_header("Vary", "Origin")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            return
         if rota_privada(path):
             o = self.headers.get("Origin") or ""
             if o and o in self.origens_ok(path):
@@ -3510,22 +3579,14 @@ class H(BaseHTTPRequestHandler):
         self.cors()
         self.end_headers()
 
-    def js(self, obj, code=200):
+    def js(self, obj, code=200, nostore=False):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.cors()
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def js_nostore(self, obj, code=200):
-        body = json.dumps(obj).encode()
-        self.send_response(code)
-        self.cors()
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        if nostore:
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -3542,14 +3603,14 @@ class H(BaseHTTPRequestHandler):
         v = ff_funcao_validar(body)
         if not v:
             return self.js({"error": "função inválida"}, 400)
-        dia, mp = v
+        dia, mp, ignoradas = v
         os.makedirs(os.path.dirname(FF_FUNCAO), exist_ok=True)
-        _grava_privado(FF_FUNCAO, json.dumps({"dia": dia, "map": mp, "em": time.strftime("%Y-%m-%dT%H:%M:%S")}))
-        with ff_lock:
+        with ff_lock:                    # N2: dois POSTs ao mesmo tempo não disputam o mesmo .tmp (o lock não é pego aqui)
+            _grava_privado(FF_FUNCAO, json.dumps({"dia": dia, "map": mp, "em": time.strftime("%Y-%m-%dT%H:%M:%S")}))
             ff_funcao.update(dia=dia, map=mp)
             ff_rev[0] += 1
         print("  função do dia atualizada por %s" % ("este computador" if self.loopback() else "posto " + self.client_address[0]))
-        return self.js({"ok": True})
+        return self.js({"ok": True, "ignoradas": ignoradas})
 
     def file(self, path):
         try:
@@ -3990,7 +4051,7 @@ class H(BaseHTTPRequestHandler):
             # v87: painel da fila do fotógrafo (só leitura). Este computador ou um posto pelo endereço de ETERNA_ORIGENS.
             if not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
-            return self.js_nostore(ff_json())
+            return self.js(ff_json(), nostore=True)
         if u.path == "/impressao/fila":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -4233,6 +4294,8 @@ class H(BaseHTTPRequestHandler):
 
 def main():
     print("Eterna · agente do ponto")
+    for x in ORIGENS_SEM_ESQUEMA:
+        print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta
     print(f"  fotos baixadas em: {INBOX}")
     print(f"  abra o Eterna em:  http://127.0.0.1:{PORT}   (mesmo Mac)")

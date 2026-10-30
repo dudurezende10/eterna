@@ -34,7 +34,7 @@ function feed(extra){const a=Date.now()/1000;return {ok:true,agora:a,rev:88,paus
   {id:'G011',estado:'pronta',fotografo:'samuel',fonte:'ftp',funcao:null,inicio:a-400,ultima_chegada:a-300,ultimo_clique:a-305,pronta_em:a-280,n:6,pids:[]},
   ...(extra||[])]};}
 const b=await chromium.launch();const errs=[];
-const novo=async(w,h)=>{const ctx=await b.newContext({viewport:{width:w||1440,height:h||900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();
+const novo=async(w,h,cheia)=>{const W=w||1440,H=h||900;const ctx=await b.newContext({viewport:{width:W,height:H},screen:{width:W,height:cheia?H:H+120},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text());});return {ctx,pg};};
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>{localStorage.removeItem('eterna.session');});await pg.goto(U);await pg.waitForTimeout(350);}
   await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
@@ -42,8 +42,8 @@ async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if
 const navVs=pg=>pg.$$eval('#nav button[data-v]',e=>e.map(x=>x.dataset.v));
 try{
   // agente simulado: GET da fila, miniaturas e POST da função (o POST muda a função dos grupos novos)
-  let modo='ok';const posts=[];let funcNova=null;
-  const {ctx,pg}=await novo();
+  let modo='ok';const posts=[];let funcNova=null;let thumbReqs=0;
+  const {ctx,pg}=await novo();pg.on('request',q=>{if(/\/thumb\//.test(q.url()))thumbReqs++;});
   await ctx.route('**/fila-fotografo',r=>{if(modo==='off')return r.abort('connectionrefused');const extra=funcNova?[{id:'G016',estado:'fotografando',fotografo:'carlos',fonte:'ftp',funcao:funcNova,inicio:Date.now()/1000-3,ultima_chegada:Date.now()/1000-1,ultimo_clique:Date.now()/1000-1,pronta_em:null,n:1,pids:pids(1)}]:[];
     r.fulfill({status:200,contentType:'application/json',headers:{'Cache-Control':'no-store'},body:JSON.stringify(feed(extra))});});
   await ctx.route('**/thumb/**',r=>{const i=parseInt(r.request().url().slice(-1),16)%cores.length;r.fulfill({status:200,contentType:'image/jpeg',body:cores[i]});});
@@ -54,7 +54,7 @@ try{
   await pg.evaluate(()=>{ETERNA.state.view='importar';ETERNA.render();});await pg.waitForTimeout(150);
   const vs=await navVs(pg);ok(vs.indexOf('fotofila')===vs.indexOf('importar')+1,'14: fotofila logo abaixo do Upload automático: '+vs.join(','));
   const grp=await pg.evaluate(()=>ETERNA.VIEWS.find(v=>v[0]==='fotofila'));ok(grp&&grp[3]==='Fotógrafo'&&grp[1]==='Fila do fotógrafo','14: grupo Fotógrafo: '+JSON.stringify(grp));
-  ok(await pg.evaluate(()=>ETERNA.MODULE_OF.fotofila==='filafoto'&&!!ETERNA.MODULE_INFO.filafoto.r&&!ETERNA.MODULE_INFO.filafoto.c&&!ETERNA.MODULE_INFO.filafoto.u&&!ETERNA.MODULE_INFO.filafoto.d),'14/22: módulo filafoto só com Ver');
+  ok(await pg.evaluate(()=>ETERNA.MODULE_OF.fotofila==='filafoto'&&!!ETERNA.MODULE_INFO.filafoto.r&&!!ETERNA.MODULE_INFO.filafoto.u&&!ETERNA.MODULE_INFO.filafoto.c&&!ETERNA.MODULE_INFO.filafoto.d),'14/22: módulo filafoto com Ver e Alterar (miniaturas)');
   await pg.click('#nav button[data-v="fotofila"]');await pg.waitForTimeout(900);
   ok(await pg.evaluate(()=>location.hash)==='#fotofila'||await pg.evaluate(()=>ETERNA.state.view)==='fotofila','abre a tela');
   // 15: três colunas com contadores
@@ -64,8 +64,12 @@ try{
   // 16: fotógrafo e de onde vem
   const t=cols.map(c=>c.txt.replace(/\s+/g,' ')).join(' # ');
   ['Carlos (campo · Terminal Campo)','Yago (volante · chute a gol)','Marinara (set interno · Vestiário)','Samuel (campo · Foto Campo 4)','Sem fotógrafo · câmera ···1234 (sem ponto)','Sandessa (sem ponto)','De folga na Escala','7 fotos','início '].forEach(s=>ok(t.includes(s),'16: falta "'+s+'" em: '+t.slice(0,400)));
+  // B1: o Admin tem venda: sem escolha gravada, as miniaturas começam desligadas mesmo fora da tela cheia
+  ok(await pg.evaluate(()=>document.querySelectorAll('img[src*="/thumb/"]').length)===0&&thumbReqs===0,'B1: Admin (com venda) sem escolha não mostra miniaturas: '+thumbReqs);
+  ok(/Miniaturas neste aparelho: desligadas/.test(await pg.textContent('#main')),'B1: interruptor para quem tem filafoto.u');
+  await pg.click('[data-act="fotofila-mini"]');await pg.waitForTimeout(500);
+  const audit=await pg.evaluate(()=>localStorage.getItem('eterna.users.log.v1')||'');ok(/fotofila_miniaturas/.test(audit),'B1: ligar as miniaturas fica no histórico');
   // 17: miniaturas só nas duas primeiras colunas, até 6, carregadas
-  await pg.waitForTimeout(400);
   const th=await pg.$$eval('.if-board .if-col',cs=>cs.map(c=>[...c.querySelectorAll('.ff-thumbs img')].map(i=>i.naturalWidth)));
   ok(th[0].length===9&&th[1].length===11&&th[2].length===0,'17: miniaturas por coluna (6+3, 6+5, 0): '+th.map(x=>x.length));
   ok(th[0].concat(th[1]).every(w=>w>0),'17: miniaturas carregadas (naturalWidth>0)');
@@ -74,23 +78,21 @@ try{
   const html=await pg.$eval('#main',e=>e.innerHTML);ok(!/\.jpe?g|@|LP[A-Z0-9]{6}/i.test(html.replace(/\/thumb\/[0-9a-f]+/g,'')),'21: HTML com nome de arquivo, e-mail ou código LP');
   const src=fs.readFileSync(path.join(RAIZ,'index.html'),'utf8');const fn=src.slice(src.indexOf('function vFotoFila('),src.indexOf('function vEstoque('));ok(fn.length>200&&!/\bT\(/.test(fn),'21: vFotoFila não usa T()');
   fs.mkdirSync(PRINTS,{recursive:true});await pg.screenshot({path:path.join(PRINTS,'fotofila-desktop.png')});
-  // 18: tela cheia sem menu e sem miniaturas por padrão; interruptor lembrado; Esc devolve o menu
+  // 18: tela cheia sem menu; a escolha gravada no aparelho vale; Esc devolve o menu
   await pg.click('[data-act="fotofila-tv"]');await pg.waitForTimeout(700);
   let st=await pg.evaluate(()=>({tv:document.body.classList.contains('if-tv'),rail:getComputedStyle(document.querySelector('.rail')).display,th:document.querySelectorAll('.ff-thumbs img').length}));
-  ok(st.tv&&st.rail==='none'&&st.th===0,'18: tela cheia sem menu e sem miniaturas: '+JSON.stringify(st));
-  await pg.screenshot({path:path.join(PRINTS,'fotofila-tela-cheia.png')});
-  await pg.click('[data-act="fotofila-mini"]');await pg.waitForTimeout(300);
-  ok(await pg.evaluate(()=>document.querySelectorAll('.ff-thumbs img').length)===20,'18: o interruptor liga as miniaturas na tela cheia');
+  ok(st.tv&&st.rail==='none'&&st.th===20,'18: tela cheia sem menu, com a escolha "ligadas" deste aparelho: '+JSON.stringify(st));
   await pg.screenshot({path:path.join(PRINTS,'fotofila-tela-cheia-miniaturas.png')});
+  await pg.click('[data-act="fotofila-mini"]');await pg.waitForTimeout(300);
+  ok(await pg.evaluate(()=>document.querySelectorAll('.ff-thumbs img').length)===0,'18: o interruptor desliga as miniaturas');
+  await pg.screenshot({path:path.join(PRINTS,'fotofila-tela-cheia.png')});
   await pg.evaluate(()=>{if(document.fullscreenElement)return document.exitFullscreen();});await pg.keyboard.press('Escape');await pg.waitForTimeout(400);
   st=await pg.evaluate(()=>({tv:document.body.classList.contains('if-tv'),rail:getComputedStyle(document.querySelector('.rail')).display}));
   ok(!st.tv&&st.rail!=='none','18: Esc tira if-tv e o menu volta: '+JSON.stringify(st));
   await pg.reload();await pg.waitForTimeout(800);
-  ok(await pg.evaluate(()=>localStorage.getItem('eterna.fotofila.tvmini'))==='1','18: interruptor lembrado depois de recarregar');
+  ok(await pg.evaluate(()=>localStorage.getItem('eterna.fotofila.tvmini'))==='0'&&await pg.evaluate(()=>document.querySelectorAll('img[src*="/thumb/"]').length)===0,'18: escolha lembrada depois de recarregar');
   await pg.evaluate(()=>{ETERNA.state.view='fotofila';ETERNA.render();});await pg.waitForTimeout(600);
-  await pg.click('[data-act="fotofila-tv"]');await pg.waitForTimeout(600);
-  ok(await pg.evaluate(()=>document.querySelectorAll('.ff-thumbs img').length)===20,'18: depois de recarregar, a tela cheia já abre com as miniaturas');
-  await pg.click('[data-act="fotofila-mini"]');await pg.waitForTimeout(200);
+  await pg.click('[data-act="fotofila-tv"]');await pg.waitForTimeout(400);
   // sair da tela por outro caminho (go) também tira a tela cheia
   await pg.evaluate(()=>ETERNA.go('importar'));await pg.waitForTimeout(200);ok(!(await pg.evaluate(()=>document.body.classList.contains('if-tv'))),'go() tira if-tv');
   await pg.evaluate(()=>ETERNA.go('fotofila'));await pg.waitForTimeout(700);
@@ -116,6 +118,16 @@ try{
     const {ctx,pg}=await novo();await ctx.route('**/fila-fotografo',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(feed())}));await ctx.route('**/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:cores[1]}));
     ok(await entrar(pg,email),'login '+email);await pg.waitForTimeout(200);const v=await navVs(pg);ok(v.includes('fotofila')===ve,`14: ${email} ${ve?'deveria':'não deveria'} ver a Fila do fotógrafo: ${v.join(',')}`);
     await pg.evaluate(()=>{location.hash='#fotofila';});await pg.reload();await pg.waitForTimeout(700);const view=await pg.evaluate(()=>ETERNA.state.view);ok((view==='fotofila')===ve,`14: ${email} pelo #fotofila abriu ${view}`);
+    await ctx.close();}
+  // B1: TV do caixa (perfil venda) recarregada direto em #fotofila, sem o botão de tela cheia: nenhuma miniatura nem pedido
+  for(const [email,cheia,quer,inter] of [['loja@eterna.photo',false,0,false],['carlos@eterna.photo',false,20,false],['carlos@eterna.photo',true,0,false],['supervisor@eterna.photo',false,0,true]]){
+    const {ctx,pg}=await novo(1440,900,cheia);let reqs=0;pg.on('request',q=>{if(/\/thumb\//.test(q.url()))reqs++;});
+    await ctx.route('**/fila-fotografo',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(feed())}));await ctx.route('**/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:cores[2]}));
+    await entrar(pg,email);await pg.evaluate(()=>{location.hash='#fotofila';});await pg.reload();await pg.waitForTimeout(1200);
+    const r=await pg.evaluate(()=>({v:ETERNA.state.view,tv:document.body.classList.contains('if-tv'),th:document.querySelectorAll('img[src*="/thumb/"]').length,inter:!!document.querySelector('[data-act="fotofila-mini"]')}));
+    ok(r.v==='fotofila'&&!r.tv&&r.th===quer&&(quer||reqs===0)&&r.inter===inter,`B1: ${email}${cheia?' em tela cheia (F11/quiosque)':''}: ${JSON.stringify(r)} pedidos ${reqs}`);
+    if(email==='carlos@eterna.photo'&&!cheia){await pg.click('[data-act="fotofila-tv"]');await pg.waitForTimeout(300);ok(await pg.evaluate(()=>document.querySelectorAll('img[src*="/thumb/"]').length)===0,'B1: fotógrafo no botão de tela cheia: sem miniaturas');
+      const g=await pg.evaluate(()=>{ETERNA.state.view='fotofila';return document.querySelectorAll('[data-act="fotofila-mini"]').length;});ok(g===0,'B1: fotógrafo sem interruptor');}
     await ctx.close();}
   {const {ctx,pg}=await novo();await pg.goto(U);await pg.waitForTimeout(400);
     // usuário salvo antes da v87 (menu sem a tela) ganha o item uma vez; perfil personalizado sem filafoto.r cai em semacesso
