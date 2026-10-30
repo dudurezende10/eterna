@@ -2233,38 +2233,135 @@ def rec_carregar():
         return rec_sess
 
 
-def rec_limpa_mascara(masks):
-    """Regras 12 e 13: máximo das máscaras (0-255, PIL L do mesmo tamanho) -> níveis 0,3-0,9 -> sólido por dentro -> só sai
-    mancha pequena e solta, longe do grupo. Tudo o que está com o convidado (bandeira, boné, óculos, taça) fica sólido."""
+REC_SINAL = 0.04         # sinal mínimo para um ponto entrar no grupo (ligado à pessoa)
+REC_PESSOA = 0.6         # semente: só o que a máscara de PESSOA (u2net_human_seg) pega com este alfa
+REC_NUCLEO = 0.10        # miolo sólido: sinal a partir daqui, ou cercado por ele
+REC_FURO = 0.03          # furo fechado com sinal médio a partir daqui é objeto (preenche)
+REC_FECHA = 0.004        # reentrância mais estreita que 2x isto (fração do lado) entre partes sólidas é fechada
+
+
+def _rec_furo_e_objeto(H, fica, rgb, exterior, dext, lado, rng):
+    """Furo fechado sem sinal (as duas máscaras dão ~0): é pedaço do objeto ou fundo de verdade visto por um vão?
+    1) borda falsa: compara a cor 3 px dentro do furo com a cor 3 px fora (no que fica). Se em 40% ou mais do perímetro
+       não há contraste, é o mesmo material dos dois lados (branco da bandeira com o branco dela): preenche. Vão entre braço
+       e corpo ou entre pessoas tem contraste em quase toda a volta (fundo x roupa/pele).
+    2) borda meio falsa (15% a 40%): preenche só se a cor do furo não aparece no fundo de fora, perto do grupo."""
     import numpy as np
     from scipy import ndimage
+    h, w = H.shape
+    ys, xs = np.nonzero(H)
+    pad = int(0.12 * lado) + 8
+    y0, y1, x0, x1 = max(0, ys.min() - pad), min(h, ys.max() + pad + 1), max(0, xs.min() - pad), min(w, xs.max() + pad + 1)
+    Hc, Fc, Ec, Dc, Cc = H[y0:y1, x0:x1], fica[y0:y1, x0:x1], exterior[y0:y1, x0:x1], dext[y0:y1, x0:x1], rgb[y0:y1, x0:x1]
+    d, ind = ndimage.distance_transform_edt(~Hc, return_indices=True)
+    O = (d >= 2.5) & (d <= 4.5) & Fc
+    oy, ox = np.nonzero(O)
+    if len(oy) < 8:
+        return False
+    qy, qx = ind[0][O], ind[1][O]                      # ponto do furo mais perto
+    vy, vx = qy - oy, qx - ox
+    nn = np.hypot(vy, vx) + 1e-6
+    iy = np.clip(np.round(qy + vy / nn * 3).astype(int), 0, Hc.shape[0] - 1)
+    ix = np.clip(np.round(qx + vx / nn * 3).astype(int), 0, Hc.shape[1] - 1)
+    dentro_furo = Hc[iy, ix]
+    if dentro_furo.sum() < 8:
+        return False
+    dif = np.sqrt(((Cc[oy, ox][dentro_furo] - Cc[iy, ix][dentro_furo]) ** 2).sum(1))
+    falsa = float((dif < 20).mean())
+    if falsa >= 0.4:
+        return True
+    if falsa < 0.15:
+        return False
+    faixa = Ec & (Dc >= max(2.0, 0.01 * lado))         # fundo de fora, longe da borda macia do grupo
+    if not faixa.any():
+        return False
+    faixa &= d <= d[faixa].min() + 0.1 * lado
+    fc, hc = Cc[faixa], Cc[Hc]
+    fc = fc[rng.choice(len(fc), min(800, len(fc)), replace=False)]
+    hc = hc[rng.choice(len(hc), min(400, len(hc)), replace=False)]
+    parecido = np.sqrt(((hc[:, None, :] - fc[None, :, :]) ** 2).sum(-1)).min(1) < 15
+    return float(parecido.mean()) < 0.2
+
+
+def rec_limpa_mascara(masks, foto=None):
+    """Regras 12 e 13. masks = [isnet-general-use, u2net_human_seg] (PIL L do mesmo tamanho); foto = a imagem RGB do
+    mesmo tamanho (opcional: sem ela, furo sem sinal nenhum fica aberto).
+    Máximo das duas máscaras -> níveis 0,3-0,9. Vai junto o que está NA pessoa (Eduardo, 30/10): entra o que tem algum sinal
+    (>= 0,04) ligado a um ponto que a máscara de pessoa pega com alfa alto; objeto solto ao lado (taça num pedestal) sai,
+    mesmo perto. Miolo sólido (sinal >= 0,10 ou cercado por ele), furos de objeto preenchidos, só a borda fica macia."""
+    import numpy as np
+    from scipy import ndimage
+    S = np.ones((3, 3), dtype=bool)
     bruta = np.maximum.reduce([np.asarray(x, dtype=np.float32) / 255.0 for x in masks])   # se uma das duas pega com alfa alto, fica
+    pessoa = np.asarray(masks[-1], dtype=np.float32) / 255.0
+    H0, W0 = bruta.shape
+    lado = max(H0, W0)
+    saida = np.zeros((H0, W0), dtype=np.uint8)
+    sinal = bruta >= REC_SINAL
+    if not (sinal & (pessoa >= REC_PESSOA)).any():
+        return saida
+    # trabalha só no retângulo do que tem sinal, com folga (o resto é fundo): mais rápido
+    ys, xs = np.nonzero(sinal)
+    pad = int(0.13 * lado) + 10
+    y0, y1, x0, x1 = max(0, ys.min() - pad), min(H0, ys.max() + pad + 1), max(0, xs.min() - pad), min(W0, xs.max() + pad + 1)
+    bruta, pessoa, sinal = bruta[y0:y1, x0:x1], pessoa[y0:y1, x0:x1], sinal[y0:y1, x0:x1]
     m = np.clip((bruta - 0.3) / 0.6, 0.0, 1.0)                 # abaixo de 0,3 vira 0; acima de 0,9 vira 1
-    lado = max(m.shape)
-    # o que pertence ao grupo: tudo o que tem algum sinal (>= 0,12) e está ligado a um ponto que uma das máscaras pega com
-    # alfa alto (>= 0,6). Assim a taça translúcida ou a ponta da bandeira entram inteiras; o que não tem sinal forte, não.
-    rot0, n0 = ndimage.label(bruta >= 0.12, structure=np.ones((3, 3), dtype=bool))
+    rot0, n0 = ndimage.label(sinal, structure=S)
     semente = np.zeros(n0 + 1, dtype=bool)
-    semente[np.unique(rot0[bruta >= 0.6])] = True
+    semente[np.unique(rot0[pessoa >= REC_PESSOA])] = True
     semente[0] = False
     dentro = semente[rot0]
     m = m * dentro
-    buracos = ndimage.binary_fill_holes(dentro) & ~dentro & (bruta >= 0.1)   # furo dentro de objeto (taça translúcida), não o fundo entre braço e corpo
-    dentro |= buracos
-    # sólido por dentro: só a borda (até 0,2% do lado) fica macia; objeto translúcido (taça, bandeira fina) não fica fantasma
-    funda = ndimage.distance_transform_edt(dentro) > max(2.0, 0.002 * lado)
-    m[funda | buracos] = 1.0
-    rot, n = ndimage.label(dentro, structure=np.ones((3, 3), dtype=bool))
+    # furos fechados: sinal médio >= 0,03 é objeto (partes fracas da bandeira, taça translúcida); sinal ~0 decide pela cor
+    cheio = ndimage.binary_fill_holes(dentro)
+    rb, nb = ndimage.label(cheio & ~dentro, structure=S)
+    furos = np.zeros_like(dentro)
+    if nb:
+        idx = np.arange(1, nb + 1)
+        ok = np.zeros(nb + 1, dtype=bool)
+        ok[1:] = ndimage.mean(bruta, rb, idx) >= REC_FURO
+        area = np.bincount(rb.ravel(), minlength=nb + 1)
+        cand = np.flatnonzero(~ok & (area >= max(30, 1e-5 * H0 * W0)))
+        cand = cand[cand > 0]
+        if foto is not None and len(cand) and tuple(foto.size) == (W0, H0):
+            from PIL import ImageFilter
+            rgb = np.asarray(foto.convert("RGB").filter(ImageFilter.BoxBlur(2)), dtype=np.float32)[y0:y1, x0:x1]
+            exterior = ~cheio
+            dext = ndimage.distance_transform_edt(exterior)
+            rng = np.random.default_rng(0)
+            for k in cand:
+                ok[k] = _rec_furo_e_objeto(rb == k, dentro, rgb, exterior, dext, lado, rng)
+        furos = ok[rb]
+    dentro |= furos
+    # miolo sólido: sinal >= 0,10 (franja fraca de fora, ex. teto do estádio atrás da bandeira, não vira sólido),
+    # reentrâncias estreitas fechadas e o que fica cercado por ele (sem furo de fundo dentro)
+    nucleo = (dentro & (bruta >= REC_NUCLEO)) | furos
+    r = max(2.0, REC_FECHA * lado)
+    nucleo |= dentro & (ndimage.distance_transform_edt(ndimage.distance_transform_edt(~nucleo) <= r) > r)
+    rn, nn = ndimage.label(ndimage.binary_fill_holes(nucleo) & ~nucleo, structure=S)
+    solido = nucleo
+    if nn:
+        idn = np.arange(1, nn + 1)
+        fora = ndimage.sum(~dentro, rn, idn)
+        okn = np.zeros(nn + 1, dtype=bool)
+        okn[1:] = fora <= 0.03 * np.bincount(rn.ravel(), minlength=nn + 1)[1:]
+        solido = nucleo | okn[rn]
+    funda = ndimage.distance_transform_edt(solido) > max(2.0, 0.002 * lado)   # só a borda (até 0,2% do lado) fica macia
+    m[funda | furos] = 1.0
+    dentro |= solido
+    rot, n = ndimage.label(dentro, structure=S)
     if n > 1:
-        areas = ndimage.sum(np.ones_like(m), rot, index=np.arange(1, n + 1))
-        grandes = np.zeros(n + 1, dtype=bool)
-        grandes[1:] = areas >= 0.03 * areas.max()             # pedaço grande fica sempre (na dúvida, mantém)
+        areas = np.bincount(rot.ravel(), minlength=n + 1).astype(np.float64)
+        areas[0] = 0
+        grandes = areas >= 0.03 * areas.max()                  # pedaço grande fica sempre (na dúvida, mantém)
+        grandes[0] = False
         perto = ndimage.distance_transform_edt(~grandes[rot]) <= max(4.0, 0.015 * lado)
         manter = grandes.copy()
         for k in np.flatnonzero(~grandes[1:]) + 1:            # pequeno só fica se encosta (ou quase) no grupo
             manter[k] = bool(perto[rot == k].any())
         m = m * manter[rot]
-    return (m * 255.0 + 0.5).astype(np.uint8)
+    saida[y0:y1, x0:x1] = (m * 255.0 + 0.5).astype(np.uint8)
+    return saida
 
 
 def rec_arquivo(pid, lado=REC_LADO_MAX):
@@ -2300,8 +2397,8 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
         trab = im.copy()
         trab.thumbnail((REC_TRAB, REC_TRAB), Image.LANCZOS)
         masks = [s.predict(trab)[0].convert("L") for s in sess]
+        mascara = Image.fromarray(rec_limpa_mascara(masks, trab), "L")   # a foto em cor decide os furos sem sinal (borda falsa)
         del trab
-        mascara = Image.fromarray(rec_limpa_mascara(masks), "L")
         if mascara.size != im.size:
             mascara = mascara.resize(im.size, Image.LANCZOS)
         mascara = mascara.filter(ImageFilter.MinFilter(3))       # 1 px de borda a menos: sem halo do fundo

@@ -43,12 +43,13 @@ class Falsa:
         if self.lado == "esq":
             d.rectangle([0, 0, w // 2 - 1, h - 1], fill=255)                      # a pessoa
             d.rectangle([w - 12, 2, w - 4, 10], fill=255)                          # mancha pequena, solta e longe: sai
-            d.rectangle([w // 2 + 10, 10, w // 2 + 18, 18], fill=255)             # objeto pequeno quase encostado: fica
+            d.rectangle([w // 2, 10, w // 2 + 18, 18], fill=255)                  # objeto pequeno encostado na pessoa: fica
+            d.rectangle([w // 2 + 30, 30, w // 2 + 38, 38], fill=255)             # objeto solto perto, sem pessoa: sai (v88)
         else:
             d.rectangle([w // 2, h // 2, w - 1, h - 1], fill=255)                  # a segunda máscara completa a pessoa
             d.rectangle([w // 2, h // 8, w // 2 + 200, h // 3], fill=120)         # objeto translúcido encostado (taça): fica sólido
             d.rectangle([w * 3 // 4 + 50, h // 8, w - 30, h // 3], fill=150)      # translúcido solto, sem sinal forte: sai
-            d.rectangle([w // 2 + 201, h // 3 + 40, w // 2 + 300, h // 2 - 1], fill=25)  # abaixo de 0,12 encostado: sai
+            d.rectangle([w // 2 + 201, h // 3 + 40, w // 2 + 300, h // 2 - 1], fill=25)  # franja abaixo de 0,10 por fora, encostada: sai
         return [mk]
 
 
@@ -64,10 +65,11 @@ a = im.getchannel("A")
 px = lambda x, y: a.getpixel((x, y))
 ok(px(100, 100) == 255 and px(2900, 1900) == 255, "máscara final = máximo das duas: %r" % [px(100, 100), px(2900, 1900)])
 ok(px(1687, 500) == 255, "objeto translúcido encostado deveria ficar sólido (regra 13): %r" % px(1687, 500))
-ok(px(1526, 26) > 200, "objeto pequeno encostado deveria ficar: %r" % px(1526, 26))
+ok(px(1520, 26) > 200, "objeto pequeno encostado deveria ficar: %r" % px(1520, 26))
+ok(px(1564, 64) == 0, "objeto solto perto, sem pessoa, deveria sair (v88): %r" % px(1564, 64))
 ok(px(2990, 8) == 0, "mancha solta pequena e longe deveria sair: %r" % px(2990, 8))
 ok(px(2600, 450) == 0, "translúcido solto sem sinal forte deveria sair: %r" % px(2600, 450))
-ok(px(2000, 850) == 0, "abaixo de 0,12 deveria sair: %r" % px(2000, 850))
+ok(px(2000, 850) == 0, "franja fraca por fora deveria sair: %r" % px(2000, 850))
 ok(px(1500, 100) == 0 and px(1492, 100) == 255 and px(1499, 100) < 100, "1 px de borda a menos: %r" % [px(x, 100) for x in range(1492, 1501)])
 ok(im.getpixel((2600, 450))[:3] == (0, 0, 0) and im.getpixel((100, 100))[:3] != (0, 0, 0), "RGB zerado fora da pessoa: %r" % (im.getpixel((2600, 450)),))
 ok(oct(os.stat(p).st_mode & 0o777) == "0o600", "recorte gravado com chmod 600")
@@ -87,6 +89,41 @@ ok(Image.open(m.rec_fazer("abc124", foto2)).size == (600, 900), "EXIF de orienta
 r, e = m.rec_pedir("abc125", foto2)
 ok(r and not e and len(m.rec_threads) == m.REC_CONC == 1, "fila com 1 trabalhador: %r %r %r" % (r, e, len(m.rec_threads)))
 ok(m.rec_status()["feitos"] >= 3, "contagem de recortes")
+# v88 (Eduardo, 30/10): vai junto o que está NA pessoa; furos de objeto preenchidos, vão real entre braço e corpo não.
+# Máscaras desenhadas (sem foto real): [isnet, u2net_human_seg] de 400x300 e a foto em cor do mesmo tamanho.
+def mascaras():
+    isn, hum = Image.new("L", (400, 300), 0), Image.new("L", (400, 300), 0)
+    cor = Image.new("RGB", (400, 300), (120, 130, 200))              # fundo azulado
+    di, dh, dc = ImageDraw.Draw(isn), ImageDraw.Draw(hum), ImageDraw.Draw(cor)
+    for dd, v in ((di, 255), (dh, 255), (dc, (200, 40, 40))):         # pessoa: tronco e braço dobrado fechando um vão
+        dd.rectangle([150, 100, 250, 299], fill=v)
+        dd.rectangle([250, 100, 330, 120], fill=v)
+        dd.rectangle([310, 100, 330, 200], fill=v)
+        dd.rectangle([250, 180, 330, 200], fill=v)
+    dc.rectangle([251, 121, 309, 179], fill=(30, 140, 40))            # o vão mostra a grama do fundo
+    di.rectangle([20, 40, 150, 200], fill=200)                        # bandeira segurada, encostada no tronco (só no isnet)
+    dc.rectangle([20, 40, 149, 200], fill=(240, 240, 240))
+    di.rectangle([40, 60, 70, 100], fill=20)                          # parte fraca da bandeira (sinal ~0,08)
+    di.rectangle([90, 120, 120, 170], fill=0)                         # parte branca sem sinal nenhum (branco com branco)
+    di.rectangle([160, 40, 240, 100], fill=255)                       # taça segurada (encosta no tronco): vai junto
+    dc.rectangle([160, 40, 240, 99], fill=(220, 180, 40))
+    di.rectangle([345, 220, 390, 290], fill=255)                      # taça num pedestal ao lado, sem pessoa: não vai
+    dc.rectangle([345, 220, 390, 290], fill=(220, 180, 40))
+    return [isn, hum], cor
+
+
+mk, cor = mascaras()
+r = m.rec_limpa_mascara(mk, cor)
+ok(r.shape == (300, 400) and r.dtype.name == "uint8", "máscara limpa do mesmo tamanho: %r" % (r.shape,))
+ok(r[255, 367] == 0 and r[222, 347] == 0, "objeto separado sem pessoa deveria sair: %r" % [r[255, 367], r[222, 347]])
+ok(r[70, 200] == 255 and r[150, 200] == 255, "objeto ligado à mão deveria ficar sólido: %r" % [r[70, 200], r[150, 200]])
+ok(r[80, 55] == 255, "furo de sinal fraco dentro da bandeira deveria ser preenchido: %r" % r[80, 55])
+ok(r[145, 105] == 255, "furo sem sinal com a mesma cor da bandeira em volta deveria ser preenchido: %r" % r[145, 105])
+ok(r[150, 280] == 0, "vão real entre braço e corpo (sem sinal, borda com contraste) não pode ser preenchido: %r" % r[150, 280])
+r2 = m.rec_limpa_mascara(mk)
+ok(r2[145, 105] == 0 and r2[80, 55] == 255 and r2[150, 280] == 0, "sem a foto: furo sem sinal fica aberto, o de sinal fraco fecha: %r" % [r2[145, 105], r2[80, 55]])
+ok(not m.rec_limpa_mascara([Image.new("L", (50, 40), 255), Image.new("L", (50, 40), 0)]).any(), "sem pessoa nenhuma: máscara vazia")
+
 # erro ao abrir os modelos: limpa depois de 60 s
 os.environ["REMBG_HOME"] = "/root/.rembg"
 import time as _t
