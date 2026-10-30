@@ -364,14 +364,17 @@ body.if-tv .if-wrap{height:calc(100vh - 40px)}body.if-tv .if-num{font-size:40px}
 .lj-gcard{display:block}.lj-gview{display:block;width:100%;border:0;padding:0;background:none;cursor:zoom-in;position:relative}
 .lj-gimg.spr{aspect-ratio:3/2}
 .lj-gok{border:0;cursor:pointer;z-index:2}
-.lj-lb{position:fixed;inset:var(--lj-topo,104px) 0 0 0;z-index:60;background:rgba(6,18,36,.94);display:grid;grid-template-columns:72px minmax(0,1fr) 72px;grid-template-rows:minmax(0,1fr) auto;align-items:center;padding:24px 16px 18px;gap:12px}
+.lj-lb{position:fixed;inset:var(--lj-topo,104px) 0 0 0;z-index:60;background:#0A1C33;display:grid;grid-template-columns:72px minmax(0,1fr) 72px;grid-template-rows:minmax(0,1fr) auto;align-items:center;padding:24px 16px 18px;gap:12px}
 .lj-lbmid{grid-column:2;grid-row:1;height:100%;min-height:0;display:flex;align-items:center;justify-content:center}
-.lj-lbimg{width:100%;height:100%;background:transparent var(--img) no-repeat;background-size:var(--bs);background-position:center;filter:var(--flt,none);position:relative}
-.lj-lbimg.spr{aspect-ratio:3/2;height:auto;max-height:100%}
+.lj-lbimg{width:100%;height:100%;background:transparent var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp,center);filter:var(--flt,none);position:relative}
+.lj-lbimg.spr{aspect-ratio:3/2;height:auto;width:auto;max-height:100%;max-width:100%;flex:0 1 auto;min-height:0}
+.lj-lbmid:has(.spr){container-type:size}.lj-lbmid .lj-lbimg.spr{width:min(100cqw,150cqh);height:auto}
 .lj-lbimg.ai{display:flex;align-items:center;justify-content:center}.lj-lbimg.ai>*{max-width:100%;max-height:100%}
 .lj-lbnav{grid-row:1;width:60px;height:60px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.08);color:#fff;font-size:40px;line-height:1;cursor:pointer}
 .lj-lbnav.prev{grid-column:1}.lj-lbnav.next{grid-column:3}.lj-lbnav:disabled{opacity:.25;cursor:default}
-.lj-lbx{position:absolute;top:10px;right:16px;width:52px;height:52px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center}
+.lj-lbx{position:absolute;top:10px;right:16px;min-height:48px;padding:0 18px;border-radius:999px;border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);color:#fff;font:inherit;font-weight:700;font-size:16px;cursor:pointer;z-index:2;display:flex;align-items:center;gap:8px}.lj-lbx svg{width:20px;height:20px}
+.lj-lbbar{position:relative}.lj-lbnext{position:absolute;right:0}
+@media (max-width:900px){.lj-lbnext{position:static}.lj-lbbar{flex-wrap:wrap}}
 .lj-lbbar{grid-column:1/-1;grid-row:2;display:flex;justify-content:center;align-items:center;gap:18px}
 .lj-lbcnt{color:rgba(255,255,255,.8);font-size:18px;font-weight:700}
 .lj-lbon{background:#43B02A!important;color:#fff!important}
@@ -390,19 +393,28 @@ body.if-tv .if-wrap{height:calc(100vh - 40px)}body.if-tv .if-num{font-size:40px}
 .lj.lj-full{overflow-x:hidden}
 /* tela Pronto (QR) sem scroll no monitor: texto e botão à esquerda, QR grande à direita */
 @media (min-width:900px){
-.lj-done .lj-heroin{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:clamp(28px,5vw,80px);row-gap:10px;align-content:center;justify-items:start;text-align:left;max-width:1100px;width:100%;margin:0 auto;overflow:visible}
+.lj-done .lj-heroin{display:grid;grid-template-columns:minmax(0,max-content) auto;justify-content:center;column-gap:clamp(36px,5vw,72px);row-gap:10px;align-content:center;justify-items:start;text-align:left;max-width:1100px;width:100%;margin:0 auto;overflow:visible}
 .lj-done .lj-heroin>*{grid-column:1}
 .lj-done .lj-heroin>.lj-qrcard{grid-column:2;grid-row:1/span 7;align-self:center;padding:20px 20px 14px}
-.lj-done .lj-heroin>.lj-qrcard .lj-qr{width:min(34vh,300px);height:auto}
+.lj-done .lj-heroin>.lj-qrcard .lj-qr{width:min(40vh,320px);height:auto}
 .lj-done .lj-heroin>.lj-qrcard .lj-qr canvas,.lj-done .lj-heroin>.lj-qrcard .lj-qr img,.lj-done .lj-heroin>.lj-qrcard .lj-qr svg{width:100%!important;height:auto!important}
 .lj-done .lj-okbig{width:72px;height:72px;box-shadow:0 0 0 10px rgba(67,176,42,.2)}
 .lj-done .lj-okbig svg{width:36px;height:36px}
 .lj-done .lj-volta{justify-content:flex-start}
 } /* o V decorativo passava da borda e criava rolagem lateral em todas as telas do cliente */
 @media (min-width:1000px){
-.lj-checkout .lj-co{grid-template-columns:minmax(0,.75fr) minmax(560px,1.25fr);padding:4px 0 10px}
+.lj-checkout .lj-co{grid-template-columns:minmax(300px,.8fr) minmax(0,1.4fr);padding:4px 0 10px}
+.lj-checkout .lj-mem{display:flex;flex-direction:column;gap:10px}
+.lj-checkout .lj-minis{display:flex;flex-wrap:nowrap;gap:6px;margin:0;padding:0;border:0;background:none;cursor:pointer;overflow:hidden}
+.lj-checkout .lj-mini{width:52px;flex:0 0 52px;padding:2px;border-radius:4px;transform:none!important;box-shadow:none}
+.lj-checkout .lj-mais{display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.15);color:#fff;font-weight:700;font-size:14px;aspect-ratio:3/2;height:auto}
+.lj-checkout .lj-incl{padding:10px 12px;gap:6px}.lj-checkout .lj-incl small{display:none}.lj-checkout .lj-incl b{font-size:14px}.lj-checkout .lj-ii svg{width:20px;height:20px}
+.lj-checkout .lj-mem .lj-sum{background:rgba(255,255,255,.1);color:#fff}
+.lj-checkout .lj-mem .lj-total{border-top-color:rgba(255,255,255,.3)}.lj-checkout .lj-mem .lj-total span{color:rgba(255,255,255,.8)}.lj-checkout .lj-mem .lj-total b{color:#fff}
+.lj-checkout .lj-mem .lj-fine{color:rgba(255,255,255,.75)}
+.lj-checkout .lj-ii{width:30px;height:30px;flex:0 0 30px}
 .lj-checkout .lj-order{gap:10px;padding:16px 18px}
-.lj-checkout .lj-pkgs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.lj-checkout .lj-pkgs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .lj-checkout .lj-pkg{position:relative;grid-template-columns:20px 34px minmax(0,1fr) auto;gap:8px;padding:9px 10px;min-height:58px}
 .lj-checkout .lj-pkgn{font-size:24px}
 .lj-checkout .lj-pkgd b{font-size:14px}.lj-checkout .lj-pkgd small{font-size:11.5px}
@@ -1819,6 +1831,7 @@ function lojaCart(card){const items=lojaItems(card);const pk=lojaPick(card);cons
   return {ch,nPh,nAI,n,pkg,extra,cart,total,prints,sobra,nSes,save,lines};}
 function lojaThumb(x,big){if(x.t==='ai'){const b=bgOf(x.bg);return `<span class="compimg" data-comp="${x.id}|${x.bg}" style="background-image:url(${b?b.file:''})"><span class="lj-aimk" role="status"><i class="lj-spin" aria-hidden="true"></i>${T('aiMaking')}</span></span><span class="laibadge" aria-label="Fundo de IA">${ICO.spark}</span>`;}return '';}
 const ICO={
+  grid:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
   no:'<svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   ok:'<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"/></svg>',
   fav:'<svg viewBox="0 0 24 24" width="44" height="44" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C1 8.6 3 5 6.6 5c2.1 0 3.6 1.2 5.4 3.2C13.8 6.2 15.3 5 17.4 5 21 5 23 8.6 21.6 11.8 19.5 16.4 12 21 12 21z"/></svg>',
@@ -2356,7 +2369,7 @@ function vQuiosque(){
   const cartPill=`<button class="lj-cartpill ${nSel?'on':''}" data-act="loja-cart" aria-label="Carrinho">${ICO.cart}<b>${nSel}</b>${nSel?`<span>${fmtR(c.total)}</span>`:''}</button>`;
   const steps=n=>`<div class="lj-steps">${T('steps').map((t,i)=>`<span class="${i+1<n?'done':i+1===n?'cur':''}"><b>${i+1<n?'✓':i+1}</b>${t}</span>`).join('<i></i>')}</div>`;
   const topR=x=>`<div class="lj-topr">${langPick(true)}${x}</div>`;
-  if(k.step==='gallery'||k.step==='pick'||k.step==='pay')k.step=k.step==='pay'?'cart':'review';
+  if(k.step==='gallery'||k.step==='pick'||k.step==='pay'){if(k.step!=='pay')k.ver=k.i||0;k.step=k.step==='pay'?'cart':'review';}
   if((k.step==='review'||k.step==='cart')&&lojaJaPaga(k.code)){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (comprar mais é o achado 2 da v85)
     const tok=galDaSessao(k.code);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){const sim=SIM.sessions[k.code]||{};setTimeout(()=>{if(state.kiosk===k&&lojaJaPaga(k.code)&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
   if((k.step==='review'||k.step==='cart')&&lojaJaPaga(k.code))return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljVoltar('loja-new','')}</div></div>`;
@@ -2366,18 +2379,18 @@ function vQuiosque(){
     const card=(q,i)=>{const s2=pk[q.k]||'';return `<div class="lj-gcard ${s2==='ok'?'ok':''}"><button class="lj-gview" data-act="kiosk-ver" data-i="${i}" aria-label="Ampliar foto ${i+1}">${img(q,s2,'lj-gimg')}${q.t==='ai'?`<span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>`:''}</button>
         <button class="lj-gok" data-act="kiosk-tog" data-i="${i}" aria-pressed="${s2==='ok'}" aria-label="Marcar foto ${i+1}">${ICO.ok}</button></div>`;};
     const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;const vs=vq?pk[vq.k]||'':'';
-    const caixa=vq?`<div class="lj-lb" id="lj-lb" role="dialog" aria-label="Foto ${v+1} de ${n}"><button class="lj-lbx" data-act="kiosk-fechar" aria-label="Fechar">${ICO.no}</button>
+    const caixa=vq?`<div class="lj-lb" id="lj-lb" role="region" aria-label="Foto ${v+1} de ${n}"><button class="lj-lbx" data-act="kiosk-fechar">${ICO.grid}<span>Ver todas</span></button>
         <button class="lj-lbnav prev" data-act="kiosk-ver" data-i="${v-1}" ${v===0?'disabled':''} aria-label="Anterior">‹</button>
         <div class="lj-lbmid">${img(vq,vs,'lj-lbimg')}</div>
         <button class="lj-lbnav next" data-act="kiosk-ver" data-i="${v+1}" ${v>=n-1?'disabled':''} aria-label="Próxima">›</button>
-        <div class="lj-lbbar"><span class="lj-lbcnt">${v+1} / ${n}</span><div class="lj-actions"><button class="lj-no ${vs==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${vs==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div></div></div>`:'';
+        <div class="lj-lbbar"><span class="lj-lbcnt">${v+1} / ${n}</span><div class="lj-actions"><button class="lj-no ${vs==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${vs==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div><button class="lj-cta lj-next lj-lbnext" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small> ${ICO.arrow}`:T('tapCheck')}</button></div></div>`:'';
     return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljVoltar()}${cartPill}`)}</div>
       <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n} ${n===1?'foto':'fotos'}</span></div>
-      <div class="lj-grid">${items.map(card).join('')}</div>${caixa}
+      ${vq?caixa:`<div class="lj-grid">${items.map(card).join('')}</div>
       <div class="lj-foot"><span class="lj-hint">${nSel?T('tapCheck'):''}</span>
-        <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div></div>`;}
+        <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div>`}</div>`;}
   if(k.step==='cart'){const ps=DATA.catalog.filter(x=>x.kind==='pacote');const auto=c.n?lojaIdeal(c.n).pkg:null;const P0=c.pkg&&DATA.catalog.find(x=>x.id===c.pkg);const save=c.save;
-    const prints=c.ch.map(x=>`<div class="lj-mini"><div class="lj-img" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}</div><button class="lj-rm" data-act="loja-rm" data-k="${esc(x.k)}" aria-label="✗">${ICO.no}</button></div>`).join('');
+    const MAXM=8;const prints=c.ch.slice(0,MAXM).map(x=>`<div class="lj-mini"><div class="lj-img" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}</div></div>`).join('')+(c.ch.length>MAXM?`<div class="lj-mini lj-mais">+${c.ch.length-MAXM}</div>`:'');
     const pkgs=c.n?ps.map(p=>{const dg=p.digital==='todas';const on=p.id===c.pkg;const ex=dg?0:Math.max(0,c.n-p.digital);return `<button class="lj-pkg ${on?'on':''}" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${on}"><span class="lj-radio"></span><span class="lj-pkgn">${dg?'∞':p.digital}</span><span class="lj-pkgd"><b>${dg?T('pkgAll'):T('nPhotos',p.digital)}</b><small>${p.prints?T('pkgPD'):T('pkgD')}</small>${ex?`<small class="lj-pkgx">${T('pkgPlusExtra',ex,fmtR(priceOf('extra')))}</small>`:''}</span>${p.id===auto?`<span class="lj-badge">${T('ideal')}</span>`:''}<span class="lj-pkgp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
     const incl=[c.prints?[ICO.print,T('incPrint',c.prints),T('incPrintD')]:null,
       c.nPh?[ICO.phone,P0&&P0.digital==='todas'?T('incDigAll'):T('incDig',c.nPh),T('incDigD')]:null,
@@ -2386,19 +2399,19 @@ function vQuiosque(){
     return `<div class="lj lj-full lj-checkout">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(2)}${topR(`${ljVoltar()}<button class="lj-ghost sm" data-act="kiosk-review">${ICO.back} ${T('steps')[0]}</button>`)}</div>
       <div class="lj-co">
         <section class="lj-mem"><div class="lj-eyebrow">${T('memories')}</div><h2 class="lj-h2">${T('chosen',nSel)}</h2>
-          ${nSel?`<div class="lj-minis">${prints}</div><div class="lj-eyebrow" style="margin-top:12px">${T('whatYouGet')}</div><ul class="lj-incl">${incl.map(([ic,t,d])=>`<li><span class="lj-ii">${ic}</span><span><b>${t}</b><small>${d}</small></span></li>`).join('')}</ul>`
+          ${nSel?`<button class="lj-minis" data-act="kiosk-review" aria-label="${T('steps')[0]}">${prints}</button><ul class="lj-incl">${incl.map(([ic,t,d])=>`<li><span class="lj-ii">${ic}</span><span><b>${t}</b><small>${d}</small></span></li>`).join('')}</ul>
+          ${c.lines.length?`<div class="lj-sum">${c.lines.map(l=>`<div class="lj-sumrow"><span>${l.t==='pkg'?(l.n==='todas'?T('sumPkgAll'):T('sumPkg',l.n)):T('sumExtra',l.n,fmtR(l.un))}</span><b>${fmtR(l.v)}</b></div>`).join('')}</div>`:''}
+          <div class="lj-total"><span>${T('total')}${save>0?`<em class="lj-save">${T('save',fmtR(save))}</em>`:''}</span><b>${fmtR(c.total)}</b></div>
+          <button class="lj-cta lj-paybtn" data-act="loja-checkout" ${k.pay?'':'disabled'}>${k.pay?`${T(k.pay==='cash'?'payBtnCash':'payBtn',fmtR(c.total))} ${ICO.arrow}`:T('choosePay')}</button>
+          ${k.pay==='cash'?`<div class="lj-fine lj-cashnote">${T('cashNote')}</div>`:''}
+          ${c.prints&&k.pay!=='cash'?`<div class="lj-fine">${T('secure')}</div>`:''}`
             :`<p class="lj-sub">${T('emptyCart')}</p><button class="lj-cta" data-act="kiosk-review">${ICO.back} ${T('choosePhotos')}</button>`}</section>
         ${nSel?`<section class="lj-order">
           ${pkgs?`<div class="lj-oh"><b>1</b>${T('pkgH')}</div><div class="lj-pkgs">${pkgs}</div>`:''}
           ${k.aviso?`<div class="lj-fine lj-aviso" role="status">${T(k.aviso)}</div>`:''}
           <div class="lj-oh"><b>${pkgs?2:1}</b>${T('payH')}</div>
           <div class="lj-pays">${PAYS.map(([m])=>`<button class="lj-pay ${k.pay===m?'on':''}" data-act="loja-paym" data-m="${m}" aria-pressed="${k.pay===m}">${ICO[m]}<span>${T(m)}</span></button>`).join('')}</div>
-          ${c.lines.length?`<div class="lj-sum">${c.lines.map(l=>`<div class="lj-sumrow"><span>${l.t==='pkg'?(l.n==='todas'?T('sumPkgAll'):T('sumPkg',l.n)):T('sumExtra',l.n,fmtR(l.un))}</span><b>${fmtR(l.v)}</b></div>`).join('')}</div>`:''}
           ${c.sobra>0?`<div class="lj-fine">${T('roomFor',c.sobra)}</div>`:''}
-          <div class="lj-total"><span>${T('total')}${save>0?`<em class="lj-save">${T('save',fmtR(save))}</em>`:''}</span><b>${fmtR(c.total)}</b></div>
-          <button class="lj-cta lj-paybtn" data-act="loja-checkout" ${k.pay?'':'disabled'}>${k.pay?`${T(k.pay==='cash'?'payBtnCash':'payBtn',fmtR(c.total))} ${ICO.arrow}`:T('choosePay')}</button>
-          ${k.pay==='cash'?`<div class="lj-fine lj-cashnote">${T('cashNote')}</div>`:''}
-          ${c.prints&&k.pay!=='cash'?`<div class="lj-fine">${T('secure')}</div>`:''}
         </section>`:''}
       </div></div>`;}
   if(k.step==='done'){const p=k.paid||{};const wait=!!p.wait;const cash=wait&&(!!p.cash||p.meio==='dinheiro');const pos=wait&&!cash;const pix=p.meio==='pix';
@@ -4373,7 +4386,7 @@ document.addEventListener('click',e=>{
     case 'caixa-confirm':caixaConfirm();break;
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':{const c=state.caixa.session;state.caixa.reprint=state.caixa.reprint===c?null:c;render();break;} // v83: abre o painel de impressão desta venda (sem baixa aqui)
-    case 'kiosk-go':{lojaCliente();const v=($('#kcode')||{}).value||'';state.kiosk.code=v.trim().toUpperCase();state.kiosk.step='review';state.kiosk.i=0;state.kiosk.pkg=null;state.kiosk.pay=null;render();break;}
+    case 'kiosk-go':{lojaCliente();const v=($('#kcode')||{}).value||'';state.kiosk.code=v.trim().toUpperCase();state.kiosk.step='review';state.kiosk.i=0;state.kiosk.ver=0;state.kiosk.pkg=null;state.kiosk.pay=null;render();break;}
     case 'kiosk-back':lojaReset();render();break;
     case 'kiosk-emerg':{lojaCliente();if(state.kiosk.timer){clearTimeout(state.kiosk.timer);state.kiosk.timer=null;}state.kiosk.step='emerg';render();const el=$('#kcode');if(el)el.focus();break;}
     case 'kiosk-sel':toggleSel(state.kiosk.code,d.id);render();break;
@@ -4392,7 +4405,7 @@ document.addEventListener('click',e=>{
     case 'loja-list':state.kiosk.list=!state.kiosk.list;render();break;
     case 'loja-sair':lojaSair();break;
     case 'loja-eq-fechar':state.kiosk.equipe=false;state.kiosk.list=false;render();break;
-    case 'loja-open':state.kiosk.equipe=false;state.kiosk.code=d.card;state.kiosk.step='review';state.kiosk.i=0;state.kiosk.pkg=null;state.kiosk.pay=null;state.kiosk.list=false;render();break;
+    case 'loja-open':state.kiosk.equipe=false;state.kiosk.code=d.card;state.kiosk.step='review';state.kiosk.i=0;state.kiosk.ver=0;state.kiosk.pkg=null;state.kiosk.pay=null;state.kiosk.list=false;render();break;
     case 'loja-rm':{const pk=lojaPick(state.kiosk.code);delete pk[d.k];lojaSync(state.kiosk.code);render();break;}
     case 'loja-pkg':state.kiosk.pkg=d.id;render();break;
     
