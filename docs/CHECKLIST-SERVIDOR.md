@@ -73,7 +73,7 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 
 ## 7. Ligar sozinho
 
-- [ ] A pasta do Eterna fica no usuário de quem usa o computador (ex.: Rafael). Nesse usuário, sem administrador: Python 3.12 (`winget install --id Python.Python.3.12 -e --scope user`), a venv em `%USERPROFILE%\Eternaenv` com as bibliotecas do passo 3 e `agente\instalar-vigia.ps1`.
+- [ ] A pasta do Eterna fica no usuário de quem usa o computador (ex.: Rafael). Nesse usuário, sem administrador: Python 3.12 (`winget install --id Python.Python.3.12 -e --scope user`), a venv em `%USERPROFILE%\Eterna\venv` com as bibliotecas do passo 3 e `agente\instalar-vigia.ps1`.
 - [ ] Como administrador: rodar **`agente\instalador\Eterna-Servidor.exe`** (executa o `agente\instalar-servidor.ps1`). Ele:
   - cria a tarefa "Eterna" do **sistema** (SYSTEM), que liga o Eterna com o Windows sem ninguém entrar e sem senha de usuário, e religa se cair;
   - desliga o atalho do vigia na pasta Inicializar, para não subirem dois;
