@@ -73,8 +73,13 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 
 ## 7. Ligar sozinho
 
-- [ ] No usuário eterna: rodar `agente\instalar-vigia.ps1`. Ele cria o atalho "Eterna vigia" na pasta Inicializar, e o vigia religa o Eterna se cair ou travar.
-- [ ] Como administrador: rodar `agente\instalar-tarefa.ps1` e digitar a senha do usuário eterna na janela. Ele cria a tarefa agendada "Eterna", que liga o vigia com o Windows como usuário eterna, escondido, **sem ninguém entrar nesse usuário**. Quem usa o computador fica no próprio usuário (ex.: Rafael) e usa o atalho "Eterna" que o script põe na área de trabalho dele (liga o Eterna se estiver parado e abre o app). Dispensa o Autologon e desliga o atalho da pasta Inicializar.
+- [ ] O Eterna roda no **usuário de quem usa o computador no dia a dia** (ex.: Rafael). Em máquina corporativa (Azure AD) a tarefa agendada em outro usuário não chega a rodar (resultado 267011, a política não deixa) e o usuário separado não entra sozinho; por isso o `agente\instalar-tarefa.ps1` ficou só para máquina fora do domínio.
+- [ ] Nesse usuário, sem administrador: Python 3.12 (`winget install --id Python.Python.3.12 -e --scope user`), a venv em `%USERPROFILE%\Eternaenv` com as bibliotecas do passo 3 e `agente\instalar-vigia.ps1`. Ele cria o "Eterna vigia" na pasta Inicializar (religa o Eterna se cair ou travar) e o atalho **"Eterna"** na área de trabalho (liga o vigia se estiver parado e abre o app).
+- [ ] Na primeira vez que o Eterna sobe, o Windows pergunta se o Python pode receber conexões. Quem tem administrador clica **Permitir**. Se clicar em Cancelar, o Windows grava uma regra que **bloqueia** o Python e a rede para de chegar, mesmo com a regra "Eterna 8765". Para desfazer, no PowerShell como administrador:
+  ```powershell
+  Get-NetFirewallApplicationFilter | ? Program -like '*python312\python.exe' | Get-NetFirewallRule | ? Action -eq Block | Set-NetFirewallRule -Action Allow
+  ```
+- [ ] Mudou de usuário: copiar a pasta `Eterna` (e `.aws`, `.u2net`) do usuário antigo como administrador, com `robocopy <origem> <destino> /E /B /XD venv programa` (sem o `/B` o administrador leva "Acesso negado" na pasta de outro usuário).
 - [ ] Teste: reiniciar o servidor e entrar no usuário de sempre. Em até 2 minutos, `/status` responde.
 
 ## 8. Acesso remoto (Tailscale)
