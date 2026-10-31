@@ -1814,7 +1814,10 @@ const BG_GROUP={campeao2:'campeao',campeaoarg:'campeao',campeaocol:'campeao'};co
 function bgOpts(){const seen=new Set();const out=[];DATA.backgrounds.filter(bgAtivo).forEach(b=>{const g=BG_GROUP[b.id]||b.id;if(seen.has(g))return;seen.add(g);out.push({id:g,name:g==='campeao'?'Noite de campeão':b.name,b:g==='campeao'?bgOf('campeao2'):b,variants:g==='campeao'?DATA.backgrounds.filter(x=>BG_GROUP[x.id]==='campeao'&&bgAtivo(x)).length:1});});return out;}
 function bgOn(){const ok=new Set(bgOpts().map(o=>o.id));const src=SIM.bgOn||BG_DEF;const l=src.filter(id=>ok.has(id)).slice(0,BG_MAX);return l.length||!src.length?l:BG_DEF.filter(id=>ok.has(id));} // v81: escolha salva só com fundos ocultos volta ao padrão
 function bgFor(opt,card){if(opt!=='campeao')return bgOf(opt);const f=String((SIM.sessions[card]||{}).flag||'').toLowerCase();const v=bgOf(/argentin/.test(f)?'campeaoarg':/col[oô]mbia/.test(f)?'campeaocol':'campeao2');return v&&bgAtivo(v)?v:bgOf('campeao2');} // v81: variação oculta cai na Noite de campeão
-function lojaAI(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];const loc=fundosModo()==='local';const ph=s.photos.filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]&&!FIA_RUIM.has(p.id)&&(!loc||/^ag_/.test(p.id)));if(!ph.length)return [];
+// Achado pela selfie: o cliente só vê as fotos em que o rosto dele aparece, nunca a sessão inteira (a fotógrafa pode emendar
+// grupos diferentes sem a pausa, e a sessão junta pessoas que não se conhecem). Pelo código do recibo, a sessão inteira.
+const lojaDele=(card,id)=>{const so=state.kiosk&&state.kiosk.so;return !so||so.card!==card||so.ids.includes(id)};
+function lojaAI(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];const loc=fundosModo()==='local';const ph=s.photos.filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]&&lojaDele(card,p.id)&&!FIA_RUIM.has(p.id)&&(!loc||/^ag_/.test(p.id)));if(!ph.length)return [];
   const ready=aiPrep(card);let picks=ph.slice(0,2);
   if(ready){const ok=aiCands(card).filter(aiOk);picks=picks.map(p=>{const sc=aiScore(p.id);return aiOk(sc)?p:null;});
     picks=picks.map(p=>p||ok.find(c=>!picks.some(q=>q&&q.id===c.id))).filter(Boolean);
@@ -1822,7 +1825,7 @@ function lojaAI(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];co
   const out=[];picks.forEach(p=>{const f=aiScore(p.id).f;const a=ANAV[p.id];
     bgOn().map(o=>bgFor(o,card)).filter(b=>b&&b.fit.includes(f)).map(b=>({b,m:bgMatch(a,b)||0})).sort((x,y)=>y.m-x.m).slice(0,3).forEach(x=>{if(!FIA_RUIM.has(p.id)&&!FIA_RUIM.has(p.id+'|'+x.b.id)&&(!loc||/^ag_/.test(p.id)))out.push({t:'ai',id:p.id,bg:x.b.id,k:'ai:'+p.id+'|'+x.b.id});});});
   return out;}
-function lojaItems(card){const s=sessionObj(card);if(!s)return [];const ph=s.photos.filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]).map(p=>({t:'ph',id:p.id,k:p.id}));
+function lojaItems(card){const s=sessionObj(card);if(!s)return [];const ph=s.photos.filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]&&lojaDele(card,p.id)).map(p=>({t:'ph',id:p.id,k:p.id}));
   const ai=lojaAI(card);if(!ai.length)return ph;const at=Math.min(ph.length,Math.max(2,Math.floor(ph.length/2)));return [...ph.slice(0,at),...ai,...ph.slice(at)];}
 function lojaPick(card){const s=simOf(card);s.pick=s.pick||{};return s.pick;}
 function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const ks=Object.keys(pk).filter(k=>pk[k]==='ok'||pk[k]==='fav');s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();}
@@ -1866,7 +1869,7 @@ const ICO={
   full:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   list:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'};
 const PAYS=[['card','Cartão'],['pix','PIX'],['cash','Dinheiro']];
-function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}Object.assign(k,{step:'code',code:'',i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
+function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}Object.assign(k,{step:'code',code:'',so:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 // relê o SIM da outra janela sem perder as escolhas desta sessão no Checkout
 function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk)simOf(card).pick=pk;}
 // revisão 1: nenhuma forma de pagamento tira uma sessão de "paga" (comprar mais é com a equipe)
@@ -4152,13 +4155,13 @@ function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c
 function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;el.dataset.st=c.status;const t=state.view==='quiosque'?(I18N['cam_'+c.status]?T('cam_'+c.status):''):({off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando',nocam:'Câmera indisponível neste endereço (use HTTPS ou localhost). Escolha a sessão na lista ou digite o código'}[c.status]||'');el.textContent=t;if(f)f.dataset.st=c.status;}
 function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Date.now();c.status='searching';camStatus();
   const ok=x=>state.view==='quiosque'||x.status!=='paga'; // checkout: toda sessão ainda não paga (como a lista ao lado); quiosque: todas
-  const open=card=>{c.busy=false;c.status='found';camStatus();
-    if(state.view==='quiosque'){lojaCliente();state.kiosk.code=card;state.kiosk.step='gallery';toast('Achamos você: '+card);render();}
+  const open=(card,fotos)=>{c.busy=false;c.status='found';camStatus();
+    if(state.view==='quiosque'){lojaCliente();state.kiosk.code=card;state.kiosk.so={card,ids:fotos||[]};state.kiosk.step='gallery';toast('Achamos você: '+card);render();}
     else if(state.view==='checkout'){toast('Encontramos: '+card);checkoutPick(card);}
     else{c.status='idle';}};
   const v=$('#cam-video');
   if(c.stream&&v&&v.videoWidth){(async()=>{const fr=[];for(let k=0;k<3;k++){const cv=mkc(v.videoWidth,v.videoHeight);cv.getContext('2d').drawImage(v,0,0);fr.push(cv);if(k<2)await new Promise(r=>setTimeout(r,250));}return faceFind(fr,ok);})()
-    .then(r=>{if(!camWanted()){c.busy=false;return;}if(r.list.length&&r.clara){open(r.list[0].card);return;}
+    .then(r=>{if(!camWanted()){c.busy=false;return;}if(r.list.length&&r.clara){open(r.list[0].card,r.list[0].fotos);return;}
       if(r.list.length){c.busy=false;c.status='pick';c.cands=r.list.slice(0,4);render();return;}
       c.busy=false;c.status=r.semRosto?'noface':'nomatch';camStatus();setTimeout(()=>{if(c.status==='noface'||c.status==='nomatch'){c.status='idle';camStatus();}},6000);})
     .catch(()=>{c.busy=false;c.status='idle';camStatus();toast('Reconhecimento indisponível. Use o código.');});return;}
@@ -4467,7 +4470,7 @@ document.addEventListener('click',e=>{
     case 'caixa-open':state.caixa.session=d.card;render();break;
     case 'caixa-pay':state.caixa.pay=d.m;state.caixa.tefStatus=null;render();break;
     case 'checkout-pick':checkoutPick(d.card);break;
-    case 'cam-pick':{const c=state.cam;c.cands=null;if(!d.card){c.status='idle';render();break;}c.status='found';if(state.view==='quiosque'){lojaCliente();state.kiosk.code=d.card;state.kiosk.step='gallery';render();}else checkoutPick(d.card);break;}
+    case 'cam-pick':{const c=state.cam;const cd=(c.cands||[]).find(x=>x.card===d.card);c.cands=null;if(!d.card){c.status='idle';render();break;}c.status='found';if(state.view==='quiosque'){lojaCliente();state.kiosk.code=d.card;state.kiosk.so={card:d.card,ids:cd?cd.fotos:[]};state.kiosk.step='gallery';render();}else checkoutPick(d.card);break;}
     case 'face-measure':{state.face.medida={rodando:true};render();faceMeasure().then(m=>{state.face.medida=m;render();}).catch(e=>{state.face.medida={erro:String(e&&e.message||e)};render();});break;}
     case 'checkout-face':{toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);break;}
     case 'checkout-back':{const sim=state.checkout.session?simOf(state.checkout.session):null;if(sim&&sim.status==='no checkout'){sim.status=DATA.sampled.find(x=>x.card===state.checkout.session)?'pronta':'fechada';saveSim();}state.checkout.session=null;state.checkout.step=1;state.fila.session=null;state.caixa.session=null;render();break;}
@@ -4495,7 +4498,7 @@ document.addEventListener('click',e=>{
     case 'caixa-confirm':caixaConfirm();break;
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':{const c=state.caixa.session;state.caixa.reprint=state.caixa.reprint===c?null:c;render();break;} // v83: abre o painel de impressão desta venda (sem baixa aqui)
-    case 'kiosk-go':{lojaCliente();const v=($('#kcode')||{}).value||'';state.kiosk.code=v.trim().toUpperCase();state.kiosk.step='review';state.kiosk.i=0;state.kiosk.ver=0;state.kiosk.pkg=null;state.kiosk.pay=null;render();break;}
+    case 'kiosk-go':{lojaCliente();const v=($('#kcode')||{}).value||'';state.kiosk.code=v.trim().toUpperCase();state.kiosk.so=null;state.kiosk.step='review';state.kiosk.i=0;state.kiosk.ver=0;state.kiosk.pkg=null;state.kiosk.pay=null;render();break;}
     case 'kiosk-back':lojaReset();render();break;
     case 'kiosk-emerg':{lojaCliente();if(state.kiosk.timer){clearTimeout(state.kiosk.timer);state.kiosk.timer=null;}state.kiosk.step='emerg';render();const el=$('#kcode');if(el)el.focus();break;}
     case 'kiosk-sel':toggleSel(state.kiosk.code,d.id);render();break;
