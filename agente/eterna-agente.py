@@ -3870,8 +3870,10 @@ IMP_DIR = os.path.join(HOME, "impressao")
 # Imprime cada JPEG numa folha 10x15 da impressora do servidor, sem margem e preenchendo a folha (corta o excesso,
 # como a DNP faz). Usa o .NET do próprio Windows (System.Drawing), sem programa extra.
 IMP_PS1 = r"""
-param([string]$Impressora, [string[]]$Arquivos)
+param([string]$Impressora, [string[]]$Arquivos, [string]$Lista)
 Add-Type -AssemblyName System.Drawing
+# a lista vem num arquivo (uma foto por linha): com -File, o PowerShell só põe em -Arquivos o primeiro de vários argumentos
+if ($Lista) { $Arquivos = @(Get-Content -LiteralPath $Lista -Encoding UTF8 | Where-Object { $_ }) }
 # Uma foto por trabalho, e a próxima só depois que a anterior saiu da fila e a impressora voltou a ficar livre:
 # a DS-RX1 descartava o que chegava enquanto imprimia (vários trabalhos seguidos ou várias páginas no mesmo trabalho).
 function Espera-Livre {
@@ -4072,8 +4074,11 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
         else:
             linhas = []
             try:
+                lista = os.path.join(IMP_DIR, "lista_%s.txt" % job["id"])
+                with open(lista, "w", encoding="utf-8") as fh:
+                    fh.write("\n".join(arqs) + "\n")
                 pr = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", imp,
-                                       "-Arquivos"] + arqs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                       "-Lista", lista], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 for ln in pr.stdout:
                     ln = ln.strip()
                     if not ln:
@@ -4085,7 +4090,11 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
                             imp_salvar()
                 pr.wait(timeout=120 + 90 * len(arqs))
                 saida = " ".join(" ".join(linhas).split())
-                ok = pr.returncode == 0 and linhas and linhas[-1].startswith("OK")
+                entregues = sum(1 for x in linhas if x.startswith("FOTO"))
+                # só é "impresso" com todas as fotos entregues à DNP: faltou uma, é erro (nunca um OK com foto a menos)
+                ok = pr.returncode == 0 and linhas and linhas[-1].startswith("OK") and entregues == len(arqs)
+                if pr.returncode == 0 and entregues != len(arqs):
+                    linhas.append("ERRO %d de %d fotos entregues à impressora" % (entregues, len(arqs)))
             except Exception as ex:
                 saida, ok = "ERRO " + str(ex), False
         with lock:
