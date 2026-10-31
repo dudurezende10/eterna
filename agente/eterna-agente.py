@@ -2256,7 +2256,7 @@ def rec_status():
     with rec_lock:
         n = rec["feitos"]
         return {"ok": ok, "motivo": motivo, "carregado": rec["carregado"], "modelos": list(REC_MODELOS), "fila": rec_fila.qsize(),
-                "antecipado": {"ligado": REC_PRE, "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
+                "antecipado": {"ligado": REC_PRE, "escolhidas": rec.get("pre_escolhidas", 0), "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
                 "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC}
 
 
@@ -2867,6 +2867,7 @@ def rec_pre_loop():
                 falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
                 with rec_lock:
                     rec["pre_falta"] = len(falta)
+                    rec["pre_escolhidas"] = len(pids)
                 for pid in falta:
                     while rec_fila.qsize():             # cliente esperando no Checkout: passa na frente
                         time.sleep(1)
