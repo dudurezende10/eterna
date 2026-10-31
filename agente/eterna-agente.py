@@ -350,6 +350,8 @@ LIMITE_TALVEZ = 0.38   # entre este e LIMITE a busca devolve como "talvez": o ap
 ROSTO_MIN = 40         # rostos menores que isso (px, foto reduzida a 1600) são fundo/arquibancada: ignorados
 LADO = 1600
 RETENCAO_DIAS = 60     # D10: a selfie da galeria online precisa achar as fotos até o dia 60
+# ETERNA_BUSCA_DIAS: a selfie do Checkout procura em hoje e nos N-1 dias anteriores (padrão 1, só hoje). Teste com fotos de ontem: 2
+BUSCA_DIAS = max(1, int(os.environ.get("ETERNA_BUSCA_DIAS") or 1))
 rostos = {"ligado": False, "motivo": "iniciando", "lidas": 0, "rostos": 0, "fila": 0, "modelo": "YuNet + SFace (OpenCV)", "limite": LIMITE}
 fila_rostos = queue.Queue()
 _cv = {}               # cv2, np, det, rec (um par por thread de leitura)
@@ -535,6 +537,7 @@ _busca_lock = threading.Lock()
 def buscar(imagens, dias=1):
     """Lê o maior rosto de cada imagem (dataURL/base64), faz a média e devolve as fotos com o rosto."""
     np = _cv["np"]; cv2 = _cv["cv2"]
+    dias = max(int(dias or 1), BUSCA_DIAS)
     with _busca_lock:
         if not _busca["m"]:
             _busca["m"] = leitor()
