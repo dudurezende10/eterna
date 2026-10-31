@@ -414,6 +414,8 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-done .lj-heroin>.lj-qrcard .lj-qr{width:min(40vh,320px);height:auto}
 .lj-done .lj-heroin>.lj-qrcard .lj-qr canvas,.lj-done .lj-heroin>.lj-qrcard .lj-qr img,.lj-done .lj-heroin>.lj-qrcard .lj-qr svg{width:100%!important;height:auto!important}
 .lj-done .lj-okbig{width:72px;height:72px;box-shadow:0 0 0 10px rgba(67,176,42,.2)}
+.lj-qrfoto{position:relative;height:min(58vh,520px);aspect-ratio:2/3;border-radius:10px;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp,center)}
+.lj-done .lj-heroin>.lj-qrcard .lj-qrfoto .lj-qr{position:absolute;right:10px;bottom:10px;width:46%;background:#fff;padding:6px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.35)}
 .lj-done .lj-okbig svg{width:36px;height:36px}
 .lj-done .lj-volta{justify-content:flex-start}
 } /* o V decorativo passava da borda e criava rolagem lateral em todas as telas do cliente */
@@ -2454,7 +2456,9 @@ function vQuiosque(){
           ${c.sobra>0?`<div class="lj-fine">${T('roomFor',c.sobra)}</div>`:''}
         </section>`:''}
       </div></div>`;}
-  if(k.step==='done'){const p=k.paid||{};const wait=!!p.wait;const cash=wait&&(!!p.cash||p.meio==='dinheiro');const pos=wait&&!cash;const pix=p.meio==='pix';
+  // o QR vem em cima de uma foto escolhida pelo cliente (como no sistema anterior): com várias pessoas no balcão, cada uma
+  // reconhece o próprio QR e ninguém lê o do vizinho
+  if(k.step==='done'){const p=k.paid||{};const wait=!!p.wait;const fotoQR=((SIM.sessions[k.code]||{}).selected||[])[0]||null;const cash=wait&&(!!p.cash||p.meio==='dinheiro');const pos=wait&&!cash;const pix=p.meio==='pix';
     return `<div class="lj lj-full lj-done${cash?' lj-cashdone':''}${pos?' lj-posdone':''}" lang="${lang()}">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(wait?2:3)}${topR(`<button class="lj-ic" data-act="loja-new" aria-label="${T('nextGuest')}">${ICO.home}</button>`)}</div>
       <div class="lj-heroin">${cash?`<div class="lj-pendbig">${ICO.cash}</div><div class="lj-eyebrow">${T('ljCashEyebrow')}</div><h1 class="lj-h1">${T('ljCashH')}</h1>
         <p class="lj-sub">${T('ljCashSub',fmtR(p.total||0),p.prints||0)}</p>`
@@ -2463,7 +2467,7 @@ function vQuiosque(){
         :`<div class="lj-okbig">${ICO.ok}</div><div class="lj-eyebrow">${T('thanks')}</div><h1 class="lj-h1">${T('storyGoes')}</h1>
         <p class="lj-sub">${p.prints?T('printsReady',p.prints)+'<br>':''}${T('scanQR')}</p>`}
         ${wait?`<div class="lj-qrcard lj-waitcard">${p.codigo?`<b class="lj-qrcode">${cash?T('gq_codeIs',`<span class="lj-nw">${esc(p.codigo)}</span>`):T('ljPosCode',`<span class="lj-nw">${esc(p.codigo)}</span>`)}</b>`:''}<span>${T('ljPosWait')}</span></div>`
-        :`<div class="lj-qrcard"><div id="lqr" class="lj-qr" aria-label="QR"></div>${p.codigo?`<b class="lj-qrcode">${T('gq_codeIs',p.codigo)}</b>`:''}<span>${ICO.phone} ${T('download')}</span></div>
+        :`<div class="lj-qrcard${fotoQR?' lj-qrcom':''}">${fotoQR?`<div class="lj-qrfoto" style="${bigStyle(fotoQR)}"><div id="lqr" class="lj-qr" aria-label="QR"></div></div>`:'<div id="lqr" class="lj-qr" aria-label="QR"></div>'}${p.codigo?`<b class="lj-qrcode">${T('gq_codeIs',p.codigo)}</b>`:''}<span>${ICO.phone} ${T('download')}</span></div>
         <div class="lj-volta"><span>${T('ljBackIn')}</span><span class="lj-volta-ring" id="lj-volta-ring" style="--p:${k.doneAt?Math.max(0,1-(Date.now()-k.doneAt)/lojaFimMs()):1}"><b id="lj-volta-n">${k.doneAt?Math.max(0,Math.ceil((lojaFimMs()-(Date.now()-k.doneAt))/1000)):lojaFimSeg()}</b></span></div>`}
         <button class="lj-cta lj-restart" data-act="loja-new">${ICO.face} ${T('ljBackStart')}</button></div></div>`;}
   lojaReset();return vQuiosque();
