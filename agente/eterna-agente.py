@@ -4567,7 +4567,7 @@ def metricas_loop():
         time.sleep(600)
 
 
-# Backup na nuvem (o mesmo bucket das fotos, prefixo backup/<computador>/): a cada 10 min, se mudou, uma cópia consistente
+# Backup na nuvem (o mesmo bucket das fotos, prefixo backup/<computador>/): a cada 2 min, se mudou, uma cópia consistente
 # dos bancos de vendas e de estado da equipe (API de backup do SQLite, nunca o arquivo aberto) em backup/<pc>/<banco>.db, e
 # uma por dia em backup/<pc>/dia/AAAA-MM-DD/<banco>.db (o histórico; o servidor pode morrer sem perder um dia). Junto, o resumo do dia e as
 # sessões de hoje e ontem. Rosto nenhum vai para o backup: só números, códigos e nomes de vendedor e fotógrafo.
@@ -4580,7 +4580,7 @@ def backup_loop():
     pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
     ultimo = None
     while True:
-        time.sleep(600)
+        time.sleep(120)
         try:
             bancos = [b for b in (VENDAS_DB, ESTADO_DB) if os.path.exists(b)]
             if not bancos:
