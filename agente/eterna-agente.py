@@ -2808,7 +2808,8 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180):
 def rec_pre_escolha(fotos):
     """Só as fotos que o Checkout vai mostrar com fundo de IA (regra do Eduardo: até 2 por sessão, nunca todas; 15 fotos
     em vários fundos virariam 75 na tela): as 2 primeiras da sessão e, como o cliente achado pela selfie vê só as fotos
-    dele (lojaDele), as 2 primeiras de cada pessoa. Pessoa = o maior rosto da foto, agrupado pela semelhança (LIMITE).
+    dele (lojaDele), as 2 primeiras de cada pessoa. Pessoa = o maior rosto da foto, agrupado pela semelhança (LIMITE),
+    que aparece em 3 fotos ou mais; no máximo 4 pessoas por sessão.
     O que escapar o Checkout pede na hora, com prioridade."""
     out = list(fotos[:2])
     np = _cv.get("np")
@@ -2825,7 +2826,7 @@ def rec_pre_escolha(fotos):
         db.close()
     except Exception:
         return out
-    pessoas = []                                     # [vetor do 1º rosto, fotos escolhidas]
+    pessoas = []                                     # [vetor do 1º rosto, fotos da pessoa]
     for pid in fotos:
         if pid not in emb:
             continue
@@ -2833,10 +2834,12 @@ def rec_pre_escolha(fotos):
         g = next((g for g in pessoas if float(g[0] @ v) >= LIMITE), None)
         if g is None:
             pessoas.append([v, [pid]])
-        elif len(g[1]) < 2:
+        else:
             g[1].append(pid)
-    for g in pessoas:
-        out += [p for p in g[1] if p not in out]
+    # pessoa = quem aparece em 3 fotos ou mais da sessão (quem passou ao fundo uma vez não conta); no máximo as 4 com
+    # mais fotos: no máximo 10 recortes por sessão, uns 40 s depois que ela fecha
+    for g in sorted((g for g in pessoas if len(g[1]) >= 3), key=lambda g: -len(g[1]))[:4]:
+        out += [p for p in g[1][:2] if p not in out]
     return out
 
 
