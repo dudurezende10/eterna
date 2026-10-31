@@ -2805,10 +2805,45 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180):
     return job.get("res"), job.get("err")
 
 
+def rec_pre_escolha(fotos):
+    """Só as fotos que o Checkout vai mostrar com fundo de IA (regra do Eduardo: até 2 por sessão, nunca todas; 15 fotos
+    em vários fundos virariam 75 na tela): as 2 primeiras da sessão e, como o cliente achado pela selfie vê só as fotos
+    dele (lojaDele), as 2 primeiras de cada pessoa. Pessoa = o maior rosto da foto, agrupado pela semelhança (LIMITE).
+    O que escapar o Checkout pede na hora, com prioridade."""
+    out = list(fotos[:2])
+    np = _cv.get("np")
+    if np is None or len(fotos) <= 2:
+        return out
+    try:
+        db = rostos_db()
+        emb = {}
+        for i in range(0, len(fotos), 500):
+            q = fotos[i:i + 500]
+            for pid, larg, e in db.execute("select pid, larg, emb from rosto where pid in (%s)" % ",".join("?" * len(q)), q):
+                if pid not in emb or larg > emb[pid][0]:
+                    emb[pid] = (larg, np.frombuffer(e, "float32"))
+        db.close()
+    except Exception:
+        return out
+    pessoas = []                                     # [vetor do 1º rosto, fotos escolhidas]
+    for pid in fotos:
+        if pid not in emb:
+            continue
+        v = emb[pid][1]
+        g = next((g for g in pessoas if float(g[0] @ v) >= LIMITE), None)
+        if g is None:
+            pessoas.append([v, [pid]])
+        elif len(g[1]) < 2:
+            g[1].append(pid)
+    for g in pessoas:
+        out += [p for p in g[1] if p not in out]
+    return out
+
+
 def rec_pre_loop():
-    """Recorte antecipado (ver REC_PRE): abre os modelos já na partida e recorta as fotos das sessões fechadas dos dias da
-    busca (ETERNA_BUSCA_DIAS): primeiro as 2 primeiras de cada sessão, da mais nova para a mais velha, depois as outras.
-    Uma de cada vez, e só com a fila ao vivo vazia."""
+    """Recorte antecipado (ver REC_PRE): abre os modelos já na partida e recorta, das sessões fechadas dos dias da busca
+    (ETERNA_BUSCA_DIAS), só as fotos de rec_pre_escolha, da sessão mais nova para a mais velha. Uma de cada vez, e só
+    com a fila ao vivo vazia."""
     if not REC_PRE:
         return
     time.sleep(15)                                  # deixa a biblioteca e as sessões carregarem
@@ -2822,9 +2857,10 @@ def rec_pre_loop():
                 with sess_lock:
                     ss = sorted((x for x in sess.values() if x["status"] == "fechada" and not x.get("removida") and x["dia"] in dias),
                                 key=lambda x: -(x.get("fechada_em") or 0))
-                    # 1º as 2 primeiras de cada sessão (o Checkout oferece fundo de IA em até 2 fotos por sessão, regra do
-                    # Eduardo), depois o resto: com a selfie, as 2 da pessoa podem não ser as 2 primeiras da sessão
-                    pids = [p for x in ss for p in x["fotos"][:2]] + [p for x in ss for p in x["fotos"][2:]]
+                    fotos_ss = [list(x["fotos"]) for x in ss]
+                pids = []
+                for fs in fotos_ss:
+                    pids += rec_pre_escolha(fs)
                 falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
                 with rec_lock:
                     rec["pre_falta"] = len(falta)
