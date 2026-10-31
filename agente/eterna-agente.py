@@ -2807,7 +2807,8 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180):
 
 def rec_pre_loop():
     """Recorte antecipado (ver REC_PRE): abre os modelos já na partida e recorta as fotos das sessões fechadas dos dias da
-    busca (ETERNA_BUSCA_DIAS), da sessão mais nova para a mais velha. Uma de cada vez, e só com a fila ao vivo vazia."""
+    busca (ETERNA_BUSCA_DIAS): primeiro as 2 primeiras de cada sessão, da mais nova para a mais velha, depois as outras.
+    Uma de cada vez, e só com a fila ao vivo vazia."""
     if not REC_PRE:
         return
     time.sleep(15)                                  # deixa a biblioteca e as sessões carregarem
@@ -2821,7 +2822,9 @@ def rec_pre_loop():
                 with sess_lock:
                     ss = sorted((x for x in sess.values() if x["status"] == "fechada" and not x.get("removida") and x["dia"] in dias),
                                 key=lambda x: -(x.get("fechada_em") or 0))
-                    pids = [p for x in ss for p in x["fotos"]]
+                    # 1º as 2 primeiras de cada sessão (o Checkout oferece fundo de IA em até 2 fotos por sessão, regra do
+                    # Eduardo), depois o resto: com a selfie, as 2 da pessoa podem não ser as 2 primeiras da sessão
+                    pids = [p for x in ss for p in x["fotos"][:2]] + [p for x in ss for p in x["fotos"][2:]]
                 falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
                 with rec_lock:
                     rec["pre_falta"] = len(falta)
