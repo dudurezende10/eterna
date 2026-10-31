@@ -2055,13 +2055,14 @@ async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pu
   if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;selfieStop();render();return;}
   p.step='buscando';selfieStop();render();
   try{
+    try{const im=await loadImg(src);const fs=im?await ynDetect(im,.6):[];if(pessoas(fs.filter(b=>b.w>=FACE_MIN))===2){p.step='nao';p.motivo='varias';return;}}catch(e){} // sem detector: o servidor confere
     if(p.modo==='agente'){const body=JSON.stringify({consentimento:true,versao:GQ_VERSAO+(galNuvem()?'-nuvem2':''),idioma:lang(),imagem:src});src=null;
       const r=await fetch(galApi()+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});const j=await r.json().catch(()=>({}));
       if(state.pub!==p)return;
       if(r.status===429){p.step='nao';p.motivo='bloqueado';p.ate=Date.parse(j.ate)||Date.now()+GQ_BLOQ;}
       else if(r.status===503){p.step='nao';p.motivo='processando';}
       else if(j.ok){p.acesso=j.acesso;p.gal=j.galeria;p.galAt=Date.now();p.aviso=null;p.step='galeria';t.o.n=0;t.save();}
-      else{p.step='nao';p.motivo=j.motivo==='sem_rosto'?'sem_rosto':'nao_encontrado';p.restam=j.restam!=null?j.restam:p.restam;}}
+      else{p.step='nao';p.motivo=j.motivo==='varias_pessoas'?'varias':j.motivo==='sem_rosto'?'sem_rosto':'nao_encontrado';p.restam=j.restam!=null?j.restam:p.restam;}}
     else{const m=SIM.galerias[p.token];let im=await loadImg(src);src=null;if(!im){pubFalhou(p,'sem_rosto');return;}
       const r=await faceFind(im,x=>m.sessoes.includes(x.card));im=null;if(state.pub!==p)return;
       if(r.semRosto){pubFalhou(p,'sem_rosto');return;}
@@ -2128,13 +2129,13 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const kid=pubKid(p);
   if(p.step==='consent')return box(T('gq_consentH'),'',`<label class="gq-consent"><input type="checkbox" data-act="gq-consent" ${p.ok?'checked':''}><span>${T((kid?'gq_consentKid':'gq_consentSelf')+(galNuvem()?'Nuvem':''))}</span></label><button class="lj-cta" id="gq-agree" data-act="gq-agree" ${p.ok?'':'disabled'}>${T('gq_agree')} ${ICO.arrow}</button>`);
   if(p.step==='selfie'){const sf=state.guest.selfie||{};const mirror=(sf.facing||'user')==='user';
-    return box(T(kid?'gq_kidH':'gq_selfieH'),T(kid?'gq_kidD':'gq_selfieD'),`${p.aviso?`<p class="gq-err">${esc(p.aviso)}</p>`:''}<div class="gq-cam ${sf.err?'off':''} ${mirror?'mirror':''}">${sf.err?'':'<video id="gself-video" autoplay muted playsinline></video>'}</div><p class="gq-fine">${T('g_fit')}</p>
-      ${sf.err?'':`<button class="lj-cta" data-act="gq-snap" ${sf.ready?'':'disabled'}>${ICO.face} ${T('g_snap')}</button>`}
+    return box(T(kid?'gq_kidH':'gq_selfieH'),T(kid?'gq_kidD':'gq_selfieD'),`${p.aviso?`<p class="gq-err">${esc(p.aviso)}</p>`:''}<div class="gq-cam ${sf.err?'off':''} ${mirror?'mirror':''}">${sf.err?'':'<video id="gself-video" autoplay muted playsinline></video>'}</div><p class="gq-fine" id="gq-st" aria-live="polite">${sf.err?T('g_fit'):sf.varias?T('cam_varias'):T('gq_looking')}</p>
+      ${sf.err||!sf.semDetector?'':`<button class="lj-cta" data-act="gq-snap" ${sf.ready?'':'disabled'}>${ICO.face} ${T('g_snap')}</button>`}
       <label class="lj-ghost gq-file" for="gq-file">${T('g_pickFile')}<input type="file" id="gq-file" accept="image/*" data-act="gq-file" hidden></label>`);}
   if(p.step==='buscando')return box(T('gq_comparing'),'','<div class="gq-spin" aria-hidden="true"></div>');
   if(p.step==='nao'){const bl=p.motivo==='bloqueado';const at=p.ate?hhmm(new Date(p.ate)):'';
-    const msg=bl?T('gq_locked',at):p.motivo==='sem_rosto'?T('gq_noFace'):p.motivo==='processando'?T('gq_arriving'):T('gq_noMatch');
-    const d=bl?'':p.motivo==='processando'?T('gq_arrivingD'):T('gq_tries',p.restam);
+    const msg=bl?T('gq_locked',at):p.motivo==='varias'?T('gq_varias'):p.motivo==='sem_rosto'?T('gq_noFace'):p.motivo==='processando'?T('gq_arriving'):T('gq_noMatch');
+    const d=bl?'':p.motivo==='varias'?T('gq_variasD'):p.motivo==='processando'?T('gq_arrivingD'):T('gq_tries',p.restam);
     return box(msg,d,`${bl?'':`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`}${help}`);}
   const g=pubGaleria();
   if(p.step==='pagar'){const n=Object.keys(p.sel).filter(k=>p.sel[k]).length;const tot=pubTotal(n,g);
@@ -2290,6 +2291,7 @@ const I18N={
  cam_present:['Fique parado um instante','Hold still for a moment','Quédate quieto un momento','Ne bougez pas un instant','Kurz stillhalten'],
  cam_searching:['Procurando suas fotos...','Finding your photos...','Buscando tus fotos...','Recherche de vos photos...','Deine Fotos werden gesucht...'],
  cam_found:['Encontramos você!','Found you!','¡Te encontramos!','Trouvé !','Gefunden!'],
+ cam_varias:['Uma pessoa por vez: só o seu rosto na câmera','One person at a time: only your face on camera','Una persona a la vez: solo tu rostro en la cámara','Une personne à la fois : seulement votre visage','Eine Person nach der anderen: nur dein Gesicht vor der Kamera'],
  cam_noface:['Não vi um rosto. Olhe para a câmera','No face seen. Look at the camera','No vemos un rostro. Mira a la cámara','Aucun visage détecté. Regardez la caméra','Kein Gesicht erkannt. Schau in die Kamera'],
  cam_pick:['É uma destas?','Is it one of these?','¿Es una de estas?','Est-ce l’une de celles-ci ?','Ist es eines davon?'],
  cam_nomatch:['Não achamos fotos suas. Use o código','No photos found. Use your receipt code','No encontramos fotos. Usa el código','Aucune photo trouvée. Utilisez le code','Keine Fotos gefunden. Nutze den Code'],
@@ -2314,6 +2316,9 @@ const I18N={
  gq_kidH:['Foto do rosto da criança','Photo of the child’s face','Foto del rostro del niño o la niña','Photo du visage de l’enfant','Foto vom Gesicht des Kindes'],
  gq_kidD:['De frente, com boa luz, sem boné nem óculos escuros.','Facing the camera, good light, no cap or sunglasses.','De frente, con buena luz, sin gorra ni gafas de sol.','De face, avec une bonne lumière, sans casquette ni lunettes de soleil.','Von vorn, bei gutem Licht, ohne Kappe und Sonnenbrille.'],
  gq_comparing:['Procurando nas fotos da sua visita.','Looking through the photos from your visit.','Buscando en las fotos de tu visita.','Recherche dans les photos de votre visite.','Wir suchen in den Fotos deines Besuchs.'],
+ gq_varias:['Uma pessoa por vez','One person at a time','Una persona a la vez','Une personne à la fois','Eine Person nach der anderen'],
+ gq_variasD:['Só o seu rosto na câmera. Cada pessoa abre as próprias fotos.','Only your face on camera. Each person opens their own photos.','Solo tu rostro en la cámara. Cada persona abre sus propias fotos.','Seulement votre visage. Chacun ouvre ses propres photos.','Nur dein Gesicht vor der Kamera. Jede Person öffnet ihre eigenen Fotos.'],
+ gq_looking:['Encaixe o rosto no círculo: a foto sai sozinha','Fit your face in the circle: the photo is taken automatically','Encaja tu rostro en el círculo: la foto sale sola','Placez votre visage dans le cercle : la photo se prend seule','Gesicht in den Kreis: das Foto wird automatisch gemacht'],
  gq_noFace:['Não encontramos um rosto na foto. Tente de frente e com boa luz.','We couldn’t find a face. Try facing the camera in good light.','No encontramos un rostro en la foto. Inténtalo de frente y con buena luz.','Aucun visage trouvé sur la photo. Essayez de face, avec une bonne lumière.','Wir haben kein Gesicht gefunden. Versuch es von vorn und bei gutem Licht.'],
  gq_noMatch:['Esse rosto não aparece nas fotos desta visita.','This face isn’t in the photos from this visit.','Ese rostro no aparece en las fotos de esta visita.','Ce visage n’apparaît pas sur les photos de cette visite.','Dieses Gesicht ist auf den Fotos dieses Besuchs nicht zu sehen.'],
  gq_tries:[n=>`Você tem mais ${n} ${PL(n,'tentativa','tentativas')}.`,n=>`${n} more ${PL(n,'attempt','attempts')}.`,n=>`Te ${PL(n,'queda','quedan')} ${n} ${PL(n,'intento','intentos')}.`,n=>`Il vous reste ${n} ${PL(n,'essai','essais')}.`,n=>`Noch ${n} ${PL(n,'Versuch','Versuche')}.`],
@@ -2553,9 +2558,10 @@ function faceLoad(){if(FACE)return FACE;FACE=new Promise((res,rej)=>{const go=as
   if(window.faceapi){go();return;}const sc=document.createElement('script');sc.src='vendor/faceapi/face-api.js';sc.onload=go;sc.onerror=()=>{FACE=null;rej(new Error('sem reconhecimento'))};document.head.appendChild(sc);});return FACE;}
 // Reconhecimento: SFace (OpenCV Zoo, Apache 2.0) rodando no navegador pelo ONNX Runtime Web (MIT), o mesmo modelo do servidor do ponto.
 // O rosto é alinhado em 112x112 pelos 5 pontos, como o OpenCV faz, e vira um vetor de 128 números.
-let ORTS=null;
-function sfLoad(){if(ORTS)return ORTS;ORTS=new Promise((res,rej)=>{const go=async()=>{try{ort.env.wasm.wasmPaths=new URL('vendor/ort/',location.href).href;ort.env.wasm.numThreads=1;res(await ort.InferenceSession.create('vendor/rostos/face_recognition_sface_2021dec.onnx',{executionProviders:['wasm']}));}catch(e){ORTS=null;rej(e)}};
-  if(window.ort){go();return;}const sc=document.createElement('script');sc.src='vendor/ort/ort.min.js';sc.onload=go;sc.onerror=()=>{ORTS=null;rej(new Error('sem ONNX Runtime'))};document.head.appendChild(sc);});return ORTS;}
+let ORTS=null,ORTJ=null;
+function ortLoad(){if(ORTJ)return ORTJ;ORTJ=new Promise((res,rej)=>{const go=()=>{ort.env.wasm.wasmPaths=new URL('vendor/ort/',location.href).href;ort.env.wasm.numThreads=1;res(window.ort);};
+  if(window.ort){go();return;}const sc=document.createElement('script');sc.src='vendor/ort/ort.min.js';sc.onload=go;sc.onerror=()=>{ORTJ=null;rej(new Error('sem ONNX Runtime'))};document.head.appendChild(sc);});return ORTJ;}
+function sfLoad(){if(ORTS)return ORTS;ORTS=ortLoad().then(()=>ort.InferenceSession.create('vendor/rostos/face_recognition_sface_2021dec.onnx',{executionProviders:['wasm']})).catch(e=>{ORTS=null;throw e});return ORTS;}
 // O ONNX Runtime no navegador não roda duas inferências ao mesmo tempo na mesma sessão: tudo passa por uma fila.
 const yieldUI=()=>new Promise(r=>{const m=new MessageChannel();m.port1.onmessage=()=>r();m.port2.postMessage(0);}); // devolve a vez à tela sem depender de temporizador (que o navegador segura em segundo plano)
 let ORTQ=Promise.resolve();const ortRun=(sess,feeds)=>{const p=ORTQ.then(()=>sess.run(feeds));ORTQ=p.catch(()=>{});return p;};
@@ -2564,7 +2570,11 @@ function simil(src,dst){const n=src.length;let mx=0,my=0,ux=0,uy=0;for(let i=0;i
   let p=0,q=0,v=0;for(let i=0;i<n;i++){const x=src[i][0]-mx,y=src[i][1]-my,u=dst[i][0]-ux,w=dst[i][1]-uy;p+=x*u+y*w;q+=x*w-y*u;v+=x*x+y*y;}const a=p/v,b=q/v;return {a,b,tx:ux-(a*mx-b*my),ty:uy-(b*mx+a*my)};}
 // Detector: YuNet (OpenCV Zoo, MIT), o mesmo do servidor; devolve caixa e 5 pontos (olhos, nariz, cantos da boca) na ordem do alinhamento do SFace.
 // Entrada fixa 640x640 (BGR, 0-255). Fotos grandes também são lidas em 4 quadrantes, para não perder rostos pequenos de grupo.
-let YNS=null;function ynLoad(){return YNS||(YNS=sfLoad().then(()=>ort.InferenceSession.create('vendor/rostos/face_detection_yunet_2023mar.onnx',{executionProviders:['wasm']})).catch(e=>{YNS=null;throw e}));}
+let YNS=null;function ynLoad(){return YNS||(YNS=ortLoad().then(()=>ort.InferenceSession.create('vendor/rostos/face_detection_yunet_2023mar.onnx',{executionProviders:['wasm']})).catch(e=>{YNS=null;throw e}));}
+// Uma pessoa por vez (antifraude), mesma regra do servidor (VARIAS_RAZAO): o segundo rosto com pelo menos metade da largura
+// do maior = duas pessoas tentando abrir as fotos uma da outra, e a busca não roda. Rosto bem menor ao fundo (fila) não conta.
+const FACE_VARIAS=.5;
+const pessoas=fs=>{const l=[...fs].sort((a,b)=>b.w-a.w);return !l.length?0:l.length>1&&l[1].w>=l[0].w*FACE_VARIAS?2:1;};
 const dimsOf=src=>[src.videoWidth||src.naturalWidth||src.width,src.videoHeight||src.naturalHeight||src.height];
 async function ynRegion(src,sx,sy,sw,sh,thr){const k=640/Math.max(sw,sh);const c=mkc(640,640);const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(src,sx,sy,sw,sh,0,0,sw*k,sh*k);
   const d=x.getImageData(0,0,640,640).data;const N=409600;const f=new Float32Array(3*N);for(let i=0;i<N;i++){f[i]=d[i*4+2];f[i+N]=d[i*4+1];f[i+2*N]=d[i*4];}
@@ -2599,8 +2609,8 @@ async function faceAgente(srcs){const a=state.agent;if(!a.on||!a.rostos||!a.rost
   try{const r=await fetch(a.url+'/rostos/buscar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imagens:srcs.map(toJpeg)})});return r.ok?await r.json():null;}catch(e){return null}}
 async function faceFind(srcs,ok){srcs=[].concat(srcs);
   const sess=demoSessions().filter(x=>!ok||ok(x));const temLocal=sess.some(x=>x.photos.some(p=>!/^ag_/.test(p.id)));
-  const ag=await faceAgente(srcs);const agSim={};if(ag&&ag.fotos)for(const f of ag.fotos)agSim['ag_'+f.id]=f.sim;
-  let me=null;if(temLocal){try{const ds=[];for(const im of srcs){const fs=await faceRead(im);if(fs.length)ds.push(fs.sort((a,b)=>b.a-a.a)[0].d);}
+  const ag=await faceAgente(srcs);if(ag&&ag.varias)return {varias:true,list:[],sims:{}};const agSim={};if(ag&&ag.fotos)for(const f of ag.fotos)agSim['ag_'+f.id]=f.sim;
+  let me=null;if(temLocal){try{const ds=[];for(const im of srcs){const fs=await faceRead(im);if(pessoas(fs.map(x=>({w:Math.sqrt(x.a)})))===2)return {varias:true,list:[],sims:{}};if(fs.length)ds.push(fs.sort((a,b)=>b.a-a.a)[0].d);}
     if(ds.length){me=new Float32Array(128);for(const d of ds)for(let i=0;i<128;i++)me[i]+=d[i]/ds.length;let n=0;for(let i=0;i<128;i++)n+=me[i]*me[i];n=Math.sqrt(n)||1;for(let i=0;i<128;i++)me[i]/=n;}}catch(e){if(!ag)throw e}}
   if(!me&&!(ag&&ag.rosto))return {semRosto:true,list:[],sims:{}};
   if(me){await facePre();faceIndexAll();if(state.face.busy&&state.face.total-state.face.done<=20)await FACEQ;}
@@ -2761,8 +2771,10 @@ function selfieMount(){const sf=state.guest.selfie;if(!(state.pub&&state.pub.mod
   // celular: tira a selfie sozinho quando vê um rosto de frente por 2 leituras seguidas (o botão continua como reserva)
   if(sf.ready&&state.pub&&!sf.autoT&&!sf.done)sf.autoT=setInterval(async()=>{if(sf.busy||sf.done||state.guest.selfie!==sf)return;sf.busy=true;
     try{const v=$('#gself-video');if(!v||!v.videoWidth)return;const c=mkc(480,480*v.videoHeight/v.videoWidth);c.getContext('2d').drawImage(v,0,0,c.width,c.height);
-      const fs=(await ynDetect(c,.75)).filter(b=>b.w>=Math.max(FACE_MIN,c.width*.2));sf.hits=fs.length===1?(sf.hits||0)+1:0;
-      if(sf.hits>=2){sf.done=true;clearInterval(sf.autoT);const b=$('[data-act="gq-snap"]');if(b&&!b.disabled)b.click();}}catch(e){}finally{sf.busy=false;}},600);}
+      const todos=await ynDetect(c,.75);const fs=todos.filter(b=>b.w>=Math.max(FACE_MIN,c.width*.2));const varias=pessoas(todos.filter(b=>b.w>=FACE_MIN))===2;
+      sf.hits=!varias&&fs.length===1?(sf.hits||0)+1:0;if(varias!==!!sf.varias){sf.varias=varias;const st=$('#gq-st');if(st)st.textContent=T(varias?'cam_varias':'gq_looking');}
+      if(sf.hits>=2){sf.done=true;clearInterval(sf.autoT);const w=Math.min(960,v.videoWidth);const k=mkc(w,w*v.videoHeight/v.videoWidth);k.getContext('2d').drawImage(v,0,0,k.width,k.height);pubMatch(k.toDataURL('image/jpeg',.9));}}
+    catch(e){if(!sf.semDetector){sf.semDetector=true;clearInterval(sf.autoT);sf.autoT=null;render();}}finally{sf.busy=false;}},600);}
 function selfieStop(){const sf=state.guest.selfie;if(sf&&sf.autoT)clearInterval(sf.autoT);if(sf&&sf.stream)sf.stream.getTracks().forEach(t=>t.stop());state.guest.selfie=null;}
 // ---------- Qualidade ----------
 const TAGS=['Luz','Enquadramento','Pose','Expressão','Foco','Fundo','Horizonte','Grupo cortado'];
@@ -4158,7 +4170,7 @@ function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c
     if(m>7){c.moved+=m;c.still=0;if(c.moved>40&&!c.armed){c.armed=true;c.status='present';camStatus();}}
     else{c.still++;if(c.armed&&c.still>=5){c.armed=false;c.moved=0;camFound();}else if(!c.armed&&c.still>12){c.moved=0;if(c.status!=='idle'&&c.status!=='searching'&&c.status!=='found'){c.status='idle';camStatus();}}}}
   c.prev=g;}
-function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;el.dataset.st=c.status;const t=state.view==='quiosque'?(I18N['cam_'+c.status]?T('cam_'+c.status):''):({off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando',nocam:'Câmera indisponível neste endereço (use HTTPS ou localhost). Escolha a sessão na lista ou digite o código'}[c.status]||'');el.textContent=t;if(f)f.dataset.st=c.status;}
+function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;const c=state.cam;el.dataset.st=c.status;const t=state.view==='quiosque'?(I18N['cam_'+c.status]?T('cam_'+c.status):''):({off:'Ligando a câmera...',idle:'Olhe para a câmera',present:'Fique parado um instante',searching:'Procurando suas fotos...',found:'Encontrado',noface:'Não vi um rosto. Olhe para a câmera',varias:'Uma pessoa por vez: só o seu rosto na câmera',pick:'É uma destas?',nomatch:'Não achamos fotos suas. Use o código',sim:'Câmera indisponível · simulando',nocam:'Câmera indisponível neste endereço (use HTTPS ou localhost). Escolha a sessão na lista ou digite o código'}[c.status]||'');el.textContent=t;if(f)f.dataset.st=c.status;}
 function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Date.now();c.status='searching';camStatus();
   const ok=x=>state.view==='quiosque'||x.status!=='paga'; // checkout: toda sessão ainda não paga (como a lista ao lado); quiosque: todas
   const open=(card,fotos)=>{c.busy=false;c.status='found';camStatus();
@@ -4169,7 +4181,7 @@ function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Dat
   if(c.stream&&v&&v.videoWidth){(async()=>{const fr=[];for(let k=0;k<3;k++){const cv=mkc(v.videoWidth,v.videoHeight);cv.getContext('2d').drawImage(v,0,0);fr.push(cv);if(k<2)await new Promise(r=>setTimeout(r,250));}return faceFind(fr,ok);})()
     .then(r=>{if(!camWanted()){c.busy=false;return;}if(r.list.length&&r.clara){open(r.list[0].card,r.list[0].fotos);return;}
       if(r.list.length){c.busy=false;c.status='pick';c.cands=r.list.slice(0,4);render();return;}
-      c.busy=false;c.status=r.semRosto?'noface':'nomatch';camStatus();setTimeout(()=>{if(c.status==='noface'||c.status==='nomatch'){c.status='idle';camStatus();}},6000);})
+      c.busy=false;c.status=r.varias?'varias':r.semRosto?'noface':'nomatch';camStatus();setTimeout(()=>{if(c.status==='noface'||c.status==='nomatch'||c.status==='varias'){c.status='idle';camStatus();}},6000);})
     .catch(()=>{c.busy=false;c.status='idle';camStatus();toast('Reconhecimento indisponível. Use o código.');});return;}
   setTimeout(()=>{if(!camWanted()){c.busy=false;return;} // o cliente já seguiu (digitou o código, pagou): a simulação não pode trocar a sessão
     const cands=demoSessions().filter(ok);const pick=cands[Math.floor(Math.random()*cands.length)];if(!pick){c.busy=false;c.status='idle';camStatus();return;}open(pick.card);},900);}

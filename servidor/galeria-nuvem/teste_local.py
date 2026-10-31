@@ -43,6 +43,10 @@ class Rek:
     def index_faces(s, CollectionId, Image, ExternalImageId, **k):
         s.indexadas += 1; time.sleep(s.lento)
         s.col[CollectionId][ExternalImageId] = "rosto-" + ExternalImageId[:1]
+    def detect_faces(s, Image, **k):          # "duas..." = duas pessoas de rosto parecido; "fundo..." = uma e outra bem menor atrás
+        b = Image["Bytes"]
+        ws = [.3, .28] if b.startswith(b"duas") else [.3, .08] if b.startswith(b"fundo") else [.3]
+        return {"FaceDetails": [{"BoundingBox": {"Width": w}} for w in ws]}
     def search_faces_by_image(s, CollectionId, Image, **k):
         if CollectionId not in s.col: raise s.exceptions.ResourceNotFoundException()
         quem = Image["Bytes"].decode()
@@ -98,6 +102,8 @@ ctx.get_remaining_time_in_millis = lambda: 29000
 R.lento = 0
 app.handler({"indexar": tok}, ctx)
 ok(R.indexadas == 40, "segundo plano terminou sem reler nenhuma foto (total de leituras = 40)")
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"duas-pessoas").decode(), "consentimento": True})
+ok(st == 200 and r["motivo"] == "varias_pessoas" and "restam" not in r, "duas pessoas na selfie: não busca e não conta tentativa")
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True})
 ok(st == 200 and r["ok"] and R.indexadas == 40, "cliente certo liberado, nenhuma leitura nova")
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True})

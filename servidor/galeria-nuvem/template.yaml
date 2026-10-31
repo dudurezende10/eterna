@@ -124,6 +124,10 @@ Resources:
               Effect: Allow
               Action: [rekognition:ListCollections]
               Resource: "*"
+            - Sid: UmaPessoaPorVez
+              Effect: Allow
+              Action: [rekognition:DetectFaces]
+              Resource: "*"
             - Sid: LeituraEmSegundoPlano
               Effect: Allow
               Action: [lambda:InvokeFunction]

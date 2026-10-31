@@ -414,6 +414,17 @@ def leitor():
     return det, rec
 
 
+# Uma pessoa por vez (antifraude): dois rostos de tamanho parecido na selfie (o segundo com pelo menos metade da largura
+# do maior) e a busca não roda: são duas pessoas tentando abrir as fotos uma da outra. Rosto bem menor ao fundo (a fila
+# do Checkout) não conta. A mesma regra vale no navegador (pessoas() no app) e na nuvem (servidor/galeria-nuvem).
+VARIAS_RAZAO = 0.5
+
+
+def varias_pessoas(fs):
+    """fs = ler_rostos(...) (do maior para o menor)."""
+    return len(fs) >= 2 and fs[1][0] >= VARIAS_RAZAO * fs[0][0]
+
+
 def ler_rostos(img, det, rec, minimo=ROSTO_MIN):
     """img BGR -> [(largura, vetor 128 normalizado)] do maior para o menor rosto."""
     np = _cv["np"]; cv2 = _cv["cv2"]
@@ -558,6 +569,8 @@ def _buscar(imagens, dias, det, rec):
         if img is None:
             continue
         fs = ler_rostos(img, det, rec, minimo=60)
+        if varias_pessoas(fs):
+            return {"rosto": True, "varias": True, "fotos": []}
         if fs:
             vs.append(fs[0][1])
     del imagens
@@ -3257,6 +3270,8 @@ def buscar_em(imagens, pids):
                 continue
             fs = ler_rostos(img, det, rec, minimo=60)
             del img
+            if varias_pessoas(fs):
+                return {"rosto": True, "varias": True, "sims": {}}
             if fs:
                 vs.append(fs[0][1])
     del imagens
@@ -4694,6 +4709,8 @@ class H(BaseHTTPRequestHandler):
                 img = None
             if r.get("processando"):
                 return self.js({"motivo": "processando"}, 503)
+            if r.get("varias"):                     # não conta como tentativa: a família tenta de novo, um de cada vez
+                return self.js({"ok": False, "motivo": "varias_pessoas"})
             if not r.get("rosto"):
                 return self.js({"ok": False, "motivo": "sem_rosto", "restam": falhou(ip, token)})
             sims = r["sims"]

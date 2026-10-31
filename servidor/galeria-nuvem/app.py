@@ -242,6 +242,19 @@ def continuar(token):
                Payload=json.dumps({"indexar": token}).encode())
 
 
+VARIAS_RAZAO = 0.5     # mesma regra do agente (varias_pessoas): o 2º rosto com metade da largura do maior = duas pessoas
+
+
+def varias_pessoas(selfie):
+    """Uma pessoa por vez (antifraude): duas pessoas de rosto parecido na selfie e a busca não roda. Rosto bem menor ao fundo
+    não conta. O search_faces_by_image só olha o maior rosto, por isso a conferência vem antes, com o detect_faces."""
+    try:
+        fs = sorted((f["BoundingBox"]["Width"] for f in rek.detect_faces(Image={"Bytes": selfie}).get("FaceDetails", [])), reverse=True)
+    except Exception:
+        return False
+    return len(fs) >= 2 and fs[1] >= VARIAS_RAZAO * fs[0]
+
+
 def buscar(token, selfie):
     """Semelhança (0 a 100) por pid da galeria. None se a selfie não tem rosto."""
     try:
@@ -434,6 +447,10 @@ def rosto(token, m, corpo, ip, ctx):
     if not contar("BUS", 86400, LIMITE_BUSCAS_DIA):
         evento(token, "selfie_teto", ip)
         return resp({"ok": False, "motivo": "processando"}, 503)
+    if varias_pessoas(selfie):                          # não conta como tentativa: cada um tenta de novo, sozinho
+        selfie = img = None
+        evento(token, "selfie_varias_pessoas", ip)
+        return resp({"ok": False, "motivo": "varias_pessoas"})
     sims = buscar(token, selfie)
     selfie = img = None
     if sims is None:
