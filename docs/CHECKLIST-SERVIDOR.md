@@ -73,12 +73,16 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 
 ## 7. Ligar sozinho
 
-- [ ] O Eterna roda no **usuário de quem usa o computador no dia a dia** (ex.: Rafael). Em máquina corporativa (Azure AD) a tarefa agendada em outro usuário não chega a rodar (resultado 267011, a política não deixa) e o usuário separado não entra sozinho; por isso o `agente\instalar-tarefa.ps1` ficou só para máquina fora do domínio.
-- [ ] Nesse usuário, sem administrador: Python 3.12 (`winget install --id Python.Python.3.12 -e --scope user`), a venv em `%USERPROFILE%\Eterna\venv` com as bibliotecas do passo 3 e `agente\instalar-vigia.ps1`. Ele cria o "Eterna vigia" na pasta Inicializar (religa o Eterna se cair ou travar) e o atalho **"Eterna"** na área de trabalho (liga o vigia se estiver parado e abre o app).
-- [ ] Na primeira vez que o Eterna sobe, o Windows pergunta se o Python pode receber conexões. Quem tem administrador clica **Permitir**. Se clicar em Cancelar, o Windows grava uma regra que **bloqueia** o Python e a rede para de chegar, mesmo com a regra "Eterna 8765". Para desfazer, no PowerShell como administrador:
-  ```powershell
-  Get-NetFirewallApplicationFilter | ? Program -like '*python312\python.exe' | Get-NetFirewallRule | ? Action -eq Block | Set-NetFirewallRule -Action Allow
-  ```
+- [ ] A pasta do Eterna fica no usuário de quem usa o computador (ex.: Rafael). Nesse usuário, sem administrador: Python 3.12 (`winget install --id Python.Python.3.12 -e --scope user`), a venv em `%USERPROFILE%\Eternaenv` com as bibliotecas do passo 3 e `agente\instalar-vigia.ps1`.
+- [ ] Como administrador: rodar **`agente\instalador\Eterna-Servidor.exe`** (executa o `agente\instalar-servidor.ps1`). Ele:
+  - cria a tarefa "Eterna" do **sistema** (SYSTEM), que liga o Eterna com o Windows sem ninguém entrar e sem senha de usuário, e religa se cair;
+  - desliga o atalho do vigia na pasta Inicializar, para não subirem dois;
+  - libera o firewall: Python, 8765 e 2121, e desfaz o bloqueio que o Windows grava quando alguém clica em **Cancelar** na pergunta do firewall;
+  - não deixa dormir na tomada nem com a tampa fechada;
+  - põe o atalho "Eterna" na área de trabalho de todos;
+  - liga o Eterna e mostra os endereços para os pontos.
+
+  Em máquina corporativa (Azure AD), a tarefa em outro usuário não roda (resultado 267011) e o usuário separado não entra sozinho; por isso a tarefa é do sistema, e o `agente\instalar-tarefa.ps1` ficou só para máquina fora do domínio. Para refazer o `.exe` depois de mudar o script: `agente\instalador\montar.ps1`.
 - [ ] Mudou de usuário: copiar a pasta `Eterna` (e `.aws`, `.u2net`) do usuário antigo como administrador, com `robocopy <origem> <destino> /E /B /XD venv programa` (sem o `/B` o administrador leva "Acesso negado" na pasta de outro usuário).
 - [ ] Teste: reiniciar o servidor e entrar no usuário de sempre. Em até 2 minutos, `/status` responde.
 
