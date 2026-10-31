@@ -61,7 +61,7 @@ Para o Eduardo e para o Claude dele. Dia de teste ponta a ponta no notebook de t
 
 **Feito:**
 - Os modelos abrem quando o Eterna liga.
-- Cada sessão fechada é recortada em segundo plano (`rec_pre_loop`, `ETERNA_PRE_RECORTE=0` desliga). **Primeiro as 2 primeiras fotos de cada sessão** (a regra publicada: fundo de IA em até 2 fotos por sessão, até 3 fundos cada), depois as outras, porque com a selfie as 2 da pessoa podem ser outras.
+- Em segundo plano, o servidor recorta **só as fotos que o Checkout vai mostrar com fundo** (`rec_pre_loop`, `rec_pre_escolha`; `ETERNA_PRE_RECORTE=0` desliga): as 2 primeiras da sessão (a regra publicada: fundo de IA em até 2 fotos por sessão, até 3 fundos cada) e as 2 primeiras de cada pessoa da sessão, agrupando os rostos, porque achado pela selfie o cliente vê só as fotos dele. Nunca todas: 15 fotos em vários fundos virariam 75 na tela (Ronaldo). O que escapar, o Checkout pede na hora.
 - O pedido ao vivo do Checkout passa na frente.
 - O progresso aparece em `/status` › `recorte.antecipado`.
 - **Medido no notebook de teste: cerca de 5,2 s por foto.**
