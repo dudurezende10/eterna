@@ -3219,6 +3219,35 @@ function painelCSV(D){const q=v=>{let t=String(v==null?'':v);if(/^[=+\-@]/.test(
   return [h.join(';'),...lin.map(l=>l.map(q).join(';'))].join('\n');}
 function painelBaixar(){if(!can('financeiro','r')||!canView('painel')){toast('Sem acesso a esta tela');return;}const D=state.painelUlt;if(!D)return;
   const blob=new Blob(['﻿'+painelCSV(D)],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`eterna-painel-${D.range.from}_${D.range.to}.csv`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
+// v90: números do servidor do ponto (todos os caixas, do banco de vendas; GET /metricas/dia), no período do Painel. Aparece
+// quando o Eterna está aberto pelo servidor (rede do ponto ou Tailscale): é assim que quem está fora vê as vendas de todos.
+state.srvMet={chave:null,dias:null,em:0,erro:null,busy:false};
+async function srvMetPull(){const M=state.srvMet,r=state.range;if(M.busy||!state.agent||!state.agent.on)return;const chave=r.from+'|'+r.to;
+  if(M.chave===chave&&Date.now()-M.em<60e3)return;M.busy=true;
+  try{const j=await (await fetch(state.agent.url+'/metricas/dia?de='+r.from+'&ate='+r.to,{cache:'no-store'})).json();if(!j.ok)throw 0;M.dias=j.dias||[];M.chave=chave;M.em=Date.now();M.erro=null;}
+  catch(e){M.erro='Sem conexão com o servidor do ponto';}finally{M.busy=false;if(state.view==='painel')render();}}
+function srvMetSoma(ds){const T={fotos:0,fotos_com_rosto:0,rostos:0,sessoes:0,sessoes_com_venda:0,vendas:0,faturamento:0,fotos_vendidas:0,fotos_ia_vendidas:0,impressoes:0,impressoes_falhas:0,canceladas:0,online:{vendas:0,faturamento:0,fotos:0},por_fotografo:{},por_vendedor:{},por_posto:{},por_meio:{}};
+  for(const d of ds){for(const k of ['fotos','fotos_com_rosto','rostos','sessoes','sessoes_com_venda','vendas','faturamento','fotos_vendidas','fotos_ia_vendidas','impressoes','impressoes_falhas','canceladas'])T[k]+=d[k]||0;
+    for(const k of ['vendas','faturamento','fotos'])T.online[k]+=(d.online||{})[k]||0;
+    for(const g of ['por_fotografo','por_vendedor','por_posto','por_meio'])for(const [n,v] of Object.entries(d[g]||{})){const a=T[g][n]||(T[g][n]={});for(const [k,x] of Object.entries(v))if(typeof x==='number'&&k!=='conversao')a[k]=(a[k]||0)+x;}}
+  return T;}
+function srvMetPainel(){if(!state.agent||!state.agent.on)return '';srvMetPull();const M=state.srvMet;
+  if(!M.dias)return M.erro?`<p class="pn-notas">${esc(M.erro)}</p>`:'';const T=srvMetSoma(M.dias);const pc=(a,b)=>b?Math.round(100*a/b)+'%':'—';
+  const fat=T.faturamento+T.online.faturamento;const mm={pix:'Pix',cartao:'Cartão',dinheiro:'Dinheiro'};
+  const tab=(tit,obj,cols,nome)=>{const ls=Object.entries(obj).sort((a,b)=>(b[1].faturamento||0)-(a[1].faturamento||0));if(!ls.length)return '';
+    return `<section class="panel pn-panel"><div class="pn-ph"><div><h2>${tit}</h2></div></div><div class="tablewrap"><table><thead><tr><th>${nome}</th>${cols.map(c=>`<th class="num">${c[1]}</th>`).join('')}</tr></thead><tbody>${ls.map(([n,v])=>`<tr><td class="name">${esc(mm[n]||n)}</td>${cols.map(c=>`<td class="num">${c[2](v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></section>`;};
+  const venda=[['vendas','Vendas',v=>fmtN(v.vendas||0)],['faturamento','Faturamento',v=>fmtR(v.faturamento||0)],['fotos_vendidas','Fotos vendidas',v=>fmtN(v.fotos_vendidas||0)]];
+  return `<section class="panel pn-panel" aria-label="Servidor do ponto"><div class="pn-ph"><div><h2>Servidor do ponto · todos os caixas</h2><p class="pn-take">${fmtR(fat)} em ${fmtN(T.vendas+T.online.vendas)} ${T.vendas+T.online.vendas===1?'venda':'vendas'}${T.online.vendas?` (${fmtN(T.online.vendas)} online)`:''} · conversão das sessões ${pc(T.sessoes_com_venda,T.sessoes)}</p></div><span class="pill neutral">atualizado ${hhmm(new Date(M.em))}</span></div>
+    <div class="tablewrap"><table><tbody>
+      <tr><td>Fotos tiradas</td><td class="num">${fmtN(T.fotos)}</td><td>Fotos com rosto</td><td class="num">${fmtN(T.fotos_com_rosto)} · ${fmtN(T.rostos)} rostos</td></tr>
+      <tr><td>Sessões</td><td class="num">${fmtN(T.sessoes)}</td><td>Sessões com venda</td><td class="num">${fmtN(T.sessoes_com_venda)} · ${pc(T.sessoes_com_venda,T.sessoes)}</td></tr>
+      <tr><td>Vendas no balcão</td><td class="num">${fmtN(T.vendas)} · ${fmtR(T.faturamento)}</td><td>Ticket médio</td><td class="num">${T.vendas?fmtR(T.faturamento/T.vendas):'—'}</td></tr>
+      <tr><td>Fotos vendidas</td><td class="num">${fmtN(T.fotos_vendidas)} · ${pc(T.fotos_vendidas,T.fotos)} das tiradas</td><td>Com fundo de IA</td><td class="num">${fmtN(T.fotos_ia_vendidas)}</td></tr>
+      <tr><td>Vendas online (QR)</td><td class="num">${fmtN(T.online.vendas)} · ${fmtR(T.online.faturamento)}</td><td>Impressões</td><td class="num">${fmtN(T.impressoes)}${T.impressoes_falhas?` · ${fmtN(T.impressoes_falhas)} não saíram`:''}</td></tr>
+      ${T.canceladas?`<tr><td>Canceladas</td><td class="num">${fmtN(T.canceladas)}</td><td></td><td></td></tr>`:''}
+    </tbody></table></div></section>
+    <div class="pn-bottom">${tab('Por fotógrafo',T.por_fotografo,[['sessoes','Sessões',v=>fmtN(v.sessoes||0)],['fotos','Fotos',v=>fmtN(v.fotos||0)],['conv','Conversão',v=>pc(v.sessoes_com_venda||0,v.sessoes||0)],...venda],'Fotógrafo')}${tab('Por vendedor',T.por_vendedor,venda,'Vendedor')}</div>
+    <div class="pn-bottom">${tab('Por ponto',T.por_posto,venda,'Ponto')}${tab('Por forma de pagamento',T.por_meio,venda,'Pagamento')}</div>`;}
 function vPainel(){const sales=allSalesSim();const pontos=painelPontos(sales);const f=painelFiltro(pontos);const r=state.range;
   const D=painelDados({from:r.from,to:r.to,pdv:f.pdv,fonte:f.fonte},sales);state.painelUlt=D;const K=D.kpi,cv=D.cobertura.rover;
   const per=D.range.from===D.range.to?dBR(D.range.from):`${dBR(D.range.from).slice(0,5)} a ${dBR(D.range.to)}`;
@@ -3240,7 +3269,7 @@ function vPainel(){const sales=allSalesSim();const pontos=painelPontos(sales);co
     ${kpiCard({k:'sessoes',ico:'ses',label:'Sessões',value:K.sessoes!=null?fmtN(K.sessoes):traco,sub:K.sessoes!=null?`/ <b>${fmtN(K.compraram)}</b> compraram`:(et?'ainda não medido pelo Eterna':'Sem sessões no período'),bar:K.sessoes?{v:K.compraram,of:K.sessoes,label:'Conversão'}:null,delta:dl('sessoes'),empty:K.sessoes==null})}
     ${kpiCard({k:'gasto',ico:'tic',label:'Gasto por visitante',value:K.gastoVisitante!=null?fmtRv(K.gastoVisitante):traco,sub:K.gastoVisitante!=null?`<b>${fmtN(K.pax)}</b> visitantes${K.captura!=null?` · <b>${K.captura}%</b> fotografados`:''}`:(f.pdv?'Catracas não são separadas por ponto':'Catracas sem leitura neste período'),bar:K.captura!=null?{v:K.captura,of:100,label:'Fotografados'}:null,delta:dl('gastoVisitante'),empty:K.gastoVisitante==null})}
   </section>`;
-  if(D.vazio)return `<div class="pn">${head}${kpis}<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Sem dados nesse período</b><p>${LIVE?`Os dados da Roverpix cobrem de ${dBR(DMIN)} a ${dBR(DMAX)}.`:`Os números importados vão de ${dBR(DMIN)} a ${dBR(DMAX)}. Para ver hoje e os últimos 30 dias, conecte a Roverpix em Repositório.`} Nenhuma venda do Eterna neste computador no período.</p><div class="row" style="margin-top:8px">${verImp}</div></div></div></div>`;
+  if(D.vazio)return `<div class="pn">${head}${kpis}${srvMetPainel()}<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Sem dados nesse período</b><p>${LIVE?`Os dados da Roverpix cobrem de ${dBR(DMIN)} a ${dBR(DMAX)}.`:`Os números importados vão de ${dBR(DMIN)} a ${dBR(DMAX)}. Para ver hoje e os últimos 30 dias, conecte a Roverpix em Repositório.`} Nenhuma venda do Eterna neste computador no período.</p><div class="row" style="margin-top:8px">${verImp}</div></div></div></div>`;
   const totPill=cv&&cv.modo==='importado'&&!cv.inteiro&&f.fonte!=='eterna'?`<span class="pill neutral pn-total">total de ${imp}</span>`:'';
   // receita por dia
   let rd='';if(D.dias.length>1){const best=D.dias.reduce((b,x)=>x.receita>b.receita?x:b,D.dias[0]),worst=D.dias.reduce((b,x)=>x.receita<b.receita?x:b,D.dias[0]);const med=safeN(K.receita/D.dias.length);
@@ -3278,7 +3307,7 @@ function vPainel(){const sales=allSalesSim();const pontos=painelPontos(sales);co
     <div class="tablewrap"><table><thead><tr><th class="stk">Dia</th><th class="num">Visitantes</th><th class="num">Sessões</th><th class="num">Viram</th><th class="num">Compraram</th><th class="num">Fotos</th><th class="num">Fotos vendidas</th><th class="num">Vendas</th><th class="num">Receita</th><th class="num">R$/visitante</th></tr></thead><tbody>
     ${D.dias.map(x=>`<tr><td class="stk">${esc(dlabel(x.date))}</td><td class="num">${nn(x.pax)}</td><td class="num">${nn(x.sessoes)}</td><td class="num">${nn(x.viram)}</td><td class="num">${nn(x.compraram)}</td><td class="num">${nn(x.fotos)}</td><td class="num">${nn(x.fotosVendidas)}</td><td class="num">${fmtN(x.vendas)}</td><td class="num">${fmtR(x.receita)}</td><td class="num">${x.pax?fmtR(x.receita/x.pax):'—'}</td></tr>`).join('')}
     </tbody></table></div></details>`;
-  return `<div class="pn">${head}${kpis}${rd}<div class="pn-comp">${pVendas}${pFotos}${pSes}</div><div class="pn-bottom">${pRank}${pPay}</div>${dd}</div>`;}
+  return `<div class="pn">${head}${kpis}${srvMetPainel()}${rd}<div class="pn-comp">${pVendas}${pFotos}${pSes}</div><div class="pn-bottom">${pRank}${pPay}</div>${dd}</div>`;}
 
 // ---------- Gestão: fotógrafos ----------
 function vFotografos(){
