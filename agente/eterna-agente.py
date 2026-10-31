@@ -4291,6 +4291,75 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
             imp_ocupadas.discard(imp)
 
 
+# ---------- Estado da equipe no servidor (v90) ----------
+# Tudo o que antes morava só no navegador de cada computador (usuários e permissões, registro de quem mudou o quê, diário,
+# treino da IA, venue, revisões, bandeiras, função do dia e, pela coleção "sim", preços, estoque, descartes, ajustes de
+# foto, cortesias...) mora aqui: ~/Eterna/ponto/estado.db, um registro por item (col, id), com rev crescente. O app liga o
+# seu banco plugável (state.db, a mesma interface de coleção/doc/onSnapshot) a estas rotas:
+#   GET  /ponto/docs/revs                 -> {revs:{col: rev}}        (um pedido só para saber o que mudou)
+#   GET  /ponto/docs?col=<col>            -> {rev, docs:[{id, valor}]} (a coleção inteira, sem os apagados)
+#   POST /ponto/docs {docs:[{col,id,valor}]}  valor null apaga.        -> {ok, rev}
+# O navegador guarda uma cópia e uma fila do que ainda não subiu (sem rede); o servidor é o dono. Backup no S3 com as vendas.
+ESTADO_DB = os.path.join(HOME, "ponto", "estado.db")
+ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim")
+ESTADO_MAX = 512 * 1024              # um registro (um usuário, um ajuste de foto) nunca passa disto
+estado_lock = threading.Lock()
+
+
+def estado_db():
+    os.makedirs(os.path.dirname(ESTADO_DB), exist_ok=True)
+    c = sqlite3.connect(ESTADO_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("pragma synchronous=full")
+    c.execute("create table if not exists doc (col text, id text, valor text, rev integer, em text, primary key (col, id))")
+    c.execute("create index if not exists doc_rev on doc(col, rev)")
+    return c
+
+
+def estado_revs():
+    with estado_lock:
+        db = estado_db()
+        try:
+            return {r[0]: r[1] for r in db.execute("select col, max(rev) from doc group by col")}
+        finally:
+            db.close()
+
+
+def estado_col(col):
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select max(rev) from doc where col = ?", (col,)).fetchone()[0] or 0
+            docs = [{"id": r[0], "valor": json.loads(r[1])} for r in db.execute("select id, valor from doc where col = ? and valor is not null", (col,))]
+        finally:
+            db.close()
+    return {"ok": True, "rev": rev, "docs": docs}
+
+
+def estado_gravar(body):
+    docs = body.get("docs") if isinstance(body.get("docs"), list) else []
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0]
+            n = 0
+            for d in docs[:500]:
+                if not isinstance(d, dict) or d.get("col") not in ESTADO_COLS or not isinstance(d.get("id"), str) or not 0 < len(d["id"]) <= 300:
+                    continue
+                v = d.get("valor")
+                txt = None if v is None else json.dumps(v, ensure_ascii=False)
+                if txt is not None and len(txt) > ESTADO_MAX:
+                    continue
+                rev += 1
+                db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                           (d["col"], d["id"], txt, rev, _iso()))
+                n += 1
+            db.commit()
+        finally:
+            db.close()
+    return {"ok": True, "gravados": n, "rev": rev}
+
+
 # ---------- Vendas dos postos e métricas do dia (v90) ----------
 # A venda mora no SERVIDOR, num banco (SQLite, ~/Eterna/ponto/vendas.db, tabela evento com idem único), não no navegador:
 # cada caixa manda o evento da venda (criar, pagar, cancelar, impressao, rolo; contrato no plano v83, seção G) por
@@ -4499,8 +4568,8 @@ def metricas_loop():
 
 
 # Backup na nuvem (o mesmo bucket das fotos, prefixo backup/<computador>/): a cada 10 min, se mudou, uma cópia consistente
-# do banco de vendas (API de backup do SQLite, nunca o arquivo aberto) em backup/<pc>/vendas.db, e uma por dia em
-# backup/<pc>/dia/AAAA-MM-DD/vendas.db (o histórico; o servidor pode morrer sem perder um dia). Junto, o resumo do dia e as
+# dos bancos de vendas e de estado da equipe (API de backup do SQLite, nunca o arquivo aberto) em backup/<pc>/<banco>.db, e
+# uma por dia em backup/<pc>/dia/AAAA-MM-DD/<banco>.db (o histórico; o servidor pode morrer sem perder um dia). Junto, o resumo do dia e as
 # sessões de hoje e ontem. Rosto nenhum vai para o backup: só números, códigos e nomes de vendedor e fotógrafo.
 backup = {"em": None, "ok": None, "erro": None}
 
@@ -4513,25 +4582,28 @@ def backup_loop():
     while True:
         time.sleep(600)
         try:
-            if not os.path.exists(VENDAS_DB):
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB) if os.path.exists(b)]
+            if not bancos:
                 continue
-            marca = max(os.path.getmtime(x) for x in (VENDAS_DB, VENDAS_DB + "-wal") if os.path.exists(x))
+            marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
             if marca == ultimo:
                 continue
-            tmp = VENDAS_DB + ".backup"
-            src, dst = sqlite3.connect(VENDAS_DB, timeout=30), sqlite3.connect(tmp)
-            try:
-                src.backup(dst)
-            finally:
-                dst.close()
-                src.close()
-            corpo = open(tmp, "rb").read()
-            os.remove(tmp)
             s3 = _s3_cliente()
             hoje = _ff_hoje()
-            for chave in ("backup/%s/vendas.db" % pc, "backup/%s/dia/%s/vendas.db" % (pc, hoje)):
-                s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
-                              ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
+            for banco in bancos:
+                tmp = banco + ".backup"
+                src, dst = sqlite3.connect(banco, timeout=30), sqlite3.connect(tmp)
+                try:
+                    src.backup(dst)
+                finally:
+                    dst.close()
+                    src.close()
+                corpo = open(tmp, "rb").read()
+                os.remove(tmp)
+                nome = os.path.basename(banco)
+                for chave in ("backup/%s/%s" % (pc, nome), "backup/%s/dia/%s/%s" % (pc, hoje, nome)):
+                    s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
+                                  ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
             for d in (_ff_hoje(time.time() - 86400), hoje):
                 for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
                     a = os.path.join(pasta, d + ".json")
@@ -4571,7 +4643,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -4892,6 +4964,13 @@ class H(BaseHTTPRequestHandler):
             if not nuvem["ligada"]:
                 return self.js({"error": "nuvem desligada"}, 503)
             return self.js(nuvem_reenviar())
+        if p == "/ponto/docs":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(8 * 1024 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            return self.js(estado_gravar(body))
         if p == "/ponto/eventos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -5128,6 +5207,17 @@ class H(BaseHTTPRequestHandler):
             if not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             return self.js(ff_json(), nostore=True)
+        if u.path == "/ponto/docs/revs":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js({"ok": True, "revs": estado_revs()})
+        if u.path == "/ponto/docs":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            col = (parse_qs(u.query).get("col") or [""])[0]
+            if col not in ESTADO_COLS:
+                return self.js({"error": "coleção inválida"}, 400)
+            return self.js(estado_col(col))
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -5211,7 +5301,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()

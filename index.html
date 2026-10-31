@@ -1100,7 +1100,8 @@ const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},in
 let SIM=SIM0();
 try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}
 // v79 (I3): devolve true/false. Sem espaço, poda o que dá para refazer (registro antigo e ajustes automáticos de fotos que não estão aqui) e tenta de novo.
-function saveSim(){const put=()=>localStorage.setItem('eterna.sim.v1',JSON.stringify(SIM));try{put();state.simCheio=0;return true;}catch(e){try{simPodar();put();state.simCheio=0;return true;}catch(e2){state.simCheio=Date.now();return false;}}}
+let simSobeT=null,SIM_SRV=null; // SIM_SRV: id -> JSON do que o servidor tem (último visto ou enviado); null antes da primeira leitura (v90)
+function saveSim(){if(state.db&&SIM_SRV){clearTimeout(simSobeT);simSobeT=setTimeout(simSobe,300);}const put=()=>localStorage.setItem('eterna.sim.v1',JSON.stringify(SIM));try{put();state.simCheio=0;return true;}catch(e){try{simPodar();put();state.simCheio=0;return true;}catch(e2){state.simCheio=Date.now();return false;}}}
 function simPodar(){SIM.log=(SIM.log||[]).slice(0,20);const ed=SIM.edits||{};Object.keys(ed).forEach(id=>{if(ed[id]&&ed[id].auto===true&&!UP[id]&&!(typeof spriteOf!=='undefined'&&spriteOf[id]))delete ed[id];});}
 // v79: Checkout e Caixa em duas janelas do mesmo navegador. simFresh relê o SIM gravado pela outra janela antes de mexer no caixa.
 function simFresh(){try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}if(!Array.isArray(SIM.caixaDin))SIM.caixaDin=[];}
@@ -4750,9 +4751,68 @@ if(cv!=='2'){const mud=['maracana','zona','arq','extra'].filter(id=>SIM.prices&&
 bgMigraPodio();   // depois do catálogo: a gravação já sai com catalogoV=2 (revisão v86)
 {let ch=false;Object.entries(SIM.sessions).forEach(([c,x])=>{if(x.status==='aberta'){x.status='fechada';x.closedAt=x.closedAt||now().toISOString();x.closedBy=x.closedBy||'v78: Anfitrião no set removido';ch=true;}});if(ch)saveSim();}
 render();
-(async()=>{
-  if(!window.claude||!window.claude.use)return;
-  try{const db=await claude.use('db');if(!db)return;state.db=db;
+// v90: o banco da equipe é o servidor do ponto (~/Eterna/ponto/estado.db, com backup na nuvem). agenteDb() tem a mesma
+// interface do state.db (collection/doc/onSnapshot/set), então tudo o que já gravava nele (usuários, registro de permissões,
+// diário, treino, venue, revisões, bandeiras, função do dia) passa a gravar no servidor. Gravar: entra numa fila deste
+// navegador (eterna.db.fila.v1) e sobe na hora; sem rede, espera e sobe depois (nunca descarta). Ler: a cada 3 s pergunta as
+// revisões de todas as coleções num pedido só e baixa só a que mudou. O que ainda está na fila vale por cima do servidor.
+const DBQ='eterna.db.fila.v1';
+function agenteDb(){const subs={},dsubs={},revs={};let sobindo=false,descendo=false;
+  const fila=()=>{try{const l=JSON.parse(localStorage.getItem(DBQ)||'[]');return Array.isArray(l)?l:[];}catch(e){return [];}};
+  const guarda=l=>{try{localStorage.setItem(DBQ,JSON.stringify(l));}catch(e){state.simCheio=Date.now();}};
+  async function sobe(){if(sobindo||!state.agent.on)return;const lote=fila().slice(0,200);if(!lote.length)return;sobindo=true;
+    try{const r=await fetch(state.agent.url+'/ponto/docs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({docs:lote})});if(r.ok)guarda(fila().slice(lote.length));}
+    catch(e){}finally{sobindo=false;}}
+  async function desce(){if(descendo||!state.agent.on)return;descendo=true;
+    try{const j=await (await fetch(state.agent.url+'/ponto/docs/revs',{cache:'no-store'})).json();
+      const cols=new Set([...Object.keys(subs),...Object.keys(dsubs).map(k=>k.slice(0,k.indexOf('/')))]);
+      for(const col of cols){const rv=(j.revs||{})[col]||0;const pend=fila().filter(x=>x.col===col);if(revs[col]===rv&&!pend.length)continue;
+        const c=await (await fetch(state.agent.url+'/ponto/docs?col='+encodeURIComponent(col),{cache:'no-store'})).json();if(!c.ok)continue;
+        const m=new Map(c.docs.map(d=>[d.id,d.valor]));pend.forEach(x=>{if(x.valor==null)m.delete(x.id);else m.set(x.id,x.valor);});revs[col]=pend.length?-1:rv;
+        const docs=[...m].map(([id,v])=>({id,exists:true,data:()=>v}));
+        (subs[col]||[]).forEach(cb=>{try{cb({docs});}catch(e){console.warn('db',col,e);}});
+        Object.entries(dsubs).forEach(([k,cbs])=>{if(!k.startsWith(col+'/'))return;const v=m.get(k.slice(col.length+1));cbs.forEach(cb=>{try{cb({exists:v!=null,data:()=>v});}catch(e){console.warn('db',k,e);}});});}}
+    catch(e){}finally{descendo=false;}}
+  const ref=path=>{const i=path.indexOf('/'),col=path.slice(0,i),id=path.slice(i+1);return {
+    set(v){const l=fila();l.push({col,id,valor:v==null?null:JSON.parse(JSON.stringify(v))});guarda(l);setTimeout(sobe,0);return Promise.resolve();},
+    onSnapshot(cb){(dsubs[path]=dsubs[path]||[]).push(cb);revs[col]=undefined;setTimeout(desce,0);return ()=>{};}};};
+  setInterval(()=>{sobe().then(desce);},3000);window.addEventListener('online',()=>sobe().then(desce));
+  return {agente:true,doc:ref,collection:col=>({doc:id=>ref(col+'/'+id),onSnapshot(cb){(subs[col]=subs[col]||[]).push(cb);revs[col]=undefined;setTimeout(desce,0);return ()=>{};}})};}
+// Coleção "sim": o resto do que morava só no navegador, item por item (cada preço, cada ajuste de foto, cada descarte, cada
+// cortesia), para dois computadores mexendo em coisas diferentes não se atropelarem. Mapas: um registro por entrada
+// ("prices|zona"); valores inteiros: um registro ("flagList"); cortesiaLog: só acrescenta, nunca apaga no servidor.
+// Fica de fora o que já tem dono no servidor: sessões, galerias (manifesto), vendas (eventos) e a fila de envio.
+const SIM_MAPA=['stock','prices','edits','discarded','invalid','flags','flagUse','ai','bgAtivo','camDia'],
+  SIM_INTEIRO=['flagList','bgOn','fundosModo','fundosModoPor','lojaFimSeg','catalogoV','pagProv','autoAj','autoAjPor','repo','funcao','bgPodioV86'],SIM_LISTA=['cortesiaLog'];
+const hash32=t=>{let h=0x811c9dc5;for(let i=0;i<t.length;i++)h=Math.imul(h^t.charCodeAt(i),16777619)>>>0;return h.toString(36);};
+function simDocs(){const o={};SIM_MAPA.forEach(k=>Object.entries(SIM[k]||{}).forEach(([e,v])=>{o[k+'|'+e]=v;}));
+  SIM_INTEIRO.forEach(k=>{if(SIM[k]!==undefined)o[k]=SIM[k];});SIM_LISTA.forEach(k=>(SIM[k]||[]).forEach(v=>{o[k+'|'+hash32(JSON.stringify(v))]=v;}));return o;}
+function simSobe(){if(!state.db||!SIM_SRV)return;const cur=simDocs();
+  Object.entries(cur).forEach(([id,v])=>{const j=JSON.stringify(v);if(SIM_SRV[id]!==j){state.db.doc('sim/'+id).set(v);SIM_SRV[id]=j;}});
+  Object.keys(SIM_SRV).forEach(id=>{if(!(id in cur)&&!SIM_LISTA.includes(id.split('|')[0])){state.db.doc('sim/'+id).set(null);delete SIM_SRV[id];}});}
+function simPut(id,v){const i=id.indexOf('|');if(i<0){SIM[id]=v;return;}const k=id.slice(0,i),e=id.slice(i+1);
+  if(SIM_LISTA.includes(k)){SIM[k]=SIM[k]||[];if(!SIM[k].some(x=>hash32(JSON.stringify(x))===e)){SIM[k].push(v);SIM[k].sort((a,b)=>String(b.em||'').localeCompare(String(a.em||'')));}return;}
+  if(!SIM[k]||typeof SIM[k]!=='object')SIM[k]={};SIM[k][e]=v;}
+function simDel(id){const i=id.indexOf('|');if(i<0){delete SIM[id];return;}const k=id.slice(0,i);if(SIM[k]&&!SIM_LISTA.includes(k))delete SIM[k][id.slice(i+1)];}
+// Primeira leitura: o servidor vale por cima; o que só existe neste navegador sobe (nada se perde). Depois: mudança local
+// ainda não enviada fica; o resto segue o servidor, inclusive o que outro computador apagou.
+function simAplica(docs){const srv={};docs.forEach(d=>{srv[d.id]=d.data();});const primeira=!SIM_SRV;if(primeira)SIM_SRV={};const cur=simDocs();let ch=false;
+  Object.entries(srv).forEach(([id,v])=>{const j=JSON.stringify(v),loc=id in cur?JSON.stringify(cur[id]):undefined;
+    if(!primeira&&loc!==undefined&&loc!==SIM_SRV[id])return;if(loc!==j){simPut(id,v);ch=true;}SIM_SRV[id]=j;});
+  if(!primeira)Object.keys(cur).forEach(id=>{if(id in srv||SIM_LISTA.includes(id.split('|')[0]))return;if(SIM_SRV[id]!==undefined&&JSON.stringify(cur[id])===SIM_SRV[id]){simDel(id);delete SIM_SRV[id];ch=true;}});
+  if(ch){saveSim();render();}simSobe();}
+// usuários, diário, treino e venue que só existiam neste navegador sobem na primeira leitura de cada coleção
+const DB_MIGRA={};function dbMigra(col,ids,sobe){if(DB_MIGRA[col])return;DB_MIGRA[col]=1;sobe(new Set(ids));}
+async function dbLigar(){if(state.db)return;let db=null;
+  if(window.claude&&window.claude.use){try{db=await claude.use('db');}catch(e){db=null;}}
+  if(!db){if(!(state.agent&&state.agent.on))return;db=agenteDb();}
+  try{state.db=db;
+    if(db.agente){db.collection('sim').onSnapshot(snap=>simAplica(snap.docs));
+      db.collection('usuarios').onSnapshot(snap=>dbMigra('usuarios',snap.docs.map(d=>d.id),tem=>Object.values(USERS).forEach(u=>{const id=encodeURIComponent(u.email);if(!tem.has(id)&&!tem.has(u.email))db.doc('usuarios/'+id).set(u);})));
+      db.collection('usuarios_log').onSnapshot(snap=>dbMigra('usuarios_log',snap.docs.map(d=>d.id),tem=>auditRead().forEach(e=>{if(e&&e.id&&!tem.has(e.id))db.doc('usuarios_log/'+e.id).set(e);})));
+      db.collection('diario').onSnapshot(snap=>dbMigra('diario',snap.docs.map(d=>d.id),tem=>(SIM.diario||[]).forEach(e=>{if(e&&e.id&&!tem.has(e.id))db.doc('diario/'+e.id).set(e);})));
+      db.collection('treino').onSnapshot(snap=>dbMigra('treino',snap.docs.map(d=>d.id),tem=>Object.entries(state.train.labels||{}).forEach(([id,b])=>{if(!tem.has(id))db.doc('treino/'+id).set(b);})));
+      db.doc('config/venue').onSnapshot(d=>dbMigra('venue',d&&d.exists?['venue']:[],tem=>{if(!tem.size)db.doc('config/venue').set({...VENUE_CFG,at:now().toISOString()});}));}
     db.collection('treino').onSnapshot(snap=>{snap.docs.forEach(d=>{if(d.exists){const x=d.data();if(x&&x.id)state.train.labels[x.id]=x;}});try{localStorage.setItem('eterna.treino.v1',JSON.stringify(state.train.labels))}catch(e){}render();},err=>{console.warn('db',err)});
     db.collection('usuarios').onSnapshot(snap=>{let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||typeof x.email!=='string'||!emailOk(x.email)||x.email!==normEmail(x.email))return; // e-mail inválido (ex.: __proto__) não entra
       if(x.deleted){if(Object.prototype.hasOwnProperty.call(USERS,x.email)){delete USERS[x.email];ch=true;}return;}USERS[x.email]=migrateUser(x);ch=true;});if(ch){try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}if(state.user){const u=userFor(state.user.email);if(!u){logout();toast('Seu acesso foi removido');return;}state.user=u;}render();}},err=>{console.warn('db',err)});
@@ -4763,7 +4823,8 @@ render();
     db.collection('reviews').onSnapshot(snap=>{const m={};snap.docs.forEach(d=>{if(d.exists)m[d.id]=d.data()});state.reviews=m;render();},err=>{console.warn('db',err)});
     render();
   }catch(e){console.warn('db',e)}
-})();
+}
+dbLigar();setInterval(dbLigar,5000);   // o servidor pode aparecer depois (rede voltou, agente ligou)
 // v78: revogação entre abas do mesmo navegador. Só relê os dados; nada do que vem do armazenamento é executado.
 window.addEventListener('storage',ev=>{if(ev.key!=='eterna.users.v1'||ev.newValue==null)return;let o=null;try{o=JSON.parse(ev.newValue||'{}');}catch(x){return;}USERS=(o&&typeof o==='object')?o:{};migrateUsers(false);
   if(state.perm.sel&&!USERS[state.perm.sel]){state.perm.sel=null;state.perm.draft=null;}
