@@ -4498,6 +4498,53 @@ def metricas_loop():
         time.sleep(600)
 
 
+# Backup na nuvem (o mesmo bucket das fotos, prefixo backup/<computador>/): a cada 10 min, se mudou, uma cópia consistente
+# do banco de vendas (API de backup do SQLite, nunca o arquivo aberto) em backup/<pc>/vendas.db, e uma por dia em
+# backup/<pc>/dia/AAAA-MM-DD/vendas.db (o histórico; o servidor pode morrer sem perder um dia). Junto, o resumo do dia e as
+# sessões de hoje e ontem. Rosto nenhum vai para o backup: só números, códigos e nomes de vendedor e fotógrafo.
+backup = {"em": None, "ok": None, "erro": None}
+
+
+def backup_loop():
+    if not NUVEM_BUCKET:
+        return
+    pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
+    ultimo = None
+    while True:
+        time.sleep(600)
+        try:
+            if not os.path.exists(VENDAS_DB):
+                continue
+            marca = max(os.path.getmtime(x) for x in (VENDAS_DB, VENDAS_DB + "-wal") if os.path.exists(x))
+            if marca == ultimo:
+                continue
+            tmp = VENDAS_DB + ".backup"
+            src, dst = sqlite3.connect(VENDAS_DB, timeout=30), sqlite3.connect(tmp)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+            corpo = open(tmp, "rb").read()
+            os.remove(tmp)
+            s3 = _s3_cliente()
+            hoje = _ff_hoje()
+            for chave in ("backup/%s/vendas.db" % pc, "backup/%s/dia/%s/vendas.db" % (pc, hoje)):
+                s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
+                              ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
+            for d in (_ff_hoje(time.time() - 86400), hoje):
+                for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
+                    a = os.path.join(pasta, d + ".json")
+                    if os.path.exists(a):
+                        s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
+                                      ContentType="application/json")
+            ultimo = marca
+            backup.update(em=_iso(), ok=True, erro=None)
+        except Exception as ex:
+            backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
+            print("  backup na nuvem:", str(ex)[:160])
+
+
 def metricas_periodo(de, ate):
     out = []
     try:
@@ -5036,7 +5083,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "recorte": rec_status(), "fundos_modo": fundos_modo(),
+                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "backup": backup, "recorte": rec_status(), "fundos_modo": fundos_modo(),
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
                                 "impressora_locais": IMP_LOCAIS, "sessoes": sess_status(),
@@ -5353,6 +5400,7 @@ def main():
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
+    threading.Thread(target=backup_loop, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
     threading.Thread(target=galeria_loop, daemon=True).start()
