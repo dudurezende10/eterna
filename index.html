@@ -1415,11 +1415,12 @@ function pvEvento(tipo,venda,dados){if(!venda)return null;const u=state.user;con
   const grava=()=>{let sq={};try{sq=JSON.parse(localStorage.getItem(PV_SEQV)||'{}')||{};}catch(e){sq={};}
     const seq=(+sq[venda]||0)+1;sq[venda]=seq;const ks=Object.keys(sq);if(ks.length>3000)ks.slice(0,ks.length-3000).forEach(k=>delete sq[k]);
     const ev={idem:venda+':'+seq,venda,seq,tipo,em,por,dados:dados||{}};const l=pvPoda(pvFila().concat([ev]));
-    try{localStorage.setItem(PV_FILA,JSON.stringify(l));localStorage.setItem(PV_SEQV,JSON.stringify(sq));}catch(e){state.simCheio=Date.now();}return ev;};
+    try{localStorage.setItem(PV_FILA,JSON.stringify(l));localStorage.setItem(PV_SEQV,JSON.stringify(sq));}catch(e){state.simCheio=Date.now();}setTimeout(pontoFlush,0);return ev;};
   try{if(navigator.locks&&typeof navigator.locks.request==='function'){navigator.locks.request('eterna-ponto-fila',grava).catch(e=>console.warn('fila local',e));return {venda,tipo,em};}}catch(e){}
   return grava();}
-// Etapa 2 (v90): a fila sobe para o servidor do ponto (POST /ponto/eventos, até 50 por vez, a cada 5 s). Só sai da fila o que o
-// servidor confirmou (ok ou ja); recusado vai para eterna.ponto.conflitos.v1. Sem servidor, a fila espera: nunca descarta.
+// Etapa 2 (v90): a venda mora no banco do servidor. Cada evento sobe na hora (POST /ponto/eventos, até 50 por vez; e a cada 5 s
+// o que ficou para trás). Só sai da fila o que o servidor confirmou gravado (ok ou ja); recusado vai para
+// eterna.ponto.conflitos.v1. Sem servidor (rede caiu), a fila do navegador segura e manda quando voltar: nunca descarta.
 const PV_CONF='eterna.ponto.conflitos.v1';let PV_ENV=false;
 async function pontoFlush(){if(PV_ENV||!state.agent||!state.agent.on)return;const lote=pvFila().slice(0,50);if(!lote.length)return;PV_ENV=true;
   try{const r=await fetch(state.agent.url+'/ponto/eventos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({posto:postoNome(),eventos:lote})});if(!r.ok)return;

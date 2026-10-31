@@ -4292,16 +4292,28 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
 
 
 # ---------- Vendas dos postos e métricas do dia (v90) ----------
-# Cada navegador manda ao servidor a fila de eventos da venda (criar, pagar, cancelar, impressao, rolo; contrato no plano v83,
-# seção G) por POST /ponto/eventos. Gravados por dia em ~/Eterna/ponto/eventos/AAAA-MM-DD.jsonl, sem repetir (idem). Daqui
-# sai o resumo do dia em ~/Eterna/ponto/metricas/AAAA-MM-DD.json, refeito a cada 10 min para hoje e ontem e NUNCA apagado:
-# os rostos e as fotos saem por prazo (LGPD), os números ficam. GET /metricas/dia?de=AAAA-MM-DD&ate=AAAA-MM-DD.
-EV_DIR = os.path.join(HOME, "ponto", "eventos")
+# A venda mora no SERVIDOR, num banco (SQLite, ~/Eterna/ponto/vendas.db, tabela evento com idem único), não no navegador:
+# cada caixa manda o evento da venda (criar, pagar, cancelar, impressao, rolo; contrato no plano v83, seção G) por
+# POST /ponto/eventos na hora em que acontece; o navegador só segura o que o servidor ainda não confirmou (sem rede).
+# Daqui sai o resumo do dia em ~/Eterna/ponto/metricas/AAAA-MM-DD.json, refeito a cada 10 min para hoje e ontem e NUNCA
+# apagado: os rostos e as fotos saem por prazo (LGPD), os números ficam. GET /metricas/dia?de=AAAA-MM-DD&ate=AAAA-MM-DD.
+VENDAS_DB = os.path.join(HOME, "ponto", "vendas.db")
 MET_DIR = os.path.join(HOME, "ponto", "metricas")
 EV_TIPOS = ("criar", "pagar", "cancelar", "impressao", "rolo")
 _re_ev_id = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_-]{2,80}$")
 ev_lock = threading.Lock()
-ev_idem = set()                  # idem já gravados (hoje e ontem, refeito no boot)
+
+
+def vendas_db():
+    os.makedirs(os.path.dirname(VENDAS_DB), exist_ok=True)
+    c = sqlite3.connect(VENDAS_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("pragma synchronous=full")                # venda gravada é venda que sobrevive a queda de energia
+    c.execute("create table if not exists evento (idem text primary key, venda text, seq int, tipo text, em text, dia text,"
+              " posto text, por text, dados text, recebido text)")
+    c.execute("create index if not exists evento_dia on evento(dia)")
+    c.execute("create index if not exists evento_venda on evento(venda)")
+    return c
 
 
 def _ev_dia(em):
@@ -4313,23 +4325,16 @@ def _ev_dia(em):
 
 
 def _ev_ler(dia):
-    out = []
-    try:
-        with open(os.path.join(EV_DIR, dia + ".jsonl"), encoding="utf8") as f:
-            for l in f:
-                try:
-                    out.append(json.loads(l))
-                except ValueError:
-                    pass
-    except OSError:
-        pass
-    return out
-
-
-def ev_carregar():
-    for i in range(3):
-        for e in _ev_ler(_ff_hoje(time.time() - i * 86400)):
-            ev_idem.add(e.get("idem"))
+    """Eventos das vendas que têm algum evento no dia (a venda inteira, mesmo o pagar que caiu depois da meia-noite)."""
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rs = db.execute("select idem, venda, seq, tipo, em, posto, por, dados from evento where venda in"
+                            " (select venda from evento where dia = ?) order by venda, seq", (dia,)).fetchall()
+        finally:
+            db.close()
+    return [{"idem": r[0], "venda": r[1], "seq": r[2], "tipo": r[3], "em": r[4], "posto": r[5], "por": r[6],
+             "dados": json.loads(r[7] or "{}")} for r in rs]
 
 
 def _ev_limpo(e):
@@ -4359,21 +4364,20 @@ def ev_receber(body):
     posto = re.sub(r"[<>]", "", str(body.get("posto") or ""))[:40]
     res = []
     with ev_lock:
-        os.makedirs(EV_DIR, exist_ok=True)
-        for e in evs[:50]:
-            x = _ev_limpo(e)
-            if not x:
-                res.append({"idem": (e or {}).get("idem") if isinstance(e, dict) else None, "s": "recusado"})
-                continue
-            if x["idem"] in ev_idem:
-                res.append({"idem": x["idem"], "s": "ja"})
-                continue
-            x["posto"] = x["posto"] or posto
-            x["recebido"] = _iso()
-            with open(os.path.join(EV_DIR, _ev_dia(x["em"]) + ".jsonl"), "a", encoding="utf8") as f:
-                f.write(json.dumps(x, ensure_ascii=False) + "\n")
-            ev_idem.add(x["idem"])
-            res.append({"idem": x["idem"], "s": "ok"})
+        db = vendas_db()
+        try:
+            for e in evs[:50]:
+                x = _ev_limpo(e)
+                if not x:
+                    res.append({"idem": (e or {}).get("idem") if isinstance(e, dict) else None, "s": "recusado"})
+                    continue
+                cur = db.execute("insert or ignore into evento values (?,?,?,?,?,?,?,?,?,?)",
+                                 (x["idem"], x["venda"], x["seq"], x["tipo"], x["em"], _ev_dia(x["em"]), x["posto"] or posto,
+                                  x["por"], json.dumps(x["dados"], ensure_ascii=False), _iso()))
+                res.append({"idem": x["idem"], "s": "ok" if cur.rowcount else "ja"})
+            db.commit()                                      # só confirma ao caixa depois de gravado no disco
+        finally:
+            db.close()
     return {"ok": True, "resultados": res}
 
 
@@ -5348,7 +5352,6 @@ def main():
         threading.Thread(target=imp_monitor, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=rec_pre_loop, daemon=True).start()
-    ev_carregar()
     threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
