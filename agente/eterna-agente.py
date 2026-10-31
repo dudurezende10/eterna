@@ -4291,11 +4291,236 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
             imp_ocupadas.discard(imp)
 
 
+# ---------- Vendas dos postos e métricas do dia (v90) ----------
+# Cada navegador manda ao servidor a fila de eventos da venda (criar, pagar, cancelar, impressao, rolo; contrato no plano v83,
+# seção G) por POST /ponto/eventos. Gravados por dia em ~/Eterna/ponto/eventos/AAAA-MM-DD.jsonl, sem repetir (idem). Daqui
+# sai o resumo do dia em ~/Eterna/ponto/metricas/AAAA-MM-DD.json, refeito a cada 10 min para hoje e ontem e NUNCA apagado:
+# os rostos e as fotos saem por prazo (LGPD), os números ficam. GET /metricas/dia?de=AAAA-MM-DD&ate=AAAA-MM-DD.
+EV_DIR = os.path.join(HOME, "ponto", "eventos")
+MET_DIR = os.path.join(HOME, "ponto", "metricas")
+EV_TIPOS = ("criar", "pagar", "cancelar", "impressao", "rolo")
+_re_ev_id = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_-]{2,80}$")
+ev_lock = threading.Lock()
+ev_idem = set()                  # idem já gravados (hoje e ontem, refeito no boot)
+
+
+def _ev_dia(em):
+    try:
+        from datetime import datetime
+        return _ff_hoje(datetime.fromisoformat(str(em).replace("Z", "+00:00")).timestamp())
+    except Exception:
+        return _ff_hoje()
+
+
+def _ev_ler(dia):
+    out = []
+    try:
+        with open(os.path.join(EV_DIR, dia + ".jsonl"), encoding="utf8") as f:
+            for l in f:
+                try:
+                    out.append(json.loads(l))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return out
+
+
+def ev_carregar():
+    for i in range(3):
+        for e in _ev_ler(_ff_hoje(time.time() - i * 86400)):
+            ev_idem.add(e.get("idem"))
+
+
+def _ev_limpo(e):
+    """Só os campos do contrato, com tipo e tamanho conferidos (o resto do evento é descartado)."""
+    if not isinstance(e, dict) or e.get("tipo") not in EV_TIPOS:
+        return None
+    if not all(isinstance(e.get(k), str) and _re_ev_id.match(e[k]) for k in ("idem", "venda")):
+        return None
+    d = e.get("dados") if isinstance(e.get("dados"), dict) else {}
+    num = lambda v: float(v) if isinstance(v, (int, float)) and 0 <= v <= 1e6 else 0
+    txt = lambda v, n=60: re.sub(r"[<>]", "", str(v))[:n] if v is not None else None
+    lista = lambda v: [str(x)[:60] for x in v[:200]] if isinstance(v, list) else []
+    dd = {"saleNo": txt(d.get("saleNo"), 20), "card": txt(d.get("card"), 20), "meio": txt(d.get("meio"), 12), "prov": txt(d.get("prov"), 20),
+          "total": num(d.get("total")), "prints": num(d.get("prints")), "nPh": num(d.get("nPh")), "nAI": num(d.get("nAI")),
+          "selected": lista(d.get("selected")), "aiSel": lista(d.get("aiSel")),
+          "vendedor": txt((d.get("vendedor") or {}).get("nome") if isinstance(d.get("vendedor"), dict) else None),
+          "resultado": txt(d.get("resultado"), 12), "n": num(d.get("n")), "reimpressao": bool(d.get("reimpressao")),
+          "motivo": txt(d.get("motivo"), 40), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
+          "galeria": (txt((d.get("galeria") or {}).get("codigo"), 12) if isinstance(d.get("galeria"), dict) else None)}
+    return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": txt(e.get("em"), 30) or _iso(),
+            "por": txt((e.get("por") or {}).get("nome") if isinstance(e.get("por"), dict) else None),
+            "posto": txt(e.get("posto"), 40), "dados": {k: v for k, v in dd.items() if v not in (None, "", [], 0, False)}}
+
+
+def ev_receber(body):
+    evs = body.get("eventos") if isinstance(body.get("eventos"), list) else []
+    posto = re.sub(r"[<>]", "", str(body.get("posto") or ""))[:40]
+    res = []
+    with ev_lock:
+        os.makedirs(EV_DIR, exist_ok=True)
+        for e in evs[:50]:
+            x = _ev_limpo(e)
+            if not x:
+                res.append({"idem": (e or {}).get("idem") if isinstance(e, dict) else None, "s": "recusado"})
+                continue
+            if x["idem"] in ev_idem:
+                res.append({"idem": x["idem"], "s": "ja"})
+                continue
+            x["posto"] = x["posto"] or posto
+            x["recebido"] = _iso()
+            with open(os.path.join(EV_DIR, _ev_dia(x["em"]) + ".jsonl"), "a", encoding="utf8") as f:
+                f.write(json.dumps(x, ensure_ascii=False) + "\n")
+            ev_idem.add(x["idem"])
+            res.append({"idem": x["idem"], "s": "ok"})
+    return {"ok": True, "resultados": res}
+
+
+def metricas_dia(dia):
+    """Resumo do dia a partir do que o servidor tem: fotos e rostos (rostos.db), sessões (ponto/sessoes), vendas dos postos
+    (ponto/eventos) e vendas online (galerias/vendas-online.jsonl). Por fotógrafo, vendedor, posto e meio de pagamento."""
+    m = {"dia": dia, "gerado": _iso(), "fotos": 0, "fotos_com_rosto": 0, "rostos": 0, "sessoes": 0, "sessoes_com_venda": 0,
+         "vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0, "fotos_ia_vendidas": 0, "impressoes": 0, "impressoes_falhas": 0,
+         "canceladas": 0, "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0},
+         "por_fotografo": {}, "por_vendedor": {}, "por_posto": {}, "por_meio": {}}
+    try:
+        db = rostos_db()
+        r = db.execute("select count(*), sum(n > 0), sum(n) from foto where dia = ?", (dia,)).fetchone()
+        m["fotos"], m["fotos_com_rosto"], m["rostos"] = int(r[0] or 0), int(r[1] or 0), int(r[2] or 0)
+        db.close()
+    except Exception:
+        pass
+    quem = {}
+    ss_dia = lambda d: (json.load(open(os.path.join(SESS_DIR, d + ".json"), encoding="utf8")).get("sessoes") or []) if os.path.exists(os.path.join(SESS_DIR, d + ".json")) else []
+    try:
+        ontem = _ff_hoje(time.mktime(time.strptime(dia, "%Y-%m-%d")) - 43200)
+        for x in ss_dia(ontem):                      # venda hoje de sessão de ontem: conta para o fotógrafo, não como sessão de hoje
+            if isinstance(x, dict) and x.get("card"):
+                quem[x["card"]] = str(x.get("fotografo") or "sem fotógrafo")
+        ss = ss_dia(dia)
+    except Exception:
+        ss = []
+    for x in ss:
+        if not isinstance(x, dict) or x.get("removida"):
+            continue
+        f = str(x.get("fotografo") or "sem fotógrafo")
+        quem[x.get("card")] = f
+        pf = m["por_fotografo"].setdefault(f, {"fotos": 0, "sessoes": 0, "sessoes_com_venda": 0, "vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0})
+        pf["sessoes"] += 1
+        pf["fotos"] += len(x.get("fotos") or [])
+        m["sessoes"] += 1
+    if not m["fotos"]:
+        m["fotos"] = sum(v["fotos"] for v in m["por_fotografo"].values())
+    vendas = {}
+    for e in _ev_ler(dia):
+        v = vendas.setdefault(e["venda"], {"criar": None, "paga": False, "cancelada": False, "posto": e.get("posto")})
+        d = e.get("dados") or {}
+        if e["tipo"] == "criar":
+            v["criar"] = d
+        elif e["tipo"] == "pagar":
+            v["paga"] = True
+        elif e["tipo"] == "cancelar":
+            v["cancelada"] = True
+        elif e["tipo"] == "impressao":
+            if d.get("resultado") == "ok":
+                m["impressoes"] += int(d.get("n") or 0)
+            else:
+                m["impressoes_falhas"] += int(d.get("n") or 0)
+    com_venda = set()
+    for v in vendas.values():
+        c = v["criar"]
+        if not c:
+            continue
+        if v["cancelada"] and not v["paga"]:
+            m["canceladas"] += 1
+            continue
+        if not v["paga"]:
+            continue
+        tot, nph, nai = float(c.get("total") or 0), int(c.get("nPh") or 0), int(c.get("nAI") or 0)
+        m["vendas"] += 1
+        m["faturamento"] += tot
+        m["fotos_vendidas"] += nph
+        m["fotos_ia_vendidas"] += nai
+        card = c.get("card")
+        if card:
+            com_venda.add(card)
+        for chave, nome in (("por_vendedor", c.get("vendedor") or "sem vendedor"), ("por_posto", v.get("posto") or "sem posto"), ("por_meio", c.get("meio") or "?")):
+            g = m[chave].setdefault(nome, {"vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0})
+            g["vendas"] += 1
+            g["faturamento"] += tot
+            g["fotos_vendidas"] += nph
+        f = quem.get(card)
+        if f:
+            pf = m["por_fotografo"].setdefault(f, {"fotos": 0, "sessoes": 0, "sessoes_com_venda": 0, "vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0})
+            pf["vendas"] += 1
+            pf["faturamento"] += tot
+            pf["fotos_vendidas"] += nph
+    do_dia = {x.get("card") for x in ss if isinstance(x, dict) and not x.get("removida")}
+    m["sessoes_com_venda"] = len(com_venda & do_dia)
+    for card in com_venda & do_dia:
+        m["por_fotografo"][quem[card]]["sessoes_com_venda"] += 1
+    for v in vendas_ler():
+        if v.get("em") and _ev_dia(v["em"]) == dia and not v.get("teste"):
+            m["online"]["vendas"] += 1
+            m["online"]["faturamento"] += float(v.get("total") or 0)
+            m["online"]["fotos"] += int(v.get("n") or 0)
+    m["conversao_sessoes"] = round(m["sessoes_com_venda"] / m["sessoes"], 4) if m["sessoes"] else None
+    m["conversao_fotos"] = round(m["fotos_vendidas"] / m["fotos"], 4) if m["fotos"] else None
+    m["ticket_medio"] = round(m["faturamento"] / m["vendas"], 2) if m["vendas"] else None
+    for pf in m["por_fotografo"].values():
+        pf["conversao"] = round(pf["sessoes_com_venda"] / pf["sessoes"], 4) if pf["sessoes"] else None
+    return m
+
+
+def metricas_gravar(dia):
+    m = metricas_dia(dia)
+    os.makedirs(MET_DIR, exist_ok=True)
+    tmp = os.path.join(MET_DIR, dia + ".json.tmp")
+    with open(tmp, "w", encoding="utf8") as f:
+        json.dump(m, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, os.path.join(MET_DIR, dia + ".json"))
+    return m
+
+
+def metricas_loop():
+    """Hoje e ontem a cada 10 min (ontem fecha com as vendas que chegaram atrasadas); dias antigos ficam como estão."""
+    while True:
+        for i in (1, 0):
+            try:
+                metricas_gravar(_ff_hoje(time.time() - i * 86400))
+            except Exception as ex:
+                print("  métricas do dia:", str(ex)[:160])
+        time.sleep(600)
+
+
+def metricas_periodo(de, ate):
+    out = []
+    try:
+        t = time.mktime(time.strptime(de, "%Y-%m-%d"))
+        fim = time.mktime(time.strptime(ate, "%Y-%m-%d"))
+    except Exception:
+        return None
+    hoje = _ff_hoje()
+    while t <= fim and len(out) < 400:
+        d = _ff_hoje(t)
+        arq = os.path.join(MET_DIR, d + ".json")
+        if d == hoje:
+            out.append(metricas_gravar(d))
+        elif os.path.exists(arq):
+            try:
+                out.append(json.load(open(arq, encoding="utf8")))
+            except Exception:
+                pass
+        t += 86400
+    return out
+
+
 def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -4616,6 +4841,13 @@ class H(BaseHTTPRequestHandler):
             if not nuvem["ligada"]:
                 return self.js({"error": "nuvem desligada"}, 503)
             return self.js(nuvem_reenviar())
+        if p == "/ponto/eventos":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(2 * 1024 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            return self.js(ev_receber(body))
         if p == "/impressao/acao":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -4845,6 +5077,13 @@ class H(BaseHTTPRequestHandler):
             if not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             return self.js(ff_json(), nostore=True)
+        if u.path == "/metricas/dia":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            q = parse_qs(u.query)
+            hoje = _ff_hoje()
+            r = metricas_periodo((q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0])
+            return self.js({"ok": True, "dias": r} if r is not None else {"error": "datas inválidas"}, 200 if r is not None else 400)
         if u.path == "/impressao/fila":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -4921,7 +5160,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
@@ -5109,6 +5348,8 @@ def main():
         threading.Thread(target=imp_monitor, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=rec_pre_loop, daemon=True).start()
+    ev_carregar()
+    threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
     threading.Thread(target=galeria_loop, daemon=True).start()
