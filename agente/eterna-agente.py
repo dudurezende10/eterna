@@ -3870,25 +3870,40 @@ IMP_DIR = os.path.join(HOME, "impressao")
 # Imprime cada JPEG numa folha 10x15 da impressora do servidor, sem margem e preenchendo a folha (corta o excesso,
 # como a DNP faz). Usa o .NET do próprio Windows (System.Drawing), sem programa extra.
 IMP_PS1 = r"""
-param([string]$Impressora, [string[]]$Arquivos, [string]$Lista)
+param([string]$Impressora, [string[]]$Arquivos, [string]$Lista, [string]$Cancelar)
+[Console]::OutputEncoding = [Text.Encoding]::UTF8          # o agente lê a saída em UTF-8 (avisos com acento)
 Add-Type -AssemblyName System.Drawing
 # a lista vem num arquivo (uma foto por linha): com -File, o PowerShell só põe em -Arquivos o primeiro de vários argumentos
 if ($Lista) { $Arquivos = @(Get-Content -LiteralPath $Lista -Encoding UTF8 | Where-Object { $_ }) }
-# Uma foto por trabalho, e a próxima só depois que a anterior saiu da fila e a impressora voltou a ficar livre:
-# a DS-RX1 descartava o que chegava enquanto imprimia (vários trabalhos seguidos ou várias páginas no mesmo trabalho).
+function Diz($t) { [Console]::Out.WriteLine($t); [Console]::Out.Flush() }
+function Cancelado { return ($Cancelar -and (Test-Path -LiteralPath $Cancelar)) }
+$motivos = @{3='pouco papel'; 4='sem papel'; 5='ribbon acabando'; 6='sem ribbon'; 7='tampa aberta'; 8='papel preso';
+             9='desligada ou sem cabo'; 10='pede manutenção'; 11='bandeja de saída cheia'}
+# Uma foto por trabalho, e a próxima só depois que a anterior SAIU (fila do Windows vazia e a impressora parada): a DS-RX1
+# descartava o que chegava enquanto imprimia. Sem papel, sem ribbon ou desligada, espera (avisando o motivo) em vez de
+# mandar a próxima e perder a foto. Trabalho "Printed, Retained" (Windows guardando o impresso) não conta como pendente.
 function Espera-Livre {
-  $fim = (Get-Date).AddSeconds(90)
-  while ((Get-Date) -lt $fim) {
-    $fila = @(Get-PrintJob -PrinterName $Impressora -ErrorAction SilentlyContinue).Count
-    $st = (Get-CimInstance Win32_Printer -Filter ("Name='" + $Impressora + "'")).PrinterStatus
-    if ($fila -eq 0 -and $st -ne 4) { return }
+  $ini = Get-Date; $ultimo = $null
+  while ($true) {
+    if (Cancelado) { return $false }
+    $fila = @(Get-PrintJob -PrinterName $Impressora -ErrorAction SilentlyContinue | Where-Object { "$($_.JobStatus)" -notmatch 'Printed|Complete|Deleted' })
+    $p = Get-CimInstance Win32_Printer -Filter ("Name='" + $Impressora + "'")
+    $aviso = ''
+    if (-not $p) { $aviso = 'impressora não encontrada no Windows' }
+    elseif ($p.WorkOffline) { $aviso = 'desligada ou sem cabo' }
+    elseif ($motivos.ContainsKey([int]$p.DetectedErrorState)) { $aviso = $motivos[[int]$p.DetectedErrorState] }
+    elseif (@($fila | Where-Object { "$($_.JobStatus)" -match 'Error|Offline|PaperOut|Blocked|UserIntervention' }).Count) { $aviso = 'a impressora parou (' + $fila[0].JobStatus + ')' }
+    elseif (((Get-Date) - $ini).TotalSeconds -gt 120) { $aviso = 'a impressora não termina há mais de 2 minutos' }
+    if ($aviso -ne $ultimo) { Diz ("AVISO " + $aviso); $ultimo = $aviso }
+    if ($p -and $fila.Count -eq 0 -and $p.PrinterStatus -ne 4) { return $true }
     Start-Sleep -Milliseconds 500
   }
 }
 $erros = @()
 foreach ($f in $Arquivos) {
+  if (Cancelado) { break }
   try {
-    Espera-Livre
+    if (-not (Espera-Livre)) { break }
     $img = [System.Drawing.Image]::FromFile($f)
     if ($img.Width -gt $img.Height) { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipNone) }
     $doc = New-Object System.Drawing.Printing.PrintDocument
@@ -3911,12 +3926,14 @@ foreach ($f in $Arquivos) {
       $e.HasMorePages = $false })
     $doc.Print()
     $img.Dispose()
-    Write-Output ("FOTO " + [IO.Path]::GetFileName($f) + " " + (Get-Date -Format HH:mm:ss))
+    Start-Sleep -Seconds 2                          # o trabalho aparece na fila do Windows
+    if (-not (Espera-Livre)) { break }              # FOTO = saiu da impressora, não só entregue ao Windows
+    Diz ("FOTO " + [IO.Path]::GetFileName($f) + " " + (Get-Date -Format HH:mm:ss))
   } catch { $erros += ([IO.Path]::GetFileName($f) + ": " + $_.Exception.Message) }
 }
-Espera-Livre
-if ($erros.Count) { Write-Output ("ERRO " + ($erros -join " | ")); exit 1 }
-Write-Output "OK"
+if (Cancelado) { Diz "CANCELADO"; exit 0 }
+if ($erros.Count) { Diz ("ERRO " + ($erros -join " | ")); exit 1 }
+Diz "OK"
 """
 
 
@@ -4004,12 +4021,102 @@ def imp_miniatura(pedido, n):
     return mini
 
 
+def imp_flag_cancelar(pid):
+    return os.path.join(IMP_DIR, "cancelar_%s" % pid)
+
+
+def imp_acao(body):
+    """Painel da fila: cancelar (na fila sai na hora; imprimindo para antes da próxima foto), reimprimir tudo ou só o que
+    faltou (vira um pedido novo no fim da fila, com as mesmas fotos, já gravadas no servidor)."""
+    acao = body.get("acao")
+    try:
+        pid = int(body.get("id"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "pedido inválido"}
+    with lock:
+        j = next((x for x in imp_fila if x["id"] == pid), None)
+        if not j:
+            return {"ok": False, "error": "pedido não encontrado"}
+        if acao == "cancelar":
+            if j["estado"] == "na_fila":
+                j["estado"], j["fim"] = "cancelado", time.time()
+            elif j["estado"] == "imprimindo":
+                os.makedirs(IMP_DIR, exist_ok=True)
+                open(imp_flag_cancelar(pid), "w").close()
+                j["aviso"] = "cancelando: para antes da próxima foto"
+            else:
+                return {"ok": False, "error": "esse pedido já terminou"}
+            j["cancelado_por"] = str(body.get("por") or "")[:60]
+            imp_salvar()
+            return {"ok": True}
+        if acao not in ("reimprimir", "faltantes"):
+            return {"ok": False, "error": "ação inválida"}
+        if j["estado"] in ("na_fila", "imprimindo"):
+            return {"ok": False, "error": "esse pedido ainda está na fila"}
+        arqs = list(j.get("arquivos") or [])
+        if acao == "faltantes":
+            arqs = arqs[j.get("feitas") or 0:]
+        arqs = [a for a in arqs if os.path.exists(a)]
+        venda, vendedor, posto = j["venda"], j.get("vendedor") or "", j.get("posto") or ""
+    if not arqs:
+        return {"ok": False, "error": "nenhuma foto para reimprimir"}
+    novo = imp_pedido(venda, vendedor, posto, arqs)
+    with lock:
+        novo["reimpressao_de"] = pid
+        imp_salvar()
+    threading.Thread(target=imprimir_fila, args=(imp_ps1(), arqs, venda, {"kb": 0}, novo), daemon=True).start()
+    return {"ok": True, "pedido": novo["id"]}
+
+
+imp_estado = {}           # impressora -> {estado, motivo, pendentes, em}: lido do Windows a cada 10 s
+IMP_ESTADO_PS1 = r"""
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$motivos = @{3='pouco papel'; 4='sem papel'; 5='ribbon acabando'; 6='sem ribbon'; 7='tampa aberta'; 8='papel preso';
+             9='desligada ou sem cabo'; 10='pede manutenção'; 11='bandeja de saída cheia'}
+$out = @{}
+foreach ($n in $args) {
+  $p = Get-CimInstance Win32_Printer -Filter ("Name='" + $n.Replace("'", "''") + "'")
+  if (-not $p) { $out[$n] = @{estado='erro'; motivo='não encontrada no Windows'; pendentes=0}; continue }
+  $pend = @(Get-PrintJob -PrinterName $n -ErrorAction SilentlyContinue | Where-Object { "$($_.JobStatus)" -notmatch 'Printed|Complete|Deleted' }).Count
+  $m = $null
+  if ($p.WorkOffline) { $m = 'desligada ou sem cabo' } elseif ($motivos.ContainsKey([int]$p.DetectedErrorState)) { $m = $motivos[[int]$p.DetectedErrorState] }
+  $e = if ($m) { 'erro' } elseif ($p.PrinterStatus -eq 4 -or $pend) { 'imprimindo' } else { 'livre' }
+  $out[$n] = @{estado=$e; motivo=$m; pendentes=$pend}
+}
+$out | ConvertTo-Json -Compress
+"""
+
+
+def imp_monitor():
+    """Estado real de cada DNP no Windows (livre, imprimindo, sem papel, desligada...), a cada 10 s, para o painel."""
+    if not IMPRESSORAS or os.environ.get("ETERNA_IMPRESSORA_TESTE") or sys.platform != "win32":
+        return
+    ps1 = os.path.join(IMP_DIR, "estado.ps1")
+    os.makedirs(IMP_DIR, exist_ok=True)
+    with open(ps1, "w", encoding="utf-8-sig") as fh:
+        fh.write(IMP_ESTADO_PS1)
+    while True:
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1] + IMPRESSORAS,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            d = json.loads(r.stdout or "{}")
+            agora = time.time()
+            with lock:
+                for n in IMPRESSORAS:
+                    x = d.get(n) or {"estado": "erro", "motivo": "sem leitura do Windows", "pendentes": 0}
+                    imp_estado[n] = {"estado": x.get("estado"), "motivo": x.get("motivo"), "pendentes": x.get("pendentes") or 0, "em": agora}
+        except Exception as ex:
+            print("  estado das impressoras: não leu:", str(ex)[:120])
+        time.sleep(10)
+
+
 def imp_fila_json():
     agora = time.time()
     with lock:
         jobs = [{k: v for k, v in j.items() if k != "arquivos"} for j in imp_fila
                 if j["estado"] in ("na_fila", "imprimindo") or agora - (j["fim"] or agora) < 3 * 3600]
-    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": IMPRESSORAS,
+        estados = {k: dict(v) for k, v in imp_estado.items()}
+    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": IMPRESSORAS, "estados": estados,
             "postos": {k: v for k, v in IMP_POSTOS.items()}, "agora": agora, "pedidos": jobs}
 
 
@@ -4050,6 +4157,8 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
     entregue (linha FOTO), e o painel da fila acompanha."""
     while True:            # vez deste pedido: nenhum anterior esperando, e uma impressora livre
         with lock:
+            if job["estado"] == "cancelado":               # cancelado no painel enquanto esperava a vez
+                return
             meus = imp_destinos(job)                       # impressoras deste terminal (ou todas)
             # ordem de chegada: só espera os pedidos anteriores que disputam alguma das mesmas impressoras
             antes = [j for j in imp_fila if j["id"] < job["id"] and j["estado"] == "na_fila" and set(imp_destinos(j)) & set(meus)]
@@ -4078,15 +4187,22 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
                 with open(lista, "w", encoding="utf-8") as fh:
                     fh.write("\n".join(arqs) + "\n")
                 pr = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Impressora", imp,
-                                       "-Lista", lista], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                       "-Lista", lista, "-Cancelar", imp_flag_cancelar(job["id"])],
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
                 for ln in pr.stdout:
                     ln = ln.strip()
                     if not ln:
+                        continue
+                    if ln.startswith("AVISO"):                  # a DNP parou (sem papel, ribbon, desligada): o painel mostra
+                        with lock:
+                            job["aviso"] = ln[5:].strip() or None
+                            imp_salvar()
                         continue
                     linhas.append(ln)
                     if ln.startswith("FOTO"):
                         with lock:
                             job["feitas"] += 1
+                            job["aviso"] = None
                             imp_salvar()
                 pr.wait(timeout=120 + 90 * len(arqs))
                 saida = " ".join(" ".join(linhas).split())
@@ -4097,11 +4213,17 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
                     linhas.append("ERRO %d de %d fotos entregues à impressora" % (entregues, len(arqs)))
             except Exception as ex:
                 saida, ok = "ERRO " + str(ex), False
+        cancelado = os.path.exists(imp_flag_cancelar(job["id"]))
         with lock:
-            job["estado"], job["fim"] = ("impresso" if ok else "erro"), time.time()
-            if not ok:
+            job["estado"], job["fim"] = ("cancelado" if cancelado else "impresso" if ok else "erro"), time.time()
+            job["aviso"] = None
+            if not ok and not cancelado:
                 job["erro"] = saida[-200:]
             imp_salvar()
+        try:
+            os.remove(imp_flag_cancelar(job["id"]))
+        except OSError:
+            pass
         print(f"  impressão {venda or '-'}: {len(arqs)} foto(s) em {imp}, {ms.get('kb', 0)} KB, "
               f"{time.time() - t1:.0f} s até a DNP terminar -> {saida[:300]}")
     finally:
@@ -4434,6 +4556,13 @@ class H(BaseHTTPRequestHandler):
             if not nuvem["ligada"]:
                 return self.js({"error": "nuvem desligada"}, 503)
             return self.js(nuvem_reenviar())
+        if p == "/impressao/acao":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            return self.js(imp_acao(body))
         if p == "/imprimir":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -4730,7 +4859,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
@@ -4915,6 +5044,7 @@ def main():
     threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
     if IMPRESSORA and not os.environ.get("ETERNA_IMPRESSORA_TESTE"):
         imp_retomar()
+        threading.Thread(target=imp_monitor, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
