@@ -2195,7 +2195,11 @@ REC_TAXA = 60            # recortes novos por minuto por IP (o cache não conta)
 REC_DIAS = 2             # prazo do cache de recortes
 REC_TETO_GB = float(os.environ.get("ETERNA_RECORTES_GB") or 5)   # teto do cache: apaga os mais antigos acima disso
 REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos, tenta de novo passado este tempo
-rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None}
+rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0}
+# Recorte antecipado: o cliente nunca espera o "Preparando sua foto especial". Os modelos abrem quando o Eterna liga, e cada
+# sessão fechada é recortada em segundo plano (da mais nova para a mais velha); pedido ao vivo do Checkout passa na frente.
+# ETERNA_PRE_RECORTE=0 desliga (servidor fraco): volta a recortar só quando o cliente pede.
+REC_PRE = os.environ.get("ETERNA_PRE_RECORTE", "1") != "0"
 rec_fila = queue.Queue(maxsize=REC_FILA_MAX)
 rec_lock = threading.Lock()        # só contadores e estado (o /status nunca espera a carga dos modelos)
 rec_carga = threading.Lock()       # abrir os modelos (só as threads de trabalho)
@@ -2239,6 +2243,7 @@ def rec_status():
     with rec_lock:
         n = rec["feitos"]
         return {"ok": ok, "motivo": motivo, "carregado": rec["carregado"], "modelos": list(REC_MODELOS), "fila": rec_fila.qsize(),
+                "antecipado": {"ligado": REC_PRE, "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
                 "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC}
 
 
@@ -2785,6 +2790,46 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180):
     if not job["ev"].wait(espera):
         return None, "tempo"
     return job.get("res"), job.get("err")
+
+
+def rec_pre_loop():
+    """Recorte antecipado (ver REC_PRE): abre os modelos já na partida e recorta as fotos das sessões fechadas dos dias da
+    busca (ETERNA_BUSCA_DIAS), da sessão mais nova para a mais velha. Uma de cada vez, e só com a fila ao vivo vazia."""
+    if not REC_PRE:
+        return
+    time.sleep(15)                                  # deixa a biblioteca e as sessões carregarem
+    vistos = set()
+    while True:
+        try:
+            ok, _ = rec_estado()
+            if ok:
+                rec_carregar()                          # modelos na memória antes do primeiro cliente
+                dias = {time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400)) for i in range(BUSCA_DIAS)}
+                with sess_lock:
+                    ss = sorted((x for x in sess.values() if x["status"] == "fechada" and not x.get("removida") and x["dia"] in dias),
+                                key=lambda x: -(x.get("fechada_em") or 0))
+                    pids = [p for x in ss for p in x["fotos"]]
+                falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
+                with rec_lock:
+                    rec["pre_falta"] = len(falta)
+                for pid in falta:
+                    while rec_fila.qsize():             # cliente esperando no Checkout: passa na frente
+                        time.sleep(1)
+                    with lock:
+                        e = lib.get(pid)
+                    vistos.add(pid)
+                    if not e or not e.get("file") or not os.path.exists(e["file"]):
+                        continue
+                    path, erro = rec_pedir(pid, e["file"], REC_LADO_MAX, espera=600)
+                    with rec_lock:
+                        rec["pre_falta"] = max(0, rec["pre_falta"] - 1)
+                        if path:
+                            rec["pre_feitos"] += 1
+                    if not path:
+                        print("  recorte antecipado %s: %s" % (pid, erro))
+        except Exception as ex:
+            print("  recorte antecipado:", str(ex)[:160])
+        time.sleep(15)
 
 
 # v84 (segurança): o Photoroom só monta quando o interruptor do Painel de controle estiver em "Photoroom" também aqui.
@@ -5046,6 +5091,7 @@ def main():
         imp_retomar()
         threading.Thread(target=imp_monitor, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
+    threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
     threading.Thread(target=galeria_loop, daemon=True).start()
