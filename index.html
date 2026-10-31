@@ -2917,8 +2917,9 @@ async function srvPull(){const a=state.agent;if(SRV.busy||!a.sessoes)return;SRV.
     if(a.sessoes.rev===SRV.rev)return;
     const j=await (await fetch(a.url+'/sessoes?desde='+SRV.rev,{cache:'no-store'})).json();if(!j||!j.ok)return;
     if(j.gen!==SRV.gen){SRV.gen=j.gen;SRV.rev=0;return;}
-    const hoje=todayKey();let novas=0;const known=photosInSessions();
-    for(const x of j.sessoes||[]){if(x.removida||x.status!=='fechada'||x.dia!==hoje||SIM.sessions[x.card])continue;
+    // ETERNA_BUSCA_DIAS no servidor (teste com fotos de dias anteriores): as sessões desses dias também entram no Checkout
+    const dias=new Set(Array.from({length:Math.max(1,a.sessoes.dias||1)},(_,i)=>new Date(now()-i*864e5).toISOString().slice(0,10)));let novas=0;const known=photosInSessions();
+    for(const x of j.sessoes||[]){if(x.removida||x.status!=='fechada'||!dias.has(x.dia)||SIM.sessions[x.card])continue;
       const fotos=(x.fotos||[]).filter(pid=>!known.has('ag_'+pid));if(!fotos.length)continue;
       fotos.forEach(pid=>{if(!UP['ag_'+pid])UP['ag_'+pid]={src:a.url+'/thumb/'+pid,name:pid};known.add('ag_'+pid);});
       ingClose('pausa de '+(j.pausa||SESSAO_PAUSA_S)+' s sem foto nova (servidor)',{...x,fotos});

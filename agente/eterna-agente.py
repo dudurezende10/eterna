@@ -3815,7 +3815,7 @@ def sess_feed(desde=0):
 def sess_status():
     with sess_lock:
         hoje = _ff_hoje()
-        return {"v": 1, "pausa": FF_PAUSA, "rev": sess_rev[0], "gen": BOOT,
+        return {"v": 1, "pausa": FF_PAUSA, "rev": sess_rev[0], "gen": BOOT, "dias": BUSCA_DIAS,
                 "hoje": sum(1 for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
                 "abertas": sum(1 for x in sess.values() if x["status"] == "aberta")}
 
