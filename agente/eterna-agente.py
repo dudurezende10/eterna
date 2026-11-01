@@ -353,6 +353,27 @@ LADO = 1600
 RETENCAO_DIAS = 60     # D10: a selfie da galeria online precisa achar as fotos até o dia 60
 # ETERNA_BUSCA_DIAS: a selfie do Checkout procura em hoje e nos N-1 dias anteriores (padrão 1, só hoje). Teste com fotos de ontem: 2
 BUSCA_DIAS = max(1, int(os.environ.get("ETERNA_BUSCA_DIAS") or 1))
+BUSCA_DIAS_EXPLICITA = bool((os.environ.get("ETERNA_BUSCA_DIAS") or "").strip())
+
+
+def _busca_janela(v=None):
+    """Minutos da janela da selfie (0 = dia todo), de 0 a 1440; inválido = padrão 90."""
+    if v is None:
+        v = os.environ.get("ETERNA_BUSCA_JANELA_MIN", "90")
+    try:
+        v = int(str(v).strip() or "90")
+    except (TypeError, ValueError):
+        v = 90
+    return max(0, min(v, 1440))
+
+
+# v91 (Eduardo, 01/11 16:46): a selfie do Checkout procura só nas sessões cuja ÚLTIMA foto (hora do clique corrigida, cap1;
+# sem clique, a chegada) foi nos últimos ETERNA_BUSCA_JANELA_MIN minutos (padrão 90; 0 = dia todo): depois disso a família já
+# foi embora. O Painel de controle pode mandar outro valor na busca (janela_min). Com ETERNA_BUSCA_DIAS definida (teste do
+# Ronaldo com fotos de ontem) a janela não vale: procura o dia todo dos dias da busca. Código do recibo e da galeria não passam
+# por aqui (abrem qualquer sessão do dia).
+BUSCA_JANELA_MIN = _busca_janela()
+ROSTO_PRINCIPAL = 0.5  # v91 (segurança B5): rosto com largura >= metade do maior rosto da foto = primeiro plano
 rostos = {"ligado": False, "motivo": "iniciando", "lidas": 0, "rostos": 0, "fila": 0, "modelo": "YuNet + SFace (OpenCV)", "limite": LIMITE}
 fila_rostos = queue.PriorityQueue()   # v91 (S11): itens (prio, seq, pid, caminho, t_fila); 0 = foto nova, 1 = atraso do boot
 _fila_seq = itertools.count()
@@ -361,7 +382,8 @@ _fila_seq = itertools.count()
 def rostos_enfileira(pid, path, prio=0, t_fila=None):
     fila_rostos.put((prio, next(_fila_seq), pid, path, t_fila))
 _cv = {}               # cv2, np, det, rec (um par por thread de leitura)
-_mat = {}              # dia -> (matriz N x 128, [pid...]) para busca
+_mat = {}              # dia -> (matriz N x 128, [pid...], larguras N, {pid: maior largura da foto}) para busca
+_mat_ver = {}          # dia -> versão; muda a cada leitura gravada ou limpeza (a releitura do dia só fica se não mudou no meio)
 _mat_lock = threading.Lock()
 
 
@@ -465,6 +487,7 @@ def limpar_rostos(db=None):
     with _mat_lock:
         for d in [d for d in _mat if d < lim]:
             _mat.pop(d, None)
+            _mat_ver[d] = _mat_ver.get(d, 0) + 1
 
 
 def rostos_thread():
@@ -533,18 +556,7 @@ def leitor_loop(det, rec, db):
                 m.update(lida=agora, leitura_ms=round((agora - t_ini) * 1000, 1), rostos=len(fs),
                          espera_ms=round((t_ini - t_fila) * 1000, 1) if t_fila else None)
                 metrica_grava({"pid": pid, "lida": m["lida"], "leitura_ms": m["leitura_ms"], "rostos": m["rostos"], "espera_ms": m["espera_ms"]})
-            with _mat_lock:             # v91 (rapidez da selfie): acrescenta na matriz do dia em vez de reler o dia inteiro
-                mt = _mat.get(dia)
-                if mt is not None:
-                    np_ = _cv["np"]
-                    M0, ps0 = mt
-                    if pid in ps0:
-                        k = [i for i, p_ in enumerate(ps0) if p_ != pid]
-                        M0, ps0 = M0[k], [ps0[i] for i in k]
-                    if fs:
-                        M0 = np_.vstack([M0] + [f[1].reshape(1, 128).astype("float32") for f in fs])
-                        ps0 = ps0 + [pid] * len(fs)
-                    _mat[dia] = (M0, ps0)
+            mat_acrescenta(dia, pid, [(f[0], f[1]) for f in fs])   # v91 (rapidez da selfie): sem reler o dia inteiro
         except Exception as ex:
             print("  erro ao ler rostos", path, ex)
         finally:
@@ -555,37 +567,81 @@ def leitor_loop(det, rec, db):
                 print("  sessões (rostos): %s" % str(ex)[:80])
 
 
-def matriz(dias):
+def mat_acrescenta(dia, pid, fs):
+    """Foto lida (já gravada no rostos.db): troca as linhas dela na matriz do dia em memória. fs = [(largura, vetor 128)].
+    Sempre sobe a versão do dia (revisão: corrida com a releitura do dia em matriz())."""
+    np_ = _cv["np"]
+    with _mat_lock:
+        _mat_ver[dia] = _mat_ver.get(dia, 0) + 1
+        mt = _mat.get(dia)
+        if mt is None:
+            return
+        M0, ps0, L0, mx = mt
+        if pid in mx or pid in ps0:
+            k = [i for i, p_ in enumerate(ps0) if p_ != pid]
+            M0, ps0, L0 = M0[k], [ps0[i] for i in k], L0[k]
+        mx = dict(mx)
+        mx.pop(pid, None)
+        if fs:
+            M0 = np_.vstack([M0] + [np_.asarray(f[1], "float32").reshape(1, 128) for f in fs])
+            ps0 = ps0 + [pid] * len(fs)
+            L0 = np_.concatenate([L0, np_.array([float(f[0] or 0) for f in fs], "float32")])
+            mx[pid] = max(float(f[0] or 0) for f in fs)
+        _mat[dia] = (M0, ps0, L0, mx)
+
+
+def _mat_le(db, d):
     np = _cv["np"]
-    vs, ps = [], []
+    rows = db.execute("select pid, larg, emb from rosto where dia=?", (d,)).fetchall()
+    M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128) if rows else np.zeros((0, 128), "float32")
+    L = np.array([float(r[1] or 0) for r in rows], "float32")
+    mx = {}
+    for r in rows:
+        mx[r[0]] = max(mx.get(r[0], 0.0), float(r[1] or 0))
+    return (M, [r[0] for r in rows], L, mx)
+
+
+def matriz(dias):
+    """(M, pids, larguras, {pid: maior largura}) dos dias. A releitura de um dia só fica em memória se nenhuma leitura nova
+    foi gravada no meio (versão do dia igual); senão tenta de novo (até 3 vezes) e, na última, usa sem guardar."""
+    np = _cv["np"]
+    vs, ps, ls, mx = [], [], [], {}
     db = rostos_db()
     for d in dias:
         with _mat_lock:
             m = _mat.get(d)
-        if m is None:
-            rows = db.execute("select pid, emb from rosto where dia=?", (d,)).fetchall()
-            m = (np.frombuffer(b"".join(r[1] for r in rows), dtype="float32").reshape(-1, 128) if rows else np.zeros((0, 128), "float32"), [r[0] for r in rows])
+        tent = 0
+        while m is None:
             with _mat_lock:
-                _mat[d] = m
-        vs.append(m[0]); ps += m[1]
-    return (np.vstack(vs) if vs else np.zeros((0, 128), "float32")), ps
+                ver = _mat_ver.get(d, 0)
+            m0 = _mat_le(db, d)
+            tent += 1
+            with _mat_lock:
+                if _mat_ver.get(d, 0) == ver:
+                    _mat[d] = m0
+                    m = m0
+                elif tent >= 3:
+                    m = m0
+        vs.append(m[0]); ps += m[1]; ls.append(m[2]); mx.update(m[3])
+    return ((np.vstack(vs) if vs else np.zeros((0, 128), "float32")), ps,
+            (np.concatenate(ls) if ls else np.zeros((0,), "float32")), mx)
 
 
 _busca = {"m": None}
 _busca_lock = threading.Lock()
 
 
-def buscar(imagens, dias=1):
+def buscar(imagens, dias=1, janela=None):
     """Lê o maior rosto de cada imagem (dataURL/base64), faz a média e devolve as fotos com o rosto."""
     np = _cv["np"]; cv2 = _cv["cv2"]
     dias = max(int(dias or 1), BUSCA_DIAS)
     with _busca_lock:
         if not _busca["m"]:
             _busca["m"] = leitor()
-        return _buscar(imagens, dias, *_busca["m"])
+        return _buscar(imagens, dias, *_busca["m"], janela=janela)
 
 
-def _buscar(imagens, dias, det, rec):
+def _buscar(imagens, dias, det, rec, janela=None):
     np = _cv["np"]; cv2 = _cv["cv2"]
     vs = []
     for b in imagens[:5]:
@@ -607,24 +663,41 @@ def _buscar(imagens, dias, det, rec):
     if not vs:
         return {"rosto": False, "fotos": []}
     me = np.mean(vs, axis=0); me /= np.linalg.norm(me) or 1
-    return buscar_vetor(me, dias)
+    return buscar_vetor(me, dias, janela)
 
 
-def buscar_vetor(me, dias=1):
+def busca_janela_efetiva(janela=None):
+    """Minutos da janela desta busca: o valor mandado pelo app (Painel de controle) ou ETERNA_BUSCA_JANELA_MIN; 0 com
+    ETERNA_BUSCA_DIAS definida (dia todo dos dias da busca)."""
+    if BUSCA_DIAS_EXPLICITA:
+        return 0
+    return BUSCA_JANELA_MIN if janela is None else _busca_janela(janela)
+
+
+def buscar_vetor(me, dias=1, janela=None, agora=None):
     """Fotos com o rosto do vetor me (128, normalizado), nos dias da busca. Separada de _buscar para medir (v91 parte B:
-    selfie até a primeira foto ampliada em menos de 2 s; testes/selfie_rapidez.py)."""
+    selfie até a primeira foto ampliada em menos de 2 s; testes/selfie_rapidez.py). Cada foto vem com principal: o rosto que
+    bateu tem largura >= ROSTO_PRINCIPAL x a do maior rosto daquela foto (B5: quem só aparece no fundo não abre a sessão
+    inteira no Checkout). Com janela (minutos) > 0, só as fotos de sessões com a última foto dentro da janela."""
     np = _cv["np"]
-    hoje = time.time()
-    M, ps = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
+    hoje = time.time() if agora is None else agora
+    M, ps, L, mx = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
+    jan = busca_janela_efetiva(janela)
+    if jan and len(ps):
+        ok = sess_pids_janela(hoje - jan * 60)
+        if ok is not None:                   # None = nenhuma sessão em memória (agente sem sessões): sem filtro
+            idx = np.array([i for i, p in enumerate(ps) if p in ok], dtype="int64")
+            M, ps, L = M[idx] if len(idx) else M[:0], [ps[i] for i in idx], L[idx] if len(idx) else L[:0]
     melhor = {}
     if len(ps):
         sims = M @ me
         for i in np.nonzero(sims >= LIMITE_TALVEZ)[0]:
             pid = ps[i]; s_ = float(sims[i])
-            if s_ > melhor.get(pid, 0):
-                melhor[pid] = s_
-    fotos = sorted(({"id": k, "sim": round(v, 3)} for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
-    return {"rosto": True, "fotos": fotos, "limite": LIMITE}
+            if s_ > melhor.get(pid, (0, 0))[0]:
+                melhor[pid] = (s_, float(L[i]))
+    fotos = sorted(({"id": k, "sim": round(v[0], 3), "principal": bool(v[1] >= ROSTO_PRINCIPAL * (mx.get(k) or 0))}
+                    for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
+    return {"rosto": True, "fotos": fotos, "limite": LIMITE, "janela_min": jan}
 
 
 def medir(sessoes):
@@ -837,6 +910,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
     with _mat_lock:
         for d in dias:
             _mat.pop(d, None)                # a busca por rosto relê o dia sem as fotos apagadas
+            _mat_ver[d] = _mat_ver.get(d, 0) + 1
     with lock:
         save_index()
         try:
@@ -3401,6 +3475,9 @@ VENDAS = os.path.join(GALERIAS, "vendas-online.jsonl")
 CONSENT = os.path.join(GALERIAS, "consentimentos.jsonl")
 
 
+FILE_TAXA = 120                 # v91: /file/ por IP da rede por minuto (o loopback não conta)
+
+
 def limite_ok(ip, rota, n, janela=60):
     agora = time.time()
     with gal_lock:
@@ -3731,6 +3808,23 @@ def _sess_publico(x, disco=False):
             continue
         o[kk] = list(v) if isinstance(v, list) else (dict(v) if isinstance(v, dict) else v)
     return o
+
+
+def sess_pids_janela(desde):
+    """pids das sessões (hoje e ontem em memória) cuja última foto (cap1, hora do clique corrigida; sem ela, a última
+    chegada) é de desde em diante, com as pendentes. None se não há sessão nenhuma em memória (agente sem sessões)."""
+    with sess_lock:
+        if not sess:
+            return None
+        ok = set()
+        for x in sess.values():
+            if x.get("removida"):
+                continue
+            fim = _num(x.get("cap1")) or _num(x.get("ultima_chegada"))
+            if fim >= desde:
+                ok.update(x.get("fotos") or ())
+                ok.update(x.get("pend") or ())
+        return ok
 
 
 def _num(v):
@@ -5829,6 +5923,10 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "not found"}, 404)
             return self.png_bytes(os.path.join(RECORTES, m.group(2) + ".png"))
         if u.path.startswith("/thumb/") or u.path.startswith("/file/"):
+            # v91 (segurança, 01/11): o /file/ (original) pela rede (ETERNA_ORIGENS) fica aceito até o pareamento da v83 etapa 2,
+            # com limite por IP: FILE_TAXA por minuto. O computador do ponto (loopback) não tem limite (Checkout e pré-carga).
+            if u.path.startswith("/file/") and not self.loopback() and not limite_ok(self.client_address[0], "file", FILE_TAXA):
+                return self.js({"error": "muitas fotos seguidas; espere um minuto"}, 429)
             pid = u.path.rsplit("/", 1)[1]
             with lock:
                 e = lib.get(pid)
@@ -5968,7 +6066,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, 400)
             try:
                 if u.path == "/rostos/buscar":
-                    return self.js(buscar(body.get("imagens") or [], body.get("dias") or 1))
+                    return self.js(buscar(body.get("imagens") or [], body.get("dias") or 1, body.get("janela_min")))
                 return self.js(medir(body.get("sessoes") or {}))
             except Exception as ex:
                 return self.js({"error": str(ex)}, 500)

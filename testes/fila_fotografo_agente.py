@@ -343,12 +343,18 @@ try:
     ok("Access-Control-Allow-Origin" not in hh, "N1: preflight de outra origem sem CORS")
     pid = (g_de("samuel") or {"pids": ["x"]})["pids"][0]
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: miniatura pelo endereço de ETERNA_ORIGENS")
-    # v90: alinhado ao main. Desde 138d45e (Ronaldo) os endereços de ETERNA_ORIGENS usam as telas da equipe e o
-    # original abre por eles (HOSTS_OK inclui ORIGENS_REDE_HOSTS); com Origin de fora continua fechado.
-    # v91 (revisão S1): expectativa de segurança do main mantida (403); o agente hoje responde 200 desde o 138d45e e o
-    # teste falha como no main, até a segurança decidir (plano 2026-10-30, Parte B, pendentes)
-    ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 403, "risco 4: o original continua fechado pelo endereço da rede")
+    # v91 (segurança, 01/11): o /file/ pela rede fica aceito até o pareamento da v83 etapa 2 (desde o 138d45e o HOSTS_OK inclui
+    # os endereços de ETERNA_ORIGENS): 200 com o Host de ETERNA_ORIGENS e sem Origin estranha; 403 com outro Host ou Origin de
+    # fora; limite de FILE_TAXA (120) por minuto por IP da rede (429 depois disso)
+    ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: o original pelo endereço de ETERNA_ORIGENS (sem Origin)")
+    ok(req("GET", "/file/" + pid, headers={"Host": hostr, "Origin": ORIG}, origem="127.0.0.2")[0] == 200, "risco 4: o original pelo endereço de ETERNA_ORIGENS (Origin dele)")
     ok(req("GET", "/file/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: o original com Origin de fora")
+    ok(req("GET", "/file/" + pid, headers={"Host": "evil.example:%d" % PORTA}, origem="127.0.0.2")[0] == 403, "risco 4: o original com outro Host")
+    ok(req("GET", "/file/" + pid, origem="127.0.0.2")[0] == 403, "risco 4: o original de outro IP com o Host local")
+    cods = [req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.3")[0] for _ in range(121)]
+    ok(cods[:120].count(200) == 120 and cods[120] == 429, "risco 4: limite de 120 originais por minuto por IP: %r" % cods[115:])
+    ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: o limite é por IP")
+    ok(all(req("GET", "/file/" + pid)[0] == 200 for _ in range(130)), "risco 4: o computador do ponto (loopback) sem limite")
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: miniatura com Origin de fora")
     # contrato: sem série completa, sem nome de arquivo
     txt = json.dumps(fila())

@@ -375,7 +375,11 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-strip{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;padding:6px 2px}
 .lj-grade{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 .lj-tvmini{display:flex;gap:12px;justify-content:center;margin:18px 0 22px}.lj-tvph{width:150px;aspect-ratio:3/2;border-radius:8px;background-image:var(--img);background-size:var(--bs);background-position:var(--bp);background-color:#141311;filter:var(--flt,none)}
-.lj-lbmid{position:relative}.lj-lbsrc{position:absolute;left:12px;bottom:12px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;background:rgba(12,35,64,.55);color:#fff;padding:4px 10px;border-radius:999px;pointer-events:none}
+/* v91: ponto · hora dentro da própria imagem (filho de .lj-lbimg), nunca metade fora; foto real ganha a proporção dela (--ar) */
+.lj-lbmid{position:relative}.lj-lbmid:has(.fit){container-type:size}.lj-lbmid .lj-lbimg.fit{width:min(100cqw,calc(var(--ar) * 100cqh));height:auto;aspect-ratio:var(--ar);max-width:100%;max-height:100%;flex:0 1 auto;min-height:0}
+/* aviso (toast) no Checkout: no alto, abaixo do cabeçalho, nunca em cima do ✗/✓ da barra de baixo */
+body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-index:70}
+.lj-lbsrc{position:absolute;left:12px;bottom:12px;z-index:1;font-size:13px;letter-spacing:.06em;text-transform:uppercase;background:rgba(12,35,64,.55);color:#fff;padding:4px 10px;border-radius:999px;pointer-events:none}
 .lj-blk{grid-column:1/-1;font-size:13px;letter-spacing:.06em;text-transform:uppercase;opacity:.7;padding:6px 2px 0;border-top:1px solid rgba(255,255,255,.14)}.lj-blk:first-child{border-top:0;padding-top:0}
 .lj-grid{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:clamp(10px,1.4vw,18px);padding:6px 4px 14px;align-content:start}
 .lj-gcard{position:relative;background:#fff;border:0;border-radius:10px;padding:6px;cursor:pointer;outline:4px solid transparent;outline-offset:-2px;transition:outline-color .15s,transform .15s}
@@ -1359,7 +1363,7 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;con
   const at=now().toISOString();const prov=meio==='dinheiro'?'dinheiro':(r.prov||pagProv());
   s.cart=cartComPreco(r.cart);s.total=r.total;s.nFotos=r.n;s.selected=(r.selected||[]).slice();s.aiSel=(r.aiSel||[]).slice();s.fav=(r.fav||[]).slice();
   s.status='paga';s.payment=PAG_NOME[meio];s.paidAt=at;s.caixaEm=at;s.caixaPor=u.name;s.saleNo=r.saleNo||s.saleNo||novoSaleNo();s.seller=LOJA_VENDEDOR;s.prints=r.prints;delete s.din;
-  s.vendaId=r.id;if(r.sessoes&&r.sessoes.length>1){s.sessoes=r.sessoes.slice();s.galVenda=r.token;}s.vendedor=r.vendedor||null;s.posto=r.posto||postoNome();s.pag={prov,ref,em:at,porNome:u.name};impIniciar(s);
+  s.vendaId=r.id;if(r.sessoes&&(r.sessoes.length>1||((SIM.galerias||{})[r.token]||{}).venda)){s.sessoes=r.sessoes.slice();s.galVenda=r.token;}s.vendedor=r.vendedor||null;s.posto=r.posto||postoNome();s.pag={prov,ref,em:at,porNome:u.name};impIniciar(s);
   if((r.aiSel||[]).length){const ai=aiOf(r.card);r.aiSel.forEach(k=>{const [ph,bg]=String(k).split('|');if(!ai.bought.some(b=>b.ph===ph&&b.bg===bg))ai.bought.push({ph,bg,paidAt:at,where:'loja'});});}
   Object.assign(r,{estado:'confirmada',fechada:at,por:u.email,porNome:u.name,motivo:null,saleNo:s.saleNo,ref});
   log(`${MEIO_NOME[meio]} confirmado: ${(r.sessoes||[r.card]).join(' + ')} ${fmtR(r.total)} por ${u.name}${ref?' · NSU '+ref:''}`);
@@ -1927,7 +1931,11 @@ async function lojaPedido(card,meio){meio=MEIO_NOME[meio]?meio:'dinheiro';if(sta
   state.lojaPedindo=true;let saleNo;try{saleNo=await pvSaleNo();}finally{state.lojaPedindo=false;}if(state.kiosk.code!==card)return; // número tirado sob a trava da fila
   lojaFresh(card);const k=state.kiosk;if(lojaJaPaga(card)){toast(T('ljAlreadyPaid'));render();return;}const c=lojaCart(card);if(!c.ch.length)return;lojaSync(card);const s=simOf(card);const antes=JSON.stringify(SIM);
   const ab=dinAbertaDe(card);if(ab)dinFechar(ab.id,'substituida','novo_pedido',null); // uma pendência aberta por sessão (D4 da v79)
-  const sessoes=soCards(card).slice();const tok=sessoes.length>1?galDaVendaJunta(card,sessoes,lojaFotos(card).map(p=>p.id)):galDaSessao(card,true);const m=SIM.galerias[tok];
+  const sessoes=soCards(card).slice();const so=k.so&&k.so.card===card?k.so:null;
+  // galeria própria (m.venda, m.so) sempre que a escolha não é uma sessão inteira só: várias sessões, sessão de menor/escola achada
+  // sozinha (IMPORTANTE 1 da segurança) ou sessão em que a pessoa só aparece no fundo (B5)
+  const junta=sessoes.length>1||lojaSesProtegida(card)||!!(so&&sessoes.some(c=>{const x=sessionObj(c);return x&&x.photos.some(p=>!so.ids.includes(p.id));}));
+  const tok=junta?galDaVendaJunta(card,sessoes,lojaFotos(card).map(p=>p.id)):galDaSessao(card,true);const m=SIM.galerias[tok];
   const id=pvId();const prov=meio==='dinheiro'?'dinheiro':pagProv();const ini=meio==='dinheiro'?{estado:'aguardando'}:((PAG_PROV[prov]&&PAG_PROV[prov].iniciar({id,meio,total:c.total}))||{estado:'aguardando'});
   const rec={id,venue:(typeof VENUE_CFG!=='undefined'&&VENUE_CFG&&VENUE_CFG.id)||'maracana',card,sessoes,token:tok,codigo:m.codigo,criada:now().toISOString(),total:c.total,prints:c.prints,n:c.ch.length,nPh:c.nPh,nAI:c.nAI,
     cart:c.cart.map(x=>({...x})),selected:(s.selected||[]).slice(),aiSel:(s.aiSel||[]).slice(),fav:(s.fav||[]).slice(),meio,prov,saleNo,vendedor:postoVendedor(),posto:postoNome(),
@@ -2497,13 +2505,13 @@ function vQuiosque(){
   if((k.step==='review'||k.step==='cart')&&pagoTudo)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljVoltar('loja-new','')}</div></div>`;
   if(k.step==='review'){const n=items.length; // galeria em grade: todas as fotos inteiras (sem corte), um toque marca ou desmarca
     const full=st0=>String(st0||'').replace('--bs:cover','--bs:contain');const spr=st0=>/sprites\//.test(String(st0||''));
-    const img=(q,s2,cls)=>{if(q.t==='ai')return `<div class="${cls} ai">${lojaThumb(q)}</div>`;const st0=bigStyle(q.id);return `<div class="${cls}${spr(st0)?' spr':''}" style="${full(st0)}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}</div>`;};
+    const img=(q,s2,cls,lb)=>{const rot=lb?`<span class="lj-lbsrc">${esc(lb)}</span>`:'';if(q.t==='ai')return `<div class="${cls} ai">${lojaThumb(q)}${rot}</div>`;const st0=bigStyle(q.id);const ar=!spr(st0)&&LJ_AR[q.id];return `<div class="${cls}${spr(st0)?' spr':''}${ar?' fit':''}" style="${ar?`--ar:${ar};`:''}${full(st0)}" data-ar="${esc(q.id)}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}${rot}</div>`;};
     const card=(q,i)=>{const s2=pk[q.k]||'';return `<div class="lj-gcard ${s2==='ok'?'ok':''}"><button class="lj-gview" data-act="kiosk-ver" data-i="${i}" aria-label="Ampliar foto ${i+1}">${img(q,s2,'lj-gimg')}${q.t==='ai'?`<span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>`:''}</button>
         <button class="lj-gok" data-act="kiosk-tog" data-i="${i}" aria-pressed="${s2==='ok'}" aria-label="Marcar foto ${i+1}">${ICO.ok}</button></div>`;};
-    const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;if(v!=null)setTimeout(()=>{const ids=items.slice(v+1,v+3).filter(x=>x.t==='ph').map(x=>x.id);ids.forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();LJ_PRE[u]=im;im.src=u;}});},0); /* a próxima já baixa */const vs=vq?pk[vq.k]||'':'';
+    const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;if(v!=null)setTimeout(()=>{const ids=items.slice(v+1,v+3).filter(x=>x.t==='ph').map(x=>x.id);ids.forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();LJ_PRE[u]=im;im.src=u;}});},0); /* a próxima já baixa */const vs=vq?pk[vq.k]||'':'';if(vq&&vq.t==='ph'&&!LJ_AR[vq.id])setTimeout(()=>ljAspecto(vq.id),0);
     const caixa=vq?`<div class="lj-lb" id="lj-lb" role="region" aria-label="Foto ${v+1} de ${n}"><button class="lj-lbx" data-act="kiosk-fechar">${ICO.grid}<span>Ver todas</span></button>
         <button class="lj-lbnav prev" data-act="kiosk-ver" data-i="${v-1}" ${v===0?'disabled':''} aria-label="Anterior">‹</button>
-        <div class="lj-lbmid">${img(vq,vs,'lj-lbimg')}${vq.lb?`<span class="lj-lbsrc">${esc(vq.lb)}</span>`:''}</div>
+        <div class="lj-lbmid">${img(vq,vs,'lj-lbimg',vq.lb)}</div>
         <button class="lj-lbnav next" data-act="kiosk-ver" data-i="${v+1}" ${v>=n-1?'disabled':''} aria-label="Próxima">›</button>
         <div class="lj-lbbar"><span class="lj-lbcnt">${v+1} / ${n}</span><div class="lj-actions"><button class="lj-no ${vs==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${vs==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div><button class="lj-cta lj-next lj-lbnext" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small> ${ICO.arrow}`:T('tapCheck')}</button></div></div>`:'';
     return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljVoltar()}${cartPill}`)}</div>
@@ -4359,29 +4367,40 @@ function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Dat
     const cands=demoSessions().filter(ok);const pick=cands[Math.floor(Math.random()*cands.length)];if(!pick){c.busy=false;c.status='idle';camStatus();return;}open(pick.card);},900);}
 // v91 parte B (Eduardo, 01/11; revisão de segurança B1 e B3): a selfie achou fotos claras (>= FACE_SIM) em uma ou mais
 // sessões. Cada sessão com foto clara entra INTEIRA (a família está junta no Checkout; seguro porque a v91 separa as sessões
-// por rosto), menos sessão de menor ou de grupo de escola, em que só entram as fotos claras dela. Sessão só com "talvez"
-// (entre FACE_DUV e FACE_SIM) pergunta "Esta sessão também é sua?" com até 3 miniaturas pequenas das fotos dela mais
-// parecidas, no máximo 3 sessões, nunca de menor ou de escola. A venda fica na sessão com mais fotos claras dela (âncora).
-// Devolve false sem foto clara (o chamador segue o fluxo antigo "É uma destas?").
+// por rosto), se pelo menos uma foto clara for PRINCIPAL (o rosto dela tem >= metade da largura do maior rosto da foto; B5 da
+// segurança: quem só aparece no fundo de uma foto de outra família não abre a sessão inteira, leva só as fotos claras). Sessão de
+// menor ou de grupo de escola: só as fotos claras dela. Sessão só com "talvez" (entre FACE_DUV e FACE_SIM) pergunta "Esta sessão
+// também é sua?" com até 3 miniaturas pequenas das fotos dela mais parecidas, no máximo 3 sessões, nunca de menor ou de escola;
+// o "Sim" põe SÓ as fotos "talvez" daquela sessão (Eduardo, 01/11, B4), nunca a sessão inteira. A venda fica na sessão com mais
+// fotos claras dela (âncora). Devolve false sem foto clara (o chamador segue o fluxo antigo "É uma destas?").
 const lojaSesProtegida=c=>!!((SIM.sessions[c]||{}).menor)||Object.values(SIM.galerias||{}).some(m=>m.tipo==='evento'&&(m.sessoes||[]).includes(c));
 function lojaJuntar(res,tv,sims){const k=state.kiosk;sims=sims||{};const claras=(res||[]).filter(r=>r.fotos&&r.fotos.length&&sessionObj(r.card));if(!claras.length)return false;lojaCliente();
   const ord=claras.slice().sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);const anc=(ord.find(r=>!lojaJaPaga(r.card))||ord[0]).card;
   const minhas={};claras.forEach(r=>minhas[r.card]=r.fotos.slice());const ja=new Set(Object.keys(minhas));
+  const inteiras=claras.filter(r=>(r.pri==null||r.pri>0)&&!lojaSesProtegida(r.card)).map(r=>r.card);
   const ask=(tv||[]).filter(r=>!ja.has(r.card)&&r.fotos&&r.fotos.length&&sessionObj(r.card)&&!lojaSesProtegida(r.card)).sort((a,b)=>b.sc-a.sc).slice(0,3)
-    .map(r=>({card:r.card,fotos:r.fotos.slice().sort((x,y)=>(sims[y]||0)-(sims[x]||0)).slice(0,3)}));
-  if(ask.length){Object.assign(k,{tv:{anc,minhas,ask,i:0,sim:[]},step:'talvez',code:'',so:null});lojaPreload(anc,minhas);render();return true;}
-  lojaAbrirSo(minhas,anc);return true;}
-// minhas: sessão -> fotos claras dela; sessão confirmada no "talvez" vem com null (entra inteira)
-function lojaAbrirSo(minhas,anc){const k=state.kiosk;const cards=Object.keys(minhas).filter(c=>sessionObj(c)).sort((a,b)=>sesHora(a)-sesHora(b));
+    .map(r=>({card:r.card,todas:r.fotos.slice(),fotos:r.fotos.slice().sort((x,y)=>(sims[y]||0)-(sims[x]||0)).slice(0,3)}));
+  if(ask.length){Object.assign(k,{tv:{anc,minhas,inteiras,ask,i:0,sim:[]},step:'talvez',code:'',so:null});lojaPreload(anc,minhas,0,inteiras);render();return true;}
+  lojaAbrirSo(minhas,anc,inteiras);return true;}
+// minhas: sessão -> fotos dela que entram (claras; no "talvez" confirmado, as fotos "talvez"); inteiras: sessões que entram
+// inteiras (foto clara principal, nunca de menor/escola, nunca por "talvez")
+function lojaIdsSo(minhas,inteiras){const inn=new Set(inteiras||[]);return Object.keys(minhas).filter(c=>sessionObj(c)).sort((a,b)=>sesHora(a)-sesHora(b))
+  .flatMap(c=>inn.has(c)&&!lojaSesProtegida(c)?sessionObj(c).photos.map(p=>p.id):(minhas[c]||[]));}
+function lojaAbrirSo(minhas,anc,inteiras){const k=state.kiosk;const cards=Object.keys(minhas).filter(c=>sessionObj(c)&&(minhas[c]||[]).length).sort((a,b)=>sesHora(a)-sesHora(b));
   if(!cards.length){lojaReset();const c=state.cam;c.status='nomatch';render();setTimeout(()=>{if(c.status==='nomatch'){c.status='idle';camStatus();}},6000);return;}
   if(!cards.includes(anc))anc=cards[0];
-  const ids=cards.flatMap(c=>lojaSesProtegida(c)?(minhas[c]||[]):sessionObj(c).photos.map(p=>p.id)); // família inteira
+  const ids=lojaIdsSo(minhas,inteiras); // família inteira só onde ela aparece clara e em primeiro plano
   Object.assign(k,{code:anc,so:{card:anc,cards,ids},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
   toast(T('foundYou'));render();lojaPreload(anc);}
+// proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
+const LJ_AR={};
+function ljAspecto(id){const u=lojaPreUrl(id);if(!u||LJ_AR[id])return;const im=LJ_PRE[u]||new Image();const ok=()=>{if(!im.naturalWidth||!im.naturalHeight)return;LJ_AR[id]=+(im.naturalWidth/im.naturalHeight).toFixed(4);
+    const el=document.querySelector('.lj-lbimg[data-ar="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]');if(el&&!el.classList.contains('spr')){el.style.setProperty('--ar',LJ_AR[id]);el.classList.add('fit');}};
+  if(im.complete&&im.naturalWidth)ok();else{im.addEventListener('load',ok,{once:true});if(!im.src)im.src=u;}}
 // rapidez (pedido 3): a primeira foto grande e as duas seguintes começam a baixar assim que a busca volta
 const LJ_PRE={};
 function lojaPreUrl(id){const u=(UP[id]||{}).src;return u&&/^ag_/.test(id)?u.replace('/thumb/','/file/'):null;}
-function lojaPreload(card,minhas,de){let ids;if(minhas){ids=Object.keys(minhas).sort((a,b)=>sesHora(a)-sesHora(b)).flatMap(c=>{const s=sessionObj(c);return s?s.photos.map(p=>p.id):[];});}
+function lojaPreload(card,minhas,de,inteiras){let ids;if(minhas){ids=lojaIdsSo(minhas,inteiras);}
   else ids=lojaItems(card).filter(x=>x.t==='ph').map(x=>x.id);
   ids.slice(de||0,(de||0)+3).forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();im.decoding='async';LJ_PRE[u]=im;im.onload=()=>{LJ_PRE[u].ok=Date.now();};im.src=u;}});}
 function camBox(){const c=state.cam;const noCam=!!c.err;return `<div class="face live" id="cam-face" data-st="${c.status}" aria-label="Câmera do checkout">${noCam?'<div class="ring"></div><div class="scan"></div>':'<video id="cam-video" autoplay muted playsinline></video><div class="ring"></div>'}</div><div class="camst" id="cam-st" data-st="${c.status}"></div>${c.status==='pick'&&c.cands?faceCands(c.cands,'cam-pick'):''}`;}
@@ -4728,7 +4747,7 @@ document.addEventListener('click',e=>{
     case 'kiosk-jump':state.kiosk.i=+d.i;render();break;
     case 'kiosk-ver':{const k=state.kiosk;const n=lojaItems(k.code).length;const i=+d.i;if(i>=0&&i<n){k.ver=i;k.i=i;}render();break;}
     case 'kiosk-fechar':state.kiosk.ver=null;render();break;
-    case 'kiosk-tv-sim':case 'kiosk-tv-nao':{const tv=state.kiosk.tv;if(!tv)break;const q=tv.ask[tv.i];if(q&&a==='kiosk-tv-sim')tv.minhas[q.card]=null;tv.i++;if(tv.i>=tv.ask.length){lojaAbrirSo(tv.minhas,tv.anc);break;}render();break;}
+    case 'kiosk-tv-sim':case 'kiosk-tv-nao':{const tv=state.kiosk.tv;if(!tv)break;const q=tv.ask[tv.i];if(q&&a==='kiosk-tv-sim')tv.minhas[q.card]=(q.todas||q.fotos).slice(); /* B4 (Eduardo, 01/11): só as fotos em dúvida, nunca a sessão inteira */tv.i++;if(tv.i>=tv.ask.length){lojaAbrirSo(tv.minhas,tv.anc,tv.inteiras);break;}render();break;}
     case 'kiosk-tog':{const k=state.kiosk;const items=lojaItems(k.code);const x=items[+d.i];if(!x)break;const pk=lojaPick(k.code);k.i=+d.i;
       if(pk[x.k]==='ok')delete pk[x.k];else pk[x.k]='ok';lojaSync(k.code);render();break;}
     case 'kiosk-ok':lojaMark('ok');break;
