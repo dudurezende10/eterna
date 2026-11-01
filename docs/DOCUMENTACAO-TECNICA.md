@@ -1464,7 +1464,7 @@ Decisões do Eduardo (30/10): D1 sai da coluna final 15 min depois de pronto (`F
 
 **`ETERNA_ORIGENS` sem esquema (segurança I1).** Entrada sem `http://` ou `https://` não vira Host vazio em `ORIGENS_REDE_HOSTS` e é avisada no console no boot.
 
-**Miniatura pelo endereço da rede (risco 4).** `origem_privada_ok` aceita `/thumb/<pid>` com `Host` em `ORIGENS_REDE_HOSTS` (Origin vazia ou em `ETERNA_ORIGENS`), para a TV aberta pelo endereço do servidor do ponto. `/file/` continua só com `HOSTS_OK`.
+**Miniatura pelo endereço da rede (risco 4).** `origem_privada_ok` aceita `/thumb/<pid>` com `Host` em `ORIGENS_REDE_HOSTS` (Origin vazia ou em `ETERNA_ORIGENS`), para a TV aberta pelo endereço do servidor do ponto. `/file/` continua só com `HOSTS_OK`. (Desde 138d45e, `HOSTS_OK` inclui `ORIGENS_REDE_HOSTS`, então `/file/` também abre pelo endereço da rede; o teste da v91 foi alinhado a isso.)
 
 ### App
 
@@ -1481,3 +1481,64 @@ Decisões do Eduardo (30/10): D1 sai da coluna final 15 min depois de pronto (`F
 - Sem código LP e sem "vendida" até a v85 A e as vendas no agente. "Já no Checkout" quer dizer fotos no servidor e rostos lidos; se o navegador do caixa estava fechado quando as fotos chegaram, o Checkout pode não achar a sessão (a sessão ainda é montada no navegador).
 - O agente não tem autenticação: qualquer máquina que passe na checagem de origem lê a fila e troca a função do dia (impacto só de exibição; POST com limite por minuto e registro do IP). O pid continua abrindo `/file/` para quem tem o `Host` certo (risco já existente, v85 risco 1); por isso só 6 pids por grupo aberto. A correção é o pareamento do posto (v83 A).
 - Polling de 2 s por tela; com mais de 5 telas, acrescentar 304 por `rev`.
+
+## Sessões por tempo e rosto (v91, 30/10/2026)
+
+Plano: `docs/planos/2026-10-30-sessoes-por-rosto-e-tempo.md`. Testes: `testes/sessoes_agente.py` (agente, critérios 1 a 20, rostos sintéticos, roda no `rodar.sh`) e `testes/sessoes-upload.js` (app, critérios 21 a 25, agente falso). Reaproveita a v85 A do Ronaldo (5fe4e5c: `_sess_codigo`, `sess`, `sess_pid`, `sess_aberta`, `sess_rev`, `sess_sujo`, gravação por dia, `sess_feed`, gancho no `ingest_file` e na LGPD, `srvPull` e `ingClose(how,srv)` no app), com as correções 1 a 11 da revisão do plano.
+
+Decisões do Eduardo (30/10 18:10): pausa de 1 minuto; regra do rosto S5 a S7; sessão separada por rostos novos fica 1 min "fechando" e pode fundir (individuais antes do grupo); foto atrasada de sessão já fechada forma sessão própria marcada "atrasada"; mesma família com dois fotógrafos fica em sessões separadas; "Já no Checkout" da Fila em ~60 s.
+
+### Regra (agente, `sess_*`)
+
+- **S1 Pausa.** `SESS_PAUSA = 60` (`ETERNA_SESSAO_PAUSA` de 2 a 600 só nos testes); `FF_PAUSA` é apelido; `SESSAO_PAUSA_S = 60` no app.
+- **S2 Relógio = hora do clique corrigida** (`sess_clique`). `t = cap + min(desvio da série)`, desvio = deque das 50 últimas `u − cap` das fotos que não vieram de cartão. Sem `cap` válido, `mt` (data do arquivo de origem, gravada no meta pelo `ingest_file`); sem as duas, a chegada `u` (`fonte_t ∈ {cap, mt, u}`). Clique fora de `[u − 48 h, u + 10 min]` é inválido (EXIF forjado e câmera adiantada mais de 10 min caem na chegada).
+- **S3 Trilhas.** `dia(t)|fotógrafo` (ao vivo) e `dia(t)|fotógrafo|t` (atrasada: `s == "cartao"` ou `u − t > 600`). Não se misturam; a sessão atrasada leva `atrasada:true`, `trilha:"atrasada"`.
+- **S4 Fotógrafo:** `ff_quem` (D2 da v85), sem mudança.
+- **Tempo.** Contra a aberta da trilha: `t − cap1 > 60` ou `t < cap0 − 60` abre sessão nova (`motivo:"pausa"`) e fecha de vez a aberta e as separadas da trilha (`fechada_por:"pausa_clique"`). Sem aberta: `inicio` (primeira da trilha no dia) ou `pausa`. Quem abre por tempo é decidido na hora (`dec:"t"`) e os rostos dele entram na sessão quando lidos (`_guardar`).
+- **S5 Rosto** (`_sess_decide`). Rostos principais: largura ≥ 0,5 × o maior da foto e ≥ `ROSTO_MIN`. Qualidade (para votar por sessão nova): score ≥ 0,80, largura ≥ 60 px na foto de 1600 px, frontal (nariz a até 0,35 × a distância entre os olhos do meio deles; `ler_rostos(..., detalhe=True)`). `sim` = maior cosseno contra os rostos guardados das candidatas. `sim ≥ 0,38` fica (`r`); com rosto de qualidade e todos `< 0,25` abre sessão nova `rostos_novos` (`n`, `sim_abertura`) e a aberta vira `separada`; dúvida (`d`), sem rosto ou só perfil/pequeno (`s`) ficam na aberta.
+- **S6 Espera.** Foto que passou no tempo entra em `pend` e em `sess_espera[trilha]` (ordem do clique). Decide quando o rosto dela foi lido (`sess_rostos_lidos`) e o de quem abriu a sessão também; prazo `SESS_ROSTO_ESPERA = 20 s` desde a chegada, depois vale o tempo (`t`). Com os rostos desligados (`sess_rostos_on()` falso: `ETERNA_SEM_OPENCV` ou leitor sem OpenCV/modelos) não há pendência.
+- **S7 Fusão.** Candidatas: a aberta e as separadas não fechadas da trilha, até 3. A foto vai para a de maior `sim`; se bater ≥ 0,45 com duas ou mais, elas se fundem na mais antiga (`f`) e a outra vira `removida:true`, `fundida_em`. Se bater com uma separada, ela volta a ser a aberta.
+- **S8 Fechamento** (`status:"fechada"`): 60 s sem chegada (`pausa`), pausa de clique na trilha (`pausa_clique`), sessão aberta antes da virada do dia (`virada_do_dia`) ou reinício (`reinicio`). Pendentes ficam na sessão que fecha (`t`). Só a fechada vai para o SIM e nunca muda de foto, exceto pela LGPD.
+- **S9 Vetores** só em memória (`sess_rostos_mem`, até 40 por sessão, sem repetido ≥ 0,7, por pid) e só das sessões não fechadas; somem no fechamento. Nada de vetor em `/sessoes`, nos arquivos ou em log. `rostos.db` igual (60 dias).
+- **S10** Python puro (`array('f')`, `sum(map(operator.mul, …))`).
+- **S11** `fila_rostos` é `PriorityQueue` com `(prio, seq, pid, caminho, t_fila)` por `rostos_enfileira`: 0 = foto nova (`ingest_file`), 1 = atraso do boot (`rostos_thread`).
+- **S12 Fila = sessões.** `ff_json` monta os grupos de `sess` (hoje, não removida): `id` = código LP, `inicio` = `aberta_em`, `ultimo_clique` = `cap1`, `n` = fotos + pendentes, `pids` (6 mais novas) fora de `pronta`. `fotografando` = aberta, ao vivo e clique há ≤ 60 s; `subindo` = o resto não fechado ou fechada com foto na fila de rostos; `pronta` = fechada e rostos lidos (`pronta_em` = fechamento ou fim da última leitura), some da Fila depois de 15 min (continua em `/sessoes`). Saíram `ff_add`, `ff_grupos`, `ff_aberto`, `ff_pid_g`, `ff_estado`; `ff_cadastrados` tem cache de 30 s.
+- **S14 Arquivos** `~/Eterna/ponto/sessoes/AAAA-MM-DD.json` (dia do clique), 60 dias (`sess_limpar`, uma vez por dia no `sess_loop`). A LGPD limpa o pid também nos arquivos dos dias anteriores (`sess_esquecer_disco`).
+- **Boot** (`sess_carregar`): lê ontem e hoje; a não fechada fecha com `reinicio`; foto sem sessão (queda antes da gravação) é reagrupada pela mesma regra em ordem de chegada, com os rostos do `rostos.db` (sem score e pose no banco: nunca votam por sessão nova), `motivo:"reagrupada"`, e fecha com `reinicio`.
+- **Travas.** `sess_lock` nunca com `lock`, `ff_lock` ou `_mat_lock` na mão; `ff_json` copia `rostos_pendentes` sob o `ff_lock` e solta antes de pegar o `sess_lock`. O leitor chama `sess_rostos_lidos` no `finally`, depois do `commit` e fora do `_mat_lock` (erro = lida sem rosto).
+
+### Contratos
+
+`GET /sessoes?desde=<rev>[&ontem=1]` (mesmas travas da v85 A: origem privada; só hoje, ontem com `ontem=1`): `{"ok","gen","rev","pausa":60,"rostos":true,"completo","sessoes":[{"card","dia","fotografo","fonte","ponto","funcao","trilha","atrasada","status","motivo","aberta_em","ultima_chegada","cap0","cap1","fonte_t","fechada_em","fechada_por","fotos","pend","dec","sim_abertura","fundida_em","removida","rev","origem"}]}`. `status ∈ {aberta, separada, fechada}`; `motivo ∈ {inicio, pausa, rostos_novos, reinicio, reagrupada}`; `fechada_por ∈ {pausa, pausa_clique, virada_do_dia, reinicio}` (`null` na fundida); `dec[pid] ∈ {r, n, d, s, t, f}`. `ponto` = `point` da função do dia quando `tipo:"campo"`. `/status.sessoes` = `{"v":2,"pausa":60,"rostos":bool,"rev","gen","hoje","abertas"}`. `/fila-fotografo`: contrato da v87, `grupos[].id` = LP, `pausa` = 60.
+
+### App
+
+- `SRV.sess` (card → sessão de hoje, aberta, separada e fechada; removida sai). `srvPull` compara com o dia local (`localDay`; o `todayKey` é UTC e pulava as sessões depois das 21 h). Fechada nova entra em `SRV.mat` e vira sessão do SIM em `srvMaterializa` (até 12 por ciclo). Fechada que já está no SIM só muda pela LGPD (`srvLgpd`: sem venda paga, as fotos saem da sessão do SIM; com venda paga, só uma linha no `log`). Redesenha só em `importar` e `fotofila`.
+- `ingClose(how, srv)` (revisão 6): `point`/`pdv` de `srv.ponto`, `closedAt` de `fechada_em`, `source` = `cartao` na atrasada ou `srv.fonte`, `key` = `srv.fotografo` quando é chave de `P`, senão `impWho`; campo novo `motivo`. A validação de IA (`validateReal`) roda uma por vez no navegador (`VAL_FILA`).
+- `upSessoes()` no `vImportarCore` quando o agente está ligado e manda `st.sessoes` (senão continuam "Sessão em formação" e "Sessões criadas nesta leva"): filtro por `state.imp.key` e `state.imp.point`, mais nova primeiro (por `aberta_em`), 30 por vez (`up-sess-mais`, `state.upSessN`), até 48 miniaturas (`<img loading="lazy">` dentro do `photoBtn`, `--img:none`) com "+N" (`up-sess-tudo`, `state.upSessAll`). Cabeçalho: LP, fotógrafo (`P[k].name` ou `Sem fotógrafo · fonte`), ponto, `cap0–cap1` (com "chegada" quando `fonte_t:"u"`), nº de fotos, motivo (`UP_MOTIVO`), "atrasada", estado (`up-sess on` com borda #FFB800 e "aberta · recebendo"; "fechando"; fechada com `UP_FECHADA` e "Abrir sessão" quando já está no SIM e `canView('revisao')`). Pendentes com "lendo rostos" e opacidade .6. `zoom` no Upload abre a galeria só com as fotos da sessão. Aviso quando `st.sessoes.rostos === false`. `up-sess-*` são só leitura (fora do `WRITE_OPS`). Sem `T()` (tela da equipe).
+
+### Riscos (para o revisor)
+
+1. Biometria: vetores só em memória das sessões não fechadas (minutos); `sess_esquecer` limpa pendentes e vetores; RIPD precisa citar o agrupamento interno por rosto, inclusive de criança.
+2. Vazamento entre famílias: zona de dúvida, rosto principal, fusão só ≥ 0,45 e só antes do fechamento. Família seguinte grande ao fundo ainda pode juntar. Calibrar com um dia real por `/rostos/medir` antes de 01/12.
+3. `/sessoes` para `ETERNA_ORIGENS` (desvio do D9 pelo Ronaldo), mesma exposição de `/biblioteca`; decisão do revisor até o pareamento.
+4. EXIF não confiável: janela do S2; identidade pelo login do FTP primeiro.
+5. Leitura de rosto atrasada: cai no prazo (só tempo, nunca pior que hoje); S11 evita o pior caso. Ver `espera_ms` em `/metricas`.
+6. Escala: arquivo do dia regravado inteiro a cada 2 s quando muda; `validateReal` em cada navegador (agora em fila); `SIM.sessions` com as listas de fotos no `localStorage` precisa de poda ou do D4 antes do go-live.
+7. Sessão de cartão com fotos de outro dia ganha o `dia` do clique e fica fora do feed de hoje (o feed filtra por dia).
+
+## Checkout: todas as fotos da pessoa no dia, de várias sessões (v91 parte B, 01/11/2026)
+
+Pedido do Eduardo (01/11 11:39): a família fotografada num ponto vai embora; 10 minutos depois a mesma pessoa é fotografada em outro ponto, por outro fotógrafo. No Checkout, a selfie precisa trazer todas as fotos dela, das duas sessões.
+
+- `faceFind` devolve também `res` e `talvez` completos (todas as sessões, de qualquer fotógrafo e ponto). O `list`/`clara` antigos continuam para a tela `checkout` da equipe e para a galeria por QR.
+- No Checkout (`quiosque`), `camFound` chama `lojaJuntar(res, talvez)`. Fotos claras (>= `FACE_SIM`) entram direto. Fotos "talvez" (entre `FACE_DUV` e `FACE_SIM`) vão para a etapa `talvez` ("Estas também são suas?"), em que a pessoa marca e desmarca foto por foto (`kiosk-tv-tog`, `kiosk-tv-ok`). Sem nenhuma foto, volta à câmera. Uma pessoa por vez (`varias_pessoas`, `pessoas()`) continua barrando a busca antes de tudo.
+- `lojaAbrirSo(ids, cardOf)` monta `state.kiosk.so = {card, cards, ids}`: `cards` = todas as sessões com fotos dela, em ordem de hora (`sesHora`); `card` = a primeira ainda não paga, onde a venda fica (`state.kiosk.code`); `ids` = só as fotos com o rosto dela (`lojaDele` continua valendo).
+- `lojaFotos(card)` junta as fotos das sessões de `soCards(card)`, bloco por bloco em ordem de hora; `lojaItems` marca o primeiro item de cada bloco com `blk` (ponto · hora, `lojaBloco`), mostrado discreto na grade (`.lj-blk`). `lojaAI` usa as mesmas fotos e o substituto da IA também precisa ser foto dela.
+- Venda: o pedido (`SIM.caixaDin`) e o evento `criar` (`pvDados`) levam `sessoes` (todas as sessões da venda); `card` continua sendo a sessão da venda. O preço do pacote é pela quantidade de fotos, como antes. Na confirmação (`pendConfirmar`), a sessão da venda fica `paga` com `sessoes`; as outras sessões não ficam pagas (podem ser de outra família), mas a foto comprada conta como vendida em qualquer tela (`vendidasTodas`, `libIndex`, `revSessions`).
+- Galeria online da venda: `galJuntar(tok, cards, ids)` acrescenta as outras sessões ao manifesto com `m.so[card]` (só as fotos dela daquela sessão); `galAtualizar` marca como comprada qualquer foto escolhida numa venda paga das sessões do manifesto.
+- Agente: `_ev_limpo` guarda `dados.sessoes` (até 20 códigos `A-Z0-9`); `metricas_dia` conta todas essas sessões como sessões com venda.
+- LGPD de sessão do servidor (`srvLgpd`) não tira do `selected` da venda a foto que é de outra sessão.
+- Pelo código do recibo (`kiosk-go`) e pelo painel da equipe (`loja-open`), `so = null`: a sessão inteira daquele código.
+- Teste: `testes/checkout-varias-sessoes.js`.
+

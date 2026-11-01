@@ -126,6 +126,33 @@ Bom saber:
 - Toda troca fica registrada com o seu nome.
 - O supervisor vê o painel, mas não consegue mudar.
 
+### Sessões de hoje (v91)
+
+Com o agente do ponto aberto, o Upload automático mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. Os seletores **Fotógrafo** e **Ponto** do alto da tela filtram as sessões.
+
+Cada sessão tem uma linha com: o código (LP...), o fotógrafo, o ponto, a hora do primeiro e do último clique, o número de fotos e o motivo de ter começado. Quando aparece "chegada" depois da hora, a câmera não mandou a hora do clique e vale a hora em que a foto chegou.
+
+| Como aparece | Quer dizer |
+| --- | --- |
+| Borda amarela e **aberta · recebendo** | o fotógrafo ainda está nessa sessão; as fotos novas entram nela |
+| **fechando** | o servidor viu rostos novos e abriu outra sessão; por 1 minuto esta ainda pode se juntar à nova (por exemplo, as fotos individuais do pai e da mãe antes da foto do grupo) |
+| Sem destaque, com **Abrir sessão** | fechada: já está no Checkout e não muda mais |
+| Foto apagada com **lendo rostos** | a foto chegou e o servidor ainda está lendo os rostos para decidir a sessão |
+
+Motivo de a sessão ter começado:
+
+- **primeira do dia**: primeira sessão do fotógrafo hoje.
+- **pausa de 1 min**: o fotógrafo ficou 1 minuto sem clicar.
+- **rostos novos**: sem pausa, mas a foto trouxe só rostos que não estavam na sessão anterior (outra família).
+- **agente reiniciado** ou **reagrupada**: o computador do ponto foi reiniciado; as fotos foram agrupadas de novo.
+- **atrasada**: fotos do cartão (ou que chegaram mais de 10 minutos depois do clique). Ficam em sessões só delas, separadas das fotos ao vivo do mesmo fotógrafo.
+
+Na dúvida, o servidor deixa a foto na sessão em que está: foto sem rosto, de perfil, de criança pequena ou de alguém ao fundo não abre sessão nova. Se a mesma família foi fotografada por dois fotógrafos, ficam duas sessões; no Checkout a selfie acha as duas.
+
+Se aparecer o aviso **Rostos desligados neste computador**, o servidor está separando as sessões só pela pausa de 1 minuto. Avise a TI.
+
+Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
+
 ---
 
 ## 3. Checkout (caixa e atendimento)
@@ -137,6 +164,12 @@ Bom saber:
 3. O Checkout abre em tela cheia, sem menu e sem login. É a tela do cliente.
 
 **A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu e-mail e o código, ou use outra janela.
+
+### Fotos de mais de uma sessão (v91)
+
+Quando o cliente olha para a câmera, o Checkout junta todas as fotos dele no dia, mesmo de sessões diferentes: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. Elas aparecem numa galeria só, em ordem de hora, com o ponto e a hora de cada bloco em cima. Ele só vê as fotos em que o rosto dele aparece.
+
+Se o Eterna ficar em dúvida sobre alguma foto, ele pergunta antes: **"Estas também são suas?"**. O cliente toca nas fotos em que aparece e segue. A compra é uma venda só, mesmo com fotos de várias sessões. Pelo código do recibo, abre a sessão inteira daquele código, como antes.
 
 ### Computador do cliente: Chrome em modo quiosque
 
@@ -531,7 +564,7 @@ Fica em **Fotógrafo › Fila do fotógrafo**, logo abaixo do Upload automático
 | **Chegando** | ele parou de clicar e as fotos ainda estão subindo para o servidor (fila do Wi-Fi ou leitura de cartão) |
 | **Já no Checkout** | as fotos estão no servidor e os rostos já foram lidos: a selfie do Checkout já acha o cliente |
 
-Um grupo vai para **Já no Checkout** 20 segundos depois da última foto e depois da leitura dos rostos. Sai da tela 15 minutos depois.
+Um grupo vai para **Já no Checkout** 1 minuto depois da última foto e depois da leitura dos rostos (v91: cada grupo da Fila é uma sessão). Sai da tela 15 minutos depois.
 
 Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segundos. É normal.
 

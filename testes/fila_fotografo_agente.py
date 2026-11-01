@@ -1,4 +1,6 @@
 # v87: Fila do fotógrafo no agente (critérios 1 a 13 do plano docs/planos/2026-10-30-fila-do-fotografo.md).
+# v91: a Fila deriva das sessões (S12 do plano docs/planos/2026-10-30-sessoes-por-rosto-e-tempo.md): o grupo é a sessão,
+# id = código LP; as fotos entram por sess_add/_sess_add (ff_add saiu).
 # Rodado por testes/fila-fotografo.js com HOME temporário:
 #   python3 -I testes/fila_fotografo_agente.py agente/eterna-agente.py <porta>
 # Parte A: o módulo importado aqui (regras com relógio controlado, rostos, cartão, pasta vigiada, câmera atrasada, poda).
@@ -77,7 +79,9 @@ def foto(o, s, u, cap=None, serie="", autor="", dono=""):
         md["autor"] = autor
     if dono:
         md["dono"] = dono
-    m.ff_add(pid, md)
+    cad = m.ff_cadastrados()
+    with m.sess_lock:
+        m._sess_add(pid, md, cad, agora=u)
     return pid
 
 
@@ -91,8 +95,9 @@ def um(gs, **kw):
 
 
 # 2 e 8: cliques num segundo só, chegando devagar (fila de envio); a câmera da Sandessa com o relógio 2 h atrasado
-# (revisão 4) e a câmera do Márcio com o relógio 1 h adiantado (desvio com sinal)
-for nome, serie, atraso in (("marinara", "111100002222", 0), ("sandessa", "333300004444", 7200), ("marcio", "777700008888", -3600)):
+# (revisão 4) e a câmera do Márcio com o relógio 5 min adiantado (desvio com sinal). v91 (S2): clique mais de 10 min
+# à frente da chegada é inválido e vale a chegada, por isso o adiantamento do teste passou de 1 h para 5 min.
+for nome, serie, atraso in (("marinara", "111100002222", 0), ("sandessa", "333300004444", 7200), ("marcio", "777700008888", -300)):
     base = T + {"marinara": 0, "sandessa": 100, "marcio": 200}[nome]
     ns = []
     for i in range(8):
@@ -169,24 +174,24 @@ ok(len(g) == 1 and g[0]["fotografo"] is None and g[0]["fonte"] == "pasta" and "e
 t12 = time.time() + 1700
 pa = foto("samuel", "ftp", t12)
 pb = foto("samuel", "ftp", t12 + 0.5)
-m.ff_esquecer(pa)
+m.ff_esquecer(pa); m.sess_esquecer(pa)
 g = um([g for g in grupos(t12 + 1) if g["inicio"] >= t12], fotografo="samuel")
-ok(g and g["n"] == 1 and pa not in g["pids"] and pb in g["pids"] and pa not in m.ff_pid_g, "LGPD: foto sai do grupo: %r" % g)
+ok(g and g["n"] == 1 and pa not in g["pids"] and pb in g["pids"] and pa not in m.sess_pid, "LGPD: foto sai do grupo: %r" % g)
 
 # revisão 2: erro na fila não atrapalha a chegada da foto
-_orig = m.ff_add
-m.ff_add = lambda *a: 1 / 0
+_orig = m.sess_add
+m.sess_add = lambda *a: 1 / 0
 f2 = os.path.join(tempfile.mkdtemp(), "IMG_0002.JPG")
 open(f2, "wb").write(jpeg(cor()))
-ok(m.ingest_file(f2, "IMG_0002.JPG", os.stat(f2), "carlos", "ftp") == "new", "erro no ff_add não pode barrar a foto")
-m.ff_add = _orig
+ok(m.ingest_file(f2, "IMG_0002.JPG", os.stat(f2), "carlos", "ftp") == "new", "erro no sess_add não pode barrar a foto")
+m.sess_add = _orig
 
 # 11: pronta há mais de FF_PRONTA_MIN sai; a virada do dia limpa
 t11 = time.time() + 2000
 ps11 = [foto("sandessa", "ftp", t11)]
 ok(um(grupos(t11 + P + 60), fotografo="sandessa"), "11: pronta há 1 min aparece")
 ok(not [g for g in grupos(t11 + P + 2 + 15 * 60) if g["fotografo"] == "sandessa"], "11: pronta há mais de 15 min não aparece")
-ok(ps11[0] not in m.ff_pid_g, "N3: a poda tira os pids do grupo podado de ff_pid_g")
+ok(m.sess_pid.get(ps11[0]) in m.sess, "v91: fora da Fila, a sessão continua em /sessoes")
 amanha = time.mktime(time.strptime(m._ff_hoje(), "%Y-%m-%d")) + 86400 + 3600
 ok(m.ff_json(amanha)["grupos"] == [], "11: a virada do dia limpa a lista")
 
@@ -339,12 +344,16 @@ try:
     ok("Access-Control-Allow-Origin" not in hh, "N1: preflight de outra origem sem CORS")
     pid = (g_de("samuel") or {"pids": ["x"]})["pids"][0]
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: miniatura pelo endereço de ETERNA_ORIGENS")
-    ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 403, "risco 4: o original continua fechado pelo endereço da rede")
+    # v90: alinhado ao main. Desde 138d45e (Ronaldo) os endereços de ETERNA_ORIGENS usam as telas da equipe e o
+    # original abre por eles (HOSTS_OK inclui ORIGENS_REDE_HOSTS); com Origin de fora continua fechado.
+    ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: o original pelo endereço de ETERNA_ORIGENS (comportamento do main)")
+    ok(req("GET", "/file/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: o original com Origin de fora")
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: miniatura com Origin de fora")
     # contrato: sem série completa, sem nome de arquivo
     txt = json.dumps(fila())
     ok("100000001111" not in txt and ".JPG" not in txt and "C0" not in txt, "contrato: sem série completa nem nome de arquivo")
     # 10: reiniciar
+    time.sleep(2.3)                              # v91: o arquivo de sessões do dia é gravado a cada 2 s
     antes = sorted((g["id"], g["fotografo"], g["n"]) for g in fila())
     A.terminate(); A.wait(10)
     A = subir(); procs.append(A)
