@@ -28,6 +28,7 @@ Para receber de um servidor FTP que já existe na máquina, vigiando a pasta del
      ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections
+import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request, urllib.error, mimetypes, re, base64
@@ -351,7 +352,12 @@ ROSTO_MIN = 40         # rostos menores que isso (px, foto reduzida a 1600) são
 LADO = 1600
 RETENCAO_DIAS = 60     # D10: a selfie da galeria online precisa achar as fotos até o dia 60
 rostos = {"ligado": False, "motivo": "iniciando", "lidas": 0, "rostos": 0, "fila": 0, "modelo": "YuNet + SFace (OpenCV)", "limite": LIMITE}
-fila_rostos = queue.Queue()
+fila_rostos = queue.PriorityQueue()   # v90 (S11): itens (prio, seq, pid, caminho, t_fila); 0 = foto nova, 1 = atraso do boot
+_fila_seq = itertools.count()
+
+
+def rostos_enfileira(pid, path, prio=0, t_fila=None):
+    fila_rostos.put((prio, next(_fila_seq), pid, path, t_fila))
 _cv = {}               # cv2, np, det, rec (um par por thread de leitura)
 _mat = {}              # dia -> (matriz N x 128, [pid...]) para busca
 _mat_lock = threading.Lock()
@@ -412,8 +418,9 @@ def leitor():
     return det, rec
 
 
-def ler_rostos(img, det, rec, minimo=ROSTO_MIN):
-    """img BGR -> [(largura, vetor 128 normalizado)] do maior para o menor rosto."""
+def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
+    """img BGR -> [(largura, vetor 128 normalizado)] do maior para o menor rosto. detalhe=True (v90, sessões):
+    [(largura, vetor, score, frontal)]; frontal = nariz a até SESS_Q_FRONTAL x a distância entre os olhos do meio deles."""
     np = _cv["np"]; cv2 = _cv["cv2"]
     h, w = img.shape[:2]
     k = min(1.0, LADO / max(h, w))
@@ -426,7 +433,14 @@ def ler_rostos(img, det, rec, minimo=ROSTO_MIN):
         if r[2] < minimo:
             continue
         e = rec.feature(rec.alignCrop(img, r)).flatten().astype("float32")
-        out.append((float(r[2]), e / (np.linalg.norm(e) or 1)))
+        v = e / (np.linalg.norm(e) or 1)
+        if detalhe:
+            rx, ry, lx, ly, nx = float(r[4]), float(r[5]), float(r[6]), float(r[7]), float(r[8])
+            dist = ((lx - rx) ** 2 + (ly - ry) ** 2) ** 0.5
+            frontal = dist > 0 and abs(nx - (rx + lx) / 2) <= SESS_Q_FRONTAL * dist
+            out.append((float(r[2]), v, float(r[14]), bool(frontal)))
+        else:
+            out.append((float(r[2]), v))
     return sorted(out, key=lambda x: -x[0])
 
 
@@ -466,7 +480,7 @@ def rostos_thread():
         pend = [(pid, e["file"]) for pid, e in lib.items() if pid not in feitas]
     for x in sorted(pend, key=lambda t: t[1], reverse=True):     # mais recentes primeiro
         ff_rosto_fila(x[0])
-        fila_rostos.put((x[0], x[1], None))
+        rostos_enfileira(x[0], x[1], 1)             # S11: atraso do boot atrás das fotos novas
     rostos["ligado"] = True; rostos["motivo"] = None
     n = max(1, int(os.environ.get("ETERNA_LEITORES") or max(1, (os.cpu_count() or 2) // 2)))
     rostos["leitores"] = n
@@ -483,19 +497,21 @@ def leitor_loop(det, rec, db):
     """Um leitor: tira da fila, lê os rostos e grava. Vários rodam em paralelo (ETERNA_LEITORES)."""
     cv2 = _cv["cv2"]
     while True:
-        pid, path, t_fila = fila_rostos.get()
+        _prio, _seq, pid, path, t_fila = fila_rostos.get()
         rostos["fila"] = fila_rostos.qsize()
         t_ini = time.time()
+        lidos = None
         try:
             img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)
             if img is None:
                 continue
-            fs = ler_rostos(img, det, rec)
+            fs = ler_rostos(img, det, rec, detalhe=True)
             dia = os.path.basename(os.path.dirname(path))
             db.execute("insert or replace into foto values (?,?,?,?)", (pid, dia, len(fs), time.time()))
             db.execute("delete from rosto where pid=?", (pid,))
-            db.executemany("insert into rosto values (?,?,?,?)", [(pid, dia, w, e.tobytes()) for w, e in fs])
+            db.executemany("insert into rosto values (?,?,?,?)", [(pid, dia, f[0], f[1].tobytes()) for f in fs])
             db.commit()
+            lidos = [(f[0], f[1].tolist(), f[2], f[3]) for f in fs]
             with _cont_lock:
                 rostos["lidas"] += 1; rostos["rostos"] += len(fs)
             m = metricas_por_pid.get(pid)
@@ -510,6 +526,10 @@ def leitor_loop(det, rec, db):
             print("  erro ao ler rostos", path, ex)
         finally:
             ff_rosto_lido(pid)          # v87: a fila do fotógrafo só mostra "Já no Checkout" depois da leitura
+            try:                        # v90 (S6): a sessão decide a foto pendente (erro = lida sem rosto); fora do _mat_lock
+                sess_rostos_lidos(pid, lidos)
+            except Exception as ex:
+                print("  sessões (rostos): %s" % str(ex)[:80])
 
 
 def matriz(dias):
@@ -717,7 +737,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
     dos rostos lidos, da fila e do bucket da nuvem; as galerias são encerradas aqui e na nuvem (que apaga os rostos
     da AWS). A venda continua no registro financeiro, sem as fotos. Fica uma linha em lgpd.log sem dado pessoal."""
     fotos, nuvem_apagadas, falhas = 0, 0, []
-    dias, linhas_foto = set(), []
+    dias, linhas_foto, apagados_sess = set(), [], []
     for pid in pids:
         pid = pid_lib(pid) if pid_ok(pid) else None
         if not pid:
@@ -729,8 +749,9 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
                 seen.pop(h, None)
                 lgpd_excluidas.add(h)
         try:
-            ff_esquecer(pid)                    # v87: sai da fila do fotógrafo (fora do lock)
-            sess_esquecer(pid)                  # v85 A: sai da sessão
+            ff_esquecer(pid)                    # v87: sai da fila de rostos pendentes (fora do lock)
+            sess_esquecer(pid)                  # v90: sai da sessão, das pendentes e dos rostos em memória
+            apagados_sess.append(pid)
         except Exception:
             pass
         # o original que a câmera mandou para a pasta vigiada (FTP do servidor) também sai: mesmo nome e mesmo hash
@@ -776,6 +797,10 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
                 time.strftime("%Y-%m-%d %H:%M:%S"), nome or "-", pid, sessao or "-", posto or "-", quem or "-"))
             md = {"pid": pid, "nome": nome, "apagada": time.time(), "motivo": "lgpd", "sessao": sessao or None, "posto": posto or None, "por": quem or None}
             metricas.append(md); metrica_grava(md)
+    try:
+        sess_esquecer_disco(apagados_sess)   # v90 (S14): o pid sai também dos arquivos de sessão dos dias anteriores
+    except Exception as ex:
+        falhas.append("sessões: " + str(ex)[:80])
     with _mat_lock:
         for d in dias:
             _mat.pop(d, None)                # a busca por rosto relê o dia sem as fotos apagadas
@@ -1123,7 +1148,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
     with lock:
         seen[h] = pid
         lib[pid] = {"file": dst, "thumb": thumb}
-        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), **exif_info(dst)}
+        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), "mt": st.st_mtime, **exif_info(dst)}
         mm = dict(meta[pid])
         save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
@@ -1134,11 +1159,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
              "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha}
         metricas.append(m); metricas_por_pid[pid] = m
     metrica_grava(m)
-    try:                                # v87: fila do fotógrafo (fora do lock); nunca atrapalha a chegada da foto
-        ff_add(pid, mm)
-    except Exception as ex:
-        print("  fila do fotógrafo: %s" % str(ex)[:80])
-    try:                                # v85 A: sessão montada aqui (fora do lock)
+    try:                                # v90: sessão montada aqui (fora do lock); a Fila do fotógrafo deriva dela (S12)
         sess_add(pid, mm)
     except Exception as ex:
         print("  sessões: %s" % str(ex)[:80])
@@ -1146,7 +1167,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         ff_rosto_fila(pid)              # antes do put: a leitura não pode terminar antes de a foto contar como pendente
     except Exception as ex:
         print("  fila do fotógrafo (rostos): %s" % str(ex)[:80])
-    fila_rostos.put((pid, dst, time.time()))
+    rostos_enfileira(pid, dst, 0, time.time())   # S11: foto nova na frente do atraso do boot
     nuvem_enfileira(pid, dst)
     print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
     return "new"
@@ -3331,37 +3352,53 @@ def anexar(path, obj):
             f.write(json.dumps(obj) + "\n")
 
 
-# ---------- Fila do fotógrafo (v87) ----------
+# ---------- Fila do fotógrafo (v87) e sessões (v90) ----------
 # Painel de senhas das fotos chegando, por fotógrafo: Clicando agora (fotografando), Chegando (subindo) e Já no Checkout
-# (pronta). Calculado aqui, a partir da chegada de cada foto (a única verdade comum a todos os postos), em memória e refeito
-# do meta no boot. Regra: ff_lock nunca é pego com o lock na mão (o meta é lido antes, com o lock, e solto).
-def _ff_pausa():
+# (pronta). v90: a Fila é montada a partir das sessões do agente (uma regra só, S12 do plano
+# docs/planos/2026-10-30-sessoes-por-rosto-e-tempo.md). Regra: ff_lock e sess_lock nunca são pegos com o lock na mão
+# (o meta é copiado antes, com o lock, e solto) e nunca um dentro do outro.
+def _sess_pausa():
     try:
         v = int(os.environ.get("ETERNA_SESSAO_PAUSA") or 0)
     except ValueError:
         v = 0
-    return v if 2 <= v <= 600 else 20
+    return v if 2 <= v <= 600 else 60
 
 
-FF_PAUSA = _ff_pausa()          # igual ao SESSAO_PAUSA_S do app; ETERNA_SESSAO_PAUSA (2 a 600) só para os testes
+def _sess_limites():
+    """(fica, novo, funde). ETERNA_SESS_LIMITES="0.38,0.25,0.45" só nos testes."""
+    try:
+        x = tuple(float(a) for a in os.environ.get("ETERNA_SESS_LIMITES", "").split(","))
+        if len(x) == 3 and all(0 < a < 1 for a in x):
+            return x
+    except ValueError:
+        pass
+    return (LIMITE_TALVEZ, 0.25, LIMITE)
+
+
+SESS_PAUSA = _sess_pausa()      # S1: 60 s sem clique fecha a sessão; igual ao SESSAO_PAUSA_S do app. ETERNA_SESSAO_PAUSA (2 a 600) só nos testes
+FF_PAUSA = SESS_PAUSA           # apelido (v87)
+SESS_ATRASO = 600               # S3: foto com chegada − clique acima disto vai para a trilha atrasada (cartão)
+SESS_ROSTO_ESPERA = 20          # S6: prazo para a leitura do rosto, desde a chegada; depois vale só o tempo
+SESS_LIM_FICA, SESS_LIM_NOVO, SESS_LIM_FUNDE = _sess_limites()   # S5/S7: 0,38 / 0,25 / 0,45
+SESS_ROSTOS_MAX = 40            # S9: vetores guardados por sessão (só memória, só sessões não fechadas)
+SESS_REPETIDO = 0.7             # S9: vetor com sim >= isto com um já guardado não entra
+SESS_CAND_MAX = 3               # S7: sessões candidatas por trilha (a aberta + as separadas)
+SESS_RET_DIAS = 60              # S14: arquivos de sessão
+SESS_Q_SCORE, SESS_Q_LARG, SESS_Q_FRONTAL = 0.80, 60, 0.35   # S5: rosto de qualidade (vota por sessão nova)
+SESS_CLIQUE_ANTES, SESS_CLIQUE_DEPOIS = 48 * 3600, 600       # S2: clique válido em [u − 48 h, u + 10 min]
 FF_PRONTA_MIN = 15              # D1 (Eduardo, 30/10): sai da coluna final 15 min depois de ficar pronto
-FF_MAX = 2000                   # grupos por dia
 FF_PIDS = 6                     # miniaturas por grupo aberto (risco 2: o pid abre o original)
 FF_PRONTAS_MAX = 24             # cartões na coluna final
 FF_FUNCAO = os.path.join(HOME, "ponto", "funcao.json")
 FF_TIPOS = ("campo", "volante", "folga")
 FF_MODOS = ("grupo", "chute", "livre")
 _re_ff_point = re.compile(r"^[a-z0-9_-]{1,24}$")
-ff_lock = threading.Lock()
-ff_grupos = []                  # grupos do dia, na ordem em que abriram
-ff_aberto = {}                  # chave interna -> último grupo da chave
-ff_desvio = {}                  # série (ou chave) -> deque das últimas 50 diferenças chegada − clique
-ff_pid_g = {}                   # pid -> grupo
-ff_rev = [0]
-ff_dia = [""]
-ff_seq = [0]
+ff_lock = threading.Lock()      # rostos_pendentes e a função do dia
+ff_desvio = {}                  # série (ou chave) -> deque das últimas 50 diferenças chegada − clique (sob o sess_lock)
 rostos_pendentes = set()        # pids na fila de rostos (só conta com os rostos ligados)
 ff_funcao = {"dia": "", "map": {}}
+_ff_cad = {"t": 0.0, "v": None}
 
 
 def _ff_hoje(t=None):
@@ -3390,20 +3427,18 @@ def ff_quem(o, autor, dono, serie, s="", cad=None):
 
 def ff_cadastrados():
     """Fotógrafos que a fila aceita como nome (sem acento): os cadastrados, menos os logins "compartilhado" do ftp.json
-    (L3: login compartilhado sem subpasta não é um fotógrafo)."""
+    (L3: login compartilhado sem subpasta não é um fotógrafo). v90 (revisão 11): cache de 30 s."""
+    c = _ff_cad
+    agora = time.time()
+    if c["v"] is not None and 0 <= agora - c["t"] < 30:
+        return set(c["v"])
     cad = {sem_acento(x) for x in ftp_cadastrados()}
     try:
         cad -= {sem_acento(x) for x in (json.load(open(FTPCFG)).get("compartilhado") or [])}
     except Exception:
         pass
-    return cad
-
-
-def _ff_reset(dia):
-    ff_grupos.clear(); ff_aberto.clear(); ff_desvio.clear(); ff_pid_g.clear()
-    ff_dia[0] = dia
-    ff_seq[0] = 0
-    ff_rev[0] += 1
+    c.update(t=agora, v=frozenset(cad))
+    return set(cad)
 
 
 def _ff_func_snapshot(chave):
@@ -3413,68 +3448,14 @@ def _ff_func_snapshot(chave):
     return dict(f) if isinstance(f, dict) else None
 
 
-def _ff_add(pid, m, cad):
-    """Com o ff_lock na mão. m = cópia do meta[pid]."""
-    try:
-        u = float(m.get("u") or 0)
-    except (TypeError, ValueError):
-        return
-    if not u or pid in ff_pid_g:
-        return
-    dia = _ff_hoje(u)
-    if dia != ff_dia[0]:
-        if ff_dia[0] and dia < ff_dia[0]:
-            return
-        _ff_reset(dia)
-    s = m.get("s") or ""
-    chave, fonte = ff_quem(m.get("o"), m.get("autor"), m.get("dono"), m.get("serie"), s, cad)
-    serie = str(m.get("serie") or "")
-    k = chave or ("cam:" + serie if serie else "src:" + fonte)
-    try:
-        cap = float(m.get("cap") or 0) or None
-    except (TypeError, ValueError):
-        cap = None
-    if cap:
-        ff_desvio.setdefault(serie or k, collections.deque(maxlen=50)).append(u - cap)
-    g = ff_aberto.get(k)
-    if g is not None and u - g["ultima_chegada"] > FF_PAUSA:
-        g = None
-    if g is None:
-        ff_seq[0] += 1
-        g = {"id": "G%03d" % ff_seq[0], "k": k, "chave": chave, "fonte": fonte, "funcao": _ff_func_snapshot(chave),
-             "inicio": u, "ultima_chegada": u, "cap_max": None, "dk": serie or k, "n": 0, "pids": [], "cartao": False,
-             "pend": 0, "rostos_fim": 0.0, "pronta_em": None}
-        ff_grupos.append(g)
-        ff_aberto[k] = g
-        if len(ff_grupos) > FF_MAX:
-            velho = ff_grupos.pop(0)
-            if ff_aberto.get(velho["k"]) is velho:
-                ff_aberto.pop(velho["k"], None)
-    g["n"] += 1
-    g["pronta_em"] = None
-    g["ultima_chegada"] = max(g["ultima_chegada"], u)
-    g["inicio"] = min(g["inicio"], u)
-    g["pids"] = ([pid] + g["pids"])[:FF_PIDS]
-    if cap:
-        g["cap_max"] = max(g["cap_max"] or cap, cap)
-    if s == "cartao":
-        g["cartao"] = True
-    ff_pid_g[pid] = g
-    if pid in rostos_pendentes:
-        g["pend"] += 1
-    ff_rev[0] += 1
-
-
-def ff_add(pid, m):
-    """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
-    cad = ff_cadastrados()
-    with ff_lock:
-        _ff_add(pid, m, cad)
-
-
 def ff_rostos_ligados():
     """Rostos ligados, ou ainda iniciando (o leitor abre depois do boot): nos dois casos a foto espera a leitura."""
     return bool(rostos.get("ligado") or rostos.get("motivo") == "iniciando")
+
+
+def sess_rostos_on():
+    """S6: a separação por rosto está ativa (OpenCV disponível e leitor ligado ou iniciando)."""
+    return not os.environ.get("ETERNA_SEM_OPENCV") and ff_rostos_ligados()
 
 
 def ff_rosto_fila(pid):
@@ -3482,101 +3463,64 @@ def ff_rosto_fila(pid):
     if not ff_rostos_ligados():
         return
     with ff_lock:
-        if pid in rostos_pendentes:
-            return
         rostos_pendentes.add(pid)
-        g = ff_pid_g.get(pid)
-        if g is not None:
-            g["pend"] += 1
 
 
 def ff_rosto_lido(pid):
     """A leitura dos rostos da foto terminou (com erro também)."""
     with ff_lock:
-        if pid not in rostos_pendentes:
-            return
         rostos_pendentes.discard(pid)
-        g = ff_pid_g.get(pid)
-        if g is not None:
-            g["pend"] = max(0, g["pend"] - 1)
-            g["rostos_fim"] = time.time()
-            ff_rev[0] += 1
 
 
 def ff_esquecer(pid):
-    """v87: a foto foi apagada a pedido do cliente (LGPD): sai do grupo (contagem e miniaturas)."""
+    """LGPD: a foto apagada sai da contagem de rostos pendentes (a sessão é limpa por sess_esquecer)."""
     with ff_lock:
-        g = ff_pid_g.pop(pid, None)
-        if pid in rostos_pendentes:
-            rostos_pendentes.discard(pid)
-            if g is not None:
-                g["pend"] = max(0, g["pend"] - 1)
-        if g is not None:
-            g["n"] = max(0, g["n"] - 1)
-            g["pids"] = [p for p in g["pids"] if p != pid]
-            ff_rev[0] += 1
-
-
-def ff_ultimo_clique(g):
-    if not g["cap_max"]:
-        return g["ultima_chegada"]
-    d = ff_desvio.get(g["dk"])
-    desvio = min(d) if d else 0.0          # com sinal: relógio da câmera adiantado também é compensado
-    return min(g["cap_max"] + desvio, g["ultima_chegada"])
-
-
-def ff_estado(g, agora, rostos_ligados=None):
-    """fotografando | subindo | pronta | fora (com o ff_lock na mão)."""
-    lig = ff_rostos_ligados() if rostos_ligados is None else rostos_ligados
-    if agora - g["ultima_chegada"] <= FF_PAUSA:
-        if not g["cap_max"]:
-            return "fotografando"            # sem a hora do clique, Fotografando e Subindo viram uma etapa só
-        if g["cartao"]:
-            return "subindo"                 # leva de cartão em andamento
-        return "fotografando" if agora - ff_ultimo_clique(g) <= FF_PAUSA else "subindo"
-    if lig and g["pend"] > 0:
-        return "subindo"                     # ainda na fila de rostos: a selfie do Checkout não acharia
-    if g["pronta_em"] is None:
-        g["pronta_em"] = max(g["ultima_chegada"] + FF_PAUSA, g["rostos_fim"] if lig else 0.0)
-    if agora - g["pronta_em"] > FF_PRONTA_MIN * 60:
-        return "fora"
-    return "pronta"
+        rostos_pendentes.discard(pid)
 
 
 def ff_json(agora=None):
+    """S12: os grupos da Fila são as sessões de hoje (id = código LP). Contrato da v87 sem mudança."""
     agora = time.time() if agora is None else agora
     hoje = _ff_hoje(agora)
     lig = ff_rostos_ligados()
-    out = []
     with ff_lock:
-        if ff_dia[0] != hoje:
-            _ff_reset(hoje)                  # virada do dia: lista limpa
-        manter = []
-        for g in ff_grupos:
-            e = ff_estado(g, agora, lig)
-            if e == "fora":                  # poda (o grupo sai da memória; o pid continua no meta)
-                if ff_aberto.get(g["k"]) is g:
-                    ff_aberto.pop(g["k"], None)
-                for p in [p for p, gg in ff_pid_g.items() if gg is g]:
-                    ff_pid_g.pop(p, None)
-                ff_rev[0] += 1
+        rp = set(rostos_pendentes) if lig else set()
+    out = []
+    with sess_lock:
+        _sess_tick(agora)
+        for x in sess.values():
+            if x["dia"] != hoje or x.get("removida"):
                 continue
-            manter.append(g)
-            out.append((e, g))
-        ff_grupos[:] = manter
-        prontas = sorted([g for e, g in out if e == "pronta"], key=lambda g: -g["pronta_em"])[:FF_PRONTAS_MAX]
-        mostrar = {id(g) for g in prontas}
-        grupos = []
-        for e, g in out:
-            if (e == "pronta" and id(g) not in mostrar) or g["n"] <= 0:
+            todos = x["fotos"] + x["pend"]
+            if not todos:
                 continue
-            grupos.append({"id": g["id"], "estado": e, "fotografo": g["chave"], "fonte": g["fonte"],
-                           "funcao": dict(g["funcao"]) if g["funcao"] else None, "inicio": g["inicio"],
-                           "ultima_chegada": g["ultima_chegada"], "ultimo_clique": ff_ultimo_clique(g),
-                           "pronta_em": g["pronta_em"] if e == "pronta" else None, "n": g["n"],
-                           "pids": list(g["pids"]) if e in ("fotografando", "subindo") else []})
-        rev = ff_rev[0]
-    return {"ok": True, "agora": agora, "rev": rev, "pausa": FF_PAUSA, "pronta_min": FF_PRONTA_MIN, "grupos": grupos}
+            pe = None
+            if x["status"] == "fechada":
+                if any(p in rp for p in todos):
+                    e = "subindo"            # ainda na fila de rostos: a selfie do Checkout não acharia
+                else:
+                    pe = x.get("_pronta")
+                    if pe is None:
+                        pe = x["_pronta"] = max(float(x.get("fechada_em") or 0), float(x.get("_rfim") or 0) if lig else 0.0)
+                    if agora - pe > FF_PRONTA_MIN * 60:
+                        continue             # sai da coluna final (a sessão continua em /sessoes)
+                    e = "pronta"
+            elif x["status"] == "aberta" and not x.get("atrasada") and agora - float(x.get("cap1") or 0) <= SESS_PAUSA:
+                e = "fotografando"
+            else:
+                e = "subindo"                # cartão em andamento, separada fechando ou aberta sem clique recente
+            ts = x.get("_t") or {}
+            novas = sorted(todos, key=lambda p: -(ts.get(p) or (0, 0))[0])[:FF_PIDS] if e != "pronta" else []
+            out.append({"id": x["card"], "estado": e, "fotografo": x.get("fotografo"), "fonte": x.get("fonte"),
+                        "funcao": dict(x["funcao"]) if isinstance(x.get("funcao"), dict) else None,
+                        "inicio": x.get("aberta_em"), "ultima_chegada": x.get("ultima_chegada"),
+                        "ultimo_clique": x.get("cap1") or x.get("ultima_chegada"), "pronta_em": pe, "n": len(todos),
+                        "pids": novas})
+        rev = sess_rev[0]
+    prontas = sorted([g for g in out if g["estado"] == "pronta"], key=lambda g: -g["pronta_em"])[:FF_PRONTAS_MAX]
+    mostrar = {g["id"] for g in prontas}
+    grupos = sorted([g for g in out if g["estado"] != "pronta" or g["id"] in mostrar], key=lambda g: g["inicio"] or 0)
+    return {"ok": True, "agora": agora, "rev": rev, "pausa": SESS_PAUSA, "pronta_min": FF_PRONTA_MIN, "grupos": grupos}
 
 
 def ff_funcao_carregar():
@@ -3590,45 +3534,35 @@ def ff_funcao_carregar():
 
 
 def ff_carregar():
-    """No boot: refaz os grupos de hoje a partir do meta (chegada de hoje, em ordem)."""
+    """No boot: só a função do dia (os grupos vêm das sessões, refeitas por sess_carregar)."""
     ff_funcao_carregar()
-    hoje = _ff_hoje()
-    ini = time.mktime(time.strptime(hoje, "%Y-%m-%d"))
-    itens = []
-    with lock:                                   # só o meta de hoje é copiado
-        for pid, m in meta.items():
-            try:
-                if isinstance(m, dict) and pid in lib and float(m.get("u") or 0) >= ini:
-                    itens.append((pid, dict(m)))
-            except (TypeError, ValueError):
-                continue
-    itens = [(pid, m) for pid, m in itens if _ff_hoje(float(m["u"])) == hoje]
-    itens.sort(key=lambda x: float(x[1]["u"]))
-    cad = ff_cadastrados()
-    n = 0
-    with ff_lock:
-        _ff_reset(hoje)
-        for pid, m in itens:
-            try:                                 # um meta estragado não derruba o boot
-                _ff_add(pid, m, cad)
-                n += 1
-            except Exception as ex:
-                print("  fila do fotógrafo: foto ignorada no boot (%s)" % str(ex)[:60])
-    return n
+    return 0
 
 
-# ---------- Sessões montadas no agente (v85 parte A, adaptada) ----------
-# A sessão nasce aqui, igual em todos os navegadores (posto, Checkout, PC pelo Tailscale, Mac do curador): mesma regra da
-# Fila do fotógrafo (mesmo fotógrafo, pausa de FF_PAUSA s entre chegadas), código LP + 7 caracteres, lista completa das
-# fotos. Gravadas em ~/Eterna/ponto/sessoes/AAAA-MM-DD.json; em memória ficam hoje e ontem. O app lê GET /sessoes?desde=<rev>.
+# ---------- Sessões montadas no agente (v85 parte A do Ronaldo, regra nova da v90) ----------
+# A sessão nasce aqui, igual em todos os navegadores. Regra (plano v90, S1 a S14): por fotógrafo e trilha (ao vivo ou
+# atrasada), 60 s sem clique (hora do clique corrigida) abrem sessão nova; sem pausa, a foto espera a leitura do rosto
+# (até 20 s) e abre sessão nova só quando todos os rostos principais são novos (sim < 0,25, rosto de qualidade). Sessão
+# separada fica "fechando" até 60 s sem chegada e ainda pode se fundir (individuais antes do grupo). Só sessão
+# "fechada" vai para o SIM e nunca muda (exceto LGPD). Vetores de rosto só em memória, só das sessões não fechadas.
+# Gravadas em ~/Eterna/ponto/sessoes/AAAA-MM-DD.json (60 dias); em memória ficam hoje e ontem.
 SESS_DIR = os.path.join(HOME, "ponto", "sessoes")
 SESS_ALFA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-sess_lock = threading.Lock()     # nunca pego com o lock na mão (o meta é copiado antes)
+sess_lock = threading.Lock()     # nunca pego com o lock, o ff_lock ou o _mat_lock na mão
 sess = {}                        # card -> sessão (hoje e ontem)
-sess_pid = {}                    # pid -> card
-sess_aberta = {}                 # dia|grupo -> card da sessão aberta
+sess_pid = {}                    # pid -> card (fotos e pendentes)
+sess_aberta = {}                 # trilha -> card da sessão aberta
+sess_cand = {}                   # trilha -> [cards "separada" ainda não fechadas], a mais nova no fim
+sess_ultima = {}                 # trilha -> card da última sessão (motivo "pausa" em vez de "inicio")
+sess_espera = {}                 # trilha -> [pids pendentes de rosto, na ordem do clique]
+sess_info = {}                   # pid pendente -> {"t", "u", "trilha", "card"}
+sess_faces_pid = {}              # pid pendente -> rostos lidos (só memória)
+sess_rostos_mem = {}             # card não fechada -> [(pid, vetor)] (S9, só memória)
 sess_rev = [0]
+sess_seq = [0]
 sess_sujo = set()                # dias com mudança ainda não gravada
+sess_limpo = [""]                # dia da última limpeza de arquivos (S14)
+_SESS_DIA = re.compile(r"^(\d{4}-\d\d-\d\d)\.json$")
 
 
 def _sess_codigo():
@@ -3644,77 +3578,529 @@ def _sess_toca(x):
     sess_sujo.add(x["dia"])
 
 
-def _sess_add(pid, m, cad):
-    """Com o sess_lock na mão. m = cópia do meta[pid]."""
+def _sess_publico(x, disco=False):
+    """Cópia para /sessoes (sem "k") ou para o arquivo (com "k"). Campos internos começam com "_" e nunca saem."""
+    o = {}
+    for kk, v in x.items():
+        if kk.startswith("_") or (kk == "k" and not disco):
+            continue
+        o[kk] = list(v) if isinstance(v, list) else (dict(v) if isinstance(v, dict) else v)
+    return o
+
+
+def _num(v):
     try:
-        u = float(m.get("u") or 0)
+        v = float(v or 0)
+        return v if v == v and v not in (float("inf"), float("-inf")) else 0.0
     except (TypeError, ValueError):
-        return
-    if not u or pid in sess_pid:
-        return
-    dia = _ff_hoje(u)
-    chave, fonte = ff_quem(m.get("o"), m.get("autor"), m.get("dono"), m.get("serie"), m.get("s") or "", cad)
-    serie = str(m.get("serie") or "")
-    k = dia + "|" + (chave or ("cam:" + serie if serie else "src:" + fonte))
-    x = sess.get(sess_aberta.get(k) or "")
-    if x is not None and (x["status"] != "aberta" or u - x["ultima_chegada"] > FF_PAUSA):
-        if x["status"] == "aberta":
-            x.update(status="fechada", fechada_em=x["ultima_chegada"] + FF_PAUSA, fechada_por="pausa")
-            _sess_toca(x)
-        x = None
-    if x is None:
-        card = _sess_codigo()
-        x = {"card": card, "dia": dia, "k": k, "fotografo": chave, "fonte": fonte, "status": "aberta", "origem": "agente",
-             "aberta_em": u, "ultima_chegada": u, "fechada_em": None, "fechada_por": None, "fotos": []}
-        sess[card] = x
-        sess_aberta[k] = card
-    x["fotos"].append(pid)
-    x["ultima_chegada"] = max(x["ultima_chegada"], u)
-    x["aberta_em"] = min(x["aberta_em"], u)
+        return 0.0
+
+
+def _dot(a, b):
+    return sum(map(operator.mul, a, b))
+
+
+def sess_clique(m, dk):
+    """S2: (t, fonte_t). t = cap + menor desvio chegada − clique da série; sem cap, a data do arquivo de origem (mt); sem as
+    duas, a chegada u. Clique fora de [u − 48 h, u + 10 min] é inválido (EXIF forjado não manda). Com o sess_lock."""
+    u = _num(m.get("u"))
+    cap = _num(m.get("cap"))
+    if cap and u - SESS_CLIQUE_ANTES <= cap <= u + SESS_CLIQUE_DEPOIS:
+        if (m.get("s") or "") != "cartao":   # a foto do cartão chega atrasada de propósito: não entra no desvio
+            ff_desvio.setdefault(dk, collections.deque(maxlen=50)).append(u - cap)
+        d = ff_desvio.get(dk)
+        t = cap + (min(d) if d else 0.0)
+        if u - SESS_CLIQUE_ANTES <= t <= u + SESS_CLIQUE_DEPOIS:
+            return t, "cap"
+    mt = _num(m.get("mt"))
+    if mt and u - SESS_CLIQUE_ANTES <= mt <= u + SESS_CLIQUE_DEPOIS:
+        return mt, "mt"
+    return u, "u"
+
+
+def sess_trilha(m, t, base=None):
+    """S3: "dia|fotógrafo" (ao vivo) ou "dia|fotógrafo|t" (atrasada: cartão, ou clique há mais de 10 min da chegada)."""
+    u = _num(m.get("u"))
+    atrasada = (m.get("s") or "") == "cartao" or u - t > SESS_ATRASO
+    return _ff_hoje(t) + "|" + (base or "?") + ("|t" if atrasada else ""), atrasada
+
+
+def _sess_nova(trilha, t, u, motivo, m, chave, fonte, fonte_t, atrasada):
+    """Cria a sessão do contrato (sem foto ainda). Com o sess_lock."""
+    card = _sess_codigo()
+    f = _ff_func_snapshot(chave)
+    sess_seq[0] += 1
+    x = {"card": card, "dia": trilha.split("|", 1)[0], "k": trilha, "fotografo": chave, "fonte": fonte,
+         "ponto": f.get("point") if f and f.get("tipo") == "campo" else None, "funcao": f,
+         "trilha": "atrasada" if atrasada else "vivo", "atrasada": bool(atrasada), "status": "aberta", "motivo": motivo,
+         "origem": "agente", "aberta_em": u, "ultima_chegada": u, "cap0": t, "cap1": t, "fonte_t": fonte_t,
+         "fechada_em": None, "fechada_por": None, "fotos": [], "pend": [], "dec": {}, "sim_abertura": None,
+         "fundida_em": None, "removida": False, "rev": 0,
+         "_t": {}, "_guardar": set(), "_rfim": 0.0, "_n": sess_seq[0], "_fonte": {}}
+    sess[card] = x
+    return x
+
+
+def _sess_recalc(x):
+    ts = x["_t"]
+    todos = [p for p in x["fotos"] + x["pend"] if p in ts]
+    if todos:
+        x["cap0"] = min(ts[p][0] for p in todos)
+        x["cap1"] = max(ts[p][0] for p in todos)
+        x["ultima_chegada"] = max(ts[p][1] for p in todos)
+        x["aberta_em"] = min(ts[p][1] for p in todos)
+    x["fotos"].sort(key=lambda p: ts.get(p, (0, 0)))
+
+
+def _sess_entra(x, pid, t, u, dec):
+    if pid not in x["fotos"]:
+        x["fotos"].append(pid)
+    x["_t"][pid] = (t, u)
+    x["dec"][pid] = dec
     sess_pid[pid] = x["card"]
+
+
+def _sess_cands(trilha):
+    """S7: a aberta e as separadas da trilha, das mais novas para as mais antigas, até SESS_CAND_MAX."""
+    out = []
+    a = sess_aberta.get(trilha)
+    if a and a in sess:
+        out.append(a)
+    for c in reversed(sess_cand.get(trilha) or []):
+        if c in sess and c not in out:
+            out.append(c)
+    return out[:SESS_CAND_MAX]
+
+
+def _sess_vira_aberta(trilha, card, agora):
+    """A sessão card passa a ser a aberta da trilha; a aberta anterior vira "separada" (fechando)."""
+    old = sess_aberta.get(trilha)
+    lst = sess_cand.setdefault(trilha, [])
+    if card in lst:
+        lst.remove(card)
+    if old and old != card and old in sess and sess[old]["status"] != "fechada":
+        sess[old]["status"] = "separada"
+        lst.append(old)
+        _sess_toca(sess[old])
+    sess_aberta[trilha] = card
+    sess[card]["status"] = "aberta"
+    while len(lst) > SESS_CAND_MAX - 1:              # passou do limite de candidatas: a separada mais antiga fecha de vez
+        _sess_fecha_uma(sess[lst[0]], agora, "pausa")
+    if not lst:
+        sess_cand.pop(trilha, None)
+
+
+def _sess_fecha_uma(x, agora, por):
+    """S8: fechamento definitivo. As fotos ainda pendentes de rosto ficam nesta sessão (só tempo)."""
+    if x["status"] == "fechada":
+        return
+    tr = x["k"]
+    for pid in list(x["pend"]):
+        info = sess_info.pop(pid, None)
+        sess_faces_pid.pop(pid, None)
+        lst = sess_espera.get(tr)
+        if lst and pid in lst:
+            lst.remove(pid)
+        t, u = (info["t"], info["u"]) if info else x["_t"].get(pid, (agora, agora))
+        x["pend"].remove(pid)
+        _sess_entra(x, pid, t, u, "t")
+    if not sess_espera.get(tr):
+        sess_espera.pop(tr, None)
+    _sess_recalc(x)
+    fim = min(x["ultima_chegada"] + SESS_PAUSA, agora) if por == "pausa" else agora
+    x.update(status="fechada", fechada_em=fim, fechada_por=por)
+    x["_guardar"] = set()
+    sess_rostos_mem.pop(x["card"], None)              # S9: os vetores somem quando a sessão fecha
+    if sess_aberta.get(tr) == x["card"]:
+        sess_aberta.pop(tr, None)
+    lst = sess_cand.get(tr)
+    if lst and x["card"] in lst:
+        lst.remove(x["card"])
+        if not lst:
+            sess_cand.pop(tr, None)
+    if not x["removida"]:
+        sess_ultima[tr] = x["card"]
     _sess_toca(x)
+
+
+def _sess_fundir(dest, orig, agora):
+    """S7: as fotos, as pendentes e os rostos da origem vão para o destino (a mais antiga); a origem vira removida."""
+    for pid in orig["fotos"]:
+        t, u = orig["_t"].get(pid, (agora, agora))
+        _sess_entra(dest, pid, t, u, orig["dec"].get(pid, "t"))
+    for pid in orig["pend"]:
+        if pid not in dest["pend"]:
+            dest["pend"].append(pid)
+        dest["_t"][pid] = orig["_t"].get(pid, (agora, agora))
+        sess_pid[pid] = dest["card"]
+        if pid in sess_info:
+            sess_info[pid]["card"] = dest["card"]
+    dest["_guardar"] |= orig["_guardar"]
+    mem = sess_rostos_mem.setdefault(dest["card"], [])
+    for pid, v in sess_rostos_mem.pop(orig["card"], []):
+        if len(mem) < SESS_ROSTOS_MAX and not any(_dot(v, w) >= SESS_REPETIDO for _, w in mem):
+            mem.append((pid, v))
+    tr = orig["k"]
+    if sess_aberta.get(tr) == orig["card"]:
+        sess_aberta.pop(tr, None)
+    lst = sess_cand.get(tr)
+    if lst and orig["card"] in lst:
+        lst.remove(orig["card"])
+    orig.update(fotos=[], pend=[], dec={}, removida=True, fundida_em=dest["card"], status="fechada", fechada_em=agora,
+                fechada_por=None)
+    orig["_t"], orig["_guardar"] = {}, set()
+    _sess_recalc(dest)
+    _sess_toca(orig)
+    _sess_toca(dest)
+
+
+def _sess_faces(faces):
+    """[(larg, vetor, score, frontal)] -> [{"l","v","s","f"}] com o vetor normalizado em array('f') (Python puro, S10)."""
+    out = []
+    for f in faces or []:
+        try:
+            if isinstance(f, dict):
+                larg, vet, sc, fr = f.get("l"), f.get("v"), f.get("s"), f.get("f")
+            else:
+                larg, vet, sc, fr = (list(f) + [None, None])[:4]
+            v = array.array("f", [float(a) for a in vet])
+            if len(v) != 128:
+                continue
+            n = _dot(v, v) ** 0.5 or 1.0
+            v = array.array("f", [a / n for a in v])
+            out.append({"l": float(larg or 0), "v": v, "s": float(sc) if sc is not None else 0.0, "f": bool(fr)})
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _sess_principais(fs):
+    """S5: rosto principal = largura >= metade do maior rosto da foto e >= ROSTO_MIN (o fundo não conta)."""
+    if not fs:
+        return []
+    mx = max(f["l"] for f in fs)
+    return [f for f in fs if f["l"] >= 0.5 * mx and f["l"] >= ROSTO_MIN]
+
+
+def _sess_qualidade(f):
+    return f["s"] >= SESS_Q_SCORE and f["l"] >= SESS_Q_LARG and f["f"]
+
+
+def _sess_sim(princ, card):
+    """Maior cosseno entre os rostos principais da foto e os rostos guardados da sessão (None sem rosto guardado)."""
+    mem = sess_rostos_mem.get(card)
+    if not mem or not princ:
+        return None
+    return max(_dot(f["v"], v) for f in princ for _, v in mem)
+
+
+def _sess_guarda_rostos(card, pid, princ):
+    """S9: até SESS_ROSTOS_MAX vetores por sessão, sem repetido, por pid. Só sessão não fechada."""
+    x = sess.get(card)
+    if not x or x["status"] == "fechada" or not princ:
+        return
+    mem = sess_rostos_mem.setdefault(card, [])
+    for f in princ:
+        if len(mem) >= SESS_ROSTOS_MAX:
+            break
+        if any(_dot(f["v"], v) >= SESS_REPETIDO for _, v in mem):
+            continue
+        mem.append((pid, f["v"]))
+
+
+def _sess_add(pid, m, cad, agora=None, faces_boot=None, boot=False):
+    """Com o sess_lock na mão. m = cópia do meta[pid]. Devolve o card (ou None)."""
+    agora = time.time() if agora is None else agora
+    u = _num(m.get("u"))
+    if not u or pid in sess_pid:
+        return None
+    s = m.get("s") or ""
+    chave, fonte = ff_quem(m.get("o"), m.get("autor"), m.get("dono"), m.get("serie"), s, cad)
+    serie = str(m.get("serie") or "")
+    base = chave or ("cam:" + serie if serie else "src:" + fonte)
+    t, fonte_t = sess_clique(m, serie or base)
+    tr, atrasada = sess_trilha(m, t, base)
+    x = sess.get(sess_aberta.get(tr) or "")
+    if x is not None and x["status"] == "fechada":
+        sess_aberta.pop(tr, None)
+        x = None
+    motivo = None
+    if x is not None and (t - x["cap1"] > SESS_PAUSA or t < x["cap0"] - SESS_PAUSA):
+        for c in [x["card"]] + list(sess_cand.get(tr) or []):   # S8: pausa de clique fecha de vez a trilha
+            if c in sess:
+                _sess_fecha_uma(sess[c], agora, "pausa_clique")
+        x, motivo = None, "pausa"
+    elif x is None:
+        motivo = "pausa" if tr in sess_ultima else "inicio"
+    if x is None:                                    # abre por tempo: decidida na hora; os rostos entram quando lidos
+        x = _sess_nova(tr, t, u, "reagrupada" if boot else motivo, m, chave, fonte, fonte_t, atrasada)
+        _sess_vira_aberta(tr, x["card"], agora)
+        _sess_entra(x, pid, t, u, "t")
+        if boot:
+            _sess_guarda_rostos(x["card"], pid, _sess_principais(_sess_faces_ok(faces_boot or [])))
+        elif sess_rostos_on():
+            x["_guardar"].add(pid)
+        _sess_recalc(x)
+        _sess_toca(x)
+        return x["card"]
+    espera = (faces_boot is not None) if boot else sess_rostos_on()
+    if espera:                                       # S6: passou no tempo; espera o rosto na ordem do clique
+        x["pend"].append(pid)
+        x["_t"][pid] = (t, u)
+        sess_pid[pid] = x["card"]
+        sess_info[pid] = {"t": t, "u": u, "trilha": tr, "card": x["card"]}
+        lst = sess_espera.setdefault(tr, [])
+        i = len(lst)
+        while i > 0 and sess_info.get(lst[i - 1], {}).get("t", 0) > t:
+            i -= 1
+        lst.insert(i, pid)
+        if boot:
+            sess_faces_pid[pid] = _sess_faces_ok(faces_boot)
+            _sess_drenar(tr, agora)
+    else:
+        _sess_entra(x, pid, t, u, "t")
+    _sess_recalc(x)
+    _sess_toca(x)
+    return sess_pid.get(pid)
+
+
+def _sess_faces_ok(fs):
+    return fs if fs and isinstance(fs[0], dict) else _sess_faces(fs)
+
+
+def _sess_decide(pid, fs, agora):
+    """S5 e S7 para a foto pendente pid (fs = rostos lidos, ou None = prazo vencido / rostos desligados)."""
+    info = sess_info.pop(pid, None)
+    sess_faces_pid.pop(pid, None)
+    if not info:
+        return
+    tr = info["trilha"]
+    lst = sess_espera.get(tr)
+    if lst and pid in lst:
+        lst.remove(pid)
+    x = sess.get(info["card"])
+    if x is None or x["status"] == "fechada":
+        return
+    if pid in x["pend"]:
+        x["pend"].remove(pid)
+    aberta = sess.get(sess_aberta.get(tr) or "") or x
+    dest, dec, princ = aberta, "t", []
+    if fs is not None:
+        princ = _sess_principais(fs)
+        if not princ:
+            dec = "s"                                # sem rosto (ou só fundo): fica
+        else:
+            sims = [(c, _sess_sim(princ, c)) for c in _sess_cands(tr)]
+            com = [(c, v) for c, v in sims if v is not None]
+            fortes = [c for c, v in com if v >= SESS_LIM_FUNDE]
+            melhor = max(com, key=lambda cv: cv[1]) if com else None
+            qual = [f for f in princ if _sess_qualidade(f)]
+            if len(fortes) >= 2:                     # individuais antes do grupo: funde na mais antiga
+                dest = sess[min(fortes, key=lambda c: sess[c]["_n"])]
+                for c in fortes:
+                    if c != dest["card"]:
+                        _sess_fundir(dest, sess[c], agora)
+                dec = "f"
+            elif melhor and melhor[1] >= SESS_LIM_FICA:
+                dest, dec = sess[melhor[0]], "r"
+            elif qual and melhor and melhor[1] < SESS_LIM_NOVO:
+                t, u = info["t"], info["u"]
+                dest = _sess_nova(tr, t, u, "rostos_novos", {}, x.get("fotografo"), x.get("fonte"), x.get("fonte_t"), x.get("atrasada"))
+                dest["sim_abertura"] = round(melhor[1], 3)
+                dec = "n"
+            else:
+                dec = "d" if qual else "s"           # dúvida, perfil, criança com leitura fraca, rosto pequeno: fica
+    _sess_entra(dest, pid, info["t"], info["u"], dec)
+    if dec in ("r", "f", "n"):
+        _sess_guarda_rostos(dest["card"], pid, princ)
+    if sess_aberta.get(tr) != dest["card"]:
+        _sess_vira_aberta(tr, dest["card"], agora)
+    for y in {id(x): x, id(dest): dest}.values():
+        _sess_recalc(y)
+        _sess_toca(y)
+
+
+def _sess_drenar(trilha, agora):
+    """S6: decide as pendentes da trilha na ordem do clique; a cabeça espera o rosto (e o rosto de quem abriu a sessão)
+    até SESS_ROSTO_ESPERA desde a chegada."""
+    lst = sess_espera.get(trilha)
+    on = sess_rostos_on()
+    while lst:
+        pid = lst[0]
+        info = sess_info.get(pid)
+        if info is None:
+            lst.pop(0)
+            continue
+        vencido = agora - info["u"] > SESS_ROSTO_ESPERA
+        fs = sess_faces_pid.get(pid)
+        if fs is None:
+            if on and not vencido:
+                break
+            _sess_decide(pid, None, agora)
+            continue
+        if on and not vencido and any(sess[c]["_guardar"] for c in _sess_cands(trilha)):
+            break                                    # o rosto de quem abriu a sessão ainda não foi lido
+        _sess_decide(pid, fs, agora)
+    if not sess_espera.get(trilha):
+        sess_espera.pop(trilha, None)
+
+
+def sess_rostos_lidos(pid, faces, agora=None):
+    """Chamada pelo leitor de rostos depois de gravar no rostos.db (fora do _mat_lock). faces = [(larg, vetor, score,
+    frontal)] ou None (erro: conta como lida sem rosto). Os vetores ficam só na memória (S9)."""
+    agora = time.time() if agora is None else agora
+    fs = _sess_faces(faces)
+    with sess_lock:
+        x = sess.get(sess_pid.get(pid) or "")
+        if x is not None:
+            x["_rfim"] = agora
+        if pid in sess_info:
+            sess_faces_pid[pid] = fs
+            _sess_drenar(sess_info[pid]["trilha"], agora)
+        elif x is not None and x["status"] != "fechada" and pid in x["_guardar"]:
+            x["_guardar"].discard(pid)
+            _sess_guarda_rostos(x["card"], pid, _sess_principais(fs))
+            _sess_drenar(x["k"], agora)
 
 
 def sess_add(pid, m):
     """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
     cad = ff_cadastrados()
     with sess_lock:
-        _sess_add(pid, m, cad)
+        return _sess_add(pid, m, cad, time.time())
 
 
 def sess_esquecer(pid):
-    """LGPD: a foto apagada sai da sessão; sessão sem foto vira removida."""
+    """LGPD: a foto apagada sai da sessão, das pendentes e dos rostos em memória; sessão sem foto vira removida."""
     with sess_lock:
         card = sess_pid.pop(pid, None)
+        info = sess_info.pop(pid, None)
+        sess_faces_pid.pop(pid, None)
+        if info:
+            lst = sess_espera.get(info["trilha"])
+            if lst and pid in lst:
+                lst.remove(pid)
+        for c, mem in list(sess_rostos_mem.items()):
+            sess_rostos_mem[c] = [(p, v) for p, v in mem if p != pid]
         x = sess.get(card or "")
         if not x:
             return
         x["fotos"] = [p for p in x["fotos"] if p != pid]
-        if not x["fotos"]:
+        x["pend"] = [p for p in x["pend"] if p != pid]
+        x["dec"].pop(pid, None)
+        x.get("_t", {}).pop(pid, None)
+        x.get("_guardar", set()).discard(pid)
+        if not x["fotos"] and not x["pend"]:
+            if x["status"] != "fechada":
+                _sess_fecha_uma(x, time.time(), "pausa")
             x["removida"] = True
             x["status"] = "fechada"
         _sess_toca(x)
 
 
-def _sess_fechar(agora):
-    """Com o sess_lock na mão: fecha as sessões paradas há mais que a pausa e as de dias anteriores."""
-    hoje = _ff_hoje(agora)
-    for x in sess.values():
-        if x["status"] != "aberta":
+def sess_esquecer_disco(pids):
+    """S14 (revisão 4): a LGPD também limpa o pid nos arquivos de sessão dos últimos 60 dias. Os dias em memória são
+    regravados a partir da memória (já limpa); os outros, reescritos a partir do arquivo."""
+    pids = {p for p in pids if p}
+    if not pids or not os.path.isdir(SESS_DIR):
+        return 0
+    lim = _ff_hoje(time.time() - SESS_RET_DIAS * 86400)
+    with sess_lock:
+        em_mem = {x["dia"] for x in sess.values()}
+    n = 0
+    for nome in sorted(os.listdir(SESS_DIR)):
+        mm = _SESS_DIA.match(nome)
+        if not mm or mm.group(1) < lim:
             continue
-        if x["dia"] != hoje:
-            x.update(status="fechada", fechada_em=agora, fechada_por="virada_do_dia")
-            _sess_toca(x)
-        elif agora - x["ultima_chegada"] > FF_PAUSA:
-            x.update(status="fechada", fechada_em=x["ultima_chegada"] + FF_PAUSA, fechada_por="pausa")
-            _sess_toca(x)
+        d = mm.group(1)
+        if d in em_mem:
+            with sess_lock:
+                sess_sujo.add(d)
+            continue
+        f = os.path.join(SESS_DIR, nome)
+        try:
+            with open(f, encoding="utf8") as fh:
+                j = json.load(fh)
+            mudou = False
+            for x in j.get("sessoes") or []:
+                if not isinstance(x, dict):
+                    continue
+                for campo in ("fotos", "pend"):
+                    v = x.get(campo) or []
+                    w = [p for p in v if p not in pids]
+                    if len(w) != len(v):
+                        x[campo] = w
+                        mudou = True
+                dec = x.get("dec")
+                if isinstance(dec, dict):
+                    for p in list(dec):
+                        if p in pids:
+                            dec.pop(p)
+                            mudou = True
+                if not x.get("fotos") and not x.get("pend") and mudou:
+                    x["removida"] = True
+            if mudou:
+                tmp = f + ".tmp"
+                with open(tmp, "w", encoding="utf8") as fh:
+                    json.dump(j, fh)
+                os.replace(tmp, f)
+                n += 1
+        except Exception as ex:
+            print("  sessões (LGPD): não limpei %s (%s)" % (nome, str(ex)[:80]))
+    sess_gravar()
+    return n
+
+
+def sess_limpar(agora=None):
+    """S14: apaga os arquivos de sessão com mais de SESS_RET_DIAS (uma vez por dia, pelo sess_loop)."""
+    agora = time.time() if agora is None else agora
+    lim = _ff_hoje(agora - SESS_RET_DIAS * 86400)
+    n = 0
+    try:
+        nomes = os.listdir(SESS_DIR)
+    except OSError:
+        return 0
+    for nome in nomes:
+        mm = _SESS_DIA.match(nome)
+        if mm and mm.group(1) < lim:
+            try:
+                os.remove(os.path.join(SESS_DIR, nome))
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
+def _sess_fechar(agora):
+    """Com o sess_lock na mão (S8): fecha de vez as sessões sem chegada há mais que a pausa e as abertas antes da virada
+    do dia (sessão aberta às 23:59:50 fecha por virada mesmo com foto chegando às 00:00:05)."""
+    hoje = _ff_hoje(agora)
+    for x in list(sess.values()):
+        if x["status"] == "fechada":
+            continue
+        if _ff_hoje(x["aberta_em"]) != hoje and x["aberta_em"] < agora:
+            _sess_fecha_uma(x, agora, "virada_do_dia")
+        elif agora - x["ultima_chegada"] > SESS_PAUSA:
+            _sess_fecha_uma(x, agora, "pausa")
+
+
+def _sess_tick(agora):
+    for tr in list(sess_espera):
+        _sess_drenar(tr, agora)
+    _sess_fechar(agora)
+
+
+def sess_tick(agora=None):
+    """Prazo do rosto (S6) e fechamento (S8). O sess_loop chama a cada 2 s; os testes passam o relógio."""
+    with sess_lock:
+        _sess_tick(time.time() if agora is None else agora)
 
 
 def sess_gravar():
     with sess_lock:
         dias = list(sess_sujo)
         sess_sujo.clear()
-        lotes = {d: [dict(x, fotos=list(x["fotos"])) for x in sess.values() if x["dia"] == d] for d in dias}
+        lotes = {d: [_sess_publico(x, disco=True) for x in sess.values() if x["dia"] == d] for d in dias}
     for d, lista in lotes.items():
         try:
             os.makedirs(SESS_DIR, exist_ok=True)
@@ -3735,24 +4121,71 @@ def sess_loop():
         try:
             agora = time.time()
             with sess_lock:
-                _sess_fechar(agora)
+                _sess_tick(agora)
                 ontem = _ff_hoje(agora - 86400)
-                for card in [c for c, x in sess.items() if x["dia"] < ontem]:   # só hoje e ontem na memória
-                    x = sess.pop(card)
+                for card in [c for c, x in sess.items() if x["dia"] < ontem and x["status"] == "fechada"]:
+                    x = sess.pop(card)                   # só hoje e ontem na memória
                     for p in x["fotos"]:
                         if sess_pid.get(p) == card:
                             sess_pid.pop(p, None)
-                    if sess_aberta.get(x["k"]) == card:
-                        sess_aberta.pop(x["k"], None)
+                    if sess_ultima.get(x["k"]) == card:
+                        sess_ultima.pop(x["k"], None)
             sess_gravar()
+            if sess_limpo[0] != _ff_hoje(agora):
+                sess_limpo[0] = _ff_hoje(agora)
+                sess_limpar(agora)
         except Exception as ex:
             print("  sessões: %s" % str(ex)[:120])
 
 
-def sess_carregar():
-    """No boot: lê as sessões gravadas de ontem e hoje e põe numa sessão as fotos que chegaram sem nenhuma (primeira
-    vez com esta versão, ou queda entre a chegada e a gravação), pela mesma regra."""
-    agora = time.time()
+def _sess_normaliza(x):
+    """Sessão lida do arquivo (v85 A ou v90) com os campos da v90."""
+    x["fotos"] = [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+    x["pend"] = [p for p in (x.get("pend") or []) if isinstance(p, str)]
+    x["dec"] = {p: v for p, v in (x.get("dec") or {}).items() if isinstance(p, str)} if isinstance(x.get("dec"), dict) else {}
+    for kk, v in (("trilha", "vivo"), ("atrasada", False), ("motivo", None), ("ponto", None), ("funcao", None),
+                  ("cap0", None), ("cap1", None), ("fonte_t", "u"), ("sim_abertura", None), ("fundida_em", None),
+                  ("removida", False), ("fechada_em", None), ("fechada_por", None), ("origem", "agente")):
+        x.setdefault(kk, v)
+    x["aberta_em"] = _num(x.get("aberta_em"))
+    x["ultima_chegada"] = _num(x.get("ultima_chegada")) or x["aberta_em"]
+    sess_seq[0] += 1
+    x.update(_t={}, _guardar=set(), _rfim=0.0, _n=sess_seq[0], _fonte={})
+    return x
+
+
+def _sess_faces_db(pids):
+    """Rostos já lidos (rostos.db) das fotos sem sessão, para o reagrupamento do boot. O banco não guarda o score nem a
+    pose: esses rostos nunca votam por "sessão nova" (só ajudam a ficar e a fundir)."""
+    out = {}
+    if not pids or not os.path.exists(ROSTOS_DB):
+        return out
+    try:
+        db = rostos_db()
+        lidas = set()
+        lista = list(pids)
+        for i in range(0, len(lista), 500):
+            parte = lista[i:i + 500]
+            q = ",".join("?" * len(parte))
+            for (p,) in db.execute("select pid from foto where pid in (%s)" % q, parte):
+                lidas.add(p)
+            for p, larg, emb in db.execute("select pid, larg, emb from rosto where pid in (%s)" % q, parte):
+                v = array.array("f")
+                v.frombytes(emb)
+                out.setdefault(p, []).append((larg, list(v), 0.0, False))
+        db.close()
+        for p in lidas:
+            out.setdefault(p, [])
+    except Exception as ex:
+        print("  sessões: rostos do boot indisponíveis (%s)" % str(ex)[:80])
+    return out
+
+
+def sess_carregar(agora=None):
+    """No boot: lê as sessões gravadas de ontem e hoje; a que não estava fechada fecha com "reinicio" (S8). As fotos que
+    chegaram sem sessão (queda entre a chegada e a gravação) são reagrupadas pela mesma regra, com os rostos do
+    rostos.db quando existem, sem esperar, e também fecham com "reinicio"."""
+    agora = time.time() if agora is None else agora
     dias = [_ff_hoje(agora - 86400), _ff_hoje(agora)]
     n_lidas = 0
     with sess_lock:
@@ -3762,15 +4195,22 @@ def sess_carregar():
             except Exception:
                 continue
             for x in j.get("sessoes") or []:
-                if not isinstance(x, dict) or not x.get("card") or not x.get("k"):
+                if not isinstance(x, dict) or not x.get("card") or not x.get("k") or not x.get("dia"):
                     continue
-                x["fotos"] = [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+                x = _sess_normaliza(x)
                 sess[x["card"]] = x
-                for p in x["fotos"]:
+                for p in x["fotos"] + x["pend"]:
                     sess_pid[p] = x["card"]
-                if x.get("status") == "aberta":
-                    sess_aberta[x["k"]] = x["card"]
                 sess_rev[0] = max(sess_rev[0], int(x.get("rev") or 0))
+                if x.get("status") != "fechada":
+                    for p in x["pend"]:
+                        x["dec"][p] = "t"
+                    x["fotos"] += [p for p in x["pend"] if p not in x["fotos"]]
+                    x["pend"] = []
+                    x.update(status="fechada", fechada_em=agora, fechada_por="reinicio")
+                    _sess_toca(x)
+                if not x.get("removida"):
+                    sess_ultima[x["k"]] = x["card"]
                 n_lidas += 1
     ini = time.mktime(time.strptime(dias[0], "%Y-%m-%d"))
     itens = []
@@ -3781,40 +4221,46 @@ def sess_carregar():
                     itens.append((pid, dict(m)))
             except (TypeError, ValueError):
                 continue
+    with sess_lock:
+        itens = [(p, m) for p, m in itens if p not in sess_pid]
     itens.sort(key=lambda x: float(x[1]["u"]))
+    faces = _sess_faces_db([p for p, _ in itens])
     cad = ff_cadastrados()
     novas = 0
     with sess_lock:
         for pid, m in itens:
-            if pid in sess_pid:
-                continue
             try:
-                _sess_add(pid, m, cad)
+                _sess_add(pid, m, cad, agora=float(m["u"]), faces_boot=faces.get(pid), boot=True)
                 novas += 1
             except Exception as ex:
                 print("  sessões: foto ignorada no boot (%s)" % str(ex)[:60])
-        _sess_fechar(agora)
+        for x in list(sess.values()):
+            if x["status"] != "fechada":
+                _sess_fecha_uma(x, agora, "reinicio")
         hoje = sum(1 for x in sess.values() if x["dia"] == dias[1] and not x.get("removida"))
     sess_gravar()
     return n_lidas, novas, hoje
 
 
-def sess_feed(desde=0):
+def sess_feed(desde=0, ontem=False):
+    """GET /sessoes?desde=<rev>: só as de hoje (revisão 9); ontem só com ?ontem=1. Nada de rosto."""
+    agora = time.time()
+    dias = {_ff_hoje(agora)} | ({_ff_hoje(agora - 86400)} if ontem else set())
     with sess_lock:
-        _sess_fechar(time.time())
-        lista = [{k: (list(v) if k == "fotos" else v) for k, v in x.items() if k != "k"}
-                 for x in sess.values() if x.get("rev", 0) > desde]
+        _sess_tick(agora)
+        lista = [_sess_publico(x) for x in sess.values() if x.get("rev", 0) > desde and x["dia"] in dias]
         rev = sess_rev[0]
     lista.sort(key=lambda x: x.get("rev", 0))
-    return {"ok": True, "gen": BOOT, "rev": rev, "pausa": FF_PAUSA, "completo": not desde, "sessoes": lista}
+    return {"ok": True, "gen": BOOT, "rev": rev, "pausa": SESS_PAUSA, "rostos": bool(sess_rostos_on()),
+            "completo": not desde, "sessoes": lista}
 
 
 def sess_status():
     with sess_lock:
         hoje = _ff_hoje()
-        return {"v": 1, "pausa": FF_PAUSA, "rev": sess_rev[0], "gen": BOOT,
+        return {"v": 2, "pausa": SESS_PAUSA, "rostos": bool(sess_rostos_on()), "rev": sess_rev[0], "gen": BOOT,
                 "hoje": sum(1 for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
-                "abertas": sum(1 for x in sess.values() if x["status"] == "aberta")}
+                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada")}
 
 
 def ff_funcao_validar(body):
@@ -4190,7 +4636,6 @@ class H(BaseHTTPRequestHandler):
         with ff_lock:                    # N2: dois POSTs ao mesmo tempo não disputam o mesmo .tmp (o lock não é pego aqui)
             _grava_privado(FF_FUNCAO, json.dumps({"dia": dia, "map": mp, "em": time.strftime("%Y-%m-%dT%H:%M:%S")}))
             ff_funcao.update(dia=dia, map=mp)
-            ff_rev[0] += 1
         print("  função do dia atualizada por %s" % ("este computador" if self.loopback() else "posto " + self.client_address[0]))
         return self.js({"ok": True, "ignoradas": ignoradas})
 
@@ -4609,7 +5054,7 @@ class H(BaseHTTPRequestHandler):
                 desde = max(0, int(q.get("desde", ["0"])[0]))
             except ValueError:
                 desde = 0
-            return self.js(sess_feed(desde))
+            return self.js(sess_feed(desde, ontem=q.get("ontem", [""])[0] == "1"))
         if u.path == "/events":
             since = int(q.get("since", ["0"])[0])
             with lock:
@@ -4889,7 +5334,7 @@ def main():
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta
     try:
         lidas, novas, hoje = sess_carregar()
-        print(f"  Sessões: {hoje} hoje (montadas aqui, pausa de {FF_PAUSA} s; {novas} fotos agrupadas agora)")
+        print(f"  Sessões: {hoje} hoje (montadas aqui, pausa de {SESS_PAUSA} s e rostos; {novas} fotos agrupadas agora)")
     except Exception as ex:
         print("  sessões: não carreguei (%s)" % str(ex)[:120])
     threading.Thread(target=sess_loop, daemon=True).start()
