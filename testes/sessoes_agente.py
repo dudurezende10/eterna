@@ -245,6 +245,9 @@ sc = sorted({de(p)["card"]: de(p) for p in cc}.values(), key=lambda x: x["cap0"]
 ok(len(sc) == 3 and all(x["atrasada"] and x["fonte_t"] == "cap" for x in sc) and abs(sc[0]["cap0"] - (uc - 3000)) < 1,
    "C1: cartão da câmera adiantada = 3 sessões pela hora corrigida: %r" % [(len(x["fotos"]), x["fonte_t"], round(x["cap0"] - uc)) for x in sc])
 LIG[0] = True
+# desvio da série (revisão, 01/11): um valor fora da curva (EXIF forjado, foto que chegou estranha) não puxa a hora das outras
+ok(abs(m.sess_desvio([3.0, 2.5, 4.0, 3.2, -5000.0]) - 2.5) < 1e-6, "desvio: valor fora da curva descartado: %r" % m.sess_desvio([3.0, 2.5, 4.0, 3.2, -5000.0]))
+ok(abs(m.sess_desvio([3600.5, 3601.0, 3602.0]) - 3600.5) < 1e-6 and m.sess_desvio([7.0]) == 7.0, "desvio: série normal fica com o menor atraso")
 
 # 12: ao vivo e cartão juntos, do mesmo fotógrafo
 reset(); LIG[0] = False

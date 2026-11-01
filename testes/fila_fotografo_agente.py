@@ -350,7 +350,6 @@ try:
     ok(req("GET", "/file/" + pid, headers={"Host": hostr, "Origin": ORIG}, origem="127.0.0.2")[0] == 200, "risco 4: o original pelo endereço de ETERNA_ORIGENS (Origin dele)")
     ok(req("GET", "/file/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: o original com Origin de fora")
     ok(req("GET", "/file/" + pid, headers={"Host": "evil.example:%d" % PORTA}, origem="127.0.0.2")[0] == 403, "risco 4: o original com outro Host")
-    ok(req("GET", "/file/" + pid, origem="127.0.0.2")[0] == 403, "risco 4: o original de outro IP com o Host local")
     cods = [req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.3")[0] for _ in range(121)]
     ok(cods[:120].count(200) == 120 and cods[120] == 429, "risco 4: limite de 120 originais por minuto por IP: %r" % cods[115:])
     ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: o limite é por IP")

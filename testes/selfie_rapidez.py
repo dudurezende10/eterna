@@ -51,13 +51,102 @@ ts = []
 for _ in range(20):
     t = time.perf_counter(); m.buscar_vetor(alvo, 1); ts.append((time.perf_counter() - t) * 1000)
 num["busca_quente_ms"] = sorted(ts)[len(ts) // 2]
-# foto nova lida pelo leitor: acréscimo na matriz (o leitor_loop faz o mesmo sob o _mat_lock)
-M0, ps0 = m._mat[dia]
+# foto nova lida pelo leitor: acréscimo na matriz (mat_acrescenta, a mesma função do leitor)
 t = time.perf_counter()
 for i in range(20):
-    v = rnd.normal(size=(1, 128)).astype("float32")
-    M0 = np.vstack([M0, v]); ps0 = ps0 + ["%012x" % (0xe10000000000 + i)]
+    v = rnd.normal(size=128).astype("float32"); v /= np.linalg.norm(v)
+    m.mat_acrescenta(dia, "%012x" % (0xe10000000000 + i), [(100.0, v)])
 num["acrescimo_por_foto_ms"] = (time.perf_counter() - t) * 1000 / 20
+
+
+def grava(pid, faces):
+    """faces = [(largura, vetor)]: grava no rostos.db e na matriz, como o leitor de rostos."""
+    db_ = m.rostos_db()
+    db_.execute("insert or replace into foto values (?,?,?,?)", (pid, dia, len(faces), time.time()))
+    db_.execute("delete from rosto where pid=?", (pid,))
+    db_.executemany("insert into rosto values (?,?,?,?)", [(pid, dia, float(l), v.astype("float32").tobytes()) for l, v in faces])
+    db_.commit(); db_.close()
+    m.mat_acrescenta(dia, pid, faces)
+
+
+def perto(k=0.3):
+    v = rnd.normal(size=128).astype("float32"); v = alvo + k * v / np.linalg.norm(v); return v / np.linalg.norm(v)
+
+
+def longe():
+    v = rnd.normal(size=128).astype("float32"); return v / np.linalg.norm(v)
+
+
+# B5 (segurança): a pessoa a 70 px numa foto cujo principal tem 200 px não é "principal" (não abre a sessão inteira no app);
+# a 200 px numa foto com outro rosto de 150 px é
+grava("b5fundo00001", [(200.0, longe()), (70.0, perto())])
+grava("b5frente0001", [(200.0, perto()), (150.0, longe())])
+r = m.buscar_vetor(alvo, 1)
+por = {f["id"]: f for f in r["fotos"]}
+if not (por.get("b5fundo00001") and por["b5fundo00001"]["sim"] >= m.LIMITE and por["b5fundo00001"]["principal"] is False):
+    falhas.append("B5: rosto de 70 px ao lado de um de 200 px veio como principal: %r" % por.get("b5fundo00001"))
+if not (por.get("b5frente0001") and por["b5frente0001"]["principal"] is True):
+    falhas.append("B5: rosto de 200 px (outro de 150 px) não veio como principal: %r" % por.get("b5frente0001"))
+# o fundo deixa de ser fundo quando a foto é relida sem o rosto grande (mat_acrescenta troca as linhas da foto)
+grava("b5fundo00001", [(70.0, perto())])
+r = m.buscar_vetor(alvo, 1)
+if not any(f["id"] == "b5fundo00001" and f["principal"] for f in r["fotos"]):
+    falhas.append("B5: foto relida não trocou as linhas da matriz")
+# corrida (revisão): leitura gravada enquanto a matriz do dia é relida do banco. A releitura velha não pode ficar.
+with m._mat_lock:
+    m._mat.pop(dia, None)
+le0 = m._mat_le
+chamadas = [0]
+
+
+def le_com_corrida(db_, d):
+    out = le0(db_, d)
+    chamadas[0] += 1
+    if chamadas[0] == 1:
+        grava("corrida00001", [(180.0, perto())])     # o leitor grava no meio da releitura
+    return out
+
+
+m._mat_le = le_com_corrida
+r = m.buscar_vetor(alvo, 1)
+m._mat_le = le0
+if chamadas[0] < 2 or "corrida00001" not in m._mat[dia][1]:
+    falhas.append("corrida da matriz: a foto lida durante a releitura sumiu (%d leituras)" % chamadas[0])
+if not any(f["id"] == "corrida00001" for f in m.buscar_vetor(alvo, 1)["fotos"]):
+    falhas.append("corrida da matriz: a busca não acha a foto lida durante a releitura")
+# janela da selfie (Eduardo, 01/11 16:46): sessão de 2 h atrás não aparece; de 80 min aparece; 0 = dia todo
+agora = time.time()
+ids = ["%012x" % (0xf00000000000 + i) for i in range(12)]
+m.sess["LPVELHA01"] = {"card": "LPVELHA01", "dia": dia, "cap1": agora - 7200, "ultima_chegada": agora - 7100, "fotos": ids[:6], "pend": [], "status": "fechada"}
+m.sess["LPNOVA001"] = {"card": "LPNOVA001", "dia": dia, "cap1": agora - 80 * 60, "ultima_chegada": agora - 79 * 60, "fotos": ids[6:], "pend": [], "status": "fechada"}
+achou = lambda r_: {f["id"] for f in r_["fotos"] if f["sim"] >= m.LIMITE}
+r = m.buscar_vetor(alvo, 1, 90)
+if achou(r) != set(ids[6:]) or r["janela_min"] != 90:
+    falhas.append("janela 90 min: esperava só as 6 fotos de 80 min atrás: %d %r" % (len(achou(r)), r.get("janela_min")))
+if not set(ids) <= achou(m.buscar_vetor(alvo, 1, 0)):
+    falhas.append("janela 0 (dia todo): esperava as 12 fotos")
+ts = []
+for _ in range(20):
+    t = time.perf_counter(); m.buscar_vetor(alvo, 1, 90); ts.append((time.perf_counter() - t) * 1000)
+num["busca_quente_janela_ms"] = sorted(ts)[len(ts) // 2]
+# Painel de controle: config/busca no estado.db manda na busca (outro navegador grava, o agente lê); a variável é o padrão
+if m.busca_janela_efetiva() != m.BUSCA_JANELA_MIN or m.BUSCA_JANELA_MIN != 90:
+    falhas.append("janela padrão sem o Painel: %r" % m.busca_janela_efetiva())
+m.estado_gravar({"docs": [{"col": "config", "id": "busca", "valor": {"janela_min": 150, "por": "teste"}}]})
+if m.busca_janela_efetiva() != 150 or set(ids) - achou(m.buscar_vetor(alvo, 1)):
+    falhas.append("Painel 150 min: a busca não usou o valor gravado (%r)" % m.busca_janela_efetiva())
+m.estado_gravar({"docs": [{"col": "config", "id": "busca", "valor": {"janela_min": 0}}]})
+if m.busca_janela_efetiva() != 0:
+    falhas.append("Painel dia todo: %r" % m.busca_janela_efetiva())
+m.estado_gravar({"docs": [{"col": "config", "id": "busca", "valor": {"janela_min": 5}}]})
+if m.busca_janela_efetiva() != 15:
+    falhas.append("Painel 5 min devia virar 15: %r" % m.busca_janela_efetiva())
+if achou(m.buscar_vetor(alvo, 1)):
+    falhas.append("Painel 15 min: sessão de 80 min atrás apareceu")
+m.estado_gravar({"docs": [{"col": "config", "id": "busca", "valor": None}]})
+if m.busca_janela_efetiva() != 90 or m._busca_janela("abc") != 90 or m._busca_janela("1000") != 480:
+    falhas.append("janela: valores inválidos")
+m.sess.clear()
 num["fotos"], num["rostos"] = N, rostos
 # detecção e reconhecimento nos 3 quadros da câmera (se os modelos estiverem no repositório)
 mods = os.path.join(os.path.dirname(os.path.abspath(AG)), "..", "vendor", "rostos")

@@ -356,20 +356,26 @@ BUSCA_DIAS = max(1, int(os.environ.get("ETERNA_BUSCA_DIAS") or 1))
 BUSCA_DIAS_EXPLICITA = bool((os.environ.get("ETERNA_BUSCA_DIAS") or "").strip())
 
 
-def _busca_janela(v=None):
-    """Minutos da janela da selfie (0 = dia todo), de 0 a 1440; inválido = padrão 90."""
+BUSCA_JANELA_PADRAO, BUSCA_JANELA_MIN_OK, BUSCA_JANELA_MAX_OK = 90, 15, 480
+
+
+def _busca_janela(v=None, padrao=BUSCA_JANELA_PADRAO):
+    """Minutos da janela da selfie: 0 (dia todo) ou de 15 a 480 (fora disso, o mais perto); inválido = padrao."""
     if v is None:
-        v = os.environ.get("ETERNA_BUSCA_JANELA_MIN", "90")
+        v = os.environ.get("ETERNA_BUSCA_JANELA_MIN", str(padrao))
     try:
-        v = int(str(v).strip() or "90")
+        v = int(float(str(v).strip() or padrao))
     except (TypeError, ValueError):
-        v = 90
-    return max(0, min(v, 1440))
+        return padrao
+    if v <= 0:
+        return 0
+    return max(BUSCA_JANELA_MIN_OK, min(v, BUSCA_JANELA_MAX_OK))
 
 
 # v91 (Eduardo, 01/11 16:46): a selfie do Checkout procura só nas sessões cuja ÚLTIMA foto (hora do clique corrigida, cap1;
 # sem clique, a chegada) foi nos últimos ETERNA_BUSCA_JANELA_MIN minutos (padrão 90; 0 = dia todo): depois disso a família já
-# foi embora. O Painel de controle pode mandar outro valor na busca (janela_min). Com ETERNA_BUSCA_DIAS definida (teste do
+# foi embora. O valor de verdade é o do Painel de controle (Eduardo, 16:51), gravado no estado.db (col "config", id "busca",
+# {"janela_min": N}) e lido aqui na busca; a variável é só o padrão inicial. Com ETERNA_BUSCA_DIAS definida (teste do
 # Ronaldo com fotos de ontem) a janela não vale: procura o dia todo dos dias da busca. Código do recibo e da galeria não passam
 # por aqui (abrem qualquer sessão do dia).
 BUSCA_JANELA_MIN = _busca_janela()
@@ -666,12 +672,42 @@ def _buscar(imagens, dias, det, rec, janela=None):
     return buscar_vetor(me, dias, janela)
 
 
+_busca_cfg = {"t": 0.0, "v": None}
+
+
+def busca_janela_cfg():
+    """Janela gravada pelo Painel de controle no estado.db (config/busca), relida a cada 3 s; None sem valor gravado."""
+    agora = time.time()
+    if agora - _busca_cfg["t"] < 3:
+        return _busca_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'busca' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                j = json.loads(r[0])
+                if isinstance(j, dict) and j.get("janela_min") is not None:
+                    v = _busca_janela(j.get("janela_min"), BUSCA_JANELA_MIN)
+    except Exception:
+        v = None
+    _busca_cfg.update(t=agora, v=v)
+    return v
+
+
 def busca_janela_efetiva(janela=None):
-    """Minutos da janela desta busca: o valor mandado pelo app (Painel de controle) ou ETERNA_BUSCA_JANELA_MIN; 0 com
-    ETERNA_BUSCA_DIAS definida (dia todo dos dias da busca)."""
+    """Minutos da janela desta busca: o parâmetro (testes), o Painel de controle (estado.db) ou ETERNA_BUSCA_JANELA_MIN;
+    0 com ETERNA_BUSCA_DIAS definida (dia todo dos dias da busca)."""
     if BUSCA_DIAS_EXPLICITA:
         return 0
-    return BUSCA_JANELA_MIN if janela is None else _busca_janela(janela)
+    if janela is not None:
+        return _busca_janela(janela)
+    v = busca_janela_cfg()
+    return BUSCA_JANELA_MIN if v is None else v
 
 
 def buscar_vetor(me, dias=1, janela=None, agora=None):
@@ -3849,13 +3885,27 @@ def sess_clique(m, dk):
         if (m.get("s") or "") != "cartao":   # a foto do cartão chega atrasada de propósito: não entra no desvio
             ff_desvio.setdefault(dk, collections.deque(maxlen=50)).append(u - cap)
         d = ff_desvio.get(dk)
-        t = cap + (min(d) if d else 0.0)
+        t = cap + (sess_desvio(d) if d else 0.0)
         if u - SESS_CLIQUE_ANTES <= t <= u + SESS_CLIQUE_DEPOIS:
             return t, "cap"
     mt = _num(m.get("mt"))
     if mt and u - SESS_CLIQUE_ANTES <= mt <= u + SESS_CLIQUE_DEPOIS:
         return mt, "mt"
     return u, "u"
+
+
+def sess_desvio(d):
+    """Desvio chegada − clique da série (revisão, 01/11): o menor valor depois de descartar os fora da curva (mais de
+    max(3 x desvio absoluto mediano, 30 s) longe da mediana). Um EXIF forjado ou uma foto que chegou estranha não puxa a hora de
+    todas as outras; o menor dos que sobram é o atraso de rede mais curto (o relógio da câmera)."""
+    v = sorted(d)
+    if len(v) < 3:
+        return v[0]
+    med = v[len(v) // 2]
+    mad = sorted(abs(x - med) for x in v)[len(v) // 2]
+    lim = max(3 * mad, 30.0)
+    ok = [x for x in v if abs(x - med) <= lim]
+    return ok[0] if ok else med
 
 
 def sess_trilha(m, t, base=None):
@@ -4499,9 +4549,11 @@ def sess_feed(desde=0, ontem=False):
 
 
 def sess_status():
+    jan = busca_janela_efetiva()         # fora do sess_lock (lê o estado.db com o estado_lock)
     with sess_lock:
         hoje = _ff_hoje()
         return {"v": 2, "pausa": SESS_PAUSA, "rostos": bool(sess_rostos_on()), "rev": sess_rev[0], "gen": BOOT, "dias": BUSCA_DIAS,
+                "janela_min": jan, "janela_padrao": BUSCA_JANELA_MIN, "janela_fixa": BUSCA_DIAS_EXPLICITA,
                 "hoje": sum(1 for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
                 "abertas": sum(1 for x in sess.values() if x["status"] != "fechada")}
 
@@ -4983,6 +5035,8 @@ def estado_gravar(body):
             db.commit()
         finally:
             db.close()
+    if any(isinstance(d, dict) and d.get("col") == "config" for d in docs[:500]):
+        _busca_cfg["t"] = 0.0            # janela da selfie mudada no Painel vale na próxima busca
     return {"ok": True, "gravados": n, "rev": rev}
 
 
@@ -6066,7 +6120,8 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, 400)
             try:
                 if u.path == "/rostos/buscar":
-                    return self.js(buscar(body.get("imagens") or [], body.get("dias") or 1, body.get("janela_min")))
+                    # janela: a do Painel (estado.db); a galeria por QR manda todo:true (dia todo)
+                    return self.js(buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if body.get("todo") is True else None))
                 return self.js(medir(body.get("sessoes") or {}))
             except Exception as ex:
                 return self.js({"error": str(ex)}, 500)

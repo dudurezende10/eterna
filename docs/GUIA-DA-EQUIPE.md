@@ -169,9 +169,17 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 Quando o cliente olha para a câmera, o Checkout junta todas as sessões do dia em que ele aparece: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. Cada sessão em que ele aparece entra inteira, inclusive as fotos da família em que ele não está, porque a família costuma vir junta ao balcão. A tela abre direto na primeira foto ampliada; ele passa as fotos com as setas ou arrastando, marca com ✓ e pode tocar em **Ver todas** para ver a grade. O ponto e a hora aparecem no canto da foto.
 
-Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta a sessão; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+Se o cliente aparece só no fundo das fotos de outra família (o rosto dele bem menor que o das pessoas da frente), aquela sessão não entra inteira: entram só as fotos em que ele aparece.
 
-A compra é uma venda só, mesmo com fotos de várias sessões. Foto que já foi comprada não aparece de novo. Pelo código do recibo (o código da sessão) abre a sessão inteira; pelo código da galeria, a compra daquela venda. Depois de 5 códigos errados seguidos, o campo trava por 1 minuto.
+Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer, nunca a sessão inteira; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+
+A compra é uma venda só, mesmo com fotos de várias sessões. Foto que já foi comprada não aparece de novo. Pelo código do recibo (o código da sessão) abre a sessão inteira; pelo código da galeria, a compra daquela venda. Depois de 5 códigos errados seguidos, o campo trava por 1 minuto (recarregar a página não destrava).
+
+### Cliente que volta horas depois: use o código do recibo
+
+A câmera procura só as fotos dos **últimos 90 minutos** (a família que fotografou antes disso já foi embora, e a busca fica mais rápida e mais segura). Se o cliente voltar depois, a câmera não acha: peça o **código do recibo** (começa com LP) ou o **código da galeria** (exemplo: `K7QM-4WXR`). O código abre a sessão de qualquer hora do dia.
+
+O tempo muda no **Painel de controle** › **Checkout** › **Procurar fotos dos últimos __ minutos** (de 15 a 480 minutos, ou **Dia todo**). Só Admin e Supervisor mudam. Vale na hora para todos os caixas do ponto. Em dia cheio, diminua; em dia calmo, pode aumentar.
 
 ### Computador do cliente: Chrome em modo quiosque
 
@@ -192,7 +200,7 @@ Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eter
 ### Atender um cliente
 
 1. O cliente olha para a câmera. O Checkout encontra as fotos dele.
-2. Se a câmera não encontrar, ele digita o código da sessão (começa com LP).
+2. Se a câmera não encontrar (ou se as fotos são de mais de 90 minutos atrás), ele digita o código da sessão (começa com LP).
 3. O cliente passa as fotos e toca em ✓ nas que quer levar e em ✗ nas que não quer.
 4. Na tela seguinte ele escolhe o pacote e a forma de pagamento. O Checkout já marca o pacote **Ideal**, o mais barato para o número de fotos que ele escolheu.
 5. **Cartão, PIX e Dinheiro ficam aguardando você.** O Checkout pede para o cliente pagar na sua maquininha (ou no dinheiro) e espera. A venda só vale depois que você confirma no **Posto de venda** (veja "Novidades da v83").
