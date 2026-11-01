@@ -374,6 +374,8 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-foot{display:flex;align-items:center;gap:14px;padding-top:6px}
 .lj-strip{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;padding:6px 2px}
 .lj-grade{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.lj-tvmini{display:flex;gap:12px;justify-content:center;margin:18px 0 22px}.lj-tvph{width:150px;aspect-ratio:3/2;border-radius:8px;background-image:var(--img);background-size:var(--bs);background-position:var(--bp);background-color:#141311;filter:var(--flt,none)}
+.lj-lbmid{position:relative}.lj-lbsrc{position:absolute;left:12px;bottom:12px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;background:rgba(12,35,64,.55);color:#fff;padding:4px 10px;border-radius:999px;pointer-events:none}
 .lj-blk{grid-column:1/-1;font-size:13px;letter-spacing:.06em;text-transform:uppercase;opacity:.7;padding:6px 2px 0;border-top:1px solid rgba(255,255,255,.14)}.lj-blk:first-child{border-top:0;padding-top:0}
 .lj-grid{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:clamp(10px,1.4vw,18px);padding:6px 4px 14px;align-content:start}
 .lj-gcard{position:relative;background:#fff;border:0;border-radius:10px;padding:6px;cursor:pointer;outline:4px solid transparent;outline-offset:-2px;transition:outline-color .15s,transform .15s}
@@ -1862,8 +1864,8 @@ function lojaAI(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];co
     bgOn().map(o=>bgFor(o,card)).filter(b=>b&&b.fit.includes(f)).map(b=>({b,m:bgMatch(a,b)||0})).sort((x,y)=>y.m-x.m).slice(0,3).forEach(x=>{if(!FIA_RUIM.has(p.id)&&!FIA_RUIM.has(p.id+'|'+x.b.id)&&(!loc||/^ag_/.test(p.id)))out.push({t:'ai',id:p.id,bg:x.b.id,k:'ai:'+p.id+'|'+x.b.id});});});
   return out;}
 function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=soCards(card).length>1;let ant=null;
-  const ph=lojaFotos(card).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi&&p.ses!==ant){o.blk=lojaBloco(p.ses);ant=p.ses;}return o;});
-  const ai=lojaAI(card);if(!ai.length)return ph;const at=Math.min(ph.length,Math.max(2,Math.floor(ph.length/2)));return [...ph.slice(0,at),...ai,...ph.slice(at)];}
+  const ph=lojaFotos(card).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi){o.lb=lojaBloco(p.ses);if(p.ses!==ant){o.blk=o.lb;ant=p.ses;}}return o;});
+  const ai=lojaAI(card).map(x=>{const p=x.lb?null:ph.find(q=>q.id===x.id);return p&&p.lb?{...x,lb:p.lb}:x;});if(!ai.length)return ph;const at=Math.min(ph.length,Math.max(2,Math.floor(ph.length/2)));return [...ph.slice(0,at),...ai,...ph.slice(at)];}
 function lojaPick(card){const s=simOf(card);s.pick=s.pick||{};return s.pick;}
 function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const ks=Object.keys(pk).filter(k=>pk[k]==='ok'||pk[k]==='fav');s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();}
 // v79: as fotos com fundo de IA contam dentro do pacote (decisão do Eduardo, 28/10): n = fotos do campo + fotos com fundo de IA.
@@ -2325,8 +2327,13 @@ const I18N={
  scanQR:['Aponte a câmera do celular para baixar as digitais.','Scan with your phone camera to download your digital photos.','Escanea con la cámara del móvil para descargar tus fotos digitales.','Scannez avec votre téléphone pour télécharger vos photos.','Mit der Handykamera scannen und deine Fotos herunterladen.'],
  download:['Baixe suas fotos','Download your photos','Descarga tus fotos','Téléchargez vos photos','Fotos herunterladen'],
  nextGuest:['Próximo cliente','Next guest','Siguiente cliente','Client suivant','Nächster Gast'],
- tvH:['Estas também são suas?','Are these yours too?','¿Estas también son tuyas?','Celles-ci sont aussi à vous ?','Sind diese auch von Ihnen?'],
- tvSub:['Toque nas fotos em que você aparece','Tap the photos you appear in','Toca las fotos en las que apareces','Touchez les photos où vous apparaissez','Tippen Sie auf die Fotos, auf denen Sie zu sehen sind'],
+ tvSesH:['Esta sessão também é sua?','Is this session yours too?','¿Esta sesión también es tuya?','Cette séance est aussi à vous ?','Ist diese Session auch Ihre?'],
+ tvSesSub:['Achamos você parecido nestas fotos de outro momento do passeio','You look similar in these photos from another moment of your tour','Te pareces en estas fotos de otro momento del recorrido','Vous semblez être sur ces photos d’un autre moment de la visite','Sie sehen auf diesen Fotos von einem anderen Moment der Tour ähnlich aus'],
+ tvSim:['Sim, sou eu','Yes, it’s me','Sí, soy yo','Oui, c’est moi','Ja, das bin ich'],
+ tvNao:['Não sou eu','Not me','No soy yo','Ce n’est pas moi','Das bin ich nicht'],
+ foundYou:['Achamos você','We found you','Te encontramos','Nous vous avons trouvé','Wir haben Sie gefunden'],
+ codeBad:['Código não encontrado. Confira o código do recibo.','Code not found. Check the code on your receipt.','Código no encontrado. Revisa el código del recibo.','Code introuvable. Vérifiez le code du reçu.','Code nicht gefunden. Prüfen Sie den Code auf dem Beleg.'],
+ codeWait:['Muitas tentativas. Peça ajuda à equipe ou tente de novo em 1 minuto.','Too many tries. Ask the team for help or try again in 1 minute.','Demasiados intentos. Pide ayuda al equipo o inténtalo en 1 minuto.','Trop d’essais. Demandez de l’aide à l’équipe ou réessayez dans 1 minute.','Zu viele Versuche. Bitten Sie das Team um Hilfe oder versuchen Sie es in 1 Minute erneut.'],
  isOne:['É uma destas?','Is it one of these?','¿Es una de estas?','Est-ce l’une de celles-ci ?','Ist es eines davon?'],
  none:['Nenhuma','None','Ninguna','Aucune','Keine'],
  cam_off:['Ligando a câmera...','Starting the camera...','Encendiendo la cámara...','Démarrage de la caméra...','Kamera startet...'],
@@ -2447,12 +2454,11 @@ function vQuiosque(){
           <div class="lj-cam">${camBox()}</div>
           <button class="lj-ghost" data-act="kiosk-emerg">${ICO.keys} ${T('receiptCode')}</button>`}
       </div></div>`;}
-  if(k.step==='talvez'&&k.tv){const tv=k.tv;const sel=new Set(tv.sel);const n=sel.size+tv.ids.length; // v91: fotos "talvez" (entre FACE_DUV e FACE_SIM): a pessoa marca as que são dela
-    return `<div class="lj lj-full lj-review lj-grade lj-tv">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div><div class="lj-topr">${langPick(true)}${ljVoltar()}</div></div>
-      <div class="lj-title"><h2 class="lj-h2">${T('tvH')}</h2><span class="lj-count">${T('tvSub')}</span></div>
-      <div class="lj-grid">${tv.maybe.map((id,i)=>{const on=sel.has(id);return `<div class="lj-gcard ${on?'ok':''}"><button class="lj-gview" data-act="kiosk-tv-tog" data-id="${esc(id)}" aria-pressed="${on}" aria-label="Foto ${i+1}"><div class="lj-gimg" style="${String(bigStyle(id)||'').replace('--bs:cover','--bs:contain')}"><span class="wm">VIVA MARACANÃ</span></div></button>
-        <button class="lj-gok" data-act="kiosk-tv-tog" data-id="${esc(id)}" aria-pressed="${on}" aria-label="Marcar foto ${i+1}">${ICO.ok}</button></div>`;}).join('')}</div>
-      <div class="lj-foot"><span class="lj-hint"></span><button class="lj-cta lj-next" data-act="kiosk-tv-ok" ${n?'':'disabled'}>${n?`${T('cont')} <small>${T('nPhotos',n)}</small> ${ICO.arrow}`:T('tapCheck')}</button></div></div>`;}
+  if(k.step==='talvez'&&k.tv&&k.tv.ask[k.tv.i]){const q=k.tv.ask[k.tv.i]; // v91 (B3): confirmação de SESSÃO inteira, com até 3 miniaturas pequenas
+    return `<div class="lj lj-full lj-hero lj-tv">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div><div class="lj-topr">${langPick(true)}${ljVoltar()}</div></div>
+      <div class="lj-heroin"><h1 class="lj-h2">${T('tvSesH')}</h1><p class="lj-sub">${T('tvSesSub')}</p>
+        <div class="lj-tvmini">${q.fotos.map(id=>`<div class="lj-tvph" style="${phStyle(id)}"></div>`).join('')}</div>
+        <div class="lj-row"><button class="lj-cta" data-act="kiosk-tv-sim">${ICO.ok} ${T('tvSim')}</button><button class="lj-ghost" data-act="kiosk-tv-nao">${ICO.no} ${T('tvNao')}</button></div></div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${langPick(true)}<span></span></div><div class="lj-heroin"><h1 class="lj-h1">${T('notFound')}<br>${esc(k.code)}</h1><button class="lj-cta" data-act="kiosk-back">${ICO.back} ${T('back')}</button></div></div>`;
   const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);const nSel=c.ch.length;
   const cartPill=`<button class="lj-cartpill ${nSel?'on':''}" data-act="loja-cart" aria-label="Carrinho">${ICO.cart}<b>${nSel}</b>${nSel?`<span>${fmtR(c.total)}</span>`:''}</button>`;
@@ -2467,10 +2473,10 @@ function vQuiosque(){
     const img=(q,s2,cls)=>{if(q.t==='ai')return `<div class="${cls} ai">${lojaThumb(q)}</div>`;const st0=bigStyle(q.id);return `<div class="${cls}${spr(st0)?' spr':''}" style="${full(st0)}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}</div>`;};
     const card=(q,i)=>{const s2=pk[q.k]||'';return `<div class="lj-gcard ${s2==='ok'?'ok':''}"><button class="lj-gview" data-act="kiosk-ver" data-i="${i}" aria-label="Ampliar foto ${i+1}">${img(q,s2,'lj-gimg')}${q.t==='ai'?`<span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>`:''}</button>
         <button class="lj-gok" data-act="kiosk-tog" data-i="${i}" aria-pressed="${s2==='ok'}" aria-label="Marcar foto ${i+1}">${ICO.ok}</button></div>`;};
-    const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;const vs=vq?pk[vq.k]||'':'';
+    const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;if(v!=null)setTimeout(()=>{const ids=items.slice(v+1,v+3).filter(x=>x.t==='ph').map(x=>x.id);ids.forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();LJ_PRE[u]=im;im.src=u;}});},0); // a próxima já baixaconst vs=vq?pk[vq.k]||'':'';
     const caixa=vq?`<div class="lj-lb" id="lj-lb" role="region" aria-label="Foto ${v+1} de ${n}"><button class="lj-lbx" data-act="kiosk-fechar">${ICO.grid}<span>Ver todas</span></button>
         <button class="lj-lbnav prev" data-act="kiosk-ver" data-i="${v-1}" ${v===0?'disabled':''} aria-label="Anterior">‹</button>
-        <div class="lj-lbmid">${img(vq,vs,'lj-lbimg')}</div>
+        <div class="lj-lbmid">${img(vq,vs,'lj-lbimg')}${vq.lb?`<span class="lj-lbsrc">${esc(vq.lb)}</span>`:''}</div>
         <button class="lj-lbnav next" data-act="kiosk-ver" data-i="${v+1}" ${v>=n-1?'disabled':''} aria-label="Próxima">›</button>
         <div class="lj-lbbar"><span class="lj-lbcnt">${v+1} / ${n}</span><div class="lj-actions"><button class="lj-no ${vs==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${vs==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div><button class="lj-cta lj-next lj-lbnext" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small> ${ICO.arrow}`:T('tapCheck')}</button></div></div>`:'';
     return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljVoltar()}${cartPill}`)}</div>
@@ -4304,33 +4310,48 @@ function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;
 function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Date.now();c.status='searching';camStatus();
   const ok=x=>state.view==='quiosque'||x.status!=='paga'; // checkout: toda sessão ainda não paga (como a lista ao lado); quiosque: todas
   const open=(card,fotos)=>{c.busy=false;c.status='found';camStatus();
-    if(state.view==='quiosque'){lojaCliente();state.kiosk.code=card;state.kiosk.so={card,ids:fotos||[]};state.kiosk.step='gallery';toast('Achamos você: '+card);render();}
+    if(state.view==='quiosque'){lojaCliente();state.kiosk.code=card;state.kiosk.so={card,ids:fotos||[]};state.kiosk.step='gallery';toast(T('foundYou'));render();}
     else if(state.view==='checkout'){toast('Encontramos: '+card);checkoutPick(card);}
     else{c.status='idle';}};
   const v=$('#cam-video');
   if(c.stream&&v&&v.videoWidth){(async()=>{const fr=[];for(let k=0;k<3;k++){const cv=mkc(v.videoWidth,v.videoHeight);cv.getContext('2d').drawImage(v,0,0);fr.push(cv);if(k<2)await new Promise(r=>setTimeout(r,250));}return faceFind(fr,ok);})()
     .then(r=>{if(!camWanted()){c.busy=false;return;}
-      if(state.view==='quiosque'&&!r.varias&&r.res&&(r.res.length||r.talvez.length)){c.busy=false;c.status='found';camStatus();lojaJuntar(r.res,r.talvez);return;} // v91: todas as sessões dela
+      if(state.view==='quiosque'&&!r.varias&&r.res&&r.res.length&&lojaJuntar(r.res,r.talvez,r.sims)){c.busy=false;c.status='found';camStatus();return;} // v91: todas as sessões dela (só com foto clara; sem nenhuma, o "É uma destas?" de antes)
       if(r.list.length&&r.clara){open(r.list[0].card,r.list[0].fotos);return;}
       if(r.list.length){c.busy=false;c.status='pick';c.cands=r.list.slice(0,4);render();return;}
       c.busy=false;c.status=r.varias?'varias':r.semRosto?'noface':'nomatch';camStatus();setTimeout(()=>{if(c.status==='noface'||c.status==='nomatch'||c.status==='varias'){c.status='idle';camStatus();}},6000);})
     .catch(()=>{c.busy=false;c.status='idle';camStatus();toast('Reconhecimento indisponível. Use o código.');});return;}
   setTimeout(()=>{if(!camWanted()){c.busy=false;return;} // o cliente já seguiu (digitou o código, pagou): a simulação não pode trocar a sessão
     const cands=demoSessions().filter(ok);const pick=cands[Math.floor(Math.random()*cands.length)];if(!pick){c.busy=false;c.status='idle';camStatus();return;}open(pick.card);},900);}
-// v91 parte B: a selfie achou fotos em uma ou mais sessões. As claras (>= FACE_SIM) entram direto; as "talvez" (entre FACE_DUV e
-// FACE_SIM) a pessoa confirma foto por foto ("Estas também são suas?"). A venda fica na primeira sessão ainda não paga.
-function lojaJuntar(res,tv){const k=state.kiosk;lojaCliente();const cardOf={};const ids=[];const maybe=[];
-  (res||[]).forEach(r=>r.fotos.forEach(id=>{if(!cardOf[id]){cardOf[id]=r.card;ids.push(id);}}));
-  (tv||[]).forEach(r=>r.fotos.forEach(id=>{if(!cardOf[id]){cardOf[id]=r.card;maybe.push(id);}}));
-  if(maybe.length){Object.assign(k,{tv:{ids,maybe,cardOf,sel:[]},step:'talvez',code:'',so:null});render();return;}
-  lojaAbrirSo(ids,cardOf);}
-function lojaAbrirSo(ids,cardOf){const k=state.kiosk;const cards=[...new Set(ids.map(id=>cardOf[id]).filter(Boolean))].sort((a,b)=>sesHora(a)-sesHora(b));
+// v91 parte B (Eduardo, 01/11; revisão de segurança B1 e B3): a selfie achou fotos claras (>= FACE_SIM) em uma ou mais
+// sessões. Cada sessão com foto clara entra INTEIRA (a família está junta no Checkout; seguro porque a v91 separa as sessões
+// por rosto), menos sessão de menor ou de grupo de escola, em que só entram as fotos claras dela. Sessão só com "talvez"
+// (entre FACE_DUV e FACE_SIM) pergunta "Esta sessão também é sua?" com até 3 miniaturas pequenas das fotos dela mais
+// parecidas, no máximo 3 sessões, nunca de menor ou de escola. A venda fica na sessão com mais fotos claras dela (âncora).
+// Devolve false sem foto clara (o chamador segue o fluxo antigo "É uma destas?").
+const lojaSesProtegida=c=>!!((SIM.sessions[c]||{}).menor)||Object.values(SIM.galerias||{}).some(m=>m.tipo==='evento'&&(m.sessoes||[]).includes(c));
+function lojaJuntar(res,tv,sims){const k=state.kiosk;sims=sims||{};const claras=(res||[]).filter(r=>r.fotos&&r.fotos.length&&sessionObj(r.card));if(!claras.length)return false;lojaCliente();
+  const ord=claras.slice().sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);const anc=(ord.find(r=>!lojaJaPaga(r.card))||ord[0]).card;
+  const minhas={};claras.forEach(r=>minhas[r.card]=r.fotos.slice());const ja=new Set(Object.keys(minhas));
+  const ask=(tv||[]).filter(r=>!ja.has(r.card)&&r.fotos&&r.fotos.length&&sessionObj(r.card)&&!lojaSesProtegida(r.card)).sort((a,b)=>b.sc-a.sc).slice(0,3)
+    .map(r=>({card:r.card,fotos:r.fotos.slice().sort((x,y)=>(sims[y]||0)-(sims[x]||0)).slice(0,3)}));
+  if(ask.length){Object.assign(k,{tv:{anc,minhas,ask,i:0,sim:[]},step:'talvez',code:'',so:null});lojaPreload(anc,minhas);render();return true;}
+  lojaAbrirSo(minhas,anc);return true;}
+// minhas: sessão -> fotos claras dela; sessão confirmada no "talvez" vem com null (entra inteira)
+function lojaAbrirSo(minhas,anc){const k=state.kiosk;const cards=Object.keys(minhas).filter(c=>sessionObj(c)).sort((a,b)=>sesHora(a)-sesHora(b));
   if(!cards.length){lojaReset();const c=state.cam;c.status='nomatch';render();setTimeout(()=>{if(c.status==='nomatch'){c.status='idle';camStatus();}},6000);return;}
-  const card=cards.find(c=>!lojaJaPaga(c))||cards[0];
-  Object.assign(k,{code:card,so:{card,cards,ids:ids.slice()},tv:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
-  toast('Achamos você: '+cards.join(' + '));render();}
+  if(!cards.includes(anc))anc=cards[0];
+  const ids=cards.flatMap(c=>lojaSesProtegida(c)?(minhas[c]||[]):sessionObj(c).photos.map(p=>p.id)); // família inteira
+  Object.assign(k,{code:anc,so:{card:anc,cards,ids},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
+  toast(T('foundYou'));render();lojaPreload(anc);}
+// rapidez (pedido 3): a primeira foto grande e as duas seguintes começam a baixar assim que a busca volta
+const LJ_PRE={};
+function lojaPreUrl(id){const u=(UP[id]||{}).src;return u&&/^ag_/.test(id)?u.replace('/thumb/','/file/'):null;}
+function lojaPreload(card,minhas,de){let ids;if(minhas){ids=Object.keys(minhas).sort((a,b)=>sesHora(a)-sesHora(b)).flatMap(c=>{const s=sessionObj(c);return s?s.photos.map(p=>p.id):[];});}
+  else ids=lojaItems(card).filter(x=>x.t==='ph').map(x=>x.id);
+  ids.slice(de||0,(de||0)+3).forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();im.decoding='async';LJ_PRE[u]=im;im.onload=()=>{LJ_PRE[u].ok=Date.now();};im.src=u;}});}
 function camBox(){const c=state.cam;const noCam=!!c.err;return `<div class="face live" id="cam-face" data-st="${c.status}" aria-label="Câmera do checkout">${noCam?'<div class="ring"></div><div class="scan"></div>':'<video id="cam-video" autoplay muted playsinline></video><div class="ring"></div>'}</div><div class="camst" id="cam-st" data-st="${c.status}"></div>${c.status==='pick'&&c.cands?faceCands(c.cands,'cam-pick'):''}`;}
-function faceCands(list,act){const gl=state.view==='quiosque';return `<div class="facepick"><div class="eyebrow">${gl?T('isOne'):'É uma destas?'}</div><div class="row" style="gap:10px;flex-wrap:wrap;justify-content:center">${list.map(r=>`<button class="facecand" data-act="${act}" data-card="${r.card}"><div class="ph" style="${phStyle(r.fotos[0])}"></div><span>${esc(r.card)} · ${r.fotos.length} ${r.fotos.length>1?'fotos':'foto'}</span></button>`).join('')}<button class="chip" data-act="${act}" data-card="">${gl?T('none'):'Nenhuma'}</button></div></div>`;}
+function faceCands(list,act){const gl=state.view==='quiosque';return `<div class="facepick"><div class="eyebrow">${gl?T('isOne'):'É uma destas?'}</div><div class="row" style="gap:10px;flex-wrap:wrap;justify-content:center">${list.map(r=>`<button class="facecand" data-act="${act}" data-card="${r.card}"><div class="ph" style="${phStyle(r.fotos[0])}"></div><span>${gl?'':esc(r.card)+' · '}${r.fotos.length} ${r.fotos.length>1?'fotos':'foto'}</span></button>`).join('')}<button class="chip" data-act="${act}" data-card="">${gl?T('none'):'Nenhuma'}</button></div></div>`;}
 // ---------- Ajustes: a IA acerta toda foto que chega (exposição, contraste, temperatura); aqui dá para refinar à mão ----------
 const AJ_CTRL=[['b','Exposição',40,180,5],['c','Contraste',50,160,5],['s','Saturação',0,200,10],['t','Temperatura',-40,40,5],['z','Corte',100,250,5]];
 const AJ_DEF={b:100,c:100,s:100,t:0,z:100};
@@ -4672,8 +4693,7 @@ document.addEventListener('click',e=>{
     case 'kiosk-jump':state.kiosk.i=+d.i;render();break;
     case 'kiosk-ver':{const k=state.kiosk;const n=lojaItems(k.code).length;const i=+d.i;if(i>=0&&i<n){k.ver=i;k.i=i;}render();break;}
     case 'kiosk-fechar':state.kiosk.ver=null;render();break;
-    case 'kiosk-tv-tog':{const tv=state.kiosk.tv;if(!tv||!tv.maybe.includes(d.id))break;const i=tv.sel.indexOf(d.id);if(i>=0)tv.sel.splice(i,1);else tv.sel.push(d.id);render();break;}
-    case 'kiosk-tv-ok':{const tv=state.kiosk.tv;if(!tv)break;lojaAbrirSo(tv.ids.concat(tv.sel),tv.cardOf);break;}
+    case 'kiosk-tv-sim':case 'kiosk-tv-nao':{const tv=state.kiosk.tv;if(!tv)break;const q=tv.ask[tv.i];if(q&&a==='kiosk-tv-sim')tv.minhas[q.card]=null;tv.i++;if(tv.i>=tv.ask.length){lojaAbrirSo(tv.minhas,tv.anc);break;}render();break;}
     case 'kiosk-tog':{const k=state.kiosk;const items=lojaItems(k.code);const x=items[+d.i];if(!x)break;const pk=lojaPick(k.code);k.i=+d.i;
       if(pk[x.k]==='ok')delete pk[x.k];else pk[x.k]='ok';lojaSync(k.code);render();break;}
     case 'kiosk-ok':lojaMark('ok');break;

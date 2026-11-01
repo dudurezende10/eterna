@@ -533,8 +533,18 @@ def leitor_loop(det, rec, db):
                 m.update(lida=agora, leitura_ms=round((agora - t_ini) * 1000, 1), rostos=len(fs),
                          espera_ms=round((t_ini - t_fila) * 1000, 1) if t_fila else None)
                 metrica_grava({"pid": pid, "lida": m["lida"], "leitura_ms": m["leitura_ms"], "rostos": m["rostos"], "espera_ms": m["espera_ms"]})
-            with _mat_lock:
-                _mat.pop(dia, None)
+            with _mat_lock:             # v91 (rapidez da selfie): acrescenta na matriz do dia em vez de reler o dia inteiro
+                mt = _mat.get(dia)
+                if mt is not None:
+                    np_ = _cv["np"]
+                    M0, ps0 = mt
+                    if pid in ps0:
+                        k = [i for i, p_ in enumerate(ps0) if p_ != pid]
+                        M0, ps0 = M0[k], [ps0[i] for i in k]
+                    if fs:
+                        M0 = np_.vstack([M0] + [f[1].reshape(1, 128).astype("float32") for f in fs])
+                        ps0 = ps0 + [pid] * len(fs)
+                    _mat[dia] = (M0, ps0)
         except Exception as ex:
             print("  erro ao ler rostos", path, ex)
         finally:
@@ -597,6 +607,13 @@ def _buscar(imagens, dias, det, rec):
     if not vs:
         return {"rosto": False, "fotos": []}
     me = np.mean(vs, axis=0); me /= np.linalg.norm(me) or 1
+    return buscar_vetor(me, dias)
+
+
+def buscar_vetor(me, dias=1):
+    """Fotos com o rosto do vetor me (128, normalizado), nos dias da busca. Separada de _buscar para medir (v91 parte B:
+    selfie até a primeira foto ampliada em menos de 2 s; testes/selfie_rapidez.py)."""
+    np = _cv["np"]
     hoje = time.time()
     M, ps = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
     melhor = {}
@@ -3127,6 +3144,25 @@ def gal_expirou(m, agora=None):
     return bool(m.get("encerrada")) or _epoch(m.get("expira")) <= (agora if agora is not None else time.time())
 
 
+def _gal_confere_sessoes(m, fotos):
+    """v91 (segurança 5): toda foto do manifesto precisa ser de uma sessão do manifesto e, na galeria da venda que juntou
+    sessões pela selfie, da lista m.so[sessão]. Sessão que o agente conhece (hoje e ontem em memória) também é conferida
+    foto por foto; sessão que ele não conhece (amostra, sessão montada só no navegador) fica só com a primeira regra."""
+    ses = [str(x)[:40] for x in (m.get("sessoes") or [])[:200]]
+    so = m.get("so") if isinstance(m.get("so"), dict) else {}
+    with sess_lock:
+        conhecidas = {c: set(sess[c]["fotos"]) | set(sess[c]["pend"]) for c in ses if c in sess}
+    for f in fotos:
+        c = f["sessao"]
+        if ses and c not in ses:
+            raise ValueError("foto fora das sessões da galeria")
+        pid = pid_lib(f["id"])
+        if c in conhecidas and pid not in conhecidas[c]:
+            raise ValueError("foto que não é da sessão")
+        if c in so and isinstance(so[c], list) and f["id"] not in so[c] and pid not in so[c]:
+            raise ValueError("foto fora da escolha da venda")
+
+
 def gal_validar(m):
     """Manifesto vindo do app: só os campos conhecidos, com tipos e tamanhos checados."""
     if not isinstance(m, dict) or not token_ok(m.get("token")) or m.get("tipo") not in ("sessao", "evento"):
@@ -3142,6 +3178,7 @@ def gal_validar(m):
             c = f["cortesia"]
             x["cortesia"] = {"motivo": str(c.get("motivo") or "")[:20], "por": str(c.get("por") or "")[:120], "em": str(c.get("em") or "")[:40]}
         fotos.append(x)
+    _gal_confere_sessoes(m, fotos)
     pr = m.get("precos") or {}
     try:
         precos = {"dig": max(0.0, float(pr.get("dig"))), "todas": max(0.0, float(pr.get("todas")))}
