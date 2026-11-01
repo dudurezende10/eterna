@@ -3145,20 +3145,23 @@ def gal_expirou(m, agora=None):
 
 
 def _gal_confere_sessoes(m, fotos):
-    """v91 (segurança 5): toda foto do manifesto precisa ser de uma sessão do manifesto e, na galeria da venda que juntou
-    sessões pela selfie, da lista m.so[sessão]. Sessão que o agente conhece (hoje e ontem em memória) também é conferida
-    foto por foto; sessão que ele não conhece (amostra, sessão montada só no navegador) fica só com a primeira regra."""
+    """v91 (segurança 5): na galeria de sessões que o agente montou (hoje e ontem em memória), toda foto precisa ser de uma
+    sessão do manifesto: foto de outra sessão do agente (outra família) é recusada. Na galeria da venda que juntou sessões
+    pela selfie, a foto também precisa estar em m.so[sessão]. Manifesto só com sessões que o agente não conhece (amostra,
+    sessão montada só no navegador) passa sem esta conferência."""
     ses = [str(x)[:40] for x in (m.get("sessoes") or [])[:200]]
     so = m.get("so") if isinstance(m.get("so"), dict) else {}
     with sess_lock:
         conhecidas = {c: set(sess[c]["fotos"]) | set(sess[c]["pend"]) for c in ses if c in sess}
+        dono = {pid_lib(f["id"]): sess_pid.get(pid_lib(f["id"])) for f in fotos} if conhecidas else {}
+    if not conhecidas:
+        return
     for f in fotos:
-        c = f["sessao"]
-        if ses and c not in ses:
-            raise ValueError("foto fora das sessões da galeria")
         pid = pid_lib(f["id"])
-        if c in conhecidas and pid not in conhecidas[c]:
-            raise ValueError("foto que não é da sessão")
+        de = [c for c, ps in conhecidas.items() if pid in ps]
+        if not de and dono.get(pid) and dono[pid] not in ses:
+            raise ValueError("foto de outra sessão")
+        c = de[0] if de else f["sessao"]
         if c in so and isinstance(so[c], list) and f["id"] not in so[c] and pid not in so[c]:
             raise ValueError("foto fora da escolha da venda")
 
@@ -3178,7 +3181,6 @@ def gal_validar(m):
             c = f["cortesia"]
             x["cortesia"] = {"motivo": str(c.get("motivo") or "")[:20], "por": str(c.get("por") or "")[:120], "em": str(c.get("em") or "")[:40]}
         fotos.append(x)
-    _gal_confere_sessoes(m, fotos)
     pr = m.get("precos") or {}
     try:
         precos = {"dig": max(0.0, float(pr.get("dig"))), "todas": max(0.0, float(pr.get("todas")))}
@@ -3745,10 +3747,11 @@ def _dot(a, b):
 
 def sess_clique(m, dk):
     """S2: (t, fonte_t). t = cap + menor desvio chegada − clique da série; sem cap, a data do arquivo de origem (mt); sem as
-    duas, a chegada u. Clique fora de [u − 48 h, u + 10 min] é inválido (EXIF forjado não manda). Com o sess_lock."""
+    duas, a chegada u. Clique corrigido fora de [u − 48 h, u + 10 min] é inválido (EXIF forjado não manda). v91 (revisão C1):
+    o cap cru entra no desvio em ±48 h (câmera com o relógio adiantado também se corrige); a janela vale para o t. Com o sess_lock."""
     u = _num(m.get("u"))
     cap = _num(m.get("cap"))
-    if cap and u - SESS_CLIQUE_ANTES <= cap <= u + SESS_CLIQUE_DEPOIS:
+    if cap and abs(u - cap) <= SESS_CLIQUE_ANTES:
         if (m.get("s") or "") != "cartao":   # a foto do cartão chega atrasada de propósito: não entra no desvio
             ff_desvio.setdefault(dk, collections.deque(maxlen=50)).append(u - cap)
         d = ff_desvio.get(dk)
@@ -3765,7 +3768,9 @@ def sess_trilha(m, t, base=None):
     """S3: "dia|fotógrafo" (ao vivo) ou "dia|fotógrafo|t" (atrasada: cartão, ou clique há mais de 10 min da chegada)."""
     u = _num(m.get("u"))
     atrasada = (m.get("s") or "") == "cartao" or u - t > SESS_ATRASO
-    return _ff_hoje(t) + "|" + (base or "?") + ("|t" if atrasada else ""), atrasada
+    # v91 (revisão S2): a trilha atrasada ganha o dia da CHEGADA (cartão de ontem descarregado hoje aparece hoje, no Upload e
+    # no Checkout); a ao vivo, o dia do clique
+    return _ff_hoje(u if atrasada else t) + "|" + (base or "?") + ("|t" if atrasada else ""), atrasada
 
 
 def _sess_nova(trilha, t, u, motivo, m, chave, fonte, fonte_t, atrasada):
@@ -5553,6 +5558,10 @@ class H(BaseHTTPRequestHandler):
             t = novo["token"]
             if t in lapides:
                 return self.js({"ok": False, "error": "galeria encerrada", "estado": "encerrada"}, 410)
+            try:                                       # v91 (segurança 5): depois da lápide (galeria encerrada responde 410 como antes)
+                _gal_confere_sessoes(body.get("manifesto"), novo["fotos"])
+            except ValueError as ex:
+                return self.js({"error": str(ex)}, 400)
             with gal_lock:
                 m = gal_mesclar(novo, REPO.ler_manifesto(t))
                 REPO.salvar_manifesto(t, m)
@@ -5687,14 +5696,15 @@ class H(BaseHTTPRequestHandler):
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/status":
+            ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
             with lock:
                 return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "backup": backup, "recorte": rec_status(), "fundos_modo": fundos_modo(),
+                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "backup": backup, "recorte": rs_, "fundos_modo": fundos_modo(),
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
-                                "impressora_locais": IMP_LOCAIS, "sessoes": sess_status(),
+                                "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):

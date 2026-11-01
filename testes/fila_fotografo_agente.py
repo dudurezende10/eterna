@@ -95,9 +95,8 @@ def um(gs, **kw):
 
 
 # 2 e 8: cliques num segundo só, chegando devagar (fila de envio); a câmera da Sandessa com o relógio 2 h atrasado
-# (revisão 4) e a câmera do Márcio com o relógio 5 min adiantado (desvio com sinal). v91 (S2): clique mais de 10 min
-# à frente da chegada é inválido e vale a chegada, por isso o adiantamento do teste passou de 1 h para 5 min.
-for nome, serie, atraso in (("marinara", "111100002222", 0), ("sandessa", "333300004444", 7200), ("marcio", "777700008888", -300)):
+# (revisão 4) e a câmera do Márcio com o relógio 1 h adiantado (desvio com sinal; v91 C1: o cap cru entra no desvio em ±48 h).
+for nome, serie, atraso in (("marinara", "111100002222", 0), ("sandessa", "333300004444", 7200), ("marcio", "777700008888", -3600)):
     base = T + {"marinara": 0, "sandessa": 100, "marcio": 200}[nome]
     ns = []
     for i in range(8):
@@ -346,7 +345,9 @@ try:
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: miniatura pelo endereço de ETERNA_ORIGENS")
     # v90: alinhado ao main. Desde 138d45e (Ronaldo) os endereços de ETERNA_ORIGENS usam as telas da equipe e o
     # original abre por eles (HOSTS_OK inclui ORIGENS_REDE_HOSTS); com Origin de fora continua fechado.
-    ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: o original pelo endereço de ETERNA_ORIGENS (comportamento do main)")
+    # v91 (revisão S1): expectativa de segurança do main mantida (403); o agente hoje responde 200 desde o 138d45e e o
+    # teste falha como no main, até a segurança decidir (plano 2026-10-30, Parte B, pendentes)
+    ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 403, "risco 4: o original continua fechado pelo endereço da rede")
     ok(req("GET", "/file/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: o original com Origin de fora")
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: miniatura com Origin de fora")
     # contrato: sem série completa, sem nome de arquivo

@@ -167,9 +167,11 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 ### Fotos de mais de uma sessão (v91)
 
-Quando o cliente olha para a câmera, o Checkout junta todas as fotos dele no dia, mesmo de sessões diferentes: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. Elas aparecem numa galeria só, em ordem de hora, com o ponto e a hora de cada bloco em cima. Ele só vê as fotos em que o rosto dele aparece.
+Quando o cliente olha para a câmera, o Checkout junta todas as sessões do dia em que ele aparece: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. Cada sessão em que ele aparece entra inteira, inclusive as fotos da família em que ele não está, porque a família costuma vir junta ao balcão. A tela abre direto na primeira foto ampliada; ele passa as fotos com as setas ou arrastando, marca com ✓ e pode tocar em **Ver todas** para ver a grade. O ponto e a hora aparecem no canto da foto.
 
-Se o Eterna ficar em dúvida sobre alguma foto, ele pergunta antes: **"Estas também são suas?"**. O cliente toca nas fotos em que aparece e segue. A compra é uma venda só, mesmo com fotos de várias sessões. Pelo código do recibo, abre a sessão inteira daquele código, como antes.
+Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta a sessão; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+
+A compra é uma venda só, mesmo com fotos de várias sessões. Foto que já foi comprada não aparece de novo. Pelo código do recibo (o código da sessão) abre a sessão inteira; pelo código da galeria, a compra daquela venda. Depois de 5 códigos errados seguidos, o campo trava por 1 minuto.
 
 ### Computador do cliente: Chrome em modo quiosque
 

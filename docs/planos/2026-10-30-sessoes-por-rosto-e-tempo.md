@@ -253,3 +253,52 @@ Os testes de agente usam faces sintéticas, montadas assim: pessoa = vetor unit�
 4. **"Já no Checkout" da Fila mais lento** (20 s → 60 s):
    - Recomendação: aceitar, porque é a mesma regra de 1 minuto.
    - Alternativa: a Fila avisa "pronta em breve" aos 20 s.
+
+## Parte B (v91): Checkout com todas as sessões da pessoa no dia
+
+Entrou na v91 depois da Parte A, a pedido do Eduardo (01/11 11:39 e 12:12), com as devoluções da segurança (B1 a B3) e do revisor (C1 a C5) do commit `909a786`.
+
+### Regra (substitui o `lojaDele` no fluxo da selfie)
+
+> **Para o Ronaldo:** o `lojaDele` (o cliente vê só as fotos com o rosto dele) **saiu do fluxo da selfie**. Ele continua no código e vale para sessão de menor ou de grupo de escola, e para o "É uma destas?" antigo (só "talvez", nenhuma foto clara). O motivo dele (a sessão misturada de 29 fotos de várias pessoas em 31/10) deixou de existir com a separação por rosto da Parte A.
+
+| # | Regra |
+|---|---|
+| P1 | Sessão em que a pessoa aparece com certeza (pelo menos 1 foto com sim >= `FACE_SIM` 0,45) entra **inteira**, com as fotos em que ela não aparece: a família está junta no Checkout (Eduardo, 12:12). |
+| P2 | Exceção: sessão de menor (`menor`) ou de grupo de escola (galeria `evento`) entra só com as fotos claras dela. |
+| P3 | Sessão só com "talvez" (entre `FACE_DUV` 0,38 e `FACE_SIM`) pergunta "Esta sessão também é sua?", uma por vez, com até 3 miniaturas pequenas das fotos dela mais parecidas; no máximo 3 sessões; nunca de menor ou de escola. "Sim" põe a sessão inteira. |
+| P4 | Sem foto clara em sessão nenhuma: o fluxo antigo ("É uma destas?", sem códigos na tela do cliente) ou "não encontrado". |
+| P5 | Uma pessoa por vez (`varias_pessoas`, `pessoas()`) continua barrando a busca. |
+| P6 | Depois da selfie abre direto na primeira foto ampliada (tela cheia, botões aprovados no `fea744a`), percorrendo todas as fotos das sessões em ordem de hora, com ponto · hora na própria foto; "Ver todas" (grade) é secundário. |
+| P7 | A venda fica na sessão com mais fotos claras dela (âncora; ainda não paga quando houver), nunca em sessão só de "talvez", nunca por ordem de hora. |
+| P8 | A venda que junta sessões tem galeria **própria** (`m.venda`), que `galDaSessao` não acha; `m.so[sessão]` = as fotos daquela sessão que entraram na escolha. Enquanto não há venda paga, cada pedido refaz `m.sessoes` e `m.so` do zero. |
+| P9 | "Comprada" na galeria = escolhida nesta venda (o `selected` da âncora com `galVenda` = esta galeria), mais as compras online já registradas. Foto comprada por outra família nunca vira comprada aqui. `m.menor` = alguma sessão do manifesto é de menor. |
+| P10 | No Checkout achado pela selfie, saem as fotos já vendidas (`vendidasTodas`) e as sessões já pagas; sem nada sobrando, "já pago" com o QR da venda da âncora. |
+| P11 | Mensagem de achado sem códigos ("Achamos você", 5 línguas). |
+| P12 | Campo de código: só o código da sessão do recibo (`LP` + 5 a 10) ou o da galeria (`XXXX-XXXX`); 5 errados seguidos travam o campo por 1 minuto no terminal. O código da galeria da venda abre só a escolha daquela venda. |
+| P13 | Agente: na publicação (depois da lápide), `_gal_confere_sessoes` recusa foto que o agente sabe ser de outra sessão (outra família), quando o manifesto tem sessões que ele conhece (hoje e ontem em memória), e foto fora de `m.so[sessão]` na galeria da venda. Manifesto só com sessões desconhecidas (amostra, sessão montada só no navegador) passa como antes. |
+| P14 | Rapidez: com o servidor respondendo, o navegador não abre o face-api para as fotos de amostra; a validação de IA das sessões que chegam espera o balcão livre no Checkout; a primeira foto grande e as duas seguintes começam a baixar quando a busca volta; quadros da selfie de até 960 px; a matriz de rostos do dia recebe a foto nova por acréscimo (não relê o dia); a lista de sessões é montada uma vez por desenho do Checkout. |
+
+### Critérios de aceite (testes)
+
+- `testes/checkout-varias-sessoes.js`: duas sessões com foto clara (pontos diferentes, 10 min de diferença) inteiras, em ordem de hora, na tela cheia, com ponto · hora; "talvez" por sessão com até 3 miniaturas, nunca para a de menor, sem códigos na tela; âncora = sessão com mais fotos claras; uma venda só com as duas sessões (pedido e evento `criar`); galeria própria; **a família da outra sessão ainda compra depois**; **nenhuma foto comprada por outra família vira "comprada" na galeria dela**; quem volta só vê o que não foi comprado e, sem nada, o QR da venda dela; pedido não pago refaz a galeria do zero; código da galeria e trava de 5 códigos errados; código do recibo abre a sessão inteira.
+- `testes/selfie_rapidez.py`: busca no servidor com 3.000 fotos e cerca de 7.500 rostos sintéticos.
+- `testes/sessoes_agente.py`: o evento guarda só códigos de sessão válidos; câmera 1 h adiantada com cartão em 3 blocos = 3 sessões (C1).
+
+### Riscos
+
+1. **Família inteira expõe a sessão toda a quem aparece claro nela.** Depende da separação por rosto da Parte A. Uma pessoa de outra família, grande e nítida no fundo de uma foto, abre a sessão alheia inteira. Mitigações: rosto principal no agrupamento, `FACE_SIM` 0,45, menor e escola só com as fotos dela, uma pessoa por vez na câmera. Calibrar com um dia real (pendente 8).
+2. **"Sim" no "talvez" abre uma sessão inteira** por confirmação do próprio cliente. Até 3 sessões, nunca de menor ou escola, com miniaturas só das fotos em que ele parece aparecer.
+3. **Código da sessão (`LP…`) ainda abre a sessão inteira.** É o código do recibo usado na contingência e nos testes da v77 em diante. A trava de tentativas reduz o chute; tirar o `LP` do campo depende de um código de recibo próprio (decisão da segurança e do Eduardo).
+4. **Recibo com as sessões da venda (sugestão S3 do revisor):** não entrou. Mostrar os códigos ao cliente contradiz o B3, já que o `LP` abre a sessão inteira. A lista fica no pedido, no evento e na sessão paga (`sessoes`), para a equipe.
+
+### Pendentes de produção (registrados a pedido da segurança e do revisor)
+
+3. `/sessoes` e `/thumb/` pela rede (`ETERNA_ORIGENS`) até o pareamento da v83 etapa 2.
+4. Regra de ciclo de vida de 60 dias no S3 para `backup/<computador>/sessoes` e `metricas`, e reenvio do arquivo do dia depois de `sess_esquecer_disco` (a LGPD limpa o local, não a cópia do S3).
+6. Poda do `localStorage` (`SIM.sessions` com as listas de fotos) antes de 01/12.
+7. RIPD: agrupamento por rosto (inclusive de criança) e Checkout com a sessão inteira da família.
+8. Calibrar `FACE_SIM`, `SESS_LIM_*` com um dia real do Tour (`/rostos/medir`).
+- S1 do revisor: o teste do `/file/` pelo endereço da rede (`testes/fila_fotografo_agente.py`, "risco 4") voltou à expectativa do main (403). O agente responde 200 desde o `138d45e` (`HOSTS_OK` inclui `ORIGENS_REDE_HOSTS`), então `fila-fotografo.js` falha como no main. A segurança decide se o `/file/` pela rede fica (e o teste passa a esperar 200) ou volta a ser fechado no agente.
+- S4 e S8 do revisor: registrados aqui para a próxima entrega.
+

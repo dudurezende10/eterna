@@ -12,8 +12,11 @@ python3 -m py_compile agente/eterna-agente.py && echo "OK sintaxe do agente" || 
 FALHAS=${F:-0}
 # v91: testes do agente que rodam sozinhos (HOME temporário; os outros *_agente.py são chamados pelos .js)
 for t in testes/sessoes_agente.py testes/selfie_rapidez.py; do
-  H=$(mktemp -d); HOME=$H python3 -I "$t" agente/eterna-agente.py 2>&1 | grep -E "^(OK|FALHA)" || true
-  [ ${PIPESTATUS[0]} -eq 0 ] || FALHAS=$((FALHAS+1)); rm -rf "$H"
+  H=$(mktemp -d); OUT=$(HOME=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
+  LINHA=$(echo "$OUT" | grep -E "^(OK|FALHA)")
+  # v91 (revisão S9): teste que quebra sem imprimir OK/FALHA também conta como falha
+  if [ -z "$LINHA" ]; then echo "FALHA $(basename $t): terminou sem resultado · $(echo "$OUT" | tail -1 | cut -c1-200)"; FALHAS=$((FALHAS+1));
+  else echo "$LINHA"; [ $RC -eq 0 ] || FALHAS=$((FALHAS+1)); fi
 done
 for t in testes/*.js; do
   case "$(basename $t)" in _*) continue;; esac

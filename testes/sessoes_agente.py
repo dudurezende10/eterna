@@ -235,6 +235,17 @@ ok(ss[1]["motivo"] == "pausa" and ss[0]["fonte_t"] == "cap", "11: motivo pausa e
 tick(u0 + 5 + 61)
 ok(ss[2]["status"] == "fechada" and ss[2]["fechada_por"] == "pausa", "11: a última fecha 60 s depois")
 
+# C1 (revisão): câmera com o relógio 1 h ADIANTADO. A foto ao vivo ensina o desvio; o cartão da mesma câmera, com 3 blocos de
+# cliques separados por 2 min, vira 3 sessões atrasadas pela hora corrigida (antes caía tudo na chegada: uma sessão só)
+reset(); LIG[0] = False
+uc = T + 3150
+add("samuel", uc, cap=uc + 3600, s="ftp", serie="990000009999")
+cc = [add("samuel", uc + 30 + i * 5 / 30, cap=uc + 3600 - 3000 + (i // 10) * 120 + (i % 10) * 2, s="cartao", serie="990000009999") for i in range(30)]
+sc = sorted({de(p)["card"]: de(p) for p in cc}.values(), key=lambda x: x["cap0"])
+ok(len(sc) == 3 and all(x["atrasada"] and x["fonte_t"] == "cap" for x in sc) and abs(sc[0]["cap0"] - (uc - 3000)) < 1,
+   "C1: cartão da câmera adiantada = 3 sessões pela hora corrigida: %r" % [(len(x["fotos"]), x["fonte_t"], round(x["cap0"] - uc)) for x in sc])
+LIG[0] = True
+
 # 12: ao vivo e cartão juntos, do mesmo fotógrafo
 reset(); LIG[0] = False
 u1 = T + 3300
@@ -381,6 +392,25 @@ ok(not m.sess_rostos_mem, "boot: nenhum vetor fica em memória depois de fechar"
 # v91 parte B: a venda achada pela selfie junta várias sessões; o evento guarda as sessões (só códigos válidos)
 ev = m._ev_limpo({"tipo": "criar", "idem": "vtest01:1", "venda": "vtest01", "dados": {"card": "LPAAAA111", "sessoes": ["LPAAAA111", "LPBBBB222", "<script>", "lp minúsculo"], "total": 190}})
 ok(ev and ev["dados"].get("sessoes") == ["LPAAAA111", "LPBBBB222"], "parte B: evento criar guarda as sessões da venda: %r" % (ev and ev["dados"]))
+
+# segurança 5: as fotos do manifesto precisam ser das sessões do manifesto (e de m.so na galeria da venda que juntou sessões)
+reset()
+with m.sess_lock:
+    m.sess["LPGALSEG1"] = {"card": "LPGALSEG1", "dia": m._ff_hoje(), "k": "x", "status": "fechada", "fotos": ["aaaaaaaaaaa1", "aaaaaaaaaaa2"], "pend": [], "removida": False}
+def conf(mf, fotos):
+    try:
+        m._gal_confere_sessoes(mf, fotos); return True
+    except ValueError:
+        return False
+F = lambda pid, ses="LPGALSEG1": {"id": "ag_" + pid, "sessao": ses}
+ok(conf({"sessoes": ["LPGALSEG1"]}, [F("aaaaaaaaaaa1")]), "seg 5: foto da sessão passa")
+with m.sess_lock:
+    m.sess["LPGALSEG2"] = {"card": "LPGALSEG2", "dia": m._ff_hoje(), "k": "y", "status": "fechada", "fotos": ["bbbbbbbbbbb1"], "pend": [], "removida": False}
+    m.sess_pid["bbbbbbbbbbb1"] = "LPGALSEG2"
+ok(not conf({"sessoes": ["LPGALSEG1"]}, [F("bbbbbbbbbbb1")]), "seg 5: foto de outra sessão do agente (outra família) é recusada")
+ok(not conf({"sessoes": ["LPGALSEG1"]}, [F("bbbbbbbbbbb1", "LPGALSEG1")]), "seg 5: dizer que a foto é da sessão não engana")
+ok(not conf({"sessoes": ["LPGALSEG1"], "so": {"LPGALSEG1": ["ag_aaaaaaaaaaa1"]}}, [F("aaaaaaaaaaa2")]), "seg 5: foto fora de m.so é recusada")
+ok(conf({"sessoes": ["LPDESCONH"]}, [F("ccccccccccc1", "LPDESCONH")]), "seg 5: sessão que o agente não conhece fica só com a primeira regra")
 
 # ======================= Parte B: o agente de verdade =======================
 from PIL import Image
