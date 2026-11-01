@@ -2032,12 +2032,15 @@ function galDaVenda(card,tok0){const mv=tok0&&(SIM.galerias||{})[tok0];if(mv&&mv
 // v91 (segurança 2): o campo de código do Checkout aceita só o código da sessão do recibo (LP + 5 a 10) ou o código da galeria
 // (XXXX-XXXX); 5 códigos errados seguidos travam o campo por 1 minuto neste terminal. A galeria da venda que juntou sessões
 // abre só a escolha daquela venda (m.so), nunca as sessões inteiras.
-const LJ_COD={erros:0,ate:0};const lojaCodReset=()=>{LJ_COD.erros=0;LJ_COD.ate=0;};
+// contador do campo de código no sessionStorage (segurança, 01/11): recarregar a página não zera as tentativas
+const LJ_COD=(()=>{try{const j=JSON.parse(sessionStorage.getItem('eterna.ljcod')||'null');if(j&&typeof j.erros==='number'&&typeof j.ate==='number')return {erros:j.erros,ate:j.ate};}catch(e){}return {erros:0,ate:0};})();
+const ljCodSalva=()=>{try{sessionStorage.setItem('eterna.ljcod',JSON.stringify(LJ_COD));}catch(e){}};
+const lojaCodReset=()=>{LJ_COD.erros=0;LJ_COD.ate=0;ljCodSalva();};
 function lojaCodigo(txt){const v=String(txt||'').trim().toUpperCase().replace(/\s+/g,'');if(Date.now()<LJ_COD.ate){toast(T('codeWait'));return null;}
-  const erro=()=>{LJ_COD.erros++;if(LJ_COD.erros>=5){LJ_COD.erros=0;LJ_COD.ate=Date.now()+60e3;toast(T('codeWait'));}else toast(T('codeBad'));return null;};
+  const erro=()=>{LJ_COD.erros++;if(LJ_COD.erros>=5){LJ_COD.erros=0;LJ_COD.ate=Date.now()+60e3;toast(T('codeWait'));}else toast(T('codeBad'));ljCodSalva();return null;};
   const g=/^[A-Z0-9]{4}-?[A-Z0-9]{4}$/.test(v)&&!/^LP/.test(v)?Object.values(SIM.galerias||{}).find(m=>m.tipo==='sessao'&&!m.substituida&&m.codigo===v.slice(0,4)+'-'+v.slice(-4)):null;
-  if(g&&sessionObj(g.sessoes[0])){LJ_COD.erros=0;return {card:g.sessoes[0],so:g.venda&&g.so?{card:g.sessoes[0],cards:g.sessoes.slice(),ids:[].concat(...Object.values(g.so))}:null};}
-  if(/^LP[A-Z0-9]{5,10}$/.test(v)&&sessionObj(v)){LJ_COD.erros=0;return {card:v,so:null};}
+  if(g&&sessionObj(g.sessoes[0])){lojaCodReset();return {card:g.sessoes[0],so:g.venda&&g.so?{card:g.sessoes[0],cards:g.sessoes.slice(),ids:[].concat(...Object.values(g.so))}:null};}
+  if(/^LP[A-Z0-9]{5,10}$/.test(v)&&sessionObj(v)){lojaCodReset();return {card:v,so:null};}
   return erro();}
 // v91 (segurança B1, revisão C2): a venda que juntou sessões pela selfie tem galeria PRÓPRIA (m.venda), nunca a de uma sessão
 // (galDaSessao não a acha). Enquanto não há venda paga, cada pedido refaz m.sessoes e m.so do zero: nada de outro pedido fica.
@@ -2690,7 +2693,7 @@ async function faceAgente(srcs){const a=state.agent;if(!a.on||!a.rostos||!a.rost
   try{const r=await fetch(a.url+'/rostos/buscar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imagens:srcs.map(toJpeg)})});return r.ok?await r.json():null;}catch(e){return null}}
 async function faceFind(srcs,ok){srcs=[].concat(srcs);
   const sess=demoSessions().filter(x=>!ok||ok(x));const temLocal=sess.some(x=>x.photos.some(p=>!/^ag_/.test(p.id)));
-  const ag=await faceAgente(srcs);if(ag&&ag.varias)return {varias:true,list:[],sims:{}};const agSim={};if(ag&&ag.fotos)for(const f of ag.fotos)agSim['ag_'+f.id]=f.sim;
+  const ag=await faceAgente(srcs);if(ag&&ag.varias)return {varias:true,list:[],sims:{}};const agSim={},agPri={};if(ag&&ag.fotos)for(const f of ag.fotos){agSim['ag_'+f.id]=f.sim;agPri['ag_'+f.id]=f.principal!==false;} // v91 (B5): principal = o rosto que bateu é dos maiores da foto (agente antigo, sem o campo: conta como principal)
   let me=null;if(temLocal&&!ag){try{ // v91 (rapidez): com o servidor do ponto respondendo, nada de abrir o face-api do navegador para as fotos de amostra
     const ds=[];for(const im of srcs){const fs=await faceRead(im);if(pessoas(fs.map(x=>({w:Math.sqrt(x.a)})))===2)return {varias:true,list:[],sims:{}};if(fs.length)ds.push(fs.sort((a,b)=>b.a-a.a)[0].d);}
     if(ds.length){me=new Float32Array(128);for(const d of ds)for(let i=0;i<128;i++)me[i]+=d[i]/ds.length;let n=0;for(let i=0;i<128;i++)n+=me[i]*me[i];n=Math.sqrt(n)||1;for(let i=0;i<128;i++)me[i]/=n;}}catch(e){if(!ag)throw e}}
@@ -2701,7 +2704,7 @@ async function faceFind(srcs,ok){srcs=[].concat(srcs);
   for(const x of sess){for(const p of x.photos){let sc=null;
       if(/^ag_/.test(p.id)){if(agSim[p.id]!=null)sc=agSim[p.id];}
       else if(me){const l=FACEIDX[p.id];if(l){let best=-1;for(const d of l){let t=0;for(let i=0;i<128;i++)t+=d[i]*me[i];if(t>best)best=t}sc=best;}}
-      if(sc!=null)sims[p.id]=sc;if(sc==null||sc<FACE_DUV)continue;const alvo=sc>=FACE_SIM?res:talvez;const r=alvo[x.card]||(alvo[x.card]={card:x.card,fotos:[],sc:0});r.fotos.push(p.id);r.sc=Math.max(r.sc,sc)}}
+      if(sc!=null)sims[p.id]=sc;if(sc==null||sc<FACE_DUV)continue;const alvo=sc>=FACE_SIM?res:talvez;const r=alvo[x.card]||(alvo[x.card]={card:x.card,fotos:[],sc:0,pri:0});r.fotos.push(p.id);r.sc=Math.max(r.sc,sc);if(!/^ag_/.test(p.id)||agPri[p.id])r.pri++;}}
   const ord=o=>Object.values(o).sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);let list=ord(res);
   let clara=list.length===1||(list.length>1&&(list[0].fotos.length>list[1].fotos.length||list[0].sc-list[1].sc>=FACE_MARGEM));
   if(!list.length){list=ord(talvez).slice(0,4);clara=false;}
@@ -3052,7 +3055,9 @@ function srvLgpd(x){const s=SIM.sessions[x.card];if(!s||!s.srv)return;const keep
   const dela=new Set((s.photos||[]).map(p=>p.id));s.photos=s.photos.filter(p=>keep.has(p.id));s.selected=(s.selected||[]).filter(id=>keep.has(id)||!dela.has(id)); /* v91: foto de outra sessão da mesma venda não sai aqui */if(x.removida)s.removida=true;log(`Sessão ${x.card}: ${fora.length} ${fora.length===1?'foto saiu':'fotos saíram'} a pedido do cliente (LGPD)`);saveSim();}
 // v91 (rapidez do Checkout): no Checkout, a validação de IA das sessões que chegam espera o balcão livre (câmera esperando
 // rosto, sem busca em andamento); com cliente na tela, nada de face-api disputando o processador com a selfie e a foto ampliada
-const valLivre=()=>new Promise(res=>{const livre=()=>!state.lojaRota||(state.kiosk.step==='code'&&!(state.cam&&state.cam.busy));if(livre())return res();const t=setInterval(()=>{if(livre()){clearInterval(t);res();}},700);});
+// Teto (segurança, 01/11): com o balcão ocupado há 10 min seguidos, valida mesmo assim (até o balcão ficar livre de novo).
+const VAL_TETO=10*60e3;let VAL_OCUP=0;
+const valLivre=()=>new Promise(res=>{const livre=()=>{if(!state.lojaRota||(state.kiosk.step==='code'&&!(state.cam&&state.cam.busy))){VAL_OCUP=0;return true;}if(!VAL_OCUP)VAL_OCUP=Date.now();return Date.now()-VAL_OCUP>=VAL_TETO;};if(livre())return res();const t=setInterval(()=>{if(livre()){clearInterval(t);res();}},700);});
 let VAL_FILA=Promise.resolve(); // v91: uma validação de IA por vez neste navegador (risco 7: cada navegador ainda valida de novo)
 function ingStop(){const g=state.ing;if(g.timer)clearInterval(g.timer);g.timer=null;g.running=false;}
 function ingClose(how,srv){const g=state.ing;const c=srv?{photos:srv.fotos.map(pid=>({id:'ag_'+pid})),flags:{},start:new Date(srv.aberta_em*1000).toISOString()}:g.cur;if(!srv)g.cur=null;if(!c||!c.photos.length)return;
@@ -3694,7 +3699,8 @@ function validatePhoto(id){return null;}
 function eyeOpen(pts){const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);return (d(pts[1],pts[5])+d(pts[2],pts[4]))/(2*d(pts[0],pts[3])||1);}
 async function validateReal(ids){const f=await faceLoad();const out={};for(const id of ids){await valLivre();try{const c=await photoCanvas(id);if(!c)continue;
     const r=await f.detectAllFaces(c,new f.SsdMobilenetv1Options({minConfidence:.5})).withFaceLandmarks();
-    if(!r.length)continue; // o detector do navegador perde rostos de ângulo difícil: "sem rosto" só pelo servidor do pontoconst big=r.sort((a,b)=>b.detection.box.area-a.detection.box.area);const lim=big[0].detection.box.width*.6;
+    if(!r.length)continue; // o detector do navegador perde rostos de ângulo difícil: "sem rosto" só pelo servidor do ponto
+    const big=r.sort((a,b)=>b.detection.box.area-a.detection.box.area);const lim=big[0].detection.box.width*.6;
     for(const x of big){if(x.detection.box.width<lim)break;const lm=x.landmarks;if(Math.max(eyeOpen(lm.getLeftEye()),eyeOpen(lm.getRightEye()))<.19){out[id]='olhos fechados';break;}}}catch(e){}}
   return out;}
 // ---------- Treino da IA: o que pode e o que não pode ----------
