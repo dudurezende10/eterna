@@ -1,0 +1,26 @@
+# Libera uma versão do agente para os servidores dos pontos (pedido do Eduardo, 02/11; plano do instalador, "Atualizações").
+# Quem libera cria uma tag vNN no commit testado (git tag v92 && git push origin v92). Esta automação monta a release com o
+# eterna-agente.py e o SHA-256 dele; o vigia do servidor (canal estável) só baixa a última release e confere o SHA-256.
+name: liberar-versao
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confere e calcula o SHA-256 do agente
+        run: |
+          python3 -m py_compile agente/eterna-agente.py
+          cp agente/eterna-agente.py eterna-agente.py
+          sha256sum eterna-agente.py | cut -d' ' -f1 > eterna-agente.py.sha256
+          cat eterna-agente.py.sha256
+      - name: Cria a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" eterna-agente.py eterna-agente.py.sha256 \
+            --title "$GITHUB_REF_NAME" --notes "Agente do ponto $GITHUB_REF_NAME. Linha da versão em VERSOES.md."

@@ -82,6 +82,7 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
   - põe o atalho "Eterna" na área de trabalho de todos;
   - liga o Eterna e mostra os endereços para os pontos.
 
+- [ ] **Versão do agente:** o vigia baixa **só a última release** do GitHub (tag `vNN`, montada por `.github/workflows/liberar-versao.yml`) e confere o SHA-256 antes de trocar; sem release, sem internet ou com o SHA-256 diferente, fica a versão do disco (`~/Eterna/programa/versao.txt` diz qual está rodando; o motivo vai para o `vigia.log`). Para liberar uma versão testada: `git tag v92 && git push origin v92`. Servidor de teste que deve seguir o `main`: `ETERNA_CANAL=teste` no `nuvem.env` (só confere a sintaxe).
   Em máquina corporativa (Azure AD), a tarefa em outro usuário não roda (resultado 267011) e o usuário separado não entra sozinho; por isso a tarefa é do sistema, e o `agente\instalar-tarefa.ps1` ficou só para máquina fora do domínio. Para refazer o `.exe` depois de mudar o script: `agente\instalador\montar.ps1`.
 - [ ] Mudou de usuário: copiar a pasta `Eterna` (e `.aws`, `.u2net`) do usuário antigo como administrador, com `robocopy <origem> <destino> /E /B /XD venv programa` (sem o `/B` o administrador leva "Acesso negado" na pasta de outro usuário).
 - [ ] Teste: reiniciar o servidor e entrar no usuário de sempre. Em até 2 minutos, `/status` responde.
