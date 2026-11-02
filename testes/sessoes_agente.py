@@ -21,6 +21,7 @@ def ok(c, msg):
 # ======================= Parte A: no processo =======================
 HA = tempfile.mkdtemp()
 os.environ["HOME"] = HA
+os.environ["USERPROFILE"] = HA      # Windows: o expanduser("~") lê o USERPROFILE, não o HOME
 os.environ["ETERNA_SEM_OPENCV"] = "1"
 os.environ.pop("ETERNA_SESSAO_PAUSA", None)
 os.environ.pop("ETERNA_SESS_LIMITES", None)
@@ -434,7 +435,7 @@ def jpeg(cor=(30, 90, 160), cap=None, serie=None):
 
 HB = tempfile.mkdtemp()
 FTPP = PORTA + 1000
-env = {**os.environ, "HOME": HB, "ETERNA_PORTA": str(PORTA), "ETERNA_FTP_PORTA": str(FTPP), "ETERNA_APP_ORIGIN": "http://127.0.0.1:9",
+env = {**os.environ, "HOME": HB, "USERPROFILE": HB, "ETERNA_PORTA": str(PORTA), "ETERNA_FTP_PORTA": str(FTPP), "ETERNA_APP_ORIGIN": "http://127.0.0.1:9",
        "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "3", "ETERNA_LEITORES": "1", "USER": "eterna-teste-sem-cartao"}
 env.pop("ETERNA_PASTA", None)
 env.pop("ETERNA_ORIGENS", None)
