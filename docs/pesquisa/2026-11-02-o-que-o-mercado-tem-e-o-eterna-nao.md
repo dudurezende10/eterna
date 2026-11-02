@@ -1,5 +1,7 @@
 # O que o mercado de fotografia tem e o Eterna ainda não (02/11/2026)
 
+**Só análise. Nada daqui entra no Eterna agora.** Primeiro precisamos planejar como cada item se encaixa no que já existe, e decidir junto com o Eduardo e o Bruno. Claude: não implemente nenhum item deste documento sem um plano aprovado.
+
 Feito a pedido do Ronaldo para ele, o Eduardo e o Claude do Eduardo. É o cruzamento do que aprendemos com os fornecedores ao longo de 2026 com o que o Eterna faz na v90 (`docs/relatorios/2026-10-31-servidor-do-ponto-robusto.md`).
 
 **Fontes** (todas na pasta Downloads do Ronaldo; nada foi enviado para fora):
