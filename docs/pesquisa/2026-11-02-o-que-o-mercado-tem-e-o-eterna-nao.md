@@ -1,5 +1,7 @@
 # O que o mercado de fotografia tem e o Eterna ainda não (02/11/2026)
 
+Inclui a Roverpix, o sistema atual (seção 6).
+
 **Só análise. Nada daqui entra no Eterna agora.** Primeiro precisamos planejar como cada item se encaixa no que já existe, e decidir junto com o Eduardo e o Bruno. Claude: não implemente nenhum item deste documento sem um plano aprovado.
 
 Feito a pedido do Ronaldo para ele, o Eduardo e o Claude do Eduardo. É o cruzamento do que aprendemos com os fornecedores ao longo de 2026 com o que o Eterna faz na v90 (`docs/relatorios/2026-10-31-servidor-do-ponto-robusto.md`).
@@ -200,3 +202,68 @@ Nenhum documento trouxe:
 - o tempo exato até a foto aparecer para venda.
 
 O Eterna mede esse tempo na Fila do fotógrafo e no `/metricas`. Vale registrar o nosso, de ponta a ponta, para comparar.
+
+## 6. Roverpix: o sistema atual e o que não pode faltar em 01/12
+
+**Fontes:**
+- `PRAZOS_ROVERPIX_OUT-26.pdf` (o "SLA Geral" de 14/10);
+- documentação da API de relatórios;
+- e-mails de junho a outubro: relatório técnico Fictix/MaracaFly de 02/06, propostas de 14 e 15/09, "Vendas Roverpix 25 e 26" de 07/10, API de 13 e 15/10, auditoria de 24/10, BI de 27/10;
+- planos do Eterna (v72, v83, cartão QR).
+
+O contrato assinado não foi encontrado nos e-mails. O comparativo Roverpix × Eterna que o Eduardo mandou ao Bruno em 15/10 é um link de artifact e não foi lido. A ata de 25/09 também ficou sem leitura.
+
+**Quem é quem:** o software é da Roverpix, mas quem opera no estádio desde 2022 é a **Livepix, do grupo Fictix** (contato: Luiz Thiago). O relatório de junho registra indícios de que a relação Fictix–Roverpix é societária, não só de cliente e fornecedor. Uma consulta de 02/09 achou duas ações trabalhistas contra a Roverpix no TRT-2, somando cerca de R$ 351 mil.
+
+**O que ela oferece no Tour:**
+- **Captura e identificação:** cartão com QR na estação. A facial estava "em piloto".
+- **Pontos de foto:** Chroma (tirado da operação em 26/10), Modo Captura (o cliente dispara no tablet), Foto Volante, PDV, PDV Mobile e Totem em que o próprio cliente paga.
+- **Produtos:** pacotes de R$ 69 a R$ 250, digitais avulsas (1 por R$ 49, 3 por R$ 79, 6 por R$ 109), **porta-retrato** (R$ 75 e R$ 150), cortesias com tipo, reimpressões e venda online pelo "Site". A proposta padrão cita ainda caneca, chaveiro, globo de neve e recuperação online de quem não comprou.
+- **Admin:** faturamento, conversão, ticket, ranking de produtos, **comissão por fotógrafo e por vendedor**, **integração fiscal e TEF** (bandeira, BIN, carteira digital).
+- **API:** só leitura (pedidos, pagamentos, fotos), sem o link da foto nem o fundo de IA (o pedido ficou "no backlog").
+- **Infraestrutura (da Fictix):** servidor Dell com reserva, sincronização com a AWS, rede Ubiquiti, link dedicado, 4 estações, 7 PDVs, 6 a 7 tablets e câmeras Canon.
+- **Guarda e suporte:** fotos 30 dias no servidor local e 3 meses na nuvem. A Fictix faz o suporte de 2º nível. O "SLA" só tem prazo para pedido de mudança (2 a 10 dias úteis, nada no fim de semana). **Não há prazo para incidente.**
+
+**Modelo comercial:**
+- Proposta padrão da Roverpix (com o Ronaldo como cliente oculto, 15/09): **10% da receita**.
+- Proposta Fictix/Livepix para continuar (14/09): **25% da receita bruta com piso de R$ 180 mil por mês**, 12 meses e renovação automática. Rescisão com 90 dias de aviso, 30 dias para retirar os equipamentos. O código e as bases ficam com a Fictix.
+
+**Números reais (dados da Roverpix):**
+- 2025: 109.954 cartões, 1,93 milhão de fotos, **19% vendidas**, R$ 21,66 por foto, **R$ 7,65 milhões**.
+- 2026, de janeiro a setembro: R$ 6,03 milhões, com 18% das fotos vendidas.
+- De 07 a 15/10 (já com a Maracatour): R$ 115 mil em 868 vendas, **ticket de R$ 133**, 24% das fotos vendidas, **56% das sessões viram as fotos no balcão**, R$ 16 por visitante.
+- Auditoria de 01 a 23/10: **101 vendas sem conciliação entre a Imply e a Roverpix (R$ 8.021,70)**: vendas sem cobrança, cancelamentos que continuaram como venda e cortesias sem lançamento.
+
+**Dores registradas:**
+- Só sabe a hora de chegada da foto, não a do clique.
+- Dia em UTC.
+- O painel tinha um "funil disfarçado" de pizzas.
+- Mudança simples leva 2 dias úteis.
+- Não integra com o caixa da Imply.
+- Sem LTV, CRM, retargeting nem foto-produto (admitido pela própria Fictix).
+- A própria Maracatour não confia nos relatórios de custo.
+
+**O que a Roverpix tem e o Eterna ainda não tem.** Isso pesa mais que a lista do mercado, porque é o que se perde no dia da troca:
+
+| # | Recurso | Situação no Eterna |
+|---|---|---|
+| R1 | **Venda online de verdade** ("Site") | Compra online desligada e pagamento simulado |
+| R2 | **Porta-retrato** (vendido hoje), caneca e chaveiro | Catálogo só com 10×15, digital e fundo de IA |
+| R3 | **TEF e dados de pagamento** (bandeira, BIN, NSU automático) | NSU digitado (`pos-manual`); a conciliação dos R$ 8 mil continua aberta |
+| R4 | **Integração fiscal** | Não existe |
+| R5 | **Comissão por fotógrafo e vendedor** (valor rateado) | Índice e conversão, sem comissão |
+| R6 | **API de relatórios para o BI**: o Caio consome a da Roverpix | Não há API publicada: **o BI quebra em 01/12** |
+| R7 | Modo Captura, PDV Mobile e **totem em que o cliente paga** | O Checkout depende do vendedor confirmar o pagamento |
+| R8 | Cadastro de e-mail e WhatsApp na loja | Só no plano (v82) |
+| R9 | Guarda de **3 meses** | 60 dias |
+| R10 | Suporte de 2º nível | Não há suporte formal |
+| R11 | Infraestrutura física redundante (servidor com reserva) | Um servidor só (o de teste ficou offline desde 01/11) |
+
+**Riscos da transição:**
+- **Contrato:** conferir aviso prévio, multa, piso e renovação automática antes de 01/12. Pela proposta de setembro, a rescisão pedia 90 dias de aviso, e a renovação automática acontecia se ninguém avisasse até 60 dias antes do fim.
+- **Equipamento:** servidor, rede, PDVs, tablets e câmeras podem ser da Fictix e sair com ela.
+- **Exportar o histórico** de pedidos, pagamentos e fotos de 2025 e 2026 **enquanto a chave da API funciona**. A chave é de um PDV e pode ser revogada, e a API não exporta as fotos.
+- **Clientes que compraram até 30/11** resgatam pela Roverpix até cerca de fevereiro/2027. É preciso definir quem atende o SAC.
+- **Cartões com QR da Roverpix** não abrem no Eterna: recolher o estoque e trocar pelos cartões novos.
+- **LGPD:** formalizar a devolução ou a exclusão de leads e fotos que estão com a Fictix. Não há protocolo de saída.
+- **Comparar antes e depois:** os preços mudam (R$ 149 por 6 fotos lá, R$ 190 por 9 no Eterna), e o Painel depende do histórico da Roverpix para comparar com o período anterior.
