@@ -16,6 +16,21 @@ Feito a pedido do Ronaldo para ele, o Eduardo e o Claude do Eduardo. É o cruzam
 | CP | Comparativo de sistemas de fotografia de tour |
 | RQ | Requisitos técnicos para 20 mil fotos/dia |
 | GR | Transcrição da Ticketmaster (granola), na parte de foto e cashless |
+| GO | GoPhoto / CaptureLife: e-mails de 28/08 a 15/10, "GoPhoto x Viva Maracana.pdf" |
+| SN | Sniper Action Photo: e-mails de 27/08 a 23/09, resposta ao RFP de 09/09 |
+| II | Image Insight: e-mails de 27/08 a 15/09 (sem proposta) |
+| BK | Banlek: e-mails de 14 e 15/10 |
+| OT | Photos.live / Oto.live: e-mails de 09 a 28/10, apresentação, resumo do Fireflies de 16/10 |
+| FG | FTG / Fotográfica: ata no Monday de 21/09 |
+| FO | Fotosmile: proposta formal de 07/09 ("Viva Maracanã offer.pdf") |
+| CO | Comparativo de 15/09 enviado ao time (`Selecao_Fornecedor_Fotografia_Tour_Maracana.docx`) e e-mails da negociação com a Magic Memories |
+
+O histórico de cada contato está no Monday, no item "Busca de Fornecedor de Fotografia" do board Diretoria de TI. Quase todos os subitens só têm título; o conteúdo está nos e-mails. Não há registro do conteúdo da reunião com a Fábrica dos Sonhos nem da reunião com a Snap Pop. Nos e-mails de outubro, "Snap Pop" aparece como experiência vendida no ponto de venda, ao lado de Drone e Chute a Gol.
+
+**Como a concorrência terminou:**
+- **14 e 15/10:** GoPhoto, Fotosmile e Banlek receberam "concluímos o bid e seguiremos com o fornecedor atual" (a Roverpix).
+- **Magic Memories:** ficou pausada, não recusada. A pausa foi em 30/09 e 01/10, porque o tour começou em 01/10 com o fornecedor atual. Em 14/10 ela avisou que abriu a primeira operação no Brasil (Hasbro / Be-Fun, em São Paulo).
+- **15/10:** o Eduardo mandou ao Bruno o comparativo Roverpix x Eterna.
 
 ## 1. Números de referência
 
@@ -50,6 +65,22 @@ Feito a pedido do Ronaldo para ele, o Eduardo e o Claude do Eduardo. É o cruzam
 
 **Referência Barça (MM):** 1,5 milhão de visitantes por ano, 2 fotos por pessoa em menos de 1 minuto, 12 a 15 pontos de venda na alta temporada.
 
+**Barça e Fenway Park, na negociação (CO):**
+- **40% a 42% dos grupos fotografados compram**;
+- ticket médio de **US$ 42 a 44**;
+- **US$ 4,80 por pagante**.
+
+É o teto de referência, bem acima do plano da Magic Memories para o Maracanã.
+
+**Quanto cada fornecedor cobraria (CO, FO, SN, GO):**
+
+| Fornecedor | Modelo |
+|---|---|
+| Magic Memories | 1ª oferta: US$ 0,35 por grupo fotografado + US$ 2,50 por venda. Oferta final: **US$ 0,75 + US$ 0,75**, com até 15 produtos por álbum (2 em vídeo, 3 com fundo de IA). Equivale a uns 4,7% a 9,3% da receita, conforme a conta do comparativo. Implantação paga pela Maracatour. |
+| Fotosmile | **23% das vendas no local** e **49% das vendas pós-visita** (que ela opera), mais € 0,006 por foto e técnico a € 850. Contrato de 3 anos. Foi a mais cara do comparativo: R$ 125 a 168 mil por ano. |
+| Sniper Action Photo | **15% da receita bruta** (descontados cartão e mídia) **ou US$ 2.500 por mês fixos**. 12 meses, piloto de 60 dias. |
+| GoPhoto | Taxa fixa, sem divisão de receita, estimada em **6% a 15% da receita**. Não houve preço fechado. |
+
 **Custo de impressão (FB):** cerca de R$ 2 por foto, mais R$ 2 com ímã.
 
 **Remuneração da Magic Memories:** 14% sobre o valor líquido mais US$ 6 mil de implantação. Toda integração é cobrada à parte.
@@ -57,6 +88,11 @@ Feito a pedido do Ronaldo para ele, o Eduardo e o Claude do Eduardo. É o cruzam
 **O que o Eterna precisa medir para comparar:** o Painel já tem visitantes (catraca), sessões, vendas e ticket. Faltam **"% de grupos fotografados"** e **"% de grupos que compram"** com a mesma definição da Magic Memories. Sem isso, não dá para saber se estamos acima ou abaixo de 31% e US$ 1,96 por visitante.
 
 ## 2. Onde o Eterna já está à frente
+
+Duas coisas que as empresas novas ofereciam já estão no Eterna:
+- **"uma face por selfie"** (GoPhoto) = a nossa **uma pessoa por vez**, na v90;
+- **busca restrita ao dia, para ter velocidade** (Sniper) = a **janela da selfie de 90 minutos**, ajustável, na v91. A busca leva 53 ms na primeira vez e 8 ms nas seguintes, com 3.000 fotos.
+
 
 - **Reconhecimento facial local e sem internet** (YuNet + SFace no servidor do ponto). A Magic Memories processa rostos na AWS dos EUA (US-West-2). A PhotoPark usa Roverpix. A Fotop depende da nuvem.
 - **Menores e escolas:** QR geral do grupo, mostrando só as fotos em que o rosto da criança bate. Na Magic Memories, o menor só se autodeclara com 13 anos ou mais.
@@ -107,6 +143,35 @@ Organizado por área. Em cada item: quem tem e o que é.
 26. **Campanhas automáticas para quem não comprou (FT, MM).** A ideia do Ronaldo: avisar no 20º dia, limpar no 30º. O Igor propôs separar a venda "local" (sem marca d'água) da venda de "retarget" (com marca d'água e preço mais agressivo). Mesmo pesando cerca de 6%, é receita quase sem custo. No Eterna o plano existe (v82), mas nada foi feito: a compra online está desligada e não há e-mail nem WhatsApp.
 27. **"Baixar todas"** num arquivo só (FT). No Eterna, o cliente baixa uma por uma.
 
+### Trazido só pelas empresas do Monday e dos e-mails
+
+**Selfie e privacidade:**
+
+28. **Prova de vida** na selfie (GoPhoto). Ela impede usar a foto de outra pessoa no celular.
+29. **Limiar de confiança alto e declarado** (GoPhoto, 92%: "melhor perder uma foto do que mostrar a família de outro"). Junto vem o botão **"Não é minha foto"**, que tira a imagem só para aquele visitante. No Eterna, o "Esta sessão também é sua?" da v91 cobre parte disso. Os 12 casos de "outra sessão" do teste de estanque mostram que vale.
+30. **O visitante vê e apaga a própria biometria** e há **verificação de idade com consentimento do adulto** (GoPhoto). O reconhecimento é ligado ou desligado por campanha, e desligado não gera biometria nenhuma.
+31. **Orientação na hora da selfie** (FO): pouca luz, olhos fechados, óculos.
+32. **Busca por horário** junto da facial, e só por horário para quem recusa a biometria (SN).
+33. **Auto-anonimização** (FO, patenteada): o visitante se esconde nas fotos de outros grupos. **Regras de privacidade por país** (FO).
+
+**Venda e pós-visita:**
+
+34. **Álbum compartilhado** (FO): o titular adiciona família e amigos e recebe as fotos deles.
+35. **Pré-venda com pré-cadastro facial** (FO; a Magic Memories também citou pré-venda).
+36. **E-mail segmentado** (FO, SN): para quem comprou parte, oferecer completar o pacote; para quem não comprou, oferecer o "Photopass".
+37. **Galeria aberta por até 365 dias** para compra (GO). Hoje o Eterna deixa 60 dias.
+38. **Quiosque de autoatendimento** com pagamento por aproximação, em que **a impressão sai sozinha quando o pagamento entra** (SN).
+39. **Nome ou número da camisa sobreposto na foto** (SN) e **molduras sazonais trocadas remotamente** (FO).
+40. **Espelho de realidade aumentada** "ao lado dos jogadores", sem chroma (FO), e **quiosque com acessibilidade** (FO).
+
+**Operação:**
+
+41. **Ferramentas do operador** (SN): Order Manager (marcar pedido pago em dinheiro, reimprimir, reenviar e-mail) e Print Manager (retomar a impressão depois da troca do rolo). A fila de impressão da v90 cobre parte: cancelar, reimprimir e imprimir o que faltou.
+42. **Cliente oculto** como controle de qualidade (FO, FG).
+43. **Comissão coletiva da equipe por desempenho** (FG).
+44. **Medir filas, mapa de calor e gargalos com as câmeras de segurança**, ligado ao BI (OT). A Oto.live também faz perfil do público (idade, gênero, marcas que veste), gamificação com missões e prêmios, e acesso por face ou pela veia da palma da mão. A Oto não vende foto; é IA de operação. Ela fez visita técnica no fim de outubro e vai montar um roadmap.
+45. **Dois modelos de foto** (FG): o "industrial", a foto de entrada para todos (a que mais converte), e o premium, com edição estilo Disney. A FTG prefere cenário real a chroma.
+
 ## 4. Recomendação de prioridade
 
 A ordem leva em conta receita, esforço e o que já existe no Eterna.
@@ -123,6 +188,9 @@ A ordem leva em conta receita, esforço e o que já existe no Eterna.
 | 8 | **Vídeo, boomerang e multipose** | Produto novo e diferencial | Alto |
 | 9 | **Comissão e meta** por fotógrafo e vendedor | Engajamento da equipe; o índice já existe | Médio |
 | 10 | **Pentest externo** e **política de guarda por tipo de visitante** | Antes de 01/12, com fotos de clientes de verdade | Médio (contratar) |
+| 11 | **Confiança da selfie**: "Não é minha foto", orientação na hora da selfie e prova de vida | Reduz foto de outra família e fraude; parte já existe na v90 e na v91 | Médio |
+| 12 | **Biometria sob controle do visitante**: ver e apagar, idade com consentimento | LGPD, antes de operar com clientes de verdade | Médio |
+| 13 | **Álbum compartilhado e e-mail segmentado** | Venda pós-visita mais certeira; depende do item 5 | Médio |
 
 ## 5. Para pedir aos fornecedores ou medir no piloto
 
