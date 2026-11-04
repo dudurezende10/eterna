@@ -5040,14 +5040,14 @@ def auth_norm(s):
 
 
 def auth_senha_fraca(usuario, nome, senha):
-    """O motivo de recusar esta senha nova, ou None se ela serve."""
+    """O código do motivo de recusar esta senha nova, ou None se ela serve. Quem escreve a mensagem é a tela, no idioma da pessoa."""
     if len(senha) < AUTH_SENHA_MIN:
-        return "A senha precisa de %d caracteres ou mais." % AUTH_SENHA_MIN
+        return "curta"
     if not re.search(r"[^\W\d_]", senha):
-        return "Use letras: uma senha só de números é fácil de descobrir."
+        return "so_numeros"
     cru = senha.lower()
     if len(set(cru)) < 5:
-        return "Essa senha repete poucos caracteres. Tente uma frase curta."
+        return "repetida"
     for base in AUTH_SEQUENCIAS:
         for seq in (base, base[::-1]):
             for tam in range(len(seq), 3, -1):
@@ -5058,7 +5058,7 @@ def auth_senha_fraca(usuario, nome, senha):
     for p in sorted(set(AUTH_OBVIAS) | {auth_norm(x) for x in proprias}, key=len, reverse=True):
         resto = resto.replace(p, "")
     if len(resto) < 6:
-        return "Essa senha é fácil de adivinhar. Evite sequências, seu nome, Maracanã, Eterna ou times. Tente uma frase curta."
+        return "obvia"
     return None
 
 
@@ -5094,11 +5094,11 @@ def auth_criar(usuario, por="", ip=""):
     return senha
 
 
-def auth_enviar_reset(destino, senha):
+def auth_enviar_reset(destino, senha, idioma=None):
     """A nuvem manda o e-mail pelo SES, com o segredo do ponto. Sem internet ou sem nuvem configurada, levanta erro."""
     if not NUVEM_API:
         raise RuntimeError("nuvem não configurada")
-    rq = urllib.request.Request(NUVEM_API + "/auth/senha-email", data=json.dumps({"email": destino, "senha": senha}).encode(), method="POST",
+    rq = urllib.request.Request(NUVEM_API + "/auth/senha-email", data=json.dumps({"email": destino, "senha": senha, "idioma": idioma or "pt"}).encode(), method="POST",
                                 headers={"Content-Type": "application/json", "X-Eterna-Ponto": nuvem_segredo(), "User-Agent": "eterna-agente"})
     with urllib.request.urlopen(rq, timeout=20) as r:
         r.read()
@@ -5139,7 +5139,7 @@ def auth_esqueci(usuario, ip=""):
         finally:
             db.close()
     try:
-        auth_enviar_reset(destino, senha)
+        auth_enviar_reset(destino, senha, (cad or {}).get("idioma"))
         return True
     except Exception as ex:
         print("  esqueci a senha: envio falhou: %s" % str(ex)[:160])
@@ -5290,6 +5290,7 @@ def auth_senhas():
 AUTH_MODULOS = ("estoque", "relatorios", "desempenho", "financeiro", "galerias", "qualidade", "diario", "set", "escala", "filafoto", "configuracao",
                 "catalogo", "usuarios", "senhas", "permissoes", "laboratorio", "venda", "quiosque")     # os mesmos de MODULES no app
 AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "contato", "key", "active"), ("perms", "menu", "preset", "inicio")
+AUTH_IDIOMAS = (None, "", "pt", "en", "es", "fr")
 AUTH_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$")
 
 
@@ -5313,6 +5314,10 @@ def auth_cadastro_recusa(quem, id_doc, antes, depois):
             return "sem_permissao"
         if antes.get("contato") != depois.get("contato") and not auth_pode(ed, "senhas", "u"):
             return "sem_permissao"                      # é para onde a senha provisória vai: mudar o e-mail vale tanto quanto gerar outra senha
+    if depois is not None and depois.get("idioma") not in AUTH_IDIOMAS:
+        return "sem_permissao"
+    if antes is not None and depois is not None and antes.get("idioma") != depois.get("idioma") and antes.get("email") != ed.get("email") and not auth_pode(ed, "usuarios", "u"):
+        return "sem_permissao"                          # o próprio idioma cada um troca; o de outra pessoa pede Alterar em Cadastro de usuários
     novos = auth_acessos(depois) - auth_acessos(antes)
     if novos - auth_acessos(ed):
         return "sem_poder"                              # não dá um acesso que não tem
@@ -5869,7 +5874,7 @@ class H(BaseHTTPRequestHandler):
             return self.js({"erro": "incorreto"}, 401, True)
         if u.path == "/auth/trocar":
             nova = str(b.get("nova") or "")
-            motivo = "A senha nova não pode repetir a atual." if nova == senha else "A senha é longa demais." if len(nova) > 200 else auth_senha_fraca(usuario, (dados["cadastro"] or {}).get("name"), nova)
+            motivo = "repete_atual" if nova == senha else "longa" if len(nova) > 200 else auth_senha_fraca(usuario, (dados["cadastro"] or {}).get("name"), nova)
             if motivo:
                 return self.js({"erro": "fraca", "motivo": motivo}, 400, True)
             auth_trocar(usuario, nova, ip)

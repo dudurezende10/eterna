@@ -207,7 +207,7 @@ ok(not m.estado_col("credencial")["docs"] and "credencial" not in m.ESTADO_COLS,
 
 # 8b. esqueci a senha: provisória por e-mail, ao lado da senha atual, sem revelar quem existe
 enviados = []
-m.auth_enviar_reset = lambda destino, senha: enviados.append((destino, senha))
+m.auth_enviar_reset = lambda destino, senha, idioma=None: enviados.append((destino, senha, idioma))
 FRASE, FRASE2 = "uma frase bem comprida agora", "outra frase bem comprida depois"
 def cad_reset(u, **k):
     m.estado_gravar({"docs": [{"col": "usuarios", "id": u, "valor": dict({"v": 2, "email": u, "name": "Pessoa " + u, "preset": "foto", "active": True, "perms": {"importar": TUDO}}, **k)}]})
@@ -264,13 +264,13 @@ m.auth_criar("saiu", "teste")
 cad_reset("sem.senha", contato="novo@exemplo.com")
 n = len(enviados)
 ok(not m.auth_esqueci("sem.email") and not m.auth_esqueci("saiu") and not m.auth_esqueci("sem.senha") and len(enviados) == n, "e-mail saiu para sem e-mail, desativado ou sem senha")
-def falha(destino, senha):
+def falha(destino, senha, idioma=None):
     raise OSError("sem internet")
 m.auth_enviar_reset = falha
 cad_reset("sem.rede", contato="rede@exemplo.com")
 m.auth_criar("sem.rede", "teste")
 ok(not m.auth_esqueci("sem.rede"), "falha de envio conta como enviado")
-m.auth_enviar_reset = lambda destino, senha: enviados.append((destino, senha))
+m.auth_enviar_reset = lambda destino, senha, idioma=None: enviados.append((destino, senha, idioma))
 ok(m.auth_esqueci("sem.rede"), "falha de envio não prende o próximo pedido por 15 minutos")
 m.auth_reset_ip.clear()
 for _ in range(m.AUTH_RESET_IP):
@@ -287,6 +287,19 @@ ed_com = {"cadastro": {"email": "ed", "preset": "custom", "perms": {"usuarios": 
 a = {"email": "x", "name": "X", "contato": "x@exemplo.com", "perms": {"importar": TUDO}}
 ok(m.auth_cadastro_recusa(ed_sem, "x", a, dict(a, contato="golpe@exemplo.com")) == "sem_permissao", "sem Senhas de acesso, muda o e-mail de outra pessoa")
 ok(m.auth_cadastro_recusa(ed_com, "x", a, dict(a, contato="novo@exemplo.com")) is None, "com Senhas de acesso, não muda o e-mail")
+
+# 8c. idioma: o servidor responde com código, cada um troca o próprio, e o e-mail sai no idioma da pessoa
+ok(m.auth_senha_fraca("x", "", "curta") == "curta" and m.auth_senha_fraca("x", "", "1234567890123") == "so_numeros", "senha fraca responde com código")
+p = {"email": "x", "name": "X", "idioma": "pt", "perms": {"importar": TUDO}}
+sem = {"cadastro": {"email": "y", "perms": {"importar": TUDO}}}
+ok(m.auth_cadastro_recusa({"cadastro": p}, "x", p, dict(p, idioma="en")) is None, "a pessoa não troca o próprio idioma")
+ok(m.auth_cadastro_recusa(sem, "x", p, dict(p, idioma="en")) == "sem_permissao", "troca o idioma de outra pessoa sem permissão")
+ok(m.auth_cadastro_recusa({"cadastro": p}, "x", p, dict(p, idioma="<b>")) == "sem_permissao", "idioma inválido aceito")
+ok(m.auth_cadastro_recusa({"cadastro": p}, "x", p, dict(p, idioma="en", name="Outro")) == "sem_permissao", "trocar o idioma libera mudar o resto do cadastro")
+m.auth_reset_ip.clear()
+cad_reset("fala.ingles", contato="en@exemplo.com", idioma="en")
+m.auth_criar("fala.ingles", "teste")
+ok(m.auth_esqueci("fala.ingles") and enviados[-1][2] == "en", "o e-mail não sai no idioma da pessoa")
 
 # 9. senha provisória vence em 72 horas; muitos erros do mesmo endereço param, mesmo mudando o usuário
 doc("velho")

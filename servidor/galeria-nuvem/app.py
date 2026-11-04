@@ -306,13 +306,27 @@ def limpeza():
 
 
 # ---------- esqueci a senha: e-mail com a senha provisória gerada pelo servidor do estádio ----------
-# POST /auth/senha-email {email, senha} -> 202 · 400 · 401 · 429 · 502. Só o servidor do estádio chama, com o segredo do ponto. A senha não é
+# POST /auth/senha-email {email, senha, idioma} -> 202 · 400 · 401 · 429 · 502. Só o servidor do estádio chama, com o segredo do ponto. A senha não é
 # guardada nem vai para log. Sai pelo Amazon SES com a permissão da própria função. Limites: 6 por hora por e-mail, 400 por hora no total.
 MAIL_FROM = os.environ.get("MAIL_FROM", "")
 MAIL_NOME = os.environ.get("MAIL_NOME", "Viva Maracanã")
 _re_email = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", re.I)
 _re_senha_prov = re.compile(r"^[a-z0-9]{8,64}$")
 _ses = boto3.client("sesv2", region_name=REGIAO)
+
+
+EMAIL_SENHA = {
+    "pt": ("Sua senha provisória", "Recebemos um pedido para redefinir sua senha do Eterna. Use esta senha provisória na tela de entrada.",
+           "Ela vale por 30 minutos e só serve para criar a sua senha nova.", "Se não foi você que pediu, ignore este e-mail. Sua senha atual continua valendo."),
+    "en": ("Your temporary password", "We received a request to reset your Eterna password. Use this temporary password on the sign-in screen.",
+           "It is valid for 30 minutes and can only be used to create your new password.", "If you did not request this, ignore this email. Your current password keeps working."),
+    "es": ("Tu contraseña temporal", "Recibimos una solicitud para restablecer tu contraseña de Eterna. Usa esta contraseña temporal en la pantalla de entrada.",
+           "Es válida durante 30 minutos y solo sirve para crear tu contraseña nueva.", "Si no fuiste tú, ignora este correo. Tu contraseña actual sigue funcionando."),
+    "fr": ("Votre mot de passe temporaire", "Nous avons reçu une demande de réinitialisation de votre mot de passe Eterna. Utilisez ce mot de passe temporaire sur l'écran de connexion.",
+           "Il est valable 30 minutes et sert uniquement à créer votre nouveau mot de passe.", "Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail. Votre mot de passe actuel reste valable."),
+    "de": ("Ihr vorläufiges Passwort", "Wir haben eine Anfrage zum Zurücksetzen Ihres Eterna-Passworts erhalten. Verwenden Sie dieses vorläufige Passwort auf der Anmeldeseite.",
+           "Es gilt 30 Minuten und dient nur dazu, Ihr neues Passwort zu erstellen.", "Wenn Sie dies nicht angefordert haben, ignorieren Sie diese E-Mail. Ihr aktuelles Passwort bleibt gültig."),
+}
 
 
 def senha_email(ev, corpo):
@@ -328,15 +342,13 @@ def senha_email(ev, corpo):
         return resp({"erro": "aguarde"}, 429)
     if not MAIL_FROM:
         return resp({"erro": "envio desligado"}, 502)
-    aviso = "Ela vale por 30 minutos e só serve para criar a sua senha nova."
-    ignore = "Se não foi você que pediu, ignore este e-mail. Sua senha atual continua valendo."
-    texto = "Recebemos um pedido para redefinir sua senha do Eterna. Use esta senha provisória na tela de entrada.\n\n%s\n\n%s\n\n%s" % (senha, aviso, ignore)
-    html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:480px'><p>Recebemos um pedido para redefinir sua senha do Eterna. "
-            "Use esta senha provisória na tela de entrada.</p><p style='font-family:monospace;font-size:26px;font-weight:bold;margin:18px 0'>%s</p>"
-            "<p>%s</p><p style='color:#666;font-size:13px'>%s</p></div>") % (senha, aviso, ignore)
+    assunto, intro, aviso, ignore = EMAIL_SENHA.get(str(corpo.get("idioma") or ""), EMAIL_SENHA["pt"])
+    texto = "%s\n\n%s\n\n%s\n\n%s" % (intro, senha, aviso, ignore)
+    html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:480px'><p>%s</p><p style='font-family:monospace;font-size:26px;font-weight:bold;margin:18px 0'>%s</p>"
+            "<p>%s</p><p style='color:#666;font-size:13px'>%s</p></div>") % (intro, senha, aviso, ignore)
     try:
         _ses.send_email(FromEmailAddress="%s <%s>" % (MAIL_NOME, MAIL_FROM), Destination={"ToAddresses": [email]},
-                        Content={"Simple": {"Subject": {"Data": "Sua senha provisória · %s" % MAIL_NOME, "Charset": "UTF-8"},
+                        Content={"Simple": {"Subject": {"Data": "%s · %s" % (assunto, MAIL_NOME), "Charset": "UTF-8"},
                                             "Body": {"Text": {"Data": texto, "Charset": "UTF-8"}, "Html": {"Data": html, "Charset": "UTF-8"}}}})
     except Exception as ex:
         print("senha-email: envio falhou:", str(ex)[:200])
