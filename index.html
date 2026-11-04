@@ -4217,7 +4217,7 @@ function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;const m=ACT_MOD[a]
 
 state.user=null;state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};
 function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;state.user=u;return true;}catch(e){return false}}
-function login(email){const u=userFor(email);if(!u){state.auth.err=TE('sem_cadastro');render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
+function login(email){const u=userFor(email);if(!u){state.auth.err='sem_cadastro';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
   state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
 function logout(){authApi('/auth/sair',{});camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
@@ -4226,17 +4226,18 @@ function logout(){authApi('/auth/sair',{});camStop();try{localStorage.removeItem
 const authSite=()=>/(^|\.)eterna\.photo$/.test(location.hostname);
 async function authApi(rota,corpo){try{const r=await fetch(rota,{method:corpo?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo?JSON.stringify(corpo):undefined});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
 function authEntrou(r){if(r.cadastro&&r.usuario){USERS[r.usuario]=migrateUser(r.cadastro)||r.cadastro;}login(r.usuario);} // o cadastro do servidor vale mais que a cópia do navegador
-function authErro(r){return r.status===429?TE('err_tentativas'):r.erro==='fraca'?TE(EQ['fraca_'+r.motivo]?'fraca_'+r.motivo:'fraca_obvia'):r.status===401?TE('err_incorretos'):TE('err_conexao');}
-async function authEntrar(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u||!a.senha){a.err=TE('err_digite');render();return;}a.busy=true;a.err=null;render();
+// o erro fica guardado como chave e é traduzido ao desenhar: trocar a bandeira com o aviso na tela também troca o aviso
+function authErro(r){return r.status===429?'err_tentativas':r.erro==='fraca'?(EQ['fraca_'+r.motivo]?'fraca_'+r.motivo:'fraca_obvia'):r.status===401?'err_incorretos':'err_conexao';}
+async function authEntrar(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u||!a.senha){a.err='err_digite';render();return;}a.busy=true;a.err=null;render();
   const r=await authApi('/auth/entrar',{usuario:u,senha:a.senha});a.busy=false;
   if(r.status===200&&r.troca){a.step='trocar';a.err=null;a.nova='';a.nova2='';render();return;}
   if(r.status===200&&r.ok){authEntrou(r);return;}a.senha='';a.err=authErro(r);render();}
-async function authEsqueci(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u){a.err=TE('err_digite_usuario');render();return;}a.busy=true;a.err=null;render();
+async function authEsqueci(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u){a.err='err_digite_usuario';render();return;}a.busy=true;a.err=null;render();
   const r=await authApi('/auth/esqueci',{usuario:u});a.busy=false;if(r.status===200)a.enviado=true;else a.err=authErro(r);render();}
-async function authTrocar(){const a=state.auth;if(a.busy)return;const dentro=!!state.user;const u=dentro?state.user.email:normEmail(a.usuario);if(!u||!a.senha){a.err=TE('err_digite_atual');render();return;}if(a.nova.length<10){a.err=TE('fraca_curta');render();return;}if(a.nova!==a.nova2){a.err=TE('err_diferentes');render();return;}a.busy=true;a.err=null;render();
+async function authTrocar(){const a=state.auth;if(a.busy)return;const dentro=!!state.user;const u=dentro?state.user.email:normEmail(a.usuario);if(!u||!a.senha){a.err='err_digite_atual';render();return;}if(a.nova.length<10){a.err='fraca_curta';render();return;}if(a.nova!==a.nova2){a.err='err_diferentes';render();return;}a.busy=true;a.err=null;render();
   const r=await authApi('/auth/trocar',{usuario:u,senha:a.senha,nova:a.nova});a.busy=false;a.nova='';a.nova2='';
   if(r.status===200&&r.ok&&dentro){state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view=homeView();toast(TE('senha_alterada'));render();return;}
-  if(r.status===200&&r.ok){authEntrou(r);return;}if(dentro&&r.status===401){a.senha='';a.err=TE('err_atual');}else a.err=authErro(r);render();}
+  if(r.status===200&&r.ok){authEntrou(r);return;}if(dentro&&r.status===401){a.senha='';a.err='err_atual';}else a.err=authErro(r);render();}
 // ao abrir: a sessão salva só vale se o servidor ainda reconhecer o cookie. Sem resposta do servidor, ela segue até ele voltar.
 async function authConferir(){if(authSite()||!state.user)return;const r=await authApi('/auth/eu');if(r.status===401&&state.user)logout();}
 // Senhas de acesso: o servidor confere a permissão do módulo em cada pedido; os botões só escondem o que não vai funcionar.
@@ -4253,10 +4254,10 @@ function vMinhaSenha(){const a=state.auth;
     ${campoSenha('login-senha',a.senha,TE('senha_atual'),'current-password',true)}
     ${campoSenha('login-nova',a.nova,TE('senha_nova'),'new-password',true)}
     ${campoSenha('login-nova2',a.nova2,TE('senha_repita'),'new-password',true)}
-    ${a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:''}<div class="row"><button class="btn primary" type="submit">${TE('salvar')}</button><button class="btn ghost" type="button" data-act="login-voltar">${TE('voltar')}</button></div></form>`;}
+    ${a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(TE(a.err))}</b></div></div>`:''}<div class="row"><button class="btn primary" type="submit">${TE('salvar')}</button><button class="btn ghost" type="button" data-act="login-voltar">${TE('voltar')}</button></div></form>`;}
 function vEntrar(){
   const a=state.auth;const at=document.activeElement;a.foco=at&&at.dataset&&/^login-(usuario|senha|nova|nova2)$/.test(at.dataset.act||'')?at.dataset.act:null;const logo=`<div class="login-mark">${venueLogo(84,'dark')}</div><div class="note" style="text-align:center">${TE('fotos_equipe')}</div>`;
-  const erro=a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:'';
+  const erro=a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(TE(a.err))}</b></div></div>`:'';
   const pe=`<div class="note" style="text-align:center">${TE('convidado')}</div>${idiomaSel()}<div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div>`;
   if(authSite())return `<div class="enter login">${logo}<div class="panel"><h2>${TE('entrar')}</h2><div class="note">${TE('site')}</div></div>${pe}</div>`;
   if(a.step==='esqueci')return `<div class="enter login">${logo}

@@ -36,8 +36,13 @@ try{
   ok(await pg.evaluate(()=>ETERNA.fmtR(1234).replace(/\s/g,' '))==='R$ 1.234','valor em português');
   // erro devolvido pelo servidor como código aparece no idioma da pessoa
   await pg.click('[data-act="idioma-equipe"][data-l="fr"]');await pg.waitForTimeout(50);
-  ok(/10 caractères/.test(await pg.evaluate(()=>ETERNA.authErro({erro:'fraca',motivo:'curta',status:400}))),'código do servidor não traduz');
+  ok(/10 caractères/.test(await pg.evaluate(()=>ETERNA.TE(ETERNA.authErro({erro:'fraca',motivo:'curta',status:400})))),'código do servidor não traduz');
   await pg.click('[data-act="idioma-equipe"][data-l="pt"]');await pg.waitForTimeout(50);
+  // aviso de erro na tela acompanha a troca de bandeira
+  await pg.fill('[data-act="login-usuario"]','');await pg.fill('[data-act="login-senha"]','');await pg.click('button[type=submit]');await pg.waitForTimeout(100);
+  ok(/Digite o usuário/.test(await pg.textContent('.alert.bad')),'aviso em português');
+  await pg.click('[data-act="idioma-equipe"][data-l="fr"]');await pg.waitForTimeout(100);ok(/Saisissez/.test(await pg.textContent('.alert.bad')),'aviso não acompanhou a bandeira');
+  await pg.click('[data-act="idioma-equipe"][data-l="pt"]');await pg.waitForTimeout(100);ok(/Digite o usuário/.test(await pg.textContent('.alert.bad')),'aviso não voltou ao português');
   // dentro do sistema: o idioma do cadastro vale mais que o do aparelho, e o seletor grava no cadastro
   ok(await entrarTeste(pg,'eduardo@eduardorezende.com'),'entrar');
   await pg.evaluate(()=>{ETERNA.state.user.idioma='es';ETERNA.render();});await pg.waitForTimeout(100);
