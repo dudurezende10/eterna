@@ -3952,6 +3952,7 @@ function vIdentidade(){
   </div>`;
 }
 
+const MAIL_FROM='hello@eterna.photo';
 // ---------- acesso: usuário e senha no servidor, permissão CRUD por módulo e menu por usuário (v78) ----------
 // Duas camadas: o módulo (C/R/U/D) decide o que a pessoa FAZ; o menu (lista de telas permitidas) decide o que ela VÊ.
 // Uma tela só aparece com o "Ver" do módulo E estando no menu da pessoa. Tela nova entra em MODULES, MODULE_INFO e no menu dos perfis.
@@ -3970,6 +3971,7 @@ const MODULES=[
  ['configuracao','Configurações do venue',['repo','identidade','chroma']],
  ['catalogo','Painel de controle (catálogo e preços)',['catalogo']],
  ['usuarios','Cadastro de usuários',['usuarios']],
+ ['senhas','Senhas de acesso',[]],
  ['permissoes','Permissões',['permissoes']],
  ['laboratorio','Laboratório',['vestiario','fundos-teste']],
  ['venda','Venda no balcão',['checkout','fila','caixa','posto']],
@@ -3991,6 +3993,7 @@ const MODULE_INFO={
  filafoto:{desc:'Painel das fotos chegando, por fotógrafo e ponto',r:'ver a fila do fotógrafo (também na TV)',u:'ligar e desligar as miniaturas (rostos) neste aparelho'},
  configuracao:{desc:'Repositório, Identidade, Fundos de IA e o FTP do estádio (no Painel de controle)',r:'ver as configurações e o status do FTP',u:'mudar repositório, identidade, integrações, FTP do estádio, os fundos do Checkout e a montagem dos fundos (local ou Photoroom)'},
  catalogo:{desc:'Painel de controle: catálogo e preços, tempo da tela final do Checkout',r:'ver os preços',u:'mudar preços e o tempo do Checkout'},
+ senhas:{desc:'Senhas de acesso, em Usuários',c:'gerar a primeira senha provisória',r:'saber quem tem senha',u:'gerar outra senha provisória',d:'cancelar a senha'},
  usuarios:{desc:'Usuários: cadastro da equipe',c:'cadastrar pessoa',r:'ver a lista',u:'mudar nome, e-mail, fotógrafo, ativar e desativar',d:'excluir acesso'},
  permissoes:{desc:'Permissões: quem vê e faz o quê',r:'ver e mudar o que cada pessoa vê e faz (sempre junto com Alterar)',u:'mudar acessos (sempre junto com Ver)'},
  laboratorio:{desc:'Laboratório: produtos em teste (Vestiário e Fundos em teste; ativar um fundo pede Alterar em Configurações do venue)',r:'ver'},
@@ -4035,6 +4038,7 @@ function seedUsers(){USERS={};SEED_USERS.forEach(([e,n,p,k])=>{USERS[e]=mkUser(e
 // migração para v:2 (D11): perfil pronto segue o perfil novo; personalizado mantém o que tinha, módulo a módulo
 const MIGRA_V1={escala:'configuracao',laboratorio:'configuracao'};
 function migrateUser(x){if(!x||typeof x!=='object')return x;const pr=x.preset;
+  if(pr==='admin'&&x.v===2&&x.perms)x.perms.senhas={...ALL}; // módulo novo: o perfil Admin vem com ele; quem tira a permissão vira personalizado
   if(x.v!==2){const old=x.perms||{};
     if(pr&&pr!=='custom'&&PRESETS[pr]){x.perms=presetPerms(pr);x.menu=presetMenu(pr);x.inicio=PRESETS[pr].inicio;}
     else{const p2={};MODULES.forEach(([m])=>{const src=old[MIGRA_V1[m]||m];p2[m]=src?{...src}:{...NONE};});
@@ -4133,13 +4137,13 @@ state.user=null;state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',e
 function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;state.user=u;return true;}catch(e){return false}}
 function login(email){const u=userFor(email);if(!u){state.auth.err='Este usuário não tem acesso ao Eterna.';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
   state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
-function logout(){authApi('/auth/sair',{});state.authAdmin=false;camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
+function logout(){authApi('/auth/sair',{});camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
 // e a sessão vale pelo cookie HttpOnly. O site público não fala com o servidor: lá só a galeria e o Checkout abrem.
 const authSite=()=>/(^|\.)eterna\.photo$/.test(location.hostname);
 async function authApi(rota,corpo){try{const r=await fetch(rota,{method:corpo?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo?JSON.stringify(corpo):undefined});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
-function authEntrou(r){state.authAdmin=!!r.admin;if(!USERS[r.usuario]&&(r.cadastro||r.admin)){USERS[r.usuario]=r.cadastro||mkUser(r.usuario,r.nome||r.usuario,'admin',null,now().toISOString());if(!r.cadastro)saveUsers(r.usuario);}login(r.usuario);}
+function authEntrou(r){if(r.cadastro&&r.usuario){USERS[r.usuario]=migrateUser(r.cadastro)||r.cadastro;}login(r.usuario);} // o cadastro do servidor vale mais que a cópia do navegador
 function authErro(r){return r.status===429?'Muitas tentativas. Espere 15 minutos ou fale com o administrador.':r.erro==='fraca'?(r.motivo||'Escolha uma senha mais difícil.'):r.status===401?'Usuário ou senha incorretos.':'Sem conexão com o servidor. Tente de novo.';}
 async function authEntrar(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u||!a.senha){a.err='Digite o usuário e a senha.';render();return;}a.busy=true;a.err=null;render();
   const r=await authApi('/auth/entrar',{usuario:u,senha:a.senha});a.busy=false;
@@ -4149,23 +4153,28 @@ async function authTrocar(){const a=state.auth;if(a.busy)return;const u=normEmai
   const r=await authApi('/auth/trocar',{usuario:u,senha:a.senha,nova:a.nova});a.busy=false;a.nova='';a.nova2='';
   if(r.status===200&&r.ok){authEntrou(r);return;}a.err=authErro(r);render();}
 // ao abrir: a sessão salva só vale se o servidor ainda reconhecer o cookie. Sem resposta do servidor, ela segue até ele voltar.
-async function authConferir(){if(authSite()||!state.user)return;const r=await authApi('/auth/eu');if(r.status===200&&r.ok){const adm=!!r.admin;if(adm!==state.authAdmin){state.authAdmin=adm;render();}return;}if(r.status===401&&state.user)logout();}
-async function authSenhaProvisoria(usuario,nome,admin){const r=await authApi('/auth/admin/senha',{usuario,nome,admin:!!admin});if(r.status===200&&r.senha){state.users.senha={usuario,valor:r.senha};render();return;}toast(r.status===403||r.status===401?'Só um administrador conectado gera senhas':'Sem conexão com o servidor');}
+async function authConferir(){if(authSite()||!state.user)return;const r=await authApi('/auth/eu');if(r.status===401&&state.user)logout();}
+// Senhas de acesso: o servidor confere a permissão do módulo em cada pedido; os botões só escondem o que não vai funcionar.
+async function authSenhasLer(){if(!can('senhas','r'))return;const r=await authApi('/auth/senhas');if(r.status===200&&r.senhas){state.users.senhas=r.senhas;render();}}
+async function authSenhaProvisoria(usuario){saveUsers(usuario);let r;for(let i=0;i<4;i++){r=await authApi('/auth/senha/gerar',{usuario});if(r.status!==404)break;await new Promise(s=>setTimeout(s,600));} // o cadastro novo pode ainda estar subindo
+  if(r.status===200&&r.senha){state.users.senha={usuario,valor:r.senha};render();authSenhasLer();return;}toast(r.erro==='alvo_maior'?'Esta pessoa tem acessos que você não tem':r.status===403||r.status===401?'Sem permissão em Senhas de acesso':r.status===404?'O cadastro ainda não chegou ao servidor':'Sem conexão com o servidor');}
+async function authSenhaCancelar(usuario){const r=await authApi('/auth/senha/cancelar',{usuario});if(r.status===200){toast('Senha cancelada');authSenhasLer();return;}toast(r.erro==='alvo_maior'?'Esta pessoa tem acessos que você não tem':'Sem permissão em Senhas de acesso');}
+function senhaBotoes(e){const s=(state.users.senhas||{})[e];const tem=!!s;const ver=can('senhas','r');return `${ver?`<span class="pill neutral">${!state.users.senhas?'senha: consultando':tem?(s.provisoria?'senha provisória':'tem senha'):'sem senha'}</span>`:''}${can('senhas',tem?'u':'c')?`<button class="btn ghost" data-act="user-senha">${tem?'Gerar outra senha provisória':'Gerar senha provisória'}</button>`:''}${tem&&can('senhas','d')?`<button class="btn ghost" data-act="user-senha-cancelar">Cancelar senha</button>`:''}`;}
 function vEntrar(){
-  const a=state.auth;const logo=`<div class="login-mark">${venueLogo(84,'dark')}</div><div class="note" style="text-align:center">Fotos · equipe</div>`;
+  const a=state.auth;const at=document.activeElement;a.foco=at&&at.dataset&&/^login-/.test(at.dataset.act||'')?at.dataset.act:null;const logo=`<div class="login-mark">${venueLogo(84,'dark')}</div><div class="note" style="text-align:center">Fotos · equipe</div>`;
   const erro=a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:'';
   const pe=`<div class="note" style="text-align:center">Convidado: suas fotos abrem pelo QR do recibo.</div><div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div>`;
   if(authSite())return `<div class="enter login">${logo}<div class="panel"><h2>Entrar</h2><div class="note">A entrada da equipe é pelo endereço do servidor do estádio.</div></div>${pe}</div>`;
   if(a.step==='trocar')return `<div class="enter login">${logo}
     <form class="panel" data-form="login-trocar"><h2>${a.provisoria?'Crie sua senha':'Trocar senha'}</h2><div class="note">${a.provisoria?'Esta senha provisória só serve para criar a sua.':'Digite a senha atual e a nova.'} Use 10 caracteres ou mais. Uma frase curta é fácil de lembrar e difícil de descobrir.</div>
-      ${a.provisoria?'':`<input type="text" autocomplete="username" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="Usuário" aria-label="Usuário"><input type="password" autocomplete="current-password" data-act="login-senha" value="" placeholder="Senha atual" aria-label="Senha atual">`}
-      <input type="password" autocomplete="new-password" data-act="login-nova" value="" placeholder="Senha nova" aria-label="Senha nova">
-      <input type="password" autocomplete="new-password" data-act="login-nova2" value="" placeholder="Repita a senha nova" aria-label="Repita a senha nova">
+      ${a.provisoria?'':`<input type="text" autocomplete="username" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="Usuário" aria-label="Usuário"><input type="password" autocomplete="current-password" data-act="login-senha" value="${esc(a.senha)}" placeholder="Senha atual" aria-label="Senha atual">`}
+      <input type="password" autocomplete="new-password" data-act="login-nova" value="${esc(a.nova)}" placeholder="Senha nova" aria-label="Senha nova">
+      <input type="password" autocomplete="new-password" data-act="login-nova2" value="${esc(a.nova2)}" placeholder="Repita a senha nova" aria-label="Repita a senha nova">
       ${erro}<div class="row"><button class="btn primary big" type="submit">Salvar e entrar</button><button class="btn ghost" type="button" data-act="login-voltar">Voltar</button></div></form>${pe}</div>`;
   return `<div class="enter login">${logo}
     <form class="panel" data-form="login-entrar"><h2>${a.switching!=null&&state.auth_next==='importar'?'Trocar fotógrafo':'Entrar'}</h2>${a.switching&&state.auth_next==='importar'?`<div class="note"><b>${esc(a.switching)}</b> saiu. O próximo fotógrafo entra com o usuário dele e volta direto para o Upload automático, onde faz o check-in da câmera.</div>`:''}
       <input type="text" autocomplete="username" autocapitalize="none" spellcheck="false" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="Usuário" aria-label="Usuário" autofocus>
-      <input type="password" autocomplete="current-password" data-act="login-senha" value="" placeholder="Senha" aria-label="Senha">
+      <input type="password" autocomplete="current-password" data-act="login-senha" value="${esc(a.senha)}" placeholder="Senha" aria-label="Senha">
       ${erro}<button class="btn primary big" type="submit">Entrar</button>
       <div class="row"><button class="btn ghost" type="button" data-act="login-trocar">Trocar senha</button></div>
       <div class="note">Esqueceu a senha? Peça uma provisória ao administrador.</div></form>
@@ -4194,7 +4203,7 @@ function vUsuarios(){
     <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}" ${ro?'readonly':''}></label><label><span class="eyebrow">Usuário</span><input type="text" data-act="user-field" data-k="email" value="${esc(d.email||'')}" readonly></label></div>
     <label><span class="eyebrow">Fotógrafo vinculado</span><select data-act="user-key" ${ro?'disabled':''}><option value="">Nenhum</option>${humans.map(k=>`<option value="${k}" ${d.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
     <div><span class="eyebrow">Perfil e acessos</span><div><b>${esc(presetName(u.preset))}</b> <span class="note">· ${esc(accSummary(u))}</span></div></div>
-    <div class="row">${rwU?`<button class="btn primary" data-act="user-save">Salvar</button>`:''}${canView('permissoes')?`<button class="btn ghost" data-act="perm-open" data-e="${esc(d.email0)}">Editar permissões</button>`:''}${canView('permissoes')&&!permRO(u)?`<button class="btn ghost" data-act="perm-copy-open" data-e="${esc(d.email0)}">Copiar permissões de…</button>`:''}${!self&&state.authAdmin?`<button class="btn ghost" data-act="user-senha">Gerar senha provisória</button>`:''}${!self&&rwU?`<button class="btn ghost" data-act="user-active">${u.active!==false?'Desativar':'Reativar'}</button>`:''}${!self&&rwD?(state.users.delAsk?`<button class="btn ghost" data-act="user-del-ok" style="color:var(--bad)">Confirmar exclusão</button><button class="btn ghost" data-act="user-del-no">Cancelar</button>`:`<button class="btn ghost" data-act="user-del-ask" style="color:var(--bad)">Excluir acesso</button>`):''}<button class="btn ghost" data-act="user-cancel">Fechar</button></div>
+    <div class="row">${rwU?`<button class="btn primary" data-act="user-save">Salvar</button>`:''}${canView('permissoes')?`<button class="btn ghost" data-act="perm-open" data-e="${esc(d.email0)}">Editar permissões</button>`:''}${canView('permissoes')&&!permRO(u)?`<button class="btn ghost" data-act="perm-copy-open" data-e="${esc(d.email0)}">Copiar permissões de…</button>`:''}${!self?senhaBotoes(d.email0):''}${!self&&rwU?`<button class="btn ghost" data-act="user-active">${u.active!==false?'Desativar':'Reativar'}</button>`:''}${!self&&rwD?(state.users.delAsk?`<button class="btn ghost" data-act="user-del-ok" style="color:var(--bad)">Confirmar exclusão</button><button class="btn ghost" data-act="user-del-no">Cancelar</button>`:`<button class="btn ghost" data-act="user-del-ask" style="color:var(--bad)">Excluir acesso</button>`):''}<button class="btn ghost" data-act="user-cancel">Fechar</button></div>
     ${state.users.delAsk&&!self?'<div class="note">Excluir apaga o cadastro. O histórico guarda quem era, quando e por quem. Desativar é o caminho recomendado.</div>':''}
     <div class="note">Criado em ${u.createdAt?new Date(u.createdAt).toLocaleDateString('pt-BR'):'—'}${u.lastLogin?' · última entrada '+new Date(u.lastLogin).toLocaleString('pt-BR'):' · nunca entrou'}${ro?' · somente leitura':''}</div></div>`;}
   const sn=state.users.senha;const senhaBox=sn?`<div class="panel" style="gap:10px"><h2>Senha provisória de ${esc(sn.usuario)}</h2><div style="font:600 24px var(--display);letter-spacing:.06em">${esc(sn.valor)}</div><div class="note">Entregue à pessoa agora. Esta senha não aparece de novo, e ela cria a própria no primeiro acesso.</div><div class="row"><button class="btn primary" data-act="user-senha-ok">Já entreguei</button></div></div>`:'';
@@ -4209,7 +4218,7 @@ function vUsuarios(){
 function userDraft(email){const u=USERS[email];if(!u)return;state.users.delAsk=false;state.users.draft={email:u.email,email0:u.email,name:u.name,key:u.key||null,preset:u.preset};}
 function userSave(){const d=state.users.draft;if(!d)return;const isNew=!d.email0;
   if(isNew&&!can('usuarios','c')){toast('Sem permissão para criar em Cadastro de usuários');return;}if(!isNew&&!can('usuarios','u')){toast('Sem permissão para alterar em Cadastro de usuários');return;}
-  if(isNew&&!state.authAdmin){toast('Só um administrador cadastra usuários');return;}const e=normEmail(d.email);if(!usuarioOk(e)){toast('Usuário inválido: use letras minúsculas, números, ponto ou hífen');return;}if(!d.name||!d.name.trim()){toast('Dê um nome ao usuário');return;}if(e!==d.email0&&USERS[e]){toast('Este usuário já existe');return;}
+  const e=normEmail(d.email);if(!usuarioOk(e)){toast('Usuário inválido: use letras minúsculas, números, ponto ou hífen');return;}if(!d.name||!d.name.trim()){toast('Dê um nome ao usuário');return;}if(e!==d.email0&&USERS[e]){toast('Este usuário já existe');return;}
   const antes=isNew?null:USERS[d.email0];if(!isNew&&!antes)return;let depois;
   let cp=null;if(isNew){const k=PRESETS[d.preset]?d.preset:'custom';const pr=PRESETS[k];depois={v:2,email:e,name:d.name.trim(),preset:k,key:d.key||null,perms:pr?presetPerms(k):permNorm({}),menu:pr?presetMenu(k):[],inicio:pr?pr.inicio:null,active:true,createdAt:now().toISOString(),createdBy:state.user.email,lastLogin:null,mv:83};
     if(d.copyFrom&&USERS[d.copyFrom]){cp=permCopia(d.copyFrom,null,state.user);Object.assign(depois,{perms:cp.depois.perms,menu:cp.depois.menu,inicio:cp.depois.inicio,preset:cp.depois.preset});}}
@@ -4568,7 +4577,7 @@ function render(){
 // v84: na tela de entrada, o campo (e-mail ou código) já vem focado. O autofocus não dispara em HTML injetado depois do
 // carregamento; o foco só é dado quando a tela passa a ser a de entrada ou muda a etapa (os outros renders não roubam o foco).
 function entrarFoco(){const k=state.view==='entrar'&&!state.user?'entrar|'+state.auth.step:null;
-  if(k&&k!==entrarFoco.k){entrarFocar();[150,600,1500].forEach(ms=>setTimeout(()=>entrarFocar(true),ms));}entrarFoco.k=k;}
+  if(k&&k!==entrarFoco.k){entrarFocar();[150,600,1500].forEach(ms=>setTimeout(()=>entrarFocar(true),ms));}else if(k&&state.auth.foco){const el=document.querySelector('#main [data-act="'+state.auth.foco+'"]');if(el&&document.activeElement!==el){try{el.focus({preventScroll:true});el.setSelectionRange(el.value.length,el.value.length);}catch(e){}}}entrarFoco.k=k;}
 // v89: extensões do navegador e o preenchimento automático podem tirar o foco logo depois; tenta de novo (só se ninguém
 // estiver digitando em outro campo) e também quando a janela volta a ficar ativa.
 function entrarFocar(soLivre){if(state.view!=='entrar'||state.user)return;const el=document.querySelector(state.auth.step==='trocar'?(state.auth.provisoria?'#main [data-act="login-nova"]':'#main [data-act="login-usuario"]'):(state.auth.usuario?'#main [data-act="login-senha"]':'#main [data-act="login-usuario"]'));if(!el)return;
@@ -4655,15 +4664,16 @@ document.addEventListener('click',e=>{
     case 'venue-reset':VENUE_CFG={...VENUE_CFG0(),id:VENUE_CFG.id};saveVenue();render();break;
     case 'venue-logo-clear':VENUE_CFG.logo=null;saveVenue();render();break;
     case 'user-new':{const ok=presetsFor(state.user);state.users.delAsk=false;state.users.draft={email:'',email0:null,name:'',key:null,preset:ok.includes('foto')?'foto':(ok[0]||'custom')};render();break;}
-    case 'user-sel':userDraft(d.e);render();break;
+    case 'user-sel':userDraft(d.e);render();authSenhasLer();break;
     case 'user-cancel':state.users.draft=null;state.users.delAsk=false;render();break;
-    case 'user-save':{const dr=state.users.draft;const nova=dr&&!dr.email0;const id=dr?normEmail(dr.email):'';const tinha=!!USERS[id];userSave();if(nova&&!tinha&&USERS[id])authSenhaProvisoria(id,USERS[id].name,USERS[id].preset==='admin');break;}
-    case 'user-senha':{const dr=state.users.draft;if(dr&&USERS[dr.email0])authSenhaProvisoria(dr.email0,USERS[dr.email0].name,USERS[dr.email0].preset==='admin');break;}
+    case 'user-save':{const dr=state.users.draft;const nova=dr&&!dr.email0;const id=dr?normEmail(dr.email):'';const tinha=!!USERS[id];userSave();if(nova&&!tinha&&USERS[id]&&can('senhas','c'))authSenhaProvisoria(id);break;}
+    case 'user-senha':{const dr=state.users.draft;if(dr&&USERS[dr.email0])authSenhaProvisoria(dr.email0);break;}
+    case 'user-senha-cancelar':{const dr=state.users.draft;if(dr&&USERS[dr.email0])authSenhaCancelar(dr.email0);break;}
     case 'user-senha-ok':state.users.senha=null;render();break;
     case 'user-active':{const dr=state.users.draft;if(!dr||!USERS[dr.email0]||dr.email0===state.user.email)break;const antes=USERS[dr.email0];const on=antes.active===false;if(userApply(dr.email0,Object.assign({},antes,{active:on}),on?'reativar':'desativar')){toast(on?'Acesso reativado':'Acesso desativado: este e-mail não entra mais');render();}break;}
     case 'user-del-ask':state.users.delAsk=true;render();break;
     case 'user-del-no':state.users.delAsk=false;render();break;
-    case 'user-del-ok':{const dr=state.users.draft;if(!dr||!USERS[dr.email0]||dr.email0===state.user.email||!state.users.delAsk)break;const antes=USERS[dr.email0];if(state.authAdmin)authApi('/auth/admin/remover',{usuario:dr.email0});if(userApply(dr.email0,null,'excluir',{antes:{name:antes.name,preset:antes.preset,modulos:MODULES.filter(([m])=>accHas(antes,m,'r')).map(([m])=>m)}})){state.users.draft=null;state.users.delAsk=false;toast('Acesso excluído');render();}break;}
+    case 'user-del-ok':{const dr=state.users.draft;if(!dr||!USERS[dr.email0]||dr.email0===state.user.email||!state.users.delAsk)break;const antes=USERS[dr.email0];if(userApply(dr.email0,null,'excluir',{antes:{name:antes.name,preset:antes.preset,modulos:MODULES.filter(([m])=>accHas(antes,m,'r')).map(([m])=>m)}})){state.users.draft=null;state.users.delAsk=false;toast('Acesso excluído');render();}break;}
     case 'perm-tab':state.perm.tab=d.t;render();break;
     case 'perm-sel':permDraft(d.e);render();break;
     case 'perm-open':state.perm.tab='usuario';permDraft(d.e);go('permissoes');break;

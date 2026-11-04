@@ -1,5 +1,6 @@
-# Entrada da equipe: usuário e senha no agente. Roda com HOME temporário:  python3 -I testes/login_agente.py agente/eterna-agente.py
-import http.client, importlib.util, json, os, sqlite3, sys, threading, time
+# Entrada da equipe: usuário e senha no agente, com as permissões do módulo Senhas de acesso.
+# Roda com HOME temporário:  python3 -I testes/login_agente.py agente/eterna-agente.py
+import http.client, importlib.util, json, os, re, sqlite3, sys, threading, time
 from http.server import ThreadingHTTPServer
 
 sp = importlib.util.spec_from_file_location("ag", sys.argv[1])
@@ -17,6 +18,7 @@ srv = ThreadingHTTPServer(("127.0.0.1", 0), m.H)
 m.PORT = srv.server_address[1]
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 HOST = "127.0.0.1:%d" % m.PORT
+TUDO = {"c": True, "r": True, "u": True, "d": True}
 
 
 def pede(rota, corpo=None, cookie=None, extra=None):
@@ -37,44 +39,125 @@ def cookie_de(ck):
     return ck.split(";")[0]
 
 
-def doc(usuario, valor):
-    m.estado_gravar({"docs": [{"col": "usuarios", "id": m.quote(usuario, safe="-_.!~*'()"), "valor": valor}]})
+def idd(usuario):
+    return m.quote(usuario, safe="-_.!~*'()")
 
 
-# 1. primeiro admin, criado no servidor, tem de trocar a senha antes de entrar
-prov = m.auth_criar("ronaldo", "Ronaldo", True, "servidor")
+def doc(usuario, perms=None, **campos):
+    """Grava direto no banco, como dado já existente: a regra de quem pode gravar é testada à parte."""
+    v = dict({"email": usuario, "name": usuario, "active": True, "preset": "custom", "perms": perms or {}}, **campos)
+    m.estado_gravar({"docs": [{"col": "usuarios", "id": idd(usuario), "valor": v}]})
+    return v
+
+
+def ler(usuario):
+    return m.auth_ler_cadastro(usuario)[0]
+
+
+def entra(usuario, nova):
+    """Cria o cadastro já com permissões, gera a provisória e troca: devolve o cookie."""
+    prov = m.auth_criar(usuario, "teste")
+    st, j, ck = pede("/auth/trocar", {"usuario": usuario, "senha": prov, "nova": nova})
+    ok(st == 200, "%s deveria entrar: %s %s" % (usuario, st, j))
+    return cookie_de(ck)
+
+
+# 1. primeiro administrador: o comando no servidor grava o cadastro e a senha provisória; ela só serve para criar a definitiva
+saida = []
+print_orig = m.print if hasattr(m, "print") else None
+m.print = lambda *a: saida.append(" ".join(str(x) for x in a))
+ok(m.auth_criar_admin("Nome Com Espaco", "x") == 1, "usuário inválido recusado")
+ok(m.auth_criar_admin("ronaldo", "Ronaldo Santos") == 0, "comando cria o administrador")
+del m.print
+prov = saida[-1].split(": ")[-1]
+ok(ler("ronaldo")["preset"] == "admin" and ler("ronaldo")["perms"]["senhas"]["c"] is True, "administrador nasce com Senhas de acesso")
 st, j, ck = pede("/auth/entrar", {"usuario": "ronaldo", "senha": prov})
 ok(st == 200 and j.get("troca") and not ck, "senha provisória não abre sessão: %s %s" % (st, j))
 for fraca in ("curta", "123456", "1234567890", "12345678901234", "0987654321", "qwertyuiop", "aaaaaaaaaaaa", "abababababab", "senha123456", "Senha@2026", "Maracana2026!",
-              "M4r4c4n4@2026", "vivamaracana", "Eterna12345", "Flamengo2026", "ronaldo12345", "Ronaldo@2026", "abcdefghijkl", "1q2w3e4r5t", "04112026041120"):
+              "M4r4c4n4@2026", "vivamaracana", "Eterna12345", "Flamengo2026", "ronaldo12345", "Ronaldo@2026", "Santos@2026", "abcdefghijkl", "1q2w3e4r5t", "04112026041120"):
     st, j, _ = pede("/auth/trocar", {"usuario": "ronaldo", "senha": prov, "nova": fraca})
     ok(st == 400 and j.get("erro") == "fraca" and j.get("motivo"), "senha fraca aceita: %s (%s)" % (fraca, st))
 st, j, _ = pede("/auth/trocar", {"usuario": "ronaldo", "senha": prov, "nova": prov})
 ok(st == 400, "senha provisória não vira definitiva")
 SENHA = "cavalo verde corre longe"
 st, j, ck = pede("/auth/trocar", {"usuario": "ronaldo", "senha": prov, "nova": SENHA})
-ok(st == 200 and j.get("ok") and j.get("admin") and "HttpOnly" in ck and "SameSite=Strict" in ck, "troca entra como admin: %s %s" % (st, ck))
+ok(st == 200 and j.get("ok") and "HttpOnly" in ck and "SameSite=Strict" in ck, "troca entra: %s %s" % (st, ck))
 adm = cookie_de(ck)
 st, j, _ = pede("/auth/eu", cookie=adm)
-ok(st == 200 and j.get("usuario") == "ronaldo", "/auth/eu reconhece a sessão")
+ok(st == 200 and j.get("usuario") == "ronaldo" and "admin" not in j, "/auth/eu reconhece a sessão, sem marca separada de administrador")
 st, _, _ = pede("/auth/entrar", {"usuario": "ronaldo", "senha": prov})
 ok(st == 401, "senha provisória antiga deixa de valer")
 
-# 2. admin cadastra um vendedor sem e-mail; quem não é admin não gera senha
-st, j, _ = pede("/auth/admin/senha", {"usuario": "rafael.melo", "nome": "Rafael"})
-ok(st == 401, "sem sessão não gera senha")
-st, j, _ = pede("/auth/admin/senha", {"usuario": "rafael.melo", "nome": "Rafael"}, adm)
-ok(st == 200 and j.get("senha"), "admin gera senha")
-doc("rafael.melo", {"email": "rafael.melo", "name": "Rafael", "active": True, "preset": "venda"})
-st, j, ck = pede("/auth/trocar", {"usuario": "rafael.melo", "senha": j["senha"], "nova": "janela azul abre cedo"})
-ok(st == 200 and j.get("admin") is False and j.get("cadastro", {}).get("name") == "Rafael", "vendedor entra sem e-mail")
-vend = cookie_de(ck)
-st, _, _ = pede("/auth/admin/senha", {"usuario": "outro"}, vend)
-ok(st == 403, "vendedor não gera senha")
-st, _, _ = pede("/auth/admin/senha", {"usuario": "rafael.melo", "admin": True}, vend)
-ok(st == 403, "vendedor não se promove")
+app = open(os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "..", "index.html"), encoding="utf-8").read()
+mods = re.findall(r"^ \['(\w+)','", app[app.index("const MODULES=["):app.index("const OPS=")], re.M)
+ok(sorted(mods) == sorted(m.AUTH_MODULOS) and len(mods) >= 18, "AUTH_MODULOS diferente de MODULES: %s" % sorted(set(mods) ^ set(m.AUTH_MODULOS)))
 
-# 3. mesma resposta para usuário inexistente e senha errada; 5 erros bloqueiam; admin libera com senha nova
+# 2. as 4 ações de Senhas de acesso são independentes; o perfil Admin sem a permissão não gera senha
+doc("rafael.melo", {"venda": {"r": True}}, name="Rafael")
+doc("vitima", {"venda": {"r": True}})
+adm_sem = doc("admin.sem", {"usuarios": TUDO, "permissoes": TUDO, "venda": TUDO}, preset="admin")
+ck_sem = entra("admin.sem", "lua cheia sobre o mar")
+st, j, _ = pede("/auth/senha/gerar", {"usuario": "rafael.melo"}, ck_sem)
+ok(st == 403, "administrador sem a permissão não gera senha: %s" % st)
+st, _, _ = pede("/auth/senha/gerar", {"usuario": "rafael.melo"})
+ok(st == 401, "sem sessão não gera senha")
+doc("so.criar", {"senhas": {"c": True}, "venda": TUDO})
+ck_c = entra("so.criar", "pedra rolando no rio")
+st, j, _ = pede("/auth/senha/gerar", {"usuario": "rafael.melo"}, ck_c)
+ok(st == 200 and j.get("senha"), "Criar gera a primeira senha: %s" % st)
+primeira = j.get("senha")
+st, _, _ = pede("/auth/senha/gerar", {"usuario": "rafael.melo"}, ck_c)
+ok(st == 403, "só Criar não gera outra para quem já tem: %s" % st)
+st, _, _ = pede("/auth/senhas", cookie=ck_c)
+ok(st == 403, "só Criar não vê quem tem senha")
+st, _, _ = pede("/auth/senha/cancelar", {"usuario": "rafael.melo"}, ck_c)
+ok(st == 403, "só Criar não cancela")
+doc("so.alterar", {"senhas": {"u": True, "r": True}, "venda": TUDO})
+ck_u = entra("so.alterar", "folha seca voa alto")
+st, j, _ = pede("/auth/senhas", cookie=ck_u)
+ok(st == 200 and "rafael.melo" in j["senhas"] and "hash" not in json.dumps(j), "Ver mostra quem tem senha, sem o hash")
+st, _, _ = pede("/auth/senha/gerar", {"usuario": "vitima"}, ck_u)
+ok(st == 403, "só Alterar não gera a primeira: %s" % st)
+st, j, _ = pede("/auth/senha/gerar", {"usuario": "rafael.melo"}, ck_u)
+ok(st == 200 and j.get("senha") != primeira, "Alterar gera outra")
+provis = j["senha"]
+st, _, _ = pede("/auth/senha/gerar", {"usuario": "so.alterar"}, ck_u)
+ok(st == 400, "não gera senha para si mesmo")
+st, _, _ = pede("/auth/senha/gerar", {"usuario": "ronaldo"}, ck_u)
+ok(st == 403, "não toma a conta de quem tem mais acesso")
+st, _, _ = pede("/auth/senha/gerar", {"usuario": "inexistente"}, adm)
+ok(st == 404, "sem cadastro não há senha")
+
+# 3. vendedor sem e-mail entra; recebe o cadastro do servidor
+st, j, ck = pede("/auth/trocar", {"usuario": "rafael.melo", "senha": provis, "nova": "janela azul abre cedo"})
+ok(st == 200 and j.get("cadastro", {}).get("name") == "Rafael", "vendedor entra sem e-mail: %s" % st)
+vend = cookie_de(ck)
+st, _, _ = pede("/auth/senha/gerar", {"usuario": "vitima"}, vend)
+ok(st == 403, "vendedor não gera senha")
+
+# 4. quem grava o cadastro: sem sessão nada; com sessão, só o que as permissões deixam
+def grava(cookie, usuario, valor):
+    st, j, _ = pede("/ponto/docs", {"docs": [{"col": "usuarios", "id": idd(usuario), "valor": valor}]}, cookie)
+    return j.get("recusados")
+
+
+sobe = dict(ler("rafael.melo"), perms={"senhas": TUDO})
+ok(grava(None, "rafael.melo", sobe) == 1 and not ler("rafael.melo")["perms"].get("senhas"), "sem sessão não muda permissões")
+ok(grava(vend, "rafael.melo", sobe) == 1 and not ler("rafael.melo")["perms"].get("senhas"), "vendedor não se dá Senhas de acesso")
+ok(grava(vend, "novo.usuario", {"email": "novo.usuario", "perms": {}}) == 1 and ler("novo.usuario") is None, "sem Criar em Usuários não cadastra")
+ok(grava(ck_sem, "novo.usuario", {"email": "novo.usuario", "name": "Novo", "perms": {"venda": {"r": True}}}) == 0 and ler("novo.usuario"), "Criar em Usuários cadastra")
+ok(grava(ck_sem, "rafael.melo", dict(ler("rafael.melo"), perms={"senhas": TUDO})) == 1, "não dá um acesso que não tem")
+ok(grava(ck_sem, "ronaldo", dict(ler("ronaldo"), name="Outro")) == 1 and ler("ronaldo")["name"] == "Ronaldo Santos", "não mexe em quem tem mais acesso")
+ok(grava(adm, "rafael.melo", dict(ler("rafael.melo"), perms={"venda": {"r": True}, "senhas": {"r": True}})) == 0 and ler("rafael.melo")["perms"]["senhas"]["r"] is True, "quem tem a permissão pode dar")
+ok(grava(vend, "vitima", None) == 1 and ler("vitima"), "sem Excluir não apaga")
+st, j, _ = pede("/ponto/docs", {"docs": [{"col": "diario", "id": "x", "valor": {"a": 1}}]})
+ok(st == 200 and j.get("gravados") == 1, "as outras coleções seguem como antes")
+# tirar a permissão vale na hora, sem nada para sincronizar
+ok(grava(adm, "so.alterar", dict(ler("so.alterar"), perms={"venda": TUDO})) == 0, "admin tira a permissão")
+st, _, _ = pede("/auth/senha/gerar", {"usuario": "rafael.melo"}, ck_u)
+ok(st == 403, "sem a permissão, não gera mais: %s" % st)
+
+# 5. mesma resposta para usuário inexistente e senha errada; 5 erros bloqueiam; senha provisória nova libera
 a = pede("/auth/entrar", {"usuario": "ninguem", "senha": "x"})
 b = pede("/auth/entrar", {"usuario": "rafael.melo", "senha": "x"})
 ok(a[0] == b[0] == 401 and a[1] == b[1], "erro igual para inexistente e senha errada")
@@ -82,44 +165,49 @@ for _ in range(4):
     pede("/auth/entrar", {"usuario": "rafael.melo", "senha": "x"})
 st, _, _ = pede("/auth/entrar", {"usuario": "rafael.melo", "senha": "janela azul abre cedo"})
 ok(st == 429, "5 erros bloqueiam até a senha certa: %s" % st)
-st, j, _ = pede("/auth/admin/senha", {"usuario": "rafael.melo"}, adm)
-ok(st == 200, "admin gera senha para quem esqueceu")
+st, j, _ = pede("/auth/senha/gerar", {"usuario": "rafael.melo"}, adm)
+ok(st == 200, "gera senha para quem esqueceu")
 st, j2, _ = pede("/auth/entrar", {"usuario": "rafael.melo", "senha": j["senha"]})
 ok(st == 200 and j2.get("troca"), "senha provisória desbloqueia")
 st, _, _ = pede("/auth/eu", cookie=vend)
 ok(st == 401, "senha nova encerra as sessões antigas")
 
-# 4. desativado perde o acesso; excluído também; sair encerra a sessão
+# 6. desativado perde o acesso; cancelar e excluir tiram a senha; sair encerra a sessão
 st, j, ck = pede("/auth/trocar", {"usuario": "rafael.melo", "senha": j["senha"], "nova": "porta velha range muito"})
 vend = cookie_de(ck)
-doc("rafael.melo", {"email": "rafael.melo", "name": "Rafael", "active": False, "preset": "venda"})
+ok(grava(adm, "rafael.melo", dict(ler("rafael.melo"), active=False)) == 0, "desativar grava")
 st, _, _ = pede("/auth/eu", cookie=vend)
 ok(st == 401, "desativado perde a sessão")
 st, _, _ = pede("/auth/entrar", {"usuario": "rafael.melo", "senha": "porta velha range muito"})
 ok(st == 401, "desativado não entra")
-st, _, _ = pede("/auth/admin/remover", {"usuario": "ronaldo"}, adm)
-ok(st == 400, "admin não remove a si mesmo")
-st, _, _ = pede("/auth/admin/remover", {"usuario": "rafael.melo"}, adm)
-ok(st == 200, "admin remove")
+ok(grava(adm, "rafael.melo", dict(ler("rafael.melo"), active=True)) == 0, "reativar grava")
+st, _, _ = pede("/auth/senha/cancelar", {"usuario": "rafael.melo"}, adm)
+ok(st == 200, "Excluir cancela a senha")
+st, _, _ = pede("/auth/entrar", {"usuario": "rafael.melo", "senha": "porta velha range muito"})
+ok(st == 401, "senha cancelada não entra")
+m.auth_criar("rafael.melo", "teste")
+ok(grava(adm, "rafael.melo", None) == 0 and ler("rafael.melo") is None and not m.auth_ler_cadastro("rafael.melo")[1], "excluir o cadastro leva a senha junto")
 st, _, ck = pede("/auth/sair", {}, adm)
 ok(st == 200 and "Max-Age=0" in ck, "sair limpa o cookie")
 st, _, _ = pede("/auth/eu", cookie=adm)
 ok(st == 401, "sair encerra a sessão no servidor")
 
-# 5. origem: outro site não chama as rotas; sem X-Eterna também não
+# 7. origem: outro site não chama as rotas; sem X-Eterna também não
 st, _, _ = pede("/auth/entrar", {"usuario": "ronaldo", "senha": SENHA}, extra={"Origin": "https://exemplo.com"})
 ok(st == 403, "outra origem é recusada")
 st, _, _ = pede("/auth/entrar", {"usuario": "ronaldo", "senha": SENHA}, extra={"X-Eterna": "0"})
 ok(st == 403, "sem X-Eterna é recusado")
 
-# 6. nada legível no banco; credenciais fora de /ponto/docs
+# 8. nada legível no banco; credenciais fora de /ponto/docs
 db = sqlite3.connect(m.ESTADO_DB)
 tudo = "\n".join(str(l) for l in db.iterdump())
 db.close()
 ok(SENHA not in tudo and "porta velha" not in tudo, "senha legível no banco")
+ok(not m.estado_col("credencial")["docs"] and "credencial" not in m.ESTADO_COLS, "credencial fora das coleções")
 
-# 7. senha provisória vence em 72 horas; muitos erros do mesmo endereço param, mesmo mudando o usuário
-prov = m.auth_criar("velho", "Velho", True, "servidor")
+# 9. senha provisória vence em 72 horas; muitos erros do mesmo endereço param, mesmo mudando o usuário
+doc("velho")
+prov = m.auth_criar("velho", "teste")
 db = sqlite3.connect(m.ESTADO_DB)
 db.execute("update credencial set atualizada=? where usuario='velho'", (time.time() - 73 * 3600,))
 db.commit()
@@ -130,10 +218,9 @@ for i in range(32):
     m.auth_ip_erros.setdefault("127.0.0.1", []).append(time.time())
 st, _, _ = pede("/auth/entrar", {"usuario": "ronaldo", "senha": SENHA})
 ok(st == 429, "muitos erros do mesmo endereço bloqueiam: %s" % st)
-ok(not m.estado_col("credencial")["docs"] and "credencial" not in m.ESTADO_COLS, "credencial fora das coleções")
 srv.shutdown()
 
 if falhas:
     print("FALHA login_agente: " + " | ".join(falhas))
     sys.exit(1)
-print("OK login_agente: senhas óbvias recusadas, senha provisória, cadastro sem e-mail, bloqueio, desativar, origem e banco sem senha legível")
+print("OK login_agente: senhas óbvias recusadas, 4 ações de Senhas de acesso, gravação do cadastro conferida, bloqueio, desativar, origem e banco sem senha legível")

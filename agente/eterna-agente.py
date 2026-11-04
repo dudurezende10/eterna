@@ -5008,8 +5008,8 @@ auth_ip_erros = {}                            # erros recentes por endereço, co
 
 def auth_db():
     c = estado_db()
-    c.execute("create table if not exists credencial (usuario text primary key, nome text, hash text, sal text, n integer,"
-              " provisoria integer, admin integer, erros integer default 0, bloqueado_ate real default 0, atualizada real)")
+    c.execute("create table if not exists credencial (usuario text primary key, hash text, sal text, n integer,"
+              " provisoria integer, erros integer default 0, bloqueado_ate real default 0, atualizada real)")
     c.execute("create table if not exists sessao_login (token text primary key, usuario text, expira real)")
     c.execute("create table if not exists login_log (em real, usuario text, acao text, por text, ip text)")
     return c
@@ -5071,18 +5071,17 @@ def auth_provisoria():
     return "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(12))
 
 
-def auth_criar(usuario, nome, admin, por="", ip=""):
-    """Cria a credencial, ou gera outra senha para quem já tem. Devolve a senha provisória, mostrada uma única vez."""
+def auth_criar(usuario, por="", ip=""):
+    """Gera a senha provisória, mostrada uma única vez, para quem já está no cadastro."""
     senha = auth_provisoria()
     sal = secrets.token_hex(16)
     h = auth_hash(senha, sal, AUTH_N)
     with estado_lock:
         db = auth_db()
         try:
-            db.execute("insert into credencial (usuario, nome, hash, sal, n, provisoria, admin, erros, bloqueado_ate, atualizada) values (?, ?, ?, ?, ?, 1, ?, 0, 0, ?)"
+            db.execute("insert into credencial (usuario, hash, sal, n, provisoria, erros, bloqueado_ate, atualizada) values (?, ?, ?, ?, 1, 0, 0, ?)"
                        " on conflict(usuario) do update set hash=excluded.hash, sal=excluded.sal, n=excluded.n, provisoria=1, erros=0, bloqueado_ate=0,"
-                       " atualizada=excluded.atualizada, admin=max(credencial.admin, excluded.admin), nome=coalesce(excluded.nome, credencial.nome)",
-                       (usuario, nome, h, sal, AUTH_N, int(bool(admin)), time.time()))
+                       " atualizada=excluded.atualizada", (usuario, h, sal, AUTH_N, time.time()))
             db.execute("delete from sessao_login where usuario=?", (usuario,))
             auth_log(db, usuario, "senha_provisoria", por, ip)
             db.commit()
@@ -5096,12 +5095,26 @@ def auth_cadastro(db, usuario):
     return json.loads(r[0]) if r else None
 
 
+def auth_ativo(cad):
+    return bool(cad) and cad.get("active") is not False
+
+
+def auth_pode(cad, modulo, letra):
+    """A permissão do módulo no cadastro: a mesma de Permissões. É ela que decide, não o nome do perfil."""
+    p = ((cad or {}).get("perms") or {}).get(modulo) or {}
+    return auth_ativo(cad) and p.get(letra) is True
+
+
+def auth_acessos(cad):
+    return {(m, k) for m, p in ((cad or {}).get("perms") or {}).items() if isinstance(p, dict) for k, v in p.items() if v is True}
+
+
 def auth_conferir(usuario, senha, ip=""):
-    """-> (situação, linha): ok, provisoria, nao ou bloqueado. Usuário inexistente custa o mesmo tempo que senha errada."""
+    """-> (situação, dados): ok, provisoria, nao ou bloqueado. Usuário inexistente custa o mesmo tempo que senha errada."""
     with estado_lock:
         db = auth_db()
         try:
-            c = db.execute("select usuario, nome, hash, sal, n, provisoria, admin, bloqueado_ate, atualizada from credencial where usuario=?", (usuario,)).fetchone()
+            c = db.execute("select usuario, hash, sal, n, provisoria, bloqueado_ate, atualizada from credencial where usuario=?", (usuario,)).fetchone()
             cad = auth_cadastro(db, usuario) if c else None
         finally:
             db.close()
@@ -5113,22 +5126,21 @@ def auth_conferir(usuario, senha, ip=""):
         auth_hash(senha, "00" * 16, AUTH_N)
         auth_ip_erros[ip] = falhas + [agora]
         return "nao", None
-    if c[7] > agora:
+    if c[5] > agora:
         return "bloqueado", None
-    certa = hmac.compare_digest(auth_hash(senha, c[3], c[4]), c[2])
-    if c[5] and c[8] < agora - AUTH_PROVISORIA_S:       # senha provisória vencida: o admin gera outra
+    certa = hmac.compare_digest(auth_hash(senha, c[2], c[3]), c[1])
+    if c[4] and c[6] < agora - AUTH_PROVISORIA_S:       # senha provisória vencida: quem pode gera outra
         certa = False
     if not certa:
         auth_ip_erros[ip] = falhas + [agora]
-    ativo = (cad.get("active") is not False) if cad else bool(c[6])      # sem cadastro, só o admin criado no próprio servidor entra
     with estado_lock:
         db = auth_db()
         try:
-            if certa and ativo:
+            if certa and auth_ativo(cad):
                 db.execute("update credencial set erros=0, bloqueado_ate=0 where usuario=?", (usuario,))
                 auth_log(db, usuario, "entrou", "", ip)
                 db.commit()
-                return ("provisoria" if c[5] else "ok"), {"usuario": c[0], "nome": c[1], "admin": bool(c[6]), "cadastro": cad}
+                return ("provisoria" if c[4] else "ok"), {"usuario": c[0], "cadastro": cad}
             db.execute("update credencial set erros=erros+1 where usuario=?", (usuario,))
             erros = db.execute("select erros from credencial where usuario=?", (usuario,)).fetchone()[0]
             if erros >= AUTH_ERROS:
@@ -5177,16 +5189,98 @@ def auth_quem(token):
     with estado_lock:
         db = auth_db()
         try:
-            r = db.execute("select c.usuario, c.nome, c.admin from sessao_login s join credencial c on c.usuario = s.usuario where s.token=? and s.expira > ?",
-                           (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
+            r = db.execute("select usuario from sessao_login where token=? and expira > ?", (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
             if not r:
                 return None
             cad = auth_cadastro(db, r[0])
         finally:
             db.close()
-    if (cad.get("active") is False) if cad else not r[2]:
+    return {"usuario": r[0], "cadastro": cad} if auth_ativo(cad) else None
+
+
+def auth_ler_cadastro(usuario):
+    with estado_lock:
+        db = auth_db()
+        try:
+            cad = auth_cadastro(db, usuario)
+            tem = bool(db.execute("select 1 from credencial where usuario=?", (usuario,)).fetchone())
+        finally:
+            db.close()
+    return cad, tem
+
+
+def auth_senhas():
+    """Quem tem senha e quando trocou, para quem pode Ver em Senhas de acesso. Nunca o hash."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            return {r[0]: {"provisoria": bool(r[1]), "atualizada": r[2]} for r in db.execute("select usuario, provisoria, atualizada from credencial")}
+        finally:
+            db.close()
+
+
+# Os mesmos limites de permValidate na tela, agora também no servidor: sem isto, quem chama /ponto/docs se daria qualquer acesso, inclusive o de gerar senhas.
+AUTH_MODULOS = ("estoque", "relatorios", "desempenho", "financeiro", "galerias", "qualidade", "diario", "set", "escala", "filafoto", "configuracao",
+                "catalogo", "usuarios", "senhas", "permissoes", "laboratorio", "venda", "quiosque")     # os mesmos de MODULES no app
+AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "key", "active"), ("perms", "menu", "preset", "inicio")
+
+
+def auth_cadastro_recusa(quem, id_doc, antes, depois):
+    """O motivo de recusar esta gravação em usuarios, ou None. quem é a sessão de quem grava."""
+    if not quem:
+        return "sem_sessao"
+    ed = quem["cadastro"]
+    if antes is None and depois is None:
         return None
-    return {"usuario": r[0], "nome": r[1], "admin": bool(r[2]), "cadastro": cad}
+    if antes is None:
+        if not auth_pode(ed, "usuarios", "c"):
+            return "sem_permissao"
+    elif depois is None:
+        if not auth_pode(ed, "usuarios", "d"):
+            return "sem_permissao"
+    else:
+        if any(antes.get(c) != depois.get(c) for c in AUTH_CAMPOS_CADASTRO) and not auth_pode(ed, "usuarios", "u"):
+            return "sem_permissao"
+        if any(antes.get(c) != depois.get(c) for c in AUTH_CAMPOS_ACESSO) and not auth_pode(ed, "permissoes", "u"):
+            return "sem_permissao"
+    novos = auth_acessos(depois) - auth_acessos(antes)
+    if novos - auth_acessos(ed):
+        return "sem_poder"                              # não dá um acesso que não tem
+    if antes is not None and antes.get("email") != ed.get("email") and auth_acessos(antes) - auth_acessos(ed):
+        return "alvo_maior"                             # não mexe em quem tem mais acesso
+    return None
+
+
+def auth_filtrar_docs(body, quem, ip=""):
+    """/ponto/docs: as gravações em usuarios só passam pela regra acima; as outras coleções seguem como antes."""
+    docs = body.get("docs") if isinstance(body.get("docs"), list) else []
+    if not any(isinstance(d, dict) and d.get("col") == "usuarios" for d in docs):
+        return body, 0
+    fica, recusados, apagados = [], 0, []
+    with estado_lock:
+        db = auth_db()
+        try:
+            for d in docs:
+                if not (isinstance(d, dict) and d.get("col") == "usuarios"):
+                    fica.append(d)
+                    continue
+                r = db.execute("select valor from doc where col='usuarios' and id=? and valor is not null", (str(d.get("id")),)).fetchone()
+                antes = json.loads(r[0]) if r else None
+                depois = d.get("valor") if isinstance(d.get("valor"), dict) else None
+                motivo = auth_cadastro_recusa(quem, d.get("id"), antes, depois)
+                if motivo:
+                    recusados += 1
+                    auth_log(db, str((antes or depois or {}).get("email") or d.get("id"))[:120], "cadastro_recusado:" + motivo, (quem or {}).get("usuario", ""), ip)
+                    continue
+                fica.append(d)
+                if antes and depois is None and antes.get("email"):
+                    apagados.append(antes["email"])
+            db.commit()
+        finally:
+            db.close()
+    for email in apagados:
+        auth_remover(str(email), (quem or {}).get("usuario", ""), ip)     # sem cadastro, a senha não fica para trás
+    return dict(body, docs=fica), recusados
 
 
 def auth_remover(usuario, por="", ip=""):
@@ -5202,12 +5296,19 @@ def auth_remover(usuario, por="", ip=""):
 
 
 def auth_criar_admin(usuario, nome):
-    """python eterna-agente.py --criar-admin <usuário> "<nome>": no próprio servidor; a senha provisória aparece só nesta tela."""
+    """python eterna-agente.py --criar-admin <usuário> "<nome>": no próprio servidor; a senha provisória aparece só nesta tela.
+    Também recupera o acesso de quem ficou sem nenhum administrador."""
     usuario = usuario.strip().lower()
     if not AUTH_ID.match(usuario):
         print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
         return 1
-    print("Administrador %s. Senha provisória, troque na primeira entrada: %s" % (usuario, auth_criar(usuario, nome or usuario, True, "servidor")))
+    tudo = {"c": True, "r": True, "u": True, "d": True}
+    id_doc = quote(usuario, safe="-_.!~*'()")
+    atual, _ = auth_ler_cadastro(usuario)
+    cad = dict(atual or {}, v=1, email=usuario, name=(atual or {}).get("name") or nome or usuario, preset="admin", active=True,
+               perms={m: dict(tudo) for m in AUTH_MODULOS}, createdBy=(atual or {}).get("createdBy") or "servidor")
+    estado_gravar({"docs": [{"col": "usuarios", "id": id_doc, "valor": cad}]})
+    print("Administrador %s. Senha provisória, troque na primeira entrada: %s" % (usuario, auth_criar(usuario, "servidor")))
     return 0
 
 
@@ -5629,14 +5730,20 @@ class H(BaseHTTPRequestHandler):
         self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (AUTH_COOKIE, token, idade, "; Secure" if https else "")
 
     def auth_get(self):
-        """GET /auth/eu: quem está conectado neste navegador."""
+        """GET /auth/eu: quem está conectado neste navegador. GET /auth/senhas: quem tem senha, para quem pode Ver em Senhas de acesso."""
         if not self.posto() or not self.origem_local():
             return self.js({"error": "origem não autorizada"}, 403)
         eu = auth_quem(self.auth_token())
-        return self.js(dict(eu, ok=True), 200, True) if eu else self.js({"erro": "sem_sessao"}, 401, True)
+        if not eu:
+            return self.js({"erro": "sem_sessao"}, 401, True)
+        if urlparse(self.path).path == "/auth/senhas":
+            if not auth_pode(eu["cadastro"], "senhas", "r"):
+                return self.js({"erro": "sem_permissao"}, 403, True)
+            return self.js({"ok": True, "senhas": auth_senhas()}, 200, True)
+        return self.js(dict(eu, ok=True), 200, True)
 
     def auth_post(self, u):
-        """POST /auth/entrar, /auth/trocar, /auth/sair, /auth/admin/senha, /auth/admin/remover. Respostas sem cache; a senha nunca vai para log."""
+        """POST /auth/entrar, /auth/trocar, /auth/sair, /auth/senha/gerar, /auth/senha/cancelar. Respostas sem cache; a senha nunca vai para log."""
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
             return self.js({"error": "origem não autorizada"}, 403)
         b, err = self.corpo(4096)
@@ -5656,18 +5763,24 @@ class H(BaseHTTPRequestHandler):
                         db.close()
             self.auth_cookie("", 0)
             return self.js({"ok": True}, 200, True)
-        if u.path.startswith("/auth/admin/"):
+        if u.path.startswith("/auth/senha/"):
             eu = auth_quem(self.auth_token())
             if not eu:
                 return self.js({"erro": "sem_sessao"}, 401, True)
-            if not eu["admin"]:
-                return self.js({"erro": "so_admin"}, 403, True)
-            if not AUTH_ID.match(usuario):
+            if not AUTH_ID.match(usuario) or usuario == eu["usuario"]:
                 return self.js({"erro": "usuario"}, 400, True)
-            if u.path == "/auth/admin/senha":
-                senha = auth_criar(usuario, str(b.get("nome") or "")[:120] or None, b.get("admin") is True, eu["usuario"], ip)
-                return self.js({"ok": True, "usuario": usuario, "senha": senha}, 200, True)
-            if u.path == "/auth/admin/remover" and usuario != eu["usuario"]:
+            cad, tem = auth_ler_cadastro(usuario)
+            if auth_acessos(cad) - auth_acessos(eu["cadastro"]):
+                return self.js({"erro": "alvo_maior"}, 403, True)    # senão, quem gera senha entraria como alguém com mais acesso
+            if u.path == "/auth/senha/gerar":
+                if not auth_pode(eu["cadastro"], "senhas", "u" if tem else "c"):
+                    return self.js({"erro": "sem_permissao"}, 403, True)
+                if not cad:
+                    return self.js({"erro": "sem_cadastro"}, 404, True)
+                return self.js({"ok": True, "usuario": usuario, "senha": auth_criar(usuario, eu["usuario"], ip)}, 200, True)
+            if u.path == "/auth/senha/cancelar":
+                if not auth_pode(eu["cadastro"], "senhas", "d"):
+                    return self.js({"erro": "sem_permissao"}, 403, True)
                 auth_remover(usuario, eu["usuario"], ip)
                 return self.js({"ok": True}, 200, True)
             return self.js({"erro": "pedido"}, 400, True)
@@ -5681,7 +5794,7 @@ class H(BaseHTTPRequestHandler):
             return self.js({"erro": "incorreto"}, 401, True)
         if u.path == "/auth/trocar":
             nova = str(b.get("nova") or "")
-            motivo = "A senha nova não pode repetir a atual." if nova == senha else "A senha é longa demais." if len(nova) > 200 else auth_senha_fraca(usuario, dados["nome"], nova)
+            motivo = "A senha nova não pode repetir a atual." if nova == senha else "A senha é longa demais." if len(nova) > 200 else auth_senha_fraca(usuario, (dados["cadastro"] or {}).get("name"), nova)
             if motivo:
                 return self.js({"erro": "fraca", "motivo": motivo}, 400, True)
             auth_trocar(usuario, nova, ip)
@@ -5946,7 +6059,8 @@ class H(BaseHTTPRequestHandler):
             body, err = self.corpo(8 * 1024 * 1024)
             if err:
                 return self.js({"error": "corpo inválido"}, err)
-            return self.js(estado_gravar(body))
+            body, recusados = auth_filtrar_docs(body, auth_quem(self.auth_token()), self.client_address[0])
+            return self.js(dict(estado_gravar(body), recusados=recusados))
         if p == "/ponto/eventos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -6135,7 +6249,7 @@ class H(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         if u.path.startswith(("/g/", "/galerias/")):
             return self.gal_get(u, q)
-        if u.path == "/auth/eu":
+        if u.path in ("/auth/eu", "/auth/senhas"):
             return self.auth_get()
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
@@ -6288,7 +6402,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/admin/senha", "/auth/admin/remover"):
+        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/senha/gerar", "/auth/senha/cancelar"):
             return self.auth_post(u)
         if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)

@@ -21,8 +21,9 @@
 1. **Usuário e senha, conferidos no servidor do estádio.** Funciona sem internet e não exige e-mail. Quem acessa de fora entra no mesmo servidor, com a mesma senha.
 2. **Tudo fica no servidor, no mesmo banco:** `~/Eterna/ponto/estado.db`.
 3. **A senha nunca fica legível.** É guardada só como hash `scrypt` com sal por pessoa. Nem o admin consegue ver.
-4. **O admin cadastra as pessoas.** Não há autocadastro.
-5. **Cada pessoa troca a própria senha.** Quem esquecer recupera pelo e-mail, se tiver, ou pede uma senha provisória ao admin.
+4. **O cadastro segue as permissões de Cadastro de usuários.** Não há autocadastro.
+   **Gerar senha tem módulo próprio, Senhas de acesso, com as 4 ações:** Criar gera a primeira, Ver mostra quem tem senha, Alterar gera outra e Excluir cancela. O perfil Admin vem com ele, e dá para tirar de uma pessoa. O servidor decide pela permissão, não pelo nome do perfil.
+5. **Cada pessoa troca a própria senha.** Quem esquecer pede uma senha provisória a quem tem a permissão. A recuperação por e-mail fica para a etapa 3.
 6. **Um serviço de e-mail simples no servidor** manda a recuperação de senha. Ele não é necessário para entrar.
 7. **A galeria do cliente segue aberta pelo QR**, e o FTP das câmeras não muda.
 

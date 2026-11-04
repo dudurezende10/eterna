@@ -388,7 +388,7 @@ As letras vêm do inglês (Create, Read, Update, Delete). Embaixo do nome de cad
 ### Cadastrar uma pessoa
 
 1. Abra **Configurações** › **Usuários** › **Novo usuário**.
-2. Escreva o nome e o usuário. Só um administrador cadastra, e a tela mostra uma senha provisória para entregar à pessoa.
+2. Escreva o nome e o usuário. Se você tiver a permissão em Senhas de acesso, a tela mostra uma senha provisória para entregar à pessoa.
 3. Se for fotógrafo, escolha o nome dele em **Fotógrafo vinculado**.
 4. Em **Perfil**, escolha um perfil pronto (tabela abaixo). Se ainda não souber o que liberar, escolha **Sem acesso ainda**.
 5. Toque em **Criar acesso**.

@@ -3,6 +3,7 @@
 // (galeria pública no modo agente, Lista de vendas com venda de teste, todas as telas e a Loja com agente) e, no modo SIM,
 // o Checkout em 3 tamanhos x 5 idiomas, recarregar telas, Lista de vendas/CSV, Catálogo › Checkout e o recibo com QR.
 // Sobe agentes em 8796 (sem OpenCV) e 8795 (com OpenCV, se houver), com HOME temporário, e derruba tudo no fim.
+const entrarTeste=require('./_entrar');
 const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const net=require('net');const crypto=require('crypto');
 const {chromium}=require('playwright');
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');const PR=__dirname+'/prints';fs.mkdirSync(PR,{recursive:true});
@@ -35,8 +36,7 @@ async function maquininha(pg){const ctx=pg.context();const base=pg.url().split('
   const id=await pg.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id)return;
   await V.evaluate(id=>{ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();return ETERNA.pendConfirmar(id,{ref:''});},id);
   for(let i=0;i<30;i++){if(await pg.evaluate(()=>!!document.querySelector('#lqr canvas,#lqr img')))break;await sleep(100);}await sleep(600);} // a galeria é publicada logo depois da confirmação
-async function login(pg,U){await pg.goto(U);await pg.waitForTimeout(500);if(await pg.evaluate(()=>!!ETERNA.state.user))return;await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(200);
-  const c=(await pg.textContent('.otp')).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(500);}
+async function login(pg,U){await pg.goto(U);await pg.waitForTimeout(500);if(await pg.evaluate(()=>!!ETERNA.state.user))return;await entrarTeste(pg,'eduardo@eduardorezende.com');}
 // chaves de I18N que aparecem cruas no DOM (só as com cara de chave: camelCase ou com _)
 const cruas=pg=>pg.evaluate(ks=>{const t=' '+document.body.innerText+' '+[...document.querySelectorAll('[title],[aria-label],[placeholder]')].map(e=>(e.title||'')+' '+(e.getAttribute('aria-label')||'')+' '+(e.placeholder||'')).join(' ')+' ';return ks.filter(k=>new RegExp('[^A-Za-z0-9_]'+k+'[^A-Za-z0-9_]').test(t));},KEYS);
 const HTML=fs.readFileSync(path.join(RAIZ,'index.html'),'utf8');

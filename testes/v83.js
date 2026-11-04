@@ -1,6 +1,7 @@
 // v83 etapa 1 (um notebook, sem agente): pagamento aguardando (14 a 20), venda acompanhada (21 e 22), impressão 10×15 (23 a 26),
 // Minhas vendas de hoje (34), fila local de eventos, alertas locais e foto com fundo de IA impressa com o fundo de 5000 px.
 // O "agente" aqui é só o page.route do Playwright na própria origem (/file/, /thumb/, /photoroom/*): nenhuma rede de verdade.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');const os=require('os');const path=require('path');const {execFileSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;const P=__dirname+'/prints';fs.mkdirSync(P,{recursive:true});
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -31,7 +32,7 @@ async function rotas(ctx){
     if(composeFalha)return r.fulfill({status:500,contentType:'application/json',body:J({error:'falha de teste'})});r.fulfill({status:200,contentType:'image/png',body:IMG.cut});});
   await ctx.route(ORIG+'/photoroom/result/**',r=>{const u=r.request().url();r.fulfill({status:200,contentType:'image/png',body:/op\.png$/.test(u)?IMG.op:/hi\.png$/.test(u)?IMG.hi:IMG.lo});});}
 function vigia(pg,nome){pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(`${nome}: ${e.message}`));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API|ERR_|net::|onnxruntime|404|status of 50/.test(m.text()))errs.push(`${nome}: ${m.text()}`);});return pg;}
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function entrar(pg,email){await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const sim=pg=>pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.sim.v1')));
 const toastTxt=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent);
 const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\s+/g,' '):'';},s);

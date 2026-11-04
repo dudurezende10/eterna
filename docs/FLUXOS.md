@@ -1334,14 +1334,15 @@ flowchart TD
 | Decisão | Regra exata | Onde no código |
 |---|---|---|
 | Senha | Conferida no servidor, em `POST /auth/entrar`. Guardada só como hash `scrypt` com sal, na tabela `credencial` do `estado.db`. Fora de `/ponto/docs` | `auth_conferir`, `authEntrar` |
-| Cadastro | Só administrador cria e gera senha. A senha provisória aparece uma vez e só serve para criar a definitiva. Identificador é o usuário, e o e-mail não é exigido | `auth_post`, `authSenhaProvisoria`, `userSave` |
+| Cadastro | Criar em Cadastro de usuários cadastra. O identificador é o usuário, e o e-mail não é exigido. O servidor confere cada gravação em `usuarios`: sem sessão nada grava, e ninguém dá um acesso que não tem nem mexe em quem tem mais acesso | `auth_filtrar_docs`, `auth_cadastro_recusa`, `userSave` |
+| Senhas de acesso | Módulo próprio. Criar gera a primeira senha provisória, Ver mostra quem tem senha, Alterar gera outra, Excluir cancela. Não vale para si mesmo nem para quem tem mais acesso. A provisória aparece uma vez e só serve para criar a definitiva | `auth_post`, `auth_pode`, `senhaBotoes` |
 | Senha nova | 10 caracteres ou mais, com letras. O servidor recusa sequências, repetição, nome da pessoa e palavras óbvias, também com troca de letras por números, como `M4r4c4n4@2026`. A senha provisória vence em 72 horas | `auth_senha_fraca` |
 | Bloqueio | 5 erros seguidos bloqueiam o usuário por 15 minutos, e 30 erros do mesmo endereço param as tentativas. Senha provisória nova libera o usuário. A mensagem é igual para usuário inexistente e senha errada | `auth_conferir` |
 | Primeiro administrador | `python eterna-agente.py --criar-admin <usuário> "<nome>"`, no próprio servidor | `auth_criar_admin` |
 | Site público | Em eterna.photo a tela não pede senha: o site não fala com o servidor | `authSite`, `vEntrar` |
 | Servidor exige o login | **Ainda não.** As outras rotas não conferem a sessão; a senha controla a entrada na tela | `auth_post` |
 | Sessão salva | Validade de 12 horas, em `eterna.session`, conferida com `GET /auth/eu` ao abrir e pelo cookie `HttpOnly`; não é carregada em aba marcada como Checkout | `sessionLoad`, `LOJA_ABA` |
-| Módulos | 17 módulos, cada um com Criar, Ver, Alterar e Excluir | `MODULES`, `OPS`, `can` |
+| Módulos | 18 módulos, cada um com Criar, Ver, Alterar e Excluir | `MODULES`, `OPS`, `can` |
 | Perfis prontos | Admin, Fotógrafo, Atendimento e venda, Validador, Supervisor, Checkout; cadastro também pode nascer sem acesso | `PRESETS`, `SEED_USERS` |
 | Ver uma tela | Módulo com Ver e tela no menu da pessoa. Checkout: Ver em `quiosque` ou `venda`. Permissões: exige também Alterar | `canView`, `menuOk` |
 | Tela de abertura | `inicio` permitido; sem telas = sem acesso; só Checkout = primeira tela sem menu; demais = Início | `homeView`, `isBare` |
