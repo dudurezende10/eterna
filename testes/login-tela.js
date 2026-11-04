@@ -14,6 +14,15 @@ try{
   await pg.fill('[data-act="login-usuario"]','eduardo@eduardorezende.com');await pg.click('[data-act="login-senha"]');await pg.keyboard.type('abc');
   await pg.evaluate(()=>ETERNA.render());await pg.waitForTimeout(50);await pg.keyboard.type('def');
   ok(await pg.inputValue('[data-act="login-senha"]')==='abcdef','redesenho apagou a senha: '+await pg.inputValue('[data-act="login-senha"]'));
+  // campo de senha igual ao de usuário, e o olho mostra e oculta sem perder o que foi digitado nem o foco
+  const est=q=>pg.$eval(q,e=>{const c=getComputedStyle(e),r=e.getBoundingClientRect();return [c.borderTopWidth,c.borderTopColor,c.borderRadius,Math.round(r.height),Math.round(r.width)].join()});
+  ok(await est('[data-act="login-senha"]')===await est('[data-act="login-usuario"]'),'campo de senha com aparência diferente da de usuário');
+  await pg.click('[data-act="login-ver"]');ok(await pg.getAttribute('[data-act="login-senha"]','type')==='text','o olho mostra a senha');
+  ok(await pg.getAttribute('[data-act="login-ver"]','aria-pressed')==='true','o olho indica que a senha está à mostra');
+  await pg.keyboard.type('g');ok(await pg.inputValue('[data-act="login-senha"]')==='abcdefg','o olho apagou a senha ou tirou o foco');
+  await pg.evaluate(()=>ETERNA.render());await pg.waitForTimeout(50);ok(await pg.getAttribute('[data-act="login-senha"]','type')==='text','redesenho voltou a ocultar a senha');
+  await pg.click('[data-act="login-ver"]');ok(await pg.getAttribute('[data-act="login-senha"]','type')==='password','o olho oculta a senha');
+  await pg.click('[data-act="login-ver"]');await pg.click('[data-act="login-trocar"]');ok(!await pg.$('input[type="text"][data-act="login-senha"],input[type="text"][data-act="login-nova"]'),'mudar de tela deixou senha à mostra');await pg.click('[data-act="login-voltar"]');await pg.fill('[data-act="login-usuario"]','eduardo@eduardorezende.com');
   // trocar senha: as duas precisam ser iguais e ter 10 caracteres, antes de ir ao servidor
   await pg.click('[data-act="login-trocar"]');await pg.fill('[data-act="login-usuario"]','x.y');await pg.fill('[data-act="login-senha"]','qualquer');await pg.fill('[data-act="login-nova"]','curta');await pg.fill('[data-act="login-nova2"]','curta');await pg.click('button[type=submit]');await pg.waitForTimeout(100);
   ok(/10 caracteres/.test(await pg.textContent('.alert.bad')),'senha curta avisa');
