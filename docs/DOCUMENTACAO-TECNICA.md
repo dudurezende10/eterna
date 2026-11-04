@@ -1,5 +1,7 @@
 # Eterna: documentação técnica v1
 
+**Fluxogramas do sistema, passo a passo e com cada bifurcação:** [`FLUXOS.md`](FLUXOS.md).
+
 26/10/2026 · Eduardo Rezende · versão editável: https://claude.ai/artifact/1hPgjcUPEFf5B6g7wGWWo4
 
 ## 1. Visão geral
