@@ -166,7 +166,7 @@ Teste local sem AWS e sem custo: `python servidor/galeria-nuvem/teste_local.py s
 - `GAL_API` = `https://whe2hyve2j.execute-api.us-east-2.amazonaws.com` (até existir `api.eterna.photo`) define a base das rotas da galeria fora do estádio: `galApi()` usa `window.ETERNA_AGENTE` (porta pública de teste), depois `GAL_API` em https e, por último, o agente local.
 - `galUrl(u)` aceita link absoluto (S3 ou CloudFront) ou relativo (agente).
 - `galBase()` monta o link do QR: `state.agent.galPublica` (vindo de `/status`), depois `window.ETERNA_AGENTE` e, por último, `https://eterna.photo/#g/`.
-- `galNuvem()` diz se a galeria está sendo atendida pela nuvem. Nesse caso o consentimento usa `gq_consentSelfNuvem` / `gq_consentKidNuvem`, que citam a AWS nos Estados Unidos e o apagamento dos rostos, e a versão gravada é `GQ_VERSAO-aws`.
+- `galNuvem()` diz se a galeria está sendo atendida pela nuvem. Nesse caso o consentimento usa `gq_consentSelfNuvem` / `gq_consentKidNuvem`, que citam a comparação só com as fotos da galeria e o apagamento dos rostos, e a versão gravada é `GQ_VERSAO-nuvem3`.
 - Sem essas configurações, o comportamento é igual ao da v82.
 
 ## 6. Ferramentas de teste
