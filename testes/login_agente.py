@@ -314,6 +314,45 @@ for i in range(32):
     m.auth_ip_erros.setdefault("127.0.0.1", []).append(time.time())
 st, _, _ = pede("/auth/entrar", {"usuario": "ronaldo", "senha": SENHA})
 ok(st == 429, "muitos erros do mesmo endereço bloqueiam: %s" % st)
+
+# Fotos enviadas pela tela de Upload: só com sessão e permissão; o dono é o fotógrafo do login; arquivo cortado ou repetido não entra
+def envia(rota, corpo, cookie=None, extra=None):
+    c = http.client.HTTPConnection("127.0.0.1", m.PORT, timeout=30)
+    h = {"Host": HOST, "X-Eterna": "1", "Content-Type": "image/jpeg"}
+    if cookie:
+        h["Cookie"] = cookie
+    h.update(extra or {})
+    c.request("POST", rota, corpo, h)
+    r = c.getresponse()
+    j = json.loads(r.read() or b"{}")
+    c.close()
+    return r.status, j
+def jpeg(marca):
+    return bytes.fromhex("FFD8FFE000104A46494600010100000100010000") + marca + bytes.fromhex("FFD9")
+doc("fot", {"set": {"c": True}}, key="carlos")
+doc("semup", {"painel": {"r": True}})
+ck_fot = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("fot"))   # o endereço já está bloqueado pelo teste acima
+ck_sem = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("semup"))
+st, _ = envia("/fotos/enviar?nome=a.jpg", jpeg(b"a"))
+ok(st == 401, "foto sem sessão: %s" % st)
+st, _ = envia("/fotos/enviar?nome=a.jpg", jpeg(b"a"), ck_sem)
+ok(st == 403, "foto sem permissão de Upload: %s" % st)
+st, _ = envia("/fotos/enviar?nome=a.jpg", jpeg(b"a"), ck_fot, {"X-Eterna": "0"})
+ok(st == 403, "foto sem o cabeçalho do app: %s" % st)
+st, _ = envia("/fotos/enviar?nome=a.jpg", jpeg(b"a"), ck_fot, {"Origin": "https://outro.exemplo"})
+ok(st == 403, "foto de outra origem: %s" % st)
+st, _ = envia("/fotos/enviar?nome=a.exe", jpeg(b"a"), ck_fot)
+ok(st == 415, "arquivo que não é JPG: %s" % st)
+st, _ = envia("/fotos/enviar?nome=c.jpg", jpeg(b"c")[:-2], ck_fot)
+ok(st == 400, "foto cortada: %s" % st)
+st, j = envia("/fotos/enviar?nome=..%2F..%2Fb.jpg&quem=outro", jpeg(b"b"), ck_fot)
+ok(st == 200 and j.get("resultado") == "new", "foto boa entra: %s %s" % (st, j))
+pid = [p for p, e in m.lib.items() if e["file"].endswith("_b.jpg")]
+ok(len(pid) == 1 and os.path.dirname(os.path.dirname(m.lib[pid[0]]["file"])) == m.INBOX, "nome com caminho fica na pasta de entrada")
+ok(pid and m.meta[pid[0]]["o"] == "carlos", "o dono é o fotógrafo do login, não o que veio no pedido")
+st, j = envia("/fotos/enviar?nome=b2.jpg", jpeg(b"b"), ck_fot)
+ok(st == 200 and j.get("resultado") == "dup", "foto repetida não entra de novo: %s" % j)
+ok(not [x for x in os.listdir(m.FTPTMP) if x.startswith("envio-")], "não sobra arquivo temporário")
 srv.shutdown()
 
 if falhas:

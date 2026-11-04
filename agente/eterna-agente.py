@@ -91,6 +91,7 @@ INDEX = os.path.join(HOME, "index.json")
 FTPCFG = os.path.join(HOME, "ftp.json")
 FTPTMP = os.path.join(HOME, "ftp-tmp")
 EXT = (".jpg", ".jpeg", ".JPG", ".JPEG")
+FOTO_ENVIO_MAX = 60 * 1024 * 1024          # uma foto enviada pela tela de Upload
 POLL = 2.0
 
 os.makedirs(INBOX, exist_ok=True)
@@ -5940,6 +5941,52 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def fotos_enviar_post(self):
+        """POST /fotos/enviar?nome=&quem=: uma foto (o JPEG é o corpo) vinda da tela de Upload. Vale o módulo de Upload da
+        pessoa conectada. O dono é sempre o fotógrafo do login; só quem não é fotógrafo escolhe de quem é a leva."""
+        tam = self.headers.get("Content-Length") or ""
+        n = int(tam) if tam.isdigit() else -1
+        erro = None
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            erro = ({"error": "origem não autorizada"}, 403)
+        else:
+            eu = auth_quem(self.auth_token())
+            if not eu:
+                erro = ({"erro": "sem_sessao"}, 401)
+            elif not auth_pode(eu["cadastro"], "set", "c"):
+                erro = ({"erro": "sem_permissao"}, 403)
+            elif n <= 0 or n > FOTO_ENVIO_MAX:
+                erro = ({"erro": "tamanho"}, 413)
+        q = parse_qs(urlparse(self.path).query)
+        nome = re.sub(r"[^\w.\- ]", "_", os.path.basename((q.get("nome") or [""])[0].replace("\\", "/")))[-120:]
+        if not erro and (not nome.endswith(EXT) or nome.startswith(".")):
+            erro = ({"erro": "formato"}, 415)
+        if erro:
+            self.close_connection = True           # o corpo não foi lido: esta conexão não serve para o próximo pedido
+            return self.js(erro[0], erro[1], True)
+        cad = eu["cadastro"]
+        quem = (q.get("quem") or [""])[0]
+        quem = cad.get("key") or (quem if quem in PHOTOGRAPHERS else "") or cad.get("email") or "upload"
+        os.makedirs(FTPTMP, exist_ok=True)
+        tmp = os.path.join(FTPTMP, "envio-%s.tmp" % secrets.token_hex(8))
+        try:
+            with open(tmp, "wb") as f:
+                resto = n
+                while resto > 0:
+                    ch = self.rfile.read(min(1 << 20, resto))
+                    if not ch:
+                        break
+                    f.write(ch)
+                    resto -= len(ch)
+            inteira = not resto and jpeg_completo(tmp, n)
+            r = ingest_file(tmp, nome, os.stat(tmp), quem, "ftp", move=True) if inteira else None   # entra como a foto do FTP: mesma sessão e mesmo dono
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        if not inteira:
+            return self.js({"erro": "incompleta"}, 400, True)
+        return self.js({"ok": bool(r), "resultado": r or "recusada"}, 200, True)
+
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
         agente; os postos pareados entram na etapa 2 com a mesma regra do /photoroom/compose) e só fotos da biblioteca."""
@@ -6488,6 +6535,8 @@ class H(BaseHTTPRequestHandler):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
+        if u.path == "/fotos/enviar":
+            return self.fotos_enviar_post()
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
         if u.path == "/fundos/modo":

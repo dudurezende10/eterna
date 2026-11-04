@@ -257,6 +257,7 @@ flowchart TD
 | Extensão aceita no cartão e na pasta vigiada | Termina em `.jpg`, `.jpeg`, `.JPG` ou `.JPEG`, com diferença entre maiúscula e minúscula. Um `.Jpg`, por exemplo, não passa | `EXT`, `scan_card`, `pasta_vigiada` |
 | Extensão aceita no FTP e no FTP remoto | `jpg` ou `jpeg`, sem diferença entre maiúscula e minúscula | `FTPSession.handle`, `rftp_list` |
 | Cartão ainda gravando | Última mudança há menos de 2 s: espera a próxima volta | `scan_card` |
+| Enviar fotos pela tela | Com a tela aberta pelo endereço do servidor, o botão Enviar fotos manda cada JPG a `POST /fotos/enviar` (até 60 MB). Exige sessão e `set:c`. Entra como a foto do FTP. O dono é o fotógrafo do login; quem não é fotógrafo escolhe no seletor. Fora do servidor, o botão Testar com fotos suas guarda só no navegador | `fotosEnviar`, `fotos_enviar_post` |
 | Porta do FTP | Tenta 21 e depois 2121. `ETERNA_FTP_PORTA` é só para testes | `ftp_server` |
 | Login FTP bloqueado | 5 erros seguidos por endereço bloqueiam por 900 s (15 min). Durante o bloqueio, responde "tente de novo em 15 minutos". Login certo zera a contagem | `FTP_MAX_FALHAS`, `FTP_BLOQUEIO_S`, `ftp_bloqueado`, `ftp_falhou` |
 | Foto completa | JPEG: começa com o marcador de início e tem o marcador de fim nos últimos 4 KB. PNG com nome de JPEG é aceito se tiver o bloco final. Outro conteúdo é recusado | `jpeg_completo` |
