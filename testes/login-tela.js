@@ -2,6 +2,7 @@
 const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
+const servidorRotas=pg=>pg.route('**/auth/esqueci',r=>r.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'}));
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};
 (async()=>{const b=await chromium.launch();
 try{
@@ -23,6 +24,10 @@ try{
   await pg.evaluate(()=>ETERNA.render());await pg.waitForTimeout(50);ok(await pg.getAttribute('[data-act="login-senha"]','type')==='text','redesenho voltou a ocultar a senha');
   await pg.click('[data-act="login-ver"]');ok(await pg.getAttribute('[data-act="login-senha"]','type')==='password','o olho oculta a senha');
   ok(!await pg.$('[data-act="login-trocar"]'),'a tela de entrada não oferece trocar senha');
+  // esqueci a senha: a resposta é a mesma para qualquer usuário, e voltar mantém o usuário digitado
+  await pg.click('[data-act="login-esqueci"]');await pg.waitForTimeout(100);ok(!await pg.$('[data-act="login-senha"]'),'esqueci a senha não pede senha');
+  await servidorRotas(pg);await pg.click('button[type=submit]');await pg.waitForTimeout(200);ok(/chega em alguns minutos/.test(await pg.textContent('#main')),'esqueci a senha confirma o pedido');
+  await pg.click('[data-act="login-voltar"]');await pg.waitForTimeout(100);ok(await pg.inputValue('[data-act="login-usuario"]')==='eduardo@eduardorezende.com','voltar perdeu o usuário');await pg.fill('[data-act="login-senha"]','abc');
   // senha provisória: o servidor pede a troca e a tela já abre em Crie sua senha, com as regras antes de ir ao servidor
   await pg.route('**/auth/entrar',r=>r.fulfill({status:200,contentType:'application/json',body:'{"ok":false,"troca":true}'}));
   await pg.click('button[type=submit]');await pg.waitForTimeout(200);ok(/Crie sua senha/.test(await pg.textContent('#main')),'a senha provisória leva a Crie sua senha');
@@ -52,7 +57,8 @@ try{
   // novo usuário sem e-mail: identificador simples passa; com espaço, não
   await pg.click('[data-act="user-new"]');await pg.fill('[data-act="user-field"][data-k="name"]','Rafael');await pg.fill('[data-act="user-field"][data-k="email"]','rafael melo');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);
   ok(/inválido/.test(await pg.textContent('#toast')),'usuário com espaço é recusado');
-  await pg.fill('[data-act="user-field"][data-k="email"]','rafael.melo');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(150);
+  await pg.fill('[data-act="user-field"][data-k="email"]','rafael.melo');await pg.fill('[data-act="user-field"][data-k="contato"]','nao e email');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);
+  ok(/E-mail inválido/.test(await pg.textContent('#toast')),'e-mail inválido é recusado');await pg.fill('[data-act="user-field"][data-k="contato"]','');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(150);
   ok(await pg.evaluate(()=>!!ETERNA.USERS['rafael.melo']),'usuário sem e-mail é cadastrado');
   ok(!/Senha provisória de rafael/.test(await pg.textContent('#main')),'sem Criar em Senhas, o cadastro fica sem senha');
   ok(!errs.length,'erros na página: '+errs.join(' | ').slice(0,300));

@@ -205,6 +205,89 @@ db.close()
 ok(SENHA not in tudo and "porta velha" not in tudo, "senha legível no banco")
 ok(not m.estado_col("credencial")["docs"] and "credencial" not in m.ESTADO_COLS, "credencial fora das coleções")
 
+# 8b. esqueci a senha: provisória por e-mail, ao lado da senha atual, sem revelar quem existe
+enviados = []
+m.auth_enviar_reset = lambda destino, senha: enviados.append((destino, senha))
+FRASE, FRASE2 = "uma frase bem comprida agora", "outra frase bem comprida depois"
+def cad_reset(u, **k):
+    m.estado_gravar({"docs": [{"col": "usuarios", "id": u, "valor": dict({"v": 2, "email": u, "name": "Pessoa " + u, "preset": "foto", "active": True, "perms": {"importar": TUDO}}, **k)}]})
+cad_reset("com.email", contato="pessoa@exemplo.com")
+m.auth_criar("com.email", "teste")
+m.auth_trocar("com.email", FRASE)
+st, j, _ = pede("/auth/esqueci", {"usuario": "nao.existe"})
+st2, j2, _ = pede("/auth/esqueci", {"usuario": "com.email"})
+ok(st == st2 == 200 and j == j2, "a resposta revela se o usuário existe")
+for _ in range(100):
+    if enviados:
+        break
+    time.sleep(0.1)
+ok(len(enviados) == 1 and enviados[0][0] == "pessoa@exemplo.com", "e-mail não saiu para o endereço do cadastro: %s" % [e[0] for e in enviados])
+prov = enviados[0][1] if enviados else ""
+ok(prov not in json.dumps(j2), "a senha aparece na resposta")
+ok(not m.auth_esqueci("com.email"), "segundo pedido em 15 minutos não manda outro e-mail")
+st, _, ck = pede("/auth/entrar", {"usuario": "com.email", "senha": FRASE})
+ok(st == 200 and ck, "pedir o reset derrubou a senha atual")
+st, j, ck = pede("/auth/entrar", {"usuario": "com.email", "senha": prov})
+ok(st == 200 and j.get("troca") and not ck, "a provisória do e-mail só serve para criar a senha: %s %s" % (st, j))
+db = sqlite3.connect(m.ESTADO_DB)
+db.execute("update credencial set bloqueado_ate=? where usuario='com.email'", (time.time() + 900,))
+db.commit()
+db.close()
+st, _, _ = pede("/auth/entrar", {"usuario": "com.email", "senha": FRASE})
+ok(st == 429, "usuário bloqueado ainda entra com a senha atual: %s" % st)
+st, j, _ = pede("/auth/entrar", {"usuario": "com.email", "senha": prov})
+ok(st == 200 and j.get("troca"), "a provisória do e-mail libera quem está bloqueado")
+st, _, ck = pede("/auth/trocar", {"usuario": "com.email", "senha": prov, "nova": FRASE2})
+ok(st == 200 and ck, "criar a senha com a provisória do e-mail")
+st, _, _ = pede("/auth/entrar", {"usuario": "com.email", "senha": prov})
+ok(st == 401, "a provisória do e-mail não serve duas vezes")
+st, _, _ = pede("/auth/entrar", {"usuario": "com.email", "senha": FRASE})
+ok(st == 401, "a senha antiga segue valendo depois da troca")
+# vencida, sem e-mail, desativado, sem senha e falha de envio
+db = sqlite3.connect(m.ESTADO_DB)
+db.execute("delete from reset_senha")
+db.commit()
+db.close()
+m.auth_reset_ip.clear()
+ok(m.auth_esqueci("com.email"), "novo pedido depois de usada a anterior")
+prov = enviados[-1][1]
+db = sqlite3.connect(m.ESTADO_DB)
+db.execute("update reset_senha set expira=? where usuario='com.email'", (time.time() - 1,))
+db.commit()
+db.close()
+st, _, _ = pede("/auth/entrar", {"usuario": "com.email", "senha": prov})
+ok(st == 401, "a provisória do e-mail vence em 30 minutos")
+cad_reset("sem.email")
+m.auth_criar("sem.email", "teste")
+cad_reset("saiu", contato="saiu@exemplo.com", active=False)
+m.auth_criar("saiu", "teste")
+cad_reset("sem.senha", contato="novo@exemplo.com")
+n = len(enviados)
+ok(not m.auth_esqueci("sem.email") and not m.auth_esqueci("saiu") and not m.auth_esqueci("sem.senha") and len(enviados) == n, "e-mail saiu para sem e-mail, desativado ou sem senha")
+def falha(destino, senha):
+    raise OSError("sem internet")
+m.auth_enviar_reset = falha
+cad_reset("sem.rede", contato="rede@exemplo.com")
+m.auth_criar("sem.rede", "teste")
+ok(not m.auth_esqueci("sem.rede"), "falha de envio conta como enviado")
+m.auth_enviar_reset = lambda destino, senha: enviados.append((destino, senha))
+ok(m.auth_esqueci("sem.rede"), "falha de envio não prende o próximo pedido por 15 minutos")
+m.auth_reset_ip.clear()
+for _ in range(m.AUTH_RESET_IP):
+    m.auth_esqueci("nao.existe", "10.0.0.9")
+n = len(enviados)
+db = sqlite3.connect(m.ESTADO_DB)
+db.execute("delete from reset_senha")
+db.commit()
+db.close()
+ok(not m.auth_esqueci("com.email", "10.0.0.9") and len(enviados) == n, "limite de pedidos por endereço")
+# o e-mail é para onde vai a senha: mudar exige Alterar em Senhas de acesso
+ed_sem = {"cadastro": {"email": "ed", "preset": "custom", "perms": {"usuarios": TUDO, "importar": TUDO}}}
+ed_com = {"cadastro": {"email": "ed", "preset": "custom", "perms": {"usuarios": TUDO, "senhas": TUDO, "importar": TUDO}}}
+a = {"email": "x", "name": "X", "contato": "x@exemplo.com", "perms": {"importar": TUDO}}
+ok(m.auth_cadastro_recusa(ed_sem, "x", a, dict(a, contato="golpe@exemplo.com")) == "sem_permissao", "sem Senhas de acesso, muda o e-mail de outra pessoa")
+ok(m.auth_cadastro_recusa(ed_com, "x", a, dict(a, contato="novo@exemplo.com")) is None, "com Senhas de acesso, não muda o e-mail")
+
 # 9. senha provisória vence em 72 horas; muitos erros do mesmo endereço param, mesmo mudando o usuário
 doc("velho")
 prov = m.auth_criar("velho", "teste")

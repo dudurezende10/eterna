@@ -23,7 +23,7 @@
 3. **A senha nunca fica legível.** É guardada só como hash `scrypt` com sal por pessoa. Nem o admin consegue ver.
 4. **O cadastro segue as permissões de Cadastro de usuários.** Não há autocadastro.
    **Gerar senha tem módulo próprio, Senhas de acesso, com as 4 ações:** Criar gera a primeira, Ver mostra quem tem senha, Alterar gera outra e Excluir cancela. O perfil Admin vem com ele, e dá para tirar de uma pessoa. O servidor decide pela permissão, não pelo nome do perfil.
-5. **Cada pessoa troca a própria senha.** Quem esquecer pede uma senha provisória a quem tem a permissão. A recuperação por e-mail fica para a etapa 3.
+5. **Cada pessoa troca a própria senha.** Quem esquecer pede pela tela e recebe uma senha provisória por e-mail. Sem e-mail, pede a quem tem a permissão. A tela responde igual para qualquer usuário, e mudar o e-mail de alguém exige Alterar em Senhas de acesso.
 6. **Um serviço de e-mail simples no servidor** manda a recuperação de senha. Ele não é necessário para entrar.
 7. **A galeria do cliente segue aberta pelo QR**, e o FTP das câmeras não muda.
 
@@ -77,9 +77,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Esqueci a senha"] --> B{"Tem e-mail no cadastro e o servidor tem internet?"}
-    B -->|"Sim"| C["Recebe um código de uso único, válido por 10 minutos"]
-    C --> D["Digita o código e cria a senha"]
+    A["Esqueci a senha"] --> B{"Ativo, com senha, com e-mail no cadastro e o servidor com internet?"}
+    B -->|"Sim"| C["Recebe uma senha provisória, válida por 30 minutos. A senha atual continua valendo"]
+    C --> D["Entra com ela e cria a senha nova"]
     B -->|"Não"| E["Pede ao admin"]
     E --> F["Admin gera uma senha provisória, mostrada uma vez"]
     F --> G["Entra e cria a própria senha"]
@@ -97,8 +97,8 @@ flowchart TD
 
 ## 6. Serviço de e-mail
 
-- Uma função `enviar_email` no agente, com novas tentativas.
-- O envio passa por uma rota nova na nuvem, autenticada com o segredo do ponto que o servidor já tem, e sai pelo SES de `hello@eterna.photo`. Assim nenhuma senha de e-mail nova fica no servidor.
+- A função `auth_enviar_reset`, no agente, faz uma tentativa. Se falhar, a pessoa pode pedir de novo ou falar com o admin.
+- O envio passa pela rota `POST /auth/senha-email` na nuvem, autenticada com o segredo do ponto que o servidor já tem, e sai pelo SES de `hello@eterna.photo`. Assim nenhuma senha de e-mail nova fica no servidor.
 - A rota aceita só a mensagem de recuperação de senha, com limite por hora.
 - Sem internet, a tela indica pedir ao admin. O login continua normal.
 

@@ -4103,7 +4103,7 @@ function auditLog(acao,alvo,mudancas,extra){if(!mudancas||!mudancas.length)retur
   const l=auditRead();l.unshift(e);try{localStorage.setItem(AUDIT_KEY,JSON.stringify(l.slice(0,1000)))}catch(x){}
   if(state.db){try{state.db.doc('usuarios_log/'+e.id).set(e)}catch(x){console.warn('db usuarios_log',x)}}return e;}
 function permDiff(a,b){a=a||{};b=b||{};const out=[];
-  ['name','email','key','active','preset','inicio'].forEach(k=>{const x=a[k]==null?null:a[k],y=b[k]==null?null:b[k];if(x!==y)out.push({campo:k,de:x,para:y});});
+  ['name','email','contato','key','active','preset','inicio'].forEach(k=>{const x=a[k]==null?null:a[k],y=b[k]==null?null:b[k];if(x!==y)out.push({campo:k,de:x,para:y});});
   MODULES.forEach(([m])=>['c','r','u','d'].forEach(k=>{const x=accHas(a,m,k),y=accHas(b,m,k);if(x!==y)out.push({campo:`perms.${m}.${k}`,de:x,para:y});}));
   const ma=a.perms?userMenu(a):[],mb=b.perms?userMenu(b):[];const sai=ma.filter(v=>!mb.includes(v)),entra=mb.filter(v=>!ma.includes(v));if(sai.length||entra.length)out.push({campo:'menu',sai,entra});
   return out;}
@@ -4154,6 +4154,8 @@ async function authEntrar(){const a=state.auth;if(a.busy)return;const u=normEmai
   const r=await authApi('/auth/entrar',{usuario:u,senha:a.senha});a.busy=false;
   if(r.status===200&&r.troca){a.step='trocar';a.err=null;a.nova='';a.nova2='';render();return;}
   if(r.status===200&&r.ok){authEntrou(r);return;}a.senha='';a.err=authErro(r);render();}
+async function authEsqueci(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u){a.err='Digite o usuário.';render();return;}a.busy=true;a.err=null;render();
+  const r=await authApi('/auth/esqueci',{usuario:u});a.busy=false;if(r.status===200)a.enviado=true;else a.err=authErro(r);render();}
 async function authTrocar(){const a=state.auth;if(a.busy)return;const dentro=!!state.user;const u=dentro?state.user.email:normEmail(a.usuario);if(!u||!a.senha){a.err='Digite o usuário e a senha atual.';render();return;}if(a.nova.length<10){a.err='A senha nova precisa de 10 caracteres ou mais.';render();return;}if(a.nova!==a.nova2){a.err='As duas senhas novas não são iguais.';render();return;}a.busy=true;a.err=null;render();
   const r=await authApi('/auth/trocar',{usuario:u,senha:a.senha,nova:a.nova});a.busy=false;a.nova='';a.nova2='';
   if(r.status===200&&r.ok&&dentro){state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view=homeView();toast('Senha alterada');render();return;}
@@ -4180,6 +4182,10 @@ function vEntrar(){
   const erro=a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:'';
   const pe=`<div class="note" style="text-align:center">Convidado: suas fotos abrem pelo QR do recibo.</div><div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div>`;
   if(authSite())return `<div class="enter login">${logo}<div class="panel"><h2>Entrar</h2><div class="note">A entrada da equipe é pelo endereço do servidor do estádio.</div></div>${pe}</div>`;
+  if(a.step==='esqueci')return `<div class="enter login">${logo}
+    <form class="panel" data-form="login-esqueci"><h2>Esqueci a senha</h2>${a.enviado?`<div class="note">Se este usuário estiver ativo e tiver e-mail cadastrado, uma senha provisória chega em alguns minutos. Ela vale por 30 minutos e sua senha atual continua valendo até você criar a nova.</div><div class="note">Sem e-mail ou sem internet no servidor, peça uma senha provisória ao administrador.</div><div class="row"><button class="btn primary big" type="button" data-act="login-voltar">Voltar para entrar</button></div>`:`<div class="note">Digite seu usuário. Se ele tiver e-mail cadastrado, enviamos uma senha provisória.</div>
+      <input type="text" autocomplete="username" autocapitalize="none" spellcheck="false" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="Usuário" aria-label="Usuário">
+      ${erro}<button class="btn primary big" type="submit">Enviar senha provisória</button><div class="row"><button class="btn ghost" type="button" data-act="login-voltar">Voltar</button></div>`}</form>${pe}</div>`;
   if(a.step==='trocar')return `<div class="enter login">${logo}
     <form class="panel" data-form="login-trocar"><h2>Crie sua senha</h2><div class="note">Esta senha provisória só serve para criar a sua. Use 10 caracteres ou mais. Uma frase curta é fácil de lembrar e difícil de descobrir.</div>
       ${campoSenha('login-nova',a.nova,'Senha nova','new-password')}
@@ -4190,7 +4196,7 @@ function vEntrar(){
       <input type="text" autocomplete="username" autocapitalize="none" spellcheck="false" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="Usuário" aria-label="Usuário" autofocus>
       ${campoSenha('login-senha',a.senha,'Senha','current-password')}
       ${erro}<button class="btn primary big" type="submit">Entrar</button>
-      <div class="note">Esqueceu a senha? Peça uma provisória ao administrador.</div></form>
+      <div class="row"><button class="btn ghost" type="button" data-act="login-esqueci">Esqueci a senha</button></div></form>
     ${pe}</div>`;
 }
 // ---------- Configurações › Usuários (cadastro) ----------
@@ -4204,7 +4210,7 @@ function vUsuarios(){
   let editor='';
   if(d&&isNew){const ok=presetsFor(me);const pk=PRESETS[d.preset]?d.preset:'custom';
     editor=`<div class="panel" style="gap:12px"><div class="head"><h2>Novo usuário</h2></div>
-    <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}"></label><label><span class="eyebrow">Usuário</span><input type="text" autocapitalize="none" spellcheck="false" placeholder="nome.sobrenome" data-act="user-field" data-k="email" value="${esc(d.email||'')}"></label></div>
+    <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}"></label><label><span class="eyebrow">Usuário</span><input type="text" autocapitalize="none" spellcheck="false" placeholder="nome.sobrenome" data-act="user-field" data-k="email" value="${esc(d.email||'')}"></label><label><span class="eyebrow">E-mail (opcional)</span><input type="text" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="Para receber a senha se esquecer" data-act="user-field" data-k="contato" value="${esc(d.contato||'')}"></label></div>
     <label><span class="eyebrow">Fotógrafo vinculado</span><select data-act="user-key"><option value="">Nenhum</option>${humans.map(k=>`<option value="${k}" ${d.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
     <label><span class="eyebrow">Perfil</span><select data-act="user-preset">${ok.map(k=>`<option value="${k}" ${pk===k?'selected':''}>${esc(PRESETS[k].name)}</option>`).join('')}<option value="custom" ${pk==='custom'?'selected':''}>Sem acesso ainda (definir em Permissões)</option></select></label>
     <div class="note">${esc(PRESETS[pk]?PRESETS[pk].desc:'A pessoa entra sem ver nenhuma tela até alguém liberar em Permissões.')}</div>
@@ -4213,7 +4219,7 @@ function vUsuarios(){
     <div class="row"><button class="btn primary" data-act="user-save">Criar acesso</button><button class="btn ghost" data-act="user-cancel">Fechar</button></div></div>`;}
   else if(d){const u=USERS[d.email0]||d;const ro=!rwU;
     editor=`<div class="panel" style="gap:12px"><div class="head"><h2>${esc(d.name||d.email)}</h2><span class="pill ${u.active!==false?'good':'bad'}">${u.active!==false?'ativo':'desativado'}</span></div>
-    <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}" ${ro?'readonly':''}></label><label><span class="eyebrow">Usuário</span><input type="text" data-act="user-field" data-k="email" value="${esc(d.email||'')}" readonly></label></div>
+    <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}" ${ro?'readonly':''}></label><label><span class="eyebrow">Usuário</span><input type="text" data-act="user-field" data-k="email" value="${esc(d.email||'')}" readonly></label><label><span class="eyebrow">E-mail (opcional)</span><input type="text" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="Para receber a senha se esquecer" data-act="user-field" data-k="contato" value="${esc(d.contato||'')}" ${ro||!can('senhas','u')?'readonly':''}></label></div>
     <label><span class="eyebrow">Fotógrafo vinculado</span><select data-act="user-key" ${ro?'disabled':''}><option value="">Nenhum</option>${humans.map(k=>`<option value="${k}" ${d.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
     <div><span class="eyebrow">Perfil e acessos</span><div><b>${esc(presetName(u.preset))}</b> <span class="note">· ${esc(accSummary(u))}</span></div></div>
     <div class="row">${rwU?`<button class="btn primary" data-act="user-save">Salvar</button>`:''}${canView('permissoes')?`<button class="btn ghost" data-act="perm-open" data-e="${esc(d.email0)}">Editar permissões</button>`:''}${canView('permissoes')&&!permRO(u)?`<button class="btn ghost" data-act="perm-copy-open" data-e="${esc(d.email0)}">Copiar permissões de…</button>`:''}${!self?senhaBotoes(d.email0):''}${!self&&rwU?`<button class="btn ghost" data-act="user-active">${u.active!==false?'Desativar':'Reativar'}</button>`:''}${!self&&rwD?(state.users.delAsk?`<button class="btn ghost" data-act="user-del-ok" style="color:var(--bad)">Confirmar exclusão</button><button class="btn ghost" data-act="user-del-no">Cancelar</button>`:`<button class="btn ghost" data-act="user-del-ask" style="color:var(--bad)">Excluir acesso</button>`):''}<button class="btn ghost" data-act="user-cancel">Fechar</button></div>
@@ -4228,14 +4234,14 @@ function vUsuarios(){
     </tbody></table></div><div class="note" style="margin-top:8px">E-mail fora desta lista não entra. Convidado abre as fotos pelo QR do recibo.</div></div>
   </div>`;
 }
-function userDraft(email){const u=USERS[email];if(!u)return;state.users.delAsk=false;state.users.draft={email:u.email,email0:u.email,name:u.name,key:u.key||null,preset:u.preset};}
+function userDraft(email){const u=USERS[email];if(!u)return;state.users.delAsk=false;state.users.draft={email:u.email,email0:u.email,name:u.name,contato:u.contato||'',key:u.key||null,preset:u.preset};}
 function userSave(){const d=state.users.draft;if(!d)return;const isNew=!d.email0;
   if(isNew&&!can('usuarios','c')){toast('Sem permissão para criar em Cadastro de usuários');return;}if(!isNew&&!can('usuarios','u')){toast('Sem permissão para alterar em Cadastro de usuários');return;}
-  const e=normEmail(d.email);if(!usuarioOk(e)){toast('Usuário inválido: use letras minúsculas, números, ponto ou hífen');return;}if(!d.name||!d.name.trim()){toast('Dê um nome ao usuário');return;}if(e!==d.email0&&USERS[e]){toast('Este usuário já existe');return;}
+  const e=normEmail(d.email);if(!usuarioOk(e)){toast('Usuário inválido: use letras minúsculas, números, ponto ou hífen');return;}if(!d.name||!d.name.trim()){toast('Dê um nome ao usuário');return;}const contato=normEmail(d.contato||'');if(contato&&!/^[^@\s]+@[^@\s]+\.[a-z]{2,24}$/.test(contato)){toast('E-mail inválido');return;}if(e!==d.email0&&USERS[e]){toast('Este usuário já existe');return;}
   const antes=isNew?null:USERS[d.email0];if(!isNew&&!antes)return;let depois;
-  let cp=null;if(isNew){const k=PRESETS[d.preset]?d.preset:'custom';const pr=PRESETS[k];depois={v:2,email:e,name:d.name.trim(),preset:k,key:d.key||null,perms:pr?presetPerms(k):permNorm({}),menu:pr?presetMenu(k):[],inicio:pr?pr.inicio:null,active:true,createdAt:now().toISOString(),createdBy:state.user.email,lastLogin:null,mv:83};
+  let cp=null;if(isNew){const k=PRESETS[d.preset]?d.preset:'custom';const pr=PRESETS[k];depois={v:2,email:e,name:d.name.trim(),contato:contato||null,preset:k,key:d.key||null,perms:pr?presetPerms(k):permNorm({}),menu:pr?presetMenu(k):[],inicio:pr?pr.inicio:null,active:true,createdAt:now().toISOString(),createdBy:state.user.email,lastLogin:null,mv:83};
     if(d.copyFrom&&USERS[d.copyFrom]){cp=permCopia(d.copyFrom,null,state.user);Object.assign(depois,{perms:cp.depois.perms,menu:cp.depois.menu,inicio:cp.depois.inicio,preset:cp.depois.preset});}}
-  else depois=Object.assign({},antes,{email:e,name:d.name.trim(),key:d.key||null});
+  else depois=Object.assign({},antes,{email:e,name:d.name.trim(),contato:contato||null,key:d.key||null});
   const usersDepois=Object.assign({},USERS);if(!isNew&&d.email0!==e)delete usersDepois[d.email0];usersDepois[e]=depois;
   const v=permValidate(state.user,antes,depois,usersDepois);if(!v.ok){toast(v.msg);return;}
   const muds=permDiff(antes,depois);if(!muds.length){state.users.draft=null;toast('Nada mudou');render();return;}
@@ -4593,7 +4599,7 @@ function entrarFoco(){const k=state.view==='entrar'&&!state.user?'entrar|'+state
   if(k&&k!==entrarFoco.k){entrarFocar();[150,600,1500].forEach(ms=>setTimeout(()=>entrarFocar(true),ms));}else if(k&&state.auth.foco){const el=document.querySelector('#main [data-act="'+state.auth.foco+'"]');if(el&&document.activeElement!==el){try{el.focus({preventScroll:true});el.setSelectionRange(el.value.length,el.value.length);}catch(e){}}}entrarFoco.k=k;}
 // v89: extensões do navegador e o preenchimento automático podem tirar o foco logo depois; tenta de novo (só se ninguém
 // estiver digitando em outro campo) e também quando a janela volta a ficar ativa.
-function entrarFocar(soLivre){if(state.view!=='entrar'||state.user)return;const el=document.querySelector(state.auth.step==='trocar'?'#main [data-act="login-nova"]':(state.auth.usuario?'#main [data-act="login-senha"]':'#main [data-act="login-usuario"]'));if(!el)return;
+function entrarFocar(soLivre){if(state.view!=='entrar'||state.user)return;const el=document.querySelector(state.auth.step==='trocar'?'#main [data-act="login-nova"]':(state.auth.usuario&&state.auth.step!=='esqueci'?'#main [data-act="login-senha"]':'#main [data-act="login-usuario"]'));if(!el)return;
   const at=document.activeElement;if(soLivre&&at&&at!==document.body&&at!==el&&/^(INPUT|TEXTAREA|SELECT)$/.test(at.tagName))return;if(at===el)return;try{el.focus({preventScroll:true});}catch(e){}}
 window.addEventListener('focus',()=>entrarFocar(true));window.addEventListener('pageshow',()=>entrarFocar(true));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')entrarFocar(true);});
 // v79: barra da equipe: Abrir Checkout e, para quem confirma pagamento, o Caixa com o número de dinheiros esperando
@@ -4654,7 +4660,8 @@ document.addEventListener('click',e=>{
     case 'nav-grp':{const g=d.g;const cur=(VIEWS.find(v=>v[0]===state.view)||[])[3];const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;state.navOpen[g]=!open;render();const gb=document.querySelector(`#nav .grp[data-g="${CSS.escape(g)}"]`);if(gb)gb.focus();break;}
     case 'login-ver':{const v=state.auth.ver=state.auth.ver||{};v[d.c]=!v[d.c];render();const c=document.querySelector('#main [data-act="'+d.c+'"]');if(c){c.focus({preventScroll:true});c.setSelectionRange(c.value.length,c.value.length);}break;}
     case 'minha-senha':state.view='minhasenha';render();break;
-    case 'login-voltar':state.auth.step='entrar';state.auth.senha='';state.auth.nova='';state.auth.nova2='';state.auth.ver=null;state.auth.err=null;if(state.user)state.view=homeView();render();break;
+    case 'login-esqueci':state.auth.step='esqueci';state.auth.enviado=false;state.auth.senha='';state.auth.err=null;render();break;
+    case 'login-voltar':state.auth.step='entrar';state.auth.enviado=false;state.auth.senha='';state.auth.nova='';state.auth.nova2='';state.auth.ver=null;state.auth.err=null;if(state.user)state.view=homeView();render();break;
     case 'aj-key':state.ajustes.key=d.k;state.ajustes.card=null;state.ajustes.photo=null;render();break;
     case 'aj-sess':state.ajustes.card=d.card;state.ajustes.photo=null;render();window.scrollTo({top:0});break;
     case 'aj-back':state.ajustes.card=null;state.ajustes.photo=null;render();break;
@@ -4917,7 +4924,7 @@ document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-p
   if(a==='gal-ev-ses'){if(state.gal.ev)state.gal.ev.sel[e.target.dataset.card]=e.target.checked;return;}
   if(a==='gal-ev-menor'){if(state.gal.ev)state.gal.ev.menor=e.target.checked;return;}
   if(a==='gal-ev-data'){if(state.gal.ev){const n=$('#gal-ev-nome');if(n)state.gal.ev.nome=n.value;state.gal.ev.data=e.target.value||todayISO();state.gal.ev.sel={};render();}return;}});
-document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-entrar')authEntrar();if(f==='login-trocar')authTrocar();});
+document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-entrar')authEntrar();if(f==='login-trocar')authTrocar();if(f==='login-esqueci')authEsqueci();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
     if(e.key==='ArrowRight'||e.key==='ArrowLeft'){k.ver=Math.max(0,Math.min(n-1,k.ver+(e.key==='ArrowRight'?1:-1)));k.i=k.ver;render();e.preventDefault();return;}
     if(e.key==='Escape'){k.ver=null;render();e.preventDefault();e.stopPropagation();return;}

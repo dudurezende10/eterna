@@ -5001,9 +5001,11 @@ def estado_db():
 AUTH_ID = re.compile(r"^[a-z0-9][a-z0-9._@+-]{1,99}$")
 AUTH_N, AUTH_SESSAO, AUTH_ERROS, AUTH_BLOQUEIO, AUTH_SENHA_MIN = 2 ** 17, 12 * 3600, 5, 900, 10
 AUTH_PROVISORIA_S, AUTH_ERROS_IP = 72 * 3600, 30
+AUTH_RESET_S, AUTH_RESET_INTERVALO, AUTH_RESET_IP = 30 * 60, 15 * 60, 10   # esqueci a senha: vale 30 min, 1 pedido a cada 15 min por usuário, 10 por hora por endereço
 AUTH_COOKIE = "eterna_sessao"
 auth_cpu = threading.BoundedSemaphore(2)      # scrypt usa 128 MB por conta: várias tentativas juntas não derrubam o servidor
 auth_ip_erros = {}                            # erros recentes por endereço, contra quem testa uma senha em muitos usuários
+auth_reset_ip = {}                            # pedidos de "esqueci a senha" por endereço
 
 
 def auth_db():
@@ -5012,6 +5014,7 @@ def auth_db():
               " provisoria integer, erros integer default 0, bloqueado_ate real default 0, atualizada real)")
     c.execute("create table if not exists sessao_login (token text primary key, usuario text, expira real)")
     c.execute("create table if not exists login_log (em real, usuario text, acao text, por text, ip text)")
+    c.execute("create table if not exists reset_senha (usuario text primary key, hash text, sal text, n integer, expira real, pedido real)")
     return c
 
 
@@ -5083,11 +5086,72 @@ def auth_criar(usuario, por="", ip=""):
                        " on conflict(usuario) do update set hash=excluded.hash, sal=excluded.sal, n=excluded.n, provisoria=1, erros=0, bloqueado_ate=0,"
                        " atualizada=excluded.atualizada", (usuario, h, sal, AUTH_N, time.time()))
             db.execute("delete from sessao_login where usuario=?", (usuario,))
+            db.execute("delete from reset_senha where usuario=?", (usuario,))
             auth_log(db, usuario, "senha_provisoria", por, ip)
             db.commit()
         finally:
             db.close()
     return senha
+
+
+def auth_enviar_reset(destino, senha):
+    """A nuvem manda o e-mail pelo SES, com o segredo do ponto. Sem internet ou sem nuvem configurada, levanta erro."""
+    if not NUVEM_API:
+        raise RuntimeError("nuvem não configurada")
+    rq = urllib.request.Request(NUVEM_API + "/auth/senha-email", data=json.dumps({"email": destino, "senha": senha}).encode(), method="POST",
+                                headers={"Content-Type": "application/json", "X-Eterna-Ponto": nuvem_segredo(), "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=20) as r:
+        r.read()
+
+
+def auth_destino(usuario, cad):
+    d = str((cad or {}).get("contato") or (usuario if "@" in usuario else "")).strip().lower()
+    return d if AUTH_EMAIL.match(d) else ""
+
+
+def auth_esqueci(usuario, ip=""):
+    """Senha provisória por e-mail. Fica ao lado da senha atual, que continua valendo: pedir em nome de outra pessoa não a tira do ar.
+    Só para quem está ativo, já tem senha e tem e-mail; quem pede nunca fica sabendo qual foi o caso."""
+    agora = time.time()
+    pedidos = [t for t in auth_reset_ip.get(ip, []) if t > agora - 3600]
+    if len(pedidos) >= AUTH_RESET_IP:
+        return False
+    auth_reset_ip[ip] = pedidos + [agora]
+    with estado_lock:
+        db = auth_db()
+        try:
+            tem = db.execute("select 1 from credencial where usuario=?", (usuario,)).fetchone()
+            cad = auth_cadastro(db, usuario)
+            ant = db.execute("select pedido from reset_senha where usuario=?", (usuario,)).fetchone()
+        finally:
+            db.close()
+    destino = auth_destino(usuario, cad)
+    if not tem or not auth_ativo(cad) or not destino or (ant and ant[0] > agora - AUTH_RESET_INTERVALO):
+        return False
+    senha, sal = auth_provisoria(), secrets.token_hex(16)
+    h = auth_hash(senha, sal, AUTH_N)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("insert or replace into reset_senha values (?, ?, ?, ?, ?, ?)", (usuario, h, sal, AUTH_N, agora + AUTH_RESET_S, agora))
+            auth_log(db, usuario, "reset_pedido", "", ip)
+            db.commit()
+        finally:
+            db.close()
+    try:
+        auth_enviar_reset(destino, senha)
+        return True
+    except Exception as ex:
+        print("  esqueci a senha: envio falhou: %s" % str(ex)[:160])
+        with estado_lock:
+            db = auth_db()
+            try:
+                db.execute("delete from reset_senha where usuario=?", (usuario,))
+                auth_log(db, usuario, "reset_falhou", "", ip)
+                db.commit()
+            finally:
+                db.close()
+        return False
 
 
 def auth_cadastro(db, usuario):
@@ -5116,6 +5180,7 @@ def auth_conferir(usuario, senha, ip=""):
         try:
             c = db.execute("select usuario, hash, sal, n, provisoria, bloqueado_ate, atualizada from credencial where usuario=?", (usuario,)).fetchone()
             cad = auth_cadastro(db, usuario) if c else None
+            rs = db.execute("select hash, sal, n, expira from reset_senha where usuario=?", (usuario,)).fetchone() if c else None
         finally:
             db.close()
     agora = time.time()
@@ -5126,10 +5191,11 @@ def auth_conferir(usuario, senha, ip=""):
         auth_hash(senha, "00" * 16, AUTH_N)
         auth_ip_erros[ip] = falhas + [agora]
         return "nao", None
-    if c[5] > agora:
+    por_reset = bool(rs) and rs[3] > agora and hmac.compare_digest(auth_hash(senha, rs[1], rs[2]), rs[0])
+    if c[5] > agora and not por_reset:                  # o bloqueio segura a senha digitada, não a que chegou no e-mail da pessoa
         return "bloqueado", None
-    certa = hmac.compare_digest(auth_hash(senha, c[2], c[3]), c[1])
-    if c[4] and c[6] < agora - AUTH_PROVISORIA_S:       # senha provisória vencida: quem pode gera outra
+    certa = por_reset or hmac.compare_digest(auth_hash(senha, c[2], c[3]), c[1])
+    if c[4] and c[6] < agora - AUTH_PROVISORIA_S and not por_reset:       # senha provisória vencida: quem pode gera outra
         certa = False
     if not certa:
         auth_ip_erros[ip] = falhas + [agora]
@@ -5140,7 +5206,7 @@ def auth_conferir(usuario, senha, ip=""):
                 db.execute("update credencial set erros=0, bloqueado_ate=0 where usuario=?", (usuario,))
                 auth_log(db, usuario, "entrou", "", ip)
                 db.commit()
-                return ("provisoria" if c[4] else "ok"), {"usuario": c[0], "cadastro": cad}
+                return ("provisoria" if c[4] or por_reset else "ok"), {"usuario": c[0], "cadastro": cad}
             db.execute("update credencial set erros=erros+1 where usuario=?", (usuario,))
             erros = db.execute("select erros from credencial where usuario=?", (usuario,)).fetchone()[0]
             if erros >= AUTH_ERROS:
@@ -5163,6 +5229,7 @@ def auth_trocar(usuario, nova, ip=""):
             db.execute("update credencial set hash=?, sal=?, n=?, provisoria=0, erros=0, bloqueado_ate=0, atualizada=? where usuario=?",
                        (h, sal, AUTH_N, time.time(), usuario))
             db.execute("delete from sessao_login where usuario=?", (usuario,))
+            db.execute("delete from reset_senha where usuario=?", (usuario,))
             auth_log(db, usuario, "trocou_senha", usuario, ip)
             db.commit()
         finally:
@@ -5222,7 +5289,8 @@ def auth_senhas():
 # Os mesmos limites de permValidate na tela, agora também no servidor: sem isto, quem chama /ponto/docs se daria qualquer acesso, inclusive o de gerar senhas.
 AUTH_MODULOS = ("estoque", "relatorios", "desempenho", "financeiro", "galerias", "qualidade", "diario", "set", "escala", "filafoto", "configuracao",
                 "catalogo", "usuarios", "senhas", "permissoes", "laboratorio", "venda", "quiosque")     # os mesmos de MODULES no app
-AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "key", "active"), ("perms", "menu", "preset", "inicio")
+AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "contato", "key", "active"), ("perms", "menu", "preset", "inicio")
+AUTH_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$")
 
 
 def auth_cadastro_recusa(quem, id_doc, antes, depois):
@@ -5243,6 +5311,8 @@ def auth_cadastro_recusa(quem, id_doc, antes, depois):
             return "sem_permissao"
         if any(antes.get(c) != depois.get(c) for c in AUTH_CAMPOS_ACESSO) and not auth_pode(ed, "permissoes", "u"):
             return "sem_permissao"
+        if antes.get("contato") != depois.get("contato") and not auth_pode(ed, "senhas", "u"):
+            return "sem_permissao"                      # é para onde a senha provisória vai: mudar o e-mail vale tanto quanto gerar outra senha
     novos = auth_acessos(depois) - auth_acessos(antes)
     if novos - auth_acessos(ed):
         return "sem_poder"                              # não dá um acesso que não tem
@@ -5289,6 +5359,7 @@ def auth_remover(usuario, por="", ip=""):
         try:
             db.execute("delete from credencial where usuario=?", (usuario,))
             db.execute("delete from sessao_login where usuario=?", (usuario,))
+            db.execute("delete from reset_senha where usuario=?", (usuario,))
             auth_log(db, usuario, "removido", por, ip)
             db.commit()
         finally:
@@ -5743,7 +5814,7 @@ class H(BaseHTTPRequestHandler):
         return self.js(dict(eu, ok=True), 200, True)
 
     def auth_post(self, u):
-        """POST /auth/entrar, /auth/trocar, /auth/sair, /auth/senha/gerar, /auth/senha/cancelar. Respostas sem cache; a senha nunca vai para log."""
+        """POST /auth/entrar, /auth/trocar, /auth/sair, /auth/esqueci, /auth/senha/gerar, /auth/senha/cancelar. Respostas sem cache; a senha nunca vai para log."""
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
             return self.js({"error": "origem não autorizada"}, 403)
         b, err = self.corpo(4096)
@@ -5762,6 +5833,10 @@ class H(BaseHTTPRequestHandler):
                     finally:
                         db.close()
             self.auth_cookie("", 0)
+            return self.js({"ok": True}, 200, True)
+        if u.path == "/auth/esqueci":
+            if AUTH_ID.match(usuario):                  # em segundo plano: a resposta e o tempo são os mesmos para qualquer usuário
+                threading.Thread(target=auth_esqueci, args=(usuario, ip), daemon=True).start()
             return self.js({"ok": True}, 200, True)
         if u.path.startswith("/auth/senha/"):
             eu = auth_quem(self.auth_token())
@@ -6402,7 +6477,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/senha/gerar", "/auth/senha/cancelar"):
+        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar"):
             return self.auth_post(u)
         if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
