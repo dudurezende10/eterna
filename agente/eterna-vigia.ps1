@@ -45,7 +45,7 @@ function Atualiza {
   }
   if (-not (Test-Path $novo) -or (Get-Item $novo).Length -lt 50000) { Remove-Item $novo -Force; Registra "download de $ref falhou: fica a versão do disco"; return }
   $tem = (Get-FileHash $novo -Algorithm SHA256).Hash.ToLower()
-  if ($esperado -and $tem -ne $esperado) { Remove-Item $novo -Force; Registra "SHA-256 de $ref não confere ($tem): fica a versão do disco"; return }
+  if ($ref -ne 'main' -and $tem -ne $esperado) { Remove-Item $novo -Force; Registra "SHA-256 de $ref não confere ($tem): fica a versão do disco"; return }
   & $py -m py_compile $novo
   if ($LASTEXITCODE) { Remove-Item $novo -Force; Registra "agente de $ref não compila: fica a versão do disco"; return }
   Move-Item -Force $novo (Join-Path $dir 'eterna-agente.py')
