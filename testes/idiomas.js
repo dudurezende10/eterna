@@ -47,8 +47,14 @@ try{
   ok(await entrarTeste(pg,'eduardo@eduardorezende.com'),'entrar');
   await pg.evaluate(()=>{ETERNA.state.user.idioma='es';ETERNA.render();});await pg.waitForTimeout(100);
   ok(/salir/.test(await pg.textContent('#venue-sub')),'idioma do cadastro não vale');
+  // computador: canto superior direito, sem cobrir nada em nenhuma tela; celular: no alto do Menu; tela do cliente: sem as bandeiras da equipe
+  await pg.setViewportSize({width:1280,height:800});await pg.waitForTimeout(50);
+  const cobre=await pg.evaluate(async()=>{const E=ETERNA,fora=[],visto=[];for(const v of Object.keys(E.MODULE_OF)){if(v==='quiosque'||!E.canView(v))continue;E.state.view=v;E.render();await new Promise(r=>setTimeout(r,30));visto.push(v);const a=document.querySelector('#topo-idiomas .idiomas').getBoundingClientRect();if(!a.height){fora.push(v+': sem bandeiras');continue;}document.querySelectorAll('#main button,#main a,#main input,#main select,#main h1,#main h2,#main .eyebrow,#main .head *').forEach(e=>{const r=e.getBoundingClientRect();if(r.width&&r.height&&r.left<a.right&&r.right>a.left&&r.top<a.bottom&&r.bottom>a.top)fora.push(v+': '+(e.innerText||e.tagName).slice(0,30));});}E.state.view='painel';E.render();return {fora:[...new Set(fora)],n:visto.length};});
+  ok(cobre.n>=15&&!cobre.fora.length,'bandeiras cobrem em '+cobre.n+' telas: '+cobre.fora.slice(0,8).join(' | '));console.log('telas conferidas:',cobre.n);
+  await pg.setViewportSize({width:375,height:700});await pg.waitForTimeout(100);ok(await pg.$eval('#topo-idiomas',e=>!e.getClientRects().length),'bandeiras do topo aparecem no celular');await pg.click('#menu-btn');await pg.waitForTimeout(150);ok(await pg.$eval('#rail-idiomas .idiomas',e=>{const r=e.getBoundingClientRect();return r.height>0&&r.bottom<=innerHeight;}),'bandeiras fora da tela no celular');
+  await pg.click('#menu-btn');await pg.setViewportSize({width:1280,height:900});await pg.waitForTimeout(50);
   ok(await pg.evaluate(()=>ETERNA.state.lang)==='fr','entrar mudou o idioma do cliente');
-  await pg.click('#venue-sub [data-act="idioma-equipe"][data-l="en"]');await pg.waitForTimeout(100);
+  await pg.click('#topo-idiomas [data-act="idioma-equipe"][data-l="en"]');await pg.waitForTimeout(100);
   ok(await pg.evaluate(()=>ETERNA.USERS['eduardo@eduardorezende.com'].idioma)==='en','seletor não grava no cadastro');
   ok(/sign out/.test(await pg.textContent('#venue-sub')),'seletor do menu não traduz');
   // o cliente troca o Checkout: a equipe segue no idioma dela, e o valor na tela do cliente segue o idioma do cliente
@@ -56,6 +62,7 @@ try{
   ok(r.cli[1]==='R$ 1.234'&&r.cli[2]==='de-DE','tela do cliente não segue o idioma do cliente: '+r.cli.join(' / '));
   ok(r.eq==='Sign in','o idioma do cliente mudou o da equipe: '+r.eq);
   ok(r.fora[0]==='R$ 1,234'&&r.fora[1]==='en-US'&&r.fora[2]==='de','ao voltar, equipe no idioma dela: '+r.fora.join(' / '));
+  await pg.evaluate(()=>{const s=ETERNA.state;s.lojaRota=true;s.view='quiosque';ETERNA.render();});await pg.waitForTimeout(150);ok(await pg.$eval('#topo-idiomas',e=>!e.getClientRects().length),'bandeiras da equipe aparecem na tela do cliente');
   // ?lang= no endereço, como em parceiros.vivamaracana.com.br
   const pg2=await b.newPage({viewport:{width:1280,height:900}});await pg2.goto(U+'?lang=es');await pg2.evaluate(()=>{localStorage.removeItem('eterna.equipe.idioma');});await pg2.reload();await pg2.waitForTimeout(400);ok(/Olvidé mi contraseña/.test(await pg2.textContent('#main')),'?lang=es não vale');await pg2.close();
   ok(!errs.length,'erros na página: '+errs.join(' | ').slice(0,300));
