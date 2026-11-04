@@ -30,7 +30,7 @@ Para receber de um servidor FTP que já existe na máquina, vigiando a pasta del
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections
 import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 import urllib.request, urllib.error, mimetypes, re, base64
 
 # imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
@@ -4994,6 +4994,168 @@ def estado_db():
     return c
 
 
+# Entrada da equipe: usuário e senha conferidos aqui, no servidor, para funcionar sem internet e sem e-mail. Mora no estado.db,
+# em tabelas próprias, fora de /ponto/docs e dos feeds: credencial guarda só o hash scrypt com sal, sessao_login só o hash do token
+# (o navegador fica com o token em cookie HttpOnly). O admin cadastra; a senha que ele gera é provisória e a pessoa troca na entrada.
+AUTH_ID = re.compile(r"^[a-z0-9][a-z0-9._@+-]{1,99}$")
+AUTH_N, AUTH_SESSAO, AUTH_ERROS, AUTH_BLOQUEIO, AUTH_SENHA_MIN = 2 ** 15, 12 * 3600, 5, 900, 8
+AUTH_COOKIE = "eterna_sessao"
+auth_cpu = threading.BoundedSemaphore(4)      # scrypt usa 32 MB por conta: várias tentativas juntas não derrubam o servidor
+
+
+def auth_db():
+    c = estado_db()
+    c.execute("create table if not exists credencial (usuario text primary key, nome text, hash text, sal text, n integer,"
+              " provisoria integer, admin integer, erros integer default 0, bloqueado_ate real default 0, atualizada real)")
+    c.execute("create table if not exists sessao_login (token text primary key, usuario text, expira real)")
+    c.execute("create table if not exists login_log (em real, usuario text, acao text, por text, ip text)")
+    return c
+
+
+def auth_hash(senha, sal, n):
+    with auth_cpu:
+        return hashlib.scrypt(senha.encode("utf-8"), salt=bytes.fromhex(sal), n=n, r=8, p=1, maxmem=128 * 1024 * 1024, dklen=32).hex()
+
+
+def auth_log(db, usuario, acao, por="", ip=""):
+    db.execute("insert into login_log values (?, ?, ?, ?, ?)", (time.time(), usuario, acao, por, ip))
+
+
+def auth_provisoria():
+    return "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(10))
+
+
+def auth_criar(usuario, nome, admin, por="", ip=""):
+    """Cria a credencial, ou gera outra senha para quem já tem. Devolve a senha provisória, mostrada uma única vez."""
+    senha = auth_provisoria()
+    sal = secrets.token_hex(16)
+    h = auth_hash(senha, sal, AUTH_N)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("insert into credencial (usuario, nome, hash, sal, n, provisoria, admin, erros, bloqueado_ate, atualizada) values (?, ?, ?, ?, ?, 1, ?, 0, 0, ?)"
+                       " on conflict(usuario) do update set hash=excluded.hash, sal=excluded.sal, n=excluded.n, provisoria=1, erros=0, bloqueado_ate=0,"
+                       " atualizada=excluded.atualizada, admin=max(credencial.admin, excluded.admin), nome=coalesce(excluded.nome, credencial.nome)",
+                       (usuario, nome, h, sal, AUTH_N, int(bool(admin)), time.time()))
+            db.execute("delete from sessao_login where usuario=?", (usuario,))
+            auth_log(db, usuario, "senha_provisoria", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return senha
+
+
+def auth_cadastro(db, usuario):
+    r = db.execute("select valor from doc where col='usuarios' and id=? and valor is not null", (quote(usuario, safe="-_.!~*'()"),)).fetchone()
+    return json.loads(r[0]) if r else None
+
+
+def auth_conferir(usuario, senha, ip=""):
+    """-> (situação, linha): ok, provisoria, nao ou bloqueado. Usuário inexistente custa o mesmo tempo que senha errada."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            c = db.execute("select usuario, nome, hash, sal, n, provisoria, admin, bloqueado_ate from credencial where usuario=?", (usuario,)).fetchone()
+            cad = auth_cadastro(db, usuario) if c else None
+        finally:
+            db.close()
+    if not c:
+        auth_hash(senha, "00" * 16, AUTH_N)
+        return "nao", None
+    if c[7] > time.time():
+        return "bloqueado", None
+    certa = hmac.compare_digest(auth_hash(senha, c[3], c[4]), c[2])
+    ativo = (cad.get("active") is not False) if cad else bool(c[6])      # sem cadastro, só o admin criado no próprio servidor entra
+    with estado_lock:
+        db = auth_db()
+        try:
+            if certa and ativo:
+                db.execute("update credencial set erros=0, bloqueado_ate=0 where usuario=?", (usuario,))
+                auth_log(db, usuario, "entrou", "", ip)
+                db.commit()
+                return ("provisoria" if c[5] else "ok"), {"usuario": c[0], "nome": c[1], "admin": bool(c[6]), "cadastro": cad}
+            db.execute("update credencial set erros=erros+1 where usuario=?", (usuario,))
+            erros = db.execute("select erros from credencial where usuario=?", (usuario,)).fetchone()[0]
+            if erros >= AUTH_ERROS:
+                db.execute("update credencial set erros=0, bloqueado_ate=? where usuario=?", (time.time() + AUTH_BLOQUEIO, usuario))
+                auth_log(db, usuario, "bloqueado", "", ip)
+            else:
+                auth_log(db, usuario, "erro", "", ip)
+            db.commit()
+        finally:
+            db.close()
+    return "nao", None
+
+
+def auth_trocar(usuario, nova, ip=""):
+    sal = secrets.token_hex(16)
+    h = auth_hash(nova, sal, AUTH_N)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("update credencial set hash=?, sal=?, n=?, provisoria=0, erros=0, bloqueado_ate=0, atualizada=? where usuario=?",
+                       (h, sal, AUTH_N, time.time(), usuario))
+            db.execute("delete from sessao_login where usuario=?", (usuario,))
+            auth_log(db, usuario, "trocou_senha", usuario, ip)
+            db.commit()
+        finally:
+            db.close()
+
+
+def auth_sessao_nova(usuario):
+    token = secrets.token_urlsafe(32)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from sessao_login where expira < ?", (time.time(),))
+            db.execute("insert into sessao_login values (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), usuario, time.time() + AUTH_SESSAO))
+            db.commit()
+        finally:
+            db.close()
+    return token
+
+
+def auth_quem(token):
+    """A pessoa dona deste token, se a sessão vale e o cadastro segue ativo; senão None."""
+    if not token:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select c.usuario, c.nome, c.admin from sessao_login s join credencial c on c.usuario = s.usuario where s.token=? and s.expira > ?",
+                           (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
+            if not r:
+                return None
+            cad = auth_cadastro(db, r[0])
+        finally:
+            db.close()
+    if (cad.get("active") is False) if cad else not r[2]:
+        return None
+    return {"usuario": r[0], "nome": r[1], "admin": bool(r[2]), "cadastro": cad}
+
+
+def auth_remover(usuario, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from credencial where usuario=?", (usuario,))
+            db.execute("delete from sessao_login where usuario=?", (usuario,))
+            auth_log(db, usuario, "removido", por, ip)
+            db.commit()
+        finally:
+            db.close()
+
+
+def auth_criar_admin(usuario, nome):
+    """python eterna-agente.py --criar-admin <usuário> "<nome>": no próprio servidor; a senha provisória aparece só nesta tela."""
+    usuario = usuario.strip().lower()
+    if not AUTH_ID.match(usuario):
+        print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
+        return 1
+    print("Administrador %s. Senha provisória, troque na primeira entrada: %s" % (usuario, auth_criar(usuario, nome or usuario, True, "servidor")))
+    return 0
+
+
 def estado_revs():
     with estado_lock:
         db = estado_db()
@@ -5326,7 +5488,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -5394,8 +5556,84 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if nostore:
             self.send_header("Cache-Control", "no-store")
+        cookie = self.__dict__.pop("cookie_novo", None)
+        if cookie is not None:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
+
+    def auth_token(self):
+        for parte in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = parte.strip().partition("=")
+            if k == AUTH_COOKIE:
+                return v
+        return None
+
+    def auth_cookie(self, token, idade):
+        https = (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
+        self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (AUTH_COOKIE, token, idade, "; Secure" if https else "")
+
+    def auth_get(self):
+        """GET /auth/eu: quem está conectado neste navegador."""
+        if not self.posto() or not self.origem_local():
+            return self.js({"error": "origem não autorizada"}, 403)
+        eu = auth_quem(self.auth_token())
+        return self.js(dict(eu, ok=True), 200, True) if eu else self.js({"erro": "sem_sessao"}, 401, True)
+
+    def auth_post(self, u):
+        """POST /auth/entrar, /auth/trocar, /auth/sair, /auth/admin/senha, /auth/admin/remover. Respostas sem cache; a senha nunca vai para log."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        ip = self.client_address[0]
+        usuario = str(b.get("usuario") or "").strip().lower()
+        if u.path == "/auth/sair":
+            token = self.auth_token()
+            if token:
+                with estado_lock:
+                    db = auth_db()
+                    try:
+                        db.execute("delete from sessao_login where token=?", (hashlib.sha256(token.encode()).hexdigest(),))
+                        db.commit()
+                    finally:
+                        db.close()
+            self.auth_cookie("", 0)
+            return self.js({"ok": True}, 200, True)
+        if u.path.startswith("/auth/admin/"):
+            eu = auth_quem(self.auth_token())
+            if not eu:
+                return self.js({"erro": "sem_sessao"}, 401, True)
+            if not eu["admin"]:
+                return self.js({"erro": "so_admin"}, 403, True)
+            if not AUTH_ID.match(usuario):
+                return self.js({"erro": "usuario"}, 400, True)
+            if u.path == "/auth/admin/senha":
+                senha = auth_criar(usuario, str(b.get("nome") or "")[:120] or None, b.get("admin") is True, eu["usuario"], ip)
+                return self.js({"ok": True, "usuario": usuario, "senha": senha}, 200, True)
+            if u.path == "/auth/admin/remover" and usuario != eu["usuario"]:
+                auth_remover(usuario, eu["usuario"], ip)
+                return self.js({"ok": True}, 200, True)
+            return self.js({"erro": "pedido"}, 400, True)
+        senha = str(b.get("senha") or "")
+        if not AUTH_ID.match(usuario) or not 0 < len(senha) <= 200:
+            return self.js({"erro": "incorreto"}, 401, True)
+        situacao, dados = auth_conferir(usuario, senha, ip)
+        if situacao == "bloqueado":
+            return self.js({"erro": "bloqueado"}, 429, True)
+        if situacao == "nao":
+            return self.js({"erro": "incorreto"}, 401, True)
+        if u.path == "/auth/trocar":
+            nova = str(b.get("nova") or "")
+            if not AUTH_SENHA_MIN <= len(nova) <= 200 or nova == senha:
+                return self.js({"erro": "fraca"}, 400, True)
+            auth_trocar(usuario, nova, ip)
+            situacao = "ok"
+        elif situacao == "provisoria":
+            return self.js({"ok": False, "troca": True}, 200, True)
+        self.auth_cookie(auth_sessao_nova(usuario), AUTH_SESSAO)
+        return self.js(dict(dados, ok=True), 200, True)
 
     def ff_funcao_post(self):
         """v87: POST /fila-fotografo/funcao {dia, map}: a função do dia vinda da Escala. Posto + origem + X-Eterna: 1,
@@ -5841,6 +6079,8 @@ class H(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         if u.path.startswith(("/g/", "/galerias/")):
             return self.gal_get(u, q)
+        if u.path == "/auth/eu":
+            return self.auth_get()
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/status":
@@ -5992,6 +6232,8 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
+        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/admin/senha", "/auth/admin/remover"):
+            return self.auth_post(u)
         if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
@@ -6201,4 +6443,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 3 and sys.argv[1] == "--criar-admin":
+        sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
     main()

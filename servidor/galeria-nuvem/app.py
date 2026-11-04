@@ -305,7 +305,7 @@ def limpeza():
             return {"apagadas": apagadas}
 
 
-# ---------- login da equipe: código de acesso por e-mail (contrato do servidor/email/README.md) ----------
+# ---------- código de acesso por e-mail, sem uso desde o login com senha no servidor: sai no próximo deploy ----------
 # POST /auth/codigo {email} -> 202 (enviado) · 400 · 429 · 502;  POST /auth/verificar {email, codigo} -> 200 {ok, token, exp} · 401 {erro}
 # Código de 6 dígitos, 10 min, 5 tentativas, uso único, guardado só como HMAC. Sai pelo Amazon SES com a permissão da própria
 # função (sem senha de e-mail em lugar nenhum). Limites: 1 pedido a cada 30 s e 6 por hora por e-mail, 30 por hora por IP, 400 por hora no total.

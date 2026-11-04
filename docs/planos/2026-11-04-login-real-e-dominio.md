@@ -1,6 +1,6 @@
 # Login com usuário e senha e domínio eterna.photo no Microsoft 365 (04/11/2026)
 
-**Situação: desenho definido pelo Ronaldo em 04/11, aguardando o ok do Eduardo. Claude: não implemente sem esse ok.**
+**Situação: etapas 1 e 2 prontas na branch `login-senha`, autorizadas pelo Ronaldo em 04/11. As demais seguem por etapa.**
 
 **O que mudou no mesmo dia:** a primeira versão pedia código por e-mail para entrar. Isso deixaria de fora quem não tem e-mail e quem está sem internet. O acesso passa a ser por usuário e senha, conferidos no servidor do estádio. O e-mail fica só para recuperar a senha.
 
@@ -104,6 +104,8 @@ flowchart TD
 ## 7. Etapas
 
 Cada etapa sobe separada, para nenhuma venda parar por causa dela.
+
+**Ordem de instalação:** o servidor busca a tela no eterna.photo. Ao unir com a `main`, a tela nova chega a todos os servidores em até 1 minuto. Por isso o agente novo vai primeiro para o servidor e os administradores são criados antes da união.
 
 | # | O que entra | Efeito para a equipe |
 |---|---|---|

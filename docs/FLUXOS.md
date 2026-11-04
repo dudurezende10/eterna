@@ -119,7 +119,7 @@ flowchart TB
 | Selfie no Checkout | Funciona | A busca roda no servidor |
 | Abrir o app em um ponto | Funciona com condição | O servidor precisa ter buscado o app desde que ligou. Servidor reiniciado sem internet responde "app indisponível" |
 | Tela já aberta | Funciona | Não depende de recarregar |
-| Login da equipe | Funciona | Hoje o código é gerado no navegador |
+| Login da equipe | Funciona | Usuário e senha conferidos no servidor |
 | Registrar venda | Funciona | A maquininha é avulsa; a conexão dela é não confirmado neste código |
 | Imprimir | Funciona | No servidor ou na DNP do ponto |
 | Fundo de IA com recorte local (modo padrão) | Funciona | Precisa do recorte instalado |
@@ -1283,29 +1283,18 @@ flowchart TD
   SESSAO -->|"sim"| LOGADO["Pessoa conectada"]
   SESSAO -->|"não"| ENTRAR
 
-  ENTRAR --> EMAIL{"E-mail com formato válido?"}
-  EMAIL -->|"não"| ERROEMAIL["Aviso: digite um e-mail válido"]
-  ERROEMAIL --> ENTRAR
-  EMAIL -->|"sim"| MAIL{"Endereço do serviço de e-mail está preenchido?"}
-  MAIL -->|"não, é o caso hoje"| CODLOCAL["Código de 6 dígitos gerado no navegador e mostrado em uma caixa de entrada simulada"]
-  MAIL -->|"sim, não usado hoje"| RESPOSTA{"Resposta do serviço"}
-  RESPOSTA -->|"enviado"| CODREAL["Código enviado por e-mail"]
-  RESPOSTA -->|"pedidos demais"| ESPERA["Aviso: aguarde antes de pedir outro"]
-  RESPOSTA -->|"e-mail recusado"| ERROEMAIL
-  RESPOSTA -->|"outra resposta ou sem resposta"| CODLOCAL
+  ENTRAR --> SITE{"Aberto pelo site público?"}
+  SITE -->|"sim"| SOSERV["Aviso: a entrada da equipe é pelo endereço do servidor"]
+  SITE -->|"não"| DIGITA["Digita usuário e senha"]
+  DIGITA --> BLOQ{"Usuário bloqueado?"}
+  BLOQ -->|"sim"| ESPERA["Aviso: espere 15 minutos ou fale com o administrador"]
   ESPERA --> ENTRAR
-
-  CODLOCAL --> VENCEU{"Passaram 10 minutos?"}
-  CODREAL --> VENCEU
-  VENCEU -->|"sim"| EXPIROU["Aviso: código expirado"]
-  EXPIROU --> ENTRAR
-  VENCEU -->|"não"| CONFERE{"Código confere?"}
-  CONFERE -->|"não"| ERRADO["Aviso: código incorreto; pode reenviar ou trocar o e-mail"]
-  ERRADO --> VENCEU
-  CONFERE -->|"sim"| CADASTRO{"E-mail no cadastro e ativo?"}
-  CADASTRO -->|"não"| SEMCADASTRO["Aviso: este e-mail não tem acesso"]
-  SEMCADASTRO --> ENTRAR
-  CADASTRO -->|"sim"| GRAVA["Salva a sessão e o último acesso"]
+  BLOQ -->|"não"| CONFERE{"Servidor confere a senha e o cadastro ativo?"}
+  CONFERE -->|"não"| ERRADO["Aviso: usuário ou senha incorretos; 5 erros bloqueiam"]
+  ERRADO --> ENTRAR
+  CONFERE -->|"sim, senha provisória"| CRIA["Pessoa cria a própria senha"]
+  CRIA --> GRAVA["Servidor abre a sessão em cookie; salva o último acesso"]
+  CONFERE -->|"sim, senha definitiva"| GRAVA
   GRAVA --> LOGADO
 
   LOGADO --> INICIO{"Tela inicial da pessoa está permitida?"}
@@ -1328,7 +1317,7 @@ flowchart TD
 
   MOSTRA --> SAIR{"Como a sessão termina?"}
   SEMACESSO --> SAIR
-  SAIR -->|"botão sair"| LOGOUT["Apaga a sessão salva e o vendedor do ponto"]
+  SAIR -->|"botão sair"| LOGOUT["Encerra a sessão no servidor; apaga a sessão salva e o vendedor do ponto"]
   SAIR -->|"cadastro removido ou desativado em outra tela ou computador"| REMOVIDO["Aviso: seu acesso foi removido"]
   REMOVIDO --> LOGOUT
   SAIR -->|"sessão com mais de 12 horas, ao recarregar"| ENTRAR
@@ -1344,11 +1333,13 @@ flowchart TD
 
 | Decisão | Regra exata | Onde no código |
 |---|---|---|
-| Serviço de e-mail | `MAIL_API=''` na v91. Vazio: o código nasce no navegador. Os serviços `/auth/codigo` e `/auth/verificar` existem em `servidor/email` e na nuvem, mas o app não aponta para eles | `MAIL_API`, `mailApi`, `sendCode` |
-| Código | 6 dígitos, validade de 10 minutos | `sendCode`, `checkCode` |
-| Modo real, quando ligado | 202 = enviado; 429 = aguarde; 400 = e-mail inválido; outra resposta = modo local. Na conferência: 200 grava o token e entra; "expirado" volta ao e-mail; sem conexão avisa | `sendCode`, `checkCode` |
-| Cadastro | `userFor`: e-mail existente e `active` diferente de falso. O pedido de código não consulta o cadastro; a conferência acontece em `login` | `userFor`, `login` |
-| Sessão salva | Validade de 12 horas, em `eterna.session`; não é carregada em aba marcada como Checkout | `sessionLoad`, `LOJA_ABA` |
+| Senha | Conferida no servidor, em `POST /auth/entrar`. Guardada só como hash `scrypt` com sal, na tabela `credencial` do `estado.db`. Fora de `/ponto/docs` | `auth_conferir`, `authEntrar` |
+| Cadastro | Só administrador cria e gera senha. A senha provisória aparece uma vez e só serve para criar a definitiva. Identificador é o usuário, e o e-mail não é exigido | `auth_post`, `authSenhaProvisoria`, `userSave` |
+| Bloqueio | 5 erros seguidos bloqueiam por 15 minutos. Senha provisória nova libera. A mensagem é igual para usuário inexistente e senha errada | `auth_conferir` |
+| Primeiro administrador | `python eterna-agente.py --criar-admin <usuário> "<nome>"`, no próprio servidor | `auth_criar_admin` |
+| Site público | Em eterna.photo a tela não pede senha: o site não fala com o servidor | `authSite`, `vEntrar` |
+| Servidor exige o login | **Ainda não.** As outras rotas não conferem a sessão; a senha controla a entrada na tela | `auth_post` |
+| Sessão salva | Validade de 12 horas, em `eterna.session`, conferida com `GET /auth/eu` ao abrir e pelo cookie `HttpOnly`; não é carregada em aba marcada como Checkout | `sessionLoad`, `LOJA_ABA` |
 | Módulos | 17 módulos, cada um com Criar, Ver, Alterar e Excluir | `MODULES`, `OPS`, `can` |
 | Perfis prontos | Admin, Fotógrafo, Atendimento e venda, Validador, Supervisor, Checkout; cadastro também pode nascer sem acesso | `PRESETS`, `SEED_USERS` |
 | Ver uma tela | Módulo com Ver e tela no menu da pessoa. Checkout: Ver em `quiosque` ou `venda`. Permissões: exige também Alterar | `canView`, `menuOk` |

@@ -107,7 +107,7 @@ O FTP do estádio é configurado pela administração em **Configurações › P
 
 1. No alto do Upload automático aparece **Neste computador**, com o nome de quem está logado.
 2. Toque em **Trocar fotógrafo**. Quem estava sai.
-3. O próximo fotógrafo entra com o e-mail dele e o código.
+3. O próximo fotógrafo entra com o usuário e a senha dele.
 4. Ele volta direto para o Upload automático.
 
 Para só sair, sem trocar, toque em **Sair**.
@@ -159,7 +159,7 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 ### Abrir
 
-1. No computador do Checkout, entre com o e-mail do aparelho. Se ele tiver o perfil Checkout, a tela abre sozinha.
+1. No computador do Checkout, entre com o usuário do aparelho. Se ele tiver o perfil Checkout, a tela abre sozinha.
 2. Em outro computador, toque em **Abrir Checkout**. No celular, é o ícone de tela ao lado do botão Menu.
 3. O Checkout abre em tela cheia, sem menu e sem login. É a tela do cliente.
 
@@ -185,7 +185,7 @@ O tempo muda no **Painel de controle** › **Checkout** › **Procurar fotos dos
 
 No terminal que fica virado para o cliente, abra o Chrome em modo quiosque. Assim o cliente não vê a barra de endereço, as abas nem os botões do navegador.
 
-1. Entre com o perfil **Checkout** (o e-mail do aparelho) ou abra direto `eterna.photo/#loja`.
+1. Entre com o perfil **Checkout** (o usuário do aparelho) ou abra direto `eterna.photo/#loja`.
 2. Abra o Chrome em modo quiosque (atalho do Chrome com a opção `--kiosk`). A TI do ponto deixa o atalho pronto.
 3. Para sair do modo quiosque, a equipe usa Alt+F4 no Windows ou Cmd+Q no Mac.
 
