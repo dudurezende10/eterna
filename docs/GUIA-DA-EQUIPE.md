@@ -163,7 +163,7 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 2. Em outro computador, toque em **Abrir Checkout**. No celular, é o ícone de tela ao lado do botão Menu.
 3. O Checkout abre em tela cheia, sem menu e sem login. É a tela do cliente.
 
-**A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu e-mail e o código, ou use outra janela.
+**A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu usuário e a sua senha, ou use outra janela.
 
 ### Fotos de mais de uma sessão (v91)
 
@@ -296,7 +296,7 @@ O botão só aparece na tela da câmera e **some de vez** assim que o Checkout c
 - depois de 10 minutos;
 - depois da primeira compra.
 
-Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o seu e-mail e o código. No computador do perfil Checkout esse botão nunca aparece.
+Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o seu usuário e a sua senha. No computador do perfil Checkout esse botão nunca aparece.
 
 **Painel do logo e Esc**
 
@@ -305,7 +305,7 @@ Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o 
   - **Sair do Checkout**: fecha o Checkout.
   - **Fechar**: volta para o cliente.
 - **Esc** no teclado sai do Checkout na hora.
-- Sair sempre leva para a tela de login. Para voltar ao sistema, entre de novo com o seu e-mail e o código.
+- Sair sempre leva para a tela de login. Para voltar ao sistema, entre de novo com o seu usuário e a sua senha.
 - Não deixe o painel aberto na frente do cliente. A lista mostra sessões de outras famílias.
 
 ---
@@ -388,7 +388,7 @@ As letras vêm do inglês (Create, Read, Update, Delete). Embaixo do nome de cad
 ### Cadastrar uma pessoa
 
 1. Abra **Configurações** › **Usuários** › **Novo usuário**.
-2. Escreva o nome e o e-mail.
+2. Escreva o nome e o usuário. Só um administrador cadastra, e a tela mostra uma senha provisória para entregar à pessoa.
 3. Se for fotógrafo, escolha o nome dele em **Fotógrafo vinculado**.
 4. Em **Perfil**, escolha um perfil pronto (tabela abaixo). Se ainda não souber o que liberar, escolha **Sem acesso ainda**.
 5. Toque em **Criar acesso**.
