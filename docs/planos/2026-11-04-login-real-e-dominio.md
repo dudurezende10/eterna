@@ -12,7 +12,7 @@
 | Serviço `servidor/email` (VM) | Fora de uso desde 26/10. Pode sair do repositório quando este plano fechar |
 | Servidor do venue | Ainda não confere quem está logado |
 | Cadastro | Fica no `estado.db`. A nuvem não sabe quem é da equipe: o código sai para qualquer e-mail válido |
-| DNS | No GoDaddy. Site no GitHub Pages; recebimento pelo ImprovMX (`hello@` vai para o Gmail do Eduardo) |
+| DNS | No GoDaddy. Site no GitHub Pages; recebimento pelo ImprovMX: um único redirecionamento `*@eterna.photo` para o e-mail do Eduardo. De 28/10 a 04/11, só o `hello@` recebeu mensagens |
 
 ## 2. Decisões propostas
 
@@ -37,7 +37,7 @@ Nenhum passo altera os registros do site (A e `www`). Antes de tudo, exportar o 
 | 8 | AWS | Pedir a saída do modo de teste do SES, se necessário | Pode levar até 1 dia | — |
 | 9 | CloudShell | `sam deploy` com `MailFrom=hello@eterna.photo` e `MailDominio=eterna.photo` | Liga o envio | Deploy com `MailFrom` vazio |
 
-**Só depois**, e em janela combinada: recriar no Microsoft 365 os endereços em uso no ImprovMX e levar o MX e o `autodiscover`. O Eduardo precisa confirmar que o `hello@` chega antes de desligar o ImprovMX. Voltar é repor o MX antigo, e a propagação depende do TTL.
+**Só depois**, e em janela combinada: criar no Microsoft 365 a caixa compartilhada `hello@`, sem pega-tudo, e levar o MX e o `autodiscover`. O Eduardo precisa confirmar que o `hello@` chega antes de desligar o ImprovMX. Voltar é repor o MX antigo, e a propagação depende do TTL.
 
 ## 4. Login no sistema, por etapas
 
