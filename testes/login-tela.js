@@ -22,15 +22,24 @@ try{
   await pg.keyboard.type('g');ok(await pg.inputValue('[data-act="login-senha"]')==='abcdefg','o olho apagou a senha ou tirou o foco');
   await pg.evaluate(()=>ETERNA.render());await pg.waitForTimeout(50);ok(await pg.getAttribute('[data-act="login-senha"]','type')==='text','redesenho voltou a ocultar a senha');
   await pg.click('[data-act="login-ver"]');ok(await pg.getAttribute('[data-act="login-senha"]','type')==='password','o olho oculta a senha');
-  await pg.click('[data-act="login-ver"]');await pg.click('[data-act="login-trocar"]');ok(!await pg.$('input[type="text"][data-act="login-senha"],input[type="text"][data-act="login-nova"]'),'mudar de tela deixou senha à mostra');await pg.click('[data-act="login-voltar"]');await pg.fill('[data-act="login-usuario"]','eduardo@eduardorezende.com');
-  // trocar senha: as duas precisam ser iguais e ter 10 caracteres, antes de ir ao servidor
-  await pg.click('[data-act="login-trocar"]');await pg.fill('[data-act="login-usuario"]','x.y');await pg.fill('[data-act="login-senha"]','qualquer');await pg.fill('[data-act="login-nova"]','curta');await pg.fill('[data-act="login-nova2"]','curta');await pg.click('button[type=submit]');await pg.waitForTimeout(100);
+  ok(!await pg.$('[data-act="login-trocar"]'),'a tela de entrada não oferece trocar senha');
+  // senha provisória: o servidor pede a troca e a tela já abre em Crie sua senha, com as regras antes de ir ao servidor
+  await pg.route('**/auth/entrar',r=>r.fulfill({status:200,contentType:'application/json',body:'{"ok":false,"troca":true}'}));
+  await pg.click('button[type=submit]');await pg.waitForTimeout(200);ok(/Crie sua senha/.test(await pg.textContent('#main')),'a senha provisória leva a Crie sua senha');
+  await pg.fill('[data-act="login-nova"]','curta');await pg.fill('[data-act="login-nova2"]','curta');await pg.click('button[type=submit]');await pg.waitForTimeout(100);
   ok(/10 caracteres/.test(await pg.textContent('.alert.bad')),'senha curta avisa');
   await pg.click('[data-act="login-voltar"]');await pg.waitForTimeout(100);ok(await pg.inputValue('[data-act="login-senha"]')==='','voltar limpa a senha');
+  await pg.unroute('**/auth/entrar');
   // administrador com o módulo: vê os botões
   ok(await entrarTeste(pg,'eduardo@eduardorezende.com'),'administrador entra');
   ok(await pg.evaluate(()=>{const s=localStorage.getItem('eterna.session')||'';return !/senha/i.test(s)}),'a senha não fica no navegador');
   ok(await pg.evaluate(()=>{const u=ETERNA.USERS['eduardo@eduardorezende.com'];return ['c','r','u','d'].every(k=>u.perms.senhas&&u.perms.senhas[k]);}),'perfil Admin vem com Senhas de acesso');
+  // trocar a própria senha fica dentro do sistema, e o redesenho não tira o foco nem apaga o que foi digitado
+  await pg.click('[data-act="minha-senha"]');await pg.waitForTimeout(150);ok(/Trocar senha/.test(await pg.textContent('#main')),'a tela Trocar senha abre');
+  await pg.click('[data-act="login-senha"]');await pg.keyboard.type('atual');await pg.evaluate(()=>ETERNA.render());await pg.waitForTimeout(50);await pg.keyboard.type('-1');
+  ok(await pg.inputValue('[data-act="login-senha"]')==='atual-1','redesenho atrapalhou a troca de senha: '+await pg.inputValue('[data-act="login-senha"]'));
+  await pg.fill('[data-act="login-nova"]','uma frase bem longa');await pg.fill('[data-act="login-nova2"]','uma frase bem longa');await pg.click('button[type=submit]');await pg.waitForTimeout(250);
+  ok(/Senha alterada/.test(await pg.textContent('#toast')),'a troca confirma');ok(await pg.evaluate(()=>!!ETERNA.state.user&&ETERNA.state.view!=='minhasenha'&&!ETERNA.state.auth.senha),'depois de trocar segue dentro e limpa as senhas');
   await pg.evaluate(()=>{location.hash='#usuarios';});await pg.waitForTimeout(300);
   await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(250);
   ok(await pg.$('[data-act="user-senha"]'),'quem tem a permissão vê Gerar senha');
