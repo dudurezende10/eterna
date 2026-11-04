@@ -2,6 +2,8 @@
 
 **Fluxogramas do sistema, passo a passo e com cada bifurcação:** [`FLUXOS.md`](FLUXOS.md).
 
+**Para entender o sistema sem ser de tecnologia:** [`Entendendo-o-Eterna.pdf`](Entendendo-o-Eterna.pdf), guia de 29 páginas para imprimir.
+
 26/10/2026 · Eduardo Rezende · versão editável: https://claude.ai/artifact/1hPgjcUPEFf5B6g7wGWWo4
 
 ## 1. Visão geral
