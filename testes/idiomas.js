@@ -24,6 +24,9 @@ try{
   ok(await pg.evaluate(()=>document.documentElement.lang)==='en-US','idioma da página não acompanha');
   ok(await pg.evaluate(()=>ETERNA.state.lang)==='fr','trocar o idioma da equipe mudou o do cliente');
   ok(await pg.evaluate(()=>localStorage.getItem('eterna.lang'))===null,'a equipe gravou no idioma do cliente');
+  // a caixa da entrada tem a mesma largura em todo idioma e em toda etapa
+  for(const vw of [1280,375]){await pg.setViewportSize({width:vw,height:800});const larg=new Set();for(const l of ['pt','en','es','fr']){await pg.click(`[data-act="idioma-equipe"][data-l="${l}"]`);await pg.waitForTimeout(50);larg.add(await pg.$eval('.enter.login .panel',e=>Math.round(e.getBoundingClientRect().width)));await pg.click('[data-act="login-esqueci"]');await pg.waitForTimeout(50);larg.add(await pg.$eval('.enter.login .panel',e=>Math.round(e.getBoundingClientRect().width)));await pg.click('[data-act="login-voltar"]');await pg.waitForTimeout(50);}ok(larg.size===1,'largura da caixa muda em '+vw+': '+[...larg].join());ok(await pg.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'sobra na horizontal em '+vw);}
+  await pg.setViewportSize({width:1280,height:900});await pg.click('[data-act="idioma-equipe"][data-l="en"]');await pg.waitForTimeout(50);
   // o que foi digitado continua, e a moeda não muda com o idioma
   await pg.fill('[data-act="login-usuario"]','abc');await pg.click('[data-act="idioma-equipe"][data-l="es"]');await pg.waitForTimeout(100);
   ok(await pg.inputValue('[data-act="login-usuario"]')==='abc','trocar o idioma apagou o usuário');
