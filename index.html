@@ -4140,12 +4140,12 @@ function logout(){authApi('/auth/sair',{});state.authAdmin=false;camStop();try{l
 const authSite=()=>/(^|\.)eterna\.photo$/.test(location.hostname);
 async function authApi(rota,corpo){try{const r=await fetch(rota,{method:corpo?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo?JSON.stringify(corpo):undefined});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
 function authEntrou(r){state.authAdmin=!!r.admin;if(!USERS[r.usuario]&&(r.cadastro||r.admin)){USERS[r.usuario]=r.cadastro||mkUser(r.usuario,r.nome||r.usuario,'admin',null,now().toISOString());if(!r.cadastro)saveUsers(r.usuario);}login(r.usuario);}
-function authErro(r){return r.status===429?'Muitas tentativas. Espere 15 minutos ou fale com o administrador.':r.erro==='fraca'?'A senha nova precisa de 8 caracteres ou mais e não pode repetir a atual.':r.status===401?'Usuário ou senha incorretos.':'Sem conexão com o servidor. Tente de novo.';}
+function authErro(r){return r.status===429?'Muitas tentativas. Espere 15 minutos ou fale com o administrador.':r.erro==='fraca'?(r.motivo||'Escolha uma senha mais difícil.'):r.status===401?'Usuário ou senha incorretos.':'Sem conexão com o servidor. Tente de novo.';}
 async function authEntrar(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u||!a.senha){a.err='Digite o usuário e a senha.';render();return;}a.busy=true;a.err=null;render();
   const r=await authApi('/auth/entrar',{usuario:u,senha:a.senha});a.busy=false;
   if(r.status===200&&r.troca){a.step='trocar';a.provisoria=true;a.err=null;a.nova='';a.nova2='';render();return;}
   if(r.status===200&&r.ok){authEntrou(r);return;}a.senha='';a.err=authErro(r);render();}
-async function authTrocar(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u||!a.senha){a.err='Digite o usuário e a senha atual.';render();return;}if(a.nova.length<8){a.err='A senha nova precisa de 8 caracteres ou mais.';render();return;}if(a.nova!==a.nova2){a.err='As duas senhas novas não são iguais.';render();return;}a.busy=true;a.err=null;render();
+async function authTrocar(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u||!a.senha){a.err='Digite o usuário e a senha atual.';render();return;}if(a.nova.length<10){a.err='A senha nova precisa de 10 caracteres ou mais.';render();return;}if(a.nova!==a.nova2){a.err='As duas senhas novas não são iguais.';render();return;}a.busy=true;a.err=null;render();
   const r=await authApi('/auth/trocar',{usuario:u,senha:a.senha,nova:a.nova});a.busy=false;a.nova='';a.nova2='';
   if(r.status===200&&r.ok){authEntrou(r);return;}a.err=authErro(r);render();}
 // ao abrir: a sessão salva só vale se o servidor ainda reconhecer o cookie. Sem resposta do servidor, ela segue até ele voltar.
@@ -4157,7 +4157,7 @@ function vEntrar(){
   const pe=`<div class="note" style="text-align:center">Convidado: suas fotos abrem pelo QR do recibo.</div><div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div>`;
   if(authSite())return `<div class="enter login">${logo}<div class="panel"><h2>Entrar</h2><div class="note">A entrada da equipe é pelo endereço do servidor do estádio.</div></div>${pe}</div>`;
   if(a.step==='trocar')return `<div class="enter login">${logo}
-    <form class="panel" data-form="login-trocar"><h2>${a.provisoria?'Crie sua senha':'Trocar senha'}</h2><div class="note">${a.provisoria?'Esta senha provisória só serve para criar a sua.':'Digite a senha atual e a nova.'} A nova precisa de 8 caracteres ou mais.</div>
+    <form class="panel" data-form="login-trocar"><h2>${a.provisoria?'Crie sua senha':'Trocar senha'}</h2><div class="note">${a.provisoria?'Esta senha provisória só serve para criar a sua.':'Digite a senha atual e a nova.'} Use 10 caracteres ou mais. Uma frase curta é fácil de lembrar e difícil de descobrir, como <i>cavalo verde corre</i>.</div>
       ${a.provisoria?'':`<input type="text" autocomplete="username" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="Usuário" aria-label="Usuário"><input type="password" autocomplete="current-password" data-act="login-senha" value="" placeholder="Senha atual" aria-label="Senha atual">`}
       <input type="password" autocomplete="new-password" data-act="login-nova" value="" placeholder="Senha nova" aria-label="Senha nova">
       <input type="password" autocomplete="new-password" data-act="login-nova2" value="" placeholder="Repita a senha nova" aria-label="Repita a senha nova">

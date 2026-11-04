@@ -88,7 +88,7 @@ flowchart TD
 
 1. O admin informa nome, usuário, permissões e, se houver, e-mail.
 2. O servidor gera a senha provisória, mostrada uma única vez.
-3. No primeiro acesso, a pessoa cria a própria senha, com no mínimo 8 caracteres.
+3. No primeiro acesso, a pessoa cria a própria senha, com no mínimo 10 caracteres. O servidor recusa senhas óbvias, e a provisória vence em 72 horas.
 
 **Primeiro admin:** criado por um comando no próprio servidor. Nenhuma senha fica no código nem no repositório.
 

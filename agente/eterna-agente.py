@@ -31,6 +31,7 @@ import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket
 import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
+import unicodedata
 import urllib.request, urllib.error, mimetypes, re, base64
 
 # imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
@@ -4998,9 +4999,11 @@ def estado_db():
 # em tabelas próprias, fora de /ponto/docs e dos feeds: credencial guarda só o hash scrypt com sal, sessao_login só o hash do token
 # (o navegador fica com o token em cookie HttpOnly). O admin cadastra; a senha que ele gera é provisória e a pessoa troca na entrada.
 AUTH_ID = re.compile(r"^[a-z0-9][a-z0-9._@+-]{1,99}$")
-AUTH_N, AUTH_SESSAO, AUTH_ERROS, AUTH_BLOQUEIO, AUTH_SENHA_MIN = 2 ** 15, 12 * 3600, 5, 900, 8
+AUTH_N, AUTH_SESSAO, AUTH_ERROS, AUTH_BLOQUEIO, AUTH_SENHA_MIN = 2 ** 17, 12 * 3600, 5, 900, 10
+AUTH_PROVISORIA_S, AUTH_ERROS_IP = 72 * 3600, 30
 AUTH_COOKIE = "eterna_sessao"
-auth_cpu = threading.BoundedSemaphore(4)      # scrypt usa 32 MB por conta: várias tentativas juntas não derrubam o servidor
+auth_cpu = threading.BoundedSemaphore(2)      # scrypt usa 128 MB por conta: várias tentativas juntas não derrubam o servidor
+auth_ip_erros = {}                            # erros recentes por endereço, contra quem testa uma senha em muitos usuários
 
 
 def auth_db():
@@ -5014,7 +5017,50 @@ def auth_db():
 
 def auth_hash(senha, sal, n):
     with auth_cpu:
-        return hashlib.scrypt(senha.encode("utf-8"), salt=bytes.fromhex(sal), n=n, r=8, p=1, maxmem=128 * 1024 * 1024, dklen=32).hex()
+        return hashlib.scrypt(senha.encode("utf-8"), salt=bytes.fromhex(sal), n=n, r=8, p=1, maxmem=256 * 1024 * 1024, dklen=32).hex()
+
+
+# Regra da senha nova, sempre conferida aqui: tamanho, e nada que um atacante tente primeiro. Não exige maiúscula nem símbolo: isso só
+# gera Senha@2026. Uma frase longa passa; o que sobra depois de tirar sequências e palavras óbvias é que precisa ter tamanho.
+AUTH_SEQUENCIAS = ("abcdefghijklmnopqrstuvwxyz", "0123456789", "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm", "1qaz2wsx", "1q2w3e4r5t", "q1w2e3r4t5", "a1b2c3d4")
+AUTH_OBVIAS = ("senha", "password", "pass", "admin", "administrador", "usuario", "teste", "test", "mudar", "trocar", "acesso", "login", "entrar",
+               "welcome", "bemvindo", "iloveyou", "teamo", "amor", "deus", "jesus", "mae", "pai", "familia", "brasil", "riodejaneiro", "rio",
+               "flamengo", "fluminense", "vasco", "botafogo", "corinthians", "palmeiras", "santos", "saopaulo", "gremio", "cruzeiro",
+               "maracana", "vivamaracana", "viva", "maracatour", "eterna", "futebol", "estadio", "tour", "fotografo", "fotos", "foto", "vendedor",
+               "caixa", "supervisor", "checkout", "roverpix", "qwerty", "letmein", "dragon", "monkey")
+AUTH_LEET = str.maketrans("@4310$57", "aaeiosst")
+
+
+def auth_norm(s):
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]", "", s.translate(AUTH_LEET))
+
+
+def auth_senha_fraca(usuario, nome, senha):
+    """O motivo de recusar esta senha nova, ou None se ela serve."""
+    if len(senha) < AUTH_SENHA_MIN:
+        return "A senha precisa de %d caracteres ou mais." % AUTH_SENHA_MIN
+    if not re.search(r"[^\W\d_]", senha):
+        return "Use letras: uma senha só de números é fácil de descobrir."
+    cru = senha.lower()
+    if len(set(cru)) < 5:
+        return "Essa senha repete poucos caracteres. Tente uma frase curta."
+    for base in AUTH_SEQUENCIAS:
+        for seq in (base, base[::-1]):
+            for tam in range(len(seq), 3, -1):
+                for i in range(len(seq) - tam + 1):
+                    cru = cru.replace(seq[i:i + tam], "")
+    resto = auth_norm(cru)
+    proprias = [p for p in re.split(r"[^a-z0-9]+", auth_norm_nome(usuario + " " + (nome or ""))) if len(p) >= 3]
+    for p in sorted(set(AUTH_OBVIAS) | {auth_norm(x) for x in proprias}, key=len, reverse=True):
+        resto = resto.replace(p, "")
+    if len(resto) < 6:
+        return "Essa senha é fácil de adivinhar. Evite sequências, seu nome, Maracanã, Eterna ou times. Tente uma frase curta."
+    return None
+
+
+def auth_norm_nome(s):
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
 
 
 def auth_log(db, usuario, acao, por="", ip=""):
@@ -5022,7 +5068,7 @@ def auth_log(db, usuario, acao, por="", ip=""):
 
 
 def auth_provisoria():
-    return "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(10))
+    return "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(12))
 
 
 def auth_criar(usuario, nome, admin, por="", ip=""):
@@ -5055,16 +5101,25 @@ def auth_conferir(usuario, senha, ip=""):
     with estado_lock:
         db = auth_db()
         try:
-            c = db.execute("select usuario, nome, hash, sal, n, provisoria, admin, bloqueado_ate from credencial where usuario=?", (usuario,)).fetchone()
+            c = db.execute("select usuario, nome, hash, sal, n, provisoria, admin, bloqueado_ate, atualizada from credencial where usuario=?", (usuario,)).fetchone()
             cad = auth_cadastro(db, usuario) if c else None
         finally:
             db.close()
+    agora = time.time()
+    falhas = [t for t in auth_ip_erros.get(ip, []) if t > agora - AUTH_BLOQUEIO]
+    if len(falhas) >= AUTH_ERROS_IP:
+        return "bloqueado", None
     if not c:
         auth_hash(senha, "00" * 16, AUTH_N)
+        auth_ip_erros[ip] = falhas + [agora]
         return "nao", None
-    if c[7] > time.time():
+    if c[7] > agora:
         return "bloqueado", None
     certa = hmac.compare_digest(auth_hash(senha, c[3], c[4]), c[2])
+    if c[5] and c[8] < agora - AUTH_PROVISORIA_S:       # senha provisória vencida: o admin gera outra
+        certa = False
+    if not certa:
+        auth_ip_erros[ip] = falhas + [agora]
     ativo = (cad.get("active") is not False) if cad else bool(c[6])      # sem cadastro, só o admin criado no próprio servidor entra
     with estado_lock:
         db = auth_db()
@@ -5626,8 +5681,9 @@ class H(BaseHTTPRequestHandler):
             return self.js({"erro": "incorreto"}, 401, True)
         if u.path == "/auth/trocar":
             nova = str(b.get("nova") or "")
-            if not AUTH_SENHA_MIN <= len(nova) <= 200 or nova == senha:
-                return self.js({"erro": "fraca"}, 400, True)
+            motivo = "A senha nova não pode repetir a atual." if nova == senha else "A senha é longa demais." if len(nova) > 200 else auth_senha_fraca(usuario, dados["nome"], nova)
+            if motivo:
+                return self.js({"erro": "fraca", "motivo": motivo}, 400, True)
             auth_trocar(usuario, nova, ip)
             situacao = "ok"
         elif situacao == "provisoria":
