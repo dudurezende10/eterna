@@ -5,6 +5,7 @@
 // → Ideal Maracanã R$ 190 com 8 impressas (Gramado + 2 adicionais = R$ 220, também 8 impressas). Economia contra a compra avulsa
 // real (Arquibancada + adicionais): 70 + 7 × 35 = 315 − 190 = R$ 125. Também cobre as correções da revisão (B1, I1 a I6, N1, N4, N6, revisor 1 a 12).
 // Checkout (#loja) e Caixa ficam em duas janelas do mesmo navegador (mesmo contexto do Playwright). Prints em testes/prints/v79-*.png.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};
@@ -17,9 +18,8 @@ async function nova(b,w,h){const ctx=await b.newContext({viewport:{width:w||1280
 async function pagina(ctx,nome){return vigia(await ctx.newPage(),nome);}
 async function login(pg,email){await pg.goto(U);await pg.waitForTimeout(350);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.reload();await pg.waitForTimeout(350);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
-async function codigo(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+  await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function codigo(pg,email){await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const txt=(pg,sel)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\s+/g,' ').trim():null;},sel);
 const toastTxt=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent.replace(/\s+/g,' '));
 const sim=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.SIM)));
@@ -349,7 +349,7 @@ try{
     if(modo==='voltar'){await pg.evaluate(()=>ETERNA.go('quiosque'));await pg.waitForTimeout(300); /* v81: o botão abre janela à parte; o Checkout na mesma aba segue por go('quiosque') */ok(await pg.evaluate(()=>ETERNA.state.lojaRota),'1.15: Abrir Checkout');await pg.goBack();await pg.waitForTimeout(400);}
     else{await pg.goto(U+'#loja');await pg.reload();await pg.waitForTimeout(500);ok(await pg.evaluate(()=>ETERNA.state.lojaRota&&!ETERNA.state.user),'1.15/I1: #loja aberto direto não carrega a sessão salva');
       if(modo==='hash-caixa')await pg.evaluate(()=>{location.hash='#caixa';});else await pg.evaluate(t=>{location.hash='#g/'+t;},tok1);await pg.waitForTimeout(500);}
-    const r=await pg.evaluate(()=>({u:!!ETERNA.state.user,s:localStorage.getItem('eterna.session'),v:ETERNA.state.view,loja:ETERNA.state.lojaRota,pub:!!ETERNA.pub,login:!!document.querySelector('[data-act="login-email"]'),din:!!document.querySelector('[data-act="din-confirm"]')}));
+    const r=await pg.evaluate(()=>({u:!!ETERNA.state.user,s:localStorage.getItem('eterna.session'),v:ETERNA.state.view,loja:ETERNA.state.lojaRota,pub:!!ETERNA.pub,login:!!document.querySelector('[data-act="login-usuario"]'),din:!!document.querySelector('[data-act="din-confirm"]')}));
     // v81: na aba do Checkout aberta direto (sem login), trocar o endereço não apaga a sessão salva (é o mesmo navegador do admin): #caixa volta ao #loja; #g abre a galeria
     if(modo==='voltar')ok(!r.u&&!r.s&&!r.loja&&!r.din&&r.login&&r.v==='entrar',`1.15 ${modo}: ${J(r)}`);
     else if(modo==='hash-caixa'){const h=await pg.evaluate(()=>location.hash);ok(!r.u&&r.s&&r.loja&&!r.din&&r.v==='quiosque'&&h==='#loja',`1.15/v81 ${modo}: ${J(r)} ${h}`);}
@@ -377,7 +377,7 @@ try{
     await pg.screenshot({path:`${P}/v79-upload-ajuste-desligado.png`});
     // 2.5: trocar de fotógrafo mantém desligado
     await pg.click('[data-act="set-switch"]');await pg.waitForTimeout(200);
-    await pg.fill('[data-act="login-email"]','marinara@eterna.photo');await pg.click('button[type=submit]');await pg.waitForTimeout(150);const cc=(await pg.textContent('.otp')).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',cc);await pg.waitForTimeout(400);
+    await entrarTeste(pg,'marinara@eterna.photo');
     t=await txt(pg,'#aj-auto');ok(/Desligado por Carlos/.test(t)&&/Desligado$/.test(t),'2.5: trocar de fotógrafo deveria manter desligado: '+t);
     ok(!(await pg.$('#nav [data-v="ajustes"]'))&&!(await pg.evaluate(()=>ETERNA.canView('ajustes'))),'2.6: Fotógrafo com Ajuste automático no menu');
     await pg.evaluate(()=>{location.hash='#ajustes';});await pg.waitForTimeout(250);ok(await pg.evaluate(()=>ETERNA.state.view)!=='ajustes','2.6: #ajustes abriu para o Fotógrafo');

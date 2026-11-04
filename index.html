@@ -112,7 +112,7 @@ svg text{font-family:var(--body);fill:var(--muted);font-size:11px}
 .stars{display:flex;gap:4px}
 .stars button{width:38px;height:38px;border-radius:5px;border:1px solid var(--line);font-family:var(--display);font-size:20px}
 .stars button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
-textarea,input[type=text],input[type=number]{width:100%;border:1px solid var(--line);border-radius:5px;padding:10px;background:var(--surface);color:var(--fg);font:inherit}
+textarea,input[type=text],input[type=password],input[type=number]{width:100%;border:1px solid var(--line);border-radius:5px;padding:10px;background:var(--surface);color:var(--fg);font:inherit}
 textarea{min-height:80px;resize:vertical}
 input[type=text].code{font-family:var(--display);font-size:24px;letter-spacing:.14em;text-transform:uppercase;padding:12px 14px}
 select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:7px 10px;min-height:38px}
@@ -627,11 +627,11 @@ body[data-bare] .app{grid-template-columns:minmax(0,1fr)}
 .enter.login{max-width:440px;gap:14px}
 .enter.login .panel{gap:12px}
 .enter.login input.code{text-align:center;font-size:30px;letter-spacing:.3em}
-.inbox{margin-top:18px;display:flex;flex-direction:column;gap:8px}
-.mail{background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;font-size:13px}
-.mail .from{display:flex;gap:8px;align-items:baseline}
-.mail .subj{font-weight:600}
-.mail .otp{font-family:var(--display);font-size:34px;letter-spacing:.18em;padding:6px 0 2px}
+.senha-campo{position:relative;display:block}
+.senha-campo input{padding-right:48px}
+.senha-campo input::-ms-reveal,.senha-campo input::-ms-clear{display:none}
+.senha-ver{position:absolute;top:0;right:0;bottom:0;width:46px;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:0 5px 5px 0;background:none;color:var(--muted);cursor:pointer}
+.senha-ver:hover{color:var(--fg)}
 .bare-exit{position:fixed;right:14px;top:10px;z-index:5}
 .wrap td{white-space:normal}
 .face.live video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
@@ -1055,7 +1055,6 @@ const hhmm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).pa
 // ---------- stats (dados reais Roverpix) ----------
 // nomes de pessoas sempre no mesmo padrão (Thais Rodrigues, não THAIS RODRIGUES)
 // e-mail oficial do Eterna: remetente dos códigos e contato do convidado
-const MAIL_FROM='hello@eterna.photo';
 const NAME_LOW=new Set(['da','de','do','das','dos','e']);
 function nameCase(n){return String(n||'').trim().toLowerCase().split(/\s+/).map((w,i)=>i>0&&NAME_LOW.has(w)?w:w.charAt(0).toUpperCase()+w.slice(1)).join(' ');}
 DATA.sellers.forEach(x=>x.name=nameCase(x.name));Object.values(DATA.people).forEach(p=>{if(p.human)p.name=nameCase(p.name);});
@@ -3951,14 +3950,15 @@ function vIdentidade(){
   </div>
   <h2 style="margin-top:4px">Como aparece</h2>
   <div class="grid2">
-    <div class="panel"><div class="eyebrow">Entrada da equipe</div><div class="pv login-pv" style="background:linear-gradient(180deg,var(--rail,var(--accent)) 0 110px,var(--bg) 110px)"><div style="display:flex;justify-content:center">${venueLogo(50,'dark')}</div><div class="pv-input">seu@email.com</div><div class="pv-btn">Receber código</div><div style="display:flex;justify-content:center">${powered()}</div></div></div>
+    <div class="panel"><div class="eyebrow">Entrada da equipe</div><div class="pv login-pv" style="background:linear-gradient(180deg,var(--rail,var(--accent)) 0 110px,var(--bg) 110px)"><div style="display:flex;justify-content:center">${venueLogo(50,'dark')}</div><div class="pv-input">usuário</div><div class="pv-btn">Entrar</div><div style="display:flex;justify-content:center">${powered()}</div></div></div>
     <div class="panel"><div class="eyebrow">Checkout e galeria online</div><div class="pv kiosk-pv"><div style="display:flex;justify-content:center">${venueLogo(50,'light')}</div><div class="pv-h">${esc(v.tagline)}</div><div class="pv-face"><span></span></div>${VENUE_CFG.powered?`<div class="pv-by">${powered()}</div>`:''}</div></div>
     <div class="panel"><div class="eyebrow">Recibo</div><div class="receipt">${esc(venueName().toUpperCase())}\nVenda E001 · Sessão LP6ZM8K74\nVendedor: Thais\nPacote 2 fotos                       R$ 120,00\nTOTAL                               R$ 120,00\nSuas fotos: eterna.photo/#g · código K7QM-4WXR · 60 dias</div></div>
     <div class="panel"><div class="eyebrow">Pontos de captura neste venue</div><div class="chips">${DATA.points.map(p=>`<span class="pill neutral">${esc(p.name)}</span>`).join('')}</div><div class="note" style="margin-top:8px">Os nomes dos pontos, pacotes e fundos mudam por venue; o fluxo é o mesmo.</div></div>
   </div>`;
 }
 
-// ---------- acesso: login por e-mail e código, permissão CRUD por módulo e menu por usuário (v78) ----------
+const MAIL_FROM='hello@eterna.photo';
+// ---------- acesso: usuário e senha no servidor, permissão CRUD por módulo e menu por usuário (v78) ----------
 // Duas camadas: o módulo (C/R/U/D) decide o que a pessoa FAZ; o menu (lista de telas permitidas) decide o que ela VÊ.
 // Uma tela só aparece com o "Ver" do módulo E estando no menu da pessoa. Tela nova entra em MODULES, MODULE_INFO e no menu dos perfis.
 // PROTÓTIPO: tudo isto é verificado só no navegador. Em produção o servidor é a fonte da verdade (plano de permissões, v79).
@@ -3976,6 +3976,7 @@ const MODULES=[
  ['configuracao','Configurações do venue',['repo','identidade','chroma']],
  ['catalogo','Painel de controle (catálogo e preços)',['catalogo']],
  ['usuarios','Cadastro de usuários',['usuarios']],
+ ['senhas','Senhas de acesso',[]],
  ['permissoes','Permissões',['permissoes']],
  ['laboratorio','Laboratório',['vestiario','fundos-teste']],
  ['venda','Venda no balcão',['checkout','fila','caixa','posto']],
@@ -3997,6 +3998,7 @@ const MODULE_INFO={
  filafoto:{desc:'Painel das fotos chegando, por fotógrafo e ponto',r:'ver a fila do fotógrafo (também na TV)',u:'ligar e desligar as miniaturas (rostos) neste aparelho'},
  configuracao:{desc:'Repositório, Identidade, Fundos de IA e o FTP do estádio (no Painel de controle)',r:'ver as configurações e o status do FTP',u:'mudar repositório, identidade, integrações, FTP do estádio, os fundos do Checkout e a montagem dos fundos (local ou Photoroom)'},
  catalogo:{desc:'Painel de controle: catálogo e preços, tempo da tela final do Checkout',r:'ver os preços',u:'mudar preços e o tempo do Checkout'},
+ senhas:{desc:'Senhas de acesso, em Usuários',c:'gerar a primeira senha provisória',r:'saber quem tem senha',u:'gerar outra senha provisória',d:'cancelar a senha'},
  usuarios:{desc:'Usuários: cadastro da equipe',c:'cadastrar pessoa',r:'ver a lista',u:'mudar nome, e-mail, fotógrafo, ativar e desativar',d:'excluir acesso'},
  permissoes:{desc:'Permissões: quem vê e faz o quê',r:'ver e mudar o que cada pessoa vê e faz (sempre junto com Alterar)',u:'mudar acessos (sempre junto com Ver)'},
  laboratorio:{desc:'Laboratório: produtos em teste (Vestiário e Fundos em teste; ativar um fundo pede Alterar em Configurações do venue)',r:'ver'},
@@ -4034,13 +4036,14 @@ const sameSet=(a,b)=>{a=a||[];b=b||[];return a.length===b.length&&a.every(x=>b.i
 // id do perfil quando módulos, menu e tela inicial batem exatamente com ele; senão 'custom'
 function presetMatch(d){const pn=permNorm(d.perms);for(const k of Object.keys(PRESETS)){const pp=presetPerms(k);if(MODULES.every(([m])=>['c','r','u','d'].every(o=>pn[m][o]===pp[m][o]))&&sameSet(d.menu,presetMenu(k))&&(d.inicio||PRESETS[k].inicio||'perfis')===(PRESETS[k].inicio||'perfis'))return k;}return 'custom';} // tela inicial vazia (Padrão) = a do perfil
 const normEmail=e=>String(e||'').trim().toLowerCase();
-const emailOk=e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+const usuarioOk=e=>/^[a-z0-9][a-z0-9._@+-]{1,99}$/.test(e);
 const mkUser=(e,n,p,k,at)=>({v:2,email:e,name:n,preset:p,key:k||null,perms:presetPerms(p),menu:presetMenu(p),inicio:PRESETS[p].inicio,active:true,createdAt:at||'2026-10-26T12:00:00.000Z',createdBy:'seed',lastLogin:null});
 let USERS={};
 function seedUsers(){USERS={};SEED_USERS.forEach(([e,n,p,k])=>{USERS[e]=mkUser(e,n,p,k)});}
 // migração para v:2 (D11): perfil pronto segue o perfil novo; personalizado mantém o que tinha, módulo a módulo
 const MIGRA_V1={escala:'configuracao',laboratorio:'configuracao'};
 function migrateUser(x){if(!x||typeof x!=='object')return x;const pr=x.preset;
+  if(pr==='admin'&&x.v===2&&x.perms)x.perms.senhas={...ALL}; // módulo novo: o perfil Admin vem com ele; quem tira a permissão vira personalizado
   if(x.v!==2){const old=x.perms||{};
     if(pr&&pr!=='custom'&&PRESETS[pr]){x.perms=presetPerms(pr);x.menu=presetMenu(pr);x.inicio=PRESETS[pr].inicio;}
     else{const p2={};MODULES.forEach(([m])=>{const src=old[MIGRA_V1[m]||m];p2[m]=src?{...src}:{...NONE};});
@@ -4100,13 +4103,13 @@ function auditLog(acao,alvo,mudancas,extra){if(!mudancas||!mudancas.length)retur
   const l=auditRead();l.unshift(e);try{localStorage.setItem(AUDIT_KEY,JSON.stringify(l.slice(0,1000)))}catch(x){}
   if(state.db){try{state.db.doc('usuarios_log/'+e.id).set(e)}catch(x){console.warn('db usuarios_log',x)}}return e;}
 function permDiff(a,b){a=a||{};b=b||{};const out=[];
-  ['name','email','key','active','preset','inicio'].forEach(k=>{const x=a[k]==null?null:a[k],y=b[k]==null?null:b[k];if(x!==y)out.push({campo:k,de:x,para:y});});
+  ['name','email','contato','key','active','preset','inicio'].forEach(k=>{const x=a[k]==null?null:a[k],y=b[k]==null?null:b[k];if(x!==y)out.push({campo:k,de:x,para:y});});
   MODULES.forEach(([m])=>['c','r','u','d'].forEach(k=>{const x=accHas(a,m,k),y=accHas(b,m,k);if(x!==y)out.push({campo:`perms.${m}.${k}`,de:x,para:y});}));
   const ma=a.perms?userMenu(a):[],mb=b.perms?userMenu(b):[];const sai=ma.filter(v=>!mb.includes(v)),entra=mb.filter(v=>!ma.includes(v));if(sai.length||entra.length)out.push({campo:'menu',sai,entra});
   return out;}
 // recuperação (D12, só no protótipo): sem nenhum administrador ativo, os e-mails admin da semente voltam a ser admin
 function ensureAdmin(){if(adminCount(USERS)>=1)return false;SEED_USERS.filter(y=>y[2]==='admin').forEach(([e,n])=>{const antes=USERS[e]?JSON.parse(JSON.stringify(USERS[e])):null;const u=USERS[e]||{email:e,name:n,key:null,createdAt:now().toISOString(),createdBy:'recuperacao',lastLogin:null};Object.assign(u,{v:2,preset:'admin',perms:presetPerms('admin'),menu:presetMenu('admin'),inicio:'perfis',active:true});USERS[e]=u;auditLog('recuperacao',e,permDiff(antes||{},u));});return true;}
-function migrateUsers(persist){Object.keys(USERS).forEach(k=>{const x=USERS[k];if(!emailOk(k)||!x||typeof x!=='object'||x.email!==k)delete USERS[k];}); // chave que não é e-mail (ex.: __proto__) sai
+function migrateUsers(persist){Object.keys(USERS).forEach(k=>{const x=USERS[k];if(!usuarioOk(k)||!x||typeof x!=='object'||x.email!==k)delete USERS[k];}); // chave que não é usuário válido (ex.: __proto__) sai
   Object.values(USERS).forEach(migrateUser);let rec=false;if(persist){rec=ensureAdmin();try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}}return rec;}
 seedUsers();
 try{const u=localStorage.getItem('eterna.users.v1');if(u){const o=JSON.parse(u);if(o&&Object.keys(o).length){USERS=o;Object.values(USERS).forEach(x=>{const sd=SEED_USERS.find(y=>y[0]===x.email);if(sd&&sd[3]&&!x.key)x.key=sd[3];});if(USERS['admin@eterna.photo']&&!USERS['hello@eterna.photo']){const u=USERS['admin@eterna.photo'];delete USERS['admin@eterna.photo'];u.email='hello@eterna.photo';u.name='Eterna (hello@)';USERS[u.email]=u;}}}}catch(e){}
@@ -4121,7 +4124,7 @@ function loginMark(e){const u=USERS[e];if(!u)return;const at=now().toISOString()
 function userFor(email){const e=normEmail(email);const u=USERS[e];if(u&&u.active!==false)return u;return null;}
 function can(mod,op){const u=state.user;if(!u)return false;const p=u.perms&&u.perms[mod];return !!(p&&p[op||'r']);}
 function menuOk(v){return userMenu(state.user).includes(v);}
-function canView(v){if(v==='entrar')return true;if(!state.user)return false;if(v==='semacesso')return !allowedViews().length;if(v==='perfis')return !isBare()&&allowedViews().length>0;
+function canView(v){if(v==='entrar')return true;if(!state.user)return false;if(v==='minhasenha')return true;if(v==='semacesso')return !allowedViews().length;if(v==='perfis')return !isBare()&&allowedViews().length>0;
   const base=v==='quiosque'?(can('quiosque','r')||can('venda','r')):(MODULE_OF[v]?can(MODULE_OF[v],'r'):false);if(!base)return false;
   if(v==='permissoes'&&!can('permissoes','u'))return false;return menuOk(v);}
 function allowedViews(){return VIEWS.map(v=>v[0]).filter(v=>v!=='perfis'&&canView(v));}
@@ -4135,46 +4138,66 @@ const WRITE_OPS={'busca-janela':'u','busca-janela-dia':'u','fotofila-mini':'u','
 const ACT_MOD={'busca-janela':'configuracao','busca-janela-dia':'configuracao','fotofila-mini':'filafoto','bg-ativar':'configuracao','bg-lab':'configuracao','user-new':'usuarios','user-save':'usuarios','user-active':'usuarios','user-del-ok':'usuarios','perm-save':'permissoes','perm-preset-apply':'permissoes','aj-autotoggle':'set','din-confirm':'venda','din-cancel':'venda','din-cancel-ok':'venda','pend-pos-ok':'venda','imp-print':'venda','imp-ok':'venda','imp-falha':'venda','imp-reprint-ok':'venda','rf-save':'configuracao','perm-copy-ok':'permissoes','fundos-modo':'configuracao'};
 function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;const m=ACT_MOD[a]||MODULE_OF[state.view];if(!m){toast('Sem permissão nesta tela');return false;}if(can(m,op))return true;toast(`Sem permissão para ${OPS.find(o=>o[0]===op)[1].toLowerCase()} em ${MODULES.find(x=>x[0]===m)[1]}`);return false;}
 
-state.user=null;state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};
+state.user=null;state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};
 function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;state.user=u;return true;}catch(e){return false}}
-function login(email){const u=userFor(email);if(!u){state.auth.err='Este e-mail não tem acesso ao Eterna.';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
-  state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
-function logout(){camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
-  state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
-// Código de acesso: quando MAIL_API aponta para um serviço de e-mail (POST /auth/codigo e /auth/verificar, contrato em
-// servidor/email/README.md), o código sai por e-mail. Vazio: o código é gerado no navegador e aparece na caixa simulada.
-const MAIL_API='';
-async function mailApi(rota,corpo){if(!MAIL_API)return {status:0};try{const r=await fetch(MAIL_API+rota,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpo)});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
-async function sendCode(){const e=normEmail(state.auth.email);if(!emailOk(e)){state.auth.err='Digite um e-mail válido.';render();return;}if(state.auth.busy)return;state.auth.busy=true;state.auth.err=null;render();
-  const r=await mailApi('/auth/codigo',{email:e});state.auth.busy=false;
-  if(r.status===429){state.auth.err='Aguarde um pouco antes de pedir outro código.';render();return;}
-  if(r.status===400){state.auth.err='Digite um e-mail válido.';render();return;}
-  const real=r.status===202;const code=real?null:String(Math.floor(100000+Math.random()*900000));
-  state.auth.pending={email:e,code,real,at:now().toISOString(),exp:new Date(now().getTime()+10*60e3).toISOString()};state.auth.step='code';state.auth.code='';state.auth.err=null;render();const i=$('[data-act="login-code"]');if(i)i.focus();}
-async function checkCode(){const p=state.auth.pending;const c=(state.auth.code||'').replace(/\D/g,'');if(!p){state.auth.step='email';render();return;}if(new Date(p.exp)<now()){state.auth.err='Código expirado. Peça outro.';state.auth.step='email';state.auth.pending=null;render();return;}
-  if(p.real){if(state.auth.busy)return;state.auth.busy=true;const r=await mailApi('/auth/verificar',{email:p.email,codigo:c});state.auth.busy=false;
-    if(r.status===200&&r.ok){try{localStorage.setItem('eterna.token',r.token)}catch(e){}login(p.email);return;}
-    if(r.erro==='expirado'){state.auth.err='Código expirado. Peça outro.';state.auth.step='email';state.auth.pending=null;render();return;}
-    state.auth.err=r.status===0?'Sem conexão. Tente de novo.':'Código incorreto.';render();return;}
-  if(c!==p.code){state.auth.err='Código incorreto.';render();return;}login(p.email);}
+function login(email){const u=userFor(email);if(!u){state.auth.err='Este usuário não tem acesso ao Eterna.';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
+  state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
+function logout(){authApi('/auth/sair',{});camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
+  state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
+// Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
+// e a sessão vale pelo cookie HttpOnly. O site público não fala com o servidor: lá só a galeria e o Checkout abrem.
+const authSite=()=>/(^|\.)eterna\.photo$/.test(location.hostname);
+async function authApi(rota,corpo){try{const r=await fetch(rota,{method:corpo?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo?JSON.stringify(corpo):undefined});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
+function authEntrou(r){if(r.cadastro&&r.usuario){USERS[r.usuario]=migrateUser(r.cadastro)||r.cadastro;}login(r.usuario);} // o cadastro do servidor vale mais que a cópia do navegador
+function authErro(r){return r.status===429?'Muitas tentativas. Espere 15 minutos ou fale com o administrador.':r.erro==='fraca'?(r.motivo||'Escolha uma senha mais difícil.'):r.status===401?'Usuário ou senha incorretos.':'Sem conexão com o servidor. Tente de novo.';}
+async function authEntrar(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u||!a.senha){a.err='Digite o usuário e a senha.';render();return;}a.busy=true;a.err=null;render();
+  const r=await authApi('/auth/entrar',{usuario:u,senha:a.senha});a.busy=false;
+  if(r.status===200&&r.troca){a.step='trocar';a.err=null;a.nova='';a.nova2='';render();return;}
+  if(r.status===200&&r.ok){authEntrou(r);return;}a.senha='';a.err=authErro(r);render();}
+async function authEsqueci(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u){a.err='Digite o usuário.';render();return;}a.busy=true;a.err=null;render();
+  const r=await authApi('/auth/esqueci',{usuario:u});a.busy=false;if(r.status===200)a.enviado=true;else a.err=authErro(r);render();}
+async function authTrocar(){const a=state.auth;if(a.busy)return;const dentro=!!state.user;const u=dentro?state.user.email:normEmail(a.usuario);if(!u||!a.senha){a.err='Digite o usuário e a senha atual.';render();return;}if(a.nova.length<10){a.err='A senha nova precisa de 10 caracteres ou mais.';render();return;}if(a.nova!==a.nova2){a.err='As duas senhas novas não são iguais.';render();return;}a.busy=true;a.err=null;render();
+  const r=await authApi('/auth/trocar',{usuario:u,senha:a.senha,nova:a.nova});a.busy=false;a.nova='';a.nova2='';
+  if(r.status===200&&r.ok&&dentro){state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view=homeView();toast('Senha alterada');render();return;}
+  if(r.status===200&&r.ok){authEntrou(r);return;}if(dentro&&r.status===401){a.senha='';a.err='Senha atual incorreta.';}else a.err=authErro(r);render();}
+// ao abrir: a sessão salva só vale se o servidor ainda reconhecer o cookie. Sem resposta do servidor, ela segue até ele voltar.
+async function authConferir(){if(authSite()||!state.user)return;const r=await authApi('/auth/eu');if(r.status===401&&state.user)logout();}
+// Senhas de acesso: o servidor confere a permissão do módulo em cada pedido; os botões só escondem o que não vai funcionar.
+async function authSenhasLer(){if(!can('senhas','r'))return;const r=await authApi('/auth/senhas');if(r.status===200&&r.senhas){state.users.senhas=r.senhas;render();}}
+async function authSenhaProvisoria(usuario){saveUsers(usuario);let r;for(let i=0;i<4;i++){r=await authApi('/auth/senha/gerar',{usuario});if(r.status!==404)break;await new Promise(s=>setTimeout(s,600));} // o cadastro novo pode ainda estar subindo
+  if(r.status===200&&r.senha){state.users.senha={usuario,valor:r.senha};render();authSenhasLer();return;}toast(r.erro==='alvo_maior'?'Esta pessoa tem acessos que você não tem':r.status===403||r.status===401?'Sem permissão em Senhas de acesso':r.status===404?'O cadastro ainda não chegou ao servidor':'Sem conexão com o servidor');}
+async function authSenhaCancelar(usuario){const r=await authApi('/auth/senha/cancelar',{usuario});if(r.status===200){toast('Senha cancelada');authSenhasLer();return;}toast(r.erro==='alvo_maior'?'Esta pessoa tem acessos que você não tem':'Sem permissão em Senhas de acesso');}
+function senhaBotoes(e){const s=(state.users.senhas||{})[e];const tem=!!s;const ver=can('senhas','r');return `${ver?`<span class="pill neutral">${!state.users.senhas?'senha: consultando':tem?(s.provisoria?'senha provisória':'tem senha'):'sem senha'}</span>`:''}${can('senhas',tem?'u':'c')?`<button class="btn ghost" data-act="user-senha">${tem?'Gerar outra senha provisória':'Gerar senha provisória'}</button>`:''}${tem&&can('senhas','d')?`<button class="btn ghost" data-act="user-senha-cancelar">Cancelar senha</button>`:''}`;}
+function campoSenha(act,valor,rotulo,auto,manter){const ver=!!(state.auth.ver&&state.auth.ver[act]);
+  const olho=ver?'<path d="M3 3l18 18"/><path d="M10.6 5.2A10 10 0 0 1 12 5c6 0 9.5 7 9.5 7a16 16 0 0 1-3.1 3.9M6.5 6.8A15.7 15.7 0 0 0 2.5 12S6 19 12 19a9.6 9.6 0 0 0 4.6-1.2"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>':'<path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/>';
+  return `<div class="senha-campo"><input type="${ver?'text':'password'}" autocomplete="${auto}" autocapitalize="none" spellcheck="false" ${manter?`id="${act}" data-keep `:''}data-act="${act}" value="${esc(valor)}" placeholder="${rotulo}" aria-label="${rotulo}"><button type="button" class="senha-ver" data-act="login-ver" data-c="${act}" aria-pressed="${ver}" aria-label="${ver?'Ocultar':'Mostrar'} ${rotulo.toLowerCase()}" title="${ver?'Ocultar':'Mostrar'} senha"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${olho}</svg></button></div>`;}
+function vMinhaSenha(){const a=state.auth;
+  return `<form class="panel" style="max-width:440px;gap:12px" data-form="login-trocar"><h2>Trocar senha</h2><div class="note">Use 10 caracteres ou mais. Uma frase curta é fácil de lembrar e difícil de descobrir.</div>
+    ${campoSenha('login-senha',a.senha,'Senha atual','current-password',true)}
+    ${campoSenha('login-nova',a.nova,'Senha nova','new-password',true)}
+    ${campoSenha('login-nova2',a.nova2,'Repita a senha nova','new-password',true)}
+    ${a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:''}<div class="row"><button class="btn primary" type="submit">Salvar</button><button class="btn ghost" type="button" data-act="login-voltar">Voltar</button></div></form>`;}
 function vEntrar(){
-  const a=state.auth;const logo=`<div class="login-mark">${venueLogo(84,'dark')}</div><div class="note" style="text-align:center">Fotos · equipe</div>`;
-  if(a.step==='code'&&a.pending){const p=a.pending;const u=USERS[p.email];
-    return `<div class="enter login">${logo}
-    <form class="panel" data-form="login-code"><h2>Digite o código</h2><div class="note">Enviado para <b>${esc(p.email)}</b>. Vale por 10 minutos.</div>
-      <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="code" data-act="login-code" value="${esc(a.code)}" placeholder="000 000" aria-label="Código de 6 dígitos" autofocus>
-      ${a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:''}
-      <div class="row"><button class="btn primary big" type="submit">Entrar</button><button class="btn ghost" type="button" data-act="login-back">Trocar e-mail</button><button class="btn ghost" type="button" data-act="login-resend">Reenviar</button></div></form>
-    ${p.real?'':`<div class="inbox" aria-label="Caixa de entrada simulada"><div class="eyebrow">Caixa de entrada · ${esc(p.email)}</div>
-      <div class="mail"><div class="from"><b>${esc(venueName())}</b> <span class="note">${MAIL_FROM}</span><span class="note" style="margin-left:auto">${hhmm(new Date(p.at))}</span></div><div class="subj">Seu código de acesso · ${esc(venueName())}</div><div class="body">Olá${u?', '+esc(u.name.split(' ')[0]):''}. Use o código abaixo para entrar. Ele vale por 10 minutos e só funciona uma vez.</div><div class="otp">${p.code.slice(0,3)} ${p.code.slice(3)}</div><div class="note">Se você não pediu este código, ignore este e-mail.</div></div></div>`}
-    <div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div></div>`;}
+  const a=state.auth;const at=document.activeElement;a.foco=at&&at.dataset&&/^login-(usuario|senha|nova|nova2)$/.test(at.dataset.act||'')?at.dataset.act:null;const logo=`<div class="login-mark">${venueLogo(84,'dark')}</div><div class="note" style="text-align:center">Fotos · equipe</div>`;
+  const erro=a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:'';
+  const pe=`<div class="note" style="text-align:center">Convidado: suas fotos abrem pelo QR do recibo.</div><div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div>`;
+  if(authSite())return `<div class="enter login">${logo}<div class="panel"><h2>Entrar</h2><div class="note">A entrada da equipe é pelo endereço do servidor do estádio.</div></div>${pe}</div>`;
+  if(a.step==='esqueci')return `<div class="enter login">${logo}
+    <form class="panel" data-form="login-esqueci"><h2>Esqueci a senha</h2>${a.enviado?`<div class="note">Se este usuário estiver ativo e tiver e-mail cadastrado, uma senha provisória chega em alguns minutos. Ela vale por 30 minutos e sua senha atual continua valendo até você criar a nova.</div><div class="note">Sem e-mail ou sem internet no servidor, peça uma senha provisória ao administrador.</div><div class="row"><button class="btn primary big" type="button" data-act="login-voltar">Voltar para entrar</button></div>`:`<div class="note">Digite seu usuário. Se ele tiver e-mail cadastrado, enviamos uma senha provisória.</div>
+      <input type="text" autocomplete="username" autocapitalize="none" spellcheck="false" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="Usuário" aria-label="Usuário">
+      ${erro}<button class="btn primary big" type="submit">Enviar senha provisória</button><div class="row"><button class="btn ghost" type="button" data-act="login-voltar">Voltar</button></div>`}</form>${pe}</div>`;
+  if(a.step==='trocar')return `<div class="enter login">${logo}
+    <form class="panel" data-form="login-trocar"><h2>Crie sua senha</h2><div class="note">Esta senha provisória só serve para criar a sua. Use 10 caracteres ou mais. Uma frase curta é fácil de lembrar e difícil de descobrir.</div>
+      ${campoSenha('login-nova',a.nova,'Senha nova','new-password')}
+      ${campoSenha('login-nova2',a.nova2,'Repita a senha nova','new-password')}
+      ${erro}<div class="row"><button class="btn primary big" type="submit">Salvar e entrar</button><button class="btn ghost" type="button" data-act="login-voltar">Voltar</button></div></form>${pe}</div>`;
   return `<div class="enter login">${logo}
-    <form class="panel" data-form="login-email"><h2>${a.switching!=null&&state.auth_next==='importar'?'Trocar fotógrafo':'Entrar'}</h2>${a.switching&&state.auth_next==='importar'?`<div class="note"><b>${esc(a.switching)}</b> saiu. O próximo fotógrafo entra com o e-mail dele e volta direto para o Upload automático, onde faz o check-in da câmera.</div>`:''}<div class="note">Você recebe um código por e-mail. Sem senha.</div>
-      <input type="text" inputmode="email" autocomplete="email" data-act="login-email" value="${esc(a.email)}" placeholder="seu@email.com" aria-label="E-mail" autofocus>
-      ${a.err?`<div class="alert bad"><span class="sev" aria-hidden="true"></span><div><b>${esc(a.err)}</b></div></div>`:''}
-      <button class="btn primary big" type="submit">Receber código</button></form>
-    <div class="note" style="text-align:center">Convidado: suas fotos abrem pelo QR do recibo.</div>
-    <div style="display:flex;justify-content:center;margin-top:18px">${powered()}</div></div>`;
+    <form class="panel" data-form="login-entrar"><h2>${a.switching!=null&&state.auth_next==='importar'?'Trocar fotógrafo':'Entrar'}</h2>${a.switching&&state.auth_next==='importar'?`<div class="note"><b>${esc(a.switching)}</b> saiu. O próximo fotógrafo entra com o usuário dele e volta direto para o Upload automático, onde faz o check-in da câmera.</div>`:''}
+      <input type="text" autocomplete="username" autocapitalize="none" spellcheck="false" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="Usuário" aria-label="Usuário" autofocus>
+      ${campoSenha('login-senha',a.senha,'Senha','current-password')}
+      ${erro}<button class="btn primary big" type="submit">Entrar</button>
+      <div class="row"><button class="btn ghost" type="button" data-act="login-esqueci">Esqueci a senha</button></div></form>
+    ${pe}</div>`;
 }
 // ---------- Configurações › Usuários (cadastro) ----------
 state.users={sel:null,draft:null,q:'',delAsk:false};
@@ -4187,7 +4210,7 @@ function vUsuarios(){
   let editor='';
   if(d&&isNew){const ok=presetsFor(me);const pk=PRESETS[d.preset]?d.preset:'custom';
     editor=`<div class="panel" style="gap:12px"><div class="head"><h2>Novo usuário</h2></div>
-    <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}"></label><label><span class="eyebrow">E-mail</span><input type="text" inputmode="email" data-act="user-field" data-k="email" value="${esc(d.email||'')}"></label></div>
+    <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}"></label><label><span class="eyebrow">Usuário</span><input type="text" autocapitalize="none" spellcheck="false" placeholder="nome.sobrenome" data-act="user-field" data-k="email" value="${esc(d.email||'')}"></label><label><span class="eyebrow">E-mail (opcional)</span><input type="text" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="Para receber a senha se esquecer" data-act="user-field" data-k="contato" value="${esc(d.contato||'')}"></label></div>
     <label><span class="eyebrow">Fotógrafo vinculado</span><select data-act="user-key"><option value="">Nenhum</option>${humans.map(k=>`<option value="${k}" ${d.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
     <label><span class="eyebrow">Perfil</span><select data-act="user-preset">${ok.map(k=>`<option value="${k}" ${pk===k?'selected':''}>${esc(PRESETS[k].name)}</option>`).join('')}<option value="custom" ${pk==='custom'?'selected':''}>Sem acesso ainda (definir em Permissões)</option></select></label>
     <div class="note">${esc(PRESETS[pk]?PRESETS[pk].desc:'A pessoa entra sem ver nenhuma tela até alguém liberar em Permissões.')}</div>
@@ -4196,13 +4219,14 @@ function vUsuarios(){
     <div class="row"><button class="btn primary" data-act="user-save">Criar acesso</button><button class="btn ghost" data-act="user-cancel">Fechar</button></div></div>`;}
   else if(d){const u=USERS[d.email0]||d;const ro=!rwU;
     editor=`<div class="panel" style="gap:12px"><div class="head"><h2>${esc(d.name||d.email)}</h2><span class="pill ${u.active!==false?'good':'bad'}">${u.active!==false?'ativo':'desativado'}</span></div>
-    <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}" ${ro?'readonly':''}></label><label><span class="eyebrow">E-mail</span><input type="text" inputmode="email" data-act="user-field" data-k="email" value="${esc(d.email||'')}" ${ro||self?'readonly':''}></label></div>
+    <div class="grid2 user-grid"><label><span class="eyebrow">Nome</span><input type="text" data-act="user-field" data-k="name" value="${esc(d.name||'')}" ${ro?'readonly':''}></label><label><span class="eyebrow">Usuário</span><input type="text" data-act="user-field" data-k="email" value="${esc(d.email||'')}" readonly></label><label><span class="eyebrow">E-mail (opcional)</span><input type="text" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="Para receber a senha se esquecer" data-act="user-field" data-k="contato" value="${esc(d.contato||'')}" ${ro||!can('senhas','u')?'readonly':''}></label></div>
     <label><span class="eyebrow">Fotógrafo vinculado</span><select data-act="user-key" ${ro?'disabled':''}><option value="">Nenhum</option>${humans.map(k=>`<option value="${k}" ${d.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
     <div><span class="eyebrow">Perfil e acessos</span><div><b>${esc(presetName(u.preset))}</b> <span class="note">· ${esc(accSummary(u))}</span></div></div>
-    <div class="row">${rwU?`<button class="btn primary" data-act="user-save">Salvar</button>`:''}${canView('permissoes')?`<button class="btn ghost" data-act="perm-open" data-e="${esc(d.email0)}">Editar permissões</button>`:''}${canView('permissoes')&&!permRO(u)?`<button class="btn ghost" data-act="perm-copy-open" data-e="${esc(d.email0)}">Copiar permissões de…</button>`:''}${!self&&rwU?`<button class="btn ghost" data-act="user-active">${u.active!==false?'Desativar':'Reativar'}</button>`:''}${!self&&rwD?(state.users.delAsk?`<button class="btn ghost" data-act="user-del-ok" style="color:var(--bad)">Confirmar exclusão</button><button class="btn ghost" data-act="user-del-no">Cancelar</button>`:`<button class="btn ghost" data-act="user-del-ask" style="color:var(--bad)">Excluir acesso</button>`):''}<button class="btn ghost" data-act="user-cancel">Fechar</button></div>
+    <div class="row">${rwU?`<button class="btn primary" data-act="user-save">Salvar</button>`:''}${canView('permissoes')?`<button class="btn ghost" data-act="perm-open" data-e="${esc(d.email0)}">Editar permissões</button>`:''}${canView('permissoes')&&!permRO(u)?`<button class="btn ghost" data-act="perm-copy-open" data-e="${esc(d.email0)}">Copiar permissões de…</button>`:''}${!self?senhaBotoes(d.email0):''}${!self&&rwU?`<button class="btn ghost" data-act="user-active">${u.active!==false?'Desativar':'Reativar'}</button>`:''}${!self&&rwD?(state.users.delAsk?`<button class="btn ghost" data-act="user-del-ok" style="color:var(--bad)">Confirmar exclusão</button><button class="btn ghost" data-act="user-del-no">Cancelar</button>`:`<button class="btn ghost" data-act="user-del-ask" style="color:var(--bad)">Excluir acesso</button>`):''}<button class="btn ghost" data-act="user-cancel">Fechar</button></div>
     ${state.users.delAsk&&!self?'<div class="note">Excluir apaga o cadastro. O histórico guarda quem era, quando e por quem. Desativar é o caminho recomendado.</div>':''}
     <div class="note">Criado em ${u.createdAt?new Date(u.createdAt).toLocaleDateString('pt-BR'):'—'}${u.lastLogin?' · última entrada '+new Date(u.lastLogin).toLocaleString('pt-BR'):' · nunca entrou'}${ro?' · somente leitura':''}</div></div>`;}
-  return `<div class="head"><div><div class="eyebrow">Configurações</div><h1>Usuários</h1></div><div class="row"><input type="text" data-act="user-q" value="${esc(state.users.q)}" placeholder="Buscar nome ou e-mail" style="width:min(240px,100%)">${rwC?'<button class="btn primary" data-act="user-new">Novo usuário</button>':''}</div></div>
+  const sn=state.users.senha;const senhaBox=sn?`<div class="panel" style="gap:10px"><h2>Senha provisória de ${esc(sn.usuario)}</h2><div style="font:600 24px var(--display);letter-spacing:.06em">${esc(sn.valor)}</div><div class="note">Entregue à pessoa agora. Esta senha não aparece de novo, e ela cria a própria no primeiro acesso.</div><div class="row"><button class="btn primary" data-act="user-senha-ok">Já entreguei</button></div></div>`:'';
+  return `${senhaBox}<div class="head"><div><div class="eyebrow">Configurações</div><h1>Usuários</h1></div><div class="row"><input type="text" data-act="user-q" value="${esc(state.users.q)}" placeholder="Buscar nome ou e-mail" style="width:min(240px,100%)">${rwC?'<button class="btn primary" data-act="user-new">Novo usuário</button>':''}</div></div>
   <div style="display:grid;gap:14px;min-width:0">
     ${editor||'<div class="panel"><div class="note">Selecione um usuário ou crie um novo. O acesso é cortado na hora em que o e-mail é desativado ou excluído. O que cada pessoa vê e faz fica em Permissões.</div></div>'}
     <div class="panel"><div class="tablewrap"><table class="wrap"><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Módulos</th><th>Última entrada</th></tr></thead><tbody>
@@ -4210,14 +4234,14 @@ function vUsuarios(){
     </tbody></table></div><div class="note" style="margin-top:8px">E-mail fora desta lista não entra. Convidado abre as fotos pelo QR do recibo.</div></div>
   </div>`;
 }
-function userDraft(email){const u=USERS[email];if(!u)return;state.users.delAsk=false;state.users.draft={email:u.email,email0:u.email,name:u.name,key:u.key||null,preset:u.preset};}
+function userDraft(email){const u=USERS[email];if(!u)return;state.users.delAsk=false;state.users.draft={email:u.email,email0:u.email,name:u.name,contato:u.contato||'',key:u.key||null,preset:u.preset};}
 function userSave(){const d=state.users.draft;if(!d)return;const isNew=!d.email0;
   if(isNew&&!can('usuarios','c')){toast('Sem permissão para criar em Cadastro de usuários');return;}if(!isNew&&!can('usuarios','u')){toast('Sem permissão para alterar em Cadastro de usuários');return;}
-  const e=normEmail(d.email);if(!emailOk(e)){toast('E-mail inválido');return;}if(!d.name||!d.name.trim()){toast('Dê um nome ao usuário');return;}if(e!==d.email0&&USERS[e]){toast('Este e-mail já tem acesso');return;}
+  const e=normEmail(d.email);if(!usuarioOk(e)){toast('Usuário inválido: use letras minúsculas, números, ponto ou hífen');return;}if(!d.name||!d.name.trim()){toast('Dê um nome ao usuário');return;}const contato=normEmail(d.contato||'');if(contato&&!/^[^@\s]+@[^@\s]+\.[a-z]{2,24}$/.test(contato)){toast('E-mail inválido');return;}if(e!==d.email0&&USERS[e]){toast('Este usuário já existe');return;}
   const antes=isNew?null:USERS[d.email0];if(!isNew&&!antes)return;let depois;
-  let cp=null;if(isNew){const k=PRESETS[d.preset]?d.preset:'custom';const pr=PRESETS[k];depois={v:2,email:e,name:d.name.trim(),preset:k,key:d.key||null,perms:pr?presetPerms(k):permNorm({}),menu:pr?presetMenu(k):[],inicio:pr?pr.inicio:null,active:true,createdAt:now().toISOString(),createdBy:state.user.email,lastLogin:null,mv:83};
+  let cp=null;if(isNew){const k=PRESETS[d.preset]?d.preset:'custom';const pr=PRESETS[k];depois={v:2,email:e,name:d.name.trim(),contato:contato||null,preset:k,key:d.key||null,perms:pr?presetPerms(k):permNorm({}),menu:pr?presetMenu(k):[],inicio:pr?pr.inicio:null,active:true,createdAt:now().toISOString(),createdBy:state.user.email,lastLogin:null,mv:83};
     if(d.copyFrom&&USERS[d.copyFrom]){cp=permCopia(d.copyFrom,null,state.user);Object.assign(depois,{perms:cp.depois.perms,menu:cp.depois.menu,inicio:cp.depois.inicio,preset:cp.depois.preset});}}
-  else depois=Object.assign({},antes,{email:e,name:d.name.trim(),key:d.key||null});
+  else depois=Object.assign({},antes,{email:e,name:d.name.trim(),contato:contato||null,key:d.key||null});
   const usersDepois=Object.assign({},USERS);if(!isNew&&d.email0!==e)delete usersDepois[d.email0];usersDepois[e]=depois;
   const v=permValidate(state.user,antes,depois,usersDepois);if(!v.ok){toast(v.msg);return;}
   const muds=permDiff(antes,depois);if(!muds.length){state.users.draft=null;toast('Nada mudou');render();return;}
@@ -4530,7 +4554,7 @@ function vDiario(){
   </div>`;
 }
 
-const VIEWFN={perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,posto:vPosto,quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const VIEWFN={perfis:vPerfis,entrar:vEntrar,minhasenha:vMinhaSenha,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,posto:vPosto,quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
     try{$('#main').innerHTML=vGaleriaQR();}catch(err){console.error(err);$('#main').innerHTML=`<div class="gq"><div class="gq-mid"><h1 class="lj-h2">${esc(T('gq_notFound'))}</h1></div></div>`;}
@@ -4554,7 +4578,7 @@ function render(){
     const cur=(VIEWS.find(v=>v[0]===state.view)||[])[3]||'';if(state.navCur!==cur){state.navCur=cur;state.navOpen={};}
     const grps=[];roleViews().forEach(v=>{let g=grps.find(x=>x[0]===v[3]);if(!g)grps.push(g=[v[3],[]]);g[1].push(v);});
     $('#nav').innerHTML=grps.map(([g,vs],i)=>{const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;return `<div class="navg"><button class="grp" data-act="nav-grp" data-g="${esc(g)}" aria-expanded="${open}" aria-controls="navg${i}"><span>${esc(g)}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><div class="navitems" id="navg${i}"${open?'':' hidden'}>${vs.map(v=>`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}"><span>${v[1]}</span><small>${v[2]}</small></button>`).join('')}</div></div>`;}).join('');
-    railCk();const m=MODULE_OF[state.view];const wr=m?['c','u','d'].filter(k=>opOk(m,k)):[];const ro=wr.length>0&&!wr.some(k=>can(m,k));/* somente leitura: o módulo tem letra de escrita e a pessoa não tem nenhuma */$('#venue-sub').innerHTML=`${esc(u.name)}${ro?' · <span class="pill neutral">somente leitura</span>':''}<br><span class="note">${esc(u.email)}</span> · <button class="chip" data-act="role-exit" style="min-height:26px;padding:2px 9px">sair</button>`;}
+    railCk();const m=MODULE_OF[state.view];const wr=m?['c','u','d'].filter(k=>opOk(m,k)):[];const ro=wr.length>0&&!wr.some(k=>can(m,k));/* somente leitura: o módulo tem letra de escrita e a pessoa não tem nenhuma */$('#venue-sub').innerHTML=`${esc(u.name)}${ro?' · <span class="pill neutral">somente leitura</span>':''}<br><span class="note">${esc(u.email)}</span> · <button class="chip" data-act="minha-senha" style="min-height:26px;padding:2px 9px">trocar senha</button> <button class="chip" data-act="role-exit" style="min-height:26px;padding:2px 9px">sair</button>`;}
   if(u&&state.view==='fotografos'&&fotoKey()){state.person=fotoKey();}
   const fn=u?(VIEWFN[state.view]||vPerfis):vEntrar;
   // campos de chave não podem ser apagados pelas atualizações automáticas da tela
@@ -4571,11 +4595,11 @@ function render(){
 }
 // v84: na tela de entrada, o campo (e-mail ou código) já vem focado. O autofocus não dispara em HTML injetado depois do
 // carregamento; o foco só é dado quando a tela passa a ser a de entrada ou muda a etapa (os outros renders não roubam o foco).
-function entrarFoco(){const k=state.view==='entrar'&&!state.user?'entrar|'+(state.auth.step==='code'&&state.auth.pending?'code':'email'):null;
-  if(k&&k!==entrarFoco.k){entrarFocar();[150,600,1500].forEach(ms=>setTimeout(()=>entrarFocar(true),ms));}entrarFoco.k=k;}
+function entrarFoco(){const k=state.view==='entrar'&&!state.user?'entrar|'+state.auth.step:null;
+  if(k&&k!==entrarFoco.k){entrarFocar();[150,600,1500].forEach(ms=>setTimeout(()=>entrarFocar(true),ms));}else if(k&&state.auth.foco){const el=document.querySelector('#main [data-act="'+state.auth.foco+'"]');if(el&&document.activeElement!==el){try{el.focus({preventScroll:true});el.setSelectionRange(el.value.length,el.value.length);}catch(e){}}}entrarFoco.k=k;}
 // v89: extensões do navegador e o preenchimento automático podem tirar o foco logo depois; tenta de novo (só se ninguém
 // estiver digitando em outro campo) e também quando a janela volta a ficar ativa.
-function entrarFocar(soLivre){if(state.view!=='entrar'||state.user)return;const el=document.querySelector(state.auth.step==='code'&&state.auth.pending?'#main [data-act="login-code"]':'#main [data-act="login-email"]');if(!el)return;
+function entrarFocar(soLivre){if(state.view!=='entrar'||state.user)return;const el=document.querySelector(state.auth.step==='trocar'?'#main [data-act="login-nova"]':(state.auth.usuario&&state.auth.step!=='esqueci'?'#main [data-act="login-senha"]':'#main [data-act="login-usuario"]'));if(!el)return;
   const at=document.activeElement;if(soLivre&&at&&at!==document.body&&at!==el&&/^(INPUT|TEXTAREA|SELECT)$/.test(at.tagName))return;if(at===el)return;try{el.focus({preventScroll:true});}catch(e){}}
 window.addEventListener('focus',()=>entrarFocar(true));window.addEventListener('pageshow',()=>entrarFocar(true));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')entrarFocar(true);});
 // v79: barra da equipe: Abrir Checkout e, para quem confirma pagamento, o Caixa com o número de dinheiros esperando
@@ -4634,8 +4658,10 @@ document.addEventListener('click',e=>{
     case 'menu-toggle':menuSet(!state.drawer);break;
     case 'menu-close':menuSet(false);break;
     case 'nav-grp':{const g=d.g;const cur=(VIEWS.find(v=>v[0]===state.view)||[])[3];const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;state.navOpen[g]=!open;render();const gb=document.querySelector(`#nav .grp[data-g="${CSS.escape(g)}"]`);if(gb)gb.focus();break;}
-    case 'login-back':state.auth.step='email';state.auth.pending=null;state.auth.err=null;render();break;
-    case 'login-resend':sendCode();toast('Novo código enviado');break;
+    case 'login-ver':{const v=state.auth.ver=state.auth.ver||{};v[d.c]=!v[d.c];render();const c=document.querySelector('#main [data-act="'+d.c+'"]');if(c){c.focus({preventScroll:true});c.setSelectionRange(c.value.length,c.value.length);}break;}
+    case 'minha-senha':state.view='minhasenha';render();break;
+    case 'login-esqueci':state.auth.step='esqueci';state.auth.enviado=false;state.auth.senha='';state.auth.err=null;render();break;
+    case 'login-voltar':state.auth.step='entrar';state.auth.enviado=false;state.auth.senha='';state.auth.nova='';state.auth.nova2='';state.auth.ver=null;state.auth.err=null;if(state.user)state.view=homeView();render();break;
     case 'aj-key':state.ajustes.key=d.k;state.ajustes.card=null;state.ajustes.photo=null;render();break;
     case 'aj-sess':state.ajustes.card=d.card;state.ajustes.photo=null;render();window.scrollTo({top:0});break;
     case 'aj-back':state.ajustes.card=null;state.ajustes.photo=null;render();break;
@@ -4659,9 +4685,12 @@ document.addEventListener('click',e=>{
     case 'venue-reset':VENUE_CFG={...VENUE_CFG0(),id:VENUE_CFG.id};saveVenue();render();break;
     case 'venue-logo-clear':VENUE_CFG.logo=null;saveVenue();render();break;
     case 'user-new':{const ok=presetsFor(state.user);state.users.delAsk=false;state.users.draft={email:'',email0:null,name:'',key:null,preset:ok.includes('foto')?'foto':(ok[0]||'custom')};render();break;}
-    case 'user-sel':userDraft(d.e);render();break;
+    case 'user-sel':userDraft(d.e);render();authSenhasLer();break;
     case 'user-cancel':state.users.draft=null;state.users.delAsk=false;render();break;
-    case 'user-save':userSave();break;
+    case 'user-save':{const dr=state.users.draft;const nova=dr&&!dr.email0;const id=dr?normEmail(dr.email):'';const tinha=!!USERS[id];userSave();if(nova&&!tinha&&USERS[id]&&can('senhas','c'))authSenhaProvisoria(id);break;}
+    case 'user-senha':{const dr=state.users.draft;if(dr&&USERS[dr.email0])authSenhaProvisoria(dr.email0);break;}
+    case 'user-senha-cancelar':{const dr=state.users.draft;if(dr&&USERS[dr.email0])authSenhaCancelar(dr.email0);break;}
+    case 'user-senha-ok':state.users.senha=null;render();break;
     case 'user-active':{const dr=state.users.draft;if(!dr||!USERS[dr.email0]||dr.email0===state.user.email)break;const antes=USERS[dr.email0];const on=antes.active===false;if(userApply(dr.email0,Object.assign({},antes,{active:on}),on?'reativar':'desativar')){toast(on?'Acesso reativado':'Acesso desativado: este e-mail não entra mais');render();}break;}
     case 'user-del-ask':state.users.delAsk=true;render();break;
     case 'user-del-no':state.users.delAsk=false;render();break;
@@ -4881,7 +4910,7 @@ document.addEventListener('click',e=>{
     case 'stock-swap':{simFresh();const pn=postoNome();SIM.stock[pn]=ROLO_CAP;log(`Rolo trocado em ${pn}`);if(saveSim())pvEvento('rolo',pvDispId(),{capacidade:ROLO_CAP,posto:pn});toast(`Rolo de ${pn}: ${ROLO_CAP} impressões`);render();break;}
   }
 });
-document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train-note'){state.train.note=e.target.value;return;}if(a==='login-email'){state.auth.email=e.target.value;return;}if(a==='login-code'){state.auth.code=e.target.value;if(e.target.value.replace(/\D/g,'').length===6)checkCode();return;}if(a==='user-field'){if(state.users.draft)state.users.draft[e.target.dataset.k]=e.target.value;return;}if(a==='di-text'){state.diario.text=e.target.value;return;}if(a==='rv-field'&&e.target.dataset.k==='base_url'){state.rvForm=state.rvForm||{};state.rvForm.base_url=e.target.value;return;}if(a==='fe-field'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='venue-field'){VENUE_CFG[e.target.dataset.k]=e.target.value||null;saveVenue();return;}if(a==='venue-color'){VENUE_CFG[e.target.dataset.k]=e.target.value;saveVenue();const b=e.target.parentElement.querySelector('b');if(b)b.textContent=e.target.value;return;}if(a==='aj-range'){if(can('set','u'))ajSet(state.ajustes.photo,e.target.dataset.k,+e.target.value);return;}if(a==='perm-q'||a==='perm-logq'){state.perm[a==='perm-q'?'q':'logQ']=e.target.value;const pos=e.target.selectionStart;render();const n=$(`[data-act="${a}"]`);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='user-q'){state.users.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="user-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='din-q'){state.caixa.dinQ=e.target.value;const pos=e.target.selectionStart;render();const n=$('#din-q');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='gal-q'){state.gal.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="gal-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
+document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='train-note'){state.train.note=e.target.value;return;}if(a==='login-usuario'){state.auth.usuario=e.target.value;return;}if(a==='login-senha'){state.auth.senha=e.target.value;return;}if(a==='login-nova'){state.auth.nova=e.target.value;return;}if(a==='login-nova2'){state.auth.nova2=e.target.value;return;}if(a==='user-field'){if(state.users.draft)state.users.draft[e.target.dataset.k]=e.target.value;return;}if(a==='di-text'){state.diario.text=e.target.value;return;}if(a==='rv-field'&&e.target.dataset.k==='base_url'){state.rvForm=state.rvForm||{};state.rvForm.base_url=e.target.value;return;}if(a==='fe-field'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='venue-field'){VENUE_CFG[e.target.dataset.k]=e.target.value||null;saveVenue();return;}if(a==='venue-color'){VENUE_CFG[e.target.dataset.k]=e.target.value;saveVenue();const b=e.target.parentElement.querySelector('b');if(b)b.textContent=e.target.value;return;}if(a==='aj-range'){if(can('set','u'))ajSet(state.ajustes.photo,e.target.dataset.k,+e.target.value);return;}if(a==='perm-q'||a==='perm-logq'){state.perm[a==='perm-q'?'q':'logQ']=e.target.value;const pos=e.target.selectionStart;render();const n=$(`[data-act="${a}"]`);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='user-q'){state.users.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="user-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='din-q'){state.caixa.dinQ=e.target.value;const pos=e.target.selectionStart;render();const n=$('#din-q');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='gal-q'){state.gal.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="gal-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='price'){SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
 // campos de data abrem o calendário ao toque (sem precisar digitar)
 document.addEventListener('keydown',e=>{if(e.key!=='Enter'||!e.target||e.target.id!=='cartao-qr')return;e.preventDefault();const card=e.target.dataset.card;const r=cartaoAtrelar(card,e.target.value);e.target.value='';
   if(r.erro){toast(r.erro);return;}const m=SIM.galerias[r.token];const sim=SIM.sessions[card]||{};
@@ -4895,7 +4924,7 @@ document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-p
   if(a==='gal-ev-ses'){if(state.gal.ev)state.gal.ev.sel[e.target.dataset.card]=e.target.checked;return;}
   if(a==='gal-ev-menor'){if(state.gal.ev)state.gal.ev.menor=e.target.checked;return;}
   if(a==='gal-ev-data'){if(state.gal.ev){const n=$('#gal-ev-nome');if(n)state.gal.ev.nome=n.value;state.gal.ev.data=e.target.value||todayISO();state.gal.ev.sel={};render();}return;}});
-document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-email')sendCode();if(f==='login-code')checkCode();});
+document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-entrar')authEntrar();if(f==='login-trocar')authTrocar();if(f==='login-esqueci')authEsqueci();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
     if(e.key==='ArrowRight'||e.key==='ArrowLeft'){k.ver=Math.max(0,Math.min(n-1,k.ver+(e.key==='ArrowRight'?1:-1)));k.i=k.ver;render();e.preventDefault();return;}
     if(e.key==='Escape'){k.ver=null;render();e.preventDefault();e.stopPropagation();return;}
@@ -4921,7 +4950,7 @@ async function save(){if(!state.db)return;const r=draft();const body={...r,updat
 // I1: aba marcada como Checkout (Abrir Checkout nesta aba) não carrega a sessão salva e volta para #loja, mesmo recarregada ou com outro endereço
 const LOJA_ABA=(()=>{try{return sessionStorage.getItem('eterna.lojaTab')==='1';}catch(e){return false;}})();
 applyVenue();pubRead();if(LOJA_ABA&&!state.pub&&!state.lojaRota){history.replaceState(null,'','#loja');pubRead();}
-if(state.lojaRota){try{sessionStorage.setItem('eterna.lojaTab','1')}catch(e){}try{window.opener=null}catch(e){}}else if(!LOJA_ABA)sessionLoad(); /* v81: a janela do cliente não fica ligada à do admin */ // I1: aba aberta direto em #loja também vira aba do Checkout e não carrega o login salvo
+if(state.lojaRota){try{sessionStorage.setItem('eterna.lojaTab','1')}catch(e){}try{window.opener=null}catch(e){}}else if(!LOJA_ABA){sessionLoad();authConferir();} /* v81: a janela do cliente não fica ligada à do admin */ // I1: aba aberta direto em #loja também vira aba do Checkout e não carrega o login salvo
 if(state.lojaRota)state.view='quiosque';else if(state.pub)pubLoad();else if(!readHash()){ // reabrir já logado: sem tela salva (ou Início salvo e o perfil tem tela inicial própria) vale a tela inicial do perfil
   const u=state.user;const ok=u&&state.viewSalva&&!(state.view==='perfis'&&u.inicio&&u.inicio!=='perfis')&&canView(state.view)&&state.view!=='entrar'&&state.view!=='quiosque';state.view=u?(ok?state.view:homeView()):'entrar';}
 window.addEventListener('hashchange',()=>{const wasLoja=state.lojaRota;
@@ -5017,9 +5046,9 @@ async function dbLigar(){if(state.db)return;let db=null;
       db.doc('config/busca').onSnapshot(d=>dbMigra('busca',d&&d.exists?['busca']:[],tem=>{if(!tem.size&&state.buscaCfg&&buscaJanelaOk(state.buscaCfg.janela_min)!=null)db.doc('config/busca').set(state.buscaCfg);})); // janela mudada antes de o servidor aparecer
       db.doc('config/venue').onSnapshot(d=>dbMigra('venue',d&&d.exists?['venue']:[],tem=>{if(!tem.size)db.doc('config/venue').set({...VENUE_CFG,at:now().toISOString()});}));}
     db.collection('treino').onSnapshot(snap=>{snap.docs.forEach(d=>{if(d.exists){const x=d.data();if(x&&x.id)state.train.labels[x.id]=x;}});try{localStorage.setItem('eterna.treino.v1',JSON.stringify(state.train.labels))}catch(e){}render();},err=>{console.warn('db',err)});
-    db.collection('usuarios').onSnapshot(snap=>{let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||typeof x.email!=='string'||!emailOk(x.email)||x.email!==normEmail(x.email))return; // e-mail inválido (ex.: __proto__) não entra
+    db.collection('usuarios').onSnapshot(snap=>{let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||typeof x.email!=='string'||!usuarioOk(x.email)||x.email!==normEmail(x.email))return; // usuário inválido (ex.: __proto__) não entra
       if(x.deleted){if(Object.prototype.hasOwnProperty.call(USERS,x.email)){delete USERS[x.email];ch=true;}return;}USERS[x.email]=migrateUser(x);ch=true;});if(ch){try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}if(state.user){const u=userFor(state.user.email);if(!u){logout();toast('Seu acesso foi removido');return;}state.user=u;}render();}},err=>{console.warn('db',err)});
-    db.collection('usuarios_login').onSnapshot(snap=>{snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||typeof x.email!=='string'||!emailOk(x.email)||typeof x.lastLogin!=='string')return;const u=Object.prototype.hasOwnProperty.call(USERS,x.email)&&USERS[x.email];if(u&&(!u.lastLogin||x.lastLogin>u.lastLogin))u.lastLogin=x.lastLogin;});},err=>{console.warn('db',err)});
+    db.collection('usuarios_login').onSnapshot(snap=>{snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||typeof x.email!=='string'||!usuarioOk(x.email)||typeof x.lastLogin!=='string')return;const u=Object.prototype.hasOwnProperty.call(USERS,x.email)&&USERS[x.email];if(u&&(!u.lastLogin||x.lastLogin>u.lastLogin))u.lastLogin=x.lastLogin;});},err=>{console.warn('db',err)});
     db.collection('usuarios_log').onSnapshot(snap=>{const l=auditRead();const ids=new Set(l.map(e=>e.id));let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.id||ids.has(x.id))return;l.push(x);ids.add(x.id);ch=true;});if(ch){l.sort((p,q)=>String(q.em).localeCompare(String(p.em)));try{localStorage.setItem(AUDIT_KEY,JSON.stringify(l.slice(0,1000)))}catch(e){}if(state.view==='permissoes')render();}},err=>{console.warn('db',err)});
     db.collection('diario').onSnapshot(snap=>{SIM.diario=SIM.diario||[];let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.id)return;const i=SIM.diario.findIndex(y=>y.id===x.id);if(i<0)SIM.diario.unshift(x);else SIM.diario[i]=x;ch=true;});if(ch){SIM.diario.sort((a,b)=>b.at.localeCompare(a.at));saveSim();render();}},err=>{console.warn('db',err)});
     db.doc('config/busca').onSnapshot(d=>{if(d&&d.exists){const x=d.data();if(x&&buscaJanelaOk(x.janela_min)!=null&&(!state.buscaCfg||String(x.em||'')>=String(state.buscaCfg.em||''))){state.buscaCfg=x;try{localStorage.setItem('eterna.busca.v1',JSON.stringify(x));}catch(e){}if(state.view==='catalogo')render();}}},err=>{console.warn('db',err)});

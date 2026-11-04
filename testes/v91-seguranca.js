@@ -9,6 +9,7 @@
 //  aviso "Achamos você" fora da barra do ✗/✓; ponto · hora dentro da própria imagem;
 //  bug antigo do validateReal (const big engolida pelo comentário): foto com olhos fechados é marcada (detector simulado).
 // Agente falso (page.route), com /ponto/docs em memória compartilhado entre os navegadores.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');const fs=require('fs');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const PRINTS=process.env.SESSOES_PRINTS||path.join(__dirname,'prints');
@@ -134,8 +135,7 @@ try{
   // ---------- Painel de controle: a janela mudada por um Admin vale em outro navegador ----------
   const adm=await contexto(b,errs);const P=adm.pg;
   await P.goto(U);await P.waitForTimeout(400);
-  await P.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await P.click('button[type=submit]');await P.waitForTimeout(200);
-  {const otp=await P.$('.otp');if(otp){await P.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await P.waitForTimeout(500);}}
+  await entrarTeste(P,'eduardo@eduardorezende.com');
   ok(await espera(P,()=>!!ETERNA.state.db,12000),'o Painel liga no servidor do ponto (estado.db)');
   await P.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await P.waitForTimeout(300);
   ok(await P.$('#busca-janela')&&/Procurar fotos dos últimos/.test(await P.textContent('#main')),'campo "Procurar fotos dos últimos __ minutos" no Painel de controle');

@@ -9,8 +9,8 @@ try{
     await p.addInitScript(()=>{window.addEventListener('load',()=>setTimeout(()=>{const x=document.createElement('button');x.id='ext';document.body.appendChild(x);x.focus();},50));});
     await p.goto(U);await p.waitForTimeout(2000);
     const r=await p.evaluate(()=>document.activeElement&&document.activeElement.dataset.act);
-    ok(r==='login-email','foco no e-mail depois de extensão roubar ('+vp.width+'): '+r);
-    await p.keyboard.type('a@b.co');ok(await p.evaluate(()=>document.querySelector('[data-act="login-email"]').value)==='a@b.co','digita direto ('+vp.width+')');
+    ok(r==='login-usuario','foco no usuário depois de extensão roubar ('+vp.width+'): '+r);
+    await p.keyboard.type('a@b.co');ok(await p.evaluate(()=>document.querySelector('[data-act="login-usuario"]').value)==='a@b.co','digita direto ('+vp.width+')');
     // quem já está digitando em outro campo não perde o foco
     await p.evaluate(()=>{const i=document.createElement('input');i.id='outro';document.body.appendChild(i);i.focus();});
     await p.evaluate(()=>window.dispatchEvent(new Event('focus')));await p.waitForTimeout(100);

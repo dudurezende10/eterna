@@ -1,5 +1,6 @@
 // v80: Painel no Dashboard (substitui a Semana). Critérios 1 a 29 de docs/planos/2026-10-28-v83-painel.md.
 // Sobe um LIVE de teste com ETERNA.applyLive (14 e 30 dias, 2 pontos, nomes maliciosos) e o agente (critério 25) num HOME temporário.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const {spawn}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
@@ -10,8 +11,7 @@ async function nova(b,w,h,extra){const ctx=await b.newContext({viewport:{width:w
   let dialogo=false;pg.on('dialog',d=>{dialogo=true;d.dismiss().catch(()=>{});});pg.dialogo=()=>dialogo;return {ctx,pg};}
 async function sair(pg){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.reload();await pg.waitForTimeout(350);}
 async function entrar(pg,email,hash){await pg.goto(U+(hash||''));await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await sair(pg);if(hash){await pg.goto(U+hash);await pg.waitForTimeout(300);}}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+  await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const view=pg=>pg.evaluate(()=>ETERNA.state.view);
 const abrir=(pg,from,to,fonte,pdv)=>pg.evaluate(([f,t,fo,pd])=>{ETERNA.state.range={from:f,to:t};ETERNA.state.painel={fonte:fo||'tudo',pdv:pd||''};ETERNA.state.view='painel';ETERNA.render();},[from,to,fonte,pdv]);
 const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\s+/g,' ').trim():null;},s);
@@ -223,7 +223,7 @@ try{
       const {ctx:c6,pg:p6}=await nova(b,1280,900);await p6.goto(`http://127.0.0.1:${porta}/index.html`);let lv=false;for(let i=0;i<40&&!lv;i++){await sleep(250);lv=await p6.evaluate(()=>!!(window.ETERNA&&ETERNA.live)).catch(()=>false);}
       ok(lv,'25: app aberto em 127.0.0.1 não carregou o LIVE pelo livePoll');
       // v80: o cartão do FTP do estádio fica em Configurações › Painel de controle (configuracao.r para ver, .u para alterar), não no Upload
-      const UA=`http://127.0.0.1:${porta}/index.html`;const ent=async e=>{await p6.evaluate(()=>localStorage.removeItem('eterna.session'));await p6.goto(UA);await p6.waitForTimeout(500);await p6.fill('[data-act="login-email"]',e);await p6.click('button[type=submit]');await p6.waitForTimeout(150);const c=(await p6.textContent('.otp')).replace(/\s/g,'');await p6.fill('[data-act="login-code"]',c);await p6.waitForTimeout(500);};
+      const UA=`http://127.0.0.1:${porta}/index.html`;const ent=async e=>{await p6.evaluate(()=>localStorage.removeItem('eterna.session'));await p6.goto(UA);await p6.waitForTimeout(500);await entrarTeste(p6,e);};
       await ent('eduardo@eduardorezende.com');await p6.evaluate(()=>ETERNA.go('catalogo'));let ft=null;for(let i=0;i<20&&!ft;i++){await sleep(250);ft=await p6.$('[data-act="rf-save"]');}
       const tc=await p6.textContent('#main');ok(ft&&/Servidor FTP do estádio/.test(tc)&&/Painel de controle/.test(tc),'FTP: admin deveria ver o FTP no Painel de controle');
       await p6.evaluate(()=>ETERNA.go('importar'));await sleep(600);ok(!/Servidor FTP do estádio/.test(await p6.textContent('#main')),'FTP: o cartão do FTP ainda está no Upload automático');

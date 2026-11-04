@@ -107,7 +107,7 @@ O FTP do estádio é configurado pela administração em **Configurações › P
 
 1. No alto do Upload automático aparece **Neste computador**, com o nome de quem está logado.
 2. Toque em **Trocar fotógrafo**. Quem estava sai.
-3. O próximo fotógrafo entra com o e-mail dele e o código.
+3. O próximo fotógrafo entra com o usuário e a senha dele.
 4. Ele volta direto para o Upload automático.
 
 Para só sair, sem trocar, toque em **Sair**.
@@ -159,11 +159,11 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 ### Abrir
 
-1. No computador do Checkout, entre com o e-mail do aparelho. Se ele tiver o perfil Checkout, a tela abre sozinha.
+1. No computador do Checkout, entre com o usuário do aparelho. Se ele tiver o perfil Checkout, a tela abre sozinha.
 2. Em outro computador, toque em **Abrir Checkout**. No celular, é o ícone de tela ao lado do botão Menu.
 3. O Checkout abre em tela cheia, sem menu e sem login. É a tela do cliente.
 
-**A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu e-mail e o código, ou use outra janela.
+**A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu usuário e a sua senha, ou use outra janela.
 
 ### Fotos de mais de uma sessão (v91)
 
@@ -185,7 +185,7 @@ O tempo muda no **Painel de controle** › **Checkout** › **Procurar fotos dos
 
 No terminal que fica virado para o cliente, abra o Chrome em modo quiosque. Assim o cliente não vê a barra de endereço, as abas nem os botões do navegador.
 
-1. Entre com o perfil **Checkout** (o e-mail do aparelho) ou abra direto `eterna.photo/#loja`.
+1. Entre com o perfil **Checkout** (o usuário do aparelho) ou abra direto `eterna.photo/#loja`.
 2. Abra o Chrome em modo quiosque (atalho do Chrome com a opção `--kiosk`). A TI do ponto deixa o atalho pronto.
 3. Para sair do modo quiosque, a equipe usa Alt+F4 no Windows ou Cmd+Q no Mac.
 
@@ -296,7 +296,7 @@ O botão só aparece na tela da câmera e **some de vez** assim que o Checkout c
 - depois de 10 minutos;
 - depois da primeira compra.
 
-Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o seu e-mail e o código. No computador do perfil Checkout esse botão nunca aparece.
+Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o seu usuário e a sua senha. No computador do perfil Checkout esse botão nunca aparece.
 
 **Painel do logo e Esc**
 
@@ -305,7 +305,7 @@ Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o 
   - **Sair do Checkout**: fecha o Checkout.
   - **Fechar**: volta para o cliente.
 - **Esc** no teclado sai do Checkout na hora.
-- Sair sempre leva para a tela de login. Para voltar ao sistema, entre de novo com o seu e-mail e o código.
+- Sair sempre leva para a tela de login. Para voltar ao sistema, entre de novo com o seu usuário e a sua senha.
 - Não deixe o painel aberto na frente do cliente. A lista mostra sessões de outras famílias.
 
 ---
@@ -388,7 +388,7 @@ As letras vêm do inglês (Create, Read, Update, Delete). Embaixo do nome de cad
 ### Cadastrar uma pessoa
 
 1. Abra **Configurações** › **Usuários** › **Novo usuário**.
-2. Escreva o nome e o e-mail.
+2. Escreva o nome e o usuário. Se você tiver a permissão em Senhas de acesso, a tela mostra uma senha provisória para entregar à pessoa.
 3. Se for fotógrafo, escolha o nome dele em **Fotógrafo vinculado**.
 4. Em **Perfil**, escolha um perfil pronto (tabela abaixo). Se ainda não souber o que liberar, escolha **Sem acesso ainda**.
 5. Toque em **Criar acesso**.

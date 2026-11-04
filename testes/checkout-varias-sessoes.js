@@ -5,6 +5,7 @@
 // própria; a família dona da outra sessão ainda compra depois e nenhuma foto comprada por outro vira "comprada" na galeria.
 // Agente falso (page.route): /status, /sessoes, /thumb/, /file/, /rostos/buscar, /ponto/eventos. Rostos e fotos simulados.
 // Mede o tempo do resultado da busca até a primeira foto ampliada na tela, com 3.000 fotos no dia.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');const fs=require('fs');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const PRINTS=process.env.SESSOES_PRINTS||path.join(__dirname,'prints');
@@ -96,8 +97,7 @@ try{
   const ev=EVENTOS.find(e=>e.tipo==='criar');ok(ev&&(ev.dados.sessoes||[]).join()==='LPTFAMA01,LPTSOLO02'&&ev.dados.card==='LPTSOLO02','evento "criar" (vendas.db) com as duas sessões');
   // o vendedor confirma no Posto de venda (outra janela do mesmo navegador, logada)
   const pg2=await ctx.newPage();pg2.on('pageerror',e=>errs.push(e.message));await pg2.goto(U);await pg2.waitForTimeout(400);
-  await pg2.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg2.click('button[type=submit]');await pg2.waitForTimeout(200);
-  {const otp=await pg2.$('.otp');if(otp){await pg2.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg2.waitForTimeout(500);}}
+  await entrarTeste(pg2,'eduardo@eduardorezende.com');
   const confirma=id=>pg2.evaluate(id=>{ETERNA.simFresh();return ETERNA.pendConfirmar(id,{ref:'123456'});},id);
   ok(await confirma(rec.id),'pagamento confirmado');
   const galDela=()=>pg.evaluate(tok=>{ETERNA.simFresh();ETERNA.galAtualizar(tok);const m=ETERNA.SIM.galerias[tok];return m.fotos.map(f=>f.id.slice(3)+':'+f.direito);},rec.token);

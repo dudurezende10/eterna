@@ -2,6 +2,7 @@
 // links antigos (#set, #fluxo, #convidado) com e sem login, Upload automático (check-in pelo admin, supervisor só leitura, Sair),
 // Permissões ("não se aplica" legível, tela inicial e menu pela tela), cadastro (cancelar exclusão), e-mail fora do cadastro,
 // textos da equipe sem "loja" e sem telas que saíram, "Fila do balcão". Prints em testes/prints/v78-*.png.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};
@@ -9,8 +10,7 @@ const P=__dirname+'/prints';fs.mkdirSync(P,{recursive:true});
 async function nova(b,w,h){const ctx=await b.newContext({viewport:{width:w||1280,height:h||1000}});const pg=await ctx.newPage();pg.setDefaultTimeout(8000);
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text())});return {ctx,pg};}
 async function sair(pg){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.reload();await pg.waitForTimeout(350);}
-async function codigo(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(400);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function codigo(pg,email){await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user))await sair(pg);return codigo(pg,email);}
 const grupos=pg=>pg.$$eval('#nav .navg',gs=>gs.map(g=>[g.querySelector('.grp').textContent.trim(),[...g.querySelectorAll('button[data-v]')].map(x=>x.dataset.v)]));
 const abrirTodos=pg=>pg.evaluate(()=>document.querySelectorAll('#nav .navitems').forEach(x=>x.hidden=false));
@@ -83,7 +83,7 @@ try{
     await entrar(pg,'supervisor@eterna.photo');await poe('R6SUP0001');ok(!(await pg.$('select[data-act="cam-who"]')),'D: supervisor ainda vê o select de câmera');
     // Carlos: Sair volta ao login
     await entrar(pg,'carlos@eterna.photo');ok(await view(pg)==='importar','D: Carlos não entrou no Upload');await pg.screenshot({path:`${P}/v78-upload-checkin-fotografo.png`,fullPage:true});
-    await pg.click('[data-act="set-logout"]');await pg.waitForTimeout(150);const r=await pg.evaluate(()=>({u:!!ETERNA.state.user,login:!!document.querySelector('[data-act="login-email"]'),s:localStorage.getItem('eterna.session')}));ok(!r.u&&r.login&&!r.s,'D: Sair do Upload deveria voltar ao login '+J(r));
+    await pg.click('[data-act="set-logout"]');await pg.waitForTimeout(150);const r=await pg.evaluate(()=>({u:!!ETERNA.state.user,login:!!document.querySelector('[data-act="login-usuario"]'),s:localStorage.getItem('eterna.session')}));ok(!r.u&&r.login&&!r.s,'D: Sair do Upload deveria voltar ao login '+J(r));
     // Trocar fotógrafo: Marinara entra e cai no Upload automático
     await codigo(pg,'carlos@eterna.photo');await pg.click('[data-act="set-switch"]');await pg.waitForTimeout(150);await codigo(pg,'marinara@eterna.photo');
     ok(await pg.evaluate(()=>ETERNA.state.user&&ETERNA.state.user.email)==='marinara@eterna.photo'&&await view(pg)==='importar','D: depois de Trocar fotógrafo a Marinara deveria cair no Upload');
@@ -113,9 +113,7 @@ try{
     await pg.click('[data-act="user-sel"][data-e="hello@eterna.photo"]');await pg.click('[data-act="user-active"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>ETERNA.USERS['hello@eterna.photo'].active===false&&ETERNA.adminCount(ETERNA.USERS)===1),'F: desativar o outro admin');
     await pg.click('[data-act="user-sel"][data-e="hello@eterna.photo"]');await pg.click('[data-act="user-active"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>ETERNA.USERS['hello@eterna.photo'].active===true),'F: reativar o outro admin');
     // e-mail fora do cadastro
-    await sair(pg);await pg.fill('[data-act="login-email"]','alguem@gmail.com');await pg.click('button[type=submit]');await pg.waitForTimeout(200);
-    // o código é mostrado igual para qualquer e-mail (não revela quem tem cadastro); o login é que recusa
-    const otpF=await pg.$('.otp');if(otpF){await pg.fill('[data-act="login-code"]',(await otpF.textContent()).replace(/\s/g,''));await pg.waitForTimeout(400);}
+    await sair(pg);await entrarTeste(pg,'alguem@gmail.com');// o cadastro é que recusa
     const fe=await pg.evaluate(()=>({u:!!ETERNA.state.user,t:document.querySelector('#main').innerText,s:localStorage.getItem('eterna.session')}));ok(!fe.u&&!fe.s&&/não tem acesso/.test(fe.t),'F: e-mail fora do cadastro deveria ser recusado '+J({u:fe.u,s:fe.s}));
     // sessão forjada com e-mail fora do cadastro
     await pg.evaluate(()=>localStorage.setItem('eterna.session',JSON.stringify({email:'alguem@gmail.com',at:new Date().toISOString()})));await pg.reload();await pg.waitForTimeout(300);ok(!(await pg.evaluate(()=>!!ETERNA.state.user)),'F: sessão forjada com e-mail fora do cadastro entrou');
@@ -124,7 +122,7 @@ try{
     await pg.fill('[data-act="user-field"][data-k="name"]','Sem Tela');await pg.fill('[data-act="user-field"][data-k="email"]','semtela@eterna.photo');await pg.selectOption('[data-act="user-preset"]','custom');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(100);
     await entrar(pg,'semtela@eterna.photo');const sa=await pg.evaluate(()=>({v:ETERNA.state.view,t:document.querySelector('#main').innerText,nav:document.querySelector('#nav').offsetParent!==null}));
     ok(sa.v==='semacesso'&&/Seu acesso ainda não foi liberado/.test(sa.t)&&!sa.nav,'F: tela sem acesso '+J({v:sa.v,nav:sa.nav}));await pg.screenshot({path:`${P}/v78-sem-acesso.png`});
-    await pg.click('[data-act="role-exit"]');await pg.waitForTimeout(120);ok(await pg.$('[data-act="login-email"]'),'F: Sair da tela sem acesso deveria voltar ao login');
+    await pg.click('[data-act="role-exit"]');await pg.waitForTimeout(120);ok(await pg.$('[data-act="login-usuario"]'),'F: Sair da tela sem acesso deveria voltar ao login');
     for(const w of [390,1024]){await pg.setViewportSize({width:w,height:844});await codigo(pg,'semtela@eterna.photo');ok(await pg.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'F: sem acesso com rolagem lateral em '+w);if(w===390)await pg.screenshot({path:`${P}/v78-sem-acesso-cel.png`});await pg.click('[data-act="role-exit"]');await pg.waitForTimeout(100);}
     await ctx.close();}
   // ---------- G. textos da equipe: "Checkout" no lugar de "loja"; nada apontando para telas que saíram; "Fila do balcão" ----------

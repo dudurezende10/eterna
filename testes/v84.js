@@ -3,6 +3,7 @@
 // fundo de 5000 px e o interruptor "Montagem dos fundos" no Painel de controle.
 // Fotos: só as de exemplo do repositório (sprites/c00.webp), ampliadas; nenhuma foto de convidado de fora do repo.
 // Memória: só isnet-general-use e u2net_human_seg (nunca birefnet). Sem rembg no ambiente, a parte do recorte real é pulada com aviso.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
@@ -137,12 +138,10 @@ out.save(sys.argv[2])
   await ctx.route(ORIG+'/photoroom/compose',r=>{let q={};try{q=JSON.parse(r.request().postData()||'{}');}catch(e){}prLog.push(q);r.fulfill({status:200,contentType:'application/json',body:J({ok:false,error:'teste'})});});
   const pg=await ctx.newPage();pg.setDefaultTimeout(15000);pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(500);
-  // tela de entrada: o e-mail já vem focado; na etapa do código, o código
-  const foco=await pg.evaluate(()=>({v:ETERNA.state.view,act:document.activeElement&&document.activeElement.dataset.act}));ok(foco.v==='entrar'&&foco.act==='login-email','0: ao abrir sem sessão, o campo de e-mail já vem focado: '+J(foco));
-  await pg.type('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.evaluate(()=>ETERNA.render());
-  ok(await pg.evaluate(()=>document.activeElement&&document.activeElement.dataset.act)!=='login-code','0: outro render da entrada não pula para outro campo');
-  await pg.click('button[type=submit]');await pg.waitForTimeout(200);
-  ok(await pg.evaluate(()=>document.activeElement&&document.activeElement.dataset.act)==='login-code','0: na etapa do código, o campo do código vem focado');
+  // tela de entrada: o usuário já vem focado
+  const foco=await pg.evaluate(()=>({v:ETERNA.state.view,act:document.activeElement&&document.activeElement.dataset.act}));ok(foco.v==='entrar'&&foco.act==='login-usuario','0: ao abrir sem sessão, o campo de usuário já vem focado: '+J(foco));
+  await pg.type('[data-act="login-usuario"]','eduardo@eduardorezende.com');await pg.evaluate(()=>ETERNA.render());
+  ok(await pg.evaluate(()=>document.activeElement&&document.activeElement.dataset.act)==='login-usuario','0: outro render da entrada não pula para outro campo');
   await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(500);
   const mont=(id,bg)=>pg.evaluate(async([id,bg])=>{const r=await ETERNA.fiaMontar(id,bg);if(!r.canvas)return r;const c=r.canvas,x=c.getContext('2d');const L=r.layout;
     // cinza: R, G e B iguais (±2) numa grade; diferença do fundo puro no meio da borda de baixo do grupo
@@ -207,8 +206,7 @@ out.save(sys.argv[2])
   await pg.evaluate(()=>{ETERNA.state.agent.on=false;ETERNA.state.agent.recorte=null;});
 
   // ---------- 5. interruptor no Painel de controle ----------
-  await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(otp){await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);}
+  await entrarTeste(pg,'eduardo@eduardorezende.com');
   await pg.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(200);
   const t5=await pg.evaluate(()=>{const p=document.querySelector('#fundos-modo');return p&&{txt:p.innerText,loc:p.querySelector('[data-m="local"]').getAttribute('aria-pressed'),pr:p.querySelector('[data-m="photoroom"]').getAttribute('aria-pressed')};});
   ok(t5&&/Montagem dos fundos/i.test(t5.txt)&&/Local \(padrão\)/i.test(t5.txt)&&t5.loc==='true'&&t5.pr==='false','5: painel Montagem dos fundos com Local marcado: '+J(t5));

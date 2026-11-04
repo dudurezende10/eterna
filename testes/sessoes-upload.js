@@ -1,6 +1,7 @@
 // v91: Sessões de hoje no Upload automático (critérios 21 a 25 do plano docs/planos/2026-10-30-sessoes-por-rosto-e-tempo.md).
 // O agente é falso (page.route na própria origem: /status, /events, /biblioteca, /sessoes, /thumb/). Dados e miniaturas
 // simulados (quadrados de cor), nunca foto de convidado. Prints em SESSOES_PRINTS (padrão: testes/prints/).
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');const fs=require('fs');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const PRINTS=process.env.SESSOES_PRINTS||path.join(__dirname,'prints');
@@ -21,8 +22,7 @@ const b=await chromium.launch();const errs=[];
 const novo=async(w,h)=>{const ctx=await b.newContext({viewport:{width:w||1440,height:h||1000},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text());});return {ctx,pg};};
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>{localStorage.removeItem('eterna.session');});await pg.goto(U);await pg.waitForTimeout(350);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(400);return pg.evaluate(()=>!!ETERNA.state.user);}
+  await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 // agente falso: o feed muda conforme o teste (FEED.sessoes) e o rev sobe a cada troca
 const FEED={gen:'b90',rev:10,rostos:true,sessoes:[],semSessoes:false};
 async function agente(ctx){
