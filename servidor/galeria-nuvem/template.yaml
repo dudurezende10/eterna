@@ -10,6 +10,11 @@ Parameters:
     Type: String
     NoEcho: true
     Description: SHA-256 do segredo do ponto (o segredo fica só no agente, em ~/Eterna/nuvem-segredo.txt)
+  SegredoPontoTesteSha256:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: SHA-256 do segredo do servidor de teste; vazio = só o segredo do estádio publica
   CompraOnline:
     Type: String
     Default: "0"
@@ -93,6 +98,7 @@ Resources:
           TABELA: !Ref Banco
           BUCKET: !Ref Bucket
           SEGREDO_PONTO_SHA256: !Ref SegredoPontoSha256
+          SEGREDO_PONTO_TESTE_SHA256: !Ref SegredoPontoTesteSha256
           COMPRA_ONLINE: !Ref CompraOnline
           LIMIAR_ADULTO: "85"
           LIMIAR_CRIANCA: "95"
