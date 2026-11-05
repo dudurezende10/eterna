@@ -1566,3 +1566,16 @@ A galeria não aceita mais foto escolhida do aparelho: saíram o botão, o `#gq-
 - Com a câmera bloqueada ou ausente, a tela mostra `gq_camBloq` e o botão de tentar de novo. A equipe do Tour é a saída de quem não consegue liberar.
 
 O servidor de teste está descrito em `docs/SERVIDOR-DE-TESTE.md`.
+
+## Estatísticas no banco (05/11/2026)
+
+Tudo em `~/Eterna/ponto/vendas.db`.
+
+| Onde | O que tem |
+| --- | --- |
+| `venda_tempos` | Uma linha por venda: início do Checkout, escolha, pedido, pagamento, fila e impressão |
+| `venda_dia` | Por dia: pedidos, pagas, cartão, PIX, dinheiro, receita, fotos impressas e tempos médios em segundos |
+| `selfie` | Cada selfie da busca local: horário, origem (`checkout` ou `qr`), resultado, fotos achadas e duração |
+| `selfie_dia`, `selfie_hora` | Totais por dia e origem, e por hora |
+
+`selfie` não guarda imagem, vetor do rosto, sessão nem venda, para não identificar ninguém. A selfie da galeria em eterna.photo fica nos eventos da nuvem (`EVT#<token>`, tipos `selfie_*`) e não entra nessas tabelas.

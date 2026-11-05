@@ -368,6 +368,18 @@ n_sem = db.execute("select count(*) from evento where idem like ':fila%'").fetch
 db.close()
 ok(len(lin) == 1 and lin[0][0] == "L0-777" and lin[0][1] == "2026-11-04T22:00:00Z" and lin[0][2] == "2026-11-04T22:00:20Z" and lin[0][4] == "2026-11-04T22:00:40Z" and lin[0][5] and lin[0][6], "venda_tempos: %s" % lin)
 ok(n_sem == 0, "pedido sem venda não grava tempo")
+# Estatísticas: selfie só conta horário e resultado; venda_dia junta pagamento, fotos e tempos
+import time as _t
+for r_ in ({"rosto": True, "fotos": [{"pid": "x"}, {"pid": "y"}]}, {"rosto": True, "fotos": []}, {"rosto": False, "fotos": []}, {"rosto": True, "varias": True, "fotos": []}, {"error": "x"}):
+    m.selfie_registra("checkout", r_, _t.time())
+db = sqlite3.connect(m.VENDAS_DB)
+lin = db.execute("select selfies, achou, nao_achou, sem_rosto, varias_pessoas, erro from selfie_dia where origem = 'checkout'").fetchall()
+ok(lin == [(5, 1, 1, 1, 1, 1)], "selfie_dia: %s" % lin)
+ok([c[1] for c in db.execute("pragma table_info(selfie)")] == ["em", "dia", "hora", "origem", "resultado", "fotos", "ms"], "selfie guarda só contagem e horário")
+ok(db.execute("select sum(selfies) from selfie_hora").fetchone()[0] == 5, "selfie_hora")
+d_ = db.execute("select pedidos, pagas, fotos_impressas, seg_escolha, seg_aguardando_pagamento, seg_checkout, seg_impressao from venda_dia").fetchall()
+ok(any(x[0] >= 1 and x[1] >= 1 and x[2] >= 2 and round(x[3]) == 20 and round(x[4]) == 10 and round(x[5]) == 40 and round(x[6]) == 40 for x in d_), "venda_dia: %s" % d_)
+db.close()
 srv.shutdown()
 
 if falhas:

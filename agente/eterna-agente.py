@@ -5492,7 +5492,44 @@ def vendas_db():
               " max(case when tipo = 'fila' then json_extract(dados, '$.terminou') end) as terminou_impressao,"
               " max(case when tipo = 'impressao' and json_extract(dados, '$.resultado') = 'ok' then em end) as saiu_certo"
               " from evento group by venda")
+    # BI: resumo por dia. Hoje conta pagamento, fotos que saíram na fila e os tempos em segundos
+    c.execute("create view if not exists venda_dia as select c.dia as dia, count(*) as pedidos, sum(t.pagamento is not null) as pagas,"
+              " sum(t.pagamento is not null and json_extract(c.dados, '$.meio') = 'cartao') as cartao,"
+              " sum(t.pagamento is not null and json_extract(c.dados, '$.meio') = 'pix') as pix,"
+              " sum(t.pagamento is not null and json_extract(c.dados, '$.meio') = 'dinheiro') as dinheiro,"
+              " sum(case when t.pagamento is not null then json_extract(c.dados, '$.total') end) as receita,"
+              " sum((select coalesce(sum(json_extract(f.dados, '$.feitas')), 0) from evento f where f.venda = c.venda and f.tipo = 'fila')) as fotos_impressas,"
+              " avg((julianday(t.escolha_fotos) - julianday(t.inicio_checkout)) * 86400) as seg_escolha,"
+              " avg((julianday(t.pagamento) - julianday(t.pedido)) * 86400) as seg_aguardando_pagamento,"
+              " avg((julianday(t.pagamento) - julianday(t.inicio_checkout)) * 86400) as seg_checkout,"
+              " avg((julianday(t.terminou_impressao) - julianday(t.entrou_na_fila)) * 86400) as seg_impressao"
+              " from evento c join venda_tempos t on t.venda = c.venda where c.tipo = 'criar' group by c.dia")
+    # BI: cada selfie do Checkout. Só contagem e horário: nunca imagem, vetor do rosto, sessão ou venda (não identifica ninguém)
+    c.execute("create table if not exists selfie (em text, dia text, hora int, origem text, resultado text, fotos int, ms int)")
+    c.execute("create index if not exists selfie_dia_i on selfie(dia)")
+    c.execute("create view if not exists selfie_dia as select dia, origem, count(*) as selfies, sum(resultado = 'achou') as achou,"
+              " sum(resultado = 'nao_achou') as nao_achou, sum(resultado = 'sem_rosto') as sem_rosto, sum(resultado = 'varias_pessoas') as varias_pessoas,"
+              " sum(resultado = 'erro') as erro, avg(ms) as ms_medio from selfie group by dia, origem")
+    c.execute("create view if not exists selfie_hora as select dia, hora, count(*) as selfies, sum(resultado = 'achou') as achou from selfie group by dia, hora")
     return c
+
+
+def selfie_registra(origem, r, t0):
+    """Conta uma selfie para o BI. Falha aqui nunca atrapalha a busca do cliente."""
+    try:
+        r = r or {}
+        res = "erro" if r.get("error") else "varias_pessoas" if r.get("varias") else "sem_rosto" if not r.get("rosto") else "achou" if r.get("fotos") else "nao_achou"
+        agora = time.time()
+        with ev_lock:
+            db = vendas_db()
+            try:
+                db.execute("insert into selfie values (?, ?, ?, ?, ?, ?, ?)", (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), _ff_hoje(agora),
+                           time.localtime(agora).tm_hour, origem, res, len(r.get("fotos") or []), int((agora - t0) * 1000)))
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  selfie: não registrou:", str(ex)[:120])
 
 
 def _ev_dia(em):
@@ -6716,7 +6753,14 @@ class H(BaseHTTPRequestHandler):
             try:
                 if u.path == "/rostos/buscar":
                     # janela: a do Painel (estado.db); a galeria por QR manda todo:true (dia todo)
-                    return self.js(buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if body.get("todo") is True else None))
+                    todo, t0 = body.get("todo") is True, time.time()
+                    try:
+                        r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None)
+                    except Exception as ex:
+                        selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0)
+                        raise
+                    selfie_registra("qr" if todo else "checkout", r, t0)
+                    return self.js(r)
                 return self.js(medir(body.get("sessoes") or {}))
             except Exception as ex:
                 return self.js({"error": str(ex)}, 500)
