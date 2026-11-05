@@ -5382,6 +5382,7 @@ ENTRADAS_ORIGENS = ("bip", "catraca")
 PRES_POSTOS_MAX = 5
 _pres_mem = {}                   # (dia, chave) -> [primeiro, ultimo gravado]: a foto só grava quando muda algo
 _pres_cad = {"t": 0.0, "v": frozenset()}
+_pres_ini = {"t": 0.0, "v": None}
 est_migra = {"estado": "parado", "feitos": 0, "total": 0, "erro": None}
 
 
@@ -5480,7 +5481,9 @@ def met_v2(dia, ss, evs):
             h_add(tempos["pagamento_s"], d)
             nome = v["pagar_por"] or c.get("vendedor") or "sem vendedor"
             h_add(out["por_vendedor"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
-    out["presenca"] = presenca_dia(dia)
+    pres = presenca_dia(dia)
+    if pres is not None:                             # S7: sem o campo = dia sem dado de presença (antes da v92)
+        out["presenca"] = pres
     out["entradas"] = entradas_dia(dia)
     return out
 
@@ -5581,6 +5584,7 @@ def presenca_marca(chave, quando, fonte, posto=None):
         finally:
             db.close()
         _pres_mem[(dia, chave)] = [prim, ult]
+    _pres_ini["t"] = 0.0
     return {"dia": dia, "primeiro": prim, "ultimo": ult}
 
 
@@ -5599,7 +5603,30 @@ def presenca_foto(chave, u):
         print("  presença pelas fotos: %s" % str(ex)[:80])
 
 
+def presenca_inicio():
+    """1º dia com presença gravada (None se nunca houve). Antes dele o resumo não traz "presenca" (S7). Cache de 60 s."""
+    c = _pres_ini
+    agora = time.time()
+    if 0 <= agora - c["t"] < 60:
+        return c["v"]
+    try:
+        with op_lock:
+            db = operacao_db()
+            try:
+                v = db.execute("select min(dia) from presenca").fetchone()[0]
+            finally:
+                db.close()
+    except Exception:
+        v = None
+    c.update(t=agora, v=v)
+    return v
+
+
 def presenca_dia(dia):
+    """Presença do dia por chave; None antes do 1º dia com presença gravada."""
+    ini = presenca_inicio()
+    if not ini or dia < ini:
+        return None
     try:
         with op_lock:
             db = operacao_db()

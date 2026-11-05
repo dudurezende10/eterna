@@ -176,6 +176,9 @@ g = m.estado_gravar({"docs": [{"col": "agenda", "id": "ag_0123456789ab", "valor"
 docs = m.estado_col("agenda")["docs"]
 ok(g["gravados"] == 1 and len(docs) == 1 and "extra" not in docs[0]["valor"], "agenda: o estado.db guarda só o registro válido e limpo: %r" % docs)
 
+ok("presenca" not in mm and "presenca" not in m.metricas_dia(SAB) and "carlos" in m.metricas_dia(hoje).get("presenca", {}),
+   "S7: presença só a partir do 1º dia com marca (dias antigos ficam sem o campo)")
+
 # --- critério 29: backup e privacidade ---
 ok("OPERACAO_DB" in inspect.getsource(m.backup_loop), "29: o operacao.db vai para o backup")
 txt = json.dumps(m.metricas_dia(SAB)) + json.dumps(m.metricas_dia(hoje))
