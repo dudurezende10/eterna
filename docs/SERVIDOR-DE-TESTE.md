@@ -73,7 +73,7 @@ Fica em `Eterna-servidor-local`, na pasta do usuário, fora do repositório:
 | `home/` | Dados: fotos, bancos, fila de impressão, configuração da nuvem e segredos |
 | `servidor.log` | Saída do agente e do supervisor |
 
-Sobe no login do Windows por um atalho na pasta Inicializar (`Eterna servidor de teste.cmd`). Para funcionar sem ninguém por perto, o notebook precisa estar na tomada, conectado e sem suspender.
+O supervisor roda sem depender de nenhuma janela aberta, mas não volta sozinho depois de reiniciar o Windows: alguém precisa abri-lo no notebook (`pythonw supervisor.py`). Para funcionar sem ninguém por perto, o notebook precisa estar na tomada, conectado e sem suspender.
 
 Variáveis de `rodar.py` que diferem do estádio:
 

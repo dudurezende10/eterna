@@ -55,7 +55,7 @@ def _ler_nuvem_env():
 _ler_nuvem_env()
 MAX_PIXELS = 40_000_000
 PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
-APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
+APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")  # no servidor de teste, a cópia local (docs/SERVIDOR-DE-TESTE.md)
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
 # ETERNA_IMPRESSORA: nome da impressora 10x15 ligada neste computador (ex.: DS-RX1). Com ela, o botão Imprimir de
