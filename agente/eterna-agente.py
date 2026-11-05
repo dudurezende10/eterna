@@ -4815,6 +4815,7 @@ def imp_acao(body):
     novo = imp_pedido(venda, vendedor, posto, arqs)
     with lock:
         novo["reimpressao_de"] = pid
+        novo["venda_id"] = j.get("venda_id") or ""
         imp_salvar()
     threading.Thread(target=imprimir_fila, args=(imp_ps1(), arqs, venda, {"kb": 0}, novo), daemon=True).start()
     return {"ok": True, "pedido": novo["id"]}
@@ -4872,7 +4873,7 @@ def imp_fila_json():
             "postos": {k: v for k, v in IMP_POSTOS.items()}, "agora": agora, "pedidos": jobs}
 
 
-def imprimir(imagens, venda, vendedor="", posto=""):
+def imprimir(imagens, venda, vendedor="", posto="", venda_id=""):
     """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor."""
     if not isinstance(imagens, list) or not imagens or len(imagens) > 20:
         return {"ok": False, "error": "nenhuma foto (ou mais de 20)"}
@@ -4900,6 +4901,7 @@ def imprimir(imagens, venda, vendedor="", posto=""):
     ps1 = imp_ps1()
     ms = {"gravar_ms": round((time.time() - t0) * 1000), "spooler_ms": 0, "kb": round(sum(os.path.getsize(a) for a in arqs) / 1024)}
     job = imp_pedido(venda, vendedor, posto, arqs)
+    job["venda_id"] = venda_id
     threading.Thread(target=imprimir_fila, args=(ps1, arqs, venda, ms, job), daemon=True).start()
     with lock:
         frente = sum(1 for j in imp_fila if j["estado"] in ("na_fila", "imprimindo") and j["id"] < job["id"])
@@ -4978,6 +4980,10 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
             if not ok and not cancelado:
                 job["erro"] = saida[-200:]
             imp_salvar()
+        try:
+            ev_fila(job)
+        except Exception as ex:
+            print("  tempos da fila não gravados:", str(ex)[:200])
         try:
             os.remove(imp_flag_cancelar(job["id"]))
         except OSError:
@@ -5461,7 +5467,7 @@ def estado_gravar(body):
 # apagado: os rostos e as fotos saem por prazo (LGPD), os números ficam. GET /metricas/dia?de=AAAA-MM-DD&ate=AAAA-MM-DD.
 VENDAS_DB = os.path.join(HOME, "ponto", "vendas.db")
 MET_DIR = os.path.join(HOME, "ponto", "metricas")
-EV_TIPOS = ("criar", "pagar", "cancelar", "impressao", "rolo")
+EV_TIPOS = ("criar", "pagar", "cancelar", "impressao", "rolo")   # "fila" só o próprio servidor grava (ev_fila)
 _re_ev_id = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_-]{2,80}$")
 ev_lock = threading.Lock()
 
@@ -5475,6 +5481,17 @@ def vendas_db():
               " posto text, por text, dados text, recebido text)")
     c.execute("create index if not exists evento_dia on evento(dia)")
     c.execute("create index if not exists evento_venda on evento(venda)")
+    # BI: uma linha por venda com os tempos (início do Checkout, escolha, pedido, pagamento, fila e saída da impressão)
+    c.execute("create view if not exists venda_tempos as select venda, max(case when tipo = 'criar' then json_extract(dados, '$.saleNo') end) as numero,"
+              " max(posto) as posto, max(case when tipo = 'criar' then json_extract(dados, '$.vendedor') end) as vendedor,"
+              " max(case when tipo = 'criar' then json_extract(dados, '$.tempos.inicio') end) as inicio_checkout,"
+              " max(case when tipo = 'criar' then json_extract(dados, '$.tempos.escolha') end) as escolha_fotos,"
+              " max(case when tipo = 'criar' then em end) as pedido, max(case when tipo = 'pagar' then em end) as pagamento,"
+              " min(case when tipo = 'fila' then json_extract(dados, '$.entrou') end) as entrou_na_fila,"
+              " min(case when tipo = 'fila' then json_extract(dados, '$.comecou') end) as comecou_impressao,"
+              " max(case when tipo = 'fila' then json_extract(dados, '$.terminou') end) as terminou_impressao,"
+              " max(case when tipo = 'impressao' and json_extract(dados, '$.resultado') = 'ok' then em end) as saiu_certo"
+              " from evento group by venda")
     return c
 
 
@@ -5516,11 +5533,30 @@ def _ev_limpo(e):
           "sessoes": [x for x in lista(d.get("sessoes"))[:20] if re.match(r"^[A-Z0-9]{4,20}$", x)],
           "vendedor": txt((d.get("vendedor") or {}).get("nome") if isinstance(d.get("vendedor"), dict) else None),
           "resultado": txt(d.get("resultado"), 12), "n": num(d.get("n")), "reimpressao": bool(d.get("reimpressao")),
+          "tempos": {k: txt(v, 30) for k, v in (d.get("tempos") if isinstance(d.get("tempos"), dict) else {}).items() if k in ("inicio", "escolha") and v} or None,
           "motivo": txt(d.get("motivo"), 40), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
           "galeria": (txt((d.get("galeria") or {}).get("codigo"), 12) if isinstance(d.get("galeria"), dict) else None)}
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": txt(e.get("em"), 30) or _iso(),
             "por": txt((e.get("por") or {}).get("nome") if isinstance(e.get("por"), dict) else None),
             "posto": txt(e.get("posto"), 40), "dados": {k: v for k, v in dd.items() if v not in (None, "", [], 0, False)}}
+
+
+def ev_fila(job):
+    """Pedido terminado na fila: grava os tempos na venda (evento "fila"), para o BI."""
+    vid = job.get("venda_id") or ""
+    if not _re_ev_id.match(vid):
+        return
+    em = _iso(job.get("fim"))
+    dados = {"pedido": job["id"], "estado": job["estado"], "fotos": job["fotos"], "feitas": job["feitas"], "entrou": _iso(job["criado"]),
+             "comecou": _iso(job["inicio"]) if job.get("inicio") else None, "terminou": em, "impressora": job.get("impressora")}
+    with ev_lock:
+        db = vendas_db()
+        try:
+            db.execute("insert or ignore into evento values (?,?,?,?,?,?,?,?,?,?)", ("%s:fila:%d" % (vid, job["id"]), vid, 100000 + job["id"], "fila", em, _ev_dia(em),
+                                                                                       job.get("posto") or "", job.get("vendedor") or None, json.dumps(dados, ensure_ascii=False), _iso()))
+            db.commit()
+        finally:
+            db.close()
 
 
 def ev_receber(body):
@@ -6230,7 +6266,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, err)
             try:
                 return self.js(imprimir(body.get("imagens") or [], str(body.get("venda") or "")[:40],
-                                        str(body.get("vendedor") or "")[:60], str(body.get("posto") or "")[:40]))
+                                        str(body.get("vendedor") or "")[:60], str(body.get("posto") or "")[:40], str(body.get("venda_id") or "")[:80]))
             except Exception as ex:
                 return self.js({"ok": False, "error": str(ex)[:300]}, 500)
         if p in ("/galerias/publicar", "/galerias/encerrar"):

@@ -1248,7 +1248,8 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 - Carrinho: selo Ideal, linha "+ N adicionais de R$ X" por pacote, resumo linha a linha (`.lj-sum`) antes do Total, "Cabem mais N fotos neste pacote sem pagar mais" quando sobra espaço. "Impressas prontas em 2 minutos" só aparece com impressas e fora do Dinheiro.
 - **Valor gravado (I4).** A venda grava `s.total` e o preço de cada item (`{id,v}`) em `lojaPay`, `lojaDinheiro`, `dinConfirmar` e `caixaConfirm`. Lista de vendas, CSV, recibo, Início e Caixa leem o gravado (`saleTotal`, `itemV`). O preço atual só vale para venda antiga sem total.
 - Vendas antigas reconstruídas da Roverpix (`reconSale`) usam o Ideal do catálogo atual.
-- **Sessão paga não paga de novo.** Nenhuma forma de pagamento tira uma sessão de `paga`. Reaberta no Checkout, mostra `ljAlreadyPaid` ("Estas fotos já foram compradas. Fale com a equipe para comprar mais.", 5 línguas); `lojaPay` e `lojaDinheiro` recusam.
+- **Sessão paga não paga de novo.** Nenhuma forma de pagamento tira uma sessão de `paga`. Reaberta no Checkout, mostra o QR e `ljMais`. `lojaMais` cria a venda complementar em uma sessão-filha (`<sessão>M2`, campo `pai`), só com as fotos ainda não compradas; `lojaCart` cobra cada foto como `extra`, sem pacote.
+- **Tempos da venda.** `ljTempo` marca `inicio` e `escolha` na sessão, e o evento `criar` leva `tempos`. O agente grava o evento `fila` quando o pedido termina (`ev_fila`). A visão `venda_tempos` do `vendas.db` traz uma linha por venda para o BI.
 - `fmtR` usa espaço fixo entre R$ e o valor.
 
 ### Pendências de segurança e de tela (v79)
@@ -1555,3 +1556,13 @@ Pedidos do Eduardo (01/11 11:39 e 12:12) e devoluções da segurança (B1 a B3) 
 - **Correção (bug antigo, também no main):** em `validateReal`, `const big=...` estava grudada no comentário anterior e a validação de olhos fechados nunca marcava foto.
 - **Janela da selfie** (Eduardo, 01/11 16:46 e 16:51): no Checkout, a selfie só considera as sessões com a última foto (`cap1`; sem clique, `ultima_chegada`) nos últimos N minutos. O valor fica em `estado.db` (`col='config'`, `id='busca'`, `{janela_min, por, em}`), gravado pelo Painel de controle › Checkout (`buscaJanelaPanel`, `buscaJanelaSalva`, ações `busca-janela` e `busca-janela-dia` em `WRITE_OPS`/`ACT_MOD` com `configuracao`, `auditLog('busca_janela')`) e lido pelo agente em cada busca (`busca_janela_cfg`, cache de 3 s, zerado quando `POST /ponto/docs` grava `config`). Valores: 0 (dia todo) ou 15 a 480 (`_busca_janela`). `ETERNA_BUSCA_JANELA_MIN` é só o padrão inicial (90). Com `ETERNA_BUSCA_DIAS` definida, a janela não vale (dia todo dos dias da busca; `/status.sessoes.janela_fixa`). `/status.sessoes` traz `janela_min` e `janela_padrao`. O filtro do agente é por pid (`sess_pids_janela`, sob o `sess_lock`, fora do `_mat_lock`) antes do produto da matriz; sem sessão em memória, sem filtro. `POST /rostos/buscar` com `todo:true` (a galeria por QR) procura o dia todo. No app: `buscaJanelaMin()` (o do Painel, senão o do `/status`, senão 90), `sesUltima(card)` (`SIM.sessions[card].cap1`, gravado pelo `ingClose` das sessões do servidor, senão `closedAt`), filtro em `faceFind` só no Checkout. Código do recibo e da galeria, Upload e Fila não mudam.
 - Testes: `testes/v91-seguranca.js`, `testes/selfie_rapidez.py` (B5, corrida, janela e Painel), `testes/sessoes_agente.py` (desvio), `testes/fila_fotografo_agente.py` (risco 4 do `/file/` com o comportamento real e o limite).
+
+## Selfie da galeria só pela câmera (04/11/2026)
+
+A galeria não aceita mais foto escolhida do aparelho: saíram o botão, o `#gq-file` e o texto `g_pickFile`.
+
+- `selfieMount` liga a captura automática assim que o vídeo chega (`onloadeddata`). Antes ela dependia de outro redesenho da tela e podia nunca disparar.
+- Depois de 10 s sem captura, aparece o botão de tirar a foto (`sf.botao`, ação `gq-snap`).
+- Com a câmera bloqueada ou ausente, a tela mostra `gq_camBloq` e o botão de tentar de novo. A equipe do Tour é a saída de quem não consegue liberar.
+
+O servidor de teste está descrito em `docs/SERVIDOR-DE-TESTE.md`.

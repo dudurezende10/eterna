@@ -19,11 +19,11 @@ async function pagoNaMaquininha(pg){const ctx=pg.context();let V=ctx.__vend;if(!
 async function fotoDe(pg,id,escala){return pg.evaluate(async([id,k])=>{let c=null;for(let i=0;i<10&&!c;i++){c=await ETERNA.photoCanvas(id);if(!c)await new Promise(r=>setTimeout(r,400));} /* v79: com a máquina carregada a imagem às vezes não carregava na primeira */const x=document.createElement('canvas');x.width=c.width*k;x.height=c.height*k;x.getContext('2d').drawImage(c,0,0,x.width,x.height);return x.toDataURL('image/jpeg',.9).split(',')[1];},[id,escala||1]);}
 // espera a câmera assentar (pronta ou sem câmera) antes de mandar a foto; se estourar o tempo, registra o estado
 async function selfie(pg,b64){await pg.waitForFunction(()=>{const s=ETERNA.state.guest.selfie;return !s||s.err||s.ready;},null,{timeout:20000}).catch(()=>{});await pg.waitForTimeout(150);
-  await pg.setInputFiles('#gq-file',{name:'selfie.jpg',mimeType:'image/jpeg',buffer:Buffer.from(b64,'base64')});
+  await pg.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(Buffer.from(b64,'base64')).toString('base64'));
   try{await pg.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='buscando'&&ETERNA.pub.step!=='selfie',null,{timeout:150000});}
   catch(e){const st=await pg.evaluate(()=>({pub:ETERNA.pub&&{step:ETERNA.pub.step,motivo:ETERNA.pub.motivo},face:ETERNA.state.face})).catch(()=>null);throw new Error('selfie sem resposta: '+JSON.stringify(st));}}
 async function abrirGaleria(pg,tok){await pg.goto(U+'#g/'+tok);await pg.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});}
-async function consentir(pg){await pg.check('[data-act="gq-consent"]');await pg.click('#gq-agree');await pg.waitForSelector('#gq-file',{state:'attached'});}
+async function consentir(pg){await pg.check('[data-act="gq-consent"]');await pg.click('#gq-agree');await pg.waitForSelector('#gq-st',{state:'attached'});}
 const gqCruas=pg=>pg.evaluate(()=>{const t=document.body.innerText+' '+[...document.querySelectorAll('[title],[aria-label],[placeholder]')].map(e=>(e.title||'')+(e.getAttribute('aria-label')||'')+(e.placeholder||'')).join(' ');return (t.match(/\b(gq|lj)_[A-Za-z]+/g)||[]);});
 
 (async()=>{const b=await chromium.launch();
@@ -81,7 +81,7 @@ try{
   const g5=await G.evaluate(()=>({h:location.hash,step:ETERNA.pub.step,ph:document.querySelectorAll('.gq-ph').length,dis:document.querySelector('#gq-agree').disabled,user:!!ETERNA.state.user}));
   ok(g5.step==='consent'&&g5.h==='#g/'+tok&&g5.ph===0&&g5.dis&&!g5.user,'5: consentimento sem login: '+JSON.stringify(g5));
   await G.check('[data-act="gq-consent"]');ok(!(await G.evaluate(()=>document.querySelector('#gq-agree').disabled)),'5: botão continua desativado depois de marcar');
-  await G.click('#gq-agree');await G.waitForSelector('#gq-file',{state:'attached'});
+  await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});
   // ---------- 7. rosto de fora da sessão: nao_encontrado, tentativas caem, depois bloqueio ----------
   dbg('7. rosto de fora da sessão: nao_encontra');
   const fora=await G.evaluate(async c=>{await ETERNA.faceIndexAll();await new Promise(r=>setTimeout(r,300));await ETERNA.faceq;const ss=ETERNA.demoSessions();const meu=ss.find(s=>s.card===c);
@@ -98,7 +98,7 @@ try{
   dbg('6. selfie de alguém da sessão');
   let meuId=null;for(let i=0;i<20&&!meuId;i++){meuId=await G.evaluate(async c=>{await ETERNA.faceIndexAll();await ETERNA.faceq;const s=ETERNA.demoSessions().find(x=>x.card===c);return s.photos.map(p=>p.id).find(id=>(ETERNA.FACEIDX[id]||[]).length)||null;},card);if(!meuId)await G.waitForTimeout(500);} // v79: espera a leitura de rostos (a máquina carregada atrasava e o teste falhava às vezes)
   const meuB64=await fotoDe(G,meuId);
-  await G.click('[data-act="gq-retry"]');await G.waitForSelector('#gq-file',{state:'attached'});await selfie(G,meuB64);
+  await G.click('[data-act="gq-retry"]');await G.waitForSelector('#gq-st',{state:'attached'});await selfie(G,meuB64);
   const g6=await G.evaluate(c=>{const s=ETERNA.demoSessions().find(x=>x.card===c);const sel=(ETERNA.SIM.sessions[c]||{}).selected||[];return {step:ETERNA.pub.step,n:s.photos.length,sel:sel.length,dl:document.querySelectorAll('[data-act="gq-dl"]').length,wm:document.querySelectorAll('.gq-ph .wm').length,yours:[...document.querySelectorAll('[data-act="gq-dl"]')].map(b=>b.dataset.pid)};},card);
   ok(g6.step==='galeria'&&g6.sel===3&&g6.dl===3&&g6.wm===g6.n-3,'6: galeria depois da selfie: '+JSON.stringify(g6));
   ok(!(await G.evaluate(()=>{let st='';for(const s of [localStorage,sessionStorage])for(let i=0;i<s.length;i++)st+=s.getItem(s.key(i));return /data:image/.test(JSON.stringify(ETERNA.pub)+JSON.stringify(ETERNA.state.guest.selfie||null)+st);})),'8: imagem guardada depois do acerto');
@@ -161,7 +161,7 @@ try{
   // ---------- 7 (bloqueio): 5 falhas ----------
   dbg('7 (bloqueio): 5 falhas');
   if(foraB64){const B=await nova(ctx,'bloqueio');await abrirGaleria(B,tok);await consentir(B);let last=null;
-    for(let i=0;i<5;i++){if(i){await B.click('[data-act="gq-retry"]');await B.waitForSelector('#gq-file',{state:'attached'});}await selfie(B,foraB64);last=await B.evaluate(()=>({m:ETERNA.pub.motivo,r:ETERNA.pub.restam,t:document.body.innerText}));}
+    for(let i=0;i<5;i++){if(i){await B.click('[data-act="gq-retry"]');await B.waitForSelector('#gq-st',{state:'attached'});}await selfie(B,foraB64);last=await B.evaluate(()=>({m:ETERNA.pub.motivo,r:ETERNA.pub.restam,t:document.body.innerText}));}
     ok(last.m==='bloqueado'&&/Muitas tentativas/i.test(last.t)&&!(await B.$('[data-act="gq-retry"]')),'7: depois de 5 falhas deveria bloquear: '+JSON.stringify({m:last.m,r:last.r}));await B.close();}
   // ---------- 14. sem rolagem horizontal em 3 tamanhos; prints ----------
   dbg('14. sem rolagem horizontal em 3 tamanhos');

@@ -241,7 +241,7 @@ Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, 
 
 ### Sessão que já foi paga
 
-Se o cliente volta ao Checkout com fotos que já comprou, aparece "Estas fotos já foram compradas. Fale com a equipe para comprar mais." O Checkout **não deixa pagar de novo**. Para vender mais fotos para ele, use a Venda no balcão.
+Se o cliente volta ao Checkout com fotos que já comprou, a tela mostra o QR da compra e o botão **Comprar mais fotos**. As fotos já compradas não aparecem nem são cobradas de novo. Cada foto a mais custa o preço de **Foto adicional**, digital e impressa, e vira uma venda nova, com número e impressão próprios.
 
 ### Dinheiro: aguardando caixa (vendedor e caixa)
 

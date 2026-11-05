@@ -353,6 +353,21 @@ ok(pid and m.meta[pid[0]]["o"] == "carlos", "o dono é o fotógrafo do login, n�
 st, j = envia("/fotos/enviar?nome=b2.jpg", jpeg(b"b"), ck_fot)
 ok(st == 200 and j.get("resultado") == "dup", "foto repetida não entra de novo: %s" % j)
 ok(not [x for x in os.listdir(m.FTPTMP) if x.startswith("envio-")], "não sobra arquivo temporário")
+
+# Tempos da venda para o BI: criar + fila viram uma linha na venda_tempos; o evento "fila" não vem de fora
+r = m.ev_receber({"posto": "Caixa 1", "eventos": [{"idem": "V00-tempos:1", "venda": "V00-tempos", "seq": 1, "tipo": "criar", "em": "2026-11-04T22:00:30Z",
+                  "dados": {"saleNo": "L0-777", "tempos": {"inicio": "2026-11-04T22:00:00Z", "escolha": "2026-11-04T22:00:20Z", "outro": "x"}}},
+                 {"idem": "V00-tempos:2", "venda": "V00-tempos", "seq": 2, "tipo": "pagar", "em": "2026-11-04T22:00:40Z", "dados": {}},
+                 {"idem": "V00-tempos:3", "venda": "V00-tempos", "seq": 3, "tipo": "fila", "em": "2026-11-04T22:00:41Z", "dados": {}}]})
+ok(r["resultados"][2]["s"] == "recusado", "evento fila aceito de fora: %s" % r)
+m.ev_fila({"id": 7, "venda_id": "V00-tempos", "estado": "impresso", "fotos": 2, "feitas": 2, "criado": 1793000000.0, "inicio": 1793000010.0, "fim": 1793000040.0, "posto": "Caixa 1", "vendedor": "Ana"})
+m.ev_fila({"id": 8, "venda_id": "", "estado": "impresso", "fotos": 1, "feitas": 1, "criado": 1793000000.0, "inicio": None, "fim": 1793000040.0})
+db = m.vendas_db()
+lin = db.execute("select numero, inicio_checkout, escolha_fotos, pedido, pagamento, entrou_na_fila, terminou_impressao from venda_tempos where venda = 'V00-tempos'").fetchall()
+n_sem = db.execute("select count(*) from evento where idem like ':fila%'").fetchone()[0]
+db.close()
+ok(len(lin) == 1 and lin[0][0] == "L0-777" and lin[0][1] == "2026-11-04T22:00:00Z" and lin[0][2] == "2026-11-04T22:00:20Z" and lin[0][4] == "2026-11-04T22:00:40Z" and lin[0][5] and lin[0][6], "venda_tempos: %s" % lin)
+ok(n_sem == 0, "pedido sem venda não grava tempo")
 srv.shutdown()
 
 if falhas:

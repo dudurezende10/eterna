@@ -68,6 +68,8 @@ Hoje `status`, `cart`, `selected`, `saleNo` e `impressao` ficam na própria sess
 
 Sugestão: **A** agora; **C** quando a sessão for para o servidor.
 
+**Decisão do Ronaldo (04/11/2026):** a compra extra é uma venda nova, com outro comprovante e outra cobrança. Implementada como a opção B (sessão-filha `<sessão>M2`). Falta o Eduardo confirmar.
+
 ### Sessão montada no servidor
 Hoje a sessão nasce no navegador (`agentPoll` → `ingPush` → `ingClose`) e mora no `localStorage` de quem estava com o app aberto.
 

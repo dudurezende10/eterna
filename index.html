@@ -252,9 +252,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .if-col h2{display:flex;justify-content:space-between;align-items:center;margin:0;font-family:var(--body);font-size:20px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .if-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
 .if-col.agora{border-color:#FFB800}
-.if-col.pronta{border-color:#2e9e5b;overflow:auto}
-.if-col.pronta .if-list{flex:none;overflow:visible}
-.if-col.pronta>.if-card{flex:none}
+.if-col.pronta{border-color:#2e9e5b}
 .if-cnt{font-size:13px;letter-spacing:0;background:var(--line);border-radius:999px;padding:2px 10px}
 .if-card{border-radius:10px;padding:10px 12px;border:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
 .if-card.fila{background:#EEF4FD;border-color:#5B8FD0}
@@ -272,7 +270,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .if-impn{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .if-prog{height:8px;border-radius:6px;background:rgba(0,0,0,.08);overflow:hidden;margin-top:6px}.if-prog i{display:block;height:100%;background:#FFB800;transition:width .4s}
 .if-vazio{color:var(--muted);font-size:15px;padding:16px 0;text-align:center}
-.if-err-h{margin-top:8px!important;color:#d64545}
+.if-erros{flex:none;background:var(--surface);border:1px solid #d64545;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}.if-erros h2{display:flex;justify-content:space-between;align-items:center;margin:0;font-family:var(--body);font-size:20px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#d64545}.if-erros-l{display:flex;gap:10px;overflow-x:auto}.if-erros-l .if-card{flex:0 0 min(340px,85%)}
 .if-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.if-acts .btn{padding:6px 10px;font-size:13px}body.if-tv .if-acts{display:none}
 .if-aviso{margin-top:6px;font-weight:700;color:#b42318}.if-imps{display:flex;gap:6px;flex-wrap:wrap}
 body.if-tv .app{grid-template-columns:minmax(0,1fr)}body.if-tv .rail{display:none}body.if-tv main{padding:20px 28px}
@@ -1482,7 +1480,7 @@ setInterval(pontoFlush,5000);window.addEventListener('online',pontoFlush);
 // dados do evento "criar" (contrato do plano v83). Sem e-mail do vendedor: só o nome declarado.
 function pvDados(r){const ed={};(r.selected||[]).forEach(id=>{const e=SIM.edits&&SIM.edits[id];if(e)ed[id]={b:e.b,c:e.c,s:e.s,t:e.t,z:e.z,x:e.x,y:e.y};});
   return {saleNo:r.saleNo,card:r.card,sessoes:(r.sessoes||[r.card]).slice(0,20),meio:r.meio,prov:r.prov,total:r.total,cart:(r.cart||[]).map(x=>({id:x.id,v:itemV(x)})),prints:r.prints||0,nPh:r.nPh||0,nAI:r.nAI||0,
-    selected:(r.selected||[]).slice(),aiSel:(r.aiSel||[]).slice(),fav:(r.fav||[]).slice(),ed,galeria:r.token?{token:r.token,codigo:r.codigo}:null,vendedor:{nome:(r.vendedor&&r.vendedor.nome)||null},lang:lang()};}
+    selected:(r.selected||[]).slice(),aiSel:(r.aiSel||[]).slice(),fav:(r.fav||[]).slice(),ed,galeria:r.token?{token:r.token,codigo:r.codigo}:null,vendedor:{nome:(r.vendedor&&r.vendedor.nome)||null},tempos:r.tempos||null,lang:lang()};}
 
 // ---------- v83 (parte F): impressão 10×15 pela DNP DS-RX1HS de cada notebook (Chrome; página PR 4×6 = 102×152 mm sem margem; rolo de ~700) ----------
 // Foto com fundo de IA imprime (Eduardo, 29/10; a D8 do plano caiu): a montagem é refeita com o fundo de 5000 px (fileHi).
@@ -1545,7 +1543,7 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
     job.fase='imprimindo';render();let tM=0;try{const imgs=[];for(const im of document.querySelectorAll('#print-root img')){ // 10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio
       const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
       tM=performance.now();
-      const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,vendedor:(state.user&&state.user.name)||'',posto:String((postoDisp()||{}).nome||postoNome()).slice(0,30) /* nome do terminal: o servidor escolhe a DNP dele (ETERNA_IMPRESSORA_POSTOS) */,imagens:imgs})})).json();
+      const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,venda_id:s.vendaId||'',vendedor:(state.user&&state.user.name)||'',posto:String((postoDisp()||{}).nome||postoNome()).slice(0,30) /* nome do terminal: o servidor escolhe a DNP dele (ETERNA_IMPRESSORA_POSTOS) */,imagens:imgs})})).json();
       if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';job.pedido=rr.pedido;impJobGuarda(job);impPostoPoll();const tF=performance.now();
       toast(rr.ja_na_fila?'Esta venda já está na fila da impressora':`Enviado para ${rr.impressora}${rr.na_frente?` · ${rr.na_frente} ${rr.na_frente===1?'pedido':'pedidos'} na frente`:''}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.t0)/1000).toFixed(1)} s (montar ${((tM-job.t0)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
@@ -1934,10 +1932,10 @@ function lojaPkgCusto(p,n){const todas=p.digital==='todas';const extra=todas?0:M
 function lojaIdeal(n){const ps=DATA.catalog.filter(c=>c.kind==='pacote');if(!n||!ps.length)return {pkg:null,extra:0,custo:0};
   const c=ps.map(p=>lojaPkgCusto(p,n)).sort((a,b)=>a.custo-b.custo||b.prints-a.prints||a.tam-b.tam)[0];return {pkg:c.pkg,extra:c.extra,custo:c.custo};}
 function lojaCart(card){const items=lojaItems(card);const pk=lojaPick(card);const ch=items.filter(x=>pk[x.k]==='ok'||pk[x.k]==='fav');const nPh=ch.filter(x=>x.t==='ph').length,nAI=ch.filter(x=>x.t==='ai').length;const n=nPh+nAI;const k=state.kiosk;
-  const pkg=n?(k.pkg&&DATA.catalog.some(c=>c.id===k.pkg&&c.kind==='pacote')?k.pkg:lojaIdeal(n).pkg):null;const P0=pkg&&DATA.catalog.find(c=>c.id===pkg);const todas=!!P0&&P0.digital==='todas';
-  const extra=P0&&!todas?Math.max(0,n-P0.digital):0;
+  const mais=!!(SIM.sessions[card]||{}).pai;const pkg=n&&!mais?(k.pkg&&DATA.catalog.some(c=>c.id===k.pkg&&c.kind==='pacote')?k.pkg:lojaIdeal(n).pkg):null;const P0=pkg&&DATA.catalog.find(c=>c.id===pkg);const todas=!!P0&&P0.digital==='todas';
+  const extra=mais?n:P0&&!todas?Math.max(0,n-P0.digital):0;
   const cart=cartComPreco([...(pkg?[{id:pkg}]:[]),...Array(extra).fill(0).map(()=>({id:'extra'}))]);const total=cartTotal(cart);
-  const prints=P0?printsVenda(cart,n):0; // pacote até n impressas + cada adicional impressa
+  const prints=P0||mais?printsVenda(cart,n):0; // pacote até n impressas + cada adicional impressa
   const nSes=items.filter(x=>x.t==='ph').length+nAI; // "Todas": todas as fotos do campo da sessão + as de fundo de IA escolhidas
   const sobra=P0&&!todas?Math.max(0,P0.digital-n):0;
   // economia (N6, revisão): contra a compra avulsa de verdade, Arquibancada + (fotos − 1) adicionais; no "Todas" contam as fotos da sessão. Só aparece quando > 0.
@@ -1971,6 +1969,20 @@ function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearInterv
 function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk)simOf(card).pick=pk;}
 // revisão 1: nenhuma forma de pagamento tira uma sessão de "paga" (comprar mais é com a equipe)
 const lojaJaPaga=card=>(SIM.sessions[card]||{}).status==='paga';
+// tempos da venda para o BI: cada marca vale uma vez por sessão e vai no evento "criar"
+function ljTempo(card,nome){const s=simOf(card);s.tempos=s.tempos||{};if(!s.tempos[nome]){s.tempos[nome]=now().toISOString();saveSim();}}
+// comprar mais: fotos do cliente que ninguém comprou ainda. Achado pela selfie, só as dele (so.ids); nunca abre foto de outra família.
+function lojaMaisIds(){const k=state.kiosk;if(!k||!k.code)return [];const base=(SIM.sessions[k.code]||{}).pai||k.code;const b=sessionObj(base);const so=k.so&&k.so.card===k.code?k.so.ids:null;const vend=vendidasTodas();
+  return (so||(b?b.photos.map(p=>p.id):[])).filter(id=>hasImg(id)&&!(SIM.discarded||{})[id]&&!vend.has(id));}
+// venda complementar em sessão-filha (opção B do plano de 29/10): venda, impressão e QR próprios, sem mexer na venda já paga
+function lojaMais(){const k=state.kiosk;const ids=lojaMaisIds();if(!ids.length){toast(T('ljMaisNada'));render();return;}
+  const base=(SIM.sessions[k.code]||{}).pai||k.code;const o=SIM.sessions[base]||{};const filhas=Object.keys(SIM.sessions).filter(c=>SIM.sessions[c].pai===base);
+  const card=filhas.find(c=>SIM.sessions[c].status==='fechada')||`${base}M${filhas.length+2}`;
+  SIM.sessions[card]={key:o.key,pdv:o.pdv,point:o.point,time:o.time,date:o.date,srv:o.srv,menor:o.menor,openedAt:o.openedAt,closedAt:o.closedAt,status:'fechada',selected:[],bg:null,cart:[],photos:ids.map(id=>({id,sold:0})),pai:base};
+  if(!saveSim()){delete SIM.sessions[card];toast(T('ljSaveFail'));render();return;}
+  lojaTimerOff();Object.assign(k,{code:card,so:{card,cards:[card],ids},tv:null,galTok:null,paid:null,doneAt:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
+  ljTempo(card,'inicio');render();lojaPreload(card);}
+const ljMaisBtn=()=>lojaMaisIds().length?`<button class="lj-cta lj-restart" data-act="loja-mais">${ICO.spark} ${T('ljMais')}</button>`:'';
 // tela final: com paid.wait (cartão, PIX ou dinheiro aguardando) não há QR nem contagem; a contagem só começa depois da confirmação (D5)
 function lojaFim(paid){const k=state.kiosk;lojaTimerOff();k.step='done';k.paid=paid;k.doneAt=paid&&paid.wait?null:Date.now();render();if(!(paid&&paid.wait))k.timer=setInterval(lojaTick,250);}
 // v83 (D3): toda forma de pagamento do Checkout vira pedido aguardando; o "pago no toque" deixou de existir
@@ -1979,7 +1991,7 @@ function lojaPay(m){lojaPedido(state.kiosk.code,PAY_MEIO[m]||m);}
 // O código que o cliente vê é o da galeria (XXXX-XXXX): o token nasce agora, mas só é publicado na confirmação (D2 da v79).
 async function lojaPedido(card,meio){meio=MEIO_NOME[meio]?meio:'dinheiro';if(state.lojaPedindo)return;lojaFresh(card);if(lojaJaPaga(card)){toast(T('ljAlreadyPaid'));render();return;}if(!lojaCart(card).ch.length)return;
   state.lojaPedindo=true;let saleNo;try{saleNo=await pvSaleNo();}finally{state.lojaPedindo=false;}if(state.kiosk.code!==card)return; // número tirado sob a trava da fila
-  lojaFresh(card);const k=state.kiosk;if(lojaJaPaga(card)){toast(T('ljAlreadyPaid'));render();return;}const c=lojaCart(card);if(!c.ch.length)return;lojaSync(card);const s=simOf(card);const antes=JSON.stringify(SIM);
+  lojaFresh(card);const k=state.kiosk;if(lojaJaPaga(card)){toast(T('ljAlreadyPaid'));render();return;}const c=lojaCart(card);if(!c.ch.length)return;ljTempo(card,'escolha');lojaSync(card);const s=simOf(card);const antes=JSON.stringify(SIM);
   const ab=dinAbertaDe(card);if(ab)dinFechar(ab.id,'substituida','novo_pedido',null); // uma pendência aberta por sessão (D4 da v79)
   const sessoes=soCards(card).slice();const so=k.so&&k.so.card===card?k.so:null;
   // galeria própria (m.venda, m.so) sempre que a escolha não é uma sessão inteira só: várias sessões, sessão de menor/escola achada
@@ -1988,7 +2000,7 @@ async function lojaPedido(card,meio){meio=MEIO_NOME[meio]?meio:'dinheiro';if(sta
   const tok=junta?galDaVendaJunta(card,sessoes,lojaFotos(card).map(p=>p.id)):galDaSessao(card,true);const m=SIM.galerias[tok];
   const id=pvId();const prov=meio==='dinheiro'?'dinheiro':pagProv();const ini=meio==='dinheiro'?{estado:'aguardando'}:((PAG_PROV[prov]&&PAG_PROV[prov].iniciar({id,meio,total:c.total}))||{estado:'aguardando'});
   const rec={id,venue:(typeof VENUE_CFG!=='undefined'&&VENUE_CFG&&VENUE_CFG.id)||'maracana',card,sessoes,token:tok,codigo:m.codigo,criada:now().toISOString(),total:c.total,prints:c.prints,n:c.ch.length,nPh:c.nPh,nAI:c.nAI,
-    cart:c.cart.map(x=>({...x})),selected:(s.selected||[]).slice(),aiSel:(s.aiSel||[]).slice(),fav:(s.fav||[]).slice(),meio,prov,saleNo,vendedor:postoVendedor(),posto:postoNome(),
+    cart:c.cart.map(x=>({...x})),selected:(s.selected||[]).slice(),aiSel:(s.aiSel||[]).slice(),fav:(s.fav||[]).slice(),tempos:s.tempos||null,meio,prov,saleNo,vendedor:postoVendedor(),posto:postoNome(),
     estado:'aguardando',iniciado:ini.estado||'aguardando',fechada:null,por:null,porNome:null,motivo:null};
   SIM.caixaDin=SIM.caixaDin||[];SIM.caixaDin.unshift(rec);s.status='aguardando';s.din=id;state.lojaEquipeAte=0;k.aviso=null;
   log(`Checkout: ${sessoes.join(' + ')} pediu pagar ${fmtR(c.total)} em ${MEIO_NOME[meio].toLowerCase()} (código ${m.codigo})`);
@@ -2256,9 +2268,8 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const kid=pubKid(p);
   if(p.step==='consent')return box(T('gq_consentH'),'',`<label class="gq-consent"><input type="checkbox" data-act="gq-consent" ${p.ok?'checked':''}><span>${T((kid?'gq_consentKid':'gq_consentSelf')+(galNuvem()?'Nuvem':'')).split('\n').map((x,i)=>i?`<small>${x}</small>`:`<strong>${x}</strong>`).join('')}</span></label><button class="lj-cta" id="gq-agree" data-act="gq-agree" ${p.ok?'':'disabled'}>${T('gq_agree')} ${ICO.arrow}</button>`);
   if(p.step==='selfie'){const sf=state.guest.selfie||{};const mirror=(sf.facing||'user')==='user';
-    return box(T(kid?'gq_kidH':'gq_selfieH'),T(kid?'gq_kidD':'gq_selfieD'),`${p.aviso?`<p class="gq-err">${esc(p.aviso)}</p>`:''}<div class="gq-cam ${sf.err?'off':''} ${mirror?'mirror':''}">${sf.err?'':'<video id="gself-video" autoplay muted playsinline></video>'}</div><p class="gq-fine" id="gq-st" aria-live="polite">${sf.err?T('g_fit'):sf.varias?T('cam_varias'):T('gq_looking')}</p>
-      ${sf.err||!sf.semDetector?'':`<button class="lj-cta" data-act="gq-snap" ${sf.ready?'':'disabled'}>${ICO.face} ${T('g_snap')}</button>`}
-      <label class="lj-ghost gq-file" for="gq-file">${T('g_pickFile')}<input type="file" id="gq-file" accept="image/*" data-act="gq-file" hidden></label>`);}
+    return box(T(kid?'gq_kidH':'gq_selfieH'),T(kid?'gq_kidD':'gq_selfieD'),`${p.aviso?`<p class="gq-err">${esc(p.aviso)}</p>`:''}<div class="gq-cam ${sf.err?'off':''} ${mirror?'mirror':''}">${sf.err?'':'<video id="gself-video" autoplay muted playsinline></video>'}</div><p class="gq-fine" id="gq-st" aria-live="polite">${sf.err?T('gq_camBloq'):sf.varias?T('cam_varias'):T('gq_looking')}</p>
+      ${sf.err?`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`:!(sf.semDetector||sf.botao)?'':`<button class="lj-cta" data-act="gq-snap" ${sf.ready?'':'disabled'}>${ICO.face} ${T('g_snap')}</button>`}`);}
   if(p.step==='buscando')return box(T('gq_comparing'),'','<div class="gq-spin" aria-hidden="true"></div>');
   if(p.step==='nao'){const bl=p.motivo==='bloqueado';const at=p.ate?hhmm(new Date(p.ate)):'';
     const msg=bl?T('gq_locked',at):p.motivo==='varias'?T('gq_varias'):p.motivo==='sem_rosto'?T('gq_noFace'):p.motivo==='processando'?T('gq_arriving'):T('gq_noMatch');
@@ -2433,7 +2444,6 @@ const I18N={
  cam_sim:['Câmera indisponível · simulando','Camera unavailable · demo','Cámara no disponible · demo','Caméra indisponible · démo','Kamera nicht verfügbar · Demo'],
  // galeria por QR: selfie (a #g reaproveita estes textos)
  g_fit:['Encaixe o rosto no círculo, sem óculos escuros nem boné.','Fit your face in the circle, no sunglasses or cap.','Encaja tu rostro en el círculo, sin gafas de sol ni gorra.','Placez votre visage dans le cercle, sans lunettes de soleil ni casquette.','Gesicht in den Kreis, ohne Sonnenbrille und Kappe.'],
- g_pickFile:['Escolher uma foto do aparelho','Choose a photo from your device','Elegir una foto del dispositivo','Choisir une photo de l’appareil','Foto vom Gerät wählen'],
  g_snap:['Tirar foto','Take photo','Tomar foto','Prendre la photo','Foto aufnehmen'],
  // Loja apartada (#loja) e galeria online por QR (#g/<token>)
  ljBackStart:['Voltar ao início','Back to start','Volver al inicio','Retour au début','Zurück zum Start'],
@@ -2452,6 +2462,7 @@ const I18N={
  gq_comparing:['Procurando nas fotos da sua visita.','Looking through the photos from your visit.','Buscando en las fotos de tu visita.','Recherche dans les photos de votre visite.','Wir suchen in den Fotos deines Besuchs.'],
  gq_varias:['Uma pessoa por vez','One person at a time','Una persona a la vez','Une personne à la fois','Eine Person nach der anderen'],
  gq_variasD:['Só o seu rosto na câmera. Cada pessoa abre as próprias fotos.','Only your face on camera. Each person opens their own photos.','Solo tu rostro en la cámara. Cada persona abre sus propias fotos.','Seulement votre visage. Chacun ouvre ses propres photos.','Nur dein Gesicht vor der Kamera. Jede Person öffnet ihre eigenen Fotos.'],
+ gq_camBloq:['Libere a câmera no navegador e tente de novo. Se não conseguir, fale com a equipe do Tour.','Allow the camera in your browser and try again. If that fails, ask the Tour team.','Permite la cámara en el navegador e inténtalo de nuevo. Si no puedes, habla con el equipo del Tour.','Autorisez la caméra dans le navigateur et réessayez. Sinon, adressez-vous à l’équipe du Tour.','Erlaube die Kamera im Browser und versuche es erneut. Falls das nicht geht, frag das Tour-Team.'],
  gq_looking:['Encaixe o rosto no círculo: a foto sai sozinha','Fit your face in the circle: the photo is taken automatically','Encaja tu rostro en el círculo: la foto sale sola','Placez votre visage dans le cercle : la photo se prend seule','Gesicht in den Kreis: das Foto wird automatisch gemacht'],
  gq_noFace:['Não encontramos um rosto na foto. Tente de frente e com boa luz.','We couldn’t find a face. Try facing the camera in good light.','No encontramos un rostro en la foto. Inténtalo de frente y con buena luz.','Aucun visage trouvé sur la photo. Essayez de face, avec une bonne lumière.','Wir haben kein Gesicht gefunden. Versuch es von vorn und bei gutem Licht.'],
  gq_noMatch:['Esse rosto não aparece nas fotos desta visita.','This face isn’t in the photos from this visit.','Ese rostro no aparece en las fotos de esta visita.','Ce visage n’apparaît pas sur les photos de cette visite.','Dieses Gesicht ist auf den Fotos dieses Besuchs nicht zu sehen.'],
@@ -2507,6 +2518,8 @@ const I18N={
  cashNote:['Em dinheiro, a compra é confirmada no caixa.','Cash purchases are confirmed at the counter.','En efectivo, la compra se confirma en la caja.','En espèces, l’achat est confirmé à la caisse.','Bei Barzahlung wird der Kauf an der Kasse bestätigt.'],
  gq_waitCash:['Seu pagamento em dinheiro está esperando o caixa','Your cash payment is waiting at the counter','Tu pago en efectivo está esperando en la caja','Votre paiement en espèces attend la caisse','Deine Barzahlung wartet an der Kasse'],
  gq_waitCashD:['Assim que a equipe confirmar, suas fotos aparecem aqui.','As soon as the team confirms it, your photos will appear here.','En cuanto el equipo lo confirme, tus fotos aparecerán aquí.','Dès que l’équipe le confirme, vos photos apparaissent ici.','Sobald das Team bestätigt, erscheinen deine Fotos hier.'],
+ ljMais:['Comprar mais fotos','Buy more photos','Comprar más fotos','Acheter d’autres photos','Mehr Fotos kaufen'],
+ ljMaisNada:['Você já comprou todas as suas fotos.','You have already bought all your photos.','Ya compraste todas tus fotos.','Vous avez déjà acheté toutes vos photos.','Du hast schon alle deine Fotos gekauft.'],
  ljAlreadyPaid:['Estas fotos já foram compradas. Fale com a equipe para comprar mais.','These photos have already been purchased. Talk to the team to buy more.','Estas fotos ya fueron compradas. Habla con el equipo para comprar más.','Ces photos ont déjà été achetées. Parlez à l’équipe pour en acheter d’autres.','Diese Fotos wurden schon gekauft. Sprich mit dem Team, wenn du mehr kaufen möchtest.'],
  ljSaveFail:['Não conseguimos registrar o pedido. Fale com a equipe no balcão.','We couldn’t register your order. Please talk to the team at the counter.','No pudimos registrar tu pedido. Habla con el equipo en el mostrador.','Nous n’avons pas pu enregistrer votre commande. Parlez à l’équipe au comptoir.','Wir konnten deine Bestellung nicht speichern. Bitte sprich mit dem Team an der Theke.'],
  sumPkg:[n=>`Pacote ${n} ${PL(n,'foto','fotos')}`,n=>`${n}-photo package`,n=>`Paquete de ${n} ${PL(n,'foto','fotos')}`,n=>`Formule ${n} ${PL(n,'photo','photos')}`,n=>`Paket mit ${n} ${PL(n,'Foto','Fotos')}`],
@@ -2550,9 +2563,9 @@ function vQuiosque(){
   const topR=x=>`<div class="lj-topr">${langPick(true)}${x}</div>`;
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay'){if(k.step!=='pay')k.ver=k.i||0;k.step=k.step==='pay'?'cart':'review';}
   const pagoTudo=lojaJaPaga(k.code)||!!(k.so&&k.so.cards&&!lojaFotos(k.code).length); // v91 (revisão C3): achado pela selfie e tudo já comprado
-  if((k.step==='review'||k.step==='cart')&&pagoTudo){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (comprar mais é o achado 2 da v85)
+  if((k.step==='review'||k.step==='cart')&&pagoTudo){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (com o botão de comprar mais)
     const pc=lojaJaPaga(k.code)?k.code:(soCards(k.code).find(c=>lojaJaPaga(c))||k.code);const sim=SIM.sessions[pc]||{};const tok=sim.galVenda||galDaSessao(pc);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){setTimeout(()=>{if(state.kiosk===k&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
-  if((k.step==='review'||k.step==='cart')&&pagoTudo)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljVoltar('loja-new','')}</div></div>`;
+  if((k.step==='review'||k.step==='cart')&&pagoTudo)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljMaisBtn()}${ljVoltar('loja-new','')}</div></div>`;
   if(k.step==='review'){const n=items.length; // galeria em grade: todas as fotos inteiras (sem corte), um toque marca ou desmarca
     const full=st0=>String(st0||'').replace('--bs:cover','--bs:contain');const spr=st0=>/sprites\//.test(String(st0||''));
     const img=(q,s2,cls,lb)=>{const rot=lb?`<span class="lj-lbsrc">${esc(lb)}</span>`:'';if(q.t==='ai')return `<div class="${cls} ai">${lojaThumb(q)}${rot}</div>`;const st0=bigStyle(q.id);const ar=!spr(st0)&&LJ_AR[q.id];return `<div class="${cls}${spr(st0)?' spr':''}${ar?' fit':''}" style="${ar?`--ar:${ar};`:''}${full(st0)}" data-ar="${esc(q.id)}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}${rot}</div>`;};
@@ -2571,7 +2584,7 @@ function vQuiosque(){
         <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div>`}</div>`;}
   if(k.step==='cart'){const ps=DATA.catalog.filter(x=>x.kind==='pacote');const auto=c.n?lojaIdeal(c.n).pkg:null;const P0=c.pkg&&DATA.catalog.find(x=>x.id===c.pkg);const save=c.save;
     const MAXM=8;const prints=c.ch.slice(0,MAXM).map(x=>`<div class="lj-mini"><div class="lj-img" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}</div></div>`).join('')+(c.ch.length>MAXM?`<div class="lj-mini lj-mais">+${c.ch.length-MAXM}</div>`:'');
-    const pkgs=c.n?ps.map(p=>{const dg=p.digital==='todas';const on=p.id===c.pkg;const ex=dg?0:Math.max(0,c.n-p.digital);return `<button class="lj-pkg ${on?'on':''}" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${on}"><span class="lj-radio"></span><span class="lj-pkgn">${dg?'∞':p.digital}</span><span class="lj-pkgd"><b>${dg?T('pkgAll'):T('nPhotos',p.digital)}</b><small>${p.prints?T('pkgPD'):T('pkgD')}</small>${ex?`<small class="lj-pkgx">${T('pkgPlusExtra',ex,fmtR(priceOf('extra')))}</small>`:''}</span>${p.id===auto?`<span class="lj-badge">${T('ideal')}</span>`:''}<span class="lj-pkgp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
+    const pkgs=c.n&&!(SIM.sessions[k.code]||{}).pai?ps.map(p=>{const dg=p.digital==='todas';const on=p.id===c.pkg;const ex=dg?0:Math.max(0,c.n-p.digital);return `<button class="lj-pkg ${on?'on':''}" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${on}"><span class="lj-radio"></span><span class="lj-pkgn">${dg?'∞':p.digital}</span><span class="lj-pkgd"><b>${dg?T('pkgAll'):T('nPhotos',p.digital)}</b><small>${p.prints?T('pkgPD'):T('pkgD')}</small>${ex?`<small class="lj-pkgx">${T('pkgPlusExtra',ex,fmtR(priceOf('extra')))}</small>`:''}</span>${p.id===auto?`<span class="lj-badge">${T('ideal')}</span>`:''}<span class="lj-pkgp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
     const incl=[c.prints?[ICO.print,T('incPrint',c.prints),T('incPrintD')]:null,
       c.nPh?[ICO.phone,P0&&P0.digital==='todas'?T('incDigAll'):T('incDig',c.nPh),T('incDigD')]:null,
       c.nAI?[ICO.spark,T('incAI',c.nAI),T('incAID')]:null,
@@ -2607,7 +2620,7 @@ function vQuiosque(){
         ${wait?`<div class="lj-qrcard lj-waitcard">${p.codigo?`<b class="lj-qrcode">${cash?T('gq_codeIs',`<span class="lj-nw">${esc(p.codigo)}</span>`):T('ljPosCode',`<span class="lj-nw">${esc(p.codigo)}</span>`)}</b>`:''}<span>${T('ljPosWait')}</span></div>`
         :`<div class="lj-qrcard${fotoQR?' lj-qrcom':''}">${fotoQR?`<div class="lj-qrfoto" style="${bigStyle(fotoQR)}"><div id="lqr" class="lj-qr" aria-label="QR"></div></div>`:'<div id="lqr" class="lj-qr" aria-label="QR"></div>'}${p.codigo?`<b class="lj-qrcode">${T('gq_codeIs',p.codigo)}</b>`:''}<span>${ICO.phone} ${T('download')}</span></div>
         <div class="lj-volta"><span>${T('ljBackIn')}</span><span class="lj-volta-ring" id="lj-volta-ring" style="--p:${k.doneAt?Math.max(0,1-(Date.now()-k.doneAt)/lojaFimMs()):1}"><b id="lj-volta-n">${k.doneAt?Math.max(0,Math.ceil((lojaFimMs()-(Date.now()-k.doneAt))/1000)):lojaFimSeg()}</b></span></div>`}
-        <button class="lj-cta lj-restart" data-act="loja-new">${ICO.face} ${T('ljBackStart')}</button></div></div>`;}
+        ${wait?'':ljMaisBtn()}<button class="lj-cta lj-restart" data-act="loja-new">${ICO.face} ${T('ljBackStart')}</button></div></div>`;}
   lojaReset();return vQuiosque();
 }
 function bigStyle(id){let st=phStyle(id);if(/^ag_/.test(id)&&state.agent&&state.agent.url)st=st.replace('/thumb/','/file/');return st;}
@@ -2916,21 +2929,21 @@ function aiOf(card){SIM.ai=SIM.ai||{};SIM.ai[card]=SIM.ai[card]||{cart:[],bought
 function aiBg(id){return bgOf(id)||{};} // compra antiga com fundo oculto continua com nome
 // ---------- Selfie com a câmera (a galeria pública #g usa selfieStart, selfieMount e selfieStop) ----------
 async function selfieStart(){const sf=state.guest.selfie;if(!sf||sf.stream||sf.err)return;
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){sf.err='Este navegador não abre a câmera. Escolha uma foto do aparelho.';render();return;}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){sf.err='Este navegador não abre a câmera.';render();return;}
   try{const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:sf.facing||'user',width:{ideal:1280},height:{ideal:960}},audio:false});
     if(!state.guest.selfie){st.getTracks().forEach(t=>t.stop());return;}sf.stream=st;selfieMount();}
-  catch(e){sf.err=e&&e.name==='NotAllowedError'?'A câmera foi bloqueada. Libere o acesso no navegador ou escolha uma foto do aparelho.':'Nenhuma câmera encontrada. Escolha uma foto do aparelho.';render();}}
+  catch(e){sf.err=e&&e.name==='NotAllowedError'?'A câmera foi bloqueada.':'Nenhuma câmera encontrada.';render();}}
 function selfieMount(){const sf=state.guest.selfie;if(!(state.pub&&state.pub.modo==='agente'))faceIndexAll();const v=$('#gself-video');if(!sf||!v)return;if(!sf.stream){selfieStart();return;}
-  if(v.srcObject!==sf.stream){v.srcObject=sf.stream;v.onloadeddata=()=>{if(!sf.ready){sf.ready=true;const b=$('[data-act="gself-snap"],[data-act="gq-snap"]');if(b)b.disabled=false;}};v.play().catch(()=>{});}
+  if(v.srcObject!==sf.stream){v.srcObject=sf.stream;v.onloadeddata=()=>{if(!sf.ready){sf.ready=true;const b=$('[data-act="gself-snap"],[data-act="gq-snap"]');if(b)b.disabled=false;sf.botaoT=setTimeout(()=>{if(state.guest.selfie===sf&&!sf.done&&!sf.botao){sf.botao=true;render();}},10000);selfieMount();}};v.play().catch(()=>{});}
   if(sf.ready){const b=$('[data-act="gself-snap"],[data-act="gq-snap"]');if(b)b.disabled=false;}
-  // celular: tira a selfie sozinho quando vê um rosto de frente por 2 leituras seguidas (o botão continua como reserva)
-  if(sf.ready&&state.pub&&!sf.autoT&&!sf.done)sf.autoT=setInterval(async()=>{if(sf.busy||sf.done||state.guest.selfie!==sf)return;sf.busy=true;
+  // celular: tira a selfie sozinho quando vê um rosto de frente por 2 leituras seguidas (o botão aparece se passar de 10 s)
+  if(sf.ready&&state.pub&&!sf.autoT&&!sf.done&&!sf.semDetector)sf.autoT=setInterval(async()=>{if(sf.busy||sf.done||state.guest.selfie!==sf)return;sf.busy=true;
     try{const v=$('#gself-video');if(!v||!v.videoWidth)return;const c=mkc(480,480*v.videoHeight/v.videoWidth);c.getContext('2d').drawImage(v,0,0,c.width,c.height);
       const todos=await ynDetect(c,.75);const fs=todos.filter(b=>b.w>=Math.max(FACE_MIN,c.width*.2));const varias=pessoas(todos.filter(b=>b.w>=FACE_MIN))===2;
       sf.hits=!varias&&fs.length===1?(sf.hits||0)+1:0;if(varias!==!!sf.varias){sf.varias=varias;const st=$('#gq-st');if(st)st.textContent=T(varias?'cam_varias':'gq_looking');}
       if(sf.hits>=2){sf.done=true;clearInterval(sf.autoT);const w=Math.min(960,v.videoWidth);const k=mkc(w,w*v.videoHeight/v.videoWidth);k.getContext('2d').drawImage(v,0,0,k.width,k.height);pubMatch(k.toDataURL('image/jpeg',.9));}}
     catch(e){if(!sf.semDetector){sf.semDetector=true;clearInterval(sf.autoT);sf.autoT=null;render();}}finally{sf.busy=false;}},600);}
-function selfieStop(){const sf=state.guest.selfie;if(sf&&sf.autoT)clearInterval(sf.autoT);if(sf&&sf.stream)sf.stream.getTracks().forEach(t=>t.stop());state.guest.selfie=null;}
+function selfieStop(){const sf=state.guest.selfie;if(sf&&sf.autoT)clearInterval(sf.autoT);if(sf&&sf.botaoT)clearTimeout(sf.botaoT);if(sf&&sf.stream)sf.stream.getTracks().forEach(t=>t.stop());state.guest.selfie=null;}
 // ---------- Qualidade ----------
 const TAGS=['Luz','Enquadramento','Pose','Expressão','Foco','Fundo','Horizonte','Grupo cortado'];
 // sessões para revisão: a amostra importada + as sessões reais montadas neste computador
@@ -3708,10 +3721,10 @@ function impMiniOn(){try{return localStorage.getItem('eterna-if-mini-tv')==='1'}
 function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000);setTimeout(impFilaPoll,0);}
   const F=state.impFila;const agora=F?F.agora:Date.now()/1000;const ps=(F&&F.pedidos)||[];const imps=(F&&F.impressoras&&F.impressoras.length)?F.impressoras:[(F&&F.impressora)||'Impressora'];
   const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?'agora':`há ${m} min`;};const hm=t=>hhmm(new Date(t*1000));
-  const fila=ps.filter(p=>p.estado==='na_fila'),agoraP=ps.filter(p=>p.estado==='imprimindo'),prontas=ps.filter(p=>p.estado==='impresso').sort((a,b)=>b.fim-a.fim).slice(0,12),erros=ps.filter(p=>(p.estado==='erro'||(p.estado==='cancelado'&&p.feitas>0))&&!ps.some(x=>x.id>p.id&&x.venda===p.venda&&x.estado!=='cancelado')).sort((a,b)=>b.fim-a.fim).slice(0,4);const motivoErro=e=>{const m=String(e).match(/ERRO\s+(?:\S+\.jpg:\s*)?(.*)$/);return m?m[1]:String(e);};
+  const fila=ps.filter(p=>p.estado==='na_fila'),agoraP=ps.filter(p=>p.estado==='imprimindo'),prontas=ps.filter(p=>p.estado==='impresso').sort((a,b)=>b.fim-a.fim).slice(0,12),erros=ps.filter(p=>p.estado==='erro'&&!ps.some(x=>x.id>p.id&&x.venda===p.venda&&x.estado!=='cancelado')).sort((a,b)=>b.fim-a.fim).slice(0,4);const motivoErro=e=>{const m=String(e).match(/ERRO\s+(?:\S+\.jpg:\s*)?(.*)$/);return m?m[1]:String(e);};
   const est=(F&&F.estados)||{};const estPill=n=>{const e=est[n];if(!e)return '';const c=e.estado==='erro'?'bad':e.estado==='imprimindo'?'warn':'good';return `<span class="pill ${c}">${esc(n)} · ${e.estado==='erro'?esc(e.motivo||'parada'):e.estado}</span>`;};
   // controle (fora da tela cheia): cancelar o que espera ou imprime; reimprimir o que saiu, o que faltou ou tudo
-  const acts=p=>{const b=(a,t)=>`<button class="btn" data-act="if-acao" data-a="${a}" data-id="${p.id}">${t}</button>`;if(p.estado==='na_fila'||p.estado==='imprimindo')return `<div class="if-acts">${b('cancelar','Cancelar')}</div>`;if(p.feitas<p.fotos&&p.feitas>0)return `<div class="if-acts">${b('faltantes','Imprimir as '+(p.fotos-p.feitas)+' que faltaram')}${b('reimprimir','Reimprimir tudo')}</div>`;return `<div class="if-acts">${b('reimprimir','Reimprimir')}</div>`;};
+  const acts=p=>{const b=(a,t)=>`<button class="btn" data-act="if-acao" data-a="${a}" data-id="${p.id}">${t}</button>`;if(p.estado==='na_fila'||p.estado==='imprimindo')return `<div class="if-acts">${b('cancelar','Cancelar')}</div>`;if(p.feitas<p.fotos&&p.feitas>0)return `<div class="if-acts">${b('faltantes',p.fotos-p.feitas===1?'Imprimir a que faltou':'Imprimir as '+(p.fotos-p.feitas)+' que faltaram')}${b('reimprimir','Reimprimir tudo')}</div>`;return `<div class="if-acts">${b('reimprimir','Reimprimir')}</div>`;};
   const aviso=p=>p.aviso?`<div class="if-aviso" role="alert">${esc(p.aviso)}</div>`:'';
   const espera=fila.reduce((a,p)=>a+p.fotos,0)+agoraP.reduce((a,p)=>a+p.fotos-p.feitas,0);const minEsp=Math.ceil(espera*14/60/Math.max(1,imps.length));
   const tv=document.body.classList.contains('if-tv');const mini=!tv||impMiniOn();
@@ -3722,12 +3735,12 @@ function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000)
   return `<div class="if-wrap"><div class="if-head"><div><div class="eyebrow">${imps.length>1?imps.length+' impressoras · '+imps.map(esc).join(', '):esc(imps[0])}</div><h1>Fila de impressão</h1></div>
     <div class="row"><span class="if-imps">${imps.map(estPill).join('')}</span><span class="pill ${espera?'warn':'good'}">${espera?`${fotos(espera)} na fila · cerca de ${minEsp} min`:'Tudo impresso'}</span><button class="btn" data-act="impfila-mini">Miniaturas na tela cheia: ${impMiniOn()?'ligadas':'desligadas'}</button><button class="btn" data-act="impfila-tv">${tv?'Sair da tela cheia':'Tela cheia'}</button></div></div>
   ${state.impFilaErro?`<div class="note" role="alert">${esc(state.impFilaErro)}</div>`:''}
+  ${erros.length?`<section class="if-erros"><h2>Com erro <span class="if-cnt">${erros.length}</span></h2><div class="if-erros-l">${erros.map(p=>card(p,'err',`${p.feitas} de ${p.fotos} saíram${p.erro?' · '+esc(motivoErro(p.erro).slice(0,90)):''}`,acts(p))).join('')}</div></section>`:''}
   <div class="if-board">
     <section class="if-col"><h2>Na fila <span class="if-cnt">${fila.length}</span></h2><div class="if-list">${fila.map((p,i)=>card(p,'fila',`pedido ${hm(p.criado)} · ${fotos(p.fotos)} · ${i===0?'próxima':i+1+'º'} · ${min(p.criado)}`,thumbs(p)+acts(p))).join('')||'<div class="if-vazio">Ninguém esperando</div>'}</div></section>
     <section class="if-col agora"><h2>Imprimindo agora <span class="if-cnt">${agoraP.length}</span></h2><div class="if-list">${imps.map(n=>{const p=agoraP.find(x=>x.impressora===n)||(imps.length===1?agoraP[0]:null);
         return `<div class="if-imp">${imps.length>1?`<div class="if-impn">${esc(n)}</div>`:''}${p?card(p,'imp',`início ${hm(p.inicio||p.criado)} · foto ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos} · ${min(p.inicio||p.criado)}`,`${aviso(p)}<div class="if-prog"><i style="width:${Math.round(100*p.feitas/p.fotos)}%"></i></div>${thumbs(p)}${acts(p)}`):'<div class="if-vazio">Livre</div>'}</div>`;}).join('')}</div></section>
-    <section class="if-col pronta"><h2>Prontas · retirar <span class="if-cnt">${prontas.length}</span></h2><div class="if-list">${prontas.map(p=>card(p,'ok',`${imps.length>1&&p.impressora?'<b>'+esc(p.impressora)+'</b> · ':''}pronta ${hm(p.fim)} · ${fotos(p.fotos)} · ${min(p.fim)}`,acts(p))).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}</div>
-      ${erros.length?`<h2 class="if-err-h">Com erro ou canceladas</h2>${erros.map(p=>card(p,'err',`${p.estado==='cancelado'?'cancelada':'erro'} · ${p.feitas} de ${p.fotos} saíram${p.erro?' · '+esc(motivoErro(p.erro).slice(0,90)):''}`,acts(p))).join('')}`:''}</section>
+    <section class="if-col pronta"><h2>Prontas · retirar <span class="if-cnt">${prontas.length}</span></h2><div class="if-list">${prontas.map(p=>card(p,'ok',`${imps.length>1&&p.impressora?'<b>'+esc(p.impressora)+'</b> · ':''}pronta ${hm(p.fim)} · ${fotos(p.fotos)} · ${min(p.fim)}`,acts(p))).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}</div></section>
   </div></div>`;}
 // ---------- Fila do fotógrafo (v87) ----------
 // Painel de senhas das fotos chegando, por fotógrafo, calculado no agente (GET /fila-fotografo, a cada 2 s). Só leitura; tela da
@@ -4559,7 +4572,7 @@ function lojaAbrirSo(minhas,anc,inteiras){const k=state.kiosk;const cards=Object
   if(!cards.length){lojaReset();const c=state.cam;c.status='nomatch';render();setTimeout(()=>{if(c.status==='nomatch'){c.status='idle';camStatus();}},6000);return;}
   if(!cards.includes(anc))anc=cards[0];
   const ids=lojaIdsSo(minhas,inteiras); // família inteira só onde ela aparece clara e em primeiro plano
-  Object.assign(k,{code:anc,so:{card:anc,cards,ids},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
+  ljTempo(anc,'inicio');Object.assign(k,{code:anc,so:{card:anc,cards,ids},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
   toast(T('foundYou'));render();lojaPreload(anc);}
 // proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
 const LJ_AR={};
@@ -4914,7 +4927,7 @@ document.addEventListener('click',e=>{
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':{const c=state.caixa.session;state.caixa.reprint=state.caixa.reprint===c?null:c;render();break;} // v83: abre o painel de impressão desta venda (sem baixa aqui)
     case 'kiosk-go':{lojaCliente();const k=state.kiosk;const r=lojaCodigo(($('#kcode')||{}).value||'');if(!r)break;
-      k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;render();break;}
+      k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;ljTempo(r.card,'inicio');render();break;}
     case 'kiosk-back':lojaReset();render();break;
     case 'kiosk-emerg':{lojaCliente();if(state.kiosk.timer){clearTimeout(state.kiosk.timer);state.kiosk.timer=null;}state.kiosk.step='emerg';render();const el=$('#kcode');if(el)el.focus();break;}
     case 'kiosk-sel':toggleSel(state.kiosk.code,d.id);render();break;
@@ -4928,8 +4941,9 @@ document.addEventListener('click',e=>{
       if(pk[x.k]==='ok')delete pk[x.k];else pk[x.k]='ok';lojaSync(k.code);render();break;}
     case 'kiosk-ok':lojaMark('ok');break;
     case 'kiosk-no':lojaMark('no');break;
-    case 'kiosk-done':case 'loja-cart':state.kiosk.step='cart';render();window.scrollTo({top:0});break;
+    case 'kiosk-done':case 'loja-cart':if(state.kiosk.code)ljTempo(state.kiosk.code,'escolha');state.kiosk.step='cart';render();window.scrollTo({top:0});break;
     case 'kiosk-review':state.kiosk.step='review';render();break;
+    case 'loja-mais':lojaCliente();lojaMais();break;
     case 'loja-exit':case 'loja-new':lojaCliente();lojaReset();render();break;
     case 'loja-list':state.kiosk.list=!state.kiosk.list;render();break;
     case 'loja-sair':lojaSair();break;
@@ -5042,7 +5056,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&e.target.i
 document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('input[data-pick]');if(el&&typeof el.showPicker==='function'){try{el.showPicker()}catch(x){}}},true);
 document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='pn-pdv'){state.painel.pdv=String(e.target.value||'');try{localStorage.setItem('eterna.painel.v1',JSON.stringify(state.painel))}catch(x){}render();return;}if(a==='rev-key'){state.revFilter.key=e.target.value;render();return;}if(a==='rev-venda'){state.revFilter.venda=e.target.value;render();return;}if(a==='rev-date'){state.revFilter.date=e.target.value||'all';render();return;}if(a==='func-set'){if(!can('escala','u')){toast('Sem permissão para alterar a escala');render();return;}const k=e.target.dataset.k,v=e.target.value;const f=funcOf(k);if(!v)setFunc(k,{tipo:'folga'});else if(v[0]==='c')setFunc(k,{tipo:'campo',point:v.slice(2)});else setFunc(k,{tipo:'volante',modo:v.slice(2),from:f.point||f.from||null});render();return;}if(a==='range-from'&&e.target.value){setRange(e.target.value,state.range.to<e.target.value?e.target.value:state.range.to);return;}if(a==='range-to'&&e.target.value){setRange(state.range.from>e.target.value?e.target.value:state.range.from,e.target.value);return;}if(a==='fe-sel'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='fe-active'){if(state.flagEd)state.flagEd.active=e.target.checked;return;}if(a==='fe-img'){const fl=e.target.files&&e.target.files[0];if(!fl||!state.flagEd)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');const w=360,h=Math.round(360*im.height/im.width);c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);state.flagEd.imgData=c.toDataURL('image/jpeg',.82);render();};im.src=rd.result;};rd.readAsDataURL(fl);return;}if(a==='venue-powered'){VENUE_CFG.powered=e.target.checked;saveVenue();render();return;}if(a==='venue-logo'){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>600*1024){toast('Logo acima de 600 KB: exporte menor');return;}const rd=new FileReader();rd.onload=()=>{VENUE_CFG.logo=rd.result;saveVenue();toast('Logo aplicada');render();};rd.readAsDataURL(f);return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr&&!dr.email0){dr.preset=e.target.value;render();}return;}if(a==='perm-copy-from'){if(state.perm.copy){state.perm.copy.de=String(e.target.value||'');render();}return;}if(a==='user-copy-from'){const dr=state.users.draft;if(dr&&!dr.email0){dr.copyFrom=String(e.target.value||'')||null;render();}return;}if(a==='perm-op'||a==='perm-view'||a==='perm-inicio'||a==='perm-preset'){if(!can('permissoes','u')){if(e.target.type==='checkbox')e.target.checked=!e.target.checked;return;}permChange(a,e.target);return;}if(a==='imp-key'){state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){state.imp.point=e.target.value;render();}else if(a==='imp-files'&&fotosNoServidor()){const l=[...e.target.files];e.target.value='';fotosEnviar(l);}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};upSave(id,f,f.name);return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(`${rows.length} rótulos importados`);render();}catch(x){toast('Arquivo inválido')}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='busca-janela'||a==='busca-janela-dia'){if(!guardAct(a)){render();return;}buscaJanelaSalva(a==='busca-janela-dia'?(e.target.checked?0:BUSCA_JANELA_PADRAO):e.target.value);return;}if(a==='loja-fim'){if(!can('catalogo','u')){toast('Sem permissão para alterar o catálogo');render();return;}let v=Math.round(+e.target.value);if(!(v>=LOJA_FIM_MIN))v=LOJA_FIM_MIN;if(v>LOJA_FIM_MAX)v=LOJA_FIM_MAX;SIM.lojaFimSeg=v;log(`Checkout: tela final com o QR por ${v} s`);saveSim();render();return;}
   if(a==='gq-consent'){const p=state.pub;if(p){p.ok=e.target.checked;const b=$('#gq-agree');if(b)b.disabled=!p.ok;}return;}
-  if(a==='gq-file'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(!fl||!state.pub)return;if(fl.size>25*1024*1024){toast(T('gq_noFace'));return;}const u=URL.createObjectURL(fl);loadImg(u).then(im=>{URL.revokeObjectURL(u);if(!im){pubFalhou(state.pub,'sem_rosto');render();return;}const k=Math.min(1,1280/Math.max(im.naturalWidth,im.naturalHeight));const c=mkc(im.naturalWidth*k,im.naturalHeight*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);pubMatch(c.toDataURL('image/jpeg',.9));});return;}
   if(a==='gal-ev-ses'){if(state.gal.ev)state.gal.ev.sel[e.target.dataset.card]=e.target.checked;return;}
   if(a==='gal-ev-menor'){if(state.gal.ev)state.gal.ev.menor=e.target.checked;return;}
   if(a==='gal-ev-data'){if(state.gal.ev){const n=$('#gal-ev-nome');if(n)state.gal.ev.nome=n.value;state.gal.ev.data=e.target.value||todayISO();state.gal.ev.sel={};render();}return;}});
@@ -5200,7 +5213,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={EQ,TE,T,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR};
+window.ETERNA={pubMatch,priceOf,lojaMaisIds,EQ,TE,T,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR};
 })();
 </script>
 
