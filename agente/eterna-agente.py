@@ -4256,10 +4256,16 @@ def sess_rostos_lidos(pid, faces, agora=None):
 
 
 def sess_add(pid, m):
-    """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
+    """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto. v92: a foto atribuída a um fotógrafo
+    (FTP, câmera ou série, pela mesma regra das sessões) na trilha ao vivo marca a presença dele (fonte "fotos")."""
     cad = ff_cadastrados()
     with sess_lock:
-        return _sess_add(pid, m, cad, time.time())
+        card = _sess_add(pid, m, cad, time.time())
+        x = sess.get(card or "")
+        quem = x.get("fotografo") if x and x.get("trilha") == "vivo" and not x.get("atrasada") else None
+    if quem:
+        presenca_foto(quem, _num(m.get("u")))      # hora de chegada ao servidor (nunca a do EXIF)
+    return card
 
 
 def sess_esquecer(pid):
@@ -4979,7 +4985,7 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
 #   POST /ponto/docs {docs:[{col,id,valor}]}  valor null apaga.        -> {ok, rev}
 # O navegador guarda uma cópia e uma fila do que ainda não subiu (sem rede); o servidor é o dono. Backup no S3 com as vendas.
 ESTADO_DB = os.path.join(HOME, "ponto", "estado.db")
-ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim")
+ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda")
 ESTADO_MAX = 512 * 1024              # um registro (um usuário, um ajuste de foto) nunca passa disto
 estado_lock = threading.Lock()
 
@@ -5025,6 +5031,10 @@ def estado_gravar(body):
                 if not isinstance(d, dict) or d.get("col") not in ESTADO_COLS or not isinstance(d.get("id"), str) or not 0 < len(d["id"]) <= 300:
                     continue
                 v = d.get("valor")
+                if d["col"] == "agenda" and v is not None:      # v92: calendário de eventos, campos fechados (risco 4)
+                    v = agenda_valida(d["id"], v)
+                    if v is None:
+                        continue
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
                 if txt is not None and len(txt) > ESTADO_MAX:
                     continue
@@ -5086,6 +5096,37 @@ def _ev_ler(dia):
              "dados": json.loads(r[7] or "{}")} for r in rs]
 
 
+EV_LANGS = ("pt", "en", "es", "fr", "de")
+EV_CANAIS = ("checkout", "balcao")
+EV_CART_MAX = 30
+_re_cart_id = re.compile(r"^[a-z0-9_-]{1,20}$")
+
+
+def _ev_cart(v):
+    """v92: itens do carrinho {id, v}; lista com mais de 30 itens ou item inválido descarta o carrinho inteiro."""
+    if not isinstance(v, list) or not v or len(v) > EV_CART_MAX:
+        return None
+    out = []
+    for it in v:
+        if not isinstance(it, dict) or not isinstance(it.get("id"), str) or not _re_cart_id.match(it["id"]):
+            return None
+        x = it.get("v")
+        if isinstance(x, bool) or not isinstance(x, (int, float)) or not 0 <= x <= 1e6:
+            return None
+        out.append({"id": it["id"], "v": float(x)})
+    return out
+
+
+def _ev_t0(v, em):
+    """v92: hora em que o cliente saiu da tela inicial do Checkout; vale só entre em − 2 h e em."""
+    if not isinstance(v, str) or len(v) > 30:
+        return None
+    t, e = _epoch(v), _epoch(em)
+    if not t or not e or not e - 7200 <= t <= e:
+        return None
+    return v
+
+
 def _ev_limpo(e):
     """Só os campos do contrato, com tipo e tamanho conferidos (o resto do evento é descartado)."""
     if not isinstance(e, dict) or e.get("tipo") not in EV_TIPOS:
@@ -5105,7 +5146,11 @@ def _ev_limpo(e):
           "resultado": txt(d.get("resultado"), 12), "n": num(d.get("n")), "reimpressao": bool(d.get("reimpressao")),
           "motivo": txt(d.get("motivo"), 40), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
           "galeria": (txt((d.get("galeria") or {}).get("codigo"), 12) if isinstance(d.get("galeria"), dict) else None)}
-    return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": txt(e.get("em"), 30) or _iso(),
+    # v92 (estatísticas): produtos, idioma, canal e a hora em que o cliente começou no Checkout. Campo inválido sai; a venda fica.
+    em = txt(e.get("em"), 30) or _iso()
+    dd.update(cart=_ev_cart(d.get("cart")), lang=d.get("lang") if d.get("lang") in EV_LANGS else None,
+              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em))
+    return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
             "por": txt((e.get("por") or {}).get("nome") if isinstance(e.get("por"), dict) else None),
             "posto": txt(e.get("posto"), 40), "dados": {k: v for k, v in dd.items() if v not in (None, "", [], 0, False)}}
 
@@ -5168,7 +5213,8 @@ def metricas_dia(dia):
     if not m["fotos"]:
         m["fotos"] = sum(v["fotos"] for v in m["por_fotografo"].values())
     vendas = {}
-    for e in _ev_ler(dia):
+    evs = _ev_ler(dia)
+    for e in evs:
         v = vendas.setdefault(e["venda"], {"criar": None, "paga": False, "cancelada": False, "posto": e.get("posto")})
         d = e.get("dados") or {}
         if e["tipo"] == "criar":
@@ -5226,7 +5272,7 @@ def metricas_dia(dia):
     m["ticket_medio"] = round(m["faturamento"] / m["vendas"], 2) if m["vendas"] else None
     for pf in m["por_fotografo"].values():
         pf["conversao"] = round(pf["sessoes_com_venda"] / pf["sessoes"], 4) if pf["sessoes"] else None
-    return m
+    return met_v2_junta(m, met_v2(dia, ss, evs))
 
 
 def metricas_gravar(dia):
@@ -5265,7 +5311,7 @@ def backup_loop():
     while True:
         time.sleep(120)
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB) if os.path.exists(b)]
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB) if os.path.exists(b)]   # v92: presença e entradas
             if not bancos:
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
@@ -5322,11 +5368,456 @@ def metricas_periodo(de, ate):
     return out
 
 
+# ---------- Estatísticas (v92; plano docs/planos/2026-11-05-estatisticas.md) ----------
+# O resumo do dia ganha campos novos (v:2) sem mudar os da v1: por hora, produto, canal e idioma, tempos em faixas fixas
+# (histograma: mediana e p90 saem das faixas, nunca média de médias), presença (login no posto ou 1ª foto, com a hora do
+# servidor) e entradas da bilheteria (bip ou catraca, importadas por CSV). Presença, entradas e importações moram em
+# ~/Eterna/ponto/operacao.db (vai para o backup). Só números, chaves de fotógrafo e nomes de vendedor: nada de foto, rosto,
+# e-mail, CPF ou número de ingresso.
+EST_FAIXAS = (30, 60, 120, 300, 600, 1200)   # limites (s) das faixas 0–30 s, 30–60 s, 1–2, 2–5, 5–10, 10–20 min e > 20 min
+OPERACAO_DB = os.path.join(HOME, "ponto", "operacao.db")
+op_lock = threading.Lock()
+ENTRADAS_MAX = 50000
+ENTRADAS_ORIGENS = ("bip", "catraca")
+PRES_POSTOS_MAX = 5
+_pres_mem = {}                   # (dia, chave) -> [primeiro, ultimo gravado]: a foto só grava quando muda algo
+_pres_cad = {"t": 0.0, "v": frozenset()}
+est_migra = {"estado": "parado", "feitos": 0, "total": 0, "erro": None}
+
+
+def h_novo():
+    return {"n": 0, "soma": 0.0, "f": [0] * (len(EST_FAIXAS) + 1)}
+
+
+def h_add(h, s):
+    """Uma medida (segundos) na faixa certa; negativa ou acima de 1 dia é descartada (relógio errado)."""
+    try:
+        s = float(s)
+    except (TypeError, ValueError):
+        return
+    if s != s or s < 0 or s > 86400:
+        return
+    i = next((k for k, lim in enumerate(EST_FAIXAS) if s < lim), len(EST_FAIXAS))
+    h["n"] += 1
+    h["soma"] = round(h["soma"] + s, 1)
+    h["f"][i] += 1
+
+
+def _hora_local(ts):
+    return time.strftime("%H", time.localtime(ts))
+
+
+def met_v2(dia, ss, evs):
+    """Campos v2 do resumo do dia. ss = sessões do arquivo do dia (None se o arquivo não existe mais); evs = eventos de
+    _ev_ler(dia). As vendas entram pela mesma regra da v1 (paga = tem "pagar"), para as somas baterem."""
+    tempos = {k: h_novo() for k in ("cliente_s", "pagamento_s", "clique_checkout_s", "transferencia_s")}
+    out = {"v": 2, "por_hora": {}, "por_produto": {}, "por_canal": {}, "por_idioma": {}, "tempos": tempos,
+           "por_vendedor": {}, "por_fotografo": {}}
+    ph = lambda h: out["por_hora"].setdefault(h, {"vendas": 0, "faturamento": 0.0, "sessoes": 0, "fotos": 0})
+    for x in ss or []:
+        if not isinstance(x, dict) or x.get("removida"):
+            continue
+        ini = _num(x.get("aberta_em")) or _num(x.get("cap0"))
+        if ini:
+            g = ph(_hora_local(ini))
+            g["sessoes"] += 1
+            g["fotos"] += len(x.get("fotos") or []) + len(x.get("pend") or [])
+        if x.get("trilha", "vivo") != "vivo" or x.get("atrasada"):
+            continue                                  # critério 16: clique e transferência só da trilha ao vivo
+        pf = out["por_fotografo"].setdefault(str(x.get("fotografo") or "sem fotógrafo"), {})
+        ae = _num(x.get("aberta_em"))
+        if ae and (not pf.get("primeira_foto") or ae < pf["primeira_foto"]):
+            pf["primeira_foto"] = ae
+        cap1 = _num(x.get("cap1"))
+        if not cap1:
+            continue
+        fe = _num(x.get("fechada_em"))
+        if x.get("status") == "fechada" and fe and x.get("fechada_por") != "reinicio":   # reinício não é o tempo real
+            h_add(tempos["clique_checkout_s"], fe - cap1)
+            h_add(pf.setdefault("clique_checkout_s", h_novo()), fe - cap1)
+        uc = _num(x.get("ultima_chegada"))
+        if uc:
+            h_add(tempos["transferencia_s"], uc - cap1)
+    vs = {}
+    for e in evs or []:
+        v = vs.setdefault(e["venda"], {"criar": None, "criar_em": 0, "pagar_em": 0, "pagar_por": None})
+        if e["tipo"] == "criar":
+            v["criar"], v["criar_em"] = e.get("dados") or {}, _epoch(e.get("em"))
+        elif e["tipo"] == "pagar" and not v["pagar_em"]:
+            v["pagar_em"], v["pagar_por"] = _epoch(e.get("em")) or 1, e.get("por")
+    for v in vs.values():
+        c = v["criar"]
+        if not c or not v["pagar_em"]:
+            continue
+        tot = float(c.get("total") or 0)
+        quando = v["pagar_em"] if v["pagar_em"] > 1 else v["criar_em"]
+        if quando:
+            g = ph(_hora_local(quando))
+            g["vendas"] += 1
+            g["faturamento"] = round(g["faturamento"] + tot, 2)
+        cart = c.get("cart") if isinstance(c.get("cart"), list) else None
+        if cart:
+            for it in cart:
+                p = out["por_produto"].setdefault(str(it.get("id"))[:20], {"n": 0, "receita": 0.0})
+                p["n"] += 1
+                p["receita"] = round(p["receita"] + float(it.get("v") or 0), 2)
+        else:                                         # critério 14: venda antiga nunca vira pacote
+            p = out["por_produto"].setdefault("sem_detalhe", {"n": 0, "receita": 0.0})
+            p["n"] += 1
+            p["receita"] = round(p["receita"] + tot, 2)
+        canal = c.get("canal") if c.get("canal") in EV_CANAIS else "sem_canal"
+        g = out["por_canal"].setdefault(canal, {"vendas": 0, "faturamento": 0.0})
+        g["vendas"] += 1
+        g["faturamento"] = round(g["faturamento"] + tot, 2)
+        if canal == "checkout" and c.get("lang") in EV_LANGS:   # S3: idioma só do Checkout
+            g = out["por_idioma"].setdefault(c["lang"], {"vendas": 0, "faturamento": 0.0})
+            g["vendas"] += 1
+            g["faturamento"] = round(g["faturamento"] + tot, 2)
+        if c.get("t0") and v["criar_em"]:
+            h_add(tempos["cliente_s"], v["criar_em"] - _epoch(c["t0"]))
+        if canal != "balcao" and v["criar_em"] and v["pagar_em"] > 1:   # no balcão criar e pagar saem juntos
+            d = v["pagar_em"] - v["criar_em"]
+            h_add(tempos["pagamento_s"], d)
+            nome = v["pagar_por"] or c.get("vendedor") or "sem vendedor"
+            h_add(out["por_vendedor"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
+    out["presenca"] = presenca_dia(dia)
+    out["entradas"] = entradas_dia(dia)
+    return out
+
+
+def met_v2_junta(m, v2, so_acrescenta=False):
+    """Põe os campos v2 no resumo. so_acrescenta (migração, critério 26): nunca troca um valor que já existe."""
+    for k, v in v2.items():
+        if k in ("por_fotografo", "por_vendedor"):
+            dst = m.setdefault(k, {})
+            for nome, extra in v.items():
+                alvo = dst.setdefault(nome, {})
+                for kk, vv in extra.items():
+                    if not so_acrescenta or kk not in alvo:
+                        alvo[kk] = vv
+        elif k == "v":
+            m["v"] = 2
+        elif not so_acrescenta or k not in m:
+            m[k] = v
+    return m
+
+
+def operacao_db():
+    os.makedirs(os.path.dirname(OPERACAO_DB), exist_ok=True)
+    c = sqlite3.connect(OPERACAO_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("pragma synchronous=full")
+    c.execute("create table if not exists presenca (dia text, chave text, primeiro real, ultimo real, n int, postos text,"
+              " fonte text, login real, foto real, primary key (dia, chave))")
+    c.execute("create table if not exists entrada (dia text, origem text, seg int)")
+    c.execute("create index if not exists entrada_dia on entrada(dia, origem)")
+    c.execute("create table if not exists importacao (id text primary key, em text, por text, arquivo text, origem text,"
+              " dias text, aceitas int, recusadas int)")
+    return c
+
+
+def presenca_cadastro():
+    """Chaves aceitas na presença: os fotógrafos do FTP (sem os logins compartilhados) e a chave de cada usuário ativo do
+    cadastro da equipe (estado.db). Cache de 30 s."""
+    c = _pres_cad
+    agora = time.time()
+    if 0 <= agora - c["t"] < 30 and c["v"]:
+        return c["v"]
+    cad = set(ff_cadastrados())
+    try:
+        for (v,) in estado_db_ler("usuarios"):
+            u = json.loads(v or "null")
+            if isinstance(u, dict) and u.get("key") and u.get("active") is not False and not u.get("deleted"):
+                cad.add(sem_acento(str(u["key"]))[:40])
+    except Exception:
+        pass
+    c.update(t=agora, v=frozenset(cad))
+    return c["v"]
+
+
+def estado_db_ler(col):
+    with estado_lock:
+        db = estado_db()
+        try:
+            return db.execute("select valor from doc where col = ? and valor is not null", (col,)).fetchall()
+        finally:
+            db.close()
+
+
+def presenca_marca(chave, quando, fonte, posto=None):
+    """Grava a presença (upsert) com a hora do SERVIDOR. login: n + 1 e o 1º login fica guardado mesmo com fotos antes;
+    fotos: só a 1ª foto do dia (e o último sinal a cada 10 min). primeiro = a marca mais cedo, fonte = de onde ela veio."""
+    dia = _ff_hoje(quando)
+    with op_lock:
+        db = operacao_db()
+        try:
+            r = db.execute("select primeiro, ultimo, n, postos, fonte, login, foto from presenca where dia = ? and chave = ?",
+                           (dia, chave)).fetchone()
+            if r is None:
+                ps = [posto] if posto else []
+                db.execute("insert into presenca values (?,?,?,?,?,?,?,?,?)",
+                           (dia, chave, quando, quando, 1 if fonte == "login" else 0, json.dumps(ps), fonte,
+                            quando if fonte == "login" else None, quando if fonte == "fotos" else None))
+                prim, ult = quando, quando
+            else:
+                prim, ult, n, ps, fo, lg, ft = r
+                try:
+                    ps = json.loads(ps or "[]")
+                except Exception:
+                    ps = []
+                if posto and posto not in ps and len(ps) < PRES_POSTOS_MAX:
+                    ps.append(posto)
+                if fonte == "login":
+                    n = (n or 0) + 1
+                    lg = quando if not lg or quando < lg else lg
+                else:
+                    ft = quando if not ft or quando < ft else ft
+                if quando < prim:
+                    prim, fo = quando, fonte
+                ult = max(ult or quando, quando)
+                db.execute("update presenca set primeiro = ?, ultimo = ?, n = ?, postos = ?, fonte = ?, login = ?, foto = ?"
+                           " where dia = ? and chave = ?", (prim, ult, n, json.dumps(ps), fo, lg, ft, dia, chave))
+            db.commit()
+        finally:
+            db.close()
+        _pres_mem[(dia, chave)] = [prim, ult]
+    return {"dia": dia, "primeiro": prim, "ultimo": ult}
+
+
+def presenca_foto(chave, u):
+    """S1/decisão do Eduardo: a 1ª foto do fotógrafo chegando ao servidor também marca presença. Só grava se for a 1ª do dia,
+    se for antes da marca que existe ou para atualizar o último sinal a cada 10 min."""
+    if not chave or not u:
+        return
+    k = (_ff_hoje(u), chave)
+    mem = _pres_mem.get(k)
+    if mem is not None and u >= mem[0] and u - mem[1] < 600:
+        return
+    try:
+        presenca_marca(chave, u, "fotos")
+    except Exception as ex:
+        print("  presença pelas fotos: %s" % str(ex)[:80])
+
+
+def presenca_dia(dia):
+    try:
+        with op_lock:
+            db = operacao_db()
+            try:
+                rs = db.execute("select chave, primeiro, ultimo, n, postos, fonte, login, foto from presenca where dia = ?", (dia,)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return {}
+    out = {}
+    for ch, pr, ul, n, ps, fo, lg, ft in rs:
+        try:
+            ps = json.loads(ps or "[]")
+        except Exception:
+            ps = []
+        out[ch] = {"primeiro": pr, "ultimo": ul, "n": n or 0, "fonte": fo, "login": lg, "foto": ft, "postos": ps}
+    return out
+
+
+def _hhmm(seg):
+    return "%02d:%02d" % (seg // 3600, (seg % 3600) // 60)
+
+
+def entradas_dia(dia):
+    """Resumo das entradas do dia, ou None sem entrada. Com catraca e bip no mesmo dia, o total usa a catraca (S6)."""
+    try:
+        with op_lock:
+            db = operacao_db()
+            try:
+                rs = db.execute("select origem, seg from entrada where dia = ?", (dia,)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return None
+    if not rs:
+        return None
+    por = {}
+    for o, s in rs:
+        por.setdefault(o, []).append(int(s))
+    fonte = "catraca" if por.get("catraca") else "bip"
+    segs = sorted(por.get(fonte) or [])
+    if not segs:
+        return None
+    ph, pm, p15 = {}, {}, {}
+    for s in segs:
+        h = "%02d" % (s // 3600)
+        ph[h] = ph.get(h, 0) + 1
+        pm[s // 60] = pm.get(s // 60, 0) + 1
+        p15[s // 900] = p15.get(s // 900, 0) + 1
+    bm = min(pm, key=lambda k: (-pm[k], k))
+    b15 = min(p15, key=lambda k: (-p15[k], k))
+    minutos = segs[-1] // 60 - segs[0] // 60 + 1
+    return {"fonte": fonte, "total": len(segs), "por_origem": {o: len(v) for o, v in por.items()}, "por_hora": ph,
+            "pico_min": {"hhmm": _hhmm(bm * 60), "n": pm[bm]}, "pico_15": {"hhmm": _hhmm(b15 * 900), "n": p15[b15]},
+            "primeira": _hhmm(segs[0]), "ultima": _hhmm(segs[-1]), "minutos": minutos,
+            "media_min": round(len(segs) / minutos, 2)}
+
+
+def entradas_validar(body):
+    """(origem, dia, segs válidos, recusadas, arquivo, por) ou (None, motivo)."""
+    origem = body.get("origem")
+    if origem not in ENTRADAS_ORIGENS:
+        return None, "origem inválida"
+    dia = body.get("dia")
+    hoje = _ff_hoje()
+    if not isinstance(dia, str) or not re.match(r"^\d{4}-\d\d-\d\d$", dia):
+        return None, "dia inválido"
+    try:
+        t = time.mktime(time.strptime(dia, "%Y-%m-%d"))
+    except ValueError:
+        return None, "dia inválido"
+    if dia > hoje or dia < _ff_hoje(time.time() - 400 * 86400) or _ff_hoje(t + 43200) != dia:
+        return None, "dia fora do intervalo"
+    seg = body.get("seg")
+    if not isinstance(seg, list) or not seg or len(seg) > ENTRADAS_MAX:
+        return None, "entradas inválidas"
+    ok = [s for s in seg if isinstance(s, int) and not isinstance(s, bool) and 0 <= s <= 86399]
+    if not ok:
+        return None, "nenhuma entrada válida"
+    limpa = lambda v, n: re.sub(r"[<>\\/\x00-\x1f]", "", str(v or ""))[:n]
+    return (origem, dia, ok, len(seg) - len(ok), limpa(body.get("arquivo"), 80), limpa(body.get("por"), 60)), None
+
+
+def entradas_gravar(origem, dia, segs, recusadas, arquivo, por):
+    """S6: importar de novo substitui o mesmo dia e a mesma origem (numa transação). Registra a importação."""
+    iid = "imp_" + secrets.token_hex(6)
+    with op_lock:
+        db = operacao_db()
+        try:
+            with db:
+                db.execute("delete from entrada where dia = ? and origem = ?", (dia, origem))
+                db.executemany("insert into entrada values (?,?,?)", [(dia, origem, s) for s in segs])
+                db.execute("insert into importacao values (?,?,?,?,?,?,?,?)",
+                           (iid, _iso(), por, arquivo, origem, json.dumps([dia]), len(segs), recusadas))
+        finally:
+            db.close()
+    threading.Thread(target=lambda: _met_regrava(dia), daemon=True).start()
+    return {"ok": True, "id": iid, "dia": dia, "origem": origem, "aceitas": len(segs), "recusadas": recusadas}
+
+
+def _met_regrava(dia):
+    """Depois de importar entradas: hoje e ontem são refeitos inteiros; dia antigo só troca o campo "entradas" (o resto do
+    resumo antigo nunca é recalculado: as sessões de lá podem já ter saído pelo prazo)."""
+    try:
+        if dia >= _ff_hoje(time.time() - 86400):
+            metricas_gravar(dia)
+            return
+        arq = os.path.join(MET_DIR, dia + ".json")
+        try:
+            m = json.load(open(arq, encoding="utf8"))
+        except Exception:
+            m = {"dia": dia, "gerado": _iso(), "v": 2, "so_entradas": True}
+        m["entradas"] = entradas_dia(dia)
+        os.makedirs(MET_DIR, exist_ok=True)
+        with open(arq + ".tmp", "w", encoding="utf8") as f:
+            json.dump(m, f, ensure_ascii=False, indent=1)
+        os.replace(arq + ".tmp", arq)
+    except Exception as ex:
+        print("  métricas (entradas): %s" % str(ex)[:120])
+
+
+def entradas_importacoes():
+    with op_lock:
+        db = operacao_db()
+        try:
+            rs = db.execute("select id, em, por, arquivo, origem, dias, aceitas, recusadas from importacao order by em desc, rowid desc limit 20").fetchall()
+        finally:
+            db.close()
+    out = []
+    for r in rs:
+        try:
+            dias = json.loads(r[5] or "[]")
+        except Exception:
+            dias = []
+        out.append({"id": r[0], "em": r[1], "por": r[2], "arquivo": r[3], "origem": r[4], "dias": dias, "aceitas": r[6], "recusadas": r[7]})
+    return {"ok": True, "importacoes": out}
+
+
+def metricas_migra_v2(pausa=0.2):
+    """Uma vez, numa thread: os resumos antigos (v1) ganham os campos v2 que dá para refazer (horas, produtos, canal e
+    pagamento_s do vendas.db; sessões, clique e transferência do arquivo de sessões, se ainda existir). SÓ ACRESCENTA:
+    nenhum campo da v1 é trocado (critério 26). Hoje e ontem ficam com o metricas_loop, que já grava v2."""
+    try:
+        nomes = sorted(n for n in os.listdir(MET_DIR) if re.match(r"^\d{4}-\d\d-\d\d\.json$", n)) if os.path.isdir(MET_DIR) else []
+    except OSError:
+        nomes = []
+    ontem = _ff_hoje(time.time() - 86400)
+    est_migra.update(estado="rodando", feitos=0, total=len(nomes), erro=None)
+    for n in nomes:
+        dia = n[:10]
+        if dia >= ontem:
+            est_migra["feitos"] += 1
+            continue
+        arq = os.path.join(MET_DIR, n)
+        try:
+            m = json.load(open(arq, encoding="utf8"))
+            if not isinstance(m, dict) or m.get("v") == 2:
+                est_migra["feitos"] += 1
+                continue
+            sf = os.path.join(SESS_DIR, dia + ".json")
+            ss = None
+            if os.path.exists(sf):
+                try:
+                    ss = json.load(open(sf, encoding="utf8")).get("sessoes") or []
+                except Exception:
+                    ss = None
+            v2 = met_v2(dia, ss, _ev_ler(dia))
+            if ss is None:                           # sem arquivo de sessões: não inventa tempos de clique nem de câmera
+                for k in ("clique_checkout_s", "transferencia_s"):
+                    v2["tempos"].pop(k, None)
+                v2.pop("por_fotografo", None)
+            met_v2_junta(m, v2, so_acrescenta=True)
+            m["migrado"] = True
+            tmp = arq + ".tmp"
+            with open(tmp, "w", encoding="utf8") as f:
+                json.dump(m, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, arq)
+        except Exception as ex:
+            est_migra["erro"] = "%s: %s" % (dia, str(ex)[:120])
+        est_migra["feitos"] += 1
+        time.sleep(pausa)                            # o agente continua atendendo (critério 27)
+    est_migra["estado"] = "feita"
+
+
+# Coleção "agenda" (calendário de eventos): só os campos do contrato, textos sem < e >, até 2 KB por registro.
+AGENDA_TIPOS = ("jogo", "show", "feriado", "fechado", "evento", "outro")
+AGENDA_ORIGENS = ("manual", "csv", "feriados")
+AGENDA_MAX = 2048
+_re_agenda_id = re.compile(r"^ag_[0-9a-f]{12}$")
+
+
+def agenda_valida(doc_id, v):
+    """Registro limpo da agenda, ou None (recusado)."""
+    if not isinstance(v, dict) or not _re_agenda_id.match(doc_id) or v.get("id") not in (None, doc_id):
+        return None
+    data = v.get("data")
+    if not isinstance(data, str) or not re.match(r"^\d{4}-\d\d-\d\d$", data):
+        return None
+    hora = v.get("hora") or ""
+    if not isinstance(hora, str) or (hora and not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", hora)):
+        return None
+    if v.get("tipo") not in AGENDA_TIPOS:
+        return None
+    txt = lambda x, n: re.sub(r"[<>\x00-\x1f]", "", str(x or ""))[:n]
+    out = {"id": doc_id, "data": data, "hora": hora, "tipo": v["tipo"], "mandante": txt(v.get("mandante"), 60),
+           "visitante": txt(v.get("visitante"), 60), "competicao": txt(v.get("competicao"), 60), "obs": txt(v.get("obs"), 200),
+           "origem": v.get("origem") if v.get("origem") in AGENDA_ORIGENS else "manual", "por": txt(v.get("por"), 60),
+           "em": txt(v.get("em"), 30)}
+    if len(json.dumps(out, ensure_ascii=False).encode("utf8")) > AGENDA_MAX:
+        return None
+    return out
+
+
 def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/presenca", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -5417,6 +5908,38 @@ class H(BaseHTTPRequestHandler):
             ff_funcao.update(dia=dia, map=mp)
         print("  função do dia atualizada por %s" % ("este computador" if self.loopback() else "posto " + self.client_address[0]))
         return self.js({"ok": True, "ignoradas": ignoradas})
+
+    def presenca_post(self):
+        """v92: POST /ponto/presenca {chave, posto}: o login no posto marca a presença com a hora DO SERVIDOR (o navegador
+        nunca manda hora). Posto + origem + X-Eterna: 1 (403), 30 por minuto (429), chave do cadastro (400)."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        if not limite_ok(self.client_address[0], "presenca", 30):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        chave = sem_acento(str(body.get("chave") or "")).strip()[:40]
+        if not chave or chave not in presenca_cadastro():
+            return self.js({"error": "chave fora do cadastro"}, 400)
+        posto = re.sub(r"[<>\x00-\x1f]", "", str(body.get("posto") or ""))[:40] or None
+        r = presenca_marca(chave, time.time(), "login", posto)
+        return self.js({"ok": True, "dia": r["dia"], "primeiro": r["primeiro"]}, nostore=True)
+
+    def entradas_post(self):
+        """v92: POST /ponto/entradas {origem, dia, seg:[...], arquivo, por}: entradas da bilheteria (bip ou catraca) de um dia,
+        só segundos do dia (o CSV fica no navegador). Substitui o mesmo dia e origem. Até 1 MB e 50.000 entradas."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        if not limite_ok(self.client_address[0], "entradas", 30):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(1024 * 1024)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        v, motivo = entradas_validar(body)
+        if v is None:
+            return self.js({"error": motivo}, 400)
+        return self.js(entradas_gravar(*v), nostore=True)
 
     def file(self, path):
         try:
@@ -5853,6 +6376,7 @@ class H(BaseHTTPRequestHandler):
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
                                 "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
+                                "estatisticas": {"v": 2, "migracao": dict(est_migra)},
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
@@ -5912,6 +6436,10 @@ class H(BaseHTTPRequestHandler):
             hoje = _ff_hoje()
             r = metricas_periodo((q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0])
             return self.js({"ok": True, "dias": r} if r is not None else {"error": "datas inválidas"}, 200 if r is not None else 400)
+        if u.path == "/ponto/entradas/importacoes":
+            if not self.posto() or not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js(entradas_importacoes(), nostore=True)
         if u.path == "/impressao/fila":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -5998,6 +6526,10 @@ class H(BaseHTTPRequestHandler):
             return self.recorte_post()
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
+        if u.path == "/ponto/presenca":
+            return self.presenca_post()
+        if u.path == "/ponto/entradas":
+            return self.entradas_post()
         if u.path == "/fundos/modo":
             # o interruptor do Painel de controle grava aqui o modo da montagem; só deste computador
             if not self.loopback() or not self.origem_local():
@@ -6182,6 +6714,7 @@ def main():
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
+    threading.Thread(target=metricas_migra_v2, daemon=True).start()   # v92: resumos antigos ganham os campos v2 (só acrescenta)
     threading.Thread(target=backup_loop, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
