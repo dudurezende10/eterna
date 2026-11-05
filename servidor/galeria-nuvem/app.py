@@ -26,6 +26,7 @@ REGIAO = os.environ.get("AWS_REGION", "us-east-2")
 TABELA = boto3.resource("dynamodb").Table(os.environ["TABELA"])
 BUCKET = os.environ["BUCKET"]
 SEGREDO_PONTO_SHA256 = os.environ["SEGREDO_PONTO_SHA256"]       # só o hash; o segredo fica no agente
+SEGREDO_TESTE_SHA256 = os.environ.get("SEGREDO_PONTO_TESTE_SHA256", "")   # servidor de teste: publica sem usar o segredo do estádio
 COLECAO_PREFIXO = os.environ.get("COLECAO_PREFIXO", "et-maracana-")
 LIMIAR_ADULTO = float(os.environ.get("LIMIAR_ADULTO", "85"))    # semelhança do Rekognition (0 a 100)
 LIMIAR_CRIANCA = float(os.environ.get("LIMIAR_CRIANCA", "95"))  # grupo de escola e sessão de menor: mais rígido
@@ -368,9 +369,14 @@ def auth_verificar(corpo):
 
 
 # ---------- rotas ----------
+def ponto_ok(seg):
+    h = hashlib.sha256(seg.encode()).hexdigest() if seg else ""
+    return bool(h) and any(x and hmac.compare_digest(h, x) for x in (SEGREDO_PONTO_SHA256, SEGREDO_TESTE_SHA256))
+
+
 def publicar(ev, corpo):
     seg = (ev.get("headers") or {}).get("x-eterna-ponto", "")
-    if not seg or not hmac.compare_digest(hashlib.sha256(seg.encode()).hexdigest(), SEGREDO_PONTO_SHA256):
+    if not ponto_ok(seg):
         return resp({"error": "não autorizado"}, 401)
     m = corpo.get("manifesto")
     if not isinstance(m, dict) or not _re_token.match(str(m.get("token") or "")) or m.get("tipo") not in ("sessao", "evento"):
