@@ -4622,7 +4622,12 @@ $motivos = @{3='pouco papel'; 4='sem papel'; 5='ribbon acabando'; 6='sem ribbon'
 # Uma foto por trabalho, e a próxima só depois que a anterior SAIU (fila do Windows vazia e a impressora parada): a DS-RX1
 # descartava o que chegava enquanto imprimia. Sem papel, sem ribbon ou desligada, espera (avisando o motivo) em vez de
 # mandar a próxima e perder a foto. Trabalho "Printed, Retained" (Windows guardando o impresso) não conta como pendente.
-function Espera-Livre {
+# Com a impressora parada, fila vazia não libera nada: nada é enviado e, se o trabalho da foto sumiu do Windows, ela não saiu.
+$param = @(4, 6, 7, 8, 9, 11)
+# ETERNA_IMP_SEM_ESTADO: impressora cujo estado no Windows fica preso depois de um aviso (a laser do teste, por USB): não confia nele
+if ($env:ETERNA_IMP_SEM_ESTADO) { $param = @(); $motivos = @{} }
+$script:perdida = $false
+function Espera-Livre([switch]$Foto) {
   $ini = Get-Date; $ultimo = $null
   while ($true) {
     if (Cancelado) { return $false }
@@ -4635,7 +4640,11 @@ function Espera-Livre {
     elseif (@($fila | Where-Object { "$($_.JobStatus)" -match 'Error|Offline|PaperOut|Blocked|UserIntervention' }).Count) { $aviso = 'a impressora parou (' + $fila[0].JobStatus + ')' }
     elseif (((Get-Date) - $ini).TotalSeconds -gt 120) { $aviso = 'a impressora não termina há mais de 2 minutos' }
     if ($aviso -ne $ultimo) { Diz ("AVISO " + $aviso); $ultimo = $aviso }
-    if ($p -and $fila.Count -eq 0 -and $p.PrinterStatus -ne 4) { return $true }
+    $parada = $p -and ($p.WorkOffline -or ($param -contains [int]$p.DetectedErrorState))
+    if ($p -and $fila.Count -eq 0 -and $p.PrinterStatus -ne 4) {
+      if (-not $parada) { return $true }
+      if ($Foto) { $script:perdida = $true; return $true }
+    }
     Start-Sleep -Milliseconds 500
   }
 }
@@ -4651,7 +4660,7 @@ foreach ($f in $Arquivos) {
     if (-not $doc.PrinterSettings.IsValid) { throw "impressora '$Impressora' não encontrada" }
     $doc.DocumentName = "Eterna " + [IO.Path]::GetFileNameWithoutExtension($f)
     $ps = $doc.PrinterSettings.PaperSizes | Where-Object { $a=[Math]::Min($_.Width,$_.Height); $b=[Math]::Max($_.Width,$_.Height); $a -ge 395 -and $a -le 420 -and $b -ge 595 -and $b -le 625 } | Select-Object -First 1
-    if ($ps) { $doc.DefaultPageSettings.PaperSize = $ps }
+    if ($ps -and -not $env:ETERNA_IMP_PAPEL_PADRAO) { $doc.DefaultPageSettings.PaperSize = $ps }   # ETERNA_IMP_PAPEL_PADRAO: teste em impressora comum, usa o papel que já está nela
     $doc.DefaultPageSettings.Landscape = $false
     $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)
     $doc.OriginAtMargins = $false
@@ -4667,7 +4676,8 @@ foreach ($f in $Arquivos) {
     $doc.Print()
     $img.Dispose()
     Start-Sleep -Seconds 2                          # o trabalho aparece na fila do Windows
-    if (-not (Espera-Livre)) { break }              # FOTO = saiu da impressora, não só entregue ao Windows
+    if (-not (Espera-Livre -Foto)) { break }        # FOTO = saiu da impressora, não só entregue ao Windows
+    if ($script:perdida) { $erros += ([IO.Path]::GetFileName($f) + ": saiu da fila do Windows com a impressora parada, sem imprimir"); break }
     Diz ("FOTO " + [IO.Path]::GetFileName($f) + " " + (Get-Date -Format HH:mm:ss))
   } catch { $erros += ([IO.Path]::GetFileName($f) + ": " + $_.Exception.Message) }
 }
@@ -4793,6 +4803,8 @@ def imp_acao(body):
             return {"ok": False, "error": "ação inválida"}
         if j["estado"] in ("na_fila", "imprimindo"):
             return {"ok": False, "error": "esse pedido ainda está na fila"}
+        if any(x["venda"] == j["venda"] and x["estado"] in ("na_fila", "imprimindo") for x in imp_fila):
+            return {"ok": False, "error": "essa venda já está na fila"}
         arqs = list(j.get("arquivos") or [])
         if acao == "faltantes":
             arqs = arqs[j.get("feitas") or 0:]
@@ -4864,6 +4876,12 @@ def imprimir(imagens, venda, vendedor="", posto=""):
     """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor."""
     if not isinstance(imagens, list) or not imagens or len(imagens) > 20:
         return {"ok": False, "error": "nenhuma foto (ou mais de 20)"}
+    with lock:                 # a mesma venda ainda na fila: não entra de novo (novo clique, outra aba, tela recarregada)
+        ativo = next((j for j in imp_fila if venda and j["venda"] == venda and j["estado"] in ("na_fila", "imprimindo")), None)
+        if ativo:
+            frente = sum(1 for j in imp_fila if j["estado"] in ("na_fila", "imprimindo") and j["id"] < ativo["id"])
+            return {"ok": True, "ja_na_fila": True, "fotos": ativo["fotos"], "impressora": IMPRESSORA, "pedido": ativo["id"], "na_frente": frente,
+                    "gravar_ms": 0, "spooler_ms": 0, "kb": 0}
     t0 = time.time()
     os.makedirs(IMP_DIR, exist_ok=True)
     tag = time.strftime("%Y%m%d-%H%M%S") + "_" + re.sub(r"[^A-Za-z0-9-]", "", venda)[:20]

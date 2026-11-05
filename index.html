@@ -252,7 +252,9 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .if-col h2{display:flex;justify-content:space-between;align-items:center;margin:0;font-family:var(--body);font-size:20px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .if-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
 .if-col.agora{border-color:#FFB800}
-.if-col.pronta{border-color:#2e9e5b}
+.if-col.pronta{border-color:#2e9e5b;overflow:auto}
+.if-col.pronta .if-list{flex:none;overflow:visible}
+.if-col.pronta>.if-card{flex:none}
 .if-cnt{font-size:13px;letter-spacing:0;background:var(--line);border-radius:999px;padding:2px 10px}
 .if-card{border-radius:10px;padding:10px 12px;border:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
 .if-card.fila{background:#EEF4FD;border-color:#5B8FD0}
@@ -1539,14 +1541,13 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
   const job={card,fase:'montando',re:re?{motivo:re.motivo}:null,fotos:fotos.map(x=>x.k),at:Date.now(),t0:performance.now()};state.impJob=job;render();
   const r=await printMontar(fotos,SIM.edits);if(state.impJob!==job)return;job.res=r;
   if(!r.ok.length){job.fase='erro';document.body.classList.remove('pr-on');toast('Nenhuma foto ficou pronta para imprimir. Tente de novo.');render();return;}
-  const termLocal=(state.agent&&state.agent.impLocais||[]).includes(String((postoDisp()||{}).nome||postoNome()).trim().toLowerCase()); // terminal com a DNP ligada nele
-  if(state.agent&&state.agent.on&&state.agent.impressora&&!termLocal){ // servidor com impressora (ETERNA_IMPRESSORA): a foto sai lá, não na impressora de quem clicou
+  if(impNoServidor()){ // servidor com impressora (ETERNA_IMPRESSORA): a foto sai lá, não na impressora de quem clicou
     job.fase='imprimindo';render();let tM=0;try{const imgs=[];for(const im of document.querySelectorAll('#print-root img')){ // 10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio
       const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
       tM=performance.now();
       const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,vendedor:(state.user&&state.user.name)||'',posto:String((postoDisp()||{}).nome||postoNome()).slice(0,30) /* nome do terminal: o servidor escolhe a DNP dele (ETERNA_IMPRESSORA_POSTOS) */,imagens:imgs})})).json();
-      if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';const tF=performance.now();
-      toast(`Enviado para ${rr.impressora}${rr.na_frente?` · ${rr.na_frente} ${rr.na_frente===1?'pedido':'pedidos'} na frente`:''}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.t0)/1000).toFixed(1)} s (montar ${((tM-job.t0)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
+      if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';job.pedido=rr.pedido;impJobGuarda(job);impPostoPoll();const tF=performance.now();
+      toast(rr.ja_na_fila?'Esta venda já está na fila da impressora':`Enviado para ${rr.impressora}${rr.na_frente?` · ${rr.na_frente} ${rr.na_frente===1?'pedido':'pedidos'} na frente`:''}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.t0)/1000).toFixed(1)} s (montar ${((tM-job.t0)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
     document.getElementById('print-root')?.remove();render();return;}
   document.body.classList.add('pr-on');job.fase='imprimindo';
@@ -1594,19 +1595,40 @@ function impVendas(cards){return Object.entries(SIM.sessions).filter(([c,s])=>s.
   .sort((a,b)=>String(b[1].paidAt||'').localeCompare(String(a[1].paidAt||'')));}
 function impThumb(x,on,act,card){const st=x.t==='ph'?phStyle(x.id):'';const b=x.t==='ai'?bgOf(x.bg):null;
   return `<button class="imp-th${on?' on':''}" ${act?`data-act="${act}" data-card="${esc(card)}" data-k="${esc(x.k)}"`:'disabled'} aria-pressed="${!!on}" style="${st}" aria-label="${x.t==='ai'?'Foto com fundo de IA':'Foto'}">${x.t==='ai'?`<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?b.file:''})"></span><span class="imp-ia">IA</span>`:''}${on?'<span class="imp-ok">✓</span>':''}</button>`;}
-function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');
+// servidor com impressora (ETERNA_IMPRESSORA): a foto sai lá, e o painel acompanha o pedido na fila do servidor
+const impNoServidor=()=>{const a=state.agent;return !!(a&&a.on&&a.impressora)&&!(a.impLocais||[]).includes(String((postoDisp()||{}).nome||postoNome()).trim().toLowerCase());}; // impLocais: terminal com a DNP ligada nele
+const IMP_JOB='eterna-imp-job';
+function impJobGuarda(job){try{const r=job.res||{};sessionStorage.setItem(IMP_JOB,JSON.stringify({card:job.card,fase:job.fase,re:job.re,fotos:job.fotos,at:job.at,pedido:job.pedido,res:{ok:r.ok||[],falhasIA:r.falhasIA||[],falhas:r.falhas||[]}}));}catch(e){}}
+function impJobVolta(){if(state.impJob)return;try{const j=JSON.parse(sessionStorage.getItem(IMP_JOB)||'null');const s=j&&SIM.sessions[j.card];if(s&&s.impressao&&!(s.impressoes||[]).some(x=>Date.parse(x.em)>=j.at))state.impJob=j;}catch(e){}} // tela recarregada: "Saiu certo" continua valendo; depois de marcar, não volta
+let impPostoTimer=null;
+async function impPostoPoll(){if(!document.getElementById('imp-painel')&&!state.impJob||!impNoServidor()){clearInterval(impPostoTimer);impPostoTimer=null;return;}
+  try{const j=await (await fetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();const sig=JSON.stringify([j.pedidos.map(p=>[p.id,p.estado,p.feitas,p.aviso,p.erro]),j.estados]);const mudou=sig!==state.impFilaSig;state.impFila=j;state.impFilaSig=sig;if(mudou&&document.getElementById('imp-painel'))render();}catch(e){}}
+const impPedido=venda=>[...((state.impFila&&state.impFila.pedidos)||[])].reverse().find(p=>p.venda===venda)||null;
+const impAtivo=p=>!!p&&(p.estado==='na_fila'||p.estado==='imprimindo');
+function impPedidoLinha(p){const F=state.impFila||{};const e=(F.estados||{})[p.impressora||state.agent.impressora];const parada=p.aviso||(e&&e.estado==='erro'?(e.motivo||'parada'):'');const fotos=`${p.fotos} ${p.fotos===1?'foto':'fotos'}`;let t;
+  if(p.estado==='na_fila'){const n=(F.pedidos||[]).filter(x=>impAtivo(x)&&x.id<p.id).length;t=`<span class="pill neutral">Na fila${n?` · ${n} ${n===1?'pedido':'pedidos'} na frente`:''}</span>`;}
+  else if(p.estado==='imprimindo')t=`<span class="pill warn">Imprimindo ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos}</span>`;
+  else if(p.estado==='erro')t=`<span class="pill bad">Parou com ${p.feitas} de ${p.fotos} impressas</span>`;
+  else if(p.estado==='cancelado')t=`<span class="pill neutral">Pedido cancelado</span>`;
+  else t=`<span class="pill good">Impressora terminou ${fotos}</span>`;
+  return `<div class="note">${t}${impAtivo(p)&&parada?` <span class="pill bad" role="alert">Impressora parada: ${esc(parada)}</span>`:''}</div>`;}
+function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');const noSrv=impNoServidor();
+  if(noSrv){impJobVolta();if(!impPostoTimer){impPostoTimer=setInterval(impPostoPoll,2500);setTimeout(impPostoPoll,0);}}
   if(!L.length&&cards){const s0=SIM.sessions[cards[0]]||{};return `<div class="panel" id="imp-painel"><div class="note">${s0.impressao?'Esta venda não tem fotos impressas no pacote.':'Esta venda é de antes da impressão pelo Posto de venda (v83): não há fotos registradas para imprimir aqui.'}</div></div>`;}
   const item=([card,s])=>{const im=s.impressao;const job=state.impJob&&state.impJob.card===card?state.impJob:null;const hora=s.paidAt?hhmm(new Date(s.paidAt)):'';
+    const ped=noSrv?impPedido(s.saleNo||card):null;const naFila=impAtivo(ped);const linhaFila=ped?impPedidoLinha(ped):'';const cancelaFila=naFila&&rw?`<div class="row"><button class="btn ghost" data-act="if-acao" data-a="cancelar" data-id="${ped.id}">Cancelar pedido</button></div>`:'';
+    const semSaida=ped&&(ped.estado==='erro'||ped.estado==='cancelado');
     const head=`<div class="din-top"><b>${esc(s.saleNo||card)}</b><span class="pill ${im.estado==='impressa'?'good':'warn'}">${im.estado==='impressa'?'impressa':'para imprimir'}</span></div><div class="note">Sessão ${esc(card)} · paga às ${hora} · ${esc(s.payment||'')} · ${s.prints||0} ${s.prints===1?'impressa':'impressas'} no pacote</div>`;
     let body='';
     if(im.estado==='pendente'){const S=impSel(card,s);const selK=new Set(S.sel.map(x=>x.k));const feitas=new Set(im.feitas||[]);
       const nota=S.semFoto?`<div class="note"><span class="pill bad">${S.semFoto} ${S.semFoto===1?'impressão sem foto':'impressões sem foto'}</span></div>`:'';
       const ult=(s.impressoes||[]).slice(-1)[0];const falhaIA=ult&&ult.falhasIA&&ult.falhasIA.length?`<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span></div>`:'';
       if(job&&job.fase==='montando')body=`<div class="note"><span class="pill neutral">Preparando ${job.fotos.length} ${job.fotos.length===1?'foto':'fotos'} para a impressora...</span></div>`;
+      else if(naFila)body=linhaFila+cancelaFila;
       else if(job&&(job.fase==='imprimindo'||job.fase==='impresso')){const r=job.res||{ok:[],falhasIA:[],falhas:[]};
-        body=`<div class="note">${r.ok.length} ${r.ok.length===1?'foto enviada':'fotos enviadas'} para a impressora deste posto.</div>${r.falhasIA.length?`<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span> ${r.falhasIA.length} ${r.falhasIA.length===1?'foto com fundo de IA ficou':'fotos com fundo de IA ficaram'} de fora.</div>`:''}${r.falhas.length?`<div class="note"><span class="pill warn">${r.falhas.length} ${r.falhas.length===1?'foto não abriu':'fotos não abriram'}</span></div>`:''}
-          ${rw?`<div class="row"><button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button><button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`;}
-      else body=`${feitas.size?`<div class="note">${feitas.size} já ${feitas.size===1?'impressa':'impressas'}; faltam ${S.max}.</div>`:''}${falhaIA}
+        body=`${noSrv?linhaFila:`<div class="note">${r.ok.length} ${r.ok.length===1?'foto enviada':'fotos enviadas'} para a impressora deste posto.</div>`}${r.falhasIA.length?`<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span> ${r.falhasIA.length} ${r.falhasIA.length===1?'foto com fundo de IA ficou':'fotos com fundo de IA ficaram'} de fora.</div>`:''}${r.falhas.length?`<div class="note"><span class="pill warn">${r.falhas.length} ${r.falhas.length===1?'foto não abriu':'fotos não abriram'}</span></div>`:''}
+          ${rw?`<div class="row">${semSaida?'':`<button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button>`}<button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`;}
+      else body=`${ped?linhaFila:''}${feitas.size?`<div class="note">${feitas.size} já ${feitas.size===1?'impressa':'impressas'}; faltam ${S.max}.</div>`:''}${falhaIA}
         <div class="imp-grid">${S.pode.map(x=>impThumb(x,selK.has(x.k),rw?'imp-pick':null,card)).join('')}</div>
         <div class="note">${S.sel.length} de ${S.max} marcadas. Toque para trocar quais imprimir.</div>${nota}${job&&job.fase==='erro'?'<div class="note"><span class="pill bad">Nenhuma foto ficou pronta. Tente de novo.</span></div>':''}
         ${rw?`<div class="row"><button class="btn primary" data-act="imp-print" data-card="${esc(card)}" ${S.sel.length?'':'disabled'}>Imprimir ${S.sel.length} ${S.sel.length===1?'foto':'fotos'} (10×15)</button></div>`:''}`;}
@@ -1614,7 +1636,7 @@ function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');
       const jr=job&&job.re?job:null;const r=jr&&jr.res||{ok:[],falhasIA:[],falhas:[]};
       body=`<div class="note">Impressa${im.porNome?' por '+esc(im.porNome):''}${im.em?' às '+hhmm(new Date(im.em)):''} · ${im.n||0} ${im.n===1?'foto':'fotos'}${nre.length?` · ${nre.length} ${nre.length===1?'reimpressão':'reimpressões'}`:''}</div>
         ${jr&&jr.fase==='montando'?'<div class="note"><span class="pill neutral">Preparando a reimpressão...</span></div>':''}
-        ${jr&&(jr.fase==='imprimindo'||jr.fase==='impresso')?`<div class="note">Reimpressão: ${r.ok.length} ${r.ok.length===1?'foto enviada':'fotos enviadas'} para a impressora.</div>${r.falhasIA.length?'<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span></div>':''}
+        ${naFila?linhaFila+cancelaFila:jr&&(jr.fase==='imprimindo'||jr.fase==='impresso')?`${noSrv?linhaFila:`<div class="note">Reimpressão: ${r.ok.length} ${r.ok.length===1?'foto enviada':'fotos enviadas'} para a impressora.</div>`}${r.falhasIA.length?'<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span></div>':''}
           ${rw?`<div class="row"><button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button><button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`
         :!rw||jr?'':re?`<div class="din-conf"><span class="eyebrow">Quais fotos reimprimir (até ${max})</span>
           <div class="imp-grid">${impFotos(s).todas.filter(x=>feitas.has(x.k)).map(x=>impThumb(x,(re.sel||[]).includes(x.k),'imp-repick',card)).join('')}</div>
@@ -1624,7 +1646,7 @@ function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');
     return `<div class="din-item" data-imp="${esc(card)}">${head}${body}</div>`;};
   return `<div class="panel" id="imp-painel"><div class="head"><h2>Impressão 10×15</h2><span class="pill ${(SIM.stock[postoNome()]||0)<ROLO_ALERTA?'bad':'neutral'}">Rolo: ${SIM.stock[postoNome()]!=null?SIM.stock[postoNome()]:ROLO_CAP} de ${ROLO_CAP}</span></div>
     ${L.length?`<div class="din-list">${L.map(item).join('')}</div>`:'<div class="note">Nenhuma venda para imprimir. Depois de confirmar o pagamento, as fotos aparecem aqui já marcadas.</div>'}
-    <div class="note">Sai na DNP RX1HS deste posto, em 10×15 (PR 4×6, sem margem). Foto com fundo de IA imprime com o fundo em alta resolução.</div></div>`;}
+    <div class="note">${noSrv?`Sai na impressora ${esc(state.agent.impressora)} do servidor`:'Sai na DNP RX1HS deste posto'}, em 10×15 (PR 4×6, sem margem). Foto com fundo de IA imprime com o fundo em alta resolução.</div></div>`;}
 // "Minhas vendas de hoje" (D9): deste notebook e do e-mail de quem está logado; valor de cada venda e nenhum total
 function minhasVendas(){const u=state.user;if(!u)return '';const hoje=todayISO();const rows=[];const vistos=new Set();
   (SIM.caixaDin||[]).forEach(r=>{if(!r.vendedor||r.vendedor.email!==u.email||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;
@@ -3686,7 +3708,7 @@ function impMiniOn(){try{return localStorage.getItem('eterna-if-mini-tv')==='1'}
 function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000);setTimeout(impFilaPoll,0);}
   const F=state.impFila;const agora=F?F.agora:Date.now()/1000;const ps=(F&&F.pedidos)||[];const imps=(F&&F.impressoras&&F.impressoras.length)?F.impressoras:[(F&&F.impressora)||'Impressora'];
   const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?'agora':`há ${m} min`;};const hm=t=>hhmm(new Date(t*1000));
-  const fila=ps.filter(p=>p.estado==='na_fila'),agoraP=ps.filter(p=>p.estado==='imprimindo'),prontas=ps.filter(p=>p.estado==='impresso').sort((a,b)=>b.fim-a.fim).slice(0,12),erros=ps.filter(p=>p.estado==='erro'||p.estado==='cancelado').sort((a,b)=>b.fim-a.fim).slice(0,4);
+  const fila=ps.filter(p=>p.estado==='na_fila'),agoraP=ps.filter(p=>p.estado==='imprimindo'),prontas=ps.filter(p=>p.estado==='impresso').sort((a,b)=>b.fim-a.fim).slice(0,12),erros=ps.filter(p=>(p.estado==='erro'||(p.estado==='cancelado'&&p.feitas>0))&&!ps.some(x=>x.id>p.id&&x.venda===p.venda&&x.estado!=='cancelado')).sort((a,b)=>b.fim-a.fim).slice(0,4);const motivoErro=e=>{const m=String(e).match(/ERRO\s+(?:\S+\.jpg:\s*)?(.*)$/);return m?m[1]:String(e);};
   const est=(F&&F.estados)||{};const estPill=n=>{const e=est[n];if(!e)return '';const c=e.estado==='erro'?'bad':e.estado==='imprimindo'?'warn':'good';return `<span class="pill ${c}">${esc(n)} · ${e.estado==='erro'?esc(e.motivo||'parada'):e.estado}</span>`;};
   // controle (fora da tela cheia): cancelar o que espera ou imprime; reimprimir o que saiu, o que faltou ou tudo
   const acts=p=>{const b=(a,t)=>`<button class="btn" data-act="if-acao" data-a="${a}" data-id="${p.id}">${t}</button>`;if(p.estado==='na_fila'||p.estado==='imprimindo')return `<div class="if-acts">${b('cancelar','Cancelar')}</div>`;if(p.feitas<p.fotos&&p.feitas>0)return `<div class="if-acts">${b('faltantes','Imprimir as '+(p.fotos-p.feitas)+' que faltaram')}${b('reimprimir','Reimprimir tudo')}</div>`;return `<div class="if-acts">${b('reimprimir','Reimprimir')}</div>`;};
@@ -3705,7 +3727,7 @@ function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000)
     <section class="if-col agora"><h2>Imprimindo agora <span class="if-cnt">${agoraP.length}</span></h2><div class="if-list">${imps.map(n=>{const p=agoraP.find(x=>x.impressora===n)||(imps.length===1?agoraP[0]:null);
         return `<div class="if-imp">${imps.length>1?`<div class="if-impn">${esc(n)}</div>`:''}${p?card(p,'imp',`início ${hm(p.inicio||p.criado)} · foto ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos} · ${min(p.inicio||p.criado)}`,`${aviso(p)}<div class="if-prog"><i style="width:${Math.round(100*p.feitas/p.fotos)}%"></i></div>${thumbs(p)}${acts(p)}`):'<div class="if-vazio">Livre</div>'}</div>`;}).join('')}</div></section>
     <section class="if-col pronta"><h2>Prontas · retirar <span class="if-cnt">${prontas.length}</span></h2><div class="if-list">${prontas.map(p=>card(p,'ok',`${imps.length>1&&p.impressora?'<b>'+esc(p.impressora)+'</b> · ':''}pronta ${hm(p.fim)} · ${fotos(p.fotos)} · ${min(p.fim)}`,acts(p))).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}</div>
-      ${erros.length?`<h2 class="if-err-h">Com erro ou canceladas</h2>${erros.map(p=>card(p,'err',`${p.estado==='cancelado'?'cancelada':'erro'} · ${p.feitas} de ${p.fotos} saíram${p.erro?' · '+esc(p.erro.slice(0,90)):''}`,acts(p))).join('')}`:''}</section>
+      ${erros.length?`<h2 class="if-err-h">Com erro ou canceladas</h2>${erros.map(p=>card(p,'err',`${p.estado==='cancelado'?'cancelada':'erro'} · ${p.feitas} de ${p.fotos} saíram${p.erro?' · '+esc(motivoErro(p.erro).slice(0,90)):''}`,acts(p))).join('')}`:''}</section>
   </div></div>`;}
 // ---------- Fila do fotógrafo (v87) ----------
 // Painel de senhas das fotos chegando, por fotógrafo, calculado no agente (GET /fila-fotografo, a cada 2 s). Só leitura; tela da
@@ -4938,7 +4960,7 @@ document.addEventListener('click',e=>{
     case 'gal-qr':state.gal.qr=state.gal.qr===d.t?null:d.t;render();break;
     case 'if-acao':{const a=d.a;if(a==='cancelar'&&!confirm('Cancelar este pedido de impressão? O que já saiu fica; o resto não imprime.'))break;
       fetch(state.agent.url+'/impressao/acao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:+d.id,acao:a,por:(state.user&&state.user.email)||''})})
-        .then(r=>r.json()).then(j=>{toast(j.ok?(a==='cancelar'?'Cancelando o pedido':'Mandado de novo para a fila'):(j.error||'Não deu certo'));impFilaPoll();}).catch(()=>toast('Sem conexão com o servidor'));break;}
+        .then(r=>r.json()).then(j=>{toast(j.ok?(a==='cancelar'?'Cancelando o pedido':'Mandado de novo para a fila'):(j.error||'Não deu certo'));impFilaPoll();impPostoPoll();}).catch(()=>toast('Sem conexão com o servidor'));break;}
     case 'impfila-mini':try{localStorage.setItem('eterna-if-mini-tv',impMiniOn()?'0':'1')}catch(e){}render();break;
     case 'fotofila-tv':{document.body.classList.toggle('if-tv');try{if(document.body.classList.contains('if-tv'))document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{});else document.fullscreenElement&&document.exitFullscreen();}catch(e){}render();break;}
     case 'fotofila-mini':{const on=ffMiniOn();try{localStorage.setItem(FF_TVMINI,on?'0':'1');}catch(e){}auditLog('fotofila_miniaturas','este aparelho',[{campo:'Miniaturas da Fila do fotógrafo',de:on?'ligadas':'desligadas',para:on?'desligadas':'ligadas'}]);render();break;} // só neste aparelho (filafoto.u, WRITE_OPS); fica no histórico
