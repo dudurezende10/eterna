@@ -91,8 +91,9 @@ ok(md["por_canal"].get("balcao", {}).get("vendas") == 1 and md["por_canal"].get(
    "por canal: %r" % md["por_canal"])
 T = md["tempos"]
 ok(T["cliente_s"]["n"] == 1 and T["cliente_s"]["f"][2] == 1, "c: cliente no Checkout (t0 até criar = 60 s, faixa 1–2 min): %r" % T["cliente_s"])
-ok(T["pagamento_s"]["n"] == 2 and T["pagamento_s"]["f"][2] == 1, "c: confirmação (criar até pagar = 90 s; balcão fora): %r" % T["pagamento_s"])
-ok(md["por_vendedor"].get("Ana", {}).get("pagamento_s", {}).get("n") == 1, "c: tempo por vendedor: %r" % md["por_vendedor"])
+ok(T["pagamento_s"]["n"] == 1 and T["pagamento_s"]["f"][2] == 1, "R3: confirmação só do Checkout (criar até pagar = 90 s; balcão e sem canal fora): %r" % T["pagamento_s"])
+ok(md["por_confirmador"].get("Ana", {}).get("pagamento_s", {}).get("n") == 1 and set(md["por_confirmador"]) == {"Ana"}, "R4: tempo por quem confirmou: %r" % md["por_confirmador"])
+ok(all("pagamento_s" not in v for v in md["por_vendedor"].values()) and set(md["por_vendedor"]) <= {"Ana", "sem vendedor"}, "R4: por_vendedor da v1 sem tempo de confirmação: %r" % md["por_vendedor"])
 ok(T["clique_checkout_s"]["n"] == 1 and T["clique_checkout_s"]["f"][2] == 1 and T["transferencia_s"]["n"] == 2,
    "16: clique e transferência só da trilha vivo (reinício fora do clique): %r" % {k: T[k] for k in ("clique_checkout_s", "transferencia_s")})
 ok(md["por_fotografo"]["carlos"].get("primeira_foto") == t1040 - 600 and md["por_fotografo"]["carlos"]["sessoes"] == 2,
@@ -144,8 +145,11 @@ ok(len(m.entradas_importacoes()["importacoes"]) == 3, "importações registradas
 # --- critério 26: migração só acrescenta ---
 dia_m = m._ff_hoje(time.time() - 100 * 86400)
 tm = time.mktime(time.strptime(dia_m + " 14:20:00", "%Y-%m-%d %H:%M:%S"))
-m.ev_receber({"eventos": [{"tipo": "criar", "idem": "vmig1:1", "venda": "vmig1", "em": iso(tm - 30), "dados": {"card": "LPMIG0001", "total": 150}},
-                          {"tipo": "pagar", "idem": "vmig1:2", "venda": "vmig1", "em": iso(tm), "dados": {}}]})
+m.ev_receber({"eventos": [{"tipo": "criar", "idem": "vmig1:1", "venda": "vmig1", "em": iso(tm - 30), "dados": {"card": "LPMIG0001", "total": 150, "canal": "checkout"}},
+                          {"tipo": "pagar", "idem": "vmig1:2", "venda": "vmig1", "em": iso(tm), "dados": {}},
+                          # R3: venda sem canal (antes da v92) não entra no tempo de confirmação
+                          {"tipo": "criar", "idem": "vmig2:1", "venda": "vmig2", "em": iso(tm - 30), "dados": {"card": "LPMIG0002", "total": 80}},
+                          {"tipo": "pagar", "idem": "vmig2:2", "venda": "vmig2", "em": iso(tm + 3600), "dados": {}}]})
 os.makedirs(m.MET_DIR, exist_ok=True)
 v1 = {"dia": dia_m, "gerado": "x", "fotos": 321, "sessoes": 17, "vendas": 5, "faturamento": 999.0, "por_fotografo": {"carlos": {"sessoes": 17, "fotos": 321}}, "por_vendedor": {}}
 json.dump(v1, open(os.path.join(m.MET_DIR, dia_m + ".json"), "w"))
@@ -153,7 +157,7 @@ m.metricas_migra_v2(pausa=0)
 mm = json.load(open(os.path.join(m.MET_DIR, dia_m + ".json")))
 ok(all(mm[k] == v1[k] for k in ("fotos", "sessoes", "vendas", "faturamento")) and mm["por_fotografo"] == v1["por_fotografo"],
    "26: os campos v1 ficam: %r" % {k: mm.get(k) for k in ("fotos", "sessoes", "vendas", "faturamento", "por_fotografo")})
-ok(mm.get("v") == 2 and mm.get("migrado") is True and mm["por_hora"].get("14", {}).get("vendas") == 1 and mm["tempos"]["pagamento_s"]["n"] == 1
+ok(mm.get("v") == 2 and mm.get("migrado") is True and mm["por_hora"].get("14", {}).get("vendas") == 1 and mm["por_hora"].get("15", {}).get("vendas") == 1 and mm["tempos"]["pagamento_s"]["n"] == 1
    and "clique_checkout_s" not in mm["tempos"], "26: ganha horas e pagamento_s, sem tempos de sessão (sem arquivo): %r" % {k: mm.get(k) for k in ("v", "migrado", "por_hora", "tempos")})
 ok(m.est_migra["estado"] == "feita", "migração marcada como feita")
 m.metricas_migra_v2(pausa=0)

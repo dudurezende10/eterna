@@ -3399,10 +3399,12 @@ async function srvMetPull(){const M=state.srvMet,r=state.range;if(M.busy||!state
   if(M.chave===chave&&Date.now()-M.em<60e3)return;M.busy=true;
   try{const j=await (await fetch(state.agent.url+'/metricas/dia?de='+r.from+'&ate='+r.to,{cache:'no-store'})).json();if(!j.ok)throw 0;M.dias=j.dias||[];M.chave=chave;M.em=Date.now();M.erro=null;}
   catch(e){M.erro='Sem conexão com o servidor do ponto';}finally{M.busy=false;if(state.view==='painel')render();}}
-function srvMetSoma(ds){const T={fotos:0,fotos_com_rosto:0,rostos:0,sessoes:0,sessoes_com_venda:0,vendas:0,faturamento:0,fotos_vendidas:0,fotos_ia_vendidas:0,impressoes:0,impressoes_falhas:0,canceladas:0,online:{vendas:0,faturamento:0,fotos:0},por_fotografo:{},por_vendedor:{},por_posto:{},por_meio:{}};
+function srvMetSoma(ds){const T={fotos:0,fotos_com_rosto:0,rostos:0,sessoes:0,sessoes_com_venda:0,vendas:0,faturamento:0,fotos_vendidas:0,fotos_ia_vendidas:0,impressoes:0,impressoes_falhas:0,canceladas:0,online:{vendas:0,faturamento:0,fotos:0},por_fotografo:Object.create(null),por_vendedor:Object.create(null),por_posto:Object.create(null),por_meio:Object.create(null)};
   for(const d of ds){for(const k of ['fotos','fotos_com_rosto','rostos','sessoes','sessoes_com_venda','vendas','faturamento','fotos_vendidas','fotos_ia_vendidas','impressoes','impressoes_falhas','canceladas'])T[k]+=d[k]||0;
     for(const k of ['vendas','faturamento','fotos'])T.online[k]+=(d.online||{})[k]||0;
-    for(const g of ['por_fotografo','por_vendedor','por_posto','por_meio'])for(const [n,v] of Object.entries(d[g]||{})){const a=T[g][n]||(T[g][n]={});for(const [k,x] of Object.entries(v))if(typeof x==='number'&&k!=='conversao')a[k]=(a[k]||0)+x;}}
+    for(const g of ['por_fotografo','por_vendedor','por_posto','por_meio'])for(const [n,v] of Object.entries(d[g]||{})){
+      // v92 (R4): só entra linha com contagem da v1 (sessões, fotos ou vendas); campo só da v2 (1ª foto, tempos) nunca cria linha fantasma nem é somado
+      if(!v||typeof v!=='object'||ES_PROIBIDO.has(n)||!['vendas','sessoes','fotos'].some(k=>typeof v[k]==='number'))continue;const a=T[g][n]||(T[g][n]={});for(const [k,x] of Object.entries(v))if(typeof x==='number'&&k!=='conversao'&&k!=='primeira_foto')a[k]=(a[k]||0)+x;}}
   return T;}
 function srvMetPainel(){if(!state.agent||!state.agent.on)return '';srvMetPull();const M=state.srvMet;
   if(!M.dias)return M.erro?`<p class="pn-notas">${esc(M.erro)}</p>`:'';const T=srvMetSoma(M.dias);const pc=(a,b)=>b?Math.round(100*a/b)+'%':'—';
@@ -3588,6 +3590,7 @@ const ES_FAIXAS=['0–30 s','30–60 s','1–2 min','2–5 min','5–10 min','10
 const ES_SEMANA=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const ES_LANG={pt:'Português',en:'Inglês',es:'Espanhol',fr:'Francês',de:'Alemão'};
 const ES_SECOES=[['a','Vendas e produtos'],['b','Fotógrafos'],['c','Rapidez'],['d','Dias e eventos'],['e','Visitantes'],['f','Movimento']];
+const ES_PROIBIDO=new Set(['__proto__','constructor','prototype']); // nomes que nunca viram chave de objeto (dados do servidor)
 const ES_DIAS_MAX=366,ES_CACHE_MS=5*60e3;
 function diaSemana(iso){const [y,m,d]=String(iso).split('-').map(Number);return new Date(Date.UTC(y,m-1,d)).getUTCDay();}
 const hmMin=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(s==null?'':s).trim());return m&&+m[1]<24&&+m[2]<60?(+m[1])*60+(+m[2]):null;};
@@ -3635,18 +3638,18 @@ function esPresenca(o){o=o||{};const hoje=o.hoje||venueToday();const out={};
   return out;}
 // soma dos dias do servidor (e, com o interruptor, os dias da Roverpix que o servidor não tem). Pura: o chamador passa roverDias.
 function esDados(ds,o){o=o||{};ds=(ds||[]).filter(d=>d&&typeof d==='object'&&ISO_DIA.test(d.dia));
-  const porDia={},prod={},meios={},postos={},canais={},idiomas={},vend={},fot={},tempos={cliente_s:[],pagamento_s:[],clique_checkout_s:[],transferencia_s:[]};
+  const O0=()=>Object.create(null);const porDia=O0(),prod=O0(),meios=O0(),postos=O0(),canais=O0(),idiomas=O0(),vend=O0(),fot=O0(),tempos={cliente_s:[],pagamento_s:[],clique_checkout_s:[],transferencia_s:[]};
   const horas={};for(let h=0;h<24;h++)horas[h]={vendas:0,faturamento:0,sessoes:0,fotos:0};const semN=[0,0,0,0,0,0,0],semF=[0,0,0,0,0,0,0],semV=[0,0,0,0,0,0,0];const hxd=[];for(let h=0;h<24;h++)hxd.push([0,0,0,0,0,0,0]);
-  const soma=(dst,src)=>{Object.entries(src||{}).forEach(([n,v])=>{if(!v||typeof v!=='object')return;const a=dst[n]||(dst[n]={});Object.entries(v).forEach(([k,x])=>{if(typeof x==='number'&&k!=='conversao'&&k!=='primeira_foto')a[k]=(a[k]||0)+x;});});};
+  const soma=(dst,src)=>{Object.entries(src||{}).forEach(([n,v])=>{if(!v||typeof v!=='object'||ES_PROIBIDO.has(n))return;const a=dst[n]||(dst[n]={});Object.entries(v).forEach(([k,x])=>{if(typeof x==='number'&&k!=='conversao'&&k!=='primeira_foto')a[k]=(a[k]||0)+x;});});};
   let semDetalhe={n:0,receita:0};let comV2=0;
   ds.forEach(d=>{const on=d.online||{};const lg=d.por_idioma||{};let lt=0,lo=0;Object.entries(lg).forEach(([l,v])=>{const n=safeN(v&&v.vendas);lt+=n;if(l!=='pt')lo+=n;});
     porDia[d.dia]={dia:d.dia,fonte:'eterna',faturamento:numF(d.faturamento)+numF(on.faturamento),vendas:safeN(d.vendas)+safeN(on.vendas),online:numF(on.faturamento),sessoes:safeN(d.sessoes),sessoes_com_venda:safeN(d.sessoes_com_venda),fotos:safeN(d.fotos),
       lingT:lt,lingO:lo,entradas:d.entradas&&d.entradas.total!=null?safeN(d.entradas.total):null,v2:d.v===2};
     if(d.v===2&&!d.migrado)comV2++;
-    Object.entries(d.por_produto||{}).forEach(([k,v])=>{if(k==='sem_detalhe'){semDetalhe.n+=safeN(v.n);semDetalhe.receita+=numF(v.receita);return;}const p=prod[k]||(prod[k]={id:k,n:0,receita:0});p.n+=safeN(v.n);p.receita+=numF(v.receita);});
+    Object.entries(d.por_produto||{}).forEach(([k,v])=>{if(!v||ES_PROIBIDO.has(k))return;if(k==='sem_detalhe'){semDetalhe.n+=safeN(v.n);semDetalhe.receita+=numF(v.receita);return;}const p=prod[k]||(prod[k]={id:k,n:0,receita:0});p.n+=safeN(v.n);p.receita+=numF(v.receita);});
     soma(meios,d.por_meio);soma(postos,d.por_posto);soma(canais,d.por_canal);soma(idiomas,d.por_idioma);soma(fot,d.por_fotografo);
-    Object.entries(d.por_vendedor||{}).forEach(([n,v])=>{const a=vend[n]||(vend[n]={vendas:0,faturamento:0,pagamento_s:[]});a.vendas+=safeN(v&&v.vendas);a.faturamento+=numF(v&&v.faturamento);if(v&&v.pagamento_s)a.pagamento_s.push(v.pagamento_s);});
-    Object.entries(d.por_fotografo||{}).forEach(([n,v])=>{if(v&&v.clique_checkout_s)(fot[n].clique=fot[n].clique||[]).push(v.clique_checkout_s);});
+    Object.entries(d.por_confirmador||{}).forEach(([n,v])=>{if(ES_PROIBIDO.has(n)||!v||!v.pagamento_s)return;const a=vend[n]||(vend[n]={pagamento_s:[]});a.pagamento_s.push(v.pagamento_s);});
+    Object.entries(d.por_fotografo||{}).forEach(([n,v])=>{if(v&&v.clique_checkout_s&&fot[n])(fot[n].clique=fot[n].clique||[]).push(v.clique_checkout_s);});
     Object.keys(tempos).forEach(k=>{const h=d.tempos&&d.tempos[k];if(h)tempos[k].push(h);});
     const wd=diaSemana(d.dia);
     Object.entries(d.por_hora||{}).forEach(([h,v])=>{const hh=+h;if(!(hh>=0&&hh<24)||!v)return;const x=horas[hh];['vendas','faturamento','sessoes','fotos'].forEach(k=>x[k]+=numF(v[k]));hxd[hh][wd]+=numF(v.vendas);});});

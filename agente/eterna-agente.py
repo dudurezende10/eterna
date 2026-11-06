@@ -5443,7 +5443,7 @@ def met_v2(dia, ss, evs):
     _ev_ler(dia). As vendas entram pela mesma regra da v1 (paga = tem "pagar"), para as somas baterem."""
     tempos = {k: h_novo() for k in ("cliente_s", "pagamento_s", "clique_checkout_s", "transferencia_s")}
     out = {"v": 2, "por_hora": {}, "por_produto": {}, "por_canal": {}, "por_idioma": {}, "tempos": tempos,
-           "por_vendedor": {}, "por_fotografo": {}}
+           "por_confirmador": {}, "por_fotografo": {}}
     ph = lambda h: out["por_hora"].setdefault(h, {"vendas": 0, "faturamento": 0.0, "sessoes": 0, "fotos": 0})
     for x in ss or []:
         if not isinstance(x, dict) or x.get("removida"):
@@ -5506,11 +5506,12 @@ def met_v2(dia, ss, evs):
             g["faturamento"] = round(g["faturamento"] + tot, 2)
         if c.get("t0") and v["criar_em"]:
             h_add(tempos["cliente_s"], v["criar_em"] - _epoch(c["t0"]))
-        if canal != "balcao" and v["criar_em"] and v["pagar_em"] > 1:   # no balcão criar e pagar saem juntos
+        if canal == "checkout" and v["criar_em"] and v["pagar_em"] > 1:   # R3: só o Checkout (no balcão criar e pagar saem juntos)
             d = v["pagar_em"] - v["criar_em"]
             h_add(tempos["pagamento_s"], d)
-            nome = v["pagar_por"] or c.get("vendedor") or "sem vendedor"
-            h_add(out["por_vendedor"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
+            # R4: quem confirmou fica em por_confirmador, nunca misturado com o por_vendedor da v1 (vendas e faturamento)
+            nome = _nome_pessoa(v["pagar_por"]) or _nome_pessoa(c.get("vendedor")) or "sem nome"
+            h_add(out["por_confirmador"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
     pres = presenca_dia(dia)
     if pres is not None:                             # S7: sem o campo = dia sem dado de presença (antes da v92)
         out["presenca"] = pres
@@ -5518,10 +5519,20 @@ def met_v2(dia, ss, evs):
     return out
 
 
+def _nome_pessoa(x):
+    """Nome de quem vendeu ou confirmou ({nome} ou texto), limpo; nunca uma chave especial de objeto."""
+    if isinstance(x, dict):
+        x = x.get("nome")
+    if not isinstance(x, str):
+        return None
+    x = re.sub(r"[<>\x00-\x1f]", "", x).strip()[:60]
+    return None if not x or x in ("__proto__", "constructor", "prototype") else x
+
+
 def met_v2_junta(m, v2, so_acrescenta=False):
     """Põe os campos v2 no resumo. so_acrescenta (migração, critério 26): nunca troca um valor que já existe."""
     for k, v in v2.items():
-        if k in ("por_fotografo", "por_vendedor"):
+        if k in ("por_fotografo", "por_confirmador"):
             dst = m.setdefault(k, {})
             for nome, extra in v.items():
                 alvo = dst.setdefault(nome, {})

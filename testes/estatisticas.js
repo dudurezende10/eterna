@@ -10,7 +10,7 @@ const H=(f)=>({n:f.reduce((a,b)=>a+b,0),soma:0,f});
 // dia v2 do servidor
 function dia(iso,o){o=o||{};return Object.assign({v:2,dia:iso,fotos:300,sessoes:20,sessoes_com_venda:5,vendas:5,faturamento:1000,fotos_vendidas:30,online:{vendas:1,faturamento:39,fotos:1},
   por_fotografo:{carlos:{fotos:300,sessoes:20,sessoes_com_venda:5,vendas:5,faturamento:1000,fotos_vendidas:30,primeira_foto:null,clique_checkout_s:H([3,5,1,0,0,0,0])}},
-  por_vendedor:{Ana:{vendas:5,faturamento:1000,fotos_vendidas:30,pagamento_s:H([1,2,1,0,0,0,0])}},por_posto:{'Caixa 1':{vendas:5,faturamento:1000,fotos_vendidas:30}},por_meio:{pix:{vendas:3,faturamento:600,fotos_vendidas:18},cartao:{vendas:2,faturamento:400,fotos_vendidas:12}},
+  por_vendedor:{Ana:{vendas:5,faturamento:1000,fotos_vendidas:30}},por_confirmador:{Bia:{pagamento_s:H([1,2,1,0,0,0,0])}},por_posto:{'Caixa 1':{vendas:5,faturamento:1000,fotos_vendidas:30}},por_meio:{pix:{vendas:3,faturamento:600,fotos_vendidas:18},cartao:{vendas:2,faturamento:400,fotos_vendidas:12}},
   por_hora:{'10':{vendas:3,faturamento:600,sessoes:10,fotos:150},'15':{vendas:2,faturamento:400,sessoes:10,fotos:150}},por_produto:{tribuna:{n:2,receita:440},maracana:{n:2,receita:380},sem_detalhe:{n:1,receita:180}},
   por_canal:{checkout:{vendas:4,faturamento:820},balcao:{vendas:1,faturamento:180}},por_idioma:{pt:{vendas:3,faturamento:600},es:{vendas:1,faturamento:220}},
   tempos:{cliente_s:H([0,2,2,0,0,0,0]),pagamento_s:H([1,2,1,0,0,0,0]),clique_checkout_s:H([3,5,1,0,0,0,0]),transferencia_s:H([9,0,0,0,0,0,0])},presenca:{},entradas:null},o);}
@@ -104,8 +104,11 @@ try{
     ok(R.vol.estado==='presente'&&R.vol.inicio==='10:00'&&R.vol.marca.fonte==='fotos','S10: turno do ponto da função do dia e marca pelas fotos: '+J(R.vol));
     const D=await pg.evaluate(([d1,d2,d3])=>{const E=ETERNA;const ds=[d1,d2,d3];const T=E.srvMetSoma(ds);const x=E.esDados(ds,{rover:false});
       const f=E.esFaixas({n:3,soma:470,f:[1,1,0,0,1,0,0]});
-      return {fat:x.kpi.faturamento,srv:T.faturamento+T.online.faturamento,h10:x.horas[10].vendas,sab:x.semana[6],semDet:x.semDetalhe,prods:x.produtos.map(p=>p.id),f,idi:x.idiomas};},
+      const fant=E.srvMetSoma([Object.assign({},d1,{por_fotografo:{carlos:{fotos:3,sessoes:1},'sem fotógrafo':{primeira_foto:1762340000}},por_vendedor:JSON.parse('{"Ana":{"vendas":1,"faturamento":10},"__proto__":{"vendas":9}}')})]);
+      const r4={fot:Object.keys(fant.por_fotografo),vend:Object.keys(fant.por_vendedor),conf:Object.keys(x.vendedores),pf:fant.por_fotografo.carlos.primeira_foto,proto:({}).vendas};
+      return {r4,fat:x.kpi.faturamento,srv:T.faturamento+T.online.faturamento,h10:x.horas[10].vendas,sab:x.semana[6],semDet:x.semDetalhe,prods:x.produtos.map(p=>p.id),f,idi:x.idiomas};},
       [dia('2026-10-31',{por_hora:{'10':{vendas:1,faturamento:220,sessoes:3,fotos:40}},vendas:1,faturamento:220,online:{}}),dia('2026-11-02'),dia('2026-11-03',{faturamento:1234.5})]);
+    ok(J(D.r4.fot)===J(['carlos'])&&J(D.r4.vend)===J(['Ana'])&&J(D.r4.conf)===J(['Bia'])&&D.r4.pf===undefined&&D.r4.proto===undefined,'R4: Painel sem linhas fantasmas, quem confirmou em por_confirmador, sem __proto__: '+J(D.r4));
     ok(Math.abs(D.fat-D.srv)<1e-6,'12: faturamento das Estatísticas = Servidor do ponto · todos os caixas: '+J([D.fat,D.srv]));
     ok(D.h10===7&&D.sab.vendas===1&&D.sab.dias===1,'13: venda das 10:40 de sábado na barra das 10 h e em Sáb: '+J([D.h10,D.sab]));
     ok(D.semDet.n===3&&!D.prods.includes('sem_detalhe'),'14: vendas sem detalhe ficam à parte: '+J(D.semDet));

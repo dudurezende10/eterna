@@ -187,7 +187,7 @@ Resumo do dia v2 (`GET /metricas/dia`):
  "por_canal":{"checkout":{"vendas":4,"faturamento":800},"balcao":{"vendas":1,"faturamento":70}},
  "por_idioma":{"pt":{"vendas":3,"faturamento":600},"es":{"vendas":1,"faturamento":200}},
  "tempos":{"cliente_s":H,"pagamento_s":H,"clique_checkout_s":H,"transferencia_s":H},
- "por_vendedor":{"Ana":{"pagamento_s":H}},
+ "por_confirmador":{"Ana":{"pagamento_s":H}},
  "por_fotografo":{"carlos":{"primeira_foto":1762340000,"clique_checkout_s":H}},
  "presenca":{"carlos":{"primeiro":1762339800,"ultimo":1762360000,"n":2,"fonte":"login"}},
  "entradas":{"fonte":"catraca","total":812,"por_origem":{"bip":790,"catraca":812},"por_hora":{"09":95},
@@ -196,6 +196,7 @@ Resumo do dia v2 (`GET /metricas/dia`):
 - `H = {"n","soma","f":[c0..c6]}`, com faixas de 0–30 s, 30–60 s, 1–2 min, 2–5 min, 5–10 min, 10–20 min e mais de 20 min.
 - `clique_checkout = fechada_em − cap1` e `transferencia = ultima_chegada − cap1`, só da trilha `vivo`.
 - `entradas` vem `null` quando não houver entrada.
+- Revisão (R3 e R4): `tempos.pagamento_s` conta só vendas com `canal:'checkout'` (no balcão criar e pagar saem juntos; venda sem canal, de antes da v92, fica fora, então a migração do critério 26 só ganha `pagamento_s` em dia com venda do Checkout gravada com canal). Quem confirmou vai para `por_confirmador`, nunca para o `por_vendedor` da v1 (vendas e faturamento de quem vendeu); o Painel só mostra linha com contagem da v1.
 
 Agenda (coleção `agenda`):
 ```json
@@ -262,3 +263,11 @@ Textos de até 60 caracteres (a observação, até 200), sem `<` nem `>`.
 
 ## Agenda pública do Maracanã
 Não existe uma fonte oficial única. CBF, Ferj e Conmebol publicam cada uma a sua, e o estádio fecha por períodos para cuidar do gramado. O mínimo é o cadastro manual e a importação por CSV. Uma API de dados esportivos fica para depois.
+
+## Falhas antigas fora da v92
+Cinco testes já falham em `origin/main` (conferido em `e7833a6`, 05/11) e continuam falhando na `feat/estatisticas` do mesmo jeito. Não vêm desta entrega; ficam ligados ao pedido 7 do Ronaldo:
+- `testes/galeria-qr.js`: critério 6 (galeria depois da selfie fica em `step:"nao"`) e critério 13 (o inglês não troca os textos).
+- `testes/v77-regressao.js`: B, galeria no modo agente (`motivo:"varias"`).
+- `testes/v79-regressao.js`: 1.6 (Caixa vazio deveria dizer "Nenhum pagamento esperando.") e as notas de pacote da v83.
+- `testes/v81.js`: 3, Esc na janela do Checkout.
+- `testes/v83.js`: espera pelo `[data-act="kiosk-next"]`, que não aparece.
