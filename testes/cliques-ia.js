@@ -28,7 +28,7 @@ const FEED=[ses('LPTIACAM1',A,'yago',{tipo:'campo',point:'campo2'},a-900,1,{ia:A
 const FILA={ok:true,agora:a,rev:6,pausa:60,pronta_min:15,grupos:[
   {id:'LPTIAABR6',estado:'fotografando',fotografo:'yago',fonte:'ftp',funcao:{tipo:'campo',point:'campo2'},inicio:a-20,ultima_chegada:a-19,ultimo_clique:a-20,pronta_em:null,n:1,pids:O.slice(),ia:{n:2,motivo:null,pids:O.slice(),prontas:0}},
   {id:'LPTIACAM1',estado:'pronta',fotografo:'yago',fonte:'ftp',funcao:{tipo:'campo',point:'campo2'},inicio:a-900,ultima_chegada:a-850,ultimo_clique:a-852,pronta_em:a-790,n:8,pids:[],ia:{n:2,motivo:null,pids:[],prontas:2}}]};
-let RECORTES=0;const PEDIDOS=[];
+let RECORTES=0;const PEDIDOS=[];let SIMS={};
 (async()=>{
 const b=await chromium.launch();const errs=[];
 try{
@@ -40,6 +40,7 @@ try{
   await ctx.route(ORIG+'/sessoes*',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,gen:'b93',rev:6,pausa:60,rostos:true,completo:true,sessoes:FEED})}));
   await ctx.route(ORIG+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:JPG}));
   await ctx.route(ORIG+'/file/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:JPG}));
+  await ctx.route(ORIG+'/rostos/buscar',r=>r.fulfill({status:200,contentType:'application/json',body:J({rosto:true,fotos:Object.entries(SIMS).map(([id,sim])=>({id,sim}))})}));
   await ctx.route(ORIG+'/fila-fotografo',r=>r.fulfill({status:200,contentType:'application/json',body:J(FILA)}));
   await ctx.route(ORIG+'/recorte',r=>{let j={};try{j=JSON.parse(r.request().postData()||'{}');}catch(e){}PEDIDOS.push(j.pid+'|'+j.lado);RECORTES++;r.fulfill({status:200,contentType:'image/png',body:SIL});});
   const pg=await ctx.newPage();
@@ -70,7 +71,7 @@ try{
   ok(it.ai.length===5&&new Set(it.ai.map(x=>x.split('=')[0])).size===5&&it.ai.every(x=>{const [bg,r]=x.split('=');return esper[bg]===r.split('@')[0]&&r.endsWith('@LPTIACAM1');}),'3: 5 montagens, 1950 e Pódio na foto 1, as outras na foto 2: '+J(it.ai));
   ok(it.fotos.length===6&&!it.fotos.includes(f1)&&!it.fotos.includes(f2),'2: Checkout com as 6 fotos normais: '+J(it.fotos));
   ok(it.items.filter(x=>x.startsWith('ph:')).length===6&&!it.items.includes('ph:'+f1)&&!it.items.includes('ph:'+f2),'2: as bases nunca como foto na revisão: '+J(it.items));
-  ok(PEDIDOS.every(p=>p.endsWith('|2400'))&&new Set(PEDIDOS.map(p=>p.split('|')[0])).size<=2,'19: só os recortes das 2 bases: '+J(PEDIDOS));
+  ok(PEDIDOS.every(p=>p.endsWith('|2400'))&&new Set(PEDIDOS.map(p=>p.split('|')[0])).size===2,'19: só os recortes das 2 bases: '+J(PEDIDOS));
   // 4: base 2 com olhos fechados = tudo na base 1; as duas ruins = jeito antigo (2 fotos normais)
   const r4=await pg.evaluate(([f1,f2])=>{ETERNA.SIM.invalid[f2]='olhos fechados';const um=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);ETERNA.FIA_RUIM.add(f1);const ant=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);
     delete ETERNA.SIM.invalid[f2];ETERNA.FIA_RUIM.delete(f1);return {um,ant};},[f1,f2]);
@@ -83,6 +84,22 @@ try{
     k.so=so0;return {s1,s2,ai2};},[f2]);
   ok(r11.s1.bases.join()===f2,'A11: só a base que está em so.ids: '+J(r11.s1));
   ok(r11.s2.ses==='LPTIACAM1'&&r11.s2.bases.length===2&&r11.ai2===5,'D2: âncora sem ia usa a próxima sessão (um conjunto de 5): '+J(r11));
+  // A15 (R3): pela selfie, sessão achada só pela base de IA; nenhuma base como foto; sessão de menor só com a base reconhecida
+  SIMS={[A[1]]:.72};
+  const r15=await pg.evaluate(async([f1,f2])=>{const c=document.createElement('canvas');c.width=64;c.height=64;const k=ETERNA.state.kiosk;
+    let r=await ETERNA.faceFind([c],x=>!x.demo);const achou=(r.res||[]).map(x=>x.card);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
+    const a={achou,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id),code:k.code};
+    ETERNA.lojaReset();ETERNA.SIM.sessions.LPTIACAM1.menor=true;
+    r=await ETERNA.faceFind([c],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
+    const b={code:k.code,ids:k.so&&k.so.ids,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id)};
+    delete ETERNA.SIM.sessions.LPTIACAM1.menor;ETERNA.lojaReset();return {a,b};},[f1,f2]);
+  ok(r15.a.achou.join()==='LPTIACAM1'&&r15.a.code==='LPTIACAM1','A15: a selfie acha a sessão só pela base: '+J(r15.a.achou));
+  ok(r15.a.fotos.length===6&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===5,'A15: sessão inteira sem nenhuma base como foto, com as 5 montagens: '+J(r15.a.items));
+  ok(r15.b.code==='LPTIACAM1'&&r15.b.fotos.length===0&&r15.b.ai.length===5&&r15.b.ai.every(x=>x===f2),'A15: menor: só a base reconhecida nas montagens, nenhuma foto de fora: '+J(r15.b));
+  SIMS={};
+  // "Todas" conta só as fotos normais (+ as montagens escolhidas)
+  const nSes=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;k.code='LPTIACAM1';k.so=null;return ETERNA.lojaCart('LPTIACAM1').nSes;});
+  ok(nSes===6,'2: contagem do "Todas" sem as bases: '+nSes);
   // impressão, galeria e "Todas"
   const r2=await pg.evaluate(([f1,f2])=>{const s=ETERNA.SIM.sessions.LPTIACAM1;const sel0=s.selected;s.selected=[f1,ETERNA.lojaFotos('LPTIACAM1')[0].id];const imp=ETERNA.impFotos({...s,prints:5}).todas.map(x=>x.t+':'+x.id);s.selected=sel0;
     const tok=ETERNA.galDaSessao('LPTIACAM1',true);const g=ETERNA.SIM.galerias[tok].fotos.map(f=>f.id);return {imp,g};},[f1,f2]);

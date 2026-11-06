@@ -50,6 +50,7 @@ Em cada sessão de ponto de campo, os 2 primeiros cliques (1º corpo inteiro, 2�
 | A12 | Mudança no Painel | Vale para as sessões que fecharem depois da mudança. A sessão fechada não muda (S8). |
 | A13 | Rótulo para a equipe | "Fundo IA 1 · corpo inteiro" e "Fundo IA 2 · fechada". Nunca só "IA", que já é o rótulo do ajuste automático. |
 | A14 | Recorte antecipado das sessões sem a regra | Só as 2 primeiras. Sai o extra por pessoa de `rec_pre_escolha`, que perdeu o sentido desde a v91 B (a selfie mostra a sessão inteira). Menor ou escola pede o recorte na hora. Assim cai a carga de até 10 para 2 recortes por sessão. **O revisor precisa olhar isto, porque mexe em código do Ronaldo.** |
+| A15 | Busca facial com as bases (decidida na implementação, mantida na revisão R3) | A selfie do Checkout também compara as bases de IA (`faceFind` percorre `photos` e `ia`). O 2º clique, mais fechado, costuma ter o melhor rosto, e a sessão pode ser achada só por ele. A base nunca aparece como foto: ela só entra em `so.ids` (sessão inteira: todas as bases; menor ou escola: só a base reconhecida), o que libera as montagens dela. |
 
 ## Mudanças por arquivo
 
