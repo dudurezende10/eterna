@@ -1555,3 +1555,122 @@ Pedidos do Eduardo (01/11 11:39 e 12:12) e devoluções da segurança (B1 a B3) 
 - **Correção (bug antigo, também no main):** em `validateReal`, `const big=...` estava grudada no comentário anterior e a validação de olhos fechados nunca marcava foto.
 - **Janela da selfie** (Eduardo, 01/11 16:46 e 16:51): no Checkout, a selfie só considera as sessões com a última foto (`cap1`; sem clique, `ultima_chegada`) nos últimos N minutos. O valor fica em `estado.db` (`col='config'`, `id='busca'`, `{janela_min, por, em}`), gravado pelo Painel de controle › Checkout (`buscaJanelaPanel`, `buscaJanelaSalva`, ações `busca-janela` e `busca-janela-dia` em `WRITE_OPS`/`ACT_MOD` com `configuracao`, `auditLog('busca_janela')`) e lido pelo agente em cada busca (`busca_janela_cfg`, cache de 3 s, zerado quando `POST /ponto/docs` grava `config`). Valores: 0 (dia todo) ou 15 a 480 (`_busca_janela`). `ETERNA_BUSCA_JANELA_MIN` é só o padrão inicial (90). Com `ETERNA_BUSCA_DIAS` definida, a janela não vale (dia todo dos dias da busca; `/status.sessoes.janela_fixa`). `/status.sessoes` traz `janela_min` e `janela_padrao`. O filtro do agente é por pid (`sess_pids_janela`, sob o `sess_lock`, fora do `_mat_lock`) antes do produto da matriz; sem sessão em memória, sem filtro. `POST /rostos/buscar` com `todo:true` (a galeria por QR) procura o dia todo. No app: `buscaJanelaMin()` (o do Painel, senão o do `/status`, senão 90), `sesUltima(card)` (`SIM.sessions[card].cap1`, gravado pelo `ingClose` das sessões do servidor, senão `closedAt`), filtro em `faceFind` só no Checkout. Código do recibo e da galeria, Upload e Fila não mudam.
 - Testes: `testes/v91-seguranca.js`, `testes/selfie_rapidez.py` (B5, corrida, janela e Painel), `testes/sessoes_agente.py` (desvio), `testes/fila_fotografo_agente.py` (risco 4 do `/file/` com o comportamento real e o limite).
+
+## Estatísticas e calendário de eventos (v92, 05/11/2026)
+
+Plano, critérios e decisões: `docs/planos/2026-11-05-estatisticas.md`. Testes: `testes/estatisticas.js`, `testes/estatisticas_agente.py`, `testes/v92-testador.js`, `testes/v92_testador_agente.py` (todos no `rodar.sh`).
+
+**Decisão do Eduardo (05/11 noite): o Eterna não faz controle de ponto.** Presença, faltas, atrasos, abono, folgas fixas e horário dos turnos são do sistema de ponto do RH e saíram da v92 (agente e app). Não existe rota, tabela, coleção ou tela para isso. A seção Fotógrafos mostra só produção. Não reabrir sem o Eduardo.
+
+### Arquitetura
+
+- O servidor do ponto continua dono dos dados (v90). As Estatísticas leem o resumo do dia (`~/Eterna/ponto/metricas/AAAA-MM-DD.json`) por `GET /metricas/dia`, que agora traz a versão 2 do resumo, e juntam com a coleção `agenda` do `estado.db`.
+- Banco novo `~/Eterna/ponto/operacao.db` (SQLite, WAL, `synchronous=full`) só para as entradas da bilheteria. Entra no `backup_loop` junto com `vendas.db` e `estado.db`.
+- Fuso fixo: `fuso_ajusta()` no `main()` põe `TZ = ETERNA_TZ` ou `America/Sao_Paulo` (com `tzset`) em Mac e Linux. No Windows vale o fuso do sistema, que precisa ser o de Brasília ([CHECKLIST-SERVIDOR.md](CHECKLIST-SERVIDOR.md), seção 1). `/status.fuso = {tz, offset_min}`; a tela Estatísticas avisa quando `offset_min` é diferente do `venueOffsetMin()` do app.
+- App: view `estatisticas` (módulo `estatisticas`, grupo Dashboard, logo depois do Painel; só o Admin recebe pela `migrateUser`) e view `calendario` (módulo `escala`, grupo Fotógrafo; Admin e Supervisor no menu; atalho no Painel de controle).
+
+### Captura da venda (`_ev_limpo` e `pvDados`)
+
+O evento `criar` ganha quatro campos. Campo inválido é descartado e a venda continua aceita.
+
+| Campo | Regra | Quem manda |
+| --- | --- | --- |
+| `cart` | até 30 itens `{id: ^[a-z0-9_-]{1,20}$, v: 0..1e6}`; `__proto__`, `constructor` e `prototype` recusados | Checkout e balcão |
+| `lang` | `pt`, `en`, `es`, `fr` ou `de` | só o Checkout (o idioma que o cliente escolheu) |
+| `canal` | `checkout` ou `balcao` | Checkout e balcão |
+| `t0` | ISO entre `em − 2 h` e `em` | só o Checkout: `state.kiosk.t0`, gravado pelo `kioskT0` ao sair da etapa `code`, zerado em `lojaReset` |
+
+Venda de antes da v92 não tem `cart`: aparece como `sem_detalhe`, nunca somada a um pacote.
+
+### Endpoints novos
+
+`POST /ponto/entradas` (posto, origem local, `X-Eterna: 1`, 30 por minuto por IP, corpo até 1 MB):
+
+```json
+{"origem":"bip","dia":"2026-11-05","seg":[32460,32475,38460],"arquivo":"bip-05-11.csv","por":"Eduardo Rezende"}
+```
+
+- `origem`: `bip` ou `catraca`. `dia`: de hoje − 400 até hoje. `seg`: 1 a 50.000 inteiros de 0 a 86399 (segundos do dia, hora do Rio). Seg inválido é contado em `recusadas`.
+- Numa transação: apaga o mesmo dia e a mesma origem, insere e registra a importação. Depois regrava o resumo daquele dia numa thread (hoje e ontem inteiros; dia antigo só troca o campo `entradas`).
+- Resposta: `{"ok":true,"id":"imp_<12hex>","dia","origem","aceitas","recusadas"}`. Erros: 403 (origem ou cabeçalho), 429, 400 com `error` (`origem inválida`, `dia inválido`, `dia fora do intervalo`, `entradas inválidas`, `nenhuma entrada válida`), 500 em JSON.
+
+`GET /ponto/entradas/importacoes` (posto e origem local, `no-store`): as 20 últimas.
+
+```json
+{"ok":true,"importacoes":[{"id":"imp_3fa1c2d4e5b6","em":"2026-11-05T19:02:11Z","por":"Eduardo Rezende","arquivo":"bip-05-11.csv","origem":"bip","dias":["2026-11-05"],"aceitas":812,"recusadas":3}]}
+```
+
+`em` vem em UTC; o app mostra no fuso do venue (dd/mm hh:mm). `operacao.db` que não abre responde 500 em JSON.
+
+`GET /metricas/dia?de=AAAA-MM-DD&ate=AAAA-MM-DD`: `{"ok":true,"dias":[...]}`, um resumo por dia (v1 com os campos v2). O app (`esPull`) pede até 366 dias e guarda 5 min em cache.
+
+`/status` ganha `estatisticas: {v:2, migracao:{estado, feitos, total, erro}}` e `fuso`.
+
+### `operacao.db`
+
+- `entrada(dia text, origem text, seg int)`, índice `(dia, origem)`.
+- `importacao(id, em, por, arquivo, origem, dias, aceitas, recusadas)`.
+- Só números e o nome do arquivo. Nenhum ingresso, CPF, nome ou e-mail: o CSV é lido no navegador (`esEntradasParse`) e só `origem`, `dia` e `seg` saem dele.
+
+### Resumo do dia v2 (contrato)
+
+A v2 só acrescenta campos. Os da v1 (fotos, sessões, vendas, faturamento, `por_fotografo`, `por_vendedor`, `por_posto`, meios de pagamento, online) não mudam.
+
+```json
+{"v":2,
+ "por_hora":{"10":{"vendas":3,"faturamento":570,"sessoes":12,"fotos":180}},
+ "por_produto":{"tribuna":{"n":2,"receita":440},"sem_detalhe":{"n":1,"receita":190}},
+ "por_canal":{"checkout":{"vendas":4,"faturamento":800},"balcao":{"vendas":1,"faturamento":70}},
+ "por_idioma":{"pt":{"vendas":3,"faturamento":600},"es":{"vendas":1,"faturamento":200}},
+ "tempos":{"cliente_s":H,"pagamento_s":H,"clique_checkout_s":H,"transferencia_s":H},
+ "por_confirmador":{"Ana":{"pagamento_s":H}},
+ "por_fotografo":{"carlos":{"clique_checkout_s":H}},
+ "entradas":{"fonte":"catraca","total":812,"por_origem":{"bip":790,"catraca":812},"por_hora":{"09":95},
+             "pico_min":{"hhmm":"10:41","n":9},"pico_15":{"hhmm":"10:30","n":88},"primeira":"09:01","ultima":"16:58"}}
+```
+
+- `H = {"n","soma","f":[c0..c6]}`: faixas fixas de 0 a 30 s, 30 a 60 s, 1 a 2 min, 2 a 5 min, 5 a 10 min, 10 a 20 min e mais de 20 min. Mediana e p90 saem das faixas (`esFaixas`), nunca de média de médias.
+- `cliente_s` = `t0` até criar. `pagamento_s` = criar até pagar, só `canal:'checkout'` (no balcão os dois saem juntos). `clique_checkout_s = fechada_em − cap1` e `transferencia_s = ultima_chegada − cap1`, só da trilha `vivo`.
+- `por_idioma` conta só vendas do Checkout.
+- Quem confirmou vai para `por_confirmador`, nunca para o `por_vendedor` da v1. O Painel mostra só linha com contagem da v1.
+- `entradas` é `null` sem entrada. Com bip e catraca no mesmo dia, `fonte` e `total` são da catraca.
+- Hora do dia, rapidez e idioma existem só a partir da v92.
+
+### Gravação e migração
+
+- Toda gravação do resumo passa por `met_escreve` (lock por dia, `mkstemp` em `MET_DIR`): `metricas_loop`, importação de entradas e migração. Resumo que existe e não abre fica como está (log). Dia sem resumo que recebe entradas ganha registro mínimo `{dia, gerado, so_entradas, entradas}`, sem `v:2`.
+- `metricas_migra_v2()` roda uma vez numa thread, com 0,2 s entre dias. **Só acrescenta**: horas e `pagamento_s` a partir do `vendas.db`; tempos de clique e de câmera só se o arquivo de sessões do dia ainda existir (60 dias). Nunca sobrescreve a v1. Marca `v:2` e `migrado:true`. O agente continua atendendo durante a migração.
+
+### Coleção `agenda` (`estado.db`)
+
+```json
+{"id":"ag_<12hex>","data":"2026-11-08","hora":"16:00","tipo":"jogo","mandante":"Flamengo","visitante":"Palmeiras","competicao":"Brasileirão","obs":"","origem":"manual","por":"Ana","em":"2026-11-05T18:00:00Z"}
+```
+
+- `tipo`: jogo, show, feriado, fechado, evento ou outro. `origem`: manual, csv ou feriados.
+- `agenda_valida` no `estado_gravar`: só os campos acima, textos até 60 caracteres (obs até 200), sem `<` nem `>`, até 2 KB por registro e até 5000 registros.
+- App: `ESTADO_COLS` inclui `agenda`, cópia local em `eterna.agenda.v1` sem servidor, `agAplicaSnap` não apaga evento ainda na fila nem traz de volta o apagado. CSV `data;hora;tipo;mandante;visitante;competicao;obs` (`agImportar`, até 2000 linhas e 1 MB, atualiza em vez de duplicar). `agFeriados(ano)`: nacionais, móveis pela Páscoa e os do Rio (20/01, 23/04, 20/11). `agClube` normaliza o nome do clube.
+
+### Permissões
+
+| Ação | Pede |
+| --- | --- |
+| ver Estatísticas | `estatisticas.r` (só Admin) |
+| importar entradas (`es-importar`) | `estatisticas.c` |
+| criar, editar, apagar, importar e feriados no Calendário (`ag-*`) | `escala.u` (Admin e Supervisor), com `auditLog` |
+
+### Sessão do fotógrafo vence na virada do dia
+
+Segurança de sessão (D2), sem relação com ponto. Usuário com `key` (fotógrafo) que abriu a sessão num dia do venue tem de entrar de novo no dia seguinte: `sessaoVencida` no `sessionLoad` (ao abrir o app) e `sessaoVirada()` no relógio de 1 min (app aberto na virada: `logout()` e o aviso "Novo dia: entre de novo").
+
+### Pendências de segurança
+
+- **IMPORTANTE.** O agente não sabe quem está logado. `/metricas/dia` e `/ponto/entradas/importacoes` respondem a qualquer posto da lista de origens; o "só Admin" das Estatísticas é conferido só no navegador. Vai para a fila do login no servidor e do pareamento do posto (v83 etapa 2).
+- **IMPORTANTE.** O descarte das colunas pessoais do CSV de entradas acontece no navegador. O agente aceita só inteiros, mas um cliente feito à mão pode mandar o que quiser em `arquivo` e `por` (limpos e cortados em 80 e 60 caracteres).
+- **IMPORTANTE.** Servidor Windows fora do fuso de Brasília grava as horas do dia erradas. O app avisa; a correção é no Windows (CHECKLIST-SERVIDOR, seção 1).
+- O resumo de hoje é recalculado a cada pedido; a tela só busca de novo depois de 5 min.
+
+### Próximo passo (v93)
+
+- **Agenda automática de jogos**: o agente busca os jogos do Maracanã toda segunda-feira e o Calendário ganha o botão "Atualizar agora". Não existe fonte oficial única (CBF, Ferj e Conmebol publicam cada uma a sua); até lá, cadastro manual e CSV.
+- Também fora da v92: tempo da fila de impressão, idioma de quem foi ao Checkout e não comprou, exportar as estatísticas em CSV, conector do bip ou da catraca (formato do bip vem do Ronaldo), estatísticas de vários venues pela nuvem.
