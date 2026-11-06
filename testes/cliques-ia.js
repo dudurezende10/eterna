@@ -49,9 +49,13 @@ try{
   const espera=async(fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await pg.evaluate(fn,arg))return true;await pg.waitForTimeout(150);}return false;};
   ok(await espera(()=>['LPTIACAM1','LPTIAVOL2','LPTIAPOU4'].every(c=>ETERNA.SIM.sessions[c]),20000),'as sessões do servidor chegaram ao SIM');
   await pg.evaluate(()=>{const S=ETERNA.SIM;S.invalid={};Object.values(S.sessions).forEach(s=>(s.photos||[]).forEach(p=>delete p.invalid));ETERNA.state.agent.recorte={ok:true,carregado:true};});
-  const base=await pg.evaluate(()=>{const s=ETERNA.SIM.sessions.LPTIACAM1;const o=ETERNA.demoSessions().find(x=>x.card==='LPTIACAM1');return {ia:s.ia,iaRegra:s.iaRegra,n:o.photos.length,oia:o.ia,tem:o.photos.some(p=>s.ia.includes(p.id))};});
-  ok(base.ia.join()==='ag_'+A[0]+',ag_'+A[1]&&base.iaRegra&&base.iaRegra.n===2,'ingClose grava ia e iaRegra: '+J(base));
+  const base=await pg.evaluate(()=>{const s=ETERNA.SIM.sessions.LPTIACAM1;const o=ETERNA.demoSessions().find(x=>x.card==='LPTIACAM1');return {ia:s.ia,n:o.photos.length,oia:o.ia,tem:o.photos.some(p=>s.ia.includes(p.id))};});
+  ok(base.ia.join()==='ag_'+A[0]+',ag_'+A[1],'ingClose grava ia: '+J(base));
   ok(base.n===6&&!base.tem&&base.oia.length===2,'2: as 2 bases fora de photos (6 à venda) e em ia: '+J(base));
+  const tot=await pg.evaluate(()=>ETERNA.demoSessions().find(x=>x.card==='LPTIACAM1').total);ok(tot===6,'total do demoSessions sem as bases: '+tot);
+  // navegador antigo: sessão fechada sem ia ganha as bases no próximo srvPull
+  const velho=await pg.evaluate(async()=>{const s=ETERNA.SIM.sessions.LPTIACAM1;const ia0=s.ia;delete s.ia;ETERNA.SRV.rev=0;await ETERNA.srvPull(true);return {ia:s.ia,igual:JSON.stringify(s.ia)===JSON.stringify(ia0)};});
+  ok(velho.igual,'srvPull completa a ia da sessão materializada sem ela: '+J(velho));
   const pou=await pg.evaluate(()=>ETERNA.demoSessions().find(x=>x.card==='LPTIAPOU4').photos.length);ok(pou===3,'9: poucas fotos: as 3 à venda: '+pou);
   // Checkout pelo código (19: as 5 montagens começam já, sem esperar o item aparecer)
   await pg.fill('#kcode','LPTIACAM1').catch(()=>{});
@@ -147,7 +151,7 @@ try{
   ok(c12.c.cliques===1&&c12.c.pontos.includes('vestiario')&&c12.ls&&c12.ls.cliques===1&&c12.ls.por==='eduardo@eduardorezende.com','12: gravado com quem mudou: '+J(c12.c));
   ok(c12.log.some(t=>/Fundos de IA: 1 primeiro clique/.test(t)),'12: mudança no log: '+J(c12.log));
   await pe.click('#ia-cfg [data-act="ia-ligada"]');await pe.waitForTimeout(150);
-  ok(await pe.evaluate(()=>ETERNA.iaCfg().ligada===false&&ETERNA.iaRegraApp({fotografo:'yago',funcao:{tipo:'campo',point:'campo2'}}).motivo==='desligada'),'12: desligar vale na regra do app');
+  ok(await pe.evaluate(()=>ETERNA.iaCfg().ligada===false&&JSON.parse(localStorage.getItem('eterna.ia.v1')).ligada===false),'12: desligar grava a regra');
   // sem configuracao.u: campos desabilitados e guardAct barra
   const r12=await pe.evaluate(()=>{const u=ETERNA.state.user;const p0=u.perms;u.perms={...p0,configuracao:{r:true}};ETERNA.render();const dis=[...document.querySelectorAll('#ia-cfg input')].every(x=>x.disabled);
     const el=document.querySelector('#ia-cfg [data-act="ia-ligada"]');el.disabled=false;el.checked=!el.checked;el.dispatchEvent(new Event('change',{bubbles:true}));const lig=ETERNA.iaCfg().ligada;u.perms=p0;ETERNA.render();return {dis,lig,w:ETERNA.WRITE_OPS['ia-ligada'],m:ETERNA.ACT_MOD['ia-cliques']};});

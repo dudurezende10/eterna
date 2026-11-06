@@ -1169,7 +1169,7 @@ function demoSessions(){if(DS_CACHE.on&&DS_CACHE.v)return DS_CACHE.v;
   // ficam em ia, sem o filtro de olhos fechados (a montagem decide pela base boa, lojaAI)
   for(const [card,sim] of Object.entries(SIM.sessions)){const iaS=Array.isArray(sim.ia)&&sim.ia.length?new Set(sim.ia):null;const ok=(sim.photos||[]).filter(p=>!(iaS&&iaS.has(p.id))&&hasImg(p.id)&&!SIM.discarded[p.id]&&!(SIM.invalid&&SIM.invalid[p.id]));
     const ia=iaS?[...iaS].filter(id=>hasImg(id)&&!SIM.discarded[id]):[];if(sim.photos&&sim.photos.length&&!ok.length&&!ia.length)continue; // fotos que não estão mais neste aparelho: sessão some da lista
-    if(!DATA.sampled.find(s=>s.card===card))list.push({card,key:sim.key,pdv:sim.pdv,time:sim.time,date:sim.date,photos:ok,ia,total:(sim.photos||[]).length,soldTotal:0,demo:false,status:sim.status});}
+    if(!DATA.sampled.find(s=>s.card===card))list.push({card,key:sim.key,pdv:sim.pdv,time:sim.time,date:sim.date,photos:ok,ia,total:(sim.photos||[]).length-(iaS?(sim.photos||[]).filter(p=>iaS.has(p.id)).length:0),soldTotal:0,demo:false,status:sim.status});}
   if(DS_CACHE.on){DS_CACHE.v=list;DS_CACHE.m=new Map(list.map(x=>[x.card,x]));}
   return list;
 }
@@ -1228,7 +1228,7 @@ function sparkIdx(perDay){
 function hbars(items,fmt){const max=Math.max(...items.map(i=>i.v))||1;return `<div class="bars">${items.map(i=>`<div class="bar"><span>${esc(i.label)}</span><div class="track"><div class="fill" style="width:${100*i.v/max}%"></div></div><span class="val">${fmt?fmt(i.v):i.v}</span></div>`).join('')}</div>`}
 function quality(key){const rs=Object.values(state.reviews).filter(r=>r.key===key);const ph=rs.flatMap(r=>Object.values(r.photos||{}));const good=ph.filter(v=>v===1).length,bad=ph.filter(v=>v===-1).length;const scored=rs.filter(r=>r.score);return {sessions:rs.length,rated:good+bad,good,bad,goodPct:(good+bad)?Math.round(100*good/(good+bad)):null,score:scored.length?(scored.reduce((a,r)=>a+r.score,0)/scored.length):null}}
 const CHECK='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg>',CROSS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phStyle(p.id)}" data-act="${o.act||'zoom'}" data-id="${p.id}" ${o.sel?'data-sel="1"':''} ${o.v?`data-v="${o.v}"`:''} aria-label="${esc(o.label||'Foto')}">${o.tag?`<span class="tag">${esc(o.tag)}</span>`:''}${o.wm?'<span class="wm">ETERNA</span>':''}${o.zoom!==false?`<span class="zoom" data-act="zoom" data-id="${p.id}" role="button" aria-label="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg></span>`:''}<span class="mark">${o.v===-1?CROSS:CHECK}</span></button>`;
+const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phStyle(p.id)}" data-act="${o.act||'zoom'}" data-id="${p.id}" ${o.sel?'data-sel="1"':''} ${o.v?`data-v="${o.v}"`:''} aria-label="${esc(o.label||'Foto')}">${o.tag?`<span class="tag${o.tagCls?' '+o.tagCls:''}">${esc(o.tag)}</span>`:''}${o.wm?'<span class="wm">ETERNA</span>':''}${o.zoom!==false?`<span class="zoom" data-act="zoom" data-id="${p.id}" role="button" aria-label="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg></span>`:''}<span class="mark">${o.v===-1?CROSS:CHECK}</span></button>`;
 
 // ---------- Perfis ----------
 function vPerfis(){
@@ -1926,7 +1926,7 @@ function lojaAI(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];co
     if(out.length)return out;}
   return lojaAIAntigo(card);}
 // v93: as montagens começam assim que a selfie ou o código acha a sessão, uma por vez, antes de o item aparecer (o COMP guarda)
-function iaAquecer(card){if(fundosModo()!=='local'||!card)return;let its=[];try{its=lojaAI(card);}catch(e){return;}
+function iaAquecer(card){if(fundosModo()!=='local'||!card)return;let its=[];const ja=DS_CACHE.on;try{DS_CACHE.on=true;its=lojaAI(card);}catch(e){return;}finally{if(!ja){DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}
   its.reduce((p,x)=>p.then(()=>compose(x.id,x.bg)).catch(()=>{}),Promise.resolve());}
 function lojaAIAntigo(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];const loc=fundosModo()==='local';const ph=lojaFotos(card).filter(p=>!FIA_RUIM.has(p.id)&&(!loc||/^ag_/.test(p.id)));if(!ph.length)return [];
   const ready=aiPrep(card);let picks=ph.slice(0,2);const dele=new Set(ph.map(p=>p.id)); // v91: o substituto também precisa ser foto do cliente
@@ -3119,7 +3119,7 @@ async function srvPull(){const a=state.agent;if(SRV.busy||!a.sessoes)return;SRV.
       if(x.removida){delete SRV.sess[x.card];delete SRV.mat[x.card];if(SIM.sessions[x.card])srvLgpd(x);continue;}
       if(deHoje)SRV.sess[x.card]=x;
       if(x.status!=='fechada')continue;
-      if(SIM.sessions[x.card]){srvLgpd(x);continue;} // fechada não muda (S8), só pela LGPD
+      if(SIM.sessions[x.card]){srvIaCompleta(x);srvLgpd(x);continue;} // fechada não muda (S8), só pela LGPD
       SRV.mat[x.card]={...x,_pausa:j.pausa};}
     SRV.rev=j.rev;const novas=srvMaterializa();if((novas||mudou)&&(state.view==='importar'||state.view==='fotofila'))render();
   }catch(e){}finally{SRV.busy=false;}}
@@ -3133,6 +3133,9 @@ function srvMaterializa(){const cards=Object.keys(SRV.mat);if(!cards.length)retu
     state.ing.feed.unshift({k:'auto',t:'Sessão '+x.card+' montada no servidor',s:fotos.length+(fotos.length===1?' foto':' fotos')+(x.fotografo?' · '+x.fotografo:'')});n++;}
   return n;}
 function srvComo(x,pausa){const p=pausa||SESSAO_PAUSA_S;const m=p===60?'1 min':p+' s';return x.fechada_por==='pausa_clique'?`pausa de ${m} entre cliques (servidor)`:x.fechada_por==='virada_do_dia'?'virada do dia (servidor)':x.fechada_por==='reinicio'?'agente reiniciado (servidor)':`pausa de ${m} sem foto nova (servidor)`;}
+// v93 (segurança): sessão fechada que um navegador antigo materializou sem ia ganha as bases do servidor (saem da venda aqui)
+function srvIaCompleta(x){const s=SIM.sessions[x.card];if(!s||!s.srv||Array.isArray(s.ia)||!Array.isArray(x.ia)||!x.ia.length)return;
+  const tem=new Set((s.photos||[]).map(p=>p.id));s.ia=x.ia.map(p=>'ag_'+p).filter(id=>tem.has(id));saveSim();}
 // v91 (revisão 5): sessão do servidor que perdeu fotos pela LGPD. Sem venda paga, as fotos saem da sessão deste navegador;
 // com venda paga, nada some do registro e fica uma linha no log.
 function srvLgpd(x){const s=SIM.sessions[x.card];if(!s||!s.srv)return;const keep=new Set(x.removida?[]:(x.fotos||[]).map(p=>'ag_'+p));const fora=(s.photos||[]).filter(p=>!keep.has(p.id));if(!fora.length)return;
@@ -3151,7 +3154,7 @@ function ingClose(how,srv){const g=state.ing;const c=srv?{photos:srv.fotos.map(p
   const top=Object.entries(c.flags).sort((a,b)=>b[1]-a[1])[0];const flag=top?top[0]:null;
   const skey=srv?(srv.fotografo&&P[srv.fotografo]?srv.fotografo:impWho(c.photos)):(state.imp.key!=='todos'?state.imp.key:impWho(c.photos));
   SIM.sessions[card]={key:skey,pdv:pt?pt.name:'',point:pt?ptId:'',time:hhmm(srv?new Date(srv.aberta_em*1000):now()),date:'hoje',srv:!!srv,status:'fechada',selected:[],bg:null,cart:[],photos:c.photos.map(p=>({id:p.id,sold:0})),openedAt:c.start,closedAt:srv&&srv.fechada_em?new Date(srv.fechada_em*1000).toISOString():now().toISOString(),source:srv?(srv.atrasada?'cartao':srv.fonte):state.imp.mode,closedBy:how,cap1:srv&&srv.cap1?+srv.cap1:null,flag,motivo:srv?srv.motivo||null:null,
-    /* v93: bases dos fundos de IA (os primeiros cliques) e a regra que valeu no fechamento */ia:srv?(srv.ia||[]).filter(p=>srv.fotos.includes(p)).map(p=>'ag_'+p):[],iaRegra:srv&&srv.ia_regra&&typeof srv.ia_regra==='object'?{n:+srv.ia_regra.n||0,motivo:srv.ia_regra.motivo||null}:null};
+    /* v93: bases dos fundos de IA (os primeiros cliques) */ia:srv?(srv.ia||[]).filter(p=>srv.fotos.includes(p)).map(p=>'ag_'+p):[]};
   if(flag){if(!SIM.flagUse)SIM.flagUse={};SIM.flagUse[flag]=(SIM.flagUse[flag]||0)+1;}
   if(!SIM.invalid)SIM.invalid={};let bad=[];c.photos.forEach(p=>{const r=validatePhoto(p.id);if(r){SIM.invalid[p.id]=r;p.invalid=r;bad.push(r);}});g.n.invalid=(g.n.invalid||0)+bad.length;
   const real=c.photos.filter(p=>/^(ag_|up_)/.test(p.id)||UP[p.id]).map(p=>p.id);
@@ -3238,21 +3241,22 @@ const upHora=t=>t?new Date(t*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',mi
 // as N primeiras pela regra do Painel de controle ("Fundo IA?"). Nunca só "IA", que é o rótulo do ajuste automático (ajTag).
 const UP_IA_MOTIVO={volante:'Volante: sem fotos de IA',sem_funcao:'Sem função do dia: fotos de IA não separadas',poucas_fotos:'Poucas fotos: ficaram à venda',ponto_fora:'Ponto fora da regra: sem fotos de IA',desligada:'Regra desligada: sem fotos de IA'};
 const UP_IA_TAG=['Fundo IA 1 · corpo inteiro','Fundo IA 2 · fechada','Fundo IA 3'];
-function iaRegraApp(x){const c=iaCfg();if(!c.ligada)return {n:0,motivo:'desligada'};const f=x&&x.funcao;if(!x||!x.fotografo||!f||typeof f!=='object')return {n:0,motivo:'sem_funcao'};
-  if(f.tipo==='volante')return c.volante?{n:c.cliques,motivo:null}:{n:0,motivo:'volante'};if(f.tipo!=='campo')return {n:0,motivo:'sem_funcao'};if(!c.pontos.includes(f.point))return {n:0,motivo:'ponto_fora'};return {n:c.cliques,motivo:null};}
-// recortes prontos das bases (o /fila-fotografo traz ia.prontas por sessão), no máximo a cada 5 s com o Upload aberto
+// regra e recortes prontos das bases vêm do servidor (o /fila-fotografo traz g.ia por sessão: n, motivo, pids e prontas), no
+// máximo a cada 5 s com o Upload aberto; a regra não é repetida no app
 state.upIa={};let UP_IA_T=0;
+const upIaOk=ia=>!!ia&&typeof ia==='object'&&Number.isFinite(+ia.n);
 function upIaPoll(){const a=state.agent;if(!a||!a.on||Date.now()-UP_IA_T<5000)return;UP_IA_T=Date.now();
-  fetch(a.url+'/fila-fotografo',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(!j||!Array.isArray(j.grupos))return;const m={};let ch=false;
-    j.grupos.forEach(g=>{if(g&&typeof g.id==='string'&&g.ia&&+g.ia.n>0){m[g.id]=+g.ia.prontas||0;if(state.upIa[g.id]!==m[g.id])ch=true;}});state.upIa=m;if(ch&&state.view==='importar')render();}).catch(()=>{});}
+  fetch(a.url+'/fila-fotografo',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(!j||!Array.isArray(j.grupos))return;const m={};
+    j.grupos.forEach(g=>{if(g&&typeof g.id==='string'&&upIaOk(g.ia))m[g.id]={n:+g.ia.n||0,motivo:typeof g.ia.motivo==='string'?g.ia.motivo:null,prontas:+g.ia.prontas||0,pids:Array.isArray(g.ia.pids)?g.ia.pids.filter(p=>typeof p==='string'):[]};});
+    const ch=JSON.stringify(m)!==JSON.stringify(state.upIa);state.upIa=m;if(ch&&state.view==='importar')render();}).catch(()=>{});}
 function upThumb(pid,i,pend,iat){const id='ag_'+pid;const src=UP[id]?UP[id].src:state.agent.url+'/thumb/'+pid;
-  return photoBtn({id},{act:'zoom',label:'Foto '+(i+1),tag:iat||(pend?'lendo rostos':'')}).replace(iat?'<span class="tag">':'\u0000','<span class="tag tag-ia">').replace('<button class="ph"',`<button class="ph" data-pend="${pend?1:0}"`).replace(/--img:url\([^)]*\)/,'--img:none').replace(/^(<button[^>]*>)/,`$1<img src="${esc(src)}" loading="lazy" alt="">`);}
+  return photoBtn({id},{act:'zoom',label:'Foto '+(i+1),tag:iat?(pend?iat+' · lendo rostos':iat):(pend?'lendo rostos':''),tagCls:iat?'tag-ia':''}).replace('<button class="ph"',`<button class="ph" data-pend="${pend?1:0}"`).replace(/--img:url\([^)]*\)/,'--img:none').replace(/^(<button[^>]*>)/,`$1<img src="${esc(src)}" loading="lazy" alt="">`);}
 function upSessBloco(x){const on=x.status==='aberta',sep=x.status==='separada',fech=x.status==='fechada';const n=(x.fotos||[]).length+(x.pend||[]).length;
   const pt=x.ponto?(DATA.points.find(p=>p.id===x.ponto)||{name:x.ponto}).name:'sem ponto';const pend=new Set(x.pend||[]);const todas=(x.fotos||[]).concat(x.pend||[]);
   const lim=state.upSessAll[x.card]?todas.length:48;const abrir=fech&&SIM.sessions[x.card]&&canView('revisao');
-  const rg=fech?(x.ia_regra&&typeof x.ia_regra==='object'?x.ia_regra:null):iaRegraApp(x);const iaL=fech?(x.ia||[]):(rg&&rg.n>0?todas.slice(0,rg.n):[]);
+  const sv=(state.upIa||{})[x.card];const rg=fech?(x.ia_regra&&typeof x.ia_regra==='object'?x.ia_regra:null):(sv||null);const iaL=fech?(x.ia||[]):(sv&&sv.n>0?sv.pids:[]);
   const iat=p=>{const j=iaL.indexOf(p);return j<0?'':fech?(UP_IA_TAG[j]||'Fundo IA '+(j+1)):'Fundo IA?';};
-  const iaN=fech?iaL.length:(rg&&rg.n)||0;const iaPr=(state.upIa||{})[x.card];
+  const iaN=fech?iaL.length:(rg&&+rg.n)||0;const iaPr=sv?sv.prontas:null;
   const iaPill=!rg?'':rg.motivo?(UP_IA_MOTIVO[rg.motivo]?`<span class="pill neutral up-ia">${UP_IA_MOTIVO[rg.motivo]}</span>`:''):iaN?`<span class="pill up-ia">Fundos de IA: ${iaPr!=null?Math.min(iaPr,iaN)+' de '+iaN+' prontas':iaN+(iaN===1?' foto':' fotos')}</span>`:'';
   return `<div class="up-sess${on?' on':''}" data-card="${esc(x.card)}"><div class="up-sess-h"><b class="up-lp">${esc(x.card)}</b><span class="up-nome">${esc(upNome(x))}</span><span>${esc(pt)}</span><span>${upHora(x.cap0)}–${upHora(x.cap1)}${x.fonte_t==='u'?' chegada':''}</span><span>${n} ${n===1?'foto':'fotos'}</span>${UP_MOTIVO[x.motivo]?`<span class="pill neutral">${UP_MOTIVO[x.motivo]}</span>`:''}${x.atrasada?'<span class="pill warn">atrasada</span>':''}${iaPill}${on?'<span class="pill up-on">aberta · recebendo</span>':sep?'<span class="pill warn">fechando</span>':''}${fech&&UP_FECHADA[x.fechada_por]?`<span class="note">${UP_FECHADA[x.fechada_por]}</span>`:''}${abrir?`<button class="chip" data-act="up-sess-abrir" data-card="${esc(x.card)}">Abrir sessão</button>`:''}</div>
     <div class="photos small">${todas.slice(0,lim).map((p,i)=>upThumb(p,i,pend.has(p),iat(p))).join('')}${todas.length>lim?`<button class="chip up-mais" data-act="up-sess-tudo" data-card="${esc(x.card)}">+${todas.length-lim}</button>`:''}</div></div>`;}
@@ -5432,7 +5436,7 @@ async function dbLigar(){if(state.db)return;let db=null;
       db.collection('usuarios_log').onSnapshot(snap=>dbMigra('usuarios_log',snap.docs.map(d=>d.id),tem=>auditRead().forEach(e=>{if(e&&e.id&&!tem.has(e.id))db.doc('usuarios_log/'+e.id).set(e);})));
       db.collection('diario').onSnapshot(snap=>dbMigra('diario',snap.docs.map(d=>d.id),tem=>(SIM.diario||[]).forEach(e=>{if(e&&e.id&&!tem.has(e.id))db.doc('diario/'+e.id).set(e);})));
       db.collection('treino').onSnapshot(snap=>dbMigra('treino',snap.docs.map(d=>d.id),tem=>Object.entries(state.train.labels||{}).forEach(([id,b])=>{if(!tem.has(id))db.doc('treino/'+id).set(b);})));
-      db.doc('config/ia').onSnapshot(d=>dbMigra('ia',d&&d.exists?['ia']:[],tem=>{if(!tem.size&&iaCfgOk(state.iaCfg))db.doc('config/ia').set(state.iaCfg);})); // v93: regra mudada antes de o servidor aparecer
+      db.doc('config/ia').onSnapshot(d=>dbMigra('ia',d&&d.exists?['ia']:[],tem=>{if(!tem.size&&iaCfgOk(state.iaCfg)&&can('configuracao','u'))db.doc('config/ia').set(state.iaCfg);})); // segurança: só quem altera Configurações sobe a cópia local // v93: regra mudada antes de o servidor aparecer
       db.doc('config/busca').onSnapshot(d=>dbMigra('busca',d&&d.exists?['busca']:[],tem=>{if(!tem.size&&state.buscaCfg&&buscaJanelaOk(state.buscaCfg.janela_min)!=null)db.doc('config/busca').set(state.buscaCfg);})); // janela mudada antes de o servidor aparecer
       db.collection('agenda').onSnapshot(snap=>dbMigra('agenda',snap.docs.map(d=>d.id),tem=>Object.values(AGENDA).forEach(a=>{if(!tem.has(a.id))db.doc('agenda/'+a.id).set(a);}))); // v92: calendário criado sem o servidor sobe
       db.doc('config/venue').onSnapshot(d=>dbMigra('venue',d&&d.exists?['venue']:[],tem=>{if(!tem.size)db.doc('config/venue').set({...VENUE_CFG,at:now().toISOString()});}));}
@@ -5471,7 +5475,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,iaRegraApp,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
+window.ETERNA={agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
 })();
 </script>
 
