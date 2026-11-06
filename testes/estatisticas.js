@@ -148,6 +148,8 @@ try{
     // 25: pico na tela
     AG.dias[1]=dia(ontem,{entradas:{fonte:'bip',total:812,por_origem:{bip:812},por_hora:{'09':95,'10':300},pico_min:{hhmm:'10:41',n:9},pico_15:{hhmm:'10:30',n:88},primeira:'09:01',ultima:'16:58',minutos:478,media_min:1.7}});
     await pg.evaluate(()=>{ETERNA.state.es.chave=null;ETERNA.esPull(true);});await pg.waitForTimeout(600);tf=await pg.textContent('#main');
+    {const bars=await pg.$$eval('#main .es-bar .l',x=>x.map(e=>e.textContent));const pm=await pg.evaluate(()=>[...document.querySelectorAll('#main .tile')].find(t=>/Por minuto aberto/.test(t.textContent)).querySelector('.v').textContent);
+      ok(bars.includes('09h')&&bars.includes('10h')&&/^\d+,\d$/.test(pm),'pessoas por hora e por minuto com uma casa: '+J({bars:bars.slice(0,4),pm}));}
     ok(/pico 10:41, 9 pessoas/.test(tf)&&/Funil/.test(tf)&&/Últimas importações/.test(tf)&&/bilheteria\.csv/.test(tf),'25: pico 10:41, 9 pessoas e importações: '+tf.slice(0,160));
     await pg.evaluate(()=>ETERNA.go('catalogo'));ok(!(await pg.$('#turnos'))&&!(await pg.$('[data-act="turno-salvar"]')),'sem horário dos turnos no Painel de controle');
     ok(await pg.$('#main [data-act="view"][data-v="calendario"]'),'D3: atalho do Calendário no Painel de controle');

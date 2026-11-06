@@ -3693,6 +3693,7 @@ async function esImportar(file){const M=state.es;if(!can('estatisticas','c')){to
   M.impRes=res;M.importando=false;M.chave=null;M.impEm=0;esPull(true);esImpPull(true);toast(res.dias?`Entradas importadas: ${fmtN(res.aceitas)} em ${res.dias} ${res.dias===1?'dia':'dias'}`:'Nenhuma entrada importada');render();}
 // ---------- tela ----------
 const esPct=(v,n)=>v==null||!isFinite(v)?'—':(Math.round(1000*v)/10).toLocaleString('pt-BR')+(n===false?'':'%');
+const esPorMin=v=>v>0&&v<0.05?'menos de 0,1':v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}); // por minuto aberto: sempre uma casa
 const esMed=n=>Number.isFinite(n)?(Math.round(n*10)/10).toLocaleString('pt-BR'):'—';
 function esBars(items,o){o=o||{};const mx=Math.max(1e-9,...items.map(x=>numF(x.v)));const fmt=o.fmt||(v=>fmtN(v));
   return `<div class="es-bars" role="img" aria-label="${esc((o.label||'')+': '+items.map(x=>x.nome+' '+fmt(x.v)).join('; '))}">${items.map(x=>`<div class="es-bar${x.hi?' hi':''}" data-tip="${esc(x.nome+': '+fmt(x.v))}" tabindex="0"><span class="v">${numF(x.v)?esc(fmt(x.v)):''}</span><i style="height:${Math.max(1.5,Math.round(100*numF(x.v)/mx))}%"></i><span class="l">${esc(x.nome)}</span></div>`).join('')}</div>`;}
@@ -3779,13 +3780,13 @@ function esSecF(D){const M=state.es;const pode=can('estatisticas','c');const E=D
   const tot=E.reduce((a,x)=>a+numF(x.total),0);const ph={};E.forEach(x=>Object.entries(x.por_hora||{}).forEach(([h,v])=>{ph[h]=(ph[h]||0)+numF(v);}));
   const pm=E.reduce((b,x)=>!b||numF(x.pico_min&&x.pico_min.n)>numF(b.pico_min&&b.pico_min.n)?x:b,null);const p15=E.reduce((b,x)=>!b||numF(x.pico_15&&x.pico_15.n)>numF(b.pico_15&&b.pico_15.n)?x:b,null);
   const minutos=E.reduce((a,x)=>a+numF(x.minutos),0);const ses=E.reduce((a,x)=>a+numF(x.sessoes),0),ven=E.reduce((a,x)=>a+numF(x.vendas),0),fat=E.reduce((a,x)=>a+numF(x.faturamento),0);const um=E.length===1;
-  const hs=Object.keys(ph).sort();
+  const hk=Object.keys(ph).map(Number).filter(h=>h>=0&&h<24);const hs=[];if(hk.length)for(let h=Math.min(...hk);h<=Math.max(...hk);h++)hs.push(String(h).padStart(2,'0')); // horas sem entrada no meio aparecem com zero
   return `<section class="panel pn-panel"><div class="pn-ph"><div><h2>Movimento na bilheteria</h2><p class="pn-take">${fmtN(E.length)} ${um?'dia':'dias'} com entradas · ${E.some(x=>x.fonte==='catraca')?'catraca quando houver, senão o bip':'bip da equipe (um por convidado)'}</p></div>${imp}</div>
     <div class="es-tiles"><div class="tile"><span class="eyebrow">Entradas</span><span class="v">${fmtN(tot)}</span><span class="d">${um?'':fmtN(tot/E.length)+' por dia'}</span></div>
       <div class="tile" id="es-pico"><span class="eyebrow">Pico do minuto</span><span class="v">${esc(pm.pico_min.hhmm)}</span><span class="d">pico ${esc(pm.pico_min.hhmm)}, ${fmtN(pm.pico_min.n)} ${pm.pico_min.n===1?'pessoa':'pessoas'}${um?'':' em '+esc(dBR(pm.dia))}</span></div>
       <div class="tile"><span class="eyebrow">Pico de 15 min</span><span class="v">${esc(p15.pico_15.hhmm)}</span><span class="d">${fmtN(p15.pico_15.n)} pessoas${um?'':' em '+esc(dBR(p15.dia))}</span></div>
-      <div class="tile"><span class="eyebrow">Por minuto aberto</span><span class="v">${minutos?esMed(tot/minutos):'—'}</span><span class="d">da 1ª à última entrada</span></div></div>
-    ${esBars(hs.map(h=>({nome:h+'h',v:ph[h]})),{label:'Pessoas por hora'})}${res}${imp?como:''}</section>
+      <div class="tile"><span class="eyebrow">Por minuto aberto</span><span class="v">${minutos?esPorMin(tot/minutos):'—'}</span><span class="d">da 1ª à última entrada</span></div></div>
+    ${esBars(hs.map(h=>({nome:h+'h',v:ph[h]||0})),{label:'Pessoas por hora'})}${res}${imp?como:''}</section>
   <section class="panel pn-panel"><div class="pn-ph"><div><h2>Funil</h2><p class="pn-take">Só os dias com entradas · ${fat&&tot?fmtR(fat/tot)+' por visitante':'—'}</p></div></div>${funnelBars([{nome:'Entradas',v:tot},{nome:'Sessões',v:ses,perda:'sem sessão'},{nome:'Vendas',v:ven,perda:'sem compra'}],{label:'Funil do movimento'})}</section>
   ${out}${imps}`;}
 // ---------- Calendário de eventos (view calendario, módulo escala) ----------
