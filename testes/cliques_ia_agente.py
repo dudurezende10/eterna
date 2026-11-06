@@ -324,17 +324,26 @@ m.REC_TETO_GB = teto
 ok(all(os.path.exists(m.rec_arquivo(p, l)) for p in K[:2] for l in (2400, 3000)), "17: bases de IA de hoje ficam")
 ok(not any(os.path.exists(m.rec_arquivo(p)) for p in K[2:]), "17: as outras saem pelo teto")
 
-# 18: manifesto de galeria com uma base de IA é recusado
+# 18 (segurança S1): base de IA sai do manifesto gravado (sem recusar a galeria); a já comprada fica
 xk = de(K[0])
-try:
-    m._gal_confere_sessoes({"sessoes": [xk["card"]]}, [{"id": "ag_" + K[0], "sessao": xk["card"]}])
-    ok(False, "18: base de IA deveria ser recusada na galeria")
-except ValueError as ex:
-    ok("IA" in str(ex), "18: motivo: %s" % ex)
-try:
-    m._gal_confere_sessoes({"sessoes": [xk["card"]]}, [{"id": "ag_" + K[2], "sessao": xk["card"]}])
-except ValueError as ex:
-    ok(False, "18: foto normal deveria passar: %s" % ex)
+fs18 = [{"id": "ag_" + K[0], "sessao": xk["card"]}, {"id": "ag_" + K[2], "sessao": xk["card"]},
+        {"id": "ag_" + K[1], "sessao": xk["card"], "direito": "comprada"}]
+ok(m._gal_confere_sessoes({"sessoes": [xk["card"]]}, fs18) == 1 and [f["id"] for f in fs18] == ["ag_" + K[2], "ag_" + K[1]],
+   "18: só a base não comprada sai: %r" % fs18)
+import http.client, socket
+_so = socket.socket(); _so.bind(("127.0.0.1", 0)); PT = _so.getsockname()[1]; _so.close()
+m.PORT = PT
+srv = m.ThreadingHTTPServer(("127.0.0.1", PT), m.H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+TOK = "Ab3dEf6hIj9lMn0pQr2tUv"
+man = {"token": TOK, "tipo": "sessao", "sessoes": [xk["card"]], "expira": "2099-01-01T00:00:00Z", "precos": {"dig": 39, "todas": 250},
+       "fotos": [{"id": "ag_" + K[0], "sessao": xk["card"], "direito": "venda"}, {"id": "ag_" + K[2], "sessao": xk["card"], "direito": "venda"}]}
+cn = http.client.HTTPConnection("127.0.0.1", PT, timeout=10)
+cn.request("POST", "/galerias/publicar", json.dumps({"manifesto": man}), {"Content-Type": "application/json"})
+rr = cn.getresponse(); rj = json.loads(rr.read() or b"{}")
+gv = m.REPO.ler_manifesto(TOK) or {}
+ok(rr.status == 200 and rj.get("ignoradas") == 1, "18: publicar responde ok com ignoradas 1: %r %r" % (rr.status, rj))
+ok([f["id"] for f in gv.get("fotos") or []] == ["ag_" + K[2]], "18: a base não está no manifesto gravado: %r" % gv.get("fotos"))
 
 # 16: reinício com sessão aberta: fecha com "reinicio" e ia calculada; o recorte antecipado escolhe as bases
 reset()

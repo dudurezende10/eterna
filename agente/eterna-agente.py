@@ -3427,11 +3427,13 @@ def gal_expirou(m, agora=None):
     return bool(m.get("encerrada")) or _epoch(m.get("expira")) <= (agora if agora is not None else time.time())
 
 
-def _gal_confere_sessoes(m, fotos):
+def _gal_confere_sessoes(m, fotos, compradas=()):
     """v91 (segurança 5): na galeria de sessões que o agente montou (hoje e ontem em memória), toda foto precisa ser de uma
     sessão do manifesto: foto de outra sessão do agente (outra família) é recusada. Na galeria da venda que juntou sessões
     pela selfie, a foto também precisa estar em m.so[sessão]. Manifesto só com sessões que o agente não conhece (amostra,
-    sessão montada só no navegador) passa sem esta conferência."""
+    sessão montada só no navegador) passa sem esta conferência.
+    v93 (segurança S1): base de IA nunca é publicada como foto (navegador antigo): sai de `fotos` (a lista é alterada aqui)
+    sem recusar o manifesto, menos a que já foi comprada (nesta publicação ou na gravada, `compradas`). Devolve quantas saíram."""
     ses = [str(x)[:40] for x in (m.get("sessoes") or [])[:200]]
     so = m.get("so") if isinstance(m.get("so"), dict) else {}
     with sess_lock:
@@ -3443,10 +3445,13 @@ def _gal_confere_sessoes(m, fotos):
             x = sess.get(sess_pid.get(p) or "")
             if x is not None and p in (x.get("ia") or ()):
                 ia.add(p)
+    n = 0
     if ia:
-        raise ValueError("foto de IA")
+        manter = [f for f in fotos if pid_lib(f["id"]) not in ia or f.get("direito") == "comprada" or f["id"] in compradas]
+        n = len(fotos) - len(manter)
+        fotos[:] = manter
     if not conhecidas:
-        return
+        return n
     for f in fotos:
         pid = pid_lib(f["id"])
         de = [c for c, ps in conhecidas.items() if pid in ps]
@@ -3455,6 +3460,7 @@ def _gal_confere_sessoes(m, fotos):
         c = de[0] if de else f["sessao"]
         if c in so and isinstance(so[c], list) and f["id"] not in so[c] and pid not in so[c]:
             raise ValueError("foto fora da escolha da venda")
+    return n
 
 
 def gal_validar(m):
@@ -6487,10 +6493,14 @@ class H(BaseHTTPRequestHandler):
             t = novo["token"]
             if t in lapides:
                 return self.js({"ok": False, "error": "galeria encerrada", "estado": "encerrada"}, 410)
+            velho = REPO.ler_manifesto(t) or {}
+            comp = {f.get("id") for f in (velho.get("fotos") or []) if isinstance(f, dict) and f.get("direito") == "comprada"}
             try:                                       # v91 (segurança 5): depois da lápide (galeria encerrada responde 410 como antes)
-                _gal_confere_sessoes(body.get("manifesto"), novo["fotos"])
+                ignoradas = _gal_confere_sessoes(body.get("manifesto"), novo["fotos"], comp)
             except ValueError as ex:
                 return self.js({"error": str(ex)}, 400)
+            if ignoradas:
+                print("  galeria: %d base(s) de IA fora do manifesto (navegador antigo)" % ignoradas)
             with gal_lock:
                 m = gal_mesclar(novo, REPO.ler_manifesto(t))
                 REPO.salvar_manifesto(t, m)
@@ -6498,7 +6508,7 @@ class H(BaseHTTPRequestHandler):
                     codigos[m["codigo"]] = t
             gal_fila.put(t)
             nuvem_galeria_enfileira(t)
-            return self.js({"ok": True, "token": t, "estado": gal_estado(t, m)})
+            return self.js({"ok": True, "token": t, "estado": gal_estado(t, m), "ignoradas": ignoradas})
         partes = p.split("/")
         if len(partes) != 4 or partes[1] != "g" or not token_ok(partes[2]):
             return self.js({"error": "not found"}, 404)
