@@ -231,7 +231,7 @@ ok(not os.path.exists(m.rec_arquivo(r3)), "5: a 3ª foto não é recortada na ch
 ok(all(oct(os.stat(m.rec_arquivo(r1, l)).st_mode & 0o777) == "0o600" for l in (2400, 3000)), "S2: PNG com chmod 600")
 time.sleep(0.3)
 st = m.rec_status()["ia"]
-ok(set(st) == {"ligada", "fila", "feitos", "erros", "atraso_p50_s", "atraso_p90_s"} and st["feitos"] >= 2 and st["atraso_p90_s"] is not None,
+ok({"ligada", "fila", "feitos", "erros", "atraso_p50_s", "atraso_p90_s", "pausa_disco", "livre_gb"} <= set(st) and st["feitos"] >= 2 and st["atraso_p90_s"] is not None,
    "/status.recorte.ia: %r" % st)
 fj = m.ff_json(time.time())
 g3 = [g for g in fj["grupos"] if g["id"] == de(r1)["card"]][0]
@@ -345,6 +345,21 @@ while time.time() - t0 < 20 and not all(os.path.exists(m.rec_arquivo(p)) for p i
     time.sleep(0.05)
 mt = {p: os.path.getmtime(m.rec_arquivo(p)) for p in at + vv if os.path.exists(m.rec_arquivo(p))}
 ok(len(mt) == 4 and max(mt[p] for p in vv) <= min(mt[p] for p in at), "11: ao vivo antes da atrasada: %r" % mt)
+
+# disco: abaixo do piso, as bases esperam (e o /status mostra)
+m.REC_PISO_GB = 10 ** 9
+with m.lock:
+    m.lib["d15c000001"] = {"file": foto("d15c000001"), "thumb": foto("d15c000001")}
+with m.sess_lock:
+    m.sess_ia_novos.append(("d15c000001", 1))
+time.sleep(1.5)
+st = m.rec_status()["ia"]
+ok(st["pausa_disco"] is True and not os.path.exists(m.rec_arquivo("d15c000001")), "disco: pausa abaixo do piso: %r" % st)
+m.REC_PISO_GB = 0
+t0 = time.time()
+while time.time() - t0 < 15 and not os.path.exists(m.rec_arquivo("d15c000001", 2400)):
+    time.sleep(0.1)
+ok(os.path.exists(m.rec_arquivo("d15c000001", 2400)) and m.rec_status()["ia"]["pausa_disco"] is False, "disco: volta quando há espaço")
 
 # 15: LGPD de uma base de IA: sai de ia (memória e arquivo) e os recortes somem na hora
 reset()

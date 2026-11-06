@@ -2412,6 +2412,10 @@ REC_FILA_MAX = 24
 REC_TAXA = 60            # recortes novos por minuto por IP (o cache não conta)
 REC_DIAS = 2             # prazo do cache de recortes
 REC_TETO_GB = float(os.environ.get("ETERNA_RECORTES_GB") or 5)   # teto do cache: apaga os mais antigos acima disso
+try:
+    REC_PISO_GB = float(os.environ.get("ETERNA_RECORTES_PISO_GB") or 10)   # v93: abaixo disto de espaço livre, as bases de IA esperam
+except ValueError:
+    REC_PISO_GB = 10.0
 REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos, tenta de novo passado este tempo
 rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0,
        "fila0": 0, "ia": {"feitos": 0, "erros": 0, "fila": 0, "atrasos": collections.deque(maxlen=200)}}
@@ -2487,8 +2491,17 @@ def _pct(v, q):
     return round(v[min(len(v) - 1, int(q * len(v)))], 1)
 
 
+def rec_livre_gb():
+    """Espaço livre (GB) no disco dos recortes, ou None se não deu para medir."""
+    try:
+        return shutil.disk_usage(RECORTES if os.path.isdir(RECORTES) else HOME).free / 1024 ** 3
+    except OSError:
+        return None
+
+
 def rec_status():
     ok, motivo = rec_estado()
+    livre = rec_livre_gb()
     lig = bool(ia_cfg().get("ligada"))     # fora do sess_lock (lê o estado.db)
     with rec_lock:
         n = rec["feitos"]
@@ -2499,6 +2512,8 @@ def rec_status():
                 "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC,
                 **({"falso": True} if _rec_falso() is not None else {}),
                 "ia": {"ligada": lig, "fila": ia["fila"], "feitos": ia["feitos"], "erros": ia["erros"],
+                       "pausa_disco": bool(rec.get("ia_pausa_disco")), "livre_gb": round(livre, 1) if livre is not None else None,
+                       "piso_gb": REC_PISO_GB,
                        "atraso_p50_s": _pct(ia["atrasos"], 0.5), "atraso_p90_s": _pct(ia["atrasos"], 0.9)}}
 
 
@@ -3237,8 +3252,16 @@ def rec_ia_loop():
                 andando_n.clear()
                 time.sleep(5)
                 continue
+            livre = rec_livre_gb()
+            pausa = livre is not None and livre < REC_PISO_GB
             with rec_lock:
-                livres = IA_FILA_ALVO - rec["ia"]["fila"]
+                if pausa and not rec.get("ia_pausa_disco"):
+                    print("  recorte das bases de IA em pausa: %.1f GB livres (piso %.0f GB, ETERNA_RECORTES_PISO_GB)" % (livre, REC_PISO_GB))
+                rec["ia_pausa_disco"] = pausa
+                livres = 0 if pausa else IA_FILA_ALVO - rec["ia"]["fila"]
+            if pausa:
+                time.sleep(5)
+                continue
             for pid in sorted(pend, key=lambda p: pend[p]):
                 if livres <= 0:
                     break
@@ -3659,6 +3682,7 @@ def gal_processar(token):
 
 def galeria_loop():
     ultima_limpeza = 0
+    ultima_rec = 0
     while True:
         try:
             token = gal_fila.get(timeout=600)
@@ -3668,6 +3692,12 @@ def galeria_loop():
                 print("  galeria: erro ao preparar", token[:8], ex)
         except queue.Empty:
             pass
+        if time.time() - ultima_rec > 3600:         # v93: recortes de hora em hora (as bases de IA enchem o disco mais rápido)
+            ultima_rec = time.time()
+            try:
+                limpar_recortes()
+            except Exception as ex:
+                print("  recortes: erro na limpeza", ex)
         if time.time() - ultima_limpeza > 86400:
             ultima_limpeza = time.time()
             if rostos["ligado"]:
@@ -3675,10 +3705,6 @@ def galeria_loop():
                     limpar_rostos()
                 except Exception as ex:
                     print("  rostos: erro na limpeza", ex)
-            try:
-                limpar_recortes()
-            except Exception as ex:
-                print("  recortes: erro na limpeza", ex)
             try:
                 for t in REPO.listar_expiradas(time.time()):
                     lapide_gravar(t, REPO.ler_manifesto(t))   # antes de apagar: o token nunca mais reabre
