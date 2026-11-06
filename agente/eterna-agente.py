@@ -3172,7 +3172,10 @@ def rec_pre_escolha(fotos, x=None):
     sessão (x["ia"]) quando ela tem; senão as 2 primeiras da sessão. O extra por pessoa (até 10 recortes por sessão) saiu:
     desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade."""
     if x is not None and x.get("ia"):
-        return list(x["ia"])
+        # revisão (A14): as bases e, com a prioridade mais baixa, as 2 primeiras fotos normais, o plano B do Checkout quando as
+        # duas bases são ruins (lojaAIAntigo); só usa a máquina livre
+        ia = list(x["ia"])
+        return ia + [p for p in fotos if p not in ia][:2]
     return list(fotos[:2])
 
 

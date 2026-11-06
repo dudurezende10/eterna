@@ -118,7 +118,7 @@ m.sess_tick(T + 200)
 ok(x1["status"] == "fechada" and x1["ia"] == [pa, pb] and x1["ia_regra"] == {"n": 2, "motivo": None},
    "1: ia = os 2 menores cliques: %r %r" % (x1["ia"], x1["ia_regra"]))
 ok(x1["fotos"][2:] == resto, "1: as outras 6 seguem na sessão")
-ok(m.rec_pre_escolha(x1["fotos"], x1) == [pa, pb], "A14: recorte antecipado = as bases de IA")
+ok(m.rec_pre_escolha(x1["fotos"], x1) == [pa, pb] + resto[:2], "A14: recorte antecipado = as bases de IA e as 2 primeiras normais (plano B)")
 ok(m.rec_pre_escolha(["a1", "a2", "a3", "a4"]) == ["a1", "a2"], "A14: sem a regra, só as 2 primeiras")
 
 # 8: volante, Vestiário, ponto fora, sem função e sem cadastro
@@ -456,7 +456,7 @@ m.sess_carregar(agora + 5)
 xr2 = m.sess.get(xr["card"])
 ok(xr2 and xr2["fechada_por"] == "reinicio" and xr2["ia"] == R[:2] and xr2["ia_regra"] == {"n": 2, "motivo": None},
    "16: fechou com reinicio e ia: %r" % ((xr2 and (xr2["fechada_por"], xr2["ia"], xr2["ia_regra"])),))
-ok(m.rec_pre_escolha(xr2["fotos"], xr2) == R[:2], "16: o recorte antecipado recorta as bases")
+ok(m.rec_pre_escolha(xr2["fotos"], xr2)[:2] == R[:2], "16: o recorte antecipado recorta as bases")
 feed = m.sess_feed(0)
 xf = [x for x in feed["sessoes"] if x["card"] == xr["card"]][0]
 ok(xf["ia"] == R[:2] and xf["ia_regra"]["n"] == 2 and not [k for k in xf if k.startswith("_")], "contrato de /sessoes com ia e ia_regra")
