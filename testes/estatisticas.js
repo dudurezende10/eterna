@@ -168,6 +168,20 @@ try{
     for(let i=0;i<40&&!(await pg.evaluate(()=>{const r=ETERNA.state.es.impRes;return r&&r.arquivo==='dias.csv';}));i++)await pg.waitForTimeout(100);
     const r429=await pg.evaluate(()=>ETERNA.state.es.impRes);ok(n429===4&&r429&&r429.dias===3&&r429.aceitas===3,'importação de 3 dias com um 429 no meio: tenta de novo e grava os 3: '+J({n429,r429}));
     await ctx.close();}
+  // Testador 3: a leitura do servidor não apaga o evento que ainda está na fila (nem traz de volta o apagado aqui)
+  {const {ctx,pg}=await nova();await entrar(pg,'supervisor@eterna.photo');
+    const r=await pg.evaluate(()=>{const E=ETERNA;const snap=l=>E.agAplicaSnap(l.map(v=>({exists:true,data:()=>v})));const base={data:'2026-11-08',hora:'16:00',tipo:'jogo',mandante:'Flamengo',visitante:'Palmeiras',competicao:'Brasileirão',obs:'',origem:'manual',por:'x',em:'2026-11-05T12:00:00Z'};
+      const a={id:'ag_aaaaaaaaaaaa',...base},b={id:'ag_bbbbbbbbbbbb',...base,data:'2026-11-09'},c={id:'ag_cccccccccccc',...base,data:'2026-11-10'};const out={};
+      E.agGrava(a);snap([]);out.primeira=Object.keys(E.AGENDA).sort();                       // 1ª leitura vazia: o novo fica
+      snap([a,b,c]);out.todos=Object.keys(E.AGENDA).length;
+      E.agGrava({...a,competicao:'Copa do Brasil'});snap([a,b,c]);out.edit=E.AGENDA[a.id].competicao;   // servidor ainda com a versão antiga
+      E.agGrava({id:'ag_dddddddddddd',...base,data:'2026-11-11'});snap([a,b,c]);out.novo=!!E.AGENDA.ag_dddddddddddd;   // criado aqui, ainda na fila
+      E.state.cal.apagar=b.id;E.agApagar(b.id);snap([a,b,c]);out.apagado=!E.AGENDA[b.id];   // apagado aqui, servidor ainda mostra
+      snap([{...a,competicao:'Copa do Brasil'},c]);out.apagado2=!E.AGENDA[b.id];
+      snap([{...a,competicao:'Copa do Brasil'}]);out.outroApagou=!E.AGENDA[c.id];            // apagado em outro aparelho
+      return out;});
+    ok(J(r.primeira)===J(['ag_aaaaaaaaaaaa'])&&r.todos===3&&r.edit==='Copa do Brasil'&&r.novo&&r.apagado&&r.apagado2&&r.outroApagou,'Testador 3: o calendário não perde nem ressuscita eventos na leitura do servidor: '+J(r));
+    await ctx.close();}
   // Escala sem folgas fixas nem abonos
   {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'supervisor@eterna.photo');await pg.evaluate(()=>ETERNA.go('escala'));
     const r=await pg.evaluate(()=>({f:!!document.getElementById('folgas-fixas'),a:!!document.getElementById('abonos'),b:!!document.querySelector('[data-act="folga-fixa"]')}));
