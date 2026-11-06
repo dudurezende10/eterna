@@ -430,6 +430,17 @@ m.limpar_recortes(agora=HOJE12)
 m.REC_TETO_GB = teto
 ok(all(os.path.exists(m.rec_arquivo(p, l)) for p in K[:2] for l in (2400, 3000)), "17: bases de IA de hoje ficam")
 ok(not any(os.path.exists(m.rec_arquivo(p)) for p in K[2:]), "17: as outras saem pelo teto")
+# 17 (sessão ainda aberta): as bases recortadas na chegada também ficam pelo teto; as outras fotos saem
+KA = [add("carlos", agora - 60 + i * 3, cap=agora - 61 + i * 3) for i in range(4)]
+ok(de(KA[0])["status"] != "fechada" and de(KA[0])["ia"] == [], "17: sessão ainda aberta (ia ainda vazia)")
+for p in KA:
+    m.rec_fazer(p, m.lib[p]["file"], 2400)
+m.REC_TETO_GB = 0
+m.limpar_recortes(agora=HOJE12)
+m.REC_TETO_GB = teto
+ok(all(os.path.exists(m.rec_arquivo(p, l)) for p in KA[:2] for l in (2400, 3000)), "17: bases de IA da sessão aberta ficam")
+ok(not any(os.path.exists(m.rec_arquivo(p)) for p in KA[2:]), "17: as outras fotos da sessão aberta saem pelo teto")
+ok(all(os.path.exists(m.rec_arquivo(p)) for p in K[:2]), "17: as da fechada continuam")
 
 # 18 (segurança S1): base de IA sai do manifesto gravado (sem recusar a galeria); a já comprada fica
 xk = de(K[0])

@@ -3010,8 +3010,8 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
 
 def limpar_recortes(agora=None, guardar=None):
     """Uma vez por dia (galeria_loop): apaga recortes com mais de REC_DIAS dias, os de foto que saiu da biblioteca e,
-    acima de REC_TETO_GB, os mais antigos. Devolve quantos apagou. v93: o recorte de foto de IA de sessão de hoje
-    (guardar, calculado antes e fora dos locks) fica, nem por idade nem pelo teto, enquanto a foto está na biblioteca."""
+    acima de REC_TETO_GB, os mais antigos. Devolve quantos apagou. v93: o recorte de foto de IA de sessão de hoje, fechada
+    ou ainda aberta (guardar = sess_ia_hoje, calculado antes e fora dos locks) fica, nem por idade nem pelo teto, enquanto a foto está na biblioteca."""
     agora = agora or time.time()
     try:
         nomes = os.listdir(RECORTES)
@@ -4273,10 +4273,22 @@ def sess_ia_de(pids):
 
 
 def sess_ia_hoje(agora=None):
-    """pids de IA das sessões de hoje (não removidas), para a limpeza dos recortes."""
+    """pids de IA das sessões de hoje (não removidas), para a limpeza dos recortes: das fechadas, x["ia"]; das ainda
+    abertas (ou separadas, fechando), as bases já pedidas na chegada (_ia_vistos) e os N primeiros cliques de agora."""
     hoje = _ff_hoje(agora)
+    out = set()
     with sess_lock:
-        return {p for x in sess.values() if x["dia"] == hoje and not x.get("removida") for p in (x.get("ia") or ())}
+        for x in sess.values():
+            if x["dia"] != hoje or x.get("removida"):
+                continue
+            out.update(x.get("ia") or ())
+            if x.get("status") != "fechada":
+                out.update(x.get("_ia_vistos") or ())
+                n, _ = _sess_ia_regra(x)
+                if n:
+                    ts = x.get("_t") or {}
+                    out.update(sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n])
+    return out
 
 
 def _sess_recalc(x):
