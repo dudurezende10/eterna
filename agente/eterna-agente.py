@@ -6425,7 +6425,12 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/ponto/entradas/importacoes":
             if not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
-            return self.js(entradas_importacoes(), nostore=True)
+            try:
+                r = entradas_importacoes()
+            except Exception as ex:      # operacao.db que não abre: responde JSON (o app mostra sem conexão)
+                print("  importações: %s" % str(ex)[:120])
+                return self.js({"error": "erro no servidor"}, 500)
+            return self.js(r, nostore=True)
         if u.path == "/impressao/fila":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
