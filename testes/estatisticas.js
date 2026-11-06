@@ -1,4 +1,4 @@
-// v92: Estatísticas, Calendário de eventos, folgas fixas, turnos, presença e sessão que vence na virada do dia
+// v92: Estatísticas, Calendário de eventos e sessão do fotógrafo que vence na virada do dia (sem presença, faltas ou atrasos: Eduardo, 05/11 noite)
 // (plano docs/planos/2026-11-05-estatisticas.md, critérios 1 a 3, 8 a 15, 17 a 25, 27 e 28; os do agente estão em
 // testes/estatisticas_agente.py). O agente é falso (page.route na própria origem); dados sintéticos, nenhum dado de cliente.
 const {chromium}=require('playwright');
@@ -13,7 +13,7 @@ function dia(iso,o){o=o||{};return Object.assign({v:2,dia:iso,fotos:300,sessoes:
   por_vendedor:{Ana:{vendas:5,faturamento:1000,fotos_vendidas:30}},por_confirmador:{Bia:{pagamento_s:H([1,2,1,0,0,0,0])}},por_posto:{'Caixa 1':{vendas:5,faturamento:1000,fotos_vendidas:30}},por_meio:{pix:{vendas:3,faturamento:600,fotos_vendidas:18},cartao:{vendas:2,faturamento:400,fotos_vendidas:12}},
   por_hora:{'10':{vendas:3,faturamento:600,sessoes:10,fotos:150},'15':{vendas:2,faturamento:400,sessoes:10,fotos:150}},por_produto:{tribuna:{n:2,receita:440},maracana:{n:2,receita:380},sem_detalhe:{n:1,receita:180}},
   por_canal:{checkout:{vendas:4,faturamento:820},balcao:{vendas:1,faturamento:180}},por_idioma:{pt:{vendas:3,faturamento:600},es:{vendas:1,faturamento:220}},
-  tempos:{cliente_s:H([0,2,2,0,0,0,0]),pagamento_s:H([1,2,1,0,0,0,0]),clique_checkout_s:H([3,5,1,0,0,0,0]),transferencia_s:H([9,0,0,0,0,0,0])},presenca:{},entradas:null},o);}
+  tempos:{cliente_s:H([0,2,2,0,0,0,0]),pagamento_s:H([1,2,1,0,0,0,0]),clique_checkout_s:H([3,5,1,0,0,0,0]),transferencia_s:H([9,0,0,0,0,0,0])},entradas:null},o);}
 (async()=>{
 const b=await chromium.launch();const errs=[];
 const nova=async(w,h)=>{const ctx=await b.newContext({viewport:{width:w||1440,height:h||1000},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();
@@ -32,7 +32,7 @@ async function agente(ctx){const js=(r,o,st)=>r.fulfill({status:st||200,contentT
   await ctx.route(ORIG+'/ponto/docs*',r=>r.request().method()==='POST'?js(r,{ok:true,gravados:1}):js(r,{ok:true,rev:0,docs:[]}));
   await ctx.route(ORIG+'/ponto/eventos',r=>{const bd=JSON.parse(r.request().postData()||'{}');AG.eventos.push(...(bd.eventos||[]));js(r,{ok:true,resultados:(bd.eventos||[]).map(e=>({idem:e.idem,s:'ok'}))});});
   await ctx.route(ORIG+'/metricas/dia*',r=>{const q=new URL(r.request().url()).searchParams;const de=q.get('de'),ate=q.get('ate');js(r,{ok:true,dias:AG.dias.filter(d=>d.dia>=de&&d.dia<=ate)});});
-  await ctx.route(ORIG+'/ponto/presenca',r=>{AG.pres.push({h:r.request().headers(),b:r.request().postData()});js(r,{ok:true,dia:HOJE,primeiro:Date.now()/1000});});
+  await ctx.route(ORIG+'/ponto/presenca',r=>{AG.pres.push(1);js(r,{error:'not found'},404);}); // não existe mais: o app não pode chamar
   await ctx.route(ORIG+'/ponto/entradas/importacoes',r=>js(r,{ok:true,importacoes:AG.imps}));
   await ctx.route(ORIG+'/ponto/entradas',r=>{const raw=r.request().postData()||'';AG.ent.push({h:r.request().headers(),raw});const bd=JSON.parse(raw);AG.imps.unshift({id:'imp_x',em:'2026-11-05T12:00:00Z',por:bd.por,arquivo:bd.arquivo,origem:bd.origem,dias:[bd.dia],aceitas:bd.seg.length,recusadas:0});js(r,{ok:true,aceitas:bd.seg.length,recusadas:0,dia:bd.dia,origem:bd.origem});});}
 try{
@@ -77,56 +77,19 @@ try{
   {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'carlos@eterna.photo');
     const r=await pg.evaluate(()=>{ETERNA.state.view='calendario';ETERNA.render();const tem=!!document.querySelector('[data-act="ag-novo"]');document.body.insertAdjacentHTML('beforeend','<button id="fake" data-act="ag-feriados" data-y="2026"></button>');document.getElementById('fake').click();return {tem,n:Object.keys(ETERNA.AGENDA).length,t:document.getElementById('toast').textContent};});
     ok(!r.tem&&r.n===0&&/Sem permissão/.test(r.t),'17: sem escala.u não cria: '+J(r));
-    // 8: presença no login e sessão vencida
-    for(let i=0;i<40&&!AG.pres.length;i++)await pg.waitForTimeout(150);
-    ok(AG.pres.length>=1,'8: login do fotógrafo marca presença');const p0=AG.pres[0]||{h:{},b:'{}'};const bd=JSON.parse(p0.b||'{}');
-    ok(p0.h['x-eterna']==='1'&&bd.chave==='carlos'&&Object.keys(bd).every(k=>['chave','posto'].includes(k)),'5/8: presença manda só chave e posto (sem hora do navegador): '+p0.b);
-    const marcado=await pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.presenca.v1')||'{}'));ok(marcado.carlos===HOJE,'8: dia marcado só depois do ok: '+J(marcado));
-    const n0=AG.pres.length;await pg.evaluate(()=>ETERNA.presencaMarcar());await pg.waitForTimeout(100);ok(AG.pres.length===n0,'8: não marca de novo no mesmo dia');
-    await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.session'));s.at=new Date(Date.parse(ETERNA.venueToday()+'T00:00:00-03:00')-60e3).toISOString(); /* ontem 23:59 no Rio: menos de 12 h, vence pela virada do dia */localStorage.setItem('eterna.session',JSON.stringify(s));localStorage.setItem('eterna.presenca.v1','{}');});
+    // 8: sessão do fotógrafo vence na virada do dia (segurança de sessão); nenhuma presença é enviada
+    await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.session'));s.at=new Date(Date.parse(ETERNA.venueToday()+'T00:00:00-03:00')-60e3).toISOString(); /* ontem 23:59 no Rio: menos de 12 h, vence pela virada do dia */localStorage.setItem('eterna.session',JSON.stringify(s));});
     await pg.clock.setFixedTime(new Date(HOJE+'T09:00:00-03:00')); // 9 h depois da sessão: só a virada do dia vence (a regra antiga é de 12 h)
-    await pg.goto(U);await pg.waitForTimeout(600);const st=await pg.evaluate(()=>({u:!!ETERNA.state.user,v:ETERNA.state.view,p:localStorage.getItem('eterna.presenca.v1'),s:localStorage.getItem('eterna.session')}));
-    ok(!st.u&&st.v==='entrar'&&st.p==='{}'&&!st.s,'8: sessão de ontem pede login de novo e nada é marcado: '+J(st));ok(AG.pres.length===n0,'8: sem presença enviada com a sessão vencida');
+    await pg.goto(U);await pg.waitForTimeout(600);const st=await pg.evaluate(()=>({u:!!ETERNA.state.user,v:ETERNA.state.view,s:localStorage.getItem('eterna.session'),p:localStorage.getItem('eterna.presenca.v1')}));
+    ok(!st.u&&st.v==='entrar'&&!st.s&&st.p==null,'8: sessão de ontem pede login de novo: '+J(st));ok(AG.pres.length===0,'sem presença: o app nunca chama /ponto/presenca');
     await ctx.close();}
-  // R1: com o app aberto desde ontem, às 00:00:30 a presença não marca o dia novo (a sessão vence antes)
-  {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'carlos@eterna.photo');for(let i=0;i<40&&!AG.pres.length;i++)await pg.waitForTimeout(100);
-    await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.session'));s.at=new Date(Date.parse(ETERNA.venueToday()+'T00:00:00-03:00')-60e3).toISOString();localStorage.setItem('eterna.session',JSON.stringify(s));localStorage.setItem('eterna.presenca.v1','{}');});
-    const n1=AG.pres.length;await pg.clock.setFixedTime(new Date(HOJE+'T00:00:30-03:00'));
-    const r=await pg.evaluate(async()=>({ret:await ETERNA.presencaMarcar(),u:!!ETERNA.state.user,p:localStorage.getItem('eterna.presenca.v1')}));await pg.waitForTimeout(150);
-    ok(r.ret===false&&!r.u&&r.p==='{}'&&AG.pres.length===n1,'R1: 00:00:30 com sessão de ontem não marca presença e pede login: '+J(r));
-    await ctx.close();}
-  // R2: 400 não repete até o próximo login; 429 espera 60 s
-  for(const st of [400,429]){const {ctx,pg}=await nova();let n=0;await agente(ctx);await ctx.route(ORIG+'/ponto/presenca',r=>{n++;r.fulfill({status:st,contentType:'application/json',body:J({error:'x'})});});
-    await entrar(pg,'carlos@eterna.photo');for(let i=0;i<30&&!n;i++)await pg.waitForTimeout(100);
-    for(let i=0;i<4;i++){await pg.evaluate(()=>ETERNA.presencaMarcar());await pg.waitForTimeout(60);}
-    ok(n===1,'R2: depois de '+st+' não tenta de novo em seguida: '+n);
-    if(st===400){await pg.evaluate(()=>{localStorage.removeItem('eterna.session');});await entrar(pg,'carlos@eterna.photo');for(let i=0;i<30&&n<2;i++)await pg.waitForTimeout(100);ok(n===2,'R2: o próximo login tenta de novo: '+n);}
-    await ctx.close();}
-  // ---------- funções puras: 9, 10, 11, 12, 13, 14, 15, 20, 21 ----------
+  // sem presença: nada de presença, faltas ou atrasos no app
   {const {ctx,pg}=await nova();await entrar(pg,'eduardo@eduardorezende.com');
-    const R=await pg.evaluate(()=>{const E=ETERNA;const ep=hm=>Date.parse('2026-11-04T'+hm+':00-03:00')/1000;const fs=[{k:'carlos',nome:'Carlos'}];
-      const esc1={historico:[{desde:'2026-11-01',folgas:{carlos:[1,2]}}]};
-      const a=E.esPresenca({dias:['2026-11-02','2026-11-04'],fotografos:fs,funcoes:{},escala:esc1,turnos:null,presencas:{'2026-11-02':{},'2026-11-04':{}},hoje:'2026-11-05'}).carlos;
-      const at=hm=>E.esPresenca({dias:['2026-11-04'],fotografos:fs,funcoes:{},escala:null,turnos:{historico:[{desde:'2026-01-01',padrao:'09:00',tolerancia:10,por_ponto:{}}]},presencas:{'2026-11-04':{carlos:{primeiro:ep(hm),fonte:'login'}}},hoje:'2026-11-05'}).carlos.dias[0];
-      const h2=E.cfgNovo({historico:[{desde:'2026-11-01',folgas:{carlos:[3]}}]},'2026-11-05',{folgas:{carlos:[1,2]}},'x');
-      const b=E.esPresenca({dias:['2026-11-04','2026-11-11'],fotografos:fs,funcoes:{'2026-11-11':{carlos:{tipo:'folga'}}},escala:h2,turnos:null,presencas:{'2026-11-04':{},'2026-11-11':{}},hoje:'2026-11-12'}).carlos.dias.map(x=>x.estado);
-      const vol=E.esPresenca({dias:['2026-11-04'],fotografos:fs,funcoes:{'2026-11-04':{carlos:{tipo:'campo',point:'p1'}}},escala:null,turnos:{historico:[{desde:'2026-01-01',padrao:'09:00',tolerancia:10,por_ponto:{p1:'10:00'}}]},presencas:{'2026-11-04':{carlos:{primeiro:ep('10:05'),fonte:'fotos'}}},hoje:'2026-11-05'}).carlos.dias[0];
-      const T9={historico:[{desde:'2026-01-01',padrao:'09:00',tolerancia:10,por_ponto:{}}]};const base={dias:['2026-11-04'],fotografos:fs,funcoes:{},escala:null,turnos:T9,hoje:'2026-11-05'};
-      const fora=E.esPresenca({...base,presencas:{'2026-11-04':{}},fora:{'2026-11-04':[[ep('08:30'),ep('09:40')]]}}).carlos;
-      const foraAtr=E.esPresenca({...base,presencas:{'2026-11-04':{carlos:{primeiro:ep('09:45'),fonte:'login',acesso:'remota'}}},fora:{'2026-11-04':[[ep('08:30'),ep('09:40')]]}}).carlos;
-      const foraDepois=E.esPresenca({...base,presencas:{'2026-11-04':{}},fora:{'2026-11-04':[[ep('12:00'),ep('13:00')]]}}).carlos;
-      const ab=E.esPresenca({...base,presencas:{'2026-11-04':{}},abonos:{'2026-11-04':{carlos:{motivo:'médico'}}}}).carlos;
-      const fe=E.esPresenca({...base,presencas:{'2026-11-04':{}},fechados:{'2026-11-04':true}}).carlos;
-      const rem=E.esPresenca({...base,presencas:{'2026-11-04':{carlos:{primeiro:ep('08:50'),fonte:'login',acesso:'remota'}}}}).carlos.dias[0];
-      return {a:a.dias.map(x=>x.estado),fal:a.faltas,fol:a.folgas,a908:at('09:08'),a925:at('09:25'),b,vol,
-        fora:[fora.dias[0].estado,fora.faltas],foraAtr:[foraAtr.dias[0].estado,foraAtr.atrasos,foraAtr.presencas],foraDepois:foraDepois.dias[0].estado,ab:[ab.dias[0].estado,ab.faltas,ab.dias[0].abono],fe:[fe.dias[0].estado,fe.faltas,fe.escalado],rem:rem.marca};});
-    ok(J(R.fora)===J(['fora',0])&&J(R.foraAtr)===J(['fora',0,1])&&R.foraDepois==='falta','servidor fora no início do turno: sem dado, nunca falta nem atraso: '+J([R.fora,R.foraAtr,R.foraDepois]));
-    ok(J(R.ab)===J(['abonado',0,'médico'])&&J(R.fe)===J(['fechado',0,0]),'abono e estádio fechado tiram a falta: '+J([R.ab,R.fe]));
-    ok(R.rem&&R.rem.acesso==='remota','marca com o tipo de acesso: '+J(R.rem));
-    ok(J(R.a)===J(['folga','falta'])&&R.fal===1&&R.fol===1,'9: folga fixa seg/ter: segunda folga, quarta falta: '+J(R.a));
-    ok(R.a908.estado==='presente'&&R.a908.atraso===0&&R.a925.estado==='atraso'&&R.a925.atraso===25,'10: 09:08 não é atraso, 09:25 é 25 min: '+J([R.a908,R.a925]));
-    ok(J(R.b)===J(['folga','folga']),'11: mudar a folga hoje não muda a quarta anterior (e a função do dia vale por cima): '+J(R.b));
-    ok(R.vol.estado==='presente'&&R.vol.inicio==='10:00'&&R.vol.marca.fonte==='fotos','S10: turno do ponto da função do dia e marca pelas fotos: '+J(R.vol));
+    const r=await pg.evaluate(()=>{const E=ETERNA;return {fn:['esPresenca','presencaMarcar','abGrava','cfgNovo'].filter(k=>k in E),ops:['folga-fixa','turno-salvar','es-abonar','ab-salvar'].filter(k=>k in E.WRITE_OPS),info:JSON.stringify(E.MODULE_INFO)};});
+    ok(!r.fn.length&&!r.ops.length&&!/presen|falta|atraso|turnos|folgas fixas/i.test(r.info),'sem presença: funções, ações e textos de permissão saíram: '+J({fn:r.fn,ops:r.ops}));
+    await ctx.close();}
+  // ---------- funções puras: 12, 13, 14, 15, 20, 21 ----------
+  {const {ctx,pg}=await nova();await entrar(pg,'eduardo@eduardorezende.com');
     const D=await pg.evaluate(([d1,d2,d3])=>{const E=ETERNA;const ds=[d1,d2,d3];const T=E.srvMetSoma(ds);const x=E.esDados(ds,{rover:false});
       const f=E.esFaixas({n:3,soma:470,f:[1,1,0,0,1,0,0]});
       const fant=E.srvMetSoma([Object.assign({},d1,{por_fotografo:{carlos:{fotos:3,sessoes:1},'sem fotógrafo':{primeira_foto:1762340000}},por_vendedor:JSON.parse('{"Ana":{"vendas":1,"faturamento":10},"__proto__":{"vendas":9}}')})]);
@@ -150,7 +113,7 @@ try{
     ok(P.a.lang==='es'&&P.a.canal==='checkout'&&P.a.t0===P.t0&&P.a.cart.length===1&&P.a.cart[0].id==='tribuna'&&P.a.cart[0].v>0,'3: Checkout manda lang, canal, cart e t0: '+J(P.a));
     ok(P.b.canal==='balcao'&&P.b.lang==null&&P.b.t0==null,'3: balcão com canal e sem lang: '+J(P.b));ok(P.t1&&P.t2==null,'3: t0 gravado ao sair da etapa code e zerado no lojaReset');
     await ctx.close();}
-  // ---------- tela com o servidor: 12, 14, 21, 22, 23, 25, 27, folgas fixas e turnos ----------
+  // ---------- tela com o servidor: 12, 14, 21, 22, 23, 25, 27 ----------
   {const {ctx,pg}=await nova();await agente(ctx);AG.dias=[];for(let i=0;i<366;i++)AG.dias.push(dia(addD(HOJE,-i)));
     await entrar(pg,'eduardo@eduardorezende.com');await pg.waitForTimeout(500);
     await pg.evaluate(([de,ate])=>{const E=ETERNA;E.state.range={from:de,to:ate};E.state.es.sec='a';E.state.es.rover=false;E.go('estatisticas');},[addD(HOJE,-365),HOJE]);
@@ -165,7 +128,10 @@ try{
     await pg.click('[data-act="es-sec"][data-s="e"]');const te=await pg.textContent('#main');ok(/Português/.test(te)&&/Outras línguas \(provável estrangeiro\)/.test(te),'21: rótulos de idioma');
     // b) fotógrafos: tabela ordenável e dia a dia
     await pg.click('[data-act="es-sec"][data-s="b"]');await pg.click('[data-act="es-ord"][data-c="nome"]');await pg.click('.es-link[data-k="carlos"]');await pg.waitForTimeout(80);
-    const tb=await pg.textContent('#main');ok(/Presença pelo login e pelas fotos no Eterna\. Não substitui o ponto oficial\./.test(tb)&&/Carlos · dia a dia/.test(tb),'b: texto S2 e dia a dia');
+    const tb=await pg.textContent('#main');const cab=await pg.$$eval('.es-fotos th',x=>x.map(e=>e.textContent.trim().replace(/ [▲▼]$/,'')));
+    ok(/Carlos · dia a dia/.test(tb)&&!/presen|falta|atraso|escalad|login às|ponto oficial/i.test(tb),'b: dia a dia sem presença, faltas ou atrasos');
+    ok(J(cab)===J(['Fotógrafo','Dias com produção','Sessões','Fotos','Fotos/sessão','Vendas','Conversão','R$/sessão','Faturamento','Clique → Checkout']),'b: só métricas de produção: '+J(cab));
+    const dp=await pg.evaluate(()=>{const tr=[...document.querySelectorAll('.es-fotos tbody tr')].find(t=>/Carlos/.test(t.textContent));return tr?tr.children[1].textContent:'';});ok(dp.replace(/\D/g,'')==='366','b: dias com produção = 366: '+dp);
     // f) movimento sem dados, com import, CSV com colunas extras (23)
     await pg.click('[data-act="es-sec"][data-s="f"]');await pg.waitForTimeout(150);let tf=await pg.textContent('#main');
     ok(/Sem dados de entrada ainda\. Quando chegar o arquivo do bip ou das catracas, importe aqui\./.test(tf)&&await pg.$('[data-act="es-importar"]')&&await pg.$('.es-out'),'22: aviso, botão de importar e retrato de outubro à parte');
@@ -183,12 +149,7 @@ try{
     AG.dias[1]=dia(ontem,{entradas:{fonte:'bip',total:812,por_origem:{bip:812},por_hora:{'09':95,'10':300},pico_min:{hhmm:'10:41',n:9},pico_15:{hhmm:'10:30',n:88},primeira:'09:01',ultima:'16:58',minutos:478,media_min:1.7}});
     await pg.evaluate(()=>{ETERNA.state.es.chave=null;ETERNA.esPull(true);});await pg.waitForTimeout(600);tf=await pg.textContent('#main');
     ok(/pico 10:41, 9 pessoas/.test(tf)&&/Funil/.test(tf)&&/Últimas importações/.test(tf)&&/bilheteria\.csv/.test(tf),'25: pico 10:41, 9 pessoas e importações: '+tf.slice(0,160));
-    // folgas fixas (Escala) e horário dos turnos (Painel de controle)
-    await pg.evaluate(()=>ETERNA.go('escala'));await pg.click('[data-act="folga-fixa"][data-k="carlos"][data-d="1"]');await pg.click('[data-act="folga-fixa"][data-k="carlos"][data-d="2"]');
-    const ec=await pg.evaluate(()=>({c:ETERNA.ESC_CFG,log:JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').filter(e=>e.acao==='folga_fixa').length}));
-    const ult=ec.c&&ec.c.historico[ec.c.historico.length-1];ok(ult&&ult.desde===HOJE&&J(ult.folgas.carlos)===J([1,2])&&ec.c.historico.length===1&&ec.log===2,'9/11: folgas fixas gravadas com desde = hoje e auditLog: '+J(ec));
-    await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.fill('#turno-padrao','08:30');await pg.fill('#turno-tol','15');await pg.click('[data-act="turno-salvar"]');
-    const tc=await pg.evaluate(()=>ETERNA.TURNOS_CFG);ok(tc&&tc.historico[0].padrao==='08:30'&&tc.historico[0].tolerancia===15,'turnos: Admin salva o horário: '+J(tc));
+    await pg.evaluate(()=>ETERNA.go('catalogo'));ok(!(await pg.$('#turnos'))&&!(await pg.$('[data-act="turno-salvar"]')),'sem horário dos turnos no Painel de controle');
     ok(await pg.$('#main [data-act="view"][data-v="calendario"]'),'D3: atalho do Calendário no Painel de controle');
     // 3: venda de verdade no balcão (caixaConfirm) com a tela em inglês: canal balcao, sem lang
     const card2=await pg.evaluate(()=>{const E=ETERNA;const c=E.demoSessions().filter(s=>s.photos.length>=3&&!['paga','cancelada'].includes((E.SIM.sessions[s.card]||{}).status))[2].card;const S=E.SIM;const s=S.sessions[c]=S.sessions[c]||{};
@@ -207,21 +168,13 @@ try{
     for(let i=0;i<40&&!(await pg.evaluate(()=>{const r=ETERNA.state.es.impRes;return r&&r.arquivo==='dias.csv';}));i++)await pg.waitForTimeout(100);
     const r429=await pg.evaluate(()=>ETERNA.state.es.impRes);ok(n429===4&&r429&&r429.dias===3&&r429.aceitas===3,'importação de 3 dias com um 429 no meio: tenta de novo e grava os 3: '+J({n429,r429}));
     await ctx.close();}
-  // revisão: abono pela Supervisora na Escala (escala.u, auditLog) e fotógrafo sem escala.u não abona
+  // Escala sem folgas fixas nem abonos
   {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'supervisor@eterna.photo');await pg.evaluate(()=>ETERNA.go('escala'));
-    const ontem=addD(HOJE,-1);await pg.selectOption('#ab-k','carlos');await pg.fill('#ab-dia',ontem);await pg.fill('#ab-motivo','<b>consulta</b> médica');await pg.click('[data-act="ab-salvar"]');await pg.waitForTimeout(120);
-    const a=await pg.evaluate(()=>({ab:ETERNA.ABONOS,log:JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').filter(e=>e.acao==='abono').length,html:document.getElementById('abonos').innerHTML}));
-    const x=a.ab[ontem+'|carlos'];ok(x&&x.motivo==='bconsulta/b médica'&&a.log===1&&!/<b>consulta/.test(a.html),'abono pela Supervisora, limpo e no auditLog: '+J(x));
-    await pg.click(`[data-act="ab-desfazer"][data-id="${ontem}|carlos"]`);ok(await pg.evaluate(()=>Object.keys(ETERNA.ABONOS).length===0),'abono desfeito');
-    await ctx.close();}
-  {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'carlos@eterna.photo');const r=await pg.evaluate(()=>{ETERNA.state.view='escala';ETERNA.render();const tem=!!document.querySelector('[data-act="ab-salvar"]');const g=ETERNA.abGrava(ETERNA.venueToday(),'carlos','x');return {tem,g,n:Object.keys(ETERNA.ABONOS).length};});
-    ok(!r.tem&&r.g===false&&r.n===0,'fotógrafo sem escala.u não abona: '+J(r));await ctx.close();}
-  // turnos: Supervisor só vê
-  {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'supervisor@eterna.photo');const r=await pg.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();return {btn:!!document.querySelector('[data-act="turno-salvar"]'),dis:document.getElementById('turno-padrao').disabled};});
-    ok(!r.btn&&r.dis,'S8: horário dos turnos só com catalogo.u');await ctx.close();}
+    const r=await pg.evaluate(()=>({f:!!document.getElementById('folgas-fixas'),a:!!document.getElementById('abonos'),b:!!document.querySelector('[data-act="folga-fixa"]')}));
+    ok(!r.f&&!r.a&&!r.b,'Escala sem folgas fixas e sem abonos: '+J(r));await ctx.close();}
 }catch(e){fails.push('exceção: '+String(e&&e.stack||e).slice(0,600));}
 await b.close();
 const e2=errs.filter(x=>!/Failed to fetch|NetworkError/.test(x));
 const okAll=!fails.length&&!e2.length;
-console.log(`${okAll?'OK':'FALHA'} estatisticas: critérios 1 a 3, 8 a 15, 17 a 25, 27 e 28 (v92) · render ${J(medidas.render_ms||{})}${fails.length?' · '+fails.join(' | '):''}${e2.length?' · erros: '+e2.slice(0,3).join(' | '):''}`);
+console.log(`${okAll?'OK':'FALHA'} estatisticas: critérios 1 a 4, 8, 12 a 25, 27 e 28 (v92, sem presença) · render ${J(medidas.render_ms||{})}${fails.length?' · '+fails.join(' | '):''}${e2.length?' · erros: '+e2.slice(0,3).join(' | '):''}`);
 process.exit(okAll?0:1);})();
