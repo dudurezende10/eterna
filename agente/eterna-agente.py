@@ -5275,13 +5275,43 @@ def metricas_dia(dia):
     return met_v2_junta(m, met_v2(dia, ss, evs))
 
 
+# v92 (revisão S1): toda gravação do resumo do dia passa por met_escreve, com um lock por dia (ler, mudar e gravar dentro
+# dele) e um arquivo temporário único (mkstemp), para o metricas_loop, a importação de entradas e a migração nunca se
+# atropelarem nem apagarem um resumo antigo.
+_met_locks = {}
+_met_locks_lock = threading.Lock()
+
+
+def met_lock(dia):
+    with _met_locks_lock:
+        lk = _met_locks.get(dia)
+        if lk is None:
+            lk = _met_locks[dia] = threading.RLock()
+        return lk
+
+
+def met_escreve(dia, m):
+    import tempfile
+    with met_lock(dia):
+        os.makedirs(MET_DIR, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix="." + dia + ".", suffix=".tmp", dir=MET_DIR)
+        try:
+            with os.fdopen(fd, "w", encoding="utf8") as f:
+                json.dump(m, f, ensure_ascii=False, indent=1)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, os.path.join(MET_DIR, dia + ".json"))
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+
 def metricas_gravar(dia):
     m = metricas_dia(dia)
-    os.makedirs(MET_DIR, exist_ok=True)
-    tmp = os.path.join(MET_DIR, dia + ".json.tmp")
-    with open(tmp, "w", encoding="utf8") as f:
-        json.dump(m, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, os.path.join(MET_DIR, dia + ".json"))
+    met_escreve(dia, m)
     return m
 
 
@@ -5735,15 +5765,20 @@ def _met_regrava(dia):
             metricas_gravar(dia)
             return
         arq = os.path.join(MET_DIR, dia + ".json")
-        try:
-            m = json.load(open(arq, encoding="utf8"))
-        except Exception:
-            m = {"dia": dia, "gerado": _iso(), "v": 2, "so_entradas": True}
-        m["entradas"] = entradas_dia(dia)
-        os.makedirs(MET_DIR, exist_ok=True)
-        with open(arq + ".tmp", "w", encoding="utf8") as f:
-            json.dump(m, f, ensure_ascii=False, indent=1)
-        os.replace(arq + ".tmp", arq)
+        with met_lock(dia):
+            if os.path.exists(arq):
+                try:
+                    with open(arq, encoding="utf8") as f:
+                        m = json.load(f)
+                    if not isinstance(m, dict):
+                        raise ValueError("não é um objeto")
+                except Exception as ex:          # S1: resumo que existe e não abre nunca é trocado por um registro vazio
+                    print("  métricas (entradas): %s não abre, ficou como está (%s)" % (dia, str(ex)[:80]))
+                    return
+            else:                                # dia sem resumo: registro mínimo, sem v:2 (a migração ainda preenche)
+                m = {"dia": dia, "gerado": _iso(), "so_entradas": True}
+            m["entradas"] = entradas_dia(dia)
+            met_escreve(dia, m)
     except Exception as ex:
         print("  métricas (entradas): %s" % str(ex)[:120])
 
@@ -5765,6 +5800,31 @@ def entradas_importacoes():
     return {"ok": True, "importacoes": out}
 
 
+def _migra_dia(dia, arq):
+    """Migra um resumo (chamado com o lock do dia). True = já era v2 (nada gravado). Arquivo que não abre: exceção."""
+    with open(arq, encoding="utf8") as f:
+        m = json.load(f)
+    if not isinstance(m, dict) or m.get("v") == 2:
+        return True
+    sf = os.path.join(SESS_DIR, dia + ".json")
+    ss = None
+    if os.path.exists(sf):
+        try:
+            with open(sf, encoding="utf8") as f:
+                ss = json.load(f).get("sessoes") or []
+        except Exception:
+            ss = None
+    v2 = met_v2(dia, ss, _ev_ler(dia))
+    if ss is None:                                   # sem arquivo de sessões: não inventa tempos de clique nem de câmera
+        for k in ("clique_checkout_s", "transferencia_s"):
+            v2["tempos"].pop(k, None)
+        v2.pop("por_fotografo", None)
+    met_v2_junta(m, v2, so_acrescenta=True)
+    m["migrado"] = True
+    met_escreve(dia, m)
+    return False
+
+
 def metricas_migra_v2(pausa=0.2):
     """Uma vez, numa thread: os resumos antigos (v1) ganham os campos v2 que dá para refazer (horas, produtos, canal e
     pagamento_s do vendas.db; sessões, clique e transferência do arquivo de sessões, se ainda existir). SÓ ACRESCENTA:
@@ -5780,33 +5840,15 @@ def metricas_migra_v2(pausa=0.2):
         if dia >= ontem:
             est_migra["feitos"] += 1
             continue
-        arq = os.path.join(MET_DIR, n)
         try:
-            m = json.load(open(arq, encoding="utf8"))
-            if not isinstance(m, dict) or m.get("v") == 2:
-                est_migra["feitos"] += 1
-                continue
-            sf = os.path.join(SESS_DIR, dia + ".json")
-            ss = None
-            if os.path.exists(sf):
-                try:
-                    ss = json.load(open(sf, encoding="utf8")).get("sessoes") or []
-                except Exception:
-                    ss = None
-            v2 = met_v2(dia, ss, _ev_ler(dia))
-            if ss is None:                           # sem arquivo de sessões: não inventa tempos de clique nem de câmera
-                for k in ("clique_checkout_s", "transferencia_s"):
-                    v2["tempos"].pop(k, None)
-                v2.pop("por_fotografo", None)
-            met_v2_junta(m, v2, so_acrescenta=True)
-            m["migrado"] = True
-            tmp = arq + ".tmp"
-            with open(tmp, "w", encoding="utf8") as f:
-                json.dump(m, f, ensure_ascii=False, indent=1)
-            os.replace(tmp, arq)
+            with met_lock(dia):                      # S1: ler, mudar e gravar dentro do lock do dia
+                pulou = _migra_dia(dia, os.path.join(MET_DIR, n))
         except Exception as ex:
             est_migra["erro"] = "%s: %s" % (dia, str(ex)[:120])
+            pulou = False
         est_migra["feitos"] += 1
+        if pulou:
+            continue
         time.sleep(pausa)                            # o agente continua atendendo (critério 27)
     est_migra["estado"] = "feita"
 

@@ -3,7 +3,7 @@
 #   python3 -I testes/estatisticas_agente.py agente/eterna-agente.py [porta]
 # Parte A: o módulo importado aqui (sem OpenCV). Parte B: o agente de verdade em outro processo (rotas, limites, migração
 # e desempenho com 366 dias). Nenhum dado de cliente: vendas, entradas e sessões sintéticas.
-import importlib.util, inspect, json, os, random, re, subprocess, sys, tempfile, time, http.client
+import threading, importlib.util, inspect, json, os, random, re, subprocess, sys, tempfile, time, http.client
 
 AG = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "agente", "eterna-agente.py")
 PORTA = int(sys.argv[2]) if len(sys.argv) > 2 else 8700 + random.randint(0, 80)
@@ -161,9 +161,41 @@ ok(json.load(open(os.path.join(m.MET_DIR, dia_m + ".json"))) == mm, "26: a migra
 # importar entradas de um dia antigo não recalcula a v1 (só troca entradas)
 v3, _ = m.entradas_validar({"origem": "bip", "dia": dia_m, "seg": [36000, 36001]})
 m.entradas_gravar(*v3)
-time.sleep(0.5)
+def espera(cond, prazo=5.0):
+    fim = time.time() + prazo
+    while time.time() < fim:
+        try:
+            if cond():
+                return True
+        except Exception:
+            pass
+        time.sleep(0.05)
+    return False
+espera(lambda: (json.load(open(os.path.join(m.MET_DIR, dia_m + ".json"))).get("entradas") or {}).get("total") == 2)
 mm2 = json.load(open(os.path.join(m.MET_DIR, dia_m + ".json")))
 ok(mm2["sessoes"] == 17 and mm2["fotos"] == 321 and (mm2.get("entradas") or {}).get("total") == 2, "entradas de dia antigo: v1 intacta: %r" % {k: mm2.get(k) for k in ("sessoes", "fotos", "entradas")})
+# S1 (revisão): resumo antigo que existe e não abre nunca é trocado; dia sem resumo ganha registro mínimo sem v:2
+dia_x = m._ff_hoje(time.time() - 20 * 86400)
+arq_x = os.path.join(m.MET_DIR, dia_x + ".json")
+ruim = b'{"dia": "' + dia_x.encode() + b'", "fotos": 12, quebrado'
+open(arq_x, "wb").write(ruim)
+v4, _ = m.entradas_validar({"origem": "bip", "dia": dia_x, "seg": [36000]})
+m.entradas_gravar(*v4)
+espera(lambda: False, 0.6)
+ok(open(arq_x, "rb").read() == ruim, "S1: JSON inválido de dia antigo fica com os mesmos bytes depois de importar entradas")
+dia_y = m._ff_hoje(time.time() - 21 * 86400)
+arq_y = os.path.join(m.MET_DIR, dia_y + ".json")
+v5, _ = m.entradas_validar({"origem": "catraca", "dia": dia_y, "seg": [36000, 36060]})
+m.entradas_gravar(*v5)
+espera(lambda: os.path.exists(arq_y))
+my = json.load(open(arq_y))
+ok(my.get("v") != 2 and my.get("so_entradas") is True and my["entradas"]["total"] == 2, "S1: dia sem resumo ganha registro mínimo sem v:2: %r" % my)
+ok(not [n for n in os.listdir(m.MET_DIR) if n.endswith(".tmp")], "S1: nenhum temporário sobrando")
+# S1: várias gravações ao mesmo tempo no mesmo dia não quebram o arquivo
+ths = [threading.Thread(target=m._met_regrava, args=(dia_y,)) for _ in range(8)]
+[t.start() for t in ths]
+[t.join() for t in ths]
+ok(json.load(open(arq_y))["entradas"]["total"] == 2, "S1: gravações concorrentes deixam um JSON válido")
 
 # --- agenda (risco 4) ---
 AGV = {"id": "ag_0123456789ab", "data": "2026-11-08", "hora": "16:00", "tipo": "jogo", "mandante": "<script>alert(1)</script>Flamengo",
