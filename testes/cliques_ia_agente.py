@@ -417,6 +417,16 @@ gv = m.REPO.ler_manifesto(TOK) or {}
 ok(rr.status == 200 and rj.get("ignoradas") == 1, "18: publicar responde ok com ignoradas 1: %r %r" % (rr.status, rj))
 ok([f["id"] for f in gv.get("fotos") or []] == ["ag_" + K[2]], "18: a base não está no manifesto gravado: %r" % gv.get("fotos"))
 
+# navegador antigo: venda com base de IA no selected fica, marcada
+rv = m.ev_receber({"posto": "Caixa 1", "eventos": [{"tipo": "pagar", "idem": "idem93a", "venda": "venda93a", "seq": 1, "em": "2026-11-06T12:00:00Z",
+                                                    "dados": {"card": xk["card"], "selected": ["ag_" + K[0], "ag_" + K[2]], "total": 70}}]})
+import sqlite3 as _sq
+_db = m.vendas_db()
+_row = _db.execute("select dados from evento where idem = 'idem93a'").fetchone()
+_db.close()
+ok(rv["resultados"][0]["s"] == "ok" and _row and json.loads(_row[0]).get("ia_vendidas") == ["ag_" + K[0]],
+   "navegador antigo: venda gravada com ia_vendidas: %r %r" % (rv, _row))
+
 # 16: reinício com sessão aberta: fecha com "reinicio" e ia calculada; o recorte antecipado escolhe as bases
 reset()
 agora = time.time()

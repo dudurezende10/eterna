@@ -4223,6 +4223,17 @@ def _sess_ia_fecha(x):
     x["ia_regra"] = {"n": n, "motivo": mot or ("poucas_fotos" if n and len(fs) <= n else None)}
 
 
+def sess_ia_de(pids):
+    """Quais destes pids são base de IA de alguma sessão em memória (hoje e ontem)."""
+    with sess_lock:
+        out = set()
+        for p in pids:
+            x = sess.get(sess_pid.get(p) or "")
+            if x is not None and p in (x.get("ia") or ()):
+                out.add(p)
+        return out
+
+
 def sess_ia_hoje(agora=None):
     """pids de IA das sessões de hoje (não removidas), para a limpeza dos recortes."""
     hoje = _ff_hoje(agora)
@@ -5507,6 +5518,14 @@ def ev_receber(body):
     evs = body.get("eventos") if isinstance(body.get("eventos"), list) else []
     posto = _txt_chave(body.get("posto") or "", 40) or ""
     res = []
+    # v93 (segurança): navegador antigo pode vender a base de IA como foto. A venda já foi paga e fica; o evento ganha
+    # "ia_vendidas" e uma linha no console (sess_lock antes do ev_lock, nunca junto)
+    sel = set()
+    for e in evs[:50]:
+        d = e.get("dados") if isinstance(e, dict) and isinstance(e.get("dados"), dict) else {}
+        if isinstance(d.get("selected"), list):
+            sel.update(pid_lib(str(p)[:60]) for p in d["selected"][:200])
+    ia_sel = sess_ia_de(sel) if sel else set()
     with ev_lock:
         db = vendas_db()
         try:
@@ -5515,6 +5534,10 @@ def ev_receber(body):
                 if not x:
                     res.append({"idem": (e or {}).get("idem") if isinstance(e, dict) else None, "s": "recusado"})
                     continue
+                vi = [p for p in x["dados"].get("selected") or [] if pid_lib(p) in ia_sel]
+                if vi:
+                    x["dados"]["ia_vendidas"] = vi
+                    print("  venda %s: %d base(s) de IA vendida(s) como foto (navegador antigo)" % (x["venda"], len(vi)))
                 cur = db.execute("insert or ignore into evento values (?,?,?,?,?,?,?,?,?,?)",
                                  (x["idem"], x["venda"], x["seq"], x["tipo"], x["em"], _ev_dia(x["em"]), x["posto"] or posto,
                                   x["por"], json.dumps(x["dados"], ensure_ascii=False), _iso()))
