@@ -60,14 +60,15 @@ try{
   const bl=evs.find(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);ok(bl&&bl.dados.canal==='balcao'&&bl.dados.lang==null,'3: balcão em inglês: canal balcao, sem lang: '+J(bl&&bl.dados&&{canal:bl.dados.canal,lang:bl.dados.lang}));
   // ---------- resumo v2 de hoje no agente ----------
   for(let i=0;i<50&&evs.filter(e=>e.tipo==='pagar').length<2;i++)await sleep(200); // o pagar do balcão sai no lote seguinte da fila
-  await sleep(400);const md=(await req(porta,'GET',`/metricas/dia?de=${HOJE}&ate=${HOJE}`)).j;const d0=(md&&md.dias||[])[0]||{};
+  const DV=ck?diaSP(Date.parse(ck.em)):HOJE; // o dia da própria venda (perto da meia-noite, HOJE do início do teste pode ser ontem)
+  await sleep(400);const md=(await req(porta,'GET',`/metricas/dia?de=${DV}&ate=${DV}`)).j;const d0=(md&&md.dias||[])[0]||{};
   ok(d0.v===2&&d0.vendas===2,'resumo de hoje v2 com 2 vendas: '+J({v:d0.v,vendas:d0.vendas,fat:d0.faturamento,evs:evs.map(e=>e.tipo+':'+e.venda+':'+((e.dados||{}).card||''))}));
   ok(J(Object.keys(d0.por_idioma||{}))===J(['es'])&&(d0.por_canal||{}).checkout&&d0.por_canal.checkout.vendas===1&&(d0.por_canal||{}).balcao&&d0.por_canal.balcao.vendas===1,'21: idioma só do Checkout (es) e canais: '+J({i:d0.por_idioma,c:d0.por_canal}));
   ok(d0.tempos&&d0.tempos.cliente_s.n===1&&d0.tempos.pagamento_s.n===1,'c/R3: cliente_s e pagamento_s só da venda do Checkout: '+J(d0.tempos&&{c:d0.tempos.cliente_s,p:d0.tempos.pagamento_s}));
   ok(d0.por_confirmador&&Object.keys(d0.por_confirmador).length===1&&!Object.values(d0.por_vendedor||{}).some(v=>'pagamento_s' in v),'R4: por_confirmador com quem confirmou; por_vendedor sem tempo: '+J({c:d0.por_confirmador,v:d0.por_vendedor}));
   const prodIds=Object.keys(d0.por_produto||{});ok(prodIds.length>0&&!prodIds.includes('sem_detalhe'),'14: produtos da v92 com id, sem "sem detalhe": '+J(d0.por_produto));
   // ---------- 12 pela tela: Estatísticas (sem Roverpix) = Servidor do ponto · todos os caixas no Painel ----------
-  await pa.evaluate(h=>{const E=ETERNA;E.state.range={from:h,to:h};E.state.srvMet.chave=null;E.go('painel');},HOJE); // o Painel guarda o resumo por 60 s (v90)let srvTxt='';
+  await pa.evaluate(h=>{const E=ETERNA;E.state.range={from:h,to:h};E.state.srvMet.chave=null;E.go('painel');},DV); // o Painel guarda o resumo por 60 s (v90)let srvTxt='';
   for(let i=0;i<30;i++){srvTxt=await pa.evaluate(()=>{const s=[...document.querySelectorAll('section')].find(x=>/Servidor do ponto · todos os caixas/.test(x.textContent));return s?s.querySelector('.pn-take').textContent:'';});if(/R\$\s?[1-9]/.test(srvTxt))break;await sleep(250);}
   await pa.evaluate(()=>{const E=ETERNA;E.state.es.rover=false;E.state.es.sec='a';E.go('estatisticas');});let kpi='';
   for(let i=0;i<30;i++){kpi=await pa.evaluate(()=>{const e=document.querySelector('.pn-kpi[data-k="fat"] .pn-big');return e?e.textContent:'';});if(/[1-9]/.test(kpi))break;await sleep(250);}
@@ -129,6 +130,13 @@ try{
     const {ctx:c3,pg:p3}=await nova(1440,950);await entrar(p3,UA,'eduardo@eduardorezende.com');await agOn(p3);let vis=0;
     for(let i=0;i<30&&!vis;i++){vis=await p3.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='jogo').length);if(!vis)await sleep(250);}ok(vis===1,'D3: o evento chega a outro aparelho pelo servidor: '+vis);
     await p3.evaluate(()=>{ETERNA.state.es.sec='d';ETERNA.state.es.rover=false;ETERNA.go('estatisticas');});await p3.waitForTimeout(500);ok(!(await p3.evaluate(()=>window.__x)),'XSS: visitante com <img onerror> não executa');
+    // dois aparelhos: editar e apagar em um chega ao outro; o apagado não volta (agAplicaSnap como o simAplica)
+    {const {ctx:c5,pg:p5}=await nova(1440,950);await entrar(p5,UA,'supervisor@eterna.photo');await agOn(p5);let v5=0;for(let i=0;i<40&&!v5;i++){v5=await p5.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='jogo').length);if(!v5)await sleep(250);}
+      const jid=await p3.evaluate(()=>{const a=Object.values(ETERNA.AGENDA).find(x=>x.tipo==='jogo');ETERNA.agGrava(Object.assign({},a,{competicao:'Copa Rio'}));return a.id;});
+      let comp='';for(let i=0;i<60&&comp!=='Copa Rio';i++){comp=await p5.evaluate(id=>(ETERNA.AGENDA[id]||{}).competicao,jid);if(comp!=='Copa Rio')await sleep(250);}ok(comp==='Copa Rio','sync: edição em um aparelho chega ao outro: '+comp);
+      await p3.evaluate(id=>ETERNA.agApagar(id),jid);let ainda=true;for(let i=0;i<60&&ainda;i++){ainda=await p5.evaluate(id=>!!ETERNA.AGENDA[id],jid);if(ainda)await sleep(250);}ok(!ainda,'sync: apagado em um aparelho some do outro');
+      const volta=[];for(let i=0;i<24;i++){volta.push(await p3.evaluate(id=>ETERNA.AGENDA[id]?1:0,jid));await sleep(250);}ok(!volta.includes(1),'sync: o apagado aqui não volta: '+volta.join(''));
+      await c5.close();}
     // celular e tablet: Estatísticas, todas as seções
     for(const [nm,w,h] of [['cel',390,844],['tab',820,1180]]){await p3.setViewportSize({width:w,height:h});
       for(const s of ['a','b','c','d','e','f']){await p3.evaluate(s=>{ETERNA.state.es.sec=s;ETERNA.render();},s);await p3.waitForTimeout(120);ok(await semLateral(p3),`${nm}: Estatísticas seção ${s} sem rolagem lateral`);if(s==='a'||s==='b'||s==='f')await p3.screenshot({path:PR+`/v92t-estat-${s}-${nm}.png`,fullPage:true});}}

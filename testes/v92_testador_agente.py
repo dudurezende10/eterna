@@ -98,25 +98,28 @@ m.metricas_gravar(hoje)
 xh = json.load(open(os.path.join(m.MET_DIR, hoje + ".json")))
 ok((xh.get("entradas") or {}).get("total") == 3 and xh.get("v") == 2, "S1: hoje com gravações concorrentes fica v2 com as entradas: %r" % xh.get("entradas"))
 
-# --- __proto__ / constructor / prototype em vendedor, posto e por; e no por de entradas ---
-th = time.time() - 600
+# --- __proto__ / constructor / prototype em vendedor, posto e por ---
+# dia fixo no passado, às 14 h (nunca cai na virada do dia, qualquer que seja a hora em que o teste roda)
+d_fix = m._ff_hoje(time.time() - 45 * 86400)
+t_fix = time.mktime(time.strptime(d_fix + " 14:00:00", "%Y-%m-%d %H:%M:%S"))
+th = t_fix
 r = m.ev_receber({"posto": "prototype", "eventos": [
     {"tipo": "criar", "idem": "vpr1:1", "venda": "vpr1", "em": iso(th - 30), "posto": "__proto__", "por": {"nome": "__proto__"},
      "dados": {"card": "LPPRO0001", "total": 70, "canal": "checkout", "vendedor": {"nome": "__proto__"}, "cart": [{"id": "constructor", "v": 70}]}},
     {"tipo": "pagar", "idem": "vpr1:2", "venda": "vpr1", "em": iso(th), "por": {"nome": "constructor"}, "dados": {}}]})
 ok(all(x["s"] == "ok" for x in r["resultados"]), "__proto__: a venda é aceita (só o campo sai): %r" % r)
-md = m.metricas_dia(hoje)
+md = m.metricas_dia(d_fix)
 txt = json.dumps({k: md.get(k) for k in ("por_vendedor", "por_posto", "por_confirmador", "por_produto")})
 ok(not any(p in txt for p in ('"__proto__"', '"constructor"', '"prototype"')), "__proto__: nenhum nome proibido vira chave no resumo: %s" % txt[:300])
 
 # --- pagamento_s só do Checkout: balcão demorado e venda sem canal ficam fora ---
-tb = time.time() - 1200
+tb = t_fix + 3600                     # 15:00 do mesmo dia fixo; o criar fica às 14:45
 m.ev_receber({"eventos": [
     {"tipo": "criar", "idem": "vbl1:1", "venda": "vbl1", "em": iso(tb - 900), "dados": {"card": "LPBAL0001", "total": 70, "canal": "balcao"}},
     {"tipo": "pagar", "idem": "vbl1:2", "venda": "vbl1", "em": iso(tb), "por": {"nome": "Rui"}, "dados": {}},
     {"tipo": "criar", "idem": "vsc1:1", "venda": "vsc1", "em": iso(tb - 900), "dados": {"card": "LPSC00001", "total": 70}},
     {"tipo": "pagar", "idem": "vsc1:2", "venda": "vsc1", "em": iso(tb), "por": {"nome": "Rui"}, "dados": {}}]})
-md = m.metricas_dia(hoje)
+md = m.metricas_dia(d_fix)
 ps = md["tempos"]["pagamento_s"]
 ok(ps["n"] == 1 and ps["f"][4] == 0 and "Rui" not in md["por_confirmador"], "R3: pagamento_s só conta o Checkout (balcão e sem canal com 15 min ficam fora): %r %r" % (ps, md["por_confirmador"]))
 shutil.rmtree(HA, ignore_errors=True)
