@@ -333,18 +333,31 @@ for ci, caso in enumerate(("na_fila", "andando")):
         time.sleep(0.1)
     ok(os.path.exists(m.rec_arquivo(pidr)) and os.path.exists(m.rec_arquivo(pidr, 2400)), "R1 (%s): 3000 e 2400 da base" % caso)
 
-# 11: atrasada (prio 2) atrás da ao vivo (prio 1) que chegou depois
-m.REC_FALSO_SEG = 0.2
+# 11: atrasada (prio 2) atrás da ao vivo (prio 1) que chegou depois. O trabalhador está ocupado (recorte de 3 s); as
+# atrasadas chegam primeiro e o rec_ia_loop já as admitiu na fila quando a ao vivo chega, 1 s depois (antes da correção
+# as atrasadas ocupavam as IA_FILA_ALVO vagas e a ao vivo esperava elas saírem)
+m.REC_FALSO_SEG = 3.0
 blk, _ = m.rec_enfileirar("b10c000002", foto("b10c000002"), 3000, m.REC_PRIO_ANTECIPADO)
-time.sleep(0.05)
+t0 = time.time()
+while time.time() - t0 < 5 and not blk["pego"]:
+    time.sleep(0.01)
+m.REC_FALSO_SEG = 0.2
 reset()
 agora = time.time()
 at = [add("carlos", agora + i * 0.01, cap=agora - 3000 + i, s="cartao") for i in range(2)]
 vv = [add("yago", agora + 0.1 + i * 0.01, cap=agora + i * 0.01) for i in range(2)]   # sem função: não entra
 funcao(dict(FUNC, yago={"tipo": "campo", "point": "campo3"}))
 reset()
+agora = time.time()
 at = [add("carlos", agora + i * 0.01, cap=agora - 3000 + i, s="cartao") for i in range(2)]
-vv = [add("yago", agora + 0.1 + i * 0.01, cap=agora + i * 0.01) for i in range(2)]
+t0 = time.time()
+while time.time() - t0 < 3 and not all(p in m.rec_jobs for p in at):
+    time.sleep(0.02)
+ok(all(p in m.rec_jobs for p in at) and not blk["ev"].is_set(), "11: as atrasadas entraram na fila com o trabalhador ocupado")
+time.sleep(0.5)
+agora = time.time()
+vv = [add("yago", agora + i * 0.01, cap=agora + i * 0.01) for i in range(2)]
+ok(not blk["ev"].is_set(), "11: o trabalhador ainda estava ocupado quando a ao vivo chegou")
 t0 = time.time()
 while time.time() - t0 < 20 and not all(os.path.exists(m.rec_arquivo(p)) for p in at + vv):
     time.sleep(0.05)

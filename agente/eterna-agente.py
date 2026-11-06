@@ -3222,9 +3222,17 @@ def rec_pre_loop():
         time.sleep(15)
 
 
+def _ia_ocupadas(pr):
+    """v93 (critério 11): vagas de IA que a prioridade pr enxerga. Conta o trabalho de IA já pego e o que espera na fila
+    com prioridade igual ou melhor; o de prioridade pior ainda não pego não conta (a melhor passa na frente dele na fila).
+    No pior caso há IA_FILA_ALVO de cada prioridade esperando. Com o rec_lock."""
+    return sum(1 for j in rec_jobs.values() if j["ia"] and (j["pego"] or j["prio"] <= pr))
+
+
 def rec_ia_loop():
     """v93: as bases de IA (os N primeiros cliques da sessão ainda aberta) vão para a fila assim que chegam, com
     prioridade 1 (ao vivo) ou 2 (cartão), no máximo IA_FILA_ALVO de cada vez para o Checkout passar na frente de verdade.
+    As vagas são por prioridade (_ia_ocupadas): base pior ainda não pega não toma a vaga da melhor (critério 11).
     Gera o de 3000 e o de 2400 de uma vez. Nada com o recorte indisponível ou no modo Photoroom (o rec_pre_loop recupera)."""
     pend = {}                                       # pid -> prioridade (ordem de chegada)
     andando = {}                                    # pid -> (trabalho, prioridade, tentativas): confere o 2400 no fim (R1)
@@ -3261,14 +3269,16 @@ def rec_ia_loop():
                 if pausa and not rec.get("ia_pausa_disco"):
                     print("  recorte das bases de IA em pausa: %.1f GB livres (piso %.0f GB, ETERNA_RECORTES_PISO_GB)" % (livre, REC_PISO_GB))
                 rec["ia_pausa_disco"] = pausa
-                livres = 0 if pausa else IA_FILA_ALVO - rec["ia"]["fila"]
             if pausa:
                 time.sleep(5)
                 continue
             for pid in sorted(pend, key=lambda p: pend[p]):
+                pr = pend[pid]
+                with rec_lock:
+                    livres = IA_FILA_ALVO - _ia_ocupadas(pr)
                 if livres <= 0:
-                    break
-                pr = pend.pop(pid)
+                    break                                # em ordem de prioridade: as seguintes não têm vaga também
+                del pend[pid]
                 if os.path.exists(rec_arquivo(pid)) and os.path.exists(rec_arquivo(pid, 2400)):
                     continue
                 with lock:
@@ -3278,7 +3288,6 @@ def rec_ia_loop():
                     continue
                 job, erro = rec_enfileirar(pid, e["file"], 2400, pr, ia=True, u=u or None)
                 if job is not None:
-                    livres -= 1
                     andando[pid] = (job, pr, andando_n.pop(pid, 0))
         except Exception as ex:
             print("  recorte das bases de IA:", str(ex)[:160])
