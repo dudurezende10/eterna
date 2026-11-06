@@ -62,8 +62,9 @@ try{
     const g1=ETERNA.SIM.galerias[tok].fotos.filter(f=>f.id===f1).map(f=>f.direito);ETERNA.SRV.rev=0;await ETERNA.srvPull(true);const iaDepois=s.ia;
     s.ia=ia0;ETERNA.galAtualizar(tok);ETERNA.galPublicar(tok);const g2=ETERNA.SIM.galerias[tok].fotos.filter(f=>f.id===f1).map(f=>f.direito);
     const g3=ETERNA.SIM.galerias[tok].fotos.filter(f=>f.id===ia0[1]).length;
-    s.status=st0;s.selected=sel0;delete ETERNA.SIM.galerias[tok];ETERNA.SIM.galFila=(ETERNA.SIM.galFila||[]).filter(x=>x.token!==tok);return {g1,iaDepois:iaDepois===undefined,g2,g3};},['ag_'+A[0]]);
-  ok(paga.g1.join()==='comprada'&&paga.iaDepois&&paga.g2.join()==='comprada'&&paga.g3===0,'segurança: base paga fica na galeria (srvPull não mexe em sessão paga; republicação mantém); a não vendida fica fora: '+J(paga));
+    const imp=ETERNA.impFotos({...s,prints:5}).todas.map(x=>x.id);const impNaoPaga=ETERNA.impFotos({...s,status:'fechada',prints:5}).todas.map(x=>x.id);
+    s.status=st0;s.selected=sel0;delete ETERNA.SIM.galerias[tok];ETERNA.SIM.galFila=(ETERNA.SIM.galFila||[]).filter(x=>x.token!==tok);return {g1,iaDepois:iaDepois===undefined,g2,g3,imp:imp.includes(f1),impNaoPaga:impNaoPaga.includes(f1)};},['ag_'+A[0]]);
+  ok(paga.g1.join()==='comprada'&&paga.iaDepois&&paga.g2.join()==='comprada'&&paga.g3===0&&paga.imp&&!paga.impNaoPaga,'segurança: base paga fica na galeria e na impressão (srvPull não mexe em sessão paga; republicação mantém); a não vendida fica fora: '+J(paga));
   const pou=await pg.evaluate(()=>ETERNA.demoSessions().find(x=>x.card==='LPTIAPOU4').photos.length);ok(pou===3,'9: poucas fotos: as 3 à venda: '+pou);
   // Checkout pelo código (19: as 5 montagens começam já, sem esperar o item aparecer)
   await pg.fill('#kcode','LPTIACAM1').catch(()=>{});

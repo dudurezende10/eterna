@@ -1499,7 +1499,7 @@ function pvDados(r){const ed={};(r.selected||[]).forEach(id=>{const e=SIM.edits&
 // ---------- v83 (parte F): impressão 10×15 pela DNP DS-RX1HS de cada notebook (Chrome; página PR 4×6 = 102×152 mm sem margem; rolo de ~700) ----------
 // Foto com fundo de IA imprime (Eduardo, 29/10; a D8 do plano caiu): a montagem é refeita com o fundo de 5000 px (fileHi).
 // Ordem: favoritas, depois as do campo, depois as de IA, até s.prints. semFoto = impressões do pacote sem foto nenhuma para imprimir.
-function impFotos(s){const iaB=iaSet();const ph=(s.selected||[]).filter(id=>!iaB.has(id)).map(id=>({k:id,t:'ph',id})); /* v93: base de IA nunca imprime como foto */const ai=(s.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {k:'ai:'+x,t:'ai',id,bg};});
+function impFotos(s){const iaB=iaSet();const ph=(s.selected||[]).filter(id=>s.status==='paga'||!iaB.has(id)).map(id=>({k:id,t:'ph',id})); /* v93: base de IA não imprime como foto, menos a já paga (navegador antigo) */const ai=(s.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {k:'ai:'+x,t:'ai',id,bg};});
   const fav=new Set(s.fav||[]);const ord=[...[...ph,...ai].filter(x=>fav.has(x.k)),...ph.filter(x=>!fav.has(x.k)),...ai.filter(x=>!fav.has(x.k))];
   const n=Math.max(0,+(s.prints!=null?s.prints:simPrints(s))||0);return {fotos:ord.slice(0,n),todas:ord,semFoto:Math.max(0,n-ord.length),n};}
 // estado da impressão de uma venda paga: nao_se_aplica | pendente | impressa (alvo = quantas fotos imprimir; feitas = chaves já impressas)
