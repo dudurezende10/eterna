@@ -187,7 +187,7 @@ Resumo do dia v2 (`GET /metricas/dia`):
  "por_idioma":{"pt":{"vendas":3,"faturamento":600},"es":{"vendas":1,"faturamento":200}},
  "tempos":{"cliente_s":H,"pagamento_s":H,"clique_checkout_s":H,"transferencia_s":H},
  "por_confirmador":{"Ana":{"pagamento_s":H}},
- "por_fotografo":{"carlos":{"primeira_foto":1762340000,"clique_checkout_s":H}},
+ "por_fotografo":{"carlos":{"clique_checkout_s":H}},
  "entradas":{"fonte":"catraca","total":812,"por_origem":{"bip":790,"catraca":812},"por_hora":{"09":95},
              "pico_min":{"hhmm":"10:41","n":9},"pico_15":{"hhmm":"10:30","n":88},"primeira":"09:01","ultima":"16:58"}}
 ```

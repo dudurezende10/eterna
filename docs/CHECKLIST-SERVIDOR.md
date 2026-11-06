@@ -23,7 +23,7 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
   powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0; powercfg /setactive SCHEME_CURRENT
   ```
 - [ ] BIOS: religar sozinho quando a energia voltar (AC Power Recovery = On).
-- [ ] Fuso e relógio (v92, estatísticas e presença): fuso de Brasília (UTC−03:00) e hora automática ligada. O agente usa o fuso do sistema no Windows (em Mac e Linux ele força `ETERNA_TZ`, padrão `America/Sao_Paulo`); o `/status` mostra `fuso.offset_min` (−180) e a tela Estatísticas avisa quando é diferente do venue.
+- [ ] Fuso e relógio (v92, estatísticas): fuso de Brasília (UTC−03:00, `America/Sao_Paulo`) e hora automática ligada. As horas das vendas, das sessões e das entradas da bilheteria saem do relógio deste computador. No Windows o agente usa o fuso do sistema; em Mac e Linux ele força `ETERNA_TZ` (padrão `America/Sao_Paulo`). Conferir: `http://127.0.0.1:8765/status` mostra `"fuso": {..., "offset_min": -180}`. Com outro valor, a tela Estatísticas mostra o aviso "O relógio do servidor do ponto está em outro fuso".
   ```powershell
   tzutil /s "E. South America Standard Time"; w32tm /resync
   ```
