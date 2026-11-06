@@ -95,6 +95,8 @@ try{
   ok(rec.stA!=='aguardando'&&rec.stA!=='paga'&&rec.stC!=='aguardando','B1: a sessão da família (A) e a outra (C) não ficam aguardando: '+rec.stA+' '+rec.stC);
   {const t0=Date.now();while(Date.now()-t0<8000&&!EVENTOS.some(e=>e.tipo==='criar'))await pg.waitForTimeout(200);}
   const ev=EVENTOS.find(e=>e.tipo==='criar');ok(ev&&(ev.dados.sessoes||[]).join()==='LPTFAMA01,LPTSOLO02'&&ev.dados.card==='LPTSOLO02','evento "criar" (vendas.db) com as duas sessões');
+  // v92 (critério 3 pelo lojaPedido de verdade): canal, idioma, carrinho e t0 antes do pedido
+  ok(ev&&ev.dados.canal==='checkout'&&ev.dados.lang==='pt'&&Array.isArray(ev.dados.cart)&&ev.dados.cart.length>0&&ev.dados.t0&&Date.parse(ev.dados.t0)<=Date.parse(ev.em),'v92: o Checkout manda canal, lang, cart e t0 anterior ao pedido: '+JSON.stringify(ev&&{canal:ev.dados.canal,lang:ev.dados.lang,t0:ev.dados.t0,em:ev.em}));
   // o vendedor confirma no Posto de venda (outra janela do mesmo navegador, logada)
   const pg2=await ctx.newPage();pg2.on('pageerror',e=>errs.push(e.message));await pg2.goto(U);await pg2.waitForTimeout(400);
   await entrarTeste(pg2,'eduardo@eduardorezende.com');

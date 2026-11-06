@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v87 (30/10/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v92 (06/11/2026).
 
 Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
 
@@ -14,9 +14,9 @@ O menu fica do lado esquerdo e é dividido em grupos:
 
 | Grupo | O que tem |
 | --- | --- |
-| Dashboard | Painel, Bandeiras, Estoque, Fotógrafos, Vendas e caixa, Lista de vendas, Galerias online |
+| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fotógrafos, Vendas e caixa, Lista de vendas, Galerias online |
 | Curadoria | Qualidade, Treino da IA, Alertas |
-| Fotógrafo | Diário do set, Upload automático, Fila do fotógrafo, Escala 5×2 |
+| Fotógrafo | Diário do set, Upload automático, Fila do fotógrafo, Escala 5×2, Calendário de eventos |
 | Configurações | Repositório, Identidade, Painel de controle (catálogo, preços, Checkout e FTP), Fundos de IA, Ajuste automático, Usuários, Permissões |
 | Laboratório | Vestiário |
 
@@ -607,6 +607,110 @@ O Eterna descobre o fotógrafo, nesta ordem: pelo usuário do FTP da câmera; pe
 - O código LP da sessão não aparece nesta versão. Ele entra quando a sessão passar a ser montada no servidor.
 - Se o Checkout estava fechado quando as fotos chegaram, a TV pode mostrar o grupo em **Já no Checkout** e o Checkout ainda não achar o cliente. Isso também se resolve quando a sessão passar a ser montada no servidor.
 - Fotos mandadas pelo navegador (upload manual) não entram na fila.
+
+## Novidades da v92: Estatísticas e Calendário de eventos
+
+Duas telas novas. **Estatísticas** junta os números de vendas, fotógrafos, rapidez, dias e movimento da bilheteria. **Calendário de eventos** guarda os jogos, shows, feriados e dias de estádio fechado, para comparar um dia com o outro.
+
+O Eterna **não faz controle de ponto**. Não marca presença, falta nem atraso. Isso continua no sistema do RH.
+
+### Quem vê o quê
+
+| Pessoa | Estatísticas | Calendário de eventos |
+| --- | --- | --- |
+| Admin | vê e importa as entradas da bilheteria | vê e edita |
+| Supervisora | não vê | vê e edita |
+| Fotógrafo, Atendimento e venda, Validador, Checkout | não veem | não veem |
+
+### Usar as Estatísticas (Admin)
+
+1. No menu, abra **Dashboard › Estatísticas** (logo abaixo do Painel).
+2. Escolha o período: **Hoje**, **Ontem**, **7 dias**, **30 dias** ou **Personalizado**. Os dias seguem o horário do Rio. Dá para ver até um ano.
+3. Toque na seção que quer ver: **Vendas e produtos**, **Fotógrafos**, **Rapidez**, **Dias e eventos**, **Visitantes** ou **Movimento**.
+4. **Com histórico Roverpix**: ligado, os números por dia incluem os dias que vieram da Roverpix. Desligado, só o que passou pelo Eterna.
+
+Os números vêm do servidor do ponto e somam todos os caixas. Sem o servidor, aparece "Sem conexão com o servidor do ponto". Se aparecer "O relógio do servidor do ponto está em outro fuso", avise a TI: as horas ficam erradas até ajustar o computador servidor.
+
+### O que significa cada número
+
+**Vendas e produtos**
+- **Faturamento, Vendas, Sessões e Fotos**: o total do período.
+- **Produtos**: quanto vendeu cada pacote e cada item, pelo valor cobrado. Vendas de antes da v92 aparecem numa nota como "sem detalhe de produto", porque o sistema ainda não guardava o carrinho.
+- **Pagamento e posto**: quanto entrou por cartão, PIX e dinheiro, e por ponto de venda.
+- **Vendas por hora**: a hora em que a venda foi paga, das 8 às 20 h.
+- **Por dia da semana**: a média de vendas por dia em cada dia da semana.
+- **Hora × dia da semana**: a tabela que mostra os horários mais fortes de cada dia.
+
+**Fotógrafos** (só produção)
+- **Dias com produção**: dias em que o fotógrafo teve fotos ou sessões no servidor. Não é presença.
+- **Sessões e Fotos**: quantas sessões ele abriu e quantas fotos tirou.
+- **Fotos por sessão**: a média de fotos em cada sessão.
+- **Vendas e Conversão**: quantas vendas saíram das sessões dele e quantas sessões, em cada 100, compraram.
+- **R$ por sessão**: quanto cada sessão dele rendeu, em média.
+- **Faturamento**: o total vendido das sessões dele.
+- **Clique → Checkout**: o tempo típico entre a última foto da sessão e ela aparecer no Checkout.
+- Toque no título da coluna para ordenar. Toque no nome para ver o dia a dia dele.
+
+**Rapidez**
+- **Cliente no Checkout**: do momento em que o cliente sai da tela inicial até pedir o pagamento.
+- **Confirmação pelo vendedor**: do pedido no Checkout até o vendedor confirmar o pagamento. Abaixo, o mesmo tempo por vendedor.
+- **Clique até o Checkout**: da última foto da sessão até ela aparecer no Checkout.
+- **Câmera até o servidor**: do clique até a foto chegar ao servidor.
+- **Mediana**: metade dos casos foi mais rápida que isso. **p90**: 9 em cada 10 casos foram mais rápidos que isso. **n**: quantos casos foram medidos.
+- **Impressão** aparece como "sem dado ainda". Entra numa próxima versão.
+
+**Dias e eventos**
+- Junta os dias em grupos: com jogo ou sem jogo, por time mandante, por competição, por tipo de evento, fim de semana ou dia útil, feriado ou não.
+- Cada linha mostra quantos dias entraram no grupo e a média por dia: faturamento, vendas, sessões, ticket, conversão, outras línguas e entradas.
+- **poucos dias**: o grupo tem menos de 3 dias. Ainda não dá para tirar conclusão.
+- Embaixo, o **Dia a dia** com o evento de cada dia. Os eventos vêm do Calendário de eventos.
+
+**Visitantes**
+- **Idioma no Checkout**: o idioma que o cliente escolheu na tela do Checkout. "Outras línguas" é provável estrangeiro. Vendas no balcão não entram.
+- **Ticket por idioma**: quanto gasta, em média, quem escolheu cada idioma.
+
+**Movimento**
+- **Total** e **Média por dia**: quantas pessoas entraram, pelo bip ou pela catraca.
+- **Pessoas por hora**: quantas entraram em cada hora.
+- **Pico do minuto** e **Pico de 15 min**: o momento de maior entrada. Exemplo: "pico 10:41, 9 pessoas".
+- **Por minuto aberto**: a média de pessoas por minuto, entre a primeira e a última entrada.
+- **Funil**: entradas, sessões, vendas e quanto cada visitante rendeu.
+- **Retrato de outubro**: as catracas de 07 a 15/10, já importadas. Fica separado do período escolhido.
+
+### Importar as entradas do bip (Admin)
+
+Hoje a equipe faz um bip por convidado na chegada. As catracas estão previstas até o fim do ano. O arquivo do bip vem da TI.
+
+1. Peça à TI o arquivo do bip em CSV.
+2. Confira que o arquivo tem a coluna **data_hora** (exemplo: 05/11/2026 10:41:12, no horário do Rio) e a coluna **origem** (bip ou catraca). As colunas podem ser separadas por ; ou por ,.
+3. Em **Estatísticas › Movimento**, toque em **Importar CSV de entradas** e escolha o arquivo (até 5 MB).
+4. Veja o resumo: quantas linhas entraram e as primeiras linhas recusadas, com o motivo.
+5. Em **Últimas importações** fica quem importou, quando, o arquivo e quantas linhas entraram.
+
+Bom saber:
+- As outras colunas do arquivo (ingresso, documento, nome) ficam no seu computador. Só a data, a hora e a origem vão para o servidor.
+- Importar de novo o mesmo dia substitui o que havia. Não soma em dobro.
+- Num dia com bip e catraca, o total usa a catraca.
+
+### Cadastrar o calendário (Admin e Supervisora)
+
+1. No menu, abra **Fotógrafo › Calendário de eventos**. O Admin também tem o atalho em **Configurações › Painel de controle**.
+2. Use **‹** e **›** para trocar de mês e **Hoje** para voltar ao mês atual.
+3. Toque em **Novo evento**. Preencha a data, a hora, o tipo (jogo, show, feriado, fechado, evento ou outro), o mandante, o visitante, a competição e, se quiser, uma observação.
+4. Toque em **Salvar**.
+5. Para mudar, toque no evento no mês ou em **Editar** na lista **Eventos do mês**. Para tirar, toque em **Apagar** e confirme.
+6. Uma vez por ano, toque em **Adicionar feriados de AAAA**. Entram os feriados nacionais, a Sexta-feira Santa, o Corpus Christi e os do Rio (20/01, 23/04 e 20/11). Tocar de novo não duplica.
+7. Para cadastrar muitos jogos de uma vez, toque em **Importar CSV**. O arquivo tem as colunas `data;hora;tipo;mandante;visitante;competicao;obs`, até 2000 linhas. O mesmo jogo importado de novo atualiza, não duplica.
+
+Bom saber:
+- Escreva o nome do clube como aparece na lista (Flamengo, Fluminense, Vasco...). Assim os dias se juntam no mesmo grupo nas Estatísticas.
+- Use **fechado** para os dias de estádio fechado.
+- Toda mudança fica registrada com o seu nome.
+- Ainda não existe uma agenda oficial única do Maracanã. Por enquanto o cadastro é à mão ou por CSV. A busca automática dos jogos entra na v93.
+
+### Fotógrafo: novo login a cada dia
+
+Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao abrir o Eterna num dia novo, ou se ele ficou aberto na virada da meia-noite, aparece "Novo dia: entre de novo". Entre com o e-mail e o código, como sempre. É só segurança da conta. Não marca ponto.
 
 ---
 

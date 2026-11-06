@@ -15,7 +15,7 @@ const toastTxt=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent)
 async function abrirPerm(pg,email){await pg.evaluate(()=>{ETERNA.state.perm.tab='usuario';ETERNA.state.view='permissoes';ETERNA.render();});await pg.click(`[data-act="perm-sel"][data-e="${email}"]`);await pg.waitForTimeout(120);}
 const ck=(pg,m,op)=>pg.click(`.perm-tbl input[data-act="perm-op"][data-m="${m}"][data-op="${op}"]`);
 const draft=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.state.perm.draft)));
-const MENUS={Dashboard:['painel','bandeiras','estoque','fotografos','vendas','vendas-lista','galerias'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','fotofila','escala'],'Configurações':['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes'],'Laboratório':['vestiario','fundos-teste']};
+const MENUS={Dashboard:['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','fotofila','escala','calendario'],'Configurações':['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes'],'Laboratório':['vestiario','fundos-teste']};
 (async()=>{const b=await chromium.launch();
 try{
   // ---------- 1, 2, 3, 4, 19 e menus: admin ----------
