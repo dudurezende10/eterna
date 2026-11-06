@@ -215,6 +215,39 @@ ok(g["gravados"] == 1 and len(docs) == 1 and "extra" not in docs[0]["valor"], "a
 ok("presenca" not in mm and "presenca" not in m.metricas_dia(SAB) and "carlos" in m.metricas_dia(hoje).get("presenca", {}),
    "S7: presença só a partir do 1º dia com marca (dias antigos ficam sem o campo)")
 
+# --- revisão: __proto__, cfg_valida, abono, teto da agenda, tipo de acesso e servidor fora ---
+ok(m._ev_cart([{"id": "__proto__", "v": 1}]) is None and m._ev_limpo({"tipo": "criar", "idem": "vp1:1", "venda": "vp1", "posto": "__proto__", "por": {"nome": "constructor"}, "dados": {"total": 1}})["posto"] is None,
+   "__proto__/constructor recusados em cart.id, posto e por")
+E1 = {"historico": [{"desde": "2026-11-05", "folgas": {"carlos": [1, 2]}}], "por": "Eduardo", "em": "2026-11-05T12:00:00Z"}
+T1 = {"historico": [{"desde": "2026-11-05", "padrao": "09:00", "tolerancia": 10, "por_ponto": {"campo1": "09:30"}}], "por": "Eduardo", "em": "2026-11-05T12:00:00Z"}
+ok(m.cfg_valida("escala", E1) and m.cfg_valida("turnos", T1)
+   and m.cfg_valida("escala", {"historico": [{"desde": "ontem", "folgas": {}}]}) is None
+   and m.cfg_valida("escala", {"historico": [{"desde": "2026-11-05", "folgas": {"Carlos!": [1]}}]}) is None
+   and m.cfg_valida("escala", {"historico": [{"desde": "2026-11-05", "folgas": {"carlos": [7]}}]}) is None
+   and m.cfg_valida("turnos", {"historico": [{"desde": "2026-11-05", "padrao": "9h", "tolerancia": 10}]}) is None
+   and m.cfg_valida("escala", {"historico": [{"desde": "2026-11-05", "folgas": {}}] * 201}) is None
+   and m.cfg_valida("turnos", {**T1, "em": "2099-01-01T00:00:00Z"})["em"] is None, "cfg_valida: escala e turnos")
+g2 = m.estado_gravar({"docs": [{"col": "config", "id": "escala", "valor": {"historico": "x"}}, {"col": "config", "id": "turnos", "valor": T1},
+                               {"col": "abono", "id": hoje + "|carlos", "valor": {"dia": hoje, "chave": "carlos", "motivo": "<b>médico</b>", "por": "Sandra"}},
+                               {"col": "abono", "id": hoje + "|carlos", "valor": {"dia": hoje, "chave": "carlos", "motivo": ""}}]})
+ab = m.estado_col("abono")["docs"]
+ok(g2["gravados"] == 2 and ab and ab[0]["valor"]["motivo"] == "bmédico/b", "estado: config inválida recusada, abono limpo: %r" % ((g2, ab),))
+m.AGENDA_DOCS_MAX = 1
+g3 = m.estado_gravar({"docs": [{"col": "agenda", "id": "ag_00000000000a", "valor": {**AGV, "id": "ag_00000000000a"}}, {"col": "agenda", "id": "ag_0123456789ab", "valor": {**AGV, "obs": "edit"}}]})
+ok(g3["gravados"] == 1, "agenda: teto de documentos (edição continua valendo): %r" % g3)
+m.AGENDA_DOCS_MAX = 5000
+ok([m.tipo_acesso(x) for x in ("127.0.0.1", "::ffff:127.0.0.1", "192.168.0.10", "100.101.1.2", "100.128.0.1")] == ["loopback", "loopback", "rede", "remota", "rede"], "tipo de acesso")
+dia_s = m._ff_hoje(time.time() - 3 * 86400)
+ts = time.mktime(time.strptime(dia_s, "%Y-%m-%d"))
+ok(m.servico_fora(dia_s) is None, "servidor fora: sem registro = sem dado")
+with m.op_lock:
+    dbs = m.operacao_db()
+    dbs.executemany("insert into servico values (?, ?)", [(ts + 3600, ts + 9 * 3600), (ts + 11 * 3600, ts + 86400 + 100)])
+    dbs.commit()
+    dbs.close()
+sf = m.servico_fora(dia_s)
+ok(sf == [[ts + 9 * 3600, ts + 11 * 3600]] and m.met_v2(dia_s, [], []).get("servidor_fora") == sf, "servidor fora das 9 às 11 h: %r" % sf)
+
 # --- critério 29: backup e privacidade ---
 ok("OPERACAO_DB" in inspect.getsource(m.backup_loop), "29: o operacao.db vai para o backup")
 txt = json.dumps(m.metricas_dia(SAB)) + json.dumps(m.metricas_dia(hoje))
@@ -289,7 +322,7 @@ try:
     ok(sx == 400, "entradas: seg que não é lista dá 400")
     si, ji = req("GET", "/ponto/entradas/importacoes")
     ok(si == 200 and len(ji["importacoes"]) == 2 and ji["importacoes"][0]["aceitas"] == 9, "importações: %r" % ji)
-    time.sleep(0.6)
+    espera(lambda: (((req("GET", "/metricas/dia?de=%s&ate=%s" % (ontem, ontem))[1] or {}).get("dias") or [{}])[0].get("entradas") or {}).get("total") == 9)
     s, md = req("GET", "/metricas/dia?de=%s&ate=%s" % (ontem, ontem))
     en = ((md or {}).get("dias") or [{}])[0].get("entradas") or {}
     ok(en.get("total") == 9 and en.get("pico_min") == {"hhmm": "10:01", "n": 9}, "24/25: o resumo de ontem traz as entradas: %r" % en)
@@ -300,7 +333,25 @@ try:
     dt = time.time() - ini
     s2_, st2 = req("GET", "/status")
     ok(s == 200 and len(md["dias"]) >= 366 and dt < 2, "27: 366 dias em %.2f s (%d dias)" % (dt, len((md or {}).get("dias") or [])))
-    ok(st2["estatisticas"]["migracao"]["estado"] in ("rodando", "feita"), "27: o agente atende durante a migração: %r" % st2["estatisticas"])
+    mg = st2["estatisticas"]["migracao"]
+    ok(mg["estado"] == "rodando" and mg["feitos"] < mg["total"], "27: o agente atende enquanto a migração está rodando: %r" % mg)
+    ok(isinstance((st2.get("fuso") or {}).get("offset_min"), int) and st2["fuso"]["tz"] in ("America/Sao_Paulo", ""), "fuso no /status: %r" % st2.get("fuso"))
+    # revisão: 413, origem de fora nas importações, CORS com X-Eterna, ip e acesso da presença
+    big = {"origem": "bip", "dia": ontem, "seg": [1] * 400000}
+    sb, _ = req("POST", "/ponto/entradas", big, X)
+    ok(sb == 413, "entradas acima de 1 MB: 413 (%r)" % sb)
+    so, _ = req("GET", "/ponto/entradas/importacoes", headers={"Origin": "http://evil.example"})
+    sh, _ = req("GET", "/ponto/entradas/importacoes", headers={"Host": "evil.example:%d" % PORTA})
+    ok(so == 403 and sh == 403, "importações: origem e Host de fora dão 403: %r" % ((so, sh),))
+    c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=10)
+    c.request("OPTIONS", "/ponto/presenca", headers={"Host": "127.0.0.1:%d" % PORTA, "Origin": "http://127.0.0.1:9", "Access-Control-Request-Headers": "content-type, x-eterna"})
+    rr = c.getresponse()
+    rr.read()
+    ok("X-Eterna" in (rr.getheader("Access-Control-Allow-Headers") or ""), "CORS: X-Eterna no Allow-Headers de /ponto/presenca: %r" % rr.getheader("Access-Control-Allow-Headers"))
+    c.close()
+    s, md = req("GET", "/metricas/dia")
+    pr = ((md or {}).get("dias") or [{}])[0].get("presenca", {}).get("carlos") or {}
+    ok(pr.get("acesso") == "loopback", "presença com o tipo de acesso: %r" % pr)
 finally:
     A.kill()
 falhas = [x for x in falhas if x]

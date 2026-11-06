@@ -4985,7 +4985,7 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
 #   POST /ponto/docs {docs:[{col,id,valor}]}  valor null apaga.        -> {ok, rev}
 # O navegador guarda uma cópia e uma fila do que ainda não subiu (sem rede); o servidor é o dono. Backup no S3 com as vendas.
 ESTADO_DB = os.path.join(HOME, "ponto", "estado.db")
-ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda")
+ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda", "abono")
 ESTADO_MAX = 512 * 1024              # um registro (um usuário, um ajuste de foto) nunca passa disto
 estado_lock = threading.Lock()
 
@@ -5033,6 +5033,17 @@ def estado_gravar(body):
                 v = d.get("valor")
                 if d["col"] == "agenda" and v is not None:      # v92: calendário de eventos, campos fechados (risco 4)
                     v = agenda_valida(d["id"], v)
+                    if v is None:
+                        continue
+                    novo = db.execute("select 1 from doc where col = 'agenda' and id = ? and valor is not null", (d["id"],)).fetchone() is None
+                    if novo and db.execute("select count(*) from doc where col = 'agenda' and valor is not null").fetchone()[0] >= AGENDA_DOCS_MAX:
+                        continue                                # teto da agenda (revisão)
+                if d["col"] == "config" and d["id"] in ("escala", "turnos") and v is not None:   # v92: folgas fixas e turnos
+                    v = cfg_valida(d["id"], v)
+                    if v is None:
+                        continue
+                if d["col"] == "abono" and v is not None:       # v92: abono de falta ou atraso (Supervisora)
+                    v = abono_valida(d["id"], v)
                     if v is None:
                         continue
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
@@ -5102,13 +5113,24 @@ EV_CART_MAX = 30
 _re_cart_id = re.compile(r"^[a-z0-9_-]{1,20}$")
 
 
+CHAVES_PROIBIDAS = ("__proto__", "constructor", "prototype")   # nunca viram nome de linha (o app monta objetos com elas)
+
+
+def _txt_chave(v, n):
+    """Texto que vira chave de objeto no resumo (posto, por): sem < >, e nunca __proto__/constructor/prototype."""
+    if v is None:
+        return None
+    x = re.sub(r"[<>\x00-\x1f]", "", str(v)).strip()[:n]
+    return None if x in CHAVES_PROIBIDAS else x
+
+
 def _ev_cart(v):
     """v92: itens do carrinho {id, v}; lista com mais de 30 itens ou item inválido descarta o carrinho inteiro."""
     if not isinstance(v, list) or not v or len(v) > EV_CART_MAX:
         return None
     out = []
     for it in v:
-        if not isinstance(it, dict) or not isinstance(it.get("id"), str) or not _re_cart_id.match(it["id"]):
+        if not isinstance(it, dict) or not isinstance(it.get("id"), str) or not _re_cart_id.match(it["id"]) or it["id"] in CHAVES_PROIBIDAS:
             return None
         x = it.get("v")
         if isinstance(x, bool) or not isinstance(x, (int, float)) or not 0 <= x <= 1e6:
@@ -5150,14 +5172,16 @@ def _ev_limpo(e):
     em = txt(e.get("em"), 30) or _iso()
     dd.update(cart=_ev_cart(d.get("cart")), lang=d.get("lang") if d.get("lang") in EV_LANGS else None,
               canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em))
+    if dd.get("vendedor") in CHAVES_PROIBIDAS:
+        dd["vendedor"] = None
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
-            "por": txt((e.get("por") or {}).get("nome") if isinstance(e.get("por"), dict) else None),
-            "posto": txt(e.get("posto"), 40), "dados": {k: v for k, v in dd.items() if v not in (None, "", [], 0, False)}}
+            "por": _txt_chave((e.get("por") or {}).get("nome") if isinstance(e.get("por"), dict) else None, 60),
+            "posto": _txt_chave(e.get("posto"), 40), "dados": {k: v for k, v in dd.items() if v not in (None, "", [], 0, False)}}
 
 
 def ev_receber(body):
     evs = body.get("eventos") if isinstance(body.get("eventos"), list) else []
-    posto = re.sub(r"[<>]", "", str(body.get("posto") or ""))[:40]
+    posto = _txt_chave(body.get("posto") or "", 40) or ""
     res = []
     with ev_lock:
         db = vendas_db()
@@ -5516,6 +5540,12 @@ def met_v2(dia, ss, evs):
     if pres is not None:                             # S7: sem o campo = dia sem dado de presença (antes da v92)
         out["presenca"] = pres
     out["entradas"] = entradas_dia(dia)
+    try:
+        sf = servico_fora(dia)
+    except Exception:
+        sf = None
+    if sf is not None:                               # revisão: horário com o agente fora não vira falta nem atraso
+        out["servidor_fora"] = sf
     return out
 
 
@@ -5546,18 +5576,111 @@ def met_v2_junta(m, v2, so_acrescenta=False):
     return m
 
 
+_op_criado = {"arq": None}
+
+
 def operacao_db():
+    """Conexão ao operacao.db (chamar com op_lock). As tabelas são criadas uma vez por arquivo (revisão)."""
     os.makedirs(os.path.dirname(OPERACAO_DB), exist_ok=True)
     c = sqlite3.connect(OPERACAO_DB, timeout=30, check_same_thread=False)
-    c.execute("pragma journal_mode=wal")
     c.execute("pragma synchronous=full")
-    c.execute("create table if not exists presenca (dia text, chave text, primeiro real, ultimo real, n int, postos text,"
-              " fonte text, login real, foto real, primary key (dia, chave))")
-    c.execute("create table if not exists entrada (dia text, origem text, seg int)")
-    c.execute("create index if not exists entrada_dia on entrada(dia, origem)")
-    c.execute("create table if not exists importacao (id text primary key, em text, por text, arquivo text, origem text,"
-              " dias text, aceitas int, recusadas int)")
+    if _op_criado["arq"] != OPERACAO_DB or not os.path.exists(OPERACAO_DB):
+        c.execute("pragma journal_mode=wal")
+        c.execute("create table if not exists presenca (dia text, chave text, primeiro real, ultimo real, n int, postos text,"
+                  " fonte text, login real, foto real, primary key (dia, chave))")
+        cols = {r[1] for r in c.execute("pragma table_info(presenca)")}
+        for col in ("ip", "acesso"):                 # revisão: de onde veio o login (ip e loopback, rede ou remota)
+            if col not in cols:
+                c.execute("alter table presenca add column %s text" % col)
+        c.execute("create table if not exists entrada (dia text, origem text, seg int)")
+        c.execute("create index if not exists entrada_dia on entrada(dia, origem)")
+        c.execute("create table if not exists importacao (id text primary key, em text, por text, arquivo text, origem text,"
+                  " dias text, aceitas int, recusadas int)")
+        c.execute("create table if not exists servico (inicio real primary key, ultimo real)")   # quando o agente esteve no ar
+        c.commit()
+        _op_criado["arq"] = OPERACAO_DB
     return c
+
+
+def op_ler(sql, args=()):
+    """Consulta de leitura no operacao.db (com op_lock); lista de linhas."""
+    with op_lock:
+        db = operacao_db()
+        try:
+            return db.execute(sql, args).fetchall()
+        finally:
+            db.close()
+
+
+def tipo_acesso(ip):
+    """loopback (o próprio servidor), remota (Tailscale/CGNAT 100.64.0.0/10) ou rede (o posto na rede do estádio)."""
+    ip = str(ip or "")
+    if ip.startswith("::ffff:"):
+        ip = ip[7:]
+    if ip in ("127.0.0.1", "::1"):
+        return "loopback"
+    try:
+        a, b = (int(x) for x in ip.split(".")[:2])
+        if a == 100 and 64 <= b <= 127:
+            return "remota"
+    except Exception:
+        pass
+    return "rede"
+
+
+SERVICO_PULSO = 60
+_servico = {"inicio": None}
+
+
+def servico_pulso(agora=None):
+    """Marca que o agente está no ar (uma linha por boot, o último sinal a cada minuto). Buraco = servidor fora."""
+    agora = agora or time.time()
+    with op_lock:
+        db = operacao_db()
+        try:
+            if _servico["inicio"] is None:
+                _servico["inicio"] = agora
+                db.execute("insert or replace into servico values (?, ?)", (agora, agora))
+            else:
+                db.execute("update servico set ultimo = ? where inicio = ?", (agora, _servico["inicio"]))
+            db.commit()
+        finally:
+            db.close()
+
+
+def servico_loop():
+    while True:
+        try:
+            servico_pulso()
+        except Exception as ex:
+            print("  operação (servidor no ar): %s" % str(ex)[:120])
+        time.sleep(SERVICO_PULSO)
+
+
+def servico_fora(dia):
+    """Intervalos [ini, fim] (epoch) do dia em que o agente esteve fora, depois do 1º registro de serviço. Buraco de até
+    3 pulsos não conta. None antes do 1º registro (sem dado)."""
+    try:
+        t0 = time.mktime(time.strptime(dia, "%Y-%m-%d"))
+    except ValueError:
+        return None
+    t1 = t0 + 86400
+    rs = op_ler("select inicio, ultimo from servico order by inicio")
+    if not rs or rs[0][0] >= t1:
+        return None
+    fora, fim_ant = [], None
+    for ini, ult in rs:
+        if fim_ant is not None and ini - fim_ant > 3 * SERVICO_PULSO:
+            a, b = max(fim_ant, t0), min(ini, t1)
+            if a < b:
+                fora.append([a, b])
+        fim_ant = max(fim_ant or 0, ult or ini)
+    agora = time.time()
+    if fim_ant is not None and agora - fim_ant > 3 * SERVICO_PULSO:      # fora agora
+        a, b = max(fim_ant, t0), min(agora, t1)
+        if a < b:
+            fora.append([a, b])
+    return fora
 
 
 def presenca_cadastro():
@@ -5588,23 +5711,25 @@ def estado_db_ler(col):
             db.close()
 
 
-def presenca_marca(chave, quando, fonte, posto=None):
+def presenca_marca(chave, quando, fonte, posto=None, ip=None, acesso=None):
     """Grava a presença (upsert) com a hora do SERVIDOR. login: n + 1 e o 1º login fica guardado mesmo com fotos antes;
     fotos: só a 1ª foto do dia (e o último sinal a cada 10 min). primeiro = a marca mais cedo, fonte = de onde ela veio."""
     dia = _ff_hoje(quando)
     with op_lock:
         db = operacao_db()
         try:
-            r = db.execute("select primeiro, ultimo, n, postos, fonte, login, foto from presenca where dia = ? and chave = ?",
+            r = db.execute("select primeiro, ultimo, n, postos, fonte, login, foto, ip, acesso from presenca where dia = ? and chave = ?",
                            (dia, chave)).fetchone()
             if r is None:
                 ps = [posto] if posto else []
-                db.execute("insert into presenca values (?,?,?,?,?,?,?,?,?)",
+                db.execute("insert into presenca (dia, chave, primeiro, ultimo, n, postos, fonte, login, foto, ip, acesso)"
+                           " values (?,?,?,?,?,?,?,?,?,?,?)",
                            (dia, chave, quando, quando, 1 if fonte == "login" else 0, json.dumps(ps), fonte,
-                            quando if fonte == "login" else None, quando if fonte == "fotos" else None))
+                            quando if fonte == "login" else None, quando if fonte == "fotos" else None,
+                            ip if fonte == "login" else None, acesso if fonte == "login" else None))
                 prim, ult = quando, quando
             else:
-                prim, ult, n, ps, fo, lg, ft = r
+                prim, ult, n, ps, fo, lg, ft, ip0, ac0 = r
                 try:
                     ps = json.loads(ps or "[]")
                 except Exception:
@@ -5613,14 +5738,15 @@ def presenca_marca(chave, quando, fonte, posto=None):
                     ps.append(posto)
                 if fonte == "login":
                     n = (n or 0) + 1
-                    lg = quando if not lg or quando < lg else lg
+                    if not lg or quando < lg:                # o ip e o acesso são os do 1º login
+                        lg, ip0, ac0 = quando, ip, acesso
                 else:
                     ft = quando if not ft or quando < ft else ft
                 if quando < prim:
                     prim, fo = quando, fonte
                 ult = max(ult or quando, quando)
-                db.execute("update presenca set primeiro = ?, ultimo = ?, n = ?, postos = ?, fonte = ?, login = ?, foto = ?"
-                           " where dia = ? and chave = ?", (prim, ult, n, json.dumps(ps), fo, lg, ft, dia, chave))
+                db.execute("update presenca set primeiro = ?, ultimo = ?, n = ?, postos = ?, fonte = ?, login = ?, foto = ?, ip = ?, acesso = ?"
+                           " where dia = ? and chave = ?", (prim, ult, n, json.dumps(ps), fo, lg, ft, ip0, ac0, dia, chave))
             db.commit()
         finally:
             db.close()
@@ -5651,12 +5777,7 @@ def presenca_inicio():
     if 0 <= agora - c["t"] < 60:
         return c["v"]
     try:
-        with op_lock:
-            db = operacao_db()
-            try:
-                v = db.execute("select min(dia) from presenca").fetchone()[0]
-            finally:
-                db.close()
+        v = op_ler("select min(dia) from presenca")[0][0]
     except Exception:
         v = None
     c.update(t=agora, v=v)
@@ -5669,21 +5790,16 @@ def presenca_dia(dia):
     if not ini or dia < ini:
         return None
     try:
-        with op_lock:
-            db = operacao_db()
-            try:
-                rs = db.execute("select chave, primeiro, ultimo, n, postos, fonte, login, foto from presenca where dia = ?", (dia,)).fetchall()
-            finally:
-                db.close()
+        rs = op_ler("select chave, primeiro, ultimo, n, postos, fonte, login, foto, acesso from presenca where dia = ?", (dia,))
     except Exception:
         return {}
     out = {}
-    for ch, pr, ul, n, ps, fo, lg, ft in rs:
+    for ch, pr, ul, n, ps, fo, lg, ft, ac in rs:
         try:
             ps = json.loads(ps or "[]")
         except Exception:
             ps = []
-        out[ch] = {"primeiro": pr, "ultimo": ul, "n": n or 0, "fonte": fo, "login": lg, "foto": ft, "postos": ps}
+        out[ch] = {"primeiro": pr, "ultimo": ul, "n": n or 0, "fonte": fo, "login": lg, "foto": ft, "postos": ps, "acesso": ac}
     return out
 
 
@@ -5694,12 +5810,7 @@ def _hhmm(seg):
 def entradas_dia(dia):
     """Resumo das entradas do dia, ou None sem entrada. Com catraca e bip no mesmo dia, o total usa a catraca (S6)."""
     try:
-        with op_lock:
-            db = operacao_db()
-            try:
-                rs = db.execute("select origem, seg from entrada where dia = ?", (dia,)).fetchall()
-            finally:
-                db.close()
+        rs = op_ler("select origem, seg from entrada where dia = ?", (dia,))
     except Exception:
         return None
     if not rs:
@@ -5795,12 +5906,7 @@ def _met_regrava(dia):
 
 
 def entradas_importacoes():
-    with op_lock:
-        db = operacao_db()
-        try:
-            rs = db.execute("select id, em, por, arquivo, origem, dias, aceitas, recusadas from importacao order by em desc, rowid desc limit 20").fetchall()
-        finally:
-            db.close()
+    rs = op_ler("select id, em, por, arquivo, origem, dias, aceitas, recusadas from importacao order by em desc, rowid desc limit 20")
     out = []
     for r in rs:
         try:
@@ -5869,6 +5975,68 @@ AGENDA_TIPOS = ("jogo", "show", "feriado", "fechado", "evento", "outro")
 AGENDA_ORIGENS = ("manual", "csv", "feriados")
 AGENDA_MAX = 2048
 _re_agenda_id = re.compile(r"^ag_[0-9a-f]{12}$")
+
+
+AGENDA_DOCS_MAX = 5000
+_re_cfg_chave = re.compile(r"^[a-z0-9_-]{1,40}$")
+_re_hhmm = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_re_dia = re.compile(r"^\d{4}-\d\d-\d\d$")
+
+
+def _em_ok(x):
+    """ISO até agora + 5 min (relógio do navegador adiantado não manda no histórico)."""
+    if not isinstance(x, str) or len(x) > 30:
+        return None
+    t = _epoch(x)
+    return x if t and t <= time.time() + 300 else None
+
+
+def cfg_valida(nome, v):
+    """config/escala {historico:[{desde, folgas:{chave:[0..6]}}]} e config/turnos {historico:[{desde, padrao, tolerancia,
+    por_ponto:{ponto:HH:MM}}]}: até 200 entradas, desde ISO, chaves ^[a-z0-9_-]{1,40}$, dias 0 a 6, HH:MM. Ou None."""
+    if not isinstance(v, dict) or not isinstance(v.get("historico"), list) or not 0 < len(v["historico"]) <= 200:
+        return None
+    hs = []
+    for h in v["historico"]:
+        if not isinstance(h, dict) or not isinstance(h.get("desde"), str) or not _re_dia.match(h["desde"]):
+            return None
+        if nome == "escala":
+            fol = h.get("folgas") if isinstance(h.get("folgas"), dict) else None
+            if fol is None or len(fol) > 200:
+                return None
+            f2 = {}
+            for k, ds in fol.items():
+                if not _re_cfg_chave.match(str(k)) or not isinstance(ds, list) or len(ds) > 7:
+                    return None
+                if not all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 6 for x in ds):
+                    return None
+                f2[k] = sorted(set(ds))
+            hs.append({"desde": h["desde"], "folgas": f2})
+        else:
+            tol = h.get("tolerancia")
+            if not isinstance(h.get("padrao"), str) or not _re_hhmm.match(h["padrao"]):
+                return None
+            if isinstance(tol, bool) or not isinstance(tol, int) or not 0 <= tol <= 120:
+                return None
+            pp = h.get("por_ponto") if isinstance(h.get("por_ponto"), dict) else {}
+            if len(pp) > 50 or not all(_re_cfg_chave.match(str(k)) and isinstance(x, str) and _re_hhmm.match(x) for k, x in pp.items()):
+                return None
+            hs.append({"desde": h["desde"], "padrao": h["padrao"], "tolerancia": tol, "por_ponto": dict(pp)})
+    return {"historico": hs, "por": _txt_chave(v.get("por"), 60), "em": _em_ok(v.get("em"))}
+
+
+_re_abono_id = re.compile(r"^\d{4}-\d\d-\d\d\|[a-z0-9_-]{1,40}$")
+
+
+def abono_valida(doc_id, v):
+    """abono/<dia>|<chave> {dia, chave, motivo, por, em}: tira a falta ou o atraso daquele dia (Supervisora, escala.u)."""
+    if not isinstance(v, dict) or not _re_abono_id.match(doc_id):
+        return None
+    dia, chave = doc_id.split("|", 1)
+    motivo = re.sub(r"[<>\x00-\x1f]", "", str(v.get("motivo") or "")).strip()[:200]
+    if v.get("dia") != dia or v.get("chave") != chave or not motivo:
+        return None
+    return {"dia": dia, "chave": chave, "motivo": motivo, "por": _txt_chave(v.get("por"), 60), "em": _em_ok(v.get("em"))}
 
 
 def agenda_valida(doc_id, v):
@@ -5944,7 +6112,7 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", o)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path in ("/ponto/presenca", "/ponto/entradas") else "Content-Type")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             return
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -5990,6 +6158,20 @@ class H(BaseHTTPRequestHandler):
         return self.js({"ok": True, "ignoradas": ignoradas})
 
     def presenca_post(self):
+        try:
+            return self._presenca_post()
+        except Exception as ex:          # revisão: erro inesperado responde JSON (o app espera e tenta depois)
+            print("  presença: %s" % str(ex)[:120])
+            return self.js({"error": "erro no servidor"}, 500)
+
+    def entradas_post(self):
+        try:
+            return self._entradas_post()
+        except Exception as ex:
+            print("  entradas: %s" % str(ex)[:120])
+            return self.js({"error": "erro no servidor"}, 500)
+
+    def _presenca_post(self):
         """v92: POST /ponto/presenca {chave, posto}: o login no posto marca a presença com a hora DO SERVIDOR (o navegador
         nunca manda hora). Posto + origem + X-Eterna: 1 (403), 30 por minuto (429), chave do cadastro (400)."""
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
@@ -6002,11 +6184,12 @@ class H(BaseHTTPRequestHandler):
         chave = sem_acento(str(body.get("chave") or "")).strip()[:40]
         if not chave or chave not in presenca_cadastro():
             return self.js({"error": "chave fora do cadastro"}, 400)
-        posto = re.sub(r"[<>\x00-\x1f]", "", str(body.get("posto") or ""))[:40] or None
-        r = presenca_marca(chave, time.time(), "login", posto)
+        posto = _txt_chave(body.get("posto") or "", 40) or None
+        ip = self.client_address[0]
+        r = presenca_marca(chave, time.time(), "login", posto, ip=ip, acesso=tipo_acesso(ip))
         return self.js({"ok": True, "dia": r["dia"], "primeiro": r["primeiro"]}, nostore=True)
 
-    def entradas_post(self):
+    def _entradas_post(self):
         """v92: POST /ponto/entradas {origem, dia, seg:[...], arquivo, por}: entradas da bilheteria (bip ou catraca) de um dia,
         só segundos do dia (o CSV fica no navegador). Substitui o mesmo dia e origem. Até 1 MB e 50.000 entradas."""
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
@@ -6456,7 +6639,7 @@ class H(BaseHTTPRequestHandler):
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
                                 "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
-                                "estatisticas": {"v": 2, "migracao": dict(est_migra)},
+                                "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(),
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
@@ -6769,7 +6952,23 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+def fuso_info():
+    """Fuso do servidor: nome (TZ ou ETERNA_TZ) e deslocamento atual em minutos (−180 no Rio)."""
+    lt = time.localtime()
+    off = lt.tm_gmtoff if getattr(lt, "tm_gmtoff", None) is not None else -(time.altzone if lt.tm_isdst > 0 else time.timezone)
+    return {"tz": os.environ.get("TZ") or "", "offset_min": int(off // 60)}
+
+
+def fuso_ajusta():
+    """Revisão (risco 7): o agente roda no fuso do venue. TZ = ETERNA_TZ ou America/Sao_Paulo (tzset só existe fora do
+    Windows; lá vale o fuso do sistema, e o /status mostra o deslocamento para o app avisar)."""
+    if hasattr(time, "tzset"):          # no Windows o TZ no formato IANA não vale (e passaria para os subprocessos)
+        os.environ["TZ"] = os.environ.get("ETERNA_TZ") or "America/Sao_Paulo"
+        time.tzset()
+
+
 def main():
+    fuso_ajusta()
     print("Eterna · agente do ponto")
     for x in ORIGENS_SEM_ESQUEMA:
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
@@ -6795,6 +6994,7 @@ def main():
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=metricas_migra_v2, daemon=True).start()   # v92: resumos antigos ganham os campos v2 (só acrescenta)
+    threading.Thread(target=servico_loop, daemon=True).start()        # v92: quando o agente esteve no ar (presença)
     threading.Thread(target=backup_loop, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
