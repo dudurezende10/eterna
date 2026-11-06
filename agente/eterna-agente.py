@@ -3047,7 +3047,15 @@ def rec_trabalho():
             if job["p0"]:
                 rec["fila0"] = max(0, rec["fila0"] - 1)
         try:
-            job["res"] = rec_fazer(job["pid"], job["file"], job["lado"])
+            if job.get("cancel"):                    # v93: LGPD com o trabalho ainda na fila
+                job["err"] = "cancelado"
+            else:
+                job["res"] = rec_fazer(job["pid"], job["file"], job["lado"])
+                with lock:
+                    viva = job["pid"] in lib
+                if (job.get("na_lib") and not viva) or job.get("cancel"):   # LGPD durante o recorte: nada do recorte fica
+                    rec_apagar(job["pid"])
+                    job["err"], job["res"] = "cancelado", None
         except Exception as ex:
             job["err"] = str(ex)[:200]
         finally:
@@ -3066,10 +3074,29 @@ def rec_trabalho():
             job["ev"].set()
 
 
+def rec_apagar(pid):
+    """Apaga os recortes de 3000 e 2400 e os temporários do pid (LGPD)."""
+    for f in [rec_arquivo(pid, lx) for lx in REC_LADOS] + glob.glob(os.path.join(RECORTES, glob.escape(pid) + "*.tmp")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
+def rec_cancelar(pid):
+    """LGPD: o trabalho de recorte do pid (na fila ou em andamento) não deixa arquivo."""
+    with rec_lock:
+        j = rec_jobs.get(pid)
+        if j is not None:
+            j["cancel"] = True
+
+
 def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=False, u=None):
     """Põe o recorte na fila sem esperar e devolve (trabalho, erro). Pedido da mesma foto reaproveita o trabalho que já
     existe (um recorte só); o mais urgente sobe a prioridade dele. Só a prioridade 0 conta para o REC_FILA_MAX."""
     lado = lado if lado in REC_LADOS else REC_LADO_MAX
+    with lock:
+        na_lib = pid in lib                          # foto que sai da biblioteca durante o recorte não deixa arquivo
     with rec_lock:
         while len(rec_threads) < REC_CONC:
             t = threading.Thread(target=rec_trabalho, daemon=True)
@@ -3080,7 +3107,7 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
             if prio == REC_PRIO_CHECKOUT and rec["fila0"] >= REC_FILA_MAX:
                 return None, "fila_cheia"
             job = {"pid": pid, "file": origem, "lado": lado, "ev": threading.Event(), "pego": False, "prio": prio,
-                   "p0": prio == REC_PRIO_CHECKOUT, "ia": bool(ia), "u": u}
+                   "p0": prio == REC_PRIO_CHECKOUT, "ia": bool(ia), "u": u, "na_lib": na_lib}
             rec_jobs[pid] = job
             if job["p0"]:
                 rec["fila0"] += 1
@@ -4541,12 +4568,9 @@ def sess_add(pid, m):
 
 def sess_esquecer(pid):
     """LGPD: a foto apagada sai da sessão, das pendentes e dos rostos em memória; sessão sem foto vira removida.
-    v93: sai também das bases de IA, e os recortes dela são apagados na hora."""
-    for lx in REC_LADOS:
-        try:
-            os.remove(rec_arquivo(pid, lx))
-        except OSError:
-            pass
+    v93: sai também das bases de IA, e os recortes dela são apagados na hora (o trabalho na fila é cancelado)."""
+    rec_cancelar(pid)
+    rec_apagar(pid)
     _sess_esquecer(pid)
 
 

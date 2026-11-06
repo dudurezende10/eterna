@@ -252,8 +252,12 @@ ok(all(j is not None for j in ia_jobs), "6: a IA nunca recebe fila_cheia")
 res = {}
 
 
+with m.lock:
+    m.lib["c0ffee0001"] = {"file": foto("c0ffee0001"), "thumb": foto("c0ffee0001")}
+
+
 def checkout():
-    res["r"] = m.rec_pedir("c0ffee0001", foto("c0ffee0001"), 2400)
+    res["r"] = m.rec_pedir("c0ffee0001", m.lib["c0ffee0001"]["file"], 2400)
     res["ia_prontos"] = sum(1 for j in ia_jobs if j["ev"].is_set())
 
 
@@ -270,6 +274,8 @@ m.REC_FALSO_SEG = 0.3
 blk, _ = m.rec_enfileirar("b10c000001", foto("b10c000001"), 3000, m.REC_PRIO_ANTECIPADO)
 time.sleep(0.05)
 fd = foto("d0b1e00001")
+with m.lock:
+    m.lib["d0b1e00001"] = {"file": fd, "thumb": fd}
 _fazer = m.rec_fazer
 chamadas = []
 
@@ -349,6 +355,27 @@ arq = json.load(open(os.path.join(m.SESS_DIR, xl["dia"] + ".json")))
 xd = [x for x in arq["sessoes"] if x["card"] == xl["card"]][0]
 ok(xl["ia"] == [L[1]] and xd["ia"] == [L[1]] and L[0] not in xd["fotos"], "15: fora de ia na memória e no arquivo: %r %r" % (xl["ia"], xd["ia"]))
 ok(not os.path.exists(m.rec_arquivo(L[0])) and not os.path.exists(m.rec_arquivo(L[0], 2400)), "15: recortes apagados na hora")
+
+# LGPD com o recorte na fila ou em andamento: nada fica
+m.REC_FALSO_SEG = 0.8
+blk, _ = m.rec_enfileirar("b10c000009", foto("b10c000009"), 3000, m.REC_PRIO_ANTECIPADO)
+time.sleep(0.05)
+for pidl, quando in (("1c0de00001", "fila"), ("1c0de00002", "andando")):
+    with m.lock:
+        m.lib[pidl] = {"file": foto(pidl), "thumb": foto(pidl)}
+    jl, _ = m.rec_enfileirar(pidl, m.lib[pidl]["file"], 2400, m.REC_PRIO_IA, ia=True, u=time.time())
+    if quando == "andando":
+        t0 = time.time()
+        while not jl["pego"] and time.time() - t0 < 10:
+            time.sleep(0.02)
+    with m.lock:
+        m.lib.pop(pidl, None)
+    m.sess_esquecer(pidl)
+    jl["ev"].wait(15)
+    ok(jl.get("err") == "cancelado" and not [n for n in os.listdir(m.RECORTES) if n.startswith(pidl)],
+       "LGPD (%s): trabalho cancelado e sem arquivo: %r %r" % (quando, jl.get("err"), [n for n in os.listdir(m.RECORTES) if n.startswith(pidl)]))
+blk["ev"].wait(10)
+m.REC_FALSO_SEG = 0.15
 
 # 17: limpeza com teto baixo não apaga a base de IA de hoje
 reset()
