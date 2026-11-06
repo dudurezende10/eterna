@@ -4259,10 +4259,7 @@ def sess_add(pid, m):
     """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
     cad = ff_cadastrados()
     with sess_lock:
-        card = _sess_add(pid, m, cad, time.time())
-        x = sess.get(card or "")
-        quem = x.get("fotografo") if x and x.get("trilha") == "vivo" and not x.get("atrasada") else None
-    return card
+        return _sess_add(pid, m, cad, time.time())
 
 
 def sess_esquecer(pid):
