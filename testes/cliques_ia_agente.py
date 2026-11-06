@@ -282,6 +282,28 @@ ok(rr.get("r") and rr["r"][0] == m.rec_arquivo("d0b1e00001") and os.path.exists(
    "7: os dois pedidos atendidos: %r" % (rr.get("r"),))
 ok(m.rec_status()["feitos"] - antes == 2, "7: um recorte para a foto (mais o que estava em andamento): %r" % (m.rec_status()["feitos"] - antes))
 
+# R1: base já na fila em 3000 pelo recorte antecipado e depois pedida em 2400 pela IA = os dois tamanhos;
+# e o mesmo com o trabalho de 3000 já em andamento (o rec_ia_loop confere o 2400 e pede de novo)
+m.REC_FALSO_SEG = 0.3
+for ci, caso in enumerate(("na_fila", "andando")):
+    blk, _ = m.rec_enfileirar("b10c0000a%d" % ci, foto("b10c0000a%d" % ci), 3000, m.REC_PRIO_ANTECIPADO)
+    time.sleep(0.05)
+    pidr = "a1b2c3d4e%d" % ci
+    with m.lock:
+        m.lib[pidr] = {"file": foto(pidr), "thumb": foto(pidr)}
+    jpre, _ = m.rec_enfileirar(pidr, m.lib[pidr]["file"], 3000, m.REC_PRIO_ANTECIPADO)
+    if caso == "andando":
+        m.REC_FALSO_SEG = 1.5                        # o de 3000 ainda em andamento quando a IA pede
+        blk["ev"].wait(10)
+        time.sleep(0.1)                              # o de 3000 já foi pego pelo trabalhador
+    with m.sess_lock:
+        m.sess_ia_novos.append((pidr, 1))
+    ok(caso == "na_fila" or jpre["pego"], "R1: o de 3000 já estava em andamento")
+    t0 = time.time()
+    while time.time() - t0 < 15 and not (os.path.exists(m.rec_arquivo(pidr)) and os.path.exists(m.rec_arquivo(pidr, 2400))):
+        time.sleep(0.1)
+    ok(os.path.exists(m.rec_arquivo(pidr)) and os.path.exists(m.rec_arquivo(pidr, 2400)), "R1 (%s): 3000 e 2400 da base" % caso)
+
 # 11: atrasada (prio 2) atrás da ao vivo (prio 1) que chegou depois
 m.REC_FALSO_SEG = 0.2
 blk, _ = m.rec_enfileirar("b10c000002", foto("b10c000002"), 3000, m.REC_PRIO_ANTECIPADO)

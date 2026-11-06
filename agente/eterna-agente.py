@@ -3091,6 +3091,8 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
         if ia and not job["ia"]:
             job["ia"], job["u"] = True, u
             rec["ia"]["fila"] += 1
+        if not job["pego"]:
+            job["lado"] = min(job["lado"], lado)     # v93 (revisão R1): o de 2400 sai junto do de 3000 (rec_fazer)
         if not job["pego"] and prio < job["prio"]:
             if prio == REC_PRIO_CHECKOUT and not job["p0"]:
                 if rec["fila0"] >= REC_FILA_MAX:
@@ -3178,6 +3180,8 @@ def rec_ia_loop():
     prioridade 1 (ao vivo) ou 2 (cartão), no máximo IA_FILA_ALVO de cada vez para o Checkout passar na frente de verdade.
     Gera o de 3000 e o de 2400 de uma vez. Nada com o recorte indisponível ou no modo Photoroom (o rec_pre_loop recupera)."""
     pend = {}                                       # pid -> prioridade (ordem de chegada)
+    andando = {}                                    # pid -> (trabalho, prioridade, tentativas): confere o 2400 no fim (R1)
+    andando_n = {}
     while True:
         time.sleep(0.5)
         try:
@@ -3186,6 +3190,14 @@ def rec_ia_loop():
                 sess_ia_novos.clear()
             for pid, pr in novos:
                 pend[pid] = min(pr, pend.get(pid, 9))
+            for pid, (job, pr, n) in list(andando.items()):
+                if not job["ev"].is_set():
+                    continue
+                del andando[pid]
+                # o trabalho reaproveitado já estava em andamento só com o de 3000: pede de novo (a cópia de 2400 é barata)
+                if not job.get("err") and not job.get("cancel") and n < 2 and not os.path.exists(rec_arquivo(pid, 2400)):
+                    pend[pid] = min(pr, pend.get(pid, 9))
+                    andando_n[pid] = n + 1
             while len(pend) > IA_NOVOS_MAX:
                 pend.pop(next(iter(pend)))
             if not pend:
@@ -3193,6 +3205,7 @@ def rec_ia_loop():
             ok, _ = rec_estado()
             if not ok or fundos_modo() == "photoroom":
                 pend.clear()
+                andando_n.clear()
                 time.sleep(5)
                 continue
             with rec_lock:
@@ -3211,6 +3224,7 @@ def rec_ia_loop():
                 job, erro = rec_enfileirar(pid, e["file"], 2400, pr, ia=True, u=u or None)
                 if job is not None:
                     livres -= 1
+                    andando[pid] = (job, pr, andando_n.pop(pid, 0))
         except Exception as ex:
             print("  recorte das bases de IA:", str(ex)[:160])
 
