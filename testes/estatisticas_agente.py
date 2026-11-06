@@ -96,8 +96,8 @@ ok(md["por_confirmador"].get("Ana", {}).get("pagamento_s", {}).get("n") == 1 and
 ok(all("pagamento_s" not in v for v in md["por_vendedor"].values()) and set(md["por_vendedor"]) <= {"Ana", "sem vendedor"}, "R4: por_vendedor da v1 sem tempo de confirmação: %r" % md["por_vendedor"])
 ok(T["clique_checkout_s"]["n"] == 1 and T["clique_checkout_s"]["f"][2] == 1 and T["transferencia_s"]["n"] == 2,
    "16: clique e transferência só da trilha vivo (reinício fora do clique): %r" % {k: T[k] for k in ("clique_checkout_s", "transferencia_s")})
-ok(md["por_fotografo"]["carlos"].get("primeira_foto") == t1040 - 600 and md["por_fotografo"]["carlos"]["sessoes"] == 2,
-   "b: 1ª foto (ao vivo) e campos v1 do fotógrafo: %r" % md["por_fotografo"]["carlos"])
+ok("primeira_foto" not in json.dumps(md["por_fotografo"]) and md["por_fotografo"]["carlos"]["sessoes"] == 2,
+   "b: sem primeira_foto (hora de chegada) e com os campos v1 do fotógrafo: %r" % md["por_fotografo"]["carlos"])
 ok(md["vendas"] == 3 and md["faturamento"] == 480 and md["sessoes"] == 3, "v1 continua igual: %r" % {k: md[k] for k in ("vendas", "faturamento", "sessoes")})
 
 # --- sem presença (Eduardo, 05/11 noite): a foto atribuída não marca nada e o operacao.db não tem a tabela ---
@@ -148,6 +148,18 @@ ok(all(mm[k] == v1[k] for k in ("fotos", "sessoes", "vendas", "faturamento")) an
 ok(mm.get("v") == 2 and mm.get("migrado") is True and mm["por_hora"].get("14", {}).get("vendas") == 1 and mm["por_hora"].get("15", {}).get("vendas") == 1 and mm["tempos"]["pagamento_s"]["n"] == 1
    and "clique_checkout_s" not in mm["tempos"], "26: ganha horas e pagamento_s, sem tempos de sessão (sem arquivo): %r" % {k: mm.get(k) for k in ("v", "migrado", "por_hora", "tempos")})
 ok(m.est_migra["estado"] == "feita", "migração marcada como feita")
+# segurança: dia antigo com arquivo de sessões migra sem primeira_foto em nenhum por_fotografo
+dia_q = m._ff_hoje(time.time() - 101 * 86400)
+tq = time.mktime(time.strptime(dia_q + " 10:00:00", "%Y-%m-%d %H:%M:%S"))
+json.dump({"dia": dia_q, "gerado": "x", "fotos": 5, "sessoes": 1, "vendas": 0, "faturamento": 0.0, "por_fotografo": {"carlos": {"sessoes": 1, "fotos": 5}}, "por_vendedor": {}},
+          open(os.path.join(m.MET_DIR, dia_q + ".json"), "w"))
+json.dump({"dia": dia_q, "sessoes": [{"card": "LPMIQ0001", "dia": dia_q, "k": dia_q + "|carlos", "fotografo": "carlos", "trilha": "vivo", "atrasada": False, "status": "fechada",
+           "aberta_em": tq, "ultima_chegada": tq + 60, "cap0": tq - 5, "cap1": tq + 50, "fechada_em": tq + 120, "fechada_por": "pausa", "fotos": ["q1", "q2"], "pend": []}]},
+          open(os.path.join(m.SESS_DIR, dia_q + ".json"), "w"))
+m.metricas_migra_v2(pausa=0)
+mq = json.load(open(os.path.join(m.MET_DIR, dia_q + ".json")))
+ok(mq.get("v") == 2 and mq["por_fotografo"]["carlos"].get("clique_checkout_s") and all("primeira_foto" not in (v or {}) for v in mq["por_fotografo"].values()),
+   "migração: nenhum por_fotografo com primeira_foto: %r" % mq.get("por_fotografo"))
 m.metricas_migra_v2(pausa=0)
 ok(json.load(open(os.path.join(m.MET_DIR, dia_m + ".json"))) == mm, "26: a migração roda uma vez (v2 não muda de novo)")
 # importar entradas de um dia antigo não recalcula a v1 (só troca entradas)

@@ -5464,10 +5464,8 @@ def met_v2(dia, ss, evs):
             g["fotos"] += len(x.get("fotos") or []) + len(x.get("pend") or [])
         if x.get("trilha", "vivo") != "vivo" or x.get("atrasada"):
             continue                                  # critério 16: clique e transferência só da trilha ao vivo
+        # sem primeira_foto: funcionaria como hora de chegada do fotógrafo (Eduardo, 05/11 noite: sem presença)
         pf = out["por_fotografo"].setdefault(str(x.get("fotografo") or "sem fotógrafo"), {})
-        ae = _num(x.get("aberta_em"))
-        if ae and (not pf.get("primeira_foto") or ae < pf["primeira_foto"]):
-            pf["primeira_foto"] = ae
         cap1 = _num(x.get("cap1"))
         if not cap1:
             continue
