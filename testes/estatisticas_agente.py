@@ -107,6 +107,27 @@ m.meta["fffff0000001"] = {}
 card = m.sess_add("fffff0000001", {"o": "carlos", "s": "ftp", "u": t_foto, "cap": t_foto - 2})
 tabs = {r[0] for r in m.op_ler("select name from sqlite_master where type = 'table'")}
 ok(card and tabs == {"entrada", "importacao"}, "operacao.db só com entrada e importacao: %r" % tabs)
+# segurança: um operacao.db antigo com a tabela presenca (só de testes) perde a tabela e os bytes dela, uma vez só
+import sqlite3 as _sq
+velho = os.path.join(HA, "operacao-velho.db")
+cv = _sq.connect(velho)
+cv.execute("pragma journal_mode=wal")
+cv.execute("create table presenca (dia text, chave text, primeiro real)")
+cv.executemany("insert into presenca values (?,?,?)", [("2026-11-05", "fotografo-marca-%04d" % i, 1.0) for i in range(300)])
+cv.execute("create table servico (inicio real, ultimo real)")
+cv.commit()
+cv.close()
+arq0, criado0 = m.OPERACAO_DB, dict(m._op_criado)
+m.OPERACAO_DB = velho
+m._op_criado["arq"] = None
+with m.op_lock:
+    m.operacao_db().close()
+tv = {r[0] for r in m.op_ler("select name from sqlite_master where type = 'table'")}
+bytes_ = b"".join(open(f, "rb").read() for f in (velho, velho + "-wal") if os.path.exists(f))
+ok(tv == {"entrada", "importacao"} and b"fotografo-marca-" not in bytes_, "presenca e servico antigos apagados com secure_delete e VACUUM: %r" % tv)
+m.OPERACAO_DB = arq0
+m._op_criado.clear()
+m._op_criado.update(criado0)
 ok(not hasattr(m, "presenca_marca") and not hasattr(m, "_pres_mem") and "presenca" not in m.metricas_dia(hoje), "sem presença no agente e no resumo")
 
 # --- critérios 24 e 25: entradas ---

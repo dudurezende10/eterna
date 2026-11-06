@@ -5560,9 +5560,17 @@ def operacao_db():
     c.execute("pragma synchronous=full")
     if _op_criado["arq"] != OPERACAO_DB or not os.path.exists(OPERACAO_DB):
         c.execute("pragma journal_mode=wal")
-        # Eduardo, 05/11 noite: o Eterna não é controle de ponto (é do RH). Presença saiu da v92; tabelas de testes antigos somem.
-        c.execute("drop table if exists presenca")
-        c.execute("drop table if exists servico")
+        # Eduardo, 05/11 noite: o Eterna não é controle de ponto (é do RH). Presença saiu da v92; as tabelas de testes antigos
+        # somem de verdade (secure_delete zera as páginas, VACUUM e checkpoint tiram o resto do arquivo e do WAL). Só uma vez:
+        # depois do drop as tabelas não existem mais.
+        velhas = [r[0] for r in c.execute("select name from sqlite_master where type = 'table' and name in ('presenca', 'servico')")]
+        if velhas:
+            c.execute("pragma secure_delete=on")
+            for t in velhas:
+                c.execute("drop table if exists %s" % t)
+            c.commit()
+            c.execute("vacuum")
+            c.execute("pragma wal_checkpoint(truncate)")
         c.execute("create table if not exists entrada (dia text, origem text, seg int)")
         c.execute("create index if not exists entrada_dia on entrada(dia, origem)")
         c.execute("create table if not exists importacao (id text primary key, em text, por text, arquivo text, origem text,"
