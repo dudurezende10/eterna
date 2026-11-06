@@ -135,7 +135,7 @@ try{
     ok(gj&&gj[1]===2&&gj[2]===true&&gj[3]===1500&&gs&&gs[1]===3&&gs[2]===false&&gs[3]===600&&gm&&gm[1]===2,'20: grupos n=2 (poucos dias) e n=3 com as médias: '+J(G));
     // 3: dados da venda (pvDados): Checkout em espanhol com canal, cart e t0; balcão sem lang
     const P=await pg.evaluate(()=>{const E=ETERNA;E.state.lang='es';const t0=new Date(Date.now()-60e3).toISOString();const a=E.pvDados({card:'LP1',canal:'checkout',t0,cart:[{id:'tribuna'}],total:220});const b=E.pvDados({card:'LP2',canal:'balcao',cart:[{id:'arq'}],total:70});E.state.lang='pt';
-      E.state.kiosk.step='review';E.state.kiosk.t0=null;E.state.view='quiosque';E.render();const t1=E.state.kiosk.t0;E.lojaReset();const t2=E.state.kiosk.t0;E.state.view='painel';E.render();return {a,b,t0,t1:!!t1,t2};});
+      E.state.kiosk.step='code';E.state.kiosk.t0=null;E.state.kiosk.step='review';const t1=E.state.kiosk.t0;E.state.view='quiosque';E.render();E.lojaReset();const t2=E.state.kiosk.t0;E.state.view='painel';E.render();return {a,b,t0,t1:!!t1,t2};});
     ok(P.a.lang==='es'&&P.a.canal==='checkout'&&P.a.t0===P.t0&&P.a.cart.length===1&&P.a.cart[0].id==='tribuna'&&P.a.cart[0].v>0,'3: Checkout manda lang, canal, cart e t0: '+J(P.a));
     ok(P.b.canal==='balcao'&&P.b.lang==null&&P.b.t0==null,'3: balcão com canal e sem lang: '+J(P.b));ok(P.t1&&P.t2==null,'3: t0 gravado ao sair da etapa code e zerado no lojaReset');
     await ctx.close();}
