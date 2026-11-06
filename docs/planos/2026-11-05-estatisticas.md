@@ -264,6 +264,14 @@ Textos de até 60 caracteres (a observação, até 200), sem `<` nem `>`.
 ## Agenda pública do Maracanã
 Não existe uma fonte oficial única. CBF, Ferj e Conmebol publicam cada uma a sua, e o estádio fecha por períodos para cuidar do gramado. O mínimo é o cadastro manual e a importação por CSV. Uma API de dados esportivos fica para depois.
 
+## Revisão e segurança (05/11, aplicadas)
+- **S1**: o resumo do dia só é gravado por `met_escreve` (lock por dia, `mkstemp` em `MET_DIR`), pelo `metricas_loop`, pela importação de entradas e pela migração; ler, mudar e gravar ficam dentro do lock. Resumo que existe e não abre fica como está (log). Dia sem resumo ganha registro mínimo `{dia, gerado, so_entradas, entradas}`, sem `v:2`.
+- **R1/R2**: `presencaMarcar` começa com `sessaoVirada()`; 400 não repete até o próximo login; 429 ou falha espera 60 s; a chave é normalizada como no agente (`presChave`).
+- **R3/R4**: veja Contratos (`pagamento_s` só do Checkout; `por_confirmador`).
+- **Presença**: o 1º login guarda `ip` e `acesso` (`loopback`, `rede` ou `remota` para 100.64.0.0/10); o dia a dia mostra a origem e marca "remota". Tabela `servico(inicio, ultimo)` no `operacao.db` com um pulso por minuto; o resumo traz `servidor_fora:[[ini,fim]]` e o turno com o servidor fora vira "sem dado (servidor fora)", nunca falta nem atraso. Abono pela Supervisora ou Admin (`escala.u`, painel Abonos na Escala, coleção `abono` com id `<dia>|<chave>`, `auditLog`). Dia com evento `fechado` no calendário fica fora das faltas.
+- **Fuso**: `fuso_ajusta()` no `main()` (TZ = `ETERNA_TZ` ou `America/Sao_Paulo` com `tzset`, fora do Windows); `/status.fuso {tz, offset_min}`; a tela avisa quando difere de `VENUE_TZ` (CHECKLIST-SERVIDOR.md, seção 1).
+- **Entrada de dados**: `__proto__`, `constructor` e `prototype` recusados no agente (cart.id, posto, por, vendedor) e acumulados com `Object.create(null)` no app; `cfg_valida` para `config/escala` e `config/turnos`; teto de 5000 eventos na agenda; rotas novas com 500 em JSON e `X-Eterna` no CORS; a importação espera e tenta de novo no 429.
+
 ## Falhas antigas fora da v92
 Cinco testes já falham em `origin/main` (conferido em `e7833a6`, 05/11) e continuam falhando na `feat/estatisticas` do mesmo jeito. Não vêm desta entrega; ficam ligados ao pedido 7 do Ronaldo:
 - `testes/galeria-qr.js`: critério 6 (galeria depois da selfie fica em `step:"nao"`) e critério 13 (o inglês não troca os textos).
