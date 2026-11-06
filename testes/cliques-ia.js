@@ -56,6 +56,14 @@ try{
   // navegador antigo: sessão fechada sem ia ganha as bases no próximo srvPull
   const velho=await pg.evaluate(async()=>{const s=ETERNA.SIM.sessions.LPTIACAM1;const ia0=s.ia;delete s.ia;ETERNA.SRV.rev=0;await ETERNA.srvPull(true);return {ia:s.ia,igual:JSON.stringify(s.ia)===JSON.stringify(ia0)};});
   ok(velho.igual,'srvPull completa a ia da sessão materializada sem ela: '+J(velho));
+  // segurança: base vendida por navegador antigo (sessão paga sem ia) não some da galeria, nem depois do srvPull e da republicação
+  const paga=await pg.evaluate(async([f1])=>{const s=ETERNA.SIM.sessions.LPTIACAM1;const ia0=s.ia,st0=s.status,sel0=s.selected;const n1=ETERNA.demoSessions().find(x=>x.card==='LPTIACAM1').photos.find(p=>p.id!==f1&&!ia0.includes(p.id)).id;
+    delete s.ia;s.status='paga';s.selected=[f1,n1];const tok=ETERNA.galDaSessao('LPTIACAM1',true);
+    const g1=ETERNA.SIM.galerias[tok].fotos.filter(f=>f.id===f1).map(f=>f.direito);ETERNA.SRV.rev=0;await ETERNA.srvPull(true);const iaDepois=s.ia;
+    s.ia=ia0;ETERNA.galAtualizar(tok);ETERNA.galPublicar(tok);const g2=ETERNA.SIM.galerias[tok].fotos.filter(f=>f.id===f1).map(f=>f.direito);
+    const g3=ETERNA.SIM.galerias[tok].fotos.filter(f=>f.id===ia0[1]).length;
+    s.status=st0;s.selected=sel0;delete ETERNA.SIM.galerias[tok];ETERNA.SIM.galFila=(ETERNA.SIM.galFila||[]).filter(x=>x.token!==tok);return {g1,iaDepois:iaDepois===undefined,g2,g3};},['ag_'+A[0]]);
+  ok(paga.g1.join()==='comprada'&&paga.iaDepois&&paga.g2.join()==='comprada'&&paga.g3===0,'segurança: base paga fica na galeria (srvPull não mexe em sessão paga; republicação mantém); a não vendida fica fora: '+J(paga));
   const pou=await pg.evaluate(()=>ETERNA.demoSessions().find(x=>x.card==='LPTIAPOU4').photos.length);ok(pou===3,'9: poucas fotos: as 3 à venda: '+pou);
   // Checkout pelo código (19: as 5 montagens começam já, sem esperar o item aparecer)
   await pg.fill('#kcode','LPTIACAM1').catch(()=>{});

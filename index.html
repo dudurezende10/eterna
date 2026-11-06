@@ -2132,7 +2132,8 @@ function galAtualizar(tok){const m=(SIM.galerias||{})[tok];if(!m)return;const ia
   const anc=SIM.sessions[m.sessoes[0]]||{};const selV=m.venda?new Set(anc.status==='paga'&&anc.galVenda===tok?(anc.selected||[]):[]):null;
   for(const card of m.sessoes){const s=sessionObj(card);if(!s)continue;const sim=SIM.sessions[card]||{};const cort=sim.cort||{};const so=m.so&&m.so[card]?new Set(m.so[card]):null;
     const sel=selV||new Set(sim.status==='paga'?(sim.selected||[]):[]);
-    for(const p of s.photos){if(so&&!so.has(p.id))continue; /* venda que juntou sessões: só a escolha da venda */if(iaB.has(p.id))continue; /* v93: base de IA nunca vai à galeria */const o=old[p.id];const f={id:p.id,sessao:card,direito:'venda',canal:null};
+    const pagas=(s.ia||[]).filter(id=>sel.has(id)||(old[id]&&old[id].direito==='comprada')).map(id=>({id})); // v93 (segurança): base já paga (navegador antigo) fica
+    for(const p of s.photos.concat(pagas)){if(so&&!so.has(p.id))continue; /* venda que juntou sessões: só a escolha da venda */if(iaB.has(p.id)&&!sel.has(p.id)&&!(old[p.id]&&old[p.id].direito==='comprada'))continue; /* v93: base de IA não vendida nunca vai à galeria */const o=old[p.id];const f={id:p.id,sessao:card,direito:'venda',canal:null};
       if(sel.has(p.id)){f.direito='comprada';f.canal=o&&o.direito==='comprada'&&o.canal==='online'?'online':'loja';}
       else if(o&&o.direito==='comprada'&&o.canal==='online'){f.direito='comprada';f.canal='online';}
       else if(cort[p.id]){f.direito='cortesia';f.cortesia=cort[p.id];}
@@ -3134,7 +3135,7 @@ function srvMaterializa(){const cards=Object.keys(SRV.mat);if(!cards.length)retu
   return n;}
 function srvComo(x,pausa){const p=pausa||SESSAO_PAUSA_S;const m=p===60?'1 min':p+' s';return x.fechada_por==='pausa_clique'?`pausa de ${m} entre cliques (servidor)`:x.fechada_por==='virada_do_dia'?'virada do dia (servidor)':x.fechada_por==='reinicio'?'agente reiniciado (servidor)':`pausa de ${m} sem foto nova (servidor)`;}
 // v93 (segurança): sessão fechada que um navegador antigo materializou sem ia ganha as bases do servidor (saem da venda aqui)
-function srvIaCompleta(x){const s=SIM.sessions[x.card];if(!s||!s.srv||Array.isArray(s.ia)||!Array.isArray(x.ia)||!x.ia.length)return;
+function srvIaCompleta(x){const s=SIM.sessions[x.card];if(!s||!s.srv||s.status==='paga'||Array.isArray(s.ia)||!Array.isArray(x.ia)||!x.ia.length)return;
   const tem=new Set((s.photos||[]).map(p=>p.id));s.ia=x.ia.map(p=>'ag_'+p).filter(id=>tem.has(id));saveSim();}
 // v91 (revisão 5): sessão do servidor que perdeu fotos pela LGPD. Sem venda paga, as fotos saem da sessão deste navegador;
 // com venda paga, nada some do registro e fica uma linha no log.
