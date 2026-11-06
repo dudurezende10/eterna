@@ -1391,9 +1391,9 @@ Decisão do Eduardo (29/10): a montagem dos fundos sai do Photoroom. O agente re
 ### Agente (`eterna-agente.py`)
 - `POST /recorte` com `{pid, lado}` (só foto da biblioteca, `pid_ok` + `lib`; `lado` 3000, padrão, para a impressão, ou 2400 para a prévia): devolve a pessoa em PNG RGBA (lado maior até 3000 px, `REC_LADO_MAX`; EXIF de orientação aplicado). O RGB fora da máscara é zerado: o PNG não leva o fundo nem quem estava ao redor. Cache em `~/Eterna/recortes/<pid>.png` e `<pid>_2400.png` (chmod 600; a de 2400 sai da de 3000, sem rodar os modelos de novo). `GET /recorte/<pid>.png` devolve o de 3000 já feito.
 - Recorte: rembg com duas sessões, `isnet-general-use` e `u2net_human_seg`, sobre uma cópia de até 1600 px (`REC_TRAB`). Máscara (`rec_limpa_mascara`, regras 12 e 13): máximo das duas (o que uma delas pega com alfa alto fica), níveis (abaixo de 0,3 vira 0, de 0,3 a 0,9 estica, acima de 0,9 vira 1), entra tudo o que tem algum sinal (≥ 0,04) ligado a um ponto que a máscara de pessoa (`u2net_human_seg`) pega com alfa alto (≥ 0,6): objeto solto que não encosta na pessoa sai (v88, taça num pedestal ao lado); miolo sólido onde o sinal passa de 0,10 ou fica cercado por ele, com reentrâncias de até 0,8% do lado fechadas (só a borda, até 0,2% do lado, fica macia); furo fechado com sinal médio ≥ 0,03 fecha; furo sem sinal decide pela cor da cópia de trabalho (`rec_limpa_mascara(masks, foto)`, `_rec_furo_e_objeto`): fecha se a borda não tem contraste (diferença de cor < 20 entre 3 px dentro e 3 px fora) em ≥ 40% da volta, ou em 15% a 40% se a cor do furo não aparece no fundo perto do grupo; vão entre braço e corpo fica vazado: taça, bandeira aberta, boné e óculos saem inteiros e sólidos. Pedaço com 3% ou mais da área do maior fica sempre; pedaço menor só sai se estiver solto, a mais de 1,5% do lado do grupo (na dúvida, mantém). Depois volta ao tamanho final e perde 1 px de borda (sem halo); `rec_sem_soltos` tira pedaço opaco (≥ 128) com menos de 0,5% do maior que ficou solto, com até 3 px de borda macia. Pedaço só do ISNet encostado na pessoa (`_rec_encostados`, precisa da foto) sai só com quatro provas: alfa ISNet ≥ 0,5 fora da pessoa engordada 2 px, média do modelo de pessoa < 0,15 e área < 1,5% da pessoa; contato curto (pontos colados na pessoa / raiz da área < 2); o fundo continua por ele (≥ 30% da borda com o fundo sem contraste de cor); a foto mostra borda entre ele e a pessoa (diferença de cor ≥ 15). Até 32 pedaços e 1,5 s (`REC_ENC_SEG`); na faixa de 2 px junto dele vale o alfa do modelo de pessoa. No fim (`_rec_ilhas`), ilha com alfa ≥ 0,5 que não está ligada à pessoa pelo alfa ≥ 0,5 nem pelo miolo (sinal ≥ 0,10; rotulado depois de abrir 1 px com a cruz 3x3, para fio de 1 px não ligar); pedaço mantido que só se liga à pessoa por miolo fraco ganha o caminho mais curto desse miolo opaco (`_rec_pontes`, até 16 pedaços, 5% do lado e 1,5 s, `REC_PONTES_SEG`; a busca para quando toca a pessoa); pedaço com semente de pessoa e pelo menos 0,2% do maior nunca cai por tamanho e tem menos de 3% da área dela sai, com a borda macia em volta. Até 48 furos sem sinal (os maiores) são decididos pela cor, em no máximo 2 s; o resto fica aberto. Semente sem pessoa ≥ 0,6: 80% do máximo do modelo de pessoa (se > 0,3); sem nada, alfa alto em qualquer uma das máscaras, como antes da v88. Conferido com fotos de exemplo do repo: óculos escuros, taça segurada e bandeira aberta saem sólidos. Casos da v88 (fotos reais de 30/10, fora do repo): convidado ao lado da taça da Libertadores num pedestal sai sem a taça e sem o pedestal; bandeira do Vasco segurada atrás do corpo sai inteira, sem furo no branco e sem o teto do estádio; família com bandeiras e a taça segurada pela criança sai com tudo, sem fechar os vãos entre as pessoas. Limite: objeto que encosta ou se sobrepõe à pessoa na imagem vai junto, segurado ou não.
-- Prazo do cache: `limpar_recortes()` uma vez por dia no `galeria_loop` (junto do `limpar_rostos`): apaga o que tem mais de 2 dias (mtime), o de foto que saiu da biblioteca e, acima de 5 GB (`ETERNA_RECORTES_GB`), os mais antigos. O `POST /recorte` também apaga o recorte quando a foto não está mais na biblioteca.
+- Prazo do cache (v93: de hora em hora, guarda as bases de IA de hoje; ver "Os 2 primeiros cliques de cada sessão só para os fundos de IA"): `limpar_recortes()` uma vez por dia no `galeria_loop` (junto do `limpar_rostos`): apaga o que tem mais de 2 dias (mtime), o de foto que saiu da biblioteca e, acima de 5 GB (`ETERNA_RECORTES_GB`), os mais antigos. O `POST /recorte` também apaga o recorte quando a foto não está mais na biblioteca.
 - Sessões abertas uma vez, na primeira foto, dentro da thread de trabalho (`rec_carregar`, com trava própria: o `/status` nunca espera a carga), `intra_op_num_threads = núcleos − 1`, sem arena de memória. Erro ao abrir os modelos: 503 por 60 s e depois tenta de novo.
-- Fila `rec_fila` (até 24) com 1 trabalhador (`ETERNA_RECORTE_CONC=2` para 2). Fila cheia: 429 `fila_cheia`; mais de 180 s: 504.
+- Fila `rec_fila` (até 24; v93: fila com prioridades, os 24 contam só os pedidos do Checkout) com 1 trabalhador (`ETERNA_RECORTE_CONC=2` para 2). Fila cheia: 429 `fila_cheia`; mais de 180 s: 504.
 - Sem rembg, onnxruntime, Pillow, numpy, scipy ou os modelos: 503 `{error:"recorte_indisponivel", motivo, como}` (o `como` manda rodar `instalar-recorte`). Nada é importado no topo. O agente nunca baixa modelo sozinho; procura em `$REMBG_HOME/models/<nome>/<nome>.onnx` (padrão `~/.rembg`) e em `$U2NET_HOME/<nome>.onnx` (padrão `~/.u2net`). `ETERNA_SEM_RECORTE=1` desliga (testes).
 - `/status` traz `recorte:{ok,motivo,carregado,modelos,fila,feitos,ms_medio,ms_ultimo,simultaneos}` e `fundos_modo`; o console de abertura mostra "Recorte local".
 - Acesso: `/recorte` e `/recorte/` em `rota_privada`. `POST /recorte` só de loopback, com `Host` do agente e `Origin` vazia ou do agente (a regra do `/photoroom/compose`; os postos pareados entram na etapa 2 da v83 com a mesma regra). `GET /recorte/` também só de loopback. Limite de 60 recortes novos por minuto por IP (o cache não conta).
@@ -1670,7 +1670,121 @@ Segurança de sessão (D2), sem relação com ponto. Usuário com `key` (fotógr
 - **IMPORTANTE.** Servidor Windows fora do fuso de Brasília grava as horas do dia erradas. O app avisa; a correção é no Windows (CHECKLIST-SERVIDOR, seção 1).
 - O resumo de hoje é recalculado a cada pedido; a tela só busca de novo depois de 5 min.
 
-### Próximo passo (v93)
+### Próximo passo (v94)
 
 - **Agenda automática de jogos**: o agente busca os jogos do Maracanã toda segunda-feira e o Calendário ganha o botão "Atualizar agora". Não existe fonte oficial única (CBF, Ferj e Conmebol publicam cada uma a sua); até lá, cadastro manual e CSV.
 - Também fora da v92: tempo da fila de impressão, idioma de quem foi ao Checkout e não comprou, exportar as estatísticas em CSV, conector do bip ou da catraca (formato do bip vem do Ronaldo), estatísticas de vários venues pela nuvem.
+
+## Os 2 primeiros cliques de cada sessão só para os fundos de IA (v93, 06/11/2026)
+
+Pedido do Eduardo (06/11 07:54), regra 15 de [fundos-ia-regras.md](fundos-ia-regras.md). Plano, critérios e respostas do Eduardo: `docs/planos/2026-11-06-dois-cliques-ia.md`. Testes: `testes/cliques_ia_agente.py`, `testes/cliques_ia_e2e_agente.py`, `testes/cliques_ia_fila_limpeza_agente.py`, `testes/cliques-ia.js`, `testes/cliques-ia-e2e.js`.
+
+Em cada sessão de ponto de campo, os N primeiros cliques (padrão 2: o 1º de corpo inteiro, o 2º mais fechado) são só base das montagens com os fundos de IA. Nunca são vendidos como foto normal. O servidor recorta as bases assim que chegam, com a sessão ainda aberta, e o Checkout abre com as 5 montagens. Se o fotógrafo esquecer, os N primeiros viram base do mesmo jeito (sem botão de devolver, D3).
+
+### Arquitetura
+
+- Agente: a regra é aplicada no fechamento da sessão (`sess_*`, v91). Na chegada, os N primeiros cliques da sessão aberta vão para a fila de recorte com prioridade (`rec_ia_loop`). A montagem continua no navegador (`fiaMontar`); montagem no servidor fica para a nuvem.
+- App: as bases saem da venda normal (Checkout, galeria, impressão, "Todas") e viram um conjunto de 5 montagens por venda.
+- Ordem dos cliques: hora do clique corrigida (`_t[pid][0]`, a mesma de `fotos`). A ordem de chegada não conta.
+
+### Configuração `config/ia` (`estado.db`, col `config`, id `ia`)
+
+Gravada pelo Painel de controle › Fotos para os fundos de IA (`iaCfgPanel`, `iaCfgSalva`) por `/ponto/docs`, com cópia em `localStorage['eterna.ia.v1']`.
+
+```json
+{"ligada": true, "cliques": 2, "pontos": ["terminal","campo2","campo3","campo4"], "volante": false, "por": "email", "em": "ISO"}
+```
+
+- Padrão (sem documento gravado): ligada, 2 cliques, os 4 pontos de campo, sem volante. Vestiário e volante ficam fora (D1) e podem ser ligados.
+- `cliques` de 1 a 3 (`IA_CLIQUES_MAX`), `pontos` até 20 itens válidos por `_re_ff_point`, booleanos. `ia_valida` recusa qualquer outra coisa.
+- Agente: `ia_cfg()` lê com cache de 3 s, fora do `sess_lock`; dentro do lock vale `ia_cfg_mem()` (último valor lido). Erro de leitura ou documento ilegível: fica o último valor válido. `POST /ponto/docs` com `config` zera o cache.
+- `estado_gravar`: `config/ia` inválida é recusada; apagar `config/ia` é recusado (religaria a regra pelo padrão; desliga-se pelo Painel). Toda mudança vai para o console com de, para, por e host.
+- App: as ações `ia-ligada`, `ia-cliques`, `ia-ponto`, `ia-volante` estão em `WRITE_OPS` (`u`) e `ACT_MOD` (`configuracao`); sem `configuracao.u` os campos ficam desabilitados. A cópia local só sobe ao servidor com `configuracao.u`.
+- A mudança vale para as sessões que fecharem depois dela. Sessão fechada não muda.
+
+### Sessão (`GET /sessoes` e arquivo do dia)
+
+```json
+{"ia": ["<pid1>","<pid2>"], "ia_regra": {"n": 2, "motivo": null}}
+```
+
+- `motivo`: `null | "desligada" | "volante" | "sem_funcao" | "ponto_fora" | "poucas_fotos"` (`_sess_ia_regra`, `_sess_ia_fecha`).
+- A regra vale com `funcao.tipo == 'campo'` e o ponto na lista. Sem função do dia ou fotógrafo sem cadastro: `sem_funcao`, nada some da venda.
+- Sessão que fecha com N fotos ou menos: `poucas_fotos`, as fotos ficam à venda e servem de base como antes.
+- Sessão aberta tem `ia = []`; a lista final só existe depois do fechamento. Fusão: valem os N primeiros da sessão fundida. Separação por rostos novos: cada sessão tem as suas bases. Trilha atrasada (cartão): a regra vale igual.
+- Reinício do agente: a sessão que fecha com "reinicio" calcula `ia`. Arquivo antigo sem `ia` fica com `ia = []` (nada retroativo).
+- LGPD: `sess_esquecer` tira o pid de `ia`, apaga os recortes de 3000 e 2400 na hora e cancela o trabalho de recorte (`rec_cancelar`; o trabalhador pula o cancelado e apaga 3000, 2400 e `.tmp` se a foto saiu da biblioteca durante o recorte).
+
+### Fila de recorte com prioridades
+
+- `rec_fila` é `PriorityQueue` com itens `(prio, seq, job)`:
+
+| Prioridade | Quem pede |
+| --- | --- |
+| 0 | Checkout ao vivo (`POST /recorte`) |
+| 1 | Base de IA da trilha ao vivo |
+| 2 | Base de IA da trilha atrasada (cartão) |
+| 3 | Recorte antecipado (`rec_pre_loop`) |
+
+- `rec_jobs` (pid → trabalho, sob o `rec_lock`): um pid tem um trabalho só. O segundo pedido espera o mesmo `Event`; o mais urgente sobe a prioridade do mesmo trabalho e fica com o menor lado (o de 2400 sai junto do de 3000).
+- `REC_FILA_MAX = 24` conta só a prioridade 0: a IA nunca dá `fila_cheia` ao cliente.
+- `rec_ia_loop` (thread ao lado do `rec_pre_loop`): tira os pids de `sess_ia_novos` (deque com teto de 2.000, `IA_NOVOS_MAX`), pede com lado 2400 (gera 3000 e 2400) e confere o 2400 no fim. Admissão por prioridade: no máximo `IA_FILA_ALVO = 2` trabalhos de IA por vez, contados por `_ia_ocupadas(pr)` (conta o já pego e o que espera com prioridade igual ou melhor). Assim a base ao vivo passa na frente da base de cartão já admitida. Não faz nada com o recorte indisponível ou no modo Photoroom (o `rec_pre_loop` recupera depois).
+- `rec_pre_escolha(fotos, x)`: com bases, as bases e depois as 2 primeiras fotos normais (plano B do Checkout, prioridade 3); sem bases, as 2 primeiras. Saiu o extra por pessoa (A14): de até 10 recortes por sessão para 2 a 4.
+- `/status.recorte` ganha `fila` (trabalhos ainda não pegos) e:
+
+```json
+{"ia": {"ligada": true, "fila": 0, "feitos": 0, "erros": 0, "pausa_disco": false, "livre_gb": 120.4, "piso_gb": 10, "atraso_p50_s": null, "atraso_p90_s": null}}
+```
+
+- Atraso = da chegada da foto (`u`) ao recorte pronto, nas últimas 200. O painel Recorte local (`fiaPanel`) mostra "Fotos para IA: fila X · p90 Y s desde a chegada · Z erros" e a pausa por disco.
+
+### Disco e limpeza
+
+- `ETERNA_RECORTES_PISO_GB` (padrão 10): abaixo disso de espaço livre, o `rec_ia_loop` pausa as bases (`/status.recorte.ia.pausa_disco`, uma linha no console). O Checkout continua recortando na hora.
+- `limpar_recortes` roda de hora em hora (antes, uma vez por dia). Não apaga, nem por idade nem pelo teto de 5 GB (`ETERNA_RECORTES_GB`), o recorte de base de IA das sessões de hoje, abertas ou fechadas, enquanto a foto está na biblioteca. O conjunto vem de `sess_ia_hoje()`, calculado antes e fora dos locks (fechadas: `ia`; abertas: as bases já pedidas e os N primeiros cliques de agora).
+
+### Fila do fotógrafo e galeria
+
+- `GET /fila-fotografo`, em cada grupo: `"ia": {"n":2, "motivo":null, "pids":["..."], "prontas":1}`. `pids` só no grupo aberto (mesma regra das miniaturas, só com `ffMiniOn()`); `prontas` conta o recorte de 2400 pronto, calculado fora do `sess_lock`.
+- Galeria (`_gal_confere_sessoes`): base de IA sai do manifesto sem recusar a publicação (`ignoradas`). A base já comprada (por navegador antigo) fica.
+
+### App (`index.html`)
+
+- `ingClose` grava `SIM.sessions[card].ia` (ids `ag_`). `srvIaCompleta` completa `ia` de sessão fechada que um navegador antigo materializou sem ela, menos a sessão paga. `srvLgpd` tira de `ia` também.
+- `demoSessions` tira as bases de `photos` e as põe em `ia` (sem filtrar olhos fechados). `iaSet()` junta todas as bases (com `DS_CACHE`). `impFotos` e `galAtualizar` pulam as bases, menos a que já está no `selected` de venda paga.
+- `FIA_BASE = {arq1950:0, podio:0, campeao2:1, campeaoarg:1, campeaocol:1, mirante:1, tunel:1}`: 0 = 1º clique (corpo inteiro), 1 = 2º clique (fechado). Fundo fora do mapa usa 1.
+- `lojaAIBase(card)` escolhe a sessão das bases: a âncora da venda e, se ela não tiver bases, a próxima (D2). Menor ou escola: só a base em `so.ids`.
+- `lojaAI(card)`: uma montagem por fundo de `bgOn()` (5 por venda), item `{t:'ai', id:'ag_<pid>', bg, k:'ai:ag_<pid>|<fundo>', ses}`, mesma chave de antes (carrinho, `aiSel`, impressão e pós-venda iguais). Base ruim (`FIA_RUIM`, olhos fechados, sem imagem) usa a outra; as duas ruins voltam ao jeito antigo (`lojaAIAntigo`, as 2 primeiras fotos normais do cliente).
+- `iaAquecer(card)`: monta as 5 no `COMP`, uma por vez, assim que a selfie ou o código acha a sessão (só no modo local).
+- A15: a selfie também compara as bases (`faceFind` percorre `photos` e `ia`). A base reconhecida entra em `so.ids` e libera as montagens; nunca aparece como foto.
+- O total do "Todas" não conta as bases.
+- Upload automático: tags `UP_IA_TAG` ("Fundo IA 1 · corpo inteiro", "Fundo IA 2 · fechada"; com a sessão aberta, "Fundo IA?"), encurtadas com reticências e texto inteiro no `title`; pílula do cabeçalho pela regra do servidor (`g.ia`, `UP_IA_MOTIVO`); `upIaPoll`. A tag "IA" do ajuste automático não mudou.
+- Fila do fotógrafo: `ffIa` mostra "Fundo IA: falta o 2º clique" ou "Fundo IA ✓✓"; miniaturas das bases primeiro com `.ff-iamk`.
+- Sem texto novo de cliente: a espera usa `aiMaking` (5 línguas).
+
+### Vendas de navegador antigo
+
+- Um navegador sem a v93 mostra as bases como fotos e pode vendê-las. O agente aceita a venda (já paga) e grava `ia_vendidas` no evento, com uma linha no console (`ev_receber`).
+- Base já paga continua na galeria (`galAtualizar` e `_gal_confere_sessoes`) e na impressão (`impFotos`). `srvIaCompleta` não mexe em sessão paga.
+
+### Testes e variáveis
+
+- `REC_FALSO_SEG`: recorte falso só por atributo do módulo, ligado pelos testes. `ETERNA_RECORTE_FALSO` é ignorada (aviso no console). `/status.recorte.falso` aparece quando ligado.
+
+### Ordem de deploy
+
+1. App (`index.html`).
+2. Recarregar todos os navegadores dos caixas (navegador antigo vende base como foto).
+3. Agente no servidor do ponto (Ronaldo).
+
+### Pendências de segurança
+
+- **IMPORTANTE.** `config/ia` grava pelo `/ponto/docs` sem login no servidor. Qualquer posto pareado consegue desligar a regra ou subir para 3 cliques. Mitigação: formato validado, teto de 3, apagar recusado, mudança no console. Fecha com o login no servidor (plano de 04/11).
+- **IMPORTANTE.** `POST /imprimir` do agente não detecta base de IA: recebe as imagens prontas do navegador. A defesa está só no `impFotos` do app.
+- **IMPORTANTE.** Navegador antigo vende base como foto até ser recarregado. O agente só registra (`ia_vendidas`); não recusa a venda.
+- EXIF forjado pode mudar a ordem dos cliques e transformar outra foto em base. Impacto baixo: a foto não se perde, vira montagem.
+- Disco: cada base gera PNG de 3000 e 2400 px. Medir no servidor; se precisar, subir `ETERNA_RECORTES_GB`.
+
+### Fora desta entrega
+
+Montagem no servidor (nuvem e galeria online), aviso de enquadramento do 1º clique, botão de devolver as bases à venda, Estatísticas contando as bases à parte, Curadoria das bases, montagem antecipada no modo Photoroom.
