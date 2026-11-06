@@ -11,7 +11,7 @@ node -e "const h=require('fs').readFileSync('index.html','utf8');const m=h.match
 python3 -m py_compile agente/eterna-agente.py && echo "OK sintaxe do agente" || { echo "FALHA sintaxe do agente"; F=1; }
 FALHAS=${F:-0}
 # v91: testes do agente que rodam sozinhos (HOME temporário; os outros *_agente.py são chamados pelos .js)
-for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/estatisticas_agente.py testes/v92_testador_agente.py; do
+for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/estatisticas_agente.py testes/v92_testador_agente.py testes/cliques_ia_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   LINHA=$(echo "$OUT" | grep -E "^(OK|FALHA)")
   # v91 (revisão S9): teste que quebra sem imprimir OK/FALHA também conta como falha
