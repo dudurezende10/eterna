@@ -2443,14 +2443,17 @@ def rec_modelo(nome):
     return None
 
 
+REC_FALSO_SEG = None     # v93 (segurança S2): só os testes ligam (m.REC_FALSO_SEG = s): o "recorte" copia a foto e demora s
+
+
 def _rec_falso():
-    """ETERNA_RECORTE_FALSO=<segundos> só nos testes: o "recorte" copia a foto e demora esses segundos (sem modelos)."""
-    v = os.environ.get("ETERNA_RECORTE_FALSO")
-    if not v:
+    """Segundos do recorte falso dos testes, ou None (sempre None em produção: não há variável de ambiente para isto)."""
+    v = REC_FALSO_SEG
+    if v is None or isinstance(v, bool):
         return None
     try:
         return min(max(float(v), 0.0), 30.0)
-    except ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -2492,6 +2495,7 @@ def rec_status():
                 "fila": sum(1 for j in rec_jobs.values() if not j["pego"]),
                 "antecipado": {"ligado": REC_PRE, "escolhidas": rec.get("pre_escolhidas", 0), "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
                 "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC,
+                **({"falso": True} if _rec_falso() is not None else {}),
                 "ia": {"ligada": lig, "fila": ia["fila"], "feitos": ia["feitos"], "erros": ia["erros"],
                        "atraso_p50_s": _pct(ia["atrasos"], 0.5), "atraso_p90_s": _pct(ia["atrasos"], 0.9)}}
 
@@ -2948,7 +2952,9 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
             with rec_lock:
                 rec["feitos"] += 1
         if destino != cheio:
-            shutil.copyfile(cheio, destino)
+            shutil.copyfile(cheio, destino + ".f.tmp")
+            os.chmod(destino + ".f.tmp", 0o600)
+            os.replace(destino + ".f.tmp", destino)
         return destino
     if not os.path.exists(cheio):
         t0 = time.time()
@@ -6978,6 +6984,8 @@ def fuso_ajusta():
 def main():
     fuso_ajusta()
     print("Eterna · agente do ponto")
+    if os.environ.get("ETERNA_RECORTE_FALSO"):
+        print("  ETERNA_RECORTE_FALSO ignorado: o recorte falso é só dos testes (v93, segurança S2)")
     for x in ORIGENS_SEM_ESQUEMA:
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta

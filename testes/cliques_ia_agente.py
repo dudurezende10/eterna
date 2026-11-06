@@ -2,7 +2,7 @@
 # docs/planos/2026-11-06-dois-cliques-ia.md, critérios 1, 5 a 13 e 15 a 18 do lado do agente). Roda sozinho
 # (testes/rodar.sh) com HOME temporário:  python3 -I testes/cliques_ia_agente.py agente/eterna-agente.py
 # O módulo é importado aqui, com relógio injetado e rostos sintéticos (como em testes/sessoes_agente.py), sem OpenCV, e
-# o recorte é falso (ETERNA_RECORTE_FALSO: copia a foto e demora um pouco; nunca foto de convidado nem modelo de verdade).
+# o recorte é falso (m.REC_FALSO_SEG: copia a foto e demora um pouco; nunca foto de convidado nem modelo de verdade).
 import importlib.util, json, os, random, sys, tempfile, threading, time
 
 AG = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "agente", "eterna-agente.py")
@@ -18,8 +18,7 @@ HA = tempfile.mkdtemp()
 os.environ["HOME"] = HA
 os.environ["USERPROFILE"] = HA
 os.environ["ETERNA_SEM_OPENCV"] = "1"
-os.environ["ETERNA_RECORTE_FALSO"] = "0.15"
-for k in ("ETERNA_SESSAO_PAUSA", "ETERNA_SESS_LIMITES", "ETERNA_SEM_RECORTE", "ETERNA_BUSCA_DIAS"):
+for k in ("ETERNA_RECORTE_FALSO", "ETERNA_SESSAO_PAUSA", "ETERNA_SESS_LIMITES", "ETERNA_SEM_RECORTE", "ETERNA_BUSCA_DIAS"):
     os.environ.pop(k, None)
 os.makedirs(os.path.join(HA, "Eterna"), exist_ok=True)
 json.dump({"users": {n: "x" * 12 for n in ("carlos", "samuel", "marinara", "yago", "marcio")}},
@@ -27,6 +26,11 @@ json.dump({"users": {n: "x" * 12 for n in ("carlos", "samuel", "marinara", "yago
 sp = importlib.util.spec_from_file_location("ag", AG)
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
+os.environ["ETERNA_RECORTE_FALSO"] = "1"
+ok(m._rec_falso() is None and "falso" not in m.rec_status(), "S2: a variável de ambiente não liga o recorte falso")
+del os.environ["ETERNA_RECORTE_FALSO"]
+m.REC_FALSO_SEG = 0.15
+ok(m.rec_status().get("falso") is True, "S2: /status.recorte.falso quando ligado")
 LIG = [False]
 m.sess_rostos_on = lambda: LIG[0]
 
@@ -219,6 +223,7 @@ dt = time.time() - t0
 ok(all(os.path.exists(m.rec_arquivo(p, l)) for p in (r1, r2) for l in (2400, 3000)) and de(r1)["status"] == "aberta",
    "5: recortes de 3000 e 2400 das 2 bases com a sessão aberta (%.1f s)" % dt)
 ok(not os.path.exists(m.rec_arquivo(r3)), "5: a 3ª foto não é recortada na chegada")
+ok(all(oct(os.stat(m.rec_arquivo(r1, l)).st_mode & 0o777) == "0o600" for l in (2400, 3000)), "S2: PNG com chmod 600")
 time.sleep(0.3)
 st = m.rec_status()["ia"]
 ok(set(st) == {"ligada", "fila", "feitos", "erros", "atraso_p50_s", "atraso_p90_s"} and st["feitos"] >= 2 and st["atraso_p90_s"] is not None,
@@ -235,7 +240,7 @@ def foto(nome):
 
 
 # 6: 20 trabalhos de IA pendentes (e mais 24 para passar do teto antigo); o Checkout passa na frente e nunca fila_cheia
-os.environ["ETERNA_RECORTE_FALSO"] = "0.05"
+m.REC_FALSO_SEG = 0.05
 blk, _ = m.rec_enfileirar("b10c000000", foto("b10c000000"), 3000, m.REC_PRIO_ANTECIPADO)   # trabalho em andamento
 time.sleep(0.02)
 ia_jobs = []
@@ -261,7 +266,7 @@ for j in ia_jobs:
     j["ev"].wait(30)
 
 # 7: o mesmo pid pedido pela IA e pelo Checkout ao mesmo tempo = um recorte só
-os.environ["ETERNA_RECORTE_FALSO"] = "0.3"
+m.REC_FALSO_SEG = 0.3
 blk, _ = m.rec_enfileirar("b10c000001", foto("b10c000001"), 3000, m.REC_PRIO_ANTECIPADO)
 time.sleep(0.05)
 antes = m.rec_status()["feitos"]
@@ -278,7 +283,7 @@ ok(rr.get("r") and rr["r"][0] == m.rec_arquivo("d0b1e00001") and os.path.exists(
 ok(m.rec_status()["feitos"] - antes == 2, "7: um recorte para a foto (mais o que estava em andamento): %r" % (m.rec_status()["feitos"] - antes))
 
 # 11: atrasada (prio 2) atrás da ao vivo (prio 1) que chegou depois
-os.environ["ETERNA_RECORTE_FALSO"] = "0.2"
+m.REC_FALSO_SEG = 0.2
 blk, _ = m.rec_enfileirar("b10c000002", foto("b10c000002"), 3000, m.REC_PRIO_ANTECIPADO)
 time.sleep(0.05)
 reset()
