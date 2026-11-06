@@ -397,16 +397,18 @@ for pidl, quando in (("1c0de00001", "fila"), ("1c0de00002", "andando")):
 blk["ev"].wait(10)
 m.REC_FALSO_SEG = 0.15
 
-# 17: limpeza com teto baixo não apaga a base de IA de hoje
+# 17: limpeza com teto baixo não apaga a base de IA de hoje (relógio fixo: meio-dia de hoje, nada vira "ontem" perto da meia-noite)
 reset()
-agora = time.time()
+_lt = time.localtime()
+HOJE12 = time.mktime((_lt.tm_year, _lt.tm_mon, _lt.tm_mday, 12, 0, 0, 0, 0, -1))
+agora = HOJE12
 K = [add("carlos", agora - 900 + i * 3, cap=agora - 901 + i * 3) for i in range(4)]
 m.sess_tick(agora - 600)
 for p in K:
     m.rec_fazer(p, m.lib[p]["file"], 2400)
 teto = m.REC_TETO_GB
 m.REC_TETO_GB = 0
-m.limpar_recortes()
+m.limpar_recortes(agora=HOJE12)
 m.REC_TETO_GB = teto
 ok(all(os.path.exists(m.rec_arquivo(p, l)) for p in K[:2] for l in (2400, 3000)), "17: bases de IA de hoje ficam")
 ok(not any(os.path.exists(m.rec_arquivo(p)) for p in K[2:]), "17: as outras saem pelo teto")
@@ -444,7 +446,7 @@ ok(rv["resultados"][0]["s"] == "ok" and _row and json.loads(_row[0]).get("ia_ven
 
 # 16: reinício com sessão aberta: fecha com "reinicio" e ia calculada; o recorte antecipado escolhe as bases
 reset()
-agora = time.time()
+agora = HOJE12
 R = [add("carlos", agora - 30 + i * 3, cap=agora - 31 + i * 3) for i in range(4)]
 xr = de(R[0])
 ok(xr["status"] == "aberta", "16: aberta antes do reinício")
