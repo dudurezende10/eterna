@@ -3626,7 +3626,7 @@ function esPresenca(o){o=o||{};const hoje=o.hoje||venueToday();const out={};
       if(f&&typeof f==='object'){escalado=f.tipo!=='folga';if(f.tipo==='campo')ponto=f.point||null;}   // S9: a função do dia manda
       else escalado=!(Array.isArray(fol[r.k])&&fol[r.k].map(Number).includes(wd));                       // sem função: a folga fixa daquele dia
       const ini=(ponto&&hmNorm(tu.por_ponto[ponto]))||tu.padrao;                                          // S10: volante usa o padrão
-      const m=pres&&pres[r.k];const pf=((o.primeiras||{})[d]||{})[r.k]||null;
+      const pk=presChave(r.k);const m=pres&&(pres[pk]||pres[r.k]);const pf=((o.primeiras||{})[d]||{})[pk]||((o.primeiras||{})[d]||{})[r.k]||null;
       const lin={dia:d,escalado,inicio:escalado?ini:null,tol:tu.tolerancia,marca:m&&m.primeiro?{fonte:m.fonte==='fotos'?'fotos':'login',hhmm:hmVenue(m.primeiro)}:null,atraso:0,primeira_foto:pf?hmVenue(pf):null,estado:''};
       if(!pres)lin.estado=escalado?'sem_dado':'folga';
       else if(escalado){
@@ -3899,11 +3899,17 @@ function turnoSalvar(){const pad=hmNorm(($('#turno-padrao')||{}).value);const to
   toast(state.db?'Horários salvos':'Sem o servidor do ponto: vale só neste navegador');render();}
 // ---------- Presença (D2/S1): o login no posto marca o dia no servidor do ponto, com a hora do servidor ----------
 let PRES_ENV=false;
-async function presencaMarcar(){const u=state.user;if(!u||!u.key||PRES_ENV||!esOn()||state.lojaRota||state.pub)return false;const hoje=venueToday();let m={};try{m=JSON.parse(localStorage.getItem('eterna.presenca.v1')||'{}')||{};}catch(e){m={};}
-  if(m[u.key]===hoje)return false;PRES_ENV=true;
+// R2 (revisão): 400 (chave fora do cadastro) não tenta de novo até o próximo login; 429 ou falha espera 60 s
+const PRES={bloq:null,ate:0};
+const presChave=k=>semAcento(k).trim().slice(0,40); // a mesma chave do agente (sem_acento, até 40)
+async function presencaMarcar(){if(state.lojaRota||state.pub)return false;if(sessaoVirada())return false; // R1: sessão de ontem nunca marca o dia novo
+  const u=state.user;if(!u||!u.key||PRES_ENV||!esOn())return false;const ch=presChave(u.key);if(PRES.bloq===ch||Date.now()<PRES.ate)return false;
+  const hoje=venueToday();let m={};try{m=JSON.parse(localStorage.getItem('eterna.presenca.v1')||'{}')||{};}catch(e){m={};}
+  if(m[ch]===hoje)return false;PRES_ENV=true;
   try{const r=await fetch(state.agent.url+'/ponto/presenca',{method:'POST',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({chave:u.key,posto:postoNome()})});const j=await r.json().catch(()=>({}));
-    if(r.ok&&j.ok&&state.user===u){m={[u.key]:hoje,...Object.fromEntries(Object.entries(m).filter(([k,d])=>k!==u.key&&d===hoje))};try{localStorage.setItem('eterna.presenca.v1',JSON.stringify(m));}catch(e){}return true;}}
-  catch(e){}finally{PRES_ENV=false;}return false;}
+    if(r.ok&&j.ok&&state.user===u){m={[ch]:hoje,...Object.fromEntries(Object.entries(m).filter(([k,d])=>k!==ch&&d===hoje))};try{localStorage.setItem('eterna.presenca.v1',JSON.stringify(m));}catch(e){}return true;}
+    if(r.status===400)PRES.bloq=ch;else PRES.ate=Date.now()+60e3;}
+  catch(e){PRES.ate=Date.now()+60e3;}finally{PRES_ENV=false;}return false;}
 // D2: a sessão de quem tem chave de fotógrafo vence na virada do dia (no fuso do venue)
 function sessaoVencida(s,u){return !!(u&&u.key&&s&&s.at&&diaVenue(Date.parse(s.at))!==venueToday());}
 function sessaoVirada(){const u=state.user;if(!u||!u.key)return false;let s=null;try{s=JSON.parse(localStorage.getItem('eterna.session')||'null');}catch(e){}if(!sessaoVencida(s,u))return false;logout();toast('Novo dia: entre de novo');return true;}
@@ -4501,7 +4507,7 @@ function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;const m=ACT_MOD[a]
 
 state.user=null;state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};
 function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;if(sessaoVencida(s,u)){try{localStorage.removeItem('eterna.session')}catch(e){}return false;} /* v92 (D2): sessão de fotógrafo de ontem pede login de novo */state.user=u;return true;}catch(e){return false}}
-function login(email){const u=userFor(email);if(!u){state.auth.err='Este e-mail não tem acesso ao Eterna.';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}setTimeout(presencaMarcar,0);
+function login(email){const u=userFor(email);if(!u){state.auth.err='Este e-mail não tem acesso ao Eterna.';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;loginMark(u.email);PRES.bloq=null;PRES.ate=0;try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}setTimeout(presencaMarcar,0);
   state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
 function logout(){camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'email',email:'',code:'',pending:null,err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}

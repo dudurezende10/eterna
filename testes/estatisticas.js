@@ -88,6 +88,20 @@ try{
     await pg.goto(U);await pg.waitForTimeout(600);const st=await pg.evaluate(()=>({u:!!ETERNA.state.user,v:ETERNA.state.view,p:localStorage.getItem('eterna.presenca.v1'),s:localStorage.getItem('eterna.session')}));
     ok(!st.u&&st.v==='entrar'&&st.p==='{}'&&!st.s,'8: sessão de ontem pede login de novo e nada é marcado: '+J(st));ok(AG.pres.length===n0,'8: sem presença enviada com a sessão vencida');
     await ctx.close();}
+  // R1: com o app aberto desde ontem, às 00:00:30 a presença não marca o dia novo (a sessão vence antes)
+  {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'carlos@eterna.photo');for(let i=0;i<40&&!AG.pres.length;i++)await pg.waitForTimeout(100);
+    await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.session'));s.at=new Date(Date.parse(ETERNA.venueToday()+'T00:00:00-03:00')-60e3).toISOString();localStorage.setItem('eterna.session',JSON.stringify(s));localStorage.setItem('eterna.presenca.v1','{}');});
+    const n1=AG.pres.length;await pg.clock.setFixedTime(new Date(HOJE+'T00:00:30-03:00'));
+    const r=await pg.evaluate(async()=>({ret:await ETERNA.presencaMarcar(),u:!!ETERNA.state.user,p:localStorage.getItem('eterna.presenca.v1')}));await pg.waitForTimeout(150);
+    ok(r.ret===false&&!r.u&&r.p==='{}'&&AG.pres.length===n1,'R1: 00:00:30 com sessão de ontem não marca presença e pede login: '+J(r));
+    await ctx.close();}
+  // R2: 400 não repete até o próximo login; 429 espera 60 s
+  for(const st of [400,429]){const {ctx,pg}=await nova();let n=0;await agente(ctx);await ctx.route(ORIG+'/ponto/presenca',r=>{n++;r.fulfill({status:st,contentType:'application/json',body:J({error:'x'})});});
+    await entrar(pg,'carlos@eterna.photo');for(let i=0;i<30&&!n;i++)await pg.waitForTimeout(100);
+    for(let i=0;i<4;i++){await pg.evaluate(()=>ETERNA.presencaMarcar());await pg.waitForTimeout(60);}
+    ok(n===1,'R2: depois de '+st+' não tenta de novo em seguida: '+n);
+    if(st===400){await pg.evaluate(()=>{localStorage.removeItem('eterna.session');});await entrar(pg,'carlos@eterna.photo');for(let i=0;i<30&&n<2;i++)await pg.waitForTimeout(100);ok(n===2,'R2: o próximo login tenta de novo: '+n);}
+    await ctx.close();}
   // ---------- funções puras: 9, 10, 11, 12, 13, 14, 15, 20, 21 ----------
   {const {ctx,pg}=await nova();await entrar(pg,'eduardo@eduardorezende.com');
     const R=await pg.evaluate(()=>{const E=ETERNA;const ep=hm=>Date.parse('2026-11-04T'+hm+':00-03:00')/1000;const fs=[{k:'carlos',nome:'Carlos'}];
