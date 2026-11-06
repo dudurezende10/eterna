@@ -125,7 +125,9 @@ try{
   // ---------- tela com o servidor: 12, 14, 21, 22, 23, 25, 27, folgas fixas e turnos ----------
   {const {ctx,pg}=await nova();await agente(ctx);AG.dias=[];for(let i=0;i<366;i++)AG.dias.push(dia(addD(HOJE,-i)));
     await entrar(pg,'eduardo@eduardorezende.com');await pg.waitForTimeout(500);
-    await pg.evaluate(([de,ate])=>{const E=ETERNA;E.state.range={from:de,to:ate};E.state.es.sec='a';E.state.es.rover=false;E.go('estatisticas');},[addD(HOJE,-365),HOJE]);await pg.waitForTimeout(900);
+    await pg.evaluate(([de,ate])=>{const E=ETERNA;E.state.range={from:de,to:ate};E.state.es.sec='a';E.state.es.rover=false;E.go('estatisticas');},[addD(HOJE,-365),HOJE]);
+    const tq=Date.now();for(let i=0;i<80&&!(await pg.evaluate(()=>(ETERNA.state.es.dias||[]).length===366));i++)await pg.waitForTimeout(100);medidas.carga_ms=Date.now()-tq; // espera o agente falso conectar e o /metricas/dia de 366 dias
+
     const m=await pg.evaluate(()=>{const E=ETERNA;const t={};for(const s of ['a','b','c','d','e','f']){E.state.es.sec=s;const t0=performance.now();E.render();t[s]=Math.round(performance.now()-t0);}E.state.es.sec='a';E.render();
       return {t,n:(E.state.es.dias||[]).length,kpi:document.querySelector('.pn-kpi[data-k="fat"] .pn-big').textContent,semdet:(document.querySelector('.es-semdet')||{}).textContent||''};});
     medidas.render_ms=m.t;ok(m.n===366,'27: 366 dias carregados: '+m.n);ok(Math.max(...Object.values(m.t))<300,'27: cada seção desenha em menos de 300 ms: '+J(m.t));
