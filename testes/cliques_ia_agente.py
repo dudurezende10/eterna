@@ -199,7 +199,12 @@ m.estado_db = lambda: (_ for _ in ()).throw(RuntimeError("banco ocupado"))
 m._ia_cfg["t"] = 0
 ok(m.ia_cfg()["ligada"] is False, "12: erro de leitura mantém o último valor válido")
 m.estado_db = _edb
-m.estado_gravar({"docs": [{"col": "config", "id": "ia", "valor": None}]})
+r12 = m.estado_gravar({"docs": [{"col": "config", "id": "ia", "valor": None}]})
+m._ia_cfg["t"] = 0
+ok(r12["gravados"] == 0 and m.ia_cfg()["ligada"] is False, "12 (segurança): apagar o config/ia é recusado e a regra fica desligada: %r" % r12)
+with m.estado_lock:                                  # sem documento (venue novo) = padrão
+    _d = m.estado_db(); _d.execute("delete from doc where col = 'config' and id = 'ia'"); _d.commit(); _d.close()
+m._ia_cfg["t"] = 0
 ok(m.ia_cfg() == m.ia_padrao(), "12: sem documento = padrão")
 
 # 13: Fila do fotógrafo: grupo aberto com 1 foto = n 2, 1 pid; fechada traz prontas

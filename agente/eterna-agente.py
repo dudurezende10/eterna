@@ -5394,6 +5394,9 @@ def estado_gravar(body, quem=""):
                     if novo and db.execute("select count(*) from doc where col = 'agenda' and valor is not null").fetchone()[0] >= AGENDA_DOCS_MAX:
                         continue                                # teto da agenda (revisão)
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
+                    if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
+                        print("  config/ia: apagar recusado · de %s" % (quem or "?"))
+                        continue
                     if v is not None:
                         ok_ = ia_valida(v)
                         if ok_ is None:
