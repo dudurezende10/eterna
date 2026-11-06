@@ -64,7 +64,7 @@ evs = [
     {"tipo": "pagar", "idem": "vsab1:2", "venda": "vsab1", "em": iso(t1040), "por": {"nome": "Ana"}, "dados": {}},
     {"tipo": "criar", "idem": "vsab2:1", "venda": "vsab2", "em": iso(t1040 + 3600), "dados": {"card": "LPSAB0002", "total": 190}},
     {"tipo": "pagar", "idem": "vsab2:2", "venda": "vsab2", "em": iso(t1040 + 3600), "dados": {}},
-    {"tipo": "criar", "idem": "vsab3:1", "venda": "vsab3", "em": iso(t1040 + 7200), "dados": {"card": "LPSAB0003", "total": 70, "canal": "balcao", "cart": [{"id": "arq", "v": 70}]}},
+    {"tipo": "criar", "idem": "vsab3:1", "venda": "vsab3", "em": iso(t1040 + 7200), "dados": {"card": "LPSAB0003", "total": 70, "canal": "balcao", "lang": "en", "cart": [{"id": "arq", "v": 70}]}},   # balcão com lang fica fora do idioma
     {"tipo": "pagar", "idem": "vsab3:2", "venda": "vsab3", "em": iso(t1040 + 7200), "dados": {}},
     {"tipo": "criar", "idem": "vsab4:1", "venda": "vsab4", "em": iso(t1040 + 100), "dados": {"card": "LPSAB0004", "total": 999, "canal": "checkout", "lang": "pt"}},
 ]

@@ -111,7 +111,18 @@ try{
       const h2=E.cfgNovo({historico:[{desde:'2026-11-01',folgas:{carlos:[3]}}]},'2026-11-05',{folgas:{carlos:[1,2]}},'x');
       const b=E.esPresenca({dias:['2026-11-04','2026-11-11'],fotografos:fs,funcoes:{'2026-11-11':{carlos:{tipo:'folga'}}},escala:h2,turnos:null,presencas:{'2026-11-04':{},'2026-11-11':{}},hoje:'2026-11-12'}).carlos.dias.map(x=>x.estado);
       const vol=E.esPresenca({dias:['2026-11-04'],fotografos:fs,funcoes:{'2026-11-04':{carlos:{tipo:'campo',point:'p1'}}},escala:null,turnos:{historico:[{desde:'2026-01-01',padrao:'09:00',tolerancia:10,por_ponto:{p1:'10:00'}}]},presencas:{'2026-11-04':{carlos:{primeiro:ep('10:05'),fonte:'fotos'}}},hoje:'2026-11-05'}).carlos.dias[0];
-      return {a:a.dias.map(x=>x.estado),fal:a.faltas,fol:a.folgas,a908:at('09:08'),a925:at('09:25'),b,vol};});
+      const T9={historico:[{desde:'2026-01-01',padrao:'09:00',tolerancia:10,por_ponto:{}}]};const base={dias:['2026-11-04'],fotografos:fs,funcoes:{},escala:null,turnos:T9,hoje:'2026-11-05'};
+      const fora=E.esPresenca({...base,presencas:{'2026-11-04':{}},fora:{'2026-11-04':[[ep('08:30'),ep('09:40')]]}}).carlos;
+      const foraAtr=E.esPresenca({...base,presencas:{'2026-11-04':{carlos:{primeiro:ep('09:45'),fonte:'login',acesso:'remota'}}},fora:{'2026-11-04':[[ep('08:30'),ep('09:40')]]}}).carlos;
+      const foraDepois=E.esPresenca({...base,presencas:{'2026-11-04':{}},fora:{'2026-11-04':[[ep('12:00'),ep('13:00')]]}}).carlos;
+      const ab=E.esPresenca({...base,presencas:{'2026-11-04':{}},abonos:{'2026-11-04':{carlos:{motivo:'médico'}}}}).carlos;
+      const fe=E.esPresenca({...base,presencas:{'2026-11-04':{}},fechados:{'2026-11-04':true}}).carlos;
+      const rem=E.esPresenca({...base,presencas:{'2026-11-04':{carlos:{primeiro:ep('08:50'),fonte:'login',acesso:'remota'}}}}).carlos.dias[0];
+      return {a:a.dias.map(x=>x.estado),fal:a.faltas,fol:a.folgas,a908:at('09:08'),a925:at('09:25'),b,vol,
+        fora:[fora.dias[0].estado,fora.faltas],foraAtr:[foraAtr.dias[0].estado,foraAtr.atrasos,foraAtr.presencas],foraDepois:foraDepois.dias[0].estado,ab:[ab.dias[0].estado,ab.faltas,ab.dias[0].abono],fe:[fe.dias[0].estado,fe.faltas,fe.escalado],rem:rem.marca};});
+    ok(J(R.fora)===J(['fora',0])&&J(R.foraAtr)===J(['fora',0,1])&&R.foraDepois==='falta','servidor fora no início do turno: sem dado, nunca falta nem atraso: '+J([R.fora,R.foraAtr,R.foraDepois]));
+    ok(J(R.ab)===J(['abonado',0,'médico'])&&J(R.fe)===J(['fechado',0,0]),'abono e estádio fechado tiram a falta: '+J([R.ab,R.fe]));
+    ok(R.rem&&R.rem.acesso==='remota','marca com o tipo de acesso: '+J(R.rem));
     ok(J(R.a)===J(['folga','falta'])&&R.fal===1&&R.fol===1,'9: folga fixa seg/ter: segunda folga, quarta falta: '+J(R.a));
     ok(R.a908.estado==='presente'&&R.a908.atraso===0&&R.a925.estado==='atraso'&&R.a925.atraso===25,'10: 09:08 não é atraso, 09:25 é 25 min: '+J([R.a908,R.a925]));
     ok(J(R.b)===J(['folga','folga']),'11: mudar a folga hoje não muda a quarta anterior (e a função do dia vale por cima): '+J(R.b));
@@ -179,7 +190,32 @@ try{
     await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.fill('#turno-padrao','08:30');await pg.fill('#turno-tol','15');await pg.click('[data-act="turno-salvar"]');
     const tc=await pg.evaluate(()=>ETERNA.TURNOS_CFG);ok(tc&&tc.historico[0].padrao==='08:30'&&tc.historico[0].tolerancia===15,'turnos: Admin salva o horário: '+J(tc));
     ok(await pg.$('#main [data-act="view"][data-v="calendario"]'),'D3: atalho do Calendário no Painel de controle');
+    // 3: venda de verdade no balcão (caixaConfirm) com a tela em inglês: canal balcao, sem lang
+    const card2=await pg.evaluate(()=>{const E=ETERNA;const c=E.demoSessions().filter(s=>s.photos.length>=3&&!['paga','cancelada'].includes((E.SIM.sessions[s.card]||{}).status))[2].card;const S=E.SIM;const s=S.sessions[c]=S.sessions[c]||{};
+      s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='caixa';E.render();return c;});
+    await pg.click('[data-act="caixa-confirm"]');
+    for(let i=0;i<60&&!AG.eventos.some(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);i++)await pg.waitForTimeout(200);
+    const evB=AG.eventos.find(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);await pg.evaluate(()=>{ETERNA.state.lang='pt';});
+    ok(evB&&evB.dados.canal==='balcao'&&evB.dados.lang==null&&evB.dados.t0==null&&Array.isArray(evB.dados.cart)&&evB.dados.cart.length>0,'3: caixaConfirm manda canal balcao, sem lang (tela em inglês) e com cart: '+J(evB&&{canal:evB.dados.canal,lang:evB.dados.lang,cart:evB.dados.cart}));
+    // revisão: aviso de fuso diferente do venue
+    const fz=await pg.evaluate(()=>{const E=ETERNA;E.state.agent.fuso={tz:'UTC',offset_min:0};E.go('estatisticas');const a=!!document.getElementById('es-fuso');E.state.agent.fuso={tz:'America/Sao_Paulo',offset_min:E.venueOffsetMin()};E.render();return {a,b:!!document.getElementById('es-fuso')};});
+    ok(fz.a&&!fz.b,'fuso: avisa só quando o servidor está em outro fuso: '+J(fz));
+    // revisão: importação de vários dias espera o 429 e tenta de novo
+    let n429=0;await ctx.route(ORIG+'/ponto/entradas',r=>{n429++;if(n429===2){r.fulfill({status:429,contentType:'application/json',body:J({error:'muitos pedidos'})});return;}const bd=JSON.parse(r.request().postData());r.fulfill({status:200,contentType:'application/json',body:J({ok:true,aceitas:bd.seg.length,recusadas:0})});});
+    await pg.evaluate(()=>{ETERNA.esImpEspera(200);ETERNA.state.es.sec='f';ETERNA.render();});const d2=addD(HOJE,-2),d3=addD(HOJE,-3);
+    await pg.setInputFiles('[data-act="es-importar"]',{name:'dias.csv',mimeType:'text/csv',buffer:Buffer.from(`data_hora;origem\n${d2} 10:00:00;bip\n${d3} 11:00:00;bip\n${addD(HOJE,-4)} 12:00:00;bip\n`)});
+    for(let i=0;i<40&&!(await pg.evaluate(()=>{const r=ETERNA.state.es.impRes;return r&&r.arquivo==='dias.csv';}));i++)await pg.waitForTimeout(100);
+    const r429=await pg.evaluate(()=>ETERNA.state.es.impRes);ok(n429===4&&r429&&r429.dias===3&&r429.aceitas===3,'importação de 3 dias com um 429 no meio: tenta de novo e grava os 3: '+J({n429,r429}));
     await ctx.close();}
+  // revisão: abono pela Supervisora na Escala (escala.u, auditLog) e fotógrafo sem escala.u não abona
+  {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'supervisor@eterna.photo');await pg.evaluate(()=>ETERNA.go('escala'));
+    const ontem=addD(HOJE,-1);await pg.selectOption('#ab-k','carlos');await pg.fill('#ab-dia',ontem);await pg.fill('#ab-motivo','<b>consulta</b> médica');await pg.click('[data-act="ab-salvar"]');await pg.waitForTimeout(120);
+    const a=await pg.evaluate(()=>({ab:ETERNA.ABONOS,log:JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').filter(e=>e.acao==='abono').length,html:document.getElementById('abonos').innerHTML}));
+    const x=a.ab[ontem+'|carlos'];ok(x&&x.motivo==='bconsulta/b médica'&&a.log===1&&!/<b>consulta/.test(a.html),'abono pela Supervisora, limpo e no auditLog: '+J(x));
+    await pg.click(`[data-act="ab-desfazer"][data-id="${ontem}|carlos"]`);ok(await pg.evaluate(()=>Object.keys(ETERNA.ABONOS).length===0),'abono desfeito');
+    await ctx.close();}
+  {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'carlos@eterna.photo');const r=await pg.evaluate(()=>{ETERNA.state.view='escala';ETERNA.render();const tem=!!document.querySelector('[data-act="ab-salvar"]');const g=ETERNA.abGrava(ETERNA.venueToday(),'carlos','x');return {tem,g,n:Object.keys(ETERNA.ABONOS).length};});
+    ok(!r.tem&&r.g===false&&r.n===0,'fotógrafo sem escala.u não abona: '+J(r));await ctx.close();}
   // turnos: Supervisor só vê
   {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'supervisor@eterna.photo');const r=await pg.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();return {btn:!!document.querySelector('[data-act="turno-salvar"]'),dis:document.getElementById('turno-padrao').disabled};});
     ok(!r.btn&&r.dis,'S8: horário dos turnos só com catalogo.u');await ctx.close();}
