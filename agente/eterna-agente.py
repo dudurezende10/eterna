@@ -699,6 +699,63 @@ def busca_janela_cfg():
     return v
 
 
+# v93 (Eduardo, 06/11 07:54; plano docs/planos/2026-11-06-dois-cliques-ia.md): os N primeiros cliques de cada sessão
+# de ponto de campo são só base dos fundos de IA (nunca vendidos como foto normal). Regra no Painel de controle, gravada em
+# estado.db col config id ia; sem valor válido, vale o padrão (ligada, 2 cliques, os 4 pontos de campo, sem o volante).
+IA_CLIQUES_PADRAO = 2
+IA_CLIQUES_MAX = 3
+IA_PONTOS_PADRAO = ("terminal", "campo2", "campo3", "campo4")
+IA_FILA_ALVO = 2                 # trabalhos de IA na fila de recorte ao mesmo tempo (o Checkout passa na frente)
+IA_NOVOS_MAX = 2000              # teto da fila de pids novos de IA (acima disso o rec_pre_loop recupera depois)
+_ia_cfg = {"t": 0.0, "v": None}
+
+
+def ia_padrao():
+    return {"ligada": True, "cliques": IA_CLIQUES_PADRAO, "pontos": list(IA_PONTOS_PADRAO), "volante": False}
+
+
+def ia_valida(j):
+    """Configuração gravada pelo Painel: só o formato conhecido; qualquer outra coisa = None (vale o padrão)."""
+    if not isinstance(j, dict):
+        return None
+    lig, n, pts, vol = j.get("ligada", True), j.get("cliques", IA_CLIQUES_PADRAO), j.get("pontos", list(IA_PONTOS_PADRAO)), j.get("volante", False)
+    if not isinstance(lig, bool) or not isinstance(vol, bool) or isinstance(n, bool) or not isinstance(n, int) \
+            or not 1 <= n <= IA_CLIQUES_MAX or not isinstance(pts, list) or len(pts) > 20 \
+            or not all(isinstance(p, str) and _re_ff_point.match(p) for p in pts):
+        return None
+    return {"ligada": lig, "cliques": n, "pontos": list(dict.fromkeys(pts)), "volante": vol}
+
+
+def ia_cfg():
+    """Regra dos cliques de IA (estado.db config/ia), relida a cada 3 s. Nunca chamar com o sess_lock na mão."""
+    agora = time.time()
+    if agora - _ia_cfg["t"] < 3 and _ia_cfg["v"] is not None:
+        return _ia_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'ia' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                v = ia_valida(json.loads(r[0]))
+                if v is None:                        # gravado mas ilegível: fica o último valor válido
+                    v = _ia_cfg["v"] or ia_padrao()
+    except Exception:                                # erro de leitura (banco ocupado): fica o último valor válido
+        v = _ia_cfg["v"] or ia_padrao()
+    v = v or ia_padrao()                             # o padrão só sem documento gravado
+    _ia_cfg.update(t=agora, v=v)
+    return v
+
+
+def ia_cfg_mem():
+    """O último valor lido (sem abrir o banco): para quem está com o sess_lock na mão."""
+    return _ia_cfg["v"] or ia_padrao()
+
+
 def busca_janela_efetiva(janela=None):
     """Minutos da janela desta busca: o parâmetro (testes), o Painel de controle (estado.db) ou ETERNA_BUSCA_JANELA_MIN;
     0 com ETERNA_BUSCA_DIAS definida (dia todo dos dias da busca)."""
@@ -2355,13 +2412,25 @@ REC_FILA_MAX = 24
 REC_TAXA = 60            # recortes novos por minuto por IP (o cache não conta)
 REC_DIAS = 2             # prazo do cache de recortes
 REC_TETO_GB = float(os.environ.get("ETERNA_RECORTES_GB") or 5)   # teto do cache: apaga os mais antigos acima disso
+try:
+    REC_PISO_GB = float(os.environ.get("ETERNA_RECORTES_PISO_GB") or 10)   # v93: abaixo disto de espaço livre, as bases de IA esperam
+except ValueError:
+    REC_PISO_GB = 10.0
 REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos, tenta de novo passado este tempo
-rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0}
+rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0,
+       "fila0": 0, "ia": {"feitos": 0, "erros": 0, "fila": 0, "atrasos": collections.deque(maxlen=200)}}
 # Recorte antecipado: o cliente nunca espera o "Preparando sua foto especial". Os modelos abrem quando o Eterna liga, e cada
 # sessão fechada é recortada em segundo plano (da mais nova para a mais velha); pedido ao vivo do Checkout passa na frente.
 # ETERNA_PRE_RECORTE=0 desliga (servidor fraco): volta a recortar só quando o cliente pede.
 REC_PRE = os.environ.get("ETERNA_PRE_RECORTE", "1") != "0"
-rec_fila = queue.Queue(maxsize=REC_FILA_MAX)
+# v93: fila com prioridade, itens (prio, seq, job). 0 = Checkout ao vivo (/recorte), 1 = IA da trilha ao vivo, 2 = IA da
+# trilha atrasada (cartão), 3 = recorte antecipado. Um pid tem um trabalho só (rec_jobs): o segundo pedido espera o mesmo
+# Event; o pedido mais urgente põe o mesmo trabalho de novo na fila (o trabalhador pula o que já pegou). REC_FILA_MAX
+# conta só os pedidos de prioridade 0: a IA nunca dá fila_cheia ao cliente.
+REC_PRIO_CHECKOUT, REC_PRIO_IA, REC_PRIO_IA_ATRASADA, REC_PRIO_ANTECIPADO = 0, 1, 2, 3
+rec_fila = queue.PriorityQueue()
+rec_jobs = {}                      # pid -> trabalho na fila ou em andamento (sob o rec_lock)
+_rec_seq = itertools.count()
 rec_lock = threading.Lock()        # só contadores e estado (o /status nunca espera a carga dos modelos)
 rec_carga = threading.Lock()       # abrir os modelos (só as threads de trabalho)
 rec_sess = []
@@ -2380,10 +2449,26 @@ def rec_modelo(nome):
     return None
 
 
+REC_FALSO_SEG = None     # v93 (segurança S2): só os testes ligam (m.REC_FALSO_SEG = s): o "recorte" copia a foto e demora s
+
+
+def _rec_falso():
+    """Segundos do recorte falso dos testes, ou None (sempre None em produção: não há variável de ambiente para isto)."""
+    v = REC_FALSO_SEG
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        return min(max(float(v), 0.0), 30.0)
+    except (TypeError, ValueError):
+        return None
+
+
 def rec_estado():
     """(ok, motivo): rembg, onnxruntime, Pillow, numpy e scipy instalados, os dois modelos baixados e sem erro recente."""
     if os.environ.get("ETERNA_SEM_RECORTE"):
         return False, "recorte desligado (ETERNA_SEM_RECORTE)"
+    if _rec_falso() is not None:
+        return True, None
     import importlib.util
     falta = [m for m in ("rembg", "onnxruntime", "PIL", "numpy", "scipy") if importlib.util.find_spec(m) is None]
     if falta:
@@ -2399,18 +2484,42 @@ def rec_estado():
     return True, None
 
 
+def _pct(v, q):
+    if not v:
+        return None
+    v = sorted(v)
+    return round(v[min(len(v) - 1, int(q * len(v)))], 1)
+
+
+def rec_livre_gb():
+    """Espaço livre (GB) no disco dos recortes, ou None se não deu para medir."""
+    try:
+        return shutil.disk_usage(RECORTES if os.path.isdir(RECORTES) else HOME).free / 1024 ** 3
+    except OSError:
+        return None
+
+
 def rec_status():
     ok, motivo = rec_estado()
+    livre = rec_livre_gb()
+    lig = bool(ia_cfg().get("ligada"))     # fora do sess_lock (lê o estado.db)
     with rec_lock:
         n = rec["feitos"]
-        return {"ok": ok, "motivo": motivo, "carregado": rec["carregado"], "modelos": list(REC_MODELOS), "fila": rec_fila.qsize(),
+        ia = rec["ia"]
+        return {"ok": ok, "motivo": motivo, "carregado": rec["carregado"], "modelos": list(REC_MODELOS),
+                "fila": sum(1 for j in rec_jobs.values() if not j["pego"]),
                 "antecipado": {"ligado": REC_PRE, "escolhidas": rec.get("pre_escolhidas", 0), "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
-                "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC}
+                "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC,
+                **({"falso": True} if _rec_falso() is not None else {}),
+                "ia": {"ligada": lig, "fila": ia["fila"], "feitos": ia["feitos"], "erros": ia["erros"],
+                       "pausa_disco": bool(rec.get("ia_pausa_disco")), "livre_gb": round(livre, 1) if livre is not None else None,
+                       "piso_gb": REC_PISO_GB,
+                       "atraso_p50_s": _pct(ia["atrasos"], 0.5), "atraso_p90_s": _pct(ia["atrasos"], 0.9)}}
 
 
 def rec_carregar():
     """Abre as duas sessões uma vez (na thread de trabalho, na primeira foto), fora do rec_lock."""
-    if rec_sess:
+    if rec_sess or _rec_falso() is not None:
         return rec_sess
     with rec_carga:
         if rec_sess:
@@ -2849,6 +2958,21 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
     if os.path.exists(destino):
         return destino
     cheio = rec_arquivo(pid)
+    falso = _rec_falso()
+    if falso is not None:                           # só nos testes (ETERNA_RECORTE_FALSO): cópia da foto, sem modelos
+        os.makedirs(RECORTES, exist_ok=True)
+        if not os.path.exists(cheio):
+            time.sleep(falso)
+            shutil.copyfile(origem, cheio + ".f.tmp")
+            os.chmod(cheio + ".f.tmp", 0o600)
+            os.replace(cheio + ".f.tmp", cheio)
+            with rec_lock:
+                rec["feitos"] += 1
+        if destino != cheio:
+            shutil.copyfile(cheio, destino + ".f.tmp")
+            os.chmod(destino + ".f.tmp", 0o600)
+            os.replace(destino + ".f.tmp", destino)
+        return destino
     if not os.path.exists(cheio):
         t0 = time.time()
         sess = rec_carregar()
@@ -2884,14 +3008,17 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
     return destino
 
 
-def limpar_recortes(agora=None):
+def limpar_recortes(agora=None, guardar=None):
     """Uma vez por dia (galeria_loop): apaga recortes com mais de REC_DIAS dias, os de foto que saiu da biblioteca e,
-    acima de REC_TETO_GB, os mais antigos. Devolve quantos apagou."""
+    acima de REC_TETO_GB, os mais antigos. Devolve quantos apagou. v93: o recorte de foto de IA de sessão de hoje, fechada
+    ou ainda aberta (guardar = sess_ia_hoje, calculado antes e fora dos locks) fica, nem por idade nem pelo teto, enquanto a foto está na biblioteca."""
     agora = agora or time.time()
     try:
         nomes = os.listdir(RECORTES)
     except OSError:
         return 0
+    if guardar is None:
+        guardar = sess_ia_hoje(agora)
     with lock:
         vivas = {pid: e.get("file") for pid, e in lib.items()}
     itens, n = [], 0
@@ -2903,6 +3030,8 @@ def limpar_recortes(agora=None):
             continue
         pid = nome.split(".")[0].split("_")[0]
         fonte = vivas.get(pid)
+        if pid in guardar and fonte and os.path.exists(fonte) and not nome.endswith(".tmp"):
+            continue                                 # v93: base de IA de hoje (critério 17)
         if agora - st.st_mtime > REC_DIAS * 86400 or nome.endswith(".tmp") and agora - st.st_mtime > 3600 \
                 or not fonte or not os.path.exists(fonte):
             try:
@@ -2927,74 +3056,133 @@ def limpar_recortes(agora=None):
 
 def rec_trabalho():
     while True:
-        job = rec_fila.get()
+        _, _, job = rec_fila.get()
+        with rec_lock:
+            if job["pego"]:
+                continue                             # o mesmo trabalho entrou de novo com prioridade maior: já foi
+            job["pego"] = True
+            if job["p0"]:
+                rec["fila0"] = max(0, rec["fila0"] - 1)
         try:
-            job["res"] = rec_fazer(job["pid"], job["file"], job["lado"])
+            if job.get("cancel"):                    # v93: LGPD com o trabalho ainda na fila
+                job["err"] = "cancelado"
+            else:
+                job["res"] = rec_fazer(job["pid"], job["file"], job["lado"])
+                with lock:
+                    viva = job["pid"] in lib
+                if (job.get("na_lib") and not viva) or job.get("cancel"):   # LGPD durante o recorte: nada do recorte fica
+                    rec_apagar(job["pid"])
+                    job["err"], job["res"] = "cancelado", None
         except Exception as ex:
             job["err"] = str(ex)[:200]
         finally:
+            with rec_lock:
+                if rec_jobs.get(job["pid"]) is job:
+                    del rec_jobs[job["pid"]]
+                if job["ia"]:
+                    ia = rec["ia"]
+                    ia["fila"] = max(0, ia["fila"] - 1)
+                    if job.get("err"):
+                        ia["erros"] += 1
+                    else:
+                        ia["feitos"] += 1
+                        if job.get("u"):
+                            ia["atrasos"].append(max(0.0, time.time() - job["u"]))
             job["ev"].set()
 
 
-def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180):
-    """Põe o recorte na fila (1 ou 2 de cada vez) e espera. Devolve (caminho, erro)."""
+def rec_apagar(pid):
+    """Apaga os recortes de 3000 e 2400 e os temporários do pid (LGPD)."""
+    for f in [rec_arquivo(pid, lx) for lx in REC_LADOS] + glob.glob(os.path.join(RECORTES, glob.escape(pid) + "*.tmp")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
+def rec_cancelar(pid):
+    """LGPD: o trabalho de recorte do pid (na fila ou em andamento) não deixa arquivo."""
+    with rec_lock:
+        j = rec_jobs.get(pid)
+        if j is not None:
+            j["cancel"] = True
+
+
+def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=False, u=None):
+    """Põe o recorte na fila sem esperar e devolve (trabalho, erro). Pedido da mesma foto reaproveita o trabalho que já
+    existe (um recorte só); o mais urgente sobe a prioridade dele. Só a prioridade 0 conta para o REC_FILA_MAX."""
+    lado = lado if lado in REC_LADOS else REC_LADO_MAX
+    with lock:
+        na_lib = pid in lib                          # foto que sai da biblioteca durante o recorte não deixa arquivo
     with rec_lock:
         while len(rec_threads) < REC_CONC:
             t = threading.Thread(target=rec_trabalho, daemon=True)
             t.start()
             rec_threads.append(t)
-    job = {"pid": pid, "file": origem, "lado": lado, "ev": threading.Event()}
-    try:
-        rec_fila.put_nowait(job)
-    except queue.Full:
-        return None, "fila_cheia"
+        job = rec_jobs.get(pid)
+        if job is None:
+            if prio == REC_PRIO_CHECKOUT and rec["fila0"] >= REC_FILA_MAX:
+                return None, "fila_cheia"
+            job = {"pid": pid, "file": origem, "lado": lado, "ev": threading.Event(), "pego": False, "prio": prio,
+                   "p0": prio == REC_PRIO_CHECKOUT, "ia": bool(ia), "u": u, "na_lib": na_lib}
+            rec_jobs[pid] = job
+            if job["p0"]:
+                rec["fila0"] += 1
+            if ia:
+                rec["ia"]["fila"] += 1
+            rec_fila.put((prio, next(_rec_seq), job))
+            return job, None
+        if ia and not job["ia"]:
+            job["ia"], job["u"] = True, u
+            rec["ia"]["fila"] += 1
+        if not job["pego"]:
+            job["lado"] = min(job["lado"], lado)     # v93 (revisão R1): o de 2400 sai junto do de 3000 (rec_fazer)
+        if not job["pego"] and prio < job["prio"]:
+            if prio == REC_PRIO_CHECKOUT and not job["p0"]:
+                if rec["fila0"] >= REC_FILA_MAX:
+                    return job, None                 # segue na fila com a prioridade que tinha (nunca fila_cheia por dedup)
+                job["p0"] = True
+                rec["fila0"] += 1
+            job["prio"] = prio
+            rec_fila.put((prio, next(_rec_seq), job))
+        return job, None
+
+
+def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT):
+    """Põe o recorte na fila (1 ou 2 de cada vez) e espera. Devolve (caminho, erro)."""
+    lado = lado if lado in REC_LADOS else REC_LADO_MAX
+    job, erro = rec_enfileirar(pid, origem, lado, prio)
+    if erro:
+        return None, erro
     if not job["ev"].wait(espera):
         return None, "tempo"
-    return job.get("res"), job.get("err")
+    if job.get("err"):
+        return None, job["err"]
+    p = rec_arquivo(pid, lado)
+    if os.path.exists(p):
+        return p, None
+    try:                                             # o trabalho era do outro tamanho: a cópia sai do de 3000 já pronto
+        return rec_fazer(pid, origem, lado), None
+    except Exception as ex:
+        return None, str(ex)[:200]
 
 
-def rec_pre_escolha(fotos):
-    """Só as fotos que o Checkout vai mostrar com fundo de IA (regra do Eduardo: até 2 por sessão, nunca todas; 15 fotos
-    em vários fundos virariam 75 na tela): as 2 primeiras da sessão e, como o cliente achado pela selfie vê só as fotos
-    dele (lojaDele), as 2 primeiras de cada pessoa. Pessoa = o maior rosto da foto, agrupado pela semelhança (LIMITE),
-    que aparece em 3 fotos ou mais; no máximo 4 pessoas por sessão.
-    O que escapar o Checkout pede na hora, com prioridade."""
-    out = list(fotos[:2])
-    np = _cv.get("np")
-    if np is None or len(fotos) <= 2:
-        return out
-    try:
-        db = rostos_db()
-        emb = {}
-        for i in range(0, len(fotos), 500):
-            q = fotos[i:i + 500]
-            for pid, larg, e in db.execute("select pid, larg, emb from rosto where pid in (%s)" % ",".join("?" * len(q)), q):
-                if pid not in emb or larg > emb[pid][0]:
-                    emb[pid] = (larg, np.frombuffer(e, "float32"))
-        db.close()
-    except Exception:
-        return out
-    pessoas = []                                     # [vetor do 1º rosto, fotos da pessoa]
-    for pid in fotos:
-        if pid not in emb:
-            continue
-        v = emb[pid][1]
-        g = next((g for g in pessoas if float(g[0] @ v) >= LIMITE), None)
-        if g is None:
-            pessoas.append([v, [pid]])
-        else:
-            g[1].append(pid)
-    # pessoa = quem aparece em 3 fotos ou mais da sessão (quem passou ao fundo uma vez não conta); no máximo as 4 com
-    # mais fotos: no máximo 10 recortes por sessão, uns 40 s depois que ela fecha
-    for g in sorted((g for g in pessoas if len(g[1]) >= 3), key=lambda g: -len(g[1]))[:4]:
-        out += [p for p in g[1][:2] if p not in out]
-    return out
+def rec_pre_escolha(fotos, x=None):
+    """Só as fotos que o Checkout vai mostrar com fundo de IA. v93 (plano dos cliques de IA, A14): as bases de IA da
+    sessão (x["ia"]) quando ela tem; senão as 2 primeiras da sessão. O extra por pessoa (até 10 recortes por sessão) saiu:
+    desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade."""
+    if x is not None and x.get("ia"):
+        # revisão (A14): as bases e, com a prioridade mais baixa, as 2 primeiras fotos normais, o plano B do Checkout quando as
+        # duas bases são ruins (lojaAIAntigo); só usa a máquina livre
+        ia = list(x["ia"])
+        return ia + [p for p in fotos if p not in ia][:2]
+    return list(fotos[:2])
 
 
 def rec_pre_loop():
     """Recorte antecipado (ver REC_PRE): abre os modelos já na partida e recorta, das sessões fechadas dos dias da busca
-    (ETERNA_BUSCA_DIAS), só as fotos de rec_pre_escolha, da sessão mais nova para a mais velha. Uma de cada vez, e só
-    com a fila ao vivo vazia."""
+    (ETERNA_BUSCA_DIAS), só as fotos de rec_pre_escolha, da sessão mais nova para a mais velha. Uma de cada vez, com a
+    prioridade mais baixa da fila (o Checkout e as bases de IA passam na frente)."""
     if not REC_PRE:
         return
     time.sleep(15)                                  # deixa a biblioteca e as sessões carregarem
@@ -3008,23 +3196,21 @@ def rec_pre_loop():
                 with sess_lock:
                     ss = sorted((x for x in sess.values() if x["status"] == "fechada" and not x.get("removida") and x["dia"] in dias),
                                 key=lambda x: -(x.get("fechada_em") or 0))
-                    fotos_ss = [list(x["fotos"]) for x in ss]
+                    fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or [])}) for x in ss]
                 pids = []
-                for fs in fotos_ss:
-                    pids += rec_pre_escolha(fs)
+                for fs, xx in fotos_ss:
+                    pids += rec_pre_escolha(fs, xx)
                 falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
                 with rec_lock:
                     rec["pre_falta"] = len(falta)
                     rec["pre_escolhidas"] = len(pids)
                 for pid in falta:
-                    while rec_fila.qsize():             # cliente esperando no Checkout: passa na frente
-                        time.sleep(1)
                     with lock:
                         e = lib.get(pid)
                     vistos.add(pid)
                     if not e or not e.get("file") or not os.path.exists(e["file"]):
                         continue
-                    path, erro = rec_pedir(pid, e["file"], REC_LADO_MAX, espera=600)
+                    path, erro = rec_pedir(pid, e["file"], REC_LADO_MAX, espera=600, prio=REC_PRIO_ANTECIPADO)
                     with rec_lock:
                         rec["pre_falta"] = max(0, rec["pre_falta"] - 1)
                         if path:
@@ -3034,6 +3220,77 @@ def rec_pre_loop():
         except Exception as ex:
             print("  recorte antecipado:", str(ex)[:160])
         time.sleep(15)
+
+
+def _ia_ocupadas(pr):
+    """v93 (critério 11): vagas de IA que a prioridade pr enxerga. Conta o trabalho de IA já pego e o que espera na fila
+    com prioridade igual ou melhor; o de prioridade pior ainda não pego não conta (a melhor passa na frente dele na fila).
+    No pior caso há IA_FILA_ALVO de cada prioridade esperando. Com o rec_lock."""
+    return sum(1 for j in rec_jobs.values() if j["ia"] and (j["pego"] or j["prio"] <= pr))
+
+
+def rec_ia_loop():
+    """v93: as bases de IA (os N primeiros cliques da sessão ainda aberta) vão para a fila assim que chegam, com
+    prioridade 1 (ao vivo) ou 2 (cartão), no máximo IA_FILA_ALVO de cada vez para o Checkout passar na frente de verdade.
+    As vagas são por prioridade (_ia_ocupadas): base pior ainda não pega não toma a vaga da melhor (critério 11).
+    Gera o de 3000 e o de 2400 de uma vez. Nada com o recorte indisponível ou no modo Photoroom (o rec_pre_loop recupera)."""
+    pend = {}                                       # pid -> prioridade (ordem de chegada)
+    andando = {}                                    # pid -> (trabalho, prioridade, tentativas): confere o 2400 no fim (R1)
+    andando_n = {}
+    while True:
+        time.sleep(0.5)
+        try:
+            with sess_lock:
+                novos = list(sess_ia_novos)
+                sess_ia_novos.clear()
+            for pid, pr in novos:
+                pend[pid] = min(pr, pend.get(pid, 9))
+            for pid, (job, pr, n) in list(andando.items()):
+                if not job["ev"].is_set():
+                    continue
+                del andando[pid]
+                # o trabalho reaproveitado já estava em andamento só com o de 3000: pede de novo (a cópia de 2400 é barata)
+                if not job.get("err") and not job.get("cancel") and n < 2 and not os.path.exists(rec_arquivo(pid, 2400)):
+                    pend[pid] = min(pr, pend.get(pid, 9))
+                    andando_n[pid] = n + 1
+            while len(pend) > IA_NOVOS_MAX:
+                pend.pop(next(iter(pend)))
+            if not pend:
+                continue
+            ok, _ = rec_estado()
+            if not ok or fundos_modo() == "photoroom":
+                pend.clear()
+                andando_n.clear()
+                time.sleep(5)
+                continue
+            livre = rec_livre_gb()
+            pausa = livre is not None and livre < REC_PISO_GB
+            with rec_lock:
+                if pausa and not rec.get("ia_pausa_disco"):
+                    print("  recorte das bases de IA em pausa: %.1f GB livres (piso %.0f GB, ETERNA_RECORTES_PISO_GB)" % (livre, REC_PISO_GB))
+                rec["ia_pausa_disco"] = pausa
+            if pausa:
+                time.sleep(5)
+                continue
+            for pid in sorted(pend, key=lambda p: pend[p]):
+                pr = pend[pid]
+                with rec_lock:
+                    livres = IA_FILA_ALVO - _ia_ocupadas(pr)
+                if livres <= 0:
+                    break                                # em ordem de prioridade: as seguintes não têm vaga também
+                del pend[pid]
+                if os.path.exists(rec_arquivo(pid)) and os.path.exists(rec_arquivo(pid, 2400)):
+                    continue
+                with lock:
+                    e = lib.get(pid)
+                    u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
+                if not e or not e.get("file") or not os.path.exists(e["file"]):
+                    continue
+                job, erro = rec_enfileirar(pid, e["file"], 2400, pr, ia=True, u=u or None)
+                if job is not None:
+                    andando[pid] = (job, pr, andando_n.pop(pid, 0))
+        except Exception as ex:
+            print("  recorte das bases de IA:", str(ex)[:160])
 
 
 # v84 (segurança): o Photoroom só monta quando o interruptor do Painel de controle estiver em "Photoroom" também aqui.
@@ -3254,18 +3511,31 @@ def gal_expirou(m, agora=None):
     return bool(m.get("encerrada")) or _epoch(m.get("expira")) <= (agora if agora is not None else time.time())
 
 
-def _gal_confere_sessoes(m, fotos):
+def _gal_confere_sessoes(m, fotos, compradas=()):
     """v91 (segurança 5): na galeria de sessões que o agente montou (hoje e ontem em memória), toda foto precisa ser de uma
     sessão do manifesto: foto de outra sessão do agente (outra família) é recusada. Na galeria da venda que juntou sessões
     pela selfie, a foto também precisa estar em m.so[sessão]. Manifesto só com sessões que o agente não conhece (amostra,
-    sessão montada só no navegador) passa sem esta conferência."""
+    sessão montada só no navegador) passa sem esta conferência.
+    v93 (segurança S1): base de IA nunca é publicada como foto (navegador antigo): sai de `fotos` (a lista é alterada aqui)
+    sem recusar o manifesto, menos a que já foi comprada (nesta publicação ou na gravada, `compradas`). Devolve quantas saíram."""
     ses = [str(x)[:40] for x in (m.get("sessoes") or [])[:200]]
     so = m.get("so") if isinstance(m.get("so"), dict) else {}
     with sess_lock:
         conhecidas = {c: set(sess[c]["fotos"]) | set(sess[c]["pend"]) for c in ses if c in sess}
         dono = {pid_lib(f["id"]): sess_pid.get(pid_lib(f["id"])) for f in fotos} if conhecidas else {}
+        ia = set()                                   # v93: base de IA nunca é publicada como foto (navegador antigo)
+        for f in fotos:
+            p = pid_lib(f["id"])
+            x = sess.get(sess_pid.get(p) or "")
+            if x is not None and p in (x.get("ia") or ()):
+                ia.add(p)
+    n = 0
+    if ia:
+        manter = [f for f in fotos if pid_lib(f["id"]) not in ia or f.get("direito") == "comprada" or f["id"] in compradas]
+        n = len(fotos) - len(manter)
+        fotos[:] = manter
     if not conhecidas:
-        return
+        return n
     for f in fotos:
         pid = pid_lib(f["id"])
         de = [c for c, ps in conhecidas.items() if pid in ps]
@@ -3274,6 +3544,7 @@ def _gal_confere_sessoes(m, fotos):
         c = de[0] if de else f["sessao"]
         if c in so and isinstance(so[c], list) and f["id"] not in so[c] and pid not in so[c]:
             raise ValueError("foto fora da escolha da venda")
+    return n
 
 
 def gal_validar(m):
@@ -3423,6 +3694,7 @@ def gal_processar(token):
 
 def galeria_loop():
     ultima_limpeza = 0
+    ultima_rec = 0
     while True:
         try:
             token = gal_fila.get(timeout=600)
@@ -3432,6 +3704,12 @@ def galeria_loop():
                 print("  galeria: erro ao preparar", token[:8], ex)
         except queue.Empty:
             pass
+        if time.time() - ultima_rec > 3600:         # v93: recortes de hora em hora (as bases de IA enchem o disco mais rápido)
+            ultima_rec = time.time()
+            try:
+                limpar_recortes()
+            except Exception as ex:
+                print("  recortes: erro na limpeza", ex)
         if time.time() - ultima_limpeza > 86400:
             ultima_limpeza = time.time()
             if rostos["ligado"]:
@@ -3439,10 +3717,6 @@ def galeria_loop():
                     limpar_rostos()
                 except Exception as ex:
                     print("  rostos: erro na limpeza", ex)
-            try:
-                limpar_recortes()
-            except Exception as ex:
-                print("  recortes: erro na limpeza", ex)
             try:
                 for t in REPO.listar_expiradas(time.time()):
                     lapide_gravar(t, REPO.ler_manifesto(t))   # antes de apagar: o token nunca mais reabre
@@ -3769,12 +4043,22 @@ def ff_json(agora=None):
                 e = "subindo"                # cartão em andamento, separada fechando ou aberta sem clique recente
             ts = x.get("_t") or {}
             novas = sorted(todos, key=lambda p: -(ts.get(p) or (0, 0))[0])[:FF_PIDS] if e != "pronta" else []
+            # v93: bases de IA. Aberta: os N primeiros cliques até agora (pids só no grupo aberto, risco 5); fechada: x["ia"]
+            if x["status"] == "fechada":
+                rg = x.get("ia_regra") or {}
+                ian, iam, iab = int(rg.get("n") or 0), rg.get("motivo"), list(x.get("ia") or [])
+            else:
+                ian, iam = _sess_ia_regra(x)
+                iab = sorted(todos, key=lambda p: (ts.get(p) or (0, 0)))[:ian] if ian else []
             out.append({"id": x["card"], "estado": e, "fotografo": x.get("fotografo"), "fonte": x.get("fonte"),
                         "funcao": dict(x["funcao"]) if isinstance(x.get("funcao"), dict) else None,
                         "inicio": x.get("aberta_em"), "ultima_chegada": x.get("ultima_chegada"),
                         "ultimo_clique": x.get("cap1") or x.get("ultima_chegada"), "pronta_em": pe, "n": len(todos),
-                        "pids": novas})
+                        "pids": novas, "ia": {"n": ian, "motivo": iam, "pids": iab if e != "pronta" else [], "_b": iab}})
         rev = sess_rev[0]
+    for g in out:                                    # fora do sess_lock: o disco
+        b = g["ia"].pop("_b")
+        g["ia"]["prontas"] = sum(1 for p in b if os.path.exists(rec_arquivo(p, 2400)))
     prontas = sorted([g for g in out if g["estado"] == "pronta"], key=lambda g: -g["pronta_em"])[:FF_PRONTAS_MAX]
     mostrar = {g["id"] for g in prontas}
     grupos = sorted([g for g in out if g["estado"] != "pronta" or g["id"] in mostrar], key=lambda g: g["inicio"] or 0)
@@ -3820,6 +4104,7 @@ sess_rev = [0]
 sess_seq = [0]
 sess_sujo = set()                # dias com mudança ainda não gravada
 sess_limpo = [""]                # dia da última limpeza de arquivos (S14)
+sess_ia_novos = collections.deque(maxlen=IA_NOVOS_MAX)   # v93: (pid, prioridade) das bases de IA novas, para o rec_ia_loop
 _SESS_DIA = re.compile(r"^(\d{4}-\d\d-\d\d)\.json$")
 
 
@@ -3927,10 +4212,83 @@ def _sess_nova(trilha, t, u, motivo, m, chave, fonte, fonte_t, atrasada):
          "trilha": "atrasada" if atrasada else "vivo", "atrasada": bool(atrasada), "status": "aberta", "motivo": motivo,
          "origem": "agente", "aberta_em": u, "ultima_chegada": u, "cap0": t, "cap1": t, "fonte_t": fonte_t,
          "fechada_em": None, "fechada_por": None, "fotos": [], "pend": [], "dec": {}, "sim_abertura": None,
-         "fundida_em": None, "removida": False, "rev": 0,
-         "_t": {}, "_guardar": set(), "_rfim": 0.0, "_n": sess_seq[0], "_fonte": {}}
+         "fundida_em": None, "removida": False, "rev": 0, "ia": [], "ia_regra": None,
+         "_t": {}, "_guardar": set(), "_rfim": 0.0, "_n": sess_seq[0], "_fonte": {}, "_ia_vistos": set()}
     sess[card] = x
     return x
+
+
+def _sess_ia_regra(x, cfg=None):
+    """v93: (n, motivo) da regra dos cliques de IA para a sessão x. motivo None ou 'desligada' | 'volante' |
+    'sem_funcao' | 'ponto_fora'. Usa a configuração já lida (ia_cfg_mem): nunca abre o banco com o sess_lock."""
+    cfg = cfg or ia_cfg_mem()
+    if not cfg.get("ligada"):
+        return 0, "desligada"
+    f = x.get("funcao")
+    if not x.get("fotografo") or not isinstance(f, dict):
+        return 0, "sem_funcao"                       # A4: sem função do dia ou sem cadastro, nada some da venda
+    if f.get("tipo") == "volante":
+        return (int(cfg["cliques"]), None) if cfg.get("volante") else (0, "volante")
+    if f.get("tipo") != "campo":
+        return 0, "sem_funcao"
+    if f.get("point") not in (cfg.get("pontos") or ()):
+        return 0, "ponto_fora"
+    return int(cfg["cliques"]), None
+
+
+def _sess_ia_cand(x):
+    """v93: com a sessão ainda não fechada, os N primeiros cliques (fotos + pendentes, pela hora do clique corrigida) que
+    ainda não foram pedidos vão para a fila de recorte de IA. Com o sess_lock."""
+    if x.get("status") == "fechada" or x.get("removida"):
+        return
+    n, _ = _sess_ia_regra(x)
+    if not n:
+        return
+    ts = x["_t"]
+    vistos = x.setdefault("_ia_vistos", set())
+    pr = 2 if x.get("atrasada") else 1
+    for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n]:
+        if p not in vistos:
+            vistos.add(p)
+            sess_ia_novos.append((p, pr))
+
+
+def _sess_ia_fecha(x):
+    """v93: no fechamento, ia = os N primeiros cliques; com N fotos ou menos, a regra não vale (poucas_fotos)."""
+    n, mot = _sess_ia_regra(x)
+    fs = x["fotos"]
+    x["ia"] = list(fs[:n]) if n and len(fs) > n else []
+    x["ia_regra"] = {"n": n, "motivo": mot or ("poucas_fotos" if n and len(fs) <= n else None)}
+
+
+def sess_ia_de(pids):
+    """Quais destes pids são base de IA de alguma sessão em memória (hoje e ontem)."""
+    with sess_lock:
+        out = set()
+        for p in pids:
+            x = sess.get(sess_pid.get(p) or "")
+            if x is not None and p in (x.get("ia") or ()):
+                out.add(p)
+        return out
+
+
+def sess_ia_hoje(agora=None):
+    """pids de IA das sessões de hoje (não removidas), para a limpeza dos recortes: das fechadas, x["ia"]; das ainda
+    abertas (ou separadas, fechando), as bases já pedidas na chegada (_ia_vistos) e os N primeiros cliques de agora."""
+    hoje = _ff_hoje(agora)
+    out = set()
+    with sess_lock:
+        for x in sess.values():
+            if x["dia"] != hoje or x.get("removida"):
+                continue
+            out.update(x.get("ia") or ())
+            if x.get("status") != "fechada":
+                out.update(x.get("_ia_vistos") or ())
+                n, _ = _sess_ia_regra(x)
+                if n:
+                    ts = x.get("_t") or {}
+                    out.update(sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n])
+    return out
 
 
 def _sess_recalc(x):
@@ -3999,6 +4357,7 @@ def _sess_fecha_uma(x, agora, por):
     if not sess_espera.get(tr):
         sess_espera.pop(tr, None)
     _sess_recalc(x)
+    _sess_ia_fecha(x)
     fim = min(x["ultima_chegada"] + SESS_PAUSA, agora) if por == "pausa" else agora
     x.update(status="fechada", fechada_em=fim, fechada_por=por)
     x["_guardar"] = set()
@@ -4039,9 +4398,11 @@ def _sess_fundir(dest, orig, agora):
     if lst and orig["card"] in lst:
         lst.remove(orig["card"])
     orig.update(fotos=[], pend=[], dec={}, removida=True, fundida_em=dest["card"], status="fechada", fechada_em=agora,
-                fechada_por=None)
+                fechada_por=None, ia=[], ia_regra=None)
     orig["_t"], orig["_guardar"] = {}, set()
+    dest.setdefault("_ia_vistos", set()).update(orig.get("_ia_vistos") or ())
     _sess_recalc(dest)
+    _sess_ia_cand(dest)                              # A6: valem os N primeiros cliques da sessão fundida
     _sess_toca(orig)
     _sess_toca(dest)
 
@@ -4133,6 +4494,7 @@ def _sess_add(pid, m, cad, agora=None, faces_boot=None, boot=False):
         elif sess_rostos_on():
             x["_guardar"].add(pid)
         _sess_recalc(x)
+        _sess_ia_cand(x)
         _sess_toca(x)
         return x["card"]
     espera = (faces_boot is not None) if boot else sess_rostos_on()
@@ -4152,6 +4514,9 @@ def _sess_add(pid, m, cad, agora=None, faces_boot=None, boot=False):
     else:
         _sess_entra(x, pid, t, u, "t")
     _sess_recalc(x)
+    y = sess.get(sess_pid.get(pid) or "")
+    if y is not None:
+        _sess_ia_cand(y)
     _sess_toca(x)
     return sess_pid.get(pid)
 
@@ -4209,6 +4574,7 @@ def _sess_decide(pid, fs, agora):
         _sess_vira_aberta(tr, dest["card"], agora)
     for y in {id(x): x, id(dest): dest}.values():
         _sess_recalc(y)
+        _sess_ia_cand(y)
         _sess_toca(y)
 
 
@@ -4258,12 +4624,20 @@ def sess_rostos_lidos(pid, faces, agora=None):
 def sess_add(pid, m):
     """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
     cad = ff_cadastrados()
+    ia_cfg()                                         # v93: a regra dos cliques de IA lida antes, fora do sess_lock
     with sess_lock:
         return _sess_add(pid, m, cad, time.time())
 
 
 def sess_esquecer(pid):
-    """LGPD: a foto apagada sai da sessão, das pendentes e dos rostos em memória; sessão sem foto vira removida."""
+    """LGPD: a foto apagada sai da sessão, das pendentes e dos rostos em memória; sessão sem foto vira removida.
+    v93: sai também das bases de IA, e os recortes dela são apagados na hora (o trabalho na fila é cancelado)."""
+    rec_cancelar(pid)
+    rec_apagar(pid)
+    _sess_esquecer(pid)
+
+
+def _sess_esquecer(pid):
     with sess_lock:
         card = sess_pid.pop(pid, None)
         info = sess_info.pop(pid, None)
@@ -4279,6 +4653,8 @@ def sess_esquecer(pid):
             return
         x["fotos"] = [p for p in x["fotos"] if p != pid]
         x["pend"] = [p for p in x["pend"] if p != pid]
+        x["ia"] = [p for p in (x.get("ia") or []) if p != pid]
+        x.get("_ia_vistos", set()).discard(pid)
         x["dec"].pop(pid, None)
         x.get("_t", {}).pop(pid, None)
         x.get("_guardar", set()).discard(pid)
@@ -4317,7 +4693,7 @@ def sess_esquecer_disco(pids):
             for x in j.get("sessoes") or []:
                 if not isinstance(x, dict):
                     continue
-                for campo in ("fotos", "pend"):
+                for campo in ("fotos", "pend", "ia"):
                     v = x.get(campo) or []
                     w = [p for p in v if p not in pids]
                     if len(w) != len(v):
@@ -4412,6 +4788,7 @@ def sess_loop():
         time.sleep(2)
         try:
             agora = time.time()
+            ia_cfg()                                 # v93: fora do sess_lock; o fechamento usa o valor guardado
             with sess_lock:
                 _sess_tick(agora)
                 ontem = _ff_hoje(agora - 86400)
@@ -4437,12 +4814,14 @@ def _sess_normaliza(x):
     x["dec"] = {p: v for p, v in (x.get("dec") or {}).items() if isinstance(p, str)} if isinstance(x.get("dec"), dict) else {}
     for kk, v in (("trilha", "vivo"), ("atrasada", False), ("motivo", None), ("ponto", None), ("funcao", None),
                   ("cap0", None), ("cap1", None), ("fonte_t", "u"), ("sim_abertura", None), ("fundida_em", None),
-                  ("removida", False), ("fechada_em", None), ("fechada_por", None), ("origem", "agente")):
+                  ("removida", False), ("fechada_em", None), ("fechada_por", None), ("origem", "agente"),
+                  ("ia_regra", None)):
         x.setdefault(kk, v)
+    x["ia"] = [p for p in (x.get("ia") or []) if isinstance(p, str)] if isinstance(x.get("ia"), list) else []   # v93: nada retroativo
     x["aberta_em"] = _num(x.get("aberta_em"))
     x["ultima_chegada"] = _num(x.get("ultima_chegada")) or x["aberta_em"]
     sess_seq[0] += 1
-    x.update(_t={}, _guardar=set(), _rfim=0.0, _n=sess_seq[0], _fonte={})
+    x.update(_t={}, _guardar=set(), _rfim=0.0, _n=sess_seq[0], _fonte={}, _ia_vistos=set())
     return x
 
 
@@ -4480,6 +4859,7 @@ def sess_carregar(agora=None):
     agora = time.time() if agora is None else agora
     dias = [_ff_hoje(agora - 86400), _ff_hoje(agora)]
     n_lidas = 0
+    ia_cfg()                                         # v93: fora do sess_lock
     with sess_lock:
         for d in dias:
             try:
@@ -4499,6 +4879,7 @@ def sess_carregar(agora=None):
                         x["dec"][p] = "t"
                     x["fotos"] += [p for p in x["pend"] if p not in x["fotos"]]
                     x["pend"] = []
+                    _sess_ia_fecha(x)                # v93 (critério 16): a aberta que fecha no boot também tem ia
                     x.update(status="fechada", fechada_em=agora, fechada_por="reinicio")
                     _sess_toca(x)
                 if not x.get("removida"):
@@ -5014,8 +5395,9 @@ def estado_col(col):
     return {"ok": True, "rev": rev, "docs": docs}
 
 
-def estado_gravar(body):
+def estado_gravar(body, quem=""):
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
+    auditoria = []
     with estado_lock:
         db = estado_db()
         try:
@@ -5032,6 +5414,18 @@ def estado_gravar(body):
                     novo = db.execute("select 1 from doc where col = 'agenda' and id = ? and valor is not null", (d["id"],)).fetchone() is None
                     if novo and db.execute("select count(*) from doc where col = 'agenda' and valor is not null").fetchone()[0] >= AGENDA_DOCS_MAX:
                         continue                                # teto da agenda (revisão)
+                if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
+                    if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
+                        print("  config/ia: apagar recusado · de %s" % (quem or "?"))
+                        continue
+                    if v is not None:
+                        ok_ = ia_valida(v)
+                        if ok_ is None:
+                            print("  config/ia recusada (formato inválido) · de %s" % (quem or "?"))
+                            continue
+                        v = {**ok_, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
+                    r_ = db.execute("select valor from doc where col = 'config' and id = 'ia'").fetchone()
+                    auditoria.append((r_[0] if r_ else None, v))
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
                 if txt is not None and len(txt) > ESTADO_MAX:
                     continue
@@ -5044,6 +5438,14 @@ def estado_gravar(body):
             db.close()
     if any(isinstance(d, dict) and d.get("col") == "config" for d in docs[:500]):
         _busca_cfg["t"] = 0.0            # janela da selfie mudada no Painel vale na próxima busca
+        _ia_cfg["t"] = 0.0               # v93: regra dos cliques de IA vale na próxima sessão que fechar
+    for de_, para in auditoria:          # v93 (segurança): quem mudou a regra dos cliques de IA, no console
+        try:
+            de_ = ia_valida(json.loads(de_)) if de_ else None
+        except Exception:
+            de_ = None
+        print("  config/ia: de %s para %s · por %s · host %s" % (json.dumps(de_), json.dumps(ia_valida(para) if para else None),
+                                                               (para or {}).get("por") or "?", quem or "?"))
     return {"ok": True, "gravados": n, "rev": rev}
 
 
@@ -5169,6 +5571,14 @@ def ev_receber(body):
     evs = body.get("eventos") if isinstance(body.get("eventos"), list) else []
     posto = _txt_chave(body.get("posto") or "", 40) or ""
     res = []
+    # v93 (segurança): navegador antigo pode vender a base de IA como foto. A venda já foi paga e fica; o evento ganha
+    # "ia_vendidas" e uma linha no console (sess_lock antes do ev_lock, nunca junto)
+    sel = set()
+    for e in evs[:50]:
+        d = e.get("dados") if isinstance(e, dict) and isinstance(e.get("dados"), dict) else {}
+        if isinstance(d.get("selected"), list):
+            sel.update(pid_lib(str(p)[:60]) for p in d["selected"][:200])
+    ia_sel = sess_ia_de(sel) if sel else set()
     with ev_lock:
         db = vendas_db()
         try:
@@ -5177,6 +5587,10 @@ def ev_receber(body):
                 if not x:
                     res.append({"idem": (e or {}).get("idem") if isinstance(e, dict) else None, "s": "recusado"})
                     continue
+                vi = [p for p in x["dados"].get("selected") or [] if pid_lib(p) in ia_sel]
+                if vi:
+                    x["dados"]["ia_vendidas"] = vi
+                    print("  venda %s: %d base(s) de IA vendida(s) como foto (navegador antigo)" % (x["venda"], len(vi)))
                 cur = db.execute("insert or ignore into evento values (?,?,?,?,?,?,?,?,?,?)",
                                  (x["idem"], x["venda"], x["seq"], x["tipo"], x["em"], _ev_dia(x["em"]), x["posto"] or posto,
                                   x["por"], json.dumps(x["dados"], ensure_ascii=False), _iso()))
@@ -6164,7 +6578,7 @@ class H(BaseHTTPRequestHandler):
             body, err = self.corpo(8 * 1024 * 1024)
             if err:
                 return self.js({"error": "corpo inválido"}, err)
-            return self.js(estado_gravar(body))
+            return self.js(estado_gravar(body, quem=self.client_address[0]))
         if p == "/ponto/eventos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -6218,10 +6632,14 @@ class H(BaseHTTPRequestHandler):
             t = novo["token"]
             if t in lapides:
                 return self.js({"ok": False, "error": "galeria encerrada", "estado": "encerrada"}, 410)
+            velho = REPO.ler_manifesto(t) or {}
+            comp = {f.get("id") for f in (velho.get("fotos") or []) if isinstance(f, dict) and f.get("direito") == "comprada"}
             try:                                       # v91 (segurança 5): depois da lápide (galeria encerrada responde 410 como antes)
-                _gal_confere_sessoes(body.get("manifesto"), novo["fotos"])
+                ignoradas = _gal_confere_sessoes(body.get("manifesto"), novo["fotos"], comp)
             except ValueError as ex:
                 return self.js({"error": str(ex)}, 400)
+            if ignoradas:
+                print("  galeria: %d base(s) de IA fora do manifesto (navegador antigo)" % ignoradas)
             with gal_lock:
                 m = gal_mesclar(novo, REPO.ler_manifesto(t))
                 REPO.salvar_manifesto(t, m)
@@ -6229,7 +6647,7 @@ class H(BaseHTTPRequestHandler):
                     codigos[m["codigo"]] = t
             gal_fila.put(t)
             nuvem_galeria_enfileira(t)
-            return self.js({"ok": True, "token": t, "estado": gal_estado(t, m)})
+            return self.js({"ok": True, "token": t, "estado": gal_estado(t, m), "ignoradas": ignoradas})
         partes = p.split("/")
         if len(partes) != 4 or partes[1] != "g" or not token_ok(partes[2]):
             return self.js({"error": "not found"}, 404)
@@ -6699,6 +7117,8 @@ def fuso_ajusta():
 def main():
     fuso_ajusta()
     print("Eterna · agente do ponto")
+    if os.environ.get("ETERNA_RECORTE_FALSO"):
+        print("  ETERNA_RECORTE_FALSO ignorado: o recorte falso é só dos testes (v93, segurança S2)")
     for x in ORIGENS_SEM_ESQUEMA:
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta
@@ -6721,6 +7141,7 @@ def main():
         threading.Thread(target=imp_monitor, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
     threading.Thread(target=rec_pre_loop, daemon=True).start()
+    threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=metricas_migra_v2, daemon=True).start()   # v92: resumos antigos ganham os campos v2 (só acrescenta)
     threading.Thread(target=backup_loop, daemon=True).start()

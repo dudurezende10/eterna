@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v92 (06/11/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v93 (06/11/2026).
 
 Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
 
@@ -153,6 +153,48 @@ Se aparecer o aviso **Rostos desligados neste computador**, o servidor está sep
 
 Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
+### Os 2 primeiros cliques são para os fundos de IA (v93)
+
+Vale nos 4 pontos de campo (Terminal Campo, Foto Campo 2, 3 e 4). Volante e Vestiário ficam de fora.
+
+**Fotógrafo: em toda sessão, comece assim**
+
+1. **1º clique: corpo inteiro** do grupo, da cabeça aos pés.
+2. **2º clique: mais fechado**, do joelho ou da cintura para cima.
+3. Depois, faça as fotos normais da sessão.
+
+**O que acontece com essas 2 fotos**
+
+- Elas não são vendidas como foto. Viram a base das montagens com os fundos de IA.
+- O servidor recorta as pessoas assim que as fotos chegam, com a sessão ainda aberta.
+- Quando o cliente chega ao Checkout, as **5 montagens** já estão prontas, uma para cada fundo: Arquibancada 1950 e Pódio de campeão usam o 1º clique; Noite de campeão, Mirante e Saída do túnel usam o 2º.
+- **Se você esquecer**, o sistema usa as 2 primeiras fotos assim mesmo. A IA recorta de qualquer jeito. Não existe botão para devolver essas fotos à venda.
+- Sessão com 2 fotos ou menos: nada é separado, as fotos ficam à venda.
+
+**Como conferir no Upload automático**
+
+- As 2 fotos aparecem com a marca **Fundo IA 1** e **Fundo IA 2**. Passe o mouse sobre a marca para ler o texto inteiro: **Fundo IA 1 · corpo inteiro** e **Fundo IA 2 · fechada**.
+- Com a sessão ainda aberta, a marca aparece como **Fundo IA?**. Ela confirma quando a sessão fecha.
+- A marca **IA** sozinha continua sendo a do ajuste automático. É outra coisa.
+- O cabeçalho da sessão mostra **Fundos de IA: 2 de 2 prontas**. Se a sessão não teve fotos separadas, mostra o motivo: volante, ponto fora da regra, sem função do dia, poucas fotos ou regra desligada.
+- Sem função do dia na Escala, nada é separado. Confira a sua função antes de começar.
+
+**Na Fila do fotógrafo**
+
+- **Fundo IA: falta o 2º clique** enquanto a sessão só tem 1 foto.
+- **Fundo IA ✓✓** quando os 2 recortes estão prontos.
+
+**Administração: mudar a regra (Admin)**
+
+1. Abra **Configurações › Painel de controle**.
+2. Desça até o quadro **Fotos para os fundos de IA**.
+3. Ali dá para ligar ou desligar a regra, escolher **quantos cliques** (de 1 a 3) e **em quais pontos** ela vale, inclusive Vestiário e Volante.
+4. A mudança vale para as sessões que fecharem depois dela. As sessões já fechadas não mudam.
+
+Só quem pode alterar Configurações (Admin e Supervisor, pelos perfis prontos) muda esse quadro. Os outros veem os campos apagados.
+
+**Depois da atualização para a v93:** recarregue todos os navegadores dos caixas. Um navegador antigo ainda mostra essas 2 fotos como fotos à venda.
+
 ---
 
 ## 3. Checkout (caixa e atendimento)
@@ -232,6 +274,7 @@ Todas as impressas são 10×15 cm.
 O que o cliente vê no carrinho:
 - **Ideal**: o pacote mais barato para as fotos que ele escolheu, já somando as adicionais. Exemplo: 4 fotos saem por Zona Mista + 1 adicional (R$ 145), mais barato que o Gramado (R$ 150).
 - **Fotos com fundo de IA contam dentro do pacote.** Não são mais cobradas à parte no Checkout.
+- **5 fundos de IA por venda (v93)**: uma montagem para cada fundo, feita com os 2 primeiros cliques da sessão. Esses 2 cliques não aparecem como foto normal nem entram na contagem do "Todas".
 - **Resumo linha a linha** antes do total: o pacote e as adicionais, cada um com o valor.
 - **Economia**: quanto ele economiza em comparação a comprar avulso (uma Arquibancada e o resto como Foto adicional). Exemplo: 8 fotos avulsas custariam R$ 70 + 7 × R$ 35 = R$ 315. No Pacote Maracanã ele paga R$ 190 e economiza R$ 125. Só aparece quando há economia.
 - "Cabem mais N fotos neste pacote sem pagar mais", quando ele escolheu menos fotos do que o pacote leva.
