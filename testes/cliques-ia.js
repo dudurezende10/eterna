@@ -138,6 +138,15 @@ try{
   ok(up.abr.join()==='Fundo IA?','Upload: sessão aberta marca a 1ª como Fundo IA?: '+J(up.abr));
   const tagIA=await pe.evaluate(()=>{return [...document.querySelectorAll('.ph .tag')].filter(t=>t.textContent==='IA').length;});
   ok(tagIA===0,'14: nenhuma base com a tag "IA" do ajuste automático');
+  // testador v93: a tag longa não é cortada pela miniatura nem fica por cima da lupa (1366, 768 e 390 px, sem rolagem lateral)
+  for(const w of [1366,768,390]){await pe.setViewportSize({width:w,height:900});await pe.waitForTimeout(250);
+    const g=await pe.evaluate(()=>{const b=document.querySelector('.up-sess[data-card="LPTIACAM1"]');const out=[];
+      (b?[...b.querySelectorAll('.ph .tag-ia')]:[]).forEach(t=>{const ph=t.closest('.ph').getBoundingClientRect(),r=t.getBoundingClientRect(),z=t.closest('.ph').querySelector('.zoom');const zr=z?z.getBoundingClientRect():null;
+        out.push({txt:t.textContent,title:t.title,dentro:r.left>=ph.left-0.5&&r.right<=ph.right+0.5,lupa:!zr||r.right<=zr.left+0.5,elip:getComputedStyle(t).textOverflow==='ellipsis'});});
+      return {out,rola:document.documentElement.scrollWidth>window.innerWidth+1};});
+    ok(g.out.length===2&&g.out.every(x=>x.dentro&&x.lupa&&x.elip&&x.title===x.txt),'14 ('+w+' px): tag das bases dentro da miniatura, fora da lupa, com o texto inteiro no title: '+J(g.out));
+    ok(!g.rola,'14 ('+w+' px): Upload sem rolagem lateral');}
+  await pe.setViewportSize({width:1366,height:900});await pe.waitForTimeout(150);
   // 13: Fila do fotógrafo
   await pe.evaluate(()=>{localStorage.setItem('eterna.fotofila.tvmini','1');ETERNA.go('fotofila');});
   ok(await esp2(()=>/falta o 2º clique/.test(document.querySelector('#main').textContent),8000),'13: grupo aberto com 1 foto: "falta o 2º clique"');

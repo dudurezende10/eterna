@@ -285,7 +285,9 @@ body.if-tv .if-wrap{height:calc(100vh - 40px)}body.if-tv .if-num{font-size:40px}
 .ff-ia{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:4px;background:#25282A;color:#FFB800;font-weight:600;font-size:13px;letter-spacing:.02em}
 .ff-iamk{position:relative;display:inline-block;line-height:0}.ff-iamk img{outline:2px solid #FFB800;outline-offset:-2px}
 .ff-iamk::after{content:'Fundo IA';position:absolute;left:2px;bottom:2px;padding:1px 4px;border-radius:3px;background:#25282A;color:#FFB800;font-size:9px;line-height:1.3;font-weight:600}
-.ph .tag.tag-ia{background:#25282A;color:#FFB800}
+.ph .tag.tag-ia{background:#25282A;color:#FFB800;box-sizing:border-box;max-width:calc(100% - 46px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.02em}
+/* v93 (testador, 1366 px): a tag longa ("Fundo IA 1 · corpo inteiro") encurta com reticências antes da lupa (28 px a 6 px da
+   borda + 6 px de folga); o texto inteiro fica no title */
 .ff-card.fot{background:#eef4ff;border-color:#307FE2}
 .ff-card.folga{border-color:#d64545}
 .ff-alerta{color:#d64545;font-weight:600}
@@ -1228,7 +1230,7 @@ function sparkIdx(perDay){
 function hbars(items,fmt){const max=Math.max(...items.map(i=>i.v))||1;return `<div class="bars">${items.map(i=>`<div class="bar"><span>${esc(i.label)}</span><div class="track"><div class="fill" style="width:${100*i.v/max}%"></div></div><span class="val">${fmt?fmt(i.v):i.v}</span></div>`).join('')}</div>`}
 function quality(key){const rs=Object.values(state.reviews).filter(r=>r.key===key);const ph=rs.flatMap(r=>Object.values(r.photos||{}));const good=ph.filter(v=>v===1).length,bad=ph.filter(v=>v===-1).length;const scored=rs.filter(r=>r.score);return {sessions:rs.length,rated:good+bad,good,bad,goodPct:(good+bad)?Math.round(100*good/(good+bad)):null,score:scored.length?(scored.reduce((a,r)=>a+r.score,0)/scored.length):null}}
 const CHECK='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg>',CROSS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phStyle(p.id)}" data-act="${o.act||'zoom'}" data-id="${p.id}" ${o.sel?'data-sel="1"':''} ${o.v?`data-v="${o.v}"`:''} aria-label="${esc(o.label||'Foto')}">${o.tag?`<span class="tag${o.tagCls?' '+o.tagCls:''}">${esc(o.tag)}</span>`:''}${o.wm?'<span class="wm">ETERNA</span>':''}${o.zoom!==false?`<span class="zoom" data-act="zoom" data-id="${p.id}" role="button" aria-label="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg></span>`:''}<span class="mark">${o.v===-1?CROSS:CHECK}</span></button>`;
+const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phStyle(p.id)}" data-act="${o.act||'zoom'}" data-id="${p.id}" ${o.sel?'data-sel="1"':''} ${o.v?`data-v="${o.v}"`:''} aria-label="${esc(o.label||'Foto')}">${o.tag?`<span class="tag${o.tagCls?' '+o.tagCls:''}"${o.tagTitle?` title="${esc(o.tag)}"`:''}>${esc(o.tag)}</span>`:''}${o.wm?'<span class="wm">ETERNA</span>':''}${o.zoom!==false?`<span class="zoom" data-act="zoom" data-id="${p.id}" role="button" aria-label="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg></span>`:''}<span class="mark">${o.v===-1?CROSS:CHECK}</span></button>`;
 
 // ---------- Perfis ----------
 function vPerfis(){
@@ -3251,7 +3253,7 @@ function upIaPoll(){const a=state.agent;if(!a||!a.on||Date.now()-UP_IA_T<5000)re
     j.grupos.forEach(g=>{if(g&&typeof g.id==='string'&&upIaOk(g.ia))m[g.id]={n:+g.ia.n||0,motivo:typeof g.ia.motivo==='string'?g.ia.motivo:null,prontas:+g.ia.prontas||0,pids:Array.isArray(g.ia.pids)?g.ia.pids.filter(p=>typeof p==='string'):[]};});
     const ch=JSON.stringify(m)!==JSON.stringify(state.upIa);state.upIa=m;if(ch&&state.view==='importar')render();}).catch(()=>{});}
 function upThumb(pid,i,pend,iat){const id='ag_'+pid;const src=UP[id]?UP[id].src:state.agent.url+'/thumb/'+pid;
-  return photoBtn({id},{act:'zoom',label:'Foto '+(i+1),tag:iat?(pend?iat+' · lendo rostos':iat):(pend?'lendo rostos':''),tagCls:iat?'tag-ia':''}).replace('<button class="ph"',`<button class="ph" data-pend="${pend?1:0}"`).replace(/--img:url\([^)]*\)/,'--img:none').replace(/^(<button[^>]*>)/,`$1<img src="${esc(src)}" loading="lazy" alt="">`);}
+  return photoBtn({id},{act:'zoom',label:'Foto '+(i+1),tag:iat?(pend?iat+' · lendo rostos':iat):(pend?'lendo rostos':''),tagCls:iat?'tag-ia':'',tagTitle:!!iat}).replace('<button class="ph"',`<button class="ph" data-pend="${pend?1:0}"`).replace(/--img:url\([^)]*\)/,'--img:none').replace(/^(<button[^>]*>)/,`$1<img src="${esc(src)}" loading="lazy" alt="">`);}
 function upSessBloco(x){const on=x.status==='aberta',sep=x.status==='separada',fech=x.status==='fechada';const n=(x.fotos||[]).length+(x.pend||[]).length;
   const pt=x.ponto?(DATA.points.find(p=>p.id===x.ponto)||{name:x.ponto}).name:'sem ponto';const pend=new Set(x.pend||[]);const todas=(x.fotos||[]).concat(x.pend||[]);
   const lim=state.upSessAll[x.card]?todas.length:48;const abrir=fech&&SIM.sessions[x.card]&&canView('revisao');
