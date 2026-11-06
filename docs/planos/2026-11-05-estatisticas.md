@@ -3,14 +3,15 @@
 Pedido do Eduardo, 05/11/2026: "Uma das coisas mais importantes do Eterna é eu ter estatística de tudo." Quer saber qual fotógrafo vende mais, qual clica mais, quem falta, quem é lento ou rápido, qual produto vende melhor, quais dias são bons ou ruins e quantas pessoas por minuto passam na bilheteria. Quer um painel no Admin só de estatísticas e um calendário de jogos e eventos do Maracanã, para comparar os dias: jogo do Flamengo ou do Fluminense, fim de semana ou dia útil, turista ou local.
 
 ## Decisões do Eduardo (05/11)
-- **Presença**:
+- **05/11 noite: sem presença, faltas, atrasos ou abono; o Eterna não concorre com o sistema de ponto do RH.** Saíram da v92 a presença (login no posto e fotos), faltas, atrasos, abono, folgas fixas e horário dos turnos, no agente e no app. Os critérios 5 a 11 foram removidos. Na seção Fotógrafos ficam só as métricas de produção (dias com produção, sessões, fotos, fotos por sessão, vendas, conversão, R$ por sessão, faturamento e clique até o Checkout). As decisões de presença e turno abaixo ficam só como registro.
+- **Presença** *(removido em 05/11 noite: sem presença)*:
   - O login no posto marca que o fotógrafo veio.
   - Ele tinha escala no dia e não fez login: falta.
   - O Eduardo disse que o fotógrafo "nunca vai fotografar sem login, porque a câmera já sobe as fotos com a identificação dele". Por isso as fotos da câmera dele também contam como presença. A presença é o primeiro login no posto ou a primeira foto dele chegando ao servidor, o que vier antes. A tela mostra de onde veio a marca: "login" ou "fotos".
   - Atraso é a primeira marca depois do início do turno somado à tolerância.
-- **D2**: a sessão de usuário com `key` vence na virada do dia (`venueToday`). Ao abrir o app no dia seguinte, ele faz `logout()` e pede login de novo.
+- **D2** (mantida como segurança de sessão): a sessão de usuário com `key` vence na virada do dia (`venueToday`). Ao abrir o app no dia seguinte, ele faz `logout()` e pede login de novo.
 - **D3**: o calendário de eventos pode ser editado pelo Admin e pela Supervisora. Fica fora do Painel de controle, que é só do Admin: entra no módulo `escala`, com a ação `escala.u`. Proposta: uma view nova `calendario` ("Calendário de eventos", grupo Fotógrafo ou Dashboard) dentro do módulo `escala`. O Admin vê também um atalho no Painel de controle.
-- **Turno**: 09:00, com 10 min de tolerância, como valor inicial. O Admin ajusta no Painel de controle, também por ponto.
+- **Turno** *(removido em 05/11 noite: sem presença)*: 09:00, com 10 min de tolerância, como valor inicial. O Admin ajusta no Painel de controle, também por ponto.
 - **Catracas ainda não existem**: estão previstas até o fim do ano. Hoje a equipe faz um bip por convidado na chegada. O número não é 100% fiel, mas é confiável. O formato do bip vem do Ronaldo depois. Até lá, a seção Movimento fica pronta, com importação por CSV e o aviso de que ainda não há dados.
 
 ## O que já existe e será reaproveitado
@@ -53,20 +54,19 @@ Pedido do Eduardo, 05/11/2026: "Uma das coisas mais importantes do Eterna é eu 
 - estatísticas de vários venues pela nuvem.
 
 ## Regras assumidas
-- **S1**: a presença usa a hora do servidor. Um login que não chega ao agente do ponto não conta.
-- **S2**: a tela diz "Presença pelo login e pelas fotos no Eterna. Não substitui o ponto oficial."
+- **S1** *(removido em 05/11 noite: sem presença)*: a presença usa a hora do servidor. Um login que não chega ao agente do ponto não conta.
+- **S2** *(removido em 05/11 noite: sem presença)*: a tela diz "Presença pelo login e pelas fotos no Eterna. Não substitui o ponto oficial."
 - **S3**: o idioma conta só vendas com `canal:'checkout'`. Rótulos: "Português" e "Outras línguas (provável estrangeiro)".
 - **S4**: os tempos aparecem como mediana e p90, calculados por faixas fixas (histograma), nunca como média de médias.
-- **S5**: escala e turnos guardam histórico (`historico:[{desde,...}]`). Mudar hoje não reescreve o passado.
+- **S5** *(removido em 05/11 noite: sem presença)*: escala e turnos guardam histórico (`historico:[{desde,...}]`). Mudar hoje não reescreve o passado.
 - **S6**: importar entradas substitui o que existia no mesmo dia e na mesma origem. Quando houver catraca e bip no mesmo dia, o total usa a catraca.
-- **S7**: hora do dia, presença, rapidez e idioma só existem na Eterna, a partir da v92. Os números por dia podem incluir o histórico da Roverpix, que vem ligado por padrão.
+- **S7**: hora do dia, rapidez e idioma só existem na Eterna, a partir da v92. Os números por dia podem incluir o histórico da Roverpix, que vem ligado por padrão.
 - **S8**:
   - a tela pede `estatisticas.r`;
   - importar entradas pede `estatisticas.c`;
-  - calendário e folgas fixas pedem `escala.u`;
-  - horário dos turnos pede `catalogo.u`.
-- **S9**: o fotógrafo está escalado no dia D se `funcao/<D>` tiver uma função diferente de `folga`. Sem função gravada, vale a folga fixa que valia em D. Só entram fotógrafos ativos.
-- **S10**: o horário do turno é o do ponto da função do dia. O volante usa o horário padrão.
+  - o calendário pede `escala.u` (folgas fixas e horário dos turnos saíram).
+- **S9** *(removido em 05/11 noite: sem presença)*: o fotógrafo está escalado no dia D se `funcao/<D>` tiver uma função diferente de `folga`. Sem função gravada, vale a folga fixa que valia em D. Só entram fotógrafos ativos.
+- **S10** *(removido em 05/11 noite: sem presença)*: o horário do turno é o do ponto da função do dia. O volante usa o horário padrão.
 
 ## Mudanças no agente (`agente/eterna-agente.py`)
 1. **`_ev_limpo` aceita quatro campos novos.** Um campo inválido é descartado e a venda continua aceita.
@@ -75,15 +75,15 @@ Pedido do Eduardo, 05/11/2026: "Uma das coisas mais importantes do Eterna é eu 
    - `canal`: checkout ou balcao.
    - `t0`: ISO, entre `em` − 2 h e `em`.
 2. **`operacao_db()`**: `~/Eterna/ponto/operacao.db`, com WAL e `synchronous=full`.
-   - `presenca(dia, chave, primeiro, ultimo, n, postos, fonte)`: `fonte` é login ou fotos; o primeiro login fica gravado mesmo que as fotos tenham vindo antes.
+   - só as tabelas abaixo (a `presenca` saiu; uma tabela `presenca` ou `servico` de testes antigos é apagada ao abrir).
    - `entrada(dia, origem, seg)`.
    - `importacao(id, em, por, arquivo, origem, dias, aceitas, recusadas)`.
-3. **`POST /ponto/presenca {chave, posto}`**:
+3. **`POST /ponto/presenca {chave, posto}`** *(removido em 05/11 noite: sem presença)*:
    - exige `posto()`, `origem_local()`, `X-Eterna: 1` e `limite_ok(ip, 'presenca', 30)`;
    - a chave precisa estar no cadastro;
    - grava com `time.time()` (upsert);
    - até 5 postos, com 40 caracteres cada e sem `<>`.
-4. **Presença pelas fotos**: a primeira foto do dia atribuída ao fotógrafo (pela câmera ou série) grava ou atualiza a presença com `fonte` = fotos, se ainda não houver presença no dia ou se a foto for anterior.
+4. **Presença pelas fotos** *(removido em 05/11 noite: sem presença)*: a primeira foto do dia atribuída ao fotógrafo (pela câmera ou série) grava ou atualiza a presença com `fonte` = fotos, se ainda não houver presença no dia ou se a foto for anterior.
 5. **`POST /ponto/entradas {origem, dia, seg:[...], arquivo, por}`**:
    - corpo de até 1 MB e até 50.000 entradas;
    - `origem` é bip ou catraca;
@@ -107,23 +107,22 @@ Pedido do Eduardo, 05/11/2026: "Uma das coisas mais importantes do Eterna é eu 
   - `VIEWS` ganha `['estatisticas','Estatísticas','vendas, fotógrafos, dias e movimento','Dashboard']`, logo depois de `painel`, e a view `calendario`.
   - `MODULES` ganha `['estatisticas','Estatísticas',['estatisticas']]`, e o módulo `escala` passa a incluir `calendario`.
   - `MODULE_INFO.estatisticas`: r = ver as estatísticas; c = importar entradas da bilheteria (bip ou catraca) por CSV.
-  - A descrição de `escala.u` passa a citar o calendário e as folgas fixas.
+  - A descrição de `escala.u` passa a citar o calendário.
   - O Admin recebe o módulo novo pela `migrateUser`. O Supervisor não recebe Estatísticas.
 - **`WRITE_OPS` e `ACT_MOD`**:
   - `es-importar` pede `estatisticas.c`;
-  - `ag-salvar`, `ag-apagar`, `ag-importar`, `ag-feriados` e `folga-fixa` pedem `escala.u`;
-  - `turno-salvar` pede `catalogo.u`.
+  - `ag-salvar`, `ag-apagar`, `ag-importar` e `ag-feriados` pedem `escala.u`.
 - **Captura da venda**:
   - `pvDados` recebe `canal` e `t0`;
   - o Checkout manda `canal:'checkout'` e `t0`, que é `state.kiosk.t0`, gravado quando a pessoa sai da etapa `code` e zerado em `lojaReset`;
   - o balcão manda `canal:'balcao'` e não manda `lang`.
-- **Presença**:
+- **Presença** *(removido em 05/11 noite: sem presença)*:
   - `presencaMarcar()` roda no `login()`, ao abrir o app com sessão aberta e quando o agente volta, se `eterna.presenca.v1[key]` for diferente de `venueToday()`;
   - só marca o dia depois do `ok` do agente;
   - nunca manda um dia anterior;
-  - a sessão com `key` vence na virada do dia (D2).
+  - a sessão com `key` vence na virada do dia (D2, mantida).
 - **Estatísticas (`vEstatisticas`, classes `es-`)**:
-  - Funções puras: `esDados`, `esGrupoDia`, `esPresenca`, `esFaixas`.
+  - Funções puras: `esDados`, `esGrupoDia`, `esFaixas`.
   - `esPull` lê `/metricas/dia`, guarda em cache por 5 min e aceita até 366 dias.
   - No topo: `rangeBar`, os chips das seções e o interruptor "Com histórico Roverpix".
   - **a) Vendas e produtos**:
@@ -134,8 +133,8 @@ Pedido do Eduardo, 05/11/2026: "Uma das coisas mais importantes do Eterna é eu 
     - vendas por dia da semana, como média por dia;
     - tabela hora × dia da semana.
   - **b) Fotógrafos**:
-    - tabela ordenável: escalado, presenças, faltas, atrasos, sessões, fotos, fotos por sessão, vendas, conversão, R$ por sessão, faturamento e mediana do clique até o Checkout;
-    - o dia a dia mostra a marca (login às hh:mm ou fotos às hh:mm), o início do turno, o atraso, a 1ª foto, as sessões e as vendas.
+    - tabela ordenável só com produção: dias com produção, sessões, fotos, fotos por sessão, vendas, conversão, R$ por sessão, faturamento e mediana do clique até o Checkout;
+    - o dia a dia mostra, nos dias com fotos ou sessões dele, as sessões, as fotos, as vendas e o faturamento (sem presença, marca, turno ou atraso).
   - **c) Rapidez**:
     - cliente no Checkout (`t0` até criar);
     - confirmação pelo vendedor (criar até pagar);
@@ -168,14 +167,14 @@ Pedido do Eduardo, 05/11/2026: "Uma das coisas mais importantes do Eterna é eu 
   - "Adicionar feriados de AAAA": nacionais, móveis pela Páscoa, 20/11, 20/01 e 23/04 do Rio;
   - `datalist` de clubes, normalizado por `agClube()`;
   - o Admin vê também um atalho no Painel de controle.
-- **Horário dos turnos**: painel no Painel de controle com o início padrão, a tolerância e o início por ponto.
-- **Escala**: painel "Folgas fixas (5×2)", com 7 chips por fotógrafo.
+- **Horário dos turnos** *(removido em 05/11 noite: sem presença)*: painel no Painel de controle com o início padrão, a tolerância e o início por ponto.
+- **Escala** *(removido em 05/11 noite: sem presença)*: painel "Folgas fixas (5×2)", com 7 chips por fotógrafo.
 - **Dados**:
   - `ESTADO_COLS` ganha `agenda`;
-  - o app assina `agenda`, `config/escala` e `config/turnos`;
+  - o app assina `agenda`;
   - guarda uma cópia local (`eterna.agenda.v1`) quando o servidor não está.
 - **Testes e versão**:
-  - `window.ETERNA` expõe `esDados`, `esGrupoDia`, `esPresenca`, `esFaixas` e `agClube`;
+  - `window.ETERNA` expõe `esDados`, `esGrupoDia`, `esFaixas` e `agClube`;
   - a versão vai para v92 nos dois carimbos e em VERSOES.md.
 
 ## Contratos
@@ -189,7 +188,6 @@ Resumo do dia v2 (`GET /metricas/dia`):
  "tempos":{"cliente_s":H,"pagamento_s":H,"clique_checkout_s":H,"transferencia_s":H},
  "por_confirmador":{"Ana":{"pagamento_s":H}},
  "por_fotografo":{"carlos":{"primeira_foto":1762340000,"clique_checkout_s":H}},
- "presenca":{"carlos":{"primeiro":1762339800,"ultimo":1762360000,"n":2,"fonte":"login"}},
  "entradas":{"fonte":"catraca","total":812,"por_origem":{"bip":790,"catraca":812},"por_hora":{"09":95},
              "pico_min":{"hhmm":"10:41","n":9},"pico_15":{"hhmm":"10:30","n":88},"primeira":"09:01","ultima":"16:58"}}
 ```
@@ -204,12 +202,6 @@ Agenda (coleção `agenda`):
 ```
 Textos de até 60 caracteres (a observação, até 200), sem `<` nem `>`.
 
-`config/escala` e `config/turnos`:
-```json
-{"historico":[{"desde":"2026-11-05","folgas":{"carlos":[1,2]}}],"por":"nome","em":"ISO"}
-{"historico":[{"desde":"…","padrao":"09:00","tolerancia":10,"por_ponto":{"campo1":"09:00"}}],"por":"nome","em":"ISO"}
-```
-
 ## Critérios de aceite
 1. **Menu Estatísticas**: aparece para o Admin no Dashboard, logo abaixo de Painel. Supervisor, Fotógrafo, Atendimento e venda, Validador e Checkout não veem o item, e `#estatisticas` mostra "sem acesso".
 2. **Telas e permissões**:
@@ -218,16 +210,16 @@ Textos de até 60 caracteres (a observação, até 200), sem `<` nem `>`.
    - o Supervisor vê e edita o Calendário.
 3. **Venda pelo Checkout em espanhol**: chega com `lang:'es'`, `canal:'checkout'`, `cart` e `t0` anterior a `em`. A venda no balcão chega com `canal:'balcao'` e sem `lang`.
 4. **Campos inválidos**: `cart` com 31 itens, `lang:'xx'` ou `t0` de três horas antes são descartados, e a venda não é recusada.
-5. **Presença pelo login**:
+5. ~~**Presença pelo login**~~ *(removido em 05/11 noite: sem presença)*:
    - grava com a hora do servidor;
    - um segundo login mantém `primeiro` e soma 1 em `n`;
    - o servidor nunca aceita hora mandada pelo navegador.
-6. **Presença pelas fotos**: a 1ª foto atribuída a um fotógrafo sem login grava a presença com `fonte` = fotos. Um login depois mantém `primeiro` como a hora mais cedo.
-7. **`POST /ponto/presenca` inválido**: sem `X-Eterna`, de origem fora da lista, com chave fora do cadastro ou mais de 30 vezes por minuto, responde 403, 403, 400 e 429.
-8. **Sessão vencida**: uma sessão aberta ontem leva a um novo login ao abrir o app hoje, e o dia de ontem nunca é marcado.
-9. **Folgas fixas**: com folga na segunda e na terça e nenhuma função gravada, numa segunda sem marca o fotógrafo aparece "folga". Numa quarta sem marca, aparece "falta".
-10. **Atraso**: com turno às 09:00 e tolerância de 10 min, uma marca às 09:08 não é atraso. Às 09:25, é atraso de 25 min.
-11. **Histórico da escala**: mudar a folga fixa hoje não muda as faltas antes de `desde`.
+6. ~~**Presença pelas fotos**~~ *(removido em 05/11 noite: sem presença)*: a 1ª foto atribuída a um fotógrafo sem login grava a presença com `fonte` = fotos. Um login depois mantém `primeiro` como a hora mais cedo.
+7. ~~**`POST /ponto/presenca` inválido**~~ *(removido em 05/11 noite: sem presença)*: sem `X-Eterna`, de origem fora da lista, com chave fora do cadastro ou mais de 30 vezes por minuto, responde 403, 403, 400 e 429.
+8. ~~**Sessão vencida**~~ *(removido em 05/11 noite: sem presença)* como critério de presença. Fica só a segurança de sessão (D2): uma sessão de fotógrafo aberta ontem leva a um novo login ao abrir o app hoje.
+9. ~~**Folgas fixas**~~ *(removido em 05/11 noite: sem presença)*: com folga na segunda e na terça e nenhuma função gravada, numa segunda sem marca o fotógrafo aparece "folga". Numa quarta sem marca, aparece "falta".
+10. ~~**Atraso**~~ *(removido em 05/11 noite: sem presença)*: com turno às 09:00 e tolerância de 10 min, uma marca às 09:08 não é atraso. Às 09:25, é atraso de 25 min.
+11. ~~**Histórico da escala**~~ *(removido em 05/11 noite: sem presença)*: mudar a folga fixa hoje não muda as faltas antes de `desde`.
 12. **Soma conferida**: com a Roverpix desligada, o faturamento da seção a é igual à soma do "Servidor do ponto · todos os caixas" no mesmo período.
 13. **Hora e dia da semana**: uma venda paga às 10:40 de um sábado entra na barra das 10 h e em "Sáb".
 14. **Produtos antigos**: vendas de antes da v92 aparecem como "sem detalhe de produto", nunca somadas a um pacote.
@@ -252,8 +244,8 @@ Textos de até 60 caracteres (a observação, até 200), sem `<` nem `>`.
 30. **Testes**: `bash testes/rodar.sh` termina com `FALHAS: 0`, contando `testes/estatisticas.js` e `testes/estatisticas_agente.py`. As falhas antigas do pedido 7 do Ronaldo ficam listadas à parte.
 
 ## Riscos (para a revisão de segurança)
-1. **O agente não sabe quem está logado.** `/metricas/dia` é lido por qualquer posto da lista de origens, e agora traz presença. Isso vai para a fila do login no servidor.
-2. **A presença pode ser falsificada** (código de login visível na tela, POST na rede). A mitigação é parcial: hora do servidor, posto, 1ª foto e o texto de que não é o ponto oficial. Há peso trabalhista (Portaria 671/2021).
+1. **O agente não sabe quem está logado.** `/metricas/dia` é lido por qualquer posto da lista de origens, Isso vai para a fila do login no servidor (a presença saiu em 05/11 noite).
+2. **A presença pode ser falsificada** *(removido em 05/11 noite: sem presença)* (código de login visível na tela, POST na rede). A mitigação é parcial: hora do servidor, posto, 1ª foto e o texto de que não é o ponto oficial. Há peso trabalhista (Portaria 671/2021).
 3. **O CSV de entradas pode trazer dado pessoal.** O descarte das colunas extras acontece no navegador, e o agente aceita só números inteiros.
 4. **XSS pelo calendário**: usar `esc()` em todo texto. A coleção `agenda` é validada no agente.
 5. **Excesso de dados**: limites de tamanho, de vezes por minuto e de datas. Cada importação fica registrada.
@@ -266,11 +258,11 @@ Não existe uma fonte oficial única. CBF, Ferj e Conmebol publicam cada uma a s
 
 ## Revisão e segurança (05/11, aplicadas)
 - **S1**: o resumo do dia só é gravado por `met_escreve` (lock por dia, `mkstemp` em `MET_DIR`), pelo `metricas_loop`, pela importação de entradas e pela migração; ler, mudar e gravar ficam dentro do lock. Resumo que existe e não abre fica como está (log). Dia sem resumo ganha registro mínimo `{dia, gerado, so_entradas, entradas}`, sem `v:2`.
-- **R1/R2**: `presencaMarcar` começa com `sessaoVirada()`; 400 não repete até o próximo login; 429 ou falha espera 60 s; a chave é normalizada como no agente (`presChave`).
+- **R1/R2** *(removido em 05/11 noite: sem presença)*: `presencaMarcar` começa com `sessaoVirada()`; 400 não repete até o próximo login; 429 ou falha espera 60 s; a chave é normalizada como no agente (`presChave`).
 - **R3/R4**: veja Contratos (`pagamento_s` só do Checkout; `por_confirmador`).
-- **Presença**: o 1º login guarda `ip` e `acesso` (`loopback`, `rede` ou `remota` para 100.64.0.0/10); o dia a dia mostra a origem e marca "remota". Tabela `servico(inicio, ultimo)` no `operacao.db` com um pulso por minuto; o resumo traz `servidor_fora:[[ini,fim]]` e o turno com o servidor fora vira "sem dado (servidor fora)", nunca falta nem atraso. Abono pela Supervisora ou Admin (`escala.u`, painel Abonos na Escala, coleção `abono` com id `<dia>|<chave>`, `auditLog`). Dia com evento `fechado` no calendário fica fora das faltas.
+- **Presença** *(removido em 05/11 noite: sem presença)*: o 1º login guarda `ip` e `acesso` (`loopback`, `rede` ou `remota` para 100.64.0.0/10); o dia a dia mostra a origem e marca "remota". Tabela `servico(inicio, ultimo)` no `operacao.db` com um pulso por minuto; o resumo traz `servidor_fora:[[ini,fim]]` e o turno com o servidor fora vira "sem dado (servidor fora)", nunca falta nem atraso. Abono pela Supervisora ou Admin (`escala.u`, painel Abonos na Escala, coleção `abono` com id `<dia>|<chave>`, `auditLog`). Dia com evento `fechado` no calendário fica fora das faltas.
 - **Fuso**: `fuso_ajusta()` no `main()` (TZ = `ETERNA_TZ` ou `America/Sao_Paulo` com `tzset`, fora do Windows); `/status.fuso {tz, offset_min}`; a tela avisa quando difere de `VENUE_TZ` (CHECKLIST-SERVIDOR.md, seção 1).
-- **Entrada de dados**: `__proto__`, `constructor` e `prototype` recusados no agente (cart.id, posto, por, vendedor) e acumulados com `Object.create(null)` no app; `cfg_valida` para `config/escala` e `config/turnos`; teto de 5000 eventos na agenda; rotas novas com 500 em JSON e `X-Eterna` no CORS; a importação espera e tenta de novo no 429.
+- **Entrada de dados**: `__proto__`, `constructor` e `prototype` recusados no agente (cart.id, posto, por, vendedor) e acumulados com `Object.create(null)` no app; `cfg_valida` saiu junto com as folgas fixas e os turnos; teto de 5000 eventos na agenda; rotas novas com 500 em JSON e `X-Eterna` no CORS; a importação espera e tenta de novo no 429.
 
 ## Falhas antigas fora da v92
 Cinco testes já falham em `origin/main` (conferido em `e7833a6`, 05/11) e continuam falhando na `feat/estatisticas` do mesmo jeito. Não vêm desta entrega; ficam ligados ao pedido 7 do Ronaldo:
