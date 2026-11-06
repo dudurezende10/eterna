@@ -742,9 +742,11 @@ def ia_cfg():
                     db.close()
             if r:
                 v = ia_valida(json.loads(r[0]))
-    except Exception:
-        v = None
-    v = v or ia_padrao()
+                if v is None:                        # gravado mas ilegível: fica o último valor válido
+                    v = _ia_cfg["v"] or ia_padrao()
+    except Exception:                                # erro de leitura (banco ocupado): fica o último valor válido
+        v = _ia_cfg["v"] or ia_padrao()
+    v = v or ia_padrao()                             # o padrão só sem documento gravado
     _ia_cfg.update(t=agora, v=v)
     return v
 
@@ -5332,8 +5334,9 @@ def estado_col(col):
     return {"ok": True, "rev": rev, "docs": docs}
 
 
-def estado_gravar(body):
+def estado_gravar(body, quem=""):
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
+    auditoria = []
     with estado_lock:
         db = estado_db()
         try:
@@ -5350,6 +5353,15 @@ def estado_gravar(body):
                     novo = db.execute("select 1 from doc where col = 'agenda' and id = ? and valor is not null", (d["id"],)).fetchone() is None
                     if novo and db.execute("select count(*) from doc where col = 'agenda' and valor is not null").fetchone()[0] >= AGENDA_DOCS_MAX:
                         continue                                # teto da agenda (revisão)
+                if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
+                    if v is not None:
+                        ok_ = ia_valida(v)
+                        if ok_ is None:
+                            print("  config/ia recusada (formato inválido) · de %s" % (quem or "?"))
+                            continue
+                        v = {**ok_, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
+                    r_ = db.execute("select valor from doc where col = 'config' and id = 'ia'").fetchone()
+                    auditoria.append((r_[0] if r_ else None, v))
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
                 if txt is not None and len(txt) > ESTADO_MAX:
                     continue
@@ -5363,6 +5375,13 @@ def estado_gravar(body):
     if any(isinstance(d, dict) and d.get("col") == "config" for d in docs[:500]):
         _busca_cfg["t"] = 0.0            # janela da selfie mudada no Painel vale na próxima busca
         _ia_cfg["t"] = 0.0               # v93: regra dos cliques de IA vale na próxima sessão que fechar
+    for de_, para in auditoria:          # v93 (segurança): quem mudou a regra dos cliques de IA, no console
+        try:
+            de_ = ia_valida(json.loads(de_)) if de_ else None
+        except Exception:
+            de_ = None
+        print("  config/ia: de %s para %s · por %s · host %s" % (json.dumps(de_), json.dumps(ia_valida(para) if para else None),
+                                                               (para or {}).get("por") or "?", quem or "?"))
     return {"ok": True, "gravados": n, "rev": rev}
 
 
@@ -6483,7 +6502,7 @@ class H(BaseHTTPRequestHandler):
             body, err = self.corpo(8 * 1024 * 1024)
             if err:
                 return self.js({"error": "corpo inválido"}, err)
-            return self.js(estado_gravar(body))
+            return self.js(estado_gravar(body, quem=self.client_address[0]))
         if p == "/ponto/eventos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)

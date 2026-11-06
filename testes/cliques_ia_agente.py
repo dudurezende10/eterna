@@ -192,10 +192,15 @@ m.sess_tick(T + 5000)
 ok(de(c[0])["ia"] == [] and de(c[0])["ia_regra"]["motivo"] == "desligada", "12: desligada")
 for ruim in ({"cliques": 7}, {"cliques": True}, {"pontos": ["../x"]}, {"pontos": ["a"] * 21}, {"ligada": "sim"}, "x", None):
     ok(m.ia_valida(ruim) is None, "12: inválido recusado: %r" % (ruim,))
-m.estado_gravar({"docs": [{"col": "config", "id": "ia", "valor": {"ligada": True, "cliques": 9}}]})
-ok(m.ia_cfg() == m.ia_padrao(), "12: inválido = padrão")
+r12 = m.estado_gravar({"docs": [{"col": "config", "id": "ia", "valor": {"ligada": True, "cliques": 9}}]})
+ok(r12["gravados"] == 0 and m.ia_cfg()["ligada"] is False, "12: inválido recusado no estado_gravar (fica o anterior): %r" % r12)
+_edb = m.estado_db
+m.estado_db = lambda: (_ for _ in ()).throw(RuntimeError("banco ocupado"))
+m._ia_cfg["t"] = 0
+ok(m.ia_cfg()["ligada"] is False, "12: erro de leitura mantém o último valor válido")
+m.estado_db = _edb
 m.estado_gravar({"docs": [{"col": "config", "id": "ia", "valor": None}]})
-m.ia_cfg()
+ok(m.ia_cfg() == m.ia_padrao(), "12: sem documento = padrão")
 
 # 13: Fila do fotógrafo: grupo aberto com 1 foto = n 2, 1 pid; fechada traz prontas
 reset()
