@@ -153,6 +153,18 @@ Se aparecer o aviso **Rostos desligados neste computador**, o servidor está sep
 
 Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
+### Os 2 primeiros cliques são para os fundos de IA (v93)
+
+Em toda sessão nos pontos de campo, comece assim:
+
+1. **1º clique: corpo inteiro** do grupo.
+2. **2º clique: mais fechado** (do joelho ou da cintura para cima).
+3. Depois, as fotos normais da sessão.
+
+Essas 2 fotos não aparecem como fotos à venda: o servidor recorta as pessoas na hora e o Checkout já abre com as 5 montagens nos fundos de IA. No Upload automático elas aparecem com a marca **Fundo IA 1 · corpo inteiro** e **Fundo IA 2 · fechada** (a marca "IA" sozinha continua sendo a do ajuste automático). O cabeçalho da sessão mostra **Fundos de IA: 2 de 2 prontas** ou o motivo de não ter separado (volante, Vestiário, sem função do dia, poucas fotos). Na Fila do fotógrafo aparece **Fundo IA: falta o 2º clique** enquanto a sessão só tem 1 foto, e **Fundo IA ✓✓** quando os 2 recortes estão prontos. Se esquecer, os 2 primeiros cliques viram base do mesmo jeito.
+
+Quem altera Configurações liga e desliga a regra, escolhe de 1 a 3 cliques e os pontos em **Painel de controle › Fotos para os fundos de IA**. A mudança vale para as próximas sessões.
+
 ---
 
 ## 3. Checkout (caixa e atendimento)
