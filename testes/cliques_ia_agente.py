@@ -265,22 +265,35 @@ ok(res.get("ia_prontos", 99) <= 1, "6: o Checkout passou na frente das bases de 
 for j in ia_jobs:
     j["ev"].wait(30)
 
-# 7: o mesmo pid pedido pela IA e pelo Checkout ao mesmo tempo = um recorte só
+# 7 (revisão R2): o mesmo pid pedido pela IA e pelo Checkout ao mesmo tempo = o mesmo trabalho e um recorte só
 m.REC_FALSO_SEG = 0.3
 blk, _ = m.rec_enfileirar("b10c000001", foto("b10c000001"), 3000, m.REC_PRIO_ANTECIPADO)
 time.sleep(0.05)
-antes = m.rec_status()["feitos"]
 fd = foto("d0b1e00001")
+_fazer = m.rec_fazer
+chamadas = []
+
+
+def _conta(pid, origem, lado=3000):
+    if pid == "d0b1e00001":
+        chamadas.append((lado, os.path.exists(m.rec_arquivo(pid))))   # (lado, o de 3000 já existia?)
+    return _fazer(pid, origem, lado)
+
+
+m.rec_fazer = _conta
 j1, _ = m.rec_enfileirar("d0b1e00001", fd, 2400, m.REC_PRIO_IA, ia=True, u=time.time())
+j2, e2 = m.rec_enfileirar("d0b1e00001", fd, 3000, m.REC_PRIO_CHECKOUT)
+ok(j2 is j1 and not e2 and j1["prio"] == 0, "7: o pedido do Checkout reaproveita o trabalho da IA (e sobe a prioridade)")
 rr = {}
 th = threading.Thread(target=lambda: rr.setdefault("r", m.rec_pedir("d0b1e00001", fd, 3000)))
 th.start()
 j1["ev"].wait(30)
 th.join(30)
 blk["ev"].wait(30)
+m.rec_fazer = _fazer
 ok(rr.get("r") and rr["r"][0] == m.rec_arquivo("d0b1e00001") and os.path.exists(m.rec_arquivo("d0b1e00001", 2400)),
    "7: os dois pedidos atendidos: %r" % (rr.get("r"),))
-ok(m.rec_status()["feitos"] - antes == 2, "7: um recorte para a foto (mais o que estava em andamento): %r" % (m.rec_status()["feitos"] - antes))
+ok(len(chamadas) == 1 and chamadas[0] == (2400, False), "7: um rec_fazer só para a foto (sem dedup seriam 2): %r" % chamadas)
 
 # R1: base já na fila em 3000 pelo recorte antecipado e depois pedida em 2400 pela IA = os dois tamanhos;
 # e o mesmo com o trabalho de 3000 já em andamento (o rec_ia_loop confere o 2400 e pede de novo)
