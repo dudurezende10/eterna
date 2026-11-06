@@ -4256,15 +4256,12 @@ def sess_rostos_lidos(pid, faces, agora=None):
 
 
 def sess_add(pid, m):
-    """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto. v92: a foto atribuída a um fotógrafo
-    (FTP, câmera ou série, pela mesma regra das sessões) na trilha ao vivo marca a presença dele (fonte "fotos")."""
+    """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
     cad = ff_cadastrados()
     with sess_lock:
         card = _sess_add(pid, m, cad, time.time())
         x = sess.get(card or "")
         quem = x.get("fotografo") if x and x.get("trilha") == "vivo" and not x.get("atrasada") else None
-    if quem:
-        presenca_foto(quem, _num(m.get("u")))      # hora de chegada ao servidor (nunca a do EXIF)
     return card
 
 
@@ -4985,7 +4982,7 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
 #   POST /ponto/docs {docs:[{col,id,valor}]}  valor null apaga.        -> {ok, rev}
 # O navegador guarda uma cópia e uma fila do que ainda não subiu (sem rede); o servidor é o dono. Backup no S3 com as vendas.
 ESTADO_DB = os.path.join(HOME, "ponto", "estado.db")
-ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda", "abono")
+ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda")
 ESTADO_MAX = 512 * 1024              # um registro (um usuário, um ajuste de foto) nunca passa disto
 estado_lock = threading.Lock()
 
@@ -5038,14 +5035,6 @@ def estado_gravar(body):
                     novo = db.execute("select 1 from doc where col = 'agenda' and id = ? and valor is not null", (d["id"],)).fetchone() is None
                     if novo and db.execute("select count(*) from doc where col = 'agenda' and valor is not null").fetchone()[0] >= AGENDA_DOCS_MAX:
                         continue                                # teto da agenda (revisão)
-                if d["col"] == "config" and d["id"] in ("escala", "turnos") and v is not None:   # v92: folgas fixas e turnos
-                    v = cfg_valida(d["id"], v)
-                    if v is None:
-                        continue
-                if d["col"] == "abono" and v is not None:       # v92: abono de falta ou atraso (Supervisora)
-                    v = abono_valida(d["id"], v)
-                    if v is None:
-                        continue
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
                 if txt is not None and len(txt) > ESTADO_MAX:
                     continue
@@ -5365,7 +5354,7 @@ def backup_loop():
     while True:
         time.sleep(120)
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB) if os.path.exists(b)]   # v92: presença e entradas
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB) if os.path.exists(b)]   # v92: entradas da bilheteria
             if not bancos:
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
@@ -5424,8 +5413,8 @@ def metricas_periodo(de, ate):
 
 # ---------- Estatísticas (v92; plano docs/planos/2026-11-05-estatisticas.md) ----------
 # O resumo do dia ganha campos novos (v:2) sem mudar os da v1: por hora, produto, canal e idioma, tempos em faixas fixas
-# (histograma: mediana e p90 saem das faixas, nunca média de médias), presença (login no posto ou 1ª foto, com a hora do
-# servidor) e entradas da bilheteria (bip ou catraca, importadas por CSV). Presença, entradas e importações moram em
+# (histograma: mediana e p90 saem das faixas, nunca média de médias) e entradas da bilheteria (bip ou catraca, importadas
+# por CSV). Sem presença, faltas ou atrasos (Eduardo, 05/11 noite: isso é do RH). Entradas e importações moram em
 # ~/Eterna/ponto/operacao.db (vai para o backup). Só números, chaves de fotógrafo e nomes de vendedor: nada de foto, rosto,
 # e-mail, CPF ou número de ingresso.
 EST_FAIXAS = (30, 60, 120, 300, 600, 1200)   # limites (s) das faixas 0–30 s, 30–60 s, 1–2, 2–5, 5–10, 10–20 min e > 20 min
@@ -5433,10 +5422,6 @@ OPERACAO_DB = os.path.join(HOME, "ponto", "operacao.db")
 op_lock = threading.Lock()
 ENTRADAS_MAX = 50000
 ENTRADAS_ORIGENS = ("bip", "catraca")
-PRES_POSTOS_MAX = 5
-_pres_mem = {}                   # (dia, chave) -> [primeiro, ultimo gravado]: a foto só grava quando muda algo
-_pres_cad = {"t": 0.0, "v": frozenset()}
-_pres_ini = {"t": 0.0, "v": None}
 est_migra = {"estado": "parado", "feitos": 0, "total": 0, "erro": None}
 
 
@@ -5536,16 +5521,7 @@ def met_v2(dia, ss, evs):
             # R4: quem confirmou fica em por_confirmador, nunca misturado com o por_vendedor da v1 (vendas e faturamento)
             nome = _nome_pessoa(v["pagar_por"]) or _nome_pessoa(c.get("vendedor")) or "sem nome"
             h_add(out["por_confirmador"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
-    pres = presenca_dia(dia)
-    if pres is not None:                             # S7: sem o campo = dia sem dado de presença (antes da v92)
-        out["presenca"] = pres
     out["entradas"] = entradas_dia(dia)
-    try:
-        sf = servico_fora(dia)
-    except Exception:
-        sf = None
-    if sf is not None:                               # revisão: horário com o agente fora não vira falta nem atraso
-        out["servidor_fora"] = sf
     return out
 
 
@@ -5586,17 +5562,13 @@ def operacao_db():
     c.execute("pragma synchronous=full")
     if _op_criado["arq"] != OPERACAO_DB or not os.path.exists(OPERACAO_DB):
         c.execute("pragma journal_mode=wal")
-        c.execute("create table if not exists presenca (dia text, chave text, primeiro real, ultimo real, n int, postos text,"
-                  " fonte text, login real, foto real, primary key (dia, chave))")
-        cols = {r[1] for r in c.execute("pragma table_info(presenca)")}
-        for col in ("ip", "acesso"):                 # revisão: de onde veio o login (ip e loopback, rede ou remota)
-            if col not in cols:
-                c.execute("alter table presenca add column %s text" % col)
+        # Eduardo, 05/11 noite: o Eterna não é controle de ponto (é do RH). Presença saiu da v92; tabelas de testes antigos somem.
+        c.execute("drop table if exists presenca")
+        c.execute("drop table if exists servico")
         c.execute("create table if not exists entrada (dia text, origem text, seg int)")
         c.execute("create index if not exists entrada_dia on entrada(dia, origem)")
         c.execute("create table if not exists importacao (id text primary key, em text, por text, arquivo text, origem text,"
                   " dias text, aceitas int, recusadas int)")
-        c.execute("create table if not exists servico (inicio real primary key, ultimo real)")   # quando o agente esteve no ar
         c.commit()
         _op_criado["arq"] = OPERACAO_DB
     return c
@@ -5612,94 +5584,11 @@ def op_ler(sql, args=()):
             db.close()
 
 
-def tipo_acesso(ip):
-    """loopback (o próprio servidor), remota (Tailscale/CGNAT 100.64.0.0/10) ou rede (o posto na rede do estádio)."""
-    ip = str(ip or "")
-    if ip.startswith("::ffff:"):
-        ip = ip[7:]
-    if ip in ("127.0.0.1", "::1"):
-        return "loopback"
-    try:
-        a, b = (int(x) for x in ip.split(".")[:2])
-        if a == 100 and 64 <= b <= 127:
-            return "remota"
-    except Exception:
-        pass
-    return "rede"
 
 
-SERVICO_PULSO = 60
-_servico = {"inicio": None}
 
 
-def servico_pulso(agora=None):
-    """Marca que o agente está no ar (uma linha por boot, o último sinal a cada minuto). Buraco = servidor fora."""
-    agora = agora or time.time()
-    with op_lock:
-        db = operacao_db()
-        try:
-            if _servico["inicio"] is None:
-                _servico["inicio"] = agora
-                db.execute("insert or replace into servico values (?, ?)", (agora, agora))
-            else:
-                db.execute("update servico set ultimo = ? where inicio = ?", (agora, _servico["inicio"]))
-            db.commit()
-        finally:
-            db.close()
 
-
-def servico_loop():
-    while True:
-        try:
-            servico_pulso()
-        except Exception as ex:
-            print("  operação (servidor no ar): %s" % str(ex)[:120])
-        time.sleep(SERVICO_PULSO)
-
-
-def servico_fora(dia):
-    """Intervalos [ini, fim] (epoch) do dia em que o agente esteve fora, depois do 1º registro de serviço. Buraco de até
-    3 pulsos não conta. None antes do 1º registro (sem dado)."""
-    try:
-        t0 = time.mktime(time.strptime(dia, "%Y-%m-%d"))
-    except ValueError:
-        return None
-    t1 = t0 + 86400
-    rs = op_ler("select inicio, ultimo from servico order by inicio")
-    if not rs or rs[0][0] >= t1:
-        return None
-    fora, fim_ant = [], None
-    for ini, ult in rs:
-        if fim_ant is not None and ini - fim_ant > 3 * SERVICO_PULSO:
-            a, b = max(fim_ant, t0), min(ini, t1)
-            if a < b:
-                fora.append([a, b])
-        fim_ant = max(fim_ant or 0, ult or ini)
-    agora = time.time()
-    if fim_ant is not None and agora - fim_ant > 3 * SERVICO_PULSO:      # fora agora
-        a, b = max(fim_ant, t0), min(agora, t1)
-        if a < b:
-            fora.append([a, b])
-    return fora
-
-
-def presenca_cadastro():
-    """Chaves aceitas na presença: os fotógrafos do FTP (sem os logins compartilhados) e a chave de cada usuário ativo do
-    cadastro da equipe (estado.db). Cache de 30 s."""
-    c = _pres_cad
-    agora = time.time()
-    if 0 <= agora - c["t"] < 30 and c["v"]:
-        return c["v"]
-    cad = set(ff_cadastrados())
-    try:
-        for (v,) in estado_db_ler("usuarios"):
-            u = json.loads(v or "null")
-            if isinstance(u, dict) and u.get("key") and u.get("active") is not False and not u.get("deleted"):
-                cad.add(sem_acento(str(u["key"]))[:40])
-    except Exception:
-        pass
-    c.update(t=agora, v=frozenset(cad))
-    return c["v"]
 
 
 def estado_db_ler(col):
@@ -5711,96 +5600,8 @@ def estado_db_ler(col):
             db.close()
 
 
-def presenca_marca(chave, quando, fonte, posto=None, ip=None, acesso=None):
-    """Grava a presença (upsert) com a hora do SERVIDOR. login: n + 1 e o 1º login fica guardado mesmo com fotos antes;
-    fotos: só a 1ª foto do dia (e o último sinal a cada 10 min). primeiro = a marca mais cedo, fonte = de onde ela veio."""
-    dia = _ff_hoje(quando)
-    with op_lock:
-        db = operacao_db()
-        try:
-            r = db.execute("select primeiro, ultimo, n, postos, fonte, login, foto, ip, acesso from presenca where dia = ? and chave = ?",
-                           (dia, chave)).fetchone()
-            if r is None:
-                ps = [posto] if posto else []
-                db.execute("insert into presenca (dia, chave, primeiro, ultimo, n, postos, fonte, login, foto, ip, acesso)"
-                           " values (?,?,?,?,?,?,?,?,?,?,?)",
-                           (dia, chave, quando, quando, 1 if fonte == "login" else 0, json.dumps(ps), fonte,
-                            quando if fonte == "login" else None, quando if fonte == "fotos" else None,
-                            ip if fonte == "login" else None, acesso if fonte == "login" else None))
-                prim, ult = quando, quando
-            else:
-                prim, ult, n, ps, fo, lg, ft, ip0, ac0 = r
-                try:
-                    ps = json.loads(ps or "[]")
-                except Exception:
-                    ps = []
-                if posto and posto not in ps and len(ps) < PRES_POSTOS_MAX:
-                    ps.append(posto)
-                if fonte == "login":
-                    n = (n or 0) + 1
-                    if not lg or quando < lg:                # o ip e o acesso são os do 1º login
-                        lg, ip0, ac0 = quando, ip, acesso
-                else:
-                    ft = quando if not ft or quando < ft else ft
-                if quando < prim:
-                    prim, fo = quando, fonte
-                ult = max(ult or quando, quando)
-                db.execute("update presenca set primeiro = ?, ultimo = ?, n = ?, postos = ?, fonte = ?, login = ?, foto = ?, ip = ?, acesso = ?"
-                           " where dia = ? and chave = ?", (prim, ult, n, json.dumps(ps), fo, lg, ft, ip0, ac0, dia, chave))
-            db.commit()
-        finally:
-            db.close()
-        _pres_mem[(dia, chave)] = [prim, ult]
-    _pres_ini["t"] = 0.0
-    return {"dia": dia, "primeiro": prim, "ultimo": ult}
 
 
-def presenca_foto(chave, u):
-    """S1/decisão do Eduardo: a 1ª foto do fotógrafo chegando ao servidor também marca presença. Só grava se for a 1ª do dia,
-    se for antes da marca que existe ou para atualizar o último sinal a cada 10 min."""
-    if not chave or not u:
-        return
-    k = (_ff_hoje(u), chave)
-    mem = _pres_mem.get(k)
-    if mem is not None and u >= mem[0] and u - mem[1] < 600:
-        return
-    try:
-        presenca_marca(chave, u, "fotos")
-    except Exception as ex:
-        print("  presença pelas fotos: %s" % str(ex)[:80])
-
-
-def presenca_inicio():
-    """1º dia com presença gravada (None se nunca houve). Antes dele o resumo não traz "presenca" (S7). Cache de 60 s."""
-    c = _pres_ini
-    agora = time.time()
-    if 0 <= agora - c["t"] < 60:
-        return c["v"]
-    try:
-        v = op_ler("select min(dia) from presenca")[0][0]
-    except Exception:
-        v = None
-    c.update(t=agora, v=v)
-    return v
-
-
-def presenca_dia(dia):
-    """Presença do dia por chave; None antes do 1º dia com presença gravada."""
-    ini = presenca_inicio()
-    if not ini or dia < ini:
-        return None
-    try:
-        rs = op_ler("select chave, primeiro, ultimo, n, postos, fonte, login, foto, acesso from presenca where dia = ?", (dia,))
-    except Exception:
-        return {}
-    out = {}
-    for ch, pr, ul, n, ps, fo, lg, ft, ac in rs:
-        try:
-            ps = json.loads(ps or "[]")
-        except Exception:
-            ps = []
-        out[ch] = {"primeiro": pr, "ultimo": ul, "n": n or 0, "fonte": fo, "login": lg, "foto": ft, "postos": ps, "acesso": ac}
-    return out
 
 
 def _hhmm(seg):
@@ -5978,65 +5779,10 @@ _re_agenda_id = re.compile(r"^ag_[0-9a-f]{12}$")
 
 
 AGENDA_DOCS_MAX = 5000
-_re_cfg_chave = re.compile(r"^[a-z0-9_-]{1,40}$")
-_re_hhmm = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-_re_dia = re.compile(r"^\d{4}-\d\d-\d\d$")
 
 
-def _em_ok(x):
-    """ISO até agora + 5 min (relógio do navegador adiantado não manda no histórico)."""
-    if not isinstance(x, str) or len(x) > 30:
-        return None
-    t = _epoch(x)
-    return x if t and t <= time.time() + 300 else None
 
 
-def cfg_valida(nome, v):
-    """config/escala {historico:[{desde, folgas:{chave:[0..6]}}]} e config/turnos {historico:[{desde, padrao, tolerancia,
-    por_ponto:{ponto:HH:MM}}]}: até 200 entradas, desde ISO, chaves ^[a-z0-9_-]{1,40}$, dias 0 a 6, HH:MM. Ou None."""
-    if not isinstance(v, dict) or not isinstance(v.get("historico"), list) or not 0 < len(v["historico"]) <= 200:
-        return None
-    hs = []
-    for h in v["historico"]:
-        if not isinstance(h, dict) or not isinstance(h.get("desde"), str) or not _re_dia.match(h["desde"]):
-            return None
-        if nome == "escala":
-            fol = h.get("folgas") if isinstance(h.get("folgas"), dict) else None
-            if fol is None or len(fol) > 200:
-                return None
-            f2 = {}
-            for k, ds in fol.items():
-                if not _re_cfg_chave.match(str(k)) or not isinstance(ds, list) or len(ds) > 7:
-                    return None
-                if not all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 6 for x in ds):
-                    return None
-                f2[k] = sorted(set(ds))
-            hs.append({"desde": h["desde"], "folgas": f2})
-        else:
-            tol = h.get("tolerancia")
-            if not isinstance(h.get("padrao"), str) or not _re_hhmm.match(h["padrao"]):
-                return None
-            if isinstance(tol, bool) or not isinstance(tol, int) or not 0 <= tol <= 120:
-                return None
-            pp = h.get("por_ponto") if isinstance(h.get("por_ponto"), dict) else {}
-            if len(pp) > 50 or not all(_re_cfg_chave.match(str(k)) and isinstance(x, str) and _re_hhmm.match(x) for k, x in pp.items()):
-                return None
-            hs.append({"desde": h["desde"], "padrao": h["padrao"], "tolerancia": tol, "por_ponto": dict(pp)})
-    return {"historico": hs, "por": _txt_chave(v.get("por"), 60), "em": _em_ok(v.get("em"))}
-
-
-_re_abono_id = re.compile(r"^\d{4}-\d\d-\d\d\|[a-z0-9_-]{1,40}$")
-
-
-def abono_valida(doc_id, v):
-    """abono/<dia>|<chave> {dia, chave, motivo, por, em}: tira a falta ou o atraso daquele dia (Supervisora, escala.u)."""
-    if not isinstance(v, dict) or not _re_abono_id.match(doc_id):
-        return None
-    dia, chave = doc_id.split("|", 1)
-    motivo = re.sub(r"[<>\x00-\x1f]", "", str(v.get("motivo") or "")).strip()[:200]
-    if v.get("dia") != dia or v.get("chave") != chave or not motivo:
-        return None
-    return {"dia": dia, "chave": chave, "motivo": motivo, "por": _txt_chave(v.get("por"), 60), "em": _em_ok(v.get("em"))}
 
 
 def agenda_valida(doc_id, v):
@@ -6065,7 +5811,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/presenca", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -6112,7 +5858,7 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", o)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path in ("/ponto/presenca", "/ponto/entradas") else "Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path == "/ponto/entradas" else "Content-Type")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             return
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -6157,12 +5903,6 @@ class H(BaseHTTPRequestHandler):
         print("  função do dia atualizada por %s" % ("este computador" if self.loopback() else "posto " + self.client_address[0]))
         return self.js({"ok": True, "ignoradas": ignoradas})
 
-    def presenca_post(self):
-        try:
-            return self._presenca_post()
-        except Exception as ex:          # revisão: erro inesperado responde JSON (o app espera e tenta depois)
-            print("  presença: %s" % str(ex)[:120])
-            return self.js({"error": "erro no servidor"}, 500)
 
     def entradas_post(self):
         try:
@@ -6171,23 +5911,6 @@ class H(BaseHTTPRequestHandler):
             print("  entradas: %s" % str(ex)[:120])
             return self.js({"error": "erro no servidor"}, 500)
 
-    def _presenca_post(self):
-        """v92: POST /ponto/presenca {chave, posto}: o login no posto marca a presença com a hora DO SERVIDOR (o navegador
-        nunca manda hora). Posto + origem + X-Eterna: 1 (403), 30 por minuto (429), chave do cadastro (400)."""
-        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
-            return self.js({"error": "origem não autorizada"}, 403)
-        if not limite_ok(self.client_address[0], "presenca", 30):
-            return self.js({"error": "muitos pedidos"}, 429)
-        body, err = self.corpo(4096)
-        if err:
-            return self.js({"error": "corpo inválido"}, err)
-        chave = sem_acento(str(body.get("chave") or "")).strip()[:40]
-        if not chave or chave not in presenca_cadastro():
-            return self.js({"error": "chave fora do cadastro"}, 400)
-        posto = _txt_chave(body.get("posto") or "", 40) or None
-        ip = self.client_address[0]
-        r = presenca_marca(chave, time.time(), "login", posto, ip=ip, acesso=tipo_acesso(ip))
-        return self.js({"ok": True, "dia": r["dia"], "primeiro": r["primeiro"]}, nostore=True)
 
     def _entradas_post(self):
         """v92: POST /ponto/entradas {origem, dia, seg:[...], arquivo, por}: entradas da bilheteria (bip ou catraca) de um dia,
@@ -6789,8 +6512,6 @@ class H(BaseHTTPRequestHandler):
             return self.recorte_post()
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
-        if u.path == "/ponto/presenca":
-            return self.presenca_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/fundos/modo":
@@ -6994,7 +6715,6 @@ def main():
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=metricas_migra_v2, daemon=True).start()   # v92: resumos antigos ganham os campos v2 (só acrescenta)
-    threading.Thread(target=servico_loop, daemon=True).start()        # v92: quando o agente esteve no ar (presença)
     threading.Thread(target=backup_loop, daemon=True).start()
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()

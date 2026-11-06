@@ -1,5 +1,5 @@
-# v92: estatísticas no agente (plano docs/planos/2026-11-05-estatisticas.md, critérios 3 a 7, 10 (hora do servidor), 13 a 16,
-# 24 a 27 e 29). Roda sozinho (testes/rodar.sh) com HOME temporário:
+# v92: estatísticas no agente (plano docs/planos/2026-11-05-estatisticas.md, critérios 3, 4, 13 a 16, 24 a 27 e 29; os 5 a 11,
+# de presença, saíram: Eduardo, 05/11 noite). Roda sozinho (testes/rodar.sh) com HOME temporário:
 #   python3 -I testes/estatisticas_agente.py agente/eterna-agente.py [porta]
 # Parte A: o módulo importado aqui (sem OpenCV). Parte B: o agente de verdade em outro processo (rotas, limites, migração
 # e desempenho com 366 dias). Nenhum dado de cliente: vendas, entradas e sessões sintéticas.
@@ -100,26 +100,14 @@ ok(md["por_fotografo"]["carlos"].get("primeira_foto") == t1040 - 600 and md["por
    "b: 1ª foto (ao vivo) e campos v1 do fotógrafo: %r" % md["por_fotografo"]["carlos"])
 ok(md["vendas"] == 3 and md["faturamento"] == 480 and md["sessoes"] == 3, "v1 continua igual: %r" % {k: md[k] for k in ("vendas", "faturamento", "sessoes")})
 
-# --- critério 5 e 6: presença ---
+# --- sem presença (Eduardo, 05/11 noite): a foto atribuída não marca nada e o operacao.db não tem a tabela ---
 hoje = m._ff_hoje()
-m._pres_mem.clear()
 t_foto = time.time() - 3000
 m.meta["fffff0000001"] = {}
 card = m.sess_add("fffff0000001", {"o": "carlos", "s": "ftp", "u": t_foto, "cap": t_foto - 2})
-p = m.presenca_dia(hoje).get("carlos")
-ok(card and p and p["fonte"] == "fotos" and abs(p["primeiro"] - t_foto) < 1 and p["n"] == 0, "6: 1ª foto atribuída sem login grava presença fotos: %r" % p)
-m.sess_add("fffff0000002", {"o": "carlos", "s": "ftp", "u": t_foto + 5, "cap": t_foto + 3})
-r1 = m.presenca_marca("carlos", time.time(), "login", "Caixa 1")
-r2 = m.presenca_marca("carlos", time.time() + 5, "login", "Caixa 2")
-p = m.presenca_dia(hoje).get("carlos")
-ok(p["n"] == 2 and abs(p["primeiro"] - t_foto) < 1 and p["fonte"] == "fotos" and p["login"] and p["login"] > t_foto and p["postos"] == ["Caixa 1", "Caixa 2"],
-   "5/6: login depois mantém primeiro (foto) e soma n; o 1º login fica guardado: %r" % p)
-m.presenca_marca("samuel", time.time() - 100, "login")
-m.presenca_marca("samuel", time.time() - 50, "login")
-p = m.presenca_dia(hoje)["samuel"]
-ok(p["n"] == 2 and p["fonte"] == "login", "5: segundo login soma 1 em n: %r" % p)
-cart_tarde = m.sess_add("fffff0000003", {"o": "samuel", "s": "cartao", "u": time.time(), "cap": time.time() - 30000})
-ok(m.presenca_dia(hoje)["samuel"]["fonte"] == "login" and m.presenca_dia(hoje)["samuel"].get("foto") is None, "6: foto do cartão (atrasada) não marca presença")
+tabs = {r[0] for r in m.op_ler("select name from sqlite_master where type = 'table'")}
+ok(card and tabs == {"entrada", "importacao"}, "operacao.db só com entrada e importacao: %r" % tabs)
+ok(not hasattr(m, "presenca_marca") and not hasattr(m, "_pres_mem") and "presenca" not in m.metricas_dia(hoje), "sem presença no agente e no resumo")
 
 # --- critérios 24 e 25: entradas ---
 dia_e = m._ff_hoje(time.time() - 3 * 86400)
@@ -212,41 +200,17 @@ g = m.estado_gravar({"docs": [{"col": "agenda", "id": "ag_0123456789ab", "valor"
 docs = m.estado_col("agenda")["docs"]
 ok(g["gravados"] == 1 and len(docs) == 1 and "extra" not in docs[0]["valor"], "agenda: o estado.db guarda só o registro válido e limpo: %r" % docs)
 
-ok("presenca" not in mm and "presenca" not in m.metricas_dia(SAB) and "carlos" in m.metricas_dia(hoje).get("presenca", {}),
-   "S7: presença só a partir do 1º dia com marca (dias antigos ficam sem o campo)")
+ok("presenca" not in mm and "presenca" not in m.metricas_dia(SAB), "migração e resumo sem presença")
 
-# --- revisão: __proto__, cfg_valida, abono, teto da agenda, tipo de acesso e servidor fora ---
+# --- revisão: __proto__ e teto da agenda ---
 ok(m._ev_cart([{"id": "__proto__", "v": 1}]) is None and m._ev_limpo({"tipo": "criar", "idem": "vp1:1", "venda": "vp1", "posto": "__proto__", "por": {"nome": "constructor"}, "dados": {"total": 1}})["posto"] is None,
    "__proto__/constructor recusados em cart.id, posto e por")
-E1 = {"historico": [{"desde": "2026-11-05", "folgas": {"carlos": [1, 2]}}], "por": "Eduardo", "em": "2026-11-05T12:00:00Z"}
-T1 = {"historico": [{"desde": "2026-11-05", "padrao": "09:00", "tolerancia": 10, "por_ponto": {"campo1": "09:30"}}], "por": "Eduardo", "em": "2026-11-05T12:00:00Z"}
-ok(m.cfg_valida("escala", E1) and m.cfg_valida("turnos", T1)
-   and m.cfg_valida("escala", {"historico": [{"desde": "ontem", "folgas": {}}]}) is None
-   and m.cfg_valida("escala", {"historico": [{"desde": "2026-11-05", "folgas": {"Carlos!": [1]}}]}) is None
-   and m.cfg_valida("escala", {"historico": [{"desde": "2026-11-05", "folgas": {"carlos": [7]}}]}) is None
-   and m.cfg_valida("turnos", {"historico": [{"desde": "2026-11-05", "padrao": "9h", "tolerancia": 10}]}) is None
-   and m.cfg_valida("escala", {"historico": [{"desde": "2026-11-05", "folgas": {}}] * 201}) is None
-   and m.cfg_valida("turnos", {**T1, "em": "2099-01-01T00:00:00Z"})["em"] is None, "cfg_valida: escala e turnos")
-g2 = m.estado_gravar({"docs": [{"col": "config", "id": "escala", "valor": {"historico": "x"}}, {"col": "config", "id": "turnos", "valor": T1},
-                               {"col": "abono", "id": hoje + "|carlos", "valor": {"dia": hoje, "chave": "carlos", "motivo": "<b>médico</b>", "por": "Sandra"}},
-                               {"col": "abono", "id": hoje + "|carlos", "valor": {"dia": hoje, "chave": "carlos", "motivo": ""}}]})
-ab = m.estado_col("abono")["docs"]
-ok(g2["gravados"] == 2 and ab and ab[0]["valor"]["motivo"] == "bmédico/b", "estado: config inválida recusada, abono limpo: %r" % ((g2, ab),))
+g2 = m.estado_gravar({"docs": [{"col": "abono", "id": hoje + "|carlos", "valor": {"motivo": "x"}}]})
+ok(g2["gravados"] == 0, "coleção abono não existe mais: %r" % g2)
 m.AGENDA_DOCS_MAX = 1
 g3 = m.estado_gravar({"docs": [{"col": "agenda", "id": "ag_00000000000a", "valor": {**AGV, "id": "ag_00000000000a"}}, {"col": "agenda", "id": "ag_0123456789ab", "valor": {**AGV, "obs": "edit"}}]})
 ok(g3["gravados"] == 1, "agenda: teto de documentos (edição continua valendo): %r" % g3)
 m.AGENDA_DOCS_MAX = 5000
-ok([m.tipo_acesso(x) for x in ("127.0.0.1", "::ffff:127.0.0.1", "192.168.0.10", "100.101.1.2", "100.128.0.1")] == ["loopback", "loopback", "rede", "remota", "rede"], "tipo de acesso")
-dia_s = m._ff_hoje(time.time() - 3 * 86400)
-ts = time.mktime(time.strptime(dia_s, "%Y-%m-%d"))
-ok(m.servico_fora(dia_s) is None, "servidor fora: sem registro = sem dado")
-with m.op_lock:
-    dbs = m.operacao_db()
-    dbs.executemany("insert into servico values (?, ?)", [(ts + 3600, ts + 9 * 3600), (ts + 11 * 3600, ts + 86400 + 100)])
-    dbs.commit()
-    dbs.close()
-sf = m.servico_fora(dia_s)
-ok(sf == [[ts + 9 * 3600, ts + 11 * 3600]] and m.met_v2(dia_s, [], []).get("servidor_fora") == sf, "servidor fora das 9 às 11 h: %r" % sf)
 
 # --- critério 29: backup e privacidade ---
 ok("OPERACAO_DB" in inspect.getsource(m.backup_loop), "29: o operacao.db vai para o backup")
@@ -298,19 +262,8 @@ try:
     s, st = req("GET", "/status")
     ok(s == 200 and (st or {}).get("estatisticas", {}).get("v") == 2 and "migracao" in st["estatisticas"], "/status.estatisticas: %r" % (st or {}).get("estatisticas"))
     X = {"X-Eterna": "1"}
-    s1, _ = req("POST", "/ponto/presenca", {"chave": "carlos"})
-    s2, _ = req("POST", "/ponto/presenca", {"chave": "carlos"}, {**X, "Origin": "http://evil.example"})
-    s3, _ = req("POST", "/ponto/presenca", {"chave": "fulano"}, X)
-    ok((s1, s2, s3) == (403, 403, 400), "7: sem X-Eterna 403, origem de fora 403, chave fora do cadastro 400: %r" % ((s1, s2, s3),))
-    s4, j4 = req("POST", "/ponto/presenca", {"chave": "Carlos", "posto": "Caixa <1>", "primeiro": 1000, "em": "2020-01-01T00:00:00Z"}, X)
-    ok(s4 == 200 and j4.get("ok") and abs(j4["primeiro"] - time.time()) < 30, "5: grava com a hora do servidor (a do navegador é ignorada): %r" % j4)
-    s5, j5 = req("POST", "/ponto/presenca", {"chave": "carlos"}, X)
-    ok(s5 == 200 and j5["primeiro"] == j4["primeiro"], "5: segundo login mantém primeiro")
-    cods = [req("POST", "/ponto/presenca", {"chave": "samuel"}, X)[0] for _ in range(30)]
-    ok(429 in cods, "7: mais de 30 por minuto dá 429: %r" % cods[-5:])
-    s, md = req("GET", "/metricas/dia")
-    pr = ((md or {}).get("dias") or [{}])[0].get("presenca", {}).get("carlos") or {}
-    ok(pr.get("n") == 2 and pr.get("fonte") == "login" and pr.get("postos") == ["Caixa 1"], "5: presença no resumo de hoje: %r" % pr)
+    sp_, _ = req("POST", "/ponto/presenca", {"chave": "carlos"}, X)
+    ok(sp_ in (403, 404), "rota de presença não existe mais: %r" % sp_)
     ontem = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
     corpo = {"origem": "bip", "dia": ontem, "seg": [36060 + i for i in range(9)], "arquivo": "bip.csv", "por": "Eduardo"}
     se, je = req("POST", "/ponto/entradas", corpo)
@@ -336,7 +289,7 @@ try:
     mg = st2["estatisticas"]["migracao"]
     ok(mg["estado"] == "rodando" and mg["feitos"] < mg["total"], "27: o agente atende enquanto a migração está rodando: %r" % mg)
     ok(isinstance((st2.get("fuso") or {}).get("offset_min"), int) and st2["fuso"]["tz"] in ("America/Sao_Paulo", ""), "fuso no /status: %r" % st2.get("fuso"))
-    # revisão: 413, origem de fora nas importações, CORS com X-Eterna, ip e acesso da presença
+    # revisão: 413, origem de fora nas importações e CORS com X-Eterna
     big = {"origem": "bip", "dia": ontem, "seg": [1] * 400000}
     sb, _ = req("POST", "/ponto/entradas", big, X)
     ok(sb == 413, "entradas acima de 1 MB: 413 (%r)" % sb)
@@ -344,17 +297,14 @@ try:
     sh, _ = req("GET", "/ponto/entradas/importacoes", headers={"Host": "evil.example:%d" % PORTA})
     ok(so == 403 and sh == 403, "importações: origem e Host de fora dão 403: %r" % ((so, sh),))
     c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=10)
-    c.request("OPTIONS", "/ponto/presenca", headers={"Host": "127.0.0.1:%d" % PORTA, "Origin": "http://127.0.0.1:9", "Access-Control-Request-Headers": "content-type, x-eterna"})
+    c.request("OPTIONS", "/ponto/entradas", headers={"Host": "127.0.0.1:%d" % PORTA, "Origin": "http://127.0.0.1:9", "Access-Control-Request-Headers": "content-type, x-eterna"})
     rr = c.getresponse()
     rr.read()
-    ok("X-Eterna" in (rr.getheader("Access-Control-Allow-Headers") or ""), "CORS: X-Eterna no Allow-Headers de /ponto/presenca: %r" % rr.getheader("Access-Control-Allow-Headers"))
+    ok("X-Eterna" in (rr.getheader("Access-Control-Allow-Headers") or ""), "CORS: X-Eterna no Allow-Headers de /ponto/entradas: %r" % rr.getheader("Access-Control-Allow-Headers"))
     c.close()
-    s, md = req("GET", "/metricas/dia")
-    pr = ((md or {}).get("dias") or [{}])[0].get("presenca", {}).get("carlos") or {}
-    ok(pr.get("acesso") == "loopback", "presença com o tipo de acesso: %r" % pr)
 finally:
     A.kill()
 falhas = [x for x in falhas if x]
 print(json.dumps({"ok": not falhas, "falhas": falhas}))
-print(("OK estatisticas_agente: presença, entradas, resumo v2, migração e agenda (v92)" if not falhas else "FALHA estatisticas_agente: " + " | ".join(falhas[:6])))
+print(("OK estatisticas_agente: entradas, resumo v2 (sem presença), migração, met_escreve e agenda (v92)" if not falhas else "FALHA estatisticas_agente: " + " | ".join(falhas[:6])))
 sys.exit(0 if not falhas else 1)
