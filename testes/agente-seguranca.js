@@ -57,10 +57,11 @@ try{
   // ---------- I4: /rostos/projecao só com ETERNA_TESTE_CARGA, por POST ----------
   ok((await req(porta,'GET','/rostos/projecao?n=6000000')).s!==200,'I4: GET /rostos/projecao ainda responde');ok((await req(porta,'POST','/rostos/projecao',{body:{n:6000000}})).s===404,'I4: POST sem ETERNA_TESTE_CARGA deveria dar 404');
   // ---------- I5: trocar servidor, porta ou usuário do FTP remoto exige senha nova ----------
-  fs.writeFileSync(path.join(home,'Eterna','ftp-remoto.json'),J({host:'127.0.0.1',port:1,user:'estadio',password:'segredo-salvo',dir:'',tls:false}));
+  fs.writeFileSync(path.join(home,'Eterna','ftp-remoto.json'),J({host:'127.0.0.1',port:21,user:'estadio',password:'segredo-salvo',dir:'',tls:false}));
+  fs.writeFileSync(path.join(home,'Eterna','ftp-remoto-hosts.txt'),'127.0.0.1\n'); // fora da rede interna, só nome ou IP listado no servidor
   let c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'10.9.9.9',port:21,user:'estadio',password:''}});ok(c.s===400&&/senha/.test(c.b),'I5: host novo sem senha deveria dar 400: '+c.s+' '+c.b);
-  c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'127.0.0.1',port:1,user:'outro',password:''}});ok(c.s===400,'I5: usuário novo sem senha deveria dar 400: '+c.s);
-  c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'127.0.0.1',port:1,user:'estadio',password:''}});ok(c.s===502,'I5: mesmo servidor sem senha deveria reaproveitar a salva e tentar conectar (502 aqui): '+c.s);
+  c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'127.0.0.1',port:21,user:'outro',password:''}});ok(c.s===400,'I5: usuário novo sem senha deveria dar 400: '+c.s);
+  c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'127.0.0.1',port:21,user:'estadio',password:''}});ok(c.s===502,'I5: mesmo servidor sem senha deveria reaproveitar a salva e tentar conectar (502 aqui): '+c.s);
   A.p.kill('SIGKILL');await sleep(400);
   // ---------- B1: login compartilhado com subpasta = fotógrafo cadastrado ----------
   cfg.users.ctp='ctp-compartilhado-123';cfg.compartilhado=['ctp'];fs.writeFileSync(cfgP,J(cfg));

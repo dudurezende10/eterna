@@ -1834,6 +1834,25 @@ def rftp_save(c):
     rftp_wake.set()
 
 
+RFTP_HOSTS = os.path.join(HOME, "ftp-remoto-hosts.txt")     # nomes (ou IPs fora da rede interna) aceitos para o FTP do estádio
+
+
+def rftp_host_ok(host):
+    """O FTP do estádio fica na rede do ponto: IP privado (10/8, 172.16/12, 192.168/16) ou um nome listado no servidor."""
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.version == 4 and any(ip in ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")):
+            return True
+    except ValueError:
+        pass
+    try:
+        with open(RFTP_HOSTS, encoding="utf-8") as f:
+            return host.lower() in {x.strip().lower() for x in f if x.strip() and not x.lstrip().startswith("#")}
+    except OSError:
+        return False
+
+
 def rftp_connect(c):
     cls = ftplib.FTP_TLS if c.get("tls") else ftplib.FTP
     f = cls()
@@ -2038,6 +2057,9 @@ def rover_cfg():
     return None
 
 
+ROVER_BASES = ("https://beta.api.roverpix.com", "https://api.roverpix.com")    # os únicos destinos da chave da Roverpix
+
+
 def rover_save_cfg(base_url, api_key):
     base_url = (base_url or "https://beta.api.roverpix.com").rstrip("/")
     if not base_url.endswith("/api/v1"):
@@ -2124,8 +2146,8 @@ def rv_aggregate(day, orders, payments, photos):
     # fotos por fotógrafo (ou estação de chroma); receita pelo cartão vendido
     card_key, cards, sold_cards = {}, {}, {}
     for p in photos:
-        nm = (p.get("photographer_name") or "").strip()
-        pdv = (p.get("pdv_name") or "").strip()
+        nm = re.sub(r"[<>\"'`&]", "", str(p.get("photographer_name") or "")).strip()[:60]   # nome vem de fora: nunca vira HTML
+        pdv = re.sub(r"[<>\"'`&]", "", str(p.get("pdv_name") or "")).strip()[:60]
         if nm:
             key, human, name = rv_key(nm), True, nm
         else:
@@ -7657,37 +7679,43 @@ class H(BaseHTTPRequestHandler):
             _grava_privado(FUNDOS_MODO_CFG, json.dumps({"modo": modo, "em": time.strftime("%Y-%m-%dT%H:%M:%S")}))
             return self.js({"ok": True, "modo": modo})
         if u.path == "/roverpix/config":
-            # só o app aberto pelo próprio agente pode trocar a chave
+            # só o app aberto pelo próprio agente pode trocar a chave; o endereço da Roverpix é um dos oficiais
             if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
-            key = (body.get("api_key") or "").strip()
-            if not key:
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            key = str(body.get("api_key") or "").strip()
+            if not key or len(key) > 400:
                 return self.js({"error": "informe a chave"}, 400)
-            rover_save_cfg(body.get("base_url"), key)
+            base = str(body.get("base_url") or ROVER_BASES[0]).strip().rstrip("/")
+            base = base[:-len("/api/v1")] if base.endswith("/api/v1") else base
+            if base not in ROVER_BASES:
+                return self.js({"error": "endereço da Roverpix não reconhecido"}, 400)
+            rover_save_cfg(base, key)
             return self.js({"ok": True})
         if u.path == "/ftp-remoto/config":
             if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
             old = rftp_cfg() or {}
             try:
                 porta_n = int(body.get("port") or 21)
             except Exception:
                 return self.js({"error": "porta inválida"}, 400)
-            c = {"host": (body.get("host") or "").strip(), "port": porta_n,
-                 "user": (body.get("user") or "").strip(), "password": body.get("password") or "",
-                 "dir": (body.get("dir") or "").strip(), "tls": bool(body.get("tls"))}
+            c = {"host": str(body.get("host") or "").strip()[:200], "port": porta_n,
+                 "user": str(body.get("user") or "").strip()[:200], "password": str(body.get("password") or "")[:200],
+                 "dir": str(body.get("dir") or "").strip()[:300], "tls": bool(body.get("tls"))}
             if not c["host"] or not c["user"]:
                 return self.js({"error": "informe servidor e usuário"}, 400)
+            if porta_n not in (21, 990):
+                return self.js({"error": "porta inválida: use 21 (FTP) ou 990 (FTP com TLS)"}, 400)
+            if not rftp_host_ok(c["host"]):
+                return self.js({"error": "servidor fora da rede do ponto: use o IP da rede interna ou cadastre o nome em ftp-remoto-hosts.txt no servidor"}, 400)
+            if not limite_ok(self.client_address[0], "rftp-config", 5):
+                return self.js({"error": "muitos testes seguidos; espere um minuto"}, 429)
             # v80 (segurança I5): a senha salva só vale para o mesmo servidor, porta e usuário (não manda a senha para outro host)
             mesmo = old and old.get("host") == c["host"] and int(old.get("port") or 21) == c["port"] and old.get("user") == c["user"]
             if not c["password"]:
@@ -7697,22 +7725,20 @@ class H(BaseHTTPRequestHandler):
             try:
                 t = rftp_connect(c)
                 t.quit()
-            except Exception as ex:
-                return self.js({"error": "não conectou: %s" % ex}, 502)
+            except Exception:
+                return self.js({"error": "não conectou: confira servidor, porta, usuário e senha"}, 502)
             rftp_save(c)
             return self.js({"ok": True})
         if u.path in ("/photoroom/config", "/photoroom/compose"):
             # só o app aberto pelo próprio agente usa a chave (ninguém de fora gasta os créditos)
             if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
+            body, err = self.corpo(4096 if u.path == "/photoroom/config" else 32 * 1024 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
             if u.path == "/photoroom/config":
-                key = (body.get("api_key") or "").strip()
-                if not key:
+                key = str(body.get("api_key") or "").strip()
+                if not key or len(key) > 400:
                     return self.js({"error": "informe a chave"}, 400)
                 pr_save(key)
                 return self.js({"ok": True, "sandbox": key.startswith("sandbox_")})
@@ -7734,7 +7760,8 @@ class H(BaseHTTPRequestHandler):
                                   hi=bool(body.get("hi")), recorte=bool(body.get("recorte")))
                 return self.js({"ok": True, "url": "/photoroom/result/" + name})
             except Exception as ex:
-                return self.js({"error": str(ex)}, 502)
+                print("  photoroom: %s" % str(ex)[:160])
+                return self.js({"error": "Photoroom não respondeu"}, 502)
         if u.path == "/roverpix/sync":
             rover_wake.set()
             return self.js({"ok": True})

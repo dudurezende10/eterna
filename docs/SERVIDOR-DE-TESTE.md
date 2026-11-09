@@ -56,6 +56,7 @@ O servidor só abre os dados para quem entrou com usuário e senha ou para um ap
 - Aparelho perdido ou trocado: "Revogar" na mesma lista.
 - Aparelho sem pareamento mostra "Este aparelho ainda não foi pareado" no Checkout. As vendas que ele já tinha na fila ficam guardadas e sobem depois do pareamento.
 - FTP embutido das câmeras: só modo passivo, nas portas 50000 a 50050 (`ETERNA_FTP_PASV` muda a faixa; o firewall precisa liberar essa faixa além da porta do FTP). Câmera em modo ativo não envia. `ETERNA_FTP=0` desliga o FTP embutido quando o servidor usa outro FTP.
+- FTP do estádio (Painel de controle): o servidor aceita IP da rede interna (10.x, 172.16 a 172.31, 192.168.x) nas portas 21 ou 990. Nome (ou outro IP, como 127.0.0.1 ou o do Tailscale) só se estiver, um por linha, em `~/Eterna/ftp-remoto-hosts.txt` no servidor. A chave da Roverpix só vai para `https://beta.api.roverpix.com` ou `https://api.roverpix.com`.
 - O teste de carga (`agente/teste-carga.py`) entra com `--login <usuário>` nos comandos que falam com o agente; a senha vem de `ETERNA_SENHA` ou é digitada.
 
 ## O que roda onde
