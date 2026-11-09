@@ -3218,6 +3218,7 @@ LIMITE_MENOR = 0.50     # grupo de escola: só as fotos em que o rosto da crian�
 URL_TTL = 900           # link assinado de foto: 15 min
 ACESSO_TTL = 3600       # acesso depois da selfie: 1 h
 GAL_MAX_CORPO = 2 * 1024 * 1024
+GAL_DIAS = 60                                            # validade máxima de uma galeria (a mesma do app)
 GAL_FALHAS, GAL_BLOQUEIO = 5, 15 * 60
 GAL_EVENTO_DISTINTOS, GAL_EVENTO_JANELA = 2, 24 * 3600   # grupo de escola: crianças diferentes por (ip, token) em 24 h
 GAL_EVENTO_HORA = 60                                     # acessos por galeria de grupo por hora (todos os IPs)
@@ -3450,6 +3451,16 @@ def _gal_confere_sessoes(m, fotos):
             raise ValueError("foto fora da escolha da venda")
 
 
+def gal_expira_ok(v):
+    """Validade pedida pelo navegador, nunca além de agora + GAL_DIAS (sem data ou inválida: agora + GAL_DIAS)."""
+    teto = time.time() + GAL_DIAS * 86400
+    try:
+        t = _epoch(str(v)[:40]) if v else None
+    except Exception:
+        t = None
+    return _iso(min(t, teto) if t else teto)
+
+
 def gal_validar(m):
     """Manifesto vindo do app: só os campos conhecidos, com tipos e tamanhos checados."""
     if not isinstance(m, dict) or not token_ok(m.get("token")) or m.get("tipo") not in ("sessao", "evento"):
@@ -3473,7 +3484,7 @@ def gal_validar(m):
     codigo = m.get("codigo") if isinstance(m.get("codigo"), str) and _re_codigo.match(m.get("codigo")) else None
     return {"v": 1, "token": m["token"], "codigo": codigo, "tipo": m["tipo"], "venue": str(m.get("venue") or "")[:40],
             "nome": (str(m["nome"])[:120] if m.get("nome") else None), "sessoes": [str(s)[:40] for s in (m.get("sessoes") or [])[:200]],
-            "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": str(m.get("expira") or "")[:40],
+            "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": gal_expira_ok(m.get("expira")),
             "precos": precos, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
 
 
@@ -3494,6 +3505,8 @@ def gal_mesclar(novo, velho):
         novo["expira"] = velho["expira"]
     if velho.get("encerrada"):
         novo["encerrada"] = True
+    if velho.get("menor"):
+        novo["menor"] = True                     # grupo de menor marcado no servidor não é desmarcado pelo navegador
     return novo
 
 
@@ -5538,11 +5551,13 @@ DOC_COL_MOD = {"diario": "diario", "treino": "qualidade", "reviews": "qualidade"
                "agenda": "escala", "config": "configuracao"}
 DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("stock|", ("estoque", "venda")),          # o rolo de papel do posto baixa na impressão, feita no caixa
-           ("flags|", ("estoque",)), ("flagUse|", ("estoque",)), ("flagList", ("estoque",)),
-           ("edits|", ("qualidade",)), ("discarded|", ("qualidade",)), ("invalid|", ("qualidade",)), ("ai|", ("qualidade",)),
+           ("flags|", ("estoque",)), ("flagList", ("estoque",)),
+           # gravados ao montar as sessões e no Upload (fotógrafo), no caixa e na Curadoria
+           ("flagUse|", ("set", "estoque", "venda")), ("invalid|", ("set", "qualidade", "venda", "estoque")),
+           ("edits|", ("set", "qualidade")), ("discarded|", ("set", "qualidade")), ("ai|", ("venda", "qualidade")),
            ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
            ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("fundosModo", ("configuracao",)),
-           ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("configuracao",)), ("repo", ("configuracao",)),
+           ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
            ("bgPodioV86", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
 DOC_SO_ACRESCENTA = ("usuarios_log", "sim:cortesiaLog|")
 
@@ -6654,6 +6669,8 @@ def agenda_valida(doc_id, v):
 #   sessao           pessoa conectada com um dos módulos (vazio = qualquer pessoa conectada; a rota confere o resto)
 #   teste            só com ETERNA_TESTE_CARGA=1 e pessoa com Painel de controle (Alterar)
 # Caminho terminado em "/" vale como prefixo. Fora das públicas: Host do agente, Origin conhecida e, em POST, X-Eterna: 1.
+FOTOS_LER = ("venda.r", "quiosque.r", "set.r", "estoque.r", "galerias.r", "qualidade.r")        # ver fotos e sessões
+VENDER = ("venda.c", "quiosque.c", "galerias.c")                                          # o que o Checkout faz numa venda
 ROTAS = (
     ("GET", "/", "publica", ()), ("GET", "/index.html", "publica", ()),
     ("GET", "/img/", "publica", ()), ("GET", "/vendor/", "publica", ()), ("GET", "/sprites/", "publica", ()),
@@ -6664,21 +6681,22 @@ ROTAS = (
     ("POST", "/auth/esqueci", "publica", ()),
     ("GET", "/auth/eu", "sessao", ()), ("GET", "/auth/senhas", "sessao", ()),
     ("POST", "/auth/senha/gerar", "sessao", ()), ("POST", "/auth/senha/cancelar", "sessao", ()),
-    ("GET", "/postos/eu", "posto_ou_sessao", ()),
+    ("GET", "/postos/eu", "publica", ()),                       # a rota confere Host e responde 401 sem_posto
+    ("GET", "/ftp/contas", "sessao", ("configuracao.r",)),
     ("GET", "/postos", "sessao", ("configuracao.r",)),
     ("POST", "/postos/parear", "sessao", ("configuracao.u",)), ("POST", "/postos/revogar", "sessao", ("configuracao.u",)),
-    # o que o Checkout usa: posto pareado ou pessoa conectada
-    ("GET", "/thumb/", "posto_ou_sessao", ()), ("GET", "/file/", "posto_ou_sessao", ()),
-    ("GET", "/sessoes", "posto_ou_sessao", ()),
+    # o que o Checkout usa: posto pareado ou pessoa conectada com o módulo
+    ("GET", "/thumb/", "posto_ou_sessao", FOTOS_LER), ("GET", "/file/", "posto_ou_sessao", FOTOS_LER),
+    ("GET", "/sessoes", "posto_ou_sessao", FOTOS_LER),
     ("GET", "/ponto/docs", "posto_ou_sessao", ()),              # posto: só sim, config e agenda
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (docs_filtrar); o posto não grava
-    ("POST", "/ponto/eventos", "posto_ou_sessao", ()),
-    ("POST", "/rostos/buscar", "posto_ou_sessao", ()),
-    ("POST", "/galerias/publicar", "posto_ou_sessao", ()),
-    ("POST", "/recorte", "posto_ou_sessao", ()), ("GET", "/recorte/", "posto_ou_sessao", ()),
-    ("GET", "/photoroom/status", "posto_ou_sessao", ()),        # sem Painel de controle: só {configured, fundos_modo}
-    ("GET", "/photoroom/result/", "posto_ou_sessao", ()), ("POST", "/photoroom/compose", "posto_ou_sessao", ()),
+    ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
+    ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
+    ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
+    ("GET", "/photoroom/status", "posto_ou_sessao", VENDER),    # sem Painel de controle: só {configured, fundos_modo}
+    ("GET", "/photoroom/result/", "posto_ou_sessao", VENDER), ("POST", "/photoroom/compose", "posto_ou_sessao", VENDER),
     ("GET", "/fila-fotografo", "posto_ou_sessao", ("filafoto.r",)),
     # só a equipe, pelo módulo
     ("GET", "/biblioteca", "sessao", ("set.r", "estoque.r")), ("GET", "/events", "sessao", ("set.r", "estoque.r")),
@@ -6943,7 +6961,7 @@ class H(BaseHTTPRequestHandler):
             if AUTH_ID.match(usuario):                  # em segundo plano: a resposta e o tempo são os mesmos para qualquer usuário
                 threading.Thread(target=auth_esqueci, args=(usuario, ip), daemon=True).start()
             return self.js({"ok": True}, 200, True)
-        if u.path.startswith("/auth/senha/"):
+        if u.path in ("/auth/senha/gerar", "/auth/senha/cancelar"):
             eu = auth_quem(self.auth_token())
             if not eu:
                 return self.js({"erro": "sem_sessao"}, 401, True)
@@ -7194,7 +7212,7 @@ class H(BaseHTTPRequestHandler):
     def gal_get(self, u, q):
         p = u.path
         ip = self.client_address[0]
-        if p.startswith("/galerias/"):
+        if p in ("/galerias/vendas", "/galerias/status"):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             if p == "/galerias/vendas":
@@ -7368,6 +7386,14 @@ class H(BaseHTTPRequestHandler):
                 _gal_confere_sessoes(body.get("manifesto"), novo["fotos"])
             except ValueError as ex:
                 return self.js({"error": str(ex)}, 400)
+            eu = self.sessao()
+            if not (eu and auth_pode(eu["cadastro"], "galerias", "u")):
+                # cortesia nova só com galerias.u; a que já está no servidor fica (republicação do Checkout)
+                ja = {f["id"] for f in (REPO.ler_manifesto(t) or {}).get("fotos") or [] if f.get("direito") == "cortesia"}
+                for f in novo["fotos"]:
+                    if f["direito"] == "cortesia" and f["id"] not in ja:
+                        f["direito"] = "venda"
+                        f.pop("cortesia", None)
             with gal_lock:
                 m = gal_mesclar(novo, REPO.ler_manifesto(t))
                 REPO.salvar_manifesto(t, m)
@@ -7502,7 +7528,7 @@ class H(BaseHTTPRequestHandler):
             return
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        if u.path.startswith(("/g/", "/galerias/")):
+        if u.path.startswith("/g/") or u.path in ("/galerias/vendas", "/galerias/status"):
             return self.gal_get(u, q)
         if u.path in ("/auth/eu", "/auth/senhas"):
             return self.auth_get()
@@ -7581,9 +7607,19 @@ class H(BaseHTTPRequestHandler):
             col = (parse_qs(u.query).get("col") or [""])[0]
             if col not in ESTADO_COLS:
                 return self.js({"error": "coleção inválida"}, 400)
-            if not self.sessao() and col not in ("sim", "config", "agenda"):
+            eu = self.sessao()
+            if not eu and col not in ("sim", "config", "agenda"):
                 return self.js({"erro": "sem_permissao"}, 403, True)     # aparelho pareado sem pessoa: só o que o Checkout lê
-            return self.js(estado_col(col))
+            cad = (eu or {}).get("cadastro")
+            if col in ("usuarios_log", "usuarios_login") and not any(auth_pode(cad, *x.split(".")) for x in FOTOS_LER + ("usuarios.r", "permissoes.r")):
+                return self.js({"erro": "sem_permissao"}, 403, True)
+            r = estado_col(col)
+            if col == "usuarios" and not auth_pode(cad, "usuarios", "r"):
+                # sem Cadastro de usuários: o próprio cadastro inteiro; dos outros, só o nome (e o fotógrafo vinculado)
+                proprio = quote(eu["usuario"], safe="-_.!~*'()")
+                r["docs"] = [d if d["id"] == proprio else {"id": d["id"], "valor": {k: d["valor"].get(k) for k in ("email", "name", "key", "active") if isinstance(d["valor"], dict)}}
+                             for d in r["docs"]]
+            return self.js(r)
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -7646,6 +7682,9 @@ class H(BaseHTTPRequestHandler):
                 meta_dirty[0] = False
                 save_meta()
             return self.js({"fotos": out, "total": len(out), "boot": BOOT})
+        if u.path == "/ftp/contas":
+            with lock:                                   # os logins do FTP embutido (sem senha), para o cartão do Upload
+                return self.js({"ok": True, "port": state["ftp"].get("port"), "ip": state["ftp"].get("ip"), "users": list(state["ftp"].get("users") or [])}, nostore=True)
         if u.path == "/ftp-remoto/status":
             c = rftp_cfg()
             return self.js({**rftp, "configurado": bool(c), "host": c and c.get("host"), "port": c and c.get("port"),
@@ -7689,7 +7728,7 @@ class H(BaseHTTPRequestHandler):
             return self.auth_post(u)
         if u.path in ("/postos/parear", "/postos/revogar"):
             return self.postos_post(u)
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
