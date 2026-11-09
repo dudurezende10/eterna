@@ -76,6 +76,11 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--surface2)}
 .conn-off{background:var(--bad-bg);color:var(--bad);border-left:6px solid var(--bad);padding:12px 16px;font-weight:600;font-size:16px;border-radius:4px;margin:0 0 12px}
 .conn-off .conn-sub{font-weight:500;font-size:14px;margin-top:2px}
 .conn-demo{background:var(--surface2);color:var(--muted);border-left:6px solid var(--line);padding:10px 16px;font-weight:600;font-size:15px;border-radius:4px;margin:0 0 12px}
+.up-faixa{display:flex;flex-direction:column;gap:8px;padding:14px 18px;border-radius:6px;border:1px solid var(--line);background:var(--surface);font-size:18px;margin:0 0 12px}
+.up-faixa.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.up-faixa.ok{background:var(--good-bg);color:var(--good);border-color:transparent}
+.up-barra{height:8px;border-radius:999px;background:rgba(0,0,0,.08);overflow:hidden}.up-barra i{display:block;height:100%;background:currentColor;border-radius:999px;transition:width .4s}
+details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;padding:10px 14px;background:var(--surface)}details.tec>summary{cursor:pointer;font-weight:600;min-height:32px;display:flex;align-items:center}details.tec[open]>summary{margin-bottom:10px}
 .demo-faixa{background:var(--surface2);color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:13px;margin-bottom:12px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{padding:7px 12px;border:1px solid var(--line);border-radius:999px;font-size:13px;background:var(--surface);min-height:34px}
@@ -1219,7 +1224,7 @@ const VIEWS=[
  ['treino','Treino da IA','pode e não pode','Curadoria'],
  ['alertas','Alertas','o que precisa de olho','Curadoria'],
  ['diario','Diário do set','equipamento e ocorrências','Fotógrafo'],
- ['importar','Upload automático','cartão, FTP, Wi‑Fi e 5G','Fotógrafo'],
+ ['importar','Minhas fotos','fotos do cartão e da câmera','Fotógrafo'],
  ['fotofila','Fila do fotógrafo','clicando, chegando e no Checkout','Fotógrafo'],
  ['escala','Escala 5×2','cobertura dos pontos','Fotógrafo'],
  ['calendario','Calendário de eventos','jogos, shows e feriados','Fotógrafo'],
@@ -3104,7 +3109,7 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
     <div class="libf"><span class="eyebrow">Fotógrafo</span>${chip('who','todos','Todos')}${[...humans,...whos.filter(k=>!humans.includes(k)&&!(P[k]&&hiddenPerson(k,P[k].name)))].map(k=>{const n=all.filter(f=>libWho(f,ix)===k).length;return chip('who',k,esc(whoName(k))+(n?' · '+n:''));}).join('')}</div>
     <div class="libf"><span class="eyebrow">Venda</span>${chip('venda','todas','Todas')}${chip('venda','vendidas','Vendidas')}${chip('venda','nao','Não vendidas')}</div>
     ${ph.length?`<div class="photos small">${ph.slice(0,400).map(f=>{const v=ix.sold.has('ag_'+f.id);return photoBtn({id:'ag_'+f.id},{label:f.name,tag:(v?'VENDIDA · ':'')+new Date(f.t*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});}).join('')}</div>${ph.length>400?'<div class="note">Mostrando as 400 mais recentes deste filtro.</div>':''}`:'<div class="note">Nenhuma foto neste filtro.</div>'}
-    <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera, pelo usuário (subpasta) do FTP ou pela sessão da foto. Vendida = foto escolhida numa venda paga.</div></div>`;}
+    <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera${isAdminUser(state.user)?', pelo usuário (subpasta) do FTP':''} ou pela sessão da foto. Vendida = foto escolhida numa venda paga.</div></div>`;}
 const SESSAO_PAUSA_S=60; // v91 (S1, Eduardo 30/10): 1 minuto sem clique fecha a sessão, a mesma regra do agente (SESS_PAUSA) e da Fila do fotógrafo; com o agente, as sessões vêm prontas dele (pausa + rostos)
 // v94 (ondas UX, C): faixa de conexão. Sem conexão nunca fica verde: vermelha com a hora do último dado; cinza na demonstração.
 function faixaConexao(o){o=o||{};const onde=o.onde||'computador do ponto';
@@ -3212,7 +3217,7 @@ function ingTick(){
   else if(it.kind==='gap'){g.n.auto++;ingClose(it.how);g.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:it.how});}
   g.feed=g.feed.slice(0,60);render();
 }
-function vImportar(){return vImportarCore()+libPanel();} // v80: o cartão do FTP do estádio foi para Configurações › Painel de controle
+function vImportar(){return vImportarCore();} // v80: o cartão do FTP do estádio foi para Configurações › Painel de controle; v94: a Biblioteca (libPanel) entra antes dos Detalhes técnicos
 // v79: o ajuste automático vale para o computador do ponto inteiro (D9); o Fotógrafo liga e desliga no Upload, e fica registrado quem mexeu
 function ajAutoSet(on){if(!can('set','u')){toast('Sem permissão para alterar em Upload, câmeras e ajustes');return;}const u=state.user;on=!!on;SIM.autoAj=on;SIM.autoAjPor={on,por:u?u.email:null,nome:u?u.name:null,em:now().toISOString()};
   log(`Ajuste automático ${on?'ligado':'desligado'} por ${u?u.name:'sistema'}`);saveSim();render();toast(on?'Ajuste automático ligado':'Ajuste automático desligado');if(on)setTimeout(ajQueue,50);}
@@ -3224,36 +3229,44 @@ function vImportarCore(){
   const im=state.imp,g=state.ing;const pt=im.point==='todos'?{id:'todos',name:'Todos os pontos'}:(DATA.points.find(p=>p.id===im.point)||DATA.points[0]);const name=impName();
   const pending=g.queue.filter(x=>x.kind==='photo'||x.kind==='dup').length;const cur=g.cur?g.cur.photos.length:0;
   const picker=`<div class="chips">${demoOn()?`<button class="chip" data-act="imp-mode" data-m="cartao" aria-pressed="${im.mode==='cartao'}">Cartão no computador do ponto</button><button class="chip" data-act="imp-mode" data-m="wifi" aria-pressed="${im.mode==='wifi'}">Celular, Wi‑Fi do estádio</button><button class="chip" data-act="imp-mode" data-m="5g" aria-pressed="${im.mode==='5g'}">Celular, 5G</button><span style="width:8px"></span>`:''}<label class="note">Fotógrafo <select data-act="imp-key" class="chip"><option value="todos" ${im.key==='todos'?'selected':''}>Todos</option>${humans.map(k=>`<option value="${k}" ${k===im.key?'selected':''}>${P[k].name}</option>`).join('')}</select></label><label class="note">Ponto <select data-act="imp-point" class="chip"><option value="todos" ${im.point==='todos'?'selected':''}>Todos</option>${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===im.point?'selected':''}>${p.name}</option>`).join('')}</select></label></div>`;
-  const tile=(l,v,d)=>`<div class="tile"><span class="eyebrow">${l}</span><span class="v">${v}</span>${d?`<span class="d">${d}</span>`:''}</div>`;
   const ico={ok:'good',dup:'neutral',black:'bad',auto:'warn',warn:'bad'};
-  const phone=`<div class="phone"><div class="pin">
-    <div class="row" style="justify-content:space-between"><span class="eyebrow">Eterna · ${esc(name)}</span><span class="note">${hhmm(now())}</span></div>
-    <div style="font-family:var(--display);font-size:30px;line-height:1.05">${g.running?(pending?`${pending} na fila`:'Fechando a leva'):(g.n.arrived?'Tudo no servidor':'Pronto para receber')}</div>
-    
-    <div class="check"><div data-ok><span class="dot">${CHECK}</span>Câmera → ${im.mode==='cartao'?'cartão':'celular'}</div><div ${g.n.arrived||g.running?'data-ok':''}><span class="dot">${CHECK}</span>${im.mode==='cartao'?'Leitor':'Celular'} → servidor do ponto</div><div ${g.done.length?'data-ok':''}><span class="dot">${CHECK}</span>Sessões na fila do balcão</div></div>
-    <div class="tiles" style="grid-template-columns:1fr 1fr"><div class="tile"><span class="eyebrow">Enviadas</span><span class="v">${g.n.arrived}</span></div><div class="tile"><span class="eyebrow">Sessões</span><span class="v">${g.done.length}</span></div></div>
-    
-  </div></div>`;
-  return `<div class="head"><div><div class="eyebrow">Fotógrafo · ${esc(name)} · ${esc(pt.name)}</div><h1>Upload automático</h1></div>${fotoQuem()}</div>
+  // v94 (ondas UX, D): Minhas fotos. Uma faixa de estado no lugar dos quadros de simulação; o técnico (agente, FTP, porta,
+  // pasta, log de chegadas) só para o Admin, recolhido em "Detalhes técnicos" no fim da tela.
+  const adm=isAdminUser(state.user);const sessAg=state.agent.on&&state.agent.sessoes;const L=sessAg?upSessLista():null; // upSessLista uma vez por render (risco 10)
+  const proprio=fotoKey()&&im.key===fotoKey();
+  const leitor=adm?`<div class="panel" style="background:${state.agent.on?'var(--good-bg)':'var(--surface)'}"><div class="head"><div><div class="eyebrow">Leitor automático · agente do ponto</div><h2 style="margin-top:4px">${state.agent.on?`Conectado${state.agent.card?' · cartão '+esc(state.agent.card)+' inserido':' · aguardando cartão'}`:'Não encontrado neste computador'}</h2></div>${state.agent.on?`<span class="note">${state.agent.copied} fotos baixadas · ${state.agent.dups} repetidas ignoradas · pasta ~/Eterna/inbox</span>`:''}</div>
+    ${state.agent.on&&state.agent.ftp&&state.agent.ftp.port?`<div class="row" style="margin-top:8px"><span class="pill good">FTP ligado</span><span class="note">Servidor <b>${esc(state.agent.ftp.ip)}</b> · porta <b>${state.agent.ftp.port}</b> · usuários ${state.agent.ftp.users.map(esc).join(', ')} · ${state.agent.ftp.received} fotos recebidas${state.agent.ftp.last_user?' · última de '+esc(state.agent.ftp.last_user):''}</span></div>`:''}
+    ${state.agent.on?'':`${location.protocol==='https:'?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>No computador do ponto, abra o Eterna em <a href="http://127.0.0.1:8765/#importar">http://127.0.0.1:8765</a></b><p>O Chrome bloqueia o site na internet de falar com o agente do Mac. Aberto pelo agente, as fotos do cartão e do CTP aparecem aqui sozinhas.</p></div></div>`:''}<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, ligue o modo demonstração (Identidade) e use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
+  </div>`:'';
+  const feed=`<div class="panel"><h2>Chegadas</h2>${g.feed.length?`<div class="tablewrap"><table><tbody>${g.feed.slice(0,14).map(f=>`<tr><td><span class="pill ${ico[f.k]}">${f.k==='ok'?'foto':f.k==='dup'?'repetida':f.k==='warn'?'validar':'auto'}</span></td><td style="white-space:normal"><div>${esc(f.t)}</div><div class="note">${esc(f.s)}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Nenhuma foto ainda.</div>'}</div>`;
+  return `<div class="head"><div><div class="eyebrow">Fotógrafo · ${esc(name)}${proprio?'':' · '+esc(pt.name)}</div><h1>Minhas fotos</h1></div>${fotoQuem()}</div>
+  ${upFaixa(L)}
   ${ajAutoPanel()}
   ${picker}
-  <div class="panel" style="background:${state.agent.on?'var(--good-bg)':'var(--surface)'}"><div class="head"><div><div class="eyebrow">Leitor automático · agente do ponto</div><h2 style="margin-top:4px">${state.agent.on?`Conectado${state.agent.card?' · cartão '+esc(state.agent.card)+' inserido':' · aguardando cartão'}`:'Não encontrado neste computador'}</h2></div>${state.agent.on?`<span class="note">${state.agent.copied} fotos baixadas · ${state.agent.dups} repetidas ignoradas · pasta ~/Eterna/inbox</span>`:''}</div>
-    ${state.agent.on&&state.agent.ftp&&state.agent.ftp.port?`<div class="row" style="margin-top:8px"><span class="pill good">FTP ligado</span><span class="note">Servidor <b>${esc(state.agent.ftp.ip)}</b> · porta <b>${state.agent.ftp.port}</b> · usuários ${state.agent.ftp.users.map(esc).join(', ')} · ${state.agent.ftp.received} fotos recebidas${state.agent.ftp.last_user?' · última de '+esc(state.agent.ftp.last_user):''}</span></div>`:''}
-    ${state.agent.on?'':`${location.protocol==='https:'?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>No computador do ponto, abra o Eterna em <a href="http://127.0.0.1:8765/#importar">http://127.0.0.1:8765</a></b><p>O Chrome bloqueia o site na internet de falar com o agente do Mac. Aberto pelo agente, as fotos do cartão e do CTP aparecem aqui sozinhas.</p></div></div>`:''}<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
-  </div>
   ${demoOn()?`<div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?'Recebendo...':`Simular leva · ${esc(name)} · ${srcName()}`}</button>${g.running?'<button class="btn ghost" data-act="ing-stop">Parar</button>':''}<label class="btn ghost" style="cursor:pointer">Testar com fotos suas<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>${g.n.arrived||g.done.length?'<button class="btn ghost" data-act="ing-reset">Limpar esta leva</button>':''}</div>`:''}
-  <div class="twocol" style="margin-top:4px">
-    <div class="panel"><h2>O que o fotógrafo vê</h2>${phone}</div>
-    <div class="panel"><h2>O que o servidor faz</h2>
-      <div class="tiles">${tile('Chegaram',g.n.arrived)}${tile('Repetidas',g.n.dup,'ignoradas')}${tile('Sessões',g.done.length)}${tile('Fechadas sozinhas',g.n.auto,'pausa + rostos')}${tile('Não válidas',g.n.invalid||0,'IA barrou')}${tile('Com bandeira',g.n.flagged,g.n.unsure?`${g.n.unsure} para confirmar`:'')}</div>
-      ${g.feed.length?`<div class="tablewrap"><table><tbody>${g.feed.slice(0,14).map(f=>`<tr><td><span class="pill ${ico[f.k]}">${f.k==='ok'?'foto':f.k==='dup'?'repetida':f.k==='warn'?'validar':'auto'}</span></td><td style="white-space:normal"><div>${esc(f.t)}</div><div class="note">${esc(f.s)}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Nenhuma foto ainda.</div>'}
-    </div>
-  </div>
-  ${state.agent.on&&state.agent.sessoes?upSessoes():`${cur?`<div class="panel"><div class="head"><h2>Sessão em formação</h2><span class="note">${cur} fotos · fecha sozinha quando os cliques param e o quadro seguinte traz rostos novos</span></div><div class="photos small">${g.cur.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.flag?p.flag:'',label:'Foto '+(i+1)})).join('')}</div></div>`:''}
+  ${sessAg?upSessoes(L):''}${demoOn()||!state.agent.sessoes?`${cur?`<div class="panel"><div class="head"><h2>Sessão em formação</h2><span class="note">${cur} fotos · fecha sozinha quando os cliques param e o quadro seguinte traz rostos novos</span></div><div class="photos small">${g.cur.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.flag?p.flag:'',label:'Foto '+(i+1)})).join('')}</div></div>`:''}
   ${g.done.length?`<div class="panel"><div class="head"><h2>Sessões criadas nesta leva</h2><span class="note">na fila</span></div>
-    ${g.done.map(s=>`<div class="eyebrow" style="margin:6px 0 8px">${s.card} · ${s.n} fotos · fechada por ${esc(s.how)} · ${s.flag?`<span class="pill good">bandeira: ${esc(s.flag)}</span>`:'<span class="pill neutral">sem bandeira</span>'}</div><div class="photos small">${s.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.invalid?'NÃO VÁLIDA · '+p.invalid:(p.conf&&p.conf<70?`${p.flag}? ${p.conf}%`:''),label:'Foto '+(i+1)}).replace('<button class="ph"',`<button class="ph" data-off="${p.invalid?1:0}"`)).join('')}</div>`).join('')}</div>`:''}`}
+    ${g.done.map(s=>`<div class="eyebrow" style="margin:6px 0 8px">${s.card} · ${s.n} fotos · fechada por ${esc(s.how)} · ${s.flag?`<span class="pill good">bandeira: ${esc(s.flag)}</span>`:'<span class="pill neutral">sem bandeira</span>'}</div><div class="photos small">${s.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.invalid?'NÃO VÁLIDA · '+p.invalid:(p.conf&&p.conf<70?`${p.flag}? ${p.conf}%`:''),label:'Foto '+(i+1)}).replace('<button class="ph"',`<button class="ph" data-off="${p.invalid?1:0}"`)).join('')}</div>`).join('')}</div>`:''}`:''}
+  ${libPanel()}
+  ${adm?`<details class="tec"><summary>Detalhes técnicos</summary>${leitor}${feed}</details>`:''}
   `;
 }
+// v94 (ondas UX, D): faixa de estado de Minhas fotos. Sobre as sessões de hoje do filtro (L = upSessLista(), já calculada no
+// render): amarela "Recebendo X de Y" (Y = o que já chegou ao servidor nas sessões não fechadas, X = o que já foi lido), verde
+// "Tudo no servidor", neutra "Pronto para receber"; sem agente, vermelha (ou o estado da demonstração).
+function upFaixa(L){const a=state.agent,g=state.ing;const pl=(n,s,p)=>n+' '+(n===1?s:p);
+  const barra=(lidas,cheg)=>{const pc=cheg?Math.round(100*lidas/cheg):0;return `<div class="up-faixa warn" role="status"><b>Recebendo ${lidas} de ${cheg}</b><div class="up-barra" aria-hidden="true"><i style="width:${pc}%"></i></div></div>`;};
+  const pronto='<div class="up-faixa" role="status"><b>Pronto para receber</b></div>';
+  if(a.on&&a.sessoes&&L){const hoje=localDay(Date.now()/1000);const D=L.filter(x=>!x.dia||x.dia===hoje);const ab=D.filter(x=>x.status!=='fechada');
+    const nowS=Date.now()/1000;const rec=ab.some(x=>(x.pend||[]).length>0||(x.ultima_chegada&&nowS-x.ultima_chegada<15))||(g.lastReal&&Date.now()-g.lastReal<15000);
+    if(rec&&ab.length){const lidas=ab.reduce((s,x)=>s+(x.fotos||[]).length,0),cheg=ab.reduce((s,x)=>s+(x.fotos||[]).length+(x.pend||[]).length,0);return barra(lidas,cheg);}
+    const n=D.reduce((s,x)=>s+(x.fotos||[]).length+(x.pend||[]).length,0);
+    return n?`<div class="up-faixa ok" role="status"><b>Tudo no servidor · ${pl(n,'foto hoje','fotos hoje')} · ${pl(D.length,'sessão','sessões')}</b></div>`:pronto;}
+  if(!a.on&&!demoOn())return faixaConexao({estado:'off',ultimo:a.lastOk,extra:'Chame a TI.'});
+  // demonstração sem agente, ou agente antigo sem sessões: a leva local (state.ing)
+  const pend=g.queue.filter(x=>x.kind==='photo').length;
+  if(g.running||pend)return barra(g.n.arrived,g.n.arrived+pend);
+  return g.n.arrived?`<div class="up-faixa ok" role="status"><b>Tudo no servidor · ${pl(g.n.arrived,'foto hoje','fotos hoje')} · ${pl(g.done.length,'sessão','sessões')}</b></div>`:pronto;}
 // ---------- v91: Sessões de hoje no Upload automático (plano docs/planos/2026-10-30-sessoes-por-rosto-e-tempo.md) ----------
 // Tela da equipe (só português, S13). Lê SRV.sess (feed /sessoes do agente): a aberta em destaque, a separada "fechando"
 // (ainda pode juntar com o grupo), a fechada neutra. Miniaturas com loading="lazy" (até 48 por sessão, 30 sessões por vez).
@@ -3288,7 +3301,7 @@ function upSessBloco(x){const on=x.status==='aberta',sep=x.status==='separada',f
   const iaPill=!rg?'':rg.motivo?(UP_IA_MOTIVO[rg.motivo]?`<span class="pill neutral up-ia">${UP_IA_MOTIVO[rg.motivo]}</span>`:''):iaN?`<span class="pill up-ia">Fundos de IA: ${iaPr!=null?Math.min(iaPr,iaN)+' de '+iaN+' prontas':iaN+(iaN===1?' foto':' fotos')}</span>`:'';
   return `<div class="up-sess${on?' on':''}" data-card="${esc(x.card)}"><div class="up-sess-h"><b class="up-lp">${esc(x.card)}</b><span class="up-nome">${esc(upNome(x))}</span><span>${esc(pt)}</span><span>${upHora(x.cap0)}–${upHora(x.cap1)}${x.fonte_t==='u'?' chegada':''}</span><span>${n} ${n===1?'foto':'fotos'}</span>${UP_MOTIVO[x.motivo]?`<span class="pill neutral">${UP_MOTIVO[x.motivo]}</span>`:''}${x.atrasada?'<span class="pill warn">atrasada</span>':''}${iaPill}${on?'<span class="pill up-on">aberta · recebendo</span>':sep?'<span class="pill warn">fechando</span>':''}${fech&&UP_FECHADA[x.fechada_por]?`<span class="note">${UP_FECHADA[x.fechada_por]}</span>`:''}${abrir?`<button class="chip" data-act="up-sess-abrir" data-card="${esc(x.card)}">Abrir sessão</button>`:''}</div>
     <div class="photos small">${todas.slice(0,lim).map((p,i)=>upThumb(p,i,pend.has(p),iat(p))).join('')}${todas.length>lim?`<button class="chip up-mais" data-act="up-sess-tudo" data-card="${esc(x.card)}">+${todas.length-lim}</button>`:''}</div></div>`;}
-function upSessoes(){const a=state.agent;upIaPoll();const L=upSessLista();const N=state.upSessN||30;const abertas=L.filter(x=>x.status!=='fechada').length;
+function upSessoes(L0){const a=state.agent;upIaPoll();const L=L0||upSessLista();const N=state.upSessN||30;const abertas=L.filter(x=>x.status!=='fechada').length;
   return `<div class="panel" id="up-sessoes"><div class="head"><div><div class="eyebrow">Montadas pelo servidor do ponto · pausa de 1 min e rostos novos</div><h2>Sessões de hoje</h2></div><span class="note">${L.length} ${L.length===1?'sessão':'sessões'}${abertas?` · ${abertas} recebendo ou fechando`:''}</span></div>
     ${a.sessoes&&a.sessoes.rostos===false?'<div class="note up-aviso"><span class="pill warn">Rostos desligados neste computador: as sessões estão sendo separadas só por tempo (1 minuto).</span></div>':''}
     ${L.length?L.slice(0,N).map(upSessBloco).join(''):'<div class="note">Nenhuma sessão neste filtro ainda. As fotos que chegarem aparecem aqui, agrupadas por sessão.</div>'}
@@ -4429,7 +4442,7 @@ const MODULE_INFO={
  galerias:{desc:'Galerias online: QR, cortesias e grupos de escola',c:'criar galeria e grupo de escola',r:'ver as galerias',u:'dar ou retirar cortesia, reenviar, editar grupo',d:'encerrar grupo'},
  qualidade:{desc:'Qualidade e Treino da IA',c:'importar rótulos de treino',r:'ver as revisões',u:'avaliar, marcar, descartar e rotular fotos'},
  diario:{desc:'Diário do set',c:'registrar ocorrência',r:'ver o diário',u:'marcar como resolvida',d:'ver e tratar as ocorrências da equipe toda (sem isso, só as próprias)'},
- set:{desc:'Upload automático (fotógrafo pelo usuário do FTP e pelo nome gravado na câmera) e Ajuste automático (o item do Ajuste fica no menu Configurações)',c:'receber fotos (leva e arquivos)',r:'ver o upload, as câmeras, as fotos e os ajustes',u:'parar o recebimento, ligar e desligar o ajuste automático, ajustar fotos',d:'limpar a leva'},
+ set:{desc:'Minhas fotos (fotógrafo pelo usuário do FTP e pelo nome gravado na câmera) e Ajuste automático (o item do Ajuste fica no menu Configurações)',c:'receber fotos (leva e arquivos)',r:'ver o upload, as câmeras, as fotos e os ajustes',u:'parar o recebimento, ligar e desligar o ajuste automático, ajustar fotos',d:'limpar a leva'},
  estatisticas:{desc:'Estatísticas: vendas e produtos, produção dos fotógrafos, rapidez, dias e eventos, visitantes e movimento da bilheteria',c:'importar entradas da bilheteria (bip ou catraca) por CSV',r:'ver as estatísticas'},
  escala:{desc:'Escala 5×2, função do dia e Calendário de eventos',r:'ver a escala e o calendário',u:'mudar a escala, a função do dia e o calendário de eventos (criar, editar, apagar, importar e feriados)'},
  filafoto:{desc:'Painel das fotos chegando, por fotógrafo e ponto',r:'ver a fila do fotógrafo (também na TV)',u:'ligar e desligar as miniaturas (rostos) neste aparelho'},
@@ -4450,7 +4463,7 @@ const ALL=perm(1,1,1,1),RO=perm(0,1,0,0),RW=perm(1,1,1,0),NONE=perm(0,0,0,0);
 function permNorm(perms){const o={};MODULES.forEach(([m])=>{const p=(perms&&perms[m])||{};const x={c:false,r:false,u:false,d:false};['c','r','u','d'].forEach(k=>{x[k]=!!p[k]&&opOk(m,k);});if(x.c||x.u||x.d)x.r=true;if(m==='permissoes'){const on=x.r&&x.u;x.r=x.u=on;}o[m]=x;});return o;}
 const PRESETS={
  admin:{name:'Admin',perms:Object.fromEntries(MODULES.map(([m])=>[m,{...ALL}])),menu:'*',inicio:'painel',desc:'Vê e faz tudo, inclusive Usuários e Permissões.'},
- foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},escala:{...RO},filafoto:{...RO}},menu:['diario','importar','fotofila','escala'],inicio:'importar',desc:'Vê só o menu Fotógrafo: Diário do set, Upload automático (com a troca de fotógrafo), Fila do fotógrafo e a Escala 5×2. Não vê: Checkout, Dashboard (vendas, índice, outros fotógrafos), Curadoria, Configurações.'},
+ foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},escala:{...RO},filafoto:{...RO}},menu:['diario','importar','fotofila','escala'],inicio:'importar',desc:'Vê só o menu Fotógrafo: Diário do set, Minhas fotos (com a troca de fotógrafo), Fila do fotógrafo e a Escala 5×2. Não vê: Checkout, Dashboard (vendas, índice, outros fotógrafos), Curadoria, Configurações.'},
  venda:{name:'Atendimento e venda',perms:{venda:{...RW},quiosque:{...RW},catalogo:{...RO},filafoto:{...RO}},menu:['quiosque','checkout','fila','caixa','posto','catalogo','fotofila'],inicio:'posto',desc:'Abre o Checkout e o Posto de venda (confirma pagamento e imprime), as telas de venda no balcão, a Fila do fotógrafo (também na TV do caixa) e vê os preços. Vê o valor de cada venda sua de hoje, sem totais. Não vê: Dashboard (vendas, números, fotógrafos), Curadoria, Usuários.'},
  valida:{name:'Validador',perms:{qualidade:{...ALL},diario:{...RO}},menu:['revisao','treino','diario'],inicio:'revisao',desc:'Qualidade e Treino da IA, e lê o Diário do set. Não vê: vendas, Checkout, Configurações.'},
  supervisor:{name:'Supervisor',perms:{relatorios:{...RO},desempenho:{...RO},financeiro:{...RO},diario:{...ALL},set:{...RO},venda:{...RW},qualidade:{...RO},estoque:{...ALL},configuracao:{...RW},escala:{...RW},laboratorio:{...RO},catalogo:{...RO},galerias:{...RW},filafoto:perm(0,1,1,0)},menu:'*',inicio:'painel',desc:'Dashboard inteiro (sem cancelar venda), Curadoria só para ver, menu Fotógrafo, Configurações do venue e Laboratório. Não vê: Usuários e Permissões.'},
