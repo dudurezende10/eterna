@@ -1464,8 +1464,15 @@ function pontoModo(){const h=location.hostname;const loop=h==='127.0.0.1'||h==='
 // posto pareado: o servidor diz quem é este aparelho (cookie eterna_posto, HttpOnly); estado: null = ainda não perguntou, 'ok', 'nao' (401) ou 'sem' (agente sem postos)
 function postoDisp(){const d=state.posto&&state.posto.disp;return d&&typeof d==='object'&&d.id?d:null;}
 state.posto={disp:null,estado:null,lista:null};
-async function postoCarregar(){const a=state.agent;if(!a||a.url!==location.origin)return;
-  try{const r=await fetch(a.url+'/postos/eu',{cache:'no-store',credentials:'same-origin',headers:{'X-Eterna':'1'}});const j=await r.json().catch(()=>({}));
+// Todo pedido ao agente (fora da galeria /g/) vai por aqui: cookie da sessão ou do posto (mesma origem) e X-Eterna: 1.
+// 401 sem_sessao com alguém conectado neste navegador = a sessão terminou no servidor: volta para a entrada com aviso.
+function agFetch(u,o){o=o||{};return fetch(u,Object.assign({},o,{credentials:'same-origin',headers:Object.assign({},o.headers||{},{'X-Eterna':'1'})})).then(r=>{
+  if(r.status===401&&state.user&&!authSite()&&!state.lojaRota&&!state.pub&&String(u).startsWith(location.origin+'/')&&!/\/postos\/eu$/.test(String(u).split('?')[0]))
+    r.clone().json().then(j=>{if(j&&j.erro==='sem_sessao'&&state.user&&!agFetch.saiu){agFetch.saiu=Date.now();logout();toast('Sua sessão terminou. Entre de novo.');setTimeout(()=>{agFetch.saiu=0;},5000);}}).catch(()=>{});
+  if(r.status===401&&state.lojaRota&&!/\/postos\/eu$/.test(String(u).split('?')[0])&&Date.now()-(postoCarregar.t||0)>10000)postoCarregar(); // Checkout: o posto foi revogado?
+  return r;});}
+async function postoCarregar(){const a=state.agent;if(!a||a.url!==location.origin)return;postoCarregar.t=Date.now();
+  try{const r=await agFetch(a.url+'/postos/eu',{cache:'no-store'});const j=await r.json().catch(()=>({}));
     const antes=JSON.stringify(state.posto.disp)+state.posto.estado;
     if(r.ok&&j.posto){state.posto.disp={id:String(j.posto.id),nome:String(j.posto.nome||'').slice(0,40),num:+j.posto.num||0};state.posto.estado='ok';}
     else if(r.status===401){state.posto.disp=null;state.posto.estado='nao';}else{state.posto.disp=null;state.posto.estado='sem';}
@@ -1509,7 +1516,7 @@ function pvEvento(tipo,venda,dados){if(!venda)return null;const u=state.user;con
 // eterna.ponto.conflitos.v1. Sem servidor (rede caiu), a fila do navegador segura e manda quando voltar: nunca descarta.
 const PV_CONF='eterna.ponto.conflitos.v1';let PV_ENV=false;
 async function pontoFlush(){if(PV_ENV||!state.agent||!state.agent.on)return;const lote=pvFila().slice(0,50);if(!lote.length)return;PV_ENV=true;
-  try{const r=await fetch(state.agent.url+'/ponto/eventos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({posto:postoNome(),eventos:lote})});if(!r.ok)return;
+  try{const r=await agFetch(state.agent.url+'/ponto/eventos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({posto:postoNome(),eventos:lote})});if(!r.ok)return;
     const res=(await r.json()).resultados||[];const sai=new Set(res.filter(x=>x.s==='ok'||x.s==='ja'||x.s==='recusado').map(x=>x.idem));const rec=lote.filter(e=>res.some(x=>x.idem===e.idem&&x.s==='recusado'));
     const tira=()=>{try{localStorage.setItem(PV_FILA,JSON.stringify(pvFila().filter(e=>!sai.has(e.idem))));
       if(rec.length){let c=[];try{c=JSON.parse(localStorage.getItem(PV_CONF)||'[]');if(!Array.isArray(c))c=[];}catch(e){c=[];}localStorage.setItem(PV_CONF,JSON.stringify(c.concat(rec).slice(-500)));}}catch(e){}};
@@ -1541,12 +1548,12 @@ const IMP_PX=[1844,1240];
 async function compHi(photoId,bgId){if(fundosModo()==='photoroom')return compHiPR(photoId,bgId);return fiaMontar(photoId,bgId,{hi:true});}
 async function compHiPR(photoId,bgId){const bg=bgOf(bgId);if(!bg)return {err:'fundo não encontrado'};const avisos=[];
   let fonte=bg.fileHi||bg.file;let plate=bg.fileHi?await loadImg(bg.fileHi):null;if(!plate){plate=await plateImg(bgId);fonte=bg.file;avisos.push('fundo_2400');} // sem o fundo de 5000 px: imprime com o de 2400 e registra
-  if(!plate)return {err:'fundo não abriu'};if(!state.pr){try{state.pr=await (await fetch(state.agent.url+'/photoroom/status',{cache:'no-store'})).json();}catch(e){}}const pr=state.pr;if(!pr||!pr.configured)return {err:'Photoroom indisponível'};
+  if(!plate)return {err:'fundo não abriu'};if(!state.pr){try{state.pr=await (await agFetch(state.agent.url+'/photoroom/status',{cache:'no-store'})).json();}catch(e){}}const pr=state.pr;if(!pr||!pr.configured)return {err:'Photoroom indisponível'};
   const k0=Math.min(1,5000/Math.max(plate.naturalWidth,plate.naturalHeight));const W=Math.round(plate.naturalWidth*k0),H=Math.round(plate.naturalHeight*k0); // teto de 5000 px do agente
   // pede só o recorte da pessoa (PNG transparente) já posicionado em W×H; o fundo de 5000 px entra aqui. hi: se o Photoroom montar mesmo assim, o agente usa o fundo de impressão do mapa aprovado
   const body={bg:bgId,W,H,pad:bgPad(bg,W,H),hi:true,recorte:true};
   if(/^ag_/.test(photoId))body.pid=photoId.slice(3);else{const c=await photoCanvas(photoId);if(!c)return {err:'sem foto'};body.image_b64=c.toDataURL('image/jpeg',.92);}
-  let r;try{r=await (await fetch(state.agent.url+'/photoroom/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){return {err:'agente fora'};}
+  let r;try{r=await (await agFetch(state.agent.url+'/photoroom/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){return {err:'agente fora'};}
   if(!r||!r.ok||!r.url)return {err:(r&&r.error)||'Photoroom não respondeu'};const im=await loadImg(state.agent.url+r.url);if(!im)return {err:'resultado não abriu'};
   const opaca=imgOpaca(im);if(opaca)avisos.push('montagem_opaca'); // o Photoroom devolveu a foto já montada (o agente usou o fundo de impressão do mapa)
   const c=mkc(W,H);const x=c.getContext('2d');x.imageSmoothingQuality='high';x.drawImage(plate,0,0,W,H);x.drawImage(im,0,0,W,H); // recorte transparente: o fundo em alta fica por baixo
@@ -1583,7 +1590,7 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
     job.fase='imprimindo';render();let tM=0;try{const imgs=[];for(const im of document.querySelectorAll('#print-root img')){ // 10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio
       const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
       tM=performance.now();
-      const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,venda_id:s.vendaId||'',vendedor:(state.user&&state.user.name)||'',posto:String((postoDisp()||{}).nome||postoNome()).slice(0,30) /* nome do terminal: o servidor escolhe a DNP dele (ETERNA_IMPRESSORA_POSTOS) */,imagens:imgs})})).json();
+      const rr=await (await agFetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,venda_id:s.vendaId||'',vendedor:(state.user&&state.user.name)||'',posto:String((postoDisp()||{}).nome||postoNome()).slice(0,30) /* nome do terminal: o servidor escolhe a DNP dele (ETERNA_IMPRESSORA_POSTOS) */,imagens:imgs})})).json();
       if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';job.pedido=rr.pedido;impJobGuarda(job);impPostoPoll();const tF=performance.now();
       toast(rr.ja_na_fila?'Esta venda já está na fila da impressora':`Enviado para ${rr.impressora}${rr.na_frente?` · ${rr.na_frente} ${rr.na_frente===1?'pedido':'pedidos'} na frente`:''}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.t0)/1000).toFixed(1)} s (montar ${((tM-job.t0)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
@@ -1640,7 +1647,7 @@ function impJobGuarda(job){try{const r=job.res||{};sessionStorage.setItem(IMP_JO
 function impJobVolta(){if(state.impJob)return;try{const j=JSON.parse(sessionStorage.getItem(IMP_JOB)||'null');const s=j&&SIM.sessions[j.card];if(s&&s.impressao&&!(s.impressoes||[]).some(x=>Date.parse(x.em)>=j.at))state.impJob=j;}catch(e){}} // tela recarregada: "Saiu certo" continua valendo; depois de marcar, não volta
 let impPostoTimer=null;
 async function impPostoPoll(){if(!document.getElementById('imp-painel')&&!state.impJob||!impNoServidor()){clearInterval(impPostoTimer);impPostoTimer=null;return;}
-  try{const j=await (await fetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();const sig=JSON.stringify([j.pedidos.map(p=>[p.id,p.estado,p.feitas,p.aviso,p.erro]),j.estados]);const mudou=sig!==state.impFilaSig;state.impFila=j;state.impFilaSig=sig;if(mudou&&document.getElementById('imp-painel'))render();}catch(e){}}
+  try{const j=await (await agFetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();const sig=JSON.stringify([j.pedidos.map(p=>[p.id,p.estado,p.feitas,p.aviso,p.erro]),j.estados]);const mudou=sig!==state.impFilaSig;state.impFila=j;state.impFilaSig=sig;if(mudou&&document.getElementById('imp-painel'))render();}catch(e){}}
 const impPedido=venda=>[...((state.impFila&&state.impFila.pedidos)||[])].reverse().find(p=>p.venda===venda)||null;
 const impAtivo=p=>!!p&&(p.estado==='na_fila'||p.estado==='imprimindo');
 function impPedidoLinha(p){const F=state.impFila||{};const e=(F.estados||{})[p.impressora||state.agent.impressora];const parada=p.aviso||(e&&e.estado==='erro'?(e.motivo||'parada'):'');const fotos=`${p.fotos} ${p.fotos===1?'foto':'fotos'}`;let t;
@@ -1876,8 +1883,8 @@ function liveRangeAgg(){if(!LIVE)return;const ds=rangeDays();const S={},PM={},PR
   DATA.payments=Object.values(PM).sort((a,b)=>b.amount-a.amount);DATA.products=Object.values(PR).map(o=>({...o,revenue:Math.round(o.revenue),price:o.units?Math.round(o.revenue/o.units):0})).sort((a,b)=>b.revenue-a.revenue);
   const gifts=Object.entries(PM).filter(([m])=>m==='coupon').reduce((a,[m,v])=>a+v.count,0);
   DATA.totals={...DATA.totals,...t,gifts,revenue:Math.round(t.revenue),ticket:t.sales?Math.round(t.revenue/t.sales):0,approachesConverted:t.sales};}
-async function livePoll(){const url=state.agent&&state.agent.url;if(!url)return;try{const st=await (await fetch(url+'/roverpix/status',{cache:'no-store'})).json();state.rover=st;
-  if(st.days>0&&(!LIVE||LIVE.updated!==st.last)){const j=await (await fetch(url+'/roverpix/data',{cache:'no-store'})).json();if(j&&j.ok){applyLive(j);render();}}}catch(e){state.rover=null;}}
+async function livePoll(){const url=state.agent&&state.agent.url;if(!url)return;try{const st=await (await agFetch(url+'/roverpix/status',{cache:'no-store'})).json();state.rover=st;
+  if(st.days>0&&(!LIVE||LIVE.updated!==st.last)){const j=await (await agFetch(url+'/roverpix/data',{cache:'no-store'})).json();if(j&&j.ok){applyLive(j);render();}}}catch(e){state.rover=null;}}
 function liveBadge(){if(LIVE)return `<span class="pill good">Roverpix ao vivo${LIVE.updated?' · '+LIVE.updated.slice(11,16):''}</span>`;return `<span class="pill neutral">dados importados ${dBR(DMIN).slice(0,5)} a ${dBR(DMAX).slice(0,5)}</span>`;}
 function roverPanel(){const r=state.rover;const ok=r&&r.configured;
   return `<div class="panel" style="gap:10px"><div class="head"><h2>Roverpix</h2>${r?(r.status==='ok'?`<span class="pill good">sincronizado ${r.last?r.last.slice(11,16):''}</span>`:r.status==='erro'?`<span class="pill bad">${esc(r.error||'erro')}</span>`:`<span class="pill warn">${esc(r.status)}</span>`):'<span class="pill neutral">agente não encontrado</span>'}</div>
@@ -2186,7 +2193,7 @@ async function galFilaTick(){if(galBusy)return;galBusy=true;let mudou=false;
       if(!m.fotos.length||!m.fotos.every(f=>/^ag_/.test(f.id))){if(it.estado!=='local'){it.estado='local';mudou=true;}continue;}
       if(!a.on){if(it.estado!=='pendente'){it.estado='pendente';mudou=true;}continue;}
       if(Date.now()<(it.prox||0))continue;
-      try{const r=await fetch(a.url+'/galerias/publicar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({manifesto:m})});const j=await r.json().catch(()=>({}));
+      try{const r=await agFetch(a.url+'/galerias/publicar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({manifesto:m})});const j=await r.json().catch(()=>({}));
         if(r.status===410){it.estado='encerrada';it.erro=null;mudou=true;continue;}if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));it.estado='enviada';it.erro=null;it.tent=0;it.em=now().toISOString();}
       catch(e){it.tent=(it.tent||0)+1;it.erro=String(e&&e.message||e).slice(0,120);it.estado='pendente';it.prox=Date.now()+[10,30,60,300][Math.min(it.tent-1,3)]*1000;}
       mudou=true;}}
@@ -2195,7 +2202,7 @@ async function galFilaTick(){if(galBusy)return;galBusy=true;let mudou=false;
 setInterval(galFilaTick,10000);
 // Vendas feitas na galeria online pelo agente: entram em SIM.vendasOnline (Lista de vendas, canal Online)
 async function galVendasPoll(){const a=state.agent;if(!a.on||state.pub)return;
-  try{const j=await (await fetch(a.url+'/galerias/vendas?desde='+(SIM.galVendasN||0),{cache:'no-store'})).json();if(!j||!Array.isArray(j.vendas))return;let novo=false;SIM.vendasOnline=SIM.vendasOnline||[];
+  try{const j=await (await agFetch(a.url+'/galerias/vendas?desde='+(SIM.galVendasN||0),{cache:'no-store'})).json();if(!j||!Array.isArray(j.vendas))return;let novo=false;SIM.vendasOnline=SIM.vendasOnline||[];
     for(const v of j.vendas){if(SIM.vendasOnline.some(x=>x.id===v.id))continue;const m=(SIM.galerias||{})[v.token];const pids=v.pids||[];
       if(m){m.fotos.forEach(f=>{if(pids.includes(f.id)){f.direito='comprada';f.canal='online';delete f.cortesia;}});}
       const card=(m&&(m.fotos.find(f=>f.id===pids[0])||{}).sessao)||(v.sessoes||[])[0]||'';
@@ -2575,7 +2582,11 @@ function fmtD(d){try{return new Date(d).toLocaleDateString({pt:'pt-BR',en:'en-GB
 function langPick(dark){return `<div class="lj-langs ${dark?'dark':''}" role="group" aria-label="Idioma · Language">${LANGS.map(([c,n])=>`<button data-act="lang" data-l="${c}" aria-pressed="${lang()===c}" title="${n}" aria-label="${n}" lang="${c}">${flagSvg(c)}</button>`).join('')}</div>`;}
 (function(){try{const s=localStorage.getItem('eterna.lang');if(s)state.lang=s;else{const n=(navigator.language||'pt').slice(0,2).toLowerCase();state.lang=LANGS.some(x=>x[0]===n)?n:'pt';}}catch(e){state.lang='pt';}})();
 
+// Checkout em aparelho não pareado (o agente respondeu 401 em /postos/eu): tela da equipe, sem nada do cliente
+function ljNaoPareado(){return `<div class="lj lj-full lj-hero"><div class="lj-heroin" style="max-width:560px"><div class="lj-eyebrow">Equipe</div><h1 class="lj-h1" style="font-size:32px">Este aparelho ainda não foi pareado</h1>
+  <p class="lj-sub">Peça a um administrador para parear em Painel de controle › Postos deste ponto. Depois, toque em Tentar de novo.</p><div class="row" style="justify-content:center;gap:10px;margin-top:18px"><button class="btn" data-act="posto-tentar">Tentar de novo</button><button class="btn ghost" data-act="loja-sair">Sair</button></div></div></div>`;}
 function vQuiosque(){
+  if(state.posto.estado==='nao'&&state.agent.on&&state.agent.url===location.origin)return ljNaoPareado();
   const k=state.kiosk;if(!k.langInit){k.langInit=1;state.lang='pt';}const logo=venueLogo(30,'dark');
   const deco=`<svg class="lj-v" viewBox="0 0 200 200" aria-hidden="true"><defs><linearGradient id="ljv" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#307FE2" stop-opacity="0"/><stop offset=".55" stop-color="#307FE2" stop-opacity=".55"/><stop offset="1" stop-color="#9cc6ff" stop-opacity=".9"/></linearGradient></defs><path d="M28 0L100 190L172 0" fill="none" stroke="url(#ljv)" stroke-width="16" stroke-linecap="round"/></svg><div class="lj-dots" aria-hidden="true"></div>`;
   const stripe='<div class="lj-stripe" aria-hidden="true"></div>';const photo='<div class="lj-photo" aria-hidden="true"></div>';
@@ -2809,7 +2820,7 @@ function buscaJanelaMin(){const a=state.agent;const ag=a&&a.on&&a.sessoes&&a.ses
 // hora da última foto da sessão (ms): clique corrigido do servidor (cap1), senão o fechamento; null = sem hora (amostra)
 function sesUltima(c){const s=SIM.sessions[c];if(!s)return null;if(s.cap1)return s.cap1*1000;const t=s.closedAt?Date.parse(s.closedAt):NaN;return isNaN(t)?null:t;}
 async function faceAgente(srcs,todo){const a=state.agent;if(!a.on||!a.rostos||!a.rostos.ligado)return null;
-  try{const r=await fetch(a.url+'/rostos/buscar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(todo?{imagens:srcs.map(toJpeg),todo:true}:{imagens:srcs.map(toJpeg)})});return r.ok?await r.json():null;}catch(e){return null}}
+  try{const r=await agFetch(a.url+'/rostos/buscar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(todo?{imagens:srcs.map(toJpeg),todo:true}:{imagens:srcs.map(toJpeg)})});return r.ok?await r.json():null;}catch(e){return null}}
 async function faceFind(srcs,ok){srcs=[].concat(srcs);
   // v91 (Eduardo, 01/11 16:46): no Checkout, só as sessões com a última foto nos últimos N minutos (Painel de controle; 0 = dia
   // todo). O agente filtra as fotos dele; aqui sai a sessão deste navegador mais velha que a janela. Galeria por QR: dia todo.
@@ -2835,7 +2846,7 @@ async function faceFind(srcs,ok){srcs=[].concat(srcs);
 // Medição: cada foto tem o maior rosto procurado nas outras fotos; acerto = a sessão dela vem em primeiro.
 async function faceMeasure(){const a=state.agent;
   if(a.on&&a.rostos&&a.rostos.ligado){const sessoes={};for(const x of demoSessions()){const ids=x.photos.filter(p=>/^ag_/.test(p.id)).map(p=>p.id.slice(3));if(ids.length)sessoes[x.card]=ids;}
-    if(Object.keys(sessoes).length){const r=await fetch(a.url+'/rostos/medir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessoes})});if(r.ok){const m=await r.json();m.onde='servidor do ponto · '+m.modelo;return m;}}}
+    if(Object.keys(sessoes).length){const r=await agFetch(a.url+'/rostos/medir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessoes})});if(r.ok){const m=await r.json();m.onde='servidor do ponto · '+m.modelo;return m;}}}
   return {...(await faceMeasureLocal()),onde:'navegador · fotos de exemplo'};}
 async function faceMeasureLocal(){await facePre();faceIndexAll();await FACEQ;const ph=[];for(const x of demoSessions())for(const p of x.photos)if(FACEIDX[p.id]&&FACEIDX[p.id].length)ph.push({card:x.card,id:p.id,f:FACEIDX[p.id]});
   const per={};ph.forEach(p=>per[p.card]=(per[p.card]||0)+1);let q=0,certo=0,errado=0,duvida=0,nada=0;
@@ -2854,7 +2865,7 @@ async function composePR(photoId,bgId){const key='pr|'+photoId+'|'+bgId;if(COMP[
     const pr=state.pr;if(!pr)return {pending:'agente'};if(!pr.configured)return {pending:'photoroom'};
     const W=plate.naturalWidth,H=plate.naturalHeight;const body={bg:bgId,W,H,pad:bgPad(bg,W,H)};
     if(/^ag_/.test(photoId))body.pid=photoId.slice(3);else{const c=await photoCanvas(photoId);if(!c)return {err:'sem foto'};body.image_b64=c.toDataURL('image/jpeg',.92);}
-    let r;try{r=await (await fetch(state.agent.url+'/photoroom/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){return {pending:'agente'};}
+    let r;try{r=await (await agFetch(state.agent.url+'/photoroom/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){return {pending:'agente'};}
     if(!r.ok)return {err:r.error||'Photoroom não respondeu'};
     const url=state.agent.url+r.url;const im=await loadImg(url);if(!im)return {err:'resultado não abriu'};
     // se o Photoroom devolver só o grupo recortado (PNG transparente), o fundo vai por baixo, no mesmo tamanho
@@ -2886,7 +2897,7 @@ const FIA_LADO_PREVIA=2400,FIA_LADO_HI=3000;
 function fiaRecorte(photoId,lado){lado=lado===FIA_LADO_HI?FIA_LADO_HI:FIA_LADO_PREVIA;const key=photoId+'|'+lado;
   if(RECS.has(key)){const p=RECS.get(key);RECS.delete(key);RECS.set(key,p);return p;}
   if(!/^ag_/.test(photoId))return Promise.resolve({pending:'exemplo'});
-  const p=(async()=>{let r;try{r=await fetch(state.agent.url+'/recorte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid:photoId.slice(3),lado})});}catch(e){return {pending:'agente'};}
+  const p=(async()=>{let r;try{r=await agFetch(state.agent.url+'/recorte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid:photoId.slice(3),lado})});}catch(e){return {pending:'agente'};}
     if(r.status===503){let j={};try{j=await r.json();}catch(e){}return {pending:'recorte',motivo:j.motivo||null};}
     if(r.status===429||r.status===504)return {pending:'fila'};
     if(!r.ok)return {err:r.status===404?'foto não está no agente':'recorte falhou'};
@@ -2933,7 +2944,7 @@ async function fiaMontar(photoId,bgId,o){o=o||{};const bg=bgOf(bgId);if(!bg)retu
   const land=W>=H;const [ow,oh]=land?IMP_PX:[IMP_PX[1],IMP_PX[0]];const k=Math.max(ow/W,oh/H);const sw=ow/k,sh=oh/k; // 10×15: centralizado na horizontal, preso embaixo (o grupo encosta na borda)
   const out=mkc(ow,oh);const ox=out.getContext('2d');ox.imageSmoothingQuality='high';ox.drawImage(c,(W-sw)/2,H-sh,sw,sh,0,0,ow,oh);
   return {url:out.toDataURL('image/jpeg',.92),w:ow,h:oh,fonte,avisos,layout:L};}
-async function compose(photoId,bgId){if(fundosModo()==='photoroom'){if(!state.pr){try{state.pr=await (await fetch(state.agent.url+'/photoroom/status',{cache:'no-store'})).json();}catch(e){}}return composePR(photoId,bgId);}const key=photoId+'|'+bgId;if(COMP[key])return COMP[key];
+async function compose(photoId,bgId){if(fundosModo()==='photoroom'){if(!state.pr){try{state.pr=await (await agFetch(state.agent.url+'/photoroom/status',{cache:'no-store'})).json();}catch(e){}}return composePR(photoId,bgId);}const key=photoId+'|'+bgId;if(COMP[key])return COMP[key];
   const job=(async()=>{const r=await fiaMontar(photoId,bgId);if(!r.canvas)return r;const bl=await new Promise(z=>r.canvas.toBlob(z,'image/jpeg',.9));if(!bl)return {err:'montagem falhou'};return {url:URL.createObjectURL(bl),w:r.w,h:r.h,layout:r.layout};})();
   COMP[key]=job;job.then(r=>{if(r.pending||r.err)delete COMP[key];});return job;}
 // Checkout: fundo de IA só aparece quando dá para montar (modo local: agente com o recorte pronto e foto do agente)
@@ -2949,7 +2960,7 @@ function fiaPanel(){const a=state.agent||{};const r=a.on?a.recorte:null;const lo
     <div class="note">${loc?'Montagem local (padrão): o agente do ponto recorta a pessoa neste computador e o Eterna monta no fundo com as regras aprovadas. Sem internet e sem custo.':'Montagem pelo Photoroom ligada no Painel de controle.'}${r&&r.ms_medio?` Média de ${(r.ms_medio/1000).toFixed(1)} s por foto (${r.feitos} feitas).`:''}</div>
     ${r&&!r.ok?`<div class="note"><b>${esc(recMotivo(r.motivo).replace(': veja Fundos de IA',''))}</b> · ${esc(r.motivo||'')}. Rode <b>instalar-recorte</b> na pasta do agente (Mac: instalar-recorte.command; Windows: instalar-recorte.bat) e abra o agente de novo. Recomendado: 16 GB de memória.</div>`:''}</div>`;}
 function compTile(photoId,b,sel,act){const a=ANAV[photoId];const m=bgMatch(a,b);return `<button class="bg comp" data-act="${act||'fila-bg'}" data-bg="${b.id}" aria-pressed="${sel}"><span class="compimg" data-comp="${photoId}|${b.id}" style="background-image:url(${b.file})"><span class="compst">${fundosModo()==='photoroom'?'Montando no Photoroom...':'Montando...'}</span></span><span class="czoom" data-act="comp-zoom" data-k="${photoId}|${b.id}" data-cap="${esc(b.name)}" role="button" aria-label="Ver grande"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"></path></svg></span>${m!=null?`<span class="cmatch ${m>=85?'hi':m>=70?'mid':'lo'}">Combina ${m}%</span>`:''}<span class="n"><span>${esc(b.name)}</span><span class="note">${esc(matchWhy(a,b)||FRAMING[aiScore(photoId).f])} · ${fmtR(priceOf('fundo'))}</span></span></button>`;}
-state.pr=null;function prPoll(force){if(prPoll.t&&!force&&Date.now()-prPoll.t<15000)return;prPoll.t=Date.now();fetch(state.agent.url+'/photoroom/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=!state.pr||state.pr.configured!==j.configured||state.pr.calls!==j.calls||state.pr.last_error!==j.last_error;state.pr=j;if(ch)render();}).catch(()=>{if(state.pr!==null){state.pr=null;render();}});}
+state.pr=null;function prPoll(force){if(prPoll.t&&!force&&Date.now()-prPoll.t<15000)return;prPoll.t=Date.now();agFetch(state.agent.url+'/photoroom/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=!state.pr||state.pr.configured!==j.configured||state.pr.calls!==j.calls||state.pr.last_error!==j.last_error;state.pr=j;if(ch)render();}).catch(()=>{if(state.pr!==null){state.pr=null;render();}});}
 function prPanel(){const p=state.pr;
   return `<div class="panel" style="gap:10px"><div class="head"><h2>Photoroom</h2>${p?(p.configured?`<span class="pill ${p.last_error?'bad':'good'}">${p.last_error?esc(p.last_error):'conectado'+(p.sandbox?' · modo de testes':'')}</span>`:'<span class="pill warn">sem chave</span>'):'<span class="pill neutral">agente não encontrado</span>'}</div>
     <div class="note">O Photoroom recorta o grupo da foto do campo e monta nos fundos de IA, com luz e sombra. O agente do ponto faz as chamadas; a chave fica só neste computador. A chave de testes (começa com sandbox_) é grátis, até 1.000 montagens por mês, com marca d'água.</div>
@@ -3071,7 +3082,7 @@ function ingPush(items){const g=state.ing;g.queue.push(...items);g.total+=items.
 // agente do ponto: programa local que vigia o cartão e entrega as fotos (agente/eterna-agente.py)
 state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:window.ETERNA_AGENTE||((location.protocol==='http:'&&location.port)?location.origin:'http://127.0.0.1:8765') /* aberto pelo próprio agente (este computador ou o servidor do ponto na rede) */,tried:false,err:null};
 // ---------- Servidor FTP do estádio: o CTP manda para ele, o agente busca as fotos novas ----------
-state.rftp=null;function rftpPoll(){if(rftpPoll.t&&Date.now()-rftpPoll.t<4000)return;rftpPoll.t=Date.now();fetch(state.agent.url+'/ftp-remoto/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=JSON.stringify(j)!==JSON.stringify(state.rftp);state.rftp=j;if(ch&&state.view==='catalogo')render();}).catch(()=>{});}
+state.rftp=null;function rftpPoll(){if(rftpPoll.t&&Date.now()-rftpPoll.t<4000)return;rftpPoll.t=Date.now();agFetch(state.agent.url+'/ftp-remoto/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=JSON.stringify(j)!==JSON.stringify(state.rftp);state.rftp=j;if(ch&&state.view==='catalogo')render();}).catch(()=>{});}
 // v80: saiu do Upload automático e foi para Configurações › Painel de controle. Ver: configuracao.r; alterar: configuracao.u. A senha fica só no agente.
 // v80: os mesmos campos nos dois cartões (com e sem agente); a grade empilha no celular
 function rftpCampos(r,desligado){r=r||{};const dis=desligado?' disabled':'';const on=state.agent.on;const v=x=>on?esc(x):'';
@@ -3081,7 +3092,7 @@ function rftpCampos(r,desligado){r=r||{};const dis=desligado?' disabled':'';cons
 // Postos deste ponto: cada aparelho (Checkout, caixa, TV) é pareado uma vez por quem tem Painel de controle (Alterar).
 // O cookie fica só no aparelho (HttpOnly); daqui dá para ver o último uso e revogar.
 function postosPoll(force){if(!state.agent.on||state.agent.url!==location.origin)return;if(!force&&postosPoll.t&&Date.now()-postosPoll.t<10000)return;postosPoll.t=Date.now();
-  fetch(state.agent.url+'/postos',{cache:'no-store',credentials:'same-origin',headers:{'X-Eterna':'1'}}).then(r=>r.ok?r.json():null).then(j=>{const l=j&&Array.isArray(j.postos)?j.postos:null;const ch=JSON.stringify(l)!==JSON.stringify(state.posto.lista);state.posto.lista=l;if(ch&&state.view==='catalogo')render();}).catch(()=>{});}
+  agFetch(state.agent.url+'/postos',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{const l=j&&Array.isArray(j.postos)?j.postos:null;const ch=JSON.stringify(l)!==JSON.stringify(state.posto.lista);state.posto.lista=l;if(ch&&state.view==='catalogo')render();}).catch(()=>{});}
 function postosPanel(){if(!can('configuracao','r')||!state.agent.on||state.agent.url!==location.origin)return '';postosPoll();
   const L=state.posto.lista||[];const ro=!can('configuracao','u');const eu=postoDisp();const qd=t=>t?new Date(t*1000).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'nunca';
   return `<div class="panel" id="postos-painel" style="gap:10px"><div class="head"><div><div class="eyebrow">Aparelhos do ponto</div><h2>Postos deste ponto</h2></div><span class="pill ${eu?'good':'warn'}">${eu?'este aparelho: '+esc(eu.nome)+' · P'+eu.num:'este aparelho não está pareado'}</span></div>
@@ -3102,7 +3113,7 @@ function rftpPanel(){if(!can('configuracao','r'))return '';
     ${r.configurado?`<div class="note">${fmtN(r.baixadas||0)} fotos novas desde que o agente abriu${r.ultima?' · última às '+esc(r.ultima):''}${r.na_fila?' · '+r.na_fila+' chegando':''}.</div>${r.aviso?`<div class="note"><span class="pill warn">${esc(r.aviso)}</span></div>`:''}`:''}</div>`;}
 // ---------- Biblioteca do agente: tudo o que já está no computador do ponto, por dia ----------
 state.lib=[];state.libDay=null;
-async function libLoad(){const a=state.agent;try{const j=await (await fetch(a.url+'/biblioteca',{cache:'no-store'})).json();state.lib=j.fotos||[];CAM_GUESS={};CAM_GDONE={};state.lib.forEach(f=>{const id='ag_'+f.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+f.id,name:f.name};});}catch(e){}}
+async function libLoad(){const a=state.agent;try{const lr=await agFetch(a.url+'/biblioteca',{cache:'no-store'});if(!lr.ok)return;const j=await lr.json();state.lib=j.fotos||[];CAM_GUESS={};CAM_GDONE={};state.lib.forEach(f=>{const id='ag_'+f.id;if(!UP[id])UP[id]={src:a.url+'/thumb/'+f.id,name:f.name};});}catch(e){}}
 function photosInSessions(){const k=new Set();Object.values(SIM.sessions||{}).forEach(s=>(s.photos||[]).forEach(p=>k.add(p.id)));return k;}
 const localDay=t=>{const d=new Date(t*1000);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 state.libF={day:'hoje',per:'dia',who:'todos',venda:'todas'};
@@ -3133,8 +3144,9 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
     <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera, pelo usuário (subpasta) do FTP ou pela sessão da foto. Vendida = foto escolhida numa venda paga.</div></div>`;}
 const SESSAO_PAUSA_S=60; // v91 (S1, Eduardo 30/10): 1 minuto sem clique fecha a sessão, a mesma regra do agente (SESS_PAUSA) e da Fila do fotógrafo; com o agente, as sessões vêm prontas dele (pausa + rostos)
 async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
-  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;postoCarregar();let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
-    const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
+  try{const st=await (await agFetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;postoCarregar();let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
+    const evr=await agFetch(a.url+'/events?since='+a.cursor,{cache:'no-store'});const ev=evr.ok?await evr.json():{events:[]}; // sem Upload/Estoque (ou só o posto): sem a lista de chegadas
+    if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
       if(e.src==='inbox'||known.has(id)||was||a.sessoes)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
       if(dups&&!state.pub&&!state.lojaRota)toast(dups+(dups>1?' fotos já estavam':' foto já estava')+' no computador. Não baixei de novo.');if(items.length){ingPush(items);state.ing.lastReal=Date.now();}render();}
@@ -3154,7 +3166,7 @@ const SRV_MAT_MAX=12;
 async function srvPull(){const a=state.agent;if(SRV.busy||!a.sessoes)return;SRV.busy=true;
   try{if(SRV.gen!==a.sessoes.gen){SRV.gen=a.sessoes.gen;SRV.rev=0;SRV.sess={};SRV.mat={};}
     if(a.sessoes.rev===SRV.rev){if(srvMaterializa()&&(state.view==='importar'||state.view==='fotofila'))render();return;}
-    const j=await (await fetch(a.url+'/sessoes?desde='+SRV.rev,{cache:'no-store'})).json();if(!j||!j.ok)return;
+    const j=await (await agFetch(a.url+'/sessoes?desde='+SRV.rev,{cache:'no-store'})).json();if(!j||!j.ok)return;
     if(j.gen!==SRV.gen){SRV.gen=j.gen;SRV.rev=0;SRV.sess={};SRV.mat={};return;}
     if(j.completo)SRV.sess={};
     const hoje=localDay(Date.now()/1000);let mudou=false; // dia local, como o do agente (todayKey é UTC)
@@ -3238,7 +3250,7 @@ const fotosNoServidor=()=>state.agent.on&&state.agent.url===location.origin;
 async function fotosEnviar(lista){const im=state.imp;if(im.envio)return;const jpg=lista.filter(f=>/\.jpe?g$/i.test(f.name));const quem=im.key&&im.key!=='todos'?im.key:'';
   const e=im.envio={total:jpg.length,feitas:0,novas:0,rep:0,falhas:0,fora:lista.length-jpg.length,erro:0};render();
   const fila=[...jpg].sort((x,y)=>x.name.localeCompare(y.name));
-  const uma=async()=>{for(let f;(f=fila.shift());){let st=0,j={};try{const r=await fetch(`${state.agent.url}/fotos/enviar?nome=${encodeURIComponent(f.name)}&quem=${encodeURIComponent(quem)}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'image/jpeg','X-Eterna':'1'},body:f});st=r.status;j=await r.json();}catch(x){}
+  const uma=async()=>{for(let f;(f=fila.shift());){let st=0,j={};try{const r=await agFetch(`${state.agent.url}/fotos/enviar?nome=${encodeURIComponent(f.name)}&quem=${encodeURIComponent(quem)}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'image/jpeg','X-Eterna':'1'},body:f});st=r.status;j=await r.json();}catch(x){}
     if(j.resultado==='new')e.novas++;else if(j.resultado==='dup')e.rep++;else{e.falhas++;if(st===401||st===403)e.erro=st;}e.feitas++;render();if(e.erro)fila.length=0;}};
   await Promise.all([uma(),uma()]);im.envio=null;
   toast(e.erro?'Sem permissão para enviar fotos. Entre de novo ou fale com o administrador.':[`${e.novas} ${e.novas===1?'foto enviada':'fotos enviadas'} ao servidor`,e.rep?`${e.rep} já ${e.rep===1?'estava':'estavam'} lá`:'',e.falhas?`${e.falhas} com falha`:'',e.fora?`${e.fora} fora do formato JPG`:''].filter(Boolean).join(' · '));render();}
@@ -3262,7 +3274,7 @@ function vImportarCore(){
   ${ajAutoPanel()}
   ${picker}
   <div class="panel" style="background:${state.agent.on?'var(--good-bg)':'var(--surface)'}"><div class="head"><div><div class="eyebrow">Leitor automático · agente do ponto</div><h2 style="margin-top:4px">${state.agent.on?`Conectado${state.agent.card?' · cartão '+esc(state.agent.card)+' inserido':' · aguardando cartão'}`:'Não encontrado neste computador'}</h2></div>${state.agent.on?`<span class="note">${state.agent.copied} fotos baixadas · ${state.agent.dups} repetidas ignoradas · pasta ~/Eterna/inbox</span>`:''}</div>
-    ${state.agent.on&&state.agent.ftp&&state.agent.ftp.port?`<div class="row" style="margin-top:8px"><span class="pill good">FTP ligado</span><span class="note">Servidor <b>${esc(state.agent.ftp.ip)}</b> · porta <b>${state.agent.ftp.port}</b> · usuários ${state.agent.ftp.users.map(esc).join(', ')} · ${state.agent.ftp.received} fotos recebidas${state.agent.ftp.last_user?' · última de '+esc(state.agent.ftp.last_user):''}</span></div>`:''}
+    ${state.agent.on&&state.agent.ftp&&state.agent.ftp.port?`<div class="row" style="margin-top:8px"><span class="pill good">FTP ligado</span><span class="note">Servidor <b>${esc(state.agent.ftp.ip)}</b> · porta <b>${state.agent.ftp.port}</b> ${(state.agent.ftp.users||[]).length?' · usuários '+state.agent.ftp.users.map(esc).join(', '):''} · ${state.agent.ftp.received} fotos recebidas${state.agent.ftp.last_user?' · última de '+esc(state.agent.ftp.last_user):''}</span></div>`:''}
     ${state.agent.on?'':`${location.protocol==='https:'?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>No computador do ponto, abra o Eterna em <a href="http://127.0.0.1:8765/#importar">http://127.0.0.1:8765</a></b><p>O Chrome bloqueia o site na internet de falar com o agente do Mac. Aberto pelo agente, as fotos do cartão e do CTP aparecem aqui sozinhas.</p></div></div>`:''}<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
   </div>
   <div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?'Recebendo...':`Simular leva · ${esc(name)} · ${srcName()}`}</button>${g.running?'<button class="btn ghost" data-act="ing-stop">Parar</button>':''}${fotosNoServidor()?(state.imp.envio?`<span class="btn ghost" aria-live="polite">Enviando ${state.imp.envio.feitas} de ${state.imp.envio.total}</span>`:`<label class="btn primary" style="cursor:pointer">Enviar fotos<input type="file" accept="image/jpeg" multiple data-act="imp-files" style="display:none"></label>`):`<label class="btn ghost" style="cursor:pointer">Testar com fotos suas<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>`}${g.n.arrived||g.done.length?'<button class="btn ghost" data-act="ing-reset">Limpar esta leva</button>':''}</div>
@@ -3489,7 +3501,7 @@ function painelBaixar(){if(!can('financeiro','r')||!canView('painel')){toast('Se
 state.srvMet={chave:null,dias:null,em:0,erro:null,busy:false};
 async function srvMetPull(){const M=state.srvMet,r=state.range;if(M.busy||!state.agent||!state.agent.on)return;const chave=r.from+'|'+r.to;
   if(M.chave===chave&&Date.now()-M.em<60e3)return;M.busy=true;
-  try{const j=await (await fetch(state.agent.url+'/metricas/dia?de='+r.from+'&ate='+r.to,{cache:'no-store'})).json();if(!j.ok)throw 0;M.dias=j.dias||[];M.chave=chave;M.em=Date.now();M.erro=null;}
+  try{const j=await (await agFetch(state.agent.url+'/metricas/dia?de='+r.from+'&ate='+r.to,{cache:'no-store'})).json();if(!j.ok)throw 0;M.dias=j.dias||[];M.chave=chave;M.em=Date.now();M.erro=null;}
   catch(e){M.erro='Sem conexão com o servidor do ponto';}finally{M.busy=false;if(state.view==='painel')render();}}
 function srvMetSoma(ds){const T={fotos:0,fotos_com_rosto:0,rostos:0,sessoes:0,sessoes_com_venda:0,vendas:0,faturamento:0,fotos_vendidas:0,fotos_ia_vendidas:0,impressoes:0,impressoes_falhas:0,canceladas:0,online:{vendas:0,faturamento:0,fotos:0},por_fotografo:Object.create(null),por_vendedor:Object.create(null),por_posto:Object.create(null),por_meio:Object.create(null)};
   for(const d of ds){for(const k of ['fotos','fotos_com_rosto','rostos','sessoes','sessoes_com_venda','vendas','faturamento','fotos_vendidas','fotos_ia_vendidas','impressoes','impressoes_falhas','canceladas'])T[k]+=d[k]||0;
@@ -3750,10 +3762,10 @@ function esPeriodo(){const r=state.range;const n=diasEntre(r.from,r.to).length;c
 const esOn=()=>!!(state.agent&&state.agent.on);
 async function esPull(forca){const M=state.es;if(M.busy||!esOn())return;const p=esPeriodo();const chave=p.de+'|'+p.ate;
   if(!forca&&M.chave===chave&&Date.now()-M.em<ES_CACHE_MS)return;if(!forca&&M.erro&&Date.now()-M.errEm<30e3)return;M.busy=true;
-  try{const j=await (await fetch(state.agent.url+'/metricas/dia?de='+p.de+'&ate='+p.ate,{cache:'no-store'})).json();if(!j||!j.ok||!Array.isArray(j.dias))throw 0;M.dias=j.dias;M.chave=chave;M.em=Date.now();M.erro=null;}
+  try{const j=await (await agFetch(state.agent.url+'/metricas/dia?de='+p.de+'&ate='+p.ate,{cache:'no-store'})).json();if(!j||!j.ok||!Array.isArray(j.dias))throw 0;M.dias=j.dias;M.chave=chave;M.em=Date.now();M.erro=null;}
   catch(e){M.erro='Sem conexão com o servidor do ponto';M.errEm=Date.now();}finally{M.busy=false;if(state.view==='estatisticas')render();}}
 async function esImpPull(forca){const M=state.es;if(M.impBusy||!esOn())return;if(!forca&&Date.now()-M.impEm<ES_CACHE_MS)return;M.impBusy=true;M.impEm=Date.now();
-  try{const r=await fetch(state.agent.url+'/ponto/entradas/importacoes',{cache:'no-store'});const j=await r.json();if(!r.ok||!j||!j.ok||!Array.isArray(j.importacoes))throw 0;M.imp=j.importacoes;M.impErro=false;}
+  try{const r=await agFetch(state.agent.url+'/ponto/entradas/importacoes',{cache:'no-store'});const j=await r.json();if(!r.ok||!j||!j.ok||!Array.isArray(j.importacoes))throw 0;M.imp=j.importacoes;M.impErro=false;}
   catch(e){M.imp=null;M.impErro=true;}finally{M.impBusy=false;if(state.view==='estatisticas'&&M.sec==='f')render();}}
 // ---------- CSV de entradas (f): lido aqui; só origem, dia e os segundos do dia saem do navegador (risco 3) ----------
 function esDataHora(s){s=String(s||'').trim();let m=/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(s),y,mo,d,h,mi,se;
@@ -3777,7 +3789,7 @@ async function esImportar(file){const M=state.es;if(!can('estatisticas','c')){to
     if(g.seg.length>50000){res.recusadas+=g.seg.length;res.erros.push(`${dBR(g.dia)}: mais de 50.000 entradas no dia`);continue;}
     try{const corpo=JSON.stringify({origem:g.origem,dia:g.dia,seg:g.seg,arquivo:res.arquivo,por:state.user?String(state.user.name||'').slice(0,60):''});let rr;
       // revisão: muitos dias passam do limite de 30 por minuto do agente; no 429 espera e tenta de novo (até 4 vezes)
-      for(let t=0;;t++){rr=await fetch(state.agent.url+'/ponto/entradas',{method:'POST',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo});if(rr.status!==429||t>=4)break;M.impProg=`Aguardando o servidor do ponto (${dBR(g.dia)})…`;render();await new Promise(ok=>setTimeout(ok,ES_IMP_ESPERA_MS));}
+      for(let t=0;;t++){rr=await agFetch(state.agent.url+'/ponto/entradas',{method:'POST',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo});if(rr.status!==429||t>=4)break;M.impProg=`Aguardando o servidor do ponto (${dBR(g.dia)})…`;render();await new Promise(ok=>setTimeout(ok,ES_IMP_ESPERA_MS));}
       M.impProg=null;const j=await rr.json().catch(()=>({}));if(rr.ok&&j.ok){res.aceitas+=safeN(j.aceitas);res.recusadas+=safeN(j.recusadas);res.dias++;}else{res.recusadas+=g.seg.length;res.erros.push(`${dBR(g.dia)}: ${String(j.error||'o servidor recusou').slice(0,80)}`);}}
     catch(e){res.recusadas+=g.seg.length;res.erros.push(`${dBR(g.dia)}: sem conexão com o servidor do ponto`);}}
   M.impRes=res;M.importando=false;M.chave=null;M.impEm=0;esPull(true);esImpPull(true);toast(res.dias?`Entradas importadas: ${fmtN(res.aceitas)} em ${res.dias} ${res.dias===1?'dia':'dias'}`:'Nenhuma entrada importada');render();}
@@ -4056,7 +4068,7 @@ function vRepo(){
 // Fila de impressão no estilo painel de senhas: na fila, imprimindo agora e prontas para retirar. Lê o servidor a cada 2 s.
 state.impFila=null;let impFilaTimer=null;
 async function impFilaPoll(){if(state.view!=='impfila'){clearInterval(impFilaTimer);impFilaTimer=null;return;}
-  try{const j=await (await fetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();state.impFila=j;state.impFilaErro=null;}catch(e){state.impFilaErro='Sem conexão com o servidor de impressão';}
+  try{const j=await (await agFetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();state.impFila=j;state.impFilaErro=null;}catch(e){state.impFilaErro='Sem conexão com o servidor de impressão';}
   if(state.view==='impfila')render();}
 // mesmo visual da Fila do fotógrafo (v87): nome grande, linha de contexto, linha de horário e miniaturas das fotos
 function impMiniOn(){try{return localStorage.getItem('eterna-if-mini-tv')==='1'}catch(e){return false}}
@@ -4092,7 +4104,7 @@ const FF_TVMINI='eterna.fotofila.tvmini';
 state.fotoFila=null;state.fotoFilaOk=0;state.fotoFilaErro=null;let fotoFilaTimer=null;
 async function fotoFilaPoll(){if(state.view!=='fotofila'){clearInterval(fotoFilaTimer);fotoFilaTimer=null;return;}
   const ac=new AbortController();const to=setTimeout(()=>ac.abort(),4000);
-  try{const r=await fetch(state.agent.url+'/fila-fotografo',{cache:'no-store',signal:ac.signal});if(!r.ok)throw new Error('http '+r.status);const j=await r.json();if(!j||!j.ok||!Array.isArray(j.grupos))throw new Error('resposta');state.fotoFila=j;state.fotoFilaOk=Date.now();state.fotoFilaErro=null;}
+  try{const r=await agFetch(state.agent.url+'/fila-fotografo',{cache:'no-store',signal:ac.signal});if(!r.ok)throw new Error('http '+r.status);const j=await r.json();if(!j||!j.ok||!Array.isArray(j.grupos))throw new Error('resposta');state.fotoFila=j;state.fotoFilaOk=Date.now();state.fotoFilaErro=null;}
   catch(e){state.fotoFilaErro='Sem conexão com o servidor';}finally{clearTimeout(to);}
   if(state.view==='fotofila')render();}
 // ponto padrão (igual em todo navegador) quando a Escala não mandou a função do dia ao agente
@@ -4107,7 +4119,7 @@ function ffMiniOn(){const e=ffMiniEscolha();if(e!==null)return e;return !can('ve
 // a função do dia vai para o agente (a TV do caixa não vê o localStorage de quem abriu a Escala); sem bloquear e sem erro na tela
 function ffFuncaoEnviar(){const f=SIM.funcao;if(!f||f.date!==todayKey()||!state.agent||!state.agent.url)return;const map={};
   Object.entries(f.map||{}).forEach(([k,v])=>{if(!humans.includes(k)||!v||!v.tipo)return;if(v.tipo==='campo'){if(v.point)map[k]={tipo:'campo',point:v.point};}else if(v.tipo==='volante')map[k]={tipo:'volante',modo:v.modo||'livre'};else if(v.tipo==='folga')map[k]={tipo:'folga'};});
-  try{fetch(state.agent.url+'/fila-fotografo/funcao',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({dia:localDay(Date.now()/1000),map})}).catch(()=>{});}catch(e){}}
+  try{agFetch(state.agent.url+'/fila-fotografo/funcao',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({dia:localDay(Date.now()/1000),map})}).catch(()=>{});}catch(e){}}
 // revisão 7: a função vai de novo só quando o agente reabriu (boot diferente do último envio deste aparelho), não a cada recarga
 function ffBootNovo(boot){try{if(!boot||localStorage.getItem('eterna.fotofila.boot')===String(boot))return false;localStorage.setItem('eterna.fotofila.boot',String(boot));return true;}catch(e){return false;}}
 function vFotoFila(){if(!fotoFilaTimer){fotoFilaTimer=setInterval(fotoFilaPoll,2000);setTimeout(fotoFilaPoll,0);}
@@ -5207,8 +5219,8 @@ document.addEventListener('click',e=>{
     case 'pn-fonte':if(['tudo','roverpix','eterna'].includes(d.v)){state.painel.fonte=d.v;try{localStorage.setItem('eterna.painel.v1',JSON.stringify(state.painel))}catch(x){}render();}break;
     case 'pn-csv':painelBaixar();break;
     case 'rv-save':{const f=state.rvForm||{};const inp=$('[data-act="rv-field"][data-k="api_key"]');const key=(inp&&inp.value||'').trim();if(!key){toast('Cole a chave da Roverpix');break;}
-      fetch(state.agent.url+'/roverpix/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_url:f.base_url||(state.rover&&state.rover.base_url)||'https://beta.api.roverpix.com',api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){if(inp)inp.value='';toast('Chave salva no agente. Sincronizando...');state.rvForm={};setTimeout(livePoll,1500);setTimeout(livePoll,8000);}else toast(j.error||'Não salvou');render();}).catch(()=>toast('Agente não encontrado'));break;}
-    case 'rv-sync':fetch(state.agent.url+'/roverpix/sync',{method:'POST'}).then(()=>{toast('Sincronizando');setTimeout(livePoll,6000);}).catch(()=>toast('Agente não encontrado'));break;
+      agFetch(state.agent.url+'/roverpix/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_url:f.base_url||(state.rover&&state.rover.base_url)||'https://beta.api.roverpix.com',api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){if(inp)inp.value='';toast('Chave salva no agente. Sincronizando...');state.rvForm={};setTimeout(livePoll,1500);setTimeout(livePoll,8000);}else toast(j.error||'Não salvou');render();}).catch(()=>toast('Agente não encontrado'));break;}
+    case 'rv-sync':agFetch(state.agent.url+'/roverpix/sync',{method:'POST'}).then(()=>{toast('Sincronizando');setTimeout(livePoll,6000);}).catch(()=>toast('Agente não encontrado'));break;
     case 'share-view':shareLink();break;
     case 'back':state.person=null;state.personDay=null;render();break;
     case 'review-person':state.view='revisao';state.revFilter.key=d.key;state.session=null;render();window.scrollTo({top:0});break;
@@ -5331,7 +5343,7 @@ document.addEventListener('click',e=>{
     case 'gal-criar':{const tok=galDaSessao(d.card,true);galPublicar(tok);log(`Galeria criada para ${d.card}`);state.gal.qr=tok;toast('Galeria criada · código '+SIM.galerias[tok].codigo);render();break;}
     case 'gal-qr':state.gal.qr=state.gal.qr===d.t?null:d.t;render();break;
     case 'if-acao':{const a=d.a;if(a==='cancelar'&&!confirm('Cancelar este pedido de impressão? O que já saiu fica; o resto não imprime.'))break;
-      fetch(state.agent.url+'/impressao/acao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:+d.id,acao:a,por:(state.user&&state.user.email)||''})})
+      agFetch(state.agent.url+'/impressao/acao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:+d.id,acao:a,por:(state.user&&state.user.email)||''})})
         .then(r=>r.json()).then(j=>{toast(j.ok?(a==='cancelar'?'Cancelando o pedido':'Mandado de novo para a fila'):(j.error||'Não deu certo'));impFilaPoll();impPostoPoll();}).catch(()=>toast('Sem conexão com o servidor'));break;}
     case 'impfila-mini':try{localStorage.setItem('eterna-if-mini-tv',impMiniOn()?'0':'1')}catch(e){}render();break;
     case 'fotofila-tv':{document.body.classList.toggle('if-tv');try{if(document.body.classList.contains('if-tv'))document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{});else document.fullscreenElement&&document.exitFullscreen();}catch(e){}render();break;}
@@ -5341,7 +5353,7 @@ document.addEventListener('click',e=>{
     case 'lgpd-nao':state.lgpdAsk=null;render();break;
     case 'lgpd-excluir':{const card=d.card;const sim=SIM.sessions[card];state.lgpdAsk=null;if(!sim||!can('galerias','u'))break;if(sim.status==='paga'){toast('Venda paga: as fotos ficam com o cliente.');render();break;} // LGPD art. 18: só sessão sem venda
       const pids=(sim.photos||[]).map(p=>p.id);const toks=Object.values(SIM.galerias||{}).filter(m=>m.tipo==='sessao'&&(m.sessoes||[]).includes(card)).map(m=>m.token);
-      fetch(state.agent.url+'/lgpd/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pids,tokens:toks,quem:state.user&&state.user.email,posto:String((postoDisp()||{}).nome||postoNome()),sessao:card})}).then(r=>r.json()).then(j=>{
+      agFetch(state.agent.url+'/lgpd/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pids,tokens:toks,quem:state.user&&state.user.email,posto:String((postoDisp()||{}).nome||postoNome()),sessao:card})}).then(r=>r.json()).then(j=>{
         if(j.error){toast('Não apaguei: '+j.error);return;}
         simFresh();const s2=SIM.sessions[card];if(s2){s2.photos=[];s2.selected=[];s2.cart=(s2.cart||[]).map(c=>({...c,apagada:true}));s2.lgpd={em:now().toISOString(),por:state.user&&state.user.email,porNome:state.user&&state.user.name,n:pids.length,posto:String((postoDisp()||{}).nome||postoNome())};}
         toks.forEach(t=>{const m=SIM.galerias[t];if(m){m.encerrada=true;m.expira=now().toISOString();}});pids.forEach(id=>{delete UP[id];});
@@ -5393,16 +5405,17 @@ document.addEventListener('click',e=>{
     case 'bg-lab':bgMover(d.id,false);break;
     case 'bg-on':{let a=bgOn();if(a.includes(d.id))a=a.filter(x=>x!==d.id);else{if(a.length>=BG_MAX){toast('No máximo 5 fundos no Checkout. Tire um antes.');break;}a.push(d.id);}SIM.bgOn=a;saveSim();render();break;}
     case 'comp-zoom':{e.preventDefault&&e.preventDefault();const keys=[...document.querySelectorAll('[data-act="comp-zoom"]')].map(x=>({k:x.dataset.k,cap:x.dataset.cap})).filter(x=>COMPURL[x.k]);const i=keys.findIndex(x=>x.k===d.k);if(i<0){toast('A montagem ainda está sendo feita');break;}compModal(keys,i);break;}
+    case 'posto-tentar':postoCarregar();break;
     case 'posto-parear':{const nome=(($('#posto-nome')||{}).value||'').trim().slice(0,40);if(!nome){toast('Dê um nome a este aparelho');break;}
-      fetch(state.agent.url+'/postos/parear',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({nome})}).then(async r=>{const j=await r.json().catch(()=>({}));
+      agFetch(state.agent.url+'/postos/parear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})}).then(async r=>{const j=await r.json().catch(()=>({}));
         if(r.ok&&j.posto){toast('Aparelho pareado: '+j.posto.nome);await postoCarregar();postosPoll(true);}else toast(r.status===403?'Sem permissão para parear':'Não deu para parear este aparelho');}).catch(()=>toast('Agente não encontrado'));break;}
-    case 'posto-revogar':{const pid=el.dataset.id;fetch(state.agent.url+'/postos/revogar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({id:pid})}).then(r=>{toast(r.ok?'Posto revogado':'Não deu para revogar');postoCarregar();postosPoll(true);}).catch(()=>toast('Agente não encontrado'));break;}
-    case 'rf-save':{const v=id=>(($('#'+id)||{}).value||'').trim();const body={host:v('rf-host'),port:v('rf-port')||'21',user:v('rf-user'),password:($('#rf-pass')||{}).value||'',dir:v('rf-dir'),tls:!!($('#rf-tls')||{}).checked};if(!body.host||!body.user){toast('Informe servidor e usuário');break;}toast('Testando conexão...');fetch(state.agent.url+'/ftp-remoto/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#rf-pass');if(f)f.value='';toast('Conectado. Buscando fotos novas no servidor.');rftpPoll.t=0;rftpPoll();}else toast(j.error||'Não conectou');}).catch(()=>toast('Agente não encontrado'));break;}
+    case 'posto-revogar':{const pid=el.dataset.id;agFetch(state.agent.url+'/postos/revogar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:pid})}).then(r=>{toast(r.ok?'Posto revogado':'Não deu para revogar');postoCarregar();postosPoll(true);}).catch(()=>toast('Agente não encontrado'));break;}
+    case 'rf-save':{const v=id=>(($('#'+id)||{}).value||'').trim();const body={host:v('rf-host'),port:v('rf-port')||'21',user:v('rf-user'),password:($('#rf-pass')||{}).value||'',dir:v('rf-dir'),tls:!!($('#rf-tls')||{}).checked};if(!body.host||!body.user){toast('Informe servidor e usuário');break;}toast('Testando conexão...');agFetch(state.agent.url+'/ftp-remoto/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#rf-pass');if(f)f.value='';toast('Conectado. Buscando fotos novas no servidor.');rftpPoll.t=0;rftpPoll();}else toast(j.error||'Não conectou');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'set-switch':case 'set-logout':{const old=state.user&&state.user.name;log(`${old} saiu do Upload automático`);logout();if(a==='set-switch'){state.auth_next='importar';state.auth.switching=old||'';render();}break;}
     case 'lib-f':{state.libF[d.k]=d.v;if(d.k==='day'){state.libF.per='dia';state.libF.who='todos';}render();break;}
     case 'fundos-modo':{const m=el.dataset.m==='photoroom'?'photoroom':'local';if(fundosModo()===m)break;SIM.fundosModo=m;SIM.fundosModoPor={modo:m,nome:(state.user&&state.user.name)||'',em:now().toISOString()};log(`Montagem dos fundos de IA: ${m==='photoroom'?'Photoroom':'local'}`);Object.keys(COMP).forEach(k=>delete COMP[k]);FIA_RUIM.clear();saveSim();render();
-      fetch(state.agent.url+'/fundos/modo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:m})}).then(r=>r.ok?toast(m==='photoroom'?'Fundos de IA montados pelo Photoroom':'Fundos de IA montados no computador do ponto'):Promise.reject()).catch(()=>toast(m==='photoroom'?'O agente não confirmou: o Photoroom continua bloqueado nele':'Fundos de IA montados no computador do ponto'));break;}
-    case 'pr-save':{const inp=$('#pr-key');const key=(inp&&inp.value||'').trim();if(!key){toast('Cole a chave do Photoroom');break;}fetch(state.agent.url+'/photoroom/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#pr-key');if(f)f.value='';toast(j.sandbox?'Photoroom conectado (modo de testes)':'Photoroom conectado');Object.keys(COMP).forEach(k=>delete COMP[k]);prPoll(true);}else toast(j.error||'Não deu para salvar');}).catch(()=>toast('Agente não encontrado'));break;}
+      agFetch(state.agent.url+'/fundos/modo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:m})}).then(r=>r.ok?toast(m==='photoroom'?'Fundos de IA montados pelo Photoroom':'Fundos de IA montados no computador do ponto'):Promise.reject()).catch(()=>toast(m==='photoroom'?'O agente não confirmou: o Photoroom continua bloqueado nele':'Fundos de IA montados no computador do ponto'));break;}
+    case 'pr-save':{const inp=$('#pr-key');const key=(inp&&inp.value||'').trim();if(!key){toast('Cole a chave do Photoroom');break;}agFetch(state.agent.url+'/photoroom/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#pr-key');if(f)f.value='';toast(j.sandbox?'Photoroom conectado (modo de testes)':'Photoroom conectado');Object.keys(COMP).forEach(k=>delete COMP[k]);prPoll(true);}else toast(j.error||'Não deu para salvar');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'comp-all':state.compAll=state.compAll===d.card?null:d.card;render();break;
     case 'price-reset':SIM.prices={};saveSim();toast('Preços de hoje restaurados');render();break;
     case 'stock-swap':{simFresh();const pn=postoNome();SIM.stock[pn]=ROLO_CAP;log(`Rolo trocado em ${pn}`);if(saveSim())pvEvento('rolo',pvDispId(),{capacidade:ROLO_CAP,posto:pn});toast(`Rolo de ${pn}: ${ROLO_CAP} impressões`);render();break;}
@@ -5489,13 +5502,13 @@ function agenteDb(){const subs={},dsubs={},revs={};let sobindo=false,descendo=fa
   const fila=()=>{try{const l=JSON.parse(localStorage.getItem(DBQ)||'[]');return Array.isArray(l)?l:[];}catch(e){return [];}};
   const guarda=l=>{try{localStorage.setItem(DBQ,JSON.stringify(l));}catch(e){state.simCheio=Date.now();}};
   async function sobe(){if(sobindo||!state.agent.on)return;const lote=fila().slice(0,200);if(!lote.length)return;sobindo=true;
-    try{const r=await fetch(state.agent.url+'/ponto/docs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({docs:lote})});if(r.ok)guarda(fila().slice(lote.length));}
+    try{const r=await agFetch(state.agent.url+'/ponto/docs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({docs:lote})});if(r.ok)guarda(fila().slice(lote.length));}
     catch(e){}finally{sobindo=false;}}
   async function desce(){if(descendo||!state.agent.on)return;descendo=true;
-    try{const j=await (await fetch(state.agent.url+'/ponto/docs/revs',{cache:'no-store'})).json();
+    try{const j=await (await agFetch(state.agent.url+'/ponto/docs/revs',{cache:'no-store'})).json();
       const cols=new Set([...Object.keys(subs),...Object.keys(dsubs).map(k=>k.slice(0,k.indexOf('/')))]);
       for(const col of cols){const rv=(j.revs||{})[col]||0;const pend=fila().filter(x=>x.col===col);if(revs[col]===rv&&!pend.length)continue;
-        const c=await (await fetch(state.agent.url+'/ponto/docs?col='+encodeURIComponent(col),{cache:'no-store'})).json();if(!c.ok)continue;
+        const c=await (await agFetch(state.agent.url+'/ponto/docs?col='+encodeURIComponent(col),{cache:'no-store'})).json();if(!c.ok)continue;
         const m=new Map(c.docs.map(d=>[d.id,d.valor]));pend.forEach(x=>{if(x.valor==null)m.delete(x.id);else m.set(x.id,x.valor);});revs[col]=pend.length?-1:rv;
         const docs=[...m].map(([id,v])=>({id,exists:true,data:()=>v}));
         (subs[col]||[]).forEach(cb=>{try{cb({docs});}catch(e){console.warn('db',col,e);}});
@@ -5577,7 +5590,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,pubMatch,priceOf,lojaMaisIds,EQ,TE,T,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR};
+window.ETERNA={agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,pubMatch,priceOf,lojaMaisIds,EQ,TE,T,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,postoDisp,postoCarregar,agFetch,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR};
 })();
 </script>
 

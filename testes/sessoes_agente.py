@@ -439,12 +439,16 @@ env = {**os.environ, "HOME": HB, "USERPROFILE": HB, "ETERNA_PORTA": str(PORTA), 
        "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "3", "ETERNA_LEITORES": "1", "USER": "eterna-teste-sem-cartao"}
 env.pop("ETERNA_PASTA", None)
 env.pop("ETERNA_ORIGENS", None)
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao
+COOKIE = _agente_sessao.cookie_sub(AG, HB)      # pessoa conectada: as rotas da equipe pedem sessão
 
 
 def req(path):
     c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=10)
     try:
-        c.request("GET", path, headers={"Host": "127.0.0.1:%d" % PORTA})
+        c.request("GET", path, headers={"Host": "127.0.0.1:%d" % PORTA, "Cookie": COOKIE})
         r = c.getresponse()
         b = r.read()
         try:

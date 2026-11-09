@@ -10,8 +10,10 @@ const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-ag
 const fails=[];const notas=[];const errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const DBG=process.env.V77_DEBUG;const T0=Date.now();const dbg=s=>{if(DBG)console.error(((Date.now()-T0)/1000).toFixed(1)+'s '+s);};
 const ignora=t=>/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|404|403|401|400/.test(t);
+const S=require('./_agente_sessao');const CKS={}; // sessão de admin por agente: as rotas da equipe pedem sessão (a galeria /g/ não)
 function req(porta,method,p,{body,headers={}}={}){return new Promise(res=>{const data=body==null?null:(Buffer.isBuffer(body)?body:Buffer.from(typeof body==='string'?body:JSON.stringify(body)));
-  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,b,j,h:rs.headers});});});
+  const eq=!p.startsWith('/g/')&&CKS[porta]?{Cookie:CKS[porta],...(method==='POST'?{'X-Eterna':'1'}:{})}:{};
+  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...eq,...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,b,j,h:rs.headers});});});
   r.on('error',e=>res({s:0,err:String(e)}));if(data)r.write(data);r.end();});}
 const tok=()=>crypto.randomBytes(16).toString('base64url');
 const ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const cod=()=>{const u=crypto.randomBytes(8);let c='';for(let i=0;i<8;i++){c+=ALFA[u[i]%32];if(i===3)c+='-';}return c;};
@@ -60,7 +62,7 @@ try{
   fs.mkdirSync(path.join(H,'Eterna','galerias',TZ),{recursive:true});fs.writeFileSync(path.join(H,'Eterna','galerias',TZ,'sessao.json'),JSON.stringify({...MZ,expira:new Date(Date.now()-3600e3).toISOString(),encerrada:true}));
   // galeria vencida pela data (não encerrada), também apagada pela limpeza diária
   const TEX=tok();const MEX=manifesto(TEX,fz,{sessoes:['LPX']});fs.mkdirSync(path.join(H,'Eterna','galerias',TEX),{recursive:true});fs.writeFileSync(path.join(H,'Eterna','galerias',TEX,'sessao.json'),JSON.stringify({...MEX,criada:new Date(Date.now()-61*864e5).toISOString(),expira:new Date(Date.now()-864e5).toISOString()}));
-  const A=await subir(P,{ETERNA_SEM_OPENCV:'1',ETERNA_APP_ORIGIN:undefined},H);procs.push(A.p);
+  const A=await subir(P,{ETERNA_SEM_OPENCV:'1',ETERNA_APP_ORIGIN:undefined},H);procs.push(A.p);CKS[P]=S.sessao(H);
   let r=await req(P,'GET','/g/'+TZ+'/info');ok(r.s===410,'S2: galeria encerrada antes de subir deveria dar 410, deu '+r.s);
   // ---- S9: app publicado em https://eterna.photo continua liberado; origem do agente funciona; outra origem 403
   for(let i=0;i<40;i++){r=await req(P,'GET','/biblioteca');if(r.s===200&&JSON.stringify(r.j||{}).includes(pids[0]))break;await sleep(250);}
@@ -163,9 +165,9 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
   fotosNoInbox(H2,bufs.length>=3?pp.slice(0,3).map((p,i)=>[p,bufs[i]]).concat([[pp[3],jpegsLisos(1)[0]]]):pp.map((p,i)=>[p,jpegsLisos(4)[i]]));
   // galeria encerrada no HOME do agente B: a limpeza da primeira publicação cria a lápide; o app tem que tratar o 410
   const TZ2=tok();const MZ2=manifesto(TZ2,[{id:'ag_'+pp[3],sessao:'LPZ2',direito:'venda',canal:null}],{sessoes:['LPZ2']});fs.mkdirSync(path.join(H2,'Eterna','galerias',TZ2),{recursive:true});fs.writeFileSync(path.join(H2,'Eterna','galerias',TZ2,'sessao.json'),JSON.stringify({...MZ2,encerrada:true,expira:new Date(Date.now()-60e3).toISOString()}));
-  const B=await subir(P2,{ETERNA_APP_ORIGIN:ORIG,...(temCV?{}:{ETERNA_SEM_OPENCV:'1'})},H2);procs.push(B.p);
+  const B=await subir(P2,{ETERNA_APP_ORIGIN:ORIG,...(temCV?{}:{ETERNA_SEM_OPENCV:'1'})},H2);procs.push(B.p);CKS[P2]=S.sessao(H2);
   let lig=false;if(temCV){for(let i=0;i<160;i++){const s=(await req(P2,'GET','/status')).j;if(s&&s.rostos&&s.rostos.ligado&&s.rostos.lidas>=4){lig=true;break;}await sleep(500);}}
-  const ctxA=await b.newContext({viewport:{width:390,height:844},locale:'pt-BR'});
+  const ctxA=await b.newContext({viewport:{width:390,height:844},locale:'pt-BR'});await S.noNavegador(ctxA,P2,[CKS[P2],S.posto(H2,'Checkout v77')]); // pessoa conectada e aparelho pareado
   await ctxA.addInitScript(()=>{window.__toasts=[];document.addEventListener('DOMContentLoaded',()=>{const t=document.querySelector('#toast');if(t)new MutationObserver(()=>{if(t.textContent)window.__toasts.push(t.textContent);}).observe(t,{childList:true,characterData:true,subtree:true});});});
   const AVISO='Agente do ponto conectado';
   if(!lig){notas.push('B: galeria no modo agente não testada (sem OpenCV ou reconhecimento não ligou)');}

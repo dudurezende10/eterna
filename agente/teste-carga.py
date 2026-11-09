@@ -54,6 +54,21 @@ def le(saida, nome):
     return [json.loads(l) for l in open(p, encoding="utf8") if l.strip()]
 
 
+def entrar_agente(agente, usuario):
+    """O agente pede sessão nas rotas da equipe: entra com usuário e senha do Eterna (senha de ETERNA_SENHA ou digitada,
+    nunca na linha de comando) e passa o cookie e o X-Eterna em todos os pedidos deste processo."""
+    senha = os.environ.get("ETERNA_SENHA") or getpass.getpass("Senha do Eterna para %s: " % usuario)
+    rq = urllib.request.Request(agente + "/auth/entrar", data=json.dumps({"usuario": usuario, "senha": senha}).encode(), method="POST",
+                                headers={"Content-Type": "application/json", "X-Eterna": "1", "User-Agent": "eterna-teste"})
+    with urllib.request.urlopen(rq, timeout=60) as r:
+        cookie = (r.headers.get("Set-Cookie") or "").split(";")[0]
+    if not cookie:
+        sys.exit("Não entrou no agente (senha provisória? troque no app antes).")
+    op = urllib.request.build_opener()
+    op.addheaders = [("Cookie", cookie), ("X-Eterna", "1"), ("User-Agent", "eterna-teste")]
+    urllib.request.install_opener(op)
+
+
 def get_json(url, timeout=30):
     with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "eterna-teste"}), timeout=timeout) as r:
         return json.loads(r.read().decode("utf8"))
@@ -942,9 +957,13 @@ def main():
     e.add_argument("--nomes", help="fotógrafos cadastrados no Eterna, separados por vírgula (o FTP do estádio só aceita pasta de fotógrafo cadastrado)")
     for x in (e, s, m, r, nl):
         x.add_argument("--saida", default="./teste-carga")
+    for x in (s, m, r, nl):
+        x.add_argument("--login", help="usuário do Eterna com acesso às telas da equipe (o agente pede sessão); senha em ETERNA_SENHA ou digitada")
     a = ap.parse_args()
     if getattr(a, "agente", None):
         a.agente = a.agente.rstrip("/")
+    if getattr(a, "login", None):
+        entrar_agente(a.agente, a.login)
     if getattr(a, "nomes", None):
         a.nomes = [x.strip() for x in a.nomes.split(",") if x.strip()]
         a.fotografos = len(a.nomes)

@@ -23,12 +23,21 @@ def cookie_posto(m, nome="Posto de teste"):
     return "%s=%s" % (m.POSTO_COOKIE, token)
 
 
+def cookie_sub(ag, home, tipo="sessao", *args):
+    """O mesmo, para um agente que roda em outro processo com HOME=home: grava no estado.db dele e devolve o cookie."""
+    import os, subprocess
+    env = dict(os.environ, HOME=home, USERPROFILE=home, ETERNA_SEM_OPENCV="1")
+    r = subprocess.run([sys.executable, "-I", os.path.abspath(__file__), ag, tipo] + [str(a) for a in args], env=env, capture_output=True, text=True, timeout=120)
+    return r.stdout.strip().splitlines()[-1]
+
+
 if __name__ == "__main__":
+    sys.dont_write_bytecode = True
     import importlib.util
     sp = importlib.util.spec_from_file_location("ag", sys.argv[1])
     m = importlib.util.module_from_spec(sp)
     sp.loader.exec_module(m)
     if sys.argv[2] == "sessao":
-        print(cookie_sessao(m, sys.argv[3], json.loads(sys.argv[4]) if len(sys.argv) > 4 else None))
+        print(cookie_sessao(m, sys.argv[3] if len(sys.argv) > 3 else "admin-teste", json.loads(sys.argv[4]) if len(sys.argv) > 4 else None))
     elif sys.argv[2] == "posto":
         print(cookie_posto(m, sys.argv[3] if len(sys.argv) > 3 else "Posto de teste"))

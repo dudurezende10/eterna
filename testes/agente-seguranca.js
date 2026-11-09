@@ -3,8 +3,9 @@
 const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');
 const AG=path.join(__dirname,'..','agente','eterna-agente.py');const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const S=require('./_agente_sessao');let CK=null; // pessoa conectada (admin): as rotas da equipe pedem sessão
 function req(porta,method,p,{headers,body}={}){return new Promise(res=>{const data=body==null?null:Buffer.from(typeof body==='string'?body:JSON.stringify(body));
-  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...(headers||{})}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch).toString();let j=null;try{j=JSON.parse(b)}catch(e){}res({s:rs.statusCode,h:rs.headers,b,j});});});
+  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...(CK?{Cookie:CK}:{}),...(method==='POST'?{'X-Eterna':'1'}:{}),...(headers||{})}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch).toString();let j=null;try{j=JSON.parse(b)}catch(e){}res({s:rs.statusCode,h:rs.headers,b,j});});});
   r.on('error',e=>res({s:0,err:String(e)}));if(data)r.write(data);r.end();});}
 // cliente FTP: devolve as respostas do servidor em ordem
 function ftp(porta,passos){const py=`
@@ -37,7 +38,7 @@ const bib=async porta=>((await req(porta,'GET','/biblioteca')).j||{}).fotos||[];
 (async()=>{const procs=[];const home=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-seg-'));const porta=17000+Math.floor(Math.random()*900),ftpP=porta+1000;
 try{
   // ---------- I7: ftp.json novo com senhas de 12+ caracteres, chmod 600, senhas fora do console ----------
-  let A=await subir(home,porta,ftpP);procs.push(A.p);const cfgP=path.join(home,'Eterna','ftp.json');const cfg=JSON.parse(fs.readFileSync(cfgP,'utf8'));
+  let A=await subir(home,porta,ftpP);procs.push(A.p);CK=S.sessao(home);const cfgP=path.join(home,'Eterna','ftp.json');const cfg=JSON.parse(fs.readFileSync(cfgP,'utf8'));
   const pws=Object.values(cfg.users);ok(pws.length&&pws.every(x=>String(x).length>=12),'I7: senhas novas com menos de 12 caracteres');ok((fs.statSync(cfgP).mode&0o777)===0o600,'I7: ftp.json sem chmod 600');
   ok(!pws.some(x=>A.log().includes(x)),'I7: senha do FTP impressa no console');
   // ---------- I2: sem REST STREAM; REST 5000 recusado; arquivo que não é JPEG nem PNG não entra ----------

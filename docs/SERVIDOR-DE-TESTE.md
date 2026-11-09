@@ -47,6 +47,16 @@ O primeiro responde com `commit`, `atualizado_em`, `erro_git`, `agente_vivo` e `
 - Senhas, chaves da AWS e segredos: ficam no notebook, fora do repositório, e nunca passam por chat ou e-mail.
 - Mudar variáveis em `rodar.py` e atualizar o `supervisor.py` (ver "Montagem").
 
+### Postos pareados (v93)
+
+O servidor só abre os dados para quem entrou com usuário e senha ou para um aparelho pareado. Cada aparelho que roda o Checkout (ou a TV da fila) é pareado uma vez:
+
+- No próprio aparelho, entre no Eterna com um usuário que tem Painel de controle (Alterar), abra Configurações › Painel de controle › Postos deste ponto, dê um nome e toque em "Parear este aparelho". Depois disso o Checkout abre ali sem ninguém conectado.
+- Sem entrar no app: no servidor, `python eterna-agente.py --parear-posto "Checkout 1"` imprime um link que vale uma vez, por 10 minutos. Abra o link no aparelho (trocando `127.0.0.1` pelo endereço do servidor na rede).
+- Aparelho perdido ou trocado: "Revogar" na mesma lista.
+- Aparelho sem pareamento mostra "Este aparelho ainda não foi pareado" no Checkout. As vendas que ele já tinha na fila ficam guardadas e sobem depois do pareamento.
+- O teste de carga (`agente/teste-carga.py`) entra com `--login <usuário>` nos comandos que falam com o agente; a senha vem de `ETERNA_SENHA` ou é digitada.
+
 ## O que roda onde
 
 | Onde | O que serve | Como muda |

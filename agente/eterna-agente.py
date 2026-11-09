@@ -4605,6 +4605,11 @@ if os.environ.get("ETERNA_REDE"):
 HOSTS_OK |= ORIGENS_REDE_HOSTS
 
 
+def host_ok(host):
+    """Host de um pedido que não é público: o do agente (contra DNS rebinding)."""
+    return host in HOSTS_OK or host in ("127.0.0.1:%d" % PORT, "localhost:%d" % PORT)
+
+
 IMP_MAX_CORPO = 60 * 1024 * 1024
 IMP_DIR = os.path.join(HOME, "impressao")
 # Imprime cada JPEG numa folha 10x15 da impressora do servidor, sem margem e preenchendo a folha (corta o excesso,
@@ -5355,18 +5360,71 @@ def auth_cadastro_recusa(quem, id_doc, antes, depois):
     return None
 
 
-def auth_filtrar_docs(body, quem, ip=""):
-    """/ponto/docs: as gravações em usuarios só passam pela regra acima; as outras coleções seguem como antes."""
+# Quem grava cada coleção de /ponto/docs (fora usuarios, que tem a regra acima): o módulo, com Criar ou Alterar para gravar
+# e Excluir ou Alterar para apagar. Na coleção "sim", pelo começo do id; id desconhecido é recusado.
+DOC_COL_MOD = {"diario": "diario", "treino": "qualidade", "reviews": "qualidade", "bandeiras": "estoque", "funcao": "escala",
+               "agenda": "escala", "config": "configuracao"}
+DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
+           ("stock|", ("estoque", "venda")),          # o rolo de papel do posto baixa na impressão, feita no caixa
+           ("flags|", ("estoque",)), ("flagUse|", ("estoque",)), ("flagList", ("estoque",)),
+           ("edits|", ("qualidade",)), ("discarded|", ("qualidade",)), ("invalid|", ("qualidade",)), ("ai|", ("qualidade",)),
+           ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
+           ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("fundosModo", ("configuracao",)),
+           ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("configuracao",)), ("repo", ("configuracao",)),
+           ("bgPodioV86", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
+DOC_SO_ACRESCENTA = ("usuarios_log", "sim:cortesiaLog|")
+
+
+def doc_modulos(col, id_doc):
+    if col == "sim":
+        for k, mods in DOC_SIM:
+            if (id_doc.startswith(k) if k.endswith("|") else id_doc == k):
+                return mods
+        return None
+    m = DOC_COL_MOD.get(col)
+    return (m,) if m else None
+
+
+def doc_recusa(db, quem, d):
+    """O motivo de recusar esta gravação (fora de usuarios), ou None."""
+    if not quem:
+        return "sem_sessao"
+    col, id_doc, apaga = d.get("col"), str(d.get("id") or ""), d.get("valor") is None
+    if col not in ESTADO_COLS:
+        return "colecao"
+    existe = db.execute("select 1 from doc where col=? and id=? and valor is not null", (col, id_doc)).fetchone() is not None
+    if col == "usuarios_login":
+        return None if id_doc == quote(quem["usuario"], safe="-_.!~*'()") else "sem_permissao"
+    if col == "usuarios_log" or (col == "sim" and id_doc.startswith("cortesiaLog|")):
+        if apaga or existe:
+            return "so_acrescenta"
+        if col == "usuarios_log":
+            return None
+    mods = doc_modulos(col, id_doc)
+    if not mods:
+        return "desconhecido"
+    letras = ("d", "u") if apaga else ("u",) if existe else ("c", "u")
+    return None if any(auth_pode(quem["cadastro"], mo, le) for mo in mods for le in letras) else "sem_permissao"
+
+
+def auth_filtrar_docs(body, quem, ip="", posto=None):
+    """/ponto/docs: cada gravação passa pela regra da sua coleção (usuarios: auth_cadastro_recusa; outras: doc_recusa).
+    Aparelho pareado sem pessoa conectada não grava. O recusado sai da resposta como "recusados" (o app não reenvia)."""
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
-    if not any(isinstance(d, dict) and d.get("col") == "usuarios" for d in docs):
-        return body, 0
-    fica, recusados, apagados = [], 0, []
+    fica, recusados, apagados, motivos = [], 0, [], {}
     with estado_lock:
         db = auth_db()
         try:
-            for d in docs:
-                if not (isinstance(d, dict) and d.get("col") == "usuarios"):
-                    fica.append(d)
+            for d in docs[:500]:
+                if not isinstance(d, dict):
+                    continue
+                if d.get("col") != "usuarios":
+                    motivo = doc_recusa(db, quem, d)
+                    if motivo:
+                        recusados += 1
+                        motivos[motivo] = motivos.get(motivo, 0) + 1
+                    else:
+                        fica.append(d)
                     continue
                 r = db.execute("select valor from doc where col='usuarios' and id=? and valor is not null", (str(d.get("id")),)).fetchone()
                 antes = json.loads(r[0]) if r else None
@@ -5379,6 +5437,9 @@ def auth_filtrar_docs(body, quem, ip=""):
                 fica.append(d)
                 if antes and depois is None and antes.get("email"):
                     apagados.append(antes["email"])
+            if motivos:
+                auth_log(db, ("posto:" + posto["id"]) if posto and not quem else (quem or {}).get("usuario", "?"),
+                         "docs_recusados:" + ",".join("%s=%d" % kv for kv in sorted(motivos.items())), (quem or {}).get("usuario", ""), ip)
             db.commit()
         finally:
             db.close()
@@ -6415,6 +6476,67 @@ def agenda_valida(doc_id, v):
     return out
 
 
+# Quem pode cada rota do agente. Nada abre sem estar aqui: rota fora da tabela responde 404 sem tocar o disco.
+#   publica          qualquer um: o app, o /status mínimo, a galeria do cliente (/g/) e o webhook do adquirente
+#   posto_ou_sessao  aparelho pareado (cookie eterna_posto) ou pessoa conectada com um dos módulos (vazio = qualquer pessoa)
+#   sessao           pessoa conectada com um dos módulos (vazio = qualquer pessoa conectada; a rota confere o resto)
+#   teste            só com ETERNA_TESTE_CARGA=1 e pessoa com Painel de controle (Alterar)
+# Caminho terminado em "/" vale como prefixo. Fora das públicas: Host do agente, Origin conhecida e, em POST, X-Eterna: 1.
+ROTAS = (
+    ("GET", "/", "publica", ()), ("GET", "/index.html", "publica", ()),
+    ("GET", "/img/", "publica", ()), ("GET", "/vendor/", "publica", ()), ("GET", "/sprites/", "publica", ()),
+    ("GET", "/status", "publica", ()),                          # sem credencial, só {ok, agent, version, boot}
+    ("GET", "/g/", "publica", ()), ("POST", "/g/", "publica", ()), ("POST", "/pagamento/webhook/", "publica", ()),
+    ("GET", "/postos/aceitar", "publica", ()),                  # o código de uso único (10 min) é a credencial
+    ("POST", "/auth/entrar", "publica", ()), ("POST", "/auth/trocar", "publica", ()), ("POST", "/auth/sair", "publica", ()),
+    ("POST", "/auth/esqueci", "publica", ()),
+    ("GET", "/auth/eu", "sessao", ()), ("GET", "/auth/senhas", "sessao", ()),
+    ("POST", "/auth/senha/gerar", "sessao", ()), ("POST", "/auth/senha/cancelar", "sessao", ()),
+    ("GET", "/postos/eu", "posto_ou_sessao", ()),
+    ("GET", "/postos", "sessao", ("configuracao.r",)),
+    ("POST", "/postos/parear", "sessao", ("configuracao.u",)), ("POST", "/postos/revogar", "sessao", ("configuracao.u",)),
+    # o que o Checkout usa: posto pareado ou pessoa conectada
+    ("GET", "/thumb/", "posto_ou_sessao", ()), ("GET", "/file/", "posto_ou_sessao", ()),
+    ("GET", "/sessoes", "posto_ou_sessao", ()),
+    ("GET", "/ponto/docs", "posto_ou_sessao", ()),              # posto: só sim, config e agenda
+    ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
+    ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (docs_filtrar); o posto não grava
+    ("POST", "/ponto/eventos", "posto_ou_sessao", ()),
+    ("POST", "/rostos/buscar", "posto_ou_sessao", ()),
+    ("POST", "/galerias/publicar", "posto_ou_sessao", ()),
+    ("POST", "/recorte", "posto_ou_sessao", ()), ("GET", "/recorte/", "posto_ou_sessao", ()),
+    ("GET", "/photoroom/status", "posto_ou_sessao", ()),        # sem Painel de controle: só {configured, fundos_modo}
+    ("GET", "/photoroom/result/", "posto_ou_sessao", ()), ("POST", "/photoroom/compose", "posto_ou_sessao", ()),
+    ("GET", "/fila-fotografo", "posto_ou_sessao", ("filafoto.r",)),
+    # só a equipe, pelo módulo
+    ("GET", "/biblioteca", "sessao", ("set.r", "estoque.r")), ("GET", "/events", "sessao", ("set.r", "estoque.r")),
+    ("POST", "/fotos/enviar", "sessao", ("set.c",)),
+    ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")),
+    ("GET", "/roverpix/status", "sessao", ("financeiro.r",)), ("GET", "/roverpix/data", "sessao", ("financeiro.r",)),
+    ("POST", "/roverpix/sync", "sessao", ("configuracao.u",)), ("POST", "/roverpix/config", "sessao", ("configuracao.u",)),
+    ("GET", "/ftp-remoto/status", "sessao", ("configuracao.r",)), ("POST", "/ftp-remoto/config", "sessao", ("configuracao.u",)),
+    ("POST", "/photoroom/config", "sessao", ("configuracao.u",)), ("POST", "/fundos/modo", "sessao", ("configuracao.u",)),
+    ("POST", "/nuvem/reenviar", "sessao", ("configuracao.u",)),
+    ("POST", "/fila-fotografo/funcao", "sessao", ("escala.u",)),
+    ("POST", "/ponto/entradas", "sessao", ("estatisticas.c",)), ("GET", "/ponto/entradas/importacoes", "sessao", ("estatisticas.r",)),
+    ("GET", "/impressao/fila", "sessao", ("venda.r",)), ("GET", "/impressao/miniatura", "sessao", ("venda.r",)),
+    ("POST", "/imprimir", "sessao", ("venda.c", "venda.u")), ("POST", "/impressao/acao", "sessao", ("venda.u",)),
+    ("GET", "/galerias/vendas", "sessao", ("galerias.r",)), ("GET", "/galerias/status", "sessao", ("galerias.r",)),
+    ("POST", "/galerias/encerrar", "sessao", ("galerias.d",)),
+    ("POST", "/lgpd/excluir", "sessao", ("galerias.d",)),
+    ("POST", "/rostos/medir", "sessao", ("qualidade.r",)),
+    ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
+)
+
+
+def rota_regra(metodo, path):
+    """-> (tipo, módulos) da rota, ou None se ela não existe."""
+    for m, c, tipo, mods in ROTAS:
+        if m == metodo and (path == c or (c.endswith("/") and c != "/" and path.startswith(c))):
+            return tipo, mods
+    return None
+
+
 def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
@@ -6445,38 +6567,68 @@ class H(BaseHTTPRequestHandler):
             # v87 (risco 4): a TV aberta pelo endereço de ETERNA_ORIGENS vê as miniaturas (só /thumb/, não o original)
             return not o or o in ORIGENS_REDE
         # contra DNS rebinding: o Host precisa ser o do agente (127.0.0.1, localhost ou o IP da rede com ETERNA_REDE)
-        if host not in HOSTS_OK:
+        if not host_ok(host):
             return False
         return not o or o in self.origens_ok(path)
 
+    def origens_aceitas(self):
+        """Origin aceita fora das rotas públicas: a do próprio agente (pelo Host pedido), ETERNA_ORIGENS e ETERNA_APP_ORIGIN."""
+        host = (self.headers.get("Host") or "").lower()
+        return {"http://" + host, "https://" + host, "http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT} | ORIGENS_REDE | {APP_ORIGIN.rstrip("/").lower()}
+
     def cors(self):
+        """CORS aberto (*) só na galeria do cliente (/g/); as outras rotas só para as origens aceitas, sem cabeçalho livre."""
         path = urlparse(self.path).path
-        if path.startswith("/fila-fotografo"):
-            # v87 (segurança N1): sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
-            o = (self.headers.get("Origin") or "").lower()
-            if o and o in ORIGENS_REDE:
-                self.send_header("Access-Control-Allow-Origin", o)
-                self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        if path.startswith("/g/"):
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             return
-        if rota_privada(path):
-            o = self.headers.get("Origin") or ""
-            if o and o in self.origens_ok(path):
-                self.send_header("Access-Control-Allow-Origin", o)
-                self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path == "/ponto/entradas" else "Content-Type")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            return
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if o and o in self.origens_aceitas() and (o in ORIGENS_REDE or not path.startswith("/fila-fotografo")):
+            self.send_header("Access-Control-Allow-Origin", o)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def autoriza(self, metodo):
+        """Primeira coisa de do_GET e do_POST: aplica ROTAS. True = o pedido segue; False = a resposta já foi dada."""
+        self.__dict__.pop("_eu", None)
+        self.__dict__.pop("_posto", None)
+        regra = rota_regra(metodo, urlparse(self.path).path)
+        if regra is None:
+            self.js({"error": "not found"}, 404)
+            return False
+        tipo, mods = regra
+        if tipo == "publica":
+            return True
+        if tipo == "teste" and not os.environ.get("ETERNA_TESTE_CARGA"):
+            self.js({"error": "not found"}, 404)       # fora do teste de carga, a rota não existe
+            return False
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if not host_ok((self.headers.get("Host") or "").lower()) or (o and o not in self.origens_aceitas()) \
+                or (metodo == "POST" and self.headers.get("X-Eterna") != "1"):
+            self.js({"erro": "origem"}, 403, True)
+            return False
+        eu = self.sessao()
+        if tipo == "teste":
+            pode = bool(eu) and auth_pode(eu["cadastro"], "configuracao", "u")
+        else:
+            pode = bool(eu) and (not mods or any(auth_pode(eu["cadastro"], *x.split(".")) for x in mods))
+        if pode or (tipo == "posto_ou_sessao" and self.posto_atual()):
+            return True
+        if eu:
+            self.js({"erro": "sem_permissao"}, 403, True)
+        else:
+            self.js({"erro": "sem_sessao"}, 401, True)
+        return False
 
     def do_OPTIONS(self):
-        self.send_response(204)
+        p = urlparse(self.path).path
+        self.send_response(204 if rota_regra("GET", p) or rota_regra("POST", p) else 404)
         self.cors()
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def js(self, obj, code=200, nostore=False):
@@ -6534,7 +6686,7 @@ class H(BaseHTTPRequestHandler):
 
     def postos_get(self, u, q):
         """GET /postos/eu (o posto deste aparelho), GET /postos (lista, configuracao.r), GET /postos/aceitar?c= (link de uso único)."""
-        if (self.headers.get("Host") or "").lower() not in HOSTS_OK:
+        if not host_ok((self.headers.get("Host") or "").lower()):
             return self.js({"erro": "origem"}, 403)
         if u.path == "/postos/eu":
             p = self.posto_atual()
@@ -6985,7 +7137,7 @@ class H(BaseHTTPRequestHandler):
             body, err = self.corpo(8 * 1024 * 1024)
             if err:
                 return self.js({"error": "corpo inválido"}, err)
-            body, recusados = auth_filtrar_docs(body, auth_quem(self.auth_token()), self.client_address[0])
+            body, recusados = auth_filtrar_docs(body, self.sessao(), self.client_address[0], self.posto_atual())
             return self.js(dict(estado_gravar(body), recusados=recusados))
         if p == "/ponto/eventos":
             if not self.origem_local():
@@ -7171,6 +7323,8 @@ class H(BaseHTTPRequestHandler):
         return self.js({"error": "not found"}, 404)
 
     def do_GET(self):
+        if not self.autoriza("GET"):
+            return
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if u.path.startswith(("/g/", "/galerias/")):
@@ -7182,17 +7336,25 @@ class H(BaseHTTPRequestHandler):
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/status":
+            minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT}
+            o = (self.headers.get("Origin") or "").rstrip("/").lower()
+            confiavel = host_ok((self.headers.get("Host") or "").lower()) and (not o or o in self.origens_aceitas())
+            eu = self.sessao() if confiavel else None
+            if not eu and not (confiavel and self.posto_atual()):
+                return self.js(minimo, nostore=True)     # sem pessoa conectada nem aparelho pareado: só que o agente está no ar
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
             with lock:
-                return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
-                                "copied": state["copied"], "dups": state["dups"], "events": len(events),
-                                "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "backup": backup, "recorte": rs_, "fundos_modo": fundos_modo(),
-                                "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
-                                "impressora": IMPRESSORA or None,
-                                "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
-                                "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(),
-                                "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
+                ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
+                st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
+                           platform=sys.platform, ftp=ftp_,
+                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, fundos_modo=fundos_modo(),
+                           galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
+                           impressora=IMPRESSORA or None, sessoes=ss_,
+                           estatisticas={"v": 2, "migracao": dict(est_migra)}, fuso=fuso_info(),
+                           galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
+            if eu:
+                st_["impressora_locais"] = IMP_LOCAIS
+            return self.js(st_, nostore=True)
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -7243,6 +7405,8 @@ class H(BaseHTTPRequestHandler):
             col = (parse_qs(u.query).get("col") or [""])[0]
             if col not in ESTADO_COLS:
                 return self.js({"error": "coleção inválida"}, 400)
+            if not self.sessao() and col not in ("sim", "config", "agenda"):
+                return self.js({"erro": "sem_permissao"}, 403, True)     # aparelho pareado sem pessoa: só o que o Checkout lê
             return self.js(estado_col(col))
         if u.path == "/metricas/dia":
             if not self.origem_local():
@@ -7312,6 +7476,9 @@ class H(BaseHTTPRequestHandler):
                             "user": c and c.get("user"), "dir": c and c.get("dir"), "tls": bool(c and c.get("tls"))})
         if u.path == "/photoroom/status":
             c = pr_cfg()
+            eu = self.sessao()
+            if not (eu and auth_pode(eu["cadastro"], "configuracao", "r")):
+                return self.js({"configured": bool(c), "fundos_modo": fundos_modo()})   # Checkout e quem não configura: só se está ligado
             with pr_lock:
                 return self.js({**pr, "configured": bool(c), "sandbox": bool(c and c["api_key"].startswith("sandbox_"))})
         if u.path.startswith("/photoroom/result/"):
@@ -7338,6 +7505,8 @@ class H(BaseHTTPRequestHandler):
         return self.app(u.path)
 
     def do_POST(self):
+        if not self.autoriza("POST"):
+            return
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
         if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar"):

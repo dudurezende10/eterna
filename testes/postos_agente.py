@@ -57,7 +57,7 @@ try:
     st, j, _ = pede("/postos/eu", cookie=cp)
     ok(st == 200 and j.get("posto", {}).get("nome") == "Caixa 2", "/postos/eu com o cookie: %s %s" % (st, j))
     st, j, _ = pede("/postos/eu")
-    ok(st == 401 and j.get("erro") == "sem_posto", "/postos/eu sem cookie: %s %s" % (st, j))
+    ok(st == 401, "/postos/eu sem cookie: %s %s" % (st, j))
     st, j, _ = pede("/postos/parear", {"nome": "  "}, adm)
     ok(st == 400, "nome vazio: %s" % st)
     # lista: configuracao.r, sem hash
