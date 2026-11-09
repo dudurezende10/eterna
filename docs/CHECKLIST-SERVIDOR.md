@@ -57,7 +57,7 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
   - `ETERNA_PASTA`: a pasta raiz do FTP (passo 6);
   - `ETERNA_IMPRESSORA`: o nome exato da DNP (passo 5);
   - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. O passo 8 acrescenta os do Tailscale.
-- [ ] Conferir em `/status`: `nuvem.ligada` = true e `s3_ok` = true.
+- [ ] Conferir no app (com login de administrador), no Upload automático e no Painel de controle, que a nuvem está ligada e conectada. Sem login, o `/status` mostra só que o Eterna está no ar.
 
 ## 5. Impressora
 
