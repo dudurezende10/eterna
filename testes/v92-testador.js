@@ -24,7 +24,8 @@ async function subir(porta,home,extra){fs.mkdirSync(path.join(home,'Eterna'),{re
 const nova=async(w,h,ag)=>{const ctx=await b.newContext({viewport:{width:w||1440,height:h||950},locale:'pt-BR'});if(ag)await S.noNavegador(ctx,ag,[CKS[ag],POSTOS[ag]]);await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
   ctx.on('request',r=>{if(/presenca/.test(r.url()))presenca.push(r.method()+' '+r.url());});const pg=await ctx.newPage();pg.setDefaultTimeout(8000);
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text());});return {ctx,pg};};
-async function entrar(pg,base,email){await pg.evaluate(()=>localStorage.removeItem('eterna.session')).catch(()=>{});await pg.goto(base);await pg.waitForTimeout(500);
+const {adminFicticio,ADMIN_TESTE:ADMT}=require('./_entrar'); // administrador fictício (nenhum e-mail de pessoa nos testes)
+async function entrar(pg,base,email){await pg.evaluate(()=>localStorage.removeItem('eterna.session')).catch(()=>{});await pg.goto(base);await pg.waitForTimeout(500);if(email===ADMT)await adminFicticio(pg);
   await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(200);const otp=await pg.$('.otp');if(!otp)return false;
   await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(500);return pg.evaluate(()=>!!ETERNA.state.user);}
 const agOn=async pg=>{for(let i=0;i<40;i++){if(await pg.evaluate(()=>!!(ETERNA.state.agent&&ETERNA.state.agent.on)))return true;await sleep(250);}return false;};
@@ -51,7 +52,7 @@ try{
   ok(ck&&ck.dados.lang==='es'&&ck.dados.canal==='checkout'&&Array.isArray(ck.dados.cart)&&ck.dados.cart.length>0&&ck.dados.t0&&Date.parse(ck.dados.t0)<Date.parse(ck.em),'3: venda do Checkout pela tela chega com lang es, canal checkout, cart e t0 antes de em: '+J(ck&&{lang:ck.dados.lang,canal:ck.dados.canal,cart:ck.dados.cart,t0:ck.dados.t0,em:ck.em}));
   await pg.screenshot({path:PR+'/v92t-checkout-es.png'});
   // ---------- Caixa: o Admin confirma o PIX (pagar) ----------
-  const pa=await ctx.newPage();pa.on('pageerror',e=>errs.push(e.message));ok(await entrar(pa,UA,'eduardo@eduardorezende.com'),'admin entrou pelo agente');ok(await agOn(pa),'app ligado ao agente');
+  const pa=await ctx.newPage();pa.on('pageerror',e=>errs.push(e.message));ok(await entrar(pa,UA,ADMT),'admin entrou pelo agente');ok(await agOn(pa),'app ligado ao agente');
   const pid=await pa.evaluate(()=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=(S.caixaDin||[]).find(x=>x.estado==='aguardando');return r&&r.id;});
   const conf=await pa.evaluate(id=>ETERNA.pendConfirmar(id,{ref:'123456'}),pid);ok(conf!==false,'Caixa confirmou o PIX: '+J(conf));
   for(let i=0;i<40&&!evs.some(e=>e.tipo==='pagar');i++)await sleep(200);
@@ -129,7 +130,7 @@ try{
     for(const [nm,w,h] of [['cel',390,844],['tab',820,1180]]){await p2.setViewportSize({width:w,height:h});await p2.waitForTimeout(200);ok(await semLateral(p2),`${nm}: Calendário sem rolagem lateral`);await p2.screenshot({path:PR+`/v92t-calendario-${nm}.png`,fullPage:true});}
     await c2.close();
     // outro aparelho (contexto novo, sem cópia local): o Admin vê o evento vindo do servidor
-    const {ctx:c3,pg:p3}=await nova(1440,950,porta);await entrar(p3,UA,'eduardo@eduardorezende.com');await agOn(p3);let vis=0;
+    const {ctx:c3,pg:p3}=await nova(1440,950,porta);await entrar(p3,UA,ADMT);await agOn(p3);let vis=0;
     for(let i=0;i<30&&!vis;i++){vis=await p3.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='jogo').length);if(!vis)await sleep(250);}ok(vis===1,'D3: o evento chega a outro aparelho pelo servidor: '+vis);
     await p3.evaluate(()=>{ETERNA.state.es.sec='d';ETERNA.state.es.rover=false;ETERNA.go('estatisticas');});await p3.waitForTimeout(500);ok(!(await p3.evaluate(()=>window.__x)),'XSS: visitante com <img onerror> não executa');
     // dois aparelhos: editar e apagar em um chega ao outro; o apagado não volta (agAplicaSnap como o simAplica)
@@ -147,7 +148,7 @@ try{
     await c3.close();}
   // ---------- dados vazios: agente novo sem nada ----------
   {const h2=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v92t-'));homes.push(h2);const p2=porta+1;const a2=await subir(p2,h2,{ETERNA_TZ:'UTC'});ags.push(a2);
-    const {ctx:c4,pg:p4}=await nova(1440,950,p2);await entrar(p4,`http://127.0.0.1:${p2}/index.html`,'eduardo@eduardorezende.com');await agOn(p4);
+    const {ctx:c4,pg:p4}=await nova(1440,950,p2);await entrar(p4,`http://127.0.0.1:${p2}/index.html`,ADMT);await agOn(p4);
     await p4.evaluate(()=>{ETERNA.state.es.rover=false;ETERNA.state.es.sec='a';ETERNA.go('estatisticas');});await p4.waitForTimeout(800);
     const r=await p4.evaluate(()=>({fuso:!!document.getElementById('es-fuso'),txt:document.querySelector('#main').textContent}));
     ok(r.fuso,'fuso: agente de verdade com ETERNA_TZ=UTC mostra o aviso de fuso');ok(!/Algo falhou|NaN|undefined|Infinity/.test(r.txt),'vazio: seção a sem NaN/undefined');

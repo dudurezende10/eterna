@@ -56,7 +56,9 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 - [ ] `~/Eterna/nuvem.env` com nuvem, bucket, perfil, região e API da galeria (tabela em [NUVEM.md](NUVEM.md)), mais:
   - `ETERNA_PASTA`: a pasta raiz do FTP (passo 6);
   - `ETERNA_IMPRESSORA`: o nome exato da DNP (passo 5);
-  - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. O passo 8 acrescenta os do Tailscale.
+  - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. Com o endereço com certificado dos postos: `ETERNA_ORIGENS=https://posto.eterna.photo` (mais os do Tailscale, que o passo 8 acrescenta);
+  - `ETERNA_FTP=0`: no estádio o FTP das câmeras é o IIS na porta 21 (passo 6); o FTP embutido do Eterna fica desligado.
+- [ ] Endereço com certificado (`posto.eterna.photo`): o proxy na frente do Eterna repassa o `Host` original e manda `X-Forwarded-Proto: https` (assim o cookie de login e o do posto saem com `Secure`). Depois de trocar o endereço, **parear de novo cada aparelho** no endereço novo (Painel de controle › Postos deste ponto): o cookie do posto vale por endereço.
 - [ ] Conferir no app (com login de administrador), no Upload automático e no Painel de controle, que a nuvem está ligada e conectada. Sem login, o `/status` mostra só que o Eterna está no ar.
 
 ## 5. Impressora
@@ -74,6 +76,8 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 - [ ] Uma **subpasta por fotógrafo** (ex.: `\carlos`). Na câmera, o destino aponta para a subpasta dela: é assim que o Eterna sabe quem tirou a foto.
 - [ ] Na câmera: Wi-Fi do ponto, servidor = IP reservado, porta 21, usuário do FTP, modo passivo ligado. A câmera precisa aparecer na lista de clientes do roteador; o app do celular só configura, quem conecta é a câmera.
 - [ ] Teste: tirar uma foto, e ela aparece em Upload automático em segundos, com o rosto lido.
+- [ ] A faixa de portas passivas precisa de regra de firewall própria (além da 21). Se um dia o FTP embutido do Eterna for usado no lugar do IIS: faixa `ETERNA_FTP_PASV` (padrão 50000-50050), só modo passivo.
+- [ ] Teste da Canon por 1 hora, com uma foto a cada 6 minutos (a câmera pode desligar o Wi-Fi entre uma e outra) e com a câmera em RAW+JPEG. No FTP embutido, o `.CR3` recebe 553 (só JPEG): confirmar que a câmera segue mandando os JPEG. Se ela travar a fila no 553, ligar `ETERNA_FTP_RAW=descartar` (o RAW é recebido e jogado fora, sem erro).
 
 ## 7. Ligar sozinho
 
@@ -102,6 +106,7 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 ## 9. Teste final, de ponta a ponta
 
 - [ ] Do servidor: `http://127.0.0.1:8765` abre.
+- [ ] Cada aparelho do Checkout e a TV da Fila pareados (Painel de controle › Postos deste ponto). Aparelho sem pareamento mostra "Este aparelho ainda não foi pareado".
 - [ ] De um posto ou celular no Wi-Fi do ponto: `http://<ip-reservado>:8765` abre, com as fotos visíveis.
 - [ ] De fora, com Tailscale: `http://<nome-do-servidor>:8765` abre, com as miniaturas e a foto ampliada.
 - [ ] Câmera → foto aparece → selfie no Checkout acha a pessoa → venda → impressão na DNP → QR abre a galeria no celular (eterna.photo).

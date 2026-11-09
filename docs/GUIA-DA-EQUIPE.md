@@ -171,9 +171,9 @@ O Checkout só abre num aparelho pareado. Cada computador ou tablet do Checkout 
 
 1. No próprio aparelho, entre com um usuário que pode alterar o Painel de controle (Admin).
 2. Abra **Configurações › Painel de controle**, vá a **Postos deste ponto**, escreva o nome do aparelho (ex.: Checkout 1) e toque em **Parear este aparelho**.
-3. Pronto: o Checkout abre nesse aparelho sem ninguém conectado. A lista mostra quando cada aparelho foi usado pela última vez.
+3. Pronto: o Checkout abre nesse aparelho sem ninguém conectado. Por segurança, a conta do Admin sai do aparelho logo depois de parear (o aparelho continua pareado). A lista mostra quando cada aparelho foi usado pela última vez.
 
-Se aparecer **"Este aparelho ainda não foi pareado"**, chame o Admin. Aparelho perdido ou trocado: **Revogar** na mesma lista. Dica: no computador do ponto, use como nome o mesmo do rolo de papel (ex.: Caixa 1).
+Se aparecer **"Este aparelho ainda não foi pareado"**, chame o Admin. Se aparecer **"abra o Eterna pelo endereço do servidor do ponto"**, a página foi aberta pelo endereço errado (por exemplo eterna.photo): abra pelo endereço do servidor do ponto, o mesmo dos postos. Se aparecer **"alterações não foram aceitas (sem permissão)"**, a sua conta não pode mudar aquilo; peça a quem pode. Aparelho perdido ou trocado: **Revogar** na mesma lista. Dica: no computador do ponto, use como nome o mesmo do rolo de papel (ex.: Caixa 1).
 
 ### Fotos de mais de uma sessão (v91)
 

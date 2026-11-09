@@ -6,7 +6,7 @@ const U=process.env.U||'http://127.0.0.1:8890/index.html';const fails=[];const o
 try{const ctx=await b.newContext({viewport:{width:1440,height:900}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();pg.setDefaultTimeout(10000);
   pg.on('pageerror',e=>errs.push(e.message));await pg.addInitScript(()=>{window.__xss=0;window.alert=()=>{window.__xss++;};});
   await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(400);
-  ok(await entrarTeste(pg,'eduardo@eduardorezende.com'),'admin entrou');
+  ok(await entrarTeste(pg,await entrarTeste.adminFicticio(pg)),'admin entrou');
   const MAL='<img src=x onerror=alert(1)>Zé Mal';
   await pg.evaluate(MAL=>{const d=new Date().toISOString().slice(0,10);const daily={approaches:1,viewed:1,converted:0,sales:0,revenue:0,prints:0,reprints:0,photos:3,photosSold:0,pax:null};
     ETERNA.applyLive({updated:d,days:{[d]:{daily,sellers:{},payments:{},products:{},rows:{zemal:{photos:3,cards:1,cardsSold:0,photosSold:0,revenue:0}},people:{zemal:{name:MAL,human:true,pdv:''}},orders:[]}}});

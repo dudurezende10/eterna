@@ -580,7 +580,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .gq-badge{position:absolute;left:6px;top:6px;padding:4px 10px;border-radius:999px;background:#FFB800;color:#0C2340;font-size:12px;font-weight:800;letter-spacing:.04em}
 .gq-dl{color:#134078;border-color:#c9d4e4;justify-content:center;width:100%}
 .gq-sel{position:absolute;right:-8px;top:-8px;width:46px;height:46px;border-radius:50%;border:2px solid #fff;background:rgba(12,35,64,.85);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 16px -6px rgba(0,0,0,.6)}
-.gq-sel svg{width:26px;height:26px}.gq-sel.on{background:#FFB800;color:#0C2340;border-color:#FFB800}
+.gq-sel svg{width:26px;height:26px}.gq-buyoff{margin-top:14px;font-weight:600}.gq-sel.on{background:#FFB800;color:#0C2340;border-color:#FFB800}
 .gq-dlall,.gq-allbtn{align-self:flex-start}
 .gq-gal{padding-bottom:110px}
 .gq-bar{position:fixed;left:0;right:0;bottom:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px clamp(14px,3vw,36px) max(12px,env(safe-area-inset-bottom,0px));background:rgba(12,35,64,.96);border-top:1px solid rgba(255,255,255,.18)}
@@ -1463,7 +1463,7 @@ const dinPainel=pendPainel; // nome da v79
 function pontoModo(){const h=location.hostname;const loop=h==='127.0.0.1'||h==='localhost';if(postoDisp())return 'posto';return loop&&state.agent&&state.agent.on?'local':'off';}
 // posto pareado: o servidor diz quem é este aparelho (cookie eterna_posto, HttpOnly); estado: null = ainda não perguntou, 'ok', 'nao' (401) ou 'sem' (agente sem postos)
 function postoDisp(){const d=state.posto&&state.posto.disp;return d&&typeof d==='object'&&d.id?d:null;}
-state.posto={disp:null,estado:null,lista:null};
+state.posto={disp:(()=>{try{const d=JSON.parse(localStorage.getItem('eterna.posto.v1')||'null');return d&&typeof d==='object'&&d.id?{id:String(d.id),nome:String(d.nome||'').slice(0,40),num:+d.num||0}:null;}catch(e){return null;}})(),estado:null,lista:null}; // o último posto confirmado pelo servidor (sem rede, o número da venda segue P<n>)
 // Todo pedido ao agente (fora da galeria /g/) vai por aqui: cookie da sessão ou do posto (mesma origem) e X-Eterna: 1.
 // 401 sem_sessao com alguém conectado neste navegador = a sessão terminou no servidor: volta para a entrada com aviso.
 function agFetch(u,o){o=o||{};return fetch(u,Object.assign({},o,{credentials:'same-origin',headers:Object.assign({},o.headers||{},{'X-Eterna':'1'})})).then(r=>{
@@ -1474,8 +1474,8 @@ function agFetch(u,o){o=o||{};return fetch(u,Object.assign({},o,{credentials:'sa
 async function postoCarregar(){const a=state.agent;if(!a||a.url!==location.origin)return;postoCarregar.t=Date.now();
   try{const r=await agFetch(a.url+'/postos/eu',{cache:'no-store'});const j=await r.json().catch(()=>({}));
     const antes=JSON.stringify(state.posto.disp)+state.posto.estado;
-    if(r.ok&&j.posto){state.posto.disp={id:String(j.posto.id),nome:String(j.posto.nome||'').slice(0,40),num:+j.posto.num||0};state.posto.estado='ok';}
-    else if(r.status===401){state.posto.disp=null;state.posto.estado='nao';}else{state.posto.disp=null;state.posto.estado='sem';}
+    if(r.ok&&j.posto){state.posto.disp={id:String(j.posto.id),nome:String(j.posto.nome||'').slice(0,40),num:+j.posto.num||0};state.posto.estado='ok';try{localStorage.setItem('eterna.posto.v1',JSON.stringify(state.posto.disp));}catch(e){}}
+    else if(r.status===401){state.posto.disp=null;state.posto.estado='nao';try{localStorage.removeItem('eterna.posto.v1');}catch(e){}}else state.posto.estado='sem';
     if(antes!==JSON.stringify(state.posto.disp)+state.posto.estado)render();}catch(e){}}
 // nome do estoque e do cabeçalho: "Posto N" num posto pareado; "Caixa 1" no computador do ponto e sem agente (compatível com o estoque de antes)
 function postoNome(){const d=pontoModo()==='posto'?postoDisp():null;return d&&d.nome?String(d.nome).slice(0,30):'Caixa 1';}
@@ -3084,6 +3084,9 @@ function ingStart(queue){const g=state.ing;if(g.timer)clearInterval(g.timer);g.q
 function ingPush(items){const g=state.ing;g.queue.push(...items);g.total+=items.length;if(!g.running){g.running=true;g.timer=setInterval(ingTick,650);}}
 // agente do ponto: programa local que vigia o cartão e entrega as fotos (agente/eterna-agente.py)
 state.agent={on:false,cursor:0,card:null,copied:0,dups:0,timer:null,url:window.ETERNA_AGENTE||((location.protocol==='http:'&&location.port)?location.origin:'http://127.0.0.1:8765') /* aberto pelo próprio agente (este computador ou o servidor do ponto na rede) */,tried:false,err:null};
+// aberto pelo próprio agente em endereço sem porta (https://posto.eterna.photo): o agente é esta mesma origem
+state.agent.sonda=(async()=>{const a=state.agent;if(window.ETERNA_AGENTE||/^(www\.)?eterna\.photo$/.test(location.hostname)||a.url===location.origin||!/^https?:$/.test(location.protocol))return;
+  try{const r=await fetch(location.origin+'/status',{cache:'no-store',credentials:'same-origin'});const j=await r.json();if(j&&j.agent==='eterna-agente')a.url=location.origin;}catch(e){}})();
 // ---------- Servidor FTP do estádio: o CTP manda para ele, o agente busca as fotos novas ----------
 state.rftp=null;function rftpPoll(){if(rftpPoll.t&&Date.now()-rftpPoll.t<4000)return;rftpPoll.t=Date.now();agFetch(state.agent.url+'/ftp-remoto/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=JSON.stringify(j)!==JSON.stringify(state.rftp);state.rftp=j;if(ch&&state.view==='catalogo')render();}).catch(()=>{});}
 // v80: saiu do Upload automático e foi para Configurações › Painel de controle. Ver: configuracao.r; alterar: configuracao.u. A senha fica só no agente.
@@ -3146,8 +3149,11 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
     ${ph.length?`<div class="photos small">${ph.slice(0,400).map(f=>{const v=ix.sold.has('ag_'+f.id);return photoBtn({id:'ag_'+f.id},{label:f.name,tag:(v?'VENDIDA · ':'')+new Date(f.t*1000).toLocaleTimeString(localeEq(),{hour:'2-digit',minute:'2-digit'})});}).join('')}</div>${ph.length>400?'<div class="note">Mostrando as 400 mais recentes deste filtro.</div>':''}`:'<div class="note">Nenhuma foto neste filtro.</div>'}
     <div class="note">Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera, pelo usuário (subpasta) do FTP ou pela sessão da foto. Vendida = foto escolhida numa venda paga.</div></div>`;}
 const SESSAO_PAUSA_S=60; // v91 (S1, Eduardo 30/10): 1 minuto sem clique fecha a sessão, a mesma regra do agente (SESS_PAUSA) e da Fila do fotógrafo; com o agente, as sessões vêm prontas dele (pausa + rostos)
-async function agentPoll(){const a=state.agent;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
-  try{const st=await (await agFetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;postoCarregar();let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
+async function agentPoll(){const a=state.agent;await a.sonda;if(state.view!=='importar'&&!a.on&&a.tried&&a.url!==location.origin)return;
+  try{const st=await (await agFetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');
+    // agente em outro endereço (página aberta pelo site ou por outro endereço): sem sessão nem posto lá, fica indisponível
+    if(a.url!==location.origin){const era=a.on||!a.outra;a.on=false;a.outra=true;a.tried=true;if(!a.outraAviso&&!state.pub&&!state.lojaRota){a.outraAviso=1;toast('Servidor do ponto encontrado: abra o Eterna pelo endereço do servidor do ponto');}if(era)render();return;}
+    a.outra=false;const was=a.on;a.on=true;a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;postoCarregar();let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
     const evr=await agFetch(a.url+'/events?since='+a.cursor,{cache:'no-store'});const ev=evr.ok?await evr.json():{events:[]}; // sem Upload/Estoque (ou só o posto): sem a lista de chegadas
     if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
@@ -3249,6 +3255,10 @@ function ajAutoSet(on){if(!can('set','u')){toast('Sem permissão para alterar em
 function ajAutoPanel(){const on=SIM.autoAj!==false;const rw=can('set','u');const p=SIM.autoAjPor;
   return `<div class="panel" id="aj-auto"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:nowrap;gap:12px"><div style="min-width:0"><h2 style="margin:0">Ajuste automático da IA</h2><div class="note">Clareia a foto escura, segura a estourada e acerta a cor de toda foto que chega neste computador. Vale para o ponto inteiro.${on?'':' Ao religar, as fotos que chegaram com ele desligado também são ajustadas.'}</div>${p&&p.nome?`<div class="note" id="aj-auto-por"><b>${p.on?'Ligado':'Desligado'} por ${esc(p.nome)} às ${hhmm(new Date(p.em))}</b></div>`:''}</div><button class="btn ${on?'primary':'ghost'}" data-act="aj-autotoggle" aria-pressed="${on}" ${rw?'':'disabled title="Só leitura"'}>${on?'Ligado':'Desligado'}</button></div></div>`;}
 // servidor aberto pelo próprio endereço: as fotos vão para ele e aparecem para toda a equipe; fora disso, ficam neste navegador
+// logins do FTP embutido (sem senha) por GET /ftp/contas, só para quem vê o Painel de controle
+function ftpContas(){const a=state.agent;if(!a.on||!can('configuracao','r'))return [];if(!ftpContas.t||Date.now()-ftpContas.t>30000){ftpContas.t=Date.now();
+  agFetch(a.url+'/ftp/contas',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{const l=j&&Array.isArray(j.users)?j.users.map(String):[];if(JSON.stringify(l)!==JSON.stringify(a.ftpUsers||[])){a.ftpUsers=l;if(state.view==='importar')render();}}).catch(()=>{});}
+  return a.ftpUsers||[];}
 const fotosNoServidor=()=>state.agent.on&&state.agent.url===location.origin;
 async function fotosEnviar(lista){const im=state.imp;if(im.envio)return;const jpg=lista.filter(f=>/\.jpe?g$/i.test(f.name));const quem=im.key&&im.key!=='todos'?im.key:'';
   const e=im.envio={total:jpg.length,feitas:0,novas:0,rep:0,falhas:0,fora:lista.length-jpg.length,erro:0};render();
@@ -3277,8 +3287,9 @@ function vImportarCore(){
   ${ajAutoPanel()}
   ${picker}
   <div class="panel" style="background:${state.agent.on?'var(--good-bg)':'var(--surface)'}"><div class="head"><div><div class="eyebrow">Leitor automático · agente do ponto</div><h2 style="margin-top:4px">${state.agent.on?`Conectado${state.agent.card?' · cartão '+esc(state.agent.card)+' inserido':' · aguardando cartão'}`:'Não encontrado neste computador'}</h2></div>${state.agent.on?`<span class="note">${state.agent.copied} fotos baixadas · ${state.agent.dups} repetidas ignoradas · pasta ~/Eterna/inbox</span>`:''}</div>
-    ${state.agent.on&&state.agent.ftp&&state.agent.ftp.port?`<div class="row" style="margin-top:8px"><span class="pill good">FTP ligado</span><span class="note">Servidor <b>${esc(state.agent.ftp.ip)}</b> · porta <b>${state.agent.ftp.port}</b> ${(state.agent.ftp.users||[]).length?' · usuários '+state.agent.ftp.users.map(esc).join(', '):''} · ${state.agent.ftp.received} fotos recebidas${state.agent.ftp.last_user?' · última de '+esc(state.agent.ftp.last_user):''}</span></div>`:''}
-    ${state.agent.on?'':`${location.protocol==='https:'?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>No computador do ponto, abra o Eterna em <a href="http://127.0.0.1:8765/#importar">http://127.0.0.1:8765</a></b><p>O Chrome bloqueia o site na internet de falar com o agente do Mac. Aberto pelo agente, as fotos do cartão e do CTP aparecem aqui sozinhas.</p></div></div>`:''}<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
+    ${state.agent.on&&state.agent.ftp&&state.agent.ftp.port?`<div class="row" style="margin-top:8px"><span class="pill good">FTP ligado</span><span class="note">Servidor <b>${esc(state.agent.ftp.ip)}</b> · porta <b>${state.agent.ftp.port}</b> ${ftpContas().length?' · usuários '+ftpContas().map(esc).join(', '):''} · ${state.agent.ftp.received} fotos recebidas${state.agent.ftp.last_user?' · última de '+esc(state.agent.ftp.last_user):''}</span></div>`:''}
+    ${!state.agent.on&&state.agent.outra?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Abra o Eterna pelo endereço do servidor do ponto</b><p>O servidor do ponto respondeu, mas esta página veio de outro endereço. Use o endereço do servidor (o mesmo dos postos) para ver as fotos e vender.</p></div></div>`:''}
+    ${state.agent.on?'':`${location.protocol==='https:'?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>No computador do ponto, abra o Eterna em <a href="http://127.0.0.1:8765/#importar">http://127.0.0.1:8765</a></b><p>O Chrome bloqueia o site na internet de falar com o agente do Mac. Aberto pelo agente, as fotos do cartão e do CTP aparecem aqui sozinhas.</p></div></div>`:''}<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="https://eterna.photo/agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
   </div>
   <div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?'Recebendo...':`Simular leva · ${esc(name)} · ${srcName()}`}</button>${g.running?'<button class="btn ghost" data-act="ing-stop">Parar</button>':''}${fotosNoServidor()?(state.imp.envio?`<span class="btn ghost" aria-live="polite">Enviando ${state.imp.envio.feitas} de ${state.imp.envio.total}</span>`:`<label class="btn primary" style="cursor:pointer">Enviar fotos<input type="file" accept="image/jpeg" multiple data-act="imp-files" style="display:none"></label>`):`<label class="btn ghost" style="cursor:pointer">Testar com fotos suas<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>`}${g.n.arrived||g.done.length?'<button class="btn ghost" data-act="ing-reset">Limpar esta leva</button>':''}</div>
   <div class="twocol" style="margin-top:4px">
@@ -4638,7 +4649,7 @@ function logout(){authApi('/auth/sair',{});camStop();try{localStorage.removeItem
   state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
 // e a sessão vale pelo cookie HttpOnly. O site público não fala com o servidor: lá só a galeria e o Checkout abrem.
-const authSite=()=>/(^|\.)eterna\.photo$/.test(location.hostname);
+const authSite=()=>/^(www\.)?eterna\.photo$/.test(location.hostname); // o site público; posto.eterna.photo é o servidor do ponto (com login)
 async function authApi(rota,corpo){try{const r=await fetch(rota,{method:corpo?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo?JSON.stringify(corpo):undefined});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
 function authEntrou(r){if(r.cadastro&&r.usuario){USERS[r.usuario]=migrateUser(r.cadastro)||r.cadastro;}login(r.usuario);} // o cadastro do servidor vale mais que a cópia do navegador
 // o erro fica guardado como chave e é traduzido ao desenhar: trocar a bandeira com o aviso na tela também troca o aviso
@@ -5411,7 +5422,7 @@ document.addEventListener('click',e=>{
     case 'posto-tentar':postoCarregar();break;
     case 'posto-parear':{const nome=(($('#posto-nome')||{}).value||'').trim().slice(0,40);if(!nome){toast('Dê um nome a este aparelho');break;}
       agFetch(state.agent.url+'/postos/parear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})}).then(async r=>{const j=await r.json().catch(()=>({}));
-        if(r.ok&&j.posto){toast('Aparelho pareado: '+j.posto.nome);await postoCarregar();postosPoll(true);}else toast(r.status===403?'Sem permissão para parear':'Não deu para parear este aparelho');}).catch(()=>toast('Agente não encontrado'));break;}
+        if(r.ok&&j.posto){await postoCarregar();logout();toast('Aparelho pareado: '+j.posto.nome+'. Sua conta saiu deste aparelho.');}else toast(r.status===403?'Sem permissão para parear':'Não deu para parear este aparelho');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'posto-revogar':{const pid=el.dataset.id;agFetch(state.agent.url+'/postos/revogar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:pid})}).then(r=>{toast(r.ok?'Posto revogado':'Não deu para revogar');postoCarregar();postosPoll(true);}).catch(()=>toast('Agente não encontrado'));break;}
     case 'rf-save':{const v=id=>(($('#'+id)||{}).value||'').trim();const body={host:v('rf-host'),port:v('rf-port')||'21',user:v('rf-user'),password:($('#rf-pass')||{}).value||'',dir:v('rf-dir'),tls:!!($('#rf-tls')||{}).checked};if(!body.host||!body.user){toast('Informe servidor e usuário');break;}toast('Testando conexão...');agFetch(state.agent.url+'/ftp-remoto/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#rf-pass');if(f)f.value='';toast('Conectado. Buscando fotos novas no servidor.');rftpPoll.t=0;rftpPoll();}else toast(j.error||'Não conectou');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'set-switch':case 'set-logout':{const old=state.user&&state.user.name;log(`${old} saiu do Upload automático`);logout();if(a==='set-switch'){state.auth_next='importar';state.auth.switching=old||'';render();}break;}
@@ -5500,12 +5511,17 @@ render();
 // diário, treino, venue, revisões, bandeiras, função do dia) passa a gravar no servidor. Gravar: entra numa fila deste
 // navegador (eterna.db.fila.v1) e sobe na hora; sem rede, espera e sobe depois (nunca descarta). Ler: a cada 3 s pergunta as
 // revisões de todas as coleções num pedido só e baixa só a que mudou. O que ainda está na fila vale por cima do servidor.
-const DBQ='eterna.db.fila.v1';
+const DBQ='eterna.db.fila.v1',DBREC='eterna.db.recusados.v1';
+// gravação que o servidor recusou (sem permissão do módulo): fica registrada e a equipe vê o aviso; o servidor manda o valor dele de volta
+function dbRecusados(n,lote){const reg={em:now().toISOString(),n,cols:[...new Set(lote.map(x=>x.col))],por:state.user?state.user.email:null,posto:(postoDisp()||{}).id||null};
+  console.warn('Eterna: '+n+' alterações recusadas pelo servidor do ponto',reg);try{let l=JSON.parse(localStorage.getItem(DBREC)||'[]');if(!Array.isArray(l))l=[];l.unshift(reg);localStorage.setItem(DBREC,JSON.stringify(l.slice(0,50)));}catch(e){}
+  if(state.user&&!state.lojaRota&&!state.pub&&Date.now()-(dbRecusados.t||0)>10000){dbRecusados.t=Date.now();toast(n+(n===1?' alteração não foi aceita':' alterações não foram aceitas')+' (sem permissão)');}}
 function agenteDb(){const subs={},dsubs={},revs={};let sobindo=false,descendo=false;
   const fila=()=>{try{const l=JSON.parse(localStorage.getItem(DBQ)||'[]');return Array.isArray(l)?l:[];}catch(e){return [];}};
   const guarda=l=>{try{localStorage.setItem(DBQ,JSON.stringify(l));}catch(e){state.simCheio=Date.now();}};
   async function sobe(){if(sobindo||!state.agent.on)return;const lote=fila().slice(0,200);if(!lote.length)return;sobindo=true;
-    try{const r=await agFetch(state.agent.url+'/ponto/docs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({docs:lote})});if(r.ok)guarda(fila().slice(lote.length));}
+    try{const r=await agFetch(state.agent.url+'/ponto/docs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({docs:lote})});
+      if(r.ok){const j=await r.json().catch(()=>({}));guarda(fila().slice(lote.length));if(j.recusados>0){dbRecusados(j.recusados,lote);[...new Set(lote.map(x=>x.col))].forEach(c=>{revs[c]=undefined;});}}}
     catch(e){}finally{sobindo=false;}}
   async function desce(){if(descendo||!state.agent.on)return;descendo=true;
     try{const j=await (await agFetch(state.agent.url+'/ponto/docs/revs',{cache:'no-store'})).json();
