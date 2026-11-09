@@ -27,7 +27,7 @@ Para outros computadores da rede (checkout, quiosque) usarem este agente:
 Para receber de um servidor FTP que já existe na máquina, vigiando a pasta dele:
      ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
-import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections
+import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections, tempfile
 import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
@@ -1246,16 +1246,16 @@ except Exception:
 
 
 def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
-    """Leva um arquivo para a inbox. Devolve 'new', 'dup' ou None."""
+    """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou)."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
-    if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo
+    if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo (a câmera recebe "ok" e não reenvia)
         if move:
             try:
                 os.remove(src)
             except OSError:
                 pass
-        return None
+        return "excluida"
     with lock:
         if dedupe_set is not None:
             if h in dedupe_set:
@@ -1472,17 +1472,40 @@ def lan_ip():
             return "127.0.0.1"
 
 
+# FTP embutido: só modo passivo, numa faixa fixa de portas (firewall), conexão de dados só do mesmo IP do controle, só JPEG,
+# até FOTO_ENVIO_MAX por arquivo, no máximo FTP_POR_IP sessões por IP e FTP_TOTAL no total. ETERNA_FTP=0 desliga (servidor com IIS).
+FTP_POR_IP, FTP_TOTAL = 8, 64
+FTP_OCIOSO_S, FTP_DADOS_S = 300, 30
+ftp_conexoes = {}          # ip -> sessões abertas
+
+
+def ftp_faixa_pasv():
+    try:
+        a, b = (int(x) for x in (os.environ.get("ETERNA_FTP_PASV") or "50000-50050").split("-", 1))
+        if 1024 <= a <= b <= 65535:
+            return a, b
+    except ValueError:
+        pass
+    return 50000, 50050
+
+
+def ftp_ip(a):
+    return a[4:] if a.startswith("::ffff:") else a
+
+
 class FTPSession(threading.Thread):
     def __init__(self, conn, addr, users, compartilhado=()):
         super().__init__(daemon=True)
         self.conn, self.addr, self.users = conn, addr, users
         self.compartilhado = {str(x).lower() for x in (compartilhado or ())}
         self.user = None
+        self.login_ok = None   # o usuário cuja senha foi aceita: só ele vira dono das fotos (USER depois do login zera)
         self.ok = False
         self.cwd = "/"
         self.pasv = None       # socket de escuta (modo passivo)
-        self.port_addr = None  # (ip, porta) do modo ativo
         self.rest = 0
+        self.tmpdir = None     # pasta temporária desta sessão (mkdtemp), nunca derivada do nome de usuário
+        self.n = 0
 
     def send(self, line):
         try:
@@ -1491,19 +1514,54 @@ class FTPSession(threading.Thread):
             pass
 
     def data_conn(self):
-        if self.pasv:
-            self.pasv.settimeout(20)
-            d, _ = self.pasv.accept()
-            self.pasv.close()
+        """A conexão de dados do modo passivo, só do mesmo IP do controle (outro IP é fechado e a espera continua); None se não veio."""
+        if not self.pasv:
+            return None
+        fim = time.time() + 20
+        try:
+            while True:
+                resto = fim - time.time()
+                if resto <= 0:
+                    return None
+                self.pasv.settimeout(resto)
+                try:
+                    d, a = self.pasv.accept()
+                except (socket.timeout, OSError):
+                    return None
+                if ftp_ip(a[0]) == ftp_ip(self.addr[0]):
+                    d.settimeout(FTP_DADOS_S)
+                    return d
+                print("ftp: conexão de dados de %s recusada (controle em %s)" % (a[0], self.addr[0]))
+                try:
+                    d.close()
+                except OSError:
+                    pass
+        finally:
+            try:
+                self.pasv.close()
+            except OSError:
+                pass
             self.pasv = None
-            return d
-        if self.port_addr:
-            d = socket.create_connection(self.port_addr, timeout=20)
-            self.port_addr = None
-            return d
-        return None
 
     def run(self):
+        try:
+            self._run()
+        finally:
+            with lock:
+                ip = ftp_ip(self.addr[0])
+                ftp_conexoes[ip] = ftp_conexoes.get(ip, 1) - 1
+                if ftp_conexoes[ip] <= 0:
+                    ftp_conexoes.pop(ip, None)
+            if self.pasv:
+                try:
+                    self.pasv.close()
+                except OSError:
+                    pass
+            if self.tmpdir:
+                shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self):
+        self.conn.settimeout(FTP_OCIOSO_S)        # controle parado por 5 min: a sessão termina
         self.send("220 Eterna FTP pronto")
         f = self.conn.makefile("rb")
         try:
@@ -1530,7 +1588,8 @@ class FTPSession(threading.Thread):
 
     def handle(self, cmd, arg):
         if cmd == "USER":
-            self.user = arg.strip().lower()
+            self.ok, self.login_ok = False, None      # trocar de usuário pede a senha de novo
+            self.user = arg.strip().lower()[:64]
             self.send("331 Senha")
             return
         if cmd == "PASS":
@@ -1541,14 +1600,15 @@ class FTPSession(threading.Thread):
             if self.user in self.users and hmac.compare_digest(str(self.users[self.user]), arg):
                 with lock:
                     FTP_FALHAS.pop(self.addr[0], None)
-                self.ok = True
+                self.ok, self.login_ok = True, self.user
                 with lock:
                     state["ftp"]["last_user"] = self.user
                 print(f"ftp: {self.user} conectado de {self.addr[0]}")
                 self.send("230 Bem-vindo ao Eterna, " + self.user)
             else:
+                self.ok, self.login_ok = False, None
                 ftp_falhou(self.addr[0])
-                print(f"ftp: login recusado para '{self.user}' de {self.addr[0]}")
+                print("ftp: login recusado para %r de %s" % (re.sub(r"[^\w.@-]", "?", self.user or "")[:40], self.addr[0]))
                 self.send("530 Usuário ou senha incorretos")
             return
         if cmd == "SYST":
@@ -1561,7 +1621,7 @@ class FTPSession(threading.Thread):
             self.send("200 OK"); return
         if cmd == "QUIT":
             self.send("221 Até logo"); return
-        if not self.ok:
+        if not self.ok or not self.login_ok:
             self.send("530 Faça login"); return
         if cmd in ("PWD", "XPWD"):
             self.send(f'257 "{self.cwd}"'); return
@@ -1589,10 +1649,19 @@ class FTPSession(threading.Thread):
         if cmd in ("PASV", "EPSV"):
             if self.pasv:
                 self.pasv.close()
-            self.pasv = socket.socket()
-            self.pasv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.pasv.bind(("0.0.0.0", 0))
-            self.pasv.listen(1)
+                self.pasv = None
+            a, b = ftp_faixa_pasv()
+            for pp in random.sample(range(a, b + 1), b - a + 1):
+                sk = socket.socket()
+                try:
+                    sk.bind(("0.0.0.0", pp))
+                    sk.listen(1)
+                    self.pasv = sk
+                    break
+                except OSError:
+                    sk.close()
+            if not self.pasv:
+                self.send("425 Sem porta livre para o modo passivo"); return
             port = self.pasv.getsockname()[1]
             if cmd == "EPSV":
                 self.send(f"229 Modo passivo (|||{port}|)")
@@ -1600,14 +1669,8 @@ class FTPSession(threading.Thread):
                 ip = self.conn.getsockname()[0].replace(".", ",")
                 self.send(f"227 Modo passivo ({ip},{port // 256},{port % 256})")
             return
-        if cmd == "PORT":
-            p = arg.split(",")
-            self.port_addr = (".".join(p[:4]), int(p[4]) * 256 + int(p[5]))
-            self.send("200 OK"); return
-        if cmd == "EPRT":
-            p = arg.split("|")
-            self.port_addr = (p[2], int(p[3]))
-            self.send("200 OK"); return
+        if cmd in ("PORT", "EPRT"):
+            self.send("502 Use o modo passivo (PASV)"); return
         if cmd in ("LIST", "NLST", "MLSD"):
             d = self.data_conn()
             self.send("150 Lista")
@@ -1619,32 +1682,48 @@ class FTPSession(threading.Thread):
         if cmd in ("DELE", "RMD", "RNFR", "RNTO", "RETR"):
             self.send("550 Não permitido"); return
         if cmd == "STOR":
-            name = os.path.basename(arg.strip().replace("\\", "/")) or f"foto_{int(time.time())}.jpg"
+            name = re.sub(r"[^\w.\- ]", "_", os.path.basename(arg.strip().replace("\\", "/")))[-120:].lstrip(".") or "foto_%d.jpg" % int(time.time())
+            if not name.lower().endswith((".jpg", ".jpeg")):
+                if self.pasv:                      # nada é gravado: a conexão de dados nem é aceita
+                    self.pasv.close()
+                    self.pasv = None
+                self.send("553 Só fotos JPEG"); return
             d = self.data_conn()
             if not d:
                 self.send("425 Abra a conexão de dados (modo passivo)"); return
             self.send("150 Pode enviar")
-            tmpdir = os.path.join(FTPTMP, self.user)
-            os.makedirs(tmpdir, exist_ok=True)
-            tmp = os.path.join(tmpdir, "%d_%s" % (self.ident, name))
+            if not self.tmpdir:
+                os.makedirs(FTPTMP, exist_ok=True)
+                self.tmpdir = tempfile.mkdtemp(prefix="s-", dir=FTPTMP)
+            self.n += 1
+            tmp = os.path.join(self.tmpdir, "%d_%s" % (self.n, name))
             size = 0
-            caiu = False
+            caiu = grande = False
             try:
                 with open(tmp, "wb") as out:
                     while True:
                         chunk = d.recv(256 * 1024)
                         if not chunk:
                             break
-                        out.write(chunk)
                         size += len(chunk)
+                        if size > FOTO_ENVIO_MAX:
+                            grande = True
+                            break
+                        out.write(chunk)
             except OSError:
                 caiu = True
             finally:
                 d.close()
             self.rest = 0
+            if grande:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                print("ftp: %s passou de %d MB; recusado" % (name, FOTO_ENVIO_MAX // (1024 * 1024)))
+                self.send("552 Arquivo grande demais"); return
             st = os.stat(tmp)
-            jpg = name.lower().endswith((".jpg", ".jpeg"))
-            if jpg and (caiu or not jpeg_completo(tmp, st.st_size)):
+            if caiu or not jpeg_completo(tmp, st.st_size):
                 with lock:
                     state["ftp"]["incompletas"] = state["ftp"].get("incompletas", 0) + 1
                 print(f"ftp: {name} chegou incompleto ({size/1e6:.1f} MB), recusado; a câmera manda de novo")
@@ -1654,26 +1733,33 @@ class FTPSession(threading.Thread):
                     pass
                 self.send("426 Transferência incompleta, envie de novo")
                 return
-            if jpg:
-                # v80 (segurança B1): o dono é sempre o login. Subpasta = fotógrafo só para login marcado como "compartilhado"
-                # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
-                quem = self.user
-                sub = self.cwd.strip("/").split("/")[-1].lower()
-                if self.user in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
-                    quem = sub
-                r = ingest_file(tmp, name, st, quem, "ftp", move=True)
-                if r:
-                    save_index()
-                with lock:
-                    state["ftp"]["received"] += 1
-            else:
-                print(f"ftp: {name} recebido ({size/1e6:.1f} MB), não é JPG; guardado em {tmp}")
-            self.send(f"226 Recebido {name}")
+            # v80 (segurança B1): o dono é sempre o login aceito. Subpasta = fotógrafo só para login marcado como "compartilhado"
+            # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
+            quem = self.login_ok
+            sub = self.cwd.strip("/").split("/")[-1].lower()
+            if self.login_ok in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
+                quem = sub
+            r = ingest_file(tmp, name, st, quem, "ftp", move=True)
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            if r is None:                          # não gravou: a câmera manda de novo
+                self.send("451 Não deu para gravar; envie de novo"); return
+            if r == "new":
+                save_index()
+            with lock:
+                state["ftp"]["received"] += 1
+            self.send("226 Recebido " + name)
             return
         self.send("502 Comando não suportado: " + cmd)
 
 
 def ftp_server():
+    if os.environ.get("ETERNA_FTP") == "0":
+        print("  FTP embutido:      desligado (ETERNA_FTP=0)")
+        return
     cfg = load_ftp_cfg()
     users = cfg["users"]
     srv = socket.socket()
@@ -1701,6 +1787,18 @@ def ftp_server():
     while True:
         try:
             conn, addr = srv.accept()
+            ip = ftp_ip(addr[0])
+            with lock:
+                demais = ftp_conexoes.get(ip, 0) >= FTP_POR_IP or sum(ftp_conexoes.values()) >= FTP_TOTAL
+                if not demais:
+                    ftp_conexoes[ip] = ftp_conexoes.get(ip, 0) + 1
+            if demais:
+                try:
+                    conn.sendall(b"421 Muitas conexoes; tente de novo\r\n")
+                    conn.close()
+                except OSError:
+                    pass
+                continue
             FTPSession(conn, addr, users, cfg.get("compartilhado") or ()).start()
         except Exception as ex:
             print("ftp:", ex)
@@ -6936,7 +7034,7 @@ class H(BaseHTTPRequestHandler):
                 os.remove(tmp)
         if not inteira:
             return self.js({"erro": "incompleta"}, 400, True)
-        return self.js({"ok": bool(r), "resultado": r or "recusada"}, 200, True)
+        return self.js({"ok": r in ("new", "dup"), "resultado": r or "recusada"}, 200, True)
 
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do

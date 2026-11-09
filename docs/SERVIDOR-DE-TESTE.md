@@ -55,6 +55,7 @@ O servidor só abre os dados para quem entrou com usuário e senha ou para um ap
 - Sem entrar no app: no servidor, `python eterna-agente.py --parear-posto "Checkout 1"` imprime um link que vale uma vez, por 10 minutos. Abra o link no aparelho (trocando `127.0.0.1` pelo endereço do servidor na rede).
 - Aparelho perdido ou trocado: "Revogar" na mesma lista.
 - Aparelho sem pareamento mostra "Este aparelho ainda não foi pareado" no Checkout. As vendas que ele já tinha na fila ficam guardadas e sobem depois do pareamento.
+- FTP embutido das câmeras: só modo passivo, nas portas 50000 a 50050 (`ETERNA_FTP_PASV` muda a faixa; o firewall precisa liberar essa faixa além da porta do FTP). Câmera em modo ativo não envia. `ETERNA_FTP=0` desliga o FTP embutido quando o servidor usa outro FTP.
 - O teste de carga (`agente/teste-carga.py`) entra com `--login <usuário>` nos comandos que falam com o agente; a senha vem de `ETERNA_SENHA` ou é digitada.
 
 ## O que roda onde
