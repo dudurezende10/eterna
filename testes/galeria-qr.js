@@ -9,12 +9,12 @@ async function nova(ctx,nome,vp){const pg=await ctx.newPage();if(vp)await pg.set
 // Loja de ponta a ponta em #loja: código do recibo, ✓ ✓ ✗ ✓, Pix, pagar
 async function compraLoja(pg,card){await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(700);
   for(const a of ['kiosk-ok','kiosk-ok','kiosk-no','kiosk-ok'])await pg.click(`[data-act="${a}"]`);
-  await pg.click('.lj-next');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.click('[data-act="loja-checkout"]');await pg.waitForTimeout(400);
+  await pg.click('.lj-next');await pg.waitForTimeout(400); // v95: o Continuar faz o pedido; pacote (o ideal) e PIX são escolhidos no Posto
   await pagoNaMaquininha(pg);}
 // v83: PIX fica aguardando; o vendedor confirma "Pago na maquininha" no Posto de venda, numa outra janela do mesmo navegador
 async function pagoNaMaquininha(pg){const ctx=pg.context();let V=ctx.__vend;if(!V||V.isClosed()){V=await nova(ctx,'vendedor');await login(V);await V.evaluate(()=>localStorage.removeItem('eterna.session'));ctx.__vend=V;} /* a janela do vendedor fica logada só na memória: os outros logins do teste continuam abrindo no login */
   const id=await pg.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id)return;
-  await V.evaluate(id=>{ETERNA.simFresh();if(ETERNA.state.view!=='posto'){ETERNA.state.view='posto';ETERNA.render();}return ETERNA.pendConfirmar(id,{ref:''});},id);
+  await V.evaluate(id=>{ETERNA.simFresh();if(ETERNA.state.view!=='posto'){ETERNA.state.view='posto';ETERNA.render();}const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.escolha){ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:'pix'});}return ETERNA.pendConfirmar(id,{ref:''});},id);
   for(let i=0;i<20;i++){if(await pg.evaluate(()=>!!document.querySelector('#lqr')))break;await pg.waitForTimeout(100);}await pg.waitForTimeout(600);}
 async function fotoDe(pg,id,escala){return pg.evaluate(async([id,k])=>{let c=null;for(let i=0;i<10&&!c;i++){c=await ETERNA.photoCanvas(id);if(!c)await new Promise(r=>setTimeout(r,400));} /* v79: com a máquina carregada a imagem às vezes não carregava na primeira */const x=document.createElement('canvas');x.width=c.width*k;x.height=c.height*k;x.getContext('2d').drawImage(c,0,0,x.width,x.height);return x.toDataURL('image/jpeg',.9).split(',')[1];},[id,escala||1]);}
 // espera a câmera assentar (pronta ou sem câmera) antes de mandar a foto; se estourar o tempo, registra o estado
@@ -72,7 +72,7 @@ try{
   // A6: voltar manual nas fotos, no carrinho e no código
   await C.click('[data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!ETERNA.state.kiosk.code),'A6: voltar nas fotos não limpou o cliente');
   await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(800);await C.click('[data-act="kiosk-ok"]');await C.click('.lj-next');await C.clock.runFor(300);
-  await C.click('.lj-checkout [data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6: voltar no carrinho não voltou para a câmera');
+  await C.click('.lj-pronto [data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6 (v95): voltar no Pronto não voltou ao início');
   await C.click('[data-act="kiosk-emerg"]');ok(await C.isVisible('[data-act="kiosk-back"]'),'A6: sem botão de voltar na etapa do código');await C.click('[data-act="kiosk-back"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6: voltar no código');
   await C.close();await ctxC.close();
   // ---------- 5. galeria pública sem login: consentimento ----------

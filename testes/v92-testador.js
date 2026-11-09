@@ -41,18 +41,18 @@ try{
   await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(1500);
   for(const a of ['kiosk-ok','kiosk-ok','kiosk-no','kiosk-ok'])await pg.click(`[data-act="${a}"]`);
   await pg.waitForTimeout(400);// cliente leva alguns segundos antes de pagar
-  await pg.click('.lj-next');await pg.waitForTimeout(400);await pg.click(`[data-act="lang"][data-l="es"]`);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.waitForTimeout(300);
-  await pg.click('[data-act="loja-checkout"]');await pg.click('[data-act="loja-checkout"]').catch(()=>{}); // clique repetido no pagar
-  for(let i=0;i<40&&!evs.some(e=>e.tipo==='criar');i++)await sleep(200);
-  const crK=evs.filter(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card);const ck=crK[0];
-  ok(crK.length===1,'3: um pedido só com o clique repetido no pagar: '+crK.length);
-  ok(ck&&ck.dados.lang==='es'&&ck.dados.canal==='checkout'&&Array.isArray(ck.dados.cart)&&ck.dados.cart.length>0&&ck.dados.t0&&Date.parse(ck.dados.t0)<Date.parse(ck.em),'3: venda do Checkout pela tela chega com lang es, canal checkout, cart e t0 antes de em: '+J(ck&&{lang:ck.dados.lang,canal:ck.dados.canal,cart:ck.dados.cart,t0:ck.dados.t0,em:ck.em}));
+  // v95: o Continuar faz o pedido (sem pacote e sem pagamento no Checkout); o "criar" sai quando o caixa confirma, com a hora do pedido
+  await pg.click(`[data-act="lang"][data-l="es"]`);await pg.click('.lj-next');await pg.click('.lj-next').catch(()=>{});await pg.waitForTimeout(400); // clique repetido no Continuar
+  ok((await pg.evaluate(c=>JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.filter(x=>x.card===c&&x.estado==='aguardando').length,card))===1,'3: um pedido só com o clique repetido no Continuar');
   await pg.screenshot({path:PR+'/v92t-checkout-es.png'});
   // ---------- Caixa: o Admin confirma o PIX (pagar) ----------
   const pa=await ctx.newPage();pa.on('pageerror',e=>errs.push(e.message));ok(await entrar(pa,UA,'eduardo@eduardorezende.com'),'admin entrou pelo agente');ok(await agOn(pa),'app ligado ao agente');
   const pid=await pa.evaluate(()=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=(S.caixaDin||[]).find(x=>x.estado==='aguardando');return r&&r.id;});
-  const conf=await pa.evaluate(id=>ETERNA.pendConfirmar(id,{ref:'123456'}),pid);ok(conf!==false,'Caixa confirmou o PIX: '+J(conf));
+  const conf=await pa.evaluate(id=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:'pix'});return ETERNA.pendConfirmar(id,{ref:'123456'});},pid);ok(conf!==false,'Caixa confirmou o PIX: '+J(conf));
   for(let i=0;i<40&&!evs.some(e=>e.tipo==='pagar');i++)await sleep(200);
+  const crK=evs.filter(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card);const ck=crK[0];
+  ok(crK.length===1,'3: um "criar" só: '+crK.length);
+  ok(ck&&ck.dados.lang==='es'&&ck.dados.canal==='checkout'&&Array.isArray(ck.dados.cart)&&ck.dados.cart.length>0&&ck.dados.t0&&Date.parse(ck.dados.t0)<Date.parse(ck.em),'3: venda do Checkout pela tela chega com lang es, canal checkout, cart e t0 antes de em: '+J(ck&&{lang:ck.dados.lang,canal:ck.dados.canal,cart:ck.dados.cart,t0:ck.dados.t0,em:ck.em}));
   // ---------- balcão em inglês (caixaConfirm) ----------
   const card2=await pa.evaluate(()=>{const E=ETERNA;const c=E.demoSessions().filter(s=>s.photos.length>=3&&!['paga','cancelada','aguardando'].includes((E.SIM.sessions[s.card]||{}).status))[3].card;const S=E.SIM;const s=S.sessions[c]=S.sessions[c]||{};
     s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='caixa';E.render();return c;});

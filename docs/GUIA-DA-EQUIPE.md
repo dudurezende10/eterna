@@ -239,23 +239,27 @@ Nesta versão o Checkout e o Caixa precisam estar **no mesmo computador e no mes
 
 Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eterna abertas naquele computador (Checkout, Caixa e as outras). Uma janela antiga aberta pode atrapalhar o caixa. Se aparecer o aviso "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.", faça isso na hora.
 
-### Atender um cliente
+### Atender um cliente (v95)
 
-1. O cliente olha para a câmera. O Checkout encontra as fotos dele.
-2. Se a câmera não encontrar (ou se as fotos são de mais de 90 minutos atrás), ele digita o código da sessão (começa com LP).
-3. O cliente passa as fotos e toca em ✓ nas que quer levar e em ✗ nas que não quer.
-4. Na tela seguinte ele escolhe o pacote e a forma de pagamento. O Checkout já marca o pacote **Ideal**, o mais barato para o número de fotos que ele escolheu.
-5. **Cartão, PIX e Dinheiro ficam aguardando você.** O Checkout pede para o cliente pagar na sua maquininha (ou no dinheiro) e espera. A venda só vale depois que você confirma no **Posto de venda** (veja "Novidades da v83").
-6. Quando você confirma, aparece no Checkout a tela final com o QR e o código da galeria (exemplo: `Código K7QM-4WXR`). Se você cancelar, o Checkout volta ao carrinho do cliente com um aviso.
-7. Imprima as fotos no Posto de venda.
-8. A tela final com o QR fica 30 segundos e volta sozinha para a câmera, com contagem. Para atender o próximo antes disso, toque em **Voltar ao início**.
+O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o notebook do caixa atrás, no **Posto de venda**. O cliente já está no caixa: o Checkout nunca manda ele para outro lugar.
+
+1. A tela do Checkout mostra o botão grande **Iniciar**. A câmera fica desligada até o cliente tocar nele.
+2. O cliente toca em **Iniciar** e olha para a câmera. O Checkout encontra as fotos dele e a câmera desliga.
+3. Se a câmera não encontrar (ou se as fotos são de mais de 90 minutos atrás), ele toca em **Digitar seu código** e digita o código da sessão (começa com LP). Se ninguém aparecer na câmera por 1 minuto, ela desliga e a tela volta ao **Iniciar**.
+4. A foto aparece na tela inteira. Ele passa com as setas, arrastando o dedo ou com as teclas de seta, e toca em ✓ nas que quer levar e em ✗ nas que não quer. **Ver todas** mostra a grade.
+5. Com fotos marcadas aparece **Continuar · N fotos** no canto de baixo. Ao tocar, o cliente vê **Pronto! O atendente vai finalizar sua compra**, com o código dele e quantas fotos escolheu. O Checkout não mostra pacote, preço nem forma de pagamento.
+6. No **Posto de venda**, a compra aparece em **Aguardando pagamento** com as fotos escolhidas (inclusive as de fundo de IA). Mostre as fotos ao cliente, escolha o **pacote** (o **Ideal** vem marcado com a etiqueta) e a **forma de pagamento**.
+7. Assim que você escolhe o pacote, a tela do cliente mostra **Valor a pagar R$ X**, o nome do pacote e **Pague na maquininha**. Ele pode tocar em **Ver minhas fotos** para ver as escolhidas. Se você trocar o pacote, o valor muda na hora na tela dele.
+8. Cobre na maquininha e confirme como antes (**Pago na maquininha** ou **Recebi R$ X**). O Checkout mostra a tela final com o QR e o código da galeria.
+9. Se você cancelar, o Checkout do cliente volta ao início.
+10. Imprima as fotos no Posto de venda. A tela final com o QR fica 30 segundos e volta sozinha ao **Iniciar**. Para atender o próximo antes disso, toque em **Voltar ao início**.
 
 Outras coisas que o cliente pode fazer:
-- Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha.
-- Desistir a qualquer momento com **Voltar ao início**. A escolha dele é apagada e a tela volta para a câmera.
+- Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha. Em tela pequena, as bandeiras ficam guardadas num botão com a bandeira atual.
+- Desistir a qualquer momento com **Voltar ao início** (a casinha). A escolha dele é apagada e a tela volta ao **Iniciar**.
 - Ficar o tempo que precisar escolhendo. O Checkout não volta sozinho no meio da escolha, só depois da compra.
 
-### O carrinho: pacote, adicionais e economia
+### Pacotes, adicionais e economia (escolhidos no Posto de venda desde a v95)
 
 O catálogo do Tour mudou na v79:
 
@@ -271,7 +275,7 @@ O catálogo do Tour mudou na v79:
 
 Todas as impressas são 10×15 cm.
 
-O que o cliente vê no carrinho:
+No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 - **Ideal**: o pacote mais barato para as fotos que ele escolheu, já somando as adicionais. Exemplo: 4 fotos saem por Zona Mista + 1 adicional (R$ 145), mais barato que o Gramado (R$ 150).
 - **Fotos com fundo de IA contam dentro do pacote.** Não são mais cobradas à parte no Checkout.
 - **5 fundos de IA por venda (v93)**: uma montagem para cada fundo, feita com os 2 primeiros cliques da sessão. Esses 2 cliques não aparecem como foto normal nem entram na contagem do "Todas".
@@ -288,13 +292,11 @@ Se o cliente volta ao Checkout com fotos que já comprou, aparece "Estas fotos j
 
 ### Dinheiro: aguardando caixa (vendedor e caixa)
 
-Quando o cliente escolhe **Dinheiro** no Checkout, a compra não é dada como paga. Ela espera alguém da equipe receber.
+Desde a v95 quem escolhe **Dinheiro** é você, no Posto de venda. A compra não é dada como paga até você receber.
 
 **O que o cliente vê**
-1. O botão vira "Finalizar e pagar R$ X no caixa".
-2. Na tela final aparece um ícone amarelo de dinheiro, "Pague no caixa em dinheiro", o valor, um **código** (exemplo: `K7QM-4WXR`) e o QR.
-3. Ele vai ao caixa e mostra o código.
-4. Se ele abrir o QR antes de pagar, aparece "Seu pagamento em dinheiro está esperando o caixa". As fotos só aparecem depois da confirmação.
+1. "Valor a pagar R$ X", o nome do pacote, "Pague em dinheiro ao atendente" e o **código** (exemplo: `K7QM-4WXR`).
+2. Se ele abrir a galeria antes de pagar, aparece que o pagamento está esperando. As fotos só aparecem depois da confirmação.
 
 **Como confirmar (caixa)**
 1. Na barra da equipe, toque em **Caixa**. O número ao lado mostra quantos pagamentos estão esperando.
@@ -526,20 +528,20 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 ### O que tem no Posto de venda
 
 - **No Checkout agora**: o que o cliente está vendo e escolhendo, ao vivo.
-- **Aguardando pagamento**: as compras de Cartão, PIX e Dinheiro esperando você.
+- **Aguardando pagamento**: as escolhas do Checkout esperando você escolher o pacote, a forma de pagamento e confirmar.
 - **Impressão 10×15**: as vendas pagas, com as fotos para imprimir já marcadas, e o contador do rolo.
 - **Minhas vendas de hoje**: as suas vendas neste notebook, com o valor de cada uma. Não mostra total.
 
 ### Confirmar na maquininha
 
-1. O cliente escolhe Cartão ou PIX no Checkout. A compra aparece em **Aguardando pagamento**, com o código, o valor e as fotos.
+1. Desde a v95 o cliente só escolhe as fotos. A compra aparece em **Aguardando pagamento** com o código e as fotos. Escolha o pacote e a forma de pagamento (Cartão, PIX ou Dinheiro); o cliente vê o valor na tela dele.
 2. Digite o valor na maquininha e espere aprovar.
 3. Toque em **Pago na maquininha**.
 4. Se quiser, digite o **NSU ou a autorização** do comprovante (só números, de 4 a 12). É opcional.
 5. **Nunca digite o número do cartão.** Se aparecer "Isso parece número de cartão", apague e digite só o NSU.
 6. Toque em **Confirmar R$ X**. O Checkout mostra o QR para o cliente.
 7. Dinheiro: receba e toque em **Recebi R$ X**.
-8. Se o cliente desistir ou a maquininha recusar de vez, toque em **Cancelar** e depois em **Sim, cancelar**. O Checkout volta ao carrinho dele.
+8. Se o cliente desistir ou a maquininha recusar de vez, toque em **Cancelar** e depois em **Sim, cancelar**. O Checkout dele volta ao início.
 
 ### Imprimir
 
