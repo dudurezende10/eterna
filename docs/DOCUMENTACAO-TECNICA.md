@@ -751,7 +751,7 @@ Igual no app (`SIM.galerias[token]`) e no agente (`~/Eterna/galerias/<token>/ses
 | Adaptador | Interface | Fase 1 | Fase 2 |
 | --- | --- | --- | --- |
 | Armazenamento `Repositorio` | `salvar_manifesto`, `ler_manifesto`, `subir`, `existe`, `url`, `abrir`, `apagar`, `listar_expiradas` | `RepositorioLocal` em `~/Eterna/galerias/<token>/{sessao.json,original/,vitrine/}` | `ETERNA_REPO=s3` (`put_object`, `generate_presigned_url`) ou `azure` (`upload_blob`, `generate_blob_sas`). Hoje levantam `NotImplementedError` |
-| Pagamento `Pagamento` | `criar(pedido)`, `consultar(id)`, `webhook(corpo,cabecalhos)` | `PagamentoSimulado`: aprova na hora e devolve `teste:true` | `ETERNA_PAGAMENTO=<provedor>` (Mercado Pago ou Asaas), chaves em `~/Eterna/pagamento.json` (chmod 600). Liberação só pelo webhook assinado ou pela consulta |
+| Pagamento `Pagamento` | `criar(pedido)`, `consultar(id)`, `webhook(corpo,cabecalhos)` | `PagamentoDesligado` (padrão, v93): `POST /g/<t>/pagamento` responde 501 `compra_indisponivel` e a galeria manda `compra:false`. `PagamentoSimulado` (aprova na hora, `teste:true`) só com `ETERNA_PAGAMENTO=simulado` e `ETERNA_MODO_TESTE=1` | `ETERNA_PAGAMENTO=<provedor>` (Mercado Pago ou Asaas), chaves em `~/Eterna/pagamento.json` (chmod 600). Liberação só pelo webhook assinado ou pela consulta |
 
 - As rotas não mudam quando o adaptador muda. Sem SDK nesta fase.
 - O preço é sempre recalculado no agente: `min(n × dig, todas)`. O `total` mandado pelo navegador é ignorado.
@@ -847,7 +847,7 @@ No navegador (modo SIM), as tentativas ficam em `sessionStorage` (`eterna.gq.<to
 | `~/Eterna/galeria-segredo.json` | segredo HMAC (chmod 600) |
 | `~/Eterna/pagamento.json` | chaves do adquirente (fase 2, chmod 600) |
 
-Variáveis novas: `ETERNA_REPO` (padrão `local`), `ETERNA_PAGAMENTO` (padrão `simulado`), `ETERNA_SEM_OPENCV` (testes).
+Variáveis novas: `ETERNA_REPO` (padrão `local`), `ETERNA_PAGAMENTO` (v93: padrão desligado; `simulado` só com `ETERNA_MODO_TESTE=1`), `ETERNA_SEM_OPENCV` (testes).
 
 ### Estado novo no app (`SIM`)
 

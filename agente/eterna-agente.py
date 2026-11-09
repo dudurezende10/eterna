@@ -3329,14 +3329,33 @@ class PagamentoSimulado(Pagamento):
         raise NotImplementedError
 
 
+class PagamentoDesligado(Pagamento):
+    """Sem adquirente real: a galeria não vende pelo celular (POST /g/<t>/pagamento responde 501, "compra": false)."""
+    def criar(self, pedido):
+        raise NotImplementedError("compra_indisponivel")
+
+    def consultar(self, id):
+        return {"id": id, "status": "desconhecido"}
+
+    def webhook(self, corpo, cabecalhos):
+        raise NotImplementedError
+
+
 def pagamento_escolhido():
-    tipo = (os.environ.get("ETERNA_PAGAMENTO") or "simulado").lower()
-    if tipo == "simulado":
+    """O pagamento simulado (aprova tudo, venda marcada como teste) só existe com ETERNA_PAGAMENTO=simulado E ETERNA_MODO_TESTE=1."""
+    tipo = (os.environ.get("ETERNA_PAGAMENTO") or "desligado").lower()
+    if tipo == "simulado" and os.environ.get("ETERNA_MODO_TESTE") == "1":
         return PagamentoSimulado()
+    if tipo in ("simulado", "desligado"):
+        return PagamentoDesligado()
     raise NotImplementedError("ETERNA_PAGAMENTO=%s ainda não implementado (fase 2; chaves em ~/Eterna/pagamento.json)" % tipo)
 
 
 PAGAMENTO = pagamento_escolhido()
+
+
+def compra_online():
+    return not isinstance(PAGAMENTO, PagamentoDesligado)
 
 
 def _iso(t=None):
@@ -3676,7 +3695,7 @@ def galeria_obj(token, m, pids):
                       "original": REPO.url(token, f["id"], "original", URL_TTL) if livre and REPO.existe(token, f["id"], "original") else None,
                       "chegando": not tem})
     return {"tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"], "estado": gal_estado(token, m),
-            "precos": m["precos"], "fotos": fotos}
+            "precos": m["precos"], "fotos": fotos, "compra": compra_online()}
 
 
 def gal_estado(token, m):
@@ -7161,7 +7180,7 @@ class H(BaseHTTPRequestHandler):
             if gal_expirou(m):
                 return self.js({"error": "expirada"}, 410)
             return self.js({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
-                            "estado": gal_estado(token, m), "venue": m.get("venue")})
+                            "estado": gal_estado(token, m), "venue": m.get("venue"), "compra": compra_online()})
         if acao == "foto" and len(partes) == 5:
             pid = partes[4]
             v = q.get("v", [""])[0]
@@ -7366,6 +7385,9 @@ class H(BaseHTTPRequestHandler):
                 acesso = secrets.token_urlsafe(24)
                 acessos[acesso] = {"token": token, "pids": pids, "exp": agora + ACESSO_TTL}
             return self.js({"ok": True, "acesso": acesso, "exp": _iso(acessos[acesso]["exp"]), "galeria": galeria_obj(token, m, pids)})
+        if acao == "pagamento" and not compra_online():
+            self.corpo(64 * 1024)
+            return self.js({"error": "compra_indisponivel"}, 501)      # sem adquirente: compra só no balcão
         if acao in ("galeria", "pagamento"):
             body, err = self.corpo(64 * 1024)
             if err:
@@ -7449,6 +7471,7 @@ class H(BaseHTTPRequestHandler):
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
                            estatisticas={"v": 2, "migracao": dict(est_migra)}, fuso=fuso_info(),
+                           pagamento="teste" if compra_online() else "desligado",
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
@@ -7833,7 +7856,8 @@ def main():
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
     threading.Thread(target=galeria_loop, daemon=True).start()
-    print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__, type(PAGAMENTO).__name__))
+    print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__,
+          "de TESTE (aprova sem cobrar)" if compra_online() else "desligado (compra só no balcão)"))
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     _rok, _rmot = rec_estado()

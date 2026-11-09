@@ -2279,6 +2279,7 @@ async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGa
   p.paying=true;
   try{if(p.modo==='agente'){const r=await fetch(galApi()+'/g/'+p.token+'/pagamento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,pids,metodo:p.pagM,idem:p.idem})});const j=await r.json().catch(()=>({}));
       if(r.status===401){pubAcessoVenceu(p);return;}
+      if(r.status===501){if(p.gal)p.gal.compra=false;p.step='galeria';p.sel={};render();toast(T('gq_buyOff'));return;}
       if(!j.ok){toast(T('gq_payFail'));return;}
       if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();}p.sel={};
       if(j.pedido&&j.pedido.status==='pendente'){p.step='aguardando';p.esperando=pids;pubAguardar(p);render();return;}
@@ -2332,14 +2333,15 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   if(p.step==='aguardando')return box(T('gq_waitPay'),'','<div class="gq-spin" aria-hidden="true"></div>');
   // galeria
   const mine=g.fotos.filter(f=>f.direito==='comprada'||f.direito==='cortesia');const more=g.fotos.filter(f=>f.direito==='venda');
-  const nSel=more.filter(f=>p.sel[f.pid]).length;const tot=pubTotal(nSel,g);const dig=(g.precos||{}).dig||priceOf('dig'),all=(g.precos||{}).todas||priceOf('mais');
+  const compra=g.compra!==false; // o servidor do ponto e a nuvem mandam compra:false quando a compra pelo celular está desligada
+  const nSel=compra?more.filter(f=>p.sel[f.pid]).length:0;const tot=pubTotal(nSel,g);const dig=(g.precos||{}).dig||priceOf('dig'),all=(g.precos||{}).todas||priceOf('mais');
   return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`)}
     <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${T('gq_kidFound',g.fotos.length)}</div>`:''}<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${mine.length?T('gq_yoursD',mine.length):T('gq_none')}</p>
       ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>
       ${mine.length>1?`<button class="lj-cta gq-dlall" data-act="gq-dlall">${ICO.cloud} ${T('gq_dlAll')}</button>`:''}`:''}</section>
     ${more.length?`<section class="gq-sec"><h2 class="lj-h2">${T('gq_more')}</h2><p class="lj-sub">${T('gq_moreD')} ${T('gq_each',fmtR(dig))}</p>
-      <div class="gq-grid">${more.map(f=>{const on=!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div><button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button></figure>`;}).join('')}</div>
-      <button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(Math.min(more.length*dig,all)))}</button></section>`:''}
+      <div class="gq-grid">${more.map(f=>{const on=compra&&!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>${compra?`<button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button>`:''}</figure>`;}).join('')}</div>
+      ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(Math.min(more.length*dig,all)))}</button>`:`<p class="lj-sub gq-buyoff">${T('gq_buyOff')}</p>`}</section>`:''}
     ${nSel?`<div class="gq-bar"><span><b>${T('nPhotos',nSel)}</b> · ${fmtR(tot)}</span><button class="lj-cta" data-act="gq-buy">${T('gq_buy',nSel,fmtR(tot))}</button></div>`:''}
     <p class="gq-help">${T('gq_help')}</p></div>`;}
 // ---------- Galerias online (administração): direito por foto, cortesias, grupos de escola e fila de envio ----------
@@ -2537,6 +2539,7 @@ const I18N={
  gq_each:[x=>`${x} cada`,x=>`${x} each`,x=>`${x} cada una`,x=>`${x} l’unité`,x=>`je ${x}`],
  gq_all:[x=>`Todas por ${x}`,x=>`All for ${x}`,x=>`Todas por ${x}`,x=>`Toutes pour ${x}`,x=>`Alle für ${x}`],
  gq_buy:[(n,x)=>`Comprar ${n} ${PL(n,'foto','fotos')} · ${x}`,(n,x)=>`Buy ${n} ${PL(n,'photo','photos')} · ${x}`,(n,x)=>`Comprar ${n} ${PL(n,'foto','fotos')} · ${x}`,(n,x)=>`Acheter ${n} ${PL(n,'photo','photos')} · ${x}`,(n,x)=>`${n} ${PL(n,'Foto','Fotos')} kaufen · ${x}`],
+ gq_buyOff:['Para comprar estas fotos, fale com a equipe do Tour no balcão.','To buy these photos, talk to the Tour team at the counter.','Para comprar estas fotos, habla con el equipo del Tour en el mostrador.','Pour acheter ces photos, adressez-vous à l’équipe du Tour au comptoir.','Um diese Fotos zu kaufen, wende dich an das Tour-Team am Schalter.'],
  gq_payTest:['Pagamento de teste. Nada é cobrado.','Test payment. Nothing is charged.','Pago de prueba. No se cobra nada.','Paiement de test. Rien n’est débité.','Testzahlung. Es wird nichts berechnet.'],
  gq_payFail:['Não foi possível concluir o pagamento. Tente de novo ou fale com a equipe do Tour.','We couldn’t complete the payment. Please try again or talk to the Tour team.','No pudimos completar el pago. Inténtalo de nuevo o habla con el equipo del Tour.','Le paiement n’a pas pu aboutir. Réessayez ou parlez à l’équipe du Tour.','Die Zahlung konnte nicht abgeschlossen werden. Versuch es noch einmal oder sprich mit dem Tour-Team.'],
  gq_again:['Por segurança, confirme com uma nova selfie para continuar.','For your security, please confirm with a new selfie to continue.','Por seguridad, confirma con una nueva selfie para continuar.','Par sécurité, confirmez avec un nouveau selfie pour continuer.','Zu deiner Sicherheit bestätige bitte mit einem neuen Selfie, um weiterzumachen.'],

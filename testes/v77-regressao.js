@@ -165,7 +165,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
   fotosNoInbox(H2,bufs.length>=3?pp.slice(0,3).map((p,i)=>[p,bufs[i]]).concat([[pp[3],jpegsLisos(1)[0]]]):pp.map((p,i)=>[p,jpegsLisos(4)[i]]));
   // galeria encerrada no HOME do agente B: a limpeza da primeira publicação cria a lápide; o app tem que tratar o 410
   const TZ2=tok();const MZ2=manifesto(TZ2,[{id:'ag_'+pp[3],sessao:'LPZ2',direito:'venda',canal:null}],{sessoes:['LPZ2']});fs.mkdirSync(path.join(H2,'Eterna','galerias',TZ2),{recursive:true});fs.writeFileSync(path.join(H2,'Eterna','galerias',TZ2,'sessao.json'),JSON.stringify({...MZ2,encerrada:true,expira:new Date(Date.now()-60e3).toISOString()}));
-  const B=await subir(P2,{ETERNA_APP_ORIGIN:ORIG,...(temCV?{}:{ETERNA_SEM_OPENCV:'1'})},H2);procs.push(B.p);CKS[P2]=S.sessao(H2);
+  const B=await subir(P2,{ETERNA_APP_ORIGIN:ORIG,ETERNA_PAGAMENTO:'simulado',ETERNA_MODO_TESTE:'1',...(temCV?{}:{ETERNA_SEM_OPENCV:'1'})},H2);procs.push(B.p);CKS[P2]=S.sessao(H2);
   let lig=false;if(temCV){for(let i=0;i<160;i++){const s=(await req(P2,'GET','/status')).j;if(s&&s.rostos&&s.rostos.ligado&&s.rostos.lidas>=4){lig=true;break;}await sleep(500);}}
   const ctxA=await b.newContext({viewport:{width:390,height:844},locale:'pt-BR'});await S.noNavegador(ctxA,P2,[CKS[P2],S.posto(H2,'Checkout v77')]); // pessoa conectada e aparelho pareado
   await ctxA.addInitScript(()=>{window.__toasts=[];document.addEventListener('DOMContentLoaded',()=>{const t=document.querySelector('#toast');if(t)new MutationObserver(()=>{if(t.textContent)window.__toasts.push(t.textContent);}).observe(t,{childList:true,characterData:true,subtree:true});});});
