@@ -130,4 +130,14 @@ chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tok3, codigo=None
 antes = R.indexadas
 st, r = chama("POST", "/g/%s/rosto" % tok3, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True})
 ok(st == 503 and R.indexadas == antes, "teto do dia atingido: nenhuma leitura paga a mais, cliente vê 'processando'")
+# esqueci a senha: só com o segredo do ponto; o login por código continua desligado mesmo com remetente
+enviados = []
+app._ses = types.SimpleNamespace(send_email=lambda **k: enviados.append(k))
+app.MAIL_FROM = "hello@eterna.photo"
+corpo = {"email": "ana@exemplo.com", "senha": "abc23def45gh", "idioma": "pt"}
+ok(chama("POST", "/auth/senha-email", corpo)[0] == 401 and not enviados, "senha-email sem o segredo do ponto: 401 e nada enviado")
+ok(chama("POST", "/auth/senha-email", dict(corpo, senha="tem espaco"), {"x-eterna-ponto": seg})[0] == 400 and not enviados, "senha-email com senha inválida: 400")
+ok(chama("POST", "/auth/senha-email", corpo, {"x-eterna-ponto": seg})[0] == 202 and len(enviados) == 1 and "abc23def45gh" in json.dumps(enviados[0]), "senha-email sai pelo SES com o segredo do ponto")
+ok(enviados[0]["FromEmailAddress"].endswith("<hello@eterna.photo>"), "remetente hello@")
+ok(chama("POST", "/auth/codigo", {"email": "ana@exemplo.com"})[0] == 502 and len(enviados) == 1, "login por código segue desligado com o remetente ligado")
 print("\ntudo certo")
