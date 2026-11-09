@@ -5040,6 +5040,10 @@ def auth_db():
     c.execute("create table if not exists sessao_login (token text primary key, usuario text, expira real)")
     c.execute("create table if not exists login_log (em real, usuario text, acao text, por text, ip text)")
     c.execute("create table if not exists reset_senha (usuario text primary key, hash text, sal text, n integer, expira real, pedido real)")
+    # posto pareado: cada aparelho (Checkout, caixa, TV) recebe um cookie próprio; aqui fica só o SHA-256 do token
+    c.execute("create table if not exists posto (id text primary key, nome text, num integer, hash text unique, criado_por text, criado_em real,"
+              " ultimo_uso real, ip_ultimo text, revogado_em real)")
+    c.execute("create table if not exists posto_convite (hash text primary key, nome text, expira real, usado real)")
     return c
 
 
@@ -5410,6 +5414,121 @@ def auth_criar_admin(usuario, nome):
                perms={m: dict(tudo) for m in AUTH_MODULOS}, createdBy=(atual or {}).get("createdBy") or "servidor")
     estado_gravar({"docs": [{"col": "usuarios", "id": id_doc, "valor": cad}]})
     print("Administrador %s. Senha provisória, troque na primeira entrada: %s" % (usuario, auth_criar(usuario, "servidor")))
+    return 0
+
+
+# ---------- Postos pareados ----------
+# O Admin pareia cada aparelho uma vez (Painel de controle, ou o link de uso único do comando --parear-posto). O aparelho guarda
+# o cookie eterna_posto (HttpOnly, 400 dias, revogável); o servidor guarda só o hash. O posto abre o Checkout sem pessoa logada.
+POSTO_COOKIE = "eterna_posto"
+POSTO_IDADE = 400 * 86400
+POSTO_CONVITE_S = 600
+posto_uso = {}                       # id -> última gravação de ultimo_uso (no máximo uma por minuto)
+
+
+def _sha(t):
+    return hashlib.sha256(t.encode()).hexdigest()
+
+
+def posto_nome_ok(nome):
+    n = re.sub(r"[<>\"'`&\x00-\x1f]", "", str(nome or "")).strip()[:40]
+    return n or None
+
+
+def posto_criar(nome, por="", ip=""):
+    """-> (token, {id, nome, num}). O token sai só aqui, para o cookie deste aparelho."""
+    token, pid = secrets.token_urlsafe(32), "p_" + secrets.token_hex(4)
+    with estado_lock:
+        db = auth_db()
+        try:
+            num = (db.execute("select coalesce(max(num), 0) from posto").fetchone()[0] or 0) + 1
+            db.execute("insert into posto values (?, ?, ?, ?, ?, ?, ?, ?, ?)", (pid, nome, num, _sha(token), por, time.time(), None, ip, None))
+            auth_log(db, "posto:" + pid, "posto_pareado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return token, {"id": pid, "nome": nome, "num": num}
+
+
+def posto_quem(token, ip=""):
+    """O posto deste cookie, se não foi revogado; senão None."""
+    if not token or len(token) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select id, nome, num from posto where hash=? and revogado_em is null", (_sha(token),)).fetchone()
+            if r and time.time() - posto_uso.get(r[0], 0) > 60:
+                posto_uso[r[0]] = time.time()
+                db.execute("update posto set ultimo_uso=?, ip_ultimo=? where id=?", (time.time(), ip, r[0]))
+                db.commit()
+        finally:
+            db.close()
+    return {"id": r[0], "nome": r[1], "num": r[2]} if r else None
+
+
+def posto_lista():
+    with estado_lock:
+        db = auth_db()
+        try:
+            cols = ("id", "nome", "num", "criado_por", "criado_em", "ultimo_uso", "ip_ultimo", "revogado_em")
+            return [dict(zip(cols, r)) for r in db.execute("select %s from posto order by num" % ", ".join(cols))]
+        finally:
+            db.close()
+
+
+def posto_revogar(pid, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            n = db.execute("update posto set revogado_em=? where id=? and revogado_em is null", (time.time(), str(pid))).rowcount
+            if n:
+                auth_log(db, "posto:" + str(pid), "posto_revogado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return bool(n)
+
+
+def posto_convite_novo(nome):
+    codigo = secrets.token_urlsafe(18)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from posto_convite where expira < ?", (time.time() - 86400,))
+            db.execute("insert into posto_convite values (?, ?, ?, ?)", (_sha(codigo), nome, time.time() + POSTO_CONVITE_S, None))
+            db.commit()
+        finally:
+            db.close()
+    return codigo
+
+
+def posto_convite_usar(codigo):
+    """O nome do posto do convite, uma única vez e dentro de 10 min; senão None."""
+    if not codigo or len(codigo) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select nome, expira from posto_convite where hash=? and usado is null", (_sha(codigo),)).fetchone()
+            if not r or r[1] < time.time():
+                return None
+            db.execute("update posto_convite set usado=? where hash=?", (time.time(), _sha(codigo)))
+            db.commit()
+        finally:
+            db.close()
+    return r[0]
+
+
+def posto_parear_cli(nome):
+    """python eterna-agente.py --parear-posto "<nome>": link de uso único (10 min) para parear um aparelho sem entrar no app."""
+    n = posto_nome_ok(nome)
+    if not n:
+        print("Nome do posto inválido.")
+        return 1
+    codigo = posto_convite_novo(n)
+    print("Abra no aparelho \"%s\" em até 10 minutos (vale uma vez), trocando 127.0.0.1 pelo endereço do servidor na rede se for outro aparelho:" % n)
+    print("  http://127.0.0.1:%d/postos/aceitar?c=%s" % (PORT, codigo))
     return 0
 
 
@@ -6374,16 +6493,93 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def auth_token(self):
+    def cookie_val(self, nome):
         for parte in (self.headers.get("Cookie") or "").split(";"):
             k, _, v = parte.strip().partition("=")
-            if k == AUTH_COOKIE:
+            if k == nome:
                 return v
         return None
 
-    def auth_cookie(self, token, idade):
+    def auth_token(self):
+        return self.cookie_val(AUTH_COOKIE)
+
+    def auth_cookie(self, token, idade, nome=AUTH_COOKIE):
         https = (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
-        self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (AUTH_COOKIE, token, idade, "; Secure" if https else "")
+        self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (nome, token, idade, "; Secure" if https else "")
+
+    def sessao(self):
+        """A pessoa conectada neste pedido (cookie eterna_sessao), lida uma vez por pedido."""
+        if "_eu" not in self.__dict__:
+            self._eu = auth_quem(self.auth_token())
+        return self._eu
+
+    def posto_atual(self):
+        """O posto pareado deste aparelho (cookie eterna_posto), lido uma vez por pedido."""
+        if "_posto" not in self.__dict__:
+            self._posto = posto_quem(self.cookie_val(POSTO_COOKIE), self.client_address[0])
+        return self._posto
+
+    def html(self, texto, code=200):
+        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Eterna</title>"
+                "<body style='font-family:system-ui;padding:32px;max-width:520px'>%s</body>" % texto).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        cookie = self.__dict__.pop("cookie_novo", None)
+        if cookie is not None:
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def postos_get(self, u, q):
+        """GET /postos/eu (o posto deste aparelho), GET /postos (lista, configuracao.r), GET /postos/aceitar?c= (link de uso único)."""
+        if (self.headers.get("Host") or "").lower() not in HOSTS_OK:
+            return self.js({"erro": "origem"}, 403)
+        if u.path == "/postos/eu":
+            p = self.posto_atual()
+            return self.js({"ok": True, "posto": p}, 200, True) if p else self.js({"erro": "sem_posto"}, 401, True)
+        if u.path == "/postos/aceitar":
+            nome = posto_convite_usar((q.get("c") or [""])[0])
+            if not nome:
+                return self.html("<h2>Link vencido ou já usado</h2><p>Gere outro no servidor do ponto.</p>", 410)
+            token, p = posto_criar(nome, "convite", self.client_address[0])
+            self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+            return self.html("<h2>Aparelho pareado</h2><p>Este aparelho agora é o posto <b>%s</b> (P%d).</p><p><a href='/#loja'>Abrir o Checkout</a> · <a href='/'>Abrir o Eterna</a></p>"
+                             % (p["nome"], p["num"]))
+        if u.path == "/postos":
+            eu = self.sessao()
+            if not eu:
+                return self.js({"erro": "sem_sessao"}, 401, True)
+            if not auth_pode(eu["cadastro"], "configuracao", "r"):
+                return self.js({"erro": "sem_permissao"}, 403, True)
+            return self.js({"ok": True, "postos": posto_lista()}, 200, True)
+        return self.js({"error": "not found"}, 404)
+
+    def postos_post(self, u):
+        """POST /postos/parear {nome} (grava o cookie deste aparelho) e POST /postos/revogar {id}: sessão com configuracao.u."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"erro": "origem"}, 403)
+        eu = self.sessao()
+        if not eu:
+            return self.js({"erro": "sem_sessao"}, 401, True)
+        if not auth_pode(eu["cadastro"], "configuracao", "u"):
+            return self.js({"erro": "sem_permissao"}, 403, True)
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        if u.path == "/postos/parear":
+            nome = posto_nome_ok(b.get("nome"))
+            if not nome:
+                return self.js({"erro": "nome"}, 400, True)
+            token, p = posto_criar(nome, eu["usuario"], self.client_address[0])
+            self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+            return self.js({"ok": True, "posto": p}, 200, True)
+        if u.path == "/postos/revogar":
+            if not posto_revogar(b.get("id"), eu["usuario"], self.client_address[0]):
+                return self.js({"erro": "not found"}, 404, True)
+            return self.js({"ok": True}, 200, True)
+        return self.js({"error": "not found"}, 404)
 
     def auth_get(self):
         """GET /auth/eu: quem está conectado neste navegador. GET /auth/senhas: quem tem senha, para quem pode Ver em Senhas de acesso."""
@@ -6981,6 +7177,8 @@ class H(BaseHTTPRequestHandler):
             return self.gal_get(u, q)
         if u.path in ("/auth/eu", "/auth/senhas"):
             return self.auth_get()
+        if u.path in ("/postos", "/postos/eu", "/postos/aceitar"):
+            return self.postos_get(u, q)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/status":
@@ -7144,6 +7342,8 @@ class H(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin") or ""
         if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar"):
             return self.auth_post(u)
+        if u.path in ("/postos/parear", "/postos/revogar"):
+            return self.postos_post(u)
         if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
@@ -7383,4 +7583,6 @@ def main():
 if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-admin":
         sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
+        sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()
