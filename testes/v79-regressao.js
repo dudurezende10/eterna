@@ -292,11 +292,11 @@ try{
   ok(L.tl['Aguardando caixa']==='1','1.10: bloco Aguardando caixa: '+J(L.tl));
   const fotosAg=await D.evaluate(id=>ETERNA.allSales().find(r=>r.no===id).photos,r10.id);ok(fotosAg===3,'rev 11: fotos na pendente: '+fotosAg);
   const rec0=L.tl['Receita'],v0=L.tl['Vendas'];
-  await D.click('[data-act="sales-status"][data-v="aguardando"]');await D.waitForTimeout(150);
+  await D.selectOption('select[data-act="sales-status"]','aguardando');/* v94-ux (parte J): filtro em select */await D.waitForTimeout(150);
   const Lf=await D.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(r=>r.innerText.replace(/\s+/g,' ')));ok(Lf.length===1&&Lf[0].includes(r10.id),'1.10: filtro Aguardando caixa: '+J(Lf));
-  await D.click('[data-act="sales-status"][data-v="nao_paga"]');await D.waitForTimeout(150);
+  await D.selectOption('select[data-act="sales-status"]','nao_paga');/* v94-ux (parte J): filtro em select */await D.waitForTimeout(150);
   const Ln=await D.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(r=>r.innerText.replace(/\s+/g,' ')));ok(Ln.some(r=>r.includes(r9.id))&&Ln.every(r=>/não paga/.test(r)),'1.10: filtro Não pagas: '+J(Ln));
-  await D.click('[data-act="sales-status"][data-v="all"]');await D.waitForTimeout(100);await D.screenshot({path:`${P}/v79-lista-vendas.png`});
+  await D.selectOption('select[data-act="sales-status"]','all');/* v94-ux (parte J): filtro em select */await D.waitForTimeout(100);await D.screenshot({path:`${P}/v79-lista-vendas.png`});
   const csv=await D.evaluate(()=>ETERNA.salesCSV(ETERNA.allSales()));const lin=csv.split('\n');
   ok(lin[0].includes(';caixa;caixa_em;')&&lin[0].endsWith(';posto;pagamento_ref;impressao'),'1.10: CSV sem as colunas caixa e caixa_em: '+lin[0]);
   ok(lin.some(l=>l.includes(r10.id)&&l.includes('"aguardando"'))&&lin.some(l=>l.includes(r9.id)&&l.includes('"nao_paga"')),'1.10: CSV com aguardando e nao_paga');

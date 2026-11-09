@@ -58,7 +58,7 @@ try{
   ok(await C.evaluate(()=>!ETERNA.state.kiosk.timer),'24: o timer da tela final deveria morrer ao voltar');
   // tempo configurável no Catálogo (seção Checkout): 10 s
   dbg('catalogo 10s');
-  {const A0=await nova(ctxC,'catalogo');await login(A0);await A0.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await A0.fill('#loja-fim','10');await A0.press('#loja-fim','Tab');await A0.waitForTimeout(150);
+  {const A0=await nova(ctxC,'catalogo');await login(A0);await A0.evaluate(()=>{ETERNA.state.catTab='checkout';/* v94-ux (parte I): aba Checkout */ETERNA.state.view='catalogo';ETERNA.render();});await A0.fill('#loja-fim','10');await A0.press('#loja-fim','Tab');await A0.waitForTimeout(150);
     ok(await A0.evaluate(()=>ETERNA.SIM.lojaFimSeg)===10,'24: o Catálogo não gravou o tempo da tela final');await A0.evaluate(()=>localStorage.removeItem('eterna.session'));await A0.close();
     await C.reload();await C.waitForTimeout(400);await C.clock.pauseAt(new Date(Date.now()+120000));await compraLoja(C,cards[3]||card2); // v79: sessão já paga não paga de novo (revisão 1), então outra sessão
     await C.clock.runFor(9000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: com 10 s, aos 9 s a tela final deveria continuar');
@@ -128,7 +128,7 @@ try{
   // ---------- 9 e 10 na administração ----------
   dbg('9 e 10 na administração');
   const A=await nova(ctx,'admin',{width:1440,height:900});await login(A);await A.evaluate(()=>{ETERNA.state.range={from:'2026-01-01',to:'2099-12-31'};ETERNA.state.view='vendas-lista';ETERNA.render();});await A.waitForTimeout(200);
-  await A.click('[data-act="sales-canal"][data-v="online"]');const v10=await A.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(tr=>tr.innerText));
+  await A.selectOption('select[data-act="sales-canal"]','online');/* v94-ux (parte J): filtro em select */const v10=await A.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(tr=>tr.innerText));
   ok(v10.length===1&&/Online/.test(v10[0])&&/teste/.test(v10[0])&&!/Recibo|Cancelar/.test(v10[0]),'10: filtro Online na Lista de vendas: '+JSON.stringify(v10).slice(0,200));
   const [dl]=await Promise.all([A.waitForEvent('download'),A.click('[data-act="sales-csv"]')]);const csv=fs.readFileSync(await dl.path(),'utf8');ok(/;"?canal"?/.test(csv.split('\n')[0])&&/online/.test(csv),'10: CSV sem a coluna canal');
   await A.evaluate(()=>{ETERNA.state.view='galerias';ETERNA.render();});await A.fill('[data-act="gal-q"]',card);await A.click(`[data-act="gal-open"][data-card="${card}"]`);
