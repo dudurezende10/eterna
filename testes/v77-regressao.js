@@ -274,7 +274,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
         await L.click('.lj-next');await L.waitForTimeout(250);await L.click('[data-act="loja-paym"][data-m="pix"]');await etapa('pagamento');
         await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);await maquininha(L);const fim=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,qr:!!document.querySelector('#lqr canvas,#lqr img'),cod:(document.querySelector('.lj-qrcode')||{}).textContent||''}));
         ok(fim.step==='done'&&fim.qr&&/[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}/.test(fim.cod),`Checkout ${w}px ${l}: tela final sem QR ou código `+JSON.stringify(fim));await etapa('pronto');
-        await L.click('.lj-restart');}}
+        await L.click('.lj-novo');}} // v94-ux: "Voltar ao início" amarelo virou "Novo cliente" no canto (parte G)
     await L.close();}
   // ---- recarregar telas da equipe nunca cai na Loja; caixa e recibo com QR; Lista de vendas, CSV e Catálogo
   dbg('reload');

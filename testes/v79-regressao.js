@@ -126,10 +126,10 @@ try{
   fase='1.4';
   const antes=await sim(A);const ai0=J((antes.ai||{})[C1]||null);
   await A.click('[data-act="loja-checkout"]');await A.waitForTimeout(500);
-  // v94-ux: "Código X" virou "Seu código: X" (gq_codeIs, parte F)
+  // v94-ux: na espera, o código aparece sozinho em 56 px, com "Seu código" em cima (partes F e G)
   const fim=await A.evaluate(()=>({step:ETERNA.state.kiosk.step,pend:!!document.querySelector('.lj-pendbig'),okbig:!!document.querySelector('.lj-okbig'),h1:document.querySelector('.lj-h1').innerText.replace(/\s+/g,' ').toLowerCase(),t:document.querySelector('#main').innerText.replace(/\s+/g,' '),cod:(document.querySelector('.lj-qrcode')||{}).innerText||'',qr:!!document.querySelector('#lqr')}));
   ok(fim.step==='done'&&fim.pend&&!fim.okbig,'1.2: tela final do dinheiro com ícone próprio e sem o check: '+J(fim));
-  ok(fim.h1==='pague no caixa em dinheiro'&&/pague R\$ 190/.test(fim.t)&&/8 impressas/.test(fim.t)&&/^Seu código: [A-Z2-9]{4}-[A-Z2-9]{4}$/.test(fim.cod)&&!fim.qr,'1.2 (v83: sem QR enquanto espera): título, valor e código: '+J(fim));
+  ok(fim.h1==='pague no caixa em dinheiro'&&/pague R\$ 190/.test(fim.t)&&/8 impressas/.test(fim.t)&&/^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(fim.cod)&&!fim.qr,'1.2 (v83: sem QR enquanto espera): título, valor e código: '+J(fim));
   ok(!/Obrigado|2 minutos/.test(fim.t),'1.2: não pode aparecer Obrigado nem "2 minutos" no dinheiro');
   await A.screenshot({path:`${P}/v79-dinheiro-pt.png`});
   for(const l of ['en','es','fr','de']){await A.click(`[data-act="lang"][data-l="${l}"]`);await A.waitForTimeout(80);const t=await txt(A,'#main');ok(!/ljCash|gq_codeIs|payBtnCash/.test(t)&&/190/.test(t),`1.2: tela do dinheiro em ${l}: ${t.slice(0,120)}`);if(l==='de')await A.screenshot({path:`${P}/v79-dinheiro-de.png`});}
@@ -158,7 +158,8 @@ try{
   // v83 (D5): enquanto espera o pagamento não há contagem; a tela fica até o vendedor confirmar ou o cliente tocar em Voltar ao início
   await A.evaluate(()=>{ETERNA.SIM.lojaFimSeg=5;});await sleep(5600);
   ok(await A.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.timer),'1.3: tela do dinheiro aguardando não pode voltar sozinha');
-  await A.click('[data-act="loja-new"]');await A.waitForTimeout(150);ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: Voltar ao início');
+  // v94-ux: na espera não há mais o botão amarelo; a casa pergunta "Cancelar o pedido?" e "Sim, sair" volta ao início (parte G)
+  await A.click('[data-act="loja-sair-ask"]');await A.waitForTimeout(150);await A.click('.lj-mx [data-act="loja-new"]');await A.waitForTimeout(150);ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: Voltar ao início');
 
   // ---- 1.5: galeria no mesmo computador
   fase='1.5';
@@ -273,7 +274,7 @@ try{
   fase='rev2';
   for(const l of ['pt','de']){await A.click(`[data-act="lang"][data-l="${l}"]`);await A.waitForTimeout(120);
     const lay=await A.evaluate(()=>{const R=s=>{const e=document.querySelector(s);return e?e.getBoundingClientRect():null;};const cod=document.querySelector('.lj-qrcode');const fs=parseFloat(getComputedStyle(cod).fontSize);
-      const top=R('.lj-top'),ic=R('.lj-pendbig'),bt=R('.lj-restart');return {umaLinha:R('.lj-qrcode').height<fs*1.6,abaixo:ic.top>=top.bottom-1,btn:bt.right<=innerWidth+1&&bt.left>=-1&&bt.bottom<=innerHeight+1,sw:document.documentElement.scrollWidth<=innerWidth+1};});
+      const top=R('.lj-top'),ic=R('.lj-pendbig'),bt=R('.lj-ic[data-act="loja-sair-ask"]'); // v94-ux: na espera, a saída é a casa do topo (parte G)return {umaLinha:R('.lj-qrcode').height<fs*1.6,abaixo:ic.top>=top.bottom-1,btn:bt.right<=innerWidth+1&&bt.left>=-1&&bt.bottom<=innerHeight+1,sw:document.documentElement.scrollWidth<=innerWidth+1};});
     ok(lay.umaLinha&&lay.abaixo&&lay.btn&&lay.sw,`rev 2: tela final do dinheiro em 390×844 (${l}): ${J(lay)}`);await A.screenshot({path:`${P}/v79-dinheiro-390-${l}.png`});}
   await A.click('[data-act="lang"][data-l="pt"]');await A.setViewportSize({width:1366,height:900});
   const D=await pagina(ctx,'D admin');ok(await login(D,'eduardo@eduardorezende.com'),'1.10: admin não entrou');
@@ -434,7 +435,7 @@ try{
     fase='3.3';
     await abrir();await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(400);
     await pg.evaluate(()=>{ETERNA.state.kiosk.step='cart';ETERNA.render();});await pg.waitForTimeout(150);await pagar(pg,'card');
-    await pg.click('.lj-restart');await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir');
+    await pg.click('[data-act="loja-sair-ask"]');await pg.waitForTimeout(150);await pg.click('.lj-mx [data-act="loja-new"]');await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir'); // v94-ux: saída da espera pela casa (parte G)
     // I1: recarregar a janela do Checkout não entra logado (a sessão salva continua para as outras janelas)
     fase='I1';
     await pg.reload();await pg.waitForTimeout(600);

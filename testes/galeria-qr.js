@@ -63,7 +63,7 @@ try{
     await C.clock.runFor(9000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: com 10 s, aos 9 s a tela final deveria continuar');
     await C.clock.runFor(1300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: com 10 s, deveria voltar aos 10 s');}
   // botão antes do tempo
-  const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-restart');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Voltar ao início" deveria voltar na hora');
+  const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-novo');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Novo cliente" deveria voltar na hora'); // v94-ux: lj-restart virou lj-novo (parte G)
   // ---------- 23. 5 minutos parado nas fotos não mudam de etapa (A3 cancelado) ----------
   dbg('23. 5 minutos parado nas fotos não mudam');
   const card4=cards[4]||cards[0]; // v79: card3 já foi paga e sessão paga não abre a escolha de novo (revisão 1)

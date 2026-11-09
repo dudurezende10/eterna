@@ -539,6 +539,42 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-okbig{width:110px;height:110px;border-radius:50%;background:#43B02A;color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 14px rgba(67,176,42,.2),0 0 0 30px rgba(255,184,0,.12)}.lj-okbig svg{width:58px;height:58px}
 .lj-qrcard{background:#fff;color:#0C2340;border-radius:16px;padding:14px 14px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;font-weight:700;font-size:14px}.lj-qrcard span{display:inline-flex;align-items:center;gap:6px}.lj-qrcard svg{width:20px;height:20px;color:#134078}
 .lj-qr{width:150px;height:150px;display:flex;align-items:center;justify-content:center}
+/* v94 (ondas UX, G): campo do código, pacotes no monitor, espera e tela final */
+.lj .lj-heroin input.lj-code{width:clamp(420px,32vw,520px);max-width:92vw;font-size:32px;font-weight:700;text-align:center;letter-spacing:.12em;margin-inline:auto;display:block;color:#fff;background:#0C2340;border:2px solid rgba(255,255,255,.7)}
+.lj .lj-heroin input.lj-code:focus{border-color:#FFB800;outline:none;box-shadow:0 0 0 4px rgba(255,184,0,.35)}
+.lj .lj-heroin input.lj-code::placeholder{color:rgba(255,255,255,.7);opacity:1}
+@media (min-width:1600px) and (min-height:900px){
+  .lj-checkout .lj-co{min-height:calc(100vh - 140px)}
+  .lj-checkout .lj-pkgs{grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr}
+  .lj-checkout .lj-pkg{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;padding:18px 12px 14px}
+  .lj-checkout .lj-pkg .lj-radio{position:absolute;top:12px;left:12px}
+  .lj-checkout .lj-pkgn{font-size:48px}
+  .lj-checkout .lj-pkgd{align-items:center}
+  .lj-checkout .lj-pkgd b,.lj-checkout .lj-pkgd small{font-size:16px}
+  .lj-checkout .lj-pkgp{font-size:32px}
+}
+.lj-done .lj-waitcard{gap:6px;padding:18px 22px 14px}
+.lj-waitlbl{font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#5b6b83}
+.lj-done .lj-waitcard .lj-qrcode.lj-waitcode{font-family:'Big Shoulders Display','Arial Narrow',sans-serif;font-weight:800;font-size:56px;letter-spacing:.08em;white-space:nowrap;line-height:1;color:#134078}
+.lj-showcode{font-size:18px;font-weight:700;color:#0C2340}
+.lj-waitsub{font-size:14px;font-weight:500;color:#5b6b83;text-align:center}
+@media (max-width:700px){.lj-done .lj-waitcard .lj-qrcode.lj-waitcode{font-size:clamp(36px,11vw,56px)}}
+.lj-qrcard.lj-final{display:grid;grid-template-columns:auto auto;gap:20px;align-items:center;justify-items:center}
+.lj-qrcard.lj-final:not(.lj-qrcom){grid-template-columns:auto}
+.lj-qrcol{display:flex;flex-direction:column;align-items:center;gap:8px}
+.lj-done .lj-heroin>.lj-qrcard.lj-final .lj-qr,.lj-qrcard.lj-final .lj-qr{width:clamp(320px,36vh,400px);height:auto}
+.lj-qrcard.lj-final .lj-qr canvas,.lj-qrcard.lj-final .lj-qr img{width:100%!important;height:auto!important}
+.lj-qrcard.lj-final .lj-qrfoto{height:min(46vh,420px)}
+.lj-dl{display:inline-flex;align-items:center;gap:8px}
+.lj-qrcard span.lj-dl .lj-dlic{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:#134078;color:#fff;flex:0 0 32px}.lj-dlic svg{width:18px;height:18px;stroke:#fff}
+@media (max-width:900px){.lj-qrcard.lj-final{grid-template-columns:1fr}.lj-done .lj-heroin>.lj-qrcard.lj-final .lj-qr,.lj-qrcard.lj-final .lj-qr{width:min(78vw,320px)}.lj-qrcard.lj-final .lj-qrfoto{height:160px}}
+.lj-novo{position:fixed;right:max(20px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:5;min-height:44px;padding:0 18px;font-size:14px;font-weight:600;border:1px solid rgba(255,255,255,.7);border-radius:999px;background:rgba(12,35,64,.55);color:#fff;cursor:pointer}
+.lj-mx{position:fixed;inset:0;z-index:90;background:rgba(5,15,30,.72);display:flex;align-items:center;justify-content:center;padding:20px}
+.lj-mxbox{background:#fff;color:#0C2340;border-radius:18px;padding:28px 26px;max-width:560px;width:100%;display:flex;flex-direction:column;gap:12px;text-align:center}
+.lj-mxbox .lj-h2{color:#0C2340}.lj-mxbox .lj-sub{color:#25282A;margin:0}
+.lj-mxbtns{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.lj-mxok{min-height:56px;border-radius:999px;background:#134078;color:#fff;font-weight:700;font-size:18px;padding:0 24px}
+.lj-mxsair{min-height:48px;border-radius:999px;border:1.5px solid #134078;color:#134078;background:#fff;font-weight:600;font-size:16px;padding:0 24px}
 @media (max-width:900px){.lj-co{grid-template-columns:1fr}.lj-order{position:static}.lj-steps span{font-size:0;gap:0}.lj-steps i{width:12px}}
 @media (max-width:640px){.lj-stage{grid-template-columns:minmax(0,1fr)}.lj-nav{display:none}.lj-print{width:100%}.lj-foot{flex-direction:column;align-items:stretch}.lj-next{width:100%}.lj-strip{order:2}.lj-cartpill span{display:none}.lj-steps{display:none}.lj-pkg{grid-template-columns:20px 44px minmax(0,1fr) auto;}.lj-pkg .lj-badge{display:none}.lj-pkgn{font-size:26px}.lj-minis{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.lj-no{width:64px;height:64px}.lj-yes{width:84px;height:84px}.lj .lj-v{opacity:.3}}
 @media (max-height:700px) and (min-width:641px){.lj-print{width:min(100%,calc((100vh - 300px) * 1.5))}.lj-title{margin:0 0 4px}.lj-h1{font-size:clamp(36px,6vw,64px)}}
@@ -2051,13 +2087,13 @@ const ICO={
   full:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   list:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'};
 const PAYS=[['card','Cartão'],['pix','PIX'],['cash','Dinheiro']];
-function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}Object.assign(k,{step:'code',t0:null,code:'',so:null,tv:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
+function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}Object.assign(k,{step:'code',t0:null,code:'',so:null,tv:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null,sairAsk:false});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 // relê o SIM da outra janela sem perder as escolhas desta sessão no Checkout
 function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk)simOf(card).pick=pk;}
 // revisão 1: nenhuma forma de pagamento tira uma sessão de "paga" (comprar mais é com a equipe)
 const lojaJaPaga=card=>(SIM.sessions[card]||{}).status==='paga';
 // tela final: com paid.wait (cartão, PIX ou dinheiro aguardando) não há QR nem contagem; a contagem só começa depois da confirmação (D5)
-function lojaFim(paid){const k=state.kiosk;lojaTimerOff();k.step='done';k.paid=paid;k.doneAt=paid&&paid.wait?null:Date.now();render();if(!(paid&&paid.wait))k.timer=setInterval(lojaTick,250);}
+function lojaFim(paid){const k=state.kiosk;lojaTimerOff();k.step='done';k.sairAsk=false;k.paid=paid;k.doneAt=paid&&paid.wait?null:Date.now();render();if(!(paid&&paid.wait))k.timer=setInterval(lojaTick,250);}
 // v83 (D3): toda forma de pagamento do Checkout vira pedido aguardando; o "pago no toque" deixou de existir
 function lojaPay(m){lojaPedido(state.kiosk.code,PAY_MEIO[m]||m);}
 // v79/v83: Cartão, PIX e Dinheiro no Checkout ficam "aguardando". Nada de venda, estoque, fundo comprado ou galeria publicada até o vendedor confirmar no Posto de venda (ou no Caixa).
@@ -2087,7 +2123,7 @@ function lojaPendCheck(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||
   if(r.estado==='confirmada'){const g=(SIM.galerias||{})[p.token];k.paid=Object.assign({},p,{wait:false,cash:false,codigo:(g&&g.codigo)||p.codigo});k.doneAt=Date.now();lojaTimerOff();k.timer=setInterval(lojaTick,250);return true;}
   if(r.estado==='cancelada'){lojaTimerOff();k.step='cart';k.pay=null;k.paid=null;k.doneAt=null;k.aviso='ljPayCancelled';return true;}
   lojaTimerOff();lojaReset();return true;}
-function drawLojaQR(){const el=$('#lqr');if(!el)return;const p=state.kiosk.paid||{};qrDraw(el,p.token?galBase()+p.token:'https://eterna.photo/#g',150,p.codigo||'QR');}
+function drawLojaQR(){const el=$('#lqr');if(!el)return;const p=state.kiosk.paid||{};qrDraw(el,p.token?galBase()+p.token:'https://eterna.photo/#g',400,p.codigo||'QR');} // v94 (C18): 400 px, nítido no monitor
 // ---------- Loja apartada: rota pública #loja, sem login, sempre em tela cheia ----------
 // Saída só da equipe: Esc ou 3 toques seguidos no logo. Depois da compra volta sozinha à câmera em 5 s.
 // O único temporizador da Loja é o da tela final, e ele morre ao sair da rota, trocar de etapa ou recarregar.
@@ -2589,6 +2625,11 @@ const I18N={
  ljPosWait:['Assim que o pagamento for aprovado, suas fotos aparecem aqui.','As soon as your payment is approved, your photos appear here.','En cuanto se apruebe el pago, tus fotos aparecen aquí.','Dès que le paiement est accepté, vos photos apparaissent ici.','Sobald die Zahlung bestätigt ist, erscheinen deine Fotos hier.'],
  ljPosCode:[c=>`Seu código: ${c}`,c=>`Your code: ${c}`,c=>`Tu código: ${c}`,c=>`Votre code : ${c}`,c=>`Dein Code: ${c}`],
  ljShowCode:['Mostre este código ao atendente','Show this code to the attendant','Muestra este código al asistente','Montrez ce code à l’employé','Zeig diesen Code am Tresen'],
+ ljCancelAskH:['Cancelar o pedido?','Cancel your order?','¿Cancelar el pedido?','Annuler la commande ?','Bestellung abbrechen?'],
+ ljCancelAskSub:['Se você já pagou, chame o atendente antes de sair.','If you have already paid, call the attendant before leaving.','Si ya pagaste, llama al asistente antes de salir.','Si vous avez déjà payé, appelez l’employé avant de partir.','Wenn du schon bezahlt hast, ruf bitte das Team, bevor du gehst.'],
+ ljCancelNo:['Não, continuar aqui','No, stay here','No, seguir aquí','Non, rester ici','Nein, hier bleiben'],
+ ljCancelYes:['Sim, sair','Yes, leave','Sí, salir','Oui, quitter','Ja, verlassen'],
+ ljNewClient:['Novo cliente','Next guest','Nuevo cliente','Client suivant','Nächster Gast'],
  ljPayCancelled:['O pagamento foi cancelado. Você pode mudar a escolha e pagar de novo.','The payment was cancelled. You can change your selection and pay again.','El pago fue cancelado. Puedes cambiar tu elección y pagar de nuevo.','Le paiement a été annulé. Vous pouvez modifier votre choix et payer à nouveau.','Die Zahlung wurde abgebrochen. Du kannst deine Auswahl ändern und erneut bezahlen.'],
  payBtnCash:[x=>`Finalizar e pagar ${x} no caixa`,x=>`Finish and pay ${x} at the counter`,x=>`Finalizar y pagar ${x} en la caja`,x=>`Terminer et payer ${x} à la caisse`,x=>`Abschließen und ${x} an der Kasse bezahlen`],
  cashNote:['Em dinheiro, a compra é confirmada no caixa.','Cash purchases are confirmed at the counter.','En efectivo, la compra se confirma en la caja.','En espèces, l’achat est confirmé à la caisse.','Bei Barzahlung wird der Kauf an der Kasse bestätigt.'],
@@ -2619,7 +2660,7 @@ function vQuiosque(){
         <div class="lj-eyebrow">${T('relive')}</div>
         <h1 class="lj-h1">${T('yourPhotos')}</h1>
         ${emerg?`<p class="lj-sub">${T('typeCode')}</p>
-          <input type="text" class="lj-code" id="kcode" placeholder="LP..." value="${esc(k.code)}" aria-label="${T('receiptCode')}" autofocus>
+          <input type="text" class="lj-code" id="kcode" placeholder="XXXX-XXXX" value="${esc(k.code)}" aria-label="${T('receiptCode')}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="14" inputmode="text" autofocus>
           <div class="lj-row"><button class="lj-cta" data-act="kiosk-go">${T('seeMine')} ${ICO.arrow}</button>${ljVoltar('kiosk-back','')}</div>`
         :`<p class="lj-sub">${T('lookCam')}</p>
           <div class="lj-cam">${camBox()}</div>
@@ -2684,17 +2725,18 @@ function vQuiosque(){
   // o QR vem em cima de uma foto escolhida pelo cliente (como no sistema anterior): com várias pessoas no balcão, cada uma
   // reconhece o próprio QR e ninguém lê o do vizinho
   if(k.step==='done'){const p=k.paid||{};const wait=!!p.wait;const fotoQR=((SIM.sessions[k.code]||{}).selected||[])[0]||null;const cash=wait&&(!!p.cash||p.meio==='dinheiro');const pos=wait&&!cash;const pix=p.meio==='pix';
-    return `<div class="lj lj-full lj-done${cash?' lj-cashdone':''}${pos?' lj-posdone':''}" lang="${lang()}">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(wait?2:3)}${topR(`<button class="lj-ic" data-act="loja-new" aria-label="${T('nextGuest')}">${ICO.home}</button>`)}</div>
+    return `<div class="lj lj-full lj-done${cash?' lj-cashdone':''}${pos?' lj-posdone':''}" lang="${lang()}">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(wait?2:3)}${topR(`<button class="lj-ic" data-act="${wait?'loja-sair-ask':'loja-new'}" aria-label="${T('nextGuest')}">${ICO.home}</button>`)}</div>
       <div class="lj-heroin">${cash?`<div class="lj-pendbig">${ICO.cash}</div><div class="lj-eyebrow">${T('ljCashEyebrow')}</div><h1 class="lj-h1">${T('ljCashH')}</h1>
         <p class="lj-sub">${T('ljCashSub',fmtR(p.total||0),p.prints||0)}</p>`
         :pos?`<div class="lj-pendbig">${pix?ICO.pix:ICO.card}</div><div class="lj-eyebrow">${T('ljPosEyebrow')}</div><h1 class="lj-h1">${T(pix?'ljPosPixH':'ljPosCardH')}</h1>
         <p class="lj-sub">${T(pix?'ljPosPixSub':'ljPosCardSub',fmtR(p.total||0))}</p>`
         :`<div class="lj-okbig">${ICO.ok}</div><div class="lj-eyebrow">${T('thanks')}</div><h1 class="lj-h1">${T('storyGoes')}</h1>
         <p class="lj-sub">${p.prints?T('printsReady',p.prints)+'<br>':''}${T('scanQR')}</p>`}
-        ${wait?`<div class="lj-qrcard lj-waitcard">${p.codigo?`<b class="lj-qrcode">${cash?T('gq_codeIs',`<span class="lj-nw">${esc(p.codigo)}</span>`):T('ljPosCode',`<span class="lj-nw">${esc(p.codigo)}</span>`)}</b>`:''}<span>${T('ljPosWait')}</span></div>`
-        :`<div class="lj-qrcard${fotoQR?' lj-qrcom':''}">${fotoQR?`<div class="lj-qrfoto" style="${bigStyle(fotoQR)}"><div id="lqr" class="lj-qr" aria-label="QR"></div></div>`:'<div id="lqr" class="lj-qr" aria-label="QR"></div>'}${p.codigo?`<b class="lj-qrcode">${T('gq_codeIs',p.codigo)}</b>`:''}<span>${ICO.phone} ${T('download')}</span></div>
+        ${wait?`<div class="lj-qrcard lj-waitcard">${p.codigo?`<span class="lj-waitlbl">${T('receiptCode')}</span><b class="lj-qrcode lj-waitcode">${esc(p.codigo)}</b><span class="lj-showcode">${T('ljShowCode')}</span>`:''}<small class="lj-waitsub">${T('ljPosWait')}</small></div>`
+        :`<div class="lj-qrcard lj-final${fotoQR?' lj-qrcom':''}"><div class="lj-qrcol"><div id="lqr" class="lj-qr" aria-label="QR"></div>${p.codigo?`<b class="lj-qrcode">${T('gq_codeIs',esc(p.codigo))}</b>`:''}<span class="lj-dl"><i class="lj-dlic">${ICO.phone}</i>${T('download')}</span></div>${fotoQR?`<div class="lj-qrfoto" style="${bigStyle(fotoQR)}"></div>`:''}</div>
         <div class="lj-volta"><span>${T('ljBackIn')}</span><span class="lj-volta-ring" id="lj-volta-ring" style="--p:${k.doneAt?Math.max(0,1-(Date.now()-k.doneAt)/lojaFimMs()):1}"><b id="lj-volta-n">${k.doneAt?Math.max(0,Math.ceil((lojaFimMs()-(Date.now()-k.doneAt))/1000)):lojaFimSeg()}</b></span></div>`}
-        <button class="lj-cta lj-restart" data-act="loja-new">${ICO.face} ${T('ljBackStart')}</button></div></div>`;}
+        </div>${wait?'':`<button class="lj-novo" data-act="loja-new">${T('ljNewClient')}</button>`}
+        ${wait&&k.sairAsk?`<div class="lj-mx" role="dialog" aria-modal="true" aria-labelledby="lj-mx-h"><div class="lj-mxbox"><h2 class="lj-h2" id="lj-mx-h">${T('ljCancelAskH')}</h2><p class="lj-sub">${T('ljCancelAskSub')}</p><div class="lj-mxbtns"><button class="lj-mxok" data-act="loja-sair-no">${T('ljCancelNo')}</button><button class="lj-mxsair" data-act="loja-new">${T('ljCancelYes')}</button></div></div></div>`:''}</div>`;}
   lojaReset();return vQuiosque();
 }
 function bigStyle(id){let st=phStyle(id);if(/^ag_/.test(id)&&state.agent&&state.agent.url)st=st.replace('/thumb/','/file/');return st;}
@@ -5295,6 +5337,9 @@ document.addEventListener('click',e=>{
     case 'kiosk-done':case 'loja-cart':state.kiosk.step='cart';render();window.scrollTo({top:0});break;
     case 'kiosk-review':state.kiosk.step='review';render();break;
     case 'loja-exit':case 'loja-new':lojaCliente();lojaReset();render();break;
+    // v94 (C15, C16): na espera do pagamento, a casa pergunta antes de sair; "Sim, sair" é o loja-new de sempre (a pendência fica no Posto)
+    case 'loja-sair-ask':if(state.kiosk.step==='done'&&state.kiosk.paid&&state.kiosk.paid.wait){state.kiosk.sairAsk=true;render();const b=$('.lj-mxok');if(b)b.focus();}else{lojaCliente();lojaReset();render();}break;
+    case 'loja-sair-no':state.kiosk.sairAsk=false;render();break;
     case 'loja-list':state.kiosk.list=!state.kiosk.list;render();break;
     case 'loja-sair':lojaSair();break;
     case 'loja-eq-fechar':state.kiosk.equipe=false;state.kiosk.list=false;render();break;
