@@ -1,4 +1,5 @@
 // Galeria online por QR (critérios 1 a 14) e Loja apartada em #loja (critérios 22 a 26), no modo SIM (sem agente).
+// v94-ux (parte H): "Abrir Checkout" do Admin fica no rodapé do menu (#nav .nav-ck); os cliques usam .rail [data-act="loja-abrir"]
 // O reconhecimento usa o mesmo do app (YuNet + SFace no navegador, índice das fotos de exemplo); a "selfie" é uma foto da própria sessão.
 const {chromium}=require('playwright');const login=require('./_login');const fs=require('fs');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const PR=__dirname+'/prints';fs.mkdirSync(PR,{recursive:true});
@@ -190,7 +191,7 @@ try{
   // CORRIGIR 1: recarregar com eterna.view=checkout (ou quiosque) não abre a Loja para a equipe
   await abaNova('reload-equipe');await login(L2);await L2.evaluate(()=>{localStorage.setItem('eterna.view','checkout');location.hash='';});await L2.reload();await L2.waitForTimeout(500);ok(await L2.evaluate(()=>!ETERNA.state.lojaRota&&location.hash!=='#loja'),'R1: reload com eterna.view=checkout abriu a Loja');
   await L2.evaluate(()=>{localStorage.setItem('eterna.view','quiosque');history.replaceState(null,'','#');});await L2.reload();await L2.waitForTimeout(500);ok(await L2.evaluate(()=>!ETERNA.state.lojaRota&&ETERNA.state.view!=='quiosque'),'R1: reload com eterna.view=quiosque abriu a Loja');
-  await L2.evaluate(()=>{ETERNA.state.view='perfis';ETERNA.render();});ok(!(await L2.$('#nav [data-v="quiosque"]')),'v78: Checkout não é item do menu');{const [J2]=await Promise.all([L2.context().waitForEvent('page'),L2.click('#rail-ck [data-act="loja-abrir"]')]);await J2.waitForLoadState();await J2.waitForTimeout(400); // v81: abre em janela à parte
+  await L2.evaluate(()=>{ETERNA.state.view='perfis';ETERNA.render();});ok(!(await L2.$('#nav [data-v="quiosque"]')),'v78: Checkout não é item do menu');{const [J2]=await Promise.all([L2.context().waitForEvent('page'),L2.click('.rail [data-act="loja-abrir"]')]);await J2.waitForLoadState();await J2.waitForTimeout(400); // v81: abre em janela à parte
   ok(await J2.evaluate(()=>ETERNA.state.lojaRota&&location.hash==='#loja'&&!ETERNA.state.user),'A1: botão Abrir Checkout deveria abrir #loja numa janela à parte');await J2.close();
   await L2.evaluate(()=>ETERNA.go('quiosque'));await L2.waitForTimeout(300);} // o resto do teste segue no Checkout desta aba (caminho antigo, ainda existe)
   await L2.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;}); // v79: a câmera simulada pode achar um rosto no meio dos 3 toques

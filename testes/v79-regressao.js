@@ -70,8 +70,9 @@ try{
   fase='1.6 abrir caixa';
   const B=await pagina(ctx,'B caixa');ok(await login(B,'loja@eterna.photo'),'1.6: Atendimento não entrou');
   // v94-ux: o botão "Caixa" da barra virou "Posto de venda" (data-v="posto"); o Caixa é o Posto com o filtro Dinheiro (parte E, decisão 3)
-  const rail0=await B.evaluate(()=>!!document.querySelector('#rail-ck [data-act="view"][data-v="posto"]')&&!document.querySelector('#rail-ck [data-v="caixa"]'));ok(rail0,'1.6: barra sem o botão Posto de venda para o Atendimento');
-  await B.click('#rail-ck [data-v="posto"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='posto','1.6: botão Posto de venda não abriu o Posto');
+  // v94-ux (parte H): o Posto de venda saiu da barra e é item do menu (#nav [data-v="posto"]); o número de pendências fica nesse item
+  const rail0=await B.evaluate(()=>!!document.querySelector('#nav [data-act="view"][data-v="posto"]')&&!document.querySelector('.rail [data-v="caixa"]'));ok(rail0,'1.6: menu sem o item Posto de venda para o Atendimento');
+  await B.click('#nav [data-v="posto"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='posto','1.6: botão Posto de venda não abriu o Posto');
   ok(/Nenhum pagamento esperando/.test(await txt(B,'#main')),'1.6: Caixa vazio deveria dizer "Nenhum pagamento esperando." (v83)');
 
   // ---- 4.1 a 4.5: caso do print (4 do campo + 4 com fundo de IA)

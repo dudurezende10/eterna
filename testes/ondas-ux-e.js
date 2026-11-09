@@ -34,14 +34,15 @@ try{
     const e1=await V.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,eb:document.querySelector('#main .head .eyebrow').textContent}));
     ok(e1.v==='posto'&&e1.h1==='Posto de venda'&&e1.eb==='Caixa 1','E1: '+J(e1));
     // E10: barra com Abrir Checkout e Posto de venda (PIX conta), sem Caixa
+    // v94-ux (parte H): o botão "Posto de venda" da barra saiu (o Posto está no menu); o número fica no item do menu (#nav [data-v="posto"] #rail-din)
     await V.evaluate(()=>{const S=ETERNA.SIM;S.caixaDin.unshift({id:'L00-teste0pix1',card:'LPTESTEPIX',codigo:'ABCD-EFGH',criada:new Date().toISOString(),total:70,prints:1,n:1,cart:[{id:'arq'}],selected:[],meio:'pix',prov:'pos-manual',estado:'aguardando'});localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.render();});
-    const e10=await V.evaluate(()=>({ck:!!document.querySelector('#rail-ck [data-act="loja-abrir"]'),posto:(document.querySelector('#rail-ck [data-v="posto"]')||{}).innerText||'',caixa:!!document.querySelector('#rail-ck [data-v="caixa"]'),din:(document.querySelector('#rail-din')||{}).textContent||'',t:document.querySelector('#rail-ck').innerText}));
+    const e10=await V.evaluate(()=>({ck:!!document.querySelector('#rail-ck [data-act="loja-abrir"]'),posto:(document.querySelector('#nav [data-v="posto"]')||{}).innerText||'',caixa:!!document.querySelector('#rail-ck [data-v="caixa"]'),din:(document.querySelector('#rail-din')||{}).textContent||'',t:document.querySelector('#rail-ck').innerText}));
     ok(e10.ck&&/Posto de venda/.test(e10.posto)&&e10.din==='1'&&!e10.caixa&&!/\bCaixa\b/.test(e10.t),'E10: barra do vendedor: '+J(e10));
     await ctx.close();}
   const ctx=await b.newContext({viewport:{width:1440,height:900}});await rotas(ctx);
   const A=vigia(await ctx.newPage(),'A');await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(500);
   ok(await entrar(A,'eduardo@eduardorezende.com'),'admin não entrou');
-  const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('#rail-ck [data-act="loja-abrir"]')]);vigia(L,'L');await L.waitForLoadState();await L.waitForTimeout(800);
+  const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('.rail [data-act="loja-abrir"]')]);vigia(L,'L');await L.waitForLoadState();await L.waitForTimeout(800);
   ok(await A.evaluate(()=>ETERNA.state.view)==='posto','E: abrir Checkout leva o admin ao Posto');
   await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
   const cards=await L.evaluate(()=>ETERNA.demoSessions().filter(s=>ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=8).map(s=>s.card));ok(cards.length>=6,'poucas sessões de exemplo: '+cards.length);

@@ -1051,6 +1051,11 @@ label>.eyebrow{display:block;margin-bottom:4px}
 .nav button.grp[aria-expanded="true"] svg{transform:rotate(180deg)}
 .nav .navitems{display:flex;flex-direction:column;gap:2px;min-width:0}
 .nav .navitems[hidden]{display:none!important}
+/* v94-ux (parte H): item do Posto com o número de pagamentos aguardando; "Abrir Checkout" discreto no rodapé do menu */
+.nav button[data-v="posto"]{flex-direction:row;align-items:center;justify-content:space-between;gap:8px}
+.nav button.nav-ck{margin-top:8px;border:1px solid currentColor;border-radius:6px;font-weight:600;min-height:36px;align-items:center;justify-content:center;opacity:.9}
+/* H1: no Admin em 1366×768, o menu com um grupo aberto cabe sem rolar */
+@media (min-width:901px){.nav .navitems button{padding:6px 11px}.nav button.grp{min-height:30px;padding:8px 11px 4px}}
 .railck-box{display:flex;flex-direction:column;gap:6px}.railck-box:empty{display:none}
 .railck.caixa{background:transparent;color:inherit;border-color:currentColor;font-weight:600}.railck .pill{margin-left:auto}
 @media (max-width:700px){.railck-box{flex-direction:row}}
@@ -1254,16 +1259,19 @@ const cartComPreco=cart=>(cart||[]).map(c=>({...c,v:itemV(c)}));
 
 // Menus da v78 (decisão do Eduardo, 27/10): grupos que abrem e fecham na barra lateral; cada grupo precisa ficar contíguo.
 // Grupo vazio = tela sem item no menu: Início (abre pelo logo) e o Checkout (abre pelo botão "Abrir Checkout", em #loja).
+// v94-ux (parte H): 2º campo = nome da tela (o rótulo por pessoa vem de viewLabel), 3º campo = só o title do item (sem <small>).
+// Grupos: Venda (Posto), Dashboard, Curadoria, Fotógrafo, Configurações e Sistema (técnico; pelos perfis prontos, só o Admin).
 const VIEWS=[
  ['perfis','Início','visão geral',''],
  ['quiosque','Checkout','área do cliente, tela cheia',''],
+ ['posto','Posto de venda','pagamentos do Checkout, impressão e dinheiro','Venda'],
  ['painel','Painel','faturamento, fotos e vendas','Dashboard'],
  ['estatisticas','Estatísticas','vendas, fotógrafos, dias e movimento','Dashboard'],
  ['bandeiras','Bandeiras','estoque e IA','Dashboard'],
  ['estoque','Estoque','rolos e insumos','Dashboard'],
  ['impfila','Fila de impressão','acompanhar a DNP','Dashboard'],
  ['fotografos','Fotógrafos','índice e métricas','Dashboard'],
- ['vendas','Vendas e caixa','vendedores','Dashboard'],
+ ['vendas','Vendedores','vendas de cada vendedor','Dashboard'],
  ['vendas-lista','Lista de vendas','venda a venda','Dashboard'],
  ['galerias','Galerias online','QR, cortesias e escolas','Dashboard'],
  ['revisao','Qualidade','revisão de fotos','Curadoria'],
@@ -1272,21 +1280,25 @@ const VIEWS=[
  ['diario','Diário do set','equipamento e ocorrências','Fotógrafo'],
  ['importar','Minhas fotos','fotos do cartão e da câmera','Fotógrafo'],
  ['fotofila','Fila do fotógrafo','clicando, chegando e no Checkout','Fotógrafo'],
- ['escala','Escala 5×2','cobertura dos pontos','Fotógrafo'],
+ ['escala','Escala','escala 5×2 e cobertura dos pontos','Fotógrafo'],
  ['calendario','Calendário de eventos','jogos, shows e feriados','Fotógrafo'],
- ['repo','Repositório','nuvem e acervo','Configurações'],
- ['identidade','Identidade','marca do venue','Configurações'],
- ['catalogo','Painel de controle','catálogo, preços, Checkout e FTP','Configurações'],
+ ['catalogo','Preços e Checkout','preços, Checkout e fundos de IA','Configurações'],
  ['chroma','Fundos de IA','a partir das fotos do campo','Configurações'],
  ['ajustes','Ajuste automático','acertar as fotos','Configurações'],
- ['usuarios','Usuários','cadastro da equipe','Configurações'],
- ['permissoes','Permissões','quem vê e faz o quê','Configurações'],
- ['vestiario','Vestiário','novo set','Laboratório'],
- ['fundos-teste','Fundos em teste','para uso futuro','Laboratório'],
+ ['repo','Repositório','nuvem e acervo','Sistema'],
+ ['identidade','Identidade','marca do venue','Sistema'],
+ ['usuarios','Usuários','cadastro da equipe','Sistema'],
+ ['permissoes','Permissões','quem vê e faz o quê','Sistema'],
+ ['vestiario','Vestiário','novo set (em teste)','Sistema'],
+ ['fundos-teste','Fundos em teste','para uso futuro','Sistema'],
 ];
-// telas sem item no menu, mas com permissão própria (abertas por botões dentro de outras telas)
-const VIEWS_EXTRA={checkout:'Venda manual',fila:'Fila do balcão',caixa:'Posto de venda',posto:'Posto de venda'};
-const viewName=v=>{const x=VIEWS.find(y=>y[0]===v);return x?x[1]:(VIEWS_EXTRA[v]||v);};
+// telas sem item no menu, mas com permissão própria (abertas por links dentro de outras telas)
+const VIEWS_EXTRA={checkout:'Venda manual',fila:'Fila do balcão',caixa:'Posto de venda'};
+// v94-ux (decisão 7): rótulo da tela para a pessoa logada; o menu e o h1 usam a mesma função (menu = título).
+// Preços e Checkout vira "Preços" para quem só lê os preços (sem catalogo.u e sem configuracao.r).
+const catCompleto=()=>can('catalogo','u')||can('configuracao','r');
+function viewLabel(v){if(v==='catalogo')return catCompleto()?'Preços e Checkout':'Preços';const x=VIEWS.find(y=>y[0]===v);return x?x[1]:(VIEWS_EXTRA[v]||v);}
+const viewName=v=>viewLabel(v);
 
 // ---------- charts ----------
 function sparkIdx(perDay){
@@ -1305,7 +1317,7 @@ const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phSty
 function vPerfis(){
   const ss=Object.values(SIM.sessions);const cnt=st=>ss.filter(s=>s.status===st).length;
   const av=allowedViews().filter(v=>v!=='quiosque');
-  const card=(v)=>{const d=VIEWS.find(x=>x[0]===v);if(!d)return '';return `<button class="role" data-act="view" data-v="${v}"><span class="t">${esc(d[1])}</span><span class="d">${esc(d[2])}</span></button>`};
+  const card=(v)=>{const d=VIEWS.find(x=>x[0]===v);if(!d)return '';return `<button class="role" data-act="view" data-v="${v}"><span class="t">${esc(viewLabel(v))}</span><span class="d">${esc(d[2])}</span></button>`};
   const grupos=[];VIEWS.forEach(v=>{if(!v[3]||!av.includes(v[0]))return;let g=grupos.find(x=>x[0]===v[3]);if(!g)grupos.push(g=[v[3],[]]);g[1].push(v[0]);});
   // números só para quem tem o módulo: contagens com set ou venda, R$ só com Números de vendas
   const nDin=dinAbertas().length;
@@ -1811,7 +1823,7 @@ function vPosto(o){o=o||{};const a=state.agent;const filtro=o.filtro==='dinheiro
   const recibo=rc&&rsim&&(rsim.status==='paga'||rsim.status==='no caixa')?`<div class="posto-recibo">${rsim.status==='paga'?receiptPanel(rc,rsim):caixaDetalhe(rc)}<div class="row"><button class="btn ghost" data-act="posto-recibo-fechar">Fechar</button></div></div>`:'';
   const balcao=demoSessions().filter(s=>s.status==='no caixa');
   const filaBalcao=balcao.length?`<div class="panel"><h2>Vindas da Fila do balcão</h2><div class="sess">${balcao.map(s=>`<button class="scard" data-act="caixa-open" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span>${esc(P[s.key]?P[s.key].name:'')}</span><span>${fmtR(cartTotal(simOf(s.card).cart))}</span></div></button>`).join('')}</div></div>`:'';
-  return `<div class="head posto-head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>Posto de venda</h1></div><div class="row">${roloPill()}${canView('quiosque')?'<button class="btn ghost" data-act="loja-abrir">Abrir Checkout</button>':''}</div></div>
+  return `<div class="head posto-head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>${esc(viewLabel('posto'))}</h1></div><div class="row">${roloPill()}${canView('quiosque')?'<button class="btn ghost" data-act="loja-abrir">Abrir Checkout</button>':''}</div></div>
   ${conn}${recibo}
   <div class="posto-cols"><div><div class="panel"><div class="head"><h2>Agora no Checkout</h2></div><div id="eco">${ecoBody()}</div></div></div>
     <div>${pendPainel({filtro,semId:ep?ep.id:null})}${impPainel(null,{semRolo:1})}${filaBalcao}</div></div>
@@ -3022,7 +3034,7 @@ function fiaFalhou(key,foto){const id=key.split('|')[0];const k=foto?id:key;cons
 function recMotivo(m){m=String(m||'');return /desligado/.test(m)?'Recorte local desligado':/erro ao abrir/.test(m)?'Recorte local com erro ao abrir os modelos: veja Fundos de IA':'Recorte local não instalado: veja Fundos de IA';}
 function fiaPanel(){const a=state.agent||{};const r=a.on?a.recorte:null;const loc=fundosModo()==='local';
   return `<div class="panel" style="gap:10px"><div class="head"><h2>Recorte local</h2>${!a.on?'<span class="pill neutral">agente não encontrado</span>':!r?'<span class="pill warn">agente antigo</span>':r.ok?`<span class="pill good">pronto${r.carregado?'':' · carrega na primeira foto'}</span>`:'<span class="pill bad">não instalado</span>'}</div>
-    <div class="note">${loc?'Montagem local (padrão): o agente do ponto recorta a pessoa neste computador e o Eterna monta no fundo com as regras aprovadas. Sem internet e sem custo.':'Montagem pelo Photoroom ligada no Painel de controle.'}${r&&r.ms_medio?` Média de ${(r.ms_medio/1000).toFixed(1)} s por foto (${r.feitos} feitas).`:''}</div>
+    <div class="note">${loc?'Montagem local (padrão): o agente do ponto recorta a pessoa neste computador e o Eterna monta no fundo com as regras aprovadas. Sem internet e sem custo.':'Montagem pelo Photoroom ligada em Preços e Checkout › Avançado.'}${r&&r.ms_medio?` Média de ${(r.ms_medio/1000).toFixed(1)} s por foto (${r.feitos} feitas).`:''}</div>
     ${r&&r.ia?`<div class="note">Fotos para IA: fila ${+r.ia.fila||0} · p90 ${r.ia.atraso_p90_s!=null?Math.round(r.ia.atraso_p90_s)+' s':'--'} desde a chegada · ${+r.ia.erros||0} ${+r.ia.erros===1?'erro':'erros'}${r.ia.pausa_disco?` · <b>em pausa: ${esc(String(r.ia.livre_gb))} GB livres no disco</b>`:''}</div>`:''}
     ${r&&!r.ok?`<div class="note"><b>${esc(recMotivo(r.motivo).replace(': veja Fundos de IA',''))}</b> · ${esc(r.motivo||'')}. Rode <b>instalar-recorte</b> na pasta do agente (Mac: instalar-recorte.command; Windows: instalar-recorte.bat) e abra o agente de novo. Recomendado: 16 GB de memória.</div>`:''}</div>`;}
 function compTile(photoId,b,sel,act){const a=ANAV[photoId];const m=bgMatch(a,b);return `<button class="bg comp" data-act="${act||'fila-bg'}" data-bg="${b.id}" aria-pressed="${sel}"><span class="compimg" data-comp="${photoId}|${b.id}" style="background-image:url(${b.file})"><span class="compst">${fundosModo()==='photoroom'?'Montando no Photoroom...':'Montando...'}</span></span><span class="czoom" data-act="comp-zoom" data-k="${photoId}|${b.id}" data-cap="${esc(b.name)}" role="button" aria-label="Ver grande"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"></path></svg></span>${m!=null?`<span class="cmatch ${m>=85?'hi':m>=70?'mid':'lo'}">Combina ${m}%</span>`:''}<span class="n"><span>${esc(b.name)}</span><span class="note">${esc(matchWhy(a,b)||FRAMING[aiScore(photoId).f])} · ${fmtR(priceOf('fundo'))}</span></span></button>`;}
@@ -3109,7 +3121,7 @@ function vRevisao(){
       </div></div>`;
   }
   const qs=humans.map(k=>({k,q:quality(k)})).filter(x=>x.q.sessions);
-  return `<div class="head"><div><div class="eyebrow">${LIVE?'Roverpix ao vivo · até hoje':'Amostra · 12 e 13/10'}${state.agent.on?' · fotos deste computador':''}</div><h1>Revisão de fotos</h1></div></div>
+  return `<div class="head"><div><div class="eyebrow">${LIVE?'Roverpix ao vivo · até hoje':'Amostra · 12 e 13/10'}${state.agent.on?' · fotos deste computador':''}</div><h1>${esc(viewLabel('revisao'))}</h1></div></div>
   ${qs.length?`<div class="tiles">${qs.map(x=>`<div class="tile"><span class="eyebrow">${esc(P[x.k].name)}</span><span class="v">${x.q.goodPct!=null?x.q.goodPct+'%':'–'}</span><span class="d">${x.q.good} boas · ${x.q.bad} ruins · ${x.q.sessions} sessões${x.q.score?' · nota '+x.q.score.toFixed(1):''}</span></div>`).join('')}</div>`:''}
   <div class="revbar">
     <label><span class="eyebrow">Fotógrafo</span><select data-act="rev-key"><option value="all" ${f.key==='all'?'selected':''}>Todos</option>${humans.map(k=>`<option value="${k}" ${f.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
@@ -3327,7 +3339,7 @@ function vImportarCore(){
     ${state.agent.on?'':`${location.protocol==='https:'?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>No computador do ponto, abra o Eterna em <a href="http://127.0.0.1:8765/#importar">http://127.0.0.1:8765</a></b><p>O Chrome bloqueia o site na internet de falar com o agente do Mac. Aberto pelo agente, as fotos do cartão e do CTP aparecem aqui sozinhas.</p></div></div>`:''}<div class="note">Para o cartão subir sozinho, rode o agente no computador do ponto: baixe <a href="agente/eterna-agente.py" download>eterna-agente.py</a>, abra o Terminal e execute <code>python3 eterna-agente.py</code>. Deixe rodando e volte a esta tela. Sem o agente, ligue o modo demonstração (Identidade) e use "Testar com fotos suas".${state.agent.tried?' <span class="pill neutral">procurando em 127.0.0.1:8765</span>':''}</div>`}
   </div>`:'';
   const feed=`<div class="panel"><h2>Chegadas</h2>${g.feed.length?`<div class="tablewrap"><table><tbody>${g.feed.slice(0,14).map(f=>`<tr><td><span class="pill ${ico[f.k]}">${f.k==='ok'?'foto':f.k==='dup'?'repetida':f.k==='warn'?'validar':'auto'}</span></td><td style="white-space:normal"><div>${esc(f.t)}</div><div class="note">${esc(f.s)}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Nenhuma foto ainda.</div>'}</div>`;
-  return `<div class="head"><div><div class="eyebrow">Fotógrafo · ${esc(name)}${proprio?'':' · '+esc(pt.name)}</div><h1>Minhas fotos</h1></div>${fotoQuem()}</div>
+  return `<div class="head"><div><div class="eyebrow">Fotógrafo · ${esc(name)}${proprio?'':' · '+esc(pt.name)}</div><h1>${esc(viewLabel('importar'))}</h1></div>${fotoQuem()}</div>
   ${upFaixa(L)}
   ${ajAutoPanel()}
   ${picker}
@@ -3703,7 +3715,7 @@ function vFotografos(){
 // ---------- Gestão: vendas ----------
 function vVendas(){
   const sl=DATA.sellers.filter(s=>s.total>=10).sort((a,b)=>b.revenue-a.revenue);const others=DATA.sellers.filter(s=>s.total<10);
-  return `<div class="head"><div><div class="eyebrow">Período · ${rangeLabel()}</div><h1>Vendas e caixa</h1></div>${liveBadge()}</div>
+  return `<div class="head"><div><div class="eyebrow">Período · ${rangeLabel()}</div><h1>${esc(viewLabel('vendas'))}</h1></div>${liveBadge()}</div>
   ${rangeBar(LIVE?'':'O detalhe por vendedor veio do Roverpix só como total de '+dBR(DMIN)+' a '+dBR(DMAX)+'; com a API conectada (Repositório) tudo segue as datas.')}
   <div class="row pn-link"><span class="note">Totais, produtos e pagamentos estão no Painel.</span><button class="btn ghost" data-act="view" data-v="painel">Abrir o Painel</button></div>
   <div class="panel"><h2>Vendedores</h2><div class="tablewrap"><table><thead><tr><th>Vendedor</th><th class="num">Atendimentos</th><th class="num">Finalizadas</th><th class="num">Descartadas</th><th class="num">Fechamento</th><th class="num">Fotos vendidas</th><th class="num c2">Fotos/venda</th><th class="num">Ticket</th><th class="num">Receita</th><th class="num c2">Tempo médio</th></tr></thead><tbody>
@@ -4065,7 +4077,7 @@ function vEscala(){
     ${humans.map(k=>{const f=funcOf(k);const pid=pointIdOf(k);return `<tr><td class="name">${esc(P[k].name)}</td><td>${funcSelect(k,!can('escala','u'))}</td><td><span class="pill ${f.tipo==='volante'?'warn':f.tipo==='folga'?'neutral':'good'}">${f.tipo==='folga'?'folga':f.tipo}</span></td><td class="num">${todaySess.filter(x=>x.key===k).length}</td></tr>`}).join('')}
     </tbody></table></div>
     <div class="note">Trocou para volante, o ponto do campo fica livre e aparece aqui como descoberto. As fotos do volante entram como ${VOL_MODES.map(m=>'"Volante · '+m[1]+'"').join(', ')}, separadas do campo em sessões, vendas e relatórios.${todaySess.length?' Hoje: '+DATA.points.filter(p=>cnt(p.id)).map(p=>esc(p.name)+' '+cnt(p.id)).join(' · '):''}</div></div>`;
-  return `<div class="head"><div><div class="eyebrow">Escala 5x2 · últimos 7 dias (${dlabel(days[0])} a ${dlabel(days[6])}) ${shareBtn()}</div><h1>Escala e cobertura</h1></div></div>
+  return `<div class="head"><div><div class="eyebrow">Escala 5x2 · últimos 7 dias (${dlabel(days[0])} a ${dlabel(days[6])}) ${shareBtn()}</div><h1>${esc(viewLabel('escala'))}</h1></div></div>
   ${funcPanel}
   <div class="tiles"><div class="tile"><span class="eyebrow">Turnos disponíveis</span><span class="v">25</span><span class="d">5 pessoas x 5 dias</span></div><div class="tile"><span class="eyebrow">Turnos necessários</span><span class="v">28</span><span class="d">4 pontos x 7 dias</span></div><div class="tile"><span class="eyebrow">Com vestiário</span><span class="v">35</span><span class="d">5 pontos x 7 dias</span></div><div class="tile"><span class="eyebrow">Fotógrafos para 5 pontos</span><span class="v">7</span><span class="d">em 5x2</span></div></div>
   <div class="panel"><h2>Quem trabalhou</h2><div class="tablewrap"><div class="grid-week"><div class="hd"></div>${days.map(d=>`<div class="hd">${dlabel(d)}</div>`).join('')}
@@ -4076,7 +4088,7 @@ function vEscala(){
 
 // ---------- Gestão: catálogo ----------
 function vCatalogo(){
-  return `<div class="head"><div><div class="eyebrow">Configurações · catálogo, preços, Checkout e FTP</div><h1>Painel de controle</h1></div></div>
+  return `<div class="head"><div><div class="eyebrow">Configurações</div><h1>${esc(viewLabel('catalogo'))}</h1></div></div>
   <div class="panel"><div class="tablewrap"><table><thead><tr><th>Produto</th><th>Tipo</th><th>Conteúdo</th><th class="num">Preço</th><th class="num">Vendidos na semana</th></tr></thead><tbody>
   ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}${c.id==='fundo'?' · só na Venda manual':''}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="Preço de ${esc(c.name)}"></td><td class="num">${real?real.units:'novo'}</td></tr>`}).join('')}
   </tbody></table></div><div class="row"><button class="btn ghost" data-act="price-reset">Voltar aos preços de hoje</button><span class="note">Próximo: preço por dia da semana, dia de jogo e temporada; passe de foto por tipo de ingresso.</span></div></div>
@@ -4290,7 +4302,7 @@ function vTreino(){
   const byKey={};TRAIN.forEach(x=>{const l=t.labels[x.id];if(!l)return;byKey[x.key]=byKey[x.key]||{n:0,nao:0};byKey[x.key].n++;if(l.verdict==='nao')byKey[x.key].nao++;});
   const rs=new Set(lab&&lab.verdict==='nao'?lab.reasons||[]:[]);
   const fm=state.face.medida;const medida=`<div class="panel"><div class="head"><h2>Reconhecimento facial</h2><button class="btn" data-act="face-measure" ${fm&&fm.rodando?'disabled':''}>${fm&&fm.rodando?'Medindo...':'Medir acerto'}</button></div>${fm&&!fm.rodando?(fm.erro?`<div class="note">${esc(fm.erro)}</div>`:`<div class="row" style="gap:18px;flex-wrap:wrap"><div><div class="eyebrow">Acerto</div><b style="font-size:28px">${(100*fm.acerto).toFixed(1)}%</b></div><div><div class="eyebrow">Rostos testados</div><b>${fm.rostos}</b></div><div><div class="eyebrow">Certos</div><b>${fm.certo}</b></div><div><div class="eyebrow">Errados</div><b>${fm.errado}</b></div><div><div class="eyebrow">Pergunta antes</div><b>${fm.duvida}</b></div><div><div class="eyebrow">Sem par</div><b>${fm.nada}</b></div></div><div class="note">${esc(fm.onde||'')}</div>`):''}</div>`;
-  return `${medida}<div class="head"><div><div class="eyebrow">Gestão · treino da IA · ${done} de ${n} rotuladas</div><h1>O que pode e o que não pode</h1></div><div class="row"><button class="chip" data-act="train-export">Exportar rótulos (JSON)</button><label class="chip" style="cursor:pointer">Importar<input type="file" accept="application/json" data-act="train-import" style="display:none"></label>${shareBtn()}</div></div>
+  return `${medida}<div class="head"><div><div class="eyebrow">Gestão · treino da IA · ${done} de ${n} rotuladas</div><h1>${esc(viewLabel('treino'))}</h1><div class="note">O que pode e o que não pode</div></div><div class="row"><button class="chip" data-act="train-export">Exportar rótulos (JSON)</button><label class="chip" style="cursor:pointer">Importar<input type="file" accept="application/json" data-act="train-import" style="display:none"></label>${shareBtn()}</div></div>
   
   <div class="bar" style="grid-template-columns:1fr 90px"><div class="track"><div class="fill" style="width:${100*done/n}%"></div></div><span class="val">${Math.round(100*done/n)}%</span></div>
   <div class="train">
@@ -4509,14 +4521,14 @@ const MODULES=[
  ['qualidade','Qualidade e IA',['revisao','treino']],
  ['diario','Diário do set',['diario']],
  ['set','Upload, câmeras e ajustes',['importar','ajustes']],
- ['escala','Escala 5×2 e calendário',['escala','calendario']],
+ ['escala','Escala e calendário',['escala','calendario']],
  ['filafoto','Fila do fotógrafo',['fotofila']],
  ['configuracao','Configurações do venue',['repo','identidade','chroma']],
- ['catalogo','Painel de controle (catálogo e preços)',['catalogo']],
+ ['catalogo','Preços e Checkout',['catalogo']],
  ['usuarios','Cadastro de usuários',['usuarios']],
  ['permissoes','Permissões',['permissoes']],
  ['laboratorio','Laboratório',['vestiario','fundos-teste']],
- ['venda','Venda no balcão',['checkout','fila','caixa','posto']],
+ ['venda','Posto de venda',['checkout','fila','caixa','posto']],
  ['quiosque','Checkout (autoatendimento)',['quiosque']],
 ];
 const OPS=[['c','Criar'],['r','Ver'],['u','Alterar'],['d','Excluir']];
@@ -4526,7 +4538,7 @@ const MODULE_INFO={
  estoque:{desc:'Bandeiras (estoque e IA) e Estoque de rolos e insumos',c:'cadastrar bandeira',r:'ver bandeiras e estoque',u:'trocar rolo, mudar estado e ponto da bandeira',d:'excluir bandeira'},
  relatorios:{desc:'Alertas',r:'ver os alertas'},
  desempenho:{desc:'Fotógrafos: índice e métricas de cada um',r:'ver o índice (o fotógrafo vinculado vê só o dele)'},
- financeiro:{desc:'Painel, Vendas e caixa, Lista de vendas',r:'ver faturamento, vendas, valores e volume',d:'cancelar venda'},
+ financeiro:{desc:'Painel, Vendedores, Lista de vendas',r:'ver faturamento, vendas, valores e volume',d:'cancelar venda'},
  galerias:{desc:'Galerias online: QR, cortesias e grupos de escola',c:'criar galeria e grupo de escola',r:'ver as galerias',u:'dar ou retirar cortesia, reenviar, editar grupo',d:'encerrar grupo'},
  qualidade:{desc:'Qualidade e Treino da IA',c:'importar rótulos de treino',r:'ver as revisões',u:'avaliar, marcar, descartar e rotular fotos'},
  diario:{desc:'Diário do set',c:'registrar ocorrência',r:'ver o diário',u:'marcar como resolvida',d:'ver e tratar as ocorrências da equipe toda (sem isso, só as próprias)'},
@@ -4534,12 +4546,12 @@ const MODULE_INFO={
  estatisticas:{desc:'Estatísticas: vendas e produtos, produção dos fotógrafos, rapidez, dias e eventos, visitantes e movimento da bilheteria',c:'importar entradas da bilheteria (bip ou catraca) por CSV',r:'ver as estatísticas'},
  escala:{desc:'Escala 5×2, função do dia e Calendário de eventos',r:'ver a escala e o calendário',u:'mudar a escala, a função do dia e o calendário de eventos (criar, editar, apagar, importar e feriados)'},
  filafoto:{desc:'Painel das fotos chegando, por fotógrafo e ponto',r:'ver a fila do fotógrafo (também na TV)',u:'ligar e desligar as miniaturas (rostos) neste aparelho'},
- configuracao:{desc:'Repositório, Identidade, Fundos de IA e o FTP do estádio (no Painel de controle)',r:'ver as configurações e o status do FTP',u:'mudar repositório, identidade, integrações, FTP do estádio, os fundos do Checkout e a montagem dos fundos (local ou Photoroom)'},
- catalogo:{desc:'Painel de controle: catálogo e preços, tempo da tela final do Checkout',r:'ver os preços',u:'mudar preços e o tempo do Checkout'},
+ configuracao:{desc:'Repositório, Identidade, Fundos de IA e o FTP do estádio (em Preços e Checkout)',r:'ver as configurações e o status do FTP',u:'mudar repositório, identidade, integrações, FTP do estádio, os fundos do Checkout e a montagem dos fundos (local ou Photoroom)'},
+ catalogo:{desc:'Preços e Checkout: catálogo e preços, tempo da tela final do Checkout',r:'ver os preços',u:'mudar preços e o tempo do Checkout'},
  usuarios:{desc:'Usuários: cadastro da equipe',c:'cadastrar pessoa',r:'ver a lista',u:'mudar nome, e-mail, fotógrafo, ativar e desativar',d:'excluir acesso'},
  permissoes:{desc:'Permissões: quem vê e faz o quê',r:'ver e mudar o que cada pessoa vê e faz (sempre junto com Alterar)',u:'mudar acessos (sempre junto com Ver)'},
  laboratorio:{desc:'Laboratório: produtos em teste (Vestiário e Fundos em teste; ativar um fundo pede Alterar em Configurações do venue)',r:'ver'},
- venda:{desc:'Posto de venda, Venda no balcão, Fila e Caixa (telas sem item no menu: o Posto de venda abre com o botão Abrir Checkout)',c:'confirmar pagamento da maquininha ou do dinheiro, cancelar pagamento aguardando, imprimir e reimprimir',r:'abrir as telas de venda',u:'escolher fotos, fundo e vendedor'},
+ venda:{desc:'Posto de venda (no menu Venda), Venda manual, Fila do balcão e Caixa (abertos pelo Posto de venda)',c:'confirmar pagamento da maquininha ou do dinheiro, cancelar pagamento aguardando, imprimir e reimprimir',r:'abrir as telas de venda',u:'escolher fotos, fundo e vendedor'},
  quiosque:{desc:'Checkout: área do cliente em tela cheia (botão Abrir Checkout)',c:'fechar compra',r:'abrir o Checkout'},
 };
 const opOk=(m,op)=>!!(MODULE_INFO[m]&&MODULE_INFO[m][op]);
@@ -4549,12 +4561,14 @@ const perm=(c,r,u,d)=>({c:!!c,r:!!r,u:!!u,d:!!d});
 const ALL=perm(1,1,1,1),RO=perm(0,1,0,0),RW=perm(1,1,1,0),NONE=perm(0,0,0,0);
 // letra que não se aplica vira false; C, U ou D ligam R; em Permissões, Ver e Alterar só valem juntos
 function permNorm(perms){const o={};MODULES.forEach(([m])=>{const p=(perms&&perms[m])||{};const x={c:false,r:false,u:false,d:false};['c','r','u','d'].forEach(k=>{x[k]=!!p[k]&&opOk(m,k);});if(x.c||x.u||x.d)x.r=true;if(m==='permissoes'){const on=x.r&&x.u;x.r=x.u=on;}o[m]=x;});return o;}
+// v94-ux (parte H, decisão 10): telas do grupo Sistema que saem do menu da Supervisora (os módulos C/R/U/D dela não mudam)
+const SUP_SEM94=['repo','identidade','vestiario','fundos-teste'];
 const PRESETS={
  admin:{name:'Admin',perms:Object.fromEntries(MODULES.map(([m])=>[m,{...ALL}])),menu:'*',inicio:'painel',desc:'Vê e faz tudo, inclusive Usuários e Permissões.'},
  foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},escala:{...RO},filafoto:{...RO}},menu:['diario','importar','fotofila','escala'],inicio:'importar',desc:'Vê só o menu Fotógrafo: Diário do set, Minhas fotos (com a troca de fotógrafo), Fila do fotógrafo e a Escala 5×2. Não vê: Checkout, Dashboard (vendas, índice, outros fotógrafos), Curadoria, Configurações.'},
  venda:{name:'Atendimento e venda',perms:{venda:{...RW},quiosque:{...RW},catalogo:{...RO},filafoto:{...RO}},menu:['quiosque','checkout','fila','caixa','posto','catalogo','fotofila'],inicio:'posto',desc:'Abre o Checkout e o Posto de venda (confirma pagamento e imprime), as telas de venda no balcão, a Fila do fotógrafo (também na TV do caixa) e vê os preços. Vê o valor de cada venda sua de hoje, sem totais. Não vê: Dashboard (vendas, números, fotógrafos), Curadoria, Usuários.'},
  valida:{name:'Validador',perms:{qualidade:{...ALL},diario:{...RO}},menu:['revisao','treino','diario'],inicio:'revisao',desc:'Qualidade e Treino da IA, e lê o Diário do set. Não vê: vendas, Checkout, Configurações.'},
- supervisor:{name:'Supervisor',perms:{relatorios:{...RO},desempenho:{...RO},financeiro:{...RO},diario:{...ALL},set:{...RO},venda:{...RW},qualidade:{...RO},estoque:{...ALL},configuracao:{...RW},escala:{...RW},laboratorio:{...RO},catalogo:{...RO},galerias:{...RW},filafoto:perm(0,1,1,0)},menu:'*',inicio:'painel',desc:'Dashboard inteiro (sem cancelar venda), Curadoria só para ver, menu Fotógrafo, Configurações do venue e Laboratório. Não vê: Usuários e Permissões.'},
+ supervisor:{name:'Supervisor',perms:{relatorios:{...RO},desempenho:{...RO},financeiro:{...RO},diario:{...ALL},set:{...RO},venda:{...RW},qualidade:{...RO},estoque:{...ALL},configuracao:{...RW},escala:{...RW},laboratorio:{...RO},catalogo:{...RO},galerias:{...RW},filafoto:perm(0,1,1,0)},menu:ALL_VIEWS.filter(v=>!SUP_SEM94.includes(v)),inicio:'painel',desc:'Posto de venda, Dashboard inteiro (sem cancelar venda), Curadoria só para ver, menu Fotógrafo e Configurações (Preços e Checkout, Ajuste automático). Não vê: o grupo Sistema (Usuários, Permissões, Repositório, Identidade, Laboratório).'},
  quiosque:{name:'Checkout (tela do cliente)',perms:{quiosque:{...RW}},menu:['quiosque'],inicio:'quiosque',desc:'Só o Checkout em tela cheia, para o computador do cliente.'},
 };
 const SEED_USERS=[
@@ -4594,6 +4608,7 @@ function migrateUser(x){if(!x||typeof x!=='object')return x;const pr=x.preset;
     if(!x.mpv83){if(pr&&pr!=='custom'&&PRESETS[pr]&&presetMenu(pr).includes('posto')&&!x.menu.includes('posto'))x.menu.push('posto');if(pr==='venda'&&(!x.inicio||x.inicio==='perfis'))x.inicio='posto';x.mpv83=1;} // v83: Posto de venda nos perfis com venda (uma vez)
     if(!x.mst92){if(pr&&pr!=='custom'&&PRESETS[pr])['estatisticas','calendario'].forEach(v=>{if(presetMenu(pr).includes(v)&&!x.menu.includes(v))x.menu.push(v);});x.mst92=1;} // v92: Estatísticas (Admin) e Calendário (perfis com a Escala), uma vez
     if(!x.mff87){if(pr&&pr!=='custom'&&PRESETS[pr]&&presetMenu(pr).includes('fotofila')&&!x.menu.includes('fotofila'))x.menu.push('fotofila');x.mff87=1;} // v87: Fila do fotógrafo nos perfis da D6 (uma vez)
+    if(!x.msis94)migraSis94(x); // v94-ux: Supervisora sem as telas do grupo Sistema (uma vez)
     x.menu=x.menu.filter(v=>MODULE_OF[v]);}
   x.mv=83;
   if(x.inicio&&x.inicio!=='perfis'&&!MODULE_OF[x.inicio])x.inicio=null;
@@ -4608,6 +4623,13 @@ function migraPainel(x){const antes=JSON.parse(JSON.stringify({perms:x.perms,men
   if(typeof auditLog==='function'&&typeof state!=='undefined'){const e=auditLog('migracao_v83',x.email,permDiff(antes,depois));
     // grava a marca (mv=83) de volta: a cópia do servidor sem a marca não migra (nem registra) de novo a cada sincronização
     if(e&&state.db)setTimeout(()=>{if(USERS[x.email]&&USERS[x.email].mv===83)saveUsers(x.email);},0);}}
+// v94-ux (parte H): a Supervisora (perfil pronto) perde do menu as telas de SUP_SEM94; tela inicial que era uma delas volta ao Padrão.
+// Só tira tela, nunca põe; personalizado não muda. Registra migracao_v94 e grava a marca de volta (como migraPainel).
+function migraSis94(x){x.msis94=1;if(x.preset!=='supervisor'||!Array.isArray(x.menu))return;
+  const antes=JSON.parse(JSON.stringify({perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));
+  x.menu=x.menu.filter(v=>!SUP_SEM94.includes(v));if(SUP_SEM94.includes(x.inicio))x.inicio=null;
+  if(typeof auditLog==='function'&&typeof state!=='undefined'){const e=auditLog('migracao_v94',x.email,permDiff(antes,{perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));
+    if(e&&state.db)setTimeout(()=>{if(USERS[x.email]&&USERS[x.email].msis94)saveUsers(x.email);},0);}}
 function userMenu(u){if(!u)return [];if(u.preset==='admin')return ALL_VIEWS.slice();return Array.isArray(u.menu)?u.menu:presetMenu(u.preset);}
 const accHas=(u,m,k)=>!!(u&&u.perms&&u.perms[m]&&u.perms[m][k]);
 // o que "a" tem e "b" não tem (letras aplicáveis e telas)
@@ -4787,7 +4809,7 @@ function permMatrix(d,ro,ed){const edMenu=userMenu(ed);
     const views=p.r?`<tr class="perm-views"><td colspan="5"><span class="note">Aparece no menu:</span> ${vs.map(v=>{const on=d.menu.includes(v);const dis=ro||(!on&&!edMenu.includes(v));const extra=VIEWS_EXTRA[v]?' (tela sem item no menu)':v==='quiosque'?' (botão Abrir Checkout)':'';return `<label class="chip perm-v"><input type="checkbox" data-act="perm-view" data-v="${v}" ${on?'checked':''} ${dis?'disabled':''}> ${esc(viewName(v))}${extra}</label>`;}).join('')}</td></tr>`:'';
     return `<tr class="perm-row" data-m="${m}"><td><b>${esc(n)}</b><div class="note">${esc(I.desc)}</div><div class="perm-desc">${descs}</div></td>${cells}</tr>${views}`;}).join('');
   return `<div class="tablewrap perm-wrap"><table class="perm-tbl">${head}<tbody>${rows}</tbody></table></div>`;}
-function auditText(e){const nm=x=>{const u=USERS[x];return u?`${u.name} (${x})`:x;};const V={criar:'criou o acesso de',alterar:'alterou o cadastro de',permissoes:'mudou as permissões de',perfil_aplicado:'aplicou um perfil em',permissoes_copiadas:'copiou permissões para',migracao_v83:'migrou (Semana virou Painel)',migracao_v81_bandeiras:'corrigiu as imagens das bandeiras',migracao_v82_bandeiras:'pôs imagens da Wikimedia nas bandeiras',fundo_ativado:'ativou',fundo_laboratorio:'moveu para o Laboratório',desativar:'desativou',reativar:'reativou',excluir:'excluiu o acesso de',recuperacao:'recuperou o administrador'};
+function auditText(e){const nm=x=>{const u=USERS[x];return u?`${u.name} (${x})`:x;};const V={criar:'criou o acesso de',alterar:'alterou o cadastro de',permissoes:'mudou as permissões de',perfil_aplicado:'aplicou um perfil em',permissoes_copiadas:'copiou permissões para',migracao_v83:'migrou (Semana virou Painel)',migracao_v94:'migrou o menu (grupo Sistema só para o Admin)',migracao_v81_bandeiras:'corrigiu as imagens das bandeiras',migracao_v82_bandeiras:'pôs imagens da Wikimedia nas bandeiras',fundo_ativado:'ativou',fundo_laboratorio:'moveu para o Laboratório',desativar:'desativou',reativar:'reativou',excluir:'excluiu o acesso de',recuperacao:'recuperou o administrador'};
   const ch=(e.mudancas||[]).map(c=>{if(c.campo==='menu')return `menu: ${c.entra&&c.entra.length?'entra '+c.entra.map(viewName).join(', '):''}${c.entra&&c.entra.length&&c.sai&&c.sai.length?'; ':''}${c.sai&&c.sai.length?'sai '+c.sai.map(viewName).join(', '):''}`;
     const m=/^perms\.(\w+)\.([crud])$/.exec(c.campo);if(m){const mn=(MODULES.find(x=>x[0]===m[1])||[0,m[1]])[1];const on=OPS_INFO.find(o=>o[0]===m[2])[1];return `${mn}: ${on} ${c.para?'ligado':'desligado'}`;}
     const ROT={menu:'Menu',preset:'Perfil',inicio:'Tela inicial',name:'Nome',email:'E-mail',key:'Fotógrafo vinculado',active:'Status'};
@@ -5029,7 +5051,7 @@ function vAjustes(){
   if(cur){const ph=cur.photos;
     return `<div class="head"><div><div class="eyebrow"><button class="chip" data-act="aj-back">← Sessões</button></div><h1>${cur.loose?'Fotos fora de sessão':esc(cur.card)}</h1></div><div class="row"><span class="pill neutral">${esc(cur.date||'')} ${esc(cur.time||'')}${cur.pdv?' · '+esc(cur.pdv):''}</span><button class="btn primary" data-act="aj-auto-all" data-card="${esc(cur.card)}">✦ Automático em todas</button><button class="btn ghost" data-act="aj-reset-all" data-card="${esc(cur.card)}">Original em todas</button></div></div>
     <div class="photos">${ph.map(p=>photoBtn(p,{act:'aj-open',tag:ajTag(p.id),label:'Ajustar foto',zoom:false}).replace('<button class="ph"',`<button class="ph" ${SIM.discarded[p.id]?'data-off="1"':''}`)).join('')}</div>`;}
-  return `<div class="head"><div><div class="eyebrow">Set · ${esc(ajWhoName(key))}</div><h1>Ajustes</h1></div><div class="row"><span class="pill ${nIA?'good':'neutral'}">${nIA} pela IA</span><span class="pill ${nMan?'good':'neutral'}">${nMan} à mão</span><span class="pill ${nOff?'bad':'neutral'}">${nOff} descartadas</span></div></div>
+  return `<div class="head"><div><div class="eyebrow">Set · ${esc(ajWhoName(key))}</div><h1>${esc(viewLabel('ajustes'))}</h1></div><div class="row"><span class="pill ${nIA?'good':'neutral'}">${nIA} pela IA</span><span class="pill ${nMan?'good':'neutral'}">${nMan} à mão</span><span class="pill ${nOff?'bad':'neutral'}">${nOff} descartadas</span></div></div>
   ${ajAutoPanel()}<div class="note">Para refinar uma foto à mão, abra a sessão e toque nela.</div>
   ${who}
   ${sessions.length?`<div class="sess">${sessions.map(s=>{const ph=s.photos;const ed=ph.filter(p=>isEdited(p.id)).length;return `<button class="scard" data-act="aj-sess" data-card="${esc(s.card)}"><div class="ph" style="${ph[0]?phStyle(ph[0].id):''};height:90px;border-radius:6px;margin-bottom:6px"></div><div class="code">${s.loose?'Fora de sessão':esc(s.card)}</div><div class="meta"><span>${esc(s.date||'')} ${esc(s.time||'')}</span><span>${ph.length} fotos${ed?` · ${ed} ajustadas`:''}</span></div></button>`;}).join('')}</div>`:'<div class="note">Nenhuma foto deste fotógrafo neste computador.</div>'}`;
@@ -5092,8 +5114,11 @@ function render(){
   document.body.toggleAttribute('data-bare',bare);if(bare||!u)state.drawer=false;menuSync();
   if(u&&!bare){ // menus que abrem e fecham: o grupo da tela atual fica aberto; grupo sem item permitido some
     const cur=(VIEWS.find(v=>v[0]===state.view)||[])[3]||'';if(state.navCur!==cur){state.navCur=cur;state.navOpen={};}
-    const grps=[];roleViews().forEach(v=>{let g=grps.find(x=>x[0]===v[3]);if(!g)grps.push(g=[v[3],[]]);g[1].push(v);});
-    $('#nav').innerHTML=grps.map(([g,vs],i)=>{const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;return `<div class="navg"><button class="grp" data-act="nav-grp" data-g="${esc(g)}" aria-expanded="${open}" aria-controls="navg${i}"><span>${esc(g)}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><div class="navitems" id="navg${i}"${open?'':' hidden'}>${vs.map(v=>`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}"><span>${v[1]}</span><small>${v[2]}</small></button>`).join('')}</div></div>`;}).join('');
+    const grps=[];const rv=roleViews();rv.forEach(v=>{let g=grps.find(x=>x[0]===v[3]);if(!g)grps.push(g=[v[3],[]]);g[1].push(v);});
+    // v94-ux (parte H): item só com o nome (o que era <small> vai para o title); até 5 telas, sem grupos (decisão 8)
+    const item=v=>`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}" title="${esc(v[2])}"><span>${esc(viewLabel(v[0]))}</span>${v[0]==='posto'?postoPill():''}</button>`;
+    const navCk=homeView()!=='posto'&&canView('quiosque')?'<button class="nav-ck" data-act="loja-abrir" title="Abre a tela do cliente em outra janela"><span>Abrir Checkout</span></button>':''; // decisão 9
+    $('#nav').innerHTML=(rv.length<=5?`<div class="navg navplano"><div class="navitems" id="navg0">${rv.map(item).join('')}</div></div>`:grps.map(([g,vs],i)=>{const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;return `<div class="navg"><button class="grp" data-act="nav-grp" data-g="${esc(g)}" aria-expanded="${open}" aria-controls="navg${i}"><span>${esc(g)}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><div class="navitems" id="navg${i}"${open?'':' hidden'}>${vs.map(item).join('')}</div></div>`;}).join(''))+navCk;
     railCk();const m=MODULE_OF[state.view];const wr=m?['c','u','d'].filter(k=>opOk(m,k)):[];const ro=wr.length>0&&!wr.some(k=>can(m,k));/* somente leitura: o módulo tem letra de escrita e a pessoa não tem nenhuma */$('#venue-sub').innerHTML=`${esc(u.name)}${ro?' · <span class="pill neutral">somente leitura</span>':''}<br><span class="note">${esc(u.email)}</span> · <button class="chip" data-act="role-exit" style="min-height:26px;padding:2px 9px">sair</button>`;}
   if(u&&state.view==='fotografos'&&fotoKey()){state.person=fotoKey();}
   const fn=u?(VIEWFN[state.view]||vPerfis):vEntrar;
@@ -5118,11 +5143,14 @@ function entrarFoco(){const k=state.view==='entrar'&&!state.user?'entrar|'+(stat
 function entrarFocar(soLivre){if(state.view!=='entrar'||state.user)return;const el=document.querySelector(state.auth.step==='code'&&state.auth.pending?'#main [data-act="login-code"]':'#main [data-act="login-email"]');if(!el)return;
   const at=document.activeElement;if(soLivre&&at&&at!==document.body&&at!==el&&/^(INPUT|TEXTAREA|SELECT)$/.test(at.tagName))return;if(at===el)return;try{el.focus({preventScroll:true});}catch(e){}}
 window.addEventListener('focus',()=>entrarFocar(true));window.addEventListener('pageshow',()=>entrarFocar(true));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')entrarFocar(true);});
-// v79: barra da equipe: Abrir Checkout e, para quem confirma pagamento, o Caixa com o número de dinheiros esperando
+// v79: barra da equipe: Abrir Checkout e, para quem confirma pagamento, o Caixa com o número de dinheiros esperando.
+// v94-ux (parte H, decisão 9): o botão grande só para quem começa no Posto; para os outros, "Abrir Checkout" no rodapé do menu.
+// O botão "Posto de venda" saiu (o Posto está no menu); o número de pagamentos aguardando fica no item do menu (#rail-din).
+function postoPill(){if(!can('venda','c'))return '';const n=dinAbertas().length;return n?`<span class="pill ${dinAtrasada()?'warn':'neutral'}" id="rail-din" aria-label="${n} aguardando pagamento">${n}</span>`:'';}
 function railCk(){const el=$('#rail-ck');if(!el)return;if(!state.user||state.lojaRota||state.pub){el.innerHTML='';return;}
-  const ck=canView('quiosque')?'<button class="btn railck" data-act="loja-abrir" aria-label="Abrir Checkout"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="railck-t">Abrir Checkout</span></button>':'';
-  let cx='';if(canView('posto')&&can('venda','c')){const n=dinAbertas().length;cx=`<button class="btn railck caixa" data-act="view" data-v="posto" aria-label="Posto de venda${n?`, ${n} aguardando pagamento`:''}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/></svg><span class="railck-t">Posto de venda</span>${n?`<span class="pill ${dinAtrasada()?'warn':'neutral'}" id="rail-din">${n}</span>`:''}</button>`;}
-  el.innerHTML=ck+cx;}
+  {const it=document.querySelector('#nav [data-v="posto"]');if(it){const old=it.querySelector('#rail-din'),h=postoPill();if((old?old.outerHTML:'')!==h){if(old)old.remove();if(h)it.insertAdjacentHTML('beforeend',h);}}}
+  const ck=canView('quiosque')&&homeView()==='posto'?'<button class="btn railck" data-act="loja-abrir" aria-label="Abrir Checkout"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="railck-t">Abrir Checkout</span></button>':'';
+  if(el.innerHTML!==ck)el.innerHTML=ck;}
 // gaveta do menu no celular (até 700 px): o cabeçalho fica só com logo, Checkout e Menu; os grupos abrem por cima da tela
 function menuSync(){const o=!!state.drawer;document.body.toggleAttribute('data-drawer',o);const b=$('#menu-btn');if(b)b.setAttribute('aria-expanded',String(o));const g=$('#railgav');if(g){if(o){g.setAttribute('role','dialog');g.setAttribute('aria-modal','true');}else{g.removeAttribute('role');g.removeAttribute('aria-modal');}}}
 function menuSet(open,semFoco){state.drawer=!!open;menuSync();if(open){const g=$('#railgav');if(g)g.scrollTop=0;const f=$('#nav [aria-current="page"]')||$('#nav .grp');if(f)f.focus();}else if(!semFoco){const b=$('#menu-btn');if(b&&b.offsetParent)b.focus();}}
@@ -5431,7 +5459,7 @@ document.addEventListener('click',e=>{
     case 'bg-on':{let a=bgOn();if(a.includes(d.id))a=a.filter(x=>x!==d.id);else{if(a.length>=BG_MAX){toast('No máximo 5 fundos no Checkout. Tire um antes.');break;}a.push(d.id);}SIM.bgOn=a;saveSim();render();break;}
     case 'comp-zoom':{e.preventDefault&&e.preventDefault();const keys=[...document.querySelectorAll('[data-act="comp-zoom"]')].map(x=>({k:x.dataset.k,cap:x.dataset.cap})).filter(x=>COMPURL[x.k]);const i=keys.findIndex(x=>x.k===d.k);if(i<0){toast('A montagem ainda está sendo feita');break;}compModal(keys,i);break;}
     case 'rf-save':{const v=id=>(($('#'+id)||{}).value||'').trim();const body={host:v('rf-host'),port:v('rf-port')||'21',user:v('rf-user'),password:($('#rf-pass')||{}).value||'',dir:v('rf-dir'),tls:!!($('#rf-tls')||{}).checked};if(!body.host||!body.user){toast('Informe servidor e usuário');break;}toast('Testando conexão...');fetch(state.agent.url+'/ftp-remoto/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#rf-pass');if(f)f.value='';toast('Conectado. Buscando fotos novas no servidor.');rftpPoll.t=0;rftpPoll();}else toast(j.error||'Não conectou');}).catch(()=>toast('Agente não encontrado'));break;}
-    case 'set-switch':case 'set-logout':{const old=state.user&&state.user.name;log(`${old} saiu do Upload automático`);logout();if(a==='set-switch'){state.auth_next='importar';state.auth.switching=old||'';render();}break;}
+    case 'set-switch':case 'set-logout':{const old=state.user&&state.user.name;log(`${old} saiu de Minhas fotos`);logout();if(a==='set-switch'){state.auth_next='importar';state.auth.switching=old||'';render();}break;}
     case 'lib-f':{state.libF[d.k]=d.v;if(d.k==='day'){state.libF.per='dia';state.libF.who='todos';}render();break;}
     case 'fundos-modo':{const m=el.dataset.m==='photoroom'?'photoroom':'local';if(fundosModo()===m)break;SIM.fundosModo=m;SIM.fundosModoPor={modo:m,nome:(state.user&&state.user.name)||'',em:now().toISOString()};log(`Montagem dos fundos de IA: ${m==='photoroom'?'Photoroom':'local'}`);Object.keys(COMP).forEach(k=>delete COMP[k]);FIA_RUIM.clear();saveSim();render();
       fetch(state.agent.url+'/fundos/modo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:m})}).then(r=>r.ok?toast(m==='photoroom'?'Fundos de IA montados pelo Photoroom':'Fundos de IA montados no computador do ponto'):Promise.reject()).catch(()=>toast(m==='photoroom'?'O agente não confirmou: o Photoroom continua bloqueado nele':'Fundos de IA montados no computador do ponto'));break;}
@@ -5613,7 +5641,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={I18N,T,demoOn,demoSet,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
+window.ETERNA={I18N,T,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
 })();
 </script>
 

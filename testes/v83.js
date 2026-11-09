@@ -1,4 +1,5 @@
 // v83 etapa 1 (um notebook, sem agente): pagamento aguardando (14 a 20), venda acompanhada (21 e 22), impressão 10×15 (23 a 26),
+// v94-ux (parte H): "Abrir Checkout" do Admin fica no rodapé do menu (#nav .nav-ck); os cliques usam .rail [data-act="loja-abrir"]
 // Minhas vendas de hoje (34), fila local de eventos, alertas locais e foto com fundo de IA impressa com o fundo de 5000 px.
 // O "agente" aqui é só o page.route do Playwright na própria origem (/file/, /thumb/, /photoroom/*): nenhuma rede de verdade.
 const {chromium}=require('playwright');const fs=require('fs');const os=require('os');const path=require('path');const {execFileSync}=require('child_process');
@@ -64,7 +65,7 @@ try{
   const A=vigia(await ctx.newPage(),'A');await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(500);
   ok(await entrar(A,'eduardo@eduardorezende.com'),'admin não entrou');
   // "Abrir Checkout": janela nova do cliente e o admin cai no Posto de venda; o vendedor fica gravado
-  const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('#rail-ck [data-act="loja-abrir"]')]);vigia(L,'L');await L.waitForLoadState();await L.waitForTimeout(800);
+  const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('.rail [data-act="loja-abrir"]')]);vigia(L,'L');await L.waitForLoadState();await L.waitForTimeout(800);
   const a0=await A.evaluate(()=>({v:ETERNA.state.view,vend:JSON.parse(localStorage.getItem('eterna.posto.vendedor')||'null'),eco:!!document.querySelector('#eco')}));
   ok(a0.v==='posto'&&a0.vend&&a0.vend.email==='eduardo@eduardorezende.com'&&a0.eco,'abrir: admin deveria cair no Posto de venda com o vendedor gravado: '+J(a0));
   await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});

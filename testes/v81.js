@@ -1,4 +1,5 @@
 // v81: (1) imagens das bandeiras corrigidas e migração da lista salva; (2) só os fundos de IA aprovados (4 na v81, 5 com o Pódio da v86); (3) Abrir Checkout em janela à parte, admin continua logado
+// v94-ux (parte H): "Abrir Checkout" do Admin fica no rodapé do menu (#nav .nav-ck); os cliques usam .rail [data-act="loja-abrir"]
 const {chromium}=require('playwright');const fs=require('fs');const path=require('path');const login=require('./_login.js');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
@@ -84,14 +85,14 @@ try{
   {const ctx=await b.newContext({viewport:{width:1440,height:900}});const A=await ctx.newPage();A.on('pageerror',e=>errs.push('3A: '+e.message));
     await login(A);await A.evaluate(()=>{const t=ETERNA.venueToday();ETERNA.state.range={from:t,to:t};ETERNA.state.view='vendas-lista';ETERNA.render();});await A.waitForTimeout(200);
     const v0=await A.evaluate(()=>({view:ETERNA.state.view,hash:location.hash,user:ETERNA.state.user&&ETERNA.state.user.email}));
-    const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('#rail-ck [data-act="loja-abrir"]')]);L.on('pageerror',e=>errs.push('3L: '+e.message));
+    const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('.rail [data-act="loja-abrir"]')]);L.on('pageerror',e=>errs.push('3L: '+e.message));
     await L.waitForLoadState();await L.waitForTimeout(900);
     const l=await L.evaluate(()=>({hash:location.hash,rota:ETERNA.state.lojaRota,user:!!ETERNA.state.user,view:ETERNA.state.view,tab:sessionStorage.getItem('eterna.lojaTab'),name:window.name}));
     ok(l.hash==='#loja'&&l.rota&&l.view==='quiosque'&&!l.user&&l.tab==='1'&&l.name==='eterna-checkout','3: janela nova deveria estar em #loja sem login: '+J(l));
     const a1=await A.evaluate(()=>({view:ETERNA.state.view,hash:location.hash,user:ETERNA.state.user&&ETERNA.state.user.email,rota:ETERNA.state.lojaRota}));
     ok(a1.view==='posto'&&a1.user===v0.user&&!a1.rota&&a1.hash!=='#loja','3: aba do admin deveria ir para o Posto de venda (v83), logada: '+J([v0,a1]));
     // reabrir: reutiliza a mesma janela
-    const n0=ctx.pages().length;await A.click('#rail-ck [data-act="loja-abrir"]');await A.waitForTimeout(500);ok(ctx.pages().length===n0,'3: segundo clique abriu outra janela: '+ctx.pages().length);
+    const n0=ctx.pages().length;await A.click('.rail [data-act="loja-abrir"]');await A.waitForTimeout(500);ok(ctx.pages().length===n0,'3: segundo clique abriu outra janela: '+ctx.pages().length);
     // compra na janela do Checkout
     const card=await L.evaluate(()=>ETERNA.demoSessions().find(s=>s.photos.length>=8&&(ETERNA.SIM.sessions[s.card]||{}).status!=='paga').card);
     await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(1500);
@@ -117,7 +118,7 @@ try{
     await ctx.close();
     // popup bloqueado: toast e a aba não muda
     const c2=await b.newContext({viewport:{width:1440,height:900}});const B=await c2.newPage();B.on('pageerror',e=>errs.push('3B: '+e.message));await login(B);
-    await B.evaluate(()=>{window.open=()=>null;ETERNA.state.view='vendas-lista';ETERNA.render();});await B.click('#rail-ck [data-act="loja-abrir"]');await B.waitForTimeout(250);
+    await B.evaluate(()=>{window.open=()=>null;ETERNA.state.view='vendas-lista';ETERNA.render();});await B.click('.rail [data-act="loja-abrir"]');await B.waitForTimeout(250);
     const bl=await B.evaluate(()=>({view:ETERNA.state.view,rota:ETERNA.state.lojaRota,toast:(document.querySelector('#toast')||document.body).innerText}));
     ok(bl.view==='vendas-lista'&&!bl.rota&&/Libere janelas pop-up/.test(bl.toast),'3: popup bloqueado: '+J({view:bl.view,rota:bl.rota}));
     // lojaEquipeOn/lojaVoltarApp continuam no caminho antigo (go('quiosque') na mesma aba)
