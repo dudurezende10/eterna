@@ -274,7 +274,7 @@ try{
   fase='rev2';
   for(const l of ['pt','de']){await A.click(`[data-act="lang"][data-l="${l}"]`);await A.waitForTimeout(120);
     const lay=await A.evaluate(()=>{const R=s=>{const e=document.querySelector(s);return e?e.getBoundingClientRect():null;};const cod=document.querySelector('.lj-qrcode');const fs=parseFloat(getComputedStyle(cod).fontSize);
-      const top=R('.lj-top'),ic=R('.lj-pendbig'),bt=R('.lj-ic[data-act="loja-sair-ask"]'); // v94-ux: na espera, a saída é a casa do topo (parte G)return {umaLinha:R('.lj-qrcode').height<fs*1.6,abaixo:ic.top>=top.bottom-1,btn:bt.right<=innerWidth+1&&bt.left>=-1&&bt.bottom<=innerHeight+1,sw:document.documentElement.scrollWidth<=innerWidth+1};});
+      const top=R('.lj-top'),ic=R('.lj-pendbig'),bt=R('.lj-ic[data-act="loja-sair-ask"]'); /* v94-ux: na espera, a saída é a casa do topo (parte G) */return {umaLinha:R('.lj-qrcode').height<fs*1.6,abaixo:ic.top>=top.bottom-1,btn:bt.right<=innerWidth+1&&bt.left>=-1&&bt.bottom<=innerHeight+1,sw:document.documentElement.scrollWidth<=innerWidth+1};});
     ok(lay.umaLinha&&lay.abaixo&&lay.btn&&lay.sw,`rev 2: tela final do dinheiro em 390×844 (${l}): ${J(lay)}`);await A.screenshot({path:`${P}/v79-dinheiro-390-${l}.png`});}
   await A.click('[data-act="lang"][data-l="pt"]');await A.setViewportSize({width:1366,height:900});
   const D=await pagina(ctx,'D admin');ok(await login(D,'eduardo@eduardorezende.com'),'1.10: admin não entrou');

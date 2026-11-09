@@ -40,6 +40,8 @@ async function ljSessao(L,card,n){await L.evaluate(()=>{if(ETERNA.state.cam)ETER
   await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(500);
   await L.evaluate(([card,n])=>{const it=ETERNA.lojaItems(card).filter(x=>x.t==='ph');const pk=ETERNA.lojaPick(card);Object.keys(pk).forEach(k=>delete pk[k]);it.slice(0,n).forEach(x=>pk[x.k]='ok');ETERNA.state.kiosk.pkg=null;ETERNA.state.kiosk.pay=null;ETERNA.state.kiosk.step='cart';ETERNA.render();},[card,n]);await L.waitForTimeout(200);}
 async function ljPagar(L,m){await L.click(`[data-act="loja-paym"][data-m="${m}"]`);await L.waitForTimeout(120);await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(400);}
+// v94-ux: na espera do pagamento o botão "Voltar ao início" saiu; a casa pergunta "Cancelar o pedido?" e "Sim, sair" volta (parte G)
+async function ljNovo(L){if(await L.$('[data-act="loja-new"]'))return L.click('[data-act="loja-new"]');await L.click('[data-act="loja-sair-ask"]');await L.waitForTimeout(100);return L.click('.lj-mx [data-act="loja-new"]');}
 const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&x.estado==='aguardando'),card);
 // venda injetada direto no SIM (sessão com fotos ag_ servidas pelo page.route), pendência aguardando
 async function injPend(pg,o){return pg.evaluate(o=>{const S=ETERNA.SIM;const card=o.card;S.sessions[card]={key:'carlos',pdv:'Foto Campo 2',time:'10:00',date:'hoje',status:'aguardando',selected:o.sel.slice(),aiSel:(o.ai||[]).slice(),fav:(o.fav||[]).slice(),cart:o.cart,photos:o.sel.concat(o.extra||[]).map(id=>({id,sold:0})),din:o.id};
@@ -95,7 +97,7 @@ try{
 
   // ---- 21 (NSU): digitar no campo enquanto o cliente navega não perde o texto
   await A.click(`[data-act="pend-pos"][data-id="${p14.id}"]`);await A.waitForTimeout(100);await A.click('#pend-ref');await A.keyboard.type('1234');
-  await L.click('[data-act="loja-new"]');await L.waitForTimeout(200);await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
+  await ljNovo(L);await L.waitForTimeout(200);await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
   await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',cards[1]);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(500);
   for(const x of ['kiosk-ok','kiosk-next','kiosk-ok'])await L.click(`[data-act="${x}"]`);await L.waitForTimeout(900);
   await A.keyboard.type('56');ok(await A.evaluate(()=>document.querySelector('#pend-ref')&&document.querySelector('#pend-ref').value)==='123456','21: o NSU digitado se perdeu enquanto o cliente navegava');
@@ -113,7 +115,7 @@ try{
   await L.screenshot({path:`${P}/v83-checkout-confirmado.png`});
 
   // ---- 16: NSU com cara de cartão e curto recusados; vazio aceito
-  await L.click('[data-act="loja-new"]');await ljSessao(L,cards[3],3);await ljPagar(L,'card');const p16=await pendDe(L,cards[3]);await A.waitForTimeout(300);
+  await ljNovo(L);await ljSessao(L,cards[3],3);await ljPagar(L,'card');const p16=await pendDe(L,cards[3]);await A.waitForTimeout(300);
   await A.click(`[data-act="pend-pos"][data-id="${p16.id}"]`);await A.fill('#pend-ref','4111111111111111');await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(200);
   let e16=await A.evaluate(()=>({t:document.querySelector('#toast').textContent,err:(document.querySelector('.pend-err')||{}).innerText||''}));const st16=(await sim(A)).caixaDin.find(x=>x.id===p16.id);
   ok(/parece número de cartão/.test(e16.t+e16.err)&&st16.estado==='aguardando'&&!JSON.stringify(await sim(A)).includes('4111111111111111')&&!JSON.stringify(await A.evaluate(()=>ETERNA.pvFila())).includes('4111111111111111'),'16: número de cartão deveria ser recusado e não gravado: '+J(e16));
@@ -123,10 +125,10 @@ try{
   const v16=(await sim(A)).sessions[cards[3]];ok(v16.status==='paga'&&v16.pag&&v16.pag.ref===null,'16: vazio deveria ser aceito: '+J(v16.pag));
 
   // ---- 17: PIX mostra ljPosPixH; Dinheiro mantém os textos da v79 e passa à tela do QR na confirmação
-  await L.click('[data-act="loja-new"]');await ljSessao(L,cards[4],3);await ljPagar(L,'pix');
+  await ljNovo(L);await ljSessao(L,cards[4],3);await ljPagar(L,'pix');
   ok(/Pague com PIX na maquininha/i.test(await txt(L,'body'))&&!(await L.$('#lqr')),'17: tela do PIX');const p17=await pendDe(L,cards[4]);ok(p17&&p17.meio==='pix','17: pendência PIX');
   await A.waitForTimeout(300);await confirmar(A,p17.id,'778899');ok((await sim(A)).sessions[cards[4]].payment==='PIX (maquininha)','17: PIX (maquininha)');
-  await L.click('[data-act="loja-new"]');await ljSessao(L,cards[5],3);await ljPagar(L,'cash');
+  await ljNovo(L);await ljSessao(L,cards[5],3);await ljPagar(L,'cash');
   const l17=await L.evaluate(()=>({t:document.body.innerText.replace(/\s+/g,' '),cash:!!document.querySelector('.lj-cashdone .lj-pendbig'),qr:!!document.querySelector('#lqr')}));
   ok(l17.cash&&/Pague no caixa/i.test(l17.t)&&/[A-Z0-9]{4}-[A-Z0-9]{4}/.test(l17.t)&&!l17.qr,'17: dinheiro com os textos da v79, sem QR enquanto espera: '+l17.t.slice(0,200));
   const p17d=await pendDe(L,cards[5]);await A.waitForTimeout(300);
@@ -135,7 +137,7 @@ try{
   t0=Date.now();let q17=false;while(Date.now()-t0<2000){q17=await L.evaluate(()=>!!document.querySelector('#lqr'));if(q17)break;await sleep(100);}ok(q17,'17: dinheiro confirmado deveria passar à tela do QR');
 
   // ---- 18: o vendedor cancela: Checkout volta ao carrinho da mesma sessão com o aviso
-  await L.click('[data-act="loja-new"]');await ljSessao(L,cards[6],3);await ljPagar(L,'card');const p18=await pendDe(L,cards[6]);await A.waitForTimeout(300);
+  await ljNovo(L);await ljSessao(L,cards[6],3);await ljPagar(L,'card');const p18=await pendDe(L,cards[6]);await A.waitForTimeout(300);
   await A.click(`[data-act="din-cancel"][data-id="${p18.id}"]`);await A.click(`[data-act="din-cancel-ok"][data-id="${p18.id}"]`);await A.waitForTimeout(500);
   const l18=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,code:ETERNA.state.kiosk.code,t:(document.querySelector('.lj-aviso')||{}).innerText||''}));const s18=await sim(A);
   ok(l18.step==='cart'&&l18.code===cards[6]&&/O pagamento foi cancelado/.test(l18.t),'18: Checkout deveria voltar ao carrinho com o aviso: '+J(l18));
