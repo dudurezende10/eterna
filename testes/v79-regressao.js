@@ -99,7 +99,7 @@ try{
   fase='4.5';
   await lojaSessao(A,C1,4,4);await A.click('[data-act="loja-pkg"][data-id="mais"]');await A.waitForTimeout(150);c=await carrinho(A);
   const nSes=await A.evaluate(c=>ETERNA.lojaCart(c).nSes,C1);const save45=PRECO.arq+(nSes-1)*PRECO.extra-PRECO.mais;
-  ok(J(c.sum)===J(['Pacote todas as fotos R$ 250'])&&c.total==='R$ 250'&&!/impressa/.test(c.incl),'4.5: Todas: '+J(c));
+  ok(c.sum.length===1&&/^Todas as \d+ fotos R\$ 250$/.test(c.sum[0])/* v94-ux (parte K, C13): "Todas as N fotos" no resumo */&&c.total==='R$ 250'&&!/impressa/.test(c.incl),'4.5: Todas: '+J(c));
   ok(save45>0?c.save===`economia de R$ ${save45.toLocaleString('pt-BR')}`:c.save==='','4.5: economia do Todas ('+nSes+' fotos): '+c.save);
   // 1 foto: sem economia
   await lojaSessao(A,C1,1,0);c=await carrinho(A);ok(c.on==='arq'&&c.save===''&&c.total==='R$ 70'&&/1 foto impressa/.test(c.incl),'4.6: com 1 foto não aparece economia: '+J(c));

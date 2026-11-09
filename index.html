@@ -576,6 +576,13 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-mxok{min-height:56px;border-radius:999px;background:#134078;color:#fff;font-weight:700;font-size:18px;padding:0 24px}
 .lj-mxsair{min-height:48px;border-radius:999px;border:1.5px solid #134078;color:#134078;background:#fff;font-weight:600;font-size:16px;padding:0 24px}
 @media (max-width:900px){.lj-co{grid-template-columns:1fr}.lj-order{position:static}.lj-steps span{font-size:0;gap:0}.lj-steps i{width:12px}}
+/* v94-ux (parte K, C12): o fim do carrinho (resumo, total e botão de pagar) numa seção própria; no celular desce para depois do pagamento e a lista do que inclui vai para o fim */
+.lj-checkout .lj-co{grid-template-areas:"mem order" "incl order" "pagar order";grid-template-rows:auto auto 1fr}
+.lj-checkout .lj-mem{grid-area:mem}.lj-checkout .lj-order{grid-area:order}.lj-checkout .lj-incl{grid-area:incl}.lj-checkout .lj-pagar{grid-area:pagar;display:flex;flex-direction:column;gap:10px;align-self:start}
+.lj-checkout .lj-pagar .lj-sum{background:rgba(255,255,255,.1);color:#fff}
+.lj-checkout .lj-pagar .lj-total{border-top-color:rgba(255,255,255,.3)}.lj-checkout .lj-pagar .lj-total span{color:rgba(255,255,255,.8)}.lj-checkout .lj-pagar .lj-total b{color:#fff}
+.lj-checkout .lj-pagar .lj-fine{color:rgba(255,255,255,.75)}
+@media (max-width:900px){.lj-checkout .lj-co{grid-template-columns:minmax(0,1fr);grid-template-areas:"mem" "order" "pagar" "incl";grid-template-rows:none}}
 @media (max-width:640px){.lj-stage{grid-template-columns:minmax(0,1fr)}.lj-nav{display:none}.lj-print{width:100%}.lj-foot{flex-direction:column;align-items:stretch}.lj-next{width:100%}.lj-strip{order:2}.lj-cartpill span{display:none}.lj-steps{display:none}.lj-pkg{grid-template-columns:20px 44px minmax(0,1fr) auto;}.lj-pkg .lj-badge{display:none}.lj-pkgn{font-size:26px}.lj-minis{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.lj-no{width:64px;height:64px}.lj-yes{width:84px;height:84px}.lj .lj-v{opacity:.3}}
 @media (max-height:700px) and (min-width:641px){.lj-print{width:min(100%,calc((100vh - 300px) * 1.5))}.lj-title{margin:0 0 4px}.lj-h1{font-size:clamp(36px,6vw,64px)}}
 .lj .lj-photo{position:absolute;inset:0;z-index:0;background:url(img/bg-noite.jpg) center 30%/cover no-repeat;opacity:.2;mix-blend-mode:luminosity;-webkit-mask:linear-gradient(180deg,transparent 0%,#000 30%,#000 70%,transparent 100%);mask:linear-gradient(180deg,transparent 0%,#000 30%,#000 70%,transparent 100%);pointer-events:none}
@@ -595,7 +602,10 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-pay{min-height:74px;gap:4px}
 .lj-total b{font-size:40px}
 @media (max-width:1100px){.lj-steps span{font-size:0;gap:0}.lj-steps i{width:10px}}
-@media (max-width:640px){.lj-langs button{width:32px;height:32px;padding:3px}.lj-langs .lj-flag{width:24px;height:24px}.lj-top{flex-wrap:wrap}.lj-logo .vlogo{height:26px!important}}
+@media (max-width:640px){.lj-top{flex-wrap:wrap}.lj-logo .vlogo{height:26px!important}}
+/* v94-ux (parte K, C19): bandeira com alvo de 44×44 em todos os tamanhos; até 480 px o seletor de idioma ganha uma linha própria (Checkout e galeria) */
+.lj-langs button{width:44px;height:44px;padding:7px}.lj-langs .lj-flag{width:30px;height:30px}
+@media (max-width:480px){.lj-top{flex-wrap:wrap;row-gap:8px}.lj-topr{display:contents}.lj-top .lj-langs{order:3;width:100%;justify-content:center}:root{--lj-topo:132px}}
 .ajpv.orig{--flt:none!important}
 /* Loja apartada (#loja): contagem da tela final, voltar ao início, painel escondido da equipe */
 .lj-equipe{position:fixed;inset:0;z-index:20;background:rgba(6,18,36,.72);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -2533,6 +2543,7 @@ const I18N={
  galleryD:['baixe quando quiser','download anytime','descarga cuando quieras','téléchargez quand vous voulez','jederzeit herunterladen'],
  pkgH:['Escolha o pacote','Choose your package','Elige tu paquete','Choisissez votre formule','Wähle dein Paket'],
  pkgAll:['Todas as fotos do tour','All photos from your tour','Todas las fotos del tour','Toutes les photos de la visite','Alle Fotos deiner Tour'],
+ pkgAllN:[n=>`Todas as ${n} fotos`,n=>`All ${n} photos`,n=>`Las ${n} fotos`,n=>`Les ${n} photos`,n=>`Alle ${n} Fotos`], // v94-ux (parte K, C13)
  pkgPD:['Impressa 10×15 + digital','Print 10×15 + digital','Impresa 10×15 + digital','Tirage 10×15 + numérique','Druck 10×15 + digital'],
  pkgD:['Só digital','Digital only','Solo digital','Numérique uniquement','Nur digital'],
  ideal:['Ideal','Best fit','Ideal','Idéal','Passt'],
@@ -2715,7 +2726,7 @@ function vQuiosque(){
         <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)} · ${fmtR(c.total)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div>`}</div>`;}
   if(k.step==='cart'){const ps=DATA.catalog.filter(x=>x.kind==='pacote');const auto=c.n?lojaIdeal(c.n).pkg:null;const P0=c.pkg&&DATA.catalog.find(x=>x.id===c.pkg);const save=c.save;
     const MAXM=8;const prints=c.ch.slice(0,MAXM).map(x=>`<div class="lj-mini"><div class="lj-img" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?lojaThumb(x):''}</div></div>`).join('')+(c.ch.length>MAXM?`<div class="lj-mini lj-mais">+${c.ch.length-MAXM}</div>`:'');
-    const pkgs=c.n?ps.map(p=>{const dg=p.digital==='todas';const on=p.id===c.pkg;const ex=dg?0:Math.max(0,c.n-p.digital);return `<button class="lj-pkg ${on?'on':''}" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${on}"><span class="lj-radio"></span><span class="lj-pkgn">${dg?'∞':p.digital}</span><span class="lj-pkgd"><b>${dg?T('pkgAll'):T('nPhotos',p.digital)}</b><small>${p.prints?T('pkgPD'):T('pkgD')}</small>${ex?`<small class="lj-pkgx">${T('pkgPlusExtra',ex,fmtR(priceOf('extra')))}</small>`:''}</span>${p.id===auto?`<span class="lj-badge">${T('ideal')}</span>`:''}<span class="lj-pkgp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
+    const pkgs=c.n?ps.map(p=>{const dg=p.digital==='todas';const on=p.id===c.pkg;const ex=dg?0:Math.max(0,c.n-p.digital);return `<button class="lj-pkg ${on?'on':''}" data-act="loja-pkg" data-id="${p.id}" aria-pressed="${on}"><span class="lj-radio"></span><span class="lj-pkgn">${dg?(c.nSes||'∞'):p.digital}</span><span class="lj-pkgd"><b>${dg?(c.nSes?T('pkgAllN',c.nSes):T('pkgAll')):T('nPhotos',p.digital)}</b><small>${p.prints?T('pkgPD'):T('pkgD')}</small>${ex?`<small class="lj-pkgx">${T('pkgPlusExtra',ex,fmtR(priceOf('extra')))}</small>`:''}</span>${p.id===auto?`<span class="lj-badge">${T('ideal')}</span>`:''}<span class="lj-pkgp">${fmtR(priceOf(p.id))}</span></button>`;}).join(''):'';
     const incl=[c.prints?[ICO.print,T('incPrint',c.prints),T('incPrintD')]:null,
       c.nPh?[ICO.phone,P0&&P0.digital==='todas'?T('incDigAll'):T('incDig',c.nPh),T('incDigD')]:null,
       c.nAI?[ICO.spark,T('incAI',c.nAI),T('incAID')]:null,
@@ -2723,13 +2734,15 @@ function vQuiosque(){
     return `<div class="lj lj-full lj-checkout">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(2)}${topR(`${ljVoltar()}<button class="lj-ghost sm" data-act="kiosk-review">${ICO.back} ${T('steps')[0]}</button>`)}</div>
       <div class="lj-co">
         <section class="lj-mem"><div class="lj-eyebrow">${T('memories')}</div><h2 class="lj-h2">${T('chosen',nSel)}</h2>
-          ${nSel?`<button class="lj-minis" data-act="kiosk-review" aria-label="${T('steps')[0]}">${prints}</button><ul class="lj-incl">${incl.map(([ic,t,d])=>`<li><span class="lj-ii">${ic}</span><span><b>${t}</b><small>${d}</small></span></li>`).join('')}</ul>
-          ${c.lines.length?`<div class="lj-sum">${c.lines.map(l=>`<div class="lj-sumrow"><span>${l.t==='pkg'?(l.n==='todas'?T('sumPkgAll'):T('sumPkg',l.n)):T('sumExtra',l.n,fmtR(l.un))}</span><b>${fmtR(l.v)}</b></div>`).join('')}</div>`:''}
+          ${nSel?`<button class="lj-minis" data-act="kiosk-review" aria-label="${T('steps')[0]}">${prints}</button>`
+            :`<p class="lj-sub">${T('emptyCart')}</p><button class="lj-cta" data-act="kiosk-review">${ICO.back} ${T('choosePhotos')}</button>`}</section>
+        ${nSel?`<ul class="lj-incl">${incl.map(([ic,t,d])=>`<li><span class="lj-ii">${ic}</span><span><b>${t}</b><small>${d}</small></span></li>`).join('')}</ul>
+        <section class="lj-pagar">
+          ${c.lines.length?`<div class="lj-sum">${c.lines.map(l=>`<div class="lj-sumrow"><span>${l.t==='pkg'?(l.n==='todas'?(c.nSes?T('pkgAllN',c.nSes):T('sumPkgAll')):T('sumPkg',l.n)):T('sumExtra',l.n,fmtR(l.un))}</span><b>${fmtR(l.v)}</b></div>`).join('')}</div>`:''}
           <div class="lj-total"><span>${T('total')}${save>0?`<em class="lj-save">${T('save',fmtR(save))}</em>`:''}</span><b>${fmtR(c.total)}</b></div>
           <button class="lj-cta lj-paybtn" data-act="loja-checkout" ${k.pay?'':'disabled'}>${k.pay?`${T(k.pay==='cash'?'payBtnCash':'payBtn',fmtR(c.total))} ${ICO.arrow}`:T('choosePay')}</button>
           ${k.pay==='cash'?`<div class="lj-fine lj-cashnote">${T('cashNote')}</div>`:''}
-          ${c.prints&&k.pay!=='cash'?`<div class="lj-fine">${T('secure')}</div>`:''}`
-            :`<p class="lj-sub">${T('emptyCart')}</p><button class="lj-cta" data-act="kiosk-review">${ICO.back} ${T('choosePhotos')}</button>`}</section>
+          ${c.prints&&k.pay!=='cash'?`<div class="lj-fine">${T('secure')}</div>`:''}</section>`:''}
         ${nSel?`<section class="lj-order">
           ${pkgs?`<div class="lj-oh"><b>1</b>${T('pkgH')}</div><div class="lj-pkgs">${pkgs}</div>`:''}
           ${k.aviso?`<div class="lj-fine lj-aviso" role="status">${T(k.aviso)}</div>`:''}
