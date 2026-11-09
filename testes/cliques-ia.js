@@ -91,10 +91,10 @@ try{
   ok(r4.um.length===5&&r4.um.every(x=>x===f1),'4: base ruim usa a outra: '+J(r4.um));
   ok(r4.ant.length>0&&!r4.ant.includes(f1)&&!r4.ant.includes(f2)&&r4.ant.every(x=>it.fotos.slice(0,2).includes(x)),'4: as duas ruins: jeito antigo com as 2 primeiras fotos normais: '+J(r4.ant));
   // A11: sessão de menor achada pela selfie sem a base em so.ids = sem as bases; D2: âncora sem ia passa para a próxima sessão
-  const r11=await pg.evaluate(([f2])=>{const k=ETERNA.state.kiosk;const so0=k.so;const card='LPTIACAM1';const fotos=ETERNA.lojaFotos(card).map(p=>p.id);
+  const r11=await pg.evaluate(([f1,f2])=>{const k=ETERNA.state.kiosk;const so0=k.so;const card='LPTIACAM1';const fotos=ETERNA.lojaFotos(card).map(p=>p.id);
     k.so={card,cards:[card],ids:fotos.slice(0,3).concat([f2])};const s1=ETERNA.lojaAIBase(card);
-    k.so={card:'LPTIASEM5',cards:['LPTIASEM5','LPTIACAM1'],ids:ETERNA.lojaIdsSo({LPTIASEM5:['x'],LPTIACAM1:['y']},['LPTIASEM5','LPTIACAM1'])};const s2=ETERNA.lojaAIBase('LPTIASEM5');const ai2=ETERNA.lojaAI('LPTIASEM5').length;
-    k.so=so0;return {s1,s2,ai2};},[f2]);
+    k.so={card:'LPTIASEM5',cards:['LPTIASEM5','LPTIACAM1'],ids:ETERNA.lojaIdsSo({LPTIASEM5:['x'],LPTIACAM1:[f1,f2]})};const s2=ETERNA.lojaAIBase('LPTIASEM5');const ai2=ETERNA.lojaAI('LPTIASEM5').length;
+    k.so=so0;return {s1,s2,ai2};},[f1,f2]);
   ok(r11.s1.bases.join()===f2,'A11: só a base que está em so.ids: '+J(r11.s1));
   ok(r11.s2.ses==='LPTIACAM1'&&r11.s2.bases.length===2&&r11.ai2===5,'D2: âncora sem ia usa a próxima sessão (um conjunto de 5): '+J(r11));
   // A15 (R3): pela selfie, sessão achada só pela base de IA; nenhuma base como foto; sessão de menor só com a base reconhecida
@@ -107,7 +107,7 @@ try{
     const b={code:k.code,ids:k.so&&k.so.ids,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id)};
     delete ETERNA.SIM.sessions.LPTIACAM1.menor;ETERNA.lojaReset();return {a,b};},[f1,f2]);
   ok(r15.a.achou.join()==='LPTIACAM1'&&r15.a.code==='LPTIACAM1','A15: a selfie acha a sessão só pela base: '+J(r15.a.achou));
-  ok(r15.a.fotos.length===6&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===5,'A15: sessão inteira sem nenhuma base como foto, com as 5 montagens: '+J(r15.a.items));
+  ok(r15.a.fotos.length===0&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===5,'A15: só o que tem o rosto dela, nenhuma base como foto, com as 5 montagens: '+J(r15.a.items));
   ok(r15.b.code==='LPTIACAM1'&&r15.b.fotos.length===0&&r15.b.ai.length===5&&r15.b.ai.every(x=>x===f2),'A15: menor: só a base reconhecida nas montagens, nenhuma foto de fora: '+J(r15.b));
   SIMS={};
   // "Todas" conta só as fotos normais (+ as montagens escolhidas)
