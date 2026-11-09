@@ -70,7 +70,9 @@ try:
     for metodo, fs in fontes.items():
         for f in fs:
             src = inspect.getsource(getattr(m.H, f))
-            for lit in set(re.findall(r'"(/[a-z][a-z0-9_/.-]*)', src)):
+            # só as linhas que escolhem a rota (path == / in / startswith); texto de resposta e URLs montadas ficam de fora
+            linhas = [x for x in src.splitlines() if re.search(r"\b(u\.path|path|p)\b\s*(==|in\b|\.startswith)", x)]
+            for lit in set(re.findall(r'"(/[a-z][a-z0-9_/.-]*)', "\n".join(linhas))):
                 coberta = any(m.rota_regra(mm, lit) for mm in ("GET", "POST")) or any(c.startswith(lit) for _, c, _, _ in m.ROTAS)
                 if not coberta:
                     sem_regra.append("%s %s (%s)" % (metodo, lit, f))

@@ -112,7 +112,17 @@ try:
     ok(erro(lambda: f.sendcmd("EPRT |1|127.0.0.1|1025|")).startswith("502"), "EPRT deveria dar 502")
     ok("PORT" not in f.sendcmd("FEAT"), "FEAT sem PORT")
     # teto de tamanho: 61 MB -> 552
-    r = erro(lambda: f.storbinary("STOR enorme.jpg", io.BytesIO(b"\xff\xd8" + b"\0" * (61 * 1024 * 1024))))
+    f.voidcmd("TYPE I")
+    dc = f.transfercmd("STOR enorme.jpg")
+    try:                                             # o servidor corta no teto: o envio pode terminar em conexão fechada
+        bloco = b"\0" * (1024 * 1024)
+        dc.sendall(b"\xff\xd8")
+        for _ in range(61):
+            dc.sendall(bloco)
+    except OSError:
+        pass
+    dc.close()
+    r = erro(lambda: f.voidresp())
     ok(r.startswith("552"), "arquivo de 61 MB deveria dar 552: %s" % r[:80])
     f.close()
     # conexão de dados de outro IP é fechada; a do IP certo grava (226)
