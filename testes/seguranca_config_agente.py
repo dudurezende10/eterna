@@ -58,7 +58,7 @@ try:
     ok(st == 502 and j.get("error") == "não conectou: confira servidor, porta, usuário e senha", "erro sem detalhe da conexão: %s %s" % (st, j))
     sts = [pede("/ftp-remoto/config", {"host": "127.0.0.1", "port": 21, "user": "u", "password": "p"}, adm)[0] for _ in range(5)]
     ok(sts[-1] == 429 and 429 not in sts[:3], "6º teste no minuto deveria dar 429: %s" % sts)
-    ok(m.rftp_host_ok("10.1.2.3") and m.rftp_host_ok("172.20.0.1") and m.rftp_host_ok("192.168.10.218") and not m.rftp_host_ok("172.32.0.1")
+    ok(m.rftp_host_ok("10.1.2.3") and m.rftp_host_ok("172.20.0.1") and m.rftp_host_ok("192.168.1.20") and not m.rftp_host_ok("172.32.0.1")
        and m.rftp_host_ok("ftp.estadio.local") and not m.rftp_host_ok("100.64.0.1"), "rftp_host_ok")
     # Photoroom: chave com teto de corpo
     st, j = pede("/photoroom/config", None, adm, bruto=b'{"api_key":"' + b"a" * 5000 + b'"}')
