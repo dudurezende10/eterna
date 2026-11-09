@@ -41,7 +41,7 @@ Cada pessoa só vê as telas que pode usar. Se faltar uma tela de que você prec
 - **Catálogo e preços** passou a se chamar **Painel de controle** (catálogo, preços, Checkout e o FTP do estádio). Não confunda com o **Painel** do Dashboard.
 - O cartão de **check-in da câmera** saiu do Upload automático. O fotógrafo de cada foto vem do usuário do FTP (cada fotógrafo tem o seu login) e do nome gravado na câmera.
 - O cartão **Servidor FTP do estádio** saiu do Upload automático e foi para **Configurações › Painel de controle**.
-- Em Permissões e no cadastro de Usuários: **Copiar permissões de…** (parte 5).
+- Em Permissões: **Copiar permissões de…** (parte 5).
 - As datas aparecem sempre como dia/mês/ano (07/10/2026), mesmo com o navegador em inglês.
 
 ### O que mudou na v78
@@ -414,7 +414,7 @@ Ao mudar uma caixa à mão, o perfil vira **Personalizado**. É normal.
 
 ### Copiar permissões de outra pessoa
 
-1. Em **Permissões**, toque na pessoa e depois em **Copiar permissões de…** (ou, em **Usuários**, abra a pessoa e toque em **Copiar permissões de…**).
+1. Em **Permissões**, toque na pessoa e depois em **Copiar permissões de…**.
 2. Escolha de quem copiar. Vêm as caixas de cada parte, o menu e a tela inicial. Nome, e-mail e status não mudam.
 3. Confira a lista **O que muda**. Nada é gravado antes de confirmar.
 4. Se a outra pessoa tiver acessos que você não tem, eles ficam de fora e aparecem no aviso **Ficou de fora**. O resto é copiado.
