@@ -42,7 +42,7 @@ try{
       // H8: links antigos
       const casos=[['importar','importar'],['caixa','caixa'],['checkout','checkout'],['fila','fila'],['posto','posto'],['catalogo','catalogo'],['vendas','vendas'],['revisao','revisao'],['ajustes','ajustes'],['escala','escala'],['semana','painel'],['set','importar']];
       for(const [h,esp] of casos){await pg.evaluate(()=>ETERNA.go('perfis'));await pg.evaluate(h=>{location.hash='#'+h;},h);await pg.waitForTimeout(120);const r=await pg.evaluate(()=>({v:ETERNA.state.view,f:/Algo falhou/.test(document.querySelector('#main').textContent)}));ok(r.v===esp&&!r.f,'H8: #'+h+' deveria abrir '+esp+': '+J(r));}}
-    if(k==='supervisor'){const vs=its.map(x=>x.v);ok(!['repo','identidade','vestiario','fundos-teste','usuarios','permissoes'].some(v=>vs.includes(v)),'H5: supervisora com tela do Sistema: '+J(vs));}
+    if(k==='supervisor'){const vs=its.map(x=>x.v);ok(!['repo','identidade','chroma','vestiario','fundos-teste','usuarios','permissoes'].some(v=>vs.includes(v)),'H5: supervisora com tela do Sistema: '+J(vs));}
     await ctx.close();}
   // H5 e H7 (funções puras)
   {const {ctx,pg}=await nova(b);
@@ -54,13 +54,13 @@ try{
     ok(['foto','venda','valida','supervisor','quiosque'].every(k=>J(r[k])==='[]'),'H7: accExtra(depois, antes) não vazio: '+J(r));
     ok(r.supPerms,'H5: perms da Supervisora mudaram');ok(r.adminTudo,'H7: Admin sem alguma tela');
     // H5: migração única da supervisora salva com o menu da v93; personalizado com repo não muda
-    await pg.evaluate(()=>{const U=JSON.parse(localStorage.getItem('eterna.users.v1'));const s=U['supervisor@eterna.photo'];const SIS=['repo','identidade','vestiario','fundos-teste'];s.menu=ETERNA.ALL_VIEWS.filter(v=>ETERNA.presetMenu('supervisor').includes(v)||SIS.includes(v)); /* menu da v93 */s.inicio='repo';delete s.msis94;
+    await pg.evaluate(()=>{const U=JSON.parse(localStorage.getItem('eterna.users.v1'));const s=U['supervisor@eterna.photo'];const SIS=['repo','identidade','chroma','vestiario','fundos-teste'];s.menu=ETERNA.ALL_VIEWS.filter(v=>ETERNA.presetMenu('supervisor').includes(v)||SIS.includes(v)); /* menu da v93 */s.inicio='repo';delete s.msis94;
       U['gerente@eterna.photo']={...JSON.parse(JSON.stringify(s)),email:'gerente@eterna.photo',name:'Gerente',preset:'custom',inicio:null};U['sup2@eterna.photo']={...JSON.parse(JSON.stringify(s)),email:'sup2@eterna.photo',name:'Sup 2',inicio:null};
       localStorage.setItem('eterna.users.v1',JSON.stringify(U));localStorage.removeItem('eterna.users.log.v1');});
     await pg.reload();await pg.waitForTimeout(400);
     const m1=await pg.evaluate(()=>{const U=ETERNA.USERS;const l=ETERNA.auditRead().filter(e=>e.acao==='migracao_v94');return {n:l.length,alvos:l.map(e=>e.alvo).sort(),sup:U['supervisor@eterna.photo'].menu,ini:U['supervisor@eterna.photo'].inicio,ger:U['gerente@eterna.photo'].menu,m:U['supervisor@eterna.photo'].msis94,preset:ETERNA.presetMatch(U['sup2@eterna.photo'])};});
     ok(m1.n===2&&J(m1.alvos)===J(['sup2@eterna.photo','supervisor@eterna.photo']),'H5: 1 linha migracao_v94 por supervisora salva: '+J(m1));
-    ok(!['repo','identidade','vestiario','fundos-teste'].some(v=>m1.sup.includes(v))&&m1.ini===null&&m1.m===1,'H5: menu e tela inicial da supervisora migrados: '+J(m1));
+    ok(!['repo','identidade','chroma','vestiario','fundos-teste'].some(v=>m1.sup.includes(v))&&m1.ini===null&&m1.m===1,'H5: menu e tela inicial da supervisora migrados: '+J(m1));
     ok(m1.ger.includes('repo')&&m1.ger.includes('identidade'),'H7: personalizado com repo não muda: '+J(m1.ger));
     ok(m1.preset==='supervisor','H5: supervisora migrada continua com o perfil Supervisor: '+m1.preset);
     await pg.reload();await pg.waitForTimeout(400);

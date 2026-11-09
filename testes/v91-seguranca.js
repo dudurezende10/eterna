@@ -1,4 +1,5 @@
 // v91, devolução da segurança e sugestões do revisor (01/11), e janela da selfie (Eduardo, 01/11 16:46 e 16:51):
+// v94-ux (parte I): a janela da selfie fica na aba Checkout de Preços e Checkout
 //  B4: "Sim, sou eu" no "Esta sessão também é sua?" põe só as fotos em dúvida daquela sessão, nunca a sessão inteira;
 //  B5: quem aparece claro só no FUNDO de uma foto (rosto < metade do maior; principal:false do agente) não abre a sessão
 //      inteira: entram só as fotos claras dela, com galeria própria na venda;
@@ -137,7 +138,7 @@ try{
   await P.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await P.click('button[type=submit]');await P.waitForTimeout(200);
   {const otp=await P.$('.otp');if(otp){await P.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await P.waitForTimeout(500);}}
   ok(await espera(P,()=>!!ETERNA.state.db,12000),'o Painel liga no servidor do ponto (estado.db)');
-  await P.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await P.waitForTimeout(300);
+  await P.evaluate(()=>{ETERNA.state.catTab='checkout';ETERNA.state.view='catalogo';ETERNA.render();});await P.waitForTimeout(300);
   ok(await P.$('#busca-janela')&&/Procurar fotos dos últimos/.test(await P.textContent('#main')),'campo "Procurar fotos dos últimos __ minutos" no Painel de controle');
   ok(await P.inputValue('#busca-janela')==='90','padrão 90 minutos');
   // sem permissão de alterar Configurações: o campo fica desligado e a troca é barrada

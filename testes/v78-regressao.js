@@ -1,3 +1,4 @@
+// v94-ux (parte I): a grade de permissões fica no "Ajuste fino" (<details>, fechado para perfil pronto); o teste abre antes de usar
 // v78 (testador): o que o permissoes.js não cobre. Menus de cada perfil (grupos, itens, ordem, abrir e fechar, grupo vazio some),
 // links antigos (#set, #fluxo, #convidado) com e sem login, Upload automático (check-in pelo admin, supervisor só leitura, Sair),
 // Permissões ("não se aplica" legível, tela inicial e menu pela tela), cadastro (cancelar exclusão), e-mail fora do cadastro,
@@ -20,10 +21,10 @@ const J=JSON.stringify;
 // v94-ux (parte H): grupos Venda (Posto) e Sistema; Laboratório entrou no Sistema; Supervisora sem o Sistema; até 5 telas, sem grupos.
 // ck = tem "Abrir Checkout" (botão grande no topo para quem começa no Posto, item no rodapé do menu para os outros)
 const PERFIS={
-  'eduardo@eduardorezende.com':{n:'admin',g:[['Venda',['posto']],['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala','calendario']],['Configurações',['catalogo','chroma','ajustes']],['Sistema',['repo','identidade','usuarios','permissoes','vestiario','fundos-teste']]],ini:'painel',ck:true},
+  'eduardo@eduardorezende.com':{n:'admin',g:[['Venda',['posto']],['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala','calendario']],['Configurações',['catalogo','ajustes']],['Sistema',['repo','identidade','chroma','usuarios','permissoes','vestiario','fundos-teste']]],ini:'painel',ck:true},
   'carlos@eterna.photo':{n:'fotografo',g:[['',['diario','importar','fotofila','escala']]],ini:'importar',ck:false},
   'loja@eterna.photo':{n:'atendimento',g:[['',['posto','fotofila','catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
-  'supervisor@eterna.photo':{n:'supervisor',g:[['Venda',['posto']],['Dashboard',['painel','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala','calendario']],['Configurações',['catalogo','chroma','ajustes']]],ini:'painel',ck:true},
+  'supervisor@eterna.photo':{n:'supervisor',g:[['Venda',['posto']],['Dashboard',['painel','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala','calendario']],['Configurações',['catalogo','ajustes']]],ini:'painel',ck:true}, // parte I: Fundos de IA (técnico) no Sistema; a Supervisora usa a aba de Preços e Checkout
   'qualidade@eterna.photo':{n:'validador',g:[['',['revisao','treino','diario']]],ini:'revisao',ck:false},
 };
 (async()=>{const b=await chromium.launch();
@@ -94,7 +95,7 @@ try{
     await ctx.close();}
   // ---------- E. Permissões: "não se aplica" legível, tela inicial e menu pela tela; prints desktop e celular ----------
   for(const [n,w,h] of [['desk',1440,900],['cel',390,844]]){const {ctx,pg}=await nova(b,w,h);await entrar(pg,'eduardo@eduardorezende.com');
-    await pg.evaluate(()=>{ETERNA.state.view='permissoes';ETERNA.render();});await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(150);
+    await pg.evaluate(()=>{ETERNA.state.view='permissoes';ETERNA.render();});await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.evaluate(()=>document.querySelectorAll('details.perm-fino').forEach(d=>d.open=true));await pg.waitForTimeout(40);await pg.waitForTimeout(150);
     const na=await pg.evaluate(()=>{const row=document.querySelector('.perm-row[data-m="financeiro"]');return {txt:row?row.innerText:'',titles:row?[...row.querySelectorAll('.perm-na')].map(x=>x.title):[]};});
     if(n==='cel')ok(/Criar · não se aplica/.test(na.txt)&&/Alterar · não se aplica/.test(na.txt),'E cel: "não se aplica" deveria estar escrito no card de Números de vendas: '+na.txt.replace(/\s+/g,' ').slice(0,200));
     else ok(na.titles.length===2&&na.titles.every(t=>/Não se aplica/.test(t)),'E desk: célula "não se aplica" sem título explicativo '+J(na.titles));
@@ -102,7 +103,7 @@ try{
     await pg.screenshot({path:`${P}/v78-permissoes-${n}.png`,fullPage:n==='cel'});
     if(n==='desk'){await pg.click('[data-act="perm-tab"][data-t="perfis"]').catch(()=>{});await pg.waitForTimeout(100);const pf=await pg.textContent('#main');ok(/Fotógrafo/.test(pf)&&/Atendimento e venda/.test(pf)&&/Validador/.test(pf),'E: aba Perfis prontos sem os perfis');await pg.screenshot({path:`${P}/v78-permissoes-perfis.png`,fullPage:true});
       // tela inicial e menu pela tela: Carlos com Diário como tela inicial e sem Escala
-      await pg.click('[data-act="perm-tab"][data-t="usuario"]');await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(100);
+      await pg.click('[data-act="perm-tab"][data-t="usuario"]');await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.evaluate(()=>document.querySelectorAll('details.perm-fino').forEach(d=>d.open=true));await pg.waitForTimeout(40);await pg.waitForTimeout(100);
       const ops=await pg.$$eval('[data-act="perm-inicio"] option',e=>e.map(x=>x.value));ok(ops.includes('diario')&&!ops.includes('vendas'),'E: opções de tela inicial '+J(ops));
       await pg.selectOption('[data-act="perm-inicio"]','diario');await pg.click('.perm-tbl input[data-act="perm-view"][data-v="escala"]');await pg.click('[data-act="perm-save"]');await pg.waitForTimeout(150);
       const cu=await pg.evaluate(()=>{const u=ETERNA.USERS['carlos@eterna.photo'];return {ini:u.inicio,menu:u.menu,preset:u.preset};});ok(cu.ini==='diario'&&!cu.menu.includes('escala')&&cu.preset==='custom','E: gravar tela inicial e menu '+J(cu));

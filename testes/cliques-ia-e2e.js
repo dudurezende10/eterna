@@ -1,4 +1,5 @@
 // v93 (testador): os cliques de IA com o AGENTE DE VERDADE (testes/_cliques_ia_lanca.py: recorte falso só por m.REC_FALSO_SEG),
+// v94-ux (parte I): "Fotos para os fundos de IA" fica na aba Fundos de IA de Preços e Checkout
 // servindo o app (ETERNA_APP_ORIGIN = servidor do rodar.sh) e montando as sessões, a fila de recorte, o /fila-fotografo e o
 // estado.db. Fotos sintéticas (PNG com uma silhueta desenhada) mandadas pelo FTP embutido (testes/_cliques_ia_semear.py).
 // Só a busca do rosto da selfie é simulada (page.route em /rostos/buscar): foto sintética não tem rosto.
@@ -147,12 +148,12 @@ try{
   const Q2=semear('sandessa',3);
   ok(await esp2(()=>[...document.querySelectorAll('.ff-ia')].some(x=>x.textContent==='Fundo IA ✓✓'),25000),'13: depois de pronto, "Fundo IA ✓✓": '+J(await pe.evaluate(()=>[...document.querySelectorAll('.ff-ia')].map(x=>x.textContent))));
   await pe.screenshot({path:path.join(PRINTS,'v93-fila-pronta.png')});
-  for(const [w,h] of [[390,844],[768,1024]]){await pe.setViewportSize({width:w,height:h});for(const v of ['fotofila','importar','catalogo']){await pe.evaluate(v=>ETERNA.go(v),v);await pe.waitForTimeout(400);
+  for(const [w,h] of [[390,844],[768,1024]]){await pe.setViewportSize({width:w,height:h});for(const v of ['fotofila','importar','catalogo']){await pe.evaluate(v=>{ETERNA.state.catTab='fundos';ETERNA.go(v);},v);await pe.waitForTimeout(400);
     const sw=await pe.evaluate(()=>({sw:document.documentElement.scrollWidth,w:innerWidth}));ok(sw.sw<=sw.w+1,`${v} ${w}px sem rolagem lateral: `+J(sw));
     if(v==='catalogo'){await pe.evaluate(()=>{const e=document.querySelector('#ia-cfg');if(e)e.scrollIntoView();});}await pe.screenshot({path:path.join(PRINTS,`v93-${v}-${w}.png`)});}}
   await pe.setViewportSize({width:1366,height:900});
   // 12: Painel de controle grava no agente (state.db = agente) e vale para a próxima sessão que fechar
-  await pe.evaluate(()=>ETERNA.go('catalogo'));await pe.waitForTimeout(300);
+  await pe.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));await pe.waitForTimeout(300);
   ok(await esp2(()=>!!ETERNA.state.db,10000),'12: o app usa o estado.db do agente');
   const pts=await pe.$$eval('#ia-cfg [data-act="ia-ponto"]',xs=>xs.map(x=>x.dataset.id+':'+x.checked));
   ok(pts.join()==='terminal:true,campo2:true,campo3:true,campo4:true,vestiario:false','12: padrão nos 4 pontos de campo: '+J(pts));
@@ -172,7 +173,7 @@ try{
   await pe.evaluate(()=>ETERNA.go('importar'));
   ok(await esp2(c=>{const b=document.querySelector(`.up-sess[data-card="${c}"]`);return b&&[...b.querySelectorAll('.ph .tag-ia')].length===1;},15000,xN1&&xN1.card),'12/14: com 1 clique, só uma base marcada no Upload');
   // sem configuracao.u: campos desabilitados e guardAct barra (nada sobe ao agente)
-  await pe.evaluate(()=>ETERNA.go('catalogo'));
+  await pe.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));
   const r12=await pe.evaluate(()=>{const u=ETERNA.state.user;const p0=u.perms;u.perms={...p0,configuracao:{r:true}};ETERNA.render();const dis=[...document.querySelectorAll('#ia-cfg input')].every(x=>x.disabled);
     const el=document.querySelector('#ia-cfg [data-act="ia-cliques"]');el.disabled=false;el.value='3';el.dispatchEvent(new Event('change',{bubbles:true}));const c=ETERNA.iaCfg().cliques;u.perms=p0;ETERNA.render();return {dis,c};});
   ok(r12.dis&&r12.c===1,'12: sem configuracao.u desabilitado e barrado: '+J(r12));
@@ -186,7 +187,7 @@ try{
   {const cn=await b.newContext({viewport:{width:1366,height:900}});await cn.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pn=await cn.newPage();const en=[];pn.on('pageerror',e=>en.push(e.message));
     await pn.goto(U);await pn.waitForTimeout(500);await pn.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pn.click('button[type=submit]');await pn.waitForTimeout(200);
     await pn.fill('[data-act="login-code"]',(await pn.textContent('.otp')).replace(/\s/g,''));await pn.waitForTimeout(600);
-    await pn.evaluate(()=>ETERNA.go('catalogo'));await pn.waitForTimeout(300);
+    await pn.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));await pn.waitForTimeout(300);
     await pn.click('#ia-cfg [data-act="ia-volante"]');await pn.waitForTimeout(300);
     const sn=await pn.evaluate(()=>({c:ETERNA.iaCfg(),toast:(document.querySelector('#toast')||{}).textContent||'',db:!!ETERNA.state.db}));
     ok(sn.c.volante===true&&!sn.db,'sem agente: o Painel grava neste navegador: '+J(sn));
