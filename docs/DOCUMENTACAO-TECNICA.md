@@ -1698,3 +1698,28 @@ Segurança de sessão (D2), sem relação com ponto. Usuário com `key` (fotógr
 
 - **Agenda automática de jogos**: o agente busca os jogos do Maracanã toda segunda-feira e o Calendário ganha o botão "Atualizar agora". Não existe fonte oficial única (CBF, Ferj e Conmebol publicam cada uma a sua); até lá, cadastro manual e CSV.
 - Também fora da v92: tempo da fila de impressão, idioma de quem foi ao Checkout e não comprou, exportar as estatísticas em CSV, conector do bip ou da catraca (formato do bip vem do Ronaldo), estatísticas de vários venues pela nuvem.
+
+## Acesso ao servidor do ponto, postos pareados, FTP e configuração (v93, 09/11/2026)
+
+**Quem pode cada rota.** Todas as rotas do agente estão numa tabela única, `ROTAS` (`rota_regra`), aplicada por `H.autoriza` antes de qualquer outra coisa em `do_GET` e `do_POST`. Tipos:
+
+| Tipo | Quem | Exemplos |
+| --- | --- | --- |
+| `publica` | qualquer um | app (`/`, `/index.html`, `img/`, `vendor/`, `sprites/`), `/status` mínimo, galeria do cliente `/g/*`, webhook, `/auth/entrar`, `/postos/aceitar` |
+| `posto_ou_sessao` | aparelho pareado ou pessoa conectada | `/thumb/`, `/file/`, `/sessoes`, `/ponto/docs`, `/ponto/eventos`, `/rostos/buscar`, `/galerias/publicar`, recorte, montagem do Photoroom, `/fila-fotografo` |
+| `sessao` | pessoa conectada com o módulo | `/biblioteca` e `/events` (`set.r` ou `estoque.r`), `/metricas*` (`estatisticas.r` ou `financeiro.r`), `/roverpix/*`, configurações (`configuracao.u`), impressão (`venda`), `/galerias/vendas|status|encerrar` e `/lgpd/excluir` (`galerias`) |
+| `teste` | `ETERNA_TESTE_CARGA=1` e `configuracao.u` | `/rostos/projecao`, `/nuvem/link` |
+
+Rota fora da tabela responde 404. Fora das públicas, o `Host` precisa ser do agente, a `Origin` (quando vem) precisa ser a do próprio agente, de `ETERNA_ORIGENS` ou de `ETERNA_APP_ORIGIN`, e todo POST leva `X-Eterna: 1`. Respostas: 401 `sem_sessao`, 403 `sem_permissao` ou `origem`. CORS aberto (`*`) só em `/g/*`. `/status` sem credencial devolve só `{ok, agent, version, boot}`; com posto ou sessão, o resto (sem logins do FTP nem pastas; `impressora_locais` só com sessão). `/photoroom/status` sem `configuracao.r` devolve só `{configured, fundos_modo}`.
+
+**Gravação de documentos.** `POST /ponto/docs` confere documento por documento (`auth_filtrar_docs`): `usuarios` pela regra de cadastro; `usuarios_login` só o próprio; `usuarios_log` e `sim/cortesiaLog|*` só acrescentam; as outras coleções pelo módulo (`DOC_COL_MOD`) e a coleção `sim` pelo começo do id (`DOC_SIM`; `stock|` também com `venda`, porque a impressão baixa o rolo). Id desconhecido é recusado. Aparelho pareado sem pessoa conectada não grava. O recusado volta em `recusados` (o app não reenvia) e fica no `login_log`.
+
+**Postos pareados.** Cookie `eterna_posto` (HttpOnly, SameSite=Strict, 400 dias), só o SHA-256 no `estado.db` (`posto`, `posto_convite`). Rotas: `POST /postos/parear {nome}` e `POST /postos/revogar {id}` (`configuracao.u`), `GET /postos` (`configuracao.r`), `GET /postos/eu`, `GET /postos/aceitar?c=` (link de uso único de 10 min gerado por `python eterna-agente.py --parear-posto "<nome>"`). O número do posto (`P1`, `P2`...) vira o prefixo do número da venda. No app: cartão "Postos deste ponto" no Painel de controle, `postoCarregar`, `postoDisp`, `pontoModo() === 'posto'`; Checkout sem pareamento mostra "Este aparelho ainda não foi pareado". Todo pedido ao agente passa por `agFetch` (cookie e `X-Eterna: 1`); 401 `sem_sessao` com alguém conectado leva à entrada com "Sua sessão terminou". A fila de vendas do aparelho nunca descarta por 401.
+
+**FTP embutido.** Só modo passivo, em faixa fixa (`ETERNA_FTP_PASV`, padrão 50000-50050), com a conexão de dados aceita só do IP do controle; `PORT`/`EPRT` respondem 502. `USER` depois do login zera a sessão; o dono da foto é o login aceito. Pasta temporária por sessão; só `.jpg`/`.jpeg` (553 antes de abrir a transferência); até 60 MB (552); controle parado 5 min encerra; 8 sessões por IP e 64 no total (421). Foto apagada a pedido do cliente responde 226 sem entrar; falha ao gravar responde 451 (a câmera reenvia). `ETERNA_FTP=0` desliga o FTP embutido.
+
+**Compra pelo celular.** Desligada por padrão: `/g/<t>/info` e a galeria mandam `compra: false`, `POST /g/<t>/pagamento` responde 501 `compra_indisponivel` e a `#g` mostra "fale com a equipe no balcão" (`gq_buyOff`, 5 línguas). Pagamento simulado só com `ETERNA_PAGAMENTO=simulado` e `ETERNA_MODO_TESTE=1`; `/status.pagamento` = `teste` ou `desligado`.
+
+**Configuração.** A chave da Roverpix só vai para `https://beta.api.roverpix.com` ou `https://api.roverpix.com` (`ROVER_BASES`). O FTP do estádio aceita IP da rede interna (10/8, 172.16/12, 192.168/16) ou nome listado em `~/Eterna/ftp-remoto-hosts.txt`, portas 21 ou 990, 5 testes por minuto, erro sem detalhe da conexão. Corpos com teto (`corpo()`): 4 KB nas chaves, 32 MB na montagem do Photoroom. Nome de fotógrafo e de ponto vindos da Roverpix sem caracteres de HTML (sinais de menor e maior, aspas, crase e &), até 60 caracteres; o seletor de fotógrafo do Upload escapa o nome.
+
+**Testes.** `testes/_agente_sessao.{py,js}` cria pessoa com sessão e posto pareado no `estado.db` do agente de teste. Novos: `postos_agente.py`, `seguranca_rotas_agente.py` (toda linha de `ROTAS` e rota no código sem regra), `seguranca_ftp_agente.py`, `seguranca_config_agente.py`, `posto-checkout.js`, `seguranca-config.js`.

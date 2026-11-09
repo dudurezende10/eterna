@@ -165,6 +165,16 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 **A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu usuário e a sua senha, ou use outra janela.
 
+### Aparelho pareado (v93)
+
+O Checkout só abre num aparelho pareado. Cada computador ou tablet do Checkout (e a TV da Fila do fotógrafo) é pareado uma vez:
+
+1. No próprio aparelho, entre com um usuário que pode alterar o Painel de controle (Admin).
+2. Abra **Configurações › Painel de controle**, vá a **Postos deste ponto**, escreva o nome do aparelho (ex.: Checkout 1) e toque em **Parear este aparelho**.
+3. Pronto: o Checkout abre nesse aparelho sem ninguém conectado. A lista mostra quando cada aparelho foi usado pela última vez.
+
+Se aparecer **"Este aparelho ainda não foi pareado"**, chame o Admin. Aparelho perdido ou trocado: **Revogar** na mesma lista. Dica: no computador do ponto, use como nome o mesmo do rolo de papel (ex.: Caixa 1).
+
 ### Fotos de mais de uma sessão (v91)
 
 Quando o cliente olha para a câmera, o Checkout junta todas as sessões do dia em que ele aparece: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. Cada sessão em que ele aparece entra inteira, inclusive as fotos da família em que ele não está, porque a família costuma vir junta ao balcão. A tela abre direto na primeira foto ampliada; ele passa as fotos com as setas ou arrastando, marca com ✓ e pode tocar em **Ver todas** para ver a grade. O ponto e a hora aparecem no canto da foto.
