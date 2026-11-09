@@ -60,6 +60,13 @@ try:
     ok(sts[-1] == 429 and 429 not in sts[:3], "6º teste no minuto deveria dar 429: %s" % sts)
     ok(m.rftp_host_ok("10.1.2.3") and m.rftp_host_ok("172.20.0.1") and m.rftp_host_ok("192.168.1.20") and not m.rftp_host_ok("172.32.0.1")
        and m.rftp_host_ok("ftp.estadio.local") and not m.rftp_host_ok("100.64.0.1"), "rftp_host_ok")
+    # destino conferido também ao ler a configuração (arquivo trocado à mão)
+    json.dump({"base_url": "http://169.254.169.254/api/v1", "api_key": "x"}, open(m.ROVER_CFG, "w"))
+    ok(m.rover_cfg() is None, "roverpix.json com endereço de fora é ignorado")
+    json.dump({"host": "8.8.8.8", "port": 21, "user": "u", "password": "p"}, open(m.RFTP_CFG, "w"))
+    ok(m.rftp_cfg() is None, "ftp-remoto.json com servidor de fora é ignorado")
+    json.dump({"host": "10.0.0.5", "port": 21, "user": "u", "password": "p"}, open(m.RFTP_CFG, "w"))
+    ok(m.rftp_cfg() is not None, "ftp-remoto.json da rede do ponto vale")
     # Photoroom: chave com teto de corpo
     st, j = pede("/photoroom/config", None, adm, bruto=b'{"api_key":"' + b"a" * 5000 + b'"}')
     ok(st == 413, "corpo do Photoroom config acima de 4 KB: %s" % st)

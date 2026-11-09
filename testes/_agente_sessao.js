@@ -5,7 +5,9 @@
 //   await S.parear(porta,ck,'Caixa 3')  -> 'eterna_posto=...' pela rota POST /postos/parear
 const {execFileSync}=require('child_process');const path=require('path');const http=require('http');
 const AG=path.join(__dirname,'..','agente','eterna-agente.py');const PY=path.join(__dirname,'_agente_sessao.py');
-const roda=(home,args)=>execFileSync('python3',['-I',PY,AG,...args],{env:{...process.env,HOME:home,ETERNA_SEM_OPENCV:'1'},timeout:60000}).toString().trim().split('\n').pop();
+// nunca no ~/Eterna de verdade: o HOME do agente de teste é sempre uma pasta temporária
+const real=require('os').userInfo().homedir;const confere=home=>{if(!home||path.resolve(home)===path.resolve(real)||home==='/')throw new Error('teste do agente sem HOME temporário');};
+const roda=(home,args)=>{confere(home);return execFileSync('python3',['-I',PY,AG,...args],{env:{...process.env,HOME:home,ETERNA_SEM_OPENCV:'1'},timeout:60000}).toString().trim().split('\n').pop();};
 const sessao=(home,usuario,perms)=>roda(home,['sessao',usuario||'admin-teste',...(perms?[JSON.stringify(perms)]:[])]);
 const posto=(home,nome)=>roda(home,['posto',nome||'Posto de teste']);
 async function noNavegador(ctx,porta,cookies){await ctx.addCookies(cookies.filter(Boolean).map(c=>{const i=c.indexOf('=');return {name:c.slice(0,i),value:c.slice(i+1),domain:'127.0.0.1',path:'/',httpOnly:true,sameSite:'Strict'};}));}

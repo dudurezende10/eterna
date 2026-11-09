@@ -261,6 +261,21 @@ try:
         pass
 finally:
     B.kill()
-print(("OK" if not falhas else "FALHA") + " seguranca_ftp_agente: USER depois do login, pasta por sessão, só JPEG, 61 MB, PORT, IP da conexão de dados, 8 por IP, LGPD, ETERNA_FTP=0"
+    B.wait(10)
+# ETERNA_FTP_RAW=descartar: câmera em RAW+JPEG recebe 226 no .CR3, e nada é gravado
+H3 = tempfile.mkdtemp()
+os.makedirs(os.path.join(H3, "Eterna"), exist_ok=True)
+json.dump({"users": SENHAS}, open(os.path.join(H3, "Eterna", "ftp.json"), "w"))
+C = subir(H3, {"ETERNA_FTP_RAW": "descartar"})
+try:
+    f = cliente()
+    r = erro(lambda: f.storbinary("STOR IMG_0001.CR3", io.BytesIO(b"\0" * 200000)))
+    ok(r.startswith("226"), "RAW com ETERNA_FTP_RAW=descartar deveria dar 226: %s" % r)
+    ok(erro(lambda: f.storbinary("STOR x.exe", io.BytesIO(b"MZ"))).startswith("553"), "o resto segue com 553")
+    f.close()
+    ok(not [x for x in arquivos(H3) if x.lower().endswith(".cr3")], "RAW descartado foi gravado")
+finally:
+    C.kill()
+print(("OK" if not falhas else "FALHA") + " seguranca_ftp_agente: USER depois do login, pasta por sessão, só JPEG, 61 MB, PORT, IP da conexão de dados, 8 por IP, LGPD, ETERNA_FTP=0, RAW descartado"
       + ("" if not falhas else " · " + " | ".join(falhas[:8])))
 sys.exit(1 if falhas else 0)

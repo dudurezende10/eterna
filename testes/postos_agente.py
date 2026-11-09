@@ -6,6 +6,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _agente_sessao as S
 
+os.environ["ETERNA_ORIGENS"] = "https://posto.eterna.photo"      # endereço com certificado dos postos (proxy na frente do agente)
 sp = importlib.util.spec_from_file_location("ag", sys.argv[1])
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
@@ -24,12 +25,17 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 HOST = "127.0.0.1:%d" % m.PORT
 
 
-def pede(rota, corpo=None, cookie=None):
+def pede(rota, corpo=None, cookie=None, extra=None, form=None):
     c = http.client.HTTPConnection("127.0.0.1", m.PORT, timeout=30)
     h = {"Host": HOST, "X-Eterna": "1", "Content-Type": "application/json"}
     if cookie:
         h["Cookie"] = cookie
-    c.request("POST" if corpo is not None else "GET", rota, json.dumps(corpo) if corpo is not None else None, h)
+    h.update(extra or {})
+    if form is not None:
+        h["Content-Type"] = "application/x-www-form-urlencoded"
+        c.request("POST", rota, form.encode(), h)
+    else:
+        c.request("POST" if corpo is not None else "GET", rota, json.dumps(corpo) if corpo is not None else None, h)
     r = c.getresponse()
     b = r.read()
     try:
@@ -86,12 +92,17 @@ try:
     link = saida[-1].strip()
     ok("/postos/aceitar?c=" in link, "link do comando: %s" % saida)
     rota = link[link.index("/postos/"):]
-    st, j, ck = pede(rota)
-    ok(st == 200 and ck.startswith("eterna_posto=") and "Checkout 1" in j.get("html", ""), "link de pareamento: %s %s" % (st, ck))
+    codigo = rota.split("c=", 1)[1]
+    for _ in range(2):                               # abrir o link (ou a prévia do WhatsApp) não gasta o código
+        st, j, ck = pede(rota)
+        ok(st == 200 and not ck and "Checkout 1" in j.get("html", "") and "method='post'" in j.get("html", ""), "GET do link mostra o botão sem parear: %s %s" % (st, ck))
+    st, j, ck = pede("/postos/aceitar", form="c=" + codigo, extra={"X-Eterna": ""})
+    ok(st == 200 and ck.startswith("eterna_posto=") and "Checkout 1" in j.get("html", ""), "botão do link pareia: %s %s" % (st, ck))
     st, j, _ = pede("/postos/eu", cookie=ck.split(";")[0])
     ok(st == 200 and j["posto"]["num"] == 2, "posto do link: %s %s" % (st, j))
-    st, j, ck2 = pede(rota)
+    st, j, ck2 = pede("/postos/aceitar", form="c=" + codigo)
     ok(st == 410 and not ck2, "link usado de novo deveria dar 410: %s" % st)
+    ok(pede(rota)[0] == 410, "GET do link usado: 410")
     cod = m.posto_convite_novo("Velho")
     db = sqlite3.connect(m.ESTADO_DB)
     db.execute("update posto_convite set expira=? where hash=?", (time.time() - 1, m._sha(cod)))
@@ -99,6 +110,18 @@ try:
     db.close()
     st, j, _ = pede("/postos/aceitar?c=" + cod)
     ok(st == 410, "link com mais de 10 min deveria dar 410: %s" % st)
+    ok(pede("/postos/aceitar", form="c=" + cod)[0] == 410, "POST de link vencido: 410")
+    # endereço com certificado (posto.eterna.photo atrás de um proxy que repassa Host e X-Forwarded-Proto: https)
+    PX = {"Host": "posto.eterna.photo", "Origin": "https://posto.eterna.photo", "X-Forwarded-Proto": "https"}
+    st, j, ck = pede("/postos/parear", {"nome": "Tablet HTTPS"}, adm, extra=PX)
+    ok(st == 200 and "; Secure" in ck, "parear pelo endereço com certificado: cookie Secure: %s %s" % (st, ck))
+    cs = ck.split(";")[0]
+    st, j, _ = pede("/sessoes", cookie=cs, extra=PX)
+    ok(st == 200, "posto pelo endereço com certificado lê as sessões: %s %s" % (st, j))
+    st, j, _ = pede("/status", cookie=cs, extra=PX)
+    ok(st == 200 and "sessoes" in j, "/status completo pelo endereço com certificado")
+    st, j, _ = pede("/ponto/eventos", {"eventos": []}, cs, extra=dict(PX, Origin="https://evil.example"))
+    ok(st == 403, "Origin de fora no endereço com certificado: %s" % st)
     c = http.client.HTTPConnection("127.0.0.1", m.PORT, timeout=30)
     c.request("GET", "/postos/eu", headers={"Host": "evil.example:%d" % m.PORT, "Cookie": cp})
     ok(c.getresponse().status == 403, "Host de fora deveria dar 403")

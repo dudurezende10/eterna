@@ -3,8 +3,18 @@
 #   No mesmo processo:  import _agente_sessao as S; S.cookie_sessao(m) / S.cookie_posto(m)
 #   Para o Node:        HOME=<home do agente> python3 -I testes/_agente_sessao.py agente/eterna-agente.py sessao <usuario> [perms-json]
 #                       HOME=<home do agente> python3 -I testes/_agente_sessao.py agente/eterna-agente.py posto "<nome>"
-import json, sys
+import json, os, pwd, sys
 
+
+def exige_home_temporario():
+    """Os testes nunca gravam no ~/Eterna de verdade: sem HOME temporário, param aqui."""
+    h = os.path.realpath(os.environ.get("HOME") or "")
+    real = os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
+    if not h or h == real or h == "/":
+        sys.exit("FALHA teste do agente: rode com HOME temporário (ex.: HOME=$(mktemp -d)), nunca no ~/Eterna real")
+
+
+exige_home_temporario()
 TUDO = {"c": True, "r": True, "u": True, "d": True}
 
 

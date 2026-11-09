@@ -1346,7 +1346,7 @@ def scan_card(vol):
 
 # ---------------------------------------------------------------- FTP --------
 # Receptor FTP mínimo (só biblioteca padrão) para o Canon Content Transfer
-# Professional e para câmeras com FTP embutido. Modo passivo e ativo, STOR,
+# Professional e para câmeras com FTP embutido. Só modo passivo, STOR,
 # pastas aceitas e ignoradas (tudo cai na inbox por data).
 
 PHOTOGRAPHERS = ["carlos", "marinara", "samuel", "yago", "marcio", "klassius", "sandessa", "dudu"]
@@ -1480,6 +1480,7 @@ FTP_POR_IP, FTP_TOTAL, FTP_RESERVA, FTP_SEM_LOGIN_IP = 8, 64, 16, 2
 FTP_OCIOSO_S, FTP_LOGIN_S, FTP_DADOS_S, FTP_LINHA = 300, 25, 30, 4096
 ftp_conexoes = {}          # ip -> sessões abertas
 ftp_sem_login = {}         # ip -> sessões abertas ainda sem login
+FTP_RAW_EXT = (".cr3", ".cr2", ".nef", ".arw", ".raf", ".dng", ".orf", ".rw2")   # ETERNA_FTP_RAW=descartar: recebe e descarta (sem 553)
 
 
 def ftp_faixa_pasv():
@@ -1714,6 +1715,23 @@ class FTPSession(threading.Thread):
             self.send("550 Não permitido"); return
         if cmd == "STOR":
             name = re.sub(r"[^\w.\- ]", "_", os.path.basename(arg.strip().replace("\\", "/")))[-120:].lstrip(".") or "foto_%d.jpg" % int(time.time())
+            if name.lower().endswith(FTP_RAW_EXT) and os.environ.get("ETERNA_FTP_RAW") == "descartar":
+                d = self.data_conn()               # câmera em RAW+JPEG que trava com 553: recebe e joga fora, sem gravar
+                if not d:
+                    self.send("425 Abra a conexão de dados (modo passivo)"); return
+                self.send("150 Pode enviar")
+                total = 0
+                try:
+                    while total <= 2 * FOTO_ENVIO_MAX:
+                        ch = d.recv(256 * 1024)
+                        if not ch:
+                            break
+                        total += len(ch)
+                except OSError:
+                    pass
+                finally:
+                    d.close()
+                self.send("226 Recebido (RAW descartado)"); return
             if not name.lower().endswith((".jpg", ".jpeg")):
                 if self.pasv:                      # nada é gravado: a conexão de dados nem é aceita
                     self.pasv.close()
@@ -1851,7 +1869,12 @@ rftp_wake = threading.Event()
 def rftp_cfg():
     try:
         c = json.load(open(RFTP_CFG))
-        return c if c.get("host") and c.get("user") else None
+        if not (c.get("host") and c.get("user")):
+            return None
+        if not rftp_host_ok(str(c["host"])) or int(c.get("port") or 21) not in (21, 990):
+            rftp["erro"] = "servidor fora da rede do ponto (ftp-remoto-hosts.txt) ou porta diferente de 21/990"
+            return None
+        return c
     except Exception:
         return None
 
@@ -2084,6 +2107,10 @@ def rover_cfg():
         c = json.load(open(ROVER_CFG))
         if c.get("api_key"):
             c.setdefault("base_url", "https://beta.api.roverpix.com/api/v1")
+            b = str(c["base_url"]).rstrip("/")
+            if (b[:-len("/api/v1")] if b.endswith("/api/v1") else b) not in ROVER_BASES:
+                print("  Roverpix: endereço em roverpix.json não é um dos oficiais; configuração ignorada")
+                return None
             return c
     except Exception:
         pass
@@ -2091,6 +2118,7 @@ def rover_cfg():
 
 
 ROVER_BASES = ("https://beta.api.roverpix.com", "https://api.roverpix.com")    # os únicos destinos da chave da Roverpix
+PR_COMPOSE_HORA = 300                                                           # montagens do Photoroom por posto ou pessoa, por hora
 
 
 def rover_save_cfg(base_url, api_key):
@@ -5559,7 +5587,6 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("fundosModo", ("configuracao",)),
            ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
            ("bgPodioV86", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
-DOC_SO_ACRESCENTA = ("usuarios_log", "sim:cortesiaLog|")
 
 
 def doc_modulos(col, id_doc):
@@ -5598,7 +5625,9 @@ def auth_filtrar_docs(body, quem, ip="", posto=None):
     """/ponto/docs: cada gravação passa pela regra da sua coleção (usuarios: auth_cadastro_recusa; outras: doc_recusa).
     Aparelho pareado sem pessoa conectada não grava. O recusado sai da resposta como "recusados" (o app não reenvia)."""
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
-    fica, recusados, apagados, motivos = [], 0, [], {}
+    fica, recusados, apagados, motivos = [], max(0, len(docs) - 500), [], {}       # acima de 500 por pedido: recusado, não some calado
+    if recusados:
+        motivos["excesso"] = recusados
     with estado_lock:
         db = auth_db()
         try:
@@ -5749,6 +5778,19 @@ def posto_convite_novo(nome):
         finally:
             db.close()
     return codigo
+
+
+def posto_convite_ver(codigo):
+    """O nome do posto do convite, se ainda vale, sem gastar o código."""
+    if not codigo or len(codigo) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select nome from posto_convite where hash=? and usado is null and expira >= ?", (_sha(codigo), time.time())).fetchone()
+        finally:
+            db.close()
+    return r[0] if r else None
 
 
 def posto_convite_usar(codigo):
@@ -6676,7 +6718,7 @@ ROTAS = (
     ("GET", "/img/", "publica", ()), ("GET", "/vendor/", "publica", ()), ("GET", "/sprites/", "publica", ()),
     ("GET", "/status", "publica", ()),                          # sem credencial, só {ok, agent, version, boot}
     ("GET", "/g/", "publica", ()), ("POST", "/g/", "publica", ()), ("POST", "/pagamento/webhook/", "publica", ()),
-    ("GET", "/postos/aceitar", "publica", ()),                  # o código de uso único (10 min) é a credencial
+    ("GET", "/postos/aceitar", "publica", ()), ("POST", "/postos/aceitar", "publica", ()),   # o código de uso único (10 min) é a credencial
     ("POST", "/auth/entrar", "publica", ()), ("POST", "/auth/trocar", "publica", ()), ("POST", "/auth/sair", "publica", ()),
     ("POST", "/auth/esqueci", "publica", ()),
     ("GET", "/auth/eu", "sessao", ()), ("GET", "/auth/senhas", "sessao", ()),
@@ -6690,7 +6732,7 @@ ROTAS = (
     ("GET", "/sessoes", "posto_ou_sessao", FOTOS_LER),
     ("GET", "/ponto/docs", "posto_ou_sessao", ()),              # posto: só sim, config e agenda
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
-    ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (docs_filtrar); o posto não grava
+    ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
     ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
@@ -6882,13 +6924,14 @@ class H(BaseHTTPRequestHandler):
             p = self.posto_atual()
             return self.js({"ok": True, "posto": p}, 200, True) if p else self.js({"erro": "sem_posto"}, 401, True)
         if u.path == "/postos/aceitar":
-            nome = posto_convite_usar((q.get("c") or [""])[0])
+            # abrir o link (ou a prévia do WhatsApp) só mostra o botão; o código é gasto no POST do botão
+            c = (q.get("c") or [""])[0]
+            nome = posto_convite_ver(c)
             if not nome:
                 return self.html("<h2>Link vencido ou já usado</h2><p>Gere outro no servidor do ponto.</p>", 410)
-            token, p = posto_criar(nome, "convite", self.client_address[0])
-            self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
-            return self.html("<h2>Aparelho pareado</h2><p>Este aparelho agora é o posto <b>%s</b> (P%d).</p><p><a href='/#loja'>Abrir o Checkout</a> · <a href='/'>Abrir o Eterna</a></p>"
-                             % (p["nome"], p["num"]))
+            return self.html("<h2>Parear este aparelho</h2><p>Este aparelho vai virar o posto <b>%s</b>.</p><form method='post' action='/postos/aceitar'>"
+                             "<input type='hidden' name='c' value='%s'><button type='submit' style='font-size:18px;padding:10px 18px'>Parear este aparelho</button></form>"
+                             % (nome, re.sub(r"[^A-Za-z0-9_-]", "", c)))
         if u.path == "/postos":
             eu = self.sessao()
             if not eu:
@@ -6897,6 +6940,25 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"erro": "sem_permissao"}, 403, True)
             return self.js({"ok": True, "postos": posto_lista()}, 200, True)
         return self.js({"error": "not found"}, 404)
+
+    def postos_aceitar_post(self):
+        """POST /postos/aceitar (botão da página do link): gasta o código de uso único e grava o cookie do posto."""
+        if not host_ok((self.headers.get("Host") or "").lower()):
+            return self.js({"erro": "origem"}, 403)
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if not 0 < n <= 512:
+            return self.html("<h2>Pedido inválido</h2>", 400)
+        c = (parse_qs(self.rfile.read(n).decode("utf-8", "replace")).get("c") or [""])[0]
+        nome = posto_convite_usar(c)
+        if not nome:
+            return self.html("<h2>Link vencido ou já usado</h2><p>Gere outro no servidor do ponto.</p>", 410)
+        token, p = posto_criar(nome, "convite", self.client_address[0])
+        self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+        return self.html("<h2>Aparelho pareado</h2><p>Este aparelho agora é o posto <b>%s</b> (P%d).</p><p><a href='/#loja'>Abrir o Checkout</a> · <a href='/'>Abrir o Eterna</a></p>"
+                         % (p["nome"], p["num"]))
 
     def postos_post(self, u):
         """POST /postos/parear {nome} (grava o cookie deste aparelho) e POST /postos/revogar {id}: sessão com configuracao.u."""
@@ -7126,7 +7188,7 @@ class H(BaseHTTPRequestHandler):
                 os.remove(tmp)
         if not inteira:
             return self.js({"erro": "incompleta"}, 400, True)
-        return self.js({"ok": r in ("new", "dup"), "resultado": r or "recusada"}, 200, True)
+        return self.js({"ok": r in ("new", "dup", "excluida"), "resultado": r or "recusada"}, 200, True)
 
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
@@ -7728,6 +7790,8 @@ class H(BaseHTTPRequestHandler):
             return self.auth_post(u)
         if u.path in ("/postos/parear", "/postos/revogar"):
             return self.postos_post(u)
+        if u.path == "/postos/aceitar":
+            return self.postos_aceitar_post()
         if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
@@ -7752,7 +7816,7 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": True, "modo": modo})
         if u.path == "/roverpix/config":
             # só o app aberto pelo próprio agente pode trocar a chave; o endereço da Roverpix é um dos oficiais
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
             body, err = self.corpo(4096)
             if err:
@@ -7767,7 +7831,7 @@ class H(BaseHTTPRequestHandler):
             rover_save_cfg(base, key)
             return self.js({"ok": True})
         if u.path == "/ftp-remoto/config":
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
             body, err = self.corpo(4096)
             if err:
@@ -7803,7 +7867,7 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": True})
         if u.path in ("/photoroom/config", "/photoroom/compose"):
             # só o app aberto pelo próprio agente usa a chave (ninguém de fora gasta os créditos)
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
             body, err = self.corpo(4096 if u.path == "/photoroom/config" else 32 * 1024 * 1024)
             if err:
@@ -7816,6 +7880,9 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"ok": True, "sandbox": key.startswith("sandbox_")})
             if fundos_modo() != "photoroom":           # v84: montagem local é o padrão; o Photoroom só com o interruptor ligado
                 return self.js({"ok": False, "error": "photoroom_desligado"}, 409)
+            quem = (self.sessao() or {}).get("usuario") or ("posto:" + (self.posto_atual() or {}).get("id", "?"))
+            if not limite_ok(quem, "photoroom-compose", PR_COMPOSE_HORA, 3600):
+                return self.js({"error": "muitas montagens nesta hora; use a montagem local"}, 429)
             try:
                 if body.get("pid"):
                     with lock:
@@ -7884,8 +7951,8 @@ class H(BaseHTTPRequestHandler):
     def app(self, path):
         if path in ("", "/"):
             path = "/index.html"
-        if ".." in path:
-            return self.js({"error": "not found"}, 404)
+        if ".." in path or (path != "/index.html" and not APP_ARQUIVO.match(path)):
+            return self.js({"error": "not found"}, 404)     # só arquivos do pacote do app (pasta, nome e tipo conhecidos)
         key = path
         hit = app_cache.get(key)
         if not hit or (path == "/index.html" and time.time() - hit[2] > 60):
@@ -7907,6 +7974,9 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache" if path == "/index.html" else "max-age=3600")
         self.end_headers()
         self.wfile.write(data)
+
+
+APP_ARQUIVO = re.compile(r"^/(img|vendor|sprites)/[A-Za-z0-9_-][A-Za-z0-9_./-]{0,150}\.(png|jpe?g|svg|webp|gif|ico|js|css|json|woff2?|wasm|onnx|txt)$")
 
 
 def fuso_info():
