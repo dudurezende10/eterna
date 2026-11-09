@@ -1474,9 +1474,12 @@ def lan_ip():
 
 # FTP embutido: só modo passivo, numa faixa fixa de portas (firewall), conexão de dados só do mesmo IP do controle, só JPEG,
 # até FOTO_ENVIO_MAX por arquivo, no máximo FTP_POR_IP sessões por IP e FTP_TOTAL no total. ETERNA_FTP=0 desliga (servidor com IIS).
-FTP_POR_IP, FTP_TOTAL = 8, 64
-FTP_OCIOSO_S, FTP_DADOS_S = 300, 30
+# Sem login: no máximo FTP_SEM_LOGIN_IP por IP, FTP_TOTAL - FTP_RESERVA no total, FTP_LOGIN_S para entrar e linha de até
+# FTP_LINHA bytes: quem só abre conexões não ocupa o lugar da câmera nem a memória do servidor.
+FTP_POR_IP, FTP_TOTAL, FTP_RESERVA, FTP_SEM_LOGIN_IP = 8, 64, 16, 2
+FTP_OCIOSO_S, FTP_LOGIN_S, FTP_DADOS_S, FTP_LINHA = 300, 25, 30, 4096
 ftp_conexoes = {}          # ip -> sessões abertas
+ftp_sem_login = {}         # ip -> sessões abertas ainda sem login
 
 
 def ftp_faixa_pasv():
@@ -1506,6 +1509,23 @@ class FTPSession(threading.Thread):
         self.rest = 0
         self.tmpdir = None     # pasta temporária desta sessão (mkdtemp), nunca derivada do nome de usuário
         self.n = 0
+        self.anonima = True    # conta em ftp_sem_login até a senha ser aceita (o ftp_server já contou na entrada)
+
+    def marca_login(self, logado):
+        """Passa a sessão de "sem login" para "logada" (ou volta, num USER depois do login) e ajusta o tempo de espera."""
+        ip = ftp_ip(self.addr[0])
+        with lock:
+            if logado and self.anonima:
+                ftp_sem_login[ip] = ftp_sem_login.get(ip, 1) - 1
+                if ftp_sem_login[ip] <= 0:
+                    ftp_sem_login.pop(ip, None)
+            elif not logado and not self.anonima:
+                ftp_sem_login[ip] = ftp_sem_login.get(ip, 0) + 1
+            self.anonima = not logado
+        try:
+            self.conn.settimeout(FTP_OCIOSO_S if logado else FTP_LOGIN_S)
+        except OSError:
+            pass
 
     def send(self, line):
         try:
@@ -1552,6 +1572,10 @@ class FTPSession(threading.Thread):
                 ftp_conexoes[ip] = ftp_conexoes.get(ip, 1) - 1
                 if ftp_conexoes[ip] <= 0:
                     ftp_conexoes.pop(ip, None)
+                if self.anonima:
+                    ftp_sem_login[ip] = ftp_sem_login.get(ip, 1) - 1
+                    if ftp_sem_login[ip] <= 0:
+                        ftp_sem_login.pop(ip, None)
             if self.pasv:
                 try:
                     self.pasv.close()
@@ -1561,13 +1585,16 @@ class FTPSession(threading.Thread):
                 shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _run(self):
-        self.conn.settimeout(FTP_OCIOSO_S)        # controle parado por 5 min: a sessão termina
+        self.conn.settimeout(FTP_LOGIN_S)         # sem login: 25 s; depois do 230, 5 min parado encerra
         self.send("220 Eterna FTP pronto")
         f = self.conn.makefile("rb")
         try:
             while True:
-                raw = f.readline()
+                raw = f.readline(FTP_LINHA + 1)
                 if not raw:
+                    break
+                if len(raw) > FTP_LINHA or not raw.endswith(b"\n"):
+                    self.send("500 Linha longa demais")   # linha sem fim ou gigante: fecha sem guardar o resto
                     break
                 line = raw.decode("utf-8", "replace").strip()
                 if not line:
@@ -1589,6 +1616,7 @@ class FTPSession(threading.Thread):
     def handle(self, cmd, arg):
         if cmd == "USER":
             self.ok, self.login_ok = False, None      # trocar de usuário pede a senha de novo
+            self.marca_login(False)
             self.user = arg.strip().lower()[:64]
             self.send("331 Senha")
             return
@@ -1601,6 +1629,7 @@ class FTPSession(threading.Thread):
                 with lock:
                     FTP_FALHAS.pop(self.addr[0], None)
                 self.ok, self.login_ok = True, self.user
+                self.marca_login(True)
                 with lock:
                     state["ftp"]["last_user"] = self.user
                 print(f"ftp: {self.user} conectado de {self.addr[0]}")
@@ -1653,6 +1682,8 @@ class FTPSession(threading.Thread):
             a, b = ftp_faixa_pasv()
             for pp in random.sample(range(a, b + 1), b - a + 1):
                 sk = socket.socket()
+                if os.name != "nt":                # porta em TIME_WAIT volta a servir (no Windows o REUSEADDR deixaria dividir a porta)
+                    sk.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 try:
                     sk.bind(("0.0.0.0", pp))
                     sk.listen(1)
@@ -1789,9 +1820,11 @@ def ftp_server():
             conn, addr = srv.accept()
             ip = ftp_ip(addr[0])
             with lock:
-                demais = ftp_conexoes.get(ip, 0) >= FTP_POR_IP or sum(ftp_conexoes.values()) >= FTP_TOTAL
+                demais = ftp_conexoes.get(ip, 0) >= FTP_POR_IP or sum(ftp_conexoes.values()) >= FTP_TOTAL \
+                    or ftp_sem_login.get(ip, 0) >= FTP_SEM_LOGIN_IP or sum(ftp_sem_login.values()) >= FTP_TOTAL - FTP_RESERVA
                 if not demais:
                     ftp_conexoes[ip] = ftp_conexoes.get(ip, 0) + 1
+                    ftp_sem_login[ip] = ftp_sem_login.get(ip, 0) + 1
             if demais:
                 try:
                     conn.sendall(b"421 Muitas conexoes; tente de novo\r\n")

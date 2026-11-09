@@ -1,5 +1,6 @@
 # FTP embutido: trocar de usuário pede a senha de novo, pasta temporária por sessão, só JPEG (553 antes de gravar), teto de
-# tamanho (552), sem modo ativo (502), conexão de dados só do IP do controle, limite de sessões por IP, foto apagada a pedido
+# tamanho (552), sem modo ativo (502), conexão de dados só do IP do controle, limites de sessões (com e sem login), linha
+# de até 4 KB, 25 s para entrar, foto apagada a pedido
 # do cliente responde 226 sem entrar, ETERNA_FTP=0 desliga. Agente de verdade em outro processo, HOME temporário.
 #   python3 -I testes/seguranca_ftp_agente.py agente/eterna-agente.py
 import ftplib, http.client, importlib.util, io, json, os, random, re, socket, subprocess, sys, tempfile, time
@@ -177,14 +178,74 @@ try:
     ok(not estranhos, "arquivos fora do lugar depois do FTP: %s" % estranhos)
     ok(not [x for x in arquivos(os.path.join(H, "Eterna", "ftp-tmp")) if x], "sobrou arquivo na pasta temporária do FTP")
     ok(not any(re.search(r"virus|fora|enorme", x) for x in novos), "arquivo recusado foi gravado: %s" % novos)
-    # limite de sessões por IP: a 9ª conexão recebe 421
-    abertas = []
     time.sleep(1.5)                                  # as sessões acima terminam do lado do servidor
-    for i in range(9):
-        s_ = socket.create_connection(("127.0.0.1", FTPP), timeout=5)
-        abertas.append((s_, s_.recv(200).decode()))
-    ok(all(x[1].startswith("220") for x in abertas[:8]) and abertas[8][1].startswith("421"), "9ª sessão do mesmo IP: %s" % [x[1][:3] for x in abertas])
-    for s_, _ in abertas:
+
+    def abre(ip_origem="127.0.0.1"):
+        s_ = socket.socket()
+        s_.bind((ip_origem, 0))
+        s_.settimeout(5)
+        s_.connect(("127.0.0.1", FTPP))
+        return s_, s_.recv(200).decode()
+
+    def entra(s_):
+        s_.sendall(("USER carlos\r\nPASS %s\r\n" % SENHAS["carlos"]).encode())
+        t = b""
+        while b"230" not in t and b"530" not in t and b"421" not in t:
+            ch = s_.recv(200)
+            if not ch:
+                break
+            t += ch
+        return t.decode("utf-8", "replace")
+
+    # sem login: no máximo 2 por IP
+    sem = [abre() for _ in range(3)]
+    ok([x[1][:3] for x in sem] == ["220", "220", "421"], "3ª sessão sem login do mesmo IP deveria dar 421: %s" % [x[1][:3] for x in sem])
+    for s_, _ in sem:
+        s_.close()
+    time.sleep(1)
+    # 8 IPs com 2 sessões paradas cada não bloqueiam a câmera logada
+    ociosas = []
+    for k in range(2, 10):
+        for _ in range(2):
+            ociosas.append(abre("127.0.0.%d" % k))
+    ok(all(x[1].startswith("220") for x in ociosas), "sessões ociosas de 8 IPs: %s" % [x[1][:3] for x in ociosas])
+    f = cliente()
+    ok(f.storbinary("STOR IMG_CAMERA.jpg", io.BytesIO(jpeg(55))).startswith("226"), "câmera logada com 16 sessões ociosas de outros IPs")
+    f.close()
+    # logadas: até 8 por IP
+    logadas = []
+    for _ in range(9):
+        s_, b = abre()
+        logadas.append((s_, b if not b.startswith("220") else entra(s_)))
+    ok(all("230" in x[1] for x in logadas[:8]) and logadas[8][1].startswith("421"), "9ª sessão do mesmo IP: %s" % [x[1][:3] for x in logadas])
+    for s_, _ in logadas:
+        s_.close()
+    # linha gigante sem fim de linha: 500 e fecha, sem subir a memória do agente
+    rss = lambda: int(re.search(r"VmRSS:\s+(\d+)", open("/proc/%d/status" % A.pid).read()).group(1)) if os.path.exists("/proc/%d/status" % A.pid) else 0
+    r0 = rss()
+    s_, _ = abre()
+    resp = b""
+    try:
+        for _ in range(64):
+            s_.sendall(b"A" * (1024 * 1024))
+    except OSError:
+        pass
+    try:
+        resp = s_.recv(200)
+    except OSError:
+        pass
+    s_.close()
+    ok(rss() - r0 < 20 * 1024, "linha gigante subiu a memória do agente: %d KB" % (rss() - r0))
+    ok(not resp or resp.startswith(b"500"), "linha gigante deveria dar 500 e fechar: %r" % resp[:40])
+    # sessão sem login é encerrada em 25 s
+    time.sleep(27)
+    s0 = ociosas[0][0]
+    try:
+        fechada = s0.recv(10) == b""
+    except OSError:
+        fechada = True
+    ok(fechada, "sessão sem login deveria terminar em 25 s")
+    for s_, _ in ociosas:
         s_.close()
 finally:
     A.kill()
