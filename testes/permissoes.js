@@ -1,5 +1,6 @@
 // v78: área de Permissões (critérios 1 a 20 do plano de permissões) e menus novos (plano dos menus), no modo SIM.
 const entrarTeste=require('./_entrar');
+const fecharUsuario=p=>p.evaluate(()=>{if(ETERNA.state.users.draft){ETERNA.state.users.draft=null;ETERNA.render();}}); // o cadastro aberto esconde a lista
 const {chromium}=require('playwright');const fs=require('fs');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};
@@ -90,7 +91,7 @@ try{
     await pg.click('[data-act="perm-tab"][data-t="historico"]');await pg.waitForTimeout(100);const h14=await pg.textContent('.perm-log');ok(/Eduardo Rezende/.test(h14)&&/Carlos/.test(h14)&&/mudou as permissões de/.test(h14),'14: frase do Histórico: '+h14.slice(0,160));
     await pg.screenshot({path:P+'/permissoes-historico.png'});
     // nome com HTML aparece como texto
-    await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await pg.click('[data-act="user-new"]');
+    await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await fecharUsuario(pg);await pg.click('[data-act="user-new"]');
     await pg.fill('[data-act="user-field"][data-k="name"]','<img src=x onerror="window.__xss=1">');await pg.fill('[data-act="user-field"][data-k="email"]','xss@eterna.photo');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(150);
     await pg.evaluate(()=>{ETERNA.state.view='permissoes';ETERNA.state.perm.tab='historico';ETERNA.render();});await pg.waitForTimeout(300);
     ok(await pg.evaluate(()=>!window.__xss&&!document.querySelector('#main img[src="x"]')&&document.querySelector('#main').innerText.includes('<img src=x')),'14: nome com <img onerror> executou ou não apareceu como texto');
@@ -176,32 +177,32 @@ try{
     const ro12=await pg.evaluate(()=>({alert:/acessos que você não tem/.test(document.querySelector('#main').innerText),all:[...document.querySelectorAll('.perm-tbl input')].every(i=>i.disabled),save:document.querySelector('[data-act="perm-save"]').disabled}));
     ok(ro12.alert&&ro12.all&&ro12.save,'12: editor do Eduardo deveria ser só leitura '+JSON.stringify(ro12));
     const r12b=await pg.evaluate(()=>{const E=ETERNA;const a=E.USERS['eduardo@eduardorezende.com'];const d=JSON.parse(JSON.stringify(a));d.name='X';return E.permValidate(E.state.user,a,d,Object.assign({},E.USERS,{[a.email]:d})).motivo;});ok(r12b==='alvo_maior','12: alvo_maior '+r12b);
-    await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await pg.click('[data-act="user-new"]');const op12=await pg.$$eval('[data-act="user-preset"] option',e=>e.map(x=>x.value));
+    await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await fecharUsuario(pg);await pg.click('[data-act="user-new"]');const op12=await pg.$$eval('[data-act="user-preset"] option',e=>e.map(x=>x.value));
     ok(!op12.includes('admin')&&!op12.includes('supervisor'),'12: perfis oferecidos ao gerente '+JSON.stringify(op12));
     await ctx.close();}
   // ---------- 13, 20: cadastro e revogação entre abas ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});
-    await pg.click('[data-act="user-new"]');await pg.fill('[data-act="user-field"][data-k="name"]','Teste');await pg.fill('[data-act="user-field"][data-k="email"]','teste@eterna.photo');await pg.selectOption('[data-act="user-preset"]','foto');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(120);
+    await fecharUsuario(pg);await pg.click('[data-act="user-new"]');await pg.fill('[data-act="user-field"][data-k="name"]','Teste');await pg.fill('[data-act="user-field"][data-k="email"]','teste@eterna.photo');await pg.selectOption('[data-act="user-preset"]','foto');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(120);
     ok(await pg.$('[data-act="user-sel"][data-e="teste@eterna.photo"]')&&await pg.evaluate(()=>ETERNA.USERS['teste@eterna.photo'].preset)==='foto','13: criar teste@');
     ok(await pg.evaluate(()=>ETERNA.auditRead()[0].acao)==='criar','13: auditoria criar');
-    await pg.click('[data-act="user-new"]');await pg.fill('[data-act="user-field"][data-k="name"]','Dup');await pg.fill('[data-act="user-field"][data-k="email"]','teste@eterna.photo');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);ok(/já existe/.test(await toastTxt(pg)),'13: usuário duplicado');
+    await fecharUsuario(pg);await pg.click('[data-act="user-new"]');await pg.fill('[data-act="user-field"][data-k="name"]','Dup');await pg.fill('[data-act="user-field"][data-k="email"]','teste@eterna.photo');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);ok(/já existe/.test(await toastTxt(pg)),'13: usuário duplicado');
     await pg.fill('[data-act="user-field"][data-k="email"]','nome com espaco');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);ok(/inválido/.test(await toastTxt(pg)),'13: e-mail inválido');
-    await pg.click('[data-act="user-cancel"]');await pg.click('[data-act="user-sel"][data-e="teste@eterna.photo"]');await pg.fill('[data-act="user-field"][data-k="name"]','Teste Dois');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);
+    await pg.click('[data-act="user-cancel"]');await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="teste@eterna.photo"]');await pg.fill('[data-act="user-field"][data-k="name"]','Teste Dois');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);
     ok(await pg.evaluate(()=>ETERNA.USERS['teste@eterna.photo'].name)==='Teste Dois','13: mudar o nome');
-    await pg.click('[data-act="user-sel"][data-e="eduardo@eduardorezende.com"]');ok(!(await pg.$('[data-act="user-active"]'))&&!(await pg.$('[data-act="user-del-ask"]')),'13: na própria linha não pode Desativar nem Excluir');
+    await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="eduardo@eduardorezende.com"]');ok(!(await pg.$('[data-act="user-active"]'))&&!(await pg.$('[data-act="user-del-ask"]')),'13: na própria linha não pode Desativar nem Excluir');
     await pg.screenshot({path:P+'/permissoes-usuarios.png'});
     // 20: B logada como Carlos; A desativa o Carlos
     const pb=await ctx.newPage();pb.on('pageerror',e=>errs.push('B: '+e.message));await pb.goto(U);await pb.waitForTimeout(300);await pb.evaluate(()=>localStorage.removeItem('eterna.session'));await pb.reload();await pb.waitForTimeout(300);
     await entrarTeste(pb,'carlos@eterna.photo');
     ok(await pb.evaluate(()=>ETERNA.state.user&&ETERNA.state.user.email)==='carlos@eterna.photo','20: pré B logada como Carlos');
-    await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.click('[data-act="user-active"]');await pb.waitForTimeout(1000);
+    await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.click('[data-act="user-active"]');await pb.waitForTimeout(1000);
     const r20=await pb.evaluate(()=>({user:!!ETERNA.state.user,login:!!document.querySelector('[data-act="login-usuario"]'),t:document.querySelector('#toast').textContent}));
     ok(!r20.user&&r20.login&&/Seu acesso foi removido/.test(r20.t),'20: B deveria voltar ao login '+JSON.stringify(r20));
     // desativado não entra; reativar volta
     const entrou=await entrar(pb,'carlos@eterna.photo');ok(!entrou&&/Este usuário não tem acesso/.test(await pb.textContent('#main')),'13: desativado entrou');
-    await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.click('[data-act="user-active"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>ETERNA.USERS['carlos@eterna.photo'].active)===true,'13: reativar');
+    await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.click('[data-act="user-active"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>ETERNA.USERS['carlos@eterna.photo'].active)===true,'13: reativar');
     // excluir só depois de confirmar
-    await pg.click('[data-act="user-sel"][data-e="teste@eterna.photo"]');await pg.click('[data-act="user-del-ask"]');ok(await pg.evaluate(()=>!!ETERNA.USERS['teste@eterna.photo']),'13: excluiu sem confirmar');
+    await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="teste@eterna.photo"]');await pg.click('[data-act="user-del-ask"]');ok(await pg.evaluate(()=>!!ETERNA.USERS['teste@eterna.photo']),'13: excluiu sem confirmar');
     await pg.click('[data-act="user-del-ok"]');await pg.waitForTimeout(80);const r13=await pg.evaluate(()=>({gone:!ETERNA.USERS['teste@eterna.photo'],log:ETERNA.auditRead()[0]}));
     ok(r13.gone&&r13.log.acao==='excluir'&&r13.log.antes&&r13.log.antes.name==='Teste Dois','13: excluir com retrato no histórico '+JSON.stringify(r13.log).slice(0,160));
     await ctx.close();}
@@ -210,7 +211,7 @@ try{
     await semear(pg,()=>{const U=JSON.parse(localStorage.getItem('eterna.users.v1'));const N={c:false,r:false,u:false,d:false};const mk=(e,p,menu)=>{const q={};Object.keys(U['eduardo@eduardorezende.com'].perms).forEach(m=>q[m]={...N});Object.assign(q,p);U[e]={v:2,email:e,name:e.split('@')[0],preset:'custom',key:null,perms:q,menu,inicio:null,active:true,createdAt:new Date().toISOString(),lastLogin:null};};
       mk('leitor@eterna.photo',{usuarios:{c:false,r:true,u:false,d:false}},['usuarios','permissoes']);mk('auditor@eterna.photo',{usuarios:{c:false,r:true,u:false,d:false},permissoes:{c:false,r:true,u:false,d:false}},['usuarios','permissoes']);localStorage.setItem('eterna.users.v1',JSON.stringify(U));});
     await entrar(pg,'leitor@eterna.photo');const v15=await nav(pg);ok(v15.includes('usuarios')&&!v15.includes('permissoes'),'15: leitor '+JSON.stringify(v15));
-    await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');
+    await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});ok(!(await pg.$('[data-act="user-new"]')),'15: leitor sem Novo usuário');await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');
     ok(!(await pg.$('[data-act="user-new"]'))&&!(await pg.$('[data-act="user-save"]'))&&!(await pg.$('[data-act="user-active"]'))&&!(await pg.$('[data-act="user-del-ask"]')),'15: leitor com botões de gravar');
     await entrar(pg,'auditor@eterna.photo');ok(!(await nav(pg)).includes('permissoes')&&await pg.evaluate(()=>ETERNA.canView('permissoes'))===false,'15: Permissões só com Ver, sem Alterar');
     await ctx.close();}
@@ -242,7 +243,7 @@ try{
     await semear(pg,()=>{let t=localStorage.getItem('eterna.users.v1');const fake=JSON.stringify({v:2,email:'__proto__',name:'Oculto',preset:'admin',perms:{},menu:[],active:true});t=t.replace(/^\{/,'{"__proto__":'+fake+',"x@eterna.photo":{"email":"y@eterna.photo","name":"Troca","preset":"admin","active":true},');localStorage.setItem('eterna.users.v1',t);});
     const r5=await pg.evaluate(()=>({keys:Object.keys(ETERNA.USERS).filter(k=>!/@/.test(k)||k==='x@eterna.photo'),proto:Object.getPrototypeOf(ETERNA.USERS)===Object.prototype}));ok(!r5.keys.length&&r5.proto,'S5: chave que não é e-mail deveria sair '+JSON.stringify(r5));
     // cadastro "sem acesso ainda": mensagem em vez de login ou Início vazio
-    await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await pg.click('[data-act="user-new"]');
+    await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await fecharUsuario(pg);await pg.click('[data-act="user-new"]');
     await pg.fill('[data-act="user-field"][data-k="name"]','Nova');await pg.fill('[data-act="user-field"][data-k="email"]','nova@eterna.photo');await pg.selectOption('[data-act="user-preset"]','custom');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(100);
     await entrar(pg,'nova@eterna.photo');ok(await pg.evaluate(()=>ETERNA.state.view)==='semacesso'&&/Seu acesso ainda não foi liberado\. Peça ao administrador\./.test(await pg.textContent('#main')),'sugestão: sem acesso deveria ver a mensagem: '+await pg.evaluate(()=>ETERNA.state.view));
     await pg.reload();await pg.waitForTimeout(400);ok(await pg.evaluate(()=>ETERNA.state.view)==='semacesso','sugestão: recarregar sem acesso abriu outra tela');
@@ -268,7 +269,7 @@ try{
   {const {ctx,pg}=await nova(b,1024,1366);await entrar(pg,'eduardo@eduardorezende.com');const r=await pg.evaluate(()=>({menu:!!document.querySelector('#menu-btn').getClientRects().length,nav:!!document.querySelector('#nav .grp').getClientRects().length}));ok(!r.menu&&r.nav,'tablet: barra lateral sem botão Menu '+JSON.stringify(r));await ctx.close();}
   // ---------- 18: sem rolagem lateral, matriz em cards no celular ----------
   for(const [n,w,h] of [['cel',390,844],['tab',1024,1366],['desk',1440,900]]){const {ctx,pg}=await nova(b,w,h);await entrar(pg,'eduardo@eduardorezende.com');
-    for(const v of ['permissoes','usuarios']){await pg.evaluate(v=>{ETERNA.state.view=v;ETERNA.render();},v);if(v==='permissoes')await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');else await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(150);
+    for(const v of ['permissoes','usuarios']){await pg.evaluate(v=>{ETERNA.state.view=v;ETERNA.render();},v);if(v==='permissoes')await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');else{await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');}await pg.waitForTimeout(150);
       const sw=await pg.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth}));ok(sw.sw<=sw.iw,`18: ${v} ${n} com rolagem lateral ${JSON.stringify(sw)}`);
       if(v==='permissoes'&&n==='cel')ok(await pg.evaluate(()=>getComputedStyle(document.querySelector('.perm-tbl thead')).display==='none'&&getComputedStyle(document.querySelector('.perm-row')).display==='block'),'18: matriz em cards no celular');
       await pg.screenshot({path:`${P}/permissoes-${v}-${n}.png`,fullPage:n!=='desk'});}

@@ -1,5 +1,6 @@
 // Tela de entrada e botões de Senhas de acesso. As rotas /auth/* respondem no navegador (_entrar.js); a regra de verdade está em login_agente.py.
 const entrarTeste=require('./_entrar');
+const fecharUsuario=p=>p.evaluate(()=>{if(ETERNA.state.users.draft){ETERNA.state.users.draft=null;ETERNA.render();}}); // o cadastro aberto esconde a lista
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const servidorRotas=pg=>pg.route('**/auth/esqueci',r=>r.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'}));
@@ -46,16 +47,16 @@ try{
   await pg.fill('[data-act="login-nova"]','uma frase bem longa');await pg.fill('[data-act="login-nova2"]','uma frase bem longa');await pg.click('button[type=submit]');await pg.waitForTimeout(250);
   ok(/Senha alterada/.test(await pg.textContent('#toast')),'a troca confirma');ok(await pg.evaluate(()=>!!ETERNA.state.user&&ETERNA.state.view!=='minhasenha'&&!ETERNA.state.auth.senha),'depois de trocar segue dentro e limpa as senhas');
   await pg.evaluate(()=>{location.hash='#usuarios';});await pg.waitForTimeout(300);
-  await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(250);
+  await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(250);ok(!(await pg.$('[data-act="user-sel"]'))&&!(await pg.$('[data-act="user-new"]'))&&!(await pg.$('[data-act="user-q"]')),'com um usuário aberto, a lista e a busca saem da tela');await pg.click('[data-act="user-cancel"]');ok(await pg.$('[data-act="user-sel"]'),'Fechar volta para a lista');await pg.click('[data-act="user-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(250);
   ok(await pg.$('[data-act="user-senha"]'),'quem tem a permissão vê Gerar senha');
   await pg.click('[data-act="user-senha"]');await pg.waitForTimeout(250);ok(/Senha provisória de carlos@eterna\.photo/.test(await pg.textContent('#main')),'a senha provisória aparece');
   await pg.click('[data-act="user-senha-ok"]');await pg.waitForTimeout(100);ok(!/provisoria-de-teste/.test(await pg.textContent('#main')),'a senha provisória some depois de entregue');
   // o mesmo perfil de administrador sem o módulo: nem Gerar nem Cancelar, e continua vendo Usuários
   await pg.evaluate(()=>{const u=ETERNA.state.user;u.perms.senhas={c:false,r:false,u:false,d:false};ETERNA.render();});await pg.waitForTimeout(100);
   ok(!await pg.$('[data-act="user-senha"]')&&!await pg.$('[data-act="user-senha-cancelar"]'),'sem a permissão, sem botões de senha');
-  ok(await pg.$('[data-act="user-sel"]'),'sem a permissão de senhas, Usuários segue aberto');
+  await fecharUsuario(pg);ok(await pg.$('[data-act="user-sel"]'),'sem a permissão de senhas, Usuários segue aberto');
   // novo usuário sem e-mail: identificador simples passa; com espaço, não
-  await pg.click('[data-act="user-new"]');await pg.fill('[data-act="user-field"][data-k="name"]','Rafael');await pg.fill('[data-act="user-field"][data-k="email"]','rafael melo');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);
+  await fecharUsuario(pg);await pg.click('[data-act="user-new"]');await pg.fill('[data-act="user-field"][data-k="name"]','Rafael');await pg.fill('[data-act="user-field"][data-k="email"]','rafael melo');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);
   ok(/inválido/.test(await pg.textContent('#toast')),'usuário com espaço é recusado');
   await pg.fill('[data-act="user-field"][data-k="email"]','rafael.melo');await pg.fill('[data-act="user-field"][data-k="contato"]','nao e email');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(80);
   ok(/E-mail inválido/.test(await pg.textContent('#toast')),'e-mail inválido é recusado');await pg.fill('[data-act="user-field"][data-k="contato"]','');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(150);

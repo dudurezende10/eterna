@@ -3,6 +3,7 @@
 // Permissões ("não se aplica" legível, tela inicial e menu pela tela), cadastro (cancelar exclusão), e-mail fora do cadastro,
 // textos da equipe sem "loja" e sem telas que saíram, "Fila do balcão". Prints em testes/prints/v78-*.png.
 const entrarTeste=require('./_entrar');
+const fecharUsuario=p=>p.evaluate(()=>{if(ETERNA.state.users.draft){ETERNA.state.users.draft=null;ETERNA.render();}}); // o cadastro aberto esconde a lista
 const {chromium}=require('playwright');const fs=require('fs');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};
@@ -107,18 +108,18 @@ try{
     await ctx.close();}
   // ---------- F. cadastro: cancelar exclusão; e-mail fora do cadastro; tela "sem acesso" ----------
   {const {ctx,pg}=await nova(b,1280,900);await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});
-    await pg.click('[data-act="user-sel"][data-e="yago@eterna.photo"]');await pg.click('[data-act="user-del-ask"]');ok(await pg.$('[data-act="user-del-ok"]')&&await pg.$('[data-act="user-del-no"]'),'F: confirmar e cancelar exclusão');
+    await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="yago@eterna.photo"]');await pg.click('[data-act="user-del-ask"]');ok(await pg.$('[data-act="user-del-ok"]')&&await pg.$('[data-act="user-del-no"]'),'F: confirmar e cancelar exclusão');
     await pg.click('[data-act="user-del-no"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>!!ETERNA.USERS['yago@eterna.photo'])&&!(await pg.$('[data-act="user-del-ok"]')),'F: cancelar exclusão');
     // desativar o outro admin (hello@) pode; depois o Eduardo segue admin; reativar
-    await pg.click('[data-act="user-sel"][data-e="hello@eterna.photo"]');await pg.click('[data-act="user-active"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>ETERNA.USERS['hello@eterna.photo'].active===false&&ETERNA.adminCount(ETERNA.USERS)===1),'F: desativar o outro admin');
-    await pg.click('[data-act="user-sel"][data-e="hello@eterna.photo"]');await pg.click('[data-act="user-active"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>ETERNA.USERS['hello@eterna.photo'].active===true),'F: reativar o outro admin');
+    await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="hello@eterna.photo"]');await pg.click('[data-act="user-active"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>ETERNA.USERS['hello@eterna.photo'].active===false&&ETERNA.adminCount(ETERNA.USERS)===1),'F: desativar o outro admin');
+    await fecharUsuario(pg);await pg.click('[data-act="user-sel"][data-e="hello@eterna.photo"]');await pg.click('[data-act="user-active"]');await pg.waitForTimeout(80);ok(await pg.evaluate(()=>ETERNA.USERS['hello@eterna.photo'].active===true),'F: reativar o outro admin');
     // e-mail fora do cadastro
     await sair(pg);await entrarTeste(pg,'alguem@gmail.com');// o cadastro é que recusa
     const fe=await pg.evaluate(()=>({u:!!ETERNA.state.user,t:document.querySelector('#main').innerText,s:localStorage.getItem('eterna.session')}));ok(!fe.u&&!fe.s&&/não tem acesso/.test(fe.t),'F: e-mail fora do cadastro deveria ser recusado '+J({u:fe.u,s:fe.s}));
     // sessão forjada com e-mail fora do cadastro
     await pg.evaluate(()=>localStorage.setItem('eterna.session',JSON.stringify({email:'alguem@gmail.com',at:new Date().toISOString()})));await pg.reload();await pg.waitForTimeout(300);ok(!(await pg.evaluate(()=>!!ETERNA.state.user)),'F: sessão forjada com e-mail fora do cadastro entrou');
     // tela "sem acesso": cadastro sem nenhuma tela
-    await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await pg.click('[data-act="user-new"]');
+    await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});await fecharUsuario(pg);await pg.click('[data-act="user-new"]');
     await pg.fill('[data-act="user-field"][data-k="name"]','Sem Tela');await pg.fill('[data-act="user-field"][data-k="email"]','semtela@eterna.photo');await pg.selectOption('[data-act="user-preset"]','custom');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(100);
     await entrar(pg,'semtela@eterna.photo');const sa=await pg.evaluate(()=>({v:ETERNA.state.view,t:document.querySelector('#main').innerText,nav:document.querySelector('#nav').offsetParent!==null}));
     ok(sa.v==='semacesso'&&/Seu acesso ainda não foi liberado/.test(sa.t)&&!sa.nav,'F: tela sem acesso '+J({v:sa.v,nav:sa.nav}));await pg.screenshot({path:`${P}/v78-sem-acesso.png`});
