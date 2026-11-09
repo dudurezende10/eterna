@@ -107,7 +107,7 @@ Resources:
           LIMITE_LEITURAS_DIA: !Ref LimiteLeiturasDia
           LIMITE_BUSCAS_DIA: !Ref LimiteBuscasDia
           MAIL_FROM: !Ref MailFrom
-          MAIL_NOME: "Viva Maracanã · Eterna"
+          MAIL_NOME: "Eterna Photos"
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref Banco}
         - Statement:
