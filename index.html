@@ -81,6 +81,16 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--surface2)}
 .up-faixa.ok{background:var(--good-bg);color:var(--good);border-color:transparent}
 .up-barra{height:8px;border-radius:999px;background:rgba(0,0,0,.08);overflow:hidden}.up-barra i{display:block;height:100%;background:currentColor;border-radius:999px;transition:width .4s}
 details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;padding:10px 14px;background:var(--surface)}details.tec>summary{cursor:pointer;font-weight:600;min-height:32px;display:flex;align-items:center}details.tec[open]>summary{margin-bottom:10px}
+.pend-acts{display:flex;flex-direction:column;gap:0}
+.pend-main{min-height:56px;width:100%;font-size:18px}
+.pend-cancel{display:flex;justify-content:flex-end;margin-top:24px}
+.link-danger{background:none;border:0;color:var(--bad);text-decoration:underline;min-height:44px;margin-left:auto;padding:0 4px;font-weight:600}
+.link-quiet{background:none;border:0;color:var(--muted);text-decoration:underline;min-height:44px;padding:0 4px}
+.posto-rodape{display:flex;justify-content:flex-end;margin-top:8px}
+.pend-filtro{gap:6px}.pend-filtro .chip{min-height:32px}
+.eco-pend.eco-acao{display:flex;flex-direction:column;gap:8px}.eco-cod{font-size:40px}.eco-val{font-size:22px;font-weight:700}
+details.mv-det>summary{cursor:pointer;list-style:none}details.mv-det>summary::-webkit-details-marker{display:none}details.mv-det>summary h2{display:inline}details.mv-det>summary::after{content:' ▾';color:var(--muted)}details.mv-det:not([open])>summary::after{content:' ▸'}
+.posto-recibo{margin-bottom:14px}
 .demo-faixa{background:var(--surface2);color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:13px;margin-bottom:12px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{padding:7px 12px;border:1px solid var(--line);border-radius:999px;font-size:13px;background:var(--surface);min-height:34px}
@@ -1239,7 +1249,7 @@ const VIEWS=[
  ['fundos-teste','Fundos em teste','para uso futuro','Laboratório'],
 ];
 // telas sem item no menu, mas com permissão própria (abertas por botões dentro de outras telas)
-const VIEWS_EXTRA={checkout:'Venda no balcão',fila:'Fila do balcão',caixa:'Caixa',posto:'Posto de venda'};
+const VIEWS_EXTRA={checkout:'Venda manual',fila:'Fila do balcão',caixa:'Posto de venda',posto:'Posto de venda'};
 const viewName=v=>{const x=VIEWS.find(y=>y[0]===v);return x?x[1]:(VIEWS_EXTRA[v]||v);};
 
 // ---------- charts ----------
@@ -1337,10 +1347,8 @@ function vFila(){
 }
 
 // ---------- Caixa ----------
-function vCaixa(){
-  const queue=demoSessions().filter(s=>s.status==='no caixa');const paid=demoSessions().filter(s=>s.status==='paga');
-  const s=state.caixa.session?sessionObj(state.caixa.session):null;
-  let detail='';
+// v94: o detalhe da sessão do Caixa (recibo ou cobrança de quem veio da Fila do balcão) também é usado pelo Posto
+function caixaDetalhe(s){let detail='';
   if(s){const sim=simOf(s.card);const total=sim.status==='paga'?saleTotal(sim):cartTotal(sim.cart);const prints=simPrints(sim);
     if(sim.status==='paga'){
       detail=`<div class="panel"><div class="head"><h2>Recibo · ${esc(s.card)}</h2><span class="pill good">pago · ${esc(sim.payment)}</span></div>
@@ -1360,7 +1368,13 @@ function vCaixa(){
         <div class="note">Depois do pagamento, imprima as fotos na DNP RX1HS deste posto (${SIM.stock[postoNome()]!=null?SIM.stock[postoNome()]:ROLO_CAP} no rolo). O recibo sai com o QR da galeria.</div></div>`;
     }
   }
-  return `<div class="head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>Caixa</h1></div><div class="row"><span class="pill ${(SIM.stock[postoNome()]||0)<ROLO_ALERTA?'bad':'good'}">Rolo: ${SIM.stock[postoNome()]!=null?SIM.stock[postoNome()]:ROLO_CAP} de ${ROLO_CAP}</span><span class="pill neutral">Turno aberto</span></div></div>
+  return detail;}
+// v94-ux: substituída pelo Posto (VIEWFN.caixa = Posto com o filtro Dinheiro); fica no arquivo por uma versão, para facilitar a volta
+function vCaixa(){
+  const queue=demoSessions().filter(s=>s.status==='no caixa');const paid=demoSessions().filter(s=>s.status==='paga');
+  const s=state.caixa.session?sessionObj(state.caixa.session):null;
+  const detail=caixaDetalhe(s);
+  return `<div class="head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>Caixa</h1></div><div class="row">${roloPill()}<span class="pill neutral">Turno aberto</span></div></div>
   <div class="twocol">
     <div style="display:flex;flex-direction:column;gap:14px;min-width:0">${pendPainel()}${impPainel()}<div class="panel"><h2>Fila do caixa</h2>${queue.length?`<div class="sess">${queue.map(s=>`<button class="scard" data-act="caixa-open" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span>${esc(P[s.key]?P[s.key].name:'')}</span><span>${fmtR(cartTotal(simOf(s.card).cart))}</span></div></button>`).join('')}</div>`:'<div class="note">Ninguém esperando. Monte um carrinho na fila do balcão.</div>'}</div>
     ${paid.length?`<div class="panel"><h2>Pagas hoje</h2><div class="tablewrap"><table><thead><tr><th>Sessão</th><th>Pagamento</th><th class="num">Total</th><th></th></tr></thead><tbody>${paid.map(s=>{const sim=simOf(s.card);return `<tr><td class="name">${esc(s.card)}</td><td>${esc(sim.payment)}</td><td class="num">${fmtR(saleTotal(sim))}</td><td><button class="chip" data-act="caixa-open" data-card="${s.card}">Recibo</button></td></tr>`}).join('')}</tbody></table></div></div>`:''}</div>
@@ -1445,24 +1459,31 @@ function dinCancelar(id){const r=dinPegar(id);if(!r)return;const antes=JSON.stri
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return;}pvCancelEv(r,'cancelada_no_posto');toast('Compra cancelada. Ela não vira venda.');render();}
 const pvCancelEv=(r,motivo)=>{if(r&&r.meio)pvEvento('cancelar',r.id,{motivo});};
 // painel "Aguardando pagamento" (Posto de venda e Caixa): só na tela da equipe (nunca no Checkout nem no painel escondido da equipe do Checkout)
-function pendPainel(){const L=dinAbertas();const q=(state.caixa.dinQ||'').toUpperCase().replace(/[^A-Z0-9]/g,'');const rw=can('venda','c');
+// v94 (ondas UX, E): ações de uma pendência (mesmo HTML e mesmos data-act da v83). A principal ocupa a largura (56 px); "Cancelar
+// compra" fica em linha separada, à direita, e pede o segundo toque como antes. r vem sempre do SIM (dinAbertas), nunca do canal.
+function pendAcoes(r){const rw=can('venda','c');if(!rw)return '<div class="note">Só quem registra pagamento confirma.</div>';const meio=meioDe(r);const conf=state.caixa.dinCancel===r.id;
+  const err=state.pend.err&&state.pend.err.id===r.id?state.pend.err.msg:'';
+  const canc=`<div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">Cancelar compra</button></div>`;
+  return conf?`<div class="din-conf"><span>Cancelar esta compra? Ela não vira venda.</span><div class="row"><button class="btn ghost" data-act="din-cancel-ok" data-id="${esc(r.id)}">Sim, cancelar</button><button class="btn ghost" data-act="din-cancel-no">Não</button></div></div>`
+    :meio==='dinheiro'?`<div class="pend-acts"><button class="btn primary big pend-main" data-act="din-confirm" data-id="${esc(r.id)}">Recebi ${fmtR(r.total)}</button>${canc}</div>`
+    :state.pend.ref===r.id?`<div class="pend-ref"><label><span class="eyebrow">NSU ou autorização, opcional</span><input type="text" id="pend-ref" data-keep="1" inputmode="numeric" autocomplete="off" maxlength="24" placeholder="só números, de 4 a 12" aria-label="NSU ou autorização, opcional"></label>${err?`<div class="pend-err" role="alert">${esc(err)}</div>`:''}
+        <div class="pend-acts"><button class="btn primary big pend-main" data-act="pend-pos-ok" data-id="${esc(r.id)}">Confirmar ${fmtR(r.total)}</button><div class="row"><button class="btn ghost" data-act="pend-pos-no">Voltar</button></div></div><div class="note">Nunca digite o número do cartão.</div></div>`
+    :`<div class="pend-acts"><button class="btn primary big pend-main" data-act="pend-pos" data-id="${esc(r.id)}">Pago na maquininha</button>${canc}</div>`;}
+// pendência mostrada com as ações no bloco "Agora no Checkout": só quando o Checkout espera o pagamento dela e ela é a única aberta
+function ecoPendR(){if(ecoOff())return null;const m=state.eco.m;if(!(m&&m.step==='done'&&m.wait&&m.pend))return null;const L=dinAbertas();return L.length===1&&L[0].id===m.pend?L[0]:null;}
+function pendPainel(o){o=o||{};const din=o.filtro==='dinheiro';const L=dinAbertas().filter(r=>!din||meioDe(r)==='dinheiro');const q=(state.caixa.dinQ||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const norm=x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');const vis=q?L.filter(r=>norm(r.codigo).includes(q)||norm(r.card).includes(q)):L;
   const alvo=state.eco&&state.eco.m&&state.eco.m.pend;
-  const item=r=>{const meio=meioDe(r);const min=dinMin(r);const ph=(r.sessoes||[r.card]).flatMap(c=>{const so=sessionObj(c);return so?so.photos.filter(p=>(r.selected||[]).includes(p.id)):[];}).slice(0,4);const conf=state.caixa.dinCancel===r.id;
-    const err=state.pend.err&&state.pend.err.id===r.id?state.pend.err.msg:'';const ico=ICO[meio==='pix'?'pix':meio==='cartao'?'card':'cash'];
-    const acts=!rw?'<div class="note">Só quem registra pagamento confirma.</div>'
-      :conf?`<div class="din-conf"><span>Cancelar esta compra? Ela não vira venda.</span><div class="row"><button class="btn ghost" data-act="din-cancel-ok" data-id="${esc(r.id)}">Sim, cancelar</button><button class="btn ghost" data-act="din-cancel-no">Não</button></div></div>`
-      :meio==='dinheiro'?`<div class="row"><button class="btn primary" data-act="din-confirm" data-id="${esc(r.id)}">Recebi ${fmtR(r.total)}</button><button class="btn ghost" data-act="din-cancel" data-id="${esc(r.id)}">Cancelar</button></div>`
-      :state.pend.ref===r.id?`<div class="pend-ref"><label><span class="eyebrow">NSU ou autorização, opcional</span><input type="text" id="pend-ref" data-keep="1" inputmode="numeric" autocomplete="off" maxlength="24" placeholder="só números, de 4 a 12" aria-label="NSU ou autorização, opcional"></label>${err?`<div class="pend-err" role="alert">${esc(err)}</div>`:''}
-          <div class="row"><button class="btn primary" data-act="pend-pos-ok" data-id="${esc(r.id)}">Confirmar ${fmtR(r.total)}</button><button class="btn ghost" data-act="pend-pos-no">Voltar</button></div><div class="note">Nunca digite o número do cartão.</div></div>`
-      :`<div class="row"><button class="btn primary" data-act="pend-pos" data-id="${esc(r.id)}">Pago na maquininha</button><button class="btn ghost" data-act="din-cancel" data-id="${esc(r.id)}">Cancelar</button></div>`;
+  const item=r=>{const meio=meioDe(r);const min=dinMin(r);const ph=(r.sessoes||[r.card]).flatMap(c=>{const so=sessionObj(c);return so?so.photos.filter(p=>(r.selected||[]).includes(p.id)):[];}).slice(0,4);
+    const ico=ICO[meio==='pix'?'pix':meio==='cartao'?'card':'cash'];
+    const acts=o.semId===r.id?'<div class="note">Confirme no bloco "Agora no Checkout".</div>':pendAcoes(r);
     return `<div class="din-item${alvo===r.id?' alvo':''}" data-pend="${esc(r.id)}"><div class="din-top"><span class="din-meio">${ico} ${MEIO_NOME[meio]}</span><span class="din-val">${fmtR(r.total)}</span></div>
       <div class="din-top"><b class="din-cod">${esc(r.codigo)}</b>${r.saleNo?`<span class="note">Venda ${esc(r.saleNo)}</span>`:''}</div>
       <div class="note">Sessão ${esc(r.card)} · ${hhmm(new Date(r.criada))} <span class="pill ${min>CAIXA_ALERTA_MIN?'warn':'neutral'}">há ${min} min</span> · ${r.n} ${r.n===1?'foto':'fotos'} · ${r.prints} ${r.prints===1?'impressa':'impressas'}</div>
       ${ph.length?`<div class="photos small">${ph.map(p=>photoBtn(p)).join('')}</div>`:''}${acts}</div>`;};
-  if(!L.length)return ''; // nada esperando: a caixa some (a venda recebida já aparece no recibo e em Pagas hoje)
-  return `<div class="panel" id="pend-painel"><div class="head"><h2>Aguardando pagamento</h2>${L.length?`<span class="pill ${dinAtrasada()?'warn':'neutral'}">${L.length}</span>`:''}</div>
-    ${L.length?`${`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="Código do cliente (XXXX-XXXX) ou sessão" aria-label="Buscar pagamento" autocomplete="off">`}${vis.length?`<div class="din-list">${vis.map(item).join('')}</div>`:'<div class="note">Nenhum pagamento com esse código.</div>'}`:'<div class="note">Nenhum pagamento esperando. Quando o cliente escolher Cartão, PIX ou Dinheiro no Checkout, a compra aparece aqui.</div>'}</div>`;}
+  const chips=`<div class="chips pend-filtro"><button class="chip" data-act="posto-filtro" data-f="todos" aria-pressed="${!din}">Todos</button><button class="chip" data-act="posto-filtro" data-f="dinheiro" aria-pressed="${din}">Dinheiro</button></div>`;
+  return `<div class="panel" id="pend-painel"><div class="head"><h2>Aguardando pagamento</h2><div class="row">${chips}${L.length?`<span class="pill ${dinAtrasada()?'warn':'neutral'}">${L.length}</span>`:''}</div></div>
+    ${L.length?`${`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="Código do cliente (XXXX-XXXX) ou sessão" aria-label="Buscar pagamento" autocomplete="off">`}${vis.length?`<div class="din-list">${vis.map(item).join('')}</div>`:'<div class="note">Nenhum pagamento com esse código.</div>'}`:'<div class="note">Nenhum pagamento esperando.</div>'}</div>`;}
 const dinPainel=pendPainel; // nome da v79
 // ---------- v83: modo do aparelho, posto, vendedor ----------
 // Etapa 1 (este notebook, sem rede): só 'local' (aberto pelo agente neste computador) ou 'off'. 'posto' e 'nao_pareado' entram com o pareamento (etapa 2).
@@ -1475,6 +1496,12 @@ const postoTitulo=()=>pontoModo()==='posto'?postoNome():'Computador do ponto';
 // quem abriu o Checkout neste notebook (gravado por lojaJanela); vai para a venda como vendedor declarado (D17)
 function postoVendedor(){try{const v=JSON.parse(localStorage.getItem('eterna.posto.vendedor')||'null');if(v&&typeof v.email==='string'&&typeof v.nome==='string')return {nome:v.nome.replace(/[<>]/g,'').slice(0,60),email:v.email.slice(0,120)};}catch(e){}return null;}
 const ROLO_CAP=700,ROLO_ALERTA=40,IMP_ALERTA_MIN=10;
+// v94 (ondas UX, E): rolo numa função só (Posto, Imprimir, Estoque, Venda manual): neutro de 100 para cima, amarelo abaixo de
+// 100, vermelho abaixo de 40. Nunca verde.
+const ROLO_AVISO=100;
+const roloCls=n=>n<ROLO_ALERTA?'bad':n<ROLO_AVISO?'warn':'neutral';
+const roloN=pn=>{const v=SIM.stock[pn||postoNome()];return v!=null?v:ROLO_CAP;};
+const roloPill=pn=>{const n=roloN(pn);return `<span class="pill ${roloCls(n)} rolo-pill">Rolo: ${n} de ${ROLO_CAP}</span>`;};
 
 // ---------- v83 (parte G, só o local): identificadores e fila de eventos ----------
 // A fila fica em chaves próprias, fora do SIM (achado 8: saveSim de uma janela não apaga o que a outra enfileirou).
@@ -1633,7 +1660,7 @@ function impVendas(cards){return Object.entries(SIM.sessions).filter(([c,s])=>s.
   .sort((a,b)=>String(b[1].paidAt||'').localeCompare(String(a[1].paidAt||'')));}
 function impThumb(x,on,act,card){const st=x.t==='ph'?phStyle(x.id):'';const b=x.t==='ai'?bgOf(x.bg):null;
   return `<button class="imp-th${on?' on':''}" ${act?`data-act="${act}" data-card="${esc(card)}" data-k="${esc(x.k)}"`:'disabled'} aria-pressed="${!!on}" style="${st}" aria-label="${x.t==='ai'?'Foto com fundo de IA':'Foto'}">${x.t==='ai'?`<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?b.file:''})"></span><span class="imp-ia">IA</span>`:''}${on?'<span class="imp-ok">✓</span>':''}</button>`;}
-function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');
+function impPainel(cards,o){o=o||{};const L=impVendas(cards);const rw=can('venda','c');
   if(!L.length&&cards){const s0=SIM.sessions[cards[0]]||{};return `<div class="panel" id="imp-painel"><div class="note">${s0.impressao?'Esta venda não tem fotos impressas no pacote.':'Esta venda é de antes da impressão pelo Posto de venda (v83): não há fotos registradas para imprimir aqui.'}</div></div>`;}
   const item=([card,s])=>{const im=s.impressao;const job=state.impJob&&state.impJob.card===card?state.impJob:null;const hora=s.paidAt?hhmm(new Date(s.paidAt)):'';
     const head=`<div class="din-top"><b>${esc(s.saleNo||card)}</b><span class="pill ${im.estado==='impressa'?'good':'warn'}">${im.estado==='impressa'?'impressa':'para imprimir'}</span></div><div class="note">Sessão ${esc(card)} · paga às ${hora} · ${esc(s.payment||'')} · ${s.prints||0} ${s.prints===1?'impressa':'impressas'} no pacote</div>`;
@@ -1661,18 +1688,19 @@ function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');
           <div class="row"><button class="btn primary" data-act="imp-reprint-ok" data-card="${esc(card)}" ${(re.sel||[]).length?'':'disabled'}>Reimprimir ${(re.sel||[]).length||''} ${(re.sel||[]).length===1?'foto':'fotos'}</button><button class="btn ghost" data-act="imp-reprint-no">Voltar</button></div></div>`
           :`<div class="row"><button class="btn ghost" data-act="imp-reprint" data-card="${esc(card)}">Reimprimir</button></div>`}`;}
     return `<div class="din-item" data-imp="${esc(card)}">${head}${body}</div>`;};
-  return `<div class="panel" id="imp-painel"><div class="head"><h2>Impressão 10×15</h2><span class="pill ${(SIM.stock[postoNome()]||0)<ROLO_ALERTA?'bad':'neutral'}">Rolo: ${SIM.stock[postoNome()]!=null?SIM.stock[postoNome()]:ROLO_CAP} de ${ROLO_CAP}</span></div>
+  return `<div class="panel" id="imp-painel"><div class="head"><h2>Imprimir</h2>${o.semRolo?'':roloPill()}</div>
     ${L.length?`<div class="din-list">${L.map(item).join('')}</div>`:'<div class="note">Nenhuma venda para imprimir. Depois de confirmar o pagamento, as fotos aparecem aqui já marcadas.</div>'}
     <div class="note">Sai na DNP RX1HS deste posto, em 10×15 (PR 4×6, sem margem). Foto com fundo de IA imprime com o fundo em alta resolução.</div></div>`;}
 // "Minhas vendas de hoje" (D9): deste notebook e do e-mail de quem está logado; valor de cada venda e nenhum total
 function minhasVendas(){const u=state.user;if(!u)return '';const hoje=todayISO();const rows=[];const vistos=new Set();
   (SIM.caixaDin||[]).forEach(r=>{if(!r.vendedor||r.vendedor.email!==u.email||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;
-    rows.push({t:r.criada,no:r.saleNo||'',meio:MEIO_NOME[meioDe(r)],v:r.total,pag:r.estado==='aguardando'?'aguardando':r.estado==='confirmada'?'paga':r.estado==='nao_paga'?'não paga':r.estado,imp:meu&&s.impressao?(s.impressao.estado==='impressa'?'impressa':s.impressao.estado==='pendente'?'para imprimir':'—'):'—'});});
+    rows.push({t:r.criada,card:r.card,rec:meu&&r.estado==='confirmada'&&s.status==='paga',no:r.saleNo||'',meio:MEIO_NOME[meioDe(r)],v:r.total,pag:r.estado==='aguardando'?'aguardando':r.estado==='confirmada'?'paga':r.estado==='nao_paga'?'não paga':r.estado,imp:meu&&s.impressao?(s.impressao.estado==='impressa'?'impressa':s.impressao.estado==='pendente'?'para imprimir':'—'):'—'});});
   Object.entries(SIM.sessions).forEach(([c,s])=>{if(s.status!=='paga'||!s.vendaId||vistos.has(s.vendaId)||!s.vendedor||s.vendedor.email!==u.email||isoDia(s.paidAt||0)!==hoje)return;
-    rows.push({t:s.paidAt,no:s.saleNo||'',meio:s.payment||'',v:saleTotal(s),pag:'paga',imp:s.impressao?(s.impressao.estado==='impressa'?'impressa':s.impressao.estado==='pendente'?'para imprimir':'—'):'—'});});
+    rows.push({t:s.paidAt,card:c,rec:true,no:s.saleNo||'',meio:s.payment||'',v:saleTotal(s),pag:'paga',imp:s.impressao?(s.impressao.estado==='impressa'?'impressa':s.impressao.estado==='pendente'?'para imprimir':'—'):'—'});});
   rows.sort((a,b)=>String(b.t).localeCompare(String(a.t)));
-  return `<div class="panel" id="minhas-vendas"><div class="head"><h2>Minhas vendas de hoje</h2></div>${rows.length?`<div class="tablewrap"><table class="mv-tab"><thead><tr><th>Hora</th><th>Venda</th><th>Pagamento</th><th class="num">Valor</th><th>Estado</th><th>Impressão</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr><td>${hhmm(new Date(r.t))}</td><td class="name">${esc(r.no)}</td><td>${esc(r.meio)}</td><td class="num">${fmtR(r.v)}</td><td>${esc(r.pag)}</td><td>${esc(r.imp)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Nenhuma venda sua hoje neste notebook.</div>'}</div>`;}
+  // v94 (E): dentro de <details> "Minhas vendas de hoje", aberto por padrão; "Recibo" nas vendas pagas abre o recibo em cima do Posto
+  return `<details class="panel mv-det" open><summary><h2>Minhas vendas de hoje</h2></summary><div id="minhas-vendas">${rows.length?`<div class="tablewrap"><table class="mv-tab"><thead><tr><th>Hora</th><th>Venda</th><th>Pagamento</th><th class="num">Valor</th><th>Estado</th><th>Impressão</th><th></th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td>${hhmm(new Date(r.t))}</td><td class="name">${esc(r.no)}</td><td>${esc(r.meio)}</td><td class="num">${fmtR(r.v)}</td><td>${esc(r.pag)}</td><td>${esc(r.imp)}</td><td>${r.rec&&r.card?`<button class="chip" data-act="caixa-open" data-card="${esc(r.card)}">Recibo</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Nenhuma venda sua hoje neste notebook.</div>'}</div></details>`;}
 
 // ---------- v83 (parte E): venda acompanhada. O Checkout publica o que o cliente vê; o Posto de venda só lê (nada vai para o agente) ----------
 const ECO_CH=(()=>{try{return window.BroadcastChannel?new BroadcastChannel('eterna-loja'):null;}catch(e){return null;}})();
@@ -1717,25 +1745,42 @@ function ecoBody(){const e=state.eco;
   const meio=m.meio||(m.pay?PAY_MEIO[m.pay]:null);
   return `<div class="eco-meta"><div><div class="eyebrow">Sessão ${esc(m.card)}${so&&P[so.key]?' · '+esc(P[so.key].name):''}</div><b>${esc(etapa)}</b></div><div class="row">${fl}${idade}</div></div>
     ${big}
-    ${m.step==='done'&&m.pend&&m.wait?`<div class="eco-pend">O cliente escolheu ${esc(MEIO_NOME[meio]||'pagar')}: confirme em "Aguardando pagamento".</div>`:''}
+    ${m.step==='done'&&m.pend&&m.wait?(()=>{const r=ecoPendR();const r0=r||dinAbertas().find(x=>x.id===m.pend);
+      return `<div class="eco-pend${r?' eco-acao':''}"${r?` data-eco-pend="${esc(r.id)}"`:''}><div>O cliente escolheu <b>${esc(MEIO_NOME[meio]||'pagar')}</b>.</div>${r0?`<span class="eyebrow">Seu código</span><b class="din-cod eco-cod">${esc(r0.codigo)}</b><div class="eco-val">${fmtR(r0.total)}</div>`:''}${r?pendAcoes(r):''}</div>`;})():''}
     <div class="eyebrow">Escolhidas · ${(m.esc||[]).length}</div>${(m.esc||[]).length?`<div class="eco-minis">${m.esc.map(x=>ecoThumb(x,'eco-mini')).join('')}</div>`:'<div class="note">Nenhuma foto escolhida ainda.</div>'}
     ${m.pkg?`<div class="cart"><div class="cartline"><span>${esc(catName(m.pkg))}${m.pkg===m.ideal?' <span class="pill good">Ideal</span>':''}</span><b>${fmtR((m.lines||[]).find(l=>l.t==='pkg')?m.lines.find(l=>l.t==='pkg').v:priceOf(m.pkg))}</b></div>${(m.lines||[]).filter(l=>l.t==='extra').map(l=>`<div class="cartline"><span>${+l.n||0} ${+l.n===1?'foto adicional':'fotos adicionais'}</span><b>${fmtR(l.v)}</b></div>`).join('')}</div>`:''}
     ${m.total!=null?`<div class="total"><span class="note">Total${+m.prints?` · ${+m.prints||0} ${+m.prints===1?'impressa':'impressas'}`:''}</span><b>${fmtR(m.total)}</b></div>`:''}
     ${meio?`<div class="note">Pagamento: <b>${esc(MEIO_NOME[meio]||meio)}</b></div>`:''}`;}
 // atualiza só o #eco (sem render): o campo de NSU e o resto da tela ficam como estão
 function ecoUpd(cheio){const el=document.getElementById('eco');if(!el)return;const off=ecoOff();
+  const foco=document.activeElement;if(foco&&el.contains(foco)&&/INPUT|TEXTAREA|SELECT/.test(foco.tagName)){if(cheio||off!==state.ecoOffMostrado)state.ecoAdiado=true;return;} // v94 (E8): digitando o NSU no bloco, nada é reescrito; no próximo tick sem foco
+  if(state.ecoAdiado){state.ecoAdiado=false;cheio=true;}
+  const ep=(ecoPendR()||{}).id||null;if(ep!==(state.ecoPendMostrado||null)&&(state.view==='posto'||state.view==='caixa')){render();return;}
   if(cheio||off!==state.ecoOffMostrado){state.ecoOffMostrado=off;el.innerHTML=ecoBody();compHydrate();
     const p=!off&&state.eco.m&&state.eco.m.step==='done'&&state.eco.m.wait?state.eco.m.pend:null;document.querySelectorAll('[data-pend]').forEach(x=>x.classList.toggle('alvo',x.dataset.pend===p));
-    if(p&&state.ecoRolou!==p){const it=document.querySelector(`[data-pend="${CSS.escape(p)}"]`);if(it){state.ecoRolou=p;it.scrollIntoView({block:'center',behavior:'smooth'});}}return;}
+    if(p&&state.ecoRolou!==p&&!ep){const it=document.querySelector(`[data-pend="${CSS.escape(p)}"]`);if(it){state.ecoRolou=p;it.scrollIntoView({block:'center',behavior:'smooth'});}}return;}
   const a=document.getElementById('eco-age');if(a&&state.eco){const par=Math.max(0,Math.floor((Date.now()-state.eco.mudouEm)/1000));a.textContent=par>=5?`parado há ${par} s`:'agora';}}
 setInterval(()=>{if(!state.lojaRota&&!state.pub)ecoUpd(false);},1000);
 
 // ---------- v83: tela Posto de venda (view posto, módulo venda) ----------
-function vPosto(){const a=state.agent;const pn=postoNome();const rolo=SIM.stock[pn]!=null?SIM.stock[pn]:ROLO_CAP;
-  const ag=a.on?'<span class="pill good">agente ligado</span>':`<span class="pill neutral">${a.offAt?'agente fora desde '+hhmm(new Date(a.offAt)):'sem agente'}</span>`;
-  return `<div class="head posto-head"><div><div class="eyebrow">Posto de venda</div><h1>${esc(postoTitulo())}</h1></div><div class="row">${ag}<span class="pill ${rolo<ROLO_ALERTA?'bad':'neutral'}">Rolo: ${rolo} de ${ROLO_CAP}</span>${canView('quiosque')?'<button class="btn ghost" data-act="loja-abrir">Abrir Checkout</button>':''}</div></div>
-  <div class="posto-cols"><div><div class="panel"><div class="head"><h2>No Checkout agora</h2></div><div id="eco">${ecoBody()}</div></div></div>
-    <div>${pendPainel()}${impPainel()}${minhasVendas()}</div></div>`;}
+// v94 (ondas UX, E): o Posto é a tela única de venda. Esquerda: "Agora no Checkout" (com as ações da única pendência que o
+// Checkout espera); direita: Aguardando pagamento (Todos/Dinheiro) e Imprimir; abaixo, Minhas vendas de hoje com o Recibo.
+// O Caixa (#caixa) é este Posto com o filtro Dinheiro. Pagamento, caixa e impressão usam as mesmas funções da v83.
+state.posto.filtro='todos';state.posto.filtroCaixa='dinheiro';state.posto.recibo=null;
+function vPosto(o){o=o||{};const a=state.agent;const filtro=o.filtro==='dinheiro'?'dinheiro':'todos';
+  const conn=a.on?'':faixaConexao({estado:demoOn()?'demo':'off',ultimo:a.lastOk});
+  const ep=ecoPendR();state.ecoPendMostrado=ep?ep.id:null;
+  const rc=state.caixa.session&&(state.posto.recibo===state.caixa.session||state.view==='caixa')?sessionObj(state.caixa.session):null;const rsim=rc?simOf(rc.card):null;
+  // recibo (botão Recibo, ou a venda recém-confirmada no #caixa); a cobrança de quem veio da Fila do balcão (caminho antigo) usa o detalhe do Caixa
+  const recibo=rc&&rsim&&(rsim.status==='paga'||rsim.status==='no caixa')?`<div class="posto-recibo">${rsim.status==='paga'?receiptPanel(rc,rsim):caixaDetalhe(rc)}<div class="row"><button class="btn ghost" data-act="posto-recibo-fechar">Fechar</button></div></div>`:'';
+  const balcao=demoSessions().filter(s=>s.status==='no caixa');
+  const filaBalcao=balcao.length?`<div class="panel"><h2>Vindas da Fila do balcão</h2><div class="sess">${balcao.map(s=>`<button class="scard" data-act="caixa-open" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span>${esc(P[s.key]?P[s.key].name:'')}</span><span>${fmtR(cartTotal(simOf(s.card).cart))}</span></div></button>`).join('')}</div></div>`:'';
+  return `<div class="head posto-head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>Posto de venda</h1></div><div class="row">${roloPill()}${canView('quiosque')?'<button class="btn ghost" data-act="loja-abrir">Abrir Checkout</button>':''}</div></div>
+  ${conn}${recibo}
+  <div class="posto-cols"><div><div class="panel"><div class="head"><h2>Agora no Checkout</h2></div><div id="eco">${ecoBody()}</div></div></div>
+    <div>${pendPainel({filtro,semId:ep?ep.id:null})}${impPainel(null,{semRolo:1})}${filaBalcao}</div></div>
+  ${minhasVendas()}
+  ${canView('checkout')?'<div class="posto-rodape"><button class="link-quiet" data-act="view" data-v="checkout">Venda manual (quando o Checkout está fora)</button></div>':''}`;}
 function drawQR(){const el=$('#qrbox');if(!el)return;const card=state.caixa.session;const tok=card&&galDaSessao(card);if(!tok){el.innerHTML='';return;}qrDraw(el,galBase()+tok,110,SIM.galerias[tok].codigo);}
 
 // ---------- Checkout (vendedor, uma tela só) ----------
@@ -1753,7 +1798,7 @@ function vCheckout(){
   const stepbar=`<div class="steps">${steps.map((t,i)=>`<span class="step" data-on="${ck.step===i+1}" data-done="${ck.step>i+1}">${i+1}. ${t}</span>`).join('')}</div>`;
   if(!ck.session||ck.step===1){
     const q=(ck.code||'').toUpperCase();const list=all.filter(s=>s.status!=='paga'&&(!q||s.card.includes(q))).slice(0,16);
-    return `<div class="head"><div><div class="eyebrow">Vendedor · balcão</div><h1>Venda no balcão</h1></div></div>
+    return `<div class="head"><div><div class="eyebrow">Posto de venda · quando o Checkout está fora</div><h1>Venda manual</h1></div><div class="row">${roloPill()}</div></div>
     ${stepbar}
     <div class="grid2">
       <div class="panel"><div class="head"><h2>Câmera do balcão</h2><span class="pill good">ligada</span></div>${camBox()}</div>
@@ -3990,7 +4035,7 @@ function vEscala(){
 function vCatalogo(){
   return `<div class="head"><div><div class="eyebrow">Configurações · catálogo, preços, Checkout e FTP</div><h1>Painel de controle</h1></div></div>
   <div class="panel"><div class="tablewrap"><table><thead><tr><th>Produto</th><th>Tipo</th><th>Conteúdo</th><th class="num">Preço</th><th class="num">Vendidos na semana</th></tr></thead><tbody>
-  ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="Preço de ${esc(c.name)}"></td><td class="num">${real?real.units:'novo'}</td></tr>`}).join('')}
+  ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}${c.id==='fundo'?' · só na Venda manual':''}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="Preço de ${esc(c.name)}"></td><td class="num">${real?real.units:'novo'}</td></tr>`}).join('')}
   </tbody></table></div><div class="row"><button class="btn ghost" data-act="price-reset">Voltar aos preços de hoje</button><span class="note">Próximo: preço por dia da semana, dia de jogo e temporada; passe de foto por tipo de ingresso.</span></div></div>
   <div class="panel"><h2>Cartões com QR impresso</h2><div class="row" style="align-items:end"><label><span class="eyebrow">Quantidade</span><input type="number" id="cartao-n" min="1" max="5000" value="1000" style="width:110px;text-align:right"></label><button class="btn" data-act="cartao-lote" ${can('catalogo','u')?'':'disabled'}>Gerar lote para a gráfica (CSV)</button></div><div class="note">Cada linha traz o QR (endereço da galeria) e o código de 8 letras para imprimir no cartão. O cartão só abre fotos depois de lido dentro de uma venda.</div></div>
   <div class="panel"><h2>Checkout</h2><div class="row" style="align-items:end"><label><span class="eyebrow">Tempo da tela final com o QR (segundos)</span><input type="number" id="loja-fim" data-act="loja-fim" min="${LOJA_FIM_MIN}" max="${LOJA_FIM_MAX}" step="1" value="${lojaFimSeg()}" style="width:110px;text-align:right" ${can('catalogo','u')?'':'disabled'}></label><span class="note">Depois do pagamento, o Checkout mostra o QR e o código por este tempo e volta sozinha para a câmera. Padrão ${LOJA_FIM_PADRAO} s, de ${LOJA_FIM_MIN} a ${LOJA_FIM_MAX} s. O botão "Voltar ao início" volta antes.</span></div>
@@ -4163,7 +4208,7 @@ function vFotoFila(){if(!fotoFilaTimer){fotoFilaTimer=setInterval(fotoFilaPoll,2
   </div></div>`;}
 function vEstoque(){
   return `<div class="head"><div><div class="eyebrow">Insumos</div><h1>Estoque</h1></div></div>
-  <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · rolo</span><span class="v" style="color:${v<ROLO_ALERTA?'var(--bad)':'inherit'}">${v}</span><span class="d">${v<ROLO_ALERTA?'Trocar antes do pico':'de '+ROLO_CAP+' · DNP RX1HS'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">Ímãs 15 x 20</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">Sacolas</span><span class="v" style="color:var(--bad)">310</span><span class="d">pedir</span></div></div>
+  <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · rolo</span><span class="v" style="color:${roloCls(v)==='bad'?'var(--bad)':roloCls(v)==='warn'?'var(--warn)':'inherit'}">${v}</span><span class="d">${v<ROLO_ALERTA?'Trocar antes do pico':v<ROLO_AVISO?'Trocar logo':'de '+ROLO_CAP+' · DNP RX1HS'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">Ímãs 15 x 20</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">Sacolas</span><span class="v" style="color:var(--bad)">310</span><span class="d">pedir</span></div></div>
   <div class="panel"><h2>Consumo</h2>${hbars([{label:'Impressões semana',v:DATA.totals.prints},{label:'Reimpressões',v:DATA.totals.reprints},{label:'Rolos usados',v:Math.round(DATA.totals.prints/200)}],fmtN)}<div class="note">${fmtN(DATA.totals.prints)} impressões na semana = ${Math.ceil(DATA.totals.prints/200)} rolos. Estoque mínimo sugerido: 10 rolos.</div></div>
   <div class="row"><button class="btn ghost" data-act="stock-swap">Registrar troca de rolo em ${esc(postoNome())}</button><button class="btn ghost" data-act="view" data-v="bandeiras">Bandeiras e material de cena →</button></div>`;
 }
@@ -4982,7 +5027,7 @@ function vDiario(){
   </div>`;
 }
 
-const VIEWFN={estatisticas:vEstatisticas,calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,posto:vPosto,quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const VIEWFN={estatisticas:vEstatisticas,calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:()=>vPosto({filtro:state.posto.filtroCaixa||'dinheiro'}),posto:()=>vPosto({filtro:state.posto.filtro}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
     try{$('#main').innerHTML=vGaleriaQR();}catch(err){console.error(err);$('#main').innerHTML=`<div class="gq"><div class="gq-mid"><h1 class="lj-h2">${esc(T('gq_notFound'))}</h1></div></div>`;}
@@ -5013,7 +5058,7 @@ function render(){
   const keep={};let keepFocus=null,keepSel=null;document.querySelectorAll('#main [data-keep][id]').forEach(el=>{if(el.value)keep[el.id]=el.value;if(document.activeElement===el){keepFocus=el.id;try{keepSel=[el.selectionStart,el.selectionEnd]}catch(e){}}});
   try{$('#main').innerHTML=(u&&!bare&&demoOn()?'<div class="demo-faixa" role="status">Modo demonstração · os botões de simulação estão visíveis</div>':'')+fn();}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div><div class="row"><button class="btn ghost" data-act="reset">Zerar simulação</button></div></div>`;}
   Object.entries(keep).forEach(([id,v])=>{const el=document.getElementById(id);if(el&&!el.value)el.value=v;});if(keepFocus){const el=document.getElementById(keepFocus);if(el){el.focus();if(keepSel)try{el.setSelectionRange(keepSel[0],keepSel[1])}catch(e){}}}
-  if(state.view==='caixa'||state.view==='checkout')drawQR();
+  if(state.view==='caixa'||state.view==='checkout'||state.view==='posto')drawQR();
   {const gq=$('#galqr');if(gq){const m=(SIM.galerias||{})[gq.dataset.t];if(m)qrDraw(gq,galBase()+m.token,150,m.codigo);}}
   syncHash();
   camMount();
@@ -5033,7 +5078,7 @@ window.addEventListener('focus',()=>entrarFocar(true));window.addEventListener('
 // v79: barra da equipe: Abrir Checkout e, para quem confirma pagamento, o Caixa com o número de dinheiros esperando
 function railCk(){const el=$('#rail-ck');if(!el)return;if(!state.user||state.lojaRota||state.pub){el.innerHTML='';return;}
   const ck=canView('quiosque')?'<button class="btn railck" data-act="loja-abrir" aria-label="Abrir Checkout"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="railck-t">Abrir Checkout</span></button>':'';
-  let cx='';if(canView('caixa')&&can('venda','c')){const n=dinAbertas().length;cx=`<button class="btn railck caixa" data-act="view" data-v="caixa" aria-label="Caixa${n?`, ${n} aguardando dinheiro`:''}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/></svg><span class="railck-t">Caixa</span>${n?`<span class="pill ${dinAtrasada()?'warn':'neutral'}" id="rail-din">${n}</span>`:''}</button>`;}
+  let cx='';if(canView('posto')&&can('venda','c')){const n=dinAbertas().length;cx=`<button class="btn railck caixa" data-act="view" data-v="posto" aria-label="Posto de venda${n?`, ${n} aguardando pagamento`:''}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/></svg><span class="railck-t">Posto de venda</span>${n?`<span class="pill ${dinAtrasada()?'warn':'neutral'}" id="rail-din">${n}</span>`:''}</button>`;}
   el.innerHTML=ck+cx;}
 // gaveta do menu no celular (até 700 px): o cabeçalho fica só com logo, Checkout e Menu; os grupos abrem por cima da tela
 function menuSync(){const o=!!state.drawer;document.body.toggleAttribute('data-drawer',o);const b=$('#menu-btn');if(b)b.setAttribute('aria-expanded',String(o));const g=$('#railgav');if(g){if(o){g.setAttribute('role','dialog');g.setAttribute('aria-modal','true');}else{g.removeAttribute('role');g.removeAttribute('aria-modal');}}}
@@ -5198,7 +5243,9 @@ document.addEventListener('click',e=>{
     case 'fila-bg':{const s=simOf(state.fila.session);s.bg=s.bg===d.bg?null:d.bg;s.cart=(s.cart||[]).filter(c=>c.id!=='fundo');if(s.bg)s.cart.push({id:'fundo'});saveSim();render();break;}
     case 'fila-add':{const s=simOf(state.fila.session);s.cart=s.cart||[];const c=DATA.catalog.find(x=>x.id===d.id);if(s.cart.find(x=>x.id===d.id))s.cart=s.cart.filter(x=>x.id!==d.id);else{if(c.kind==='pacote')s.cart=s.cart.filter(x=>{const y=DATA.catalog.find(z=>z.id===x.id);return !y||y.kind!=='pacote'});s.cart.push({id:d.id});}saveSim();render();break;}
     case 'fila-send':{const c=state.fila.session;const s=simOf(c);s.status='no caixa';s.sentAt=now().toISOString();log(`Sessão ${c} enviada ao caixa: ${fmtR(cartTotal(s.cart))}`);saveSim();toast('Carrinho enviado ao caixa');state.fila.session=null;render();break;}
-    case 'caixa-open':state.caixa.session=d.card;render();break;
+    case 'caixa-open':state.caixa.session=d.card;state.posto.recibo=d.card;render();if(state.view==='posto'||state.view==='caixa')window.scrollTo({top:0});break;
+    case 'posto-recibo-fechar':state.posto.recibo=null;state.caixa.session=null;state.caixa.reprint=null;render();break;
+    case 'posto-filtro':if(state.view==='caixa')state.posto.filtroCaixa=d.f==='dinheiro'?'dinheiro':'todos';else state.posto.filtro=d.f==='dinheiro'?'dinheiro':'todos';render();break;
     case 'caixa-pay':state.caixa.pay=d.m;state.caixa.tefStatus=null;render();break;
     case 'checkout-pick':checkoutPick(d.card);break;
     case 'cam-pick':{const c=state.cam;const cd=(c.cands||[]).find(x=>x.card===d.card);c.cands=null;if(!d.card){c.status='idle';render();break;}c.status='found';if(state.view==='quiosque'){lojaCliente();state.kiosk.code=d.card;state.kiosk.so={card:d.card,ids:cd?cd.fotos:[]};state.kiosk.step='gallery';render();}else checkoutPick(d.card);break;}

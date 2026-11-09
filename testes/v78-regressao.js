@@ -137,7 +137,7 @@ try{
         [...t.matchAll(/.{0,30}(\bno Fluxo\b|Anfitrião no set|galeria do convidado|Fila da loja).{0,30}/gi)].forEach(m=>out.push(v+': '+m[0]));return out;},v));}
     ok(!achados.length,'G: textos com "loja" ou telas que saíram: '+[...new Set(achados.map(x=>x.replace(/\s+/g,' ')))].slice(0,12).join(' || '));
     await pg.evaluate(()=>{ETERNA.state.view='fila';ETERNA.render();});ok(/Fila do balcão/i.test(await pg.textContent('#main')),'G: tela Fila sem o título "Fila do balcão"');
-    await pg.evaluate(()=>{ETERNA.state.view='checkout';ETERNA.render();});ok(/Venda no balcão/.test(await pg.textContent('#main')),'G: tela de venda sem "Venda no balcão"');
+    await pg.evaluate(()=>{ETERNA.state.view='checkout';ETERNA.render();});ok(/Venda manual/.test(await pg.textContent('#main')),'G: tela de venda sem "Venda manual"'); // v94-ux: "Venda no balcão" virou "Venda manual" (parte E, decisão 4)
     await ctx.close();}
 }catch(e){fails.push('erro: '+e.message.split('\n').filter(x=>x.trim()).slice(0,3).join(' / '));}
 await b.close();const okk=!fails.length&&!errs.length;console.log(`${okk?'OK':'FALHA'} v78-regressao: menus por perfil, links antigos, Upload, Permissões, cadastro, sem acesso, textos${fails.length?' · '+fails.join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();

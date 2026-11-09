@@ -69,8 +69,9 @@ try{
   // ---- Caixa aberto antes do pedido (janela B, Atendimento e venda)
   fase='1.6 abrir caixa';
   const B=await pagina(ctx,'B caixa');ok(await login(B,'loja@eterna.photo'),'1.6: Atendimento não entrou');
-  const rail0=await B.evaluate(()=>!!document.querySelector('#rail-ck [data-act="view"][data-v="caixa"]'));ok(rail0,'1.6: barra sem o botão Caixa para o Atendimento');
-  await B.click('#rail-ck [data-v="caixa"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='caixa','1.6: botão Caixa não abriu o Caixa');
+  // v94-ux: o botão "Caixa" da barra virou "Posto de venda" (data-v="posto"); o Caixa é o Posto com o filtro Dinheiro (parte E, decisão 3)
+  const rail0=await B.evaluate(()=>!!document.querySelector('#rail-ck [data-act="view"][data-v="posto"]')&&!document.querySelector('#rail-ck [data-v="caixa"]'));ok(rail0,'1.6: barra sem o botão Posto de venda para o Atendimento');
+  await B.click('#rail-ck [data-v="posto"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='posto','1.6: botão Posto de venda não abriu o Posto');
   ok(/Nenhum pagamento esperando/.test(await txt(B,'#main')),'1.6: Caixa vazio deveria dizer "Nenhum pagamento esperando." (v83)');
 
   // ---- 4.1 a 4.5: caso do print (4 do campo + 4 com fundo de IA)
@@ -175,6 +176,8 @@ try{
   const gal7=d7.galerias[tok1];ok((d7.galFila||[]).some(x=>x.token===tok1),'1.7: galeria publicada (fila)');
   ok(J(gal7.fotos.filter(f=>f.direito==='comprada').map(f=>f.id).sort())===J(s7.selected.slice().sort()),'1.7: compradas = selected');
   ok(((d7.ai||{})[C1]||{bought:[]}).bought.length===4,'1.7: 4 fundos de IA comprados na confirmação');
+  // v94-ux: no Posto de venda o recibo abre pelo botão "Recibo" (data-act caixa-open, o mesmo da antiga lista "Pagas hoje"; parte E)
+  await B.evaluate(c=>{const b=document.createElement('button');b.dataset.act='caixa-open';b.dataset.card=c;document.body.appendChild(b);b.click();b.remove();},C1);await B.waitForTimeout(300);
   const rec=await txt(B,'.receipt');ok(/Recebido por Atendimento e venda às \d\d:\d\d/.test(rec)&&/Impressões: 8/.test(rec)&&/TOTAL\s+R\$ 190/.test(rec),'1.7: recibo: '+rec);
   await B.screenshot({path:`${P}/v79-caixa-recibo.png`});
   await sleep(600);const g10=await G.evaluate(()=>ETERNA.pub&&ETERNA.pub.step);ok(g10==='consent','rev 10: a galeria deveria sair do "esperando o caixa" sem recarregar: '+g10);await G.close();
@@ -229,7 +232,7 @@ try{
   fase='1.9';
   await lojaSessao(A,C3,2,0);await pagar(A,'cash');const r9=(await sim(A)).caixaDin[0];await sleep(600);
   await B.click(`[data-act="din-cancel"][data-id="${r9.id}"]`);await B.waitForTimeout(150);
-  ok(/Cancelar esta compra\? Ela não vira venda\./.test(await txt(B,'.din-list')),'1.9: falta a segunda confirmação do cancelar');
+  ok(/Cancelar esta compra\? Ela não vira venda\./.test(await txt(B,'#main')),'1.9: falta a segunda confirmação do cancelar'); // v94-ux: com uma pendência só, as ações ficam no bloco "Agora no Checkout" (parte E)
   ok((await sim(B)).caixaDin.find(x=>x.id===r9.id).estado==='aguardando','1.9: o primeiro toque não pode cancelar');
   await B.click(`[data-act="din-cancel-ok"][data-id="${r9.id}"]`);await B.waitForTimeout(250);
   const d9=await sim(B);const x9=d9.caixaDin.find(x=>x.id===r9.id);
