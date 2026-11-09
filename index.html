@@ -1429,7 +1429,7 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;con
   log(`${MEIO_NOME[meio]} confirmado: ${(r.sessoes||[r.card]).join(' + ')} ${fmtR(r.total)} por ${u.name}${ref?' · NSU '+ref:''}`);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return false;} // I3: nada muda se não gravou
   if(r.meio)pvEvento('pagar',r.id,{ref,prov});
-  if(pontoModo()!=='posto')galDaVenda(r.card,r.token);
+  galDaVenda(r.card,r.token); // v93: o aparelho pareado também publica a galeria da venda (o servidor aceita do posto)
   state.pend.ref=null;state.pend.err=null;if(state.view==='caixa')state.caixa.session=r.card;
   const imp=s.impressao&&s.impressao.estado==='pendente'?' Agora imprima as fotos.':'';
   toast(meio==='dinheiro'?`Recebido ${fmtR(r.total)}.${imp}`:`Pagamento confirmado.${imp}`);render();return true;}
