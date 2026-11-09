@@ -157,7 +157,7 @@ try{
   // 14 (com LIVE): 4 atalhos × 3 fontes
   for(const [f,t] of await chips())for(const fo of ['tudo','roverpix','eterna']){await abrir(pg,f,t,fo,'');const m=await main(pg);ok(!ruim.test(m),`14: Painel com LIVE ${f}..${t} ${fo}: `+(m.match(ruim)||[''])[0]);}
   // 26: LIVE com mais de 15 min
-  await live(pg,14,{velho:true});await abrir(pg,await pg.evaluate(()=>ETERNA.venueToday()),await pg.evaluate(()=>ETERNA.venueToday()),'tudo');const st26=await pg.evaluate(()=>(document.querySelector('.pn-head .pill.warn')||{}).textContent||'');ok(/Roverpix desatualizado desde \d\d:\d\d/.test(st26),'26: '+st26);
+  await live(pg,14,{velho:true});await abrir(pg,await pg.evaluate(()=>ETERNA.venueToday()),await pg.evaluate(()=>ETERNA.venueToday()),'tudo');const st26=await pg.evaluate(()=>(document.querySelector('.pn-head .pill.warn')||{}).textContent||'');ok(/Sistema anterior desatualizado desde \d\d:\d\d/.test(st26),/* v94-ux (parte L): fora do Admin, a Roverpix vira "sistema anterior" no texto */'26: '+st26);
   // 28: 30 dias × 400 pedidos em menos de 50 ms
   await live(pg,30,{orders:400});const ms=await pg.evaluate(()=>{const t=ETERNA.venueToday();const[y,m,d]=t.split('-').map(Number);ETERNA.state.range={from:new Date(Date.UTC(y,m-1,d-29)).toISOString().slice(0,10),to:t};ETERNA.state.painel={fonte:'tudo',pdv:''};ETERNA.vPainel();const r=[];for(let i=0;i<5;i++){const a=performance.now();ETERNA.vPainel();r.push(performance.now()-a);}r.sort((a,b)=>a-b);return r[2];});
   ok(ms<50,'28: vPainel com 30 dias × 400 pedidos levou '+ms.toFixed(1)+' ms');
