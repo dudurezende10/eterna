@@ -1477,7 +1477,7 @@ def lan_ip():
 # Sem login: no máximo FTP_SEM_LOGIN_IP por IP, FTP_TOTAL - FTP_RESERVA no total, FTP_LOGIN_S para entrar e linha de até
 # FTP_LINHA bytes: quem só abre conexões não ocupa o lugar da câmera nem a memória do servidor.
 FTP_POR_IP, FTP_TOTAL, FTP_RESERVA, FTP_SEM_LOGIN_IP = 8, 64, 16, 2
-FTP_OCIOSO_S, FTP_LOGIN_S, FTP_DADOS_S, FTP_LINHA = 300, 25, 30, 4096
+FTP_OCIOSO_S, FTP_LOGIN_S, FTP_DADOS_S, FTP_LINHA, FTP_TENTATIVAS = 300, 25, 30, 4096, 3
 ftp_conexoes = {}          # ip -> sessões abertas
 ftp_sem_login = {}         # ip -> sessões abertas ainda sem login
 FTP_RAW_EXT = (".cr3", ".cr2", ".nef", ".arw", ".raf", ".dng", ".orf", ".rw2")   # ETERNA_FTP_RAW=descartar: recebe e descarta (sem 553)
@@ -1511,6 +1511,9 @@ class FTPSession(threading.Thread):
         self.tmpdir = None     # pasta temporária desta sessão (mkdtemp), nunca derivada do nome de usuário
         self.n = 0
         self.anonima = True    # conta em ftp_sem_login até a senha ser aceita (o ftp_server já contou na entrada)
+        self.prazo = time.time() + FTP_LOGIN_S   # prazo ABSOLUTO para entrar: NOOP, FEAT e afins antes do login não renovam
+        self.tentativas = 0    # USER e PASS sem login nesta conexão (até FTP_TENTATIVAS pares); acima disso a conexão fecha
+        self.fechar = False
 
     def marca_login(self, logado):
         """Passa a sessão de "sem login" para "logada" (ou volta, num USER depois do login) e ajusta o tempo de espera."""
@@ -1523,6 +1526,8 @@ class FTPSession(threading.Thread):
             elif not logado and not self.anonima:
                 ftp_sem_login[ip] = ftp_sem_login.get(ip, 0) + 1
             self.anonima = not logado
+        if not logado:
+            self.prazo = time.time() + FTP_LOGIN_S       # voltou a ficar sem login: prazo novo (as tentativas continuam contando)
         try:
             self.conn.settimeout(FTP_OCIOSO_S if logado else FTP_LOGIN_S)
         except OSError:
@@ -1591,8 +1596,22 @@ class FTPSession(threading.Thread):
         f = self.conn.makefile("rb")
         try:
             while True:
-                raw = f.readline(FTP_LINHA + 1)
+                if self.anonima:                     # sem login: só o tempo que resta do prazo, conte o que for mandado
+                    resto = self.prazo - time.time()
+                    if resto <= 0:
+                        self.send("421 Tempo para entrar esgotado")
+                        break
+                    self.conn.settimeout(resto)
+                try:
+                    raw = f.readline(FTP_LINHA + 1)
+                except socket.timeout:
+                    if self.anonima:
+                        self.send("421 Tempo para entrar esgotado")
+                    break
                 if not raw:
+                    break
+                if self.anonima and time.time() > self.prazo:
+                    self.send("421 Tempo para entrar esgotado")
                     break
                 if len(raw) > FTP_LINHA or not raw.endswith(b"\n"):
                     self.send("500 Linha longa demais")   # linha sem fim ou gigante: fecha sem guardar o resto
@@ -1604,7 +1623,7 @@ class FTPSession(threading.Thread):
                 cmd = parts[0].upper()
                 arg = parts[1] if len(parts) > 1 else ""
                 self.handle(cmd, arg)
-                if cmd == "QUIT":
+                if cmd == "QUIT" or self.fechar:
                     break
         except Exception as ex:
             print("ftp sessão:", ex)
@@ -1615,6 +1634,12 @@ class FTPSession(threading.Thread):
                 pass
 
     def handle(self, cmd, arg):
+        if cmd in ("USER", "PASS") and self.anonima:
+            self.tentativas += 1                       # cada USER e cada PASS sem login: 3 tentativas = 3 pares
+            if self.tentativas > 2 * FTP_TENTATIVAS:
+                self.send("421 Muitas tentativas nesta conexão")
+                self.fechar = True
+                return
         if cmd == "USER":
             self.ok, self.login_ok = False, None      # trocar de usuário pede a senha de novo
             self.marca_login(False)
@@ -6737,7 +6762,7 @@ ROTAS = (
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
     ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
     ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
-    ("GET", "/photoroom/status", "posto_ou_sessao", VENDER),    # sem Painel de controle: só {configured, fundos_modo}
+    ("GET", "/photoroom/status", "posto_ou_sessao", VENDER + ("configuracao.r",)),    # sem Painel de controle: só {configured, fundos_modo}
     ("GET", "/photoroom/result/", "posto_ou_sessao", VENDER), ("POST", "/photoroom/compose", "posto_ou_sessao", VENDER),
     ("GET", "/fila-fotografo", "posto_ou_sessao", ("filafoto.r",)),
     # só a equipe, pelo módulo
@@ -6943,7 +6968,8 @@ class H(BaseHTTPRequestHandler):
 
     def postos_aceitar_post(self):
         """POST /postos/aceitar (botão da página do link): gasta o código de uso único e grava o cookie do posto."""
-        if not host_ok((self.headers.get("Host") or "").lower()):
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if not host_ok((self.headers.get("Host") or "").lower()) or (o and o not in self.origens_aceitas()):
             return self.js({"erro": "origem"}, 403)
         try:
             n = int(self.headers.get("Content-Length") or 0)

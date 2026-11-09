@@ -241,12 +241,73 @@ try:
     time.sleep(27)
     s0 = ociosas[0][0]
     try:
-        fechada = s0.recv(10) == b""
+        r_ = s0.recv(100)
+        fechada = r_ == b"" or r_.startswith(b"421")     # avisa 421 e fecha
     except OSError:
         fechada = True
     ok(fechada, "sessão sem login deveria terminar em 25 s")
     for s_, _ in ociosas:
         s_.close()
+    # prazo ABSOLUTO para entrar: 24 IPs x 2 conexões mandando NOOP a cada 10 s ocupam as vagas sem login,
+    # mas caem no fim do prazo, e uma câmera nova entra e grava
+    time.sleep(1)
+    noop = []
+    for k in range(10, 34):
+        for _ in range(2):
+            try:
+                noop.append(abre("127.0.0.%d" % k)[0])
+            except OSError:
+                pass
+    ok(len(noop) == 48, "48 conexões sem login abertas: %d" % len(noop))
+    s_, b = abre()
+    ok(b.startswith("421"), "com as vagas sem login cheias, a conexão nova recebe 421: %s" % b[:20])
+    s_.close()
+    t0 = time.time()
+    while time.time() - t0 < 28:
+        for x in noop:
+            try:
+                x.sendall(b"NOOP\r\n")
+            except OSError:
+                pass
+        time.sleep(10 if time.time() - t0 < 20 else 8.5)
+    caidas = 0
+    for x in noop:
+        try:
+            x.settimeout(2)
+            x.sendall(b"NOOP\r\n")
+            dados = b""
+            while True:
+                ch = x.recv(4096)
+                if not ch:
+                    break
+                dados += ch
+            caidas += 1                              # o servidor fechou (EOF)
+        except socket.timeout:
+            pass                                     # ainda aberta: segura a vaga
+        except OSError:
+            caidas += 1                              # conexão já derrubada pelo servidor
+        x.close()
+    ok(caidas == 48, "conexões com NOOP deveriam cair no fim do prazo: %d de 48" % caidas)
+    f = cliente()
+    ok(f.storbinary("STOR IMG_DEPOIS.jpg", io.BytesIO(jpeg(66))).startswith("226"), "câmera nova entra e grava depois do prazo")
+    f.close()
+    # no máximo 3 tentativas de USER/PASS por conexão
+    s_, _ = abre()
+    resp = b""
+    try:
+        for i in range(4):
+            s_.sendall(b"USER carlos\r\nPASS errada%d\r\n" % i)
+            time.sleep(0.2)
+        s_.settimeout(3)
+        while True:
+            ch = s_.recv(4096)
+            if not ch:
+                break
+            resp += ch
+    except OSError:
+        pass
+    s_.close()
+    ok(resp.count(b"530") == 3 and b"421" in resp, "4ª tentativa na mesma conexão deveria fechar com 421: %r" % resp[-120:])
 finally:
     A.kill()
     A.wait(10)

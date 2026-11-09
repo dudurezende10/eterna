@@ -124,6 +124,9 @@ try:
     ok(any("perms" in d["valor"] for d in j.get("docs", []) if d["id"] == "sem-modulo"), "admin vê os cadastros inteiros")
     ok(pede("GET", "/ponto/docs?col=usuarios_log", cookie=nada)[0] == 403 and pede("GET", "/ponto/docs?col=usuarios_login", cookie=nada)[0] == 403, "registro de usuários para quem não tem módulo")
     ok(pede("GET", "/ponto/docs?col=usuarios_log", cookie=foto)[0] == 200, "registro de usuários para o fotógrafo")
+    cfgr = S.cookie_sessao(m, "so-config", {"configuracao": {"r": True}})
+    st, j, _ = pede("GET", "/photoroom/status", cookie=cfgr)
+    ok(st == 200 and "calls" in j, "/photoroom/status com só configuracao.r: %s %s" % (st, j))
     # /ftp/contas: Painel de controle (Ver)
     ok(pede("GET", "/ftp/contas", cookie=foto)[0] == 403 and pede("GET", "/ftp/contas", cookie=adm)[0] == 200, "/ftp/contas só com configuracao.r")
     # coleção sim por perfil (cópia dos PRESETS do index.html): cada perfil grava o que a tela dele grava

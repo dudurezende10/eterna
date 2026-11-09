@@ -26,6 +26,7 @@ try{
   const cA=await b.newContext({viewport:{width:1440,height:900}});await S.noNavegador(cA,porta,[adm]);const PA=vigia(await cA.newPage(),'admin');await PA.goto(A+'/index.html');await PA.waitForTimeout(500);
   const ADM=await entrarTeste.adminFicticio(PA);ok(await entrarTeste(PA,ADM),'admin entrou');await espera(PA,()=>ETERNA.state.agent.on,15000);
   await PA.evaluate(()=>ETERNA.go('catalogo'));ok(await espera(PA,()=>!!document.querySelector('#postos-painel [data-act="posto-parear"]'),10000),'Painel de controle sem o cartão Postos deste ponto');
+  await espera(PA,()=>Array.isArray(ETERNA.state.posto.lista),10000);await PA.waitForTimeout(300); // a lista chegou: o cartão não redesenha por cima do campo
   await PA.fill('#posto-nome','Checkout 1');await PA.click('[data-act="posto-parear"]');
   ok(await espera(PA,()=>ETERNA.state.posto.estado==='ok'&&ETERNA.postoDisp()&&ETERNA.postoDisp().nome==='Checkout 1',10000),'parear pela tela: '+J(await PA.evaluate(()=>ETERNA.state.posto)));
   ok(await espera(PA,()=>!ETERNA.state.user,5000)&&/Sua conta saiu/.test(await PA.textContent('#toast').catch(()=>'')),'depois de parear, a conta do Admin sai do aparelho');

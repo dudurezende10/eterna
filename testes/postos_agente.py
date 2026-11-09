@@ -111,6 +111,9 @@ try:
     st, j, _ = pede("/postos/aceitar?c=" + cod)
     ok(st == 410, "link com mais de 10 min deveria dar 410: %s" % st)
     ok(pede("/postos/aceitar", form="c=" + cod)[0] == 410, "POST de link vencido: 410")
+    cod2 = m.posto_convite_novo("Origem")
+    ok(pede("/postos/aceitar", form="c=" + cod2, extra={"Origin": "https://evil.example"})[0] == 403, "POST do link vindo de outro site: 403")
+    ok(m.posto_convite_ver(cod2) == "Origem", "o código recusado por origem continua valendo")
     # endereço com certificado (posto.eterna.photo atrás de um proxy que repassa Host e X-Forwarded-Proto: https)
     PX = {"Host": "posto.eterna.photo", "Origin": "https://posto.eterna.photo", "X-Forwarded-Proto": "https"}
     st, j, ck = pede("/postos/parear", {"nome": "Tablet HTTPS"}, adm, extra=PX)
