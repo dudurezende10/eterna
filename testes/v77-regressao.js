@@ -175,8 +175,8 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     await G.goto(UA+'#g/'+TB);await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});
     ok(await G.evaluate(()=>ETERNA.pub.modo==='agente'&&ETERNA.pub.step==='consent'),'B: galeria pelo agente deveria abrir o consentimento no modo agente: '+JSON.stringify(await G.evaluate(()=>({m:ETERNA.pub.modo,s:ETERNA.pub.step}))));
     await G.screenshot({path:PR+'/v77-agente-consentimento.png'});
-    await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-file',{state:'attached'});await G.waitForTimeout(400);
-    await G.setInputFiles('#gq-file',{name:'s.jpg',mimeType:'image/jpeg',buffer:bufs[0]});
+    await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});await G.waitForTimeout(400);
+    await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));
     await G.waitForFunction(()=>ETERNA.pub&&!['buscando','selfie'].includes(ETERNA.pub.step),null,{timeout:60000}).catch(()=>{});
     const gb=await G.evaluate(()=>({step:ETERNA.pub.step,motivo:ETERNA.pub.motivo,dl:[...document.querySelectorAll('[data-act="gq-dl"]')].map(x=>x.dataset.pid),sel:[...document.querySelectorAll('[data-act="gq-sel"]')].map(x=>x.dataset.pid)}));
     ok(gb.step==='galeria'&&gb.dl.length===2&&gb.sel.length===2,'B: galeria no modo agente: '+JSON.stringify(gb));
@@ -214,7 +214,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
       ok(r4.step==='selfie'&&r4.txt.includes(r4.again)&&!r4.txt.includes(r4.noMatch)&&r4.ph===0&&!r4.acesso,'R4: acesso vencido (401) deveria voltar para a selfie com gq_again: '+JSON.stringify({...r4,txt:r4.txt.slice(0,160)}));
       await G.screenshot({path:PR+'/v77-agente-acesso-vencido.png'});
       // pagamento com acesso vencido também volta para a selfie
-      await G.setInputFiles('#gq-file',{name:'s.jpg',mimeType:'image/jpeg',buffer:bufs[0]});await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='galeria',null,{timeout:60000}).catch(()=>{});
+      await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='galeria',null,{timeout:60000}).catch(()=>{});
       if(await G.evaluate(()=>ETERNA.pub.step==='galeria'&&!!document.querySelector('[data-act="gq-sel"]'))){await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});await G.click('[data-act="gq-sel"]');await G.click('[data-act="gq-buy"]');await G.click('[data-act="gq-paym"][data-m="pix"]');
         await G.evaluate(()=>{ETERNA.pub.acesso='forjado-acesso-vencido';});await G.click('[data-act="gq-pay"]');await G.waitForTimeout(600);ok(await G.evaluate(()=>ETERNA.pub.step==='selfie'),'R4: pagamento com acesso vencido deveria voltar para a selfie');}
       else notas.push('R4: segunda selfie não abriu a galeria; pagamento com 401 não testado');
