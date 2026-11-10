@@ -1812,7 +1812,7 @@ function lojaEcoMsg(){const k=state.kiosk;const m={tipo:'estado',em:Date.now(),s
 function lojaEco(){if(!ECO_CH||!state.lojaRota)return;const d=Date.now()-ecoUlt;if(d<300){if(!ecoTimer)ecoTimer=setTimeout(()=>{ecoTimer=null;lojaEco();},300-d);return;}
   ecoUlt=Date.now();try{ECO_CH.postMessage(lojaEcoMsg());}catch(e){}}
 function lojaEcoFim(){if(ECO_CH)try{ECO_CH.postMessage({tipo:'fim',em:Date.now()});}catch(e){}}
-setInterval(()=>{if(state.lojaRota){if(lojaProntoOcioso()||lojaEscolhaOciosa())return;lojaEco();if(lojaPendCheck())render();}},5000);
+setInterval(()=>{if(state.lojaRota){if(lojaProntoOcioso()||lojaEscolhaOciosa())return;lojaEco();lojaVisitaAtualiza();if(lojaPendCheck())render();}},5000);
 // S2: qualquer toque ou tecla no Checkout conta como cliente presente na tela Pronto e na do valor; v96: também na escolha, com roda e arrasto
 ['pointerdown','keydown','wheel','touchmove'].forEach(t=>document.addEventListener(t,()=>{if(state.lojaRota)state.kiosk.toque=Date.now();},true));
 window.addEventListener('pagehide',()=>{if(state.lojaRota)lojaEcoFim();});
@@ -2077,13 +2077,24 @@ function lojaAI(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];co
       const id=[bases[i],...bases.filter((_,j)=>j!==i)].find(x=>boa(x)&&!FIA_RUIM.has(x+'|'+b.id));
       if(id)out.push({t:'ai',id,bg:b.id,k:'ai:'+id+'|'+b.id,ses});});
     if(out.length)return out;}
-  return lojaAIAntigo(card);}
+  const ant=lojaAIAntigo(card);if(ant.length)return ant;
+  // v97 (E5b, D4b): base barrada só pela validação (olhos fechados num grupo de 7) é a última alternativa: nunca sem montagem
+  // quando existe base com recorte. A base boa e o jeito antigo continuam na frente.
+  const barrada=id=>!!id&&hasImg(id)&&!FIA_RUIM.has(id)&&!!(SIM.invalid||{})[id]&&!(SIM.discarded||{})[id]&&(!loc||/^ag_/.test(id));
+  if(bases.some(barrada)){const out=[];
+    bgOn().forEach(o=>{const b=bgFor(o,card);if(!b)return;const i=Math.min(b.id in FIA_BASE?FIA_BASE[b.id]:1,bases.length-1);
+      const id=[bases[i],...bases.filter((_,j)=>j!==i)].find(x=>(boa(x)||barrada(x))&&!FIA_RUIM.has(x+'|'+b.id));
+      if(id)out.push({t:'ai',id,bg:b.id,k:'ai:'+id+'|'+b.id,ses});});
+    return out;}
+  return [];}
 // v93: as montagens começam assim que a selfie ou o código acha a sessão, uma por vez, antes de o item aparecer (o COMP guarda)
 function iaAquecer(card){if(fundosModo()!=='local'||!card)return;let its=[];const ja=DS_CACHE.on;try{DS_CACHE.on=true;its=lojaAI(card);}catch(e){return;}finally{if(!ja){DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}
   its.reduce((p,x)=>p.then(()=>compose(x.id,x.bg)).catch(()=>{}),Promise.resolve());}
 function lojaAIAntigo(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];const loc=fundosModo()==='local';const ph=lojaFotos(card).filter(p=>!FIA_RUIM.has(p.id)&&(!loc||/^ag_/.test(p.id)));if(!ph.length)return [];
   const ready=aiPrep(card);let picks=ph.slice(0,2);const dele=new Set(ph.map(p=>p.id)); // v91: o substituto também precisa ser foto do cliente
-  if(ready){const ok=aiCands(card).filter(c=>aiOk(c)&&dele.has(c.id));picks=picks.map(p=>{const sc=aiScore(p.id);return aiOk(sc)?p:null;});
+  // v97 (E5b): foto real do agente (ag_) não passa pela nota simulada (aiOk, por hash, barrava ~25% ao acaso); FIA_RUIM, o fit do fundo e o recorte continuam
+  const real=id=>/^ag_/.test(id);
+  if(ready){const ok=aiCands(card).filter(c=>(real(c.id)||aiOk(c))&&dele.has(c.id));picks=picks.map(p=>{if(real(p.id))return p;const sc=aiScore(p.id);return aiOk(sc)?p:null;});
     picks=picks.map(p=>p||ok.find(c=>!picks.some(q=>q&&q.id===c.id))).filter(Boolean);
     const seen=new Set();picks=picks.filter(p=>!seen.has(p.id)&&seen.add(p.id));}
   const out=[];picks.forEach(p=>{const f=aiScore(p.id).f;const a=ANAV[p.id];
@@ -2322,8 +2333,9 @@ const lojaCodReset=()=>{LJ_COD.erros=0;LJ_COD.ate=0;ljCodSalva();};
 function lojaCodigo(txt){const v=String(txt||'').trim().toUpperCase().replace(/\s+/g,'');if(Date.now()<LJ_COD.ate){toast(T('codeWait'));return null;}
   const erro=()=>{LJ_COD.erros++;if(LJ_COD.erros>=5){LJ_COD.erros=0;LJ_COD.ate=Date.now()+60e3;toast(T('codeWait'));}else toast(T('codeBad'));ljCodSalva();return null;};
   const g=/^[A-Z0-9]{4}-?[A-Z0-9]{4}$/.test(v)&&!/^LP/.test(v)?Object.values(SIM.galerias||{}).find(m=>m.tipo==='sessao'&&!m.substituida&&m.codigo===v.slice(0,4)+'-'+v.slice(-4)):null;
-  if(g&&sessionObj(g.sessoes[0])){lojaCodReset();return {card:g.sessoes[0],so:g.venda&&g.so?{card:g.sessoes[0],cards:g.sessoes.slice(),ids:[].concat(...Object.values(g.so))}:null};}
-  if(/^LP[A-Z0-9]{5,10}$/.test(v)&&sessionObj(v)){lojaCodReset();return {card:v,so:null};}
+  // v97 (E5a): o código de qualquer leva abre a visita inteira (lojaSoVisita); leva sozinha, como antes
+  if(g&&sessionObj(g.sessoes[0])){lojaCodReset();const so0=g.venda&&g.so?{card:g.sessoes[0],cards:g.sessoes.slice(),ids:[].concat(...Object.values(g.so))}:null;return {card:g.sessoes[0],so:lojaSoVisita(g.sessoes[0],g.sessoes.slice(1),so0)};}
+  if(/^LP[A-Z0-9]{5,10}$/.test(v)&&sessionObj(v)){lojaCodReset();return {card:v,so:lojaSoVisita(v,[],null)};}
   return erro();}
 // v91 (segurança B1, revisão C2): a venda que juntou sessões pela selfie tem galeria PRÓPRIA (m.venda), nunca a de uma sessão
 // (galDaSessao não a acha). Enquanto não há venda paga, cada pedido refaz m.sessoes e m.so do zero: nada de outro pedido fica.
@@ -3127,7 +3139,10 @@ function compMsg(r){return r.pending==='photoroom'?'Conecte o Photoroom em Fundo
 function compHydrate(){if(fundosModo()==='photoroom'&&document.querySelector('[data-comp]:not([data-done])')&&!state.pr)prPoll();document.querySelectorAll('[data-comp]:not([data-done])').forEach(el=>{el.dataset.done='1';const [ph,bg]=el.dataset.comp.split('|');const key=ph+'|'+bg;
   compose(ph,bg).then(r=>{if(r.url){el.style.backgroundImage=`url(${r.url})`;el.classList.add('ok');el.innerHTML='';el.dataset.url=r.url;COMPURL[key]=r.url;COMPLOW[key]=r.low;if(r.low)el.insertAdjacentHTML('beforeend','<span class="compst lowres">miniatura de exemplo</span>');return;}
     if(r.pending==='fila'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Na fila do recorte...</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},3000);return;}
-    el.classList.add('pend');el.innerHTML=`<span class="compst">${compMsg(r)}</span>`;if(r.pending!=='agente'&&r.pending!=='photoroom')fiaFalhou(key,fundosModo()==='local'&&(r.pending==='recorte'||r.pending==='exemplo'||r.err==='sem_pessoa'||/recorte|foto não está/.test(r.err||'')));}).catch(()=>{el.classList.add('pend');el.innerHTML='<span class="compst">Montagem indisponível</span>';fiaFalhou(key);});});}
+    // v97 (E5b): 503 do recorte (modelos abrindo, processo de recorte reiniciando) não tira a foto da venda: tenta de novo em 30 s
+    if(r.pending==='recorte'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Recorte local indisponível</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},FIA_REC_DE_NOVO_MS);return;}
+    el.classList.add('pend');el.innerHTML=`<span class="compst">${compMsg(r)}</span>`;if(r.pending==='exemplo'||r.err)fiaFalhou(key,fundosModo()==='local'&&(r.pending==='exemplo'||r.err==='sem_pessoa'||/recorte|foto não está/.test(r.err||'')));}).catch(()=>{el.classList.add('pend');el.innerHTML='<span class="compst">Montagem indisponível</span>';fiaFalhou(key);});});}
+let FIA_REC_DE_NOVO_MS=30000;
 function compGrid(card,sel){if(!aiPrep(card))return '<div class="note">Lendo o ângulo e a luz das fotos da sessão...</div>';const bgs=aiBgsFor(card);if(!bgs.length)return '<span class="pill warn">Nenhuma foto desta sessão serve para fundo de IA</span>';
   const all=state.compAll===card;const top=all?bgs:bgs.slice(0,5);if(sel&&!top.find(b=>b.id===sel)){const x=bgs.find(b=>b.id===sel);if(x)top.push(x);}
   return `<div class="bgs">${top.map(b=>{const pk=aiPick(card,b.id);return compTile(pk.id,b,sel===b.id);}).join('')}</div><div class="row" style="align-items:center"><span class="note">A IA leu o ângulo e a luz das fotos, escolheu a melhor para cada fundo e montou ${all?'todas as versões':'as que mais combinam'}. O convidado olha e decide se compra.</span>${bgs.length>5?`<button class="chip" data-act="comp-all" data-card="${esc(card)}">${all?'Mostrar só as 5 melhores':'Ver os outros '+(bgs.length-5)+' fundos'}</button>`:''}</div>`;}
@@ -3307,9 +3322,16 @@ setTimeout(livePoll,800);setInterval(livePoll,60000);setTimeout(upLoad,300);
 // mesma sessão (mesmo código LP) em qualquer navegador: posto, Checkout, PC pelo Tailscale, Mac do curador. SRV.sess guarda
 // as de hoje (aberta, separada e fechada) para o painel "Sessões de hoje" do Upload; só a fechada entra no SIM. Foto que já
 // está numa sessão deste navegador (montada aqui antes desta versão) não duplica.
-const SRV={gen:null,rev:0,busy:false,sess:{},mat:{}}; // mat: fechadas ainda não materializadas no SIM (até SRV_MAT_MAX por ciclo)
+const SRV={gen:null,rev:0,busy:false,sess:{},mat:{},visRev:null,visBusy:false}; // mat: fechadas ainda não materializadas no SIM (até SRV_MAT_MAX por ciclo)
 const SRV_MAT_MAX=12;
-async function srvPull(){const a=state.agent;if(SRV.busy||!a.sessoes)return;SRV.busy=true;
+// v97: as visitas do agente (GET /visitas), puxadas quando o rev de /status.sessoes.visitas muda; SIM.visitas é cópia (o agente é o dono)
+async function visPull(){const a=state.agent;const vs=a&&a.sessoes&&a.sessoes.visitas;if(!a||!a.on||!vs||SRV.visBusy||vs.rev===SRV.visRev)return;SRV.visBusy=true;
+  try{const j=await (await fetch(a.url+'/visitas'+((a.sessoes.dias||1)>1?'?ontem=1':''),{cache:'no-store'})).json();if(!j||!j.ok)return;
+    const levas={},grande={};(j.visitas||[]).forEach(v=>{if(!v||!Array.isArray(v.levas))return;if(v.levas.length>1)v.levas.forEach(c=>{levas[c]=v.levas.slice();});if(v.grande)v.levas.forEach(c=>{grande[c]=true;});});
+    SRV.visRev=vs.rev;const novo={rev:j.rev,levas,grande};if(JSON.stringify(novo)!==JSON.stringify(SIM.visitas||null)){SIM.visitas=novo;saveSim();}
+    if(state.lojaRota)lojaVisitaAtualiza();else if(state.view==='posto')render(); // a outra janela pode ter gravado antes (storage): redesenha mesmo assim
+  }catch(e){}finally{SRV.visBusy=false;}}
+async function srvPull(){const a=state.agent;visPull();if(SRV.busy||!a.sessoes)return;SRV.busy=true;
   try{if(SRV.gen!==a.sessoes.gen){SRV.gen=a.sessoes.gen;SRV.rev=0;SRV.sess={};SRV.mat={};}
     if(a.sessoes.rev===SRV.rev){if(srvMaterializa()&&(state.view==='importar'||state.view==='fotofila'))render();return;}
     const j=await (await fetch(a.url+'/sessoes?desde='+SRV.rev,{cache:'no-store'})).json();if(!j||!j.ok)return;
@@ -3447,7 +3469,7 @@ const upNome=x=>x.fotografo&&P[x.fotografo]?P[x.fotografo].name:('Sem fotógrafo
 const upHora=t=>t?new Date(t*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'--';
 // v93: bases dos fundos de IA. Sessão fechada: x.ia do servidor ("Fundo IA 1 · corpo inteiro", "Fundo IA 2 · fechada"); aberta:
 // as N primeiras pela regra do Painel de controle ("Fundo IA?"). Nunca só "IA", que é o rótulo do ajuste automático (ajTag).
-const UP_IA_MOTIVO={volante:'Volante: sem fotos de IA',sem_funcao:'Sem função do dia: fotos de IA não separadas',poucas_fotos:'Poucas fotos: ficaram à venda',ponto_fora:'Ponto fora da regra: sem fotos de IA',desligada:'Regra desligada: sem fotos de IA'};
+const UP_IA_MOTIVO={volante:'Volante: sem fotos de IA',sem_funcao:'Sem função do dia: fotos de IA não separadas',poucas_fotos:'Poucas fotos: ficaram à venda',ponto_fora:'Ponto fora da regra: sem fotos de IA',desligada:'Regra desligada: sem fotos de IA',visita_ja_tem:'A família já tem as fotos de IA: todas à venda'}; // v97 (D4): bases por visita
 const UP_IA_TAG=['Fundo IA 1 · corpo inteiro','Fundo IA 2 · fechada','Fundo IA 3'];
 // regra e recortes prontos das bases vêm do servidor (o /fila-fotografo traz g.ia por sessão: n, motivo, pids e prontas), no
 // máximo a cada 5 s com o Upload aberto; a regra não é repetida no app
@@ -5029,21 +5051,43 @@ function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Dat
 // o "Sim" põe SÓ as fotos "talvez" daquela sessão (Eduardo, 01/11, B4), nunca a sessão inteira. A venda fica na sessão com mais
 // fotos claras dela (âncora). Devolve false sem foto clara (o chamador segue o fluxo antigo "É uma destas?").
 const lojaSesProtegida=c=>!!((SIM.sessions[c]||{}).menor)||Object.values(SIM.galerias||{}).some(m=>m.tipo==='evento'&&(m.sessoes||[]).includes(c));
+// v97 (Eduardo, 10/11; plano docs/planos/2026-11-10-recorte-birefnet-sessoes.md, E5a): VISITA = as levas (sessões LP) da mesma
+// família no dia, ligadas pelo agente por rosto em corrente ou pelo Juntar do Posto (SIM.visitas é cópia do GET /visitas).
+// A selfie e o código abrem a visita inteira no Checkout (muda a regra da v95 só no Checkout): uma leva nova por falta de
+// disparo (60 s) não separa a família. Leva de menor ou de escola segue a v77 (nunca abre a visita, nem entra pela visita).
+function visitaDe(card){if(!card||lojaSesProtegida(card))return [card];const v=((SIM.visitas||{}).levas||{})[card];if(!Array.isArray(v)||v.length<2)return [card];
+  const out=v.filter(c=>c===card||(sessionObj(c)&&!lojaSesProtegida(c)));return out.includes(card)?out:[card,...out];}
+const lojaTodas=c=>{const s=sessionObj(c);return s?[...s.photos.map(p=>p.id),...(((SIM.sessions[c]||{}).ia)||[])]:[];}; // as bases entram em ids (liberam as montagens), nunca como foto
+const lojaVisCards=base=>[...new Set((base||[]).flatMap(c=>visitaDe(c)))].filter(c=>sessionObj(c)).sort((a,b)=>sesHora(a)-sesHora(b));
+// ids da escolha: leva da visita inteira; leva de menor ou de escola achada pela selfie e o "talvez" ficam só com as fotos achadas (fix)
+const lojaVisIds=(cards,fix)=>cards.flatMap(c=>fix&&fix[c]?fix[c]:lojaSesProtegida(c)?[]:lojaTodas(c));
+// código (LP ou da galeria): a visita inteira da leva; uma leva só = a sessão inteira como antes (so null)
+function lojaSoVisita(card,base,soAntigo){const cards=lojaVisCards([card,...(base||[])]);if(cards.length<2||cards.every(c=>c===card||(base||[]).includes(c)))return soAntigo||null; // nada novo da visita: como antes
+  return {card,cards,ids:[...new Set([...lojaVisIds(cards,null),...((soAntigo&&soAntigo.ids)||[])])],base:[card,...(base||[])],fix:{},visita:true};}
+// Juntar ou Separar no Posto com o cliente na escolha: refaz a visita e tira só as marcas de fotos que saíram (nunca troca de cliente)
+function lojaVisitaAtualiza(){const k=state.kiosk;const so=k&&k.so;if(!so||!so.visita||!Array.isArray(so.base)||!['gallery','review'].includes(k.step))return false;
+  const cards=lojaVisCards(so.base);if(!cards.includes(so.card))cards.unshift(so.card);if(cards.join()===so.cards.join())return false;
+  k.so=Object.assign({},so,{cards,ids:lojaVisIds(cards,so.fix)});const pk=lojaPick(so.card);const vale=new Set(lojaItems(so.card).map(x=>x.k));let fora=0;
+  Object.keys(pk).forEach(x=>{if(!vale.has(x)){delete pk[x];fora++;}});if(fora)lojaSync(so.card);const n=lojaItems(so.card).length;if(k.i>=n)k.i=Math.max(0,n-1);render();return true;}
 function lojaJuntar(res,tv,sims){const k=state.kiosk;sims=sims||{};const claras=(res||[]).filter(r=>r.fotos&&r.fotos.length&&sessionObj(r.card));if(!claras.length)return false;lojaCliente();
   const ord=claras.slice().sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);const anc=(ord.find(r=>!lojaJaPaga(r.card))||ord[0]).card;
-  const minhas={};claras.forEach(r=>minhas[r.card]=r.fotos.slice());const ja=new Set(Object.keys(minhas));
+  // v97: cada leva com foto clara traz a visita inteira (todas as fotos de cada leva); menor ou escola só com as fotos achadas
+  const base=claras.map(r=>r.card),fix={};claras.forEach(r=>{if(lojaSesProtegida(r.card))fix[r.card]=r.fotos.slice();});
+  const minhas={};lojaVisCards(base).forEach(c=>{minhas[c]=fix[c]||lojaTodas(c);});claras.forEach(r=>{if(!minhas[r.card])minhas[r.card]=r.fotos.slice();});const ja=new Set(Object.keys(minhas));
   const ask=(tv||[]).filter(r=>!ja.has(r.card)&&r.fotos&&r.fotos.length&&sessionObj(r.card)&&!lojaSesProtegida(r.card)).sort((a,b)=>b.sc-a.sc).slice(0,3)
     .map(r=>({card:r.card,todas:r.fotos.slice(),fotos:r.fotos.slice().sort((x,y)=>(sims[y]||0)-(sims[x]||0)).slice(0,3)}));
-  if(ask.length){Object.assign(k,{tv:{anc,minhas,ask,i:0,sim:[]},step:'talvez',code:'',so:null});lojaPreload(anc,minhas,0);render();return true;}
-  lojaAbrirSo(minhas,anc);return true;}
+  if(ask.length){Object.assign(k,{tv:{anc,minhas,ask,i:0,sim:[],ext:{base,fix}},step:'talvez',code:'',so:null});lojaPreload(anc,minhas,0);render();return true;}
+  lojaAbrirSo(minhas,anc,{base,fix});return true;}
 // minhas: sessão -> fotos dela que entram (claras; no "talvez" confirmado, as fotos "talvez")
 function lojaIdsSo(minhas){return Object.keys(minhas).filter(c=>sessionObj(c)).sort((a,b)=>sesHora(a)-sesHora(b))
   .flatMap(c=>minhas[c]||[]);}
-function lojaAbrirSo(minhas,anc){const k=state.kiosk;const cards=Object.keys(minhas).filter(c=>sessionObj(c)&&(minhas[c]||[]).length).sort((a,b)=>sesHora(a)-sesHora(b));
+function lojaAbrirSo(minhas,anc,ext){const k=state.kiosk;const cards=Object.keys(minhas).filter(c=>sessionObj(c)&&(minhas[c]||[]).length).sort((a,b)=>sesHora(a)-sesHora(b));
   if(!cards.length){lojaReset();const c=state.cam;c.status='nomatch';render();setTimeout(()=>{if(c.status==='nomatch'){c.status='idle';camStatus();}},6000);return;}
   if(!cards.includes(anc))anc=cards[0];
   const ids=lojaIdsSo(minhas);lojaPickLimpa(anc); // B2: marca velha de quem usou a mesma sessão antes não aparece nem entra no pedido
-  Object.assign(k,{code:anc,so:{card:anc,cards,ids},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
+  // v97: base (levas achadas) e fix (fotos só achadas: menor, escola, "talvez") deixam o Checkout refazer a visita quando o Posto junta ou separa
+  const fix=Object.assign({},(ext&&ext.fix)||{});cards.forEach(c=>{if(ext&&ext.base&&!ext.base.includes(c)&&!lojaVisCards(ext.base).includes(c))fix[c]=(minhas[c]||[]).slice();});
+  Object.assign(k,{code:anc,so:{card:anc,cards,ids,base:ext&&ext.base?ext.base.slice():null,fix,visita:!!(ext&&ext.base)},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
   toast(T('foundYou'));render();lojaPreload(anc);iaAquecer(anc);}
 // proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
 const LJ_AR={};
@@ -5418,7 +5462,7 @@ document.addEventListener('click',e=>{
     case 'kiosk-jump':state.kiosk.i=+d.i;render();break;
     case 'kiosk-ver':{const k=state.kiosk;const n=lojaItems(k.code).length;const i=+d.i;if(i>=0&&i<n){k.ver=i;k.i=i;}render();break;}
     case 'kiosk-fechar':state.kiosk.ver=null;render();break;
-    case 'kiosk-tv-sim':case 'kiosk-tv-nao':{const tv=state.kiosk.tv;if(!tv)break;const q=tv.ask[tv.i];if(q&&a==='kiosk-tv-sim')tv.minhas[q.card]=(q.todas||q.fotos).slice(); /* B4 (Eduardo, 01/11): só as fotos em dúvida, nunca a sessão inteira */tv.i++;if(tv.i>=tv.ask.length){lojaAbrirSo(tv.minhas,tv.anc);break;}render();break;}
+    case 'kiosk-tv-sim':case 'kiosk-tv-nao':{const tv=state.kiosk.tv;if(!tv)break;const q=tv.ask[tv.i];if(q&&a==='kiosk-tv-sim')tv.minhas[q.card]=(q.todas||q.fotos).slice(); /* B4 (Eduardo, 01/11): só as fotos em dúvida, nunca a sessão inteira */tv.i++;if(tv.i>=tv.ask.length){lojaAbrirSo(tv.minhas,tv.anc,tv.ext);break;}render();break;}
     case 'kiosk-tog':{const k=state.kiosk;const items=lojaItems(k.code);const x=items[+d.i];if(!x)break;const pk=lojaPick(k.code);k.i=+d.i;
       if(pk[x.k]==='ok')delete pk[x.k];else pk[x.k]='ok';lojaSync(k.code);render();break;}
     case 'kiosk-ok':lojaMark('ok');break;
@@ -5717,7 +5761,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
+window.ETERNA={lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
 })();
 </script>
 
