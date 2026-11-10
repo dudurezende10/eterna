@@ -3260,7 +3260,10 @@ function srvLgpd(x){const s=SIM.sessions[x.card];if(!s||!s.srv)return;const keep
 // rosto, sem busca em andamento); com cliente na tela, nada de face-api disputando o processador com a selfie e a foto ampliada
 // Teto (segurança, 01/11): com o balcão ocupado há 10 min seguidos, valida mesmo assim (até o balcão ficar livre de novo).
 const VAL_TETO=10*60e3;let VAL_OCUP=0;
-const valLivre=()=>new Promise(res=>{const livre=()=>{if(!state.lojaRota||(state.kiosk.step==='code'&&!(state.cam&&state.cam.busy))){VAL_OCUP=0;return true;}if(!VAL_OCUP)VAL_OCUP=Date.now();return Date.now()-VAL_OCUP>=VAL_TETO;};if(livre())return res();const t=setInterval(()=>{if(livre()){clearInterval(t);res();}},700);});
+// v95: com o Iniciar a tela inicial fica sem câmera; o balcão só conta como livre depois de VAL_CALMO na tela inicial, para a validação
+// (face-api, que aquece o WebGL por alguns segundos) nunca disputar o processador com o cliente que acabou de chegar e as montagens dele
+const VAL_CALMO=60e3; // 1 minuto parado na tela inicial
+const valLivre=()=>new Promise(res=>{const livre=()=>{if(!state.lojaRota||(state.kiosk.step==='code'&&!(state.cam&&state.cam.busy)&&(state.kiosk.camOn||(state.kiosk.codeDesde&&Date.now()-state.kiosk.codeDesde>=VAL_CALMO)))){VAL_OCUP=0;return true;}if(!VAL_OCUP)VAL_OCUP=Date.now();return Date.now()-VAL_OCUP>=VAL_TETO;};if(livre())return res();const t=setInterval(()=>{if(livre()){clearInterval(t);res();}},700);});
 let VAL_FILA=Promise.resolve(); // v91: uma validação de IA por vez neste navegador (risco 7: cada navegador ainda valida de novo)
 function ingStop(){const g=state.ing;if(g.timer)clearInterval(g.timer);g.timer=null;g.running=false;}
 function ingClose(how,srv){const g=state.ing;const c=srv?{photos:srv.fotos.map(pid=>({id:'ag_'+pid})),flags:{},start:new Date(srv.aberta_em*1000).toISOString()}:g.cur;if(!srv)g.cur=null;if(!c||!c.photos.length)return;
@@ -5072,6 +5075,7 @@ function render(){
   if(state.lojaRota&&state.view!=='quiosque'){state.lojaRota=false;if(location.hash==='#loja')history.replaceState(null,'','#');}
   if(state.lojaRota){document.body.setAttribute('data-bare','');document.body.setAttribute('data-loja','');
     if(state.kiosk.step!=='done')lojaTimerOff();else lojaPendCheck(); // v83: pendência confirmada ou cancelada enquanto a janela não redesenhou
+    {const k=state.kiosk;if(k.step==='code'){if(!k.codeDesde)k.codeDesde=Date.now();}else k.codeDesde=0;} // v95: desde quando a tela inicial está parada (valLivre)
     try{DS_CACHE.on=true;try{$('#main').innerHTML=vQuiosque()+lojaEquipe();}finally{DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div></div>`;}
     if(location.hash!=='#loja')history.replaceState(null,'','#loja');
     if(state.kiosk.step==='done')drawLojaQR(); // v79: redesenhar (troca de idioma, SIM de outra janela) não pode apagar o QR
