@@ -1481,6 +1481,8 @@ async function postoCarregar(){const a=state.agent;if(!a||a.url!==location.origi
     if(r.ok&&j.posto){state.posto.disp={id:String(j.posto.id),nome:String(j.posto.nome||'').slice(0,40),num:+j.posto.num||0};state.posto.estado='ok';try{localStorage.setItem('eterna.posto.v1',JSON.stringify(state.posto.disp));}catch(e){}}
     else if(r.status===401){state.posto.disp=null;state.posto.estado='nao';try{localStorage.removeItem('eterna.posto.v1');}catch(e){}}else state.posto.estado='sem';
     if(antes!==JSON.stringify(state.posto.disp)+state.posto.estado)render();}catch(e){}}
+// posto automático: a janela que abriu antes do login (ou antes do posto existir) pergunta de novo até o servidor responder; 'sem' = acesso remoto ou agente sem postos
+setInterval(()=>{const a=state.agent;if(a&&a.on&&a.url===location.origin&&!state.pub&&state.posto.estado!=='ok'&&state.posto.estado!=='sem'&&(state.user||state.lojaRota)&&Date.now()-(postoCarregar.t||0)>8000)postoCarregar();},4000);
 // nome do estoque e do cabeçalho: "Posto N" num posto pareado; "Caixa 1" no computador do ponto e sem agente (compatível com o estoque de antes)
 function postoNome(){const d=pontoModo()==='posto'?postoDisp():null;return d&&d.nome?String(d.nome).slice(0,30):'Caixa 1';}
 const postoTitulo=()=>pontoModo()==='posto'?postoNome():'Computador do ponto';
