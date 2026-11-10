@@ -299,8 +299,9 @@ Se o cliente volta ao Checkout com fotos que já comprou, aparece "Estas fotos j
 Desde a v96 quem escolhe **Dinheiro** é você, no Posto de venda. A compra não é dada como paga até você receber.
 
 **O que o cliente vê**
-1. "Valor a pagar R$ X", o nome do pacote, "Pague em dinheiro ao atendente" e o **código** (exemplo: `K7QM-4WXR`).
-2. Se ele abrir a galeria antes de pagar, aparece que o pagamento está esperando. As fotos só aparecem depois da confirmação.
+1. Na tela Pronto, antes de você escolher o pacote: o **código** da compra (exemplo: `K7QM-4WXR`) e quantas fotos ele escolheu.
+2. Depois que você escolhe o pacote e Dinheiro no Posto de venda: "Valor a pagar R$ X", "N fotos", "Pague em dinheiro ao atendente" e o botão **Ver minhas fotos**. Essa tela não mostra o nome do pacote nem o código.
+3. Se ele abrir a galeria antes de pagar, aparece que o pagamento está esperando. As fotos só aparecem depois da confirmação.
 
 **Como confirmar (caixa)**
 1. Na barra da equipe, toque em **Caixa**. O número ao lado mostra quantos pagamentos estão esperando.
