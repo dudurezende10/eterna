@@ -617,14 +617,16 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 1. Na venda já impressa, toque em **Reimprimir**.
 2. Marque as fotos que vão sair de novo.
 3. Escolha o motivo: Falhou, Outra cópia, Cor ou Outro.
-4. Toque em **Reimprimir N fotos** e depois em **Saiu certo** ou **Não saiu**.
+4. Toque em **Reimprimir N fotos**. Nos postos com o programa de impressão, a DNP confere e a reimpressão é registrada sozinha; sem ele, toque em **Saiu certo** ou **Não saiu**.
 
 ### Trocar o rolo de 700
 
 1. O rolo da DNP faz cerca de 700 fotos. O contador "Rolo: X de 700" fica no alto do Posto de venda.
-2. Abaixo de 40, o contador fica vermelho e aparece em **Alertas**. Troque antes do pico.
-3. Troque o rolo e a fita na DNP.
-4. Registre a troca: no Posto de venda (veja **Troquei o rolo** logo abaixo) ou em **Dashboard › Estoque**, em **Registrar troca de rolo** (no Estoque, só quem tem permissão de editar Estoque). O contador volta a 700.
+2. Com 100 ou menos, o contador fica amarelo: separe um rolo novo. Abaixo de 40, fica vermelho piscando, aparece uma faixa vermelha no alto do Posto de venda e do Caixa ("Rolo acabando: faltam N fotos") e um alerta grave em **Alertas**. Troque antes do pico.
+3. Quando a impressora avisa um problema (papel ou fita no fim, tampa aberta, papel enroscado), a faixa fica vermelha cheia com o aviso da própria DNP.
+4. Nos postos com o programa de impressão, o contador é o da própria DNP e a troca de rolo é percebida sozinha: não precisa registrar.
+5. Troque o rolo e a fita na DNP.
+6. Sem o programa de impressão, registre a troca: no Posto de venda (veja **Troquei o rolo** logo abaixo) ou em **Dashboard › Estoque**, em **Registrar troca de rolo** (no Estoque, só quem tem permissão de editar Estoque). O contador volta a 700.
 
 ### Troquei o rolo (v96)
 

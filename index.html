@@ -224,6 +224,8 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .din-meio{display:inline-flex;align-items:center;gap:6px;font-weight:700}.din-meio svg{width:28px;height:auto}
 .pend-ref{display:flex;flex-direction:column;gap:6px}.pend-ref input{max-width:260px;font-size:18px;letter-spacing:.06em}
 .pend-err{color:var(--bad);font-weight:600}
+.rolo-faixa{display:flex;align-items:center;gap:12px;margin:0 0 12px;padding:12px 16px;border-radius:8px;border:2px solid var(--bad,#c0392b);background:rgba(192,57,43,.12);font-size:15px}.rolo-faixa b{font-size:17px}.rolo-faixa.fim{background:var(--bad,#c0392b);color:#fff}
+@keyframes rolo-pisca{50%{opacity:.45}}.pill.rolo-pisca{animation:rolo-pisca 1.2s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.pill.rolo-pisca{animation:none}}
 .pend-grave{display:flex;flex-direction:column;gap:6px;margin:0 0 10px;padding:10px 12px;border-radius:8px;border:2px solid var(--bad,#c0392b);background:rgba(192,57,43,.1);font-size:14px}
 .pend-ths{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.pend-th{position:relative;width:84px;aspect-ratio:3/2;border-radius:6px;border:0;padding:0;overflow:hidden;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);cursor:zoom-in}
 .pend-th.ai .compimg{position:absolute;inset:0;background-size:cover;background-position:center}.pend-th .lj-aimk{font-size:10px;gap:2px;padding:2px}.pend-th .lj-spin{width:14px;height:14px}.pend-th .laibadge{position:absolute;right:3px;bottom:3px;color:#FFB800}.pend-th .laibadge svg{width:14px;height:14px}
@@ -1436,7 +1438,7 @@ function vCaixa(){
         <div class="note">Depois do pagamento, imprima as fotos na DNP RX1HS deste posto (${SIM.stock[postoNome()]!=null?SIM.stock[postoNome()]:ROLO_CAP} no rolo). O recibo sai com o QR da galeria.</div></div>`;
     }
   }
-  return `<div class="head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>Caixa</h1></div><div class="row">${roloSelo('good')}<span class="pill neutral">Turno aberto</span></div></div>
+  return `${roloFaixa()}<div class="head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>Caixa</h1></div><div class="row">${roloSelo('good')}<span class="pill neutral">Turno aberto</span></div></div>
   <div class="twocol">
     <div style="display:flex;flex-direction:column;gap:14px;min-width:0">${pendPainel()}${impPainel()}<div class="panel"><h2>Fila do caixa</h2>${queue.length?`<div class="sess">${queue.map(s=>`<button class="scard" data-act="caixa-open" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span>${esc(P[s.key]?P[s.key].name:'')}</span><span>${fmtR(cartTotal(simOf(s.card).cart))}</span></div></button>`).join('')}</div>`:'<div class="note">Ninguém esperando. Monte um carrinho na fila do balcão.</div>'}</div>
     ${paid.length?`<div class="panel"><h2>Pagas hoje</h2><div class="tablewrap"><table><thead><tr><th>Sessão</th><th>Pagamento</th><th class="num">Total</th><th></th></tr></thead><tbody>${paid.map(s=>{const sim=simOf(s.card);return `<tr><td class="name">${esc(s.card)}</td><td>${esc(sim.payment)}</td><td class="num">${fmtR(saleTotal(sim))}</td><td><button class="chip" data-act="caixa-open" data-card="${s.card}">Recibo</button></td></tr>`}).join('')}</tbody></table></div></div>`:''}</div>
@@ -1628,7 +1630,7 @@ function postoNome(){const d=pontoModo()==='posto'?postoDisp():null;return d&&d.
 const postoTitulo=()=>pontoModo()==='posto'?postoNome():'Computador do ponto';
 // quem abriu o Checkout neste notebook (gravado por lojaJanela); vai para a venda como vendedor declarado (D17)
 function postoVendedor(){try{const v=JSON.parse(localStorage.getItem('eterna.posto.vendedor')||'null');if(v&&typeof v.email==='string'&&typeof v.nome==='string')return {nome:v.nome.replace(/[<>]/g,'').slice(0,60),email:v.email.slice(0,120)};}catch(e){}return null;}
-const ROLO_CAP=700,ROLO_ALERTA=40,ROLO_SOBRA=60,IMP_ALERTA_MIN=10;
+const ROLO_CAP=700,ROLO_ALERTA=40,ROLO_SOBRA=60,IMP_ALERTA_MIN=10,ROLO_AVISO=100; // AVISO: selo amarelo antes do vermelho (Ronaldo, 10/11)
 // v96 (Eduardo, 10/11): "Registrar troca de rolo" à mão do caixa. O selo "Rolo: N de 700" do Posto, da Impressão 10×15 e do Caixa vira botão para quem
 // vende (venda 'c'), só para o posto deste aparelho (postoNome); com o rolo abaixo de ROLO_ALERTA aparece também "Troquei o rolo". Estoque (stock-swap,
 // estoque 'u') continua. Os dois caminhos passam por roloTrocar: SIM.stock, log, pvEvento('rolo') e auditLog('rolo_troca') com quem, posto e valor anterior.
@@ -1656,9 +1658,14 @@ async function dnpLer(){if(pontoModo()!=='posto'||state.impJob||dnpLer.on)return
     render();}catch(e){}finally{dnpLer.on=false;}}
 setInterval(()=>{if(pontoModo()==='posto'&&!state.impJob&&Date.now()-(dnpLer.t||0)>DNP_LEIT_MS)dnpLer();},15000);
 // v96 (revisão): só num aparelho configurado como posto (pontoModo 'posto'); fora dele postoNome() devolve 'Caixa 1' e o selo é só informação.
-function roloSelo(cls,semTroquei){const pn=postoNome();const v=roloDe(pn);const baixo=v<ROLO_ALERTA;const tx=`Rolo: ${v} de ${ROLO_CAP}`;
-  if(!can('venda','c')||pontoModo()!=='posto')return `<span class="pill ${baixo?'bad':cls||'neutral'}">${tx}</span>`;
-  return `<button class="pill ${baixo?'bad':cls||'neutral'} rolo-selo" data-act="rolo-troca" title="Registrar troca de rolo em ${esc(pn)}">${tx}</button>${baixo&&!semTroquei?`<button class="btn rolo-troquei" data-act="rolo-troca">Troquei o rolo</button>`:''}`;}
+function roloSelo(cls,semTroquei){const pn=postoNome();const v=roloDe(pn);const baixo=v<ROLO_ALERTA;const tx=`Rolo: ${v} de ${ROLO_CAP}`;cls=baixo?'bad rolo-pisca':v<=ROLO_AVISO?'warn':cls;
+  if(!can('venda','c')||pontoModo()!=='posto')return `<span class="pill ${cls||'neutral'}">${tx}</span>`;
+  return `<button class="pill ${cls||'neutral'} rolo-selo" data-act="rolo-troca" title="Registrar troca de rolo em ${esc(pn)}">${tx}</button>${baixo&&!semTroquei?`<button class="btn rolo-troquei" data-act="rolo-troca">Troquei o rolo</button>`:''}`;}
+// faixa no alto do Posto e do Caixa: rolo abaixo de ROLO_ALERTA, ou a DNP avisando erro (papel/fita no fim, tampa, enrosco)
+function roloFaixa(){const pn=postoNome();const v=roloDe(pn);const d=pontoModo()==='posto'?dnpUlt(pn):null;const erro=d&&d.status>=1000;
+  if(erro||v<=0)return `<div class="rolo-faixa fim" role="alert"><b>${erro?`A impressora avisa: ${esc(d.texto||'erro')}`:'O rolo acabou'}</b><span>${erro&&d.status!==1100&&d.status!==1200?'Resolva na DNP antes de imprimir.':'Troque o rolo e a fita da DNP agora.'}${d?' O Eterna percebe a troca sozinho.':''}</span></div>`;
+  if(v<ROLO_ALERTA)return `<div class="rolo-faixa" role="alert"><b>Rolo acabando: ${v===1?'falta 1 foto':`faltam ${v} fotos`}</b><span>Separe um rolo novo e troque antes do próximo pico.${d?' O Eterna percebe a troca sozinho.':''}</span></div>`;
+  return '';}
 function roloAsk(){const q=state.roloAsk;if(!q||q.view!==state.view||q.pn!==postoNome()||pontoModo()!=='posto')return '';
   return `<div class="rolo-ask" role="alertdialog" aria-modal="true" aria-labelledby="rolo-askt"><div class="rolo-askc"><h2 id="rolo-askt">Trocou o rolo da impressora deste posto?</h2><p>O contador volta para ${ROLO_CAP}. Posto: ${esc(q.pn)}.</p>
     <div class="row"><button class="btn primary" data-act="rolo-troca-sim" data-posto="${esc(q.pn)}">Sim, troquei</button><button class="btn ghost" data-act="rolo-troca-nao">Cancelar</button></div></div></div>`;}
@@ -1786,7 +1793,7 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
     document.getElementById('print-root')?.remove();render();return;}
   if(pontoModo()==='posto'){ // programa de impressão do posto (eterna-impressao.ps1): a foto vai direto para a DNP, sem a prévia do Chrome
-    job.fase='imprimindo';render();const rl=await impLocal(impJpegs(),s.saleNo||card);if(state.impJob!==job)return;
+    job.fase='imprimindo';job.local=true;render();const rl=await impLocal(impJpegs(),s.saleNo||card);if(state.impJob!==job)return;job.local=false;
     if(rl){document.getElementById('print-root')?.remove();
       if(rl.ok){job.fase='impresso';job.dnp=dnpLimpa(rl.dnp,'impressao');
         // a DNP confirmou que as folhas saíram: o Eterna registra sozinho (sem "Saiu certo")
@@ -1806,6 +1813,32 @@ async function impLocal(imgs,venda){const u='http://127.0.0.1:8790';
   try{const c=new AbortController();const t=setTimeout(()=>c.abort(),1500);const r=await fetch(u+'/status',{signal:c.signal});clearTimeout(t);if(!r.ok)return null;}catch(e){return null;}
   try{const c=new AbortController();const t=setTimeout(()=>c.abort(),300000);const r=await fetch(u+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:String(venda),imagens:imgs}),signal:c.signal});clearTimeout(t);return await r.json();}
   catch(e){return {ok:false,erro:'sem resposta do programa de impressão'};}}
+// ---------- histórico de impressão: mora no servidor ----------
+// O registro de cada impressão, reimpressão e "não saiu" é o evento "impressao" no banco de vendas (POST /ponto/eventos).
+// s.impressao (estado, fotos feitas, por quem, a que horas) e s.impressoes são refeitos daqui: eventos do servidor
+// (GET /ponto/impressoes) + os que ainda estão na fila de envio deste navegador (eterna.ponto.fila.v1, chave que nenhuma
+// janela sobrescreve). O que fica no SIM é só a cópia para desenhar a tela: outra aba gravando por cima não apaga nada,
+// porque a próxima leitura (ao abrir e a cada 15 s) refaz a partir do banco.
+const IMP_SRV={};let IMP_SRV_ON=false;
+function impDeEv(e){const d=e.dados||e;const p=e.por;return {idem:e.idem,em:e.em,porNome:p&&typeof p==='object'?p.nome:(p||null),posto:e.posto||null,resultado:d.resultado,n:+d.n||0,
+  reimpressao:!!d.reimpressao,motivo:d.motivo||null,fotos:Array.isArray(d.fotos)?d.fotos:[],semFoto:+d.semFoto||0,dnp:d.dnp||null};}
+function impRefaz(s){if(!s||!s.vendaId||!s.impressao||!IMP_SRV[s.vendaId])return false;const im=s.impressao;
+  const antes=JSON.stringify([im,s.impressoes||[]]);const loc=new Map((s.impressoes||[]).map(x=>[x.em+'|'+x.resultado,x]));const vis=new Set();const l=[];
+  IMP_SRV[s.vendaId].concat(pvFila().filter(e=>e.tipo==='impressao'&&e.venda===s.vendaId)).forEach(e=>{if(!e||vis.has(e.idem))return;vis.add(e.idem);const r=impDeEv(e);
+    const x=loc.get(r.em+'|'+r.resultado);if(x){r.avisos=x.avisos;r.falhasIA=x.falhasIA;} // aviso de tela da última tentativa (não vai ao banco)
+    l.push(r);});
+  l.sort((a,b)=>String(a.em).localeCompare(String(b.em)));
+  const feitas=[];let fim=null;l.forEach(r=>{if(r.resultado!=='ok'||r.reimpressao)return;r.fotos.forEach(k=>{if(!feitas.includes(k))feitas.push(k);});if(!fim&&feitas.length>=(im.alvo||0))fim=r;});
+  im.feitas=feitas;s.impressoes=l;
+  if(im.estado!=='nao_se_aplica'){if(fim)Object.assign(im,{estado:'impressa',n:feitas.length,em:fim.em,porNome:fim.porNome});else{im.estado='pendente';delete im.n;delete im.em;delete im.porNome;}}
+  return JSON.stringify([im,s.impressoes])!==antes;}
+async function impSrvLer(){if(IMP_SRV_ON||!state.agent||!state.agent.on)return;
+  const ses=Object.values(SIM.sessions||{}).filter(s=>s&&s.vendaId&&s.impressao&&s.impressao.estado!=='nao_se_aplica').sort((a,b)=>String(b.paidAt||'').localeCompare(String(a.paidAt||'')));
+  const ids=[...new Set(ses.map(s=>s.vendaId))].slice(0,100);if(!ids.length)return;IMP_SRV_ON=true;
+  try{const r=await agFetch(state.agent.url+'/ponto/impressoes?vendas='+encodeURIComponent(ids.join(',')));if(!r.ok)return;const j=await r.json();Object.assign(IMP_SRV,j.vendas||{});
+    let ch=false;Object.values(SIM.sessions||{}).forEach(s=>{if(impRefaz(s))ch=true;});if(!ch)return;saveSim();
+    const f=document.activeElement;if(!state.impJob&&!(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName)))render();}catch(e){}finally{IMP_SRV_ON=false;}}
+setTimeout(impSrvLer,1500);setInterval(impSrvLer,15000);
 const impReMax=s=>{const f=((s.impressao&&s.impressao.feitas)||[]).length;return Math.max(1,Math.min(+s.prints||f,f));}; // até prints por reimpressão
 // "Saiu certo": baixa do rolo uma vez por foto. Primeira impressão: só as que ainda não estavam feitas (com todas feitas, a venda vira impressa).
 // Reimpressão: grava a lista exata e baixa as que saíram.
@@ -1819,16 +1852,16 @@ function impOk(card){const job=state.impJob;simFresh();const s=SIM.sessions[card
   const tudo=job.re||im.feitas.length>=(im.alvo||0);if(!job.re&&tudo){im.estado='impressa';im.n=im.feitas.length;im.em=at;im.porNome=u.name;}
   log(`${job.re?'Reimpressão':'Impressão'} ${s.saleNo||card}: ${novas.length} ${novas.length===1?'foto':'fotos'} 10×15 em ${pn}${job.re?' ('+job.re.motivo+')':''}`);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return;}
-  pvEvento('impressao',s.vendaId,{resultado:'ok',fotos:novas,n:novas.length,reimpressao:!!job.re,motivo:reg.motivo,semFoto:reg.semFoto,avisos:reg.avisos,dnp});
+  pvEvento('impressao',s.vendaId,{resultado:'ok',fotos:novas,n:novas.length,reimpressao:!!job.re,motivo:reg.motivo,semFoto:reg.semFoto,avisos:reg.avisos,dnp},{em:at});
   state.impJob=null;state.impSel[card]=null;document.body.classList.remove('pr-on');
   toast(job.re?'Reimpressão registrada.':tudo?'Impressão registrada.':`Faltam ${impFalta(s)} ${impFalta(s)===1?'foto':'fotos'}: imprima de novo.`);render();}
 // "Não saiu": registra a tentativa (com a lista exata), não baixa estoque; a primeira impressão continua pendente
 function impFalha(card){const job=state.impJob;simFresh();const s=SIM.sessions[card];const im=s&&s.impressao;
   if(!job||job.card!==card||job.fase!=='impresso'||!im){toast('Imprima antes de marcar');render();return;}
   const antes=JSON.stringify(SIM);const u=state.user;const fotos=(job.res&&job.res.ok||job.fotos).slice();
-  const dnp=job.dnp||null;if(dnp)dnpGuarda(dnp);s.impressoes=s.impressoes||[];s.impressoes.push({dnp,em:now().toISOString(),porNome:u.name,resultado:'nao_saiu',n:0,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,fotos,semFoto:job.re?0:(im.semFoto||0),posto:postoNome()});
+  const dnp=job.dnp||null;if(dnp)dnpGuarda(dnp);const at=now().toISOString();s.impressoes=s.impressoes||[];s.impressoes.push({dnp,em:at,porNome:u.name,resultado:'nao_saiu',n:0,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,fotos,semFoto:job.re?0:(im.semFoto||0),posto:postoNome()});
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return;}
-  pvEvento('impressao',s.vendaId,{dnp,resultado:'nao_saiu',fotos,n:fotos.length,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,semFoto:job.re?0:(im.semFoto||0)});
+  pvEvento('impressao',s.vendaId,{dnp,resultado:'nao_saiu',fotos,n:fotos.length,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,semFoto:job.re?0:(im.semFoto||0)},{em:at});
   state.impJob=null;document.body.classList.remove('pr-on');toast('Registrado. Confira a impressora e imprima de novo.');render();}
 const IMP_MOTIVOS=[['falhou','Falhou'],['copia','Outra cópia'],['cor','Cor'],['outro','Outro']];
 // reimpressão: o vendedor escolhe quais das fotos já impressas (até prints por vez) e o motivo; imprime e depois marca "Saiu certo" ou "Não saiu"
@@ -1858,6 +1891,8 @@ async function impPostoPoll(){if(!document.getElementById('imp-painel')&&!state.
   try{const j=await (await agFetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();const sig=JSON.stringify([j.pedidos.map(p=>[p.id,p.estado,p.feitas,p.aviso,p.erro]),j.estados]);const mudou=sig!==state.impFilaSig;state.impFila=j;state.impFilaSig=sig;if(mudou&&document.getElementById('imp-painel'))render();}catch(e){}}
 const impPedido=venda=>[...((state.impFila&&state.impFila.pedidos)||[])].reverse().find(p=>p.venda===venda)||null;
 const impAtivo=p=>!!p&&(p.estado==='na_fila'||p.estado==='imprimindo');
+// programa do posto imprimindo: a DNP confere e o Eterna registra sozinho, sem botões
+const IMP_CONF='<div class="note"><span class="pill neutral">Imprimindo e conferindo com a impressora...</span></div>';
 function impPedidoLinha(p){const F=state.impFila||{};const e=(F.estados||{})[p.impressora||state.agent.impressora];const parada=p.aviso||(e&&e.estado==='erro'?(e.motivo||'parada'):'');const fotos=`${p.fotos} ${p.fotos===1?'foto':'fotos'}`;let t;
   if(p.estado==='na_fila'){const n=(F.pedidos||[]).filter(x=>impAtivo(x)&&x.id<p.id).length;t=`<span class="pill neutral">Na fila${n?` · ${n} ${n===1?'pedido':'pedidos'} na frente`:''}</span>`;}
   else if(p.estado==='imprimindo')t=`<span class="pill warn">Imprimindo ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos}</span>`;
@@ -1880,7 +1915,7 @@ function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');con
       else if(naFila)body=linhaFila+cancelaFila;
       else if(job&&(job.fase==='imprimindo'||job.fase==='impresso')){const r=job.res||{ok:[],falhasIA:[],falhas:[]};
         body=`${noSrv?linhaFila:`<div class="note">${r.ok.length} ${r.ok.length===1?'foto enviada':'fotos enviadas'} para a impressora deste posto.</div>`}${r.falhasIA.length?`<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span> ${r.falhasIA.length} ${r.falhasIA.length===1?'foto com fundo de IA ficou':'fotos com fundo de IA ficaram'} de fora.</div>`:''}${r.falhas.length?`<div class="note"><span class="pill warn">${r.falhas.length} ${r.falhas.length===1?'foto não abriu':'fotos não abriram'}</span></div>`:''}
-          ${rw?`<div class="row">${semSaida?'':`<button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button>`}<button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`;}
+          ${job.local&&job.fase==='imprimindo'?IMP_CONF:rw?`<div class="row">${semSaida?'':`<button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button>`}<button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`;}
       else body=`${ped?linhaFila:''}${feitas.size?`<div class="note">${feitas.size} já ${feitas.size===1?'impressa':'impressas'}; faltam ${S.max}.</div>`:''}${falhaIA}
         <div class="imp-grid">${S.pode.map(x=>impThumb(x,selK.has(x.k),rw?'imp-pick':null,card)).join('')}</div>
         <div class="note">${S.sel.length} de ${S.max} marcadas. Toque para trocar quais imprimir.</div>${nota}${job&&job.fase==='erro'?'<div class="note"><span class="pill bad">Nenhuma foto ficou pronta. Tente de novo.</span></div>':''}
@@ -1890,7 +1925,7 @@ function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');con
       body=`<div class="note">Impressa${im.porNome?' por '+esc(im.porNome):''}${im.em?' às '+hhmm(new Date(im.em)):''} · ${im.n||0} ${im.n===1?'foto':'fotos'}${nre.length?` · ${nre.length} ${nre.length===1?'reimpressão':'reimpressões'}`:''}</div>
         ${jr&&jr.fase==='montando'?'<div class="note"><span class="pill neutral">Preparando a reimpressão...</span></div>':''}
         ${naFila?linhaFila+cancelaFila:jr&&(jr.fase==='imprimindo'||jr.fase==='impresso')?`${noSrv?linhaFila:`<div class="note">Reimpressão: ${r.ok.length} ${r.ok.length===1?'foto enviada':'fotos enviadas'} para a impressora.</div>`}${r.falhasIA.length?'<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span></div>':''}
-          ${rw?`<div class="row"><button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button><button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`
+          ${jr.local&&jr.fase==='imprimindo'?IMP_CONF:rw?`<div class="row"><button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button><button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`
         :!rw||jr?'':re?`<div class="din-conf"><span class="eyebrow">Quais fotos reimprimir (até ${max})</span>
           <div class="imp-grid">${impFotos(s).todas.filter(x=>feitas.has(x.k)).map(x=>impThumb(x,(re.sel||[]).includes(x.k),'imp-repick',card)).join('')}</div>
           <div class="chips">${IMP_MOTIVOS.map(([k,l])=>`<button class="chip" data-act="imp-motivo" data-m="${k}" aria-pressed="${re.motivo===k}">${l}</button>`).join('')}</div>
@@ -1972,7 +2007,7 @@ setInterval(()=>{if(!state.lojaRota&&!state.pub)ecoUpd(false);},1000);
 // ---------- v83: tela Posto de venda (view posto, módulo venda) ----------
 function vPosto(){const a=state.agent;
   const ag=a.on?'<span class="pill good">agente ligado</span>':`<span class="pill neutral">${a.offAt?'agente fora desde '+hhmm(new Date(a.offAt)):'sem agente'}</span>`;
-  return `<div class="head posto-head"><div><div class="eyebrow">Posto de venda</div><h1>${esc(postoTitulo())}</h1></div><div class="row">${ag}${roloSelo('neutral')}</div></div>
+  return `${roloFaixa()}<div class="head posto-head"><div><div class="eyebrow">Posto de venda</div><h1>${esc(postoTitulo())}</h1></div><div class="row">${ag}${roloSelo('neutral')}</div></div>
   <div class="posto-cols"><div><div class="panel"><div class="head"><h2>No Checkout agora</h2></div><div id="eco">${ecoBody()}</div></div></div>
     <div>${pendPainel()}${impPainel()}${minhasVendas()}</div></div>`;}
 function drawQR(){const el=$('#qrbox');if(!el)return;const card=state.caixa.session;const tok=card&&galDaSessao(card);if(!tok){el.innerHTML='';return;}qrDraw(el,galBase()+tok,110,SIM.galerias[tok].codigo);}
@@ -4696,7 +4731,7 @@ function alerts(){
     if(im.semFoto>0&&isoDia(s.paidAt||0)===todayISO())out.push({sev:'bad',t:`Venda ${s.saleNo||c}: ${im.semFoto} ${im.semFoto===1?'impressão':'impressões'} sem foto`,d:'O pacote prevê mais impressões do que fotos escolhidas. Combine com o cliente.'});});
   // v96 (revisão): troca de rolo de hoje com muitas folhas sobrando (valor anterior acima de ROLO_SOBRA)
   auditRead().filter(e=>e&&e.acao==='rolo_troca'&&isoDia(e.em||0)===todayISO()).forEach(e=>{const m=(e.mudancas||[])[0]||{};if(typeof m.de==='number'&&m.de>ROLO_SOBRA)out.push({sev:'bad',t:`Rolo trocado com ${m.de} impressões sobrando · ${e.posto||String(e.alvo||'').replace(/^posto\//,'')}`,d:`Troca registrada por ${e.porNome||e.por||'?'} às ${hhmm(new Date(e.em))}. Confira o rolo retirado e o contador da DNP.`});});
-  Object.entries(SIM.stock||{}).forEach(([k,v])=>{if(v<ROLO_ALERTA)out.push({sev:'warn',t:`${k}: rolo com ${v} impressões`,d:'Trocar o rolo da DNP antes do pico e registrar a troca em Estoque.'});});
+  Object.entries(SIM.stock||{}).forEach(([k,v])=>{if(v<ROLO_ALERTA)out.push({sev:'bad',t:`${k}: rolo com ${v} impressões`,d:'Trocar o rolo da DNP antes do pico e registrar a troca em Estoque.'});});
   flagList().forEach(x=>{if(!x[5]||!x[3])return;const st=flagOf(x),fs=flagStats(x);if(st.state==='defeito'||st.state==='fora de uso')out.push({sev:'warn',t:`Bandeira ${x[1]}: ${st.state}${st.note?', '+st.note:''}`,d:`${x[3]===1?'Peça única. ':''}Repor antes do fim de semana.`});else if(x[3]===1&&fs.sessions>=100)out.push({sev:'warn',t:`Bandeira ${x[1]}: peça única com ${fs.sessions} sessões na semana`,d:'Em dia de jogo falta. Comprar a segunda unidade.'});});
   out.push({sev:'warn',t:'Escala: 25 turnos para 28 necessários',d:'Quatro pontos por sete dias com cinco pessoas em 5x2 deixa 3 turnos descobertos; com o vestiário, 10.'});
   const best=humans.map(k=>stats[k]).sort((a,b)=>b.index-a.index)[0];out.push({sev:'good',t:`${best.name} lidera a semana com índice ${best.index}`,d:`${fmtR(best.revenue)} em ${best.days} dias, ticket ${fmtR(best.ticket)}.`});
@@ -6020,7 +6055,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={dnpLimpa,dnpLer,dnpUlt,impOk,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,priceOf,lojaMaisIds,EQ,TE,T,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais};
+window.ETERNA={impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,priceOf,lojaMaisIds,EQ,TE,T,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais};
 })();
 </script>
 

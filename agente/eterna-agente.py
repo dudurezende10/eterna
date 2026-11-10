@@ -6542,7 +6542,7 @@ def _ev_limpo(e):
           "vendedor": txt((d.get("vendedor") or {}).get("nome") if isinstance(d.get("vendedor"), dict) else None),
           "resultado": txt(d.get("resultado"), 12), "n": num(d.get("n")), "reimpressao": bool(d.get("reimpressao")),
           "tempos": {k: txt(v, 30) for k, v in (d.get("tempos") if isinstance(d.get("tempos"), dict) else {}).items() if k in ("inicio", "escolha") and v} or None,
-          "motivo": txt(d.get("motivo"), 40), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
+          "motivo": txt(d.get("motivo"), 40), "semFoto": num(d.get("semFoto")), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
           # impressão: as fotos impressas; impressão e rolo: a leitura da DNP pelo programa de impressão do posto (auditoria do rolo)
           "fotos": lista(d.get("fotos")) if e.get("tipo") == "impressao" else [], "dnp": _ev_dnp(d.get("dnp")),
           "galeria": (txt((d.get("galeria") or {}).get("codigo"), 12) if isinstance(d.get("galeria"), dict) else None)}
@@ -6555,6 +6555,31 @@ def _ev_limpo(e):
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
             "por": _txt_chave((e.get("por") or {}).get("nome") if isinstance(e.get("por"), dict) else None, 60),
             "posto": _txt_chave(e.get("posto"), 40), "dados": {k: v for k, v in dd.items() if v not in (None, "", [], 0, False)}}
+
+
+def ev_impressoes(ids):
+    """Histórico de impressão das vendas pedidas, direto do banco (eventos "impressao"): o que a tela do Posto mostra
+    (impressa, por quem, reimpressões, "não saiu") vem daqui, não do navegador. Até 100 vendas por pedido."""
+    ids = [x for x in ids if isinstance(x, str) and _re_ev_id.match(x)][:100]
+    out = {v: [] for v in ids}
+    if not ids:
+        return out
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rows = db.execute("select idem, venda, em, posto, por, dados from evento where tipo = 'impressao' and venda in (%s) order by em, seq"
+                              % ",".join("?" * len(ids)), ids).fetchall()
+        finally:
+            db.close()
+    for idem, venda, em, posto, por, dados in rows:
+        try:
+            d = json.loads(dados or "{}")
+        except Exception:
+            d = {}
+        out[venda].append({"idem": idem, "em": em, "posto": posto, "por": por, "resultado": d.get("resultado"), "n": int(d.get("n") or 0),
+                           "reimpressao": bool(d.get("reimpressao")), "motivo": d.get("motivo"), "fotos": d.get("fotos") or [],
+                           "semFoto": int(d.get("semFoto") or 0), "dnp": d.get("dnp")})
+    return out
 
 
 def ev_fila(job):
@@ -7286,6 +7311,7 @@ ROTAS = (
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
     ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
     ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
@@ -7325,7 +7351,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -8254,6 +8280,11 @@ class H(BaseHTTPRequestHandler):
             if not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             return self.js(ff_json(), nostore=True)
+        if u.path == "/ponto/impressoes":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            ids = ",".join(parse_qs(u.query).get("vendas") or []).split(",")
+            return self.js({"ok": True, "vendas": ev_impressoes(ids)}, nostore=True)
         if u.path == "/ponto/docs/revs":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
