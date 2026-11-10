@@ -6511,6 +6511,19 @@ def _ev_t0(v, em):
     return v
 
 
+def _ev_dnp(v):
+    """Leitura do firmware da DNP (eterna-impressao.ps1): contadores inteiros, status e de onde veio. Outro formato: descarta."""
+    if not isinstance(v, dict):
+        return None
+    i = lambda k: int(v[k]) if isinstance(v.get(k), (int, float)) and not isinstance(v.get(k), bool) and 0 <= v[k] <= 10 ** 7 else None
+    o = {k: i(k) for k in ("mqty", "antes", "saiu", "restantes", "vida", "vida_antes", "status")}
+    o["conferido"] = v.get("conferido") is True
+    o["texto"] = re.sub(r"[<>]", "", str(v.get("texto") or ""))[:40] or None
+    o["origem"] = v.get("origem") if v.get("origem") in ("impressao", "leitura", "troca") else None
+    o = {k: x for k, x in o.items() if x is not None and x is not False}
+    return o if ("mqty" in o or "vida" in o) else None
+
+
 def _ev_limpo(e):
     """Só os campos do contrato, com tipo e tamanho conferidos (o resto do evento é descartado)."""
     if not isinstance(e, dict) or e.get("tipo") not in EV_TIPOS:
@@ -6530,6 +6543,8 @@ def _ev_limpo(e):
           "resultado": txt(d.get("resultado"), 12), "n": num(d.get("n")), "reimpressao": bool(d.get("reimpressao")),
           "tempos": {k: txt(v, 30) for k, v in (d.get("tempos") if isinstance(d.get("tempos"), dict) else {}).items() if k in ("inicio", "escolha") and v} or None,
           "motivo": txt(d.get("motivo"), 40), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
+          # impressão: as fotos impressas; impressão e rolo: a leitura da DNP pelo programa de impressão do posto (auditoria do rolo)
+          "fotos": lista(d.get("fotos")) if e.get("tipo") == "impressao" else [], "dnp": _ev_dnp(d.get("dnp")),
           "galeria": (txt((d.get("galeria") or {}).get("codigo"), 12) if isinstance(d.get("galeria"), dict) else None)}
     # v92 (estatísticas): produtos, idioma, canal e a hora em que o cliente começou no Checkout. Campo inválido sai; a venda fica.
     em = txt(e.get("em"), 30) or _iso()
@@ -6599,7 +6614,7 @@ def metricas_dia(dia):
     (ponto/eventos) e vendas online (galerias/vendas-online.jsonl). Por fotógrafo, vendedor, posto e meio de pagamento."""
     m = {"dia": dia, "gerado": _iso(), "fotos": 0, "fotos_com_rosto": 0, "rostos": 0, "sessoes": 0, "sessoes_com_venda": 0,
          "vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0, "fotos_ia_vendidas": 0, "impressoes": 0, "impressoes_falhas": 0,
-         "canceladas": 0, "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0},
+         "canceladas": 0, "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0}, "rolo": {},
          "por_fotografo": {}, "por_vendedor": {}, "por_posto": {}, "por_meio": {}}
     try:
         db = rostos_db()
@@ -6645,6 +6660,31 @@ def metricas_dia(dia):
                 m["impressoes"] += int(d.get("n") or 0)
             else:
                 m["impressoes_falhas"] += int(d.get("n") or 0)
+        # auditoria do rolo por posto: o contador de vida da DNP (folhas que a impressora cortou) contra as fotos que o Eterna
+        # registrou como impressas. folhas_dnp - folhas_eterna > 0 = folha saída sem registro (fora do Eterna, erro, teste)
+        if e["tipo"] in ("impressao", "rolo") and isinstance(d.get("dnp"), dict):
+            dn = d["dnp"]
+            r = m["rolo"].setdefault(e.get("posto") or "sem posto", {"vida_ini": None, "vida_fim": None, "folhas_dnp": 0, "folhas_eterna": 0,
+                                                                       "reimpressoes": 0, "trocas": 0, "restantes": None, "leituras": 0})
+            r["leituras"] += 1
+            # o contador de vida só cresce: menor e maior do dia, sem depender da ordem dos eventos
+            for x in (dn.get("vida_antes"), dn.get("vida")):
+                if x is not None:
+                    r["vida_ini"] = x if r["vida_ini"] is None else min(r["vida_ini"], x)
+                    r["vida_fim"] = x if r["vida_fim"] is None else max(r["vida_fim"], x)
+            if dn.get("restantes") is not None and (dn.get("vida") or 0) >= r.get("_vr", -1):
+                r["restantes"], r["_vr"] = dn["restantes"], dn.get("vida") or 0
+            if dn.get("origem") == "troca":
+                r["trocas"] += 1
+            if e["tipo"] == "impressao" and d.get("resultado") == "ok":
+                r["folhas_eterna"] += int(d.get("n") or 0)
+                if d.get("reimpressao"):
+                    r["reimpressoes"] += int(d.get("n") or 0)
+    for r in m["rolo"].values():
+        if r["vida_ini"] is not None and r["vida_fim"] is not None:
+            r["folhas_dnp"] = max(0, r["vida_fim"] - r["vida_ini"])
+        r["diferenca"] = r["folhas_dnp"] - r["folhas_eterna"]
+        r.pop("_vr", None)
     com_venda = set()
     for v in vendas.values():
         c = v["criar"]
