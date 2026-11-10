@@ -1336,7 +1336,7 @@ const VIEWS=[
  ['fundos-teste','Fundos em teste','para uso futuro','Sistema'],
 ];
 // telas sem item no menu, mas com permissão própria (abertas por links dentro de outras telas)
-const VIEWS_EXTRA={checkout:'Venda manual',fila:'Fila do balcão',caixa:'Posto de venda (só Dinheiro)'}; // revisão: rótulo próprio do #caixa (Permissões e histórico)
+const VIEWS_EXTRA={checkout:'Venda manual',fila:'Fila do balcão',caixa:'Caixa'}; // revisão: rótulo próprio do #caixa (Permissões e histórico)
 // v94-ux (decisão 7): rótulo da tela para a pessoa logada; o menu e o h1 usam a mesma função (menu = título).
 // Preços e Checkout vira "Preços" para quem só lê os preços (sem catalogo.u e sem configuracao.r).
 const catCompleto=()=>can('catalogo','u')||can('configuracao','r');
@@ -1466,7 +1466,7 @@ function vCaixa(){
   const queue=demoSessions().filter(s=>s.status==='no caixa');const paid=demoSessions().filter(s=>s.status==='paga');
   const s=state.caixa.session?sessionObj(state.caixa.session):null;
   const detail=caixaDetalhe(s);
-  return `<div class="head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>Caixa</h1></div><div class="row">${roloPill()}<span class="pill neutral">Turno aberto</span></div></div>
+  return `<div class="head"><div><div class="eyebrow">${esc(postoNome())}</div><h1>Caixa</h1></div><div class="row">${roloSelo('good')}<span class="pill neutral">Turno aberto</span></div></div>
   <div class="twocol">
     <div style="display:flex;flex-direction:column;gap:14px;min-width:0">${pendPainel()}${impPainel()}<div class="panel"><h2>Fila do caixa</h2>${queue.length?`<div class="sess">${queue.map(s=>`<button class="scard" data-act="caixa-open" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span>${esc(P[s.key]?P[s.key].name:'')}</span><span>${fmtR(cartTotal(simOf(s.card).cart))}</span></div></button>`).join('')}</div>`:'<div class="note">Ninguém esperando. Monte um carrinho na fila do balcão.</div>'}</div>
     ${paid.length?`<div class="panel"><h2>Pagas hoje</h2><div class="tablewrap"><table><thead><tr><th>Sessão</th><th>Pagamento</th><th class="num">Total</th><th></th></tr></thead><tbody>${paid.map(s=>{const sim=simOf(s.card);return `<tr><td class="name">${esc(s.card)}</td><td>${esc(sim.payment)}</td><td class="num">${fmtR(saleTotal(sim))}</td><td><button class="chip" data-act="caixa-open" data-card="${s.card}">Recibo</button></td></tr>`}).join('')}</tbody></table></div></div>`:''}</div>
@@ -5305,7 +5305,7 @@ function vDiario(){
   </div>`;
 }
 
-const VIEWFN={estatisticas:vEstatisticas,calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:()=>vPosto({filtro:state.posto.filtroCaixa||'dinheiro'}),posto:()=>vPosto({filtro:state.posto.filtro}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const VIEWFN={estatisticas:vEstatisticas,calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:vCheckout,'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:vFila,caixa:vCaixa,posto:()=>vPosto({filtro:state.posto.filtro}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
     try{$('#main').innerHTML=vGaleriaQR();}catch(err){console.error(err);$('#main').innerHTML=`<div class="gq"><div class="gq-mid"><h1 class="lj-h2">${esc(T('gq_notFound'))}</h1></div></div>`;}
