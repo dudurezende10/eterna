@@ -46,12 +46,36 @@ a = R.regra(f, p, i, pt(520, 400))
 ok(a[400, 600] == 255 and a[500, 400] == 255, "5a: objeto encostado no punho deveria ficar: %r" % a[400, 600])
 a2 = R.regra(f, p, i, pt())
 ok(a2[400, 600] == 0, "5a: o mesmo objeto sem punho por perto e com pouco contato sai: %r" % a2[400, 580])
-# b) pedestal alto que desce ao chão, contato < 30%: sai (mesmo com a mão perto)
+# b) Eduardo (10/11, 21 fotos de campo): o objeto só sai quando está solto. Pedestal com taça grudado por uma ponta, sem
+# mão nem braço: sai; com a mão apoiada: fica; abraçado, com o braço atrás (o objeto cobre o membro da pose): fica inteiro
 f, p, i = base()
 f[500:511, 500:521] = 255                  # ponte curta até o pedestal
 f[500:951, 520:601] = 255                  # pedestal até o chão
-a = R.regra(f, p, i, pt(505, 505))
-ok(a[800, 560] == 0 and a[500, 400] == 255, "5b: pedestal que desce ao chão deveria sair: %r" % a[800, 560])
+a = R.regra(f, p, i, pt())
+ok(a[800, 560] == 0 and a[500, 400] == 255, "5b: pedestal solto que desce ao chão deveria sair: %r" % a[800, 560])
+a = R.regra(f, p, i, pt(525, 505))
+ok(a[800, 560] == 255, "5b: pedestal com a mão apoiada fica: %r" % a[800, 560])
+
+
+def braco_atras(cx_omb, y_omb, cx_cot, y_cot, cx_pun, y_pun, larg=100):
+    k = np.zeros((17, 3))
+    k[5] = (cx_omb - larg, y_omb, .9)
+    k[6] = (cx_omb, y_omb, .9)
+    k[8] = (cx_cot, y_cot, .9)                 # cotovelo e punho atrás do pedestal (fora da máscara de pessoa)
+    k[10] = (cx_pun, y_pun, .9)
+    return k
+
+
+abraco = braco_atras(480, 250, 560, 600, 640, 640)
+a = R.regra(f, p, i, pt(), (), pessoas=[abraco])
+ok(a[800, 560] == 255 and a[600, 560] == 255, "5b: pedestal abraçado (braço atrás) fica inteiro: %r" % [a[800, 560], a[600, 560]])
+# nunca cortar pessoa: tirando o pedestal solto, o braço que a pose vê encostado nele (fora do u2net) fica
+f2, p2, i2 = base()
+f2[500:511, 500:521] = 255
+f2[500:951, 560:621] = 255                 # pedestal mais afastado
+f2[430:441, 500:540] = 255                 # antebraço fora do u2net, até perto do pedestal (sem tocar)
+a = R.regra(f2, p2, i2, pt(), (), pessoas=[braco_atras(480, 250, 500, 420, 538, 435)])
+ok(a[800, 590] == 0 and a[435, 530] == 255, "5b: o pedestal solto sai e o braço da pose fica: %r" % [a[800, 590], a[435, 530]])
 # c) pessoa pequena separada (< 12% do maior) sai
 f, p, i = base()
 f[800:951, 650:701] = 255
@@ -94,6 +118,30 @@ ok(a[94, 300] == 255 and a[94, 285] == 255, "5g: óculos do acordo ISNet + u2net
 i2 = i.copy()
 i2[88:101, 280:331] = 0
 ok(R.regra(f, p, i2, pt())[94, 300] == 0, "5g: sem o acordo (só o u2net) não volta")
+# j) bandeira furada (Colo-Colo, 10/11): buraco interno de objeto grudado, sem a cor do fundo, é preenchido e sólido
+rgbf = np.zeros((H, W, 3), np.uint8)
+rgbf[:] = (40, 120, 60)                    # fundo verde
+f, p, i = base()
+f[150:451, 500:761] = 255                  # bandeira aberta grudada na pessoa
+rgbf[150:451, 500:761] = (240, 240, 240)
+f[250:351, 590:671] = 0                    # o miolo saiu furado no BiRefNet
+rgbf[250:351, 590:671] = (200, 30, 30)     # escudo vermelho (não é o fundo)
+a = R.regra(f, p, i, pt(520, 300), rgb=rgbf)
+ok(a[300, 630] == 255 and a[200, 700] == 255, "5j: miolo furado da bandeira preenchido: %r" % [a[300, 630], a[200, 700]])
+rgbv = rgbf.copy()
+rgbv[250:351, 590:671] = (40, 120, 60)     # o "buraco" mostra o fundo de fora: vão de verdade, fica aberto
+ok(R.regra(f, p, i, pt(520, 300), rgb=rgbv)[300, 630] == 0, "5j: buraco com a cor do fundo de fora fica aberto")
+iv = i.copy()
+iv[250:351, 590:671] = 255                 # o ISNet vê primeiro plano no miolo: preenche mesmo com cor parecida
+ok(R.regra(f, p, iv, pt(520, 300), rgb=rgbv)[300, 630] == 255, "5j: com o apoio do ISNet o miolo é preenchido")
+# k) vão real entre braço e corpo (cercado de pessoa) nunca é preenchido
+f, p, i = base()
+for m_ in (f, p):
+    m_[300:321, 500:621] = 255             # braço saindo
+    m_[300:501, 600:621] = 255             # antebraço descendo
+    m_[480:501, 500:621] = 255             # mão voltando ao quadril
+a = R.regra(f, p, p.copy(), pt(), rgb=rgbf)
+ok(a[400, 550] == 0 and a[310, 550] == 255, "5k: vão entre braço e corpo fica aberto: %r" % a[400, 550])
 # h) máscara de pessoa vazia: o maior componente do BiRefNet (A5)
 f, p, i = base()
 f[100:201, 600:701] = 255

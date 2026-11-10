@@ -37,6 +37,12 @@ RAIO_MAO = 0.04          # objeto "na mão" se encosta num raio de 4% da altura 
 FAIXA_REFINO = 0.02      # faixa (2% da altura) em volta do recorte onde ISNet + u2net podem somar
 FUNDO_PEQUENO = 0.12     # componente separado com < 12% da área do maior e que não encosta = pessoa ao fundo
 OMBROS_CRIANCA = 0.5     # A4: componente pequeno e separado fica se tem uma pessoa com ombros >= 0,5 da maior da foto
+PROTEGE_PESSOA = 0.004   # (10/11, braço cortado) ao tirar um objeto, a pessoa (u2net dilatada 0,4% da altura) e os membros da pose ficam
+MEMBRO_ESP = 0.30        # espessura do membro da pose = 30% da largura dos ombros (sem ombros: 2% da altura)
+BURACO_MAX = 0.04        # (10/11, bandeira furada) buraco interno de objeto grudado preenchido até 4% da imagem
+BURACO_OBJ = 0.5         # ...se pelo menos metade da borda dele é objeto (não pessoa: o vão entre braço e corpo é cercado de pessoa)
+BURACO_COR = 30          # ...e a cor dele não é a do fundo de fora (distância RGB média abaixo disto = fundo vazando: não preenche)
+BURACOS_MAX = 200        # teto de custo: buracos avaliados por foto
 GRUDADOS_MAX = 64        # teto de custo: no máximo 64 pedaços avaliados no passo "grudados" (o resto fica)
 REGRA_SEG = 1.5          # e no máximo 1,5 s na regra (o que não foi avaliado fica)
 TRAB = 1600              # maior lado da imagem entregue aos modelos
@@ -118,12 +124,77 @@ def ombros(pessoas, lim=0.2):
             for j in (5, 6, 11, 12) if k[j][2] >= lim]
 
 
-def regra(fino, pessoa, isnet, pts_mao, ancoras=(), info=None, limite_seg=REGRA_SEG, max_pedacos=GRUDADOS_MAX):
+_MEMBROS = ((5, 7), (7, 9), (6, 8), (8, 10), (11, 13), (13, 15), (12, 14), (14, 16))
+_VAOS = ((5, 7, 9, 11), (6, 8, 10, 12), (11, 13, 15, 16, 14, 12))   # entre braço e tronco (dos dois lados) e entre as pernas
+
+
+def pose_mascaras(pessoas, h, w, lim=0.2):
+    """(membros, vaos) uint8 h x w: os segmentos ombro-cotovelo-punho e quadril-joelho-tornozelo com espessura proporcional
+    aos ombros, e os polígonos dos vãos reais entre braço e tronco e entre as pernas."""
+    import numpy as np
+    import cv2
+    mem = np.zeros((h, w), np.uint8)
+    vao = np.zeros((h, w), np.uint8)
+    for k in pessoas or ():
+        lg = float(((k[5][0] - k[6][0]) ** 2 + (k[5][1] - k[6][1]) ** 2) ** 0.5) if k[5][2] >= lim and k[6][2] >= lim else 0
+        esp = max(3, int(MEMBRO_ESP * lg) if lg else int(0.02 * h))
+        for a, b in _MEMBROS:
+            if k[a][2] >= lim and k[b][2] >= lim:
+                cv2.line(mem, (int(k[a][0]), int(k[a][1])), (int(k[b][0]), int(k[b][1])), 1, esp)
+        for pol in _VAOS:
+            if all(k[j][2] >= lim for j in pol):
+                cv2.fillPoly(vao, [np.array([[int(k[j][0]), int(k[j][1])] for j in pol], np.int32)], 1)
+    return mem > 0, vao > 0
+
+
+def _buracos(manter, obj, isnet, pessoa, rgb, vao, h, w, log):
+    """(10/11, bandeira do Colo-Colo furada) buracos internos (fundo cercado, sem tocar a borda nem o fundo de fora) com a
+    borda em pelo menos metade de OBJETO grudado (não de pessoa), até BURACO_MAX da imagem: preenchidos. Não preenche o
+    vão real: buraco sobre o vão entre membros da pose, ou com a cor do fundo de fora (sem apoio do ISNet/u2net)."""
+    import numpy as np
+    import cv2
+    inv = (~manter).astype("uint8")
+    n, lab, st, _ = cv2.connectedComponentsWithStats(inv, 4)
+    fora = set(np.unique(np.concatenate([lab[0, :], lab[-1, :], lab[:, 0], lab[:, -1]])).tolist())
+    cand = [c for c in range(1, n) if c not in fora and st[c, cv2.CC_STAT_AREA] <= BURACO_MAX * h * w]
+    cand = sorted(cand, key=lambda c: -st[c, cv2.CC_STAT_AREA])[:BURACOS_MAX]
+    cheio = np.zeros_like(manter)
+    fundo_cor = None
+    for c in cand:
+        x0, y0, cw, ch = st[c, 0], st[c, 1], st[c, 2], st[c, 3]
+        X0, Y0, X1, Y1 = max(0, x0 - 2), max(0, y0 - 2), min(w, x0 + cw + 2), min(h, y0 + ch + 2)
+        B = lab[Y0:Y1, X0:X1] == c
+        anel = (cv2.dilate(B.astype("uint8"), np.ones((3, 3), "uint8")) > 0) & ~B
+        if anel.sum() == 0 or (anel & obj[Y0:Y1, X0:X1]).sum() < BURACO_OBJ * anel.sum():
+            continue                                 # cercado de pessoa: vão entre braço e corpo, entre as pernas
+        area = int(B.sum())
+        if vao is not None and (B & vao[Y0:Y1, X0:X1]).sum() > 0.2 * area:
+            log.append("  buraco %d px sobre o vão entre membros: fica aberto" % area)
+            continue
+        apoio = float(np.maximum(isnet[Y0:Y1, X0:X1], pessoa[Y0:Y1, X0:X1])[B].mean()) >= 128
+        if not apoio and rgb is not None:
+            if fundo_cor is None:                    # cor média do fundo de fora (o que toca a borda da foto)
+                F = np.isin(lab, list(fora - {0})) if len(fora - {0}) else ~manter
+                fundo_cor = rgb[F].reshape(-1, 3).mean(0) if F.any() else np.array([-999.0] * 3)
+            cor = rgb[Y0:Y1, X0:X1][B].reshape(-1, 3).mean(0)
+            if float(np.abs(cor - fundo_cor).mean()) < BURACO_COR:
+                log.append("  buraco %d px com a cor do fundo de fora: fica aberto" % area)
+                continue
+        cheio[Y0:Y1, X0:X1] |= B
+        log.append("  buraco %d px dentro de objeto: preenchido" % area)
+    return cheio
+
+
+def regra(fino, pessoa, isnet, pts_mao, ancoras=(), info=None, limite_seg=REGRA_SEG, max_pedacos=GRUDADOS_MAX, rgb=None, pessoas=None):
     """fino/pessoa/isnet: uint8 0..255 (mesmo tamanho). pts_mao: punhos (N x 2). ancoras: pontos (x, y) de ombro e
     quadril das pessoas grandes (A4). Devolve o alfa uint8. Cópia fiel de recorte2.regra do protótipo validado, com:
     (a) A4: componente pequeno e separado que contém uma âncora fica (criança separada do grupo);
     (b) A5: sem pixel de pessoa, fica o maior componente do BiRefNet (melhor levar a foto do que tirá-la da venda);
-    (c) teto de custo: no máximo max_pedacos pedaços avaliados no passo "grudados" e limite_seg no total (o resto fica)."""
+    (c) teto de custo: no máximo max_pedacos pedaços avaliados no passo "grudados" e limite_seg no total (o resto fica);
+    (d) 10/11 (21 fotos de campo, decisão do Eduardo): objeto grudado só sai quando está solto: com mão apoiada, contato de
+    10% ou mais, ou braço atrás ou na frente dele (membro da pose), fica inteiro; ao tirar, a pessoa (u2net dilatada) e os
+    membros nunca saem; buraco interno de objeto grudado (bandeira furada) é preenchido (_buracos).
+    rgb (a foto de trabalho) e pessoas (MoveNet) são opcionais: sem eles, (d) usa só o u2net."""
     import numpy as np
     import cv2
     t0 = time.time()
@@ -144,6 +215,9 @@ def regra(fino, pessoa, isnet, pts_mao, ancoras=(), info=None, limite_seg=REGRA_
     d = max(3, int(FAIXA_PESSOA * h))
     kd = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * d + 1, 2 * d + 1))
     Pd = cv2.dilate(P.astype("uint8"), kd) > 0
+    membros, vao = pose_mascaras(pessoas, h, w) if pessoas else (np.zeros((h, w), bool), None)
+    dp = max(2, int(PROTEGE_PESSOA * h))
+    Prot = (cv2.dilate(P.astype("uint8"), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dp + 1, 2 * dp + 1))) > 0) | membros
     n, lab, st, _ = cv2.connectedComponentsWithStats(F.astype("uint8"), 8)
     manter = np.zeros_like(F)
     comps = []
@@ -207,14 +281,20 @@ def regra(fino, pessoa, isnet, pts_mao, ancoras=(), info=None, limite_seg=REGRA_
         borda &= ~R
         contato = (borda & Pd[Y0:Y1, X0:X1]).sum() / max(1, borda.sum())
         pequeno = area < 0.003 * h * w               # acessório pequeno grudado (óculos, boné, relógio): fica
-        # objeto apoiado no chão (pedestal com troféu, placa) sai mesmo com mão por perto: quem segura algo não deixa o
-        # objeto ir até o chão. Exceção: contato grande (bandeira enrolada no corpo até o chão).
-        sai = (no_chao and contato < 0.30) or (not na_mao and not pequeno and contato < 0.10)
+        # Eduardo (10/11, depois do teste com 21 fotos de campo; substitui o "sai mesmo com a mão por perto" do protótipo):
+        # o objeto só sai quando está realmente solto. Mão apoiada (punho perto), contato de verdade com a pessoa (>= 10% da
+        # borda) ou braço atrás ou na frente dele (o objeto cobre parte de um membro da pose: tirar cortaria a pessoa) = fica
+        # inteiro, com o pedestal. Não dá para inventar braço.
+        toca_membro = int((R & membros[Y0:Y1, X0:X1]).sum()) > max(20, 0.002 * area)
+        interage = na_mao or contato >= 0.10 or toca_membro
+        sai = not interage and (no_chao or not pequeno)
         if sai:
             Rx = cv2.dilate(R.astype("uint8"), kd) > 0   # tira o pedaço, inclusive a lasca na faixa que não é pessoa
-            manter[Y0:Y1, X0:X1] &= ~(Rx & ~P[Y0:Y1, X0:X1])
-        log.append("  pedaço %d (%.1f%% img): chão=%s mão=%s contato=%.0f%% -> %s"
-                   % (c, 100 * area / (h * w), no_chao, na_mao, 100 * contato, "sai" if sai else "fica"))
+            manter[Y0:Y1, X0:X1] &= ~(Rx & ~Prot[Y0:Y1, X0:X1])   # a pessoa e os membros ficam (braço encostado na taça)
+        log.append("  pedaço %d (%.1f%% img): chão=%s mão=%s contato=%.0f%% membro=%s -> %s"
+                   % (c, 100 * area / (h * w), no_chao, na_mao, 100 * contato, toca_membro, "sai" if sai else "fica"))
+    buraco = _buracos(manter, manter & ~Pd, isnet, pessoa, rgb, vao, h, w, log) if time.time() - t0 <= limite_seg * 2 else np.zeros_like(manter)
+    manter |= buraco
     # alfa: o alfa suave do BiRefNet dentro das regiões mantidas (com a borda suave)
     km = manter.astype("uint8")
     zona = cv2.dilate(km, np.ones((9, 9), "uint8")) > 0
@@ -229,6 +309,7 @@ def regra(fino, pessoa, isnet, pts_mao, ancoras=(), info=None, limite_seg=REGRA_
     lig = np.isin(la, np.unique(la[manter])) & A
     soma = np.where(cv2.dilate(lig.astype("uint8"), np.ones((5, 5), "uint8")) > 0, acordo, 0)
     alfa = np.maximum(alfa, soma)
+    alfa[buraco] = 255                               # miolo da bandeira sólido (regra 13)
     if info is not None:
         info.extend(log + ["refino: +%.2f%% da imagem" % (100 * (lig & ~manter).sum() / (h * w))])
     return np.clip(alfa, 0, 255).astype("uint8")
@@ -312,12 +393,13 @@ def recortar(rc, origem, destino, trab=TRAB, info=None):
     fino, pes, isn, ms = rc.mascaras(tr)
     t = time.time()
     rgb = np.array(tr)
+    tr_rgb = rgb
     pessoas = rc.pose(rgb)
     pm, anc = punhos(pessoas), ombros(pessoas)
     ms["pose"] = int((time.time() - t) * 1000)
-    del tr, rgb
+    del tr
     t = time.time()
-    alfa = regra(fino, pes, isn, pm, anc, info)
+    alfa = regra(fino, pes, isn, pm, anc, info, rgb=np.asarray(tr_rgb), pessoas=pessoas)
     ms["regra"] = int((time.time() - t) * 1000)
     if not alfa.any():
         raise ValueError("sem_pessoa")
