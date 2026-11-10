@@ -2056,7 +2056,8 @@ function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=so
   const ph=lojaFotos(card).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi){o.lb=lojaBloco(p.ses);if(p.ses!==ant){o.blk=o.lb;ant=p.ses;}}return o;});
   const ai=lojaAI(card).map(x=>{if(!multi)return x;const p=ph.find(q=>q.id===x.id);const lb=p?p.lb:(x.ses?lojaBloco(x.ses):null);return lb?{...x,lb}:x;}); /* v93: a base de IA não está em ph */if(!ai.length)return ph;const at=Math.min(ph.length,Math.max(2,Math.floor(ph.length/2)));return [...ph.slice(0,at),...ai,...ph.slice(at)];}
 function lojaPick(card){const s=simOf(card);s.pick=s.pick||{};return s.pick;}
-function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const ks=Object.keys(pk).filter(k=>pk[k]==='ok'||pk[k]==='fav');s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();}
+// v96 (B2): só valem as marcas das fotos que este cliente vê (lojaItems); marca velha de outra pessoa da mesma sessão fica de fora
+function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const vale=new Set(lojaItems(card).map(x=>x.k));const ks=Object.keys(pk).filter(k=>(pk[k]==='ok'||pk[k]==='fav')&&vale.has(k));s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();}
 // v79: as fotos com fundo de IA contam dentro do pacote (decisão do Eduardo, 28/10): n = fotos do campo + fotos com fundo de IA.
 // Custo de um pacote para n fotos: pacote + fotos adicionais (o "Todas" não tem adicional). Preços sempre de priceOf (valem os do Catálogo).
 // Catálogo novo (28/10, correção das 10:44): a foto adicional é digital e impressa, então impressas = min(n, impressas do pacote) + adicionais.
@@ -2099,7 +2100,11 @@ const ICO={
   cloud:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 9.5z"/><path d="M12 11v6M9.5 14.5L12 17l2.5-2.5"/></svg>',
   full:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   list:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'};
-function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{step:'code',t0:null,code:'',so:null,tv:null,lgOpen:false,camOn:false,minhas:false,minhasI:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
+// v96 (B2): o Checkout voltou ao início (ou abriu por selfie): as marcas do cliente anterior saem da sessão. Sessão paga fica como está;
+// com pedido aberto, o pedido guarda as fotos dele e a sessão só perde as marcas do Checkout
+function lojaPickLimpa(card){const s=card&&SIM.sessions[card];if(!s||s.status==='paga'||!s.pick||!Object.keys(s.pick).length)return false;
+  s.pick={};if(s.status!=='aguardando'){s.selected=[];s.aiSel=[];s.fav=[];}saveSim();return true;}
+function lojaReset(){const k=state.kiosk;if(k.code)lojaPickLimpa(k.code);state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{step:'code',t0:null,code:'',so:null,tv:null,lgOpen:false,camOn:false,minhas:false,minhasI:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 // relê o SIM da outra janela sem perder as escolhas desta sessão no Checkout
 function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk)simOf(card).pick=pk;}
 // revisão 1: nenhuma forma de pagamento tira uma sessão de "paga" (comprar mais é com a equipe)
@@ -2118,9 +2123,11 @@ async function lojaPedido(card,meio){const escolha=meio==null;meio=escolha?null:
   // sozinha (IMPORTANTE 1 da segurança) ou sessão em que a pessoa só aparece no fundo (B5)
   const junta=sessoes.length>1||lojaSesProtegida(card)||!!(so&&sessoes.some(c=>{const x=sessionObj(c);return x&&x.photos.some(p=>!so.ids.includes(p.id));}));
   const tok=junta?galDaVendaJunta(card,sessoes,lojaFotos(card).map(p=>p.id)):galDaSessao(card,true);const m=SIM.galerias[tok];
+  const pkc=lojaPick(card); // B2: as fotos do pedido são as que o cliente vê e marcou (c.ch), nunca o que sobrou na sessão
+  const selR=c.ch.filter(x=>x.t==='ph').map(x=>x.id),aiR=c.ch.filter(x=>x.t==='ai').map(x=>x.id+'|'+x.bg),favR=c.ch.filter(x=>pkc[x.k]==='fav').map(x=>x.k);
   const id=pvId();const prov=escolha?null:meio==='dinheiro'?'dinheiro':pagProv();const ini=escolha||meio==='dinheiro'?{estado:'aguardando'}:((PAG_PROV[prov]&&PAG_PROV[prov].iniciar({id,meio,total:c.total}))||{estado:'aguardando'});
   const rec={id,venue:(typeof VENUE_CFG!=='undefined'&&VENUE_CFG&&VENUE_CFG.id)||'maracana',card,sessoes,token:tok,codigo:m.codigo,criada:now().toISOString(),total:escolha?null:c.total,prints:escolha?null:c.prints,n:c.ch.length,nPh:c.nPh,nAI:c.nAI,
-    cart:escolha?[]:c.cart.map(x=>({...x})),selected:(s.selected||[]).slice(),aiSel:(s.aiSel||[]).slice(),fav:(s.fav||[]).slice(),meio,prov,saleNo,vendedor:postoVendedor(),posto:postoNome(),
+    cart:escolha?[]:c.cart.map(x=>({...x})),selected:selR,aiSel:aiR,fav:favR,meio,prov,saleNo,vendedor:postoVendedor(),posto:postoNome(),
     canal:'checkout',t0:k.t0||null,estado:escolha?'escolha':'aguardando',iniciado:ini.estado||'aguardando',fechada:null,por:null,porNome:null,motivo:null};
   if(escolha)Object.assign(rec,{escolha:true,pkg:null,nSes:c.nSes,lang:lang()});
   SIM.caixaDin=SIM.caixaDin||[];SIM.caixaDin.unshift(rec);s.status='aguardando';s.din=id;state.lojaEquipeAte=0;k.aviso=null;
@@ -4942,7 +4949,7 @@ function camStatus(){const el=$('#cam-st');const f=$('#cam-face');if(!el)return;
 function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Date.now();c.status='searching';camStatus();
   const ok=x=>state.view==='quiosque'||x.status!=='paga'; // checkout: toda sessão ainda não paga (como a lista ao lado); quiosque: todas
   const open=(card,fotos)=>{c.busy=false;c.status='found';camStatus();
-    if(state.view==='quiosque'){lojaCliente();state.kiosk.code=card;state.kiosk.so={card,ids:fotos||[]};state.kiosk.step='gallery';toast(T('foundYou'));render();iaAquecer(card);}
+    if(state.view==='quiosque'){lojaCliente();lojaPickLimpa(card);state.kiosk.code=card;state.kiosk.so={card,ids:fotos||[]};state.kiosk.step='gallery';toast(T('foundYou'));render();iaAquecer(card);}
     else if(state.view==='checkout'){toast('Encontramos: '+card);checkoutPick(card);}
     else{c.status='idle';}};
   const v=$('#cam-video');
@@ -4975,7 +4982,7 @@ function lojaIdsSo(minhas){return Object.keys(minhas).filter(c=>sessionObj(c)).s
 function lojaAbrirSo(minhas,anc){const k=state.kiosk;const cards=Object.keys(minhas).filter(c=>sessionObj(c)&&(minhas[c]||[]).length).sort((a,b)=>sesHora(a)-sesHora(b));
   if(!cards.length){lojaReset();const c=state.cam;c.status='nomatch';render();setTimeout(()=>{if(c.status==='nomatch'){c.status='idle';camStatus();}},6000);return;}
   if(!cards.includes(anc))anc=cards[0];
-  const ids=lojaIdsSo(minhas);
+  const ids=lojaIdsSo(minhas);lojaPickLimpa(anc); // B2: marca velha de quem usou a mesma sessão antes não aparece nem entra no pedido
   Object.assign(k,{code:anc,so:{card:anc,cards,ids},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
   toast(T('foundYou'));render();lojaPreload(anc);iaAquecer(anc);}
 // proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
@@ -5338,7 +5345,7 @@ document.addEventListener('click',e=>{
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':{const c=state.caixa.session;state.caixa.reprint=state.caixa.reprint===c?null:c;render();break;} // v83: abre o painel de impressão desta venda (sem baixa aqui)
     case 'kiosk-go':{lojaCliente();const k=state.kiosk;const r=lojaCodigo(($('#kcode')||{}).value||'');if(!r)break;
-      k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;render();iaAquecer(r.card);break;}
+      lojaPickLimpa(r.card);k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;render();iaAquecer(r.card);break;} // B2: outra janela pode ter regravado marcas antigas
     case 'kiosk-back':lojaReset();render();break;
     case 'kiosk-start':lojaCamLigar();break;
     case 'kiosk-emerg':{lojaCliente();state.kiosk.camOn=false;if(state.kiosk.timer){clearTimeout(state.kiosk.timer);state.kiosk.timer=null;}state.kiosk.step='emerg';render();const el=$('#kcode');if(el)el.focus();break;}

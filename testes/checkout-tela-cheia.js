@@ -220,7 +220,7 @@ ok(await V.evaluate(id=>/saiu da tela/.test((document.querySelector(`[data-pend=
 await L.evaluate(()=>ETERNA.lojaProntoMs(180000));
 // toque conta como presença
 await abrir(cards[1]);await L.evaluate(()=>{ETERNA.lojaProntoMs(600);});await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(450);const idV3=await pend();
-await sleep(700);await L.keyboard.press('Shift');await L.evaluate(()=>ETERNA.lojaProntoOcioso());ok(await L.evaluate(()=>ETERNA.state.kiosk.step)==='done','S2: com toque recente a tela Pronto fica');await L.evaluate(()=>ETERNA.lojaProntoMs(180000));
+await L.evaluate(()=>{const k=ETERNA.state.kiosk;k.prontoDesde=Date.now()-5000;k.toque=0;});await L.keyboard.press('Shift');await L.evaluate(()=>ETERNA.lojaProntoOcioso());ok(await L.evaluate(()=>ETERNA.state.kiosk.step)==='done','S2: com toque recente a tela Pronto fica');await L.evaluate(()=>ETERNA.lojaProntoMs(180000));
 await V.evaluate(ids=>{ETERNA.simFresh();ids.forEach(id=>{const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.estado==='escolha')ETERNA.dinCancelar(id);});},[idV2,idV3]);await L.waitForTimeout(300);
 // S4: pedido com fotos que não batem com o número é recusado
 await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(450);const idS4=await pend();
@@ -239,7 +239,34 @@ await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.wait
 await V.evaluate(()=>{ETERNA.simFresh();ETERNA.render();});await V.waitForTimeout(200);await V.click(`[data-pend="${id2}"] [data-act="din-cancel"]`);await V.waitForTimeout(100);await V.click(`[data-act="din-cancel-ok"][data-id="${id2}"]`);
 for(let i=0;i<20;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'))break;await sleep(100);}
 ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!!document.querySelector('[data-act="kiosk-start"]')),'P4: cancelado pelo caixa, o cliente volta ao início');
+//@@REVISAO2
+// B2: marca velha de outra pessoa da mesma sessão não entra no pedido. A marca e sai; B abre por selfie, marca 1 e continua: pedido só com a foto de B
+{const cB=cards[1];await abrir(cB);const todas=await L.evaluate(c=>ETERNA.lojaItems(c).filter(x=>x.t==='ph').map(x=>x.id),cB);
+  await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(80);
+  ok(await L.evaluate(c=>Object.keys(ETERNA.lojaPick(c)).length,cB)===2,'B2: A marcou 2');
+  await L.click('#lj-lb [data-act="loja-new"]');await L.waitForTimeout(200);
+  const lim=await L.evaluate(c=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')).sessions[c]||{};return {pk:Object.keys(s.pick||{}).length,sel:(s.selected||[]).length};},cB);
+  ok(lim.pk===0&&lim.sel===0,'B2: voltar ao início sem pedido limpa as marcas da sessão: '+JSON.stringify(lim));
+  // marcas que sobraram de outra janela (fechada no meio da escolha): fotos que B não vê
+  const velhas=todas.slice(0,2),deB=todas.slice(4,6);
+  await L.evaluate(([c,v])=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const s=S.sessions[c]=S.sessions[c]||{};s.pick={[v[0]]:'ok',[v[1]]:'fav'};s.selected=v.slice();s.fav=[v[1]];localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.simFresh();},[cB,velhas]);
+  ok(await L.evaluate(c=>Object.keys(ETERNA.lojaPick(c)).length,cB)===2&&!(await L.evaluate(()=>ETERNA.state.kiosk.code)),'B2: marcas velhas na sessão antes da selfie de B');
+  await L.evaluate(([c,ids])=>ETERNA.lojaAbrirSo({[c]:ids},c),[cB,deB]);
+  await L.waitForTimeout(500);
+  const ab=await L.evaluate(c=>({step:ETERNA.state.kiosk.step,itens:ETERNA.lojaItems(c).filter(x=>x.t==='ph').map(x=>x.id),pk:Object.keys(ETERNA.lojaPick(c))}),cB);
+  ok(ab.step==='review'&&ab.itens.join()===deB.join()&&!ab.pk.length,'B2: abrir por selfie limpa as marcas velhas e mostra só as fotos de B: '+JSON.stringify(ab));
+  // mesmo que uma marca velha reapareça (outra janela gravou), ela fica fora do pedido
+  await L.evaluate(([c,v])=>{const pk=ETERNA.lojaPick(c);pk[v[0]]='ok';pk[v[1]]='fav';},[cB,velhas]);
+  await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(80);
+  const ses=await L.evaluate(c=>ETERNA.SIM.sessions[c].selected.slice(),cB);ok(ses.join()===deB[0],'B2: lojaSync ignora marca de foto que o cliente não vê: '+ses.join());
+  await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idB2=await pend();
+  const rB=await L.evaluate(id=>ETERNA.SIM.caixaDin.find(x=>x.id===id),idB2);
+  ok(rB&&rB.n===1&&rB.selected.join()===deB[0]&&!rB.aiSel.length&&!(rB.fav||[]).length,'B2: pedido n:1 só com a foto de B: '+JSON.stringify(rB&&{n:rB.n,sel:rB.selected,fav:rB.fav}));
+  await posto(idB2,{pkg:'arq'});await posto(idB2,{meio:'dinheiro'});await confirma(idB2);
+  const fim=await L.evaluate(([id,c])=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=S.caixaDin.find(x=>x.id===id);return {est:r.estado,sel:S.sessions[c].selected,st:S.sessions[c].status};},[idB2,cB]);
+  ok(fim.est==='confirmada'&&fim.st==='paga'&&fim.sel.join()===deB[0],'B2: o Posto confirma e a venda fica só com a foto de B: '+JSON.stringify(fim));}
 
+if(!process.env.RAPIDO){
 // ---- P6: a venda registrada sai igual à de antes (app da v94) para a mesma escolha, pacote e meio
 // v96: matriz (o.nPh fotos do campo + o.nAI com fundo de IA, pacote o.pkg, meio o.meio). As fotos são marcadas do mesmo jeito nos dois apps
 const venda=async(pg,vend,antigo,o)=>{const card=cardsIA[0];await pg.goto(pg.url().split('#')[0]+'#loja');await pg.evaluate(()=>{localStorage.removeItem('eterna.sim.v1');localStorage.removeItem('eterna.ponto.fila.v1');});await pg.reload();await pg.waitForTimeout(500);
@@ -344,6 +371,7 @@ for(const [w,h] of TAMANHOS){await L.setViewportSize({width:w,height:h});const c
 }
 const etapas=['camera','camera ligada','codigo','escolha','escolha marcada','todas','pronto','valor','minhas','final','galeria'];
 console.log('tamanho | '+etapas.join(' | '));for(const t of Object.keys(tabela))console.log(t+' | '+etapas.map(e=>tabela[t][e]||'-').join(' | '));
+} // RAPIDO=1 pula a matriz da v94, a mesma origem com a v95 e os 10 tamanhos (só para iterar; a suíte roda tudo)
 }catch(e){fails.push('exceção (depois de: '+ult+'): '+String(e.message||e).split('\n').slice(0,3).join(' / '));}
 finally{await b.close().catch(()=>{});for(const sv of servidores){try{sv.p.kill('SIGTERM');}catch(e){}try{fs.rmSync(sv.dir,{recursive:true,force:true});}catch(e){}}}
 const okk=!fails.length&&!errs.length;console.log(`${okk?'OK':'FALHA'} checkout-tela-cheia: ${n} verificações (tela cheia, Iniciar, sem preço no Checkout, caixa escolhe o pacote, venda igual à v94 em ${8} combinações, janela antiga, revisão 6 a 8, S1 a S5, 10 tamanhos)${fails.length?' · '+fails.slice(0,14).join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();
