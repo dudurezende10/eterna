@@ -242,7 +242,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .imp-ia{position:absolute;left:3px;bottom:3px;font-size:11px;font-weight:800;padding:1px 6px;border-radius:3px;background:#FFB800;color:#0C2340}
 .mv-tab td,.mv-tab th{white-space:nowrap}
 #print-root{display:none}
-@page foto{size:102mm 152mm;margin:0}
+@page foto{margin:0} /* sem tamanho fixo: a foto ocupa o papel escolhido na impressora (o PR 4x6 da DNP passa um pouco de 10x15 para sair sem borda) */
 .if-wrap{display:flex;flex-direction:column;gap:14px;height:calc(100vh - 80px);min-height:420px}
 .if-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
 .if-head h1{margin:0}
@@ -289,10 +289,10 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
   html:has(body.pr-on),body.pr-on{height:auto!important;margin:0!important;background:#fff!important}
   body.pr-on>*:not(#print-root){display:none!important}
   body.pr-on #print-root{display:block}
-  #print-root .pr-pg{page:foto;width:102mm;height:152mm;position:relative;overflow:hidden;break-after:page;page-break-after:always;margin:0;padding:0}
+  #print-root .pr-pg{page:foto;width:100vw;height:100vh;position:relative;overflow:hidden;break-after:page;page-break-after:always;margin:0;padding:0}
   #print-root .pr-pg:last-child{break-after:auto;page-break-after:auto}
-  #print-root .pr-box{position:absolute;left:0;top:0;width:102mm;height:152mm;overflow:hidden}
-  #print-root .pr-pg.land .pr-box{width:152mm;height:102mm;left:50%;top:50%;transform:translate(-50%,-50%) rotate(90deg)}
+  #print-root .pr-box{position:absolute;left:0;top:0;width:100vw;height:100vh;overflow:hidden}
+  #print-root .pr-pg.land .pr-box{width:100vh;height:100vw;left:50%;top:50%;transform:translate(-50%,-50%) rotate(90deg)}
   #print-root img{display:block;width:100%;height:100%;object-fit:cover;filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
 }
 .qr{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
