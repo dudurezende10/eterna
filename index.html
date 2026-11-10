@@ -422,7 +422,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-gcard{display:block}.lj-gview{display:block;width:100%;border:0;padding:0;background:none;cursor:zoom-in;position:relative}
 .lj-gimg.spr{aspect-ratio:3/2}
 .lj-gok{border:0;cursor:pointer;z-index:2}
-/* v95 (Eduardo, 09/11): escolha com a foto na tela inteira (inteira à vista, fundo azul escuro); por cima, em overlay pequeno e semitransparente,
+/* v96 (Eduardo, 09/11): escolha com a foto na tela inteira (inteira à vista, fundo azul escuro); por cima, em overlay pequeno e semitransparente,
    só setas, ✓, ✗, logo, contador, um canto com idioma, início, carrinho e Ver todas, e o Continuar quando há foto marcada */
 .lj-lb{position:fixed;inset:0;z-index:60;background:#0A1C33;overflow:hidden}
 .lj-lbmid{position:absolute;inset:0;min-height:0;display:flex;align-items:center;justify-content:center}
@@ -558,7 +558,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-qr{width:150px;height:150px;display:flex;align-items:center;justify-content:center}
 @media (max-width:900px){.lj-co{grid-template-columns:1fr}.lj-order{position:static}.lj-steps span{font-size:0;gap:0}.lj-steps i{width:12px}}
 @media (max-width:640px){.lj-stage{grid-template-columns:minmax(0,1fr)}.lj-nav{display:none}.lj-print{width:100%}.lj-foot{flex-direction:column;align-items:stretch}.lj-next{width:100%}.lj-strip{order:2}.lj-cartpill span{display:none}.lj-steps{display:none}.lj-pkg{grid-template-columns:20px 44px minmax(0,1fr) auto;}.lj-pkg .lj-badge{display:none}.lj-pkgn{font-size:26px}.lj-minis{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.lj-no{width:64px;height:64px}.lj-yes{width:84px;height:84px}.lj .lj-v{opacity:.3}}
-/* v95: janela do Windows não maximizada (ex.: 1366×657): a câmera cabe sem rolar */
+/* v96: janela do Windows não maximizada (ex.: 1366×657): a câmera cabe sem rolar */
 @media (max-height:700px){.lj-heroin{gap:10px}}
 @media (max-height:700px) and (min-width:641px){.lj-print{width:min(100%,calc((100vh - 300px) * 1.5))}.lj-title{margin:0 0 4px}.lj-h1{font-size:clamp(36px,6vw,64px)}}
 .lj .lj-photo{position:absolute;inset:0;z-index:0;background:url(img/bg-noite.jpg) center 30%/cover no-repeat;opacity:.2;mix-blend-mode:luminosity;-webkit-mask:linear-gradient(180deg,transparent 0%,#000 30%,#000 70%,transparent 100%);mask:linear-gradient(180deg,transparent 0%,#000 30%,#000 70%,transparent 100%);pointer-events:none}
@@ -579,13 +579,13 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-total b{font-size:40px}
 @media (max-width:1100px){.lj-steps span{font-size:0;gap:0}.lj-steps i{width:10px}}
 @media (max-width:640px){.lj-langs button{width:32px;height:32px;padding:3px}.lj-langs .lj-flag{width:24px;height:24px}.lj-top{flex-wrap:wrap}.lj-logo .vlogo{height:26px!important}}
-/* v95: câmera ligada com título menor; em tela estreita as bandeiras do topo recolhem no botão de idioma */
+/* v96: câmera ligada com título menor; em tela estreita as bandeiras do topo recolhem no botão de idioma */
 .lj-camon .lj-h1{font-size:clamp(30px,5.5vh,64px)}.lj-camon .lj-eyebrow{display:none}
 .lj-top .lj-lgov .lj-lgbtn{display:none}
 @media (max-width:640px){.lj .lj-top .lj-lgov .lj-langs{display:none}.lj .lj-top .lj-lgov .lj-lgbtn{display:inline-flex}
   .lj .lj-top .lj-lgov.open .lj-langs{display:flex;flex-direction:column;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:5;padding:4px;border-radius:36px;background:rgba(10,28,51,.92)}}
 .lj .lj-ghost{min-width:72px;justify-content:center}.lj .lj-cartpill{min-width:72px;justify-content:center}
-/* v95 (P5): no Checkout todo alvo de toque tem pelo menos 72 px (o desenho pode ser menor; a área do toque não) */
+/* v96 (P5): no Checkout todo alvo de toque tem pelo menos 72 px (o desenho pode ser menor; a área do toque não) */
 .lj .lj-langs button{width:72px;height:72px;padding:0}.lj .lj-langs .lj-flag{width:32px;height:32px}
 .lj .lj-ic{width:72px;height:72px}.lj .lj-ghost,.lj .lj-ghost.sm{min-height:72px}.lj .lj-cta{min-height:72px}.lj .lj-cartpill{height:72px}
 .lj .lj-gok{width:72px;height:72px;right:0;top:0;background:transparent!important;box-shadow:none;opacity:1}
@@ -1122,7 +1122,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v95 · 09/11 20:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v95</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v96 · 09/11 22:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v96</span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1471,14 +1471,14 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   Object.assign(r,{estado:'confirmada',fechada:at,por:u.email,porNome:u.name,motivo:null,saleNo:s.saleNo,ref});const criar=r.escolha&&!r.pvCriado;if(criar)r.pvCriado=true;
   log(`${MEIO_NOME[meio]} confirmado: ${(r.sessoes||[r.card]).join(' + ')} ${fmtR(r.total)} por ${u.name}${ref?' · NSU '+ref:''}`);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return false;} // I3: nada muda se não gravou
-  if(criar)pvEvento('criar',r.id,pvDados(r),{em:r.criada,por:null}); // v95: o mesmo "criar" que o Checkout mandava, com a hora do pedido e sem autor
+  if(criar)pvEvento('criar',r.id,pvDados(r),{em:r.criada,por:null}); // v96: o mesmo "criar" que o Checkout mandava, com a hora do pedido e sem autor
   if(r.meio)pvEvento('pagar',r.id,{ref,prov});
   if(pontoModo()!=='posto')galDaVenda(r.card,r.token);
   state.pend.ref=null;state.pend.err=null;if(state.view==='caixa')state.caixa.session=r.card;
   const imp=s.impressao&&s.impressao.estado==='pendente'?' Agora imprima as fotos.':'';
   toast(meio==='dinheiro'?`Recebido ${fmtR(r.total)}.${imp}`:`Pagamento confirmado.${imp}`);render();return true;}
 function dinConfirmar(id){return pendConfirmar(id,{});}
-// v95 (P3): o caixa escolhe (ou troca) o pacote e o meio do pedido do Checkout. Mesmo cálculo de antes (vendaCalc); a tela do cliente mostra o valor
+// v96 (P3): o caixa escolhe (ou troca) o pacote e o meio do pedido do Checkout. Mesmo cálculo de antes (vendaCalc); a tela do cliente mostra o valor
 function pendEscolher(id,o){const r=dinPegar(id);if(!r)return false;if(!r.escolha){toast('Esta compra já veio com o pacote escolhido');return false;}const antes=JSON.stringify(SIM);
   if(o.pkg){const c=vendaCalc(r.n,r.nSes||r.n,o.pkg);if(!c.pkg)return false;Object.assign(r,{pkg:c.pkg,cart:c.cart.map(x=>({...x})),total:c.total,prints:c.prints});}
   if(o.meio&&MEIO_NOME[o.meio]){const prov=o.meio==='dinheiro'?'dinheiro':pagProv();const ini=o.meio==='dinheiro'?{estado:'aguardando'}:((PAG_PROV[prov]&&PAG_PROV[prov].iniciar({id:r.id,meio:o.meio,total:r.total}))||{estado:'aguardando'});Object.assign(r,{meio:o.meio,prov,iniciado:ini.estado||'aguardando'});}
@@ -1486,7 +1486,7 @@ function pendEscolher(id,o){const r=dinPegar(id);if(!r)return false;if(!r.escolh
 function dinCancelar(id){const r=dinPegar(id);if(!r)return;const antes=JSON.stringify(SIM);
   dinFechar(id,'cancelada','cancelada_no_caixa',state.user);log(`${MEIO_NOME[meioDe(r)]} cancelado: ${r.card} ${fmtR(r.total)} por ${state.user.name}`);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return;}pvCancelEv(r,'cancelada_no_posto');toast('Compra cancelada. Ela não vira venda.');render();}
-const pvCancelEv=(r,motivo)=>{if(r&&r.meio&&(!r.escolha||r.pvCriado))pvEvento('cancelar',r.id,{motivo});}; // v95: pedido do Checkout ainda sem "criar" no servidor não manda cancelar
+const pvCancelEv=(r,motivo)=>{if(r&&r.meio&&(!r.escolha||r.pvCriado))pvEvento('cancelar',r.id,{motivo});}; // v96: pedido do Checkout ainda sem "criar" no servidor não manda cancelar
 // painel "Aguardando pagamento" (Posto de venda e Caixa): só na tela da equipe (nunca no Checkout nem no painel escondido da equipe do Checkout)
 function pendPainel(){const L=dinAbertas();const q=(state.caixa.dinQ||'').toUpperCase().replace(/[^A-Z0-9]/g,'');const rw=can('venda','c');
   const norm=x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');const vis=q?L.filter(r=>norm(r.codigo).includes(q)||norm(r.card).includes(q)):L;
@@ -1508,7 +1508,7 @@ function pendPainel(){const L=dinAbertas();const q=(state.caixa.dinQ||'').toUppe
   return `<div class="panel" id="pend-painel"><div class="head"><h2>Aguardando pagamento</h2>${L.length?`<span class="pill ${dinAtrasada()?'warn':'neutral'}">${L.length}</span>`:''}</div>
     ${L.length?`${`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="Código do cliente (XXXX-XXXX) ou sessão" aria-label="Buscar pagamento" autocomplete="off">`}${vis.length?`<div class="din-list">${vis.map(item).join('')}</div>`:'<div class="note">Nenhum pagamento com esse código.</div>'}`:'<div class="note">Nenhum pagamento esperando. Quando o cliente escolher Cartão, PIX ou Dinheiro no Checkout, a compra aparece aqui.</div>'}</div>`;}
 const dinPainel=pendPainel; // nome da v79
-// v95 (P3): pedido do Checkout sem pacote. O caixa vê as fotos escolhidas (com as de fundo de IA), escolhe o pacote e o meio e confirma como antes
+// v96 (P3): pedido do Checkout sem pacote. O caixa vê as fotos escolhidas (com as de fundo de IA), escolhe o pacote e o meio e confirma como antes
 function pendEscolhaItem(r,o){const n=r.n||0;const ideal=lojaIdeal(n).pkg;const pronto=r.total!=null&&r.pkg&&MEIO_NOME[r.meio];
   const fotos=[...(r.selected||[]).map(id=>({t:'ph',id})),...(r.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {t:'ai',id,bg};})];
   const th=x=>x.t==='ai'?`<div class="pend-th ai">${lojaThumb(x)}</div>`:`<button class="pend-th" style="${phStyle(x.id)}" data-act="zoom" data-id="${esc(x.id)}" aria-label="Foto"></button>`;
@@ -1738,7 +1738,7 @@ state.eco=null;let ecoUlt=0,ecoTimer=null;
 function lojaEcoMsg(){const k=state.kiosk;const m={tipo:'estado',em:Date.now(),step:k.step,lang:lang()};
   if(k.code&&(k.step==='review'||k.step==='cart'||k.step==='done')&&sessionObj(k.code)){const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);
     m.card=k.code;m.i=Math.max(0,Math.min(items.length-1,k.i||0));m.n=items.length;const x=items[m.i];if(x)m.foto={t:x.t,id:x.id,bg:x.bg||null,st:pk[x.k]||''};
-    m.esc=c.ch.map(x=>({t:x.t,id:x.id,bg:x.bg||null,fav:pk[x.k]==='fav'}));m.pkg=null;m.ideal=c.n?lojaIdeal(c.n).pkg:null;m.lines=[];m.total=null;m.prints=0;m.pay=null;} // v95: pacote e valor são do caixa
+    m.esc=c.ch.map(x=>({t:x.t,id:x.id,bg:x.bg||null,fav:pk[x.k]==='fav'}));m.pkg=null;m.ideal=c.n?lojaIdeal(c.n).pkg:null;m.lines=[];m.total=null;m.prints=0;m.pay=null;} // v96: pacote e valor são do caixa
   if(k.step==='done'&&k.paid){m.pend=k.paid.pend||null;m.wait=!!k.paid.wait;m.total=k.paid.total;m.meio=k.paid.meio||null;m.pkg=k.paid.pkg||null;}
   return m;}
 function lojaEco(){if(!ECO_CH||!state.lojaRota)return;const d=Date.now()-ecoUlt;if(d<300){if(!ecoTimer)ecoTimer=setTimeout(()=>{ecoTimer=null;lojaEco();},300-d);return;}
@@ -2035,7 +2035,7 @@ function lojaCart(card){const items=lojaItems(card);const pk=lojaPick(card);cons
   const pkg=n?(k.pkg&&DATA.catalog.some(c=>c.id===k.pkg&&c.kind==='pacote')?k.pkg:lojaIdeal(n).pkg):null;
   const nSes=items.filter(x=>x.t==='ph').length+nAI; // "Todas": todas as fotos do campo da sessão + as de fundo de IA escolhidas
   return Object.assign({ch,nPh,nAI,n},vendaCalc(n,nSes,pkg));}
-// v95 (P3): o preço de uma escolha (n fotos, pacote) sai daqui, no Checkout antigo e no Posto de venda: mesmo carrinho, total, impressas e economia
+// v96 (P3): o preço de uma escolha (n fotos, pacote) sai daqui, no Checkout antigo e no Posto de venda: mesmo carrinho, total, impressas e economia
 function vendaCalc(n,nSes,pkg){pkg=n&&pkg&&DATA.catalog.some(c=>c.id===pkg&&c.kind==='pacote')?pkg:null;const P0=pkg&&DATA.catalog.find(c=>c.id===pkg);const todas=!!P0&&P0.digital==='todas';
   const extra=P0&&!todas?Math.max(0,n-P0.digital):0;
   const cart=cartComPreco([...(pkg?[{id:pkg}]:[]),...Array(extra).fill(0).map(()=>({id:'extra'}))]);const total=cartTotal(cart);
@@ -2078,7 +2078,7 @@ function lojaFim(paid){const k=state.kiosk;lojaTimerOff();k.step='done';k.paid=p
 function lojaPay(m){lojaPedido(state.kiosk.code,PAY_MEIO[m]||m);}
 // v79/v83: Cartão, PIX e Dinheiro no Checkout ficam "aguardando". Nada de venda, estoque, fundo comprado ou galeria publicada até o vendedor confirmar no Posto de venda (ou no Caixa).
 // O código que o cliente vê é o da galeria (XXXX-XXXX): o token nasce agora, mas só é publicado na confirmação (D2 da v79).
-// v95 (P2): sem meio, o pedido sai do Checkout sem pacote, sem valor e sem meio (escolha:true); o caixa escolhe no Posto (pendEscolher)
+// v96 (P2): sem meio, o pedido sai do Checkout sem pacote, sem valor e sem meio (escolha:true); o caixa escolhe no Posto (pendEscolher)
 async function lojaPedido(card,meio){const escolha=meio==null;meio=escolha?null:MEIO_NOME[meio]?meio:'dinheiro';if(state.lojaPedindo)return;lojaFresh(card);if(lojaJaPaga(card)){toast(T('ljAlreadyPaid'));render();return;}if(!lojaCart(card).ch.length)return;
   state.lojaPedindo=true;let saleNo;try{saleNo=await pvSaleNo();}finally{state.lojaPedindo=false;}if(state.kiosk.code!==card)return; // número tirado sob a trava da fila
   lojaFresh(card);const k=state.kiosk;if(lojaJaPaga(card)){toast(T('ljAlreadyPaid'));render();return;}const c=lojaCart(card);if(!c.ch.length)return;lojaSync(card);const s=simOf(card);const antes=JSON.stringify(SIM);
@@ -2105,10 +2105,10 @@ const lojaDinheiro=card=>lojaPedido(card,'dinheiro'); // nome da v79
 // Checkout esperando: o vendedor confirmou (vira a tela do QR com a contagem), cancelou (volta ao carrinho da mesma sessão com aviso) ou o dia virou
 function lojaPendCheck(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.pend)return false;
   const r=(SIM.caixaDin||[]).find(x=>x.id===p.pend);if(!r)return false;
-  if(r.estado==='aguardando'){if(!p.escolha||(p.pkg===(r.pkg||null)&&p.total===r.total&&p.meio===(r.meio||null)))return false; // v95 (P4): o caixa escolheu ou trocou o pacote
+  if(r.estado==='aguardando'){if(!p.escolha||(p.pkg===(r.pkg||null)&&p.total===r.total&&p.meio===(r.meio||null)))return false; // v96 (P4): o caixa escolheu ou trocou o pacote
     k.paid=Object.assign({},p,{pkg:r.pkg||null,total:r.total,meio:r.meio||null,prints:r.prints});return true;}
   if(r.estado==='confirmada'){const g=(SIM.galerias||{})[p.token];k.paid=Object.assign({},p,{wait:false,cash:false,codigo:(g&&g.codigo)||p.codigo});k.doneAt=Date.now();lojaTimerOff();k.timer=setInterval(lojaTick,250);return true;}
-  if(r.estado==='cancelada'){lojaTimerOff();lojaReset();return true;} // v95: cancelada pelo caixa, o cliente volta ao início
+  if(r.estado==='cancelada'){lojaTimerOff();lojaReset();return true;} // v96: cancelada pelo caixa, o cliente volta ao início
   lojaTimerOff();lojaReset();return true;}
 function drawLojaQR(){const el=$('#lqr');if(!el)return;const p=state.kiosk.paid||{};qrDraw(el,p.token?galBase()+p.token:'https://eterna.photo/#g',150,p.codigo||'QR');}
 // ---------- Loja apartada: rota pública #loja, sem login, sempre em tela cheia ----------
@@ -2304,13 +2304,13 @@ async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pu
       if(r.semRosto){pubFalhou(p,'sem_rosto');return;}
       if(m.tipo==='evento'){const pids=Object.entries(r.sims||{}).filter(([id,sc])=>sc>=GAL_LIMITE_MENOR).map(([id])=>id);
         if(pids.length){p.match=pids;p.step='galeria';t.o.n=0;t.save();}else pubFalhou(p,'nao_encontrado');}
-      else{const top=r.list[0];if(top&&top.sc>=FACE_SIM&&m.sessoes.includes(top.card)){ /* v91: a galeria da venda pode ter várias sessões */p.step='galeria';t.o.n=0;t.save();}else pubFalhou(p,'nao_encontrado');}}
+      else{const pids=Object.entries(r.sims||{}).filter(([id,sc])=>sc>=FACE_SIM).map(([id])=>id);if(pids.length){p.match=pids;p.step='galeria';t.o.n=0;t.save();}else pubFalhou(p,'nao_encontrado');}}
   }catch(e){if(state.pub===p){p.step='nao';p.motivo='processando';}}
   finally{src=null;selfieStop();if(state.pub===p)render();}}
 // Lista da galeria: {pid,direito,vitrine,original}. Modo agente: vem pronta e assinada. Modo SIM: manifesto local (evento: só as fotos em que o rosto bateu).
 function pubGaleria(){const p=state.pub;if(!p)return {fotos:[]};
   if(p.modo==='agente'){const g=p.gal||{fotos:[]};return {...g,fotos:(g.fotos||[]).map(f=>({...f}))};}
-  const m=(SIM.galerias||{})[p.token];if(!m)return {fotos:[]};const ok=m.tipo==='evento'?new Set(p.match||[]):null;
+  const m=(SIM.galerias||{})[p.token];if(!m)return {fotos:[]};const ok=new Set(p.match||[]);
   return {tipo:m.tipo,menor:!!m.menor,expira:m.expira,estado:'pronta',precos:{dig:priceOf('dig'),todas:priceOf('mais')},fotos:m.fotos.filter(f=>!ok||ok.has(f.id)).map(f=>({pid:f.id,direito:f.direito,sessao:f.sessao}))};}
 function pubImg(f){const p=state.pub;if(p.modo==='agente'){const src=f.original||f.vitrine; // comprada aparece sem marca d'água (a mesma alta do download)
   return src?`--img:url(&quot;${esc(galUrl(src))}&quot;);--bs:cover;--bp:center`:'';}return phStyle(f.pid);}
@@ -2496,7 +2496,7 @@ const I18N={
  choose:['Escolha suas fotos','Choose your photos','Elige tus fotos','Choisissez vos photos','Wähle deine Fotos'],
  aiTag:['Fundo de IA','AI background','Fondo con IA','Fond IA','KI-Hintergrund'],
  cont:['Continuar','Continue','Continuar','Continuer','Weiter'],
- // v95: overlay da foto em tela cheia
+ // v96: overlay da foto em tela cheia
  ljVerTodas:['Ver todas','See all','Ver todas','Tout voir','Alle ansehen'],
  ljPrev:['Foto anterior','Previous photo','Foto anterior','Photo précédente','Vorheriges Foto'],
  ljNext:['Próxima foto','Next photo','Foto siguiente','Photo suivante','Nächstes Foto'],
@@ -2644,7 +2644,7 @@ const I18N={
 function lang(){const l=state.lang;return LANGS.some(x=>x[0]===l)?l:'pt';}
 function T(k,...a){const e=I18N[k];if(!e)return k;const i=Math.max(0,LANGS.findIndex(x=>x[0]===lang()));const v=e[i]!=null?e[i]:e[0];return typeof v==='function'?v(...a):v;}
 function fmtD(d){try{return new Date(d).toLocaleDateString({pt:'pt-BR',en:'en-GB',es:'es-ES',fr:'fr-FR',de:'de-DE'}[lang()]);}catch(e){return String(d);}}
-// v95: idiomas no overlay da foto; em tela estreita recolhem num botão com a bandeira atual (state.kiosk.lgOpen)
+// v96: idiomas no overlay da foto; em tela estreita recolhem num botão com a bandeira atual (state.kiosk.lgOpen)
 function ljLangOv(){const o=!!state.kiosk.lgOpen;return `<div class="lj-lgov${o?' open':''}"><button class="lj-ovb lj-lgbtn" data-act="lj-lg" aria-expanded="${o}" aria-label="${T('ljLang')}" title="${T('ljLang')}">${flagSvg(lang())}</button>${langPick(true)}</div>`;}
 function langPick(dark){return `<div class="lj-langs ${dark?'dark':''}" role="group" aria-label="Idioma · Language">${LANGS.map(([c,n])=>`<button data-act="lang" data-l="${c}" aria-pressed="${lang()===c}" title="${n}" aria-label="${n}" lang="${c}">${flagSvg(c)}</button>`).join('')}</div>`;}
 (function(){try{const s=localStorage.getItem('eterna.lang');if(s)state.lang=s;else{const n=(navigator.language||'pt').slice(0,2).toLowerCase();state.lang=LANGS.some(x=>x[0]===n)?n:'pt';}}catch(e){state.lang='pt';}})();
@@ -2664,7 +2664,7 @@ function vQuiosque(){
         :k.camOn?`<p class="lj-sub">${T('lookCam')}</p>
           <div class="lj-cam">${camBox()}</div>
           <button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button>`
-        // v95 (Eduardo, 09/11): a câmera não fica ligada direto; o cliente toca em Iniciar
+        // v96 (Eduardo, 09/11): a câmera não fica ligada direto; o cliente toca em Iniciar
         :`<p class="lj-sub">${T('ljStartSub')}</p>
           <button class="lj-start" data-act="kiosk-start">${ICO.face}<span>${T('ljStart')}</span></button>
           <button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button>`}
@@ -2676,10 +2676,10 @@ function vQuiosque(){
         <div class="lj-row"><button class="lj-cta" data-act="kiosk-tv-sim">${ICO.ok} ${T('tvSim')}</button><button class="lj-ghost" data-act="kiosk-tv-nao">${ICO.no} ${T('tvNao')}</button></div></div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${ljLangOv()}<span></span></div><div class="lj-heroin"><h1 class="lj-h1">${T('notFound')}<br>${esc(k.code)}</h1><button class="lj-cta" data-act="kiosk-back">${ICO.back} ${T('back')}</button></div></div>`;
   const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);const nSel=c.ch.length;
-  const cartPill=`<button class="lj-cartpill ${nSel?'on':''}" data-act="loja-cart" aria-label="${T('nPhotos',nSel)}">${ICO.cart}<b>${nSel}</b></button>`; // v95: só a contagem, sem preço
+  const cartPill=`<button class="lj-cartpill ${nSel?'on':''}" data-act="loja-cart" aria-label="${T('nPhotos',nSel)}">${ICO.cart}<b>${nSel}</b></button>`; // v96: só a contagem, sem preço
   const steps=n=>`<div class="lj-steps">${T('steps').map((t,i)=>`<span class="${i+1<n?'done':i+1===n?'cur':''}"><b>${i+1<n?'✓':i+1}</b>${t}</span>`).join('<i></i>')}</div>`;
   const topR=x=>`<div class="lj-topr">${ljLangOv()}${x}</div>`;
-  if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v95: sem etapa de pacote e pagamento no Checkout
+  if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v96: sem etapa de pacote e pagamento no Checkout
   const pagoTudo=lojaJaPaga(k.code)||!!(k.so&&k.so.cards&&!lojaFotos(k.code).length); // v91 (revisão C3): achado pela selfie e tudo já comprado
   if((k.step==='review'||k.step==='cart')&&pagoTudo){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (comprar mais é o achado 2 da v85)
     const pc=lojaJaPaga(k.code)?k.code:(soCards(k.code).find(c=>lojaJaPaga(c))||k.code);const sim=SIM.sessions[pc]||{};const tok=sim.galVenda||galDaSessao(pc);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){setTimeout(()=>{if(state.kiosk===k&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
@@ -2690,7 +2690,7 @@ function vQuiosque(){
     const card=(q,i)=>{const s2=pk[q.k]||'';return `<div class="lj-gcard ${s2==='ok'?'ok':''}"><button class="lj-gview" data-act="kiosk-ver" data-i="${i}" aria-label="Ampliar foto ${i+1}">${img(q,s2,'lj-gimg')}${q.t==='ai'?`<span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>`:''}</button>
         <button class="lj-gok" data-act="kiosk-tog" data-i="${i}" aria-pressed="${s2==='ok'}" aria-label="Marcar foto ${i+1}">${ICO.ok}</button></div>`;};
     const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;if(v!=null)setTimeout(()=>{const ids=items.slice(v+1,v+3).filter(x=>x.t==='ph').map(x=>x.id);ids.forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();LJ_PRE[u]=im;im.src=u;}});},0); /* a próxima já baixa */const vs=vq?pk[vq.k]||'':'';if(vq&&vq.t==='ph'&&!LJ_AR[vq.id])setTimeout(()=>ljAspecto(vq.id),0);
-    // v95 (Eduardo, 09/11): a foto na tela inteira; por cima, em overlay discreto, só setas, ✓, ✗, logo, contador e um canto com idioma, início, carrinho e Ver todas
+    // v96 (Eduardo, 09/11): a foto na tela inteira; por cima, em overlay discreto, só setas, ✓, ✗, logo, contador e um canto com idioma, início, carrinho e Ver todas
     const caixa=vq?`<div class="lj-lb lj-lbfs" id="lj-lb" role="region" aria-label="${v+1} / ${n}">
         <div class="lj-lbmid">${img(vq,vs,'lj-lbimg',vq.lb)}</div>
         <div class="lj-ovtl"><div class="lj-logo lj-ovlogo" data-act="loja-logo">${logo}</div></div>
@@ -2723,7 +2723,7 @@ function vQuiosque(){
         <button class="lj-cta lj-restart" data-act="loja-new">${ICO.face} ${T('ljBackStart')}</button></div></div>`;}
   lojaReset();return vQuiosque();
 }
-// v95 (P2, P4): depois da escolha, "Pronto! O atendente vai finalizar sua compra"; quando o caixa escolhe o pacote, o valor e "Pague na maquininha"
+// v96 (P2, P4): depois da escolha, "Pronto! O atendente vai finalizar sua compra"; quando o caixa escolhe o pacote, o valor e "Pague na maquininha"
 function ljPronto(k,logo,photo,stripe,deco,steps,topR){const p=k.paid;const P0=p.pkg&&DATA.catalog.find(x=>x.id===p.pkg);const tem=!!P0&&p.total!=null;
   const r=(SIM.caixaDin||[]).find(x=>x.id===p.pend);const ext=tem&&r?(r.cart||[]).filter(x=>x.id==='extra').length:0;
   const head=tem?`<div class="lj-eyebrow lj-pkgname">${esc(P0.name)}${ext?` <span class="lj-nw">${T('pkgPlusExtra',ext,fmtR(priceOf('extra')))}</span>`:''}</div>
@@ -3260,7 +3260,7 @@ function srvLgpd(x){const s=SIM.sessions[x.card];if(!s||!s.srv)return;const keep
 // rosto, sem busca em andamento); com cliente na tela, nada de face-api disputando o processador com a selfie e a foto ampliada
 // Teto (segurança, 01/11): com o balcão ocupado há 10 min seguidos, valida mesmo assim (até o balcão ficar livre de novo).
 const VAL_TETO=10*60e3;let VAL_OCUP=0;
-// v95: com o Iniciar a tela inicial fica sem câmera; o balcão só conta como livre depois de VAL_CALMO na tela inicial, para a validação
+// v96: com o Iniciar a tela inicial fica sem câmera; o balcão só conta como livre depois de VAL_CALMO na tela inicial, para a validação
 // (face-api, que aquece o WebGL por alguns segundos) nunca disputar o processador com o cliente que acabou de chegar e as montagens dele
 const VAL_CALMO=60e3; // 1 minuto parado na tela inicial
 const valLivre=()=>new Promise(res=>{const livre=()=>{if(!state.lojaRota||(state.kiosk.step==='code'&&!(state.cam&&state.cam.busy)&&(state.kiosk.camOn||(state.kiosk.codeDesde&&Date.now()-state.kiosk.codeDesde>=VAL_CALMO)))){VAL_OCUP=0;return true;}if(!VAL_OCUP)VAL_OCUP=Date.now();return Date.now()-VAL_OCUP>=VAL_TETO;};if(livre())return res();const t=setInterval(()=>{if(livre()){clearInterval(t);res();}},700);});
@@ -4872,7 +4872,7 @@ function isEdited(id){const e=SIM.edits&&SIM.edits[id];return !!e&&((e.b||100)!=
 // Pede a câmera do computador uma vez e fica olhando. Quando alguém chega e para na frente, procura as fotos sozinha.
 state.cam={stream:null,status:'off',err:null,timer:null,prev:null,armed:false,still:0,moved:0,busy:false,sim:null,onFound:null,cv:null};
 function camWanted(){return (state.view==='checkout'&&(!state.checkout.session||state.checkout.step===1))||(state.view==='quiosque'&&state.kiosk.step==='code'&&!!state.kiosk.camOn);}
-// v95: no Checkout a câmera liga no Iniciar e desliga ao achar a sessão, ao digitar o código, ao voltar ao início e depois de LOJA_CAM_MS sem rosto
+// v96: no Checkout a câmera liga no Iniciar e desliga ao achar a sessão, ao digitar o código, ao voltar ao início e depois de LOJA_CAM_MS sem rosto
 let LOJA_CAM_MS=60000;
 function lojaCamLigar(){const k=state.kiosk;lojaCliente();k.camOn=true;state.cam.lastTry=0;k.camDesde=Date.now();if(k.camT)clearTimeout(k.camT);
   const vigia=()=>{k.camT=null;if(state.kiosk!==k||k.step!=='code'||!k.camOn)return;const c=state.cam;const ult=Math.max(k.camDesde||0,c.lastTry||0);const resta=LOJA_CAM_MS-(Date.now()-ult);
@@ -4883,8 +4883,8 @@ async function camStart(){const c=state.cam;if(c.stream||c.err)return;if(!naviga
   try{const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});clearTimeout(c.wait);c.wait=null;c.stream=st;c.err=null;clearTimeout(c.sim);c.sim=null;c.status='idle';render();}catch(e){clearTimeout(c.wait);c.wait=null;c.err=e&&e.name==='NotAllowedError'?'câmera bloqueada':'sem câmera';c.status='off';render();}}
 function camStop(){const c=state.cam;if(c.stream){c.stream.getTracks().forEach(t=>t.stop());c.stream=null;}clearInterval(c.timer);c.timer=null;clearTimeout(c.sim);c.sim=null;c.status='off';c.prev=null;c.armed=false;}
 function camMount(){const c=state.cam;const v=$('#cam-video');
-  if(state.view==='quiosque'&&!camWanted()&&(c.stream||c.wait)){clearTimeout(c.wait);c.wait=null;camStop();} // v95: fora da etapa da câmera, nada ligado
-  if(state.view==='quiosque'&&state.kiosk.step==='code'&&!state.kiosk.camOn&&!FACEPRE){facePre();ynLoad().catch(()=>{});} // v95: com a câmera desligada no Iniciar, os modelos já carregam (como antes, quando a câmera ligava sozinha)
+  if(state.view==='quiosque'&&!camWanted()&&(c.stream||c.wait)){clearTimeout(c.wait);c.wait=null;camStop();} // v96: fora da etapa da câmera, nada ligado
+  if(state.view==='quiosque'&&state.kiosk.step==='code'&&!state.kiosk.camOn&&!FACEPRE){facePre();ynLoad().catch(()=>{});} // v96: com a câmera desligada no Iniciar, os modelos já carregam (como antes, quando a câmera ligava sozinha)
   if(!camWanted()||!$('#cam-face')){clearInterval(c.timer);c.timer=null;clearTimeout(c.sim);c.sim=null;if(c.status!=='off')c.status='idle';return;}
   if(c.err||!navigator.mediaDevices){ // sem câmera: com o agente ligado (venda de verdade) nunca sorteia sessão; só a demonstração simula
     if(state.agent&&state.agent.on){c.status='nocam';camStatus();return;}
@@ -4926,10 +4926,8 @@ function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Dat
   setTimeout(()=>{if(!camWanted()){c.busy=false;return;} // o cliente já seguiu (digitou o código, pagou): a simulação não pode trocar a sessão
     const cands=demoSessions().filter(ok);const pick=cands[Math.floor(Math.random()*cands.length)];if(!pick){c.busy=false;c.status='idle';camStatus();return;}open(pick.card);},900);}
 // v91 parte B (Eduardo, 01/11; revisão de segurança B1 e B3): a selfie achou fotos claras (>= FACE_SIM) em uma ou mais
-// sessões. Cada sessão com foto clara entra INTEIRA (a família está junta no Checkout; seguro porque a v91 separa as sessões
-// por rosto), se pelo menos uma foto clara for PRINCIPAL (o rosto dela tem >= metade da largura do maior rosto da foto; B5 da
-// segurança: quem só aparece no fundo de uma foto de outra família não abre a sessão inteira, leva só as fotos claras). Sessão de
-// menor ou de grupo de escola: só as fotos claras dela. Sessão só com "talvez" (entre FACE_DUV e FACE_SIM) pergunta "Esta sessão
+// sessões. De cada sessão entram só as fotos claras em que quem fez a selfie aparece (LGPD: Ronaldo, 09/11; até a v94 a sessão entrava
+// inteira). Sessão só com "talvez" (entre FACE_DUV e FACE_SIM) pergunta "Esta sessão
 // também é sua?" com até 3 miniaturas pequenas das fotos dela mais parecidas, no máximo 3 sessões, nunca de menor ou de escola;
 // o "Sim" põe SÓ as fotos "talvez" daquela sessão (Eduardo, 01/11, B4), nunca a sessão inteira. A venda fica na sessão com mais
 // fotos claras dela (âncora). Devolve false sem foto clara (o chamador segue o fluxo antigo "É uma destas?").
@@ -4937,19 +4935,17 @@ const lojaSesProtegida=c=>!!((SIM.sessions[c]||{}).menor)||Object.values(SIM.gal
 function lojaJuntar(res,tv,sims){const k=state.kiosk;sims=sims||{};const claras=(res||[]).filter(r=>r.fotos&&r.fotos.length&&sessionObj(r.card));if(!claras.length)return false;lojaCliente();
   const ord=claras.slice().sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);const anc=(ord.find(r=>!lojaJaPaga(r.card))||ord[0]).card;
   const minhas={};claras.forEach(r=>minhas[r.card]=r.fotos.slice());const ja=new Set(Object.keys(minhas));
-  const inteiras=claras.filter(r=>(r.pri==null||r.pri>0)&&!lojaSesProtegida(r.card)).map(r=>r.card);
   const ask=(tv||[]).filter(r=>!ja.has(r.card)&&r.fotos&&r.fotos.length&&sessionObj(r.card)&&!lojaSesProtegida(r.card)).sort((a,b)=>b.sc-a.sc).slice(0,3)
     .map(r=>({card:r.card,todas:r.fotos.slice(),fotos:r.fotos.slice().sort((x,y)=>(sims[y]||0)-(sims[x]||0)).slice(0,3)}));
-  if(ask.length){Object.assign(k,{tv:{anc,minhas,inteiras,ask,i:0,sim:[]},step:'talvez',code:'',so:null});lojaPreload(anc,minhas,0,inteiras);render();return true;}
-  lojaAbrirSo(minhas,anc,inteiras);return true;}
-// minhas: sessão -> fotos dela que entram (claras; no "talvez" confirmado, as fotos "talvez"); inteiras: sessões que entram
-// inteiras (foto clara principal, nunca de menor/escola, nunca por "talvez")
-function lojaIdsSo(minhas,inteiras){const inn=new Set(inteiras||[]);return Object.keys(minhas).filter(c=>sessionObj(c)).sort((a,b)=>sesHora(a)-sesHora(b))
-  .flatMap(c=>inn.has(c)&&!lojaSesProtegida(c)?sessionObj(c).photos.map(p=>p.id).concat(sessionObj(c).ia||[]):(minhas[c]||[]));} // v93: + bases de IA (montagens)
-function lojaAbrirSo(minhas,anc,inteiras){const k=state.kiosk;const cards=Object.keys(minhas).filter(c=>sessionObj(c)&&(minhas[c]||[]).length).sort((a,b)=>sesHora(a)-sesHora(b));
+  if(ask.length){Object.assign(k,{tv:{anc,minhas,ask,i:0,sim:[]},step:'talvez',code:'',so:null});lojaPreload(anc,minhas,0);render();return true;}
+  lojaAbrirSo(minhas,anc);return true;}
+// minhas: sessão -> fotos dela que entram (claras; no "talvez" confirmado, as fotos "talvez")
+function lojaIdsSo(minhas){return Object.keys(minhas).filter(c=>sessionObj(c)).sort((a,b)=>sesHora(a)-sesHora(b))
+  .flatMap(c=>minhas[c]||[]);}
+function lojaAbrirSo(minhas,anc){const k=state.kiosk;const cards=Object.keys(minhas).filter(c=>sessionObj(c)&&(minhas[c]||[]).length).sort((a,b)=>sesHora(a)-sesHora(b));
   if(!cards.length){lojaReset();const c=state.cam;c.status='nomatch';render();setTimeout(()=>{if(c.status==='nomatch'){c.status='idle';camStatus();}},6000);return;}
   if(!cards.includes(anc))anc=cards[0];
-  const ids=lojaIdsSo(minhas,inteiras); // família inteira só onde ela aparece clara e em primeiro plano
+  const ids=lojaIdsSo(minhas);
   Object.assign(k,{code:anc,so:{card:anc,cards,ids},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
   toast(T('foundYou'));render();lojaPreload(anc);iaAquecer(anc);}
 // proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
@@ -4960,7 +4956,7 @@ function ljAspecto(id){const u=lojaPreUrl(id);if(!u||LJ_AR[id])return;const im=L
 // rapidez (pedido 3): a primeira foto grande e as duas seguintes começam a baixar assim que a busca volta
 const LJ_PRE={};
 function lojaPreUrl(id){const u=(UP[id]||{}).src;return u&&/^ag_/.test(id)?u.replace('/thumb/','/file/'):null;}
-function lojaPreload(card,minhas,de,inteiras){let ids;if(minhas){ids=lojaIdsSo(minhas,inteiras);}
+function lojaPreload(card,minhas,de){let ids;if(minhas){ids=lojaIdsSo(minhas);}
   else ids=lojaItems(card).filter(x=>x.t==='ph').map(x=>x.id);
   ids.slice(de||0,(de||0)+3).forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();im.decoding='async';LJ_PRE[u]=im;im.onload=()=>{LJ_PRE[u].ok=Date.now();};im.src=u;}});}
 function camBox(){const c=state.cam;const noCam=!!c.err;return `<div class="face live" id="cam-face" data-st="${c.status}" aria-label="Câmera do checkout">${noCam?'<div class="ring"></div><div class="scan"></div>':'<video id="cam-video" autoplay muted playsinline></video><div class="ring"></div>'}</div><div class="camst" id="cam-st" data-st="${c.status}"></div>${c.status==='pick'&&c.cands?faceCands(c.cands,'cam-pick'):''}`;}
@@ -5075,7 +5071,7 @@ function render(){
   if(state.lojaRota&&state.view!=='quiosque'){state.lojaRota=false;if(location.hash==='#loja')history.replaceState(null,'','#');}
   if(state.lojaRota){document.body.setAttribute('data-bare','');document.body.setAttribute('data-loja','');
     if(state.kiosk.step!=='done')lojaTimerOff();else lojaPendCheck(); // v83: pendência confirmada ou cancelada enquanto a janela não redesenhou
-    {const k=state.kiosk;if(k.step==='code'){if(!k.codeDesde)k.codeDesde=Date.now();}else k.codeDesde=0;} // v95: desde quando a tela inicial está parada (valLivre)
+    {const k=state.kiosk;if(k.step==='code'){if(!k.codeDesde)k.codeDesde=Date.now();}else k.codeDesde=0;} // v96: desde quando a tela inicial está parada (valLivre)
     try{DS_CACHE.on=true;try{$('#main').innerHTML=vQuiosque()+lojaEquipe();}finally{DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div></div>`;}
     if(location.hash!=='#loja')history.replaceState(null,'','#loja');
     if(state.kiosk.step==='done')drawLojaQR(); // v79: redesenhar (troca de idioma, SIM de outra janela) não pode apagar o QR
@@ -5322,12 +5318,12 @@ document.addEventListener('click',e=>{
     case 'kiosk-jump':state.kiosk.i=+d.i;render();break;
     case 'kiosk-ver':{const k=state.kiosk;const n=lojaItems(k.code).length;const i=+d.i;if(i>=0&&i<n){k.ver=i;k.i=i;}render();break;}
     case 'kiosk-fechar':state.kiosk.ver=null;render();break;
-    case 'kiosk-tv-sim':case 'kiosk-tv-nao':{const tv=state.kiosk.tv;if(!tv)break;const q=tv.ask[tv.i];if(q&&a==='kiosk-tv-sim')tv.minhas[q.card]=(q.todas||q.fotos).slice(); /* B4 (Eduardo, 01/11): só as fotos em dúvida, nunca a sessão inteira */tv.i++;if(tv.i>=tv.ask.length){lojaAbrirSo(tv.minhas,tv.anc,tv.inteiras);break;}render();break;}
+    case 'kiosk-tv-sim':case 'kiosk-tv-nao':{const tv=state.kiosk.tv;if(!tv)break;const q=tv.ask[tv.i];if(q&&a==='kiosk-tv-sim')tv.minhas[q.card]=(q.todas||q.fotos).slice(); /* B4 (Eduardo, 01/11): só as fotos em dúvida, nunca a sessão inteira */tv.i++;if(tv.i>=tv.ask.length){lojaAbrirSo(tv.minhas,tv.anc);break;}render();break;}
     case 'kiosk-tog':{const k=state.kiosk;const items=lojaItems(k.code);const x=items[+d.i];if(!x)break;const pk=lojaPick(k.code);k.i=+d.i;
       if(pk[x.k]==='ok')delete pk[x.k];else pk[x.k]='ok';lojaSync(k.code);render();break;}
     case 'kiosk-ok':lojaMark('ok');break;
     case 'kiosk-no':lojaMark('no');break;
-    case 'kiosk-done':case 'loja-cart':lojaPedir();break; // v95: Continuar manda a escolha ao atendente (sem pacote e sem pagamento no Checkout)
+    case 'kiosk-done':case 'loja-cart':lojaPedir();break; // v96: Continuar manda a escolha ao atendente (sem pacote e sem pagamento no Checkout)
     case 'kiosk-review':state.kiosk.step='review';render();break;
     case 'kiosk-minhas':state.kiosk.minhas=true;state.kiosk.minhasI=null;render();break;
     case 'kiosk-minhas-i':state.kiosk.minhasI=d.i!=null&&state.kiosk.minhasI==null?+d.i:null;render();break;

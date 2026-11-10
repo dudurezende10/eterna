@@ -39,7 +39,7 @@ const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.i
 async function ljSessao(L,card,n){await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;const k=ETERNA.state.kiosk;if(k.step!=='code'){ETERNA.state.kiosk.step='code';ETERNA.render();}});
   await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(500);
   await L.evaluate(([card,n])=>{const it=ETERNA.lojaItems(card).filter(x=>x.t==='ph');const pk=ETERNA.lojaPick(card);Object.keys(pk).forEach(k=>delete pk[k]);it.slice(0,n).forEach(x=>pk[x.k]='ok');ETERNA.state.kiosk.pkg=null;ETERNA.state.kiosk.pay=null;ETERNA.state.kiosk.step='cart';ETERNA.render();},[card,n]);await L.waitForTimeout(200);}
-// v95: o Checkout não escolhe pacote nem meio. "ljPagar" = o cliente toca em Continuar e o vendedor (janela A, Posto) escolhe o Ideal e o meio
+// v96: o Checkout não escolhe pacote nem meio. "ljPagar" = o cliente toca em Continuar e o vendedor (janela A, Posto) escolhe o Ideal e o meio
 let POSTO=null;
 async function ljPagar(L,m){await L.evaluate(()=>ETERNA.lojaPedir());await L.waitForTimeout(400);const id=await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id||!POSTO)return;
   await POSTO.evaluate(([id,m])=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(!r||!r.escolha)return;ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:{card:'cartao',cash:'dinheiro',pix:'pix'}[m]||m});},[id,m]);await L.waitForTimeout(500);}
@@ -78,7 +78,7 @@ try{
   const lk=await L.evaluate(()=>({i:ETERNA.state.kiosk.i,n:ETERNA.lojaItems(ETERNA.state.kiosk.code).length}));
   let eco=await txt(A,'#eco');ok(eco.includes(`Foto ${lk.i+1} de ${lk.n}`)&&/Escolhidas · 2/i.test(eco),'21: Posto deveria mostrar a foto em tela e 2 escolhidas: '+eco.slice(0,200));
   ok(await A.evaluate(()=>!!document.querySelector('#eco .eco-big')),'21: foto grande no painel');
-  // v95: o Continuar faz o pedido; o painel mostra que o cliente terminou e o vendedor escolhe o pacote
+  // v96: o Continuar faz o pedido; o painel mostra que o cliente terminou e o vendedor escolhe o pacote
   const s0=await sim(L);const fila0=(s0.galFila||[]).length;const est0=s0.stock['Caixa 1'];
   await ljPagar(L,'card');eco=await txt(A,'#eco');
   ok(/Esperando o pagamento/.test(eco)&&/Total/.test(eco)&&/R\$ \d+/.test(eco),'21: painel com o pacote e o total escolhidos no Posto: '+eco.slice(0,240));
@@ -126,11 +126,11 @@ try{
 
   // ---- 17: PIX mostra ljPosPixH; Dinheiro mantém os textos da v79 e passa à tela do QR na confirmação
   await L.click('[data-act="loja-new"]');await ljSessao(L,cards[4],3);await ljPagar(L,'pix');
-  ok(/Pague na maquininha/i.test(await txt(L,'body'))&&!(await L.$('#lqr')),'17: tela do PIX (v95: "Pague na maquininha")');const p17=await pendDe(L,cards[4]);ok(p17&&p17.meio==='pix','17: pendência PIX');
+  ok(/Pague na maquininha/i.test(await txt(L,'body'))&&!(await L.$('#lqr')),'17: tela do PIX (v96: "Pague na maquininha")');const p17=await pendDe(L,cards[4]);ok(p17&&p17.meio==='pix','17: pendência PIX');
   await A.waitForTimeout(300);await confirmar(A,p17.id,'778899');ok((await sim(A)).sessions[cards[4]].payment==='PIX (maquininha)','17: PIX (maquininha)');
   await L.click('[data-act="loja-new"]');await ljSessao(L,cards[5],3);await ljPagar(L,'cash');
   const l17=await L.evaluate(()=>({t:document.body.innerText.replace(/\s+/g,' '),qr:!!document.querySelector('#lqr')}));
-  ok(/Pague em dinheiro ao atendente/i.test(l17.t)&&!/no caixa/i.test(l17.t)&&/[A-Z0-9]{4}-[A-Z0-9]{4}/.test(l17.t)&&!l17.qr,'17 (v95): dinheiro "Pague em dinheiro ao atendente", sem QR enquanto espera: '+l17.t.slice(0,200));
+  ok(/Pague em dinheiro ao atendente/i.test(l17.t)&&!/no caixa/i.test(l17.t)&&/[A-Z0-9]{4}-[A-Z0-9]{4}/.test(l17.t)&&!l17.qr,'17 (v96): dinheiro "Pague em dinheiro ao atendente", sem QR enquanto espera: '+l17.t.slice(0,200));
   const p17d=await pendDe(L,cards[5]);await A.waitForTimeout(300);
   ok(!(await A.$(`[data-act="pend-pos"][data-id="${p17d.id}"]`))&&!!(await A.$(`[data-act="din-confirm"][data-id="${p17d.id}"]`)),'17: dinheiro usa "Recebi", não a maquininha');
   await A.click(`[data-act="din-confirm"][data-id="${p17d.id}"]`);await A.waitForTimeout(300);
@@ -140,14 +140,14 @@ try{
   await L.click('[data-act="loja-new"]');await ljSessao(L,cards[6],3);await ljPagar(L,'card');const p18=await pendDe(L,cards[6]);await A.waitForTimeout(300);
   await A.click(`[data-act="din-cancel"][data-id="${p18.id}"]`);await A.click(`[data-act="din-cancel-ok"][data-id="${p18.id}"]`);await A.waitForTimeout(500);
   const l18=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,code:ETERNA.state.kiosk.code,t:(document.querySelector('.lj-aviso')||{}).innerText||''}));const s18=await sim(A);
-  ok(l18.step==='code'&&!l18.code,'18 (v95): cancelado pelo vendedor, o Checkout volta ao início: '+J(l18));
+  ok(l18.step==='code'&&!l18.code,'18 (v96): cancelado pelo vendedor, o Checkout volta ao início: '+J(l18));
   ok(s18.caixaDin.find(x=>x.id===p18.id).estado==='cancelada'&&s18.sessions[cards[6]].status!=='paga','18: pendência cancelada sem virar venda');
   await L.screenshot({path:`${P}/v83-checkout-cancelado.png`});
 
   // ---- fila local de eventos (G, só local): criar, pagar, cancelar em ordem, idem único
   const fila=await A.evaluate(()=>ETERNA.pvFila());const idems=new Set(fila.map(e=>e.idem));
   const doId=id=>fila.filter(e=>e.venda===id).map(e=>e.tipo+':'+e.seq).join(',');
-  ok(idems.size===fila.length&&doId(p14.id)==='criar:1,pagar:2'&&doId(p18.id)==='','G (v95: pedido do Checkout cancelado antes de confirmar não vai ao servidor): fila local: '+J({p14:doId(p14.id),p18:doId(p18.id),n:fila.length}));
+  ok(idems.size===fila.length&&doId(p14.id)==='criar:1,pagar:2'&&doId(p18.id)==='','G (v96: pedido do Checkout cancelado antes de confirmar não vai ao servidor): fila local: '+J({p14:doId(p14.id),p18:doId(p18.id),n:fila.length}));
   ok(fila.every(e=>!JSON.stringify(e).includes('@')),'G: a fila não pode levar e-mail');
   const ev14=fila.find(e=>e.venda===p14.id&&e.tipo==='pagar');ok(ev14&&ev14.dados.ref==='123456'&&ev14.dados.prov==='pos-manual','G: pagar com ref e prov: '+J(ev14&&ev14.dados));
 
@@ -169,7 +169,7 @@ try{
   {const c2=await b.newContext();await rotas(c2);const K=vigia(await c2.newPage(),'K');await K.goto(U+'#loja');await K.waitForTimeout(700);
     const card=await K.evaluate(()=>ETERNA.demoSessions().find(s=>s.photos.length>=8).card);
     for(const [w,h] of [[390,844],[768,1024],[1366,800]]){await K.setViewportSize({width:w,height:h});
-      for(const lg of ['pt','en','es','fr','de'])for(const meio of ['cartao','pix']){ // v95: sem o aviso de cancelado (o cliente volta ao início)
+      for(const lg of ['pt','en','es','fr','de'])for(const meio of ['cartao','pix']){ // v96: sem o aviso de cancelado (o cliente volta ao início)
         const r=await K.evaluate(([card,lg,meio])=>{const k=ETERNA.state.kiosk;k.code=card;ETERNA.state.lang=lg;if(meio==='aviso'){const pk=ETERNA.lojaPick(card);const it=ETERNA.lojaItems(card).filter(x=>x.t==='ph');it.slice(0,3).forEach(x=>pk[x.k]='ok');k.step='cart';k.paid=null;k.aviso='ljPayCancelled';}
           else{k.step='done';k.aviso=null;k.paid={wait:true,meio,pend:'x',total:190,prints:5,n:5,codigo:'ABCD-2345'};}
           ETERNA.render();const t=document.body.innerText;const el=document.querySelector(meio==='aviso'?'.lj-aviso':'.lj-waitcard');const r=el&&el.getBoundingClientRect();

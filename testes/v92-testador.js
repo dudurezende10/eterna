@@ -41,7 +41,7 @@ try{
   await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(1500);
   for(const a of ['kiosk-ok','kiosk-ok','kiosk-no','kiosk-ok'])await pg.click(`[data-act="${a}"]`);
   await pg.waitForTimeout(400);// cliente leva alguns segundos antes de pagar
-  // v95: o Continuar faz o pedido (sem pacote e sem pagamento no Checkout); o "criar" sai quando o caixa confirma, com a hora do pedido
+  // v96: o Continuar faz o pedido (sem pacote e sem pagamento no Checkout); o "criar" sai quando o caixa confirma, com a hora do pedido
   await pg.click(`[data-act="lang"][data-l="es"]`);await pg.click('.lj-next');await pg.click('.lj-next').catch(()=>{});await pg.waitForTimeout(400); // clique repetido no Continuar
   ok((await pg.evaluate(c=>JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.filter(x=>x.card===c&&x.estado==='aguardando').length,card))===1,'3: um pedido só com o clique repetido no Continuar');
   await pg.screenshot({path:PR+'/v92t-checkout-es.png'});

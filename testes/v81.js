@@ -96,7 +96,7 @@ try{
     const card=await L.evaluate(()=>ETERNA.demoSessions().find(s=>s.photos.length>=8&&(ETERNA.SIM.sessions[s.card]||{}).status!=='paga').card);
     await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(1500);
     for(const x of ['kiosk-ok','kiosk-ok','kiosk-no','kiosk-ok'])await L.click(`[data-act="${x}"]`);
-    await L.click('.lj-next');await L.waitForTimeout(800); // v95: o Continuar faz o pedido; o caixa escolhe pacote e PIX no Posto
+    await L.click('.lj-next');await L.waitForTimeout(800); // v96: o Continuar faz o pedido; o caixa escolhe pacote e PIX no Posto
     const lp=await L.evaluate(c=>({st:(JSON.parse(localStorage.getItem('eterna.sim.v1')).sessions[c]||{}).status,step:ETERNA.state.kiosk.step,user:!!ETERNA.state.user}),card);
     ok(lp.st==='aguardando'&&lp.step==='done'&&!lp.user,'3: compra na janela do Checkout (v83: PIX aguardando): '+J(lp));
     await A.waitForTimeout(500);const pid=await L.evaluate(()=>ETERNA.state.kiosk.paid.pend);

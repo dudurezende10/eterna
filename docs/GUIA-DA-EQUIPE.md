@@ -239,7 +239,7 @@ Nesta versão o Checkout e o Caixa precisam estar **no mesmo computador e no mes
 
 Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eterna abertas naquele computador (Checkout, Caixa e as outras). Uma janela antiga aberta pode atrapalhar o caixa. Se aparecer o aviso "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.", faça isso na hora.
 
-### Atender um cliente (v95)
+### Atender um cliente (v96)
 
 O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o notebook do caixa atrás, no **Posto de venda**. O cliente já está no caixa: o Checkout nunca manda ele para outro lugar.
 
@@ -259,7 +259,7 @@ Outras coisas que o cliente pode fazer:
 - Desistir a qualquer momento com **Voltar ao início** (a casinha). A escolha dele é apagada e a tela volta ao **Iniciar**.
 - Ficar o tempo que precisar escolhendo. O Checkout não volta sozinho no meio da escolha, só depois da compra.
 
-### Pacotes, adicionais e economia (escolhidos no Posto de venda desde a v95)
+### Pacotes, adicionais e economia (escolhidos no Posto de venda desde a v96)
 
 O catálogo do Tour mudou na v79:
 
@@ -292,7 +292,7 @@ Se o cliente volta ao Checkout com fotos que já comprou, aparece "Estas fotos j
 
 ### Dinheiro: aguardando caixa (vendedor e caixa)
 
-Desde a v95 quem escolhe **Dinheiro** é você, no Posto de venda. A compra não é dada como paga até você receber.
+Desde a v96 quem escolhe **Dinheiro** é você, no Posto de venda. A compra não é dada como paga até você receber.
 
 **O que o cliente vê**
 1. "Valor a pagar R$ X", o nome do pacote, "Pague em dinheiro ao atendente" e o **código** (exemplo: `K7QM-4WXR`).
@@ -534,7 +534,7 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 
 ### Confirmar na maquininha
 
-1. Desde a v95 o cliente só escolhe as fotos. A compra aparece em **Aguardando pagamento** com o código e as fotos. Escolha o pacote e a forma de pagamento (Cartão, PIX ou Dinheiro); o cliente vê o valor na tela dele.
+1. Desde a v96 o cliente só escolhe as fotos. A compra aparece em **Aguardando pagamento** com o código e as fotos. Escolha o pacote e a forma de pagamento (Cartão, PIX ou Dinheiro); o cliente vê o valor na tela dele.
 2. Digite o valor na maquininha e espere aprovar.
 3. Toque em **Pago na maquininha**.
 4. Se quiser, digite o **NSU ou a autorização** do comprovante (só números, de 4 a 12). É opcional.

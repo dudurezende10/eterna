@@ -6692,10 +6692,8 @@ class H(BaseHTTPRequestHandler):
             if not r.get("rosto"):
                 return self.js({"ok": False, "motivo": "sem_rosto", "restam": falhou(ip, token)})
             sims = r["sims"]
-            if m["tipo"] == "evento":
-                pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), -1) >= LIMITE_MENOR}
-            else:
-                pids = {f["id"] for f in m["fotos"]} if any(s >= LIMITE for s in sims.values()) else set()
+            lim = LIMITE_MENOR if m["tipo"] == "evento" else LIMITE
+            pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), -1) >= lim}   # só as fotos em que quem fez a selfie aparece
             if not pids:
                 restam = falhou(ip, token)
                 if not restam:

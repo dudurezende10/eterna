@@ -6,7 +6,7 @@
 // real (Arquibancada + adicionais): 70 + 7 × 35 = 315 − 190 = R$ 125. Também cobre as correções da revisão (B1, I1 a I6, N1, N4, N6, revisor 1 a 12).
 // Checkout (#loja) e Caixa ficam em duas janelas do mesmo navegador (mesmo contexto do Playwright). Prints em testes/prints/v79-*.png.
 const {chromium}=require('playwright');const fs=require('fs');
-// v95: em tela estreita as bandeiras do Checkout ficam recolhidas no botão de idioma; o teste troca o idioma pelo próprio botão da bandeira
+// v96: em tela estreita as bandeiras do Checkout ficam recolhidas no botão de idioma; o teste troca o idioma pelo próprio botão da bandeira
 const idioma=(pg,l)=>pg.evaluate(l=>{const b=document.querySelector(`[data-act="lang"][data-l="${l}"]`);if(b)b.click();},l);
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};
@@ -42,7 +42,7 @@ async function carrinho(pg){return pg.evaluate(()=>{const q=s=>[...document.quer
 // v83: cartão e PIX ficam aguardando; o vendedor confirma "Pago na maquininha" na outra janela (Caixa)
 async function maquininha(A,B){await sleep(500);const id=await A.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);await B.waitForSelector(`[data-act="pend-pos"][data-id="${id}"]`,{timeout:3000}).catch(()=>null);
   await B.click(`[data-act="pend-pos"][data-id="${id}"]`);await B.click(`[data-act="pend-pos-ok"][data-id="${id}"]`);await B.waitForTimeout(400);}
-// v95: o Checkout não tem pacote nem pagamento. "pagar" = o cliente toca em Continuar e o caixa (janela B, logada) escolhe no Posto o pacote (o já marcado ou o Ideal) e o meio
+// v96: o Checkout não tem pacote nem pagamento. "pagar" = o cliente toca em Continuar e o caixa (janela B, logada) escolhe no Posto o pacote (o já marcado ou o Ideal) e o meio
 let CAIXA=null;
 async function pagar(pg,m){await pg.evaluate(()=>ETERNA.lojaPedir());await pg.waitForTimeout(500);const id=await pg.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id||!CAIXA||CAIXA.isClosed()||CAIXA.context()!==pg.context())return;
   await CAIXA.evaluate(([id,m,pkg])=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(!r||!r.escolha)return;ETERNA.pendEscolher(id,{pkg:pkg||ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:{cash:'dinheiro',card:'cartao',pix:'pix'}[m]||m});},[id,m,await pg.evaluate(()=>ETERNA.state.kiosk.pkg||null)]);await pg.waitForTimeout(400);}
@@ -78,15 +78,15 @@ try{
   await B.click('#rail-ck [data-v="caixa"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='caixa','1.6: botão Caixa não abriu o Caixa');
   ok(/Nenhum pagamento esperando/.test(await txt(B,'#main')),'1.6: Caixa vazio deveria dizer "Nenhum pagamento esperando." (v83)');
 
-  // ---- 4.1 a 4.9 e 1.1: v95 tirou o carrinho do Checkout (pacote, resumo, total, economia e botões de pagar). O cálculo (vendaCalc) é o mesmo de antes
+  // ---- 4.1 a 4.9 e 1.1: v96 tirou o carrinho do Checkout (pacote, resumo, total, economia e botões de pagar). O cálculo (vendaCalc) é o mesmo de antes
   // e é conferido contra o do app da v94, pacote por pacote, em testes/checkout-tela-cheia.js (P6). Aqui segue o fluxo do dinheiro pelo Posto.
   fase='1.4';
   await A.bringToFront();await lojaSessao(A,C1,4,4);
   const antes=await sim(A);const ai0=J((antes.ai||{})[C1]||null);
   await pagar(A,'cash');
   const fim=await A.evaluate(()=>({step:ETERNA.state.kiosk.step,t:document.querySelector('#main').innerText.replace(/\s+/g,' '),cod:(document.querySelector('.lj-qrcode')||{}).innerText||'',qr:!!document.querySelector('#lqr')}));
-  ok(fim.step==='done'&&/Pague em dinheiro ao atendente/.test(fim.t)&&/R\$ 190/.test(fim.t)&&/^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(fim.cod)&&!fim.qr,'1.2 (v95): o cliente vê o valor, "Pague em dinheiro ao atendente" e o código, sem QR: '+J(fim));
-  ok(!/no caixa|Obrigado|2 minutos/i.test(fim.t),'1.2 (v95): nunca manda o cliente ao caixa');
+  ok(fim.step==='done'&&/Pague em dinheiro ao atendente/.test(fim.t)&&/R\$ 190/.test(fim.t)&&/^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(fim.cod)&&!fim.qr,'1.2 (v96): o cliente vê o valor, "Pague em dinheiro ao atendente" e o código, sem QR: '+J(fim));
+  ok(!/no caixa|Obrigado|2 minutos/i.test(fim.t),'1.2 (v96): nunca manda o cliente ao caixa');
   await A.screenshot({path:`${P}/v79-dinheiro-pt.png`});
   for(const l of ['en','es','fr','de']){await idioma(A,l);await A.waitForTimeout(80);const t=await txt(A,'#main');ok(!/ljPay|ljYour|ljN/.test(t)&&/190/.test(t),`1.2: tela do dinheiro em ${l}: ${t.slice(0,120)}`);if(l==='de')await A.screenshot({path:`${P}/v79-dinheiro-de.png`});}
   await idioma(A,'pt');
@@ -382,8 +382,8 @@ try{
     await pg.evaluate(c=>{const it=ETERNA.lojaItems(c);const pk=ETERNA.lojaPick(c);pk[it[0].k]='ok';ETERNA.state.kiosk.step='cart';ETERNA.render();},card);await pg.waitForTimeout(150);ok(!(await btn()),'B1: sem botão no carrinho');
     await pg.click('.lj-back0');await pg.waitForTimeout(200);ok(await pg.evaluate(()=>ETERNA.state.kiosk.step)==='code'&&!(await btn()),'B1: de volta à câmera depois de um cliente, o botão não volta');
     await pg.evaluate(()=>{ETERNA.state.lojaEquipeAte=Date.now()+60000;ETERNA.state.kiosk.step='review';});ok(!(await pg.evaluate(()=>ETERNA.lojaEquipeOn())),'B1: lojaEquipeOn só no passo da câmera');
-    // v95: a câmera só liga no Iniciar; tocar em Iniciar já é cliente
-    await abrir();await pg.evaluate(()=>{ETERNA.state.cam.busy=false;});await pg.click('[data-act="kiosk-start"]');await pg.waitForTimeout(150);ok(!(await btn()),'B1 (v95): tocar em Iniciar já é cliente e tira o botão');
+    // v96: a câmera só liga no Iniciar; tocar em Iniciar já é cliente
+    await abrir();await pg.evaluate(()=>{ETERNA.state.cam.busy=false;});await pg.click('[data-act="kiosk-start"]');await pg.waitForTimeout(150);ok(!(await btn()),'B1 (v96): tocar em Iniciar já é cliente e tira o botão');
     await pg.waitForFunction(()=>ETERNA.state.kiosk.step!=='code',null,{timeout:15000}).catch(()=>{});
     await pg.evaluate(()=>{ETERNA.state.kiosk.step='code';ETERNA.render();});ok(!(await btn()),'B1: a câmera achar o cliente também tira o botão');
     // 3.3: depois da primeira compra o botão some
