@@ -2149,11 +2149,13 @@ function lojaVoltarFotos(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota
   lojaTimerOff();Object.assign(k,{paid:null,doneAt:null,minhas:false,minhasI:null,step:'review'});k.ver=Math.max(0,Math.min(lojaItems(k.code).length-1,k.i||0));render();lojaEco();}
 // segurança S2: tela Pronto ou do valor parada por LOJA_PRONTO_MS sem toque: volta ao início; a pendência fica no Posto com "o cliente saiu" (r.saiu)
 let LOJA_PRONTO_MS=3*60e3;
+// R3: o mesmo vale para "Voltar ao início" na tela Pronto ou do valor (lojaSaiu marca r.saiu e grava; o Posto avisa)
+function lojaSaiu(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.escolha||!p.pend)return false;
+  lojaFresh(k.code);const r=(SIM.caixaDin||[]).find(x=>x.id===p.pend);if(!r||!aberta(r)||r.saiu)return false;
+  r.saiu=now().toISOString();SIM.log.unshift({t:`Checkout: o cliente do pedido ${r.saleNo||r.id} saiu da tela sem pagar (a compra continua no Posto)`,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);saveSim();return true;}
 function lojaProntoOcioso(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.escolha)return false;
   if(Date.now()-Math.max(k.toque||0,k.prontoDesde||0)<LOJA_PRONTO_MS)return false;
-  lojaFresh(k.code);const r=(SIM.caixaDin||[]).find(x=>x.id===p.pend);
-  if(r&&aberta(r)&&!r.saiu){r.saiu=now().toISOString();SIM.log.unshift({t:`Checkout: o cliente do pedido ${r.saleNo||r.id} saiu da tela sem pagar (a compra continua no Posto)`,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);saveSim();}
-  lojaTimerOff();lojaReset();render();lojaEco();return true;}
+  lojaSaiu();lojaTimerOff();lojaReset();render();lojaEco();return true;}
 const lojaDinheiro=card=>lojaPedido(card,'dinheiro'); // nome da v79
 // Checkout esperando: o vendedor confirmou (vira a tela do QR com a contagem), cancelou (volta ao carrinho da mesma sessão com aviso) ou o dia virou
 function lojaPendCheck(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.pend)return false;
@@ -5369,7 +5371,7 @@ document.addEventListener('click',e=>{
     case 'kiosk-minhas-x':if(state.kiosk.minhasI!=null)state.kiosk.minhasI=null;else state.kiosk.minhas=false;render();break;
     case 'pend-pkg':pendEscolher(d.id,{pkg:d.p});break;
     case 'pend-meio':pendEscolher(d.id,{meio:d.m});break;
-    case 'loja-exit':case 'loja-new':lojaCliente();lojaReset();render();break;
+    case 'loja-exit':case 'loja-new':lojaSaiu();lojaCliente();lojaReset();render();break; // R3: saindo da tela Pronto ou do valor, o Posto vê "o cliente saiu"
     case 'loja-list':state.kiosk.list=!state.kiosk.list;render();break;
     case 'loja-sair':lojaSair();break;
     case 'loja-eq-fechar':state.kiosk.equipe=false;state.kiosk.list=false;render();break;

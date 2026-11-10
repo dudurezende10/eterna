@@ -240,6 +240,18 @@ await V.evaluate(()=>{ETERNA.simFresh();ETERNA.render();});await V.waitForTimeou
 for(let i=0;i<20;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'))break;await sleep(100);}
 ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!!document.querySelector('[data-act="kiosk-start"]')),'P4: cancelado pelo caixa, o cliente volta ao início');
 //@@REVISAO2
+// R3: "Voltar ao início" na tela Pronto e na do valor marca "o cliente saiu" (a compra continua no Posto, que avisa)
+{const saiu=async(id,sel)=>{await L.click(sel);await L.waitForTimeout(300);
+    const s=await L.evaluate(id=>{const r=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);return {step:ETERNA.state.kiosk.step,est:r.estado,saiu:!!r.saiu};},id);
+    for(let i=0;i<20;i++){if(await V.evaluate(id=>!!document.querySelector(`[data-pend="${id}"] .pend-saiu`),id))break;await sleep(100);}
+    s.posto=await V.evaluate(id=>/saiu da tela/.test((document.querySelector(`[data-pend="${id}"] .pend-saiu`)||{}).innerText||'')&&/saiu da tela do Checkout/.test((document.querySelector('.pend-avisos')||{}).innerText||''),id);return s;};
+  await V.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});
+  await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idP=await pend();
+  let s=await saiu(idP,'.lj-pronto .lj-restart[data-act="loja-new"]');ok(s.step==='code'&&s.est==='escolha'&&s.saiu&&s.posto,'R3: "Voltar ao início" na tela Pronto marca "o cliente saiu" e o Posto avisa: '+JSON.stringify(s));
+  await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idQ=await pend();await posto(idQ,{pkg:'arq'});
+  for(let i=0;i<20;i++){if(await L.evaluate(()=>!!document.querySelector('.lj-temvalor')))break;await sleep(100);}
+  s=await saiu(idQ,'.lj-temvalor [data-act="loja-new"]');ok(s.step==='code'&&s.est==='escolha'&&s.saiu&&s.posto,'R3: o início na tela do valor também marca "o cliente saiu": '+JSON.stringify(s));
+  await V.evaluate(ids=>{ETERNA.simFresh();ids.forEach(id=>{const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.estado==='escolha')ETERNA.dinCancelar(id);});},[idP,idQ]);await L.waitForTimeout(300);}
 // R1: o caixa escolhe o meio antes do pacote. Nada de "R$ 0" nem "Dinheiro": o pedido segue "Escolha do pacote pendente", sem valor e fora das somas
 {await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idR=await pend();
   await posto(idR,{meio:'dinheiro'});await L.waitForTimeout(300);
