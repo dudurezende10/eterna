@@ -1,7 +1,9 @@
 #!/bin/bash
-# Eterna · instala o recorte local dos fundos de IA (v84), uma vez por computador.
-# Cria ~/Eterna/venv (ambiente separado do Python do sistema) com versões fixas e baixa os dois modelos usados pelo
-# agente: isnet-general-use e u2net_human_seg (cerca de 350 MB). Recomendado: 16 GB de memória.
+# Eterna · instala o recorte local dos fundos de IA (v97: BiRefNet + a regra do que encosta na pessoa), uma vez por computador.
+# Cria ~/Eterna/venv (ambiente separado do Python do sistema) com versões fixas e baixa os 4 modelos: birefnet-general,
+# u2net_human_seg e isnet-general-use (pelo rembg, que confere o hash de cada um) e o MoveNet (SHA-256 conferido), cerca
+# de 1,3 GB. Precisa de 16 GB de memória (o BiRefNet sozinho passa de 4,7 GB); servidor com placa NVIDIA usa a placa
+# (no Windows: instalar-recorte.bat gpu). Rodar de novo não baixa nada que já esteja certo.
 # Depois, feche e abra o agente (Eterna.command): ele passa a usar o Python de ~/Eterna/venv.
 cd "$(dirname "$0")"
 VENV="$HOME/Eterna/venv"
@@ -18,10 +20,9 @@ fi
 echo "Instalando $PACOTES (pode levar alguns minutos)..."
 "$VENV/bin/python3" -m pip install --disable-pip-version-check --upgrade pip >/dev/null
 "$VENV/bin/python3" -m pip install --disable-pip-version-check $PACOTES || { echo "Não deu para instalar."; fim 1; }
-echo "Baixando os modelos de recorte (isnet-general-use e u2net_human_seg)..."
-"$VENV/bin/python3" -c "from rembg import new_session
-for m in ('isnet-general-use', 'u2net_human_seg'):
-    new_session(m); print('ok', m)" || { echo "Não deu para baixar os modelos."; fim 1; }
+[ -f instalar-recorte-modelos.py ] || curl -fsSL -o instalar-recorte-modelos.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/instalar-recorte-modelos.py
+echo "Baixando os modelos do recorte (birefnet-general, u2net_human_seg, isnet-general-use e MoveNet; cerca de 1,3 GB)..."
+"$VENV/bin/python3" instalar-recorte-modelos.py || { echo "Não deu para baixar os modelos."; fim 1; }
 echo
 echo "Pronto. Feche o agente e abra de novo (Eterna.command): a janela mostra \"Recorte local: pronto\"."
 fim 0

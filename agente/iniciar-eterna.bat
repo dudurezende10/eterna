@@ -20,6 +20,8 @@ if errorlevel 1 (
 
 echo Baixando a versao mais nova do Eterna...
 curl -fsSL -o eterna-agente.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/eterna-agente.py
+rem v97: o recorte dos fundos de IA roda num processo a parte, ao lado do agente
+curl -fsSL -o eterna-recorte.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/eterna-recorte.py
 curl -fsSL -o teste-carga.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/teste-carga.py
 
 rem v84: com o recorte local instalado (instalar-recorte.bat), usa o Python de %USERPROFILE%\Eterna\venv

@@ -46,7 +46,9 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 ## 3. Eterna (no usuário eterna)
 
 - [ ] Instalar o Python 3.12 (python.org), marcando "Add python.exe to PATH".
-- [ ] Baixar e rodar `agente\instalar-recorte.bat`. Ele cria o venv e baixa os modelos do recorte (cerca de 350 MB).
+- [ ] Driver NVIDIA recente (a série RTX 50 exige driver e CUDA 12.8 ou mais novos). Conferir com `nvidia-smi`.
+- [ ] Baixar e rodar `agente\instalar-recorte.bat gpu` (v97). Ele cria o venv, troca o onnxruntime pelo da placa (com as bibliotecas CUDA e cuDNN pelo pip) e baixa os 4 modelos do recorte (BiRefNet, u2net_human_seg, isnet-general-use e MoveNet, cerca de 1,3 GB, com hash conferido). No fim mostra "provedor do recorte: placa de vídeo (CUDA)"; se mostrar processador, conferir o driver. Sem placa NVIDIA: `agente\instalar-recorte.bat` (sem `gpu`). Computador com menos de 16 GB não roda o recorte.
+- [ ] Com o agente aberto, conferir `/status`: `recorte.ok` = true, `recorte.modelo` = `birefnet-general` e, depois da primeira foto, `recorte.provedor` = `cuda`. O `eterna-recorte.py` precisa estar na mesma pasta do `eterna-agente.py` (o `iniciar-eterna.bat` baixa os dois).
 - [ ] Rodar `agente\iniciar-eterna.bat` uma vez. Ele baixa o agente mais novo, instala as bibliotecas e cria `~/Eterna`.
 - [ ] Conferir: `curl http://127.0.0.1:8765/status` responde `"ok": true`.
 
