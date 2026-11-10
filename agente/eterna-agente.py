@@ -28,7 +28,7 @@ Para receber de um servidor FTP que já existe na máquina, vigiando a pasta del
      ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections
-import array, itertools, operator
+import array, itertools, operator, tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request, urllib.error, mimetypes, re, base64
@@ -3433,6 +3433,8 @@ def gal_indexar():
             m = REPO.ler_manifesto(t)
             if m and m.get("codigo"):
                 codigos[m["codigo"]] = t
+            if m and not gal_expirou(m):
+                vis_protege_manifesto(m)            # v97: leva de escola ou de menor só entra em visita por Juntar
             if m and (m.get("envio") or {}).get("vitrine") != "ok" and not gal_expirou(m):
                 gal_fila.put(t)
 
@@ -4061,9 +4063,15 @@ def _sess_ia_cand(x):
 
 
 def _sess_ia_fecha(x):
-    """v93: no fechamento, ia = os N primeiros cliques; com N fotos ou menos, a regra não vale (poucas_fotos)."""
+    """v93: no fechamento, ia = os N primeiros cliques; com N fotos ou menos, a regra não vale (poucas_fotos).
+    v97 (D4, Eduardo 10/11: bases POR VISITA, as 2 primeiras fotos da família): se a visita da leva já tem outra leva
+    fechada com bases, esta fecha sem bases (visita_ja_tem) e as fotos dela voltam todas para a venda."""
     n, mot = _sess_ia_regra(x)
     fs = x["fotos"]
+    if n and not mot and len(fs) > n and _vis_ja_tem_ia(x["card"]):
+        x["ia"] = []
+        x["ia_regra"] = {"n": n, "motivo": "visita_ja_tem"}
+        return
     x["ia"] = list(fs[:n]) if n and len(fs) > n else []
     x["ia_regra"] = {"n": n, "motivo": mot or ("poucas_fotos" if n and len(fs) <= n else None)}
 
@@ -4377,6 +4385,8 @@ def _sess_decide(pid, fs, agora):
     _sess_entra(dest, pid, info["t"], info["u"], dec)
     if dec in ("r", "f", "n"):
         _sess_guarda_rostos(dest["card"], pid, princ)
+    if princ:
+        _vis_ligar(dest["card"], pid, info["t"], princ)   # v97: a leva liga à visita pelos rostos de qualidade
     if sess_aberta.get(tr) != dest["card"]:
         _sess_vira_aberta(tr, dest["card"], agora)
     for y in {id(x): x, id(dest): dest}.values():
@@ -4424,8 +4434,13 @@ def sess_rostos_lidos(pid, faces, agora=None):
             _sess_drenar(sess_info[pid]["trilha"], agora)
         elif x is not None and x["status"] != "fechada" and pid in x["_guardar"]:
             x["_guardar"].discard(pid)
-            _sess_guarda_rostos(x["card"], pid, _sess_principais(fs))
+            princ = _sess_principais(fs)
+            _sess_guarda_rostos(x["card"], pid, princ)
+            _vis_ligar(x["card"], pid, x["_t"].get(pid, (agora, agora))[0], princ)   # v97
             _sess_drenar(x["k"], agora)
+        elif x is not None and fs:
+            # v97: foto já decidida só pelo tempo (rosto lido depois do prazo, ou leva já fechada): liga a visita mesmo assim
+            _vis_ligar(x["card"], pid, x["_t"].get(pid, (_num(x.get("cap1")), 0))[0], _sess_principais(fs))
 
 
 def sess_add(pid, m):
@@ -4471,6 +4486,7 @@ def _sess_esquecer(pid):
             x["removida"] = True
             x["status"] = "fechada"
         _sess_toca(x)
+        _vis_esquecer(pid, x["card"], x["removida"])        # v97: sai das arestas; leva removida sai da visita
 
 
 def sess_esquecer_disco(pids):
@@ -4522,27 +4538,56 @@ def sess_esquecer_disco(pids):
                 n += 1
         except Exception as ex:
             print("  sessões (LGPD): não limpei %s (%s)" % (nome, str(ex)[:80]))
+    # v97: as arestas das visitas dos dias fora da memória perdem os pids (as de hoje e ontem já saíram em _vis_esquecer)
+    try:
+        nomes = sorted(os.listdir(VIS_DIR))
+    except OSError:
+        nomes = []
+    for nome in nomes:
+        mm = _SESS_DIA.match(nome)
+        if not mm or mm.group(1) < lim or mm.group(1) in em_mem:
+            continue
+        f = os.path.join(VIS_DIR, nome)
+        try:
+            with open(f, encoding="utf8") as fh:
+                j = json.load(fh)
+            mudou = False
+            for e in j.get("arestas") or []:
+                for k in ("pa", "pb"):
+                    if isinstance(e, dict) and e.get(k) in pids:
+                        e[k] = None
+                        mudou = True
+            if mudou:
+                fd, tmp = tempfile.mkstemp(prefix=".vis-", suffix=".tmp", dir=VIS_DIR)
+                with os.fdopen(fd, "w", encoding="utf8") as fh:
+                    json.dump(j, fh)
+                os.chmod(tmp, 0o600)
+                os.replace(tmp, f)
+                n += 1
+        except Exception as ex:
+            print("  visitas (LGPD): não limpei %s (%s)" % (nome, str(ex)[:80]))
     sess_gravar()
     return n
 
 
 def sess_limpar(agora=None):
-    """S14: apaga os arquivos de sessão com mais de SESS_RET_DIAS (uma vez por dia, pelo sess_loop)."""
+    """S14: apaga os arquivos de sessão com mais de SESS_RET_DIAS (uma vez por dia, pelo sess_loop). v97: e os das visitas."""
     agora = time.time() if agora is None else agora
     lim = _ff_hoje(agora - SESS_RET_DIAS * 86400)
     n = 0
-    try:
-        nomes = os.listdir(SESS_DIR)
-    except OSError:
-        return 0
-    for nome in nomes:
-        mm = _SESS_DIA.match(nome)
-        if mm and mm.group(1) < lim:
-            try:
-                os.remove(os.path.join(SESS_DIR, nome))
-                n += 1
-            except OSError:
-                pass
+    for pasta in (SESS_DIR, VIS_DIR):
+        try:
+            nomes = os.listdir(pasta)
+        except OSError:
+            continue
+        for nome in nomes:
+            mm = _SESS_DIA.match(nome)
+            if mm and mm.group(1) < lim:
+                try:
+                    os.remove(os.path.join(pasta, nome))
+                    n += 1
+                except OSError:
+                    pass
     return n
 
 
@@ -4572,6 +4617,7 @@ def sess_tick(agora=None):
 
 
 def sess_gravar():
+    vis_gravar()                                     # v97: as arestas das visitas junto das sessões
     with sess_lock:
         dias = list(sess_sujo)
         sess_sujo.clear()
@@ -4606,6 +4652,12 @@ def sess_loop():
                             sess_pid.pop(p, None)
                     if sess_ultima.get(x["k"]) == card:
                         sess_ultima.pop(x["k"], None)
+                    vis_rostos.pop(card, None)
+                    vis_de.pop(card, None)
+                for d in [d for d in vis_arestas if d < ontem]:   # v97: visitas também só de hoje e ontem na memória
+                    vis_arestas.pop(d, None)
+                for vid in [k for k, v in vis_info.items() if v["dia"] < ontem]:
+                    vis_info.pop(vid, None)
             sess_gravar()
             if sess_limpo[0] != _ff_hoje(agora):
                 sess_limpo[0] = _ff_hoje(agora)
@@ -4718,6 +4770,13 @@ def sess_carregar(agora=None):
             if x["status"] != "fechada":
                 _sess_fecha_uma(x, agora, "reinicio")
         hoje = sum(1 for x in sess.values() if x["dia"] == dias[1] and not x.get("removida"))
+        _vis_carregar(dias, agora)                   # v97: arestas relidas, visitas refeitas (critério 31)
+        for d in dias:
+            _vis_recalc(d)
+    try:
+        vis_idx_boot(agora)
+    except Exception as ex:
+        print("  visitas: rostos do boot indisponíveis (%s)" % str(ex)[:80])
     sess_gravar()
     return n_lidas, novas, hoje
 
@@ -4743,7 +4802,544 @@ def sess_status():
         return {"v": 2, "pausa": SESS_PAUSA, "rostos": bool(sess_rostos_on()), "rev": sess_rev[0], "gen": BOOT, "dias": BUSCA_DIAS,
                 "janela_min": jan, "janela_padrao": BUSCA_JANELA_MIN, "janela_fixa": BUSCA_DIAS_EXPLICITA,
                 "hoje": sum(1 for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
-                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada")}
+                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada"), "visitas": _vis_status_mem()}
+
+
+# ---------- v97: visitas (as levas da mesma família, ligadas por rosto) ----------
+# Leva = a sessão de hoje (por fotógrafo ou câmera, 60 s sem disparo fecham, rostos novos separam; código LP). Visita = as
+# levas da mesma família no dia: duas levas ligam quando um rosto de qualidade (principal, >= 60 px, frontal, score >= 0,80)
+# de uma bate (sim >= VIS_LIM) com um rosto de qualidade da outra, em corrente (união), com o 1º e o último clique da visita
+# a até 50 min. Teto: 12 levas ou 15 rostos diferentes (acima disso a ligação automática para e a visita fica "grande":
+# excursão ou escola encadeariam todo mundo). Leva de escola ou de menor só liga por Juntar. Separar (Posto) vira "não
+# ligar" entre a leva e o resto da visita e vence a ligação por rosto; Juntar liga mesmo sem rosto e desfaz o Separar.
+# Tudo sob o sess_lock (nunca com o lock). Vetores só em memória (vis_idx, 50 min); as arestas vão para
+# ~/Eterna/ponto/visitas/AAAA-MM-DD.json (60 dias) sem vetor; o Checkout abre a visita inteira (decisão do Eduardo, 10/11).
+def _vis_lim():
+    try:
+        v = float(os.environ.get("ETERNA_VIS_LIM") or 0)       # só nos testes
+    except ValueError:
+        v = 0
+    return v if 0 < v < 1 else 0.50
+
+
+VIS_LIM = _vis_lim()
+VIS_JANELA = 3000            # s entre o 1º e o último clique da visita
+VIS_LEVAS_MAX = 12
+VIS_ROSTOS_MAX = 15
+VIS_IDX_MAX = 4000           # vetores na janela (todas as trilhas)
+VIS_ROSTOS_LEVA = 20         # rostos diferentes guardados por leva (para o teto de rostos da visita)
+VIS_DIR = os.path.join(HOME, "ponto", "visitas")
+VIS_LOG = os.path.join(HOME, "ponto", "visitas-log.jsonl")
+VIS_LOG_MAX = 5 * 1024 * 1024
+vis_idx = {"M": None, "T": None, "C": None, "meta": [], "w": 0, "n": 0, "cid": {}, "tmax": 0.0}   # anel de vetores (sob o sess_lock)
+vis_arestas = {}             # dia -> [aresta {a, b, tipo, sim, pa, pb, por, posto, em, seq, barrada?, desfeita?}]
+vis_de = {}                  # card -> id da visita (só visitas com 2 levas ou mais)
+vis_info = {}                # id -> visita pública (sem vetor, sem pid)
+vis_rostos = {}              # card -> [(pid, vetor)] distintos (só memória)
+vis_rev = [0]
+vis_seq = [0]
+vis_sujo = set()
+vis_prot = set()             # levas de escola ou de menor (galerias publicadas): só ligam por Juntar
+vis_med = {"lig": collections.deque(maxlen=500), "recalc": collections.deque(maxlen=200), "ms_ultimo": None}
+_VIS_NP = []
+
+
+def _vis_np():
+    if not _VIS_NP:
+        try:
+            import numpy
+            _VIS_NP.append(numpy)
+        except Exception:
+            _VIS_NP.append(None)
+    return _VIS_NP[0]
+
+
+def _vis_idx_add(t, card, pid, v):
+    """Põe o vetor no anel (sobrescreve o mais velho acima de VIS_IDX_MAX). Com o sess_lock."""
+    I = vis_idx
+    np = _vis_np()
+    if I["meta"] == []:
+        I["meta"] = [None] * VIS_IDX_MAX
+        if np is not None:
+            I["M"] = np.zeros((VIS_IDX_MAX, 128), np.float32)
+            I["T"] = np.full(VIS_IDX_MAX, np.nan)
+            I["C"] = np.full(VIS_IDX_MAX, -1, np.int64)
+    w = I["w"]
+    cid = I["cid"].setdefault(card, len(I["cid"]) + 1)
+    I["meta"][w] = (float(t), card, pid, v)
+    if np is not None:
+        I["M"][w] = np.frombuffer(v, dtype=np.float32) if isinstance(v, array.array) else np.asarray(v, np.float32)
+        I["T"][w] = float(t)
+        I["C"][w] = cid
+    I["w"] = (w + 1) % VIS_IDX_MAX
+    I["n"] = min(VIS_IDX_MAX, I["n"] + 1)
+    I["tmax"] = max(I["tmax"], float(t))
+
+
+def _vis_idx_tira(pids=None, cards=None):
+    """LGPD ou leva removida: os vetores saem do anel. Com o sess_lock."""
+    I = vis_idx
+    for i, mm in enumerate(I["meta"]):
+        if mm and ((pids and mm[2] in pids) or (cards and mm[1] in cards)):
+            I["meta"][i] = None
+            if I["T"] is not None:
+                I["T"][i] = float("nan")
+                I["C"][i] = -1
+
+
+def _vis_busca(v, card, t):
+    """{outro card: (sim, pid)} dos rostos da janela (|t − t_outro| <= 50 min) de OUTRAS levas, o melhor por leva."""
+    I = vis_idx
+    out = {}
+    if not I["n"]:
+        return out
+    np = _vis_np()
+    mine = I["cid"].get(card, -2)
+    if np is not None and I["M"] is not None:
+        vv = np.frombuffer(v, dtype=np.float32) if isinstance(v, array.array) else np.asarray(v, np.float32)
+        with np.errstate(invalid="ignore"):
+            ok = (np.abs(I["T"] - float(t)) <= VIS_JANELA) & (I["C"] != mine) & (I["C"] >= 0)
+        idx = np.nonzero(ok)[0]
+        if not len(idx):
+            return out
+        sims = I["M"][idx] @ vv
+        for j in np.nonzero(sims >= VIS_LIM - 1e-6)[0]:     # 1e-6: o float32 não tira o 0,50 exato do limiar
+            mm = I["meta"][int(idx[j])]
+            if mm is None:
+                continue
+            s = float(sims[j])
+            if mm[1] not in out or s > out[mm[1]][0]:
+                out[mm[1]] = (s, mm[2])
+        return out
+    for mm in I["meta"]:
+        if not mm or mm[1] == card or abs(mm[0] - t) > VIS_JANELA:
+            continue
+        s = _dot(v, mm[3])
+        if s >= VIS_LIM - 1e-6 and (mm[1] not in out or s > out[mm[1]][0]):
+            out[mm[1]] = (s, mm[2])
+    return out
+
+
+def _vis_distintos(vs):
+    """Quantos rostos diferentes (sim < VIS_LIM entre eles) há na lista de vetores."""
+    if len(vs) < 2:
+        return len(vs)
+    np = _vis_np()
+    if np is not None:
+        A = np.stack([np.frombuffer(v, dtype=np.float32) if isinstance(v, array.array) else np.asarray(v, np.float32) for v in vs])
+        S = A @ A.T
+        rep = []
+        for i in range(len(vs)):
+            if not any(S[i, j] >= VIS_LIM for j in rep):
+                rep.append(i)
+        return len(rep)
+    rep = []
+    for v in vs:
+        if not any(_dot(v, w) >= VIS_LIM for w in rep):
+            rep.append(v)
+    return len(rep)
+
+
+def _vis_rostos_add(card, pid, v):
+    mem = vis_rostos.setdefault(card, [])
+    if len(mem) < VIS_ROSTOS_LEVA and not any(_dot(v, w) >= VIS_LIM for _, w in mem):
+        mem.append((pid, v))
+
+
+def _vis_ligar(card, pid, t, princ):
+    """Com o sess_lock: os rostos de qualidade da foto pid (leva card, clique t) procuram rostos de OUTRAS levas na janela;
+    sim >= VIS_LIM cria a aresta "rosto" entre as duas levas (uma por par: a maior sim e os 2 pids). Depois os vetores entram
+    no anel. Devolve True se a visita mudou."""
+    x = sess.get(card)
+    if x is None or x.get("removida") or not princ:
+        return False
+    qual = [f for f in princ if _sess_qualidade(f)]
+    if not qual:
+        return False
+    t0 = time.perf_counter()
+    melhor = {}
+    for f in qual:
+        for oc, (s, op) in _vis_busca(f["v"], card, t).items():
+            if oc not in melhor or s > melhor[oc][0]:
+                melhor[oc] = (s, op)
+    for f in qual:
+        _vis_idx_add(t, card, pid, f["v"])
+        _vis_rostos_add(card, pid, f["v"])
+    nova = False
+    dia = x["dia"]
+    for oc, (s, op) in melhor.items():
+        y = sess.get(oc)
+        if y is None or y.get("removida") or y["dia"] != dia:
+            continue
+        nova = _vis_aresta(dia, "rosto", card, oc, sim=s, pa=pid, pb=op) or nova
+    mudou = _vis_recalc(dia, set(melhor) | {card}) if nova else False
+    vis_med["lig"].append((time.perf_counter() - t0) * 1000)
+    return mudou
+
+
+def _vis_aresta(dia, tipo, a, b, sim=None, pa=None, pb=None, por=None, posto=None):
+    """Aresta nova (True) ou a de rosto que já existe com sim maior (False: a ligação não muda). Com o sess_lock."""
+    lst = vis_arestas.setdefault(dia, [])
+    par = {a, b}
+    if tipo == "rosto":
+        for e in lst:
+            if e["tipo"] == "rosto" and {e["a"], e["b"]} == par:
+                if sim is not None and sim > (e.get("sim") or 0):
+                    e.update(sim=round(sim, 4), pa=pa if e["a"] == a else pb, pb=pb if e["a"] == a else pa)
+                    vis_sujo.add(dia)
+                return False
+    vis_seq[0] += 1
+    e = {"a": a, "b": b, "tipo": tipo, "sim": round(sim, 4) if sim is not None else None, "pa": pa, "pb": pb,
+         "por": por, "posto": posto, "em": round(time.time(), 1), "seq": vis_seq[0]}
+    lst.append(e)
+    vis_sujo.add(dia)
+    return True
+
+
+def _vis_protegida(x):
+    return x["card"] in vis_prot or bool(x.get("menor"))
+
+
+def _vis_recalc(dia, toque=None):
+    """Com o sess_lock: refaz as visitas do dia (união-busca) só com as arestas permitidas. Juntar primeiro (decisão da
+    equipe, sem teto), depois as de rosto na ordem em que nasceram; aresta que deixaria a visita com mais de 50 min, mais de
+    12 levas ou mais de 15 rostos, entre levas separadas, ou de leva de escola ou menor, fica registrada com "barrada".
+    toque = levas que mudaram: refaz só o pedaço do dia ligado a elas por alguma aresta (critério 33). Devolve True se
+    alguma visita mudou."""
+    t0 = time.perf_counter()
+    lst = vis_arestas.get(dia) or []
+    if toque is not None:
+        viz = {}
+        for e in lst:
+            viz.setdefault(e["a"], []).append(e["b"])
+            viz.setdefault(e["b"], []).append(e["a"])
+        alc, pilha = set(), [c for c in toque if c]
+        for v in vis_info.values():              # as levas das visitas atuais das tocadas também (uma pode sair)
+            if v["dia"] == dia and set(v["levas"]) & set(pilha):
+                pilha += v["levas"]
+        while pilha:
+            c = pilha.pop()
+            if c in alc:
+                continue
+            alc.add(c)
+            pilha += viz.get(c, [])
+        levas = {c: sess[c] for c in alc if c in sess and sess[c]["dia"] == dia and not sess[c].get("removida")}
+        lst = [e for e in lst if e["a"] in alc or e["b"] in alc]
+    else:
+        alc = None
+        levas = {c: x for c, x in sess.items() if x["dia"] == dia and not x.get("removida")}
+    pai = {c: c for c in levas}
+    ag = {c: {"ini": _num(x.get("cap0")) or _num(x.get("aberta_em")), "fim": _num(x.get("cap1")) or _num(x.get("ultima_chegada")),
+              "n": 1, "rostos": [v for _, v in vis_rostos.get(c, [])], "grande": False, "membros": [c]} for c, x in levas.items()}
+
+    def raiz(c):
+        while pai[c] != c:
+            pai[c] = pai[pai[c]]
+            c = pai[c]
+        return c
+
+    sep = [e for e in lst if e["tipo"] == "separar" and not e.get("desfeita")]
+    nao = {frozenset((e["a"], e["b"])) for e in sep}
+    ordem = sorted((e for e in lst if e["tipo"] == "juntar" and not e.get("desfeita")), key=lambda e: e["seq"]) + \
+        sorted((e for e in lst if e["tipo"] == "rosto"), key=lambda e: e["seq"])
+    for e in ordem:
+        e.pop("barrada", None)
+        a, b = e["a"], e["b"]
+        if a not in pai or b not in pai:
+            continue
+        ra, rb = raiz(a), raiz(b)
+        if ra == rb:
+            continue
+        A, B = ag[ra], ag[rb]
+        if nao and any(frozenset((u, w)) in nao for u in A["membros"] for w in B["membros"]):
+            e["barrada"] = "separada"
+            continue
+        rostos = A["rostos"] + B["rostos"]
+        if e["tipo"] == "rosto":
+            if _vis_protegida(levas[a]) or _vis_protegida(levas[b]):
+                e["barrada"] = "escola_menor"
+                continue
+            if max(A["fim"], B["fim"]) - min(A["ini"], B["ini"]) > VIS_JANELA:
+                e["barrada"] = "janela"
+                continue
+            if A["n"] + B["n"] > VIS_LEVAS_MAX:
+                e["barrada"] = "levas"
+                A["grande"] = B["grande"] = True
+                continue
+            if _vis_distintos(rostos) > VIS_ROSTOS_MAX:
+                e["barrada"] = "rostos"
+                A["grande"] = B["grande"] = True
+                continue
+        pai[rb] = ra
+        A.update(ini=min(A["ini"], B["ini"]), fim=max(A["fim"], B["fim"]), n=A["n"] + B["n"], rostos=rostos,
+                 grande=A["grande"] or B["grande"] or A["n"] + B["n"] > VIS_LEVAS_MAX, membros=A["membros"] + B["membros"])
+        if e["tipo"] == "juntar" and _vis_distintos(rostos) > VIS_ROSTOS_MAX:
+            A["grande"] = True
+    novas = {}
+    for c in levas:
+        r = raiz(c)
+        A = ag[r]
+        sep_de = sorted({(e["b"] if e["a"] in A["membros"] else e["a"]) for e in sep
+                         if (e["a"] in A["membros"]) != (e["b"] in A["membros"])})
+        if len(A["membros"]) < 2 and not A["grande"] and not sep_de:
+            continue
+        if r in novas:
+            continue
+        ms = sorted(A["membros"], key=lambda k: (_num(levas[k].get("cap0")) or _num(levas[k].get("aberta_em")), levas[k].get("_n", 0)))
+        vid = "V" + ms[0][2:]
+        novas[r] = {"id": vid, "dia": dia, "levas": ms, "inicio": round(A["ini"], 1), "fim": round(A["fim"], 1),
+                    "grande": bool(A["grande"]), "separadas": sep_de}
+    mudou = False
+    vistos = set()
+    for v in novas.values():
+        vistos.add(v["id"])
+        velho = vis_info.get(v["id"])
+        chave = lambda o: (o["levas"], o["grande"], o["separadas"])
+        if velho is None or chave(velho) != chave(v):
+            vis_rev[0] += 1
+            v["rev"] = vis_rev[0]
+            mudou = True
+        else:
+            v["rev"] = velho["rev"]
+        vis_info[v["id"]] = v
+    for vid in [k for k, v in vis_info.items() if v["dia"] == dia and k not in vistos and (alc is None or set(v["levas"]) & alc)]:
+        vis_info.pop(vid)
+        vis_rev[0] += 1
+        mudou = True
+    for c in levas:
+        vis_de.pop(c, None)
+    for v in novas.values():
+        if len(v["levas"]) > 1:
+            for c in v["levas"]:
+                vis_de[c] = v["id"]
+    vis_sujo.add(dia)
+    ms_ = (time.perf_counter() - t0) * 1000
+    vis_med["recalc"].append(ms_)
+    vis_med["ms_ultimo"] = round(ms_, 2)
+    return mudou
+
+
+def _vis_ja_tem_ia(card):
+    """D4 (Eduardo, 10/11): a visita da leva já tem outra leva fechada com as bases de IA. Com o sess_lock."""
+    v = vis_info.get(vis_de.get(card) or "")
+    if not v:
+        return False
+    for c in v["levas"]:
+        y = sess.get(c)
+        if c != card and y is not None and y["status"] == "fechada" and y.get("ia"):
+            return True
+    return False
+
+
+def vis_levas_de(card):
+    """As levas da visita do card (só ele, se não está em visita). Com o sess_lock."""
+    v = vis_info.get(vis_de.get(card) or "")
+    return list(v["levas"]) if v else [card]
+
+
+def _vis_publico(v):
+    return {k: (list(v[k]) if isinstance(v[k], list) else v[k]) for k in ("id", "levas", "rev", "inicio", "fim", "grande", "separadas")}
+
+
+def _vis_sozinha(card):
+    x = sess.get(card) or {}
+    return {"id": "V" + card[2:], "levas": [card], "rev": vis_rev[0], "inicio": _num(x.get("cap0")), "fim": _num(x.get("cap1")),
+            "grande": False, "separadas": []}
+
+
+def vis_feed(desde=0, ontem=False):
+    """GET /visitas?desde=<rev>: as visitas de hoje (e ontem com ontem=1), sem vetor e sem pid. Nada mudou desde o rev
+    pedido: lista vazia com "igual"; mudou: a lista inteira ("completo")."""
+    agora = time.time()
+    dias = {_ff_hoje(agora)} | ({_ff_hoje(agora - 86400)} if ontem else set())
+    with sess_lock:
+        rev = vis_rev[0]
+        if desde and desde >= rev:
+            return {"ok": True, "rev": rev, "igual": True, "visitas": []}
+        lista = [_vis_publico(v) for v in vis_info.values() if v["dia"] in dias]
+    lista.sort(key=lambda v: v["inicio"] or 0)
+    return {"ok": True, "rev": rev, "completo": True, "visitas": lista}
+
+
+def _vis_status_mem():
+    """/status.sessoes.visitas (com o sess_lock)."""
+    if True:
+        hoje = _ff_hoje()
+        arestas = vis_arestas.get(hoje) or []
+        lig = sorted(vis_med["lig"])
+        return {"n": sum(1 for v in vis_info.values() if v["dia"] == hoje and len(v["levas"]) > 1), "rev": vis_rev[0],
+                "ligacoes_rosto": sum(1 for e in arestas if e["tipo"] == "rosto" and not e.get("barrada")),
+                "barradas": sum(1 for e in arestas if e.get("barrada")), "ms_ultimo": vis_med["ms_ultimo"],
+                "ligar_p90_ms": round(lig[int(0.9 * (len(lig) - 1))], 2) if lig else None, "limiar": VIS_LIM}
+
+
+def _vis_txt(v, n):
+    x = _txt_chave(v, n)
+    return x or None
+
+
+def vis_acao(acao, body, quem_ip):
+    """POST /visitas/juntar {a, b, por, posto} e /visitas/separar {card, por, posto}. Só levas de hoje que existem.
+    Devolve (resposta, código)."""
+    if not isinstance(body, dict):
+        return {"error": "corpo inválido"}, 400
+    por, posto = _vis_txt(body.get("por"), 60), _vis_txt(body.get("posto"), 40)
+    hoje = _ff_hoje()
+    re_lp = re.compile(r"^LP[A-Z0-9]{5,10}$")
+    with sess_lock:
+        def leva_ok(c):
+            x = sess.get(c) if isinstance(c, str) and re_lp.match(c) else None
+            return x is not None and x["dia"] == hoje and not x.get("removida")
+        if acao == "juntar":
+            a, b = body.get("a"), body.get("b")
+            if not leva_ok(a) or not leva_ok(b) or a == b:
+                return {"error": "leva inválida (só levas de hoje)"}, 400
+            de = vis_levas_de(a)
+            Va, Vb = set(vis_levas_de(a)), set(vis_levas_de(b))
+            for e in vis_arestas.get(hoje) or []:      # Juntar desfaz o Separar entre as duas visitas
+                if e["tipo"] == "separar" and not e.get("desfeita") and ({e["a"], e["b"]} & Va) and ({e["a"], e["b"]} & Vb):
+                    e["desfeita"] = round(time.time(), 1)
+            _vis_aresta(hoje, "juntar", a, b, por=por, posto=posto)
+            _vis_recalc(hoje)
+            para = vis_levas_de(a)
+            resp = {"ok": True, "visita": _vis_publico(vis_info[vis_de[a]]) if a in vis_de else _vis_sozinha(a)}
+            log = {"acao": "juntar", "a": a, "b": b, "de": sorted(de), "para": para}
+        elif acao == "separar":
+            card = body.get("card")
+            if not leva_ok(card):
+                return {"error": "leva inválida (só levas de hoje)"}, 400
+            de = vis_levas_de(card)
+            outros = [c for c in de if c != card]
+            for e in vis_arestas.get(hoje) or []:      # Separar desfaz o Juntar entre a leva e o resto da visita
+                if e["tipo"] == "juntar" and not e.get("desfeita") and card in (e["a"], e["b"]) and ({e["a"], e["b"]} - {card}) & set(outros):
+                    e["desfeita"] = round(time.time(), 1)
+            for c in outros:
+                _vis_aresta(hoje, "separar", card, c, por=por, posto=posto)
+            _vis_recalc(hoje)
+            resto = outros[0] if outros else None
+            resp = {"ok": True, "visita": (_vis_publico(vis_info[vis_de[resto]]) if resto in vis_de else _vis_sozinha(resto)) if resto else None,
+                    "nova": _vis_publico(vis_info[vis_de[card]]) if card in vis_de else _vis_sozinha(card)}
+            log = {"acao": "separar", "card": card, "de": sorted(de), "para": vis_levas_de(card)}
+        else:
+            return {"error": "not found"}, 404
+    log.update(por=por, posto=posto, ip=None if quem_ip in ("127.0.0.1", "::1") else quem_ip, em=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    vis_log(log)
+    sess_gravar()
+    return resp, 200
+
+
+def vis_log(obj):
+    """~/Eterna/ponto/visitas-log.jsonl (600): quem, posto, quando, de e para. Sem rosto, sem foto."""
+    try:
+        os.makedirs(os.path.dirname(VIS_LOG), exist_ok=True)
+        if os.path.exists(VIS_LOG) and os.path.getsize(VIS_LOG) > VIS_LOG_MAX:
+            os.replace(VIS_LOG, VIS_LOG + ".1")
+        fd = os.open(VIS_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf8") as f:
+            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    except OSError as ex:
+        print("  visitas: não gravei o registro (%s)" % str(ex)[:80])
+
+
+def vis_gravar():
+    """Grava as arestas dos dias com mudança (~/Eterna/ponto/visitas/AAAA-MM-DD.json, 600, mkstemp). Fora do sess_lock."""
+    with sess_lock:
+        dias = list(vis_sujo)
+        vis_sujo.clear()
+        lotes = {d: [dict(e) for e in vis_arestas.get(d) or []] for d in dias}
+    for d, lst in lotes.items():
+        try:
+            os.makedirs(VIS_DIR, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(prefix=".vis-", suffix=".tmp", dir=VIS_DIR)
+            with os.fdopen(fd, "w", encoding="utf8") as fh:
+                json.dump({"dia": d, "arestas": lst}, fh)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, os.path.join(VIS_DIR, d + ".json"))
+        except Exception as ex:
+            with sess_lock:
+                vis_sujo.add(d)
+            print("  visitas: não gravei %s (%s)" % (d, str(ex)[:80]))
+
+
+def _vis_carregar(dias, agora):
+    """No boot (sess_carregar, com o sess_lock): arestas de ontem e hoje e as visitas refeitas."""
+    for d in dias:
+        try:
+            with open(os.path.join(VIS_DIR, d + ".json"), encoding="utf8") as fh:
+                j = json.load(fh)
+        except Exception:
+            continue
+        lst = []
+        for e in j.get("arestas") or []:
+            if isinstance(e, dict) and e.get("tipo") in ("rosto", "juntar", "separar") and isinstance(e.get("a"), str) and isinstance(e.get("b"), str):
+                lst.append(e)
+                vis_seq[0] = max(vis_seq[0], int(e.get("seq") or 0))
+        vis_arestas[d] = lst
+
+
+def vis_idx_boot(agora=None):
+    """No boot, fora do sess_lock: o anel refeito do rostos.db para as fotos das levas das últimas 50 min. O banco não
+    guarda score nem pose: entra o rosto principal com largura >= 60 px (aceito no plano)."""
+    agora = time.time() if agora is None else agora
+    with sess_lock:
+        pids = {}
+        for x in sess.values():
+            if x.get("removida") or _num(x.get("cap1")) < agora - VIS_JANELA:
+                continue
+            for p in x["fotos"]:
+                pids[p] = (x["card"], _num(x.get("cap1")))
+    if not pids:
+        return 0
+    faces = _sess_faces_db(list(pids))
+    n = 0
+    with sess_lock:
+        for p, fs in faces.items():
+            card, t = pids.get(p, (None, 0))
+            if card is None:
+                continue
+            for f in _sess_principais(_sess_faces(fs)):
+                if f["l"] >= SESS_Q_LARG:
+                    _vis_idx_add(t, card, p, f["v"])
+                    _vis_rostos_add(card, p, f["v"])
+                    n += 1
+    return n
+
+
+def vis_protege(cards):
+    """Levas de galeria de escola ou de menor: nunca ligam por rosto (só por Juntar). Refaz os dias afetados."""
+    cards = {c for c in cards if isinstance(c, str) and c}
+    novos = cards - vis_prot
+    if not novos:
+        return
+    with sess_lock:
+        vis_prot.update(novos)
+        for d in {sess[c]["dia"] for c in novos if c in sess}:
+            _vis_recalc(d)
+
+
+def vis_protege_manifesto(m):
+    if isinstance(m, dict) and (m.get("tipo") == "evento" or m.get("menor")):
+        vis_protege({str(f.get("sessao") or "") for f in (m.get("fotos") or []) if isinstance(f, dict)} | set(m.get("sessoes") or []))
+
+
+def _vis_esquecer(pid, card, removida):
+    """LGPD (com o sess_lock): o pid sai do anel e das arestas; leva removida sai da visita."""
+    _vis_idx_tira(pids={pid})
+    for c in [card] if card else []:
+        if c in vis_rostos:
+            vis_rostos[c] = [(p, v) for p, v in vis_rostos[c] if p != pid]
+    for d, lst in vis_arestas.items():
+        for e in lst:
+            for k in ("pa", "pb"):
+                if e.get(k) == pid:
+                    e[k] = None
+                    vis_sujo.add(d)
+    if removida and card:
+        _vis_idx_tira(cards={card})
+        vis_rostos.pop(card, None)
+        x = sess.get(card)
+        if x is not None:
+            _vis_recalc(x["dia"])
 
 
 def ff_funcao_validar(body):
@@ -6067,8 +6663,8 @@ class H(BaseHTTPRequestHandler):
 
     def cors(self):
         path = urlparse(self.path).path
-        if path.startswith("/fila-fotografo"):
-            # v87 (segurança N1): sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
+        if path.startswith(("/fila-fotografo", "/visitas")):
+            # v87 (segurança N1); v97: /visitas igual: sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
             o = (self.headers.get("Origin") or "").lower()
             if o and o in ORIGENS_REDE:
                 self.send_header("Access-Control-Allow-Origin", o)
@@ -6127,6 +6723,23 @@ class H(BaseHTTPRequestHandler):
         print("  função do dia atualizada por %s" % ("este computador" if self.loopback() else "posto " + self.client_address[0]))
         return self.js({"ok": True, "ignoradas": ignoradas})
 
+
+    def visitas_post(self, acao):
+        """v97: POST /visitas/juntar {a, b, por, posto} e /visitas/separar {card, por, posto} do Posto de venda. Posto +
+        origem + X-Eterna: 1 + 30 por minuto; só levas de hoje; registro em ~/Eterna/ponto/visitas-log.jsonl."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        if not limite_ok(self.client_address[0], "visitas", 30):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        try:
+            r, cod = vis_acao(acao, body, self.client_address[0])
+        except Exception as ex:
+            print("  visitas: %s" % str(ex)[:120])
+            return self.js({"error": "erro no servidor"}, 500)
+        return self.js(r, cod, nostore=True)
 
     def entradas_post(self):
         try:
@@ -6454,6 +7067,7 @@ class H(BaseHTTPRequestHandler):
                     codigos[m["codigo"]] = t
             gal_fila.put(t)
             nuvem_galeria_enfileira(t)
+            vis_protege_manifesto(m)                   # v97: fora do gal_lock (pega o sess_lock)
             return self.js({"ok": True, "token": t, "estado": gal_estado(t, m), "ignoradas": ignoradas})
         partes = p.split("/")
         if len(partes) != 4 or partes[1] != "g" or not token_ok(partes[2]):
@@ -6625,6 +7239,15 @@ class H(BaseHTTPRequestHandler):
             return self.js({**{k: v for k, v in rover.items()}, "configured": bool(c), "base_url": c["base_url"] if c else None})
         if u.path == "/roverpix/data":
             return self.js(rover_data())
+        if u.path == "/visitas":
+            # v97: as visitas de hoje (levas ligadas). Este computador ou um posto pelo endereço de ETERNA_ORIGENS; sem vetor e sem pid.
+            if not self.posto() or not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            try:
+                desde = max(0, int(q.get("desde", ["0"])[0]))
+            except ValueError:
+                desde = 0
+            return self.js(vis_feed(desde, ontem=q.get("ontem", [""])[0] == "1"), nostore=True)
         if u.path == "/fila-fotografo":
             # v87: painel da fila do fotógrafo (só leitura). Este computador ou um posto pelo endereço de ETERNA_ORIGENS.
             if not self.posto() or not self.origem_local():
@@ -6743,6 +7366,8 @@ class H(BaseHTTPRequestHandler):
             return self.recorte_post()
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
+        if u.path in ("/visitas/juntar", "/visitas/separar"):
+            return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/fundos/modo":
