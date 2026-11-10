@@ -150,6 +150,12 @@ Resources:
             ApiId: !Ref Api
             Path: "/g/{token}/info"
             Method: GET
+        Livres:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/{token}/livres"
+            Method: GET
         Acoes:
           Type: HttpApi
           Properties:

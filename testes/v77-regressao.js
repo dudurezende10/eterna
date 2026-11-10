@@ -184,7 +184,11 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(TB,fb,{sessoes:['LPB']})}});ok(!!(await esperarEnvio(H2,TB)),'pré B: envio da galeria não ficou ok');
     const G=await nova(ctxA,'galeria-agente');const reqs=[];G.on('request',q=>{if(/\/g\//.test(q.url()))reqs.push(q.method()+' '+q.url().replace(/^https?:\/\/[^/]+/,'').replace(/\?.*/,''));});
     await G.goto(UA+'#g/'+TB);await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});
-    ok(await G.evaluate(()=>ETERNA.pub.modo==='agente'&&ETERNA.pub.step==='consent'),'B: galeria pelo agente deveria abrir o consentimento no modo agente: '+JSON.stringify(await G.evaluate(()=>({m:ETERNA.pub.modo,s:ETERNA.pub.step}))));
+    // v96.1 (decisão do Eduardo, 10/11): o QR sozinho abre as compradas e cortesias da venda (rota livres), sem à venda
+    const g0=await G.evaluate(()=>({m:ETERNA.pub.modo,s:ETERNA.pub.step,dl:[...document.querySelectorAll('[data-act="gq-dl"]')].map(x=>x.dataset.pid).sort().join(','),sel:document.querySelectorAll('[data-act="gq-sel"]').length,mais:!!document.querySelector('[data-act="gq-mais"]')}));
+    ok(g0.m==='agente'&&g0.s==='galeria'&&g0.dl===['ag_'+pp[0],'ag_'+pA[1],'ag_'+pp[2]].sort().join(',')&&!g0.sel&&g0.mais,'B (v96.1): só pelo QR no modo agente, as 3 da venda e nenhuma à venda: '+JSON.stringify(g0));
+    await G.click('[data-act="gq-mais"]');
+    ok(await G.evaluate(()=>ETERNA.pub.step==='consent'),'B: Encontrar mais fotos suas deveria abrir o consentimento');
     await G.screenshot({path:PR+'/v77-agente-consentimento.png'});
     await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});await G.waitForTimeout(400);
     await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));
@@ -200,7 +204,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
       const iG=reqs.findIndex(x=>/^POST .*\/galeria$/.test(x)),iF=reqs.findIndex(x=>/^GET .*\/foto\//.test(x));
       ok(d1&&iG>=0&&iF>iG,'R4: com a galeria aberta há 13 min, Baixar deveria pedir /galeria e depois baixar: '+JSON.stringify({download:!!d1,reqs}));
       // ---- CORRIGIR 4b: link vencido (403 no download) pede links novos e tenta de novo uma vez
-      dbg('R4b');reqs.length=0;let vez=0;await G.route('**/g/'+TB+'/foto/**',rt=>{if(rt.request().url().includes('v=original')&&vez++===0)return rt.fulfill({status:403,contentType:'application/json',body:'{"error":"link vencido"}'});return rt.continue();});
+      dbg('R4b');reqs.length=0;let vez=0;await G.route('**/g/'+TB+'/foto/**',rt=>{if(rt.request().url().includes('v=original')&&rt.request().resourceType()==='fetch'&&vez++===0)return rt.fulfill({status:403,contentType:'application/json',body:'{"error":"link vencido"}'});return rt.continue();});
       let d2=null;try{[d2]=await Promise.all([G.waitForEvent('download',{timeout:8000}),G.click(`[data-act="gq-dl"][data-pid="${gb.dl[0]}"]`)]);}catch(e){}
       ok(d2&&reqs.some(x=>/^POST .*\/galeria$/.test(x))&&vez>=2,'R4: download que falhou (403) deveria renovar os links e baixar na segunda tentativa: '+JSON.stringify({download:!!d2,vez,reqs}));
       if(d2){const fp=await d2.path();ok(fs.statSync(fp).size>10000,'R4: arquivo baixado vazio');}
@@ -220,15 +224,15 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
       const [pres]=await Promise.all([G.waitForResponse(rs=>/\/pagamento$/.test(rs.url()),{timeout:8000}).catch(()=>null),G.click('[data-act="gq-pay"]')]);const pj=pres?await pres.json().catch(()=>null):null;await G.waitForTimeout(400);
       ok(pj&&pj.ok&&pj.pedido&&pj.pedido.teste===true&&pj.pedido.total===39,'S3: pagamento simulado pelo agente deveria vir aprovado com teste:true e total 39: '+JSON.stringify(pj&&pj.pedido));
       ok(await G.evaluate(p=>ETERNA.pub.step==='galeria'&&!!document.querySelector(`[data-act="gq-dl"][data-pid="${p}"]`),gb.sel[0]),'S3: foto paga deveria ir para Suas fotos');
-      // ---- CORRIGIR 4c: acesso vencido (401) volta para a selfie, com aviso próprio (não "esse rosto não aparece")
+      // ---- CORRIGIR 4c: acesso vencido (401) avisa (não "esse rosto não aparece"); v96.1: na venda volta para as compradas e cortesias do QR, sem as à venda
       dbg('R4c');await G.evaluate(()=>{ETERNA.pub.acesso='forjado-acesso-vencido';ETERNA.pub.galAt=Date.now()-13*60000;});await G.click(`[data-act="gq-dl"][data-pid="${gb.dl[0]}"]`);await G.waitForTimeout(800);
-      const r4=await G.evaluate(([again,noMatch])=>({step:ETERNA.pub.step,txt:document.body.innerText,again,noMatch,ph:document.querySelectorAll('.gq-ph').length,acesso:ETERNA.pub.acesso}),[TT('gq_again','pt'),TT('gq_noMatch','pt')]);
-      ok(r4.step==='selfie'&&r4.txt.includes(r4.again)&&!r4.txt.includes(r4.noMatch)&&r4.ph===0&&!r4.acesso,'R4: acesso vencido (401) deveria voltar para a selfie com gq_again: '+JSON.stringify({...r4,txt:r4.txt.slice(0,160)}));
+      const r4=await G.evaluate(([again,noMatch])=>({step:ETERNA.pub.step,txt:document.body.innerText,toasts:window.__toasts.join('|'),again,noMatch,sel:document.querySelectorAll('[data-act="gq-sel"]').length,dl:document.querySelectorAll('[data-act="gq-dl"]').length,mais:!!document.querySelector('[data-act="gq-mais"]'),acesso:ETERNA.pub.acesso}),[TT('gq_again','pt'),TT('gq_noMatch','pt')]);
+      ok(r4.step==='galeria'&&r4.toasts.includes(r4.again)&&!r4.txt.includes(r4.noMatch)&&!r4.sel&&r4.dl>0&&r4.mais&&!r4.acesso,'R4 (v96.1): acesso vencido (401) deveria voltar às compradas do QR com gq_again: '+JSON.stringify({...r4,txt:r4.txt.slice(0,160)}));
       await G.screenshot({path:PR+'/v77-agente-acesso-vencido.png'});
       // pagamento com acesso vencido também volta para a selfie
       await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='galeria',null,{timeout:60000}).catch(()=>{});
       if(await G.evaluate(()=>ETERNA.pub.step==='galeria'&&!!document.querySelector('[data-act="gq-sel"]'))){await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});await G.click('[data-act="gq-sel"]');await G.click('[data-act="gq-buy"]');await G.click('[data-act="gq-paym"][data-m="pix"]');
-        await G.evaluate(()=>{ETERNA.pub.acesso='forjado-acesso-vencido';});await G.click('[data-act="gq-pay"]');await G.waitForTimeout(600);ok(await G.evaluate(()=>ETERNA.pub.step==='selfie'),'R4: pagamento com acesso vencido deveria voltar para a selfie');}
+        await G.evaluate(()=>{ETERNA.pub.acesso='forjado-acesso-vencido';});await G.click('[data-act="gq-pay"]');await G.waitForTimeout(600);ok(await G.evaluate(()=>ETERNA.pub.step==='galeria'&&!ETERNA.pub.acesso&&!document.querySelector('[data-act="gq-sel"]')),'R4 (v96.1): pagamento com acesso vencido deveria voltar às compradas do QR');}
       else notas.push('R4: segunda selfie não abriu a galeria; pagamento com 401 não testado');
       // ---- S3 na Lista de vendas (app com agente): venda online de teste, fora da receita
       const AD=await nova(ctxA,'admin-agente',{width:1440,height:900});await login(AD,UA);

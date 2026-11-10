@@ -23,7 +23,8 @@ async function selfie(pg,b64){await pg.waitForFunction(()=>{const s=ETERNA.state
   try{await pg.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='buscando'&&ETERNA.pub.step!=='selfie',null,{timeout:150000});}
   catch(e){const st=await pg.evaluate(()=>({pub:ETERNA.pub&&{step:ETERNA.pub.step,motivo:ETERNA.pub.motivo},face:ETERNA.state.face})).catch(()=>null);throw new Error('selfie sem resposta: '+JSON.stringify(st));}}
 async function abrirGaleria(pg,tok){await pg.goto(U+'#g/'+tok);await pg.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});}
-async function consentir(pg){await pg.check('[data-act="gq-consent"]');await pg.click('#gq-agree');await pg.waitForSelector('#gq-st',{state:'attached'});}
+async function consentir(pg){if(await pg.evaluate(()=>!!document.querySelector('[data-act="gq-mais"]')))await pg.click('[data-act="gq-mais"]'); // v96.1: venda com compradas abre direto nelas
+  await pg.check('[data-act="gq-consent"]');await pg.click('#gq-agree');await pg.waitForSelector('#gq-st',{state:'attached'});}
 const gqCruas=pg=>pg.evaluate(()=>{const t=document.body.innerText+' '+[...document.querySelectorAll('[title],[aria-label],[placeholder]')].map(e=>(e.title||'')+(e.getAttribute('aria-label')||'')+(e.placeholder||'')).join(' ');return (t.match(/\b(gq|lj)_[A-Za-z]+/g)||[]);});
 
 (async()=>{const b=await chromium.launch();
@@ -84,8 +85,12 @@ try{
   // ---------- 5. galeria pública sem login: consentimento ----------
   dbg('5. galeria pública sem login: consentime');
   const G=await nova(ctx,'galeria',{width:390,height:844});await abrirGaleria(G,tok);
+  // v96.1 (decisão do Eduardo, 10/11): a venda com compradas abre direto nelas, sem selfie; a selfie fica no "Encontrar mais fotos suas"
+  const g5a=await G.evaluate(()=>({step:ETERNA.pub.step,dl:document.querySelectorAll('[data-act="gq-dl"]').length,wm:document.querySelectorAll('.gq-ph .wm').length,mais:!!document.querySelector('[data-act="gq-mais"]'),user:!!ETERNA.state.user}));
+  ok(g5a.step==='galeria'&&g5a.dl>0&&!g5a.wm&&g5a.mais&&!g5a.user,'5 (v96.1): só pelo QR, compradas sem à venda e com Encontrar mais fotos suas: '+JSON.stringify(g5a));
+  await G.click('[data-act="gq-mais"]');
   const g5=await G.evaluate(()=>({h:location.hash,step:ETERNA.pub.step,ph:document.querySelectorAll('.gq-ph').length,dis:document.querySelector('#gq-agree').disabled,user:!!ETERNA.state.user}));
-  ok(g5.step==='consent'&&g5.h==='#g/'+tok&&g5.ph===0&&g5.dis&&!g5.user,'5: consentimento sem login: '+JSON.stringify(g5));
+  ok(g5.step==='consent'&&g5.h==='#g/'+tok&&g5.dis&&!g5.user,'5: consentimento sem login: '+JSON.stringify(g5));
   await G.check('[data-act="gq-consent"]');ok(!(await G.evaluate(()=>document.querySelector('#gq-agree').disabled)),'5: botão continua desativado depois de marcar');
   await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});
   // ---------- 7. rosto de fora da sessão: nao_encontrado, tentativas caem, depois bloqueio ----------
@@ -154,7 +159,7 @@ try{
   await A.click(`.galph[data-pid="${venda}"]`);await A.selectOption('#gal-motivo','escola');await A.fill('#gal-nota','turma A');await A.click('[data-act="gal-cort-ok"]');
   const c9=await A.evaluate(()=>ETERNA.SIM.cortesiaLog[0]);ok(c9&&c9.por==='eduardo@eduardorezende.com'&&c9.motivo==='escola'&&c9.acao==='deu'&&c9.pid===venda,'9: log da cortesia: '+JSON.stringify(c9));
   await A.screenshot({path:PR+'/galeria-admin-sessao.png'});
-  await G.reload();await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='consent');await consentir(G);await selfie(G,meuB64);
+  await G.reload();await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando');await consentir(G);await selfie(G,meuB64);
   const g9=await G.evaluate(p=>{const it=[...document.querySelectorAll('.gq-item')].find(x=>x.querySelector(`[data-act="gq-dl"][data-pid="${p}"]`));return {ok:!!it,gift:it&&/Cortesia/.test(it.innerText)};},venda);ok(g9.ok&&g9.gift,'9: cortesia deveria aparecer em Suas fotos com o selo: '+JSON.stringify(g9));
   await A.click(`.galph[data-pid="${venda}"]`);await A.click('[data-act="gal-cort-rm"]');const c9b=await A.evaluate(()=>ETERNA.SIM.cortesiaLog[0]);ok(c9b&&c9b.acao==='retirou'&&c9b.pid===venda,'9: retirar cortesia: '+JSON.stringify(c9b));
   // ---------- 12. grupo de escola com 2 sessões ----------

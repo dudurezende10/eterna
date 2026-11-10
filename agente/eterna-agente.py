@@ -3321,6 +3321,7 @@ URL_TTL = 900           # link assinado de foto: 15 min
 ACESSO_TTL = 3600       # acesso depois da selfie: 1 h
 GAL_MAX_CORPO = 2 * 1024 * 1024
 GAL_FALHAS, GAL_BLOQUEIO = 5, 15 * 60
+GAL_TETO_DIA = 20       # v96.1: selfies sem acerto por galeria de venda por dia, somando todos os IPs; depois, galeria parada até amanhã
 GAL_EVENTO_DISTINTOS, GAL_EVENTO_JANELA = 2, 24 * 3600   # grupo de escola: crianças diferentes por (ip, token) em 24 h
 GAL_EVENTO_HORA = 60                                     # acessos por galeria de grupo por hora (todos os IPs)
 SEM_OPENCV = bool(os.environ.get("ETERNA_SEM_OPENCV"))
@@ -3818,6 +3819,42 @@ def falhou(ip, token):
         return GAL_FALHAS - f[0]
 
 
+_falhas_gal = {}       # token -> [dia, selfies sem acerto no dia]  (v96.1, todos os IPs, só em memória)
+GAL_ALERTAS = os.path.join(GALERIAS, "alertas.jsonl")
+
+
+def _amanha():
+    lt = time.localtime()
+    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday + 1, 0, 0, 0, 0, 0, -1))
+
+
+def gal_teto(token):
+    """v96.1: galeria de venda com GAL_TETO_DIA selfies sem acerto hoje (todos os IPs) fica parada até amanhã.
+    Devolve 0 (pode) ou o instante em que libera."""
+    with gal_lock:
+        f = _falhas_gal.get(token)
+        return _amanha() if f and f[0] == time.strftime("%Y-%m-%d") and f[1] >= GAL_TETO_DIA else 0
+
+
+def gal_teto_soma(token):
+    """Soma uma selfie sem acerto na galeria; na que chega ao teto, grava o alerta (sem token, só um resumo dele)."""
+    dia = time.strftime("%Y-%m-%d")
+    with gal_lock:
+        for k in [k for k, v in _falhas_gal.items() if v[0] != dia]:
+            _falhas_gal.pop(k, None)
+        f = _falhas_gal.setdefault(token, [dia, 0])
+        f[1] += 1
+        n = f[1]
+    if n == GAL_TETO_DIA:
+        g = hashlib.sha256(token.encode()).hexdigest()[:12]
+        print("  ALERTA galeria %s: %d selfies sem acerto hoje, parada até amanhã" % (g, n))
+        try:
+            anexar(GAL_ALERTAS, {"tipo": "galeria_teto_selfie", "galeria": g, "n": n, "dia": dia, "em": _iso()})
+        except Exception:
+            pass
+    return n
+
+
 def evento_permite(ip, token, pids):
     """Grupo de escola: o mesmo IP abre no máximo GAL_EVENTO_DISTINTOS crianças diferentes por galeria em 24 h
     (quem já abriu as fotos de uma criança pode tentar o rosto de outra recortado da vitrine), e cada galeria aceita
@@ -3839,17 +3876,18 @@ def evento_permite(ip, token, pids):
 
 
 def gal_livres(m):
-    """v96.1: na galeria de uma venda (tipo sessao) as compradas e as cortesias entram sempre no acesso da selfie que bateu em
-    pelo menos uma foto (sem acerto continua nao_encontrado, com tentativas e bloqueio): o QR é
-    do comprador e a foto do pai com a bandeira, ou a pessoa pequena demais para o rosto bater, também é dele. As à venda
-    continuam só as em que o rosto bateu (outros clientes). Grupo de escola (evento): só o rosto."""
-    if m.get("tipo") != "sessao":
+    """v96.1 (decisão do Eduardo, 10/11): na galeria de uma venda (tipo sessao) o QR sozinho abre as compradas e as cortesias
+    daquela venda, sem selfie (o pai que pagou e não aparece nas fotos). A selfie só acrescenta as à venda em que a pessoa
+    aparece (regra da v95). Grupo de escola (evento): só pelo rosto (v77)."""
+    if m["tipo"] != "sessao":
         return set()
-    return {f["id"] for f in m.get("fotos") or [] if isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia")}
+    return {f["id"] for f in m["fotos"] if f["direito"] in ("comprada", "cortesia")}
 
 
-def galeria_obj(token, m, pids):
-    pids = set(pids) | gal_livres(m)          # v96.1: o acesso guarda só o acerto do rosto; compradas e cortesias seguem o manifesto de agora
+def galeria_obj(token, m, pids=()):
+    """pids = acerto da selfie (as à venda em que a pessoa aparece). Na venda (sessao), as compradas e cortesias entram sempre:
+    o QR sozinho já as abre (decisão do Eduardo, 10/11), e seguem o manifesto de agora."""
+    pids = set(pids) | gal_livres(m)
     fotos = []
     for f in m["fotos"]:
         if f["id"] not in pids:
@@ -6516,6 +6554,17 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "expirada"}, 410)
             return self.js({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
                             "estado": gal_estado(token, m), "venue": m.get("venue")})
+        if acao == "livres" and len(partes) == 4:       # v96.1: compradas e cortesias da venda só pelo QR (sem selfie)
+            if not limite_ok(ip, "livres", 30):
+                return self.js({"motivo": "bloqueado"}, 429)
+            if token in lapides:
+                return self.js({"error": "expirada"}, 410)
+            m = REPO.ler_manifesto(token)
+            if not m:
+                return self.js({"error": "not found"}, 404)
+            if gal_expirou(m):
+                return self.js({"error": "expirada"}, 410)
+            return self.js({"galeria": galeria_obj(token, m)})
         if acao == "foto" and len(partes) == 5:
             pid = partes[4]
             v = q.get("v", [""])[0]
@@ -6679,7 +6728,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "not found"}, 404)
             if gal_expirou(m):
                 return self.js({"error": "expirada"}, 410)
-            ate = bloqueio(ip, token)
+            ate = bloqueio(ip, token) or (gal_teto(token) if m["tipo"] == "sessao" else 0)
             if ate:
                 return self.js({"motivo": "bloqueado", "ate": _iso(ate)}, 429)
             if not rostos["ligado"]:
@@ -6703,9 +6752,11 @@ class H(BaseHTTPRequestHandler):
             if not r.get("rosto"):
                 return self.js({"ok": False, "motivo": "sem_rosto", "restam": falhou(ip, token)})
             sims = r["sims"]
-            lim = LIMITE_MENOR if m["tipo"] == "evento" else LIMITE
+            lim = LIMITE_MENOR if m["tipo"] == "evento" or m.get("menor") else LIMITE   # v96.1: sessão de menor com o limiar de criança (como a nuvem)
             pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), -1) >= lim}   # as fotos em que quem fez a selfie aparece
-            if not pids:                           # v96.1: com acerto, galeria_obj junta as compradas e cortesias da venda
+            if not pids:                           # as compradas e cortesias da venda continuam abertas pelo QR (rota livres)
+                if m["tipo"] == "sessao":
+                    gal_teto_soma(token)
                 restam = falhou(ip, token)
                 if not restam:
                     return self.js({"motivo": "bloqueado", "ate": _iso(bloqueio(ip, token))}, 429)

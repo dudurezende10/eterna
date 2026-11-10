@@ -1,5 +1,6 @@
-// v96.1 (Testador, C1): na galeria do QR de uma venda, depois da selfie, as fotos compradas em que o rosto do cliente não bateu
-// (pessoa pequena, foto do pai com a bandeira comprada pela família) aparecem e baixam; as à venda continuam só as em que a pessoa aparece.
+// v96.1 (Testador, C1; decisão do Eduardo, 10/11): na galeria do QR de uma venda, o QR sozinho abre e baixa as compradas e as cortesias,
+// sem selfie (o pai que pagou e não aparece nas fotos); a selfie só acrescenta as à venda em que a pessoa aparece; selfie sem acerto
+// não esconde as compradas; à venda de outra pessoa nunca aparece.
 // Modo SIM (sem agente). Compra pelo Checkout (#loja) só das fotos da sessão em que o rosto da selfie NÃO bate.
 const {chromium}=require('playwright');const login=require('./_login');const fs=require('fs');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const PR=__dirname+'/prints';fs.mkdirSync(PR,{recursive:true});
@@ -32,9 +33,22 @@ async function fotoDe(pg,id){return pg.evaluate(async id=>{let c=null;for(let i=
  // cortesia numa foto à venda em que a pessoa aparece não muda nada; numa em que não aparece, ela entra (manifesto do SIM)
  const G=await nova(ctx,'galeria',{width:390,height:844});await G.goto(U+'#g/'+tok);await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});
  const sel=await fotoDe(G,info.meu);
- // galeria sem selfie não lista nada
- ok(await G.evaluate(()=>ETERNA.pubGaleria?ETERNA.pubGaleria().fotos.length===0:true),'sem selfie a galeria não deveria listar foto nenhuma');
- await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});
+ // só o QR (sem selfie): as compradas aparecem e baixam; nenhuma à venda
+ const g0=await G.evaluate(()=>({step:ETERNA.pub.step,venda:ETERNA.pubGaleria().fotos.filter(f=>f.direito==='venda').length,dl:[...document.querySelectorAll('[data-act="gq-dl"]')].map(b=>b.dataset.pid),mais:!!document.querySelector('[data-act="gq-mais"]')}));
+ await G.screenshot({path:PR+'/c1-galeria-so-qr.png',fullPage:true});
+ ok(g0.step==='galeria'&&compra.every(id=>g0.dl.includes(id)),'só pelo QR as compradas deveriam aparecer com Baixar: '+JSON.stringify(g0));
+ ok(g0.venda===0&&!g0.dl.includes(outra),'só pelo QR nenhuma à venda deveria aparecer: '+g0.venda);
+ ok(g0.mais,'só pelo QR deveria aparecer o botão Encontrar mais fotos suas');
+ {const [d0]=await Promise.all([G.waitForEvent('download',{timeout:15000}).catch(()=>null),G.click(`[data-act="gq-dl"][data-pid="${compra[0]}"]`)]);
+  ok(!!d0,'só pelo QR baixar a comprada deveria gerar o arquivo');}
+ // selfie sem rosto: as compradas continuam ao voltar
+ await G.click('[data-act="gq-mais"]');await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});
+ await G.evaluate(()=>{const c=document.createElement('canvas');c.width=400;c.height=300;const x=c.getContext('2d');x.fillStyle='#456';x.fillRect(0,0,400,300);return ETERNA.pubMatch(c.toDataURL('image/jpeg',.9));});
+ await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='nao',null,{timeout:60000}).catch(()=>{});
+ ok(await G.evaluate(()=>!!document.querySelector('[data-act="gq-back"][data-to="galeria"]')),'selfie sem acerto deveria oferecer Voltar às suas fotos');
+ await G.click('[data-act="gq-back"][data-to="galeria"]');
+ ok(await G.evaluate(ids=>ids.every(id=>!!document.querySelector(`[data-act="gq-dl"][data-pid="${id}"]`)),compra),'depois da selfie sem acerto as compradas deveriam continuar');
+ await G.click('[data-act="gq-mais"]');await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});
  await G.waitForFunction(()=>{const s=ETERNA.state.guest.selfie;return !s||s.err||s.ready;},null,{timeout:20000}).catch(()=>{});
  await G.evaluate(u=>ETERNA.pubMatch(u),sel);await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='buscando'&&ETERNA.pub.step!=='selfie',null,{timeout:150000});
  const g=await G.evaluate(t=>{const m=ETERNA.SIM.galerias[t];return {step:ETERNA.pub.step,comprada:m.fotos.filter(f=>f.direito==='comprada').map(f=>f.id),

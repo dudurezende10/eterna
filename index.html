@@ -1120,7 +1120,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v96.1 · 10/11 15:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v96.1</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v96.1 · 10/11 17:03"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v96.1</span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2398,7 +2398,14 @@ async function pubLoad(){const p=state.pub;if(!p||!p.token){render();return;}con
       if(m.tipo==='sessao'&&(SIM.sessions[m.sessoes[0]]||{}).status==='aguardando'){p.step='aguarda_caixa';render();return;}} // v79: dinheiro esperando o caixa, nada liberado
     else{p.step=net?'chegando':'nao_existe';if(net)pubRetry(p);render();return;}}
   if(p.info.estado==='chegando'){p.step='chegando';pubRetry(p);render();return;}
-  p.step='consent';render();}
+  if(await pubAbrirLivres(p)){if(state.pub!==p)return;p.livres=true;p.step='galeria';render();return;} // v96.1: compradas e cortesias direto pelo QR
+  if(state.pub!==p)return;p.step='consent';render();}
+// v96.1 (decisão do Eduardo, 10/11): na galeria de uma venda (tipo sessao) o QR sozinho abre as compradas e as cortesias daquela venda, sem
+// selfie (o pai que pagou e não aparece nas fotos). A selfie só acrescenta as à venda em que a pessoa aparece (v95). Grupo (evento): só o rosto.
+async function pubAbrirLivres(p){if(!p.info||p.info.tipo!=='sessao')return false;
+  if(p.modo==='agente'){try{const r=await fetch(galApi()+'/g/'+p.token+'/livres',{cache:'no-store'});if(!r.ok)return false;const j=await r.json();
+      if(!j.galeria||!(j.galeria.fotos||[]).length)return false;if(!p.acesso){p.gal=j.galeria;p.galAt=Date.now();}return true;}catch(e){return false;}}
+  const m=(SIM.galerias||{})[p.token];return !!m&&pubLivres(m).size>0;}
 const pubKid=p=>!!(p.info&&(p.info.tipo==='evento'||p.info.menor));
 // tentativas por galeria neste navegador (sessionStorage): 5 erros bloqueiam por 15 min. Só contador e hora, nada de imagem.
 function pubTries(p){const k='eterna.gq.'+p.token.slice(0,8);let o={n:0,ate:0};try{o=JSON.parse(sessionStorage.getItem(k)||'null')||o;}catch(e){}return {o,save(){try{sessionStorage.setItem(k,JSON.stringify(o))}catch(e){}}};}
@@ -2419,19 +2426,17 @@ async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pu
     else{const m=SIM.galerias[p.token];let im=await loadImg(src);src=null;if(!im){pubFalhou(p,'sem_rosto');return;}
       const r=await faceFind(im,x=>m.sessoes.includes(x.card));im=null;if(state.pub!==p)return;
       if(r.semRosto){pubFalhou(p,'sem_rosto');return;}
-      if(m.tipo==='evento'){const pids=Object.entries(r.sims||{}).filter(([id,sc])=>sc>=GAL_LIMITE_MENOR).map(([id])=>id);
-        if(pids.length){p.match=pids;p.step='galeria';t.o.n=0;t.save();}else pubFalhou(p,'nao_encontrado');}
-      else{const pids=Object.entries(r.sims||{}).filter(([id,sc])=>sc>=FACE_SIM).map(([id])=>id);if(pids.length){p.match=pids;p.step='galeria';t.o.n=0;t.save();}else pubFalhou(p,'nao_encontrado');}}
+      const lim=m.tipo==='evento'||m.menor?GAL_LIMITE_MENOR:FACE_SIM; // v96.1: sessão de menor com o limiar de criança, como o agente e a nuvem
+      const pids=Object.entries(r.sims||{}).filter(([id,sc])=>sc>=lim).map(([id])=>id);
+      if(pids.length){p.match=pids;p.step='galeria';t.o.n=0;t.save();}else pubFalhou(p,'nao_encontrado');}
   }catch(e){if(state.pub===p){p.step='nao';p.motivo='processando';}}
   finally{src=null;selfieStop();if(state.pub===p)render();}}
-// v96.1: galeria de uma venda (tipo sessao), selfie que bateu em pelo menos uma foto: as compradas e as cortesias aparecem sempre (o QR é do
-// comprador; a foto do pai com a bandeira ou a pessoa pequena demais para o rosto bater também são dele). As à venda continuam só as em que o
-// rosto bateu. Sem acerto, nao_encontrado como antes. Grupo (evento): só o rosto.
+// v96.1: compradas e cortesias da venda (tipo sessao), abertas pelo QR sem selfie. Grupo (evento): nenhuma (só o rosto).
 const pubLivres=m=>new Set(m&&m.tipo==='sessao'?(m.fotos||[]).filter(f=>f.direito==='comprada'||f.direito==='cortesia').map(f=>f.id):[]);
 // Lista da galeria: {pid,direito,vitrine,original}. Modo agente: vem pronta e assinada. Modo SIM: manifesto local (as à venda só onde o rosto bateu).
 function pubGaleria(){const p=state.pub;if(!p)return {fotos:[]};
   if(p.modo==='agente'){const g=p.gal||{fotos:[]};return {...g,fotos:(g.fotos||[]).map(f=>({...f}))};}
-  const m=(SIM.galerias||{})[p.token];if(!m||!p.match)return {fotos:[]};const ok=new Set(p.match),livre=pubLivres(m); // sem selfie, nada
+  const m=(SIM.galerias||{})[p.token];if(!m)return {fotos:[]};const ok=new Set(p.match||[]),livre=pubLivres(m); // sem selfie, só as compradas e cortesias da venda
   return {tipo:m.tipo,menor:!!m.menor,expira:m.expira,estado:'pronta',precos:{dig:priceOf('dig'),todas:priceOf('mais')},fotos:m.fotos.filter(f=>ok.has(f.id)||livre.has(f.id)).map(f=>({pid:f.id,direito:f.direito,sessao:f.sessao}))};}
 function pubImg(f){const p=state.pub;if(p.modo==='agente'){const src=f.original||f.vitrine; // comprada aparece sem marca d'água (a mesma alta do download)
   return src?`--img:url(&quot;${esc(galUrl(src))}&quot;);--bs:cover;--bp:center`:'';}return phStyle(f.pid);}
@@ -2462,9 +2467,12 @@ async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGa
     p.sel={};p.step='galeria';render();toast(T('gq_paid'));}
   finally{p.paying=false;}}
 // Pede links novos (POST /galeria). Acesso vencido (401): volta para a selfie, com aviso próprio.
-async function pubRenovar(p){try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});
+async function pubRenovar(p){if(!p.acesso)return pubAbrirLivres(p); // só pelo QR: links novos das compradas e cortesias
+  try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});
   if(r.status===401){pubAcessoVenceu(p);return false;}const j=await r.json();if(!j.galeria)return false;p.gal=j.galeria;p.galAt=Date.now();return true;}catch(e){return false;}}
-function pubAcessoVenceu(p){if(state.pub!==p)return;p.acesso=null;p.gal=null;p.sel={};p.aviso=T('gq_again');pubSelfieAbrir(p);render();}
+function pubAcessoVenceu(p){if(state.pub!==p)return;p.acesso=null;p.gal=null;p.sel={};p.aviso=T('gq_again');
+  if(p.livres){pubAbrirLivres(p).then(ok=>{if(state.pub!==p)return;if(ok){p.step='galeria';toast(T('gq_again'));}else pubSelfieAbrir(p);render();});return;} // as compradas continuam pelo QR
+  pubSelfieAbrir(p);render();}
 function pubAguardar(p){clearTimeout(p.at);p.at=setTimeout(async()=>{if(state.pub!==p||p.step!=='aguardando')return;
   try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});if(r.status===401){pubAcessoVenceu(p);return;}const j=await r.json();if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();const ok=(p.esperando||[]).every(pid=>(j.galeria.fotos||[]).some(f=>f.pid===pid&&f.direito==='comprada'));if(ok){p.step='galeria';render();toast(T('gq_paid'));return;}}}catch(e){}
   pubAguardar(p);},5000);}
@@ -2484,7 +2492,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   if(p.step==='chegando')return box(T('gq_arriving'),T('gq_arrivingD'),help);
   if(p.step==='aguarda_caixa')return box(T('gq_waitCash'),T('gq_waitCashD'),help);
   const kid=pubKid(p);
-  if(p.step==='consent')return box(T('gq_consentH'),'',`<label class="gq-consent"><input type="checkbox" data-act="gq-consent" ${p.ok?'checked':''}><span>${T((kid?'gq_consentKid':'gq_consentSelf')+(galNuvem()?'Nuvem':''))}</span></label><button class="lj-cta" id="gq-agree" data-act="gq-agree" ${p.ok?'':'disabled'}>${T('gq_agree')} ${ICO.arrow}</button>`);
+  if(p.step==='consent')return box(T('gq_consentH'),'',`<label class="gq-consent"><input type="checkbox" data-act="gq-consent" ${p.ok?'checked':''}><span>${T((kid?'gq_consentKid':'gq_consentSelf')+(galNuvem()?'Nuvem':''))}</span></label><button class="lj-cta" id="gq-agree" data-act="gq-agree" ${p.ok?'':'disabled'}>${T('gq_agree')} ${ICO.arrow}</button>${p.livres?`<button class="lj-ghost" data-act="gq-back" data-to="galeria">${T('gq_backMine')}</button>`:''}`);
   if(p.step==='selfie'){const sf=state.guest.selfie||{};const mirror=(sf.facing||'user')==='user';
     return box(T(kid?'gq_kidH':'gq_selfieH'),T(kid?'gq_kidD':'gq_selfieD'),`${p.aviso?`<p class="gq-err">${esc(p.aviso)}</p>`:''}<div class="gq-cam ${sf.err?'off':''} ${mirror?'mirror':''}">${sf.err?'':'<video id="gself-video" autoplay muted playsinline></video>'}</div><p class="gq-fine" id="gq-st" aria-live="polite">${sf.err?T('gq_camBloq'):sf.varias?T('cam_varias'):T('gq_looking')}</p>
       ${sf.err?`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`:!(sf.semDetector||sf.botao)?'':`<button class="lj-cta" data-act="gq-snap" ${sf.ready?'':'disabled'}>${ICO.face} ${T('g_snap')}</button>`}`);}
@@ -2492,7 +2500,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   if(p.step==='nao'){const bl=p.motivo==='bloqueado';const at=p.ate?hhmm(new Date(p.ate)):'';
     const msg=bl?T('gq_locked',at):p.motivo==='varias'?T('gq_varias'):p.motivo==='sem_rosto'?T('gq_noFace'):p.motivo==='processando'?T('gq_arriving'):T('gq_noMatch');
     const d=bl?'':p.motivo==='varias'?T('gq_variasD'):p.motivo==='processando'?T('gq_arrivingD'):T('gq_tries',p.restam);
-    return box(msg,d,`${bl?'':`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`}${help}`);}
+    return box(msg,d,`${bl?'':`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`}${p.livres?`<button class="lj-ghost" data-act="gq-back" data-to="galeria">${T('gq_backMine')}</button>`:''}${help}`);}
   const g=pubGaleria();
   if(p.step==='pagar'){const n=Object.keys(p.sel).filter(k=>p.sel[k]).length;const tot=pubTotal(n,g);
     return `<div class="gq">${deco}${top()}<div class="gq-mid"><h1 class="lj-h2 gq-h">${T('payH')}</h1><p class="lj-sub">${T('nPhotos',n)}</p>
@@ -2511,6 +2519,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
     ${more.length?`<section class="gq-sec"><h2 class="lj-h2">${T('gq_more')}</h2><p class="lj-sub">${T('gq_moreD')} ${T('gq_each',fmtR(dig))}</p>
       <div class="gq-grid">${more.map(f=>{const on=!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div><button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button></figure>`;}).join('')}</div>
       <button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(Math.min(more.length*dig,all)))}</button></section>`:''}
+    ${g.tipo==='sessao'&&!(p.modo==='agente'?p.acesso:p.match)?`<section class="gq-sec gq-findmore"><p class="lj-sub">${T('gq_findMoreD')}</p><button class="lj-cta" data-act="gq-mais">${ICO.face} ${T('gq_findMore')}</button></section>`:''}
     ${nSel?`<div class="gq-bar"><span><b>${T('nPhotos',nSel)}</b> · ${fmtR(tot)}</span><button class="lj-cta" data-act="gq-buy">${T('gq_buy',nSel,fmtR(tot))}</button></div>`:''}
     <p class="gq-help">${T('gq_help')}</p></div>`;}
 // ---------- Galerias online (administração): direito por foto, cortesias, grupos de escola e fila de envio ----------
@@ -2702,6 +2711,9 @@ const I18N={
  gq_codeIs:[c=>`Código ${c}`,c=>`Code ${c}`,c=>`Código ${c}`,c=>`Code ${c}`,c=>`Code ${c}`],
  gq_open:['Abrir','Open','Abrir','Ouvrir','Öffnen'],
  gq_until:[d=>`Disponível até ${d}`,d=>`Available until ${d}`,d=>`Disponible hasta el ${d}`,d=>`Disponible jusqu’au ${d}`,d=>`Verfügbar bis ${d}`],
+ gq_findMore:['Encontrar mais fotos suas','Find more photos of you','Encontrar más fotos tuyas','Trouver d’autres photos de vous','Weitere Fotos von dir finden'],
+ gq_findMoreD:['Faça uma selfie para ver as outras fotos em que você aparece.','Take a selfie to see the other photos you appear in.','Hazte una selfie para ver las otras fotos en las que apareces.','Prenez un selfie pour voir les autres photos où vous apparaissez.','Mach ein Selfie, um die anderen Fotos zu sehen, auf denen du bist.'],
+ gq_backMine:['Voltar às suas fotos','Back to your photos','Volver a tus fotos','Retour à vos photos','Zurück zu deinen Fotos'],
  gq_yours:['Suas fotos','Your photos','Tus fotos','Vos photos','Deine Fotos'],
  gq_yoursD:[n=>`${n} ${PL(n,'foto','fotos')} em alta para baixar`,n=>`${n} high-resolution ${PL(n,'photo','photos')} to download`,n=>`${n} ${PL(n,'foto','fotos')} en alta resolución para descargar`,n=>`${n} ${PL(n,'photo','photos')} en haute résolution à télécharger`,n=>`${n} ${PL(n,'Foto','Fotos')} in hoher Auflösung zum Herunterladen`],
  gq_none:['Nenhuma foto liberada ainda.','No photos unlocked yet.','Todavía no hay fotos liberadas.','Aucune photo débloquée pour l’instant.','Noch keine Fotos freigeschaltet.'],
@@ -5450,6 +5462,7 @@ document.addEventListener('click',e=>{
     case 'loja-logo':lojaLogo();break;
     // galeria pública (#g/<token>): sem usuário, fora do WRITE_OPS
     case 'gq-code-go':pubCodigo();break;
+    case 'gq-mais':{const p=state.pub;if(!p)break;p.ok=false;p.step='consent';render();scrollTo(0,0);break;} // v96.1: selfie para as à venda em que a pessoa aparece
     case 'gq-agree':{const p=state.pub;if(!p||!p.ok)break;p.consentAt=now().toISOString();pubSelfieAbrir(p);render();break;}
     case 'gq-snap':{const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v||!v.videoWidth)break;const w=Math.min(960,v.videoWidth);const c=mkc(w,w*v.videoHeight/v.videoWidth);c.getContext('2d').drawImage(v,0,0,c.width,c.height);pubMatch(c.toDataURL('image/jpeg',.9));break;}
     case 'gq-retry':{const p=state.pub;if(!p)break;const t=pubTries(p);if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;}else if(p.motivo==='processando'&&p.modo==='agente'){p.step='consent';}else pubSelfieAbrir(p);render();break;}

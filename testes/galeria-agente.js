@@ -84,6 +84,14 @@ try{
   r=await req(P,'GET',url(pids[2],'original',exp,assinar(H,T,pids[2],'original',exp)));ok(r.s===403,'17: original de foto à venda, mesmo assinado, deveria dar 403, deu '+r.s);
   r=await req(P,'GET',`/g/${TE}/foto/${pids[2]}?v=vitrine&exp=${exp}&sig=${assinar(H,TE,pids[2],'vitrine',exp)}`);ok(r.s===403,'17: assinatura de outro token não vale, deu '+r.s);
   r=await req(P,'GET',url('ffffffffffff','vitrine',exp,assinar(H,T,'ffffffffffff','vitrine',exp)));ok(r.s===403,'17: pid fora do token deveria dar 403, deu '+r.s);
+  // v96.1 (decisão do Eduardo, 10/11): na venda o QR sozinho abre a comprada e a cortesia (com original), nunca as à venda; grupo: nada
+  r=await req(P,'GET','/g/'+T+'/livres');{const fl=(r.j&&r.j.galeria&&r.j.galeria.fotos)||[];
+    ok(r.s===200&&fl.map(f=>f.pid).sort().join(',')===['ag_'+pids[0],'ag_'+pids[1]].sort().join(',')&&fl.every(f=>f.original),'livres: só pelo QR, comprada e cortesia com original: '+r.s+' '+JSON.stringify(fl.map(f=>f.pid+':'+f.direito)));
+    if(fl[0]){const x=await req(P,'GET',fl[0].original);ok(x.s===200,'livres: original da comprada só pelo QR deveria baixar, deu '+x.s);}}
+  {const TG=tok();await req(P,'POST','/galerias/publicar',{body:{manifesto:manifesto(TG,fotos,{tipo:'evento',nome:'Escola',menor:true})}});
+    r=await req(P,'GET','/g/'+TG+'/livres');ok(r.s===200&&r.j.galeria.fotos.length===0,'livres: grupo de escola não abre nada sem rosto: '+JSON.stringify(r.j));}
+  r=await req(P,'GET','/g/'+TE+'/livres');ok(r.s===410,'livres: galeria expirada deveria dar 410, deu '+r.s);
+  r=await req(P,'GET','/g/'+tok()+'/livres');ok(r.s===404,'livres: token inexistente deveria dar 404, deu '+r.s);
   // 18. rosto sem OpenCV
   r=await req(P,'POST','/g/'+T+'/rosto',{body:{versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,AAAA'}});ok(r.s===400,'18: sem consentimento deveria dar 400, deu '+r.s);
   r=await req(P,'POST','/g/'+T+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+jpegsLisos(1)[0].toString('base64')}});
