@@ -81,7 +81,7 @@ print(json.dumps({'taca_encostada':zona(sys.argv[2],(1250,850,1400,1100)),'taca_
     r=await req(PORTA,'POST','/fundos/modo',{body:{modo:'photoroom'},headers:{Origin:'https://exemplo.com'}});ok(r.s===403,'2: /fundos/modo de fora: '+r.s);
     r=await req(PORTA,'POST','/fundos/modo',{body:{modo:'photoroom'}});const st2=(await req(PORTA,'GET','/status')).j;
     const r2=await req(PORTA,'POST','/photoroom/compose',{body:{bg:'campeao2',pid:PIDS.meio}});
-    ok(r.s===200&&st2.fundos_modo==='photoroom'&&r2.s!==409,'2: com o modo Photoroom gravado pelo app, o agente libera: '+J({s:r.s,m:st2.fundos_modo,c:r2.s}));
+    ok(st2.fundos_modo==='local'&&r2.s===409,'2 (v97, critério 14): com fundos-modo.json = photoroom o agente continua local e o Photoroom dá 409: '+J({s:r.s,m:st2.fundos_modo,c:r2.s}));
     await req(PORTA,'POST','/fundos/modo',{body:{modo:'local'}});
     r=await req(PORTA,'POST','/recorte',{headers:{Origin:'https://exemplo.com'},body:{pid:PIDS.meio}});ok(!r.h['access-control-allow-origin'],'2: /recorte sem CORS para fora');
     let t0=Date.now();r=await req(PORTA,'POST','/recorte',{body:{pid:'ag_'+PIDS.meio}});ok(r.s===200&&Date.now()-t0<1500&&r.b.equals(CUT.meio),'2: segundo pedido sai do cache: '+(Date.now()-t0)+' ms');
@@ -210,20 +210,25 @@ out.save(sys.argv[2])
   const i18=fs.readFileSync(path.join(RAIZ,'index.html'),'utf8').match(/aiMaking:\[([^\]]*)\]/);ok(i18&&i18[1].split("','").length===5&&/lj-spin/.test(fs.readFileSync(path.join(RAIZ,'index.html'),'utf8')),'5a: "Preparando sua foto especial" nas 5 línguas, com indicador: '+(i18&&i18[1]));
   await pg.evaluate(()=>{ETERNA.state.agent.on=false;ETERNA.state.agent.recorte=null;});
 
-  // ---------- 5. interruptor no Painel de controle ----------
+  // ---------- 5. v97 (D6): sem escolha de montagem; o Photoroom guardado e inativo (critérios 12 e 13 do plano v97) ----------
   await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(150);
   const otp=await pg.$('.otp');if(otp){await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);}
+  const prReq=[];pg.on('request',q=>{if(/\/photoroom\//.test(q.url()))prReq.push(q.url());});
   await pg.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(200);
-  const t5=await pg.evaluate(()=>{const p=document.querySelector('#fundos-modo');return p&&{txt:p.innerText,loc:p.querySelector('[data-m="local"]').getAttribute('aria-pressed'),pr:p.querySelector('[data-m="photoroom"]').getAttribute('aria-pressed')};});
-  ok(t5&&/Montagem dos fundos/i.test(t5.txt)&&/Local \(padrão\)/i.test(t5.txt)&&t5.loc==='true'&&t5.pr==='false','5: painel Montagem dos fundos com Local marcado: '+J(t5));
-  await ctx.route(ORIG+'/fundos/modo',r=>{modoLog.push(JSON.parse(r.request().postData()||'{}').modo);r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
-  await pg.click('#fundos-modo [data-m="photoroom"]');await pg.waitForTimeout(200);
-  let s5=await pg.evaluate(()=>({m:ETERNA.fundosModo(),sim:JSON.parse(localStorage.getItem('eterna.sim.v1')).fundosModo}));ok(s5.m==='photoroom'&&s5.sim==='photoroom','5: Photoroom ligado e salvo: '+J(s5));
-  await pg.evaluate(async id=>{await ETERNA.compose(id,'mirante');},'ag_'+PIDS.meio);ok(prLog.length===1&&prLog[0].bg==='mirante','5: com Photoroom, a montagem volta a chamar /photoroom/compose: '+J(prLog));
-  await pg.click('#fundos-modo [data-m="local"]');await pg.waitForTimeout(200);s5=await pg.evaluate(()=>ETERNA.fundosModo());ok(s5==='local'&&J(modoLog)===J(['photoroom','local']),'5: volta para local e o agente recebe os dois modos: '+J(modoLog));
-  await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(200);ok(/Recorte local/i.test(await pg.evaluate(()=>document.querySelector('#main').innerText)),'5: Fundos de IA mostra o Recorte local');
+  const t5=await pg.evaluate(()=>({painel:!!document.querySelector('#fundos-modo'),txt:document.querySelector('#main').innerText}));
+  ok(!t5.painel&&!/Montagem dos fundos/.test(t5.txt),'12: Painel de controle sem "Montagem dos fundos": '+J(t5.painel));
+  await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(300);
+  const t6=await pg.evaluate(()=>document.querySelector('#main').innerText);
+  ok(/Recorte local/i.test(t6)&&!/Chave da API Photoroom/.test(t6)&&!/Photoroom fica como opção/.test(t6),'12: Fundos de IA sem o quadro do Photoroom: '+t6.slice(0,300));
+  // 13: SIM.fundosModo='photoroom' salvo por uma janela antiga: a prévia e a impressão montam pelo recorte local
+  await pg.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';});
+  const n0=prLog.length;const m13=await pg.evaluate(async id=>{const r=await ETERNA.compose(id,'mirante');const h=await ETERNA.compHi(id,'campeao2');return {modo:ETERNA.fundosModo(),url:!!r.url,hi:h.fonte};},'ag_'+PIDS.meio);
+  ok(m13.modo==='local'&&m13.url&&m13.hi==='img/fundos-5k/campeao.jpg'&&prLog.length===n0,'13: fundosModo salvo como photoroom é ignorado: '+J({m13,pr:prLog.length-n0}));
+  ok(!prReq.length,'12: nenhum fetch para /photoroom/* ao abrir as telas e montar: '+J(prReq.slice(0,3)));
+  const t7=await pg.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();const el=document.createElement('button');el.dataset.act='fundos-modo';el.dataset.m='photoroom';document.body.appendChild(el);el.click();el.remove();return ETERNA.fundosModo();});
+  ok(t7==='local','12: o clique antigo em fundos-modo não troca o modo: '+t7);
 }catch(e){fails.push('erro: '+(e.stack||e.message).slice(0,600));}
 finally{procs.forEach(p=>{try{p.kill('SIGKILL');}catch(e){}});if(b)await b.close();}
 if(errs.length)fails.push('erros na página: '+errs.slice(0,3).join(' | '));
 if(fails.length){console.log('FALHA v84: recorte local e montagem dos fundos · '+fails.join(' | '));process.exit(1);}
-console.log('OK v84: recorte local (ISNet + u2net_human_seg), regras de montagem, impressão com fileHi, 503 e interruptor'+(notas.length?' · '+notas.join(' · '):''));})();
+console.log('OK v84: recorte local (v97: BiRefNet, real só com ETERNA_RECORTE_REAL=1), regras de montagem, impressão com fileHi, 503 e Photoroom fora das opções (critérios 12 e 13 do v97)'+(notas.length?' · '+notas.join(' · '):''));})();

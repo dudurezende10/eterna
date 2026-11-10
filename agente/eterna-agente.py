@@ -3106,11 +3106,9 @@ FUNDOS_MODO_CFG = os.path.join(HOME, "fundos-modo.json")
 
 
 def fundos_modo():
-    try:
-        with open(FUNDOS_MODO_CFG) as f:
-            return "photoroom" if json.load(f).get("modo") == "photoroom" else "local"
-    except Exception:
-        return "local"
+    """v97 (Eduardo, 10/11, D6): sempre "local" (BiRefNet neste servidor). O Photoroom fica guardado e inativo: a chave em
+    ~/Eterna/photoroom.json continua (nada é apagado), o fundos-modo.json é ignorado e o /photoroom/compose responde 409."""
+    return "local"
 
 
 # ---------- Galeria online por QR (fase 1) ----------
@@ -7581,7 +7579,6 @@ def main():
     threading.Thread(target=galeria_loop, daemon=True).start()
     print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__, type(PAGAMENTO).__name__))
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
-    print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     _rok, _rmot = rec_estado()
     print("  Recorte local:     " + ("pronto (BiRefNet + a regra do que encosta na pessoa, num processo à parte; abre na partida)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))

@@ -50,7 +50,7 @@ const semPreco=pg=>pg.evaluate(()=>{const t=document.querySelector('.lj').innerT
 const L=await nova(ctx,'checkout',{width:1920,height:1080});await L.goto(U+'#loja');await L.evaluate(()=>localStorage.removeItem('eterna.sim.v1'));await L.reload();await L.waitForTimeout(800);
 const cards=await L.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=8).map(s=>s.card));const cardS5=cards.pop();
 // sessões com 10 fotos do campo e 4 fundos de IA (modo Photoroom, como no v79), para a matriz do P6
-const cardsIA=await L.evaluate(()=>{const S=ETERNA.SIM;const m0=S.fundosModo;S.fundosModo='photoroom';const r=ETERNA.demoSessions().filter(s=>ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=10&&ETERNA.lojaItems(s.card).filter(x=>x.t==='ai').length>=4).map(s=>s.card);S.fundosModo=m0;return r;});
+const cardsIA=await L.evaluate(()=>{const S=ETERNA.SIM;const m0=S.fundosModo;S.fundosModo='photoroom';ETERNA.fundosModoTeste('photoroom');const r=ETERNA.demoSessions().filter(s=>ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=10&&ETERNA.lojaItems(s.card).filter(x=>x.t==='ai').length>=4).map(s=>s.card);S.fundosModo=m0;ETERNA.fundosModoTeste(null);return r;});
 const V=await nova(ctx,'posto',{width:1366,height:768});await login(V);await V.evaluate(()=>localStorage.removeItem('eterna.session'));await V.evaluate(()=>ETERNA.go('posto'));await V.waitForTimeout(400);
 const cam=()=>L.evaluate(()=>({on:!!ETERNA.state.kiosk.camOn,stream:!!ETERNA.state.cam.stream,face:!!document.querySelector('#cam-face'),ini:!!document.querySelector('[data-act="kiosk-start"]'),step:ETERNA.state.kiosk.step}));
 const abrir=async card=>{await L.goto(U+'#loja');await L.waitForTimeout(300);await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});
@@ -379,6 +379,7 @@ if(!process.env.RAPIDO){
 // v96: matriz (o.nPh fotos do campo + o.nAI com fundo de IA, pacote o.pkg, meio o.meio). As fotos são marcadas do mesmo jeito nos dois apps
 const venda=async(pg,vend,antigo,o)=>{const card=cardsIA[0];await pg.goto(pg.url().split('#')[0]+'#loja');await pg.evaluate(()=>{localStorage.removeItem('eterna.sim.v1');localStorage.removeItem('eterna.ponto.fila.v1');});await pg.reload();await pg.waitForTimeout(500);
   await pg.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});await pg.reload();await pg.waitForTimeout(700); // fundos de IA sem o recorte do agente (como no v79)
+  await pg.evaluate(()=>{if(ETERNA.fundosModoTeste)ETERNA.fundosModoTeste('photoroom');}); // v97: no app novo o Photoroom só pelo interruptor dos testes
   await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(700);
   const m=await pg.evaluate(([card,nPh,nAI])=>{const it=ETERNA.lojaItems(card);const pk=ETERNA.lojaPick(card);Object.keys(pk).forEach(k=>delete pk[k]);
     it.filter(x=>x.t==='ph').slice(0,nPh).forEach(x=>pk[x.k]='ok');it.filter(x=>x.t==='ai').slice(0,nAI).forEach(x=>pk[x.k]='ok');ETERNA.render();const c=ETERNA.lojaCart(card);return [c.nPh,c.nAI];},[card,o.nPh,o.nAI]);
