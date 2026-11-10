@@ -177,7 +177,8 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
   await ctxA.addInitScript(()=>{window.__toasts=[];document.addEventListener('DOMContentLoaded',()=>{const t=document.querySelector('#toast');if(t)new MutationObserver(()=>{if(t.textContent)window.__toasts.push(t.textContent);}).observe(t,{childList:true,characterData:true,subtree:true});});});
   const AVISO='Agente do ponto conectado';
   if(!lig){notas.push('B: galeria no modo agente não testada (sem OpenCV ou reconhecimento não ligou)');}
-  else{const TB=tok();// v95 (Ronaldo, 09/11, LGPD): a selfie de A abre só as fotos de A (comprada, 2 à venda, cortesia); a de B, a sem rosto e a cortesia de C ficam de fora
+  else{const TB=tok();// v95 (Ronaldo, 09/11, LGPD): a selfie de A abre só as fotos de A (comprada, 2 à venda, cortesia); as à venda de B e a sem rosto ficam de fora
+    // v96.1 (C1): a cortesia de C é da venda e aparece também (compradas e cortesias da venda entram sempre depois de uma selfie que bateu)
     const fb=[{id:'ag_'+pp[0],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_'+pA[0],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pA[2],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pA[1],sessao:'LPB',direito:'cortesia',canal:null,cortesia:{motivo:'escola',por:'eduardo@eduardorezende.com',em:new Date().toISOString()}},
       {id:'ag_'+pp[1],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[3],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[2],sessao:'LPB',direito:'cortesia',canal:null,cortesia:{motivo:'escola',por:'eduardo@eduardorezende.com',em:new Date().toISOString()}}];
     await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(TB,fb,{sessoes:['LPB']})}});ok(!!(await esperarEnvio(H2,TB)),'pré B: envio da galeria não ficou ok');
@@ -189,8 +190,8 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));
     await G.waitForFunction(()=>ETERNA.pub&&!['buscando','selfie'].includes(ETERNA.pub.step),null,{timeout:60000}).catch(()=>{});
     const gb=await G.evaluate(()=>({step:ETERNA.pub.step,motivo:ETERNA.pub.motivo,dl:[...document.querySelectorAll('[data-act="gq-dl"]')].map(x=>x.dataset.pid),sel:[...document.querySelectorAll('[data-act="gq-sel"]')].map(x=>x.dataset.pid)}));
-    const deA=['ag_'+pp[0],'ag_'+pA[1]].sort().join(',')+'|'+['ag_'+pA[0],'ag_'+pA[2]].sort().join(',');
-    ok(gb.step==='galeria'&&gb.dl.slice().sort().join(',')+'|'+gb.sel.slice().sort().join(',')===deA,'B (v95): galeria no modo agente deveria ter só as fotos de A (2 suas, 2 à venda): '+JSON.stringify(gb));
+    const deA=['ag_'+pp[0],'ag_'+pA[1],'ag_'+pp[2]].sort().join(',')+'|'+['ag_'+pA[0],'ag_'+pA[2]].sort().join(',');
+    ok(gb.step==='galeria'&&gb.dl.slice().sort().join(',')+'|'+gb.sel.slice().sort().join(',')===deA,'B (v96.1): galeria no modo agente deveria ter as 3 da venda (comprada e cortesias) e só as à venda de A (2): '+JSON.stringify(gb));
     await G.waitForTimeout(600);await G.screenshot({path:PR+'/v77-agente-galeria.png',fullPage:true});
     if(gb.step==='galeria'){
       // ---- CORRIGIR 4a: com mais de 12 min de galeria, Baixar pede links novos antes de baixar

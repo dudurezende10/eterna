@@ -8,8 +8,9 @@ API que atende o celular do cliente fora do estádio: QR, código curto, selfie 
 - A coleção é apagada quando a galeria é encerrada no ponto ou vence (limpeza diária agendada).
 - Tetos por dia de leituras e de selfies, e alerta de orçamento por e-mail.
 - A selfie é comparada só com essa coleção:
-  - adulto: semelhança ≥ 85 libera a sessão inteira;
-  - grupo de escola e sessão de menor: ≥ 95, e só as fotos em que a criança aparece;
+  - adulto: semelhança ≥ 85 libera as fotos à venda em que a pessoa aparece (v95) e, numa venda, sempre todas as compradas e cortesias dela (v96.1);
+  - grupo de escola: ≥ 95, e só as fotos em que a criança aparece; sessão de menor: ≥ 95, e as compradas e cortesias da venda também;
+  - sem acerto em nenhuma foto: `nao_encontrado`, mesmo com foto comprada;
   - 5 tentativas por (IP, galeria) e depois 15 min de bloqueio;
   - escola: no máximo 2 crianças diferentes por IP em 24 h e 60 acessos por hora por galeria.
 - As fotos saem por link assinado do S3 de 5 min. A alta só sai para foto comprada ou cortesia.

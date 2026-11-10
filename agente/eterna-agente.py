@@ -3838,7 +3838,18 @@ def evento_permite(ip, token, pids):
         return 0
 
 
+def gal_livres(m):
+    """v96.1: na galeria de uma venda (tipo sessao) as compradas e as cortesias entram sempre no acesso da selfie que bateu em
+    pelo menos uma foto (sem acerto continua nao_encontrado, com tentativas e bloqueio): o QR é
+    do comprador e a foto do pai com a bandeira, ou a pessoa pequena demais para o rosto bater, também é dele. As à venda
+    continuam só as em que o rosto bateu (outros clientes). Grupo de escola (evento): só o rosto."""
+    if m.get("tipo") != "sessao":
+        return set()
+    return {f["id"] for f in m.get("fotos") or [] if isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia")}
+
+
 def galeria_obj(token, m, pids):
+    pids = set(pids) | gal_livres(m)          # v96.1: o acesso guarda só o acerto do rosto; compradas e cortesias seguem o manifesto de agora
     fotos = []
     for f in m["fotos"]:
         if f["id"] not in pids:
@@ -6693,8 +6704,8 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"ok": False, "motivo": "sem_rosto", "restam": falhou(ip, token)})
             sims = r["sims"]
             lim = LIMITE_MENOR if m["tipo"] == "evento" else LIMITE
-            pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), -1) >= lim}   # só as fotos em que quem fez a selfie aparece
-            if not pids:
+            pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), -1) >= lim}   # as fotos em que quem fez a selfie aparece
+            if not pids:                           # v96.1: com acerto, galeria_obj junta as compradas e cortesias da venda
                 restam = falhou(ip, token)
                 if not restam:
                     return self.js({"motivo": "bloqueado", "ate": _iso(bloqueio(ip, token))}, 429)

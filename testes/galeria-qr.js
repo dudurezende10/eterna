@@ -108,14 +108,15 @@ try{
   ok(!!meuId,'pré 6: nenhuma foto da sessão com uma pessoa só para servir de selfie');
   const meuB64=await fotoDe(G,meuId);
   await G.click('[data-act="gq-retry"]');await G.waitForSelector('#gq-st',{state:'attached'});await selfie(G,meuB64);
-  // v95 (Ronaldo, 09/11, LGPD): a selfie abre SÓ as fotos em que a pessoa aparece (semelhança >= FACE_SIM), nunca a sessão inteira
+  // v95 (Ronaldo, 09/11, LGPD): a selfie abre SÓ as fotos à venda em que a pessoa aparece (semelhança >= FACE_SIM), nunca a sessão inteira
+  // v96.1 (C1): as compradas e as cortesias da venda aparecem sempre (o QR é do comprador), mesmo onde o rosto não bateu
   const g6=await G.evaluate(([c,id])=>{const s=ETERNA.demoSessions().find(x=>x.card===c);const sel=(ETERNA.SIM.sessions[c]||{}).selected||[];const m=ETERNA.SIM.galerias[ETERNA.pub.token];
     const match=ETERNA.pub.match||[];const shown=[...document.querySelectorAll('.gq-item [data-pid],.gq-ph[data-pid]')].map(b=>b.dataset.pid).filter((v,i,a)=>a.indexOf(v)===i);
     const dir=Object.fromEntries(m.fotos.map(f=>[f.id,f.direito]));const yours=[...document.querySelectorAll('[data-act="gq-dl"]')].map(b=>b.dataset.pid);
-    return {step:ETERNA.pub.step,motivo:ETERNA.pub.motivo,n:s.photos.length,sel:sel.length,match:match.length,meu:match.includes(id),fora:shown.filter(p=>!match.includes(p)),
+    return {step:ETERNA.pub.step,motivo:ETERNA.pub.motivo,n:s.photos.length,sel:sel.length,match:match.length,meu:match.includes(id),fora:shown.filter(p=>!match.includes(p)&&dir[p]!=='comprada'&&dir[p]!=='cortesia'),
       dl:yours.length,wm:document.querySelectorAll('.gq-ph .wm').length,shown:shown.length,yours,donoFora:yours.filter(p=>!match.includes(p)),
-      compradasEsperadas:match.filter(p=>dir[p]==='comprada'||dir[p]==='cortesia'),compradasSumidas:sel.filter(p=>!match.includes(p)).length};},[card,meuId]);
-  ok(g6.step==='galeria'&&g6.sel===3&&g6.meu&&g6.match>0&&g6.match<g6.n&&!g6.fora.length&&g6.dl===g6.compradasEsperadas.length&&g6.wm===g6.match-g6.dl&&!g6.donoFora.length,'6: galeria depois da selfie (v95: só as fotos da pessoa): '+JSON.stringify(g6));
+      compradasEsperadas:m.fotos.filter(f=>f.direito==='comprada'||f.direito==='cortesia').map(f=>f.id),compradasSumidas:sel.filter(p=>!yours.includes(p)).length,vendaMostradas:shown.filter(p=>dir[p]==='venda').length};},[card,meuId]);
+  ok(g6.step==='galeria'&&g6.sel===3&&g6.meu&&g6.match>0&&g6.match<g6.n&&!g6.fora.length&&g6.dl===g6.compradasEsperadas.length&&!g6.compradasSumidas&&g6.wm===g6.vendaMostradas,'6: galeria depois da selfie (v95: à venda só as da pessoa; v96.1: compradas sempre): '+JSON.stringify(g6));
   dbg('6: '+JSON.stringify(g6));
   ok(!(await G.evaluate(()=>{let st='';for(const s of [localStorage,sessionStorage])for(let i=0;i<s.length;i++)st+=s.getItem(s.key(i));return /data:image/.test(JSON.stringify(ETERNA.pub)+JSON.stringify(ETERNA.state.guest.selfie||null)+st);})),'8: imagem guardada depois do acerto');
   // ---------- 13. cinco idiomas, sem chave crua ----------

@@ -149,6 +149,24 @@ try{
         // 20 (b): republicar do app com a foto comprada online como venda mantém comprada
         await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T3,f3.map(f=>({...f,direito:f.direito==='comprada'?'comprada':'venda',canal:f.direito==='comprada'?'loja':null})),{sessoes:['LPB'],precos:{dig:39,todas:60}})}});
         const m3=lerManifesto(H2,T3);ok(m3.fotos.find(f=>f.id==='ag_'+pA2).direito==='comprada','20: compra online regrediu depois de republicar');}
+      // v96.1 (C1): na venda, comprada e cortesia em que o rosto não bateu entram sempre e baixam; à venda de outra pessoa fica fora (400)
+      {const T5=tok();const f5=[{id:'ag_'+pp[1],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_d1d2d3d4d5d6',sessao:'LPB',direito:'cortesia',canal:null,cortesia:{motivo:'teste',por:'t',em:new Date().toISOString()}},{id:'ag_'+pA2,sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[2],sessao:'LPB',direito:'venda',canal:null}];
+        await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T5,f5,{sessoes:['LPB'],precos:{dig:39,todas:60}})}});await esperarEnvio(P2,H2,T5);
+        r=await req(P2,'POST','/g/'+T5+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+bufs[0].toString('base64')}});
+        if(!(r.s===200&&r.j.ok))ok(false,'C1: selfie de A na venda com comprada de B deveria abrir: '+r.s+' '+JSON.stringify(r.j));
+        else{const g5=r.j.galeria,ac5=r.j.acesso,por=id=>g5.fotos.find(f=>f.pid==='ag_'+id);
+          ok(g5.fotos.map(f=>f.pid).sort().join(',')===['ag_'+pp[1],'ag_d1d2d3d4d5d6','ag_'+pA2].sort().join(','),'C1: compradas e cortesias da venda e as à venda de A: '+g5.fotos.map(f=>f.pid+':'+f.direito).join(','));
+          const oc=(por(pp[1])||{}).original,ot=(por('d1d2d3d4d5d6')||{}).original;ok(oc&&ot,'C1: comprada e cortesia sem o rosto deveriam ter original');
+          if(oc){r=await req(P2,'GET',oc);ok(r.s===200&&r.b.length>1000,'C1: download da comprada sem o rosto deveria dar 200, deu '+r.s);}
+          r=await req(P2,'POST','/g/'+T5+'/pagamento',{body:{acesso:ac5,pids:['ag_'+pp[2]],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===400,'C1: à venda de outra pessoa continua fora do acesso (400), deu '+r.s);
+          r=await req(P2,'POST','/g/'+T5+'/pagamento',{body:{acesso:ac5,pids:['ag_'+pp[1]],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===400,'C1: comprada não está à venda (400), deu '+r.s);
+          // venda no balcão depois da selfie: a nova comprada entra no mesmo acesso
+          await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T5,f5.map(f=>f.id==='ag_'+pp[2]?{...f,direito:'comprada',canal:'loja'}:f),{sessoes:['LPB'],precos:{dig:39,todas:60}})}});await esperarEnvio(P2,H2,T5);
+          r=await req(P2,'POST','/g/'+T5+'/galeria',{body:{acesso:ac5}});ok(r.s===200&&((r.j.galeria.fotos.find(f=>f.pid==='ag_'+pp[2])||{}).direito==='comprada'),'C1: comprada no balcão depois da selfie deveria entrar no acesso: '+r.s);}
+        // rosto que não bate em nenhuma foto da venda: continua nao_encontrado (conta tentativa), mesmo com comprada na galeria
+        const T6=tok();await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T6,[{id:'ag_'+pp[0],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_'+pp[1],sessao:'LPB',direito:'venda',canal:null}],{sessoes:['LPB'],precos:{dig:39,todas:60}})}});await esperarEnvio(P2,H2,T6);
+        r=await req(P2,'POST','/g/'+T6+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+bufs[2].toString('base64')}});
+        ok(r.s===200&&r.j.ok===false&&r.j.motivo==='nao_encontrado'&&r.j.restam===4,'C1: rosto sem acerto na venda continua nao_encontrado: '+r.s+' '+JSON.stringify(r.j));}
       // S1: grupo de escola: no máximo 2 crianças diferentes por (ip, token) em 24 h; a mesma criança de novo continua valendo
       const T4=tok();await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T4,pp.map(p=>({id:'ag_'+p,sessao:'LPB',direito:'venda',canal:null})),{tipo:'evento',nome:'Escola',menor:true,sessoes:['LPB']})}});await esperarEnvio(P2,H2,T4);
       const sel=async b=>(await req(P2,'POST','/g/'+T4+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+b.toString('base64')}}));

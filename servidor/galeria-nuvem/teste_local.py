@@ -107,8 +107,21 @@ ok(st == 200 and r["motivo"] == "varias_pessoas" and "restam" not in r, "duas pe
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True})
 ok(st == 200 and r["ok"] and R.indexadas == 40, "cliente certo liberado, nenhuma leitura nova")
 ok(len(r["galeria"]["fotos"]) == 38 and not [f for f in r["galeria"]["fotos"] if f["pid"].startswith("b")], "a selfie libera só as fotos em que a pessoa aparece")
+# v96.1: com a selfie que bateu, comprada (e cortesia) em que o rosto não bateu entra sempre; a à venda de outra pessoa continua fora
+manc = dict(man, fotos=[dict(f) for f in man["fotos"]])
+manc["fotos"][38]["direito"] = "comprada"               # b00026: comprada, outra pessoa (o pai com a bandeira); b00027 à venda, outra pessoa
+chama("POST", "/ponto/galerias", {"manifesto": manc}, {"x-eterna-ponto": seg})
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True})
+ps = {f["pid"]: f for f in r["galeria"]["fotos"]}
+ok(st == 200 and len(ps) == 39 and ps["b00026"]["original"] and "b00027" not in ps, "comprada sem o rosto aparece e baixa; à venda de outra pessoa fora")
+ace = r["acesso"]
+manv = dict(manc, fotos=[dict(f) for f in manc["fotos"]])
+manv["fotos"][39]["direito"] = "cortesia"               # cortesia dada no balcão depois da selfie
+chama("POST", "/ponto/galerias", {"manifesto": manv}, {"x-eterna-ponto": seg})
+st, r = chama("POST", "/g/%s/galeria" % tok, {"acesso": ace})
+ok(st == 200 and (next((f for f in r["galeria"]["fotos"] if f["pid"] == "b00027"), {}).get("original")), "cortesia dada depois da selfie entra no mesmo acesso")
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True})
-ok(st == 200 and r["motivo"] == "nao_encontrado" and r["restam"] == 4, "cliente errado com leitura completa: conta erro")
+ok(st == 200 and r["motivo"] == "nao_encontrado" and r["restam"] == 4, "cliente errado com leitura completa: conta erro, mesmo com comprada na venda")
 
 # encerrar no ponto: some da nuvem e os rostos são apagados
 man2 = dict(man, encerrada=True, expira=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))

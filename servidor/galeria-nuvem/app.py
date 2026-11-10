@@ -156,7 +156,16 @@ def link(chave, nome=None):
     return s3.generate_presigned_url("get_object", Params=p, ExpiresIn=URL_TTL)
 
 
+def livres(m):
+    """v96.1: na galeria de uma venda (tipo sessao) as compradas e as cortesias entram sempre no acesso da selfie que bateu
+    em pelo menos uma foto (o QR é do comprador; sem acerto continua nao_encontrado). As à venda continuam só as em que o rosto bateu. Grupo de escola (evento): só o rosto."""
+    if m.get("tipo") != "sessao":
+        return set()
+    return {f["id"] for f in m.get("fotos") or [] if isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia")}
+
+
 def galeria_obj(token, m, pids):
+    pids = set(pids) | livres(m)            # v96.1: o acesso guarda só o acerto do rosto; compradas e cortesias seguem o manifesto de agora
     fotos, ok = [], False
     for i, f in enumerate(m["fotos"]):
         if f["id"] not in pids:
@@ -458,11 +467,11 @@ def rosto(token, m, corpo, ip, ctx):
         evento(token, "selfie_sem_rosto", ip)
         return resp({"ok": False, "motivo": "sem_rosto", "restam": restam})
     lim = LIMIAR_CRIANCA if m["tipo"] == "evento" or m.get("menor") else LIMIAR_ADULTO
-    pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), 0) >= lim}   # só as fotos em que quem fez a selfie aparece
+    pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), 0) >= lim}   # as fotos em que quem fez a selfie aparece
     if not pids and leitura != "ok":
         evento(token, "selfie_processando", ip)          # leitura incompleta: não conta como erro
         return resp({"ok": False, "motivo": "processando"}, 503)
-    if not pids:
+    if not pids:                                         # v96.1: com acerto, galeria_obj junta as compradas e cortesias da venda
         restam, ate = falhas(ip, token, somar=True)
         evento(token, "selfie_nao", ip)
         if ate:
