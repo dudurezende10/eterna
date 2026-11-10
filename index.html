@@ -2156,7 +2156,8 @@ function galDaVenda(card,tok0){const mv=tok0&&(SIM.galerias||{})[tok0];if(mv&&mv
 const LJ_COD=(()=>{try{const j=JSON.parse(sessionStorage.getItem('eterna.ljcod')||'null');if(j&&typeof j.erros==='number'&&typeof j.ate==='number')return {erros:j.erros,ate:j.ate};}catch(e){}return {erros:0,ate:0};})();
 const ljCodSalva=()=>{try{sessionStorage.setItem('eterna.ljcod',JSON.stringify(LJ_COD));}catch(e){}};
 const lojaCodReset=()=>{LJ_COD.erros=0;LJ_COD.ate=0;ljCodSalva();};
-function lojaCodigo(txt){const v=String(txt||'').trim().toUpperCase().replace(/\s+/g,'');if(Date.now()<LJ_COD.ate){toast(T('codeWait'));return null;}
+const ljCodNorm=txt=>String(txt||'').trim().toUpperCase().replace(/\s+/g,''); // o mesmo código para lojaCodigo e lojaCodEspera
+function lojaCodigo(txt){const v=ljCodNorm(txt);if(Date.now()<LJ_COD.ate){toast(T('codeWait'));return null;}
   const erro=()=>{LJ_COD.erros++;if(LJ_COD.erros>=5){LJ_COD.erros=0;LJ_COD.ate=Date.now()+60e3;toast(T('codeWait'));}else toast(T('codeBad'));ljCodSalva();return null;};
   const g=/^[A-Z0-9]{4}-?[A-Z0-9]{4}$/.test(v)&&!/^LP/.test(v)?Object.values(SIM.galerias||{}).find(m=>m.tipo==='sessao'&&!m.substituida&&m.codigo===v.slice(0,4)+'-'+v.slice(-4)):null;
   if(g&&sessionObj(g.sessoes[0])){lojaCodReset();return {card:g.sessoes[0],so:g.venda&&g.so?{card:g.sessoes[0],cards:g.sessoes.slice(),ids:[].concat(...Object.values(g.so))}:null};}
@@ -2164,10 +2165,21 @@ function lojaCodigo(txt){const v=String(txt||'').trim().toUpperCase().replace(/\
   return erro();}
 // v93: código de sessão que a aba já conhece mas cujas fotos ainda não carregaram (aba recém-aberta, antes do primeiro /sessoes),
 // ou que chegou e espera a vez de entrar (SRV.mat): espera até 4 s a sessão aparecer antes de conferir. Sem espera -> null.
-function lojaCodEspera(txt){const v=String(txt||'').trim().toUpperCase().replace(/\s+/g,'');const a=state.agent;
+// Sessão com todas as fotos descartadas ou recusadas, ou fora dos dias do Checkout, não espera: responde na hora.
+// Intervalo crescente (LJ_ESPERA_MS) e qualquer erro no caminho encerra a espera (quem chamou confere o código e avisa).
+const LJ_ESPERA_MS=[200,400,800,1200],LJ_ESPERA_MAX=4000;
+function ljSessSemFoto(v){const s=SIM.sessions[v];if(!s)return false;const ph=s.photos||[];
+  if(ph.length&&ph.every(p=>(SIM.discarded||{})[p.id]||(SIM.invalid||{})[p.id]))return true;
+  const t=Date.parse(s.closedAt||'');if(!t)return false;const a=state.agent;const n=Math.max(1,(a&&a.sessoes&&a.sessoes.dias)||1);
+  return !Array.from({length:n},(_,i)=>localDay(Date.now()/1000-i*86400)).includes(localDay(t/1000));}
+function lojaCodEspera(txt){const v=ljCodNorm(txt);const a=state.agent;
   if(!/^LP[A-Z0-9]{5,10}$/.test(v)||Date.now()<LJ_COD.ate||!a||!a.sessoes||sessionObj(v))return null;
   if(!SRV.mat[v]&&!((SIM.sessions[v]||{}).photos||[]).length)return null;
-  return new Promise(res=>{const t0=Date.now();const vez=()=>{if(SRV.mat[v])srvMaterializa();if(sessionObj(v)||Date.now()-t0>4000)return res();if(!SRV.busy)srvPull();setTimeout(vez,250);};vez();});}
+  if(ljSessSemFoto(v))return null;
+  return new Promise(res=>{const t0=Date.now();let i=0;
+    const vez=()=>{let fim=true;try{if(SRV.mat[v])srvMaterializa();fim=!!sessionObj(v)||Date.now()-t0>=LJ_ESPERA_MAX||ljSessSemFoto(v);if(!fim&&!SRV.busy)srvPull();}catch(e){fim=true;}
+      if(fim)return res();const d=LJ_ESPERA_MS[Math.min(i++,LJ_ESPERA_MS.length-1)];setTimeout(vez,Math.max(0,Math.min(d,t0+LJ_ESPERA_MAX-Date.now())));};
+    vez();});}
 // v91 (segurança B1, revisão C2): a venda que juntou sessões pela selfie tem galeria PRÓPRIA (m.venda), nunca a de uma sessão
 // (galDaSessao não a acha). Enquanto não há venda paga, cada pedido refaz m.sessoes e m.so do zero: nada de outro pedido fica.
 // m.so[sessão] = as fotos daquela sessão que entraram na escolha (sessão inteira, ou só as dela em sessão de menor/escola).

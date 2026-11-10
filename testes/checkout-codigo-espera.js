@@ -48,6 +48,16 @@ try{
   await pg.evaluate(m=>{ETERNA.UP.ag_vol000000001={src:m,name:'c'};},MINI);
   await pg.waitForTimeout(1500);
   ok(await pg.evaluate(()=>ETERNA.state.kiosk.step==='emerg'&&!ETERNA.state.kiosk.code),'espera do cliente anterior não abre a sessão depois do reset: '+await pg.evaluate(()=>ETERNA.state.kiosk.step+' '+ETERNA.state.kiosk.code));
+  // 6) todas as fotos da sessão descartadas ou recusadas: responde na hora, sem esperar
+  const naHora=async(c,prep,msg)=>{await pg.evaluate(prep);await pg.evaluate(()=>{ETERNA.lojaCodReset();const t=document.querySelector('#toast');if(t)t.textContent='';});
+    const t0=await abreCod(c);const foi=await espera(pg,()=>/não encontrado/i.test((document.querySelector('#toast')||{}).textContent||''),3000);const dt=Date.now()-t0;
+    ok(foi&&dt<1000&&await pg.evaluate(()=>!ETERNA.state.kiosk.codEsp),msg+': '+dt+' ms '+await toast());};
+  await naHora('LPDESC06',()=>{const S=ETERNA.SIM.sessions;S.LPDESC06=Object.assign({},S.LPNUNCA02,{photos:[{id:'ag_des000000001'},{id:'ag_des000000002'}]});
+    ETERNA.SIM.discarded.ag_des000000001=true;ETERNA.SIM.invalid=ETERNA.SIM.invalid||{};ETERNA.SIM.invalid.ag_des000000002='teste';},'sessão com todas as fotos descartadas ou recusadas avisa na hora');
+  // 7) sessão de dias que o Checkout não mostra mais: responde na hora
+  await naHora('LPVENC07',()=>{const S=ETERNA.SIM.sessions;S.LPVENC07=Object.assign({},S.LPNUNCA02,{photos:[{id:'ag_ven000000001'}],closedAt:new Date(Date.now()-3*86400e3).toISOString()});},'sessão vencida avisa na hora');
+  // 8) erro no caminho da espera (sessão do servidor com dado quebrado): a espera acaba, sem travar o botão
+  await naHora('LPERRO08',()=>{ETERNA.SRV.mat.LPERRO08={card:'LPERRO08',get fotos(){throw new Error('teste');}};},'erro durante a espera encerra a espera');
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+e.message);}
 await b.close();
