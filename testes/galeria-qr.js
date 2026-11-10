@@ -102,11 +102,21 @@ try{
     ok(!g8,'8: string data:image em state.pub, guest.selfie ou storage');}
   // ---------- 6. selfie de alguém da sessão ----------
   dbg('6. selfie de alguém da sessão');
-  let meuId=null;for(let i=0;i<20&&!meuId;i++){meuId=await G.evaluate(async c=>{await ETERNA.faceIndexAll();await ETERNA.faceq;const s=ETERNA.demoSessions().find(x=>x.card===c);return s.photos.map(p=>p.id).find(id=>(ETERNA.FACEIDX[id]||[]).length)||null;},card);if(!meuId)await G.waitForTimeout(500);} // v79: espera a leitura de rostos (a máquina carregada atrasava e o teste falhava às vezes)
+  let meuId=null;for(let i=0;i<20&&!meuId;i++){meuId=await G.evaluate(async c=>{await ETERNA.faceIndexAll();await ETERNA.faceq;const s=ETERNA.demoSessions().find(x=>x.card===c);const ids=s.photos.map(p=>p.id).filter(id=>(ETERNA.FACEIDX[id]||[]).length===1);
+    // v95 (testador, 10/11): desde a "uma pessoa por vez" (0f53bf2, 31/10) a selfie com 2 rostos parecidos volta "varias"; a selfie do teste é uma foto da sessão com UMA pessoa (faceFind diz varias pelo mesmo detector do app)
+    for(const id of ids){const r=await ETERNA.faceFind(await ETERNA.photoCanvas(id),x=>x.card===c);if(!r.varias&&!r.semRosto&&(r.sims[id]||0)>=.45)return id;}return null;},card);if(!meuId)await G.waitForTimeout(500);} // v79: espera a leitura de rostos (a máquina carregada atrasava e o teste falhava às vezes)
+  ok(!!meuId,'pré 6: nenhuma foto da sessão com uma pessoa só para servir de selfie');
   const meuB64=await fotoDe(G,meuId);
   await G.click('[data-act="gq-retry"]');await G.waitForSelector('#gq-st',{state:'attached'});await selfie(G,meuB64);
-  const g6=await G.evaluate(c=>{const s=ETERNA.demoSessions().find(x=>x.card===c);const sel=(ETERNA.SIM.sessions[c]||{}).selected||[];return {step:ETERNA.pub.step,n:s.photos.length,sel:sel.length,dl:document.querySelectorAll('[data-act="gq-dl"]').length,wm:document.querySelectorAll('.gq-ph .wm').length,yours:[...document.querySelectorAll('[data-act="gq-dl"]')].map(b=>b.dataset.pid)};},card);
-  ok(g6.step==='galeria'&&g6.sel===3&&g6.dl===3&&g6.wm===g6.n-3,'6: galeria depois da selfie: '+JSON.stringify(g6));
+  // v95 (Ronaldo, 09/11, LGPD): a selfie abre SÓ as fotos em que a pessoa aparece (semelhança >= FACE_SIM), nunca a sessão inteira
+  const g6=await G.evaluate(([c,id])=>{const s=ETERNA.demoSessions().find(x=>x.card===c);const sel=(ETERNA.SIM.sessions[c]||{}).selected||[];const m=ETERNA.SIM.galerias[ETERNA.pub.token];
+    const match=ETERNA.pub.match||[];const shown=[...document.querySelectorAll('.gq-item [data-pid],.gq-ph[data-pid]')].map(b=>b.dataset.pid).filter((v,i,a)=>a.indexOf(v)===i);
+    const dir=Object.fromEntries(m.fotos.map(f=>[f.id,f.direito]));const yours=[...document.querySelectorAll('[data-act="gq-dl"]')].map(b=>b.dataset.pid);
+    return {step:ETERNA.pub.step,motivo:ETERNA.pub.motivo,n:s.photos.length,sel:sel.length,match:match.length,meu:match.includes(id),fora:shown.filter(p=>!match.includes(p)),
+      dl:yours.length,wm:document.querySelectorAll('.gq-ph .wm').length,shown:shown.length,yours,donoFora:yours.filter(p=>!match.includes(p)),
+      compradasEsperadas:match.filter(p=>dir[p]==='comprada'||dir[p]==='cortesia'),compradasSumidas:sel.filter(p=>!match.includes(p)).length};},[card,meuId]);
+  ok(g6.step==='galeria'&&g6.sel===3&&g6.meu&&g6.match>0&&g6.match<g6.n&&!g6.fora.length&&g6.dl===g6.compradasEsperadas.length&&g6.wm===g6.match-g6.dl&&!g6.donoFora.length,'6: galeria depois da selfie (v95: só as fotos da pessoa): '+JSON.stringify(g6));
+  dbg('6: '+JSON.stringify(g6));
   ok(!(await G.evaluate(()=>{let st='';for(const s of [localStorage,sessionStorage])for(let i=0;i<s.length;i++)st+=s.getItem(s.key(i));return /data:image/.test(JSON.stringify(ETERNA.pub)+JSON.stringify(ETERNA.state.guest.selfie||null)+st);})),'8: imagem guardada depois do acerto');
   // ---------- 13. cinco idiomas, sem chave crua ----------
   dbg('13. cinco idiomas, sem chave crua');
@@ -137,7 +147,8 @@ try{
   ok(v10.length===1&&/Online/.test(v10[0])&&/teste/.test(v10[0])&&!/Recibo|Cancelar/.test(v10[0]),'10: filtro Online na Lista de vendas: '+JSON.stringify(v10).slice(0,200));
   const [dl]=await Promise.all([A.waitForEvent('download'),A.click('[data-act="sales-csv"]')]);const csv=fs.readFileSync(await dl.path(),'utf8');ok(/;"?canal"?/.test(csv.split('\n')[0])&&/online/.test(csv),'10: CSV sem a coluna canal');
   await A.evaluate(()=>{ETERNA.state.view='galerias';ETERNA.render();});await A.fill('[data-act="gal-q"]',card);await A.click(`[data-act="gal-open"][data-card="${card}"]`);
-  const venda=await A.evaluate(()=>{const b=document.querySelector('.galph.venda');return b&&b.dataset.pid;});const comprada=await A.evaluate(()=>{const b=document.querySelector('.galph.comprada');return b?{dis:b.disabled}:null;});
+  const daSelfie=await G.evaluate(()=>ETERNA.pub.match||[]);const venda=await A.evaluate(ids=>{const b=[...document.querySelectorAll('.galph.venda')].find(x=>ids.includes(x.dataset.pid));return b&&b.dataset.pid;},daSelfie); // v95: só fotos em que a pessoa aparece
+  ok(!!venda,'pré 9: nenhuma foto à venda entre as fotos da selfie para dar cortesia');const comprada=await A.evaluate(()=>{const b=document.querySelector('.galph.comprada');return b?{dis:b.disabled}:null;});
   ok(comprada&&comprada.dis,'9: foto comprada não deveria ter a opção de cortesia');
   await A.click(`.galph[data-pid="${venda}"]`);await A.selectOption('#gal-motivo','escola');await A.fill('#gal-nota','turma A');await A.click('[data-act="gal-cort-ok"]');
   const c9=await A.evaluate(()=>ETERNA.SIM.cortesiaLog[0]);ok(c9&&c9.por==='eduardo@eduardorezende.com'&&c9.motivo==='escola'&&c9.acao==='deu'&&c9.pid===venda,'9: log da cortesia: '+JSON.stringify(c9));
@@ -157,10 +168,11 @@ try{
     ok(ev&&ev.ses.length===2&&ev.menor&&ev.ma&&ev.mb,'12: grupo: '+JSON.stringify(ev));
     await A.screenshot({path:PR+'/galeria-admin-grupos.png'});
     if(ev){const E=await nova(ctx,'evento',{width:390,height:844});await abrirGaleria(E,ev.tok);ok(/responsável/.test(await E.textContent('.gq-consent')),'12: consentimento do grupo deveria ser o do responsável');
-      await consentir(E);const idA=await E.evaluate(a=>{const s=ETERNA.demoSessions().find(x=>x.card===a);return s.photos.map(p=>p.id).find(id=>(ETERNA.FACEIDX[id]||[]).length);},par.a);
+      await consentir(E);const idA=await E.evaluate(async a=>{const s=ETERNA.demoSessions().find(x=>x.card===a);for(const id of s.photos.map(p=>p.id).filter(id=>(ETERNA.FACEIDX[id]||[]).length===1)){const r=await ETERNA.faceFind(await ETERNA.photoCanvas(id),x=>x.card===a);if(!r.varias&&!r.semRosto)return id;}return null;},par.a); // uma pessoa por vez (0f53bf2): a selfie do teste tem um rosto só
+      ok(!!idA,'pré 12: nenhuma foto com uma pessoa só na sessão do grupo');
       await selfie(E,await fotoDe(E,idA));
-      const g12=await E.evaluate(async([a,b])=>{const pids=[...document.querySelectorAll('.gq-ph')].length;const shown=ETERNA.pub.match||[];const sa=ETERNA.demoSessions().find(x=>x.card===a).photos.map(p=>p.id);const sb=ETERNA.demoSessions().find(x=>x.card===b).photos.map(p=>p.id);
-        return {step:ETERNA.pub.step,n:shown.length,ph:pids,todasA:shown.every(id=>sa.includes(id)),nenhumaB:!shown.some(id=>sb.includes(id))};},[par.a,par.b]);
+      const g12=await E.evaluate(async([a,b])=>{const motivo=ETERNA.pub.motivo;const pids=[...document.querySelectorAll('.gq-ph')].length;const shown=ETERNA.pub.match||[];const sa=ETERNA.demoSessions().find(x=>x.card===a).photos.map(p=>p.id);const sb=ETERNA.demoSessions().find(x=>x.card===b).photos.map(p=>p.id);
+        return {step:ETERNA.pub.step,motivo,n:shown.length,ph:pids,todasA:shown.every(id=>sa.includes(id)),nenhumaB:!shown.some(id=>sb.includes(id))};},[par.a,par.b]);
       const sims=await E.evaluate(async([a,b,id])=>{const c=await ETERNA.photoCanvas(id);const r=await ETERNA.faceFind(c,x=>x.card===a||x.card===b);return (ETERNA.pub.match||[]).map(p=>r.sims[p]);},[par.a,par.b,idA]);
       ok(g12.step==='galeria'&&g12.n>0&&g12.ph===g12.n&&g12.todasA&&g12.nenhumaB&&sims.every(s=>s>=.5),'12: evento mostrou fotos erradas: '+JSON.stringify({...g12,sims}));
       await E.screenshot({path:PR+'/galeria-cel-evento.png'});await E.close();}}
