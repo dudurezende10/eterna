@@ -5727,7 +5727,7 @@ POSTO_IDADE = 400 * 86400
 POSTO_CONVITE_S = 600
 posto_uso = {}                       # id -> última gravação de ultimo_uso (no máximo uma por minuto)
 POSTO_REPETIDO_S = 15
-posto_recentes = {}                  # (pessoa, IP, nome) -> (hora, token, posto) dos últimos pareamentos, contra clique repetido
+posto_recentes = {}                  # (pessoa, hash do login, nome) -> (hora, token, posto) dos últimos pareamentos, contra clique repetido
 posto_par_lock = threading.Lock()
 
 
@@ -5792,7 +5792,8 @@ def posto_revogar(pid, por="", ip=""):
             db.commit()
         finally:
             db.close()
-    with posto_par_lock:                     # o pareamento repetido não pode devolver um posto revogado
+    # Limpeza de cortesia: quem garante que o pareamento repetido não devolve posto revogado é o posto_ativo em postos_post.
+    with posto_par_lock:
         for k in [k for k, v in posto_recentes.items() if v[2]["id"] == str(pid)]:
             posto_recentes.pop(k, None)
     return bool(n)
@@ -7018,8 +7019,8 @@ class H(BaseHTTPRequestHandler):
             nome = posto_nome_ok(b.get("nome"))
             if not nome:
                 return self.js({"erro": "nome"}, 400, True)
-            chave, agora = (eu["usuario"], self.client_address[0], nome), time.time()
-            with posto_par_lock:                 # clique repetido (mesma pessoa, aparelho e nome em 15 s): o mesmo posto, sem criar outro
+            chave, agora = (eu["usuario"], _sha(self.auth_token() or ""), nome), time.time()
+            with posto_par_lock:                 # clique repetido (mesmo login deste navegador e mesmo nome em 15 s): o mesmo posto, sem criar outro
                 for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:
                     posto_recentes.pop(k, None)
                 if chave in posto_recentes and not posto_ativo(posto_recentes[chave][2]["id"]):

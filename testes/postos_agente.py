@@ -102,6 +102,16 @@ try:
     ok(st == 200 and j.get("posto", {}).get("id") not in (None, pz), "pareamento repetido reaproveitou posto revogado no banco: %s %s" % (st, j))
     st, j, _ = pede("/postos/eu", cookie=ck.split(";")[0])
     ok(st == 200, "/postos/eu depois de parear de novo: %s %s" % (st, j))
+    # dois navegadores com o mesmo usuário (dois logins), mesmo nome em seguida: postos e cookies diferentes
+    adm2 = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("admin-postos"))
+    st, ja, cka = pede("/postos/parear", {"nome": "Caixa Dupla"}, adm)
+    st2, jb, ckb = pede("/postos/parear", {"nome": "Caixa Dupla"}, adm2)
+    ok(st == 200 and st2 == 200 and ja["posto"]["id"] != jb["posto"]["id"] and cka.split(";")[0] != ckb.split(";")[0],
+       "dois logins do mesmo usuário receberam o mesmo posto: %s %s" % (ja, jb))
+    st, jc, ckc = pede("/postos/parear", {"nome": "Caixa Dupla"}, adm)      # clique repetido no primeiro navegador
+    ok(st == 200 and jc["posto"]["id"] == ja["posto"]["id"] and ckc.split(";")[0] == cka.split(";")[0], "clique repetido com o mesmo login: %s %s" % (ja, jc))
+    st, jl, _ = pede("/postos", cookie=adm)
+    num_max = max([p["num"] for p in jl.get("postos", [])] or [0])
     # CA4: link do --parear-posto vale uma vez e por 10 min
     saida = []
     m.print = lambda *a: saida.append(" ".join(str(x) for x in a))
@@ -117,7 +127,7 @@ try:
     st, j, ck = pede("/postos/aceitar", form="c=" + codigo, extra={"X-Eterna": ""})
     ok(st == 200 and ck.startswith("eterna_posto=") and "Checkout 1" in j.get("html", ""), "botão do link pareia: %s %s" % (st, ck))
     st, j, _ = pede("/postos/eu", cookie=ck.split(";")[0])
-    ok(st == 200 and j["posto"]["nome"] == "Checkout 1" and j["posto"]["num"] == 5, "posto do link: %s %s" % (st, j))
+    ok(st == 200 and j["posto"]["nome"] == "Checkout 1" and j["posto"]["num"] == num_max + 1, "posto do link: %s %s" % (st, j))
     st, j, ck2 = pede("/postos/aceitar", form="c=" + codigo)
     ok(st == 410 and not ck2, "link usado de novo deveria dar 410: %s" % st)
     ok(pede(rota)[0] == 410, "GET do link usado: 410")
