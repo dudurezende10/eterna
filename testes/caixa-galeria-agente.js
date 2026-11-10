@@ -111,18 +111,18 @@ try{
     if(!ok(await espera(K,()=>ETERNA.state.kiosk.step==='review',5000),`R${r}: código abre (${card}) toast ${await toastTxt(K)}`))continue;
     await K.click('[data-act="kiosk-tog"][data-i="0"]').catch(async()=>{await K.click('[data-act="kiosk-ok"]');});await K.waitForTimeout(100);
     await K.evaluate(()=>document.querySelector('[data-act="loja-cart"]:not([disabled])').click());await K.waitForTimeout(150);
-    await K.click(`[data-act="loja-paym"][data-m="${r%2?'card':'pix'}"]`);await K.click('[data-act="loja-checkout"]');
+    // v96: o Checkout manda a escolha sem pacote nem meio (estado 'escolha'); o "criar" só sobe na confirmação
     ok(await espera(K,()=>ETERNA.state.kiosk.step==='done',5000),`R${r}: pendência criada`);
-    const pend=await K.evaluate(c=>ETERNA.SIM.caixaDin.find(x=>x.card===c&&x.estado==='aguardando'),card);
-    ok(await espera(K,()=>ETERNA.pvFila().length===0,15000),`R${r}: criar sobe`);
+    const pend=await K.evaluate(c=>ETERNA.SIM.caixaDin.find(x=>x.card===c&&x.estado==='escolha'),card);
     const sel=pend?pend.selected||[]:[];
     // Caixa: aba nova no aparelho pareado (o Caixa usa o mesmo aparelho do Checkout), entrando de novo a cada rodada
     let cC=null;await cK.clearCookies({name:'eterna_sessao'});const CX=vigia(await cK.newPage(),'caixa'+r);
     await CX.goto(A+'/index.html');await CX.waitForSelector('[data-act="login-usuario"]');
     const okE=primeiraVez?await entrar(CX,'venda.teste',sv,SENHA+'v'):await entrar(CX,'venda.teste',SENHA+'v');primeiraVez=false;ok(okE,`R${r}: vendedor entra`);
     // confirma assim que a pendência aparece
-    ok(await espera(CX,id=>!!document.querySelector(`[data-act="pend-pos"][data-id="${id}"]`),15000,pend.id),`R${r}: pendência no Caixa`);
+    ok(await espera(CX,id=>!!document.querySelector(`[data-act="pend-pkg"][data-id="${id}"]`),15000,pend.id),`R${r}: pendência no Caixa`);
     const carregada=await CX.evaluate(c=>{const x=ETERNA.demoSessions().find(s=>s.card===c);return x?x.photos.length:0;},card);
+    await CX.click(`[data-act="pend-pkg"][data-id="${pend.id}"]`);await CX.waitForTimeout(100);await CX.click(`[data-act="pend-meio"][data-id="${pend.id}"][data-m="${r%2?'cartao':'pix'}"]`);await CX.waitForTimeout(100);
     await CX.click(`[data-act="pend-pos"][data-id="${pend.id}"]`);await CX.click(`[data-act="pend-pos-ok"][data-id="${pend.id}"]`);
     ok(await espera(CX,c=>ETERNA.SIM.sessions[c].status==='paga',5000,card),`R${r}: paga no Caixa`);
     const tok=await CX.evaluate(c=>ETERNA.SIM.sessions[c].galVenda||ETERNA.galDaSessao(c),card);const t0=Date.now();let gi=null;

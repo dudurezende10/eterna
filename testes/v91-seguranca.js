@@ -87,7 +87,7 @@ try{
   fs.mkdirSync(PRINTS,{recursive:true});
   // ---------- venda com B5 e T: galeria própria só com o que entrou ----------
   await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);
-  await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.waitForTimeout(120);await pg.click('[data-act="loja-checkout"]');
+  await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);/* v96: o Continuar já faz o pedido (pacote e meio no Posto) */
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'),'pedido feito');
   const g1=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];const m=ETERNA.SIM.galerias[r.token];return {venda:!!m.venda,so:m.so};});
   ok(g1.venda&&(g1.so.LPSFUND02||[]).length===2&&(g1.so.LPSTALV03||[]).length===2&&(g1.so.LPSFAMA01||[]).length===2,'galeria da venda só com o que entrou de F e T: '+JSON.stringify(g1.so&&Object.fromEntries(Object.entries(g1.so).map(([c,l])=>[c,l.length]))));
@@ -96,14 +96,14 @@ try{
   r=await busca();
   const f=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;return {code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id.slice(3)).sort()};});
   ok(f.code==='LPSFUND02'&&f.fotos.join()==='fff000000002,fff000000004','B5: só no fundo de uma família grande, a sessão não abre inteira: '+JSON.stringify(f));
-  await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.waitForTimeout(120);await pg.click('[data-act="loja-checkout"]');
+  await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);/* v96: o Continuar já faz o pedido (pacote e meio no Posto) */
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'),'pedido de F feito');
   const g2=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];const m=ETERNA.SIM.galerias[r.token];return {card:r.card,venda:!!m.venda,so:m.so};});
   ok(g2.card==='LPSFUND02'&&g2.venda&&(g2.so.LPSFUND02||[]).sort().join()==='ag_fff000000002,ag_fff000000004','B5: venda de F com galeria própria só com as fotos dela: '+JSON.stringify(g2));
   // ---------- IMPORTANTE 1: sessão de menor achada sozinha ----------
   SIMS={[M[1]]:[.68,true]};
   r=await busca();
-  await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.waitForTimeout(120);await pg.click('[data-act="loja-checkout"]');
+  await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);/* v96: o Continuar já faz o pedido (pacote e meio no Posto) */
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'),'pedido da menor feito');
   const g3=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];const m=ETERNA.SIM.galerias[r.token];return {card:r.card,sessoes:r.sessoes,venda:!!m.venda,so:m.so};});
   ok(g3.card==='LPSMENO04'&&g3.venda&&JSON.stringify(g3.so)==='{"LPSMENO04":["ag_mmm000000002"]}','IMPORTANTE 1: menor sozinha = galeria própria só com a foto dela: '+JSON.stringify(g3));

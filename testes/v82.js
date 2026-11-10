@@ -21,7 +21,7 @@ try{
   await pg.evaluate(()=>{const L=ETERNA.FLAGS.map(x=>[...x]);const by=n=>L.find(x=>x[0]===n);
     Object.keys(ETERNA.FLAG_WEB_V82).forEach(n=>{by(+n)[6]='';});const fx=ETERNA.FLAG_FIX_V81['113'];if(fx)by(113)[6]=fx[0];
     by(116)[7]='data:image/png;base64,FOTOUSUARIO';by(118)[6]='meu-arquivo.jpg';
-    const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.flagList=L;s.caixaDin=s.caixaDin||[];s.catalogoV=2;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));
+    const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.flagList=L;s.caixaDin=s.caixaDin||[];s.catalogoV=3;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));
     localStorage.setItem('eterna.flags.v','81');localStorage.removeItem('eterna.users.log.v1');});
   await pg.reload();await pg.waitForTimeout(400);
   const m=await pg.evaluate(w=>{const L=JSON.parse(localStorage.getItem('eterna.sim.v1')).flagList;const by=n=>L.find(x=>x[0]===n);
