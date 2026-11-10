@@ -5736,6 +5736,21 @@ def _sha(t):
     return hashlib.sha256(t.encode()).hexdigest()
 
 
+def posto_auto_ok(ip, ip_servidor=""):
+    """Aparelho da rede local do ponto (vira posto sozinho). Tailscale/VPN (100.64.0.0/10), o próprio servidor e
+    endereços públicos não viram posto: quem acessa de fora (Ronaldo e Eduardo) usa o sistema sem criar posto."""
+    import ipaddress
+    try:
+        a = ipaddress.ip_address(str(ip).split("%")[0])
+        if a.version == 6 and a.ipv4_mapped:
+            a = a.ipv4_mapped
+    except ValueError:
+        return False
+    if a.is_loopback or str(a) == str(ip_servidor) or a in ipaddress.ip_network("100.64.0.0/10"):
+        return False
+    return a.is_private
+
+
 def posto_nome_ok(nome):
     n = re.sub(r"[<>\"'`&\x00-\x1f]", "", str(nome or "")).strip()[:40]
     return n or None
@@ -6971,6 +6986,12 @@ class H(BaseHTTPRequestHandler):
                 eu = self.sessao()
                 if not eu:
                     return self.js({"erro": "sem_posto"}, 401, True)
+                try:
+                    ip_srv = self.connection.getsockname()[0]
+                except OSError:
+                    ip_srv = ""
+                if not posto_auto_ok(self.client_address[0], ip_srv):
+                    return self.js({"ok": True, "posto": None, "remoto": True}, 200, True)   # acesso remoto: sem posto, sem bloquear
                 chave, agora = (eu["usuario"], _sha(self.auth_token() or ""), "auto"), time.time()
                 with posto_par_lock:             # várias janelas do mesmo navegador ao mesmo tempo: um posto só
                     for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:

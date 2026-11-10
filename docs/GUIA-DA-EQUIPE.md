@@ -167,7 +167,7 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 ### Posto automático (10/11/2026)
 
-Não é preciso parear o aparelho. Basta ligar o computador na rede do ponto, abrir o Eterna pelo endereço do servidor e entrar com usuário e senha: o servidor registra o aparelho sozinho como **Posto 1**, **Posto 2**... e cada venda fica marcada com o posto onde foi feita. O Checkout aberto por esse aparelho funciona na hora.
+Não é preciso parear o aparelho. Basta ligar o computador na rede do ponto, abrir o Eterna pelo endereço do servidor e entrar com usuário e senha: o servidor registra o aparelho sozinho como **Posto 1**, **Posto 2**... e cada venda fica marcada com o posto onde foi feita. O Checkout aberto por esse aparelho funciona na hora. Só os aparelhos da rede do ponto viram posto: quem entra de fora (pelo Tailscale) e o próprio computador do servidor usam o sistema normalmente, sem virar posto.
 
 O pareamento abaixo continua existindo só para um aparelho que precisa abrir o Checkout **sem ninguém conectado** (ex.: um tablet fixo ou a TV da Fila).
 
