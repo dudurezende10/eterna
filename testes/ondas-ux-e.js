@@ -87,7 +87,7 @@ try{
   await A.click('[data-act="posto-filtro"][data-f="todos"]');await A.waitForTimeout(150);
   await A.evaluate(()=>{location.hash='#caixa';});await A.waitForTimeout(400);
   e5=await A.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,ids:[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend),on:(document.querySelector('[data-act="posto-filtro"][aria-pressed="true"]')||{}).dataset}));
-  ok(e5.v==='caixa'&&e5.h1==='Posto de venda'&&e5.ids.length===1&&e5.ids[0]==='L00-teste0din01'&&e5.on&&e5.on.f==='dinheiro','E5: #caixa com o filtro Dinheiro: '+J(e5));
+  ok(e5.v==='caixa'&&e5.h1==='Posto de venda (só Dinheiro)'/* revisão: rótulo próprio do #caixa */&&e5.ids.length===1&&e5.ids[0]==='L00-teste0din01'&&e5.on&&e5.on.f==='dinheiro','E5: #caixa com o filtro Dinheiro: '+J(e5));
   // ---- E6: rolo 120 neutro, 99 amarelo, 39 vermelho em Posto, Estoque e Venda manual; nunca verde
   for(const [n,cls] of [[120,'neutral'],[99,'warn'],[39,'bad']]){
     await A.evaluate(n=>{ETERNA.SIM.stock['Caixa 1']=n;localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));ETERNA.go('posto');},n);await A.waitForTimeout(150);

@@ -42,7 +42,8 @@ try{
   dbg('2 e 3. token, código curto e texto do QR');
   const tok=q1.paid&&q1.paid.token;ok(TOKRE.test(tok||''),'2: token fora do formato: '+tok);ok(tok&&tok!==card&&!tok.includes(card),'2: token igual ao LP ou contendo o LP');
   const sim1=await L.evaluate(t=>{const S=ETERNA.SIM;return {m:S.galerias[t]};},tok);ok(sim1.m&&sim1.m.sessoes[0]===card&&sim1.m.tipo==='sessao','2: manifesto da sessão não está em SIM.galerias');
-  const cod=(q1.txt.match(/código:? (\S+)/i)||[])[1]; // v94-ux: "Código X" virou "Seu código: X" (parte F)ok(CODRE.test(cod||''),'3: código curto fora do formato: '+q1.txt);ok(cod===q1.paid.codigo,'3: código da tela diferente do manifesto');
+  // v94-ux: "Código X" virou "Seu código: X" (parte F)
+  const cod=(q1.txt.match(/código:? (\S+)/i)||[])[1];ok(CODRE.test(cod||''),'3: código curto fora do formato: '+q1.txt);ok(cod===q1.paid.codigo,'3: código da tela diferente do manifesto');
   ok(q1.title==='https://eterna.photo/#g/'+tok,'3: texto do QR: '+q1.title);
   // ---------- 24. tela final volta sozinha em 5 s; "Voltar ao início" volta antes (criterio 4 substituído pelo adendo A4) ----------
   dbg('24. tela final volta sozinha em 5 s; "Vo');

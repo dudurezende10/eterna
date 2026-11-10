@@ -14,7 +14,7 @@ const ler=(pg,raiz,min)=>pg.evaluate(([raiz,min])=>{const R=document.querySelect
     if(e.closest('svg,[aria-hidden="true"],.wm,.lj-eq'))continue;const fs=parseFloat(s.fontSize);if(fs<min)peq.push((e.className||e.tagName)+' '+fs+'px "'+n.nodeValue.trim().slice(0,30)+'"');}
   return {t:(document.querySelector('.app')||document.body).innerText,peq:[...new Set(peq)].slice(0,8)};},[raiz,min]);
 // L3: caixa de toque ≥ 44×44 (o label que envolve o checkbox conta)
-const toque=pg=>pg.evaluate(()=>{const out=[];document.querySelectorAll('button,a,input[type=checkbox]').forEach(e=>{if(!e.getClientRects().length)return;const s=getComputedStyle(e);if(s.visibility==='hidden'||+s.opacity===0)return;if(e.closest('.lj-eq,.lj-mx'))return;
+const toque=pg=>pg.evaluate(()=>{const out=[];document.querySelectorAll('button,a,input[type=checkbox]').forEach(e=>{if(!e.getClientRects().length)return;const s=getComputedStyle(e);if(s.visibility==='hidden'||+s.opacity===0)return;if(e.closest('.lj-eq'))return; /* revisão: o modal "Cancelar o pedido?" também conta */
   let r=e.getBoundingClientRect();if(e.type==='checkbox'){const l=e.closest('label');if(l)r=l.getBoundingClientRect();}if(r.width<1)return;if(r.width<43.5||r.height<43.5)out.push((e.dataset.act||e.className||e.tagName)+' '+Math.round(r.width)+'×'+Math.round(r.height));});return [...new Set(out)].slice(0,8);});
 const PERFIS=[['carlos@eterna.photo','foto'],['loja@eterna.photo','venda'],['qualidade@eterna.photo','valida'],['supervisor@eterna.photo','supervisor']];
 (async()=>{const b=await chromium.launch();
@@ -47,6 +47,7 @@ try{
     await L.evaluate(()=>{ETERNA.state.kiosk.ver=null;ETERNA.render();});res.push(await etapa('todas'));
     await L.evaluate(c=>{const it=ETERNA.lojaItems(c).filter(x=>x.t==='ph');const pk=ETERNA.lojaPick(c);it.slice(0,4).forEach(x=>pk[x.k]='ok');ETERNA.state.kiosk.step='cart';ETERNA.render();},card);res.push(await etapa('pacote'));
     await L.click('[data-act="loja-paym"][data-m="card"]');await L.waitForTimeout(120);await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(450);res.push(await etapa('espera'));
+    await L.click('.lj-ic[data-act="loja-sair-ask"]');await L.waitForTimeout(150);res.push(await etapa('espera, Cancelar o pedido?'));await L.click('[data-act="loja-sair-no"]');await L.waitForTimeout(150);
     const p=await A.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&x.estado==='aguardando'),card);if(p)await A.evaluate(id=>ETERNA.pendConfirmar(id,{ref:''}),p.id);
     await L.waitForTimeout(1200);res.push(await etapa('final'));
     res.forEach(r=>{ok(!r.peq.length,`L2 Checkout ${w} ${r.nome}: letra < 14 px: `+r.peq.join(' ; '));ok(!r.t.length,`L3 Checkout ${w} ${r.nome}: toque < 44 px: `+r.t.join(' ; '));});
