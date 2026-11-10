@@ -67,6 +67,7 @@ IMPRESSORAS = [x.strip() for x in IMPRESSORA.split(",") if x.strip()]
 # ETERNA_IMPRESSORA_POSTOS="Caixa 1=DS-RX1|DS-RX1 (2);Caixa 2=DS-RX1 (3);Caixa 3=DS-RX1 (3)". Terminal fora da lista usa
 # qualquer impressora livre. Cada venda sai inteira numa impressora só.
 # "Caixa 4=local": esse terminal imprime na DNP ligada nele mesmo (o navegador imprime, o servidor não entra).
+# "*=local": todo posto que não está na lista imprime na DNP ligada nele (o computador do servidor segue na ETERNA_IMPRESSORA).
 IMP_POSTOS, IMP_LOCAIS = {}, []
 for _x in os.environ.get("ETERNA_IMPRESSORA_POSTOS", "").split(";"):
     _k, _, _v = _x.partition("=")
@@ -5747,6 +5748,7 @@ def posto_criar(nome, por="", ip=""):
         db = auth_db()
         try:
             num = (db.execute("select coalesce(max(num), 0) from posto").fetchone()[0] or 0) + 1
+            nome = nome or "Posto %d" % num     # posto automático: nome pelo número
             db.execute("insert into posto values (?, ?, ?, ?, ?, ?, ?, ?, ?)", (pid, nome, num, _sha(token), por, time.time(), None, ip, None))
             auth_log(db, "posto:" + pid, "posto_pareado", por, ip)
             db.commit()
@@ -6964,7 +6966,22 @@ class H(BaseHTTPRequestHandler):
             return self.js({"erro": "origem"}, 403)
         if u.path == "/postos/eu":
             p = self.posto_atual()
-            return self.js({"ok": True, "posto": p}, 200, True) if p else self.js({"erro": "sem_posto"}, 401, True)
+            if not p:
+                # aparelho novo com alguém da equipe conectado: vira posto sozinho, sem parear (Ronaldo, 10/11)
+                eu = self.sessao()
+                if not eu:
+                    return self.js({"erro": "sem_posto"}, 401, True)
+                chave, agora = (eu["usuario"], _sha(self.auth_token() or ""), "auto"), time.time()
+                with posto_par_lock:             # várias janelas do mesmo navegador ao mesmo tempo: um posto só
+                    for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:
+                        posto_recentes.pop(k, None)
+                    if chave in posto_recentes and posto_ativo(posto_recentes[chave][2]["id"]):
+                        _, token, p = posto_recentes[chave]
+                    else:
+                        token, p = posto_criar(None, eu["usuario"], self.client_address[0])
+                        posto_recentes[chave] = (agora, token, p)
+                self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+            return self.js({"ok": True, "posto": p}, 200, True)
         if u.path == "/postos/aceitar":
             # abrir o link (ou a prévia do WhatsApp) só mostra o botão; o código é gasto no POST do botão
             c = (q.get("c") or [""])[0]

@@ -1645,7 +1645,7 @@ function impVendas(cards){return Object.entries(SIM.sessions).filter(([c,s])=>s.
 function impThumb(x,on,act,card){const st=x.t==='ph'?phStyle(x.id):'';const b=x.t==='ai'?bgOf(x.bg):null;
   return `<button class="imp-th${on?' on':''}" ${act?`data-act="${act}" data-card="${esc(card)}" data-k="${esc(x.k)}"`:'disabled'} aria-pressed="${!!on}" style="${st}" aria-label="${x.t==='ai'?'Foto com fundo de IA':'Foto'}">${x.t==='ai'?`<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?b.file:''})"></span><span class="imp-ia">IA</span>`:''}${on?'<span class="imp-ok">✓</span>':''}</button>`;}
 // servidor com impressora (ETERNA_IMPRESSORA): a foto sai lá, e o painel acompanha o pedido na fila do servidor
-const impNoServidor=()=>{const a=state.agent;return !!(a&&a.on&&a.impressora)&&!(a.impLocais||[]).includes(String((postoDisp()||{}).nome||postoNome()).trim().toLowerCase());}; // impLocais: terminal com a DNP ligada nele
+const impNoServidor=()=>{const a=state.agent;return !!(a&&a.on&&a.impressora)&&!(a.impLocais||[]).includes(String((postoDisp()||{}).nome||postoNome()).trim().toLowerCase())&&!(pontoModo()==='posto'&&(a.impLocais||[]).includes('*'));}; // "*=local": todo posto fora da lista imprime na DNP ligada nele // impLocais: terminal com a DNP ligada nele
 const IMP_JOB='eterna-imp-job';
 function impJobGuarda(job){try{const r=job.res||{};sessionStorage.setItem(IMP_JOB,JSON.stringify({card:job.card,fase:job.fase,re:job.re,fotos:job.fotos,at:job.at,pedido:job.pedido,res:{ok:r.ok||[],falhasIA:r.falhasIA||[],falhas:r.falhas||[]}}));}catch(e){}}
 function impJobVolta(){if(state.impJob)return;try{const j=JSON.parse(sessionStorage.getItem(IMP_JOB)||'null');const s=j&&SIM.sessions[j.card];if(s&&s.impressao&&!(s.impressoes||[]).some(x=>Date.parse(x.em)>=j.at))state.impJob=j;}catch(e){}} // tela recarregada: "Saiu certo" continua valendo; depois de marcar, não volta
@@ -1765,7 +1765,7 @@ setInterval(()=>{if(!state.lojaRota&&!state.pub)ecoUpd(false);},1000);
 // ---------- v83: tela Posto de venda (view posto, módulo venda) ----------
 function vPosto(){const a=state.agent;const pn=postoNome();const rolo=SIM.stock[pn]!=null?SIM.stock[pn]:ROLO_CAP;
   const ag=a.on?'<span class="pill good">agente ligado</span>':`<span class="pill neutral">${a.offAt?'agente fora desde '+hhmm(new Date(a.offAt)):'sem agente'}</span>`;
-  return `<div class="head posto-head"><div><div class="eyebrow">Posto de venda</div><h1>${esc(postoTitulo())}</h1></div><div class="row">${ag}<span class="pill ${rolo<ROLO_ALERTA?'bad':'neutral'}">Rolo: ${rolo} de ${ROLO_CAP}</span>${canView('quiosque')?'<button class="btn ghost" data-act="loja-abrir">Abrir Checkout</button>':''}</div></div>
+  return `<div class="head posto-head"><div><div class="eyebrow">Posto de venda</div><h1>${esc(postoTitulo())}</h1></div><div class="row">${ag}<span class="pill ${rolo<ROLO_ALERTA?'bad':'neutral'}">Rolo: ${rolo} de ${ROLO_CAP}</span></div></div>
   <div class="posto-cols"><div><div class="panel"><div class="head"><h2>No Checkout agora</h2></div><div id="eco">${ecoBody()}</div></div></div>
     <div>${pendPainel()}${impPainel()}${minhasVendas()}</div></div>`;}
 function drawQR(){const el=$('#qrbox');if(!el)return;const card=state.caixa.session;const tok=card&&galDaSessao(card);if(!tok){el.innerHTML='';return;}qrDraw(el,galBase()+tok,110,SIM.galerias[tok].codigo);}
