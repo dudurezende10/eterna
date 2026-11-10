@@ -192,3 +192,10 @@ Agenda (coleção `agenda`, só os campos novos marcados):
 4. **Visitação de 2026:** quem manda o total de visitantes por dia (bilheteria da Viva) de 01/01/2026 até hoje, em `dia;total`?
 5. **Quarta-feira de Cinzas e véspera de feriado** entram como tipo de dia? (Assumido: não.)
 6. **Supervisora:** a seção "Jogos e ano a ano" fica só para o Admin, ou abre para a Supervisora sem R$? (Assumido: só Admin, como as Estatísticas hoje.)
+
+## Decisões do Eduardo (10/11)
+1. Fonte dos jogos: API-Football. A chave ainda não existe; o Eduardo cria a conta (plano grátis primeiro, 100 pedidos por dia, sem cartão) e a chave vai para a configuração do servidor do ponto pelo Ronaldo. Até lá, colar a lista.
+2. Conta como evento: todo jogo e todo evento no Maracanã (inclusive amistoso, feminino e shows). Shows e eventos que não são futebol entram por cadastro manual ou colagem.
+3. Histórico: a base diária começa hoje (10/11/2026). Sem importação retroativa da Roverpix.
+4. Visitação: não há histórico (a Viva começou a operar em 01/10/2026). A visitação entra a partir de agora pelas fontes do próprio ponto (catraca, bip ou total diário quando existir).
+5. A seção nova das Estatísticas é só para o Admin.
