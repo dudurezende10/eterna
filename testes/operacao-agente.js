@@ -241,6 +241,8 @@ ok(supP.postos&&supP.parear,'supervisora: preços só leitura, vê e pode parear
   if(pid0&&pid0.dis){ // campo desabilitado: a recusa do servidor é conferida gravando direto pela fila do app
     await SU.evaluate(id=>ETERNA.state.db.doc('sim/prices|'+id).set(5),pid0.id);
     ok(await espera(SU,()=>/não foi aceita|Sem permissão/.test((document.querySelector('#toast')||{}).textContent||''),10000),'supervisora gravando preço (só leitura): aviso: '+await toastTxt(SU));
+    await SU.waitForTimeout(3000);const loc=await SU.evaluate(id=>ETERNA.priceOf(id),pid0.id);
+    ok(String(loc)===String(pid0.v),'preço recusado não fica valendo neste aparelho: antes '+pid0.v+', agora '+loc);
     const srv=sql('estado.db',`select valor from doc where col='sim' and id='prices|${pid0.id}'`);ok(!/^\[\["5"\]\]$|^\[\[5\]\]$/.test(srv),'preço da supervisora não chega ao servidor: '+srv);}
   else if(pid0){await SU.fill(`[data-act="price"][data-id="${pid0.id}"]`,'5');
     ok(await espera(SU,()=>/não foi aceita|Sem permissão/.test((document.querySelector('#toast')||{}).textContent||''),10000),'supervisora digitando preço (só leitura): aviso: '+await toastTxt(SU));
