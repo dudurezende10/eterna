@@ -5398,6 +5398,7 @@ def estado_col(col):
 def estado_gravar(body, quem=""):
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
     auditoria = []
+    ag_datas = []                        # v97: dias da agenda que mudaram (série diária)
     with estado_lock:
         db = estado_db()
         try:
@@ -5429,6 +5430,11 @@ def estado_gravar(body, quem=""):
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
                 if txt is not None and len(txt) > ESTADO_MAX:
                     continue
+                if d["col"] == "agenda":                        # v97: o dia de antes e o de depois da mudança
+                    r_ = db.execute("select valor from doc where col = 'agenda' and id = ?", (d["id"],)).fetchone()
+                    for x in ((json.loads(r_[0]) if r_ and r_[0] else None), v):
+                        if isinstance(x, dict) and isinstance(x.get("data"), str):
+                            ag_datas.append(x["data"])
                 rev += 1
                 db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
                            (d["col"], d["id"], txt, rev, _iso()))
@@ -5439,6 +5445,8 @@ def estado_gravar(body, quem=""):
     if any(isinstance(d, dict) and d.get("col") == "config" for d in docs[:500]):
         _busca_cfg["t"] = 0.0            # janela da selfie mudada no Painel vale na próxima busca
         _ia_cfg["t"] = 0.0               # v93: regra dos cliques de IA vale na próxima sessão que fechar
+    if ag_datas:
+        dia_marcar(ag_datas)
     for de_, para in auditoria:          # v93 (segurança): quem mudou a regra dos cliques de IA, no console
         try:
             de_ = ia_valida(json.loads(de_)) if de_ else None
@@ -5986,6 +5994,11 @@ def operacao_db():
         c.execute("create index if not exists entrada_dia on entrada(dia, origem)")
         c.execute("create table if not exists importacao (id text primary key, em text, por text, arquivo text, origem text,"
                   " dias text, aceitas int, recusadas int)")
+        # v97: série diária (uma linha por dia) e total diário de visitantes (bilheteria; "entrada_dia" já é nome de índice)
+        c.execute("create table if not exists dia (dia text primary key, tipo text, jogo int, vespera int, feriado int, show int, fechado int,"
+                  " fds int, eventos text, fonte_vendas text, vendas int, receita real, fotos int, sessoes int, sessoes_com_venda int,"
+                  " entradas int, entradas_fonte text, clima text, calc_em text, v int)")
+        c.execute("create table if not exists entrada_total (dia text, origem text, total int, importacao text, primary key (dia, origem))")
         c.commit()
         _op_criado["arq"] = OPERACAO_DB
     return c
@@ -6190,7 +6203,7 @@ def metricas_migra_v2(pausa=0.2):
 
 # Coleção "agenda" (calendário de eventos): só os campos do contrato, textos sem < e >, até 2 KB por registro.
 AGENDA_TIPOS = ("jogo", "show", "feriado", "fechado", "evento", "outro")
-AGENDA_ORIGENS = ("manual", "csv", "feriados")
+AGENDA_ORIGENS = ("manual", "csv", "feriados", "api")   # v97: api = jogos da API-Football
 AGENDA_MAX = 2048
 _re_agenda_id = re.compile(r"^ag_[0-9a-f]{12}$")
 
@@ -6219,16 +6232,699 @@ def agenda_valida(doc_id, v):
            "visitante": txt(v.get("visitante"), 60), "competicao": txt(v.get("competicao"), 60), "obs": txt(v.get("obs"), 200),
            "origem": v.get("origem") if v.get("origem") in AGENDA_ORIGENS else "manual", "por": txt(v.get("por"), 60),
            "em": txt(v.get("em"), 30)}
+    if isinstance(v.get("ext"), str) and re.match(r"^af:\d{1,12}$", v["ext"]):   # v97: id da partida na fonte
+        out["ext"] = v["ext"]
     if len(json.dumps(out, ensure_ascii=False).encode("utf8")) > AGENDA_MAX:
         return None
     return out
+
+
+# ---------- Agenda automática e série diária (v97; plano docs/planos/2026-11-10-agenda-estatisticas.md) ----------
+# Feriados nacionais e do Rio calculados aqui, sem internet e sem clique. Jogos no Maracanã pela API-Football, só com a
+# chave colada pelo Admin no Calendário (~/Eterna/api-football.json, 600): a chave nunca volta ao navegador (só os 4
+# últimos caracteres), nunca vai para log, status, URL ou backup. Evento automático editado ou apagado por uma pessoa
+# nunca é sobrescrito nem recriado (D9). Série diária: tabela "dia" do operacao.db, uma linha por dia a partir de
+# 10/11/2026 (Eduardo, 10/11: sem retroativo da Roverpix), com tipo do dia, vendas, fotos, conversão e visitação.
+AGENDA_DESDE = 2026
+DIA_DESDE = "2026-11-10"
+DIA_MAX_RODADA = 800
+AF_CFG = os.path.join(HOME, "api-football.json")
+AF_FONTE = os.path.join(HOME, "ponto", "agenda-fonte.json")
+AF_URL = "https://v3.football.api-sports.io"     # host fixo (risco 2); só os testes trocam, pelo módulo (m.AF_URL)
+AF_ENV = "ETERNA_API_FOOTBALL"                    # chave definida no servidor: vale por cima da tela
+AF_RESP_MAX = 2 * 1024 * 1024
+AF_FORA = ("PST", "CANC", "ABD", "SUSP")          # adiado, cancelado, abandonado, suspenso: sai do calendário (D2)
+AF_TZ = "America/Sao_Paulo"
+AF_NOMES = {"vasco da gama": "Vasco da Gama", "vasco da gama rj": "Vasco da Gama", "brazil": "Seleção Brasileira",
+            "brasil": "Seleção Brasileira", "botafogo rj": "Botafogo", "botafogo fr": "Botafogo"}
+_re_af_chave = re.compile(r"^[A-Za-z0-9]{20,64}$")
+_re_dia_iso = re.compile(r"^\d{4}-\d\d-\d\d$")
+agenda_lock = threading.Lock()                    # uma sincronização de jogos por vez
+agenda_wake = threading.Event()
+dia_wake = threading.Event()
+agenda_fonte = {"feriados_ate": None, "ultima": None, "tentativa": None, "ok": None, "erro": None, "pedidos_hoje": 0,
+                "pedidos_dia": None, "restantes": None, "n_por_ano": {}, "ja_no_calendario": 0, "venue_id": None,
+                "apagados_api": [], "teste": None, "rodando": False}
+AF_FONTE_CAMPOS = ("ultima", "tentativa", "ok", "erro", "pedidos_hoje", "pedidos_dia", "restantes", "n_por_ano",
+                   "ja_no_calendario", "venue_id", "apagados_api", "teste")
+_af_carregado = [False]
+dia_sujos = set()
+dia_sujos_lock = threading.Lock()
+dia_estado = {"ultima": None, "erro": None, "completa": None}
+
+
+def agenda_id(chave):
+    """Id determinístico: o mesmo feriado ou a mesma partida nunca duplica (dois aparelhos, vários boots)."""
+    return "ag_" + hashlib.sha1(chave.encode("utf8")).hexdigest()[:12]
+
+
+def pascoa(y):
+    """Domingo de Páscoa (mesmo cálculo do pascoa do app)."""
+    a, b, c = y % 19, y // 100, y % 100
+    d, e, f = b // 4, b % 4, (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    return _dt.date(y, (h + l - 7 * m + 114) // 31, ((h + l - 7 * m + 114) % 31) + 1)
+
+
+def feriados_de(ano):
+    """D8: feriados nacionais e do Rio, os móveis pela Páscoa. Mesma lista do feriadosDe do app. [(AAAA-MM-DD, nome)]."""
+    F = [("01-01", "Confraternização Universal"), ("01-20", "São Sebastião (Rio)"), ("04-21", "Tiradentes"),
+         ("04-23", "São Jorge (Rio)"), ("05-01", "Dia do Trabalho"), ("09-07", "Independência do Brasil"),
+         ("10-12", "Nossa Senhora Aparecida"), ("11-02", "Finados"), ("11-15", "Proclamação da República"),
+         ("11-20", "Consciência Negra"), ("12-25", "Natal")]
+    out = [("%d-%s" % (ano, md), n) for md, n in F]
+    p = pascoa(ano)
+    for dd, n in ((-48, "Carnaval (segunda)"), (-47, "Carnaval"), (-2, "Sexta-feira Santa"), (60, "Corpus Christi")):
+        out.append(((p + _dt.timedelta(days=dd)).isoformat(), n))
+    return sorted(out)
+
+
+def _agenda_todos():
+    """Coleção agenda inteira: id -> registro, ou None para a lápide (apagado)."""
+    with estado_lock:
+        db = estado_db()
+        try:
+            rs = db.execute("select id, valor from doc where col = 'agenda'").fetchall()
+        finally:
+            db.close()
+    out = {}
+    for i, v in rs:
+        try:
+            x = json.loads(v) if v is not None else None
+        except Exception:
+            x = None
+        out[i] = x if isinstance(x, dict) else None
+    return out
+
+
+def _agenda_grava(docs):
+    for i in range(0, len(docs), 500):            # estado_gravar aceita 500 por vez
+        estado_gravar({"docs": docs[i:i + 500]}, quem="agente")
+
+
+def agenda_semear_feriados(ano_atual=None):
+    """Feriados de AGENDA_DESDE até o ano que vem. Não grava se o id já existe (inclusive apagado: a pessoa apagou, não
+    volta) nem se a data já tem um feriado (os criados antes pelo botão "Adicionar feriados", de id aleatório)."""
+    ano_atual = ano_atual or int(_ff_hoje()[:4])
+    todos = _agenda_todos()
+    datas = {v.get("data") for v in todos.values() if v and v.get("tipo") == "feriado"}
+    em, novos = _iso(), []
+    for ano in range(AGENDA_DESDE, ano_atual + 2):
+        for data, nome in feriados_de(ano):
+            i = agenda_id("feriado|" + data)
+            if i in todos or data in datas:
+                continue
+            datas.add(data)
+            novos.append({"col": "agenda", "id": i, "valor": {"id": i, "data": data, "hora": "", "tipo": "feriado", "mandante": "",
+                          "visitante": "", "competicao": "", "obs": nome, "origem": "feriados", "por": "Eterna", "em": em}})
+    if novos:
+        _agenda_grava(novos)
+    agenda_fonte["feriados_ate"] = ano_atual + 1
+    return len(novos)
+
+
+def _af_fonte_carrega():
+    if _af_carregado[0]:
+        return
+    _af_carregado[0] = True
+    try:
+        with open(AF_FONTE, encoding="utf8") as f:
+            j = json.load(f)
+        if isinstance(j, dict):
+            for k in AF_FONTE_CAMPOS:
+                if k in j:
+                    agenda_fonte[k] = j[k]
+    except Exception:
+        pass
+
+
+def _af_fonte_grava():
+    """Situação da fonte (sem a chave e sem URL), 600."""
+    try:
+        os.makedirs(os.path.dirname(AF_FONTE), exist_ok=True)
+        _grava_privado(AF_FONTE, json.dumps({k: agenda_fonte.get(k) for k in AF_FONTE_CAMPOS}, ensure_ascii=False))
+    except Exception as ex:
+        print("  agenda: não gravei a situação da fonte (%s)" % type(ex).__name__)
+
+
+def af_cfg():
+    """Chave da API-Football: a variável de ambiente do servidor vale por cima do arquivo colado pela tela."""
+    env = (os.environ.get(AF_ENV) or "").strip()
+    if env:
+        return {"chave": env, "env": True, "em": None, "por": None}
+    try:
+        with open(AF_CFG, encoding="utf8") as f:
+            c = json.load(f)
+        if isinstance(c, dict) and isinstance(c.get("chave"), str) and _re_af_chave.match(c["chave"]):
+            return {"chave": c["chave"], "env": False, "em": c.get("em"), "por": c.get("por")}
+    except Exception:
+        pass
+    return None
+
+
+def af_salvar(chave, por):
+    _grava_privado(AF_CFG, json.dumps({"chave": chave, "em": _iso(), "por": str(por or "")[:60]}))
+    agenda_fonte.update(teste=None, erro=None, ok=None, tentativa=None)
+    _af_fonte_grava()
+
+
+def af_remover():
+    try:
+        os.remove(AF_CFG)
+    except FileNotFoundError:
+        pass
+    agenda_fonte.update(teste=None, erro=None, ok=None, tentativa=None)
+    _af_fonte_grava()
+
+
+class _AfSemRedir(urllib.request.HTTPRedirectHandler):
+    """A chave vai num cabeçalho: redirecionamento para outro host nunca é seguido (risco 2)."""
+    def redirect_request(self, *a, **k):
+        return None
+
+
+def _af_msg(ex, cfg):
+    t = re.sub(r"[\x00-\x1f<>]", "", str(ex))[:160]
+    return t.replace(cfg["chave"], "····") if cfg and cfg.get("chave") else t
+
+
+def af_get(cfg, rota, params):
+    """GET na API-Football (host fixo, timeout 20 s, resposta até 2 MB). Erro vira RuntimeError sem a chave."""
+    hoje = _ff_hoje()
+    if agenda_fonte.get("pedidos_dia") != hoje:
+        agenda_fonte.update(pedidos_dia=hoje, pedidos_hoje=0)
+    agenda_fonte["pedidos_hoje"] = int(agenda_fonte.get("pedidos_hoje") or 0) + 1
+    req = urllib.request.Request(AF_URL.rstrip("/") + rota + "?" + urlencode(params),
+                                 headers={"x-apisports-key": cfg["chave"], "Accept": "application/json", "User-Agent": "eterna-agente"})
+    try:
+        with urllib.request.build_opener(_AfSemRedir).open(req, timeout=20) as r:
+            corpo = r.read(AF_RESP_MAX + 1)
+            resto = r.headers.get("x-ratelimit-requests-remaining")
+    except urllib.error.HTTPError as ex:
+        raise RuntimeError("API-Football respondeu HTTP %d%s" % (ex.code, " (chave recusada)" if ex.code in (401, 403) else ""))
+    except Exception as ex:
+        raise RuntimeError("sem conexão com a API-Football (%s)" % type(ex).__name__)
+    if len(corpo) > AF_RESP_MAX:
+        raise RuntimeError("resposta da API-Football grande demais")
+    try:
+        j = json.loads(corpo.decode("utf8"))
+    except Exception:
+        raise RuntimeError("resposta da API-Football inválida")
+    try:
+        agenda_fonte["restantes"] = int(resto) if resto is not None else agenda_fonte.get("restantes")
+    except ValueError:
+        pass
+    erros = j.get("errors") if isinstance(j, dict) else None
+    if erros:
+        vals = list(erros.values()) if isinstance(erros, dict) else list(erros) if isinstance(erros, list) else [erros]
+        raise RuntimeError("API-Football: " + (str(vals[0]) if vals else "erro"))
+    resp = j.get("response") if isinstance(j, dict) else None
+    if not isinstance(resp, list):
+        raise RuntimeError("resposta da API-Football sem lista")
+    return resp
+
+
+def af_venue(cfg):
+    """Id do Maracanã na API-Football: descoberto uma vez e guardado na situação da fonte."""
+    v = agenda_fonte.get("venue_id")
+    if isinstance(v, int) and not isinstance(v, bool) and v > 0:
+        return v
+    for x in af_get(cfg, "/venues", {"search": "Maracan"}):
+        if not isinstance(x, dict):
+            continue
+        nome, cidade = str(x.get("name") or "").lower(), str(x.get("city") or "").lower()
+        if "maracan" in nome and "rio de janeiro" in cidade and isinstance(x.get("id"), int) and x["id"] > 0:
+            agenda_fonte["venue_id"] = x["id"]
+            _af_fonte_grava()
+            return x["id"]
+    raise RuntimeError("o Maracanã não apareceu na busca de estádios da API-Football")
+
+
+def _af_local(ts):
+    """Hora UTC da API no fuso do venue (critério 21), com ou sem zoneinfo."""
+    try:
+        from zoneinfo import ZoneInfo
+        t = _dt.datetime.fromtimestamp(ts, ZoneInfo(os.environ.get("ETERNA_TZ") or AF_TZ))
+    except Exception:
+        t = _dt.datetime.fromtimestamp(ts)      # o agente já roda no fuso do venue (fuso_ajusta)
+    return t.strftime("%Y-%m-%d"), t.strftime("%H:%M")
+
+
+def _af_nome(x):
+    n = re.sub(r"[<>\x00-\x1f]", "", str((x or {}).get("name") or "")).strip()[:60]
+    return AF_NOMES.get(n.lower(), n)
+
+
+def af_partidas(cfg, venue, temporada):
+    out = []
+    for x in af_get(cfg, "/fixtures", {"venue": venue, "season": temporada}):
+        if not isinstance(x, dict):
+            continue
+        fx, tm, lg = x.get("fixture") or {}, x.get("teams") or {}, x.get("league") or {}
+        fid, ts = fx.get("id"), fx.get("timestamp")
+        if not isinstance(fid, int) or isinstance(fid, bool) or not 0 < fid < 10 ** 12:
+            continue
+        if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+            try:
+                ts = _dt.datetime.fromisoformat(str(fx.get("date")).replace("Z", "+00:00")).timestamp()
+            except Exception:
+                continue
+        data, hora = _af_local(ts)
+        st = str((fx.get("status") or {}).get("short") or "")[:6]
+        out.append({"fixture_id": fid, "data": data, "hora": "" if st == "TBD" else hora, "status": st,
+                    "mandante": _af_nome(tm.get("home")), "visitante": _af_nome(tm.get("away")),
+                    "competicao": re.sub(r"[<>\x00-\x1f]", "", str(lg.get("name") or ""))[:60]})
+    return out
+
+
+def _ag_do_agente(v, ext):
+    """Registro ainda como o agente gravou (risco 4: não basta o "por", que alguém pode digitar)."""
+    return isinstance(v, dict) and v.get("por") == "Eterna" and v.get("origem") == "api" and v.get("ext") == ext
+
+
+def agenda_aplica_jogos(partidas):
+    """Grava as partidas na agenda pela regra D9. Devolve {gravados, apagados, ja_no_calendario, n_por_ano}."""
+    todos = _agenda_todos()
+    humanos = {v["data"] for v in todos.values() if v and v.get("tipo") == "jogo" and not (v.get("origem") == "api" and v.get("por") == "Eterna")}
+    apagados = set(agenda_fonte.get("apagados_api") or [])
+    docs, ja, n_por_ano, em, n_apag = [], 0, {}, _iso(), 0
+    for p in partidas:
+        ext = "af:%d" % p["fixture_id"]
+        i = agenda_id("af|%d" % p["fixture_id"])
+        atual = todos.get(i, False)              # False = nunca existiu; None = lápide
+        if p["status"] in AF_FORA:
+            if _ag_do_agente(atual, ext):
+                docs.append({"col": "agenda", "id": i, "valor": None})
+                apagados.add(i)
+                n_apag += 1
+            continue
+        n_por_ano[p["data"][:4]] = n_por_ano.get(p["data"][:4], 0) + 1
+        if atual is None and i not in apagados:  # apagado por uma pessoa: não volta
+            continue
+        if atual and not _ag_do_agente(atual, ext):   # editado por uma pessoa: não muda
+            continue
+        if not atual and p["data"] in humanos:   # jogo cadastrado à mão na mesma data
+            ja += 1
+            continue
+        novo = {"id": i, "data": p["data"], "hora": p["hora"], "tipo": "jogo", "mandante": p["mandante"], "visitante": p["visitante"],
+                "competicao": p["competicao"], "obs": "", "origem": "api", "ext": ext, "por": "Eterna", "em": em}
+        if atual and all(atual.get(k) == novo[k] for k in ("data", "hora", "mandante", "visitante", "competicao")):
+            continue
+        apagados.discard(i)
+        docs.append({"col": "agenda", "id": i, "valor": novo})
+    if docs:
+        _agenda_grava(docs)
+    agenda_fonte["apagados_api"] = sorted(apagados)[-2000:]
+    return {"gravados": len(docs) - n_apag, "apagados": n_apag, "ja_no_calendario": ja, "n_por_ano": n_por_ano}
+
+
+def agenda_jogos_sync(motivo=""):
+    """Temporadas de AGENDA_DESDE até a atual (e a próxima a partir de dezembro). Falha não apaga nada."""
+    if not agenda_lock.acquire(blocking=False):
+        return {"ok": False, "ja_rodando": True}
+    try:
+        _af_fonte_carrega()
+        cfg = af_cfg()
+        if not cfg:
+            return {"ok": False, "erro": "sem_chave"}
+        agenda_fonte["rodando"] = True
+        hoje = _ff_hoje()
+        ano = int(hoje[:4])
+        temporadas = list(range(AGENDA_DESDE, ano + 1)) + ([ano + 1] if hoje[5:7] == "12" else [])
+        partidas, erros = {}, []
+        try:
+            venue = af_venue(cfg)
+            for t in temporadas:
+                try:
+                    for p in af_partidas(cfg, venue, t):
+                        partidas[p["fixture_id"]] = p
+                except RuntimeError as ex:
+                    erros.append("%d: %s" % (t, _af_msg(ex, cfg)))
+        except RuntimeError as ex:
+            erros.append(_af_msg(ex, cfg))
+            venue = None
+        r = agenda_aplica_jogos(list(partidas.values())) if partidas else {"gravados": 0, "apagados": 0, "ja_no_calendario": 0, "n_por_ano": {}}
+        ok = not erros
+        agenda_fonte.update(tentativa=_iso(), ok=ok, erro="; ".join(erros)[:300] or None,
+                            ja_no_calendario=r["ja_no_calendario"], n_por_ano=r["n_por_ano"] if partidas else agenda_fonte.get("n_por_ano") or {})
+        if ok:
+            agenda_fonte["ultima"] = agenda_fonte["tentativa"]
+        _af_fonte_grava()
+        print("  agenda (jogos, %s): %d gravados, %d apagados, %d já no calendário%s" % (motivo or "agenda", r["gravados"], r["apagados"],
+              r["ja_no_calendario"], "" if ok else " · erro: " + agenda_fonte["erro"]))
+        return {"ok": ok, **r, "erro": agenda_fonte["erro"]}
+    finally:
+        agenda_fonte["rodando"] = False
+        agenda_lock.release()
+
+
+def agenda_testar():
+    """"Testar agora" do Calendário: uma consulta da temporada atual (mais a busca do estádio na primeira vez)."""
+    _af_fonte_carrega()
+    cfg = af_cfg()
+    if not cfg:
+        return {"ok": False, "erro": "sem_chave"}
+    ano = int(_ff_hoje()[:4])
+    try:
+        n = len(af_partidas(cfg, af_venue(cfg), ano))
+        t = {"em": _iso(), "ok": True, "temporada": ano, "n": n, "erro": None}
+    except RuntimeError as ex:
+        t = {"em": _iso(), "ok": False, "temporada": ano, "n": 0, "erro": _af_msg(ex, cfg)}
+    agenda_fonte["teste"] = t
+    _af_fonte_grava()
+    return t
+
+
+def _agenda_vencida(agora=None):
+    """Sincroniza toda segunda às 06:00 (fuso do venue), no boot se a última passou de 7 dias, e de novo 6 h depois de uma falha."""
+    agora = agora or time.time()
+    ult, tent = _epoch(agenda_fonte.get("ultima") or ""), _epoch(agenda_fonte.get("tentativa") or "")
+    if tent and not agenda_fonte.get("ok") and agora - tent < 6 * 3600:
+        return False
+    if not ult or agora - ult > 7 * 86400:
+        return True
+    lt = time.localtime(agora)
+    seis = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 6, 0, 0, 0, 0, -1))
+    return lt.tm_wday == 0 and agora >= seis and ult < seis
+
+
+def agenda_loop():
+    _af_fonte_carrega()
+    dia_feito = None
+    while True:
+        hoje = _ff_hoje()
+        if hoje != dia_feito:                    # no boot e na virada do dia (pega a virada do ano sem ninguém)
+            try:
+                n = agenda_semear_feriados()
+                if n:
+                    print("  agenda: %d feriados adicionados (até %d)" % (n, agenda_fonte["feriados_ate"]))
+                dia_feito = hoje
+            except Exception as ex:
+                print("  agenda (feriados): %s" % str(ex)[:120])
+        acordado = agenda_wake.is_set()
+        agenda_wake.clear()
+        try:
+            if af_cfg() and (acordado or _agenda_vencida()):
+                agenda_jogos_sync("pedido na tela" if acordado else "agenda")
+        except Exception as ex:
+            print("  agenda (jogos): %s" % type(ex).__name__)
+        agenda_wake.wait(60)
+
+
+def agenda_status(publico=False):
+    """Situação das fontes. publico=True é o bloco do /status (CORS aberto): sem os 4 últimos, sem quem salvou."""
+    _af_fonte_carrega()
+    cfg = af_cfg()
+    j = {"fonte": "api-football" if cfg else "nenhuma", "chave": bool(cfg), "ultima": agenda_fonte.get("ultima"),
+         "ok": agenda_fonte.get("ok"), "erro": agenda_fonte.get("erro")}
+    if publico:
+        return {"feriados_ate": agenda_fonte.get("feriados_ate"), "jogos": j}
+    j.update(env=bool(cfg and cfg["env"]), final=cfg["chave"][-4:] if cfg else None, salva_em=cfg and cfg.get("em"),
+             salva_por=cfg and cfg.get("por"), tentativa=agenda_fonte.get("tentativa"), n_por_ano=agenda_fonte.get("n_por_ano") or {},
+             ja_no_calendario=agenda_fonte.get("ja_no_calendario") or 0, teste=agenda_fonte.get("teste"),
+             rodando=bool(agenda_fonte.get("rodando")), pedidos_hoje=agenda_fonte.get("pedidos_hoje") if agenda_fonte.get("pedidos_dia") == _ff_hoje() else 0,
+             restantes=agenda_fonte.get("restantes"))
+    return {"ok": True, "feriados_ate": agenda_fonte.get("feriados_ate"), "jogos": j,
+            "dias": {"desde": DIA_DESDE, **dia_estado}}
+
+
+# --- série diária (tabela dia do operacao.db) ---
+def _dia_mais(d, n):
+    return (_dt.date.fromisoformat(d) + _dt.timedelta(days=n)).isoformat()
+
+
+def dia_marcar(datas):
+    """Dias que mudaram (agenda, entradas): o dia_loop recalcula. A véspera também muda com o jogo do dia seguinte."""
+    n = 0
+    with dia_sujos_lock:
+        for d in datas:
+            if isinstance(d, str) and _re_dia_iso.match(d):
+                try:
+                    dia_sujos.update((d, _dia_mais(d, -1)))
+                    n += 1
+                except ValueError:
+                    pass
+    if n:
+        dia_wake.set()
+
+
+def _agenda_por_dia():
+    por = {}
+    for v in _agenda_todos().values():
+        if v and isinstance(v.get("data"), str):
+            por.setdefault(v["data"], []).append(v)
+    return por
+
+
+def _ag_curto(e):
+    nome = {"jogo": "Jogo", "show": "Show", "feriado": "Feriado", "fechado": "Estádio fechado", "evento": "Evento"}.get(e.get("tipo"), "Outro")
+    if e.get("tipo") == "jogo":
+        partes = [nome, "%s × %s" % (e.get("mandante") or "?", e.get("visitante") or "?") if (e.get("mandante") or e.get("visitante")) else "", e.get("competicao") or ""]
+    else:
+        partes = [nome, e.get("obs") or e.get("mandante") or ""]
+    return " · ".join(str(p)[:80] for p in partes if p)[:160]
+
+
+def dia_linha(dia, evs, evs_seguinte):
+    """Tipo e marcas do dia (D3): fechado > jogo > show > evento > feriado > véspera > normal. Marcas guardadas separadas."""
+    tipos = {e.get("tipo") for e in evs}
+    wd = _dt.date.fromisoformat(dia).weekday()
+    mk = {"jogo": int("jogo" in tipos), "vespera": int(any(e.get("tipo") == "jogo" for e in evs_seguinte)), "feriado": int("feriado" in tipos),
+          "show": int("show" in tipos), "fechado": int("fechado" in tipos), "fds": int(wd >= 5)}
+    tipo = ("fechado" if mk["fechado"] else "jogo" if mk["jogo"] else "show" if mk["show"] else "evento" if tipos & {"evento", "outro"}
+            else "feriado" if mk["feriado"] else "vespera" if mk["vespera"] else "normal")
+    evs = sorted(evs, key=lambda e: (str(e.get("hora") or ""), str(e.get("tipo"))))
+    return {"dia": dia, "tipo": tipo, "marcas": mk, "eventos": [_ag_curto(e) for e in evs][:5]}
+
+
+def _dia_vendas(dia):
+    """D6: vale o servidor do ponto (resumo do dia com vendas ou sessões); senão a Roverpix do dia; senão None (sem operação)."""
+    def ler(p):
+        try:
+            with open(p, encoding="utf8") as f:
+                j = json.load(f)
+            return j if isinstance(j, dict) else None
+        except Exception:
+            return None
+    n = lambda v: int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+    r = lambda v: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+    m = ler(os.path.join(MET_DIR, dia + ".json"))
+    if m and (n(m.get("vendas")) > 0 or n(m.get("sessoes")) > 0):
+        on = m.get("online") if isinstance(m.get("online"), dict) else {}
+        return {"fonte_vendas": "eterna", "vendas": n(m.get("vendas")) + n(on.get("vendas")), "receita": round(r(m.get("faturamento")) + r(on.get("faturamento")), 2),
+                "fotos": n(m.get("fotos")), "sessoes": n(m.get("sessoes")), "sessoes_com_venda": n(m.get("sessoes_com_venda"))}
+    rv = ler(os.path.join(ROVER_DIR, "agg", dia + ".json"))
+    d = rv.get("daily") if rv and isinstance(rv.get("daily"), dict) else None
+    if d:
+        return {"fonte_vendas": "roverpix", "vendas": n(d.get("sales")), "receita": round(r(d.get("revenue")), 2), "fotos": n(d.get("photos")),
+                "sessoes": n(d.get("approaches")), "sessoes_com_venda": n(d.get("converted"))}
+    return {"fonte_vendas": None, "vendas": None, "receita": None, "fotos": None, "sessoes": None, "sessoes_com_venda": None}
+
+
+def _dia_entradas(de, ate):
+    """D5: catraca > total da bilheteria > bip. {dia: (total, fonte)}."""
+    por = {}
+    for d, o, n in op_ler("select dia, origem, count(*) from entrada where dia >= ? and dia <= ? group by dia, origem", (de, ate)):
+        por.setdefault(d, {})[o] = int(n)
+    for d, o, n in op_ler("select dia, origem, total from entrada_total where dia >= ? and dia <= ?", (de, ate)):
+        por.setdefault(d, {})[o] = int(n)
+    out = {}
+    for d, x in por.items():
+        for f in ("catraca", "bilheteria", "bip"):
+            if x.get(f) is not None:
+                out[d] = (x[f], f)
+                break
+    return out
+
+
+DIA_COLS = ("dia", "tipo", "jogo", "vespera", "feriado", "show", "fechado", "fds", "eventos", "fonte_vendas", "vendas", "receita", "fotos",
+            "sessoes", "sessoes_com_venda", "entradas", "entradas_fonte", "clima", "calc_em", "v")
+DIA_VENDAS = ("fonte_vendas", "vendas", "receita", "fotos", "sessoes", "sessoes_com_venda")
+
+
+def dia_consolidar(dias):
+    """Recalcula e grava as linhas (upsert). Nunca zera uma fonte que sumiu: sem arquivo de vendas, a linha mantém os
+    números que já tinha (critério 15)."""
+    hoje = _ff_hoje()
+    dias = sorted({d for d in dias if isinstance(d, str) and _re_dia_iso.match(d) and DIA_DESDE <= d <= hoje})
+    if not dias:
+        return 0
+    por = _agenda_por_dia()
+    ent = _dia_entradas(dias[0], dias[-1])
+    em = _iso()
+    linhas = []
+    for d in dias:
+        l = dia_linha(d, por.get(d, []), por.get(_dia_mais(d, 1), []))
+        l.update(_dia_vendas(d))
+        l["entradas"], l["entradas_fonte"] = ent.get(d, (None, None))
+        linhas.append(l)
+    with op_lock:
+        db = operacao_db()
+        try:
+            with db:
+                for l in linhas:
+                    old = db.execute("select fonte_vendas, vendas, receita, fotos, sessoes, sessoes_com_venda from dia where dia = ?", (l["dia"],)).fetchone()
+                    if old and old[0] and not l["fonte_vendas"]:
+                        l.update(dict(zip(DIA_VENDAS, old)))
+                    mk = l["marcas"]
+                    db.execute("insert or replace into dia (%s) values (%s)" % (", ".join(DIA_COLS), ", ".join("?" * len(DIA_COLS))),
+                               (l["dia"], l["tipo"], mk["jogo"], mk["vespera"], mk["feriado"], mk["show"], mk["fechado"], mk["fds"],
+                                json.dumps(l["eventos"], ensure_ascii=False), l["fonte_vendas"], l["vendas"], l["receita"], l["fotos"],
+                                l["sessoes"], l["sessoes_com_venda"], l["entradas"], l["entradas_fonte"], None, em, 1))
+        finally:
+            db.close()
+    return len(linhas)
+
+
+def dia_completo(pausa=0.2):
+    """De DIA_DESDE até hoje (no máximo DIA_MAX_RODADA dias), de 50 em 50 com pausa curta (risco 6)."""
+    hoje = _ff_hoje()
+    if hoje < DIA_DESDE:
+        return 0
+    dias, d = [], DIA_DESDE
+    while d <= hoje:
+        dias.append(d)
+        d = _dia_mais(d, 1)
+    dias = dias[-DIA_MAX_RODADA:]
+    for i in range(0, len(dias), 50):
+        dia_consolidar(dias[i:i + 50])
+        if i + 50 < len(dias):
+            time.sleep(pausa)
+    dia_estado["completa"] = _iso()
+    return len(dias)
+
+
+def dia_loop():
+    feito = None
+    while True:
+        hoje = _ff_hoje()
+        try:
+            if feito != hoje:
+                dia_completo()
+                feito = hoje
+            with dia_sujos_lock:
+                sujos = set(dia_sujos)
+                dia_sujos.clear()
+            dia_consolidar(sujos | {hoje, _dia_mais(hoje, -1)})
+            dia_estado.update(ultima=_iso(), erro=None)
+        except Exception as ex:
+            dia_estado.update(erro=str(ex)[:160])
+            print("  série diária: %s" % str(ex)[:160])
+        if dia_wake.wait(600):
+            time.sleep(3)                         # junta várias mudanças seguidas numa rodada
+        dia_wake.clear()
+
+
+def dias_periodo(ano):
+    rs = op_ler("select %s from dia where dia >= ? and dia <= ? order by dia" % ", ".join(DIA_COLS), ("%d-01-01" % ano, "%d-12-31" % ano))
+    out, calc = [], None
+    for r in rs:
+        x = dict(zip(DIA_COLS, r))
+        try:
+            ev = json.loads(x["eventos"] or "[]")
+        except Exception:
+            ev = []
+        calc = max(calc or "", x["calc_em"] or "") or None
+        out.append({"dia": x["dia"], "tipo": x["tipo"], "marcas": {k: int(x[k] or 0) for k in ("jogo", "vespera", "feriado", "show", "fechado", "fds")},
+                    "eventos": ev if isinstance(ev, list) else [], **{k: x[k] for k in DIA_VENDAS}, "entradas": x["entradas"],
+                    "entradas_fonte": x["entradas_fonte"], "clima": None})
+    return {"ok": True, "ano": ano, "desde": DIA_DESDE, "calc_em": calc, "dias": out}
+
+
+TOTAIS_MAX_DIAS = 1000
+
+
+def totais_validar(body):
+    """POST /ponto/entradas/totais: (origem, [(dia, total)], recusados, arquivo, por) ou (None, motivo)."""
+    if not isinstance(body, dict) or body.get("origem") != "bilheteria":
+        return None, "origem inválida"
+    dias = body.get("dias")
+    if not isinstance(dias, list) or not dias or len(dias) > TOTAIS_MAX_DIAS:
+        return None, "dias inválidos (de 1 a %d)" % TOTAIS_MAX_DIAS
+    hoje, bons, rec = _ff_hoje(), {}, []
+    for i, x in enumerate(dias):
+        d = x.get("dia") if isinstance(x, dict) else None
+        t = x.get("total") if isinstance(x, dict) else None
+        if not isinstance(d, str) or not _re_dia_iso.match(d):
+            rec.append({"i": i, "motivo": "dia inválido"})
+            continue
+        try:
+            _dt.date.fromisoformat(d)
+        except ValueError:
+            rec.append({"i": i, "motivo": "dia inválido"})
+            continue
+        if d < "%d-01-01" % AGENDA_DESDE or d > hoje:
+            rec.append({"i": i, "motivo": "dia fora do intervalo"})
+            continue
+        if not isinstance(t, int) or isinstance(t, bool) or not 0 <= t <= 100000:
+            rec.append({"i": i, "motivo": "total inválido (inteiro de 0 a 100.000)"})
+            continue
+        bons[d] = t
+    limpa = lambda v, n: re.sub(r"[<>\\/\x00-\x1f]", "", str(v or ""))[:n]
+    return ("bilheteria", sorted(bons.items()), rec, limpa(body.get("arquivo"), 80), limpa(body.get("por"), 60)), None
+
+
+def totais_gravar(origem, itens, rec, arquivo, por):
+    """Substitui dia e origem; registra a importação (mesma tabela da v92)."""
+    iid = "imp_" + secrets.token_hex(6)
+    with op_lock:
+        db = operacao_db()
+        try:
+            with db:
+                db.executemany("insert or replace into entrada_total values (?,?,?,?)", [(d, origem, t, iid) for d, t in itens])
+                db.execute("insert into importacao values (?,?,?,?,?,?,?,?)",
+                           (iid, _iso(), por, arquivo, origem, json.dumps([d for d, _ in itens][:1000]), len(itens), len(rec)))
+        finally:
+            db.close()
+    dia_marcar([d for d, _ in itens])
+    return {"ok": True, "aceitos": len(itens), "recusados": rec[:200], "importacao": iid}
+
+
+def admin_do_cadastro(email):
+    """O servidor ainda não confere quem está logado (pendência desde a v78; login real no plano de 04/11). Até lá, a
+    chave da API-Football só é aceita com o e-mail de alguém que o cadastro do servidor marca como ativo e com
+    Configurações, Usuários e Permissões em Alterar (o Admin; a Supervisora não tem Usuários). Barreira, não autenticação.
+    Devolve o nome (para a situação da fonte) ou None."""
+    e = str(email or "").strip().lower()
+    if not e or len(e) > 200:
+        return None
+    for (v,) in estado_db_ler("usuarios"):
+        try:
+            u = json.loads(v)
+        except Exception:
+            continue
+        if not isinstance(u, dict) or str(u.get("email") or "").strip().lower() != e or u.get("active") is False or u.get("deleted"):
+            continue
+        p = u.get("perms") if isinstance(u.get("perms"), dict) else {}
+        if all(isinstance(p.get(m), dict) and p[m].get("u") is True for m in ("configuracao", "usuarios", "permissoes")):
+            return re.sub(r"[<>\x00-\x1f]", "", str(u.get("name") or e))[:60]
+    return None
+
+
+# Rotas da v97 (deny-by-default): toda rota declara a guarda; guarda desconhecida = 403. Todas em rota_privada (sem CORS
+# aberto), com o Host e a origem do agente (posto + origem_local) e no-store. "gravar" exige X-Eterna: 1 e limite por
+# minuto; "admin" exige também o e-mail de um Admin do cadastro do servidor (admin_do_cadastro).
+#   (método, caminho): (guarda, método do H, pedidos por minuto por IP, corpo máximo)
+AGENDA_ROTAS = {
+    ("GET", "/estatisticas/dias"): ("ler", "r_estatisticas_dias", 0, 0),
+    ("GET", "/agenda/status"): ("ler", "r_agenda_status", 0, 0),
+    ("POST", "/agenda/atualizar"): ("gravar", "r_agenda_atualizar", 1, 1024),
+    ("POST", "/ponto/entradas/totais"): ("gravar", "r_entradas_totais", 30, 256 * 1024),
+    ("POST", "/agenda/fonte"): ("admin", "r_agenda_fonte", 10, 4096),
+    ("POST", "/agenda/testar"): ("admin", "r_agenda_testar", 1, 1024),
+}
+AGENDA_ROTAS_PATHS = frozenset(p for _, p in AGENDA_ROTAS)
 
 
 def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -6275,7 +6971,7 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", o)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path == "/ponto/entradas" else "Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path == "/ponto/entradas" or path in AGENDA_ROTAS_PATHS else "Content-Type")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             return
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -6343,6 +7039,79 @@ class H(BaseHTTPRequestHandler):
         if v is None:
             return self.js({"error": motivo}, 400)
         return self.js(entradas_gravar(*v), nostore=True)
+
+    # ---------- v97: agenda automática e série diária (rotas em AGENDA_ROTAS, deny-by-default) ----------
+    def agenda_rota(self, metodo, path):
+        guarda, nome, por_min, corpo_max = AGENDA_ROTAS[(metodo, path)]
+        try:
+            if guarda not in ("ler", "gravar", "admin") or not self.posto() or not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403, nostore=True)
+            body, quem = None, None
+            if guarda != "ler":
+                if self.headers.get("X-Eterna") != "1":
+                    return self.js({"error": "origem não autorizada"}, 403, nostore=True)
+                if not limite_ok(self.client_address[0], nome, por_min):
+                    return self.js({"error": "muitos pedidos"}, 429, nostore=True)
+                body, err = self.corpo(corpo_max)
+                if err:
+                    return self.js({"error": "corpo inválido"}, err, nostore=True)
+            if guarda == "admin":
+                quem = admin_do_cadastro(body.get("quem"))
+                if not quem:
+                    return self.js({"error": "so_admin"}, 403, nostore=True)
+            return getattr(self, nome)(body, quem)
+        except Exception as ex:
+            print("  %s: %s" % (path, type(ex).__name__))
+            return self.js({"error": "erro no servidor"}, 500, nostore=True)
+
+    def r_estatisticas_dias(self, body, quem):
+        try:
+            ano = int((parse_qs(urlparse(self.path).query).get("ano") or [""])[0])
+        except ValueError:
+            ano = 0
+        if not 2000 <= ano <= int(_ff_hoje()[:4]):
+            return self.js({"error": "ano inválido"}, 400, nostore=True)
+        return self.js(dias_periodo(ano), nostore=True)
+
+    def r_agenda_status(self, body, quem):
+        return self.js(agenda_status(), nostore=True)
+
+    def r_agenda_atualizar(self, body, quem):
+        if not af_cfg():
+            return self.js({"ok": False, "error": "sem_chave"}, 409, nostore=True)
+        ja = bool(agenda_fonte.get("rodando"))
+        agenda_wake.set()
+        return self.js({"ok": True, "ja_rodando": ja}, nostore=True)
+
+    def r_entradas_totais(self, body, quem):
+        v, motivo = totais_validar(body)
+        if v is None:
+            return self.js({"error": motivo}, 400, nostore=True)
+        return self.js(totais_gravar(*v), nostore=True)
+
+    def r_agenda_fonte(self, body, quem):
+        """{acao: "salvar", chave} ou {acao: "remover"}. A resposta nunca traz a chave; o console registra quem, sem a chave."""
+        de = "este computador" if self.loopback() else "posto " + self.client_address[0]
+        if os.environ.get(AF_ENV, "").strip():
+            return self.js({"ok": False, "error": "chave_no_servidor"}, 409, nostore=True)
+        acao = body.get("acao")
+        if acao == "remover":
+            af_remover()
+            print("  agenda: chave da API-Football removida por %s (%s)" % (quem, de))
+            return self.js({"ok": True, "chave": False}, nostore=True)
+        chave = body.get("chave")
+        if acao != "salvar" or not isinstance(chave, str) or not _re_af_chave.match(chave.strip()):
+            return self.js({"ok": False, "error": "chave_invalida"}, 400, nostore=True)
+        troca = bool(af_cfg())
+        af_salvar(chave.strip(), quem)
+        print("  agenda: chave da API-Football %s por %s (%s)" % ("trocada" if troca else "salva", quem, de))
+        agenda_wake.set()
+        return self.js({"ok": True, "chave": True, "final": chave.strip()[-4:]}, nostore=True)
+
+    def r_agenda_testar(self, body, quem):
+        if not af_cfg():
+            return self.js({"ok": False, "error": "sem_chave"}, 409, nostore=True)
+        return self.js(agenda_testar(), nostore=True)
 
     def file(self, path):
         try:
@@ -6769,10 +7538,13 @@ class H(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         if u.path.startswith(("/g/", "/galerias/")):
             return self.gal_get(u, q)
+        if ("GET", u.path) in AGENDA_ROTAS:          # v97
+            return self.agenda_rota("GET", u.path)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/status":
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
+            ag_ = agenda_status(publico=True)          # v97: sem os 4 últimos da chave e sem quem salvou (CORS aberto)
             with lock:
                 return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
@@ -6781,7 +7553,7 @@ class H(BaseHTTPRequestHandler):
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
                                 "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
-                                "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(),
+                                "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(), "agenda": ag_,
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
@@ -6934,6 +7706,8 @@ class H(BaseHTTPRequestHandler):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
+        if ("POST", u.path) in AGENDA_ROTAS:         # v97
+            return self.agenda_rota("POST", u.path)
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
         if u.path == "/ponto/entradas":
@@ -7143,6 +7917,8 @@ def main():
     threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=metricas_migra_v2, daemon=True).start()   # v92: resumos antigos ganham os campos v2 (só acrescenta)
     threading.Thread(target=backup_loop, daemon=True).start()
+    threading.Thread(target=agenda_loop, daemon=True).start()      # v97: feriados sem clique e jogos da API-Football
+    threading.Thread(target=dia_loop, daemon=True).start()         # v97: série diária (tabela dia do operacao.db)
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
     threading.Thread(target=galeria_loop, daemon=True).start()
@@ -7151,6 +7927,7 @@ def main():
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     _rok, _rmot = rec_estado()
     print("  Recorte local:     " + ("pronto (ISNet + u2net_human_seg, carrega na primeira foto)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
+    print("  Agenda:            feriados automáticos; jogos " + ("pela API-Football" if af_cfg() else "sem chave (cole no Calendário de eventos)"))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")
