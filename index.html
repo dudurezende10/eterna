@@ -1783,7 +1783,7 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
     document.getElementById('print-root')?.remove();render();return;}
   if(pontoModo()==='posto'){ // programa de impressão do posto (eterna-impressao.ps1): a foto vai direto para a DNP, sem a prévia do Chrome
-    job.fase='imprimindo';render();const rl=await impLocal(impJpegs(),s.saleNo||card);if(state.impJob!==job)return;
+    job.fase='imprimindo';job.local=true;render();const rl=await impLocal(impJpegs(),s.saleNo||card);if(state.impJob!==job)return;job.local=false;
     if(rl){document.getElementById('print-root')?.remove();
       if(rl.ok){job.fase='impresso';job.dnp=dnpLimpa(rl.dnp,'impressao');
         // a DNP confirmou que as folhas saíram: o Eterna registra sozinho (sem "Saiu certo")
@@ -1855,6 +1855,8 @@ async function impPostoPoll(){if(!document.getElementById('imp-painel')&&!state.
   try{const j=await (await agFetch(state.agent.url+'/impressao/fila',{cache:'no-store'})).json();const sig=JSON.stringify([j.pedidos.map(p=>[p.id,p.estado,p.feitas,p.aviso,p.erro]),j.estados]);const mudou=sig!==state.impFilaSig;state.impFila=j;state.impFilaSig=sig;if(mudou&&document.getElementById('imp-painel'))render();}catch(e){}}
 const impPedido=venda=>[...((state.impFila&&state.impFila.pedidos)||[])].reverse().find(p=>p.venda===venda)||null;
 const impAtivo=p=>!!p&&(p.estado==='na_fila'||p.estado==='imprimindo');
+// programa do posto imprimindo: a DNP confere e o Eterna registra sozinho, sem botões
+const IMP_CONF='<div class="note"><span class="pill neutral">Imprimindo e conferindo com a impressora...</span></div>';
 function impPedidoLinha(p){const F=state.impFila||{};const e=(F.estados||{})[p.impressora||state.agent.impressora];const parada=p.aviso||(e&&e.estado==='erro'?(e.motivo||'parada'):'');const fotos=`${p.fotos} ${p.fotos===1?'foto':'fotos'}`;let t;
   if(p.estado==='na_fila'){const n=(F.pedidos||[]).filter(x=>impAtivo(x)&&x.id<p.id).length;t=`<span class="pill neutral">Na fila${n?` · ${n} ${n===1?'pedido':'pedidos'} na frente`:''}</span>`;}
   else if(p.estado==='imprimindo')t=`<span class="pill warn">Imprimindo ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos}</span>`;
@@ -1877,7 +1879,7 @@ function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');con
       else if(naFila)body=linhaFila+cancelaFila;
       else if(job&&(job.fase==='imprimindo'||job.fase==='impresso')){const r=job.res||{ok:[],falhasIA:[],falhas:[]};
         body=`${noSrv?linhaFila:`<div class="note">${r.ok.length} ${r.ok.length===1?'foto enviada':'fotos enviadas'} para a impressora deste posto.</div>`}${r.falhasIA.length?`<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span> ${r.falhasIA.length} ${r.falhasIA.length===1?'foto com fundo de IA ficou':'fotos com fundo de IA ficaram'} de fora.</div>`:''}${r.falhas.length?`<div class="note"><span class="pill warn">${r.falhas.length} ${r.falhas.length===1?'foto não abriu':'fotos não abriram'}</span></div>`:''}
-          ${rw?`<div class="row">${semSaida?'':`<button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button>`}<button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`;}
+          ${job.local&&job.fase==='imprimindo'?IMP_CONF:rw?`<div class="row">${semSaida?'':`<button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button>`}<button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`;}
       else body=`${ped?linhaFila:''}${feitas.size?`<div class="note">${feitas.size} já ${feitas.size===1?'impressa':'impressas'}; faltam ${S.max}.</div>`:''}${falhaIA}
         <div class="imp-grid">${S.pode.map(x=>impThumb(x,selK.has(x.k),rw?'imp-pick':null,card)).join('')}</div>
         <div class="note">${S.sel.length} de ${S.max} marcadas. Toque para trocar quais imprimir.</div>${nota}${job&&job.fase==='erro'?'<div class="note"><span class="pill bad">Nenhuma foto ficou pronta. Tente de novo.</span></div>':''}
@@ -1887,7 +1889,7 @@ function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');con
       body=`<div class="note">Impressa${im.porNome?' por '+esc(im.porNome):''}${im.em?' às '+hhmm(new Date(im.em)):''} · ${im.n||0} ${im.n===1?'foto':'fotos'}${nre.length?` · ${nre.length} ${nre.length===1?'reimpressão':'reimpressões'}`:''}</div>
         ${jr&&jr.fase==='montando'?'<div class="note"><span class="pill neutral">Preparando a reimpressão...</span></div>':''}
         ${naFila?linhaFila+cancelaFila:jr&&(jr.fase==='imprimindo'||jr.fase==='impresso')?`${noSrv?linhaFila:`<div class="note">Reimpressão: ${r.ok.length} ${r.ok.length===1?'foto enviada':'fotos enviadas'} para a impressora.</div>`}${r.falhasIA.length?'<div class="note"><span class="pill warn">Não deu para montar o fundo: tente de novo</span></div>':''}
-          ${rw?`<div class="row"><button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button><button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`
+          ${jr.local&&jr.fase==='imprimindo'?IMP_CONF:rw?`<div class="row"><button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">Saiu certo</button><button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">Não saiu</button></div>`:''}`
         :!rw||jr?'':re?`<div class="din-conf"><span class="eyebrow">Quais fotos reimprimir (até ${max})</span>
           <div class="imp-grid">${impFotos(s).todas.filter(x=>feitas.has(x.k)).map(x=>impThumb(x,(re.sel||[]).includes(x.k),'imp-repick',card)).join('')}</div>
           <div class="chips">${IMP_MOTIVOS.map(([k,l])=>`<button class="chip" data-act="imp-motivo" data-m="${k}" aria-pressed="${re.motivo===k}">${l}</button>`).join('')}</div>
