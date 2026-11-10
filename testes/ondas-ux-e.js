@@ -18,8 +18,11 @@ const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.i
 async function ljSessao(L,card,n){await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;if(ETERNA.state.kiosk.step!=='code'){ETERNA.state.kiosk.step='code';ETERNA.render();}});
   await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(500);
   await L.evaluate(([card,n])=>{const it=ETERNA.lojaItems(card).filter(x=>x.t==='ph');const pk=ETERNA.lojaPick(card);Object.keys(pk).forEach(k=>delete pk[k]);it.slice(0,n).forEach(x=>pk[x.k]='ok');ETERNA.state.kiosk.pkg=null;ETERNA.state.kiosk.pay=null;ETERNA.state.kiosk.step='cart';ETERNA.render();},[card,n]);await L.waitForTimeout(200);}
-async function ljPagar(L,m){await L.click(`[data-act="loja-paym"][data-m="${m}"]`);await L.waitForTimeout(120);await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);}
-const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&x.estado==='aguardando'),card);
+// v96-ux: o Checkout não escolhe pacote nem meio (v96). "ljPagar" = o cliente toca em Continuar e o vendedor (janela A, Posto) escolhe o Ideal e o meio
+let POSTO=null;
+async function ljPagar(L,m){await L.evaluate(()=>ETERNA.lojaPedir());await L.waitForTimeout(400);const id=await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id||!POSTO)return;
+  await POSTO.evaluate(([id,m])=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(!r||!r.escolha)return;ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:{card:'cartao',cash:'dinheiro',pix:'pix'}[m]||m});},[id,m]);await L.waitForTimeout(500);}
+const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&(x.estado==='aguardando'||x.estado==='escolha')),card);
 const espera=async(pg,fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||4000)){if(await pg.evaluate(fn,arg))return true;await sleep(120);}return false;};
 // resultado de uma venda confirmada, sem datas, ids, códigos nem o número da sessão
 async function venda(pg,card,id){return pg.evaluate(([card,id])=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const s=S.sessions[card];const r=S.caixaDin.find(x=>x.id===id);
@@ -41,19 +44,21 @@ try{
     await ctx.close();}
   const ctx=await b.newContext({viewport:{width:1440,height:900}});await rotas(ctx);
   const A=vigia(await ctx.newPage(),'A');await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(500);
-  ok(await entrar(A,'eduardo@eduardorezende.com'),'admin não entrou');
+  ok(await entrar(A,'eduardo@eduardorezende.com'),'admin não entrou');POSTO=A;
   const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('.rail [data-act="loja-abrir"]')]);vigia(L,'L');await L.waitForLoadState();await L.waitForTimeout(800);
   ok(await A.evaluate(()=>ETERNA.state.view)==='posto','E: abrir Checkout leva o admin ao Posto');
   await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
   const cards=await L.evaluate(()=>ETERNA.demoSessions().filter(s=>ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=8).map(s=>s.card));ok(cards.length>=6,'poucas sessões de exemplo: '+cards.length);
   ok(await A.evaluate(()=>/Agora no Checkout/.test(document.querySelector('#main').textContent)),'E: título "Agora no Checkout"');
-  // ---- E2: Cartão no Checkout; o bloco de cima mostra o código e "Pago na maquininha"
+  // ---- E2 (v96-ux): o pedido do Checkout (escolha:true) tem pacote e meio escolhidos no Posto; as ações ficam em "Aguardando pagamento"
+  // e o bloco "Agora no Checkout" mostra só o código (ecoPendR exclui escolha:true)
   await ljSessao(L,cards[0],4);await ljPagar(L,'card');const p0=await pendDe(L,cards[0]);ok(!!p0,'E2: pendência do cartão');
-  ok(await espera(A,id=>!!document.querySelector(`#eco [data-act="pend-pos"][data-id="${id}"]`),3000,p0&&p0.id),'E2: "Pago na maquininha" no bloco Agora no Checkout');
-  const e2=await A.evaluate(c=>({cod:(document.querySelector('#eco .eco-cod')||{}).textContent||'',refs:document.querySelectorAll('#pend-ref').length,acoesLista:document.querySelectorAll('#pend-painel [data-act="pend-pos"]').length,txt:document.querySelector('#eco').innerText}),cards[0]);
-  ok(e2.cod===p0.codigo&&e2.acoesLista===0&&!/confirme em/i.test(e2.txt),'E2: código grande no bloco e sem ações repetidas na lista: '+J({...e2,txt:e2.txt.slice(0,120)}));
-  await A.click(`#eco [data-act="pend-pos"][data-id="${p0.id}"]`);await A.waitForTimeout(150);
-  ok(await A.evaluate(()=>document.querySelectorAll('#pend-ref').length===1&&!!document.querySelector('#eco #pend-ref')),'risco 4: um só #pend-ref, dentro do bloco');
+  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${id}"]`),3000,p0&&p0.id),'E2: "Pago na maquininha" em Aguardando pagamento');
+  ok(await espera(A,c=>((document.querySelector('#eco .eco-cod')||{}).textContent||'')===c,3000,p0.codigo),'E2: código no bloco Agora no Checkout');
+  const e2=await A.evaluate(()=>({ecoBtn:document.querySelectorAll('#eco button').length,acoesLista:document.querySelectorAll('#pend-painel [data-act="pend-pos"]').length}));
+  ok(e2.ecoBtn===0&&e2.acoesLista===1,'E2: ações só na lista (pedido do Checkout): '+J(e2));
+  await A.click(`#pend-painel [data-act="pend-pos"][data-id="${p0.id}"]`);await A.waitForTimeout(150);
+  ok(await A.evaluate(()=>document.querySelectorAll('#pend-ref').length===1&&!!document.querySelector('#pend-painel #pend-ref')),'risco 4: um só #pend-ref');
   // ---- E8: digitando o NSU, a troca de idioma no Checkout não apaga
   await A.click('#pend-ref');await A.keyboard.type('1234');
   await L.click('[data-act="lang"][data-l="en"]').catch(()=>L.evaluate(()=>{ETERNA.state.lang='en';ETERNA.render();}));await sleep(1300);
@@ -69,7 +74,7 @@ try{
   ok(J(r1)===J(r2),'E2: SIM igual ao caminho da v93: '+J(r1)+' ≠ '+J(r2));
   // ---- E3: com 2 pendências, o bloco de cima não tem botões; as duas aparecem com as ações
   await L.click('[data-act="loja-new"]').catch(()=>{});await ljSessao(L,cards[2],3);await ljPagar(L,'pix');const p2=await pendDe(L,cards[2]);
-  ok(await espera(A,id=>!!document.querySelector(`#eco [data-act="pend-pos"][data-id="${id}"]`),3000,p2.id),'E3: uma pendência: ações no bloco');
+  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${id}"]`)&&!document.querySelector('#eco button'),3000,p2.id),'E3 (v96-ux): pedido do Checkout: ações na lista, nenhuma no bloco');
   await A.evaluate(()=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));S.caixaDin.unshift({id:'L00-teste0din01',card:'LPTESTEDIN',codigo:'WXYZ-2345',criada:new Date().toISOString(),total:110,prints:0,n:3,cart:[{id:'zona'}],selected:[],meio:'dinheiro',prov:'dinheiro',estado:'aguardando'});localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.simFresh();ETERNA.render();});
   ok(await espera(A,()=>!document.querySelector('#eco [data-act]')||!document.querySelector('#eco button'),3000),'E3: com 2 pendências o bloco de cima não tem botões');
   const e3=await A.evaluate(([a,b])=>({a:!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${a}"]`),b:!!document.querySelector(`#pend-painel [data-act="din-confirm"][data-id="${b}"]`),ecoBtn:document.querySelectorAll('#eco button').length}),[p2.id,'L00-teste0din01']);
@@ -92,7 +97,7 @@ try{
   for(const [n,cls] of [[120,'neutral'],[99,'warn'],[39,'bad']]){
     await A.evaluate(n=>{ETERNA.SIM.stock['Caixa 1']=n;localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));ETERNA.go('posto');},n);await A.waitForTimeout(150);
     const ps=await A.evaluate(()=>[...document.querySelectorAll('#main .pill')].filter(p=>/Rolo:/.test(p.textContent)).map(p=>p.className));
-    ok(ps.length===1&&ps[0].includes(cls)&&!ps[0].includes('good'),`E6: rolo ${n} no Posto (1 selo, ${cls}): `+J(ps));
+    ok(ps.length>=1&&ps.length<=2&&ps.every(c=>c.includes(cls)&&!c.includes('good')),`E6: rolo ${n} no Posto (v96-ux: selo no cabeçalho e no Imprimir, como na v96; ${cls}): `+J(ps));
     await A.evaluate(()=>ETERNA.go('checkout'));await A.waitForTimeout(150);
     const pc=await A.evaluate(()=>[...document.querySelectorAll('#main .pill')].filter(p=>/Rolo:/.test(p.textContent)).map(p=>p.className));ok(pc.length===1&&pc[0].includes(cls),`E6: rolo ${n} na Venda manual: `+J(pc));
     await A.evaluate(()=>ETERNA.go('estoque'));await A.waitForTimeout(150);

@@ -6,7 +6,7 @@ const PX=Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP////////////////////////
 const LANGS=['pt','en','es','fr','de'];
 const SEU={pt:'Seu código',en:'Your code',es:'Tu código',fr:'Votre code',de:'Dein Code'};
 const PROIB=/recibo|receipt|reçu|Beleg|pedido|\border\b|commande|Bestell/i;
-const CHAVES=['receiptCode','typeCode','codeBad','cam_nomatch','cam_nocam','gq_codeH','gq_codeIs','ljPosCode','ljShowCode'];
+const CHAVES=['receiptCode','typeCode','codeBad','cam_nomatch','cam_nocam','gq_codeH','gq_codeIs','ljYourCode','ljTypeCode']; // v96-ux: no Checkout valem as chaves da v96 (ljYourCode na tela Pronto, ljTypeCode no Iniciar)
 async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(450);}
 (async()=>{const b=await chromium.launch();
 try{
@@ -51,7 +51,7 @@ try{
     await L.evaluate(([lg,c])=>{const k=ETERNA.state.kiosk;k.code=c.card;k.paid={wait:false,codigo:c.code,token:c.tok,total:110,prints:3};ETERNA.render();},[lg,{card:dados.card1,code:dados.c1,tok:null}]);t.fim=await L.evaluate(()=>document.querySelector('#main').innerText);
     await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});
     for(const [k,v] of Object.entries(t)){ok(!PROIB.test(v),`F1 ${lg} ${k}: texto com recibo/pedido: `+(v.match(PROIB)||[])[0]);}
-    ['cam','cod','espera','din','fim'].forEach(k=>ok(new RegExp(SEU[lg],'i').test(t[k])||(k==='cod'&&new RegExp(lg==='pt'?'seu código':lg==='en'?'your code':lg==='es'?'tu código':lg==='fr'?'votre code':'deinen Code','i').test(t[k])),`F1 ${lg} ${k}: falta "${SEU[lg]}": `+t[k].replace(/\s+/g,' ').slice(0,160)));}
+    ['cam','cod','espera','din','fim'].forEach(k=>ok(new RegExp(SEU[lg],'i').test(t[k])||(k==='cam'&&lg==='de'&&/Code eingeben/.test(t[k]))/* v96-ux: botão da v96 */||(k==='cod'&&new RegExp(lg==='pt'?'seu código':lg==='en'?'your code':lg==='es'?'tu código':lg==='fr'?'votre code':'deinen Code','i').test(t[k])),`F1 ${lg} ${k}: falta "${SEU[lg]}": `+t[k].replace(/\s+/g,' ').slice(0,160)));}
   // galeria: tela de código
   const G=await ctx.newPage();G.on('pageerror',e=>errs.push('G: '+e.message));await G.goto(U+'#g/abcdefghijklmnop');await G.waitForTimeout(600);
   for(const lg of LANGS){const t=await G.evaluate(lg=>{ETERNA.state.lang=lg;ETERNA.state.pub.step='codigo';ETERNA.render();return document.querySelector('#main').innerText;},lg);

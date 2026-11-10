@@ -16,8 +16,11 @@ const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.i
 async function ljSessao(L,card,n){await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;if(ETERNA.state.kiosk.step!=='code'){ETERNA.state.kiosk.step='code';ETERNA.render();}});
   await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(500);
   await L.evaluate(([card,n])=>{const it=ETERNA.lojaItems(card).filter(x=>x.t==='ph');const pk=ETERNA.lojaPick(card);Object.keys(pk).forEach(k=>delete pk[k]);it.slice(0,n).forEach(x=>pk[x.k]='ok');ETERNA.state.kiosk.pkg=null;ETERNA.state.kiosk.pay=null;ETERNA.state.kiosk.step='cart';ETERNA.render();},[card,n]);await L.waitForTimeout(200);}
-async function ljPagar(L,m){await L.click(`[data-act="loja-paym"][data-m="${m}"]`);await L.waitForTimeout(120);await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);}
-const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&x.estado==='aguardando'),card);
+// v96-ux: o Checkout não escolhe pacote nem meio (v96); o vendedor (janela A, Posto) escolhe o Ideal e o meio
+let POSTO=null;
+async function ljPagar(L,m){await L.evaluate(()=>ETERNA.lojaPedir());await L.waitForTimeout(400);const id=await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id||!POSTO)return;
+  await POSTO.evaluate(([id,m])=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(!r||!r.escolha)return;ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:{card:'cartao',cash:'dinheiro',pix:'pix'}[m]||m});},[id,m]);await L.waitForTimeout(500);}
+const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&(x.estado==='aguardando'||x.estado==='escolha')),card);
 const espera=async(pg,fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||4000)){if(await pg.evaluate(fn,arg))return true;await sleep(120);}return false;};
 // resultado de uma venda confirmada, sem datas, ids, códigos nem o número da sessão
 async function venda(pg,card,id){return pg.evaluate(([card,id])=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const s=S.sessions[card];const r=S.caixaDin.find(x=>x.id===id);
@@ -29,7 +32,7 @@ async function venda(pg,card,id){return pg.evaluate(([card,id])=>{const S=JSON.p
 try{
   const ctx=await b.newContext({viewport:{width:1440,height:900}});await rotas(ctx);
   const A=vigia(await ctx.newPage(),'A');await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(500);
-  ok(await entrar(A,'eduardo@eduardorezende.com'),'admin não entrou');
+  ok(await entrar(A,'eduardo@eduardorezende.com'),'admin não entrou');POSTO=A;
   // ---- 4: antes da primeira tentativa ao agente, sem faixa "Sem conexão"; depois dela (sem agente), com a faixa
   const r4=await A.evaluate(()=>{const a=ETERNA.state.agent;const t0=a.tried;a.on=false;a.tried=false;ETERNA.go('posto');const antes=!!document.querySelector('#main .conn-off');a.tried=true;ETERNA.render();const depois=!!document.querySelector('#main .conn-off');a.tried=t0||true;return {antes,depois};});
   ok(!r4.antes&&r4.depois,'4: faixa "Sem conexão" só depois da primeira tentativa: '+J(r4));
@@ -38,11 +41,12 @@ try{
   await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
   const cards=await L.evaluate(()=>ETERNA.demoSessions().filter(s=>ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=8).map(s=>s.card));
   await ljSessao(L,cards[0],4);await ljPagar(L,'card');const p0=await pendDe(L,cards[0]);ok(!!p0,'3: pendência do cartão');
-  ok(await espera(A,id=>!!document.querySelector(`#eco [data-act="pend-pos"][data-id="${id}"]`),3000,p0&&p0.id),'3: "Pago na maquininha" no bloco');
-  await A.click(`#eco [data-act="pend-pos"][data-id="${p0.id}"]`);await A.waitForTimeout(150);
+  // v96-ux: pedido do Checkout (escolha:true): as ações ficam em "Aguardando pagamento" (o NSU não fica no bloco #eco)
+  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${id}"]`),3000,p0&&p0.id),'3: "Pago na maquininha" na lista');
+  await A.click(`#pend-painel [data-act="pend-pos"][data-id="${p0.id}"]`);await A.waitForTimeout(150);
   await A.click('#pend-ref');await A.keyboard.type('123456');await A.click('#main h1');await A.waitForTimeout(100);
-  await A.evaluate(()=>ETERNA.ecoUpd(true));await A.waitForTimeout(100);
-  ok(await A.evaluate(()=>(document.querySelector('#eco #pend-ref')||{}).value)==='123456','3: o NSU sumiu quando o bloco foi reescrito com o foco fora');
+  await A.evaluate(()=>{ETERNA.ecoUpd(true);ETERNA.render();});await A.waitForTimeout(100);
+  ok(await A.evaluate(()=>(document.querySelector('#pend-ref')||{}).value)==='123456','3: o NSU sumiu quando a tela foi redesenhada com o foco fora');
   await L.click('[data-act="lang"][data-l="en"]').catch(()=>{});await sleep(1300);
   ok(await A.evaluate(()=>(document.querySelector('#pend-ref')||{}).value)==='123456','3: o NSU sumiu com uma mudança no Checkout');
   await L.close();
@@ -54,12 +58,15 @@ try{
     const card=Object.keys(S.sessions).find(c=>!antes.has(c));const s=S.sessions[card];
     const f0=E.pvFila().length;const ev=E.pvEvento('criar','V-DEMO-1',{card});const f1=E.pvFila().length;
     s.status='paga';s.cart=[{id:'arq',v:70}];s.total=70;s.saleNo='E-DEMO';const row=E.allSalesSim().find(r=>r.card===card);
+    const tokD=E.galDaVenda(card);const galFila=(S.galFila||[]).some(x=>x.token===tokD); // v96-ux (pendência das ondas): venda de sessão demo não publica a galeria
     const audit=E.auditRead().find(e=>e.acao==='modo_demo');
-    return {card,demo:s&&s.demo,flag:JSON.stringify(S.flagUse||{})===fu0,inv:JSON.stringify(S.invalid||{})===inv0,teste:ev&&ev.teste,fila:f1===f0,row:row&&row.status,alvo:audit&&audit.alvo,posto:E.postoNome()};});
+    return {card,demo:s&&s.demo,flag:JSON.stringify(S.flagUse||{})===fu0,inv:JSON.stringify(S.invalid||{})===inv0,teste:ev&&ev.teste,fila:f1===f0,row:row&&row.status,tokD:!!tokD,galFila,alvo:audit&&audit.alvo,posto:E.postoNome()};});
   ok(r7.demo===1,'7a: sessão do modo demonstração sem a marca demo:1: '+J(r7));
   ok(r7.flag&&r7.inv,'7a: bandeira ou foto inválida da sessão demo contaram: '+J(r7));
   ok(r7.teste&&r7.fila,'7a: venda da sessão demo foi para a fila do servidor: '+J(r7));
   ok(r7.row==='teste','7a: venda da sessão demo na receita: '+J(r7));
+  ok(r7.tokD&&!r7.galFila,'7a: venda da sessão demo publicou a galeria (fila de envio): '+J(r7));
+  ok(await A.evaluate(()=>{const E=ETERNA,S=E.SIM;const c=E.demoSessions().find(x=>!(S.sessions[x.card]||{}).demo).card;S.sessions[c]=Object.assign(S.sessions[c]||{},{status:'paga'});const t=E.galDaVenda(c);return (S.galFila||[]).some(x=>x.token===t);}),'7a: venda normal deixou de publicar a galeria');
   ok(r7.alvo===r7.posto&&r7.alvo!=='aparelho','7b: auditoria do modo demonstração com o posto: '+J(r7));
   // venda normal (sem demo) continua subindo
   ok(await A.evaluate(async()=>{const E=ETERNA;const ev=E.pvEvento('criar','V-REAL-1',{card:'LPNAOEXISTE'});await new Promise(r=>setTimeout(r,300));return !ev.teste&&E.pvFila().some(x=>x.venda==='V-REAL-1');}),'7a: venda normal deixou de ir para a fila');

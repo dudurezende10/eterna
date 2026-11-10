@@ -692,8 +692,8 @@ sequenceDiagram
 | `#g` | cliente sem o QR | campo para digitar o código curto do recibo |
 
 - `render()` trata `state.pub` e `state.lojaRota` antes de tudo: não pede login, não chama `syncHash` e não mostra `.bare-exit`. Recarregar a página nunca abre o Checkout para a equipe; ele só abre com `#loja` ou com o perfil quiosque.
-- **Checkout (`#loja`)**: Esc ou o botão Sair do painel da equipe chamam `lojaSair()`, que sempre leva ao login (faz logout se houver usuário). 3 toques seguidos no logo (`lojaLogo`, janela de 1,5 s) abrem o painel escondido da equipe com "Sessões esperando" e "Sair". Botão "Voltar ao início" em todas as etapas. Não há volta automática por inatividade. Idiomas por bandeiras em SVG (`LANG_FLAGS`, Brasil, EUA, Espanha, França, Alemanha), porque emoji de bandeira não aparece no Chrome do Windows.
-- **Tela final do Checkout**: QR (`#lqr`) com o código `XXXX-XXXX` embaixo e contagem regressiva. Volta sozinha à câmera em `SIM.lojaFimSeg` segundos (padrão 30, de 5 a 120). `lojaTick` é o único timer do Checkout e morre ao sair da rota, trocar de etapa ou recarregar.
+- **Checkout (`#loja`)**: Esc ou o botão Sair do painel da equipe chamam `lojaSair()`, que sempre leva ao login (faz logout se houver usuário). 3 toques seguidos no logo (`lojaLogo`, janela de 1,5 s) abrem o painel escondido da equipe com "Sessões esperando" e "Sair". Botão "Voltar ao início" em todas as etapas (na escolha das fotos é o botão "Sair", com texto, que pede confirmação se houver foto marcada). Voltas automáticas por inatividade (v96): escolha parada 90 s sem toque (`LOJA_ESCOLHA_MS`, `lojaEscolhaOciosa`) volta ao Iniciar e apaga as marcas, menos com pedido aberto; tela Pronto ou do valor parada 3 min (`LOJA_PRONTO_MS`) volta ao início e o Posto vê "o cliente saiu"; câmera sem rosto 60 s (`LOJA_CAM_MS`). Idiomas por bandeiras em SVG (`LANG_FLAGS`, Brasil, EUA, Espanha, França, Alemanha), porque emoji de bandeira não aparece no Chrome do Windows.
+- **Tela final do Checkout**: QR (`#lqr`) com o código `XXXX-XXXX` embaixo e contagem regressiva ("Voltamos ao início em", `ljBackIn`). Volta sozinha ao início em `SIM.lojaFimSeg` segundos (padrão 30, de 5 a 120). `lojaTick` é o único timer do Checkout e morre ao sair da rota, trocar de etapa ou recarregar.
 - **Galeria pública (`#g/<token>`)**, passos de `state.pub.step`:
   - `carregando` → `GET /g/<token>/info` no agente (tempo limite 2,5 s);
   - `codigo`, `nao_existe`, `expirada` (410) ou `chegando` (agente fora e token desconhecido neste aparelho; nova tentativa a cada 20 s);
@@ -1135,7 +1135,7 @@ Checkout e Caixa funcionam **no mesmo computador e no mesmo navegador**, em duas
 
 ### Dinheiro aguardando caixa
 
-**Fluxo**
+**Fluxo** (histórico da v79: desde a v96 o Checkout não mostra pacote, preço nem forma de pagamento e não manda o cliente ao caixa; o pedido nasce em `escolha` e o atendente escolhe pacote e meio no Posto de venda)
 
 1. Cliente escolhe Dinheiro no carrinho. O botão vira "Finalizar e pagar R$ X no caixa" e aparece a nota "Em dinheiro, a compra é confirmada no caixa."
 2. `lojaDinheiro(card)`: `simFresh()`, fecha uma pendência anterior da mesma sessão como `substituida`/`novo_pedido`, cria o token da galeria **sem publicar** (`galDaSessao(card,true)`), grava o registro em `SIM.caixaDin` e põe a sessão em `status:'aguardando'`, `din:<id>`. Não baixa estoque, não grava `aiOf().bought`, não gera `saleNo`.
@@ -1351,7 +1351,7 @@ Plano: `docs/planos/2026-10-29-v83-multiterminal.md` (decisões D1 a D11, notas 
 
 ### Pagamento aguardando (parte D)
 
-- `lojaPay` só chama `lojaPedido(card,meio)`. Cartão, PIX e Dinheiro viram pendência em `SIM.caixaDin` com `meio`, `prov`, `saleNo` e `vendedor` (de `eterna.posto.vendedor`). Nada de venda, estoque, fundo comprado ou galeria até a confirmação.
+- (histórico; `lojaPay` saiu na v96 e o Checkout chama `lojaPedido(card)` sem meio) `lojaPay` só chamava `lojaPedido(card,meio)`. Cartão, PIX e Dinheiro viram pendência em `SIM.caixaDin` com `meio`, `prov`, `saleNo` e `vendedor` (de `eterna.posto.vendedor`). Nada de venda, estoque, fundo comprado ou galeria até a confirmação.
 - `PAG_PROV`: `pos-manual` (maquininha avulsa, confirmação humana) e `tef:null`, reservado para o TEF real.
 - `pendConfirmar(id,{ref})`: "Pago na maquininha" com NSU ou autorização opcional (4 a 12 dígitos). `refErro` recusa 13 a 19 dígitos (parece número de cartão) e o valor nunca é gravado. Dinheiro usa "Recebi R$ X" (`dinConfirmar` é apelido). Confirmar não baixa estoque.
 - `lojaPendCheck`: o Checkout vai ao QR quando a pendência é confirmada, ou volta ao carrinho da mesma sessão com `ljPayCancelled` (5 línguas) quando é cancelada. Saíram as promessas de "2 minutos" e a contagem na tela de pagamento.

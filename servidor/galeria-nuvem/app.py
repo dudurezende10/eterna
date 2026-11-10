@@ -457,11 +457,8 @@ def rosto(token, m, corpo, ip, ctx):
         restam, _ = falhas(ip, token, somar=True)
         evento(token, "selfie_sem_rosto", ip)
         return resp({"ok": False, "motivo": "sem_rosto", "restam": restam})
-    if m["tipo"] == "evento":
-        pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), 0) >= LIMIAR_CRIANCA}
-    else:
-        lim = LIMIAR_CRIANCA if m.get("menor") else LIMIAR_ADULTO
-        pids = {f["id"] for f in m["fotos"]} if any(s >= lim for s in sims.values()) else set()
+    lim = LIMIAR_CRIANCA if m["tipo"] == "evento" or m.get("menor") else LIMIAR_ADULTO
+    pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), 0) >= lim}   # só as fotos em que quem fez a selfie aparece
     if not pids and leitura != "ok":
         evento(token, "selfie_processando", ip)          # leitura incompleta: não conta como erro
         return resp({"ok": False, "motivo": "processando"}, 503)

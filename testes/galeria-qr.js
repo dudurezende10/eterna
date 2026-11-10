@@ -10,21 +10,21 @@ async function nova(ctx,nome,vp){const pg=await ctx.newPage();if(vp)await pg.set
 // Loja de ponta a ponta em #loja: código do recibo, ✓ ✓ ✗ ✓, Pix, pagar
 async function compraLoja(pg,card){await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(700);
   for(const a of ['kiosk-ok','kiosk-ok','kiosk-no','kiosk-ok'])await pg.click(`[data-act="${a}"]`);
-  await pg.click('.lj-next');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.click('[data-act="loja-checkout"]');await pg.waitForTimeout(400);
+  await pg.click('.lj-next');await pg.waitForTimeout(400); // v96: o Continuar faz o pedido; pacote (o ideal) e PIX são escolhidos no Posto
   await pagoNaMaquininha(pg);}
 // v83: PIX fica aguardando; o vendedor confirma "Pago na maquininha" no Posto de venda, numa outra janela do mesmo navegador
 async function pagoNaMaquininha(pg){const ctx=pg.context();let V=ctx.__vend;if(!V||V.isClosed()){V=await nova(ctx,'vendedor');await login(V);await V.evaluate(()=>localStorage.removeItem('eterna.session'));ctx.__vend=V;} /* a janela do vendedor fica logada só na memória: os outros logins do teste continuam abrindo no login */
   const id=await pg.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id)return;
-  await V.evaluate(id=>{ETERNA.simFresh();if(ETERNA.state.view!=='posto'){ETERNA.state.view='posto';ETERNA.render();}return ETERNA.pendConfirmar(id,{ref:''});},id);
+  await V.evaluate(id=>{ETERNA.simFresh();if(ETERNA.state.view!=='posto'){ETERNA.state.view='posto';ETERNA.render();}const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.escolha){ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:'pix'});}return ETERNA.pendConfirmar(id,{ref:''});},id);
   for(let i=0;i<20;i++){if(await pg.evaluate(()=>!!document.querySelector('#lqr')))break;await pg.waitForTimeout(100);}await pg.waitForTimeout(600);}
 async function fotoDe(pg,id,escala){return pg.evaluate(async([id,k])=>{let c=null;for(let i=0;i<10&&!c;i++){c=await ETERNA.photoCanvas(id);if(!c)await new Promise(r=>setTimeout(r,400));} /* v79: com a máquina carregada a imagem às vezes não carregava na primeira */const x=document.createElement('canvas');x.width=c.width*k;x.height=c.height*k;x.getContext('2d').drawImage(c,0,0,x.width,x.height);return x.toDataURL('image/jpeg',.9).split(',')[1];},[id,escala||1]);}
 // espera a câmera assentar (pronta ou sem câmera) antes de mandar a foto; se estourar o tempo, registra o estado
 async function selfie(pg,b64){await pg.waitForFunction(()=>{const s=ETERNA.state.guest.selfie;return !s||s.err||s.ready;},null,{timeout:20000}).catch(()=>{});await pg.waitForTimeout(150);
-  await pg.setInputFiles('#gq-file',{name:'selfie.jpg',mimeType:'image/jpeg',buffer:Buffer.from(b64,'base64')});
+  await pg.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(Buffer.from(b64,'base64')).toString('base64'));
   try{await pg.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='buscando'&&ETERNA.pub.step!=='selfie',null,{timeout:150000});}
   catch(e){const st=await pg.evaluate(()=>({pub:ETERNA.pub&&{step:ETERNA.pub.step,motivo:ETERNA.pub.motivo},face:ETERNA.state.face})).catch(()=>null);throw new Error('selfie sem resposta: '+JSON.stringify(st));}}
 async function abrirGaleria(pg,tok){await pg.goto(U+'#g/'+tok);await pg.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});}
-async function consentir(pg){await pg.check('[data-act="gq-consent"]');await pg.click('#gq-agree');await pg.waitForSelector('#gq-file',{state:'attached'});}
+async function consentir(pg){await pg.check('[data-act="gq-consent"]');await pg.click('#gq-agree');await pg.waitForSelector('#gq-st',{state:'attached'});}
 const gqCruas=pg=>pg.evaluate(()=>{const t=document.body.innerText+' '+[...document.querySelectorAll('[title],[aria-label],[placeholder]')].map(e=>(e.title||'')+(e.getAttribute('aria-label')||'')+(e.placeholder||'')).join(' ');return (t.match(/\b(gq|lj)_[A-Za-z]+/g)||[]);});
 
 (async()=>{const b=await chromium.launch();
@@ -65,16 +65,22 @@ try{
     await C.clock.runFor(9000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: com 10 s, aos 9 s a tela final deveria continuar');
     await C.clock.runFor(1300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: com 10 s, deveria voltar aos 10 s');}
   // botão antes do tempo
-  const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-novo');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Novo cliente" deveria voltar na hora'); // v94-ux: lj-restart virou lj-novo (parte G)
-  // ---------- 23. 5 minutos parado nas fotos não mudam de etapa (A3 cancelado) ----------
-  dbg('23. 5 minutos parado nas fotos não mudam');
+  const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-restart');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Voltar ao início" deveria voltar na hora');
+  // ---------- 23. escolha parada 90 s sem toque volta ao Iniciar e apaga as marcas (Eduardo, 10/11; substitui o "A3 cancelado" de 27/10) ----------
+  dbg('23. escolha parada 90 s volta ao Iniciar');
   const card4=cards[4]||cards[0]; // v79: card3 já foi paga e sessão paga não abre a escolha de novo (revisão 1)
   await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(1000);
-  ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: não abriu as fotos');await C.clock.runFor(5*60*1000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: 5 min parado nas fotos mudaram a etapa');
-  // A6: voltar manual nas fotos, no carrinho e no código
-  await C.click('[data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!ETERNA.state.kiosk.code),'A6: voltar nas fotos não limpou o cliente');
+  ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: não abriu as fotos');await C.click('[data-act="kiosk-ok"]');
+  await C.clock.runFor(80*1000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: aos 80 s parado ainda deveria estar nas fotos');
+  await C.mouse.click(5,450);await C.clock.runFor(80*1000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: um toque deveria renovar o prazo de 90 s');
+  await C.clock.runFor(20*1000);
+  const p23=await C.evaluate(c=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')).sessions[c]||{};return {step:ETERNA.state.kiosk.step,code:ETERNA.state.kiosk.code,pk:Object.keys(s.pick||{}).length,ini:!!document.querySelector('[data-act="kiosk-start"]'),foto:!!document.querySelector('#lj-lb,.lj-gcard')};},card4);
+  ok(p23.step==='code'&&!p23.code&&!p23.pk&&p23.ini&&!p23.foto,'23: 90 s sem toque deveria voltar ao Iniciar, sem foto na tela e sem marcas: '+JSON.stringify(p23));
+  // A6: voltar manual nas fotos (Sair), no Pronto e no código
+  await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(800);
+  await C.click('[data-act="kiosk-sair"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!ETERNA.state.kiosk.code),'A6: Sair nas fotos não limpou o cliente');
   await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(800);await C.click('[data-act="kiosk-ok"]');await C.click('.lj-next');await C.clock.runFor(300);
-  await C.click('.lj-checkout [data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6: voltar no carrinho não voltou para a câmera');
+  await C.click('.lj-pronto [data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6 (v96): voltar no Pronto não voltou ao início');
   await C.click('[data-act="kiosk-emerg"]');ok(await C.isVisible('[data-act="kiosk-back"]'),'A6: sem botão de voltar na etapa do código');await C.click('[data-act="kiosk-back"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6: voltar no código');
   await C.close();await ctxC.close();
   // ---------- 5. galeria pública sem login: consentimento ----------
@@ -83,7 +89,7 @@ try{
   const g5=await G.evaluate(()=>({h:location.hash,step:ETERNA.pub.step,ph:document.querySelectorAll('.gq-ph').length,dis:document.querySelector('#gq-agree').disabled,user:!!ETERNA.state.user}));
   ok(g5.step==='consent'&&g5.h==='#g/'+tok&&g5.ph===0&&g5.dis&&!g5.user,'5: consentimento sem login: '+JSON.stringify(g5));
   await G.check('[data-act="gq-consent"]');ok(!(await G.evaluate(()=>document.querySelector('#gq-agree').disabled)),'5: botão continua desativado depois de marcar');
-  await G.click('#gq-agree');await G.waitForSelector('#gq-file',{state:'attached'});
+  await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});
   // ---------- 7. rosto de fora da sessão: nao_encontrado, tentativas caem, depois bloqueio ----------
   dbg('7. rosto de fora da sessão: nao_encontra');
   const fora=await G.evaluate(async c=>{await ETERNA.faceIndexAll();await new Promise(r=>setTimeout(r,300));await ETERNA.faceq;const ss=ETERNA.demoSessions();const meu=ss.find(s=>s.card===c);
@@ -100,7 +106,7 @@ try{
   dbg('6. selfie de alguém da sessão');
   let meuId=null;for(let i=0;i<20&&!meuId;i++){meuId=await G.evaluate(async c=>{await ETERNA.faceIndexAll();await ETERNA.faceq;const s=ETERNA.demoSessions().find(x=>x.card===c);return s.photos.map(p=>p.id).find(id=>(ETERNA.FACEIDX[id]||[]).length)||null;},card);if(!meuId)await G.waitForTimeout(500);} // v79: espera a leitura de rostos (a máquina carregada atrasava e o teste falhava às vezes)
   const meuB64=await fotoDe(G,meuId);
-  await G.click('[data-act="gq-retry"]');await G.waitForSelector('#gq-file',{state:'attached'});await selfie(G,meuB64);
+  await G.click('[data-act="gq-retry"]');await G.waitForSelector('#gq-st',{state:'attached'});await selfie(G,meuB64);
   const g6=await G.evaluate(c=>{const s=ETERNA.demoSessions().find(x=>x.card===c);const sel=(ETERNA.SIM.sessions[c]||{}).selected||[];return {step:ETERNA.pub.step,n:s.photos.length,sel:sel.length,dl:document.querySelectorAll('[data-act="gq-dl"]').length,wm:document.querySelectorAll('.gq-ph .wm').length,yours:[...document.querySelectorAll('[data-act="gq-dl"]')].map(b=>b.dataset.pid)};},card);
   ok(g6.step==='galeria'&&g6.sel===3&&g6.dl===3&&g6.wm===g6.n-3,'6: galeria depois da selfie: '+JSON.stringify(g6));
   ok(!(await G.evaluate(()=>{let st='';for(const s of [localStorage,sessionStorage])for(let i=0;i<s.length;i++)st+=s.getItem(s.key(i));return /data:image/.test(JSON.stringify(ETERNA.pub)+JSON.stringify(ETERNA.state.guest.selfie||null)+st);})),'8: imagem guardada depois do acerto');
@@ -163,7 +169,7 @@ try{
   // ---------- 7 (bloqueio): 5 falhas ----------
   dbg('7 (bloqueio): 5 falhas');
   if(foraB64){const B=await nova(ctx,'bloqueio');await abrirGaleria(B,tok);await consentir(B);let last=null;
-    for(let i=0;i<5;i++){if(i){await B.click('[data-act="gq-retry"]');await B.waitForSelector('#gq-file',{state:'attached'});}await selfie(B,foraB64);last=await B.evaluate(()=>({m:ETERNA.pub.motivo,r:ETERNA.pub.restam,t:document.body.innerText}));}
+    for(let i=0;i<5;i++){if(i){await B.click('[data-act="gq-retry"]');await B.waitForSelector('#gq-st',{state:'attached'});}await selfie(B,foraB64);last=await B.evaluate(()=>({m:ETERNA.pub.motivo,r:ETERNA.pub.restam,t:document.body.innerText}));}
     ok(last.m==='bloqueado'&&/Muitas tentativas/i.test(last.t)&&!(await B.$('[data-act="gq-retry"]')),'7: depois de 5 falhas deveria bloquear: '+JSON.stringify({m:last.m,r:last.r}));await B.close();}
   // ---------- 14. sem rolagem horizontal em 3 tamanhos; prints ----------
   dbg('14. sem rolagem horizontal em 3 tamanhos');

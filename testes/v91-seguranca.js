@@ -71,10 +71,10 @@ try{
   ok(await espera(pg,()=>!!document.querySelector('#lj-lb .lj-lbimg'),5000),'depois do "Sim" abre na foto ampliada');
   const k=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;const by={};ETERNA.lojaFotos(k.code).forEach(p=>{(by[p.ses]=by[p.ses]||[]).push(p.id.slice(3));});return {code:k.code,by};});
   ok((k.by.LPSTALV03||[]).sort().join()==='ttt000000001,ttt000000003','B4: o "Sim" põe só as 2 fotos "talvez" de T, nunca a sessão inteira: '+JSON.stringify(k.by.LPSTALV03));
-  ok((k.by.LPSFAMA01||[]).length===6,'família dela (A, principal) inteira: '+(k.by.LPSFAMA01||[]).length);
+  ok((k.by.LPSFAMA01||[]).length===2,'família dela (A, principal): só as fotos em que ela aparece: '+(k.by.LPSFAMA01||[]).length);
   ok((k.by.LPSFUND02||[]).sort().join()==='fff000000002,fff000000004','B5: F (ela só no fundo) entra só com as fotos claras dela: '+JSON.stringify(k.by.LPSFUND02));
   ok((k.by.LPSMENO04||[]).join()==='mmm000000002','menor: só a foto clara dela: '+JSON.stringify(k.by.LPSMENO04));
-  ok((k.by.LPSOITE05||[]).length===3&&!k.by.LPSVELH06,'W (80 min) inteira, V (2 h) fora');
+  ok((k.by.LPSOITE05||[]).length===1&&!k.by.LPSVELH06,'W (80 min) só com a foto em que ela aparece, V (2 h) fora');
   // aviso "Achamos você" fora da barra do ✗/✓ e do botão Ver todas; ponto · hora dentro da imagem
   const lay=await pg.evaluate(()=>{const R=s=>{const e=document.querySelector(s);return e?e.getBoundingClientRect().toJSON():null;};return {t:R('#toast'),bar:R('.lj-lbbar'),x:R('.lj-lbx'),no:R('.lj-no'),on:document.querySelector('#toast').hasAttribute('data-on'),txt:document.querySelector('#toast').textContent};});
   const cruza=(p,q)=>p&&q&&!(p.right<=q.left||q.right<=p.left||p.bottom<=q.top||q.bottom<=p.top);
@@ -87,23 +87,23 @@ try{
   fs.mkdirSync(PRINTS,{recursive:true});
   // ---------- venda com B5 e T: galeria própria só com o que entrou ----------
   await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);
-  await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.waitForTimeout(120);await pg.click('[data-act="loja-checkout"]');
+  await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);/* v96: o Continuar já faz o pedido (pacote e meio no Posto) */
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'),'pedido feito');
   const g1=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];const m=ETERNA.SIM.galerias[r.token];return {venda:!!m.venda,so:m.so};});
-  ok(g1.venda&&(g1.so.LPSFUND02||[]).length===2&&(g1.so.LPSTALV03||[]).length===2&&(g1.so.LPSFAMA01||[]).length===6,'galeria da venda só com o que entrou de F e T: '+JSON.stringify(g1.so&&Object.fromEntries(Object.entries(g1.so).map(([c,l])=>[c,l.length]))));
+  ok(g1.venda&&(g1.so.LPSFUND02||[]).length===2&&(g1.so.LPSTALV03||[]).length===2&&(g1.so.LPSFAMA01||[]).length===2,'galeria da venda só com o que entrou de F e T: '+JSON.stringify(g1.so&&Object.fromEntries(Object.entries(g1.so).map(([c,l])=>[c,l.length]))));
   // ---------- B5 sozinho: ela clara só no fundo de F ----------
   SIMS={[F[1]]:[.70,false],[F[3]]:[.62,false]};
   r=await busca();
   const f=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;return {code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id.slice(3)).sort()};});
   ok(f.code==='LPSFUND02'&&f.fotos.join()==='fff000000002,fff000000004','B5: só no fundo de uma família grande, a sessão não abre inteira: '+JSON.stringify(f));
-  await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.waitForTimeout(120);await pg.click('[data-act="loja-checkout"]');
+  await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);/* v96: o Continuar já faz o pedido (pacote e meio no Posto) */
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'),'pedido de F feito');
   const g2=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];const m=ETERNA.SIM.galerias[r.token];return {card:r.card,venda:!!m.venda,so:m.so};});
   ok(g2.card==='LPSFUND02'&&g2.venda&&(g2.so.LPSFUND02||[]).sort().join()==='ag_fff000000002,ag_fff000000004','B5: venda de F com galeria própria só com as fotos dela: '+JSON.stringify(g2));
   // ---------- IMPORTANTE 1: sessão de menor achada sozinha ----------
   SIMS={[M[1]]:[.68,true]};
   r=await busca();
-  await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.waitForTimeout(120);await pg.click('[data-act="loja-checkout"]');
+  await pg.click('#lj-lb [data-act="kiosk-ok"]');await pg.waitForTimeout(100);await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);/* v96: o Continuar já faz o pedido (pacote e meio no Posto) */
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'),'pedido da menor feito');
   const g3=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];const m=ETERNA.SIM.galerias[r.token];return {card:r.card,sessoes:r.sessoes,venda:!!m.venda,so:m.so};});
   ok(g3.card==='LPSMENO04'&&g3.venda&&JSON.stringify(g3.so)==='{"LPSMENO04":["ag_mmm000000002"]}','IMPORTANTE 1: menor sozinha = galeria própria só com a foto dela: '+JSON.stringify(g3));

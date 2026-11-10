@@ -5,6 +5,8 @@
 // Sobe agentes em 8796 (sem OpenCV) e 8795 (com OpenCV, se houver), com HOME temporário, e derruba tudo no fim.
 const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const net=require('net');const crypto=require('crypto');
 const {chromium}=require('playwright');
+// v96: em tela estreita as bandeiras do Checkout ficam recolhidas no botão de idioma; o teste troca o idioma pelo próprio botão da bandeira
+const idioma=(pg,l)=>pg.evaluate(l=>{const b=document.querySelector(`[data-act="lang"][data-l="${l}"]`);if(b)b.click();},l);
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');const PR=__dirname+'/prints';fs.mkdirSync(PR,{recursive:true});
 const fails=[];const notas=[];const errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const DBG=process.env.V77_DEBUG;const T0=Date.now();const dbg=s=>{if(DBG)console.error(((Date.now()-T0)/1000).toFixed(1)+'s '+s);};
@@ -33,7 +35,7 @@ async function nova(ctx,nome,vp){const pg=await ctx.newPage();if(vp)await pg.set
 async function maquininha(pg){const ctx=pg.context();const base=pg.url().split('#')[0];let V=ctx.__vend;
   if(!V||V.isClosed()){V=await nova(ctx,'vendedor',{width:1280,height:900});await login(V,base);await V.evaluate(()=>localStorage.removeItem('eterna.session'));ctx.__vend=V;}
   const id=await pg.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id)return;
-  await V.evaluate(id=>{ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();return ETERNA.pendConfirmar(id,{ref:''});},id);
+  await V.evaluate(id=>{ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.escolha){ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:'pix'});}return ETERNA.pendConfirmar(id,{ref:''});},id); // v96: o caixa escolhe pacote e meio
   for(let i=0;i<30;i++){if(await pg.evaluate(()=>!!document.querySelector('#lqr canvas,#lqr img')))break;await sleep(100);}await sleep(600);} // a galeria é publicada logo depois da confirmação
 async function login(pg,U){await pg.goto(U);await pg.waitForTimeout(500);if(await pg.evaluate(()=>!!ETERNA.state.user))return;await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(200);
   const c=(await pg.textContent('.otp')).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(500);}
@@ -175,8 +177,8 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     await G.goto(UA+'#g/'+TB);await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});
     ok(await G.evaluate(()=>ETERNA.pub.modo==='agente'&&ETERNA.pub.step==='consent'),'B: galeria pelo agente deveria abrir o consentimento no modo agente: '+JSON.stringify(await G.evaluate(()=>({m:ETERNA.pub.modo,s:ETERNA.pub.step}))));
     await G.screenshot({path:PR+'/v77-agente-consentimento.png'});
-    await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-file',{state:'attached'});await G.waitForTimeout(400);
-    await G.setInputFiles('#gq-file',{name:'s.jpg',mimeType:'image/jpeg',buffer:bufs[0]});
+    await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});await G.waitForTimeout(400);
+    await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));
     await G.waitForFunction(()=>ETERNA.pub&&!['buscando','selfie'].includes(ETERNA.pub.step),null,{timeout:60000}).catch(()=>{});
     const gb=await G.evaluate(()=>({step:ETERNA.pub.step,motivo:ETERNA.pub.motivo,dl:[...document.querySelectorAll('[data-act="gq-dl"]')].map(x=>x.dataset.pid),sel:[...document.querySelectorAll('[data-act="gq-sel"]')].map(x=>x.dataset.pid)}));
     ok(gb.step==='galeria'&&gb.dl.length===2&&gb.sel.length===2,'B: galeria no modo agente: '+JSON.stringify(gb));
@@ -196,12 +198,12 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
       // ---- CORRIGIR 3: pagamento recusado mostra mensagem traduzida, sem o texto cru do servidor
       dbg('R3');await G.waitForFunction(()=>ETERNA.state.agent&&ETERNA.state.agent.on,null,{timeout:15000}).catch(()=>{});await G.waitForTimeout(600);
       {const ts=await G.evaluate(()=>window.__toasts);ok(await G.evaluate(()=>ETERNA.state.agent.on)&&!ts.includes(AVISO),'(a): galeria pública (#g) não pode mostrar "'+AVISO+'": '+JSON.stringify(ts));}await G.waitForFunction(()=>!document.querySelector('#toast').hasAttribute('data-on'),null,{timeout:5000}).catch(()=>{});await G.route('**/g/'+TB+'/pagamento',rt=>rt.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'foto fora do acesso ou não está à venda'})}));
-      for(const l of ['pt','en','de']){await G.click(`.lj-langs [data-l="${l}"]`);await G.waitForTimeout(100);
+      for(const l of ['pt','en','de']){await idioma(G,l);await G.waitForTimeout(100);
         if(await G.evaluate(()=>ETERNA.pub.step)!=='pagar'){await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});await G.click(`[data-act="gq-sel"][data-pid="${gb.sel[0]}"]`);await G.click('[data-act="gq-buy"]');await G.click('[data-act="gq-paym"][data-m="pix"]');}
         if(l==='pt')await G.screenshot({path:PR+'/v77-agente-pagar.png'});
         await G.click('[data-act="gq-pay"]');await G.waitForTimeout(400);const t3=await G.evaluate(e=>({toast:document.querySelector('#toast').textContent,esp:e,on:document.querySelector('#toast').hasAttribute('data-on')}),TT('gq_payFail',l));
         ok(t3.on&&t3.toast===t3.esp&&!/fora do acesso/.test(t3.toast),'R3: erro de pagamento em '+l+' deveria mostrar gq_payFail traduzido: '+JSON.stringify(t3));}
-      await G.unroute('**/g/'+TB+'/pagamento');await G.click('.lj-langs [data-l="pt"]');
+      await G.unroute('**/g/'+TB+'/pagamento');await idioma(G,'pt');
       ok(Array.isArray(I18N.gq_payFail)&&I18N.gq_payFail.length===5&&I18N.gq_payFail.every(x=>x&&!/[—–]/.test(x))&&Array.isArray(I18N.gq_again)&&I18N.gq_again.length===5,'R3: gq_payFail deveria existir nas 5 línguas, sem travessão');
       // ---- S3: pagamento simulado de verdade: aprovado, marcado teste
       dbg('S3');if(await G.evaluate(()=>ETERNA.pub.step)!=='pagar'){await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});await G.click(`[data-act="gq-sel"][data-pid="${gb.sel[0]}"]`);await G.click('[data-act="gq-buy"]');await G.click('[data-act="gq-paym"][data-m="pix"]');}
@@ -214,7 +216,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
       ok(r4.step==='selfie'&&r4.txt.includes(r4.again)&&!r4.txt.includes(r4.noMatch)&&r4.ph===0&&!r4.acesso,'R4: acesso vencido (401) deveria voltar para a selfie com gq_again: '+JSON.stringify({...r4,txt:r4.txt.slice(0,160)}));
       await G.screenshot({path:PR+'/v77-agente-acesso-vencido.png'});
       // pagamento com acesso vencido também volta para a selfie
-      await G.setInputFiles('#gq-file',{name:'s.jpg',mimeType:'image/jpeg',buffer:bufs[0]});await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='galeria',null,{timeout:60000}).catch(()=>{});
+      await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='galeria',null,{timeout:60000}).catch(()=>{});
       if(await G.evaluate(()=>ETERNA.pub.step==='galeria'&&!!document.querySelector('[data-act="gq-sel"]'))){await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});await G.click('[data-act="gq-sel"]');await G.click('[data-act="gq-buy"]');await G.click('[data-act="gq-paym"][data-m="pix"]');
         await G.evaluate(()=>{ETERNA.pub.acesso='forjado-acesso-vencido';});await G.click('[data-act="gq-pay"]');await G.waitForTimeout(600);ok(await G.evaluate(()=>ETERNA.pub.step==='selfie'),'R4: pagamento com acesso vencido deveria voltar para a selfie');}
       else notas.push('R4: segunda selfie não abriu a galeria; pagamento com 401 não testado');
@@ -247,7 +249,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     await pg.goto(UA+'#loja');await pg.waitForTimeout(800);const lj=await pg.evaluate(()=>({rota:ETERNA.state.lojaRota,step:ETERNA.state.kiosk.step}));ok(lj.rota&&lj.step==='code','com agente: #loja deveria abrir a câmera da Loja: '+JSON.stringify(lj));
     const card=await pg.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=8&&(ETERNA.SIM.sessions[s.card]||{}).status!=='paga')[0].card);
     await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(800);for(const a of ['kiosk-ok','kiosk-ok','kiosk-no','kiosk-ok'])await pg.click(`[data-act="${a}"]`);
-    await pg.click('.lj-next');await pg.waitForTimeout(250);await pg.click('[data-act="loja-paym"][data-m="pix"]');await pg.click('[data-act="loja-checkout"]');await pg.waitForTimeout(600);await maquininha(pg);
+    await pg.click('.lj-next');await pg.waitForTimeout(600);await maquininha(pg); // v96: Continuar faz o pedido; pacote e PIX no Posto
     const dn=await pg.evaluate(()=>({step:ETERNA.state.kiosk.step,qr:!!document.querySelector('#lqr canvas,#lqr img'),title:(document.querySelector('#lqr')||{}).title,fila:(ETERNA.SIM.galFila||[]).filter(x=>{const m=ETERNA.SIM.galerias[x.token];return m&&!m.fotos.every(f=>/^ag_/.test(f.id));}).map(x=>x.estado)}));
     ok(dn.step==='done'&&dn.qr&&/^https:\/\/eterna\.photo\/#g\/[A-Za-z0-9_-]{22}$/.test(dn.title||''),'com agente: compra na Loja deveria terminar com o QR da galeria: '+JSON.stringify(dn));
     ok(dn.fila.length&&dn.fila.every(e=>e==='local'),'com agente: sessão de exemplo (sprites) deveria ficar local na fila (D14): '+JSON.stringify(dn.fila));
@@ -262,7 +264,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     const cards=await L.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=6).map(s=>s.card));let ci=0;
     for(const [n,w,h] of [['cel',390,844],['tab',1024,1366],['desk',1440,900]]){await L.setViewportSize({width:w,height:h});
       for(const l of ['pt','en','es','fr','de']){const card=cards[ci++%cards.length];
-        await L.goto(U+'#loja');await L.waitForTimeout(400);await L.click(`.lj-langs [data-l="${l}"]`);await L.waitForTimeout(80);
+        await L.goto(U+'#loja');await L.waitForTimeout(400);await idioma(L,l);await L.waitForTimeout(80);
         const etapa=async nome=>{const sr=await semRolagem(L);const cr=await cruas(L);const fl=await L.evaluate(()=>{const x=document.querySelector('.lj-langs');return x?{svg:x.querySelectorAll('button svg').length,txt:x.innerText.trim(),sel:[...x.querySelectorAll('button')].filter(b=>b.getAttribute('aria-pressed')==='true'||b.classList.contains('on')).map(b=>b.dataset.l)}:null;});
           ok(sr.ok,`Checkout ${w}px ${l} ${nome}: rolagem horizontal `+JSON.stringify(sr));ok(!cr.length,`Checkout ${w}px ${l} ${nome}: chave crua `+cr.join(','));
           if(fl)ok(fl.svg===5&&!fl.txt,`Checkout ${w}px ${l} ${nome}: bandeiras `+JSON.stringify(fl));
@@ -271,10 +273,10 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
         await L.click('[data-act="kiosk-emerg"]');await etapa('codigo');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(700);
         if(await L.evaluate(()=>ETERNA.state.kiosk.step)!=='review'){fails.push(`Checkout ${w}px ${l}: código ${card} não abriu as fotos`);continue;}
         await L.click('[data-act="kiosk-ok"]');await L.click('[data-act="kiosk-ok"]');await L.click('[data-act="kiosk-no"]');await etapa('fotos');
-        await L.click('.lj-next');await L.waitForTimeout(250);await L.click('[data-act="loja-paym"][data-m="pix"]');await etapa('pagamento');
-        await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);await maquininha(L);const fim=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,qr:!!document.querySelector('#lqr canvas,#lqr img'),cod:(document.querySelector('.lj-qrcode')||{}).textContent||''}));
+        await L.click('.lj-next');await L.waitForTimeout(500);await etapa('pedido'); // v96: sem etapa de pagamento no Checkout
+        await maquininha(L);const fim=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,qr:!!document.querySelector('#lqr canvas,#lqr img'),cod:(document.querySelector('.lj-qrcode')||{}).textContent||''}));
         ok(fim.step==='done'&&fim.qr&&/[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}/.test(fim.cod),`Checkout ${w}px ${l}: tela final sem QR ou código `+JSON.stringify(fim));await etapa('pronto');
-        await L.click('.lj-novo');}} // v94-ux: "Voltar ao início" amarelo virou "Novo cliente" no canto (parte G)
+        await L.click('.lj-restart');}} // v96-ux: no Checkout vale o "Voltar ao início" da v96 (o "Novo cliente" das ondas saiu)
     await L.close();}
   // ---- recarregar telas da equipe nunca cai na Loja; caixa e recibo com QR; Lista de vendas, CSV e Catálogo
   dbg('reload');
@@ -285,7 +287,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     ok(!caiu.length,'Reload: telas que caíram na Loja, perderam o login ou quebraram: '+caiu.join(' | '));
     // compra na Loja (SIM) para ter recibo: depois Recibo na Lista de vendas abre o Checkout com o QR da galeria
     const L=await nova(ctx,'loja2',{width:1280,height:900});await L.goto(U+'#loja');await L.waitForTimeout(500);const card=await L.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=6&&(ETERNA.SIM.sessions[s.card]||{}).status!=='paga')[0].card);
-    await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(700);for(const a of ['kiosk-ok','kiosk-ok','kiosk-ok'])await L.click(`[data-act="${a}"]`);await L.click('.lj-next');await L.waitForTimeout(250);await L.click('[data-act="loja-paym"][data-m="pix"]');await L.click('[data-act="loja-checkout"]');await L.waitForTimeout(500);await maquininha(L);
+    await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(700);for(const a of ['kiosk-ok','kiosk-ok','kiosk-ok'])await L.click(`[data-act="${a}"]`);await L.click('.lj-next');await L.waitForTimeout(500);await maquininha(L);
     const tokL=await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.token);await L.close();
     await A1.reload();await A1.waitForTimeout(400);await A1.evaluate(()=>{ETERNA.state.range={from:'2026-01-01',to:'2099-12-31'};ETERNA.state.sales.canal='all';ETERNA.state.view='vendas-lista';ETERNA.render();});
     await A1.click(`[data-act="sales-receipt"][data-card="${card}"]`);await A1.waitForTimeout(500);
