@@ -221,3 +221,14 @@ Coerente com a v96.1: compradas e cortesias sempre aparecem, sem selfie. O que n
 - D6: Photoroom fica guardado e inativo (chave mantida no servidor, fora das opções). BiRefNet é o padrão.
 - D7: todos os recortes são feitos no servidor do ponto (onde o BiRefNet fica instalado). Os outros computadores não recortam.
 - Padrões assumidos (sem objeção): D2 limiar 0,50 e tetos 12 levas / 15 rostos, a calibrar com fotos reais antes de ligar no estádio; D3 galeria por QR com compradas e cortesias sempre visíveis e o resto da visita depois da selfie (escola e menor seguem a v77); D4b base com olhos fechados como última alternativa; D8 CUDA ou DirectML decidido pela medição do Ronaldo.
+
+## Execução (Programador, 10/11)
+Commits: E1 `628fdb6`, E2 `85fbf4c`, E3 `69329e3`, E4 `1589be1`, E5a/E5b `c2938f6`, E6 `5bc03b3`; docs neste commit. Desvios e escolhas:
+- Id da visita = `V` + código da leva mais antiga (estável no reinício; o `_n` das levas muda no boot).
+- `GET /visitas?desde=` devolve `igual` com lista vazia quando nada mudou, senão a lista inteira (sem remoções parciais para o app tratar).
+- Juntar não passa pelo teto nem pela janela (decisão da equipe); só marca a visita `grande`. Juntar desfaz o Separar entre as duas visitas; Separar desfaz o Juntar entre a leva e o resto.
+- Escola e menor no agente vêm das galerias publicadas (`tipo evento` ou `menor`); o app filtra de novo por `lojaSesProtegida`.
+- `REC_CONC=2` com CUDA = um processo de recorte por trabalhador. Recorte falso dos testes por `m.REC_FILHO` (módulo, como o `REC_FALSO_SEG` da v93; sem variável de ambiente no agente).
+- `ETERNA.fundosModoTeste` só para os testes antigos que precisavam de fundos de IA sem o agente (não grava nada).
+- Criança separada (A4) e o teto de custo não mudaram o resultado nas 5 fotos de referência (regra conferida bit a bit nas máscaras em cache; recorte real com IoU 0,999 em 1600 px, sem precisar subir para 2400).
+Conflitos previstos: `pubGaleria` não foi tocada (a galeria por QR segue a v95; a v96.1 em `fix/galeria-testes` muda compradas e cortesias); rotas `/visitas*` entram no handler e no `cors()` ao lado da Fila do fotógrafo e precisam entrar na matriz de permissões da `idiomas-base`; `testes/v84_agente.py` e `testes/v84.js` mudam nos dois lados; `instalar-servidor.ps1` e `eterna-vigia.ps1` (idiomas-base) precisam levar o `eterna-recorte.py`.
