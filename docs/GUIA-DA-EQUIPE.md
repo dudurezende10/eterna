@@ -572,7 +572,15 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 1. O rolo da DNP faz cerca de 700 fotos. O contador "Rolo: X de 700" fica no alto do Posto de venda.
 2. Abaixo de 40, o contador fica vermelho e aparece em **Alertas**. Troque antes do pico.
 3. Troque o rolo e a fita na DNP.
-4. Em **Dashboard › Estoque**, toque em **Registrar troca de rolo**. O contador volta a 700.
+4. Registre a troca: no Posto de venda (veja **Troquei o rolo** logo abaixo) ou em **Dashboard › Estoque**, em **Registrar troca de rolo**. O contador volta a 700.
+
+### Troquei o rolo (v96)
+
+1. No Posto de venda, no Caixa ou no painel **Impressão 10×15**, toque no selo **Rolo: X de 700**. Com o rolo abaixo de 40, aparece também o botão **Troquei o rolo** ao lado do selo.
+2. O Eterna pergunta "Trocou o rolo da impressora deste posto? O contador volta para 700." Toque em **Sim, troquei** ou em **Cancelar** (Cancelar não muda nada).
+3. Vale só para o posto deste computador. A troca de outro posto se registra no próprio posto ou em **Dashboard › Estoque**.
+4. Quem vende (permissão de criar em Venda) pode registrar a troca do próprio posto, mesmo sem acesso ao Estoque. Cada troca fica no registro de auditoria com quem fez, o posto e o valor que o contador tinha.
+5. Os valores que vêm na instalação (58, 142 e 171) são de demonstração. Antes de usar no balcão, registre a troca em cada posto com um rolo novo.
 
 ### Outras mudanças
 
