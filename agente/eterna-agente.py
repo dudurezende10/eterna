@@ -5726,6 +5726,9 @@ POSTO_COOKIE = "eterna_posto"
 POSTO_IDADE = 400 * 86400
 POSTO_CONVITE_S = 600
 posto_uso = {}                       # id -> última gravação de ultimo_uso (no máximo uma por minuto)
+POSTO_REPETIDO_S = 15
+posto_recentes = {}                  # (pessoa, IP, nome) -> (hora, token, posto) dos últimos pareamentos, contra clique repetido
+posto_par_lock = threading.Lock()
 
 
 def _sha(t):
@@ -7002,7 +7005,15 @@ class H(BaseHTTPRequestHandler):
             nome = posto_nome_ok(b.get("nome"))
             if not nome:
                 return self.js({"erro": "nome"}, 400, True)
-            token, p = posto_criar(nome, eu["usuario"], self.client_address[0])
+            chave, agora = (eu["usuario"], self.client_address[0], nome), time.time()
+            with posto_par_lock:                 # clique repetido (mesma pessoa, aparelho e nome em 15 s): o mesmo posto, sem criar outro
+                for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:
+                    posto_recentes.pop(k, None)
+                if chave in posto_recentes:
+                    _, token, p = posto_recentes[chave]
+                else:
+                    token, p = posto_criar(nome, eu["usuario"], self.client_address[0])
+                    posto_recentes[chave] = (agora, token, p)
             self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
             return self.js({"ok": True, "posto": p}, 200, True)
         if u.path == "/postos/revogar":

@@ -234,10 +234,15 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   ok(await SU.evaluate(()=>!ETERNA.canView('estatisticas')),'supervisora não vê Estatísticas');
   await SU.evaluate(()=>ETERNA.go('catalogo'));await SU.waitForTimeout(800);
   const supP=await SU.evaluate(()=>({inp:[...document.querySelectorAll('[data-act="price"]')].filter(x=>!x.disabled&&!x.readOnly).length,postos:!!document.querySelector('#postos-painel'),parear:!!document.querySelector('[data-act="posto-parear"]')}));
-  if(supP.inp)notas.push('supervisora (catálogo só leitura) vê os campos de preço editáveis: '+supP.inp);ok(supP.postos&&supP.parear,'supervisora: preços só leitura, vê e pode parear postos (configuracao.u): '+J(supP));
+ok(supP.postos&&supP.parear,'supervisora: preços só leitura, vê e pode parear postos (configuracao.u): '+J(supP));
   await espera(SU,()=>!!ETERNA.state.db,15000);await SU.waitForTimeout(3000);
-  const pid0=await SU.evaluate(()=>{const i=document.querySelector('[data-act="price"]');return i&&{id:i.dataset.id,v:i.value};});
-  if(pid0){await SU.fill(`[data-act="price"][data-id="${pid0.id}"]`,'5');
+  const pid0=await SU.evaluate(()=>{const i=document.querySelector('[data-act="price"]');return i&&{id:i.dataset.id,v:i.value,dis:i.disabled};});
+  ok(supP.inp===0,'supervisora (catálogo só leitura): campos de preço desabilitados: '+supP.inp);
+  if(pid0&&pid0.dis){ // campo desabilitado: a recusa do servidor é conferida gravando direto pela fila do app
+    await SU.evaluate(id=>ETERNA.state.db.doc('sim/prices|'+id).set(5),pid0.id);
+    ok(await espera(SU,()=>/não foi aceita|Sem permissão/.test((document.querySelector('#toast')||{}).textContent||''),10000),'supervisora gravando preço (só leitura): aviso: '+await toastTxt(SU));
+    const srv=sql('estado.db',`select valor from doc where col='sim' and id='prices|${pid0.id}'`);ok(!/^\[\["5"\]\]$|^\[\[5\]\]$/.test(srv),'preço da supervisora não chega ao servidor: '+srv);}
+  else if(pid0){await SU.fill(`[data-act="price"][data-id="${pid0.id}"]`,'5');
     ok(await espera(SU,()=>/não foi aceita|Sem permissão/.test((document.querySelector('#toast')||{}).textContent||''),10000),'supervisora digitando preço (só leitura): aviso: '+await toastTxt(SU));
     await SU.waitForTimeout(3000);const loc=await SU.evaluate(id=>ETERNA.priceOf(id),pid0.id);
     ok(String(loc)===String(pid0.v),'preço recusado não fica valendo neste aparelho: antes '+pid0.v+', agora '+loc);

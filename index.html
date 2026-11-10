@@ -337,6 +337,9 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-cta[disabled]{background:rgba(255,255,255,.12);color:#c7d5ea;box-shadow:none;cursor:default;font-weight:500;font-size:16px}
 .lj-cta svg,.lj-ghost svg{width:22px;height:22px}
 .lj-ghost{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 20px;border-radius:999px;border:1.5px solid rgba(255,255,255,.55);background:transparent;color:#fff;font-weight:600;font-size:15px;cursor:pointer}
+/* v93: aviso do Checkout em aparelho não pareado (centralizado, botões do Checkout) */
+.lj-naopar{display:flex;align-items:center;justify-content:center}.lj-naoparin{position:relative;z-index:2;max-width:620px;margin:0 auto;padding:24px;text-align:center}
+.lj-naoparin .lj-h1{font-size:34px}.lj-naoparbt{display:flex;justify-content:center;align-items:center;gap:14px;flex-wrap:wrap;margin-top:22px}
 .lj-ghost.sm{min-height:42px;padding:0 16px;font-size:14px}
 .lj-ic{width:48px;height:48px;border-radius:50%;border:1.5px solid rgba(255,255,255,.35);background:transparent;color:#fff;display:inline-flex;align-items:center;justify-content:center}.lj-ic[aria-pressed="true"]{background:#fff;color:#134078}
 .lj-heroin{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:10px 0}
@@ -2174,14 +2177,15 @@ function galAtualizar(tok){const m=(SIM.galerias||{})[tok];if(!m)return;const ol
   // v91 (segurança B2): comprada = escolhida NESTA venda. Galeria da venda que juntou sessões: só o selected da sessão âncora,
   // e só se a venda paga dela é esta galeria; foto comprada por outra família nunca vira "comprada" aqui. Compra online fica (old).
   const anc=SIM.sessions[m.sessoes[0]]||{};const selV=m.venda?new Set(anc.status==='paga'&&anc.galVenda===tok?(anc.selected||[]):[]):null;
-  for(const card of m.sessoes){const s=sessionObj(card);if(!s)continue;const sim=SIM.sessions[card]||{};const cort=sim.cort||{};const so=m.so&&m.so[card]?new Set(m.so[card]):null;
+  let faltam=0; // sessão que esta aba ainda não conhece (o servidor não mandou): as fotos dela ficam como estavam, nada é apagado
+  for(const card of m.sessoes){const s=sessionObj(card);if(!s||!(s.photos||[]).length){faltam++;(m.fotos||[]).forEach(f=>{if(f.sessao===card)out.push(f);});continue;}const sim=SIM.sessions[card]||{};const cort=sim.cort||{};const so=m.so&&m.so[card]?new Set(m.so[card]):null;
     const sel=selV||new Set(sim.status==='paga'?(sim.selected||[]):[]);
     for(const p of s.photos){if(so&&!so.has(p.id))continue; /* venda que juntou sessões: só a escolha da venda */const o=old[p.id];const f={id:p.id,sessao:card,direito:'venda',canal:null};
       if(sel.has(p.id)){f.direito='comprada';f.canal=o&&o.direito==='comprada'&&o.canal==='online'?'online':'loja';}
       else if(o&&o.direito==='comprada'&&o.canal==='online'){f.direito='comprada';f.canal='online';}
       else if(cort[p.id]){f.direito='cortesia';f.cortesia=cort[p.id];}
       out.push(f);}}
-  m.fotos=out;if(m.tipo==='sessao')m.menor=m.sessoes.some(c=>!!(SIM.sessions[c]||{}).menor);}
+  m.fotos=out;if(faltam)m.pendSess=faltam;else delete m.pendSess;if(m.tipo==='sessao')m.menor=m.sessoes.some(c=>!!(SIM.sessions[c]||{}).menor);}
 function galEstado(tok){if(!tok)return 'sem';const it=(SIM.galFila||[]).find(x=>x.token===tok);return it?it.estado:'local';}
 function galPublicar(tok){if(!tok||!(SIM.galerias||{})[tok])return;SIM.galFila=SIM.galFila||[];let it=SIM.galFila.find(x=>x.token===tok);
   if(!it){it={token:tok,estado:'pendente',tent:0,erro:null,prox:0,em:now().toISOString()};SIM.galFila.unshift(it);}else{it.estado='pendente';it.prox=0;}
@@ -2189,6 +2193,9 @@ function galPublicar(tok){if(!tok||!(SIM.galerias||{})[tok])return;SIM.galFila=S
 let galBusy=false;
 async function galFilaTick(){if(galBusy)return;galBusy=true;let mudou=false;
   try{const a=state.agent;for(const it of (SIM.galFila||[])){if(it.estado==='enviada'||it.estado==='encerrada')continue;const m=(SIM.galerias||{})[it.token];if(!m){it.estado='erro';it.erro='manifesto não existe';mudou=true;continue;}
+      // sessão que a aba ainda não conhece: refaz a galeria a cada volta (10 s e quando as sessões chegam) até as fotos aparecerem
+      if(m.pendSess||(!m.fotos.length&&it.estado==='local')){const n0=JSON.stringify(m.fotos);galAtualizar(it.token);if(JSON.stringify(m.fotos)!==n0)mudou=true;}
+      if(m.pendSess){if(it.estado!=='aguardando'){it.estado='aguardando';mudou=true;}continue;}
       // D14: o agente só tem as fotos que vieram dele (ag_); sessão de exemplo fica só neste aparelho
       if(!m.fotos.length||!m.fotos.every(f=>/^ag_/.test(f.id))){if(it.estado!=='local'){it.estado='local';mudou=true;}continue;}
       if(!a.on){if(it.estado!=='pendente'){it.estado='pendente';mudou=true;}continue;}
@@ -2586,8 +2593,8 @@ function langPick(dark){return `<div class="lj-langs ${dark?'dark':''}" role="gr
 (function(){try{const s=localStorage.getItem('eterna.lang');if(s)state.lang=s;else{const n=(navigator.language||'pt').slice(0,2).toLowerCase();state.lang=LANGS.some(x=>x[0]===n)?n:'pt';}}catch(e){state.lang='pt';}})();
 
 // Checkout em aparelho não pareado (o agente respondeu 401 em /postos/eu): tela da equipe, sem nada do cliente
-function ljNaoPareado(){return `<div class="lj lj-full lj-hero"><div class="lj-heroin" style="max-width:560px"><div class="lj-eyebrow">Equipe</div><h1 class="lj-h1" style="font-size:32px">Este aparelho ainda não foi pareado</h1>
-  <p class="lj-sub">Peça a um administrador para parear em Painel de controle › Postos deste ponto. Depois, toque em Tentar de novo.</p><div class="row" style="justify-content:center;gap:10px;margin-top:18px"><button class="btn" data-act="posto-tentar">Tentar de novo</button><button class="btn ghost" data-act="loja-sair">Sair</button></div></div></div>`;}
+function ljNaoPareado(){return `<div class="lj lj-full lj-hero lj-naopar"><div class="lj-naoparin"><div class="lj-eyebrow">Equipe</div><h1 class="lj-h1">Este aparelho ainda não foi pareado</h1>
+  <p class="lj-sub">Peça a um administrador para parear em Painel de controle › Postos deste ponto. Depois, toque em Tentar de novo.</p><div class="lj-naoparbt"><button class="lj-cta" data-act="posto-tentar">Tentar de novo</button><button class="lj-ghost" data-act="loja-sair">Sair</button></div></div></div>`;}
 function vQuiosque(){
   if(state.posto.estado==='nao'&&state.agent.on&&state.agent.url===location.origin)return ljNaoPareado();
   const k=state.kiosk;if(!k.langInit){k.langInit=1;state.lang='pt';}const logo=venueLogo(30,'dark');
@@ -3104,7 +3111,7 @@ function postosPanel(){if(!can('configuracao','r')||!state.agent.on||state.agent
   return `<div class="panel" id="postos-painel" style="gap:10px"><div class="head"><div><div class="eyebrow">Aparelhos do ponto</div><h2>Postos deste ponto</h2></div><span class="pill ${eu?'good':'warn'}">${eu?'este aparelho: '+esc(eu.nome)+' · P'+eu.num:'este aparelho não está pareado'}</span></div>
     <div class="note">O Checkout só abre em aparelho pareado. Pareie cada aparelho uma vez, abrindo o Eterna nele com quem tem Painel de controle. Aparelho perdido ou trocado: revogue.</div>
     ${L.length?`<div class="tablewrap"><table><thead><tr><th>Posto</th><th>Nº</th><th>Pareado por</th><th>Último uso</th><th>Situação</th><th></th></tr></thead><tbody>${L.map(p=>`<tr><td class="name">${esc(p.nome)}${eu&&eu.id===p.id?' <span class="pill neutral">este</span>':''}</td><td>P${+p.num||0}</td><td>${esc(p.criado_por||'')}</td><td>${qd(p.ultimo_uso)}${p.ip_ultimo?' · '+esc(p.ip_ultimo):''}</td><td>${p.revogado_em?'<span class="pill bad">revogado</span>':'<span class="pill good">ativo</span>'}</td><td>${!p.revogado_em&&!ro?`<button class="btn ghost" data-act="posto-revogar" data-id="${esc(p.id)}">Revogar</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Nenhum aparelho pareado ainda.</div>'}
-    ${ro?'':`<div class="row" style="align-items:end"><label><span class="eyebrow">Nome deste aparelho</span><input type="text" id="posto-nome" maxlength="40" placeholder="Ex.: Checkout 1" style="width:200px"></label><button class="btn" data-act="posto-parear">Parear este aparelho</button></div>`}</div>`;}
+    ${ro?'':`<div class="row" style="align-items:end"><label><span class="eyebrow">Nome deste aparelho</span><input type="text" id="posto-nome" maxlength="40" placeholder="Ex.: Checkout 1" style="width:200px"></label><button class="btn" data-act="posto-parear" ${state.posto.pareando?'disabled':''}>${state.posto.pareando?'Pareando…':'Parear este aparelho'}</button></div>`}</div>`;}
 function rftpPanel(){if(!can('configuracao','r'))return '';
   if(!state.agent.on){ // sem o agente: o cartão aparece, desligado (pedido do Eduardo)
     return `<div class="panel rftp-off" style="gap:10px"><div class="head"><div><div class="eyebrow">Fotos em tempo real</div><h2>Servidor FTP do estádio</h2></div><span class="pill warn">agente desconectado</span></div>
@@ -3187,18 +3194,23 @@ async function srvPull(){const a=state.agent;if(SRV.busy||!a.sessoes)return;SRV.
       if(x.removida){delete SRV.sess[x.card];delete SRV.mat[x.card];if(SIM.sessions[x.card])srvLgpd(x);continue;}
       if(deHoje)SRV.sess[x.card]=x;
       if(x.status!=='fechada')continue;
-      if(SIM.sessions[x.card]){srvLgpd(x);continue;} // fechada não muda (S8), só pela LGPD
+      if(SIM.sessions[x.card]&&(SIM.sessions[x.card].photos||[]).length){srvLgpd(x);continue;} // fechada não muda (S8), só pela LGPD; sem fotos (venda que chegou antes) ainda materializa
       SRV.mat[x.card]={...x,_pausa:j.pausa};}
     SRV.rev=j.rev;const novas=srvMaterializa();if((novas||mudou)&&(state.view==='importar'||state.view==='fotofila'))render();
   }catch(e){}finally{SRV.busy=false;}}
 // a sessão fechada vira sessão do SIM (Checkout, Qualidade, vendas). Até SRV_MAT_MAX por ciclo: um navegador aberto no fim
 // do dia não materializa (e valida) centenas de sessões de uma vez.
 function srvMaterializa(){const cards=Object.keys(SRV.mat);if(!cards.length)return 0;let n=0;const known=photosInSessions();
-  for(const card of cards.slice(0,SRV_MAT_MAX)){const x=SRV.mat[card];delete SRV.mat[card];if(SIM.sessions[card])continue;
+  for(const card of cards.slice(0,SRV_MAT_MAX)){const x=SRV.mat[card];delete SRV.mat[card];
+    // venda confirmada antes de a aba conhecer a sessão: o registro dela existe sem fotos; as fotos do servidor entram e a venda fica
+    const stub=SIM.sessions[card];if(stub&&(stub.photos||[]).length)continue;
     const fotos=(x.fotos||[]).filter(pid=>!known.has('ag_'+pid));if(!fotos.length)continue;
     fotos.forEach(pid=>known.add('ag_'+pid));
+    if(stub)delete SIM.sessions[card];
     ingClose(srvComo(x,x._pausa),{...x,fotos});
+    if(stub&&SIM.sessions[card]){const {photos,...resto}=stub;Object.assign(SIM.sessions[card],resto);}
     state.ing.feed.unshift({k:'auto',t:'Sessão '+x.card+' montada no servidor',s:fotos.length+(fotos.length===1?' foto':' fotos')+(x.fotografo?' · '+x.fotografo:'')});n++;}
+  if(n)setTimeout(galFilaTick,0); // galeria que esperava a sessão chegar
   return n;}
 function srvComo(x,pausa){const p=pausa||SESSAO_PAUSA_S;const m=p===60?'1 min':p+' s';return x.fechada_por==='pausa_clique'?`pausa de ${m} entre cliques (servidor)`:x.fechada_por==='virada_do_dia'?'virada do dia (servidor)':x.fechada_por==='reinicio'?'agente reiniciado (servidor)':`pausa de ${m} sem foto nova (servidor)`;}
 // v91 (revisão 5): sessão do servidor que perdeu fotos pela LGPD. Sem venda paga, as fotos saem da sessão deste navegador;
@@ -4011,8 +4023,8 @@ function vEscala(){
 function vCatalogo(){
   return `<div class="head"><div><div class="eyebrow">Configurações · catálogo, preços, Checkout e FTP</div><h1>Painel de controle</h1></div></div>
   <div class="panel"><div class="tablewrap"><table><thead><tr><th>Produto</th><th>Tipo</th><th>Conteúdo</th><th class="num">Preço</th><th class="num">Vendidos na semana</th></tr></thead><tbody>
-  ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="Preço de ${esc(c.name)}"></td><td class="num">${real?real.units:'novo'}</td></tr>`}).join('')}
-  </tbody></table></div><div class="row"><button class="btn ghost" data-act="price-reset">Voltar aos preços de hoje</button><span class="note">Próximo: preço por dia da semana, dia de jogo e temporada; passe de foto por tipo de ingresso.</span></div></div>
+  ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="Preço de ${esc(c.name)}" ${can('catalogo','u')?'':'disabled'}></td><td class="num">${real?real.units:'novo'}</td></tr>`}).join('')}
+  </tbody></table></div><div class="row"><button class="btn ghost" data-act="price-reset" ${can('catalogo','u')?'':'disabled'}>Voltar aos preços de hoje</button><span class="note">Próximo: preço por dia da semana, dia de jogo e temporada; passe de foto por tipo de ingresso.</span></div></div>
   <div class="panel"><h2>Cartões com QR impresso</h2><div class="row" style="align-items:end"><label><span class="eyebrow">Quantidade</span><input type="number" id="cartao-n" min="1" max="5000" value="1000" style="width:110px;text-align:right"></label><button class="btn" data-act="cartao-lote" ${can('catalogo','u')?'':'disabled'}>Gerar lote para a gráfica (CSV)</button></div><div class="note">Cada linha traz o QR (endereço da galeria) e o código de 8 letras para imprimir no cartão. O cartão só abre fotos depois de lido dentro de uma venda.</div></div>
   <div class="panel"><h2>Checkout</h2><div class="row" style="align-items:end"><label><span class="eyebrow">Tempo da tela final com o QR (segundos)</span><input type="number" id="loja-fim" data-act="loja-fim" min="${LOJA_FIM_MIN}" max="${LOJA_FIM_MAX}" step="1" value="${lojaFimSeg()}" style="width:110px;text-align:right" ${can('catalogo','u')?'':'disabled'}></label><span class="note">Depois do pagamento, o Checkout mostra o QR e o código por este tempo e volta sozinha para a câmera. Padrão ${LOJA_FIM_PADRAO} s, de ${LOJA_FIM_MIN} a ${LOJA_FIM_MAX} s. O botão "Voltar ao início" volta antes.</span></div>
     ${buscaJanelaPanel()}</div>
@@ -4668,7 +4680,7 @@ async function authTrocar(){const a=state.auth;if(a.busy)return;const dentro=!!s
 async function authConferir(){if(authSite()||!state.user)return;const r=await authApi('/auth/eu');if(r.status===401&&state.user)logout();}
 // Senhas de acesso: o servidor confere a permissão do módulo em cada pedido; os botões só escondem o que não vai funcionar.
 async function authSenhasLer(){if(!can('senhas','r'))return;const r=await authApi('/auth/senhas');if(r.status===200&&r.senhas){state.users.senhas=r.senhas;render();}}
-async function authSenhaProvisoria(usuario){saveUsers(usuario);let r;for(let i=0;i<4;i++){r=await authApi('/auth/senha/gerar',{usuario});if(r.status!==404)break;await new Promise(s=>setTimeout(s,600));} // o cadastro novo pode ainda estar subindo
+async function authSenhaProvisoria(usuario){saveUsers(usuario);let r;const t0=Date.now();for(let i=0;;i++){r=await authApi('/auth/senha/gerar',{usuario});if(r.status!==404||Date.now()-t0>10000)break;await new Promise(s=>setTimeout(s,Math.min(400*(i+1),2500)));} // o cadastro novo pode ainda estar subindo (até 10 s, espera crescente)
   if(r.status===200&&r.senha){state.users.senha={usuario,valor:r.senha};render();authSenhasLer();return;}toast(r.erro==='alvo_maior'?'Esta pessoa tem acessos que você não tem':r.status===403||r.status===401?'Sem permissão em Senhas de acesso':r.status===404?'O cadastro ainda não chegou ao servidor':'Sem conexão com o servidor');}
 async function authSenhaCancelar(usuario){const r=await authApi('/auth/senha/cancelar',{usuario});if(r.status===200){toast('Senha cancelada');authSenhasLer();return;}toast(r.erro==='alvo_maior'?'Esta pessoa tem acessos que você não tem':'Sem permissão em Senhas de acesso');}
 function senhaLinha(e){const s=(state.users.senhas||{})[e];const tem=!!s;const ver=can('senhas','r');const gera=can('senhas',tem?'u':'c');if(!ver&&!gera)return '';return `<div class="user-sec"><div><span class="eyebrow">Senha</span>${ver?`<div><b>${!state.users.senhas?'Consultando':tem?(s.provisoria?'Provisória':'Definida'):'Sem senha'}</b></div>`:''}</div><div class="row">${gera?`<button class="btn ghost" data-act="user-senha">Gerar senha provisória</button>`:''}${tem&&can('senhas','d')?`<button class="btn ghost" data-act="user-senha-cancelar">Cancelar senha</button>`:''}</div></div>`;}
@@ -5420,10 +5432,15 @@ document.addEventListener('click',e=>{
     case 'bg-on':{let a=bgOn();if(a.includes(d.id))a=a.filter(x=>x!==d.id);else{if(a.length>=BG_MAX){toast('No máximo 5 fundos no Checkout. Tire um antes.');break;}a.push(d.id);}SIM.bgOn=a;saveSim();render();break;}
     case 'comp-zoom':{e.preventDefault&&e.preventDefault();const keys=[...document.querySelectorAll('[data-act="comp-zoom"]')].map(x=>({k:x.dataset.k,cap:x.dataset.cap})).filter(x=>COMPURL[x.k]);const i=keys.findIndex(x=>x.k===d.k);if(i<0){toast('A montagem ainda está sendo feita');break;}compModal(keys,i);break;}
     case 'posto-tentar':postoCarregar();break;
-    case 'posto-parear':{const nome=(($('#posto-nome')||{}).value||'').trim().slice(0,40);if(!nome){toast('Dê um nome a este aparelho');break;}
+    case 'posto-parear':{if(state.posto.pareando)break;const nome=(($('#posto-nome')||{}).value||'').trim().slice(0,40);if(!nome){toast('Dê um nome a este aparelho');break;}
+      state.posto.pareando=true;el.disabled=true; // um pedido por vez: clique repetido não cria outro posto (o servidor também confere)
       agFetch(state.agent.url+'/postos/parear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})}).then(async r=>{const j=await r.json().catch(()=>({}));
-        if(r.ok&&j.posto){await postoCarregar();logout();toast('Aparelho pareado: '+j.posto.nome+'. Sua conta saiu deste aparelho.');}else toast(r.status===403?'Sem permissão para parear':'Não deu para parear este aparelho');}).catch(()=>toast('Agente não encontrado'));break;}
-    case 'posto-revogar':{const pid=el.dataset.id;agFetch(state.agent.url+'/postos/revogar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:pid})}).then(r=>{toast(r.ok?'Posto revogado':'Não deu para revogar');postoCarregar();postosPoll(true);}).catch(()=>toast('Agente não encontrado'));break;}
+        if(r.ok&&j.posto){await postoCarregar();postosPoll(true);logout();toast('Aparelho pareado: '+j.posto.nome+'. Sua conta saiu deste aparelho.');}else toast(r.status===403?'Sem permissão para parear':'Não deu para parear este aparelho');})
+        .catch(()=>toast('Agente não encontrado')).finally(()=>{state.posto.pareando=false;const b=$('[data-act="posto-parear"]');if(b)b.disabled=false;});break;}
+    case 'posto-revogar':{const pid=el.dataset.id;if(el.disabled)break;el.disabled=true;
+      agFetch(state.agent.url+'/postos/revogar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:pid})}).then(r=>{toast(r.ok?'Posto revogado':'Não deu para revogar');
+        if(r.ok){const p=(state.posto.lista||[]).find(x=>x.id===pid);if(p)p.revogado_em=Date.now()/1000;if(state.view==='catalogo')render();} // a lista muda na hora; o servidor confirma em seguida
+        postoCarregar();postosPoll(true);}).catch(()=>{el.disabled=false;toast('Agente não encontrado');});break;}
     case 'rf-save':{const v=id=>(($('#'+id)||{}).value||'').trim();const body={host:v('rf-host'),port:v('rf-port')||'21',user:v('rf-user'),password:($('#rf-pass')||{}).value||'',dir:v('rf-dir'),tls:!!($('#rf-tls')||{}).checked};if(!body.host||!body.user){toast('Informe servidor e usuário');break;}toast('Testando conexão...');agFetch(state.agent.url+'/ftp-remoto/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#rf-pass');if(f)f.value='';toast('Conectado. Buscando fotos novas no servidor.');rftpPoll.t=0;rftpPoll();}else toast(j.error||'Não conectou');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'set-switch':case 'set-logout':{const old=state.user&&state.user.name;log(`${old} saiu do Upload automático`);logout();if(a==='set-switch'){state.auth_next='importar';state.auth.switching=old||'';render();}break;}
     case 'lib-f':{state.libF[d.k]=d.v;if(d.k==='day'){state.libF.per='dia';state.libF.who='todos';}render();break;}

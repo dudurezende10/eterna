@@ -59,6 +59,8 @@ try:
     ok(st == 200 and j.get("posto", {}).get("nome") == "Caixa 2" and j["posto"].get("num") == 1 and j["posto"]["id"].startswith("p_"), "parear com admin: %s %s" % (st, j))
     ok(ck.startswith("eterna_posto=") and "HttpOnly" in ck and "SameSite=Strict" in ck and "Max-Age=34560000" in ck, "cookie do posto: %s" % ck)
     cp = ck.split(";")[0]
+    st2, j2, ck2 = pede("/postos/parear", {"nome": "Caixa <2>"}, adm)          # clique repetido: o mesmo posto, sem criar outro
+    ok(st2 == 200 and j2["posto"]["id"] == j["posto"]["id"] and ck2.split(";")[0] == cp, "pareamento repetido em seguida cria outro posto: %s" % j2)
     token = cp.split("=", 1)[1]
     st, j, _ = pede("/postos/eu", cookie=cp)
     ok(st == 200 and j.get("posto", {}).get("nome") == "Caixa 2", "/postos/eu com o cookie: %s %s" % (st, j))
