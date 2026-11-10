@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v93 (10/11/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v96 (10/11/2026).
 
 Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
 
@@ -153,6 +153,48 @@ Se aparecer o aviso **Rostos desligados neste computador**, o servidor está sep
 
 Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
+### Os 2 primeiros cliques são para os fundos de IA (v93)
+
+Vale nos 4 pontos de campo (Terminal Campo, Foto Campo 2, 3 e 4). Volante e Vestiário ficam de fora.
+
+**Fotógrafo: em toda sessão, comece assim**
+
+1. **1º clique: corpo inteiro** do grupo, da cabeça aos pés.
+2. **2º clique: mais fechado**, do joelho ou da cintura para cima.
+3. Depois, faça as fotos normais da sessão.
+
+**O que acontece com essas 2 fotos**
+
+- Elas não são vendidas como foto. Viram a base das montagens com os fundos de IA.
+- O servidor recorta as pessoas assim que as fotos chegam, com a sessão ainda aberta.
+- Quando o cliente chega ao Checkout, as **5 montagens** já estão prontas, uma para cada fundo: Arquibancada 1950 e Pódio de campeão usam o 1º clique; Noite de campeão, Mirante e Saída do túnel usam o 2º.
+- **Se você esquecer**, o sistema usa as 2 primeiras fotos assim mesmo. A IA recorta de qualquer jeito. Não existe botão para devolver essas fotos à venda.
+- Sessão com 2 fotos ou menos: nada é separado, as fotos ficam à venda.
+
+**Como conferir no Upload automático**
+
+- As 2 fotos aparecem com a marca **Fundo IA 1** e **Fundo IA 2**. Passe o mouse sobre a marca para ler o texto inteiro: **Fundo IA 1 · corpo inteiro** e **Fundo IA 2 · fechada**.
+- Com a sessão ainda aberta, a marca aparece como **Fundo IA?**. Ela confirma quando a sessão fecha.
+- A marca **IA** sozinha continua sendo a do ajuste automático. É outra coisa.
+- O cabeçalho da sessão mostra **Fundos de IA: 2 de 2 prontas**. Se a sessão não teve fotos separadas, mostra o motivo: volante, ponto fora da regra, sem função do dia, poucas fotos ou regra desligada.
+- Sem função do dia na Escala, nada é separado. Confira a sua função antes de começar.
+
+**Na Fila do fotógrafo**
+
+- **Fundo IA: falta o 2º clique** enquanto a sessão só tem 1 foto.
+- **Fundo IA ✓✓** quando os 2 recortes estão prontos.
+
+**Administração: mudar a regra (Admin)**
+
+1. Abra **Configurações › Painel de controle**.
+2. Desça até o quadro **Fotos para os fundos de IA**.
+3. Ali dá para ligar ou desligar a regra, escolher **quantos cliques** (de 1 a 3) e **em quais pontos** ela vale, inclusive Vestiário e Volante.
+4. A mudança vale para as sessões que fecharem depois dela. As sessões já fechadas não mudam.
+
+Só quem pode alterar Configurações (Admin e Supervisor, pelos perfis prontos) muda esse quadro. Os outros veem os campos apagados.
+
+**Depois da atualização para a v93:** recarregue todos os navegadores dos caixas. Um navegador antigo ainda mostra essas 2 fotos como fotos à venda.
+
 ---
 
 ## 3. Checkout (caixa e atendimento)
@@ -239,25 +281,35 @@ Nesta versão o Checkout e o Caixa precisam estar **no mesmo computador e no mes
 
 ### Depois de cada atualização: feche as janelas antigas
 
+**Na atualização para a v96, logo depois de publicar:** em todos os balcões, feche e abra de novo o Checkout e o Posto de venda (e qualquer outra janela do Eterna aberta no notebook). A v96 grava a compra sem pacote de um jeito que uma janela da versão anterior não lista nem confirma, e o Posto da v96 mostra um alerta vermelho se uma janela antiga mexer numa compra do Checkout. Mesmo assim a janela antiga continua aberta com dados velhos e só some quando é fechada: **fechar e reabrir em todos os balcões continua obrigatório**. Antes de usar a impressora, registre a troca de rolo em cada posto com um rolo novo (os valores que vêm na instalação são de demonstração; veja **Troquei o rolo**).
+
 Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eterna abertas naquele computador (Checkout, Caixa e as outras). Uma janela antiga aberta pode atrapalhar o caixa. Se aparecer o aviso "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.", faça isso na hora.
 
-### Atender um cliente
+### Atender um cliente (v96)
 
-1. O cliente olha para a câmera. O Checkout encontra as fotos dele.
-2. Se a câmera não encontrar (ou se as fotos são de mais de 90 minutos atrás), ele digita o código da sessão (começa com LP).
-3. O cliente passa as fotos e toca em ✓ nas que quer levar e em ✗ nas que não quer.
-4. Na tela seguinte ele escolhe o pacote e a forma de pagamento. O Checkout já marca o pacote **Ideal**, o mais barato para o número de fotos que ele escolheu.
-5. **Cartão, PIX e Dinheiro ficam aguardando você.** O Checkout pede para o cliente pagar na sua maquininha (ou no dinheiro) e espera. A venda só vale depois que você confirma no **Posto de venda** (veja "Novidades da v83").
-6. Quando você confirma, aparece no Checkout a tela final com o QR e o código da galeria (exemplo: `Código K7QM-4WXR`). Se você cancelar, o Checkout volta ao carrinho do cliente com um aviso.
-7. Imprima as fotos no Posto de venda.
-8. A tela final com o QR fica 30 segundos e volta sozinha para a câmera, com contagem. Para atender o próximo antes disso, toque em **Voltar ao início**.
+O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o notebook do caixa atrás, no **Posto de venda**. O cliente já está no caixa: o Checkout nunca manda ele para outro lugar.
+
+1. A tela do Checkout mostra o botão grande **Iniciar**. A câmera fica desligada até o cliente tocar nele.
+2. O cliente toca em **Iniciar** e olha para a câmera. O Checkout encontra as fotos dele e a câmera desliga.
+3. Se a câmera não encontrar (ou se as fotos são de mais de 90 minutos atrás), ele toca em **Digitar seu código** e digita o código da sessão (começa com LP). Se nenhum rosto aparecer na câmera por 1 minuto (gente passando atrás não conta), ela desliga e a tela volta ao **Iniciar**. Em qualquer caso ela desliga 3 minutos depois do Iniciar.
+4. A foto aparece na tela inteira. Ele passa com as setas, arrastando o dedo ou com as teclas de seta, e toca em ✓ nas que quer levar e em ✗ nas que não quer. **Ver todas** mostra a grade.
+5. Com fotos marcadas aparece **Continuar · N fotos** no canto de baixo. É o único botão que faz o pedido (o carrinho do canto de cima só mostra quantas estão marcadas). Ao tocar, o cliente vê **Pronto! O atendente vai finalizar sua compra**, com o código dele e quantas fotos escolheu. O Checkout não mostra pacote, preço nem forma de pagamento. Se ele quiser mudar a escolha, toca em **Voltar às fotos**: volta para as fotos com tudo o que já tinha marcado e a compra sai do seu **Aguardando pagamento** (aparece o aviso "O cliente do código ... voltou às fotos"). Quando ele tocar em Continuar de novo, ela volta. Depois que você escolhe o pacote ou a forma de pagamento no Posto, **Voltar às fotos** some e o cliente vê "O atendente já está finalizando sua compra.": a compra fica com você (para mudar, cancele e peça para ele escolher de novo).
+   - Se o cliente parar na escolha das fotos sem tocar na tela por 90 segundos, o Checkout volta ao **Iniciar** e as fotos marcadas por ele são apagadas: quem chegar depois começa do zero e não vê as fotos de ninguém. Ele também pode sair quando quiser pelo botão **Sair**, no canto de cima. Se já tiver marcado fotos, o Checkout pergunta "Sair e apagar as fotos marcadas?" (Sim ou Não). Isso não vale depois do Continuar: aí valem as regras da tela Pronto e do valor (abaixo).
+6. No **Posto de venda**, a compra aparece em **Aguardando pagamento** com as fotos escolhidas (inclusive as de fundo de IA). Mostre as fotos ao cliente, escolha o **pacote** (o **Ideal** vem marcado com a etiqueta) e a **forma de pagamento**.
+7. Assim que você escolhe o pacote, a tela do cliente mostra **Valor a pagar R$ X** e quantas fotos são, sem o nome do pacote. Antes de você escolher a forma de pagamento aparece "O atendente vai informar a forma de pagamento"; depois, "Pague na maquininha" (Cartão), "Pague com PIX na maquininha" (PIX) ou "Pague em dinheiro ao atendente" (Dinheiro). Ele pode tocar em **Ver minhas fotos** para ver as escolhidas. Se você trocar o pacote, o valor muda na hora na tela dele. Cada escolha ou troca de pacote e de forma de pagamento fica no registro de auditoria com o seu nome e o valor.
+   - Se o cliente sair da tela Pronto ou da tela do valor sem tocar em nada por 3 minutos, ou tocar em **Voltar ao início** (ou a equipe apertar Esc), o Checkout volta ao **Iniciar**. A compra continua em **Aguardando pagamento** com "O cliente saiu da tela": cancele ou espere ele voltar.
+   - Se o preço do pacote mudar no Catálogo depois da sua escolha, ao confirmar o Eterna mostra o valor novo (o cliente também vê) e pede para confirmar de novo.
+8. Cobre na maquininha e confirme como antes (**Pago na maquininha** ou **Recebi R$ X**). O Checkout mostra a tela final com o QR, o código da galeria e o **Valor pago R$ X** que você confirmou.
+9. Se você cancelar, o Checkout do cliente volta ao início.
+10. Imprima as fotos no Posto de venda. A tela final com o QR fica 30 segundos e volta sozinha ao **Iniciar**. Para atender o próximo antes disso, toque em **Voltar ao início**.
 
 Outras coisas que o cliente pode fazer:
-- Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha.
-- Desistir a qualquer momento com **Voltar ao início**. A escolha dele é apagada e a tela volta para a câmera.
-- Ficar o tempo que precisar escolhendo. O Checkout não volta sozinho no meio da escolha, só depois da compra.
+- Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha. Em tela pequena, as bandeiras ficam guardadas num botão com a bandeira atual.
+- Desistir a qualquer momento com o botão **Sair**, no alto da tela. Se ele já marcou fotos, o Checkout pergunta "Sair e apagar as fotos marcadas?" e só apaga com **Sim, sair**. A escolha dele é apagada e a tela volta ao **Iniciar**.
+- Se ele parar de mexer na escolha das fotos (foto ampliada, Ver todas ou a confirmação de sessão) por 90 segundos, o Checkout volta sozinho ao **Iniciar** e apaga as marcas. Qualquer toque ou arrasto renova o prazo.
+- Se ele já tinha feito o pedido e voltou às fotos (pelo código, pela selfie ou em outro balcão), o **Sair** e a volta em 90 segundos deixam a compra em **Aguardando pagamento** com "O cliente saiu da tela": cancele ou espere ele voltar.
 
-### O carrinho: pacote, adicionais e economia
+### Pacotes, adicionais e economia (escolhidos no Posto de venda desde a v96)
 
 O catálogo do Tour mudou na v79:
 
@@ -273,9 +325,10 @@ O catálogo do Tour mudou na v79:
 
 Todas as impressas são 10×15 cm.
 
-O que o cliente vê no carrinho:
+No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 - **Ideal**: o pacote mais barato para as fotos que ele escolheu, já somando as adicionais. Exemplo: 4 fotos saem por Zona Mista + 1 adicional (R$ 145), mais barato que o Gramado (R$ 150).
 - **Fotos com fundo de IA contam dentro do pacote.** Não são mais cobradas à parte no Checkout.
+- **5 fundos de IA por venda (v93)**: uma montagem para cada fundo, feita com os 2 primeiros cliques da sessão. Esses 2 cliques não aparecem como foto normal nem entram na contagem do "Todas".
 - **Resumo linha a linha** antes do total: o pacote e as adicionais, cada um com o valor.
 - **Economia**: quanto ele economiza em comparação a comprar avulso (uma Arquibancada e o resto como Foto adicional). Exemplo: 8 fotos avulsas custariam R$ 70 + 7 × R$ 35 = R$ 315. No Pacote Maracanã ele paga R$ 190 e economiza R$ 125. Só aparece quando há economia.
 - "Cabem mais N fotos neste pacote sem pagar mais", quando ele escolheu menos fotos do que o pacote leva.
@@ -289,13 +342,12 @@ Se o cliente volta ao Checkout com fotos que já comprou, a tela mostra o QR da 
 
 ### Dinheiro: aguardando caixa (vendedor e caixa)
 
-Quando o cliente escolhe **Dinheiro** no Checkout, a compra não é dada como paga. Ela espera alguém da equipe receber.
+Desde a v96 quem escolhe **Dinheiro** é você, no Posto de venda. A compra não é dada como paga até você receber.
 
 **O que o cliente vê**
-1. O botão vira "Finalizar e pagar R$ X no caixa".
-2. Na tela final aparece um ícone amarelo de dinheiro, "Pague no caixa em dinheiro", o valor, um **código** (exemplo: `K7QM-4WXR`) e o QR.
-3. Ele vai ao caixa e mostra o código.
-4. Se ele abrir o QR antes de pagar, aparece "Seu pagamento em dinheiro está esperando o caixa". As fotos só aparecem depois da confirmação.
+1. Na tela Pronto, antes de você escolher o pacote: o **código** da compra (exemplo: `K7QM-4WXR`) e quantas fotos ele escolheu.
+2. Depois que você escolhe o pacote e Dinheiro no Posto de venda: "Valor a pagar R$ X", "N fotos", "Pague em dinheiro ao atendente" e o botão **Ver minhas fotos**. Essa tela não mostra o nome do pacote nem o código.
+3. Se ele abrir a galeria antes de pagar, aparece que o pagamento está esperando. As fotos só aparecem depois da confirmação.
 
 **Como confirmar (caixa)**
 1. Na barra da equipe, toque em **Caixa**. O número ao lado mostra quantos pagamentos estão esperando.
@@ -535,20 +587,20 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 ### O que tem no Posto de venda
 
 - **No Checkout agora**: o que o cliente está vendo e escolhendo, ao vivo.
-- **Aguardando pagamento**: as compras de Cartão, PIX e Dinheiro esperando você.
+- **Aguardando pagamento**: as escolhas do Checkout esperando você escolher o pacote, a forma de pagamento e confirmar.
 - **Impressão 10×15**: as vendas pagas, com as fotos para imprimir já marcadas, e o contador do rolo.
 - **Minhas vendas de hoje**: as suas vendas neste notebook, com o valor de cada uma. Não mostra total.
 
 ### Confirmar na maquininha
 
-1. O cliente escolhe Cartão ou PIX no Checkout. A compra aparece em **Aguardando pagamento**, com o código, o valor e as fotos.
+1. Desde a v96 o cliente só escolhe as fotos. A compra aparece em **Aguardando pagamento** com o código e as fotos. Escolha o pacote e a forma de pagamento (Cartão, PIX ou Dinheiro); o cliente vê o valor na tela dele.
 2. Digite o valor na maquininha e espere aprovar.
 3. Toque em **Pago na maquininha**.
 4. Se quiser, digite o **NSU ou a autorização** do comprovante (só números, de 4 a 12). É opcional.
 5. **Nunca digite o número do cartão.** Se aparecer "Isso parece número de cartão", apague e digite só o NSU.
 6. Toque em **Confirmar R$ X**. O Checkout mostra o QR para o cliente.
 7. Dinheiro: receba e toque em **Recebi R$ X**.
-8. Se o cliente desistir ou a maquininha recusar de vez, toque em **Cancelar** e depois em **Sim, cancelar**. O Checkout volta ao carrinho dele.
+8. Se o cliente desistir ou a maquininha recusar de vez, toque em **Cancelar** e depois em **Sim, cancelar**. O Checkout dele volta ao início.
 
 ### Imprimir
 
@@ -572,7 +624,15 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 1. O rolo da DNP faz cerca de 700 fotos. O contador "Rolo: X de 700" fica no alto do Posto de venda.
 2. Abaixo de 40, o contador fica vermelho e aparece em **Alertas**. Troque antes do pico.
 3. Troque o rolo e a fita na DNP.
-4. Em **Dashboard › Estoque**, toque em **Registrar troca de rolo**. O contador volta a 700.
+4. Registre a troca: no Posto de venda (veja **Troquei o rolo** logo abaixo) ou em **Dashboard › Estoque**, em **Registrar troca de rolo** (no Estoque, só quem tem permissão de editar Estoque). O contador volta a 700.
+
+### Troquei o rolo (v96)
+
+1. Só num aparelho configurado como posto: toque no selo **Rolo: X de 700** no alto do Posto de venda, no alto do Caixa ou no painel **Impressão 10×15**. Com o rolo abaixo de 40, o botão **Troquei o rolo** aparece ao lado do selo no alto do Posto de venda e do Caixa (não no painel Impressão 10×15). Em aparelho não configurado como posto, o selo só mostra o contador: registre a troca em **Dashboard › Estoque**.
+2. O Eterna pergunta "Trocou o rolo da impressora deste posto? O contador volta para 700." Toque em **Sim, troquei** ou em **Cancelar** (Cancelar não muda nada).
+3. Vale só para o posto deste computador. A troca de outro posto se registra no próprio posto ou em **Dashboard › Estoque**.
+4. Quem vende (permissão de criar em Venda) pode registrar a troca do próprio posto, mesmo sem acesso ao Estoque. Cada troca fica no registro de auditoria com quem fez, o posto e o valor que o contador tinha. Uma troca de hoje com mais de 60 impressões sobrando aparece em **Alertas** como grave, com o posto, quem fez e o valor.
+5. Os valores que vêm na instalação (58, 142 e 171) são de demonstração. Antes de usar no balcão, registre a troca em cada posto com um rolo novo.
 
 ### Outras mudanças
 

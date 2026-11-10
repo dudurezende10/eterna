@@ -71,7 +71,7 @@ app.SEGREDO_PONTO_SHA256 = __import__("hashlib").sha256(seg.encode()).hexdigest(
 tok = "A" * 22
 exp = (datetime.now(timezone.utc) + timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
 man = {"token": tok, "codigo": "ABCD-EFGH", "tipo": "sessao", "expira": exp, "precos": {},
-       "fotos": [{"id": "a%05x" % i, "direito": "comprada" if i < 2 else "venda"} for i in range(40)]}
+       "fotos": [{"id": ("b" if i >= 38 else "a") + "%05x" % i, "direito": "comprada" if i < 2 else "venda"} for i in range(40)]}
 
 
 def chama(metodo, caminho, corpo=None, cab=None):
@@ -106,6 +106,7 @@ st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"duas-pe
 ok(st == 200 and r["motivo"] == "varias_pessoas" and "restam" not in r, "duas pessoas na selfie: não busca e não conta tentativa")
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True})
 ok(st == 200 and r["ok"] and R.indexadas == 40, "cliente certo liberado, nenhuma leitura nova")
+ok(len(r["galeria"]["fotos"]) == 38 and not [f for f in r["galeria"]["fotos"] if f["pid"].startswith("b")], "a selfie libera só as fotos em que a pessoa aparece")
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True})
 ok(st == 200 and r["motivo"] == "nao_encontrado" and r["restam"] == 4, "cliente errado com leitura completa: conta erro")
 

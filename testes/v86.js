@@ -58,7 +58,7 @@ im.save(sys.argv[1]+'/largomeio.png')
   // ---------- 3. migração: escolha salva com 4 fundos ganha o pódio uma vez só ----------
   const salvar=async(f)=>{await pg.evaluate(f);await pg.reload();await pg.waitForTimeout(400);};
   const lerSim=()=>pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');return {bgOn:s.bgOn,flag:s.bgPodioV86,on:ETERNA.bgOn(),k:localStorage.getItem('eterna.bgpodio.v')};});
-  await salvar(()=>{localStorage.removeItem('eterna.bgpodio.v');const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.bgOn=['campeao','mirante','arq1950','tunel'];delete s.bgPodioV86;s.caixaDin=s.caixaDin||[];s.catalogoV=2;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
+  await salvar(()=>{localStorage.removeItem('eterna.bgpodio.v');const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.bgOn=['campeao','mirante','arq1950','tunel'];delete s.bgPodioV86;s.caixaDin=s.caixaDin||[];s.catalogoV=3;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
   let m=await lerSim();ok(J(m.bgOn)===J(['campeao','mirante','arq1950','tunel','podio'])&&m.flag===true&&m.k==='86'&&m.on.includes('podio'),'3: SIM com 4 fundos ganha o pódio: '+J(m));
   // o usuário tira o pódio: não volta ao recarregar
   await login(pg);await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(200);
