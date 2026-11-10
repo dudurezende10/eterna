@@ -43,11 +43,11 @@ try{
   await pg.waitForTimeout(400);// cliente leva alguns segundos antes de pagar
   // v96: o Continuar faz o pedido (sem pacote e sem pagamento no Checkout); o "criar" sai quando o caixa confirma, com a hora do pedido
   await pg.click('#lj-lb [data-act="lj-lg"]');await pg.click(`#lj-lb [data-act="lang"][data-l="es"]`);await pg.click('.lj-next');await pg.click('.lj-next').catch(()=>{});await pg.waitForTimeout(400); // clique repetido no Continuar; v96: idioma pelo botão da bandeira atual (bandeiras recolhidas no overlay)
-  ok((await pg.evaluate(c=>JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.filter(x=>x.card===c&&x.estado==='aguardando').length,card))===1,'3: um pedido só com o clique repetido no Continuar');
+  ok((await pg.evaluate(c=>JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.filter(x=>x.card===c&&x.estado==='escolha').length,card))===1,'3: um pedido só com o clique repetido no Continuar');
   await pg.screenshot({path:PR+'/v92t-checkout-es.png'});
   // ---------- Caixa: o Admin confirma o PIX (pagar) ----------
   const pa=await ctx.newPage();pa.on('pageerror',e=>errs.push(e.message));ok(await entrar(pa,UA,'eduardo@eduardorezende.com'),'admin entrou pelo agente');ok(await agOn(pa),'app ligado ao agente');
-  const pid=await pa.evaluate(()=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=(S.caixaDin||[]).find(x=>x.estado==='aguardando');return r&&r.id;});
+  const pid=await pa.evaluate(()=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=(S.caixaDin||[]).find(x=>x.estado==='aguardando'||x.estado==='escolha');return r&&r.id;});
   const conf=await pa.evaluate(id=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:'pix'});return ETERNA.pendConfirmar(id,{ref:'123456'});},pid);ok(conf!==false,'Caixa confirmou o PIX: '+J(conf));
   for(let i=0;i<40&&!evs.some(e=>e.tipo==='pagar');i++)await sleep(200);
   const crK=evs.filter(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card);const ck=crK[0];

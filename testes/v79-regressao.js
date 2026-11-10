@@ -129,7 +129,7 @@ try{
   for(const l of ['en','es','fr','de']){await idioma(A,l);await A.waitForTimeout(80);const t=await txt(A,'#main');ok(!/ljPay|ljYour|ljN/.test(t)&&/190/.test(t),`1.2: tela do dinheiro em ${l}: ${t.slice(0,120)}`);if(l==='de')await A.screenshot({path:`${P}/v79-dinheiro-de.png`});}
   await idioma(A,'pt');
   const depois=await sim(A);const r1=depois.caixaDin[0];const s1=depois.sessions[C1];
-  ok(s1.status==='aguardando'&&s1.din===r1.id&&r1.estado==='aguardando'&&r1.card===C1&&r1.total===190&&r1.prints===8&&r1.n===8,'1.4: sessão aguardando e registro: '+J({st:s1.status,r1}));
+  ok(s1.status==='aguardando'&&s1.din===r1.id&&r1.estado==='escolha'&&r1.card===C1&&r1.total===190&&r1.prints===8&&r1.n===8,'1.4: sessão aguardando e registro: '+J({st:s1.status,r1}));
   ok(depois.stock['Caixa 1']===antes.stock['Caixa 1'],'1.4: estoque não pode mudar antes da confirmação');
   ok(J((depois.ai||{})[C1]||null)===ai0||!((depois.ai||{})[C1]||{bought:[]}).bought.length,'1.4: aiOf().bought não pode mudar');
   ok(!s1.saleNo&&/^L0-\d{3}$/.test(r1.saleNo||'')&&!(depois.galFila||[]).some(x=>x.token===r1.token),'1.4: sessão sem saleNo (v83: o número fica na pendência) e sem galeria na fila de envio');
@@ -218,7 +218,7 @@ try{
   await B.click(`[data-act="din-confirm"][data-id="${rI3.id}"]`);await B.waitForTimeout(200);
   const i3b=await B.evaluate(id=>({t:document.querySelector('#toast').textContent,e:ETERNA.SIM.caixaDin.find(x=>x.id===id).estado}),rI3.id);
   await B.evaluate(()=>{Storage.prototype.setItem=window._si;});
-  ok(i3b.t==='Não gravou, tente de novo'&&i3b.e==='aguardando','I3: Caixa sem gravar: '+J(i3b));
+  ok(i3b.t==='Não gravou, tente de novo'&&/^(aguardando|escolha)$/.test(i3b.e),'I3: Caixa sem gravar: '+J(i3b));
   await B.click(`[data-act="din-cancel"][data-id="${rI3.id}"]`);await B.waitForTimeout(100);await B.click(`[data-act="din-cancel-ok"][data-id="${rI3.id}"]`);await B.waitForTimeout(200);
 
   // ---- 1.9: cancelar com segunda confirmação
@@ -226,7 +226,7 @@ try{
   await lojaSessao(A,C3,2,0);await pagar(A,'cash');const r9=(await sim(A)).caixaDin[0];await sleep(600);
   await B.click(`[data-act="din-cancel"][data-id="${r9.id}"]`);await B.waitForTimeout(150);
   ok(/Cancelar esta compra\? Ela não vira venda\./.test(await txt(B,'.din-list')),'1.9: falta a segunda confirmação do cancelar');
-  ok((await sim(B)).caixaDin.find(x=>x.id===r9.id).estado==='aguardando','1.9: o primeiro toque não pode cancelar');
+  ok((await sim(B)).caixaDin.find(x=>x.id===r9.id).estado==='escolha','1.9: o primeiro toque não pode cancelar');
   await B.click(`[data-act="din-cancel-ok"][data-id="${r9.id}"]`);await B.waitForTimeout(250);
   const d9=await sim(B);const x9=d9.caixaDin.find(x=>x.id===r9.id);
   ok(x9.estado==='cancelada'&&x9.motivo==='cancelada_no_caixa'&&x9.porNome==='Atendimento e venda'&&x9.fechada&&d9.sessions[C3].status==='pronta'&&!d9.sessions[C3].din,'1.9: cancelada: '+J({x9,st:d9.sessions[C3].status}));
@@ -257,7 +257,7 @@ try{
   ok(/schon gekauft/i.test((await paga('de')).m),'rev 1: mensagem em alemão');await A.evaluate(()=>{ETERNA.state.lang='pt';});
   await A.waitForTimeout(150);ok(await A.evaluate(()=>{const k=ETERNA.state.kiosk;return k.step==='done'&&k.paid&&!k.paid.wait&&!!document.querySelector('#lqr');}),'rev 1 (v85): depois da mensagem, o QR da galeria de novo');
   await A.evaluate(()=>ETERNA.lojaPedir());await A.waitForTimeout(400); // v96: o único pedido do Checkout (Continuar)
-  const depoisPago=await sim(A);ok(depoisPago.sessions[C5].status==='paga'&&depoisPago.sessions[C5].saleNo===pago.saleNo&&!depoisPago.caixaDin.some(x=>x.card===C5&&x.estado==='aguardando'),'rev 1: Dinheiro numa sessão paga não pode desfazer a venda: '+J({st:depoisPago.sessions[C5].status}));
+  const depoisPago=await sim(A);ok(depoisPago.sessions[C5].status==='paga'&&depoisPago.sessions[C5].saleNo===pago.saleNo&&!depoisPago.caixaDin.some(x=>x.card===C5&&(x.estado==='aguardando'||x.estado==='escolha')),'rev 1: Dinheiro numa sessão paga não pode desfazer a venda: '+J({st:depoisPago.sessions[C5].status}));
   await A.evaluate(()=>{ETERNA.state.kiosk.step='code';ETERNA.render();});
 
   // ---- 1.10 e 1.11: Lista de vendas, CSV e Alertas (admin, outra janela do mesmo navegador)
@@ -337,8 +337,8 @@ try{
     await pg.evaluate(()=>{if(ETERNA.state.lojaRota)return;ETERNA.state.view='caixa';ETERNA.render();});await pg.waitForTimeout(200);
     const vis=await pg.evaluate(()=>!!document.querySelector('[data-act="din-confirm"]'));ok(vis===pode,`1.14: ${email} ${pode?'deveria':'não deveria'} ver o botão Recebi`);
     if(!pode){await pg.evaluate(id=>{const bt=document.createElement('button');bt.dataset.act='din-confirm';bt.dataset.id=id;bt.id='forca';document.body.appendChild(bt);},r14.id);await pg.evaluate(()=>document.querySelector('#forca').click());await pg.waitForTimeout(150);
-      const t=await toastTxt(pg);const e=await pg.evaluate(id=>ETERNA.SIM.caixaDin.find(x=>x.id===id).estado,r14.id);ok(/Sem permissão/.test(t)&&e==='aguardando',`1.14: ${email} forçando o clique: ${t} / ${e}`);
-      const e2=await pg.evaluate(id=>{ETERNA.dinConfirmar(id);return ETERNA.SIM.caixaDin.find(x=>x.id===id).estado;},r14.id);ok(e2==='aguardando',`1.14: ${email} chamando dinConfirmar pelo console confirmou`);}
+      const t=await toastTxt(pg);const e=await pg.evaluate(id=>ETERNA.SIM.caixaDin.find(x=>x.id===id).estado,r14.id);ok(/Sem permissão/.test(t)&&e==='escolha',`1.14: ${email} forçando o clique: ${t} / ${e}`);
+      const e2=await pg.evaluate(id=>{ETERNA.dinConfirmar(id);return ETERNA.SIM.caixaDin.find(x=>x.id===id).estado;},r14.id);ok(e2==='escolha',`1.14: ${email} chamando dinConfirmar pelo console confirmou`);}
     else{await pg.click(`[data-act="din-confirm"][data-id="${r14.id}"]`);await pg.waitForTimeout(300);ok(await pg.evaluate(id=>ETERNA.SIM.caixaDin.find(x=>x.id===id).estado,r14.id)==='confirmada','1.14: supervisor deveria confirmar');}
     await cx2.close();}
 
@@ -430,7 +430,8 @@ try{
     // 3.3: depois da primeira compra o botão some
     fase='3.3';
     await abrir();await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(400);
-    await pg.evaluate(()=>{ETERNA.state.kiosk.step='cart';ETERNA.render();});await pg.waitForTimeout(150);await pagar(pg,'card');
+    // v96 (B2): voltar ao início limpa as marcas da sessão; aqui o cliente marca a foto dele antes de continuar
+    await pg.evaluate(c=>{const it=ETERNA.lojaItems(c);ETERNA.lojaPick(c)[it[0].k]='ok';ETERNA.state.kiosk.step='cart';ETERNA.render();},card);await pg.waitForTimeout(150);await pagar(pg,'card');
     await pg.click('.lj-restart');await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir');
     // I1: recarregar a janela do Checkout não entra logado (a sessão salva continua para as outras janelas)
     fase='I1';

@@ -43,7 +43,7 @@ async function ljSessao(L,card,n){await L.evaluate(()=>{if(ETERNA.state.cam)ETER
 let POSTO=null;
 async function ljPagar(L,m){await L.evaluate(()=>ETERNA.lojaPedir());await L.waitForTimeout(400);const id=await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id||!POSTO)return;
   await POSTO.evaluate(([id,m])=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(!r||!r.escolha)return;ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:{card:'cartao',cash:'dinheiro',pix:'pix'}[m]||m});},[id,m]);await L.waitForTimeout(500);}
-const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&x.estado==='aguardando'),card);
+const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&(x.estado==='aguardando'||x.estado==='escolha')),card);
 // venda injetada direto no SIM (sessão com fotos ag_ servidas pelo page.route), pendência aguardando
 async function injPend(pg,o){return pg.evaluate(o=>{const S=ETERNA.SIM;const card=o.card;S.sessions[card]={key:'carlos',pdv:'Foto Campo 2',time:'10:00',date:'hoje',status:'aguardando',selected:o.sel.slice(),aiSel:(o.ai||[]).slice(),fav:(o.fav||[]).slice(),cart:o.cart,photos:o.sel.concat(o.extra||[]).map(id=>({id,sold:0})),din:o.id};
   o.sel.concat(o.extra||[]).forEach(id=>{ETERNA.UP[id]={src:location.origin+'/thumb/'+id.slice(3),name:id};});
@@ -86,7 +86,7 @@ try{
 
   // ---- 14: cartão aguardando, sem QR, sem contagem, sem estoque, sem galFila
   const l14=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,wait:!!(ETERNA.state.kiosk.paid||{}).wait,qr:!!document.querySelector('#lqr'),volta:!!document.querySelector('#lj-volta-n'),timer:!!ETERNA.state.kiosk.timer,t:document.body.innerText.replace(/\s+/g,' ')}));
-  const s14=await sim(L);const p14=s14.caixaDin.find(x=>x.card===cards[0]&&x.estado==='aguardando')||{};
+  const s14=await sim(L);const p14=s14.caixaDin.find(x=>x.card===cards[0]&&(x.estado==='aguardando'||x.estado==='escolha'))||{};
   ok(l14.step==='done'&&l14.wait&&!l14.qr&&!l14.volta&&!l14.timer,'14: tela do cartão aguardando: '+J({...l14,t:''}));
   ok(/Pague na maquininha/i.test(l14.t)&&new RegExp('R\\$\\s'+p14.total).test(l14.t),'14: "Pague na maquininha" e o valor: '+l14.t.slice(0,240));
   ok(s14.sessions[cards[0]].status==='aguardando'&&p14.meio==='cartao'&&p14.prov==='pos-manual'&&/^L0-\d{3}$/.test(p14.saleNo||'')&&/^L00-[a-z0-9]{10,}$/.test(p14.id||''),'14: pendência do cartão: '+J({st:s14.sessions[cards[0]].status,meio:p14.meio,prov:p14.prov,no:p14.saleNo,id:p14.id}));
@@ -118,9 +118,9 @@ try{
   await L.click('[data-act="loja-new"]');await ljSessao(L,cards[3],3);await ljPagar(L,'card');const p16=await pendDe(L,cards[3]);await A.waitForTimeout(300);
   await A.click(`[data-act="pend-pos"][data-id="${p16.id}"]`);await A.fill('#pend-ref','4111111111111111');await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(200);
   let e16=await A.evaluate(()=>({t:document.querySelector('#toast').textContent,err:(document.querySelector('.pend-err')||{}).innerText||''}));const st16=(await sim(A)).caixaDin.find(x=>x.id===p16.id);
-  ok(/parece número de cartão/.test(e16.t+e16.err)&&st16.estado==='aguardando'&&!JSON.stringify(await sim(A)).includes('4111111111111111')&&!JSON.stringify(await A.evaluate(()=>ETERNA.pvFila())).includes('4111111111111111'),'16: número de cartão deveria ser recusado e não gravado: '+J(e16));
+  ok(/parece número de cartão/.test(e16.t+e16.err)&&st16.estado==='escolha'&&!JSON.stringify(await sim(A)).includes('4111111111111111')&&!JSON.stringify(await A.evaluate(()=>ETERNA.pvFila())).includes('4111111111111111'),'16: número de cartão deveria ser recusado e não gravado: '+J(e16));
   await A.fill('#pend-ref','12');await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(200);
-  ok(/4 a 12/.test(await toastTxt(A))&&(await sim(A)).caixaDin.find(x=>x.id===p16.id).estado==='aguardando','16: "12" deveria ser recusado');
+  ok(/4 a 12/.test(await toastTxt(A))&&(await sim(A)).caixaDin.find(x=>x.id===p16.id).estado==='escolha','16: "12" deveria ser recusado');
   await A.fill('#pend-ref','');await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(250);
   const v16=(await sim(A)).sessions[cards[3]];ok(v16.status==='paga'&&v16.pag&&v16.pag.ref===null,'16: vazio deveria ser aceito: '+J(v16.pag));
 
