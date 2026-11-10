@@ -165,11 +165,13 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 **A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu usuário e a sua senha, ou use outra janela.
 
-### Aparelho pareado (v93)
+### Posto automático (10/11/2026)
 
-O Checkout só abre num aparelho pareado. Cada computador ou tablet do Checkout (e a TV da Fila do fotógrafo) é pareado uma vez.
+Não é preciso parear o aparelho. Basta ligar o computador na rede do ponto, abrir o Eterna pelo endereço do servidor e entrar com usuário e senha: o servidor registra o aparelho sozinho como **Posto 1**, **Posto 2**... e cada venda fica marcada com o posto onde foi feita. O Checkout aberto por esse aparelho funciona na hora.
 
-**Parear um aparelho (Admin)**
+O pareamento abaixo continua existindo só para um aparelho que precisa abrir o Checkout **sem ninguém conectado** (ex.: um tablet fixo ou a TV da Fila).
+
+**Parear um aparelho sem pessoa conectada (Admin, opcional)**
 
 1. No próprio aparelho, abra o Eterna pelo endereço do servidor do ponto (`https://posto.eterna.photo`). Não use eterna.photo.
 2. Entre com um usuário que pode alterar o Painel de controle (Admin).
@@ -181,10 +183,10 @@ A lista mostra cada aparelho, o número (P1, P2...), quem pareou, o último uso 
 
 **"Este aparelho ainda não foi pareado"**
 
-Aparece no Checkout de um aparelho sem pareamento, ou que foi revogado. O que fazer:
+Aparece no Checkout de um aparelho sem ninguém conectado, ou que foi revogado. O que fazer:
 
 1. Confira se a página foi aberta pelo endereço do servidor do ponto.
-2. Chame o Admin para parear o aparelho (passos acima).
+2. Toque em **Sair**, entre com o seu usuário e a sua senha e abra o Checkout de novo: o aparelho vira posto sozinho.
 3. Depois, toque em **Tentar de novo**. **Sair** volta para a entrada.
 
 As vendas que o aparelho já tinha na fila ficam guardadas e sobem depois do pareamento.
@@ -518,8 +520,10 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 
 ### Preparar o notebook (TI do ponto, uma vez)
 
-1. Instale a DNP RX1HS com papel PR 4×6 (10×15) e deixe a **DNP como impressora padrão** do notebook.
-2. Abra o Chrome do Eterna com a opção `--kiosk-printing`. Assim a foto sai direto na DNP, sem a janela de impressão do Chrome. A TI do ponto deixa o atalho pronto.
+1. Instale o driver da DNP DS-RX1HS e ligue no USB. Em **Configurações › Impressoras › DNP › Preferências de impressão**, escolha o papel **PR 4×6 (10×15)**.
+2. Deixe a **DNP como impressora padrão** e desligue "Permitir que o Windows gerencie minha impressora padrão" (senão o Windows troca a padrão sozinho).
+3. Feche o Chrome por completo (inclusive o ícone perto do relógio: botão direito › Sair) e crie um atalho **Eterna** na Área de Trabalho com o destino `"C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk-printing <endereço do servidor do ponto>`. Abra o Eterna sempre por ele. Com `--kiosk-printing`, a foto sai direto na DNP, sem a janela de impressão do Chrome.
+4. O posto imprime na DNP ligada nele quando o servidor tem `ETERNA_IMPRESSORA_POSTOS="*=local"` (veja a documentação técnica).
 3. Com `--kiosk-printing`, tudo o que for impresso nesse Chrome sai na DNP. Cartaz A4 de grupo de escola: imprima no computador do ponto.
 
 ### O que tem no Posto de venda
@@ -760,7 +764,7 @@ Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao a
 
 O servidor do ponto só abre os dados para quem entrou com usuário e senha ou para um aparelho pareado.
 
-- **Checkout e TV da Fila**: precisam ser pareados uma vez (veja "Aparelho pareado" na parte 3).
+- **Postos**: o aparelho vira posto sozinho quando alguém da equipe entra nele (veja "Posto automático" na parte 3). Só aparelho sem ninguém conectado precisa de pareamento.
 - **Código no Checkout**: com a sessão recém-fotografada, o botão mostra "Buscando suas fotos…" por alguns segundos (veja "Cliente que volta horas depois").
 - **Galeria da venda**: o aparelho pareado publica a galeria depois que o Caixa confirma o pagamento.
 - **Compra pelo celular**: desligada. A galeria mostra as fotos e pede para o cliente falar com a equipe no balcão.

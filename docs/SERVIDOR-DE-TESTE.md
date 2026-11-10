@@ -94,6 +94,7 @@ Variáveis de `rodar.py` que diferem do estádio:
 
 | Variável | Motivo |
 | --- | --- |
+| `ETERNA_IMPRESSORA_POSTOS="*=local"` | Os postos da rede (ex.: o Dell do vendedor com a DNP) imprimem na impressora ligada neles; o notebook do servidor segue na Samsung |
 | `ETERNA_IMPRESSORA` = Samsung M332x | Não há DNP aqui |
 | `ETERNA_IMP_SEM_ESTADO=1` | O status da Samsung no Windows fica preso depois de um aviso |
 | `ETERNA_IMP_PAPEL_PADRAO=1` | Imprime em A4, o papel da bandeja |

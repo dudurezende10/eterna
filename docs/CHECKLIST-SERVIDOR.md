@@ -108,7 +108,8 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 ## 9. Teste final, de ponta a ponta
 
 - [ ] Do servidor: `http://127.0.0.1:8765` abre.
-- [ ] Cada aparelho do Checkout e a TV da Fila pareados (Painel de controle › Postos deste ponto). Aparelho sem pareamento mostra "Este aparelho ainda não foi pareado".
+- [ ] Postos: cada aparelho vira posto sozinho quando alguém da equipe entra nele (10/11/2026). Pareamento (Painel de controle › Postos deste ponto) só para aparelho que abre o Checkout sem ninguém conectado, como a TV da Fila.
+- [ ] DNP ligada no posto: `ETERNA_IMPRESSORA_POSTOS="*=local"` no servidor, DNP como padrão no posto e Chrome aberto com `--kiosk-printing`.
 - [ ] De um posto ou celular no Wi-Fi do ponto: `http://<ip-reservado>:8765` abre, com as fotos visíveis.
 - [ ] De fora, com Tailscale: `http://<nome-do-servidor>:8765` abre, com as miniaturas e a foto ampliada.
 - [ ] Câmera → foto aparece → selfie no Checkout acha a pessoa → venda → impressão na DNP → QR abre a galeria no celular (eterna.photo).
