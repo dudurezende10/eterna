@@ -38,8 +38,15 @@ try{
   ok(await pg.evaluate(()=>ETERNA.state.kiosk.step==='emerg'&&ETERNA.LJ_COD.erros===1),'continua na tela do código e conta 1 tentativa');
   // 4) clique repetido durante a espera não conta duas tentativas
   await pg.evaluate(()=>{ETERNA.lojaCodReset();});
-  await abreCod('LPNUNCA02');await pg.click('[data-act="kiosk-go"]');await pg.click('[data-act="kiosk-go"]');
+  await abreCod('LPNUNCA02');
+  // durante a espera: botão desativado com "Buscando suas fotos…" (nas 5 línguas) e o código digitado continua no campo
+  const btn=()=>pg.evaluate(()=>{const e=document.querySelector('[data-act="kiosk-go"]');return e?{dis:e.disabled,txt:e.textContent.trim(),cod:(document.querySelector('#kcode')||{}).value}:null;});
+  let bt=await btn();ok(bt&&bt.dis&&bt.txt==='Buscando suas fotos…'&&bt.cod==='LPNUNCA02','botão durante a espera: '+JSON.stringify(bt));
+  const txts=await pg.evaluate(()=>{const r=ETERNA.LANGS.map(([l])=>{ETERNA.state.lang=l;return ETERNA.T('codeSearching');});ETERNA.state.lang='pt';return r;});
+  ok(txts.length===5&&new Set(txts).size===5&&txts.every(t=>t&&/…$/.test(t)&&!/[—–]/.test(t)),'texto da espera nas 5 línguas, sem travessão: '+txts.join(' | '));
+  await pg.click('[data-act="kiosk-go"]',{force:true}).catch(()=>{});await pg.evaluate(()=>{const e=document.querySelector('[data-act="kiosk-go"]');if(e)e.click();});
   await pg.waitForTimeout(5000);
+  bt=await btn();ok(bt&&!bt.dis&&bt.txt.startsWith('Ver minhas fotos')&&bt.cod==='LPNUNCA02','botão volta ao normal depois da espera: '+JSON.stringify(bt));
   ok(await pg.evaluate(()=>ETERNA.LJ_COD.erros)===1,'cliques repetidos durante a espera contam 1 tentativa: '+await pg.evaluate(()=>ETERNA.LJ_COD.erros));
   // 5) tela volta ao início durante a espera e outro cliente abre o campo de código: a sessão do anterior não abre
   await pg.evaluate(()=>{ETERNA.lojaCodReset();const S=ETERNA.SIM.sessions;S.LPVOLTA03=Object.assign({},S.LPNUNCA02,{photos:[{id:'ag_vol000000001'}]});});

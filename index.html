@@ -2014,7 +2014,7 @@ const ICO={
   full:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   list:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'};
 const PAYS=[['card','Cartão'],['pix','PIX'],['cash','Dinheiro']];
-function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}Object.assign(k,{step:'code',t0:null,code:'',so:null,tv:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null,codEsp:false,codN:(k.codN||0)+1});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
+function lojaReset(){const k=state.kiosk;state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}Object.assign(k,{step:'code',t0:null,code:'',so:null,tv:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null,codEsp:false,codTxt:'',codN:(k.codN||0)+1});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 // relê o SIM da outra janela sem perder as escolhas desta sessão no Checkout
 function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk)simOf(card).pick=pk;}
 // revisão 1: nenhuma forma de pagamento tira uma sessão de "paga" (comprar mais é com a equipe)
@@ -2454,6 +2454,7 @@ const I18N={
  typeCode:['Digite o código do recibo','Type the code on your receipt','Escribe el código de tu recibo','Saisissez le code de votre reçu','Gib den Code von deinem Beleg ein'],
  receiptCode:['Código do recibo','Receipt code','Código del recibo','Code du reçu','Belegcode'],
  seeMine:['Ver minhas fotos','See my photos','Ver mis fotos','Voir mes photos','Meine Fotos ansehen'],
+ codeSearching:['Buscando suas fotos…','Finding your photos…','Buscando tus fotos…','Recherche de vos photos…','Deine Fotos werden gesucht…'],
  camera:['Câmera','Camera','Cámara','Caméra','Kamera'],
  notFound:['Não achamos','We couldn’t find','No encontramos','Introuvable :','Nicht gefunden:'],
  back:['Voltar','Back','Volver','Retour','Zurück'],
@@ -2624,8 +2625,8 @@ function vQuiosque(){
         <div class="lj-eyebrow">${T('relive')}</div>
         <h1 class="lj-h1">${T('yourPhotos')}</h1>
         ${emerg?`<p class="lj-sub">${T('typeCode')}</p>
-          <input type="text" class="lj-code" id="kcode" placeholder="LP..." value="${esc(k.code)}" aria-label="${T('receiptCode')}" autofocus>
-          <div class="lj-row"><button class="lj-cta" data-act="kiosk-go">${T('seeMine')} ${ICO.arrow}</button>${ljVoltar('kiosk-back','')}</div>`
+          <input type="text" class="lj-code" id="kcode" placeholder="LP..." value="${esc(k.codTxt||k.code)}" aria-label="${T('receiptCode')}" autofocus>
+          <div class="lj-row"><button class="lj-cta" data-act="kiosk-go"${k.codEsp?' disabled aria-busy="true"':''}>${k.codEsp?T('codeSearching'):T('seeMine')+' '+ICO.arrow}</button>${ljVoltar('kiosk-back','')}</div>`
         :`<p class="lj-sub">${T('lookCam')}</p>
           <div class="lj-cam">${camBox()}</div>
           <button class="lj-ghost" data-act="kiosk-emerg">${ICO.keys} ${T('receiptCode')}</button>`}
@@ -5342,7 +5343,8 @@ document.addEventListener('click',e=>{
     case 'caixa-reprint':{const c=state.caixa.session;state.caixa.reprint=state.caixa.reprint===c?null:c;render();break;} // v83: abre o painel de impressão desta venda (sem baixa aqui)
     case 'kiosk-go':{lojaCliente();const k=state.kiosk;if(k.codEsp)break;const txt=($('#kcode')||{}).value||'';
       const abre=()=>{const r=lojaCodigo(txt);if(!r)return;k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;ljTempo(r.card,'inicio');render();};
-      const p=lojaCodEspera(txt);if(!p){abre();break;}const passo=k.step,n=k.codN=(k.codN||0)+1;k.codEsp=true;p.then(()=>{if(k.codN!==n)return;k.codEsp=false;if(state.kiosk===k&&k.step===passo)abre();});break;} // lojaReset troca codN: a espera de um cliente nunca abre a sessão depois que a tela voltou ao início
+      const p=lojaCodEspera(txt);if(!p){abre();break;}const passo=k.step,n=k.codN=(k.codN||0)+1;k.codEsp=true;k.codTxt=txt;render(); // botão desativado com "Buscando suas fotos…"; codTxt guarda o que o cliente digitou
+      p.then(()=>{if(k.codN!==n)return;k.codEsp=false;if(state.kiosk!==k||k.step!==passo)return;abre();if(k.step===passo)render();});break;} // lojaReset troca codN: a espera de um cliente nunca abre a sessão depois que a tela voltou ao início
     case 'kiosk-back':lojaReset();render();break;
     case 'kiosk-emerg':{lojaCliente();if(state.kiosk.timer){clearTimeout(state.kiosk.timer);state.kiosk.timer=null;}state.kiosk.step='emerg';render();const el=$('#kcode');if(el)el.focus();break;}
     case 'kiosk-sel':toggleSel(state.kiosk.code,d.id);render();break;
