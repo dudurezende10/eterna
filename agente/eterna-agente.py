@@ -2392,22 +2392,31 @@ def pr_compose(photo, bg, W, H, pad, hi=False, recorte=False):
     return name
 
 
-# ---------- v84: recorte local da pessoa (sem Photoroom, sem custo) ----------
-# rembg com duas sessões, ISNet (cabelo e bordas finas) e u2net_human_seg (pessoa inteira, com óculos e acessórios);
-# a máscara final é o maior valor das duas em cada ponto (docs/fundos-ia-regras.md, regra 12), depois limpa: níveis
-# (abaixo de 0,3 some, acima de 0,9 fica cheio), sólida por dentro (taça, bandeira e boné nunca semitransparentes, regra 13),
-# só sai mancha pequena e solta, longe do grupo (na dúvida, mantém), e 1 px de borda a menos (sem halo). O PNG leva só a pessoa:
-# o RGB fora da máscara é zerado (nada do fundo nem de quem estava ao redor). Lado maior até 3000 px (impressão 10×15) e
-# uma cópia de 2400 px para a prévia. Cache em ~/Eterna/recortes/ por até 2 dias (limpar_recortes). A montagem com as
-# regras de cada fundo é do app (canvas). Nada é importado no topo: sem rembg o agente segue e a rota responde 503.
+# ---------- v84/v97: recorte local da pessoa (sem Photoroom, sem custo) ----------
+# v97 (plano docs/planos/2026-11-10-recorte-birefnet-sessoes.md): um recorte só, BiRefNet-general + a regra do Eduardo
+# (docs/fundos-ia-regras.md, regra 16: fica o que é da pessoa e encosta nela; sai o que está solto). u2net_human_seg,
+# isnet-general-use e MoveNet são auxiliares da regra, nunca opção de recorte; sem o BiRefNet não há fundos de IA (A1).
+# Os modelos rodam num PROCESSO FILHO (agente/eterna-recorte.py): o BiRefNet em CPU passa de 4,7 GB e, se o sistema o matar
+# por falta de memória, só o recorte cai (FTP, vendas e Checkout seguem). O PNG leva só a pessoa (RGB zerado fora), lado
+# até 3000 px, e uma cópia de 2400 px para a prévia. Cache em ~/Eterna/recortes/ por até 2 dias (limpar_recortes), com a
+# marca da versão do recorte (.versao): recorte de versão antiga é apagado na partida. A montagem com as regras de cada
+# fundo é do app (canvas). Nada é importado no topo: sem rembg o agente segue e a rota responde 503.
 RECORTES = os.path.join(HOME, "recortes")
-REC_MODELOS = ("isnet-general-use", "u2net_human_seg")
-REC_VERSOES = "rembg==2.0.86 onnxruntime==1.29.0"
-REC_COMO = "rode agente/instalar-recorte (Mac: instalar-recorte.command; Windows: instalar-recorte.bat): cria ~/Eterna/venv com %s e baixa %s" % (REC_VERSOES, " e ".join(REC_MODELOS))
+REC_MODELOS = ("birefnet-general", "u2net_human_seg", "isnet-general-use")
+REC_POSE = "movenet_multipose_lightning_1.onnx"          # em ~/Eterna/modelos (MODELOS); baixado pelo instalador
+REC_POSE_SHA = "61c25a6fc887b0e8d14517c3d66fdaf36c0e7a7ec0d50f74ed41a32ca1485184"
+REC_VERSAO = "birefnet-1"
+REC_VERSOES = "rembg==2.0.86 onnxruntime==1.29.0 opencv-python-headless==4.10.0.84 psutil==7.2.2"
+REC_COMO = ("rode agente/instalar-recorte (Mac: instalar-recorte.command; Windows: instalar-recorte.bat; servidor com placa NVIDIA: "
+            "instalar-recorte.bat gpu): cria ~/Eterna/venv com %s e baixa %s e %s (cerca de 1,3 GB)"
+            % (REC_VERSOES, ", ".join(REC_MODELOS), REC_POSE[:-5]))
+REC_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-recorte.py")   # testes podem trocar (m.REC_FILHO)
+REC_ESPERA_FILHO = 300   # s: uma foto em CPU lenta (45 a 75 s na máquina de teste); acima disso o filho é reiniciado
+REC_CARGA_SEG = 300      # s: abrir os 4 modelos
 REC_LADO_MAX = 3000      # maior lado do PNG da impressão
 REC_LADOS = (2400, 3000) # 2400 = prévia (cópia reduzida do de 3000, sem rodar os modelos de novo)
-REC_TRAB = 1600          # maior lado da imagem entregue aos modelos (eles trabalham em 1024 e 320 px); a máscara volta ao tamanho final
-REC_CONC = 2 if os.environ.get("ETERNA_RECORTE_CONC") == "2" else 1   # recortes ao mesmo tempo (1 ou 2): cada um ocupa memória
+REC_TRAB = 1600          # maior lado da imagem entregue aos modelos; a máscara volta ao tamanho final
+REC_CONC = 2 if os.environ.get("ETERNA_RECORTE_CONC") == "2" else 1   # 2 só vale com a placa de vídeo (CUDA): cada filho ocupa memória
 REC_FILA_MAX = 24
 REC_TAXA = 60            # recortes novos por minuto por IP (o cache não conta)
 REC_DIAS = 2             # prazo do cache de recortes
@@ -2416,9 +2425,10 @@ try:
     REC_PISO_GB = float(os.environ.get("ETERNA_RECORTES_PISO_GB") or 10)   # v93: abaixo disto de espaço livre, as bases de IA esperam
 except ValueError:
     REC_PISO_GB = 10.0
-REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos, tenta de novo passado este tempo
+REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos (ou do filho morto), tenta de novo passado este tempo
 rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0,
-       "fila0": 0, "ia": {"feitos": 0, "erros": 0, "fila": 0, "atrasos": collections.deque(maxlen=200)}}
+       "fila0": 0, "provedor": None, "carga_ms": None, "etapas_ms": None, "pico_mb": None, "reinicios": 0,
+       "ia": {"feitos": 0, "erros": 0, "fila": 0, "atrasos": collections.deque(maxlen=200)}}
 # Recorte antecipado: o cliente nunca espera o "Preparando sua foto especial". Os modelos abrem quando o Eterna liga, e cada
 # sessão fechada é recortada em segundo plano (da mais nova para a mais velha); pedido ao vivo do Checkout passa na frente.
 # ETERNA_PRE_RECORTE=0 desliga (servidor fraco): volta a recortar só quando o cliente pede.
@@ -2432,21 +2442,48 @@ rec_fila = queue.PriorityQueue()
 rec_jobs = {}                      # pid -> trabalho na fila ou em andamento (sob o rec_lock)
 _rec_seq = itertools.count()
 rec_lock = threading.Lock()        # só contadores e estado (o /status nunca espera a carga dos modelos)
-rec_carga = threading.Lock()       # abrir os modelos (só as threads de trabalho)
-rec_sess = []
+rec_filhos = {}                    # índice do trabalhador -> {"p", "fila", "lock", "seq"} (o processo de recorte de cada um)
+rec_filhos_lock = threading.Lock()
 rec_threads = []
+_rec_tl = threading.local()        # índice do trabalhador (o processo de recorte dele)
+_rec_pose_ok = {}                  # (caminho, tamanho, mtime) -> sha confere (o /status não lê 19 MB a cada chamada)
 _re_rec = re.compile(r"^(ag_)?([0-9a-f]{6,40})\.png$")
 
 
 def rec_modelo(nome):
-    """Arquivo do modelo já baixado (rembg 2.0.6x+ em ~/.rembg/models/<nome>/; versões antigas em ~/.u2net/), ou None.
-    O agente nunca baixa modelo sozinho: quem baixa é o instalador (instalar-recorte)."""
+    """Arquivo do modelo já baixado (rembg 2.0.6x+ em ~/.rembg/models/<nome>/; com U2NET_HOME, em <U2NET_HOME>/models/<nome>/
+    ou na pasta antiga), ou None. O agente nunca baixa modelo sozinho: quem baixa é o instalador (instalar-recorte)."""
     novos = os.path.expanduser(os.environ.get("REMBG_HOME") or "~/.rembg")
     antigos = os.path.expanduser(os.environ.get("U2NET_HOME") or "~/.u2net")
-    for c in (os.path.join(novos, "models", nome, nome + ".onnx"), os.path.join(antigos, nome + ".onnx")):
+    for c in (os.path.join(novos, "models", nome, nome + ".onnx"), os.path.join(antigos, "models", nome, nome + ".onnx"),
+              os.path.join(antigos, nome + ".onnx")):
         if os.path.isfile(c) and os.path.getsize(c) > 1_000_000:
             return c
     return None
+
+
+def rec_pose_ok():
+    """(ok, motivo) do MoveNet em ~/Eterna/modelos: arquivo presente e SHA-256 igual ao fixado no código (cache por
+    tamanho e data do arquivo)."""
+    p = os.path.join(MODELOS, REC_POSE)
+    try:
+        st = os.stat(p)
+    except OSError:
+        return False, "não instalado: modelo de pose ausente (%s)" % REC_POSE
+    k = (p, st.st_size, st.st_mtime)
+    v = _rec_pose_ok.get(k)
+    if v is None:
+        try:
+            h = hashlib.sha256()
+            with open(p, "rb") as f:
+                for b in iter(lambda: f.read(1 << 20), b""):
+                    h.update(b)
+            v = h.hexdigest() == REC_POSE_SHA
+        except OSError:
+            v = False
+        _rec_pose_ok.clear()
+        _rec_pose_ok[k] = v
+    return (True, None) if v else (False, "não instalado: modelo de pose diferente do esperado (%s): rode instalar-recorte de novo" % REC_POSE)
 
 
 REC_FALSO_SEG = None     # v93 (segurança S2): só os testes ligam (m.REC_FALSO_SEG = s): o "recorte" copia a foto e demora s
@@ -2464,18 +2501,24 @@ def _rec_falso():
 
 
 def rec_estado():
-    """(ok, motivo): rembg, onnxruntime, Pillow, numpy e scipy instalados, os dois modelos baixados e sem erro recente."""
+    """(ok, motivo): rembg, onnxruntime, Pillow, numpy e OpenCV instalados, os 3 modelos do rembg e o MoveNet (com o SHA
+    certo) baixados e sem erro recente."""
     if os.environ.get("ETERNA_SEM_RECORTE"):
         return False, "recorte desligado (ETERNA_SEM_RECORTE)"
     if _rec_falso() is not None:
         return True, None
+    if not os.path.isfile(REC_FILHO):
+        return False, "não instalado: falta o eterna-recorte.py na pasta do agente (%s)" % os.path.dirname(REC_FILHO)
     import importlib.util
-    falta = [m for m in ("rembg", "onnxruntime", "PIL", "numpy", "scipy") if importlib.util.find_spec(m) is None]
+    falta = [m for m in ("rembg", "onnxruntime", "PIL", "numpy", "cv2") if importlib.util.find_spec(m) is None]
     if falta:
         return False, "não instalado: faltam pacotes (" + ", ".join(falta) + ")"
     sem = [n for n in REC_MODELOS if not rec_modelo(n)]
     if sem:
         return False, "não instalado: modelos não baixados (" + ", ".join(sem) + ")"
+    ok, motivo = rec_pose_ok()
+    if not ok:
+        return False, motivo
     with rec_lock:
         if rec["erro"]:
             if time.time() - rec["erro_em"] < REC_ERRO_SEG:
@@ -2499,17 +2542,29 @@ def rec_livre_gb():
         return None
 
 
+def rec_conc():
+    """Trabalhadores de recorte ao mesmo tempo: 2 só com ETERNA_RECORTE_CONC=2 e a placa de vídeo (CUDA) aberta."""
+    with rec_lock:
+        return 2 if REC_CONC == 2 and rec.get("provedor") == "cuda" else 1
+
+
 def rec_status():
     ok, motivo = rec_estado()
     livre = rec_livre_gb()
     lig = bool(ia_cfg().get("ligada"))     # fora do sess_lock (lê o estado.db)
+    with rec_filhos_lock:
+        vivo = any(f["p"] is not None and f["p"].poll() is None for f in rec_filhos.values())
     with rec_lock:
         n = rec["feitos"]
         ia = rec["ia"]
         return {"ok": ok, "motivo": motivo, "carregado": rec["carregado"], "modelos": list(REC_MODELOS),
+                "modelo": REC_MODELOS[0], "auxiliares": list(REC_MODELOS[1:]) + [REC_POSE[:-5]], "versao": REC_VERSAO,
+                "provedor": rec["provedor"], "carga_ms": rec["carga_ms"], "etapas_ms": rec["etapas_ms"], "pico_mb": rec["pico_mb"],
+                "filho": {"vivo": vivo, "reinicios": rec["reinicios"]},
                 "fila": sum(1 for j in rec_jobs.values() if not j["pego"]),
                 "antecipado": {"ligado": REC_PRE, "escolhidas": rec.get("pre_escolhidas", 0), "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
-                "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC,
+                "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"],
+                "simultaneos": 2 if REC_CONC == 2 and rec.get("provedor") == "cuda" else 1,
                 **({"falso": True} if _rec_falso() is not None else {}),
                 "ia": {"ligada": lig, "fila": ia["fila"], "feitos": ia["feitos"], "erros": ia["erros"],
                        "pausa_disco": bool(rec.get("ia_pausa_disco")), "livre_gb": round(livre, 1) if livre is not None else None,
@@ -2517,424 +2572,182 @@ def rec_status():
                        "atraso_p50_s": _pct(ia["atrasos"], 0.5), "atraso_p90_s": _pct(ia["atrasos"], 0.9)}}
 
 
-def rec_carregar():
-    """Abre as duas sessões uma vez (na thread de trabalho, na primeira foto), fora do rec_lock."""
-    if rec_sess or _rec_falso() is not None:
-        return rec_sess
-    with rec_carga:
-        if rec_sess:
-            return rec_sess
+def _rec_filho_leitor(p, fila):
+    """Lê as linhas do stdout do filho (só JSON) para a fila; None no fim (o filho morreu ou fechou)."""
+    try:
+        for linha in p.stdout:
+            linha = linha.strip()
+            if not linha:
+                continue
+            try:
+                j = json.loads(linha)
+            except ValueError:
+                continue                                # stdout do filho é só protocolo; linha estranha é ignorada
+            if isinstance(j, dict):
+                fila.put(j)
+    except Exception:
+        pass
+    fila.put(None)
+
+
+def _rec_filho_erro(p, padrao):
+    """Motivo do filho que terminou: "memória insuficiente" quando o sistema o matou (-9 / 137)."""
+    try:
+        rc = p.wait(timeout=5)
+    except Exception:
+        rc = None
+    if rc in (-9, 137, 9):
+        return "recorte parou: memória insuficiente (código %s)" % rc
+    return "%s (código %s)" % (padrao, rc)
+
+
+def _rec_filho_matar(f):
+    p = f.get("p")
+    f["p"] = None
+    if p is not None:
         try:
-            import onnxruntime as ort
-            from rembg import new_session
-            so = ort.SessionOptions()
-            so.intra_op_num_threads = max(1, (os.cpu_count() or 2) - 1)   # deixa um núcleo para o FTP, os rostos e a tela
-            so.enable_cpu_mem_arena = False                                # menos memória presa entre um recorte e outro
-            novas = [new_session(n, sess_opts=so, providers=["CPUExecutionProvider"]) for n in REC_MODELOS]
-        except Exception as ex:
-            with rec_lock:
-                rec["erro"] = "erro ao abrir os modelos: %s" % str(ex)[:160]
-                rec["erro_em"] = time.time()
-            raise
-        rec_sess[:] = novas
-        with rec_lock:
-            rec["carregado"] = True
-            rec["erro"] = None
-        return rec_sess
+            p.kill()
+        except Exception:
+            pass
+        try:
+            p.wait(timeout=5)
+        except Exception:
+            pass
 
 
-REC_SINAL = 0.04         # sinal mínimo para um ponto entrar no grupo (ligado à pessoa)
-REC_PESSOA = 0.6         # semente: o que a máscara de PESSOA (u2net_human_seg) pega com este alfa
-REC_NUCLEO = 0.10        # miolo sólido: sinal a partir daqui, ou cercado por ele
-REC_FURO = 0.03          # furo fechado (sinal < 0,04) com sinal médio a partir daqui é objeto (preenche)
-REC_FECHA = 0.004        # reentrância mais estreita que 2x isto (fração do lado) entre partes sólidas é fechada
-REC_FUROS_MAX = 48       # teto de custo: só os 48 maiores furos sem sinal são decididos pela cor (o resto fica aberto)
-REC_FUROS_SEG = 2.0      # e no máximo 2 s decidindo furos por recorte
-REC_PONTES_SEG = 1.5     # teto de tempo para as pontes de miolo fraco (o resto fica como está)
-REC_ENC_SEG = 1.5        # teto de tempo para os pedaços encostados por uma ponta (o resto fica)
-REC_ENC_AREA = 0.015     # pedaço só do ISNet encostado na pessoa por uma ponta: até 1,5% da área da pessoa...
-REC_ENC_PESSOA = 0.15    # ...o modelo de pessoa quase não o vê (média abaixo disto)...
-REC_ENC_CONTATO = 2.0    # ...contato curto: comprimento do contato / raiz da área abaixo disto (não depende da escala)...
-REC_ENC_FUNDO = 0.3      # ...a borda dele com o fundo não tem contraste em 30% ou mais (o fundo continua por ele)...
-REC_ENC_CORTE = 15       # ...e a foto mostra uma borda entre ele e a pessoa (diferença de cor >= 15 no contato; a caixa tem 25)
+def _rec_erro(motivo):
+    with rec_lock:
+        rec["erro"] = motivo[:200]
+        rec["erro_em"] = time.time()
+        rec["carregado"] = False
 
 
-def _rec_furo_e_objeto(Hc, Fc, Cc, Ec, Dc, lado, rng):
-    """Furo fechado sem sinal (as duas máscaras dão ~0): é pedaço do objeto ou fundo de verdade visto por um vão?
-    Recebe só a fatia do furo com folga (Hc = furo, Fc = o que fica, Cc = cor, Ec = fundo de fora, Dc = distância ao grupo).
-    1) borda falsa: compara a cor 3 px dentro do furo com a cor 3 px fora (no que fica). Se em 40% ou mais do perímetro
-       não há contraste, é o mesmo material dos dois lados (branco da bandeira com o branco dela): preenche. Vão entre braço
-       e corpo ou entre pessoas tem contraste em quase toda a volta (fundo x roupa/pele).
-    2) borda meio falsa (15% a 40%): preenche só se a cor do furo não aparece no fundo de fora, perto do grupo."""
-    import numpy as np
-    from scipy import ndimage
-    d, ind = ndimage.distance_transform_edt(~Hc, return_indices=True)
-    O = (d >= 2.5) & (d <= 4.5) & Fc
-    oy, ox = np.nonzero(O)
-    if len(oy) < 8:
-        return False
-    qy, qx = ind[0][O], ind[1][O]                      # ponto do furo mais perto
-    vy, vx = qy - oy, qx - ox
-    nn = np.hypot(vy, vx) + 1e-6
-    iy = np.clip(np.round(qy + vy / nn * 3).astype(int), 0, Hc.shape[0] - 1)
-    ix = np.clip(np.round(qx + vx / nn * 3).astype(int), 0, Hc.shape[1] - 1)
-    dentro_furo = Hc[iy, ix]
-    if dentro_furo.sum() < 8:
-        return False
-    dif = np.sqrt(((Cc[oy, ox][dentro_furo] - Cc[iy, ix][dentro_furo]) ** 2).sum(1))
-    falsa = float((dif < 20).mean())
-    if falsa >= 0.4:
-        return True
-    if falsa < 0.15:
-        return False
-    faixa = Ec & (Dc >= max(2.0, 0.01 * lado))         # fundo de fora, longe da borda macia do grupo
-    if not faixa.any():
-        return False
-    faixa &= d <= d[faixa].min() + 0.1 * lado
-    fc, hc = Cc[faixa], Cc[Hc]
-    fc = fc[rng.choice(len(fc), min(800, len(fc)), replace=False)]
-    hc = hc[rng.choice(len(hc), min(400, len(hc)), replace=False)]
-    parecido = np.sqrt(((hc[:, None, :] - fc[None, :, :]) ** 2).sum(-1)).min(1) < 15
-    return float(parecido.mean()) < 0.2
+def rec_carregar(i=0):
+    """Abre o processo de recorte do trabalhador i (uma vez; de novo se morreu), fora do rec_lock, e espera o "pronto".
+    Devolve o registro do filho. Erro: rec["erro"] com o motivo e exceção (nova tentativa depois de REC_ERRO_SEG)."""
+    if _rec_falso() is not None:
+        return None
+    with rec_filhos_lock:
+        f = rec_filhos.setdefault(i, {"p": None, "fila": None, "lock": threading.Lock(), "seq": 0})
+    with f["lock"]:
+        return _rec_abrir(f)
 
 
-def rec_limpa_mascara(masks, foto=None):
-    """Regras 12 e 13. masks = [isnet-general-use, u2net_human_seg] (PIL L do mesmo tamanho); foto = a imagem RGB do
-    mesmo tamanho (opcional: sem ela, furo sem sinal nenhum fica aberto).
-    Máximo das duas máscaras -> níveis 0,3-0,9. Vai junto o que está NA pessoa (Eduardo, 30/10): entra o que tem algum sinal
-    (>= 0,04) ligado a um ponto que a máscara de pessoa pega com alfa alto; objeto solto ao lado (taça num pedestal) sai,
-    mesmo perto. Limite: o que encosta ou se sobrepõe à pessoa na imagem fica ligado a ela e vai junto, segurado ou não.
-    Miolo sólido (sinal >= 0,10 ou cercado por ele), furos de objeto preenchidos, só a borda fica macia."""
-    import time as _tm
-    import numpy as np
-    from scipy import ndimage
-    S = np.ones((3, 3), dtype=bool)
-    bruta = np.maximum.reduce([np.asarray(x, dtype=np.float32) / 255.0 for x in masks])   # se uma das duas pega com alfa alto, fica
-    pessoa = np.asarray(masks[-1], dtype=np.float32) / 255.0
-    H0, W0 = bruta.shape
-    lado = max(H0, W0)
-    saida = np.zeros((H0, W0), dtype=np.uint8)
-    sinal = bruta >= REC_SINAL
-    # semente: pessoa com alfa alto; se o modelo de pessoa veio fraco, o que ele tem de mais forte; se não viu ninguém,
-    # o que uma das máscaras pega com alfa alto (como antes da v88): melhor levar a foto do que tirá-la da venda
-    semente_px = sinal & (pessoa >= REC_PESSOA)
-    if not semente_px.any():
-        pmax = float(pessoa.max()) if pessoa.size else 0.0
-        if pmax > 0.3:
-            semente_px = sinal & (pessoa >= 0.8 * pmax)
-        if not semente_px.any():
-            semente_px = bruta >= REC_PESSOA
-    if not semente_px.any():
-        return saida
-    # trabalha só no retângulo do que tem sinal, com folga (o resto é fundo): mais rápido
-    ys, xs = np.nonzero(sinal)
-    pad = int(0.13 * lado) + 10
-    y0, y1, x0, x1 = max(0, ys.min() - pad), min(H0, ys.max() + pad + 1), max(0, xs.min() - pad), min(W0, xs.max() + pad + 1)
-    bruta, sinal, semente_px = bruta[y0:y1, x0:x1], sinal[y0:y1, x0:x1], semente_px[y0:y1, x0:x1]
-    m = np.clip((bruta - 0.3) / 0.6, 0.0, 1.0)                 # abaixo de 0,3 vira 0; acima de 0,9 vira 1
-    rot0, n0 = ndimage.label(sinal, structure=S)
-    semente = np.zeros(n0 + 1, dtype=bool)
-    semente[np.unique(rot0[semente_px])] = True
-    semente[0] = False
-    dentro = semente[rot0]
-    m = m * dentro
-    # furos fechados: sinal médio >= 0,03 é objeto (partes fracas da bandeira, taça translúcida); sinal ~0 decide pela cor
-    cheio = ndimage.binary_fill_holes(dentro)
-    rb, nb = ndimage.label(cheio & ~dentro, structure=S)
-    furos = np.zeros_like(dentro)
-    if nb:
-        idx = np.arange(1, nb + 1)
-        ok = np.zeros(nb + 1, dtype=bool)
-        ok[1:] = ndimage.mean(bruta, rb, idx) >= REC_FURO
-        area = np.bincount(rb.ravel(), minlength=nb + 1)
-        cand = np.flatnonzero(~ok & (area >= max(30, 1e-5 * H0 * W0)))
-        cand = cand[cand > 0]
-        if foto is not None and len(cand) and tuple(foto.size) == (W0, H0):
-            from PIL import ImageFilter
-            cand = cand[np.argsort(-area[cand], kind="stable")][:REC_FUROS_MAX]   # teto de custo: os maiores primeiro
-            rgb = np.asarray(foto.convert("RGB").filter(ImageFilter.BoxBlur(2)), dtype=np.float32)[y0:y1, x0:x1]
-            exterior = ~cheio
-            dext = ndimage.distance_transform_edt(exterior)
-            rng = np.random.default_rng(0)
-            fatias = ndimage.find_objects(rb)
-            folga = int(0.12 * lado) + 8
-            hh, ww = rb.shape
-            limite = _tm.monotonic() + REC_FUROS_SEG
-            for k in cand:
-                if _tm.monotonic() > limite:
-                    break                                       # orçamento esgotado: o resto fica aberto
-                sy, sx = fatias[k - 1]
-                cy = slice(max(0, sy.start - folga), min(hh, sy.stop + folga))
-                cx = slice(max(0, sx.start - folga), min(ww, sx.stop + folga))
-                ok[k] = _rec_furo_e_objeto(rb[cy, cx] == k, dentro[cy, cx], rgb[cy, cx], exterior[cy, cx], dext[cy, cx], lado, rng)
-        furos = ok[rb]
-    dentro |= furos
-    # miolo sólido: sinal >= 0,10 (franja fraca de fora, ex. teto do estádio atrás da bandeira, não vira sólido),
-    # reentrâncias estreitas fechadas e o que fica cercado por ele (sem furo de fundo dentro)
-    nucleo = (dentro & (bruta >= REC_NUCLEO)) | furos
-    r = max(2.0, REC_FECHA * lado)
-    nucleo |= dentro & (ndimage.distance_transform_edt(ndimage.distance_transform_edt(~nucleo) <= r) > r)
-    rn, nn = ndimage.label(ndimage.binary_fill_holes(nucleo) & ~nucleo, structure=S)
-    solido = nucleo
-    if nn:
-        idn = np.arange(1, nn + 1)
-        fora = ndimage.sum(~dentro, rn, idn)
-        okn = np.zeros(nn + 1, dtype=bool)
-        okn[1:] = fora <= 0.03 * np.bincount(rn.ravel(), minlength=nn + 1)[1:]
-        solido = nucleo | okn[rn]
-    funda = ndimage.distance_transform_edt(solido) > max(2.0, 0.002 * lado)   # só a borda (até 0,2% do lado) fica macia
-    m[funda | furos] = 1.0
-    dentro |= solido
-    rot, n = ndimage.label(dentro, structure=S)
-    if n > 1:
-        idr = np.arange(1, n + 1)
-        areas = np.bincount(rot.ravel(), minlength=n + 1).astype(np.float64)
-        areas[0] = 0
-        grandes = areas >= 0.03 * areas.max()                  # pedaço grande fica sempre (na dúvida, mantém)
-        com_pessoa = np.zeros(n + 1, dtype=bool)
-        com_pessoa[np.unique(rot[semente_px])] = True
-        grandes |= com_pessoa & (areas >= 0.002 * areas.max())  # pedaço com pessoa não cai por tamanho (criança separada a 1%);
-                                                                # só ponto solto do modelo (< 0,2% do maior) não conta como pessoa
-        grandes[0] = False
-        dist = ndimage.distance_transform_edt(~grandes[rot])
-        manter = grandes.copy()
-        # pequeno só fica se encosta (ou quase) no grupo: menor distância de cada pedaço de uma vez (sem laço por pedaço)
-        manter[1:] |= ndimage.minimum(dist, rot, idr) <= max(4.0, 0.015 * lado)
-        m = m * manter[rot]
-    if len(masks) > 1:
-        isn = np.asarray(masks[0], dtype=np.float32)[y0:y1, x0:x1] / 255.0
-        if foto is not None and tuple(foto.size) == (W0, H0):
-            from PIL import ImageFilter
-            rgb = np.asarray(foto.convert("RGB").filter(ImageFilter.BoxBlur(2)), dtype=np.float32)[y0:y1, x0:x1]
-            m, tirado = _rec_encostados(m, isn, pessoa[y0:y1, x0:x1], bruta, rgb, lado)
-            dentro &= ~tirado                                   # o que saiu não liga mais nada à pessoa
-    liga = (m >= 0.5) | (dentro & (bruta >= REC_NUCLEO))
-    m = _rec_ilhas(m, semente_px, liga)
-    m = _rec_pontes(m, semente_px, liga, lado)
-    saida[y0:y1, x0:x1] = (m * 255.0 + 0.5).astype(np.uint8)
-    return saida
+def _rec_abrir(f):
+    """Com o f["lock"]: o filho vivo, ou abre um novo."""
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:                             # morreu entre uma foto e outra
+        motivo = _rec_filho_erro(f["p"], "o recorte parou")
+        f["p"] = None
+        _rec_erro(motivo)
+        raise RuntimeError(motivo)
+    env = dict(os.environ)
+    env.pop("PYTHONSTARTUP", None)
+    try:
+        p = subprocess.Popen([sys.executable, REC_FILHO, "--inbox", INBOX, "--recortes", RECORTES, "--modelos", MODELOS],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1,
+                             encoding="utf-8", env=env, close_fds=True)
+    except Exception as ex:
+        _rec_erro("erro ao abrir o recorte: %s" % str(ex)[:160])
+        raise
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila)
+    try:
+        j = fila.get(timeout=REC_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "os modelos demoraram mais de %d s para abrir" % REC_CARGA_SEG}
+    if j is None:
+        motivo = _rec_filho_erro(p, "o recorte parou ao abrir os modelos")
+        _rec_filho_matar(f)
+        _rec_erro(motivo)
+        raise RuntimeError(motivo)
+    if not j.get("pronto"):
+        _rec_filho_matar(f)
+        _rec_erro("erro ao abrir os modelos: %s" % str(j.get("erro") or "")[:160])
+        raise RuntimeError(rec["erro"])
+    prov = j.get("provedor") if j.get("provedor") in ("cuda", "cpu", "directml") else "cpu"
+    with rec_lock:
+        if rec["carregado"] is False and rec.get("_abriu"):
+            rec["reinicios"] += 1
+        rec.update(carregado=True, erro=None, provedor=prov, carga_ms=j.get("carga_ms"), _abriu=True)
+    if REC_CONC == 2 and prov != "cuda":
+        print("  recorte: ETERNA_RECORTE_CONC=2 ignorado (só com a placa de vídeo; aqui é %s)" % prov)
+    print("  recorte: modelos abertos em %.1f s (%s)" % ((j.get("carga_ms") or 0) / 1000.0, "placa de vídeo" if prov == "cuda" else prov))
+    return f
 
 
-def _rec_encostados(m, isn, pessoa, bruta, rgb, lado):
-    """Pedaço do fundo que só encosta na pessoa (ex.: a caixa escura da entrada do túnel embaixo do cotovelo, 30/10).
-    Devolve (máscara, o que saiu). Sai só com as quatro provas juntas (na dúvida, mantém):
-    1) só o ISNet o pega (alfa >= 0,5; modelo de pessoa com média < 0,15) e é pequeno (< 1,5% da pessoa);
-    2) encosta curto: comprimento do contato / raiz da área < 2 (medida sem escala; a caixa tem 1,3);
-    3) o fundo continua por ele: em 30% ou mais da borda dele com o fundo, a cor de dentro e a de fora são iguais
-       (a caixa é estrutura do estádio; objeto segurado contrasta com o fundo em volta: 0 a 15% nas fotos de 30/10);
-    4) a foto mostra uma borda entre ele e a pessoa: a cor dele junto do contato difere da cor da pessoa ali (>= 15).
-       Foto sem informação (tudo da mesma cor) não prova nada: fica."""
-    import numpy as np
-    from scipy import ndimage
-    S = np.ones((3, 3), dtype=bool)
-    pes = pessoa >= 0.5
-    npes = int(pes.sum())
-    nada = np.zeros(m.shape, dtype=bool)
-    if not npes:
-        return m, nada
-    dp = ndimage.distance_transform_edt(~pes)
-    longe = dp > 2.0                                                 # fora da pessoa engordada 2 px
-    lab, n = ndimage.label((isn >= 0.5) & longe & (m > 0), structure=S)
-    if not n:
-        return m, nada
-    area = np.bincount(lab.ravel(), minlength=n + 1)
-    minimo = max(30, 300 * (lado / 1600.0) ** 2)
-    cand = [k for k in np.argsort(-area[1:])[:32] + 1 if minimo <= area[k] < REC_ENC_AREA * npes]
-    if not cand:
-        return m, nada
-    media_pes = ndimage.mean(pessoa, lab, np.arange(n + 1))
-    dentro_pes = ndimage.distance_transform_edt(pes)
-    fatias = ndimage.find_objects(lab)
-    hh, ww = lab.shape
-    tirar = np.zeros(n + 1, dtype=bool)
-    import time as _tm
-    limite = _tm.monotonic() + REC_ENC_SEG
-    for k in cand:
-        if _tm.monotonic() > limite:
-            break                                               # sem tempo: o resto fica (na dúvida, mantém)
-        if media_pes[k] >= REC_ENC_PESSOA:
-            continue
-        sy, sx = fatias[k - 1]
-        cy = slice(max(0, sy.start - 12), min(hh, sy.stop + 12))
-        cx = slice(max(0, sx.start - 12), min(ww, sx.stop + 12))
-        c, dpc, cor = lab[cy, cx] == k, dp[cy, cx], rgb[cy, cx]
-        contato = int((c & (dpc <= 3.5)).sum())                     # pontos dele colados na pessoa
-        if not contato or contato >= REC_ENC_CONTATO * np.sqrt(area[k]):
-            continue
-        d, ind = ndimage.distance_transform_edt(~c, return_indices=True)
-        O = (d >= 2.5) & (d <= 4.5) & (bruta[cy, cx] < 0.3) & (dpc > 6)   # borda dele com o fundo, longe da pessoa
-        oy, ox = np.nonzero(O)
-        if len(oy) < 40:
-            continue
-        qy, qx = ind[0][O], ind[1][O]
-        vy, vx = qy - oy, qx - ox
-        nn = np.hypot(vy, vx) + 1e-6
-        iy = np.clip(np.round(qy + vy / nn * 3).astype(int), 0, c.shape[0] - 1)
-        ix = np.clip(np.round(qx + vx / nn * 3).astype(int), 0, c.shape[1] - 1)
-        v = c[iy, ix]
-        if v.sum() < 40:
-            continue
-        dif = np.sqrt(((cor[oy, ox][v] - cor[iy, ix][v]) ** 2).sum(1))
-        if float((dif < 20).mean()) < REC_ENC_FUNDO:
-            continue
-        perto_c = d <= 8
-        lado_obj = c & (dpc <= 8)
-        lado_pes = pes[cy, cx] & perto_c & (dentro_pes[cy, cx] >= 2)
-        if lado_obj.sum() < 4 or lado_pes.sum() < 4:
-            continue
-        corte = float(np.sqrt(((np.median(cor[lado_obj], 0) - np.median(cor[lado_pes], 0)) ** 2).sum()))
-        tirar[k] = corte >= REC_ENC_CORTE
-    if not tirar.any():
-        return m, nada
-    sai = tirar[lab]
-    perto = ndimage.distance_transform_edt(~sai) <= 4.0
-    sai |= perto & longe                                            # e a borda macia dele
-    m = m * ~sai
-    # na faixa de 2 px junto da pessoa, onde o pedaço encostava, vale o alfa do modelo de pessoa (sem filete do fundo)
-    faixa = perto & ~longe & ~pes
-    m[faixa] = np.minimum(m[faixa], np.clip((pessoa[faixa] - 0.3) / 0.6, 0.0, 1.0))
-    return m, sai
+def rec_filho_recortar(pid, origem, destino, i=0):
+    """Manda a foto ao processo de recorte e espera (até REC_ESPERA_FILHO). Devolve a resposta {"ok", "ms", "pico_mb"}.
+    Filho que morre no meio: rec["erro"] com o motivo e exceção (o próximo pedido, passado REC_ERRO_SEG, reabre)."""
+    with rec_filhos_lock:
+        f = rec_filhos.setdefault(i, {"p": None, "fila": None, "lock": threading.Lock(), "seq": 0})
+    with f["lock"]:
+        _rec_abrir(f)
+        f["seq"] += 1
+        rid = "%s.%d" % (pid, f["seq"])
+        try:
+            f["p"].stdin.write(json.dumps({"id": rid, "origem": origem, "destino": destino, "trab": REC_TRAB}) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            motivo = _rec_filho_erro(f["p"], "o recorte parou")
+            _rec_filho_matar(f)
+            _rec_erro(motivo)
+            raise RuntimeError(motivo)
+        fim = time.time() + REC_ESPERA_FILHO
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _rec_filho_matar(f)
+                _rec_erro("recorte demorou mais de %d s numa foto: reiniciado" % REC_ESPERA_FILHO)
+                raise RuntimeError("tempo")
+            if j is None:
+                motivo = _rec_filho_erro(f["p"], "o recorte parou no meio de uma foto")
+                f["p"] = None
+                _rec_erro(motivo)
+                raise RuntimeError(motivo)
+            if j.get("id") == rid:
+                break
+    if not j.get("ok"):
+        raise ValueError(str(j.get("erro") or "não deu para recortar")[:200])
+    with rec_lock:
+        rec["etapas_ms"] = {k: int(v) for k, v in (j.get("ms") or {}).items() if isinstance(v, (int, float))}
+        if isinstance(j.get("pico_mb"), (int, float)):
+            rec["pico_mb"] = int(j["pico_mb"])
+    return j
 
 
-def _rec_ilhas(m, semente_px, liga=None):
-    """Depois da máscara pronta: o que fica com alfa >= 0,5 tem que estar ligado à pessoa pelo alfa >= 0,5 ou pelo miolo
-    (`liga`: sinal >= 0,10 dentro do grupo; a ponta da bandeira presa por tecido fino e fraco continua ligada).
-    Ilha pequena solta (ex.: pedaço do teto ao lado da barba, ligado à pessoa só por franja de 0,08) sai, com a borda macia
-    em volta dela. Ilha grande (3% ou mais da pessoa) fica: na dúvida, mantém."""
-    import numpy as np
-    from scipy import ndimage
-    forte = m >= 0.5
-    if liga is None:
-        liga = forte
-    forte = liga | forte
-    # fio de 1 px (reto ou diagonal) não liga ilha à pessoa: rotula o que sobra depois de abrir 1 px (cruz 3x3);
-    # o que a abertura tirou vai com o pedaço mais perto
-    aberto = ndimage.binary_opening(forte, structure=ndimage.generate_binary_structure(2, 1))
-    lab, n = ndimage.label(aberto, structure=np.ones((3, 3), dtype=bool))
-    forte = aberto
-    if n < 2:
-        return m
-    area = np.bincount(lab.ravel(), minlength=n + 1).astype(np.float64)
-    pessoa = np.zeros(n + 1, dtype=bool)
-    pessoa[np.unique(lab[semente_px & forte])] = True
-    pessoa[0] = False
-    if not pessoa.any():
-        return m                                               # semente sem alfa forte: não decide nada aqui
-    manter = pessoa | (area >= 0.03 * area[pessoa].max())
-    manter[0] = False
-    if manter[1:].all():
-        return m
-    # cada ponto macio vai com a ilha forte mais perto: a borda da ilha descartada sai junto com ela
-    _, ind = ndimage.distance_transform_edt(~forte, return_indices=True)
-    perto = lab[ind[0], ind[1]]
-    return m * manter[perto]
-
-
-def _rec_geo(origem, L, passos, limite, alvo=None):
-    """Distância geodésica (em passos de 8-vizinhança) a partir de `origem`, andando só por `L`, até `passos` passos.
-    Com `alvo`, para no primeiro passo em que a frente toca o alvo. Devolve (distâncias, passo em que tocou o alvo ou
-    None); (None, None) se o relógio `limite` (time.monotonic) acabar no meio."""
-    import time as _tm
-    import numpy as np
-    from scipy import ndimage
-    tudo3 = np.ones((3, 3), dtype=bool)
-    d = np.full(L.shape, np.inf, dtype=np.float32)
-    atual = origem.copy()
-    d[atual] = 0
-    if alvo is not None and (atual & alvo).any():
-        return d, 0
-    for passo in range(1, passos + 1):
-        if _tm.monotonic() > limite:
-            return None, None
-        novo = ndimage.binary_dilation(atual, structure=tudo3, mask=L)
-        frente = novo & ~atual
-        if not frente.any():
-            break
-        d[frente] = passo
-        atual = novo
-        if alvo is not None and (frente & alvo).any():
-            return d, passo
-    return d, None
-
-
-def _rec_pontes(m, semente_px, liga, lado):
-    """Pedaço opaco que ficou porque está ligado à pessoa só pelo miolo fraco (ex.: ponta de bandeira afastada pelo vento,
-    presa por tecido de 0,2, que pelos níveis sairia transparente): o caminho mais curto de miolo entre ele e a pessoa fica
-    opaco, para a ponta ficar presa de verdade (e não ser apagada como pedaço solto na máscara final). Até 16 pedaços,
-    caminho de até 5% do lado e no máximo 1,5 s (o que não der tempo fica como está)."""
-    import time as _tm
-    import numpy as np
-    from scipy import ndimage
-    limite = _tm.monotonic() + REC_PONTES_SEG
-    cruz = ndimage.generate_binary_structure(2, 1)
-    tudo3 = np.ones((3, 3), dtype=bool)
-    forte = ndimage.binary_opening(m >= 0.5, structure=cruz)
-    lab, n = ndimage.label(forte, structure=tudo3)
-    if n < 2:
-        return m
-    pes = np.zeros(n + 1, dtype=bool)
-    pes[np.unique(lab[semente_px & forte])] = True
-    pes[0] = False
-    if not pes.any():
-        return m
-    area = np.bincount(lab.ravel(), minlength=n + 1)
-    ilhas = [k for k in np.argsort(-area[1:])[:16] + 1 if not pes[k] and area[k] >= 20]
-    if not ilhas:
-        return m
-    L = liga | forte
-    fatias = ndimage.find_objects(lab)
-    R = int(0.05 * lado) + 4
-    hh, ww = m.shape
-    for k in ilhas:
-        if _tm.monotonic() > limite:
-            break                                               # sem tempo: o resto fica como está
-        sy, sx = fatias[k - 1]
-        cy = slice(max(0, sy.start - R), min(hh, sy.stop + R))
-        cx = slice(max(0, sx.start - R), min(ww, sx.stop + R))
-        Lc, labc = L[cy, cx], lab[cy, cx]
-        alvo = pes[labc] & forte[cy, cx]
-        if not alvo.any():
-            continue
-        di, toque = _rec_geo(labc == k, Lc, R, limite, alvo)
-        if di is None:
-            break
-        if toque is None:
-            continue                                            # a pessoa está longe demais por dentro do miolo
-        dp, _ = _rec_geo(alvo, Lc, toque, limite)              # do outro lado, só até o mesmo número de passos
-        if dp is None:
-            break
-        soma = di + dp
-        melhor = float(soma[Lc].min())
-        ponte = Lc & (soma <= melhor + 1) & ~(m[cy, cx] >= 0.5)
-        ponte = ndimage.binary_dilation(ponte, structure=tudo3, mask=Lc)
-        sub = m[cy, cx]
-        sub[ponte] = 1.0
-    return m
-
-
-def rec_sem_soltos(a):
-    """Máscara final (uint8, depois de voltar ao tamanho e perder 1 px de borda): pedaço opaco (>= 128) com menos de 0,5%
-    da área do maior que ficou solto sai, com a borda macia em volta (até 3 px). Ex.: o pedaço do teto ao lado da barba,
-    preso por um fio de 1 px que a redução e o MinFilter cortaram."""
-    import numpy as np
-    from scipy import ndimage
-    lab, n = ndimage.label(a >= 128, structure=np.ones((3, 3), dtype=bool))
-    if n < 2:
-        return a
-    area = np.bincount(lab.ravel(), minlength=n + 1)
-    area[0] = 0
-    pequeno = area < 0.005 * area.max()                         # bem pequeno: pessoa separada (criança a 1%) nunca cai aqui
-    pequeno[0] = False
-    if not pequeno.any():
-        return a
-    sai = pequeno[lab]
-    ys, xs = np.nonzero(sai)
-    y0, y1, x0, x1 = max(0, ys.min() - 4), min(a.shape[0], ys.max() + 5), max(0, xs.min() - 4), min(a.shape[1], xs.max() + 5)
-    sub = sai[y0:y1, x0:x1]
-    perto = sub | ((ndimage.distance_transform_edt(~sub) <= 3.0) & (lab[y0:y1, x0:x1] == 0))   # ele e a borda macia dele
-    a = a.copy()
-    a[y0:y1, x0:x1][perto] = 0
-    return a
+def rec_versao_cache():
+    """Na partida (antes do rec_pre_loop): recorte feito por outra versão do recorte não serve. Se ~/Eterna/recortes/.versao
+    não é REC_VERSAO, apaga só os *.png e *.tmp da pasta (link simbólico é desfeito, nunca seguido) e grava a marca."""
+    marca = os.path.join(RECORTES, ".versao")
+    try:
+        with open(marca, encoding="utf8") as f:
+            if f.read().strip() == REC_VERSAO:
+                return 0
+    except OSError:
+        pass
+    n = 0
+    try:
+        os.makedirs(RECORTES, exist_ok=True)
+        with os.scandir(RECORTES) as it:
+            for e in it:
+                if not e.name.endswith((".png", ".tmp")):
+                    continue
+                try:
+                    if e.is_symlink() or e.is_file(follow_symlinks=False):
+                        os.remove(e.path)              # num link, apaga o link (o alvo fica)
+                        n += 1
+                except OSError:
+                    pass
+        _grava_privado(marca, REC_VERSAO)
+    except OSError as ex:
+        print("  recortes: não troquei a versão do cache (%s)" % str(ex)[:80])
+    if n:
+        print("  recortes: %d recorte(s) da versão anterior apagado(s) (agora %s)" % (n, REC_VERSAO))
+    return n
 
 
 def rec_arquivo(pid, lado=REC_LADO_MAX):
@@ -2951,8 +2764,9 @@ def _grava_png(im, destino):
 
 
 def rec_fazer(pid, origem, lado=REC_LADO_MAX):
-    """Recorta a foto `origem` e grava ~/Eterna/recortes/<pid>.png (3000 px) e, se pedido, <pid>_2400.png. Devolve o caminho."""
-    from PIL import Image, ImageOps, ImageFilter
+    """Recorta a foto `origem` e grava ~/Eterna/recortes/<pid>.png (3000 px) e, se pedido, <pid>_2400.png. Devolve o caminho.
+    v97: o de 3000 sai do processo de recorte (rec_filho_recortar, BiRefNet + regra); o de 2400 é cópia reduzida dele."""
+    from PIL import Image
     lado = REC_LADO_MAX if lado not in REC_LADOS else lado
     destino = rec_arquivo(pid, lado)
     if os.path.exists(destino):
@@ -2975,26 +2789,8 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
         return destino
     if not os.path.exists(cheio):
         t0 = time.time()
-        sess = rec_carregar()
-        with Image.open(origem) as im0:
-            if im0.size[0] * im0.size[1] > MAX_PIXELS:
-                raise ValueError("imagem acima de %d MP" % (MAX_PIXELS // 1_000_000))
-            im = ImageOps.exif_transpose(im0).convert("RGB")   # o navegador mostra a foto já girada pelo EXIF; o PNG não tem EXIF
-        if max(im.size) > REC_LADO_MAX:
-            im.thumbnail((REC_LADO_MAX, REC_LADO_MAX), Image.LANCZOS)
-        trab = im.copy()
-        trab.thumbnail((REC_TRAB, REC_TRAB), Image.LANCZOS)
-        masks = [s.predict(trab)[0].convert("L") for s in sess]
-        mascara = Image.fromarray(rec_limpa_mascara(masks, trab), "L")   # a foto em cor decide os furos sem sinal (borda falsa)
-        del trab
-        if mascara.size != im.size:
-            mascara = mascara.resize(im.size, Image.LANCZOS)
-        mascara = mascara.filter(ImageFilter.MinFilter(3))       # 1 px de borda a menos: sem halo do fundo
-        import numpy as np
-        mascara = Image.fromarray(rec_sem_soltos(np.asarray(mascara)), "L")   # o fio que segurava uma ilha pode ter sumido
-        im = Image.composite(im, Image.new("RGB", im.size), mascara.point(lambda v: 255 if v else 0))   # fora da pessoa, RGB zerado
-        im.putalpha(mascara)
-        _grava_png(im, cheio)
+        os.makedirs(RECORTES, exist_ok=True)
+        rec_filho_recortar(pid, origem, cheio, getattr(_rec_tl, "i", 0))   # MAX_PIXELS, EXIF, 3000 px, RGB zerado fora, 600: no filho
         ms = int((time.time() - t0) * 1000)
         with rec_lock:
             rec["feitos"] += 1
@@ -3054,7 +2850,9 @@ def limpar_recortes(agora=None, guardar=None):
     return n
 
 
-def rec_trabalho():
+def rec_trabalho(i=0):
+    """Trabalhador i da fila de recorte (cada um com o seu processo de recorte: _rec_tl.i)."""
+    _rec_tl.i = i
     while True:
         _, _, job = rec_fila.get()
         with rec_lock:
@@ -3115,8 +2913,8 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
     with lock:
         na_lib = pid in lib                          # foto que sai da biblioteca durante o recorte não deixa arquivo
     with rec_lock:
-        while len(rec_threads) < REC_CONC:
-            t = threading.Thread(target=rec_trabalho, daemon=True)
+        while len(rec_threads) < (2 if REC_CONC == 2 and rec.get("provedor") == "cuda" else 1):
+            t = threading.Thread(target=rec_trabalho, args=(len(rec_threads),), daemon=True)
             t.start()
             rec_threads.append(t)
         job = rec_jobs.get(pid)
@@ -3149,7 +2947,7 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
 
 
 def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT):
-    """Põe o recorte na fila (1 ou 2 de cada vez) e espera. Devolve (caminho, erro)."""
+    """Põe o recorte na fila (1 de cada vez; 2 só com CUDA, rec_conc) e espera. Devolve (caminho, erro)."""
     lado = lado if lado in REC_LADOS else REC_LADO_MAX
     job, erro = rec_enfileirar(pid, origem, lado, prio)
     if erro:
@@ -3170,7 +2968,16 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT
 def rec_pre_escolha(fotos, x=None):
     """Só as fotos que o Checkout vai mostrar com fundo de IA. v93 (plano dos cliques de IA, A14): as bases de IA da
     sessão (x["ia"]) quando ela tem; senão as 2 primeiras da sessão. O extra por pessoa (até 10 recortes por sessão) saiu:
-    desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade."""
+    desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade.
+    v97: com o recorte na CPU (lento: 45 a 75 s por foto), só as bases; sem as 2 normais do plano B (a fila não cresce
+    sem fim). Leva cuja visita já tem as bases (D4): nada (o Checkout monta com as bases da visita). Leva sem bases por
+    outro motivo (poucas fotos, volante): as 2 primeiras, como antes."""
+    if x is not None and (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
+        return []
+    with rec_lock:
+        cpu = rec.get("provedor") == "cpu"
+    if x is not None and x.get("ia") and cpu:
+        return list(x["ia"])
     if x is not None and x.get("ia"):
         # revisão (A14): as bases e, com a prioridade mais baixa, as 2 primeiras fotos normais, o plano B do Checkout quando as
         # duas bases são ruins (lojaAIAntigo); só usa a máquina livre
@@ -3196,7 +3003,7 @@ def rec_pre_loop():
                 with sess_lock:
                     ss = sorted((x for x in sess.values() if x["status"] == "fechada" and not x.get("removida") and x["dia"] in dias),
                                 key=lambda x: -(x.get("fechada_em") or 0))
-                    fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or [])}) for x in ss]
+                    fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {})}) for x in ss]
                 pids = []
                 for fs, xx in fotos_ss:
                     pids += rec_pre_escolha(fs, xx)
@@ -7138,6 +6945,7 @@ def main():
         imp_retomar()
         threading.Thread(target=imp_monitor, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
+    rec_versao_cache()                  # v97: recorte de versão anterior sai antes do recorte antecipado
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=metricas_loop, daemon=True).start()
@@ -7150,7 +6958,7 @@ def main():
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     _rok, _rmot = rec_estado()
-    print("  Recorte local:     " + ("pronto (ISNet + u2net_human_seg, carrega na primeira foto)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
+    print("  Recorte local:     " + ("pronto (BiRefNet + a regra do que encosta na pessoa, num processo à parte; abre na partida)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")

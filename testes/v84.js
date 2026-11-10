@@ -37,11 +37,15 @@ for nome,(c,r) in (('${PIDS.meio}',(2,0)),('${PIDS.inteiro}',(3,0)),('${PIDS.ocu
   const FOTO={meio:fs.readFileSync(path.join(inbox,PIDS.meio+'_IMG.jpg')),inteiro:fs.readFileSync(path.join(inbox,PIDS.inteiro+'_IMG.jpg'))};
 
   // ---------- 2. agente com rembg de verdade ----------
-  const temRembg=(()=>{try{execFileSync('python3',['-c','import rembg, onnxruntime'],{stdio:'ignore'});}catch(e){return false;}
-    return ['isnet-general-use','u2net_human_seg'].every(n=>fs.existsSync(path.join(REAL_HOME,'.rembg','models',n,n+'.onnx'))||fs.existsSync(path.join(REAL_HOME,'.u2net',n+'.onnx')));})();
+  // v97: o recorte real é o BiRefNet (passa de 4,7 GB): só com ETERNA_RECORTE_REAL=1 e os 4 modelos (o MoveNet em
+  // ETERNA_RECORTE_MOVENET). A regra nova tem os testes dela em testes/recorte_birefnet_agente.py.
+  const MOVENET=process.env.ETERNA_RECORTE_MOVENET||'';
+  const temRembg=process.env.ETERNA_RECORTE_REAL==='1'&&fs.existsSync(MOVENET)&&(()=>{try{execFileSync('python3',['-c','import rembg, onnxruntime, cv2'],{stdio:'ignore'});}catch(e){return false;}
+    return ['birefnet-general','isnet-general-use','u2net_human_seg'].every(n=>fs.existsSync(path.join(REAL_HOME,'.rembg','models',n,n+'.onnx')));})();
   const CUT={};
-  if(!temRembg){notas.push('rembg ou modelos ausentes: recorte real pulado');}
-  else{const A=await subir(PORTA,{REMBG_HOME:path.join(REAL_HOME,'.rembg'),U2NET_HOME:path.join(REAL_HOME,'.u2net')},H);procs.push(A.p);
+  if(!temRembg){notas.push('recorte real (BiRefNet) pulado: ETERNA_RECORTE_REAL=1, ETERNA_RECORTE_MOVENET e os modelos em ~/.rembg');}
+  else{fs.mkdirSync(path.join(H,'Eterna','modelos'),{recursive:true});fs.copyFileSync(MOVENET,path.join(H,'Eterna','modelos','movenet_multipose_lightning_1.onnx'));
+    const A=await subir(PORTA,{REMBG_HOME:path.join(REAL_HOME,'.rembg')},H);procs.push(A.p);
     let st=(await req(PORTA,'GET','/status')).j;ok(st.recorte&&st.recorte.ok===true&&st.recorte.carregado===false,'2: /status com recorte pronto e ainda não carregado: '+J(st.recorte));
     ok(/Recorte local:\s+pronto/.test(A.log()),'2: console mostra o recorte: '+A.log().slice(0,600));
     for(const k of ['meio','inteiro','oculos']){const t0=Date.now();const r=await req(PORTA,'POST','/recorte',{body:{pid:PIDS[k]}});const ms=Date.now()-t0;
