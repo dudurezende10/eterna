@@ -5792,7 +5792,20 @@ def posto_revogar(pid, por="", ip=""):
             db.commit()
         finally:
             db.close()
+    with posto_par_lock:                     # o pareamento repetido não pode devolver um posto revogado
+        for k in [k for k, v in posto_recentes.items() if v[2]["id"] == str(pid)]:
+            posto_recentes.pop(k, None)
     return bool(n)
+
+
+def posto_ativo(pid):
+    """True se o posto existe e não foi revogado."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            return bool(db.execute("select 1 from posto where id=? and revogado_em is null", (str(pid),)).fetchone())
+        finally:
+            db.close()
 
 
 def posto_convite_novo(nome):
@@ -7009,6 +7022,8 @@ class H(BaseHTTPRequestHandler):
             with posto_par_lock:                 # clique repetido (mesma pessoa, aparelho e nome em 15 s): o mesmo posto, sem criar outro
                 for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:
                     posto_recentes.pop(k, None)
+                if chave in posto_recentes and not posto_ativo(posto_recentes[chave][2]["id"]):
+                    posto_recentes.pop(chave, None)
                 if chave in posto_recentes:
                     _, token, p = posto_recentes[chave]
                 else:

@@ -86,6 +86,22 @@ try:
     ok(st == 401, "posto revogado ainda responde: %s" % st)
     st, j, _ = pede("/postos/revogar", {"id": pid}, adm)
     ok(st == 404, "revogar de novo: %s" % st)
+    # parear de novo o mesmo nome logo depois de revogar: posto novo, que responde em /postos/eu
+    st, j, ck = pede("/postos/parear", {"nome": "Caixa <2>"}, adm)
+    ok(st == 200 and j.get("posto", {}).get("id") not in (None, pid) and ck.split(";")[0] != cp, "parear depois de revogar devolveu o posto revogado: %s %s" % (st, j))
+    st, j3, _ = pede("/postos/eu", cookie=ck.split(";")[0])
+    ok(st == 200 and j3.get("posto", {}).get("id") == j.get("posto", {}).get("id"), "/postos/eu do posto pareado depois de revogar: %s %s" % (st, j3))
+    # revogado por fora do /postos/revogar (direto no banco): o pareamento repetido também não reaproveita
+    st, j, ck = pede("/postos/parear", {"nome": "Caixa Z"}, adm)
+    pz = j.get("posto", {}).get("id")
+    db = sqlite3.connect(m.ESTADO_DB)
+    db.execute("update posto set revogado_em=? where id=?", (time.time(), pz))
+    db.commit()
+    db.close()
+    st, j, ck = pede("/postos/parear", {"nome": "Caixa Z"}, adm)
+    ok(st == 200 and j.get("posto", {}).get("id") not in (None, pz), "pareamento repetido reaproveitou posto revogado no banco: %s %s" % (st, j))
+    st, j, _ = pede("/postos/eu", cookie=ck.split(";")[0])
+    ok(st == 200, "/postos/eu depois de parear de novo: %s %s" % (st, j))
     # CA4: link do --parear-posto vale uma vez e por 10 min
     saida = []
     m.print = lambda *a: saida.append(" ".join(str(x) for x in a))
@@ -101,7 +117,7 @@ try:
     st, j, ck = pede("/postos/aceitar", form="c=" + codigo, extra={"X-Eterna": ""})
     ok(st == 200 and ck.startswith("eterna_posto=") and "Checkout 1" in j.get("html", ""), "botão do link pareia: %s %s" % (st, ck))
     st, j, _ = pede("/postos/eu", cookie=ck.split(";")[0])
-    ok(st == 200 and j["posto"]["num"] == 2, "posto do link: %s %s" % (st, j))
+    ok(st == 200 and j["posto"]["nome"] == "Checkout 1" and j["posto"]["num"] == 5, "posto do link: %s %s" % (st, j))
     st, j, ck2 = pede("/postos/aceitar", form="c=" + codigo)
     ok(st == 410 and not ck2, "link usado de novo deveria dar 410: %s" % st)
     ok(pede(rota)[0] == 410, "GET do link usado: 410")
