@@ -14,7 +14,11 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const TAMANHOS=[[1280,720],[1366,768],[1440,900],[1536,864],[1600,900],[1920,1080],[1366,657],[1536,730],[1920,969],[390,844]];
 const UMA_TELA={camera:1,'camera ligada':1,codigo:1,escolha:1,'escolha marcada':1,pronto:1,valor:1,minhas:1,final:1};
 const shot=async(pg,nome)=>{await pg.screenshot({path:`${PR}/${nome}`});if(SHOTS)await pg.screenshot({path:`${SHOTS}/${nome}`});};
-const portaLivre=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p));});});
+// portas de teste a partir de 25000 (as baixas e a faixa 24000 são de outras frentes)
+const portaUsada=p=>new Promise(r=>{const s=net.createServer();s.once('error',()=>r(true));s.listen(p,'127.0.0.1',()=>s.close(()=>r(false)));});
+const portaLivre=async()=>{for(let p=25000+Math.floor(Math.random()*400);p<26000;p++)if(!(await portaUsada(p)))return p;throw new Error('sem porta livre');};
+const servePasta=async dir=>{const p=await portaLivre();const sv={p:spawn('python3',['-m','http.server',String(p),'--bind','127.0.0.1'],{cwd:dir,stdio:'ignore'}),dir,porta:p};servidores.push(sv);await sleep(800);return sv;};
+const servidores=[];
 (async()=>{const b=await chromium.launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});const errs=[];const fails=[];let n=0;let velho=null;
 let ult="";const ok=(c,m)=>{n++;ult=String(m).slice(0,90);if(!c)fails.push(m);};
 try{
@@ -154,7 +158,7 @@ sp=await semPreco(L);ok(!sp.rs&&!sp.nomes.length&&!sp.el,'P2: Pronto sem preço,
 await shot(L,'v96-pronto.png');
 const id1=await pend();
 let rec=await L.evaluate(id=>ETERNA.SIM.caixaDin.find(x=>x.id===id),id1);
-ok(rec&&rec.estado==='aguardando'&&rec.total==null&&rec.meio==null&&rec.escolha&&rec.n===2&&(rec.selected.length+rec.aiSel.length)===2&&!rec.cart.length,'P2: pendência no Posto com as fotos e sem valor: '+JSON.stringify(rec).slice(0,240));
+ok(rec&&rec.estado==='escolha'&&rec.total==null&&rec.meio==null&&rec.escolha&&rec.n===2&&(rec.selected.length+rec.aiSel.length)===2&&!rec.cart.length,'P2: pendência no Posto com as fotos e sem valor: '+JSON.stringify(rec).slice(0,240));
 ok(await L.evaluate(id=>!JSON.parse(localStorage.getItem('eterna.ponto.fila.v1')||'[]').some(e=>e.venda===id),id1),'P2: nada vai ao servidor antes do caixa confirmar');
 // Posto (1366×768): fotos escolhidas, pacotes e meios
 await V.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});await V.waitForTimeout(400);
@@ -210,14 +214,14 @@ await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idV2=await pe
 // S2: tela Pronto/valor parada: volta ao início e o Posto vê "o cliente saiu"; a pendência fica para o caixa decidir
 await L.evaluate(()=>{ETERNA.lojaProntoMs(400);ETERNA.state.kiosk.toque=0;});await sleep(500);await L.evaluate(()=>ETERNA.lojaProntoOcioso());await L.waitForTimeout(200);
 let s2=await L.evaluate(id=>{const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);return {step:ETERNA.state.kiosk.step,ini:!!document.querySelector('[data-act="kiosk-start"]'),est:r.estado,saiu:!!r.saiu};},idV2);
-ok(s2.step==='code'&&s2.ini&&s2.est==='aguardando'&&s2.saiu,'S2: sem toque, volta ao início e a pendência continua, marcada "o cliente saiu": '+JSON.stringify(s2));
+ok(s2.step==='code'&&s2.ini&&s2.est==='escolha'&&s2.saiu,'S2: sem toque, volta ao início e a pendência continua, marcada "o cliente saiu": '+JSON.stringify(s2));
 for(let i=0;i<20;i++){if(await V.evaluate(id=>!!document.querySelector(`[data-pend="${id}"] .pend-saiu`),idV2))break;await sleep(100);}
 ok(await V.evaluate(id=>/saiu da tela/.test((document.querySelector(`[data-pend="${id}"] .pend-saiu`)||{}).innerText||'')&&/saiu da tela do Checkout/.test((document.querySelector('.pend-avisos')||{}).innerText||''),idV2),'S2: o Posto mostra "o cliente saiu"');
 await L.evaluate(()=>ETERNA.lojaProntoMs(180000));
 // toque conta como presença
 await abrir(cards[1]);await L.evaluate(()=>{ETERNA.lojaProntoMs(600);});await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(450);const idV3=await pend();
 await sleep(700);await L.keyboard.press('Shift');await L.evaluate(()=>ETERNA.lojaProntoOcioso());ok(await L.evaluate(()=>ETERNA.state.kiosk.step)==='done','S2: com toque recente a tela Pronto fica');await L.evaluate(()=>ETERNA.lojaProntoMs(180000));
-await V.evaluate(ids=>{ETERNA.simFresh();ids.forEach(id=>{const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.estado==='aguardando')ETERNA.dinCancelar(id);});},[idV2,idV3]);await L.waitForTimeout(300);
+await V.evaluate(ids=>{ETERNA.simFresh();ids.forEach(id=>{const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.estado==='escolha')ETERNA.dinCancelar(id);});},[idV2,idV3]);await L.waitForTimeout(300);
 // S4: pedido com fotos que não batem com o número é recusado
 await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(450);const idS4=await pend();
 await L.evaluate(id=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=S.caixaDin.find(x=>x.id===id);r.n=5;localStorage.setItem('eterna.sim.v1',JSON.stringify(S));},idS4);
@@ -228,7 +232,7 @@ await V.evaluate(id=>{ETERNA.simFresh();ETERNA.dinCancelar(id);},idS4);await L.w
 await abrir(cardS5);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(450);const idS5=await pend();
 await posto(idS5,{pkg:'arq'});await posto(idS5,{meio:'dinheiro'});
 const s5=await V.evaluate(id=>{ETERNA.simFresh();ETERNA.SIM.prices.arq=80;ETERNA.SIM.caixaDin.find(x=>x.id===id);localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));const a=ETERNA.pendConfirmar(id,{});const r1=ETERNA.SIM.caixaDin.find(x=>x.id===id);const t1=r1.total,e1=r1.estado;const b=ETERNA.pendConfirmar(id,{});const r2=ETERNA.SIM.caixaDin.find(x=>x.id===id);const s=ETERNA.SIM.sessions[r2.card];delete ETERNA.SIM.prices.arq;localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));return {a,t1,e1,b,e2:r2.estado,tot:s.total};},idS5);
-ok(!s5.a&&s5.t1===80&&s5.e1==='aguardando'&&s5.b&&s5.e2==='confirmada'&&s5.tot===80,'S5: confirmação recalcula o valor pelo Catálogo: '+JSON.stringify(s5));
+ok(!s5.a&&s5.t1===80&&s5.e1==='escolha'&&s5.b&&s5.e2==='confirmada'&&s5.tot===80,'S5: confirmação recalcula o valor pelo Catálogo: '+JSON.stringify(s5));
 await L.waitForTimeout(500);
 // cancelamento volta ao início
 await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(60);await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const id2=await pend();
@@ -257,7 +261,7 @@ const venda=async(pg,vend,antigo,o)=>{const card=cardsIA[0];await pg.goto(pg.url
 // app da v94 servido de uma pasta temporária (outra origem: outro localStorage)
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v94-'));fs.writeFileSync(path.join(dir,'index.html'),execFileSync('git',['show','b92ea0c:index.html'],{cwd:RAIZ,maxBuffer:64*1024*1024}));
 for(const d of ['img','sprites','vendor'])fs.symlinkSync(path.join(RAIZ,d),path.join(dir,d));
-const pv94=await portaLivre();velho={p:spawn('python3',['-m','http.server',String(pv94),'--bind','127.0.0.1'],{cwd:dir,stdio:'ignore'}),dir};await sleep(800);
+const pv94=(await servePasta(dir)).porta;
 const U94=`http://127.0.0.1:${pv94}/index.html`;
 const ctx94=await b.newContext({locale:'pt-BR'});const L94=await nova(ctx94,'v94 checkout',{width:1920,height:1080});await L94.goto(U94+'#loja');
 const V94=await nova(ctx94,'v94 posto',{width:1366,height:768});const uAnt=process.env.U;process.env.U=U94;await login(V94);process.env.U=uAnt;await V94.evaluate(()=>localStorage.removeItem('eterna.session'));
@@ -281,6 +285,37 @@ for(const [nPh,nAI,pkg,meio] of MATRIZ){const tag=`${nPh}+${nAI} ${pkg} ${meio}`
   const k=await L2.evaluate(()=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));S.catalogoV=2;window.dispatchEvent(new StorageEvent('storage',{key:'eterna.sim.v1',newValue:JSON.stringify(S)}));return !!ETERNA.state.janelaAntiga;});
   ok(k,'1: a v96 também recusa o SIM gravado por uma janela antiga (catalogoV 2) e marca a janela antiga');}
 await ctx94.close();await L2.close();
+// B1: Posto da v95 aberto e não recarregado, na MESMA origem do Checkout da v96 (mesmo localStorage): o pedido sem pacote nasce em 'escolha',
+// que a v95 não lista nem confirma (lá viraria "Recebi R$ 0" e entregaria as fotos). Defesa extra: confirmado sem o "criar" da v96 não libera o QR
+{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v95-'));fs.copyFileSync(path.join(RAIZ,'index.html'),path.join(dir,'index.html'));
+  fs.writeFileSync(path.join(dir,'v95.html'),execFileSync('git',['show','f4ac8df:index.html'],{cwd:RAIZ,maxBuffer:64*1024*1024}));
+  for(const d of ['img','sprites','vendor'])fs.symlinkSync(path.join(RAIZ,d),path.join(dir,d));
+  const sv=await servePasta(dir);const base=`http://127.0.0.1:${sv.porta}/`;const ctxM=await b.newContext({locale:'pt-BR'});
+  const P95=await nova(ctxM,'v95 posto',{width:1366,height:768});const uAnt=process.env.U;process.env.U=base+'v95.html';await login(P95);process.env.U=uAnt;await P95.evaluate(()=>localStorage.removeItem('eterna.session'));
+  await P95.evaluate(()=>{ETERNA.state.view='posto';ETERNA.render();});
+  const C=await nova(ctxM,'checkout mesma origem',{width:1920,height:1080});await C.goto(base+'index.html#loja');await C.waitForTimeout(700);
+  const P96=await nova(ctxM,'posto v96 mesma origem',{width:1366,height:768});process.env.U=base+'index.html';await login(P96);process.env.U=uAnt;await P96.evaluate(()=>localStorage.removeItem('eterna.session'));await P96.evaluate(()=>ETERNA.go('posto'));
+  await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',cards[2]);await C.click('[data-act="kiosk-go"]');await C.waitForTimeout(700);
+  await C.click('#lj-lb [data-act="kiosk-ok"]');await C.click('#lj-lb .lj-next');await C.waitForTimeout(600);const idB=await C.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);
+  const lido=()=>C.evaluate(id=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=S.caixaDin.find(x=>x.id===id);return {est:r&&r.estado,st:r&&S.sessions[r.card].status,cv:S.catalogoV};},idB);
+  ok(idB&&(await lido()).est==='escolha','B1: o pedido do Checkout sem pacote nasce em "escolha": '+JSON.stringify(await lido()));
+  const p95=await P95.evaluate(id=>{ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();const lista=!!document.querySelector(`[data-pend="${id}"]`);const txt=document.querySelector('#main').innerText;
+    const a=ETERNA.dinConfirmar(id);const b2=ETERNA.pendConfirmar(id,{ref:''});ETERNA.render();const rs=/Recebi R\$\s?0/.test(document.querySelector('#main').innerText);
+    return {lista,recebi:/Recebi R\$\s?0|R\$\s?0,00/.test(txt)||rs,a:a||false,b:b2||false};},idB);
+  const dep=await lido();
+  ok(!p95.lista&&!p95.recebi&&!p95.a&&!p95.b&&dep.est==='escolha'&&dep.st!=='paga','B1: o Posto da v95 não lista nem confirma o pedido em "escolha" (nada de "Recebi R$ 0"): '+JSON.stringify({p95,dep}));
+  // o Posto da v96 na mesma origem lista e escolhe normalmente
+  const p96=await P96.evaluate(id=>{ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();return !!document.querySelector(`[data-pend="${id}"] [data-act="pend-pkg"]`);},idB);ok(p96,'B1: o Posto da v96 lista o pedido em "escolha" com os pacotes');
+  // defesa extra: uma janela antiga grava o pedido como confirmado (sem pvCriado). O Checkout não libera o QR; o Posto mostra alerta grave e janela antiga
+  await P95.evaluate(id=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=S.caixaDin.find(x=>x.id===id);Object.assign(r,{estado:'confirmada',fechada:new Date().toISOString(),meio:'dinheiro'});S.sessions[r.card].status='paga';localStorage.setItem('eterna.sim.v1',JSON.stringify(S));},idB);
+  await C.waitForTimeout(600);await C.evaluate(()=>{ETERNA.lojaPendCheck();ETERNA.render();});
+  const cq=await C.evaluate(()=>({wait:!!(ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.wait),qr:!!document.querySelector('#lqr'),step:ETERNA.state.kiosk.step}));
+  ok(cq.wait&&!cq.qr,'B1: confirmado por janela antiga, o Checkout não libera o QR: '+JSON.stringify(cq));
+  await P96.waitForTimeout(300);const pg=await P96.evaluate(()=>{ETERNA.state.view='posto';ETERNA.render();return {antiga:!!ETERNA.state.janelaAntiga,grave:((document.querySelector('.pend-grave')||{}).innerText||''),al:ETERNA.alerts().some(a=>a.sev==='bad'&&/janela antiga/.test(a.t)&&/confirmado/.test(a.t))};});
+  ok(pg.antiga&&/janela antiga/.test(pg.grave)&&/não foram liberadas/.test(pg.grave)&&pg.al,'B1: o Posto da v96 mostra o alerta grave e a janela antiga: '+JSON.stringify(pg));
+  // simFresh também percebe (Posto que relê sem evento storage)
+  ok(await P96.evaluate(()=>{ETERNA.state.janelaAntiga=0;ETERNA.simFresh();return !!ETERNA.state.janelaAntiga;}),'B1: simFresh marca a janela antiga ao achar o pedido confirmado sem o "criar"');
+  await ctxM.close();}
 
 // ---- N7 e P5: cada tamanho × etapa
 let ci=3;
@@ -310,5 +345,5 @@ for(const [w,h] of TAMANHOS){await L.setViewportSize({width:w,height:h});const c
 const etapas=['camera','camera ligada','codigo','escolha','escolha marcada','todas','pronto','valor','minhas','final','galeria'];
 console.log('tamanho | '+etapas.join(' | '));for(const t of Object.keys(tabela))console.log(t+' | '+etapas.map(e=>tabela[t][e]||'-').join(' | '));
 }catch(e){fails.push('exceção (depois de: '+ult+'): '+String(e.message||e).split('\n').slice(0,3).join(' / '));}
-finally{await b.close().catch(()=>{});if(velho){try{velho.p.kill('SIGTERM');}catch(e){}try{fs.rmSync(velho.dir,{recursive:true,force:true});}catch(e){}}}
+finally{await b.close().catch(()=>{});for(const sv of servidores){try{sv.p.kill('SIGTERM');}catch(e){}try{fs.rmSync(sv.dir,{recursive:true,force:true});}catch(e){}}}
 const okk=!fails.length&&!errs.length;console.log(`${okk?'OK':'FALHA'} checkout-tela-cheia: ${n} verificações (tela cheia, Iniciar, sem preço no Checkout, caixa escolhe o pacote, venda igual à v94 em ${8} combinações, janela antiga, revisão 6 a 8, S1 a S5, 10 tamanhos)${fails.length?' · '+fails.slice(0,14).join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();

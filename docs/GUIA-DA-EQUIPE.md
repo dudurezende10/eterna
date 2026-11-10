@@ -237,7 +237,7 @@ Nesta versão o Checkout e o Caixa precisam estar **no mesmo computador e no mes
 
 ### Depois de cada atualização: feche as janelas antigas
 
-**Na atualização para a v96, logo depois de publicar:** em todos os balcões, feche e abra de novo o Checkout e o Posto de venda (e qualquer outra janela do Eterna aberta no notebook). Uma janela da versão anterior não entende a compra sem pacote e mostraria "Dinheiro R$ 0". A v96 marca os dados para a janela antiga recusar e mostrar o aviso abaixo, mas a janela antiga só some quando é fechada.
+**Na atualização para a v96, logo depois de publicar:** em todos os balcões, feche e abra de novo o Checkout e o Posto de venda (e qualquer outra janela do Eterna aberta no notebook). A v96 grava a compra sem pacote de um jeito que uma janela da versão anterior não lista nem confirma, e o Posto da v96 mostra um alerta vermelho se uma janela antiga mexer numa compra do Checkout. Mesmo assim a janela antiga continua aberta com dados velhos e só some quando é fechada: **fechar e reabrir em todos os balcões continua obrigatório**.
 
 Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eterna abertas naquele computador (Checkout, Caixa e as outras). Uma janela antiga aberta pode atrapalhar o caixa. Se aparecer o aviso "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.", faça isso na hora.
 

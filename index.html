@@ -218,6 +218,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .din-meio{display:inline-flex;align-items:center;gap:6px;font-weight:700}.din-meio svg{width:28px;height:auto}
 .pend-ref{display:flex;flex-direction:column;gap:6px}.pend-ref input{max-width:260px;font-size:18px;letter-spacing:.06em}
 .pend-err{color:var(--bad);font-weight:600}
+.pend-grave{display:flex;flex-direction:column;gap:6px;margin:0 0 10px;padding:10px 12px;border-radius:8px;border:2px solid var(--bad,#c0392b);background:rgba(192,57,43,.1);font-size:14px}
 .posto-head .row{flex-wrap:wrap}
 .posto-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px;align-items:start}
 .posto-cols>div{display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -1205,7 +1206,8 @@ function saveSim(){if(state.db&&SIM_SRV){clearTimeout(simSobeT);simSobeT=setTime
 function simPodar(){SIM.log=(SIM.log||[]).slice(0,20);const ed=SIM.edits||{};Object.keys(ed).forEach(id=>{if(ed[id]&&ed[id].auto===true&&!UP[id]&&!(typeof spriteOf!=='undefined'&&spriteOf[id]))delete ed[id];});}
 // v79: Checkout e Caixa em duas janelas do mesmo navegador. simFresh relê o SIM gravado pela outra janela antes de mexer no caixa.
 function simFresh(){try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}if(!Array.isArray(SIM.caixaDin))SIM.caixaDin=[];
-  if(SIM.catalogoV!==SIM_V){if(SIM.catalogoV===2)state.janelaAntiga=Date.now();SIM.catalogoV=SIM_V;}} // v96: SIM gravado por uma janela antiga: avisa e grava de novo com a marca
+  if(SIM.catalogoV!==SIM_V){if(SIM.catalogoV===2)state.janelaAntiga=Date.now();SIM.catalogoV=SIM_V;} // v96: SIM gravado por uma janela antiga: avisa e grava de novo com a marca
+  if(SIM.caixaDin.some(r=>r&&r.escolha&&r.estado==='confirmada'&&!r.pvCriado))state.janelaAntiga=Date.now();} // B1: pedido do Checkout confirmado por uma janela antiga
 function priceOf(id){const c=DATA.catalog.find(x=>x.id===id);return SIM.prices[id]!=null?SIM.prices[id]:(c?c.price:0)}
 const catName=id=>{const c=DATA.catalog.find(x=>x.id===id);return c?c.name:id};
 function log(t){SIM.log.unshift({t,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);saveSim();}
@@ -1418,24 +1420,29 @@ function printsVenda(cart,n){let t=0;(cart||[]).forEach(c=>{const p=DATA.catalog
 // impressões de uma venda: as gravadas na venda ou, sem isso (vendas antigas), as calculadas pelo carrinho
 function simPrints(sim){if(sim&&sim.prints!=null)return sim.prints;return printsVenda(sim&&sim.cart,((sim&&sim.selected)||[]).length||null);}
 const recebidoPor=sim=>sim&&sim.caixaPor?`\nRecebido por ${esc(sim.caixaPor)}${sim.caixaEm?' às '+hhmm(new Date(sim.caixaEm)):''}`:'';
-const dinAbertas=()=>(SIM.caixaDin||[]).filter(r=>r.estado==='aguardando');
+// v96 (B1): o pedido do Checkout sem pacote nasce em 'escolha' (não 'aguardando'): um Posto da v95 ainda aberto não o lista nem confirma
+// (lá ele viraria "Dinheiro R$ 0"). Aberta = aguardando ou escolha; só pendConfirmar passa a 'confirmada'.
+const aberta=r=>!!r&&(r.estado==='aguardando'||r.estado==='escolha');
+// pedido do Checkout confirmado sem o "criar" da v96: foi uma janela antiga. O Checkout não libera o QR e o Posto avisa
+const pendJanelaAntiga=r=>!!(r&&r.escolha&&r.estado==='confirmada'&&!r.pvCriado);
+const dinAbertas=()=>(SIM.caixaDin||[]).filter(aberta);
 const dinMin=r=>Math.max(0,Math.floor((now()-new Date(r.criada))/60000));
 const dinAtrasada=()=>dinAbertas().some(r=>dinMin(r)>CAIXA_ALERTA_MIN);
-function dinAbertaDe(card){const s=SIM.sessions[card];if(!s||!s.din)return null;return (SIM.caixaDin||[]).find(r=>r.id===s.din&&r.estado==='aguardando')||null;}
+function dinAbertaDe(card){const s=SIM.sessions[card];if(!s||!s.din)return null;return (SIM.caixaDin||[]).find(r=>r.id===s.din&&aberta(r))||null;}
 // fecha uma pendência (cancelada, nao_paga, substituida); a sessão que ainda estava aguardando volta para pronta
-function dinFechar(id,estado,motivo,u){const r=(SIM.caixaDin||[]).find(x=>x.id===id);if(!r||r.estado!=='aguardando')return null;
+function dinFechar(id,estado,motivo,u){const r=(SIM.caixaDin||[]).find(x=>x.id===id);if(!r||!aberta(r))return null;
   r.estado=estado;r.motivo=motivo||null;r.fechada=now().toISOString();r.por=u?u.email:'sistema';r.porNome=u?u.name:null;
   const s=SIM.sessions[r.card];if(s&&s.din===id){delete s.din;if(s.status==='aguardando')s.status='pronta';}return r;}
 // virada do dia (00:00 local): pendência de ontem vira não paga; fechadas com mais de 30 dias saem; no máximo 1000 fechadas
 function dinVirada(){const L=SIM.caixaDin;if(!Array.isArray(L)){SIM.caixaDin=[];return false;}if(!L.length)return false;const hoje=todayISO();let ch=false;
-  L.filter(r=>r.estado==='aguardando'&&isoDia(r.criada)<hoje).forEach(r=>{dinFechar(r.id,'nao_paga','fim_do_dia',null);SIM.log.unshift({t:pendSemMeio(r)?`Pedido do Checkout sem pacote escolhido até o fim do dia: ${r.card} (código ${r.codigo})`:`${MEIO_NOME[meioDe(r)]} não pago até o fim do dia: ${r.card} ${fmtR(r.total)} (código ${r.codigo})`,at:now().toISOString()});ch=true;});
-  const lim=now().getTime()-DIN_DIAS*864e5;const fe=new Set(L.filter(r=>r.estado!=='aguardando'&&Date.parse(r.fechada||r.criada)>=lim).slice(0,DIN_MAX));
-  const nv=L.filter(r=>r.estado==='aguardando'||fe.has(r));if(nv.length!==L.length){SIM.caixaDin=nv;ch=true;}
+  L.filter(r=>aberta(r)&&isoDia(r.criada)<hoje).forEach(r=>{dinFechar(r.id,'nao_paga','fim_do_dia',null);SIM.log.unshift({t:pendSemMeio(r)?`Pedido do Checkout sem pacote escolhido até o fim do dia: ${r.card} (código ${r.codigo})`:`${MEIO_NOME[meioDe(r)]} não pago até o fim do dia: ${r.card} ${fmtR(r.total)} (código ${r.codigo})`,at:now().toISOString()});ch=true;});
+  const lim=now().getTime()-DIN_DIAS*864e5;const fe=new Set(L.filter(r=>!aberta(r)&&Date.parse(r.fechada||r.criada)>=lim).slice(0,DIN_MAX));
+  const nv=L.filter(r=>aberta(r)||fe.has(r));if(nv.length!==L.length){SIM.caixaDin=nv;ch=true;}
   if(ch){SIM.log=SIM.log.slice(0,80);saveSim();}return ch;}
 // travas comuns de Confirmar e Cancelar: só no Caixa da equipe, com venda.c, lendo o SIM mais novo; pendência já fechada não muda (idempotência)
 function dinPegar(id){if(state.lojaRota||state.pub){toast('Confirme no Caixa da equipe');return null;}if(!can('venda','c')){toast('Sem permissão para registrar pagamento');return null;}
   simFresh();state.caixa.dinCancel=null;const r=SIM.caixaDin.find(x=>x.id===id);if(!r){toast('Pagamento não encontrado');render();return null;}
-  if(r.estado!=='aguardando'){toast(`Já ${DIN_ROT[r.estado]||r.estado}${r.porNome?' por '+r.porNome:''}${r.fechada?' às '+hhmm(new Date(r.fechada)):''}`);render();return null;}return r;}
+  if(!aberta(r)){toast(`Já ${DIN_ROT[r.estado]||r.estado}${r.porNome?' por '+r.porNome:''}${r.fechada?' às '+hhmm(new Date(r.fechada)):''}`);render();return null;}return r;}
 // ---------- v83 (parte D): pagamento aguardando. Cartão, PIX e Dinheiro ficam "aguardando" até o vendedor confirmar no Posto de venda ----------
 // PAG_PROV: interface do pagamento no ponto. 'pos-manual' = maquininha avulsa (Imply), confirmação humana; 'tef' fica reservado (D3).
 const PAG_PROV={'pos-manual':{nome:'Maquininha avulsa',iniciar:rec=>({estado:'aguardando'}),manual:true},tef:null};
@@ -1513,7 +1520,7 @@ function pendPainel(){const L=dinAbertas();const q=(state.caixa.dinQ||'').toUppe
       <div class="din-top"><b class="din-cod">${esc(r.codigo)}</b>${r.saleNo?`<span class="note">Venda ${esc(r.saleNo)}</span>`:''}</div>
       <div class="note">Sessão ${esc(r.card)} · ${hhmm(new Date(r.criada))} <span class="pill ${min>CAIXA_ALERTA_MIN?'warn':'neutral'}">há ${min} min</span> · ${r.n} ${r.n===1?'foto':'fotos'} · ${r.prints} ${r.prints===1?'impressa':'impressas'}</div>
       ${ph.length?`<div class="photos small">${ph.map(p=>photoBtn(p)).join('')}</div>`:''}${acts}</div>`;};
-  const av=pendAvisosHtml();
+  const av=pendAntigaHtml()+pendAvisosHtml();
   if(!L.length)return av?`<div class="panel" id="pend-painel"><div class="head"><h2>Aguardando pagamento</h2></div>${av}</div>`:''; // nada esperando: a caixa some (a venda recebida já aparece no recibo e em Pagas hoje)
   return `<div class="panel" id="pend-painel"><div class="head"><h2>Aguardando pagamento</h2>${L.length?`<span class="pill ${dinAtrasada()?'warn':'neutral'}">${L.length}</span>`:''}</div>${av}
     ${L.length?`${`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="Código do cliente (XXXX-XXXX) ou sessão" aria-label="Buscar pagamento" autocomplete="off">`}${vis.length?`<div class="din-list">${vis.map(item).join('')}</div>`:'<div class="note">Nenhum pagamento com esse código.</div>'}`:'<div class="note">Nenhum pagamento esperando. Quando o cliente escolher Cartão, PIX ou Dinheiro no Checkout, a compra aparece aqui.</div>'}</div>`;}
@@ -1522,9 +1529,12 @@ const dinPainel=pendPainel; // nome da v79
 // o aviso por 5 min no alto de "Aguardando pagamento". Só lê o SIM que a janela do Checkout gravou (evento storage).
 const PEND_AVISO_MS=5*60e3;
 function pendAvisos(velhas){const novos=[];(SIM.caixaDin||[]).forEach(r=>{const v=velhas.get(r.id);if(!v||!r.escolha)return;
-    if(v.estado==='aguardando'&&r.estado==='substituida'&&r.motivo==='cliente_voltou')novos.push(`O cliente do código ${r.codigo} voltou às fotos. A compra saiu daqui e volta quando ele tocar em Continuar.`);
-    else if(!v.saiu&&r.saiu&&r.estado==='aguardando')novos.push(`O cliente do código ${r.codigo} saiu da tela do Checkout sem pagar. A compra continua aqui: cancele ou espere ele voltar.`);});
+    if(aberta(v)&&r.estado==='substituida'&&r.motivo==='cliente_voltou')novos.push(`O cliente do código ${r.codigo} voltou às fotos. A compra saiu daqui e volta quando ele tocar em Continuar.`);
+    else if(!v.saiu&&r.saiu&&aberta(r))novos.push(`O cliente do código ${r.codigo} saiu da tela do Checkout sem pagar. A compra continua aqui: cancele ou espere ele voltar.`);});
   if(!novos.length)return false;const at=Date.now();state.caixa.avisos=(state.caixa.avisos||[]).filter(a=>at-a.em<PEND_AVISO_MS).concat(novos.map(t=>({t,em:at}))).slice(-5);toast(novos[0]);return true;}
+// B1: pedido do Checkout confirmado por uma janela antiga (sem o "criar" da v96): alerta grave no alto do painel, o dia todo
+function pendAntigaHtml(){const l=(SIM.caixaDin||[]).filter(r=>pendJanelaAntiga(r)&&isoDia(r.fechada||r.criada)===todayISO());if(!l.length)return '';
+  return `<div class="pend-grave" role="alert">${l.map(r=>`<div><b>Pedido ${esc(r.codigo)} confirmado por uma janela antiga do Eterna.</b> As fotos não foram liberadas ao cliente. Feche e reabra o Checkout e o Posto de venda neste balcão e confira o pagamento com o cliente.</div>`).join('')}</div>`;}
 function pendAvisosHtml(){const at=Date.now();const l=(state.caixa.avisos||[]).filter(a=>at-a.em<PEND_AVISO_MS);if(!l.length)return '';
   return `<div class="pend-avisos" role="status">${l.slice().reverse().map(a=>`<div class="pend-aviso">${hhmm(new Date(a.em))} · ${esc(a.t)}</div>`).join('')}</div>`;}
 // v96 (P3): pedido do Checkout sem pacote. O caixa vê as fotos escolhidas (com as de fundo de IA), escolhe o pacote e o meio e confirma como antes
@@ -1745,7 +1755,7 @@ function impPainel(cards){const L=impVendas(cards);const rw=can('venda','c');
 // "Minhas vendas de hoje" (D9): deste notebook e do e-mail de quem está logado; valor de cada venda e nenhum total
 function minhasVendas(){const u=state.user;if(!u)return '';const hoje=todayISO();const rows=[];const vistos=new Set();
   (SIM.caixaDin||[]).forEach(r=>{if(!r.vendedor||r.vendedor.email!==u.email||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;
-    rows.push({t:r.criada,no:r.saleNo||'',meio:pendMeioTxt(r),v:pendSemMeio(r)?null:r.total,pag:r.estado==='aguardando'?'aguardando':r.estado==='confirmada'?'paga':r.estado==='nao_paga'?'não paga':r.estado,imp:meu&&s.impressao?(s.impressao.estado==='impressa'?'impressa':s.impressao.estado==='pendente'?'para imprimir':'—'):'—'});});
+    rows.push({t:r.criada,no:r.saleNo||'',meio:pendMeioTxt(r),v:pendSemMeio(r)?null:r.total,pag:aberta(r)?'aguardando':r.estado==='confirmada'?'paga':r.estado==='nao_paga'?'não paga':r.estado,imp:meu&&s.impressao?(s.impressao.estado==='impressa'?'impressa':s.impressao.estado==='pendente'?'para imprimir':'—'):'—'});});
   Object.entries(SIM.sessions).forEach(([c,s])=>{if(s.status!=='paga'||!s.vendaId||vistos.has(s.vendaId)||!s.vendedor||s.vendedor.email!==u.email||isoDia(s.paidAt||0)!==hoje)return;
     rows.push({t:s.paidAt,no:s.saleNo||'',meio:s.payment||'',v:saleTotal(s),pag:'paga',imp:s.impressao?(s.impressao.estado==='impressa'?'impressa':s.impressao.estado==='pendente'?'para imprimir':'—'):'—'});});
   rows.sort((a,b)=>String(b.t).localeCompare(String(a.t)));
@@ -1953,14 +1963,14 @@ function allSalesSim(){
   const real=[];const _unused=DATA.sessions.filter(s=>s.card&&s.sold>0).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(reconSale);
   const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'||s.status==='cancelada').map(([card,s],i)=>{const items=(s.cart||[]).map(c=>c.id);const pt=DATA.points.find(p=>p.id===s.point);return {no:s.saleNo||('E'+String(i+1).padStart(3,'0')),date:'hoje',time:s.paidAt?hhmm(new Date(s.paidAt)):s.time,card,key:s.key,pdv:s.pdv||(pt?pt.name:''),seller:s.seller||SELLERS[0],items,photos:s.nFotos!=null?s.nFotos:(s.selected||[]).length,prints:simPrints(s),pay:s.payment||'',total:saleTotal(s),status:s.status,est:false,canal:'loja',caixa:s.caixaPor||'',caixa_em:s.caixaEm||'',posto:s.posto||'',ref:(s.pag&&s.pag.ref)||'',impressao:impTxt(s)};});
   // v79: dinheiro do Checkout que ainda não virou venda (aguardando) ou não foi pago (cancelado no caixa, fim do dia). Confirmada e substituída aparecem pela sessão.
-  const din=(SIM.caixaDin||[]).filter(r=>DIN_LINHA.includes(r.estado)).map(r=>{const d=new Date(r.criada);const dia=isoDia(d);const so=SIM.sessions[r.card]||{};const ag=r.estado==='aguardando';
+  const din=(SIM.caixaDin||[]).filter(r=>DIN_LINHA.includes(r.estado)).map(r=>{const d=new Date(r.criada);const dia=isoDia(d);const so=SIM.sessions[r.card]||{};const ag=aberta(r);
     return {no:r.id,date:dia===todayISO()?'hoje':dia,time:hhmm(d),card:r.card,key:so.key,pdv:so.pdv||'',seller:LOJA_VENDEDOR,items:(r.cart||[]).map(c=>c.id),photos:r.n!=null?r.n:(r.nPh||0)+(r.nAI||0),prints:r.prints||0,pay:pendSemMeio(r)?pendMeioTxt(r):MEIO_NOME[meioDe(r)]+(meioDe(r)==='dinheiro'?'':' · maquininha'),total:pendSemMeio(r)?null:r.total,status:ag?'aguardando':'nao_paga',est:false,canal:'loja',din:true,posto:r.posto||'',ref:'',impressao:'',
       title:ag?(pendSemMeio(r)?`Aguardando a escolha do pacote no Posto desde ${hhmm(d)} · código ${r.codigo}`:`Aguardando ${meioDe(r)==='dinheiro'?'o caixa':'a maquininha'} desde ${hhmm(d)} · código ${r.codigo}`):`${r.motivo==='fim_do_dia'?'Não paga até o fim do dia':'Cancelada no caixa'}${r.porNome?' por '+r.porNome:''}${r.fechada?' às '+hhmm(new Date(r.fechada)):''}`,caixa:ag?'':(r.porNome||''),caixa_em:ag?'':(r.fechada||'')};});
   const on=(SIM.vendasOnline||[]).map(v=>{const d=v.at?new Date(v.at):now();const dia=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');const so=sessionObj(v.card)||{};
     return {no:v.id,date:dia===todayISO()?'hoje':dia,time:hhmm(d),card:v.card,key:so.key||(SIM.sessions[v.card]||{}).key,pdv:'Galeria online',seller:'Online',items:v.todas?['mais']:Array(v.n).fill('dig'),photos:v.n,prints:0,pay:v.pay+(v.teste?' (teste)':''),total:v.total,status:v.teste?'teste':(v.status||'paga'),est:false,canal:'online',at:v.at||'',teste:!!v.teste};});
   return [...din,...sim.reverse(),...on.reverse()];
 }
-const DIN_LINHA=['aguardando','cancelada','nao_paga'];
+const DIN_LINHA=['aguardando','escolha','cancelada','nao_paga'];
 function salesCSV(rows){const h=['venda','data','hora','sessao','ponto','fotografo','vendedor','itens','fotos','impressoes','pagamento','total','status','canal','caixa','caixa_em','posto','pagamento_ref','impressao'];const esc2=v=>{let t=String(v);if(/^[=+\-@]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"';};/* N4: célula que começa com = + - @ não vira fórmula */return [h.join(';'),...rows.map(r=>[r.no,r.date,r.time,r.card,r.pdv,P[r.key]?P[r.key].name:r.key,r.seller,r.items.map(catName).join(' + '),r.photos,r.prints,r.pay,r.total==null?'':String(r.total).replace('.',','),r.status,r.canal||'loja',r.caixa||'',r.caixa_em||'',r.posto||'',r.ref||'',r.impressao||''].map(esc2).join(';'))].join('\n');}
 function vVendasLista(){
   const f=state.sales;let rows=allSales();
@@ -2111,7 +2121,7 @@ async function lojaPedido(card,meio){const escolha=meio==null;meio=escolha?null:
   const id=pvId();const prov=escolha?null:meio==='dinheiro'?'dinheiro':pagProv();const ini=escolha||meio==='dinheiro'?{estado:'aguardando'}:((PAG_PROV[prov]&&PAG_PROV[prov].iniciar({id,meio,total:c.total}))||{estado:'aguardando'});
   const rec={id,venue:(typeof VENUE_CFG!=='undefined'&&VENUE_CFG&&VENUE_CFG.id)||'maracana',card,sessoes,token:tok,codigo:m.codigo,criada:now().toISOString(),total:escolha?null:c.total,prints:escolha?null:c.prints,n:c.ch.length,nPh:c.nPh,nAI:c.nAI,
     cart:escolha?[]:c.cart.map(x=>({...x})),selected:(s.selected||[]).slice(),aiSel:(s.aiSel||[]).slice(),fav:(s.fav||[]).slice(),meio,prov,saleNo,vendedor:postoVendedor(),posto:postoNome(),
-    canal:'checkout',t0:k.t0||null,estado:'aguardando',iniciado:ini.estado||'aguardando',fechada:null,por:null,porNome:null,motivo:null};
+    canal:'checkout',t0:k.t0||null,estado:escolha?'escolha':'aguardando',iniciado:ini.estado||'aguardando',fechada:null,por:null,porNome:null,motivo:null};
   if(escolha)Object.assign(rec,{escolha:true,pkg:null,nSes:c.nSes,lang:lang()});
   SIM.caixaDin=SIM.caixaDin||[];SIM.caixaDin.unshift(rec);s.status='aguardando';s.din=id;state.lojaEquipeAte=0;k.aviso=null;
   log(escolha?`Checkout: ${sessoes.join(' + ')} escolheu ${c.ch.length} ${c.ch.length===1?'foto':'fotos'} (código ${m.codigo})`:`Checkout: ${sessoes.join(' + ')} pediu pagar ${fmtR(c.total)} em ${MEIO_NOME[meio].toLowerCase()} (código ${m.codigo})`);
@@ -2125,7 +2135,7 @@ function lojaPedir(){const k=state.kiosk;if(k.code&&lojaCart(k.code).ch.length)l
 // o "criar" só sai na confirmação) e o cliente volta à foto ampliada da mesma sessão com o que já tinha marcado
 function lojaVoltarFotos(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.escolha||!k.code)return;
   lojaFresh(k.code);const r=(SIM.caixaDin||[]).find(x=>x.id===p.pend);
-  if(r&&r.estado!=='aguardando'){if(lojaPendCheck())render();return;} // o caixa já confirmou ou cancelou
+  if(r&&!aberta(r)){if(lojaPendCheck())render();return;} // o caixa já confirmou ou cancelou
   if(r){const antes=JSON.stringify(SIM);dinFechar(r.id,'substituida','cliente_voltou',null);SIM.log.unshift({t:`Checkout: o cliente do pedido ${r.saleNo||r.id} voltou às fotos`,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);
     if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(T('ljSaveFail'));render();return;}}
   lojaTimerOff();Object.assign(k,{paid:null,doneAt:null,minhas:false,minhasI:null,step:'review'});k.ver=Math.max(0,Math.min(lojaItems(k.code).length-1,k.i||0));render();lojaEco();}
@@ -2134,14 +2144,15 @@ let LOJA_PRONTO_MS=3*60e3;
 function lojaProntoOcioso(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.escolha)return false;
   if(Date.now()-Math.max(k.toque||0,k.prontoDesde||0)<LOJA_PRONTO_MS)return false;
   lojaFresh(k.code);const r=(SIM.caixaDin||[]).find(x=>x.id===p.pend);
-  if(r&&r.estado==='aguardando'&&!r.saiu){r.saiu=now().toISOString();SIM.log.unshift({t:`Checkout: o cliente do pedido ${r.saleNo||r.id} saiu da tela sem pagar (a compra continua no Posto)`,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);saveSim();}
+  if(r&&aberta(r)&&!r.saiu){r.saiu=now().toISOString();SIM.log.unshift({t:`Checkout: o cliente do pedido ${r.saleNo||r.id} saiu da tela sem pagar (a compra continua no Posto)`,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);saveSim();}
   lojaTimerOff();lojaReset();render();lojaEco();return true;}
 const lojaDinheiro=card=>lojaPedido(card,'dinheiro'); // nome da v79
 // Checkout esperando: o vendedor confirmou (vira a tela do QR com a contagem), cancelou (volta ao carrinho da mesma sessão com aviso) ou o dia virou
 function lojaPendCheck(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.pend)return false;
   const r=(SIM.caixaDin||[]).find(x=>x.id===p.pend);if(!r)return false;
-  if(r.estado==='aguardando'){if(!p.escolha||(p.pkg===(r.pkg||null)&&p.total===r.total&&p.meio===(r.meio||null)))return false; // v96 (P4): o caixa escolheu ou trocou o pacote
+  if(aberta(r)){if(!p.escolha||(p.pkg===(r.pkg||null)&&p.total===r.total&&p.meio===(r.meio||null)))return false; // v96 (P4): o caixa escolheu ou trocou o pacote
     k.paid=Object.assign({},p,{pkg:r.pkg||null,total:r.total,meio:r.meio||null,prints:r.prints});k.prontoDesde=Date.now();return true;}
+  if(pendJanelaAntiga(r)){state.janelaAntiga=Date.now();return false;} // B1: confirmado por uma janela antiga: o QR não sai
   if(r.estado==='confirmada'){const g=(SIM.galerias||{})[p.token];k.paid=Object.assign({},p,{wait:false,cash:false,codigo:(g&&g.codigo)||p.codigo});k.doneAt=Date.now();lojaTimerOff();k.timer=setInterval(lojaTick,250);return true;}
   if(r.estado==='cancelada'){lojaTimerOff();lojaReset();return true;} // v96: cancelada pelo caixa, o cliente volta ao início
   lojaTimerOff();lojaReset();return true;}
@@ -4419,6 +4430,7 @@ function alerts(){
   Object.entries(unlinked).forEach(([kd,n])=>{const [k,d]=kd.split('|');const ses=DATA.sessions.filter(s=>s.key===k&&s.date===d&&s.card).length||1;const r=n/ses;if(r>=2)out.push({sev:r>=3?'bad':'warn',t:`${P[k].name}: ${n} fotos fora de sessão em ${dlabel(d)}, ${r.toFixed(1)} por grupo`,d:`Separação automática resolve; conferir no Upload automático e na Qualidade.`})});
   if(state.simCheio)out.push({sev:'bad',t:'Armazenamento do navegador cheio: o Eterna não conseguiu gravar',d:'Vendas e pendências desta janela podem não estar salvas. Feche abas antigas do Eterna e avise a TI antes de continuar vendendo.'});
   if(state.janelaAntiga)out.push({sev:'bad',t:'Há uma janela antiga do Eterna aberta',d:'Recarregue as outras janelas do Eterna neste computador para não perder o caixa.'});
+  (SIM.caixaDin||[]).filter(r=>pendJanelaAntiga(r)&&isoDia(r.fechada||r.criada)===todayISO()).forEach(r=>out.push({sev:'bad',t:`Pedido do Checkout confirmado por uma janela antiga · código ${r.codigo}`,d:'Foi confirmado sem pacote escolhido e as fotos não foram liberadas ao cliente. Feche e reabra o Checkout e o Posto de venda neste balcão e confira o pagamento com o cliente.'}));
   dinAbertas().filter(r=>dinMin(r)>CAIXA_ALERTA_MIN).forEach(r=>{const m=meioDe(r);if(pendSemMeio(r)){out.push({sev:'bad',t:`Pedido do Checkout esperando a escolha do pacote há ${dinMin(r)} min · código ${r.codigo}`,d:`${r.n} ${r.n===1?'foto':'fotos'}, ainda sem valor. Escolha o pacote e a forma de pagamento ou cancele no Posto de venda.`});return;}
     out.push({sev:'bad',t:m==='dinheiro'?`Dinheiro esperando no caixa há ${dinMin(r)} min · código ${r.codigo}`:`${MEIO_NOME[m]} esperando a confirmação da maquininha há ${dinMin(r)} min · código ${r.codigo}`,d:`${fmtR(r.total)}, ${r.n} ${r.n===1?'foto':'fotos'}. Confirme o pagamento ou cancele no Posto de venda.`});});
   // v83: venda paga sem impressão, impressões sem foto (semFoto) e rolo baixo, por posto
@@ -5615,6 +5627,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   // I2: SIM sem caixaDin ou sem catalogoV veio de uma janela antiga (v78): não adota, avisa. v96: a marca é SIM_V (3)
   if(!Array.isArray(o.caixaDin)||o.catalogoV!==SIM_V){state.janelaAntiga=Date.now();if(!state.lojaRota&&!state.pub)toast('Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.');return;}
   const antes=simResumo(SIM);const velhas=new Map((SIM.caixaDin||[]).map(r=>[r.id,{estado:r.estado,saiu:r.saiu||null}]));SIM=Object.assign(SIM0(),o);
+  if(SIM.caixaDin.some(pendJanelaAntiga)){state.janelaAntiga=Date.now();if(!state.lojaRota&&!state.pub&&SIM.caixaDin.some(r=>pendJanelaAntiga(r)&&(velhas.get(r.id)||{}).estado!=='confirmada'))toast('Uma janela antiga do Eterna confirmou um pedido do Checkout sem pacote. As fotos não foram liberadas. Feche e reabra o Checkout e o Posto de venda.');} // B1
   const avisou=!state.lojaRota&&!state.pub&&pendAvisos(velhas); // v96: o cliente voltou às fotos ou saiu da tela
   if(state.pub){const p=state.pub;if(p.step==='aguarda_caixa')pubLoad();return;} // galeria pública: sem redesenhar no meio da selfie; sai do "esperando o caixa" quando confirmar
   const pc=lojaPendCheck(); // v83: o vendedor confirmou ou cancelou a pendência que esta janela do Checkout mostra
