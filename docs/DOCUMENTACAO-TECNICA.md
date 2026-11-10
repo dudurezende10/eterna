@@ -1725,3 +1725,35 @@ Rota fora da tabela responde 404. Fora das públicas, o `Host` precisa ser do ag
 **Testes.** `testes/_agente_sessao.{py,js}` cria pessoa com sessão e posto pareado no `estado.db` do agente de teste. Novos: `postos_agente.py`, `seguranca_rotas_agente.py` (toda linha de `ROTAS` e rota no código sem regra), `seguranca_ftp_agente.py`, `seguranca_config_agente.py`, `posto-checkout.js`, `seguranca-config.js`.
 
 **Ajustes da revisão (v93).** FTP: 25 s para entrar, 2 sessões sem login por IP, 16 das 64 vagas reservadas para quem entrou, linha de comando de até 4 KB; `ETERNA_FTP_RAW=descartar` aceita RAW e descarta. Galeria publicada: cortesia nova só com `galerias.u` (a que já está no servidor fica), validade até 60 dias (`GAL_DIAS`), `menor` marcado no servidor não sai. Coleção `sim`: `edits|`/`discarded|` com set ou qualidade, `invalid|` com set, qualidade, venda ou estoque, `flagUse|` com set, estoque ou venda, `ai|` com venda ou qualidade, `lojaFimSeg` com catalogo. `GET /ponto/docs?col=usuarios` sem `usuarios.r` devolve o próprio cadastro e, dos outros, só nome e fotógrafo vinculado; `usuarios_log`/`usuarios_login` só para quem tem módulo de equipe. `GET /ftp/contas` (`configuracao.r`) no cartão do Upload. `/postos/aceitar`: o GET mostra o botão e o POST gasta o código. `roverpix.json` e `ftp-remoto.json` conferidos também ao ler. Pastas do app (`img/`, `vendor/`, `sprites/`) só com nome e tipo de arquivo do pacote (`APP_ARQUIVO`). `/photoroom/compose`: até 300 por posto ou pessoa por hora. App: gravação recusada mostra "N alterações não foram aceitas (sem permissão)" e fica em `eterna.db.recusados.v1`; agente em outro endereço fica indisponível com aviso; página aberta por `https://posto.eterna.photo` usa o agente na mesma origem (`state.agent.sonda`); depois de parear pela tela, a conta do Admin sai do aparelho; o posto confirmado fica em `eterna.posto.v1` até um 401. Os testes do agente param sem HOME temporário (`_agente_sessao`) e usam um administrador fictício (`adminFicticio` em `_entrar.js`).
+
+### Etapa 1 da v93: pareamento, Checkout e operação (10/11/2026)
+
+**Pareamento repetido.** `POST /postos/parear` guarda por 15 s (`POSTO_REPETIDO_S`) o último pareamento de cada combinação (pessoa, SHA-256 do login deste navegador, nome). O mesmo pedido nesse prazo devolve o mesmo posto e o mesmo cookie, sem criar outro (`posto_recentes`, `posto_par_lock`). Outro login da mesma pessoa, ou outro nome, cria posto novo. Posto revogado nunca é devolvido: `posto_ativo(pid)` confere antes, e `posto_revogar` limpa a lembrança. No app, o botão fica desativado com "Pareando…" (`state.posto.pareando`) até a resposta; "Revogar" desativa o botão e marca o posto como revogado na lista na hora, e o servidor confirma em seguida.
+
+Resposta do pareamento:
+
+```json
+{ "ok": true, "posto": { "id": "p_1a2b3c4d", "nome": "Checkout 1", "num": 3 } }
+```
+
+`GET /postos/eu`: `{"ok": true, "posto": {...}}` ou 401 `{"erro": "sem_posto"}`. `POST /postos/aceitar` (botão da página do link) confere o `Host` e a `Origin` (quando vem) como as outras rotas; fora disso, 403 `origem`.
+
+**Endereço com certificado.** Os aparelhos abrem o app por `https://posto.eterna.photo`, atrás de um proxy que repassa o `Host` original e manda `X-Forwarded-Proto: https`. Com esse cabeçalho, os cookies de login e de posto saem com `Secure`. `ETERNA_ORIGENS` precisa ter `https://posto.eterna.photo`. O cookie do posto vale por endereço: ao trocar o endereço, cada aparelho é pareado de novo. Entrada de `ETERNA_ORIGENS` sem `http://` ou `https://` é ignorada com aviso no log.
+
+**Código no Checkout.** `lojaCodEspera(txt)` (app) espera a sessão aparecer antes de `lojaCodigo` conferir o código, quando o código `LP...` é de uma sessão que a aba já conhece sem fotos ou que está na fila para entrar (`SRV.mat`). Espera até 4 s (`LJ_ESPERA_MAX`), com intervalo crescente (`LJ_ESPERA_MS` = 200, 400, 800, 1200 ms), chamando `srvMaterializa` e `srvPull`. Não espera (responde na hora) quando o campo está travado pelos erros, quando a sessão tem todas as fotos descartadas ou recusadas (`ljSessSemFoto`) ou quando é de fora dos dias do Checkout. Qualquer erro encerra a espera. Durante a espera, o botão fica desativado com `T('codeSearching')` ("Buscando suas fotos…", 5 línguas) e o texto digitado fica em `kiosk.codTxt`. `lojaReset` troca `kiosk.codN`: a espera de um cliente nunca abre a sessão depois que a tela voltou ao início. A normalização do código é única (`ljCodNorm`).
+
+**Galeria da venda no aparelho pareado.** `pendConfirmar` chama `galDaVenda` também com `pontoModo() === 'posto'`; o servidor aceita `/galerias/publicar` do posto (rota `posto_ou_sessao`, `VENDER`). Venda confirmada antes de a aba conhecer a sessão: `galAtualizar` mantém as fotos que já estavam e marca `m.pendSess`; a fila (`galFilaTick`) mostra o estado `aguardando` e refaz a galeria a cada volta. `srvMaterializa` monta a sessão do servidor por cima do registro sem fotos (as fotos entram, os dados da venda ficam) e chama `galFilaTick`; `srvPull` não pula sessão fechada que a aba conhece sem fotos.
+
+**Outros ajustes.**
+
+- FTP embutido: prazo fixo de 25 s para entrar (`FTP_LOGIN_S`, contado do início da conexão; comandos antes do login não renovam), até 3 pares `USER`/`PASS` por conexão (`FTP_TENTATIVAS`). Acima disso, 421 e a conexão fecha.
+- `/photoroom/status` aceita também quem tem `configuracao.r` (o Photoroom aparece para quem vê o Painel de controle).
+- Senha provisória: `authSenhaProvisoria` tenta de novo por até 10 s, com espera crescente, enquanto o servidor responde 404 (cadastro novo ainda subindo).
+- Preços e "Voltar aos preços de hoje" no Painel de controle ficam só leitura sem `catalogo.u`.
+- Checkout sem pareamento (`ljNaoPareado`): texto centralizado e botões do Checkout (`lj-cta`, `lj-ghost`).
+
+**Detalhe conhecido.** Ao recarregar a página com a sessão de login vencida, o app volta à entrada sem o aviso "Sua sessão terminou" (o aviso aparece só quando o 401 chega com o app aberto).
+
+**Testes.** Novos: `testes/operacao-agente.js` (operação de ponta a ponta com o agente: entrada, cadastro, FTP, Upload, pareamento, Checkout, Caixa, venda sem rede e endereço com certificado), `testes/caixa-galeria-agente.js`, `testes/checkout-codigo-espera.js`, `testes/seg-pareamento-codigo-agente.js` (pareamento repetido com dois logins, revogação, proxy HTTPS e código com as fotos carregando).
+
+**IMPORTANTE (operação).** Antes de usar no ponto: (1) `ETERNA_ORIGENS=https://posto.eterna.photo` e proxy com `Host` e `X-Forwarded-Proto`; (2) re-parear todos os aparelhos no endereço novo; (3) firewall com a faixa passiva do FTP (`ETERNA_FTP_PASV`) ou `ETERNA_FTP=0` onde outro FTP usa a porta 21; (4) conferir no log se `ftp-remoto.json` e `roverpix.json` foram aceitos (configuração fora das regras é ignorada); (5) teste da Canon com intervalo de 6 min e RAW+JPEG. Lista completa no `GUIA-DA-EQUIPE.md` (Para o TI) e no `CHECKLIST-SERVIDOR.md`.

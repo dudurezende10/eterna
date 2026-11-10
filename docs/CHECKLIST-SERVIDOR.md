@@ -59,6 +59,8 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
   - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. Com o endereço com certificado dos postos: `ETERNA_ORIGENS=https://posto.eterna.photo` (mais os do Tailscale, que o passo 8 acrescenta);
   - `ETERNA_FTP=0`: no estádio o FTP das câmeras é o IIS na porta 21 (passo 6); o FTP embutido do Eterna fica desligado.
 - [ ] Endereço com certificado (`posto.eterna.photo`): o proxy na frente do Eterna repassa o `Host` original e manda `X-Forwarded-Proto: https` (assim o cookie de login e o do posto saem com `Secure`). Depois de trocar o endereço, **parear de novo cada aparelho** no endereço novo (Painel de controle › Postos deste ponto): o cookie do posto vale por endereço.
+- [ ] Abrir o app nos aparelhos sempre pelo endereço do servidor do ponto (`https://posto.eterna.photo`), nunca por eterna.photo.
+- [ ] Depois de reiniciar o agente, conferir no log que `ftp-remoto.json` e `roverpix.json` foram aceitos: servidor FTP fora da rede do ponto (ou porta diferente de 21/990) e endereço da Roverpix que não é o oficial são ignorados. Se for o caso, refazer pelo Painel de controle (nome de servidor FTP: um por linha em `~/Eterna/ftp-remoto-hosts.txt`).
 - [ ] Conferir no app (com login de administrador), no Upload automático e no Painel de controle, que a nuvem está ligada e conectada. Sem login, o `/status` mostra só que o Eterna está no ar.
 
 ## 5. Impressora
