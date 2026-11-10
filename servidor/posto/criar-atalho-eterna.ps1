@@ -1,6 +1,6 @@
 ﻿# Cria o atalho "Eterna" num posto de venda (Windows). Roda uma vez por máquina, sem ser administrador.
 #
-# O atalho abre o Eterna num Chrome só dele (perfil em C:\Eterna\chrome), sempre como processo novo, com:
+# O atalho abre o Posto de venda do Eterna (<endereço>/#posto) num Chrome só dele (perfil em C:\Eterna\chrome), sempre como processo novo, com:
 #   --kiosk-printing  a foto sai direto na impressora padrão (a DNP), sem a janela de impressão
 #   --unsafely-treat-insecure-origin-as-secure  libera a câmera enquanto o endereço não tem certificado
 #
@@ -37,7 +37,7 @@ $perfil = "C:\Eterna\chrome"
 New-Item -ItemType Directory -Force $perfil | Out-Null
 $argumentos = "--user-data-dir=`"$perfil`" --kiosk-printing --no-first-run --no-default-browser-check"
 if ($Endereco -like "http://*") { $argumentos += " --unsafely-treat-insecure-origin-as-secure=$Endereco" }
-$argumentos += " $Endereco"
+$argumentos += " $Endereco/#posto"   # abre o Posto de venda: o vendedor entra e abre o Checkout por ali
 
 $w = New-Object -ComObject WScript.Shell
 $lista = @($destinos | ForEach-Object { Join-Path $_ "Eterna.lnk" })
