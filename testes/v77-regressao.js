@@ -55,7 +55,7 @@ try{
 
   // =============== A. agente sem OpenCV, origem do app padrão (https://eterna.photo) ===============
   dbg('A');
-  const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H);const P=P0+2;
+  const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H);const P=+(process.env.V77_PORTA||8794)+2;
   const pids=['a1b2c3d4e5f6','0a1b2c3d4e5f','f6e5d4c3b2a1'];fotosNoInbox(H,pids.map((p,i)=>[p,jpegsLisos(3)[i]]));
   // galeria já encerrada antes de o agente subir (como depois de um "Encerrar" de ontem)
   const TZ=tok();const fz=[{id:'ag_'+pids[2],sessao:'LPZ',direito:'venda',canal:null}];const MZ=manifesto(TZ,fz,{sessoes:['LPZ']});
@@ -154,7 +154,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
   // =============== B. app servido pelo agente, com OpenCV: galeria no modo agente, R3, R4, S3 ===============
   dbg('B');
   let temCV=true;try{execFileSync('python3',['-c','import cv2, numpy'],{stdio:'ignore'});}catch(e){temCV=false;}
-  const H2=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H2);const P2=P0+1;const UA=`http://127.0.0.1:${P2}/index.html`;
+  const H2=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H2);const P2=+(process.env.V77_PORTA||8794)+1;const UA=`http://127.0.0.1:${P2}/index.html`;
   let imgs=[];
   if(temCV){fs.mkdirSync(path.join(H2,'Eterna','modelos'),{recursive:true});for(const f of ['face_detection_yunet_2023mar.onnx','face_recognition_sface_2021dec.onnx'])fs.copyFileSync(path.join(RAIZ,'vendor','rostos',f),path.join(H2,'Eterna','modelos',f));
     const pg=await b.newPage();await pg.goto(U);await pg.waitForTimeout(500);
