@@ -213,11 +213,19 @@ env = {**os.environ, "HOME": HB, "ETERNA_PORTA": str(PORTA), "ETERNA_FTP_PORTA":
        "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "3", "ETERNA_ORIGENS": ORIG, "ETERNA_LEITORES": "1"}
 env.pop("ETERNA_PASTA", None)
 env["USER"] = "eterna-teste-sem-cartao"     # o vigia de cartões procura em /media/<USER>/: nenhum cartão do computador entra
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao
+COOKIE = _agente_sessao.cookie_sub(AG, HB)                    # pessoa conectada (admin)
+COOKIE_POSTO = _agente_sessao.cookie_sub(AG, HB, "posto", "TV da fila")
 
 
 def req(method, path, body=None, headers=None, origem=None):
     h = dict(headers or {})
     h.setdefault("Host", "127.0.0.1:%d" % PORTA)
+    h.setdefault("Cookie", COOKIE)
+    if not h["Cookie"]:
+        del h["Cookie"]
     data = None
     if body is not None:
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
@@ -321,6 +329,9 @@ try:
     g = g_de("samuel")
     ok(g and g["n"] == 1 and g["funcao"] == {"tipo": "volante", "modo": "chute"}, "9: grupo novo com a função nova: %r" % g)
     # 12: segurança
+    ok(req("GET", "/fila-fotografo", headers={"Cookie": ""})[0] == 401, "12: sem sessão nem posto: 401")
+    ok(req("GET", "/fila-fotografo", headers={"Cookie": COOKIE_POSTO})[0] == 200, "12: posto pareado (TV) vê a fila")
+    ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}}, {"X-Eterna": "1", "Cookie": COOKIE_POSTO})[0] == 401, "12: posto sem pessoa não grava a função")
     ok(req("GET", "/fila-fotografo", headers={"Host": "evil:%d" % PORTA})[0] == 403, "12: Host evil")
     ok(req("GET", "/fila-fotografo", headers={"Origin": "https://evil.example"})[0] == 403, "12: Origin evil")
     ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}})[0] == 403, "12: POST sem X-Eterna")

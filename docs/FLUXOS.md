@@ -985,7 +985,7 @@ flowchart TD
 | Fim do dia | Pedido aguardando de dia anterior vira não pago, motivo `fim_do_dia`. Fechados com mais de 30 dias saem, com teto de 1000. | `dinVirada`, `DIN_DIAS`, `DIN_MAX` |
 | Alerta de espera | Mais de 15 minutos. | `CAIXA_ALERTA_MIN`, `dinAtrasada` |
 | Caixa do balcão | Paga direto, sem pedido do Checkout. Fecha pedido aberto com motivo `pago_de_outro_jeito`. | `caixaConfirm`, `vCaixa` |
-| Pagamento simulado | `PagamentoSimulado`, padrão de `ETERNA_PAGAMENTO`, só na galeria atendida pelo servidor. Aprova na hora, marca `teste: true` e fica fora das métricas. Outro valor impede o agente de iniciar. Webhook responde 501. | `PagamentoSimulado`, `pagamento_escolhido`, `metricas_dia`, `gal_post` |
+| Pagamento pelo celular | v93: desligado por padrão (`PagamentoDesligado`): `POST /g/<t>/pagamento` responde 501 `compra_indisponivel`, `/g/<t>/info` e a galeria mandam `compra:false` e a `#g` mostra "fale com a equipe no balcão" (`gq_buyOff`). `PagamentoSimulado` (aprova na hora, `teste: true`, fora das métricas) só com `ETERNA_PAGAMENTO=simulado` e `ETERNA_MODO_TESTE=1`. Outro valor impede o agente de iniciar. Webhook responde 501. | `PagamentoDesligado`, `PagamentoSimulado`, `pagamento_escolhido`, `compra_online`, `gal_post` |
 
 #### Divergências
 

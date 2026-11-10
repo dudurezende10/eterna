@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v92 (06/11/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v93 (10/11/2026).
 
 Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
 
@@ -165,6 +165,46 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 **A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu usuário e a sua senha, ou use outra janela.
 
+### Aparelho pareado (v93)
+
+O Checkout só abre num aparelho pareado. Cada computador ou tablet do Checkout (e a TV da Fila do fotógrafo) é pareado uma vez.
+
+**Parear um aparelho (Admin)**
+
+1. No próprio aparelho, abra o Eterna pelo endereço do servidor do ponto (`https://posto.eterna.photo`). Não use eterna.photo.
+2. Entre com um usuário que pode alterar o Painel de controle (Admin).
+3. Abra **Configurações › Painel de controle** e vá a **Postos deste ponto**.
+4. Escreva o nome do aparelho (ex.: Checkout 1) e toque **uma vez** em **Parear este aparelho**. O botão mostra **Pareando…** até terminar. Tocar de novo não cria outro posto.
+5. Pronto: o Checkout abre nesse aparelho sem ninguém conectado. A conta do Admin sai do aparelho logo depois de parear (o aparelho continua pareado). Para usar o sistema ali de novo, entre com usuário e senha.
+
+A lista mostra cada aparelho, o número (P1, P2...), quem pareou, o último uso e se está ativo. Dica: no computador do ponto, use como nome o mesmo do rolo de papel (ex.: Caixa 1).
+
+**"Este aparelho ainda não foi pareado"**
+
+Aparece no Checkout de um aparelho sem pareamento, ou que foi revogado. O que fazer:
+
+1. Confira se a página foi aberta pelo endereço do servidor do ponto.
+2. Chame o Admin para parear o aparelho (passos acima).
+3. Depois, toque em **Tentar de novo**. **Sair** volta para a entrada.
+
+As vendas que o aparelho já tinha na fila ficam guardadas e sobem depois do pareamento.
+
+**Revogar um aparelho (Admin)**
+
+Use quando um aparelho for perdido, trocado ou sair do ponto.
+
+1. Em **Postos deste ponto**, ache o aparelho na lista.
+2. Toque em **Revogar**. A situação muda para **revogado** na hora.
+3. Aquele aparelho passa a mostrar "Este aparelho ainda não foi pareado". Para voltar a usar, pareie de novo (ele ganha um número novo).
+
+**Outros avisos**
+
+- **"abra o Eterna pelo endereço do servidor do ponto"**: a página foi aberta pelo endereço errado (por exemplo eterna.photo). Abra pelo endereço do servidor do ponto, o mesmo dos postos.
+- **"alterações não foram aceitas (sem permissão)"**: a sua conta não pode mudar aquilo. Peça a quem pode.
+- **Preços** no Painel de controle: quem não tem o Catálogo vê os preços, mas não muda.
+
+**Galeria da venda no aparelho pareado.** Depois que o Caixa confirma o pagamento, o aparelho pareado publica a galeria da venda (QR e código). Se a sessão ainda estiver chegando do servidor, a galeria espera as fotos e é publicada sozinha em seguida.
+
 ### Fotos de mais de uma sessão (v91)
 
 Quando o cliente olha para a câmera, o Checkout junta todas as sessões do dia em que ele aparece: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. Cada sessão em que ele aparece entra inteira, inclusive as fotos da família em que ele não está, porque a família costuma vir junta ao balcão. A tela abre direto na primeira foto ampliada; ele passa as fotos com as setas ou arrastando, marca com ✓ e pode tocar em **Ver todas** para ver a grade. O ponto e a hora aparecem no canto da foto.
@@ -178,6 +218,8 @@ A compra é uma venda só, mesmo com fotos de várias sessões. Foto que já foi
 ### Cliente que volta horas depois: use o código do recibo
 
 A câmera procura só as fotos dos **últimos 90 minutos** (a família que fotografou antes disso já foi embora, e a busca fica mais rápida e mais segura). Se o cliente voltar depois, a câmera não acha: peça o **código do recibo** (começa com LP) ou o **código da galeria** (exemplo: `K7QM-4WXR`). O código abre a sessão de qualquer hora do dia.
+
+**"Buscando suas fotos…"** Se a sessão acabou de ser fotografada, as fotos podem levar alguns segundos para chegar ao Checkout. Depois de digitar o código e tocar em **Ver minhas fotos**, o botão fica desativado e mostra "Buscando suas fotos…" por até 4 segundos. É normal. Não toque de novo: assim que as fotos chegam, a sessão abre. Se não chegarem, aparece o aviso de código não encontrado; espere um pouco e tente de novo. Código de sessão sem foto disponível, ou de outro dia, responde na hora, sem espera.
 
 O tempo muda no **Painel de controle** › **Checkout** › **Procurar fotos dos últimos __ minutos** (de 15 a 480 minutos, ou **Dia todo**). Só Admin e Supervisor mudam. Vale na hora para todos os caixas do ponto. Em dia cheio, diminua; em dia calmo, pode aumentar.
 
@@ -706,11 +748,38 @@ Bom saber:
 - Escreva o nome do clube como aparece na lista (Flamengo, Fluminense, Vasco...). Assim os dias se juntam no mesmo grupo nas Estatísticas.
 - Use **fechado** para os dias de estádio fechado.
 - Toda mudança fica registrada com o seu nome.
-- Ainda não existe uma agenda oficial única do Maracanã. Por enquanto o cadastro é à mão ou por CSV. A busca automática dos jogos entra na v93.
+- Ainda não existe uma agenda oficial única do Maracanã. Por enquanto o cadastro é à mão ou por CSV. A busca automática dos jogos entra numa próxima versão.
 
 ### Fotógrafo: novo login a cada dia
 
 Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao abrir o Eterna num dia novo, ou se ele ficou aberto na virada da meia-noite, aparece "Novo dia: entre de novo". Entre com o e-mail e o código, como sempre. É só segurança da conta. Não marca ponto.
+
+---
+
+## Novidades da v93: servidor do ponto com acesso por pessoa ou aparelho
+
+O servidor do ponto só abre os dados para quem entrou com usuário e senha ou para um aparelho pareado.
+
+- **Checkout e TV da Fila**: precisam ser pareados uma vez (veja "Aparelho pareado" na parte 3).
+- **Código no Checkout**: com a sessão recém-fotografada, o botão mostra "Buscando suas fotos…" por alguns segundos (veja "Cliente que volta horas depois").
+- **Galeria da venda**: o aparelho pareado publica a galeria depois que o Caixa confirma o pagamento.
+- **Compra pelo celular**: desligada. A galeria mostra as fotos e pede para o cliente falar com a equipe no balcão.
+- **Senha provisória**: logo depois de cadastrar uma pessoa, o botão **Gerar senha provisória** espera alguns segundos o cadastro chegar ao servidor.
+- **Sessão vencida**: se o login venceu e a página é recarregada, a tela volta à entrada sem o aviso "Sua sessão terminou". É só entrar de novo (detalhe conhecido).
+
+### Para o TI (Ronaldo)
+
+Lista de operação no servidor do ponto:
+
+1. **Endereço com certificado.** Os aparelhos abrem o Eterna por `https://posto.eterna.photo`. No `nuvem.env`: `ETERNA_ORIGENS=https://posto.eterna.photo` (mais os endereços do Tailscale, se houver).
+2. **Proxy.** O proxy na frente do Eterna repassa o `Host` original e manda `X-Forwarded-Proto: https`. Sem isso, o login e o pareamento não ficam guardados no aparelho.
+3. **Parear de novo todos os aparelhos** em `https://posto.eterna.photo` (Painel de controle › Postos deste ponto). O pareamento vale por endereço: aparelho pareado em outro endereço precisa parear de novo.
+4. **Abrir o app pelo endereço do servidor**, nunca por eterna.photo. Aberto por outro endereço, o app avisa "abra o Eterna pelo endereço do servidor do ponto".
+5. **FTP embutido, portas passivas.** O FTP do Eterna usa só modo passivo, na faixa `ETERNA_FTP_PASV` (padrão 50000-50050). Libere essa faixa no firewall, além da porta 21. Câmera em modo ativo não envia.
+6. **Outro FTP na porta 21.** Onde já houver outro servidor FTP (por exemplo o IIS do estádio), use `ETERNA_FTP=0` para desligar o FTP embutido.
+7. **Teste com a câmera Canon.** Uma hora, com uma foto a cada 6 minutos e a câmera em RAW+JPEG. O FTP embutido recebe só JPEG. Se a câmera travar a fila por causa do RAW, use `ETERNA_FTP_RAW=descartar` (o RAW é recebido e descartado, sem erro).
+8. **Configurações inválidas são ignoradas.** `ftp-remoto.json` com servidor fora da rede do ponto ou porta diferente de 21/990, e `roverpix.json` com endereço que não é o oficial, agora são ignorados. Confira o log do agente depois de reiniciar e, se preciso, refaça a configuração pelo Painel de controle. Servidor FTP do estádio com nome (ou IP fora da rede interna): um por linha em `~/Eterna/ftp-remoto-hosts.txt`.
+9. **Status.** Sem login, o `/status` mostra só que o Eterna está no ar. Impressora, nuvem e rostos se conferem no app, com login de administrador.
 
 ---
 
@@ -741,7 +810,7 @@ Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao a
 
 - **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
 - **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.
-- **Compras na galeria online são de teste.** Nada é cobrado. Elas aparecem na Lista de vendas como "teste" e não entram na receita.
+- **Compra pelo celular está desligada (v93).** A galeria mostra as fotos e pede para o cliente falar com a equipe no balcão. A venda é feita no Checkout.
 - **Cartão e PIX**: o sistema ainda não conversa com a maquininha (sem TEF). Quem confirma é você, depois de ver a maquininha aprovar.
 - **Checkout e Posto de venda no mesmo notebook**: nesta etapa o Checkout, o Posto de venda e o Caixa precisam estar no mesmo notebook e no mesmo navegador. Os notebooks ainda não conversam entre si; isso entra na próxima etapa.
 - **Ícone do celular no cartão do QR** está quase invisível na tela final. Ajuste previsto.
@@ -750,6 +819,7 @@ Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao a
 - **Compra feita na galeria da escola** não aparece na galeria da sessão da família, e vice-versa.
 - **"Baixar todas"** baixa as fotos uma por uma (ainda não há arquivo ZIP).
 - **Fotos com fundo de IA** ainda não aparecem na galeria por QR. A compra de fundo de IA depois da visita, que existia na tela Convidado, volta na galeria online numa próxima fase.
-- **Permissões e confirmação do caixa**: nesta fase organizam o que cada pessoa vê e faz, mas ainda são conferidas só no navegador. Ainda não são uma trava de segurança no servidor. Isso entra quando o servidor entrar.
+- **Permissões**: desde a v93, o servidor do ponto confere a permissão de cada pessoa ou aparelho em cada pedido. O que a conta não pode mudar volta com o aviso "alterações não foram aceitas (sem permissão)".
+- **Sessão vencida ao recarregar**: a tela volta à entrada sem o aviso "Sua sessão terminou". Basta entrar de novo.
 - **Painel: a parte Eterna são as vendas deste computador.** Dois computadores podem mostrar totais diferentes até as vendas irem para o servidor.
 - **Fotógrafo sem o próprio índice**: no perfil pronto, o fotógrafo não vê a tela Fotógrafos. Decisão confirmada pelo Eduardo.

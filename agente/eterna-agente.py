@@ -27,7 +27,7 @@ Para outros computadores da rede (checkout, quiosque) usarem este agente:
 Para receber de um servidor FTP que já existe na máquina, vigiando a pasta dele:
      ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
-import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections
+import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections, tempfile
 import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
@@ -1246,16 +1246,16 @@ except Exception:
 
 
 def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
-    """Leva um arquivo para a inbox. Devolve 'new', 'dup' ou None."""
+    """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou)."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
-    if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo
+    if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo (a câmera recebe "ok" e não reenvia)
         if move:
             try:
                 os.remove(src)
             except OSError:
                 pass
-        return None
+        return "excluida"
     with lock:
         if dedupe_set is not None:
             if h in dedupe_set:
@@ -1346,7 +1346,7 @@ def scan_card(vol):
 
 # ---------------------------------------------------------------- FTP --------
 # Receptor FTP mínimo (só biblioteca padrão) para o Canon Content Transfer
-# Professional e para câmeras com FTP embutido. Modo passivo e ativo, STOR,
+# Professional e para câmeras com FTP embutido. Só modo passivo, STOR,
 # pastas aceitas e ignoradas (tudo cai na inbox por data).
 
 PHOTOGRAPHERS = ["carlos", "marinara", "samuel", "yago", "marcio", "klassius", "sandessa", "dudu"]
@@ -1472,17 +1472,66 @@ def lan_ip():
             return "127.0.0.1"
 
 
+# FTP embutido: só modo passivo, numa faixa fixa de portas (firewall), conexão de dados só do mesmo IP do controle, só JPEG,
+# até FOTO_ENVIO_MAX por arquivo, no máximo FTP_POR_IP sessões por IP e FTP_TOTAL no total. ETERNA_FTP=0 desliga (servidor com IIS).
+# Sem login: no máximo FTP_SEM_LOGIN_IP por IP, FTP_TOTAL - FTP_RESERVA no total, FTP_LOGIN_S para entrar e linha de até
+# FTP_LINHA bytes: quem só abre conexões não ocupa o lugar da câmera nem a memória do servidor.
+FTP_POR_IP, FTP_TOTAL, FTP_RESERVA, FTP_SEM_LOGIN_IP = 8, 64, 16, 2
+FTP_OCIOSO_S, FTP_LOGIN_S, FTP_DADOS_S, FTP_LINHA, FTP_TENTATIVAS = 300, 25, 30, 4096, 3
+ftp_conexoes = {}          # ip -> sessões abertas
+ftp_sem_login = {}         # ip -> sessões abertas ainda sem login
+FTP_RAW_EXT = (".cr3", ".cr2", ".nef", ".arw", ".raf", ".dng", ".orf", ".rw2")   # ETERNA_FTP_RAW=descartar: recebe e descarta (sem 553)
+
+
+def ftp_faixa_pasv():
+    try:
+        a, b = (int(x) for x in (os.environ.get("ETERNA_FTP_PASV") or "50000-50050").split("-", 1))
+        if 1024 <= a <= b <= 65535:
+            return a, b
+    except ValueError:
+        pass
+    return 50000, 50050
+
+
+def ftp_ip(a):
+    return a[4:] if a.startswith("::ffff:") else a
+
+
 class FTPSession(threading.Thread):
     def __init__(self, conn, addr, users, compartilhado=()):
         super().__init__(daemon=True)
         self.conn, self.addr, self.users = conn, addr, users
         self.compartilhado = {str(x).lower() for x in (compartilhado or ())}
         self.user = None
+        self.login_ok = None   # o usuário cuja senha foi aceita: só ele vira dono das fotos (USER depois do login zera)
         self.ok = False
         self.cwd = "/"
         self.pasv = None       # socket de escuta (modo passivo)
-        self.port_addr = None  # (ip, porta) do modo ativo
         self.rest = 0
+        self.tmpdir = None     # pasta temporária desta sessão (mkdtemp), nunca derivada do nome de usuário
+        self.n = 0
+        self.anonima = True    # conta em ftp_sem_login até a senha ser aceita (o ftp_server já contou na entrada)
+        self.prazo = time.time() + FTP_LOGIN_S   # prazo ABSOLUTO para entrar: NOOP, FEAT e afins antes do login não renovam
+        self.tentativas = 0    # USER e PASS sem login nesta conexão (até FTP_TENTATIVAS pares); acima disso a conexão fecha
+        self.fechar = False
+
+    def marca_login(self, logado):
+        """Passa a sessão de "sem login" para "logada" (ou volta, num USER depois do login) e ajusta o tempo de espera."""
+        ip = ftp_ip(self.addr[0])
+        with lock:
+            if logado and self.anonima:
+                ftp_sem_login[ip] = ftp_sem_login.get(ip, 1) - 1
+                if ftp_sem_login[ip] <= 0:
+                    ftp_sem_login.pop(ip, None)
+            elif not logado and not self.anonima:
+                ftp_sem_login[ip] = ftp_sem_login.get(ip, 0) + 1
+            self.anonima = not logado
+        if not logado:
+            self.prazo = time.time() + FTP_LOGIN_S       # voltou a ficar sem login: prazo novo (as tentativas continuam contando)
+        try:
+            self.conn.settimeout(FTP_OCIOSO_S if logado else FTP_LOGIN_S)
+        except OSError:
+            pass
 
     def send(self, line):
         try:
@@ -1491,25 +1540,81 @@ class FTPSession(threading.Thread):
             pass
 
     def data_conn(self):
-        if self.pasv:
-            self.pasv.settimeout(20)
-            d, _ = self.pasv.accept()
-            self.pasv.close()
+        """A conexão de dados do modo passivo, só do mesmo IP do controle (outro IP é fechado e a espera continua); None se não veio."""
+        if not self.pasv:
+            return None
+        fim = time.time() + 20
+        try:
+            while True:
+                resto = fim - time.time()
+                if resto <= 0:
+                    return None
+                self.pasv.settimeout(resto)
+                try:
+                    d, a = self.pasv.accept()
+                except (socket.timeout, OSError):
+                    return None
+                if ftp_ip(a[0]) == ftp_ip(self.addr[0]):
+                    d.settimeout(FTP_DADOS_S)
+                    return d
+                print("ftp: conexão de dados de %s recusada (controle em %s)" % (a[0], self.addr[0]))
+                try:
+                    d.close()
+                except OSError:
+                    pass
+        finally:
+            try:
+                self.pasv.close()
+            except OSError:
+                pass
             self.pasv = None
-            return d
-        if self.port_addr:
-            d = socket.create_connection(self.port_addr, timeout=20)
-            self.port_addr = None
-            return d
-        return None
 
     def run(self):
+        try:
+            self._run()
+        finally:
+            with lock:
+                ip = ftp_ip(self.addr[0])
+                ftp_conexoes[ip] = ftp_conexoes.get(ip, 1) - 1
+                if ftp_conexoes[ip] <= 0:
+                    ftp_conexoes.pop(ip, None)
+                if self.anonima:
+                    ftp_sem_login[ip] = ftp_sem_login.get(ip, 1) - 1
+                    if ftp_sem_login[ip] <= 0:
+                        ftp_sem_login.pop(ip, None)
+            if self.pasv:
+                try:
+                    self.pasv.close()
+                except OSError:
+                    pass
+            if self.tmpdir:
+                shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self):
+        self.conn.settimeout(FTP_LOGIN_S)         # sem login: 25 s; depois do 230, 5 min parado encerra
         self.send("220 Eterna FTP pronto")
         f = self.conn.makefile("rb")
         try:
             while True:
-                raw = f.readline()
+                if self.anonima:                     # sem login: só o tempo que resta do prazo, conte o que for mandado
+                    resto = self.prazo - time.time()
+                    if resto <= 0:
+                        self.send("421 Tempo para entrar esgotado")
+                        break
+                    self.conn.settimeout(resto)
+                try:
+                    raw = f.readline(FTP_LINHA + 1)
+                except socket.timeout:
+                    if self.anonima:
+                        self.send("421 Tempo para entrar esgotado")
+                    break
                 if not raw:
+                    break
+                if self.anonima and time.time() > self.prazo:
+                    self.send("421 Tempo para entrar esgotado")
+                    break
+                if len(raw) > FTP_LINHA or not raw.endswith(b"\n"):
+                    self.send("500 Linha longa demais")   # linha sem fim ou gigante: fecha sem guardar o resto
                     break
                 line = raw.decode("utf-8", "replace").strip()
                 if not line:
@@ -1518,7 +1623,7 @@ class FTPSession(threading.Thread):
                 cmd = parts[0].upper()
                 arg = parts[1] if len(parts) > 1 else ""
                 self.handle(cmd, arg)
-                if cmd == "QUIT":
+                if cmd == "QUIT" or self.fechar:
                     break
         except Exception as ex:
             print("ftp sessão:", ex)
@@ -1529,8 +1634,16 @@ class FTPSession(threading.Thread):
                 pass
 
     def handle(self, cmd, arg):
+        if cmd in ("USER", "PASS") and self.anonima:
+            self.tentativas += 1                       # cada USER e cada PASS sem login: 3 tentativas = 3 pares
+            if self.tentativas > 2 * FTP_TENTATIVAS:
+                self.send("421 Muitas tentativas nesta conexão")
+                self.fechar = True
+                return
         if cmd == "USER":
-            self.user = arg.strip().lower()
+            self.ok, self.login_ok = False, None      # trocar de usuário pede a senha de novo
+            self.marca_login(False)
+            self.user = arg.strip().lower()[:64]
             self.send("331 Senha")
             return
         if cmd == "PASS":
@@ -1541,14 +1654,16 @@ class FTPSession(threading.Thread):
             if self.user in self.users and hmac.compare_digest(str(self.users[self.user]), arg):
                 with lock:
                     FTP_FALHAS.pop(self.addr[0], None)
-                self.ok = True
+                self.ok, self.login_ok = True, self.user
+                self.marca_login(True)
                 with lock:
                     state["ftp"]["last_user"] = self.user
                 print(f"ftp: {self.user} conectado de {self.addr[0]}")
                 self.send("230 Bem-vindo ao Eterna, " + self.user)
             else:
+                self.ok, self.login_ok = False, None
                 ftp_falhou(self.addr[0])
-                print(f"ftp: login recusado para '{self.user}' de {self.addr[0]}")
+                print("ftp: login recusado para %r de %s" % (re.sub(r"[^\w.@-]", "?", self.user or "")[:40], self.addr[0]))
                 self.send("530 Usuário ou senha incorretos")
             return
         if cmd == "SYST":
@@ -1561,7 +1676,7 @@ class FTPSession(threading.Thread):
             self.send("200 OK"); return
         if cmd == "QUIT":
             self.send("221 Até logo"); return
-        if not self.ok:
+        if not self.ok or not self.login_ok:
             self.send("530 Faça login"); return
         if cmd in ("PWD", "XPWD"):
             self.send(f'257 "{self.cwd}"'); return
@@ -1589,10 +1704,21 @@ class FTPSession(threading.Thread):
         if cmd in ("PASV", "EPSV"):
             if self.pasv:
                 self.pasv.close()
-            self.pasv = socket.socket()
-            self.pasv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.pasv.bind(("0.0.0.0", 0))
-            self.pasv.listen(1)
+                self.pasv = None
+            a, b = ftp_faixa_pasv()
+            for pp in random.sample(range(a, b + 1), b - a + 1):
+                sk = socket.socket()
+                if os.name != "nt":                # porta em TIME_WAIT volta a servir (no Windows o REUSEADDR deixaria dividir a porta)
+                    sk.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    sk.bind(("0.0.0.0", pp))
+                    sk.listen(1)
+                    self.pasv = sk
+                    break
+                except OSError:
+                    sk.close()
+            if not self.pasv:
+                self.send("425 Sem porta livre para o modo passivo"); return
             port = self.pasv.getsockname()[1]
             if cmd == "EPSV":
                 self.send(f"229 Modo passivo (|||{port}|)")
@@ -1600,14 +1726,8 @@ class FTPSession(threading.Thread):
                 ip = self.conn.getsockname()[0].replace(".", ",")
                 self.send(f"227 Modo passivo ({ip},{port // 256},{port % 256})")
             return
-        if cmd == "PORT":
-            p = arg.split(",")
-            self.port_addr = (".".join(p[:4]), int(p[4]) * 256 + int(p[5]))
-            self.send("200 OK"); return
-        if cmd == "EPRT":
-            p = arg.split("|")
-            self.port_addr = (p[2], int(p[3]))
-            self.send("200 OK"); return
+        if cmd in ("PORT", "EPRT"):
+            self.send("502 Use o modo passivo (PASV)"); return
         if cmd in ("LIST", "NLST", "MLSD"):
             d = self.data_conn()
             self.send("150 Lista")
@@ -1619,32 +1739,65 @@ class FTPSession(threading.Thread):
         if cmd in ("DELE", "RMD", "RNFR", "RNTO", "RETR"):
             self.send("550 Não permitido"); return
         if cmd == "STOR":
-            name = os.path.basename(arg.strip().replace("\\", "/")) or f"foto_{int(time.time())}.jpg"
+            name = re.sub(r"[^\w.\- ]", "_", os.path.basename(arg.strip().replace("\\", "/")))[-120:].lstrip(".") or "foto_%d.jpg" % int(time.time())
+            if name.lower().endswith(FTP_RAW_EXT) and os.environ.get("ETERNA_FTP_RAW") == "descartar":
+                d = self.data_conn()               # câmera em RAW+JPEG que trava com 553: recebe e joga fora, sem gravar
+                if not d:
+                    self.send("425 Abra a conexão de dados (modo passivo)"); return
+                self.send("150 Pode enviar")
+                total = 0
+                try:
+                    while total <= 2 * FOTO_ENVIO_MAX:
+                        ch = d.recv(256 * 1024)
+                        if not ch:
+                            break
+                        total += len(ch)
+                except OSError:
+                    pass
+                finally:
+                    d.close()
+                self.send("226 Recebido (RAW descartado)"); return
+            if not name.lower().endswith((".jpg", ".jpeg")):
+                if self.pasv:                      # nada é gravado: a conexão de dados nem é aceita
+                    self.pasv.close()
+                    self.pasv = None
+                self.send("553 Só fotos JPEG"); return
             d = self.data_conn()
             if not d:
                 self.send("425 Abra a conexão de dados (modo passivo)"); return
             self.send("150 Pode enviar")
-            tmpdir = os.path.join(FTPTMP, self.user)
-            os.makedirs(tmpdir, exist_ok=True)
-            tmp = os.path.join(tmpdir, "%d_%s" % (self.ident, name))
+            if not self.tmpdir:
+                os.makedirs(FTPTMP, exist_ok=True)
+                self.tmpdir = tempfile.mkdtemp(prefix="s-", dir=FTPTMP)
+            self.n += 1
+            tmp = os.path.join(self.tmpdir, "%d_%s" % (self.n, name))
             size = 0
-            caiu = False
+            caiu = grande = False
             try:
                 with open(tmp, "wb") as out:
                     while True:
                         chunk = d.recv(256 * 1024)
                         if not chunk:
                             break
-                        out.write(chunk)
                         size += len(chunk)
+                        if size > FOTO_ENVIO_MAX:
+                            grande = True
+                            break
+                        out.write(chunk)
             except OSError:
                 caiu = True
             finally:
                 d.close()
             self.rest = 0
+            if grande:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                print("ftp: %s passou de %d MB; recusado" % (name, FOTO_ENVIO_MAX // (1024 * 1024)))
+                self.send("552 Arquivo grande demais"); return
             st = os.stat(tmp)
-            jpg = name.lower().endswith((".jpg", ".jpeg"))
-            if jpg and (caiu or not jpeg_completo(tmp, st.st_size)):
+            if caiu or not jpeg_completo(tmp, st.st_size):
                 with lock:
                     state["ftp"]["incompletas"] = state["ftp"].get("incompletas", 0) + 1
                 print(f"ftp: {name} chegou incompleto ({size/1e6:.1f} MB), recusado; a câmera manda de novo")
@@ -1654,26 +1807,33 @@ class FTPSession(threading.Thread):
                     pass
                 self.send("426 Transferência incompleta, envie de novo")
                 return
-            if jpg:
-                # v80 (segurança B1): o dono é sempre o login. Subpasta = fotógrafo só para login marcado como "compartilhado"
-                # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
-                quem = self.user
-                sub = self.cwd.strip("/").split("/")[-1].lower()
-                if self.user in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
-                    quem = sub
-                r = ingest_file(tmp, name, st, quem, "ftp", move=True)
-                if r:
-                    save_index()
-                with lock:
-                    state["ftp"]["received"] += 1
-            else:
-                print(f"ftp: {name} recebido ({size/1e6:.1f} MB), não é JPG; guardado em {tmp}")
-            self.send(f"226 Recebido {name}")
+            # v80 (segurança B1): o dono é sempre o login aceito. Subpasta = fotógrafo só para login marcado como "compartilhado"
+            # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
+            quem = self.login_ok
+            sub = self.cwd.strip("/").split("/")[-1].lower()
+            if self.login_ok in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
+                quem = sub
+            r = ingest_file(tmp, name, st, quem, "ftp", move=True)
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            if r is None:                          # não gravou: a câmera manda de novo
+                self.send("451 Não deu para gravar; envie de novo"); return
+            if r == "new":
+                save_index()
+            with lock:
+                state["ftp"]["received"] += 1
+            self.send("226 Recebido " + name)
             return
         self.send("502 Comando não suportado: " + cmd)
 
 
 def ftp_server():
+    if os.environ.get("ETERNA_FTP") == "0":
+        print("  FTP embutido:      desligado (ETERNA_FTP=0)")
+        return
     cfg = load_ftp_cfg()
     users = cfg["users"]
     srv = socket.socket()
@@ -1701,6 +1861,20 @@ def ftp_server():
     while True:
         try:
             conn, addr = srv.accept()
+            ip = ftp_ip(addr[0])
+            with lock:
+                demais = ftp_conexoes.get(ip, 0) >= FTP_POR_IP or sum(ftp_conexoes.values()) >= FTP_TOTAL \
+                    or ftp_sem_login.get(ip, 0) >= FTP_SEM_LOGIN_IP or sum(ftp_sem_login.values()) >= FTP_TOTAL - FTP_RESERVA
+                if not demais:
+                    ftp_conexoes[ip] = ftp_conexoes.get(ip, 0) + 1
+                    ftp_sem_login[ip] = ftp_sem_login.get(ip, 0) + 1
+            if demais:
+                try:
+                    conn.sendall(b"421 Muitas conexoes; tente de novo\r\n")
+                    conn.close()
+                except OSError:
+                    pass
+                continue
             FTPSession(conn, addr, users, cfg.get("compartilhado") or ()).start()
         except Exception as ex:
             print("ftp:", ex)
@@ -1720,7 +1894,12 @@ rftp_wake = threading.Event()
 def rftp_cfg():
     try:
         c = json.load(open(RFTP_CFG))
-        return c if c.get("host") and c.get("user") else None
+        if not (c.get("host") and c.get("user")):
+            return None
+        if not rftp_host_ok(str(c["host"])) or int(c.get("port") or 21) not in (21, 990):
+            rftp["erro"] = "servidor fora da rede do ponto (ftp-remoto-hosts.txt) ou porta diferente de 21/990"
+            return None
+        return c
     except Exception:
         return None
 
@@ -1734,6 +1913,25 @@ def rftp_save(c):
         pass
     rftp["erro"] = None
     rftp_wake.set()
+
+
+RFTP_HOSTS = os.path.join(HOME, "ftp-remoto-hosts.txt")     # nomes (ou IPs fora da rede interna) aceitos para o FTP do estádio
+
+
+def rftp_host_ok(host):
+    """O FTP do estádio fica na rede do ponto: IP privado (10/8, 172.16/12, 192.168/16) ou um nome listado no servidor."""
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.version == 4 and any(ip in ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")):
+            return True
+    except ValueError:
+        pass
+    try:
+        with open(RFTP_HOSTS, encoding="utf-8") as f:
+            return host.lower() in {x.strip().lower() for x in f if x.strip() and not x.lstrip().startswith("#")}
+    except OSError:
+        return False
 
 
 def rftp_connect(c):
@@ -1934,10 +2132,18 @@ def rover_cfg():
         c = json.load(open(ROVER_CFG))
         if c.get("api_key"):
             c.setdefault("base_url", "https://beta.api.roverpix.com/api/v1")
+            b = str(c["base_url"]).rstrip("/")
+            if (b[:-len("/api/v1")] if b.endswith("/api/v1") else b) not in ROVER_BASES:
+                print("  Roverpix: endereço em roverpix.json não é um dos oficiais; configuração ignorada")
+                return None
             return c
     except Exception:
         pass
     return None
+
+
+ROVER_BASES = ("https://beta.api.roverpix.com", "https://api.roverpix.com")    # os únicos destinos da chave da Roverpix
+PR_COMPOSE_HORA = 300                                                           # montagens do Photoroom por posto ou pessoa, por hora
 
 
 def rover_save_cfg(base_url, api_key):
@@ -2026,8 +2232,8 @@ def rv_aggregate(day, orders, payments, photos):
     # fotos por fotógrafo (ou estação de chroma); receita pelo cartão vendido
     card_key, cards, sold_cards = {}, {}, {}
     for p in photos:
-        nm = (p.get("photographer_name") or "").strip()
-        pdv = (p.get("pdv_name") or "").strip()
+        nm = re.sub(r"[<>\"'`&]", "", str(p.get("photographer_name") or "")).strip()[:60]   # nome vem de fora: nunca vira HTML
+        pdv = re.sub(r"[<>\"'`&]", "", str(p.get("pdv_name") or "")).strip()[:60]
         if nm:
             key, human, name = rv_key(nm), True, nm
         else:
@@ -3065,6 +3271,7 @@ LIMITE_MENOR = 0.50     # grupo de escola: só as fotos em que o rosto da crian�
 URL_TTL = 900           # link assinado de foto: 15 min
 ACESSO_TTL = 3600       # acesso depois da selfie: 1 h
 GAL_MAX_CORPO = 2 * 1024 * 1024
+GAL_DIAS = 60                                            # validade máxima de uma galeria (a mesma do app)
 GAL_FALHAS, GAL_BLOQUEIO = 5, 15 * 60
 GAL_EVENTO_DISTINTOS, GAL_EVENTO_JANELA = 2, 24 * 3600   # grupo de escola: crianças diferentes por (ip, token) em 24 h
 GAL_EVENTO_HORA = 60                                     # acessos por galeria de grupo por hora (todos os IPs)
@@ -3231,14 +3438,33 @@ class PagamentoSimulado(Pagamento):
         raise NotImplementedError
 
 
+class PagamentoDesligado(Pagamento):
+    """Sem adquirente real: a galeria não vende pelo celular (POST /g/<t>/pagamento responde 501, "compra": false)."""
+    def criar(self, pedido):
+        raise NotImplementedError("compra_indisponivel")
+
+    def consultar(self, id):
+        return {"id": id, "status": "desconhecido"}
+
+    def webhook(self, corpo, cabecalhos):
+        raise NotImplementedError
+
+
 def pagamento_escolhido():
-    tipo = (os.environ.get("ETERNA_PAGAMENTO") or "simulado").lower()
-    if tipo == "simulado":
+    """O pagamento simulado (aprova tudo, venda marcada como teste) só existe com ETERNA_PAGAMENTO=simulado E ETERNA_MODO_TESTE=1."""
+    tipo = (os.environ.get("ETERNA_PAGAMENTO") or "desligado").lower()
+    if tipo == "simulado" and os.environ.get("ETERNA_MODO_TESTE") == "1":
         return PagamentoSimulado()
+    if tipo in ("simulado", "desligado"):
+        return PagamentoDesligado()
     raise NotImplementedError("ETERNA_PAGAMENTO=%s ainda não implementado (fase 2; chaves em ~/Eterna/pagamento.json)" % tipo)
 
 
 PAGAMENTO = pagamento_escolhido()
+
+
+def compra_online():
+    return not isinstance(PAGAMENTO, PagamentoDesligado)
 
 
 def _iso(t=None):
@@ -3278,6 +3504,16 @@ def _gal_confere_sessoes(m, fotos):
             raise ValueError("foto fora da escolha da venda")
 
 
+def gal_expira_ok(v):
+    """Validade pedida pelo navegador, nunca além de agora + GAL_DIAS (sem data ou inválida: agora + GAL_DIAS)."""
+    teto = time.time() + GAL_DIAS * 86400
+    try:
+        t = _epoch(str(v)[:40]) if v else None
+    except Exception:
+        t = None
+    return _iso(min(t, teto) if t else teto)
+
+
 def gal_validar(m):
     """Manifesto vindo do app: só os campos conhecidos, com tipos e tamanhos checados."""
     if not isinstance(m, dict) or not token_ok(m.get("token")) or m.get("tipo") not in ("sessao", "evento"):
@@ -3301,7 +3537,7 @@ def gal_validar(m):
     codigo = m.get("codigo") if isinstance(m.get("codigo"), str) and _re_codigo.match(m.get("codigo")) else None
     return {"v": 1, "token": m["token"], "codigo": codigo, "tipo": m["tipo"], "venue": str(m.get("venue") or "")[:40],
             "nome": (str(m["nome"])[:120] if m.get("nome") else None), "sessoes": [str(s)[:40] for s in (m.get("sessoes") or [])[:200]],
-            "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": str(m.get("expira") or "")[:40],
+            "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": gal_expira_ok(m.get("expira")),
             "precos": precos, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
 
 
@@ -3322,6 +3558,8 @@ def gal_mesclar(novo, velho):
         novo["expira"] = velho["expira"]
     if velho.get("encerrada"):
         novo["encerrada"] = True
+    if velho.get("menor"):
+        novo["menor"] = True                     # grupo de menor marcado no servidor não é desmarcado pelo navegador
     return novo
 
 
@@ -3578,7 +3816,7 @@ def galeria_obj(token, m, pids):
                       "original": REPO.url(token, f["id"], "original", URL_TTL) if livre and REPO.existe(token, f["id"], "original") else None,
                       "chegando": not tem})
     return {"tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"], "estado": gal_estado(token, m),
-            "precos": m["precos"], "fotos": fotos}
+            "precos": m["precos"], "fotos": fotos, "compra": compra_online()}
 
 
 def gal_estado(token, m):
@@ -4605,6 +4843,11 @@ if os.environ.get("ETERNA_REDE"):
 HOSTS_OK |= ORIGENS_REDE_HOSTS
 
 
+def host_ok(host):
+    """Host de um pedido que não é público: o do agente (contra DNS rebinding)."""
+    return host in HOSTS_OK or host in ("127.0.0.1:%d" % PORT, "localhost:%d" % PORT)
+
+
 IMP_MAX_CORPO = 60 * 1024 * 1024
 IMP_DIR = os.path.join(HOME, "impressao")
 # Imprime cada JPEG numa folha 10x15 da impressora do servidor, sem margem e preenchendo a folha (corta o excesso,
@@ -5040,6 +5283,10 @@ def auth_db():
     c.execute("create table if not exists sessao_login (token text primary key, usuario text, expira real)")
     c.execute("create table if not exists login_log (em real, usuario text, acao text, por text, ip text)")
     c.execute("create table if not exists reset_senha (usuario text primary key, hash text, sal text, n integer, expira real, pedido real)")
+    # posto pareado: cada aparelho (Checkout, caixa, TV) recebe um cookie próprio; aqui fica só o SHA-256 do token
+    c.execute("create table if not exists posto (id text primary key, nome text, num integer, hash text unique, criado_por text, criado_em real,"
+              " ultimo_uso real, ip_ultimo text, revogado_em real)")
+    c.execute("create table if not exists posto_convite (hash text primary key, nome text, expira real, usado real)")
     return c
 
 
@@ -5351,18 +5598,74 @@ def auth_cadastro_recusa(quem, id_doc, antes, depois):
     return None
 
 
-def auth_filtrar_docs(body, quem, ip=""):
-    """/ponto/docs: as gravações em usuarios só passam pela regra acima; as outras coleções seguem como antes."""
+# Quem grava cada coleção de /ponto/docs (fora usuarios, que tem a regra acima): o módulo, com Criar ou Alterar para gravar
+# e Excluir ou Alterar para apagar. Na coleção "sim", pelo começo do id; id desconhecido é recusado.
+DOC_COL_MOD = {"diario": "diario", "treino": "qualidade", "reviews": "qualidade", "bandeiras": "estoque", "funcao": "escala",
+               "agenda": "escala", "config": "configuracao"}
+DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
+           ("stock|", ("estoque", "venda")),          # o rolo de papel do posto baixa na impressão, feita no caixa
+           ("flags|", ("estoque",)), ("flagList", ("estoque",)),
+           # gravados ao montar as sessões e no Upload (fotógrafo), no caixa e na Curadoria
+           ("flagUse|", ("set", "estoque", "venda")), ("invalid|", ("set", "qualidade", "venda", "estoque")),
+           ("edits|", ("set", "qualidade")), ("discarded|", ("set", "qualidade")), ("ai|", ("venda", "qualidade")),
+           ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
+           ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("fundosModo", ("configuracao",)),
+           ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
+           ("bgPodioV86", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
+
+
+def doc_modulos(col, id_doc):
+    if col == "sim":
+        for k, mods in DOC_SIM:
+            if (id_doc.startswith(k) if k.endswith("|") else id_doc == k):
+                return mods
+        return None
+    m = DOC_COL_MOD.get(col)
+    return (m,) if m else None
+
+
+def doc_recusa(db, quem, d):
+    """O motivo de recusar esta gravação (fora de usuarios), ou None."""
+    if not quem:
+        return "sem_sessao"
+    col, id_doc, apaga = d.get("col"), str(d.get("id") or ""), d.get("valor") is None
+    if col not in ESTADO_COLS:
+        return "colecao"
+    existe = db.execute("select 1 from doc where col=? and id=? and valor is not null", (col, id_doc)).fetchone() is not None
+    if col == "usuarios_login":
+        return None if id_doc == quote(quem["usuario"], safe="-_.!~*'()") else "sem_permissao"
+    if col == "usuarios_log" or (col == "sim" and id_doc.startswith("cortesiaLog|")):
+        if apaga or existe:
+            return "so_acrescenta"
+        if col == "usuarios_log":
+            return None
+    mods = doc_modulos(col, id_doc)
+    if not mods:
+        return "desconhecido"
+    letras = ("d", "u") if apaga else ("u",) if existe else ("c", "u")
+    return None if any(auth_pode(quem["cadastro"], mo, le) for mo in mods for le in letras) else "sem_permissao"
+
+
+def auth_filtrar_docs(body, quem, ip="", posto=None):
+    """/ponto/docs: cada gravação passa pela regra da sua coleção (usuarios: auth_cadastro_recusa; outras: doc_recusa).
+    Aparelho pareado sem pessoa conectada não grava. O recusado sai da resposta como "recusados" (o app não reenvia)."""
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
-    if not any(isinstance(d, dict) and d.get("col") == "usuarios" for d in docs):
-        return body, 0
-    fica, recusados, apagados = [], 0, []
+    fica, recusados, apagados, motivos = [], max(0, len(docs) - 500), [], {}       # acima de 500 por pedido: recusado, não some calado
+    if recusados:
+        motivos["excesso"] = recusados
     with estado_lock:
         db = auth_db()
         try:
-            for d in docs:
-                if not (isinstance(d, dict) and d.get("col") == "usuarios"):
-                    fica.append(d)
+            for d in docs[:500]:
+                if not isinstance(d, dict):
+                    continue
+                if d.get("col") != "usuarios":
+                    motivo = doc_recusa(db, quem, d)
+                    if motivo:
+                        recusados += 1
+                        motivos[motivo] = motivos.get(motivo, 0) + 1
+                    else:
+                        fica.append(d)
                     continue
                 r = db.execute("select valor from doc where col='usuarios' and id=? and valor is not null", (str(d.get("id")),)).fetchone()
                 antes = json.loads(r[0]) if r else None
@@ -5375,6 +5678,9 @@ def auth_filtrar_docs(body, quem, ip=""):
                 fica.append(d)
                 if antes and depois is None and antes.get("email"):
                     apagados.append(antes["email"])
+            if motivos:
+                auth_log(db, ("posto:" + posto["id"]) if posto and not quem else (quem or {}).get("usuario", "?"),
+                         "docs_recusados:" + ",".join("%s=%d" % kv for kv in sorted(motivos.items())), (quem or {}).get("usuario", ""), ip)
             db.commit()
         finally:
             db.close()
@@ -5410,6 +5716,151 @@ def auth_criar_admin(usuario, nome):
                perms={m: dict(tudo) for m in AUTH_MODULOS}, createdBy=(atual or {}).get("createdBy") or "servidor")
     estado_gravar({"docs": [{"col": "usuarios", "id": id_doc, "valor": cad}]})
     print("Administrador %s. Senha provisória, troque na primeira entrada: %s" % (usuario, auth_criar(usuario, "servidor")))
+    return 0
+
+
+# ---------- Postos pareados ----------
+# O Admin pareia cada aparelho uma vez (Painel de controle, ou o link de uso único do comando --parear-posto). O aparelho guarda
+# o cookie eterna_posto (HttpOnly, 400 dias, revogável); o servidor guarda só o hash. O posto abre o Checkout sem pessoa logada.
+POSTO_COOKIE = "eterna_posto"
+POSTO_IDADE = 400 * 86400
+POSTO_CONVITE_S = 600
+posto_uso = {}                       # id -> última gravação de ultimo_uso (no máximo uma por minuto)
+POSTO_REPETIDO_S = 15
+posto_recentes = {}                  # (pessoa, hash do login, nome) -> (hora, token, posto) dos últimos pareamentos, contra clique repetido
+posto_par_lock = threading.Lock()
+
+
+def _sha(t):
+    return hashlib.sha256(t.encode()).hexdigest()
+
+
+def posto_nome_ok(nome):
+    n = re.sub(r"[<>\"'`&\x00-\x1f]", "", str(nome or "")).strip()[:40]
+    return n or None
+
+
+def posto_criar(nome, por="", ip=""):
+    """-> (token, {id, nome, num}). O token sai só aqui, para o cookie deste aparelho."""
+    token, pid = secrets.token_urlsafe(32), "p_" + secrets.token_hex(4)
+    with estado_lock:
+        db = auth_db()
+        try:
+            num = (db.execute("select coalesce(max(num), 0) from posto").fetchone()[0] or 0) + 1
+            db.execute("insert into posto values (?, ?, ?, ?, ?, ?, ?, ?, ?)", (pid, nome, num, _sha(token), por, time.time(), None, ip, None))
+            auth_log(db, "posto:" + pid, "posto_pareado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return token, {"id": pid, "nome": nome, "num": num}
+
+
+def posto_quem(token, ip=""):
+    """O posto deste cookie, se não foi revogado; senão None."""
+    if not token or len(token) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select id, nome, num from posto where hash=? and revogado_em is null", (_sha(token),)).fetchone()
+            if r and time.time() - posto_uso.get(r[0], 0) > 60:
+                posto_uso[r[0]] = time.time()
+                db.execute("update posto set ultimo_uso=?, ip_ultimo=? where id=?", (time.time(), ip, r[0]))
+                db.commit()
+        finally:
+            db.close()
+    return {"id": r[0], "nome": r[1], "num": r[2]} if r else None
+
+
+def posto_lista():
+    with estado_lock:
+        db = auth_db()
+        try:
+            cols = ("id", "nome", "num", "criado_por", "criado_em", "ultimo_uso", "ip_ultimo", "revogado_em")
+            return [dict(zip(cols, r)) for r in db.execute("select %s from posto order by num" % ", ".join(cols))]
+        finally:
+            db.close()
+
+
+def posto_revogar(pid, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            n = db.execute("update posto set revogado_em=? where id=? and revogado_em is null", (time.time(), str(pid))).rowcount
+            if n:
+                auth_log(db, "posto:" + str(pid), "posto_revogado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    # Limpeza de cortesia: quem garante que o pareamento repetido não devolve posto revogado é o posto_ativo em postos_post.
+    with posto_par_lock:
+        for k in [k for k, v in posto_recentes.items() if v[2]["id"] == str(pid)]:
+            posto_recentes.pop(k, None)
+    return bool(n)
+
+
+def posto_ativo(pid):
+    """True se o posto existe e não foi revogado."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            return bool(db.execute("select 1 from posto where id=? and revogado_em is null", (str(pid),)).fetchone())
+        finally:
+            db.close()
+
+
+def posto_convite_novo(nome):
+    codigo = secrets.token_urlsafe(18)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from posto_convite where expira < ?", (time.time() - 86400,))
+            db.execute("insert into posto_convite values (?, ?, ?, ?)", (_sha(codigo), nome, time.time() + POSTO_CONVITE_S, None))
+            db.commit()
+        finally:
+            db.close()
+    return codigo
+
+
+def posto_convite_ver(codigo):
+    """O nome do posto do convite, se ainda vale, sem gastar o código."""
+    if not codigo or len(codigo) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select nome from posto_convite where hash=? and usado is null and expira >= ?", (_sha(codigo), time.time())).fetchone()
+        finally:
+            db.close()
+    return r[0] if r else None
+
+
+def posto_convite_usar(codigo):
+    """O nome do posto do convite, uma única vez e dentro de 10 min; senão None."""
+    if not codigo or len(codigo) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select nome, expira from posto_convite where hash=? and usado is null", (_sha(codigo),)).fetchone()
+            if not r or r[1] < time.time():
+                return None
+            db.execute("update posto_convite set usado=? where hash=?", (time.time(), _sha(codigo)))
+            db.commit()
+        finally:
+            db.close()
+    return r[0]
+
+
+def posto_parear_cli(nome):
+    """python eterna-agente.py --parear-posto "<nome>": link de uso único (10 min) para parear um aparelho sem entrar no app."""
+    n = posto_nome_ok(nome)
+    if not n:
+        print("Nome do posto inválido.")
+        return 1
+    codigo = posto_convite_novo(n)
+    print("Abra no aparelho \"%s\" em até 10 minutos (vale uma vez), trocando 127.0.0.1 pelo endereço do servidor na rede se for outro aparelho:" % n)
+    print("  http://127.0.0.1:%d/postos/aceitar?c=%s" % (PORT, codigo))
     return 0
 
 
@@ -6296,6 +6747,70 @@ def agenda_valida(doc_id, v):
     return out
 
 
+# Quem pode cada rota do agente. Nada abre sem estar aqui: rota fora da tabela responde 404 sem tocar o disco.
+#   publica          qualquer um: o app, o /status mínimo, a galeria do cliente (/g/) e o webhook do adquirente
+#   posto_ou_sessao  aparelho pareado (cookie eterna_posto) ou pessoa conectada com um dos módulos (vazio = qualquer pessoa)
+#   sessao           pessoa conectada com um dos módulos (vazio = qualquer pessoa conectada; a rota confere o resto)
+#   teste            só com ETERNA_TESTE_CARGA=1 e pessoa com Painel de controle (Alterar)
+# Caminho terminado em "/" vale como prefixo. Fora das públicas: Host do agente, Origin conhecida e, em POST, X-Eterna: 1.
+FOTOS_LER = ("venda.r", "quiosque.r", "set.r", "estoque.r", "galerias.r", "qualidade.r")        # ver fotos e sessões
+VENDER = ("venda.c", "quiosque.c", "galerias.c")                                          # o que o Checkout faz numa venda
+ROTAS = (
+    ("GET", "/", "publica", ()), ("GET", "/index.html", "publica", ()),
+    ("GET", "/img/", "publica", ()), ("GET", "/vendor/", "publica", ()), ("GET", "/sprites/", "publica", ()),
+    ("GET", "/status", "publica", ()),                          # sem credencial, só {ok, agent, version, boot}
+    ("GET", "/g/", "publica", ()), ("POST", "/g/", "publica", ()), ("POST", "/pagamento/webhook/", "publica", ()),
+    ("GET", "/postos/aceitar", "publica", ()), ("POST", "/postos/aceitar", "publica", ()),   # o código de uso único (10 min) é a credencial
+    ("POST", "/auth/entrar", "publica", ()), ("POST", "/auth/trocar", "publica", ()), ("POST", "/auth/sair", "publica", ()),
+    ("POST", "/auth/esqueci", "publica", ()),
+    ("GET", "/auth/eu", "sessao", ()), ("GET", "/auth/senhas", "sessao", ()),
+    ("POST", "/auth/senha/gerar", "sessao", ()), ("POST", "/auth/senha/cancelar", "sessao", ()),
+    ("GET", "/postos/eu", "publica", ()),                       # a rota confere Host e responde 401 sem_posto
+    ("GET", "/ftp/contas", "sessao", ("configuracao.r",)),
+    ("GET", "/postos", "sessao", ("configuracao.r",)),
+    ("POST", "/postos/parear", "sessao", ("configuracao.u",)), ("POST", "/postos/revogar", "sessao", ("configuracao.u",)),
+    # o que o Checkout usa: posto pareado ou pessoa conectada com o módulo
+    ("GET", "/thumb/", "posto_ou_sessao", FOTOS_LER), ("GET", "/file/", "posto_ou_sessao", FOTOS_LER),
+    ("GET", "/sessoes", "posto_ou_sessao", FOTOS_LER),
+    ("GET", "/ponto/docs", "posto_ou_sessao", ()),              # posto: só sim, config e agenda
+    ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
+    ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
+    ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
+    ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
+    ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
+    ("GET", "/photoroom/status", "posto_ou_sessao", VENDER + ("configuracao.r",)),    # sem Painel de controle: só {configured, fundos_modo}
+    ("GET", "/photoroom/result/", "posto_ou_sessao", VENDER), ("POST", "/photoroom/compose", "posto_ou_sessao", VENDER),
+    ("GET", "/fila-fotografo", "posto_ou_sessao", ("filafoto.r",)),
+    # só a equipe, pelo módulo
+    ("GET", "/biblioteca", "sessao", ("set.r", "estoque.r")), ("GET", "/events", "sessao", ("set.r", "estoque.r")),
+    ("POST", "/fotos/enviar", "sessao", ("set.c",)),
+    ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")),
+    ("GET", "/roverpix/status", "sessao", ("financeiro.r",)), ("GET", "/roverpix/data", "sessao", ("financeiro.r",)),
+    ("POST", "/roverpix/sync", "sessao", ("configuracao.u",)), ("POST", "/roverpix/config", "sessao", ("configuracao.u",)),
+    ("GET", "/ftp-remoto/status", "sessao", ("configuracao.r",)), ("POST", "/ftp-remoto/config", "sessao", ("configuracao.u",)),
+    ("POST", "/photoroom/config", "sessao", ("configuracao.u",)), ("POST", "/fundos/modo", "sessao", ("configuracao.u",)),
+    ("POST", "/nuvem/reenviar", "sessao", ("configuracao.u",)),
+    ("POST", "/fila-fotografo/funcao", "sessao", ("escala.u",)),
+    ("POST", "/ponto/entradas", "sessao", ("estatisticas.c",)), ("GET", "/ponto/entradas/importacoes", "sessao", ("estatisticas.r",)),
+    ("GET", "/impressao/fila", "sessao", ("venda.r",)), ("GET", "/impressao/miniatura", "sessao", ("venda.r",)),
+    ("POST", "/imprimir", "sessao", ("venda.c", "venda.u")), ("POST", "/impressao/acao", "sessao", ("venda.u",)),
+    ("GET", "/galerias/vendas", "sessao", ("galerias.r",)), ("GET", "/galerias/status", "sessao", ("galerias.r",)),
+    ("POST", "/galerias/encerrar", "sessao", ("galerias.d",)),
+    ("POST", "/lgpd/excluir", "sessao", ("galerias.d",)),
+    ("POST", "/rostos/medir", "sessao", ("qualidade.r",)),
+    ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
+)
+
+
+def rota_regra(metodo, path):
+    """-> (tipo, módulos) da rota, ou None se ela não existe."""
+    for m, c, tipo, mods in ROTAS:
+        if m == metodo and (path == c or (c.endswith("/") and c != "/" and path.startswith(c))):
+            return tipo, mods
+    return None
+
+
 def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
@@ -6326,38 +6841,68 @@ class H(BaseHTTPRequestHandler):
             # v87 (risco 4): a TV aberta pelo endereço de ETERNA_ORIGENS vê as miniaturas (só /thumb/, não o original)
             return not o or o in ORIGENS_REDE
         # contra DNS rebinding: o Host precisa ser o do agente (127.0.0.1, localhost ou o IP da rede com ETERNA_REDE)
-        if host not in HOSTS_OK:
+        if not host_ok(host):
             return False
         return not o or o in self.origens_ok(path)
 
+    def origens_aceitas(self):
+        """Origin aceita fora das rotas públicas: a do próprio agente (pelo Host pedido), ETERNA_ORIGENS e ETERNA_APP_ORIGIN."""
+        host = (self.headers.get("Host") or "").lower()
+        return {"http://" + host, "https://" + host, "http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT} | ORIGENS_REDE | {APP_ORIGIN.rstrip("/").lower()}
+
     def cors(self):
+        """CORS aberto (*) só na galeria do cliente (/g/); as outras rotas só para as origens aceitas, sem cabeçalho livre."""
         path = urlparse(self.path).path
-        if path.startswith("/fila-fotografo"):
-            # v87 (segurança N1): sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
-            o = (self.headers.get("Origin") or "").lower()
-            if o and o in ORIGENS_REDE:
-                self.send_header("Access-Control-Allow-Origin", o)
-                self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        if path.startswith("/g/"):
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             return
-        if rota_privada(path):
-            o = self.headers.get("Origin") or ""
-            if o and o in self.origens_ok(path):
-                self.send_header("Access-Control-Allow-Origin", o)
-                self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path == "/ponto/entradas" else "Content-Type")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            return
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if o and o in self.origens_aceitas() and (o in ORIGENS_REDE or not path.startswith("/fila-fotografo")):
+            self.send_header("Access-Control-Allow-Origin", o)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def autoriza(self, metodo):
+        """Primeira coisa de do_GET e do_POST: aplica ROTAS. True = o pedido segue; False = a resposta já foi dada."""
+        self.__dict__.pop("_eu", None)
+        self.__dict__.pop("_posto", None)
+        regra = rota_regra(metodo, urlparse(self.path).path)
+        if regra is None:
+            self.js({"error": "not found"}, 404)
+            return False
+        tipo, mods = regra
+        if tipo == "publica":
+            return True
+        if tipo == "teste" and not os.environ.get("ETERNA_TESTE_CARGA"):
+            self.js({"error": "not found"}, 404)       # fora do teste de carga, a rota não existe
+            return False
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if not host_ok((self.headers.get("Host") or "").lower()) or (o and o not in self.origens_aceitas()) \
+                or (metodo == "POST" and self.headers.get("X-Eterna") != "1"):
+            self.js({"erro": "origem"}, 403, True)
+            return False
+        eu = self.sessao()
+        if tipo == "teste":
+            pode = bool(eu) and auth_pode(eu["cadastro"], "configuracao", "u")
+        else:
+            pode = bool(eu) and (not mods or any(auth_pode(eu["cadastro"], *x.split(".")) for x in mods))
+        if pode or (tipo == "posto_ou_sessao" and self.posto_atual()):
+            return True
+        if eu:
+            self.js({"erro": "sem_permissao"}, 403, True)
+        else:
+            self.js({"erro": "sem_sessao"}, 401, True)
+        return False
 
     def do_OPTIONS(self):
-        self.send_response(204)
+        p = urlparse(self.path).path
+        self.send_response(204 if rota_regra("GET", p) or rota_regra("POST", p) else 404)
         self.cors()
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def js(self, obj, code=200, nostore=False):
@@ -6374,16 +6919,124 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def auth_token(self):
+    def cookie_val(self, nome):
         for parte in (self.headers.get("Cookie") or "").split(";"):
             k, _, v = parte.strip().partition("=")
-            if k == AUTH_COOKIE:
+            if k == nome:
                 return v
         return None
 
-    def auth_cookie(self, token, idade):
+    def auth_token(self):
+        return self.cookie_val(AUTH_COOKIE)
+
+    def auth_cookie(self, token, idade, nome=AUTH_COOKIE):
         https = (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
-        self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (AUTH_COOKIE, token, idade, "; Secure" if https else "")
+        self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (nome, token, idade, "; Secure" if https else "")
+
+    def sessao(self):
+        """A pessoa conectada neste pedido (cookie eterna_sessao), lida uma vez por pedido."""
+        if "_eu" not in self.__dict__:
+            self._eu = auth_quem(self.auth_token())
+        return self._eu
+
+    def posto_atual(self):
+        """O posto pareado deste aparelho (cookie eterna_posto), lido uma vez por pedido."""
+        if "_posto" not in self.__dict__:
+            self._posto = posto_quem(self.cookie_val(POSTO_COOKIE), self.client_address[0])
+        return self._posto
+
+    def html(self, texto, code=200):
+        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Eterna</title>"
+                "<body style='font-family:system-ui;padding:32px;max-width:520px'>%s</body>" % texto).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        cookie = self.__dict__.pop("cookie_novo", None)
+        if cookie is not None:
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def postos_get(self, u, q):
+        """GET /postos/eu (o posto deste aparelho), GET /postos (lista, configuracao.r), GET /postos/aceitar?c= (link de uso único)."""
+        if not host_ok((self.headers.get("Host") or "").lower()):
+            return self.js({"erro": "origem"}, 403)
+        if u.path == "/postos/eu":
+            p = self.posto_atual()
+            return self.js({"ok": True, "posto": p}, 200, True) if p else self.js({"erro": "sem_posto"}, 401, True)
+        if u.path == "/postos/aceitar":
+            # abrir o link (ou a prévia do WhatsApp) só mostra o botão; o código é gasto no POST do botão
+            c = (q.get("c") or [""])[0]
+            nome = posto_convite_ver(c)
+            if not nome:
+                return self.html("<h2>Link vencido ou já usado</h2><p>Gere outro no servidor do ponto.</p>", 410)
+            return self.html("<h2>Parear este aparelho</h2><p>Este aparelho vai virar o posto <b>%s</b>.</p><form method='post' action='/postos/aceitar'>"
+                             "<input type='hidden' name='c' value='%s'><button type='submit' style='font-size:18px;padding:10px 18px'>Parear este aparelho</button></form>"
+                             % (nome, re.sub(r"[^A-Za-z0-9_-]", "", c)))
+        if u.path == "/postos":
+            eu = self.sessao()
+            if not eu:
+                return self.js({"erro": "sem_sessao"}, 401, True)
+            if not auth_pode(eu["cadastro"], "configuracao", "r"):
+                return self.js({"erro": "sem_permissao"}, 403, True)
+            return self.js({"ok": True, "postos": posto_lista()}, 200, True)
+        return self.js({"error": "not found"}, 404)
+
+    def postos_aceitar_post(self):
+        """POST /postos/aceitar (botão da página do link): gasta o código de uso único e grava o cookie do posto."""
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if not host_ok((self.headers.get("Host") or "").lower()) or (o and o not in self.origens_aceitas()):
+            return self.js({"erro": "origem"}, 403)
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if not 0 < n <= 512:
+            return self.html("<h2>Pedido inválido</h2>", 400)
+        c = (parse_qs(self.rfile.read(n).decode("utf-8", "replace")).get("c") or [""])[0]
+        nome = posto_convite_usar(c)
+        if not nome:
+            return self.html("<h2>Link vencido ou já usado</h2><p>Gere outro no servidor do ponto.</p>", 410)
+        token, p = posto_criar(nome, "convite", self.client_address[0])
+        self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+        return self.html("<h2>Aparelho pareado</h2><p>Este aparelho agora é o posto <b>%s</b> (P%d).</p><p><a href='/#loja'>Abrir o Checkout</a> · <a href='/'>Abrir o Eterna</a></p>"
+                         % (p["nome"], p["num"]))
+
+    def postos_post(self, u):
+        """POST /postos/parear {nome} (grava o cookie deste aparelho) e POST /postos/revogar {id}: sessão com configuracao.u."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"erro": "origem"}, 403)
+        eu = self.sessao()
+        if not eu:
+            return self.js({"erro": "sem_sessao"}, 401, True)
+        if not auth_pode(eu["cadastro"], "configuracao", "u"):
+            return self.js({"erro": "sem_permissao"}, 403, True)
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        if u.path == "/postos/parear":
+            nome = posto_nome_ok(b.get("nome"))
+            if not nome:
+                return self.js({"erro": "nome"}, 400, True)
+            chave, agora = (eu["usuario"], _sha(self.auth_token() or ""), nome), time.time()
+            with posto_par_lock:                 # clique repetido (mesmo login deste navegador e mesmo nome em 15 s): o mesmo posto, sem criar outro
+                for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:
+                    posto_recentes.pop(k, None)
+                if chave in posto_recentes and not posto_ativo(posto_recentes[chave][2]["id"]):
+                    posto_recentes.pop(chave, None)
+                if chave in posto_recentes:
+                    _, token, p = posto_recentes[chave]
+                else:
+                    token, p = posto_criar(nome, eu["usuario"], self.client_address[0])
+                    posto_recentes[chave] = (agora, token, p)
+            self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+            return self.js({"ok": True, "posto": p}, 200, True)
+        if u.path == "/postos/revogar":
+            if not posto_revogar(b.get("id"), eu["usuario"], self.client_address[0]):
+                return self.js({"erro": "not found"}, 404, True)
+            return self.js({"ok": True}, 200, True)
+        return self.js({"error": "not found"}, 404)
 
     def auth_get(self):
         """GET /auth/eu: quem está conectado neste navegador. GET /auth/senhas: quem tem senha, para quem pode Ver em Senhas de acesso."""
@@ -6423,7 +7076,7 @@ class H(BaseHTTPRequestHandler):
             if AUTH_ID.match(usuario):                  # em segundo plano: a resposta e o tempo são os mesmos para qualquer usuário
                 threading.Thread(target=auth_esqueci, args=(usuario, ip), daemon=True).start()
             return self.js({"ok": True}, 200, True)
-        if u.path.startswith("/auth/senha/"):
+        if u.path in ("/auth/senha/gerar", "/auth/senha/cancelar"):
             eu = auth_quem(self.auth_token())
             if not eu:
                 return self.js({"erro": "sem_sessao"}, 401, True)
@@ -6588,7 +7241,7 @@ class H(BaseHTTPRequestHandler):
                 os.remove(tmp)
         if not inteira:
             return self.js({"erro": "incompleta"}, 400, True)
-        return self.js({"ok": bool(r), "resultado": r or "recusada"}, 200, True)
+        return self.js({"ok": r in ("new", "dup", "excluida"), "resultado": r or "recusada"}, 200, True)
 
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
@@ -6674,7 +7327,7 @@ class H(BaseHTTPRequestHandler):
     def gal_get(self, u, q):
         p = u.path
         ip = self.client_address[0]
-        if p.startswith("/galerias/"):
+        if p in ("/galerias/vendas", "/galerias/status"):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             if p == "/galerias/vendas":
@@ -6715,7 +7368,7 @@ class H(BaseHTTPRequestHandler):
             if gal_expirou(m):
                 return self.js({"error": "expirada"}, 410)
             return self.js({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
-                            "estado": gal_estado(token, m), "venue": m.get("venue")})
+                            "estado": gal_estado(token, m), "venue": m.get("venue"), "compra": compra_online()})
         if acao == "foto" and len(partes) == 5:
             pid = partes[4]
             v = q.get("v", [""])[0]
@@ -6789,7 +7442,7 @@ class H(BaseHTTPRequestHandler):
             body, err = self.corpo(8 * 1024 * 1024)
             if err:
                 return self.js({"error": "corpo inválido"}, err)
-            body, recusados = auth_filtrar_docs(body, auth_quem(self.auth_token()), self.client_address[0])
+            body, recusados = auth_filtrar_docs(body, self.sessao(), self.client_address[0], self.posto_atual())
             return self.js(dict(estado_gravar(body), recusados=recusados))
         if p == "/ponto/eventos":
             if not self.origem_local():
@@ -6848,6 +7501,14 @@ class H(BaseHTTPRequestHandler):
                 _gal_confere_sessoes(body.get("manifesto"), novo["fotos"])
             except ValueError as ex:
                 return self.js({"error": str(ex)}, 400)
+            eu = self.sessao()
+            if not (eu and auth_pode(eu["cadastro"], "galerias", "u")):
+                # cortesia nova só com galerias.u; a que já está no servidor fica (republicação do Checkout)
+                ja = {f["id"] for f in (REPO.ler_manifesto(t) or {}).get("fotos") or [] if f.get("direito") == "cortesia"}
+                for f in novo["fotos"]:
+                    if f["direito"] == "cortesia" and f["id"] not in ja:
+                        f["direito"] = "venda"
+                        f.pop("cortesia", None)
             with gal_lock:
                 m = gal_mesclar(novo, REPO.ler_manifesto(t))
                 REPO.salvar_manifesto(t, m)
@@ -6918,6 +7579,9 @@ class H(BaseHTTPRequestHandler):
                 acesso = secrets.token_urlsafe(24)
                 acessos[acesso] = {"token": token, "pids": pids, "exp": agora + ACESSO_TTL}
             return self.js({"ok": True, "acesso": acesso, "exp": _iso(acessos[acesso]["exp"]), "galeria": galeria_obj(token, m, pids)})
+        if acao == "pagamento" and not compra_online():
+            self.corpo(64 * 1024)
+            return self.js({"error": "compra_indisponivel"}, 501)      # sem adquirente: compra só no balcão
         if acao in ("galeria", "pagamento"):
             body, err = self.corpo(64 * 1024)
             if err:
@@ -6973,26 +7637,39 @@ class H(BaseHTTPRequestHandler):
         return self.js({"error": "not found"}, 404)
 
     def do_GET(self):
+        if not self.autoriza("GET"):
+            return
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        if u.path.startswith(("/g/", "/galerias/")):
+        if u.path.startswith("/g/") or u.path in ("/galerias/vendas", "/galerias/status"):
             return self.gal_get(u, q)
         if u.path in ("/auth/eu", "/auth/senhas"):
             return self.auth_get()
+        if u.path in ("/postos", "/postos/eu", "/postos/aceitar"):
+            return self.postos_get(u, q)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/status":
+            minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT}
+            o = (self.headers.get("Origin") or "").rstrip("/").lower()
+            confiavel = host_ok((self.headers.get("Host") or "").lower()) and (not o or o in self.origens_aceitas())
+            eu = self.sessao() if confiavel else None
+            if not eu and not (confiavel and self.posto_atual()):
+                return self.js(minimo, nostore=True)     # sem pessoa conectada nem aparelho pareado: só que o agente está no ar
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
             with lock:
-                return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
-                                "copied": state["copied"], "dups": state["dups"], "events": len(events),
-                                "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "backup": backup, "recorte": rs_, "fundos_modo": fundos_modo(),
-                                "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
-                                "impressora": IMPRESSORA or None,
-                                "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
-                                "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(),
-                                "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
+                ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
+                st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
+                           platform=sys.platform, ftp=ftp_,
+                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, fundos_modo=fundos_modo(),
+                           galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
+                           impressora=IMPRESSORA or None, sessoes=ss_,
+                           estatisticas={"v": 2, "migracao": dict(est_migra)}, fuso=fuso_info(),
+                           pagamento="teste" if compra_online() else "desligado",
+                           galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
+            if eu:
+                st_["impressora_locais"] = IMP_LOCAIS
+            return self.js(st_, nostore=True)
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -7043,7 +7720,19 @@ class H(BaseHTTPRequestHandler):
             col = (parse_qs(u.query).get("col") or [""])[0]
             if col not in ESTADO_COLS:
                 return self.js({"error": "coleção inválida"}, 400)
-            return self.js(estado_col(col))
+            eu = self.sessao()
+            if not eu and col not in ("sim", "config", "agenda"):
+                return self.js({"erro": "sem_permissao"}, 403, True)     # aparelho pareado sem pessoa: só o que o Checkout lê
+            cad = (eu or {}).get("cadastro")
+            if col in ("usuarios_log", "usuarios_login") and not any(auth_pode(cad, *x.split(".")) for x in FOTOS_LER + ("usuarios.r", "permissoes.r")):
+                return self.js({"erro": "sem_permissao"}, 403, True)
+            r = estado_col(col)
+            if col == "usuarios" and not auth_pode(cad, "usuarios", "r"):
+                # sem Cadastro de usuários: o próprio cadastro inteiro; dos outros, só o nome (e o fotógrafo vinculado)
+                proprio = quote(eu["usuario"], safe="-_.!~*'()")
+                r["docs"] = [d if d["id"] == proprio else {"id": d["id"], "valor": {k: d["valor"].get(k) for k in ("email", "name", "key", "active") if isinstance(d["valor"], dict)}}
+                             for d in r["docs"]]
+            return self.js(r)
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -7106,12 +7795,18 @@ class H(BaseHTTPRequestHandler):
                 meta_dirty[0] = False
                 save_meta()
             return self.js({"fotos": out, "total": len(out), "boot": BOOT})
+        if u.path == "/ftp/contas":
+            with lock:                                   # os logins do FTP embutido (sem senha), para o cartão do Upload
+                return self.js({"ok": True, "port": state["ftp"].get("port"), "ip": state["ftp"].get("ip"), "users": list(state["ftp"].get("users") or [])}, nostore=True)
         if u.path == "/ftp-remoto/status":
             c = rftp_cfg()
             return self.js({**rftp, "configurado": bool(c), "host": c and c.get("host"), "port": c and c.get("port"),
                             "user": c and c.get("user"), "dir": c and c.get("dir"), "tls": bool(c and c.get("tls"))})
         if u.path == "/photoroom/status":
             c = pr_cfg()
+            eu = self.sessao()
+            if not (eu and auth_pode(eu["cadastro"], "configuracao", "r")):
+                return self.js({"configured": bool(c), "fundos_modo": fundos_modo()})   # Checkout e quem não configura: só se está ligado
             with pr_lock:
                 return self.js({**pr, "configured": bool(c), "sandbox": bool(c and c["api_key"].startswith("sandbox_"))})
         if u.path.startswith("/photoroom/result/"):
@@ -7138,11 +7833,17 @@ class H(BaseHTTPRequestHandler):
         return self.app(u.path)
 
     def do_POST(self):
+        if not self.autoriza("POST"):
+            return
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
         if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar"):
             return self.auth_post(u)
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path in ("/postos/parear", "/postos/revogar"):
+            return self.postos_post(u)
+        if u.path == "/postos/aceitar":
+            return self.postos_aceitar_post()
+        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
@@ -7165,37 +7866,43 @@ class H(BaseHTTPRequestHandler):
             _grava_privado(FUNDOS_MODO_CFG, json.dumps({"modo": modo, "em": time.strftime("%Y-%m-%dT%H:%M:%S")}))
             return self.js({"ok": True, "modo": modo})
         if u.path == "/roverpix/config":
-            # só o app aberto pelo próprio agente pode trocar a chave
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            # só o app aberto pelo próprio agente pode trocar a chave; o endereço da Roverpix é um dos oficiais
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
-            key = (body.get("api_key") or "").strip()
-            if not key:
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            key = str(body.get("api_key") or "").strip()
+            if not key or len(key) > 400:
                 return self.js({"error": "informe a chave"}, 400)
-            rover_save_cfg(body.get("base_url"), key)
+            base = str(body.get("base_url") or ROVER_BASES[0]).strip().rstrip("/")
+            base = base[:-len("/api/v1")] if base.endswith("/api/v1") else base
+            if base not in ROVER_BASES:
+                return self.js({"error": "endereço da Roverpix não reconhecido"}, 400)
+            rover_save_cfg(base, key)
             return self.js({"ok": True})
         if u.path == "/ftp-remoto/config":
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
             old = rftp_cfg() or {}
             try:
                 porta_n = int(body.get("port") or 21)
             except Exception:
                 return self.js({"error": "porta inválida"}, 400)
-            c = {"host": (body.get("host") or "").strip(), "port": porta_n,
-                 "user": (body.get("user") or "").strip(), "password": body.get("password") or "",
-                 "dir": (body.get("dir") or "").strip(), "tls": bool(body.get("tls"))}
+            c = {"host": str(body.get("host") or "").strip()[:200], "port": porta_n,
+                 "user": str(body.get("user") or "").strip()[:200], "password": str(body.get("password") or "")[:200],
+                 "dir": str(body.get("dir") or "").strip()[:300], "tls": bool(body.get("tls"))}
             if not c["host"] or not c["user"]:
                 return self.js({"error": "informe servidor e usuário"}, 400)
+            if porta_n not in (21, 990):
+                return self.js({"error": "porta inválida: use 21 (FTP) ou 990 (FTP com TLS)"}, 400)
+            if not rftp_host_ok(c["host"]):
+                return self.js({"error": "servidor fora da rede do ponto: use o IP da rede interna ou cadastre o nome em ftp-remoto-hosts.txt no servidor"}, 400)
+            if not limite_ok(self.client_address[0], "rftp-config", 5):
+                return self.js({"error": "muitos testes seguidos; espere um minuto"}, 429)
             # v80 (segurança I5): a senha salva só vale para o mesmo servidor, porta e usuário (não manda a senha para outro host)
             mesmo = old and old.get("host") == c["host"] and int(old.get("port") or 21) == c["port"] and old.get("user") == c["user"]
             if not c["password"]:
@@ -7205,27 +7912,28 @@ class H(BaseHTTPRequestHandler):
             try:
                 t = rftp_connect(c)
                 t.quit()
-            except Exception as ex:
-                return self.js({"error": "não conectou: %s" % ex}, 502)
+            except Exception:
+                return self.js({"error": "não conectou: confira servidor, porta, usuário e senha"}, 502)
             rftp_save(c)
             return self.js({"ok": True})
         if u.path in ("/photoroom/config", "/photoroom/compose"):
             # só o app aberto pelo próprio agente usa a chave (ninguém de fora gasta os créditos)
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
+            body, err = self.corpo(4096 if u.path == "/photoroom/config" else 32 * 1024 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
             if u.path == "/photoroom/config":
-                key = (body.get("api_key") or "").strip()
-                if not key:
+                key = str(body.get("api_key") or "").strip()
+                if not key or len(key) > 400:
                     return self.js({"error": "informe a chave"}, 400)
                 pr_save(key)
                 return self.js({"ok": True, "sandbox": key.startswith("sandbox_")})
             if fundos_modo() != "photoroom":           # v84: montagem local é o padrão; o Photoroom só com o interruptor ligado
                 return self.js({"ok": False, "error": "photoroom_desligado"}, 409)
+            quem = (self.sessao() or {}).get("usuario") or ("posto:" + (self.posto_atual() or {}).get("id", "?"))
+            if not limite_ok(quem, "photoroom-compose", PR_COMPOSE_HORA, 3600):
+                return self.js({"error": "muitas montagens nesta hora; use a montagem local"}, 429)
             try:
                 if body.get("pid"):
                     with lock:
@@ -7242,7 +7950,8 @@ class H(BaseHTTPRequestHandler):
                                   hi=bool(body.get("hi")), recorte=bool(body.get("recorte")))
                 return self.js({"ok": True, "url": "/photoroom/result/" + name})
             except Exception as ex:
-                return self.js({"error": str(ex)}, 502)
+                print("  photoroom: %s" % str(ex)[:160])
+                return self.js({"error": "Photoroom não respondeu"}, 502)
         if u.path == "/roverpix/sync":
             rover_wake.set()
             return self.js({"ok": True})
@@ -7293,8 +8002,8 @@ class H(BaseHTTPRequestHandler):
     def app(self, path):
         if path in ("", "/"):
             path = "/index.html"
-        if ".." in path:
-            return self.js({"error": "not found"}, 404)
+        if ".." in path or (path != "/index.html" and not APP_ARQUIVO.match(path)):
+            return self.js({"error": "not found"}, 404)     # só arquivos do pacote do app (pasta, nome e tipo conhecidos)
         key = path
         hit = app_cache.get(key)
         if not hit or (path == "/index.html" and time.time() - hit[2] > 60):
@@ -7316,6 +8025,9 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache" if path == "/index.html" else "max-age=3600")
         self.end_headers()
         self.wfile.write(data)
+
+
+APP_ARQUIVO = re.compile(r"^/(img|vendor|sprites)/[A-Za-z0-9_-][A-Za-z0-9_./-]{0,150}\.(png|jpe?g|svg|webp|gif|ico|js|css|json|woff2?|wasm|onnx|txt)$")
 
 
 def fuso_info():
@@ -7364,7 +8076,8 @@ def main():
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
     threading.Thread(target=galeria_loop, daemon=True).start()
-    print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__, type(PAGAMENTO).__name__))
+    print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__,
+          "de TESTE (aprova sem cobrar)" if compra_online() else "desligado (compra só no balcão)"))
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     _rok, _rmot = rec_estado()
@@ -7381,4 +8094,6 @@ def main():
 if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-admin":
         sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
+        sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()

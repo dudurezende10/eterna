@@ -3,6 +3,9 @@
 import http.client, importlib.util, json, os, re, sqlite3, sys, threading, time
 from http.server import ThreadingHTTPServer
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao               # para aqui se o HOME não for temporário
 sp = importlib.util.spec_from_file_location("ag", sys.argv[1])
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
@@ -142,7 +145,8 @@ def grava(cookie, usuario, valor):
 
 
 sobe = dict(ler("rafael.melo"), perms={"senhas": TUDO})
-ok(grava(None, "rafael.melo", sobe) == 1 and not ler("rafael.melo")["perms"].get("senhas"), "sem sessão não muda permissões")
+st, j, _ = pede("/ponto/docs", {"docs": [{"col": "usuarios", "id": idd("rafael.melo"), "valor": sobe}]})
+ok(st == 401 and not ler("rafael.melo")["perms"].get("senhas"), "sem sessão não muda permissões: %s" % st)
 ok(grava(vend, "rafael.melo", sobe) == 1 and not ler("rafael.melo")["perms"].get("senhas"), "vendedor não se dá Senhas de acesso")
 ok(grava(vend, "novo.usuario", {"email": "novo.usuario", "perms": {}}) == 1 and ler("novo.usuario") is None, "sem Criar em Usuários não cadastra")
 ok(grava(ck_sem, "novo.usuario", {"email": "novo.usuario", "name": "Novo", "perms": {"venda": {"r": True}}}) == 0 and ler("novo.usuario"), "Criar em Usuários cadastra")
@@ -151,7 +155,11 @@ ok(grava(ck_sem, "ronaldo", dict(ler("ronaldo"), name="Outro")) == 1 and ler("ro
 ok(grava(adm, "rafael.melo", dict(ler("rafael.melo"), perms={"venda": {"r": True}, "senhas": {"r": True}})) == 0 and ler("rafael.melo")["perms"]["senhas"]["r"] is True, "quem tem a permissão pode dar")
 ok(grava(vend, "vitima", None) == 1 and ler("vitima"), "sem Excluir não apaga")
 st, j, _ = pede("/ponto/docs", {"docs": [{"col": "diario", "id": "x", "valor": {"a": 1}}]})
-ok(st == 200 and j.get("gravados") == 1, "as outras coleções seguem como antes")
+ok(st == 401, "outras coleções sem sessão: 401 (%s)" % st)
+st, j, _ = pede("/ponto/docs", {"docs": [{"col": "diario", "id": "x", "valor": {"a": 1}}]}, vend)
+ok(st == 200 and j.get("gravados") == 0 and j.get("recusados") == 1, "diário sem o módulo Diário: recusado (%s)" % j)
+st, j, _ = pede("/ponto/docs", {"docs": [{"col": "diario", "id": "x", "valor": {"a": 1}}]}, adm)
+ok(st == 200 and j.get("gravados") == 1, "diário com o módulo: gravado (%s)" % j)
 # tirar a permissão vale na hora, sem nada para sincronizar
 ok(grava(adm, "so.alterar", dict(ler("so.alterar"), perms={"venda": TUDO})) == 0, "admin tira a permissão")
 st, _, _ = pede("/auth/senha/gerar", {"usuario": "rafael.melo"}, ck_u)

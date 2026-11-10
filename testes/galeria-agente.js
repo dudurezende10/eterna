@@ -6,8 +6,10 @@ const {spawn,execFileSync}=require('child_process');const fs=require('fs');const
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
 const fails=[];const notas=[];const ok=(c,m)=>{if(!c)fails.push(m);};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const S=require('./_agente_sessao');const CKS={}; // sessão de admin por agente: as rotas da equipe pedem sessão (a galeria /g/ não)
 function req(porta,method,p,{body,headers={}}={}){return new Promise(res=>{const data=body==null?null:(Buffer.isBuffer(body)?body:Buffer.from(typeof body==='string'?body:JSON.stringify(body)));
-  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,b,j,h:rs.headers});});});
+  const eq=!p.startsWith('/g/')&&CKS[porta]?{Cookie:CKS[porta],...(method==='POST'?{'X-Eterna':'1'}:{})}:{};
+  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...eq,...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,b,j,h:rs.headers});});});
   r.on('error',e=>res({s:0,err:String(e)}));if(data)r.write(data);r.end();});}
 const tok=()=>crypto.randomBytes(16).toString('base64url');
 const ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const cod=()=>{const u=crypto.randomBytes(8);let c='';for(let i=0;i<8;i++){c+=ALFA[u[i]%32];if(i===3)c+='-';}return c;};
@@ -32,6 +34,9 @@ try{
   const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-ag-'));homes.push(H);const P=8799;
   const pids=['a1b2c3d4e5f6','0a1b2c3d4e5f','f6e5d4c3b2a1','1234567890ab'];fotosNoInbox(H,pids.map((p,i)=>[p,jpegsLisos(4)[i]]));
   const A=await subir(P,{ETERNA_SEM_OPENCV:'1'},H);procs.push(A.p);
+  {const r0=await req(P,'GET','/galerias/vendas?desde=0');ok(r0.s===401,'A2: vendas online sem sessão deveria dar 401, deu '+r0.s);
+    const r1=await req(P,'POST','/lgpd/excluir',{body:{pids:['a1b2c3d4e5f6']},headers:{'X-Eterna':'1'}});ok(r1.s===401,'A2: exclusão LGPD sem sessão deveria dar 401, deu '+r1.s);}
+  CKS[P]=S.sessao(H);
   const st=(await req(P,'GET','/status')).j;ok(st&&st.galerias&&st.galerias.vitrine_marca===false,'15: /status sem galerias.vitrine_marca:false');ok(st&&st.rostos&&st.rostos.ligado===false,'pré: reconhecimento deveria estar desligado');
   const T=tok();const fotos=[{id:'ag_'+pids[0],sessao:'LPTESTE01',direito:'comprada',canal:'loja'},{id:'ag_'+pids[1],sessao:'LPTESTE01',direito:'cortesia',canal:null,cortesia:{motivo:'escola',por:'eduardo@eduardorezende.com',em:new Date().toISOString()}},{id:'ag_'+pids[2],sessao:'LPTESTE01',direito:'venda',canal:null},{id:'ag_'+pids[3],sessao:'LPTESTE01',direito:'venda',canal:null}];
   const M=manifesto(T,fotos);
@@ -91,7 +96,9 @@ try{
   r=await req(P,'POST','/g/'+T+'/rosto',{body:'{"consentimento":true,"imagem":"'+'A'.repeat(2*1024*1024+10)+'"}'});ok(r.s===413,'18: corpo acima de 2 MB deveria dar 413, deu '+r.s);
   ok(!fs.existsSync(path.join(H,'Eterna','galerias','consentimentos.jsonl'))||!/data:image/.test(fs.readFileSync(path.join(H,'Eterna','galerias','consentimentos.jsonl'),'utf8')),'18: imagem não pode ir para o log de consentimento');
   // 19. acesso forjado
-  r=await req(P,'POST','/g/'+T+'/pagamento',{body:{acesso:'forjado-'+crypto.randomBytes(12).toString('hex'),pids:['ag_'+pids[2]],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===401,'19: acesso forjado deveria dar 401, deu '+r.s);
+  r=await req(P,'POST','/g/'+T+'/pagamento',{body:{acesso:'forjado-'+crypto.randomBytes(12).toString('hex'),pids:['ag_'+pids[2]],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===501&&r.j&&r.j.error==='compra_indisponivel','A4: sem ETERNA_PAGAMENTO=simulado e ETERNA_MODO_TESTE=1 a compra pelo celular dá 501, deu '+r.s);
+  ok(!fs.existsSync(path.join(H,'Eterna','galerias','vendas-online.jsonl')),'A4: compra recusada não grava venda online');
+  {const ri=await req(P,'GET','/g/'+T+'/info');ok(ri.j&&ri.j.compra===false,'A4: /info com compra:false: '+JSON.stringify(ri.j));}
   r=await req(P,'POST','/g/'+T+'/galeria',{body:{acesso:'x'}});ok(r.s===401,'19: galeria com acesso forjado deveria dar 401, deu '+r.s);
   r=await req(P,'POST','/pagamento/webhook/mercadopago',{body:{}});ok(r.s===501,'19: webhook reservado deveria dar 501, deu '+r.s);
   // 20. comprada online não regride
@@ -116,7 +123,7 @@ try{
       const out=[];for(const id of pick){const c=await ETERNA.photoCanvas(id);const k=document.createElement('canvas');k.width=c.width*2;k.height=c.height*2;k.getContext('2d').drawImage(c,0,0,k.width,k.height);out.push(k.toDataURL('image/jpeg',.88));}return out;});
     await b.close();
     const bufs=imgs.map(u=>Buffer.from(u.split(',')[1],'base64'));const pp=['b1b2b3b4b5b6','c1c2c3c4c5c6','e1e2e3e4e5e6'];fotosNoInbox(H2,pp.map((p,i)=>[p,bufs[i]]).concat([['d1d2d3d4d5d6',jpegsLisos(1)[0]]]));
-    const B=await subir(P2,{},H2);procs.push(B.p);let lig=false;
+    const B=await subir(P2,{ETERNA_PAGAMENTO:'simulado',ETERNA_MODO_TESTE:'1'},H2);procs.push(B.p);CKS[P2]=S.sessao(H2);let lig=false;
     for(let i=0;i<160;i++){const s=(await req(P2,'GET','/status')).j;if(s&&s.rostos&&s.rostos.ligado&&s.rostos.lidas>=4){lig=true;break;}await sleep(500);}
     if(!lig){notas.push('fase B: reconhecimento não ligou ('+B.log().slice(-200).replace(/\n/g,' ')+')');}
     else{const T3=tok();const f3=[{id:'ag_'+pp[0],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_'+pp[1],sessao:'LPB',direito:'venda',canal:null},{id:'ag_d1d2d3d4d5d6',sessao:'LPB',direito:'venda',canal:null}];

@@ -11,4 +11,9 @@ async function servidorDeTeste(pg){if(SERVIDOR.has(pg))return;SERVIDOR.add(pg);l
     if(p==='/auth/senha/gerar')return resp({ok:true,usuario:c.usuario,senha:'provisoria-de-teste'});
     return resp({ok:true});});
   await pg.route('**/auth/senha/*',rota=>{const c=(()=>{try{return rota.request().postDataJSON()||{}}catch(e){return {}}})();return rota.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,usuario:c.usuario,senha:'provisoria-de-teste'})});});}
+// usuário fictício de administrador (cópia das permissões do Admin semeado), para os testes não usarem o e-mail de ninguém
+const ADMIN_TESTE='admin.teste@exemplo.com';
+async function adminFicticio(pg){await pg.evaluate(e=>{const U0=JSON.parse(localStorage.getItem('eterna.users.v1')||'null')||JSON.parse(JSON.stringify(ETERNA.USERS));
+  const base=Object.values(U0).find(u=>u&&u.preset==='admin');U0[e]={...base,email:e,name:'Admin de teste',key:null};localStorage.setItem('eterna.users.v1',JSON.stringify(U0));},ADMIN_TESTE);await pg.reload();await pg.waitForTimeout(400);return ADMIN_TESTE;}
 module.exports=async function entrarTeste(pg,usuario){await servidorDeTeste(pg);await pg.fill('[data-act="login-usuario"]',usuario);await pg.fill('[data-act="login-senha"]','senha-de-teste');await pg.click('button[type=submit]');await pg.waitForTimeout(350);return pg.evaluate(()=>!!ETERNA.state.user);};
+module.exports.adminFicticio=adminFicticio;module.exports.ADMIN_TESTE=ADMIN_TESTE;

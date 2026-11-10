@@ -88,8 +88,8 @@ Start-ScheduledTask -TaskName 'Eterna'
 $fim = (Get-Date).AddMinutes(3); $no = $false
 while ((Get-Date) -lt $fim) { if ((curl.exe -s -o NUL -w '%{http_code}' -m 5 http://127.0.0.1:8765/status) -eq '200') { $no = $true; break }; Start-Sleep 3 }
 if (-not $no) { Aviso ('o Eterna não respondeu em 3 minutos; veja ' + (Join-Path $Base 'Eterna\vigia.log')) } else {
-  $s = curl.exe -s -m 5 http://127.0.0.1:8765/status | ConvertFrom-Json
-  Ok ('no ar · impressora ' + $(if ($s.impressora) { $s.impressora } else { 'nenhuma' }) + ' · nuvem ' + $(if ($s.nuvem.s3_ok) { 'ok' } else { 'sem conexão' }) + ' · rostos ' + $s.rostos.lidas)
+  # sem login o /status diz só que o Eterna está no ar; impressora, nuvem e rostos aparecem no app (Upload e Painel de controle)
+  Ok 'no ar · impressora, nuvem e rostos: confira no app, com login'
   $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | ForEach-Object IPAddress
   Write-Host ''
   Write-Host '   Endereços para os pontos:' -ForegroundColor Cyan

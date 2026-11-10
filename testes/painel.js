@@ -33,7 +33,8 @@ function mkLive(n,o){o=o||{};const t=ETERNA.venueToday();const add=(iso,k)=>{con
 const MK=mkLive.toString();
 const live=(pg,n,o)=>pg.evaluate(([src,n,o])=>{const f=new Function('return '+src)();ETERNA.applyLive(f(n,o));return Object.keys(ETERNA.live.days).length;},[MK,n,o||{}]);
 const dvz=()=>{const d=new Date();return d;};
-function req(porta,p,headers){return new Promise(res=>{const r=http.request({host:'127.0.0.1',port:porta,method:'GET',path:p,headers:headers||{}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>res({s:rs.statusCode,h:rs.headers,b:Buffer.concat(ch).toString()}));});r.on('error',e=>res({s:0,err:String(e)}));r.end();});}
+const S=require('./_agente_sessao');let CK=null; // sessão de admin no agente de verdade (critério 25)
+function req(porta,p,headers){return new Promise(res=>{const r=http.request({host:'127.0.0.1',port:porta,method:'GET',path:p,headers:{...(CK?{Cookie:CK}:{}),...(headers||{})}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>res({s:rs.statusCode,h:rs.headers,b:Buffer.concat(ch).toString()}));});r.on('error',e=>res({s:0,err:String(e)}));r.end();});}
 
 (async()=>{const b=await chromium.launch();let agente=null;const home=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-painel-'));
 try{
@@ -215,12 +216,12 @@ try{
     fs.writeFileSync(path.join(agg,'2026-10-20.json'),JSON.stringify({daily:{approaches:3,viewed:3,converted:2,sales:2,revenue:300,prints:2,reprints:0,photos:30,photosSold:6,pax:null},sellers:{},payments:{pix:{count:2,amount:300}},products:{},rows:{},people:{},orders:[]}));
     const uo=new URL(U);agente=spawn('python3',[path.join(__dirname,'..','agente','eterna-agente.py')],{env:{...process.env,HOME:home,ETERNA_PORTA:String(porta),ETERNA_APP_ORIGIN:uo.origin,ETERNA_SEM_OPENCV:'1',NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});let log='';agente.stdout.on('data',d=>log+=d);agente.stderr.on('data',d=>log+=d);
     let up=false;for(let i=0;i<60&&!up;i++){await sleep(250);up=(await req(porta,'/status')).s===200;}ok(up,'25: agente não subiu '+log.slice(-300));
-    if(up){const fora=await req(porta,'/roverpix/data',{Origin:'https://exemplo.com'});ok(!fora.h['access-control-allow-origin'],'25: /roverpix/data com origem estranha devolveu CORS '+fora.h['access-control-allow-origin']);
+    if(up){ok((await req(porta,'/roverpix/data')).s===401,'25: /roverpix/data sem sessão deveria dar 401');CK=S.sessao(home);const fora=await req(porta,'/roverpix/data',{Origin:'https://exemplo.com'});ok(!fora.h['access-control-allow-origin'],'25: /roverpix/data com origem estranha devolveu CORS '+fora.h['access-control-allow-origin']);
       const fs2=await req(porta,'/roverpix/status',{Origin:'https://exemplo.com'});ok(!fs2.h['access-control-allow-origin'],'25: /roverpix/status com origem estranha devolveu CORS');
       const app=await req(porta,'/roverpix/data',{Origin:uo.origin});ok(app.h['access-control-allow-origin']===uo.origin,'25: ETERNA_APP_ORIGIN perdeu o acesso '+J(app.h['access-control-allow-origin']));
       const loc=await req(porta,'/roverpix/data');ok(loc.s===200&&/"ok": true/.test(loc.b),'25: mesma origem sem Origin deveria funcionar '+loc.s);
       // app aberto pelo agente: livePoll lê /roverpix/status e /roverpix/data
-      const {ctx:c6,pg:p6}=await nova(b,1280,900);await p6.goto(`http://127.0.0.1:${porta}/index.html`);let lv=false;for(let i=0;i<40&&!lv;i++){await sleep(250);lv=await p6.evaluate(()=>!!(window.ETERNA&&ETERNA.live)).catch(()=>false);}
+      const {ctx:c6,pg:p6}=await nova(b,1280,900);await S.noNavegador(c6,porta,[CK]);await p6.goto(`http://127.0.0.1:${porta}/index.html`);let lv=false;for(let i=0;i<40&&!lv;i++){await sleep(250);lv=await p6.evaluate(()=>!!(window.ETERNA&&ETERNA.live)).catch(()=>false);}
       ok(lv,'25: app aberto em 127.0.0.1 não carregou o LIVE pelo livePoll');
       // v80: o cartão do FTP do estádio fica em Configurações › Painel de controle (configuracao.r para ver, .u para alterar), não no Upload
       const UA=`http://127.0.0.1:${porta}/index.html`;const ent=async e=>{await p6.evaluate(()=>localStorage.removeItem('eterna.session'));await p6.goto(UA);await p6.waitForTimeout(500);await entrarTeste(p6,e);};

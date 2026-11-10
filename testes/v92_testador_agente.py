@@ -126,12 +126,19 @@ shutil.rmtree(HA, ignore_errors=True)
 
 
 # ======================= B: o agente de verdade =======================
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao
+COOKIES = {}
+
+
 def sobe(home, porta, extra=None):
     env = {**os.environ, "HOME": home, "USERPROFILE": home, "ETERNA_PORTA": str(porta), "ETERNA_FTP_PORTA": str(porta + 1000),
            "ETERNA_APP_ORIGIN": "http://127.0.0.1:9", "ETERNA_SEM_OPENCV": "1", **(extra or {})}
     for k in ("ETERNA_PASTA", "ETERNA_ORIGENS", "ETERNA_BUCKET", "ETERNA_TZ"):
         if k not in (extra or {}):
             env.pop(k, None)
+    COOKIES[porta] = _agente_sessao.cookie_sub(AG, home)      # pessoa conectada (admin): as rotas da equipe pedem sessão
     p = subprocess.Popen([sys.executable, "-I", AG], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     for _ in range(80):
         time.sleep(0.25)
@@ -143,7 +150,7 @@ def sobe(home, porta, extra=None):
 def req(porta, metodo, path, body=None, headers=None, raw=False):
     c = http.client.HTTPConnection("127.0.0.1", porta, timeout=15)
     try:
-        hs = {"Host": "127.0.0.1:%d" % porta, **(headers or {})}
+        hs = {"Host": "127.0.0.1:%d" % porta, **({"Cookie": COOKIES[porta]} if porta in COOKIES else {}), **(headers or {})}
         data = json.dumps(body).encode() if body is not None else None
         if data is not None:
             hs["Content-Type"] = "application/json"
