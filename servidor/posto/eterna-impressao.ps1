@@ -32,6 +32,7 @@ public static class EternaDnp{
  [DllImport("setupapi.dll",SetLastError=true)] static extern bool SetupDiEnumDeviceInterfaces(IntPtr s,IntPtr d,ref Guid g,int i,ref SPDID x);
  [DllImport("setupapi.dll",SetLastError=true,CharSet=CharSet.Unicode)] static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr s,ref SPDID x,IntPtr b,int n,out int req,IntPtr di);
  [DllImport("setupapi.dll")] static extern bool SetupDiDestroyDeviceInfoList(IntPtr s);
+ [DllImport("kernel32.dll",SetLastError=true)] static extern bool CancelIoEx(SafeFileHandle h,IntPtr o);
  [DllImport("kernel32.dll",SetLastError=true,CharSet=CharSet.Unicode)] static extern SafeFileHandle CreateFile(string n,uint a,uint s,IntPtr sa,uint c,uint f,IntPtr t);
  public static string Caminho(){var g=new Guid("28d78fad-5a12-11d1-ae5b-0000f803a8c2");IntPtr s=SetupDiGetClassDevs(ref g,IntPtr.Zero,IntPtr.Zero,0x12);string achou=null;
   for(int i=0;achou==null;i++){var x=new SPDID();x.cb=Marshal.SizeOf(x);if(!SetupDiEnumDeviceInterfaces(s,IntPtr.Zero,ref g,i,ref x))break;
@@ -46,7 +47,7 @@ public static class EternaDnp{
    Encoding.ASCII.GetBytes(c1).CopyTo(cmd,2);Encoding.ASCII.GetBytes(c2).CopyTo(cmd,8);fs.Write(cmd,0,32);fs.Flush();
    var cab=Le(fs,8);if(cab==null)return null;int n;if(!int.TryParse(Encoding.ASCII.GetString(cab),out n)||n<0||n>4096)return null;
    var d=Le(fs,n);return d==null?null:Encoding.ASCII.GetString(d);}}
- static byte[] Le(FileStream fs,int n){var r=new byte[n];int t=0;while(t<n){var ar=fs.BeginRead(r,t,n-t,null,null);if(!ar.AsyncWaitHandle.WaitOne(3000))return null;int k=fs.EndRead(ar);if(k<=0)return null;t+=k;}return r;}
+ static byte[] Le(FileStream fs,int n){var r=new byte[n];int t=0;while(t<n){var ar=fs.BeginRead(r,t,n-t,null,null);if(!ar.AsyncWaitHandle.WaitOne(3000)){CancelIoEx(fs.SafeFileHandle,IntPtr.Zero);try{fs.EndRead(ar);}catch{}return null;}int k=fs.EndRead(ar);if(k<=0)return null;t+=k;}return r;}
 }
 '@
 $DnpMargem = 50
