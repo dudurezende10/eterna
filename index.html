@@ -1085,6 +1085,9 @@ label>.eyebrow{display:block;margin-bottom:4px}
 .nav button.grp[aria-expanded="true"] svg{transform:rotate(180deg)}
 .nav .navitems{display:flex;flex-direction:column;gap:2px;min-width:0}
 .nav .navitems[hidden]{display:none!important}
+/* v96-ux: pasta dentro do grupo (Sistema › Laboratório) */
+.nav button.grp.navsub{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:none;padding-left:11px;min-height:34px}
+.nav .navsubitems{padding-left:12px}
 /* v94-ux (parte L, G4): a versão no rodapé do menu só para o Admin (para os outros fica no title do carimbo) */
 body:not([data-admin]) .pw-v{display:none}
 /* v94-ux (parte H): item do Posto com o número de pagamentos aguardando; "Abrir Checkout" discreto no rodapé do menu */
@@ -1332,8 +1335,8 @@ const VIEWS=[
  ['chroma','Fundos de IA (técnico)','recorte, Photoroom e leitura de cada fundo','Sistema'],
  ['usuarios','Usuários','cadastro da equipe','Sistema'],
  ['permissoes','Permissões','quem vê e faz o quê','Sistema'],
- ['vestiario','Vestiário','novo set (em teste)','Sistema'],
- ['fundos-teste','Fundos em teste','para uso futuro','Sistema'],
+ ['vestiario','Vestiário','novo set (em teste)','Sistema','Laboratório'],
+ ['fundos-teste','Fundos em teste','para uso futuro','Sistema','Laboratório'],
 ];
 // telas sem item no menu, mas com permissão própria (abertas por links dentro de outras telas)
 const VIEWS_EXTRA={checkout:'Venda manual',fila:'Fila do balcão',caixa:'Caixa'}; // revisão: rótulo próprio do #caixa (Permissões e histórico)
@@ -1342,6 +1345,10 @@ const VIEWS_EXTRA={checkout:'Venda manual',fila:'Fila do balcão',caixa:'Caixa'}
 const catCompleto=()=>can('catalogo','u')||can('configuracao','r');
 function viewLabel(v){if(v==='catalogo')return catCompleto()?'Preços e Checkout':'Preços';const x=VIEWS.find(y=>y[0]===v);return x?x[1]:(VIEWS_EXTRA[v]||v);}
 const viewName=v=>viewLabel(v);
+// v96-ux (Eduardo, 10/11): pasta dentro de um grupo do menu (5º campo de VIEWS), ex.: Sistema › Laboratório (Vestiário e Fundos em teste)
+function navSub(g,vs,i,item){const soltos=vs.filter(v=>!v[4]);const subs=[];vs.filter(v=>v[4]).forEach(v=>{let x=subs.find(y=>y[0]===v[4]);if(!x)subs.push(x=[v[4],[]]);x[1].push(v);});
+  return soltos.map(item).join('')+subs.map(([sn,svs],j)=>{const k=g+'›'+sn;const cur=svs.some(v=>v[0]===state.view);const open=state.navOpen[k]!=null?state.navOpen[k]:cur;
+    return `<button class="grp navsub" data-act="nav-grp" data-g="${esc(k)}" aria-expanded="${open}" aria-controls="navs${i}_${j}"><span>${esc(sn)}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><div class="navitems navsubitems" id="navs${i}_${j}"${open?'':' hidden'}>${svs.map(item).join('')}</div>`;}).join('');}
 
 // ---------- charts ----------
 function sparkIdx(perDay){
@@ -5333,7 +5340,7 @@ function render(){
     // v94-ux (parte H): item só com o nome (o que era <small> vai para o title); até 5 telas, sem grupos (decisão 8)
     const item=v=>`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}" title="${esc(v[2])}"><span>${esc(viewLabel(v[0]))}</span>${v[0]==='posto'?postoPill():''}</button>`;
     const navCk=false&&canView('quiosque')?'<button class="nav-ck" data-act="loja-abrir" title="Abre a tela do cliente em outra janela"><span>Abrir Checkout</span></button>':''; // decisão 9
-    $('#nav').innerHTML=(rv.length<=5?`<div class="navg navplano"><div class="navitems" id="navg0">${rv.map(item).join('')}</div></div>`:grps.map(([g,vs],i)=>{const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;return `<div class="navg"><button class="grp" data-act="nav-grp" data-g="${esc(g)}" aria-expanded="${open}" aria-controls="navg${i}"><span>${esc(g)}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><div class="navitems" id="navg${i}"${open?'':' hidden'}>${vs.map(item).join('')}</div></div>`;}).join(''))+navCk;
+    $('#nav').innerHTML=(rv.length<=5?`<div class="navg navplano"><div class="navitems" id="navg0">${rv.map(item).join('')}</div></div>`:grps.map(([g,vs],i)=>{const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;return `<div class="navg"><button class="grp" data-act="nav-grp" data-g="${esc(g)}" aria-expanded="${open}" aria-controls="navg${i}"><span>${esc(g)}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><div class="navitems" id="navg${i}"${open?'':' hidden'}>${navSub(g,vs,i,item)}</div></div>`;}).join(''))+navCk;
     railCk();const m=MODULE_OF[state.view];const wr=m?['c','u','d'].filter(k=>opOk(m,k)):[];const ro=wr.length>0&&!wr.some(k=>can(m,k));/* somente leitura: o módulo tem letra de escrita e a pessoa não tem nenhuma */$('#venue-sub').innerHTML=`${esc(u.name)}${ro?' · <span class="pill neutral">somente leitura</span>':''}<br><span class="note">${esc(u.email)}</span> · <button class="chip" data-act="role-exit" style="min-height:26px;padding:2px 9px">sair</button>`;}
   if(u&&state.view==='fotografos'&&fotoKey()){state.person=fotoKey();}
   const fn=u?(VIEWFN[state.view]||vPerfis):vEntrar;
@@ -5420,7 +5427,7 @@ document.addEventListener('click',e=>{
     case 'loja-abrir':if(state.drawer)menuSet(false,true);if(lojaJanela()&&canView('posto')&&state.view!=='posto')go('posto');break; // v83: o admin cai no Posto de venda (pop-up bloqueado: fica onde está)
     case 'menu-toggle':menuSet(!state.drawer);break;
     case 'menu-close':menuSet(false);break;
-    case 'nav-grp':{const g=d.g;const cur=(VIEWS.find(v=>v[0]===state.view)||[])[3];const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;state.navOpen[g]=!open;render();const gb=document.querySelector(`#nav .grp[data-g="${CSS.escape(g)}"]`);if(gb)gb.focus();break;}
+    case 'nav-grp':{const g=d.g;const vv=VIEWS.find(v=>v[0]===state.view)||[];const cur=g.includes('›')?(vv[4]?vv[3]+'›'+vv[4]:''):vv[3];const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;state.navOpen[g]=!open;render();const gb=document.querySelector(`#nav .grp[data-g="${CSS.escape(g)}"]`);if(gb)gb.focus();break;}
     case 'login-back':state.auth.step='email';state.auth.pending=null;state.auth.err=null;render();break;
     case 'login-resend':sendCode();toast('Novo código enviado');break;
     case 'aj-key':state.ajustes.key=d.k;state.ajustes.card=null;state.ajustes.photo=null;render();break;
