@@ -1451,8 +1451,9 @@ const MEIO_NOME={cartao:'Cartão',pix:'PIX',dinheiro:'Dinheiro'};
 const PAG_NOME={cartao:'Cartão (maquininha)',pix:'PIX (maquininha)',dinheiro:'Dinheiro'};
 const PAY_MEIO={card:'cartao',pix:'pix',cash:'dinheiro'};
 const meioDe=r=>r&&MEIO_NOME[r.meio]?r.meio:'dinheiro'; // registro da v79 sem meio = dinheiro
-// v96: pedido do Checkout em que o caixa ainda não escolheu a forma de pagamento: não é dinheiro, não tem valor e fica fora das somas
-const pendSemMeio=r=>!!(r&&r.escolha&&!MEIO_NOME[r.meio]);
+// v96: pedido do Checkout em que o caixa ainda não escolheu o pacote ou a forma de pagamento (em qualquer ordem): não é dinheiro, não tem
+// valor e fica fora das somas (Posto, Alertas, logs, Lista, CSV, Minhas vendas). R1: o meio escolhido antes do pacote não vira "Dinheiro R$ 0"
+const pendSemMeio=r=>!!(r&&r.escolha&&(!r.pkg||r.total==null||!MEIO_NOME[r.meio]));
 const pendMeioTxt=r=>pendSemMeio(r)?'Escolha do pacote pendente':MEIO_NOME[meioDe(r)];
 state.pend={ref:null,err:null};
 // NSU/autorização (D4): opcional, só números, de 4 a 12. 13 a 19 números parecem cartão: recusa e nunca grava.

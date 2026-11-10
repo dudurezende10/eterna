@@ -240,6 +240,30 @@ await V.evaluate(()=>{ETERNA.simFresh();ETERNA.render();});await V.waitForTimeou
 for(let i=0;i<20;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'))break;await sleep(100);}
 ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!!document.querySelector('[data-act="kiosk-start"]')),'P4: cancelado pelo caixa, o cliente volta ao início');
 //@@REVISAO2
+// R1: o caixa escolhe o meio antes do pacote. Nada de "R$ 0" nem "Dinheiro": o pedido segue "Escolha do pacote pendente", sem valor e fora das somas
+{await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idR=await pend();
+  await posto(idR,{meio:'dinheiro'});await L.waitForTimeout(300);
+  const r1=await V.evaluate(id=>{ETERNA.simFresh();const S=ETERNA.SIM;const r=S.caixaDin.find(x=>x.id===id);
+    r.vendedor={email:ETERNA.state.user.email,nome:ETERNA.state.user.name}; // só na memória: Minhas vendas (e, abaixo, o alerta de atraso)
+    ETERNA.state.view='posto';ETERNA.render();const it=document.querySelector(`[data-pend="${id}"]`);const item=it?it.innerText:'';const mv=(document.querySelector('#minhas-vendas')||{}).innerText||'';
+    const row=ETERNA.allSales().find(x=>x.no===id)||{};const csv=ETERNA.salesCSV([row]).split('\n')[1]||'';
+    const cr=r.criada;r.criada=new Date(Date.now()-20*60e3).toISOString();const al=ETERNA.alerts().filter(a=>a.t.includes(r.codigo)).map(a=>a.t+' '+a.d).join(' | ');r.criada=cr;
+    ETERNA.state.view='vendas-lista';ETERNA.render();const lista=document.querySelector('#main').innerText;const linhaLista=[...document.querySelectorAll('#main tr')].map(t=>t.innerText).find(t=>t.includes(r.card))||'';
+    ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();
+    return {item,mv,pay:row.pay,total:row.total,csv,al,linhaLista};},idR);
+  const zero=t=>/R\$\s?0(,00)?\b/.test(t);
+  ok(!zero(r1.item)&&!/Recebi/.test(r1.item)&&/sem valor/.test(r1.item),'R1: no Posto, meio antes do pacote fica sem valor e sem "Recebi": '+r1.item.replace(/\s+/g,' ').slice(0,160));
+  ok(r1.pay==='Escolha do pacote pendente'&&r1.total==null&&!/Dinheiro/.test(r1.csv)&&/;"";/.test(r1.csv),'R1: Lista e CSV com "Escolha do pacote pendente" e sem valor: '+JSON.stringify({pay:r1.pay,total:r1.total,csv:r1.csv.slice(0,200)}));
+  ok(/escolha do pacote/.test(r1.al)&&!/Dinheiro esperando/.test(r1.al)&&!zero(r1.al),'R1: Alertas falam da escolha do pacote, sem "R$ 0": '+r1.al);
+  ok(/Escolha do pacote pendente/.test(r1.mv)&&!zero(r1.mv),'R1: Minhas vendas sem "R$ 0": '+r1.mv.replace(/\s+/g,' ').slice(0,200));
+  ok(!r1.linhaLista||(!zero(r1.linhaLista)&&!/Dinheiro/.test(r1.linhaLista)),'R1: linha da Lista de vendas sem "Dinheiro R$ 0": '+r1.linhaLista.replace(/\s+/g,' ').slice(0,160));
+  // logs: cancelar e virada do dia
+  await V.evaluate(id=>{ETERNA.simFresh();ETERNA.dinCancelar(id);},idR);await L.waitForTimeout(300);
+  const lc=await V.evaluate(()=>ETERNA.SIM.log[0].t);ok(/antes da escolha do pacote/.test(lc)&&!zero(lc),'R1: log do cancelamento sem "R$ 0": '+lc);
+  await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idR2=await pend();await posto(idR2,{meio:'pix'});
+  const lv=await V.evaluate(id=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);r.criada=new Date(Date.now()-2*864e5).toISOString();ETERNA.dinVirada();const r2=ETERNA.SIM.caixaDin.find(x=>x.id===id);return {t:ETERNA.SIM.log[0].t,est:r2.estado};},idR2);
+  ok(lv.est==='nao_paga'&&/sem pacote escolhido/.test(lv.t)&&!zero(lv.t),'R1: log da virada do dia sem "R$ 0": '+JSON.stringify(lv));
+  for(let i=0;i<20;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'))break;await sleep(100);}}
 // B2: marca velha de outra pessoa da mesma sessão não entra no pedido. A marca e sai; B abre por selfie, marca 1 e continua: pedido só com a foto de B
 {const cB=cards[1];await abrir(cB);const todas=await L.evaluate(c=>ETERNA.lojaItems(c).filter(x=>x.t==='ph').map(x=>x.id),cB);
   await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(80);
