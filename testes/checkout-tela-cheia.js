@@ -371,7 +371,7 @@ ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!!document.querySelect
   const cm=await L.evaluate(async()=>{const E=ETERNA,k=E.state.kiosk,c=E.state.cam;E.state.view='quiosque';E.lojaReset();const st=c.stream;c.stream=null;c.busy=false;
     k.step='code';k.camOn=true;k.camDesde=Date.now()-5000;E.camFound();k.camOn=false;k.camOn=true;k.camDesde=Date.now(); // desligou e outro Iniciar ligou
     await new Promise(r=>setTimeout(r,1300));const a={step:k.step,code:k.code};
-    c.busy=false;E.camFound();await new Promise(r=>setTimeout(r,1300));const b={step:k.step,code:k.code};c.stream=st;k.camOn=false;E.lojaReset();E.render();return {a,b};});
+    c.busy=false;E.camFound();for(let i=0;i<50&&k.step==='code';i++)await new Promise(r=>setTimeout(r,100));const b={step:k.step,code:k.code};c.stream=st;k.camOn=false;E.lojaReset();E.render();return {a,b};});
   ok(cm.a.step==='code'&&!cm.a.code&&cm.b.step!=='code'&&cm.b.code,'revisão: a câmera descarta o resultado da busca de outro Iniciar (e aceita o da câmera atual): '+JSON.stringify(cm));}
 
 if(!process.env.RAPIDO){
