@@ -1120,7 +1120,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v96 · 10/11 10:36"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v96</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v96 · 10/11 11:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v96</span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1576,20 +1576,28 @@ function postoNome(){const d=pontoModo()==='posto'?postoDisp():null;return d&&d.
 const postoTitulo=()=>pontoModo()==='posto'?postoNome():'Computador do ponto';
 // quem abriu o Checkout neste notebook (gravado por lojaJanela); vai para a venda como vendedor declarado (D17)
 function postoVendedor(){try{const v=JSON.parse(localStorage.getItem('eterna.posto.vendedor')||'null');if(v&&typeof v.email==='string'&&typeof v.nome==='string')return {nome:v.nome.replace(/[<>]/g,'').slice(0,60),email:v.email.slice(0,120)};}catch(e){}return null;}
-const ROLO_CAP=700,ROLO_ALERTA=40,IMP_ALERTA_MIN=10;
+const ROLO_CAP=700,ROLO_ALERTA=40,ROLO_SOBRA=60,IMP_ALERTA_MIN=10;
 // v96 (Eduardo, 10/11): "Registrar troca de rolo" à mão do caixa. O selo "Rolo: N de 700" do Posto, da Impressão 10×15 e do Caixa vira botão para quem
 // vende (venda 'c'), só para o posto deste aparelho (postoNome); com o rolo abaixo de ROLO_ALERTA aparece também "Troquei o rolo". Estoque (stock-swap,
 // estoque 'u') continua. Os dois caminhos passam por roloTrocar: SIM.stock, log, pvEvento('rolo') e auditLog('rolo_troca') com quem, posto e valor anterior.
 const roloDe=pn=>SIM.stock[pn]!=null?SIM.stock[pn]:ROLO_CAP;
+// v96 (revisão): só num aparelho configurado como posto (pontoModo 'posto'); fora dele postoNome() devolve 'Caixa 1' e o selo é só informação.
 function roloSelo(cls,semTroquei){const pn=postoNome();const v=roloDe(pn);const baixo=v<ROLO_ALERTA;const tx=`Rolo: ${v} de ${ROLO_CAP}`;
-  if(!can('venda','c'))return `<span class="pill ${baixo?'bad':cls||'neutral'}">${tx}</span>`;
+  if(!can('venda','c')||pontoModo()!=='posto')return `<span class="pill ${baixo?'bad':cls||'neutral'}">${tx}</span>`;
   return `<button class="pill ${baixo?'bad':cls||'neutral'} rolo-selo" data-act="rolo-troca" title="Registrar troca de rolo em ${esc(pn)}">${tx}</button>${baixo&&!semTroquei?`<button class="btn rolo-troquei" data-act="rolo-troca">Troquei o rolo</button>`:''}`;}
-function roloAsk(){const q=state.roloAsk;if(!q||q.view!==state.view||q.pn!==postoNome())return '';
+function roloAsk(){const q=state.roloAsk;if(!q||q.view!==state.view||q.pn!==postoNome()||pontoModo()!=='posto')return '';
   return `<div class="rolo-ask" role="alertdialog" aria-modal="true" aria-labelledby="rolo-askt"><div class="rolo-askc"><h2 id="rolo-askt">Trocou o rolo da impressora deste posto?</h2><p>O contador volta para ${ROLO_CAP}. Posto: ${esc(q.pn)}.</p>
     <div class="row"><button class="btn primary" data-act="rolo-troca-sim" data-posto="${esc(q.pn)}">Sim, troquei</button><button class="btn ghost" data-act="rolo-troca-nao">Cancelar</button></div></div></div>`;}
-function roloTrocar(pn){simFresh();const antes=SIM.stock[pn]!=null?SIM.stock[pn]:null;SIM.stock[pn]=ROLO_CAP;log(`Rolo trocado em ${pn}`);
-  if(!saveSim()){toast('Não foi possível gravar a troca do rolo. Tente de novo.');return false;}
-  pvEvento('rolo',pvDispId(),{capacidade:ROLO_CAP,posto:pn});
+// a confirmação mantém o foco depois de redesenhar e prende o Tab (como lojaAskFoco/lojaAskTab)
+function roloAskFoco(prev){if(!prev)return;const b=document.querySelector(`.rolo-ask [data-act="${prev}"]`)||document.querySelector('.rolo-ask [data-act="rolo-troca-nao"]');if(b)b.focus();}
+function roloAskTab(e){const bs=[...document.querySelectorAll('.rolo-ask button')];if(!bs.length)return;const i=bs.indexOf(document.activeElement);e.preventDefault();
+  bs[i<0?0:(i+(e.shiftKey?bs.length-1:1))%bs.length].focus();}
+function roloTrocar(pn){simFresh();const tem=SIM.stock[pn]!=null,antes=tem?SIM.stock[pn]:null;SIM.stock[pn]=ROLO_CAP;
+  const linha={t:`Rolo trocado em ${pn}`,at:now().toISOString()};SIM.log.unshift(linha);SIM.log=SIM.log.slice(0,80);
+  if(!saveSim()){ // não gravou: desfaz o contador e a linha do registro
+    if(tem)SIM.stock[pn]=antes;else delete SIM.stock[pn];const i=SIM.log.indexOf(linha);if(i>=0)SIM.log.splice(i,1);
+    toast('Não foi possível gravar a troca do rolo. Tente de novo.');return false;}
+  pvEvento('rolo',pvDispId(),{capacidade:ROLO_CAP,posto:pn,de:antes,quem:(state.user&&state.user.email)||null});
   auditLog('rolo_troca','posto/'+pn,[{campo:'rolo',de:antes,para:ROLO_CAP}],{posto:pn,porNome:(state.user&&state.user.name)||null});
   toast(`Rolo de ${pn}: ${ROLO_CAP} impressões`);return true;}
 
@@ -4321,7 +4329,7 @@ function vEstoque(){
   return `<div class="head"><div><div class="eyebrow">Insumos</div><h1>Estoque</h1></div></div>
   <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · rolo</span><span class="v" style="color:${v<ROLO_ALERTA?'var(--bad)':'inherit'}">${v}</span><span class="d">${v<ROLO_ALERTA?'Trocar antes do pico':'de '+ROLO_CAP+' · DNP RX1HS'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">Ímãs 15 x 20</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">Sacolas</span><span class="v" style="color:var(--bad)">310</span><span class="d">pedir</span></div></div>
   <div class="panel"><h2>Consumo</h2>${hbars([{label:'Impressões semana',v:DATA.totals.prints},{label:'Reimpressões',v:DATA.totals.reprints},{label:'Rolos usados',v:Math.round(DATA.totals.prints/200)}],fmtN)}<div class="note">${fmtN(DATA.totals.prints)} impressões na semana = ${Math.ceil(DATA.totals.prints/200)} rolos. Estoque mínimo sugerido: 10 rolos.</div></div>
-  <div class="row"><button class="btn ghost" data-act="stock-swap">Registrar troca de rolo em ${esc(postoNome())}</button><button class="btn ghost" data-act="view" data-v="bandeiras">Bandeiras e material de cena →</button></div>`;
+  <div class="row">${can('estoque','u')?`<button class="btn ghost" data-act="stock-swap">Registrar troca de rolo em ${esc(postoNome())}</button>`:''}<button class="btn ghost" data-act="view" data-v="bandeiras">Bandeiras e material de cena →</button></div>`;
 }
 
 // ---------- Fluxo do sistema (quadro de 26/10) ----------
@@ -4489,6 +4497,8 @@ function alerts(){
   Object.entries(SIM.sessions).forEach(([c,s])=>{const im=s.impressao;if(s.status!=='paga'||!im)return;const min=s.paidAt?Math.floor((now()-new Date(s.paidAt))/60000):0;
     if(im.estado==='pendente'&&min>IMP_ALERTA_MIN&&min<24*60)out.push({sev:'warn',t:`Venda ${s.saleNo||c} paga há ${min} min e ainda sem impressão`,d:`${s.posto||postoNome()}: imprima as fotos no Posto de venda ou marque "Não saiu" para registrar o problema.`});
     if(im.semFoto>0&&isoDia(s.paidAt||0)===todayISO())out.push({sev:'bad',t:`Venda ${s.saleNo||c}: ${im.semFoto} ${im.semFoto===1?'impressão':'impressões'} sem foto`,d:'O pacote prevê mais impressões do que fotos escolhidas. Combine com o cliente.'});});
+  // v96 (revisão): troca de rolo de hoje com muitas folhas sobrando (valor anterior acima de ROLO_SOBRA)
+  auditRead().filter(e=>e&&e.acao==='rolo_troca'&&isoDia(e.em||0)===todayISO()).forEach(e=>{const m=(e.mudancas||[])[0]||{};if(typeof m.de==='number'&&m.de>ROLO_SOBRA)out.push({sev:'bad',t:`Rolo trocado com ${m.de} impressões sobrando · ${e.posto||String(e.alvo||'').replace(/^posto\//,'')}`,d:`Troca registrada por ${e.porNome||e.por||'?'} às ${hhmm(new Date(e.em))}. Confira o rolo retirado e o contador da DNP.`});});
   Object.entries(SIM.stock||{}).forEach(([k,v])=>{if(v<ROLO_ALERTA)out.push({sev:'warn',t:`${k}: rolo com ${v} impressões`,d:'Trocar o rolo da DNP antes do pico e registrar a troca em Estoque.'});});
   flagList().forEach(x=>{if(!x[5]||!x[3])return;const st=flagOf(x),fs=flagStats(x);if(st.state==='defeito'||st.state==='fora de uso')out.push({sev:'warn',t:`Bandeira ${x[1]}: ${st.state}${st.note?', '+st.note:''}`,d:`${x[3]===1?'Peça única. ':''}Repor antes do fim de semana.`});else if(x[3]===1&&fs.sessions>=100)out.push({sev:'warn',t:`Bandeira ${x[1]}: peça única com ${fs.sessions} sessões na semana`,d:'Em dia de jogo falta. Comprar a segunda unidade.'});});
   out.push({sev:'warn',t:'Escala: 25 turnos para 28 necessários',d:'Quatro pontos por sete dias com cinco pessoas em 5x2 deixa 3 turnos descobertos; com o vestiário, 10.'});
@@ -5176,9 +5186,11 @@ function render(){
   const fn=u?(VIEWFN[state.view]||vPerfis):vEntrar;
   // campos de chave não podem ser apagados pelas atualizações automáticas da tela
   const keep={};let keepFocus=null,keepSel=null;document.querySelectorAll('#main [data-keep][id]').forEach(el=>{if(el.value)keep[el.id]=el.value;if(document.activeElement===el){keepFocus=el.id;try{keepSel=[el.selectionStart,el.selectionEnd]}catch(e){}}});
+  const roloAnt=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.rolo-ask')?document.activeElement.dataset.act:null;
   try{$('#main').innerHTML=fn()+roloAsk();}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div><div class="row"><button class="btn ghost" data-act="reset">Zerar simulação</button></div></div>`;}
   Object.entries(keep).forEach(([id,v])=>{const el=document.getElementById(id);if(el&&!el.value)el.value=v;});if(keepFocus){const el=document.getElementById(keepFocus);if(el){el.focus();if(keepSel)try{el.setSelectionRange(keepSel[0],keepSel[1])}catch(e){}}}
   if(state.view==='caixa'||state.view==='checkout')drawQR();
+  roloAskFoco(roloAnt);
   {const gq=$('#galqr');if(gq){const m=(SIM.galerias||{})[gq.dataset.t];if(m)qrDraw(gq,galBase()+m.token,150,m.codigo);}}
   syncHash();
   camMount();
@@ -5213,7 +5225,7 @@ window.addEventListener('resize',()=>{if(state.drawer&&innerWidth>700)menuSet(fa
   document.addEventListener('pointerout',e=>{if(e.pointerType==='touch')return;/* no toque a dica fica até o próximo toque */const el=tipOf(e);if(el&&!(e.relatedTarget&&el.contains(e.relatedTarget)))hide();});
   document.addEventListener('focusin',e=>{const el=tipOf(e);if(el)show(el);else hide();});
   window.addEventListener('scroll',hide,{passive:true});}
-function go(v){if(!canView(v)){toast('Sem acesso a esta tela');return;}if(v==='quiosque'){lojaAbrir();return;}const changed=state.view!==v;if(changed)tvSair();state.view=v;state.person=null;state.session=null;state.personDay=null;try{localStorage.setItem('eterna.view',v)}catch(e){}render();if(changed)window.scrollTo({top:0});}
+function go(v){if(!canView(v)){toast('Sem acesso a esta tela');return;}if(v==='quiosque'){lojaAbrir();return;}const changed=state.view!==v;if(changed){tvSair();state.roloAsk=null;}state.view=v;state.person=null;state.session=null;state.personDay=null;try{localStorage.setItem('eterna.view',v)}catch(e){}render();if(changed)window.scrollTo({top:0});}
 function syncHash(){if(state.pub||state.lojaRota)return;if(!state.user){if(location.hash&&location.hash!=='#')history.replaceState(null,'','#');return;}const parts=[state.view];if(state.view==='fotografos'&&state.person){parts.push(state.person);if(state.personDay)parts.push(state.personDay);}const h='#'+parts.join('/');if(location.hash!==h)history.replaceState(null,'',h);}
 const LEGACY_HASH={admin:'perfis',foto:'importar',venda:'checkout',valida:'revisao',set:'importar',semana:'painel'};
 function readHash(){const h=location.hash.replace(/^#/,'');if(!h)return false;let segs=h.split('/');if(LEGACY_HASH[segs[0]]){if(segs.length>1&&VIEWFN[segs[1]])segs=segs.slice(1);else segs[0]=LEGACY_HASH[segs[0]];}const [v,a,b]=segs;if(!VIEWFN[v]||v==='entrar')return false;if(v==='quiosque'&&!(state.user&&homeView()==='quiosque'))return false; // a Loja só abre por #loja
@@ -5517,9 +5529,10 @@ document.addEventListener('click',e=>{
     case 'comp-all':state.compAll=state.compAll===d.card?null:d.card;render();break;
     case 'price-reset':SIM.prices={};saveSim();toast('Preços de hoje restaurados');render();break;
     case 'stock-swap':roloTrocar(postoNome());render();break;
-    case 'rolo-troca':state.roloAsk={pn:postoNome(),view:state.view};render();{const b=document.querySelector('.rolo-ask [data-act="rolo-troca-nao"]');if(b)b.focus();}break;
+    case 'rolo-troca':if(pontoModo()!=='posto'){toast('A troca de rolo pelo selo só vale num aparelho configurado como posto. Registre em Estoque.');break;}state.roloAsk={pn:postoNome(),view:state.view};render();{const b=document.querySelector('.rolo-ask [data-act="rolo-troca-nao"]');if(b)b.focus();}break;
     case 'rolo-troca-nao':state.roloAsk=null;render();break;
     case 'rolo-troca-sim':{const pn=postoNome();state.roloAsk=null;
+      if(pontoModo()!=='posto'){toast('A troca de rolo pelo selo só vale num aparelho configurado como posto. Registre em Estoque.');render();break;}
       if(d.posto!==pn){toast(`A troca de rolo daqui vale só para ${pn}. Registre a de ${d.posto||'outro posto'} no próprio posto ou em Estoque.`);render();break;}
       roloTrocar(pn);render();break;}
   }
@@ -5538,7 +5551,7 @@ document.addEventListener('change',e=>{const a=e.target.dataset.act;if(a==='es-i
   if(a==='gal-ev-menor'){if(state.gal.ev)state.gal.ev.menor=e.target.checked;return;}
   if(a==='gal-ev-data'){if(state.gal.ev){const n=$('#gal-ev-nome');if(n)state.gal.ev.nome=n.value;state.gal.ev.data=e.target.value||todayISO();state.gal.ev.sel={};render();}return;}});
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-email')sendCode();if(f==='login-code')checkCode();});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.roloAsk&&!state.lojaRota){state.roloAsk=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.sairAsk){state.kiosk.sairAsk=false;render();e.preventDefault();return;}if(e.key==='Tab'&&state.lojaRota&&state.kiosk.sairAsk){lojaAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.roloAsk&&!state.lojaRota){state.roloAsk=null;render();e.preventDefault();return;}if(e.key==='Tab'&&state.roloAsk&&!state.lojaRota&&document.querySelector('.rolo-ask')){roloAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.sairAsk){state.kiosk.sairAsk=false;render();e.preventDefault();return;}if(e.key==='Tab'&&state.lojaRota&&state.kiosk.sairAsk){lojaAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
     if(e.key==='ArrowRight'||e.key==='ArrowLeft'){k.ver=Math.max(0,Math.min(n-1,k.ver+(e.key==='ArrowRight'?1:-1)));k.i=k.ver;render();e.preventDefault();return;}
     if(e.key==='Escape'){k.ver=null;render();e.preventDefault();e.stopPropagation();return;}
     if(e.key==='Enter'||e.key===' '){const b=$('.lj-lbbar [data-act="kiosk-ok"]');if(b)b.click();e.preventDefault();return;}}
