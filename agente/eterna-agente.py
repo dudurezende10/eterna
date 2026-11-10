@@ -2824,6 +2824,16 @@ def limpar_recortes(agora=None, guardar=None):
             st = os.stat(p)
         except OSError:
             continue
+        if nome.startswith("."):
+            # v97: a marca .versao fica sempre (sem ela a próxima partida apagaria o cache todo); o .rec-*.tmp do processo de
+            # recorte, só passada 1 h (em andamento ele é trocado pelo PNG)
+            if nome.endswith(".tmp") and agora - st.st_mtime > 3600:
+                try:
+                    os.remove(p)
+                    n += 1
+                except OSError:
+                    pass
+            continue
         pid = nome.split(".")[0].split("_")[0]
         fonte = vivas.get(pid)
         if pid in guardar and fonte and os.path.exists(fonte) and not nome.endswith(".tmp"):

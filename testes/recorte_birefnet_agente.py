@@ -312,6 +312,13 @@ open(os.path.join(m.RECORTES, "a97000000001.png"), "w").write("x")
 ok(m.rec_versao_cache() == 0 and os.path.exists(os.path.join(m.RECORTES, "a97000000001.png")), "7: segunda partida não apaga nada")
 open(os.path.join(m.RECORTES, ".versao"), "w").write("isnet-0")
 ok(m.rec_versao_cache() == 1, "7: marca antiga apaga de novo")
+# a limpeza de hora em hora nunca apaga a marca (nem velha) nem o .tmp do recorte em andamento
+velho_ = time.time() - 3 * 86400
+os.utime(os.path.join(m.RECORTES, ".versao"), (velho_, velho_))
+open(os.path.join(m.RECORTES, ".rec-andamento.tmp"), "w").write("x")
+m.limpar_recortes(guardar=set())
+ok(os.path.exists(os.path.join(m.RECORTES, ".versao")) and os.path.exists(os.path.join(m.RECORTES, ".rec-andamento.tmp")), "7: limpar_recortes guarda a .versao e o .tmp em andamento: %r" % os.listdir(m.RECORTES))
+ok(m.rec_versao_cache() == 0, "7: depois da limpeza a partida não apaga o cache")
 
 # ---------- critério 9 (parte): CPU -> rec_pre_escolha só com as bases ----------
 with m.rec_lock:
