@@ -64,13 +64,19 @@ try{
     await C.clock.runFor(1300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: com 10 s, deveria voltar aos 10 s');}
   // botão antes do tempo
   const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-restart');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Voltar ao início" deveria voltar na hora');
-  // ---------- 23. 5 minutos parado nas fotos não mudam de etapa (A3 cancelado) ----------
-  dbg('23. 5 minutos parado nas fotos não mudam');
+  // ---------- 23. escolha parada 90 s sem toque volta ao Iniciar e apaga as marcas (Eduardo, 10/11; substitui o "A3 cancelado" de 27/10) ----------
+  dbg('23. escolha parada 90 s volta ao Iniciar');
   const card4=cards[4]||cards[0]; // v79: card3 já foi paga e sessão paga não abre a escolha de novo (revisão 1)
   await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(1000);
-  ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: não abriu as fotos');await C.clock.runFor(5*60*1000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: 5 min parado nas fotos mudaram a etapa');
-  // A6: voltar manual nas fotos, no carrinho e no código
-  await C.click('[data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!ETERNA.state.kiosk.code),'A6: voltar nas fotos não limpou o cliente');
+  ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: não abriu as fotos');await C.click('[data-act="kiosk-ok"]');
+  await C.clock.runFor(80*1000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: aos 80 s parado ainda deveria estar nas fotos');
+  await C.mouse.click(5,450);await C.clock.runFor(80*1000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='review','23: um toque deveria renovar o prazo de 90 s');
+  await C.clock.runFor(20*1000);
+  const p23=await C.evaluate(c=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')).sessions[c]||{};return {step:ETERNA.state.kiosk.step,code:ETERNA.state.kiosk.code,pk:Object.keys(s.pick||{}).length,ini:!!document.querySelector('[data-act="kiosk-start"]'),foto:!!document.querySelector('#lj-lb,.lj-gcard')};},card4);
+  ok(p23.step==='code'&&!p23.code&&!p23.pk&&p23.ini&&!p23.foto,'23: 90 s sem toque deveria voltar ao Iniciar, sem foto na tela e sem marcas: '+JSON.stringify(p23));
+  // A6: voltar manual nas fotos (Sair), no Pronto e no código
+  await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(800);
+  await C.click('[data-act="kiosk-sair"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!ETERNA.state.kiosk.code),'A6: Sair nas fotos não limpou o cliente');
   await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(800);await C.click('[data-act="kiosk-ok"]');await C.click('.lj-next');await C.clock.runFor(300);
   await C.click('.lj-pronto [data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6 (v96): voltar no Pronto não voltou ao início');
   await C.click('[data-act="kiosk-emerg"]');ok(await C.isVisible('[data-act="kiosk-back"]'),'A6: sem botão de voltar na etapa do código');await C.click('[data-act="kiosk-back"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6: voltar no código');

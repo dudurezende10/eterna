@@ -218,7 +218,7 @@ try{
   await B.click(`[data-act="din-confirm"][data-id="${rI3.id}"]`);await B.waitForTimeout(200);
   const i3b=await B.evaluate(id=>({t:document.querySelector('#toast').textContent,e:ETERNA.SIM.caixaDin.find(x=>x.id===id).estado}),rI3.id);
   await B.evaluate(()=>{Storage.prototype.setItem=window._si;});
-  ok(i3b.t==='Não gravou, tente de novo'&&/^(aguardando|escolha)$/.test(i3b.e),'I3: Caixa sem gravar: '+J(i3b));
+  ok(i3b.t==='Não gravou, tente de novo'&&i3b.e==='escolha','I3: Caixa sem gravar: '+J(i3b));
   await B.click(`[data-act="din-cancel"][data-id="${rI3.id}"]`);await B.waitForTimeout(100);await B.click(`[data-act="din-cancel-ok"][data-id="${rI3.id}"]`);await B.waitForTimeout(200);
 
   // ---- 1.9: cancelar com segunda confirmação
@@ -421,7 +421,7 @@ try{
     await abrir();await pg.click('[data-act="kiosk-emerg"]');await pg.waitForTimeout(100);ok(!(await btn()),'B1: tocar em "código do recibo" já é cliente');
     await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(400);ok(!(await btn()),'B1: sem botão na escolha');
     await pg.evaluate(c=>{const it=ETERNA.lojaItems(c);const pk=ETERNA.lojaPick(c);pk[it[0].k]='ok';ETERNA.state.kiosk.step='cart';ETERNA.render();},card);await pg.waitForTimeout(150);ok(!(await btn()),'B1: sem botão no carrinho');
-    await pg.click('.lj-back0');await pg.waitForTimeout(200);ok(await pg.evaluate(()=>ETERNA.state.kiosk.step)==='code'&&!(await btn()),'B1: de volta à câmera depois de um cliente, o botão não volta');
+    await pg.click('[data-act="kiosk-sair"]');await pg.click('[data-act="kiosk-sair-sim"]');await pg.waitForTimeout(200);ok(await pg.evaluate(()=>ETERNA.state.kiosk.step)==='code'&&!(await btn()),'B1: de volta à câmera depois de um cliente, o botão não volta');
     await pg.evaluate(()=>{ETERNA.state.lojaEquipeAte=Date.now()+60000;ETERNA.state.kiosk.step='review';});ok(!(await pg.evaluate(()=>ETERNA.lojaEquipeOn())),'B1: lojaEquipeOn só no passo da câmera');
     // v96: a câmera só liga no Iniciar; tocar em Iniciar já é cliente
     await abrir();await pg.evaluate(()=>{ETERNA.state.cam.busy=false;});await pg.click('[data-act="kiosk-start"]');await pg.waitForTimeout(150);ok(!(await btn()),'B1 (v96): tocar em Iniciar já é cliente e tira o botão');
