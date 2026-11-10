@@ -199,6 +199,10 @@ await V.click(`[data-pend="${id1}"] [data-act="pend-meio"][data-m="pix"]`);await
 await V.click(`[data-pend="${id1}"] [data-act="pend-pos"]`);await V.waitForTimeout(100);await V.click(`[data-act="pend-pos-ok"][data-id="${id1}"]`);
 for(let i=0;i<30;i++){if(await L.evaluate(()=>!!document.querySelector('#lqr canvas,#lqr img')))break;await sleep(100);}
 ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.paid.wait&&!!document.querySelector('#lqr canvas,#lqr img')),'P4: confirmado no Posto, o cliente vai para a tela final com QR');
+// revisão (10/11): a tela final do QR mostra o valor confirmado no Posto
+{const q=await L.evaluate(id=>{const r=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);return {pago:(document.querySelector('.lj-pago')||{}).innerText||'',tot:r.total};},id1);
+  const m=/Valor pago R\$\s?([\d.]+(?:,\d+)?)/.exec(q.pago);const v=m?Number(m[1].replace(/\./g,'').replace(',','.')):null;
+  ok(q.tot>0&&v===q.tot,'revisão: tela final do QR com o valor confirmado: '+JSON.stringify(q));await shot(L,'v96-qr-final.png');}
 // 8: "Voltar às fotos" na tela Pronto: reabre a escolha da mesma sessão com o que estava marcado e tira o pedido do Posto (o caixa vê o aviso)
 await abrir(cards[1]);for(let i=0;i<2;i++){await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(60);}await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idV=await pend();
 await V.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});await V.waitForTimeout(300);
@@ -301,6 +305,26 @@ ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!!document.querySelect
   await posto(idB2,{pkg:'arq'});await posto(idB2,{meio:'dinheiro'});await confirma(idB2);
   const fim=await L.evaluate(([id,c])=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=S.caixaDin.find(x=>x.id===id);return {est:r.estado,sel:S.sessions[c].selected,st:S.sessions[c].status};},[idB2,cB]);
   ok(fim.est==='confirmada'&&fim.st==='paga'&&fim.sel.join()===deB[0],'B2: o Posto confirma e a venda fica só com a foto de B: '+JSON.stringify(fim));}
+
+// revisão (10/11): "Voltar às fotos" inativo quando o caixa já escolheu o meio (ou o pacote); escolha parada não volta ao início (A3 cancelado);
+// a câmera descarta o resultado de uma busca que começou com outra câmera (k.camOn falso ou outro Iniciar)
+{const cR=cards[3]||cards[2];await abrir(cR);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idT=await pend();
+  ok(!(await L.isDisabled('[data-act="kiosk-voltar-fotos"]')),'revisão: "Voltar às fotos" ativo enquanto o caixa não mexeu');
+  await posto(idT,{meio:'pix'});for(let i=0;i<30;i++){if(await L.evaluate(()=>!!(ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.meio)))break;await sleep(100);}
+  const vt=await L.evaluate(id=>{const b=document.querySelector('[data-act="kiosk-voltar-fotos"]');const dis=!!(b&&b.disabled);ETERNA.lojaVoltarFotos();const r=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);
+    return {dis,step:ETERNA.state.kiosk.step,est:r.estado,meio:r.meio,toast:document.querySelector('#toast').textContent};},idT);
+  ok(vt.dis&&vt.step==='done'&&vt.est==='escolha'&&vt.meio==='pix'&&/finalizando/.test(vt.toast),'revisão: com o meio escolhido no Posto, "Voltar às fotos" fica inativo e o pedido fica com o caixa: '+JSON.stringify(vt));
+  await V.evaluate(id=>{ETERNA.simFresh();ETERNA.dinCancelar(id);},idT);for(let i=0;i<30;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'))break;await sleep(100);}
+  // escolha parada NÃO volta ao início (adendo 2 do Eduardo, 27/10: A3 cancelado); quem chega depois não herda as marcas (B2)
+  await abrir(cR);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(100);
+  const oc=await L.evaluate(()=>{const k=ETERNA.state.kiosk;k.toque=0;k.prontoDesde=0;return {r:ETERNA.lojaProntoOcioso(),step:k.step};});
+  ok(!oc.r&&oc.step==='review','revisão: escolha parada continua na escolha (A3 cancelado): '+JSON.stringify(oc));
+  // câmera: busca começada com a câmera de um Iniciar anterior não abre sessão
+  const cm=await L.evaluate(async()=>{const E=ETERNA,k=E.state.kiosk,c=E.state.cam;E.state.view='quiosque';E.lojaReset();const st=c.stream;c.stream=null;c.busy=false;
+    k.step='code';k.camOn=true;k.camDesde=Date.now()-5000;E.camFound();k.camOn=false;k.camOn=true;k.camDesde=Date.now(); // desligou e outro Iniciar ligou
+    await new Promise(r=>setTimeout(r,1300));const a={step:k.step,code:k.code};
+    c.busy=false;E.camFound();await new Promise(r=>setTimeout(r,1300));const b={step:k.step,code:k.code};c.stream=st;k.camOn=false;E.lojaReset();E.render();return {a,b};});
+  ok(cm.a.step==='code'&&!cm.a.code&&cm.b.step!=='code'&&cm.b.code,'revisão: a câmera descarta o resultado da busca de outro Iniciar (e aceita o da câmera atual): '+JSON.stringify(cm));}
 
 if(!process.env.RAPIDO){
 // ---- P6: a venda registrada sai igual à de antes (app da v94) para a mesma escolha, pacote e meio
