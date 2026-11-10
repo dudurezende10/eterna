@@ -5697,6 +5697,10 @@ def auth_remover(usuario, por="", ip=""):
             db.execute("delete from credencial where usuario=?", (usuario,))
             db.execute("delete from sessao_login where usuario=?", (usuario,))
             db.execute("delete from reset_senha where usuario=?", (usuario,))
+            # os postos que a pessoa criou caem junto (pareados por ela ou automáticos)
+            for (pid,) in db.execute("select id from posto where revogado_em is null and criado_por in (?, ?)", (usuario, "auto:" + usuario)).fetchall():
+                db.execute("update posto set revogado_em=? where id=?", (time.time(), pid))
+                auth_log(db, "posto:" + pid, "posto_revogado", por, ip)
             auth_log(db, usuario, "removido", por, ip)
             db.commit()
         finally:
@@ -5730,16 +5734,36 @@ posto_uso = {}                       # id -> última gravação de ultimo_uso (n
 POSTO_REPETIDO_S = 15
 posto_recentes = {}                  # (pessoa, hash do login, nome) -> (hora, token, posto) dos últimos pareamentos, contra clique repetido
 posto_par_lock = threading.Lock()
+POSTO_AUTO_IDADE = 30 * 86400        # posto automático: cai depois de 30 dias sem uso; cada uso renova (revisão do Eduardo, 10/11)
+POSTO_AUTO_DIA = 3                   # no máximo 3 postos automáticos por pessoa e IP em 24 h
+posto_auto_feitos = {}               # (pessoa, ip) -> horas das criações nas últimas 24 h
+
+
+def posto_redes():
+    """ETERNA_POSTO_REDE: faixa(s) da rede do ponto, ex.: 192.168.10.0/24 (várias separadas por vírgula). Vazia desliga o posto automático."""
+    import ipaddress
+    redes = []
+    for x in os.environ.get("ETERNA_POSTO_REDE", "").split(","):
+        try:
+            if x.strip():
+                redes.append(ipaddress.ip_network(x.strip(), strict=False))
+        except ValueError:
+            pass
+    return redes
 
 
 def _sha(t):
     return hashlib.sha256(t.encode()).hexdigest()
 
 
-def posto_auto_ok(ip, ip_servidor=""):
-    """Aparelho da rede local do ponto (vira posto sozinho). Tailscale/VPN (100.64.0.0/10), o próprio servidor e
-    endereços públicos não viram posto: quem acessa de fora (Ronaldo e Eduardo) usa o sistema sem criar posto."""
+def posto_auto_ok(ip, ip_servidor="", redes=None):
+    """Aparelho da rede do ponto (ETERNA_POSTO_REDE), que vira posto quando um Admin entra nele. Tailscale/VPN (100.64.0.0/10),
+    o próprio servidor e endereços fora da faixa não viram posto: quem acessa de fora (Ronaldo e Eduardo) usa o sistema sem criar posto.
+    Atrás de proxy o IP visto é o do proxy: não ligar o automático lá sem tratar X-Forwarded-For (só vindo de ETERNA_PROXY_IP)."""
     import ipaddress
+    redes = posto_redes() if redes is None else redes
+    if not redes:
+        return False
     try:
         a = ipaddress.ip_address(str(ip).split("%")[0])
         if a.version == 6 and a.ipv4_mapped:
@@ -5748,7 +5772,19 @@ def posto_auto_ok(ip, ip_servidor=""):
         return False
     if a.is_loopback or str(a) == str(ip_servidor) or a in ipaddress.ip_network("100.64.0.0/10"):
         return False
-    return a.is_private
+    return a.is_private and any(a in r for r in redes)
+
+
+def posto_auto_cota(usuario, ip):
+    """True e conta mais um, se esta pessoa ainda pode criar posto automático deste IP hoje."""
+    agora = time.time()
+    k = (usuario, str(ip))
+    feitos = [t for t in posto_auto_feitos.get(k, []) if agora - t < 86400]
+    if len(feitos) >= POSTO_AUTO_DIA:
+        posto_auto_feitos[k] = feitos
+        return False
+    posto_auto_feitos[k] = feitos + [agora]
+    return True
 
 
 def posto_nome_ok(nome):
@@ -5756,8 +5792,9 @@ def posto_nome_ok(nome):
     return n or None
 
 
-def posto_criar(nome, por="", ip=""):
-    """-> (token, {id, nome, num}). O token sai só aqui, para o cookie deste aparelho."""
+def posto_criar(nome, por="", ip="", aparelho=""):
+    """-> (token, {id, nome, num}). O token sai só aqui, para o cookie deste aparelho.
+    Posto automático: por = "auto:<pessoa>" e aparelho = User-Agent, gravados na auditoria para o Admin reconhecer o aparelho."""
     token, pid = secrets.token_urlsafe(32), "p_" + secrets.token_hex(4)
     with estado_lock:
         db = auth_db()
@@ -5765,7 +5802,7 @@ def posto_criar(nome, por="", ip=""):
             num = (db.execute("select coalesce(max(num), 0) from posto").fetchone()[0] or 0) + 1
             nome = nome or "Posto %d" % num     # posto automático: nome pelo número
             db.execute("insert into posto values (?, ?, ?, ?, ?, ?, ?, ?, ?)", (pid, nome, num, _sha(token), por, time.time(), None, ip, None))
-            auth_log(db, "posto:" + pid, "posto_pareado", por, ip)
+            auth_log(db, "posto:" + pid, ("posto_auto " + re.sub(r"[\x00-\x1f]", "", str(aparelho))[:200]).strip() if aparelho else "posto_pareado", por, ip)
             db.commit()
         finally:
             db.close()
@@ -5779,14 +5816,16 @@ def posto_quem(token, ip=""):
     with estado_lock:
         db = auth_db()
         try:
-            r = db.execute("select id, nome, num from posto where hash=? and revogado_em is null", (_sha(token),)).fetchone()
+            r = db.execute("select id, nome, num, criado_por, ultimo_uso, criado_em from posto where hash=? and revogado_em is null", (_sha(token),)).fetchone()
+            if r and str(r[3] or "").startswith("auto:") and time.time() - (r[4] or r[5] or 0) > POSTO_AUTO_IDADE:
+                r = None                     # posto automático parado há mais de 30 dias: não vale mais
             if r and time.time() - posto_uso.get(r[0], 0) > 60:
                 posto_uso[r[0]] = time.time()
                 db.execute("update posto set ultimo_uso=?, ip_ultimo=? where id=?", (time.time(), ip, r[0]))
                 db.commit()
         finally:
             db.close()
-    return {"id": r[0], "nome": r[1], "num": r[2]} if r else None
+    return {"id": r[0], "nome": r[1], "num": r[2], "auto": str(r[3] or "").startswith("auto:")} if r else None
 
 
 def posto_lista():
@@ -6982,7 +7021,8 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/postos/eu":
             p = self.posto_atual()
             if not p:
-                # aparelho novo com alguém da equipe conectado: vira posto sozinho, sem parear (Ronaldo, 10/11)
+                # aparelho da rede do ponto com um Admin conectado: vira posto sozinho, sem parear (Ronaldo, 10/11).
+                # Só Admin (configuracao.u): o cookie de posto abre rotas da venda; fotógrafo no celular pela Wi-Fi não vira posto (Eduardo, 10/11).
                 eu = self.sessao()
                 if not eu:
                     return self.js({"erro": "sem_posto"}, 401, True)
@@ -6990,18 +7030,26 @@ class H(BaseHTTPRequestHandler):
                     ip_srv = self.connection.getsockname()[0]
                 except OSError:
                     ip_srv = ""
-                if not posto_auto_ok(self.client_address[0], ip_srv):
+                ip = self.client_address[0]
+                if not posto_auto_ok(ip, ip_srv):
                     return self.js({"ok": True, "posto": None, "remoto": True}, 200, True)   # acesso remoto: sem posto, sem bloquear
+                if not auth_pode(eu["cadastro"], "configuracao", "u"):
+                    return self.js({"erro": "sem_posto"}, 401, True)
                 chave, agora = (eu["usuario"], _sha(self.auth_token() or ""), "auto"), time.time()
                 with posto_par_lock:             # várias janelas do mesmo navegador ao mesmo tempo: um posto só
                     for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:
                         posto_recentes.pop(k, None)
                     if chave in posto_recentes and posto_ativo(posto_recentes[chave][2]["id"]):
                         _, token, p = posto_recentes[chave]
+                    elif not posto_auto_cota(eu["usuario"], ip):
+                        return self.js({"erro": "limite_postos"}, 429, True)
                     else:
-                        token, p = posto_criar(None, eu["usuario"], self.client_address[0])
+                        token, p = posto_criar(None, "auto:" + eu["usuario"], ip, self.headers.get("User-Agent") or "?")
+                        p = dict(p, auto=True)
                         posto_recentes[chave] = (agora, token, p)
-                self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+                self.auth_cookie(token, POSTO_AUTO_IDADE, POSTO_COOKIE)
+            elif p.get("auto"):
+                self.auth_cookie(self.cookie_val(POSTO_COOKIE), POSTO_AUTO_IDADE, POSTO_COOKIE)   # cada uso renova os 30 dias
             return self.js({"ok": True, "posto": p}, 200, True)
         if u.path == "/postos/aceitar":
             # abrir o link (ou a prévia do WhatsApp) só mostra o botão; o código é gasto no POST do botão

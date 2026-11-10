@@ -1593,17 +1593,28 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
   const r=await printMontar(fotos,SIM.edits);if(state.impJob!==job)return;job.res=r;
   if(!r.ok.length){job.fase='erro';document.body.classList.remove('pr-on');toast('Nenhuma foto ficou pronta para imprimir. Tente de novo.');render();return;}
   if(impNoServidor()){ // servidor com impressora (ETERNA_IMPRESSORA): a foto sai lá, não na impressora de quem clicou
-    job.fase='imprimindo';render();let tM=0;try{const imgs=[];for(const im of document.querySelectorAll('#print-root img')){ // 10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio
-      const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
+    job.fase='imprimindo';render();let tM=0;try{const imgs=impJpegs();
       tM=performance.now();
       const rr=await (await agFetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,venda_id:s.vendaId||'',vendedor:(state.user&&state.user.name)||'',posto:String((postoDisp()||{}).nome||postoNome()).slice(0,30) /* nome do terminal: o servidor escolhe a DNP dele (ETERNA_IMPRESSORA_POSTOS) */,imagens:imgs})})).json();
       if(state.impJob!==job)return;if(!rr.ok)throw new Error(rr.error||'falha');job.fase='impresso';job.pedido=rr.pedido;impJobGuarda(job);impPostoPoll();const tF=performance.now();
       toast(rr.ja_na_fila?'Esta venda já está na fila da impressora':`Enviado para ${rr.impressora}${rr.na_frente?` · ${rr.na_frente} ${rr.na_frente===1?'pedido':'pedidos'} na frente`:''}: ${rr.fotos} ${rr.fotos===1?'foto':'fotos'} em ${((tF-job.t0)/1000).toFixed(1)} s (montar ${((tM-job.t0)/1000).toFixed(1)} s · enviar ${((tF-tM-(rr.gravar_ms+rr.spooler_ms))/1000).toFixed(1)} s · Windows ${(rr.spooler_ms/1000).toFixed(1)} s)`);}
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
     document.getElementById('print-root')?.remove();render();return;}
+  if(pontoModo()==='posto'){ // programa de impressão do posto (eterna-impressao.ps1): a foto vai direto para a DNP, sem a prévia do Chrome
+    job.fase='imprimindo';render();const rl=await impLocal(impJpegs(),s.saleNo||card);if(state.impJob!==job)return;
+    if(rl){document.getElementById('print-root')?.remove();if(rl.ok){job.fase='impresso';toast(`Enviado para ${rl.impressora}: ${rl.fotos} ${rl.fotos===1?'foto':'fotos'}`);}else{job.fase='erro';toast('A impressora deste posto não imprimiu: '+String(rl.erro||'falha').slice(0,140));}render();return;}}
   document.body.classList.add('pr-on');job.fase='imprimindo';
   const fim=()=>{if(job.fase!=='imprimindo')return;job.fase='impresso';document.body.classList.remove('pr-on');render();}; // depois do afterprint, um print() qualquer volta a imprimir a tela
   window.addEventListener('afterprint',fim,{once:true});try{window.print();}catch(e){}setTimeout(fim,0);}
+// fotos montadas em #print-root -> JPEG (10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio)
+function impJpegs(){const imgs=[];for(const im of document.querySelectorAll('#print-root img')){
+  const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
+  return imgs;}
+// programa de impressão do posto em 127.0.0.1:8790. null = não está rodando (o Eterna imprime pelo Chrome); senão a resposta dele
+async function impLocal(imgs,venda){const u='http://127.0.0.1:8790';
+  try{const c=new AbortController();const t=setTimeout(()=>c.abort(),1500);const r=await fetch(u+'/status',{signal:c.signal});clearTimeout(t);if(!r.ok)return null;}catch(e){return null;}
+  try{const c=new AbortController();const t=setTimeout(()=>c.abort(),90000);const r=await fetch(u+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:String(venda),imagens:imgs}),signal:c.signal});clearTimeout(t);return await r.json();}
+  catch(e){return {ok:false,erro:'sem resposta do programa de impressão'};}}
 const impReMax=s=>{const f=((s.impressao&&s.impressao.feitas)||[]).length;return Math.max(1,Math.min(+s.prints||f,f));}; // até prints por reimpressão
 // "Saiu certo": baixa do rolo uma vez por foto. Primeira impressão: só as que ainda não estavam feitas (com todas feitas, a venda vira impressa).
 // Reimpressão: grava a lista exata e baixa as que saíram.
@@ -2615,8 +2626,8 @@ function langPick(dark){return `<div class="lj-langs ${dark?'dark':''}" role="gr
 (function(){try{const s=localStorage.getItem('eterna.lang');if(s)state.lang=s;else{const n=(navigator.language||'pt').slice(0,2).toLowerCase();state.lang=LANGS.some(x=>x[0]===n)?n:'pt';}}catch(e){state.lang='pt';}})();
 
 // Checkout em aparelho não pareado (o agente respondeu 401 em /postos/eu): tela da equipe, sem nada do cliente
-function ljNaoPareado(){return `<div class="lj lj-full lj-hero lj-naopar"><div class="lj-naoparin"><div class="lj-eyebrow">Equipe</div><h1 class="lj-h1">Este aparelho ainda não foi pareado</h1>
-  <p class="lj-sub">Peça a um administrador para parear em Painel de controle › Postos deste ponto. Depois, toque em Tentar de novo.</p><div class="lj-naoparbt"><button class="lj-cta" data-act="posto-tentar">Tentar de novo</button><button class="lj-ghost" data-act="loja-sair">Sair</button></div></div></div>`;}
+function ljNaoPareado(){return `<div class="lj lj-full lj-hero lj-naopar"><div class="lj-naoparin"><div class="lj-eyebrow">Equipe</div><h1 class="lj-h1">Este aparelho ainda não é um posto</h1>
+  <p class="lj-sub">Um administrador entra no Eterna uma vez neste aparelho, pelo atalho, e ele vira posto sozinho. Depois, toque em Tentar de novo.</p><div class="lj-naoparbt"><button class="lj-cta" data-act="posto-tentar">Tentar de novo</button><button class="lj-ghost" data-act="loja-sair">Sair</button></div></div></div>`;}
 function vQuiosque(){
   if(state.posto.estado==='nao'&&state.agent.on&&state.agent.url===location.origin)return ljNaoPareado();
   const k=state.kiosk;if(!k.langInit){k.langInit=1;state.lang='pt';}const logo=venueLogo(30,'dark');

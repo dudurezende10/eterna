@@ -167,7 +167,7 @@ Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
 
 ### Posto automático (10/11/2026)
 
-Não é preciso parear o aparelho. Basta ligar o computador na rede do ponto, abrir o Eterna pelo endereço do servidor e entrar com usuário e senha: o servidor registra o aparelho sozinho como **Posto 1**, **Posto 2**... e cada venda fica marcada com o posto onde foi feita. O Checkout aberto por esse aparelho funciona na hora. Só os aparelhos da rede do ponto viram posto: quem entra de fora (pelo Tailscale) e o próprio computador do servidor usam o sistema normalmente, sem virar posto.
+Não é preciso parear o aparelho. Basta ligar o computador na rede do ponto, abrir o Eterna pelo atalho e um **Admin** entrar com usuário e senha uma vez: o servidor registra o aparelho sozinho como **Posto 1**, **Posto 2**... e cada venda fica marcada com o posto onde foi feita. O Checkout aberto por esse aparelho funciona na hora. Só os aparelhos da rede do ponto viram posto: quem entra de fora (pelo Tailscale) e o próprio computador do servidor usam o sistema normalmente, sem virar posto. Fotógrafo ou vendedor que entra num aparelho que ainda não é posto vê "Este aparelho ainda não é um posto": chame um Admin. Depois disso, qualquer pessoa da equipe usa o posto. O posto só deixa de valer se ficar mais de 30 dias seguidos sem abrir o Eterna (aí um Admin entra de novo), ou se a pessoa que o criou for removida.
 
 O pareamento abaixo continua existindo só para um aparelho que precisa abrir o Checkout **sem ninguém conectado** (ex.: um tablet fixo ou a TV da Fila).
 
@@ -524,6 +524,7 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 2. Deixe a **DNP como impressora padrão** e desligue "Permitir que o Windows gerencie minha impressora padrão" (senão o Windows troca a padrão sozinho).
 3. Crie um atalho **Eterna** na Área de Trabalho com o destino `"C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir=C:\Eterna\chrome --kiosk-printing --unsafely-treat-insecure-origin-as-secure=<endereço do servidor do ponto> <endereço do servidor do ponto>/#posto` e abra o Eterna sempre por ele. O `--user-data-dir` dá ao Eterna um Chrome só dele, que abre sempre como processo novo: sem isso, se outro Chrome estiver aberto (até em segundo plano), o `--kiosk-printing` é ignorado e a janela de impressão aparece. Com `--kiosk-printing`, a foto sai direto na DNP. O `--unsafely-treat-insecure-origin-as-secure` libera a câmera enquanto o endereço não tem certificado. O atalho abre o **Posto de venda** (`/#posto`): o vendedor entra com usuário e senha e abre o Checkout pelo botão **Abrir Checkout**. Com `--kiosk-printing` a prévia de impressão do Chrome aparece por um instante e fecha sozinha: não precisa clicar. Para conferir: `chrome://version` mostra `--kiosk-printing` na linha de comando. O jeito mais fácil de criar o atalho é dar duplo clique em `servidor/posto/preparar-posto-eterna.cmd` (cria os dois atalhos e confere a impressora padrão; para mandar por e-mail, vai zipado), ou o script `servidor/posto/criar-atalho-eterna.ps1` (uma vez por máquina; `-AoLigar` também abre o Eterna quando o Windows entra).
 4. O posto imprime na DNP ligada nele quando o servidor tem `ETERNA_IMPRESSORA_POSTOS="*=local"` (veja a documentação técnica).
+5. O `preparar-posto-eterna.cmd` também instala o **programa de impressão**: a foto vai direto para a DNP, sem a prévia do Chrome aparecer. Ele liga sozinho com o Windows, escondido. Se ele estiver parado, o Eterna imprime pelo Chrome como antes (a prévia pisca e fecha sozinha).
 3. Com `--kiosk-printing`, tudo o que for impresso nesse Chrome sai na DNP. Cartaz A4 de grupo de escola: imprima no computador do ponto.
 
 ### O que tem no Posto de venda
@@ -764,7 +765,7 @@ Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao a
 
 O servidor do ponto só abre os dados para quem entrou com usuário e senha ou para um aparelho pareado.
 
-- **Postos**: o aparelho vira posto sozinho quando alguém da equipe entra nele (veja "Posto automático" na parte 3). Só aparelho sem ninguém conectado precisa de pareamento.
+- **Postos**: o aparelho da rede do ponto vira posto sozinho quando um Admin entra nele (veja "Posto automático" na parte 3). Só aparelho sem ninguém conectado precisa de pareamento.
 - **Código no Checkout**: com a sessão recém-fotografada, o botão mostra "Buscando suas fotos…" por alguns segundos (veja "Cliente que volta horas depois").
 - **Galeria da venda**: o aparelho pareado publica a galeria depois que o Caixa confirma o pagamento.
 - **Compra pelo celular**: desligada. A galeria mostra as fotos e pede para o cliente falar com a equipe no balcão.

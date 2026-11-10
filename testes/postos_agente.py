@@ -157,6 +157,52 @@ try:
     c.request("GET", "/postos/eu", headers={"Host": "evil.example:%d" % m.PORT, "Cookie": cp})
     ok(c.getresponse().status == 403, "Host de fora deveria dar 403")
     c.close()
+    # Posto automático (revisão do Eduardo, 10/11): só na faixa ETERNA_POSTO_REDE, só Admin, 3 por dia, cai com a remoção da pessoa
+    import ipaddress
+    rede = [ipaddress.ip_network("192.168.10.0/24")]
+    ok(m.posto_auto_ok("192.168.10.50", "192.168.10.178", rede), "aparelho da rede do ponto deveria poder virar posto")
+    ok(not m.posto_auto_ok("192.168.10.178", "192.168.10.178", rede), "o próprio servidor não vira posto")
+    ok(not m.posto_auto_ok("192.168.20.5", "", rede), "IP fora da faixa não vira posto")
+    ok(not m.posto_auto_ok("100.115.186.26", "", rede), "Tailscale não vira posto")
+    ok(not m.posto_auto_ok("192.168.10.50", "", []), "ETERNA_POSTO_REDE vazia desliga o automático")
+    os.environ.pop("ETERNA_POSTO_REDE", None)
+    ok(not m.posto_auto_ok("192.168.10.50", ""), "sem ETERNA_POSTO_REDE o automático fica desligado")
+    st, j, ck = pede("/postos/eu", cookie=foto)            # 127.0.0.1 = loopback: acesso remoto, sem posto e sem bloquear
+    ok(st == 200 and j.get("remoto") and not ck, "fora da rede do ponto: remoto sem posto: %s %s" % (st, j))
+    real = m.posto_auto_ok
+    m.posto_auto_ok = lambda ip, srv="", redes=None: True  # simula um aparelho da rede do ponto
+    try:
+        st, j, ck = pede("/postos/eu", cookie=foto)
+        ok(st == 401 and j.get("erro") == "sem_posto" and not ck, "perfil sem configuracao.u virou posto automático: %s %s %s" % (st, j, ck))
+        auto = S.cookie_sessao(m, "admin-auto")
+        st, j, ck = pede("/postos/eu", cookie=auto, extra={"User-Agent": "Chrome do posto teste"})
+        ok(st == 200 and j.get("posto", {}).get("auto") and ck.startswith("eterna_posto=") and "Max-Age=2592000" in ck,
+           "Admin na rede do ponto deveria virar posto de 30 dias: %s %s %s" % (st, j, ck))
+        pa, cpa = j.get("posto", {}).get("id"), ck.split(";")[0]
+        st, j, ck = pede("/postos/eu", cookie=cpa)
+        ok(st == 200 and j.get("posto", {}).get("id") == pa and "Max-Age=2592000" in ck, "uso do posto automático renova o cookie: %s %s" % (j, ck))
+        db = sqlite3.connect(m.ESTADO_DB)
+        lg = db.execute("select acao, por from login_log where usuario=?", ("posto:" + pa,)).fetchone()
+        db.close()
+        ok(lg and lg[1] == "auto:admin-auto" and "Chrome do posto teste" in lg[0], "auditoria do posto automático: %s" % (lg,))
+        for i in range(3):                                     # janela anônima repetida: novo login a cada vez
+            ck_i = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("admin-auto"))
+            st, j, _ = pede("/postos/eu", cookie=ck_i)
+            ok(st == (200 if i < 2 else 429), "teto de 3 postos automáticos por dia, tentativa %d: %s %s" % (i + 2, st, j))
+        db = sqlite3.connect(m.ESTADO_DB)                      # 30 dias sem uso: não vale mais
+        db.execute("update posto set ultimo_uso=? where id=?", (time.time() - 31 * 86400, pa))
+        db.commit()
+        db.close()
+        m.posto_uso.pop(pa, None)
+        st, j, _ = pede("/postos/eu", cookie=cpa)
+        ok(st == 401, "posto automático parado há 31 dias ainda vale: %s %s" % (st, j))
+        m.auth_remover("admin-auto", "teste")
+        db = sqlite3.connect(m.ESTADO_DB)
+        vivos = db.execute("select count(*) from posto where criado_por='auto:admin-auto' and revogado_em is null").fetchone()[0]
+        db.close()
+        ok(vivos == 0, "postos de quem foi removido continuam valendo: %d" % vivos)
+    finally:
+        m.posto_auto_ok = real
 except Exception as ex:
     import traceback
     falhas.append("exceção: %s" % traceback.format_exc()[-400:])
