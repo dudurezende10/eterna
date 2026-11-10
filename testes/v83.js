@@ -126,11 +126,11 @@ try{
 
   // ---- 17: PIX mostra ljPosPixH; Dinheiro mantém os textos da v79 e passa à tela do QR na confirmação
   await L.click('[data-act="loja-new"]');await ljSessao(L,cards[4],3);await ljPagar(L,'pix');
-  ok(/Pague na maquininha/i.test(await txt(L,'body'))&&!(await L.$('#lqr')),'17: tela do PIX (v96: "Pague na maquininha")');const p17=await pendDe(L,cards[4]);ok(p17&&p17.meio==='pix','17: pendência PIX');
+  ok(/Pague com PIX na maquininha/i.test(await txt(L,'body'))&&!(await L.$('#lqr')),'17: tela do PIX (v96: "Pague com PIX na maquininha", como na v94)');const p17=await pendDe(L,cards[4]);ok(p17&&p17.meio==='pix','17: pendência PIX');
   await A.waitForTimeout(300);await confirmar(A,p17.id,'778899');ok((await sim(A)).sessions[cards[4]].payment==='PIX (maquininha)','17: PIX (maquininha)');
   await L.click('[data-act="loja-new"]');await ljSessao(L,cards[5],3);await ljPagar(L,'cash');
   const l17=await L.evaluate(()=>({t:document.body.innerText.replace(/\s+/g,' '),qr:!!document.querySelector('#lqr')}));
-  ok(/Pague em dinheiro ao atendente/i.test(l17.t)&&!/no caixa/i.test(l17.t)&&/[A-Z0-9]{4}-[A-Z0-9]{4}/.test(l17.t)&&!l17.qr,'17 (v96): dinheiro "Pague em dinheiro ao atendente", sem QR enquanto espera: '+l17.t.slice(0,200));
+  ok(/Pague em dinheiro ao atendente/i.test(l17.t)&&!/no caixa/i.test(l17.t)&&/R\$ \d/.test(l17.t)&&/3 fotos/.test(l17.t)&&!l17.qr,'17 (v96): dinheiro "Pague em dinheiro ao atendente", valor e "3 fotos", sem QR enquanto espera: '+l17.t.slice(0,200));
   const p17d=await pendDe(L,cards[5]);await A.waitForTimeout(300);
   ok(!(await A.$(`[data-act="pend-pos"][data-id="${p17d.id}"]`))&&!!(await A.$(`[data-act="din-confirm"][data-id="${p17d.id}"]`)),'17: dinheiro usa "Recebi", não a maquininha');
   await A.click(`[data-act="din-confirm"][data-id="${p17d.id}"]`);await A.waitForTimeout(300);

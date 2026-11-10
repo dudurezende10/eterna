@@ -47,7 +47,7 @@ try{
     // SIM antiga: flagList com os arquivos velhos; item 83 com foto do usuário; item 84 editado com outro arquivo
     const antes=await pg.evaluate(()=>{const L=ETERNA.FLAGS.map(x=>[...x]);Object.entries(ETERNA.FLAG_FIX_V81).forEach(([n,[velho]])=>{const f=L.find(x=>x[0]===+n);if(f)f[6]=velho;});
       const f83=L.find(x=>x[0]===83);f83[7]='data:image/png;base64,FOTOUSUARIO';const f84=L.find(x=>x[0]===84);f84[6]='meu-arquivo.jpg';
-      const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.flagList=L;s.caixaDin=s.caixaDin||[];s.catalogoV=2;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));localStorage.removeItem('eterna.flags.v');
+      const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.flagList=L;s.caixaDin=s.caixaDin||[];s.catalogoV=3;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));localStorage.removeItem('eterna.flags.v');
       localStorage.removeItem('eterna.users.log.v1');return {velho83:f83[6]};});
     await pg.reload();await pg.waitForTimeout(400);
     const m=await pg.evaluate(fx=>{const L=JSON.parse(localStorage.getItem('eterna.sim.v1')).flagList;const by=n=>L.find(x=>x[0]===n);

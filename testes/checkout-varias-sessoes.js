@@ -98,6 +98,10 @@ try{
   {const otp=await pg2.$('.otp');if(otp){await pg2.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg2.waitForTimeout(500);}}
   const confirma=id=>pg2.evaluate(id=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:'pix'});return ETERNA.pendConfirmar(id,{ref:'123456'});},id);
   ok(await confirma(rec.id),'pagamento confirmado');
+  // v96 (revisão 2): preço de várias sessões no Posto: o Ideal pelas 2 fotos escolhidas (das duas sessões), venda com esse valor
+  {const v=await pg2.evaluate(id=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);const s=ETERNA.SIM.sessions[r.card];const id2=ETERNA.lojaIdeal(2);
+    return {n:r.n,ses:(r.sessoes||[]).length,tot:r.total,ideal:id2.custo,pkg:r.pkg,ipkg:id2.pkg,st:s.status,stot:s.total,nSes:r.nSes,todas:ETERNA.vendaCalc(r.n,r.nSes,'mais').save===Math.max(0,70+(r.nSes-1)*35-250) /* Arquibancada + adicionais contra o Todas (catálogo do Tour) */};},rec.id);
+    ok(v.n===2&&v.ses===2&&v.pkg===v.ipkg&&v.tot===v.ideal&&v.st==='paga'&&v.stot===v.ideal&&v.nSes>=2&&v.todas,'v96: várias sessões: pacote Ideal para as 2 fotos, valor gravado na venda e "Todas" contando as fotos das sessões: '+JSON.stringify(v));}
   // v96: o "criar" sai na confirmação, com a hora do pedido
   {const t0=Date.now();while(Date.now()-t0<8000&&!EVENTOS.some(e=>e.tipo==='criar'))await pg.waitForTimeout(200);}
   const ev=EVENTOS.find(e=>e.tipo==='criar');ok(ev&&(ev.dados.sessoes||[]).join()==='LPTFAMA01,LPTSOLO02'&&ev.dados.card==='LPTSOLO02','evento "criar" (vendas.db) com as duas sessões');
