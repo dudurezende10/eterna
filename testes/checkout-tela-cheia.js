@@ -14,9 +14,9 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const TAMANHOS=[[1280,720],[1366,768],[1440,900],[1536,864],[1600,900],[1920,1080],[1366,657],[1536,730],[1920,969],[390,844]];
 const UMA_TELA={camera:1,'camera ligada':1,codigo:1,escolha:1,'escolha marcada':1,pronto:1,valor:1,minhas:1,final:1};
 const shot=async(pg,nome)=>{await pg.screenshot({path:`${PR}/${nome}`});if(SHOTS)await pg.screenshot({path:`${SHOTS}/${nome}`});};
-// portas de teste a partir de 30000 (as mais baixas são de outras frentes)
+// portas de teste de 31000 a 31999 (as mais baixas são de outras frentes)
 const portaUsada=p=>new Promise(r=>{const s=net.createServer();s.once('error',()=>r(true));s.listen(p,'127.0.0.1',()=>s.close(()=>r(false)));});
-const portaLivre=async()=>{for(let p=30000+Math.floor(Math.random()*400);p<31000;p++)if(!(await portaUsada(p)))return p;throw new Error('sem porta livre');};
+const portaLivre=async()=>{for(let p=31000+Math.floor(Math.random()*400);p<32000;p++)if(!(await portaUsada(p)))return p;throw new Error('sem porta livre');};
 const servePasta=async dir=>{const p=await portaLivre();const sv={p:spawn('python3',['-m','http.server',String(p),'--bind','127.0.0.1'],{cwd:dir,stdio:'ignore'}),dir,porta:p};servidores.push(sv);await sleep(800);return sv;};
 const servidores=[];
 (async()=>{const b=await chromium.launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});const errs=[];const fails=[];let n=0;let velho=null;
@@ -319,7 +319,7 @@ ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!!document.querySelect
   ok(r.code===cP&&r.pk===0&&r.gr===0&&r.sel===0,'B2: cam-pick limpa as marcas velhas antes de abrir a sessão: '+JSON.stringify(r));
   await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});}
 
-// revisão (10/11): "Voltar às fotos" inativo quando o caixa já escolheu o meio (ou o pacote); escolha parada não volta ao início (A3 cancelado);
+// revisão (10/11): "Voltar às fotos" inativo quando o caixa já escolheu o meio (ou o pacote); escolha parada 90 s volta ao Iniciar (Eduardo, 10/11);
 // a câmera descarta o resultado de uma busca que começou com outra câmera (k.camOn falso ou outro Iniciar)
 {const cR=cards[3]||cards[2];await abrir(cR);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idT=await pend();
   ok(!(await L.isDisabled('[data-act="kiosk-voltar-fotos"]')),'revisão: "Voltar às fotos" ativo enquanto o caixa não mexeu');
@@ -343,17 +343,25 @@ ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!!document.querySelect
   await abrir(cR);await L.click('#lj-lb [data-act="kiosk-sair"]');await L.waitForTimeout(150);ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!ETERNA.state.kiosk.code&&!document.querySelector('.lj-ask')),'Sair sem foto marcada volta direto ao Iniciar');
   await abrir(cR);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(80);await L.click('#lj-lb [data-act="kiosk-sair"]');await L.waitForTimeout(150);
   {const tx=await L.evaluate(()=>(document.querySelector('.lj-ask')||{}).innerText||'');ok(/Sair e apagar as fotos marcadas\?/.test(tx)&&/Sim, sair/.test(tx)&&/Não, continuar escolhendo/.test(tx),'Sair com foto marcada pergunta antes: '+tx.replace(/\s+/g,' '));}
+  {const f0=await L.evaluate(()=>document.activeElement&&document.activeElement.dataset.act);const fs=[];for(let i=0;i<3;i++){await L.keyboard.press('Tab');fs.push(await L.evaluate(()=>document.activeElement&&document.activeElement.dataset.act));}
+    await L.keyboard.press('Shift+Tab');fs.push(await L.evaluate(()=>document.activeElement&&document.activeElement.dataset.act));
+    await L.evaluate(()=>ETERNA.render());const f1=await L.evaluate(()=>document.activeElement&&document.activeElement.dataset.act);
+    ok(f0==='kiosk-sair-nao'&&fs.every(x=>/^kiosk-sair-(sim|nao)$/.test(x))&&fs[0]!==fs[1]&&f1===fs[3],'Sair: a confirmação abre com o foco em "Não, continuar escolhendo" e o Tab fica nela, também depois de redesenhar: '+JSON.stringify([f0,fs,f1]));}
   await shot(L,'v96-sair-confirma.png');
   for(const [l,t] of [['en',/Exit and clear the photos you marked\?/],['es',/¿Salir y borrar las fotos marcadas\?/],['fr',/Quitter et effacer les photos choisies/],['de',/Beenden und die markierten Fotos löschen\?/],['pt',/Sair e apagar/]]){await L.evaluate(l=>{ETERNA.state.lang=l;ETERNA.render();},l);const tx=await L.evaluate(()=>document.querySelector('.lj').innerText);ok(t.test(tx)&&!/—|ljSair/.test(tx),'Sair: confirmação em '+l);}
   await L.click('.lj-ask [data-act="kiosk-sair-nao"]');await L.waitForTimeout(100);ok(await L.evaluate(c=>ETERNA.state.kiosk.step==='review'&&!document.querySelector('.lj-ask')&&ETERNA.lojaCart(c).ch.length===1,cR),'Sair: "Não" continua na escolha com as marcas');
   await L.click('#lj-lb [data-act="kiosk-sair"]');await L.waitForTimeout(100);await L.click('.lj-ask [data-act="kiosk-sair-sim"]');await L.waitForTimeout(150);
   ok(await L.evaluate(c=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')).sessions[c]||{};return ETERNA.state.kiosk.step==='code'&&!Object.keys(s.pick||{}).length&&!!document.querySelector('[data-act="kiosk-start"]');},cR),'Sair: "Sim" volta ao Iniciar e apaga as marcas');
-  // com pedido aberto o prazo da escolha não vale e o Sair avisa o Posto ("o cliente saiu", lojaSaiu)
+  // Eduardo (10/11): com pedido aberto a escolha parada 90 s também volta ao Iniciar e o Posto vê "o cliente saiu"; o Sair faz o mesmo
   await abrir(cR);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idA=await pend();
-  {const pa=await L.evaluate(id=>{const E=ETERNA,k=E.state.kiosk;k.step='review';k.ver=0;k.toque=0;k.escolhaDesde=Date.now()-300000;const r={ocio:E.lojaEscolhaOciosa(),step:k.step};
-      E.lojaSairCli(true);const p=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);r.depois=k.step;r.est=p.estado;r.saiu=!!p.saiu;return r;},idA);
-    ok(!pa.ocio&&pa.step==='review'&&pa.depois==='code'&&pa.est==='escolha'&&pa.saiu,'com pedido aberto o prazo da escolha não vale e o Sair marca "o cliente saiu": '+JSON.stringify(pa));}
+  {const pa=await L.evaluate(id=>{const E=ETERNA,k=E.state.kiosk;k.step='review';k.ver=0;k.toque=0;k.escolhaDesde=Date.now()-300000;const r={ocio:E.lojaEscolhaOciosa(),step:k.step,code:k.code};
+      const p=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);r.est=p.estado;r.saiu=!!p.saiu;r.ini=!!document.querySelector('[data-act="kiosk-start"]');return r;},idA);
+    ok(pa.ocio&&pa.step==='code'&&!pa.code&&pa.ini&&pa.est==='escolha'&&pa.saiu,'com pedido aberto a escolha parada 90 s volta ao Iniciar e marca "o cliente saiu": '+JSON.stringify(pa));}
   await V.evaluate(id=>{ETERNA.simFresh();ETERNA.dinCancelar(id);},idA);
+  await abrir(cR);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idS=await pend();
+  {const pa=await L.evaluate(id=>{const E=ETERNA,k=E.state.kiosk;k.step='review';k.ver=0;E.lojaSairCli(true);const p=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);return {depois:k.step,est:p.estado,saiu:!!p.saiu};},idS);
+    ok(pa.depois==='code'&&pa.est==='escolha'&&pa.saiu,'com pedido aberto o Sair volta ao Iniciar e marca "o cliente saiu": '+JSON.stringify(pa));}
+  await V.evaluate(id=>{ETERNA.simFresh();ETERNA.dinCancelar(id);},idS);
   // Esc na tela Pronto também marca "o cliente saiu"
   await abrir(cR);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idE=await pend();
   await L.keyboard.press('Escape');await L.waitForTimeout(200);

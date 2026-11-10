@@ -261,8 +261,9 @@ O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o n
 
 Outras coisas que o cliente pode fazer:
 - Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha. Em tela pequena, as bandeiras ficam guardadas num botão com a bandeira atual.
-- Desistir a qualquer momento com **Voltar ao início** (a casinha). A escolha dele é apagada e a tela volta ao **Iniciar**.
-- Ficar o tempo que precisar escolhendo. O Checkout não volta sozinho no meio da escolha, só depois da compra.
+- Desistir a qualquer momento com o botão **Sair**, no alto da tela. Se ele já marcou fotos, o Checkout pergunta "Sair e apagar as fotos marcadas?" e só apaga com **Sim, sair**. A escolha dele é apagada e a tela volta ao **Iniciar**.
+- Se ele parar de mexer na escolha das fotos (foto ampliada, Ver todas ou a confirmação de sessão) por 90 segundos, o Checkout volta sozinho ao **Iniciar** e apaga as marcas. Qualquer toque ou arrasto renova o prazo.
+- Se ele já tinha feito o pedido e voltou às fotos (pelo código, pela selfie ou em outro balcão), o **Sair** e a volta em 90 segundos deixam a compra em **Aguardando pagamento** com "O cliente saiu da tela": cancele ou espere ele voltar.
 
 ### Pacotes, adicionais e economia (escolhidos no Posto de venda desde a v96)
 
