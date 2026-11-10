@@ -4,9 +4,9 @@ const {chromium}=require('playwright');const login=require('./_login');
 pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text())});
 await login(pg);const vs=await pg.$$eval('#nav button[data-v]',e=>e.map(x=>x.dataset.v));const bad=[];
 for(const v of vs){await pg.evaluate(v=>{ETERNA.state.view=v;ETERNA.render();},v);await pg.waitForTimeout(120);const t=await pg.textContent('#main');if(/Algo falhou/.test(t))bad.push(v);}
-// v97: Estatísticas › Jogos e ano a ano (seção g, só Admin) e o Calendário com o bloco Fontes
+// v97: Estatísticas › Jogos e ano a ano (seção g, só Admin) e o painel da fonte dos jogos no Painel de controle
 for(const s of ['g']){await pg.evaluate(s=>{ETERNA.state.es.sec=s;ETERNA.state.view='estatisticas';ETERNA.render();},s);await pg.waitForTimeout(150);if(/Algo falhou/.test(await pg.textContent('#main'))||!(await pg.$('[data-act="es-sec"][data-s="g"]')))bad.push('estatisticas/'+s);}
-await pg.evaluate(()=>{ETERNA.state.es.sec='a';ETERNA.state.view='calendario';ETERNA.render();});await pg.waitForTimeout(120);if(/Algo falhou/.test(await pg.textContent('#main'))||!(await pg.$('#ag-fontes-bloco')))bad.push('calendario (Fontes)');
+await pg.evaluate(()=>{ETERNA.state.es.sec='a';ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(120);if(/Algo falhou/.test(await pg.textContent('#main'))||!(await pg.$('#ag-fontes-bloco')))bad.push('catalogo (fonte dos jogos)');
 // rota pública da galeria por QR com um token que não existe, sem login: abre sem erro e mostra "não encontrada"
 const pp=await b.newPage();pp.on('pageerror',e=>errs.push('#g: '+e.message));await pp.goto((process.env.U||'http://127.0.0.1:8890/index.html')+'#g/'+'Zz'.repeat(11));await pp.waitForTimeout(1500);
 const gq=await pp.evaluate(()=>({step:ETERNA.pub&&ETERNA.pub.step,h:location.hash,user:!!ETERNA.state.user}));if(gq.step!=='nao_existe'||!/^#g\//.test(gq.h)||gq.user)bad.push('#g/<inexistente> '+JSON.stringify(gq));

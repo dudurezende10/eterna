@@ -59,7 +59,7 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
   - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. O passo 8 acrescenta os do Tailscale.
 - [ ] Conferir em `/status`: `nuvem.ligada` = true e `s3_ok` = true.
 - [ ] Depois de 2 minutos ligado, conferir em `/status`: `backup.ok` = true (sem isso, a série diária das Estatísticas e o calendário ficam só neste disco).
-- [ ] Chave da API-Football (v97): o Admin abre o Eterna pelo servidor (http://127.0.0.1:8765 ou o endereço do Tailscale), vai em Calendário de eventos › Fontes, cola a chave e toca em Testar agora. Nunca mandar a chave por chat ou e-mail. Alternativa: `ETERNA_API_FOOTBALL` no `nuvem.env` (aí a tela mostra "definida no servidor").
+- [ ] Chave da API-Football (v97): o Admin abre o Eterna pelo servidor (http://127.0.0.1:8765 ou o endereço do Tailscale), vai em Configurações › Painel de controle › Calendário de eventos · fonte dos jogos, cola a chave e toca em Testar agora. Nunca mandar a chave por chat ou e-mail. Alternativa: `ETERNA_API_FOOTBALL` no `nuvem.env` (aí a tela mostra "definida no servidor").
 
 ## 5. Impressora
 

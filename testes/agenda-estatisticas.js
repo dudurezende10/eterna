@@ -1,4 +1,4 @@
-// v97: Calendário que se preenche sozinho, Fontes (chave da API-Football pela tela) e Estatísticas › Jogos e ano a ano
+// v97: Calendário que se preenche sozinho, fonte dos jogos (chave da API-Football em Configurações › Painel de controle, Eduardo 10/11) e Estatísticas › Jogos e ano a ano
 // (plano docs/planos/2026-11-10-agenda-estatisticas.md, critérios 2, 6 (tela), 8 a 10, 18 a 20 e os da chave pela tela;
 // os do agente estão em testes/agenda_agente.py). Agente falso (page.route na própria origem), chave falsa, dados sintéticos.
 // Com SHOTS=<pasta>, grava os prints agenda-*.png.
@@ -62,20 +62,24 @@ try{
     ok(J(app)===J(FER),'2: feriados_de do agente e feriadosDe do app iguais de 2026 a 2035');await ctx.close();}
   // ---------- 8: sem servidor ----------
   {const {ctx,pg}=await nova();await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>ETERNA.go('calendario'));await pg.waitForTimeout(200);
-    const r=await pg.evaluate(()=>({sem:!!document.getElementById('ag-sem-servidor'),fer:!!document.querySelector('[data-act="ag-feriados"]'),fb:document.getElementById('ag-fontes-bloco')&&document.getElementById('ag-fontes-bloco').textContent}));
-    ok(r.sem&&r.fer,'8: sem servidor aparece o aviso e o botão de feriados fica: '+J(r));ok(/servidor do ponto/.test(r.fb||'')&&!(await pg.$('#ag-chave')),'chave: sem servidor o Admin não vê o campo da chave');
+    const r=await pg.evaluate(()=>({sem:!!document.getElementById('ag-sem-servidor'),fer:!!document.querySelector('[data-act="ag-feriados"]')}));
+    ok(r.sem&&r.fer,'8: sem servidor aparece o aviso e o botão de feriados fica: '+J(r));
+    await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(150);const fb=await pg.evaluate(()=>(document.getElementById('ag-fontes-bloco')||{}).textContent||'');
+    ok(/servidor do ponto/.test(fb)&&!(await pg.$('#ag-chave')),'chave: sem servidor o painel não mostra o campo da chave');
     await pg.evaluate(()=>{ETERNA.state.es.sec='g';ETERNA.go('estatisticas');});await pg.waitForTimeout(200);ok(!!(await pg.$('#es-g-sem')),'18: Jogos e ano a ano sem servidor mostra o aviso');
     await ctx.close();}
   // ---------- 8, 6, 9 e chave: Admin com servidor, sem chave ----------
   {const {ctx,pg}=await nova();const AG=await agente(ctx,{agenda:true});await entrar(pg,'eduardo@eduardorezende.com');await ligado(pg);
     await pg.evaluate(()=>{ETERNA.state.cal.mes=null;ETERNA.go('calendario');});await pg.waitForSelector('#ag-fontes',{timeout:5000}).catch(()=>{});await pg.waitForTimeout(400);
     let r=await pg.evaluate(()=>({sem:!!document.getElementById('ag-sem-servidor'),f:(document.getElementById('ag-fontes')||{}).textContent||'',at:!!document.querySelector('[data-act="ag-atualizar"]'),fer:!!document.querySelector('[data-act="ag-feriados"]'),bl:!!document.getElementById('ag-fontes-bloco'),ch:!!document.getElementById('ag-chave'),n:Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='feriado').length}));
-    ok(!r.sem&&/Feriados automáticos até 2027/.test(r.f)&&/sem chave da API/.test(r.f),'8/6: com servidor, sem aviso e com a linha das fontes: '+J(r));
+    ok(!r.sem&&/Feriados automáticos até 2027/.test(r.f)&&/fonte não configurada, peça ao Admin/.test(r.f),'8/6: com servidor, sem aviso e com a linha das fontes: '+J(r));
     ok(!r.at&&!r.fer,'6: sem chave não aparece "Atualizar jogos agora"; com servidor some o botão manual de feriados: '+J(r));
-    ok(r.bl&&r.ch&&r.n===30,'chave: Admin vê Fontes com o campo; o calendário tem os 30 feriados do servidor: '+J(r));
+    ok(!r.bl&&!r.ch&&r.n===30,'chave: o Calendário não tem a chave (Eduardo, 10/11); tem os 30 feriados do servidor: '+J(r));
     const lin=await pg.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(t=>t.textContent).join('\n'));ok(/Automático · jogos/.test(lin)&&/Automático · feriados/.test(lin),'origem dos automáticos na lista do mês');
     if(SHOTS){await pg.screenshot({path:path.join(SHOTS,'agenda-calendario.png'),fullPage:true});}
-    // chave: salvar
+    // chave: salvar, em Configurações › Painel de controle, logo abaixo do painel Checkout
+    await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForSelector('#ag-chave',{timeout:5000}).catch(()=>{});
+    ok(await pg.evaluate(()=>{const ps=[...document.querySelectorAll('#main .panel')];const i=ps.findIndex(p=>/^Checkout/.test((p.querySelector('h2')||{}).textContent||''));return i>=0&&ps[i+1]&&ps[i+1].id==='ag-fontes-bloco'&&/Calendário de eventos · fonte dos jogos/.test(ps[i+1].textContent);}),'chave: painel "Calendário de eventos · fonte dos jogos" logo abaixo do Checkout');
     await pg.fill('#ag-chave',CHAVE);await pg.click('[data-act="ag-chave-salvar"]');await pg.waitForTimeout(700);
     const fz=AG.fonte[0]||{};ok(fz.bd&&fz.bd.chave===CHAVE&&fz.bd.acao==='salvar'&&fz.bd.quem==='eduardo@eduardorezende.com'&&fz.h['x-eterna']==='1','chave: o POST leva a chave, o e-mail do Admin e X-Eterna: '+J(fz.bd&&{acao:fz.bd.acao,quem:fz.bd.quem}));
     r=await pg.evaluate(k=>({st:(document.getElementById('ag-chave-st')||{}).textContent||'',campo:!!document.getElementById('ag-chave'),ls:Object.keys(localStorage).some(x=>String(localStorage.getItem(x)).includes(k)),ss:Object.keys(sessionStorage).some(x=>String(sessionStorage.getItem(x)).includes(k)),
@@ -83,15 +87,18 @@ try{
     ok(/Chave configurada/.test(r.st)&&r.st.includes('····'+CHAVE.slice(-4))&&!r.campo,'chave: a tela mostra só "Chave configurada ····"+4 últimos: '+J(r.st));
     ok(!r.ls&&!r.ss&&!r.sim&&!r.cal&&!r.html,'chave: a chave não fica no localStorage, sessionStorage, SIM, state nem na página: '+J(r));
     ok(J(r.log)===J(['agenda_chave_salvar'])&&!r.logk,'chave: salvar no registro de auditoria, sem a chave: '+J(r.log));
-    r=await pg.evaluate(()=>({at:!!document.querySelector('[data-act="ag-atualizar"]'),f:(document.getElementById('ag-fontes')||{}).textContent||''}));ok(r.at&&/atualizados em/.test(r.f)&&/34 em/.test(r.f),'6: com chave aparece "Atualizar jogos agora" e a linha dos jogos: '+J(r));
     await pg.click('[data-act="ag-chave-testar"]');await pg.waitForTimeout(500);ok(AG.testar===1&&/34 jogos no Maracanã/.test(await pg.textContent('#ag-teste')),'chave: Testar agora mostra o resultado');
+    if(SHOTS){await pg.evaluate(()=>document.getElementById('ag-fontes-bloco').scrollIntoView({block:'center'}));await pg.screenshot({path:path.join(SHOTS,'agenda-fontes.png')});}
+    await pg.evaluate(()=>ETERNA.go('calendario'));await pg.waitForTimeout(300);
+    r=await pg.evaluate(()=>({at:!!document.querySelector('[data-act="ag-atualizar"]'),f:(document.getElementById('ag-fontes')||{}).textContent||''}));ok(r.at&&/atualizados em/.test(r.f)&&/34 em/.test(r.f),'6: com chave aparece "Atualizar jogos agora" e a linha dos jogos: '+J(r));
     await pg.click('[data-act="ag-atualizar"]');await pg.waitForTimeout(300);ok(AG.atualizar===1&&AG.hAt['x-eterna']==='1','Atualizar jogos agora manda o POST com X-Eterna');
-    if(SHOTS){await pg.evaluate(()=>document.getElementById('ag-fontes-bloco').scrollIntoView());await pg.screenshot({path:path.join(SHOTS,'agenda-fontes.png')});}
+    await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(200);
     // trocar e remover
     await pg.click('[data-act="ag-chave-trocar"]');await pg.waitForTimeout(100);await pg.fill('#ag-chave','OutraChaveFalsa0000000000000abcd');await pg.click('[data-act="ag-chave-salvar"]');await pg.waitForTimeout(500);
     await pg.click('[data-act="ag-chave-remover"]');await pg.waitForTimeout(100);ok(!!(await pg.$('#ag-chave-conf')),'chave: Remover pede confirmação');await pg.click('[data-act="ag-chave-remover-ok"]');await pg.waitForTimeout(500);
     r=await pg.evaluate(()=>({log:ETERNA.auditRead().filter(e=>/agenda_chave/.test(e.acao)).map(e=>e.acao),campo:!!document.getElementById('ag-chave')}));
     ok(J(r.log.slice(0,3))===J(['agenda_chave_remover','agenda_chave_trocar','agenda_chave_salvar'])&&r.campo,'chave: trocar e remover no registro; depois de remover volta o campo: '+J(r.log));
+    await pg.evaluate(()=>ETERNA.go('calendario'));await pg.waitForTimeout(200);
     // 9: colar lista do Google Sheets (TAB)
     const txt=[HOJE.slice(0,8)+'05\t16:00\tjogo\tfla\tPalmeiras\tBrasileirão',`${HOJE.slice(8,10)}/${HOJE.slice(5,7)}/${ANO}\t\tshow\t\t\t\tShow de teste`,'2026-12-01\t19:00\tevento\t\t\t\tFeira','31/02/2026\t10:00\tjogo\tBotafogo\tVasco\tCarioca'].join('\n');
     await pg.click('[data-act="ag-colar"]');await pg.fill('#ag-colar-txt',txt);await pg.click('[data-act="ag-colar-ok"]');await pg.waitForTimeout(200);
@@ -106,10 +113,13 @@ try{
   // ---------- 10: Supervisora e Atendimento ----------
   {const {ctx,pg}=await nova();const AG=await agente(ctx,{chave:true});await entrar(pg,'supervisor@eterna.photo');await ligado(pg);await pg.evaluate(()=>ETERNA.go('calendario'));await pg.waitForTimeout(600);
     const r=await pg.evaluate(()=>({col:!!document.querySelector('[data-act="ag-colar"]'),at:!!document.querySelector('[data-act="ag-atualizar"]'),bl:!!document.getElementById('ag-fontes-bloco'),ch:!!document.getElementById('ag-chave')}));
-    ok(r.col&&r.at,'10: Supervisora vê Colar lista e Atualizar jogos: '+J(r));ok(!r.bl&&!r.ch,'chave: Supervisora não vê o bloco Fontes: '+J(r));
+    ok(r.col&&r.at,'10: Supervisora vê Colar lista e Atualizar jogos: '+J(r));ok(!r.bl&&!r.ch,'chave: o Calendário não mostra a chave a quem edita o calendário: '+J(r));
     await pg.click('[data-act="ag-colar"]');await pg.fill('#ag-colar-txt','2026-12-02;20:00;show;;;;Show');await pg.click('[data-act="ag-colar-ok"]');await pg.waitForTimeout(150);ok(/1 novos/.test(await pg.textContent('#ag-res')),'10: Supervisora usa Colar lista');
-    const t=await pg.evaluate(()=>{document.body.insertAdjacentHTML('beforeend','<input id="ag-chave" value="x"><button id="fk" data-act="ag-chave-salvar"></button>');document.getElementById('fk').click();return new Promise(ok=>setTimeout(()=>ok(document.getElementById('toast').textContent),300));});
-    ok(AG.fonte.length===0&&/Admin/.test(t),'chave: Supervisora não consegue mandar a chave: '+t);
+    // quem altera Configurações vê o painel (a Supervisora tem configuracao.u); quem só lê Configurações não vê nem consegue mandar
+    await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(300);ok(!!(await pg.$('#ag-fontes-bloco')),'chave: quem altera Configurações vê o painel da fonte dos jogos');
+    const t=await pg.evaluate(()=>{const E=ETERNA;const u=JSON.parse(JSON.stringify(E.state.user));u.perms.configuracao={c:false,r:true,u:false,d:false};E.state.user=u;const vazio=E.agBlocoFontes()==='';E.render();const tem=!!document.getElementById('ag-fontes-bloco');
+      document.body.insertAdjacentHTML('beforeend','<input id="ag-chave2" value="x"><button id="fk" data-act="ag-chave-salvar"></button>');document.getElementById('fk').click();return new Promise(ok=>setTimeout(()=>ok({vazio,tem,t:document.getElementById('toast').textContent}),300));});
+    ok(AG.fonte.length===0&&t.vazio&&!t.tem&&/Sem permissão/.test(t.t),'chave: quem só lê Configurações não vê o painel nem manda a chave: '+J(t));
     await ctx.close();}
   {const {ctx,pg}=await nova();await agente(ctx,{chave:true});await entrar(pg,'loja@eterna.photo');
     const r=await pg.evaluate(()=>{const n=Object.keys(ETERNA.AGENDA).length;document.body.insertAdjacentHTML('beforeend','<textarea id="ag-colar-txt">2026-12-03;20:00;show;;;;X</textarea><button id="fk" data-act="ag-colar-ok"></button>');document.getElementById('fk').click();

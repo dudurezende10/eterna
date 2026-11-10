@@ -5432,7 +5432,11 @@ def estado_gravar(body, quem=""):
                     continue
                 if d["col"] == "agenda":                        # v97: o dia de antes e o de depois da mudança
                     r_ = db.execute("select valor from doc where col = 'agenda' and id = ?", (d["id"],)).fetchone()
-                    for x in ((json.loads(r_[0]) if r_ and r_[0] else None), v):
+                    try:
+                        velho = json.loads(r_[0]) if r_ and r_[0] else None
+                    except ValueError:
+                        velho = None
+                    for x in (velho, v):
                         if isinstance(x, dict) and isinstance(x.get("data"), str):
                             ag_datas.append(x["data"])
                 rev += 1
@@ -6241,7 +6245,7 @@ def agenda_valida(doc_id, v):
 
 # ---------- Agenda automática e série diária (v97; plano docs/planos/2026-11-10-agenda-estatisticas.md) ----------
 # Feriados nacionais e do Rio calculados aqui, sem internet e sem clique. Jogos no Maracanã pela API-Football, só com a
-# chave colada pelo Admin no Calendário (~/Eterna/api-football.json, 600): a chave nunca volta ao navegador (só os 4
+# chave colada em Configurações › Painel de controle (~/Eterna/api-football.json, 600): a chave nunca volta ao navegador (só os 4
 # últimos caracteres), nunca vai para log, status, URL ou backup. Evento automático editado ou apagado por uma pessoa
 # nunca é sobrescrito nem recriado (D9). Série diária: tabela "dia" do operacao.db, uma linha por dia a partir de
 # 10/11/2026 (Eduardo, 10/11: sem retroativo da Roverpix), com tipo do dia, vendas, fotos, conversão e visitação.
@@ -6583,7 +6587,7 @@ def agenda_jogos_sync(motivo=""):
 
 
 def agenda_testar():
-    """"Testar agora" do Calendário: uma consulta da temporada atual (mais a busca do estádio na primeira vez)."""
+    """"Testar agora" do Painel de controle: uma consulta da temporada atual (mais a busca do estádio na primeira vez)."""
     _af_fonte_carrega()
     cfg = af_cfg()
     if not cfg:
@@ -6884,10 +6888,10 @@ def totais_gravar(origem, itens, rec, arquivo, por):
     return {"ok": True, "aceitos": len(itens), "recusados": rec[:200], "importacao": iid}
 
 
-def admin_do_cadastro(email):
+def config_do_cadastro(email):
     """O servidor ainda não confere quem está logado (pendência desde a v78; login real no plano de 04/11). Até lá, a
     chave da API-Football só é aceita com o e-mail de alguém que o cadastro do servidor marca como ativo e com
-    Configurações, Usuários e Permissões em Alterar (o Admin; a Supervisora não tem Usuários). Barreira, não autenticação.
+    Configurações em Alterar (Eduardo, 10/11: o painel fica em Configurações). Barreira, não autenticação.
     Devolve o nome (para a situação da fonte) ou None."""
     e = str(email or "").strip().lower()
     if not e or len(e) > 200:
@@ -6900,22 +6904,22 @@ def admin_do_cadastro(email):
         if not isinstance(u, dict) or str(u.get("email") or "").strip().lower() != e or u.get("active") is False or u.get("deleted"):
             continue
         p = u.get("perms") if isinstance(u.get("perms"), dict) else {}
-        if all(isinstance(p.get(m), dict) and p[m].get("u") is True for m in ("configuracao", "usuarios", "permissoes")):
+        if isinstance(p.get("configuracao"), dict) and p["configuracao"].get("u") is True:
             return re.sub(r"[<>\x00-\x1f]", "", str(u.get("name") or e))[:60]
     return None
 
 
 # Rotas da v97 (deny-by-default): toda rota declara a guarda; guarda desconhecida = 403. Todas em rota_privada (sem CORS
 # aberto), com o Host e a origem do agente (posto + origem_local) e no-store. "gravar" exige X-Eterna: 1 e limite por
-# minuto; "admin" exige também o e-mail de um Admin do cadastro do servidor (admin_do_cadastro).
+# minuto; "config" exige também o e-mail de alguém com Configurações em Alterar no cadastro do servidor (config_do_cadastro).
 #   (método, caminho): (guarda, método do H, pedidos por minuto por IP, corpo máximo)
 AGENDA_ROTAS = {
     ("GET", "/estatisticas/dias"): ("ler", "r_estatisticas_dias", 0, 0),
     ("GET", "/agenda/status"): ("ler", "r_agenda_status", 0, 0),
     ("POST", "/agenda/atualizar"): ("gravar", "r_agenda_atualizar", 1, 1024),
     ("POST", "/ponto/entradas/totais"): ("gravar", "r_entradas_totais", 30, 256 * 1024),
-    ("POST", "/agenda/fonte"): ("admin", "r_agenda_fonte", 10, 4096),
-    ("POST", "/agenda/testar"): ("admin", "r_agenda_testar", 1, 1024),
+    ("POST", "/agenda/fonte"): ("config", "r_agenda_fonte", 10, 4096),
+    ("POST", "/agenda/testar"): ("config", "r_agenda_testar", 1, 1024),
 }
 AGENDA_ROTAS_PATHS = frozenset(p for _, p in AGENDA_ROTAS)
 
@@ -7044,7 +7048,7 @@ class H(BaseHTTPRequestHandler):
     def agenda_rota(self, metodo, path):
         guarda, nome, por_min, corpo_max = AGENDA_ROTAS[(metodo, path)]
         try:
-            if guarda not in ("ler", "gravar", "admin") or not self.posto() or not self.origem_local():
+            if guarda not in ("ler", "gravar", "config") or not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403, nostore=True)
             body, quem = None, None
             if guarda != "ler":
@@ -7055,10 +7059,10 @@ class H(BaseHTTPRequestHandler):
                 body, err = self.corpo(corpo_max)
                 if err:
                     return self.js({"error": "corpo inválido"}, err, nostore=True)
-            if guarda == "admin":
-                quem = admin_do_cadastro(body.get("quem"))
+            if guarda == "config":
+                quem = config_do_cadastro(body.get("quem"))
                 if not quem:
-                    return self.js({"error": "so_admin"}, 403, nostore=True)
+                    return self.js({"error": "sem_permissao"}, 403, nostore=True)
             return getattr(self, nome)(body, quem)
         except Exception as ex:
             print("  %s: %s" % (path, type(ex).__name__))
@@ -7927,7 +7931,7 @@ def main():
     print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     _rok, _rmot = rec_estado()
     print("  Recorte local:     " + ("pronto (ISNet + u2net_human_seg, carrega na primeira foto)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
-    print("  Agenda:            feriados automáticos; jogos " + ("pela API-Football" if af_cfg() else "sem chave (cole no Calendário de eventos)"))
+    print("  Agenda:            feriados automáticos; jogos " + ("pela API-Football" if af_cfg() else "sem chave (Configurações › Painel de controle)"))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")

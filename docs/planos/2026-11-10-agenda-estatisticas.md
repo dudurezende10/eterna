@@ -216,12 +216,22 @@ Branch `feat/agenda-estatisticas`, carimbo `v97-agenda`. Feito conforme o plano 
 - **Sem retroativo** (decisão 3): saíram `rover_hist_loop`, o `bruto=False` do `rover_sync_day` e o `/status.roverpix.historico`; o critério 17 não se aplica. A série diária começa em `DIA_DESDE = "2026-11-10"`. A Roverpix ainda vale para um dia sem vendas do servidor (D6), pelo `agg/` que a sincronização normal de 30 dias já grava.
 - **Tabela do total diário** chama `entrada_total`, não `entrada_dia` (esse nome já é de um índice do `operacao.db`). `POST /ponto/entradas/totais` e o botão "Importar total por dia (bilheteria)" na seção f entraram ("total diário quando existir").
 - **Id do estádio** fica em `~/Eterna/ponto/agenda-fonte.json` (`venue_id`), não no `api-football.json`: o arquivo da chave tem só `{chave, em, por}` e some inteiro no Remover. O POST não aceita `venue_id`.
-- **"POST com login de Admin"**: o agente ainda não confere quem está logado. As rotas `/agenda/fonte` e `/agenda/testar` exigem posto + origem do agente + `X-Eterna: 1` + limite + o e-mail em `quem` de alguém ativo com Configurações, Usuários e Permissões em Alterar no cadastro do servidor (`admin_do_cadastro`). Isso barra a Supervisora pela tela e por engano, mas quem souber o e-mail de um Admin e estiver num posto consegue trocar a chave (não ler). Fecha com o login no servidor (plano de 04/11). Aceita pelo endereço do Tailscale (`ETERNA_ORIGENS`), não só pelo loopback, para o Eduardo colar de fora.
+- **"POST com login"**: o agente ainda não confere quem está logado. As rotas `/agenda/fonte` e `/agenda/testar` exigem posto + origem do agente + `X-Eterna: 1` + limite + o e-mail em `quem` de alguém ativo com Configurações em Alterar no cadastro do servidor (`config_do_cadastro`; ver a decisão abaixo). Isso barra quem não altera Configurações pela tela e por engano, mas quem souber o e-mail de alguém com essa permissão e estiver num posto consegue trocar a chave (não ler). Fecha com o login no servidor (plano de 04/11). Aceita pelo endereço do Tailscale (`ETERNA_ORIGENS`), não só pelo loopback, para o Eduardo colar de fora.
 - **Atualizar jogos agora** acorda o `agenda_loop` (a busca roda em segundo plano); a tela relê a situação em 5 s. **Testar agora** roda na hora (até 2 consultas na primeira vez: estádio e temporada).
 - **Jogo cancelado depois de gravado** sai do calendário e volta se a fonte remarcar, só quando quem tirou foi o próprio agente (`apagados_api`). Lápide de pessoa nunca volta.
 - **Falha da API** tenta de novo 6 h depois (não a cada minuto) e nunca apaga nada; `ultima` é a última que deu certo, `tentativa` a última tentativa.
 - **Seção g só para o Admin**: o chip não aparece para quem não é Admin (`esSecoes`) e o R$ também é conferido dentro da seção (D7). O botão "Adicionar feriados de AAAA" só aparece sem o servidor do ponto.
 - **Fora desta entrega**: `docs/dados/jogos-maracana-2026.tsv` (montar a lista de fontes públicas sem conferir seria arriscado; com a chave a API preenche, e até lá Colar lista); clima; histórico da Roverpix.
+
+### Decisão do Eduardo (10/11, depois da primeira implementação): a chave sai do Calendário
+
+A chave da API-Football **não** fica no Calendário de eventos: vai para Configurações › Painel de controle (`vCatalogo`), num painel próprio "Calendário de eventos · fonte dos jogos", logo abaixo do painel "Checkout". Motivo: quem tem acesso ao Calendário não precisa ter acesso à chave. Substitui a seção "chave da API-Football pela tela" acima no que diz respeito ao lugar e a quem vê:
+
+- O painel só aparece para quem pode alterar Configurações (`can('configuracao','u')`); quem só lê Configurações não vê. A Supervisora tem `configuracao.u` e passa a ver e usar o painel.
+- No agente, a guarda das rotas `/agenda/fonte` e `/agenda/testar` virou `config` (`config_do_cadastro`: ativo e com Configurações em Alterar), no lugar da conferência de Admin.
+- Mesmo funcionamento: salva só no servidor do ponto, nunca devolve a chave (só os 4 últimos), Testar agora, Trocar, Remover, auditoria sem a chave.
+- No Calendário fica só a situação em linguagem simples ("Jogos: atualizados em dd/mm hh:mm (N em AAAA)", "Jogos: fonte não configurada, peça ao Admin", "Jogos: a última busca não deu certo..."), "Atualizar jogos agora" para quem edita o calendário (com fonte configurada) e "Colar lista".
+- Critérios ajustados: quem altera Configurações salva e testa no Painel de controle; o Calendário não mostra campo nem bloco da chave para ninguém; quem só lê Configurações não vê o painel e recebe 403 no POST; GET de situação nunca contém a chave (`testes/agenda_agente.py`, `testes/agenda-estatisticas.js`).
 
 ### Pontos de contato com as outras branches (para a junção)
 
@@ -238,6 +248,6 @@ Branch `feat/agenda-estatisticas`, carimbo `v97-agenda`. Feito conforme o plano 
 - `index.html`:
   - `VIEWFN`/`VIEWS`/`MODULES` não mudaram (sem tela nova);
   - Estatísticas: `ES_SECOES` com `g`, `esSecoes`, `esChips` (o chip das seções saiu de dentro do `vEstatisticas`), início do `vEstatisticas` com o desvio para `g`, bloco "Jogos e ano a ano" antes de "Calendário de eventos", botão do total na `esSecF`, cases `es-ano` e `es-dias-csv` antes de `es-sec`, `es-importar-totais` no ouvinte `change`;
-  - Calendário: `agLimpo` (`api`, `ext`), `agSalvarForm`, `agImportar` (TAB), `vCalendario` (cabeçalho, linha das fontes, Colar lista, origem, nota e `agBlocoFontes`), bloco v97 do calendário logo depois do `vCalendario`, cases `ag-colar*`, `ag-atualizar`, `ag-chave-*` antes de `ag-feriados`;
+  - Calendário: `agLimpo` (`api`, `ext`), `agSalvarForm`, `agImportar` (TAB), `vCalendario` (cabeçalho, linha das fontes, Colar lista, origem, nota), bloco v97 do calendário logo depois do `vCalendario`; `vCatalogo` (primeira linha chama `agStatusPull`; `${agBlocoFontes()}` entre o painel Checkout e o `iaCfgPanel`); cases `ag-colar*`, `ag-atualizar`, `ag-chave-*` antes de `ag-feriados`;
   - `WRITE_OPS` e `ACT_MOD`: chaves novas no começo dos objetos; `window.ETERNA`: nomes novos no começo; CSS novo depois de `.es-vazio`; carimbo `v97-agenda`.
-- `testes/rodar.sh`: `testes/agenda_agente.py` no fim da lista dos testes de agente; `testes/todas-as-telas.js`: seção `g` e o bloco Fontes.
+- `testes/rodar.sh`: `testes/agenda_agente.py` no fim da lista dos testes de agente; `testes/todas-as-telas.js`: seção `g` e o painel da fonte dos jogos no Painel de controle.

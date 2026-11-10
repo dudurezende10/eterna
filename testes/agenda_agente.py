@@ -1,5 +1,5 @@
 # v97: agenda automática e série diária no agente (plano docs/planos/2026-11-10-agenda-estatisticas.md, critérios 1, 3 a 7,
-# 11 a 16 e 21, e os da chave da API-Football pela tela). Roda sozinho (testes/rodar.sh) com HOME temporário:
+# 11 a 16 e 21, e os da chave da API-Football em Configurações, só para quem altera Configurações). Roda sozinho (testes/rodar.sh) com HOME temporário:
 #   python3 -I testes/agenda_agente.py agente/eterna-agente.py
 # O agente é importado aqui e o servidor HTTP dele roda numa thread (porta 42000-42999); a API-Football é um servidor
 # falso local com uma chave falsa. O 2 (feriados iguais aos do app) está em testes/agenda-estatisticas.js; o 17 (histórico
@@ -129,12 +129,13 @@ with contextlib.redirect_stdout(saida):
     # ---------- chave pela tela: só Admin do cadastro ----------
     adm = {"email": "admin@teste.local", "name": "Admin Teste", "active": True,
            "perms": {"configuracao": {"c": True, "r": True, "u": True, "d": False}, "usuarios": {"c": True, "r": True, "u": True, "d": True}, "permissoes": {"c": False, "r": True, "u": True, "d": False}}}
-    sup = {"email": "sup@teste.local", "name": "Supervisora", "active": True, "perms": {"configuracao": {"c": True, "r": True, "u": True, "d": False}, "escala": {"c": True, "r": True, "u": True, "d": False}}}
+    sup = {"email": "sup@teste.local", "name": "Só leitura", "active": True, "perms": {"configuracao": {"c": False, "r": True, "u": False, "d": False}, "escala": {"c": True, "r": True, "u": True, "d": False}}}
+    sv = {"email": "superv@teste.local", "name": "Supervisora", "active": True, "perms": {"configuracao": {"c": True, "r": True, "u": True, "d": False}}}
     ina = dict(adm, email="velho@teste.local", active=False)
-    m.estado_gravar({"docs": [{"col": "usuarios", "id": "admin%40teste.local", "valor": adm}, {"col": "usuarios", "id": "sup%40teste.local", "valor": sup},
+    m.estado_gravar({"docs": [{"col": "usuarios", "id": "admin%40teste.local", "valor": adm}, {"col": "usuarios", "id": "sup%40teste.local", "valor": sup}, {"col": "usuarios", "id": "superv%40teste.local", "valor": sv},
                               {"col": "usuarios", "id": "velho%40teste.local", "valor": ina}]}, quem="teste")
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "sup@teste.local"}, XE)
-    ok(s == 403 and not os.path.exists(m.AF_CFG), "chave: Supervisora recebe 403 e nada é gravado: %d" % s)
+    ok(s == 403 and not os.path.exists(m.AF_CFG), "chave: quem só lê Configurações (e edita o calendário) recebe 403 e nada é gravado: %d" % s)
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "velho@teste.local"}, XE)
     ok(s == 403, "chave: Admin inativo recebe 403")
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "admin@teste.local"})
@@ -222,6 +223,9 @@ with contextlib.redirect_stdout(saida):
     m._janelas.clear()
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "remover", "quem": "admin@teste.local"}, XE)
     ok(s == 200 and not os.path.exists(m.AF_CFG) and m.agenda_status()["jogos"]["fonte"] == "nenhuma", "chave: Remover apaga o arquivo")
+    s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "superv@teste.local"}, XE)
+    ok(s == 200 and m.agenda_status()["jogos"]["salva_por"] == "Supervisora", "chave: quem altera Configurações (Supervisora) salva: %d" % s)
+    req("POST", "/agenda/fonte", {"acao": "remover", "quem": "superv@teste.local"}, XE)
     os.environ["ETERNA_API_FOOTBALL"] = CHAVE
     st = m.agenda_status()["jogos"]
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": "B" * 30, "quem": "admin@teste.local"}, XE)

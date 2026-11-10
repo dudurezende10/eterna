@@ -766,14 +766,14 @@ Bom saber:
 - Escreva o nome do clube como aparece na lista (Flamengo, Fluminense, Vasco...). Assim os dias se juntam no mesmo grupo nas Estatísticas.
 - Use **fechado** para os dias de estádio fechado.
 - Toda mudança fica registrada com o seu nome.
-- Jogos no Maracanã entram sozinhos pela API-Football (v97) toda segunda às 06:00, depois que o Admin salvar a chave em **Fontes**. **Atualizar jogos agora** busca na hora. Shows e outros eventos continuam por **Novo evento**, **Colar lista** ou CSV.
+- Jogos no Maracanã entram sozinhos pela API-Football (v97) toda segunda às 06:00, depois que a chave da API-Football for salva em **Configurações › Painel de controle**. Sem ela, a linha do Calendário diz "Jogos: fonte não configurada, peça ao Admin". **Atualizar jogos agora** busca na hora. Shows e outros eventos continuam por **Novo evento**, **Colar lista** ou CSV.
 - A coluna **Origem** mostra "Automático · feriados", "Automático · jogos", "Manual" ou "Importado". Evento automático que você edita ou apaga não volta a ser mudado pelo servidor.
 - Se aparecer o aviso **Este aparelho não está ligado ao servidor do ponto**, você está vendo só o que foi salvo neste navegador. O que criar sobe quando abrir o Eterna pelo servidor (no estádio ou pelo Tailscale).
 
-### Chave da API-Football (só o Admin)
+### Chave da API-Football (quem altera Configurações)
 
 1. Crie a conta em dashboard.api-football.com (o plano grátis dá 100 consultas por dia) e copie a chave.
-2. Abra o Eterna **pelo servidor do ponto** (no estádio ou pelo Tailscale) e vá em **Fotógrafo › Calendário de eventos**. No fim da tela fica o bloco **Fontes**.
+2. Abra o Eterna **pelo servidor do ponto** (no estádio ou pelo Tailscale) e vá em **Configurações › Painel de controle**. Logo abaixo do painel **Checkout** fica **Calendário de eventos · fonte dos jogos**. Quem só lê Configurações não vê esse painel, e o Calendário de eventos não mostra a chave.
 3. Cole a chave e toque em **Salvar chave**. A tela passa a mostrar "Chave configurada ····" com os 4 últimos caracteres, quando e por quem foi salva.
 4. Toque em **Testar agora**: aparece se a temporada atual veio e quantos jogos no Maracanã.
 5. **Trocar chave** e **Remover** ficam no mesmo bloco. Tudo fica no registro de alterações, sem a chave.

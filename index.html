@@ -4230,7 +4230,7 @@ function vCalendario(){const C=state.cal;const hoje=venueToday();if(esOn())agSta
   <section class="panel"><div class="cal-top"><button class="chip" data-act="ag-mes" data-d="-1" aria-label="Mês anterior">‹</button><h2>${esc(nomeMes)}</h2><button class="chip" data-act="ag-mes" data-d="1" aria-label="Próximo mês">›</button>${mes!==hoje.slice(0,7)?'<button class="chip" data-act="ag-mes" data-d="0">Hoje</button>':''}</div>
     <div class="cal-grid">${ES_SEMANA.map(s=>`<div class="cal-h">${s}</div>`).join('')}${cel.join('')}</div></section>
   <section class="panel"><h2>Eventos do mês</h2>${lista.length?esTab([{t:'Dia'},{t:'Tipo'},{t:'Evento'},{t:'Origem'},{t:''}],lista.map(a=>`<tr><td>${esc(dlabel(a.data))}</td><td>${esc(AG_TIPO_NOME[a.tipo]||a.tipo)}</td><td class="name">${esc(agResumo(a))}</td><td class="note">${esc(AG_ORIGEM_NOME[a.origem]||a.origem)}${a.por?' · '+esc(a.por):''}</td><td>${pode?`<button class="chip" data-act="ag-editar" data-id="${esc(a.id)}">Editar</button> <button class="chip" data-act="ag-apagar" data-id="${esc(a.id)}">Apagar</button>`:''}</td></tr>`)):'<div class="note">Nenhum evento neste mês.</div>'}
-    <p class="note">CSV: <code>data;hora;tipo;mandante;visitante;competicao;obs</code> (data em dd/mm/aaaa ou aaaa-mm-dd; tipo jogo, show, feriado, fechado, evento ou outro). Até 2000 linhas; o mesmo jogo importado de novo atualiza em vez de duplicar. Automáticos: feriados nacionais e do Rio, calculados pelo servidor do ponto, e jogos no Maracanã pela API-Football (com a chave em Fontes). Evento automático que alguém edita ou apaga não volta a ser mexido pelo servidor.</p></section>${agBlocoFontes()}`;}
+    <p class="note">CSV: <code>data;hora;tipo;mandante;visitante;competicao;obs</code> (data em dd/mm/aaaa ou aaaa-mm-dd; tipo jogo, show, feriado, fechado, evento ou outro). Até 2000 linhas; o mesmo jogo importado de novo atualiza em vez de duplicar. Automáticos: feriados nacionais e do Rio, calculados pelo servidor do ponto, e jogos no Maracanã pela API-Football (com a chave em Fontes). Evento automático que alguém edita ou apaga não volta a ser mexido pelo servidor.</p></section>`;}
 // ---------- v97: calendário que se preenche sozinho (feriados e jogos no servidor do ponto), Colar lista e Fontes ----------
 const AG_ORIGEM_NOME={manual:'Manual',csv:'Importado',feriados:'Automático · feriados',api:'Automático · jogos'};
 const agServidor=()=>!!(state.db&&state.db.agente&&esOn());
@@ -4239,27 +4239,27 @@ function agConexao(){return agServidor()?'':`<div class="alert warn" id="ag-sem-
 state.cal.st=null;state.cal.stEm=0;state.cal.stBusy=false;state.cal.stErr=false;state.cal.colar=false;state.cal.trocaChave=false;state.cal.rmChave=false;state.cal.chaveBusy=false;
 async function agStatusPull(forca){const C=state.cal;if(C.stBusy||!esOn())return;if(!forca&&Date.now()-C.stEm<60e3)return;C.stBusy=true;C.stEm=Date.now();
   try{const r=await fetch(state.agent.url+'/agenda/status',{cache:'no-store'});const j=await r.json();if(!r.ok||!j||!j.ok||!j.jogos)throw 0;C.st=j;C.stErr=false;}
-  catch(e){C.stErr=true;}finally{C.stBusy=false;if(state.view==='calendario')render();}}
+  catch(e){C.stErr=true;}finally{C.stBusy=false;if(state.view==='calendario'||state.view==='catalogo')render();}}
 function agFontesTxt(){const C=state.cal,S=C.st;if(!esOn())return '';if(!S)return C.stErr?'Situação das fontes indisponível: o servidor do ponto não respondeu.':'';
   const J=S.jogos||{};const ano=venueToday().slice(0,4);const fer=Number.isFinite(+S.feriados_ate)&&S.feriados_ate?`Feriados automáticos até ${+S.feriados_ate}`:'Feriados automáticos';let jg;
-  if(!J.chave)jg='Jogos: sem chave da API. Cole a lista ou importe o CSV';
+  if(!J.chave)jg='Jogos: fonte não configurada, peça ao Admin. Até lá, cole a lista ou importe o CSV';
   else if(J.rodando)jg='Jogos: atualizando agora';
-  else if(J.ok===false&&J.erro)jg=`Jogos: a última atualização falhou${J.tentativa?' em '+esQuando(J.tentativa):''} (${String(J.erro).slice(0,160)})${J.ultima?'. Última que deu certo: '+esQuando(J.ultima):''}`;
+  else if(J.ok===false&&J.erro)jg=`Jogos: a última busca não deu certo${J.ultima?'; a última que deu certo foi em '+esQuando(J.ultima):''}. Se continuar, avise o Admin`;
   else if(J.ultima){const n=J.n_por_ano&&typeof J.n_por_ano==='object'?safeN(J.n_por_ano[ano]):0;jg=`Jogos: atualizados em ${esQuando(J.ultima)} (${fmtN(n)} em ${ano})`;}
-  else jg='Jogos: chave configurada, a primeira atualização está na fila';
+  else jg='Jogos: a primeira atualização está na fila';
   return fer+' · '+jg+(safeN(J.ja_no_calendario)?` · ${fmtN(safeN(J.ja_no_calendario))} já estavam no calendário`:'');}
 async function agAtualizar(){if(!esOn()){toast('Sem conexão com o servidor do ponto');return;}
   try{const r=await fetch(state.agent.url+'/agenda/atualizar',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:'{}'});const j=await r.json().catch(()=>({}));
     toast(r.status===429?'Aguarde um minuto para atualizar de novo':r.status===409?'Sem chave da API-Football':r.ok&&j.ok?(j.ja_rodando?'A atualização dos jogos já está em andamento':'Atualizando os jogos. Os novos aparecem em instantes'):'O servidor do ponto recusou');}
   catch(e){toast('Sem conexão com o servidor do ponto');}
   setTimeout(()=>agStatusPull(true),5000);}
-// chave da API-Football (Eduardo, 10/11 16h54): só o Admin, só pelo servidor do ponto; a chave sai do campo direto para o
+// chave da API-Football (Eduardo, 10/11): em Configurações › Painel de controle, só para quem altera Configurações, só pelo servidor do ponto; a chave sai do campo direto para o
 // POST e nunca vai para o state, o SIM, o localStorage ou o registro; o servidor devolve só os 4 últimos caracteres
-async function agChavePost(rota,corpo){if(!isAdminUser(state.user)){toast('Só o Admin altera a chave da API-Football');return null;}if(!agServidor()){toast('Abra o Eterna pelo servidor do ponto para mexer na chave');return null;}
+async function agChavePost(rota,corpo){if(!can('configuracao','u')){toast('Sem permissão para alterar Configurações');return null;}if(!agServidor()){toast('Abra o Eterna pelo servidor do ponto para mexer na chave');return null;}
   try{const r=await fetch(state.agent.url+rota,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify(Object.assign({quem:state.user.email},corpo||{}))});return {st:r.status,j:await r.json().catch(()=>({}))};}
   catch(e){toast('Sem conexão com o servidor do ponto');return null;}}
-const agChaveErro=r=>r.st===403?'O servidor do ponto não reconhece este usuário como Admin (confira o cadastro no servidor)':r.st===409&&r.j.error==='chave_no_servidor'?'A chave está definida no servidor e não pode ser trocada por aqui':r.st===429?'Aguarde um minuto e tente de novo':r.st===400?'Chave inválida: de 20 a 64 letras e números':'O servidor do ponto recusou';
-async function agChaveSalvar(){const C=state.cal;const el=document.getElementById('ag-chave');const k=el?String(el.value||'').trim():'';if(el)el.value='';if(!isAdminUser(state.user)){toast('Só o Admin altera a chave da API-Football');return;}
+const agChaveErro=r=>r.st===403?'O servidor do ponto não reconhece a sua permissão de alterar Configurações (confira o cadastro no servidor)':r.st===409&&r.j.error==='chave_no_servidor'?'A chave está definida no servidor e não pode ser trocada por aqui':r.st===429?'Aguarde um minuto e tente de novo':r.st===400?'Chave inválida: de 20 a 64 letras e números':'O servidor do ponto recusou';
+async function agChaveSalvar(){const C=state.cal;const el=document.getElementById('ag-chave');const k=el?String(el.value||'').trim():'';if(el)el.value='';if(!can('configuracao','u')){toast('Sem permissão para alterar Configurações');return;}
   if(!/^[A-Za-z0-9]{20,64}$/.test(k)){toast('A chave tem de 20 a 64 letras e números');return;}const troca=!!(C.st&&C.st.jogos&&C.st.jogos.chave);C.chaveBusy=true;render();
   const r=await agChavePost('/agenda/fonte',{acao:'salvar',chave:k});C.chaveBusy=false;
   if(r&&r.st===200&&r.j.ok){auditLog(troca?'agenda_chave_trocar':'agenda_chave_salvar','config/api-football',[{campo:'chave_api_football',de:troca?'configurada':null,para:'configurada'}]);C.trocaChave=false;toast(troca?'Chave trocada':'Chave salva no servidor do ponto');}
@@ -4270,8 +4270,8 @@ async function agChaveTestar(){const C=state.cal;C.chaveBusy=true;render();const
   if(r&&r.st===200)toast(r.j.ok?`A temporada ${safeN(r.j.temporada)} veio: ${fmtN(safeN(r.j.n))} jogos no Maracanã`:'O teste falhou: '+String(r.j.erro||'erro').slice(0,120));else if(r)toast(agChaveErro(r));await agStatusPull(true);render();}
 function agTesteTxt(t){if(!t||typeof t!=='object')return '<p class="note" id="ag-teste">Ainda não testada.</p>';
   return `<p class="note" id="ag-teste">Último teste em ${esc(esQuando(t.em))}: ${t.ok?`a temporada ${safeN(t.temporada)} veio (${fmtN(safeN(t.n))} jogos no Maracanã)`:`falhou (${esc(String(t.erro||'erro').slice(0,160))})`}.</p>`;}
-// bloco Fontes: só o Admin vê
-function agBlocoFontes(){if(!isAdminUser(state.user))return '';const C=state.cal;const J=C.st&&C.st.jogos;const b=C.chaveBusy?' disabled':'';let corpo;
+// painel "Calendário de eventos · fonte dos jogos" no Painel de controle (Eduardo, 10/11): quem só lê Configurações não vê
+function agBlocoFontes(){if(!can('configuracao','u'))return '';const C=state.cal;const J=C.st&&C.st.jogos;const b=C.chaveBusy?' disabled':'';let corpo;
   const campo=`<div class="ag-grid"><label class="ag-obs"><span class="eyebrow">Chave da API-Football</span><input type="password" id="ag-chave" data-keep autocomplete="off" spellcheck="false" maxlength="64" placeholder="cole a chave aqui"></label></div>
     <div class="row"><button class="btn primary" data-act="ag-chave-salvar"${b}>Salvar chave</button>${C.trocaChave?'<button class="btn ghost" data-act="ag-chave-cancelar">Cancelar</button>':''}</div>
     <p class="note">Crie a conta em dashboard.api-football.com (plano grátis: 100 consultas por dia) e cole a chave. Ela fica só no servidor do ponto; aqui aparecem só os 4 últimos caracteres.</p>`;
@@ -4282,7 +4282,7 @@ function agBlocoFontes(){if(!isAdminUser(state.user))return '';const C=state.cal
     <div class="row"><button class="btn ghost" data-act="ag-chave-testar"${b}>Testar agora</button><button class="btn ghost" data-act="ag-chave-trocar"${b}>Trocar chave</button><button class="btn ghost" data-act="ag-chave-remover"${b}>Remover</button></div>
     ${C.rmChave?`<div class="alert warn" id="ag-chave-conf"><span class="sev" aria-hidden="true"></span><div><b>Remover a chave da API-Football?</b><p>Os jogos já no calendário ficam; os novos param de entrar sozinhos.</p><div class="row" style="margin-top:8px"><button class="btn" data-act="ag-chave-remover-ok">Remover</button><button class="btn ghost" data-act="ag-chave-remover-nao">Cancelar</button></div></div></div>`:''}`;
   else corpo=campo;
-  return `<section class="panel" id="ag-fontes-bloco"><h2>Fontes</h2><p class="note">Feriados nacionais e do Rio entram sozinhos. Jogos no Maracanã entram pela API-Football toda segunda às 06:00 (e em "Atualizar jogos agora"). Shows e outros eventos: Novo evento, Colar lista ou CSV.</p>${corpo}</section>`;}
+  return `<div class="panel" id="ag-fontes-bloco"><h2>Calendário de eventos · fonte dos jogos</h2><p class="note">Feriados nacionais e do Rio entram sozinhos. Jogos no Maracanã entram pela API-Football toda segunda às 06:00 (e em "Atualizar jogos agora", no Calendário). Shows e outros eventos: Novo evento, Colar lista ou CSV no Calendário.</p>${agFontesTxt()?`<p class="note">${esc(agFontesTxt())}</p>`:''}${corpo}</div>`;}
 // D2 (segurança de sessão): a sessão de quem tem chave de fotógrafo vence na virada do dia (no fuso do venue)
 function sessaoVencida(s,u){return !!(u&&u.key&&s&&s.at&&diaVenue(Date.parse(s.at))!==venueToday());}
 function sessaoVirada(){const u=state.user;if(!u||!u.key)return false;let s=null;try{s=JSON.parse(localStorage.getItem('eterna.session')||'null');}catch(e){}if(!sessaoVencida(s,u))return false;logout();toast('Novo dia: entre de novo');return true;}
@@ -4307,7 +4307,7 @@ function vEscala(){
 }
 
 // ---------- Gestão: catálogo ----------
-function vCatalogo(){
+function vCatalogo(){if(esOn()&&can('configuracao','u'))agStatusPull(); // v97: situação da fonte dos jogos
   return `<div class="head"><div><div class="eyebrow">Configurações · catálogo, preços, Checkout e FTP</div><h1>Painel de controle</h1></div></div>
   <div class="panel"><div class="tablewrap"><table><thead><tr><th>Produto</th><th>Tipo</th><th>Conteúdo</th><th class="num">Preço</th><th class="num">Vendidos na semana</th></tr></thead><tbody>
   ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="Preço de ${esc(c.name)}"></td><td class="num">${real?real.units:'novo'}</td></tr>`}).join('')}
@@ -4315,6 +4315,7 @@ function vCatalogo(){
   <div class="panel"><h2>Cartões com QR impresso</h2><div class="row" style="align-items:end"><label><span class="eyebrow">Quantidade</span><input type="number" id="cartao-n" min="1" max="5000" value="1000" style="width:110px;text-align:right"></label><button class="btn" data-act="cartao-lote" ${can('catalogo','u')?'':'disabled'}>Gerar lote para a gráfica (CSV)</button></div><div class="note">Cada linha traz o QR (endereço da galeria) e o código de 8 letras para imprimir no cartão. O cartão só abre fotos depois de lido dentro de uma venda.</div></div>
   <div class="panel"><h2>Checkout</h2><div class="row" style="align-items:end"><label><span class="eyebrow">Tempo da tela final com o QR (segundos)</span><input type="number" id="loja-fim" data-act="loja-fim" min="${LOJA_FIM_MIN}" max="${LOJA_FIM_MAX}" step="1" value="${lojaFimSeg()}" style="width:110px;text-align:right" ${can('catalogo','u')?'':'disabled'}></label><span class="note">Depois do pagamento, o Checkout mostra o QR e o código por este tempo e volta sozinho ao início. Padrão ${LOJA_FIM_PADRAO} s, de ${LOJA_FIM_MIN} a ${LOJA_FIM_MAX} s. O botão "Voltar ao início" volta antes.</span></div>
     ${buscaJanelaPanel()}</div>
+  ${agBlocoFontes()}
   ${iaCfgPanel()}
   ${canView('calendario')?`<div class="panel"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">Calendário de eventos</h2><div class="note">Jogos, shows, feriados e dias de estádio fechado, para comparar os dias nas Estatísticas. A Supervisora também edita.</div></div><button class="btn ghost" data-act="view" data-v="calendario">Abrir o calendário</button></div></div>`:''}
   ${fundosModoPanel()}
