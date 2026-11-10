@@ -194,7 +194,7 @@ out.save(sys.argv[2])
   // recorte não instalado: a prévia mostra o aviso, sem erro
   const p503=await pg.evaluate(async()=>{const r=await ETERNA.compose('ag_d84000000004','campeao2');const el=document.createElement('span');el.className='compimg';el.dataset.comp='ag_d84000000004|mirante';document.body.appendChild(el);ETERNA.compHydrate();
     await new Promise(z=>setTimeout(z,800));const t=el.innerText;el.remove();return {r,t};});
-  ok(p503.r.pending==='recorte'&&/Recorte local não instalado/.test(p503.t),'4: 503 vira aviso de recorte não instalado: '+J(p503));
+  ok(p503.r.pending==='recorte'&&/Recorte local indisponível/.test(p503.t),'4 (v97, E5b): 503 vira "Recorte local indisponível" e tenta de novo: '+J(p503));
   const pex=await pg.evaluate(()=>ETERNA.compose('c00x','campeao2'));ok(pex.pending==='exemplo','4: foto de exemplo (sem pid do agente) não pede recorte: '+J(pex));
 
   // ---------- 5a. Checkout: só oferece fundo de IA com o recorte pronto; carregando nas 5 línguas; item que falhou sai ----------
@@ -204,9 +204,9 @@ out.save(sys.argv[2])
     ag.recorte={ok:true};const it=ETERNA.lojaItems(card).filter(x=>x.t==='ai');const ruim={id:'ag_d84000000004',bg:'campeao2',k:'ai:ag_d84000000004|campeao2'};ETERNA.lojaPick(card)[ruim.k]='ok';if(!it.some(x=>x.k===ruim.k))it.push(ruim);
     it.forEach(x=>{const el=document.createElement('span');el.className='compimg';el.dataset.comp=x.id+'|'+x.bg;document.body.appendChild(el);});ETERNA.compHydrate();
     await new Promise(z=>setTimeout(z,2500));ag.on=true;ag.recorte={ok:true};/* o agentPoll da página de teste desliga o agente */const depois=ETERNA.lojaItems(card).filter(x=>x.t==='ai');document.querySelectorAll('body>.compimg').forEach(e=>e.remove());
-    const res=[];for(const x of it)res.push(await ETERNA.compose(x.id,x.bg).then(r=>r.url?'ok':(r.err||r.pending)));return {res,sem,com:it.length,ruim:!!ruim,depois:depois.length,temRuim:depois.some(x=>x.id==='ag_d84000000004'),pick:Object.keys(ETERNA.lojaPick(card))};},[PIDS.meio,PIDS.inteiro]);
+    const res=[];for(const x of it)res.push(await ETERNA.compose(x.id,x.bg).then(r=>r.url?'ok':(r.err||r.pending)));return {res,sem,com:it.length,ruim:!!ruim,depois:depois.length,temRuim:depois.some(x=>x.id==='ag_d84000000004'),pick:Object.keys(ETERNA.lojaPick(card)),ruimSet:ETERNA.FIA_RUIM.has('ag_d84000000004')};},[PIDS.meio,PIDS.inteiro]);
   ok(ck.sem===0,'5a: sem o recorte pronto, o Checkout não oferece fundo de IA: '+J(ck));
-  ok(ck.com>1&&!ck.temRuim&&!ck.pick.some(k=>/d84000000004/.test(k)),'5a: item que falhou (503) sai da venda e da escolha: '+J(ck));
+  ok(ck.com>1&&ck.temRuim&&ck.pick.some(k=>/d84000000004/.test(k))&&!ck.ruimSet,'5a (v97, critério 15): 503 do recorte não tira o item da venda nem da escolha: '+J(ck));
   const i18=fs.readFileSync(path.join(RAIZ,'index.html'),'utf8').match(/aiMaking:\[([^\]]*)\]/);ok(i18&&i18[1].split("','").length===5&&/lj-spin/.test(fs.readFileSync(path.join(RAIZ,'index.html'),'utf8')),'5a: "Preparando sua foto especial" nas 5 línguas, com indicador: '+(i18&&i18[1]));
   await pg.evaluate(()=>{ETERNA.state.agent.on=false;ETERNA.state.agent.recorte=null;});
 

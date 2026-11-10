@@ -5091,15 +5091,18 @@ const lojaVisIds=(cards,fix)=>cards.flatMap(c=>fix&&fix[c]?fix[c]:lojaSesProtegi
 function lojaSoVisita(card,base,soAntigo){const cards=lojaVisCards([card,...(base||[])]);if(cards.length<2||cards.every(c=>c===card||(base||[]).includes(c)))return soAntigo||null; // nada novo da visita: como antes
   return {card,cards,ids:[...new Set([...lojaVisIds(cards,null),...((soAntigo&&soAntigo.ids)||[])])],base:[card,...(base||[])],fix:{},visita:true};}
 // Juntar ou Separar no Posto com o cliente na escolha: refaz a visita e tira só as marcas de fotos que saíram (nunca troca de cliente)
-function lojaVisitaAtualiza(){const k=state.kiosk;const so=k&&k.so;if(!so||!so.visita||!Array.isArray(so.base)||!['gallery','review'].includes(k.step))return false;
-  const cards=lojaVisCards(so.base);if(!cards.includes(so.card))cards.unshift(so.card);if(cards.join()===so.cards.join())return false;
+function lojaVisitaAtualiza(){const k=state.kiosk;const so=k&&k.so;if(!k||!['gallery','review'].includes(k.step))return false;
+  if(!so&&k.code&&!lojaSesProtegida(k.code)){const ns=lojaSoVisita(k.code,[],null);if(!ns)return false;k.so=ns;render();return true;} // aberta pelo código, a leva entrou numa visita
+  if(!so||!so.visita||!Array.isArray(so.base))return false;
+  const cards=[...new Set([...lojaVisCards(so.base),...Object.keys(so.fix||{}).filter(c=>sessionObj(c))])].sort((a,b)=>sesHora(a)-sesHora(b));if(!cards.includes(so.card))cards.unshift(so.card);if(cards.join()===so.cards.join())return false;
   k.so=Object.assign({},so,{cards,ids:lojaVisIds(cards,so.fix)});const pk=lojaPick(so.card);const vale=new Set(lojaItems(so.card).map(x=>x.k));let fora=0;
   Object.keys(pk).forEach(x=>{if(!vale.has(x)){delete pk[x];fora++;}});if(fora)lojaSync(so.card);const n=lojaItems(so.card).length;if(k.i>=n)k.i=Math.max(0,n-1);render();return true;}
 function lojaJuntar(res,tv,sims){const k=state.kiosk;sims=sims||{};const claras=(res||[]).filter(r=>r.fotos&&r.fotos.length&&sessionObj(r.card));if(!claras.length)return false;lojaCliente();
   const ord=claras.slice().sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);const anc=(ord.find(r=>!lojaJaPaga(r.card))||ord[0]).card;
-  // v97: cada leva com foto clara traz a visita inteira (todas as fotos de cada leva); menor ou escola só com as fotos achadas
-  const base=claras.map(r=>r.card),fix={};claras.forEach(r=>{if(lojaSesProtegida(r.card))fix[r.card]=r.fotos.slice();});
-  const minhas={};lojaVisCards(base).forEach(c=>{minhas[c]=fix[c]||lojaTodas(c);});claras.forEach(r=>{if(!minhas[r.card])minhas[r.card]=r.fotos.slice();});const ja=new Set(Object.keys(minhas));
+  // v97: cada leva com foto clara em que ela é rosto principal traz a visita inteira (todas as fotos de cada leva); menor ou
+  // escola e a leva em que ela só aparece no fundo (B5 da v91, pri 0) ficam só com as fotos achadas e não abrem a visita
+  const inteira=r=>!lojaSesProtegida(r.card)&&r.pri!==0;const base=claras.filter(inteira).map(r=>r.card),fix={};claras.forEach(r=>{if(!inteira(r))fix[r.card]=r.fotos.slice();});
+  const minhas={};lojaVisCards(base).forEach(c=>{minhas[c]=lojaTodas(c);});claras.forEach(r=>{if(!minhas[r.card])minhas[r.card]=fix[r.card]||r.fotos.slice();});const ja=new Set(Object.keys(minhas));
   const ask=(tv||[]).filter(r=>!ja.has(r.card)&&r.fotos&&r.fotos.length&&sessionObj(r.card)&&!lojaSesProtegida(r.card)).sort((a,b)=>b.sc-a.sc).slice(0,3)
     .map(r=>({card:r.card,todas:r.fotos.slice(),fotos:r.fotos.slice().sort((x,y)=>(sims[y]||0)-(sims[x]||0)).slice(0,3)}));
   if(ask.length){Object.assign(k,{tv:{anc,minhas,ask,i:0,sim:[],ext:{base,fix}},step:'talvez',code:'',so:null});lojaPreload(anc,minhas,0);render();return true;}

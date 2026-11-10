@@ -101,13 +101,14 @@ try{
   SIMS={[A[1]]:.72};
   const r15=await pg.evaluate(async([f1,f2])=>{const c=document.createElement('canvas');c.width=64;c.height=64;const k=ETERNA.state.kiosk;
     let r=await ETERNA.faceFind([c],x=>!x.demo);const achou=(r.res||[]).map(x=>x.card);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
-    const a={achou,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id),code:k.code};
+    const a={achou,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id),code:k.code,tot:(ETERNA.demoSessions().find(s=>s.card===k.code)||{photos:[]}).photos.length};
     ETERNA.lojaReset();ETERNA.SIM.sessions.LPTIACAM1.menor=true;
     r=await ETERNA.faceFind([c],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
     const b={code:k.code,ids:k.so&&k.so.ids,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id)};
     delete ETERNA.SIM.sessions.LPTIACAM1.menor;ETERNA.lojaReset();return {a,b};},[f1,f2]);
   ok(r15.a.achou.join()==='LPTIACAM1'&&r15.a.code==='LPTIACAM1','A15: a selfie acha a sessão só pela base: '+J(r15.a.achou));
-  ok(r15.a.fotos.length===0&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===5,'A15: só o que tem o rosto dela, nenhuma base como foto, com as 5 montagens: '+J(r15.a.items));
+  // v97 (Eduardo, 10/11): a selfie abre a leva inteira (e a visita); a base continua fora das fotos
+  ok(r15.a.fotos.length===r15.a.tot&&r15.a.tot>0&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===5,'A15: a leva inteira, nenhuma base como foto, com as 5 montagens: '+J(r15.a));
   ok(r15.b.code==='LPTIACAM1'&&r15.b.fotos.length===0&&r15.b.ai.length===5&&r15.b.ai.every(x=>x===f2),'A15: menor: só a base reconhecida nas montagens, nenhuma foto de fora: '+J(r15.b));
   SIMS={};
   // "Todas" conta só as fotos normais (+ as montagens escolhidas)

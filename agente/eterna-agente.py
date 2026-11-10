@@ -5161,14 +5161,13 @@ def vis_feed(desde=0, ontem=False):
 
 def _vis_status_mem():
     """/status.sessoes.visitas (com o sess_lock)."""
-    if True:
-        hoje = _ff_hoje()
-        arestas = vis_arestas.get(hoje) or []
-        lig = sorted(vis_med["lig"])
-        return {"n": sum(1 for v in vis_info.values() if v["dia"] == hoje and len(v["levas"]) > 1), "rev": vis_rev[0],
-                "ligacoes_rosto": sum(1 for e in arestas if e["tipo"] == "rosto" and not e.get("barrada")),
-                "barradas": sum(1 for e in arestas if e.get("barrada")), "ms_ultimo": vis_med["ms_ultimo"],
-                "ligar_p90_ms": round(lig[int(0.9 * (len(lig) - 1))], 2) if lig else None, "limiar": VIS_LIM}
+    hoje = _ff_hoje()
+    arestas = vis_arestas.get(hoje) or []
+    lig = sorted(vis_med["lig"])
+    return {"n": sum(1 for v in vis_info.values() if v["dia"] == hoje and len(v["levas"]) > 1), "rev": vis_rev[0],
+            "ligacoes_rosto": sum(1 for e in arestas if e["tipo"] == "rosto" and not e.get("barrada")),
+            "barradas": sum(1 for e in arestas if e.get("barrada")), "ms_ultimo": vis_med["ms_ultimo"],
+            "ligar_p90_ms": round(lig[int(0.9 * (len(lig) - 1))], 2) if lig else None, "limiar": VIS_LIM}
 
 
 def _vis_txt(v, n):
