@@ -199,3 +199,12 @@ Agenda (coleção `agenda`, só os campos novos marcados):
 3. Histórico: a base diária começa hoje (10/11/2026). Sem importação retroativa da Roverpix.
 4. Visitação: não há histórico (a Viva começou a operar em 01/10/2026). A visitação entra a partir de agora pelas fontes do próprio ponto (catraca, bip ou total diário quando existir).
 5. A seção nova das Estatísticas é só para o Admin.
+
+## Decisão do Eduardo (10/11, 16h54): chave da API-Football pela tela
+A chave é colada pelo Admin no próprio Calendário de eventos (bloco "Fontes"), sem depender do Ronaldo:
+- Campo só para quem pode alterar Configurações (Admin). Quem não é Admin não vê o bloco.
+- Ao salvar, o app manda a chave só para o servidor do ponto (POST com login de Admin e X-Eterna: 1), que grava em ~/Eterna/api-football.json com permissão restrita (mesmo padrão do ftp-remoto.json/roverpix.json). A chave nunca vai para o SIM, para o localStorage, para o backup da nuvem em texto aberto, para logs nem para o Firestore.
+- O servidor nunca devolve a chave: a tela mostra só "Chave configurada ····<4 últimos>", a data, quem salvou e o resultado do último teste. Botões: "Testar agora" (1 consulta, mostra se a temporada atual veio), "Trocar chave" e "Remover".
+- Auditoria: salvar, trocar e remover entram no auditLog (sem a chave).
+- Variável de ambiente, se existir, continua valendo e aparece como "definida no servidor" (a tela não sobrescreve).
+- Critérios de aceite novos: Admin salva e testa; Supervisora/Caixa não veem o bloco nem conseguem o POST (403); GET de configuração nunca contém a chave; a chave não aparece em nenhum arquivo do repo, SIM, log ou resposta HTTP.
