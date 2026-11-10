@@ -4,8 +4,11 @@
 # Escuta só em 127.0.0.1:8790; o Posto de venda manda as fotos já montadas (JPEG) e este script imprime
 # na impressora padrão (a DNP) por um Chrome escondido, igual à impressão do Eterna. Só aceita pedidos do endereço do Eterna (ORIGENS).
 # Se este script não estiver rodando, o Eterna imprime pelo Chrome (--kiosk-printing), como antes.
-#   GET  /status    -> {ok, impressora}
-#   POST /imprimir  {venda, imagens: ["data:image/jpeg;base64,..."]} -> {ok, fotos, impressora}
+#   GET  /status    -> {ok, impressora, dnp}
+#   POST /imprimir  {venda, imagens: ["data:image/jpeg;base64,..."]} -> {ok, fotos, impressora, dnp}
+# dnp (null quando não há DNP DS-RX1 no USB): {status, texto, erro, mqty, restantes, vida, antes, saiu, conferido}
+#   lido do firmware da DNP pelo USB (comandos de leitura "ESC P": STATUS, INFO MQTY, MNT_RD COUNTER_LIFE), só com a fila
+#   do Windows vazia, para nunca misturar com os dados de uma impressão. restantes = MQTY - 50 (margem que a DNP soma ao rolo).
 # Log: C:\Eterna\impressao.log
 
 param([Parameter(Mandatory = $true)][string]$Endereco)   # endereço do Eterna neste ponto; só ele pode mandar imprimir
@@ -18,6 +21,37 @@ $MaxFotos = 20
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Web.Extensions
+
+# DNP pelo USB: a interface usbprint da impressora (fabricante 1343) aceita comandos de 32 bytes "ESC P" + comando (6) + argumento (16)
+# + 8 espaços e responde com 8 dígitos de tamanho seguidos dos dados. Só comandos de leitura são usados aqui.
+Add-Type -TypeDefinition @'
+using System;using System.IO;using System.Text;using System.Runtime.InteropServices;using Microsoft.Win32.SafeHandles;
+public static class EternaDnp{
+ [StructLayout(LayoutKind.Sequential)] struct SPDID{public int cb;public Guid g;public int f;public IntPtr r;}
+ [DllImport("setupapi.dll",SetLastError=true)] static extern IntPtr SetupDiGetClassDevs(ref Guid g,IntPtr e,IntPtr h,int f);
+ [DllImport("setupapi.dll",SetLastError=true)] static extern bool SetupDiEnumDeviceInterfaces(IntPtr s,IntPtr d,ref Guid g,int i,ref SPDID x);
+ [DllImport("setupapi.dll",SetLastError=true,CharSet=CharSet.Unicode)] static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr s,ref SPDID x,IntPtr b,int n,out int req,IntPtr di);
+ [DllImport("setupapi.dll")] static extern bool SetupDiDestroyDeviceInfoList(IntPtr s);
+ [DllImport("kernel32.dll",SetLastError=true,CharSet=CharSet.Unicode)] static extern SafeFileHandle CreateFile(string n,uint a,uint s,IntPtr sa,uint c,uint f,IntPtr t);
+ public static string Caminho(){var g=new Guid("28d78fad-5a12-11d1-ae5b-0000f803a8c2");IntPtr s=SetupDiGetClassDevs(ref g,IntPtr.Zero,IntPtr.Zero,0x12);string achou=null;
+  for(int i=0;achou==null;i++){var x=new SPDID();x.cb=Marshal.SizeOf(x);if(!SetupDiEnumDeviceInterfaces(s,IntPtr.Zero,ref g,i,ref x))break;
+   int req;SetupDiGetDeviceInterfaceDetail(s,ref x,IntPtr.Zero,0,out req,IntPtr.Zero);IntPtr b=Marshal.AllocHGlobal(req);
+   Marshal.WriteInt32(b,IntPtr.Size==8?8:6);if(SetupDiGetDeviceInterfaceDetail(s,ref x,b,req,out req,IntPtr.Zero)){string p=Marshal.PtrToStringUni(new IntPtr(b.ToInt64()+4));if(p.ToLower().Contains("vid_1343"))achou=p;}
+   Marshal.FreeHGlobal(b);}
+  SetupDiDestroyDeviceInfoList(s);return achou;}
+ public static string Cmd(string path,string c1,string c2){
+  var h=CreateFile(path,0xC0000000,3,IntPtr.Zero,3,0x40000000,IntPtr.Zero);if(h.IsInvalid)return null;
+  using(var fs=new FileStream(h,FileAccess.ReadWrite,4096,true)){
+   var cmd=new byte[32];for(int i=0;i<32;i++)cmd[i]=0x20;cmd[0]=0x1b;cmd[1]=0x50;
+   Encoding.ASCII.GetBytes(c1).CopyTo(cmd,2);Encoding.ASCII.GetBytes(c2).CopyTo(cmd,8);fs.Write(cmd,0,32);fs.Flush();
+   var cab=Le(fs,8);if(cab==null)return null;int n;if(!int.TryParse(Encoding.ASCII.GetString(cab),out n)||n<0||n>4096)return null;
+   var d=Le(fs,n);return d==null?null:Encoding.ASCII.GetString(d);}}
+ static byte[] Le(FileStream fs,int n){var r=new byte[n];int t=0;while(t<n){var ar=fs.BeginRead(r,t,n-t,null,null);if(!ar.AsyncWaitHandle.WaitOne(3000))return null;int k=fs.EndRead(ar);if(k<=0)return null;t+=k;}return r;}
+}
+'@
+$DnpMargem = 50
+$DnpTextos = @{ 0 = "pronta"; 1 = "imprimindo"; 500 = "esfriando a cabeça"; 510 = "esfriando o motor"; 900 = "em espera"; 1000 = "tampa aberta"; 1010 = "sem a caixa de aparas";
+    1100 = "o papel acabou"; 1200 = "a fita acabou"; 1300 = "papel enroscado"; 1400 = "erro na fita"; 1500 = "papel diferente do configurado"; 1600 = "erro nos dados" }
 
 # Quem imprime é um Chrome só deste programa (perfil C:\Eterna\chrome-impressao), aberto fora da tela com --kiosk-printing:
 # a foto sai igual à impressão pelo Chrome do Eterna (mesmo motor e mesma correção de cor) e a prévia acontece fora da vista.
@@ -33,9 +67,28 @@ function Anota($t) {
 
 function Padrao { (New-Object System.Drawing.Printing.PrinterSettings).PrinterName }
 
+# fila do Windows da impressora padrão vazia (nada sendo enviado pelo USB): só então o programa conversa com a DNP
+function FilaVazia { try { return -not @(Get-PrintJob -PrinterName (Padrao) -ErrorAction Stop).Count } catch { return $true } }
+
+# lê a DNP: $null sem DNP no USB ou sem resposta; senão @{status; texto; erro; mqty; restantes; vida}
+function DnpLer {
+    try {
+        $c = [EternaDnp]::Caminho(); if (-not $c) { return $null }
+        $st = [EternaDnp]::Cmd($c, "STATUS", ""); $mq = [EternaDnp]::Cmd($c, "INFO", "MQTY"); $vd = [EternaDnp]::Cmd($c, "MNT_RD", "COUNTER_LIFE")
+    } catch { return $null }
+    if ($null -eq $st -or $mq -notmatch '^MQTY(\d+)') { return $null }
+    $mqty = [int]$Matches[1]; $cod = 0; [void][int]::TryParse($st.Trim(), [ref]$cod)
+    $vida = $null; if ($vd -match '^CL(\d+)') { $vida = [int]$Matches[1] }
+    $tx = $DnpTextos[$cod]; if (-not $tx) { $tx = "código $cod" }
+    return @{ status = $cod; texto = $tx; erro = ($cod -ge 1000); mqty = $mqty; restantes = [Math]::Max(0, $mqty - $DnpMargem); vida = $vida }
+}
+function DnpJson($d) { if (-not $d) { return "null" }; return (ConvertTo-Json $d -Compress) }
+
 # $fotos: lista de @{ bytes = JPEG; deitada = $true/$false }. Mesma página de impressão do index.html (#print-root).
 function Imprime($fotos) {
     if (-not $Chrome) { throw "Chrome não encontrado" }
+    $antes = $null; if (FilaVazia) { $antes = DnpLer }
+    if ($antes -and $antes.erro) { throw ("A DNP avisa: " + $antes.texto) }
     $dir = Join-Path $Trabalho ([guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force $dir | Out-Null
     try {
@@ -57,6 +110,19 @@ function Imprime($fotos) {
         $p = Start-Process $Chrome -ArgumentList $arg -PassThru
         if (-not $p.WaitForExit(90000)) { Anota "Chrome da impressão não fechou em 90 s" }
         Start-Sleep -Milliseconds 500
+        if (-not $antes) { return $null }
+        # conferência pela DNP: a fila esvazia (o Windows entregou tudo), depois a DNP termina e o MQTY desce
+        $fim = (Get-Date).AddSeconds(60 + 25 * $fotos.Count); $d = $null
+        while ((Get-Date) -lt $fim) {
+            Start-Sleep -Milliseconds 1500
+            if (-not (FilaVazia)) { continue }
+            $d = DnpLer; if (-not $d) { continue }
+            if ($d.erro) { break }
+            if (($antes.mqty - $d.mqty) -ge $fotos.Count -and ($d.status -eq 0 -or $d.status -eq 900)) { break }
+        }
+        if (-not $d) { return @{ antes = $antes.mqty; vida_antes = $antes.vida; saiu = $null; conferido = $false; erro = $false; texto = "sem resposta da DNP" } }
+        $d.antes = $antes.mqty; $d.vida_antes = $antes.vida; $d.saiu = $antes.mqty - $d.mqty; $d.conferido = ($d.saiu -ge $fotos.Count -and -not $d.erro)
+        return $d
     } finally {
         Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -104,7 +170,8 @@ function Atende($c) {
     if ($metodo -eq "OPTIONS") { Responde $st 204 "" $origem $cors; return }
     if (-not $cors) { Responde $st 403 '{"ok":false,"erro":"origem"}' $origem $false; return }
     if ($metodo -eq "GET" -and $caminho -like "/status*") {
-        Responde $st 200 ('{"ok":true,"impressora":' + (ConvertTo-Json ([string](Padrao))) + '}') $origem $cors
+        $dn = $null; if (FilaVazia) { $dn = DnpLer }
+        Responde $st 200 ('{"ok":true,"impressora":' + (ConvertTo-Json ([string](Padrao))) + ',"dnp":' + (DnpJson $dn) + '}') $origem $cors
         return
     }
     if ($metodo -ne "POST" -or $caminho -ne "/imprimir") { Responde $st 404 '{"ok":false,"erro":"rota"}' $origem $cors; return }
@@ -131,9 +198,10 @@ function Atende($c) {
         }
         if (-not $imgs.Count -or $imgs.Count -gt $MaxFotos) { Responde $st 400 '{"ok":false,"erro":"fotos"}' $origem $cors; return }
         $imp = [string](Padrao)
-        Imprime $imgs
-        Anota ("venda {0}: {1} foto(s) em {2}" -f $j["venda"], $imgs.Count, $imp)
-        Responde $st 200 ('{"ok":true,"fotos":' + $imgs.Count + ',"impressora":' + (ConvertTo-Json $imp) + '}') $origem $cors
+        $dn = Imprime $imgs
+        $ext = ""; if ($dn) { $ext = " | DNP: contador {0} -> {1}, saiu {2}, restam {3}, vida {4}, {5}" -f $dn.antes, $dn.mqty, $dn.saiu, $dn.restantes, $dn.vida, $dn.texto }
+        Anota ("venda {0}: {1} foto(s) em {2}{3}" -f $j["venda"], $imgs.Count, $imp, $ext)
+        Responde $st 200 ('{"ok":true,"fotos":' + $imgs.Count + ',"impressora":' + (ConvertTo-Json $imp) + ',"dnp":' + (DnpJson $dn) + '}') $origem $cors
     } catch {
         Anota ("erro ao imprimir: {0}" -f $_.Exception.Message)
         Responde $st 500 ('{"ok":false,"erro":' + (ConvertTo-Json ([string]$_.Exception.Message)) + '}') $origem $cors

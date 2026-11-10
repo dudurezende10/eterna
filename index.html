@@ -1630,6 +1630,28 @@ const ROLO_CAP=700,ROLO_ALERTA=40,ROLO_SOBRA=60,IMP_ALERTA_MIN=10;
 // vende (venda 'c'), só para o posto deste aparelho (postoNome); com o rolo abaixo de ROLO_ALERTA aparece também "Troquei o rolo". Estoque (stock-swap,
 // estoque 'u') continua. Os dois caminhos passam por roloTrocar: SIM.stock, log, pvEvento('rolo') e auditLog('rolo_troca') com quem, posto e valor anterior.
 const roloDe=pn=>SIM.stock[pn]!=null?SIM.stock[pn]:ROLO_CAP;
+// ---------- rolo pela DNP (programa de impressão do posto, eterna-impressao.ps1) ----------
+// A DNP informa pelo firmware: mqty (contador do rolo, com margem de 50), restantes (mqty - 50), vida (folhas cortadas desde a fábrica) e status.
+// Cada leitura que muda vai ao servidor (evento "rolo", origem leitura/troca; a de impressão vai no evento "impressao") para a auditoria
+// fotos vendidas x fotos registradas x folhas da DNP (métricas do dia: rolo por posto). A última leitura fica neste navegador por posto.
+const DNP_ULT='eterna.dnp.v1',DNP_LEIT_MS=5*60e3;
+function dnpLimpa(d,origem){if(!d||typeof d!=='object')return null;const n=k=>Number.isFinite(+d[k])&&d[k]!==null&&d[k]!==''?Math.round(+d[k]):null;
+  return {mqty:n('mqty'),antes:n('antes'),saiu:n('saiu'),restantes:n('restantes'),vida:n('vida'),vida_antes:n('vida_antes'),status:n('status'),texto:String(d.texto||'').slice(0,40),conferido:d.conferido===true,origem,em:now().toISOString()};}
+function dnpUlt(pn){try{return (JSON.parse(localStorage.getItem(DNP_ULT)||'{}')||{})[pn]||null;}catch(e){return null;}}
+function dnpGuarda(d){const pn=postoNome();try{const o=JSON.parse(localStorage.getItem(DNP_ULT)||'{}')||{};o[pn]=d;localStorage.setItem(DNP_ULT,JSON.stringify(o));}catch(e){}}
+// leitura sem impressão: rolo do Posto pelo número real; contador que sobe = rolo novo (troca registrada sozinha); vida que andou sem
+// impressão do Eterna aparece na auditoria como diferença
+async function dnpLer(){if(pontoModo()!=='posto'||state.impJob||dnpLer.on)return;dnpLer.on=true;dnpLer.t=Date.now();
+  try{const c=new AbortController();const t=setTimeout(()=>c.abort(),4000);const r=await fetch('http://127.0.0.1:8790/status',{signal:c.signal});clearTimeout(t);
+    const j=r.ok?await r.json():null;const d=j&&dnpLimpa(j.dnp,'leitura');if(!d||d.mqty==null)return;
+    const pn=postoNome(),u=dnpUlt(pn);const troca=!!(u&&u.mqty!=null&&d.mqty>u.mqty+5);if(troca)d.origem='troca';
+    if(u&&u.mqty===d.mqty&&u.vida===d.vida&&u.status===d.status)return; // nada mudou: não grava
+    simFresh();const de=SIM.stock[pn]!=null?SIM.stock[pn]:null;SIM.stock[pn]=d.restantes;dnpGuarda(d);saveSim();
+    pvEvento('rolo',pvDispId(),{capacidade:ROLO_CAP,posto:pn,de,dnp:d},{por:null});
+    if(troca){auditLog('rolo_troca','posto/'+pn,[{campo:'rolo (DNP)',de,para:d.restantes}],{posto:pn,porNome:'DNP'});toast(`Rolo novo em ${pn}: ${d.restantes} impressões`);}
+    if(d.status>=1000)toast(`A DNP de ${pn} avisa: ${d.texto}`);
+    render();}catch(e){}finally{dnpLer.on=false;}}
+setInterval(()=>{if(pontoModo()==='posto'&&!state.impJob&&Date.now()-(dnpLer.t||0)>DNP_LEIT_MS)dnpLer();},15000);
 // v96 (revisão): só num aparelho configurado como posto (pontoModo 'posto'); fora dele postoNome() devolve 'Caixa 1' e o selo é só informação.
 function roloSelo(cls,semTroquei){const pn=postoNome();const v=roloDe(pn);const baixo=v<ROLO_ALERTA;const tx=`Rolo: ${v} de ${ROLO_CAP}`;
   if(!can('venda','c')||pontoModo()!=='posto')return `<span class="pill ${baixo?'bad':cls||'neutral'}">${tx}</span>`;
@@ -1762,7 +1784,13 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
     document.getElementById('print-root')?.remove();render();return;}
   if(pontoModo()==='posto'){ // programa de impressão do posto (eterna-impressao.ps1): a foto vai direto para a DNP, sem a prévia do Chrome
     job.fase='imprimindo';render();const rl=await impLocal(impJpegs(),s.saleNo||card);if(state.impJob!==job)return;
-    if(rl){document.getElementById('print-root')?.remove();if(rl.ok){job.fase='impresso';toast(`Enviado para ${rl.impressora}: ${rl.fotos} ${rl.fotos===1?'foto':'fotos'}`);}else{job.fase='erro';toast('A impressora deste posto não imprimiu: '+String(rl.erro||'falha').slice(0,140));}render();return;}}
+    if(rl){document.getElementById('print-root')?.remove();
+      if(rl.ok){job.fase='impresso';job.dnp=dnpLimpa(rl.dnp,'impressao');
+        // a DNP confirmou que as folhas saíram: o Eterna registra sozinho (sem "Saiu certo")
+        if(job.dnp&&job.dnp.conferido){render();impOk(card);return;}
+        if(job.dnp&&job.dnp.status>=1000)toast(`A DNP avisa: ${job.dnp.texto}. Resolva na impressora e marque se saiu.`);
+        else toast(`Enviado para ${rl.impressora}: ${rl.fotos} ${rl.fotos===1?'foto':'fotos'}`);}
+      else{job.fase='erro';toast('A impressora deste posto não imprimiu: '+String(rl.erro||'falha').slice(0,140));}render();return;}}
   document.body.classList.add('pr-on');job.fase='imprimindo';
   const fim=()=>{if(job.fase!=='imprimindo')return;job.fase='impresso';document.body.classList.remove('pr-on');render();}; // depois do afterprint, um print() qualquer volta a imprimir a tela
   window.addEventListener('afterprint',fim,{once:true});try{window.print();}catch(e){}setTimeout(fim,0);}
@@ -1773,7 +1801,7 @@ function impJpegs(){const imgs=[];for(const im of document.querySelectorAll('#pr
 // programa de impressão do posto em 127.0.0.1:8790. null = não está rodando (o Eterna imprime pelo Chrome); senão a resposta dele
 async function impLocal(imgs,venda){const u='http://127.0.0.1:8790';
   try{const c=new AbortController();const t=setTimeout(()=>c.abort(),1500);const r=await fetch(u+'/status',{signal:c.signal});clearTimeout(t);if(!r.ok)return null;}catch(e){return null;}
-  try{const c=new AbortController();const t=setTimeout(()=>c.abort(),90000);const r=await fetch(u+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:String(venda),imagens:imgs}),signal:c.signal});clearTimeout(t);return await r.json();}
+  try{const c=new AbortController();const t=setTimeout(()=>c.abort(),300000);const r=await fetch(u+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:String(venda),imagens:imgs}),signal:c.signal});clearTimeout(t);return await r.json();}
   catch(e){return {ok:false,erro:'sem resposta do programa de impressão'};}}
 const impReMax=s=>{const f=((s.impressao&&s.impressao.feitas)||[]).length;return Math.max(1,Math.min(+s.prints||f,f));}; // até prints por reimpressão
 // "Saiu certo": baixa do rolo uma vez por foto. Primeira impressão: só as que ainda não estavam feitas (com todas feitas, a venda vira impressa).
@@ -1783,21 +1811,21 @@ function impOk(card){const job=state.impJob;simFresh();const s=SIM.sessions[card
   if(!im||(job.re?im.estado!=='impressa':im.estado!=='pendente')){toast('Esta impressão já foi registrada');state.impJob=null;render();return;}
   const antes=JSON.stringify(SIM);const u=state.user;const at=now().toISOString();const r=job.res;const pn=postoNome();im.feitas=im.feitas||[];
   const novas=job.re?r.ok.slice():r.ok.filter(k=>!im.feitas.includes(k));if(!job.re)im.feitas.push(...novas);
-  SIM.stock[pn]=Math.max(0,(SIM.stock[pn]!=null?SIM.stock[pn]:ROLO_CAP)-novas.length);
-  const reg={em:at,porNome:u.name,resultado:'ok',n:novas.length,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,fotos:novas,semFoto:job.re?0:(im.semFoto||0),posto:pn,avisos:r.avisos.map(a=>a.aviso),falhasIA:r.falhasIA.slice()};s.impressoes=s.impressoes||[];s.impressoes.push(reg);
+  const dnp=job.dnp||null;SIM.stock[pn]=dnp&&dnp.restantes!=null?dnp.restantes:Math.max(0,(SIM.stock[pn]!=null?SIM.stock[pn]:ROLO_CAP)-novas.length);if(dnp)dnpGuarda(dnp);
+  const reg={dnp,em:at,porNome:u.name,resultado:'ok',n:novas.length,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,fotos:novas,semFoto:job.re?0:(im.semFoto||0),posto:pn,avisos:r.avisos.map(a=>a.aviso),falhasIA:r.falhasIA.slice()};s.impressoes=s.impressoes||[];s.impressoes.push(reg);
   const tudo=job.re||im.feitas.length>=(im.alvo||0);if(!job.re&&tudo){im.estado='impressa';im.n=im.feitas.length;im.em=at;im.porNome=u.name;}
   log(`${job.re?'Reimpressão':'Impressão'} ${s.saleNo||card}: ${novas.length} ${novas.length===1?'foto':'fotos'} 10×15 em ${pn}${job.re?' ('+job.re.motivo+')':''}`);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return;}
-  pvEvento('impressao',s.vendaId,{resultado:'ok',fotos:novas,n:novas.length,reimpressao:!!job.re,motivo:reg.motivo,semFoto:reg.semFoto,avisos:reg.avisos});
+  pvEvento('impressao',s.vendaId,{resultado:'ok',fotos:novas,n:novas.length,reimpressao:!!job.re,motivo:reg.motivo,semFoto:reg.semFoto,avisos:reg.avisos,dnp});
   state.impJob=null;state.impSel[card]=null;document.body.classList.remove('pr-on');
   toast(job.re?'Reimpressão registrada.':tudo?'Impressão registrada.':`Faltam ${impFalta(s)} ${impFalta(s)===1?'foto':'fotos'}: imprima de novo.`);render();}
 // "Não saiu": registra a tentativa (com a lista exata), não baixa estoque; a primeira impressão continua pendente
 function impFalha(card){const job=state.impJob;simFresh();const s=SIM.sessions[card];const im=s&&s.impressao;
   if(!job||job.card!==card||job.fase!=='impresso'||!im){toast('Imprima antes de marcar');render();return;}
   const antes=JSON.stringify(SIM);const u=state.user;const fotos=(job.res&&job.res.ok||job.fotos).slice();
-  s.impressoes=s.impressoes||[];s.impressoes.push({em:now().toISOString(),porNome:u.name,resultado:'nao_saiu',n:0,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,fotos,semFoto:job.re?0:(im.semFoto||0),posto:postoNome()});
+  const dnp=job.dnp||null;if(dnp)dnpGuarda(dnp);s.impressoes=s.impressoes||[];s.impressoes.push({dnp,em:now().toISOString(),porNome:u.name,resultado:'nao_saiu',n:0,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,fotos,semFoto:job.re?0:(im.semFoto||0),posto:postoNome()});
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return;}
-  pvEvento('impressao',s.vendaId,{resultado:'nao_saiu',fotos,n:fotos.length,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,semFoto:job.re?0:(im.semFoto||0)});
+  pvEvento('impressao',s.vendaId,{dnp,resultado:'nao_saiu',fotos,n:fotos.length,reimpressao:!!job.re,motivo:job.re?job.re.motivo:null,semFoto:job.re?0:(im.semFoto||0)});
   state.impJob=null;document.body.classList.remove('pr-on');toast('Registrado. Confira a impressora e imprima de novo.');render();}
 const IMP_MOTIVOS=[['falhou','Falhou'],['copia','Outra cópia'],['cor','Cor'],['outro','Outro']];
 // reimpressão: o vendedor escolhe quais das fotos já impressas (até prints por vez) e o motivo; imprime e depois marca "Saiu certo" ou "Não saiu"
@@ -5989,7 +6017,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,priceOf,lojaMaisIds,EQ,TE,T,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais};
+window.ETERNA={dnpLimpa,dnpLer,dnpUlt,impOk,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,priceOf,lojaMaisIds,EQ,TE,T,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais};
 })();
 </script>
 
