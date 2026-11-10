@@ -80,7 +80,7 @@ try{
   // 3: uma por fundo, com a base indicada
   const it=await pg.evaluate(()=>({ai:ETERNA.lojaAI('LPTIACAM1').map(x=>x.bg+'='+x.id+'@'+x.ses),items:ETERNA.lojaItems('LPTIACAM1').map(x=>x.t+':'+x.id),fotos:ETERNA.lojaFotos('LPTIACAM1').map(p=>p.id),on:ETERNA.bgOn()}));
   const f1='ag_'+A[0],f2='ag_'+A[1];
-  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2};
+  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2,telao:f2};
   ok(it.ai.length===5&&new Set(it.ai.map(x=>x.split('=')[0])).size===5&&it.ai.every(x=>{const [bg,r]=x.split('=');return esper[bg]===r.split('@')[0]&&r.endsWith('@LPTIACAM1');}),'3: 5 montagens, 1950 e Pódio na foto 1, as outras na foto 2: '+J(it.ai));
   ok(it.fotos.length===6&&!it.fotos.includes(f1)&&!it.fotos.includes(f2),'2: Checkout com as 6 fotos normais: '+J(it.fotos));
   ok(it.items.filter(x=>x.startsWith('ph:')).length===6&&!it.items.includes('ph:'+f1)&&!it.items.includes('ph:'+f2),'2: as bases nunca como foto na revisão: '+J(it.items));

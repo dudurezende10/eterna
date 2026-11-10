@@ -73,7 +73,7 @@ try{
   num.montagens_ms=Date.now()-t0;
   ok(pronto.n===5&&pronto.ok===5&&num.montagens_ms<=4000,'19: as 5 montagens prontas em até 4 s (agente de verdade): '+J({...pronto,ms:num.montagens_ms}));
   const it=await pg.evaluate(c=>({ai:ETERNA.lojaAI(c).map(x=>x.bg+'='+x.id),items:ETERNA.lojaItems(c).map(x=>x.t+':'+x.id),fotos:ETERNA.lojaFotos(c).map(p=>p.id),step:ETERNA.state.kiosk.step,nSes:ETERNA.lojaCart(c).nSes}),xS.card);
-  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2};
+  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2,telao:f2};
   ok(it.ai.length===5&&it.ai.every(x=>{const [bg,id]=x.split('=');return esper[bg]===id;}),'3: 5 montagens: 1950 e Pódio na foto 1, Campeão, Mirante e Túnel na foto 2: '+J(it.ai));
   ok(it.fotos.length===6&&!it.items.includes('ph:'+f1)&&!it.items.includes('ph:'+f2)&&it.items.filter(x=>x.startsWith('ph:')).length===6,'2: Checkout por código sem as bases como foto: '+J(it.items));
   ok(it.nSes===6,'2: contagem do "Todas" = 6: '+it.nSes);
