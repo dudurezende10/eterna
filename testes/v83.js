@@ -200,7 +200,10 @@ try{
   await A.reload();await A.waitForTimeout(500);await A.evaluate(()=>{ETERNA.state.view='posto';ETERNA.render();});s24=await sim(A);
   ok(s24.stock['Caixa 1']===est23-5&&!(await A.$('#print-root')),'24: repetir ou recarregar não baixa de novo: '+s24.stock['Caixa 1']);
   // reimpressão (R4): o vendedor escolhe a foto; "Não saiu" não baixa; "Saiu certo" baixa 1 e grava a lista exata; entra no CSV
-  const reimp=async(k,res)=>{await A.click('[data-act="imp-reprint"][data-card="LPV83A"]');await A.waitForTimeout(100);await A.click(`[data-act="imp-repick"][data-card="LPV83A"][data-k="${k}"]`);await A.click('[data-act="imp-motivo"][data-m="falhou"]');
+  const reimp=async(k,res)=>{await A.click('[data-act="imp-reprint"][data-card="LPV83A"]');await A.waitForTimeout(100);
+    // abre com todas as impressas marcadas (um clique só); aqui o vendedor desmarca as outras e fica só com k
+    for(const o of await A.evaluate(()=>ETERNA.state.impRe.sel.slice()))if(o!==k)await A.click(`[data-act="imp-repick"][data-card="LPV83A"][data-k="${o}"]`);
+    if(!(await A.evaluate(()=>ETERNA.state.impRe.sel.slice())).includes(k))await A.click(`[data-act="imp-repick"][data-card="LPV83A"][data-k="${k}"]`);await A.click('[data-act="imp-motivo"][data-m="falhou"]');
     await A.evaluate(()=>{window.print=()=>{};});await A.click('[data-act="imp-reprint-ok"][data-card="LPV83A"]');await A.waitForSelector(`[data-act="${res}"][data-card="LPV83A"]`,{timeout:15000});
     const r=await raiz(A);ok((await sim(A)).stock['Caixa 1']===est23-5-(res==='imp-falha'?0:0),'24: a reimpressão não baixa antes do Saiu certo');await A.click(`[data-act="${res}"][data-card="LPV83A"]`);await A.waitForTimeout(250);return r;};
   const rf=await reimp('ag_aaaa00000003','imp-falha');s24=await sim(A);
@@ -209,7 +212,8 @@ try{
   const re24=(s24.sessions.LPV83A.impressoes||[]).filter(x=>x.reimpressao&&x.resultado==='ok');
   ok(rk.length===1&&s24.stock['Caixa 1']===est23-6&&re24.length===1&&re24[0].n===1&&re24[0].motivo==='falhou'&&J(re24[0].fotos)===J(['ag_aaaa00000003']),'24: reimpressão de 1 (falhou) com a lista exata: '+J({e:s24.stock['Caixa 1'],re24}));
   // limite: até prints (5) por reimpressão; a grade só mostra as já impressas
-  await A.click('[data-act="imp-reprint"][data-card="LPV83A"]');await A.waitForTimeout(80);ok(await A.evaluate(()=>document.querySelectorAll('[data-act="imp-repick"][data-card="LPV83A"]').length)===5,'24: grade da reimpressão com as 5 impressas');await A.click('[data-act="imp-reprint-no"]');
+  await A.click('[data-act="imp-reprint"][data-card="LPV83A"]');await A.waitForTimeout(80);ok(await A.evaluate(()=>document.querySelectorAll('[data-act="imp-repick"][data-card="LPV83A"]').length)===5,'24: grade da reimpressão com as 5 impressas');
+  ok(await A.evaluate(()=>ETERNA.state.impRe.sel.length===5&&!document.querySelector('[data-act="imp-reprint-ok"][data-card="LPV83A"]').disabled),'24: reimpressão abre com as 5 marcadas e o botão ativo');await A.click('[data-act="imp-reprint-no"]');
   const csv=await A.evaluate(()=>ETERNA.salesCSV(ETERNA.allSales()));const hdr=csv.split('\n')[0];const lin=csv.split('\n').find(l=>l.includes('LPV83A'))||'';
   ok(/;"?posto"?;"?pagamento_ref"?;"?impressao"?$/.test(hdr)&&/reimpressão 1 \(falhou\)/.test(lin)&&lin.includes('445566')&&!lin.includes('@'),'24: CSV com posto;pagamento_ref;impressao e a reimpressão: '+J({hdr:hdr.slice(-60),lin:lin.slice(-160)}));
   // "Não saiu": volta a pendente sem baixar

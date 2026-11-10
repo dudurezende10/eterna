@@ -5451,7 +5451,8 @@ document.addEventListener('click',e=>{
     case 'imp-print':impImprimir(d.card);break;
     case 'imp-ok':impOk(d.card);break;
     case 'imp-falha':impFalha(d.card);break;
-    case 'imp-reprint':state.impRe={card:d.card,sel:[],motivo:null};render();break;
+    case 'imp-reprint':{const s=SIM.sessions[d.card];const feitas=new Set((s&&s.impressao&&s.impressao.feitas)||[]); // já vem com as fotos impressas marcadas (até o limite): reimprimir é um clique só (Ronaldo, 10/11)
+      state.impRe={card:d.card,sel:s?impFotos(s).todas.filter(x=>feitas.has(x.k)).map(x=>x.k).slice(0,impReMax(s)):[],motivo:null};render();break;}
     case 'imp-repick':{const re=state.impRe;const s=SIM.sessions[d.card];if(!re||re.card!==d.card||!s)break;const max=impReMax(s);if(re.sel.includes(d.k))re.sel=re.sel.filter(k=>k!==d.k);else if(re.sel.length>=max){toast(`No máximo ${max} por reimpressão`);break;}else re.sel.push(d.k);render();break;}
     case 'imp-motivo':if(state.impRe){state.impRe.motivo=d.m;render();}break;
     case 'imp-reprint-no':state.impRe=null;render();break;
