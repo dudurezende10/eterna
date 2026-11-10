@@ -670,7 +670,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .kpi{font-family:var(--display);font-size:28px;line-height:1}
 .hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
 /* v97: Laboratório, Chute a gol: prévia das placas (preta, letras brancas e amarelas, bola) */
-.placas-gol{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-top:14px}
+.placas-gol{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-top:14px;align-items:stretch}
 .placa-gol{margin:0;display:flex;flex-direction:column;gap:6px}
 .placa-gol .pl{background:#151515;color:#fff;border-radius:12px;overflow:hidden}
 .placa-gol .pl-txt{padding:20px 14px 6px;display:flex;flex-direction:column;align-items:center;text-align:center;font-family:Impact,"Arial Narrow Bold","Arial Black",sans-serif;font-weight:800;line-height:1.05;letter-spacing:.02em;text-transform:uppercase;min-height:118px;justify-content:center}
@@ -3860,14 +3860,14 @@ const CHUTE_PLACAS=[
  {l:'pt',n:'Português',a:['FIZ UM GOL','NO'],y:'MARACANÃ!',b:[]},
  {l:'en',n:'Inglês',a:['I SCORED','A GOAL AT'],y:'MARACANÃ!',b:[]},
  {l:'es',n:'Espanhol',a:['¡MARQUÉ UN GOL','EN EL'],y:'MARACANÃ!',b:[]},
- {l:'fr',n:'Francês',a:['J’AI MARQUÉ','UN BUT AU'],y:'MARACANÃ !',b:[]},
+ {l:'fr',n:'Francês',a:['J’AI MARQUÉ','UN BUT AU'],y:'MARACANÃ\u00A0!',b:[]},
  {l:'de',n:'Alemão',a:['ICH HABE IM'],y:'MARACANÃ',b:['EIN TOR GESCHOSSEN!']},
 ];
 const BOLA_SVG='<svg class="bola" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="#fff" stroke="#111" stroke-width="1.5"/><path d="M20 12l7 5-2.7 8.3h-8.6L13 17z" fill="#111"/><path d="M20 2v10M27 17l9-3M24.3 25.3l5.5 8M15.7 25.3l-5.5 8M13 17l-9-3" stroke="#111" stroke-width="1.5" fill="none"/></svg>';
 function chutePlaca(p){return `<figure class="placa-gol" lang="${p.l}"><div class="pl"><div class="pl-txt">${p.a.map(t=>`<span class="w">${esc(t)}</span>`).join('')}<span class="y">${esc(p.y)}</span>${p.b.map(t=>`<span class="w">${esc(t)}</span>`).join('')}</div><div class="pl-bola"><i></i>${BOLA_SVG}<i></i></div></div><figcaption>${esc(p.l.toUpperCase())} · ${esc(p.n)}</figcaption></figure>`;}
 function vChuteAGol(){
   const li=xs=>`<div class="check">${xs.map(f=>`<div><span class="dot"></span><span>${esc(f)}</span></div>`).join('')}</div>`;
-  return `<div class="head"><div><div class="eyebrow">Novo produto · em teste</div><h1>Chute a gol</h1></div><div class="row"><span class="pill">Em teste</span></div></div>
+  return `<div class="head"><div><div class="eyebrow">Novo produto · em teste</div><h1>Chute a gol</h1></div></div>
   <div class="hero"><button class="bg" data-act="zoom-img" data-src="img/lab/chute-a-gol-ref.jpg" data-cap="Referência do Chute a gol (arte do Eduardo; na placa vale Maracanã com til)"><img src="img/lab/chute-a-gol-ref.jpg" alt="Referência: cliente com o goleiro em frente à trave, segurando a placa"></button>
     <div class="panel"><h2>O que é</h2><div class="note">Depois do chute a gol no gramado, o cliente (sozinho, casal ou família) tira uma foto com o goleiro da equipe em frente à trave. O cliente segura a placa preta "Fiz um gol no Maracanã" na língua dele e a bola; o goleiro, de uniforme verde e luvas, faz o polegar para cima.</div>
     <div class="note">A imagem ao lado é a arte de referência do Eduardo. Nela a placa saiu com MARACAÑA e MARACANÁ, que está errado: o nome é sempre Maracanã, com til no a, em todas as línguas.</div></div></div>
