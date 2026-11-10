@@ -1,8 +1,8 @@
-# Eterna: impressão direta na DNP deste posto, sem a prévia do Chrome.
+﻿# Eterna: impressão direta na DNP deste posto, sem a prévia do Chrome.
 #
 # Roda escondido no posto (atalho na inicialização do Windows, criado pelo preparar-posto-eterna.cmd).
 # Escuta só em 127.0.0.1:8790; o Posto de venda manda as fotos já montadas (JPEG) e este script imprime
-# na impressora padrão (a DNP), no papel 4x6, sem margem. Só aceita pedidos do endereço do Eterna (ORIGENS).
+# na impressora padrão (a DNP) por um Chrome escondido, igual à impressão do Eterna. Só aceita pedidos do endereço do Eterna (ORIGENS).
 # Se este script não estiver rodando, o Eterna imprime pelo Chrome (--kiosk-printing), como antes.
 #   GET  /status    -> {ok, impressora}
 #   POST /imprimir  {venda, imagens: ["data:image/jpeg;base64,..."]} -> {ok, fotos, impressora}
@@ -19,43 +19,48 @@ $MaxFotos = 20
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Web.Extensions
 
+# Quem imprime é um Chrome só deste programa (perfil C:\Eterna\chrome-impressao), aberto fora da tela com --kiosk-printing:
+# a foto sai igual à impressão pelo Chrome do Eterna (mesmo motor e mesma correção de cor) e a prévia acontece fora da vista.
+# Imprimir direto pelo System.Drawing saía pálido na DNP (10/11), por isso não é usado.
+$Chrome = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe", "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe") |
+    Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+$Perfil = "C:\Eterna\chrome-impressao"
+$Trabalho = "C:\Eterna\impressao"
+
 function Anota($t) {
     try { Add-Content -Path $Log -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $t) -Encoding UTF8 } catch {}
 }
 
 function Padrao { (New-Object System.Drawing.Printing.PrinterSettings).PrinterName }
 
-function Imprime($imgs) {
-    $pd = New-Object System.Drawing.Printing.PrintDocument
-    $pd.PrintController = New-Object System.Drawing.Printing.StandardPrintController   # sem janela de progresso
-    $pd.DocumentName = "Eterna"
-    $papel = $pd.PrinterSettings.PaperSizes | Where-Object { $_.PaperName -match "4\s*x\s*6" } |
-        Sort-Object { if ($_.PaperName -match "^\s*PR") { 0 } else { 1 } } | Select-Object -First 1
-    if ($papel) { $pd.DefaultPageSettings.PaperSize = $papel }
-    $pd.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
-    $pd.DefaultPageSettings.Landscape = $false
-    $pd.OriginAtMargins = $false
-    $script:lista = $imgs
-    $script:i = 0
-    $pd.add_PrintPage({
-        param($s, $e)
-        $img = $script:lista[$script:i]
-        $script:i++
-        $W = [double]$e.PageBounds.Width
-        $H = [double]$e.PageBounds.Height
-        if (($img.Width -gt $img.Height) -ne ($W -gt $H)) { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipNone) }
-        $k = [Math]::Max($W / $img.Width, $H / $img.Height) * 1.01      # cobre o papel inteiro, com 1% de sobra: sem borda branca
-        $w = $img.Width * $k
-        $h = $img.Height * $k
-        $x = ($W - $w) / 2 - $e.PageSettings.HardMarginX                 # a origem do desenho é a área imprimível, não a borda do papel
-        $y = ($H - $h) / 2 - $e.PageSettings.HardMarginY
-        $e.Graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-        $e.Graphics.DrawImage($img, [single]$x, [single]$y, [single]$w, [single]$h)
-        $e.HasMorePages = $script:i -lt $script:lista.Count
-    })
-    try { $pd.Print() } finally { $pd.Dispose() }
+# $fotos: lista de @{ bytes = JPEG; deitada = $true/$false }. Mesma página de impressão do index.html (#print-root).
+function Imprime($fotos) {
+    if (-not $Chrome) { throw "Chrome não encontrado" }
+    $dir = Join-Path $Trabalho ([guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    try {
+        $pgs = ""
+        for ($i = 0; $i -lt $fotos.Count; $i++) {
+            [IO.File]::WriteAllBytes((Join-Path $dir "f$i.jpg"), $fotos[$i].bytes)
+            $pgs += '<div class="pg' + $(if ($fotos[$i].deitada) { " land" } else { "" }) + '"><div class="box"><img src="f' + $i + '.jpg"></div></div>'
+        }
+        $html = '<!doctype html><meta charset="utf-8"><style>@page{margin:0}html,body{margin:0;padding:0;background:#fff}' +
+            '.pg{width:100vw;height:100vh;position:relative;overflow:hidden;break-after:page;page-break-after:always}.pg:last-child{break-after:auto;page-break-after:auto}' +
+            '.box{position:absolute;left:0;top:0;width:100vw;height:100vh;overflow:hidden}.pg.land .box{width:100vh;height:100vw;left:50%;top:50%;transform:translate(-50%,-50%) rotate(90deg)}' +
+            'img{display:block;width:100%;height:100%;object-fit:cover}</style>' + $pgs +
+            '<script>var n=0,ims=document.images;function vai(){window.addEventListener("afterprint",function(){setTimeout(function(){window.close()},300)});window.print();}' +
+            'for(var k=0;k<ims.length;k++){if(ims[k].complete)n++;else ims[k].onload=ims[k].onerror=function(){if(++n===ims.length)vai()}}if(n===ims.length)vai();</script>'
+        [IO.File]::WriteAllText((Join-Path $dir "imprimir.html"), $html, (New-Object Text.UTF8Encoding($false)))
+        $url = "file:///" + ((Join-Path $dir "imprimir.html") -replace "\\", "/")
+        $arg = "--user-data-dir=`"$Perfil`" --kiosk-printing --no-first-run --no-default-browser-check --disable-extensions --allow-file-access-from-files " +
+            "--window-position=-32000,-32000 --window-size=500,400 `"$url`""
+        $p = Start-Process $Chrome -ArgumentList $arg -PassThru
+        if (-not $p.WaitForExit(90000)) { Anota "Chrome da impressão não fechou em 90 s" }
+        Start-Sleep -Milliseconds 500
+    } finally {
+        Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
-
 function Responde($st, $cod, $corpo, $origem, $cors) {
     $nomes = @{ 200 = "OK"; 204 = "No Content"; 400 = "Bad Request"; 403 = "Forbidden"; 404 = "Not Found"; 413 = "Payload Too Large"; 500 = "Internal Server Error" }
     $b = [Text.Encoding]::UTF8.GetBytes([string]$corpo)
@@ -120,7 +125,9 @@ function Atende($c) {
             $d = [string]$d
             if ($d -notmatch "^data:image/(jpeg|png);base64,") { continue }
             $bytes = [Convert]::FromBase64String($d.Substring($d.IndexOf(",") + 1))
-            $imgs += [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream(, $bytes)))
+            $im = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream(, $bytes)))   # só para validar o JPEG e ler a orientação
+            $imgs += @{ bytes = $bytes; deitada = ($im.Width -gt $im.Height) }
+            $im.Dispose()
         }
         if (-not $imgs.Count -or $imgs.Count -gt $MaxFotos) { Responde $st 400 '{"ok":false,"erro":"fotos"}' $origem $cors; return }
         $imp = [string](Padrao)
@@ -131,7 +138,7 @@ function Atende($c) {
         Anota ("erro ao imprimir: {0}" -f $_.Exception.Message)
         Responde $st 500 ('{"ok":false,"erro":' + (ConvertTo-Json ([string]$_.Exception.Message)) + '}') $origem $cors
     } finally {
-        foreach ($im in $imgs) { $im.Dispose() }
+        $imgs = $null
     }
 }
 
