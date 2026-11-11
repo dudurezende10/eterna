@@ -49,7 +49,7 @@ const medeQR=pg=>pg.evaluate(()=>{const q=document.querySelector('#lqr');if(!q)r
   const im=[...q.querySelectorAll('img,canvas')].find(e=>{const r=e.getBoundingClientRect();return r.width>0&&getComputedStyle(e).display!=='none';});
   const card=q.closest('.lj-qrcard');const foto=card&&card.querySelector('.lj-qrfoto');const cs=getComputedStyle(q);const dpr=devicePixelRatio||1;
   return {box:R(q),img:R(im),nat:im?(im.tagName==='IMG'?im.naturalWidth:im.width):0,dpr,mod:+q.dataset.mod||0,pad:Math.min(...['Top','Right','Bottom','Left'].map(k=>parseFloat(cs['padding'+k]))),bg:cs.backgroundColor,
-    foto:R(foto),cod:R(card&&card.querySelector('.lj-qrcode')),dl:R(card&&card.querySelector('.lj-qrcol>span')),com:!!(card&&card.classList.contains('lj-qrcom')),W:innerWidth,H:innerHeight};});
+    foto:R(foto),cod:R(card&&card.querySelector('.lj-qrcode')),dl:R(card&&card.querySelector('.lj-qrcol>.lj-qrinst')),inst:[...(card?card.querySelectorAll('.lj-qrcol>.lj-qrinst'):[])].map(R),com:!!(card&&card.classList.contains('lj-qrcom')),W:innerWidth,H:innerHeight};});
 const confereQR=async(pg,w,h,rot)=>{const m=await medeQR(pg);if(!m||!m.img){ok(false,`${w}×${h} ${rot}: QR não desenhado`);return null;}
   const lado=Math.min(m.img.width,m.img.height),caixa=Math.min(m.box.width,m.box.height),min=QR_MIN[w+'×'+h]||(w>=900?280:0);const prob=[];
   if(lado+0.5<min||caixa+0.5<min)prob.push(`QR ${Math.round(lado)} px (caixa ${Math.round(caixa)}) < ${min}`);
@@ -58,13 +58,14 @@ const confereQR=async(pg,w,h,rot)=>{const m=await medeQR(pg);if(!m||!m.img){ok(f
   if(m.com&&!m.foto)prob.push('foto sumiu do card');
   if(!m.mod||m.pad+0.5<4*lado/m.mod)prob.push(`margem branca ${m.pad.toFixed(1)} px < 4 módulos (${m.mod})`);if(!/255, 255, 255/.test(m.bg))prob.push('margem não é branca: '+m.bg);
   if(Math.abs(m.nat-Math.round(lado*m.dpr))>1)prob.push(`desenho ${m.nat} px reescalado para ${Math.round(lado)}×${m.dpr}`);
-  if(!m.cod||m.cod.top<m.box.bottom-0.5)prob.push('"Seu código" não está embaixo do QR');if(!m.dl||m.dl.top<(m.cod||m.box).bottom-0.5)prob.push('"Baixe suas fotos" não está embaixo');
+  // 2a1cd80 (Ronaldo, 11/11): embaixo do QR vêm a instrução da câmera, "ou acesse eterna.photo/g e digite o código" e o código, nessa ordem
+  if(!m.dl||m.dl.top<m.box.bottom-0.5)prob.push('instrução da câmera não está embaixo do QR');if(!m.cod||m.cod.top<m.inst[m.inst.length-1].bottom-0.5)prob.push('"Seu código" não está embaixo das instruções');
   if(m.box.left<0||m.box.top<0||m.box.right>m.W+0.5||m.box.bottom>m.H+0.5)prob.push('QR sai da tela');
   ok(!prob.length,`${w}×${h} ${rot}: `+prob.join(' · '));return {lado:Math.round(lado),caixa:Math.round(caixa),mod:m.mod,pad:Math.round(m.pad),nat:m.nat,foto:m.foto?Math.round(m.foto.width)+'×'+Math.round(m.foto.height):'-'};};
 const medidasQR={};
 const ar=async pg=>pg.evaluate(()=>{const i=document.querySelector('#lj-lb .lj-lbimg');if(!i)return null;const r=i.getBoundingClientRect();return {w:r.width,h:r.height,top:r.top,left:r.left,H:innerHeight,W:innerWidth};});
 // P2: nada de preço, pacote ou forma de pagamento no Checkout antes do caixa escolher
-const semPreco=pg=>pg.evaluate(()=>{const t=document.querySelector('.lj').innerText;const nomes=['Pacote','Maracanã Mais','Tribuna de Honra','Gramado','Zona Mista','Arquibancada','Foto adicional','Cartão','PIX','Dinheiro'];
+const semPreco=pg=>pg.evaluate(()=>{const t=document.querySelector('.lj').innerText;const nomes=['Pacote','PACOTE','Todas as fotos digitais','Acima de 15','fotos digitais e impressas','Maracanã Mais','Tribuna de Honra','Gramado','Zona Mista','Arquibancada','Foto adicional','Cartão','PIX','Dinheiro']; // v98.1: nomes da Imply também
   return {rs:/R\$/.test(t),nomes:nomes.filter(x=>t.includes(x)),el:!!document.querySelector('.lj .lj-pkg,.lj .lj-pay,.lj .lj-pays,.lj .lj-total,.lj [data-act="loja-paym"],.lj [data-act="loja-pkg"]')};});
 
 const L=await nova(ctx,'checkout',{width:1920,height:1080});await L.goto(U+'#loja');await L.evaluate(()=>localStorage.removeItem('eterna.sim.v1'));await L.reload();await L.waitForTimeout(800);
@@ -187,7 +188,7 @@ ok(await L.evaluate(id=>!JSON.parse(localStorage.getItem('eterna.ponto.fila.v1')
 // Posto (1366×768): fotos escolhidas, pacotes e meios
 await V.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});await V.waitForTimeout(400);
 const pv=await V.evaluate(id=>{const it=document.querySelector(`[data-pend="${id}"]`);return it?{ths:it.querySelectorAll('.pend-th').length,pkgs:[...it.querySelectorAll('[data-act="pend-pkg"]')].map(b=>b.dataset.p),meios:[...it.querySelectorAll('[data-act="pend-meio"]')].map(b=>b.dataset.m),conf:!!it.querySelector('[data-act="pend-pos"],[data-act="din-confirm"]')}:null;},id1);
-ok(pv&&pv.ths===2&&pv.pkgs.length===6&&pv.meios.join()==='cartao,pix,dinheiro'&&!pv.conf,'P3: Posto mostra as 2 fotos, os 6 pacotes e os 3 meios, sem confirmar antes da escolha: '+JSON.stringify(pv));
+ok(pv&&pv.ths===2&&pv.pkgs.length===9/* v98: os 9 pacotes de fotos da Imply (sem adicional, Figurinha e Porta-retrato) */&&pv.meios.join()==='cartao,pix,dinheiro'&&!pv.conf,'P3: Posto mostra as 2 fotos, os 9 pacotes e os 3 meios, sem confirmar antes da escolha: '+JSON.stringify(pv));
 const ideal=await V.evaluate(()=>ETERNA.lojaIdeal(2).pkg);
 await V.click(`[data-pend="${id1}"] [data-act="pend-pkg"][data-p="${ideal}"]`);await V.waitForTimeout(400);
 await V.locator(`[data-pend="${id1}"]`).scrollIntoViewIfNeeded();await shot(V,'v96-posto.png');
@@ -196,7 +197,7 @@ for(let i=0;i<20;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.st
 st=await L.evaluate(()=>document.querySelector('.lj').innerText.replace(/\s+/g,' '));
 ok(st.replace(/ /g,' ').includes('R$ '+esperado.total),'P4: cliente vê o valor do pacote: '+st.slice(0,200));
 ok(/Valor a pagar/.test(st)&&/O atendente vai informar a forma de pagamento/.test(st)&&/Ver minhas fotos/.test(st)&&/2 fotos/.test(st),'P4/7: "Valor a pagar", "2 fotos", "O atendente vai informar a forma de pagamento" e "Ver minhas fotos": '+st.slice(0,200));
-const nomes=await L.evaluate(()=>{const t=document.querySelector('.lj').innerText;return ['Pacote','Maracanã','Gramado','Zona Mista','Arquibancada','Tribuna','adicional','R$ 35','Seu código','Voltar às fotos'].filter(x=>t.includes(x));});
+const nomes=await L.evaluate(()=>{const t=document.querySelector('.lj').innerText;return ['Pacote','PACOTE','Todas as fotos digitais','fotos digitais e impressas','Maracanã','Gramado','Zona Mista','Arquibancada','Tribuna','adicional','R$ 35','Seu código','Voltar às fotos'].filter(x=>t.includes(x));});
 ok(!nomes.length,'7: a tela do valor não mostra nome de pacote, preço unitário, código nem outros botões: '+nomes.join(','));
 ok(await L.evaluate(()=>[...document.querySelectorAll('.lj-heroin button')].map(b=>b.dataset.act).join())==='kiosk-minhas','7: na tela do valor o único botão do meio é "Ver minhas fotos"');
 for(const [m,t] of [['cartao',/Pague na maquininha/],['pix',/Pague com PIX na maquininha/],['dinheiro',/Pague em dinheiro ao atendente/]]){await posto(id1,{meio:m});
@@ -207,9 +208,9 @@ await shot(L,'v96-valor.png');
 await V.click(`[data-pend="${id1}"] [data-act="pend-pkg"][data-p="mais"]`);await V.waitForTimeout(200);
 for(let i=0;i<20;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pkg==='mais'))break;await sleep(100);}
 const mais=await L.evaluate(()=>ETERNA.vendaCalc(2,2,'mais').total);st=await L.evaluate(()=>document.querySelector('.lj').innerText);
-ok(!/Maracanã Mais/i.test(st)&&st.includes(String(mais)),'P4: o caixa troca o pacote e a tela do cliente atualiza ao vivo (só o valor): '+st.replace(/\s+/g,' ').slice(0,120));
+ok(!/Maracanã Mais|Todas as fotos digitais/i.test(st)&&st.includes(String(mais)),'P4: o caixa troca o pacote e a tela do cliente atualiza ao vivo (só o valor): '+st.replace(/\s+/g,' ').slice(0,120));
 const aud=await V.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='venda_escolha').slice(0,2).map(e=>({por:e.por,m:e.mudancas})));
-ok(aud.length===2&&aud[0].por&&aud[0].m.some(c=>c.campo==='pacote'&&c.para==='Pacote Maracanã Mais')&&aud[0].m.some(c=>c.campo==='valor'&&c.para===mais),'S5: a troca de pacote vai ao registro de auditoria (quem, pacote, valor): '+JSON.stringify(aud[0]));
+ok(aud.length===2&&aud[0].por&&aud[0].m.some(c=>c.campo==='pacote'&&c.para==='Todas as fotos digitais'/* v98: antigo Pacote Maracanã Mais */)&&aud[0].m.some(c=>c.campo==='valor'&&c.para===mais),'S5: a troca de pacote vai ao registro de auditoria (quem, pacote, valor): '+JSON.stringify(aud[0]));
 await V.click(`[data-pend="${id1}"] [data-act="pend-pkg"][data-p="${ideal}"]`);await V.waitForTimeout(300);
 for(const [l,t,f] of [['en',/Amount to pay/,/2 photos/],['es',/Importe a pagar/,/2 fotos/],['fr',/Montant à payer/,/2 photos/],['de',/Zu zahlen/,/2 Fotos/],['pt',/Valor a pagar/,/2 fotos/]]){await L.click(`[data-act="lang"][data-l="${l}"]`);await L.waitForTimeout(60);const tx=await L.evaluate(()=>document.querySelector('.lj').innerText);ok(t.test(tx)&&f.test(tx)&&!/—|ljPay|nPhotos/.test(tx),'P4/7: valor e "N fotos" em '+l+' (sem travessão)');}
 // miniaturas

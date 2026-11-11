@@ -194,7 +194,8 @@ try{
   ok(r23.filter(x=>x.land).length===4&&r23.find(x=>x.k==='ag_pbbb00000002'&&!x.land),'23: só as deitadas com .land: '+J(r23.map(x=>[x.k,x.land])));
   ok(await A.evaluate(()=>window.__prints)===1,'23: window.print uma vez');ok(!(await A.evaluate(()=>document.body.classList.contains('pr-on'))),'23: pr-on sai depois do afterprint');
   const pdf=await pdfImpresso(A);fs.writeFileSync(`${P}/v83-impressao-5.pdf`,pdf);const pp=pdfPaginas(pdf);
-  ok(pp.n===5&&pp.mb.length>=5&&pp.mb.every(([w,h])=>Math.abs(w-MM(102))<2&&Math.abs(h-MM(152))<2),'23: PDF com 5 páginas de 102×152 mm: '+J(pp));
+  // 24c3668 (Ronaldo, 10/11, teste na DNP): @page sem tamanho fixo, a foto cobre o papel escolhido na impressora; o PDF sai no papel padrão
+  ok(pp.n===5&&pp.mb.length>=5&&pp.mb.every(([w,h])=>w===pp.mb[0][0]&&h===pp.mb[0][1]),'23: PDF com 5 páginas do mesmo papel: '+J(pp));
   await A.evaluate(()=>document.body.classList.add('pr-on'));await A.emulateMedia({media:'print'});const g23=await A.evaluate(()=>{const p=document.querySelector('#print-root .pr-pg.land');const bx=p.querySelector('.pr-box').getBoundingClientRect();const pg=p.getBoundingClientRect();const im=p.querySelector('img');return {pw:pg.width,ph:pg.height,bw:bx.width,bh:bx.height,fit:getComputedStyle(im).objectFit,tf:getComputedStyle(p.querySelector('.pr-box')).transform};});await A.emulateMedia({media:null});await A.evaluate(()=>document.body.classList.remove('pr-on'));
   ok(Math.abs(g23.bw-g23.pw)<2&&Math.abs(g23.bh-g23.ph)<2&&g23.fit==='cover'&&g23.tf!=='none','23: foto deitada girada preenchendo a página: '+J(g23));
   // ---- 24: Saiu certo baixa exatamente 5, uma vez só

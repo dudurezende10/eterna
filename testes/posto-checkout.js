@@ -20,18 +20,18 @@ try{
   // 1. aparelho sem pareamento: o Checkout mostra só o aviso da equipe
   {const c=await b.newContext({viewport:{width:1280,height:900}});const K=vigia(await c.newPage(),'K');await K.goto(A+'/#loja');
     ok(await espera(K,()=>ETERNA.state.posto.estado==='nao',15000),'aparelho sem pareamento deveria ficar "nao": '+await K.evaluate(()=>ETERNA.state.posto.estado));
-    await espera(K,()=>/ainda não foi pareado/i.test(document.body.innerText),8000);
-    const t=await K.evaluate(()=>document.body.innerText);ok(/ainda não foi pareado/i.test(t)&&!(await K.$('[data-act="kiosk-emerg"]')),'Checkout sem pareamento deveria mostrar o aviso: '+t.slice(0,120).replace(/\s+/g,' '));await c.close();}
+    await espera(K,()=>/ainda não foi pareado|ainda não é um posto/i.test(document.body.innerText),8000);
+    const t=await K.evaluate(()=>document.body.innerText);ok(/ainda não foi pareado|ainda não é um posto/i.test(t)&&!(await K.$('[data-act="kiosk-emerg"]')),'Checkout sem pareamento deveria mostrar o aviso: '+t.slice(0,120).replace(/\s+/g,' '));await c.close();}
   // 2. o Admin pareia este aparelho no Painel de controle
   const cA=await b.newContext({viewport:{width:1440,height:900}});await S.noNavegador(cA,porta,[adm]);const PA=vigia(await cA.newPage(),'admin');await PA.goto(A+'/index.html');await PA.waitForTimeout(500);
   const ADM=await entrarTeste.adminFicticio(PA);ok(await entrarTeste(PA,ADM),'admin entrou');await espera(PA,()=>ETERNA.state.agent.on,15000);
-  await PA.evaluate(()=>ETERNA.go('catalogo'));ok(await espera(PA,()=>!!document.querySelector('#postos-painel [data-act="posto-parear"]'),10000),'Painel de controle sem o cartão Postos deste ponto');
+  await PA.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));ok(await espera(PA,()=>!!document.querySelector('#postos-painel [data-act="posto-parear"]'),10000),'Painel de controle sem o cartão Postos deste ponto');
   await espera(PA,()=>Array.isArray(ETERNA.state.posto.lista),10000);await PA.waitForTimeout(300); // a lista chegou: o cartão não redesenha por cima do campo
   await PA.fill('#posto-nome','Checkout 1');await PA.click('[data-act="posto-parear"]');
   ok(await espera(PA,()=>ETERNA.state.posto.estado==='ok'&&ETERNA.postoDisp()&&ETERNA.postoDisp().nome==='Checkout 1',10000),'parear pela tela: '+J(await PA.evaluate(()=>ETERNA.state.posto)));
   ok(await espera(PA,()=>!ETERNA.state.user,5000)&&/Sua conta saiu/.test(await PA.textContent('#toast').catch(()=>'')),'depois de parear, a conta do Admin sai do aparelho');
   ok(JSON.parse(await PA.evaluate(()=>localStorage.getItem('eterna.posto.v1'))||'{}').nome==='Checkout 1','o aparelho guarda o posto confirmado');
-  ok(await entrarTeste(PA,ADM),'admin entra de novo');await PA.evaluate(()=>ETERNA.go('catalogo'));
+  ok(await entrarTeste(PA,ADM),'admin entra de novo');await PA.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));
   ok(await espera(PA,()=>{const e=document.querySelector('#postos-painel');return !!e&&/Checkout 1/.test(e.textContent)&&/P1/.test(e.textContent);},10000),'a lista mostra o posto pareado');
   const ckP=(await cA.cookies()).find(c=>c.name==='eterna_posto');ok(ckP&&ckP.httpOnly&&ckP.sameSite==='Strict','cookie do posto HttpOnly e Strict: '+J(ckP&&{h:ckP.httpOnly,s:ckP.sameSite}));
   ok(await PA.evaluate(()=>ETERNA.pontoModo())==='posto','pontoModo do aparelho pareado: '+await PA.evaluate(()=>ETERNA.pontoModo()));
@@ -39,7 +39,7 @@ try{
   const cP=await b.newContext({viewport:{width:1280,height:900}});await cP.addCookies([{name:'eterna_posto',value:ckP.value,domain:'127.0.0.1',path:'/',httpOnly:true,sameSite:'Strict'}]);
   const P=vigia(await cP.newPage(),'posto');await P.goto(A+'/#loja');
   ok(await espera(P,()=>ETERNA.state.agent.on&&ETERNA.state.posto.estado==='ok',15000),'Checkout pareado conectado: '+J(await P.evaluate(()=>({on:ETERNA.state.agent.on,p:ETERNA.state.posto}))));
-  ok(await P.evaluate(()=>!!document.querySelector('[data-act="kiosk-emerg"]')&&!/não foi pareado/i.test(document.body.innerText)),'Checkout pareado mostra a tela do cliente');
+  ok(await P.evaluate(()=>!!document.querySelector('[data-act="kiosk-emerg"]')&&!/não foi pareado|ainda não é um posto/i.test(document.body.innerText)),'Checkout pareado mostra a tela do cliente');
   const rotas=await P.evaluate(async()=>{const o=location.origin;const st=async(u,op)=>(await ETERNA.agFetch(o+u,op)).status;
     return {sessoes:await st('/sessoes?desde=0'),status:(await (await ETERNA.agFetch(o+'/status')).json()).sessoes?'completo':'minimo',thumb:await st('/thumb/abcdef123456'),
       pub:await st('/galerias/publicar',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"manifesto":{}}'}),bib:await st('/biblioteca'),usu:await st('/ponto/docs?col=usuarios'),
@@ -73,7 +73,7 @@ try{
   const pid=await P.evaluate(()=>ETERNA.postoDisp().id);const adm2=S.sessao(home,'admin-2');
   const rv=await new Promise(res=>{const d=Buffer.from(J({id:pid}));const r=http.request({host:'127.0.0.1',port:porta,method:'POST',path:'/postos/revogar',headers:{'Content-Type':'application/json','Content-Length':d.length,'X-Eterna':'1',Cookie:adm2}},rs=>{rs.resume();rs.on('end',()=>res(rs.statusCode));});r.end(d);});
   ok(rv===200,'revogar: '+rv);await P.evaluate(()=>ETERNA.postoCarregar());
-  ok(await espera(P,()=>ETERNA.state.posto.estado==='nao'&&/não foi pareado/i.test(document.body.innerText),8000),'posto revogado volta para o aviso');
+  ok(await espera(P,()=>ETERNA.state.posto.estado==='nao'&&/não foi pareado|ainda não é um posto/i.test(document.body.innerText),8000),'posto revogado volta para o aviso');
   // 7. gravação recusada pelo servidor (pessoa sem o módulo): aviso e registro, sem sumir calada
   {const cF=await b.newContext({viewport:{width:1280,height:900}});await S.noNavegador(cF,porta,[S.sessao(home,'foto-teste',{set:{c:true,r:true,u:true}})]);const F=vigia(await cF.newPage(),'foto');
     await F.goto(A+'/index.html');await F.waitForTimeout(400);ok(await entrarTeste(F,await entrarTeste.adminFicticio(F)),'entrou (tela) com sessão de fotógrafo no servidor');await espera(F,()=>ETERNA.state.agent.on&&!!ETERNA.state.db,20000);await F.waitForTimeout(3500); // a primeira leitura do servidor já passou

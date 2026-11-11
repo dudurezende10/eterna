@@ -80,7 +80,7 @@ try{
   const r3=await parearPg(P1,'Caixa R');ok(r3.s===200&&r3.j.posto.id!==r1.j.posto.id&&(await euPg(P1)).s===200,'revogado por outro navegador e pareado de novo: posto novo: '+J(r3.j));
   // 1d. pela tela: clique duplo no botão -> 1 posto; a conta sai; revogar pelo outro navegador e parear de novo (entra de novo) -> posto novo
   const c3=await novo();const P3=vigia(await c3.newPage(),'nav3');await P3.goto(A+'/index.html');await P3.waitForTimeout(400);ok(await entrar(P3,'admin.teste',SENHA),'admin entra no navegador 3');
-  await P3.evaluate(()=>ETERNA.go('catalogo'));ok(await espera(P3,()=>!!document.querySelector('#posto-nome')&&Array.isArray(ETERNA.state.posto.lista),15000),'cartão Postos (nav3)');await P3.waitForTimeout(300);
+  await P3.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));ok(await espera(P3,()=>!!document.querySelector('#posto-nome')&&Array.isArray(ETERNA.state.posto.lista),15000),'cartão Postos (nav3)');await P3.waitForTimeout(300);
   await P3.fill('#posto-nome','Checkout T');const antesT=JSON.parse(sql('estado.db',"select count(*) from posto where nome='Checkout T'"))[0][0];
   await P3.evaluate(()=>{const b=document.querySelector('[data-act="posto-parear"]');b.click();b.click();b.click();});
   ok(await espera(P3,()=>!ETERNA.state.user&&ETERNA.state.posto.estado==='ok',10000),'pela tela: pareado e a conta saiu');
@@ -88,7 +88,7 @@ try{
   const t0id=await P3.evaluate(()=>ETERNA.state.posto.disp.id);const kT0=await ckPosto(c3);
   await P2.evaluate(async id=>fetch('/postos/revogar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({id})}),t0id);
   await P3.reload();await P3.waitForTimeout(800);
-  ok(await entrar(P3,'admin.teste',SENHA),'nav3 entra de novo depois da revogação');await P3.evaluate(()=>ETERNA.go('catalogo'));
+  ok(await entrar(P3,'admin.teste',SENHA),'nav3 entra de novo depois da revogação');await P3.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));
   ok(await espera(P3,()=>!!document.querySelector('#posto-nome'),15000),'cartão Postos (nav3, de novo)');await P3.fill('#posto-nome','Checkout T');await P3.click('[data-act="posto-parear"]');
   ok(await espera(P3,()=>!ETERNA.state.user&&ETERNA.state.posto.estado==='ok',10000),'pareado de novo pela tela');
   ok(await P3.evaluate(()=>ETERNA.state.posto.disp.id)!==t0id&&await ckPosto(c3)!==kT0,'pela tela, depois de revogar: posto novo');
