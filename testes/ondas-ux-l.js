@@ -7,7 +7,7 @@ const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.strin
 const TEC=/127\.0\.0\.1|:8765|\bporta \d|~\/Eterna|\.py\b|\bFTP\b|Photoroom|Roverpix|sandbox_|\bfase [12]\b|\bv9\d\b|simula/i;
 const TMP=fs.mkdtempSync(path.join(os.tmpdir(),'ondas-l-'));
 execFileSync('python3',['-c',"from PIL import Image\nimport sys\nImage.new('RGB',(600,900),(40,120,200)).save(sys.argv[1]+'/a.jpg',quality=70)",TMP]);const IMG=fs.readFileSync(TMP+'/a.jpg');
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 // texto visível da tela inteira (menu + tela) e o menor corpo de letra entre os elementos com texto visível
 const ler=(pg,raiz,min)=>pg.evaluate(([raiz,min])=>{const R=document.querySelector(raiz)||document.body;const peq=[];
   const w=document.createTreeWalker(R,NodeFilter.SHOW_TEXT);let n;while((n=w.nextNode())){if(!n.nodeValue.trim())continue;const e=n.parentElement;if(!e||!e.getClientRects().length)continue;const s=getComputedStyle(e);if(s.visibility==='hidden'||+s.opacity===0||s.display==='none')continue;

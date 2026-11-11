@@ -1642,7 +1642,7 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   if(criar)pvEvento('criar',r.id,pvDados(r),{em:r.criada,por:null}); // v96: o mesmo "criar" que o Checkout mandava, com a hora do pedido e sem autor
   if(r.meio)pvEvento('pagar',r.id,{ref,prov});
   galDaVenda(r.card,r.token); // v93: o aparelho pareado também publica a galeria da venda (o servidor aceita do posto)
-  state.pend.ref=null;state.pend.err=null;if(state.view==='caixa')state.caixa.session=r.card;
+  state.pend.ref=null;state.pend.err=null;state.caixa.session=r.card;state.posto.recibo=r.card;state.caixa.reprint=null; // Ronaldo (11/11): o recibo e o QR à direita passam para a venda que acabou de ser paga, no Posto e no Caixa
   const imp=s.impressao&&s.impressao.estado==='pendente'?' Agora imprima as fotos.':'';
   toast(meio==='dinheiro'?`Recebido ${fmtR(r.total)}.${imp}`:`Pagamento confirmado.${imp}`);render();return true;}
 function dinConfirmar(id){return pendConfirmar(id,{});}
@@ -2060,7 +2060,7 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards);const rw=can('venda
   const item=([card,s])=>{const im=s.impressao;const job=state.impJob&&state.impJob.card===card?state.impJob:null;const hora=s.paidAt?hhmm(new Date(s.paidAt)):'';
     const ped=noSrv?impPedido(s.saleNo||card):null;const naFila=impAtivo(ped);const linhaFila=ped?impPedidoLinha(ped):'';const cancelaFila=naFila&&rw?`<div class="row"><button class="btn ghost" data-act="if-acao" data-a="cancelar" data-id="${ped.id}">Cancelar pedido</button></div>`:'';
     const semSaida=ped&&(ped.estado==='erro'||ped.estado==='cancelado');
-    const head=`<div class="din-top"><b>${esc(s.saleNo||card)}</b><span class="pill ${im.estado==='impressa'?'good':'warn'}">${im.estado==='impressa'?'impressa':'para imprimir'}</span></div><div class="note">Sessão ${esc(card)} · paga às ${hora} · ${esc(s.payment||'')} · ${s.prints||0} ${s.prints===1?'impressa':'impressas'} no pacote</div>`;
+    const head=`<div class="din-top"><b>${esc(s.saleNo||card)}</b><span class="row" style="gap:8px">${cards?'':`<button class="chip" data-act="caixa-open" data-card="${esc(card)}">Recibo e QR</button>`}<span class="pill ${im.estado==='impressa'?'good':'warn'}">${im.estado==='impressa'?'impressa':'para imprimir'}</span></span></div><div class="note">Sessão ${esc(card)} · paga às ${hora} · ${esc(s.payment||'')} · ${s.prints||0} ${s.prints===1?'impressa':'impressas'} no pacote</div>`;
     let body='';
     if(im.estado==='pendente'){const S=impSel(card,s);const selK=new Set(S.sel.map(x=>x.k));const feitas=new Set(im.feitas||[]);
       const nota=S.semFoto?`<div class="note"><span class="pill bad">${S.semFoto} ${S.semFoto===1?'impressão sem foto':'impressões sem foto'}</span></div>`:'';
@@ -2587,7 +2587,7 @@ let lojaQRrz=0;window.addEventListener('resize',()=>{clearTimeout(lojaQRrz);loja
 // com a escolha parada 90 s (LOJA_ESCOLHA_MS), a tela Pronto ou do valor parada 3 min (LOJA_PRONTO_MS) e a tela final do QR (lojaFimSeg, 30 s por padrão).
 // O temporizador da tela final (k.timer) morre ao sair da rota, trocar de etapa ou recarregar; os prazos de escolha e Pronto são conferidos a cada 5 s.
 const LOJA_VENDEDOR='Checkout (autoatendimento)';
-const LOJA_FIM_PADRAO=30,LOJA_FIM_MIN=5,LOJA_FIM_MAX=120;
+const LOJA_FIM_PADRAO=40,LOJA_FIM_MIN=5,LOJA_FIM_MAX=120;
 const lojaFimSeg=()=>{const v=Math.round(+SIM.lojaFimSeg);return v>=LOJA_FIM_MIN&&v<=LOJA_FIM_MAX?v:LOJA_FIM_PADRAO;};const lojaFimMs=()=>lojaFimSeg()*1000;
 const ljVoltar=(act,cls)=>`<button class="lj-ghost ${cls||'sm'} lj-back0" data-act="${act||'loja-new'}" aria-label="${T('ljBackStart')}">${ICO.face} <span>${T('ljBackStart')}</span></button>`;
 function lojaTimerOff(){const k=state.kiosk;if(k&&k.timer){clearInterval(k.timer);k.timer=null;}}

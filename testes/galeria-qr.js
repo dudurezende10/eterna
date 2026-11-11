@@ -48,15 +48,15 @@ try{
   ok(q1.title==='https://eterna.photo/#g/'+tok,'3: texto do QR: '+q1.title);
   // ---------- 24. tela final volta sozinha em 5 s; "Voltar ao início" volta antes (criterio 4 substituído pelo adendo A4) ----------
   dbg('24. tela final volta sozinha em 5 s; "Vo');
-  // relógio parado antes da compra: o tempo real gasto nos cliques não conta na tela final (adendo 3: 30 s, configurável)
+  // relógio parado antes da compra: o tempo real gasto nos cliques não conta na tela final (adendo 3: 30 s, configurável; 40 s desde 11/11, Ronaldo)
   // o relógio do Playwright vale para o contexto inteiro: a Loja com relógio roda num contexto próprio
   const ctxC=await b.newContext({viewport:{width:1280,height:900},locale:'pt-BR'});const C=await nova(ctxC,'clock');await C.clock.install();await C.goto(U+'#loja');await C.waitForTimeout(500);await C.clock.pauseAt(new Date(Date.now()+60000));
   const card2=cards[1]||cards[0];await compraLoja(C,card2);const tok2=await C.evaluate(()=>ETERNA.state.kiosk.paid.token);
   ok(TOKRE.test(tok2||'')&&tok2!==tok,'2: dois pagamentos deveriam gerar tokens diferentes');
-  ok((await C.textContent('#lj-volta-n')).trim()==='30','24: a contagem deveria começar em 30');
-  await C.clock.runFor(25000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: aos 25 s a tela final deveria continuar');
-  const n3=await C.textContent('#lj-volta-n');ok(/^[3-5]$/.test((n3||'').trim()),'24: contagem visível aos 25 s deveria mostrar uns 5 s, mostra '+n3);
-  await C.clock.runFor(5300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: aos 30 s deveria voltar para a câmera');
+  ok((await C.textContent('#lj-volta-n')).trim()==='40','24: a contagem deveria começar em 40');
+  await C.clock.runFor(35000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: aos 35 s a tela final deveria continuar');
+  const n3=await C.textContent('#lj-volta-n');ok(/^[3-5]$/.test((n3||'').trim()),'24: contagem visível aos 35 s deveria mostrar uns 5 s, mostra '+n3);
+  await C.clock.runFor(5300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: aos 40 s deveria voltar para a câmera');
   ok(await C.evaluate(()=>!ETERNA.state.kiosk.timer),'24: o timer da tela final deveria morrer ao voltar');
   // tempo configurável no Catálogo (seção Checkout): 10 s
   dbg('catalogo 10s');

@@ -7,7 +7,7 @@ const LANGS=['pt','en','es','fr','de'];
 const SEU={pt:'Seu código',en:'Your code',es:'Tu código',fr:'Votre code',de:'Dein Code'};
 const PROIB=/recibo|receipt|reçu|Beleg|pedido|\border\b|commande|Bestell/i;
 const CHAVES=['receiptCode','typeCode','codeBad','cam_nomatch','cam_nocam','gq_codeH','gq_codeIs','ljYourCode','ljTypeCode']; // v96-ux: no Checkout valem as chaves da v96 (ljYourCode na tela Pronto, ljTypeCode no Iniciar)
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(450);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);}
 (async()=>{const b=await chromium.launch();
 try{
   const ctx=await b.newContext({viewport:{width:1440,height:900}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());

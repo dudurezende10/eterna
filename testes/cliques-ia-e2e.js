@@ -26,8 +26,7 @@ try{
   if(!up)throw new Error('agente não subiu: '+LOGA.slice(-400));
   // dados vazios: agente sem nenhuma foto; Upload, Fila do fotógrafo e Painel de controle abrem sem erro
   {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
-    await pv.goto(AO+'/index.html');await pv.waitForTimeout(500);await pv.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pv.click('button[type=submit]');await pv.waitForTimeout(200);
-    await pv.fill('[data-act="login-code"]',(await pv.textContent('.otp')).replace(/\s/g,''));await pv.waitForTimeout(600);
+    await pv.goto(AO+'/index.html');await pv.waitForTimeout(500);await require('./_entrar')(pv,'eduardo@eduardorezende.com');
     for(const v of ['importar','fotofila','catalogo','chroma']){await pv.evaluate(v=>ETERNA.go(v),v);await pv.waitForTimeout(700);}
     const vz=await pv.evaluate(()=>{ETERNA.go('fotofila');return document.querySelector('#main').textContent;});
     ok(!ev.length&&!/Fundo IA/.test(vz),'vazio: telas da equipe sem fotos abrem sem erro: '+ev.join(' | '));await bv.close();}
@@ -128,8 +127,7 @@ try{
   // ---------- equipe ----------
   const pe=await ctx.newPage();const errs2=[];pe.on('pageerror',e=>errs2.push(e.message));pe.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|404|ort|wasm|face-api|models/i.test(m.text()))errs2.push('console: '+m.text());});
   await pe.goto(AO+'/index.html');await pe.waitForTimeout(500);
-  await pe.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pe.click('button[type=submit]');await pe.waitForTimeout(200);
-  await pe.fill('[data-act="login-code"]',(await pe.textContent('.otp')).replace(/\s/g,''));await pe.waitForTimeout(600);
+  await require('./_entrar')(pe,'eduardo@eduardorezende.com');
   const esp2=async(fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await pe.evaluate(fn,arg))return true;await pe.waitForTimeout(200);}return false;};
   await pe.evaluate(()=>{ETERNA.state.imp.key='todos';ETERNA.state.imp.point='todos';ETERNA.go('importar');});
   ok(await esp2(c=>!!document.querySelector(`.up-sess[data-card="${c}"]`),20000,xS.card),'Upload com as sessões do agente');
@@ -186,8 +184,7 @@ try{
   ok(await esp2(()=>/Fotos para IA: fila \d+ · p90 \d+ s desde a chegada · \d+ erros?/.test(document.querySelector('#main').textContent),8000),'fiaPanel: linha "Fotos para IA"');
   // sem agente: o app servido pelo rodar.sh (sem servidor do ponto); Painel de controle e Checkout sem erro
   {const cn=await b.newContext({viewport:{width:1366,height:900}});await cn.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pn=await cn.newPage();const en=[];pn.on('pageerror',e=>en.push(e.message));
-    await pn.goto(U);await pn.waitForTimeout(500);await pn.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pn.click('button[type=submit]');await pn.waitForTimeout(200);
-    await pn.fill('[data-act="login-code"]',(await pn.textContent('.otp')).replace(/\s/g,''));await pn.waitForTimeout(600);
+    await pn.goto(U);await pn.waitForTimeout(500);await require('./_entrar')(pn,'eduardo@eduardorezende.com');
     await pn.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));await pn.waitForTimeout(300);
     await pn.click('#ia-cfg [data-act="ia-volante"]');await pn.waitForTimeout(300);
     const sn=await pn.evaluate(()=>({c:ETERNA.iaCfg(),toast:(document.querySelector('#toast')||{}).textContent||'',db:!!ETERNA.state.db}));

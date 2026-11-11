@@ -10,7 +10,7 @@ const lum=c=>{const f=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.05
 const rgb=s=>{const m=String(s).match(/[\d.]+/g).map(Number);return {c:m.slice(0,3),a:m.length>3?m[3]:1};};
 const mix=(fg,bg)=>fg.c.map((v,i)=>v*fg.a+bg.c[i]*(1-fg.a));
 const contraste=(fg,bg)=>{const a=lum(mix(rgb(fg),rgb(bg))),b=lum(rgb(bg).c);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);};
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(450);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);}
 async function ljSessao(L,card,n){await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;ETERNA.lojaReset();ETERNA.render();});
   await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(400);
   await L.evaluate(([card,n])=>{const it=ETERNA.lojaItems(card).filter(x=>x.t==='ph');const pk=ETERNA.lojaPick(card);Object.keys(pk).forEach(k=>delete pk[k]);it.slice(0,n).forEach(x=>pk[x.k]='ok');ETERNA.state.kiosk.pkg=null;ETERNA.state.kiosk.pay=null;ETERNA.state.kiosk.step='cart';ETERNA.render();},[card,n]);await L.waitForTimeout(250);}

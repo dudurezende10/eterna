@@ -301,7 +301,7 @@ O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o n
    - Se o preço do pacote mudar no Catálogo depois da sua escolha, ao confirmar o Eterna mostra o valor novo (o cliente também vê) e pede para confirmar de novo.
 8. Cobre na maquininha e confirme como antes (**Pago na maquininha** ou **Recebi R$ X**). O Checkout mostra a tela final com o QR, o código da galeria e o **Valor pago R$ X** que você confirmou.
 9. Se você cancelar, o Checkout do cliente volta ao início.
-10. Imprima as fotos no Posto de venda. A tela final com o QR fica 30 segundos e volta sozinha ao **Iniciar**. Para atender o próximo antes disso, toque em **Voltar ao início**.
+10. Imprima as fotos no Posto de venda. A tela final com o QR fica 40 segundos e volta sozinha ao **Iniciar**. Para atender o próximo antes disso, toque em **Voltar ao início**.
 
 Outras coisas que o cliente pode fazer:
 - Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha. Em tela pequena, as bandeiras ficam guardadas num botão com a bandeira atual.
@@ -455,7 +455,7 @@ A aba **Envio** mostra se cada galeria chegou ao computador do ponto:
 
 ### Ajustes no Catálogo
 
-- **Tempo da tela final do Checkout**: Painel de controle › Checkout › "Tempo da tela final com o QR (segundos)". Padrão 30, de 5 a 120.
+- **Tempo da tela final do Checkout**: Preços e Checkout › Checkout › "Tempo da tela final com o QR (segundos)". Padrão 40, de 5 a 120.
 - **Preço da foto avulsa na galeria**: item "Foto digital avulsa (galeria online)", hoje R$ 39. "Todas as fotos" custa o mesmo que o Pacote Maracanã Mais.
 
 ### Ver as vendas da galeria

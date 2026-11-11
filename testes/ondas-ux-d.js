@@ -17,8 +17,7 @@ async function agente(ctx){
   await ctx.route(ORIG+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:PX}));}
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(300);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(300);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(400);}
+  await require('./_entrar')(pg,email);}
 const espera=async(pg,fn,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||8000)){if(await pg.evaluate(fn))return true;await pg.waitForTimeout(200);}return false;};
 const PROIB_D1=['Simular','Testar com fotos','Limpar esta leva','Cartão no computador do ponto','Wi‑Fi do estádio','5G','O que o fotógrafo vê','O que o servidor faz','Chegaram','Repetidas'];
 // "Terminal Campo" é o nome de um ponto de foto (DATA.points), não o Terminal do computador: fica fora da regex do plano

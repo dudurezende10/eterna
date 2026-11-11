@@ -4,8 +4,7 @@ const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);};
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(300);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(300);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(400);return pg.evaluate(()=>!!ETERNA.state.user);}
+  await require('./_entrar')(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const SIMUL=['ing-start','imp-files','imp-mode','ing-reset'];
 const botoes=pg=>pg.evaluate(s=>s.filter(a=>document.querySelector(`#main [data-act="${a}"]`)),SIMUL);
 // dispara a ação como um clique de verdade, mesmo sem o botão na tela

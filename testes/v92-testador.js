@@ -26,8 +26,7 @@ const nova=async(w,h,ag)=>{const ctx=await b.newContext({viewport:{width:w||1440
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text());});return {ctx,pg};};
 const {adminFicticio,ADMIN_TESTE:ADMT}=require('./_entrar'); // administrador fictício (nenhum e-mail de pessoa nos testes)
 async function entrar(pg,base,email){await pg.evaluate(()=>localStorage.removeItem('eterna.session')).catch(()=>{});await pg.goto(base);await pg.waitForTimeout(500);if(email===ADMT)await adminFicticio(pg);
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(200);const otp=await pg.$('.otp');if(!otp)return false;
-  await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(500);return pg.evaluate(()=>!!ETERNA.state.user);}
+  await require('./_entrar')(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const agOn=async pg=>{for(let i=0;i<40;i++){if(await pg.evaluate(()=>!!(ETERNA.state.agent&&ETERNA.state.agent.on)))return true;await sleep(250);}return false;};
 const semLateral=pg=>pg.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1);
 const PRES=/presen[cç]a|\bfaltas?\b|atras(o|ad)|abono|abonar|folgas? fixas?|horário dos turnos|ponto oficial|escalad[oa]/i;

@@ -17,8 +17,7 @@ async function agente(ctx){
 }
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(300);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(300);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(400);}
+  await require('./_entrar')(pg,email);}
 const espera=async(pg,fn,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||6000)){if(await pg.evaluate(fn))return Date.now()-t0;await pg.waitForTimeout(150);}return -1;};
 (async()=>{
 const b=await chromium.launch();const errs=[];

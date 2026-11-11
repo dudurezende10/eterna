@@ -33,8 +33,7 @@ const b=await chromium.launch();const errs=[];
 const nova=async(w,h)=>{const ctx=await b.newContext({viewport:{width:w||1440,height:h||1000},locale:'pt-BR',acceptDownloads:true});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|JSON/.test(m.text()))errs.push(m.text());});return {ctx,pg};};
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>{localStorage.removeItem('eterna.session');});await pg.goto(U);await pg.waitForTimeout(350);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(400);return pg.evaluate(()=>!!ETERNA.state.user);};
+  await require('./_entrar')(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);};
 // agente falso
 async function agente(ctx,o){o=o||{};const AG={fonte:[],testar:0,atualizar:0,totais:[],chave:!!o.chave};const S=serie();
   const st=()=>({ok:true,feriados_ate:2027,jogos:AG.chave?{fonte:'api-football',chave:true,env:false,final:CHAVE.slice(-4),salva_em:'2026-11-10T19:05:00Z',salva_por:'Eduardo Rezende',ultima:'2026-11-10T19:06:00Z',ok:true,erro:null,n_por_ano:{[ANO]:34},ja_no_calendario:1,teste:AG.teste||null,rodando:false}:{fonte:'nenhuma',chave:false,ultima:null,ok:null,erro:null,n_por_ano:{},ja_no_calendario:0,teste:null},dias:{desde:'2026-11-10'}});
