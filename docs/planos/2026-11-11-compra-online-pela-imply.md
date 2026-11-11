@@ -67,10 +67,37 @@ Regras:
 | pedido online | código nosso, galeria, itens (SKU, quantidade, fotos escolhidas), valor esperado, situação, idpedido/nº da Imply, valor pago, quando criou, quando conferiu, quantas consultas |
 | lead | e-mail, idioma, consentimento de marketing (sim/não, data, versão do texto), galeria/venda, selfie, primeiro e último acesso |
 
+## setPessoa (documentação recebida da Imply em 11/11)
+
+- `POST https://maracanatouradmin.eleventickets.com/api/OAuth2/v01/setPessoa/`, cabeçalho `Authorization: Server <WS_CHAVE>`
+  (chave do usuário de serviço, dada pela Eleven; fica só no segredo da Nuvem, nunca no navegador nem no repositório).
+- Corpo: array com 3 posições: `[ {dados da pessoa}, false, ["de_para"] ]`. A 3ª posição diz como achar a pessoa já
+  cadastrada (atualiza em vez de duplicar); recomendado `["de_para"]`.
+- Dados obrigatórios: `de_para` (o nosso identificador da pessoa), `tipo_pessoa` (código da Eleven), `nome`, `email` e **ao
+  menos um documento**: `cpf`, `passaporte` ou `documento`. Opcionais: celular, telefone, endereço, empresa.
+  Número/objeto vazio invalida a chamada (omitir o campo); texto vazio é ignorado.
+- Resposta 200 com `result` = token de acesso da pessoa (não devolve o id interno; a correlação é o `de_para`). Erro também vem
+  com 200 e `error.code`: 13033 JSON inválido, 13034 sem de_para/nome, 13037 e-mail inválido, 13038 tipo_pessoa inválido,
+  13042 falha ao gravar.
+- Login automático: redirecionar o cliente para
+  `https://maracanatouradmin.eleventickets.com/OAuth2/external?token=<result>&url=<destino>`, onde destino é a URL completa
+  (com https://) em Base64 e depois codificada para URL. O cliente entra já logado na página de destino (para nós, o checkout
+  com o carrinho pronto).
+
+Consequências para o Eterna:
+
+- **Para comprar online o cliente precisa informar nome, e-mail e CPF (ou passaporte, estrangeiro).** O e-mail continua
+  sendo pedido antes da selfie (lead); nome e CPF/passaporte são pedidos só na hora de "Comprar", para não afastar quem só
+  quer ver as fotos.
+- `de_para` = id da pessoa no Eterna (`EP-` + aleatório, um por e-mail), gravado no lead.
+- O CPF é dado pessoal sensível de cadastro: vai para a Imply, e no Eterna fica só o necessário para conferência (decisão a
+  tomar: guardar só os 3 últimos dígitos ou não guardar).
+
 ## O que falta a Imply responder (antes de construir)
 
-1. `setPessoa`: endereço, autenticação, campos (e-mail, nome, CPF obrigatório?) e o que devolve. Como o checkout sabe que a
-   pessoa está logada (um token no endereço? cookie?).
+1. `setPessoa` (documentação recebida; faltam): o `tipo_pessoa` informado é o de **AGÊNCIA**; qual é o código para o cliente
+   final (pessoa física)? Quanto tempo vale o token (`result`) e se é de uso único. O `url` do login automático aceita o
+   endereço do checkout com `predefined-cart` e `urlreturn` dentro (Base64)? Há limite de tamanho?
 2. `predefined-cart`: o formato exato (exemplo de JSON), onde vai (no endereço ou num POST), limite de itens.
 3. Endpoint de consulta: endereço, autenticação, um exemplo de resposta, a lista de situações (pago, pendente, cancelado,
    estornado, expirado) e se traz o nº do pedido Imply, o meio de pagamento e o valor por item.
