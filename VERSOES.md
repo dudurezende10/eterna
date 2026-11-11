@@ -2,6 +2,34 @@
 
 Cada versão é um commit em `main`. Para abrir uma versão: `git checkout <commit>`.
 
+## v97 em linguagem simples
+
+Texto para a equipe e para o relatório. O detalhe técnico está na linha da v97 da tabela abaixo.
+
+**Uma tela só para vender.** As antigas telas de venda viraram o **Posto**. O Caixa é o mesmo Posto mostrando só o dinheiro a confirmar. A Venda manual abre dentro dele. "Pago na maquininha" é o botão principal e "Cancelar compra" virou um link afastado. O botão "Recomeçar o Checkout" fica no computador do caixa: o cliente não tem mais "Voltar ao início" enquanto espera o pagamento e não perde o pedido sem querer.
+
+**Fotógrafo sem configuração.** O nome vem do login e o ponto vem da Escala. A Escala mostra "Hoje você está em:" com o ponto em letra grande. No lugar da Biblioteca com filtros, o fotógrafo vê "Minhas fotos de hoje", por sessão. O Calendário de eventos foi para o Dashboard. O modo demonstração ficou só com o Admin.
+
+**Aviso claro quando o computador do ponto para.** Faixa vermelha com a hora do último dado e a frase "O computador do ponto não está respondendo. Chame a TI." Os detalhes técnicos aparecem só para o Admin.
+
+**Plano B do cartão.** Quando o leitor não lê o cartão, o fotógrafo ou a Supervisora enviam as fotos pela tela Minhas fotos. Elas entram como fotos de cartão. Só entra JPEG de verdade, há um teto de fotos por dia e o envio para se o disco estiver quase cheio.
+
+**Edição Maracanã.** As fotos com fundo de IA aparecem primeiro no Checkout, com o selo "Edição Maracanã" e o título "Suas fotos especiais". Entrou o fundo Telão do Maracanã no lugar do Pódio. O recorte da pessoa é novo e mais preciso, feito no computador do ponto, com instalador para placa de vídeo. O caixa recebe um aviso quando o pedido tem montagem e o pacote é só digital, porque a montagem ainda não vai para a galeria.
+
+**QR maior na tela final.** O QR fica ao lado da foto, com 320 px ou mais, fácil de ler com o celular.
+
+**Funciona sem internet.** O computador do ponto guarda uma cópia do app, das letras e dos fundos. Se a internet cair, o Checkout e o Posto continuam abrindo.
+
+**Apagar fotos a pedido do cliente.** As fotos compradas e as cortesias agora ficam com o cliente e a galeria paga continua aberta. Só as não compradas são apagadas.
+
+**Administração.** Lista de vendas em uma tela, com 50 vendas por página. Nomes de tela iguais no menu e no título, sem repetidos. Feriados e jogos entram sozinhos no Calendário. Estatísticas ganharam "Jogos e ano a ano" e as montagens vistas e compradas. A chave da API de jogos e "Juntar a família pelo rosto" ficam só com o Admin.
+
+**Laboratório.** Ficha do Chute a gol: a foto com o goleiro e a placa "Fiz um gol no Maracanã". Ainda em teste.
+
+**Regra fixa do projeto.** Recorte e montagem são feitos e guardados no computador do ponto. O Checkout só mostra. Na v97 a montagem ainda é feita na tela; ela passa para o computador do ponto na v98.
+
+**No dia da atualização.** Instalar o recorte novo no computador do ponto, atualizar o agente e o app, e fechar e reabrir o Checkout, o Posto e Minhas fotos em todos os balcões.
+
 | Versão | Commit | O que entrou |
 | --- | --- | --- |
 | v13 | `7023356` | Eterna: protótipo funcional, versão 13 (ingestão automática sem foto preta, bandeiras) |

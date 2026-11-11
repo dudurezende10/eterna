@@ -1,8 +1,30 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v93 (06/11/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v97 (11/11/2026).
 
-Nomes: a tela do cliente na loja se chama **Checkout**. Ela abre pelo botão **Abrir Checkout**. Antes era o item Loja do menu. É a mesma tela.
+Três nomes para guardar:
+
+- **Checkout** é a tela do cliente, no monitor virado para ele. Abre pelo botão amarelo **Abrir Checkout**.
+- **Posto de venda** (ou só **Posto**) é a tela do vendedor e do caixa, no notebook. Tudo da venda é feito nela.
+- **Computador do ponto** é o computador do estádio que recebe e guarda as fotos. Quando ele para, aparece a faixa vermelha "O computador do ponto não está respondendo. Chame a TI."
+
+### Nomes que mudaram
+
+Se alguém falar o nome antigo, é esta tela:
+
+| Nome antigo | Nome de hoje | Onde fica |
+| --- | --- | --- |
+| Loja | Checkout | botão amarelo **Abrir Checkout** |
+| Fila do balcão, tela Caixa antiga, tela Venda | Posto de venda | grupo **Venda** |
+| Caixa (tela separada) | Caixa, dentro do Posto de venda | botão amarelo **Caixa** |
+| Upload automático | Minhas fotos | grupo **Fotógrafo** |
+| Biblioteca (para o fotógrafo) | Minhas fotos de hoje | fim da tela **Minhas fotos** |
+| Escala 5×2 | Escala | grupo **Fotógrafo** |
+| Painel de controle, Catálogo e preços | Preços e Checkout | grupo **Configurações** |
+| Vendas e caixa | Vendedores | grupo **Dashboard** |
+| Fundos de IA (em Configurações) | aba **Fundos de IA** de Preços e Checkout | grupo **Configurações** |
+| Semana | Painel | grupo **Dashboard** |
+| Código do recibo, código do pedido | Seu código | tela do cliente e recibo |
 
 ---
 
@@ -14,18 +36,22 @@ O menu fica do lado esquerdo e é dividido em grupos:
 
 | Grupo | O que tem |
 | --- | --- |
-| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fotógrafos, Vendas e caixa, Lista de vendas, Galerias online |
+| Venda | Posto de venda |
+| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Fotógrafos, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
 | Curadoria | Qualidade, Treino da IA, Alertas |
-| Fotógrafo | Diário do set, Upload automático, Fila do fotógrafo, Escala 5×2, Calendário de eventos |
-| Configurações | Repositório, Identidade, Painel de controle (catálogo, preços, Checkout e FTP), Fundos de IA, Ajuste automático, Usuários, Permissões |
-| Laboratório | Vestiário |
+| Fotógrafo | Diário do set, Minhas fotos, Fila do fotógrafo, Escala |
+| Configurações | Preços e Checkout, Ajuste automático |
+| Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
-1. Toque no nome do grupo para abrir. Toque de novo para fechar.
-2. O grupo da tela em que você está fica sempre aberto.
-3. Para voltar ao **Início**, toque no logo.
-4. O botão **Abrir Checkout** fica fora dos grupos, logo abaixo do logo.
+1. No alto do menu ficam dois botões amarelos: **Abrir Checkout** e **Caixa**. Só aparecem para quem pode usar.
+2. O número ao lado de **Caixa** mostra quantos pagamentos em dinheiro esperam confirmação.
+3. Toque no nome do grupo para abrir. Toque de novo para fechar. Quem vê até 5 telas vê a lista direta, sem grupos.
+4. O grupo da tela em que você está fica sempre aberto.
+5. Para voltar ao **Início**, toque no logo.
 
 Cada pessoa só vê as telas que pode usar. Se faltar uma tela de que você precisa, peça à administração.
+
+Quem só consulta os preços (vendedor) vê a tela **Preços e Checkout** com o nome **Preços**, só com a tabela.
 
 ### No celular
 
@@ -34,23 +60,27 @@ Cada pessoa só vê as telas que pode usar. Se faltar uma tela de que você prec
 3. Toque no grupo e depois na tela. O menu fecha sozinho.
 4. Para fechar sem escolher, toque na parte escura ao lado ou em **Menu** de novo.
 
-### O que mudou na v80
+### Faixa vermelha: o computador do ponto não responde
 
-- A **Semana** virou o **Painel**, a primeira tela do Dashboard. Admin e Supervisor começam nele (parte 1A).
-- **Vendas e caixa** ficou só com os vendedores. Totais, produtos e pagamentos estão no Painel.
-- **Catálogo e preços** passou a se chamar **Painel de controle** (catálogo, preços, Checkout e o FTP do estádio). Não confunda com o **Painel** do Dashboard.
-- O cartão de **check-in da câmera** saiu do Upload automático. O fotógrafo de cada foto vem do usuário do FTP (cada fotógrafo tem o seu login) e do nome gravado na câmera.
-- O cartão **Servidor FTP do estádio** saiu do Upload automático e foi para **Configurações › Painel de controle**.
-- Em Permissões e no cadastro de Usuários: **Copiar permissões de…** (parte 5).
-- As datas aparecem sempre como dia/mês/ano (07/10/2026), mesmo com o navegador em inglês.
+Quando o computador do ponto está desligado ou fora da rede, as telas que dependem dele mostram uma faixa vermelha:
 
-### O que mudou na v78
+**O computador do ponto não está respondendo. Chame a TI.**
 
-- **Loja** virou **Checkout**, com o botão **Abrir Checkout**.
-- **Fluxo**, **Anfitrião no set** e **Convidado** saíram do menu.
-- O check-in da câmera e a troca de fotógrafo estão agora no **Upload automático** (parte 2).
-- O cliente vê as fotos só pela galeria online, com o QR do recibo. Não existe mais login de cliente.
-- Se ao entrar aparecer "Seu acesso ainda não foi liberado", a administração ainda não liberou nenhuma tela para você. Peça ao administrador.
+Embaixo aparece **Último dado às hh:mm**. Os números da tela são dessa hora e não estão atualizando.
+
+1. Avise a TI e diga a hora que aparece na faixa.
+2. Não recarregue a página várias vezes. A tela volta sozinha quando o computador do ponto responder.
+3. O Checkout e o Posto de venda continuam abrindo mesmo sem internet (veja **Novidades da v97**).
+
+Os detalhes técnicos (endereço, porta, pasta) aparecem só para o Admin, em **Detalhes técnicos**, no fim da tela **Minhas fotos**.
+
+### Modo demonstração (só o Admin)
+
+Os botões de simulação (Simular leva, Testar com fotos suas) ficam escondidos no dia a dia. Só o Admin liga, em **Sistema › Identidade › Modo demonstração neste computador**. Vale só naquele computador e aparece a faixa cinza "Modo demonstração" no alto. Desligue antes de atender.
+
+### Se ao entrar aparecer "Seu acesso ainda não foi liberado"
+
+A administração ainda não liberou nenhuma tela para você. Peça ao administrador.
 
 ---
 
@@ -62,13 +92,13 @@ O Painel responde em poucos segundos "como foi o período": faturamento, fotos, 
 
 1. Toque em **Hoje**, **Ontem**, **7 dias** ou **30 dias**. Os dias seguem o horário do Rio, mesmo abrindo de outro país.
 2. Para outras datas, toque em **Personalizado** ou direto nas datas **De** e **Até**.
-3. **Ponto**: filtra pelo ponto onde a foto foi tirada. Só liga com a Roverpix ao vivo (agente do ponto) ou com a fonte **Eterna**.
+3. **Ponto**: filtra pelo ponto onde a foto foi tirada. Só liga com a Roverpix ao vivo (pelo computador do ponto) ou com a fonte **Eterna**.
 4. **Fonte**: **Tudo** (Roverpix + Eterna), só **Roverpix** ou só **Eterna**. A parte Eterna são as vendas deste computador.
 5. **Exportar CSV** baixa um dia por linha e uma linha de total.
 
 ### Como ler
 
-- **Os 4 cartões**: Faturamento (com ticket médio e vendas), Fotos tiradas (e quantas foram vendidas), Sessões (e quantas compraram) e Gasto por visitante (só com a leitura das catracas; sem catraca aparece "—").
+- **Os 4 cartões**: Faturamento (com ticket médio e vendas), Fotos tiradas (e quantas foram vendidas), Sessões (e quantas compraram) e Gasto por visitante (só com a leitura das catracas; sem catraca aparece um traço).
 - **Seta verde ▲ ou cinza ▼**: comparação com o período anterior de mesma duração. Só aparece quando esse período anterior está inteiro nos dados. Abaixo de 1% aparece "estável".
 - **Receita por dia**: o melhor dia em azul, com o valor; o pior só com o valor. Passe o mouse ou toque numa coluna para ver o valor do dia.
 - **Vendas**: quantos atendimentos viraram venda, foram descartados ou cancelados, e os brindes.
@@ -78,45 +108,75 @@ O Painel responde em poucos segundos "como foi o período": faturamento, fotos, 
 - **Pagamentos**: quanto entrou por modalidade. Dinheiro aguardando caixa aparece numa nota e não entra no total.
 - **Dia a dia**: toque para abrir a tabela.
 - **"total de 07/10 a 15/10"**: com os números importados, Vendas, Fotos, Ranking e Pagamentos só existem como total do período inteiro.
-- **"Roverpix desatualizado desde hh:mm"**: o agente não atualiza há mais de 15 minutos. Confira se o computador do ponto está ligado.
+- **"Roverpix desatualizado desde hh:mm"**: o computador do ponto não atualiza há mais de 15 minutos. Confira se o computador do ponto está ligado.
 
 Atendimento e venda, Fotógrafo, Validador e Checkout não veem o Painel.
 
 ---
 
-## 2. Fotógrafo (Upload automático)
+## 2. Fotógrafo (Minhas fotos e Escala)
 
 ### O que o fotógrafo vê
 
-- Ao entrar, cai direto no **Upload automático**.
-- No menu, só o grupo **Fotógrafo**: Diário do set, Upload automático e Escala 5×2.
+- Ao entrar, cai direto em **Minhas fotos**.
+- No menu, só o grupo **Fotógrafo**: Diário do set, Minhas fotos, Fila do fotógrafo e Escala.
 - Não vê Checkout, vendas, números de outros fotógrafos, Curadoria nem Configurações.
 
-### De quem é cada foto (v80)
+### Seu nome e seu ponto (v97)
 
-O fotógrafo não precisa mais fazer check-in da câmera. O Eterna sabe de quem é cada foto assim:
+No alto de **Minhas fotos** aparecem o seu nome e o seu ponto do dia. O nome vem do seu login. O ponto vem da **Escala**. Não dá para trocar por aqui.
+
+- Outro fotógrafo vai usar o computador: toque em **Trocar fotógrafo**.
+- O ponto está errado: fale com a supervisora. Ela corrige na Escala.
+
+A supervisora e o Admin continuam com os seletores **Fotógrafo** e **Ponto** no alto da tela.
+
+### Escala: onde eu trabalho hoje (v97)
+
+1. Abra **Fotógrafo › Escala**.
+2. Em letra grande aparece **Hoje você está em:** e o nome do ponto. Para o volante aparece **Hoje você está como Volante**, com o modo do dia.
+3. Se for folga, aparece **Hoje é sua folga**.
+4. Se aparecer **Você não está na escala de hoje. Fale com a supervisora.**, fale com ela antes de começar. Sem função do dia, as fotos para os fundos de IA não são separadas.
+5. Embaixo ficam os **Próximos 7 dias**. Eles mostram o seu ponto fixo. A supervisora confirma a função de cada dia.
+
+A supervisora e o Admin veem a Escala da equipe a partir de hoje: a função de cada fotógrafo e a cobertura dos pontos. Os dias que já passaram ficam em **Ver dias anteriores**.
+
+### De quem é cada foto
+
+O fotógrafo não faz check-in da câmera. O Eterna sabe de quem é cada foto assim:
 
 1. Pelo **usuário do FTP**: cada fotógrafo manda as fotos com o seu login (ou para a sua pasta) no FTP do estádio.
 2. Pelo **nome gravado na câmera** (menu da câmera › Informações de copyright › Nome do autor), se houver.
 
-Check-ins feitos antes da v80 continuam valendo para aquelas fotos. Foto sem nenhuma dessas pistas cai em **Sem fotógrafo**.
+Foto sem nenhuma dessas pistas cai em **Sem fotógrafo**.
 
-O FTP do estádio é configurado pela administração em **Configurações › Painel de controle**. Fora do computador do ponto, o cartão aparece com **agente desconectado**: abra o Eterna pelo agente (http://127.0.0.1:8765) naquele computador para configurar.
+O FTP do estádio é configurado pela administração em **Configurações › Preços e Checkout**, aba **Avançado**. Só funciona com o Eterna aberto no computador do ponto.
 
 ### Trocar de fotógrafo no mesmo computador
 
-1. No alto do Upload automático aparece **Neste computador**, com o nome de quem está logado.
+1. No alto de **Minhas fotos** aparece **Neste computador**, com o nome de quem está logado.
 2. Toque em **Trocar fotógrafo**. Quem estava sai.
 3. O próximo fotógrafo entra com o e-mail dele e o código.
-4. Ele volta direto para o Upload automático.
+4. Ele volta direto para **Minhas fotos**.
 
 Para só sair, sem trocar, toque em **Sair**.
+
+### A faixa de estado
+
+Logo abaixo do título, uma faixa diz como estão as suas fotos:
+
+| Faixa | Quer dizer |
+| --- | --- |
+| **Pronto para receber** | nada chegando agora |
+| **Recebendo 12 de 20** (amarela) | as fotos estão chegando e sendo lidas |
+| **Tudo no servidor · 48 fotos hoje · 6 sessões** (verde) | tudo o que você fez já está guardado |
+| **O computador do ponto não está respondendo. Chame a TI.** (vermelha) | o computador do ponto parou; a hora do último dado aparece embaixo |
 
 ### Ligar e desligar o ajuste automático
 
 O ajuste automático da IA clareia a foto escura, segura a estourada e acerta a cor de toda foto que chega.
 
-1. No topo do **Upload automático** fica o painel **Ajuste automático da IA**.
+1. Em **Minhas fotos** fica o painel **Ajuste automático da IA**.
 2. Toque no botão para trocar entre **Ligado** e **Desligado**.
 3. Embaixo aparece quem mexeu e a hora. Exemplo: "Desligado por Carlos às 14:02".
 
@@ -126,34 +186,60 @@ Bom saber:
 - Toda troca fica registrada com o seu nome.
 - O supervisor vê o painel, mas não consegue mudar.
 
-### Seu nome e seu ponto (v96-ux)
+### Minhas fotos de hoje (v97)
 
-No topo de **Minhas fotos** aparecem o seu nome e o seu ponto do dia, como estão na Escala. Não dá para trocar por aqui. Se outro fotógrafo for usar o computador, toque em **Trocar fotógrafo**. Se o ponto estiver errado, fale com a supervisora para corrigir a Escala.
+No fim da tela o fotógrafo vê **Minhas fotos de hoje**: só as fotos dele, de hoje, separadas por sessão.
 
-### Minhas fotos de hoje (v96-ux)
+- Cada sessão mostra a hora da primeira foto, quantas fotos tem e quantas foram vendidas.
+- A foto vendida leva a etiqueta **VENDIDA**.
+- As fotos que acabaram de chegar ficam em **Ainda sem sessão** até a sessão fechar.
+- Não tem filtro para escolher. A tela já mostra só o que é seu.
 
-No fim da tela o fotógrafo vê **Minhas fotos de hoje**: só as fotos dele, de hoje, separadas por sessão. Cada sessão mostra a hora da primeira foto, quantas fotos tem e quantas foram vendidas. A foto vendida leva a etiqueta **VENDIDA**. As fotos que acabaram de chegar ficam em **Ainda sem sessão** até a sessão fechar. A supervisora e o Admin continuam vendo a Biblioteca inteira, com os filtros.
+A supervisora e o Admin continuam vendo todas as fotos, com os filtros de dia, hora, fotógrafo e venda.
 
-### O cartão não foi lido: enviar as fotos pela tela (v96-ux)
+### O cartão não foi lido: enviar as fotos pela tela (v97)
 
-Use só quando o leitor não reconhecer o cartão. As fotos entram do mesmo jeito que entrariam pelo leitor.
+É o plano B. Use só quando o leitor não reconhecer o cartão. As fotos entram do mesmo jeito que entrariam pelo leitor, como fotos de cartão.
+
+**Fotógrafo**
 
 1. No computador do ponto, abra **Minhas fotos**.
-2. Toque em **Enviar fotos do cartão manualmente** (o link fica logo abaixo da faixa de estado).
-3. Abra a pasta do cartão no computador e arraste as fotos para a área **Solte aqui as fotos do cartão**, ou toque em **Escolher fotos**.
-4. A faixa mostra **Enviando 4 de 6** e, no fim, **Enviadas 6 de 6**.
+2. Toque em **Enviar fotos do cartão manualmente** (fica logo abaixo da faixa de estado, com o aviso "Use só se o cartão não foi lido.").
+3. Confira a frase "As fotos entram como do cartão de <seu nome>".
+4. Abra a pasta do cartão no computador e arraste as fotos para a área **Solte aqui as fotos do cartão**. Ou toque em **Escolher fotos** e selecione as fotos.
+5. A faixa mostra **Enviando 4 de 6**. Espere.
+6. No fim aparece **Enviadas 6 de 6**. Pronto.
+7. Toque em **Fechar** para guardar o painel.
+
+**Supervisora ou Admin (enviando para um fotógrafo)**
+
+1. Abra **Minhas fotos** no computador do ponto.
+2. No seletor **Fotógrafo**, no alto, escolha de quem são as fotos. Com **Todos** aparece "Escolha o fotógrafo acima." e nenhuma foto entra.
+3. Siga os passos 2 a 7 acima. Confira o nome na frase "As fotos entram como do cartão de...".
+
+**Se algo não entrar**
+
+| O que aparece | O que fazer |
+| --- | --- |
+| "já estava no servidor" | Nada. A foto já tinha chegado. Não é erro. |
+| "não era foto" | O arquivo não é uma foto JPEG da câmera. Só entram arquivos `.jpg` ou `.jpeg` de verdade. Foto em RAW, vídeo ou arquivo renomeado não entra. |
+| "acima de 60 MB" | A foto é grande demais. Fale com a supervisora. |
+| "chegou cortada" | A foto chegou incompleta. Envie de novo. |
+| **Tentar de novo as N que faltaram** | A conexão caiu no meio. Toque no botão. Cada foto já tinha tentado 3 vezes. |
+| "O computador do ponto está sem espaço. Chame a TI." | O disco do computador do ponto está quase cheio. Pare e chame a TI. |
+| "O limite de fotos por dia do envio manual foi atingido. Chame a TI." | O envio manual tem um teto de fotos por dia. Chame a TI. |
+| "O computador do ponto precisa ser atualizado para receber fotos por aqui. Chame a TI." | O computador do ponto está numa versão antiga. Chame a TI. |
+| "O computador do ponto não está respondendo. Chame a TI." | O computador do ponto está desligado ou fora da rede, ou você não abriu o Eterna pelo computador do ponto. |
 
 Bom saber:
-- O fotógrafo manda sempre em nome dele. A supervisora e o Admin escolhem o fotógrafo no seletor **Fotógrafo** acima; com **Todos**, aparece "Escolha o fotógrafo acima" e nenhuma foto entra.
-- Só entram fotos `.jpg` ou `.jpeg` da câmera. Outro arquivo aparece na lista como "não era foto".
-- Foto que já estava no servidor não entra de novo e aparece como "já estava no servidor". Não é erro.
-- Se a conexão cair, cada foto tenta 3 vezes. Depois aparece **Tentar de novo as N que faltaram**.
+- O fotógrafo manda sempre em nome dele. Não dá para mandar em nome de outro.
+- Dá para mandar até 2.000 fotos de cada vez.
 - Pode trocar de tela durante o envio, ele continua. Não feche nem recarregue a página até terminar.
-- Se aparecer "O computador do ponto não está respondendo. Chame a TI.", o computador do ponto está desligado ou fora da rede. Os outros avisos com "Chame a TI" dizem o motivo (sem espaço, precisa ser atualizado).
-
+- Para interromper, toque em **Parar**.
+- Cada envio fica registrado com o nome de quem enviou.
 ### Sessões de hoje (v91)
 
-Com o agente do ponto aberto, o Upload automático mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. Os seletores **Fotógrafo** e **Ponto** do alto da tela filtram as sessões.
+Com o computador do ponto ligado, **Minhas fotos** mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. O fotógrafo vê as sessões dele. A supervisora e o Admin filtram pelos seletores **Fotógrafo** e **Ponto** do alto da tela.
 
 Cada sessão tem uma linha com: o código (LP...), o fotógrafo, o ponto, a hora do primeiro e do último clique, o número de fotos e o motivo de ter começado. Quando aparece "chegada" depois da hora, a câmera não mandou a hora do clique e vale a hora em que a foto chegou.
 
@@ -192,11 +278,11 @@ Vale nos 4 pontos de campo (Terminal Campo, Foto Campo 2, 3 e 4). Volante e Vest
 
 - Elas não são vendidas como foto. Viram a base das montagens com os fundos de IA.
 - O servidor recorta as pessoas assim que as fotos chegam, com a sessão ainda aberta.
-- Quando o cliente chega ao Checkout, as **5 montagens** já estão prontas, uma para cada fundo: Arquibancada 1950 e Pódio de campeão usam o 1º clique; Noite de campeão, Mirante e Saída do túnel usam o 2º.
+- Quando o cliente chega ao Checkout, as **5 montagens** já estão prontas, uma para cada fundo: Arquibancada 1950 usa o 1º clique; Noite de campeão, Mirante, Saída do túnel e Telão do Maracanã usam o 2º.
 - **Se você esquecer**, o sistema usa as 2 primeiras fotos assim mesmo. A IA recorta de qualquer jeito. Não existe botão para devolver essas fotos à venda.
 - Sessão com 2 fotos ou menos: nada é separado, as fotos ficam à venda.
 
-**Como conferir no Upload automático**
+**Como conferir em Minhas fotos**
 
 - As 2 fotos aparecem com a marca **Fundo IA 1** e **Fundo IA 2**. Passe o mouse sobre a marca para ler o texto inteiro: **Fundo IA 1 · corpo inteiro** e **Fundo IA 2 · fechada**.
 - Com a sessão ainda aberta, a marca aparece como **Fundo IA?**. Ela confirma quando a sessão fecha.
@@ -211,7 +297,7 @@ Vale nos 4 pontos de campo (Terminal Campo, Foto Campo 2, 3 e 4). Volante e Vest
 
 **Administração: mudar a regra (Admin)**
 
-1. Abra **Configurações › Painel de controle**.
+1. Abra **Configurações › Preços e Checkout** e toque na aba **Fundos de IA**.
 2. Desça até o quadro **Fotos para os fundos de IA**.
 3. Ali dá para ligar ou desligar a regra, escolher **quantos cliques** (de 1 a 3) e **em quais pontos** ela vale, inclusive Vestiário e Volante.
 4. A mudança vale para as sessões que fecharem depois dela. As sessões já fechadas não mudam.
@@ -222,7 +308,7 @@ Só quem pode alterar Configurações (Admin e Supervisor, pelos perfis prontos)
 
 ---
 
-## 3. Checkout (caixa e atendimento)
+## 3. Checkout e Posto de venda (caixa e atendimento)
 
 ### Abrir
 
@@ -246,7 +332,7 @@ A compra é uma venda só, mesmo com fotos de várias sessões. Foto que já foi
 
 A câmera procura só as fotos dos **últimos 90 minutos** (a família que fotografou antes disso já foi embora, e a busca fica mais rápida e mais segura). Se o cliente voltar depois, a câmera não acha: peça o **código do recibo** (começa com LP) ou o **código da galeria** (exemplo: `K7QM-4WXR`). O código abre a sessão de qualquer hora do dia.
 
-O tempo muda no **Painel de controle** › **Checkout** › **Procurar fotos dos últimos __ minutos** (de 15 a 480 minutos, ou **Dia todo**). Só Admin e Supervisor mudam. Vale na hora para todos os caixas do ponto. Em dia cheio, diminua; em dia calmo, pode aumentar.
+O tempo muda em **Configurações › Preços e Checkout**, aba **Checkout**, em **Procurar fotos dos últimos __ minutos** (de 15 a 480 minutos, ou **Dia todo**). Só Admin e Supervisor mudam. Vale na hora para todos os caixas do ponto. Em dia cheio, diminua; em dia calmo, pode aumentar.
 
 ### Computador do cliente: Chrome em modo quiosque
 
@@ -256,15 +342,15 @@ No terminal que fica virado para o cliente, abra o Chrome em modo quiosque. Assi
 2. Abra o Chrome em modo quiosque (atalho do Chrome com a opção `--kiosk`). A TI do ponto deixa o atalho pronto.
 3. Para sair do modo quiosque, a equipe usa Alt+F4 no Windows ou Cmd+Q no Mac.
 
-### Checkout e Caixa no mesmo computador
+### Checkout e Posto de venda no mesmo computador
 
-Nesta versão o Checkout e o Caixa precisam estar **no mesmo computador e no mesmo navegador**, em duas janelas: uma com o Checkout, na tela do cliente, e outra com o Caixa, na tela da equipe. Em computadores diferentes o dinheiro não aparece no Caixa. Isso muda numa próxima versão.
+Nesta versão o Checkout e o Posto de venda precisam estar **no mesmo computador e no mesmo navegador**, em duas janelas: uma com o Checkout, no monitor do cliente, e outra com o Posto de venda, no notebook da equipe. Em computadores diferentes o pedido não aparece no Posto. Isso muda numa próxima versão.
 
 ### Depois de cada atualização: feche as janelas antigas
 
 **Na atualização para a v96, logo depois de publicar:** em todos os balcões, feche e abra de novo o Checkout e o Posto de venda (e qualquer outra janela do Eterna aberta no notebook). A v96 grava a compra sem pacote de um jeito que uma janela da versão anterior não lista nem confirma, e o Posto da v96 mostra um alerta vermelho se uma janela antiga mexer numa compra do Checkout. Mesmo assim a janela antiga continua aberta com dados velhos e só some quando é fechada: **fechar e reabrir em todos os balcões continua obrigatório**. Antes de usar a impressora, registre a troca de rolo em cada posto com um rolo novo (os valores que vêm na instalação são de demonstração; veja **Troquei o rolo**).
 
-Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eterna abertas naquele computador (Checkout, Caixa e as outras). Uma janela antiga aberta pode atrapalhar o caixa. Se aparecer o aviso "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.", faça isso na hora.
+Quando o Eterna for atualizado, feche ou recarregue **todas** as janelas do Eterna abertas naquele computador (Checkout, Posto de venda e as outras). Uma janela antiga aberta pode atrapalhar o caixa. Se aparecer o aviso "Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.", faça isso na hora.
 
 ### Atender um cliente (v96)
 
@@ -278,11 +364,28 @@ O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o n
    - Se o cliente parar na escolha das fotos sem tocar na tela por 90 segundos, o Checkout volta ao **Iniciar** e as fotos marcadas por ele são apagadas: quem chegar depois começa do zero e não vê as fotos de ninguém. Ele também pode sair quando quiser pelo botão **Sair**, no canto de cima. Se já tiver marcado fotos, o Checkout pergunta "Sair e apagar as fotos marcadas?" (Sim ou Não). Isso não vale depois do Continuar: aí valem as regras da tela Pronto e do valor (abaixo).
 6. No **Posto de venda**, a compra aparece em **Aguardando pagamento** com as fotos escolhidas (inclusive as de fundo de IA). Mostre as fotos ao cliente, escolha o **pacote** (o **Ideal** vem marcado com a etiqueta) e a **forma de pagamento**.
 7. Assim que você escolhe o pacote, a tela do cliente mostra **Valor a pagar R$ X** e quantas fotos são, sem o nome do pacote. Antes de você escolher a forma de pagamento aparece "O atendente vai informar a forma de pagamento"; depois, "Pague na maquininha" (Cartão), "Pague com PIX na maquininha" (PIX) ou "Pague em dinheiro ao atendente" (Dinheiro). Ele pode tocar em **Ver minhas fotos** para ver as escolhidas. Se você trocar o pacote, o valor muda na hora na tela dele. Cada escolha ou troca de pacote e de forma de pagamento fica no registro de auditoria com o seu nome e o valor.
-   - Se o cliente sair da tela Pronto ou da tela do valor sem tocar em nada por 3 minutos, ou tocar em **Voltar ao início** (ou a equipe apertar Esc), o Checkout volta ao **Iniciar**. A compra continua em **Aguardando pagamento** com "O cliente saiu da tela": cancele ou espere ele voltar.
-   - Se o preço do pacote mudar no Catálogo depois da sua escolha, ao confirmar o Eterna mostra o valor novo (o cliente também vê) e pede para confirmar de novo.
+   - Na tela Pronto e na tela do valor o cliente não tem mais o botão **Voltar ao início** (v97). Ele apertava sem querer e perdia o pedido. Para voltar a tela dele ao começo, use **Recomeçar o Checkout** no seu notebook (veja abaixo).
+   - Se a tela Pronto ou a tela do valor ficar parada por 3 minutos (ou a equipe apertar Esc), o Checkout volta sozinho ao **Iniciar**. A compra continua em **Aguardando pagamento** com "O cliente saiu da tela": cancele ou espere ele voltar.
+   - Se o preço do pacote mudar em Preços e Checkout depois da sua escolha, ao confirmar o Eterna mostra o valor novo (o cliente também vê) e pede para confirmar de novo.
 8. Cobre na maquininha e confirme como antes (**Pago na maquininha** ou **Recebi R$ X**). O Checkout mostra a tela final com o QR, o código da galeria e o **Valor pago R$ X** que você confirmou.
 9. Se você cancelar, o Checkout do cliente volta ao início.
-10. Imprima as fotos no Posto de venda. A tela final com o QR fica 30 segundos e volta sozinha ao **Iniciar**. Para atender o próximo antes disso, toque em **Voltar ao início**.
+10. Imprima as fotos no Posto de venda. A tela final com o QR fica 30 segundos e volta sozinha ao **Iniciar**. Para atender o próximo antes disso, toque em **Voltar ao início** (só a tela final com o QR tem esse botão).
+
+### Recomeçar o Checkout (v97)
+
+Use quando o monitor do cliente ficou parado na tela Pronto ou na tela do valor e você precisa dele livre: o cliente foi buscar alguém, saiu da frente da tela ou outra família vai usar o monitor.
+
+1. No **Posto de venda**, ache o pedido em **Aguardando pagamento**. O botão **Recomeçar o Checkout** aparece só no pedido que o monitor do cliente está esperando.
+2. Toque em **Recomeçar o Checkout**.
+3. Aparece a pergunta **Recomeçar o Checkout?**, com o código do pedido. Confira o código.
+4. Toque em **Sim, recomeçar**. Para desistir, toque em **Não, manter a tela**.
+5. O monitor do cliente volta ao **Iniciar**. Aparece o aviso "O monitor do cliente voltou ao início. O pedido continua aqui."
+
+Bom saber:
+- O pedido **não é cancelado**. Ele continua em **Aguardando pagamento**, com a marca "Checkout recomeçado às hh:mm". Você ainda pode cobrar e confirmar.
+- Para desistir da compra, o caminho é outro: o link **Cancelar compra**.
+- Só quem vende vê o botão. Cada uso fica registrado com o seu nome.
+- Se o cliente já saiu da tela de espera, o botão some sozinho.
 
 Outras coisas que o cliente pode fazer:
 - Trocar o idioma tocando na bandeira: Brasil, Estados Unidos, Espanha, França ou Alemanha. Em tela pequena, as bandeiras ficam guardadas num botão com a bandeira atual.
@@ -315,7 +418,7 @@ No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 - "Cabem mais N fotos neste pacote sem pagar mais", quando ele escolheu menos fotos do que o pacote leva.
 - Impressas: o pacote imprime até o número de fotos escolhidas, mais uma por adicional. Cada adicional sai do rolo do caixa.
 
-Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Painel de controle**.
+Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Configurações › Preços e Checkout**.
 
 ### Sessão que já foi paga
 
@@ -434,10 +537,10 @@ A aba **Envio** mostra se cada galeria chegou ao computador do ponto:
 - **local**: sessão de exemplo, que só existe neste computador.
 - **encerrada**: o grupo foi encerrado.
 
-### Ajustes no Catálogo
+### Ajustes em Preços e Checkout
 
-- **Tempo da tela final do Checkout**: Painel de controle › Checkout › "Tempo da tela final com o QR (segundos)". Padrão 30, de 5 a 120.
-- **Preço da foto avulsa na galeria**: item "Foto digital avulsa (galeria online)", hoje R$ 39. "Todas as fotos" custa o mesmo que o Pacote Maracanã Mais.
+- **Tempo da tela final do Checkout**: Configurações › Preços e Checkout › aba Checkout › "Tempo da tela final com o QR (segundos)". Padrão 30, de 5 a 120.
+- **Preço da foto avulsa na galeria**: aba Preços, item "Foto digital avulsa (galeria online)", hoje R$ 39. "Todas as fotos" custa o mesmo que o Pacote Maracanã Mais.
 
 ### Ver as vendas da galeria
 
@@ -447,7 +550,7 @@ Em **Lista de vendas**, use o filtro **Canal: Online**. Hoje elas aparecem como 
 
 ## 5. Administração (Usuários e Permissões)
 
-Fica no grupo **Configurações**. **Usuários** é o cadastro da equipe. **Permissões** é onde se decide o que cada pessoa vê e faz. Só o admin vê as duas telas.
+Fica no grupo **Sistema**. **Usuários** é o cadastro da equipe. **Permissões** é onde se decide o que cada pessoa vê e faz. Só o admin vê as duas telas.
 
 ### As quatro palavras
 
@@ -464,7 +567,7 @@ As letras vêm do inglês (Create, Read, Update, Delete). Embaixo do nome de cad
 
 ### Cadastrar uma pessoa
 
-1. Abra **Configurações** › **Usuários** › **Novo usuário**.
+1. Abra **Sistema** › **Usuários** › **Novo usuário**.
 2. Escreva o nome e o e-mail.
 3. Se for fotógrafo, escolha o nome dele em **Fotógrafo vinculado**.
 4. Em **Perfil**, escolha um perfil pronto (tabela abaixo). Se ainda não souber o que liberar, escolha **Sem acesso ainda**.
@@ -476,7 +579,7 @@ Quem entra com "Sem acesso ainda" vê a mensagem "Seu acesso ainda não foi libe
 
 ### Dar ou tirar acesso
 
-1. Abra **Configurações** › **Permissões** › aba **Por usuário**.
+1. Abra **Sistema** › **Permissões** › aba **Por usuário**.
 2. Busque a pessoa pelo nome ou e-mail e toque nela.
 3. **Jeito rápido:** escolha um **Perfil pronto**, toque em **Aplicar perfil** e depois em **Salvar**.
 4. **Jeito fino:** em cada linha, marque o que a pessoa pode fazer.
@@ -524,10 +627,10 @@ A aba **Histórico** em Permissões mostra toda mudança: quando, quem mudou, a 
 | Perfil | Vê | Não vê |
 | --- | --- | --- |
 | Admin | tudo, inclusive Usuários e Permissões; começa no Painel | nada fica de fora |
-| Fotógrafo | Diário do set, Upload automático (troca de fotógrafo), Fila do fotógrafo, Escala 5×2 | Checkout, Dashboard, Curadoria, Configurações |
-| Atendimento e venda | Checkout, Posto de venda (com o Caixa e a Venda manual dentro dele), Catálogo (só para ver os preços), Fila do fotógrafo (só para ver) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
+| Fotógrafo | Diário do set, Minhas fotos (com a troca de fotógrafo e o envio das fotos do cartão pela tela), Fila do fotógrafo, Escala | Checkout, Dashboard, Curadoria, Configurações |
+| Atendimento e venda | Checkout, Posto de venda (com o Caixa e a Venda manual dentro dele), Preços (só para ver), Fila do fotógrafo (só para ver) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
 | Validador | Qualidade, Treino da IA, Diário do set (só para ver) | vendas, Checkout, Configurações |
-| Supervisor | Dashboard (começa no Painel), Curadoria (só para ver), grupo Fotógrafo (envia as fotos do cartão pela tela em nome de um fotógrafo, v96-ux), Configurações do venue, Laboratório | Usuários e Permissões; não cancela venda |
+| Supervisor | Posto de venda, Dashboard (começa no Painel), Curadoria (só para ver), grupo Fotógrafo (envia as fotos do cartão pela tela em nome de um fotógrafo), Configurações (Preços e Checkout com os Fundos de IA, Ajuste automático) | o grupo Sistema (Usuários, Permissões, Repositório, Identidade, Laboratório); não cancela venda |
 | Checkout | só a tela do cliente, em tela cheia | todo o resto |
 
 A aba **Perfis prontos** mostra cada perfil em detalhe.
@@ -537,7 +640,7 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 ## Novidades da v81
 
 - **Checkout no segundo monitor.** "Abrir Checkout" abre uma janela separada. Arraste essa janela para o monitor do cliente. A sua tela continua logada no admin. Se o cliente apertar Esc ou mexer no endereço da janela dele, o Checkout volta ao início e o seu login não cai.
-- **Fundos de IA.** O cliente vê só 5 fundos: Noite de campeão (sem a taça), Mirante ao pôr do sol, Arquibancada 1950 em preto e branco, Saída do túnel e Pódio de campeão (desde a v86). Os outros ficam em Laboratório › Fundos em teste, onde o admin pode Ativar ou Mover para o Laboratório.
+- **Fundos de IA.** O cliente vê só 5 fundos: Noite de campeão (sem a taça), Mirante ao pôr do sol, Arquibancada 1950 em preto e branco, Saída do túnel e Telão do Maracanã (desde a v97, no lugar do Pódio de campeão). Os outros ficam em Sistema › Laboratório › Fundos em teste, onde o admin pode Ativar ou Mover para o Laboratório.
 - **Bandeiras.** As imagens foram corrigidas. A bandeira que ainda não tem a imagem certa fica sem foto, de propósito, até a imagem certa chegar.
 - **Fotógrafos.** Klassius e Sandessa já estão na lista.
 
@@ -559,26 +662,26 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 
 ### O que tem no Posto de venda
 
-- **No Checkout agora**: o que o cliente está vendo e escolhendo, ao vivo.
-- **Aguardando pagamento**: as escolhas do Checkout esperando você escolher o pacote, a forma de pagamento e confirmar.
+- **Agora no Checkout**: o que o cliente está vendo e escolhendo, ao vivo.
+- **Aguardando pagamento**: as escolhas do Checkout esperando você escolher o pacote, a forma de pagamento e confirmar. No pedido que o monitor do cliente está esperando aparece o botão **Recomeçar o Checkout**.
 - **Impressão 10×15**: as vendas pagas, com as fotos para imprimir já marcadas, e o contador do rolo.
 - **Minhas vendas de hoje**: as suas vendas neste notebook, com o valor de cada uma. Não mostra total. O botão **Recibo** abre o recibo com o QR em cima do Posto.
 - **Caixa** (botão amarelo no alto do menu): o mesmo Posto só com o dinheiro esperando confirmação. **Dinheiro ✕** volta ao Posto completo.
 - **Venda manual (quando o Checkout está fora)**: link no fim do Posto. Abre um bloco no alto da própria tela, com a câmera do balcão, o código da sessão, as fotos, o pacote, o Fundo de IA e o pagamento. **Fechar venda manual** fecha o bloco. Com uma sessão aberta na Venda manual, os botões Recibo ficam apagados até você fechar.
-- **Cliente pediu: apagar as fotos** (LGPD): fica na Venda manual, depois de escolher a sessão, para quem pode alterar as Galerias online. Só para sessão que não foi paga; pede confirmação e não dá para desfazer.
-- A tela **Fila do balcão** saiu: tudo é feito no Posto de venda.
+- **Cliente pediu: apagar as fotos** (LGPD): fica na Venda manual, depois de escolher a sessão, para quem pode alterar as Galerias online. Pede confirmação e não dá para desfazer. Desde a v97, as fotos compradas e as cortesias ficam com o cliente e a galeria paga continua aberta (passo a passo em **Novidades da v97**).
+- As telas **Fila do balcão** e **Caixa** separadas saíram: tudo é feito no Posto de venda.
 - **Aviso da Edição Maracanã** (foto com fundo de IA): a montagem ainda não vai para a galeria do QR, então o cliente só recebe se ela for impressa. Quando o pedido tem montagem, os pacotes só digitais (Zona Mista e Maracanã Mais) aparecem com o selo "sem a Edição Maracanã" e, se você escolher um deles, um aviso amarelo aparece abaixo dos pacotes: ofereça um pacote com impressão. O aviso também aparece quando as montagens não cabem nas impressões do pacote. Ele não trava a venda. Na Venda manual, o aviso aparece sempre que um Fundo de IA é escolhido.
 
 ### Confirmar na maquininha
 
 1. Desde a v96 o cliente só escolhe as fotos. A compra aparece em **Aguardando pagamento** com o código e as fotos. Escolha o pacote e a forma de pagamento (Cartão, PIX ou Dinheiro); o cliente vê o valor na tela dele.
 2. Digite o valor na maquininha e espere aprovar.
-3. Toque em **Pago na maquininha**.
+3. Toque em **Pago na maquininha**. É o botão principal do pedido, o maior.
 4. Se quiser, digite o **NSU ou a autorização** do comprovante (só números, de 4 a 12). É opcional.
 5. **Nunca digite o número do cartão.** Se aparecer "Isso parece número de cartão", apague e digite só o NSU.
 6. Toque em **Confirmar R$ X**. O Checkout mostra o QR para o cliente.
 7. Dinheiro: receba e toque em **Recebi R$ X**.
-8. Se o cliente desistir ou a maquininha recusar de vez, toque em **Cancelar** e depois em **Sim, cancelar**. O Checkout dele volta ao início.
+8. Se o cliente desistir ou a maquininha recusar de vez, toque no link vermelho **Cancelar compra** e depois em **Sim, cancelar**. O link fica afastado do botão principal, para ninguém tocar sem querer. O Checkout dele volta ao início.
 
 ### Imprimir
 
@@ -620,14 +723,14 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 
 ## Novidades da v84: fundos de IA montados no próprio computador
 
-As fotos com fundo de IA agora são montadas no computador do ponto, sem internet e sem custo. O agente recorta a pessoa e o Eterna coloca no fundo com as regras aprovadas (meio corpo encostado embaixo, corpo inteiro do joelho para cima, a Arquibancada 1950 toda em preto e branco). Vale para a prévia, o Checkout, o Posto de venda e a impressão 10×15.
+As fotos com fundo de IA agora são montadas no computador do ponto, sem internet e sem custo. O computador do ponto recorta a pessoa e o Eterna coloca no fundo com as regras aprovadas (meio corpo encostado embaixo, corpo inteiro do joelho para cima, a Arquibancada 1950 toda em preto e branco). Vale para a prévia, o Checkout, o Posto de venda e a impressão 10×15.
 
 ### Instalar o recorte (TI do ponto, uma vez por computador)
 
-1. Use um computador com **16 GB de memória** (recomendado). Com 8 GB funciona, mas fica no limite com o Chrome e o reconhecimento de rostos abertos.
-2. Na pasta do agente, dê dois cliques em **instalar-recorte.command** (Mac) ou **instalar-recorte.bat** (Windows). Ele cria um ambiente separado do Eterna (`Eterna/venv`, na pasta do usuário), instala as versões testadas do recorte e baixa os dois modelos (cerca de 350 MB). Precisa de internet só nesta hora. Depois disso, o Eterna.command e o iniciar-eterna.bat abrem o agente por esse ambiente.
+1. Use um computador com **16 GB de memória**. Desde a v97 o recorte é mais pesado: com menos de 6 GB de memória livre ele não abre.
+2. Na pasta do agente, dê dois cliques em **instalar-recorte.command** (Mac) ou **instalar-recorte.bat** (Windows). Ele cria um ambiente separado do Eterna (`Eterna/venv`, na pasta do usuário), instala as versões testadas do recorte e baixa os modelos (cerca de 1,3 GB na v97). No servidor do estádio, com placa de vídeo, a TI roda `instalar-recorte.bat gpu`. Precisa de internet só nesta hora. Depois disso, o Eterna.command e o iniciar-eterna.bat abrem o agente por esse ambiente.
 3. Feche o agente e abra de novo (Eterna.command ou iniciar-eterna.bat). Na janela do agente aparece **Recorte local: pronto**.
-4. Em **Configurações › Fundos de IA**, o quadro **Recorte local** mostra "pronto" e, depois das primeiras fotos, o tempo médio por foto.
+4. Em **Sistema › Fundos de IA (técnico)**, o quadro **Recorte local** mostra "pronto" e, depois das primeiras fotos, o tempo médio por foto.
 
 Se o recorte não estiver instalado, o Checkout não oferece foto com fundo de IA e o quadro mostra o motivo. Enquanto a foto está sendo montada, o cliente vê "Preparando sua foto especial..."; se a montagem falhar, a foto sai da venda. As outras fotos seguem normais.
 
@@ -639,14 +742,16 @@ A primeira foto do dia demora mais (o agente abre os modelos). Depois, cada foto
 
 ### Photoroom
 
-O Photoroom continua configurado, só não é usado. Para voltar a ele: **Configurações › Painel de controle › Montagem dos fundos › Photoroom**. Cada montagem pelo Photoroom gasta crédito.
+Desde a v97 o Photoroom saiu das opções da tela. O recorte é sempre feito no computador do ponto. A chave do Photoroom continua guardada, sem uso.
 
 ## Novidades da v86: fundo Pódio de campeão
+
+**Na v97 o Pódio de campeão saiu dos fundos do cliente e deu lugar ao Telão do Maracanã.** Ele está em Sistema › Laboratório › Fundos em teste. O texto abaixo vale se a administração ligar o Pódio de novo.
 
 O cliente ganhou um 5º fundo de IA: **Pódio de campeão**. Estádio lotado em verde e amarelo, confete, um pódio dourado e uma taça à direita.
 
 - **Já vem ligado.** Não precisa fazer nada. Se o ponto já tinha uma escolha de fundos salva com 1 a 4 fundos, o Pódio entra sozinho na lista, uma vez só.
-- **Se a lista estava vazia de propósito**, continua vazia. Para ligar, use Configurações › Fundos de IA.
+- **Se a lista estava vazia de propósito**, continua vazia. Para ligar, use Configurações › Preços e Checkout › aba Fundos de IA.
 - **Se a administração tirar o Pódio**, ele não volta sozinho.
 - **Como a foto sai.** A pessoa fica em cima do pódio, um pouco à esquerda, e nunca cobre a taça do fundo. Foto de corpo inteiro vira do joelho para cima, como no Campeão, no Mirante e no Túnel.
 - **Anfitrião e vendedor.** Na hora de oferecer, vale mostrar a prévia do Pódio para quem tirou foto comemorando ou segurando a taça. A taça que o cliente segura sai junto no recorte. A taça do fundo é outra e fica sempre à vista.
@@ -654,7 +759,7 @@ O cliente ganhou um 5º fundo de IA: **Pódio de campeão**. Estádio lotado em 
 
 ## Novidades da v87: Fila do fotógrafo
 
-Fica em **Fotógrafo › Fila do fotógrafo**, logo abaixo do Upload automático. É um painel, como a Fila de impressão, que mostra as fotos chegando ao servidor, separadas por fotógrafo. Ninguém precisa apertar nada: o fotógrafo só fotografa e o painel se atualiza sozinho a cada 2 segundos. Veem: Admin, Supervisor, Fotógrafo e Atendimento e venda.
+Fica em **Fotógrafo › Fila do fotógrafo**, logo abaixo de Minhas fotos. É um painel, como a Fila de impressão, que mostra as fotos chegando ao servidor, separadas por fotógrafo. Ninguém precisa apertar nada: o fotógrafo só fotografa e o painel se atualiza sozinho a cada 2 segundos. Veem: Admin, Supervisor, Fotógrafo e Atendimento e venda.
 
 ### As três colunas
 
@@ -670,7 +775,7 @@ Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segun
 
 ### O que cada cartão mostra
 
-- O nome do fotógrafo em letra grande e, entre parênteses, de onde ele está fotografando: **(campo · Foto Campo 2)**, **(volante · chute a gol)**, **(set interno · Vestiário)** ou **(sem ponto)**. O ponto vem da **Escala 5×2** (função do dia). Trocou a função na Escala, os grupos seguintes já mostram o ponto novo; os que já estavam na tela não mudam.
+- O nome do fotógrafo em letra grande e, entre parênteses, de onde ele está fotografando: **(campo · Foto Campo 2)**, **(volante · chute a gol)**, **(set interno · Vestiário)** ou **(sem ponto)**. O ponto vem da **Escala** (função do dia). Trocou a função na Escala, os grupos seguintes já mostram o ponto novo; os que já estavam na tela não mudam.
 - A hora em que o grupo começou e quantas fotos tem.
 - Nas duas primeiras colunas, as últimas fotos que chegaram, em miniatura (no computador da equipe; na TV, não).
 - **De folga na Escala e mandando fotos**, em vermelho: a pessoa está de folga na Escala e as fotos dela estão chegando. Confira a Escala.
@@ -696,7 +801,7 @@ O Eterna descobre o fotógrafo, nesta ordem: pelo usuário do FTP da câmera; pe
 
 - O código LP da sessão não aparece nesta versão. Ele entra quando a sessão passar a ser montada no servidor.
 - Se o Checkout estava fechado quando as fotos chegaram, a TV pode mostrar o grupo em **Já no Checkout** e o Checkout ainda não achar o cliente. Isso também se resolve quando a sessão passar a ser montada no servidor.
-- Fotos mandadas pelo navegador (upload manual) não entram na fila.
+- Fotos de teste do modo demonstração não entram na fila. As fotos do envio manual (parte 2) entram, como fotos de cartão.
 
 ## Novidades da v92: Estatísticas e Calendário de eventos
 
@@ -709,7 +814,7 @@ O Eterna **não faz controle de ponto**. Não marca presença, falta nem atraso.
 | Pessoa | Estatísticas | Calendário de eventos |
 | --- | --- | --- |
 | Admin | vê e importa as entradas da bilheteria | vê e edita |
-| Supervisora | não vê | vê e edita |
+| Supervisora | não vê | vê e edita (sem a chave da API de jogos) |
 | Fotógrafo, Atendimento e venda, Validador, Checkout | não veem | não veem |
 
 ### Usar as Estatísticas (Admin)
@@ -784,7 +889,7 @@ Bom saber:
 
 ### Cadastrar o calendário (Admin e Supervisora)
 
-1. No menu, abra **Fotógrafo › Calendário de eventos**. O Admin também tem o atalho em **Configurações › Painel de controle**.
+1. No menu, abra **Dashboard › Calendário de eventos** (desde a v97; antes ficava no grupo Fotógrafo). O atalho também fica em **Configurações › Preços e Checkout**, aba **Checkout**.
 2. Use **‹** e **›** para trocar de mês e **Hoje** para voltar ao mês atual.
 3. Toque em **Novo evento**. Preencha a data, a hora, o tipo (jogo, show, feriado, fechado, evento ou outro), o mandante, o visitante, a competição e, se quiser, uma observação.
 4. Toque em **Salvar**.
@@ -796,14 +901,14 @@ Bom saber:
 - Escreva o nome do clube como aparece na lista (Flamengo, Fluminense, Vasco...). Assim os dias se juntam no mesmo grupo nas Estatísticas.
 - Use **fechado** para os dias de estádio fechado.
 - Toda mudança fica registrada com o seu nome.
-- Jogos no Maracanã entram sozinhos pela API-Football (v97) toda segunda às 06:00, depois que a chave da API-Football for salva em **Configurações › Painel de controle**. Sem ela, a linha do Calendário diz "Jogos: fonte não configurada, peça ao Admin". **Atualizar jogos agora** busca na hora. Shows e outros eventos continuam por **Novo evento**, **Colar lista** ou CSV.
+- Jogos no Maracanã entram sozinhos pela API-Football (v97) toda segunda às 06:00, depois que o Admin salvar a chave da API-Football em **Configurações › Preços e Checkout**, aba **Checkout**. Sem ela, a linha do Calendário diz "Jogos: fonte não configurada, peça ao Admin". **Atualizar jogos agora** busca na hora. Shows e outros eventos continuam por **Novo evento**, **Colar lista** ou CSV.
 - A coluna **Origem** mostra "Automático · feriados", "Automático · jogos", "Manual" ou "Importado". Evento automático que você edita ou apaga não volta a ser mudado pelo servidor.
 - Se aparecer o aviso **Este aparelho não está ligado ao servidor do ponto**, você está vendo só o que foi salvo neste navegador. O que criar sobe quando abrir o Eterna pelo servidor (no estádio ou pelo Tailscale).
 
 ### Chave da API-Football (só o Admin)
 
 1. Crie a conta em dashboard.api-football.com (o plano grátis dá 100 consultas por dia) e copie a chave.
-2. Abra o Eterna **pelo servidor do ponto** (no estádio ou pelo Tailscale) e vá em **Configurações › Painel de controle**. Logo abaixo do painel **Checkout** fica **Calendário de eventos · fonte dos jogos**. Só o Admin vê esse painel. A Supervisora e os outros perfis não veem, e o Calendário de eventos não mostra a chave.
+2. Abra o Eterna **pelo servidor do ponto** (no estádio ou pelo Tailscale) e vá em **Configurações › Preços e Checkout** e toque na aba **Checkout**. Logo abaixo do painel **Checkout** fica **Calendário de eventos · fonte dos jogos**. Só o Admin vê esse painel. A Supervisora e os outros perfis não veem, e o Calendário de eventos não mostra a chave.
 3. Cole a chave e toque em **Salvar chave**. A tela passa a mostrar "Chave configurada ····" com os 4 últimos caracteres, quando e por quem foi salva.
 4. Toque em **Testar agora**: aparece se a temporada atual veio e quantos jogos no Maracanã. Dá para testar uma vez por minuto.
 5. **Trocar chave** e **Remover** ficam no mesmo bloco. Tudo fica no registro de alterações, sem a chave.
@@ -825,15 +930,84 @@ O total de visitantes por dia da bilheteria entra em **Estatísticas › Movimen
 
 Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao abrir o Eterna num dia novo, ou se ele ficou aberto na virada da meia-noite, aparece "Novo dia: entre de novo". Entre com o e-mail e o código, como sempre. É só segurança da conta. Não marca ponto.
 
-## Novidades da v97: selo Edição Maracanã
+## Novidades da v97
+
+Resumo do que mudou. Os passos estão nas partes indicadas.
+
+| Para quem | O que mudou | Onde ler |
+| --- | --- | --- |
+| Vendedor e caixa | Uma tela só para vender: o **Posto de venda**. O **Caixa** e a **Venda manual** ficam dentro dele. | parte 3 e **O que tem no Posto de venda** |
+| Vendedor e caixa | **Recomeçar o Checkout** fica no notebook do caixa. O cliente não tem mais **Voltar ao início** enquanto espera o pagamento. | parte 3, **Recomeçar o Checkout** |
+| Vendedor e caixa | **Pago na maquininha** é o botão principal. **Cancelar compra** virou um link vermelho, afastado. | **Confirmar na maquininha** |
+| Vendedor e caixa | Aviso quando o pedido tem foto Edição Maracanã e o pacote é só digital. | **O que tem no Posto de venda** |
+| Fotógrafo | Nome e ponto vêm do login e da Escala. **Minhas fotos de hoje** por sessão. Escala com **Hoje você está em:**. | parte 2 |
+| Fotógrafo e supervisora | Envio das fotos pela tela quando o cartão não é lido. | parte 2, **O cartão não foi lido** |
+| Todos | Faixa vermelha com a hora do último dado quando o computador do ponto não responde. | parte 1 |
+| Supervisora e Admin | **Calendário de eventos** foi para o grupo **Dashboard**. | **Cadastrar o calendário** |
+| Admin | Chave da API de jogos, **Juntar a família pelo rosto** e modo demonstração ficam só com o Admin. | **Chave da API-Football** e abaixo |
+
+### Selo Edição Maracanã
 
 - No Checkout, as fotos com fundo de IA (as montagens) aparecem primeiro, juntas, com a faixa amarela **Edição Maracanã** e o nome do fundo (Noite de campeão, Mirante ao pôr do sol, Arquibancada 1950, Saída do túnel, Telão do Maracanã), nas 5 línguas. Na grade elas vêm com o título "Suas fotos especiais" e, depois delas, "Suas fotos de hoje".
 - O Checkout abre na primeira montagem pronta. Se ela ainda estiver sendo preparada e o cliente não tocar em nada, depois de 8 segundos a tela vai sozinha para a próxima foto pronta.
 - No Posto de venda, as montagens do pedido e a tela do cliente mostram a mesma faixa Edição Maracanã. A montagem continua contando dentro do pacote, igual a qualquer outra foto.
 - A faixa é só da tela: a foto impressa e a do download saem sem ela.
-- Atenção: hoje a montagem não vai para a galeria online. No pacote só digital (Zona Mista, Maracanã Mais) a montagem escolhida não chega ao cliente. Nos pacotes com impressão, a montagem sai impressa.
+- Atenção: hoje a montagem não vai para a galeria online. No pacote só digital (Zona Mista, Maracanã Mais) a montagem escolhida não chega ao cliente. Nos pacotes com impressão, a montagem sai impressa. Por isso o Posto avisa o caixa.
 - Para o Admin: em Estatísticas, o quadro "Edição Maracanã: montagens vistas × compradas" mostra por dia quantas montagens os clientes viram no Checkout e quantas compraram.
 
+### Fundo novo: Telão do Maracanã
+
+O **Telão do Maracanã** entrou nos 5 fundos do cliente, no lugar do Pódio de campeão. A família aparece dentro do telão do estádio. O Pódio foi para **Sistema › Laboratório › Fundos em teste**.
+
+### QR maior na tela final
+
+Na tela final do Checkout, o QR ficou maior e ao lado da foto do cliente, não mais em cima dela. Dá para ler com o celular a cerca de 1 metro. Peça para o cliente fotografar o QR antes de sair.
+
+### O Eterna abre sem internet
+
+O computador do ponto guarda uma cópia do Eterna, das letras, dos fundos de IA e do que o Checkout precisa para achar o rosto. Se a internet cair, o Checkout e o Posto de venda continuam abrindo e vendendo pelo endereço do computador do ponto.
+
+- A cópia é feita sozinha quando o computador do ponto liga com internet. A TI confere se ela está completa.
+- O que não funciona sem internet: o celular do cliente abrir a galeria pelo QR e a busca automática de jogos do calendário.
+
+### Cliente pediu: apagar as fotos
+
+O link fica na **Venda manual**, depois de escolher a sessão. Na v97 mudou o que é apagado:
+
+1. Abra o **Posto de venda** e toque em **Venda manual (quando o Checkout está fora)**.
+2. Escolha a sessão do cliente pelo código ou pela lista.
+3. Toque no link vermelho **Cliente pediu: apagar as fotos**.
+4. Leia a pergunta **Apagar as fotos do cliente?** Ela diz quantas fotos saem e quantas ficam.
+5. Toque em **Sim, apagar as fotos**. Não dá para desfazer.
+
+Bom saber:
+- As fotos que o cliente **comprou** e as **cortesias** não são apagadas. Elas ficam com ele e a galeria paga continua aberta.
+- Saem as fotos que ele não comprou, e o rosto lido nelas é apagado.
+- Se houver um pedido aberto no Posto usando essas fotos, cancele o pedido antes.
+- Só quem pode alterar as Galerias online vê o link.
+
+### Lista de vendas e Vendedores
+
+- A **Lista de vendas** cabe inteira na tela do notebook: 4 cartões no alto (Vendas, Receita, Ticket e Aguardando caixa), os filtros numa linha só (Dia, Vendedor, Pagamento, Canal, Status) e 50 vendas por página, com **Anterior** e **Próxima**.
+- As colunas Ponto e Fotógrafo saíram da tabela. Continuam no recibo e no CSV.
+- A tela **Vendas e caixa** agora se chama **Vendedores**.
+- O título de cada tela é igual ao nome dela no menu.
+- O código do cliente tem um nome só em todas as telas: **Seu código**.
+
+### Agenda e Estatísticas
+
+- Feriados e jogos no Maracanã entram sozinhos no **Calendário de eventos** (veja **Cadastrar o calendário**).
+- **Estatísticas › Jogos e ano a ano** compara dia de jogo com dia normal. Só o Admin vê.
+- A chave da API de jogos fica só com o Admin, em **Configurações › Preços e Checkout**, aba **Checkout**.
+- **Juntar a família pelo rosto (em teste)** fica no mesmo lugar, só para o Admin, e vem desligado. Enquanto estiver desligado, o caixa junta as fotos da mesma família pelo botão **Juntar outra leva**, no pedido do Posto de venda, e desfaz com **Separar**.
+
+### Recorte novo dos fundos de IA
+
+O recorte da pessoa ficou mais preciso. O que a pessoa segura, como a bandeira, fica na foto, e a pessoa nunca sai cortada. Ele roda só no computador do ponto. A TI instala uma vez, com a opção para placa de vídeo no servidor do estádio (veja **Instalar o recorte**).
+
+### Laboratório: Chute a gol
+
+Em **Sistema › Laboratório › Chute a gol** está a ficha de um produto em teste: a foto do cliente com o goleiro em frente à trave, segurando a placa "Fiz um gol no Maracanã" na língua dele. A tela explica onde fica, quem é o goleiro, quantos cliques e o material. Ainda não é vendido. Só o Admin vê o Laboratório.
 ---
 
 ## 6. O que dizer ao cliente
@@ -859,19 +1033,19 @@ Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao a
 
 ---
 
-## 7. Limitações de hoje (v83)
+## 7. Limitações de hoje
 
 - **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
 - **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.
 - **Compras na galeria online são de teste.** Nada é cobrado. Elas aparecem na Lista de vendas como "teste" e não entram na receita.
 - **Cartão e PIX**: o sistema ainda não conversa com a maquininha (sem TEF). Quem confirma é você, depois de ver a maquininha aprovar.
-- **Checkout e Posto de venda no mesmo notebook**: nesta etapa o Checkout, o Posto de venda e o Caixa precisam estar no mesmo notebook e no mesmo navegador. Os notebooks ainda não conversam entre si; isso entra na próxima etapa.
+- **Checkout e Posto de venda no mesmo notebook**: nesta etapa o Checkout e o Posto de venda (com o Caixa dentro dele) precisam estar no mesmo notebook e no mesmo navegador. Os notebooks ainda não conversam entre si; isso entra na próxima etapa.
 - **Ícone do celular no cartão do QR** está quase invisível na tela final. Ajuste previsto.
 - **No celular (tela estreita)**, na tela "Estas fotos já foram compradas", o botão **Voltar ao início** aparece só como ícone. Ajuste previsto.
 - **Cancelar uma venda do Checkout** tira o download no sistema, mas a foto pode continuar liberada no computador do ponto. Avise a administração quando cancelar.
 - **Compra feita na galeria da escola** não aparece na galeria da sessão da família, e vice-versa.
 - **"Baixar todas"** baixa as fotos uma por uma (ainda não há arquivo ZIP).
-- **Fotos com fundo de IA** ainda não aparecem na galeria por QR. A compra de fundo de IA depois da visita, que existia na tela Convidado, volta na galeria online numa próxima fase.
+- **Fotos com fundo de IA (Edição Maracanã)** ainda não aparecem na galeria por QR. No pacote só digital elas não chegam ao cliente: ofereça um pacote com impressão. Isso muda numa próxima versão. A compra de fundo de IA depois da visita, que existia na tela Convidado, volta na galeria online numa próxima fase.
 - **Permissões e confirmação do caixa**: nesta fase organizam o que cada pessoa vê e faz, mas ainda são conferidas só no navegador. Ainda não são uma trava de segurança no servidor. Isso entra quando o servidor entrar.
 - **Painel: a parte Eterna são as vendas deste computador.** Dois computadores podem mostrar totais diferentes até as vendas irem para o servidor.
 - **Fotógrafo sem o próprio índice**: no perfil pronto, o fotógrafo não vê a tela Fotógrafos. Decisão confirmada pelo Eduardo.
