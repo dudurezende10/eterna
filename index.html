@@ -1178,7 +1178,6 @@ body:not([data-admin]) .pw-v{display:none}
 .railck-box{display:flex;flex-direction:column;gap:6px}.railck-box:empty{display:none}
 /* v97: em tela baixa de computador (1366×768) o menu do Admin com os dois botões amarelos cabe sem rolar: só espaçamento, nenhum botão ou item a menos */
 @media (min-width:901px) and (max-height:800px) and (hover:hover) and (pointer:fine){.railck{min-height:40px}} /* só notebook com mouse (1366×768); tablet deitado (1024×768, toque) fica com os 44 px */
-@media (min-width:701px) and (pointer:coarse){.railck{min-height:44px}}
 @media (min-width:901px) and (max-height:800px){.rail{padding-block:12px;gap:10px}.railck-box{gap:4px}.nav .navitems button{padding:4px 11px}.nav button.grp{min-height:26px;padding:6px 11px 2px}}
 .railck.caixa{background:transparent;color:inherit;border-color:currentColor;font-weight:600}.railck .pill{margin-left:auto}
 @media (max-width:700px){.railck-box{flex-direction:row}}
@@ -1186,6 +1185,7 @@ body:not([data-admin]) .pw-v{display:none}
 :root[data-venue="maracana"] .railck{background:var(--venue2);border-color:var(--venue2);color:#0C2340;font-weight:600}
 /* celular: os nomes dos grupos quebram linha (sem arrastar) e os itens do grupo aberto ficam numa linha própria logo abaixo */
 @media (max-width:900px){.nav{flex-wrap:wrap;overflow-x:visible;row-gap:2px}.nav .navg{display:contents}.nav button.grp{order:0;flex:none;width:auto;padding:8px;gap:6px;white-space:nowrap}.nav .navitems{order:1;flex:1 1 100%;flex-direction:row;flex-wrap:wrap;align-items:center;gap:4px;padding-top:4px;border-top:1px solid rgba(127,127,127,.25)}.nav .navitems button{flex:none}.railck{width:auto;min-height:36px}}
+@media (min-width:701px) and (pointer:coarse){.railck{min-height:44px}} /* toque (tablet em pé ou deitado): 44 px; vem depois da regra de até 900 px para valer por cima dela */
 /* v78: celular (até 700 px): cabeçalho fixo compacto (logo, Checkout em ícone e Menu); o menu abre numa gaveta por cima da tela */
 .menubtn,.navback{display:none}
 @media (min-width:701px){.railgav{display:contents}}
