@@ -540,7 +540,8 @@ def envio_dia_n():
     if envio_dia["dia"] != hoje:
         n = 0
         try:
-            j = json.load(open(ENVIO_DIA_ARQ))
+            with open(ENVIO_DIA_ARQ) as f:
+                j = json.load(f)
             if j.get("dia") == hoje:
                 n = max(0, int(j.get("n") or 0))
         except Exception:
@@ -1384,12 +1385,43 @@ def nuvem_reenviar():
 def lgpd_galerias_abertas():
     """Manifestos publicados que ainda valem (nem encerrados nem vencidos): [(token, manifesto)]."""
     out = []
-    base = getattr(REPO, "base", None)
-    for t in (os.listdir(base) if base and os.path.isdir(base) else []):
+    for t in REPO.listar():                # repositório que não sabe listar levanta erro: quem chama recusa a exclusão
         m = REPO.ler_manifesto(t) if token_ok(t) else None
         if m and isinstance(m.get("fotos"), list) and not gal_expirou(m):
             out.append((t, m))
     return out
+
+
+def lgpd_vendas_pagas():
+    """Fotos das vendas pagas no balcão (vendas.db): as escolhidas (selected) e as bases das montagens (aiSel, 'ai:<id>|<fundo>'),
+    em id da biblioteca. Vale mesmo sem galeria publicada. Erro de leitura sobe para quem chama (a exclusão é recusada)."""
+    if not os.path.exists(VENDAS_DB):
+        return set()
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rs = db.execute("select dados from evento where tipo = 'criar' and venda in"
+                            " (select venda from evento where tipo = 'pagar')").fetchall()
+        finally:
+            db.close()
+    out = set()
+    for (dados,) in rs:
+        d = json.loads(dados or "{}")
+        ids = [str(x) for x in d.get("selected") or []] + [re.sub(r"^ai:", "", str(k)).split("|")[0] for k in d.get("aiSel") or []]
+        out.update(pid_lib(i) for i in ids if pid_ok(i))
+    return out
+
+
+def lgpd_recusa(motivo, quem=""):
+    """Sem como conferir o que é do cliente, nada é apagado: fica a linha no registro e o app recebe o erro."""
+    try:
+        with open(LGPD_LOG, "a", encoding="utf8") as fh:
+            fh.write("%s exclusão a pedido do cliente recusada: %s, por %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), motivo, quem or "-"))
+    except OSError:
+        pass
+    print("  LGPD: exclusão recusada (%s); nada foi apagado" % motivo)
+    return {"ok": False, "error": motivo, "fotos": 0, "nuvem": 0, "galerias": 0, "preservadas": 0, "galerias_mantidas": 0,
+            "preservadas_ids": [], "galerias_mantidas_tokens": [], "falhas": [motivo]}
 
 
 def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
@@ -1400,17 +1432,68 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
     dias, linhas_foto, apagados_sess = set(), [], []
     # foto comprada ou de cortesia numa galeria publicada que ainda vale fica com o cliente: não sai daqui nem da nuvem,
     # e a galeria que tem alguma delas não é encerrada (só perde as fotos apagadas)
-    abertas = lgpd_galerias_abertas()
-    do_cliente = {pid_lib(str(f.get("id") or "")) for _, m in abertas for f in m["fotos"]
-                  if isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia")}
-    preservadas = 0
-    for pid in pids:
-        pid = pid_lib(pid) if pid_ok(pid) else None
-        if not pid:
-            continue
-        if pid in do_cliente:
-            preservadas += 1
-            continue
+    # e a foto ou a base de montagem de venda paga no balcão fica mesmo antes de a galeria ser publicada (vendas.db)
+    try:
+        pagas = lgpd_vendas_pagas()
+    except Exception as ex:
+        return lgpd_recusa("não deu para conferir as vendas pagas (%s)" % type(ex).__name__, quem)
+    do_cli = lambda m: any(isinstance(f, dict) and (f.get("direito") in ("comprada", "cortesia") or pid_lib(str(f.get("id") or "")) in pagas)
+                           for f in (m.get("fotos") or []))
+    galerias, mantidas, avisar = 0, [], []
+    # Tudo o que decide e tira as fotos das galerias acontece de uma vez, com o gal_lock: a compra online (que usa o mesmo
+    # lock e relê o manifesto) ou entra antes, e a foto fica com o cliente, ou entra depois e já não encontra a foto à venda.
+    # Os arquivos só são apagados depois, quando nenhuma galeria no ar aponta mais para eles.
+    with gal_lock:
+        try:
+            abertas = lgpd_galerias_abertas()
+        except Exception as ex:
+            return lgpd_recusa("não deu para conferir as galerias publicadas (%s)" % type(ex).__name__, quem)
+        do_cliente = pagas | {pid_lib(str(f.get("id") or "")) for _, m in abertas for f in m["fotos"]
+                              if isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia")}
+        alvo, guardadas = [], set()
+        for pid in pids:
+            pid = pid_lib(pid) if pid_ok(pid) else None
+            if not pid:
+                continue
+            if pid in do_cliente:
+                guardadas.add(pid)
+            elif pid not in alvo:
+                alvo.append(pid)
+        sairam = set(alvo)
+        fechar = set()
+        for t in tokens:
+            if not token_ok(t):
+                continue
+            m = REPO.ler_manifesto(t)
+            if m and do_cli(m) and not gal_expirou(m):
+                mantidas.append(t)            # tem foto do cliente: continua no ar
+                continue
+            if m:
+                m["expira"], m["encerrada"], m["lgpd"] = _iso(), True, True
+                REPO.salvar_manifesto(t, m)
+                galerias += 1
+            fechar.add(t)
+            avisar.append(t)                  # na nuvem: sai do ar, código curto e rostos apagados
+        # galeria que continua no ar perde as fotos apagadas (manifesto e cópias), sem esperar a republicação do app
+        for t, m in (abertas if sairam else []):
+            if t in fechar:
+                continue
+            try:
+                fora = [f for f in m["fotos"] if isinstance(f, dict) and pid_lib(str(f.get("id") or "")) in sairam]
+                if not fora:
+                    continue
+                m["fotos"] = [f for f in m["fotos"] if f not in fora]
+                REPO.salvar_manifesto(t, m)
+                avisar.append(t)
+                for f in fora:
+                    try:
+                        REPO.apagar_foto(t, f["id"])
+                    except (ValueError, OSError) as ex:
+                        falhas.append("cópia da galeria: " + str(ex)[:80])
+            except Exception as ex:
+                falhas.append("galeria: " + str(ex)[:80])
+    preservadas = len(guardadas)
+    for pid in alvo:
         with lock:
             e = lib.pop(pid, None)
             hs = [h for h, v in seen.items() if v == pid]
@@ -1481,56 +1564,18 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             _grava_privado(LGPD_EXCLUIDAS, json.dumps(sorted(lgpd_excluidas)))
         except Exception as ex:
             falhas.append(str(ex)[:80])
-    galerias, mantidas = 0, 0
-    fechar = set()
-    for t in tokens:
-        if not token_ok(t):
-            continue
-        with gal_lock:
-            m = REPO.ler_manifesto(t)
-            if m and any(isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia") for f in (m.get("fotos") or [])) and not gal_expirou(m):
-                mantidas += 1                 # tem foto do cliente: continua no ar
-                continue
-            if m:
-                m["expira"], m["encerrada"], m["lgpd"] = _iso(), True, True
-                REPO.salvar_manifesto(t, m)
-                galerias += 1
-        fechar.add(t)
-        nuvem_galeria_enfileira(t)            # na nuvem: sai do ar, código curto e rostos apagados
-    # galeria que continua no ar perde as fotos apagadas (manifesto e cópias), sem esperar a republicação do app
-    sairam = set(apagados_sess)
-    for t, _ in (abertas if sairam else []):
-        if t in fechar:
-            continue
-        try:
-            with gal_lock:
-                m = REPO.ler_manifesto(t)
-                if not m or gal_expirou(m):
-                    continue
-                fora = [f for f in (m.get("fotos") or []) if isinstance(f, dict) and pid_lib(str(f.get("id") or "")) in sairam]
-                if not fora:
-                    continue
-                m["fotos"] = [f for f in m["fotos"] if f not in fora]
-                REPO.salvar_manifesto(t, m)
-                for f in fora:
-                    for v in ("original", "vitrine"):
-                        try:
-                            arq = REPO._arq(t, f["id"], v)
-                            if os.path.exists(arq):
-                                os.remove(arq)
-                        except (AttributeError, ValueError, OSError):
-                            pass
-            nuvem_galeria_enfileira(t)
-        except Exception as ex:
-            falhas.append("galeria: " + str(ex)[:80])
+    for t in avisar:
+        nuvem_galeria_enfileira(t)
     with open(LGPD_LOG, "a", encoding="utf8") as fh:
         for ln in linhas_foto:
             fh.write(ln + "\n")
         fh.write("%s exclusão a pedido do cliente: %d foto(s), %d na nuvem, %d galeria(s), por %s%s\n" % (
             time.strftime("%Y-%m-%d %H:%M:%S"), fotos, nuvem_apagadas, galerias, quem or "-", (" · falhas: " + "; ".join(falhas)) if falhas else ""))
     print(f"  LGPD: {fotos} foto(s) e {galerias} galeria(s) apagadas a pedido do cliente")
+    # para a tela tirar da sessão só o que saiu: as preservadas (no formato do app) e as galerias do pedido que continuam
     return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "preservadas": preservadas,
-            "galerias_mantidas": mantidas, "falhas": falhas[:5]}
+            "galerias_mantidas": len(mantidas), "preservadas_ids": sorted("ag_" + p for p in guardadas),
+            "galerias_mantidas_tokens": mantidas, "falhas": falhas[:5]}
 
 
 def nuvem_versoes(arquivo, pid):
@@ -3832,6 +3877,8 @@ class Repositorio:
     def url(self, token, pid, variante, ttl): raise NotImplementedError
     def abrir(self, token, pid, variante): raise NotImplementedError
     def apagar(self, token): raise NotImplementedError
+    def apagar_foto(self, token, pid): raise NotImplementedError
+    def listar(self): raise NotImplementedError
     def listar_expiradas(self, agora): raise NotImplementedError
 
 
@@ -3887,11 +3934,20 @@ class RepositorioLocal(Repositorio):
     def apagar(self, token):
         shutil.rmtree(self._dir(token), ignore_errors=True)
 
+    def apagar_foto(self, token, pid):
+        """Tira da galeria as cópias de uma foto (original e vitrine); o manifesto é de quem chama."""
+        for v in ("original", "vitrine"):
+            arq = self._arq(token, pid, v)
+            if os.path.exists(arq):
+                os.remove(arq)
+
+    def listar(self):
+        """Tokens das galerias guardadas (com ou sem manifesto válido)."""
+        return [t for t in (os.listdir(self.base) if os.path.isdir(self.base) else []) if token_ok(t)]
+
     def listar_expiradas(self, agora):
         out = []
-        for t in os.listdir(self.base):
-            if not token_ok(t):
-                continue
+        for t in self.listar():
             m = self.ler_manifesto(t)
             if m and gal_expirou(m, agora):
                 out.append(t)
@@ -8762,11 +8818,12 @@ class H(BaseHTTPRequestHandler):
                         break
                     f.write(ch)
                     resto -= len(ch)
+            erro_jpeg = None if resto else jpeg_envio_erro(tmp, n)   # o arquivo é lido uma vez só
             if resto:
                 motivo = ({"erro": "lenta"}, 408) if lenta else ({"erro": "incompleta"}, 400)
                 self.close_connection = True
-            elif jpeg_envio_erro(tmp, n):
-                motivo = ({"erro": "incompleta"}, 400) if jpeg_envio_erro(tmp, n) == "incompleta" else ({"erro": "nao_jpeg"}, 415)
+            elif erro_jpeg:
+                motivo = ({"erro": "incompleta"}, 400) if erro_jpeg == "incompleta" else ({"erro": "nao_jpeg"}, 415)
             else:
                 r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
                 if r == "new":
@@ -8996,8 +9053,9 @@ class H(BaseHTTPRequestHandler):
             tokens = [str(x) for x in (body.get("tokens") or [])][:20]
             if not pids and not tokens:
                 return self.js({"error": "nada para apagar"}, 400)
-            return self.js(lgpd_excluir(pids, tokens, str(body.get("quem") or "")[:80], str(body.get("posto") or "")[:40],
-                                        str(body.get("sessao") or "")[:40]))
+            r = lgpd_excluir(pids, tokens, str(body.get("quem") or "")[:80], str(body.get("posto") or "")[:40],
+                             str(body.get("sessao") or "")[:40])
+            return self.js(r, 503 if r.get("error") else 200)
         if p == "/nuvem/reenviar":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -9169,6 +9227,9 @@ class H(BaseHTTPRequestHandler):
                     m = REPO.ler_manifesto(token)
                     return self.js({"ok": True, "pedido": {"id": ja["id"], "status": "aprovado", "total": ja["total"], "canal": "online", "teste": bool(ja.get("teste")),
                                                            "checkout_url": None, "pix_copia_cola": None}, "galeria": galeria_obj(token, m, a["pids"])})
+                m = REPO.ler_manifesto(token)              # relido com o lock: vale o manifesto de agora, não o de antes da espera
+                if not m or gal_expirou(m):
+                    return self.js({"error": "expirada"}, 410)
                 dire = {f["id"]: f["direito"] for f in m["fotos"]}
                 if not isinstance(pids, list) or not pids or len(pids) > 2000 or len(set(map(str, pids))) != len(pids) \
                         or any(x not in a["pids"] or dire.get(x) != "venda" for x in pids):
