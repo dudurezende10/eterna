@@ -21,10 +21,10 @@ const J=JSON.stringify;
 // v94-ux (parte H): grupos Venda (Posto) e Sistema; Laboratório entrou no Sistema; Supervisora sem o Sistema; até 5 telas, sem grupos.
 // ck = tem "Abrir Checkout" (botão grande no topo para quem começa no Posto, item no rodapé do menu para os outros)
 const PERFIS={
-  'eduardo@eduardorezende.com':{n:'admin',g:[['Venda',['posto']],['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala','calendario']],['Configurações',['catalogo','ajustes']],['Sistema',['repo','identidade','chroma','usuarios','permissoes','vestiario','fundos-teste']]],ini:'painel',ck:true},
+  'eduardo@eduardorezende.com':{n:'admin',g:[['Venda',['posto']],['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala']],['Configurações',['catalogo','ajustes']],['Sistema',['repo','identidade','chroma','usuarios','permissoes','vestiario','fundos-teste']]],ini:'painel',ck:true},
   'carlos@eterna.photo':{n:'fotografo',g:[['',['diario','importar','fotofila','escala']]],ini:'importar',ck:false},
   'loja@eterna.photo':{n:'atendimento',g:[['',['posto','fotofila','catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
-  'supervisor@eterna.photo':{n:'supervisor',g:[['Venda',['posto']],['Dashboard',['painel','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala','calendario']],['Configurações',['catalogo','ajustes']]],ini:'painel',ck:true}, // parte I: Fundos de IA (técnico) no Sistema; a Supervisora usa a aba de Preços e Checkout
+  'supervisor@eterna.photo':{n:'supervisor',g:[['Venda',['posto']],['Dashboard',['painel','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala']],['Configurações',['catalogo','ajustes']]],ini:'painel',ck:true}, // parte I: Fundos de IA (técnico) no Sistema; a Supervisora usa a aba de Preços e Checkout
   'qualidade@eterna.photo':{n:'validador',g:[['',['revisao','treino','diario']]],ini:'revisao',ck:false},
 };
 (async()=>{const b=await chromium.launch();
