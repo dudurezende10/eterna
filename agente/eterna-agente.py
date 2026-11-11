@@ -402,6 +402,7 @@ def rostos_db():
     c.execute("create table if not exists foto (pid text primary key, dia text, n int, lida real)")
     c.execute("create table if not exists rosto (pid text, dia text, larg real, emb blob)")
     c.execute("create index if not exists rosto_dia on rosto(dia)")
+    c.execute("create index if not exists rosto_pid on rosto(pid)")   # cada foto lida apaga e regrava os rostos dela; sem isto, varre a tabela inteira (1,2 milhão de linhas: 4,5 s por foto)
     return c
 
 
