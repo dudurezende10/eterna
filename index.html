@@ -888,7 +888,7 @@ body[data-bare] .app{grid-template-columns:minmax(0,1fr)}
 :root[data-venue="lolla"] .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 :root[data-venue="lolla"] .pill.good{color:#0b0a12;background:var(--venue2)}
 :root[data-venue="lolla"] .nav button[aria-current="page"]{box-shadow:inset 3px 0 0 var(--accent)}
-.revbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}.revbar label{display:flex;flex-direction:column;gap:4px}.revbar select{width:auto;min-width:160px;min-height:44px}.revf{display:flex;flex-direction:column;gap:8px}.revf .chips{align-items:center;gap:6px}.revf .chip,.revf .datef{min-height:44px;padding:0 14px}.revbar .datef{flex-direction:row}.revbar input[type=date]{border:1px solid var(--line);border-radius:5px;padding:8px 10px;background:var(--surface);color:var(--fg);font:inherit;font-size:16px;min-height:42px;cursor:pointer}
+.revbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}.revbar label{display:flex;flex-direction:column;gap:4px}.revbar select{width:auto;min-width:160px;min-height:44px}.revf{display:flex;flex-direction:column;gap:8px}.revf .chips{align-items:center;gap:6px}.revf .chip,.revf .datef{min-height:44px;padding:0 14px}.revbar .datef{flex-direction:row}
 /* ---------- Painel (v80): tokens de qualquer venue; o Maracanã usa o manual Viva Maracanã ---------- */
 :root{--pn-focus:var(--accent);--pn-focus2:var(--venue2,var(--accent));--pn-rest:#d9d9d6;--pn-rest2:#8e9193;--pn-hl:var(--venue2,#e0a800);--pn-up:var(--good);--pn-up-bg:var(--good-bg);--pn-down:var(--fg);--pn-down-bg:var(--surface2)}
 :root[data-venue="maracana"]{--pn-focus:#134078;--pn-focus2:#307FE2;--pn-rest:#D9D9D6;--pn-rest2:#8E9193;--pn-hl:#FFB800;--pn-up:#005500;--pn-up-bg:#E2EFE0;--pn-down:#25282A;--pn-down-bg:#ECECEA}
@@ -3564,14 +3564,15 @@ function liveMatch(day,ses){const out={};const lib=state.lib.filter(f=>(f.cap?lo
   Object.entries(who).forEach(([sr,k])=>{CAM_GUESS[day+'|'+sr]=k;});
   Object.entries(bySerie).forEach(([sr,a])=>{const k=who[sr];if(!k)return;let i=0;byKey[k].forEach(x=>{const got=[];while(i<a.length&&got.length<x.n&&a[i].cap<=x.t1+FOLGA){got.push(a[i]);i++;}if(got.length)out[x.card]=got;});});
   return out;}
-// período da Qualidade: os atalhos do rangeBar no dia local (o mesmo de localDay, que data as sessões); 7 e 30 dias incluem hoje
+// período da Qualidade: os atalhos do rangeBar, com o mesmo Hoje do Painel (venueToday); 7 e 30 dias incluem hoje
 const REV_PER=[['hoje','Hoje'],['ontem','Ontem'],['7d','Últimos 7 dias'],['30d','Últimos 30 dias'],['data','Data específica']];
 const revPer=()=>REV_PER.some(x=>x[0]===state.revFilter.per)?state.revFilter.per:'hoje';
-function revPeriodo(){const f=state.revFilter,k=revPer(),t=todayISO();const um=d=>({de:d,ate:d});
+function revPeriodo(){const f=state.revFilter,k=revPer(),t=venueToday();const um=d=>({de:d,ate:d});
   if(k==='ontem')return um(addDays(t,-1));if(k==='7d')return {de:addDays(t,-6),ate:t};if(k==='30d')return {de:addDays(t,-29),ate:t};
   return um(k==='data'&&/^\d{4}-\d{2}-\d{2}$/.test(f.date)?f.date:t);}
 function revPerTxt(){const k=revPer(),p=revPeriodo();const dias=p.de===p.ate?dBR(p.de):dBR(p.de).slice(0,5)+' a '+dBR(p.ate);return k==='data'?dias:REV_PER.find(x=>x[0]===k)[1]+', '+dias;}
-function revLista(){const f=state.revFilter;return revSessions(revPeriodo()).filter(s=>(f.key==='all'||s.key===f.key)&&(f.venda==='all'||(f.venda==='com'?s.soldTotal>0:f.venda==='sem'?s.soldTotal===0:s.soldTotal===s.total)));}
+// lista da tela, da mais recente para a mais antiga; o "Próxima sessão" anda nessa mesma ordem
+function revLista(){const f=state.revFilter;return revSessions(revPeriodo()).filter(s=>(f.key==='all'||s.key===f.key)&&(f.venda==='all'||(f.venda==='com'?s.soldTotal>0:f.venda==='sem'?s.soldTotal===0:s.soldTotal===s.total))).sort((a,b)=>{const x=a.date+a.time,y=b.date+b.time;return x<y?1:x>y?-1:0;});}
 function vRevisao(){
   const f=state.revFilter;
   if(state.session){const s=revSessions().find(x=>x.card===state.session);if(!s){state.session=null;return vRevisao();}
@@ -3589,19 +3590,19 @@ function vRevisao(){
         <div class="row"><button class="btn primary" data-act="save" ${state.db?'':'disabled'}>Salvar sessão</button><button class="btn ghost" data-act="next">Próxima sessão →</button></div>
       </div></div>`;
   }
-  const p=revPeriodo(),k=revPer(),per=revPerTxt();const samp=revLista().sort((a,b)=>{const x=a.date+a.time,y=b.date+b.time;return x<y?1:x>y?-1:0;});
-  const nF=samp.reduce((n,s)=>n+s.total,0),nV=samp.reduce((n,s)=>n+s.soldTotal,0);const ex=LIVE?[]:[...new Set(DATA.sampled.map(s=>s.date))].sort();
+  const p=revPeriodo(),k=revPer(),per=revPerTxt();const samp=revLista();
+  const nF=samp.reduce((n,s)=>n+s.total,0),nV=samp.reduce((n,s)=>n+s.soldTotal,0);const ex=LIVE?[]:[...new Set(DATA.sampled.map(s=>s.date))].sort();const exTxt=ex.length?dBR(ex[0]).slice(0,5)+(ex.length>1?' a '+dBR(ex[ex.length-1]).slice(0,5):''):'';
   const qs=humans.map(k=>({k,q:quality(k,p)})).filter(x=>x.q.sessions);
-  return `<div class="head"><div><div class="eyebrow">${LIVE?'Sistema anterior ao vivo · até hoje':'Amostra · 12 e 13/10'}${state.agent.on?' · fotos deste computador':''}</div><h1>${esc(viewLabel('revisao'))}</h1></div></div>
-  ${qs.length?`<div class="tiles">${qs.map(x=>`<div class="tile"><span class="eyebrow">${esc(P[x.k].name)}</span><span class="v">${x.q.goodPct!=null?x.q.goodPct+'%':'–'}</span><span class="d">${x.q.good} boas · ${x.q.bad} ruins · ${x.q.sessions} sessões${x.q.score?' · nota '+x.q.score.toFixed(1):''}</span></div>`).join('')}</div>`:''}
+  return `<div class="head"><div><div class="eyebrow">${LIVE?'Sistema anterior ao vivo · até hoje':'Amostra'+(exTxt?' · '+exTxt:'')}${state.agent.on?' · fotos deste computador':''}</div><h1>${esc(viewLabel('revisao'))}</h1></div></div>
+  ${qs.length?`<div class="tiles">${qs.map(x=>`<div class="tile"><span class="eyebrow">${esc(P[x.k].name)}</span><span class="v">${x.q.goodPct!=null?x.q.goodPct+'%':'–'}</span><span class="d">${x.q.good} boas · ${x.q.bad} ruins · ${x.q.sessions} sess${x.q.sessions===1?'ão':'ões'}${x.q.score?' · nota '+x.q.score.toFixed(1):''}</span></div>`).join('')}</div>`:''}
   <div class="revbar">
     <label><span class="eyebrow">Fotógrafo</span><select data-act="rev-key"><option value="all" ${f.key==='all'?'selected':''}>Todos</option>${humans.map(k=>`<option value="${k}" ${f.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
-    <div class="revf"><span class="eyebrow" id="rev-per-t">Data</span><div class="chips" role="group" aria-labelledby="rev-per-t">${REV_PER.map(([v,l])=>`<button class="chip" data-act="rev-per" data-k="${v}" aria-pressed="${k===v}">${l}</button>`).join('')}${k==='data'?dateField('rev-date',p.de,'Data específica',todayISO()):''}</div></div>
+    <div class="revf"><span class="eyebrow" id="rev-per-t">Data</span><div class="chips" role="group" aria-labelledby="rev-per-t">${REV_PER.map(([v,l])=>`<button class="chip" data-act="rev-per" data-k="${v}" aria-pressed="${k===v}">${l}</button>`).join('')}${k==='data'?dateField('rev-date',p.de,'Data específica',venueToday()):''}</div></div>
     <label><span class="eyebrow">Venda</span><select data-act="rev-venda"><option value="all" ${f.venda==='all'?'selected':''}>Todas as sessões</option><option value="com" ${f.venda==='com'?'selected':''}>Com venda</option><option value="toda" ${f.venda==='toda'?'selected':''}>Toda vendida</option><option value="sem" ${f.venda==='sem'?'selected':''}>Sem venda</option></select></label>
     <span class="pill neutral">${samp.length} sess${samp.length===1?'ão':'ões'}</span></div>
   <div class="note" id="rev-resumo"><b>${esc(per)}</b> · ${samp.length} sess${samp.length===1?'ão':'ões'} · ${nF} foto${nF===1?'':'s'} · ${nV} vendida${nV===1?'':'s'}</div>
-  ${samp.length?'':`<div class="panel" id="rev-vazio"><div class="note">Nenhuma sessão neste período${f.key!=='all'||f.venda!=='all'?' com estes filtros':''}.${ex.length?` As sessões de exemplo são de ${dBR(ex[0]).slice(0,5)}${ex.length>1?' a '+dBR(ex[ex.length-1]).slice(0,5):''}: escolha Data específica.`:''}</div></div>`}
-  <div class="sess">${samp.slice(0,80).map(s=>{const r=state.reviews[s.card];const rated=r?Object.values(r.photos||{}).filter(v=>v).length:0;const kind=s.soldTotal===s.total?'toda vendida':s.soldTotal===0?'sem venda':'parcial';return `<button class="scard" data-act="session" data-card="${s.card}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key].name)}</span><span>${dlabel(s.date)} ${s.time}</span></div><div class="meta"><span>${s.total} fotos · ${s.soldTotal} vendidas${s.live&&!s.photos.length?' · sem as fotos aqui':''}</span><span class="pill ${s.soldTotal===0?'bad':s.soldTotal===s.total?'good':'neutral'}">${kind}</span></div><div class="meta"><span>${r?(rated+' avaliadas'+(r.score?' · nota '+r.score:'')):'não revisada'}</span></div></button>`}).join('')}</div>
+  ${samp.length?'':`<div class="panel" id="rev-vazio"><div class="note">Nenhuma sessão neste período${f.key!=='all'||f.venda!=='all'?' com estes filtros':''}.${exTxt?` As sessões de exemplo são de ${exTxt}: escolha Data específica.`:''}</div></div>`}
+  <div class="sess">${samp.slice(0,80).map(s=>{const r=state.reviews[s.card];const rated=r?Object.values(r.photos||{}).filter(v=>v).length:0;const kind=s.soldTotal===s.total?'toda vendida':s.soldTotal===0?'sem venda':'parcial';return `<button class="scard" data-act="session" data-card="${esc(s.card)}"><div class="code">${esc(s.card)}</div><div class="meta"><span class="name" style="color:var(--fg)">${esc(P[s.key]?P[s.key].name:s.key)}</span><span>${dlabel(s.date)} ${s.time}</span></div><div class="meta"><span>${s.total} fotos · ${s.soldTotal} vendidas${s.live&&!s.photos.length?' · sem as fotos aqui':''}</span><span class="pill ${s.soldTotal===0?'bad':s.soldTotal===s.total?'good':'neutral'}">${kind}</span></div><div class="meta"><span>${r?(rated+' avaliadas'+(r.score?' · nota '+r.score:'')):'não revisada'}</span></div></button>`}).join('')}</div>
   ${samp.length?`<div class="panel"><h2 id="rev-titulo">Sessões · ${esc(per)}${samp.length>300?` (as 300 mais recentes de ${samp.length})`:''}</h2><div class="tablewrap"><table><thead><tr><th>Dia</th><th>Hora</th><th>Fotógrafo</th><th>Sessão</th><th>Ponto</th><th class="num">Fotos</th><th class="num">Vendidas</th></tr></thead><tbody>
   ${samp.slice(0,300).map(s=>`<tr class="click" data-act="session" data-card="${esc(s.card)}"><td>${dlabel(s.date)}</td><td>${esc(s.time)}</td><td>${esc(P[s.key]?P[s.key].name:s.key)}</td><td>${esc(s.card)}</td><td>${esc(s.pdv)}</td><td class="num">${s.total}</td><td class="num">${s.soldTotal}</td></tr>`).join('')}
   </tbody></table></div></div>`:''}`;
@@ -6197,8 +6198,11 @@ document.addEventListener('click',e=>{
     case 'rv-sync':fetch(state.agent.url+'/roverpix/sync',{method:'POST'}).then(()=>{toast('Sincronizando');setTimeout(livePoll,6000);}).catch(()=>toast('Agente não encontrado'));break;
     case 'share-view':shareLink();break;
     case 'back':state.person=null;state.personDay=null;render();break;
-    case 'review-person':state.view='revisao';state.revFilter.key=d.key;state.session=null;render();window.scrollTo({top:0});break;
-    case 'rev-per':{const f=state.revFilter;f.per=d.k;if(d.k==='data'&&!f.date)f.date=todayISO();render();if(d.k==='data'){const i=document.querySelector('#main [data-act="rev-date"]');if(i){i.focus();try{i.showPicker()}catch(x){}}}break;}
+    case 'review-person':{const f=state.revFilter,t=venueToday(),r=state.range;f.key=d.key; // o período acompanha o que a pessoa via em Fotógrafos, para a lista não abrir vazia
+      if(state.personDay){f.per='data';f.date=state.personDay;}else if(r.from>=addDays(t,-6))f.per='7d';else if(r.from>=addDays(t,-29))f.per='30d';
+      else{const ds=revSessions({de:r.from,ate:r.to}).filter(s=>s.key===d.key).map(s=>s.date).sort();f.per='data';f.date=ds.length?ds[ds.length-1]:r.to;}
+      state.view='revisao';state.session=null;render();window.scrollTo({top:0});break;}
+    case 'rev-per':{const f=state.revFilter;f.per=d.k;if(d.k==='data'&&!f.date)f.date=venueToday();render();if(d.k==='data'){const i=document.querySelector('#main [data-act="rev-date"]');if(i){i.focus();try{i.showPicker()}catch(x){}}}break;}
     case 'rev-foto':state.revFilter.foto=d.k;render();break;
     case 'session':state.session=d.card;render();window.scrollTo({top:0});break;
     case 'back-sessions':state.session=null;render();break;
