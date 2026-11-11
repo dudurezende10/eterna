@@ -95,8 +95,8 @@ Consequências para o Eterna:
 
 ## O que falta a Imply responder (antes de construir)
 
-1. `setPessoa` (documentação recebida; faltam): o `tipo_pessoa` informado é o de **AGÊNCIA**; qual é o código para o cliente
-   final (pessoa física)? Quanto tempo vale o token (`result`) e se é de uso único. O `url` do login automático aceita o
+1. `setPessoa` (documentação recebida; faltam): o `tipo_pessoa` é o de **AGÊNCIA** (decisão do Ronaldo, 11/11: não haverá tipo
+   pessoa física; o cliente online entra como agência). Quanto tempo vale o token (`result`) e se é de uso único. O `url` do login automático aceita o
    endereço do checkout com `predefined-cart` e `urlreturn` dentro (Base64)? Há limite de tamanho?
 2. `predefined-cart`: o formato exato (exemplo de JSON), onde vai (no endereço ou num POST), limite de itens.
 3. Endpoint de consulta: endereço, autenticação, um exemplo de resposta, a lista de situações (pago, pendente, cancelado,
@@ -138,7 +138,7 @@ Consequências para o Eterna:
 - **Agente**: a cada minuto busca `GET /ponto/vendas-online` com o segredo do ponto. Junta a venda às vendas do ponto
   (`vendas-online.jsonl`, que o app já lê) e marca as fotos como compradas no manifesto local.
 - **Ainda dependem da Imply** (ajustáveis sem mexer no código, pelos parâmetros do template):
-  - `ImplyTipoPessoa`: o código de cliente final.
+  - `ImplyTipoPessoa`: o código de AGÊNCIA (já informado pela Imply; decisão de 11/11).
   - `ImplyCarrinho`: o formato do predefined-cart. Hoje vai JSON em Base64 com `referencia` e `itens[{idproduto, quantidade}]`.
   - `ImplyConsulta`: o endereço da consulta, com `{ref}`.
   - As palavras de situação (`IMPLY_PAGO` e `IMPLY_CANCELADO`).
