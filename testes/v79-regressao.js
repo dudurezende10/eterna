@@ -56,7 +56,7 @@ try{
   const ctx=await nova(b,1366,900);
   const A=await pagina(ctx,'A #loja');await A.goto(U+'#loja');await A.evaluate(()=>{localStorage.clear();});await A.reload();await A.waitForTimeout(1200);
   // v84: no modo local o Checkout só oferece fundo de IA com o recorte do agente; as sessões de exemplo usam o modo Photoroom (só a escolha, sem montar)
-  await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
+  await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';ETERNA.fundosModoTeste('photoroom');localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));}); // v97: o Photoroom só pelo interruptor dos testes (some ao recarregar)
   const cards=await A.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=10&&ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=10&&ETERNA.lojaItems(s.card).filter(x=>x.t==='ai').length>=4).map(s=>s.card).slice(0,6));
   ok(cards.length>=5,'pré: faltam sessões com 10 fotos e 4 fundos de IA: '+J(cards));
   const [C1,C2,C3,C4,C5]=cards;
@@ -74,9 +74,12 @@ try{
   // ---- Caixa aberto antes do pedido (janela B, Atendimento e venda)
   fase='1.6 abrir caixa';
   const B=await pagina(ctx,'B caixa');ok(await login(B,'loja@eterna.photo'),'1.6: Atendimento não entrou');CAIXA=B;
-  const rail0=await B.evaluate(()=>!!document.querySelector('#rail-ck [data-act="view"][data-v="caixa"]'));ok(rail0,'1.6: barra sem o botão Caixa para o Atendimento');
-  await B.click('#rail-ck [data-v="caixa"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='caixa','1.6: botão Caixa não abriu o Caixa');
-  ok(!(await B.$('#pend-painel')),'1.6: Caixa vazio sem a caixa "Aguardando pagamento" (some quando não há pagamento esperando, a0dbfd9)');
+  // v94-ux: o botão "Caixa" da barra virou "Posto de venda" (data-v="posto"); o Caixa é o Posto com o filtro Dinheiro (parte E, decisão 3)
+  // v94-ux (parte H): o Posto de venda saiu da barra e é item do menu (#nav [data-v="posto"]); o número de pendências fica nesse item
+  // v97-ux (Posto único): o botão amarelo Caixa fica na barra e conta só o dinheiro esperando confirmação (#rail-cx)
+  const rail0=await B.evaluate(()=>{const c=document.querySelector('#rail-ck [data-v="caixa"]');const n=ETERNA.SIM.caixaDin.filter(r=>(r.estado==='aguardando'||r.estado==='escolha')&&r.meio==='dinheiro'&&r.total!=null&&(!r.escolha||r.pkg)).length;return {posto:!!document.querySelector('#nav [data-act="view"][data-v="posto"]'),caixa:!!c,cx:(document.querySelector('#rail-cx')||{}).textContent||'',n};});ok(rail0.posto&&rail0.caixa&&rail0.cx===(rail0.n?String(rail0.n):''),'1.6: item Posto de venda no menu e botão Caixa com o número do dinheiro: '+JSON.stringify(rail0));
+  await B.click('#nav [data-v="posto"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='posto','1.6: botão Posto de venda não abriu o Posto');
+  ok(/Nenhum pagamento esperando/.test(await txt(B,'#main')),'1.6: Caixa vazio deveria dizer "Nenhum pagamento esperando." (v83)');
 
   // ---- 4.1 a 4.9 e 1.1 (v96): o carrinho saiu do Checkout; pacote, Ideal, adicionais, impressas, economia e meio são do caixa no Posto de venda.
   // Os mesmos casos de antes, agora no cartão da pendência (pendEscolhaItem), no registro (pendEscolher) e no cálculo (vendaCalc).
@@ -152,7 +155,10 @@ try{
   // v83 (D5): enquanto espera o pagamento não há contagem; a tela fica até o vendedor confirmar ou o cliente tocar em Voltar ao início
   await A.evaluate(()=>{ETERNA.SIM.lojaFimSeg=5;});await sleep(5600);
   ok(await A.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.timer),'1.3: tela do dinheiro aguardando não pode voltar sozinha');
-  await A.click('[data-act="loja-new"]');await A.waitForTimeout(150);ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: Voltar ao início');
+  // v94-ux: na espera não há mais o botão amarelo; a casa pergunta "Cancelar o pedido?" e "Sim, sair" volta ao início (parte G)
+  // Eduardo (11/11): na espera não há "Voltar ao início" (o caixa recomeça pelo Posto); parada 3 min, a tela volta sozinha
+  ok(await A.evaluate(()=>document.querySelectorAll('[data-act="loja-new"]').length)===0,'1.3 (11/11): a espera do pagamento não tem "Voltar ao início"');
+  await A.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);});await A.waitForTimeout(150);ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: a espera parada volta ao início');
 
   // ---- 1.5: galeria no mesmo computador
   fase='1.5';
@@ -171,9 +177,11 @@ try{
   const gal7=d7.galerias[tok1];ok((d7.galFila||[]).some(x=>x.token===tok1),'1.7: galeria publicada (fila)');
   ok(J(gal7.fotos.filter(f=>f.direito==='comprada').map(f=>f.id).sort())===J(s7.selected.slice().sort()),'1.7: compradas = selected');
   ok(((d7.ai||{})[C1]||{bought:[]}).bought.length===4,'1.7: 4 fundos de IA comprados na confirmação');
+  // v94-ux: no Posto de venda o recibo abre pelo botão "Recibo" (data-act caixa-open, o mesmo da antiga lista "Pagas hoje"; parte E)
+  await B.evaluate(c=>{const b=document.createElement('button');b.dataset.act='caixa-open';b.dataset.card=c;document.body.appendChild(b);b.click();b.remove();},C1);await B.waitForTimeout(300);
   const rec=await txt(B,'.receipt');ok(/Recebido por Atendimento e venda às \d\d:\d\d/.test(rec)&&/Impressões: 8/.test(rec)&&/TOTAL\s+R\$ 190/.test(rec),'1.7: recibo: '+rec);
   await B.screenshot({path:`${P}/v79-caixa-recibo.png`});
-  await sleep(600);const g10=await G.evaluate(()=>ETERNA.pub&&ETERNA.pub.step);ok(g10==='consent','rev 10: a galeria deveria sair do "esperando o caixa" sem recarregar: '+g10);await G.close();
+  await sleep(600);const g10=await G.evaluate(()=>ETERNA.pub&&ETERNA.pub.step);ok(g10==='galeria','rev 10 (v96.1): a galeria deveria sair do "esperando o caixa" sem recarregar, direto nas compradas: '+g10);await G.close();
   ok(s7.total===190&&s7.cart.every(x=>typeof x.v==='number'),'I4: venda grava total e preço por item: '+J({t:s7.total,cart:s7.cart}));
   await sleep(400);const dA=await sim(A);ok(dA.sessions[C1].status==='paga'&&dA.caixaDin.find(x=>x.id===r1.id).estado==='confirmada','1.7: a janela do Checkout deveria adotar o SIM novo');
 
@@ -285,11 +293,11 @@ try{
   ok(L.tl['Aguardando caixa']==='1','1.10: bloco Aguardando caixa: '+J(L.tl));
   const fotosAg=await D.evaluate(id=>ETERNA.allSales().find(r=>r.no===id).photos,r10.id);ok(fotosAg===3,'rev 11: fotos na pendente: '+fotosAg);
   const rec0=L.tl['Receita'],v0=L.tl['Vendas'];
-  await D.click('[data-act="sales-status"][data-v="aguardando"]');await D.waitForTimeout(150);
+  await D.selectOption('select[data-act="sales-status"]','aguardando');/* v94-ux (parte J): filtro em select */await D.waitForTimeout(150);
   const Lf=await D.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(r=>r.innerText.replace(/\s+/g,' ')));ok(Lf.length===1&&Lf[0].includes(r10.id),'1.10: filtro Aguardando caixa: '+J(Lf));
-  await D.click('[data-act="sales-status"][data-v="nao_paga"]');await D.waitForTimeout(150);
+  await D.selectOption('select[data-act="sales-status"]','nao_paga');/* v94-ux (parte J): filtro em select */await D.waitForTimeout(150);
   const Ln=await D.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(r=>r.innerText.replace(/\s+/g,' ')));ok(Ln.some(r=>r.includes(r9.id))&&Ln.every(r=>/não paga/.test(r)),'1.10: filtro Não pagas: '+J(Ln));
-  await D.click('[data-act="sales-status"][data-v="all"]');await D.waitForTimeout(100);await D.screenshot({path:`${P}/v79-lista-vendas.png`});
+  await D.selectOption('select[data-act="sales-status"]','all');/* v94-ux (parte J): filtro em select */await D.waitForTimeout(100);await D.screenshot({path:`${P}/v79-lista-vendas.png`});
   const csv=await D.evaluate(()=>ETERNA.salesCSV(ETERNA.allSales()));const lin=csv.split('\n');
   ok(lin[0].includes(';caixa;caixa_em;')&&lin[0].endsWith(';posto;pagamento_ref;impressao'),'1.10: CSV sem as colunas caixa e caixa_em: '+lin[0]);
   ok(lin.some(l=>l.includes(r10.id)&&l.includes('"aguardando"'))&&lin.some(l=>l.includes(r9.id)&&l.includes('"nao_paga"')),'1.10: CSV com aguardando e nao_paga');
@@ -432,7 +440,7 @@ try{
     await abrir();await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(400);
     // v96 (B2): voltar ao início limpa as marcas da sessão; aqui o cliente marca a foto dele antes de continuar
     await pg.evaluate(c=>{const it=ETERNA.lojaItems(c);ETERNA.lojaPick(c)[it[0].k]='ok';ETERNA.state.kiosk.step='cart';ETERNA.render();},card);await pg.waitForTimeout(150);await pagar(pg,'card');
-    await pg.click('.lj-restart');await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir');
+    await pg.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);ETERNA.render();});await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir'); // 11/11: a espera não tem "Voltar ao início"; volta parada
     // I1: recarregar a janela do Checkout não entra logado (a sessão salva continua para as outras janelas)
     fase='I1';
     await pg.reload();await pg.waitForTimeout(600);

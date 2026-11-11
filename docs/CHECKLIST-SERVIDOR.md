@@ -46,7 +46,11 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 ## 3. Eterna (no usuário eterna)
 
 - [ ] Instalar o Python 3.12 (python.org), marcando "Add python.exe to PATH".
-- [ ] Baixar e rodar `agente\instalar-recorte.bat`. Ele cria o venv e baixa os modelos do recorte (cerca de 350 MB).
+- [ ] Driver NVIDIA recente: o `onnxruntime-gpu` 1.29.0 fixado usa CUDA 13 e cuDNN 9 (bibliotecas `nvidia-*` pelo pip), que pedem driver 580 ou mais novo; a série RTX 50 exige no mínimo CUDA 12.8. Conferir com `nvidia-smi` (linha "CUDA Version" 13.0 ou mais).
+- [ ] **Venv do serviço (Ronaldo, no `instalar-servidor.ps1`)**: o serviço roda como SYSTEM; o Python que ele usa não pode ficar numa pasta que o usuário comum grava (troca de DLL do CUDA ou de pacote vira código rodando como SYSTEM). Criar o venv fora do perfil, por exemplo `C:\Eterna\venv`, como administrador, instalar nele (`agente\instalar-recorte.bat gpu C:\Eterna\venv`) e trancar a escrita: `icacls C:\Eterna\venv /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX"` (Administradores e SYSTEM gravam; Usuários só leem e executam). O mesmo para a pasta do agente (`eterna-agente.py` e `eterna-recorte.py`) e para a pasta dos modelos do rembg. Conferir com `icacls C:\Eterna\venv` que nenhum usuário comum tem `(M)`, `(W)` ou `(F)`. O agente do usuário (Mac, notebook do ponto) continua com o venv em `~/Eterna/venv`.
+- [ ] **Versões fixas com hash**: os instaladores usam `pip install --require-hashes --only-binary=:all: -r agente\recorte-requisitos.txt` (ou `recorte-requisitos-gpu.txt` no modo gpu): todas as rodas, dependências e bibliotecas `nvidia-*` incluídas, com o SHA-256 de cada arquivo do PyPI. Erro de hash = arquivo diferente do esperado: parar e avisar. Para trocar uma versão, gerar de novo com `python3 agente\gerar-requisitos-recorte.py` (com internet, fora do ponto) e revisar a diferença no commit. Instalação sem internet no estádio: `pip download --require-hashes --only-binary=:all: -r <arquivo> -d rodas` numa máquina com internet e, no servidor, o mesmo `pip install` com `--no-index --find-links rodas`.
+- [ ] Baixar e rodar `agente\instalar-recorte.bat gpu` (v97). Ele cria o venv, instala o onnxruntime da placa sem o de CPU (os dois dividem a mesma pasta; se o de CPU estava lá, sai antes, e o da placa só é reinstalado se faltar o provedor CUDA) com as bibliotecas CUDA e cuDNN pelo pip, e baixa os 4 modelos do recorte (BiRefNet, u2net_human_seg, isnet-general-use e MoveNet, cerca de 1,3 GB, com hash conferido). No fim mostra "provedor do recorte: placa de vídeo (CUDA)"; se mostrar processador, conferir o driver. Sem placa NVIDIA: `agente\instalar-recorte.bat` (sem `gpu`). Computador com menos de 16 GB não roda o recorte. Rodar de novo não baixa nada que já esteja certo.
+- [ ] Com o agente aberto, conferir `/status`: `recorte.ok` = true, `recorte.modelo` = `birefnet-general` e, depois da primeira foto, `recorte.provedor` = `cuda`. O `eterna-recorte.py` precisa estar na mesma pasta do `eterna-agente.py` (o `iniciar-eterna.bat` baixa os dois).
 - [ ] Rodar `agente\iniciar-eterna.bat` uma vez. Ele baixa o agente mais novo, instala as bibliotecas e cria `~/Eterna`.
 - [ ] Conferir: `curl http://127.0.0.1:8765/status` responde `"ok": true`.
 
@@ -58,6 +62,8 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
   - `ETERNA_IMPRESSORA`: o nome exato da DNP (passo 5);
   - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. O passo 8 acrescenta os do Tailscale.
 - [ ] Conferir em `/status`: `nuvem.ligada` = true e `s3_ok` = true.
+- [ ] Depois de 2 minutos ligado, conferir em `/status`: `backup.ok` = true (sem isso, a série diária das Estatísticas e o calendário ficam só neste disco).
+- [ ] Chave da API-Football (v97): o Admin abre o Eterna pelo servidor (http://127.0.0.1:8765 ou o endereço do Tailscale), vai em Configurações › Painel de controle › Calendário de eventos · fonte dos jogos, cola a chave e toca em Testar agora. Nunca mandar a chave por chat ou e-mail. Alternativa: `ETERNA_API_FOOTBALL` no `nuvem.env` (aí a tela mostra "definida no servidor").
 
 ## 5. Impressora
 

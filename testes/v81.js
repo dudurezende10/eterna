@@ -1,4 +1,5 @@
 // v81: (1) imagens das bandeiras corrigidas e migração da lista salva; (2) só os fundos de IA aprovados (4 na v81, 5 com o Pódio da v86); (3) Abrir Checkout em janela à parte, admin continua logado
+// v94-ux (parte H): "Abrir Checkout" do Admin fica no rodapé do menu (#nav .nav-ck); os cliques usam .rail [data-act="loja-abrir"]
 const {chromium}=require('playwright');const fs=require('fs');const path=require('path');const login=require('./_login.js');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
@@ -29,9 +30,9 @@ async function A8(pg){
   // 7: títulos dos grupos do menu: 12px, negrito, maiúsculo, quase branco no rail do Maracanã; item normal; sem quebra nem rolagem lateral
   for(const [w,h] of [[1440,900],[1280,800],[390,844]]){await pg.setViewportSize({width:w,height:h});await pg.waitForTimeout(150);
     if(w<=900)await pg.evaluate(()=>{const m=document.querySelector('#menu-btn');if(m&&m.offsetParent)m.click();});await pg.waitForTimeout(200);
-    const g=await pg.evaluate(()=>{const gs=[...document.querySelectorAll('#nav button.grp')].filter(e=>e.offsetParent);const it=document.querySelector('#nav .navitems button:not(.grp)');const cs=e=>getComputedStyle(e);
-      return {n:gs.length,fs:gs.map(e=>cs(e).fontSize),fw:gs.map(e=>cs(e).fontWeight),tt:gs.map(e=>cs(e).textTransform),cor:gs.map(e=>cs(e).color),quebra:gs.filter(e=>{const sp=e.querySelector('span');return sp&&sp.getClientRects().length>1||sp.offsetHeight>22;}).map(e=>e.innerText),itw:it?cs(it).fontWeight:null,sw:document.documentElement.scrollWidth<=innerWidth};});
-    ok(g.n>=4&&g.fs.every(x=>x==='12px')&&g.fw.every(x=>+x>=700)&&g.tt.every(x=>x==='uppercase'),`7 ${w}: títulos do menu `+J(g));
+    const g=await pg.evaluate(()=>{const todos=[...document.querySelectorAll('#nav button.grp')].filter(e=>e.offsetParent);const gs=todos.filter(e=>!e.classList.contains('navsub'));const sub=todos.filter(e=>e.classList.contains('navsub')); /* v97: pasta dentro do grupo (Laboratório) tem título próprio: 12px, 600, sem maiúsculas */const it=document.querySelector('#nav .navitems button:not(.grp)');const cs=e=>getComputedStyle(e);
+      return {sub:sub.map(e=>cs(e).fontSize+' '+cs(e).fontWeight+' '+cs(e).textTransform),n:gs.length,fs:gs.map(e=>cs(e).fontSize),fw:gs.map(e=>cs(e).fontWeight),tt:gs.map(e=>cs(e).textTransform),cor:gs.map(e=>cs(e).color),quebra:gs.filter(e=>{const sp=e.querySelector('span');return sp&&sp.getClientRects().length>1||sp.offsetHeight>22;}).map(e=>e.innerText),itw:it?cs(it).fontWeight:null,sw:document.documentElement.scrollWidth<=innerWidth};});
+    ok(g.n>=4&&g.fs.every(x=>x==='12px')&&g.fw.every(x=>+x>=700)&&g.tt.every(x=>x==='uppercase'),`7 ${w}: títulos do menu `+J(g));ok(g.sub.every(x=>x==='12px 600 none'),`7 ${w}: título da pasta dentro do grupo `+J(g.sub));
     ok(g.cor.every(c=>c==='rgba(255, 255, 255, 0.92)'),`7 ${w}: cor dos títulos no Maracanã `+J(g.cor));ok(!g.quebra.length&&g.sw,`7 ${w}: título quebrou linha ou rolagem lateral `+J(g.quebra));ok(g.itw==null||+g.itw<700,`7 ${w}: item do grupo em negrito`);
     if(w<=900)await pg.evaluate(()=>{const m=document.querySelector('#menu-btn');if(m&&m.offsetParent)m.click();});}
   await pg.setViewportSize({width:1440,height:900});}
@@ -69,11 +70,11 @@ try{
     const r=await pg.evaluate(()=>{const S=ETERNA.SIM;delete S.bgOn;const at=ETERNA.BGS.filter(b=>!b.inativo);
       return {ativos:at.map(b=>b.id),nomes:at.map(b=>b.name),files:at.map(b=>b.file),opts:ETERNA.bgOpts().map(o=>o.name),on:ETERNA.bgOn(),ai:ETERNA.aiBgs().map(b=>b.id),total:ETERNA.BGS.length,
         pb:ETERNA.bgOf('arq1950').mono,camp:ETERNA.bgOf('campeao2').fit,mir:ETERNA.bgOf('mirante').pos.cx,tun:ETERNA.bgOf('tunel').pos,tunFit:ETERNA.bgOf('tunel').fit,tunMono:ETERNA.bgOf('tunel').mono,arg:ETERNA.bgFor('campeao','x').id};});
-    ok(J(r.ativos.sort())===J(['arq1950','campeao2','mirante','podio','tunel']),'2: ativos deveriam ser 5 (v86: Pódio): '+J(r.ativos));ok(r.total>=12,'2: fundos apagados em vez de ocultos');
-    ok(J(r.opts.sort())===J(['Arquibancada 1950','Mirante ao pôr do sol','Noite de campeão','Pódio de campeão','Saída do túnel']),'2: bgOpts: '+J(r.opts));ok(r.ai.length===5&&r.on.length===5,'2: aiBgs/bgOn: '+J([r.ai,r.on]));
-    ok(r.files.length===5&&r.files.every(f=>/bg-(campeao-v81|mirantesol|pb1950|tunel|podio)\.jpg$/.test(f)),'2: arquivos novos: '+J(r.files));ok(r.pb==='pb','2: 1950 em preto e branco');ok(r.camp.includes('inteiro'),'2 (v84): Campeão aceita corpo inteiro, que vira do joelho para cima (regra 9)');ok(r.mir===.45,'2: Mirante centro 45%');ok(r.tun.cx===.5&&r.tun.top>=.25&&r.tun.base===1&&r.tunFit.includes('inteiro')&&r.tunMono===false,'2: túnel: '+J([r.tun,r.tunFit]));
+    ok(J(r.ativos.sort())===J(['arq1950','campeao2','mirante','telao','tunel']),'2: ativos deveriam ser 5 (v86: Pódio; v97: Telão no lugar dele): '+J(r.ativos));ok(r.total>=12,'2: fundos apagados em vez de ocultos');
+    ok(J(r.opts.sort())===J(['Arquibancada 1950','Mirante ao pôr do sol','Noite de campeão','Saída do túnel','Telão do Maracanã']),'2: bgOpts (v97: Telão no lugar do Pódio): '+J(r.opts));ok(r.ai.length===5&&r.on.length===5,'2: aiBgs/bgOn: '+J([r.ai,r.on]));
+    ok(r.files.length===5&&r.files.every(f=>/bg-(campeao-v81|mirantesol|pb1950|tunel|telao)\.jpg$/.test(f)),'2: arquivos novos: '+J(r.files));ok(r.pb==='pb','2: 1950 em preto e branco');ok(r.camp.includes('inteiro'),'2 (v84): Campeão aceita corpo inteiro, que vira do joelho para cima (regra 9)');ok(r.mir===.45,'2: Mirante centro 45%');ok(r.tun.cx===.5&&r.tun.top>=.25&&r.tun.base===1&&r.tunFit.includes('inteiro')&&r.tunMono===false,'2: túnel: '+J([r.tun,r.tunFit]));
     ok(r.arg==='campeao2','2: variação Argentina oculta cai na Noite de campeão: '+r.arg);
-    for(const f of ['bg-campeao-v81.jpg','bg-mirantesol.jpg','bg-pb1950.jpg','bg-tunel.jpg','bg-podio.jpg']){const x=await pg.evaluate(async f=>{const im=new Image();im.src='img/'+f;await im.decode().catch(()=>{});return Math.max(im.naturalWidth,im.naturalHeight);},f);ok(x===2400,'2: '+f+' deveria ter 2400 px: '+x);}
+    for(const f of ['bg-campeao-v81.jpg','bg-mirantesol.jpg','bg-pb1950.jpg','bg-tunel.jpg','bg-podio.jpg','bg-telao.jpg']){const x=await pg.evaluate(async f=>{const im=new Image();im.src='img/'+f;await im.decode().catch(()=>{});return Math.max(im.naturalWidth,im.naturalHeight);},f);ok(x===(f==='bg-telao.jpg'?2576:2400),'2: '+f+' deveria ter 2400 px (o Telão, 2576, arte do Eduardo): '+x);}
     await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(300);
     const t=await pg.evaluate(()=>({n:document.querySelectorAll('#main .bgs .bg').length,txt:document.querySelector('#main').innerText,rows:document.querySelectorAll('#main table tbody tr').length}));
     ok(!/Sala de imprensa|Maracanã à noite|Gramado 1950|Terraço|Colômbia|Argentina/.test(t.txt),'2: tela Fundos de IA mostra fundo oculto');ok(/Mirante ao pôr do sol/.test(t.txt)&&/Arquibancada 1950/.test(t.txt)&&/Saída do túnel/.test(t.txt)&&/Pódio de campeão/.test(t.txt),'2: tela Fundos de IA sem os aprovados');
@@ -81,17 +82,22 @@ try{
     await A8(pg);
     await ctx.close();}
   // ---------- 3. Abrir Checkout em janela à parte ----------
+  // v97: botões do alto do menu: notebook com mouse em 1366×768 pode ter 40 px (o menu cabe sem rolar); tablet deitado 1024×768 e em pé 820×1180 (toque) ficam com 44 px ou mais
+  for(const [nome,opt,min,max] of [['notebook 1366×768',{viewport:{width:1366,height:768}},40,43],['tablet 1024×768',{viewport:{width:1024,height:768},hasTouch:true,isMobile:true},44,99],['tablet em pé 820×1180',{viewport:{width:820,height:1180},hasTouch:true,isMobile:true},44,99]]){
+    const ctx=await b.newContext(opt);const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push('rail: '+e.message));await login(pg);await pg.waitForTimeout(200);
+    const hs=await pg.evaluate(()=>[...document.querySelectorAll('.railck')].filter(e=>e.offsetParent).map(e=>Math.round(e.getBoundingClientRect().height)));
+    ok(hs.length>=1&&hs.every(x=>x>=min&&x<=max),`botões do alto do menu no ${nome}: `+J(hs));await ctx.close();}
   {const ctx=await b.newContext({viewport:{width:1440,height:900}});const A=await ctx.newPage();A.on('pageerror',e=>errs.push('3A: '+e.message));
     await login(A);await A.evaluate(()=>{const t=ETERNA.venueToday();ETERNA.state.range={from:t,to:t};ETERNA.state.view='vendas-lista';ETERNA.render();});await A.waitForTimeout(200);
     const v0=await A.evaluate(()=>({view:ETERNA.state.view,hash:location.hash,user:ETERNA.state.user&&ETERNA.state.user.email}));
-    const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('#rail-ck [data-act="loja-abrir"]')]);L.on('pageerror',e=>errs.push('3L: '+e.message));
+    const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('.rail [data-act="loja-abrir"]')]);L.on('pageerror',e=>errs.push('3L: '+e.message));
     await L.waitForLoadState();await L.waitForTimeout(900);
     const l=await L.evaluate(()=>({hash:location.hash,rota:ETERNA.state.lojaRota,user:!!ETERNA.state.user,view:ETERNA.state.view,tab:sessionStorage.getItem('eterna.lojaTab'),name:window.name}));
     ok(l.hash==='#loja'&&l.rota&&l.view==='quiosque'&&!l.user&&l.tab==='1'&&l.name==='eterna-checkout','3: janela nova deveria estar em #loja sem login: '+J(l));
     const a1=await A.evaluate(()=>({view:ETERNA.state.view,hash:location.hash,user:ETERNA.state.user&&ETERNA.state.user.email,rota:ETERNA.state.lojaRota}));
     ok(a1.view==='posto'&&a1.user===v0.user&&!a1.rota&&a1.hash!=='#loja','3: aba do admin deveria ir para o Posto de venda (v83), logada: '+J([v0,a1]));
     // reabrir: reutiliza a mesma janela
-    const n0=ctx.pages().length;await A.click('#rail-ck [data-act="loja-abrir"]');await A.waitForTimeout(500);ok(ctx.pages().length===n0,'3: segundo clique abriu outra janela: '+ctx.pages().length);
+    const n0=ctx.pages().length;await A.click('.rail [data-act="loja-abrir"]');await A.waitForTimeout(500);ok(ctx.pages().length===n0,'3: segundo clique abriu outra janela: '+ctx.pages().length);
     // compra na janela do Checkout
     const card=await L.evaluate(()=>ETERNA.demoSessions().find(s=>s.photos.length>=8&&(ETERNA.SIM.sessions[s.card]||{}).status!=='paga').card);
     await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',card);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(1500);
@@ -118,7 +124,7 @@ try{
     await ctx.close();
     // popup bloqueado: toast e a aba não muda
     const c2=await b.newContext({viewport:{width:1440,height:900}});const B=await c2.newPage();B.on('pageerror',e=>errs.push('3B: '+e.message));await login(B);
-    await B.evaluate(()=>{window.open=()=>null;ETERNA.state.view='vendas-lista';ETERNA.render();});await B.click('#rail-ck [data-act="loja-abrir"]');await B.waitForTimeout(250);
+    await B.evaluate(()=>{window.open=()=>null;ETERNA.state.view='vendas-lista';ETERNA.render();});await B.click('.rail [data-act="loja-abrir"]');await B.waitForTimeout(250);
     const bl=await B.evaluate(()=>({view:ETERNA.state.view,rota:ETERNA.state.lojaRota,toast:(document.querySelector('#toast')||document.body).innerText}));
     ok(bl.view==='vendas-lista'&&!bl.rota&&/Libere janelas pop-up/.test(bl.toast),'3: popup bloqueado: '+J({view:bl.view,rota:bl.rota}));
     // lojaEquipeOn/lojaVoltarApp continuam no caminho antigo (go('quiosque') na mesma aba)

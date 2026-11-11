@@ -3,7 +3,7 @@ import base64, json, os, sys, time, types
 from datetime import datetime, timedelta, timezone
 from botocore.exceptions import ClientError
 
-sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__)))
 os.environ.update(TABELA="t", BUCKET="b", SEGREDO_PONTO_SHA256="ab" * 32, AWS_LAMBDA_FUNCTION_NAME="f",
                   LIMITE_LEITURAS_DIA="1000", LIMITE_BUSCAS_DIA="1000")
 
@@ -47,14 +47,15 @@ class Rek:
         b = Image["Bytes"]
         ws = [.3, .28] if b.startswith(b"duas") else [.3, .08] if b.startswith(b"fundo") else [.3]
         return {"FaceDetails": [{"BoundingBox": {"Width": w}} for w in ws]}
-    def search_faces_by_image(s, CollectionId, Image, **k):
+    def search_faces_by_image(s, CollectionId, Image, **k):     # "rosto-a@90" = semelhança 90 (padrão 99)
         if CollectionId not in s.col: raise s.exceptions.ResourceNotFoundException()
-        quem = Image["Bytes"].decode()
-        return {"FaceMatches": [{"Face": {"ExternalImageId": p}, "Similarity": 99} for p, r in s.col[CollectionId].items() if r == quem]}
+        quem, _, sim = Image["Bytes"].decode().partition("@")
+        return {"FaceMatches": [{"Face": {"ExternalImageId": p}, "Similarity": float(sim or 99)} for p, r in s.col[CollectionId].items() if r == quem]}
 
 
 class S3:
-    def head_object(s, Bucket, Key): return {}
+    heads = 0
+    def head_object(s, Bucket, Key): S3.heads += 1; return {}
     def generate_presigned_url(s, *a, **k): return "https://x/" + k["Params"]["Key"]
 
 
@@ -74,9 +75,9 @@ man = {"token": tok, "codigo": "ABCD-EFGH", "tipo": "sessao", "expira": exp, "pr
        "fotos": [{"id": ("b" if i >= 38 else "a") + "%05x" % i, "direito": "comprada" if i < 2 else "venda"} for i in range(40)]}
 
 
-def chama(metodo, caminho, corpo=None, cab=None):
+def chama(metodo, caminho, corpo=None, cab=None, ip="1.2.3.4"):
     ev = {"rawPath": caminho, "headers": cab or {}, "body": json.dumps(corpo) if corpo else None,
-          "requestContext": {"http": {"method": metodo, "sourceIp": "1.2.3.4"}}}
+          "requestContext": {"http": {"method": metodo, "sourceIp": ip}}}
     r = app.handler(ev, ctx)
     return r["statusCode"], json.loads(r["body"])
 
@@ -107,8 +108,77 @@ ok(st == 200 and r["motivo"] == "varias_pessoas" and "restam" not in r, "duas pe
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True})
 ok(st == 200 and r["ok"] and R.indexadas == 40, "cliente certo liberado, nenhuma leitura nova")
 ok(len(r["galeria"]["fotos"]) == 38 and not [f for f in r["galeria"]["fotos"] if f["pid"].startswith("b")], "a selfie libera só as fotos em que a pessoa aparece")
+# v96.1: com a selfie que bateu, comprada (e cortesia) em que o rosto não bateu entra sempre; a à venda de outra pessoa continua fora
+manc = dict(man, fotos=[dict(f) for f in man["fotos"]])
+manc["fotos"][38]["direito"] = "comprada"               # b00026: comprada, outra pessoa (o pai com a bandeira); b00027 à venda, outra pessoa
+chama("POST", "/ponto/galerias", {"manifesto": manc}, {"x-eterna-ponto": seg})
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True})
+ps = {f["pid"]: f for f in r["galeria"]["fotos"]}
+ok(st == 200 and len(ps) == 39 and ps["b00026"]["original"] and "b00027" not in ps, "comprada sem o rosto aparece e baixa; à venda de outra pessoa fora")
+ace = r["acesso"]
+manv = dict(manc, fotos=[dict(f) for f in manc["fotos"]])
+manv["fotos"][39]["direito"] = "cortesia"               # cortesia dada no balcão depois da selfie
+chama("POST", "/ponto/galerias", {"manifesto": manv}, {"x-eterna-ponto": seg})
+st, r = chama("POST", "/g/%s/galeria" % tok, {"acesso": ace})
+ok(st == 200 and (next((f for f in r["galeria"]["fotos"] if f["pid"] == "b00027"), {}).get("original")), "cortesia dada depois da selfie entra no mesmo acesso")
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True})
-ok(st == 200 and r["motivo"] == "nao_encontrado" and r["restam"] == 4, "cliente errado com leitura completa: conta erro")
+ok(st == 200 and r["motivo"] == "nao_encontrado" and r["restam"] == 4, "cliente errado com leitura completa: conta erro, mesmo com comprada na venda")
+
+# v96.1 (decisão do Eduardo, 10/11): o QR sozinho abre as compradas e cortesias da venda, sem selfie; nunca as à venda
+st, r = chama("GET", "/g/%s/livres" % tok)
+ps = sorted(f["pid"] for f in r["galeria"]["fotos"])
+ok(st == 200 and ps == ["a00000", "a00001", "b00026", "b00027"] and all(f["original"] for f in r["galeria"]["fotos"]), "livres: só pelo QR, compradas e cortesia com original (%s)" % ps)
+ev_l = [v for k, v in T.d.items() if k[0] == "EVT#" + tok and v["tipo"] == "livres_vistas"]
+ok(ev_l and ev_l[-1]["livres"] == "4", "livres: evento livres_vistas com a contagem")
+ev_ok = sorted((k[1], v) for k, v in T.d.items() if k[0] == "EVT#" + tok and v["tipo"] == "selfie_ok")
+ok(ev_ok and "livres" in ev_ok[-1][1], "selfie_ok registra quantas compradas e cortesias abriram junto")
+S3.heads = 0
+app.galeria_obj(tok, manv, set())
+ok(S3.heads == 8, "galeria_obj: um head_object por chave na chamada (%d para 4 fotos livres)" % S3.heads)
+# grupo de escola: nada sem rosto
+tokE = "E" * 22
+chama("POST", "/ponto/galerias", {"manifesto": dict(manv, token=tokE, codigo=None, tipo="evento")}, {"x-eterna-ponto": seg})
+st, r = chama("GET", "/g/%s/livres" % tokE)
+ok(st == 200 and r["galeria"]["fotos"] == [], "livres: grupo de escola não abre nada sem rosto")
+
+# v96.1: sessão de menor usa o limiar de criança (95): semelhança 90 abre a de adulto e não a de menor
+tokA, tokM = "F" * 22, "G" * 22
+chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tokA, codigo=None)}, {"x-eterna-ponto": seg})
+chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tokM, codigo=None, menor=True)}, {"x-eterna-ponto": seg})
+st, r = chama("POST", "/g/%s/rosto" % tokA, {"imagem": base64.b64encode(b"rosto-a@90").decode(), "consentimento": True}, ip="7.0.0.1")
+ok(st == 200 and r.get("ok"), "adulto abre com semelhança 90")
+st, r = chama("POST", "/g/%s/rosto" % tokM, {"imagem": base64.b64encode(b"rosto-a@90").decode(), "consentimento": True}, ip="7.0.0.2")
+ok(st == 200 and r.get("motivo") == "nao_encontrado", "sessão de menor exige o limiar de criança (90 < 95)")
+
+# v96.1: teto da galeria de venda: 20 selfies sem acerto no dia, somando IPs; a 21ª (de outro IP) dá 429 até amanhã, com alerta
+tokT = "H" * 22
+chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tokT, codigo=None)}, {"x-eterna-ponto": seg})
+res = [chama("POST", "/g/%s/rosto" % tokT, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True}, ip="9.0.0.%d" % (i + 1)) for i in range(20)]
+ok(all(s_ == 200 and r_["motivo"] == "nao_encontrado" for s_, r_ in res), "teto: as 20 primeiras sem acerto dão nao_encontrado")
+st, r = chama("POST", "/g/%s/rosto" % tokT, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True}, ip="9.0.1.1")
+ok(st == 429 and r["motivo"] == "bloqueado" and r.get("teto") is True and app.epoch(r["ate"]) == app._amanha_venue(), "teto: a 21ª de outro IP dá 429 até o início de amanhã")
+st, r = chama("POST", "/g/%s/rosto" % tokT, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.1.2")
+ok(st == 429, "teto: parada também para quem bate")
+ok(len([v for k, v in T.d.items() if k[0] == "EVT#" + tokT and v["tipo"] == "galeria_teto_selfie"]) == 1, "teto: um evento de alerta")
+ok(chama("GET", "/g/%s/livres" % tokT)[0] == 200, "teto: as compradas continuam pelo QR")
+st, r = chama("POST", "/g/%s/rosto" % tokA, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.1.3")
+ok(st == 200 and r.get("ok"), "teto: outra galeria não é afetada")
+for t_ in (tokA, tokM, tokT):                          # tira do ar as galerias deste bloco (coleções apagadas)
+    chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=t_, codigo=None, encerrada=True)}, {"x-eterna-ponto": seg})
+
+# foto que saiu do manifesto: os rostos lidos da galeria saem e a coleção se refaz na próxima selfie com consentimento
+col_tok, lidas0 = app.colecao(tok), R.indexadas
+chama("POST", "/ponto/galerias", {"manifesto": manv}, {"x-eterna-ponto": seg})
+ok(col_tok in R.col and ("IDX#" + tok, "M") in T.d, "republicar com as mesmas fotos não mexe nos rostos lidos")
+manp = dict(manv, fotos=[dict(f) for i, f in enumerate(manv["fotos"]) if i != 5])        # a00005 saiu
+st, _ = chama("POST", "/ponto/galerias", {"manifesto": manp}, {"x-eterna-ponto": seg})
+ok(st == 200 and col_tok not in R.col and ("IDX#" + tok, "M") not in T.d and ("COL#" + col_tok, "M") not in T.d, "foto fora do manifesto: coleção de rostos e progresso da leitura apagados")
+ok(chama("GET", "/g/%s/info" % tok)[0] == 200 and chama("GET", "/g/codigo/ABCD-EFGH")[0] == 200, "a galeria continua no ar, com o código curto")
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.2.1")
+ok(st == 200 and r.get("ok") and R.indexadas == lidas0 + 39 and "a00005" not in R.col[col_tok] and "a00005" not in [f["pid"] for f in r["galeria"]["fotos"]],
+   "a selfie seguinte relê só as 39 fotos que ficaram (%d leituras novas)" % (R.indexadas - lidas0))
+chama("POST", "/ponto/galerias", {"manifesto": manv}, {"x-eterna-ponto": seg})          # foto a mais não apaga nada
+ok(col_tok in R.col, "republicar com foto a mais não apaga os rostos lidos")
 
 # encerrar no ponto: some da nuvem e os rostos são apagados
 man2 = dict(man, encerrada=True, expira=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))

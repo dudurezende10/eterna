@@ -32,8 +32,11 @@ im.save(sys.argv[1]+'/largomeio.png')
   // ---------- 1. dados do fundo e ativo por padrão ----------
   const d=await pg.evaluate(()=>{const b=ETERNA.bgOf('podio');return b&&{name:b.name,file:b.file,fileHi:b.fileHi,ang:b.ang,luz:b.luz,dir:b.dir,mono:b.mono,fit:b.fit,pos:b.pos,inativo:!!b.inativo,ativo:ETERNA.bgAtivo(b),
     on:ETERNA.bgOn(),opts:ETERNA.bgOpts().map(o=>o.id),ai:ETERNA.aiBgs().map(x=>x.id),regra:ETERNA.FIA_REGRAS.podio,flag:ETERNA.SIM.bgPodioV86};});
-  ok(d&&d.name==='Pódio de campeão'&&d.file==='img/bg-podio.jpg'&&d.fileHi==='img/fundos-5k/podio.jpg'&&d.ang==='baixo'&&d.luz==='sol'&&d.dir==='frontal'&&d.mono===false&&J(d.fit)===J(['meio','close','inteiro'])&&!d.inativo&&d.ativo,'1: DATA.backgrounds podio: '+J(d));
-  ok(d&&J(d.on)===J(['campeao','mirante','arq1950','tunel','podio'])&&d.opts.includes('podio')&&d.ai.includes('podio')&&d.ai.length===5,'1: pódio ativo por padrão, 5 no Checkout: '+J(d&&{on:d.on,ai:d.ai}));
+  ok(d&&d.name==='Pódio de campeão'&&d.file==='img/bg-podio.jpg'&&d.fileHi==='img/fundos-5k/podio.jpg'&&d.ang==='baixo'&&d.luz==='sol'&&d.dir==='frontal'&&d.mono===false&&J(d.fit)===J(['meio','close','inteiro'])&&d.inativo&&!d.ativo,'1 (v97, E8): DATA.backgrounds podio, agora em Laboratório › Fundos em teste: '+J(d));
+  ok(d&&J(d.on)===J(['campeao','mirante','arq1950','tunel','telao'])&&!d.opts.includes('podio')&&d.ai.includes('telao')&&d.ai.length===5,'1 (v97, E8): o Telão no lugar do pódio, 5 no Checkout: '+J(d&&{on:d.on,ai:d.ai}));
+  // daqui em diante o pódio é ligado à mão (SIM.bgAtivo.podio, como em Laboratório › Ativar) e a migração do Telão já feita:
+  // as regras da v86 (layout, impressão, migração uma vez só) continuam valendo para quem reativar o pódio
+  await pg.evaluate(()=>{ETERNA.SIM.bgAtivo={...(ETERNA.SIM.bgAtivo||{}),podio:true};ETERNA.SIM.bgTelaoV97=true;localStorage.setItem('eterna.bgtelao.v','97');localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});await pg.reload();await pg.waitForTimeout(400);
   ok(d&&J(d.regra)===J({meio:{corte:1,alt:.8,larg:.62,cx:.45},inteiro:{corte:.62,alt:.8,larg:.62,cx:.45}}),'1: FIA_REGRAS.podio (regra 14): '+J(d&&d.regra));
   // Photoroom (bgPad): a área do grupo também não passa de 0,76 da largura
   const pad=await pg.evaluate(()=>{const p=ETERNA.bgPad(ETERNA.bgOf('podio'),2400,1600),t=ETERNA.bgPad(ETERNA.bgOf('tunel'),2400,1600);return {p,dir:(2400-p.right)/2400,tl:t.left,tr:t.right};});
@@ -56,7 +59,7 @@ im.save(sys.argv[1]+'/largomeio.png')
   ok(hi.fonte==='img/fundos-5k/podio.jpg'&&!(hi.av||[]).length&&Math.max(hi.w,hi.h)>=1844&&Math.min(hi.w,hi.h)>=1240&&hi.url==='data:image/jpeg;base64,'&&hi.dir<=.77,'2: impressão do pódio com o fundo de 5000 px: '+J(hi));
 
   // ---------- 3. migração: escolha salva com 4 fundos ganha o pódio uma vez só ----------
-  const salvar=async(f)=>{await pg.evaluate(f);await pg.reload();await pg.waitForTimeout(400);};
+  const salvar=async(f)=>{await pg.evaluate(f);await pg.evaluate(()=>{localStorage.setItem('eterna.bgtelao.v','97');const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'null');if(s){s.bgTelaoV97=true;s.bgAtivo=s.bgAtivo||{};if(s.bgAtivo.podio==null)s.bgAtivo.podio=true;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));}});await pg.reload();await pg.waitForTimeout(400);};
   const lerSim=()=>pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');return {bgOn:s.bgOn,flag:s.bgPodioV86,on:ETERNA.bgOn(),k:localStorage.getItem('eterna.bgpodio.v')};});
   await salvar(()=>{localStorage.removeItem('eterna.bgpodio.v');const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.bgOn=['campeao','mirante','arq1950','tunel'];delete s.bgPodioV86;s.caixaDin=s.caixaDin||[];s.catalogoV=3;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
   let m=await lerSim();ok(J(m.bgOn)===J(['campeao','mirante','arq1950','tunel','podio'])&&m.flag===true&&m.k==='86'&&m.on.includes('podio'),'3: SIM com 4 fundos ganha o pódio: '+J(m));
@@ -68,17 +71,17 @@ im.save(sys.argv[1]+'/largomeio.png')
   await salvar(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));delete s.bgPodioV86;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
   m=await lerSim();ok(!m.bgOn.includes('podio'),'3: SIM de outra janela refez a migração: '+J(m));
   // escolha salva com 5 fundos (sem o pódio): não passa de 5 nem troca nada
-  await salvar(()=>{localStorage.removeItem('eterna.bgpodio.v');const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));s.bgAtivo={imprensa:true};s.bgOn=['campeao','mirante','arq1950','tunel','imprensa'];delete s.bgPodioV86;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
+  await salvar(()=>{localStorage.removeItem('eterna.bgpodio.v');const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));s.bgAtivo={imprensa:true,podio:true};s.bgOn=['campeao','mirante','arq1950','tunel','imprensa'];delete s.bgPodioV86;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
   m=await lerSim();ok(J(m.bgOn)===J(['campeao','mirante','arq1950','tunel','imprensa'])&&m.flag===true,'3: com 5 já escolhidos, nada muda: '+J(m));
   // lista vazia salva de propósito (nenhum fundo no Checkout): continua vazia depois da migração, e a migração fica marcada
   await salvar(()=>{localStorage.removeItem('eterna.bgpodio.v');const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));s.bgOn=[];delete s.bgPodioV86;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
   m=await lerSim();ok(J(m.bgOn)===J([])&&J(m.on)===J([])&&m.flag===true&&m.k==='86','3: lista vazia salva ganhou o pódio ou voltou ao padrão: '+J(m));
   await pg.reload();await pg.waitForTimeout(300);m=await lerSim();ok(J(m.bgOn)===J([])&&J(m.on)===J([]),'3: lista vazia mudou no segundo carregamento: '+J(m));
   // sem escolha salva: segue o padrão (BG_DEF, com o pódio), sem gravar bgOn
-  await salvar(()=>{localStorage.clear();});m=await lerSim();ok(m.bgOn==null&&J(m.on)===J(['campeao','mirante','arq1950','tunel','podio']),'3: sem escolha salva, padrão com o pódio: '+J(m));
+  await salvar(()=>{localStorage.clear();});m=await lerSim();ok(m.bgOn==null&&J(m.on)===J(['campeao','mirante','arq1950','tunel','telao']),'3 (v97): sem escolha salva, padrão com o Telão: '+J(m));
   // tela Fundos de IA cita o Pódio de campeão e os cinco
   await login(pg);await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(200);
-  const txt=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(/cinco fundos aprovados/.test(txt)&&/Pódio de campeão/.test(txt)&&!/quatro fundos/.test(txt),'3: textos dos Fundos de IA com os cinco: '+txt.slice(0,300));
+  const txt=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(/cinco fundos aprovados/.test(txt)&&/Telão do Maracanã/.test(txt)&&!/quatro fundos/.test(txt),'3 (v97): textos dos Fundos de IA com os cinco (Telão no lugar do Pódio): '+txt.slice(0,300));
 
   // ---------- 4. agente: mapa fixo com o pódio (prévia e impressão) ----------
   {const HA=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v86-ag-'));let out='';
@@ -96,7 +99,7 @@ print(json.dumps({'p':m.bg_arquivo('podio'),'hi':m.bg_arquivo('podio',True),'bp'
     const p2=await ctx.newPage();p2.setDefaultTimeout(15000);p2.on('pageerror',e=>errs.push('p2: '+e.message));
     await p2.goto(U);await p2.waitForTimeout(400);await p2.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await p2.waitForTimeout(200);
     // a p2 fica com a escolha antiga em memória (4 fundos, sem marca), e o mesmo SIM salvo sem a chave própria: estado de antes da v86
-    await p2.evaluate(()=>{const S=ETERNA.SIM;S.bgOn=['campeao','mirante','arq1950','tunel'];delete S.bgPodioV86;localStorage.setItem('eterna.sim.v1',JSON.stringify(S));localStorage.removeItem('eterna.bgpodio.v');ETERNA.render();});
+    await p2.evaluate(()=>{const S=ETERNA.SIM;S.bgOn=['campeao','mirante','arq1950','tunel'];delete S.bgPodioV86;S.bgAtivo={podio:true};S.bgTelaoV97=true;localStorage.setItem('eterna.bgtelao.v','97');localStorage.setItem('eterna.sim.v1',JSON.stringify(S));localStorage.removeItem('eterna.bgpodio.v');ETERNA.render();});
     const antes=await p2.evaluate(()=>ETERNA.bgOn());
     await pg.reload();await pg.waitForTimeout(500);   // a primeira página carrega e migra
     const p1=await pg.evaluate(()=>({on:ETERNA.bgOn(),k:localStorage.getItem('eterna.bgpodio.v')}));

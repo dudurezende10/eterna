@@ -4,6 +4,7 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
 (galeria-qr-fase1.md), para o app não mudar de tela:
   GET  /g/codigo/<XXXX-XXXX>      código curto -> token
   GET  /g/<token>/info            tipo, validade, estado
+  GET  /g/<token>/livres          na venda (sessao): compradas e cortesias só pelo QR, sem selfie (v96.1)
   POST /g/<token>/rosto           selfie com consentimento -> acesso de 1 h + galeria
   POST /g/<token>/galeria         renova os links com o acesso
   POST /g/<token>/pagamento       compra online: desligada até haver canal (só maquininha Imply por ora)
@@ -41,6 +42,8 @@ lam = boto3.client("lambda", region_name=REGIAO)
 URL_TTL = 300
 ACESSO_TTL = 3600
 FALHAS, BLOQUEIO = 5, 15 * 60
+TETO_DIA = int(os.environ.get("TETO_SELFIES_DIA", "20"))   # v96.1: selfies sem acerto por galeria de venda por dia (todos os IPs)
+FUSO_H = -3                                                # dia do venue (Brasília, sem horário de verão)
 EVENTO_DISTINTOS, EVENTO_JANELA, EVENTO_HORA = 2, 24 * 3600, 60
 EVENTOS_DIAS = 90
 _re_token = re.compile(r"^[A-Za-z0-9_-]{22}$")
@@ -126,6 +129,34 @@ def falhas(ip, token, somar=False):
     return FALHAS - n, 0
 
 
+def _dia_venue(t=None):
+    t = time.time() if t is None else t
+    return datetime.fromtimestamp(t + FUSO_H * 3600, timezone.utc).strftime("%Y-%m-%d")
+
+
+def _amanha_venue():
+    t = time.time() + FUSO_H * 3600
+    return int((t // 86400 + 1) * 86400 - FUSO_H * 3600)
+
+
+def teto_galeria(token):
+    """v96.1: galeria de venda com TETO_DIA selfies sem acerto hoje (todos os IPs) fica parada até o dia seguinte. 0 = pode."""
+    it = item("FALG#%s#%s" % (token, _dia_venue())) or {}
+    return _amanha_venue() if int(it.get("n") or 0) >= TETO_DIA else 0
+
+
+def teto_soma(token, ip):
+    agora = int(time.time())
+    r = TABELA.update_item(Key={"pk": "FALG#%s#%s" % (token, _dia_venue()), "sk": "M"}, UpdateExpression="ADD n :um SET #t = :ttl",
+                           ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":um": 1, ":ttl": agora + 2 * 86400},
+                           ReturnValues="UPDATED_NEW")
+    n = int(r["Attributes"]["n"])
+    if n == TETO_DIA:                                     # alerta: evento na linha do tempo e linha no log (sem token)
+        evento(token, "galeria_teto_selfie", ip, n=n)
+        print("ALERTA galeria %s: %d selfies sem acerto hoje, parada até amanhã" % (colecao(token)[-8:], n))
+    return n
+
+
 def evento_permite(ip, token, pids):
     """Grupo de escola: o mesmo IP abre no máximo 2 crianças diferentes por galeria em 24 h; 60 acessos por hora por galeria."""
     if not contar("EVH#" + token, 3600, EVENTO_HORA):
@@ -156,19 +187,33 @@ def link(chave, nome=None):
     return s3.generate_presigned_url("get_object", Params=p, ExpiresIn=URL_TTL)
 
 
-def galeria_obj(token, m, pids):
-    fotos, ok = [], False
+def livres(m):
+    """v96.1 (decisão do Eduardo, 10/11): na galeria de uma venda (tipo sessao) o QR sozinho abre as compradas e as cortesias
+    daquela venda, sem selfie. A selfie só acrescenta as à venda em que a pessoa aparece (v95). Grupo de escola (evento): só o rosto."""
+    if m["tipo"] != "sessao":
+        return set()
+    return {f["id"] for f in m["fotos"] if f["direito"] in ("comprada", "cortesia")}
+
+
+def galeria_obj(token, m, pids=()):
+    pids = set(pids) | livres(m)            # compradas e cortesias seguem o manifesto de agora
+    fotos, ok, cache = [], False, {}
+
+    def tem(chave):                         # um head_object por chave nesta chamada
+        if chave not in cache:
+            cache[chave] = tem_s3(chave)
+        return cache[chave]
     for i, f in enumerate(m["fotos"]):
         if f["id"] not in pids:
             continue
         pid = pid_lib(f["id"])
-        tem = tem_s3("vitrine/%s.jpg" % pid)
-        ok = ok or tem
+        v = tem("vitrine/%s.jpg" % pid)
+        ok = ok or v
         livre = f["direito"] in ("comprada", "cortesia")
         fotos.append({"pid": f["id"], "direito": f["direito"],
-                      "vitrine": link("vitrine/%s.jpg" % pid) if tem else None,
-                      "original": link("alta/%s.jpg" % pid, "viva-maracana-%d.jpg" % (i + 1)) if livre and tem_s3("alta/%s.jpg" % pid) else None,
-                      "chegando": not tem})
+                      "vitrine": link("vitrine/%s.jpg" % pid) if v else None,
+                      "original": link("alta/%s.jpg" % pid, "viva-maracana-%d.jpg" % (i + 1)) if livre and tem("alta/%s.jpg" % pid) else None,
+                      "chegando": not v})
     return {"tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"], "estado": "pronta" if ok else "chegando",
             "precos": m["precos"], "compra": COMPRA_ONLINE, "fotos": fotos}
 
@@ -405,6 +450,8 @@ def publicar(ev, corpo):
             novo["encerrada"] = True
     if m.get("encerrada"):                                # encerrada no ponto: sai do ar na nuvem também
         novo["encerrada"] = True
+    # foto que saiu da galeria: os rostos lidos dela saem junto (a coleção se refaz na próxima selfie com consentimento)
+    perdeu = bool(velho) and bool({f.get("id") for f in velho["fotos"]} - {f["id"] for f in novo["fotos"]})
     ttl = ttl_de(novo)
     TABELA.update_item(Key={"pk": "GAL#" + novo["token"], "sk": "M"}, UpdateExpression="SET m = :m, #t = :t",
                        ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":m": json.dumps(novo), ":t": ttl})
@@ -413,6 +460,8 @@ def publicar(ev, corpo):
         if novo["codigo"]:
             TABELA.delete_item(Key={"pk": "COD#" + novo["codigo"], "sk": "M"})
         return resp({"ok": True, "token": novo["token"], "estado": "encerrada"})
+    if perdeu:
+        apagar_rostos(novo["token"])
     if novo["codigo"]:
         TABELA.put_item(Item={"pk": "COD#" + novo["codigo"], "sk": "M", "token": novo["token"], "ttl": ttl})
     # os rostos não são lidos aqui: só depois do primeiro consentimento na galeria (rota /rosto)
@@ -425,8 +474,9 @@ def rosto(token, m, corpo, ip, ctx):
     if corpo.get("consentimento") is not True:
         return resp({"error": "consentimento obrigatório"}, 400)
     restam, ate = falhas(ip, token)
-    if ate:
-        return resp({"motivo": "bloqueado", "ate": iso(ate)}, 429)
+    teto = teto_galeria(token) if not ate and m["tipo"] == "sessao" else 0
+    if ate or teto:                                      # v96.2: teto = parada até amanhã (o app diz "Tente de novo amanhã")
+        return resp(dict({"motivo": "bloqueado", "ate": iso(ate or teto)}, **({"teto": True} if teto else {})), 429)
     img = corpo.get("imagem")
     if not isinstance(img, str) or not img:
         return resp({"error": "sem imagem"}, 400)
@@ -458,11 +508,13 @@ def rosto(token, m, corpo, ip, ctx):
         evento(token, "selfie_sem_rosto", ip)
         return resp({"ok": False, "motivo": "sem_rosto", "restam": restam})
     lim = LIMIAR_CRIANCA if m["tipo"] == "evento" or m.get("menor") else LIMIAR_ADULTO
-    pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), 0) >= lim}   # só as fotos em que quem fez a selfie aparece
+    pids = {f["id"] for f in m["fotos"] if sims.get(pid_lib(f["id"]), 0) >= lim}   # as fotos em que quem fez a selfie aparece
     if not pids and leitura != "ok":
         evento(token, "selfie_processando", ip)          # leitura incompleta: não conta como erro
         return resp({"ok": False, "motivo": "processando"}, 503)
-    if not pids:
+    if not pids:                                         # as compradas e cortesias da venda continuam abertas pelo QR (rota livres)
+        if m["tipo"] == "sessao":
+            teto_soma(token, ip)
         restam, ate = falhas(ip, token, somar=True)
         evento(token, "selfie_nao", ip)
         if ate:
@@ -475,7 +527,7 @@ def rosto(token, m, corpo, ip, ctx):
     acesso = secrets.token_urlsafe(24)
     exp = int(time.time() + ACESSO_TTL)
     TABELA.put_item(Item={"pk": "ACE#" + acesso, "sk": "M", "token": token, "pids": json.dumps(sorted(pids)), "exp": exp, "ttl": exp})
-    evento(token, "selfie_ok", ip, fotos=len(pids))
+    evento(token, "selfie_ok", ip, fotos=len(pids), livres=len(livres(m) - pids))   # livres: compradas e cortesias sem o rosto, abertas junto
     return resp({"ok": True, "acesso": acesso, "exp": iso(exp), "galeria": galeria_obj(token, m, pids)})
 
 
@@ -534,6 +586,13 @@ def handler(ev, ctx):
         evento(token, "qr_aberto", ip)
         return resp({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
                      "estado": estado(m), "venue": m.get("venue"), "compra": COMPRA_ONLINE})
+    if acao == "livres" and metodo == "GET":              # v96.1: compradas e cortesias da venda só pelo QR
+        if not contar("LIV#" + ip_hash(ip), 60, 30):
+            return resp({"motivo": "bloqueado"}, 429)
+        g = galeria_obj(token, m)
+        if g["fotos"]:
+            evento(token, "livres_vistas", ip, livres=len(g["fotos"]))
+        return resp({"galeria": g})
     if acao == "rosto" and metodo == "POST":
         return rosto(token, m, corpo, ip, ctx)
     if acao in ("galeria", "pagamento") and metodo == "POST":

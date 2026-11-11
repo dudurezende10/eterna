@@ -1,4 +1,5 @@
 // v83 etapa 1 (um notebook, sem agente): pagamento aguardando (14 a 20), venda acompanhada (21 e 22), impressão 10×15 (23 a 26),
+// v94-ux (parte H): "Abrir Checkout" do Admin fica no rodapé do menu (#nav .nav-ck); os cliques usam .rail [data-act="loja-abrir"]
 // Minhas vendas de hoje (34), fila local de eventos, alertas locais e foto com fundo de IA impressa com o fundo de 5000 px.
 // O "agente" aqui é só o page.route do Playwright na própria origem (/file/, /thumb/, /photoroom/*): nenhuma rede de verdade.
 const {chromium}=require('playwright');const fs=require('fs');const os=require('os');const path=require('path');const {execFileSync}=require('child_process');
@@ -43,6 +44,8 @@ async function ljSessao(L,card,n){await L.evaluate(()=>{if(ETERNA.state.cam)ETER
 let POSTO=null;
 async function ljPagar(L,m){await L.evaluate(()=>ETERNA.lojaPedir());await L.waitForTimeout(400);const id=await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id||!POSTO)return;
   await POSTO.evaluate(([id,m])=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(!r||!r.escolha)return;ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:{card:'cartao',cash:'dinheiro',pix:'pix'}[m]||m});},[id,m]);await L.waitForTimeout(500);}
+// Eduardo (11/11): na tela Pronto e na do valor o cliente não tem "Voltar ao início"; ali a tela volta sozinha parada (aqui, com o prazo encurtado)
+async function ljNovo(L){if(await L.$('[data-act="loja-new"]'))return L.click('[data-act="loja-new"]');return L.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);ETERNA.render();});}
 const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&(x.estado==='aguardando'||x.estado==='escolha')),card);
 // venda injetada direto no SIM (sessão com fotos ag_ servidas pelo page.route), pendência aguardando
 async function injPend(pg,o){return pg.evaluate(o=>{const S=ETERNA.SIM;const card=o.card;S.sessions[card]={key:'carlos',pdv:'Foto Campo 2',time:'10:00',date:'hoje',status:'aguardando',selected:o.sel.slice(),aiSel:(o.ai||[]).slice(),fav:(o.fav||[]).slice(),cart:o.cart,photos:o.sel.concat(o.extra||[]).map(id=>({id,sold:0})),din:o.id};
@@ -65,7 +68,7 @@ try{
   const A=vigia(await ctx.newPage(),'A');POSTO=A;await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(500);
   ok(await entrar(A,'eduardo@eduardorezende.com'),'admin não entrou');
   // "Abrir Checkout": janela nova do cliente e o admin cai no Posto de venda; o vendedor fica gravado
-  const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('#rail-ck [data-act="loja-abrir"]')]);vigia(L,'L');await L.waitForLoadState();await L.waitForTimeout(800);
+  const [L]=await Promise.all([ctx.waitForEvent('page'),A.click('.rail [data-act="loja-abrir"]')]);vigia(L,'L');await L.waitForLoadState();await L.waitForTimeout(800);
   const a0=await A.evaluate(()=>({v:ETERNA.state.view,vend:JSON.parse(localStorage.getItem('eterna.posto.vendedor')||'null'),eco:!!document.querySelector('#eco')}));
   ok(a0.v==='posto'&&a0.vend&&a0.vend.email==='eduardo@eduardorezende.com'&&a0.eco,'abrir: admin deveria cair no Posto de venda com o vendedor gravado: '+J(a0));
   await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
@@ -97,7 +100,7 @@ try{
 
   // ---- 21 (NSU): digitar no campo enquanto o cliente navega não perde o texto
   await A.click(`[data-act="pend-pos"][data-id="${p14.id}"]`);await A.waitForTimeout(100);await A.click('#pend-ref');await A.keyboard.type('1234');
-  await L.click('[data-act="loja-new"]');await L.waitForTimeout(200);await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
+  await ljNovo(L);await L.waitForTimeout(200);await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
   await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',cards[1]);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(500);
   for(const x of ['kiosk-ok','kiosk-no','kiosk-ok'])await L.click(`[data-act="${x}"]`);await L.waitForTimeout(900);
   await A.keyboard.type('56');ok(await A.evaluate(()=>document.querySelector('#pend-ref')&&document.querySelector('#pend-ref').value)==='123456','21: o NSU digitado se perdeu enquanto o cliente navegava');
@@ -115,7 +118,7 @@ try{
   await L.screenshot({path:`${P}/v83-checkout-confirmado.png`});
 
   // ---- 16: NSU com cara de cartão e curto recusados; vazio aceito
-  await L.click('[data-act="loja-new"]');await ljSessao(L,cards[3],3);await ljPagar(L,'card');const p16=await pendDe(L,cards[3]);await A.waitForTimeout(300);
+  await ljNovo(L);await ljSessao(L,cards[3],3);await ljPagar(L,'card');const p16=await pendDe(L,cards[3]);await A.waitForTimeout(300);
   await A.click(`[data-act="pend-pos"][data-id="${p16.id}"]`);await A.fill('#pend-ref','4111111111111111');await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(200);
   let e16=await A.evaluate(()=>({t:document.querySelector('#toast').textContent,err:(document.querySelector('.pend-err')||{}).innerText||''}));const st16=(await sim(A)).caixaDin.find(x=>x.id===p16.id);
   ok(/parece número de cartão/.test(e16.t+e16.err)&&st16.estado==='escolha'&&!JSON.stringify(await sim(A)).includes('4111111111111111')&&!JSON.stringify(await A.evaluate(()=>ETERNA.pvFila())).includes('4111111111111111'),'16: número de cartão deveria ser recusado e não gravado: '+J(e16));
@@ -137,7 +140,7 @@ try{
   t0=Date.now();let q17=false;while(Date.now()-t0<2000){q17=await L.evaluate(()=>!!document.querySelector('#lqr'));if(q17)break;await sleep(100);}ok(q17,'17: dinheiro confirmado deveria passar à tela do QR');
 
   // ---- 18: o vendedor cancela: Checkout volta ao carrinho da mesma sessão com o aviso
-  await L.click('[data-act="loja-new"]');await ljSessao(L,cards[6],3);await ljPagar(L,'card');const p18=await pendDe(L,cards[6]);await A.waitForTimeout(300);
+  await ljNovo(L);await ljSessao(L,cards[6],3);await ljPagar(L,'card');const p18=await pendDe(L,cards[6]);await A.waitForTimeout(300);
   await A.click(`[data-act="din-cancel"][data-id="${p18.id}"]`);await A.click(`[data-act="din-cancel-ok"][data-id="${p18.id}"]`);await A.waitForTimeout(500);
   const l18=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,code:ETERNA.state.kiosk.code,t:(document.querySelector('.lj-aviso')||{}).innerText||''}));const s18=await sim(A);
   ok(l18.step==='code'&&!l18.code,'18 (v96): cancelado pelo vendedor, o Checkout volta ao início: '+J(l18));
@@ -259,12 +262,12 @@ try{
   ok(al.some(t=>/maquininha há 2\d min/.test(t))&&al.some(t=>/LPV83B|L0-\d+.*sem impressão/.test(t)||/paga há 1\d min e ainda sem impressão/.test(t))&&al.some(t=>/Caixa 1: rolo com 30/.test(t))&&al.some(t=>/^bad .*sem foto/.test(t)),'alertas locais: '+J(al.filter(t=>/maquininha|impress|rolo|sem foto/.test(t))));
 
   // ---- R1(c): o Photoroom devolve a foto já montada (opaca): imprime em 1800 px ou mais e registra o aviso (v84: só com o interruptor em Photoroom)
-  await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';ETERNA.state.view='posto';ETERNA.render();});
+  await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';ETERNA.fundosModoTeste('photoroom');ETERNA.state.view='posto';ETERNA.render();}); // v97: o Photoroom só pelo interruptor dos testes
   composeOpaca=true;composeLog.length=0;await injPend(A,{card:'LPV83F',id:'L00-v83f0000aaaa',sel:F5.slice(0,1),ai:['ag_aaaa00000005|campeao2'],cart:[{id:'arq',v:70},{id:'extra',v:35}],total:105,prints:2});await confirmar(A,'L00-v83f0000aaaa','');
   await imprimir(A,'LPV83F');const r25o=await raiz(A);const iao=r25o.find(x=>x.t==='ai');
   ok(r25o.length===2&&iao&&Math.max(iao.w,iao.h)>=1800&&composeLog.some(c=>c.hi&&c.recorte&&c.W===5000),'R1(c): resposta opaca imprime em alta: '+J({r25o,composeLog}));
   await A.click('[data-act="imp-ok"][data-card="LPV83F"]');await A.waitForTimeout(200);const s25o=(await sim(A)).sessions.LPV83F;
-  ok(s25o.impressao.estado==='impressa'&&s25o.impressoes.slice(-1)[0].avisos.includes('montagem_opaca'),'R1(c): aviso montagem_opaca no registro: '+J(s25o.impressoes.slice(-1)[0]));composeOpaca=false;await A.evaluate(()=>{ETERNA.SIM.fundosModo='local';localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
+  ok(s25o.impressao.estado==='impressa'&&s25o.impressoes.slice(-1)[0].avisos.includes('montagem_opaca'),'R1(c): aviso montagem_opaca no registro: '+J(s25o.impressoes.slice(-1)[0]));composeOpaca=false;await A.evaluate(()=>{ETERNA.fundosModoTeste(null);ETERNA.SIM.fundosModo='local';localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
   // ---- R1(a): o agente usa o mapa fixo de fundos aprovados (Noite de campeão sem a taça na prévia e o de 5000 px na impressão)
   {const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v83-ag-'));let out='';
     try{out=execFileSync('python3',['-I','-c',`
@@ -295,7 +298,7 @@ print(json.dumps(r))`,path.join(__dirname,'..','agente','eterna-agente.py')],{en
     ok(!x.xss&&!x.el,'S1: mensagem forjada injetou HTML: '+J(x));}
   // ---- S2: sem TEF real, o Caixa não tem caminho de pagamento automático
   {const r=await A.evaluate(()=>{const S=ETERNA.SIM;const c=ETERNA.demoSessions().find(s=>(S.sessions[s.card]||{}).status!=='paga').card;const s=S.sessions[c]=S.sessions[c]||{};s.selected=[];s.cart=[{id:'arq'}];s.status='no caixa';
-      ETERNA.state.caixa.session=c;ETERNA.state.caixa.pay='PIX';ETERNA.state.caixa.tef=true;ETERNA.state.view='caixa';ETERNA.render();
+      ETERNA.state.caixa.session=c;ETERNA.state.posto.recibo=c;/* v97-ux: sessão 'no caixa' cobrada pelo recibo em cima do Posto */ETERNA.state.caixa.pay='PIX';ETERNA.state.caixa.tef=true;ETERNA.state.view='posto';ETERNA.render();
       const vis=!!document.querySelector('[data-act="caixa-mode"][data-m="tef"],[data-act="caixa-tef"]');const bt=document.createElement('button');bt.dataset.act='caixa-tef';document.body.appendChild(bt);bt.click();bt.remove();
       return {vis,t:document.querySelector('#toast').textContent,c,tef:!!ETERNA.PAG_PROV.tef};});
     await A.waitForTimeout(6000);const st=(await A.evaluate(c=>(ETERNA.SIM.sessions[c]||{}).status,r.c));

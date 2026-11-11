@@ -1,3 +1,4 @@
+// v94-ux (parte I): a grade de permissões fica no "Ajuste fino" (<details>, fechado para perfil pronto); o teste abre antes de usar
 // v78 (testador): o que o permissoes.js não cobre. Menus de cada perfil (grupos, itens, ordem, abrir e fechar, grupo vazio some),
 // links antigos (#set, #fluxo, #convidado) com e sem login, Upload automático (check-in pelo admin, supervisor só leitura, Sair),
 // Permissões ("não se aplica" legível, tela inicial e menu pela tela), cadastro (cancelar exclusão), e-mail fora do cadastro,
@@ -12,16 +13,19 @@ async function sair(pg){await pg.evaluate(()=>localStorage.removeItem('eterna.se
 async function codigo(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
   const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(400);return pg.evaluate(()=>!!ETERNA.state.user);}
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user))await sair(pg);return codigo(pg,email);}
-const grupos=pg=>pg.$$eval('#nav .navg',gs=>gs.map(g=>[g.querySelector('.grp').textContent.trim(),[...g.querySelectorAll('button[data-v]')].map(x=>x.dataset.v)]));
+// v94-ux (parte H): menu com até 5 telas não tem cabeçalho de grupo (nome '')
+const grupos=pg=>pg.$$eval('#nav .navg',gs=>gs.map(g=>[g.querySelector('.grp')?g.querySelector('.grp').textContent.trim():'',[...g.querySelectorAll('button[data-v]')].map(x=>x.dataset.v)]));
 const abrirTodos=pg=>pg.evaluate(()=>document.querySelectorAll('#nav .navitems').forEach(x=>x.hidden=false));
 const view=pg=>pg.evaluate(()=>ETERNA.state.view);
 const J=JSON.stringify;
+// v94-ux (parte H): grupos Venda (Posto) e Sistema; Laboratório entrou no Sistema; Supervisora sem o Sistema; até 5 telas, sem grupos.
+// ck = tem "Abrir Checkout" (botão grande no topo para quem começa no Posto, item no rodapé do menu para os outros)
 const PERFIS={
-  'eduardo@eduardorezende.com':{n:'admin',g:[['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala','calendario']],['Configurações',['repo','identidade','catalogo','chroma','ajustes','usuarios','permissoes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
-  'carlos@eterna.photo':{n:'fotografo',g:[['Fotógrafo',['diario','importar','fotofila','escala']]],ini:'importar',ck:false},
-  'loja@eterna.photo':{n:'atendimento',g:[['Fotógrafo',['fotofila']],['Configurações',['catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
-  'supervisor@eterna.photo':{n:'supervisor',g:[['Dashboard',['painel','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala','calendario']],['Configurações',['repo','identidade','catalogo','chroma','ajustes']],['Laboratório',['vestiario','fundos-teste']]],ini:'painel',ck:true},
-  'qualidade@eterna.photo':{n:'validador',g:[['Curadoria',['revisao','treino']],['Fotógrafo',['diario']]],ini:'revisao',ck:false},
+  'eduardo@eduardorezende.com':{n:'admin',g:[['Venda',['posto']],['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala']],['Configurações',['catalogo','ajustes']],['Sistema',['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']]],ini:'painel',ck:true},
+  'carlos@eterna.photo':{n:'fotografo',g:[['',['diario','importar','fotofila','escala']]],ini:'importar',ck:false},
+  'loja@eterna.photo':{n:'atendimento',g:[['',['posto','fotofila','catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
+  'supervisor@eterna.photo':{n:'supervisor',g:[['Venda',['posto']],['Dashboard',['painel','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','alertas']],['Fotógrafo',['diario','importar','fotofila','escala']],['Configurações',['catalogo','ajustes']]],ini:'painel',ck:true}, // parte I: Fundos de IA (técnico) no Sistema; a Supervisora usa a aba de Preços e Checkout
+  'qualidade@eterna.photo':{n:'validador',g:[['',['revisao','treino','diario']]],ini:'revisao',ck:false},
 };
 (async()=>{const b=await chromium.launch();
 try{
@@ -32,7 +36,7 @@ try{
     await pg.goto('about:blank');await pg.goto(U);await pg.waitForTimeout(400);ok(await view(pg)===X.ini,`A ${X.n}: reabrir o app logado (sem #) caiu em ${await view(pg)} (esperado ${X.ini})`);
     if(await view(pg)!=='perfis'){await pg.click('#rail-brand');await pg.waitForTimeout(120);}
     const gs=await grupos(pg);ok(J(gs)===J(X.g),`A ${X.n}: menus ${J(gs)}`);
-    ok(!!(await pg.$('#rail-ck [data-act="loja-abrir"]'))===X.ck,`A ${X.n}: botão Abrir Checkout ${X.ck?'faltando':'não deveria aparecer'}`);
+    ok(!!(await pg.$('.rail [data-act="loja-abrir"]'))===X.ck,`A ${X.n}: botão Abrir Checkout ${X.ck?'faltando':'não deveria aparecer'}`);
     ok(!(await pg.$('#nav [data-v="quiosque"]')),`A ${X.n}: Checkout como item de menu`);
     // Início pelo logo
     await pg.click('#rail-brand');await pg.waitForTimeout(120);ok(await view(pg)==='perfis',`A ${X.n}: logo não abriu o Início (${await view(pg)})`);
@@ -52,15 +56,16 @@ try{
     await ctx.close();}
   // ---------- B. abrir e fechar: aria-expanded, o grupo da tela atual abre, os outros fecham ao trocar ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>ETERNA.go('perfis'));await pg.waitForTimeout(100); // v80: o admin começa no Painel
+    // v94-ux (parte H): índices dos grupos do Admin: 0 Venda, 1 Dashboard, 2 Curadoria, 3 Fotógrafo, 4 Configurações, 5 Sistema (Permissões está no Sistema)
     const est=()=>pg.$$eval('#nav .navg',gs=>gs.map(g=>[g.querySelector('.grp').getAttribute('aria-expanded'),g.querySelector('.navitems').hidden]));
     let s=await est();ok(s.every(([a,h])=>a==='false'&&h),'B: no Início todos fechados '+J(s));
-    await pg.click('#nav .grp[data-g="Configurações"]');await pg.waitForTimeout(60);s=await est();ok(s[3][0]==='true'&&!s[3][1],'B: Configurações abre com aria-expanded=true '+J(s[3]));
-    await pg.click('#nav .grp[data-g="Laboratório"]');await pg.waitForTimeout(60);s=await est();ok(s[3][0]==='true'&&s[4][0]==='true','B: dois grupos abertos ao mesmo tempo '+J(s));
-    await pg.click('#nav [data-v="permissoes"]');await pg.waitForTimeout(100);s=await est();ok(s[3][0]==='true'&&s.filter(x=>x[0]==='true').length===1,'B: ao abrir Permissões só Configurações fica aberto '+J(s));
+    await pg.click('#nav .grp[data-g="Sistema"]');await pg.waitForTimeout(60);s=await est();ok(s[5][0]==='true'&&!s[5][1],'B: Sistema abre com aria-expanded=true '+J(s[5]));
+    await pg.click('#nav .grp[data-g="Configurações"]');await pg.waitForTimeout(60);s=await est();ok(s[5][0]==='true'&&s[4][0]==='true','B: dois grupos abertos ao mesmo tempo '+J(s));
+    await pg.click('#nav [data-v="permissoes"]');await pg.waitForTimeout(100);s=await est();ok(s[5][0]==='true'&&s.filter(x=>x[0]==='true').length===1,'B: ao abrir Permissões só Sistema fica aberto '+J(s));
     ok(await pg.$eval('#nav [data-v="permissoes"]',e=>e.getAttribute('aria-current'))==='page','B: item atual sem aria-current=page');
-    await pg.click('#nav .grp[data-g="Configurações"]');await pg.waitForTimeout(60);s=await est();ok(s[3][0]==='false'&&s[3][1],'B: dá para fechar o grupo da tela atual '+J(s[3]));
+    await pg.click('#nav .grp[data-g="Sistema"]');await pg.waitForTimeout(60);s=await est();ok(s[5][0]==='false'&&s[5][1],'B: dá para fechar o grupo da tela atual '+J(s[5]));
     // cliques repetidos
-    for(let i=0;i<5;i++)await pg.click('#nav .grp[data-g="Dashboard"]');s=await est();ok(s[0][0]==='true','B: 5 cliques no Dashboard deveriam deixar aberto '+J(s[0]));
+    for(let i=0;i<5;i++)await pg.click('#nav .grp[data-g="Dashboard"]');s=await est();ok(s[1][0]==='true','B: 5 cliques no Dashboard deveriam deixar aberto '+J(s[1]));
     await ctx.close();}
   // ---------- C. links antigos ----------
   {const {ctx,pg}=await nova(b);
@@ -70,7 +75,7 @@ try{
       ok(r.v===esp&&!r.f&&r.h==='#'+esp,`C: sem login, #${h} e entrar como ${email} deveria cair em ${esp}: ${J(r)}`);}
     // já logado, abrir a página com o link antigo
     await entrar(pg,'eduardo@eduardorezende.com');
-    for(const [h,esp] of [['fluxo','painel'],['convidado','painel'],['set','importar'],['set/x','importar'],['venda','checkout']]){await pg.goto('about:blank');await pg.goto(U+'#'+h);await pg.waitForTimeout(300);const r=await pg.evaluate(()=>({v:ETERNA.state.view,h:location.hash,u:!!ETERNA.state.user}));ok(r.v===esp&&r.u,`C: logado, abrir #${h} deveria cair em ${esp}: ${J(r)}`);}
+    for(const [h,esp] of [['fluxo','painel'],['convidado','painel'],['set','importar'],['set/x','importar'],['venda','posto']/* v97-ux: #venda abre o Posto com a Venda manual (#checkout) */]){await pg.goto('about:blank');await pg.goto(U+'#'+h);await pg.waitForTimeout(300);const r=await pg.evaluate(()=>({v:ETERNA.state.view,h:location.hash,u:!!ETERNA.state.user,m:!!document.querySelector('#posto-manual')}));ok(r.v===esp&&r.u&&(h!=='venda'||(r.h==='#checkout'&&r.m)),`C: logado, abrir #${h} deveria cair em ${esp}: ${J(r)}`);}
     await ctx.close();}
   // ---------- D. Upload automático: check-in pelo admin (select), supervisor só leitura, Sair ----------
   {const {ctx,pg}=await nova(b,1440,1000);await entrar(pg,'eduardo@eduardorezende.com');const serie='R6ADMIN0007';
@@ -90,7 +95,7 @@ try{
     await ctx.close();}
   // ---------- E. Permissões: "não se aplica" legível, tela inicial e menu pela tela; prints desktop e celular ----------
   for(const [n,w,h] of [['desk',1440,900],['cel',390,844]]){const {ctx,pg}=await nova(b,w,h);await entrar(pg,'eduardo@eduardorezende.com');
-    await pg.evaluate(()=>{ETERNA.state.view='permissoes';ETERNA.render();});await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(150);
+    await pg.evaluate(()=>{ETERNA.state.view='permissoes';ETERNA.render();});await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.evaluate(()=>document.querySelectorAll('details.perm-fino').forEach(d=>d.open=true));await pg.waitForTimeout(40);await pg.waitForTimeout(150);
     const na=await pg.evaluate(()=>{const row=document.querySelector('.perm-row[data-m="financeiro"]');return {txt:row?row.innerText:'',titles:row?[...row.querySelectorAll('.perm-na')].map(x=>x.title):[]};});
     if(n==='cel')ok(/Criar · não se aplica/.test(na.txt)&&/Alterar · não se aplica/.test(na.txt),'E cel: "não se aplica" deveria estar escrito no card de Números de vendas: '+na.txt.replace(/\s+/g,' ').slice(0,200));
     else ok(na.titles.length===2&&na.titles.every(t=>/Não se aplica/.test(t)),'E desk: célula "não se aplica" sem título explicativo '+J(na.titles));
@@ -98,12 +103,12 @@ try{
     await pg.screenshot({path:`${P}/v78-permissoes-${n}.png`,fullPage:n==='cel'});
     if(n==='desk'){await pg.click('[data-act="perm-tab"][data-t="perfis"]').catch(()=>{});await pg.waitForTimeout(100);const pf=await pg.textContent('#main');ok(/Fotógrafo/.test(pf)&&/Atendimento e venda/.test(pf)&&/Validador/.test(pf),'E: aba Perfis prontos sem os perfis');await pg.screenshot({path:`${P}/v78-permissoes-perfis.png`,fullPage:true});
       // tela inicial e menu pela tela: Carlos com Diário como tela inicial e sem Escala
-      await pg.click('[data-act="perm-tab"][data-t="usuario"]');await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(100);
+      await pg.click('[data-act="perm-tab"][data-t="usuario"]');await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.evaluate(()=>document.querySelectorAll('details.perm-fino').forEach(d=>d.open=true));await pg.waitForTimeout(40);await pg.waitForTimeout(100);
       const ops=await pg.$$eval('[data-act="perm-inicio"] option',e=>e.map(x=>x.value));ok(ops.includes('diario')&&!ops.includes('vendas'),'E: opções de tela inicial '+J(ops));
       await pg.selectOption('[data-act="perm-inicio"]','diario');await pg.click('.perm-tbl input[data-act="perm-view"][data-v="escala"]');await pg.click('[data-act="perm-save"]');await pg.waitForTimeout(150);
       const cu=await pg.evaluate(()=>{const u=ETERNA.USERS['carlos@eterna.photo'];return {ini:u.inicio,menu:u.menu,preset:u.preset};});ok(cu.ini==='diario'&&!cu.menu.includes('escala')&&cu.preset==='custom','E: gravar tela inicial e menu '+J(cu));
       await pg.click('[data-act="perm-tab"][data-t="historico"]');await pg.waitForTimeout(100);await pg.screenshot({path:`${P}/v78-permissoes-historico.png`});
-      await entrar(pg,'carlos@eterna.photo');const g=await grupos(pg);ok(await view(pg)==='diario'&&J(g)===J([['Fotógrafo',['diario','importar','fotofila']]]),'E: Carlos deveria entrar no Diário sem Escala: '+await view(pg)+' '+J(g));}
+      await entrar(pg,'carlos@eterna.photo');const g=await grupos(pg);ok(await view(pg)==='diario'&&J(g)===J([['',['diario','importar','fotofila']]]),/* v94-ux: até 5 telas, sem grupo */'E: Carlos deveria entrar no Diário sem Escala: '+await view(pg)+' '+J(g));}
     await ctx.close();}
   // ---------- F. cadastro: cancelar exclusão; e-mail fora do cadastro; tela "sem acesso" ----------
   {const {ctx,pg}=await nova(b,1280,900);await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});
@@ -136,8 +141,9 @@ try{
         [...t.matchAll(/.{0,40}\bloja\b.{0,30}/gi)].forEach(m=>out.push(v+': '+m[0]));
         [...t.matchAll(/.{0,30}(\bno Fluxo\b|Anfitrião no set|galeria do convidado|Fila da loja).{0,30}/gi)].forEach(m=>out.push(v+': '+m[0]));return out;},v));}
     ok(!achados.length,'G: textos com "loja" ou telas que saíram: '+[...new Set(achados.map(x=>x.replace(/\s+/g,' ')))].slice(0,12).join(' || '));
-    await pg.evaluate(()=>{ETERNA.state.view='fila';ETERNA.render();});ok(/Fila do balcão/i.test(await pg.textContent('#main')),'G: tela Fila sem o título "Fila do balcão"');
-    await pg.evaluate(()=>{ETERNA.state.view='checkout';ETERNA.render();});ok(/Venda no balcão/.test(await pg.textContent('#main')),'G: tela de venda sem "Venda no balcão"');
+    // v97-ux (Posto único): a tela Fila do balcão saiu (fila abre o Posto) e a Venda manual é um bloco dentro do Posto
+    await pg.evaluate(()=>{ETERNA.state.view='fila';ETERNA.render();});ok(await pg.evaluate(()=>ETERNA.state.view==='posto'&&!/Fila do balcão|Sessões prontas|Enviar ao caixa/i.test(document.querySelector('#main').textContent)),'G: a tela Fila do balcão ainda aparece');
+    await pg.evaluate(()=>{ETERNA.state.view='checkout';ETERNA.render();});ok(await pg.evaluate(()=>ETERNA.state.view==='posto'&&/Venda manual/.test((document.querySelector('#posto-manual h2')||{}).textContent||'')),'G: Posto sem o bloco "Venda manual"'); // v94-ux: "Venda no balcão" virou "Venda manual" (parte E, decisão 4)
     await ctx.close();}
 }catch(e){fails.push('erro: '+e.message.split('\n').filter(x=>x.trim()).slice(0,3).join(' / '));}
 await b.close();const okk=!fails.length&&!errs.length;console.log(`${okk?'OK':'FALHA'} v78-regressao: menus por perfil, links antigos, Upload, Permissões, cadastro, sem acesso, textos${fails.length?' · '+fails.join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();

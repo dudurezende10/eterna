@@ -151,11 +151,11 @@ try{
     {const bars=await pg.$$eval('#main .es-bar .l',x=>x.map(e=>e.textContent));const pm=await pg.evaluate(()=>[...document.querySelectorAll('#main .tile')].find(t=>/Por minuto aberto/.test(t.textContent)).querySelector('.v').textContent);
       ok(bars.includes('09h')&&bars.includes('10h')&&/^\d+,\d$/.test(pm),'pessoas por hora e por minuto com uma casa: '+J({bars:bars.slice(0,4),pm}));}
     ok(/pico 10:41, 9 pessoas/.test(tf)&&/Funil/.test(tf)&&/Últimas importações/.test(tf)&&/bilheteria\.csv/.test(tf),'25: pico 10:41, 9 pessoas e importações: '+tf.slice(0,160));
-    await pg.evaluate(()=>ETERNA.go('catalogo'));ok(!(await pg.$('#turnos'))&&!(await pg.$('[data-act="turno-salvar"]')),'sem horário dos turnos no Painel de controle');
+    await pg.evaluate(()=>{ETERNA.state.catTab='checkout';ETERNA.go('catalogo');});/* v94-ux (parte I): o atalho do Calendário fica na aba Checkout */ok(!(await pg.$('#turnos'))&&!(await pg.$('[data-act="turno-salvar"]')),'sem horário dos turnos no Painel de controle');
     ok(await pg.$('#main [data-act="view"][data-v="calendario"]'),'D3: atalho do Calendário no Painel de controle');
     // 3: venda de verdade no balcão (caixaConfirm) com a tela em inglês: canal balcao, sem lang
     const card2=await pg.evaluate(()=>{const E=ETERNA;const c=E.demoSessions().filter(s=>s.photos.length>=3&&!['paga','cancelada'].includes((E.SIM.sessions[s.card]||{}).status))[2].card;const S=E.SIM;const s=S.sessions[c]=S.sessions[c]||{};
-      s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='caixa';E.render();return c;});
+      s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.posto.recibo=c;/* v97-ux: sessão 'no caixa' cobrada pelo recibo em cima do Posto */E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='posto';E.render();return c;});
     await pg.click('[data-act="caixa-confirm"]');
     for(let i=0;i<60&&!AG.eventos.some(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);i++)await pg.waitForTimeout(200);
     const evB=AG.eventos.find(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);await pg.evaluate(()=>{ETERNA.state.lang='pt';});

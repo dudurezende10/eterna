@@ -1,4 +1,5 @@
 // v91, devolução da segurança e sugestões do revisor (01/11), e janela da selfie (Eduardo, 01/11 16:46 e 16:51):
+// v94-ux (parte I): a janela da selfie fica na aba Checkout de Preços e Checkout
 //  B4: "Sim, sou eu" no "Esta sessão também é sua?" põe só as fotos em dúvida daquela sessão, nunca a sessão inteira;
 //  B5: quem aparece claro só no FUNDO de uma foto (rosto < metade do maior; principal:false do agente) não abre a sessão
 //      inteira: entram só as fotos claras dela, com galeria própria na venda;
@@ -70,10 +71,11 @@ try{
   ok(await espera(pg,()=>!!document.querySelector('#lj-lb .lj-lbimg'),5000),'depois do "Sim" abre na foto ampliada');
   const k=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;const by={};ETERNA.lojaFotos(k.code).forEach(p=>{(by[p.ses]=by[p.ses]||[]).push(p.id.slice(3));});return {code:k.code,by};});
   ok((k.by.LPSTALV03||[]).sort().join()==='ttt000000001,ttt000000003','B4: o "Sim" põe só as 2 fotos "talvez" de T, nunca a sessão inteira: '+JSON.stringify(k.by.LPSTALV03));
-  ok((k.by.LPSFAMA01||[]).length===2,'família dela (A, principal): só as fotos em que ela aparece: '+(k.by.LPSFAMA01||[]).length);
+  // v97 (Eduardo, 10/11): leva em que ela é rosto principal abre inteira (e a visita dela); fundo (B5), menor e "talvez" continuam só com as fotos achadas
+  ok((k.by.LPSFAMA01||[]).length===6,'família dela (A, principal): v97, a leva inteira: '+(k.by.LPSFAMA01||[]).length);
   ok((k.by.LPSFUND02||[]).sort().join()==='fff000000002,fff000000004','B5: F (ela só no fundo) entra só com as fotos claras dela: '+JSON.stringify(k.by.LPSFUND02));
   ok((k.by.LPSMENO04||[]).join()==='mmm000000002','menor: só a foto clara dela: '+JSON.stringify(k.by.LPSMENO04));
-  ok((k.by.LPSOITE05||[]).length===1&&!k.by.LPSVELH06,'W (80 min) só com a foto em que ela aparece, V (2 h) fora');
+  ok((k.by.LPSOITE05||[]).length===3&&!k.by.LPSVELH06,'W (80 min) inteira (v97), V (2 h) fora');
   // aviso "Achamos você" fora da barra do ✗/✓ e do botão Ver todas; ponto · hora dentro da imagem
   const lay=await pg.evaluate(()=>{const R=s=>{const e=document.querySelector(s);return e?e.getBoundingClientRect().toJSON():null;};return {t:R('#toast'),bar:R('.lj-lbbar'),x:R('.lj-lbx'),no:R('.lj-no'),on:document.querySelector('#toast').hasAttribute('data-on'),txt:document.querySelector('#toast').textContent};});
   const cruza=(p,q)=>p&&q&&!(p.right<=q.left||q.right<=p.left||p.bottom<=q.top||q.bottom<=p.top);
@@ -89,7 +91,7 @@ try{
   await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);/* v96: o Continuar já faz o pedido (pacote e meio no Posto) */
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'),'pedido feito');
   const g1=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];const m=ETERNA.SIM.galerias[r.token];return {venda:!!m.venda,so:m.so};});
-  ok(g1.venda&&(g1.so.LPSFUND02||[]).length===2&&(g1.so.LPSTALV03||[]).length===2&&(g1.so.LPSFAMA01||[]).length===2,'galeria da venda só com o que entrou de F e T: '+JSON.stringify(g1.so&&Object.fromEntries(Object.entries(g1.so).map(([c,l])=>[c,l.length]))));
+  ok(g1.venda&&(g1.so.LPSFUND02||[]).length===2&&(g1.so.LPSTALV03||[]).length===2&&(g1.so.LPSFAMA01||[]).length===6,'galeria da venda só com o que entrou de F e T (v97: A inteira): '+JSON.stringify(g1.so&&Object.fromEntries(Object.entries(g1.so).map(([c,l])=>[c,l.length]))));
   // ---------- B5 sozinho: ela clara só no fundo de F ----------
   SIMS={[F[1]]:[.70,false],[F[3]]:[.62,false]};
   r=await busca();
@@ -136,8 +138,10 @@ try{
   await P.goto(U);await P.waitForTimeout(400);
   await P.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await P.click('button[type=submit]');await P.waitForTimeout(200);
   {const otp=await P.$('.otp');if(otp){await P.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await P.waitForTimeout(500);}}
-  ok(await espera(P,()=>!!ETERNA.state.db,12000),'o Painel liga no servidor do ponto (estado.db)');
-  await P.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await P.waitForTimeout(300);
+  // v96.1 (Testador): 45 s. Com a máquina carregada (2 CPUs, outras suítes ao lado) a página fica ocupada 12 a 24 s logo depois do login e o
+  // dbLigar (a cada 5 s) só roda depois; igual na v96 (0596b50). O que se testa é que liga, não em quanto tempo.
+  ok(await espera(P,()=>!!ETERNA.state.db,45000),'o Painel liga no servidor do ponto (estado.db)');
+  await P.evaluate(()=>{ETERNA.state.catTab='checkout';ETERNA.state.view='catalogo';ETERNA.render();});await P.waitForTimeout(300);
   ok(await P.$('#busca-janela')&&/Procurar fotos dos últimos/.test(await P.textContent('#main')),'campo "Procurar fotos dos últimos __ minutos" no Painel de controle');
   ok(await P.inputValue('#busca-janela')==='90','padrão 90 minutos');
   // sem permissão de alterar Configurações: o campo fica desligado e a troca é barrada

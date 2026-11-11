@@ -933,7 +933,7 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 - O grupo é o 4º campo de cada linha de `VIEWS`. Grupo `''` é tela sem item no menu. Itens do mesmo grupo ficam contíguos, porque o `render()` abre um cabeçalho a cada troca de grupo.
 - Os grupos abrem e fecham (`nav-grp`, `state.navOpen`, `aria-expanded` e `aria-controls`). O grupo da tela atual fica aberto (`state.navCur`). Grupo sem nenhum item permitido some.
 - "Abrir Checkout" fica em `#rail-ck`, fora dos grupos, e só aparece com `canView('quiosque')` (ação `loja-abrir`, leva a `#loja`).
-- `VIEWS_EXTRA`: telas sem item no menu, abertas por botões dentro de outras telas. Venda no balcão (`checkout`), Fila do balcão (`fila`) e Caixa (`caixa`). "Fila da loja" virou "Fila do balcão" para não haver duas coisas chamadas Checkout.
+- `VIEWS_EXTRA`: telas sem item no menu. Desde a v97-ux (Posto único): `caixa` é o Posto só com o dinheiro (botão amarelo Caixa) e `checkout` (Venda manual) e `fila` são apelidos do Posto (`postoAlias`); antes eram Venda no balcão (`checkout`), Fila do balcão (`fila`) e Caixa (`caixa`). "Fila da loja" virou "Fila do balcão" para não haver duas coisas chamadas Checkout.
 - **Celular (até 700 px)**: o cabeçalho fixo fica com o logo, o Checkout em ícone e o botão Menu (`#menu-btn`, `menu-toggle`). O menu abre numa gaveta por cima da tela (`body[data-drawer]`, `#railgav` com `role=dialog` e `aria-modal`). Fecha ao escolher um item, ao tocar no fundo escuro (`#navback`, `menu-close`), com Esc ou se a janela passar de 700 px. Entre 701 e 900 px o menu continua como barra no topo.
 
 ### Telas e perfis removidos
@@ -1177,7 +1177,7 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 
 | Lugar | O que mostra |
 | --- | --- |
-| Caixa (`vCaixa`) | painel no topo: busca por código ou sessão (ignora hífen e maiúsculas), código grande, sessão, valor, hora, "há N min", fotos e impressas, até 4 miniaturas. Botões só com `venda.c`; sem ela, "Só quem registra pagamento confirma." |
+| Caixa (até a v96 `vCaixa`; desde a v97-ux o `vPosto` com o filtro dinheiro) | painel no topo: busca por código ou sessão (ignora hífen e maiúsculas), código grande, sessão, valor, hora, "há N min", fotos e impressas, até 4 miniaturas. Botões só com `venda.c`; sem ela, "Só quem registra pagamento confirma." |
 | Barra da equipe (`#rail-ck`) | botão Caixa com o número de pendências, para quem tem `canView('caixa')` e `venda.c` |
 | Início (`vPerfis`) | cartão "Caixa · N aguardando dinheiro" e pill "N aguardando caixa" |
 | Lista de vendas | status "aguardando caixa" e "não paga" (`statusLabel`), filtro Status (Todos, Pagas, Aguardando caixa, Não pagas, Canceladas, `sales-status`), bloco "Aguardando caixa" com N e R$. Receita só soma `paga` |
@@ -1362,6 +1362,18 @@ Plano: `docs/planos/2026-10-29-v83-multiterminal.md` (decisões D1 a D11, notas 
 - Em `VIEWS_EXTRA`, módulo `venda`; tela inicial de Atendimento e venda (`mpv83` acrescenta `posto` ao menu dos perfis prontos com venda). `loja-abrir` abre a janela do Checkout e leva o admin ao Posto.
 - Colunas: "No Checkout agora" (`ecoPainel`), Aguardando pagamento (`pendPainel`), Impressão 10×15 (`impPainel`) e Minhas vendas de hoje (`minhasVendas`: valor de cada venda, sem total, ticket nem contagem em reais).
 - Venda acompanhada (parte E): o Checkout publica no BroadcastChannel `eterna-loja` o que o cliente vê; o Posto só lê e atualiza `#eco`. Só campos conhecidos são lidos, nunca HTML vindo do canal. Nada passa pelo agente.
+
+#### Posto único (v97-ux, 11/11/2026, plano `docs/planos/2026-11-11-posto-unico.md`)
+
+- Views: `posto` (`vPosto({filtro:'todos'})`) e `caixa` (`vPosto({filtro:'dinheiro'})`). `checkout` e `fila` continuam em `VIEWFN`, `MODULES` e nos menus gravados, mas são apelidos: `postoAlias(v)` devolve `{v:'posto',manual}`; `go`, `readHash` e `render` aplicam. Endereços: `#posto`, `#caixa`, `#checkout` (Posto com a Venda manual; `syncHash` escreve `#checkout` enquanto o bloco está aberto), `#fila` vira `#posto`, `#venda` vira `#checkout`.
+- Permissão: mesmo módulo `venda`, mesmas letras. `canView('posto')` aceita quem tem qualquer uma de `VENDA_VIEWS` no menu (com `venda.r`); o botão amarelo Caixa exige `caixa` no menu e `venda.c`; a Venda manual exige `checkout` no menu (o `case 'posto-manual'` recusa sem isso). Em Permissões, `fila` não aparece mais na lista de telas, mas continua gravado.
+- Dinheiro esperando confirmação: `dinEspera(r)` = `aberta(r) && !pendSemMeio(r) && meioDe(r)==='dinheiro'`; `caixaAbertas()` e `caixaAtrasada()`. É o número do botão amarelo (`#rail-cx`), a lista da vista Caixa e o cartão "Caixa" do Início. Pedido do Checkout sem pacote ou sem meio não conta. O item do menu (`#rail-din`) continua com todas as pendências.
+- Cabeçalho: Posto com `postoNome()` em cima de "Posto de venda"; Caixa com `postoTitulo()` ("Posto de venda · Caixa 1") em cima de "Caixa". Um selo de rolo só, no cabeçalho. No Caixa, o chip "Dinheiro ✕" (`posto-filtro`, `data-f="todos"`) volta ao Posto; no Posto não há chips.
+- Venda manual: `vCheckoutCorpo()` dentro de `<section id="posto-manual">`, aberta por `posto-manual` e fechada por `posto-manual-fechar` (`checkoutVoltar` devolve a sessão `no checkout` ao estado anterior). `state.posto.manual` e `state.posto.recibo` só na memória da tela. Venda manual e Recibo usam o mesmo `state.caixa.session`: abrir uma fecha o outro, e com a Venda manual numa sessão os botões Recibo e "Vindas da Fila do balcão" ficam desabilitados e `caixa-open` é recusado. `camWanted` e `camFound` valem com o bloco aberto. O campo do código é `#ck-code` com `data-keep`.
+- O botão LGPD ("Cliente pediu: apagar as fotos") saiu da Fila do balcão e está na etapa 2 da Venda manual, com a mesma regra (`galerias.u`, sessão não paga, confirmação, `lgpd-excluir`).
+- Confirmar dinheiro (`pendConfirmar`) não abre recibo sozinho em nenhuma das vistas. Saíram `vFila`, `vCaixa`, `fila-open`, `fila-back`, `fila-send`, `state.posto.filtro` e `state.posto.filtroCaixa`. Sessão `no caixa` deixada por uma janela antiga aparece em "Vindas da Fila do balcão" e é cobrada pelo `caixaDetalhe`.
+- Testes: `testes/posto-unico.js` (compara a venda em dinheiro, a Venda manual e os `PRESETS` com o resultado da `a9b4028`).
+- Aviso da Edição Maracanã (Eduardo, 11/11): a montagem (`aiSel`) não vai para a galeria do QR e o `impFotos` corta em `s.prints` com as montagens no fim da fila. `pendMontSemImp(r,prints)` conta as montagens fora das impressões (mesma ordem do `impFotos`); `pendMontAviso(r)` mostra `.pend-mont` abaixo dos pacotes no `pendEscolhaItem` (pacote só digital, ou montagens que não cabem) e os pacotes sem impressão ganham o selo `.pend-semmont`. Na Venda manual o aviso aparece com `sim.bg` escolhido (o fundo da Venda manual não entra em `aiSel`, então não é impresso nem vai para a galeria). Só avisa, não bloqueia. Teste `testes/posto-montagem.js`. Pendente: levar a montagem para a galeria e para a impressão dos pacotes só digitais.
 
 ### Impressão 10×15 na DNP DS-RX1HS (parte F)
 
@@ -1670,10 +1682,40 @@ Segurança de sessão (D2), sem relação com ponto. Usuário com `key` (fotógr
 - **IMPORTANTE.** Servidor Windows fora do fuso de Brasília grava as horas do dia erradas. O app avisa; a correção é no Windows (CHECKLIST-SERVIDOR, seção 1).
 - O resumo de hoje é recalculado a cada pedido; a tela só busca de novo depois de 5 min.
 
-### Próximo passo (v94)
+### Próximo passo
 
-- **Agenda automática de jogos**: o agente busca os jogos do Maracanã toda segunda-feira e o Calendário ganha o botão "Atualizar agora". Não existe fonte oficial única (CBF, Ferj e Conmebol publicam cada uma a sua); até lá, cadastro manual e CSV.
+- A agenda automática de jogos entrou na v97 (seção "Agenda automática e série diária (v97)").
 - Também fora da v92: tempo da fila de impressão, idioma de quem foi ao Checkout e não comprou, exportar as estatísticas em CSV, conector do bip ou da catraca (formato do bip vem do Ronaldo), estatísticas de vários venues pela nuvem.
+
+## Agenda automática e série diária (v97, 10/11/2026)
+
+Plano: `docs/planos/2026-11-10-agenda-estatisticas.md` (com as decisões do Eduardo de 10/11 e os pontos de contato no fim).
+
+**Feriados.** `feriados_de(ano)` no agente (Páscoa pelo mesmo cálculo do `pascoa` do app; lista D8) e `agenda_semear_feriados()` no boot e na virada do dia (`agenda_loop`): de 2026 até o ano que vem, id `agenda_id("feriado|AAAA-MM-DD")` (`ag_` + sha1[:12]), `origem "feriados"`, `por "Eterna"`. Não grava se o id já existe (inclusive lápide: apagado não volta) nem se a data já tem feriado (os do botão antigo, de id aleatório). Sem internet.
+
+**Jogos (API-Football).** Chave em `~/Eterna/api-football.json` (600, `{chave, em, por}`), colada em Configurações › Painel de controle (painel "Calendário de eventos · fonte dos jogos", logo abaixo do Checkout; Eduardo, 10/11: quem edita o calendário não precisa ter a chave) ou na variável `ETERNA_API_FOOTBALL` do servidor (vale por cima; a tela não sobrescreve). `af_get` só fala com `AF_URL` (host fixo `v3.football.api-sports.io`, sem seguir redirecionamento, timeout 20 s, até 2 MB); o estádio é descoberto uma vez por `/venues?search=Maracan` e guardado em `~/Eterna/ponto/agenda-fonte.json` (600, situação sem a chave). `agenda_jogos_sync` busca `fixtures?venue=&season=` de 2026 até o ano atual (e o próximo em dezembro) toda segunda às 06:00, no boot se a última passou de 7 dias, 6 h depois de uma falha e em "Atualizar jogos agora". Regra D9: registro com `origem "api"`, `por "Eterna"` e `ext "af:<id>"` é do agente; editado ou apagado por pessoa não muda nem volta; jogo à mão na mesma data impede o automático (`ja_no_calendario`); adiado, cancelado, abandonado ou suspenso sai (e volta se for remarcado, só quando quem tirou foi o agente: `apagados_api`). Hora UTC da API convertida para `America/Sao_Paulo` (`_af_local`). Falha nunca apaga nada; a situação guarda a última que deu certo (`ultima`) e a última tentativa.
+
+**Série diária.** Tabela `dia` do `operacao.db` (uma linha por dia desde `DIA_DESDE` = 2026-11-10, sem retroativo; colunas do contrato) e `entrada_total` (total diário por origem, hoje só `bilheteria`; o nome `entrada_dia` do plano já era de um índice). `dia_linha`: tipo pela precedência fechado > jogo > show > evento (evento ou outro) > feriado > véspera > normal, marcas separadas e até 5 eventos curtos sem quem cadastrou. Vendas (D6): resumo do dia do servidor com vendas ou sessões (vendas e faturamento somam o online) > `roverpix/agg/<dia>.json` > null (sem operação, nunca zero). Visitação (D5): catraca > bilheteria > bip. `dia_consolidar` nunca zera uma fonte que sumiu. `dia_loop`: a cada 10 min hoje, ontem e os dias marcados (`dia_marcar`, chamado pelo `estado_gravar` na mudança da agenda, com a véspera, e pelo total da bilheteria; acorda o loop em 3 s), e uma vez por dia o período inteiro (até 800 dias, de 50 em 50).
+
+**Rotas (AGENDA_ROTAS, deny-by-default).** Todas em `rota_privada`, com `posto()` + `origem_local()` e `no-store`:
+
+| Rota | Guarda | Notas |
+| --- | --- | --- |
+| `GET /estatisticas/dias?ano=` | ler | linhas do ano (2000 até o atual) |
+| `GET /agenda/status` | ler | situação das fontes; da chave só `final` (4 últimos), `salva_em`, `salva_por`, `env` e o último teste |
+| `POST /agenda/atualizar` | gravar (X-Eterna, 1 por minuto) | 409 `sem_chave`; 429 `espera` com `motivo` `intervalo` (menos de 10 min da última busca) ou `falha` (6 h depois de uma falha) e `espera_min` |
+| `POST /ponto/entradas/totais` | gravar (X-Eterna, 30/min, 256 KB) | `{origem:"bilheteria", dias:[{dia,total}]}`, até 1000 dias, total 0 a 100.000, dia de 2026-01-01 até hoje; registra em `importacao` |
+| `POST /agenda/fonte` | admin (X-Eterna, 10/min) | `{acao:"salvar", chave}` ou `{acao:"remover"}`; chave `[A-Za-z0-9]{20,64}`; 409 `chave_no_servidor` |
+| `POST /agenda/testar` | admin (X-Eterna, 1/min) | uma consulta da temporada atual, dentro do `agenda_lock`; 409 `ja_rodando` com a busca rodando, 429 `espera` com menos de 1 min do último teste (de qualquer posto) |
+
+"admin" = o e-mail mandado em `quem` precisa ser, no cadastro do servidor (`usuarios` do `estado.db`), de um Admin ativo: Configurações, Usuários e Permissões em Alterar (`admin_do_cadastro`; a Supervisora não tem Usuários e recebe 403 `so_admin`). **Barreira, não autenticação**: o agente ainda não confere quem está logado. `/status.agenda` (CORS aberto) traz só `feriados_ate` e `jogos {fonte, chave (bool), ultima, ok, erro}`, com `erro` só como código (`"falha"` ou null); o motivo fica em `/agenda/status`.
+
+**Teto global de consultas** (todos os postos juntos, não por IP; `af_espera` e `af_cota`): uma busca de jogos no máximo a cada 10 min (`AF_ATUALIZAR_S`), pedida pela tela ou pelo horário; um Testar agora no máximo por minuto (`AF_TESTAR_S`); nenhuma consulta sai com menos de 10 restantes no dia (`x-ratelimit-requests-remaining`) ou passando de 80% do plano diário (100 no grátis; o `x-ratelimit-requests-limit` da API vale por cima), e a conta zera na virada do dia; depois de uma falha, 6 h de espera também para o Atualizar jogos agora (Testar agora não espera as 6 h, para conferir uma chave nova; salvar ou remover a chave zera a falha). Pedido da tela barrado pelo teto fica na fila do `agenda_loop` e roda quando abrir. Feriados: os anos já semeados ficam em `agenda-fonte.json` (`feriados_anos`) e não são semeados de novo.
+
+**App.** Calendário: `agConexao` (`#ag-sem-servidor` sem `state.db.agente`), `agStatusPull`/`agFontesTxt` (`#ag-fontes`), `ag-colar` (`#ag-colar-txt`, `agImportar` aceita `;`, `,` ou TAB), `ag-atualizar` (só com chave), `AG_ORIGEM_NOME`. Painel de controle (`vCatalogo`): `agBlocoFontes` logo abaixo do painel Checkout (só o Admin, `isAdminUser(state.user)`; campo com `autocomplete="new-password"`; `ag-chave-salvar|testar|trocar|remover|remover-ok`; a chave sai do campo `data-keep` direto para o POST e nunca entra em `state`, SIM, `localStorage` ou `auditLog`, que registra `agenda_chave_salvar|trocar|remover` sem ela). `agSalvarForm`: automático com data, tipo ou times mudados vira `manual` (sem `ext`). Estatísticas: seção `g` "Jogos e ano a ano" (`esSecoes` só mostra para `isAdminUser`), sem `rangeBar`, chips de ano (`es-ano`), `esDiasPull` (ano e anterior; 5 min no ano atual, 1 h nos fechados), funções puras `esDiasLimpa`, `esPorTipo`, `esPareado`, `esMesAMes`, `esTendencia`, `esDiasCSV` (`es-dias-csv`, `receita` só Admin, proteção contra fórmula: célula que começa com `= + - @`, TAB ou `\r` ganha `'`); aviso de fuso (`esFusoAviso`) também na seção g; R$ só para o Admin. Seção f: `es-importar-totais` (`esTotaisParse`, `esImportarTotais`, blocos de 1000).
+
+Testes: `testes/agenda_agente.py` (agente importado, servidor numa thread na porta `PORTA_BASE` + 0 a 899, padrão 42000, API-Football falsa com chave falsa) e `testes/agenda-estatisticas.js` (agente falso; `SHOTS=<pasta>` grava os prints).
+
 
 ## Os 2 primeiros cliques de cada sessão só para os fundos de IA (v93, 06/11/2026)
 
@@ -1788,3 +1830,224 @@ Gravada pelo Painel de controle › Fotos para os fundos de IA (`iaCfgPanel`, `i
 ### Fora desta entrega
 
 Montagem no servidor (nuvem e galeria online), aviso de enquadramento do 1º clique, botão de devolver as bases à venda, Estatísticas contando as bases à parte, Curadoria das bases, montagem antecipada no modo Photoroom.
+
+## Recorte BiRefNet, levas e visitas (v97, 10/11/2026)
+
+Plano: `docs/planos/2026-11-10-recorte-birefnet-sessoes.md` (com as decisões do Eduardo de 10/11 no fim). Branch `feat/recorte-birefnet`.
+
+### Recorte (E1)
+- `agente/eterna-recorte.py`: processo FILHO do agente, aberto por `rec_carregar` (`subprocess.Popen([sys.executable, eterna-recorte.py, --inbox, --recortes, --modelos])`). Só numpy, Pillow, opencv-python-headless, onnxruntime e rembg. Motivo: o BiRefNet em CPU passa de 4,7 GB; se o sistema matar o filho por falta de memória, o agente (FTP, vendas, Checkout) segue e `rec.erro` mostra "recorte parou: memória insuficiente (código -9)"; passado `REC_ERRO_SEG` (60 s), a próxima foto reabre o filho.
+- Contrato (uma linha JSON por mensagem; o stdout do filho é só protocolo, o fd 1 vira o stderr):
+  ```
+  -> {"pronto":true,"provedor":"cuda|cpu|directml","modelos":[...],"carga_ms":N}   ou {"pronto":false,"erro":"..."}
+  <- {"id":"<pid>.<seq>","origem":"<caminho na inbox>","destino":"<recortes>/<pid>.png","trab":1600}
+  -> {"id":...,"ok":true,"ms":{"birefnet","pessoas","isnet","pose","regra","gravar","total"},"pico_mb":N,"pessoas":K}
+  -> {"id":...,"ok":false,"erro":"sem_pessoa|imagem_grande|caminho_recusado|..."}
+  ```
+  Origem só dentro de `INBOX` e destino só em `RECORTES` (`realpath`), nome `<pid>.png`. MAX_PIXELS conferido pelo cabeçalho antes de decodificar, `exif_transpose`, lado até 3000, máscaras em 1600, alfa volta ao tamanho final (LANCZOS), RGB zerado onde o alfa é 0, PNG 600 por `mkstemp` + `os.replace`. O de 2400 continua sendo cópia do de 3000 no agente.
+- Regra (`regra()` no filho): cópia fiel de `recorte2.regra` do protótipo (conferida bit a bit nas máscaras em cache das 5 fotos) mais A4 (componente pequeno e separado com ombro ou quadril de pessoa com ombros >= 0,5 da maior fica), A5 (sem pessoa no u2net: maior componente do BiRefNet) e teto de custo (64 pedaços, 1,5 s). Depois do teste com 21 fotos de campo (10/11, decisão do Eduardo): objeto grudado só sai quando está solto (mão apoiada, contato >= 10% ou membro da pose coberto = fica inteiro; `pose_mascaras`), ao tirar a pessoa e os membros nunca saem, e `_buracos` preenche o miolo furado de objeto grudado (até 4% da imagem; vão cercado de pessoa, sobre o vão da pose ou com a cor do fundo de fora fica aberto). Nas 5 fotos de referência nada muda. Regra 16 de `docs/fundos-ia-regras.md`.
+- Agente: `REC_MODELOS = ("birefnet-general", "u2net_human_seg", "isnet-general-use")`, `REC_POSE` (MoveNet em `~/Eterna/modelos`, SHA-256 fixo `REC_POSE_SHA`, conferido com cache por tamanho e data), `REC_VERSAO = "birefnet-1"`. `rec_estado` exige rembg, onnxruntime, PIL, numpy, cv2 (scipy saiu), os 3 modelos, o MoveNet certo e o `eterna-recorte.py` ao lado do agente. `rec_versao_cache()` na partida: `.versao` diferente apaga só `*.png` e `*.tmp` de `~/Eterna/recortes/` (link desfeito, nunca seguido). `REC_CONC=2` só vale com o provedor `cuda` (cada trabalhador tem o seu filho). Com o provedor CPU, o recorte antecipado faz só as bases (`rec_pre_escolha`). Saíram `rec_limpa_mascara` e companhia.
+- `/status.recorte` acrescenta `modelo`, `auxiliares`, `versao`, `provedor`, `carga_ms`, `etapas_ms` (última foto), `pico_mb` (do filho) e `filho: {vivo, reinicios}`. `POST /recorte` e `GET /recorte/<pid>.png` sem mudança.
+- Variáveis: `ETERNA_RECORTE_GPU` (`auto` padrão, `cpu`), `ETERNA_RECORTE_CONC=2` (só com CUDA). Testes trocam o filho por `m.REC_FILHO` (`testes/_recorte_filho_falso.py`, modelos falsos, mesmo protocolo e gravação); o recorte falso do v93 (`m.REC_FALSO_SEG`) continua.
+
+### Instaladores (E2)
+`instalar-recorte.command` e `.bat` com as versões fixas (`rembg==2.0.86 onnxruntime==1.29.0 opencv-python-headless==4.10.0.84 psutil==7.2.2`) e `agente/instalar-recorte-modelos.py`: os 3 modelos pelo `download_models` do rembg (hash do próprio rembg, sem abrir o modelo) e o MoveNet de `github.com/Kazuhito00/MoveNet-Python-Example` com SHA-256 conferido (temporário e troca no fim; diferente, apaga e para). Cerca de 1,3 GB, 16 GB de memória. `instalar-recorte.bat gpu`: `onnxruntime-gpu[cuda,cudnn]==1.29.0` (versão a confirmar pelo Ronaldo) e mostra o provedor que abriu (`--provedor`). `iniciar-eterna.bat` baixa também o `eterna-recorte.py`.
+
+### Medição (E7, script)
+`agente/medir-recorte.py <pasta> [--gpu auto|cpu] [--saida <pasta>]`: abre o filho de verdade e mostra por foto os ms de cada etapa e o pico de memória (psutil a cada 50 ms), com mediana e p90. Rodar com o agente fechado. Números da máquina de teste (2 vCPU, 8 GB e troca em disco, CPU, 10/11, as 5 fotos de referência pelo agente): carga dos modelos 6 a 12 s; BiRefNet 68 a 79 s por foto, total 78 a 89 s; u2net 2,8 a 3,6 s; isnet 5,1 a 5,8 s; pose 0,6 a 0,8 s; regra 0,12 a 0,24 s; pico do filho 5,5 a 5,7 GB. Sem a troca em disco o sistema matou o filho nas 5 fotos (o agente seguiu de pé). Falta medir no Mac do Eduardo e no servidor do estádio (critério 10: portão de produção com a GPU, BiRefNet <= 3 s, total <= 6 s, pico <= 6 GB).
+
+### Levas e visitas (E3)
+- Leva = a sessão de hoje (sem mudança: por fotógrafo ou câmera, 60 s sem disparo, rostos novos; código LP; Upload e Fila continuam por leva).
+- Visita: levas ligadas quando um rosto de qualidade (principal, >= 60 px, frontal, score >= 0,80) de uma bate com um de outra com `sim >= VIS_LIM` (0,50 fixo; os testes trocam `m.VIS_LIM`, sem variável de ambiente), em corrente, com o 1º e o último clique a até `VIS_JANELA` (3000 s). Teto `VIS_LEVAS_MAX` 12 e `VIS_ROSTOS_MAX` 15 (acima disso a aresta fica `barrada` e a visita `grande`). Leva de escola ou de menor (galerias publicadas: `vis_protege_manifesto`) só liga por Juntar.
+- Estado sob o `sess_lock`: anel `vis_idx` (até `VIS_IDX_MAX` 4000 vetores, numpy), `vis_arestas[dia]` (`{a, b, tipo: rosto|juntar|separar, sim, pa, pb, por, posto, em, seq, barrada?, desfeita?}`), `vis_de`, `vis_info`, `vis_rostos` (rostos diferentes por leva, só memória). `_vis_ligar` roda em `_sess_decide`, no ramo `_guardar` e na foto já decidida de `sess_rostos_lidos`. `_vis_recalc(dia, toque)`: união-busca com Juntar primeiro e as de rosto na ordem; Separar vira "não ligar" entre a leva e o resto da visita; refaz só o pedaço do dia ligado às levas tocadas. Id da visita `V` + código da leva mais antiga (estável no reinício).
+- Persistência: `~/Eterna/ponto/visitas/AAAA-MM-DD.json` (600, `mkstemp`, sem vetor), gravado junto do `sess_gravar`; no boot as arestas são relidas e o anel refeito do `rostos.db` das últimas 50 min (largura e principal; o banco não guarda score nem pose). 60 dias. LGPD tira o pid das arestas (memória e disco) e a leva removida sai da visita. Registro `~/Eterna/ponto/visitas-log.jsonl` (600; quem, posto, quando, de, para; sem rosto).
+- D4 (bases por visita): `_sess_ia_fecha` fecha com `ia=[]` e `ia_regra.motivo = "visita_ja_tem"` a leva cuja visita já tem outra leva fechada com bases; o recorte antecipado não faz nada dessa leva.
+- Rotas: `GET /visitas?desde=<rev>[&ontem=1]` (posto + origem local, `no-store`; com `desde >= rev` devolve `igual` e lista vazia, senão a lista inteira `completo`): `{rev, visitas:[{id, levas, rev, inicio, fim, grande, separadas}]}`. `POST /visitas/juntar {a, b, por, posto}` e `POST /visitas/separar {card, por, posto}` (posto + origem + `X-Eterna: 1` + 30 por minuto; só levas de hoje; `por` e `posto` limpos como no `/ponto/eventos`). `/status.sessoes.visitas`: `n`, `rev`, `ligacoes_rosto`, `barradas`, `ms_ultimo`, `ligar_p90_ms`, `limiar`. Desempenho medido (3.000 fotos, 6 trilhas): ligação p90 3 a 7 ms, recálculo p90 2 a 6 ms.
+
+### Photoroom (E4)
+`fundos_modo()` sempre `local` no agente e no app (D6): a chave fica em `~/Eterna/photoroom.json` sem uso, `/photoroom/compose` dá 409, sai o quadro Montagem dos fundos e o do Photoroom. O código do Photoroom sai depois do merge da `idiomas-base`. Testes antigos que precisavam de fundos de IA sem o agente usam `ETERNA.fundosModoTeste('photoroom')` (só em memória).
+
+### App: Checkout e Posto (E5, E6)
+- `visPull` (pelo rev de `/status.sessoes.visitas`) grava `SIM.visitas = {rev, levas:{card:[levas]}, grande:{card:true}}` (cópia; fora da sincronização do `estado.db`). `visitaDe(card)`: as levas da visita no SIM, sem menor e sem escola (v77).
+- Selfie (`lojaJuntar`): cada leva com foto clara traz a visita inteira (todas as fotos e as bases em `so.ids`); menor ou escola só com as fotos achadas; o "talvez" só para levas fora das visitas. Código LP ou da galeria: `lojaSoVisita`. `so` guarda `base`, `fix` e `visita`; `lojaVisitaAtualiza` (relógio de 5 s e cada `visPull`) refaz a escolha quando o Posto junta ou separa e tira só as marcas de fotos que saíram. Muda a regra da v95 no Checkout (decisão do Eduardo, 10/11); a galeria por QR continua na v95 até a proposta do plano ser implementada (depois da v96.1).
+- Bases (`lojaAI`): base boa; senão o jeito antigo (foto real sem a nota simulada); senão a base barrada pela validação. `compHydrate`: 503 do recorte tenta de novo em 30 s (`FIA_REC_DE_NOVO_MS`) e não marca `FIA_RUIM`.
+- Posto: `pendVisitaHtml` no pedido do Checkout (levas, Separar, Juntar outra leva com as de hoje dos últimos 50 min ou o código LP), `visitaPost` (X-Eterna), `auditLog('visita_juntar'|'visita_separar')`, `pendTiraLeva` (Separar com o pedido aberto tira as fotos daquela leva e o pacote volta a ser escolhido). `visita-juntar` e `visita-separar` com venda u.
+- Testes: `testes/recorte_birefnet_agente.py` (com `ETERNA_RECORTE_FOTOS` e `ETERNA_RECORTE_REF`, as 5 fotos de referência com o BiRefNet de verdade; nunca fotos no repositório), `testes/visitas_agente.py`, `testes/visitas-checkout.js`; `testes/v84.js` com o recorte real só com `ETERNA_RECORTE_REAL=1`.
+
+### Correções da Segurança e do Revisor (11/11)
+- **Ligação por rosto desligada até a calibração (B1)**: interruptor `config/visitas` no `estado.db`, `{"rosto": false}` por padrão (sem documento ou ilegível = desligada). Só muda por `POST /visitas/config {rosto: bool, por, posto}` (posto + origem local + `X-Eterna: 1` + 10 por minuto); a sincronização `/ponto/docs` recusa `config/visitas`. `vis_cfg()` relido a cada 3 s fora do `sess_lock` (como o `ia_cfg`), `vis_cfg_mem()` dentro. Desligada: `_vis_ligar` não cria aresta `rosto`, o `_vis_recalc` não conta as antigas, e cada par de levas com `sim >= VIS_CALIB_PISO` (0,35) vai para `~/Eterna/ponto/visitas-calibracao.jsonl` (600; `{em, dia, a, b, pa, pb, sim, ligada}`: só ids de leva e de foto e o score). Juntar e Separar continuam. `vis_cfg_gravar` refaz as visitas na hora (desligar desfaz as ligações automáticas), registra no console e no `visitas-log.jsonl`. `/status.sessoes.visitas` ganha `rosto`, `rosto_em` e `calibracao`. App: Configurações › Painel de controle › "Juntar a família pelo rosto (em teste)" (`visRostoPanel`, `visRostoSalva`), só para `isAdminUser`, valor do `/status`, com `auditLog('visitas_rosto')`; inativo com o servidor do ponto fora.
+- **Anel do boot só com rosto de qualidade**: tabela nova `rosto_q (pid, dia, emb)` no `rostos.db` com os rostos de score >= 0,80 e frontais, gravada pelo leitor junto da `rosto` e apagada com ela (prazo e LGPD). `vis_idx_boot` só põe no anel o rosto principal que passa em `_sess_qualidade` com o score e a pose da `rosto_q`; rosto lido antes da tabela existir fica fora.
+- **Escola ou menor publicada depois da ligação (item 5)** e **Separar (item 6)**: `vis_protege` guarda a visita de antes, refaz e chama `_vis_ia_reabre`; `vis_acao('separar')` também. A leva fechada com `visita_ja_tem` que ficou sem visita com bases volta a ter as N primeiras como bases (`ia_regra.reaberta = separar|protegida|rosto_desligado`), que entram na fila de recorte (`sess_ia_novos`). App: `srvIaCompleta` aceita as bases reabertas, menos quando alguma já foi vendida ou está num pedido aberto.
+- **Recorte morto por memória (item 1)**: `_rec_erro` conta as mortes por memória seguidas (`rec.mortes_mem`), a espera dobra (60, 120 s) e na 3ª (`REC_MORTES_MAX`) o recorte para até reiniciar o agente (`/status.recorte.parado` com o texto). Foto feita zera. Antes de abrir o filho, `rec_mem_livre_gb()` (psutil ou `/proc/meminfo`) abaixo de `REC_MEM_MIN_GB` (6) recusa com "memória livre insuficiente ... X GB livres, precisa de 6 GB" (`/status.recorte.mem_livre_gb`). `rec_espera()` é o prazo; `_rec_abrir` não abre parado ou dentro do prazo.
+- **Ambiente do filho**: `rec_env()` passa só `REC_ENV_PASSA` (caminhos, temporários, idioma, `REMBG_HOME`/`U2NET_HOME`, `ETERNA_RECORTE_GPU`, CUDA); nada de `MODEL_CHECKSUM_DISABLED`, `PYTHONPATH`, `PYTHONSTARTUP`, `AWS_*` ou outro segredo. Testes acrescentam `m.REC_ENV_PREFIXOS`.
+- **Processo órfão**: o pid de cada filho fica em `~/Eterna/ponto/recorte-filhos.json` (600); `rec_orfaos_encerrar()` na partida encerra o que ainda está vivo e é mesmo um `eterna-recorte.py` (psutil, com a hora de criação, ou `/proc`). O filho também sai sozinho quando o pai muda (agente caiu no meio de uma foto; fora do Windows).
+- **Retenção**: `vis_logs_poda` (no `sess_limpar`, uma vez por dia) tira as linhas com mais de 60 dias do `visitas-log.jsonl` e do registro de calibração; LGPD tira o pid do registro de calibração.
+- **Instaladores (itens 2 e 3)**: `agente/recorte-requisitos.txt` (CPU, 32 pacotes) e `recorte-requisitos-gpu.txt` (39, com `onnxruntime-gpu` 1.29.0 e as `nvidia-*` do CUDA 13 e cuDNN 9, sem o `onnxruntime` de CPU), versões fixas de todas as rodas e dependências com o SHA-256 de cada arquivo do PyPI; os instaladores usam `pip install --require-hashes --only-binary=:all: -r`. No modo gpu, o `onnxruntime` de CPU, se estiver lá, sai antes (com o da placa, que volta limpo); o `onnxruntime-gpu` só é reinstalado (`--force-reinstall --no-deps -r recorte-requisitos-ort-gpu.txt`) se faltar o `CUDAExecutionProvider`. Rodar de novo não baixa nada. `.bat gpu <venv>` instala num venv fora do perfil (servidor). `agente/gerar-requisitos-recorte.py` refaz os 3 arquivos. Validado com `pip install --dry-run --require-hashes` para Mac arm64 (CPU) e Windows amd64 3.12 (placa).
+- **Posto (Revisor)**: `pendTiraLeva(card, id)` mexe só no pedido do botão, com `simFresh` antes e desfazendo se o `saveSim` falhar. `visPull` compara `gen:rev` (o rev das visitas recomeça no reinício do agente).
+- Testes: `testes/visitas_agente.py` (B1, rota, boot, LGPD, retenção, itens 5 e 6), `testes/recorte_birefnet_agente.py` (item 1, ambiente, órfão), `testes/instalar_recorte.py` (requisitos e .bat), `testes/visitas-config.js` (interruptor), `testes/visitas-separar-pedido.js` (Separar num pedido só, bases reabertas no app).
+
+### Telão do Maracanã (E8)
+Fundo `telao` (`img/bg-telao.jpg`, arte do Eduardo, 2576×1840; `fileHi` = o mesmo arquivo) no lugar do `podio` (agora `inativo:true`, em Laboratório › Fundos em teste). `BG_DEF = ['campeao','mirante','arq1950','tunel','telao']`; `bgMigraTelao` (uma vez, marca `SIM.bgTelaoV97` e `eterna.bgtelao.v`): lista salva com o pódio troca pelo telão na mesma posição; com menos de 5, ganha o telão. Montagem própria em `fiaTelao` (chamada por `fiaMontar` quando o fundo tem `telao.quad`): `fiaHomog` (homografia por 4 pontos) e `fiaWarp` (amostragem bilinear por linha, só na caixa da tela): desentorta o conteúdo da tela em meia resolução, desenha a pessoa pelo `fiaLayout` com `FIA_REGRAS.telao` no quadro da tela, acabamento por `ctx.filter` e entorta de volta. Prévia ~0,4 s por foto com tudo carregado. `FIA_BASE.telao = 1`. Nome do fundo para o cliente em `bgNomeCli` (`T('bgTelao')`). Regra 17 de `docs/fundos-ia-regras.md`. O mapa de fundos do Photoroom no agente (`FUNDOS_PREVIA`) não tem o telão (Photoroom inativo). Teste `testes/telao.js`; `v86.js` e `v81.js` ajustados (o pódio é ligado à mão no teste da v86).
+
+### Ordem de deploy
+1) `instalar-recorte` (Mac e servidor) com os modelos novos; 2) agente: `eterna-agente.py` e `eterna-recorte.py` juntos (no Mac do Eduardo em `~/Documents/ETERNA/eterna/` e `~/Downloads/Eterna/`); 3) app; 4) recarregar Checkout, Posto e Upload. Agente novo sem o instalador = sem fundos de IA. O servidor do estádio está na `idiomas-base`: o `eterna-recorte.py` precisa entrar no `instalar-servidor.ps1` e no vigia (`eterna-vigia.ps1` só atualiza o `eterna-agente.py`).
+
+## Selo Edição Maracanã nas montagens de IA (v97, 11/11/2026)
+Plano `docs/planos/2026-11-11-selo-edicao-maracana.md` (decisões D1 a D8 do Eduardo e a investigação D1). Testes `testes/selo-edicao.js` (Checkout, Posto, Estatísticas) e `testes/montagens_agente.py` (agente).
+
+### Checkout
+- Ordem: `lojaItems(card)` = montagens (ordem de `bgOn`) + fotos comuns (ordem de sempre). A montagem não tem `lb` ("ponto · hora"). Marcas para a grade: `edIni` (1ª montagem) e `edFotos` (1ª foto comum, só com uma leva; com várias, os blocos `lj-blk` fazem esse papel). `lojaCart`, `lojaSync`, `lojaPedido`, `aiSel`, `n` e preço não mudam (só a ordem).
+- Selo: `lojaThumb` acrescenta `<span class="lj-ed">` (texto `edSeloTxt()`, chave do venue `VENUES.maracana.selo`) depois do `.compimg` (que o `compHydrate` esvazia). Grade com `.lj-edh` (`.lj-edeb` + `h3` `edTitulo`) antes da 1ª montagem e `.lj-blk.lj-edfotos` (`edFotos`) antes da 1ª foto. Etiqueta do card (`.lj-tag`) com o nome do fundo (`bgNomeCli`), no lugar de "Fundo de IA" (`aiTag` fica no dicionário sem uso). Tela cheia com `.lj-lbsrc.lj-edn` (nome do fundo) e caixa `fit` na proporção da montagem (`--ar`; 3/2 até ficar pronta; `LJ_AR['ai:<base>|<fundo>']` gravado pelo `compHydrate`).
+- Abertura: `ljAbrirEd(k)` (em `lojaAbrirSo`, `kiosk-go` e `loja-open`) põe `k.i = k.ver = ljPrimeira(card)` (1ª montagem pronta; sem nenhuma, a 1ª montagem; sem montagem, 0), limpa a âncora e agenda `lojaEdEspera` em `LJ_ED_ESPERA_MS` (8 s). Sem toque desde a abertura (`k.toque`) e com a montagem da tela ainda em preparo, vai uma vez para o 1º item pronto (montagem pronta, senão a 1ª foto comum). Pronta = `fiaPronta(x)`: `COMPURL` ou `COMPOK` (o `compose` marca as montagens terminadas).
+- Âncora: `ljAncora(k, items)` no começo do ramo review. Guarda as chaves do último desenho (`k.verKs`, `k.verCode`); se a lista mudou, `k.ver` (e `k.i`) passam a ser o número novo da mesma chave; se ela sumiu, o mesmo número limitado ao tamanho novo. Nunca age nas setas, no deslizar ou nas teclas (a lista não muda).
+- Vistas: `edVista(chave)` só no `#loja` (`state.lojaRota`), com `t0`, montagem pronta na tela cheia (no desenho e no `compHydrate` dentro de `#lj-lb`), uma vez por atendimento (`k.edVistos` por `k.edT0`). Soma em `localStorage['eterna.edvistas.v1'] = {terminal, dias:{AAAA-MM-DD: n}}` (só hoje e ontem, dia do venue) com o terminal aleatório `eterna.terminal.v1` (12 caracteres `[a-z0-9]`, `crypto.getRandomValues`). `edVistasEnviar` manda o total de cada dia a `POST /ponto/montagens` 30 s depois da vista; falha ou agente fora tenta de novo em 5 min. Mandar o total (não a soma) deixa o envio repetido sem efeito.
+- CSS `.lj-ed` (amarelo `#FFB800`, azul noite `#0C2340`, maiúsculas, `letter-spacing:.1em`, Big Shoulders, sem quebra, `pointer-events:none`) perto do `.lj-tag`. Miniaturas (`.lj-mimg`, `.pend-th`, `.eco-mini`) com `container-type:inline-size` e o selo menor abaixo de 150 px. Com a imagem encostada no alto da tela, o selo anda para a direita do logo do overlay (`@container (min-aspect-ratio:4/3)`).
+
+### Posto
+- Pedido: as miniaturas de montagem (`pend-th`, pelo `lojaThumb`) têm o selo e o nome do fundo no `title` do ícone. A ordem do pedido (`pendEscolhaItem`) não mudou: D7 pendente da `fix/checkout-espera`.
+- Eco da tela do cliente: `ecoThumb` troca a etiqueta "IA" por `.lj-ed.eco-ed` com o nome do fundo no `title`.
+
+### Estatísticas
+`esDados` lê `montagens` do resumo do dia (`edVistas`, `edCompradas`; `null` = sem registro). `esEdPainel(D)` na seção a, depois de Produtos e Pagamento: "Edição Maracanã: montagens vistas × compradas", um dia por linha (mais novo em cima, dd/mm/aaaa), Vistas, Compradas, Compradas por vista, "sem registro" para dia antes da versão e total do período. Só Admin (a tela já é só do Admin).
+
+### Agente
+`POST /ponto/montagens` (`montagens_post`): mesma guarda do `/ponto/entradas` (posto + `origem_local` + `X-Eterna: 1` + `limite_ok` 30/min por IP), corpo até 1 KB. `montagens_validar`: só `dia` (hoje ou ontem no fuso do agente), `terminal` (`^[a-z0-9]{8,16}$`) e `vistas` (inteiro de 0 a 20.000); outro campo é 400 `campo`. `montagens_gravar`: tabela `montagem_vista (dia, terminal, vistas, em)` no `operacao.db`, fica o maior valor, até 40 terminais por dia (o 41º é 409 `muitos_terminais` e conta em `/status.estatisticas.montagens_recusadas`). Resposta `{"ok":true,"vistas":<gravado>}`. CORS e `Access-Control-Allow-Headers` com `X-Eterna` como no `/ponto/entradas`. O console nunca imprime o corpo. `met_v2`: `montagens = {vistas: montagens_dia(dia), compradas: soma de nAI das vendas pagas do canal checkout}`. Sem IP, sessão, rosto, foto ou nome. `operacao.db` já vai para o backup.
+
+### Fora desta entrega
+- Galeria por QR (D1): a montagem não vai para a galeria (só a impressa sai da DNP). Contrato para quando for: no plano.
+- Ordem do pedido no Posto com as montagens primeiro (D7).
+- Selo ou nome do fundo na impressão, no download e no arquivo (decisão do Eduardo: o selo é só da tela).
+
+
+## v97: visão de conjunto (11/11/2026)
+
+Junta o que a `release/v97` mudou e aponta para as seções de cada parte. Planos: `docs/planos/2026-11-09-ondas-ux.md`, `2026-11-10-recorte-birefnet-sessoes.md`, `2026-11-10-agenda-estatisticas.md`, `2026-11-11-posto-unico.md`, `2026-11-11-minhas-fotos-envio-manual.md` e `2026-11-11-selo-edicao-maracana.md`.
+
+### Regra fixa do projeto: recorte e montagem no computador do ponto
+
+**O recorte e a montagem dos fundos de IA são feitos e guardados no computador do ponto (servidor). O Checkout só mostra.** Vale para toda entrega daqui para a frente.
+
+| Etapa | v97 (hoje) | v98 (previsto) |
+| --- | --- | --- |
+| Recorte da pessoa | no servidor: processo `eterna-recorte.py`, PNG em `~/Eterna/recortes/` | igual |
+| Montagem no fundo | ainda na tela: `fiaMontar` e `fiaTelao` no navegador do Checkout e do Posto, sem arquivo guardado no servidor | no servidor, com o arquivo guardado |
+| Checkout | mostra e também monta | só mostra |
+
+Consequência na v97: como a montagem não existe como arquivo no servidor, ela não entra na galeria do QR e só chega ao cliente impressa. Por isso o Posto avisa o caixa quando o pedido tem montagem em pacote só digital (`pendMontAviso`, seção "Posto único"). O aviso sai quando a montagem passar a ser feita e guardada no servidor. Nenhuma tela nova deve recortar ou montar fora do servidor.
+
+### Telas e menu
+
+Grupos de `VIEWS` (4º campo; o 5º campo é a pasta dentro do grupo):
+
+| Grupo | Telas (view) |
+| --- | --- |
+| Venda | Posto de venda (`posto`) |
+| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Fotógrafos, Vendedores (`vendas`), Lista de vendas, Galerias online, Calendário de eventos (`calendario`, veio do grupo Fotógrafo; módulo `escala`, permissões iguais) |
+| Curadoria | Qualidade, Treino da IA, Alertas |
+| Fotógrafo | Diário do set, Minhas fotos (`importar`), Fila do fotógrafo, Escala |
+| Configurações | Preços e Checkout (`catalogo`, abas `precos`, `checkout`, `fundos`, `avancado` em `state.catTab`), Ajuste automático |
+| Sistema | Repositório, Identidade, Fundos de IA (técnico) (`chroma`), Usuários, Permissões e a pasta Laboratório: Vestiário, Chute a gol (`chute-a-gol`), Fundos em teste |
+
+- `viewLabel(v)` dá o nome da tela por pessoa e é o mesmo texto do menu e do `h1`. `catalogo` aparece como "Preços" para quem só lê os preços. O teste `testes/nomes-antigos.js` confere que nenhum texto visível usa "Painel de controle" ou "Vendas e caixa".
+- `VIEWS_EXTRA`: `caixa` (o Posto filtrado em dinheiro), `checkout` e `fila` (apelidos do Posto). Detalhe na seção "Posto único".
+- Botões amarelos no alto do menu (`railCk`): "Abrir Checkout" (`canView('quiosque')`) e "Caixa" (`canView('caixa')` e `venda.c`), com o número de `caixaAbertas()`.
+- Aba Checkout de Preços e Checkout: tempo da tela final, janela da selfie, e só para o Admin (`isAdminUser`) a fonte dos jogos (`agBlocoFontes`) e "Juntar a família pelo rosto (em teste)" (`visRostoPanel`). Aba Fundos de IA: fundos ativos e a regra dos cliques (`iaCfgPanel`). Aba Avançado: FTP do estádio e cartões com QR.
+- Supervisora: o menu não tem `repo`, `identidade`, `chroma`, `vestiario`, `chute-a-gol` nem `fundos-teste` (`SUP_SEM94`).
+- Laboratório › Chute a gol (`vChuteAGol`, módulo `laboratorio`, migração `mcg97` para quem já via o Vestiário): ficha de produto em teste, com a prévia das 5 placas e a referência em `img/lab/chute-a-gol-ref.jpg`. Sem venda e sem rota no agente.
+
+### Checkout e Posto
+
+- Espera do pagamento (`ljPronto`): a tela Pronto e a tela do valor não têm "Voltar ao início" nem a casa do topo. Parada `LOJA_PRONTO_MS`, volta sozinha ao início. A tela final com o QR mantém "Voltar ao início".
+- "Recomeçar o Checkout" (Posto): `pendRecBtn(r)` aparece só no pedido que o monitor espera (`ecoEsperaId()`), para quem tem `venda.u`. `pendRecAsk` pede confirmação; `pendRecomecar(id)` grava `r.recomecar` (hora) no SIM e o Checkout volta ao início pelo evento `storage` (`lojaPendCheck`). O pedido continua aberto. `auditLog('checkout_recomecar')` e a marca "Checkout recomeçado às hh:mm" (`pendRecPill`).
+- "Pago na maquininha" é o botão principal (`pend-main`); "Cancelar compra" é o link `link-danger` em `.pend-cancel`, com a confirmação de sempre.
+- Tela final: QR ao lado da foto no mesmo card (`lj-final`, `drawLojaQR`), 320 px ou mais em 1920 de largura (389 px em 1920×1080, 280 px em 1366×768), margem branca de 4 módulos.
+- Selo Edição Maracanã, visitas e Posto único: seções próprias acima.
+
+### Fotógrafo
+
+- Nome e ponto fixos: `impPreso()` devolve a chave do fotógrafo logado (quem tem pessoa ligada e não é Admin nem Supervisora); `impPontoDe()` lê a função do dia da Escala. Em `vImportarCore` os seletores viram texto (`.imp-fixo`). Admin e Supervisora continuam com os seletores.
+- "Minhas fotos de hoje": `libPanelFoto(k, ix, hoje)` no lugar da Biblioteca com filtros, por sessão, com "Ainda sem sessão", até 400 fotos. `libPanel()` segue igual para Admin e Supervisora.
+- Escala: `vEscalaFoto(k)` para quem tem `fotoKey()` e não tem `escala.u`: "Hoje você está em:" com o ponto (`.esc-ponto`), volante, folga ou fora da escala, e os próximos 7 dias (`escDiaFunc`; dias futuros mostram o ponto fixo como previsto).
+- Faixa sem conexão: `faixaConexao({estado, ultimo, onde, extra})`. Estado `off`: `.conn-off` com "O computador do ponto não está respondendo. Chame a TI." e "Último dado às hh:mm" (`state.agent.lastOk`). Vale em Minhas fotos, Posto, Fila do fotógrafo e Fila de impressão. Endereço, porta, pasta e registro de chegadas ficam em "Detalhes técnicos", só para o Admin.
+- Modo demonstração: `demoOn()` e `demoSet()` (chave `eterna.demo.v1` no aparelho), só o Admin liga, em Identidade. Sem a chave, as ações de simulação são recusadas. Sessão criada na demonstração leva `demo: 1` e a venda dela não publica galeria.
+
+### Envio manual das fotos do cartão
+
+Plano B quando o leitor não reconhece o cartão. A foto entra pelo mesmo caminho do cartão (`ingest_file(..., "cartao")`), então segue para sessões, rostos e Fila do fotógrafo.
+
+App (`index.html`): `envioPainel()` em Minhas fotos, só com `set.c` (Fotógrafo, Supervisora e Admin). `envioQuem()`: o fotógrafo manda no próprio nome; Admin e Supervisora escolhem no seletor, nunca "Todos". `fotosEnviar(lista)`: até 2.000 arquivos por lote, 2 por vez, 3 tentativas por foto, espera crescente quando o servidor responde ocupado. Só envia com o app aberto pela origem do agente (`fotosNoServidor()`) e com `/status.envio` presente. `auditLog('fotos_envio_manual')` sem nome de arquivo.
+
+`POST /fotos/enviar?nome=<arquivo>&quem=<fotógrafo>` no agente. Corpo: o JPEG. Cabeçalhos: `Content-Type: image/jpeg`, `Content-Length`, `X-Eterna: 1`. Rota privada (posto e origem local, sem CORS aberto).
+
+| Resposta | `erro` | Quando |
+| --- | --- | --- |
+| 200 | | `{"ok": true, "resultado": "new" ou "dup"}`: foto nova ou repetida (a repetida não entra de novo); `resultado: "recusada"` com `ok: false` quando a entrada não aceita a foto |
+| 400 | `tamanho`, `quem`, `incompleta` | tamanho inválido, fotógrafo fora do cadastro, corpo cortado |
+| 403 | `origem` | fora do posto ou sem o cabeçalho |
+| 408 | `lenta` | o corpo não chegou em 120 s (`FOTO_ENVIO_PRAZO`) |
+| 411, 413 | `tamanho` | sem `Content-Length` ou acima de 60 MB (`FOTO_ENVIO_MAX`) |
+| 415 | `formato`, `nao_jpeg` | tipo ou extensão errados, ou o arquivo não é um JPEG de verdade |
+| 429 | `taxa`, `teto_dia` | mais de 300 por minuto por aparelho, ou teto diário atingido |
+| 500 | `servidor` | falha ao guardar a foto (conta como recusada) |
+| 503 | `ocupado` | 4 gravações ao mesmo tempo no agente ou 2 no mesmo aparelho |
+| 507 | `disco` | espaço livre abaixo do piso |
+
+- JPEG de verdade: `jpeg_envio_erro` confere o cabeçalho, as dimensões (lado menor de 64 px ou mais, até 40 MP) e o tamanho mínimo de 1 KB.
+- Nome gravado: o do cliente só se casar com letras, números, `_` e `-` e extensão JPEG; senão `envio_<hhmmss>_<hex>.jpg` (`envio_nome`).
+- Teto do dia: `ETERNA_ENVIO_TETO_DIA` fotos novas, somando todos os aparelhos, contado em `~/Eterna/envio-dia.json` (só o dia e o número; vale depois de reiniciar).
+- Piso de disco: o mesmo do recorte, `ETERNA_RECORTES_PISO_GB`.
+- `/status.envio = {v: 1, max_mb: 60, novas, repetidas, recusadas}`. O índice é gravado uma vez depois do lote e refeito na abertura do agente.
+- Testes: `testes/envio_manual_agente.py` e `testes/envio-manual.js`.
+
+### App sem internet (cópia em disco no agente)
+
+- O agente serve o app e guarda cada arquivo em `~/Eterna/app-cache/` (um arquivo por caminho, gravação atômica, teto de 300 MB com poda dos mais antigos, até 80 MB por arquivo). Reiniciado sem rede, serve tudo do disco.
+- Só caminhos da lista: `/index.html`, `vendor/`, `img/` e `sprites/`, com as extensões de `APP_TIPOS`. O resto responde 404 sem consultar a origem (`app_rel`).
+- `index.html`: pela rede a cada 60 s; sem rede, o do disco. Os outros arquivos: disco primeiro, revistos pela rede uma vez por abertura do agente, em segundo plano (`app_revisar_loop`).
+- Pré-aquecimento (`app_preaquecer`, na abertura): `APP_ESSENCIAIS` (index, QR, fontes Big Shoulders Display e Inter em `vendor/fonts/`, marca, ONNX Runtime e os modelos do rosto do Checkout) e `APP_FUNDOS_ATIVOS` (os fundos de `BG_DEF`, com as variações da Noite de campeão e o Telão), depois os outros fundos. Se faltar algo, tenta de novo de minuto em minuto, 30 vezes.
+- **`/status.app_offline_pronto`** (booleano): todos os essenciais e os fundos ativos estão no disco. É o que a TI confere antes de confiar no ponto sem internet.
+- **Mudou `BG_DEF` ou o arquivo de um fundo no app, mude `APP_FUNDOS_ATIVOS` no agente.** O teste `testes/app_offline_agente.py` compara os dois.
+- Origem fora do ar: por 45 s ninguém tenta a rede de novo (disco, ou 502 `app_indisponivel` na hora). `ETERNA_APP_ORIGIN` só aceita `https://` (ou `http://` de `127.0.0.1` e `localhost`); fora disso o agente avisa no console e usa a origem padrão.
+- As fontes da marca são locais (sem Google Fonts). Exceção: a Archivo Black do tema de teste do Lollapalooza.
+- Sem internet não funcionam: a galeria do QR no celular do cliente (nuvem) e a busca de jogos na API-Football.
+- Testes: `testes/app_offline_agente.py` e `testes/app-offline.js` (Checkout com toda a rede externa bloqueada).
+
+### Apagar a pedido do cliente (LGPD)
+
+- App: `lgpdPlano(card)` separa o que sai, o que fica e o pedido aberto. Ficam as compradas (`vendidasTodas()`), a base de montagem paga, as cortesias e toda foto com direito de comprada ou cortesia em algum manifesto. Pedido aberto usando foto que sairia recusa a ação: o caixa cancela o pedido antes. Galeria com comprada ou cortesia continua aberta. O link está na Venda manual, com `galerias.u`.
+- Agente (`POST /lgpd/excluir`, `lgpd_excluir`): pula a foto com direito `comprada` ou `cortesia` em manifesto publicado que ainda vale, não encerra a galeria que tenha uma delas e tira as apagadas do manifesto. A resposta ganhou `preservadas` e `galerias_mantidas`.
+- Testes: `testes/lgpd-compradas.js` e `testes/lgpd_compradas_agente.py`.
+
+### Rotas do agente novas ou alteradas na v97
+
+| Rota | Para quê | Detalhe em |
+| --- | --- | --- |
+| `POST /fotos/enviar` | envio manual das fotos do cartão | acima |
+| `POST /ponto/montagens` | total de montagens vistas por dia e terminal | "Selo Edição Maracanã" |
+| `GET /visitas`, `POST /visitas/juntar`, `POST /visitas/separar`, `POST /visitas/config` | levas da mesma família; interruptor da ligação por rosto | "Recorte BiRefNet, levas e visitas" |
+| `GET /estatisticas/dias` | série diária do ano | "Agenda automática e série diária" |
+| `GET /agenda/status`, `POST /agenda/atualizar`, `POST /agenda/fonte`, `POST /agenda/testar` | fontes do calendário e chave da API de jogos | idem |
+| `POST /ponto/entradas/totais` | total de visitantes por dia (bilheteria) | idem |
+| `GET /g/<token>/livres` | compradas e cortesias da venda pelo QR, sem selfie (`gal_livres`; 30 por minuto por aparelho; grupo de escola fica de fora). Existe também na nuvem. | "Galeria online por QR", nota da v96.1 no `VERSOES.md` |
+| `POST /lgpd/excluir` | resposta com `preservadas` e `galerias_mantidas` | acima |
+| `GET /status` | campos novos: `app_offline_pronto`, `envio`, `agenda`, `sessoes.visitas`, `recorte` (`modelo`, `provedor`, `parado`, `mem_livre_gb`, `filho`), `estatisticas.montagens_recusadas` | cada seção |
+
+### Variáveis de ambiente novas ou alteradas
+
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `ETERNA_ENVIO_TETO_DIA` | 20000 | fotos novas por dia pelo envio manual, somando todos os aparelhos |
+| `ETERNA_RECORTES_PISO_GB` | 10 | espaço livre mínimo, em GB. Já pausava o recorte das bases de IA (v93); na v97 também recusa o envio manual (507) |
+| `ETERNA_RECORTE_GPU` | `auto` | `cpu` força o recorte sem placa de vídeo |
+| `ETERNA_RECORTE_CONC` | 1 | 2 recortes ao mesmo tempo, só com CUDA |
+| `ETERNA_API_FOOTBALL` | vazio | chave da API de jogos definida no servidor; vale por cima da colada na tela |
+| `ETERNA_APP_ORIGIN` | origem padrão do app | na v97 só aceita `https://` (ou `http://` local) |
+
+### Pendências
+
+- **IMPORTANTE (segurança):** as rotas novas (`/fotos/enviar`, `/ponto/montagens`, `/visitas*`, `/agenda/*`, `/estatisticas/dias`, `/ponto/entradas/totais`) têm o mesmo nível de proteção das outras rotas privadas do ponto. A conferência do login e da permissão no servidor entra com a `idiomas-base`, e todas elas precisam estar na matriz de permissões dessa entrega.
+- **IMPORTANTE (segurança):** a ligação automática de levas por rosto fica desligada até a calibração com fotos reais. Só o Admin liga.
+- **IMPORTANTE (produto):** montagem comprada em pacote só digital não chega ao cliente até a montagem ser feita e guardada no servidor (regra fixa acima, v98).
+- Montagens primeiro no pedido do Posto (D7 do plano do selo).
+- Medir o recorte no servidor do estádio com a placa de vídeo (critério 10 do plano do recorte).
+- Deploy: instalar o recorte antes do agente; o agente leva `eterna-agente.py` e `eterna-recorte.py`; depois o app; fechar e reabrir Checkout, Posto e Minhas fotos em todos os balcões. Conferir `/status.app_offline_pronto` com internet antes de testar o ponto sem rede.

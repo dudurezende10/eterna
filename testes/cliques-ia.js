@@ -1,4 +1,5 @@
 // v93 (Eduardo, 06/11 07:54; plano docs/planos/2026-11-06-dois-cliques-ia.md): os 2 primeiros cliques de cada sessão de ponto
+// v94-ux (parte I): "Fotos para os fundos de IA" fica na aba Fundos de IA de Preços e Checkout
 // de campo são só base dos fundos de IA. Critérios do app: 2 (fora da venda normal), 3 (5 montagens com a base certa), 4 (base
 // ruim usa a outra; as duas ruins = jeito antigo), A11 e D2, 8 e 14 (Upload: tags e pílulas), 12 (Painel de controle e guardAct),
 // 13 (Fila do fotógrafo) e 19 (as 5 montagens prontas no COMP em até 4 s depois de o código achar a sessão).
@@ -80,7 +81,7 @@ try{
   // 3: uma por fundo, com a base indicada
   const it=await pg.evaluate(()=>({ai:ETERNA.lojaAI('LPTIACAM1').map(x=>x.bg+'='+x.id+'@'+x.ses),items:ETERNA.lojaItems('LPTIACAM1').map(x=>x.t+':'+x.id),fotos:ETERNA.lojaFotos('LPTIACAM1').map(p=>p.id),on:ETERNA.bgOn()}));
   const f1='ag_'+A[0],f2='ag_'+A[1];
-  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2};
+  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2,telao:f2};
   ok(it.ai.length===5&&new Set(it.ai.map(x=>x.split('=')[0])).size===5&&it.ai.every(x=>{const [bg,r]=x.split('=');return esper[bg]===r.split('@')[0]&&r.endsWith('@LPTIACAM1');}),'3: 5 montagens, 1950 e Pódio na foto 1, as outras na foto 2: '+J(it.ai));
   ok(it.fotos.length===6&&!it.fotos.includes(f1)&&!it.fotos.includes(f2),'2: Checkout com as 6 fotos normais: '+J(it.fotos));
   ok(it.items.filter(x=>x.startsWith('ph:')).length===6&&!it.items.includes('ph:'+f1)&&!it.items.includes('ph:'+f2),'2: as bases nunca como foto na revisão: '+J(it.items));
@@ -101,13 +102,14 @@ try{
   SIMS={[A[1]]:.72};
   const r15=await pg.evaluate(async([f1,f2])=>{const c=document.createElement('canvas');c.width=64;c.height=64;const k=ETERNA.state.kiosk;
     let r=await ETERNA.faceFind([c],x=>!x.demo);const achou=(r.res||[]).map(x=>x.card);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
-    const a={achou,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id),code:k.code};
+    const a={achou,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id),code:k.code,tot:(ETERNA.demoSessions().find(s=>s.card===k.code)||{photos:[]}).photos.length};
     ETERNA.lojaReset();ETERNA.SIM.sessions.LPTIACAM1.menor=true;
     r=await ETERNA.faceFind([c],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
     const b={code:k.code,ids:k.so&&k.so.ids,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id)};
     delete ETERNA.SIM.sessions.LPTIACAM1.menor;ETERNA.lojaReset();return {a,b};},[f1,f2]);
   ok(r15.a.achou.join()==='LPTIACAM1'&&r15.a.code==='LPTIACAM1','A15: a selfie acha a sessão só pela base: '+J(r15.a.achou));
-  ok(r15.a.fotos.length===0&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===5,'A15: só o que tem o rosto dela, nenhuma base como foto, com as 5 montagens: '+J(r15.a.items));
+  // v97 (Eduardo, 10/11): a selfie abre a leva inteira (e a visita); a base continua fora das fotos
+  ok(r15.a.fotos.length===r15.a.tot&&r15.a.tot>0&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===5,'A15: a leva inteira, nenhuma base como foto, com as 5 montagens: '+J(r15.a));
   ok(r15.b.code==='LPTIACAM1'&&r15.b.fotos.length===0&&r15.b.ai.length===5&&r15.b.ai.every(x=>x===f2),'A15: menor: só a base reconhecida nas montagens, nenhuma foto de fora: '+J(r15.b));
   SIMS={};
   // "Todas" conta só as fotos normais (+ as montagens escolhidas)
@@ -159,7 +161,7 @@ try{
   const fp=await pe.evaluate(()=>{ETERNA.go('chroma');return document.querySelector('#main').textContent;});
   ok(/Fotos para IA: fila 1 · p90 21 s desde a chegada · 0 erros/.test(fp),'fiaPanel mostra a fila das bases: '+(fp.match(/Fotos para IA[^.]*/)||[''])[0]);
   // 12: Painel de controle
-  await pe.evaluate(()=>ETERNA.go('catalogo'));await pe.waitForTimeout(200);
+  await pe.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await pe.waitForTimeout(200);
   ok(await pe.$('#ia-cfg'),'12: painel "Fotos para os fundos de IA" no Painel de controle');
   const pts=await pe.$$eval('#ia-cfg [data-act="ia-ponto"]',xs=>xs.map(x=>x.dataset.id+':'+x.checked));
   ok(pts.join()==='terminal:true,campo2:true,campo3:true,campo4:true,vestiario:false','12: padrão nos 4 pontos de campo, sem o Vestiário: '+J(pts));

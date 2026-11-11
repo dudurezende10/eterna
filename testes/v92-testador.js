@@ -55,7 +55,7 @@ try{
   ok(ck&&ck.dados.lang==='es'&&ck.dados.canal==='checkout'&&Array.isArray(ck.dados.cart)&&ck.dados.cart.length>0&&ck.dados.t0&&Date.parse(ck.dados.t0)<Date.parse(ck.em),'3: venda do Checkout pela tela chega com lang es, canal checkout, cart e t0 antes de em: '+J(ck&&{lang:ck.dados.lang,canal:ck.dados.canal,cart:ck.dados.cart,t0:ck.dados.t0,em:ck.em}));
   // ---------- balcão em inglês (caixaConfirm) ----------
   const card2=await pa.evaluate(()=>{const E=ETERNA;const c=E.demoSessions().filter(s=>s.photos.length>=3&&!['paga','cancelada','aguardando'].includes((E.SIM.sessions[s.card]||{}).status))[3].card;const S=E.SIM;const s=S.sessions[c]=S.sessions[c]||{};
-    s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='caixa';E.render();return c;});
+    s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.posto.recibo=c;/* v97-ux: sessão 'no caixa' cobrada pelo recibo em cima do Posto */E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='posto';E.render();return c;});
   await pa.click('[data-act="caixa-confirm"]');for(let i=0;i<40&&!evs.some(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);i++)await sleep(200);await pa.evaluate(()=>{ETERNA.state.lang='pt';});
   const bl=evs.find(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);ok(bl&&bl.dados.canal==='balcao'&&bl.dados.lang==null,'3: balcão em inglês: canal balcao, sem lang: '+J(bl&&bl.dados&&{canal:bl.dados.canal,lang:bl.dados.lang}));
   // ---------- resumo v2 de hoje no agente ----------
@@ -118,11 +118,12 @@ try{
     // o evento salvo não pode sumir da tela enquanto o app sincroniza com o servidor (1ª leitura da coleção agenda)
     const amostra=[];for(let i=0;i<32;i++){amostra.push(await p2.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='jogo').length));await sleep(250);}
     ok(amostra.every(x=>x===1),'D3: o jogo salvo pela Supervisora some do calendário durante a 1ª sincronização (quantidade a cada 250 ms por 8 s): '+amostra.join(''));
-    const n=await p2.evaluate(()=>Object.keys(ETERNA.AGENDA).length);ok(n===1,'cliques repetidos no Salvar criam um evento só: '+n);
-    let docs=null;for(let i=0;i<20;i++){const r=await req(porta,'GET','/ponto/docs?col=agenda');docs=r.j&&r.j.docs;if(docs&&docs.length)break;await sleep(250);}
+    const n=await p2.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.origem!=='feriados').length);ok(n===1,'cliques repetidos no Salvar criam um evento só: '+n); // v97: os feriados entram sozinhos pelo servidor
+    let docs=null;for(let i=0;i<20;i++){const r=await req(porta,'GET','/ponto/docs?col=agenda');docs=r.j&&r.j.docs&&r.j.docs.filter(d=>d.valor&&d.valor.origem!=='feriados');if(docs&&docs.length)break;await sleep(250);}
     const dv=docs&&docs[0]&&docs[0].valor;ok(docs&&docs.length===1&&dv.mandante==='Fluminense'&&!/[<>]/.test(J(dv)),'17/D3: evento da Supervisora no estado.db do servidor, limpo: '+J(dv));
-    await p2.click('[data-act="ag-feriados"]');await p2.click('[data-act="ag-feriados"]');await p2.waitForTimeout(300);
-    const nf=await p2.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='feriado').length);ok(nf===15,'19: feriados clicando duas vezes sem duplicar: '+nf);
+    // v97: com o servidor, os feriados (deste ano e do próximo) vêm sozinhos e o botão manual some
+    let nf=0;for(let i=0;i<20&&nf<30;i++){nf=await p2.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='feriado').length);if(nf<30)await sleep(250);}
+    ok(nf===30&&!(await p2.$('[data-act="ag-feriados"]')),'19 (v97): feriados automáticos do servidor, sem duplicar e sem o botão manual: '+nf);
     await p2.screenshot({path:PR+'/v92t-calendario.png',fullPage:true});
     for(const [nm,w,h] of [['cel',390,844],['tab',820,1180]]){await p2.setViewportSize({width:w,height:h});await p2.waitForTimeout(200);ok(await semLateral(p2),`${nm}: Calendário sem rolagem lateral`);await p2.screenshot({path:PR+`/v92t-calendario-${nm}.png`,fullPage:true});}
     await c2.close();
