@@ -2120,19 +2120,20 @@ function vCheckoutCorpo(){
   const sim=simOf(s.card);const sel=new Set(sim.selected||[]);const cart=sim.cart||[];const total=cartTotal(cart);
   const prints=printsVenda(cart,sel.size||null);
   const head=`<div class="posto-manual-sess"><button class="chip" data-act="checkout-back">← Outra sessão</button><label class="eyebrow">Vendedor <select data-act="checkout-seller" class="chip">${SELLERS.map(n=>`<option ${n===sim.seller?'selected':''}>${esc(n)}</option>`).join('')}</select></label><b class="posto-manual-cod">${esc(s.card)}</b><span class="note">${esc(P[s.key]?P[s.key].name:'')} · ${esc(s.pdv)} · ${dlabel(s.date)} ${esc(s.time)} · ${s.photos.length} fotos${s.flag?` · <span class="pill good">bandeira: ${esc(s.flag)}</span>`:''}</span></div>${stepbar}`;
-  if(sim.lgpd)return head+lgpdSelo(sim);
-  // LGPD (veio da Fila do balcão): só sessão não paga e só com galerias 'u'; a confirmação e o lgpd-excluir são os de sempre
+  if(sim.lgpd&&sim.status!=='paga')return head+lgpdSelo(sim);
+  // LGPD (veio da Fila do balcão): só com galerias 'u'; a confirmação e o lgpd-excluir são os de sempre. Sessão paga: só quando
+  // sobra foto não comprada para apagar (o cliente comprou parte e pede para apagar o resto); o recibo continua na tela
   const montAviso=sim.bg&&sim.status!=='paga'?`<div class="pend-mont" role="status">Esta venda tem foto Edição Maracanã (fundo de IA). Pela Venda manual ela não é impressa e ainda não vai para a galeria. Avise o cliente.</div>`:'';
-  const lgP=sim.status!=='paga'&&can('galerias','u')?lgpdPlano(s.card):null;
+  const lgP=can('galerias','u')?lgpdPlano(s.card):null;const lgPaga=sim.status==='paga';
   const lgN=lgP&&(lgP.pids.length||lgP.fica.length)?lgP.pids.length:s.photos.length; // sessão de demonstração não tem fotos no SIM: vale a contagem da tela
-  const lgpdBtn=lgP&&(lgP.pids.length||!lgP.fica.length)?`<div class="pend-cancel"><button class="link-danger" data-act="lgpd-pedir" data-card="${esc(s.card)}" title="O cliente não comprou e pediu para não guardar as fotos dele (LGPD)">Cliente pediu: apagar as fotos</button></div>`:'';
+  const lgpdBtn=lgP&&(lgPaga?lgP.pids.length>0:(lgP.pids.length||!lgP.fica.length))?`<div class="pend-cancel"><button class="link-danger" data-act="lgpd-pedir" data-card="${esc(s.card)}" title="${lgPaga?'O cliente pediu para não guardar as fotos que não comprou (LGPD)':'O cliente não comprou e pediu para não guardar as fotos dele (LGPD)'}">Cliente pediu: apagar as fotos</button></div>`:'';
   const lgpdAsk=state.lgpdAsk===s.card?`<div class="mx-fundo" data-act="lgpd-nao"></div><div class="mx" role="dialog" aria-modal="true" aria-labelledby="mx-t"><div class="mx-ic">${ICO.no}</div>
         <h2 id="mx-t">Apagar as fotos do cliente?</h2>
         <p>${lgN===1?'<b>1 foto</b> da sessão <b>'+esc(s.card)+'</b> sai':'As <b>'+lgN+' fotos</b> da sessão <b>'+esc(s.card)+'</b> saem'} deste servidor e da nuvem, e o rosto lido nelas é apagado. O cliente ${lgP&&lgP.fica.length?'não comprou estas':'não comprou'} e pediu para não guardar (LGPD).</p>${lgP&&lgP.fica.length?`
         <p><b>${lgP.fica.length===1?'1 foto comprada ou de cortesia fica':lgP.fica.length+' fotos compradas ou de cortesia ficam'}</b> com o cliente e a galeria dele continua aberta.</p>`:''}
         <p class="note">Não dá para desfazer.</p>
         <div class="mx-acoes"><button class="btn ghost big" data-act="lgpd-nao">Cancelar</button><button class="btn danger big" data-act="lgpd-excluir" data-card="${esc(s.card)}">Sim, apagar as fotos</button></div></div>`:'';
-  if(sim.status==='paga'){return head+receiptPanel(s,sim)+`<div class="row"><button class="btn primary big" data-act="checkout-next-guest">Próximo convidado</button></div>`;}
+  if(sim.status==='paga'){return head+receiptPanel(s,sim)+(sim.lgpd?lgpdSelo(sim):'')+`<div class="row"><button class="btn primary big" data-act="checkout-next-guest">Próximo convidado</button></div>`+lgpdBtn+lgpdAsk;}
   if(ck.step===3){
     return head+`<div class="twocol">
       <div class="panel"><h2>Resumo</h2><div class="photos small">${s.photos.filter(p=>sel.has(p.id)).map(p=>photoBtn(p)).join('')||'<div class="note">Nenhuma foto escolhida.</div>'}</div>
@@ -6331,8 +6332,9 @@ document.addEventListener('click',e=>{
     case 'impfila-tv':{document.body.classList.toggle('if-tv');try{if(document.body.classList.contains('if-tv'))document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();else document.fullscreenElement&&document.exitFullscreen();}catch(e){}render();break;}
     case 'lgpd-pedir':state.lgpdAsk=d.card;render();break;
     case 'lgpd-nao':state.lgpdAsk=null;render();break;
-    case 'lgpd-excluir':{const card=d.card;const sim=SIM.sessions[card];state.lgpdAsk=null;if(!sim||!can('galerias','u'))break;if(sim.status==='paga'){toast('Venda paga: as fotos ficam com o cliente.');render();break;} // LGPD art. 18: só sessão sem venda
-      const pl=lgpdPlano(card);const pids=pl.pids;
+    case 'lgpd-excluir':{const card=d.card;const sim=SIM.sessions[card];state.lgpdAsk=null;if(!sim||!can('galerias','u'))break;
+      const pl=lgpdPlano(card);const pids=pl.pids;const paga=sim.status==='paga';
+      if(paga&&!pids.length){toast('Venda paga: as fotos ficam com o cliente.');render();break;} // LGPD art. 18: na sessão paga só sai o que não foi comprado
       if(pl.pedido){toast('Há um pedido aberto no Posto com fotos desta sessão. Cancele o pedido ou tire a sessão dele antes de apagar.');render();break;}
       if(!pids.length&&pl.fica.length){toast('Nada para apagar: as fotos desta sessão foram compradas ou são cortesia e ficam com o cliente.');render();break;}
       // galeria com foto comprada ou cortesia continua aberta (só perde as fotos apagadas); as outras saem do ar
@@ -6341,7 +6343,7 @@ document.addEventListener('click',e=>{
       fetch(state.agent.url+'/lgpd/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pids,tokens:toks,quem:state.user&&state.user.email,posto:String((postoDisp()||{}).nome||postoNome()),sessao:card})}).then(r=>r.json()).then(j=>{
         if(j.error){toast('Não apaguei: '+j.error);return;}
         simFresh();const s2=SIM.sessions[card];const sai=new Set(pids);
-        if(s2){s2.photos=(s2.photos||[]).filter(p=>!sai.has(p.id));if(Array.isArray(s2.ia))s2.ia=s2.ia.filter(id=>!sai.has(id));s2.selected=(s2.selected||[]).filter(id=>!sai.has(id));s2.cart=(s2.cart||[]).map(c=>({...c,apagada:true}));s2.lgpd={em:now().toISOString(),por:state.user&&state.user.email,porNome:state.user&&state.user.name,n:pids.length,ficaram:s2.photos.length,posto:String((postoDisp()||{}).nome||postoNome())};}
+        if(s2){s2.photos=(s2.photos||[]).filter(p=>!sai.has(p.id));if(Array.isArray(s2.ia))s2.ia=s2.ia.filter(id=>!sai.has(id));s2.selected=(s2.selected||[]).filter(id=>!sai.has(id));if(!paga)s2.cart=(s2.cart||[]).map(c=>({...c,apagada:true}));s2.lgpd={em:now().toISOString(),por:state.user&&state.user.email,porNome:state.user&&state.user.name,n:pids.length,ficaram:s2.photos.length,posto:String((postoDisp()||{}).nome||postoNome())};}
         toks.forEach(t=>{const m=SIM.galerias[t];if(m){m.encerrada=true;m.expira=now().toISOString();}});pids.forEach(id=>{delete UP[id];});
         ficam.forEach(t=>{const m=SIM.galerias[t];if(!m)return;if(m.so)Object.keys(m.so).forEach(c=>{m.so[c]=(m.so[c]||[]).filter(id=>!sai.has(id));});galAtualizar(t);});
         pids.forEach(id=>log(`LGPD: foto ${id.replace(/^ag_/,'')} da sessão ${card} apagada a pedido do cliente`));saveSim();ficam.forEach(t=>{if(!galDemo(card))galPublicar(t);});log(`LGPD: ${pids.length} fotos da sessão ${card} apagadas a pedido do cliente${pl.fica.length?` (${pl.fica.length} compradas ou de cortesia ficaram)`:''}`);toast(`Apagadas: ${j.fotos} ${j.fotos===1?'foto':'fotos'}${j.nuvem?' (também na nuvem)':''}${pl.fica.length?` · ${pl.fica.length} ${pl.fica.length===1?'comprada ficou':'compradas ficaram'} com o cliente`:''}${j.galerias?' · galeria fora do ar':''}${j.ok?'':' · com falhas, veja o registro'}`);render();})

@@ -3,6 +3,7 @@
 // a comprada e a cortesia continuam na sessão, não vão no pedido de exclusão (o arquivo fica no servidor) e a galeria paga
 // continua aberta e é publicada de novo. Com pedido aberto no Posto usando as fotos, a exclusão é recusada. Sessão sem
 // compra continua como antes: todas as fotos saem e a galeria dela é encerrada.
+// Sessão paga (a âncora B): o botão aparece enquanto sobra foto não comprada; apaga só essas e o recibo continua na tela.
 // Agente falso (page.route), como em checkout-varias-sessoes.js.
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
@@ -102,6 +103,28 @@ try{
   t=await apagar('LPTOUTR03');const p2=LG[1]||{pids:[],tokens:[]};
   const c=await pg2.evaluate(tok=>{ETERNA.simFresh();const S=ETERNA.SIM;return {n:S.sessions.LPTOUTR03.photos.length,lgpd:S.sessions.LPTOUTR03.lgpd&&S.sessions.LPTOUTR03.lgpd.n,fic:S.sessions.LPTOUTR03.lgpd&&S.sessions.LPTOUTR03.lgpd.ficaram,enc:!!S.galerias[tok].encerrada};},tokC);
   ok(p2.pids.length===5&&p2.tokens.join()===tokC&&c.n===0&&c.lgpd===5&&!c.fic&&c.enc,'7: sessão sem compra: as 5 fotos saem e a galeria é encerrada: '+J({p2,c,t}));
+  // 8. sessão paga (âncora B, 4 fotos, 1 comprada): o cliente comprou parte e pede para apagar o resto
+  const plB=await pg2.evaluate(()=>{ETERNA.simFresh();const p=ETERNA.lgpdPlano('LPTSOLO02');return {sai:p.pids.map(x=>x.slice(-1)).join(''),fica:p.fica.map(x=>x.slice(-1)).join(''),pedido:p.pedido};});
+  ok(plB.sai==='134'&&plB.fica==='2'&&!plB.pedido,'8: na sessão paga saem só as 3 não compradas: '+J(plB));
+  const abrir=async card=>{await pg2.evaluate(()=>ETERNA.go('checkout'));await pg2.waitForTimeout(300);
+    await pg2.evaluate(card=>{const b=document.createElement('button');b.dataset.act='checkout-pick';b.dataset.card=card;document.body.appendChild(b);b.click();b.remove();},card);await pg2.waitForTimeout(400);};
+  await abrir('LPTSOLO02');
+  ok(await pg2.$('#posto-manual [data-act="lgpd-pedir"][data-card="LPTSOLO02"]'),'8: botão de apagar na sessão paga com fotos não compradas');
+  const nLG=LG.length;
+  if(await pg2.$('#posto-manual [data-act="lgpd-pedir"]')){await pg2.click('#posto-manual [data-act="lgpd-pedir"]');await pg2.waitForTimeout(200);
+    const dlg=await pg2.evaluate(()=>(document.querySelector('.mx')||{}).textContent||'');
+    ok(/As 3 fotos da sessão LPTSOLO02 saem/.test(dlg)&&/1 foto comprada ou de cortesia fica com o cliente/.test(dlg),'8: diálogo diz quantas saem e quantas ficam: '+dlg.replace(/\s+/g,' ').slice(0,400));
+    await pg2.click('.mx [data-act="lgpd-excluir"]');await pg2.waitForTimeout(700);t=await pg2.evaluate(()=>(document.querySelector('#toast')||{}).textContent||'');}
+  const p8=LG[nLG]||{pids:[],tokens:[]};
+  ok(LG.length===nLG+1&&p8.pids.slice().sort().join()==='ag_bbb000000001,ag_bbb000000003,ag_bbb000000004'&&!p8.tokens.includes(rec.token),'8: o pedido leva só as 3 não compradas e não encerra a galeria paga: '+J(p8));
+  const b8=await pg2.evaluate(tok=>{ETERNA.simFresh();const S=ETERNA.SIM;const B=S.sessions.LPTSOLO02;const m=S.galerias[tok];
+    return {st:B.status,fotos:B.photos.map(p=>p.id.slice(-1)).join(''),sel:(B.selected||[]).slice().sort().join(),cart:(B.cart||[]).some(c=>c.apagada),n:B.lgpd&&B.lgpd.n,fic:B.lgpd&&B.lgpd.ficaram,enc:!!m.encerrada,gal:m.fotos.map(f=>f.id.slice(3,6)+f.id.slice(-1)+':'+f.direito).join(),
+      recibo:!!document.querySelector('#posto-manual [data-act="checkout-next-guest"]'),selo:!!document.querySelector('#posto-manual .lgpd-selo'),btn:!!document.querySelector('#posto-manual [data-act="lgpd-pedir"]')};},rec.token);
+  ok(b8.st==='paga'&&b8.fotos==='2'&&b8.sel==='ag_aaa000000001,ag_bbb000000002'&&!b8.cart&&b8.n===3&&b8.fic===1,'8: a venda continua paga, com a comprada e o carrinho intactos: '+J(b8));
+  ok(!b8.enc&&/bbb2:comprada/.test(b8.gal)&&/aaa1:comprada/.test(b8.gal)&&!/bbb[134]/.test(b8.gal),'8: a galeria paga continua, sem as apagadas: '+J(b8));
+  ok(b8.recibo&&b8.selo&&!b8.btn,'8: o recibo continua na tela, com o aviso, e o botão some (nada mais para apagar): '+J(b8));
+  ok(/Apagadas: 3 fotos/.test(t)&&/1 comprada ficou/.test(t),'8: aviso com as duas contagens: '+t);
+  t=await apagar('LPTSOLO02');ok(LG.length===nLG+1&&/Venda paga: as fotos ficam com o cliente/.test(t),'8: de novo na sessão paga: nada vai ao servidor: '+J({n:LG.length,t}));
   ok(!errs.length,'erros de página: '+errs.slice(0,3).join(' | '));
 }catch(e){fails.push('exceção: '+(e&&e.stack||e));}
 finally{await b.close();}
