@@ -64,14 +64,14 @@ def ambiente(porta, ftpp, home, user):
     return e
 
 
-def subir(nome, porta, ftpp, home, user, piso):
+def subir(nome, porta, ftpp, home, user, piso, extras=()):
     os.makedirs(os.path.join(home, "Eterna"), exist_ok=True)
     # login "equipe" compartilhado no FTP: não é fotógrafo (critério 22)
     usuarios = {u: secrets.token_hex(6) for u in ["carlos", "marinara", "samuel", "yago", "marcio", "klassius", "sandessa", "dudu", "equipe"]}
     with open(os.path.join(home, "Eterna", "ftp.json"), "w") as f:
         json.dump({"users": usuarios, "compartilhado": ["equipe"]}, f)
     os.chmod(os.path.join(home, "Eterna", "ftp.json"), 0o600)
-    p = subprocess.Popen([sys.executable, "-I", "-u", LANCA, AG, str(piso)], env=ambiente(porta, ftpp, home, user),
+    p = subprocess.Popen([sys.executable, "-I", "-u", LANCA, AG, str(piso), *extras], env=ambiente(porta, ftpp, home, user),
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     LOG[nome] = []
     threading.Thread(target=lambda: [LOG[nome].append((time.time(), l.decode(errors="replace"))) for l in iter(p.stdout.readline, b"")],
@@ -268,6 +268,23 @@ try:
     s.close()
     ok(b" 411 " in resp.split(b"\r\n")[0], "20: 411 sem Content-Length: %r" % resp[:40])
 
+    # 20 (v97): Content-Length que não é número dá 400, sem derrubar a rota
+    for cl in ("abc", "\u00b2", "-5x"):
+        s = socket.create_connection(("127.0.0.1", PORTA), timeout=10)
+        s.sendall(("POST /fotos/enviar?nome=a.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
+                   "Content-Length: %s\r\n\r\n" % (PORTA, cl)).encode("latin-1"))
+        resp = b""
+        try:
+            while True:
+                ch = s.recv(4096)
+                if not ch:
+                    break
+                resp += ch
+        except OSError:
+            pass
+        s.close()
+        ok(b" 400 " in resp.split(b"\r\n")[0] and b'"tamanho"' in resp, "20: 400 com Content-Length %r: %r" % (cl, resp[:60]))
+
     # 21: sem X-Eterna, Origin de fora, Host de fora
     antes = set(arquivos(INB))
     r1 = enviar(jpeg(), sem=("X-Eterna",))
@@ -304,16 +321,16 @@ try:
     ok("X-Eterna" in (rb[2].get("Access-Control-Allow-Headers") or ""), "26: preflight libera X-Eterna para a origem do agente")
     ok(not rc[2].get("Access-Control-Allow-Origin"), "26: origem de fora sem CORS: %s" % rc[2])
 
-    # semáforo: 4 gravações em curso, a 5ª recebe 503 na hora
+    # vagas por aparelho: 2 gravações em curso do mesmo IP, a 3ª recebe 503 na hora
     presos = []
-    for i in range(4):
+    for i in range(2):
         s = socket.create_connection(("127.0.0.1", PORTA), timeout=10)
         s.sendall(("POST /fotos/enviar?nome=p%d.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
                    "Content-Length: 100000\r\n\r\n" % (i, PORTA)).encode() + b"\xff\xd8\xff")
         presos.append(s)
     time.sleep(0.6)
     r = enviar(jpeg(), "q.jpg")
-    ok(r[0] == 503 and r[1] == {"erro": "ocupado"}, "semáforo: 5ª gravação ao mesmo tempo: %s" % (r[:2],))
+    ok(r[0] == 503 and r[1] == {"erro": "ocupado"}, "vagas: 3ª gravação ao mesmo tempo do mesmo IP: %s" % (r[:2],))
     for s in presos:
         s.close()
     time.sleep(0.6)
@@ -349,6 +366,64 @@ try:
     ok(not arquivos(os.path.join(H3, "Eterna", "inbox")), "24: nada gravado")
     shutil.rmtree(H2, ignore_errors=True)
     shutil.rmtree(H3, ignore_errors=True)
+
+    # v97: agente com as vagas por IP abertas (só o semáforo geral), prazo de 3 s por foto e teto de 3 fotos no dia
+    P4, F4 = porta_45(), porta_45()
+    H4 = tempfile.mkdtemp(prefix="eterna-envio-d-")
+    procs.append(subir("d", P4, F4, H4, USER + "d", 2, ["FOTO_ENVIO_POR_IP=9", "FOTO_ENVIO_PRAZO=3", "FOTO_ENVIO_TETO_DIA=3"]))
+    cab = ("POST /fotos/enviar?nome=p.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
+           "Content-Length: 100000\r\n\r\n" % P4).encode() + b"\xff\xd8\xff"
+    presos = []
+    for i in range(4):
+        s = socket.create_connection(("127.0.0.1", P4), timeout=10)
+        s.sendall(cab)
+        presos.append(s)
+    time.sleep(0.6)
+    r = enviar(jpeg(), "q.jpg", porta=P4)
+    ok(r[0] == 503 and r[1] == {"erro": "ocupado"}, "semáforo: 5ª gravação ao mesmo tempo no agente: %s" % (r[:2],))
+    for s in presos:
+        s.close()
+    time.sleep(0.6)
+    # conexão lenta: um byte a cada 0,4 s nunca termina a foto; em 3 s o agente responde 408 e solta a vaga
+    s = socket.create_connection(("127.0.0.1", P4), timeout=10)
+    s.sendall(cab)
+    t0 = time.time()
+    resp = b""
+    s.settimeout(0.4)
+    while time.time() - t0 < 12 and b"\r\n\r\n" not in resp:
+        try:
+            ch = s.recv(4096)
+            if not ch:
+                break
+            resp += ch
+        except socket.timeout:
+            try:
+                s.sendall(b"\x00")
+            except OSError:
+                break
+    dt = time.time() - t0
+    try:
+        s.settimeout(3)
+        while True:
+            ch = s.recv(4096)
+            if not ch:
+                break
+            resp += ch
+    except OSError:
+        pass
+    s.close()
+    ok(b" 408 " in resp.split(b"\r\n")[0] and b'"lenta"' in resp and 2.5 <= dt <= 6, "lenta: 408 no prazo de 3 s (%.1f s): %r" % (dt, resp[:60]))
+    time.sleep(0.3)
+    ok(not [n for n in os.listdir(os.path.join(H4, "Eterna", "ftp-tmp")) if n.startswith("envio-")], "lenta: temporário apagado")
+    rs = [enviar(jpeg(), "D%d.jpg" % i, porta=P4) for i in range(4)]
+    ok(all(r[0] == 200 and r[1]["resultado"] == "new" for r in rs[:3]), "lenta: a vaga voltou e as 3 fotos seguintes entram: %s" % [r[:2] for r in rs[:3]])
+    ok(rs[3][0] == 429 and rs[3][1] == {"erro": "teto_dia"}, "teto do dia: a 4ª foto do dia dá 429: %s" % (rs[3][:2],))
+    try:
+        gd = json.load(open(os.path.join(H4, "Eterna", "envio-dia.json")))
+    except Exception as ex:
+        gd = {"erro": str(ex)}
+    ok(gd.get("n") == 3 and gd.get("dia") == hoje and set(gd) == {"dia", "n"}, "teto do dia: contagem gravada só com dia e número: %s" % gd)
+    shutil.rmtree(H4, ignore_errors=True)
 except SystemExit as ex:
     falhas.append(str(ex))
 except Exception as ex:

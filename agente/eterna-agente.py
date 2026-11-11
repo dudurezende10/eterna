@@ -283,7 +283,16 @@ EXT = (".jpg", ".jpeg", ".JPG", ".JPEG")
 FOTO_ENVIO_MAX = 60 * 1024 * 1024          # uma foto por pedido (mesmo teto do Ronaldo, fix/seguranca-dados)
 FOTO_ENVIO_TAXA = 300                      # fotos por minuto por IP
 FOTO_ENVIO_SIMULT = 4                      # gravações ao mesmo tempo no agente inteiro; o resto recebe 503 na hora
-FOTO_ENVIO_PISO_GB = 2                     # espaço livre mínimo no disco da inbox
+FOTO_ENVIO_POR_IP = 2                      # gravações ao mesmo tempo por IP (o app manda 2 por vez)
+FOTO_ENVIO_PRAZO = 120                     # segundos para o corpo de uma foto chegar inteiro; passou, 408 e a vaga volta
+try:                                       # espaço livre mínimo no disco da inbox: o mesmo piso do recorte (10 GB)
+    FOTO_ENVIO_PISO_GB = float(os.environ.get("ETERNA_RECORTES_PISO_GB") or 10)
+except ValueError:
+    FOTO_ENVIO_PISO_GB = 10.0
+try:                                       # fotos novas por dia por esta rota, somando todos os aparelhos
+    FOTO_ENVIO_TETO_DIA = max(1, int(os.environ.get("ETERNA_ENVIO_TETO_DIA") or 20000))
+except ValueError:
+    FOTO_ENVIO_TETO_DIA = 20000
 FOTO_ENVIO_MIN = 1024                      # bytes: menor que isto não é foto de câmera
 FOTO_ENVIO_LADO_MIN = 64                   # px no lado menor
 _re_envio_nome = re.compile(r"^[A-Za-z0-9_-]{1,80}\.(jpg|jpeg|JPG|JPEG)$")
@@ -450,6 +459,34 @@ metricas_carrega()
 state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None},
          "envio": {"novas": 0, "repetidas": 0, "recusadas": 0}}
 envio_sem = threading.BoundedSemaphore(FOTO_ENVIO_SIMULT)
+envio_ips = {}                              # ip -> gravações em curso (com o lock)
+envio_dia = {"dia": "", "n": 0}             # fotos novas de hoje pelo envio da tela (com o lock)
+ENVIO_DIA_ARQ = os.path.join(HOME, "envio-dia.json")   # só o dia e o número: o teto do dia vale depois de reiniciar
+
+
+def envio_dia_n():
+    """Fotos novas de hoje pela rota (com o lock na mão). Virou o dia, zera; na primeira vez lê o que ficou gravado."""
+    hoje = time.strftime("%Y-%m-%d")
+    if envio_dia["dia"] != hoje:
+        n = 0
+        try:
+            j = json.load(open(ENVIO_DIA_ARQ))
+            if j.get("dia") == hoje:
+                n = max(0, int(j.get("n") or 0))
+        except Exception:
+            pass
+        envio_dia.update(dia=hoje, n=n)
+    return envio_dia["n"]
+
+
+def envio_dia_soma():
+    envio_dia_n()
+    envio_dia["n"] += 1
+    try:
+        _grava_privado(ENVIO_DIA_ARQ, json.dumps(envio_dia))
+    except Exception:
+        pass
+
 
 if os.path.exists(INDEX):
     try:
@@ -8526,13 +8563,18 @@ class H(BaseHTTPRequestHandler):
         posto + origem local + X-Eterna: 1 (mesmo nível de /ponto/entradas). Entra pelo ingest_file como foto de cartão."""
         q = parse_qs(urlparse(self.path).query)
         tam = self.headers.get("Content-Length")
-        n = int(tam) if tam and tam.isdigit() else -1
         ip = self.client_address[0]
         erro = None
+        try:
+            n = int(tam) if tam is not None else -1
+        except ValueError:
+            n, erro = -1, ({"erro": "tamanho"}, 400)
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
             erro = ({"erro": "origem"}, 403)
         elif (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "image/jpeg":
             erro = ({"erro": "formato"}, 415)
+        elif erro:
+            pass
         elif tam is None:
             erro = ({"erro": "tamanho"}, 411)
         elif n <= 0 or n > FOTO_ENVIO_MAX:
@@ -8552,8 +8594,18 @@ class H(BaseHTTPRequestHandler):
                 livre = 0
             if livre < FOTO_ENVIO_PISO_GB * 1024 ** 3:
                 erro = ({"erro": "disco"}, 507)
-        if not erro and not envio_sem.acquire(blocking=False):
-            erro = ({"erro": "ocupado"}, 503)
+        if not erro:
+            with lock:
+                if envio_dia_n() >= FOTO_ENVIO_TETO_DIA:
+                    erro = ({"erro": "teto_dia"}, 429)
+        if not erro:
+            with lock:                              # no máximo FOTO_ENVIO_POR_IP vagas por aparelho
+                if envio_ips.get(ip, 0) >= FOTO_ENVIO_POR_IP:
+                    erro = ({"erro": "ocupado"}, 503)
+                elif not envio_sem.acquire(blocking=False):
+                    erro = ({"erro": "ocupado"}, 503)
+                else:
+                    envio_ips[ip] = envio_ips.get(ip, 0) + 1
         if erro:
             self.close_connection = True           # o corpo não foi lido: esta conexão não serve para o próximo pedido
             with lock:
@@ -8564,16 +8616,28 @@ class H(BaseHTTPRequestHandler):
         try:
             os.makedirs(FTPTMP, exist_ok=True)
             tmp = os.path.join(FTPTMP, "envio-%s.tmp" % secrets.token_hex(8))
+            fim = time.time() + FOTO_ENVIO_PRAZO      # prazo total da foto: conexão que pinga byte a byte não segura a vaga
+            lenta = False
+            ler = getattr(self.rfile, "read1", None) or self.rfile.read
             with open(tmp, "wb") as f:
                 resto = n
                 while resto > 0:
-                    ch = self.rfile.read(min(1 << 20, resto))
+                    falta = fim - time.time()
+                    if falta <= 0:
+                        lenta = True
+                        break
+                    try:
+                        self.connection.settimeout(max(0.05, min(20, falta)))
+                        ch = ler(min(1 << 20, resto))
+                    except OSError:                    # timeout de leitura: sem dado dentro do prazo
+                        lenta = time.time() >= fim
+                        break
                     if not ch:
                         break
                     f.write(ch)
                     resto -= len(ch)
             if resto:
-                motivo = ({"erro": "incompleta"}, 400)
+                motivo = ({"erro": "lenta"}, 408) if lenta else ({"erro": "incompleta"}, 400)
                 self.close_connection = True
             elif jpeg_envio_erro(tmp, n):
                 motivo = ({"erro": "incompleta"}, 400) if jpeg_envio_erro(tmp, n) == "incompleta" else ({"erro": "nao_jpeg"}, 415)
@@ -8581,6 +8645,7 @@ class H(BaseHTTPRequestHandler):
                 r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
                 if r == "new":
                     with lock:
+                        envio_dia_soma()
                         save_index()
         finally:
             if tmp and os.path.exists(tmp):
@@ -8588,7 +8653,15 @@ class H(BaseHTTPRequestHandler):
                     os.remove(tmp)
                 except OSError:
                     pass
+            with lock:
+                envio_ips[ip] = envio_ips.get(ip, 1) - 1
+                if envio_ips[ip] <= 0:
+                    envio_ips.pop(ip, None)
             envio_sem.release()
+            try:
+                self.connection.settimeout(20)
+            except OSError:
+                pass
         res = r or "recusada"
         with lock:
             state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1

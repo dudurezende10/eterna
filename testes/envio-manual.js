@@ -128,6 +128,21 @@ try{
     M.posts.length=0;M.resp=null;await pg.click('#envio-painel [data-act="envio-repetir"]');await fim(pg);
     ok(J(M.posts.map(p=>p.nome).sort())===J(['r4.jpg','r5.jpg']),'11: Tentar de novo manda só as 2: '+J(M.posts.map(p=>p.nome)));
     ok(/Enviadas 2 de 2/.test((await faixa(pg)).t),'11: depois do Tentar de novo, Enviadas 2 de 2');
+    // v97: 503 (servidor ocupado com outro envio): espera mais, com recuo, e o lote continua; só para depois de todas as esperas
+    await pg.evaluate(()=>ETERNA.envioEsperaOcupado([100,200,300]));
+    M.posts.length=0;M.resp=(n,t)=>n==='o1.jpg'&&t<=3?{status:503,body:{erro:'ocupado'}}:null;
+    await escolher(pg,[arq('o0.jpg'),arq('o1.jpg'),arq('o2.jpg')]);await fim(pg);
+    const fo=await faixa(pg);const to=M.posts.filter(p=>p.nome==='o1.jpg').map(p=>p.t);
+    ok(to.length===4&&/Enviadas 3 de 3/.test(fo.t),'503: 3 esperas e a foto entra na 4ª tentativa, lote inteiro: '+J({n:to.length,fo}));
+    ok(to.length===4&&to[2]-to[1]>to[1]-to[0]-40&&to[3]-to[0]>=550,'503: espera crescente: '+J(to.map(x=>x-to[0])));
+    M.posts.length=0;M.resp=()=>({status:503,body:{erro:'ocupado'}});
+    await escolher(pg,[arq('o9.jpg')]);await fim(pg);
+    const fo2=await faixa(pg);ok(M.posts.length===4&&/bad/.test(fo2.cls)&&/não está respondendo\. 1 foto não foi enviada\./.test(fo2.t),'503 sem fim: para depois das esperas e guarda a foto: '+J({n:M.posts.length,fo2}));
+    // v97: teto de fotos por dia do envio manual: para o lote na hora, sem tentar de novo
+    M.posts.length=0;M.resp=()=>({status:429,body:{erro:'teto_dia'}});
+    await escolher(pg,[arq('t0.jpg'),arq('t1.jpg'),arq('t2.jpg'),arq('t3.jpg')]);await fim(pg);
+    const ft=await faixa(pg);ok(M.posts.length<=2&&/bad/.test(ft.cls)&&/O limite de fotos por dia do envio manual foi atingido\. Chame a TI\./.test(ft.t),'teto do dia: '+J({n:M.posts.length,ft}));
+    M.resp=null;
     // Fechar
     await pg.click('#envio-painel [data-act="envio-fechar"]');await pg.waitForTimeout(100);ok(!(await pg.$('#envio-painel'))&&!!(await pg.$('#main [data-act="envio-abrir"]')),'Fechar volta ao link');
     await ctx.close();}
