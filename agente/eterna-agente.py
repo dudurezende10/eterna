@@ -31,7 +31,7 @@ import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket
 import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
-import urllib.request, urllib.error, mimetypes, re, base64
+import urllib.request, urllib.error, urllib.parse, mimetypes, re, base64
 
 # imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
 os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", "40000000")
@@ -57,6 +57,195 @@ PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
 APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
+# v97: cópia do app em disco (~/Eterna/app-cache/), para o agente reiniciado sem internet continuar servindo o app,
+# as fontes e o vendor. Só caminhos da lista branca; um arquivo por caminho, com o nome do caminho codificado.
+APP_CACHE_DIR = os.path.join(HOME, "app-cache")
+APP_CACHE_TETO = 300 * 1024 * 1024          # soma dos arquivos; passou, apaga os mais antigos
+APP_ARQ_MAX = 80 * 1024 * 1024              # um arquivo só (o maior do app, o modelo SFace, tem ~37 MB)
+APP_TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css",
+             ".woff2": "font/woff2", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+             ".webp": "image/webp", ".svg": "image/svg+xml", ".json": "application/json",
+             ".onnx": "application/octet-stream", ".wasm": "application/wasm", ".bin": "application/octet-stream"}
+APP_PREFIXOS = ("vendor/", "img/", "sprites/")
+_re_app = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")
+# o que o Checkout precisa para abrir e achar o rosto sem rede (baixado na abertura do agente, em segundo plano)
+APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js",
+                  "vendor/fonts/big-shoulders-display-latin-600-normal.woff2",
+                  "vendor/fonts/big-shoulders-display-latin-700-normal.woff2",
+                  "vendor/fonts/big-shoulders-display-latin-800-normal.woff2",
+                  "vendor/fonts/inter-latin-400-normal.woff2", "vendor/fonts/inter-latin-500-normal.woff2",
+                  "vendor/fonts/inter-latin-600-normal.woff2", "vendor/fonts/inter-latin-700-normal.woff2",
+                  "img/brand/viva-maracana-white.png", "img/brand/viva-maracana-azul.png", "img/bg-noite.jpg",
+                  "vendor/ort/ort.min.js", "vendor/ort/ort-wasm-simd.wasm", "vendor/ort/ort-wasm.wasm",
+                  "vendor/rostos/face_detection_yunet_2023mar.onnx", "vendor/rostos/face_recognition_sface_2021dec.onnx",
+                  "vendor/faceapi/indice-exemplos.json"]
+app_disco_lock = threading.Lock()
+app_revisto = set()                         # caminhos já baixados de novo nesta abertura do agente
+app_fila = queue.Queue()                    # revisão em segundo plano do que foi servido do disco
+
+
+def app_rel(path):
+    """Caminho da URL -> caminho relativo do app, ou None se estiver fora da lista branca."""
+    if path in ("", "/"):
+        path = "/index.html"
+    if not path.startswith("/") or path.startswith("//") or "\\" in path or ".." in path or "\x00" in path:
+        return None
+    rel = path[1:]
+    if not _re_app.match(rel):
+        return None
+    if rel != "index.html" and not rel.startswith(APP_PREFIXOS):
+        return None
+    if os.path.splitext(rel)[1].lower() not in APP_TIPOS:
+        return None
+    return rel
+
+
+def app_disco(rel):
+    """Arquivo do cache para o caminho (nome = caminho codificado, sem subpastas); None se cair fora da pasta."""
+    base = os.path.realpath(APP_CACHE_DIR)
+    p = os.path.realpath(os.path.join(base, urllib.parse.quote(rel, safe="")))
+    return p if os.path.dirname(p) == base else None
+
+
+def app_disco_ler(rel):
+    p = app_disco(rel)
+    try:
+        with open(p, "rb") as f:
+            return f.read()
+    except (OSError, TypeError):
+        return None
+
+
+def app_disco_gravar(rel, data):
+    """Grava de forma atômica (.tmp + os.replace) e poda o cache acima do teto. False se não gravou."""
+    p = app_disco(rel)
+    if not p:
+        return False
+    try:
+        os.makedirs(APP_CACHE_DIR, exist_ok=True)
+        tmp = "%s.%d.tmp" % (p, threading.get_ident())
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, p)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return False
+    app_disco_podar(p)
+    return True
+
+
+def app_disco_podar(manter):
+    with app_disco_lock:
+        try:
+            arqs = []
+            for n in os.listdir(APP_CACHE_DIR):
+                q = os.path.join(APP_CACHE_DIR, n)
+                if not os.path.isfile(q):
+                    continue
+                st = os.stat(q)
+                if n.endswith(".tmp"):
+                    if st.st_mtime < time.time() - 3600:     # sobra de gravação interrompida
+                        os.remove(q)
+                    continue
+                arqs.append((st.st_mtime, st.st_size, q))
+            total = sum(a[1] for a in arqs)
+            for mt, tam, q in sorted(arqs):
+                if total <= APP_CACHE_TETO:
+                    break
+                if q == manter:
+                    continue
+                os.remove(q)
+                total -= tam
+        except OSError:
+            pass
+
+
+def app_baixar(rel, timeout=20):
+    url = APP_ORIGIN.rstrip("/") + "/" + rel + ("?t=%d" % int(time.time()) if rel == "index.html" else "")
+    req = urllib.request.Request(url, headers={"User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = r.read(APP_ARQ_MAX + 1)
+    if len(data) > APP_ARQ_MAX:
+        raise ValueError("arquivo grande demais")
+    return data
+
+
+def app_buscar(rel):
+    """(bytes, origem) do arquivo do app: rede primeiro para o index.html (a cada 60 s), disco primeiro para o resto.
+    Sem rede, serve o que estiver no disco. Levanta a exceção da rede se não houver cópia nenhuma."""
+    mem = app_cache.get(rel)
+    if rel == "index.html":
+        if mem and time.time() - mem[1] <= 60:
+            return mem[0], "memoria"
+        disco = None if mem else app_disco_ler(rel)
+        try:
+            data = app_baixar(rel, timeout=8 if (mem or disco) else 20)
+        except Exception:
+            if mem:
+                app_cache[rel] = (mem[0], time.time() - 50)   # tenta a rede de novo em ~10 s
+                return mem[0], "memoria"
+            if disco is not None:
+                app_cache[rel] = (disco, time.time() - 50)
+                return disco, "disco"
+            raise
+        app_disco_gravar(rel, data)
+        app_cache[rel] = (data, time.time())
+        app_revisto.add(rel)
+        return data, "rede"
+    if mem:
+        return mem[0], "memoria"
+    disco = app_disco_ler(rel)
+    if disco is not None:
+        if rel not in app_revisto:
+            app_revisto.add(rel)
+            try:
+                os.utime(app_disco(rel))           # usado agora: fica por último na poda
+            except OSError:
+                pass
+            app_fila.put(rel)
+        return disco, "disco"
+    data = app_baixar(rel)
+    app_revisto.add(rel)
+    if not app_disco_gravar(rel, data):
+        app_cache[rel] = (data, time.time())       # disco cheio ou sem permissão: fica só em memória, como antes
+    return data, "rede"
+
+
+def app_revisar_loop():
+    """Baixa de novo, em segundo plano, o que foi servido do disco (uma vez por abertura): a versão nova chega sem travar."""
+    while True:
+        rel = app_fila.get()
+        try:
+            app_disco_gravar(rel, app_baixar(rel))
+        except Exception:
+            pass
+
+
+def app_preaquecer():
+    """Na abertura: baixa o index.html e o que falta dos essenciais do Checkout, sem travar o início. Depois, sem contar
+    para o app_offline_pronto, os fundos de IA (prévia e impressão), que o Checkout e o Posto montam no navegador."""
+    extras = sorted(set(FUNDOS_PREVIA.values()) | set(FUNDOS_IMPRESSAO.values()))
+    for rel in APP_ESSENCIAIS + extras:
+        try:
+            if rel == "index.html":
+                app_buscar(rel)
+            elif app_disco_ler(rel) is None:
+                data = app_baixar(rel)
+                app_revisto.add(rel)
+                app_disco_gravar(rel, data)
+        except Exception:
+            pass
+
+
+def app_offline_pronto():
+    for rel in APP_ESSENCIAIS:
+        p = app_disco(rel)
+        if not p or not os.path.isfile(p):
+            return False
+    return True
 # ETERNA_IMPRESSORA: nome da impressora 10x15 ligada neste computador (ex.: DS-RX1). Com ela, o botão Imprimir de
 # qualquer posto manda a foto para cá e ela sai aqui, em vez de sair na impressora do navegador de quem clicou.
 IMPRESSORA = os.environ.get("ETERNA_IMPRESSORA", "").strip()
@@ -6781,7 +6970,7 @@ class H(BaseHTTPRequestHandler):
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
                                 "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
-                                "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(),
+                                "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(), "app_offline_pronto": app_offline_pronto(),
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
@@ -7070,32 +7259,22 @@ class H(BaseHTTPRequestHandler):
     # O app servido pelo próprio agente: o navegador abre http://127.0.0.1:8765 e
     # conversa com o agente na mesma origem (sem bloqueio de rede local do Chrome).
     def app(self, path):
-        if path in ("", "/"):
-            path = "/index.html"
-        if ".." in path:
+        # v97: só a lista branca (app_rel); cópia em disco para abrir sem internet (app_buscar)
+        rel = app_rel(path)
+        if not rel:
             return self.js({"error": "not found"}, 404)
-        key = path
-        hit = app_cache.get(key)
-        if not hit or (path == "/index.html" and time.time() - hit[2] > 60):
-            try:
-                req = urllib.request.Request(APP_ORIGIN + path + ("?t=%d" % int(time.time()) if path == "/index.html" else ""),
-                                             headers={"User-Agent": "eterna-agente"})
-                with urllib.request.urlopen(req, timeout=20) as r:
-                    data = r.read()
-                    ctype = r.headers.get("Content-Type") or mimetypes.guess_type(path)[0] or "application/octet-stream"
-                hit = (data, ctype, time.time())
-                app_cache[key] = hit
-            except Exception as ex:
-                if not hit:
-                    return self.js({"error": "app indisponível: %s" % ex}, 502)
-        data, ctype, _ = hit
+        try:
+            data, _ = app_buscar(rel)
+        except urllib.error.HTTPError as ex:
+            return self.js({"error": "not found"}, 404) if ex.code == 404 else self.js({"error": "app indisponível: HTTP %d" % ex.code}, 502)
+        except Exception as ex:
+            return self.js({"error": "app indisponível: %s" % str(ex)[:120]}, 502)
         self.send_response(200)
-        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Type", APP_TIPOS[os.path.splitext(rel)[1].lower()])
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache" if path == "/index.html" else "max-age=3600")
+        self.send_header("Cache-Control", "no-cache" if rel == "index.html" else "max-age=3600")
         self.end_headers()
         self.wfile.write(data)
-
 
 def fuso_info():
     """Fuso do servidor: nome (TZ ou ETERNA_TZ) e deslocamento atual em minutos (−180 no Rio)."""
@@ -7126,6 +7305,8 @@ def main():
     except Exception as ex:
         print("  sessões: não carreguei (%s)" % str(ex)[:120])
     threading.Thread(target=sess_loop, daemon=True).start()
+    threading.Thread(target=app_preaquecer, daemon=True).start()     # v97: app, fontes e Checkout em disco para abrir sem internet
+    threading.Thread(target=app_revisar_loop, daemon=True).start()
     print(f"  fotos baixadas em: {INBOX}")
     print(f"  abra o Eterna em:  http://127.0.0.1:{PORT}   (mesmo Mac)")
     threading.Thread(target=watcher, daemon=True).start()
