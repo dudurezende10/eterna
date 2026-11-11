@@ -54,7 +54,25 @@ def _ler_nuvem_env():
 _ler_nuvem_env()
 MAX_PIXELS = 40_000_000
 PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
-APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
+APP_ORIGIN_PADRAO = "https://eterna.photo"
+
+
+def app_origem_ok(o):
+    """De onde o agente baixa o app: só https://, ou http:// neste computador (testes e desenvolvimento). Sem usuário e senha."""
+    try:
+        u = urlparse(o or "")
+        host = (u.hostname or "").lower()
+        if not host or u.username or u.password:
+            return False
+        return u.scheme == "https" or (u.scheme == "http" and host in ("127.0.0.1", "localhost", "::1"))
+    except ValueError:
+        return False
+
+
+APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN") or APP_ORIGIN_PADRAO
+APP_ORIGIN_RECUSADA = not app_origem_ok(APP_ORIGIN)    # o main() avisa no console
+if APP_ORIGIN_RECUSADA:
+    APP_ORIGIN = APP_ORIGIN_PADRAO
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
 # v97: cópia do app em disco (~/Eterna/app-cache/), para o agente reiniciado sem internet continuar servindo o app,
@@ -79,7 +97,27 @@ APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js",
                   "vendor/ort/ort.min.js", "vendor/ort/ort-wasm-simd.wasm", "vendor/ort/ort-wasm.wasm",
                   "vendor/rostos/face_detection_yunet_2023mar.onnx", "vendor/rostos/face_recognition_sface_2021dec.onnx",
                   "vendor/faceapi/indice-exemplos.json"]
+# os fundos de IA ativos no Checkout (BG_DEF do app, com as variações da Noite de campeão): sem eles a família fica sem as
+# montagens quando a rede cai. Manter igual ao app; o teste testes/app_offline_agente.py confere com o index.html.
+APP_FUNDOS_ATIVOS = ["img/bg-campeao-v81.jpg", "img/bg-campeaoarg.jpg", "img/bg-campeaocol.jpg", "img/bg-mirantesol.jpg",
+                     "img/bg-pb1950.jpg", "img/bg-tunel.jpg", "img/bg-telao.jpg"]
 app_disco_lock = threading.Lock()
+APP_FORA_SEG = 45                           # origem fora: por este tempo ninguém tenta a rede de novo (502 ou disco na hora)
+app_fora = {"ate": 0.0}
+app_travas = {}                             # caminho -> trava: o mesmo arquivo não é baixado duas vezes ao mesmo tempo
+app_travas_lock = threading.Lock()
+
+
+class AppFora(Exception):
+    pass
+
+
+def app_trava(rel):
+    with app_travas_lock:
+        if len(app_travas) > 500:           # caminhos pedidos uma vez só não ficam para sempre
+            for k in [k for k, t in app_travas.items() if not t.locked()]:
+                app_travas.pop(k, None)
+        return app_travas.setdefault(rel, threading.Lock())
 app_revisto = set()                         # caminhos já baixados de novo nesta abertura do agente
 app_fila = queue.Queue()                    # revisão em segundo plano do que foi servido do disco
 
@@ -164,10 +202,19 @@ def app_disco_podar(manter):
 
 
 def app_baixar(rel, timeout=20):
+    if time.time() < app_fora["ate"]:
+        raise AppFora()                             # a origem acabou de falhar: não espera a rede de novo
     url = APP_ORIGIN.rstrip("/") + "/" + rel + ("?t=%d" % int(time.time()) if rel == "index.html" else "")
     req = urllib.request.Request(url, headers={"User-Agent": "eterna-agente"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = r.read(APP_ARQ_MAX + 1)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read(APP_ARQ_MAX + 1)
+    except urllib.error.HTTPError:
+        raise                                       # a origem respondeu (404, 500): está no ar
+    except OSError:                                 # sem rede, recusada, tempo esgotado (URLError e timeout são OSError)
+        app_fora["ate"] = time.time() + APP_FORA_SEG
+        raise
+    app_fora["ate"] = 0.0
     if len(data) > APP_ARQ_MAX:
         raise ValueError("arquivo grande demais")
     return data
@@ -180,37 +227,51 @@ def app_buscar(rel):
     if rel == "index.html":
         if mem and time.time() - mem[1] <= 60:
             return mem[0], "memoria"
-        disco = None if mem else app_disco_ler(rel)
-        try:
-            data = app_baixar(rel, timeout=8 if (mem or disco) else 20)
-        except Exception:
-            if mem:
-                app_cache[rel] = (mem[0], time.time() - 50)   # tenta a rede de novo em ~10 s
-                return mem[0], "memoria"
-            if disco is not None:
-                app_cache[rel] = (disco, time.time() - 50)
-                return disco, "disco"
-            raise
-        app_disco_gravar(rel, data)
-        app_cache[rel] = (data, time.time())
-        app_revisto.add(rel)
-        return data, "rede"
+        with app_trava(rel):
+            return _app_buscar_index(rel)
     if mem:
         return mem[0], "memoria"
     disco = app_disco_ler(rel)
-    if disco is not None:
-        if rel not in app_revisto:
-            app_revisto.add(rel)
-            try:
-                os.utime(app_disco(rel))           # usado agora: fica por último na poda
-            except OSError:
-                pass
-            app_fila.put(rel)
-        return disco, "disco"
-    data = app_baixar(rel)
+    if disco is None:
+        with app_trava(rel):                       # quem esperou a trava encontra o arquivo já baixado
+            mem = app_cache.get(rel)
+            if mem:
+                return mem[0], "memoria"
+            disco = app_disco_ler(rel)
+            if disco is None:
+                data = app_baixar(rel)
+                app_revisto.add(rel)
+                if not app_disco_gravar(rel, data):
+                    app_cache[rel] = (data, time.time())   # disco cheio ou sem permissão: fica só em memória, como antes
+                return data, "rede"
+    if rel not in app_revisto:
+        app_revisto.add(rel)
+        try:
+            os.utime(app_disco(rel))               # usado agora: fica por último na poda
+        except OSError:
+            pass
+        app_fila.put(rel)
+    return disco, "disco"
+
+
+def _app_buscar_index(rel):
+    mem = app_cache.get(rel)
+    if mem and time.time() - mem[1] <= 60:
+        return mem[0], "memoria"
+    disco = None if mem else app_disco_ler(rel)
+    try:
+        data = app_baixar(rel, timeout=8 if (mem or disco) else 20)
+    except Exception:
+        if mem:
+            app_cache[rel] = (mem[0], time.time() - 50)   # tenta a rede de novo em ~10 s
+            return mem[0], "memoria"
+        if disco is not None:
+            app_cache[rel] = (disco, time.time() - 50)
+            return disco, "disco"
+        raise
+    app_disco_gravar(rel, data)
+    app_cache[rel] = (data, time.time())
     app_revisto.add(rel)
-    if not app_disco_gravar(rel, data):
-        app_cache[rel] = (data, time.time())       # disco cheio ou sem permissão: fica só em memória, como antes
     return data, "rede"
 
 
@@ -227,21 +288,30 @@ def app_revisar_loop():
 def app_preaquecer():
     """Na abertura: baixa o index.html e o que falta dos essenciais do Checkout, sem travar o início. Depois, sem contar
     para o app_offline_pronto, os fundos de IA (prévia e impressão), que o Checkout e o Posto montam no navegador."""
-    extras = sorted(set(FUNDOS_PREVIA.values()) | set(FUNDOS_IMPRESSAO.values()))
-    for rel in APP_ESSENCIAIS + extras:
-        try:
-            if rel == "index.html":
-                app_buscar(rel)
-            elif app_disco_ler(rel) is None:
-                data = app_baixar(rel)
-                app_revisto.add(rel)
-                app_disco_gravar(rel, data)
-        except Exception:
-            pass
+    extras = [r for r in sorted(set(FUNDOS_PREVIA.values()) | set(FUNDOS_IMPRESSAO.values())) if r not in APP_FUNDOS_ATIVOS]
+    for volta in range(APP_PRE_VOLTAS):             # origem fora na abertura: tenta de novo de minuto em minuto
+        for rel in APP_ESSENCIAIS + APP_FUNDOS_ATIVOS + extras:
+            try:
+                if rel == "index.html":
+                    app_buscar(rel)
+                elif app_disco_ler(rel) is None:
+                    with app_trava(rel):
+                        if app_disco_ler(rel) is None:
+                            data = app_baixar(rel)
+                            app_revisto.add(rel)
+                            app_disco_gravar(rel, data)
+            except Exception:
+                pass
+        if app_offline_pronto():
+            break
+        time.sleep(APP_PRE_ESPERA)
+
+
+APP_PRE_VOLTAS, APP_PRE_ESPERA = 30, 60
 
 
 def app_offline_pronto():
-    for rel in APP_ESSENCIAIS:
+    for rel in APP_ESSENCIAIS + APP_FUNDOS_ATIVOS:
         p = app_disco(rel)
         if not p or not os.path.isfile(p):
             return False
@@ -283,7 +353,18 @@ EXT = (".jpg", ".jpeg", ".JPG", ".JPEG")
 FOTO_ENVIO_MAX = 60 * 1024 * 1024          # uma foto por pedido (mesmo teto do Ronaldo, fix/seguranca-dados)
 FOTO_ENVIO_TAXA = 300                      # fotos por minuto por IP
 FOTO_ENVIO_SIMULT = 4                      # gravações ao mesmo tempo no agente inteiro; o resto recebe 503 na hora
-FOTO_ENVIO_PISO_GB = 2                     # espaço livre mínimo no disco da inbox
+FOTO_ENVIO_POR_IP = 2                      # gravações ao mesmo tempo por IP (o app manda 2 por vez)
+FOTO_ENVIO_PRAZO = 120                     # segundos para o corpo de uma foto chegar inteiro; passou, 408 e a vaga volta
+try:                                       # espaço livre mínimo no disco da inbox: o mesmo piso do recorte (10 GB)
+    FOTO_ENVIO_PISO_GB = float(os.environ.get("ETERNA_RECORTES_PISO_GB") or 10)
+except ValueError:
+    FOTO_ENVIO_PISO_GB = 10.0
+try:                                       # fotos novas por dia por esta rota, somando todos os aparelhos
+    FOTO_ENVIO_TETO_DIA = max(1, int(os.environ.get("ETERNA_ENVIO_TETO_DIA") or 20000))
+except ValueError:
+    FOTO_ENVIO_TETO_DIA = 20000
+FOTO_ENVIO_MIN = 1024                      # bytes: menor que isto não é foto de câmera
+FOTO_ENVIO_LADO_MIN = 64                   # px no lado menor
 _re_envio_nome = re.compile(r"^[A-Za-z0-9_-]{1,80}\.(jpg|jpeg|JPG|JPEG)$")
 POLL = 2.0
 
@@ -448,6 +529,34 @@ metricas_carrega()
 state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None},
          "envio": {"novas": 0, "repetidas": 0, "recusadas": 0}}
 envio_sem = threading.BoundedSemaphore(FOTO_ENVIO_SIMULT)
+envio_ips = {}                              # ip -> gravações em curso (com o lock)
+envio_dia = {"dia": "", "n": 0}             # fotos novas de hoje pelo envio da tela (com o lock)
+ENVIO_DIA_ARQ = os.path.join(HOME, "envio-dia.json")   # só o dia e o número: o teto do dia vale depois de reiniciar
+
+
+def envio_dia_n():
+    """Fotos novas de hoje pela rota (com o lock na mão). Virou o dia, zera; na primeira vez lê o que ficou gravado."""
+    hoje = time.strftime("%Y-%m-%d")
+    if envio_dia["dia"] != hoje:
+        n = 0
+        try:
+            j = json.load(open(ENVIO_DIA_ARQ))
+            if j.get("dia") == hoje:
+                n = max(0, int(j.get("n") or 0))
+        except Exception:
+            pass
+        envio_dia.update(dia=hoje, n=n)
+    return envio_dia["n"]
+
+
+def envio_dia_soma():
+    envio_dia_n()
+    envio_dia["n"] += 1
+    try:
+        _grava_privado(ENVIO_DIA_ARQ, json.dumps(envio_dia))
+    except Exception:
+        pass
+
 
 if os.path.exists(INDEX):
     try:
@@ -495,6 +604,61 @@ def quick_hash(path, size):
     return h.hexdigest()
 
 
+INDEX_ESPERA = 2.0
+_index_timer = {"t": None}
+
+
+def save_index_logo():
+    """Com o lock na mão: grava o índice daqui a INDEX_ESPERA segundos, uma vez só para as fotos que chegarem nesse meio
+    tempo (o envio pela tela manda centenas em sequência). Se o agente cair antes, o index_conferir da abertura refaz."""
+    if _index_timer["t"] is None:
+        t = threading.Timer(INDEX_ESPERA, _save_index_agendado)
+        t.daemon = True
+        _index_timer["t"] = t
+        t.start()
+
+
+def _save_index_agendado():
+    with lock:
+        _index_timer["t"] = None
+        try:
+            save_index()
+        except Exception as ex:
+            print("  índice: não gravei (%s)" % type(ex).__name__)
+
+
+def index_conferir():
+    """Na abertura: foto de hoje que está na inbox e não está no índice (o agente caiu antes da gravação agendada) volta
+    para ele, para a mesma foto mandada de novo continuar sendo reconhecida como repetida."""
+    ddir = os.path.join(INBOX, time.strftime("%Y-%m-%d"))
+    if not os.path.isdir(ddir):
+        return 0
+    tem = set(seen.values())
+    n = 0
+    for fn in os.listdir(ddir):
+        pid = fn.split("_", 1)[0]
+        if "_" not in fn or not fn.endswith(EXT) or pid in tem:
+            continue
+        try:
+            p = os.path.join(ddir, fn)
+            hq = quick_hash(p, os.path.getsize(p))
+        except OSError:
+            continue
+        if hq[:12] == pid:
+            seen[hq] = pid
+            tem.add(pid)
+            n += 1
+    if n:
+        try:
+            save_index()
+        except Exception:
+            pass
+    return n
+
+
+index_conferir()
+
+
 def jpeg_completo(path, size):
     """Foto inteira? JPEG termina no marcador FFD9 (algumas câmeras deixam uns bytes depois dele); PNG no bloco IEND.
     Há fotos PNG com nome .jpeg (exportações do Roverpix). v80 (segurança I2): arquivo que não começa como JPEG nem PNG é recusado."""
@@ -512,15 +676,76 @@ def jpeg_completo(path, size):
     return False
 
 
-def jpeg_de_verdade(path, size):
-    """v96-ux: foto mandada pela tela. Só JPEG (começa com FF D8 FF e tem FF D9 nos últimos 4 KB). PNG com nome .jpg é
-    recusado aqui (no cartão da câmera nunca existe); o jpeg_completo geral não muda."""
+_JPEG_SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+
+
+def jpeg_cabecalho(path):
+    """(largura, altura) lidas dos segmentos do JPEG (do SOI até o quadro SOF, que precisa vir antes do SOS), só com a
+    biblioteca padrão; None se a estrutura não for a de um JPEG. Anda segmento a segmento, sem carregar a imagem."""
+    try:
+        with open(path, "rb") as f:
+            if f.read(2) != b"\xff\xd8":
+                return None
+            for _ in range(2000):                       # teto de segmentos antes do quadro
+                b = f.read(1)
+                if b != b"\xff":
+                    return None
+                m = f.read(1)
+                while m == b"\xff":                     # preenchimento
+                    m = f.read(1)
+                if len(m) != 1:
+                    return None
+                m = m[0]
+                if m in (0x00, 0xD8, 0xD9, 0xDA) or 0xD0 <= m <= 0xD7 or m < 0xC0:
+                    return None                         # dados, fim ou varredura antes do quadro: não é foto
+                t = f.read(2)
+                if len(t) != 2:
+                    return None
+                n = int.from_bytes(t, "big")
+                if n < 2:
+                    return None
+                if m in _JPEG_SOF:
+                    q = f.read(6)
+                    if len(q) != 6 or n < 8 + 3 * q[5] or q[5] not in (1, 3, 4) or q[0] not in (8, 12, 16):
+                        return None
+                    return int.from_bytes(q[3:5], "big"), int.from_bytes(q[1:3], "big")
+                f.seek(n - 2, 1)
+    except OSError:
+        pass
+    return None
+
+
+def jpeg_envio_erro(path, size):
+    """v96-ux: foto mandada pela tela. None = JPEG de câmera inteiro; "nao_jpeg" = não é (PNG com nome .jpg, texto, arquivo
+    que só começa e termina como JPEG, dimensões fora de FOTO_ENVIO_LADO_MIN a 40 MP, menor que FOTO_ENVIO_MIN);
+    "incompleta" = cabeçalho de JPEG certo, mas sem o fim (FF D9 nos últimos 4 KB). Com Pillow instalada, ela também
+    precisa abrir o cabeçalho como JPEG com as mesmas dimensões."""
     try:
         with open(path, "rb") as f:
             ini = f.read(3)
     except OSError:
-        return False
-    return ini == b"\xff\xd8\xff" and jpeg_completo(path, size)
+        return "nao_jpeg"
+    dim = jpeg_cabecalho(path) if ini == b"\xff\xd8\xff" else None
+    if not dim or min(dim) < FOTO_ENVIO_LADO_MIN or dim[0] * dim[1] > MAX_PIXELS:
+        return "nao_jpeg"
+    if not jpeg_completo(path, size):
+        return "incompleta"
+    if size < FOTO_ENVIO_MIN:
+        return "nao_jpeg"
+    if has_pillow():
+        try:
+            from PIL import Image
+            with Image.open(path) as im:
+                if im.format not in ("JPEG", "MPO") or tuple(im.size) != tuple(dim):
+                    return "nao_jpeg"
+        except Exception:
+            return "nao_jpeg"
+    return None
+
+
+def jpeg_de_verdade(path, size):
+    """v96-ux: foto mandada pela tela é um JPEG inteiro (jpeg_envio_erro). O jpeg_completo geral não muda."""
+    return jpeg_envio_erro(path, size) is None
 
 
 def envio_nome(nome):
@@ -1156,15 +1381,35 @@ def nuvem_reenviar():
     return {"ok": True, "fotos": fotos, "galerias": gals}
 
 
+def lgpd_galerias_abertas():
+    """Manifestos publicados que ainda valem (nem encerrados nem vencidos): [(token, manifesto)]."""
+    out = []
+    base = getattr(REPO, "base", None)
+    for t in (os.listdir(base) if base and os.path.isdir(base) else []):
+        m = REPO.ler_manifesto(t) if token_ok(t) else None
+        if m and isinstance(m.get("fotos"), list) and not gal_expirou(m):
+            out.append((t, m))
+    return out
+
+
 def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
     """O cliente pediu para apagar as fotos dele (LGPD, art. 18): some do disco (foto, miniatura, recorte), do índice,
     dos rostos lidos, da fila e do bucket da nuvem; as galerias são encerradas aqui e na nuvem (que apaga os rostos
     da AWS). A venda continua no registro financeiro, sem as fotos. Fica uma linha em lgpd.log sem dado pessoal."""
     fotos, nuvem_apagadas, falhas = 0, 0, []
     dias, linhas_foto, apagados_sess = set(), [], []
+    # foto comprada ou de cortesia numa galeria publicada que ainda vale fica com o cliente: não sai daqui nem da nuvem,
+    # e a galeria que tem alguma delas não é encerrada (só perde as fotos apagadas)
+    abertas = lgpd_galerias_abertas()
+    do_cliente = {pid_lib(str(f.get("id") or "")) for _, m in abertas for f in m["fotos"]
+                  if isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia")}
+    preservadas = 0
     for pid in pids:
         pid = pid_lib(pid) if pid_ok(pid) else None
         if not pid:
+            continue
+        if pid in do_cliente:
+            preservadas += 1
             continue
         with lock:
             e = lib.pop(pid, None)
@@ -1236,24 +1481,56 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             _grava_privado(LGPD_EXCLUIDAS, json.dumps(sorted(lgpd_excluidas)))
         except Exception as ex:
             falhas.append(str(ex)[:80])
-    galerias = 0
+    galerias, mantidas = 0, 0
+    fechar = set()
     for t in tokens:
         if not token_ok(t):
             continue
         with gal_lock:
             m = REPO.ler_manifesto(t)
+            if m and any(isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia") for f in (m.get("fotos") or [])) and not gal_expirou(m):
+                mantidas += 1                 # tem foto do cliente: continua no ar
+                continue
             if m:
                 m["expira"], m["encerrada"], m["lgpd"] = _iso(), True, True
                 REPO.salvar_manifesto(t, m)
                 galerias += 1
+        fechar.add(t)
         nuvem_galeria_enfileira(t)            # na nuvem: sai do ar, código curto e rostos apagados
+    # galeria que continua no ar perde as fotos apagadas (manifesto e cópias), sem esperar a republicação do app
+    sairam = set(apagados_sess)
+    for t, _ in (abertas if sairam else []):
+        if t in fechar:
+            continue
+        try:
+            with gal_lock:
+                m = REPO.ler_manifesto(t)
+                if not m or gal_expirou(m):
+                    continue
+                fora = [f for f in (m.get("fotos") or []) if isinstance(f, dict) and pid_lib(str(f.get("id") or "")) in sairam]
+                if not fora:
+                    continue
+                m["fotos"] = [f for f in m["fotos"] if f not in fora]
+                REPO.salvar_manifesto(t, m)
+                for f in fora:
+                    for v in ("original", "vitrine"):
+                        try:
+                            arq = REPO._arq(t, f["id"], v)
+                            if os.path.exists(arq):
+                                os.remove(arq)
+                        except (AttributeError, ValueError, OSError):
+                            pass
+            nuvem_galeria_enfileira(t)
+        except Exception as ex:
+            falhas.append("galeria: " + str(ex)[:80])
     with open(LGPD_LOG, "a", encoding="utf8") as fh:
         for ln in linhas_foto:
             fh.write(ln + "\n")
         fh.write("%s exclusão a pedido do cliente: %d foto(s), %d na nuvem, %d galeria(s), por %s%s\n" % (
             time.strftime("%Y-%m-%d %H:%M:%S"), fotos, nuvem_apagadas, galerias, quem or "-", (" · falhas: " + "; ".join(falhas)) if falhas else ""))
     print(f"  LGPD: {fotos} foto(s) e {galerias} galeria(s) apagadas a pedido do cliente")
-    return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "falhas": falhas[:5]}
+    return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "preservadas": preservadas,
+            "galerias_mantidas": mantidas, "falhas": falhas[:5]}
 
 
 def nuvem_versoes(arquivo, pid):
@@ -5772,8 +6049,9 @@ def vis_calib_gravar(linhas, tira=None):
     ligação estava ligada. tira = pids da LGPD (a linha perde o pid). Fora do sess_lock."""
     try:
         os.makedirs(os.path.dirname(VIS_CALIB), exist_ok=True)
-        if tira and os.path.exists(VIS_CALIB):
-            _jsonl_reescreve(VIS_CALIB, lambda o: {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}})
+        for g in ((VIS_CALIB, VIS_CALIB + ".1") if tira else ()):     # o arquivo atual e a cópia da rotação
+            if os.path.exists(g):
+                _jsonl_reescreve(g, lambda o: {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}})
         if not linhas:
             return
         if os.path.exists(VIS_CALIB) and os.path.getsize(VIS_CALIB) > VIS_LOG_MAX:
@@ -8411,13 +8689,18 @@ class H(BaseHTTPRequestHandler):
         posto + origem local + X-Eterna: 1 (mesmo nível de /ponto/entradas). Entra pelo ingest_file como foto de cartão."""
         q = parse_qs(urlparse(self.path).query)
         tam = self.headers.get("Content-Length")
-        n = int(tam) if tam and tam.isdigit() else -1
         ip = self.client_address[0]
         erro = None
+        try:
+            n = int(tam) if tam is not None else -1
+        except ValueError:
+            n, erro = -1, ({"erro": "tamanho"}, 400)
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
             erro = ({"erro": "origem"}, 403)
         elif (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "image/jpeg":
             erro = ({"erro": "formato"}, 415)
+        elif erro:
+            pass
         elif tam is None:
             erro = ({"erro": "tamanho"}, 411)
         elif n <= 0 or n > FOTO_ENVIO_MAX:
@@ -8437,8 +8720,18 @@ class H(BaseHTTPRequestHandler):
                 livre = 0
             if livre < FOTO_ENVIO_PISO_GB * 1024 ** 3:
                 erro = ({"erro": "disco"}, 507)
-        if not erro and not envio_sem.acquire(blocking=False):
-            erro = ({"erro": "ocupado"}, 503)
+        if not erro:
+            with lock:
+                if envio_dia_n() >= FOTO_ENVIO_TETO_DIA:
+                    erro = ({"erro": "teto_dia"}, 429)
+        if not erro:
+            with lock:                              # no máximo FOTO_ENVIO_POR_IP vagas por aparelho
+                if envio_ips.get(ip, 0) >= FOTO_ENVIO_POR_IP:
+                    erro = ({"erro": "ocupado"}, 503)
+                elif not envio_sem.acquire(blocking=False):
+                    erro = ({"erro": "ocupado"}, 503)
+                else:
+                    envio_ips[ip] = envio_ips.get(ip, 0) + 1
         if erro:
             self.close_connection = True           # o corpo não foi lido: esta conexão não serve para o próximo pedido
             with lock:
@@ -8449,33 +8742,56 @@ class H(BaseHTTPRequestHandler):
         try:
             os.makedirs(FTPTMP, exist_ok=True)
             tmp = os.path.join(FTPTMP, "envio-%s.tmp" % secrets.token_hex(8))
+            fim = time.time() + FOTO_ENVIO_PRAZO      # prazo total da foto: conexão que pinga byte a byte não segura a vaga
+            lenta = False
+            ler = getattr(self.rfile, "read1", None) or self.rfile.read
             with open(tmp, "wb") as f:
                 resto = n
                 while resto > 0:
-                    ch = self.rfile.read(min(1 << 20, resto))
+                    falta = fim - time.time()
+                    if falta <= 0:
+                        lenta = True
+                        break
+                    try:
+                        self.connection.settimeout(max(0.05, min(20, falta)))
+                        ch = ler(min(1 << 20, resto))
+                    except OSError:                    # timeout de leitura: sem dado dentro do prazo
+                        lenta = time.time() >= fim
+                        break
                     if not ch:
                         break
                     f.write(ch)
                     resto -= len(ch)
             if resto:
-                motivo = ({"erro": "incompleta"}, 400)
+                motivo = ({"erro": "lenta"}, 408) if lenta else ({"erro": "incompleta"}, 400)
                 self.close_connection = True
-            elif not jpeg_de_verdade(tmp, n):
-                with open(tmp, "rb") as f:
-                    ini = f.read(3)
-                motivo = ({"erro": "incompleta"}, 400) if ini == b"\xff\xd8\xff" else ({"erro": "nao_jpeg"}, 415)
+            elif jpeg_envio_erro(tmp, n):
+                motivo = ({"erro": "incompleta"}, 400) if jpeg_envio_erro(tmp, n) == "incompleta" else ({"erro": "nao_jpeg"}, 415)
             else:
                 r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
                 if r == "new":
                     with lock:
-                        save_index()
+                        envio_dia_soma()
+                        save_index_logo()                  # o índice inteiro não é regravado a cada foto do lote
+        except Exception as ex:                        # disco, permissão ou falha na entrada da foto: 500 com código fixo
+            r, motivo = None, ({"erro": "servidor"}, 500)
+            self.close_connection = True
+            print("  envio pela tela: falha no servidor (%s)" % type(ex).__name__)
         finally:
             if tmp and os.path.exists(tmp):
                 try:
                     os.remove(tmp)
                 except OSError:
                     pass
+            with lock:
+                envio_ips[ip] = envio_ips.get(ip, 1) - 1
+                if envio_ips[ip] <= 0:
+                    envio_ips.pop(ip, None)
             envio_sem.release()
+            try:
+                self.connection.settimeout(20)
+            except OSError:
+                pass
         res = r or "recusada"
         with lock:
             state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
@@ -9220,11 +9536,12 @@ class H(BaseHTTPRequestHandler):
         try:
             data, _ = app_buscar(rel)
         except urllib.error.HTTPError as ex:
-            return self.js({"error": "not found"}, 404) if ex.code == 404 else self.js({"error": "app indisponível: HTTP %d" % ex.code}, 502)
-        except Exception as ex:
-            return self.js({"error": "app indisponível: %s" % str(ex)[:120]}, 502)
+            return self.js({"error": "not found"}, 404) if ex.code == 404 else self.js({"error": "app_indisponivel"}, 502)
+        except Exception:
+            return self.js({"error": "app_indisponivel"}, 502)
         self.send_response(200)
         self.send_header("Content-Type", APP_TIPOS[os.path.splitext(rel)[1].lower()])
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache" if rel == "index.html" else "max-age=3600")
         self.end_headers()
@@ -9250,6 +9567,8 @@ def main():
     print("Eterna · agente do ponto")
     if os.environ.get("ETERNA_RECORTE_FALSO"):
         print("  ETERNA_RECORTE_FALSO ignorado: o recorte falso é só dos testes (v93, segurança S2)")
+    if APP_ORIGIN_RECUSADA:
+        print("  ETERNA_APP_ORIGIN ignorado: precisa ser https:// (http:// só para 127.0.0.1 ou localhost). Usando %s" % APP_ORIGIN_PADRAO)
     for x in ORIGENS_SEM_ESQUEMA:
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta

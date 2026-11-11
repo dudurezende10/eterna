@@ -30,9 +30,9 @@ async function A8(pg){
   // 7: títulos dos grupos do menu: 12px, negrito, maiúsculo, quase branco no rail do Maracanã; item normal; sem quebra nem rolagem lateral
   for(const [w,h] of [[1440,900],[1280,800],[390,844]]){await pg.setViewportSize({width:w,height:h});await pg.waitForTimeout(150);
     if(w<=900)await pg.evaluate(()=>{const m=document.querySelector('#menu-btn');if(m&&m.offsetParent)m.click();});await pg.waitForTimeout(200);
-    const g=await pg.evaluate(()=>{const gs=[...document.querySelectorAll('#nav button.grp')].filter(e=>e.offsetParent);const it=document.querySelector('#nav .navitems button:not(.grp)');const cs=e=>getComputedStyle(e);
-      return {n:gs.length,fs:gs.map(e=>cs(e).fontSize),fw:gs.map(e=>cs(e).fontWeight),tt:gs.map(e=>cs(e).textTransform),cor:gs.map(e=>cs(e).color),quebra:gs.filter(e=>{const sp=e.querySelector('span');return sp&&sp.getClientRects().length>1||sp.offsetHeight>22;}).map(e=>e.innerText),itw:it?cs(it).fontWeight:null,sw:document.documentElement.scrollWidth<=innerWidth};});
-    ok(g.n>=4&&g.fs.every(x=>x==='12px')&&g.fw.every(x=>+x>=700)&&g.tt.every(x=>x==='uppercase'),`7 ${w}: títulos do menu `+J(g));
+    const g=await pg.evaluate(()=>{const todos=[...document.querySelectorAll('#nav button.grp')].filter(e=>e.offsetParent);const gs=todos.filter(e=>!e.classList.contains('navsub'));const sub=todos.filter(e=>e.classList.contains('navsub')); /* v97: pasta dentro do grupo (Laboratório) tem título próprio: 12px, 600, sem maiúsculas */const it=document.querySelector('#nav .navitems button:not(.grp)');const cs=e=>getComputedStyle(e);
+      return {sub:sub.map(e=>cs(e).fontSize+' '+cs(e).fontWeight+' '+cs(e).textTransform),n:gs.length,fs:gs.map(e=>cs(e).fontSize),fw:gs.map(e=>cs(e).fontWeight),tt:gs.map(e=>cs(e).textTransform),cor:gs.map(e=>cs(e).color),quebra:gs.filter(e=>{const sp=e.querySelector('span');return sp&&sp.getClientRects().length>1||sp.offsetHeight>22;}).map(e=>e.innerText),itw:it?cs(it).fontWeight:null,sw:document.documentElement.scrollWidth<=innerWidth};});
+    ok(g.n>=4&&g.fs.every(x=>x==='12px')&&g.fw.every(x=>+x>=700)&&g.tt.every(x=>x==='uppercase'),`7 ${w}: títulos do menu `+J(g));ok(g.sub.every(x=>x==='12px 600 none'),`7 ${w}: título da pasta dentro do grupo `+J(g.sub));
     ok(g.cor.every(c=>c==='rgba(255, 255, 255, 0.92)'),`7 ${w}: cor dos títulos no Maracanã `+J(g.cor));ok(!g.quebra.length&&g.sw,`7 ${w}: título quebrou linha ou rolagem lateral `+J(g.quebra));ok(g.itw==null||+g.itw<700,`7 ${w}: item do grupo em negrito`);
     if(w<=900)await pg.evaluate(()=>{const m=document.querySelector('#menu-btn');if(m&&m.offsetParent)m.click();});}
   await pg.setViewportSize({width:1440,height:900});}
@@ -82,6 +82,11 @@ try{
     await A8(pg);
     await ctx.close();}
   // ---------- 3. Abrir Checkout em janela à parte ----------
+  // v97: botões do alto do menu: notebook com mouse em 1366×768 pode ter 40 px (o menu cabe sem rolar); tablet deitado 1024×768 (toque) fica com 44 px ou mais
+  for(const [nome,opt,min,max] of [['notebook 1366×768',{viewport:{width:1366,height:768}},40,43],['tablet 1024×768',{viewport:{width:1024,height:768},hasTouch:true,isMobile:true},44,99]]){
+    const ctx=await b.newContext(opt);const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push('rail: '+e.message));await login(pg);await pg.waitForTimeout(200);
+    const hs=await pg.evaluate(()=>[...document.querySelectorAll('.railck')].filter(e=>e.offsetParent).map(e=>Math.round(e.getBoundingClientRect().height)));
+    ok(hs.length>=1&&hs.every(x=>x>=min&&x<=max),`botões do alto do menu no ${nome}: `+J(hs));await ctx.close();}
   {const ctx=await b.newContext({viewport:{width:1440,height:900}});const A=await ctx.newPage();A.on('pageerror',e=>errs.push('3A: '+e.message));
     await login(A);await A.evaluate(()=>{const t=ETERNA.venueToday();ETERNA.state.range={from:t,to:t};ETERNA.state.view='vendas-lista';ETERNA.render();});await A.waitForTimeout(200);
     const v0=await A.evaluate(()=>({view:ETERNA.state.view,hash:location.hash,user:ETERNA.state.user&&ETERNA.state.user.email}));

@@ -47,6 +47,13 @@ ESSENCIAIS = ["vendor/qrcode/qrcode.min.js", "img/brand/viva-maracana-white.png"
               "vendor/faceapi/indice-exemplos.json"] + ["vendor/fonts/%s.woff2" % n for n in (
               "big-shoulders-display-latin-600-normal", "big-shoulders-display-latin-700-normal", "big-shoulders-display-latin-800-normal",
               "inter-latin-500-normal", "inter-latin-600-normal", "inter-latin-700-normal")]
+# v97: os fundos de IA ativos do app (BG_DEF, com as variações do grupo), lidos do index.html: a lista do agente precisa ser esta
+import re
+_html = open(os.path.join(RAIZ, "index.html"), encoding="utf8").read()
+_def = re.findall(r"'([a-z0-9]+)'", re.search(r"const BG_DEF=\[([^\]]*)\]", _html).group(1))
+_grp = dict(re.findall(r"([a-z0-9]+):'([a-z0-9]+)'", re.search(r"const BG_GROUP=\{([^}]*)\}", _html).group(1)))
+_arq = dict(re.findall(r"\{id:'([a-z0-9]+)',name:'[^']*',(?:nome:'[^']*',)?file:'([^']+)'", _html))
+FUNDOS = sorted(_arq[i] for i in _arq if i in _def or _grp.get(i) in _def)
 
 
 def pôr(rel, data):
@@ -59,7 +66,7 @@ pôr("index.html", INDEX)
 pôr(FONTE, FONTE_B)
 pôr("vendor/segredo.exe", b"nao")
 pôr("README.md", b"nao")
-for rel in ESSENCIAIS:
+for rel in ESSENCIAIS + [f for f in FUNDOS if f != "img/bg-telao.jpg"]:
     pôr(rel, b"x" * 64)                     # conteúdo falso: só conta o arquivo existir
 
 pedidos = []
@@ -139,7 +146,20 @@ try:
     ok(s == 200 and b == INDEX and ct.startswith("text/html"), "a: / deveria servir o index.html: %r %r" % (s, ct))
     s, ct, b = get("/" + FONTE)
     ok(s == 200 and b == FONTE_B and ct == "font/woff2", "a: fonte: %r %r %d" % (s, ct, len(b)))
-    ok(esperar_pronto(), "a: /status.app_offline_pronto deveria virar true com os essenciais baixados: %r" % status().get("app_offline_pronto"))
+    # v97: sem um fundo ativo (o Telão) na origem, não fica pronto; com ele, fica (o pré-aquecimento tenta de novo)
+    ok(len(FUNDOS) >= 5 and "img/bg-telao.jpg" in FUNDOS and all(os.path.isfile(os.path.join(RAIZ, f)) for f in FUNDOS), "fundos ativos do app: %r" % FUNDOS)
+    ok(not esperar_pronto(4), "a: sem o fundo do Telão no disco, app_offline_pronto não pode ser true")
+    pôr("img/bg-telao.jpg", b"x" * 64)
+    s, ct, b = get("/img/bg-telao.jpg")
+    ok(s == 200 and ct == "image/jpeg", "a: fundo do Telão servido: %r %r" % (s, ct))
+    ok(esperar_pronto(), "a: /status.app_offline_pronto deveria virar true com os essenciais e os fundos ativos baixados: %r" % status().get("app_offline_pronto"))
+    ok(all(os.path.isfile(os.path.join(CACHE, f.replace("/", "%2F"))) for f in FUNDOS), "a: fundos ativos no disco: %r" % sorted(os.listdir(CACHE)))
+    c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=10)
+    c.request("GET", "/index.html")
+    r = c.getresponse()
+    r.read()
+    ok(r.getheader("X-Content-Type-Options") == "nosniff", "a: app com X-Content-Type-Options: nosniff: %r" % r.getheader("X-Content-Type-Options"))
+    c.close()
     ok(os.path.isfile(os.path.join(CACHE, "index.html")) and os.path.isfile(os.path.join(CACHE, FONTE.replace("/", "%2F"))),
        "a: cópia em disco: %r" % (os.listdir(CACHE) if os.path.isdir(CACHE) else None))
     ok(not [n for n in os.listdir(CACHE) if n.endswith(".tmp")], "a: sobrou .tmp no cache")
@@ -169,8 +189,11 @@ try:
     s, ct, b = get("/" + FONTE)
     ok(s == 200 and b == FONTE_B and ct == "font/woff2", "b: sem origem, fonte do disco: %r %r %d" % (s, ct, len(b)))
     ok(status().get("app_offline_pronto") is True, "b: app_offline_pronto sem origem deveria seguir true")
-    s, _, _ = get("/sprites/c00.webp")
-    ok(s == 502, "b: arquivo que nunca foi baixado, sem origem, deveria dar 502: %r" % s)
+    s, _, b = get("/sprites/c00.webp")
+    ok(s == 502 and json.loads(b) == {"error": "app_indisponivel"}, "b: arquivo que nunca foi baixado, sem origem, deveria dar 502 com código fixo: %r %r" % (s, b[:80]))
+    t0 = time.time()
+    rs = [get("/sprites/c%02d.webp" % i)[0] for i in range(1, 6)] + [get("/")[0]]
+    ok(rs == [502] * 5 + [200] and time.time() - t0 < 2, "b: origem fora: 502 na hora e o index do disco, sem esperar a rede: %r em %.1f s" % (rs, time.time() - t0))
 finally:
     if A:
         parar(A)
@@ -195,6 +218,64 @@ for i, rel in enumerate(("img/a.jpg", "img/b.jpg")):
 ok(m.app_disco_gravar("img/c.jpg", b"z" * 1000), "d: gravar c")
 ok(m.app_disco_ler("img/a.jpg") is None and m.app_disco_ler("img/b.jpg") and m.app_disco_ler("img/c.jpg"),
    "d: a poda deveria apagar só o mais antigo: %r" % os.listdir(m.APP_CACHE_DIR))
+ok(sorted(m.APP_FUNDOS_ATIVOS) == FUNDOS, "d: fundos ativos do agente iguais aos do app: %r x %r" % (sorted(m.APP_FUNDOS_ATIVOS), FUNDOS))
+# origem: só https, ou http neste computador
+ok(all(m.app_origem_ok(o) for o in ("https://eterna.photo", "https://previa.exemplo.com/x", "http://127.0.0.1:9", "http://localhost:8890")), "d: origens aceitas")
+ok(not any(m.app_origem_ok(o) for o in ("http://exemplo.com", "http://127.0.0.1.exemplo.com", "ftp://eterna.photo", "file:///etc", "eterna.photo",
+                                        "https://u:s@eterna.photo", "http://192.168.0.9:8000", "", "https://")), "d: origens recusadas")
+# origem fora: uma tentativa de rede e, por APP_FORA_SEG, nenhuma outra (cache negativo); depois volta a tentar
+chamadas = []
+
+
+def cai(req, timeout=None):
+    chamadas.append(req.full_url)
+    raise m.urllib.error.URLError("sem rede")
+
+
+m.urllib.request.urlopen = cai
+for _ in range(3):
+    try:
+        m.app_buscar("img/nunca.jpg")
+        ok(False, "d: sem origem deveria levantar")
+    except Exception:
+        pass
+m.app_disco_gravar("index.html", b"do disco")
+ok(m.app_buscar("index.html") == (b"do disco", "disco"), "d: index do disco com a origem fora")
+ok(len(chamadas) == 1, "d: origem fora, só 1 tentativa de rede em 4 pedidos: %r" % chamadas)
+m.app_fora["ate"] = time.time() - 1
+try:
+    m.app_buscar("img/nunca.jpg")
+except Exception:
+    pass
+ok(len(chamadas) == 2 and m.app_fora["ate"] > time.time() + 20, "d: passado o prazo tenta a rede de novo e marca outra vez: %r" % len(chamadas))
+# o mesmo arquivo pedido por 6 ao mesmo tempo: um download só
+m.app_fora["ate"] = 0.0
+chamadas.clear()
+
+
+class Resp:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self, n=-1):
+        return b"conteudo"
+
+
+def lento(req, timeout=None):
+    chamadas.append(req.full_url)
+    time.sleep(0.4)
+    return Resp()
+
+
+m.urllib.request.urlopen = lento
+res = []
+ts = [threading.Thread(target=lambda: res.append(m.app_buscar("img/junto.jpg")[0])) for _ in range(6)]
+[t.start() for t in ts]
+[t.join() for t in ts]
+ok(res == [b"conteudo"] * 6 and len(chamadas) == 1, "d: 6 pedidos do mesmo arquivo, 1 download: %r %r" % (len(res), len(chamadas)))
 ok(m.app_rel("/") == "index.html" and m.app_rel("/vendor/x.js") == "vendor/x.js" and m.app_rel("/vendor/x.py") is None
    and m.app_rel("/docs/x.json") is None and m.app_rel("/vendor/a/../b.js") is None, "d: app_rel")
 

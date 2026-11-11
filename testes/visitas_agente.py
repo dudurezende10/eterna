@@ -462,6 +462,18 @@ with m.sess_lock:
 m.vis_gravar()
 lin = [json.loads(l) for l in open(m.VIS_CALIB)]
 ok(all(o.get("pa") != "abc123abc123" for o in lin) and any(o.get("pb") == "def456def456" for o in lin), "B1: LGPD tira o pid da calibração: %r" % lin[-1:])
+# e também da cópia da rotação (.1)
+_l1 = {"em": time.strftime("%Y-%m-%dT%H:%M:%S"), "dia": time.strftime("%Y-%m-%d"), "a": "LPCCCCC", "b": "LPDDDDD", "pa": "aaa111aaa111", "pb": "bbb222bbb222", "sim": 0.4, "ligada": False}
+_fd = os.open(m.VIS_CALIB + ".1", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(_fd, "w", encoding="utf8") as _f:
+    _f.write(json.dumps(_l1) + "\n")
+with m.sess_lock:
+    m.vis_calib_tira.add("aaa111aaa111")
+m.vis_gravar()
+lin1 = [json.loads(l) for l in open(m.VIS_CALIB + ".1")]
+ok(len(lin1) == 1 and lin1[0].get("pa") is None and lin1[0].get("pb") == "bbb222bbb222" and oct(os.stat(m.VIS_CALIB + ".1").st_mode & 0o777) == "0o600",
+   "LGPD tira o pid também da cópia .1 da calibração: %r" % lin1)
+os.remove(m.VIS_CALIB + ".1")
 # retenção de 60 dias (visitas-log.jsonl e calibração)
 m.vis_log({"acao": "juntar", "em": "2020-01-01T10:00:00"})
 antes = sum(1 for _ in open(m.VIS_LOG))

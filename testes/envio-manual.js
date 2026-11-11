@@ -128,6 +128,21 @@ try{
     M.posts.length=0;M.resp=null;await pg.click('#envio-painel [data-act="envio-repetir"]');await fim(pg);
     ok(J(M.posts.map(p=>p.nome).sort())===J(['r4.jpg','r5.jpg']),'11: Tentar de novo manda só as 2: '+J(M.posts.map(p=>p.nome)));
     ok(/Enviadas 2 de 2/.test((await faixa(pg)).t),'11: depois do Tentar de novo, Enviadas 2 de 2');
+    // v97: 503 (servidor ocupado com outro envio): espera mais, com recuo, e o lote continua; só para depois de todas as esperas
+    await pg.evaluate(()=>ETERNA.envioEsperaOcupado([100,200,300]));
+    M.posts.length=0;M.resp=(n,t)=>n==='o1.jpg'&&t<=3?{status:503,body:{erro:'ocupado'}}:null;
+    await escolher(pg,[arq('o0.jpg'),arq('o1.jpg'),arq('o2.jpg')]);await fim(pg);
+    const fo=await faixa(pg);const to=M.posts.filter(p=>p.nome==='o1.jpg').map(p=>p.t);
+    ok(to.length===4&&/Enviadas 3 de 3/.test(fo.t),'503: 3 esperas e a foto entra na 4ª tentativa, lote inteiro: '+J({n:to.length,fo}));
+    ok(to.length===4&&to[2]-to[1]>to[1]-to[0]-40&&to[3]-to[0]>=550,'503: espera crescente: '+J(to.map(x=>x-to[0])));
+    M.posts.length=0;M.resp=()=>({status:503,body:{erro:'ocupado'}});
+    await escolher(pg,[arq('o9.jpg')]);await fim(pg);
+    const fo2=await faixa(pg);ok(M.posts.length===4&&/bad/.test(fo2.cls)&&/não está respondendo\. 1 foto não foi enviada\./.test(fo2.t),'503 sem fim: para depois das esperas e guarda a foto: '+J({n:M.posts.length,fo2}));
+    // v97: teto de fotos por dia do envio manual: para o lote na hora, sem tentar de novo
+    M.posts.length=0;M.resp=()=>({status:429,body:{erro:'teto_dia'}});
+    await escolher(pg,[arq('t0.jpg'),arq('t1.jpg'),arq('t2.jpg'),arq('t3.jpg')]);await fim(pg);
+    const ft=await faixa(pg);ok(M.posts.length<=2&&/bad/.test(ft.cls)&&/O limite de fotos por dia do envio manual foi atingido\. Chame a TI\./.test(ft.t),'teto do dia: '+J({n:M.posts.length,ft}));
+    M.resp=null;
     // Fechar
     await pg.click('#envio-painel [data-act="envio-fechar"]');await pg.waitForTimeout(100);ok(!(await pg.$('#envio-painel'))&&!!(await pg.$('#main [data-act="envio-abrir"]')),'Fechar volta ao link');
     await ctx.close();}
@@ -143,6 +158,15 @@ try{
     await escolher(pg,[arq('m1.jpg'),arq('m2.jpg')]);await fim(pg);
     ok(M.posts.length===2&&M.posts.every(p=>p.quem==='samuel'),'13: '+email+' escolhendo Samuel: '+J(M.posts));
     const au=await pg.evaluate(()=>ETERNA.auditRead().find(e=>e.acao==='fotos_envio_manual'));ok(au&&au.alvo==='samuel'&&au.por===email&&au.mudancas[0].para===2,'14: auditLog com quem mandou e para quem: '+J(au));
+    // v97: Admin ou Supervisora com fotógrafo vinculado continua escolhendo no seletor: as fotos entram no nome escolhido
+    {M.posts.length=0;await pg.evaluate(()=>{ETERNA.state.user.key='carlos';ETERNA.render();});await pg.waitForTimeout(120);
+      ok(!!(await pg.$('#main select[data-act="imp-key"]'))&&await pg.evaluate(()=>ETERNA.impPreso()===null),'13: '+email+' vinculada ao Carlos continua com o seletor');
+      await pg.selectOption('#main select[data-act="imp-key"]','samuel');await pg.waitForTimeout(120);
+      await escolher(pg,[arq('v1.jpg')]);await fim(pg);
+      ok(M.posts.length===1&&M.posts[0].quem==='samuel','13: '+email+' vinculada ao Carlos, escolhendo Samuel, manda como Samuel: '+J(M.posts.map(p=>p.quem)));
+      await pg.selectOption('#main select[data-act="imp-key"]','todos');await pg.waitForTimeout(120);
+      ok(await pg.evaluate(()=>ETERNA.envioPode().motivo)==='quem','13: '+email+' vinculada, com Todos, não manda no próprio nome');
+      await pg.evaluate(()=>{delete ETERNA.state.user.key;ETERNA.render();});await pg.waitForTimeout(80);}
     if(/supervisor/.test(email)){
       // sem set.c (usuário personalizado): sem link
       await pg.evaluate(()=>{ETERNA.state.user.perms.set.c=false;ETERNA.render();});await pg.waitForTimeout(80);

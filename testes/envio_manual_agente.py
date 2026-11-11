@@ -64,14 +64,14 @@ def ambiente(porta, ftpp, home, user):
     return e
 
 
-def subir(nome, porta, ftpp, home, user, piso):
+def subir(nome, porta, ftpp, home, user, piso, extras=()):
     os.makedirs(os.path.join(home, "Eterna"), exist_ok=True)
     # login "equipe" compartilhado no FTP: não é fotógrafo (critério 22)
     usuarios = {u: secrets.token_hex(6) for u in ["carlos", "marinara", "samuel", "yago", "marcio", "klassius", "sandessa", "dudu", "equipe"]}
     with open(os.path.join(home, "Eterna", "ftp.json"), "w") as f:
         json.dump({"users": usuarios, "compartilhado": ["equipe"]}, f)
     os.chmod(os.path.join(home, "Eterna", "ftp.json"), 0o600)
-    p = subprocess.Popen([sys.executable, "-I", "-u", LANCA, AG, str(piso)], env=ambiente(porta, ftpp, home, user),
+    p = subprocess.Popen([sys.executable, "-I", "-u", LANCA, AG, str(piso), *extras], env=ambiente(porta, ftpp, home, user),
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     LOG[nome] = []
     threading.Thread(target=lambda: [LOG[nome].append((time.time(), l.decode(errors="replace"))) for l in iter(p.stdout.readline, b"")],
@@ -211,6 +211,18 @@ try:
     ok(r1[0] == 415 and r1[1] == {"erro": "nao_jpeg"}, "18: PNG com nome .jpg: %s" % (r1[:2],))
     ok(r2[0] == 415 and r2[1] == {"erro": "nao_jpeg"}, "18: texto: %s" % (r2[:2],))
     ok(r3[0] == 400 and r3[1] == {"erro": "incompleta"}, "18: JPEG cortado: %s" % (r3[:2],))
+    # 18 (v97): arquivo que só começa e termina como JPEG, foto pequena demais e dimensões acima de 40 MP
+    lixo = b"\xff\xd8\xff" + os.urandom(200 * 1024) + b"\xff\xd9"
+    html = b"\xff\xd8\xff<html><body><script>alert(1)</script>" + b"a" * 4000 + b"</body></html>\xff\xd9"
+    bz = io.BytesIO()
+    Image.new("RGB", (9000, 6000), (10, 20, 30)).save(bz, "JPEG", quality=30)
+    rs = [enviar(lixo, "l.jpg"), enviar(html, "h.jpg"), enviar(jpeg(lado=(40, 30)), "p.jpg"), enviar(bz.getvalue(), "g.jpg")]
+    ok(all(r[0] == 415 and r[1] == {"erro": "nao_jpeg"} for r in rs), "18: lixo de 200 KB, HTML, 40 px e 54 MP dão 415: %s" % [r[:2] for r in rs])
+    bp = io.BytesIO()
+    Image.effect_noise((1200, 800), 40).convert("RGB").save(bp, "JPEG", quality=85, progressive=True)
+    rp = enviar(bp.getvalue(), "prog.jpg")
+    ok(rp[0] == 200 and rp[1] == {"ok": True, "resultado": "new"}, "18: JPEG progressivo de verdade entra: %s" % (rp[:2],))
+    antes.update(p for p in arquivos(INB) if p.endswith("_prog.jpg"))
     ok(set(arquivos(INB)) == antes and tmp_vazio(), "18: nada ficou em inbox nem em ftp-tmp")
     r4 = enviar(jpeg(), "foto.png")
     ok(r4[0] == 415 and r4[1] == {"erro": "formato"}, "extensão fora do cartão: %s" % (r4[:2],))
@@ -256,6 +268,23 @@ try:
     s.close()
     ok(b" 411 " in resp.split(b"\r\n")[0], "20: 411 sem Content-Length: %r" % resp[:40])
 
+    # 20 (v97): Content-Length que não é número dá 400, sem derrubar a rota
+    for cl in ("abc", "\u00b2", "-5x"):
+        s = socket.create_connection(("127.0.0.1", PORTA), timeout=10)
+        s.sendall(("POST /fotos/enviar?nome=a.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
+                   "Content-Length: %s\r\n\r\n" % (PORTA, cl)).encode("latin-1"))
+        resp = b""
+        try:
+            while True:
+                ch = s.recv(4096)
+                if not ch:
+                    break
+                resp += ch
+        except OSError:
+            pass
+        s.close()
+        ok(b" 400 " in resp.split(b"\r\n")[0] and b'"tamanho"' in resp, "20: 400 com Content-Length %r: %r" % (cl, resp[:60]))
+
     # 21: sem X-Eterna, Origin de fora, Host de fora
     antes = set(arquivos(INB))
     r1 = enviar(jpeg(), sem=("X-Eterna",))
@@ -292,16 +321,16 @@ try:
     ok("X-Eterna" in (rb[2].get("Access-Control-Allow-Headers") or ""), "26: preflight libera X-Eterna para a origem do agente")
     ok(not rc[2].get("Access-Control-Allow-Origin"), "26: origem de fora sem CORS: %s" % rc[2])
 
-    # semáforo: 4 gravações em curso, a 5ª recebe 503 na hora
+    # vagas por aparelho: 2 gravações em curso do mesmo IP, a 3ª recebe 503 na hora
     presos = []
-    for i in range(4):
+    for i in range(2):
         s = socket.create_connection(("127.0.0.1", PORTA), timeout=10)
         s.sendall(("POST /fotos/enviar?nome=p%d.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
                    "Content-Length: 100000\r\n\r\n" % (i, PORTA)).encode() + b"\xff\xd8\xff")
         presos.append(s)
     time.sleep(0.6)
     r = enviar(jpeg(), "q.jpg")
-    ok(r[0] == 503 and r[1] == {"erro": "ocupado"}, "semáforo: 5ª gravação ao mesmo tempo: %s" % (r[:2],))
+    ok(r[0] == 503 and r[1] == {"erro": "ocupado"}, "vagas: 3ª gravação ao mesmo tempo do mesmo IP: %s" % (r[:2],))
     for s in presos:
         s.close()
     time.sleep(0.6)
@@ -337,6 +366,101 @@ try:
     ok(not arquivos(os.path.join(H3, "Eterna", "inbox")), "24: nada gravado")
     shutil.rmtree(H2, ignore_errors=True)
     shutil.rmtree(H3, ignore_errors=True)
+
+    # v97: agente com as vagas por IP abertas (só o semáforo geral), prazo de 3 s por foto e teto de 3 fotos no dia
+    P4, F4 = porta_45(), porta_45()
+    H4 = tempfile.mkdtemp(prefix="eterna-envio-d-")
+    procs.append(subir("d", P4, F4, H4, USER + "d", 2, ["FOTO_ENVIO_POR_IP=9", "FOTO_ENVIO_PRAZO=3", "FOTO_ENVIO_TETO_DIA=3"]))
+    cab = ("POST /fotos/enviar?nome=p.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
+           "Content-Length: 100000\r\n\r\n" % P4).encode() + b"\xff\xd8\xff"
+    presos = []
+    for i in range(4):
+        s = socket.create_connection(("127.0.0.1", P4), timeout=10)
+        s.sendall(cab)
+        presos.append(s)
+    time.sleep(0.6)
+    r = enviar(jpeg(), "q.jpg", porta=P4)
+    ok(r[0] == 503 and r[1] == {"erro": "ocupado"}, "semáforo: 5ª gravação ao mesmo tempo no agente: %s" % (r[:2],))
+    for s in presos:
+        s.close()
+    time.sleep(0.6)
+    # conexão lenta: um byte a cada 0,4 s nunca termina a foto; em 3 s o agente responde 408 e solta a vaga
+    s = socket.create_connection(("127.0.0.1", P4), timeout=10)
+    s.sendall(cab)
+    t0 = time.time()
+    resp = b""
+    s.settimeout(0.4)
+    while time.time() - t0 < 12 and b"\r\n\r\n" not in resp:
+        try:
+            ch = s.recv(4096)
+            if not ch:
+                break
+            resp += ch
+        except socket.timeout:
+            try:
+                s.sendall(b"\x00")
+            except OSError:
+                break
+    dt = time.time() - t0
+    try:
+        s.settimeout(3)
+        while True:
+            ch = s.recv(4096)
+            if not ch:
+                break
+            resp += ch
+    except OSError:
+        pass
+    s.close()
+    ok(b" 408 " in resp.split(b"\r\n")[0] and b'"lenta"' in resp and 2.5 <= dt <= 6, "lenta: 408 no prazo de 3 s (%.1f s): %r" % (dt, resp[:60]))
+    time.sleep(0.3)
+    ok(not [n for n in os.listdir(os.path.join(H4, "Eterna", "ftp-tmp")) if n.startswith("envio-")], "lenta: temporário apagado")
+    rs = [enviar(jpeg(), "D%d.jpg" % i, porta=P4) for i in range(4)]
+    ok(all(r[0] == 200 and r[1]["resultado"] == "new" for r in rs[:3]), "lenta: a vaga voltou e as 3 fotos seguintes entram: %s" % [r[:2] for r in rs[:3]])
+    ok(rs[3][0] == 429 and rs[3][1] == {"erro": "teto_dia"}, "teto do dia: a 4ª foto do dia dá 429: %s" % (rs[3][:2],))
+    try:
+        gd = json.load(open(os.path.join(H4, "Eterna", "envio-dia.json")))
+    except Exception as ex:
+        gd = {"erro": str(ex)}
+    ok(gd.get("n") == 3 and gd.get("dia") == hoje and set(gd) == {"dia", "n"}, "teto do dia: contagem gravada só com dia e número: %s" % gd)
+    shutil.rmtree(H4, ignore_errors=True)
+
+    # v97: falha do servidor ao guardar a foto: 500 com código fixo, contada em recusadas, sem temporário e com a vaga solta
+    P6, F6 = porta_45(), porta_45()
+    H6 = tempfile.mkdtemp(prefix="eterna-envio-f-")
+    procs.append(subir("f", P6, F6, H6, USER + "f", 2, ["ENVIO_FALHA=1"]))
+    rs = [enviar(jpeg(), "F%d.jpg" % i, porta=P6) for i in range(3)]
+    st = req("GET", "/status", porta=P6)[1]["envio"]
+    ok(all(r[0] == 500 and r[1] == {"erro": "servidor"} for r in rs) and st["recusadas"] == 3 and st["novas"] == 0,
+       "falha ao guardar: 500 e recusadas: %s %s" % ([r[:2] for r in rs], st))
+    ok(not [n for n in os.listdir(os.path.join(H6, "Eterna", "ftp-tmp")) if n.startswith("envio-")], "falha ao guardar: temporário apagado")
+    shutil.rmtree(H6, ignore_errors=True)
+
+    # v97: o índice é gravado logo depois do lote (até ~2 s), não a cada foto; agente morto antes disso não perde a conta:
+    # na abertura seguinte a foto que já está na inbox volta ao índice e a mesma foto mandada de novo é repetida
+    P5, F5 = porta_45(), porta_45()
+    H5 = tempfile.mkdtemp(prefix="eterna-envio-e-")
+    pe = subir("e", P5, F5, H5, USER + "e", 2)
+    procs.append(pe)
+    idx = os.path.join(H5, "Eterna", "index.json")
+    l1 = [jpeg() for _ in range(3)]
+    r = [enviar(b, "A%d.jpg" % i, porta=P5) for i, b in enumerate(l1)]
+    time.sleep(3.2)
+    n1 = len(json.load(open(idx))) if os.path.exists(idx) else 0
+    ok(all(x[1] == {"ok": True, "resultado": "new"} for x in r) and n1 == 3, "índice gravado logo depois do lote: %s" % n1)
+    l2 = [jpeg() for _ in range(3)]
+    r = [enviar(b, "B%d.jpg" % i, porta=P5) for i, b in enumerate(l2)]
+    pe.kill()                                            # cai antes da gravação agendada
+    pe.wait(5)
+    n2 = len(json.load(open(idx)))
+    pe = subir("e2", P5, F5, H5, USER + "e", 2)
+    procs.append(pe)
+    n3 = len(json.load(open(idx)))
+    r2 = [enviar(b, "B%d.jpg" % i, porta=P5) for i, b in enumerate(l1 + l2)]
+    ok(all(x[1] == {"ok": True, "resultado": "new"} for x in r) and n3 == 6 and all(x[1] == {"ok": True, "resultado": "dup"} for x in r2),
+       "queda antes de gravar o índice: na volta as 6 são repetidas (índice %s -> %s -> %s): %s" % (n1, n2, n3, [x[1] for x in r2]))
+    ok(len([p for p in arquivos(os.path.join(H5, "Eterna", "inbox")) if p.endswith(".jpg")]) == 6, "queda: nenhuma foto duplicada na inbox")
+    shutil.rmtree(H5, ignore_errors=True)
 except SystemExit as ex:
     falhas.append(str(ex))
 except Exception as ex:
