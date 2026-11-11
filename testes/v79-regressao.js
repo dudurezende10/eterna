@@ -155,7 +155,9 @@ try{
   await A.evaluate(()=>{ETERNA.SIM.lojaFimSeg=5;});await sleep(5600);
   ok(await A.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.timer),'1.3: tela do dinheiro aguardando não pode voltar sozinha');
   // v94-ux: na espera não há mais o botão amarelo; a casa pergunta "Cancelar o pedido?" e "Sim, sair" volta ao início (parte G)
-  await A.click('[data-act="loja-new"]');await A.waitForTimeout(150); // v96-ux: no Checkout vale o "Voltar ao início" da v96ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: Voltar ao início');
+  // Eduardo (11/11): na espera não há "Voltar ao início" (o caixa recomeça pelo Posto); parada 3 min, a tela volta sozinha
+  ok(await A.evaluate(()=>document.querySelectorAll('[data-act="loja-new"]').length)===0,'1.3 (11/11): a espera do pagamento não tem "Voltar ao início"');
+  await A.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);});await A.waitForTimeout(150);ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: a espera parada volta ao início');
 
   // ---- 1.5: galeria no mesmo computador
   fase='1.5';
@@ -437,7 +439,7 @@ try{
     await abrir();await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(400);
     // v96 (B2): voltar ao início limpa as marcas da sessão; aqui o cliente marca a foto dele antes de continuar
     await pg.evaluate(c=>{const it=ETERNA.lojaItems(c);ETERNA.lojaPick(c)[it[0].k]='ok';ETERNA.state.kiosk.step='cart';ETERNA.render();},card);await pg.waitForTimeout(150);await pagar(pg,'card');
-    await pg.click('.lj-restart');await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir');
+    await pg.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);ETERNA.render();});await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir'); // 11/11: a espera não tem "Voltar ao início"; volta parada
     // I1: recarregar a janela do Checkout não entra logado (a sessão salva continua para as outras janelas)
     fase='I1';
     await pg.reload();await pg.waitForTimeout(600);

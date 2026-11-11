@@ -226,7 +226,8 @@ ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.pa
 // revisão (10/11): a tela final do QR mostra o valor confirmado no Posto
 {const q=await L.evaluate(id=>{const r=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);return {pago:(document.querySelector('.lj-pago')||{}).innerText||'',tot:r.total};},id1);
   const m=/Valor pago R\$\s?([\d.]+(?:,\d+)?)/.exec(q.pago);const v=m?Number(m[1].replace(/\./g,'').replace(',','.')):null;
-  ok(q.tot>0&&v===q.tot,'revisão: tela final do QR com o valor confirmado: '+JSON.stringify(q));await shot(L,'v96-qr-final.png');}
+  ok(q.tot>0&&v===q.tot,'revisão: tela final do QR com o valor confirmado: '+JSON.stringify(q));await shot(L,'v96-qr-final.png');
+  ok(await L.evaluate(()=>!!document.querySelector('.lj-done .lj-restart[data-act="loja-new"]')),'espera (11/11): a tela final paga continua com "Voltar ao início"');}
 // 8: "Voltar às fotos" na tela Pronto: reabre a escolha da mesma sessão com o que estava marcado e tira o pedido do Posto (o caixa vê o aviso)
 await abrir(cards[1]);for(let i=0;i<2;i++){await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(60);}await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idV=await pend();
 await V.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});await V.waitForTimeout(300);
@@ -268,18 +269,53 @@ await V.evaluate(()=>{ETERNA.simFresh();ETERNA.render();});await V.waitForTimeou
 for(let i=0;i<20;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'))break;await sleep(100);}
 ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!!document.querySelector('[data-act="kiosk-start"]')),'P4: cancelado pelo caixa, o cliente volta ao início');
 //@@REVISAO2
-// R3: "Voltar ao início" na tela Pronto e na do valor marca "o cliente saiu" (a compra continua no Posto, que avisa)
-{const saiu=async(id,sel)=>{await L.click(sel);await L.waitForTimeout(300);
-    const s=await L.evaluate(id=>{const r=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);return {step:ETERNA.state.kiosk.step,est:r.estado,saiu:!!r.saiu};},id);
-    for(let i=0;i<20;i++){if(await V.evaluate(id=>!!document.querySelector(`[data-pend="${id}"] .pend-saiu`),id))break;await sleep(100);}
-    s.posto=await V.evaluate(id=>/saiu da tela/.test((document.querySelector(`[data-pend="${id}"] .pend-saiu`)||{}).innerText||'')&&/saiu da tela do Checkout/.test((document.querySelector('.pend-avisos')||{}).innerText||''),id);return s;};
+// Eduardo (11/11): na espera do pagamento (tela Pronto e tela do valor) o cliente não tem "Voltar ao início" nem a casa do topo, e o logo não leva ao
+// início. Quem recomeça é o caixa, no Posto: "Recomeçar o Checkout" (só com venda u e só com o monitor nessa espera), com confirmação e foco preso.
+// Ao confirmar, o monitor volta ao início e o pedido continua aberto no Posto, com o "Cancelar compra" de sempre.
+{const ESP=process.env.ESPERA_PRINTS||'';if(ESP)fs.mkdirSync(ESP,{recursive:true});
+  const semInicio=()=>L.evaluate(()=>({n:document.querySelectorAll('[data-act="loja-new"]').length,restart:document.querySelectorAll('.lj-restart').length,casa:document.querySelectorAll('.lj-top .lj-ic').length,
+    bts:[...document.querySelectorAll('.lj button')].map(b=>b.dataset.act).filter(a=>a!=='lang'&&a!=='lj-lg')}));
+  const botao=id=>V.evaluate(id=>{const b=document.querySelector(`[data-pend="${id}"] [data-act="pend-recomecar"]`);return b?b.innerText.trim():null;},id);
+  const esperaBotao=async(id,quer)=>{for(let i=0;i<40;i++){if(!!(await botao(id))===quer)break;await sleep(100);}return botao(id);};
   await V.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});
   await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idP=await pend();
-  let s=await saiu(idP,'.lj-pronto .lj-restart[data-act="loja-new"]');ok(s.step==='code'&&s.est==='escolha'&&s.saiu&&s.posto,'R3: "Voltar ao início" na tela Pronto marca "o cliente saiu" e o Posto avisa: '+JSON.stringify(s));
-  await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idQ=await pend();await posto(idQ,{pkg:'arq'});
-  for(let i=0;i<20;i++){if(await L.evaluate(()=>!!document.querySelector('.lj-temvalor')))break;await sleep(100);}
-  s=await saiu(idQ,'.lj-temvalor [data-act="loja-new"]');ok(s.step==='code'&&s.est==='escolha'&&s.saiu&&s.posto,'R3: o início na tela do valor também marca "o cliente saiu": '+JSON.stringify(s));
-  await V.evaluate(ids=>{ETERNA.simFresh();ids.forEach(id=>{const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.estado==='escolha')ETERNA.dinCancelar(id);});},[idP,idQ]);await L.waitForTimeout(300);}
+  let si=await semInicio();ok(si.n===0&&si.restart===0&&si.casa===0&&si.bts.join()==='kiosk-voltar-fotos','espera: tela Pronto sem "Voltar ao início" nem casa (só "Voltar às fotos"): '+JSON.stringify(si));
+  await L.click('.lj [data-act="loja-logo"]');await L.waitForTimeout(150);ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.equipe),'espera: tocar no logo não sai da tela Pronto');
+  if(ESP)await L.screenshot({path:ESP+'/espera-pronto-1920.png'});
+  let bt=await esperaBotao(idP,true);ok(bt==='Recomeçar o Checkout','espera: o Posto mostra "Recomeçar o Checkout" no pedido que o monitor espera: '+bt);
+  // sem venda u, o botão não aparece e a ação é recusada
+  const semU=await V.evaluate(id=>{const u=ETERNA.state.user;const p0=u.perms.venda;u.perms.venda=Object.assign({},p0,{u:false});ETERNA.render();const b=!!document.querySelector(`[data-pend="${id}"] [data-act="pend-recomecar"]`);u.perms.venda=p0;ETERNA.render();return b;},idP);
+  ok(!semU,'espera: sem venda u o botão não aparece');
+  // tela do valor
+  await posto(idP,{pkg:'arq'});for(let i=0;i<20;i++){if(await L.evaluate(()=>!!document.querySelector('.lj-temvalor')))break;await sleep(100);}
+  si=await semInicio();ok(si.n===0&&si.restart===0&&si.casa===0&&si.bts.join()==='kiosk-minhas','espera: tela do valor sem "Voltar ao início" nem casa (só "Ver minhas fotos"): '+JSON.stringify(si));
+  await L.click('[data-act="kiosk-minhas"]');await L.waitForTimeout(150);ok(await L.evaluate(()=>document.querySelectorAll('[data-act="loja-new"]').length)===0,'espera: "Ver minhas fotos" sem "Voltar ao início"');await L.click('[data-act="kiosk-minhas-x"]');await L.waitForTimeout(100);
+  if(ESP)await L.screenshot({path:ESP+'/espera-valor-1920.png'});
+  bt=await esperaBotao(idP,true);ok(bt==='Recomeçar o Checkout','espera: na tela do valor o Posto segue com o botão');
+  await V.locator(`[data-pend="${idP}"] [data-act="pend-recomecar"]`).scrollIntoViewIfNeeded();if(ESP)await V.screenshot({path:ESP+'/posto-botao.png'});
+  // confirmação: foco preso no diálogo, Cancelar não faz nada
+  await V.click(`[data-pend="${idP}"] [data-act="pend-recomecar"]`);await V.waitForTimeout(150);
+  let dlg=await V.evaluate(()=>{const d=document.querySelector('.pend-recask');return d?{txt:d.innerText.replace(/\s+/g,' '),foco:document.activeElement&&document.activeElement.dataset.act}:null;});
+  ok(dlg&&/O monitor do cliente volta ao início\. O pedido continua aqui no Posto\./.test(dlg.txt)&&dlg.foco==='pend-recomecar-nao'&&!/—/.test(dlg.txt),'espera: confirmação com o texto e o foco em "Não, manter a tela": '+JSON.stringify(dlg));
+  if(ESP)await V.screenshot({path:ESP+'/posto-confirmacao.png'});
+  const focos=[];for(let i=0;i<4;i++){await V.keyboard.press('Tab');focos.push(await V.evaluate(()=>document.activeElement&&document.activeElement.closest('.pend-recask')?document.activeElement.dataset.act:'fora'));}
+  ok(!focos.includes('fora')&&focos.includes('pend-recomecar-sim'),'espera: o Tab fica preso na confirmação: '+focos.join());
+  await V.click('[data-act="pend-recomecar-nao"]');await V.waitForTimeout(300);
+  ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='done')&&!(await V.$('.pend-recask')),'espera: "Não, manter a tela" fecha a pergunta e o cliente fica na espera');
+  // confirmar: o monitor volta ao início; o pedido continua no Posto
+  await V.click(`[data-pend="${idP}"] [data-act="pend-recomecar"]`);await V.waitForTimeout(150);await V.click('[data-act="pend-recomecar-sim"]');
+  for(let i=0;i<30;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.step==='code'))break;await sleep(100);}
+  const rc=await L.evaluate(id=>{const r=JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin.find(x=>x.id===id);return {step:ETERNA.state.kiosk.step,ini:!!document.querySelector('[data-act="kiosk-start"]'),est:r.estado,pkg:r.pkg,rec:!!r.recomecar,saiu:!!r.saiu};},idP);
+  ok(rc.step==='code'&&rc.ini&&rc.est==='escolha'&&rc.pkg==='arq'&&rc.rec&&!rc.saiu,'espera: ao confirmar, o cliente vai para o início e o pedido continua aberto: '+JSON.stringify(rc));
+  bt=await esperaBotao(idP,false);
+  const pv=await V.evaluate(id=>{const it=document.querySelector(`[data-pend="${id}"]`);return it?{canc:!!it.querySelector('[data-act="din-cancel"]'),pill:/Checkout recomeçado/.test(it.innerText)}:null;},idP);
+  ok(pv&&pv.canc&&pv.pill&&!bt,'espera: o pedido segue na lista do Posto com "Cancelar compra", marcado "Checkout recomeçado", sem o botão: '+JSON.stringify(pv)+' '+bt);
+  const au=await V.evaluate(()=>ETERNA.auditRead().find(e=>e.acao==='checkout_recomecar'));ok(au&&au.por&&/^venda\//.test(au.alvo),'espera: recomeçar vai ao registro de auditoria: '+JSON.stringify(au));
+  // o cliente volta pelo código: a marca antiga não o derruba de novo
+  await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);await L.evaluate(()=>window.dispatchEvent(new StorageEvent('storage',{key:'eterna.sim.v1',newValue:localStorage.getItem('eterna.sim.v1')})));await L.waitForTimeout(300);
+  ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='done'&&ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.wait),'espera: o cliente que volta depois do recomeço fica na tela Pronto');
+  const idP2=await pend();
+  await V.evaluate(ids=>{ETERNA.simFresh();ids.forEach(id=>{const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.estado==='escolha')ETERNA.dinCancelar(id);});},[idP,idP2]);await L.waitForTimeout(300);}
 // R1: o caixa escolhe o meio antes do pacote. Nada de "R$ 0" nem "Dinheiro": o pedido segue "Escolha do pacote pendente", sem valor e fora das somas
 {await abrir(cards[1]);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idR=await pend();
   await posto(idR,{meio:'dinheiro'});await L.waitForTimeout(300);
