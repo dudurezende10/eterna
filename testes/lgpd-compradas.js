@@ -72,6 +72,7 @@ try{
   const pl=await pg2.evaluate(()=>{const p=ETERNA.lgpdPlano('LPTFAMA01');return {sai:p.pids.map(x=>x.slice(-1)).join(''),fica:p.fica.map(x=>x.slice(-1)).join(''),pedido:p.pedido};});
   ok(pl.sai==='2456'&&pl.fica==='13'&&!pl.pedido,'3: saem só as não compradas; a comprada (A1) e a cortesia (A3) ficam: '+J(pl));
   // 4. o diálogo conta só o que sai e avisa do que fica
+  ok(await espera(()=>ETERNA.demoSessions().some(s=>s.card==='LPTFAMA01'&&s.photos.length===6),20000,null,pg2),'4: o Posto já tem as fotos da leva A do servidor');
   await pg2.evaluate(()=>ETERNA.go('checkout'));await pg2.waitForTimeout(400);
   if(await pg2.$('#main [data-act="checkout-pick"][data-card="LPTFAMA01"]'))await pg2.click('#main [data-act="checkout-pick"][data-card="LPTFAMA01"]');
   else await pg2.evaluate(()=>{const b=document.createElement('button');b.dataset.act='checkout-pick';b.dataset.card='LPTFAMA01';document.body.appendChild(b);b.click();b.remove();});
