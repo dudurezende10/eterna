@@ -4995,7 +4995,7 @@ const EQ={
   esqueci_enviar:['Enviar senha provisória','Send temporary password','Enviar contraseña temporal','Envoyer un mot de passe temporaire','Vorläufiges Passwort senden'],
   esqueci_ok:['Se este usuário estiver ativo e tiver e-mail cadastrado, uma senha provisória chega em alguns minutos. Ela vale por 30 minutos e sua senha atual continua valendo até você criar a nova.','If this username is active and has an email on file, a temporary password will arrive within a few minutes. It is valid for 30 minutes, and your current password keeps working until you create a new one.','Si este usuario está activo y tiene un correo registrado, una contraseña temporal llegará en unos minutos. Es válida durante 30 minutos y tu contraseña actual sigue funcionando hasta que crees la nueva.','Si cet identifiant est actif et possède une adresse e-mail enregistrée, un mot de passe temporaire arrivera dans quelques minutes. Il est valable 30 minutes et votre mot de passe actuel reste valable jusqu\'à la création du nouveau.','Wenn dieser Benutzer aktiv ist und eine E-Mail-Adresse hinterlegt hat, kommt in wenigen Minuten ein vorläufiges Passwort an. Es gilt 30 Minuten, und Ihr aktuelles Passwort bleibt gültig, bis Sie ein neues erstellen.'],
   esqueci_sem:['Sem e-mail ou sem internet no servidor, peça uma senha provisória ao administrador.','With no email, or if the server has no internet, ask an administrator for a temporary password.','Sin correo o sin internet en el servidor, pide una contraseña temporal al administrador.','Sans e-mail, ou si le serveur n\'a pas Internet, demandez un mot de passe temporaire à l\'administrateur.','Ohne E-Mail oder wenn der Server kein Internet hat, bitten Sie den Administrator um ein vorläufiges Passwort.'],
-  voltar_entrar:['Voltar para entrar','Back to sign in','Volver para entrar','Retour à la connexion','Zurück zur Anmeldung'],
+  voltar_entrar:['Voltar para entrar','Back to sign in','Volver para entrar','Retour à la connexion','Zurück zur Anmeldung'],outro_usuario:['Entrar com outro usuário','Sign in as another user','Entrar con otro usuario','Se connecter avec un autre utilisateur','Mit anderem Benutzer anmelden'],
   voltar:['Voltar','Back','Volver','Retour','Zurück'],
   crie:['Crie sua senha','Create your password','Crea tu contraseña','Créez votre mot de passe','Erstellen Sie Ihr Passwort'],
   crie_nota:['Esta senha provisória só serve para criar a sua.','This temporary password can only be used to create yours.','Esta contraseña temporal solo sirve para crear la tuya.','Ce mot de passe temporaire sert uniquement à créer le vôtre.','Dieses vorläufige Passwort dient nur dazu, Ihr eigenes zu erstellen.'],
@@ -5103,7 +5103,7 @@ function vEntrar(){
       <input type="text" autocomplete="username" autocapitalize="none" spellcheck="false" data-act="login-usuario" value="${esc(a.usuario)}" placeholder="${TE('usuario')}" aria-label="${TE('usuario')}" autofocus>
       ${campoSenha('login-senha',a.senha,TE('senha'),'current-password')}
       ${erro}<button class="btn primary big" type="submit">${TE('entrar')}</button>
-      <div class="row"><button class="btn ghost" type="button" data-act="login-esqueci">${TE('esqueci')}</button></div></form>
+      <div class="row"><button class="btn ghost" type="button" data-act="login-esqueci">${TE('esqueci')}</button>${a.usuario?`<button class="btn ghost" type="button" data-act="login-outro">${TE('outro_usuario')}</button>`:''}</div></form>
     ${pe}</div>`;
 }
 // ---------- Configurações › Usuários (cadastro) ----------
@@ -5582,6 +5582,7 @@ document.addEventListener('click',e=>{
     case 'login-ver':{const v=state.auth.ver=state.auth.ver||{};v[d.c]=!v[d.c];render();const c=document.querySelector('#main [data-act="'+d.c+'"]');if(c){c.focus({preventScroll:true});c.setSelectionRange(c.value.length,c.value.length);}break;}
     case 'idioma-equipe':idiomaEquipe(d.l);break;
     case 'minha-senha':state.view='minhasenha';render();break;
+    case 'login-outro':Object.assign(state.auth,{usuario:'',senha:'',err:null});render();{const u=document.querySelector('#main [data-act="login-usuario"]');if(u)u.focus();}break;
     case 'login-esqueci':state.auth.step='esqueci';state.auth.enviado=false;state.auth.senha='';state.auth.err=null;render();break;
     case 'login-voltar':state.auth.step='entrar';state.auth.enviado=false;state.auth.senha='';state.auth.nova='';state.auth.nova2='';state.auth.ver=null;state.auth.err=null;if(state.user)state.view=homeView();render();break;
     case 'aj-key':state.ajustes.key=d.k;state.ajustes.card=null;state.ajustes.photo=null;render();break;
