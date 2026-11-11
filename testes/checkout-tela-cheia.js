@@ -63,7 +63,7 @@ const confirma=async id=>{await V.evaluate(id=>{ETERNA.simFresh();ETERNA.state.v
 // ---- P1: câmera só depois do Iniciar
 let c=await cam();ok(c.ini&&!c.on&&!c.stream&&!c.face,'P1: tela inicial com Iniciar e câmera desligada: '+JSON.stringify(c));
 const ini=await L.evaluate(()=>{const e=document.querySelector('[data-act="kiosk-start"]').getBoundingClientRect();return {h:e.height,w:e.width,alt:!!document.querySelector('[data-act="kiosk-emerg"]'),txt:document.querySelector('[data-act="kiosk-start"]').innerText.trim()};});
-ok(ini.h>=120&&ini.alt&&/INICIAR/i.test(ini.txt),'P1: Iniciar grande (≥ 120 px) e "Digitar seu código": '+JSON.stringify(ini));
+ok(ini.h>=120&&ini.alt&&/INICIAR/i.test(ini.txt),'P1: Iniciar grande (≥ 120 px) e "Digite sua sessão": '+JSON.stringify(ini));
 await shot(L,'v96-iniciar.png');
 for(const [l,t] of [['en',/start/i],['es',/iniciar/i],['fr',/commencer/i],['de',/starten/i],['pt',/iniciar/i]]){await L.click(`[data-act="lang"][data-l="${l}"]`);await L.waitForTimeout(60);ok(t.test(await L.textContent('[data-act="kiosk-start"]')),'P1: Iniciar em '+l);}
 await L.click('[data-act="kiosk-start"]');for(let i=0;i<20&&!(await cam()).stream;i++)await sleep(100);c=await cam();ok(c.on&&c.stream&&c.face,'P1: Iniciar liga a câmera: '+JSON.stringify(c));
