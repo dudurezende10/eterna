@@ -117,6 +117,9 @@ Consequências para o Eterna:
   digitais" está como "Pacote Maracanã Mais"; "Foto adicional" é "digital ou impressa" na Imply e "digital e impressa" no
   Eterna; "Fundo de IA" (40) e "Foto digital avulsa" (39) não existem na Imply.
 
+- Decidido (11/11): produto que não existe na Imply não é cadastrado no Eterna. Fundo de IA e Foto digital avulsa saíram;
+  os nomes no Eterna são os da Imply (`dscinterna` sem o prefixo "[POS] [Foto]").
+
 ## Etapas
 
 1. Catálogo idêntico ao da Imply, com SKU (depende das decisões acima).
