@@ -75,7 +75,7 @@ try{
       ok(r.v===esp&&!r.f&&r.h==='#'+esp,`C: sem login, #${h} e entrar como ${email} deveria cair em ${esp}: ${J(r)}`);}
     // já logado, abrir a página com o link antigo
     await entrar(pg,'eduardo@eduardorezende.com');
-    for(const [h,esp] of [['fluxo','painel'],['convidado','painel'],['set','importar'],['set/x','importar'],['venda','checkout']]){await pg.goto('about:blank');await pg.goto(U+'#'+h);await pg.waitForTimeout(300);const r=await pg.evaluate(()=>({v:ETERNA.state.view,h:location.hash,u:!!ETERNA.state.user}));ok(r.v===esp&&r.u,`C: logado, abrir #${h} deveria cair em ${esp}: ${J(r)}`);}
+    for(const [h,esp] of [['fluxo','painel'],['convidado','painel'],['set','importar'],['set/x','importar'],['venda','posto']/* v97-ux: #venda abre o Posto com a Venda manual (#checkout) */]){await pg.goto('about:blank');await pg.goto(U+'#'+h);await pg.waitForTimeout(300);const r=await pg.evaluate(()=>({v:ETERNA.state.view,h:location.hash,u:!!ETERNA.state.user,m:!!document.querySelector('#posto-manual')}));ok(r.v===esp&&r.u&&(h!=='venda'||(r.h==='#checkout'&&r.m)),`C: logado, abrir #${h} deveria cair em ${esp}: ${J(r)}`);}
     await ctx.close();}
   // ---------- D. Upload automático: check-in pelo admin (select), supervisor só leitura, Sair ----------
   {const {ctx,pg}=await nova(b,1440,1000);await entrar(pg,'eduardo@eduardorezende.com');const serie='R6ADMIN0007';
@@ -141,8 +141,9 @@ try{
         [...t.matchAll(/.{0,40}\bloja\b.{0,30}/gi)].forEach(m=>out.push(v+': '+m[0]));
         [...t.matchAll(/.{0,30}(\bno Fluxo\b|Anfitrião no set|galeria do convidado|Fila da loja).{0,30}/gi)].forEach(m=>out.push(v+': '+m[0]));return out;},v));}
     ok(!achados.length,'G: textos com "loja" ou telas que saíram: '+[...new Set(achados.map(x=>x.replace(/\s+/g,' ')))].slice(0,12).join(' || '));
-    await pg.evaluate(()=>{ETERNA.state.view='fila';ETERNA.render();});ok(/Fila do balcão/i.test(await pg.textContent('#main')),'G: tela Fila sem o título "Fila do balcão"');
-    await pg.evaluate(()=>{ETERNA.state.view='checkout';ETERNA.render();});ok(/Venda manual/.test(await pg.textContent('#main')),'G: tela de venda sem "Venda manual"'); // v94-ux: "Venda no balcão" virou "Venda manual" (parte E, decisão 4)
+    // v97-ux (Posto único): a tela Fila do balcão saiu (fila abre o Posto) e a Venda manual é um bloco dentro do Posto
+    await pg.evaluate(()=>{ETERNA.state.view='fila';ETERNA.render();});ok(await pg.evaluate(()=>ETERNA.state.view==='posto'&&!/Fila do balcão|Sessões prontas|Enviar ao caixa/i.test(document.querySelector('#main').textContent)),'G: a tela Fila do balcão ainda aparece');
+    await pg.evaluate(()=>{ETERNA.state.view='checkout';ETERNA.render();});ok(await pg.evaluate(()=>ETERNA.state.view==='posto'&&/Venda manual/.test((document.querySelector('#posto-manual h2')||{}).textContent||'')),'G: Posto sem o bloco "Venda manual"'); // v94-ux: "Venda no balcão" virou "Venda manual" (parte E, decisão 4)
     await ctx.close();}
 }catch(e){fails.push('erro: '+e.message.split('\n').filter(x=>x.trim()).slice(0,3).join(' / '));}
 await b.close();const okk=!fails.length&&!errs.length;console.log(`${okk?'OK':'FALHA'} v78-regressao: menus por perfil, links antigos, Upload, Permissões, cadastro, sem acesso, textos${fails.length?' · '+fails.join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();

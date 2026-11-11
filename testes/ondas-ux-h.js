@@ -40,7 +40,7 @@ try{
       const rola=await pg.evaluate(()=>{const g=document.querySelector('#railgav');const r=document.querySelector('.rail');return {g:g.scrollHeight-g.clientHeight,r:r.scrollHeight-r.clientHeight,doc:document.querySelector('.rail').getBoundingClientRect().bottom<=innerHeight+1};});
       ok(rola.g<=1&&rola.r<=1,'H1: menu do Admin rola em 1366×768: '+J(rola));
       // H8: links antigos
-      const casos=[['importar','importar'],['caixa','caixa'],['checkout','checkout'],['fila','fila'],['posto','posto'],['catalogo','catalogo'],['vendas','vendas'],['revisao','revisao'],['ajustes','ajustes'],['escala','escala'],['semana','painel'],['set','importar']];
+      const casos=[['importar','importar'],['caixa','caixa'],['checkout','posto'],['fila','posto']/* v97-ux: Venda manual e Fila do balcão são apelidos do Posto */,['posto','posto'],['catalogo','catalogo'],['vendas','vendas'],['revisao','revisao'],['ajustes','ajustes'],['escala','escala'],['semana','painel'],['set','importar']];
       for(const [h,esp] of casos){await pg.evaluate(()=>ETERNA.go('perfis'));await pg.evaluate(h=>{location.hash='#'+h;},h);await pg.waitForTimeout(120);const r=await pg.evaluate(()=>({v:ETERNA.state.view,f:/Algo falhou/.test(document.querySelector('#main').textContent)}));ok(r.v===esp&&!r.f,'H8: #'+h+' deveria abrir '+esp+': '+J(r));}}
     if(k==='supervisor'){const vs=its.map(x=>x.v);ok(!['repo','identidade','chroma','vestiario','fundos-teste','usuarios','permissoes'].some(v=>vs.includes(v)),'H5: supervisora com tela do Sistema: '+J(vs));}
     await ctx.close();}

@@ -55,7 +55,7 @@ try{
   ok(ck&&ck.dados.lang==='es'&&ck.dados.canal==='checkout'&&Array.isArray(ck.dados.cart)&&ck.dados.cart.length>0&&ck.dados.t0&&Date.parse(ck.dados.t0)<Date.parse(ck.em),'3: venda do Checkout pela tela chega com lang es, canal checkout, cart e t0 antes de em: '+J(ck&&{lang:ck.dados.lang,canal:ck.dados.canal,cart:ck.dados.cart,t0:ck.dados.t0,em:ck.em}));
   // ---------- balcão em inglês (caixaConfirm) ----------
   const card2=await pa.evaluate(()=>{const E=ETERNA;const c=E.demoSessions().filter(s=>s.photos.length>=3&&!['paga','cancelada','aguardando'].includes((E.SIM.sessions[s.card]||{}).status))[3].card;const S=E.SIM;const s=S.sessions[c]=S.sessions[c]||{};
-    s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='caixa';E.render();return c;});
+    s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.posto.recibo=c;/* v97-ux: sessão 'no caixa' cobrada pelo recibo em cima do Posto */E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='posto';E.render();return c;});
   await pa.click('[data-act="caixa-confirm"]');for(let i=0;i<40&&!evs.some(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);i++)await sleep(200);await pa.evaluate(()=>{ETERNA.state.lang='pt';});
   const bl=evs.find(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);ok(bl&&bl.dados.canal==='balcao'&&bl.dados.lang==null,'3: balcão em inglês: canal balcao, sem lang: '+J(bl&&bl.dados&&{canal:bl.dados.canal,lang:bl.dados.lang}));
   // ---------- resumo v2 de hoje no agente ----------

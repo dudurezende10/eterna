@@ -933,7 +933,7 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 - O grupo é o 4º campo de cada linha de `VIEWS`. Grupo `''` é tela sem item no menu. Itens do mesmo grupo ficam contíguos, porque o `render()` abre um cabeçalho a cada troca de grupo.
 - Os grupos abrem e fecham (`nav-grp`, `state.navOpen`, `aria-expanded` e `aria-controls`). O grupo da tela atual fica aberto (`state.navCur`). Grupo sem nenhum item permitido some.
 - "Abrir Checkout" fica em `#rail-ck`, fora dos grupos, e só aparece com `canView('quiosque')` (ação `loja-abrir`, leva a `#loja`).
-- `VIEWS_EXTRA`: telas sem item no menu, abertas por botões dentro de outras telas. Venda no balcão (`checkout`), Fila do balcão (`fila`) e Caixa (`caixa`). "Fila da loja" virou "Fila do balcão" para não haver duas coisas chamadas Checkout.
+- `VIEWS_EXTRA`: telas sem item no menu. Desde a v97-ux (Posto único): `caixa` é o Posto só com o dinheiro (botão amarelo Caixa) e `checkout` (Venda manual) e `fila` são apelidos do Posto (`postoAlias`); antes eram Venda no balcão (`checkout`), Fila do balcão (`fila`) e Caixa (`caixa`). "Fila da loja" virou "Fila do balcão" para não haver duas coisas chamadas Checkout.
 - **Celular (até 700 px)**: o cabeçalho fixo fica com o logo, o Checkout em ícone e o botão Menu (`#menu-btn`, `menu-toggle`). O menu abre numa gaveta por cima da tela (`body[data-drawer]`, `#railgav` com `role=dialog` e `aria-modal`). Fecha ao escolher um item, ao tocar no fundo escuro (`#navback`, `menu-close`), com Esc ou se a janela passar de 700 px. Entre 701 e 900 px o menu continua como barra no topo.
 
 ### Telas e perfis removidos
@@ -1177,7 +1177,7 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 
 | Lugar | O que mostra |
 | --- | --- |
-| Caixa (`vCaixa`) | painel no topo: busca por código ou sessão (ignora hífen e maiúsculas), código grande, sessão, valor, hora, "há N min", fotos e impressas, até 4 miniaturas. Botões só com `venda.c`; sem ela, "Só quem registra pagamento confirma." |
+| Caixa (até a v96 `vCaixa`; desde a v97-ux o `vPosto` com o filtro dinheiro) | painel no topo: busca por código ou sessão (ignora hífen e maiúsculas), código grande, sessão, valor, hora, "há N min", fotos e impressas, até 4 miniaturas. Botões só com `venda.c`; sem ela, "Só quem registra pagamento confirma." |
 | Barra da equipe (`#rail-ck`) | botão Caixa com o número de pendências, para quem tem `canView('caixa')` e `venda.c` |
 | Início (`vPerfis`) | cartão "Caixa · N aguardando dinheiro" e pill "N aguardando caixa" |
 | Lista de vendas | status "aguardando caixa" e "não paga" (`statusLabel`), filtro Status (Todos, Pagas, Aguardando caixa, Não pagas, Canceladas, `sales-status`), bloco "Aguardando caixa" com N e R$. Receita só soma `paga` |
@@ -1362,6 +1362,18 @@ Plano: `docs/planos/2026-10-29-v83-multiterminal.md` (decisões D1 a D11, notas 
 - Em `VIEWS_EXTRA`, módulo `venda`; tela inicial de Atendimento e venda (`mpv83` acrescenta `posto` ao menu dos perfis prontos com venda). `loja-abrir` abre a janela do Checkout e leva o admin ao Posto.
 - Colunas: "No Checkout agora" (`ecoPainel`), Aguardando pagamento (`pendPainel`), Impressão 10×15 (`impPainel`) e Minhas vendas de hoje (`minhasVendas`: valor de cada venda, sem total, ticket nem contagem em reais).
 - Venda acompanhada (parte E): o Checkout publica no BroadcastChannel `eterna-loja` o que o cliente vê; o Posto só lê e atualiza `#eco`. Só campos conhecidos são lidos, nunca HTML vindo do canal. Nada passa pelo agente.
+
+#### Posto único (v97-ux, 11/11/2026, plano `docs/planos/2026-11-11-posto-unico.md`)
+
+- Views: `posto` (`vPosto({filtro:'todos'})`) e `caixa` (`vPosto({filtro:'dinheiro'})`). `checkout` e `fila` continuam em `VIEWFN`, `MODULES` e nos menus gravados, mas são apelidos: `postoAlias(v)` devolve `{v:'posto',manual}`; `go`, `readHash` e `render` aplicam. Endereços: `#posto`, `#caixa`, `#checkout` (Posto com a Venda manual; `syncHash` escreve `#checkout` enquanto o bloco está aberto), `#fila` vira `#posto`, `#venda` vira `#checkout`.
+- Permissão: mesmo módulo `venda`, mesmas letras. `canView('posto')` aceita quem tem qualquer uma de `VENDA_VIEWS` no menu (com `venda.r`); o botão amarelo Caixa exige `caixa` no menu e `venda.c`; a Venda manual exige `checkout` no menu (o `case 'posto-manual'` recusa sem isso). Em Permissões, `fila` não aparece mais na lista de telas, mas continua gravado.
+- Dinheiro esperando confirmação: `dinEspera(r)` = `aberta(r) && !pendSemMeio(r) && meioDe(r)==='dinheiro'`; `caixaAbertas()` e `caixaAtrasada()`. É o número do botão amarelo (`#rail-cx`), a lista da vista Caixa e o cartão "Caixa" do Início. Pedido do Checkout sem pacote ou sem meio não conta. O item do menu (`#rail-din`) continua com todas as pendências.
+- Cabeçalho: Posto com `postoNome()` em cima de "Posto de venda"; Caixa com `postoTitulo()` ("Posto de venda · Caixa 1") em cima de "Caixa". Um selo de rolo só, no cabeçalho. No Caixa, o chip "Dinheiro ✕" (`posto-filtro`, `data-f="todos"`) volta ao Posto; no Posto não há chips.
+- Venda manual: `vCheckoutCorpo()` dentro de `<section id="posto-manual">`, aberta por `posto-manual` e fechada por `posto-manual-fechar` (`checkoutVoltar` devolve a sessão `no checkout` ao estado anterior). `state.posto.manual` e `state.posto.recibo` só na memória da tela. Venda manual e Recibo usam o mesmo `state.caixa.session`: abrir uma fecha o outro, e com a Venda manual numa sessão os botões Recibo e "Vindas da Fila do balcão" ficam desabilitados e `caixa-open` é recusado. `camWanted` e `camFound` valem com o bloco aberto. O campo do código é `#ck-code` com `data-keep`.
+- O botão LGPD ("Cliente pediu: apagar as fotos") saiu da Fila do balcão e está na etapa 2 da Venda manual, com a mesma regra (`galerias.u`, sessão não paga, confirmação, `lgpd-excluir`).
+- Confirmar dinheiro (`pendConfirmar`) não abre recibo sozinho em nenhuma das vistas. Saíram `vFila`, `vCaixa`, `fila-open`, `fila-back`, `fila-send`, `state.posto.filtro` e `state.posto.filtroCaixa`. Sessão `no caixa` deixada por uma janela antiga aparece em "Vindas da Fila do balcão" e é cobrada pelo `caixaDetalhe`.
+- Testes: `testes/posto-unico.js` (compara a venda em dinheiro, a Venda manual e os `PRESETS` com o resultado da `a9b4028`).
+- Aviso da Edição Maracanã (Eduardo, 11/11): a montagem (`aiSel`) não vai para a galeria do QR e o `impFotos` corta em `s.prints` com as montagens no fim da fila. `pendMontSemImp(r,prints)` conta as montagens fora das impressões (mesma ordem do `impFotos`); `pendMontAviso(r)` mostra `.pend-mont` abaixo dos pacotes no `pendEscolhaItem` (pacote só digital, ou montagens que não cabem) e os pacotes sem impressão ganham o selo `.pend-semmont`. Na Venda manual o aviso aparece com `sim.bg` escolhido (o fundo da Venda manual não entra em `aiSel`, então não é impresso nem vai para a galeria). Só avisa, não bloqueia. Teste `testes/posto-montagem.js`. Pendente: levar a montagem para a galeria e para a impressão dos pacotes só digitais.
 
 ### Impressão 10×15 na DNP DS-RX1HS (parte F)
 
