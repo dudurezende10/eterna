@@ -425,6 +425,17 @@ try:
     ok(gd.get("n") == 3 and gd.get("dia") == hoje and set(gd) == {"dia", "n"}, "teto do dia: contagem gravada só com dia e número: %s" % gd)
     shutil.rmtree(H4, ignore_errors=True)
 
+    # v97: falha do servidor ao guardar a foto: 500 com código fixo, contada em recusadas, sem temporário e com a vaga solta
+    P6, F6 = porta_45(), porta_45()
+    H6 = tempfile.mkdtemp(prefix="eterna-envio-f-")
+    procs.append(subir("f", P6, F6, H6, USER + "f", 2, ["ENVIO_FALHA=1"]))
+    rs = [enviar(jpeg(), "F%d.jpg" % i, porta=P6) for i in range(3)]
+    st = req("GET", "/status", porta=P6)[1]["envio"]
+    ok(all(r[0] == 500 and r[1] == {"erro": "servidor"} for r in rs) and st["recusadas"] == 3 and st["novas"] == 0,
+       "falha ao guardar: 500 e recusadas: %s %s" % ([r[:2] for r in rs], st))
+    ok(not [n for n in os.listdir(os.path.join(H6, "Eterna", "ftp-tmp")) if n.startswith("envio-")], "falha ao guardar: temporário apagado")
+    shutil.rmtree(H6, ignore_errors=True)
+
     # v97: o índice é gravado logo depois do lote (até ~2 s), não a cada foto; agente morto antes disso não perde a conta:
     # na abertura seguinte a foto que já está na inbox volta ao índice e a mesma foto mandada de novo é repetida
     P5, F5 = porta_45(), porta_45()

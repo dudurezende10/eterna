@@ -11,4 +11,8 @@ for par in sys.argv[3:]:                    # v97: outros limites do envio troca
     k, _, v = par.partition("=")
     if k in ("FOTO_ENVIO_POR_IP", "FOTO_ENVIO_PRAZO", "FOTO_ENVIO_TETO_DIA"):
         setattr(m, k, float(v) if "." in v else int(v))
+if "ENVIO_FALHA=1" in sys.argv[3:]:        # v97: a entrada da foto falha (disco, permissão): a rota responde 500
+    def _falha(*a, **k):
+        raise OSError("falha de teste")
+    m.ingest_file = _falha
 m.main()

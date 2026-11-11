@@ -8773,6 +8773,10 @@ class H(BaseHTTPRequestHandler):
                     with lock:
                         envio_dia_soma()
                         save_index_logo()                  # o índice inteiro não é regravado a cada foto do lote
+        except Exception as ex:                        # disco, permissão ou falha na entrada da foto: 500 com código fixo
+            r, motivo = None, ({"erro": "servidor"}, 500)
+            self.close_connection = True
+            print("  envio pela tela: falha no servidor (%s)" % type(ex).__name__)
         finally:
             if tmp and os.path.exists(tmp):
                 try:
