@@ -44,7 +44,8 @@ async function ljSessao(L,card,n){await L.evaluate(()=>{if(ETERNA.state.cam)ETER
 let POSTO=null;
 async function ljPagar(L,m){await L.evaluate(()=>ETERNA.lojaPedir());await L.waitForTimeout(400);const id=await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id||!POSTO)return;
   await POSTO.evaluate(([id,m])=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(!r||!r.escolha)return;ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:{card:'cartao',cash:'dinheiro',pix:'pix'}[m]||m});},[id,m]);await L.waitForTimeout(500);}
-async function ljNovo(L){return L.click('[data-act="loja-new"]');} // v96-ux: na tela Pronto e na do valor o "Voltar ao início" da v96 (o "Cancelar o pedido?" das ondas saiu)
+// Eduardo (11/11): na tela Pronto e na do valor o cliente não tem "Voltar ao início"; ali a tela volta sozinha parada (aqui, com o prazo encurtado)
+async function ljNovo(L){if(await L.$('[data-act="loja-new"]'))return L.click('[data-act="loja-new"]');return L.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);ETERNA.render();});}
 const pendDe=(pg,card)=>pg.evaluate(c=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).find(x=>x.card===c&&(x.estado==='aguardando'||x.estado==='escolha')),card);
 // venda injetada direto no SIM (sessão com fotos ag_ servidas pelo page.route), pendência aguardando
 async function injPend(pg,o){return pg.evaluate(o=>{const S=ETERNA.SIM;const card=o.card;S.sessions[card]={key:'carlos',pdv:'Foto Campo 2',time:'10:00',date:'hoje',status:'aguardando',selected:o.sel.slice(),aiSel:(o.ai||[]).slice(),fav:(o.fav||[]).slice(),cart:o.cart,photos:o.sel.concat(o.extra||[]).map(id=>({id,sold:0})),din:o.id};
