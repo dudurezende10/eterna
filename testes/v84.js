@@ -1,4 +1,5 @@
 // v84: recorte local dos fundos de IA (sem Photoroom). Agente: POST /recorte com rembg (ISNet + u2net_human_seg), cache,
+// v94-ux (parte I): a Montagem dos fundos fica na aba Avançado de Preços e Checkout
 // acesso só local, 503 sem os modelos. App: montagem no canvas com as regras de docs/fundos-ia-regras.md, impressão com o
 // fundo de 5000 px e o interruptor "Montagem dos fundos" no Painel de controle.
 // Fotos: só as de exemplo do repositório (sprites/c00.webp), ampliadas; nenhuma foto de convidado de fora do repo.
@@ -214,7 +215,7 @@ out.save(sys.argv[2])
   // ---------- 5. v97 (D6): sem escolha de montagem; o Photoroom guardado e inativo (critérios 12 e 13 do plano v97) ----------
   await entrarTeste(pg,'eduardo@eduardorezende.com');
   const prReq=[];pg.on('request',q=>{if(/\/photoroom\//.test(q.url()))prReq.push(q.url());});
-  await pg.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(200);
+  await pg.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(200);
   const t5=await pg.evaluate(()=>({painel:!!document.querySelector('#fundos-modo'),txt:document.querySelector('#main').innerText}));
   ok(!t5.painel&&!/Montagem dos fundos/.test(t5.txt),'12: Painel de controle sem "Montagem dos fundos": '+J(t5.painel));
   await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(300);

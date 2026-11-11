@@ -292,7 +292,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
         await L.click('.lj-next');await L.waitForTimeout(500);await etapa('pedido'); // v96: sem etapa de pagamento no Checkout
         await maquininha(L);const fim=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,qr:!!document.querySelector('#lqr canvas,#lqr img'),cod:(document.querySelector('.lj-qrcode')||{}).textContent||''}));
         ok(fim.step==='done'&&fim.qr&&/[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}/.test(fim.cod),`Checkout ${w}px ${l}: tela final sem QR ou código `+JSON.stringify(fim));await etapa('pronto');
-        await L.click('.lj-restart');}}
+        await L.click('.lj-restart');}} // v96-ux: no Checkout vale o "Voltar ao início" da v96 (o "Novo cliente" das ondas saiu)
     await L.close();}
   // ---- recarregar telas da equipe nunca cai na Loja; caixa e recibo com QR; Lista de vendas, CSV e Catálogo
   dbg('reload');
@@ -336,7 +336,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
     ok(/;"?canal"?;"?caixa"?;"?caixa_em"?;"?posto"?;"?pagamento_ref"?;"?impressao"?$/.test(csv[0].trim())&&csv.some(l=>/"O901".*"teste";"online"/.test(l))&&csv.some(l=>/"loja";"[^"]*";"[^"]*";"[^"]*";"[^"]*";"[^"]*"\s*$/.test(l)),'CSV: colunas canal, caixa e caixa_em (v79) e venda de teste: '+csv[0]+' / '+(csv.find(l=>/O901/.test(l))||'sem O901'));
     await A1.screenshot({path:PR+'/v77-lista-vendas.png'});
     // Catálogo › Checkout: campo novo, limites 5 a 120
-    await A1.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});const vals=[];
+    await A1.evaluate(()=>{ETERNA.state.catTab='checkout';/* v94-ux (parte I): o tempo da tela final fica na aba Checkout */ETERNA.state.view='catalogo';ETERNA.render();});const vals=[];
     for(const [v,esp] of [['2',5],['500',120],['45',45],['abc',5],['7.6',8]]){await A1.fill('#loja-fim',v).catch(async()=>{await A1.evaluate(x=>{const i=document.querySelector('#loja-fim');i.value=x;},v);});await A1.evaluate(()=>document.querySelector('#loja-fim').dispatchEvent(new Event('change',{bubbles:true})));await A1.waitForTimeout(80);vals.push([v,await A1.evaluate(()=>ETERNA.SIM.lojaFimSeg),esp]);}
     ok(vals.every(([v,g,e])=>g===e),'Catálogo: tempo da tela final deveria ficar entre 5 e 120: '+JSON.stringify(vals));
     await A1.fill('#loja-fim','30');await A1.evaluate(()=>document.querySelector('#loja-fim').dispatchEvent(new Event('change',{bubbles:true})));

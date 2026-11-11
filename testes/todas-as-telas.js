@@ -15,5 +15,5 @@ if(!vs.includes('galerias'))bad.push('menu sem galerias');
 if(!vs.includes('permissoes'))bad.push('menu sem permissoes');['set','fluxo','convidado','quiosque','perfis'].forEach(v=>{if(vs.includes(v))bad.push('menu com '+v);});
 for(const v of ['perfis','checkout','fila','caixa','posto']){ // v83: Posto de venda (sem item no menu, aberto pelo Abrir Checkout)
 await pg.evaluate(v=>{ETERNA.state.view=v;ETERNA.render();},v);await pg.waitForTimeout(120);if(/Algo falhou/.test(await pg.textContent('#main')))bad.push(v);}
-if(!(await pg.$('#rail-ck [data-act="loja-abrir"]')))bad.push('sem botão Abrir Checkout');
+if(!(await pg.$('.rail [data-act="loja-abrir"]')))bad.push('sem botão Abrir Checkout'); // v94-ux: no Admin, o Abrir Checkout fica no rodapé do menu (#nav .nav-ck)
 await b.close();const ok=!bad.length&&!errs.length;console.log(`${ok?'OK':'FALHA'} todas-as-telas: ${vs.length} telas${bad.length?' · quebradas: '+bad.join(', '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(ok?0:1);})();

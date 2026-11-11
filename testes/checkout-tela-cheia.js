@@ -12,7 +12,7 @@ const RAIZ=path.join(__dirname,'..');const PR=__dirname+'/prints';fs.mkdirSync(P
 const SHOTS=process.env.SHOTS||'';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const TAMANHOS=[[1280,720],[1366,768],[1440,900],[1536,864],[1600,900],[1920,1080],[1366,657],[1536,730],[1920,969],[390,844]];
-const UMA_TELA={camera:1,'camera ligada':1,codigo:1,escolha:1,'escolha marcada':1,pronto:1,valor:1,minhas:1,final:1};
+const UMA_TELA={camera:1,'camera ligada':1,codigo:1,escolha:1,'escolha marcada':1,pronto:1,valor:1,minhas:1,final:1,'final sem foto':1};
 const shot=async(pg,nome)=>{await pg.screenshot({path:`${PR}/${nome}`});if(SHOTS)await pg.screenshot({path:`${SHOTS}/${nome}`});};
 // portas de teste de 31000 a 31999 (as mais baixas são de outras frentes)
 const portaUsada=p=>new Promise(r=>{const s=net.createServer();s.once('error',()=>r(true));s.listen(p,'127.0.0.1',()=>s.close(()=>r(false)));});
@@ -42,6 +42,26 @@ const confere=async(pg,etapa,w,h)=>{const m=await medir(pg,!!UMA_TELA[etapa]);co
   if(m.peq.length)prob.push('alvo < 72 px: '+m.peq.slice(0,4).join(' | '));
   if(etapa!=='camera ligada'&&etapa!=='galeria'&&m.cam)prob.push('câmera ligada fora da etapa dela');
   (tabela[w+'×'+h]=tabela[w+'×'+h]||{})[etapa]=prob.length?'FALHA':'ok';ok(!prob.length,`${w}×${h} ${etapa}: `+prob.join(' · '));return m;};
+// v96-ux (Eduardo, 11/11): QR da tela final grande (lido a 1 m), fora da foto, com 4 módulos de margem branca, código e
+// "Baixe suas fotos" embaixo, desenho no pixel do monitor (sem reescala que borra)
+const QR_MIN={'1920×1080':320,'1920×969':320,'1366×768':280};
+const medeQR=pg=>pg.evaluate(()=>{const q=document.querySelector('#lqr');if(!q)return null;const R=e=>e?e.getBoundingClientRect().toJSON():null;
+  const im=[...q.querySelectorAll('img,canvas')].find(e=>{const r=e.getBoundingClientRect();return r.width>0&&getComputedStyle(e).display!=='none';});
+  const card=q.closest('.lj-qrcard');const foto=card&&card.querySelector('.lj-qrfoto');const cs=getComputedStyle(q);const dpr=devicePixelRatio||1;
+  return {box:R(q),img:R(im),nat:im?(im.tagName==='IMG'?im.naturalWidth:im.width):0,dpr,mod:+q.dataset.mod||0,pad:Math.min(...['Top','Right','Bottom','Left'].map(k=>parseFloat(cs['padding'+k]))),bg:cs.backgroundColor,
+    foto:R(foto),cod:R(card&&card.querySelector('.lj-qrcode')),dl:R(card&&card.querySelector('.lj-qrcol>span')),com:!!(card&&card.classList.contains('lj-qrcom')),W:innerWidth,H:innerHeight};});
+const confereQR=async(pg,w,h,rot)=>{const m=await medeQR(pg);if(!m||!m.img){ok(false,`${w}×${h} ${rot}: QR não desenhado`);return null;}
+  const lado=Math.min(m.img.width,m.img.height),caixa=Math.min(m.box.width,m.box.height),min=QR_MIN[w+'×'+h]||(w>=900?280:0);const prob=[];
+  if(lado+0.5<min||caixa+0.5<min)prob.push(`QR ${Math.round(lado)} px (caixa ${Math.round(caixa)}) < ${min}`);
+  if(w<900&&caixa>Math.min(.78*w,320)+1)prob.push(`caixa do QR ${Math.round(caixa)} > min(78vw,320)`);
+  if(m.foto){const a=m.box,b=m.foto;if(a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5)prob.push('QR sobre a foto');}
+  if(m.com&&!m.foto)prob.push('foto sumiu do card');
+  if(!m.mod||m.pad+0.5<4*lado/m.mod)prob.push(`margem branca ${m.pad.toFixed(1)} px < 4 módulos (${m.mod})`);if(!/255, 255, 255/.test(m.bg))prob.push('margem não é branca: '+m.bg);
+  if(Math.abs(m.nat-Math.round(lado*m.dpr))>1)prob.push(`desenho ${m.nat} px reescalado para ${Math.round(lado)}×${m.dpr}`);
+  if(!m.cod||m.cod.top<m.box.bottom-0.5)prob.push('"Seu código" não está embaixo do QR');if(!m.dl||m.dl.top<(m.cod||m.box).bottom-0.5)prob.push('"Baixe suas fotos" não está embaixo');
+  if(m.box.left<0||m.box.top<0||m.box.right>m.W+0.5||m.box.bottom>m.H+0.5)prob.push('QR sai da tela');
+  ok(!prob.length,`${w}×${h} ${rot}: `+prob.join(' · '));return {lado:Math.round(lado),caixa:Math.round(caixa),mod:m.mod,pad:Math.round(m.pad),nat:m.nat,foto:m.foto?Math.round(m.foto.width)+'×'+Math.round(m.foto.height):'-'};};
+const medidasQR={};
 const ar=async pg=>pg.evaluate(()=>{const i=document.querySelector('#lj-lb .lj-lbimg');if(!i)return null;const r=i.getBoundingClientRect();return {w:r.width,h:r.height,top:r.top,left:r.left,H:innerHeight,W:innerWidth};});
 // P2: nada de preço, pacote ou forma de pagamento no Checkout antes do caixa escolher
 const semPreco=pg=>pg.evaluate(()=>{const t=document.querySelector('.lj').innerText;const nomes=['Pacote','Maracanã Mais','Tribuna de Honra','Gramado','Zona Mista','Arquibancada','Foto adicional','Cartão','PIX','Dinheiro'];
@@ -480,12 +500,20 @@ for(const [w,h] of TAMANHOS){await L.setViewportSize({width:w,height:h});const c
   for(let i=0;i<20;i++){if(await L.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.total!=null))break;await sleep(100);}
   await confere(L,'valor',w,h);await L.screenshot({path:`${PR}/v96-valor-${w}x${h}.png`});
   await L.click('[data-act="kiosk-minhas"]');await L.waitForTimeout(250);await confere(L,'minhas',w,h);await L.click('[data-act="kiosk-minhas-x"]');
-  await confirma(id);await confere(L,'final',w,h);await L.screenshot({path:`${PR}/v96-final-${w}x${h}.png`});
+  await confirma(id);for(let i=0;i<30;i++){if(await L.evaluate(()=>!!document.querySelector('#lqr canvas,#lqr img')))break;await sleep(100);}
+  await confere(L,'final',w,h);await L.screenshot({path:`${PR}/v96-final-${w}x${h}.png`});if(SHOTS&&(w===1920||w===1366))await shot(L,`qr-final-${w}x${h}.png`);
+  medidasQR[w+'×'+h]={foto:await confereQR(L,w,h,'QR da tela final com foto')};
+  // a mesma tela sem foto escolhida (sem .lj-qrcom): mesmos tamanhos e nada rola
+  await L.evaluate(()=>{const s=ETERNA.SIM.sessions[ETERNA.state.kiosk.code];window.__selQR=s.selected;s.selected=[];ETERNA.render();});await L.waitForTimeout(150);
+  ok(await L.evaluate(()=>!!document.querySelector('.lj-qrcard.lj-final')&&!document.querySelector('.lj-qrcom')),`${w}×${h}: tela final sem foto sem .lj-qrcom`);
+  await confere(L,'final sem foto',w,h);medidasQR[w+'×'+h].semFoto=await confereQR(L,w,h,'QR da tela final sem foto');if(SHOTS&&(w===1920||w===1366))await shot(L,`qr-final-semfoto-${w}x${h}.png`);
+  await L.evaluate(()=>{ETERNA.SIM.sessions[ETERNA.state.kiosk.code].selected=window.__selQR;ETERNA.render();});await L.waitForTimeout(100);
   const tok=await L.evaluate(()=>(ETERNA.state.kiosk.paid||{}).token||null);
   if(tok){const G=await nova(ctx,'galeria',{width:w,height:h});await G.goto(U+'#g/'+tok);await G.waitForTimeout(700);await confere(G,'galeria',w,h);await G.close();}
   else tabela[w+'×'+h].galeria='sem token';
 }
-const etapas=['camera','camera ligada','codigo','escolha','escolha marcada','todas','pronto','valor','minhas','final','galeria'];
+const etapas=['camera','camera ligada','codigo','escolha','escolha marcada','todas','pronto','valor','minhas','final','final sem foto','galeria'];
+console.log('QR da tela final (lado do código, caixa com margem, módulos, margem, pixels do desenho, foto): '+JSON.stringify(medidasQR));
 console.log('tamanho | '+etapas.join(' | '));for(const t of Object.keys(tabela))console.log(t+' | '+etapas.map(e=>tabela[t][e]||'-').join(' | '));
 } // RAPIDO=1 pula a matriz da v94, a mesma origem com a v95 e os 10 tamanhos (só para iterar; a suíte roda tudo)
 }catch(e){fails.push('exceção (depois de: '+ult+'): '+String(e.message||e).split('\n').slice(0,3).join(' / '));}

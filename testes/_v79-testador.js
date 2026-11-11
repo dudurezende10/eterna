@@ -111,7 +111,7 @@ try{
     await sessao(A,cards[1],8,0);await A.evaluate(lg=>{ETERNA.state.lang=lg;ETERNA.render();},lg);await A.waitForTimeout(150);await A.screenshot({path:`${P}/t79-390-carrinho-${lg}.png`,fullPage:true});await ruim(A,`390 ${lg} carrinho`);await semRolagem(A,`390 ${lg} carrinho`);
     await A.click('[data-act="loja-paym"][data-m="cash"]');await A.waitForTimeout(150);await A.click('[data-act="loja-checkout"]');await A.waitForTimeout(700);
     await A.screenshot({path:`${P}/t79-390-dinheiro-final-${lg}.png`});
-    const g=await A.evaluate(()=>{const c=document.querySelector('.lj-qrcode');const bt=[...document.querySelectorAll('[data-act="loja-new"]')].pop();const r=bt&&bt.getBoundingClientRect();
+    const g=await A.evaluate(()=>{const c=document.querySelector('.lj-qrcode');const bt=[...document.querySelectorAll('[data-act="loja-sair-ask"],[data-act="loja-new"]')].pop(); /* v94-ux: na espera, a saída é a casa do topo (parte G) */const r=bt&&bt.getBoundingClientRect();
       return {lang:ETERNA.state.lang,t:document.body.innerText.replace(/\s+/g,' ').slice(0,260),btnIn:r?r.bottom<=innerHeight&&r.top>=0:null,btn:bt&&bt.innerText,sw:document.documentElement.scrollWidth<=innerWidth+1,sh:document.documentElement.scrollHeight,codeH:c?c.getBoundingClientRect().height:null,code:c&&c.innerText};});
     notas.push(`390 ${lg}: `+J(g));ok(g.sw,`390 ${lg}: rolagem horizontal na tela final`);ok(g.btnIn!==false,`390 ${lg}: botão final fora da tela`);
     ok(!/\bljCash|payBtnCash|cashNote|gq_/.test(g.t),`390 ${lg}: chave crua`);await ruim(A,`390 ${lg} final`);

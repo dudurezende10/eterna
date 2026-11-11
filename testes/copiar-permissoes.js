@@ -1,3 +1,4 @@
+// v94-ux (parte I): a grade de permissões fica no "Ajuste fino" (<details>, fechado para perfil pronto); o teste abre antes de usar
 // v80: "Copiar permissões de…" em Permissões e no cadastro de Usuários (pedido do Eduardo, 28/10).
 // Copia módulos C/R/U/D, menu e tela inicial; passa por permValidate; o que quem copia não pode dar fica de fora e é listado; registra permissoes_copiadas.
 const entrarTeste=require('./_entrar');
@@ -28,7 +29,7 @@ try{
     const l1=await log(pg,'permissoes_copiadas');ok(l1.some(e=>e.alvo==='novo@eterna.photo'&&e.de==='supervisor@eterna.photo'&&e.para==='novo@eterna.photo'&&e.mudancas.length),'1: auditLog permissoes_copiadas '+J(l1.map(e=>[e.alvo,e.de])));
     // ---------- 2. Permissões: copiar do Validador para o Carlos, com prévia antes de gravar ----------
     const c0=await acesso(pg,'carlos@eterna.photo');
-    await pg.evaluate(()=>{ETERNA.state.perm.tab='usuario';ETERNA.go('permissoes');});await pg.waitForTimeout(100);await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.waitForTimeout(100);
+    await pg.evaluate(()=>{ETERNA.state.perm.tab='usuario';ETERNA.go('permissoes');});await pg.waitForTimeout(100);await pg.click('[data-act="perm-sel"][data-e="carlos@eterna.photo"]');await pg.evaluate(()=>document.querySelectorAll('details.perm-fino').forEach(d=>d.open=true));await pg.waitForTimeout(40);await pg.waitForTimeout(100);
     await pg.click('[data-act="perm-copy"]');await pg.waitForTimeout(100);await pg.selectOption('select[data-act="perm-copy-from"]','qualidade@eterna.photo');await pg.waitForTimeout(120);
     const pv=await pg.evaluate(()=>({li:[...document.querySelectorAll('.perm-copy-prev li')].map(x=>x.textContent),btn:!document.querySelector('[data-act="perm-copy-ok"]').disabled}));
     ok(pv.li.length>0&&pv.btn&&pv.li.some(x=>/Qualidade e IA/.test(x)),'2: prévia da cópia '+J(pv));ok(pv.li.some(x=>/^Perfil: /.test(x))&&pv.li.some(x=>/^Tela inicial: /.test(x))&&!pv.li.some(x=>/^(preset|inicio):/.test(x)),'revisão 3: prévia com nomes internos '+J(pv.li));ok(J(await acesso(pg,'carlos@eterna.photo'))===J(c0),'2: gravou antes de confirmar');
@@ -51,7 +52,7 @@ try{
       localStorage.setItem('eterna.users.v1',JSON.stringify(U0));});
     await pg.reload();await pg.waitForTimeout(300);ok(await entrar(pg,'gerente@eterna.photo'),'3: gerente não entrou');
     await pg.evaluate(()=>{localStorage.removeItem('eterna.users.log.v1');ETERNA.state.perm.tab='usuario';ETERNA.go('permissoes');});await pg.waitForTimeout(120);
-    await pg.click('[data-act="perm-sel"][data-e="alvo@eterna.photo"]');await pg.waitForTimeout(100);await pg.click('[data-act="perm-copy"]');await pg.waitForTimeout(80);
+    await pg.click('[data-act="perm-sel"][data-e="alvo@eterna.photo"]');await pg.evaluate(()=>document.querySelectorAll('details.perm-fino').forEach(d=>d.open=true));await pg.waitForTimeout(40);await pg.waitForTimeout(100);await pg.click('[data-act="perm-copy"]');await pg.waitForTimeout(80);
     await pg.selectOption('select[data-act="perm-copy-from"]','eduardo@eduardorezende.com');await pg.waitForTimeout(120);
     const av=await pg.evaluate(()=>({fora:(document.querySelector('.perm-copy-prev .alert')||{}).textContent||'',li:[...document.querySelectorAll('.perm-copy-prev li')].map(x=>x.textContent)}));
     ok(/Ficou de fora: você não pode dar estes acessos/.test(av.fora)&&/Números de vendas/.test(av.fora),'3: aviso do que ficou de fora ao copiar o Admin '+J(av.fora.slice(0,120)));
@@ -62,7 +63,7 @@ try{
     ok(/Ficou de fora/.test(await toast(pg)),'3: aviso no toast '+await toast(pg));
     const l3=await log(pg,'permissoes_copiadas');ok(l3.some(e=>e.alvo==='alvo@eterna.photo'&&e.de==='eduardo@eduardorezende.com'&&e.fora&&e.fora.length>0),'3: auditLog com o que ficou de fora');
     // copiar para quem tem mais acesso (o Admin): bloqueado, sem botão; forçar pelo estado também não grava
-    await pg.click('[data-act="perm-sel"][data-e="eduardo@eduardorezende.com"]');await pg.waitForTimeout(100);ok(!(await pg.$('[data-act="perm-copy"]')),'3: botão de cópia para quem tem mais acesso');
+    await pg.click('[data-act="perm-sel"][data-e="eduardo@eduardorezende.com"]');await pg.evaluate(()=>document.querySelectorAll('details.perm-fino').forEach(d=>d.open=true));await pg.waitForTimeout(40);await pg.waitForTimeout(100);ok(!(await pg.$('[data-act="perm-copy"]')),'3: botão de cópia para quem tem mais acesso');
     const adm0=await acesso(pg,'eduardo@eduardorezende.com');
     await pg.evaluate(()=>{ETERNA.state.perm.copy={open:true,de:'alvo@eterna.photo'};const bt=document.createElement('button');bt.dataset.act='perm-copy-ok';document.querySelector('#main').appendChild(bt);bt.click();});await pg.waitForTimeout(120);
     ok(J(await acesso(pg,'eduardo@eduardorezende.com'))===J(adm0),'3: cópia forçada mudou o Admin');ok(/Sem permissão|acessos que você não tem/.test(await toast(pg)),'3: cópia forçada sem aviso '+await toast(pg));
