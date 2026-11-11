@@ -27,7 +27,7 @@ Parameters:
   ImplyTipoPessoa:
     Type: String
     Default: ""
-    Description: código tipo_pessoa da Eleven para cliente final (pessoa física), informado pela Imply
+    Description: código tipo_pessoa de AGÊNCIA da Eleven, informado pela Imply (11/11: o cliente online entra como agência, sem tipo pessoa física)
   ImplyConsulta:
     Type: String
     Default: ""

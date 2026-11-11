@@ -13,7 +13,7 @@ import base64, hashlib, hmac, json, os, re, urllib.parse, urllib.request
 
 ADMIN = os.environ.get("IMPLY_ADMIN", "https://maracanatouradmin.eleventickets.com").rstrip("/")
 LOJA = os.environ.get("IMPLY_LOJA", "https://maracanatour.eleventickets.com").rstrip("/")
-TIPO_PESSOA = os.environ.get("IMPLY_TIPO_PESSOA", "")          # código da Eleven para cliente final (a confirmar)
+TIPO_PESSOA = os.environ.get("IMPLY_TIPO_PESSOA", "")          # código de AGÊNCIA da Eleven (11/11: não há tipo pessoa física)
 CHAVE_SSM = os.environ.get("IMPLY_CHAVE_SSM", "")              # nome do parâmetro SecureString com a chave
 CARRINHO = os.environ.get("IMPLY_CARRINHO", "json-b64")         # formato do predefined-cart: json-b64 | json
 CONSULTA = os.environ.get("IMPLY_CONSULTA", "")                 # ex.: https://.../api/pedido?referencia={ref}
