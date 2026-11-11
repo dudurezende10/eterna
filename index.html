@@ -1057,10 +1057,10 @@ details.pn-dd{padding:0}
 /* v97: Jogos e ano a ano (seção g) */
 .es-g-top{justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.es-g-top .chip[aria-pressed="true"]{background:#134078;color:#fff;border-color:#134078}
 .es-tend{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-radius:6px;padding:14px 18px;background:#D9D9D6;color:#25282A}
-.es-tend b{font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:800;font-size:28px;letter-spacing:.1em;text-transform:uppercase}.es-tend span{font-size:14px}
+.es-tend b{font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:28px;letter-spacing:.1em;text-transform:uppercase}.es-tend span{font-size:14px}
 .es-tend.sobe{background:#43B02A;color:#0C2340}.es-tend.cai{background:#FFB800;color:#0C2340}.es-tend.igual{background:#134078;color:#fff}
 .es-g-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-.es-g-card{border-radius:6px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}.es-g-card h3{margin:0;font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:800;font-size:20px;letter-spacing:.1em;text-transform:uppercase}
+.es-g-card{border-radius:6px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}.es-g-card h3{margin:0;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:20px;letter-spacing:.1em;text-transform:uppercase}
 .es-g-card.jogo{background:#134078;color:#fff}.es-g-card.jogo .note{color:#dfe6f0}.es-g-card.normal{background:#D9D9D6;color:#25282A}
 .es-g-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;margin:0}.es-g-card dt{font-size:12px;opacity:.85}.es-g-card dd{margin:0;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .es-g-card .pill.warn{color:#0C2340}
@@ -1340,7 +1340,7 @@ state.viewSalva=false;try{let v=localStorage.getItem('eterna.view');if(v==='sema
 // v96: marca do SIM (catalogoV). A v95 e anteriores só adotam catalogoV===2: um SIM gravado pela v96 cai no aviso de janela antiga
 // nelas (pedido do Checkout sem pacote, sem meio e sem valor não pode ser lido como "Dinheiro R$ 0" por um Posto antigo)
 const SIM_V=3;
-const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'},diario:[],galerias:{},cortesiaLog:[],vendasOnline:[],galFila:[],lojaFimSeg:30,caixaDin:[],catalogoV:SIM_V});
+const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'},diario:[],galerias:{},cortesiaLog:[],vendasOnline:[],galFila:[],lojaFimSeg:40,caixaDin:[],catalogoV:SIM_V});
 let SIM=SIM0();
 try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}
 // v79 (I3): devolve true/false. Sem espaço, poda o que dá para refazer (registro antigo e ajustes automáticos de fotos que não estão aqui) e tenta de novo.
@@ -1894,7 +1894,7 @@ setInterval(pontoFlush,5000);window.addEventListener('online',pontoFlush);
 function pvDados(r){const ed={};(r.selected||[]).forEach(id=>{const e=SIM.edits&&SIM.edits[id];if(e)ed[id]={b:e.b,c:e.c,s:e.s,t:e.t,z:e.z,x:e.x,y:e.y};});
   return {saleNo:r.saleNo,card:r.card,sessoes:(r.sessoes||[r.card]).slice(0,20),meio:r.meio,prov:r.prov,total:r.total,cart:(r.cart||[]).map(x=>({id:x.id,v:itemV(x)})),prints:r.prints||0,nPh:r.nPh||0,nAI:r.nAI||0,
     selected:(r.selected||[]).slice(),aiSel:(r.aiSel||[]).slice(),fav:(r.fav||[]).slice(),ed,galeria:r.token?{token:r.token,codigo:r.codigo}:null,vendedor:{nome:(r.vendedor&&r.vendedor.nome)||null},
-    /* v92: canal e t0; o idioma só do Checkout (a venda no balcão usaria o idioma da equipe) */canal:r.canal==='checkout'||r.canal==='balcao'?r.canal:null,t0:r.canal==='checkout'&&r.t0?r.t0:null,tempos:r.tempos||null,lang:r.canal==='checkout'?(r.lang||lang()):null,cortesia:r.cortesia||null};}
+    /* v92: canal e t0; o idioma só do Checkout (a venda no balcão usaria o idioma da equipe) */canal:r.canal==='checkout'||r.canal==='balcao'?r.canal:null,t0:r.canal==='checkout'&&r.t0?r.t0:null,tempos:r.tempos||null,lang:r.canal==='checkout'?(r.lang||lang()):null,...(r.cortesia?{cortesia:r.cortesia}:{})};}
 
 // ---------- v83 (parte F): impressão 10×15 pela DNP DS-RX1HS de cada notebook (Chrome; página PR 4×6 = 102×152 mm sem margem; rolo de ~700) ----------
 // Foto com fundo de IA imprime (Eduardo, 29/10; a D8 do plano caiu): a montagem é refeita com o fundo de 5000 px (fileHi).
@@ -4100,7 +4100,7 @@ const PROD_CAT=['mais','acima15','tribuna','maracana','gramado','zona','foto3','
 // v80 (revisão 1): memo por nome; com 30 dias × 400 pedidos o mesmo nome aparece milhares de vezes
 const PK_MEMO=new Map();function prodKey(nome){const n=String(nome==null?'':nome);let k=PK_MEMO.get(n);if(k===undefined){k=prodKey0(n);if(PK_MEMO.size<5000)PK_MEMO.set(n,k);}return k;}
 function prodKey0(nome){const s=semAcento(nome).replace(/pacote/g,' ').replace(/\s+/g,' ').trim();
-  if(s.includes('adic'))return 'extra';if(s.includes('figurinha'))return 'figurinha';if(s.includes('porta-retrato')||s.includes('porta retrato'))return 'porta';if(s.includes('acima de 15'))return 'acima15';if(s.includes('todas as fotos digitais')||s.includes('maracana mais'))return 'mais';
+  if(s.includes('cortesia'))return 'cortesia';if(s.includes('adic'))return 'extra';if(s.includes('figurinha'))return 'figurinha';if(s.includes('porta-retrato')||s.includes('porta retrato'))return 'porta';if(s.includes('acima de 15'))return 'acima15';if(s.includes('todas as fotos digitais')||s.includes('maracana mais'))return 'mais';
   if(s.includes('3 fotos digitais e impressas'))return 'foto3';if(s.includes('1 foto digital e impressa'))return 'foto1';if(s.includes('tribuna'))return 'tribuna';if(s.includes('gramado'))return 'gramado';if(s.includes('zona mista'))return 'zona';if(s.includes('arquibancada'))return 'arq';if(s.includes('maracana'))return 'maracana';
   if(s.includes('adicional'))return 'extra';if(s.includes('fundo'))return 'fundo';if(s.includes('avulsa'))return 'dig';if(s.includes('cortesia'))return 'cortesia';return 'outros';}
 const prodNome=k=>k==='outros'?'Outros (catálogo antigo)':k==='dig'?'Foto digital avulsa':catName(k).replace(/^Pacote /,'');
@@ -4403,7 +4403,7 @@ function vChroma(){
   const fila=Object.values(SIM.sessions).filter(x=>x.bg).length;const balcao=Object.values(SIM.sessions).filter(x=>x.status==='paga').reduce((a,x)=>a+(x.cart||[]).filter(c=>c.id==='fundo').reduce((b,c)=>b+itemV(c),0),0); // receita de fundo só no balcão (where!=='loja')
   const old=chromas.map(k=>stats[k]).filter(Boolean);
   return `<div class="head"><div><div class="eyebrow">Sistema · fundos de IA</div><h1>${esc(viewLabel('chroma'))}</h1></div><span class="pill neutral">Chroma desativado em 26/10</span></div>
-  <div class="panel"><h2>Como funciona agora</h2><div class="note" style="font-size:13px">Não existe mais estação de Chroma. Qualquer foto do campo (ou do volante) pode virar foto com fundo de IA: o agente do ponto recorta o grupo neste computador (sem internet e sem custo) e o Eterna monta no fundo escolhido com as regras aprovadas de cada fundo (meio corpo encostado embaixo, corpo inteiro do joelho para cima, a Arquibancada 1950 toda em preto e branco). O Photoroom fica como opção em Preços e Checkout › Avançado. O convidado escolhe no Checkout ou no balcão (venda e fila). A compra depois da visita, pela galeria online, fica para a fase 2. No Checkout, as fotos com fundo de IA entram no pacote como qualquer outra foto; no balcão, ${fmtR(priceOf('fundo'))} por foto.</div>
+  <div class="panel"><h2>Como funciona agora</h2><div class="note" style="font-size:13px">Não existe mais estação de Chroma. Qualquer foto do campo (ou do volante) pode virar foto com fundo de IA: o agente do ponto recorta o grupo neste computador (sem internet e sem custo) e o Eterna monta no fundo escolhido com as regras aprovadas de cada fundo (meio corpo encostado embaixo, corpo inteiro do joelho para cima, a Arquibancada 1950 toda em preto e branco). O convidado escolhe no Checkout ou no balcão (venda e fila). A compra depois da visita, pela galeria online, fica para a fase 2. No Checkout, as fotos com fundo de IA entram no pacote como qualquer outra foto; no balcão, ${fmtR(priceOf('fundo'))} por foto.</div>
     <div class="note">O roteiro de cada ponto de campo (e do volante que acompanha o grupo) tem um quadro para isso: grupo com folga nas laterais, sem cortar ninguém. Corpo inteiro abre todos os fundos; meio corpo e fechada abrem parte deles.</div></div>
   ${fiaPanel()}
   <div class="tiles">
@@ -5443,7 +5443,7 @@ const ALL=perm(1,1,1,1),RO=perm(0,1,0,0),RW=perm(1,1,1,0),NONE=perm(0,0,0,0);
 // letra que não se aplica vira false; C, U ou D ligam R; em Permissões, Ver e Alterar só valem juntos
 function permNorm(perms){const o={};MODULES.forEach(([m])=>{const p=(perms&&perms[m])||{};const x={c:false,r:false,u:false,d:false};['c','r','u','d'].forEach(k=>{x[k]=!!p[k]&&opOk(m,k);});if(x.c||x.u||x.d)x.r=true;if(m==='permissoes'){const on=x.r&&x.u;x.r=x.u=on;}o[m]=x;});return o;}
 // v94-ux (parte H, decisão 10): telas do grupo Sistema que saem do menu da Supervisora (os módulos C/R/U/D dela não mudam)
-const SUP_SEM94=['repo','identidade','chroma','vestiario','fundos-teste']; // parte I: o chroma (Fundos de IA técnico) também; a Supervisora mantém a aba Fundos de IA de Preços e Checkout
+const SUP_SEM94=['repo','identidade','chroma','vestiario','fundos-teste','chute-a-gol']; // parte I: o chroma (Fundos de IA técnico) também; a Supervisora mantém a aba Fundos de IA de Preços e Checkout
 const PRESETS={
  admin:{name:'Admin',perms:Object.fromEntries(MODULES.map(([m])=>[m,{...ALL}])),menu:'*',inicio:'painel',desc:'Vê e faz tudo, inclusive Usuários e Permissões.'},
  foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},escala:{...RO},filafoto:{...RO}},menu:['diario','importar','fotofila','escala'],inicio:'importar',desc:'Vê só o menu Fotógrafo: Diário do set, Minhas fotos (com a troca de fotógrafo), Fila do fotógrafo e a Escala 5×2. Não vê: Checkout, Dashboard (vendas, índice, outros fotógrafos), Curadoria, Configurações.'},
@@ -6604,6 +6604,7 @@ function bgMigraTelao(){let v=null;try{v=localStorage.getItem('eterna.bgtelao.v'
 // a versão do catálogo fica numa chave própria (eterna.catalogo.v): um SIM antigo gravado por outra janela não refaz a migração
 // v98 (Ronaldo, 11/11): catálogo espelhado da Imply, com SKU (idproduto); preço editado no Eterna deixa de valer (uma vez só)
 {let c3=null;try{c3=localStorage.getItem('eterna.catalogo.v3');}catch(e){}if(c3!=='1'&&SIM.prices&&Object.keys(SIM.prices).length){SIM.prices={};log('Catálogo espelhado da Imply: preços editados voltaram ao preço da Imply');}try{localStorage.setItem('eterna.catalogo.v3','1')}catch(e){}}
+  {let q=null;try{q=localStorage.getItem('eterna.qr40');}catch(e){}if(q!=='1'&&SIM.lojaFimSeg===30){SIM.lojaFimSeg=40;log('Tela final do QR: 30 s antigos passaram para 40 s (v97.1)');}try{localStorage.setItem('eterna.qr40','1')}catch(e){}}
 SIM.catalogoV=SIM_V;{let cv=null;try{cv=localStorage.getItem('eterna.catalogo.v');}catch(e){}
 if(cv!=='2'){const mud=['maracana','zona','arq','extra'].filter(id=>SIM.prices&&SIM.prices[id]!=null);mud.forEach(id=>delete SIM.prices[id]);try{localStorage.setItem('eterna.catalogo.v','2')}catch(e){}
   if(mud.length)log(`Catálogo novo do Tour: preços editados de ${mud.map(catName).join(', ')} voltaram ao preço do catálogo`);else saveSim();}}
