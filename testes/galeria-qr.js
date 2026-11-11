@@ -53,7 +53,7 @@ try{
   const ctxC=await b.newContext({viewport:{width:1280,height:900},locale:'pt-BR'});const C=await nova(ctxC,'clock');await C.clock.install();await C.goto(U+'#loja');await C.waitForTimeout(500);await C.clock.pauseAt(new Date(Date.now()+60000));
   const card2=cards[1]||cards[0];await compraLoja(C,card2);const tok2=await C.evaluate(()=>ETERNA.state.kiosk.paid.token);
   ok(TOKRE.test(tok2||'')&&tok2!==tok,'2: dois pagamentos deveriam gerar tokens diferentes');
-  ok((await C.textContent('#lj-volta-n')).trim()==='40','24: a contagem deveria começar em 40');
+  {const n0=(await C.textContent('#lj-volta-n')).trim();ok(n0==='40','24: a contagem deveria começar em 40, começou em '+n0);}
   await C.clock.runFor(35000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: aos 35 s a tela final deveria continuar');
   const n3=await C.textContent('#lj-volta-n');ok(/^[3-5]$/.test((n3||'').trim()),'24: contagem visível aos 35 s deveria mostrar uns 5 s, mostra '+n3);
   await C.clock.runFor(5300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: aos 40 s deveria voltar para a câmera');

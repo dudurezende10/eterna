@@ -29,9 +29,9 @@ try{
   ok(await A.evaluate(()=>/Seu código/.test(document.querySelector('#din-q').placeholder)&&!!document.querySelector('#pend-painel .eyebrow')),'F: placeholder e rótulo "Seu código" no Posto');
   for(const q of [dados.c2,dados.card2]){await A.fill('#din-q','');await A.type('#din-q',q);await A.waitForTimeout(200);
     const ids=await A.evaluate(()=>[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend));ok(ids.length===1&&ids[0]==='L00-ondasf00002','F3: busca por '+q+': '+J(ids));}
-  // recibo: "Seu código: X · eterna.photo/#g · 60 dias"
+  // recibo: "Seu código: X · eterna.photo/g · 60 dias (11/11: endereço curto)"
   await A.evaluate(c=>{ETERNA.state.caixa.session=c;ETERNA.state.posto.recibo=c;ETERNA.render();},dados.card1);await A.waitForTimeout(300);
-  const rec=await A.evaluate(()=>(document.querySelector('.receipt')||{}).textContent||'');ok(new RegExp('Seu código: '+dados.c1+' · eterna\\.photo/#g · 60 dias').test(rec),'F: recibo com "Seu código": '+rec.slice(-160));
+  const rec=await A.evaluate(()=>(document.querySelector('.receipt')||{}).textContent||'');ok(new RegExp('Seu código: '+dados.c1+' · eterna\\.photo/g · 60 dias').test(rec),'F: recibo com "Seu código": '+rec.slice(-160));
   // F2 e F1 no Checkout
   const L=await ctx.newPage();L.on('pageerror',e=>errs.push('L: '+e.message));await L.goto(U+'#loja');await L.waitForTimeout(800);await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
   const tenta=async v=>{await L.evaluate(()=>{ETERNA.state.kiosk.step='code';ETERNA.render();});await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',v);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(250);
