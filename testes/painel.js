@@ -124,7 +124,7 @@ try{
   {const {ctx:c2,pg:p2}=await nova(b,1440,900,{locale:'en-US'});await entrar(p2,'eduardo@eduardorezende.com');const mmdd=/\b10\/(0[7-9]|1[0-5])\/2026\b/;
     for(const v of ['painel','fotografos','vendas']){await p2.evaluate(v=>{ETERNA.state.range={from:'2026-10-07',to:'2026-10-15'};ETERNA.state.view=v;ETERNA.render();},v);await p2.waitForTimeout(80);
       const d=await p2.$$eval('.rangebar .datef-t',e=>e.map(x=>x.textContent));ok(J(d)===J(['07/10/2026','15/10/2026']),'13: datas em '+v+' '+J(d));ok(!mmdd.test(await main(p2)),'13: data mm/dd em '+v);}
-    await p2.evaluate(()=>{ETERNA.state.revFilter.date='2026-10-12';ETERNA.state.view='revisao';ETERNA.render();});await p2.waitForTimeout(100);ok((await p2.$$eval('.datef-t',e=>e.map(x=>x.textContent))).includes('12/10/2026'),'13: data na Qualidade');
+    await p2.evaluate(()=>{ETERNA.state.revFilter.per='data';ETERNA.state.revFilter.date='2026-10-12';ETERNA.state.view='revisao';ETERNA.render();});await p2.waitForTimeout(100);ok((await p2.$$eval('.datef-t',e=>e.map(x=>x.textContent))).includes('12/10/2026'),'13: data na Qualidade');
     await p2.evaluate(()=>{ETERNA.state.gal.tab='grupos';ETERNA.state.view='galerias';ETERNA.render();});await p2.waitForTimeout(80);const nv=await p2.$('[data-act="gal-ev-novo"]');if(nv){await nv.click();await p2.waitForTimeout(100);await p2.evaluate(()=>{const i=document.querySelector('[data-act="gal-ev-data"]');i.value='2026-10-09';i.dispatchEvent(new Event('change',{bubbles:true}));});await p2.waitForTimeout(100);
       ok((await p2.$$eval('.datef-t',e=>e.map(x=>x.textContent))).includes('09/10/2026'),'13: data no grupo de Galerias');}else ok(false,'13: Galerias sem "novo grupo"');
     await c2.close();}
