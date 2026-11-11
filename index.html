@@ -453,7 +453,7 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-tag{position:absolute;left:clamp(14px,2vw,22px);bottom:clamp(14px,2vw,22px);display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:rgba(12,35,64,.85);color:#FFB800;font-size:14px;font-weight:700;letter-spacing:.04em}
 .lj .compimg{position:absolute;inset:0;background-size:cover;background-position:center}.lj .compimg .compst{display:none}.lj .laibadge{display:none}
 /* v97 (selo Edição Maracanã, A6): faixa dourada no canto de cima à esquerda da IMAGEM da montagem; nunca quebra linha nem é cortada; só na tela (nada na impressão, no download ou no arquivo) */
-.lj-ed{position:absolute;top:0;left:clamp(10px,2%,22px);z-index:2;padding:5px 12px 6px;border-radius:0 0 8px 8px;background:#FFB800;color:#0C2340;font-family:'Big Shoulders Display','Barlow Condensed','Arial Narrow',sans-serif;font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:clamp(11px,1.4vw,15px);line-height:1.15;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(12,35,64,.25)}
+.lj-ed{position:absolute;top:0;left:clamp(10px,2%,22px);z-index:2;padding:5px 12px 6px;border-radius:0 0 8px 8px;background:#FFB800;color:#0C2340;font-family:var(--display);font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:clamp(11px,1.4vw,15px);line-height:1.15;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(12,35,64,.25)}
 .lj-lbimg.ai .lj-ed{font-size:15px}
 /* a caixa da montagem na tela cheia tem a proporção dela (fit); com a imagem encostada no alto da tela, o selo anda para a direita do logo (lj-ovtl) */
 @container (min-aspect-ratio:4/3){.lj-lbmid .lj-lbimg.ai.fit .lj-ed{left:max(clamp(10px,2%,22px),calc(112px - (100cqw - min(100cqw,var(--ar) * 100cqh)) / 2))}}
@@ -465,8 +465,8 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-mimg.ai .lj-ed{left:calc(max(0px,(100cqw - 66.667cqw * min(var(--ar,1.5),1.5)) / 2) + clamp(4px,2%,22px));top:max(0px,calc((66.667cqw - 100cqw / max(var(--ar,1.5),1.5)) / 2))}
 @container (max-width:150px){.lj-ed{font-size:9px;padding:2px 6px 3px;letter-spacing:.06em;left:4px;border-radius:0 0 5px 5px}}
 .pend-th .lj-ed,.eco-ed{font-size:10px;padding:1px 5px 2px;left:3px;letter-spacing:.05em;border-radius:0 0 4px 4px}
-.lj-edh{grid-column:1/-1;display:flex;flex-direction:column;gap:4px;padding:2px 2px 4px}.lj-edh h3{margin:0;color:#fff;font-family:'Big Shoulders Display','Barlow Condensed','Arial Narrow',sans-serif;font-weight:800;letter-spacing:.06em;text-transform:uppercase;font-size:clamp(20px,2.4vw,30px);line-height:1.05}
-.lj-edeb{align-self:flex-start;padding:3px 10px 4px;border-radius:4px;background:#FFB800;color:#0C2340;font-family:'Big Shoulders Display','Barlow Condensed','Arial Narrow',sans-serif;font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:14px;white-space:nowrap}
+.lj-edh{grid-column:1/-1;display:flex;flex-direction:column;gap:4px;padding:2px 2px 4px}.lj-edh h3{margin:0;color:#fff;font-family:var(--display);font-weight:800;letter-spacing:.06em;text-transform:uppercase;font-size:clamp(20px,2.4vw,30px);line-height:1.05}
+.lj-edeb{align-self:flex-start;padding:3px 10px 4px;border-radius:4px;background:#FFB800;color:#0C2340;font-family:var(--display);font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:14px;white-space:nowrap}
 .lj-aimk{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:12px;text-align:center;background:rgba(12,35,64,.62);color:#fff;font-weight:600;font-size:clamp(14px,1.6vw,18px);letter-spacing:.02em}
 .lj-spin{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.28);border-top-color:#FFB800;animation:gqspin 1s linear infinite}
 .lj-actions{display:flex;justify-content:center;align-items:center;gap:clamp(24px,6vw,64px);padding:12px 0 6px}
@@ -1072,11 +1072,11 @@ details.pn-dd{padding:0}
 /* v97: Jogos e ano a ano (seção g) */
 .es-g-top{justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.es-g-top .chip[aria-pressed="true"]{background:#134078;color:#fff;border-color:#134078}
 .es-tend{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-radius:6px;padding:14px 18px;background:#D9D9D6;color:#25282A}
-.es-tend b{font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:800;font-size:28px;letter-spacing:.1em;text-transform:uppercase}.es-tend span{font-size:14px}
+.es-tend b{font-family:var(--display);font-weight:800;font-size:28px;letter-spacing:.1em;text-transform:uppercase}.es-tend span{font-size:14px}
 .es-tend.sobe{background:#43B02A;color:#0C2340}.es-tend.cai{background:#FFB800;color:#0C2340}.es-tend.igual{background:#134078;color:#fff}
 .es-tend.neutro{background:#F2F2F0;color:#25282A;border:1px dashed #A2AAAD}.es-tend.neutro b{font-size:20px}
 .es-g-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-.es-g-card{border-radius:6px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}.es-g-card h3{margin:0;font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:800;font-size:20px;letter-spacing:.1em;text-transform:uppercase}
+.es-g-card{border-radius:6px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}.es-g-card h3{margin:0;font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:.1em;text-transform:uppercase}
 .es-g-card.jogo{background:#134078;color:#fff}.es-g-card.jogo .note{color:#dfe6f0}.es-g-card.normal{background:#D9D9D6;color:#25282A}
 .es-g-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;margin:0}.es-g-card dt{font-size:12px;opacity:.85}.es-g-card dd{margin:0;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .es-g-card .pill.warn{color:#0C2340}
