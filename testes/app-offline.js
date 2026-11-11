@@ -11,14 +11,16 @@ const TIPOS={'.html':'text/html','.js':'application/javascript','.woff2':'font/w
 function origem(){return new Promise(res=>{const s=http.createServer((q,r)=>{const u=decodeURIComponent(q.url.split('?')[0]);const f=path.join(RAIZ,u==='/'?'index.html':u);
   if(!f.startsWith(RAIZ+path.sep)||!fs.existsSync(f)||!fs.statSync(f).isFile()){r.writeHead(404);return r.end();}
   r.writeHead(200,{'Content-Type':TIPOS[path.extname(f)]||'application/octet-stream'});fs.createReadStream(f).pipe(r);});s.listen(OP,'127.0.0.1',()=>res(s));});}
-const get=p=>new Promise(res=>{const r=http.get({host:'127.0.0.1',port:P,path:p},rs=>{const c=[];rs.on('data',x=>c.push(x));rs.on('end',()=>res({s:rs.statusCode,b:Buffer.concat(c)}));});r.on('error',()=>res({s:0,b:Buffer.alloc(0)}));});
+/* v93: o /status completo (com app_offline_pronto) exige sessão; sem ela o agente só diz ok/versão */
+const S=require('./_agente_sessao');let CK=null,HOME_AG=null;
+const get=p=>new Promise(res=>{const r=http.get({host:'127.0.0.1',port:P,path:p,headers:CK?{Cookie:CK}:{}},rs=>{const c=[];rs.on('data',x=>c.push(x));rs.on('end',()=>res({s:rs.statusCode,b:Buffer.concat(c)}));});r.on('error',()=>res({s:0,b:Buffer.alloc(0)}));});
 function subir(H){const p=spawn('python3',['-I',AG],{env:{...process.env,HOME:H,USERPROFILE:H,ETERNA_PORTA:String(P),ETERNA_FTP_PORTA:String(FP),ETERNA_APP_ORIGIN:'http://127.0.0.1:'+OP,ETERNA_SEM_OPENCV:'1',USER:'eterna-teste-sem-cartao',NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});
   p.log='';p.stdout.on('data',d=>p.log+=d);p.stderr.on('data',d=>p.log+=d);return p;}
 const parar=p=>new Promise(r=>{if(!p||p.exitCode!==null)return r();p.on('exit',r);p.kill();});
-async function status(){const r=await get('/status');try{return r.s===200?JSON.parse(r.b):{}}catch(e){return {}}}
+async function status(){if(!CK&&HOME_AG){try{CK=S.sessao(HOME_AG);}catch(e){}}const r=await get('/status');try{return r.s===200?JSON.parse(r.b):{}}catch(e){return {}}}
 (async()=>{
 for(let i=0;i<50;i++){P=46600+Math.floor(Math.random()*100);OP=P+100;FP=P+200;if(await livre(P)&&await livre(OP)&&await livre(FP))break;}
-const H=fs.mkdtempSync(path.join(os.tmpdir(),'app-offline-'));let ag=null,srv=null,b=null;
+const H=fs.mkdtempSync(path.join(os.tmpdir(),'app-offline-'));HOME_AG=H;let ag=null,srv=null,b=null;
 try{
   srv=await origem();ag=subir(H);
   let st={};for(let i=0;i<240&&st.app_offline_pronto!==true;i++){await sleep(250);st=await status();}
