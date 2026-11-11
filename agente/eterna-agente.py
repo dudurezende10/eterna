@@ -6267,10 +6267,24 @@ agenda_lock = threading.Lock()                    # uma sincronização de jogos
 agenda_wake = threading.Event()
 dia_wake = threading.Event()
 agenda_fonte = {"feriados_ate": None, "ultima": None, "tentativa": None, "ok": None, "erro": None, "pedidos_hoje": 0,
-                "pedidos_dia": None, "restantes": None, "n_por_ano": {}, "ja_no_calendario": 0, "venue_id": None,
-                "apagados_api": [], "teste": None, "rodando": False}
-AF_FONTE_CAMPOS = ("ultima", "tentativa", "ok", "erro", "pedidos_hoje", "pedidos_dia", "restantes", "n_por_ano",
-                   "ja_no_calendario", "venue_id", "apagados_api", "teste")
+                "pedidos_dia": None, "restantes": None, "limite_dia": None, "n_por_ano": {}, "ja_no_calendario": 0, "venue_id": None,
+                "apagados_api": [], "teste": None, "rodando": False, "feriados_anos": []}
+AF_FONTE_CAMPOS = ("ultima", "tentativa", "ok", "erro", "pedidos_hoje", "pedidos_dia", "restantes", "limite_dia", "n_por_ano",
+                   "ja_no_calendario", "venue_id", "apagados_api", "teste", "feriados_anos")
+# Teto global de consultas à API-Football (vale para todos os postos juntos, não por IP): Atualizar no máximo 1 vez a
+# cada 10 min, Testar no máximo 1 vez por minuto, parar com menos de 10 consultas restantes no dia ou passando de 80% do
+# plano diário (100 no grátis; o limite que a API manda no cabeçalho vale por cima), e 6 h de espera depois de uma falha.
+AF_ATUALIZAR_S = 600
+AF_TESTAR_S = 60
+AF_RESTANTES_MIN = 10
+AF_PLANO_DIA = 100
+AF_TETO_PCT = 0.8
+AF_FALHA_S = 6 * 3600
+af_ultimo = {"sync": 0.0, "teste": 0.0}           # time.time() do último começo de cada um (em memória; o arquivo guarda tentativa e teste.em)
+
+
+class AfCota(RuntimeError):
+    """Consulta barrada antes de sair: o teto diário chegou."""
 _af_carregado = [False]
 dia_sujos = set()
 dia_sujos_lock = threading.Lock()
@@ -6332,12 +6346,19 @@ def _agenda_grava(docs):
 
 def agenda_semear_feriados(ano_atual=None):
     """Feriados de AGENDA_DESDE até o ano que vem. Não grava se o id já existe (inclusive apagado: a pessoa apagou, não
-    volta) nem se a data já tem um feriado (os criados antes pelo botão "Adicionar feriados", de id aleatório)."""
+    volta) nem se a data já tem um feriado (os criados antes pelo botão "Adicionar feriados", de id aleatório). Os anos
+    já semeados ficam em agenda-fonte.json (feriados_anos) e não são semeados de novo."""
+    _af_fonte_carrega()
     ano_atual = ano_atual or int(_ff_hoje()[:4])
+    feitos = {a for a in (agenda_fonte.get("feriados_anos") or []) if isinstance(a, int) and not isinstance(a, bool)}
+    anos = [a for a in range(AGENDA_DESDE, ano_atual + 2) if a not in feitos]
+    if not anos:
+        agenda_fonte["feriados_ate"] = ano_atual + 1
+        return 0
     todos = _agenda_todos()
     datas = {v.get("data") for v in todos.values() if v and v.get("tipo") == "feriado"}
     em, novos = _iso(), []
-    for ano in range(AGENDA_DESDE, ano_atual + 2):
+    for ano in anos:
         for data, nome in feriados_de(ano):
             i = agenda_id("feriado|" + data)
             if i in todos or data in datas:
@@ -6347,7 +6368,9 @@ def agenda_semear_feriados(ano_atual=None):
                           "visitante": "", "competicao": "", "obs": nome, "origem": "feriados", "por": "Eterna", "em": em}})
     if novos:
         _agenda_grava(novos)
+    agenda_fonte["feriados_anos"] = sorted(feitos | set(anos))[-50:]   # ano semeado não é semeado de novo
     agenda_fonte["feriados_ate"] = ano_atual + 1
+    _af_fonte_grava()
     return len(novos)
 
 
@@ -6416,11 +6439,43 @@ def _af_msg(ex, cfg):
     return t.replace(cfg["chave"], "····") if cfg and cfg.get("chave") else t
 
 
-def af_get(cfg, rota, params):
-    """GET na API-Football (host fixo, timeout 20 s, resposta até 2 MB). Erro vira RuntimeError sem a chave."""
+def af_cota():
+    """None se ainda cabe uma consulta hoje; senão o motivo (texto curto, sem a chave). Zera a conta na virada do dia."""
     hoje = _ff_hoje()
     if agenda_fonte.get("pedidos_dia") != hoje:
-        agenda_fonte.update(pedidos_dia=hoje, pedidos_hoje=0)
+        agenda_fonte.update(pedidos_dia=hoje, pedidos_hoje=0, restantes=None)
+    rest = agenda_fonte.get("restantes")
+    if isinstance(rest, int) and not isinstance(rest, bool) and rest < AF_RESTANTES_MIN:
+        return "limite diário de consultas da API-Football quase no fim (menos de %d restantes)" % AF_RESTANTES_MIN
+    lim = agenda_fonte.get("limite_dia")
+    lim = lim if isinstance(lim, int) and not isinstance(lim, bool) and lim > 0 else AF_PLANO_DIA
+    if int(agenda_fonte.get("pedidos_hoje") or 0) + 1 > lim * AF_TETO_PCT:
+        return "limite diário de consultas da API-Football quase no fim (80%% do plano usado)"
+    return None
+
+
+def af_espera(tipo, agora=None):
+    """Segundos até poder consultar de novo e o motivo: (0, None), (s, "intervalo") ou (s, "falha").
+    tipo "sync": 10 min entre buscas e 6 h depois de uma falha; tipo "teste": 1 min entre testes."""
+    agora = agora or time.time()
+    if tipo == "teste":
+        t = (agenda_fonte.get("teste") or {}) if isinstance(agenda_fonte.get("teste"), dict) else {}
+        ult = max(af_ultimo["teste"], _epoch(t.get("em") or "") or 0)
+        return (int(ult + AF_TESTAR_S - agora) + 1, "intervalo") if ult and agora - ult < AF_TESTAR_S else (0, None)
+    tent = _epoch(agenda_fonte.get("tentativa") or "") or 0
+    if tent and agenda_fonte.get("ok") is False and agora - tent < AF_FALHA_S:
+        return int(tent + AF_FALHA_S - agora) + 1, "falha"
+    ult = max(af_ultimo["sync"], tent)
+    if ult and agora - ult < AF_ATUALIZAR_S:
+        return int(ult + AF_ATUALIZAR_S - agora) + 1, "intervalo"
+    return 0, None
+
+
+def af_get(cfg, rota, params):
+    """GET na API-Football (host fixo, timeout 20 s, resposta até 2 MB). Erro vira RuntimeError sem a chave."""
+    motivo = af_cota()
+    if motivo:
+        raise AfCota(motivo)
     agenda_fonte["pedidos_hoje"] = int(agenda_fonte.get("pedidos_hoje") or 0) + 1
     req = urllib.request.Request(AF_URL.rstrip("/") + rota + "?" + urlencode(params),
                                  headers={"x-apisports-key": cfg["chave"], "Accept": "application/json", "User-Agent": "eterna-agente"})
@@ -6428,6 +6483,7 @@ def af_get(cfg, rota, params):
         with urllib.request.build_opener(_AfSemRedir).open(req, timeout=20) as r:
             corpo = r.read(AF_RESP_MAX + 1)
             resto = r.headers.get("x-ratelimit-requests-remaining")
+            lim = r.headers.get("x-ratelimit-requests-limit")
     except urllib.error.HTTPError as ex:
         raise RuntimeError("API-Football respondeu HTTP %d%s" % (ex.code, " (chave recusada)" if ex.code in (401, 403) else ""))
     except Exception as ex:
@@ -6440,6 +6496,11 @@ def af_get(cfg, rota, params):
         raise RuntimeError("resposta da API-Football inválida")
     try:
         agenda_fonte["restantes"] = int(resto) if resto is not None else agenda_fonte.get("restantes")
+    except ValueError:
+        pass
+    try:
+        if lim is not None and int(lim) > 0:
+            agenda_fonte["limite_dia"] = int(lim)
     except ValueError:
         pass
     erros = j.get("errors") if isinstance(j, dict) else None
@@ -6555,6 +6616,10 @@ def agenda_jogos_sync(motivo=""):
         cfg = af_cfg()
         if not cfg:
             return {"ok": False, "erro": "sem_chave"}
+        espera, porque = af_espera("sync")
+        if espera:
+            return {"ok": False, "erro": "espera", "motivo": porque, "espera_s": espera}
+        af_ultimo["sync"] = time.time()
         agenda_fonte["rodando"] = True
         hoje = _ff_hoje()
         ano = int(hoje[:4])
@@ -6566,6 +6631,9 @@ def agenda_jogos_sync(motivo=""):
                 try:
                     for p in af_partidas(cfg, venue, t):
                         partidas[p["fixture_id"]] = p
+                except AfCota as ex:
+                    erros.append(_af_msg(ex, cfg))
+                    break
                 except RuntimeError as ex:
                     erros.append("%d: %s" % (t, _af_msg(ex, cfg)))
         except RuntimeError as ex:
@@ -6587,27 +6655,38 @@ def agenda_jogos_sync(motivo=""):
 
 
 def agenda_testar():
-    """"Testar agora" do Painel de controle: uma consulta da temporada atual (mais a busca do estádio na primeira vez)."""
-    _af_fonte_carrega()
-    cfg = af_cfg()
-    if not cfg:
-        return {"ok": False, "erro": "sem_chave"}
-    ano = int(_ff_hoje()[:4])
+    """"Testar agora" do Painel de controle: uma consulta da temporada atual (mais a busca do estádio na primeira vez).
+    Roda dentro do agenda_lock (nunca junto com uma busca) e no máximo 1 vez por minuto (teto global). Não espera as
+    6 h de uma falha da busca: é assim que o Admin confere a chave nova; o teto diário vale igual."""
+    if not agenda_lock.acquire(blocking=False):
+        return {"ok": False, "erro": "ja_rodando"}
     try:
-        n = len(af_partidas(cfg, af_venue(cfg), ano))
-        t = {"em": _iso(), "ok": True, "temporada": ano, "n": n, "erro": None}
-    except RuntimeError as ex:
-        t = {"em": _iso(), "ok": False, "temporada": ano, "n": 0, "erro": _af_msg(ex, cfg)}
-    agenda_fonte["teste"] = t
-    _af_fonte_grava()
-    return t
+        _af_fonte_carrega()
+        cfg = af_cfg()
+        if not cfg:
+            return {"ok": False, "erro": "sem_chave"}
+        espera, _ = af_espera("teste")
+        if espera:
+            return {"ok": False, "erro": "espera", "espera_s": espera}
+        af_ultimo["teste"] = time.time()
+        ano = int(_ff_hoje()[:4])
+        try:
+            n = len(af_partidas(cfg, af_venue(cfg), ano))
+            t = {"em": _iso(), "ok": True, "temporada": ano, "n": n, "erro": None}
+        except RuntimeError as ex:
+            t = {"em": _iso(), "ok": False, "temporada": ano, "n": 0, "erro": _af_msg(ex, cfg)}
+        agenda_fonte["teste"] = t
+        _af_fonte_grava()
+        return t
+    finally:
+        agenda_lock.release()
 
 
 def _agenda_vencida(agora=None):
     """Sincroniza toda segunda às 06:00 (fuso do venue), no boot se a última passou de 7 dias, e de novo 6 h depois de uma falha."""
     agora = agora or time.time()
     ult, tent = _epoch(agenda_fonte.get("ultima") or ""), _epoch(agenda_fonte.get("tentativa") or "")
-    if tent and not agenda_fonte.get("ok") and agora - tent < 6 * 3600:
+    if tent and not agenda_fonte.get("ok") and agora - tent < AF_FALHA_S:
         return False
     if not ult or agora - ult > 7 * 86400:
         return True
@@ -6618,7 +6697,7 @@ def _agenda_vencida(agora=None):
 
 def agenda_loop():
     _af_fonte_carrega()
-    dia_feito = None
+    dia_feito, pendente = None, False
     while True:
         hoje = _ff_hoje()
         if hoje != dia_feito:                    # no boot e na virada do dia (pega a virada do ano sem ninguém)
@@ -6631,9 +6710,14 @@ def agenda_loop():
                 print("  agenda (feriados): %s" % str(ex)[:120])
         acordado = agenda_wake.is_set()
         agenda_wake.clear()
+        pendente = pendente or acordado          # pedido da tela barrado pelo teto (10 min ou 6 h) roda quando abrir
         try:
-            if af_cfg() and (acordado or _agenda_vencida()):
-                agenda_jogos_sync("pedido na tela" if acordado else "agenda")
+            if af_cfg() and (pendente or _agenda_vencida()):
+                r = agenda_jogos_sync("pedido na tela" if pendente else "agenda")
+                if r.get("erro") != "espera" and not r.get("ja_rodando"):
+                    pendente = False
+            elif not af_cfg():
+                pendente = False
         except Exception as ex:
             print("  agenda (jogos): %s" % type(ex).__name__)
         agenda_wake.wait(60)
@@ -6645,13 +6729,14 @@ def agenda_status(publico=False):
     cfg = af_cfg()
     j = {"fonte": "api-football" if cfg else "nenhuma", "chave": bool(cfg), "ultima": agenda_fonte.get("ultima"),
          "ok": agenda_fonte.get("ok"), "erro": agenda_fonte.get("erro")}
-    if publico:
+    if publico:                                  # /status (CORS aberto): só o código, nunca o texto do erro
+        j["erro"] = "falha" if j["erro"] else None
         return {"feriados_ate": agenda_fonte.get("feriados_ate"), "jogos": j}
     j.update(env=bool(cfg and cfg["env"]), final=cfg["chave"][-4:] if cfg else None, salva_em=cfg and cfg.get("em"),
              salva_por=cfg and cfg.get("por"), tentativa=agenda_fonte.get("tentativa"), n_por_ano=agenda_fonte.get("n_por_ano") or {},
              ja_no_calendario=agenda_fonte.get("ja_no_calendario") or 0, teste=agenda_fonte.get("teste"),
              rodando=bool(agenda_fonte.get("rodando")), pedidos_hoje=agenda_fonte.get("pedidos_hoje") if agenda_fonte.get("pedidos_dia") == _ff_hoje() else 0,
-             restantes=agenda_fonte.get("restantes"))
+             restantes=agenda_fonte.get("restantes"), espera_s=af_espera("sync")[0] if cfg else 0)
     return {"ok": True, "feriados_ate": agenda_fonte.get("feriados_ate"), "jogos": j,
             "dias": {"desde": DIA_DESDE, **dia_estado}}
 
@@ -6717,8 +6802,8 @@ def _dia_vendas(dia):
     n = lambda v: int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
     r = lambda v: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
     m = ler(os.path.join(MET_DIR, dia + ".json"))
-    if m and (n(m.get("vendas")) > 0 or n(m.get("sessoes")) > 0):
-        on = m.get("online") if isinstance(m.get("online"), dict) else {}
+    on = (m.get("online") if isinstance(m.get("online"), dict) else {}) if m else {}
+    if m and (n(m.get("vendas")) > 0 or n(m.get("sessoes")) > 0 or n(on.get("vendas")) > 0):   # dia só com venda online também conta
         return {"fonte_vendas": "eterna", "vendas": n(m.get("vendas")) + n(on.get("vendas")), "receita": round(r(m.get("faturamento")) + r(on.get("faturamento")), 2),
                 "fotos": n(m.get("fotos")), "sessoes": n(m.get("sessoes")), "sessoes_com_venda": n(m.get("sessoes_com_venda"))}
     rv = ler(os.path.join(ROVER_DIR, "agg", dia + ".json"))
@@ -6888,10 +6973,11 @@ def totais_gravar(origem, itens, rec, arquivo, por):
     return {"ok": True, "aceitos": len(itens), "recusados": rec[:200], "importacao": iid}
 
 
-def config_do_cadastro(email):
+def admin_do_cadastro(email):
     """O servidor ainda não confere quem está logado (pendência desde a v78; login real no plano de 04/11). Até lá, a
     chave da API-Football só é aceita com o e-mail de alguém que o cadastro do servidor marca como ativo e com
-    Configurações em Alterar (Eduardo, 10/11: o painel fica em Configurações). Barreira, não autenticação.
+    Configurações, Usuários e Permissões em Alterar (o Admin; a Supervisora não tem Usuários). Eduardo, 10/11: a
+    chave fica só com o Admin. Barreira, não autenticação.
     Devolve o nome (para a situação da fonte) ou None."""
     e = str(email or "").strip().lower()
     if not e or len(e) > 200:
@@ -6904,22 +6990,22 @@ def config_do_cadastro(email):
         if not isinstance(u, dict) or str(u.get("email") or "").strip().lower() != e or u.get("active") is False or u.get("deleted"):
             continue
         p = u.get("perms") if isinstance(u.get("perms"), dict) else {}
-        if isinstance(p.get("configuracao"), dict) and p["configuracao"].get("u") is True:
+        if all(isinstance(p.get(m), dict) and p[m].get("u") is True for m in ("configuracao", "usuarios", "permissoes")):
             return re.sub(r"[<>\x00-\x1f]", "", str(u.get("name") or e))[:60]
     return None
 
 
 # Rotas da v97 (deny-by-default): toda rota declara a guarda; guarda desconhecida = 403. Todas em rota_privada (sem CORS
 # aberto), com o Host e a origem do agente (posto + origem_local) e no-store. "gravar" exige X-Eterna: 1 e limite por
-# minuto; "config" exige também o e-mail de alguém com Configurações em Alterar no cadastro do servidor (config_do_cadastro).
+# minuto; "admin" exige também o e-mail de um Admin do cadastro do servidor (admin_do_cadastro).
 #   (método, caminho): (guarda, método do H, pedidos por minuto por IP, corpo máximo)
 AGENDA_ROTAS = {
     ("GET", "/estatisticas/dias"): ("ler", "r_estatisticas_dias", 0, 0),
     ("GET", "/agenda/status"): ("ler", "r_agenda_status", 0, 0),
     ("POST", "/agenda/atualizar"): ("gravar", "r_agenda_atualizar", 1, 1024),
     ("POST", "/ponto/entradas/totais"): ("gravar", "r_entradas_totais", 30, 256 * 1024),
-    ("POST", "/agenda/fonte"): ("config", "r_agenda_fonte", 10, 4096),
-    ("POST", "/agenda/testar"): ("config", "r_agenda_testar", 1, 1024),
+    ("POST", "/agenda/fonte"): ("admin", "r_agenda_fonte", 10, 4096),
+    ("POST", "/agenda/testar"): ("admin", "r_agenda_testar", 1, 1024),
 }
 AGENDA_ROTAS_PATHS = frozenset(p for _, p in AGENDA_ROTAS)
 
@@ -7048,7 +7134,7 @@ class H(BaseHTTPRequestHandler):
     def agenda_rota(self, metodo, path):
         guarda, nome, por_min, corpo_max = AGENDA_ROTAS[(metodo, path)]
         try:
-            if guarda not in ("ler", "gravar", "config") or not self.posto() or not self.origem_local():
+            if guarda not in ("ler", "gravar", "admin") or not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403, nostore=True)
             body, quem = None, None
             if guarda != "ler":
@@ -7059,10 +7145,10 @@ class H(BaseHTTPRequestHandler):
                 body, err = self.corpo(corpo_max)
                 if err:
                     return self.js({"error": "corpo inválido"}, err, nostore=True)
-            if guarda == "config":
-                quem = config_do_cadastro(body.get("quem"))
+            if guarda == "admin":
+                quem = admin_do_cadastro(body.get("quem"))
                 if not quem:
-                    return self.js({"error": "sem_permissao"}, 403, nostore=True)
+                    return self.js({"error": "so_admin"}, 403, nostore=True)
             return getattr(self, nome)(body, quem)
         except Exception as ex:
             print("  %s: %s" % (path, type(ex).__name__))
@@ -7083,6 +7169,9 @@ class H(BaseHTTPRequestHandler):
     def r_agenda_atualizar(self, body, quem):
         if not af_cfg():
             return self.js({"ok": False, "error": "sem_chave"}, 409, nostore=True)
+        espera, porque = af_espera("sync")       # teto global: 10 min entre buscas, 6 h depois de uma falha
+        if espera:
+            return self.js({"ok": False, "error": "espera", "motivo": porque, "espera_min": (espera + 59) // 60}, 429, nostore=True)
         ja = bool(agenda_fonte.get("rodando"))
         agenda_wake.set()
         return self.js({"ok": True, "ja_rodando": ja}, nostore=True)
@@ -7115,7 +7204,12 @@ class H(BaseHTTPRequestHandler):
     def r_agenda_testar(self, body, quem):
         if not af_cfg():
             return self.js({"ok": False, "error": "sem_chave"}, 409, nostore=True)
-        return self.js(agenda_testar(), nostore=True)
+        t = agenda_testar()
+        if t.get("erro") == "ja_rodando":
+            return self.js({"ok": False, "error": "ja_rodando"}, 409, nostore=True)
+        if t.get("erro") == "espera":
+            return self.js({"ok": False, "error": "espera", "espera_s": t["espera_s"]}, 429, nostore=True)
+        return self.js(t, nostore=True)
 
     def file(self, path):
         try:
