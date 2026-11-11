@@ -1420,7 +1420,8 @@ def lgpd_recusa(motivo, quem=""):
     except OSError:
         pass
     print("  LGPD: exclusão recusada (%s); nada foi apagado" % motivo)
-    return {"ok": False, "error": motivo, "fotos": 0, "nuvem": 0, "galerias": 0, "preservadas": 0, "galerias_mantidas": 0, "falhas": [motivo]}
+    return {"ok": False, "error": motivo, "fotos": 0, "nuvem": 0, "galerias": 0, "preservadas": 0, "galerias_mantidas": 0,
+            "preservadas_ids": [], "galerias_mantidas_tokens": [], "falhas": [motivo]}
 
 
 def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
@@ -1438,7 +1439,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
         return lgpd_recusa("não deu para conferir as vendas pagas (%s)" % type(ex).__name__, quem)
     do_cli = lambda m: any(isinstance(f, dict) and (f.get("direito") in ("comprada", "cortesia") or pid_lib(str(f.get("id") or "")) in pagas)
                            for f in (m.get("fotos") or []))
-    galerias, mantidas, avisar = 0, 0, []
+    galerias, mantidas, avisar = 0, [], []
     # Tudo o que decide e tira as fotos das galerias acontece de uma vez, com o gal_lock: a compra online (que usa o mesmo
     # lock e relê o manifesto) ou entra antes, e a foto fica com o cliente, ou entra depois e já não encontra a foto à venda.
     # Os arquivos só são apagados depois, quando nenhuma galeria no ar aponta mais para eles.
@@ -1465,7 +1466,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
                 continue
             m = REPO.ler_manifesto(t)
             if m and do_cli(m) and not gal_expirou(m):
-                mantidas += 1                 # tem foto do cliente: continua no ar
+                mantidas.append(t)            # tem foto do cliente: continua no ar
                 continue
             if m:
                 m["expira"], m["encerrada"], m["lgpd"] = _iso(), True, True
@@ -1571,8 +1572,10 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
         fh.write("%s exclusão a pedido do cliente: %d foto(s), %d na nuvem, %d galeria(s), por %s%s\n" % (
             time.strftime("%Y-%m-%d %H:%M:%S"), fotos, nuvem_apagadas, galerias, quem or "-", (" · falhas: " + "; ".join(falhas)) if falhas else ""))
     print(f"  LGPD: {fotos} foto(s) e {galerias} galeria(s) apagadas a pedido do cliente")
+    # para a tela tirar da sessão só o que saiu: as preservadas (no formato do app) e as galerias do pedido que continuam
     return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "preservadas": preservadas,
-            "galerias_mantidas": mantidas, "falhas": falhas[:5]}
+            "galerias_mantidas": len(mantidas), "preservadas_ids": sorted("ag_" + p for p in guardadas),
+            "galerias_mantidas_tokens": mantidas, "falhas": falhas[:5]}
 
 
 def nuvem_versoes(arquivo, pid):

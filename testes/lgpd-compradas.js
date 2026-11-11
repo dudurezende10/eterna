@@ -4,6 +4,8 @@
 // continua aberta e é publicada de novo. Com pedido aberto no Posto usando as fotos, a exclusão é recusada. Sessão sem
 // compra continua como antes: todas as fotos saem e a galeria dela é encerrada.
 // Sessão paga (a âncora B): o botão aparece enquanto sobra foto não comprada; apaga só essas e o recibo continua na tela.
+// Servidor que preservou foto que a tela ainda não sabia que era do cliente (compra online de agora): a tela busca as vendas
+// online, refaz a conta e só tira o que o servidor apagou; a galeria que o servidor manteve não é marcada como encerrada.
 // Agente falso (page.route), como em checkout-varias-sessoes.js.
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
@@ -17,11 +19,11 @@ for i in range(4):
 const hoje=(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
 const a=Date.now()/1000;
 const ids=(p,n)=>Array.from({length:n},(_,i)=>p+String(i+1).padStart(9,'0'));
-const A=ids('aaa',6),B=ids('bbb',4),C=ids('ccc',5);
+const A=ids('aaa',6),B=ids('bbb',4),C=ids('ccc',5),D=ids('ddd',4);
 const ses=(card,fotos,who,ponto,t0,rev)=>({card,dia:hoje,fotografo:who,fonte:'ftp',ponto,trilha:'vivo',atrasada:false,status:'fechada',motivo:'pausa',aberta_em:t0,ultima_chegada:t0+50,cap0:t0-2,cap1:t0+48,fonte_t:'cap',fechada_em:t0+110,fechada_por:'pausa',fotos,pend:[],dec:{},sim_abertura:null,fundida_em:null,removida:false,rev});
-const FEED=[ses('LPTFAMA01',A,'carlos','terminal',a-1500,1),ses('LPTSOLO02',B,'samuel','campo4',a-900,2),ses('LPTOUTR03',C,'yago','campo2',a-700,3)];
+const FEED=[ses('LPTFAMA01',A,'carlos','terminal',a-1500,1),ses('LPTSOLO02',B,'samuel','campo4',a-900,2),ses('LPTOUTR03',C,'yago','campo2',a-700,3),ses('LPTQUAR04',D,'yago','campo3',a-600,4)];
 const SIMS={[A[0]]:.71,[A[1]]:.66,[B[0]]:.69,[B[1]]:.62,[B[2]]:.58};
-let LG=[];
+let LG=[];let PRES=null; // PRES = {ids, tokens(), venda}: o servidor preserva estas fotos, mantém a galeria e passa a listar a venda online
 (async()=>{
 const b=await chromium.launch();const errs=[];
 try{
@@ -35,7 +37,10 @@ try{
   await ctx.route(ORIG+'/file/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:cores[0]}));
   await ctx.route(ORIG+'/rostos/buscar',r=>js(r,{rosto:true,fotos:Object.entries(SIMS).map(([id,sim])=>({id,sim}))}));
   await ctx.route(ORIG+'/ponto/eventos',r=>{let j={};try{j=JSON.parse(r.request().postData()||'{}');}catch(e){}js(r,{ok:true,resultados:(j.eventos||[]).map(e=>({idem:e.idem,s:'ok'}))});});
-  await ctx.route(ORIG+'/lgpd/excluir',r=>{const j=JSON.parse(r.request().postData()||'{}');LG.push(j);js(r,{ok:true,fotos:(j.pids||[]).length,nuvem:0,galerias:(j.tokens||[]).length,falhas:[]});});
+  await ctx.route(ORIG+'/lgpd/excluir',r=>{const j=JSON.parse(r.request().postData()||'{}');LG.push(j);
+    if(PRES){const pr=(j.pids||[]).filter(x=>PRES.ids.includes(x));PRES.listar=true;return js(r,{ok:true,fotos:(j.pids||[]).length-pr.length,nuvem:0,galerias:0,preservadas:pr.length,galerias_mantidas:(j.tokens||[]).length,falhas:[]});} // só as contagens: a tela descobre quais pela venda online
+    js(r,{ok:true,fotos:(j.pids||[]).length,nuvem:0,galerias:(j.tokens||[]).length,falhas:[]});});
+  await ctx.route(ORIG+'/galerias/vendas*',r=>js(r,PRES&&PRES.listar?{vendas:[PRES.venda],next:1}:{vendas:[],next:0}));
   const pg=await ctx.newPage();
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|404/.test(m.text()))errs.push(m.text());});
   await pg.goto(U+'#loja');
@@ -103,6 +108,16 @@ try{
   t=await apagar('LPTOUTR03');const p2=LG[1]||{pids:[],tokens:[]};
   const c=await pg2.evaluate(tok=>{ETERNA.simFresh();const S=ETERNA.SIM;return {n:S.sessions.LPTOUTR03.photos.length,lgpd:S.sessions.LPTOUTR03.lgpd&&S.sessions.LPTOUTR03.lgpd.n,fic:S.sessions.LPTOUTR03.lgpd&&S.sessions.LPTOUTR03.lgpd.ficaram,enc:!!S.galerias[tok].encerrada};},tokC);
   ok(p2.pids.length===5&&p2.tokens.join()===tokC&&c.n===0&&c.lgpd===5&&!c.fic&&c.enc,'7: sessão sem compra: as 5 fotos saem e a galeria é encerrada: '+J({p2,c,t}));
+  // 9. o servidor preserva uma foto que esta tela não sabia que era do cliente (compra online feita agora na galeria da sessão D)
+  const tokD=await pg2.evaluate(()=>{ETERNA.simFresh();const t=ETERNA.galDaSessao('LPTQUAR04',true);ETERNA.galAtualizar(t);ETERNA.saveSim();return t;});
+  PRES={ids:['ag_ddd000000002'],venda:{id:'O0001',token:tokD,sessoes:['LPTQUAR04'],pids:['ag_ddd000000002'],n:1,total:39,metodo:'pix',em:new Date().toISOString(),canal:'online',teste:true}};
+  t=await apagar('LPTQUAR04');await pg2.waitForTimeout(500);t=await pg2.evaluate(()=>(document.querySelector('#toast')||{}).textContent||'')||t;const p9=LG[LG.length-1]||{pids:[],tokens:[]};PRES=null;
+  ok(p9.pids.length===4&&p9.tokens.join()===tokD,'9: a tela pede as 4 fotos e o fim da galeria (ainda não sabia da compra): '+J(p9));
+  const d9=await pg2.evaluate(tok=>{ETERNA.simFresh();const S=ETERNA.SIM;const s=S.sessions.LPTQUAR04;const m=S.galerias[tok];const it=(S.galFila||[]).find(x=>x.token===tok);
+    return {fotos:s.photos.map(p=>p.id.slice(-1)).join(''),n:s.lgpd&&s.lgpd.n,fic:s.lgpd&&s.lgpd.ficaram,enc:!!m.encerrada,gal:m.fotos.map(f=>f.id.slice(-1)+':'+f.direito).join(),fila:it?it.estado:null,on:(S.vendasOnline||[]).some(v=>v.id==='O0001')};},tokD);
+  ok(d9.on&&d9.fotos==='2'&&d9.n===3&&d9.fic===1,'9: sai da sessão só o que o servidor apagou; a comprada online fica: '+J(d9));
+  ok(!d9.enc&&d9.gal==='2:comprada'&&d9.fila&&d9.fila!=='encerrada','9: a galeria que o servidor manteve continua aberta, só com a comprada, e é publicada de novo: '+J(d9));
+  ok(/Apagadas: 3 fotos/.test(t)&&/1 comprada ficou/.test(t)&&!/fora do ar/.test(t),'9: aviso com a conta certa: '+t);
   // 8. sessão paga (âncora B, 4 fotos, 1 comprada): o cliente comprou parte e pede para apagar o resto
   const plB=await pg2.evaluate(()=>{ETERNA.simFresh();const p=ETERNA.lgpdPlano('LPTSOLO02');return {sai:p.pids.map(x=>x.slice(-1)).join(''),fica:p.fica.map(x=>x.slice(-1)).join(''),pedido:p.pedido};});
   ok(plB.sai==='134'&&plB.fica==='2'&&!plB.pedido,'8: na sessão paga saem só as 3 não compradas: '+J(plB));
@@ -128,5 +143,5 @@ try{
   ok(!errs.length,'erros de página: '+errs.slice(0,3).join(' | '));
 }catch(e){fails.push('exceção: '+(e&&e.stack||e));}
 finally{await b.close();}
-console.log(fails.length?'FALHA lgpd-compradas: '+fails.join(' · '):'OK lgpd-compradas: apagar a pedido do cliente preserva compradas e cortesias, mantém a galeria paga e recusa com pedido aberto');
+console.log(fails.length?'FALHA lgpd-compradas: '+fails.join(' · '):'OK lgpd-compradas: apagar a pedido do cliente preserva compradas e cortesias, mantém a galeria paga, recusa com pedido aberto, segue o que o servidor preservou e atende a sessão paga');
 process.exit(fails.length?1:0);})();

@@ -92,6 +92,7 @@ try:
     r = m.lgpd_excluir(["ag_" + A1, "ag_" + A2, "ag_" + A3, A4], [paga, solta], quem="teste", posto="Caixa 1", sessao="LPA")
     ok(r["fotos"] == 2 and r["preservadas"] == 2 and r["galerias"] == 1 and r["galerias_mantidas"] == 1, "1: 2 apagadas, 2 preservadas, 1 galeria encerrada, 1 mantida: %r" % r)
     ok(os.path.exists(arq[A1]) and os.path.exists(arq[A3]) and A1 in m.lib and A3 in m.lib, "1: a comprada e a cortesia continuam no disco e no índice")
+    ok(r["preservadas_ids"] == ["ag_" + A1, "ag_" + A3] and r["galerias_mantidas_tokens"] == [paga], "1: a resposta diz quais ficaram e qual galeria continua: %r" % r)
     ok(not os.path.exists(arq[A2]) and not os.path.exists(arq[A4]) and A2 not in m.lib and A4 not in m.lib, "1: as não compradas saem")
     mp, ms = m.REPO.ler_manifesto(paga), m.REPO.ler_manifesto(solta)
     ok(not mp.get("encerrada") and not m.gal_expirou(mp), "1: a galeria paga continua aberta: %r" % {k: mp.get(k) for k in ("encerrada", "expira", "lgpd")})

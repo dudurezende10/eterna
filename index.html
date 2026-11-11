@@ -6340,13 +6340,22 @@ document.addEventListener('click',e=>{
       // galeria com foto comprada ou cortesia continua aberta (só perde as fotos apagadas); as outras saem do ar
       const gals=Object.values(SIM.galerias||{}).filter(m=>m.tipo==='sessao'&&(m.sessoes||[]).includes(card));const temDir=m=>(m.fotos||[]).some(f=>f.direito==='comprada'||f.direito==='cortesia');
       gals.forEach(m=>galAtualizar(m.token));const ficam=gals.filter(temDir).map(m=>m.token);const toks=gals.filter(m=>!temDir(m)).map(m=>m.token);
-      fetch(state.agent.url+'/lgpd/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pids,tokens:toks,quem:state.user&&state.user.email,posto:String((postoDisp()||{}).nome||postoNome()),sessao:card})}).then(r=>r.json()).then(j=>{
+      fetch(state.agent.url+'/lgpd/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pids,tokens:toks,quem:state.user&&state.user.email,posto:String((postoDisp()||{}).nome||postoNome()),sessao:card})}).then(r=>r.json()).then(async j=>{
         if(j.error){toast('Não apaguei: '+j.error);return;}
-        simFresh();const s2=SIM.sessions[card];const sai=new Set(pids);
-        if(s2){s2.photos=(s2.photos||[]).filter(p=>!sai.has(p.id));if(Array.isArray(s2.ia))s2.ia=s2.ia.filter(id=>!sai.has(id));s2.selected=(s2.selected||[]).filter(id=>!sai.has(id));if(!paga)s2.cart=(s2.cart||[]).map(c=>({...c,apagada:true}));s2.lgpd={em:now().toISOString(),por:state.user&&state.user.email,porNome:state.user&&state.user.name,n:pids.length,ficaram:s2.photos.length,posto:String((postoDisp()||{}).nome||postoNome())};}
-        toks.forEach(t=>{const m=SIM.galerias[t];if(m){m.encerrada=true;m.expira=now().toISOString();}});pids.forEach(id=>{delete UP[id];});
-        ficam.forEach(t=>{const m=SIM.galerias[t];if(!m)return;if(m.so)Object.keys(m.so).forEach(c=>{m.so[c]=(m.so[c]||[]).filter(id=>!sai.has(id));});galAtualizar(t);});
-        pids.forEach(id=>log(`LGPD: foto ${id.replace(/^ag_/,'')} da sessão ${card} apagada a pedido do cliente`));saveSim();ficam.forEach(t=>{if(!galDemo(card))galPublicar(t);});log(`LGPD: ${pids.length} fotos da sessão ${card} apagadas a pedido do cliente${pl.fica.length?` (${pl.fica.length} compradas ou de cortesia ficaram)`:''}`);toast(`Apagadas: ${j.fotos} ${j.fotos===1?'foto':'fotos'}${j.nuvem?' (também na nuvem)':''}${pl.fica.length?` · ${pl.fica.length} ${pl.fica.length===1?'comprada ficou':'compradas ficaram'} com o cliente`:''}${j.galerias?' · galeria fora do ar':''}${j.ok?'':' · com falhas, veja o registro'}`);render();})
+        // o servidor pode ter preservado foto que esta tela ainda não sabia que era do cliente (compra online de agora, venda paga
+        // em outro caixa): primeiro as vendas online, depois o plano de novo, e só sai da sessão o que o servidor de fato apagou
+        const nPres=j.preservadas||0,nMant=j.galerias_mantidas||0;const guarda=new Set(j.preservadas_ids||[]);const mant=new Set(j.galerias_mantidas_tokens||[]);
+        if(nPres>0||nMant>0)await galVendasPoll();
+        simFresh();const s2=SIM.sessions[card];
+        if(nPres>0||nMant>0){lgpdPlano(card).fica.forEach(id=>guarda.add(id));toks.forEach(t=>{const m=SIM.galerias[t];if(m){galAtualizar(t);if(temDir(m))mant.add(t);}});}
+        const apag=pids.filter(id=>!guarda.has(id));const sai=new Set(apag);const nFica=pl.fica.length+(pids.length-apag.length);
+        const fechadas=toks.filter(t=>!mant.has(t));const abertas=ficam.concat(toks.filter(t=>mant.has(t)));
+        if(s2&&(apag.length||!pids.length)){s2.photos=(s2.photos||[]).filter(p=>!sai.has(p.id));if(Array.isArray(s2.ia))s2.ia=s2.ia.filter(id=>!sai.has(id));s2.selected=(s2.selected||[]).filter(id=>!sai.has(id));if(!paga)s2.cart=(s2.cart||[]).map(c=>({...c,apagada:true}));s2.lgpd={em:now().toISOString(),por:state.user&&state.user.email,porNome:state.user&&state.user.name,n:apag.length,ficaram:s2.photos.length,posto:String((postoDisp()||{}).nome||postoNome())};}
+        fechadas.forEach(t=>{const m=SIM.galerias[t];if(m){m.encerrada=true;m.expira=now().toISOString();}});apag.forEach(id=>{delete UP[id];});
+        abertas.forEach(t=>{const m=SIM.galerias[t];if(!m)return;if(m.so)Object.keys(m.so).forEach(c=>{m.so[c]=(m.so[c]||[]).filter(id=>!sai.has(id));});galAtualizar(t);});
+        apag.forEach(id=>log(`LGPD: foto ${id.replace(/^ag_/,'')} da sessão ${card} apagada a pedido do cliente`));saveSim();abertas.forEach(t=>{if(!galDemo(card))galPublicar(t);});log(`LGPD: ${apag.length} fotos da sessão ${card} apagadas a pedido do cliente${nFica?` (${nFica} compradas ou de cortesia ficaram)`:''}`);
+        const nAp=pids.length===apag.length?j.fotos:apag.length; // sem nada preservado vale a contagem do servidor; com preservadas, só o que saiu
+        toast(`Apagadas: ${nAp} ${nAp===1?'foto':'fotos'}${j.nuvem?' (também na nuvem)':''}${nFica?` · ${nFica} ${nFica===1?'comprada ficou':'compradas ficaram'} com o cliente`:''}${j.galerias?' · galeria fora do ar':''}${j.ok?'':' · com falhas, veja o registro'}`);render();})
         .catch(()=>toast('Sem conexão com o servidor. Nada foi apagado.'));break;}
     case 'eco-qr':{const tok=galDaSessao(d.card);const m=tok&&SIM.galerias&&SIM.galerias[tok];if(!m){toast('Esta venda não tem galeria online');break;}const sim=SIM.sessions[d.card]||{};
       if(!ECO_CH){toast('Este navegador não fala com a tela do cliente');break;}try{ECO_CH.postMessage({tipo:'mostrar-qr',em:Date.now(),card:d.card,token:tok,codigo:m.codigo||null,total:saleTotal(sim)});toast('QR enviado para a tela do cliente');}catch(e){toast('Não consegui falar com a tela do cliente');}break;}
