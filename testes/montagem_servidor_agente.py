@@ -290,7 +290,8 @@ respostas = []
 
 def H(*a, **k):
     r = pede(*a, **k)
-    respostas.append(r)
+    if a[1].startswith("/montagens"):
+        respostas.append(r)
     return r
 
 
@@ -419,6 +420,136 @@ for mm_ in (mid1, mid_t):
     except OSError:
         pass
 
+# ---------- E4 (critérios 41 a 48): venda com montagem, galeria local ----------
+TOK, COD = "tokMontagemTeste000001", "ABCD-EFGH"
+ph = [p for p in m.sess["LPMONT001"]["fotos"]]      # a leva do gatilho só tem as 2 bases; as fotos comuns vêm da LPMONT000
+comuns = [p for p in m.sess["LPMONT000"]["fotos"] if p not in b0][:2]
+card_g = "LPMONT000"
+mid_v = [r for r in de_base(b0[1]) if r["fundo"] == "tunel"][0]["mid"]          # a montagem que o cliente viu e comprou
+mid_outra = [r for r in de_base(b0[0]) if r["fundo"] == "mirante"][0]["mid"]     # pronta, não comprada
+exp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 60 * 86400))
+
+
+def manifesto(extra=()):
+    return {"token": TOK, "tipo": "sessao", "codigo": COD, "venue": "maracana", "sessoes": [card_g], "criada": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "expira": exp_iso, "precos": {"dig": 39, "todas": 250},
+            "fotos": [{"id": "ag_" + p, "sessao": card_g, "direito": "comprada", "canal": "loja"} for p in comuns] + list(extra)}
+
+
+def evento(venda, tipo, seq, dados=None):
+    return {"idem": "%s-%s-%d" % (venda, tipo, seq), "venda": venda, "seq": seq, "tipo": tipo, "em": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "dados": dados or {}}
+
+
+# 43: manifesto do navegador com t:'ai' inventado (ou com o id de uma montagem não vendida): o item não entra
+st_, j_, _, _ = H("POST", "/galerias/publicar", {"manifesto": manifesto([{"id": mid_outra, "t": "ai", "bg": "mirante", "sessao": card_g, "direito": "comprada", "canal": "loja"},
+                                                                         {"id": mid_v, "sessao": card_g, "direito": "comprada", "canal": "loja"}])})
+mg_ = m.REPO.ler_manifesto(TOK)
+ok(st_ == 200 and j_.get("ignoradas", 0) >= 2 and [f["id"] for f in mg_["fotos"]] == ["ag_" + p for p in comuns], "43: montagem inventada pelo navegador não entra (ignoradas %r): %r" % (j_.get("ignoradas"), [f["id"][:10] for f in mg_["fotos"]]))
+# 41: venda paga (Zona Mista, só digital) com 1 montagem + 2 fotos: a galeria tem as 3 e a montagem baixa
+dados_v = {"saleNo": "L0-041", "card": card_g, "sessoes": [card_g], "meio": "pix", "total": 110, "prints": 0, "nPh": 2, "nAI": 1, "selected": ["ag_" + p for p in comuns],
+           "aiSel": ["ag_%s|tunel" % b0[1]], "aiMont": {"ag_%s|tunel" % b0[1]: mid_v}, "galeria": {"token": TOK, "codigo": COD}, "cart": [{"id": "zonamista", "v": 110}], "canal": "checkout"}
+st_, j_, _, _ = H("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": [evento("V-E4-1", "criar", 1, dados_v)]})
+ok(st_ == 200 and j_["resultados"][0]["s"] == "ok", "41: evento criar aceito")
+ok(not linhas("where vendida is not null"), "41: só com o criar (sem o pagar) nada é marcado como vendido")
+st_, j_, _, _ = H("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": [evento("V-E4-1", "pagar", 2, {"meio": "pix"})]})
+rv = linhas("where mid = ?", (mid_v,))[0]
+ok(rv["vendida"] and rv["venda"] == "V-E4-1" and rv["galeria"] == COD and rv["expira"] > time.time() + 59 * 86400, "41: a venda paga marca a montagem como vendida, com a venda, a galeria e o prazo: %r" % {k: rv[k] for k in ("vendida", "venda", "galeria")})
+ok(len(linhas("where vendida is not null")) == 1, "41/47: só a montagem comprada é marcada")
+m.gal_processar(TOK)
+mg_ = m.REPO.ler_manifesto(TOK)
+ai_ = [f for f in mg_["fotos"] if f.get("t") == "ai"]
+ok(len(mg_["fotos"]) == 3 and len(ai_) == 1 and ai_[0] == {"id": mid_v, "t": "ai", "base": b0[1], "bg": "tunel", "sessao": card_g, "direito": "comprada", "canal": "loja"},
+   "41: a galeria tem as 2 fotos e a montagem, no formato do contrato: %r" % ai_)
+ok(m.REPO.existe(TOK, mid_v, "original") and m.REPO.existe(TOK, mid_v, "vitrine") and mg_["envio"]["compradas"] == "ok", "41: original e vitrine da montagem na galeria")
+with Image.open(m.REPO.abrir(TOK, mid_v, "original")) as im:
+    ok(max(im.size) == 3000 and im.format == "JPEG" and not im.getexif(), "46/D3: download em JPEG de 3000 px, sem EXIF: %r" % (im.size,))
+with Image.open(m.mont_arquivos(HOJE, mid_v)[0]) as im:
+    ok(max(im.size) == 5000, "D3: o arquivo de 5000 px continua guardado no servidor para a impressão")
+# 45: a montagem comprada aparece com qualquer acesso dado, mesmo sem o rosto bater nela; a foto fora do acesso não
+go = m.galeria_obj(TOK, mg_, {"ag_" + comuns[0]})
+fa = [f for f in go["fotos"] if f.get("t") == "ai"]
+ok(len(go["fotos"]) == 2 and len(fa) == 1 and fa[0]["pid"] == mid_v and fa[0]["bg"] == "tunel" and fa[0]["direito"] == "comprada" and fa[0]["original"] and fa[0]["chegando"] is False,
+   "45: galeria_obj devolve a montagem comprada (t, bg, original) sem depender do rosto: %r" % [(f["pid"][:8], f.get("t")) for f in go["fotos"]])
+st_, _, corpo_, hd = H("GET", fa[0]["original"])
+ok(st_ == 200 and corpo_[:2] == b"\xff\xd8", "41: a montagem baixa pelo link assinado da galeria: %r" % st_)
+# 36/E3 com a venda de verdade: agora o corte de impressão sai (montagem vendida)
+ok(H("GET", "/montagens/%s/impressao.jpg" % mid_v)[0] == 200 and H("GET", "/montagens/%s/impressao.jpg" % mid_outra)[0] == 409, "42: a vendida imprime e a não vendida não")
+# republicar pelo navegador (sem a montagem) não a tira; 47: a não comprada nunca aparece
+st_, j_, _, _ = H("POST", "/galerias/publicar", {"manifesto": manifesto()})
+mg_ = m.REPO.ler_manifesto(TOK)
+ok(st_ == 200 and [f["id"] for f in mg_["fotos"] if f.get("t") == "ai"] == [mid_v] and mid_outra not in [f["id"] for f in mg_["fotos"]], "47: republicação mantém só a montagem comprada")
+# 47: galeria de grupo de escola nunca tem montagem
+TOKE = "tokMontagemEscola00001"
+H("POST", "/galerias/publicar", {"manifesto": {**manifesto(), "token": TOKE, "tipo": "evento", "codigo": COD, "nome": "Escola"}})
+m.gal_processar(TOKE)
+ok(not [f for f in (m.REPO.ler_manifesto(TOKE) or {"fotos": []})["fotos"] if f.get("t") == "ai"], "47: galeria de escola nunca tem montagem")
+with m.gal_lock:
+    m.codigos[COD] = TOK
+# 44: venda paga antes de a montagem existir (app antigo ou Venda manual, sem aiMont, foto comum): "chegando" e completa sozinha
+m.REC_FALSO_SEG = 0
+with m.mont_lock:
+    m.mont["parado"] = "teste"                      # segura a montagem para ver o "chegando"
+dados_2 = {"saleNo": "L0-044", "card": card_g, "sessoes": [card_g], "meio": "dinheiro", "total": 70, "selected": [], "aiSel": ["ag_%s|mirante" % comuns[1], "ag_%s|naoexiste" % comuns[1], "../x|tunel"],
+           "galeria": {"token": TOK, "codigo": COD}, "canal": "balcao"}
+H("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": [evento("V-E4-2", "criar", 1, dados_2), evento("V-E4-2", "pagar", 2, {"meio": "dinheiro"})]})
+with m.mont_lock:
+    m.mont["parado"] = None
+r44 = de_base(comuns[1])
+r44 = [r for r in r44 if r["fundo"] == "mirante"]
+ok(len(r44) == 1 and r44[0]["venda"] == "V-E4-2" and r44[0]["vendida"] and r44[0]["origem"] in ("venda", "pedido") and len(linhas("where venda = 'V-E4-2'")) == 1,
+   "44: sem aiMont o servidor resolve a montagem da venda sozinho (e fundo fora do mapa não entra): %r" % [(r["fundo"], r["estado"], r["origem"]) for r in linhas("where venda = 'V-E4-2'")])
+mid44 = r44[0]["mid"]
+m.gal_processar(TOK)
+mg_ = m.REPO.ler_manifesto(TOK)
+go = m.galeria_obj(TOK, mg_, set())
+f44 = [f for f in go["fotos"] if f["pid"] == mid44]
+if not (f44 and f44[0]["original"]):                # (se a montagem já ficou pronta antes de olhar, o "chegando" não é observável)
+    ok(f44 and f44[0]["chegando"] is True and f44[0]["original"] is None and mg_["envio"]["compradas"] == "pendente", "44: montagem vendida ainda não pronta aparece como chegando: %r" % f44)
+ok(espera(lambda: linhas("where mid = ?", (mid44,))[0]["estado"] == "pronta", 60), "44: o servidor recorta e monta a foto vendida: %r" % [(r["estado"], r["motivo"]) for r in linhas("where mid = ?", (mid44,))])
+tk_fila = []
+while not m.gal_fila.empty():
+    tk_fila.append(m.gal_fila.get())
+ok(TOK in tk_fila, "44: a montagem pronta põe a galeria da venda na fila para completar sozinha")
+m.gal_processar(TOK)
+go = m.galeria_obj(TOK, m.REPO.ler_manifesto(TOK), set())
+ok([f for f in go["fotos"] if f["pid"] == mid44 and f["original"] and not f["chegando"]], "44: e a galeria completa")
+m.REC_FALSO_SEG = None
+# D7: venda paga com montagem que não sai em 5 min: alerta no /status (só venda e fundo)
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set estado = 'erro', motivo = 'interno', vendida = ? where mid = ?", (time.time() - 400, mid44)); db.commit(); db.close()
+    m.mont["st"] = (0.0, None)
+al = m.mont_status()["alertas"]
+ok(al == [{"venda": "V-E4-2", "fundo": "mirante", "estado": "erro"}], "D7: /status.montagem.alertas com a venda e o fundo, sem pid nem mid: %r" % al)
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set estado = 'pronta', motivo = null where mid = ?", (mid44,)); db.commit(); db.close()
+    m.mont["st"] = (0.0, None)
+ok(m.mont_status()["alertas"] == [], "D7: montagem pronta, alerta some")
+# 16 com venda de verdade: a vendida não sai por idade nem por teto
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set criada = ? where mid = ?", (time.time() - 10 * 86400, mid_v)); db.commit(); db.close()
+teto_ = m.MONT_TETO_GB
+m.limpar_montagens()
+ok(linhas("where mid = ?", (mid_v,))[0]["estado"] == "pronta" and os.path.isfile(m.mont_arquivos(HOJE, mid_v)[0]), "48/16: a montagem vendida não sai na limpeza antes do prazo da galeria")
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set criada = ? where mid = ?", (time.time(), mid_v)); db.commit(); db.close()
+# 48: venda cancelada: desmarca e sai da galeria
+H("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": [evento("V-E4-2", "cancelar", 3, {"motivo": "teste"})]})
+ok(not linhas("where venda = 'V-E4-2'") and linhas("where mid = ?", (mid44,))[0]["vendida"] is None, "48: venda cancelada desmarca a montagem")
+m.gal_processar(TOK)
+ok(mid44 not in [f["id"] for f in m.REPO.ler_manifesto(TOK)["fotos"]] and mid_v in [f["id"] for f in m.REPO.ler_manifesto(TOK)["fotos"]], "48: a montagem da venda cancelada sai da galeria; a outra fica")
+# evento repetido (idem igual) não muda nada; venda sem montagem não toca o índice
+H("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": [evento("V-E4-1", "pagar", 2, {"meio": "pix"}), evento("V-E4-3", "criar", 1, {"card": card_g, "selected": ["ag_" + comuns[0]]}), evento("V-E4-3", "pagar", 2, {})]})
+ok(len(linhas("where vendida is not null")) == 1, "evento repetido e venda sem montagem não mexem nas vendidas")
+# LGPD da base de uma montagem vendida: some do servidor e da galeria
+base_v = b0[1]
+m.lgpd_excluir([base_v], [], quem="teste")
+mg_ = m.REPO.ler_manifesto(TOK)
+ok(not linhas("where base = ?", (base_v,)) and mid_v not in [f["id"] for f in mg_["fotos"]] and not m.REPO.existe(TOK, mid_v, "original") and not m.REPO.existe(TOK, mid_v, "vitrine"),
+   "19/E4: LGPD da base tira a montagem vendida do índice, do manifesto e dos arquivos da galeria")
+ok(H("GET", "/montagens/%s/impressao.jpg" % mid_v)[0] == 404 and H("GET", "/montagens/%s/previa.jpg" % mid_v)[0] == 404, "19/E4: e as rotas respondem 404")
+while not m.gal_fila.empty():
+    m.gal_fila.get()
+
 # 22/E2: desligada = 503
 cfg("montagem", {"ligada": False})
 ok(H("POST", "/montagens/lista", {"bases": bases})[0] == 503 and H("POST", "/montagens/lista", {"bases": bases})[1] == {"error": "montagem_desligada"}, "E2: montagem desligada = 503 montagem_desligada")
@@ -428,7 +559,7 @@ ok(st["ligada"] is True and st["checkout"] is True, "D5: config/montagem com che
 cfg("montagem", {"ligada": True})
 ok(m.mont_status()["checkout"] is False, "D5: sem o campo, checkout volta a desligado")
 # 33: nenhuma resposta com Access-Control-Allow-Origin: *
-ok(all(r[3].get("access-control-allow-origin") != "*" for r in respostas), "33: nenhuma resposta de /montagens com Access-Control-Allow-Origin: *")
+ok(len(respostas) > 60 and all(r[3].get("access-control-allow-origin") != "*" for r in respostas), "33: nenhuma resposta de /montagens com Access-Control-Allow-Origin: *")
 ok(not any(mid1 in l for l in console.linhas), "E2: o mid nunca vai para o console")
 # 28: a 121ª chamada no minuto do mesmo IP recebe 429
 with m.gal_lock:
@@ -668,6 +799,6 @@ sys.stdout = console.real
 if falhas:
     print("FALHA montagem_servidor_agente: %d · %s · %s" % (len(falhas), " · ".join(falhas[:10]), json.dumps(notas)))
     sys.exit(1)
-print("OK montagem_servidor_agente (E1: 10 por visita com as preferidas primeiro, arquivos 600 só com o mid, idempotência, filho morto, disco, limpeza, fundo novo, versão nova, LGPD, Separar, offline, SHA do fundo) " + json.dumps(notas))
+print("OK montagem_servidor_agente (E1: 10 por visita com as preferidas primeiro, arquivos 600 só com o mid, idempotência, filho morto, disco, limpeza, fundo novo, versão nova, LGPD, Separar, offline, SHA do fundo · E2: rotas /montagens · E3: corte de impressão e {mont} · E4: venda, galeria, alerta) " + json.dumps(notas))
 sys.stdout.flush()
 os._exit(0)

@@ -1876,3 +1876,51 @@ Plano `docs/planos/2026-11-11-selo-edicao-maracana.md` (decisões D1 a D8 do Edu
 - Ordem do pedido no Posto com as montagens primeiro (D7).
 - Selo ou nome do fundo na impressão, no download e no arquivo (decisão do Eduardo: o selo é só da tela).
 
+## Montagem dos fundos de IA no servidor do ponto (v97, 11/11/2026)
+Plano `docs/planos/2026-11-11-montagem-no-servidor.md` (etapas E0 a E4 feitas; E5, a nuvem, pendente). **Regra do projeto (Eduardo, 11/11): recorte e montagem são feitos e guardados no servidor do ponto; o Checkout só mostra.** Tudo nasce desligado: a montagem liga com `config/montagem {"ligada": true}` e o Checkout, o Posto e a impressão só passam a ler do servidor com `"checkout": true`, depois de o Eduardo aprovar a folha lado a lado (D5).
+
+### Processo de montagem (`agente/eterna-montagem.py`)
+- Processo filho do agente, só numpy, Pillow e OpenCV (opcional, só para os rostos). É a porta em Python do `fiaMontar` do app, função por função: `medir`, `layout`, `rostos`, `desenhar`, `ampliar`, `homog`, `warp`, `telao`, `montar`, `imprimir_corte`. Contrato de uma linha JSON por mensagem (`op: montar | imprimir`); caminhos só dentro de `--recortes`, `--fundos` e `--montagens` (`realpath`); imagens até 40 MP; nunca abre porta.
+- Tabelas `REGRAS`, `PADRAO`, `BASE`, `TELAO`, `MONO`, `TELAO_FILTRO`, iguais às do app (`FIA_REGRAS`, `FIA_PADRAO`, `FIA_BASE`, `DATA.backgrounds`). Estão em dois lugares até o canvas sair do app; `testes/montagem-paridade.js` quebra se um lado mudar sem o outro. Regra nova de fundo: mudar nos dois e rodar o teste.
+- Paridade com o canvas (36 casos, figuras sintéticas): layout e medida iguais; prévia com as mesmas entradas, erro médio 0,12 de 255 (pior 0,50); impressão 10×15, 0,94 (pior 1,40). O arquivo do servidor usa o fundo de 5000 px (o da impressão), que não é idêntico ao de 2400 px da prévia do canvas (1,1 a 2,6 de diferença só no fundo).
+- `python3 agente/eterna-montagem.py --regras` imprime as tabelas; `--teste` é só dos testes.
+
+### Fila, arquivos e banco (agente, `mont_*`)
+- Gatilho: o fim do recorte de uma base de IA (`rec_trabalho` → `mont_base_pronta`). 2 bases × fundos ativos = 10 por visita; as que a tela mostra (`mont_preferidos`: `min(BASE[fundo], n − 1) == posição`) com prioridade 1 (ao vivo) ou 2 (cartão), as de reserva com 3; pedido do Checkout e venda com 0. `mont_recuperar` (15 s): partida, Separar, fundo novo, versão nova, erro que passa.
+- A fila é o banco `~/Eterna/ponto/montagens.db` (tabela `montagem`: `mid, base, fundo, versao, estado, motivo, dia, w, h, bytes, sha, rostos, prio, origem, criada, pronta, ms, vendida, venda, expira, apagada, galeria`; única por `(base, fundo, versao)`; estados `fila | fazendo | pronta | erro | apagada`). Entra no backup; os arquivos não.
+- Arquivos em `~/Eterna/montagens/<AAAA-MM-DD>/`: `<mid>.jpg` (final, tamanho do fundo de impressão: 5000 px; Telão 2576×1840; JPEG 92), `<mid>_p.jpg` (prévia de 1600 px, JPEG 85) e `<mid>_i.jpg` (corte 10×15 de 1844×1240, só de montagem vendida, feito no primeiro pedido). Pasta 700, arquivo 600. `mid` = 32 hex sorteados; nenhum pid, fundo ou código de sessão em nome de arquivo nem no console.
+- Versão por fundo (`mont_versao`): `MONT_VERSAO`, versão do processo, versão do recorte, SHA do arquivo do fundo e a regra dele. Versão nova: as não vendidas são refeitas e as antigas saem na limpeza; **a vendida nunca muda**.
+- Fundos: baixados uma vez de `APP_ORIGIN` para `~/Eterna/fundos/` e conferidos com `FUNDOS_SHA` (`agente/gerar-fundos-sha.py` ao trocar a imagem de um fundo); arquivo diferente é recusado e apagado.
+- Limites: uma montagem por vez (`ETERNA_MONTAGEM_CONC=2` com 8 núcleos), prioridade baixa do sistema, 2 GB de memória livre, piso de disco `ETERNA_MONTAGENS_PISO_GB` (15; a prioridade 0 até 2 GB), teto das não vendidas `ETERNA_MONTAGENS_GB` (40), fila de até 2000. Filho morto: a linha volta para a fila; 3 mortes por memória param a montagem até reiniciar o agente (`/status.montagem.parado`).
+- Limpeza de hora em hora (`limpar_montagens`): não vendida com mais de 3 dias, base que saiu da biblioteca, versão antiga não vendida, vendida com `expira` vencido (60 dias) e, acima do teto, as não vendidas mais antigas. A linha fica `apagada` por 60 dias. LGPD (`mont_apagar_base`): arquivos, linhas e o item da galeria somem na hora.
+- Configuração no `estado.db` (validada no `estado_gravar`, apagar recusado): `config/montagem {"ligada": bool, "checkout": bool}` (sem documento vale `ETERNA_MONTAGEM=1`; padrão desligada) e `config/fundos {"ativos": [...]}` (até 8 fundos do mapa aprovado; padrão campeao2, mirante, arq1950, tunel, telao; o app grava por `fundosCfgSalva`).
+- `/status.montagem`: `v, ligada, checkout, imprime, versao, motivo, filho, parado, fila, feitas_hoje, erros_hoje, ms_medio, guardado_gb, alertas, pico_mb, livre_gb, pausa_disco, dias, fundos, fundos_faltando`.
+
+### Rotas (deny-by-default)
+- Um despachante (`mont_rota`) com tabela fechada; qualquer outro caminho em `/montagens` responde 404. Guarda: posto + origem local (Host da lista) → `X-Eterna: 1` no POST → 120 por minuto por IP → validação (campo desconhecido = 400). Sem CORS aberto (só `ETERNA_ORIGENS`). Nenhum caminho vem do cliente; não existe rota para o arquivo final.
+- `POST /montagens/lista {"bases": [até 12], "fundos": [até 8]?, "pedir": bool?}` → itens `{base, fundo, mid, estado, motivo, w, h}`; 404 para foto fora das sessões de hoje e de ontem; 503 `montagem_desligada`. `pedir` enfileira com prioridade 0 (e pede o recorte de foto que ainda não tem).
+- `GET /montagens/<mid>/previa.jpg` (montagem pronta) e `GET /montagens/<mid>/impressao.jpg` (só vendida; 409 `nao_vendida`).
+- `POST /imprimir` aceita o item `{"mont": "<mid>"}` (só vendida) além do JPEG em base64.
+- Para a matriz de permissões da `idiomas-base`: tabela no plano, seção "Rotas novas".
+
+### App (com `montSrv()`)
+- `montSrv()` = agente ligado, `montagem.v >= 1`, `ligada` e `checkout`. `montTela()`: só Checkout, Posto, Venda no balcão, Caixa e Fila; as telas do Admin (Fundos de IA, Laboratório) continuam no canvas, que é a referência da paridade.
+- `compose` → `montCompose` (prévia do servidor; `MONT`, `montLista`, `montBusca` juntando os itens da tela numa chamada); `compHydrate` com `pending: 'montagem'` (mantém o "Preparando sua foto especial" e tenta de novo a cada 2 s, até 3 min); `iaAquecer` pede a visita inteira de uma vez. Com `montSrv()` o Checkout não chama `/recorte` nem `fiaMontar`. Página recém-aberta espera o primeiro `/status` antes de decidir quem monta.
+- Venda: `aiSel` não muda; o pedido ganha `aiMont {"<base>|<fundo>": "<mid>"}` (`montDoPedido`), copiado para a sessão paga e mandado no evento `criar` (`_ev_aimont` valida; par inválido sai, a venda fica).
+- Impressão: `printMontar` usa `/montagens/<mid>/impressao.jpg` (`montMidVenda`); sem o arquivo, o `compHi` de sempre. Ao servidor com impressora, o item vai como `{mont}`.
+- Galeria `#g`: a montagem comprada (`t: 'ai'`) aparece com o selo e o nome do fundo (`.gq-ed`, `.gq-edn`), inteira no quadro, e baixa como as outras. Painel Fundos de IA: linha "Montagens no servidor". Posto: alerta `montAlertaHtml` (D7).
+- `montEntregaDigital()`: verdadeiro quando o servidor entrega a montagem na galeria; no merge com a `feat/posto-unico`, `pendMontAviso` e o `montAviso` da Venda manual devolvem vazio nesse caso.
+
+### Venda e galeria local (E4)
+- `ev_receber` chama `mont_vender(venda)` depois de gravar um `criar`, `pagar` ou `cancelar`. Venda paga (tem `pagar`, sem `cancelar`): cada `base|fundo` do `aiSel` vira montagem vendida: a do `aiMont` se o `mid` existe e é dessa base e fundo; senão a da versão atual; senão o servidor monta (e recorta antes, se preciso) com prioridade 0. Isso cobre o app antigo e a Venda manual, que não mandam `aiMont`. Grava `vendida`, `venda`, `expira` (61 dias) e `galeria` (código da galeria do evento). Cancelada: desmarca.
+- **O servidor decide a montagem que entra na galeria** (`_gal_montagens`, no `/galerias/publicar` e no `gal_processar`): item `t:'ai'` vindo do navegador é descartado (conta em `ignoradas`) e entram as montagens vendidas com o código desta galeria, sempre `comprada`: `{"id": "<mid>", "t": "ai", "base", "bg", "sessao", "direito": "comprada", "canal": "loja"}`. Galeria de grupo de escola nunca tem montagem.
+- `gal_processar`: o original da montagem na galeria é o final reduzido a 3000 px (JPEG 88, sem EXIF, sem selo); a vitrine pelo `_vitrine`. Montagem vendida ainda não pronta fica "chegando" e, quando fica pronta, a galeria entra na fila sozinha.
+- `galeria_obj` devolve `t` e `bg` e inclui a montagem comprada sempre que o acesso foi dado (o rosto não precisa bater nela).
+- D7: venda paga com montagem sem arquivo depois de 5 min aparece em `/status.montagem.alertas` (venda, fundo e estado) e o Posto mostra o alerta.
+- Nuvem (E5, pendente): até lá o manifesto enviado à nuvem segue sem o item `t:'ai'`; a montagem comprada só está na galeria local.
+
+### Testes
+`node testes/montagem-paridade.js` (`MONTAGEM_FOLHA=<arquivo.jpg>` gera a folha lado a lado; `MONTAGEM_RAPIDO=1` só a prévia), `python3 -I testes/montagem_servidor_agente.py agente/eterna-agente.py` (HOME temporário), `node testes/montagem-checkout.js`.
+
+### Ordem de deploy
+Agente com os 3 arquivos (`eterna-agente.py`, `eterna-recorte.py`, `eterna-montagem.py`) → app → fechar e reabrir Checkout e Postos → `config/montagem {"ligada": true}` (modo sombra) → conferir `/status.montagem` → só depois da aprovação do Eduardo, `"checkout": true`. Disco: 100 GB livres.

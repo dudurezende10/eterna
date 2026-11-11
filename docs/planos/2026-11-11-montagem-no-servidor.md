@@ -368,6 +368,17 @@ Admin e Laboratório pedem a prévia ao servidor; saem `fiaMontar` e companhia d
 - A impressão pelo servidor também fica atrás do interruptor `checkout` (é o `montSrv()`).
 - Testes: 36 a 40 em `testes/montagem_servidor_agente.py` (409, 1844×1240, corte preso embaixo e Telão no meio, mesmo arquivo na reimpressão, `{mont}` recusado nos 5 casos) e 36 em `testes/montagem-checkout.js` (as 2 imagens vêm de `/montagens/<mid>/impressao.jpg`, nenhum recorte pedido, sem selo; sem o arquivo, canvas). O envio `{mont}` pelo app ao `/imprimir` não tem teste de navegador (precisa de impressora no agente falso); o lado do servidor está coberto.
 
+## Registro da implementação (E4, 11/11)
+- Agente: `mont_vender` (chamado no `ev_receber` para `criar`, `pagar` e `cancelar`, fora do `ev_lock`), `_gal_montagens`, `_gal_montagem_original`, `gal_validar` descartando `t:'ai'`, `gal_processar` e `galeria_obj` com a montagem, alertas em `/status.montagem.alertas`, coluna `galeria` no `montagens.db` (banco antigo ganha a coluna), LGPD tirando a montagem vendida também do manifesto e dos arquivos da galeria.
+- A galeria certa é achada pelo **código da galeria do evento `criar`** gravado na linha (`galeria`), e a leva da base precisa estar em `m["sessoes"]` quando a sessão está em memória.
+- Montagem parada não impede marcar a venda: a linha fica na fila e o Posto vê o alerta.
+- Venda sem `aiMont` (app antigo, **Venda manual**) e de foto que não é base: o servidor recorta e monta com prioridade 0 e a galeria completa sozinha ("chegando" até lá).
+- App: selo e nome do fundo na `#g` (`.gq-ed`, `.gq-edn`, `.gq-ai`), `montAlertaHtml` no Posto (D7), `montEntregaDigital()`.
+- **Aviso do Posto para pacote só digital**: ele não existe nesta branch; está na `feat/posto-unico` (`7387f6c`: `pendMontAviso`, `pendMontSemImp`, `.pend-mont`, `.pend-semmont`, o `montAviso` da Venda manual e `testes/posto-montagem.js`). No merge: `pendMontAviso(r)` e o `montAviso` devolvem `''` quando `montEntregaDigital()` é verdadeiro (interruptor ligado), o teste ganha os dois casos (interruptor desligado: aviso; ligado: sem aviso), e a Venda manual precisa mandar o `aiSel` no formato `"<foto>|<fundo>"` para o servidor entregar. Com o interruptor desligado o aviso continua valendo.
+- A montagem **não vai para a nuvem** ainda: o manifesto enviado à nuvem segue sem o item `t:'ai'` até a E5 (o arquivo ainda não sobe). No celular do cliente fora do ponto a montagem só aparece depois da E5.
+- Critérios cobertos por teste: 41, 43 a 48 (servidor), 46 (selo nas 5 línguas, navegador), D7. Não cobertos por teste automático: 42 de ponta a ponta com a impressora, 49 (o aviso não está nesta branch), 50 (coberto pelo 18: a vendida não muda com versão nova).
+- Cancelamento depois de publicada: a montagem sai da galeria (o plano dizia "desmarca se a galeria não foi publicada"; ficou mais simples e coerente com o cancelamento: venda cancelada não entrega).
+
 ## Decisões para o Eduardo (texto original das propostas)
 - D1. Retenção da montagem não vendida: 3 dias (proposta). Mais dias = mais disco (~15 GB por dia no teto).
 - D2. Quantas montagens por visita: as 10 (2 bases × 5 fundos, como pedido; proposta) ou só as 5 que o Checkout mostra, com a reserva feita em ~2 s quando a base preferida é ruim (metade do disco e do tempo).

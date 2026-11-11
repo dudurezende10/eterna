@@ -1229,6 +1229,8 @@ def nuvem_galerias_loop():
                 erro = None
                 if m:
                     try:
+                        # E4: a montagem (t:'ai') só vai para a nuvem na E5 (o arquivo ainda não sobe): até lá o manifesto da nuvem segue sem ela
+                        m = {**m, "fotos": [f for f in m.get("fotos") or [] if not (isinstance(f, dict) and f.get("t") == "ai")]}
                         rq = urllib.request.Request(NUVEM_API + "/ponto/galerias", data=json.dumps({"manifesto": m}).encode(), method="POST",
                                                     headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
                         with urllib.request.urlopen(rq, timeout=20) as r:
@@ -3336,7 +3338,7 @@ _re_mont_dia = re.compile(r"^\d{4}-\d\d-\d\d$")
 _re_mont_arq = re.compile(r"^([0-9a-f]{32})(_p|_i)?\.jpg$")
 _re_mont_get = re.compile(r"^/montagens/([0-9a-f]{32})/(previa|impressao)\.jpg$")
 MONT_COLS = ("mid", "base", "fundo", "versao", "estado", "motivo", "dia", "w", "h", "bytes", "sha", "rostos", "prio", "origem",
-             "criada", "pronta", "ms", "vendida", "venda", "expira", "apagada")
+             "criada", "pronta", "ms", "vendida", "venda", "expira", "apagada", "galeria")
 
 
 def fundos_valida(j):
@@ -3426,10 +3428,15 @@ def mont_db():
     c.execute("pragma journal_mode=wal")
     c.execute("create table if not exists montagem (mid text primary key, base text, fundo text, versao text, estado text,"
               " motivo text, dia text, w int, h int, bytes int, sha text, rostos int, prio int, origem text, criada real,"
-              " pronta real, ms int, vendida real, venda text, expira real, apagada real, unique(base, fundo, versao))")
+              " pronta real, ms int, vendida real, venda text, expira real, apagada real, galeria text, unique(base, fundo, versao))")
     c.execute("create index if not exists montagem_base on montagem(base)")
     c.execute("create index if not exists montagem_fila on montagem(estado, prio, criada)")
     c.execute("create index if not exists montagem_vendida on montagem(vendida)")
+    if _mont_reg.get("galeria") != MONT_DB:              # E4: código da galeria da venda (banco criado antes ganha a coluna)
+        if "galeria" not in {r[1] for r in c.execute("pragma table_info(montagem)")}:
+            c.execute("alter table montagem add column galeria text")
+            c.commit()
+        _mont_reg["galeria"] = MONT_DB
     return c
 
 
@@ -3654,6 +3661,15 @@ def mont_recorte_fim(pid, erro=None):
             mont_rec_falhou[pid] = time.time()
             if len(mont_rec_falhou) > MONT_PEDIDOS_MAX:
                 mont_rec_falhou.pop(next(iter(mont_rec_falhou)))
+    if not erro and os.path.exists(MONT_DB):
+        with mont_lock:                              # montagem (de venda) que esperava o recorte desta foto volta para a fila já
+            db = mont_db()
+            try:
+                if db.execute("update montagem set estado = 'fila', motivo = null where base = ? and estado = 'erro' and motivo = 'recorte'", (pid,)).rowcount:
+                    mont_ev.set()
+                db.commit()
+            finally:
+                db.close()
     if not fs or erro:
         return 0
     n = 0
@@ -3743,6 +3759,153 @@ def mont_previa(mid):
     except ValueError:
         return None
     return f if os.path.isfile(f) and not os.path.islink(f) else None
+
+
+MONT_VENDA_DIAS = 60               # a montagem vendida fica até a galeria da venda vencer (60 dias)
+MONT_ALERTA_SEG = 300              # D7: venda paga com montagem sem arquivo depois de 5 min vira alerta no Posto
+
+
+def _mont_venda_dados(venda):
+    """(dados do "criar", paga, cancelada) da venda, lidos do vendas.db (o servidor decide: nada vem do navegador aqui)."""
+    with ev_lock:
+        db = vendas_db()
+        try:
+            evs = db.execute("select tipo, dados from evento where venda = ? order by seq", (venda,)).fetchall()
+        finally:
+            db.close()
+    criar = None
+    for tipo, dados in evs:
+        if tipo == "criar" and criar is None:
+            try:
+                criar = json.loads(dados)
+            except ValueError:
+                criar = {}
+    tipos = {t for t, _ in evs}
+    return criar, "pagar" in tipos, "cancelar" in tipos
+
+
+def mont_vender(venda):
+    """E4: a venda ficou paga. Cada "base|fundo" do aiSel vira montagem VENDIDA: a que o cliente viu (aiMont, se o mid existe
+    e é dessa base e desse fundo), senão a da versão atual, senão entra na fila com a prioridade 0 (venda de app antigo ou
+    da Venda manual: o servidor monta, e recorta antes se a foto ainda não tem recorte). A vendida nunca muda nem sai pela
+    limpeza antes de `expira`. Depois a galeria da venda é refeita (a montagem entra no manifesto pelo _gal_montagens).
+    Venda cancelada: desmarca. Devolve quantas montagens marcou."""
+    criar, paga, cancelada = _mont_venda_dados(venda)
+    if criar is None:
+        return 0
+    cod = criar.get("galeria") if isinstance(criar.get("galeria"), str) and _re_codigo.match(criar["galeria"]) else None
+    if cancelada or not paga:
+        if cancelada:
+            with mont_lock:
+                db = mont_db()
+                try:
+                    db.execute("update montagem set vendida = null, venda = null, expira = null, galeria = null where venda = ?", (venda,))
+                    db.commit()
+                finally:
+                    db.close()
+                mont["st"] = (0.0, None)
+            tk = codigos.get(cod) if cod else None
+            if tk:
+                gal_fila.put(tk)
+        return 0
+    if not mont_cfg()["ligada"] or not os.path.isfile(MONT_REGRAS_ARQ):
+        return 0                                     # (montagem parada não impede marcar: a linha espera na fila e o Posto vê o alerta)
+    ai_mont = criar.get("aiMont") if isinstance(criar.get("aiMont"), dict) else {}
+    agora = time.time()
+    n = 0
+    for k in (criar.get("aiSel") or [])[:20]:
+        if not isinstance(k, str) or not _re_aimont_k.match(k):
+            continue
+        base, bg = k.split("|", 1)
+        base = pid_lib(base)
+        if bg not in FUNDOS_PREVIA:
+            continue
+        r = None
+        mid = ai_mont.get(k) or ai_mont.get("ag_" + k)
+        if isinstance(mid, str) and _re_mid.match(mid):
+            rs = mont_ler("where mid = ? and base = ? and fundo = ? and estado != 'apagada'", (mid, base, bg))
+            r = rs[0] if rs else None
+        if r is None:
+            r, _ = mont_enfileirar(base, bg, MONT_PRIO_PEDIDO, "venda")
+            if r is not None and r["estado"] != "pronta" and not os.path.exists(rec_arquivo(base)):
+                with lock:
+                    arq = (lib.get(base) or {}).get("file")
+                if arq and rec_estado()[0]:
+                    rec_enfileirar(base, arq, REC_LADO_MAX, REC_PRIO_CHECKOUT)
+        if r is None:
+            continue
+        with mont_lock:
+            db = mont_db()
+            try:
+                db.execute("update montagem set vendida = coalesce(vendida, ?), venda = ?, expira = ?, galeria = ? where mid = ?",
+                           (agora, venda, agora + (MONT_VENDA_DIAS + 1) * 86400, cod, r["mid"]))
+                db.commit()
+            finally:
+                db.close()
+            mont["st"] = (0.0, None)
+        n += 1
+    if n:
+        mont_ev.set()
+        tk = codigos.get(cod) if cod else None
+        if tk:
+            gal_fila.put(tk)
+    return n
+
+
+def _gal_montagens(m):
+    """E4 (A8): o SERVIDOR decide a montagem que entra na galeria. Tira do manifesto qualquer item t:'ai' (ou com id de
+    montagem) que tenha vindo de fora e acrescenta as montagens das vendas pagas desta galeria (linha vendida com o código
+    dela), sempre como compradas. Galeria de grupo de escola nunca tem montagem (A13). Devolve (quantas pôs, quantas tirou)."""
+    antes = m.get("fotos") or []
+    ids = [f.get("id") for f in antes if isinstance(f, dict) and isinstance(f.get("id"), str) and _re_mid.match(pid_lib(f["id"]))]
+    conhecidos = set()
+    if ids:
+        conhecidos = {r["mid"] for r in mont_ler("where mid in (%s)" % ",".join("?" * len(ids)), tuple(pid_lib(i) for i in ids))}
+    fotos = [f for f in antes if not (isinstance(f, dict) and (f.get("t") == "ai" or pid_lib(str(f.get("id") or "")) in conhecidos))]
+    tirou = len(antes) - len(fotos)
+    pos = 0
+    cod = m.get("codigo")
+    if m.get("tipo") == "sessao" and cod and os.path.exists(MONT_DB):
+        ses = set(m.get("sessoes") or [])
+        for r in mont_ler("where galeria = ? and vendida is not null and estado != 'apagada' order by vendida, rowid", (cod,)):
+            with sess_lock:
+                card = sess_pid.get(r["base"])
+            if card is not None and ses and card not in ses:
+                continue                             # a leva da base precisa estar nesta galeria (nunca a montagem de outra família)
+            fotos.append({"id": r["mid"], "t": "ai", "base": r["base"], "bg": r["fundo"], "sessao": card or (sorted(ses)[0] if ses else ""),
+                          "direito": "comprada", "canal": "loja"})
+            pos += 1
+    m["fotos"] = fotos
+    return pos, tirou
+
+
+def _gal_montagem_original(token, f):
+    """O arquivo que a galeria entrega da montagem comprada: cópia do final reduzida a 3000 px (D3; o de 5000 px fica no
+    servidor para a impressão), JPEG 88, sem EXIF e sem selo. False enquanto a montagem não está pronta ("chegando")."""
+    rs = mont_ler("where mid = ? and estado = 'pronta' and vendida is not null", (f["id"],))
+    if not rs:
+        return False
+    final, previa, _ = mont_arquivos(rs[0]["dia"], f["id"])
+    if not os.path.isfile(final) or os.path.islink(final):
+        return False
+    from PIL import Image
+    tmp = os.path.join(os.path.dirname(final), ".mont-gal-%s.tmp" % secrets.token_hex(6))
+    try:
+        with Image.open(final) as im:
+            im = im.convert("RGB")
+            im.thumbnail((ALTA_LADO, ALTA_LADO), Image.LANCZOS)
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                im.save(fh, "JPEG", quality=88)
+        REPO.subir(token, f["id"], "original", tmp)
+        if not REPO.existe(token, f["id"], "vitrine"):
+            _vitrine(previa if os.path.isfile(previa) else tmp, None, REPO.abrir(token, f["id"], "vitrine"))
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    return True
 
 
 _mont_imp_lock = threading.Lock()
@@ -3986,8 +4149,13 @@ def _mont_passo(i=0):
     b = j.get("bytes") or {}
     ro = (j.get("layout") or {}).get("rostos")
     ms = int((time.time() - t0) * 1000)
+    if r.get("galeria") is None:
+        r = (mont_ler("where mid = ?", (mid,)) or [r])[0]   # a venda pode ter chegado com a montagem na fila
     _mont_fim(mid, "pronta", None, w=int(j.get("w") or 0), h=int(j.get("h") or 0), bytes=int(b.get("final") or 0) + int(b.get("previa") or 0),
               sha=str(j.get("sha") or "")[:64], rostos=ro if isinstance(ro, int) else None, pronta=time.time(), ms=ms)
+    tk = codigos.get(r.get("galeria")) if r.get("vendida") and r.get("galeria") else None
+    if tk:
+        gal_fila.put(tk)                             # E4: a montagem vendida que faltava ("chegando") completa a galeria sozinha
     with mont_lock:
         mont["mortes_mem"] = 0
         mont["espera_s"] = MONT_ERRO_SEG
@@ -4172,17 +4340,34 @@ def mont_apagar_base(pid):
     """LGPD: tudo da base some na hora (arquivos e linhas, inclusive vendida); o trabalho em andamento não deixa arquivo
     (o trabalhador confere a biblioteca ao terminar) e nada volta na recuperação (a base saiu das sessões)."""
     n = 0
+    vendidas = []
     with mont_lock:
         db = mont_db()
         try:
-            for dia, mid in db.execute("select dia, mid from montagem where base = ?", (pid,)).fetchall():
+            for dia, mid, cod in db.execute("select dia, mid, galeria from montagem where base = ?", (pid,)).fetchall():
                 _mont_apaga_arquivos(dia, mid)
                 n += 1
+                if cod:
+                    vendidas.append((cod, mid))
             db.execute("delete from montagem where base = ?", (pid,))
             db.commit()
         finally:
             db.close()
         mont["st"] = (0.0, None)
+    for cod, mid in vendidas:                        # E4: a montagem vendida sai também da galeria (manifesto e arquivos)
+        tk = codigos.get(cod)
+        if not tk:
+            continue
+        with gal_lock:
+            m = REPO.ler_manifesto(tk)
+            if m and any(f.get("id") == mid for f in m.get("fotos") or []):
+                m["fotos"] = [f for f in m["fotos"] if f.get("id") != mid]
+                REPO.salvar_manifesto(tk, m)
+        for var in ("original", "vitrine"):
+            try:
+                os.remove(REPO.abrir(tk, mid, var))
+            except (OSError, ValueError):
+                pass
     return n
 
 
@@ -4206,6 +4391,9 @@ def mont_status():
                     n, ms = db.execute("select count(*), avg(ms) from montagem where estado = 'pronta' and dia = ?", (hoje,)).fetchone()
                     s["feitas_hoje"], s["ms_medio"] = n, int(ms) if ms else None
                     s["erros_hoje"] = db.execute("select count(*) from montagem where estado = 'erro' and dia = ?", (hoje,)).fetchone()[0]
+                    s["alertas"] = [{"venda": str(r[0] or "")[:40], "fundo": r[1], "estado": r[2]} for r in db.execute(
+                        "select venda, fundo, estado from montagem where vendida is not null and estado in ('fila', 'fazendo', 'erro') and vendida < ? order by vendida limit 20",
+                        (agora - MONT_ALERTA_SEG,))]
                     s["guardado_gb"] = round(db.execute("select coalesce(sum(bytes), 0) from montagem where estado = 'pronta'").fetchone()[0] / 1024 ** 3, 3)
                 finally:
                     db.close()
@@ -4221,7 +4409,8 @@ def mont_status():
                 "parado": bool(mont["parado"]), **s, "pico_mb": mont["pico_mb"],
                 "livre_gb": round(livre, 1) if livre is not None else None,
                 "pausa_disco": bool(livre is not None and livre < MONT_PISO_GB), "dias": MONT_DIAS,
-                "fundos": fundos, "fundos_faltando": [b for b in fundos if not mont_fundo_arquivo(b, baixar=False)]}
+                "fundos": fundos, "fundos_faltando": [b for b in fundos if not mont_fundo_arquivo(b, baixar=False)],
+                "alertas": s.get("alertas") or []}
 
 
 # v84 (segurança): o Photoroom só monta quando o interruptor do Painel de controle estiver em "Photoroom" também aqui.
@@ -4482,6 +4671,8 @@ def gal_validar(m):
         raise ValueError("manifesto inválido")
     fotos = []
     for f in (m.get("fotos") or [])[:2000]:
+        if isinstance(f, dict) and f.get("t") == "ai":
+            continue                                 # E4 (A8): montagem nunca entra pelo navegador (o agente põe as das vendas pagas)
         if not isinstance(f, dict) or not pid_ok(f.get("id")):
             raise ValueError("foto inválida")
         d = f.get("direito") if f.get("direito") in ("comprada", "cortesia", "venda") else "venda"
@@ -4602,8 +4793,30 @@ def gal_processar(token):
         m = REPO.ler_manifesto(token)
     if not m:
         return
+    try:                                             # E4: as montagens das vendas pagas desta galeria (a venda pode chegar depois da publicação)
+        with gal_lock:
+            m = REPO.ler_manifesto(token) or m
+            antes_ai = [f["id"] for f in m["fotos"] if f.get("t") == "ai"]
+            _gal_montagens(m)
+            if [f["id"] for f in m["fotos"] if f.get("t") == "ai"] != antes_ai:
+                REPO.salvar_manifesto(token, m)
+                mudou_ai = True
+            else:
+                mudou_ai = False
+    except Exception as ex:
+        print("  galeria: montagens não conferidas (%s)" % type(ex).__name__)
+        mudou_ai = False
     falta_orig = falta_vit = 0
     for f in m["fotos"]:
+        if f.get("t") == "ai":
+            if not REPO.existe(token, f["id"], "original"):
+                try:
+                    if not _gal_montagem_original(token, f):
+                        falta_orig += 1
+                except Exception as ex:
+                    print("  galeria: montagem não copiada (%s)" % type(ex).__name__)
+                    falta_orig += 1
+            continue
         if f["direito"] in ("comprada", "cortesia") and not REPO.existe(token, f["id"], "original"):
             with lock:
                 e = lib.get(pid_lib(f["id"]))
@@ -4612,6 +4825,8 @@ def gal_processar(token):
             else:
                 falta_orig += 1
     for f in m["fotos"]:
+        if f.get("t") == "ai":
+            continue                                 # a vitrine da montagem sai junto do original (_gal_montagem_original)
         if not REPO.existe(token, f["id"], "vitrine"):
             with lock:
                 e = lib.get(pid_lib(f["id"]))
@@ -4621,6 +4836,8 @@ def gal_processar(token):
         m = REPO.ler_manifesto(token) or m
         m["envio"] = {"compradas": "ok" if not falta_orig else "pendente", "vitrine": "ok" if not falta_vit else "pendente"}
         REPO.salvar_manifesto(token, m)
+    if mudou_ai:
+        nuvem_galeria_enfileira(token)
 
 
 def galeria_loop():
@@ -4776,11 +4993,12 @@ def evento_permite(ip, token, pids):
 def galeria_obj(token, m, pids):
     fotos = []
     for f in m["fotos"]:
-        if f["id"] not in pids:
-            continue
+        ai = f.get("t") == "ai"
+        if f["id"] not in pids and not (ai and f["direito"] == "comprada"):
+            continue                                 # E4: a montagem comprada aparece sempre que o acesso foi dado (o rosto não precisa bater nela)
         tem = REPO.existe(token, f["id"], "vitrine")
         livre = f["direito"] in ("comprada", "cortesia")
-        fotos.append({"pid": f["id"], "direito": f["direito"],
+        fotos.append({"pid": f["id"], "direito": f["direito"], **({"t": "ai", "bg": f.get("bg")} if ai else {}),
                       "vitrine": REPO.url(token, f["id"], "vitrine", URL_TTL) if tem else None,
                       "original": REPO.url(token, f["id"], "original", URL_TTL) if livre and REPO.existe(token, f["id"], "original") else None,
                       "chegando": not tem})
@@ -7372,6 +7590,7 @@ def ev_receber(body):
         if isinstance(d.get("selected"), list):
             sel.update(pid_lib(str(p)[:60]) for p in d["selected"][:200])
     ia_sel = sess_ia_de(sel) if sel else set()
+    vendas_mont = set()
     with ev_lock:
         db = vendas_db()
         try:
@@ -7388,9 +7607,16 @@ def ev_receber(body):
                                  (x["idem"], x["venda"], x["seq"], x["tipo"], x["em"], _ev_dia(x["em"]), x["posto"] or posto,
                                   x["por"], json.dumps(x["dados"], ensure_ascii=False), _iso()))
                 res.append({"idem": x["idem"], "s": "ok" if cur.rowcount else "ja"})
+                if cur.rowcount and x["tipo"] in ("criar", "pagar", "cancelar"):
+                    vendas_mont.add(x["venda"])
             db.commit()                                      # só confirma ao caixa depois de gravado no disco
         finally:
             db.close()
+    for v in vendas_mont:                                    # E4: montagens da venda paga (fora do ev_lock; nunca derruba a venda)
+        try:
+            mont_vender(v)
+        except Exception as ex:
+            print("  montagem: venda não marcada (%s)" % type(ex).__name__)
     return {"ok": True, "resultados": res}
 
 
@@ -8592,8 +8818,16 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": str(ex)}, 400)
             if ignoradas:
                 print("  galeria: %d base(s) de IA fora do manifesto (navegador antigo)" % ignoradas)
+            mf = (body.get("manifesto") or {}).get("fotos")
+            ignoradas += sum(1 for f in (mf if isinstance(mf, list) else [])[:2000] if isinstance(f, dict) and f.get("t") == "ai")
             with gal_lock:
                 m = gal_mesclar(novo, REPO.ler_manifesto(t))
+                try:
+                    _, fora_ = _gal_montagens(m)       # E4: só o servidor põe montagem na galeria (das vendas pagas)
+                    ignoradas += fora_
+                except Exception as ex:
+                    print("  galeria: montagens não conferidas (%s)" % type(ex).__name__)
+                    m["fotos"] = [f for f in m["fotos"] if f.get("t") != "ai"]
                 REPO.salvar_manifesto(t, m)
                 if m.get("codigo"):
                     codigos[m["codigo"]] = t
