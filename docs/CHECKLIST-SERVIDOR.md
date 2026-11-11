@@ -62,6 +62,9 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 - [ ] Abrir o app nos aparelhos sempre pelo endereço do servidor do ponto (`https://posto.eterna.photo`), nunca por eterna.photo.
 - [ ] Depois de reiniciar o agente, conferir no log que `ftp-remoto.json` e `roverpix.json` foram aceitos: servidor FTP fora da rede do ponto (ou porta diferente de 21/990) e endereço da Roverpix que não é o oficial são ignorados. Se for o caso, refazer pelo Painel de controle (nome de servidor FTP: um por linha em `~/Eterna/ftp-remoto-hosts.txt`).
 - [ ] Conferir no app (com login de administrador), no Upload automático e no Painel de controle, que a nuvem está ligada e conectada. Sem login, o `/status` mostra só que o Eterna está no ar.
+- [ ] Conferir em `/status`: `nuvem.ligada` = true e `s3_ok` = true.
+- [ ] Depois de 2 minutos ligado, conferir em `/status`: `backup.ok` = true (sem isso, a série diária das Estatísticas e o calendário ficam só neste disco).
+- [ ] Chave da API-Football (v97): o Admin abre o Eterna pelo servidor (http://127.0.0.1:8765 ou o endereço do Tailscale), vai em Configurações › Painel de controle › Calendário de eventos · fonte dos jogos, cola a chave e toca em Testar agora. Nunca mandar a chave por chat ou e-mail. Alternativa: `ETERNA_API_FOOTBALL` no `nuvem.env` (aí a tela mostra "definida no servidor").
 
 ## 5. Impressora
 

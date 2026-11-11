@@ -813,14 +813,35 @@ Bom saber:
 3. Toque em **Novo evento**. Preencha a data, a hora, o tipo (jogo, show, feriado, fechado, evento ou outro), o mandante, o visitante, a competição e, se quiser, uma observação.
 4. Toque em **Salvar**.
 5. Para mudar, toque no evento no mês ou em **Editar** na lista **Eventos do mês**. Para tirar, toque em **Apagar** e confirme.
-6. Uma vez por ano, toque em **Adicionar feriados de AAAA**. Entram os feriados nacionais, a Sexta-feira Santa, o Corpus Christi e os do Rio (20/01, 23/04 e 20/11). Tocar de novo não duplica.
-7. Para cadastrar muitos jogos de uma vez, toque em **Importar CSV**. O arquivo tem as colunas `data;hora;tipo;mandante;visitante;competicao;obs`, até 2000 linhas. O mesmo jogo importado de novo atualiza, não duplica.
+6. Feriados entram sozinhos (v97): os nacionais, o Carnaval, a Sexta-feira Santa, o Corpus Christi e os do Rio (20/01, 23/04 e 20/11), deste ano e do próximo. O botão **Adicionar feriados de AAAA** só aparece quando o aparelho não está ligado ao servidor do ponto.
+7. Para cadastrar muitos jogos de uma vez, toque em **Colar lista** e cole as linhas copiadas da planilha (Google Sheets ou Excel), na ordem data, hora, tipo, mandante, visitante, competição, observação. Ou toque em **Importar CSV**. O arquivo tem as colunas `data;hora;tipo;mandante;visitante;competicao;obs`, até 2000 linhas. O mesmo jogo importado de novo atualiza, não duplica.
 
 Bom saber:
 - Escreva o nome do clube como aparece na lista (Flamengo, Fluminense, Vasco...). Assim os dias se juntam no mesmo grupo nas Estatísticas.
 - Use **fechado** para os dias de estádio fechado.
 - Toda mudança fica registrada com o seu nome.
-- Ainda não existe uma agenda oficial única do Maracanã. Por enquanto o cadastro é à mão ou por CSV. A busca automática dos jogos entra numa próxima versão.
+- Jogos no Maracanã entram sozinhos pela API-Football (v97) toda segunda às 06:00, depois que a chave da API-Football for salva em **Configurações › Painel de controle**. Sem ela, a linha do Calendário diz "Jogos: fonte não configurada, peça ao Admin". **Atualizar jogos agora** busca na hora. Shows e outros eventos continuam por **Novo evento**, **Colar lista** ou CSV.
+- A coluna **Origem** mostra "Automático · feriados", "Automático · jogos", "Manual" ou "Importado". Evento automático que você edita ou apaga não volta a ser mudado pelo servidor.
+- Se aparecer o aviso **Este aparelho não está ligado ao servidor do ponto**, você está vendo só o que foi salvo neste navegador. O que criar sobe quando abrir o Eterna pelo servidor (no estádio ou pelo Tailscale).
+
+### Chave da API-Football (quem altera Configurações)
+
+1. Crie a conta em dashboard.api-football.com (o plano grátis dá 100 consultas por dia) e copie a chave.
+2. Abra o Eterna **pelo servidor do ponto** (no estádio ou pelo Tailscale) e vá em **Configurações › Painel de controle**. Logo abaixo do painel **Checkout** fica **Calendário de eventos · fonte dos jogos**. Quem só lê Configurações não vê esse painel, e o Calendário de eventos não mostra a chave.
+3. Cole a chave e toque em **Salvar chave**. A tela passa a mostrar "Chave configurada ····" com os 4 últimos caracteres, quando e por quem foi salva.
+4. Toque em **Testar agora**: aparece se a temporada atual veio e quantos jogos no Maracanã.
+5. **Trocar chave** e **Remover** ficam no mesmo bloco. Tudo fica no registro de alterações, sem a chave.
+
+A chave fica só no servidor do ponto. Ela não aparece na tela, no navegador, no backup nem no registro.
+
+### Jogos e ano a ano (Estatísticas, só o Admin)
+
+Desde 10/11/2026 o servidor guarda uma linha por dia: tipo do dia (estádio fechado, jogo, show, evento, feriado, véspera de jogo ou normal), visitantes, vendas, fotos e conversão. Em **Estatísticas › Jogos e ano a ano**:
+- a faixa do topo diz se a visitação está **subindo**, **caindo** ou **estável** nos últimos 28 dias;
+- os cartões comparam **Dia de jogo** com **Dia normal**, e a frase embaixo compara cada jogo com os dias normais do mesmo dia da semana;
+- **Mês a mês** compara o ano escolhido com o anterior; **Baixar dias (CSV)** exporta o ano.
+
+O total de visitantes por dia da bilheteria entra em **Estatísticas › Movimento › Importar total por dia (bilheteria)**, com um CSV `dia;total`.
 
 ### Fotógrafo: novo login a cada dia
 
