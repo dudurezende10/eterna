@@ -6661,6 +6661,7 @@ def met_v2(dia, ss, evs):
         if uc:
             h_add(tempos["transferencia_s"], uc - cap1)
     vs = {}
+    compradas = 0                                     # v97 (selo): montagens (nAI) das vendas pagas do Checkout
     for e in evs or []:
         v = vs.setdefault(e["venda"], {"criar": None, "criar_em": 0, "pagar_em": 0, "pagar_por": None})
         if e["tipo"] == "criar":
@@ -6688,6 +6689,11 @@ def met_v2(dia, ss, evs):
             p["n"] += 1
             p["receita"] = round(p["receita"] + tot, 2)
         canal = c.get("canal") if c.get("canal") in EV_CANAIS else "sem_canal"
+        if canal == "checkout":
+            try:
+                compradas += max(0, int(c.get("nAI") or 0))
+            except (TypeError, ValueError):
+                pass
         g = out["por_canal"].setdefault(canal, {"vendas": 0, "faturamento": 0.0})
         g["vendas"] += 1
         g["faturamento"] = round(g["faturamento"] + tot, 2)
@@ -6704,6 +6710,7 @@ def met_v2(dia, ss, evs):
             nome = _nome_pessoa(v["pagar_por"]) or _nome_pessoa(c.get("vendedor")) or "sem nome"
             h_add(out["por_confirmador"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
     out["entradas"] = entradas_dia(dia)
+    out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     return out
 
 
@@ -6759,6 +6766,9 @@ def operacao_db():
         c.execute("create index if not exists entrada_dia on entrada(dia, origem)")
         c.execute("create table if not exists importacao (id text primary key, em text, por text, arquivo text, origem text,"
                   " dias text, aceitas int, recusadas int)")
+        # v97 (selo Edição Maracanã): montagens vistas no Checkout, um número acumulado por dia e terminal (id aleatório do navegador).
+        # Sem IP, sessão, rosto, foto ou nome
+        c.execute("create table if not exists montagem_vista (dia text, terminal text, vistas int, em real, primary key (dia, terminal))")
         c.commit()
         _op_criado["arq"] = OPERACAO_DB
     return c
@@ -6796,6 +6806,55 @@ def estado_db_ler(col):
 
 def _hhmm(seg):
     return "%02d:%02d" % (seg // 3600, (seg % 3600) // 60)
+
+
+MONT_TERMINAIS_MAX = 40
+MONT_VISTAS_MAX = 20000
+_re_mont_term = re.compile(r"^[a-z0-9]{8,16}$")
+mont_recusadas = {"n": 0}
+
+
+def montagens_dia(dia):
+    """v97 (selo): soma das montagens vistas no Checkout no dia (todos os terminais), ou None sem registro."""
+    try:
+        r = op_ler("select count(*), sum(vistas) from montagem_vista where dia = ?", (dia,))
+    except Exception:
+        return None
+    return int(r[0][1] or 0) if r and r[0][0] else None
+
+
+def montagens_validar(body):
+    """(dia, terminal, vistas) ou (None, campo recusado). Só hoje e ontem no fuso do agente; vistas inteiro de 0 a 20.000."""
+    if not isinstance(body, dict) or set(body) - {"dia", "terminal", "vistas"}:
+        return None, "campo"
+    dia, term, n = body.get("dia"), body.get("terminal"), body.get("vistas")
+    if not isinstance(dia, str) or dia not in (_ff_hoje(), _ff_hoje(time.time() - 86400)):
+        return None, "dia"
+    if not isinstance(term, str) or not _re_mont_term.match(term):
+        return None, "terminal"
+    if type(n) is not int or n < 0 or n > MONT_VISTAS_MAX:
+        return None, "vistas"
+    return (dia, term, n), None
+
+
+def montagens_gravar(dia, term, n):
+    """Grava o total do terminal no dia (fica o maior: repetir o envio não conta duas vezes). None = já tem 40 terminais no dia."""
+    with op_lock:
+        db = operacao_db()
+        try:
+            r = db.execute("select vistas from montagem_vista where dia = ? and terminal = ?", (dia, term)).fetchone()
+            if r is None:
+                if db.execute("select count(*) from montagem_vista where dia = ?", (dia,)).fetchone()[0] >= MONT_TERMINAIS_MAX:
+                    return None
+                db.execute("insert into montagem_vista (dia, terminal, vistas, em) values (?, ?, ?, ?)", (dia, term, n, time.time()))
+                v = n
+            else:
+                v = max(int(r[0] or 0), n)
+                db.execute("update montagem_vista set vistas = ?, em = ? where dia = ? and terminal = ?", (v, time.time(), dia, term))
+            db.commit()
+            return v
+        finally:
+            db.close()
 
 
 def entradas_dia(dia):
@@ -7001,7 +7060,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -7048,7 +7107,7 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", o)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path == "/ponto/entradas" else "Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path in ("/ponto/entradas", "/ponto/montagens") else "Content-Type")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             return
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -7129,6 +7188,29 @@ class H(BaseHTTPRequestHandler):
             print("  visitas: config %s" % str(ex)[:120])
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, 200, nostore=True)
+
+    def montagens_post(self):
+        """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
+        Mesma guarda do /ponto/entradas (posto + origem + X-Eterna + 30 por minuto), corpo até 1 KB. O console nunca imprime o corpo."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"ok": False, "error": "origem"}, 403)
+        if not limite_ok(self.client_address[0], "montagens", 30):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        v, motivo = montagens_validar(body)
+        if v is None:
+            return self.js({"ok": False, "error": motivo}, 400)
+        try:
+            r = montagens_gravar(*v)
+        except Exception as ex:
+            print("  montagens: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        if r is None:
+            mont_recusadas["n"] += 1
+            return self.js({"ok": False, "error": "muitos_terminais"}, 409)
+        return self.js({"ok": True, "vistas": r}, nostore=True)
 
     def entradas_post(self):
         try:
@@ -7591,7 +7673,7 @@ class H(BaseHTTPRequestHandler):
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
                                 "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
-                                "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(),
+                                "estatisticas": {"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, "fuso": fuso_info(),
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
@@ -7761,6 +7843,8 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_config_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
+        if u.path == "/ponto/montagens":
+            return self.montagens_post()
         if u.path == "/fundos/modo":
             # o interruptor do Painel de controle grava aqui o modo da montagem; só deste computador
             if not self.loopback() or not self.origem_local():
