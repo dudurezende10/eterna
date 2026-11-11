@@ -1,6 +1,8 @@
 # Apagar fotos a pedido do cliente (LGPD) no agente: foto comprada ou de cortesia numa galeria publicada que ainda vale
 # fica com o cliente (arquivo, índice e cópia da galeria), e a galeria que tem alguma delas não é encerrada: só perde as
 # fotos apagadas. Galeria sem foto do cliente é encerrada como antes. Pela função e pela rota POST /lgpd/excluir.
+# Venda paga no balcão (vendas.db) segura as fotos escolhidas e a base da montagem mesmo sem galeria publicada; sem como
+# conferir as galerias ou as vendas, nada é apagado.
 #   python3 -I testes/lgpd_compradas_agente.py agente/eterna-agente.py
 import importlib.util, json, os, sys, tempfile, threading, time, http.client
 from http.server import ThreadingHTTPServer
@@ -122,11 +124,62 @@ try:
     r = m.lgpd_excluir([D1], [])
     ok(r["fotos"] == 1 and r["ok"] and not os.path.exists(arq[D1]), "4: foto sem galeria sai: %r" % r)
     ok(B1 in m.lib and os.path.exists(arq[B1]), "4: foto que ninguém pediu para apagar continua")
+
+    # 5. venda paga no balcão ainda sem galeria: a foto escolhida (E1) e a base da montagem (E2) ficam; a de venda só criada
+    # (E3) e a que não entrou em venda nenhuma (E4) saem
+    E1, E2, E3, E4 = "e1e1e1e1e1e1", "e2e2e2e2e2e2", "e3e3e3e3e3e3", "e4e4e4e4e4e4"
+    arq.update({p: foto(p) for p in (E1, E2, E3, E4)})
+    ev = lambda idem, venda, seq, tipo, dados=None: {"idem": idem, "venda": venda, "seq": seq, "tipo": tipo, "em": m._iso(), "dados": dados or {}}
+    r = m.ev_receber({"posto": "Caixa 1", "eventos": [
+        ev("t5-v1-criar", "t5-v1", 1, "criar", {"card": "LPE", "total": 190, "selected": ["ag_" + E1], "aiSel": ["ai:ag_" + E2 + "|mirante"]}),
+        ev("t5-v1-pagar", "t5-v1", 2, "pagar", {"meio": "pix"}),
+        ev("t5-v2-criar", "t5-v2", 1, "criar", {"card": "LPF", "total": 70, "selected": ["ag_" + E3]})]})
+    ok(all(x["s"] == "ok" for x in r["resultados"]), "5: eventos de venda gravados: %r" % r)
+    ok(m.lgpd_vendas_pagas() == {E1, E2}, "5: só a venda paga protege, com a foto e a base da montagem: %r" % m.lgpd_vendas_pagas())
+    solta2 = galeria([(E1, "venda"), (E4, "venda")])          # galeria publicada antes do pagamento: a paga ainda está "à venda"
+    s, j = req("/lgpd/excluir", {"pids": ["ag_" + E1, "ag_" + E2, "ag_" + E3, "ag_" + E4], "tokens": [solta2], "quem": "teste"})
+    ok(s == 200 and j["fotos"] == 2 and j["preservadas"] == 2 and j["galerias"] == 0 and j["galerias_mantidas"] == 1, "5: 2 apagadas, 2 de venda paga preservadas, galeria mantida: %r %r" % (s, j))
+    ok(all(os.path.exists(arq[p]) and p in m.lib for p in (E1, E2)), "5: a foto paga e a base da montagem paga continuam no disco e no índice")
+    ok(all(not os.path.exists(arq[p]) and p not in m.lib for p in (E3, E4)), "5: as outras saem")
+    m2 = m.REPO.ler_manifesto(solta2)
+    ok(not m2.get("encerrada") and [f["id"] for f in m2["fotos"]] == ["ag_" + E1] and copia(solta2, E1) and not copia(solta2, E4), "5: a galeria com a foto paga continua, sem a apagada: %r" % m2["fotos"])
+
+    # 6. sem como conferir, nada é apagado e fica a linha no registro: repositório que não lista as galerias; vendas.db que não abre
+    F1 = "f1f1f1f1f1f1"
+    arq[F1] = foto(F1)
+    linhas = lambda: open(m.LGPD_LOG, encoding="utf8").read().count("recusada")
+    n0 = linhas()
+
+    class SemLista(m.Repositorio):
+        def ler_manifesto(self, token): return None
+
+    repo = m.REPO
+    m.REPO = SemLista()
+    try:
+        s, j = req("/lgpd/excluir", {"pids": ["ag_" + F1], "quem": "teste"})
+    finally:
+        m.REPO = repo
+    ok(s == 503 and j.get("error") and j["fotos"] == 0 and os.path.exists(arq[F1]) and F1 in m.lib, "6: repositório que não lista: recusa e a foto fica: %r %r" % (s, j))
+    ok(linhas() == n0 + 1, "6: a recusa fica no registro")
+    banco = m.vendas_db
+
+    def quebrado():
+        raise m.sqlite3.OperationalError("teste")
+
+    m.vendas_db = quebrado
+    try:
+        r = m.lgpd_excluir([F1], [])
+    finally:
+        m.vendas_db = banco
+    ok(not r["ok"] and r.get("error") and r["fotos"] == 0 and os.path.exists(arq[F1]), "6: vendas.db que não abre: recusa e a foto fica: %r" % r)
+    ok(linhas() == n0 + 2 and F1 not in open(m.LGPD_LOG, encoding="utf8").read().split("recusada")[-1], "6: registro da recusa sem id de foto")
+    r = m.lgpd_excluir([F1], [])
+    ok(r["ok"] and r["fotos"] == 1 and not os.path.exists(arq[F1]), "6: com tudo de volta, apaga: %r" % r)
 except Exception as ex:
     import traceback
     falhas.append("exceção: " + traceback.format_exc()[-600:])
 finally:
     srv.shutdown()
 
-print(("FALHA lgpd_compradas_agente: " + " · ".join(falhas)) if falhas else "OK lgpd_compradas_agente: comprada e cortesia ficam, galeria paga continua aberta, galeria sem foto do cliente é encerrada")
+print(("FALHA lgpd_compradas_agente: " + " · ".join(falhas)) if falhas else "OK lgpd_compradas_agente: comprada e cortesia ficam, galeria paga continua aberta, galeria sem foto do cliente é encerrada, venda paga do balcão protege sem galeria, sem conferência nada sai")
 sys.exit(1 if falhas else 0)
