@@ -264,12 +264,12 @@ try{
   ok(al.some(t=>/maquininha há 2\d min/.test(t))&&al.some(t=>/LPV83B|L0-\d+.*sem impressão/.test(t)||/paga há 1\d min e ainda sem impressão/.test(t))&&al.some(t=>/Caixa 1: rolo com 30/.test(t))&&al.some(t=>/^bad .*sem foto/.test(t)),'alertas locais: '+J(al.filter(t=>/maquininha|impress|rolo|sem foto/.test(t))));
 
   // ---- R1(c): o Photoroom devolve a foto já montada (opaca): imprime em 1800 px ou mais e registra o aviso (v84: só com o interruptor em Photoroom)
-  await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';ETERNA.state.view='posto';ETERNA.render();});
+  await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';ETERNA.fundosModoTeste('photoroom');ETERNA.state.view='posto';ETERNA.render();}); // v97: o Photoroom só pelo interruptor dos testes
   composeOpaca=true;composeLog.length=0;await injPend(A,{card:'LPV83F',id:'L00-v83f0000aaaa',sel:F5.slice(0,1),ai:['ag_aaaa00000005|campeao2'],cart:[{id:'arq',v:70},{id:'extra',v:35}],total:105,prints:2});await confirmar(A,'L00-v83f0000aaaa','');
   await imprimir(A,'LPV83F');const r25o=await raiz(A);const iao=r25o.find(x=>x.t==='ai');
   ok(r25o.length===2&&iao&&Math.max(iao.w,iao.h)>=1800&&composeLog.some(c=>c.hi&&c.recorte&&c.W===5000),'R1(c): resposta opaca imprime em alta: '+J({r25o,composeLog}));
   await A.click('[data-act="imp-ok"][data-card="LPV83F"]');await A.waitForTimeout(200);const s25o=(await sim(A)).sessions.LPV83F;
-  ok(s25o.impressao.estado==='impressa'&&s25o.impressoes.slice(-1)[0].avisos.includes('montagem_opaca'),'R1(c): aviso montagem_opaca no registro: '+J(s25o.impressoes.slice(-1)[0]));composeOpaca=false;await A.evaluate(()=>{ETERNA.SIM.fundosModo='local';localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
+  ok(s25o.impressao.estado==='impressa'&&s25o.impressoes.slice(-1)[0].avisos.includes('montagem_opaca'),'R1(c): aviso montagem_opaca no registro: '+J(s25o.impressoes.slice(-1)[0]));composeOpaca=false;await A.evaluate(()=>{ETERNA.fundosModoTeste(null);ETERNA.SIM.fundosModo='local';localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
   // ---- R1(a): o agente usa o mapa fixo de fundos aprovados (Noite de campeão sem a taça na prévia e o de 5000 px na impressão)
   {const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v83-ag-'));let out='';
     try{out=execFileSync('python3',['-I','-c',`

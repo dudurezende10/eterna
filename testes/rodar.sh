@@ -8,10 +8,10 @@ trap "kill $SRV 2>/dev/null" EXIT
 sleep 1
 export U="http://127.0.0.1:$PORTA/index.html"
 node -e "const h=require('fs').readFileSync('index.html','utf8');const m=h.match(/<script>([\s\S]*?)<\/script>/);new Function(m[1]);" && echo "OK sintaxe do index.html" || { echo "FALHA sintaxe do index.html"; F=1; }
-python3 -m py_compile agente/eterna-agente.py && echo "OK sintaxe do agente" || { echo "FALHA sintaxe do agente"; F=1; }
+python3 -m py_compile agente/eterna-agente.py agente/eterna-recorte.py agente/medir-recorte.py && echo "OK sintaxe do agente" || { echo "FALHA sintaxe do agente"; F=1; }
 FALHAS=${F:-0}
 # v91: testes do agente que rodam sozinhos (HOME temporário; os outros *_agente.py são chamados pelos .js)
-for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/login_agente.py testes/estatisticas_agente.py testes/v92_testador_agente.py testes/postos_agente.py testes/seguranca_rotas_agente.py testes/seguranca_ftp_agente.py testes/seguranca_config_agente.py testes/cliques_ia_agente.py testes/cliques_ia_e2e_agente.py testes/cliques_ia_fila_limpeza_agente.py testes/galeria_teto_agente.py testes/agenda_agente.py; do
+for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/login_agente.py testes/estatisticas_agente.py testes/v92_testador_agente.py testes/postos_agente.py testes/seguranca_rotas_agente.py testes/seguranca_ftp_agente.py testes/seguranca_config_agente.py testes/cliques_ia_agente.py testes/cliques_ia_e2e_agente.py testes/cliques_ia_fila_limpeza_agente.py testes/galeria_teto_agente.py testes/agenda_agente.py testes/recorte_birefnet_agente.py testes/visitas_agente.py testes/instalar_recorte.py; do
   H=$(mktemp -d); OUT=$(HOME=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   LINHA=$(echo "$OUT" | grep -E "^(OK|FALHA)")
   # v91 (revisão S9): teste que quebra sem imprimir OK/FALHA também conta como falha
