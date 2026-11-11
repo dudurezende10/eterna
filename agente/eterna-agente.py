@@ -399,6 +399,10 @@ def rostos_db():
     c.execute("create table if not exists foto (pid text primary key, dia text, n int, lida real)")
     c.execute("create table if not exists rosto (pid text, dia text, larg real, emb blob)")
     c.execute("create index if not exists rosto_dia on rosto(dia)")
+    # B1 (segurança, 10/11): os rostos com score e pose de qualidade (score >= SESS_Q_SCORE e frontal), para o anel das
+    # visitas refeito no boot (vis_idx_boot) só com o que passaria em _sess_qualidade. Tabela à parte: a "rosto" não muda.
+    c.execute("create table if not exists rosto_q (pid text, dia text, emb blob)")
+    c.execute("create index if not exists rosto_q_pid on rosto_q(pid)")
     return c
 
 
@@ -489,7 +493,8 @@ def limpar_rostos(db=None):
     """Apaga as leituras de rosto com mais de RETENCAO_DIAS (no início e uma vez por dia, pelo galeria_loop)."""
     db = db or rostos_db()
     lim = time.strftime("%Y-%m-%d", time.localtime(time.time() - RETENCAO_DIAS * 86400))
-    db.execute("delete from rosto where dia < ?", (lim,)); db.execute("delete from foto where dia < ?", (lim,)); db.commit()
+    db.execute("delete from rosto where dia < ?", (lim,)); db.execute("delete from foto where dia < ?", (lim,))
+    db.execute("delete from rosto_q where dia < ?", (lim,)); db.commit()
     with _mat_lock:
         for d in [d for d in _mat if d < lim]:
             _mat.pop(d, None)
@@ -552,6 +557,9 @@ def leitor_loop(det, rec, db):
             db.execute("insert or replace into foto values (?,?,?,?)", (pid, dia, len(fs), time.time()))
             db.execute("delete from rosto where pid=?", (pid,))
             db.executemany("insert into rosto values (?,?,?,?)", [(pid, dia, f[0], f[1].tobytes()) for f in fs])
+            db.execute("delete from rosto_q where pid=?", (pid,))
+            db.executemany("insert into rosto_q values (?,?,?)", [(pid, dia, f[1].tobytes()) for f in fs
+                                                                  if len(f) > 3 and f[2] >= SESS_Q_SCORE and f[3]])
             db.commit()
             lidos = [(f[0], f[1].tolist(), f[2], f[3]) for f in fs]
             with _cont_lock:
@@ -976,7 +984,8 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             r = db.execute("select dia from foto where pid=?", (pid,)).fetchone()
             if r:
                 dias.add(r[0])
-            db.execute("delete from rosto where pid=?", (pid,)); db.execute("delete from foto where pid=?", (pid,)); db.commit(); db.close()
+            db.execute("delete from rosto where pid=?", (pid,)); db.execute("delete from foto where pid=?", (pid,))
+            db.execute("delete from rosto_q where pid=?", (pid,)); db.commit(); db.close()
         except Exception as ex:
             falhas.append("rostos: " + str(ex)[:80])
         if nuvem["ligada"]:
@@ -4433,6 +4442,7 @@ def sess_rostos_lidos(pid, faces, agora=None):
     frontal)] ou None (erro: conta como lida sem rosto). Os vetores ficam só na memória (S9)."""
     agora = time.time() if agora is None else agora
     fs = _sess_faces(faces)
+    vis_cfg()                                        # B1: fora do sess_lock (cache de 3 s)
     with sess_lock:
         x = sess.get(sess_pid.get(pid) or "")
         if x is not None:
@@ -4455,6 +4465,7 @@ def sess_add(pid, m):
     """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
     cad = ff_cadastrados()
     ia_cfg()                                         # v93: a regra dos cliques de IA lida antes, fora do sess_lock
+    vis_cfg()                                        # B1: o interruptor da ligação por rosto, idem
     with sess_lock:
         return _sess_add(pid, m, cad, time.time())
 
@@ -4579,7 +4590,8 @@ def sess_esquecer_disco(pids):
 
 
 def sess_limpar(agora=None):
-    """S14: apaga os arquivos de sessão com mais de SESS_RET_DIAS (uma vez por dia, pelo sess_loop). v97: e os das visitas."""
+    """S14: apaga os arquivos de sessão com mais de SESS_RET_DIAS (uma vez por dia, pelo sess_loop). v97: e os das visitas,
+    e as linhas com mais de 60 dias do visitas-log.jsonl e do registro de calibração (vis_logs_poda)."""
     agora = time.time() if agora is None else agora
     lim = _ff_hoje(agora - SESS_RET_DIAS * 86400)
     n = 0
@@ -4596,6 +4608,7 @@ def sess_limpar(agora=None):
                     n += 1
                 except OSError:
                     pass
+    vis_logs_poda(agora)
     return n
 
 
@@ -4650,6 +4663,7 @@ def sess_loop():
         try:
             agora = time.time()
             ia_cfg()                                 # v93: fora do sess_lock; o fechamento usa o valor guardado
+            vis_cfg()                                # B1: idem para a ligação por rosto
             with sess_lock:
                 _sess_tick(agora)
                 ontem = _ff_hoje(agora - 86400)
@@ -4727,6 +4741,7 @@ def sess_carregar(agora=None):
     dias = [_ff_hoje(agora - 86400), _ff_hoje(agora)]
     n_lidas = 0
     ia_cfg()                                         # v93: fora do sess_lock
+    vis_cfg()                                        # B1: as visitas do boot já respeitam o interruptor
     with sess_lock:
         for d in dias:
             try:
@@ -4822,15 +4837,57 @@ def sess_status():
 # ligar" entre a leva e o resto da visita e vence a ligação por rosto; Juntar liga mesmo sem rosto e desfaz o Separar.
 # Tudo sob o sess_lock (nunca com o lock). Vetores só em memória (vis_idx, 50 min); as arestas vão para
 # ~/Eterna/ponto/visitas/AAAA-MM-DD.json (60 dias) sem vetor; o Checkout abre a visita inteira (decisão do Eduardo, 10/11).
-def _vis_lim():
+# Segurança (10/11, B1): a ligação AUTOMÁTICA por rosto fica desligada até a calibração com fotos reais do Tour (interruptor
+# em estado.db config/visitas {"rosto": false}, só pela rota POST /visitas/config, Admin no Painel de controle). Desligada,
+# _vis_ligar não cria aresta "rosto" e as que já existem não contam no _vis_recalc; a similaridade entre levas vai para
+# ~/Eterna/ponto/visitas-calibracao.jsonl (só ids de leva e de foto e o score, 60 dias). Juntar e Separar continuam.
+VIS_LIM = 0.50               # limiar fixo; os testes trocam o atributo do módulo (m.VIS_LIM), como o REC_FALSO_SEG
+VIS_CALIB_PISO = 0.35        # pares de levas a partir desta similaridade vão para o registro de calibração
+VIS_CFG_PADRAO = {"rosto": False}
+_vis_cfg = {"t": 0.0, "v": None}
+
+
+def vis_valida(j):
+    """config/visitas: só {"rosto": bool} (por e em são de auditoria). Outro formato = None (vale o padrão: desligada)."""
+    if not isinstance(j, dict) or not isinstance(j.get("rosto"), bool):
+        return None
+    return {"rosto": j["rosto"]}
+
+
+def vis_cfg():
+    """Interruptor da ligação por rosto (estado.db config/visitas), relido a cada 3 s. Nunca chamar com o sess_lock na mão
+    (como o ia_cfg). Sem documento ou ilegível: desligada."""
+    agora = time.time()
+    if agora - _vis_cfg["t"] < 3 and _vis_cfg["v"] is not None:
+        return _vis_cfg["v"]
+    v = None
     try:
-        v = float(os.environ.get("ETERNA_VIS_LIM") or 0)       # só nos testes
-    except ValueError:
-        v = 0
-    return v if 0 < v < 1 else 0.50
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'visitas' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                j = json.loads(r[0])
+                v = vis_valida(j)
+                if v is not None:
+                    v = {**v, "por": j.get("por"), "em": j.get("em")}
+    except Exception:                                # banco ocupado: fica o último valor lido (ou desligada)
+        v = _vis_cfg["v"]
+    v = v or dict(VIS_CFG_PADRAO)
+    _vis_cfg.update(t=agora, v=v)
+    return v
 
 
-VIS_LIM = _vis_lim()
+def vis_cfg_mem():
+    """O último valor lido (sem abrir o banco): para quem está com o sess_lock na mão."""
+    return _vis_cfg["v"] or VIS_CFG_PADRAO
+
+
+def vis_rosto_ligado():
+    return vis_cfg_mem().get("rosto") is True
 VIS_JANELA = 3000            # s entre o 1º e o último clique da visita
 VIS_LEVAS_MAX = 12
 VIS_ROSTOS_MAX = 15
@@ -4838,7 +4895,12 @@ VIS_IDX_MAX = 4000           # vetores na janela (todas as trilhas)
 VIS_ROSTOS_LEVA = 20         # rostos diferentes guardados por leva (para o teto de rostos da visita)
 VIS_DIR = os.path.join(HOME, "ponto", "visitas")
 VIS_LOG = os.path.join(HOME, "ponto", "visitas-log.jsonl")
+VIS_CALIB = os.path.join(HOME, "ponto", "visitas-calibracao.jsonl")
 VIS_LOG_MAX = 5 * 1024 * 1024
+VIS_LOG_DIAS = 60            # retenção do visitas-log.jsonl e do registro de calibração (como as sessões)
+vis_calib = collections.deque(maxlen=5000)   # linhas de calibração a gravar (sob o sess_lock; gravadas no vis_gravar)
+vis_calib_n = [0]
+vis_calib_tira = set()       # pids da LGPD a tirar do registro de calibração (no vis_gravar, fora do sess_lock)
 vis_idx = {"M": None, "T": None, "C": None, "meta": [], "w": 0, "n": 0, "cid": {}, "tmax": 0.0}   # anel de vetores (sob o sess_lock)
 vis_arestas = {}             # dia -> [aresta {a, b, tipo, sim, pa, pb, por, posto, em, seq, barrada?, desfeita?}]
 vis_de = {}                  # card -> id da visita (só visitas com 2 levas ou mais)
@@ -4895,8 +4957,10 @@ def _vis_idx_tira(pids=None, cards=None):
                 I["C"][i] = -1
 
 
-def _vis_busca(v, card, t):
-    """{outro card: (sim, pid)} dos rostos da janela (|t − t_outro| <= 50 min) de OUTRAS levas, o melhor por leva."""
+def _vis_busca(v, card, t, piso=None):
+    """{outro card: (sim, pid)} dos rostos da janela (|t − t_outro| <= 50 min) de OUTRAS levas, o melhor por leva, com
+    sim >= piso (padrão VIS_LIM; a calibração pede um piso mais baixo)."""
+    lim = VIS_LIM if piso is None else piso
     I = vis_idx
     out = {}
     if not I["n"]:
@@ -4911,7 +4975,7 @@ def _vis_busca(v, card, t):
         if not len(idx):
             return out
         sims = I["M"][idx] @ vv
-        for j in np.nonzero(sims >= VIS_LIM - 1e-6)[0]:     # 1e-6: o float32 não tira o 0,50 exato do limiar
+        for j in np.nonzero(sims >= lim - 1e-6)[0]:         # 1e-6: o float32 não tira o 0,50 exato do limiar
             mm = I["meta"][int(idx[j])]
             if mm is None:
                 continue
@@ -4923,7 +4987,7 @@ def _vis_busca(v, card, t):
         if not mm or mm[1] == card or abs(mm[0] - t) > VIS_JANELA:
             continue
         s = _dot(v, mm[3])
-        if s >= VIS_LIM - 1e-6 and (mm[1] not in out or s > out[mm[1]][0]):
+        if s >= lim - 1e-6 and (mm[1] not in out or s > out[mm[1]][0]):
             out[mm[1]] = (s, mm[2])
     return out
 
@@ -4956,8 +5020,9 @@ def _vis_rostos_add(card, pid, v):
 
 def _vis_ligar(card, pid, t, princ):
     """Com o sess_lock: os rostos de qualidade da foto pid (leva card, clique t) procuram rostos de OUTRAS levas na janela;
-    sim >= VIS_LIM cria a aresta "rosto" entre as duas levas (uma por par: a maior sim e os 2 pids). Depois os vetores entram
-    no anel. Devolve True se a visita mudou."""
+    sim >= VIS_LIM cria a aresta "rosto" entre as duas levas (uma por par: a maior sim e os 2 pids), só com o interruptor
+    config/visitas ligado (B1). Todo par com sim >= VIS_CALIB_PISO vai para o registro de calibração (ids e score). Depois
+    os vetores entram no anel. Devolve True se a visita mudou."""
     x = sess.get(card)
     if x is None or x.get("removida") or not princ:
         return False
@@ -4965,9 +5030,10 @@ def _vis_ligar(card, pid, t, princ):
     if not qual:
         return False
     t0 = time.perf_counter()
+    lig = vis_rosto_ligado()
     melhor = {}
     for f in qual:
-        for oc, (s, op) in _vis_busca(f["v"], card, t).items():
+        for oc, (s, op) in _vis_busca(f["v"], card, t, min(VIS_LIM, VIS_CALIB_PISO)).items():
             if oc not in melhor or s > melhor[oc][0]:
                 melhor[oc] = (s, op)
     for f in qual:
@@ -4979,7 +5045,11 @@ def _vis_ligar(card, pid, t, princ):
         y = sess.get(oc)
         if y is None or y.get("removida") or y["dia"] != dia:
             continue
-        nova = _vis_aresta(dia, "rosto", card, oc, sim=s, pa=pid, pb=op) or nova
+        vis_calib.append({"em": time.strftime("%Y-%m-%dT%H:%M:%S"), "dia": dia, "a": card, "b": oc, "pa": pid, "pb": op,
+                          "sim": round(s, 4), "ligada": lig})
+        vis_calib_n[0] += 1
+        if lig and s >= VIS_LIM - 1e-6:
+            nova = _vis_aresta(dia, "rosto", card, oc, sim=s, pa=pid, pb=op) or nova
     mudou = _vis_recalc(dia, set(melhor) | {card}) if nova else False
     vis_med["lig"].append((time.perf_counter() - t0) * 1000)
     return mudou
@@ -5049,7 +5119,10 @@ def _vis_recalc(dia, toque=None):
     sep = [e for e in lst if e["tipo"] == "separar" and not e.get("desfeita")]
     nao = {frozenset((e["a"], e["b"])) for e in sep}
     ordem = sorted((e for e in lst if e["tipo"] == "juntar" and not e.get("desfeita")), key=lambda e: e["seq"]) + \
-        sorted((e for e in lst if e["tipo"] == "rosto"), key=lambda e: e["seq"])
+        (sorted((e for e in lst if e["tipo"] == "rosto"), key=lambda e: e["seq"]) if vis_rosto_ligado() else [])   # B1
+    for e in lst:
+        if e["tipo"] == "rosto" and e.get("barrada") and not vis_rosto_ligado():
+            e.pop("barrada", None)                  # desligada: a aresta antiga não conta (nem como barrada)
     for e in ordem:
         e.pop("barrada", None)
         a, b = e["a"], e["b"]
@@ -5177,7 +5250,8 @@ def _vis_status_mem():
     return {"n": sum(1 for v in vis_info.values() if v["dia"] == hoje and len(v["levas"]) > 1), "rev": vis_rev[0],
             "ligacoes_rosto": sum(1 for e in arestas if e["tipo"] == "rosto" and not e.get("barrada")),
             "barradas": sum(1 for e in arestas if e.get("barrada")), "ms_ultimo": vis_med["ms_ultimo"],
-            "ligar_p90_ms": round(lig[int(0.9 * (len(lig) - 1))], 2) if lig else None, "limiar": VIS_LIM}
+            "ligar_p90_ms": round(lig[int(0.9 * (len(lig) - 1))], 2) if lig else None, "limiar": VIS_LIM,
+            "rosto": vis_rosto_ligado(), "rosto_em": vis_cfg_mem().get("em"), "calibracao": vis_calib_n[0]}
 
 
 def _vis_txt(v, n):
@@ -5235,6 +5309,32 @@ def vis_acao(acao, body, quem_ip):
     return resp, 200
 
 
+def vis_cfg_gravar(rosto, por=None, posto=None, quem_ip=None):
+    """B1: POST /visitas/config {rosto, por, posto} (Painel de controle, só Admin no app). Grava config/visitas no estado.db
+    (rev novo), registra no console e no visitas-log.jsonl e refaz as visitas dos dias em memória com o valor novo
+    (desligar desfaz na hora as ligações automáticas; Juntar e Separar ficam). Fora do sess_lock."""
+    de = vis_cfg().get("rosto") is True
+    v = {"rosto": bool(rosto), "por": _vis_txt(por, 60), "em": _iso()}
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "visitas", json.dumps(v, ensure_ascii=False), rev, _iso()))
+            db.commit()
+        finally:
+            db.close()
+    _vis_cfg.update(t=time.time(), v=dict(v))
+    with sess_lock:
+        for d in sorted({x["dia"] for x in sess.values()} | set(vis_arestas)):
+            _vis_recalc(d)
+    print("  visitas: ligação por rosto %s -> %s · por %s" % ("ligada" if de else "desligada", "ligada" if v["rosto"] else "desligada", v["por"] or "?"))
+    vis_log({"acao": "config", "rosto": v["rosto"], "de": de, "por": v["por"], "posto": _vis_txt(posto, 40),
+             "ip": None if quem_ip in (None, "127.0.0.1", "::1") else quem_ip, "em": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    sess_gravar()
+    return {"ok": True, "rosto": v["rosto"], "em": v["em"], "por": v["por"]}
+
+
 def vis_log(obj):
     """~/Eterna/ponto/visitas-log.jsonl (600): quem, posto, quando, de e para. Sem rosto, sem foto."""
     try:
@@ -5248,12 +5348,89 @@ def vis_log(obj):
         print("  visitas: não gravei o registro (%s)" % str(ex)[:80])
 
 
+def vis_calib_gravar(linhas, tira=None):
+    """B1: registro de calibração (~/Eterna/ponto/visitas-calibracao.jsonl, 600): só ids de leva e de foto, score e se a
+    ligação estava ligada. tira = pids da LGPD (a linha perde o pid). Fora do sess_lock."""
+    try:
+        os.makedirs(os.path.dirname(VIS_CALIB), exist_ok=True)
+        if tira and os.path.exists(VIS_CALIB):
+            _jsonl_reescreve(VIS_CALIB, lambda o: {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}})
+        if not linhas:
+            return
+        if os.path.exists(VIS_CALIB) and os.path.getsize(VIS_CALIB) > VIS_LOG_MAX:
+            os.replace(VIS_CALIB, VIS_CALIB + ".1")
+        fd = os.open(VIS_CALIB, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf8") as f:
+            for o in linhas:
+                if tira:
+                    o = {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}}
+                f.write(json.dumps(o, ensure_ascii=False) + "\n")
+    except OSError as ex:
+        print("  visitas: não gravei a calibração (%s)" % str(ex)[:80])
+
+
+def _jsonl_reescreve(f, fn):
+    """Reescreve um .jsonl linha a linha (fn(obj) -> obj, ou None para tirar a linha), 600, mkstemp + replace."""
+    fd, tmp = tempfile.mkstemp(prefix=".vlog-", suffix=".tmp", dir=os.path.dirname(f))
+    try:
+        with os.fdopen(fd, "w", encoding="utf8") as out, open(f, encoding="utf8") as fh:
+            for linha in fh:
+                try:
+                    o = json.loads(linha)
+                except ValueError:
+                    continue
+                o = fn(o) if isinstance(o, dict) else None
+                if o is not None:
+                    out.write(json.dumps(o, ensure_ascii=False) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, f)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def vis_logs_poda(agora=None):
+    """Retenção de VIS_LOG_DIAS (60) do visitas-log.jsonl e do registro de calibração (e das cópias .1). Uma vez por dia,
+    pelo sess_limpar. Devolve as linhas tiradas."""
+    agora = time.time() if agora is None else agora
+    lim = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora - VIS_LOG_DIAS * 86400))
+    n = [0]
+
+    def fica(o):
+        if str(o.get("em") or "") < lim:
+            n[0] += 1
+            return None
+        return o
+    for f in (VIS_LOG, VIS_CALIB):
+        for g in (f, f + ".1"):
+            try:
+                if not os.path.exists(g):
+                    continue
+                if os.path.getmtime(g) < agora - VIS_LOG_DIAS * 86400:
+                    os.remove(g)                         # nada mais novo que o prazo: sai o arquivo
+                    continue
+                _jsonl_reescreve(g, fica)
+            except Exception as ex:
+                print("  visitas: não podei %s (%s)" % (os.path.basename(g), str(ex)[:80]))
+    return n[0]
+
+
 def vis_gravar():
-    """Grava as arestas dos dias com mudança (~/Eterna/ponto/visitas/AAAA-MM-DD.json, 600, mkstemp). Fora do sess_lock."""
+    """Grava as arestas dos dias com mudança (~/Eterna/ponto/visitas/AAAA-MM-DD.json, 600, mkstemp). Fora do sess_lock.
+    B1: e as linhas novas do registro de calibração."""
     with sess_lock:
         dias = list(vis_sujo)
         vis_sujo.clear()
         lotes = {d: [dict(e) for e in vis_arestas.get(d) or []] for d in dias}
+        calib = list(vis_calib)
+        vis_calib.clear()
+        tira = set(vis_calib_tira)
+        vis_calib_tira.clear()
+    if calib or tira:
+        vis_calib_gravar(calib, tira)
     for d, lst in lotes.items():
         try:
             os.makedirs(VIS_DIR, exist_ok=True)
@@ -5285,8 +5462,9 @@ def _vis_carregar(dias, agora):
 
 
 def vis_idx_boot(agora=None):
-    """No boot, fora do sess_lock: o anel refeito do rostos.db para as fotos das levas das últimas 50 min. O banco não
-    guarda score nem pose: entra o rosto principal com largura >= 60 px (aceito no plano)."""
+    """No boot, fora do sess_lock: o anel refeito do rostos.db para as fotos das levas das últimas 50 min. B1 (segurança):
+    só o rosto que passa em _sess_qualidade (principal, >= 60 px e, pela tabela rosto_q, score >= 0,80 e frontal); rosto
+    lido antes da tabela existir fica fora (sem score conhecido)."""
     agora = time.time() if agora is None else agora
     with sess_lock:
         pids = {}
@@ -5298,18 +5476,39 @@ def vis_idx_boot(agora=None):
     if not pids:
         return 0
     faces = _sess_faces_db(list(pids))
+    boas = _rosto_q_db(list(faces))
     n = 0
     with sess_lock:
         for p, fs in faces.items():
             card, t = pids.get(p, (None, 0))
             if card is None:
                 continue
+            q = boas.get(p) or set()
+            fs = [(f[0], f[1], 1.0, True) if array.array("f", f[1]).tobytes() in q else (f[0], f[1], 0.0, False) for f in fs]
             for f in _sess_principais(_sess_faces(fs)):
-                if f["l"] >= SESS_Q_LARG:
+                if _sess_qualidade(f):
                     _vis_idx_add(t, card, p, f["v"])
                     _vis_rostos_add(card, p, f["v"])
                     n += 1
     return n
+
+
+def _rosto_q_db(pids):
+    """{pid: {emb}} dos rostos de qualidade gravados (tabela rosto_q)."""
+    out = {}
+    if not pids or not os.path.exists(ROSTOS_DB):
+        return out
+    try:
+        db = rostos_db()
+        lista = list(pids)
+        for i in range(0, len(lista), 500):
+            parte = lista[i:i + 500]
+            for p, emb in db.execute("select pid, emb from rosto_q where pid in (%s)" % ",".join("?" * len(parte)), parte):
+                out.setdefault(p, set()).add(bytes(emb))
+        db.close()
+    except Exception as ex:
+        print("  visitas: rostos de qualidade do boot indisponíveis (%s)" % str(ex)[:80])
+    return out
 
 
 def vis_protege(cards):
@@ -5330,8 +5529,13 @@ def vis_protege_manifesto(m):
 
 
 def _vis_esquecer(pid, card, removida):
-    """LGPD (com o sess_lock): o pid sai do anel e das arestas; leva removida sai da visita."""
+    """LGPD (com o sess_lock): o pid sai do anel, das arestas e do registro de calibração; leva removida sai da visita."""
     _vis_idx_tira(pids={pid})
+    vis_calib_tira.add(pid)                              # B1: o vis_gravar tira do arquivo (fora do sess_lock)
+    for o in vis_calib:
+        for k in ("pa", "pb"):
+            if o.get(k) == pid:
+                o[k] = None
     for c in [card] if card else []:
         if c in vis_rostos:
             vis_rostos[c] = [(p, v) for p, v in vis_rostos[c] if p != pid]
@@ -5824,6 +6028,9 @@ def estado_gravar(body, quem=""):
                     novo = db.execute("select 1 from doc where col = 'agenda' and id = ? and valor is not null", (d["id"],)).fetchone() is None
                     if novo and db.execute("select count(*) from doc where col = 'agenda' and valor is not null").fetchone()[0] >= AGENDA_DOCS_MAX:
                         continue                                # teto da agenda (revisão)
+                if d["col"] == "config" and d["id"] == "visitas":   # B1: o interruptor só muda pela rota /visitas/config
+                    print("  config/visitas recusada pela sincronização (só POST /visitas/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
                     if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
                         print("  config/ia: apagar recusado · de %s" % (quem or "?"))
@@ -6748,6 +6955,25 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, cod, nostore=True)
 
+    def visitas_config_post(self):
+        """B1: POST /visitas/config {rosto: bool, por, posto}: liga ou desliga a ligação automática por rosto. Posto +
+        origem + X-Eterna: 1 + 10 por minuto, corpo só com rosto booleano. O app só mostra o interruptor ao Admin."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        if not limite_ok(self.client_address[0], "visitas-config", 10):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        if not isinstance(body, dict) or not isinstance(body.get("rosto"), bool):
+            return self.js({"error": "rosto deve ser true ou false"}, 400)
+        try:
+            r = vis_cfg_gravar(body["rosto"], body.get("por"), body.get("posto"), self.client_address[0])
+        except Exception as ex:
+            print("  visitas: config %s" % str(ex)[:120])
+            return self.js({"error": "erro no servidor"}, 500)
+        return self.js(r, 200, nostore=True)
+
     def entradas_post(self):
         try:
             return self._entradas_post()
@@ -7375,6 +7601,8 @@ class H(BaseHTTPRequestHandler):
             return self.ff_funcao_post()
         if u.path in ("/visitas/juntar", "/visitas/separar"):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
+        if u.path == "/visitas/config":
+            return self.visitas_config_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/fundos/modo":

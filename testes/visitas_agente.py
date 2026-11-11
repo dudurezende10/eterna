@@ -15,7 +15,7 @@ def ok(c, msg):
 
 
 def porta_livre():
-    for p in range(39000 + random.randint(0, 900), 39999):
+    for p in range(49000 + random.randint(0, 900), 49999):
         s = socket.socket()
         try:
             s.bind(("127.0.0.1", p))
@@ -38,6 +38,14 @@ sp = importlib.util.spec_from_file_location("ag", AG)
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
 ok(m.VIS_LIM == 0.50 and m.VIS_JANELA == 3000 and m.VIS_LEVAS_MAX == 12 and m.VIS_ROSTOS_MAX == 15 and m.VIS_IDX_MAX == 4000, "constantes")
+# B1 (Segurança, 10/11): o limiar não lê variável de ambiente em produção (só o atributo do módulo, nos testes)
+os.environ["ETERNA_VIS_LIM"] = "0.2"
+sp_ = importlib.util.spec_from_file_location("ag2", AG)
+m2 = importlib.util.module_from_spec(sp_)
+sp_.loader.exec_module(m2)
+ok(m2.VIS_LIM == 0.50 and "ETERNA_VIS_LIM" not in open(AG, encoding="utf-8").read(), "B1: ETERNA_VIS_LIM não muda o limiar: %r" % m2.VIS_LIM)
+os.environ.pop("ETERNA_VIS_LIM")
+del m2
 m.sess_rostos_on = lambda: True
 rnd = random.Random(97)
 
@@ -107,6 +115,52 @@ def visita(card):
 
 
 P = [unit() for _ in range(40)]
+
+# ---------- B1: ligação por rosto desligada por padrão (até a calibração) ----------
+reset()
+ok(m.vis_cfg() == {"rosto": False} and not m.vis_rosto_ligado(), "B1: padrão desligado: %r" % m.vis_cfg())
+fam = P[36]
+A, pa = leva("carlos", T0, [[rosto(fam)], [rosto(fam)]])
+fecha(T0 + 200)
+B, pb = leva("samuel", T0 + 300, [[rosto(fam)]])
+fecha(T0 + 600)
+with m.sess_lock:
+    tipos = [e["tipo"] for e in m.vis_arestas.get(HOJE, [])]
+    calib = list(m.vis_calib)
+ok(visita(A) == [A] and visita(B) == [B] and "rosto" not in tipos, "B1: desligada, a mesma família não liga sozinha: %r %r" % (visita(A), tipos))
+ok(calib and calib[-1]["a"] == B and calib[-1]["b"] == A and calib[-1]["sim"] >= 0.5 and calib[-1]["ligada"] is False
+   and set(calib[-1]) == {"em", "dia", "a", "b", "pa", "pb", "sim", "ligada"}, "B1: par registrado para a calibração (só ids e score): %r" % calib[-1:])
+st = m.sess_status()["visitas"]
+ok(st["rosto"] is False and st["calibracao"] >= 1, "B1: /status.sessoes.visitas.rosto: %r" % st)
+m.sess_gravar()
+lin = [json.loads(l) for l in open(m.VIS_CALIB)]
+ok(lin and oct(os.stat(m.VIS_CALIB).st_mode & 0o777) == "0o600" and all(set(o) == {"em", "dia", "a", "b", "pa", "pb", "sim", "ligada"} for o in lin),
+   "B1: visitas-calibracao.jsonl 600 sem vetor nem nome: %r" % lin[:1])
+# Juntar e Separar continuam com a ligação desligada
+r, cod = m.vis_acao("juntar", {"a": A, "b": B, "por": "Ana", "posto": "Caixa 1"}, "127.0.0.1")
+ok(cod == 200 and visita(A) == sorted([A, B]), "B1: Juntar continua: %r" % (r,))
+r, cod = m.vis_acao("separar", {"card": B, "por": "Ana", "posto": "Caixa 1"}, "127.0.0.1")
+ok(cod == 200 and visita(A) == [A], "B1: Separar continua: %r" % (r,))
+# a sincronização do estado.db não muda o interruptor (só a rota)
+m.estado_gravar({"docs": [{"col": "config", "id": "visitas", "valor": {"rosto": True}}]}, "teste")
+m._vis_cfg["t"] = 0
+ok(m.vis_cfg()["rosto"] is False, "B1: /ponto/docs não liga a ligação por rosto")
+# ligar pela rota grava config/visitas, refaz e passa a ligar; desligar desfaz as ligações automáticas na hora
+reset()
+r = m.vis_cfg_gravar(True, "Eduardo", "Painel", "127.0.0.1")
+m._vis_cfg["t"] = 0
+ok(r["rosto"] is True and m.vis_cfg()["rosto"] is True and m.vis_cfg()["por"] == "Eduardo", "B1: ligada pela rota: %r" % (r,))
+A, _ = leva("carlos", T0, [[rosto(fam)]])
+B, _ = leva("samuel", T0 + 300, [[rosto(fam)]])
+fecha(T0 + 600)
+ok(visita(A) == sorted([A, B]), "B1: ligada, liga: %r" % visita(A))
+m.vis_cfg_gravar(False, "Eduardo")
+ok(visita(A) == [A] and m.sess_status()["visitas"]["ligacoes_rosto"] >= 0, "B1: desligar desfaz a ligação automática: %r" % visita(A))
+linhas = [json.loads(l) for l in open(m.VIS_LOG)]
+ok(any(o.get("acao") == "config" and o.get("rosto") is False and o.get("por") == "Eduardo" for o in linhas), "B1: mudança no visitas-log.jsonl")
+m.vis_cfg_gravar(True, "Eduardo")
+ok(visita(A) == sorted([A, B]), "B1: religar volta a ligação: %r" % visita(A))
+# os testes abaixo (critérios 18 a 33 do plano) conferem a ligação por rosto LIGADA
 
 # ---------- 18: família de 4 em 3 fotógrafos (25 min) -> 1 visita; 19: filho sozinho entra pela corrente ----------
 reset()
@@ -334,7 +388,57 @@ s, _, _ = req("POST", "/visitas/juntar", {"a": A, "b": B}, {"X-Eterna": "1", "Or
 ok(s == 403, "29: POST de outra origem: %r" % s)
 cods = [req("POST", "/visitas/separar", {"card": B, "por": "Ana"}, {"X-Eterna": "1"})[0] for _ in range(31)]
 ok(cods[0] == 200 and cods[29] == 200 and cods[30] == 429, "29: o 31º pedido no minuto dá 429: %r" % cods[-3:])
+# B1: POST /visitas/config (X-Eterna, origem, só booleano, 10 por minuto) e o estado em /status.sessoes.visitas
+ok(req("POST", "/visitas/config", {"rosto": False})[0] == 403, "B1: /visitas/config sem X-Eterna: 403")
+ok(req("POST", "/visitas/config", {"rosto": False}, {"X-Eterna": "1", "Origin": "https://exemplo.com"})[0] == 403, "B1: /visitas/config de outra origem: 403")
+ok(req("POST", "/visitas/config", {"rosto": "sim"}, {"X-Eterna": "1"})[0] == 400, "B1: /visitas/config com rosto não booleano: 400")
+s, j, h = req("POST", "/visitas/config", {"rosto": False, "por": "Eduardo"}, {"X-Eterna": "1"})
+ok(s == 200 and j["rosto"] is False and h.get("Cache-Control") == "no-store", "B1: /visitas/config desliga: %r %r" % (s, j))
+s, j, _ = req("GET", "/status")
+ok(s == 200 and j["sessoes"]["visitas"]["rosto"] is False, "B1: /status.sessoes.visitas.rosto: %r" % (j or {}).get("sessoes", {}).get("visitas"))
+cods = [req("POST", "/visitas/config", {"rosto": False}, {"X-Eterna": "1"})[0] for _ in range(10)]
+ok(cods[-1] == 429, "B1: o 11º pedido no minuto dá 429: %r" % cods[-3:])
 srv.shutdown()
+m.vis_cfg_gravar(True, "teste")
+
+# ---------- B1: anel do boot só com rostos de qualidade (rosto_q); LGPD e retenção do registro de calibração ----------
+reset()
+import array as _array
+db = m.rostos_db()
+agora_b = time.time()
+A, pa = leva("carlos", agora_b - 600, [[rosto(P[37])]])
+B, pb = leva("samuel", agora_b - 500, [[rosto(P[38])]])
+fecha(agora_b - 300)
+for pid, base, boa in ((pa[0], P[37], True), (pb[0], P[38], False)):
+    v = _array.array("f", rosto(base)[1]).tobytes()
+    db.execute("insert or replace into foto values (?,?,?,?)", (pid, HOJE, 1, time.time()))
+    db.execute("insert into rosto values (?,?,?,?)", (pid, HOJE, 200.0, v))
+    if boa:
+        db.execute("insert into rosto_q values (?,?,?)", (pid, HOJE, v))
+db.commit(); db.close()
+with m.sess_lock:
+    m.vis_idx.update(M=None, T=None, C=None, meta=[], w=0, n=0, cid={}, tmax=0.0)
+    m.vis_rostos.clear()
+n_boot = m.vis_idx_boot(agora_b)
+with m.sess_lock:
+    no_anel = {mm[2] for mm in m.vis_idx["meta"] if mm}
+ok(n_boot == 1 and no_anel == {pa[0]}, "B1: vis_idx_boot só com o rosto de qualidade (score e frontal): %r %r" % (n_boot, no_anel))
+# leitor grava a rosto_q só com score >= 0,80 e frontal
+src = open(AG, encoding="utf-8").read()
+ok("insert into rosto_q values" in src and "f[2] >= SESS_Q_SCORE and f[3]" in src, "B1: o leitor grava a rosto_q com score e frontal")
+# LGPD tira o pid do registro de calibração
+m.vis_calib_gravar([{"em": "2026-01-01T10:00:00", "dia": "2026-01-01", "a": "LPAAAAA", "b": "LPBBBBB", "pa": "abc123abc123", "pb": "def456def456", "sim": 0.4, "ligada": False}])
+with m.sess_lock:
+    m.vis_calib_tira.add("abc123abc123")
+m.vis_gravar()
+lin = [json.loads(l) for l in open(m.VIS_CALIB)]
+ok(all(o.get("pa") != "abc123abc123" for o in lin) and any(o.get("pb") == "def456def456" for o in lin), "B1: LGPD tira o pid da calibração: %r" % lin[-1:])
+# retenção de 60 dias (visitas-log.jsonl e calibração)
+m.vis_log({"acao": "juntar", "em": "2020-01-01T10:00:00"})
+antes = sum(1 for _ in open(m.VIS_LOG))
+tir = m.vis_logs_poda()
+ok(tir >= 2 and sum(1 for _ in open(m.VIS_LOG)) == antes - 1 and all(json.loads(l)["em"] >= "2026" for l in open(m.VIS_CALIB))
+   and oct(os.stat(m.VIS_LOG).st_mode & 0o777) == "0o600", "notas: retenção de 60 dias nos dois registros: %r" % tir)
 
 # ---------- 33: desempenho: 3.000 fotos num dia, 6 trilhas ao mesmo tempo ----------
 reset()
