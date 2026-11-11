@@ -1,7 +1,7 @@
 # Plano: selo "Edição Maracanã" nas montagens de IA (item 9 da análise de telas)
 
 Data: 11/11/2026 · Worktree `/home/claude/eterna-selo`, branch `feat/selo-ia`, criada de `feat/recorte-birefnet` `212bc84`.
-Versão: proposta v98 (o recorte e a `feat/ondas-ux` são v97). O carimbo final fica com o deploy (D8).
+Versão: v97, junto do recorte e da `feat/ondas-ux` (D8, Eduardo 11/11). Carimbo da branch: `v97-selo`.
 
 ## Objetivo
 As montagens com fundo de IA passam a ser vistas como o produto especial que são: vêm primeiro no Checkout, juntas, com título, selo dourado "Edição Maracanã" e o nome do fundo.
@@ -190,7 +190,25 @@ Geral:
 ## Testes que o Testador roda
 `node testes/selo-edicao.js`, `python3 testes/montagens_agente.py`, `bash testes/rodar.sh`; conferência visual com print da tela cheia, da grade, de "Ver minhas fotos" e do Posto nas 4 resoluções do critério 9 e nas 5 línguas.
 
-## Decisões que ainda dependem do Eduardo
+## Decisões (Eduardo, 11/11)
+- D1. Galeria por QR: fica para depois (plano à parte, junto da montagem feita no servidor do ponto). A investigação de quem compra montagem num pacote só digital está em "Investigação D1" abaixo.
+- D2. Título do grupo na grade: "Suas fotos especiais". EN "Your special photos", ES "Tus fotos especiales", FR "Vos photos spéciales", DE "Ihre besonderen Fotos" (chave `edTitulo`, sem travessão).
+- D3. O título aparece só na grade (proposta aceita).
+- D4. Nomes dos fundos nas 5 línguas: os da tabela de I18N deste plano (aceitos sem mudança).
+- D5. A "vista" conta só na tela cheia (proposta aceita).
+- D6. Espera de 8 s (`LJ_ED_ESPERA_MS = 8000`).
+- D7. No Posto, as montagens também vêm primeiro no pedido. Só depois da `fix/checkout-espera` (mexe no `pendEscolhaItem`). **Pendente**: em 11/11 a `fix/checkout-espera` ainda não tem commits próprios (aponta para a ponta da `feat/ondas-ux`, `a9b4028`); a ordem do pedido no Posto não mudou nesta entrega.
+- D8. Entra junto na v97 (não na v98).
+
+## Investigação D1 (11/11, sem correção)
+Quem compra montagem num pacote só digital (Zona Mista, Maracanã Mais) não leva a montagem de jeito nenhum. Confirmado por teste (Checkout e Posto de verdade, agente falso como no `selo-edicao.js`; script fora do `testes/`): 1 montagem + 2 fotos, PIX confirmado no Posto em modo local.
+- Zona Mista (R$ 110): `prints` 0, nada para imprimir, galeria com as 2 fotos compradas e sem a montagem.
+- Maracanã Mais (R$ 250): igual, `prints` 0, galeria sem a montagem.
+- Gramado (R$ 150, com impressão): a montagem sai impressa (`impFotos`), mas também não vai para a galeria.
+Passo a passo no código (linhas da `c0965e3`): `pendConfirmar` grava `s.aiSel` (index.html 1492) e chama `galDaVenda` (1498) → `galAtualizar` (2382) monta `m.fotos` só com `s.photos` e as bases já pagas (laço da linha 2389); `aiSel` nunca entra no manifesto. `impFotos` (1682) põe as montagens depois das fotos comuns e corta em `s.prints`, que é 0 nos pacotes só digitais (catálogo: `zona` e `mais` com `prints: 0`). Além disso, na Zona Mista com fotos adicionais (que são impressas), as montagens ficam no fim da fila e só saem se sobrar impressão. O agente não monta (a montagem é feita no canvas do navegador) e a galeria recusa base de IA.
+Sugestão: até a montagem ir para a galeria, não vender montagem em pacote sem impressão (o Posto avisa e não deixa escolher Zona Mista ou Maracanã Mais com montagem marcada), ou imprimir a montagem como cortesia nesses pacotes; e, no plano da galeria, levar a montagem feita no servidor do ponto (`aiSel` no manifesto, contrato acima).
+
+## Decisões que dependiam do Eduardo (respondidas acima)
 - D1. Galeria por QR: hoje a montagem comprada não vai para a galeria (só a impressa sai da DNP). O selo na galeria depende de a montagem ir para a galeria, que precisa de a montagem ser feita no servidor do ponto (plano à parte). Confirmar que fica para essa entrega, e conferir com ele se o cliente que compra montagem num pacote só digital está levando a montagem de algum jeito hoje.
 - D2. Título do grupo: proposta "Montamos estas com as suas fotos" (EN "We made these from your photos"). Alternativa: "Suas fotos em outros cantos do Maracanã".
 - D3. Título só na grade (proposta) ou também na tela cheia, em cima do nome do fundo da 1ª montagem.
@@ -199,3 +217,14 @@ Geral:
 - D6. Espera de 8 s antes de sair de uma montagem que não fica pronta (A4).
 - D7. Ordem do pedido no Posto com as montagens primeiro também (fica para depois do merge da `fix/checkout-espera`).
 - D8. Versão: v98 sozinha (proposta) ou junto da v97 com a `ondas-ux` e o recorte.
+
+## Implementação (Programador, 11/11)
+- Merge da `feat/recorte-birefnet` (`212bc84`): já estava na base, nada novo.
+- "Pronta" no Checkout = `fiaPronta(x)`: `COMPURL` (montagem que já apareceu) ou `COMPOK` (montagem que o `compose` terminou, mesmo aquecida pelo `iaAquecer` sem aparecer). Sem isso a abertura e a espera de 8 s não viam as montagens prontas fora da tela.
+- Selo na grade: o card é 4/5 e a montagem fica inteira; o selo desce até a borda de cima da imagem pela proporção (`--ar` no `.lj-gimg.ai`, `container-type:inline-size`). Em "Ver minhas fotos" (célula 3/2) o selo acompanha a borda da imagem do mesmo jeito.
+- Tela cheia: com a imagem encostada no alto da tela (1280×800, por exemplo), o selo anda para a direita do logo do overlay (`@container (min-aspect-ratio:4/3)`), para não encostar no `.lj-ovtl`.
+- Âncora: `ljAncora` também acerta o `k.i` quando a tela cheia está aberta (`k.i = k.ver`), porque o `fiaFalhou` e o `lojaVisitaAtualiza` limitam o `k.i` pelo tamanho novo antes do desenho.
+- Contagem: o Set das vistas é por `t0` do atendimento (`k.edT0`), além de limpo no `lojaReset`.
+- Agente: `montagens_validar` recusa qualquer campo fora de `dia`, `terminal`, `vistas` (400 `campo`, cobre `__proto__`); `vistas` precisa ser inteiro de verdade (`true` e `1.0` dão 400). Compradas seguem a regra de venda do resumo (tem "pagar").
+- Testes: `testes/selo-edicao.js` usa o agente falso por `page.route` (como `visitas-checkout.js`), com o `/recorte` segurando a base para deixar a montagem "em preparo"; o critério 4 com montagem que fica pronta durante a espera chama o fim da espera à mão (o tempo da montagem no navegador varia). `testes/montagens_agente.py` usa o agente de verdade (no `rodar.sh`).
+- Fora: critério 5 com o Posto juntando leva e critério 7 com 2 levas (blocos "ponto · hora") não têm teste próprio; o critério 10 com 30 fotos e o 13 byte a byte não foram testados (a impressão não passa pelo `lojaThumb`; o teste confere que o `#print-root` não tem selo nem nome do fundo).

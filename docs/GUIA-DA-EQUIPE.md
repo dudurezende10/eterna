@@ -772,6 +772,15 @@ Bom saber:
 
 Quem entra com perfil de fotógrafo precisa entrar de novo no dia seguinte. Ao abrir o Eterna num dia novo, ou se ele ficou aberto na virada da meia-noite, aparece "Novo dia: entre de novo". Entre com o e-mail e o código, como sempre. É só segurança da conta. Não marca ponto.
 
+## Novidades da v97: selo Edição Maracanã
+
+- No Checkout, as fotos com fundo de IA (as montagens) aparecem primeiro, juntas, com a faixa amarela **Edição Maracanã** e o nome do fundo (Noite de campeão, Mirante ao pôr do sol, Arquibancada 1950, Saída do túnel, Telão do Maracanã), nas 5 línguas. Na grade elas vêm com o título "Suas fotos especiais" e, depois delas, "Suas fotos de hoje".
+- O Checkout abre na primeira montagem pronta. Se ela ainda estiver sendo preparada e o cliente não tocar em nada, depois de 8 segundos a tela vai sozinha para a próxima foto pronta.
+- No Posto de venda, as montagens do pedido e a tela do cliente mostram a mesma faixa Edição Maracanã. A montagem continua contando dentro do pacote, igual a qualquer outra foto.
+- A faixa é só da tela: a foto impressa e a do download saem sem ela.
+- Atenção: hoje a montagem não vai para a galeria online. No pacote só digital (Zona Mista, Maracanã Mais) a montagem escolhida não chega ao cliente. Nos pacotes com impressão, a montagem sai impressa.
+- Para o Admin: em Estatísticas, o quadro "Edição Maracanã: montagens vistas × compradas" mostra por dia quantas montagens os clientes viram no Checkout e quantas compraram.
+
 ---
 
 ## 6. O que dizer ao cliente
