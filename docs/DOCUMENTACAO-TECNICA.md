@@ -1879,3 +1879,30 @@ Fundo `telao` (`img/bg-telao.jpg`, arte do Eduardo, 2576×1840; `fileHi` = o mes
 
 ### Ordem de deploy
 1) `instalar-recorte` (Mac e servidor) com os modelos novos; 2) agente: `eterna-agente.py` e `eterna-recorte.py` juntos (no Mac do Eduardo em `~/Documents/ETERNA/eterna/` e `~/Downloads/Eterna/`); 3) app; 4) recarregar Checkout, Posto e Upload. Agente novo sem o instalador = sem fundos de IA. O servidor do estádio está na `idiomas-base`: o `eterna-recorte.py` precisa entrar no `instalar-servidor.ps1` e no vigia (`eterna-vigia.ps1` só atualiza o `eterna-agente.py`).
+
+## Selo Edição Maracanã nas montagens de IA (v97, 11/11/2026)
+Plano `docs/planos/2026-11-11-selo-edicao-maracana.md` (decisões D1 a D8 do Eduardo e a investigação D1). Testes `testes/selo-edicao.js` (Checkout, Posto, Estatísticas) e `testes/montagens_agente.py` (agente).
+
+### Checkout
+- Ordem: `lojaItems(card)` = montagens (ordem de `bgOn`) + fotos comuns (ordem de sempre). A montagem não tem `lb` ("ponto · hora"). Marcas para a grade: `edIni` (1ª montagem) e `edFotos` (1ª foto comum, só com uma leva; com várias, os blocos `lj-blk` fazem esse papel). `lojaCart`, `lojaSync`, `lojaPedido`, `aiSel`, `n` e preço não mudam (só a ordem).
+- Selo: `lojaThumb` acrescenta `<span class="lj-ed">` (texto `edSeloTxt()`, chave do venue `VENUES.maracana.selo`) depois do `.compimg` (que o `compHydrate` esvazia). Grade com `.lj-edh` (`.lj-edeb` + `h3` `edTitulo`) antes da 1ª montagem e `.lj-blk.lj-edfotos` (`edFotos`) antes da 1ª foto. Etiqueta do card (`.lj-tag`) com o nome do fundo (`bgNomeCli`), no lugar de "Fundo de IA" (`aiTag` fica no dicionário sem uso). Tela cheia com `.lj-lbsrc.lj-edn` (nome do fundo) e caixa `fit` na proporção da montagem (`--ar`; 3/2 até ficar pronta; `LJ_AR['ai:<base>|<fundo>']` gravado pelo `compHydrate`).
+- Abertura: `ljAbrirEd(k)` (em `lojaAbrirSo`, `kiosk-go` e `loja-open`) põe `k.i = k.ver = ljPrimeira(card)` (1ª montagem pronta; sem nenhuma, a 1ª montagem; sem montagem, 0), limpa a âncora e agenda `lojaEdEspera` em `LJ_ED_ESPERA_MS` (8 s). Sem toque desde a abertura (`k.toque`) e com a montagem da tela ainda em preparo, vai uma vez para o 1º item pronto (montagem pronta, senão a 1ª foto comum). Pronta = `fiaPronta(x)`: `COMPURL` ou `COMPOK` (o `compose` marca as montagens terminadas).
+- Âncora: `ljAncora(k, items)` no começo do ramo review. Guarda as chaves do último desenho (`k.verKs`, `k.verCode`); se a lista mudou, `k.ver` (e `k.i`) passam a ser o número novo da mesma chave; se ela sumiu, o mesmo número limitado ao tamanho novo. Nunca age nas setas, no deslizar ou nas teclas (a lista não muda).
+- Vistas: `edVista(chave)` só no `#loja` (`state.lojaRota`), com `t0`, montagem pronta na tela cheia (no desenho e no `compHydrate` dentro de `#lj-lb`), uma vez por atendimento (`k.edVistos` por `k.edT0`). Soma em `localStorage['eterna.edvistas.v1'] = {terminal, dias:{AAAA-MM-DD: n}}` (só hoje e ontem, dia do venue) com o terminal aleatório `eterna.terminal.v1` (12 caracteres `[a-z0-9]`, `crypto.getRandomValues`). `edVistasEnviar` manda o total de cada dia a `POST /ponto/montagens` 30 s depois da vista; falha ou agente fora tenta de novo em 5 min. Mandar o total (não a soma) deixa o envio repetido sem efeito.
+- CSS `.lj-ed` (amarelo `#FFB800`, azul noite `#0C2340`, maiúsculas, `letter-spacing:.1em`, Big Shoulders, sem quebra, `pointer-events:none`) perto do `.lj-tag`. Miniaturas (`.lj-mimg`, `.pend-th`, `.eco-mini`) com `container-type:inline-size` e o selo menor abaixo de 150 px. Com a imagem encostada no alto da tela, o selo anda para a direita do logo do overlay (`@container (min-aspect-ratio:4/3)`).
+
+### Posto
+- Pedido: as miniaturas de montagem (`pend-th`, pelo `lojaThumb`) têm o selo e o nome do fundo no `title` do ícone. A ordem do pedido (`pendEscolhaItem`) não mudou: D7 pendente da `fix/checkout-espera`.
+- Eco da tela do cliente: `ecoThumb` troca a etiqueta "IA" por `.lj-ed.eco-ed` com o nome do fundo no `title`.
+
+### Estatísticas
+`esDados` lê `montagens` do resumo do dia (`edVistas`, `edCompradas`; `null` = sem registro). `esEdPainel(D)` na seção a, depois de Produtos e Pagamento: "Edição Maracanã: montagens vistas × compradas", um dia por linha (mais novo em cima, dd/mm/aaaa), Vistas, Compradas, Compradas por vista, "sem registro" para dia antes da versão e total do período. Só Admin (a tela já é só do Admin).
+
+### Agente
+`POST /ponto/montagens` (`montagens_post`): mesma guarda do `/ponto/entradas` (posto + `origem_local` + `X-Eterna: 1` + `limite_ok` 30/min por IP), corpo até 1 KB. `montagens_validar`: só `dia` (hoje ou ontem no fuso do agente), `terminal` (`^[a-z0-9]{8,16}$`) e `vistas` (inteiro de 0 a 20.000); outro campo é 400 `campo`. `montagens_gravar`: tabela `montagem_vista (dia, terminal, vistas, em)` no `operacao.db`, fica o maior valor, até 40 terminais por dia (o 41º é 409 `muitos_terminais` e conta em `/status.estatisticas.montagens_recusadas`). Resposta `{"ok":true,"vistas":<gravado>}`. CORS e `Access-Control-Allow-Headers` com `X-Eterna` como no `/ponto/entradas`. O console nunca imprime o corpo. `met_v2`: `montagens = {vistas: montagens_dia(dia), compradas: soma de nAI das vendas pagas do canal checkout}`. Sem IP, sessão, rosto, foto ou nome. `operacao.db` já vai para o backup.
+
+### Fora desta entrega
+- Galeria por QR (D1): a montagem não vai para a galeria (só a impressa sai da DNP). Contrato para quando for: no plano.
+- Ordem do pedido no Posto com as montagens primeiro (D7).
+- Selo ou nome do fundo na impressão, no download e no arquivo (decisão do Eduardo: o selo é só da tela).
+

@@ -445,6 +445,21 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-mark{position:absolute;right:-14px;top:-14px;width:58px;height:58px;border-radius:50%;background:#FFB800;color:#0C2340;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px -6px rgba(0,0,0,.5)}.lj-mark svg{width:32px;height:32px}
 .lj-tag{position:absolute;left:clamp(14px,2vw,22px);bottom:clamp(14px,2vw,22px);display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:rgba(12,35,64,.85);color:#FFB800;font-size:14px;font-weight:700;letter-spacing:.04em}
 .lj .compimg{position:absolute;inset:0;background-size:cover;background-position:center}.lj .compimg .compst{display:none}.lj .laibadge{display:none}
+/* v97 (selo Edição Maracanã, A6): faixa dourada no canto de cima à esquerda da IMAGEM da montagem; nunca quebra linha nem é cortada; só na tela (nada na impressão, no download ou no arquivo) */
+.lj-ed{position:absolute;top:0;left:clamp(10px,2%,22px);z-index:2;padding:5px 12px 6px;border-radius:0 0 8px 8px;background:#FFB800;color:#0C2340;font-family:'Big Shoulders Display','Barlow Condensed','Arial Narrow',sans-serif;font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:clamp(11px,1.4vw,15px);line-height:1.15;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(12,35,64,.25)}
+.lj-lbimg.ai .lj-ed{font-size:15px}
+/* a caixa da montagem na tela cheia tem a proporção dela (fit); com a imagem encostada no alto da tela, o selo anda para a direita do logo (lj-ovtl) */
+@container (min-aspect-ratio:4/3){.lj-lbmid .lj-lbimg.ai.fit .lj-ed{left:max(clamp(10px,2%,22px),calc(112px - (100cqw - min(100cqw,var(--ar) * 100cqh)) / 2))}}
+/* grade: o card tem 4/5 e a montagem fica inteira (contain), centrada na altura: o selo desce até a borda de cima da imagem */
+.lj-gimg.ai{container-type:inline-size}.lj-gimg.ai .lj-ed{top:max(0px,calc((125cqw - 100cqw / var(--ar,1.5)) / 2));width:auto!important;height:auto!important}
+.lj-lbimg.ai .lj-ed,.lj-lbimg.ai .lj-edn,.lj-mimg.ai .lj-ed,.lj-mbig.ai .lj-ed{width:auto;height:auto}
+.lj-mimg,.pend-th,.eco-mini{container-type:inline-size}
+/* "Ver minhas fotos": a célula é 3/2 e a montagem fica inteira (contain); o selo acompanha a borda da imagem quando ela é mais estreita ou mais baixa */
+.lj-mimg.ai .lj-ed{left:calc(max(0px,(100cqw - 66.667cqw * min(var(--ar,1.5),1.5)) / 2) + clamp(4px,2%,22px));top:max(0px,calc((66.667cqw - 100cqw / max(var(--ar,1.5),1.5)) / 2))}
+@container (max-width:150px){.lj-ed{font-size:9px;padding:2px 6px 3px;letter-spacing:.06em;left:4px;border-radius:0 0 5px 5px}}
+.pend-th .lj-ed,.eco-ed{font-size:10px;padding:1px 5px 2px;left:3px;letter-spacing:.05em;border-radius:0 0 4px 4px}
+.lj-edh{grid-column:1/-1;display:flex;flex-direction:column;gap:4px;padding:2px 2px 4px}.lj-edh h3{margin:0;color:#fff;font-family:'Big Shoulders Display','Barlow Condensed','Arial Narrow',sans-serif;font-weight:800;letter-spacing:.06em;text-transform:uppercase;font-size:clamp(20px,2.4vw,30px);line-height:1.05}
+.lj-edeb{align-self:flex-start;padding:3px 10px 4px;border-radius:4px;background:#FFB800;color:#0C2340;font-family:'Big Shoulders Display','Barlow Condensed','Arial Narrow',sans-serif;font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:14px;white-space:nowrap}
 .lj-aimk{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:12px;text-align:center;background:rgba(12,35,64,.62);color:#fff;font-weight:600;font-size:clamp(14px,1.6vw,18px);letter-spacing:.02em}
 .lj-spin{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.28);border-top-color:#FFB800;animation:gqspin 1s linear infinite}
 .lj-actions{display:flex;justify-content:center;align-items:center;gap:clamp(24px,6vw,64px);padding:12px 0 6px}
@@ -1224,7 +1239,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v97 · 11/11 12:52"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v97</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v97 · 11/11 13:02"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v97</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2029,7 +2044,7 @@ if(ECO_CH)ECO_CH.onmessage=ev=>{const q=ev.data;
   const ant=state.eco;const sem=JSON.stringify(Object.assign({},m,{em:0}));const mudou=!ant||ant.sem!==sem;
   state.eco={m:m.tipo==='fim'?null:m,fim:m.tipo==='fim',at:Date.now(),sem,mudouEm:mudou?Date.now():ant.mudouEm};ecoUpd(mudou);};
 const ecoOff=()=>{const e=state.eco;return !e||e.fim||!e.m||Date.now()-e.at>15000;};
-function ecoThumb(x,cls){const b=x.t==='ai'?bgOf(x.bg):null;return `<div class="${cls}" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?`<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?b.file:''})"></span><span class="eco-tag">IA</span>`:''}${x.fav?'<span class="eco-fav">♥</span>':''}</div>`;}
+function ecoThumb(x,cls){const b=x.t==='ai'?bgOf(x.bg):null;return `<div class="${cls}" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?`<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?b.file:''})"></span><span class="lj-ed eco-ed" title="${esc(bgNomeCli(b))}">${esc(edSeloTxt())}</span>`:''}${x.fav?'<span class="eco-fav">♥</span>':''}</div>`;}
 function ecoBody(){const e=state.eco;
   if(ecoOff())return `<div class="eco-off"><b>Checkout fechado ou parado</b><span class="note">Abra o Checkout pelo botão "Abrir Checkout" e arraste a janela para o monitor do cliente. O que o cliente escolhe aparece aqui.</span></div>`;
   const m=e.m;const fl=`<span class="eco-flag" title="Idioma do cliente">${flagSvg(m.lang||'pt')}</span>`;const par=Math.max(0,Math.floor((Date.now()-e.mudouEm)/1000));
@@ -2318,7 +2333,9 @@ function lojaAIAntigo(card){const s=sessionObj(card);if(!s||!fiaOferece())return
   return out;}
 function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=soCards(card).length>1;let ant=null;
   const ph=lojaFotos(card).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi){o.lb=lojaBloco(p.ses);if(p.ses!==ant){o.blk=o.lb;ant=p.ses;}}return o;});
-  const ai=lojaAI(card).map(x=>{if(!multi)return x;const p=ph.find(q=>q.id===x.id);const lb=p?p.lb:(x.ses?lojaBloco(x.ses):null);return lb?{...x,lb}:x;}); /* v93: a base de IA não está em ph */if(!ai.length)return ph;const at=Math.min(ph.length,Math.max(2,Math.floor(ph.length/2)));return [...ph.slice(0,at),...ai,...ph.slice(at)];}
+  // v97 (selo, A1/A7/A8): as montagens vêm primeiro, na ordem de bgOn, sem "ponto · hora"; depois as fotos comuns na ordem de sempre.
+  // edIni marca a 1ª montagem (título do grupo na grade); edFotos marca a 1ª foto comum (separador, só com uma leva)
+  const ai=lojaAI(card).map((x,i)=>i?x:{...x,edIni:true});if(!ai.length)return ph;if(!multi&&ph.length)ph[0].edFotos=true;return [...ai,...ph];}
 function lojaPick(card){const s=simOf(card);s.pick=s.pick||{};return s.pick;}
 // v96 (B2): só valem as marcas das fotos que este cliente vê (lojaItems); marca velha de outra pessoa da mesma sessão fica de fora
 function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const vale=new Set(lojaItems(card).map(x=>x.k));const ks=Object.keys(pk).filter(k=>(pk[k]==='ok'||pk[k]==='fav')&&vale.has(k));s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();}
@@ -2343,7 +2360,41 @@ function vendaCalc(n,nSes,pkg){pkg=n&&pkg&&DATA.catalog.some(c=>c.id===pkg&&c.ki
   const ndig=todas?nSes:n;const save=!P0||!ndig?0:Math.max(0,priceOf('arq')+(ndig-1)*priceOf('extra')-total);
   const lines=[];if(P0)lines.push({t:'pkg',id:pkg,n:todas?'todas':P0.digital,v:priceOf(pkg)});if(extra)lines.push({t:'extra',n:extra,un:priceOf('extra'),v:extra*priceOf('extra')});
   return {pkg,extra,cart,total,prints,sobra,nSes,save,lines};}
-function lojaThumb(x,big){if(x.t==='ai'){const b=bgOf(x.bg);return `<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?esc(b.file):''})"><span class="lj-aimk" role="status"><i class="lj-spin" aria-hidden="true"></i>${T('aiMaking')}</span></span><span class="laibadge" aria-label="${esc(bgNomeCli(b))}" title="${esc(bgNomeCli(b))}">${ICO.spark}</span>`;}return '';}
+function lojaThumb(x,big){if(x.t==='ai'){const b=bgOf(x.bg);const nm=bgNomeCli(b);return `<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?esc(b.file):''})"><span class="lj-aimk" role="status"><i class="lj-spin" aria-hidden="true"></i>${T('aiMaking')}</span></span><span class="lj-ed" aria-hidden="true" title="${esc(nm)}">${esc(edSeloTxt())}</span><span class="laibadge" aria-label="${esc(edSeloTxt()+' · '+nm)}" title="${esc(nm)}">${ICO.spark}</span>`;}return '';}
+// v97 (selo Edição Maracanã, plano docs/planos/2026-11-11-selo-edicao-maracana.md): o texto do selo vem do venue (white label, A11)
+function edSeloTxt(){return T(venue().selo||'edSelo');}
+// A4: a tela cheia abre na 1ª montagem pronta; sem nenhuma pronta, na 1ª montagem (ou na 1ª foto, sem montagem)
+const fiaPronta=x=>!!x&&x.t==='ai'&&!!(COMPURL[x.id+'|'+x.bg]||COMPOK.has(x.id+'|'+x.bg));
+function ljPrimeira(card){const its=lojaItems(card);const i=its.findIndex(fiaPronta);return i>=0?i:0;}
+let LJ_ED_ESPERA_MS=8000; // D6 (Eduardo, 11/11): 8 s
+function ljAbrirEd(k){const i=ljPrimeira(k.code);k.i=i;k.ver=i;k.verKs=null;k.verCode=k.code;const t=k.edAbriu=Date.now();setTimeout(()=>lojaEdEspera(t),LJ_ED_ESPERA_MS);}
+// montagem que não ficou pronta em 8 s e o cliente sem tocar desde a abertura: vai uma vez para o 1º item pronto. Depois do 1º toque, nunca anda sozinha
+function lojaEdEspera(t){const k=state.kiosk;if(!k||k.edAbriu!==t||state.view!=='quiosque'||k.step!=='review'||k.ver==null||(k.toque||0)>t)return;k.edAbriu=0;
+  const its=lojaItems(k.code);const x=its[k.ver];if(!x||x.t!=='ai'||fiaPronta(x))return;
+  const j=its.findIndex(q=>q.t==='ph'||fiaPronta(q));if(j<0||j===k.ver)return;k.ver=k.i=j;render();}
+// A5: a tela guarda a chave do item; se a lista mudou (montagem falhou ou entrou, o Posto juntou ou separou leva), acha o número novo dela.
+// Só age quando a lista de chaves muda (nunca nas setas, no deslizar ou nas teclas)
+function ljAncora(k,items){const ks=items.map(x=>x.k);const old=k.verCode===k.code?k.verKs:null;
+  if(old&&(old.length!==ks.length||old.some((x,i)=>x!==ks[i]))&&ks.length){const novo=i=>{const j=old[i]!=null?ks.indexOf(old[i]):-1;return j>=0?j:Math.max(0,Math.min(ks.length-1,i));};
+    if(k.ver!=null){k.ver=novo(k.ver);k.i=k.ver;}else if(k.i!=null)k.i=novo(k.i||0);}
+  k.verKs=ks;k.verCode=k.code;}
+// A9/A10: montagem pronta vista na tela cheia do Checkout (#loja), uma vez por atendimento (t0) e por montagem. Só um número por dia e por
+// terminal (id aleatório do navegador) vai ao servidor do ponto: sem rosto, sessão, t0, nome ou IP
+const ED_LS='eterna.edvistas.v1',ED_TERM='eterna.terminal.v1';let ED_ENVIA_MS=30000,ED_DE_NOVO_MS=300000;const ED_ENV={busy:false,t:null,em:0};
+function edTerminal(){let t=null;try{t=localStorage.getItem(ED_TERM);}catch(e){}if(typeof t==='string'&&/^[a-z0-9]{12}$/.test(t))return t;
+  const ab='abcdefghijklmnopqrstuvwxyz0123456789';const r=new Uint8Array(12);crypto.getRandomValues(r);t=Array.from(r,b=>ab[b%36]).join('');try{localStorage.setItem(ED_TERM,t);}catch(e){}return t;}
+function edDiaAntes(d){const x=new Date(d+'T12:00:00Z');x.setUTCDate(x.getUTCDate()-1);return x.toISOString().slice(0,10);}
+function edLer(){let j=null;try{j=JSON.parse(localStorage.getItem(ED_LS)||'null');}catch(e){}const term=edTerminal();const dias=Object.create(null);const hoje=venueToday(),ontem=edDiaAntes(hoje);
+  if(j&&j.dias&&typeof j.dias==='object')[hoje,ontem].forEach(d=>{const n=j.dias[d];if(Number.isInteger(n)&&n>0)dias[d]=n;});return {terminal:term,dias};}
+function edVista(ch){if(!state.lojaRota||state.view!=='quiosque')return false;const k=state.kiosk;if(!k||!k.t0||typeof ch!=='string')return false;
+  if(k.edT0!==k.t0||!k.edVistos){k.edT0=k.t0;k.edVistos=new Set();}if(k.edVistos.has(ch))return false;k.edVistos.add(ch);
+  const L=edLer();const d=venueToday();L.dias[d]=Math.min(20000,(L.dias[d]||0)+1);try{localStorage.setItem(ED_LS,JSON.stringify({terminal:L.terminal,dias:L.dias}));}catch(e){}edVistasAgenda(ED_ENVIA_MS);return true;}
+function edVistasAgenda(ms){const em=Date.now()+ms;if(ED_ENV.t&&ED_ENV.em<=em)return;if(ED_ENV.t)clearTimeout(ED_ENV.t);ED_ENV.em=em;ED_ENV.t=setTimeout(()=>{ED_ENV.t=null;edVistasEnviar();},ms);}
+// manda o TOTAL acumulado de cada dia guardado (hoje e ontem): repetir não conta duas vezes. Falha: guarda e tenta de novo em 5 min
+async function edVistasEnviar(){if(ED_ENV.busy)return false;const a=state.agent||{};const L=edLer();const ds=Object.keys(L.dias);if(!ds.length)return true;
+  if(!a.url){edVistasAgenda(ED_DE_NOVO_MS);return false;}ED_ENV.busy=true;let ok=true;
+  try{for(const dia of ds){try{const r=await fetch(a.url+'/ponto/montagens',{method:'POST',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({dia,terminal:L.terminal,vistas:L.dias[dia]})});if(!r.ok&&r.status!==400)ok=false;}catch(e){ok=false;}}}
+  finally{ED_ENV.busy=false;}if(!ok)edVistasAgenda(ED_DE_NOVO_MS);return ok;}
 function bgNomeCli(b){return !b?T('bgIA'):b.nome?T(b.nome):b.name;} // v97 (E8): nome do fundo nas 5 línguas quando o fundo tem (o Telão)
 const ICO={
   sair:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>',
@@ -2370,7 +2421,7 @@ const ICO={
 // com pedido aberto, o pedido guarda as fotos dele e a sessão só perde as marcas do Checkout
 function lojaPickLimpa(card){const s=card&&SIM.sessions[card];if(!s||s.status==='paga'||!s.pick||!Object.keys(s.pick).length)return false;
   s.pick={};if(s.status!=='aguardando'){s.selected=[];s.aiSel=[];s.fav=[];}saveSim();return true;}
-function lojaReset(){const k=state.kiosk;if(k.code)lojaPickLimpa(k.code);state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{step:'code',escolhaDesde:0,sairAsk:false,t0:null,code:'',so:null,tv:null,lgOpen:false,camOn:false,minhas:false,minhasI:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
+function lojaReset(){const k=state.kiosk;if(k.code)lojaPickLimpa(k.code);state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{step:'code',escolhaDesde:0,sairAsk:false,t0:null,code:'',so:null,tv:null,lgOpen:false,camOn:false,minhas:false,minhasI:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null,verKs:null,verCode:null,edAbriu:0,edVistos:null,edT0:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 // relê o SIM da outra janela sem perder as escolhas desta sessão no Checkout
 function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk)simOf(card).pick=pk;}
 // revisão 1: nenhuma forma de pagamento tira uma sessão de "paga" (comprar mais é com a equipe)
@@ -2870,6 +2921,15 @@ const I18N={
  memories:['Suas memórias','Your memories','Tus recuerdos','Vos souvenirs','Deine Erinnerungen'],
  bgTelao:['Telão do Maracanã','Maracanã big screen','Pantalla gigante del Maracanã','Écran géant du Maracanã','Maracanã-Großbildleinwand'],
  bgIA:['Fundo de IA','AI background','Fondo con IA','Fond IA','KI-Hintergrund'],
+ // selo Edição Maracanã (v97, Eduardo 11/11, D2): selo, título do grupo na grade, separador e o nome dos fundos na tela do cliente
+ edSelo:['Edição Maracanã','Maracanã Edition','Edición Maracanã','Édition Maracanã','Maracanã-Edition'],
+ edTitulo:['Suas fotos especiais','Your special photos','Tus fotos especiales','Vos photos spéciales','Ihre besonderen Fotos'],
+ edFotos:['Suas fotos de hoje','Your photos from today','Tus fotos de hoy','Vos photos du jour','Ihre Fotos von heute'],
+ bgArq1950:['Arquibancada 1950','1950 Stands','Tribuna de 1950','Tribunes de 1950','Tribüne 1950'],
+ bgMirante:['Mirante ao pôr do sol','Lookout at sunset','Mirador al atardecer','Belvédère au coucher du soleil','Aussichtspunkt bei Sonnenuntergang'],
+ bgCampeao:['Noite de campeão',"Champions' night",'Noche de campeón','Nuit de champion','Meisternacht'],
+ bgTunel:['Saída do túnel','Out of the tunnel','Salida del túnel','Sortie du tunnel','Aus dem Spielertunnel'],
+ bgPodio:['Pódio de campeão',"Champions' podium",'Podio de campeón','Podium du champion','Siegerpodest'],
  aiMaking:['Preparando sua foto especial...','Preparing your special photo...','Preparando tu foto especial...','Nous préparons votre photo spéciale...','Ihr besonderes Foto wird vorbereitet...'],
  gallery:['Galeria online por 60 dias','Online gallery for 60 days','Galería online por 60 días','Galerie en ligne pendant 60 jours','Online-Galerie für 60 Tage'],
  payH:['Como prefere pagar?','How would you like to pay?','¿Cómo prefieres pagar?','Comment souhaitez-vous payer ?','Wie möchtest du bezahlen?'],
@@ -3009,12 +3069,14 @@ function vQuiosque(){
   if((k.step==='review'||k.step==='cart')&&pagoTudo){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (comprar mais é o achado 2 da v85)
     const pc=lojaJaPaga(k.code)?k.code:(soCards(k.code).find(c=>lojaJaPaga(c))||k.code);const sim=SIM.sessions[pc]||{};const tok=sim.galVenda||galDaSessao(pc);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){setTimeout(()=>{if(state.kiosk===k&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
   if((k.step==='review'||k.step==='cart')&&pagoTudo)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljVoltar('loja-new','')}</div></div>`;
-  if(k.step==='review'){const n=items.length; // galeria em grade: todas as fotos inteiras (sem corte), um toque marca ou desmarca
+  if(k.step==='review'){const n=items.length;ljAncora(k,items); // galeria em grade: todas as fotos inteiras (sem corte), um toque marca ou desmarca
     const full=st0=>String(st0||'').replace('--bs:cover','--bs:contain');const spr=st0=>/sprites\//.test(String(st0||''));
-    const img=(q,s2,cls,lb)=>{const rot=lb?`<span class="lj-lbsrc">${esc(lb)}</span>`:'';if(q.t==='ai')return `<div class="${cls} ai">${lojaThumb(q)}${rot}</div>`;const st0=bigStyle(q.id);const ar=!spr(st0)&&LJ_AR[q.id];return `<div class="${cls}${spr(st0)?' spr':''}${ar?' fit':''}" style="${ar?`--ar:${ar};`:''}${full(st0)}" data-ar="${esc(q.id)}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}${rot}</div>`;};
-    const card=(q,i)=>{const s2=pk[q.k]||'';return `<div class="lj-gcard ${s2==='ok'?'ok':''}"><button class="lj-gview" data-act="kiosk-ver" data-i="${i}" aria-label="Ampliar foto ${i+1}">${img(q,s2,'lj-gimg')}${q.t==='ai'?`<span class="lj-tag">${ICO.spark} ${T('aiTag')}</span>`:''}</button>
+    const img=(q,s2,cls,lb)=>{const rot=lb?`<span class="lj-lbsrc">${esc(lb)}</span>`:'';
+      // v97 (selo, A6/A7): a montagem ganha a proporção dela (--ar; 3/2 até ficar pronta) para o selo ficar no canto da imagem; na tela cheia, o nome do fundo embaixo
+      if(q.t==='ai'){const big=cls==='lj-lbimg';const ar=LJ_AR['ai:'+q.id+'|'+q.bg]||1.5;return `<div class="${cls} ai${big?' fit':''}" style="--ar:${ar}">${lojaThumb(q)}${big?`<span class="lj-lbsrc lj-edn">${esc(bgNomeCli(bgOf(q.bg)))}</span>`:''}</div>`;}const st0=bigStyle(q.id);const ar=!spr(st0)&&LJ_AR[q.id];return `<div class="${cls}${spr(st0)?' spr':''}${ar?' fit':''}" style="${ar?`--ar:${ar};`:''}${full(st0)}" data-ar="${esc(q.id)}">${s2==='ok'?'':'<span class="wm">VIVA MARACANÃ</span>'}${rot}</div>`;};
+    const card=(q,i)=>{const s2=pk[q.k]||'';return `<div class="lj-gcard ${s2==='ok'?'ok':''}"><button class="lj-gview" data-act="kiosk-ver" data-i="${i}" aria-label="Ampliar foto ${i+1}">${img(q,s2,'lj-gimg')}${q.t==='ai'?`<span class="lj-tag">${ICO.spark} ${esc(bgNomeCli(bgOf(q.bg)))}</span>`:''}</button>
         <button class="lj-gok" data-act="kiosk-tog" data-i="${i}" aria-pressed="${s2==='ok'}" aria-label="Marcar foto ${i+1}">${ICO.ok}</button></div>`;};
-    const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;if(v!=null)setTimeout(()=>{const ids=items.slice(v+1,v+3).filter(x=>x.t==='ph').map(x=>x.id);ids.forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();LJ_PRE[u]=im;im.src=u;}});},0); /* a próxima já baixa */const vs=vq?pk[vq.k]||'':'';if(vq&&vq.t==='ph'&&!LJ_AR[vq.id])setTimeout(()=>ljAspecto(vq.id),0);
+    const v=k.ver!=null&&items[k.ver]?k.ver:null;const vq=v!=null?items[v]:null;if(v!=null)setTimeout(()=>{const ids=items.slice(v+1,v+3).filter(x=>x.t==='ph').map(x=>x.id);ids.forEach(id=>{const u=lojaPreUrl(id);if(u&&!LJ_PRE[u]){const im=new Image();LJ_PRE[u]=im;im.src=u;}});},0); /* a próxima já baixa */const vs=vq?pk[vq.k]||'':'';if(vq&&vq.t==='ph'&&!LJ_AR[vq.id])setTimeout(()=>ljAspecto(vq.id),0);if(fiaPronta(vq))edVista(vq.k); /* A9: montagem pronta na tela cheia */
     // v96 (Eduardo, 09/11): a foto na tela inteira; por cima, em overlay discreto, só setas, ✓, ✗, logo, contador e um canto pequeno com idioma (recolhido
     // na bandeira atual), início, contador do carrinho (só leitura) e Ver todas; o único caminho para o pedido é o "Continuar · N fotos"
     const caixa=vq?`<div class="lj-lb lj-lbfs" id="lj-lb" role="region" aria-label="${v+1} / ${n}">
@@ -3029,7 +3091,7 @@ function vQuiosque(){
     if(vq)return `<div class="lj lj-full lj-review lj-fs">${caixa}${ljSairAsk(k)}</div>`;
     return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljSairBtn('lj-ghost sm')}${cartPill}`)}</div>
       <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n} ${n===1?'foto':'fotos'}</span></div>
-      <div class="lj-grid">${items.map((q,i)=>(q.blk?`<div class="lj-blk">${esc(q.blk)}</div>`:'')+card(q,i)).join('')}</div>
+      <div class="lj-grid">${items.map((q,i)=>(q.edIni?`<div class="lj-edh"><span class="lj-edeb">${esc(edSeloTxt())}</span><h3>${T('edTitulo')}</h3></div>`:'')+(q.edFotos?`<div class="lj-blk lj-edfotos">${T('edFotos')}</div>`:'')+(q.blk?`<div class="lj-blk">${esc(q.blk)}</div>`:'')+card(q,i)).join('')}</div>
       <div class="lj-foot"><span class="lj-hint">${nSel?T('tapCheck'):''}</span>
         <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div>${ljSairAsk(k)}</div>`;}
   // o QR vem ao lado de uma foto escolhida pelo cliente (como no sistema anterior): com várias pessoas no balcão, cada uma
@@ -3088,16 +3150,16 @@ const FRAMING={inteiro:'Corpo inteiro',meio:'Meio corpo',close:'Fechada'};
 // A IA lê o ângulo e a luz da foto do campo e casa com o fundo que combina.
 DATA.backgrounds=[
  {id:'imprensa',name:'Sala de imprensa',file:'img/bg-imprensa.jpg',note:'Painel Maracanã, bancada com microfones · o grupo entra sentado atrás da bancada, só do peito para cima',ang:'olho',luz:'interna',dir:'frontal',mono:false,fit:['meio','close'],inativo:true,pos:{cx:.5,top:.43,base:.74,fg:.585}},
- {id:'arq1950',name:'Arquibancada 1950',file:'img/bg-pb1950.jpg',fileHi:'img/fundos-5k/pb1950.jpg',note:'Preto e branco, torcedores de chapéu no primeiro plano, campo e Pão de Açúcar ao fundo · a foto inteira, convidados incluídos, sai em preto e branco',ang:'alto',luz:'nublado',dir:'difusa',mono:'pb',fit:['inteiro','meio'],pos:{cx:.5,top:.22,base:1}},
- {id:'mirante',name:'Mirante ao pôr do sol',file:'img/bg-mirantesol.jpg',fileHi:'img/fundos-5k/mirantesol.jpg',note:'Pôr do sol, Cristo e o Maracanã aceso, na frente do parapeito · meio corpo encostado embaixo; corpo inteiro vira do joelho para cima (regra 5)',ang:'olho',luz:'fim',dir:'esquerda',mono:false,fit:['close','meio','inteiro'],pos:{cx:.45,top:.2,base:1}},
+ {id:'arq1950',name:'Arquibancada 1950',nome:'bgArq1950',file:'img/bg-pb1950.jpg',fileHi:'img/fundos-5k/pb1950.jpg',note:'Preto e branco, torcedores de chapéu no primeiro plano, campo e Pão de Açúcar ao fundo · a foto inteira, convidados incluídos, sai em preto e branco',ang:'alto',luz:'nublado',dir:'difusa',mono:'pb',fit:['inteiro','meio'],pos:{cx:.5,top:.22,base:1}},
+ {id:'mirante',name:'Mirante ao pôr do sol',nome:'bgMirante',file:'img/bg-mirantesol.jpg',fileHi:'img/fundos-5k/mirantesol.jpg',note:'Pôr do sol, Cristo e o Maracanã aceso, na frente do parapeito · meio corpo encostado embaixo; corpo inteiro vira do joelho para cima (regra 5)',ang:'olho',luz:'fim',dir:'esquerda',mono:false,fit:['close','meio','inteiro'],pos:{cx:.45,top:.2,base:1}},
  {id:'noite',name:'Maracanã à noite',file:'img/bg-noite.jpg',note:'Gramado, refletores e torcida verde e amarela',ang:'baixo',luz:'noite',dir:'frontal',mono:false,fit:['inteiro','meio'],inativo:true,pos:{cx:.5,top:.3,base:.95}},
  {id:'terraco',name:'Terraço ao pôr do sol',file:'img/bg-terraco.jpg',note:'Terraço com vista para o Maracanã e o Cristo',ang:'olho',luz:'fim',dir:'esquerda',mono:false,fit:['inteiro','meio'],inativo:true,pos:{cx:.52,top:.3,base:.9}},
- {id:'campeao2',name:'Noite de campeão',file:'img/bg-campeao-v81.jpg',fileHi:'img/fundos-5k/campeao.jpg',note:'Confete verde e dourado, sem a taça · meio corpo encostado embaixo; corpo inteiro vira do joelho para cima, sem sombra (regra 9)',ang:'baixo',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.5,top:.12,base:1}},{id:'campeaoarg',name:'Noite de campeão · Argentina',file:'img/bg-campeaoarg.jpg',note:'Confete azul e branco, torcida argentina, taça no gramado',ang:'baixo',luz:'noite',dir:'frontal',mono:false,fit:['inteiro','meio'],inativo:true,pos:{cx:.42,top:.3,base:.93}},{id:'campeaocol',name:'Noite de campeão · Colômbia',file:'img/bg-campeaocol.jpg',note:'Confete amarelo, azul e vermelho, torcida colombiana, taça no gramado',ang:'baixo',luz:'noite',dir:'frontal',mono:false,fit:['inteiro','meio'],inativo:true,pos:{cx:.42,top:.3,base:.93}},
+ {id:'campeao2',name:'Noite de campeão',nome:'bgCampeao',file:'img/bg-campeao-v81.jpg',fileHi:'img/fundos-5k/campeao.jpg',note:'Confete verde e dourado, sem a taça · meio corpo encostado embaixo; corpo inteiro vira do joelho para cima, sem sombra (regra 9)',ang:'baixo',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.5,top:.12,base:1}},{id:'campeaoarg',name:'Noite de campeão · Argentina',file:'img/bg-campeaoarg.jpg',note:'Confete azul e branco, torcida argentina, taça no gramado',ang:'baixo',luz:'noite',dir:'frontal',mono:false,fit:['inteiro','meio'],inativo:true,pos:{cx:.42,top:.3,base:.93}},{id:'campeaocol',name:'Noite de campeão · Colômbia',file:'img/bg-campeaocol.jpg',note:'Confete amarelo, azul e vermelho, torcida colombiana, taça no gramado',ang:'baixo',luz:'noite',dir:'frontal',mono:false,fit:['inteiro','meio'],inativo:true,pos:{cx:.42,top:.3,base:.93}},
  {id:'gramado1950',name:'Gramado 1950',file:'img/bg-gramado1950.jpg',note:'Preto e branco, rente ao gramado, estádio lotado',ang:'baixo',luz:'nublado',dir:'difusa',mono:'pb',fit:['inteiro','meio'],inativo:true,pos:{cx:.45,top:.3,base:.95}},
  {id:'alto1950',name:'Maracanã 1950 do alto',file:'img/bg-alto1950.jpg',note:'Preto e branco, vista do anel superior',ang:'alto',luz:'sol',dir:'difusa',mono:'pb',fit:['inteiro','meio'],inativo:true,pos:{cx:.5,top:.38,base:.98}},
  {id:'escanteio1950',name:'Escanteio 1950',file:'img/bg-escanteio1950.jpg',note:'Preto e branco, bandeirinha de escanteio',ang:'olho',luz:'sol',dir:'difusa',mono:'pb',fit:['inteiro','meio'],inativo:true,pos:{cx:.64,top:.3,base:.95}},
- {id:'tunel',name:'Saída do túnel',file:'img/bg-tunel.jpg',fileHi:'img/fundos-5k/tunel.jpg',note:'Saída do túnel para o gramado, faixa Born to Score no alto · até 75% da altura; corpo inteiro vira do joelho para cima (regra 11)',ang:'olho',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.5,top:.25,base:1}}, // regra 11 (28/10 22:41): centralizado, encostado embaixo, até 75% da altura (faixa livre); v84: corpo inteiro vira do joelho para cima
- {id:'podio',name:'Pódio de campeão',inativo:true,file:'img/bg-podio.jpg',fileHi:'img/fundos-5k/podio.jpg',note:'Estádio lotado, confete e faíscas, pódio dourado no centro e taça à direita · o grupo fica no pódio, à esquerda da taça, sem cobri-la; corpo inteiro vira do joelho para cima (regra 14)',ang:'baixo',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.45,top:.2,base:1,larg:.62}}, // regra 14 (29/10): aprovado direto; pos.larg: no Photoroom o grupo também não passa de 0,76 da largura · v97 (E8): vai para o Laboratório, o Telão entra no lugar
+ {id:'tunel',name:'Saída do túnel',nome:'bgTunel',file:'img/bg-tunel.jpg',fileHi:'img/fundos-5k/tunel.jpg',note:'Saída do túnel para o gramado, faixa Born to Score no alto · até 75% da altura; corpo inteiro vira do joelho para cima (regra 11)',ang:'olho',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.5,top:.25,base:1}}, // regra 11 (28/10 22:41): centralizado, encostado embaixo, até 75% da altura (faixa livre); v84: corpo inteiro vira do joelho para cima
+ {id:'podio',name:'Pódio de campeão',nome:'bgPodio',inativo:true,file:'img/bg-podio.jpg',fileHi:'img/fundos-5k/podio.jpg',note:'Estádio lotado, confete e faíscas, pódio dourado no centro e taça à direita · o grupo fica no pódio, à esquerda da taça, sem cobri-la; corpo inteiro vira do joelho para cima (regra 14)',ang:'baixo',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.45,top:.2,base:1,larg:.62}}, // regra 14 (29/10): aprovado direto; pos.larg: no Photoroom o grupo também não passa de 0,76 da largura · v97 (E8): vai para o Laboratório, o Telão entra no lugar
  {id:'telao',name:'Telão do Maracanã',nome:'bgTelao',file:'img/bg-telao.jpg',fileHi:'img/bg-telao.jpg',note:'Telão do estádio mostrando a torcida · a família aparece DENTRO do telão (como a câmera do beijo), do peito ou da cintura para cima, em perspectiva; a moldura e a torcida da frente ficam como estão (regra 17)',ang:'baixo',luz:'sol',dir:'frontal',mono:false,fit:['meio','close','inteiro'],pos:{cx:.5,top:.1,base:1},telao:{w:2576,h:1840,quad:[[559,118],[2192,330],[2249,1213],[537,1057]]}}, // v97 (E8, Eduardo 10/11): cantos da área de imagem do telão em px do arquivo (sup. esq., sup. dir., inf. dir., inf. esq.), pela borda de dentro do filete escuro: nada passa para a moldura
  {id:'asadelta',name:'Voo de asa-delta',file:'img/bg-asadelta.jpg',note:'Precisa de montagem generativa (só a cabeça, corpo no arnês); fora do automático até ter essa ferramenta',ang:'olho',luz:'sol',dir:'esquerda',mono:false,fit:[],inativo:true,pos:{box:[.35,.3,.3,.42]}}];
 const ANG_N={olho:'altura dos olhos',alto:'de cima',baixo:'rente ao chão'},LUZ_N={sol:'dia de sol',nublado:'luz difusa',fim:'fim de tarde',noite:'noite, refletores',interna:'luz interna'},DIR_N={esquerda:'vem da esquerda',direita:'vem da direita',frontal:'frontal',difusa:'difusa'};
@@ -3138,7 +3200,7 @@ function aiBgsFor(card){return bgOn().map(o=>bgFor(o,card)).filter(b=>b&&bgAtivo
 // ---------- Montagem com IA: recorte do grupo + fundo limpo ----------
 // Recorte por segmentação de pessoas (MediaPipe, roda no navegador ou no computador do ponto) e montagem sobre o fundo limpo (sem pessoas).
 // Fundos limpos: img/plate-<id>.jpg. Sem o arquivo, a montagem daquele fundo fica pendente.
-const COMP={},PLATES={},COMPURL={},COMPLOW={};let SEG=null,SEGQ=Promise.resolve();
+const COMP={},PLATES={},COMPURL={},COMPLOW={},COMPOK=new Set(); // COMPOK (v97, selo): montagens já prontas (mesmo as que ainda não apareceram na tela)let SEG=null,SEGQ=Promise.resolve();
 const mkc=(w,h)=>{const c=document.createElement('canvas');c.width=Math.round(w);c.height=Math.round(h);return c;};
 function loadImg(src){return new Promise(res=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>res(null);im.src=src;});}
 function plateImg(id){const b=bgOf(id);return PLATES[id]||(PLATES[id]=b?loadImg(b.file):Promise.resolve(null));}
@@ -3271,7 +3333,7 @@ async function composePR(photoId,bgId){const key='pr|'+photoId+'|'+bgId;if(COMP[
     let out=c;if(bg.mono){out=mkc(c.width,c.height);const ox=out.getContext('2d');ox.filter=bg.mono==='sepia'?'grayscale(1) sepia(.38) contrast(1.02)':'grayscale(1) contrast(1.04)';ox.drawImage(c,0,0);}
     const low=!/^ag_/.test(photoId);
     return {url:out.toDataURL('image/jpeg',.92),low,w:out.width,h:out.height};})();
-  COMP[key]=job;job.then(r=>{if(r.pending||r.err)delete COMP[key];});return job;}
+  COMP[key]=job;job.then(r=>{if(r.pending||r.err)delete COMP[key];else if(r.url)COMPOK.add(key);});return job;}
 // ---------- v84: montagem local dos fundos de IA (sem Photoroom, sem custo) ----------
 // O agente recorta a pessoa (POST /recorte: ISNet + u2net_human_seg, regra 12) e o navegador monta no canvas com as regras
 // de posição aprovadas foto a foto pelo Eduardo (docs/fundos-ia-regras.md). A mesma fiaMontar serve à prévia (fundo de
@@ -3385,7 +3447,7 @@ async function fiaMontar(photoId,bgId,o){o=o||{};const bg=bgOf(bgId);if(!bg)retu
   return {url:out.toDataURL('image/jpeg',.92),w:ow,h:oh,fonte,avisos,layout:L};}
 async function compose(photoId,bgId){if(fundosModo()==='photoroom'){if(!state.pr){try{state.pr=await (await fetch(state.agent.url+'/photoroom/status',{cache:'no-store'})).json();}catch(e){}}return composePR(photoId,bgId);}const key=photoId+'|'+bgId;if(COMP[key])return COMP[key];
   const job=(async()=>{const r=await fiaMontar(photoId,bgId);if(!r.canvas)return r;const bl=await new Promise(z=>r.canvas.toBlob(z,'image/jpeg',.9));if(!bl)return {err:'montagem falhou'};return {url:URL.createObjectURL(bl),w:r.w,h:r.h,layout:r.layout};})();
-  COMP[key]=job;job.then(r=>{if(r.pending||r.err)delete COMP[key];});return job;}
+  COMP[key]=job;job.then(r=>{if(r.pending||r.err)delete COMP[key];else if(r.url)COMPOK.add(key);});return job;}
 // Checkout: fundo de IA só aparece quando dá para montar (modo local: agente com o recorte pronto e foto do agente)
 const FIA_RUIM=new Set();
 function fiaOferece(){if(fundosModo()==='photoroom')return true;const a=state.agent||{};return !!(a.on&&a.recorte&&a.recorte.ok);}
@@ -3408,7 +3470,10 @@ function prPanel(){const p=state.pr;
     <div class="note">${p.calls||0} montagens feitas desde que o agente abriu${p.cached?' · '+p.cached+' reaproveitadas sem custo':''}${p.last_ok?' · última às '+p.last_ok:''}.</div>`:`<div class="note">Abra o Eterna pelo agente (http://127.0.0.1:8765) neste computador para conectar.</div>`}</div>`;}
 function compMsg(r){return r.pending==='photoroom'?'Conecte o Photoroom em Fundos de IA':r.pending==='agente'?'Abra o Eterna pelo agente do ponto':r.pending==='recorte'?recMotivo(r.motivo):r.pending==='exemplo'?'Foto de exemplo: o recorte é só para fotos do agente':r.err==='sem_pessoa'?'Ninguém encontrado na foto':r.err==='photoroom_desligado'?'Photoroom desligado no agente: ligue em Painel de controle':esc(r.err||'não deu');}
 function compHydrate(){if(fundosModo()==='photoroom'&&document.querySelector('[data-comp]:not([data-done])')&&!state.pr)prPoll();document.querySelectorAll('[data-comp]:not([data-done])').forEach(el=>{el.dataset.done='1';const [ph,bg]=el.dataset.comp.split('|');const key=ph+'|'+bg;
-  compose(ph,bg).then(r=>{if(r.url){el.style.backgroundImage=`url(${r.url})`;el.classList.add('ok');el.innerHTML='';el.dataset.url=r.url;COMPURL[key]=r.url;COMPLOW[key]=r.low;if(r.low)el.insertAdjacentHTML('beforeend','<span class="compst lowres">miniatura de exemplo</span>');return;}
+  compose(ph,bg).then(r=>{if(r.url){el.style.backgroundImage=`url(${r.url})`;el.classList.add('ok');el.innerHTML='';el.dataset.url=r.url;COMPURL[key]=r.url;COMPLOW[key]=r.low;if(r.low)el.insertAdjacentHTML('beforeend','<span class="compst lowres">miniatura de exemplo</span>');
+      // v97 (selo): a caixa da montagem fica com a proporção dela, sem redesenhar a tela; pronta com o cliente olhando para ela = vista (A9)
+      if(r.w>0&&r.h>0){LJ_AR['ai:'+key]=+(r.w/r.h).toFixed(4);const pai=el.parentElement;if(pai&&pai.matches('.lj-lbimg.ai,.lj-gimg.ai,.lj-mimg.ai'))pai.style.setProperty('--ar',LJ_AR['ai:'+key]);}
+      if(el.closest('#lj-lb'))edVista('ai:'+key);return;}
     if(r.pending==='fila'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Na fila do recorte...</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},3000);return;}
     // v97 (E5b): 503 do recorte (modelos abrindo, processo de recorte reiniciando) não tira a foto da venda: tenta de novo em 30 s
     if(r.pending==='recorte'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Recorte local indisponível</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},FIA_REC_DE_NOVO_MS);return;}
@@ -4341,7 +4406,9 @@ function esDados(ds,o){o=o||{};ds=(ds||[]).filter(d=>d&&typeof d==='object'&&ISO
   let semDetalhe={n:0,receita:0};let comV2=0;
   ds.forEach(d=>{const on=d.online||{};const lg=d.por_idioma||{};let lt=0,lo=0;Object.entries(lg).forEach(([l,v])=>{const n=safeN(v&&v.vendas);lt+=n;if(l!=='pt')lo+=n;});
     porDia[d.dia]={dia:d.dia,fonte:'eterna',faturamento:numF(d.faturamento)+numF(on.faturamento),vendas:safeN(d.vendas)+safeN(on.vendas),online:numF(on.faturamento),sessoes:safeN(d.sessoes),sessoes_com_venda:safeN(d.sessoes_com_venda),fotos:safeN(d.fotos),
-      lingT:lt,lingO:lo,entradas:d.entradas&&d.entradas.total!=null?safeN(d.entradas.total):null,v2:d.v===2};
+      lingT:lt,lingO:lo,entradas:d.entradas&&d.entradas.total!=null?safeN(d.entradas.total):null,v2:d.v===2,
+      /* v97 (selo): montagens vistas na tela cheia do Checkout e compradas (nAI das vendas pagas do Checkout); null = dia sem registro */
+      edVistas:d.montagens&&d.montagens.vistas!=null?safeN(d.montagens.vistas):null,edCompradas:d.montagens&&d.montagens.compradas!=null?safeN(d.montagens.compradas):null};
     if(d.v===2&&!d.migrado)comV2++;
     Object.entries(d.por_produto||{}).forEach(([k,v])=>{if(!v||ES_PROIBIDO.has(k))return;if(k==='sem_detalhe'){semDetalhe.n+=safeN(v.n);semDetalhe.receita+=numF(v.receita);return;}const p=prod[k]||(prod[k]={id:k,n:0,receita:0});p.n+=safeN(v.n);p.receita+=numF(v.receita);});
     soma(meios,d.por_meio);soma(postos,d.por_posto);soma(canais,d.por_canal);soma(idiomas,d.por_idioma);soma(fot,d.por_fotografo);
@@ -4456,11 +4523,20 @@ function esSecA(D,K){const prs=D.produtos.map(x=>{const tot=D.produtos.reduce((a
   <div class="pn-bottom"><section class="panel pn-panel"><div class="pn-ph"><div><h2>Produtos</h2><p class="pn-take">Cada item do carrinho pelo valor cobrado</p></div></div>${D.produtos.length?esTab([{t:'Produto'},{t:'Vendidos',n:1},{t:'Receita',n:1},{t:'Parte',n:1}],prs):'<div class="note">Nenhuma venda com detalhe de produto no período.</div>'}
       ${D.semDetalhe.n?`<p class="note es-semdet">${fmtN(D.semDetalhe.n)} ${D.semDetalhe.n===1?'venda':'vendas'} sem detalhe de produto (antes da v92) · ${fmtR(D.semDetalhe.receita)}</p>`:''}</section>
     <section class="panel pn-panel"><div class="pn-ph"><div><h2>Pagamento e posto</h2></div></div>${Object.keys(D.meios).length?esTab([{t:'Pagamento'},{t:'Vendas',n:1},{t:'Faturamento',n:1}],tb(D.meios,n=>mm[n]||n)):'<div class="note">Sem vendas no período.</div>'}${Object.keys(D.postos).length?esTab([{t:'Posto'},{t:'Vendas',n:1},{t:'Faturamento',n:1}],tb(D.postos)):''}</section></div>
+  ${esEdPainel(D)}
   <div class="pn-bottom"><section class="panel pn-panel"><div class="pn-ph"><div><h2>Vendas por hora</h2><p class="pn-take">Hora em que a venda foi paga, das 8 às 20 h${fora?` · ${fmtN(fora)} fora desse horário`:''}</p></div></div>${esBars(hs,{label:'Vendas por hora'})}</section>
     <section class="panel pn-panel"><div class="pn-ph"><div><h2>Por dia da semana</h2><p class="pn-take">Média por dia (faturamento)</p></div></div>${esBars(D.semana.map((x,i)=>({nome:x.nome,v:x.faturamento,hi:i===best&&x.faturamento>0})),{label:'Faturamento médio por dia da semana',fmt:v=>fmtR(v)})}
       <p class="note">${D.semana.map(x=>`${x.nome}: ${fmtN(x.dias)} ${x.dias===1?'dia':'dias'}, ${esMed(x.vendas)} vendas/dia`).join(' · ')}</p></section></div>
   <section class="panel pn-panel"><div class="pn-ph"><div><h2>Hora × dia da semana</h2><p class="pn-take">Média de vendas por dia, só Eterna</p></div></div>
     <div class="tablewrap"><table class="es-hxd"><thead><tr><th>Hora</th>${ES_SEMANA.map(s=>`<th class="num">${s}</th>`).join('')}</tr></thead><tbody>${D.hxd.slice(8,21).map((l,i)=>`<tr><td>${String(i+8).padStart(2,'0')}h</td>${l.map((v,j)=>`<td class="num" style="--a:${(v/mxh).toFixed(2)}" data-tip="${esc(ES_SEMANA[j]+' '+(i+8)+'h: '+esMed(v)+' vendas por dia')}">${v?esMed(v):''}</td>`).join('')}</tr>`).join('')}</tbody></table></div></section>`;}
+// v97 (selo): montagens vistas na tela cheia do Checkout × compradas, por dia (mais novo em cima); dia sem registro = antes desta versão
+function esEdPainel(D){const ds=(D.dias||[]).filter(x=>x.fonte==='eterna').slice().sort((a,b)=>b.dia.localeCompare(a.dia));
+  const tx=(c,v)=>v&&c!=null?esPct(c/v):'—';let tv=0,tc=0,tem=false;
+  const ls=ds.map(x=>{const sem=x.edVistas==null;if(!sem){tem=true;tv+=x.edVistas;tc+=x.edCompradas||0;}
+    return `<tr><td>${dBR(x.dia)}</td>${sem?`<td class="num es-semreg" colspan="3">sem registro</td>`:`<td class="num">${fmtN(x.edVistas)}</td><td class="num">${fmtN(x.edCompradas||0)}</td><td class="num">${tx(x.edCompradas||0,x.edVistas)}</td>`}</tr>`;});
+  if(tem)ls.push(`<tr class="es-edtot"><td><b>Total do período</b></td><td class="num"><b>${fmtN(tv)}</b></td><td class="num"><b>${fmtN(tc)}</b></td><td class="num"><b>${tx(tc,tv)}</b></td></tr>`);
+  return `<section class="panel pn-panel es-ed"><div class="pn-ph"><div><h2>Edição Maracanã: montagens vistas × compradas</h2><p class="pn-take">Vista = montagem pronta que apareceu na tela cheia do Checkout, uma vez por atendimento. Comprada = montagem nas vendas pagas do Checkout</p></div></div>
+    ${ds.length?esTab([{t:'Dia'},{t:'Vistas',n:1},{t:'Compradas',n:1},{t:'Compradas por vista',n:1}],ls):'<div class="note">Sem dias do Eterna no período.</div>'}</section>`;}
 function esSecB(D){const M=state.es;const L=esFotoLinhas(D);const col=[['nome','Fotógrafo'],['dias_prod','Dias com produção'],['sessoes','Sessões'],['fotos','Fotos'],['fps','Fotos/sessão'],['vendas','Vendas'],['conversao','Conversão'],['rps','R$/sessão'],['faturamento','Faturamento'],['clique','Clique → Checkout']];
   const ord=col.some(c=>c[0]===M.ord)?M.ord:'faturamento';const dir=M.dir===1?1:-1;
   L.sort((a,b)=>{const x=a[ord],y=b[ord];if(ord==='nome')return dir*String(x).localeCompare(String(y),'pt');return dir*((x==null?-1:x)-(y==null?-1:y));});
@@ -5187,7 +5263,7 @@ const VENUES={
    logo:{onLight:'img/brand/viva-maracana-azul.png',onDark:'img/brand/viva-maracana-white.png',ratio:3.06,minW:150},
    palette:[['#134078','Azul'],['#005500','Verde'],['#FFB800','Amarelo'],['#307FE2','Azul luz'],['#0C2340','Azul noite'],['#43B02A','Verde luz'],['#FCE300','Amarelo luz'],['#D9D9D6','Cinza museu'],['#25282A','Grafite']],
    notes:'Manual de Marca Viva Maracanã (Grupo Viva, outubro 2026): logo branco sobre azul institucional ou azul sobre branco, Big Shoulders com tracking 100 nos títulos, Inter nos textos, azul com mais peso, verde e amarelo em harmonia. Redução mínima em tela: 150 px de largura.',
-   points:{}},
+   points:{},selo:'edSelo'},
  lolla:{id:'lolla',name:'Lollapalooza Brasil',short:'Lolla',org:'Rock World',city:'São Paulo · Interlagos',dark:true,
    accent:'#ff2e88',accent2:'#c8ff2e',display:"'Archivo Black','Arial Black',sans-serif",tagline:'Seu festival, guardado.',guestEyebrow:'Lollapalooza Brasil 2027',mark:['','Lollapalooza','Brasil'],
    notes:'Variante de apresentação: fundo escuro, rosa e lima vibrantes, tipografia pesada. Paleta e logo oficiais vêm do kit de marca do festival.',
@@ -5757,7 +5833,7 @@ function lojaAbrirSo(minhas,anc,ext){const k=state.kiosk;const cards=Object.keys
   const ids=lojaIdsSo(minhas);lojaPickLimpa(anc); // B2: marca velha de quem usou a mesma sessão antes não aparece nem entra no pedido
   // v97: base (levas achadas) e fix (fotos só achadas: menor, escola, "talvez") deixam o Checkout refazer a visita quando o Posto junta ou separa
   const fix=Object.assign({},(ext&&ext.fix)||{});cards.forEach(c=>{if(ext&&ext.base&&!ext.base.includes(c)&&!lojaVisCards(ext.base).includes(c))fix[c]=(minhas[c]||[]).slice();});
-  Object.assign(k,{code:anc,so:{card:anc,cards,ids,base:ext&&ext.base?ext.base.slice():null,fix,visita:!!(ext&&ext.base)},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
+  Object.assign(k,{code:anc,so:{card:anc,cards,ids,base:ext&&ext.base?ext.base.slice():null,fix,visita:!!(ext&&ext.base)},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});ljAbrirEd(k); // v97 (selo, A4)
   toast(T('foundYou'));render();lojaPreload(anc);iaAquecer(anc);}
 // proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
 const LJ_AR={};
@@ -6151,7 +6227,7 @@ document.addEventListener('click',e=>{
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':{const c=state.caixa.session;state.caixa.reprint=state.caixa.reprint===c?null:c;render();break;} // v83: abre o painel de impressão desta venda (sem baixa aqui)
     case 'kiosk-go':{lojaCliente();const k=state.kiosk;const r=lojaCodigo(($('#kcode')||{}).value||'');if(!r)break;
-      lojaPickLimpa(r.card);k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;render();iaAquecer(r.card);break;} // B2: outra janela pode ter regravado marcas antigas
+      lojaPickLimpa(r.card);k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;ljAbrirEd(k);render();iaAquecer(r.card);break;} // B2: outra janela pode ter regravado marcas antigas
     case 'kiosk-back':lojaReset();render();break;
     case 'kiosk-start':lojaCamLigar();break;
     case 'kiosk-emerg':{lojaCliente();state.kiosk.camOn=false;if(state.kiosk.timer){clearTimeout(state.kiosk.timer);state.kiosk.timer=null;}state.kiosk.step='emerg';render();const el=$('#kcode');if(el)el.focus();break;}
@@ -6190,7 +6266,7 @@ document.addEventListener('click',e=>{
     case 'loja-sair':lojaSair();break;
     case 'loja-eq-fechar':state.kiosk.equipe=false;state.kiosk.list=false;render();break;
     case 'loja-open':{const k0=state.kiosk.code;if(k0&&k0!==d.card)lojaPickLimpa(k0);if(k0!==d.card)lojaPickLimpa(d.card);} // a equipe abre outra sessão: ninguém herda marca de outro cliente (a mesma sessão na tela continua com as marcas)
-      state.kiosk.equipe=false;state.kiosk.code=d.card;state.kiosk.step='review';state.kiosk.i=0;state.kiosk.ver=0;state.kiosk.pkg=null;state.kiosk.pay=null;state.kiosk.list=false;render();break;
+      state.kiosk.equipe=false;state.kiosk.code=d.card;state.kiosk.step='review';state.kiosk.i=0;state.kiosk.ver=0;state.kiosk.pkg=null;state.kiosk.pay=null;state.kiosk.list=false;ljAbrirEd(state.kiosk);render();break;
     case 'loja-rm':{const pk=lojaPick(state.kiosk.code);delete pk[d.k];lojaSync(state.kiosk.code);render();break;}
     
     case 'loja-logo':lojaLogo();break;
@@ -6486,6 +6562,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
 window.ETERNA={I18N,T,ecoUpd,pendRecomecar,ecoEsperaId,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,bgMigraTelao,bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
+Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 })();
 </script>
 
