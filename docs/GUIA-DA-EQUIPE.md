@@ -149,7 +149,7 @@ Bom saber:
 - Foto que já estava no servidor não entra de novo e aparece como "já estava no servidor". Não é erro.
 - Se a conexão cair, cada foto tenta 3 vezes. Depois aparece **Tentar de novo as N que faltaram**.
 - Pode trocar de tela durante o envio, ele continua. Não feche nem recarregue a página até terminar.
-- Se aparecer "Chame a TI", o computador do ponto está desligado, sem espaço ou precisa ser atualizado.
+- Se aparecer "O computador do ponto não está respondendo. Chame a TI.", o computador do ponto está desligado ou fora da rede. Os outros avisos com "Chame a TI" dizem o motivo (sem espaço, precisa ser atualizado).
 
 ### Sessões de hoje (v91)
 
@@ -678,7 +678,7 @@ Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segun
 3. Na TV as miniaturas ficam **desligadas**: no login de Atendimento e venda e em qualquer tela cheia (o botão, o F11 ou o modo quiosque). São rostos de turistas e de crianças, e uma TV virada para a fila mostraria as fotos de graça. Só Admin e Supervisor veem o botão **Miniaturas neste aparelho**, que liga ou desliga naquele aparelho; a escolha fica guardada nele e registrada no histórico.
 4. Para sair da tela cheia, aperte **Esc** ou toque em **Sair da tela cheia**.
 
-Se aparecer **Sem conexão com o servidor**, o painel continua mostrando o último dado. Confira se o computador do ponto está ligado.
+Se aparecer **O computador do ponto não está respondendo. Chame a TI.**, o painel continua mostrando o último dado (a hora dele aparece embaixo). Confira se o computador do ponto está ligado.
 
 ### Para aparecer o nome do fotógrafo (TI e fotógrafos)
 

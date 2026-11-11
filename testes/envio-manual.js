@@ -123,7 +123,7 @@ try{
     await escolher(pg,Array.from({length:6},(_,i)=>arq('r'+i+'.jpg')));await fim(pg);
     const tent=n=>M.posts.filter(p=>p.nome===n).length;
     ok(tent('r4.jpg')===3&&tent('r5.jpg')===3&&['r0.jpg','r1.jpg','r2.jpg','r3.jpg'].every(n=>tent(n)===1),'11: tentativas: '+J(['r0.jpg','r1.jpg','r2.jpg','r3.jpg','r4.jpg','r5.jpg'].map(tent)));
-    const f11=await faixa(pg);ok(/bad/.test(f11.cls)&&/Sem conexão com o computador do ponto\. 2 fotos não foram enviadas\./.test(f11.t),'11: faixa da rede: '+J(f11));
+    const f11=await faixa(pg);ok(/bad/.test(f11.cls)&&/O computador do ponto não está respondendo\. 2 fotos não foram enviadas\./.test(f11.t),'11: faixa da rede: '+J(f11));
     const rb=await pg.evaluate(()=>(document.querySelector('#envio-painel [data-act="envio-repetir"]')||{}).textContent);ok(rb==='Tentar de novo as 2 que faltaram','11: botão: '+rb);
     M.posts.length=0;M.resp=null;await pg.click('#envio-painel [data-act="envio-repetir"]');await fim(pg);
     ok(J(M.posts.map(p=>p.nome).sort())===J(['r4.jpg','r5.jpg']),'11: Tentar de novo manda só as 2: '+J(M.posts.map(p=>p.nome)));
@@ -167,7 +167,7 @@ try{
     await espera(pg,()=>ETERNA.state.agent.tried,6000);await pg.evaluate(()=>ETERNA.render());
     ok(!!(await pg.$('#main [data-act="envio-abrir"]')),'3: link aparece sem agente');await pg.click('#main [data-act="envio-abrir"]');await pg.waitForTimeout(100);
     const off=await pg.evaluate(()=>(document.querySelector('#envio-painel .conn-off')||{}).textContent||'');
-    ok(/Sem conexão com o computador do ponto/.test(off)&&/Chame a TI/.test(off),'3: painel com .conn-off: '+off);
+    ok(/^O computador do ponto não está respondendo\. Chame a TI\.$/.test(off.trim()),'3: painel com .conn-off: '+off);
     ok(!(await pg.$('#envio-painel .envio-drop'))&&!(await pg.$('#envio-painel input[type=file]'))&&!(await pg.$('#envio-painel [data-act="envio-escolher"]')),'3: sem área e sem arquivo');
     ok(!TEC.test(await pg.evaluate(()=>document.body.innerText)),'D2: sem agente, texto técnico');await ctx.close();}
   // ---------- 4: agente fora da origem da página ----------

@@ -108,7 +108,7 @@ try{
   // ---- E7: agente fora com último dado
   await A.evaluate(()=>{ETERNA.state.agent.on=false;ETERNA.state.agent.lastOk=Date.now()-120000;ETERNA.render();});
   const e7=await A.evaluate(()=>({off:(document.querySelector('#main .conn-off')||{}).textContent||'',good:document.querySelectorAll('#main .posto-head .pill.good').length,ag:/agente ligado|sem agente/.test(document.querySelector('#main').innerText)}));
-  ok(/Sem conexão com o computador do ponto · último dado às \d\d:\d\d/.test(e7.off)&&e7.good===0&&!e7.ag,'E7: '+J(e7));
+  ok(/O computador do ponto não está respondendo\. Chame a TI\.Último dado às \d\d:\d\d/.test(e7.off)&&e7.good===0&&!e7.ag,'E7: '+J(e7));
   // ---- E9: Venda manual pelo link do Posto; fundo de IA nunca no Checkout do cliente
   await A.click('.posto-rodape [data-act="view"][data-v="checkout"]');await A.waitForTimeout(200);
   const e9=await A.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,eb:document.querySelector('#main .head .eyebrow').textContent}));
