@@ -3058,6 +3058,10 @@ def rec_trabalho(i=0):
                         if job.get("u"):
                             ia["atrasos"].append(max(0.0, time.time() - job["u"]))
             job["ev"].set()
+            try:
+                mont_recorte_fim(job["pid"], job.get("err"))   # E2: montagens pedidas pelo Checkout antes de o recorte existir
+            except Exception as ex:
+                print("  montagem: não enfileirei o pedido (%s)" % type(ex).__name__)
             if job["ia"] and not job.get("err"):     # montagem no servidor (E1): o recorte da base ficou pronto
                 try:
                     mont_base_pronta(job["pid"], MONT_PRIO_VIVO if job["prio"] <= REC_PRIO_IA else
@@ -3330,6 +3334,7 @@ _mont_fundo_ok = {}                # caminho -> (tamanho, mtime, confere)
 _re_mid = re.compile(r"^[0-9a-f]{32}$")
 _re_mont_dia = re.compile(r"^\d{4}-\d\d-\d\d$")
 _re_mont_arq = re.compile(r"^([0-9a-f]{32})(_p|_i)?\.jpg$")
+_re_mont_get = re.compile(r"^/montagens/([0-9a-f]{32})/(previa)\.jpg$")
 MONT_COLS = ("mid", "base", "fundo", "versao", "estado", "motivo", "dia", "w", "h", "bytes", "sha", "rostos", "prio", "origem",
              "criada", "pronta", "ms", "vendida", "venda", "expira", "apagada")
 
@@ -3595,10 +3600,14 @@ def mont_enfileirar(pid, bg, prio=MONT_PRIO_RESERVA, origem="auto"):
                     db.execute("update montagem set prio = ? where mid = ?", (prio, r["mid"]))
                     db.commit()
                     r["prio"] = prio
-                elif r["estado"] == "erro" and prio == MONT_PRIO_PEDIDO and r["motivo"] != "sem_pessoa":
-                    db.execute("update montagem set estado = 'fila', motivo = null, prio = 0 where mid = ?", (r["mid"],))
+                elif prio == MONT_PRIO_PEDIDO and (r["estado"] == "apagada" or r["estado"] == "erro" and r["motivo"] != "sem_pessoa"):
+                    if r["estado"] == "apagada" and livre is not None and livre < MONT_PISO0_GB:
+                        return None, "disco"
+                    # pedido do Checkout: a montagem com erro que passa, ou a que a limpeza levou, volta para a fila
+                    db.execute("update montagem set estado = 'fila', motivo = null, prio = 0, apagada = null, dia = ?, criada = ? where mid = ?",
+                               (_ff_hoje(agora), agora, r["mid"]))
                     db.commit()
-                    r.update(estado="fila", motivo=None, prio=0)
+                    r.update(estado="fila", motivo=None, prio=0, dia=_ff_hoje(agora), criada=agora, apagada=None)
                 return r, None
             if livre is not None and livre < (MONT_PISO0_GB if prio == MONT_PRIO_PEDIDO else MONT_PISO_GB):
                 return None, "disco"
@@ -3629,6 +3638,111 @@ def mont_base_pronta(pid, prio=MONT_PRIO_RESERVA):
         n += 1 if r else 0
     mont_ev.set()
     return n
+
+
+mont_pedidos = {}                  # pid sem recorte -> fundos pedidos pelo Checkout (o fim do recorte enfileira com prioridade 0)
+mont_rec_falhou = {}               # pid cujo recorte pedido falhou -> quando (a lista responde erro por 5 min, sem recortar de novo)
+MONT_PEDIDOS_MAX = 500
+
+
+def mont_recorte_fim(pid, erro=None):
+    """Chamado no fim de qualquer recorte: se o Checkout pediu montagens desta foto antes de o recorte existir, elas entram
+    agora com a prioridade 0; recorte que falhou fica marcado (a lista devolve erro)."""
+    with mont_lock:
+        fs = mont_pedidos.pop(pid, None)
+        if fs and erro:
+            mont_rec_falhou[pid] = time.time()
+            if len(mont_rec_falhou) > MONT_PEDIDOS_MAX:
+                mont_rec_falhou.pop(next(iter(mont_rec_falhou)))
+    if not fs or erro:
+        return 0
+    n = 0
+    for bg in fs:
+        r, _ = mont_enfileirar(pid, bg, MONT_PRIO_PEDIDO, "pedido")
+        n += 1 if r else 0
+    mont_ev.set()
+    return n
+
+
+def mont_lista(body):
+    """POST /montagens/lista {"bases": [pid até 12], "fundos": [bg até 8]?, "pedir": bool?} -> (resposta, código).
+    Só foto que está em sessão de hoje ou de ontem; campo desconhecido = 400. pedir enfileira o que falta com a prioridade 0
+    (e pede o recorte, se a foto ainda não tem). Nenhum caminho vem do cliente: a resposta leva só o mid."""
+    if not isinstance(body, dict) or set(body) - {"bases", "fundos", "pedir"}:
+        return {"error": "campo"}, 400
+    bases, fundos, pedir = body.get("bases"), body.get("fundos"), body.get("pedir", False)
+    if not isinstance(bases, list) or not 1 <= len(bases) <= 12 or not all(isinstance(p, str) and pid_ok(p) for p in bases) \
+            or not isinstance(pedir, bool):
+        return {"error": "campo"}, 400
+    if fundos is not None and (not isinstance(fundos, list) or not 1 <= len(fundos) <= MONT_FUNDOS_MAX
+                               or not all(isinstance(b, str) and b in FUNDOS_PREVIA for b in fundos)):
+        return {"error": "campo"}, 400
+    if not mont_ligada():
+        return {"error": "montagem_desligada"}, 503
+    bases = list(dict.fromkeys(pid_lib(p) for p in bases))
+    with sess_lock:
+        nas = set()
+        for p in bases:
+            x = sess.get(sess_pid.get(p) or "")
+            if x is not None and not x.get("removida"):
+                nas.add(p)
+    with lock:
+        arq = {p: (lib.get(p) or {}).get("file") for p in bases}
+    if any(p not in nas or not arq[p] for p in bases):
+        return {"error": "base"}, 404
+    fs = list(dict.fromkeys(fundos)) if fundos is not None else mont_fundos()
+    versoes = {bg: mont_versao(bg) for bg in fs}
+    tem = {(r["base"], r["fundo"], r["versao"]): r for r in mont_ler("where base in (%s)" % ",".join("?" * len(bases)), tuple(bases))}
+    itens, acorda = [], False
+    for p in bases:
+        for bg in fs:
+            r = tem.get((p, bg, versoes[bg]))
+            motivo = None
+            if pedir and (r is None or r["estado"] in ("apagada", "erro") or (r["estado"] == "fila" and (r["prio"] or 0) > 0)):
+                if os.path.exists(rec_arquivo(p)):
+                    r2, motivo = mont_enfileirar(p, bg, MONT_PRIO_PEDIDO, "pedido")
+                    r = r2 or (r if r and r["estado"] == "erro" else None)
+                    acorda = True
+                else:
+                    with mont_lock:
+                        falhou = time.time() - mont_rec_falhou.get(p, 0) < 300
+                    if falhou:
+                        r, motivo = None, "recorte_erro"
+                    elif not rec_estado()[0]:
+                        r, motivo = None, "recorte"
+                    else:
+                        with mont_lock:
+                            if len(mont_pedidos) < MONT_PEDIDOS_MAX or p in mont_pedidos:
+                                mont_pedidos.setdefault(p, set()).add(bg)
+                        job, erro = rec_enfileirar(p, arq[p], REC_LADO_MAX, REC_PRIO_CHECKOUT)
+                        r, motivo = None, ("recorte" if erro else "recortando")
+            if motivo == "recortando":
+                itens.append({"base": p, "fundo": bg, "mid": None, "estado": "fila", "motivo": None, "w": None, "h": None})
+            elif motivo == "recorte_erro":
+                itens.append({"base": p, "fundo": bg, "mid": None, "estado": "erro", "motivo": "recorte", "w": None, "h": None})
+            elif r is None or r["estado"] == "apagada":
+                itens.append({"base": p, "fundo": bg, "mid": None, "estado": "indisponivel", "motivo": motivo if motivo in ("disco", "fundo", "recorte") else None, "w": None, "h": None})
+            else:
+                itens.append({"base": p, "fundo": bg, "mid": r["mid"] if r["estado"] == "pronta" else None, "estado": r["estado"],
+                              "motivo": (r["motivo"] if r["motivo"] in ("sem_pessoa", "fundo", "recorte") else "interno") if r["estado"] == "erro" else None,
+                              "w": r["w"], "h": r["h"]})
+    if acorda:
+        mont_ev.set()
+    return {"versao": 1, "itens": itens}, 200
+
+
+def mont_previa(mid):
+    """Arquivo da prévia da montagem pronta (caminho montado aqui a partir da linha do banco), ou None."""
+    if not _re_mid.match(mid or ""):
+        return None
+    rs = mont_ler("where mid = ? and estado = 'pronta'", (mid,))
+    if not rs:
+        return None
+    try:
+        f = mont_arquivos(rs[0]["dia"], mid)[1]
+    except ValueError:
+        return None
+    return f if os.path.isfile(f) and not os.path.islink(f) else None
 
 
 def _mont_erro(motivo):
@@ -7154,6 +7268,20 @@ def _ev_t0(v, em):
     return v
 
 
+_re_aimont_k = re.compile(r"^(ag_)?[0-9a-f]{6,40}\|[a-z0-9]{2,40}$")
+
+
+def _ev_aimont(v):
+    """aiMont da venda: {"<base>|<fundo>": "<mid>"}, a montagem que o cliente viu. Até 20 pares; par inválido sai, a venda fica."""
+    if not isinstance(v, dict):
+        return None
+    out = {}
+    for k, mid in list(v.items())[:40]:
+        if isinstance(k, str) and isinstance(mid, str) and _re_aimont_k.match(k) and _re_mid.match(mid) and len(out) < 20:
+            out[k] = mid
+    return out or None
+
+
 def _ev_limpo(e):
     """Só os campos do contrato, com tipo e tamanho conferidos (o resto do evento é descartado)."""
     if not isinstance(e, dict) or e.get("tipo") not in EV_TIPOS:
@@ -7176,7 +7304,8 @@ def _ev_limpo(e):
     # v92 (estatísticas): produtos, idioma, canal e a hora em que o cliente começou no Checkout. Campo inválido sai; a venda fica.
     em = txt(e.get("em"), 30) or _iso()
     dd.update(cart=_ev_cart(d.get("cart")), lang=d.get("lang") if d.get("lang") in EV_LANGS else None,
-              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em))
+              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em),
+              aiMont=_ev_aimont(d.get("aiMont")))
     if dd.get("vendedor") in CHAVES_PROIBIDAS:
         dd["vendedor"] = None
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
@@ -7936,7 +8065,7 @@ class H(BaseHTTPRequestHandler):
 
     def cors(self):
         path = urlparse(self.path).path
-        if path.startswith(("/fila-fotografo", "/visitas")):
+        if path.startswith(("/fila-fotografo", "/visitas", "/montagens")):
             # v87 (segurança N1); v97: /visitas igual: sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
             o = (self.headers.get("Origin") or "").lower()
             if o and o in ORIGENS_REDE:
@@ -8032,6 +8161,42 @@ class H(BaseHTTPRequestHandler):
             print("  visitas: config %s" % str(ex)[:120])
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, 200, nostore=True)
+
+    def mont_rota(self, metodo, path):
+        """Montagem no servidor (E2): despachante único e fechado de /montagens. POST /montagens/lista e
+        GET /montagens/<mid 32 hex>/previa.jpg; qualquer outro caminho = 404. Guarda: posto + origem local (Host da lista,
+        contra DNS rebinding) -> X-Eterna: 1 no POST -> 120 por minuto por IP -> validação. Nunca CORS aberto (cors())."""
+        mg = _re_mont_get.match(path) if metodo == "GET" else None
+        if not mg and not (metodo == "POST" and path == "/montagens/lista"):
+            return self.js({"error": "not found"}, 404)
+        if not self.posto() or not self.origem_local() or (metodo == "POST" and self.headers.get("X-Eterna") != "1"):
+            return self.js({"error": "origem"}, 403)
+        if not limite_ok(self.client_address[0], "mont", MONT_TAXA):
+            return self.js({"error": "limite"}, 429)
+        if metodo == "POST":
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "campo"}, err)
+            try:
+                r, cod = mont_lista(body)
+            except Exception as ex:
+                print("  montagens/lista: %s" % type(ex).__name__)
+                return self.js({"error": "erro no servidor"}, 500)
+            return self.js(r, cod, nostore=True)
+        f = mont_previa(mg.group(1))
+        try:
+            with open(f, "rb") as fh:
+                data = fh.read()
+        except (OSError, TypeError):
+            return self.js({"error": "not found"}, 404)
+        self.send_response(200)
+        self.cors()
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
 
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
@@ -8503,6 +8668,8 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/montagens" or u.path.startswith("/montagens/"):
+            return self.mont_rota("GET", u.path)
         if u.path.startswith(("/g/", "/galerias/")):
             return self.gal_get(u, q)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
@@ -8676,6 +8843,8 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
+        if u.path == "/montagens" or u.path.startswith("/montagens/"):
+            return self.mont_rota("POST", u.path)
         if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":

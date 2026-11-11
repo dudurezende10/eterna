@@ -4,7 +4,7 @@
 # O agente é carregado neste processo; o processo de montagem é o de verdade (agente/eterna-montagem.py) e, para o filho
 # morto no meio, o testes/_montagem_filho_falso.py. Os fundos vêm de um servidor local com a raiz do repositório (portas
 # 48200 a 48699). Só figuras geradas aqui (nunca foto de cliente).
-import hashlib, http.server, importlib.util, io, json, os, re, shutil, socket, stat, sys, tempfile, threading, time
+import hashlib, http.client, http.server, importlib.util, io, json, os, re, shutil, socket, stat, sys, tempfile, threading, time
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -45,6 +45,11 @@ PORTA = porta_livre()
 srv = http.server.ThreadingHTTPServer(("127.0.0.1", PORTA), Quieto)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 os.environ["ETERNA_APP_ORIGIN"] = "http://127.0.0.1:%d" % PORTA
+PORTA_AG = porta_livre()
+os.environ["ETERNA_PORTA"] = str(PORTA_AG)
+REDE = "192.168.50.9:%d" % PORTA_AG                 # o Posto em outro computador abre o Eterna por este endereço
+os.environ["ETERNA_ORIGENS"] = "http://" + REDE
+os.environ.pop("ETERNA_REDE", None)
 for k in ("ETERNA_MONTAGEM", "ETERNA_MONTAGEM_CONC", "ETERNA_SEM_OPENCV", "ETERNA_MONTAGENS_GB", "ETERNA_MONTAGENS_PISO_GB", "ETERNA_PASTA"):
     os.environ.pop(k, None)
 
@@ -251,6 +256,133 @@ ok(st["fila"] == 0 and st["feitas_hoje"] == 30 and st["erros_hoje"] == 0 and st[
    "/status.montagem com fila, feitas, média, filho, guardado e fundos: %r" % st)
 notas["ms_medio"], notas["pico_mb"] = st["ms_medio"], st["pico_mb"]
 notas["mb_por_montagem"] = round(sum(r["bytes"] for r in linhas()) / len(linhas()) / 1e6, 2)
+
+# ---------- E2 (critérios 28, 33 e 34): as rotas /montagens ----------
+ag_srv = m.ThreadingHTTPServer(("127.0.0.1", PORTA_AG), m.H)
+threading.Thread(target=ag_srv.serve_forever, daemon=True).start()
+
+
+def pede(metodo, caminho, corpo=None, host=None, origin=None, x=True, cru=None):
+    h = {"Host": host or "127.0.0.1:%d" % PORTA_AG}
+    if origin:
+        h["Origin"] = origin
+    if x and metodo == "POST":
+        h["X-Eterna"] = "1"
+    data = cru if cru is not None else (json.dumps(corpo).encode() if corpo is not None else None)
+    if data is not None:
+        h["Content-Type"] = "application/json"
+    c = http.client.HTTPConnection("127.0.0.1", PORTA_AG, timeout=30)
+    try:
+        c.request(metodo, caminho, body=data, headers=h)
+        r = c.getresponse()
+        b = r.read()
+        try:
+            j = json.loads(b)
+        except Exception:
+            j = None
+        return r.status, j, b, {k.lower(): v for k, v in r.getheaders()}
+    finally:
+        c.close()
+
+
+respostas = []
+
+
+def H(*a, **k):
+    r = pede(*a, **k)
+    respostas.append(r)
+    return r
+
+
+st_, j_, _, hd = H("POST", "/montagens/lista", {"bases": bases})
+ok(st_ == 200 and j_["versao"] == 1 and len(j_["itens"]) == 10 and all(i["estado"] == "pronta" and re.match(r"^[0-9a-f]{32}$", i["mid"] or "") and i["w"] and i["h"] for i in j_["itens"]),
+   "E2: lista devolve as 10 montagens prontas da visita com o mid: %r %r" % (st_, j_))
+ok(set(j_["itens"][0]) == {"base", "fundo", "mid", "estado", "motivo", "w", "h"} and "no-store" in (hd.get("cache-control") or ""), "E2: item só com os campos do contrato, sem cache")
+it = {(i["base"], i["fundo"]): i for i in j_["itens"]}
+mid1 = it[(bases[1], "tunel")]["mid"]
+ok(mid1 == [r for r in de_base(bases[1]) if r["fundo"] == "tunel"][0]["mid"], "E2: o mid da lista é o da linha")
+st_, _, corpo_, hd = H("GET", "/montagens/%s/previa.jpg" % mid1)
+ok(st_ == 200 and hd.get("content-type") == "image/jpeg" and corpo_[:2] == b"\xff\xd8" and hd.get("x-content-type-options") == "nosniff" and hd.get("cache-control") == "private, max-age=3600",
+   "E2: prévia em JPEG, private, nosniff: %r %r" % (st_, hd))
+ok(corpo_ == open(m.mont_arquivos(HOJE, mid1)[1], "rb").read(), "E2: a prévia servida é o arquivo guardado")
+st_, j_, _, _ = H("POST", "/montagens/lista", {"bases": ["ag_" + bases[0]], "fundos": ["tunel", "telao"]})
+ok(st_ == 200 and [(i["base"], i["fundo"]) for i in j_["itens"]] == [(bases[0], "tunel"), (bases[0], "telao")], "E2: aceita o id com ag_ e a lista de fundos pedida")
+# 34: o Posto em outro computador (Host e Origin de ETERNA_ORIGENS)
+st_, j_, _, hd = H("POST", "/montagens/lista", {"bases": bases[:1]}, host=REDE, origin="http://" + REDE)
+ok(st_ == 200 and len(j_["itens"]) == 5 and hd.get("access-control-allow-origin") == "http://" + REDE, "34: lista pelo endereço de ETERNA_ORIGENS: %r" % st_)
+ok(H("GET", "/montagens/%s/previa.jpg" % mid1, host=REDE)[0] == 200, "34: prévia pelo endereço de ETERNA_ORIGENS")
+# 33: origem, Host, X-Eterna
+ok(H("POST", "/montagens/lista", {"bases": bases}, x=False)[0] == 403, "33: POST sem X-Eterna = 403")
+ok(H("POST", "/montagens/lista", {"bases": bases}, origin="https://exemplo.invalid")[0] == 403, "33: outra origem = 403")
+ok(H("POST", "/montagens/lista", {"bases": bases}, host="evil.invalid:%d" % PORTA_AG)[0] == 403, "33: Host fora da lista = 403")
+ok(H("GET", "/montagens/%s/previa.jpg" % mid1, host="evil.invalid")[0] == 403 and H("GET", "/montagens/%s/previa.jpg" % mid1, origin="https://exemplo.invalid")[0] == 403, "33: prévia com Host ou origem de fora = 403")
+# 33: caminhos
+for cam in ("/montagens", "/montagens/", "/montagens/lista", "/montagens/%s" % mid1, "/montagens/%s/final.jpg" % mid1, "/montagens/%s/previa.jpg/x" % mid1,
+            "/montagens/%s/previa.png" % mid1, "/montagens/../%s/previa.jpg" % mid1, "/montagens/%s/../previa.jpg" % mid1, "/montagens/%s/previa.jpg" % mid1.upper(),
+            "/montagens/%s/previa.jpg" % (mid1[:-1]), "/montagens/%s/previa.jpg" % ("0" * 32), "/montagens/%2e%2e/previa.jpg", "/montagens/%s/impressao.jpg" % mid1):
+    ok(H("GET", cam)[0] == 404, "33: GET %s = 404" % cam.replace(mid1, "<mid>"))
+ok(H("POST", "/montagens/outra", {"bases": bases})[0] == 404 and H("POST", "/montagens/%s/previa.jpg" % mid1, {})[0] == 404, "33: POST fora da tabela = 404")
+# 33: validação
+for corpo in ({"bases": bases, "caminho": "/etc/passwd"}, {"bases": []}, {"bases": ["x"] * 13}, {"bases": ["../../x"]}, {"bases": bases, "fundos": ["naoexiste"]},
+              {"bases": bases, "fundos": ["../x"]}, {"bases": bases, "fundos": []}, {"bases": bases, "pedir": "sim"}, {"bases": "abc"}, {"bases": [1, 2]}, {"bases": bases, "fundos": ["tunel"] * 9}):
+    ok(H("POST", "/montagens/lista", corpo)[0] == 400, "33: corpo %r = 400" % (corpo,))
+ok(H("POST", "/montagens/lista", cru=b"[1,2]")[0] == 400 and H("POST", "/montagens/lista", cru=b"x" * 5000)[0] in (400, 413), "33: corpo que não é objeto ou passa de 4 KB")
+fora_sessao = nova_base(True)
+ok(H("POST", "/montagens/lista", {"bases": ["ffffffffffff"]})[0] == 404 and H("POST", "/montagens/lista", {"bases": [bases[0], fora_sessao], "pedir": True})[0] == 404,
+   "33: base desconhecida ou fora das sessões = 404")
+ok(not de_base(fora_sessao), "33: foto fora das sessões não ganha montagem por pedido")
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set estado = 'fila' where mid = ?", (mid1,)); db.commit(); db.close()
+ok(H("GET", "/montagens/%s/previa.jpg" % mid1)[0] == 404, "33: prévia de montagem que não está pronta = 404")
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set estado = 'pronta' where mid = ?", (mid1,)); db.commit(); db.close()
+# 28: leva sem bases (jeito antigo): o Checkout pede a montagem de uma foto comum; o servidor recorta e monta
+m.REC_FALSO_SEG = 0
+comum = [p for p in m.sess["LPMONT000"]["fotos"] if p not in b0][0]
+st_, j_, _, _ = H("POST", "/montagens/lista", {"bases": [comum], "fundos": ["tunel"]})
+ok(st_ == 200 and j_["itens"][0]["estado"] == "indisponivel" and not de_base(comum), "28: sem pedir, a foto comum fica indisponível e nada é feito: %r" % j_)
+st_, j_, _, _ = H("POST", "/montagens/lista", {"bases": [comum], "fundos": ["tunel"], "pedir": True})
+ok(st_ == 200 and j_["itens"][0]["estado"] in ("fila", "fazendo", "pronta"), "28: pedir põe na fila: %r" % j_)
+ok(espera(lambda: H("POST", "/montagens/lista", {"bases": [comum], "fundos": ["tunel"]})[1]["itens"][0]["estado"] == "pronta", 60, 0.5), "28: a montagem pedida fica pronta")
+rp = de_base(comum)
+ok(len(rp) == 1 and rp[0]["prio"] == 0 and rp[0]["origem"] == "pedido", "28: linha com prioridade 0 e origem pedido: %r" % [(r["prio"], r["origem"]) for r in rp])
+m.REC_FALSO_SEG = None
+# pedir sobe a prioridade do que está na fila
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set estado = 'fila', prio = 3 where mid = ?", (mid1,)); db.commit(); db.close()
+    m.mont["parado"] = "teste"                      # segura o trabalhador para ver a linha na fila
+st_, j_, _, _ = H("POST", "/montagens/lista", {"bases": [bases[1]], "fundos": ["tunel"], "pedir": True})
+ok(st_ == 503, "E2: com a montagem parada a lista responde 503: %r" % st_)
+with m.mont_lock:
+    m.mont["parado"] = None
+st_, j_, _, _ = H("POST", "/montagens/lista", {"bases": [bases[1]], "fundos": ["tunel"], "pedir": True})
+ok(st_ == 200 and j_["itens"][0]["mid"] in (None, mid1), "E2: pedir com a linha na fila")
+ok(espera(lambda: [r for r in de_base(bases[1]) if r["fundo"] == "tunel"][0]["estado"] == "pronta", 60), "E2: a linha pedida volta a ficar pronta com o mesmo mid")
+ok([r for r in de_base(bases[1]) if r["fundo"] == "tunel"][0]["prio"] == 0, "E2: pedir sobe a prioridade para 0")
+# 22/E2: desligada = 503
+cfg("montagem", {"ligada": False})
+ok(H("POST", "/montagens/lista", {"bases": bases})[0] == 503 and H("POST", "/montagens/lista", {"bases": bases})[1] == {"error": "montagem_desligada"}, "E2: montagem desligada = 503 montagem_desligada")
+cfg("montagem", {"ligada": True, "checkout": True})
+st = m.mont_status()
+ok(st["ligada"] is True and st["checkout"] is True, "D5: config/montagem com checkout liga /status.montagem.checkout: %r" % st["checkout"])
+cfg("montagem", {"ligada": True})
+ok(m.mont_status()["checkout"] is False, "D5: sem o campo, checkout volta a desligado")
+# 33: nenhuma resposta com Access-Control-Allow-Origin: *
+ok(all(r[3].get("access-control-allow-origin") != "*" for r in respostas), "33: nenhuma resposta de /montagens com Access-Control-Allow-Origin: *")
+ok(not any(mid1 in l for l in console.linhas), "E2: o mid nunca vai para o console")
+# 28: a 121ª chamada no minuto do mesmo IP recebe 429
+with m.gal_lock:
+    m._janelas.pop(("127.0.0.1", "mont"), None)
+cods = [pede("POST", "/montagens/lista", {"bases": bases[:1], "fundos": ["tunel"]})[0] for _ in range(121)]
+ok(cods[:120] == [200] * 120 and cods[120] == 429, "28: 120 chamadas por minuto por IP; a 121ª recebe 429: %r" % cods[118:])
+ok(pede("GET", "/montagens/%s/previa.jpg" % mid1)[0] == 429, "28: a prévia também entra no limite")
+with m.gal_lock:
+    m._janelas.pop(("127.0.0.1", "mont"), None)
+# aiMont no evento da venda: par inválido sai, a venda fica
+ev = m._ev_limpo({"idem": "t-aimont-1", "venda": "V-AIMONT", "tipo": "criar", "dados": {"aiSel": ["ag_%s|tunel" % bases[1]], "aiMont": {"ag_%s|tunel" % bases[1]: mid1, "x|y": "nao", "ag_%s|telao" % bases[1]: "../../etc", "__proto__": mid1}}})
+ok(ev and ev["dados"].get("aiMont") == {"ag_%s|tunel" % bases[1]: mid1}, "32: aiMont validado no evento (par inválido sai): %r" % (ev and ev["dados"].get("aiMont")))
+ev = m._ev_limpo({"idem": "t-aimont-2", "venda": "V-AIMONT", "tipo": "criar", "dados": {"aiSel": ["a|b"], "aiMont": "x"}})
+ok(ev and "aiMont" not in ev["dados"], "32: aiMont que não é objeto sai e a venda fica")
 
 # ---------- 21: com o YuNet e o OpenCV, os rostos são lidos (linha com número) ----------
 try:
