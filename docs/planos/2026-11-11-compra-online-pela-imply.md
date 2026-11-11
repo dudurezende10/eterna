@@ -105,7 +105,8 @@ Consequências para o Eterna:
 5. `urlreturn`: aceita `https://eterna.photo/...`? A volta acontece também quando o cliente desiste ou o pagamento é recusado?
 6. Lista oficial de produtos com o código a passar (o `idproduto` da planilha "Consulta_de_produtos_FOTOS" é esse código?).
    Produtos que só a venda online usa (ex.: 1 foto digital avulsa) precisam ser criados lá.
-7. Ambiente de homologação com credencial de teste.
+7. ~~Ambiente de homologação~~: não precisa (Ronaldo, 11/11). O teste é em produção: o Ronaldo paga uma compra real e cancela depois.
+   A lista de produtos online (item 6) também fica para depois: não será pedida à Imply por ora.
 8. Nota fiscal: sai pela Imply?
 9. (Pedido do Ronaldo, para o ERP TOTVS) endpoint com a lista das vendas por período, além da consulta individual.
 
