@@ -47,9 +47,32 @@ try{
     ok(n.k&&n.p&&!n.f,'NP4: '+email+' com os dois seletores: '+J(n));
     await pg.selectOption('#main select[data-act="imp-key"]','marinara');await pg.waitForTimeout(100);ok(await pg.evaluate(()=>ETERNA.state.imp.key)==='marinara','NP4: '+email+' troca o fotógrafo');
     await ctx.close();}
+  // ---------- Biblioteca do fotógrafo: Minhas fotos de hoje, por sessão ----------
+  {const agora=Date.now()/1000;const d=new Date();const hoje=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const foto=(id,quem,t,dia)=>({id,name:'F_'+id+'.JPG',day:dia||hoje,t,cap:0,size:1000,origem:quem,via:'ftp',serie:'',autor:'',dono:''});
+    LIB.fotos=[foto('c00000000001','carlos',agora-3000),foto('c00000000002','carlos',agora-2990),foto('c00000000003','carlos',agora-1200),foto('c00000000004','carlos',agora-60),
+      foto('c00000000005','samuel',agora-500),foto('c00000000006','carlos',agora-90000,'2000-01-01')];
+    const semear=pg=>pg.evaluate(()=>{const S=ETERNA.SIM;const base={pdv:'',time:'10:00',date:'hoje',bg:null,cart:[]};
+      S.sessions.LPLIBA01={...base,key:'carlos',status:'paga',selected:['ag_c00000000001'],photos:[{id:'ag_c00000000001',sold:0},{id:'ag_c00000000002',sold:0}]};
+      S.sessions.LPLIBB02={...base,key:'carlos',status:'fechada',selected:[],photos:[{id:'ag_c00000000003',sold:0}]};ETERNA.render();});
+    {const {ctx,pg}=await nova();await entrar(pg,'carlos@eterna.photo');await semear(pg);await pg.waitForTimeout(150);
+      const r=await pg.evaluate(()=>{const p=document.querySelector('#lib-minhas');return p?{libf:document.querySelectorAll('#main .libf').length,h2:p.querySelector('h2').textContent,pills:[...p.querySelectorAll('.head .pill')].map(x=>x.textContent),
+        grupos:[...p.querySelectorAll('.lib-ses')].map(g=>({h:g.querySelector('.lib-ses-h').innerText.replace(/\s+/g,' ').trim(),n:g.querySelectorAll('.ph').length,vend:[...g.querySelectorAll('.ph')].filter(b=>/VENDIDA/.test(b.textContent)).length})),
+        nomes:[...p.querySelectorAll('.ph')].map(b=>b.dataset.id),txt:p.innerText}:null;});
+      ok(r&&r.libf===0,'L1: fotógrafo sem .libf: '+J(r&&r.libf));
+      ok(r&&r.h2==='Minhas fotos de hoje'&&J(r.pills)===J(['4 fotos','1 vendida']),'L2: título e resumo: '+J(r&&{h2:r.h2,p:r.pills}));
+      ok(r&&r.grupos.length===3&&/^Ainda sem sessão 1 foto 0 vendidas$/.test(r.grupos[0].h)&&/^Sessão das \d\d:\d\d 1 foto 0 vendidas$/.test(r.grupos[1].h)&&/^Sessão das \d\d:\d\d 2 fotos 1 vendida$/.test(r.grupos[2].h)&&r.grupos[2].vend===1,'L3: grupos por sessão, mais recente primeiro: '+J(r&&r.grupos));
+      ok(r&&!/c00000000005|c00000000006/.test(J(r.nomes))&&!/FTP|subpasta/i.test(r.txt),'L4: só as fotos de hoje do Carlos, nota sem FTP: '+J(r&&r.nomes));
+      LIB.fotos=LIB.fotos.filter(f=>f.origem!=='carlos');await pg.evaluate(async()=>{await ETERNA.libLoad();ETERNA.render();});await pg.waitForTimeout(100);
+      const v=await pg.evaluate(()=>(document.querySelector('#lib-minhas')||{}).innerText||'');ok(/Nenhuma foto sua hoje ainda\./.test(v),'L5: sem fotos: '+v.slice(0,120));
+      await ctx.close();}
+    LIB.fotos=[foto('c00000000001','carlos',agora-3000),foto('c00000000005','samuel',agora-500)];
+    {const {ctx,pg}=await nova();await entrar(pg,'eduardo@eduardorezende.com');await pg.waitForTimeout(150);
+      const r=await pg.evaluate(()=>({libf:document.querySelectorAll('#main .libf').length,minhas:!!document.querySelector('#lib-minhas')}));
+      ok(r.libf===4&&!r.minhas,'L6: Admin continua com os 4 filtros: '+J(r));await ctx.close();}}
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}
 if(fails.length){console.log('FALHA minhas-fotos-fotografo: '+fails.join(' || '));process.exit(1);}
-console.log('OK minhas-fotos-fotografo: nome e ponto do fotógrafo como texto, Admin e Supervisora com seletores');process.exit(0);
+console.log('OK minhas-fotos-fotografo: nome e ponto do fotógrafo como texto, Minhas fotos de hoje por sessão; Admin e Supervisora com seletores e filtros');process.exit(0);
 })();

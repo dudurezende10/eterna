@@ -130,6 +130,10 @@ Bom saber:
 
 No topo de **Minhas fotos** aparecem o seu nome e o seu ponto do dia, como estão na Escala. Não dá para trocar por aqui. Se outro fotógrafo for usar o computador, toque em **Trocar fotógrafo**. Se o ponto estiver errado, fale com a supervisora para corrigir a Escala.
 
+### Minhas fotos de hoje (v96-ux)
+
+No fim da tela o fotógrafo vê **Minhas fotos de hoje**: só as fotos dele, de hoje, separadas por sessão. Cada sessão mostra a hora da primeira foto, quantas fotos tem e quantas foram vendidas. A foto vendida leva a etiqueta **VENDIDA**. As fotos que acabaram de chegar ficam em **Ainda sem sessão** até a sessão fechar. A supervisora e o Admin continuam vendo a Biblioteca inteira, com os filtros.
+
 ### O cartão não foi lido: enviar as fotos pela tela (v96-ux)
 
 Use só quando o leitor não reconhecer o cartão. As fotos entram do mesmo jeito que entrariam pelo leitor.
