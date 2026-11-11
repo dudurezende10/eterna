@@ -178,8 +178,58 @@ try:
 except Exception as ex:
     import traceback
     falhas.append("exceção: " + traceback.format_exc()[-600:])
-finally:
-    srv.shutdown()
+
+if not falhas:
+    try:
+        # 7. compra online no meio da exclusão. (a) a compra entra antes: a exclusão espera o lock da galeria e a foto fica
+        G1, G2, G3 = "91a1a1a1a1a1", "92a2a2a2a2a2", "93a3a3a3a3a3"
+        arq.update({p: foto(p) for p in (G1, G2, G3)})
+        gg = galeria([(G1, "venda"), (G2, "venda"), (G3, "venda")])
+        res = {}
+        m.gal_lock.acquire()
+        try:
+            th = threading.Thread(target=lambda: res.update(r=m.lgpd_excluir([G1, G2], [gg])), daemon=True)
+            th.start()
+            time.sleep(0.4)
+            ok(th.is_alive() and os.path.exists(arq[G1]) and os.path.exists(arq[G2]), "7a: a exclusão espera a compra em curso sem apagar nada")
+            mm = m.REPO.ler_manifesto(gg)
+            for f in mm["fotos"]:
+                if f["id"] == "ag_" + G1:
+                    f["direito"], f["canal"] = "comprada", "online"
+            m.REPO.salvar_manifesto(gg, mm)
+        finally:
+            m.gal_lock.release()
+        th.join(10)
+        r = res.get("r") or {}
+        ok(r.get("fotos") == 1 and r.get("preservadas") == 1 and r.get("galerias_mantidas") == 1 and os.path.exists(arq[G1]) and not os.path.exists(arq[G2]), "7a: a comprada durante a espera fica, a outra sai: %r" % r)
+        mm = m.REPO.ler_manifesto(gg)
+        ok(not mm.get("encerrada") and sorted(f["id"][3:] for f in mm["fotos"]) == [G1, G3], "7a: a galeria continua, sem a apagada: %r" % mm["fotos"])
+
+        # (b) a compra entra depois (pela rota, enquanto os arquivos estão saindo): a foto já não está à venda, nada é cobrado
+        ac = "acesso-teste-7b"
+        m.acessos[ac] = {"token": gg, "pids": {"ag_" + G3}, "exp": time.time() + 600}
+        visto = {}
+        esquecer = m.sess_esquecer
+
+        def no_meio(pid):
+            if pid == G3 and "s" not in visto:
+                visto["arquivo"] = os.path.exists(arq[G3])
+                visto["s"], visto["j"] = req("/g/%s/pagamento" % gg, {"acesso": ac, "pids": ["ag_" + G3], "metodo": "pix", "idem": "teste-7b-0001"})
+            return esquecer(pid)
+
+        m.sess_esquecer = no_meio
+        try:
+            r = m.lgpd_excluir([G3], [])
+        finally:
+            m.sess_esquecer = esquecer
+        ok(visto.get("s") == 400, "7b: compra no meio da exclusão é recusada (a foto já saiu da galeria): %r" % visto)
+        mm = m.REPO.ler_manifesto(gg)
+        ok(r["fotos"] == 1 and not os.path.exists(arq[G3]) and [f["id"][3:] for f in mm["fotos"]] == [G1] and mm["fotos"][0]["direito"] == "comprada", "7b: a foto sai e nenhuma galeria fica com foto comprada sem arquivo: %r %r" % (r, mm["fotos"]))
+        ok(not any(v.get("idem") == "teste-7b-0001" for v in m.vendas_ler()), "7b: nenhuma venda online gravada")
+    except Exception as ex:
+        import traceback
+        falhas.append("exceção: " + traceback.format_exc()[-600:])
+srv.shutdown()
 
 print(("FALHA lgpd_compradas_agente: " + " · ".join(falhas)) if falhas else "OK lgpd_compradas_agente: comprada e cortesia ficam, galeria paga continua aberta, galeria sem foto do cliente é encerrada, venda paga do balcão protege sem galeria, sem conferência nada sai")
 sys.exit(1 if falhas else 0)
