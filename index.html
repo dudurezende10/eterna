@@ -1176,6 +1176,8 @@ body:not([data-admin]) .pw-v{display:none}
 /* H1: no Admin em 1366×768, o menu com um grupo aberto cabe sem rolar */
 @media (min-width:901px){.nav .navitems button{padding:5px 11px}.nav button.grp{min-height:30px;padding:8px 11px 4px}}
 .railck-box{display:flex;flex-direction:column;gap:6px}.railck-box:empty{display:none}
+/* v97: em tela baixa de computador (1366×768) o menu do Admin com os dois botões amarelos cabe sem rolar: só espaçamento, nenhum botão ou item a menos */
+@media (min-width:901px) and (max-height:800px){.rail{padding-block:12px;gap:10px}.railck-box{gap:4px}.railck{min-height:40px}.nav .navitems button{padding:4px 11px}.nav button.grp{min-height:26px;padding:6px 11px 2px}}
 .railck.caixa{background:transparent;color:inherit;border-color:currentColor;font-weight:600}.railck .pill{margin-left:auto}
 @media (max-width:700px){.railck-box{flex-direction:row}}
 .railck{width:100%;background:var(--fg);color:var(--bg);border-color:var(--fg)}
