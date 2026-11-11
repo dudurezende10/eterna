@@ -72,11 +72,11 @@ try{
   ok(await espera(pg,()=>!!document.querySelector('#lj-lb .lj-lbimg'),5000),'depois do "Sim" abre na foto ampliada');
   const k=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;const by={};ETERNA.lojaFotos(k.code).forEach(p=>{(by[p.ses]=by[p.ses]||[]).push(p.id.slice(3));});return {code:k.code,by};});
   ok((k.by.LPSTALV03||[]).sort().join()==='ttt000000001,ttt000000003','B4: o "Sim" põe só as 2 fotos "talvez" de T, nunca a sessão inteira: '+JSON.stringify(k.by.LPSTALV03));
-  // v97 (Eduardo, 10/11): leva em que ela é rosto principal abre inteira (e a visita dela); fundo (B5), menor e "talvez" continuam só com as fotos achadas
-  ok((k.by.LPSFAMA01||[]).length===6,'família dela (A, principal): v97, a leva inteira: '+(k.by.LPSFAMA01||[]).length);
+  // v99.2 (Ronaldo e Eduardo, 11/11): sai a leva inteira da v97; entram só as fotos em que ela aparece
+  ok((k.by.LPSFAMA01||[]).length===2,'família dela (A, principal): só as fotos em que ela aparece: '+(k.by.LPSFAMA01||[]).length);
   ok((k.by.LPSFUND02||[]).sort().join()==='fff000000002,fff000000004','B5: F (ela só no fundo) entra só com as fotos claras dela: '+JSON.stringify(k.by.LPSFUND02));
   ok((k.by.LPSMENO04||[]).join()==='mmm000000002','menor: só a foto clara dela: '+JSON.stringify(k.by.LPSMENO04));
-  ok((k.by.LPSOITE05||[]).length===3&&!k.by.LPSVELH06,'W (80 min) inteira (v97), V (2 h) fora');
+  ok((k.by.LPSOITE05||[]).length===1&&!k.by.LPSVELH06,'W (80 min) só com a foto em que ela aparece, V (2 h) fora');
   // aviso "Achamos você" fora da barra do ✗/✓ e do botão Ver todas; ponto · hora dentro da imagem
   const lay=await pg.evaluate(()=>{const R=s=>{const e=document.querySelector(s);return e?e.getBoundingClientRect().toJSON():null;};return {t:R('#toast'),bar:R('.lj-lbbar'),x:R('.lj-lbx'),no:R('.lj-no'),on:document.querySelector('#toast').hasAttribute('data-on'),txt:document.querySelector('#toast').textContent};});
   const cruza=(p,q)=>p&&q&&!(p.right<=q.left||q.right<=p.left||p.bottom<=q.top||q.bottom<=p.top);
@@ -92,7 +92,7 @@ try{
   await pg.click('#lj-lb [data-act="loja-cart"]');await pg.waitForTimeout(250);/* v96: o Continuar já faz o pedido (pacote e meio no Posto) */
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'),'pedido feito');
   const g1=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];const m=ETERNA.SIM.galerias[r.token];return {venda:!!m.venda,so:m.so};});
-  ok(g1.venda&&(g1.so.LPSFUND02||[]).length===2&&(g1.so.LPSTALV03||[]).length===2&&(g1.so.LPSFAMA01||[]).length===6,'galeria da venda só com o que entrou de F e T (v97: A inteira): '+JSON.stringify(g1.so&&Object.fromEntries(Object.entries(g1.so).map(([c,l])=>[c,l.length]))));
+  ok(g1.venda&&(g1.so.LPSFUND02||[]).length===2&&(g1.so.LPSTALV03||[]).length===2&&(g1.so.LPSFAMA01||[]).length===2,'galeria da venda só com o que entrou de F e T: '+JSON.stringify(g1.so&&Object.fromEntries(Object.entries(g1.so).map(([c,l])=>[c,l.length]))));
   // ---------- B5 sozinho: ela clara só no fundo de F ----------
   SIMS={[F[1]]:[.70,false],[F[3]]:[.62,false]};
   r=await busca();
