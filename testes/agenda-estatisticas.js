@@ -115,11 +115,11 @@ try{
     const r=await pg.evaluate(()=>({col:!!document.querySelector('[data-act="ag-colar"]'),at:!!document.querySelector('[data-act="ag-atualizar"]'),bl:!!document.getElementById('ag-fontes-bloco'),ch:!!document.getElementById('ag-chave')}));
     ok(r.col&&r.at,'10: Supervisora vê Colar lista e Atualizar jogos: '+J(r));ok(!r.bl&&!r.ch,'chave: o Calendário não mostra a chave a quem edita o calendário: '+J(r));
     await pg.click('[data-act="ag-colar"]');await pg.fill('#ag-colar-txt','2026-12-02;20:00;show;;;;Show');await pg.click('[data-act="ag-colar-ok"]');await pg.waitForTimeout(150);ok(/1 novos/.test(await pg.textContent('#ag-res')),'10: Supervisora usa Colar lista');
-    // quem altera Configurações vê o painel (a Supervisora tem configuracao.u); quem só lê Configurações não vê nem consegue mandar
-    await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(300);ok(!!(await pg.$('#ag-fontes-bloco')),'chave: quem altera Configurações vê o painel da fonte dos jogos');
-    const t=await pg.evaluate(()=>{const E=ETERNA;const u=JSON.parse(JSON.stringify(E.state.user));u.perms.configuracao={c:false,r:true,u:false,d:false};E.state.user=u;const vazio=E.agBlocoFontes()==='';E.render();const tem=!!document.getElementById('ag-fontes-bloco');
-      document.body.insertAdjacentHTML('beforeend','<input id="ag-chave2" value="x"><button id="fk" data-act="ag-chave-salvar"></button>');document.getElementById('fk').click();return new Promise(ok=>setTimeout(()=>ok({vazio,tem,t:document.getElementById('toast').textContent}),300));});
-    ok(AG.fonte.length===0&&t.vazio&&!t.tem&&/Sem permissão/.test(t.t),'chave: quem só lê Configurações não vê o painel nem manda a chave: '+J(t));
+    // só o Admin (Eduardo, 10/11): a Supervisora altera Configurações, mas não vê o painel da fonte dos jogos nem manda a chave
+    await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(300);
+    const t=await pg.evaluate(()=>{const E=ETERNA;const vazio=E.agBlocoFontes()==='';const tem=!!document.getElementById('ag-fontes-bloco');const cu=E.can('configuracao','u');
+      document.body.insertAdjacentHTML('beforeend','<input id="ag-chave2" value="x"><button id="fk" data-act="ag-chave-salvar"></button>');document.getElementById('fk').click();return new Promise(ok=>setTimeout(()=>ok({cu,vazio,tem,t:document.getElementById('toast').textContent}),300));});
+    ok(t.cu&&AG.fonte.length===0&&t.vazio&&!t.tem&&/Só o Admin/.test(t.t),'chave: a Supervisora (com Configurações em Alterar) não vê o painel #ag-fontes-bloco nem manda a chave: '+J(t));
     await ctx.close();}
   {const {ctx,pg}=await nova();await agente(ctx,{chave:true});await entrar(pg,'loja@eterna.photo');
     const r=await pg.evaluate(()=>{const n=Object.keys(ETERNA.AGENDA).length;document.body.insertAdjacentHTML('beforeend','<textarea id="ag-colar-txt">2026-12-03;20:00;show;;;;X</textarea><button id="fk" data-act="ag-colar-ok"></button>');document.getElementById('fk').click();
@@ -145,6 +145,8 @@ try{
     const [dl]=await Promise.all([pg.waitForEvent('download',{timeout:5000}),pg.click('[data-act="es-dias-csv"]')]);const csv=fs.readFileSync(await dl.path(),'utf8').replace(/^﻿/,'');const L=csv.split('\n');
     ok(L.length===A.length+1&&L[0]==='dia;tipo;eventos;visitantes;fonte_visitantes;vendas;fotos;sessoes;sessoes_com_venda;fonte_vendas;receita','20/19: uma linha por dia, ; e coluna receita para o Admin: '+L[0]+' · '+L.length);
     ok(L.some(l=>l.includes(";'=1+1;")),'20: evento =1+1 sai como \'=1+1');
+    const q=await pg.evaluate(()=>ETERNA.esDiasCSV([{dia:'2026-11-10',tipo:'\tTAB',eventos:['\r=1+1'],entradas:'@x',entradas_fonte:'-1',vendas:'+1',fotos:null,sessoes:null,sessoes_com_venda:null,fonte_vendas:'=A1'}],false).split('\n')[1]);
+    ok(q==="2026-11-10;'\tTAB;' =1+1;'@x;'-1;'+1;;;;'=A1",'20: célula que começa com TAB ou \\r também ganha \': '+J(q));
     // 19: quem não é Admin não vê R$
     const nr=await pg.evaluate(()=>{const E=ETERNA;const u=E.state.user;const sup=JSON.parse(JSON.stringify(E.USERS['supervisor@eterna.photo']));sup.perms.estatisticas={c:false,r:true,u:false,d:false};E.state.user=sup;
       const html=E.esSecG();const csv=E.esDiasCSV(E.state.es.anos[+E.venueToday().slice(0,4)].dias,false);E.state.es.sec='g';E.render();const v={html:/R\$/.test(html),csv:csv.split('\n')[0],sec:E.state.es.sec,chips:[...document.querySelectorAll('[data-act="es-sec"]')].map(x=>x.dataset.s)};E.state.user=u;E.render();return v;});

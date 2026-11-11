@@ -967,6 +967,7 @@ details.pn-dd{padding:0}
 .es-tend{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-radius:6px;padding:14px 18px;background:#D9D9D6;color:#25282A}
 .es-tend b{font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:800;font-size:28px;letter-spacing:.1em;text-transform:uppercase}.es-tend span{font-size:14px}
 .es-tend.sobe{background:#43B02A;color:#0C2340}.es-tend.cai{background:#FFB800;color:#0C2340}.es-tend.igual{background:#134078;color:#fff}
+.es-tend.neutro{background:#F2F2F0;color:#25282A;border:1px dashed #A2AAAD}.es-tend.neutro b{font-size:20px}
 .es-g-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
 .es-g-card{border-radius:6px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}.es-g-card h3{margin:0;font-family:'Big Shoulders Display','Barlow Condensed',sans-serif;font-weight:800;font-size:20px;letter-spacing:.1em;text-transform:uppercase}
 .es-g-card.jogo{background:#134078;color:#fff}.es-g-card.jogo .note{color:#dfe6f0}.es-g-card.normal{background:#D9D9D6;color:#25282A}
@@ -1130,7 +1131,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v97-agenda · 10/11 18:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v97-agenda</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v97-agenda · 11/11 12:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v97-agenda</span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3981,13 +3982,16 @@ function vEstatisticas(){const M=state.es;const on=esOn();if(!esSecoes().some(s=
   let rv=[];if(M.rover){try{rv=painelRover(p.de,p.ate,'').dias;}catch(e){rv=[];}}
   const D=esDados(ds,{rover:M.rover,roverDias:rv});const K=D.kpi;
   const aviso=!on||M.erro?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Sem conexão com o servidor do ponto</b><p>As estatísticas da Eterna vêm do servidor do ponto (todos os caixas). ${M.rover?'Abaixo, só o histórico da Roverpix.':'Ligue "Com histórico Roverpix" para ver os dias importados.'}</p></div></div>`:(M.busy&&!M.dias?'<div class="note">Carregando o servidor do ponto…</div>':'');
-  const fz=state.agent&&state.agent.fuso;const vo=venueOffsetMin();const fuso=on&&fz&&Number.isFinite(fz.offset_min)&&vo!=null&&fz.offset_min!==vo?`<div class="alert warn" id="es-fuso"><span class="sev" aria-hidden="true"></span><div><b>O relógio do servidor do ponto está em outro fuso</b><p>Servidor em UTC${fz.offset_min>=0?'+':'−'}${esc(String(Math.abs(fz.offset_min/60)))}, venue em UTC${vo>=0?'+':'−'}${esc(String(Math.abs(vo/60)))}. As horas do dia ficam erradas até ajustar o fuso do computador servidor (CHECKLIST-SERVIDOR.md).</p></div></div>`:'';
+  const fuso=on?esFusoAviso('As horas do dia ficam erradas'):'';
   const extra=`<button class="chip" data-act="es-rover" aria-pressed="${M.rover}" title="Os números por dia incluem os dias da Roverpix que o servidor do ponto não tem">Com histórico Roverpix</button>`;
   const nota=`${p.cortado?`Período longo: mostrando os últimos ${ES_DIAS_MAX} dias. `:''}Hora do dia, rapidez e idioma existem só na Eterna, a partir da v92.`;
   const chips=esChips();
   const sec={a:esSecA,b:esSecB,c:esSecC,d:esSecD,e:esSecE,f:esSecF}[M.sec]||esSecA;
   return `<div class="head pn-head"><div><div class="eyebrow">Dashboard · ${esc(venueName())}</div><h1>Estatísticas</h1></div></div>
   ${rangeBar(nota,extra,true)}${chips}${aviso}${fuso}<div class="es-sec">${sec(D,K)}</div>`;}
+// aviso de fuso (servidor do ponto em outro fuso que o venue); conseq diz o que fica errado em cada seção
+function esFusoAviso(conseq){const fz=state.agent&&state.agent.fuso;const vo=venueOffsetMin();if(!(fz&&Number.isFinite(fz.offset_min)&&vo!=null&&fz.offset_min!==vo))return '';
+  return `<div class="alert warn" id="es-fuso"><span class="sev" aria-hidden="true"></span><div><b>O relógio do servidor do ponto está em outro fuso</b><p>Servidor em UTC${fz.offset_min>=0?'+':'−'}${esc(String(Math.abs(fz.offset_min/60)))}, venue em UTC${vo>=0?'+':'−'}${esc(String(Math.abs(vo/60)))}. ${esc(conseq)} até ajustar o fuso do computador servidor (CHECKLIST-SERVIDOR.md).</p></div></div>`;}
 function esChips(){const M=state.es;return `<div class="chips es-secs" role="tablist" aria-label="Seções">${esSecoes().map(([s,n])=>`<button class="chip" role="tab" data-act="es-sec" data-s="${s}" aria-selected="${M.sec===s}" aria-pressed="${M.sec===s}">${esc(n)}</button>`).join('')}</div>`;}
 function esSecA(D,K){const prs=D.produtos.map(x=>{const tot=D.produtos.reduce((a,y)=>a+y.receita,0);return `<tr><td class="name">${esc(x.id==='dig'||PROD_CAT.includes(x.id)||x.id==='fundo'?prodNome(x.id):x.id)}</td><td class="num">${fmtN(x.n)}</td><td class="num">${fmtR(x.receita)}</td><td class="num">${tot?Math.round(100*x.receita/tot)+'%':'—'}</td></tr>`;});
   const tb=(obj,nm)=>Object.entries(obj).sort((a,b)=>numF(b[1].faturamento)-numF(a[1].faturamento)).map(([n,v])=>`<tr><td class="name">${esc(nm?nm(n):n)}</td><td class="num">${fmtN(numF(v.vendas))}</td><td class="num">${fmtR(numF(v.faturamento))}</td></tr>`);
@@ -4100,8 +4104,8 @@ async function esDiasPull(ano,forca){const M=state.es;const c=M.anos[ano]||(M.an
   catch(e){c.erro='Sem conexão com o servidor do ponto';c.errEm=Date.now();}finally{c.busy=false;if(state.view==='estatisticas'&&state.es.sec==='g')render();}}
 const esVar=v=>v==null||!isFinite(v)?'—':(v>=0?'+':'−')+Math.round(Math.abs(100*v))+'%';
 const esPctI=v=>Math.round(Math.abs(100*v))+'%';
-// CSV dos dias (Admin vê a coluna receita); proteção contra fórmula: célula que começa com = + - @ ganha '
-function esDiasCSV(L,adm){const q=v=>{let t=String(v==null?'':v).replace(/[\r\n]+/g,' ');if(/^[=+\-@]/.test(t))t="'"+t;return /[;"]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
+// CSV dos dias (Admin vê a coluna receita); proteção contra fórmula: célula que começa com = + - @, TAB ou \r ganha '
+function esDiasCSV(L,adm){const q=v=>{let t=String(v==null?'':v);if(/^[=+\-@\t\r]/.test(t))t="'"+t;t=t.replace(/[\r\n]+/g,' ');return /[;"]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
   const h=['dia','tipo','eventos','visitantes','fonte_visitantes','vendas','fotos','sessoes','sessoes_com_venda','fonte_vendas'].concat(adm?['receita']:[]);
   return [h.join(';'),...(L||[]).map(d=>[d.dia,d.tipo,d.eventos.join(' | '),d.entradas,d.entradas_fonte,d.vendas,d.fotos,d.sessoes,d.sessoes_com_venda,d.fonte_vendas].concat(adm?[d.receita]:[]).map(q).join(';'))].join('\n');}
 function esSecG(){const M=state.es;const adm=isAdminUser(state.user);const at=+venueToday().slice(0,4);const ano=esAnoSel();const on=esOn();if(on){esDiasPull(ano);esDiasPull(ano-1);}
@@ -4110,8 +4114,8 @@ function esSecG(){const M=state.es;const adm=isAdminUser(state.user);const at=+v
   const cA=M.anos[ano]||{},cB=M.anos[ano-1]||{};
   if(!on||cA.erro)return `${topo}<div class="alert warn" id="es-g-sem"><span class="sev" aria-hidden="true"></span><div><b>Sem conexão com o servidor do ponto</b><p>A série diária mora no servidor do ponto (uma linha por dia, com tipo do dia, vendas e visitantes). Abra o Eterna pelo servidor, no estádio ou pelo Tailscale.</p></div></div>`;
   if(!cA.dias)return topo+'<div class="note">Carregando o servidor do ponto…</div>';
-  const A=cA.dias,B=cB.dias||[];
-  if(!A.length)return `${topo}<section class="panel pn-panel"><div class="note es-vazio" id="es-g-vazio">Ainda não há dias guardados em ${ano}. A série diária começa em ${esc(dBR(cA.desde||'2026-11-10'))}.</div></section>`;
+  const A=cA.dias,B=cB.dias||[];const fuso=esFusoAviso('As vendas e os visitantes perto da meia-noite podem cair no dia errado');
+  if(!A.length)return `${topo}${fuso}<section class="panel pn-panel"><div class="note es-vazio" id="es-g-vazio">Ainda não há dias guardados em ${ano}. A série diária começa em ${esc(dBR(cA.desde||'2026-11-10'))}.</div></section>`;
   const T=esTendencia(A.concat(B),ano===at?venueToday():ano+'-12-31');
   const faixa=T.poucos?`<div class="es-tend neutro" id="es-tend"><b>Visitação</b><span>poucos dias com visitantes registrados nos últimos 28 dias (${fmtN(T.n)}; a comparação começa com 14)</span></div>`
     :`<div class="es-tend ${T.dir}" id="es-tend"><span>Visitação</span><b>${T.dir==='sobe'?'subindo '+esPctI(T.pct):T.dir==='cai'?'caindo '+esPctI(T.pct):'estável'}</b><span>${T.base==='ano'?`contra os mesmos 28 dias de ${T.anoBase}`:'contra os 28 dias anteriores'}</span></div>`;
@@ -4126,7 +4130,7 @@ function esSecG(){const M=state.es;const adm=isAdminUser(state.user);const at=+v
   const barras=esBars(usados.flatMap(x=>[{nome:`${x.nome}/${yy(ano-1)}`,v:numF(x.b.vendas)},{nome:`${x.nome}/${yy(ano)}`,v:numF(x.a.vendas),hi:true}]),{label:`Vendas por mês, ${ano-1} e ${ano}`});
   const cabM=[{t:'Mês'},{t:`Visitantes ${ano-1}`,n:1},{t:`Visitantes ${ano}`,n:1},{t:'Variação',n:1},{t:`Vendas ${ano-1}`,n:1},{t:`Vendas ${ano}`,n:1},{t:'Variação',n:1},{t:`Conversão ${ano}`,n:1}].concat(adm?[{t:`Faturamento ${ano-1}`,n:1},{t:`Faturamento ${ano}`,n:1},{t:'Variação',n:1}]:[]);
   const linM=usados.map(x=>`<tr><td>${esc(x.nome)}</td><td class="num">${nv(x.b.visitantes)}</td><td class="num">${nv(x.a.visitantes)}</td><td class="num">${esVar(x.var.visitantes)}</td><td class="num">${nv(x.b.vendas)}</td><td class="num">${nv(x.a.vendas)}</td><td class="num">${esVar(x.var.vendas)}</td><td class="num">${esPct(x.a.conversao)}</td>${adm?`<td class="num">${x.b.receita!=null?fmtR(x.b.receita):'—'}</td><td class="num">${x.a.receita!=null?fmtR(x.a.receita):'—'}</td><td class="num">${esVar(x.var.receita)}</td>`:''}</tr>`);
-  return `${topo}${faixa}
+  return `${topo}${fuso}${faixa}
   <div class="es-g-cards">${card('jogo','jogo')}${card('normal','normal')}</div><p class="note" id="es-pareado">${esc(frase)}</p>
   <section class="panel pn-panel"><div class="pn-ph"><div><h2>Por tipo do dia</h2><p class="pn-take">Média por dia. Vendas só dos dias com operação; visitantes só dos dias com visitantes registrados.</p></div></div>${esTab(cabT,linT)}</section>
   <section class="panel pn-panel"><div class="pn-ph"><div><h2>Mês a mês</h2><p class="pn-take">${ano} contra ${ano-1}. Variação só onde os dois anos têm dado.</p></div><button class="btn ghost" data-act="es-dias-csv">Baixar dias (CSV)</button></div>${usados.length?barras+esTab(cabM,linM):'<div class="note">Sem meses com dado.</div>'}</section>
@@ -4230,7 +4234,7 @@ function vCalendario(){const C=state.cal;const hoje=venueToday();if(esOn())agSta
   <section class="panel"><div class="cal-top"><button class="chip" data-act="ag-mes" data-d="-1" aria-label="Mês anterior">‹</button><h2>${esc(nomeMes)}</h2><button class="chip" data-act="ag-mes" data-d="1" aria-label="Próximo mês">›</button>${mes!==hoje.slice(0,7)?'<button class="chip" data-act="ag-mes" data-d="0">Hoje</button>':''}</div>
     <div class="cal-grid">${ES_SEMANA.map(s=>`<div class="cal-h">${s}</div>`).join('')}${cel.join('')}</div></section>
   <section class="panel"><h2>Eventos do mês</h2>${lista.length?esTab([{t:'Dia'},{t:'Tipo'},{t:'Evento'},{t:'Origem'},{t:''}],lista.map(a=>`<tr><td>${esc(dlabel(a.data))}</td><td>${esc(AG_TIPO_NOME[a.tipo]||a.tipo)}</td><td class="name">${esc(agResumo(a))}</td><td class="note">${esc(AG_ORIGEM_NOME[a.origem]||a.origem)}${a.por?' · '+esc(a.por):''}</td><td>${pode?`<button class="chip" data-act="ag-editar" data-id="${esc(a.id)}">Editar</button> <button class="chip" data-act="ag-apagar" data-id="${esc(a.id)}">Apagar</button>`:''}</td></tr>`)):'<div class="note">Nenhum evento neste mês.</div>'}
-    <p class="note">CSV: <code>data;hora;tipo;mandante;visitante;competicao;obs</code> (data em dd/mm/aaaa ou aaaa-mm-dd; tipo jogo, show, feriado, fechado, evento ou outro). Até 2000 linhas; o mesmo jogo importado de novo atualiza em vez de duplicar. Automáticos: feriados nacionais e do Rio, calculados pelo servidor do ponto, e jogos no Maracanã pela API-Football (com a chave em Fontes). Evento automático que alguém edita ou apaga não volta a ser mexido pelo servidor.</p></section>`;}
+    <p class="note">CSV: <code>data;hora;tipo;mandante;visitante;competicao;obs</code> (data em dd/mm/aaaa ou aaaa-mm-dd; tipo jogo, show, feriado, fechado, evento ou outro). Até 2000 linhas; o mesmo jogo importado de novo atualiza em vez de duplicar. Automáticos: feriados nacionais e do Rio, calculados pelo servidor do ponto, e jogos no Maracanã pela API-Football (a chave fica em Configurações › Painel de controle, só com o Admin). Evento automático que alguém edita ou apaga não volta a ser mexido pelo servidor.</p></section>`;}
 // ---------- v97: calendário que se preenche sozinho (feriados e jogos no servidor do ponto), Colar lista e Fontes ----------
 const AG_ORIGEM_NOME={manual:'Manual',csv:'Importado',feriados:'Automático · feriados',api:'Automático · jogos'};
 const agServidor=()=>!!(state.db&&state.db.agente&&esOn());
@@ -4250,16 +4254,16 @@ function agFontesTxt(){const C=state.cal,S=C.st;if(!esOn())return '';if(!S)retur
   return fer+' · '+jg+(safeN(J.ja_no_calendario)?` · ${fmtN(safeN(J.ja_no_calendario))} já estavam no calendário`:'');}
 async function agAtualizar(){if(!esOn()){toast('Sem conexão com o servidor do ponto');return;}
   try{const r=await fetch(state.agent.url+'/agenda/atualizar',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:'{}'});const j=await r.json().catch(()=>({}));
-    toast(r.status===429?'Aguarde um minuto para atualizar de novo':r.status===409?'Sem chave da API-Football':r.ok&&j.ok?(j.ja_rodando?'A atualização dos jogos já está em andamento':'Atualizando os jogos. Os novos aparecem em instantes'):'O servidor do ponto recusou');}
+    toast(r.status===429?(j.error==='espera'?(j.motivo==='falha'?'A última busca não deu certo. O servidor tenta de novo sozinho em até 6 horas':`A busca dos jogos roda no máximo a cada 10 minutos. Tente de novo em ${safeN(j.espera_min)||1} min`):'Aguarde um minuto para atualizar de novo'):r.status===409?'Sem chave da API-Football':r.ok&&j.ok?(j.ja_rodando?'A atualização dos jogos já está em andamento':'Atualizando os jogos. Os novos aparecem em instantes'):'O servidor do ponto recusou');}
   catch(e){toast('Sem conexão com o servidor do ponto');}
   setTimeout(()=>agStatusPull(true),5000);}
-// chave da API-Football (Eduardo, 10/11): em Configurações › Painel de controle, só para quem altera Configurações, só pelo servidor do ponto; a chave sai do campo direto para o
+// chave da API-Football (Eduardo, 10/11): em Configurações › Painel de controle, só o Admin, só pelo servidor do ponto; a chave sai do campo direto para o
 // POST e nunca vai para o state, o SIM, o localStorage ou o registro; o servidor devolve só os 4 últimos caracteres
-async function agChavePost(rota,corpo){if(!can('configuracao','u')){toast('Sem permissão para alterar Configurações');return null;}if(!agServidor()){toast('Abra o Eterna pelo servidor do ponto para mexer na chave');return null;}
+async function agChavePost(rota,corpo){if(!isAdminUser(state.user)){toast('Só o Admin altera a chave da API-Football');return null;}if(!agServidor()){toast('Abra o Eterna pelo servidor do ponto para mexer na chave');return null;}
   try{const r=await fetch(state.agent.url+rota,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify(Object.assign({quem:state.user.email},corpo||{}))});return {st:r.status,j:await r.json().catch(()=>({}))};}
   catch(e){toast('Sem conexão com o servidor do ponto');return null;}}
-const agChaveErro=r=>r.st===403?'O servidor do ponto não reconhece a sua permissão de alterar Configurações (confira o cadastro no servidor)':r.st===409&&r.j.error==='chave_no_servidor'?'A chave está definida no servidor e não pode ser trocada por aqui':r.st===429?'Aguarde um minuto e tente de novo':r.st===400?'Chave inválida: de 20 a 64 letras e números':'O servidor do ponto recusou';
-async function agChaveSalvar(){const C=state.cal;const el=document.getElementById('ag-chave');const k=el?String(el.value||'').trim():'';if(el)el.value='';if(!can('configuracao','u')){toast('Sem permissão para alterar Configurações');return;}
+const agChaveErro=r=>r.st===403?'O servidor do ponto não reconhece este usuário como Admin (confira o cadastro no servidor)':r.st===409&&r.j.error==='chave_no_servidor'?'A chave está definida no servidor e não pode ser trocada por aqui':r.st===409&&r.j.error==='ja_rodando'?'A busca dos jogos está rodando agora. Teste de novo em instantes':r.st===429?'Aguarde um minuto e tente de novo':r.st===400?'Chave inválida: de 20 a 64 letras e números':'O servidor do ponto recusou';
+async function agChaveSalvar(){const C=state.cal;const el=document.getElementById('ag-chave');const k=el?String(el.value||'').trim():'';if(el)el.value='';if(!isAdminUser(state.user)){toast('Só o Admin altera a chave da API-Football');return;}
   if(!/^[A-Za-z0-9]{20,64}$/.test(k)){toast('A chave tem de 20 a 64 letras e números');return;}const troca=!!(C.st&&C.st.jogos&&C.st.jogos.chave);C.chaveBusy=true;render();
   const r=await agChavePost('/agenda/fonte',{acao:'salvar',chave:k});C.chaveBusy=false;
   if(r&&r.st===200&&r.j.ok){auditLog(troca?'agenda_chave_trocar':'agenda_chave_salvar','config/api-football',[{campo:'chave_api_football',de:troca?'configurada':null,para:'configurada'}]);C.trocaChave=false;toast(troca?'Chave trocada':'Chave salva no servidor do ponto');}
@@ -4270,9 +4274,9 @@ async function agChaveTestar(){const C=state.cal;C.chaveBusy=true;render();const
   if(r&&r.st===200)toast(r.j.ok?`A temporada ${safeN(r.j.temporada)} veio: ${fmtN(safeN(r.j.n))} jogos no Maracanã`:'O teste falhou: '+String(r.j.erro||'erro').slice(0,120));else if(r)toast(agChaveErro(r));await agStatusPull(true);render();}
 function agTesteTxt(t){if(!t||typeof t!=='object')return '<p class="note" id="ag-teste">Ainda não testada.</p>';
   return `<p class="note" id="ag-teste">Último teste em ${esc(esQuando(t.em))}: ${t.ok?`a temporada ${safeN(t.temporada)} veio (${fmtN(safeN(t.n))} jogos no Maracanã)`:`falhou (${esc(String(t.erro||'erro').slice(0,160))})`}.</p>`;}
-// painel "Calendário de eventos · fonte dos jogos" no Painel de controle (Eduardo, 10/11): quem só lê Configurações não vê
-function agBlocoFontes(){if(!can('configuracao','u'))return '';const C=state.cal;const J=C.st&&C.st.jogos;const b=C.chaveBusy?' disabled':'';let corpo;
-  const campo=`<div class="ag-grid"><label class="ag-obs"><span class="eyebrow">Chave da API-Football</span><input type="password" id="ag-chave" data-keep autocomplete="off" spellcheck="false" maxlength="64" placeholder="cole a chave aqui"></label></div>
+// painel "Calendário de eventos · fonte dos jogos" no Painel de controle (Eduardo, 10/11): só o Admin vê
+function agBlocoFontes(){if(!isAdminUser(state.user))return '';const C=state.cal;const J=C.st&&C.st.jogos;const b=C.chaveBusy?' disabled':'';let corpo;
+  const campo=`<div class="ag-grid"><label class="ag-obs"><span class="eyebrow">Chave da API-Football</span><input type="password" id="ag-chave" data-keep autocomplete="new-password" spellcheck="false" maxlength="64" placeholder="cole a chave aqui"></label></div>
     <div class="row"><button class="btn primary" data-act="ag-chave-salvar"${b}>Salvar chave</button>${C.trocaChave?'<button class="btn ghost" data-act="ag-chave-cancelar">Cancelar</button>':''}</div>
     <p class="note">Crie a conta em dashboard.api-football.com (plano grátis: 100 consultas por dia) e cole a chave. Ela fica só no servidor do ponto; aqui aparecem só os 4 últimos caracteres.</p>`;
   if(!agServidor())corpo='<p class="note">A chave só pode ser vista e salva com o Eterna aberto pelo servidor do ponto (no estádio ou pelo Tailscale).</p>';
@@ -4307,7 +4311,7 @@ function vEscala(){
 }
 
 // ---------- Gestão: catálogo ----------
-function vCatalogo(){if(esOn()&&can('configuracao','u'))agStatusPull(); // v97: situação da fonte dos jogos
+function vCatalogo(){if(esOn()&&isAdminUser(state.user))agStatusPull(); // v97: situação da fonte dos jogos
   return `<div class="head"><div><div class="eyebrow">Configurações · catálogo, preços, Checkout e FTP</div><h1>Painel de controle</h1></div></div>
   <div class="panel"><div class="tablewrap"><table><thead><tr><th>Produto</th><th>Tipo</th><th>Conteúdo</th><th class="num">Preço</th><th class="num">Vendidos na semana</th></tr></thead><tbody>
   ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="Preço de ${esc(c.name)}"></td><td class="num">${real?real.units:'novo'}</td></tr>`}).join('')}
