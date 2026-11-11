@@ -197,3 +197,20 @@ Agente (Python, HOME temporário, agente de verdade)
 2. `set.c` em vez de `set.u` (decisão 1).
 3. Supervisora deve poder mandar fotos de um fotógrafo (hoje ela tem `set` só leitura)?
 4. Prioridade das fotos do cartão (lido ou enviado pela tela) na fila de rostos: hoje entram na frente, junto com as ao vivo. Passar para trás das ao vivo fica para outra entrega?
+
+## Decisões (Eduardo, 11/11)
+
+1. **Pode ir ao Mac antes do login no servidor.** A rota segue o mesmo nível de proteção de `/ponto/entradas` (posto, origem local e `X-Eterna: 1`). Fica fechada quando entrar a `fix/seguranca-dados`, que tem o login no servidor do Ronaldo (`ROTAS` com `set.c` e o dono = chave do cadastro).
+2. **A permissão é `set.c`**, igual à da `ROTAS` do Ronaldo.
+3. **A Supervisora também envia fotos** (muda a resposta anterior, "a Supervisora não manda fotos por enquanto"). Ela envia como o Admin: escolhe o fotógrafo no seletor; com "Todos", nenhuma foto é aceita. O perfil pronto Supervisor ganhou `set.c` (`set` passa de só leitura para receber e ver; `u` continua fora, ela não liga nem desliga o ajuste automático). Supervisora já salva ganha a letra uma vez por `migraEnvio96` (marca `menv96`, registro `migracao_v96_envio`); usuário personalizado não muda. O Caixa e o vendedor (Atendimento e venda) continuam sem `set` e não veem o link.
+4. **A prioridade da fila de rostos não muda nesta entrega.** Fica como pendência: hoje as fotos do cartão (lidas pelo leitor ou enviadas pela tela) entram com prioridade 0, junto com as ao vivo; passar para trás das ao vivo fica para outra entrega.
+
+## Notas da implementação (programador, 11/11)
+
+- **Seletor de arquivos fora do `#main`** (`envioInput()`, um único `input type=file` no `body`, aberto pelo botão "Escolher fotos" e pela área de soltar). O plano previa o `input` dentro de um `label` no painel; com o agente de verdade o `render()` troca o `#main` a cada sessão nova, e um `input` trocado enquanto o seletor do sistema está aberto perde a escolha (o `change` cai num elemento solto). Ação nova `envio-escolher` no `WRITE_OPS` (c) e no `ACT_MOD` (set).
+- **Tentativas:** 3 tentativas por foto (na hora, depois de 1 s e depois de 3 s). O 9 s da decisão 11 ficou de fora: com "tenta 3 vezes" só cabem duas esperas.
+- **Rede caída:** a primeira foto que esgota as tentativas para a fila; a foto em curso no outro trabalhador termina; as que faltaram (as que falharam e as que não saíram) ficam em `faltam`. "Parar", 401, 403 e 507 também guardam as que faltaram, e o botão "Tentar de novo" aparece.
+- **Console do agente:** o `ingest_file` ganhou o parâmetro `quieto` (padrão `False`), que só tira o nome do arquivo da linha `+ <nome>` e de "erro ao copiar" no envio pela tela (critério 27). O fluxo do `ingest_file` não muda.
+- **Contador `recusadas` do `/status.envio`:** conta toda recusa da rota (inclusive 403, 429 e 503) e as `recusada` do `ingest_file`.
+- **Admin fora da origem:** a dica é "Para enviar fotos por aqui, abra o Eterna pelo endereço do computador do ponto" com o endereço do agente.
+- **Sessões em Minhas fotos:** a lista continua filtrada pelo ponto do seletor. Uma sessão atrasada sem função do dia (sem ponto) não aparece com o seletor num ponto; no teste de ponta a ponta a função do dia do Carlos é mandada antes, como a Escala faz.

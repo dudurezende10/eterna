@@ -46,10 +46,12 @@ try{
     await ctx.close();}
   // H5 e H7 (funções puras)
   {const {ctx,pg}=await nova(b);
-    const r=await pg.evaluate(V93=>{const E=ETERNA;const out={};
+    const r=await pg.evaluate(V93=>{const E=ETERNA;const out={};const J=JSON.stringify;const RW_C={c:true,r:true,u:false,d:false};
       const antes=k=>({preset:'custom',perms:E.permNorm(V93[k].perms),menu:V93[k].menu==='*'?E.ALL_VIEWS.slice():V93[k].menu.slice()});
       Object.keys(V93).forEach(k=>{const dep={preset:k,perms:E.presetPerms(k),menu:E.presetMenu(k)};out[k]=E.accExtra(dep,antes(k));});
-      out.supPerms=JSON.stringify(E.presetPerms('supervisor'))===JSON.stringify(E.permNorm(V93.supervisor.perms));
+      // v96-ux (Eduardo, 11/11): a Supervisora ganha só set.c (envia as fotos do cartão pela tela, como o Admin)
+      out.supPerms=JSON.stringify(E.presetPerms('supervisor'))===JSON.stringify(E.permNorm({...V93.supervisor.perms,set:RW_C}));
+      if(J(out.supervisor)===J(['perms.set.c']))out.supervisor=[];
       out.adminTudo=E.ALL_VIEWS.every(v=>E.presetMenu('admin').includes(v));return out;},V93);
     ok(['foto','venda','valida','supervisor','quiosque'].every(k=>J(r[k])==='[]'),'H7: accExtra(depois, antes) não vazio: '+J(r));
     ok(r.supPerms,'H5: perms da Supervisora mudaram');ok(r.adminTudo,'H7: Admin sem alguma tela');

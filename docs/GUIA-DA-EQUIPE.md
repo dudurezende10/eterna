@@ -126,6 +126,23 @@ Bom saber:
 - Toda troca fica registrada com o seu nome.
 - O supervisor vê o painel, mas não consegue mudar.
 
+### O cartão não foi lido: enviar as fotos pela tela (v96-ux)
+
+Use só quando o leitor não reconhecer o cartão. As fotos entram do mesmo jeito que entrariam pelo leitor.
+
+1. No computador do ponto, abra **Minhas fotos**.
+2. Toque em **Enviar fotos do cartão manualmente** (o link fica logo abaixo da faixa de estado).
+3. Abra a pasta do cartão no computador e arraste as fotos para a área **Solte aqui as fotos do cartão**, ou toque em **Escolher fotos**.
+4. A faixa mostra **Enviando 4 de 6** e, no fim, **Enviadas 6 de 6**.
+
+Bom saber:
+- O fotógrafo manda sempre em nome dele. A supervisora e o Admin escolhem o fotógrafo no seletor **Fotógrafo** acima; com **Todos**, aparece "Escolha o fotógrafo acima" e nenhuma foto entra.
+- Só entram fotos `.jpg` ou `.jpeg` da câmera. Outro arquivo aparece na lista como "não era foto".
+- Foto que já estava no servidor não entra de novo e aparece como "já estava no servidor". Não é erro.
+- Se a conexão cair, cada foto tenta 3 vezes. Depois aparece **Tentar de novo as N que faltaram**.
+- Pode trocar de tela durante o envio, ele continua. Não feche nem recarregue a página até terminar.
+- Se aparecer "Chame a TI", o computador do ponto está desligado, sem espaço ou precisa ser atualizado.
+
 ### Sessões de hoje (v91)
 
 Com o agente do ponto aberto, o Upload automático mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. Os seletores **Fotógrafo** e **Ponto** do alto da tela filtram as sessões.
@@ -502,7 +519,7 @@ A aba **Histórico** em Permissões mostra toda mudança: quando, quem mudou, a 
 | Fotógrafo | Diário do set, Upload automático (troca de fotógrafo), Fila do fotógrafo, Escala 5×2 | Checkout, Dashboard, Curadoria, Configurações |
 | Atendimento e venda | Checkout, venda no balcão, Fila, Caixa, Catálogo (só para ver os preços), Fila do fotógrafo (só para ver) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
 | Validador | Qualidade, Treino da IA, Diário do set (só para ver) | vendas, Checkout, Configurações |
-| Supervisor | Dashboard (começa no Painel), Curadoria (só para ver), grupo Fotógrafo, Configurações do venue, Laboratório | Usuários e Permissões; não cancela venda |
+| Supervisor | Dashboard (começa no Painel), Curadoria (só para ver), grupo Fotógrafo (envia as fotos do cartão pela tela em nome de um fotógrafo, v96-ux), Configurações do venue, Laboratório | Usuários e Permissões; não cancela venda |
 | Checkout | só a tela do cliente, em tela cheia | todo o resto |
 
 A aba **Perfis prontos** mostra cada perfil em detalhe.

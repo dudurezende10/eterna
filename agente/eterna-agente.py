@@ -90,6 +90,12 @@ INDEX = os.path.join(HOME, "index.json")
 FTPCFG = os.path.join(HOME, "ftp.json")
 FTPTMP = os.path.join(HOME, "ftp-tmp")
 EXT = (".jpg", ".jpeg", ".JPG", ".JPEG")
+# v96-ux (Minhas fotos, envio manual): fotos do cartão mandadas pela tela quando o leitor não reconhece o cartão
+FOTO_ENVIO_MAX = 60 * 1024 * 1024          # uma foto por pedido (mesmo teto do Ronaldo, fix/seguranca-dados)
+FOTO_ENVIO_TAXA = 300                      # fotos por minuto por IP
+FOTO_ENVIO_SIMULT = 4                      # gravações ao mesmo tempo no agente inteiro; o resto recebe 503 na hora
+FOTO_ENVIO_PISO_GB = 2                     # espaço livre mínimo no disco da inbox
+_re_envio_nome = re.compile(r"^[A-Za-z0-9_-]{1,80}\.(jpg|jpeg|JPG|JPEG)$")
 POLL = 2.0
 
 os.makedirs(INBOX, exist_ok=True)
@@ -250,7 +256,9 @@ def metricas_carrega(dias=3):
 
 
 metricas_carrega()
-state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None}}
+state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None},
+         "envio": {"novas": 0, "repetidas": 0, "recusadas": 0}}
+envio_sem = threading.BoundedSemaphore(FOTO_ENVIO_SIMULT)
 
 if os.path.exists(INDEX):
     try:
@@ -313,6 +321,26 @@ def jpeg_completo(path, size):
     if ini == b"\x89PNG\r\n\x1a\n":
         return b"IEND" in fim[-16:]
     return False
+
+
+def jpeg_de_verdade(path, size):
+    """v96-ux: foto mandada pela tela. Só JPEG (começa com FF D8 FF e tem FF D9 nos últimos 4 KB). PNG com nome .jpg é
+    recusado aqui (no cartão da câmera nunca existe); o jpeg_completo geral não muda."""
+    try:
+        with open(path, "rb") as f:
+            ini = f.read(3)
+    except OSError:
+        return False
+    return ini == b"\xff\xd8\xff" and jpeg_completo(path, size)
+
+
+def envio_nome(nome):
+    """v96-ux: rótulo seguro da foto mandada pela tela. O nome do cliente só passa se casar com a regra (letras, números,
+    _ e -, até 80, extensão do cartão); senão o agente dá o nome. Nunca passa por os.path."""
+    nome = nome if isinstance(nome, str) else ""
+    if _re_envio_nome.match(nome):
+        return nome
+    return "envio_%s_%s.jpg" % (time.strftime("%H%M%S"), secrets.token_hex(2))
 
 
 def has_pillow():
@@ -1300,8 +1328,9 @@ except Exception:
     lgpd_excluidas = set()
 
 
-def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
-    """Leva um arquivo para a inbox. Devolve 'new', 'dup' ou None."""
+def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False):
+    """Leva um arquivo para a inbox. Devolve 'new', 'dup' ou None. v96-ux: quieto=True (envio pela tela) não põe o nome do
+    arquivo no console; o fluxo é o mesmo."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
     if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo
@@ -1335,7 +1364,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         else:
             shutil.copy2(src, dst)
     except Exception as ex:
-        print("erro ao copiar", fn, ex)
+        print("erro ao copiar", "(envio pela tela)", type(ex).__name__) if quieto else print("erro ao copiar", fn, ex)
         return None
     sha = hashlib.sha256()                    # assinatura do arquivo gravado: o teste confere foto a foto se chegou íntegra
     with open(dst, "rb") as f:
@@ -1369,7 +1398,8 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         print("  fila do fotógrafo (rostos): %s" % str(ex)[:80])
     rostos_enfileira(pid, dst, 0, time.time())   # S11: foto nova na frente do atraso do boot
     nuvem_enfileira(pid, dst)
-    print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
+    if not quieto:
+        print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
     return "new"
 
 
@@ -6228,7 +6258,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
+    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/"))
 
 
 class H(BaseHTTPRequestHandler):
@@ -6275,7 +6305,7 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", o)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path == "/ponto/entradas" else "Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path in ("/ponto/entradas", "/fotos/enviar") else "Content-Type")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             return
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -6378,6 +6408,85 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "private, max-age=3600")
         self.end_headers()
         self.wfile.write(data)
+
+    def fotos_enviar_post(self):
+        """v96-ux: POST /fotos/enviar?nome=&quem=: uma foto do cartão (o JPEG é o corpo) mandada pela tela Minhas fotos quando o
+        leitor não reconheceu o cartão. Mesmo contrato do Ronaldo (fix/seguranca-dados, b06b67b); aqui sem login no servidor:
+        posto + origem local + X-Eterna: 1 (mesmo nível de /ponto/entradas). Entra pelo ingest_file como foto de cartão."""
+        q = parse_qs(urlparse(self.path).query)
+        tam = self.headers.get("Content-Length")
+        n = int(tam) if tam and tam.isdigit() else -1
+        ip = self.client_address[0]
+        erro = None
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            erro = ({"erro": "origem"}, 403)
+        elif (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "image/jpeg":
+            erro = ({"erro": "formato"}, 415)
+        elif tam is None:
+            erro = ({"erro": "tamanho"}, 411)
+        elif n <= 0 or n > FOTO_ENVIO_MAX:
+            erro = ({"erro": "tamanho"}, 413)
+        quem = sem_acento((q.get("quem") or [""])[0]).strip()
+        nome = (q.get("nome") or [""])[0]
+        if not erro and (not quem or quem not in ff_cadastrados()):
+            erro = ({"erro": "quem"}, 400)
+        if not erro and not nome.endswith(EXT):
+            erro = ({"erro": "formato"}, 415)
+        if not erro and not limite_ok(ip, "fotos_enviar", FOTO_ENVIO_TAXA):
+            erro = ({"erro": "taxa"}, 429)
+        if not erro:
+            try:
+                livre = shutil.disk_usage(INBOX).free
+            except OSError:
+                livre = 0
+            if livre < FOTO_ENVIO_PISO_GB * 1024 ** 3:
+                erro = ({"erro": "disco"}, 507)
+        if not erro and not envio_sem.acquire(blocking=False):
+            erro = ({"erro": "ocupado"}, 503)
+        if erro:
+            self.close_connection = True           # o corpo não foi lido: esta conexão não serve para o próximo pedido
+            with lock:
+                state["envio"]["recusadas"] += 1
+            return self.js(erro[0], erro[1], True)
+        tmp = None
+        r, motivo = None, None
+        try:
+            os.makedirs(FTPTMP, exist_ok=True)
+            tmp = os.path.join(FTPTMP, "envio-%s.tmp" % secrets.token_hex(8))
+            with open(tmp, "wb") as f:
+                resto = n
+                while resto > 0:
+                    ch = self.rfile.read(min(1 << 20, resto))
+                    if not ch:
+                        break
+                    f.write(ch)
+                    resto -= len(ch)
+            if resto:
+                motivo = ({"erro": "incompleta"}, 400)
+                self.close_connection = True
+            elif not jpeg_de_verdade(tmp, n):
+                with open(tmp, "rb") as f:
+                    ini = f.read(3)
+                motivo = ({"erro": "incompleta"}, 400) if ini == b"\xff\xd8\xff" else ({"erro": "nao_jpeg"}, 415)
+            else:
+                r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
+                if r == "new":
+                    with lock:
+                        save_index()
+        finally:
+            if tmp and os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            envio_sem.release()
+        res = r or "recusada"
+        with lock:
+            state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
+        print("  envio pela tela: %s %s %.1f MB" % (quem, motivo[0]["erro"] if motivo else res, n / 1e6))
+        if motivo:
+            return self.js(motivo[0], motivo[1], True)
+        return self.js({"ok": bool(r), "resultado": res}, 200, True)
 
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
@@ -6782,6 +6891,7 @@ class H(BaseHTTPRequestHandler):
                                 "impressora": IMPRESSORA or None,
                                 "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
                                 "estatisticas": {"v": 2, "migracao": dict(est_migra)}, "fuso": fuso_info(),
+                                "envio": {"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
                                 "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
@@ -6934,6 +7044,8 @@ class H(BaseHTTPRequestHandler):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
+        if u.path == "/fotos/enviar":
+            return self.fotos_enviar_post()
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
         if u.path == "/ponto/entradas":
