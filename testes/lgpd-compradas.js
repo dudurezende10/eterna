@@ -111,6 +111,7 @@ try{
   // 9. o servidor preserva uma foto que esta tela não sabia que era do cliente (compra online feita agora na galeria da sessão D)
   const tokD=await pg2.evaluate(()=>{ETERNA.simFresh();const t=ETERNA.galDaSessao('LPTQUAR04',true);ETERNA.galAtualizar(t);ETERNA.saveSim();return t;});
   PRES={ids:['ag_ddd000000002'],venda:{id:'O0001',token:tokD,sessoes:['LPTQUAR04'],pids:['ag_ddd000000002'],n:1,total:39,metodo:'pix',em:new Date().toISOString(),canal:'online',teste:true}};
+  const aud0=await pg2.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='lgpd_excluir').length);
   t=await apagar('LPTQUAR04');await pg2.waitForTimeout(500);t=await pg2.evaluate(()=>(document.querySelector('#toast')||{}).textContent||'')||t;const p9=LG[LG.length-1]||{pids:[],tokens:[]};PRES=null;
   ok(p9.pids.length===4&&p9.tokens.join()===tokD,'9: a tela pede as 4 fotos e o fim da galeria (ainda não sabia da compra): '+J(p9));
   const d9=await pg2.evaluate(tok=>{ETERNA.simFresh();const S=ETERNA.SIM;const s=S.sessions.LPTQUAR04;const m=S.galerias[tok];const it=(S.galFila||[]).find(x=>x.token===tok);
@@ -118,6 +119,9 @@ try{
   ok(d9.on&&d9.fotos==='2'&&d9.n===3&&d9.fic===1,'9: sai da sessão só o que o servidor apagou; a comprada online fica: '+J(d9));
   ok(!d9.enc&&d9.gal==='2:comprada'&&d9.fila&&d9.fila!=='encerrada','9: a galeria que o servidor manteve continua aberta, só com a comprada, e é publicada de novo: '+J(d9));
   ok(/Apagadas: 3 fotos/.test(t)&&/1 comprada ficou/.test(t)&&!/fora do ar/.test(t),'9: aviso com a conta certa: '+t);
+  const au=await pg2.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='lgpd_excluir'));const a9=au[0]||{};
+  ok(au.length===aud0+1&&a9.apagadas===3&&a9.preservadas===1&&a9.galerias_mantidas===1,'9: histórico com as contagens: '+J(a9));
+  ok(!/ag_|ddd0|LPT/.test(J(a9))&&!J(a9).includes(tokD),'9: histórico sem id de foto, sessão ou galeria: '+J(a9));
   // 8. sessão paga (âncora B, 4 fotos, 1 comprada): o cliente comprou parte e pede para apagar o resto
   const plB=await pg2.evaluate(()=>{ETERNA.simFresh();const p=ETERNA.lgpdPlano('LPTSOLO02');return {sai:p.pids.map(x=>x.slice(-1)).join(''),fica:p.fica.map(x=>x.slice(-1)).join(''),pedido:p.pedido};});
   ok(plB.sai==='134'&&plB.fica==='2'&&!plB.pedido,'8: na sessão paga saem só as 3 não compradas: '+J(plB));

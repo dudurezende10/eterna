@@ -6355,6 +6355,7 @@ document.addEventListener('click',e=>{
         abertas.forEach(t=>{const m=SIM.galerias[t];if(!m)return;if(m.so)Object.keys(m.so).forEach(c=>{m.so[c]=(m.so[c]||[]).filter(id=>!sai.has(id));});galAtualizar(t);});
         apag.forEach(id=>log(`LGPD: foto ${id.replace(/^ag_/,'')} da sessão ${card} apagada a pedido do cliente`));saveSim();abertas.forEach(t=>{if(!galDemo(card))galPublicar(t);});log(`LGPD: ${apag.length} fotos da sessão ${card} apagadas a pedido do cliente${nFica?` (${nFica} compradas ou de cortesia ficaram)`:''}`);
         const nAp=pids.length===apag.length?j.fotos:apag.length; // sem nada preservado vale a contagem do servidor; com preservadas, só o que saiu
+        auditLog('lgpd_excluir','fotos do cliente',[{campo:'fotos',de:pids.length+pl.fica.length,para:nFica}],{apagadas:nAp,preservadas:nFica,galerias_mantidas:abertas.length}); // só contagens: sem id de foto, sessão ou galeria
         toast(`Apagadas: ${nAp} ${nAp===1?'foto':'fotos'}${j.nuvem?' (também na nuvem)':''}${nFica?` · ${nFica} ${nFica===1?'comprada ficou':'compradas ficaram'} com o cliente`:''}${j.galerias?' · galeria fora do ar':''}${j.ok?'':' · com falhas, veja o registro'}`);render();})
         .catch(()=>toast('Sem conexão com o servidor. Nada foi apagado.'));break;}
     case 'eco-qr':{const tok=galDaSessao(d.card);const m=tok&&SIM.galerias&&SIM.galerias[tok];if(!m){toast('Esta venda não tem galeria online');break;}const sim=SIM.sessions[d.card]||{};
