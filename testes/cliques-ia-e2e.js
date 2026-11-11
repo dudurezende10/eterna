@@ -74,7 +74,7 @@ try{
   num.montagens_ms=Date.now()-t0;
   ok(pronto.n===5&&pronto.ok===5&&num.montagens_ms<=4000,'19: as 5 montagens prontas em até 4 s (agente de verdade): '+J({...pronto,ms:num.montagens_ms}));
   const it=await pg.evaluate(c=>({ai:ETERNA.lojaAI(c).map(x=>x.bg+'='+x.id),items:ETERNA.lojaItems(c).map(x=>x.t+':'+x.id),fotos:ETERNA.lojaFotos(c).map(p=>p.id),step:ETERNA.state.kiosk.step,nSes:ETERNA.lojaCart(c).nSes}),xS.card);
-  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2};
+  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2,telao:f2};
   ok(it.ai.length===5&&it.ai.every(x=>{const [bg,id]=x.split('=');return esper[bg]===id;}),'3: 5 montagens: 1950 e Pódio na foto 1, Campeão, Mirante e Túnel na foto 2: '+J(it.ai));
   ok(it.fotos.length===6&&!it.items.includes('ph:'+f1)&&!it.items.includes('ph:'+f2)&&it.items.filter(x=>x.startsWith('ph:')).length===6,'2: Checkout por código sem as bases como foto: '+J(it.items));
   ok(it.nSes===6,'2: contagem do "Todas" = 6: '+it.nSes);
@@ -107,10 +107,11 @@ try{
   // A15 pela selfie: a sessão achada só pela base 2; inteira, sem base como foto; menor: só a base reconhecida
   SIMS={[S[1]]:.72};
   const s15=await pg.evaluate(async c=>{const cv=document.createElement('canvas');cv.width=64;cv.height=64;const k=ETERNA.state.kiosk;ETERNA.lojaReset();ETERNA.state.agent.rostos={ligado:true};
-    let r=await ETERNA.faceFind([cv],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);const a={code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id)};
+    let r=await ETERNA.faceFind([cv],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);const a={code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id),tot:(ETERNA.demoSessions().find(s=>s.card===k.code)||{photos:[]}).photos.length};
     ETERNA.lojaReset();ETERNA.SIM.sessions[c].menor=true;ETERNA.state.agent.rostos={ligado:true};r=await ETERNA.faceFind([cv],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
     const m={code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id)};delete ETERNA.SIM.sessions[c].menor;ETERNA.lojaReset();return {a,m};},xS.card);
-  ok(s15.a.code===xS.card&&s15.a.fotos.length===0&&s15.a.ai.length===5&&!s15.a.items.includes('ph:'+f2)&&!s15.a.items.includes('ph:'+f1),'A15: selfie pela base: só o que tem o rosto dela, 5 montagens, base nunca como foto: '+J(s15.a));
+  // v97 (Eduardo, 10/11): a selfie abre a leva inteira (e a visita); a base continua fora das fotos
+  ok(s15.a.code===xS.card&&s15.a.fotos.length===s15.a.tot&&s15.a.tot>0&&s15.a.ai.length===5&&!s15.a.items.includes('ph:'+f2)&&!s15.a.items.includes('ph:'+f1),'A15: selfie pela base: a leva inteira, 5 montagens, base nunca como foto: '+J(s15.a));
   ok(s15.m.code===xS.card&&s15.m.fotos.length===0&&s15.m.ai.length===5&&s15.m.ai.every(x=>x===f2),'A11: menor: só a base reconhecida: '+J(s15.m));
   SIMS={};
   // idiomas: Checkout com as montagens em en, es, fr, de, sem erro e sem texto novo em português

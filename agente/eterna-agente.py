@@ -28,7 +28,7 @@ Para receber de um servidor FTP que já existe na máquina, vigiando a pasta del
      ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections
-import array, itertools, operator
+import array, itertools, operator, tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request, urllib.error, urllib.parse, mimetypes, re, base64
@@ -616,6 +616,10 @@ def rostos_db():
     c.execute("create table if not exists foto (pid text primary key, dia text, n int, lida real)")
     c.execute("create table if not exists rosto (pid text, dia text, larg real, emb blob)")
     c.execute("create index if not exists rosto_dia on rosto(dia)")
+    # B1 (segurança, 10/11): os rostos com score e pose de qualidade (score >= SESS_Q_SCORE e frontal), para o anel das
+    # visitas refeito no boot (vis_idx_boot) só com o que passaria em _sess_qualidade. Tabela à parte: a "rosto" não muda.
+    c.execute("create table if not exists rosto_q (pid text, dia text, emb blob)")
+    c.execute("create index if not exists rosto_q_pid on rosto_q(pid)")
     return c
 
 
@@ -706,7 +710,8 @@ def limpar_rostos(db=None):
     """Apaga as leituras de rosto com mais de RETENCAO_DIAS (no início e uma vez por dia, pelo galeria_loop)."""
     db = db or rostos_db()
     lim = time.strftime("%Y-%m-%d", time.localtime(time.time() - RETENCAO_DIAS * 86400))
-    db.execute("delete from rosto where dia < ?", (lim,)); db.execute("delete from foto where dia < ?", (lim,)); db.commit()
+    db.execute("delete from rosto where dia < ?", (lim,)); db.execute("delete from foto where dia < ?", (lim,))
+    db.execute("delete from rosto_q where dia < ?", (lim,)); db.commit()
     with _mat_lock:
         for d in [d for d in _mat if d < lim]:
             _mat.pop(d, None)
@@ -769,6 +774,9 @@ def leitor_loop(det, rec, db):
             db.execute("insert or replace into foto values (?,?,?,?)", (pid, dia, len(fs), time.time()))
             db.execute("delete from rosto where pid=?", (pid,))
             db.executemany("insert into rosto values (?,?,?,?)", [(pid, dia, f[0], f[1].tobytes()) for f in fs])
+            db.execute("delete from rosto_q where pid=?", (pid,))
+            db.executemany("insert into rosto_q values (?,?,?)", [(pid, dia, f[1].tobytes()) for f in fs
+                                                                  if len(f) > 3 and f[2] >= SESS_Q_SCORE and f[3]])
             db.commit()
             lidos = [(f[0], f[1].tolist(), f[2], f[3]) for f in fs]
             with _cont_lock:
@@ -1193,7 +1201,8 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             r = db.execute("select dia from foto where pid=?", (pid,)).fetchone()
             if r:
                 dias.add(r[0])
-            db.execute("delete from rosto where pid=?", (pid,)); db.execute("delete from foto where pid=?", (pid,)); db.commit(); db.close()
+            db.execute("delete from rosto where pid=?", (pid,)); db.execute("delete from foto where pid=?", (pid,))
+            db.execute("delete from rosto_q where pid=?", (pid,)); db.commit(); db.close()
         except Exception as ex:
             falhas.append("rostos: " + str(ex)[:80])
         if nuvem["ligada"]:
@@ -2611,22 +2620,31 @@ def pr_compose(photo, bg, W, H, pad, hi=False, recorte=False):
     return name
 
 
-# ---------- v84: recorte local da pessoa (sem Photoroom, sem custo) ----------
-# rembg com duas sessões, ISNet (cabelo e bordas finas) e u2net_human_seg (pessoa inteira, com óculos e acessórios);
-# a máscara final é o maior valor das duas em cada ponto (docs/fundos-ia-regras.md, regra 12), depois limpa: níveis
-# (abaixo de 0,3 some, acima de 0,9 fica cheio), sólida por dentro (taça, bandeira e boné nunca semitransparentes, regra 13),
-# só sai mancha pequena e solta, longe do grupo (na dúvida, mantém), e 1 px de borda a menos (sem halo). O PNG leva só a pessoa:
-# o RGB fora da máscara é zerado (nada do fundo nem de quem estava ao redor). Lado maior até 3000 px (impressão 10×15) e
-# uma cópia de 2400 px para a prévia. Cache em ~/Eterna/recortes/ por até 2 dias (limpar_recortes). A montagem com as
-# regras de cada fundo é do app (canvas). Nada é importado no topo: sem rembg o agente segue e a rota responde 503.
+# ---------- v84/v97: recorte local da pessoa (sem Photoroom, sem custo) ----------
+# v97 (plano docs/planos/2026-11-10-recorte-birefnet-sessoes.md): um recorte só, BiRefNet-general + a regra do Eduardo
+# (docs/fundos-ia-regras.md, regra 16: fica o que é da pessoa e encosta nela; sai o que está solto). u2net_human_seg,
+# isnet-general-use e MoveNet são auxiliares da regra, nunca opção de recorte; sem o BiRefNet não há fundos de IA (A1).
+# Os modelos rodam num PROCESSO FILHO (agente/eterna-recorte.py): o BiRefNet em CPU passa de 4,7 GB e, se o sistema o matar
+# por falta de memória, só o recorte cai (FTP, vendas e Checkout seguem). O PNG leva só a pessoa (RGB zerado fora), lado
+# até 3000 px, e uma cópia de 2400 px para a prévia. Cache em ~/Eterna/recortes/ por até 2 dias (limpar_recortes), com a
+# marca da versão do recorte (.versao): recorte de versão antiga é apagado na partida. A montagem com as regras de cada
+# fundo é do app (canvas). Nada é importado no topo: sem rembg o agente segue e a rota responde 503.
 RECORTES = os.path.join(HOME, "recortes")
-REC_MODELOS = ("isnet-general-use", "u2net_human_seg")
-REC_VERSOES = "rembg==2.0.86 onnxruntime==1.29.0"
-REC_COMO = "rode agente/instalar-recorte (Mac: instalar-recorte.command; Windows: instalar-recorte.bat): cria ~/Eterna/venv com %s e baixa %s" % (REC_VERSOES, " e ".join(REC_MODELOS))
+REC_MODELOS = ("birefnet-general", "u2net_human_seg", "isnet-general-use")
+REC_POSE = "movenet_multipose_lightning_1.onnx"          # em ~/Eterna/modelos (MODELOS); baixado pelo instalador
+REC_POSE_SHA = "61c25a6fc887b0e8d14517c3d66fdaf36c0e7a7ec0d50f74ed41a32ca1485184"
+REC_VERSAO = "birefnet-1"
+REC_VERSOES = "rembg==2.0.86 onnxruntime==1.29.0 opencv-python-headless==4.10.0.84 psutil==7.2.2"
+REC_COMO = ("rode agente/instalar-recorte (Mac: instalar-recorte.command; Windows: instalar-recorte.bat; servidor com placa NVIDIA: "
+            "instalar-recorte.bat gpu): cria ~/Eterna/venv com %s e baixa %s e %s (cerca de 1,3 GB)"
+            % (REC_VERSOES, ", ".join(REC_MODELOS), REC_POSE[:-5]))
+REC_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-recorte.py")   # testes podem trocar (m.REC_FILHO)
+REC_ESPERA_FILHO = 300   # s: uma foto em CPU lenta (45 a 75 s na máquina de teste); acima disso o filho é reiniciado
+REC_CARGA_SEG = 300      # s: abrir os 4 modelos
 REC_LADO_MAX = 3000      # maior lado do PNG da impressão
 REC_LADOS = (2400, 3000) # 2400 = prévia (cópia reduzida do de 3000, sem rodar os modelos de novo)
-REC_TRAB = 1600          # maior lado da imagem entregue aos modelos (eles trabalham em 1024 e 320 px); a máscara volta ao tamanho final
-REC_CONC = 2 if os.environ.get("ETERNA_RECORTE_CONC") == "2" else 1   # recortes ao mesmo tempo (1 ou 2): cada um ocupa memória
+REC_TRAB = 1600          # maior lado da imagem entregue aos modelos; a máscara volta ao tamanho final
+REC_CONC = 2 if os.environ.get("ETERNA_RECORTE_CONC") == "2" else 1   # 2 só vale com a placa de vídeo (CUDA): cada filho ocupa memória
 REC_FILA_MAX = 24
 REC_TAXA = 60            # recortes novos por minuto por IP (o cache não conta)
 REC_DIAS = 2             # prazo do cache de recortes
@@ -2635,9 +2653,23 @@ try:
     REC_PISO_GB = float(os.environ.get("ETERNA_RECORTES_PISO_GB") or 10)   # v93: abaixo disto de espaço livre, as bases de IA esperam
 except ValueError:
     REC_PISO_GB = 10.0
-REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos, tenta de novo passado este tempo
-rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0,
-       "fila0": 0, "ia": {"feitos": 0, "erros": 0, "fila": 0, "atrasos": collections.deque(maxlen=200)}}
+REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos (ou do filho morto), tenta de novo passado este tempo
+# Segurança (10/11, item 1): o filho morto por falta de memória (-9/137) espera mais a cada vez (60, 120, 240 s) e, na 3ª
+# morte seguida, o recorte para até o agente ser reiniciado (aviso em /status.recorte.parado). Antes de abrir o filho, a
+# memória livre é conferida (psutil; no Linux sem psutil, /proc/meminfo): abaixo de REC_MEM_MIN_GB, recusa com o motivo.
+REC_MORTES_MAX = 3
+REC_MEM_MIN_GB = 6.0     # os testes trocam o atributo do módulo
+REC_MSG_MEM = "memória insuficiente"
+# o processo de recorte recebe só estas variáveis (nada de MODEL_CHECKSUM_DISABLED, PYTHONPATH, AWS_* ou outro segredo)
+REC_ENV_PASSA = ("PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "COMSPEC", "PATHEXT", "TEMP", "TMP",
+                 "TMPDIR", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
+                 "LANG", "LC_ALL", "LC_CTYPE", "REMBG_HOME", "U2NET_HOME", "ETERNA_RECORTE_GPU", "OMP_NUM_THREADS",
+                 "CUDA_VISIBLE_DEVICES", "CUDA_PATH", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH")
+REC_ENV_PREFIXOS = ()    # os testes acrescentam o prefixo das variáveis do filho falso
+REC_PIDS = os.path.join(HOME, "ponto", "recorte-filhos.json")   # processos de recorte abertos (o agente novo encerra os antigos)
+rec = {"carregado": False, "erro": None, "erro_em": 0, "espera_s": 60, "mortes_mem": 0, "parado": None, "mem_livre_gb": None, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0,
+       "fila0": 0, "provedor": None, "carga_ms": None, "etapas_ms": None, "pico_mb": None, "reinicios": 0,
+       "ia": {"feitos": 0, "erros": 0, "fila": 0, "atrasos": collections.deque(maxlen=200)}}
 # Recorte antecipado: o cliente nunca espera o "Preparando sua foto especial". Os modelos abrem quando o Eterna liga, e cada
 # sessão fechada é recortada em segundo plano (da mais nova para a mais velha); pedido ao vivo do Checkout passa na frente.
 # ETERNA_PRE_RECORTE=0 desliga (servidor fraco): volta a recortar só quando o cliente pede.
@@ -2651,21 +2683,48 @@ rec_fila = queue.PriorityQueue()
 rec_jobs = {}                      # pid -> trabalho na fila ou em andamento (sob o rec_lock)
 _rec_seq = itertools.count()
 rec_lock = threading.Lock()        # só contadores e estado (o /status nunca espera a carga dos modelos)
-rec_carga = threading.Lock()       # abrir os modelos (só as threads de trabalho)
-rec_sess = []
+rec_filhos = {}                    # índice do trabalhador -> {"p", "fila", "lock", "seq"} (o processo de recorte de cada um)
+rec_filhos_lock = threading.Lock()
 rec_threads = []
+_rec_tl = threading.local()        # índice do trabalhador (o processo de recorte dele)
+_rec_pose_ok = {}                  # (caminho, tamanho, mtime) -> sha confere (o /status não lê 19 MB a cada chamada)
 _re_rec = re.compile(r"^(ag_)?([0-9a-f]{6,40})\.png$")
 
 
 def rec_modelo(nome):
-    """Arquivo do modelo já baixado (rembg 2.0.6x+ em ~/.rembg/models/<nome>/; versões antigas em ~/.u2net/), ou None.
-    O agente nunca baixa modelo sozinho: quem baixa é o instalador (instalar-recorte)."""
+    """Arquivo do modelo já baixado (rembg 2.0.6x+ em ~/.rembg/models/<nome>/; com U2NET_HOME, em <U2NET_HOME>/models/<nome>/
+    ou na pasta antiga), ou None. O agente nunca baixa modelo sozinho: quem baixa é o instalador (instalar-recorte)."""
     novos = os.path.expanduser(os.environ.get("REMBG_HOME") or "~/.rembg")
     antigos = os.path.expanduser(os.environ.get("U2NET_HOME") or "~/.u2net")
-    for c in (os.path.join(novos, "models", nome, nome + ".onnx"), os.path.join(antigos, nome + ".onnx")):
+    for c in (os.path.join(novos, "models", nome, nome + ".onnx"), os.path.join(antigos, "models", nome, nome + ".onnx"),
+              os.path.join(antigos, nome + ".onnx")):
         if os.path.isfile(c) and os.path.getsize(c) > 1_000_000:
             return c
     return None
+
+
+def rec_pose_ok():
+    """(ok, motivo) do MoveNet em ~/Eterna/modelos: arquivo presente e SHA-256 igual ao fixado no código (cache por
+    tamanho e data do arquivo)."""
+    p = os.path.join(MODELOS, REC_POSE)
+    try:
+        st = os.stat(p)
+    except OSError:
+        return False, "não instalado: modelo de pose ausente (%s)" % REC_POSE
+    k = (p, st.st_size, st.st_mtime)
+    v = _rec_pose_ok.get(k)
+    if v is None:
+        try:
+            h = hashlib.sha256()
+            with open(p, "rb") as f:
+                for b in iter(lambda: f.read(1 << 20), b""):
+                    h.update(b)
+            v = h.hexdigest() == REC_POSE_SHA
+        except OSError:
+            v = False
+        _rec_pose_ok.clear()
+        _rec_pose_ok[k] = v
+    return (True, None) if v else (False, "não instalado: modelo de pose diferente do esperado (%s): rode instalar-recorte de novo" % REC_POSE)
 
 
 REC_FALSO_SEG = None     # v93 (segurança S2): só os testes ligam (m.REC_FALSO_SEG = s): o "recorte" copia a foto e demora s
@@ -2683,24 +2742,122 @@ def _rec_falso():
 
 
 def rec_estado():
-    """(ok, motivo): rembg, onnxruntime, Pillow, numpy e scipy instalados, os dois modelos baixados e sem erro recente."""
+    """(ok, motivo): rembg, onnxruntime, Pillow, numpy e OpenCV instalados, os 3 modelos do rembg e o MoveNet (com o SHA
+    certo) baixados e sem erro recente."""
     if os.environ.get("ETERNA_SEM_RECORTE"):
         return False, "recorte desligado (ETERNA_SEM_RECORTE)"
     if _rec_falso() is not None:
         return True, None
+    if not os.path.isfile(REC_FILHO):
+        return False, "não instalado: falta o eterna-recorte.py na pasta do agente (%s)" % os.path.dirname(REC_FILHO)
     import importlib.util
-    falta = [m for m in ("rembg", "onnxruntime", "PIL", "numpy", "scipy") if importlib.util.find_spec(m) is None]
+    falta = [m for m in ("rembg", "onnxruntime", "PIL", "numpy", "cv2") if importlib.util.find_spec(m) is None]
     if falta:
         return False, "não instalado: faltam pacotes (" + ", ".join(falta) + ")"
     sem = [n for n in REC_MODELOS if not rec_modelo(n)]
     if sem:
         return False, "não instalado: modelos não baixados (" + ", ".join(sem) + ")"
+    ok, motivo = rec_pose_ok()
+    if not ok:
+        return False, motivo
+    return rec_espera()
+
+
+def rec_espera():
+    """(ok, motivo) do último erro do recorte: parado depois de REC_MORTES_MAX mortes por memória (até reiniciar o agente),
+    ou esperando o prazo crescente (rec["espera_s"]) antes de tentar abrir o processo de novo."""
     with rec_lock:
+        if rec["parado"]:
+            return False, rec["parado"]
         if rec["erro"]:
-            if time.time() - rec["erro_em"] < REC_ERRO_SEG:
+            if time.time() - rec["erro_em"] < rec["espera_s"]:
                 return False, rec["erro"]
             rec["erro"] = None         # passou o tempo: a próxima foto tenta abrir os modelos de novo
     return True, None
+
+
+def rec_mem_livre_gb():
+    """Memória livre (GB) para o processo de recorte: psutil (no venv do recorte) ou /proc/meminfo; None se não dá para medir."""
+    try:
+        import psutil
+        return psutil.virtual_memory().available / 1024 ** 3
+    except Exception:
+        pass
+    try:
+        with open("/proc/meminfo", encoding="ascii") as f:
+            for linha in f:
+                if linha.startswith("MemAvailable:"):
+                    return int(linha.split()[1]) / 1024 ** 2
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def rec_env():
+    """Ambiente limpo do processo de recorte: só a lista REC_ENV_PASSA (e os prefixos dos testes)."""
+    passa = {k.upper() for k in REC_ENV_PASSA}
+    return {k: v for k, v in os.environ.items() if k.upper() in passa or (REC_ENV_PREFIXOS and k.upper().startswith(REC_ENV_PREFIXOS))}
+
+
+def _rec_pids_ler():
+    try:
+        with open(REC_PIDS, encoding="utf8") as f:
+            j = json.load(f)
+        return [x for x in j if isinstance(x, dict) and isinstance(x.get("pid"), int)] if isinstance(j, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _rec_pids_gravar():
+    with rec_filhos_lock:
+        lst = [{"pid": f["p"].pid, "agente": os.getpid(), "criado": f.get("criado")} for f in rec_filhos.values()
+               if f.get("p") is not None and f["p"].poll() is None]
+    try:
+        os.makedirs(os.path.dirname(REC_PIDS), exist_ok=True)
+        _grava_privado(REC_PIDS, json.dumps(lst))
+    except OSError:
+        pass
+
+
+def _rec_e_filho(pid, criado=None):
+    """True se o processo pid é um eterna-recorte.py (psutil; sem psutil, /proc no Linux). Nunca mata processo de outro tipo."""
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        if criado and abs(p.create_time() - criado) > 2:
+            return False                                 # o número foi reaproveitado por outro processo
+        return any(os.path.basename(c) == os.path.basename(REC_FILHO) for c in p.cmdline())
+    except ImportError:
+        pass
+    except Exception:
+        return False
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            return any(os.path.basename(c.decode("utf8", "replace")) == os.path.basename(REC_FILHO) for c in f.read().split(b"\0") if c)
+    except OSError:
+        return False
+
+
+def rec_orfaos_encerrar():
+    """Na partida: o processo de recorte deixado por um agente que caiu (gravado em REC_PIDS) é encerrado, para não segurar
+    a memória do novo. Devolve quantos foram encerrados."""
+    import signal
+    n = 0
+    for x in _rec_pids_ler():
+        pid = x["pid"]
+        if pid == os.getpid() or not _rec_e_filho(pid, x.get("criado")):
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else 9)
+            n += 1
+            print("  recorte: processo antigo %d encerrado (de uma partida anterior)" % pid)
+        except OSError:
+            pass
+    try:
+        os.remove(REC_PIDS)
+    except OSError:
+        pass
+    return n
 
 
 def _pct(v, q):
@@ -2722,13 +2879,20 @@ def rec_status():
     ok, motivo = rec_estado()
     livre = rec_livre_gb()
     lig = bool(ia_cfg().get("ligada"))     # fora do sess_lock (lê o estado.db)
+    with rec_filhos_lock:
+        vivo = any(f["p"] is not None and f["p"].poll() is None for f in rec_filhos.values())
     with rec_lock:
         n = rec["feitos"]
         ia = rec["ia"]
         return {"ok": ok, "motivo": motivo, "carregado": rec["carregado"], "modelos": list(REC_MODELOS),
+                "modelo": REC_MODELOS[0], "auxiliares": list(REC_MODELOS[1:]) + [REC_POSE[:-5]], "versao": REC_VERSAO,
+                "provedor": rec["provedor"], "carga_ms": rec["carga_ms"], "etapas_ms": rec["etapas_ms"], "pico_mb": rec["pico_mb"],
+                "filho": {"vivo": vivo, "reinicios": rec["reinicios"], "mortes_memoria": rec["mortes_mem"], "espera_s": rec["espera_s"]},
+                "parado": rec["parado"], "mem_livre_gb": rec["mem_livre_gb"], "mem_min_gb": REC_MEM_MIN_GB,
                 "fila": sum(1 for j in rec_jobs.values() if not j["pego"]),
                 "antecipado": {"ligado": REC_PRE, "escolhidas": rec.get("pre_escolhidas", 0), "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
-                "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"], "simultaneos": REC_CONC,
+                "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"],
+                "simultaneos": 2 if REC_CONC == 2 and rec.get("provedor") == "cuda" else 1,
                 **({"falso": True} if _rec_falso() is not None else {}),
                 "ia": {"ligada": lig, "fila": ia["fila"], "feitos": ia["feitos"], "erros": ia["erros"],
                        "pausa_disco": bool(rec.get("ia_pausa_disco")), "livre_gb": round(livre, 1) if livre is not None else None,
@@ -2736,424 +2900,205 @@ def rec_status():
                        "atraso_p50_s": _pct(ia["atrasos"], 0.5), "atraso_p90_s": _pct(ia["atrasos"], 0.9)}}
 
 
-def rec_carregar():
-    """Abre as duas sessões uma vez (na thread de trabalho, na primeira foto), fora do rec_lock."""
-    if rec_sess or _rec_falso() is not None:
-        return rec_sess
-    with rec_carga:
-        if rec_sess:
-            return rec_sess
+def _rec_filho_leitor(p, fila):
+    """Lê as linhas do stdout do filho (só JSON) para a fila; None no fim (o filho morreu ou fechou)."""
+    try:
+        for linha in p.stdout:
+            linha = linha.strip()
+            if not linha:
+                continue
+            try:
+                j = json.loads(linha)
+            except ValueError:
+                continue                                # stdout do filho é só protocolo; linha estranha é ignorada
+            if isinstance(j, dict):
+                fila.put(j)
+    except Exception:
+        pass
+    fila.put(None)
+
+
+def _rec_filho_erro(p, padrao):
+    """Motivo do filho que terminou: "memória insuficiente" quando o sistema o matou (-9 / 137)."""
+    try:
+        rc = p.wait(timeout=5)
+    except Exception:
+        rc = None
+    if rc in (-9, 137, 9):
+        return "recorte parou: memória insuficiente (código %s)" % rc
+    return "%s (código %s)" % (padrao, rc)
+
+
+def _rec_filho_matar(f):
+    p = f.get("p")
+    f["p"] = None
+    if p is not None:
         try:
-            import onnxruntime as ort
-            from rembg import new_session
-            so = ort.SessionOptions()
-            so.intra_op_num_threads = max(1, (os.cpu_count() or 2) - 1)   # deixa um núcleo para o FTP, os rostos e a tela
-            so.enable_cpu_mem_arena = False                                # menos memória presa entre um recorte e outro
-            novas = [new_session(n, sess_opts=so, providers=["CPUExecutionProvider"]) for n in REC_MODELOS]
-        except Exception as ex:
-            with rec_lock:
-                rec["erro"] = "erro ao abrir os modelos: %s" % str(ex)[:160]
-                rec["erro_em"] = time.time()
-            raise
-        rec_sess[:] = novas
-        with rec_lock:
-            rec["carregado"] = True
-            rec["erro"] = None
-        return rec_sess
+            p.kill()
+        except Exception:
+            pass
+        try:
+            p.wait(timeout=5)
+        except Exception:
+            pass
 
 
-REC_SINAL = 0.04         # sinal mínimo para um ponto entrar no grupo (ligado à pessoa)
-REC_PESSOA = 0.6         # semente: o que a máscara de PESSOA (u2net_human_seg) pega com este alfa
-REC_NUCLEO = 0.10        # miolo sólido: sinal a partir daqui, ou cercado por ele
-REC_FURO = 0.03          # furo fechado (sinal < 0,04) com sinal médio a partir daqui é objeto (preenche)
-REC_FECHA = 0.004        # reentrância mais estreita que 2x isto (fração do lado) entre partes sólidas é fechada
-REC_FUROS_MAX = 48       # teto de custo: só os 48 maiores furos sem sinal são decididos pela cor (o resto fica aberto)
-REC_FUROS_SEG = 2.0      # e no máximo 2 s decidindo furos por recorte
-REC_PONTES_SEG = 1.5     # teto de tempo para as pontes de miolo fraco (o resto fica como está)
-REC_ENC_SEG = 1.5        # teto de tempo para os pedaços encostados por uma ponta (o resto fica)
-REC_ENC_AREA = 0.015     # pedaço só do ISNet encostado na pessoa por uma ponta: até 1,5% da área da pessoa...
-REC_ENC_PESSOA = 0.15    # ...o modelo de pessoa quase não o vê (média abaixo disto)...
-REC_ENC_CONTATO = 2.0    # ...contato curto: comprimento do contato / raiz da área abaixo disto (não depende da escala)...
-REC_ENC_FUNDO = 0.3      # ...a borda dele com o fundo não tem contraste em 30% ou mais (o fundo continua por ele)...
-REC_ENC_CORTE = 15       # ...e a foto mostra uma borda entre ele e a pessoa (diferença de cor >= 15 no contato; a caixa tem 25)
+def _rec_erro(motivo):
+    """Erro do recorte: espera REC_ERRO_SEG; morte por memória dobra a espera a cada vez e para na REC_MORTES_MAX-ésima."""
+    with rec_lock:
+        rec["erro"] = motivo[:200]
+        rec["erro_em"] = time.time()
+        rec["carregado"] = False
+        if REC_MSG_MEM + " (código" in motivo:
+            rec["mortes_mem"] += 1
+            rec["espera_s"] = REC_ERRO_SEG * 2 ** (rec["mortes_mem"] - 1)
+            if rec["mortes_mem"] >= REC_MORTES_MAX:
+                rec["parado"] = ("recorte parado: o processo foi encerrado por falta de memória %d vezes seguidas. Feche programas "
+                                 "ou use um computador com 16 GB e reinicie o agente" % rec["mortes_mem"])
+                print("  " + rec["parado"])
+        else:
+            rec["espera_s"] = REC_ERRO_SEG
 
 
-def _rec_furo_e_objeto(Hc, Fc, Cc, Ec, Dc, lado, rng):
-    """Furo fechado sem sinal (as duas máscaras dão ~0): é pedaço do objeto ou fundo de verdade visto por um vão?
-    Recebe só a fatia do furo com folga (Hc = furo, Fc = o que fica, Cc = cor, Ec = fundo de fora, Dc = distância ao grupo).
-    1) borda falsa: compara a cor 3 px dentro do furo com a cor 3 px fora (no que fica). Se em 40% ou mais do perímetro
-       não há contraste, é o mesmo material dos dois lados (branco da bandeira com o branco dela): preenche. Vão entre braço
-       e corpo ou entre pessoas tem contraste em quase toda a volta (fundo x roupa/pele).
-    2) borda meio falsa (15% a 40%): preenche só se a cor do furo não aparece no fundo de fora, perto do grupo."""
-    import numpy as np
-    from scipy import ndimage
-    d, ind = ndimage.distance_transform_edt(~Hc, return_indices=True)
-    O = (d >= 2.5) & (d <= 4.5) & Fc
-    oy, ox = np.nonzero(O)
-    if len(oy) < 8:
-        return False
-    qy, qx = ind[0][O], ind[1][O]                      # ponto do furo mais perto
-    vy, vx = qy - oy, qx - ox
-    nn = np.hypot(vy, vx) + 1e-6
-    iy = np.clip(np.round(qy + vy / nn * 3).astype(int), 0, Hc.shape[0] - 1)
-    ix = np.clip(np.round(qx + vx / nn * 3).astype(int), 0, Hc.shape[1] - 1)
-    dentro_furo = Hc[iy, ix]
-    if dentro_furo.sum() < 8:
-        return False
-    dif = np.sqrt(((Cc[oy, ox][dentro_furo] - Cc[iy, ix][dentro_furo]) ** 2).sum(1))
-    falsa = float((dif < 20).mean())
-    if falsa >= 0.4:
-        return True
-    if falsa < 0.15:
-        return False
-    faixa = Ec & (Dc >= max(2.0, 0.01 * lado))         # fundo de fora, longe da borda macia do grupo
-    if not faixa.any():
-        return False
-    faixa &= d <= d[faixa].min() + 0.1 * lado
-    fc, hc = Cc[faixa], Cc[Hc]
-    fc = fc[rng.choice(len(fc), min(800, len(fc)), replace=False)]
-    hc = hc[rng.choice(len(hc), min(400, len(hc)), replace=False)]
-    parecido = np.sqrt(((hc[:, None, :] - fc[None, :, :]) ** 2).sum(-1)).min(1) < 15
-    return float(parecido.mean()) < 0.2
+def rec_carregar(i=0):
+    """Abre o processo de recorte do trabalhador i (uma vez; de novo se morreu), fora do rec_lock, e espera o "pronto".
+    Devolve o registro do filho. Erro: rec["erro"] com o motivo e exceção (nova tentativa depois de REC_ERRO_SEG)."""
+    if _rec_falso() is not None:
+        return None
+    with rec_filhos_lock:
+        f = rec_filhos.setdefault(i, {"p": None, "fila": None, "lock": threading.Lock(), "seq": 0})
+    with f["lock"]:
+        return _rec_abrir(f)
 
 
-def rec_limpa_mascara(masks, foto=None):
-    """Regras 12 e 13. masks = [isnet-general-use, u2net_human_seg] (PIL L do mesmo tamanho); foto = a imagem RGB do
-    mesmo tamanho (opcional: sem ela, furo sem sinal nenhum fica aberto).
-    Máximo das duas máscaras -> níveis 0,3-0,9. Vai junto o que está NA pessoa (Eduardo, 30/10): entra o que tem algum sinal
-    (>= 0,04) ligado a um ponto que a máscara de pessoa pega com alfa alto; objeto solto ao lado (taça num pedestal) sai,
-    mesmo perto. Limite: o que encosta ou se sobrepõe à pessoa na imagem fica ligado a ela e vai junto, segurado ou não.
-    Miolo sólido (sinal >= 0,10 ou cercado por ele), furos de objeto preenchidos, só a borda fica macia."""
-    import time as _tm
-    import numpy as np
-    from scipy import ndimage
-    S = np.ones((3, 3), dtype=bool)
-    bruta = np.maximum.reduce([np.asarray(x, dtype=np.float32) / 255.0 for x in masks])   # se uma das duas pega com alfa alto, fica
-    pessoa = np.asarray(masks[-1], dtype=np.float32) / 255.0
-    H0, W0 = bruta.shape
-    lado = max(H0, W0)
-    saida = np.zeros((H0, W0), dtype=np.uint8)
-    sinal = bruta >= REC_SINAL
-    # semente: pessoa com alfa alto; se o modelo de pessoa veio fraco, o que ele tem de mais forte; se não viu ninguém,
-    # o que uma das máscaras pega com alfa alto (como antes da v88): melhor levar a foto do que tirá-la da venda
-    semente_px = sinal & (pessoa >= REC_PESSOA)
-    if not semente_px.any():
-        pmax = float(pessoa.max()) if pessoa.size else 0.0
-        if pmax > 0.3:
-            semente_px = sinal & (pessoa >= 0.8 * pmax)
-        if not semente_px.any():
-            semente_px = bruta >= REC_PESSOA
-    if not semente_px.any():
-        return saida
-    # trabalha só no retângulo do que tem sinal, com folga (o resto é fundo): mais rápido
-    ys, xs = np.nonzero(sinal)
-    pad = int(0.13 * lado) + 10
-    y0, y1, x0, x1 = max(0, ys.min() - pad), min(H0, ys.max() + pad + 1), max(0, xs.min() - pad), min(W0, xs.max() + pad + 1)
-    bruta, sinal, semente_px = bruta[y0:y1, x0:x1], sinal[y0:y1, x0:x1], semente_px[y0:y1, x0:x1]
-    m = np.clip((bruta - 0.3) / 0.6, 0.0, 1.0)                 # abaixo de 0,3 vira 0; acima de 0,9 vira 1
-    rot0, n0 = ndimage.label(sinal, structure=S)
-    semente = np.zeros(n0 + 1, dtype=bool)
-    semente[np.unique(rot0[semente_px])] = True
-    semente[0] = False
-    dentro = semente[rot0]
-    m = m * dentro
-    # furos fechados: sinal médio >= 0,03 é objeto (partes fracas da bandeira, taça translúcida); sinal ~0 decide pela cor
-    cheio = ndimage.binary_fill_holes(dentro)
-    rb, nb = ndimage.label(cheio & ~dentro, structure=S)
-    furos = np.zeros_like(dentro)
-    if nb:
-        idx = np.arange(1, nb + 1)
-        ok = np.zeros(nb + 1, dtype=bool)
-        ok[1:] = ndimage.mean(bruta, rb, idx) >= REC_FURO
-        area = np.bincount(rb.ravel(), minlength=nb + 1)
-        cand = np.flatnonzero(~ok & (area >= max(30, 1e-5 * H0 * W0)))
-        cand = cand[cand > 0]
-        if foto is not None and len(cand) and tuple(foto.size) == (W0, H0):
-            from PIL import ImageFilter
-            cand = cand[np.argsort(-area[cand], kind="stable")][:REC_FUROS_MAX]   # teto de custo: os maiores primeiro
-            rgb = np.asarray(foto.convert("RGB").filter(ImageFilter.BoxBlur(2)), dtype=np.float32)[y0:y1, x0:x1]
-            exterior = ~cheio
-            dext = ndimage.distance_transform_edt(exterior)
-            rng = np.random.default_rng(0)
-            fatias = ndimage.find_objects(rb)
-            folga = int(0.12 * lado) + 8
-            hh, ww = rb.shape
-            limite = _tm.monotonic() + REC_FUROS_SEG
-            for k in cand:
-                if _tm.monotonic() > limite:
-                    break                                       # orçamento esgotado: o resto fica aberto
-                sy, sx = fatias[k - 1]
-                cy = slice(max(0, sy.start - folga), min(hh, sy.stop + folga))
-                cx = slice(max(0, sx.start - folga), min(ww, sx.stop + folga))
-                ok[k] = _rec_furo_e_objeto(rb[cy, cx] == k, dentro[cy, cx], rgb[cy, cx], exterior[cy, cx], dext[cy, cx], lado, rng)
-        furos = ok[rb]
-    dentro |= furos
-    # miolo sólido: sinal >= 0,10 (franja fraca de fora, ex. teto do estádio atrás da bandeira, não vira sólido),
-    # reentrâncias estreitas fechadas e o que fica cercado por ele (sem furo de fundo dentro)
-    nucleo = (dentro & (bruta >= REC_NUCLEO)) | furos
-    r = max(2.0, REC_FECHA * lado)
-    nucleo |= dentro & (ndimage.distance_transform_edt(ndimage.distance_transform_edt(~nucleo) <= r) > r)
-    rn, nn = ndimage.label(ndimage.binary_fill_holes(nucleo) & ~nucleo, structure=S)
-    solido = nucleo
-    if nn:
-        idn = np.arange(1, nn + 1)
-        fora = ndimage.sum(~dentro, rn, idn)
-        okn = np.zeros(nn + 1, dtype=bool)
-        okn[1:] = fora <= 0.03 * np.bincount(rn.ravel(), minlength=nn + 1)[1:]
-        solido = nucleo | okn[rn]
-    funda = ndimage.distance_transform_edt(solido) > max(2.0, 0.002 * lado)   # só a borda (até 0,2% do lado) fica macia
-    m[funda | furos] = 1.0
-    dentro |= solido
-    rot, n = ndimage.label(dentro, structure=S)
-    if n > 1:
-        idr = np.arange(1, n + 1)
-        areas = np.bincount(rot.ravel(), minlength=n + 1).astype(np.float64)
-        areas[0] = 0
-        grandes = areas >= 0.03 * areas.max()                  # pedaço grande fica sempre (na dúvida, mantém)
-        com_pessoa = np.zeros(n + 1, dtype=bool)
-        com_pessoa[np.unique(rot[semente_px])] = True
-        grandes |= com_pessoa & (areas >= 0.002 * areas.max())  # pedaço com pessoa não cai por tamanho (criança separada a 1%);
-                                                                # só ponto solto do modelo (< 0,2% do maior) não conta como pessoa
-        grandes[0] = False
-        dist = ndimage.distance_transform_edt(~grandes[rot])
-        manter = grandes.copy()
-        # pequeno só fica se encosta (ou quase) no grupo: menor distância de cada pedaço de uma vez (sem laço por pedaço)
-        manter[1:] |= ndimage.minimum(dist, rot, idr) <= max(4.0, 0.015 * lado)
-        m = m * manter[rot]
-    if len(masks) > 1:
-        isn = np.asarray(masks[0], dtype=np.float32)[y0:y1, x0:x1] / 255.0
-        if foto is not None and tuple(foto.size) == (W0, H0):
-            from PIL import ImageFilter
-            rgb = np.asarray(foto.convert("RGB").filter(ImageFilter.BoxBlur(2)), dtype=np.float32)[y0:y1, x0:x1]
-            m, tirado = _rec_encostados(m, isn, pessoa[y0:y1, x0:x1], bruta, rgb, lado)
-            dentro &= ~tirado                                   # o que saiu não liga mais nada à pessoa
-    liga = (m >= 0.5) | (dentro & (bruta >= REC_NUCLEO))
-    m = _rec_ilhas(m, semente_px, liga)
-    m = _rec_pontes(m, semente_px, liga, lado)
-    saida[y0:y1, x0:x1] = (m * 255.0 + 0.5).astype(np.uint8)
-    return saida
+def _rec_abrir(f):
+    """Com o f["lock"]: o filho vivo, ou abre um novo."""
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:                             # morreu entre uma foto e outra
+        motivo = _rec_filho_erro(f["p"], "o recorte parou")
+        f["p"] = None
+        _rec_erro(motivo)
+        raise RuntimeError(motivo)
+    okp, mot = rec_espera()                            # parado (3 mortes por memória) ou dentro do prazo: não abre
+    if not okp:
+        raise RuntimeError(mot)
+    livre = rec_mem_livre_gb()
+    with rec_lock:
+        rec["mem_livre_gb"] = round(livre, 1) if livre is not None else None
+    if livre is not None and livre < REC_MEM_MIN_GB:
+        motivo = ("memória livre insuficiente para abrir o recorte: %.1f GB livres, precisa de %.0f GB (feche programas; o "
+                  "recorte é do servidor do ponto)" % (livre, REC_MEM_MIN_GB))
+        _rec_erro(motivo)
+        raise RuntimeError(motivo)
+    env = rec_env()
+    try:
+        p = subprocess.Popen([sys.executable, REC_FILHO, "--inbox", INBOX, "--recortes", RECORTES, "--modelos", MODELOS],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1,
+                             encoding="utf-8", env=env, close_fds=True)
+    except Exception as ex:
+        _rec_erro("erro ao abrir o recorte: %s" % str(ex)[:160])
+        raise
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila, criado=time.time())
+    _rec_pids_gravar()
+    try:
+        j = fila.get(timeout=REC_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "os modelos demoraram mais de %d s para abrir" % REC_CARGA_SEG}
+    if j is None:
+        motivo = _rec_filho_erro(p, "o recorte parou ao abrir os modelos")
+        _rec_filho_matar(f)
+        _rec_erro(motivo)
+        raise RuntimeError(motivo)
+    if not j.get("pronto"):
+        _rec_filho_matar(f)
+        _rec_erro("erro ao abrir os modelos: %s" % str(j.get("erro") or "")[:160])
+        raise RuntimeError(rec["erro"])
+    prov = j.get("provedor") if j.get("provedor") in ("cuda", "cpu", "directml") else "cpu"
+    with rec_lock:
+        if rec["carregado"] is False and rec.get("_abriu"):
+            rec["reinicios"] += 1
+        rec.update(carregado=True, erro=None, provedor=prov, carga_ms=j.get("carga_ms"), _abriu=True)
+    if REC_CONC == 2 and prov != "cuda":
+        print("  recorte: ETERNA_RECORTE_CONC=2 ignorado (só com a placa de vídeo; aqui é %s)" % prov)
+    print("  recorte: modelos abertos em %.1f s (%s)" % ((j.get("carga_ms") or 0) / 1000.0, "placa de vídeo" if prov == "cuda" else prov))
+    return f
 
 
-def _rec_encostados(m, isn, pessoa, bruta, rgb, lado):
-    """Pedaço do fundo que só encosta na pessoa (ex.: a caixa escura da entrada do túnel embaixo do cotovelo, 30/10).
-    Devolve (máscara, o que saiu). Sai só com as quatro provas juntas (na dúvida, mantém):
-    1) só o ISNet o pega (alfa >= 0,5; modelo de pessoa com média < 0,15) e é pequeno (< 1,5% da pessoa);
-    2) encosta curto: comprimento do contato / raiz da área < 2 (medida sem escala; a caixa tem 1,3);
-    3) o fundo continua por ele: em 30% ou mais da borda dele com o fundo, a cor de dentro e a de fora são iguais
-       (a caixa é estrutura do estádio; objeto segurado contrasta com o fundo em volta: 0 a 15% nas fotos de 30/10);
-    4) a foto mostra uma borda entre ele e a pessoa: a cor dele junto do contato difere da cor da pessoa ali (>= 15).
-       Foto sem informação (tudo da mesma cor) não prova nada: fica."""
-    import numpy as np
-    from scipy import ndimage
-    S = np.ones((3, 3), dtype=bool)
-    pes = pessoa >= 0.5
-    npes = int(pes.sum())
-    nada = np.zeros(m.shape, dtype=bool)
-    if not npes:
-        return m, nada
-    dp = ndimage.distance_transform_edt(~pes)
-    longe = dp > 2.0                                                 # fora da pessoa engordada 2 px
-    lab, n = ndimage.label((isn >= 0.5) & longe & (m > 0), structure=S)
-    if not n:
-        return m, nada
-    area = np.bincount(lab.ravel(), minlength=n + 1)
-    minimo = max(30, 300 * (lado / 1600.0) ** 2)
-    cand = [k for k in np.argsort(-area[1:])[:32] + 1 if minimo <= area[k] < REC_ENC_AREA * npes]
-    if not cand:
-        return m, nada
-    media_pes = ndimage.mean(pessoa, lab, np.arange(n + 1))
-    dentro_pes = ndimage.distance_transform_edt(pes)
-    fatias = ndimage.find_objects(lab)
-    hh, ww = lab.shape
-    tirar = np.zeros(n + 1, dtype=bool)
-    import time as _tm
-    limite = _tm.monotonic() + REC_ENC_SEG
-    for k in cand:
-        if _tm.monotonic() > limite:
-            break                                               # sem tempo: o resto fica (na dúvida, mantém)
-        if media_pes[k] >= REC_ENC_PESSOA:
-            continue
-        sy, sx = fatias[k - 1]
-        cy = slice(max(0, sy.start - 12), min(hh, sy.stop + 12))
-        cx = slice(max(0, sx.start - 12), min(ww, sx.stop + 12))
-        c, dpc, cor = lab[cy, cx] == k, dp[cy, cx], rgb[cy, cx]
-        contato = int((c & (dpc <= 3.5)).sum())                     # pontos dele colados na pessoa
-        if not contato or contato >= REC_ENC_CONTATO * np.sqrt(area[k]):
-            continue
-        d, ind = ndimage.distance_transform_edt(~c, return_indices=True)
-        O = (d >= 2.5) & (d <= 4.5) & (bruta[cy, cx] < 0.3) & (dpc > 6)   # borda dele com o fundo, longe da pessoa
-        oy, ox = np.nonzero(O)
-        if len(oy) < 40:
-            continue
-        qy, qx = ind[0][O], ind[1][O]
-        vy, vx = qy - oy, qx - ox
-        nn = np.hypot(vy, vx) + 1e-6
-        iy = np.clip(np.round(qy + vy / nn * 3).astype(int), 0, c.shape[0] - 1)
-        ix = np.clip(np.round(qx + vx / nn * 3).astype(int), 0, c.shape[1] - 1)
-        v = c[iy, ix]
-        if v.sum() < 40:
-            continue
-        dif = np.sqrt(((cor[oy, ox][v] - cor[iy, ix][v]) ** 2).sum(1))
-        if float((dif < 20).mean()) < REC_ENC_FUNDO:
-            continue
-        perto_c = d <= 8
-        lado_obj = c & (dpc <= 8)
-        lado_pes = pes[cy, cx] & perto_c & (dentro_pes[cy, cx] >= 2)
-        if lado_obj.sum() < 4 or lado_pes.sum() < 4:
-            continue
-        corte = float(np.sqrt(((np.median(cor[lado_obj], 0) - np.median(cor[lado_pes], 0)) ** 2).sum()))
-        tirar[k] = corte >= REC_ENC_CORTE
-    if not tirar.any():
-        return m, nada
-    sai = tirar[lab]
-    perto = ndimage.distance_transform_edt(~sai) <= 4.0
-    sai |= perto & longe                                            # e a borda macia dele
-    m = m * ~sai
-    # na faixa de 2 px junto da pessoa, onde o pedaço encostava, vale o alfa do modelo de pessoa (sem filete do fundo)
-    faixa = perto & ~longe & ~pes
-    m[faixa] = np.minimum(m[faixa], np.clip((pessoa[faixa] - 0.3) / 0.6, 0.0, 1.0))
-    return m, sai
+def rec_filho_recortar(pid, origem, destino, i=0):
+    """Manda a foto ao processo de recorte e espera (até REC_ESPERA_FILHO). Devolve a resposta {"ok", "ms", "pico_mb"}.
+    Filho que morre no meio: rec["erro"] com o motivo e exceção (o próximo pedido, passado REC_ERRO_SEG, reabre)."""
+    with rec_filhos_lock:
+        f = rec_filhos.setdefault(i, {"p": None, "fila": None, "lock": threading.Lock(), "seq": 0})
+    with f["lock"]:
+        _rec_abrir(f)
+        f["seq"] += 1
+        rid = "%s.%d" % (pid, f["seq"])
+        try:
+            f["p"].stdin.write(json.dumps({"id": rid, "origem": origem, "destino": destino, "trab": REC_TRAB}) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            motivo = _rec_filho_erro(f["p"], "o recorte parou")
+            _rec_filho_matar(f)
+            _rec_erro(motivo)
+            raise RuntimeError(motivo)
+        fim = time.time() + REC_ESPERA_FILHO
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _rec_filho_matar(f)
+                _rec_erro("recorte demorou mais de %d s numa foto: reiniciado" % REC_ESPERA_FILHO)
+                raise RuntimeError("tempo")
+            if j is None:
+                motivo = _rec_filho_erro(f["p"], "o recorte parou no meio de uma foto")
+                f["p"] = None
+                _rec_erro(motivo)
+                raise RuntimeError(motivo)
+            if j.get("id") == rid:
+                break
+    if not j.get("ok"):
+        raise ValueError(str(j.get("erro") or "não deu para recortar")[:200])
+    with rec_lock:
+        rec["mortes_mem"] = 0                      # foto feita: as mortes por memória deixam de ser seguidas
+        rec["espera_s"] = REC_ERRO_SEG
+        rec["etapas_ms"] = {k: int(v) for k, v in (j.get("ms") or {}).items() if isinstance(v, (int, float))}
+        if isinstance(j.get("pico_mb"), (int, float)):
+            rec["pico_mb"] = int(j["pico_mb"])
+    return j
 
 
-def _rec_ilhas(m, semente_px, liga=None):
-    """Depois da máscara pronta: o que fica com alfa >= 0,5 tem que estar ligado à pessoa pelo alfa >= 0,5 ou pelo miolo
-    (`liga`: sinal >= 0,10 dentro do grupo; a ponta da bandeira presa por tecido fino e fraco continua ligada).
-    Ilha pequena solta (ex.: pedaço do teto ao lado da barba, ligado à pessoa só por franja de 0,08) sai, com a borda macia
-    em volta dela. Ilha grande (3% ou mais da pessoa) fica: na dúvida, mantém."""
-    import numpy as np
-    from scipy import ndimage
-    forte = m >= 0.5
-    if liga is None:
-        liga = forte
-    forte = liga | forte
-    # fio de 1 px (reto ou diagonal) não liga ilha à pessoa: rotula o que sobra depois de abrir 1 px (cruz 3x3);
-    # o que a abertura tirou vai com o pedaço mais perto
-    aberto = ndimage.binary_opening(forte, structure=ndimage.generate_binary_structure(2, 1))
-    lab, n = ndimage.label(aberto, structure=np.ones((3, 3), dtype=bool))
-    forte = aberto
-    if n < 2:
-        return m
-    area = np.bincount(lab.ravel(), minlength=n + 1).astype(np.float64)
-    pessoa = np.zeros(n + 1, dtype=bool)
-    pessoa[np.unique(lab[semente_px & forte])] = True
-    pessoa[0] = False
-    if not pessoa.any():
-        return m                                               # semente sem alfa forte: não decide nada aqui
-    manter = pessoa | (area >= 0.03 * area[pessoa].max())
-    manter[0] = False
-    if manter[1:].all():
-        return m
-    # cada ponto macio vai com a ilha forte mais perto: a borda da ilha descartada sai junto com ela
-    _, ind = ndimage.distance_transform_edt(~forte, return_indices=True)
-    perto = lab[ind[0], ind[1]]
-    return m * manter[perto]
-
-
-def _rec_geo(origem, L, passos, limite, alvo=None):
-    """Distância geodésica (em passos de 8-vizinhança) a partir de `origem`, andando só por `L`, até `passos` passos.
-    Com `alvo`, para no primeiro passo em que a frente toca o alvo. Devolve (distâncias, passo em que tocou o alvo ou
-    None); (None, None) se o relógio `limite` (time.monotonic) acabar no meio."""
-    import time as _tm
-    import numpy as np
-    from scipy import ndimage
-    tudo3 = np.ones((3, 3), dtype=bool)
-    d = np.full(L.shape, np.inf, dtype=np.float32)
-    atual = origem.copy()
-    d[atual] = 0
-    if alvo is not None and (atual & alvo).any():
-        return d, 0
-    for passo in range(1, passos + 1):
-        if _tm.monotonic() > limite:
-            return None, None
-        novo = ndimage.binary_dilation(atual, structure=tudo3, mask=L)
-        frente = novo & ~atual
-        if not frente.any():
-            break
-        d[frente] = passo
-        atual = novo
-        if alvo is not None and (frente & alvo).any():
-            return d, passo
-    return d, None
-
-
-def _rec_pontes(m, semente_px, liga, lado):
-    """Pedaço opaco que ficou porque está ligado à pessoa só pelo miolo fraco (ex.: ponta de bandeira afastada pelo vento,
-    presa por tecido de 0,2, que pelos níveis sairia transparente): o caminho mais curto de miolo entre ele e a pessoa fica
-    opaco, para a ponta ficar presa de verdade (e não ser apagada como pedaço solto na máscara final). Até 16 pedaços,
-    caminho de até 5% do lado e no máximo 1,5 s (o que não der tempo fica como está)."""
-    import time as _tm
-    import numpy as np
-    from scipy import ndimage
-    limite = _tm.monotonic() + REC_PONTES_SEG
-    cruz = ndimage.generate_binary_structure(2, 1)
-    tudo3 = np.ones((3, 3), dtype=bool)
-    forte = ndimage.binary_opening(m >= 0.5, structure=cruz)
-    lab, n = ndimage.label(forte, structure=tudo3)
-    if n < 2:
-        return m
-    pes = np.zeros(n + 1, dtype=bool)
-    pes[np.unique(lab[semente_px & forte])] = True
-    pes[0] = False
-    if not pes.any():
-        return m
-    area = np.bincount(lab.ravel(), minlength=n + 1)
-    ilhas = [k for k in np.argsort(-area[1:])[:16] + 1 if not pes[k] and area[k] >= 20]
-    if not ilhas:
-        return m
-    L = liga | forte
-    fatias = ndimage.find_objects(lab)
-    R = int(0.05 * lado) + 4
-    hh, ww = m.shape
-    for k in ilhas:
-        if _tm.monotonic() > limite:
-            break                                               # sem tempo: o resto fica como está
-        sy, sx = fatias[k - 1]
-        cy = slice(max(0, sy.start - R), min(hh, sy.stop + R))
-        cx = slice(max(0, sx.start - R), min(ww, sx.stop + R))
-        Lc, labc = L[cy, cx], lab[cy, cx]
-        alvo = pes[labc] & forte[cy, cx]
-        if not alvo.any():
-            continue
-        di, toque = _rec_geo(labc == k, Lc, R, limite, alvo)
-        if di is None:
-            break
-        if toque is None:
-            continue                                            # a pessoa está longe demais por dentro do miolo
-        dp, _ = _rec_geo(alvo, Lc, toque, limite)              # do outro lado, só até o mesmo número de passos
-        if dp is None:
-            break
-        soma = di + dp
-        melhor = float(soma[Lc].min())
-        ponte = Lc & (soma <= melhor + 1) & ~(m[cy, cx] >= 0.5)
-        ponte = ndimage.binary_dilation(ponte, structure=tudo3, mask=Lc)
-        sub = m[cy, cx]
-        sub[ponte] = 1.0
-    return m
-
-
-def rec_sem_soltos(a):
-    """Máscara final (uint8, depois de voltar ao tamanho e perder 1 px de borda): pedaço opaco (>= 128) com menos de 0,5%
-    da área do maior que ficou solto sai, com a borda macia em volta (até 3 px). Ex.: o pedaço do teto ao lado da barba,
-    preso por um fio de 1 px que a redução e o MinFilter cortaram."""
-    import numpy as np
-    from scipy import ndimage
-    lab, n = ndimage.label(a >= 128, structure=np.ones((3, 3), dtype=bool))
-    if n < 2:
-        return a
-    area = np.bincount(lab.ravel(), minlength=n + 1)
-    area[0] = 0
-    pequeno = area < 0.005 * area.max()                         # bem pequeno: pessoa separada (criança a 1%) nunca cai aqui
-    pequeno[0] = False
-    if not pequeno.any():
-        return a
-    sai = pequeno[lab]
-    ys, xs = np.nonzero(sai)
-    y0, y1, x0, x1 = max(0, ys.min() - 4), min(a.shape[0], ys.max() + 5), max(0, xs.min() - 4), min(a.shape[1], xs.max() + 5)
-    sub = sai[y0:y1, x0:x1]
-    perto = sub | ((ndimage.distance_transform_edt(~sub) <= 3.0) & (lab[y0:y1, x0:x1] == 0))   # ele e a borda macia dele
-    a = a.copy()
-    a[y0:y1, x0:x1][perto] = 0
-    return a
+def rec_versao_cache():
+    """Na partida (antes do rec_pre_loop): recorte feito por outra versão do recorte não serve. Se ~/Eterna/recortes/.versao
+    não é REC_VERSAO, apaga só os *.png e *.tmp da pasta (link simbólico é desfeito, nunca seguido) e grava a marca."""
+    marca = os.path.join(RECORTES, ".versao")
+    try:
+        with open(marca, encoding="utf8") as f:
+            if f.read().strip() == REC_VERSAO:
+                return 0
+    except OSError:
+        pass
+    n = 0
+    try:
+        os.makedirs(RECORTES, exist_ok=True)
+        with os.scandir(RECORTES) as it:
+            for e in it:
+                if not e.name.endswith((".png", ".tmp")):
+                    continue
+                try:
+                    if e.is_symlink() or e.is_file(follow_symlinks=False):
+                        os.remove(e.path)              # num link, apaga o link (o alvo fica)
+                        n += 1
+                except OSError:
+                    pass
+        _grava_privado(marca, REC_VERSAO)
+    except OSError as ex:
+        print("  recortes: não troquei a versão do cache (%s)" % str(ex)[:80])
+    if n:
+        print("  recortes: %d recorte(s) da versão anterior apagado(s) (agora %s)" % (n, REC_VERSAO))
+    return n
 
 
 def rec_arquivo(pid, lado=REC_LADO_MAX):
@@ -3170,8 +3115,9 @@ def _grava_png(im, destino):
 
 
 def rec_fazer(pid, origem, lado=REC_LADO_MAX):
-    """Recorta a foto `origem` e grava ~/Eterna/recortes/<pid>.png (3000 px) e, se pedido, <pid>_2400.png. Devolve o caminho."""
-    from PIL import Image, ImageOps, ImageFilter
+    """Recorta a foto `origem` e grava ~/Eterna/recortes/<pid>.png (3000 px) e, se pedido, <pid>_2400.png. Devolve o caminho.
+    v97: o de 3000 sai do processo de recorte (rec_filho_recortar, BiRefNet + regra); o de 2400 é cópia reduzida dele."""
+    from PIL import Image
     lado = REC_LADO_MAX if lado not in REC_LADOS else lado
     destino = rec_arquivo(pid, lado)
     if os.path.exists(destino):
@@ -3194,26 +3140,8 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
         return destino
     if not os.path.exists(cheio):
         t0 = time.time()
-        sess = rec_carregar()
-        with Image.open(origem) as im0:
-            if im0.size[0] * im0.size[1] > MAX_PIXELS:
-                raise ValueError("imagem acima de %d MP" % (MAX_PIXELS // 1_000_000))
-            im = ImageOps.exif_transpose(im0).convert("RGB")   # o navegador mostra a foto já girada pelo EXIF; o PNG não tem EXIF
-        if max(im.size) > REC_LADO_MAX:
-            im.thumbnail((REC_LADO_MAX, REC_LADO_MAX), Image.LANCZOS)
-        trab = im.copy()
-        trab.thumbnail((REC_TRAB, REC_TRAB), Image.LANCZOS)
-        masks = [s.predict(trab)[0].convert("L") for s in sess]
-        mascara = Image.fromarray(rec_limpa_mascara(masks, trab), "L")   # a foto em cor decide os furos sem sinal (borda falsa)
-        del trab
-        if mascara.size != im.size:
-            mascara = mascara.resize(im.size, Image.LANCZOS)
-        mascara = mascara.filter(ImageFilter.MinFilter(3))       # 1 px de borda a menos: sem halo do fundo
-        import numpy as np
-        mascara = Image.fromarray(rec_sem_soltos(np.asarray(mascara)), "L")   # o fio que segurava uma ilha pode ter sumido
-        im = Image.composite(im, Image.new("RGB", im.size), mascara.point(lambda v: 255 if v else 0))   # fora da pessoa, RGB zerado
-        im.putalpha(mascara)
-        _grava_png(im, cheio)
+        os.makedirs(RECORTES, exist_ok=True)
+        rec_filho_recortar(pid, origem, cheio, getattr(_rec_tl, "i", 0))   # MAX_PIXELS, EXIF, 3000 px, RGB zerado fora, 600: no filho
         ms = int((time.time() - t0) * 1000)
         with rec_lock:
             rec["feitos"] += 1
@@ -3247,6 +3175,16 @@ def limpar_recortes(agora=None, guardar=None):
             st = os.stat(p)
         except OSError:
             continue
+        if nome.startswith("."):
+            # v97: a marca .versao fica sempre (sem ela a próxima partida apagaria o cache todo); o .rec-*.tmp do processo de
+            # recorte, só passada 1 h (em andamento ele é trocado pelo PNG)
+            if nome.endswith(".tmp") and agora - st.st_mtime > 3600:
+                try:
+                    os.remove(p)
+                    n += 1
+                except OSError:
+                    pass
+            continue
         pid = nome.split(".")[0].split("_")[0]
         fonte = vivas.get(pid)
         if pid in guardar and fonte and os.path.exists(fonte) and not nome.endswith(".tmp"):
@@ -3273,7 +3211,9 @@ def limpar_recortes(agora=None, guardar=None):
     return n
 
 
-def rec_trabalho():
+def rec_trabalho(i=0):
+    """Trabalhador i da fila de recorte (cada um com o seu processo de recorte: _rec_tl.i)."""
+    _rec_tl.i = i
     while True:
         _, _, job = rec_fila.get()
         with rec_lock:
@@ -3334,8 +3274,8 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
     with lock:
         na_lib = pid in lib                          # foto que sai da biblioteca durante o recorte não deixa arquivo
     with rec_lock:
-        while len(rec_threads) < REC_CONC:
-            t = threading.Thread(target=rec_trabalho, daemon=True)
+        while len(rec_threads) < (2 if REC_CONC == 2 and rec.get("provedor") == "cuda" else 1):
+            t = threading.Thread(target=rec_trabalho, args=(len(rec_threads),), daemon=True)
             t.start()
             rec_threads.append(t)
         job = rec_jobs.get(pid)
@@ -3368,7 +3308,7 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
 
 
 def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT):
-    """Põe o recorte na fila (1 ou 2 de cada vez) e espera. Devolve (caminho, erro)."""
+    """Põe o recorte na fila (1 de cada vez; 2 só com CUDA e ETERNA_RECORTE_CONC=2) e espera. Devolve (caminho, erro)."""
     lado = lado if lado in REC_LADOS else REC_LADO_MAX
     job, erro = rec_enfileirar(pid, origem, lado, prio)
     if erro:
@@ -3389,7 +3329,16 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT
 def rec_pre_escolha(fotos, x=None):
     """Só as fotos que o Checkout vai mostrar com fundo de IA. v93 (plano dos cliques de IA, A14): as bases de IA da
     sessão (x["ia"]) quando ela tem; senão as 2 primeiras da sessão. O extra por pessoa (até 10 recortes por sessão) saiu:
-    desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade."""
+    desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade.
+    v97: com o recorte na CPU (lento: 45 a 75 s por foto), só as bases; sem as 2 normais do plano B (a fila não cresce
+    sem fim). Leva cuja visita já tem as bases (D4): nada (o Checkout monta com as bases da visita). Leva sem bases por
+    outro motivo (poucas fotos, volante): as 2 primeiras, como antes."""
+    if x is not None and (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
+        return []
+    with rec_lock:
+        cpu = rec.get("provedor") == "cpu"
+    if x is not None and x.get("ia") and cpu:
+        return list(x["ia"])
     if x is not None and x.get("ia"):
         # revisão (A14): as bases e, com a prioridade mais baixa, as 2 primeiras fotos normais, o plano B do Checkout quando as
         # duas bases são ruins (lojaAIAntigo); só usa a máquina livre
@@ -3415,7 +3364,7 @@ def rec_pre_loop():
                 with sess_lock:
                     ss = sorted((x for x in sess.values() if x["status"] == "fechada" and not x.get("removida") and x["dia"] in dias),
                                 key=lambda x: -(x.get("fechada_em") or 0))
-                    fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or [])}) for x in ss]
+                    fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {})}) for x in ss]
                 pids = []
                 for fs, xx in fotos_ss:
                     pids += rec_pre_escolha(fs, xx)
@@ -3518,11 +3467,9 @@ FUNDOS_MODO_CFG = os.path.join(HOME, "fundos-modo.json")
 
 
 def fundos_modo():
-    try:
-        with open(FUNDOS_MODO_CFG) as f:
-            return "photoroom" if json.load(f).get("modo") == "photoroom" else "local"
-    except Exception:
-        return "local"
+    """v97 (Eduardo, 10/11, D6): sempre "local" (BiRefNet neste servidor). O Photoroom fica guardado e inativo: a chave em
+    ~/Eterna/photoroom.json continua (nada é apagado), o fundos-modo.json é ignorado e o /photoroom/compose responde 409."""
+    return "local"
 
 
 # ---------- Galeria online por QR (fase 1) ----------
@@ -3845,6 +3792,8 @@ def gal_indexar():
             m = REPO.ler_manifesto(t)
             if m and m.get("codigo"):
                 codigos[m["codigo"]] = t
+            if m and not gal_expirou(m):
+                vis_protege_manifesto(m)            # v97: leva de escola ou de menor só entra em visita por Juntar
             if m and (m.get("envio") or {}).get("vitrine") != "ok" and not gal_expirou(m):
                 gal_fila.put(t)
 
@@ -4473,9 +4422,15 @@ def _sess_ia_cand(x):
 
 
 def _sess_ia_fecha(x):
-    """v93: no fechamento, ia = os N primeiros cliques; com N fotos ou menos, a regra não vale (poucas_fotos)."""
+    """v93: no fechamento, ia = os N primeiros cliques; com N fotos ou menos, a regra não vale (poucas_fotos).
+    v97 (D4, Eduardo 10/11: bases POR VISITA, as 2 primeiras fotos da família): se a visita da leva já tem outra leva
+    fechada com bases, esta fecha sem bases (visita_ja_tem) e as fotos dela voltam todas para a venda."""
     n, mot = _sess_ia_regra(x)
     fs = x["fotos"]
+    if n and not mot and len(fs) > n and _vis_ja_tem_ia(x["card"]):
+        x["ia"] = []
+        x["ia_regra"] = {"n": n, "motivo": "visita_ja_tem"}
+        return
     x["ia"] = list(fs[:n]) if n and len(fs) > n else []
     x["ia_regra"] = {"n": n, "motivo": mot or ("poucas_fotos" if n and len(fs) <= n else None)}
 
@@ -4789,6 +4744,8 @@ def _sess_decide(pid, fs, agora):
     _sess_entra(dest, pid, info["t"], info["u"], dec)
     if dec in ("r", "f", "n"):
         _sess_guarda_rostos(dest["card"], pid, princ)
+    if princ:
+        _vis_ligar(dest["card"], pid, info["t"], princ)   # v97: a leva liga à visita pelos rostos de qualidade
     if sess_aberta.get(tr) != dest["card"]:
         _sess_vira_aberta(tr, dest["card"], agora)
     for y in {id(x): x, id(dest): dest}.values():
@@ -4827,6 +4784,7 @@ def sess_rostos_lidos(pid, faces, agora=None):
     frontal)] ou None (erro: conta como lida sem rosto). Os vetores ficam só na memória (S9)."""
     agora = time.time() if agora is None else agora
     fs = _sess_faces(faces)
+    vis_cfg()                                        # B1: fora do sess_lock (cache de 3 s)
     with sess_lock:
         x = sess.get(sess_pid.get(pid) or "")
         if x is not None:
@@ -4836,14 +4794,20 @@ def sess_rostos_lidos(pid, faces, agora=None):
             _sess_drenar(sess_info[pid]["trilha"], agora)
         elif x is not None and x["status"] != "fechada" and pid in x["_guardar"]:
             x["_guardar"].discard(pid)
-            _sess_guarda_rostos(x["card"], pid, _sess_principais(fs))
+            princ = _sess_principais(fs)
+            _sess_guarda_rostos(x["card"], pid, princ)
+            _vis_ligar(x["card"], pid, x["_t"].get(pid, (agora, agora))[0], princ)   # v97
             _sess_drenar(x["k"], agora)
+        elif x is not None and fs:
+            # v97: foto já decidida só pelo tempo (rosto lido depois do prazo, ou leva já fechada): liga a visita mesmo assim
+            _vis_ligar(x["card"], pid, x["_t"].get(pid, (_num(x.get("cap1")), 0))[0], _sess_principais(fs))
 
 
 def sess_add(pid, m):
     """Chamada no fim do ingest_file, fora do lock, com a cópia do meta da foto."""
     cad = ff_cadastrados()
     ia_cfg()                                         # v93: a regra dos cliques de IA lida antes, fora do sess_lock
+    vis_cfg()                                        # B1: o interruptor da ligação por rosto, idem
     with sess_lock:
         return _sess_add(pid, m, cad, time.time())
 
@@ -4883,6 +4847,7 @@ def _sess_esquecer(pid):
             x["removida"] = True
             x["status"] = "fechada"
         _sess_toca(x)
+        _vis_esquecer(pid, x["card"], x["removida"])        # v97: sai das arestas; leva removida sai da visita
 
 
 def sess_esquecer_disco(pids):
@@ -4934,27 +4899,58 @@ def sess_esquecer_disco(pids):
                 n += 1
         except Exception as ex:
             print("  sessões (LGPD): não limpei %s (%s)" % (nome, str(ex)[:80]))
+    # v97: as arestas das visitas dos dias fora da memória perdem os pids (as de hoje e ontem já saíram em _vis_esquecer)
+    try:
+        nomes = sorted(os.listdir(VIS_DIR))
+    except OSError:
+        nomes = []
+    for nome in nomes:
+        mm = _SESS_DIA.match(nome)
+        if not mm or mm.group(1) < lim or mm.group(1) in em_mem:
+            continue
+        f = os.path.join(VIS_DIR, nome)
+        try:
+            with open(f, encoding="utf8") as fh:
+                j = json.load(fh)
+            mudou = False
+            for e in j.get("arestas") or []:
+                for k in ("pa", "pb"):
+                    if isinstance(e, dict) and e.get(k) in pids:
+                        e[k] = None
+                        mudou = True
+            if mudou:
+                fd, tmp = tempfile.mkstemp(prefix=".vis-", suffix=".tmp", dir=VIS_DIR)
+                with os.fdopen(fd, "w", encoding="utf8") as fh:
+                    json.dump(j, fh)
+                os.chmod(tmp, 0o600)
+                os.replace(tmp, f)
+                n += 1
+        except Exception as ex:
+            print("  visitas (LGPD): não limpei %s (%s)" % (nome, str(ex)[:80]))
     sess_gravar()
     return n
 
 
 def sess_limpar(agora=None):
-    """S14: apaga os arquivos de sessão com mais de SESS_RET_DIAS (uma vez por dia, pelo sess_loop)."""
+    """S14: apaga os arquivos de sessão com mais de SESS_RET_DIAS (uma vez por dia, pelo sess_loop). v97: e os das visitas,
+    e as linhas com mais de 60 dias do visitas-log.jsonl e do registro de calibração (vis_logs_poda)."""
     agora = time.time() if agora is None else agora
     lim = _ff_hoje(agora - SESS_RET_DIAS * 86400)
     n = 0
-    try:
-        nomes = os.listdir(SESS_DIR)
-    except OSError:
-        return 0
-    for nome in nomes:
-        mm = _SESS_DIA.match(nome)
-        if mm and mm.group(1) < lim:
-            try:
-                os.remove(os.path.join(SESS_DIR, nome))
-                n += 1
-            except OSError:
-                pass
+    for pasta in (SESS_DIR, VIS_DIR):
+        try:
+            nomes = os.listdir(pasta)
+        except OSError:
+            continue
+        for nome in nomes:
+            mm = _SESS_DIA.match(nome)
+            if mm and mm.group(1) < lim:
+                try:
+                    os.remove(os.path.join(pasta, nome))
+                    n += 1
+                except OSError:
+                    pass
+    vis_logs_poda(agora)
     return n
 
 
@@ -4984,6 +4980,7 @@ def sess_tick(agora=None):
 
 
 def sess_gravar():
+    vis_gravar()                                     # v97: as arestas das visitas junto das sessões
     with sess_lock:
         dias = list(sess_sujo)
         sess_sujo.clear()
@@ -5008,6 +5005,7 @@ def sess_loop():
         try:
             agora = time.time()
             ia_cfg()                                 # v93: fora do sess_lock; o fechamento usa o valor guardado
+            vis_cfg()                                # B1: idem para a ligação por rosto
             with sess_lock:
                 _sess_tick(agora)
                 ontem = _ff_hoje(agora - 86400)
@@ -5018,6 +5016,12 @@ def sess_loop():
                             sess_pid.pop(p, None)
                     if sess_ultima.get(x["k"]) == card:
                         sess_ultima.pop(x["k"], None)
+                    vis_rostos.pop(card, None)
+                    vis_de.pop(card, None)
+                for d in [d for d in vis_arestas if d < ontem]:   # v97: visitas também só de hoje e ontem na memória
+                    vis_arestas.pop(d, None)
+                for vid in [k for k, v in vis_info.items() if v["dia"] < ontem]:
+                    vis_info.pop(vid, None)
             sess_gravar()
             if sess_limpo[0] != _ff_hoje(agora):
                 sess_limpo[0] = _ff_hoje(agora)
@@ -5079,6 +5083,7 @@ def sess_carregar(agora=None):
     dias = [_ff_hoje(agora - 86400), _ff_hoje(agora)]
     n_lidas = 0
     ia_cfg()                                         # v93: fora do sess_lock
+    vis_cfg()                                        # B1: as visitas do boot já respeitam o interruptor
     with sess_lock:
         for d in dias:
             try:
@@ -5130,6 +5135,13 @@ def sess_carregar(agora=None):
             if x["status"] != "fechada":
                 _sess_fecha_uma(x, agora, "reinicio")
         hoje = sum(1 for x in sess.values() if x["dia"] == dias[1] and not x.get("removida"))
+        _vis_carregar(dias, agora)                   # v97: arestas relidas, visitas refeitas (critério 31)
+        for d in dias:
+            _vis_recalc(d)
+    try:
+        vis_idx_boot(agora)
+    except Exception as ex:
+        print("  visitas: rostos do boot indisponíveis (%s)" % str(ex)[:80])
     sess_gravar()
     return n_lidas, novas, hoje
 
@@ -5155,7 +5167,765 @@ def sess_status():
         return {"v": 2, "pausa": SESS_PAUSA, "rostos": bool(sess_rostos_on()), "rev": sess_rev[0], "gen": BOOT, "dias": BUSCA_DIAS,
                 "janela_min": jan, "janela_padrao": BUSCA_JANELA_MIN, "janela_fixa": BUSCA_DIAS_EXPLICITA,
                 "hoje": sum(1 for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
-                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada")}
+                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada"), "visitas": _vis_status_mem()}
+
+
+# ---------- v97: visitas (as levas da mesma família, ligadas por rosto) ----------
+# Leva = a sessão de hoje (por fotógrafo ou câmera, 60 s sem disparo fecham, rostos novos separam; código LP). Visita = as
+# levas da mesma família no dia: duas levas ligam quando um rosto de qualidade (principal, >= 60 px, frontal, score >= 0,80)
+# de uma bate (sim >= VIS_LIM) com um rosto de qualidade da outra, em corrente (união), com o 1º e o último clique da visita
+# a até 50 min. Teto: 12 levas ou 15 rostos diferentes (acima disso a ligação automática para e a visita fica "grande":
+# excursão ou escola encadeariam todo mundo). Leva de escola ou de menor só liga por Juntar. Separar (Posto) vira "não
+# ligar" entre a leva e o resto da visita e vence a ligação por rosto; Juntar liga mesmo sem rosto e desfaz o Separar.
+# Tudo sob o sess_lock (nunca com o lock). Vetores só em memória (vis_idx, 50 min); as arestas vão para
+# ~/Eterna/ponto/visitas/AAAA-MM-DD.json (60 dias) sem vetor; o Checkout abre a visita inteira (decisão do Eduardo, 10/11).
+# Segurança (10/11, B1): a ligação AUTOMÁTICA por rosto fica desligada até a calibração com fotos reais do Tour (interruptor
+# em estado.db config/visitas {"rosto": false}, só pela rota POST /visitas/config, Admin no Painel de controle). Desligada,
+# _vis_ligar não cria aresta "rosto" e as que já existem não contam no _vis_recalc; a similaridade entre levas vai para
+# ~/Eterna/ponto/visitas-calibracao.jsonl (só ids de leva e de foto e o score, 60 dias). Juntar e Separar continuam.
+VIS_LIM = 0.50               # limiar fixo; os testes trocam o atributo do módulo (m.VIS_LIM), como o REC_FALSO_SEG
+VIS_CALIB_PISO = 0.35        # pares de levas a partir desta similaridade vão para o registro de calibração
+VIS_CFG_PADRAO = {"rosto": False}
+_vis_cfg = {"t": 0.0, "v": None}
+
+
+def vis_valida(j):
+    """config/visitas: só {"rosto": bool} (por e em são de auditoria). Outro formato = None (vale o padrão: desligada)."""
+    if not isinstance(j, dict) or not isinstance(j.get("rosto"), bool):
+        return None
+    return {"rosto": j["rosto"]}
+
+
+def vis_cfg():
+    """Interruptor da ligação por rosto (estado.db config/visitas), relido a cada 3 s. Nunca chamar com o sess_lock na mão
+    (como o ia_cfg). Sem documento ou ilegível: desligada."""
+    agora = time.time()
+    if agora - _vis_cfg["t"] < 3 and _vis_cfg["v"] is not None:
+        return _vis_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'visitas' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                j = json.loads(r[0])
+                v = vis_valida(j)
+                if v is not None:
+                    v = {**v, "por": j.get("por"), "em": j.get("em")}
+    except Exception:                                # banco ocupado: fica o último valor lido (ou desligada)
+        v = _vis_cfg["v"]
+    v = v or dict(VIS_CFG_PADRAO)
+    _vis_cfg.update(t=agora, v=v)
+    return v
+
+
+def vis_cfg_mem():
+    """O último valor lido (sem abrir o banco): para quem está com o sess_lock na mão."""
+    return _vis_cfg["v"] or VIS_CFG_PADRAO
+
+
+def vis_rosto_ligado():
+    return vis_cfg_mem().get("rosto") is True
+VIS_JANELA = 3000            # s entre o 1º e o último clique da visita
+VIS_LEVAS_MAX = 12
+VIS_ROSTOS_MAX = 15
+VIS_IDX_MAX = 4000           # vetores na janela (todas as trilhas)
+VIS_ROSTOS_LEVA = 20         # rostos diferentes guardados por leva (para o teto de rostos da visita)
+VIS_DIR = os.path.join(HOME, "ponto", "visitas")
+VIS_LOG = os.path.join(HOME, "ponto", "visitas-log.jsonl")
+VIS_CALIB = os.path.join(HOME, "ponto", "visitas-calibracao.jsonl")
+VIS_LOG_MAX = 5 * 1024 * 1024
+VIS_LOG_DIAS = 60            # retenção do visitas-log.jsonl e do registro de calibração (como as sessões)
+vis_calib = collections.deque(maxlen=5000)   # linhas de calibração a gravar (sob o sess_lock; gravadas no vis_gravar)
+vis_calib_n = [0]
+vis_calib_tira = set()       # pids da LGPD a tirar do registro de calibração (no vis_gravar, fora do sess_lock)
+vis_idx = {"M": None, "T": None, "C": None, "meta": [], "w": 0, "n": 0, "cid": {}, "tmax": 0.0}   # anel de vetores (sob o sess_lock)
+vis_arestas = {}             # dia -> [aresta {a, b, tipo, sim, pa, pb, por, posto, em, seq, barrada?, desfeita?}]
+vis_de = {}                  # card -> id da visita (só visitas com 2 levas ou mais)
+vis_info = {}                # id -> visita pública (sem vetor, sem pid)
+vis_rostos = {}              # card -> [(pid, vetor)] distintos (só memória)
+vis_rev = [0]
+vis_seq = [0]
+vis_sujo = set()
+vis_prot = set()             # levas de escola ou de menor (galerias publicadas): só ligam por Juntar
+vis_med = {"lig": collections.deque(maxlen=500), "recalc": collections.deque(maxlen=200), "ms_ultimo": None}
+_VIS_NP = []
+
+
+def _vis_np():
+    if not _VIS_NP:
+        try:
+            import numpy
+            _VIS_NP.append(numpy)
+        except Exception:
+            _VIS_NP.append(None)
+    return _VIS_NP[0]
+
+
+def _vis_idx_add(t, card, pid, v):
+    """Põe o vetor no anel (sobrescreve o mais velho acima de VIS_IDX_MAX). Com o sess_lock."""
+    I = vis_idx
+    np = _vis_np()
+    if I["meta"] == []:
+        I["meta"] = [None] * VIS_IDX_MAX
+        if np is not None:
+            I["M"] = np.zeros((VIS_IDX_MAX, 128), np.float32)
+            I["T"] = np.full(VIS_IDX_MAX, np.nan)
+            I["C"] = np.full(VIS_IDX_MAX, -1, np.int64)
+    w = I["w"]
+    cid = I["cid"].setdefault(card, len(I["cid"]) + 1)
+    I["meta"][w] = (float(t), card, pid, v)
+    if np is not None:
+        I["M"][w] = np.frombuffer(v, dtype=np.float32) if isinstance(v, array.array) else np.asarray(v, np.float32)
+        I["T"][w] = float(t)
+        I["C"][w] = cid
+    I["w"] = (w + 1) % VIS_IDX_MAX
+    I["n"] = min(VIS_IDX_MAX, I["n"] + 1)
+    I["tmax"] = max(I["tmax"], float(t))
+
+
+def _vis_idx_tira(pids=None, cards=None):
+    """LGPD ou leva removida: os vetores saem do anel. Com o sess_lock."""
+    I = vis_idx
+    for i, mm in enumerate(I["meta"]):
+        if mm and ((pids and mm[2] in pids) or (cards and mm[1] in cards)):
+            I["meta"][i] = None
+            if I["T"] is not None:
+                I["T"][i] = float("nan")
+                I["C"][i] = -1
+
+
+def _vis_busca(v, card, t, piso=None):
+    """{outro card: (sim, pid)} dos rostos da janela (|t − t_outro| <= 50 min) de OUTRAS levas, o melhor por leva, com
+    sim >= piso (padrão VIS_LIM; a calibração pede um piso mais baixo)."""
+    lim = VIS_LIM if piso is None else piso
+    I = vis_idx
+    out = {}
+    if not I["n"]:
+        return out
+    np = _vis_np()
+    mine = I["cid"].get(card, -2)
+    if np is not None and I["M"] is not None:
+        vv = np.frombuffer(v, dtype=np.float32) if isinstance(v, array.array) else np.asarray(v, np.float32)
+        with np.errstate(invalid="ignore"):
+            ok = (np.abs(I["T"] - float(t)) <= VIS_JANELA) & (I["C"] != mine) & (I["C"] >= 0)
+        idx = np.nonzero(ok)[0]
+        if not len(idx):
+            return out
+        sims = I["M"][idx] @ vv
+        for j in np.nonzero(sims >= lim - 1e-6)[0]:         # 1e-6: o float32 não tira o 0,50 exato do limiar
+            mm = I["meta"][int(idx[j])]
+            if mm is None:
+                continue
+            s = float(sims[j])
+            if mm[1] not in out or s > out[mm[1]][0]:
+                out[mm[1]] = (s, mm[2])
+        return out
+    for mm in I["meta"]:
+        if not mm or mm[1] == card or abs(mm[0] - t) > VIS_JANELA:
+            continue
+        s = _dot(v, mm[3])
+        if s >= lim - 1e-6 and (mm[1] not in out or s > out[mm[1]][0]):
+            out[mm[1]] = (s, mm[2])
+    return out
+
+
+def _vis_distintos(vs):
+    """Quantos rostos diferentes (sim < VIS_LIM entre eles) há na lista de vetores."""
+    if len(vs) < 2:
+        return len(vs)
+    np = _vis_np()
+    if np is not None:
+        A = np.stack([np.frombuffer(v, dtype=np.float32) if isinstance(v, array.array) else np.asarray(v, np.float32) for v in vs])
+        S = A @ A.T
+        rep = []
+        for i in range(len(vs)):
+            if not any(S[i, j] >= VIS_LIM for j in rep):
+                rep.append(i)
+        return len(rep)
+    rep = []
+    for v in vs:
+        if not any(_dot(v, w) >= VIS_LIM for w in rep):
+            rep.append(v)
+    return len(rep)
+
+
+def _vis_rostos_add(card, pid, v):
+    mem = vis_rostos.setdefault(card, [])
+    if len(mem) < VIS_ROSTOS_LEVA and not any(_dot(v, w) >= VIS_LIM for _, w in mem):
+        mem.append((pid, v))
+
+
+def _vis_ligar(card, pid, t, princ):
+    """Com o sess_lock: os rostos de qualidade da foto pid (leva card, clique t) procuram rostos de OUTRAS levas na janela;
+    sim >= VIS_LIM cria a aresta "rosto" entre as duas levas (uma por par: a maior sim e os 2 pids), só com o interruptor
+    config/visitas ligado (B1). Todo par com sim >= VIS_CALIB_PISO vai para o registro de calibração (ids e score). Depois
+    os vetores entram no anel. Devolve True se a visita mudou."""
+    x = sess.get(card)
+    if x is None or x.get("removida") or not princ:
+        return False
+    qual = [f for f in princ if _sess_qualidade(f)]
+    if not qual:
+        return False
+    t0 = time.perf_counter()
+    lig = vis_rosto_ligado()
+    melhor = {}
+    for f in qual:
+        for oc, (s, op) in _vis_busca(f["v"], card, t, min(VIS_LIM, VIS_CALIB_PISO)).items():
+            if oc not in melhor or s > melhor[oc][0]:
+                melhor[oc] = (s, op)
+    for f in qual:
+        _vis_idx_add(t, card, pid, f["v"])
+        _vis_rostos_add(card, pid, f["v"])
+    nova = False
+    dia = x["dia"]
+    for oc, (s, op) in melhor.items():
+        y = sess.get(oc)
+        if y is None or y.get("removida") or y["dia"] != dia:
+            continue
+        vis_calib.append({"em": time.strftime("%Y-%m-%dT%H:%M:%S"), "dia": dia, "a": card, "b": oc, "pa": pid, "pb": op,
+                          "sim": round(s, 4), "ligada": lig})
+        vis_calib_n[0] += 1
+        if lig and s >= VIS_LIM - 1e-6:
+            nova = _vis_aresta(dia, "rosto", card, oc, sim=s, pa=pid, pb=op) or nova
+    mudou = _vis_recalc(dia, set(melhor) | {card}) if nova else False
+    vis_med["lig"].append((time.perf_counter() - t0) * 1000)
+    return mudou
+
+
+def _vis_aresta(dia, tipo, a, b, sim=None, pa=None, pb=None, por=None, posto=None):
+    """Aresta nova (True) ou a de rosto que já existe com sim maior (False: a ligação não muda). Com o sess_lock."""
+    lst = vis_arestas.setdefault(dia, [])
+    par = {a, b}
+    if tipo == "rosto":
+        for e in lst:
+            if e["tipo"] == "rosto" and {e["a"], e["b"]} == par:
+                if sim is not None and sim > (e.get("sim") or 0):
+                    e.update(sim=round(sim, 4), pa=pa if e["a"] == a else pb, pb=pb if e["a"] == a else pa)
+                    vis_sujo.add(dia)
+                return False
+    vis_seq[0] += 1
+    e = {"a": a, "b": b, "tipo": tipo, "sim": round(sim, 4) if sim is not None else None, "pa": pa, "pb": pb,
+         "por": por, "posto": posto, "em": round(time.time(), 1), "seq": vis_seq[0]}
+    lst.append(e)
+    vis_sujo.add(dia)
+    return True
+
+
+def _vis_protegida(x):
+    return x["card"] in vis_prot or bool(x.get("menor"))
+
+
+def _vis_recalc(dia, toque=None):
+    """Com o sess_lock: refaz as visitas do dia (união-busca) só com as arestas permitidas. Juntar primeiro (decisão da
+    equipe, sem teto), depois as de rosto na ordem em que nasceram; aresta que deixaria a visita com mais de 50 min, mais de
+    12 levas ou mais de 15 rostos, entre levas separadas, ou de leva de escola ou menor, fica registrada com "barrada".
+    toque = levas que mudaram: refaz só o pedaço do dia ligado a elas por alguma aresta (critério 33). Devolve True se
+    alguma visita mudou."""
+    t0 = time.perf_counter()
+    lst = vis_arestas.get(dia) or []
+    if toque is not None:
+        viz = {}
+        for e in lst:
+            viz.setdefault(e["a"], []).append(e["b"])
+            viz.setdefault(e["b"], []).append(e["a"])
+        alc, pilha = set(), [c for c in toque if c]
+        for v in vis_info.values():              # as levas das visitas atuais das tocadas também (uma pode sair)
+            if v["dia"] == dia and set(v["levas"]) & set(pilha):
+                pilha += v["levas"]
+        while pilha:
+            c = pilha.pop()
+            if c in alc:
+                continue
+            alc.add(c)
+            pilha += viz.get(c, [])
+        levas = {c: sess[c] for c in alc if c in sess and sess[c]["dia"] == dia and not sess[c].get("removida")}
+        lst = [e for e in lst if e["a"] in alc or e["b"] in alc]
+    else:
+        alc = None
+        levas = {c: x for c, x in sess.items() if x["dia"] == dia and not x.get("removida")}
+    pai = {c: c for c in levas}
+    ag = {c: {"ini": _num(x.get("cap0")) or _num(x.get("aberta_em")), "fim": _num(x.get("cap1")) or _num(x.get("ultima_chegada")),
+              "n": 1, "rostos": [v for _, v in vis_rostos.get(c, [])], "grande": False, "membros": [c]} for c, x in levas.items()}
+
+    def raiz(c):
+        while pai[c] != c:
+            pai[c] = pai[pai[c]]
+            c = pai[c]
+        return c
+
+    sep = [e for e in lst if e["tipo"] == "separar" and not e.get("desfeita")]
+    nao = {frozenset((e["a"], e["b"])) for e in sep}
+    ordem = sorted((e for e in lst if e["tipo"] == "juntar" and not e.get("desfeita")), key=lambda e: e["seq"]) + \
+        (sorted((e for e in lst if e["tipo"] == "rosto"), key=lambda e: e["seq"]) if vis_rosto_ligado() else [])   # B1
+    for e in lst:
+        if e["tipo"] == "rosto" and e.get("barrada") and not vis_rosto_ligado():
+            e.pop("barrada", None)                  # desligada: a aresta antiga não conta (nem como barrada)
+    for e in ordem:
+        e.pop("barrada", None)
+        a, b = e["a"], e["b"]
+        if a not in pai or b not in pai:
+            continue
+        ra, rb = raiz(a), raiz(b)
+        if ra == rb:
+            continue
+        A, B = ag[ra], ag[rb]
+        if nao and any(frozenset((u, w)) in nao for u in A["membros"] for w in B["membros"]):
+            e["barrada"] = "separada"
+            continue
+        rostos = A["rostos"] + B["rostos"]
+        if e["tipo"] == "rosto":
+            if _vis_protegida(levas[a]) or _vis_protegida(levas[b]):
+                e["barrada"] = "escola_menor"
+                continue
+            if max(A["fim"], B["fim"]) - min(A["ini"], B["ini"]) > VIS_JANELA:
+                e["barrada"] = "janela"
+                continue
+            if A["n"] + B["n"] > VIS_LEVAS_MAX:
+                e["barrada"] = "levas"
+                A["grande"] = B["grande"] = True
+                continue
+            if _vis_distintos(rostos) > VIS_ROSTOS_MAX:
+                e["barrada"] = "rostos"
+                A["grande"] = B["grande"] = True
+                continue
+        pai[rb] = ra
+        A.update(ini=min(A["ini"], B["ini"]), fim=max(A["fim"], B["fim"]), n=A["n"] + B["n"], rostos=rostos,
+                 grande=A["grande"] or B["grande"] or A["n"] + B["n"] > VIS_LEVAS_MAX, membros=A["membros"] + B["membros"])
+        if e["tipo"] == "juntar" and _vis_distintos(rostos) > VIS_ROSTOS_MAX:
+            A["grande"] = True
+    novas = {}
+    for c in levas:
+        r = raiz(c)
+        A = ag[r]
+        sep_de = sorted({(e["b"] if e["a"] in A["membros"] else e["a"]) for e in sep
+                         if (e["a"] in A["membros"]) != (e["b"] in A["membros"])})
+        if len(A["membros"]) < 2 and not A["grande"] and not sep_de:
+            continue
+        if r in novas:
+            continue
+        ms = sorted(A["membros"], key=lambda k: (_num(levas[k].get("cap0")) or _num(levas[k].get("aberta_em")), levas[k].get("_n", 0)))
+        vid = "V" + ms[0][2:]
+        novas[r] = {"id": vid, "dia": dia, "levas": ms, "inicio": round(A["ini"], 1), "fim": round(A["fim"], 1),
+                    "grande": bool(A["grande"]), "separadas": sep_de}
+    mudou = False
+    vistos = set()
+    for v in novas.values():
+        vistos.add(v["id"])
+        velho = vis_info.get(v["id"])
+        chave = lambda o: (o["levas"], o["grande"], o["separadas"])
+        if velho is None or chave(velho) != chave(v):
+            vis_rev[0] += 1
+            v["rev"] = vis_rev[0]
+            mudou = True
+        else:
+            v["rev"] = velho["rev"]
+        vis_info[v["id"]] = v
+    for vid in [k for k, v in vis_info.items() if v["dia"] == dia and k not in vistos and (alc is None or set(v["levas"]) & alc)]:
+        vis_info.pop(vid)
+        vis_rev[0] += 1
+        mudou = True
+    for c in levas:
+        vis_de.pop(c, None)
+    for v in novas.values():
+        if len(v["levas"]) > 1:
+            for c in v["levas"]:
+                vis_de[c] = v["id"]
+    vis_sujo.add(dia)
+    ms_ = (time.perf_counter() - t0) * 1000
+    vis_med["recalc"].append(ms_)
+    vis_med["ms_ultimo"] = round(ms_, 2)
+    return mudou
+
+
+def _vis_ja_tem_ia(card):
+    """D4 (Eduardo, 10/11): a visita da leva já tem outra leva fechada com as bases de IA. Com o sess_lock."""
+    v = vis_info.get(vis_de.get(card) or "")
+    if not v:
+        return False
+    for c in v["levas"]:
+        y = sess.get(c)
+        if c != card and y is not None and y["status"] == "fechada" and y.get("ia"):
+            return True
+    return False
+
+
+def _vis_ia_reabre(cards, motivo):
+    """Com o sess_lock (Segurança, 10/11, item 6): leva fechada sem bases porque a visita já tinha (visita_ja_tem) e que
+    deixou de ter visita com bases (Separar, escola ou menor protegida, ligação por rosto desligada) volta a ter as N
+    primeiras fotos como bases de IA, e elas vão para a fila de recorte. Devolve as levas reabertas."""
+    out = []
+    for c in sorted(set(cards)):
+        x = sess.get(c)
+        if x is None or x.get("removida") or x["status"] != "fechada":
+            continue
+        r = x.get("ia_regra") or {}
+        if r.get("motivo") != "visita_ja_tem" or x.get("ia") or _vis_ja_tem_ia(c):
+            continue
+        n = r.get("n") or 0
+        fs = x["fotos"]
+        if not n or len(fs) <= n:
+            continue
+        x["ia"] = list(fs[:n])
+        x["ia_regra"] = {"n": n, "motivo": None, "reaberta": motivo}
+        for p in x["ia"]:
+            sess_ia_novos.append((p, REC_PRIO_IA))
+        _sess_toca(x)
+        out.append(c)
+    return out
+
+
+def vis_levas_de(card):
+    """As levas da visita do card (só ele, se não está em visita). Com o sess_lock."""
+    v = vis_info.get(vis_de.get(card) or "")
+    return list(v["levas"]) if v else [card]
+
+
+def _vis_publico(v):
+    return {k: (list(v[k]) if isinstance(v[k], list) else v[k]) for k in ("id", "levas", "rev", "inicio", "fim", "grande", "separadas")}
+
+
+def _vis_sozinha(card):
+    x = sess.get(card) or {}
+    return {"id": "V" + card[2:], "levas": [card], "rev": vis_rev[0], "inicio": _num(x.get("cap0")), "fim": _num(x.get("cap1")),
+            "grande": False, "separadas": []}
+
+
+def vis_feed(desde=0, ontem=False):
+    """GET /visitas?desde=<rev>: as visitas de hoje (e ontem com ontem=1), sem vetor e sem pid. Nada mudou desde o rev
+    pedido: lista vazia com "igual"; mudou: a lista inteira ("completo")."""
+    agora = time.time()
+    dias = {_ff_hoje(agora)} | ({_ff_hoje(agora - 86400)} if ontem else set())
+    with sess_lock:
+        rev = vis_rev[0]
+        if desde and desde >= rev:
+            return {"ok": True, "rev": rev, "igual": True, "visitas": []}
+        lista = [_vis_publico(v) for v in vis_info.values() if v["dia"] in dias]
+    lista.sort(key=lambda v: v["inicio"] or 0)
+    return {"ok": True, "rev": rev, "completo": True, "visitas": lista}
+
+
+def _vis_status_mem():
+    """/status.sessoes.visitas (com o sess_lock)."""
+    hoje = _ff_hoje()
+    arestas = vis_arestas.get(hoje) or []
+    lig = sorted(vis_med["lig"])
+    return {"n": sum(1 for v in vis_info.values() if v["dia"] == hoje and len(v["levas"]) > 1), "rev": vis_rev[0],
+            "ligacoes_rosto": sum(1 for e in arestas if e["tipo"] == "rosto" and not e.get("barrada")),
+            "barradas": sum(1 for e in arestas if e.get("barrada")), "ms_ultimo": vis_med["ms_ultimo"],
+            "ligar_p90_ms": round(lig[int(0.9 * (len(lig) - 1))], 2) if lig else None, "limiar": VIS_LIM,
+            "rosto": vis_rosto_ligado(), "rosto_em": vis_cfg_mem().get("em"), "calibracao": vis_calib_n[0]}
+
+
+def _vis_txt(v, n):
+    x = _txt_chave(v, n)
+    return x or None
+
+
+def vis_acao(acao, body, quem_ip):
+    """POST /visitas/juntar {a, b, por, posto} e /visitas/separar {card, por, posto}. Só levas de hoje que existem.
+    Devolve (resposta, código)."""
+    if not isinstance(body, dict):
+        return {"error": "corpo inválido"}, 400
+    por, posto = _vis_txt(body.get("por"), 60), _vis_txt(body.get("posto"), 40)
+    hoje = _ff_hoje()
+    re_lp = re.compile(r"^LP[A-Z0-9]{5,10}$")
+    with sess_lock:
+        def leva_ok(c):
+            x = sess.get(c) if isinstance(c, str) and re_lp.match(c) else None
+            return x is not None and x["dia"] == hoje and not x.get("removida")
+        if acao == "juntar":
+            a, b = body.get("a"), body.get("b")
+            if not leva_ok(a) or not leva_ok(b) or a == b:
+                return {"error": "leva inválida (só levas de hoje)"}, 400
+            de = vis_levas_de(a)
+            Va, Vb = set(vis_levas_de(a)), set(vis_levas_de(b))
+            for e in vis_arestas.get(hoje) or []:      # Juntar desfaz o Separar entre as duas visitas
+                if e["tipo"] == "separar" and not e.get("desfeita") and ({e["a"], e["b"]} & Va) and ({e["a"], e["b"]} & Vb):
+                    e["desfeita"] = round(time.time(), 1)
+            _vis_aresta(hoje, "juntar", a, b, por=por, posto=posto)
+            _vis_recalc(hoje)
+            para = vis_levas_de(a)
+            resp = {"ok": True, "visita": _vis_publico(vis_info[vis_de[a]]) if a in vis_de else _vis_sozinha(a)}
+            log = {"acao": "juntar", "a": a, "b": b, "de": sorted(de), "para": para}
+        elif acao == "separar":
+            card = body.get("card")
+            if not leva_ok(card):
+                return {"error": "leva inválida (só levas de hoje)"}, 400
+            de = vis_levas_de(card)
+            outros = [c for c in de if c != card]
+            for e in vis_arestas.get(hoje) or []:      # Separar desfaz o Juntar entre a leva e o resto da visita
+                if e["tipo"] == "juntar" and not e.get("desfeita") and card in (e["a"], e["b"]) and ({e["a"], e["b"]} - {card}) & set(outros):
+                    e["desfeita"] = round(time.time(), 1)
+            for c in outros:
+                _vis_aresta(hoje, "separar", card, c, por=por, posto=posto)
+            _vis_recalc(hoje)
+            reab = _vis_ia_reabre(de, "separar")       # item 6: a leva que ficou sem visita com bases ganha as dela
+            resto = outros[0] if outros else None
+            resp = {"ok": True, "visita": (_vis_publico(vis_info[vis_de[resto]]) if resto in vis_de else _vis_sozinha(resto)) if resto else None,
+                    "nova": _vis_publico(vis_info[vis_de[card]]) if card in vis_de else _vis_sozinha(card)}
+            log = {"acao": "separar", "card": card, "de": sorted(de), "para": vis_levas_de(card), "bases_reabertas": reab}
+            resp["bases_reabertas"] = reab
+        else:
+            return {"error": "not found"}, 404
+    log.update(por=por, posto=posto, ip=None if quem_ip in ("127.0.0.1", "::1") else quem_ip, em=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    vis_log(log)
+    sess_gravar()
+    return resp, 200
+
+
+def vis_cfg_gravar(rosto, por=None, posto=None, quem_ip=None):
+    """B1: POST /visitas/config {rosto, por, posto} (Painel de controle, só Admin no app). Grava config/visitas no estado.db
+    (rev novo), registra no console e no visitas-log.jsonl e refaz as visitas dos dias em memória com o valor novo
+    (desligar desfaz na hora as ligações automáticas; Juntar e Separar ficam). Fora do sess_lock."""
+    de = vis_cfg().get("rosto") is True
+    v = {"rosto": bool(rosto), "por": _vis_txt(por, 60), "em": _iso()}
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "visitas", json.dumps(v, ensure_ascii=False), rev, _iso()))
+            db.commit()
+        finally:
+            db.close()
+    _vis_cfg.update(t=time.time(), v=dict(v))
+    with sess_lock:
+        for d in sorted({x["dia"] for x in sess.values()} | set(vis_arestas)):
+            _vis_recalc(d)
+        _vis_ia_reabre(list(sess), "rosto_desligado")
+    print("  visitas: ligação por rosto %s -> %s · por %s" % ("ligada" if de else "desligada", "ligada" if v["rosto"] else "desligada", v["por"] or "?"))
+    vis_log({"acao": "config", "rosto": v["rosto"], "de": de, "por": v["por"], "posto": _vis_txt(posto, 40),
+             "ip": None if quem_ip in (None, "127.0.0.1", "::1") else quem_ip, "em": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    sess_gravar()
+    return {"ok": True, "rosto": v["rosto"], "em": v["em"], "por": v["por"]}
+
+
+def vis_log(obj):
+    """~/Eterna/ponto/visitas-log.jsonl (600): quem, posto, quando, de e para. Sem rosto, sem foto."""
+    try:
+        os.makedirs(os.path.dirname(VIS_LOG), exist_ok=True)
+        if os.path.exists(VIS_LOG) and os.path.getsize(VIS_LOG) > VIS_LOG_MAX:
+            os.replace(VIS_LOG, VIS_LOG + ".1")
+        fd = os.open(VIS_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf8") as f:
+            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    except OSError as ex:
+        print("  visitas: não gravei o registro (%s)" % str(ex)[:80])
+
+
+def vis_calib_gravar(linhas, tira=None):
+    """B1: registro de calibração (~/Eterna/ponto/visitas-calibracao.jsonl, 600): só ids de leva e de foto, score e se a
+    ligação estava ligada. tira = pids da LGPD (a linha perde o pid). Fora do sess_lock."""
+    try:
+        os.makedirs(os.path.dirname(VIS_CALIB), exist_ok=True)
+        if tira and os.path.exists(VIS_CALIB):
+            _jsonl_reescreve(VIS_CALIB, lambda o: {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}})
+        if not linhas:
+            return
+        if os.path.exists(VIS_CALIB) and os.path.getsize(VIS_CALIB) > VIS_LOG_MAX:
+            os.replace(VIS_CALIB, VIS_CALIB + ".1")
+        fd = os.open(VIS_CALIB, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf8") as f:
+            for o in linhas:
+                if tira:
+                    o = {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}}
+                f.write(json.dumps(o, ensure_ascii=False) + "\n")
+    except OSError as ex:
+        print("  visitas: não gravei a calibração (%s)" % str(ex)[:80])
+
+
+def _jsonl_reescreve(f, fn):
+    """Reescreve um .jsonl linha a linha (fn(obj) -> obj, ou None para tirar a linha), 600, mkstemp + replace."""
+    fd, tmp = tempfile.mkstemp(prefix=".vlog-", suffix=".tmp", dir=os.path.dirname(f))
+    try:
+        with os.fdopen(fd, "w", encoding="utf8") as out, open(f, encoding="utf8") as fh:
+            for linha in fh:
+                try:
+                    o = json.loads(linha)
+                except ValueError:
+                    continue
+                o = fn(o) if isinstance(o, dict) else None
+                if o is not None:
+                    out.write(json.dumps(o, ensure_ascii=False) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, f)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def vis_logs_poda(agora=None):
+    """Retenção de VIS_LOG_DIAS (60) do visitas-log.jsonl e do registro de calibração (e das cópias .1). Uma vez por dia,
+    pelo sess_limpar. Devolve as linhas tiradas."""
+    agora = time.time() if agora is None else agora
+    lim = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora - VIS_LOG_DIAS * 86400))
+    n = [0]
+
+    def fica(o):
+        if str(o.get("em") or "") < lim:
+            n[0] += 1
+            return None
+        return o
+    for f in (VIS_LOG, VIS_CALIB):
+        for g in (f, f + ".1"):
+            try:
+                if not os.path.exists(g):
+                    continue
+                if os.path.getmtime(g) < agora - VIS_LOG_DIAS * 86400:
+                    os.remove(g)                         # nada mais novo que o prazo: sai o arquivo
+                    continue
+                _jsonl_reescreve(g, fica)
+            except Exception as ex:
+                print("  visitas: não podei %s (%s)" % (os.path.basename(g), str(ex)[:80]))
+    return n[0]
+
+
+def vis_gravar():
+    """Grava as arestas dos dias com mudança (~/Eterna/ponto/visitas/AAAA-MM-DD.json, 600, mkstemp). Fora do sess_lock.
+    B1: e as linhas novas do registro de calibração."""
+    with sess_lock:
+        dias = list(vis_sujo)
+        vis_sujo.clear()
+        lotes = {d: [dict(e) for e in vis_arestas.get(d) or []] for d in dias}
+        calib = list(vis_calib)
+        vis_calib.clear()
+        tira = set(vis_calib_tira)
+        vis_calib_tira.clear()
+    if calib or tira:
+        vis_calib_gravar(calib, tira)
+    for d, lst in lotes.items():
+        try:
+            os.makedirs(VIS_DIR, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(prefix=".vis-", suffix=".tmp", dir=VIS_DIR)
+            with os.fdopen(fd, "w", encoding="utf8") as fh:
+                json.dump({"dia": d, "arestas": lst}, fh)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, os.path.join(VIS_DIR, d + ".json"))
+        except Exception as ex:
+            with sess_lock:
+                vis_sujo.add(d)
+            print("  visitas: não gravei %s (%s)" % (d, str(ex)[:80]))
+
+
+def _vis_carregar(dias, agora):
+    """No boot (sess_carregar, com o sess_lock): arestas de ontem e hoje e as visitas refeitas."""
+    for d in dias:
+        try:
+            with open(os.path.join(VIS_DIR, d + ".json"), encoding="utf8") as fh:
+                j = json.load(fh)
+        except Exception:
+            continue
+        lst = []
+        for e in j.get("arestas") or []:
+            if isinstance(e, dict) and e.get("tipo") in ("rosto", "juntar", "separar") and isinstance(e.get("a"), str) and isinstance(e.get("b"), str):
+                lst.append(e)
+                vis_seq[0] = max(vis_seq[0], int(e.get("seq") or 0))
+        vis_arestas[d] = lst
+
+
+def vis_idx_boot(agora=None):
+    """No boot, fora do sess_lock: o anel refeito do rostos.db para as fotos das levas das últimas 50 min. B1 (segurança):
+    só o rosto que passa em _sess_qualidade (principal, >= 60 px e, pela tabela rosto_q, score >= 0,80 e frontal); rosto
+    lido antes da tabela existir fica fora (sem score conhecido)."""
+    agora = time.time() if agora is None else agora
+    with sess_lock:
+        pids = {}
+        for x in sess.values():
+            if x.get("removida") or _num(x.get("cap1")) < agora - VIS_JANELA:
+                continue
+            for p in x["fotos"]:
+                pids[p] = (x["card"], _num(x.get("cap1")))
+    if not pids:
+        return 0
+    faces = _sess_faces_db(list(pids))
+    boas = _rosto_q_db(list(faces))
+    n = 0
+    with sess_lock:
+        for p, fs in faces.items():
+            card, t = pids.get(p, (None, 0))
+            if card is None:
+                continue
+            q = boas.get(p) or set()
+            fs = [(f[0], f[1], 1.0, True) if array.array("f", f[1]).tobytes() in q else (f[0], f[1], 0.0, False) for f in fs]
+            for f in _sess_principais(_sess_faces(fs)):
+                if _sess_qualidade(f):
+                    _vis_idx_add(t, card, p, f["v"])
+                    _vis_rostos_add(card, p, f["v"])
+                    n += 1
+    return n
+
+
+def _rosto_q_db(pids):
+    """{pid: {emb}} dos rostos de qualidade gravados (tabela rosto_q)."""
+    out = {}
+    if not pids or not os.path.exists(ROSTOS_DB):
+        return out
+    try:
+        db = rostos_db()
+        lista = list(pids)
+        for i in range(0, len(lista), 500):
+            parte = lista[i:i + 500]
+            for p, emb in db.execute("select pid, emb from rosto_q where pid in (%s)" % ",".join("?" * len(parte)), parte):
+                out.setdefault(p, set()).add(bytes(emb))
+        db.close()
+    except Exception as ex:
+        print("  visitas: rostos de qualidade do boot indisponíveis (%s)" % str(ex)[:80])
+    return out
+
+
+def vis_protege(cards):
+    """Levas de galeria de escola ou de menor: nunca ligam por rosto (só por Juntar). Refaz os dias afetados."""
+    cards = {c for c in cards if isinstance(c, str) and c}
+    novos = cards - vis_prot
+    if not novos:
+        return
+    with sess_lock:
+        antes = {c2 for c in novos for c2 in vis_levas_de(c)}   # as levas que estavam na visita da leva protegida
+        vis_prot.update(novos)
+        for d in {sess[c]["dia"] for c in novos if c in sess}:
+            _vis_recalc(d)
+        reab = _vis_ia_reabre(antes, "protegida")   # item 5: escola ou menor publicada depois da ligação
+    if reab:
+        print("  visitas: %d leva(s) voltaram a ter bases de IA (escola ou menor separada da visita)" % len(reab))
+    sess_gravar()
+
+
+def vis_protege_manifesto(m):
+    if isinstance(m, dict) and (m.get("tipo") == "evento" or m.get("menor")):
+        vis_protege({str(f.get("sessao") or "") for f in (m.get("fotos") or []) if isinstance(f, dict)} | set(m.get("sessoes") or []))
+
+
+def _vis_esquecer(pid, card, removida):
+    """LGPD (com o sess_lock): o pid sai do anel, das arestas e do registro de calibração; leva removida sai da visita."""
+    _vis_idx_tira(pids={pid})
+    vis_calib_tira.add(pid)                              # B1: o vis_gravar tira do arquivo (fora do sess_lock)
+    for o in vis_calib:
+        for k in ("pa", "pb"):
+            if o.get(k) == pid:
+                o[k] = None
+    for c in [card] if card else []:
+        if c in vis_rostos:
+            vis_rostos[c] = [(p, v) for p, v in vis_rostos[c] if p != pid]
+    for d, lst in vis_arestas.items():
+        for e in lst:
+            for k in ("pa", "pb"):
+                if e.get(k) == pid:
+                    e[k] = None
+                    vis_sujo.add(d)
+    if removida and card:
+        _vis_idx_tira(cards={card})
+        vis_rostos.pop(card, None)
+        x = sess.get(card)
+        if x is not None:
+            _vis_recalc(x["dia"])
 
 
 def ff_funcao_validar(body):
@@ -5633,6 +6403,9 @@ def estado_gravar(body, quem=""):
                     novo = db.execute("select 1 from doc where col = 'agenda' and id = ? and valor is not null", (d["id"],)).fetchone() is None
                     if novo and db.execute("select count(*) from doc where col = 'agenda' and valor is not null").fetchone()[0] >= AGENDA_DOCS_MAX:
                         continue                                # teto da agenda (revisão)
+                if d["col"] == "config" and d["id"] == "visitas":   # B1: o interruptor só muda pela rota /visitas/config
+                    print("  config/visitas recusada pela sincronização (só POST /visitas/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
                     if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
                         print("  config/ia: apagar recusado · de %s" % (quem or "?"))
@@ -6479,8 +7252,8 @@ class H(BaseHTTPRequestHandler):
 
     def cors(self):
         path = urlparse(self.path).path
-        if path.startswith("/fila-fotografo"):
-            # v87 (segurança N1): sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
+        if path.startswith(("/fila-fotografo", "/visitas")):
+            # v87 (segurança N1); v97: /visitas igual: sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
             o = (self.headers.get("Origin") or "").lower()
             if o and o in ORIGENS_REDE:
                 self.send_header("Access-Control-Allow-Origin", o)
@@ -6539,6 +7312,42 @@ class H(BaseHTTPRequestHandler):
         print("  função do dia atualizada por %s" % ("este computador" if self.loopback() else "posto " + self.client_address[0]))
         return self.js({"ok": True, "ignoradas": ignoradas})
 
+
+    def visitas_post(self, acao):
+        """v97: POST /visitas/juntar {a, b, por, posto} e /visitas/separar {card, por, posto} do Posto de venda. Posto +
+        origem + X-Eterna: 1 + 30 por minuto; só levas de hoje; registro em ~/Eterna/ponto/visitas-log.jsonl."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        if not limite_ok(self.client_address[0], "visitas", 30):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        try:
+            r, cod = vis_acao(acao, body, self.client_address[0])
+        except Exception as ex:
+            print("  visitas: %s" % str(ex)[:120])
+            return self.js({"error": "erro no servidor"}, 500)
+        return self.js(r, cod, nostore=True)
+
+    def visitas_config_post(self):
+        """B1: POST /visitas/config {rosto: bool, por, posto}: liga ou desliga a ligação automática por rosto. Posto +
+        origem + X-Eterna: 1 + 10 por minuto, corpo só com rosto booleano. O app só mostra o interruptor ao Admin."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        if not limite_ok(self.client_address[0], "visitas-config", 10):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        if not isinstance(body, dict) or not isinstance(body.get("rosto"), bool):
+            return self.js({"error": "rosto deve ser true ou false"}, 400)
+        try:
+            r = vis_cfg_gravar(body["rosto"], body.get("por"), body.get("posto"), self.client_address[0])
+        except Exception as ex:
+            print("  visitas: config %s" % str(ex)[:120])
+            return self.js({"error": "erro no servidor"}, 500)
+        return self.js(r, 200, nostore=True)
 
     def entradas_post(self):
         try:
@@ -6945,6 +7754,7 @@ class H(BaseHTTPRequestHandler):
                     codigos[m["codigo"]] = t
             gal_fila.put(t)
             nuvem_galeria_enfileira(t)
+            vis_protege_manifesto(m)                   # v97: fora do gal_lock (pega o sess_lock)
             return self.js({"ok": True, "token": t, "estado": gal_estado(t, m), "ignoradas": ignoradas})
         partes = p.split("/")
         if len(partes) != 4 or partes[1] != "g" or not token_ok(partes[2]):
@@ -7117,6 +7927,15 @@ class H(BaseHTTPRequestHandler):
             return self.js({**{k: v for k, v in rover.items()}, "configured": bool(c), "base_url": c["base_url"] if c else None})
         if u.path == "/roverpix/data":
             return self.js(rover_data())
+        if u.path == "/visitas":
+            # v97: as visitas de hoje (levas ligadas). Este computador ou um posto pelo endereço de ETERNA_ORIGENS; sem vetor e sem pid.
+            if not self.posto() or not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            try:
+                desde = max(0, int(q.get("desde", ["0"])[0]))
+            except ValueError:
+                desde = 0
+            return self.js(vis_feed(desde, ontem=q.get("ontem", [""])[0] == "1"), nostore=True)
         if u.path == "/fila-fotografo":
             # v87: painel da fila do fotógrafo (só leitura). Este computador ou um posto pelo endereço de ETERNA_ORIGENS.
             if not self.posto() or not self.origem_local():
@@ -7237,6 +8056,10 @@ class H(BaseHTTPRequestHandler):
             return self.fotos_enviar_post()
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
+        if u.path in ("/visitas/juntar", "/visitas/separar"):
+            return self.visitas_post(u.path.rsplit("/", 1)[1])
+        if u.path == "/visitas/config":
+            return self.visitas_config_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/fundos/modo":
@@ -7431,6 +8254,8 @@ def main():
         imp_retomar()
         threading.Thread(target=imp_monitor, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
+    rec_orfaos_encerrar()               # processo de recorte de uma partida anterior (agente que caiu) não segura memória
+    rec_versao_cache()                  # v97: recorte de versão anterior sai antes do recorte antecipado
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=metricas_loop, daemon=True).start()
@@ -7441,9 +8266,8 @@ def main():
     threading.Thread(target=galeria_loop, daemon=True).start()
     print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__, type(PAGAMENTO).__name__))
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
-    print("  Photoroom:         " + ("conectado" + (" (modo de testes)" if (pr_cfg() or {}).get("api_key", "").startswith("sandbox_") else "") if pr_cfg() else "sem chave (configure no Eterna: Fundos de IA)"))
     _rok, _rmot = rec_estado()
-    print("  Recorte local:     " + ("pronto (ISNet + u2net_human_seg, carrega na primeira foto)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
+    print("  Recorte local:     " + ("pronto (BiRefNet + a regra do que encosta na pessoa, num processo à parte; abre na partida)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")

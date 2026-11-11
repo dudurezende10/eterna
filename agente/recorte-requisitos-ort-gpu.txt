@@ -1,0 +1,19 @@
+# Eterna v97 · só o onnxruntime-gpu (mesma versão e hashes de recorte-requisitos-gpu.txt). Usado por instalar-recorte.bat gpu
+# com --force-reinstall --no-deps apenas quando o provedor CUDA falta depois da instalação (onnxruntime de CPU gravou por cima).
+onnxruntime-gpu==1.29.0 \
+    --hash=sha256:17d6ec021b06e9b3f622c69083ad48d725f95c319d2625280eacf092490e21f6 \
+    --hash=sha256:264f14cac514238bd548b5960b487383768c05967dc1291ccf46e7a9e7699af5 \
+    --hash=sha256:38f5ed87714af536f38d6ee81329d4a3899bf40d2fce9cf39dd6be74855b4832 \
+    --hash=sha256:3eace12b5065ca64bfe17ebd88427e833a8b4ed288f40e5e045db050c08d76b8 \
+    --hash=sha256:4247025e674a666f839c02b90c829277cb2e1be11576d3646cad5c86b7fc26c5 \
+    --hash=sha256:545d2966dd11208bbc98e67be4d92e54ecd793acc45c0532cc7bfd36f50692fa \
+    --hash=sha256:5c50d24541bf61e668dfe0a7a3a62de98def81959c832cc2d376814b661cb006 \
+    --hash=sha256:6f5344dce3d6d41248d5135e159f5addb49114198ea4630c258855cb532a6688 \
+    --hash=sha256:70a3cab61b800bff1c1cce1d56ecd31f894075b2eb92577bc6189eb660e3e8b2 \
+    --hash=sha256:8ccd052ca4de21b2a335f3503a283126163b6fab9dba29d1d9cbf3fa55c51d28 \
+    --hash=sha256:a64aa7c3dd7fa6b29fa7bcb0439ebd204607a590d3ce02bb276672257da4a454 \
+    --hash=sha256:c37187aaa39802283f47094ccdfa5a0667b7f9723feed67facf2cef6e0e6a6dc \
+    --hash=sha256:dca01986a5feb7c494d02333d43aa4deb2b482a9d341c6888b7837b72c9a9a07 \
+    --hash=sha256:de3caf93887ba4ad51c7d3cab04c7b464f9dd93c51047be5bfb413fd4a191e6a \
+    --hash=sha256:f1330dcda8cb6f7ad46d87cbf2330fc52f007206a1d22f3830d680d36c8de80f \
+    --hash=sha256:fb6045d8623a5b9f949449bb4b93bab92e7f77578a2dc34420babacd16e2908c
