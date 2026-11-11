@@ -71,10 +71,10 @@ O que existe (v92) funciona, mas depende de alguém digitar:
 - Rotas novas, todas em `rota_privada`, com `origem_local`, respostas `no-store` e erro em JSON:
   - `GET /estatisticas/dias?ano=AAAA` → contrato abaixo.
   - `GET /agenda/status` → situação das fontes (sem chave nem URL).
-  - `POST /agenda/atualizar` (posto + origem + `X-Eterna: 1` + `limite_ok(ip, rota, 1, 60)`) → acorda o `agenda_loop`; responde `{ok, ja_rodando}`. Sem chave: 409 `sem_chave`.
+  - `POST /agenda/atualizar` (posto + origem + `X-Eterna: 1` + `limite_ok(ip, rota, 1, 60)`) → acorda o `agenda_loop`; responde `{ok, ja_rodando}`. Sem chave: 409 `sem_chave`. Além do limite por IP, teto global: 429 `espera` com menos de 10 min da última busca ou nas 6 h depois de uma falha (ver "Teto global" na Implementação).
   - `POST /agenda/fonte {chave, venue_id?}` → só `loopback()` e origem local (regra das chaves); chave de 20 a 64 caracteres `[A-Za-z0-9]`; grava `af_salvar` e acorda o loop. Resposta nunca ecoa a chave.
   - `POST /ponto/entradas/totais {origem:"bilheteria", arquivo, por, dias:[{dia,total}]}` → posto + origem + `X-Eterna: 1` + 30/min, até 1000 dias e 256 KB, `total` inteiro de 0 a 100.000, dia entre 2026-01-01 e hoje; substitui dia e origem; registra em `importacao` (mesma tabela da v92, `origem "bilheteria"`); marca os dias em `dia_sujos`.
-- `/status`: bloco `agenda: {feriados_ate, jogos: {fonte: "api-football"|"nenhuma", chave: bool, ultima, ok, erro}}` e `roverpix.historico: {feitos, total, primeiro_dia}`.
+- `/status`: bloco `agenda: {feriados_ate, jogos: {fonte: "api-football"|"nenhuma", chave: bool, ultima, ok, erro}}`, com `erro` só como código genérico (`"falha"` ou null), nunca o texto; e `roverpix.historico: {feitos, total, primeiro_dia}`.
 
 **Roverpix de 2026**
 - `rover_sync_day(cfg, day, bruto=True)`: com `bruto=False` não grava `raw/` (um ano de fotos brutas passaria de 1 GB), só `agg/`.
@@ -105,7 +105,7 @@ O que existe (v92) funciona, mas depende de alguém digitar:
   2. Cartões "Dia de jogo" e "Dia normal" lado a lado (azul #134078 e cinza museu #D9D9D6): visitantes por dia, vendas por dia, conversão, R$ por dia (só Admin). Embaixo: "No mesmo dia da semana, dia de jogo tem X% mais (menos) visitantes e Y% mais (menos) vendas", com n de jogos.
   3. Tabela por tipo do dia (`esPorTipo`), com a pílula "poucos dias".
   4. Mês a mês, ano escolhido contra o anterior (`esMesAMes`), barras duplas por mês (`esBars` com `hi` no ano atual).
-  5. Botão "Baixar dias (CSV)" `data-act="es-dias-csv"`: `dia;tipo;eventos;visitantes;fonte_visitantes;vendas;fotos;sessoes;sessoes_com_venda;fonte_vendas` + `receita` só para Admin; células que começam com `= + - @` ganham `'` na frente.
+  5. Botão "Baixar dias (CSV)" `data-act="es-dias-csv"`: `dia;tipo;eventos;visitantes;fonte_visitantes;vendas;fotos;sessoes;sessoes_com_venda;fonte_vendas` + `receita` só para Admin; células que começam com `= + - @`, TAB ou `\r` ganham `'` na frente.
   6. Sem servidor: o mesmo alerta da seção a. Ano sem nenhum dia: "Ainda não há dias guardados em AAAA".
 - Textos em português, linguagem do Tour ("visitantes", "dia de jogo", nunca "pax"). Títulos Big Shoulders como as outras seções. Tela interna: sem I18N.
 - `ACT_MOD`: `es-ano`, `es-dias-csv` → `estatisticas`.
@@ -182,7 +182,7 @@ Agenda (coleção `agenda`, só os campos novos marcados):
 8. **Internet caída:** feriados e tabela `dia` são locais; a sincronização de jogos falha sem apagar nada e mostra o erro e a data da última que deu certo.
 9. **Fuso:** datas da API em UTC convertidas para `America/Sao_Paulo` antes de gravar; servidor em outro fuso já tem aviso (`/status.fuso`).
 10. **Backup:** a série diária vai para a nuvem pelo `operacao.db` só com `NUVEM_BUCKET`; sem ele, um disco perdido leva o histórico. Conferir `/status.backup.ok` no servidor de produção é passo do deploy.
-11. **CSV exportado:** proteção contra fórmula (`'` na frente); o arquivo tem faturamento: só baixa quem é Admin vê a coluna.
+11. **CSV exportado:** proteção contra fórmula (`'` na frente de `= + - @`, TAB e `\r`); o arquivo tem faturamento: só baixa quem é Admin vê a coluna.
 12. **Escala para 100 venues:** feriados hoje são do Rio; a lista vira `FERIADOS_POR_LOCAL` (UF e município do `config/venue`) quando entrar o segundo venue. O `venue_id` da API fica por servidor. Cada venue tem o seu `operacao.db`; a visão de vários venues juntos lê os backups na nuvem (fase SaaS).
 
 ## Decisões para o Eduardo (curtas)
@@ -202,7 +202,7 @@ Agenda (coleção `agenda`, só os campos novos marcados):
 
 ## Decisão do Eduardo (10/11, 16h54): chave da API-Football pela tela
 A chave é colada pelo Admin no próprio Calendário de eventos (bloco "Fontes"), sem depender do Ronaldo:
-- Campo só para quem pode alterar Configurações (Admin). Quem não é Admin não vê o bloco.
+- Campo só para o Admin. Quem não é Admin não vê o bloco.
 - Ao salvar, o app manda a chave só para o servidor do ponto (POST com login de Admin e X-Eterna: 1), que grava em ~/Eterna/api-football.json com permissão restrita (mesmo padrão do ftp-remoto.json/roverpix.json). A chave nunca vai para o SIM, para o localStorage, para o backup da nuvem em texto aberto, para logs nem para o Firestore.
 - O servidor nunca devolve a chave: a tela mostra só "Chave configurada ····<4 últimos>", a data, quem salvou e o resultado do último teste. Botões: "Testar agora" (1 consulta, mostra se a temporada atual veio), "Trocar chave" e "Remover".
 - Auditoria: salvar, trocar e remover entram no auditLog (sem a chave).
@@ -216,10 +216,12 @@ Branch `feat/agenda-estatisticas`, carimbo `v97-agenda`. Feito conforme o plano 
 - **Sem retroativo** (decisão 3): saíram `rover_hist_loop`, o `bruto=False` do `rover_sync_day` e o `/status.roverpix.historico`; o critério 17 não se aplica. A série diária começa em `DIA_DESDE = "2026-11-10"`. A Roverpix ainda vale para um dia sem vendas do servidor (D6), pelo `agg/` que a sincronização normal de 30 dias já grava.
 - **Tabela do total diário** chama `entrada_total`, não `entrada_dia` (esse nome já é de um índice do `operacao.db`). `POST /ponto/entradas/totais` e o botão "Importar total por dia (bilheteria)" na seção f entraram ("total diário quando existir").
 - **Id do estádio** fica em `~/Eterna/ponto/agenda-fonte.json` (`venue_id`), não no `api-football.json`: o arquivo da chave tem só `{chave, em, por}` e some inteiro no Remover. O POST não aceita `venue_id`.
-- **"POST com login"**: o agente ainda não confere quem está logado. As rotas `/agenda/fonte` e `/agenda/testar` exigem posto + origem do agente + `X-Eterna: 1` + limite + o e-mail em `quem` de alguém ativo com Configurações em Alterar no cadastro do servidor (`config_do_cadastro`; ver a decisão abaixo). Isso barra quem não altera Configurações pela tela e por engano, mas quem souber o e-mail de alguém com essa permissão e estiver num posto consegue trocar a chave (não ler). Fecha com o login no servidor (plano de 04/11). Aceita pelo endereço do Tailscale (`ETERNA_ORIGENS`), não só pelo loopback, para o Eduardo colar de fora.
-- **Atualizar jogos agora** acorda o `agenda_loop` (a busca roda em segundo plano); a tela relê a situação em 5 s. **Testar agora** roda na hora (até 2 consultas na primeira vez: estádio e temporada).
+- **"POST com login"**: o agente ainda não confere quem está logado. As rotas `/agenda/fonte` e `/agenda/testar` exigem posto + origem do agente + `X-Eterna: 1` + limite + o e-mail em `quem` de um Admin ativo no cadastro do servidor (Configurações, Usuários e Permissões em Alterar, `admin_do_cadastro`; ver as decisões abaixo). Isso barra quem não é Admin pela tela e por engano, mas quem souber o e-mail de um Admin e estiver num posto consegue trocar a chave (não ler). Fecha com o login no servidor (plano de 04/11). Aceita pelo endereço do Tailscale (`ETERNA_ORIGENS`), não só pelo loopback, para o Eduardo colar de fora.
+- **Atualizar jogos agora** acorda o `agenda_loop` (a busca roda em segundo plano); a tela relê a situação em 5 s. **Testar agora** roda na hora, dentro do `agenda_lock` (nunca junto com uma busca; com a busca rodando dá 409), com até 2 consultas na primeira vez (estádio e temporada).
+- **Teto global de consultas à API-Football** (todos os postos juntos, não por IP; Segurança, 11/11): uma busca de jogos no máximo a cada 10 min, pela tela ou pelo horário (Atualizar dá 429 `espera` com os minutos que faltam; o pedido barrado fica na fila do `agenda_loop`); Testar agora no máximo 1 vez por minuto; nenhuma consulta sai com menos de 10 restantes no dia ou passando de 80% do plano diário (100 no grátis; o limite que a API manda no cabeçalho vale por cima), e a conta zera na virada do dia; depois de uma falha, 6 h de espera também para o Atualizar jogos agora. Testar agora não espera as 6 h (é como o Admin confere uma chave nova) e salvar ou remover a chave zera a falha.
+- **Feriados**: os anos já semeados ficam em `agenda-fonte.json` (`feriados_anos`); ano semeado não é semeado de novo, então feriado apagado não volta mesmo se a lápide sumir.
 - **Jogo cancelado depois de gravado** sai do calendário e volta se a fonte remarcar, só quando quem tirou foi o próprio agente (`apagados_api`). Lápide de pessoa nunca volta.
-- **Falha da API** tenta de novo 6 h depois (não a cada minuto) e nunca apaga nada; `ultima` é a última que deu certo, `tentativa` a última tentativa.
+- **Falha da API** tenta de novo 6 h depois (não a cada minuto, nem pelo Atualizar jogos agora) e nunca apaga nada; `ultima` é a última que deu certo, `tentativa` a última tentativa. O `/status` (CORS aberto) mostra o `erro` só como código (`"falha"`); o motivo fica só em `/agenda/status`.
 - **Seção g só para o Admin**: o chip não aparece para quem não é Admin (`esSecoes`) e o R$ também é conferido dentro da seção (D7). O botão "Adicionar feriados de AAAA" só aparece sem o servidor do ponto.
 - **Fora desta entrega**: `docs/dados/jogos-maracana-2026.tsv` (montar a lista de fontes públicas sem conferir seria arriscado; com a chave a API preenche, e até lá Colar lista); clima; histórico da Roverpix.
 
@@ -227,11 +229,11 @@ Branch `feat/agenda-estatisticas`, carimbo `v97-agenda`. Feito conforme o plano 
 
 A chave da API-Football **não** fica no Calendário de eventos: vai para Configurações › Painel de controle (`vCatalogo`), num painel próprio "Calendário de eventos · fonte dos jogos", logo abaixo do painel "Checkout". Motivo: quem tem acesso ao Calendário não precisa ter acesso à chave. Substitui a seção "chave da API-Football pela tela" acima no que diz respeito ao lugar e a quem vê:
 
-- O painel só aparece para quem pode alterar Configurações (`can('configuracao','u')`); quem só lê Configurações não vê. A Supervisora tem `configuracao.u` e passa a ver e usar o painel.
-- No agente, a guarda das rotas `/agenda/fonte` e `/agenda/testar` virou `config` (`config_do_cadastro`: ativo e com Configurações em Alterar), no lugar da conferência de Admin.
+- O painel só aparece para o Admin (`isAdminUser(state.user)`). **Decisão do Eduardo (revisão de 11/11): a chave fica só com o Admin**; a Supervisora tem `configuracao.u`, mas não vê o painel e recebe 403 no POST.
+- No agente, a guarda das rotas `/agenda/fonte` e `/agenda/testar` é `admin` (`admin_do_cadastro`: ativo e com Configurações, Usuários e Permissões em Alterar).
 - Mesmo funcionamento: salva só no servidor do ponto, nunca devolve a chave (só os 4 últimos), Testar agora, Trocar, Remover, auditoria sem a chave.
 - No Calendário fica só a situação em linguagem simples ("Jogos: atualizados em dd/mm hh:mm (N em AAAA)", "Jogos: fonte não configurada, peça ao Admin", "Jogos: a última busca não deu certo..."), "Atualizar jogos agora" para quem edita o calendário (com fonte configurada) e "Colar lista".
-- Critérios ajustados: quem altera Configurações salva e testa no Painel de controle; o Calendário não mostra campo nem bloco da chave para ninguém; quem só lê Configurações não vê o painel e recebe 403 no POST; GET de situação nunca contém a chave (`testes/agenda_agente.py`, `testes/agenda-estatisticas.js`).
+- Critérios ajustados: só o Admin salva e testa no Painel de controle; o Calendário não mostra campo nem bloco da chave para ninguém; a Supervisora (e quem não é Admin) não vê o painel e recebe 403 no POST, sem nada gravado; GET de situação nunca contém a chave (`testes/agenda_agente.py`, `testes/agenda-estatisticas.js`).
 
 ### Pontos de contato com as outras branches (para a junção)
 

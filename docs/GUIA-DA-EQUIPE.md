@@ -770,15 +770,17 @@ Bom saber:
 - A coluna **Origem** mostra "Automático · feriados", "Automático · jogos", "Manual" ou "Importado". Evento automático que você edita ou apaga não volta a ser mudado pelo servidor.
 - Se aparecer o aviso **Este aparelho não está ligado ao servidor do ponto**, você está vendo só o que foi salvo neste navegador. O que criar sobe quando abrir o Eterna pelo servidor (no estádio ou pelo Tailscale).
 
-### Chave da API-Football (quem altera Configurações)
+### Chave da API-Football (só o Admin)
 
 1. Crie a conta em dashboard.api-football.com (o plano grátis dá 100 consultas por dia) e copie a chave.
-2. Abra o Eterna **pelo servidor do ponto** (no estádio ou pelo Tailscale) e vá em **Configurações › Painel de controle**. Logo abaixo do painel **Checkout** fica **Calendário de eventos · fonte dos jogos**. Quem só lê Configurações não vê esse painel, e o Calendário de eventos não mostra a chave.
+2. Abra o Eterna **pelo servidor do ponto** (no estádio ou pelo Tailscale) e vá em **Configurações › Painel de controle**. Logo abaixo do painel **Checkout** fica **Calendário de eventos · fonte dos jogos**. Só o Admin vê esse painel. A Supervisora e os outros perfis não veem, e o Calendário de eventos não mostra a chave.
 3. Cole a chave e toque em **Salvar chave**. A tela passa a mostrar "Chave configurada ····" com os 4 últimos caracteres, quando e por quem foi salva.
-4. Toque em **Testar agora**: aparece se a temporada atual veio e quantos jogos no Maracanã.
+4. Toque em **Testar agora**: aparece se a temporada atual veio e quantos jogos no Maracanã. Dá para testar uma vez por minuto.
 5. **Trocar chave** e **Remover** ficam no mesmo bloco. Tudo fica no registro de alterações, sem a chave.
 
 A chave fica só no servidor do ponto. Ela não aparece na tela, no navegador, no backup nem no registro.
+
+Para não gastar as consultas do plano, o servidor busca os jogos no máximo a cada 10 minutos e para sozinho quando o plano do dia está perto do fim. Se uma busca não der certo, ele tenta de novo sozinho depois de 6 horas.
 
 ### Jogos e ano a ano (Estatísticas, só o Admin)
 
