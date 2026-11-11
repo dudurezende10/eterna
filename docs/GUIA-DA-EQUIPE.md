@@ -104,7 +104,7 @@ O Painel responde em poucos segundos "como foi o período": faturamento, fotos, 
 - **Vendas**: quantos atendimentos viraram venda, foram descartados ou cancelados, e os brindes.
 - **Fotos**: quanto das fotos vendidas saiu impressa, e as reimpressões.
 - **Sessões**: de cada 100 sessões, quantas chegaram ao balcão e quantas compraram. A frase diz onde está a maior perda.
-- **Ranking de produtos**: sempre os 12 produtos do catálogo (os da Imply); o que vem de nomes antigos da Roverpix fica em "Outros (catálogo antigo)". As cortesias (Cortesia SAC e CORTESIA PORTA-RETRATO) aparecem depois dos produtos vendidos, com quantas foram dadas e "cortesia" no lugar do valor. Elas não contam na receita nem na posição do ranking. Só aparecem quando houve alguma no período.
+- **Ranking de produtos**: sempre os produtos do catálogo (o de antes da v98, que voltou na v99.3); nome que não é de nenhum deles fica em "Outros (catálogo antigo)". As cortesias (Cortesia SAC e CORTESIA PORTA-RETRATO) aparecem depois dos produtos vendidos, com quantas foram dadas e "cortesia" no lugar do valor. Elas não contam na receita nem na posição do ranking. Só aparecem quando houve alguma no período.
 - **Pagamentos**: quanto entrou por modalidade. Dinheiro aguardando caixa aparece numa nota e não entra no total.
 - **Dia a dia**: toque para abrir a tabela.
 - **"total de 07/10 a 15/10"**: com os números importados, Vendas, Fotos, Ranking e Pagamentos só existem como total do período inteiro.
@@ -439,29 +439,26 @@ Outras coisas que o cliente pode fazer:
 
 ### Pacotes, adicionais e economia (escolhidos no Posto de venda desde a v96)
 
-Desde a v98 o catálogo é o da Imply: mesmos produtos, nomes, preços e código (SKU). Produto que não existe na Imply não é cadastrado.
+Na v99.3 (11/11) voltou o catálogo de antes da v98: a lista da Imply ficou de lado por decisão do Ronaldo.
 
-| Produto | O que leva | Preço | Vende online |
-| --- | --- | --- | --- |
-| Todas as fotos digitais | todas as fotos, só digitais | R$ 250 | sim |
-| Acima de 15 fotos digitais | todas as fotos, só digitais | R$ 250 | não |
-| PACOTE TRIBUNA DE HONRA | 12 fotos, digitais e impressas | R$ 220 | não |
-| PACOTE MARACANÃ | 9 fotos, digitais e impressas | R$ 190 | não |
-| PACOTE GRAMADO | 6 fotos, digitais e impressas | R$ 150 | não |
-| PACOTE ZONA MISTA | 3 fotos, só digitais | R$ 110 | sim |
-| 3 fotos digitais e impressas | 3 fotos, digitais e impressas | R$ 110 | não |
-| PACOTE ARQUIBANCADA | 1 foto, digital e impressa | R$ 70 | não |
-| 1 foto digital e impressa | 1 foto, digital e impressa | R$ 70 | não |
-| 1 foto (adicional) digital ou impressa | 1 foto a mais | R$ 35 | sim |
-| Figurinha Copa | figurinha | R$ 20 | não |
-| Porta-retrato | porta-retrato, com a CORTESIA PORTA-RETRATO | R$ 75 | não |
+| Produto | O que leva | Preço |
+| --- | --- | --- |
+| Pacote Maracanã Mais | todas as fotos, só digitais | R$ 250 |
+| Pacote Tribuna de Honra | 12 fotos, digitais e impressas | R$ 220 |
+| Pacote Maracanã | 9 fotos, digitais e impressas | R$ 190 |
+| Pacote Gramado | 6 fotos, digitais e impressas | R$ 150 |
+| Pacote Zona Mista | 3 fotos, só digitais | R$ 110 |
+| Pacote Arquibancada | 1 foto, digital e impressa | R$ 70 |
+| Foto adicional | 1 foto a mais, digital e impressa | R$ 35 |
+| Fundo de IA | uma foto do campo com o grupo no fundo escolhido | R$ 40 |
+| Foto digital avulsa | uma foto em alta, comprada na galeria online | R$ 39 |
 
 Cortesias (sem valor, não são venda):
 
 | Cortesia | Quando | O que leva |
 | --- | --- | --- |
 | Cortesia SAC | cliente prejudicado pela operação: espera longa, falha de foto, impressão ou sistema, problema no atendimento | as fotos escolhidas, impressas e digitais |
-| CORTESIA PORTA-RETRATO | entra sozinha, uma para cada Porta-retrato vendido | 1 foto impressa para pôr no porta-retrato |
+| CORTESIA PORTA-RETRATO | entra sozinha, uma para cada Porta-retrato vendido (parada desde a v99.3: o Porta-retrato saiu com a lista da Imply) | 1 foto impressa para pôr no porta-retrato |
 
 Todas as impressas são 10×15 cm.
 
@@ -608,13 +605,13 @@ A aba **Envio** mostra se cada galeria chegou ao computador do ponto:
 ### Ajustes em Preços e Checkout
 
 - **Tempo da tela final do Checkout**: Configurações › Preços e Checkout › aba Checkout › "Tempo da tela final com o QR (segundos)". Padrão 40, de 5 a 120.
-- **Preços da galeria online (v99)**: os mesmos do balcão, dos produtos que vendem online (tabela da seção 3). O cliente escolhe as fotos e a galeria monta o mais barato: até 3 fotos, PACOTE ZONA MISTA; de 4 em diante, mais uma foto adicional por foto, até ficar mais caro que Todas as fotos digitais.
+- **Preços da galeria online (v99.3)**: cada foto custa a **Foto digital avulsa**; se sair mais caro que o **Pacote Maracanã Mais**, a compra vira o pacote (todas as fotos). Os preços são os de Preços e Checkout.
 
 ### Ver as vendas da galeria
 
-Em **Lista de vendas**, use o filtro **Canal: Online**. A compra online paga na Imply aparece como **Imply online** (v99), com o código do pedido (ON-...). As compras simuladas do servidor de teste aparecem como **teste** e ficam fora da receita.
+Em **Lista de vendas**, use o filtro **Canal: Online**. As compras simuladas do servidor de teste aparecem como **teste** e ficam fora da receita.
 
-Como o cliente compra online (v99): escolhe as fotos na galeria, informa nome, e-mail e CPF (ou passaporte, se for estrangeiro) e paga no checkout da Imply, com Pix ou cartão. Ao voltar, a galeria espera a Imply confirmar e libera as fotos. Se ele fechar a página depois de pagar, a Nuvem confere sozinha e manda o link das fotos por e-mail.
+A compra online paga no checkout da Imply (v99) está **desligada**: dependia da lista da Imply (código SKU de cada produto), que ficou de lado na v99.3, e das respostas da Imply. Enquanto isso, a compra das fotos é no balcão.
 
 ---
 
