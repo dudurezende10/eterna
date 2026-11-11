@@ -1281,7 +1281,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.2 · 11/11 18:28"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.2 · 11/11 18:31"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3394,7 +3394,7 @@ function vQuiosque(){
     const caixa=vq?`<div class="lj-lb lj-lbfs" id="lj-lb" role="region" aria-label="${v+1} / ${n}">
         <div class="lj-lbmid">${img(vq,vs,'lj-lbimg',vq.lb)}</div>
         <div class="lj-ovtl"><div class="lj-logo lj-ovlogo" data-act="loja-logo">${logo}</div></div>
-        <div class="lj-ovtr">${ljLangOv()}${ljSairBtn('lj-ovb')}${cartPill}<button class="lj-ovb lj-lbx" data-act="kiosk-fechar" aria-label="${T('ljVerTodas')}" title="${T('ljVerTodas')}">${ICO.grid}</button></div>
+        <div class="lj-ovtr">${ljLangOv()}${ljSairBtn('lj-ovb')}${cartPill}${k.so&&!k.so.visita?`<button class="lj-ovb lj-maisp" data-act="kiosk-mais" aria-label="${T('addPerson')}" title="${T('addPerson')}">${ICO.face}</button>`:''}<button class="lj-ovb lj-lbx" data-act="kiosk-fechar" aria-label="${T('ljVerTodas')}" title="${T('ljVerTodas')}">${ICO.grid}</button></div>
         <button class="lj-lbnav prev" data-act="kiosk-ver" data-i="${v-1}" ${v===0?'disabled':''} aria-label="${T('ljPrev')}">‹</button>
         <button class="lj-lbnav next" data-act="kiosk-ver" data-i="${v+1}" ${v>=n-1?'disabled':''} aria-label="${T('ljNext')}">›</button>
         <span class="lj-lbcnt">${v+1} / ${n}</span>
@@ -6270,7 +6270,7 @@ function lojaAbrirSo(minhas,anc,ext){const k=state.kiosk;const mais=k.mais;
   const ids=lojaIdsSo(minhas);if(!mais)lojaPickLimpa(anc); // B2: marca velha de quem usou a mesma sessão antes não aparece nem entra no pedido
   // v97: base (levas achadas) e fix (fotos só achadas: menor, escola, "talvez") deixam o Checkout refazer a visita quando o Posto junta ou separa
   const fix=Object.assign({},(ext&&ext.fix)||{});cards.forEach(c=>{if(ext&&ext.base&&!ext.base.includes(c)&&!lojaVisCards(ext.base).includes(c))fix[c]=(minhas[c]||[]).slice();});
-  if(!mais)ljTempo(anc,'inicio');Object.assign(k,{code:anc,so:{card:anc,cards,ids,base:ext&&ext.base?ext.base.slice():null,fix,visita:!!(ext&&ext.base)},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false,mais:null,camOn:false});if(mais)camStop();else ljAbrirEd(k); // v97 (selo, A4)
+  if(!mais)ljTempo(anc,'inicio');Object.assign(k,{code:anc,so:{card:anc,cards,ids,base:ext&&ext.base&&ext.base.length?ext.base.slice():null,fix,visita:!!(ext&&ext.base&&ext.base.length)},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false,mais:null,camOn:false});if(mais)camStop();else ljAbrirEd(k); // v97 (selo, A4)
   toast(T(mais?'addedPerson':'foundYou'));render();lojaPreload(anc);iaAquecer(anc);}
 // proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
 const LJ_AR={};
