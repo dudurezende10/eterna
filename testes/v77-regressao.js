@@ -52,12 +52,12 @@ const semRolagem=pg=>pg.evaluate(()=>({s:document.documentElement.scrollWidth,i:
 (async()=>{const procs=[];const homes=[];let srv=null;let b=null;
 let U=process.env.U;
 try{
-  if(!U){const P0=8794;srv=spawn('python3',['-m','http.server',String(P0)],{cwd:RAIZ,stdio:'ignore'});procs.push(srv);await sleep(800);U=`http://127.0.0.1:${P0}/index.html`;}
+  if(!U){const P0=+(process.env.V77_PORTA||8794);srv=spawn('python3',['-m','http.server',String(P0)],{cwd:RAIZ,stdio:'ignore'});procs.push(srv);await sleep(800);U=`http://127.0.0.1:${P0}/index.html`;}
   const ORIG=new URL(U).origin;b=await chromium.launch();
 
   // =============== A. agente sem OpenCV, origem do app padrão (https://eterna.photo) ===============
   dbg('A');
-  const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H);const P=8796;
+  const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H);const P=+(process.env.V77_PORTA||8794)+2;
   const pids=['a1b2c3d4e5f6','0a1b2c3d4e5f','f6e5d4c3b2a1'];fotosNoInbox(H,pids.map((p,i)=>[p,jpegsLisos(3)[i]]));
   // galeria já encerrada antes de o agente subir (como depois de um "Encerrar" de ontem)
   const TZ=tok();const fz=[{id:'ag_'+pids[2],sessao:'LPZ',direito:'venda',canal:null}];const MZ=manifesto(TZ,fz,{sessoes:['LPZ']});
@@ -156,34 +156,48 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
   // =============== B. app servido pelo agente, com OpenCV: galeria no modo agente, R3, R4, S3 ===============
   dbg('B');
   let temCV=true;try{execFileSync('python3',['-c','import cv2, numpy'],{stdio:'ignore'});}catch(e){temCV=false;}
-  const H2=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H2);const P2=8795;const UA=`http://127.0.0.1:${P2}/index.html`;
+  const H2=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H2);const P2=+(process.env.V77_PORTA||8794)+1;const UA=`http://127.0.0.1:${P2}/index.html`;
   let imgs=[];
   if(temCV){fs.mkdirSync(path.join(H2,'Eterna','modelos'),{recursive:true});for(const f of ['face_detection_yunet_2023mar.onnx','face_recognition_sface_2021dec.onnx'])fs.copyFileSync(path.join(RAIZ,'vendor','rostos',f),path.join(H2,'Eterna','modelos',f));
     const pg=await b.newPage();await pg.goto(U);await pg.waitForTimeout(500);
     imgs=await pg.evaluate(async()=>{await ETERNA.faceIndexAll();await new Promise(r=>setTimeout(r,300));await ETERNA.faceq;const ss=ETERNA.demoSessions().filter(s=>s.photos.length>=3);const pick=[];
-      const keys=new Set();for(const s of ss){if(keys.has(s.key))continue;const id=s.photos.map(p=>p.id).find(id=>(ETERNA.FACEIDX[id]||[]).length===1);if(id){pick.push(id);keys.add(s.key);}if(pick.length>=3)break;}
-      const out=[];for(const id of pick){const c=await ETERNA.photoCanvas(id);const k=document.createElement('canvas');k.width=c.width*2;k.height=c.height*2;k.getContext('2d').drawImage(c,0,0,k.width,k.height);out.push(k.toDataURL('image/jpeg',.88).split(',')[1]);}return out;});await pg.close();}
+      const dobro=(c,fx)=>{const k=document.createElement('canvas');k.width=c.width*2;k.height=c.height*2;const x=k.getContext('2d');if(fx)fx(x,k);x.drawImage(c,0,0,k.width,k.height);return k;};
+      // uma pessoa por vez (0f53bf2, 31/10): a selfie com 2 rostos parecidos volta "varias" no navegador; a foto ampliada passa pelo mesmo detector do app (faceFind)
+      const keys=new Set();for(const s of ss){if(keys.has(s.key))continue;for(const id of s.photos.map(p=>p.id).filter(id=>(ETERNA.FACEIDX[id]||[]).length===1)){const r=await ETERNA.faceFind(dobro(await ETERNA.photoCanvas(id)));if(r.varias||r.semRosto)continue;pick.push(id);keys.add(s.key);break;}if(pick.length>=3)break;}
+      const out=[];for(const id of pick){const c=await ETERNA.photoCanvas(id);out.push(dobro(c).toDataURL('image/jpeg',.88).split(',')[1]);}
+      // v95 (LGPD): a selfie abre só as fotos em que a pessoa aparece; mais 3 fotos da pessoa A (espelhada, mais clara, espelhada e com contraste)
+      if(pick.length){const c=await ETERNA.photoCanvas(pick[0]);for(const fx of [(x,k)=>{x.translate(k.width,0);x.scale(-1,1);},x=>{x.filter='brightness(1.12)';},(x,k)=>{x.translate(k.width,0);x.scale(-1,1);x.filter='contrast(1.1)';}])out.push(dobro(c,fx).toDataURL('image/jpeg',.88).split(',')[1]);}
+      return out;});await pg.close();}
   const bufs=imgs.map(x=>Buffer.from(x,'base64'));const pp=['b1b2b3b4b5b6','c1c2c3c4c5c6','e1e2e3e4e5e6','d1d2d3d4d5d6'];
-  fotosNoInbox(H2,bufs.length>=3?pp.slice(0,3).map((p,i)=>[p,bufs[i]]).concat([[pp[3],jpegsLisos(1)[0]]]):pp.map((p,i)=>[p,jpegsLisos(4)[i]]));
+  const pA=['a2a2a2a2a2a2','a3a3a3a3a3a3','a4a4a4a4a4a4']; // v95: mais fotos da pessoa A
+  fotosNoInbox(H2,bufs.length>=6?pp.slice(0,3).map((p,i)=>[p,bufs[i]]).concat([[pp[3],jpegsLisos(1)[0]]],pA.map((p,i)=>[p,bufs[3+i]])):pp.map((p,i)=>[p,jpegsLisos(4)[i]]));
   // galeria encerrada no HOME do agente B: a limpeza da primeira publicação cria a lápide; o app tem que tratar o 410
   const TZ2=tok();const MZ2=manifesto(TZ2,[{id:'ag_'+pp[3],sessao:'LPZ2',direito:'venda',canal:null}],{sessoes:['LPZ2']});fs.mkdirSync(path.join(H2,'Eterna','galerias',TZ2),{recursive:true});fs.writeFileSync(path.join(H2,'Eterna','galerias',TZ2,'sessao.json'),JSON.stringify({...MZ2,encerrada:true,expira:new Date(Date.now()-60e3).toISOString()}));
   const B=await subir(P2,{ETERNA_APP_ORIGIN:ORIG,ETERNA_PAGAMENTO:'simulado',ETERNA_MODO_TESTE:'1',...(temCV?{}:{ETERNA_SEM_OPENCV:'1'})},H2);procs.push(B.p);CKS[P2]=S.sessao(H2);
-  let lig=false;if(temCV){for(let i=0;i<160;i++){const s=(await req(P2,'GET','/status')).j;if(s&&s.rostos&&s.rostos.ligado&&s.rostos.lidas>=4){lig=true;break;}await sleep(500);}}
+  let lig=false;if(temCV){for(let i=0;i<160;i++){const s=(await req(P2,'GET','/status')).j;if(s&&s.rostos&&s.rostos.ligado&&s.rostos.lidas>=7){lig=true;break;}await sleep(500);}}
   const ctxA=await b.newContext({viewport:{width:390,height:844},locale:'pt-BR'});await S.noNavegador(ctxA,P2,[CKS[P2],S.posto(H2,'Checkout v77')]); // pessoa conectada e aparelho pareado
   await ctxA.addInitScript(()=>{window.__toasts=[];document.addEventListener('DOMContentLoaded',()=>{const t=document.querySelector('#toast');if(t)new MutationObserver(()=>{if(t.textContent)window.__toasts.push(t.textContent);}).observe(t,{childList:true,characterData:true,subtree:true});});});
   const AVISO='Agente do ponto conectado';
   if(!lig){notas.push('B: galeria no modo agente não testada (sem OpenCV ou reconhecimento não ligou)');}
-  else{const TB=tok();const fb=[{id:'ag_'+pp[0],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_'+pp[1],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[3],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[2],sessao:'LPB',direito:'cortesia',canal:null,cortesia:{motivo:'escola',por:'eduardo@eduardorezende.com',em:new Date().toISOString()}}];
+  else{const TB=tok();// v95 (Ronaldo, 09/11, LGPD): a selfie de A abre só as fotos de A (comprada, 2 à venda, cortesia); as à venda de B e a sem rosto ficam de fora
+    // v96.1 (C1): a cortesia de C é da venda e aparece também (compradas e cortesias da venda entram sempre depois de uma selfie que bateu)
+    const fb=[{id:'ag_'+pp[0],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_'+pA[0],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pA[2],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pA[1],sessao:'LPB',direito:'cortesia',canal:null,cortesia:{motivo:'escola',por:'eduardo@eduardorezende.com',em:new Date().toISOString()}},
+      {id:'ag_'+pp[1],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[3],sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[2],sessao:'LPB',direito:'cortesia',canal:null,cortesia:{motivo:'escola',por:'eduardo@eduardorezende.com',em:new Date().toISOString()}}];
     await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(TB,fb,{sessoes:['LPB']})}});ok(!!(await esperarEnvio(H2,TB)),'pré B: envio da galeria não ficou ok');
     const G=await nova(ctxA,'galeria-agente');const reqs=[];G.on('request',q=>{if(/\/g\//.test(q.url()))reqs.push(q.method()+' '+q.url().replace(/^https?:\/\/[^/]+/,'').replace(/\?.*/,''));});
     await G.goto(UA+'#g/'+TB);await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});
-    ok(await G.evaluate(()=>ETERNA.pub.modo==='agente'&&ETERNA.pub.step==='consent'),'B: galeria pelo agente deveria abrir o consentimento no modo agente: '+JSON.stringify(await G.evaluate(()=>({m:ETERNA.pub.modo,s:ETERNA.pub.step}))));
+    // v96.1 (decisão do Eduardo, 10/11): o QR sozinho abre as compradas e cortesias da venda (rota livres), sem à venda
+    const g0=await G.evaluate(()=>({m:ETERNA.pub.modo,s:ETERNA.pub.step,dl:[...document.querySelectorAll('[data-act="gq-dl"]')].map(x=>x.dataset.pid).sort().join(','),sel:document.querySelectorAll('[data-act="gq-sel"]').length,mais:!!document.querySelector('[data-act="gq-mais"]')}));
+    ok(g0.m==='agente'&&g0.s==='galeria'&&g0.dl===['ag_'+pp[0],'ag_'+pA[1],'ag_'+pp[2]].sort().join(',')&&!g0.sel&&g0.mais,'B (v96.1): só pelo QR no modo agente, as 3 da venda e nenhuma à venda: '+JSON.stringify(g0));
+    await G.click('[data-act="gq-mais"]');
+    ok(await G.evaluate(()=>ETERNA.pub.step==='consent'),'B: Encontrar mais fotos suas deveria abrir o consentimento');
     await G.screenshot({path:PR+'/v77-agente-consentimento.png'});
     await G.check('[data-act="gq-consent"]');await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});await G.waitForTimeout(400);
     await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));
     await G.waitForFunction(()=>ETERNA.pub&&!['buscando','selfie'].includes(ETERNA.pub.step),null,{timeout:60000}).catch(()=>{});
     const gb=await G.evaluate(()=>({step:ETERNA.pub.step,motivo:ETERNA.pub.motivo,dl:[...document.querySelectorAll('[data-act="gq-dl"]')].map(x=>x.dataset.pid),sel:[...document.querySelectorAll('[data-act="gq-sel"]')].map(x=>x.dataset.pid)}));
-    ok(gb.step==='galeria'&&gb.dl.length===2&&gb.sel.length===2,'B: galeria no modo agente: '+JSON.stringify(gb));
+    const deA=['ag_'+pp[0],'ag_'+pA[1],'ag_'+pp[2]].sort().join(',')+'|'+['ag_'+pA[0],'ag_'+pA[2]].sort().join(',');
+    ok(gb.step==='galeria'&&gb.dl.slice().sort().join(',')+'|'+gb.sel.slice().sort().join(',')===deA,'B (v96.1): galeria no modo agente deveria ter as 3 da venda (comprada e cortesias) e só as à venda de A (2): '+JSON.stringify(gb));
     await G.waitForTimeout(600);await G.screenshot({path:PR+'/v77-agente-galeria.png',fullPage:true});
     if(gb.step==='galeria'){
       // ---- CORRIGIR 4a: com mais de 12 min de galeria, Baixar pede links novos antes de baixar
@@ -192,7 +206,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
       const iG=reqs.findIndex(x=>/^POST .*\/galeria$/.test(x)),iF=reqs.findIndex(x=>/^GET .*\/foto\//.test(x));
       ok(d1&&iG>=0&&iF>iG,'R4: com a galeria aberta há 13 min, Baixar deveria pedir /galeria e depois baixar: '+JSON.stringify({download:!!d1,reqs}));
       // ---- CORRIGIR 4b: link vencido (403 no download) pede links novos e tenta de novo uma vez
-      dbg('R4b');reqs.length=0;let vez=0;await G.route('**/g/'+TB+'/foto/**',rt=>{if(rt.request().url().includes('v=original')&&vez++===0)return rt.fulfill({status:403,contentType:'application/json',body:'{"error":"link vencido"}'});return rt.continue();});
+      dbg('R4b');reqs.length=0;let vez=0;await G.route('**/g/'+TB+'/foto/**',rt=>{if(rt.request().url().includes('v=original')&&rt.request().resourceType()==='fetch'&&vez++===0)return rt.fulfill({status:403,contentType:'application/json',body:'{"error":"link vencido"}'});return rt.continue();});
       let d2=null;try{[d2]=await Promise.all([G.waitForEvent('download',{timeout:8000}),G.click(`[data-act="gq-dl"][data-pid="${gb.dl[0]}"]`)]);}catch(e){}
       ok(d2&&reqs.some(x=>/^POST .*\/galeria$/.test(x))&&vez>=2,'R4: download que falhou (403) deveria renovar os links e baixar na segunda tentativa: '+JSON.stringify({download:!!d2,vez,reqs}));
       if(d2){const fp=await d2.path();ok(fs.statSync(fp).size>10000,'R4: arquivo baixado vazio');}
@@ -212,15 +226,15 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
       const [pres]=await Promise.all([G.waitForResponse(rs=>/\/pagamento$/.test(rs.url()),{timeout:8000}).catch(()=>null),G.click('[data-act="gq-pay"]')]);const pj=pres?await pres.json().catch(()=>null):null;await G.waitForTimeout(400);
       ok(pj&&pj.ok&&pj.pedido&&pj.pedido.teste===true&&pj.pedido.total===39,'S3: pagamento simulado pelo agente deveria vir aprovado com teste:true e total 39: '+JSON.stringify(pj&&pj.pedido));
       ok(await G.evaluate(p=>ETERNA.pub.step==='galeria'&&!!document.querySelector(`[data-act="gq-dl"][data-pid="${p}"]`),gb.sel[0]),'S3: foto paga deveria ir para Suas fotos');
-      // ---- CORRIGIR 4c: acesso vencido (401) volta para a selfie, com aviso próprio (não "esse rosto não aparece")
+      // ---- CORRIGIR 4c: acesso vencido (401) avisa (não "esse rosto não aparece"); v96.1: na venda volta para as compradas e cortesias do QR, sem as à venda
       dbg('R4c');await G.evaluate(()=>{ETERNA.pub.acesso='forjado-acesso-vencido';ETERNA.pub.galAt=Date.now()-13*60000;});await G.click(`[data-act="gq-dl"][data-pid="${gb.dl[0]}"]`);await G.waitForTimeout(800);
-      const r4=await G.evaluate(([again,noMatch])=>({step:ETERNA.pub.step,txt:document.body.innerText,again,noMatch,ph:document.querySelectorAll('.gq-ph').length,acesso:ETERNA.pub.acesso}),[TT('gq_again','pt'),TT('gq_noMatch','pt')]);
-      ok(r4.step==='selfie'&&r4.txt.includes(r4.again)&&!r4.txt.includes(r4.noMatch)&&r4.ph===0&&!r4.acesso,'R4: acesso vencido (401) deveria voltar para a selfie com gq_again: '+JSON.stringify({...r4,txt:r4.txt.slice(0,160)}));
+      const r4=await G.evaluate(([again,noMatch])=>({step:ETERNA.pub.step,txt:document.body.innerText,toasts:window.__toasts.join('|'),again,noMatch,sel:document.querySelectorAll('[data-act="gq-sel"]').length,dl:document.querySelectorAll('[data-act="gq-dl"]').length,mais:!!document.querySelector('[data-act="gq-mais"]'),acesso:ETERNA.pub.acesso}),[TT('gq_again','pt'),TT('gq_noMatch','pt')]);
+      ok(r4.step==='galeria'&&r4.toasts.includes(r4.again)&&!r4.txt.includes(r4.noMatch)&&!r4.sel&&r4.dl>0&&r4.mais&&!r4.acesso,'R4 (v96.1): acesso vencido (401) deveria voltar às compradas do QR com gq_again: '+JSON.stringify({...r4,txt:r4.txt.slice(0,160)}));
       await G.screenshot({path:PR+'/v77-agente-acesso-vencido.png'});
       // pagamento com acesso vencido também volta para a selfie
       await G.evaluate(u=>{ETERNA.pubMatch(u);},'data:image/jpeg;base64,'+(bufs[0]).toString('base64'));await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='galeria',null,{timeout:60000}).catch(()=>{});
       if(await G.evaluate(()=>ETERNA.pub.step==='galeria'&&!!document.querySelector('[data-act="gq-sel"]'))){await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});await G.click('[data-act="gq-sel"]');await G.click('[data-act="gq-buy"]');await G.click('[data-act="gq-paym"][data-m="pix"]');
-        await G.evaluate(()=>{ETERNA.pub.acesso='forjado-acesso-vencido';});await G.click('[data-act="gq-pay"]');await G.waitForTimeout(600);ok(await G.evaluate(()=>ETERNA.pub.step==='selfie'),'R4: pagamento com acesso vencido deveria voltar para a selfie');}
+        await G.evaluate(()=>{ETERNA.pub.acesso='forjado-acesso-vencido';});await G.click('[data-act="gq-pay"]');await G.waitForTimeout(600);ok(await G.evaluate(()=>ETERNA.pub.step==='galeria'&&!ETERNA.pub.acesso&&!document.querySelector('[data-act="gq-sel"]')),'R4 (v96.1): pagamento com acesso vencido deveria voltar às compradas do QR');}
       else notas.push('R4: segunda selfie não abriu a galeria; pagamento com 401 não testado');
       // ---- S3 na Lista de vendas (app com agente): venda online de teste, fora da receita
       const AD=await nova(ctxA,'admin-agente',{width:1440,height:900});await login(AD,UA);
@@ -337,7 +351,7 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
   dbg('prints SIM');
   {const G=await nova(ctx,'galeria-sim',{width:390,height:844});await G.goto(U);await G.waitForTimeout(400);const t=await G.evaluate(()=>Object.values(ETERNA.SIM.galerias||{}).find(m=>m.tipo==='sessao'&&m.fotos.some(f=>f.direito==='venda'))?.token);
     if(t){await G.goto(U+'#g/'+t);await G.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step==='consent',null,{timeout:15000}).catch(()=>{});await G.screenshot({path:PR+'/v77-sim-consentimento.png'});
-      await G.evaluate(()=>{ETERNA.pub.step='galeria';ETERNA.render();});await G.waitForTimeout(300);await G.screenshot({path:PR+'/v77-sim-galeria.png',fullPage:true});
+      await G.evaluate(t=>{ETERNA.pub.match=ETERNA.SIM.galerias[t].fotos.map(f=>f.id);ETERNA.pub.step='galeria';ETERNA.render();},t);await G.waitForTimeout(300);await G.screenshot({path:PR+'/v77-sim-galeria.png',fullPage:true}); // v95: sem p.match (selfie) a galeria não mostra foto nenhuma
       await G.click('[data-act="gq-sel"]');await G.click('[data-act="gq-buy"]');await G.waitForTimeout(150);await G.click('[data-act="gq-paym"][data-m="pix"]');ok(await G.evaluate(()=>ETERNA.pub.step==='pagar'),'SIM: etapa pagar');await G.screenshot({path:PR+'/v77-sim-pagar.png'});
       const sr=await semRolagem(G);ok(sr.ok,'SIM: pagar com rolagem horizontal '+JSON.stringify(sr));}
     await G.close();}

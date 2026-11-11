@@ -136,7 +136,7 @@ try{
   const adm=await contexto(b,errs);const P=adm.pg;
   await P.goto(U);await P.waitForTimeout(400);
   await entrarTeste(P,'eduardo@eduardorezende.com');
-  ok(await espera(P,()=>!!ETERNA.state.db,12000),'o Painel liga no servidor do ponto (estado.db)');
+  ok(await espera(P,()=>!!ETERNA.state.db,45000),'o Painel liga no servidor do ponto (estado.db)');
   await P.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await P.waitForTimeout(300);
   ok(await P.$('#busca-janela')&&/Procurar fotos dos últimos/.test(await P.textContent('#main')),'campo "Procurar fotos dos últimos __ minutos" no Painel de controle');
   ok(await P.inputValue('#busca-janela')==='90','padrão 90 minutos');

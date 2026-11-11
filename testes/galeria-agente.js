@@ -31,7 +31,7 @@ async function esperarEnvio(porta,home,t){for(let i=0;i<80;i++){try{const m=lerM
 (async()=>{const procs=[];const homes=[];
 try{
   // ---------------- Fase A: sem OpenCV ----------------
-  const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-ag-'));homes.push(H);const P=8799;
+  const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-ag-'));homes.push(H);const P=+(process.env.GA_PORTA||8799);
   const pids=['a1b2c3d4e5f6','0a1b2c3d4e5f','f6e5d4c3b2a1','1234567890ab'];fotosNoInbox(H,pids.map((p,i)=>[p,jpegsLisos(4)[i]]));
   const A=await subir(P,{ETERNA_SEM_OPENCV:'1'},H);procs.push(A.p);
   {const r0=await req(P,'GET','/galerias/vendas?desde=0');ok(r0.s===401,'A2: vendas online sem sessão deveria dar 401, deu '+r0.s);
@@ -89,6 +89,14 @@ try{
   r=await req(P,'GET',url(pids[2],'original',exp,assinar(H,T,pids[2],'original',exp)));ok(r.s===403,'17: original de foto à venda, mesmo assinado, deveria dar 403, deu '+r.s);
   r=await req(P,'GET',`/g/${TE}/foto/${pids[2]}?v=vitrine&exp=${exp}&sig=${assinar(H,TE,pids[2],'vitrine',exp)}`);ok(r.s===403,'17: assinatura de outro token não vale, deu '+r.s);
   r=await req(P,'GET',url('ffffffffffff','vitrine',exp,assinar(H,T,'ffffffffffff','vitrine',exp)));ok(r.s===403,'17: pid fora do token deveria dar 403, deu '+r.s);
+  // v96.1 (decisão do Eduardo, 10/11): na venda o QR sozinho abre a comprada e a cortesia (com original), nunca as à venda; grupo: nada
+  r=await req(P,'GET','/g/'+T+'/livres');{const fl=(r.j&&r.j.galeria&&r.j.galeria.fotos)||[];
+    ok(r.s===200&&fl.map(f=>f.pid).sort().join(',')===['ag_'+pids[0],'ag_'+pids[1]].sort().join(',')&&fl.every(f=>f.original),'livres: só pelo QR, comprada e cortesia com original: '+r.s+' '+JSON.stringify(fl.map(f=>f.pid+':'+f.direito)));
+    if(fl[0]){const x=await req(P,'GET',fl[0].original);ok(x.s===200,'livres: original da comprada só pelo QR deveria baixar, deu '+x.s);}}
+  {const TG=tok();await req(P,'POST','/galerias/publicar',{body:{manifesto:manifesto(TG,fotos,{tipo:'evento',nome:'Escola',menor:true})}});
+    r=await req(P,'GET','/g/'+TG+'/livres');ok(r.s===200&&r.j.galeria.fotos.length===0,'livres: grupo de escola não abre nada sem rosto: '+JSON.stringify(r.j));}
+  r=await req(P,'GET','/g/'+TE+'/livres');ok(r.s===410,'livres: galeria expirada deveria dar 410, deu '+r.s);
+  r=await req(P,'GET','/g/'+tok()+'/livres');ok(r.s===404,'livres: token inexistente deveria dar 404, deu '+r.s);
   // 18. rosto sem OpenCV
   r=await req(P,'POST','/g/'+T+'/rosto',{body:{versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,AAAA'}});ok(r.s===400,'18: sem consentimento deveria dar 400, deu '+r.s);
   r=await req(P,'POST','/g/'+T+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+jpegsLisos(1)[0].toString('base64')}});
@@ -114,19 +122,22 @@ try{
   // ---------------- Fase B: reconhecimento ligado (OpenCV) ----------------
   let temCV=true;try{execFileSync('python3',['-c','import cv2, numpy'],{stdio:'ignore'});}catch(e){temCV=false;}
   if(!temCV){notas.push('fase B pulada: Python sem OpenCV');}
-  else{const H2=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-ag-'));homes.push(H2);const P2=8798;
+  else{const H2=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-ag-'));homes.push(H2);const P2=P-1;
     fs.mkdirSync(path.join(H2,'Eterna','modelos'),{recursive:true});for(const f of ['face_detection_yunet_2023mar.onnx','face_recognition_sface_2021dec.onnx'])fs.copyFileSync(path.join(RAIZ,'vendor','rostos',f),path.join(H2,'Eterna','modelos',f));
     // fotos com rosto: fotos de exemplo do app, ampliadas (o servidor de testes do rodar.sh serve o index.html)
     const {chromium}=require('playwright');const b=await chromium.launch();const pg=await b.newPage();await pg.goto(process.env.U||'http://127.0.0.1:8890/index.html');await pg.waitForTimeout(500);
     const imgs=await pg.evaluate(async()=>{await ETERNA.faceIndexAll();await new Promise(r=>setTimeout(r,300));await ETERNA.faceq;const ss=ETERNA.demoSessions().filter(s=>s.photos.length>=3);const pick=[];
       const keys=new Set();for(const s of ss){if(keys.has(s.key))continue;const id=s.photos.map(p=>p.id).find(id=>(ETERNA.FACEIDX[id]||[]).length===1);if(id){pick.push(id);keys.add(s.key);}if(pick.length>=3)break;}
-      const out=[];for(const id of pick){const c=await ETERNA.photoCanvas(id);const k=document.createElement('canvas');k.width=c.width*2;k.height=c.height*2;k.getContext('2d').drawImage(c,0,0,k.width,k.height);out.push(k.toDataURL('image/jpeg',.88));}return out;});
+      const out=[];for(const id of pick){const c=await ETERNA.photoCanvas(id);const k=document.createElement('canvas');k.width=c.width*2;k.height=c.height*2;k.getContext('2d').drawImage(c,0,0,k.width,k.height);out.push(k.toDataURL('image/jpeg',.88));}
+      // v95: outra foto da pessoa A (a mesma, espelhada), para a galeria dela ter uma comprada e uma à venda
+      {const c=await ETERNA.photoCanvas(pick[0]);const k=document.createElement('canvas');k.width=c.width*2;k.height=c.height*2;const x=k.getContext('2d');x.translate(k.width,0);x.scale(-1,1);x.drawImage(c,0,0,k.width,k.height);out.push(k.toDataURL('image/jpeg',.88));}
+      return out;});
     await b.close();
-    const bufs=imgs.map(u=>Buffer.from(u.split(',')[1],'base64'));const pp=['b1b2b3b4b5b6','c1c2c3c4c5c6','e1e2e3e4e5e6'];fotosNoInbox(H2,pp.map((p,i)=>[p,bufs[i]]).concat([['d1d2d3d4d5d6',jpegsLisos(1)[0]]]));
+    const bufs=imgs.map(u=>Buffer.from(u.split(',')[1],'base64'));const pp=['b1b2b3b4b5b6','c1c2c3c4c5c6','e1e2e3e4e5e6'];const pA2='a2a2a2a2a2a2';fotosNoInbox(H2,pp.map((p,i)=>[p,bufs[i]]).concat([['d1d2d3d4d5d6',jpegsLisos(1)[0]],[pA2,bufs[3]]]));
     const B=await subir(P2,{ETERNA_PAGAMENTO:'simulado',ETERNA_MODO_TESTE:'1'},H2);procs.push(B.p);CKS[P2]=S.sessao(H2);let lig=false;
-    for(let i=0;i<160;i++){const s=(await req(P2,'GET','/status')).j;if(s&&s.rostos&&s.rostos.ligado&&s.rostos.lidas>=4){lig=true;break;}await sleep(500);}
+    for(let i=0;i<160;i++){const s=(await req(P2,'GET','/status')).j;if(s&&s.rostos&&s.rostos.ligado&&s.rostos.lidas>=5){lig=true;break;}await sleep(500);}
     if(!lig){notas.push('fase B: reconhecimento não ligou ('+B.log().slice(-200).replace(/\n/g,' ')+')');}
-    else{const T3=tok();const f3=[{id:'ag_'+pp[0],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_'+pp[1],sessao:'LPB',direito:'venda',canal:null},{id:'ag_d1d2d3d4d5d6',sessao:'LPB',direito:'venda',canal:null}];
+    else{const T3=tok();const f3=[{id:'ag_'+pp[0],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_'+pA2,sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[1],sessao:'LPB',direito:'venda',canal:null},{id:'ag_d1d2d3d4d5d6',sessao:'LPB',direito:'venda',canal:null}];
       await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T3,f3,{sessoes:['LPB'],precos:{dig:39,todas:60}})}});await esperarEnvio(P2,H2,T3);
       r=await req(P2,'POST','/g/'+T3+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+jpegsLisos(1)[0].toString('base64')}});
       ok(r.s===200&&r.j.ok===false&&r.j.motivo==='sem_rosto'&&r.j.restam===4,'18b: imagem sem rosto deveria dar sem_rosto com restam 4: '+r.s+' '+JSON.stringify(r.j));
@@ -136,19 +147,41 @@ try{
         ok(r.s===200&&r.j.motivo==='sem_rosto'&&Date.now()-t0<5000,'S5: imagem de 400 MP deveria ser recusada: '+r.s+' '+JSON.stringify(r.j));ok((await req(P2,'GET','/status')).s===200,'S5: o agente caiu com a imagem enorme');}
       r=await req(P2,'POST','/g/'+T3+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+bufs[0].toString('base64')}});
       if(!(r.s===200&&r.j.ok)){notas.push('fase B: o rosto não bateu ('+r.s+' '+JSON.stringify(r.j)+'): pagamento não testado');}
-      else{const ac=r.j.acesso;const g=r.j.galeria;ok(g.fotos.length===3&&g.fotos.find(f=>f.direito==='comprada').original&&!g.fotos.find(f=>f.direito==='venda').original,'19b: galeria deveria ter original só da comprada');
-        const vit=g.fotos.find(f=>f.direito==='venda').vitrine;r=await req(P2,'GET',vit);ok(r.s===200,'19b: link de vitrine devolvido deveria abrir, deu '+r.s);
+      else{const ac=r.j.acesso;const g=r.j.galeria;// v95 (Ronaldo, 09/11, LGPD): a selfie de A abre só as fotos em que A aparece (a comprada e a espelhada); a de B e a sem rosto ficam de fora
+        const gp=g.fotos.map(f=>f.pid).sort().join(',');ok(gp===['ag_'+pp[0],'ag_'+pA2].sort().join(','),'19b (v95): selfie deveria abrir só as fotos da pessoa: '+gp);
+        const fc=g.fotos.find(f=>f.direito==='comprada'),fv=g.fotos.find(f=>f.direito==='venda');
+        ok(fc&&fc.original&&fv&&!fv.original,'19b: galeria deveria ter original só da comprada: '+JSON.stringify(g.fotos.map(f=>({pid:f.pid,d:f.direito,o:!!f.original}))));
+        const vit=(fv||{}).vitrine;r=await req(P2,'GET',vit);ok(r.s===200,'19b: link de vitrine devolvido deveria abrir, deu '+r.s);
         const cs=fs.readFileSync(path.join(H2,'Eterna','galerias','consentimentos.jsonl'),'utf8');ok(/"tipo": "titular"/.test(cs)&&!/data:image|base64/.test(cs),'19b: consentimento registrado sem imagem');
-        const idem=crypto.randomUUID();const corpo={acesso:ac,pids:['ag_'+pp[1]],metodo:'pix',idem,total:1};
+        const idem=crypto.randomUUID();const corpo={acesso:ac,pids:['ag_'+pA2],metodo:'pix',idem,total:1};
         r=await req(P2,'POST','/g/'+T3+'/pagamento',{body:corpo});ok(r.s===200&&r.j.ok&&r.j.pedido.total===39&&r.j.pedido.status==='aprovado'&&r.j.pedido.teste===true,'19: total do cliente deveria ser ignorado (39) e a venda simulada marcada como teste, veio '+JSON.stringify(r.j&&r.j.pedido));
-        ok(r.j&&r.j.galeria.fotos.find(f=>f.pid==='ag_'+pp[1]).direito==='comprada','19: foto paga deveria virar comprada');
+        ok(r.j&&r.j.galeria&&(r.j.galeria.fotos.find(f=>f.pid==='ag_'+pA2)||{}).direito==='comprada','19: foto paga deveria virar comprada');
         r=await req(P2,'POST','/g/'+T3+'/pagamento',{body:corpo});ok(r.s===200&&r.j.ok,'19: repetir o idem deveria responder ok');
         const vs=(await req(P2,'GET','/galerias/vendas?desde=0')).j.vendas;ok(vs.length===1&&vs[0].canal==='online'&&vs[0].total===39&&vs[0].teste===true,'19: mesmo idem deveria registrar uma venda só: '+JSON.stringify(vs));
-        r=await req(P2,'POST','/g/'+T3+'/pagamento',{body:{acesso:ac,pids:['ag_'+pp[1]],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===400,'19: foto já comprada não está à venda (400), deu '+r.s);
+        r=await req(P2,'POST','/g/'+T3+'/pagamento',{body:{acesso:ac,pids:['ag_'+pA2],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===400,'19: foto já comprada não está à venda (400), deu '+r.s);
+        r=await req(P2,'POST','/g/'+T3+'/pagamento',{body:{acesso:ac,pids:['ag_'+pp[1]],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===400,'19 (v95): foto da mesma sessão em que a pessoa não aparece está fora do acesso (400), deu '+r.s);
         r=await req(P2,'POST','/g/'+T3+'/pagamento',{body:{acesso:ac,pids:['ag_ffffffffffff'],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===400,'19: pid fora do acesso deveria dar 400, deu '+r.s);
         // 20 (b): republicar do app com a foto comprada online como venda mantém comprada
         await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T3,f3.map(f=>({...f,direito:f.direito==='comprada'?'comprada':'venda',canal:f.direito==='comprada'?'loja':null})),{sessoes:['LPB'],precos:{dig:39,todas:60}})}});
-        const m3=lerManifesto(H2,T3);ok(m3.fotos.find(f=>f.id==='ag_'+pp[1]).direito==='comprada','20: compra online regrediu depois de republicar');}
+        const m3=lerManifesto(H2,T3);ok(m3.fotos.find(f=>f.id==='ag_'+pA2).direito==='comprada','20: compra online regrediu depois de republicar');}
+      // v96.1 (C1): na venda, comprada e cortesia em que o rosto não bateu entram sempre e baixam; à venda de outra pessoa fica fora (400)
+      {const T5=tok();const f5=[{id:'ag_'+pp[1],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_d1d2d3d4d5d6',sessao:'LPB',direito:'cortesia',canal:null,cortesia:{motivo:'teste',por:'t',em:new Date().toISOString()}},{id:'ag_'+pA2,sessao:'LPB',direito:'venda',canal:null},{id:'ag_'+pp[2],sessao:'LPB',direito:'venda',canal:null}];
+        await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T5,f5,{sessoes:['LPB'],precos:{dig:39,todas:60}})}});await esperarEnvio(P2,H2,T5);
+        r=await req(P2,'POST','/g/'+T5+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+bufs[0].toString('base64')}});
+        if(!(r.s===200&&r.j.ok))ok(false,'C1: selfie de A na venda com comprada de B deveria abrir: '+r.s+' '+JSON.stringify(r.j));
+        else{const g5=r.j.galeria,ac5=r.j.acesso,por=id=>g5.fotos.find(f=>f.pid==='ag_'+id);
+          ok(g5.fotos.map(f=>f.pid).sort().join(',')===['ag_'+pp[1],'ag_d1d2d3d4d5d6','ag_'+pA2].sort().join(','),'C1: compradas e cortesias da venda e as à venda de A: '+g5.fotos.map(f=>f.pid+':'+f.direito).join(','));
+          const oc=(por(pp[1])||{}).original,ot=(por('d1d2d3d4d5d6')||{}).original;ok(oc&&ot,'C1: comprada e cortesia sem o rosto deveriam ter original');
+          if(oc){r=await req(P2,'GET',oc);ok(r.s===200&&r.b.length>1000,'C1: download da comprada sem o rosto deveria dar 200, deu '+r.s);}
+          r=await req(P2,'POST','/g/'+T5+'/pagamento',{body:{acesso:ac5,pids:['ag_'+pp[2]],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===400,'C1: à venda de outra pessoa continua fora do acesso (400), deu '+r.s);
+          r=await req(P2,'POST','/g/'+T5+'/pagamento',{body:{acesso:ac5,pids:['ag_'+pp[1]],metodo:'pix',idem:crypto.randomUUID()}});ok(r.s===400,'C1: comprada não está à venda (400), deu '+r.s);
+          // venda no balcão depois da selfie: a nova comprada entra no mesmo acesso
+          await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T5,f5.map(f=>f.id==='ag_'+pp[2]?{...f,direito:'comprada',canal:'loja'}:f),{sessoes:['LPB'],precos:{dig:39,todas:60}})}});await esperarEnvio(P2,H2,T5);
+          r=await req(P2,'POST','/g/'+T5+'/galeria',{body:{acesso:ac5}});ok(r.s===200&&((r.j.galeria.fotos.find(f=>f.pid==='ag_'+pp[2])||{}).direito==='comprada'),'C1: comprada no balcão depois da selfie deveria entrar no acesso: '+r.s);}
+        // rosto que não bate em nenhuma foto da venda: continua nao_encontrado (conta tentativa), mesmo com comprada na galeria
+        const T6=tok();await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T6,[{id:'ag_'+pp[0],sessao:'LPB',direito:'comprada',canal:'loja'},{id:'ag_'+pp[1],sessao:'LPB',direito:'venda',canal:null}],{sessoes:['LPB'],precos:{dig:39,todas:60}})}});await esperarEnvio(P2,H2,T6);
+        r=await req(P2,'POST','/g/'+T6+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+bufs[2].toString('base64')}});
+        ok(r.s===200&&r.j.ok===false&&r.j.motivo==='nao_encontrado'&&r.j.restam===4,'C1: rosto sem acerto na venda continua nao_encontrado: '+r.s+' '+JSON.stringify(r.j));}
       // S1: grupo de escola: no máximo 2 crianças diferentes por (ip, token) em 24 h; a mesma criança de novo continua valendo
       const T4=tok();await req(P2,'POST','/galerias/publicar',{body:{manifesto:manifesto(T4,pp.map(p=>({id:'ag_'+p,sessao:'LPB',direito:'venda',canal:null})),{tipo:'evento',nome:'Escola',menor:true,sessoes:['LPB']})}});await esperarEnvio(P2,H2,T4);
       const sel=async b=>(await req(P2,'POST','/g/'+T4+'/rosto',{body:{consentimento:true,versao:'2026-10-27',idioma:'pt',imagem:'data:image/jpeg;base64,'+b.toString('base64')}}));
