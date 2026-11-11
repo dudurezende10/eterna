@@ -207,3 +207,27 @@ Perfis de teste: Admin (Eduardo), Supervisora (Sandessa), Atendimento e venda, F
 2. **Eyebrow do Caixa.** "Posto de venda · Caixa 1" em cima de "Caixa", para não ficar "Caixa 1" em cima de "Caixa". Ele pode preferir só "Caixa 1".
 3. **Recibo depois do dinheiro.** O plano tira o recibo que abria sozinho no Caixa depois de confirmar (fica igual ao Posto). Se ele quiser o recibo automático no dinheiro, volta nos dois.
 4. **Número no item do menu.** O item "Posto de venda" continua com todas as pendências e o botão amarelo com só o dinheiro. Ele pode preferir tirar o número do item do menu para não ter dois números.
+
+## Decisões
+
+Respostas do Eduardo (11/11) às 4 dúvidas da seção anterior:
+
+1. **Chips no Posto.** Sem os chips Todos/Dinheiro no Posto. O filtro de dinheiro é o botão amarelo Caixa; na vista Caixa, o chip "Dinheiro ✕" volta ao Posto completo.
+2. **Rótulo do Caixa.** Na vista Caixa, o rótulo em cima do título é "Posto de venda · Caixa 1" (nome do ponto).
+3. **Recibo depois do dinheiro.** Confirmar dinheiro não abre recibo sozinho, em nenhuma das duas vistas.
+4. **Dois números.** Ficam os dois: todas as pendências no item do menu e só o dinheiro no botão amarelo.
+
+Também do Eduardo (item de nomes):
+
+- O título "Computador do ponto" deixa de existir em texto visível: `postoTitulo()` devolve "Posto de venda · " + nome do ponto ("Posto de venda · Caixa 1").
+- Fica o padrão da Onda 1: botão principal grande e "Cancelar compra" como link vermelho afastado (agora também no pedido do Checkout sem pacote).
+- Os botões amarelos do topo continuam.
+
+Decisões do programador na implementação:
+
+- **Apelidos e permissão (critério 16 contra o texto de `go`).** O plano pedia `canView` da view pedida em `go` e `readHash`, mas o critério 16 pede que `#checkout` sem `checkout` no menu abra o Posto sem o bloco. Ficou: `go`, `readHash` e `render` conferem `canView` da view de destino (`posto`, que exige `venda.r` e alguma tela de venda no menu) e a Venda manual só abre com `canView('checkout')`.
+- **Selo do rolo.** Um selo só, no cabeçalho (critério 2): o painel Imprimir do Posto deixa de repetir o selo que a v96 tinha posto ali. O painel Impressão 10×15 do Dashboard e o painel de reimpressão do recibo continuam com o selo. `testes/rolo-posto.js` ajustado.
+- **Carimbo.** `v97-ux` (o merge da `fix/checkout-espera` trouxe `v97`; esta branch segue a série `-ux`, só local).
+- **Venda manual com sessão LGPD.** Sessão já apagada por LGPD escolhida na Venda manual mostra só o selo da exclusão (como a Fila do balcão fazia).
+- **Recibo com a Venda manual aberta sem sessão.** O botão Recibo fecha o bloco e abre o recibo (os dois não convivem); com sessão escolhida, fica desabilitado.
+- **Testes fora de linha na base.** `ondas-ux-e.js` (E5, E10), `ondas-ux-h.js` (H4, H1), `permissoes.js` (menus e gaveta) e `v79-regressao.js` (1.6) já falhavam na `a9b4028`: os commits `cace1c4` (botões amarelos no alto do menu), `cdcf4b5` (Caixa de volta à tela antiga) e `a9b4028` (pasta Laboratório) mudaram a tela sem ajustar esses testes.

@@ -298,7 +298,7 @@ print(json.dumps(r))`,path.join(__dirname,'..','agente','eterna-agente.py')],{en
     ok(!x.xss&&!x.el,'S1: mensagem forjada injetou HTML: '+J(x));}
   // ---- S2: sem TEF real, o Caixa não tem caminho de pagamento automático
   {const r=await A.evaluate(()=>{const S=ETERNA.SIM;const c=ETERNA.demoSessions().find(s=>(S.sessions[s.card]||{}).status!=='paga').card;const s=S.sessions[c]=S.sessions[c]||{};s.selected=[];s.cart=[{id:'arq'}];s.status='no caixa';
-      ETERNA.state.caixa.session=c;ETERNA.state.caixa.pay='PIX';ETERNA.state.caixa.tef=true;ETERNA.state.view='caixa';ETERNA.render();
+      ETERNA.state.caixa.session=c;ETERNA.state.posto.recibo=c;/* v97-ux: sessão 'no caixa' cobrada pelo recibo em cima do Posto */ETERNA.state.caixa.pay='PIX';ETERNA.state.caixa.tef=true;ETERNA.state.view='posto';ETERNA.render();
       const vis=!!document.querySelector('[data-act="caixa-mode"][data-m="tef"],[data-act="caixa-tef"]');const bt=document.createElement('button');bt.dataset.act='caixa-tef';document.body.appendChild(bt);bt.click();bt.remove();
       return {vis,t:document.querySelector('#toast').textContent,c,tef:!!ETERNA.PAG_PROV.tef};});
     await A.waitForTimeout(6000);const st=(await A.evaluate(c=>(ETERNA.SIM.sessions[c]||{}).status,r.c));

@@ -294,7 +294,7 @@ Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, 
 
 ### Sessão que já foi paga
 
-Se o cliente volta ao Checkout com fotos que já comprou, aparece "Estas fotos já foram compradas. Fale com a equipe para comprar mais." O Checkout **não deixa pagar de novo**. Para vender mais fotos para ele, use a Venda no balcão.
+Se o cliente volta ao Checkout com fotos que já comprou, aparece "Estas fotos já foram compradas. Fale com a equipe para comprar mais." O Checkout **não deixa pagar de novo**. Para vender mais fotos para ele, use a **Venda manual**, dentro do Posto de venda.
 
 ### Dinheiro: aguardando caixa (vendedor e caixa)
 
@@ -306,15 +306,15 @@ Desde a v96 quem escolhe **Dinheiro** é você, no Posto de venda. A compra não
 3. Se ele abrir a galeria antes de pagar, aparece que o pagamento está esperando. As fotos só aparecem depois da confirmação.
 
 **Como confirmar (caixa)**
-1. Na barra da equipe, toque em **Caixa**. O número ao lado mostra quantos pagamentos estão esperando.
-2. No topo aparece **Aguardando caixa · dinheiro do Checkout**. A lista atualiza sozinha.
+1. No alto do menu, toque no botão amarelo **Caixa**. O número mostra quantos pagamentos em dinheiro esperam confirmação (cartão, PIX e pedido ainda sem pacote não contam).
+2. Abre o mesmo Posto de venda só com o dinheiro, com o título **Caixa**. A lista atualiza sozinha. Para ver tudo de novo, toque em **Dinheiro ✕**.
 3. Digite o código que o cliente mostrou no campo de busca. Pode ser com ou sem hífen.
 4. Confira o valor, o número de fotos e de impressas e as miniaturas.
 5. Receba o dinheiro.
-6. Toque em **Recebi R$ X**. A venda fica paga, as fotos vão para Impressão 10×15 no Posto de venda, a galeria do cliente libera as fotos e aparece o recibo com "Recebido por <seu nome>".
+6. Toque em **Recebi R$ X**. A venda fica paga, as fotos vão para **Imprimir** no Posto de venda e a galeria do cliente libera as fotos. O recibo não abre sozinho: o cliente vê o QR no Checkout e, se precisar, o recibo (com "Recebido por <seu nome>") abre pelo botão **Recibo** em Minhas vendas de hoje.
 
 **Se o cliente desistir**
-1. Toque em **Cancelar** no item.
+1. Toque em **Cancelar compra** (o link vermelho, afastado do botão principal).
 2. Confirme em "Cancelar esta compra? Ela não vira venda."
 3. A sessão volta a ficar livre. O cliente pode voltar ao Checkout e comprar de outro jeito.
 
@@ -500,7 +500,7 @@ A aba **Histórico** em Permissões mostra toda mudança: quando, quem mudou, a 
 | --- | --- | --- |
 | Admin | tudo, inclusive Usuários e Permissões; começa no Painel | nada fica de fora |
 | Fotógrafo | Diário do set, Upload automático (troca de fotógrafo), Fila do fotógrafo, Escala 5×2 | Checkout, Dashboard, Curadoria, Configurações |
-| Atendimento e venda | Checkout, venda no balcão, Fila, Caixa, Catálogo (só para ver os preços), Fila do fotógrafo (só para ver) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
+| Atendimento e venda | Checkout, Posto de venda (com o Caixa e a Venda manual dentro dele), Catálogo (só para ver os preços), Fila do fotógrafo (só para ver) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
 | Validador | Qualidade, Treino da IA, Diário do set (só para ver) | vendas, Checkout, Configurações |
 | Supervisor | Dashboard (começa no Painel), Curadoria (só para ver), grupo Fotógrafo, Configurações do venue, Laboratório | Usuários e Permissões; não cancela venda |
 | Checkout | só a tela do cliente, em tela cheia | todo o resto |
@@ -537,7 +537,11 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 - **No Checkout agora**: o que o cliente está vendo e escolhendo, ao vivo.
 - **Aguardando pagamento**: as escolhas do Checkout esperando você escolher o pacote, a forma de pagamento e confirmar.
 - **Impressão 10×15**: as vendas pagas, com as fotos para imprimir já marcadas, e o contador do rolo.
-- **Minhas vendas de hoje**: as suas vendas neste notebook, com o valor de cada uma. Não mostra total.
+- **Minhas vendas de hoje**: as suas vendas neste notebook, com o valor de cada uma. Não mostra total. O botão **Recibo** abre o recibo com o QR em cima do Posto.
+- **Caixa** (botão amarelo no alto do menu): o mesmo Posto só com o dinheiro esperando confirmação. **Dinheiro ✕** volta ao Posto completo.
+- **Venda manual (quando o Checkout está fora)**: link no fim do Posto. Abre um bloco no alto da própria tela, com a câmera do balcão, o código da sessão, as fotos, o pacote, o Fundo de IA e o pagamento. **Fechar venda manual** fecha o bloco. Com uma sessão aberta na Venda manual, os botões Recibo ficam apagados até você fechar.
+- **Cliente pediu: apagar as fotos** (LGPD): fica na Venda manual, depois de escolher a sessão, para quem pode alterar as Galerias online. Só para sessão que não foi paga; pede confirmação e não dá para desfazer.
+- A tela **Fila do balcão** saiu: tudo é feito no Posto de venda.
 
 ### Confirmar na maquininha
 
@@ -576,7 +580,7 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 
 ### Troquei o rolo (v96)
 
-1. Só num aparelho configurado como posto: toque no selo **Rolo: X de 700** no alto do Posto de venda, no alto do Caixa ou no painel **Impressão 10×15**. Com o rolo abaixo de 40, o botão **Troquei o rolo** aparece ao lado do selo no alto do Posto de venda e do Caixa (não no painel Impressão 10×15). Em aparelho não configurado como posto, o selo só mostra o contador: registre a troca em **Dashboard › Estoque**.
+1. Só num aparelho configurado como posto: toque no selo **Rolo: X de 700** no alto do Posto de venda (o Caixa é a mesma tela) ou no painel **Impressão 10×15** do Dashboard. Com o rolo abaixo de 40, o botão **Troquei o rolo** aparece ao lado do selo no alto do Posto de venda. Em aparelho não configurado como posto, o selo só mostra o contador: registre a troca em **Dashboard › Estoque**.
 2. O Eterna pergunta "Trocou o rolo da impressora deste posto? O contador volta para 700." Toque em **Sim, troquei** ou em **Cancelar** (Cancelar não muda nada).
 3. Vale só para o posto deste computador. A troca de outro posto se registra no próprio posto ou em **Dashboard › Estoque**.
 4. Quem vende (permissão de criar em Venda) pode registrar a troca do próprio posto, mesmo sem acesso ao Estoque. Cada troca fica no registro de auditoria com quem fez, o posto e o valor que o contador tinha. Uma troca de hoje com mais de 60 impressões sobrando aparece em **Alertas** como grave, com o posto, quem fez e o valor.
