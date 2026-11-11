@@ -3,6 +3,8 @@
 Data: 11/11/2026 · Worktree `/home/claude/eterna-montagem`, branch `feat/montagem-servidor`, criada de `feat/selo-ia` `7467981`.
 Pedido do Eduardo (11/11): as 2 primeiras fotos do gramado são as bases das montagens de IA; a montagem é feita no servidor (onde está a placa de vídeo), fica guardada lá e é entregue na galeria. Não é feita no Checkout.
 
+**Regra do projeto (Eduardo, 11/11): recorte e montagem são feitos e guardados no servidor do ponto; o Checkout só mostra.**
+
 ## Objetivo
 O servidor do ponto monta cada base de IA em cada fundo ativo assim que o recorte fica pronto, guarda o arquivo e uma prévia, e passa a ser a única fonte da montagem para o Checkout, o Posto, a impressão e a galeria por QR (agente e nuvem).
 Quem compra montagem em qualquer pacote, inclusive só digital, recebe o arquivo na galeria.
@@ -330,7 +332,16 @@ Admin e Laboratório pedem a prévia ao servidor; saem `fiaMontar` e companhia d
 | E5 nuvem | 1,5 (mais o deploy do Ronaldo) |
 | E6 limpeza | 1 |
 
-## Decisões para o Eduardo
+## Decisões (assumidas em 11/11 para a implementação; o Eduardo pode mudar)
+- D1. Retenção da montagem não vendida: **3 dias** (`MONT_DIAS`).
+- D2. **As 10 por visita** (2 bases × 5 fundos); as 5 que a tela mostra saem primeiro, as 5 de reserva depois.
+- D3. Download da galeria em **3000 px**; o arquivo de **5000 px fica guardado no servidor para a impressão**.
+- D4. Telão no **tamanho nativo do fundo (2576×1840)** por enquanto.
+- D5. **Portão da E2, ainda aberto**: o Eduardo aprova a folha lado a lado (canvas × servidor) antes de o Checkout trocar. Até lá a E2 fica atrás do interruptor `config/montagem {"checkout": false}` (desligado por padrão; `/status.montagem.checkout`). Folha com figuras sintéticas gerada pelo `testes/montagem-paridade.js` (`MONTAGEM_FOLHA=<arquivo.jpg>`); a de fotos reais sai no servidor do estádio.
+- D6. Montagem não comprada à venda na galeria online: **fora** desta entrega.
+- D7. Venda paga com montagem que falhou no servidor: **alerta no Posto** (entra na E4).
+
+## Decisões para o Eduardo (texto original das propostas)
 - D1. Retenção da montagem não vendida: 3 dias (proposta). Mais dias = mais disco (~15 GB por dia no teto).
 - D2. Quantas montagens por visita: as 10 (2 bases × 5 fundos, como pedido; proposta) ou só as 5 que o Checkout mostra, com a reserva feita em ~2 s quando a base preferida é ruim (metade do disco e do tempo).
 - D3. Tamanho do download na galeria: 3000 px como as outras fotos (proposta) ou o arquivo cheio de 5000 px (3 vezes mais pesado no celular e na nuvem).

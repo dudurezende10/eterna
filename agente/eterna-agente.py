@@ -2305,10 +2305,35 @@ FUNDOS_PREVIA = {"campeao2": "img/bg-campeao-v81.jpg", "mirante": "img/bg-mirant
                  "imprensa": "img/bg-imprensa.jpg", "noite": "img/bg-noite.jpg", "terraco": "img/bg-terraco.jpg",
                  "campeaoarg": "img/bg-campeaoarg.jpg", "campeaocol": "img/bg-campeaocol.jpg",
                  "gramado1950": "img/bg-gramado1950.jpg", "alto1950": "img/bg-alto1950.jpg",
-                 "escanteio1950": "img/bg-escanteio1950.jpg", "asadelta": "img/bg-asadelta.jpg"}
+                 "escanteio1950": "img/bg-escanteio1950.jpg", "asadelta": "img/bg-asadelta.jpg",
+                 "telao": "img/bg-telao.jpg"}   # v97 (E8): o Telão só existe em 2576x1840 (a impressão usa o mesmo arquivo)
 FUNDOS_IMPRESSAO = {"campeao2": "img/fundos-5k/campeao.jpg", "mirante": "img/fundos-5k/mirantesol.jpg",
                     "arq1950": "img/fundos-5k/pb1950.jpg", "tunel": "img/fundos-5k/tunel.jpg",
                     "podio": "img/fundos-5k/podio.jpg"}
+# Montagem no servidor (plano docs/planos/2026-11-11-montagem-no-servidor.md): SHA-256 de cada arquivo de fundo aprovado.
+# O fundo baixado do app vira produto do cliente: o servidor só monta com o arquivo que bate com este SHA. Gerado por
+# agente/gerar-fundos-sha.py (rodar ao trocar a imagem de um fundo) e conferido com img/ pelo testes/montagem-paridade.js.
+FUNDOS_SHA = {
+    "img/bg-alto1950.jpg": "4f3239548dca775eb54f55871292c1797c1a99a6e2314227b2cda90c797e4b06",
+    "img/bg-asadelta.jpg": "5d250936437faa6ea0e4bb94dba7f567678e95203e07ea7f88e8f932ccb79105",
+    "img/bg-campeao-v81.jpg": "67efe775921201c25755b4d66b4fa21c95101f40f6204fb0ede0cf33c03be062",
+    "img/bg-campeaoarg.jpg": "52435ba26ed045e895125d2b83177cec87d2704146e40c7ea12c3c7310314f1a",
+    "img/bg-campeaocol.jpg": "d0ee43870b119866077a58795e357a3605317c4ff720f57bad185de315ce6500",
+    "img/bg-escanteio1950.jpg": "777be292c530e33277b004747e9e11a9e7a93f27a69617e755a13270ff993e2e",
+    "img/bg-gramado1950.jpg": "9713ecf351844bda76b012f36aca42aa46eaa812720aee34c292d34aea68d26e",
+    "img/bg-imprensa.jpg": "1c3f3688065a22754b8ad82745640d801f49a64d5d34838fff79a1b9646b7728",
+    "img/bg-mirantesol.jpg": "4f6c00862f54f68e3d6c2f1e8117bc2871752a6264d1419a7525bde1348d9c92",
+    "img/bg-noite.jpg": "cbe792530e80a0fbe2c8e7e6a6054dc2968178ec3451dee235e988c36beeab46",
+    "img/bg-pb1950.jpg": "0b03c57d7bc4e481f186026c3cdd377c35d72159a9d713d10549e6bd4615786b",
+    "img/bg-podio.jpg": "e61488510e9768d64e5e74fa2837ce2399cdd4bbab14567bcf4433e0b77492b7",
+    "img/bg-telao.jpg": "d16b7f0ee99d490205218bfc32e8b53c2e7d5a642715664a0da9bb7fdd4683d7",
+    "img/bg-terraco.jpg": "92e2a5f15df1c4b9cc29c478a1384382bfeb65378e4d63b183dc937083399c5f",
+    "img/bg-tunel.jpg": "479fabef8ddaa69151d5161201a3f2a8f761ada5af2cf1e07d1a531835b4534b",
+    "img/fundos-5k/campeao.jpg": "cca7340a8ef1667cb5f95deb3fa268782e388aa87b8d06893e77f5561804346a",
+    "img/fundos-5k/mirantesol.jpg": "a7ba6f870ddc4c46ca4ac2b69a8ddbc4b9f1ba609deee425709290f11c8275c5",
+    "img/fundos-5k/pb1950.jpg": "ef875897d531624592890db06973fd074a9ca4aceade7dc30891b2bfacb6631c",
+    "img/fundos-5k/podio.jpg": "6c0435ac7f3be12dd3b4e51343c53e2c0bde0bc713371d0afe652cc66c1cf971",
+    "img/fundos-5k/tunel.jpg": "bb04c64f78801b433be74dc48b85c4c53acb61774cc8582e7f1cb34a8c13d2ef"}
 PR_LADO_MAX = 5000  # teto de W e H no /photoroom/compose
 
 
