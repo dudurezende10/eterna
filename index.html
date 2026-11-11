@@ -2004,7 +2004,7 @@ setInterval(()=>{if(!state.lojaRota&&!state.pub)ecoUpd(false);},1000);
 // ---------- v83: tela Posto de venda (view posto, módulo venda) ----------
 function vPosto(){const a=state.agent;
   const ag=a.on?'<span class="pill good">agente ligado</span>':`<span class="pill neutral">${a.offAt?'agente fora desde '+hhmm(new Date(a.offAt)):'sem agente'}</span>`;
-  return `${roloFaixa()}<div class="head posto-head"><div><div class="eyebrow">Posto de venda</div><h1>${esc(postoTitulo())}</h1></div><div class="row">${ag}${roloSelo('neutral')}${canView('quiosque')?'<button class="btn ghost" data-act="loja-abrir">Abrir Checkout</button>':''}</div></div>
+  return `${roloFaixa()}<div class="head posto-head"><div><div class="eyebrow">Posto de venda</div><h1>${esc(postoTitulo())}</h1></div><div class="row">${ag}${roloSelo('neutral')}</div></div>
   <div class="posto-cols"><div><div class="panel"><div class="head"><h2>No Checkout agora</h2></div><div id="eco">${ecoBody()}</div></div></div>
     <div>${pendPainel()}${impPainel()}${minhasVendas()}</div></div>`;}
 function drawQR(){const el=$('#qrbox');if(!el)return;const card=state.caixa.session;const tok=card&&galDaSessao(card);if(!tok){el.innerHTML='';return;}qrDraw(el,galBase()+tok,110,SIM.galerias[tok].codigo);}
