@@ -1525,6 +1525,10 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
                 except OSError as ex:
                     falhas.append(str(ex)[:80])
         try:
+            mont_apagar_base(pid)               # montagens da base (arquivos e linhas), na hora
+        except Exception as ex:
+            falhas.append("montagem: " + type(ex).__name__)
+        try:
             db = rostos_db()
             r = db.execute("select dia from foto where pid=?", (pid,)).fetchone()
             if r:
@@ -1764,6 +1768,8 @@ def nuvem_galerias_loop():
                 erro = None
                 if m:
                     try:
+                        # E4: a montagem (t:'ai') só vai para a nuvem na E5 (o arquivo ainda não sobe): até lá o manifesto da nuvem segue sem ela
+                        m = {**m, "fotos": [f for f in m.get("fotos") or [] if not (isinstance(f, dict) and f.get("t") == "ai")]}
                         rq = urllib.request.Request(NUVEM_API + "/ponto/galerias", data=json.dumps({"manifesto": m}).encode(), method="POST",
                                                     headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
                         with urllib.request.urlopen(rq, timeout=20) as r:
@@ -2846,10 +2852,35 @@ FUNDOS_PREVIA = {"campeao2": "img/bg-campeao-v81.jpg", "mirante": "img/bg-mirant
                  "imprensa": "img/bg-imprensa.jpg", "noite": "img/bg-noite.jpg", "terraco": "img/bg-terraco.jpg",
                  "campeaoarg": "img/bg-campeaoarg.jpg", "campeaocol": "img/bg-campeaocol.jpg",
                  "gramado1950": "img/bg-gramado1950.jpg", "alto1950": "img/bg-alto1950.jpg",
-                 "escanteio1950": "img/bg-escanteio1950.jpg", "asadelta": "img/bg-asadelta.jpg"}
+                 "escanteio1950": "img/bg-escanteio1950.jpg", "asadelta": "img/bg-asadelta.jpg",
+                 "telao": "img/bg-telao.jpg"}   # v97 (E8): o Telão só existe em 2576x1840 (a impressão usa o mesmo arquivo)
 FUNDOS_IMPRESSAO = {"campeao2": "img/fundos-5k/campeao.jpg", "mirante": "img/fundos-5k/mirantesol.jpg",
                     "arq1950": "img/fundos-5k/pb1950.jpg", "tunel": "img/fundos-5k/tunel.jpg",
                     "podio": "img/fundos-5k/podio.jpg"}
+# Montagem no servidor (plano docs/planos/2026-11-11-montagem-no-servidor.md): SHA-256 de cada arquivo de fundo aprovado.
+# O fundo baixado do app vira produto do cliente: o servidor só monta com o arquivo que bate com este SHA. Gerado por
+# agente/gerar-fundos-sha.py (rodar ao trocar a imagem de um fundo) e conferido com img/ pelo testes/montagem-paridade.js.
+FUNDOS_SHA = {
+    "img/bg-alto1950.jpg": "4f3239548dca775eb54f55871292c1797c1a99a6e2314227b2cda90c797e4b06",
+    "img/bg-asadelta.jpg": "5d250936437faa6ea0e4bb94dba7f567678e95203e07ea7f88e8f932ccb79105",
+    "img/bg-campeao-v81.jpg": "67efe775921201c25755b4d66b4fa21c95101f40f6204fb0ede0cf33c03be062",
+    "img/bg-campeaoarg.jpg": "52435ba26ed045e895125d2b83177cec87d2704146e40c7ea12c3c7310314f1a",
+    "img/bg-campeaocol.jpg": "d0ee43870b119866077a58795e357a3605317c4ff720f57bad185de315ce6500",
+    "img/bg-escanteio1950.jpg": "777be292c530e33277b004747e9e11a9e7a93f27a69617e755a13270ff993e2e",
+    "img/bg-gramado1950.jpg": "9713ecf351844bda76b012f36aca42aa46eaa812720aee34c292d34aea68d26e",
+    "img/bg-imprensa.jpg": "1c3f3688065a22754b8ad82745640d801f49a64d5d34838fff79a1b9646b7728",
+    "img/bg-mirantesol.jpg": "4f6c00862f54f68e3d6c2f1e8117bc2871752a6264d1419a7525bde1348d9c92",
+    "img/bg-noite.jpg": "cbe792530e80a0fbe2c8e7e6a6054dc2968178ec3451dee235e988c36beeab46",
+    "img/bg-pb1950.jpg": "0b03c57d7bc4e481f186026c3cdd377c35d72159a9d713d10549e6bd4615786b",
+    "img/bg-podio.jpg": "e61488510e9768d64e5e74fa2837ce2399cdd4bbab14567bcf4433e0b77492b7",
+    "img/bg-telao.jpg": "d16b7f0ee99d490205218bfc32e8b53c2e7d5a642715664a0da9bb7fdd4683d7",
+    "img/bg-terraco.jpg": "92e2a5f15df1c4b9cc29c478a1384382bfeb65378e4d63b183dc937083399c5f",
+    "img/bg-tunel.jpg": "479fabef8ddaa69151d5161201a3f2a8f761ada5af2cf1e07d1a531835b4534b",
+    "img/fundos-5k/campeao.jpg": "cca7340a8ef1667cb5f95deb3fa268782e388aa87b8d06893e77f5561804346a",
+    "img/fundos-5k/mirantesol.jpg": "a7ba6f870ddc4c46ca4ac2b69a8ddbc4b9f1ba609deee425709290f11c8275c5",
+    "img/fundos-5k/pb1950.jpg": "ef875897d531624592890db06973fd074a9ca4aceade7dc30891b2bfacb6631c",
+    "img/fundos-5k/podio.jpg": "6c0435ac7f3be12dd3b4e51343c53e2c0bde0bc713371d0afe652cc66c1cf971",
+    "img/fundos-5k/tunel.jpg": "bb04c64f78801b433be74dc48b85c4c53acb61774cc8582e7f1cb34a8c13d2ef"}
 PR_LADO_MAX = 5000  # teto de W e H no /photoroom/compose
 
 
@@ -3570,6 +3601,16 @@ def rec_trabalho(i=0):
                         if job.get("u"):
                             ia["atrasos"].append(max(0.0, time.time() - job["u"]))
             job["ev"].set()
+            try:
+                mont_recorte_fim(job["pid"], job.get("err"))   # E2: montagens pedidas pelo Checkout antes de o recorte existir
+            except Exception as ex:
+                print("  montagem: não enfileirei o pedido (%s)" % type(ex).__name__)
+            if job["ia"] and not job.get("err"):     # montagem no servidor (E1): o recorte da base ficou pronto
+                try:
+                    mont_base_pronta(job["pid"], MONT_PRIO_VIVO if job["prio"] <= REC_PRIO_IA else
+                                     MONT_PRIO_CARTAO if job["prio"] == REC_PRIO_IA_ATRASADA else MONT_PRIO_RESERVA)
+                except Exception as ex:
+                    print("  montagem: não enfileirei (%s)" % type(ex).__name__)
 
 
 def rec_apagar(pid):
@@ -3781,6 +3822,1136 @@ def rec_ia_loop():
                     andando[pid] = (job, pr, andando_n.pop(pid, 0))
         except Exception as ex:
             print("  recorte das bases de IA:", str(ex)[:160])
+
+
+# ---------- Montagem dos fundos de IA no servidor do ponto (plano docs/planos/2026-11-11-montagem-no-servidor.md) ----------
+# REGRA DO PROJETO (Eduardo, 11/11): recorte e montagem são feitos e guardados no servidor do ponto; o Checkout só mostra.
+# E1 (modo sombra): assim que o recorte de uma base de IA fica pronto, o servidor monta a base em cada fundo ativo (2 bases
+# x N fundos por visita; as preferidas da tela primeiro, as de reserva depois), num PROCESSO FILHO (agente/eterna-montagem.py,
+# a porta em Python do fiaMontar; uma montagem de 5000 px ocupa centenas de MB e não pode travar FTP, vendas e Checkout).
+# Guarda o final (tamanho do fundo de impressão, JPEG 92) e a prévia (1600 px, JPEG 85) em
+# ~/Eterna/montagens/<AAAA-MM-DD>/<mid>.jpg e <mid>_p.jpg (pasta 700, arquivo 600), com mid = 32 hex sorteados aqui: nenhum
+# pid, fundo ou código de sessão em nome de arquivo. Índice em ~/Eterna/ponto/montagens.db (entra no backup; os arquivos
+# não). A fila é o próprio banco (estado 'fila', por prioridade e ordem de entrada): sobrevive ao reinício.
+# Desligada por padrão: liga com config/montagem {"ligada": true} no estado.db (ou ETERNA_MONTAGEM=1, sem documento).
+# Nunca pegar lock, sess_lock e mont_lock juntos (regra do ff_lock).
+MONTAGENS = os.path.join(HOME, "montagens")
+MONT_DB = os.path.join(HOME, "ponto", "montagens.db")
+MONT_VERSAO = "m1"                 # os testes trocam o atributo (versão nova = montagens não vendidas refeitas)
+MONT_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-montagem.py")   # testes podem trocar (m.MONT_FILHO)
+MONT_REGRAS_ARQ = MONT_FILHO       # a tabela de regras (BASE, regra de cada fundo) vem sempre do arquivo de verdade
+MONT_DIAS = 3                      # D1 (Eduardo, 11/11): a montagem não vendida fica 3 dias
+MONT_APAGADA_DIAS = 60             # a linha 'apagada' fica 60 dias (auditoria), sem arquivo
+try:
+    MONT_TETO_GB = float(os.environ.get("ETERNA_MONTAGENS_GB") or 40)        # teto das NÃO vendidas (a vendida nunca sai por teto)
+    MONT_PISO_GB = float(os.environ.get("ETERNA_MONTAGENS_PISO_GB") or 15)   # abaixo disto de espaço livre, só o pedido do Checkout
+except ValueError:
+    MONT_TETO_GB, MONT_PISO_GB = 40.0, 15.0
+MONT_PISO0_GB = 2.0                # abaixo disto nem a prioridade 0
+MONT_FILA_MAX = 2000
+MONT_TAXA = 120                    # chamadas por minuto por IP nas rotas /montagens (E2)
+MONT_MEM_MIN_GB = 2.0              # memória livre para montar (os testes trocam)
+MONT_CONC = 2 if os.environ.get("ETERNA_MONTAGEM_CONC") == "2" and (os.cpu_count() or 1) >= 8 else 1
+MONT_ESPERA_FILHO = 60             # s por montagem; acima disso o filho é reiniciado
+MONT_CARGA_SEG = 60
+MONT_ERRO_SEG = 60                 # depois de um erro do filho, tenta de novo passado este tempo (dobra a cada morte por memória)
+MONT_MORTES_MAX = 3                # mortes por memória seguidas: a montagem para até reiniciar o agente
+MONT_TENTATIVAS = 3                # a mesma montagem derrubando o filho: na 3ª vira erro
+MONT_LOOP_SEG = 15                 # recuperação (partida, Separar, fundo novo, versão nova)
+MONT_FUNDOS_PADRAO = ("campeao2", "mirante", "arq1950", "tunel", "telao")
+MONT_FUNDOS_MAX = 8
+MONT_PRIO_PEDIDO, MONT_PRIO_VIVO, MONT_PRIO_CARTAO, MONT_PRIO_RESERVA = 0, 1, 2, 3
+MONT_ENV_PREFIXOS = ()             # os testes acrescentam o prefixo das variáveis do filho falso
+MONT_YUNET = "face_detection_yunet_2023mar.onnx"
+mont_lock = threading.Lock()       # o banco de montagens e os contadores; nunca junto do lock ou do sess_lock
+mont_ev = threading.Event()        # acorda o trabalhador
+mont = {"erro": None, "erro_em": 0, "espera_s": 60, "mortes_mem": 0, "parado": None, "reinicios": 0, "abriu": False,
+        "pico_mb": None, "pausa_disco": False, "fundo_invalido": set(), "tent": {}, "erro_linha": {}, "st": (0.0, None),
+        "motivo": None}
+mont_filhos = {}                   # índice do trabalhador -> {"p", "fila", "lock", "seq"}
+mont_filhos_lock = threading.Lock()
+mont_threads = []
+_mont_cfg = {"t": 0.0, "v": None}
+_mont_reg = {}
+_mont_fundo_ok = {}                # caminho -> (tamanho, mtime, confere)
+_re_mid = re.compile(r"^[0-9a-f]{32}$")
+_re_mont_dia = re.compile(r"^\d{4}-\d\d-\d\d$")
+_re_mont_arq = re.compile(r"^([0-9a-f]{32})(_p|_i)?\.jpg$")
+_re_mont_get = re.compile(r"^/montagens/([0-9a-f]{32})/(previa|impressao)\.jpg$")
+MONT_COLS = ("mid", "base", "fundo", "versao", "estado", "motivo", "dia", "w", "h", "bytes", "sha", "rostos", "prio", "origem",
+             "criada", "pronta", "ms", "vendida", "venda", "expira", "apagada", "galeria")
+
+
+def fundos_valida(j):
+    """config/fundos: {"ativos": [ids do mapa aprovado, até 8, sem repetir]}; qualquer outra coisa = None (recusado)."""
+    if not isinstance(j, dict) or not isinstance(j.get("ativos"), list) or len(j["ativos"]) > MONT_FUNDOS_MAX:
+        return None
+    a = j["ativos"]
+    if not all(isinstance(b, str) and b in FUNDOS_PREVIA for b in a) or len(set(a)) != len(a):
+        return None
+    return {"ativos": list(a)}
+
+
+def montagem_valida(j):
+    """config/montagem: {"ligada": bool, "checkout": bool?}. "checkout" é o interruptor da E2 (o Checkout e o Posto passam a
+    ler a montagem do servidor); fica desligado até o Eduardo aprovar a folha lado a lado (D5)."""
+    if not isinstance(j, dict) or not isinstance(j.get("ligada"), bool) or not isinstance(j.get("checkout", False), bool):
+        return None
+    return {"ligada": j["ligada"], "checkout": bool(j.get("checkout", False))}
+
+
+def mont_cfg():
+    """{"ligada", "checkout", "fundos"} do estado.db (config/montagem e config/fundos), relido a cada 3 s. Sem documento:
+    ETERNA_MONTAGEM=1 liga (padrão desligada) e os fundos são os 5 do padrão. Nunca chamar com o sess_lock na mão."""
+    agora = time.time()
+    if agora - _mont_cfg["t"] < 3 and _mont_cfg["v"] is not None:
+        return _mont_cfg["v"]
+    v = {"ligada": os.environ.get("ETERNA_MONTAGEM") == "1", "checkout": False, "fundos": list(MONT_FUNDOS_PADRAO)}
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    rs = dict(db.execute("select id, valor from doc where col = 'config' and id in ('montagem', 'fundos') and valor is not null").fetchall())
+                finally:
+                    db.close()
+            mo = montagem_valida(json.loads(rs["montagem"])) if rs.get("montagem") else None
+            fu = fundos_valida(json.loads(rs["fundos"])) if rs.get("fundos") else None
+            if mo:
+                v.update(ligada=mo["ligada"], checkout=mo["checkout"])
+            if fu:
+                v["fundos"] = fu["ativos"]
+    except Exception:                                # banco ocupado ou ilegível: fica o último valor válido
+        v = _mont_cfg["v"] or v
+    _mont_cfg.update(t=agora, v=v)
+    return v
+
+
+def mont_fundos():
+    return list(mont_cfg()["fundos"])
+
+
+def mont_regras():
+    """BASE e a regra de cada fundo, do agente/eterna-montagem.py (um lugar só no servidor; o teste de paridade compara com
+    o app). O arquivo só importa a biblioteca padrão no topo (numpy e Pillow ficam dentro das funções)."""
+    r = _mont_reg.get("v")
+    if r is None:
+        import importlib.util
+        sp = importlib.util.spec_from_file_location("eterna_montagem_regras", MONT_REGRAS_ARQ)
+        mod = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(mod)
+        r = {"base": dict(mod.BASE), "versao": str(mod.VERSAO), "regra": mod.regra_do_fundo}
+        _mont_reg["v"] = r
+    return r
+
+
+def mont_estado():
+    """(ok, motivo): o arquivo do processo de montagem, numpy e Pillow presentes e a montagem não parada."""
+    if not os.path.isfile(MONT_FILHO) or not os.path.isfile(MONT_REGRAS_ARQ):
+        return False, "não instalado: falta o eterna-montagem.py na pasta do agente"
+    import importlib.util
+    falta = [x for x in ("numpy", "PIL") if importlib.util.find_spec(x) is None]
+    if falta:
+        return False, "não instalado: faltam pacotes (" + ", ".join(falta) + ")"
+    with mont_lock:
+        if mont["parado"]:
+            return False, mont["parado"]
+    return True, None
+
+
+def mont_ligada():
+    return bool(mont_cfg()["ligada"]) and mont_estado()[0]
+
+
+def mont_db():
+    os.makedirs(os.path.dirname(MONT_DB), exist_ok=True)
+    c = sqlite3.connect(MONT_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("create table if not exists montagem (mid text primary key, base text, fundo text, versao text, estado text,"
+              " motivo text, dia text, w int, h int, bytes int, sha text, rostos int, prio int, origem text, criada real,"
+              " pronta real, ms int, vendida real, venda text, expira real, apagada real, galeria text, unique(base, fundo, versao))")
+    c.execute("create index if not exists montagem_base on montagem(base)")
+    c.execute("create index if not exists montagem_fila on montagem(estado, prio, criada)")
+    c.execute("create index if not exists montagem_vendida on montagem(vendida)")
+    if _mont_reg.get("galeria") != MONT_DB:              # E4: código da galeria da venda (banco criado antes ganha a coluna)
+        if "galeria" not in {r[1] for r in c.execute("pragma table_info(montagem)")}:
+            c.execute("alter table montagem add column galeria text")
+            c.commit()
+        _mont_reg["galeria"] = MONT_DB
+    return c
+
+
+def _mont_linha(r):
+    return dict(zip(MONT_COLS, r)) if r else None
+
+
+def mont_ler(onde="", args=()):
+    """Linhas do índice (dicionários). onde = cláusula depois de "from montagem" (só texto fixo do código, nunca do cliente)."""
+    with mont_lock:
+        db = mont_db()
+        try:
+            return [_mont_linha(r) for r in db.execute("select %s from montagem %s" % (", ".join(MONT_COLS), onde), args)]
+        finally:
+            db.close()
+
+
+def mont_arquivos(dia, mid):
+    """(final, prévia, impressão) da montagem; o caminho é sempre montado aqui (dia e mid conferidos), nunca vem de fora."""
+    if not _re_mont_dia.match(dia or "") or not _re_mid.match(mid or ""):
+        raise ValueError("montagem inválida")
+    p = os.path.join(MONTAGENS, dia)
+    return os.path.join(p, mid + ".jpg"), os.path.join(p, mid + "_p.jpg"), os.path.join(p, mid + "_i.jpg")
+
+
+def _mont_apaga_arquivos(dia, mid):
+    n = 0
+    try:
+        arqs = mont_arquivos(dia, mid)
+    except ValueError:
+        return 0
+    for f in arqs:
+        try:
+            os.remove(f)                             # num link, apaga o link (o alvo fica)
+            n += 1
+        except OSError:
+            pass
+    return n
+
+
+def mont_livre_gb():
+    """Espaço livre (GB) no disco das montagens, ou None se não deu para medir (os testes trocam esta função)."""
+    try:
+        return shutil.disk_usage(MONTAGENS if os.path.isdir(MONTAGENS) else HOME).free / 1024 ** 3
+    except OSError:
+        return None
+
+
+def mont_fundo_arquivo(bg, baixar=True):
+    """Arquivo local do fundo de impressão de bg (5000 px quando há), com o SHA-256 conferido contra FUNDOS_SHA, ou None.
+    Baixado uma vez de APP_ORIGIN para ~/Eterna/fundos/ (depois o servidor monta sem internet). Arquivo diferente do SHA é
+    apagado e o fundo fica marcado em fundo_invalido: o fundo vira produto do cliente, nunca monta com arquivo trocado."""
+    try:
+        rel = bg_arquivo(bg, hi=True)
+    except ValueError:
+        return None
+    sha = FUNDOS_SHA.get(rel)
+    if not sha:
+        return None
+    path = os.path.join(BG_DIR, "v83-" + rel.replace("/", "_"))
+
+    def confere():
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        v = _mont_fundo_ok.get(path)
+        if v is None or v[0] != st.st_size or v[1] != st.st_mtime:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for b in iter(lambda: f.read(1 << 20), b""):
+                    h.update(b)
+            v = (st.st_size, st.st_mtime, h.hexdigest() == sha)
+            _mont_fundo_ok[path] = v
+        return v[2]
+    c = confere()
+    if c:
+        mont["fundo_invalido"].discard(bg)
+        return path
+    if c is False:                                   # arquivo no disco diferente do aprovado: sai
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        _mont_fundo_ok.pop(path, None)
+    if not baixar:
+        return None
+    try:
+        os.makedirs(BG_DIR, exist_ok=True)
+        req = urllib.request.Request(APP_ORIGIN + "/" + rel, headers={"User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = r.read(64 * 1024 * 1024)
+    except Exception:
+        return None                                  # sem internet: nova tentativa depois (motivo "fundo")
+    if hashlib.sha256(data).hexdigest() != sha:
+        if bg not in mont["fundo_invalido"]:
+            print("  montagem: o arquivo do fundo %s veio diferente do aprovado (SHA): não monto com ele" % bg)
+        mont["fundo_invalido"].add(bg)
+        return None
+    tmp = path + ".%d.tmp" % threading.get_ident()
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+    mont["fundo_invalido"].discard(bg)
+    return path if confere() else None
+
+
+def mont_versao(bg):
+    """Versão da montagem deste fundo: muda com a versão da montagem, do recorte, do arquivo do fundo ou da regra dele.
+    Montagem não vendida de versão antiga é refeita; a vendida nunca muda (A9)."""
+    try:
+        rel = bg_arquivo(bg, hi=True)
+    except ValueError:
+        return None
+    r = mont_regras()
+    txt = "|".join((MONT_VERSAO, r["versao"], REC_VERSAO, FUNDOS_SHA.get(rel) or "", json.dumps(r["regra"](bg), sort_keys=True)))
+    return hashlib.sha256(txt.encode()).hexdigest()[:12]
+
+
+def mont_plano(pid):
+    """A leva da base, a posição dela entre as bases (0 = 1ª) e quantas são, ou None se pid não é base de IA de sessão em
+    memória (hoje e ontem). Sessão aberta: os N primeiros cliques de agora."""
+    with sess_lock:
+        x = sess.get(sess_pid.get(pid) or "")
+        if x is None or x.get("removida"):
+            return None
+        if x.get("status") == "fechada":
+            bases = list(x.get("ia") or ())
+            n = len(bases)
+        else:
+            n, _ = _sess_ia_regra(x)
+            ts = x.get("_t") or {}
+            bases = sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n] if n else []
+        if pid not in bases:
+            return None
+        return {"card": x["card"], "pos": bases.index(pid), "n": max(1, n), "dia": x["dia"], "atrasada": bool(x.get("atrasada"))}
+
+
+def mont_preferidos(pl, ativos=None):
+    """(preferidos, reserva) dos fundos ativos para a base do plano pl: o Checkout mostra cada fundo com a base
+    min(BASE[fundo], n - 1) (lojaAI); a outra base no mesmo fundo é a reserva (base preferida com olhos fechados)."""
+    ativos = mont_fundos() if ativos is None else ativos
+    base = mont_regras()["base"]
+    pref = [bg for bg in ativos if min(base.get(bg, 1), pl["n"] - 1) == pl["pos"]]
+    return pref, [bg for bg in ativos if bg not in pref]
+
+
+def mont_enfileirar(pid, bg, prio=MONT_PRIO_RESERVA, origem="auto"):
+    """Põe a montagem base x fundo na fila. Idempotente pela chave (base, fundo, versão): linha 'pronta' é devolvida; 'fila'
+    só sobe a prioridade; senão cria com mid novo. Devolve (linha, motivo): motivo "fundo" (fora do mapa), "disco" (abaixo do
+    piso; a prioridade 0 só para abaixo de 2 GB), "fila_cheia" ou "base" (a foto não está na biblioteca)."""
+    if bg not in FUNDOS_PREVIA:
+        return None, "fundo"
+    v = mont_versao(bg)
+    if not v or not pid_ok(pid):
+        return None, "fundo" if not v else "base"
+    with lock:
+        if pid not in lib:
+            return None, "base"
+    livre = mont_livre_gb()
+    agora = time.time()
+    with mont_lock:
+        db = mont_db()
+        try:
+            r = _mont_linha(db.execute("select %s from montagem where base = ? and fundo = ? and versao = ?" % ", ".join(MONT_COLS), (pid, bg, v)).fetchone())
+            if r:
+                if r["estado"] == "fila" and prio < (r["prio"] if r["prio"] is not None else 9):
+                    db.execute("update montagem set prio = ? where mid = ?", (prio, r["mid"]))
+                    db.commit()
+                    r["prio"] = prio
+                elif prio == MONT_PRIO_PEDIDO and (r["estado"] == "apagada" or r["estado"] == "erro" and r["motivo"] != "sem_pessoa"):
+                    if r["estado"] == "apagada" and livre is not None and livre < MONT_PISO0_GB:
+                        return None, "disco"
+                    # pedido do Checkout: a montagem com erro que passa, ou a que a limpeza levou, volta para a fila
+                    db.execute("update montagem set estado = 'fila', motivo = null, prio = 0, apagada = null, dia = ?, criada = ? where mid = ?",
+                               (_ff_hoje(agora), agora, r["mid"]))
+                    db.commit()
+                    r.update(estado="fila", motivo=None, prio=0, dia=_ff_hoje(agora), criada=agora, apagada=None)
+                return r, None
+            if livre is not None and livre < (MONT_PISO0_GB if prio == MONT_PRIO_PEDIDO else MONT_PISO_GB):
+                return None, "disco"
+            if db.execute("select count(*) from montagem where estado = 'fila'").fetchone()[0] >= MONT_FILA_MAX:
+                return None, "fila_cheia"
+            mid = secrets.token_hex(16)
+            db.execute("insert into montagem (mid, base, fundo, versao, estado, dia, prio, origem, criada) values (?,?,?,?,'fila',?,?,?,?)",
+                       (mid, pid, bg, v, _ff_hoje(agora), prio, origem if origem in ("auto", "pedido", "venda") else "auto", agora))
+            db.commit()
+            return {**dict.fromkeys(MONT_COLS), "mid": mid, "base": pid, "fundo": bg, "versao": v, "estado": "fila",
+                    "dia": _ff_hoje(agora), "prio": prio, "origem": origem, "criada": agora}, None
+        finally:
+            db.close()
+
+
+def mont_base_pronta(pid, prio=MONT_PRIO_RESERVA):
+    """O recorte da base ficou pronto: as montagens dela vão para a fila, as preferidas (as da tela) com a prioridade prio
+    e na ordem dos fundos ativos, as de reserva com a prioridade mais baixa. Devolve quantas linhas pediu."""
+    if not mont_ligada():
+        return 0
+    pl = mont_plano(pid)                             # sess_lock, solto antes do mont_lock
+    if not pl:
+        return 0
+    pref, res = mont_preferidos(pl)
+    n = 0
+    for bg, pr in [(b, prio) for b in pref] + [(b, MONT_PRIO_RESERVA) for b in res]:
+        r, _ = mont_enfileirar(pid, bg, pr, "auto")
+        n += 1 if r else 0
+    mont_ev.set()
+    return n
+
+
+mont_pedidos = {}                  # pid sem recorte -> fundos pedidos pelo Checkout (o fim do recorte enfileira com prioridade 0)
+mont_rec_falhou = {}               # pid cujo recorte pedido falhou -> quando (a lista responde erro por 5 min, sem recortar de novo)
+MONT_PEDIDOS_MAX = 500
+
+
+def mont_recorte_fim(pid, erro=None):
+    """Chamado no fim de qualquer recorte: se o Checkout pediu montagens desta foto antes de o recorte existir, elas entram
+    agora com a prioridade 0; recorte que falhou fica marcado (a lista devolve erro)."""
+    with mont_lock:
+        fs = mont_pedidos.pop(pid, None)
+        if fs and erro:
+            mont_rec_falhou[pid] = time.time()
+            if len(mont_rec_falhou) > MONT_PEDIDOS_MAX:
+                mont_rec_falhou.pop(next(iter(mont_rec_falhou)))
+    if not erro and os.path.exists(MONT_DB):
+        with mont_lock:                              # montagem (de venda) que esperava o recorte desta foto volta para a fila já
+            db = mont_db()
+            try:
+                if db.execute("update montagem set estado = 'fila', motivo = null where base = ? and estado = 'erro' and motivo = 'recorte'", (pid,)).rowcount:
+                    mont_ev.set()
+                db.commit()
+            finally:
+                db.close()
+    if not fs or erro:
+        return 0
+    n = 0
+    for bg in fs:
+        r, _ = mont_enfileirar(pid, bg, MONT_PRIO_PEDIDO, "pedido")
+        n += 1 if r else 0
+    mont_ev.set()
+    return n
+
+
+def mont_lista(body):
+    """POST /montagens/lista {"bases": [pid até 12], "fundos": [bg até 8]?, "pedir": bool?} -> (resposta, código).
+    Só foto que está em sessão de hoje ou de ontem; campo desconhecido = 400. pedir enfileira o que falta com a prioridade 0
+    (e pede o recorte, se a foto ainda não tem). Nenhum caminho vem do cliente: a resposta leva só o mid."""
+    if not isinstance(body, dict) or set(body) - {"bases", "fundos", "pedir"}:
+        return {"error": "campo"}, 400
+    bases, fundos, pedir = body.get("bases"), body.get("fundos"), body.get("pedir", False)
+    if not isinstance(bases, list) or not 1 <= len(bases) <= 12 or not all(isinstance(p, str) and pid_ok(p) for p in bases) \
+            or not isinstance(pedir, bool):
+        return {"error": "campo"}, 400
+    if fundos is not None and (not isinstance(fundos, list) or not 1 <= len(fundos) <= MONT_FUNDOS_MAX
+                               or not all(isinstance(b, str) and b in FUNDOS_PREVIA for b in fundos)):
+        return {"error": "campo"}, 400
+    if not mont_ligada():
+        return {"error": "montagem_desligada"}, 503
+    bases = list(dict.fromkeys(pid_lib(p) for p in bases))
+    with sess_lock:
+        nas = set()
+        for p in bases:
+            x = sess.get(sess_pid.get(p) or "")
+            if x is not None and not x.get("removida"):
+                nas.add(p)
+    with lock:
+        arq = {p: (lib.get(p) or {}).get("file") for p in bases}
+    if any(p not in nas or not arq[p] for p in bases):
+        return {"error": "base"}, 404
+    fs = list(dict.fromkeys(fundos)) if fundos is not None else mont_fundos()
+    versoes = {bg: mont_versao(bg) for bg in fs}
+    tem = {(r["base"], r["fundo"], r["versao"]): r for r in mont_ler("where base in (%s)" % ",".join("?" * len(bases)), tuple(bases))}
+    itens, acorda = [], False
+    for p in bases:
+        for bg in fs:
+            r = tem.get((p, bg, versoes[bg]))
+            motivo = None
+            if pedir and (r is None or r["estado"] in ("apagada", "erro") or (r["estado"] == "fila" and (r["prio"] or 0) > 0)):
+                if os.path.exists(rec_arquivo(p)):
+                    r2, motivo = mont_enfileirar(p, bg, MONT_PRIO_PEDIDO, "pedido")
+                    r = r2 or (r if r and r["estado"] == "erro" else None)
+                    acorda = True
+                else:
+                    with mont_lock:
+                        falhou = time.time() - mont_rec_falhou.get(p, 0) < 300
+                    if falhou:
+                        r, motivo = None, "recorte_erro"
+                    elif not rec_estado()[0]:
+                        r, motivo = None, "recorte"
+                    else:
+                        with mont_lock:
+                            if len(mont_pedidos) < MONT_PEDIDOS_MAX or p in mont_pedidos:
+                                mont_pedidos.setdefault(p, set()).add(bg)
+                        job, erro = rec_enfileirar(p, arq[p], REC_LADO_MAX, REC_PRIO_CHECKOUT)
+                        r, motivo = None, ("recorte" if erro else "recortando")
+            if motivo == "recortando":
+                itens.append({"base": p, "fundo": bg, "mid": None, "estado": "fila", "motivo": None, "w": None, "h": None})
+            elif motivo == "recorte_erro":
+                itens.append({"base": p, "fundo": bg, "mid": None, "estado": "erro", "motivo": "recorte", "w": None, "h": None})
+            elif r is None or r["estado"] == "apagada":
+                itens.append({"base": p, "fundo": bg, "mid": None, "estado": "indisponivel", "motivo": motivo if motivo in ("disco", "fundo", "recorte") else None, "w": None, "h": None})
+            else:
+                itens.append({"base": p, "fundo": bg, "mid": r["mid"] if r["estado"] == "pronta" else None, "estado": r["estado"],
+                              "motivo": (r["motivo"] if r["motivo"] in ("sem_pessoa", "fundo", "recorte") else "interno") if r["estado"] == "erro" else None,
+                              "w": r["w"], "h": r["h"]})
+    if acorda:
+        mont_ev.set()
+    return {"versao": 1, "itens": itens}, 200
+
+
+def mont_previa(mid):
+    """Arquivo da prévia da montagem pronta (caminho montado aqui a partir da linha do banco), ou None."""
+    if not _re_mid.match(mid or ""):
+        return None
+    rs = mont_ler("where mid = ? and estado = 'pronta'", (mid,))
+    if not rs:
+        return None
+    try:
+        f = mont_arquivos(rs[0]["dia"], mid)[1]
+    except ValueError:
+        return None
+    return f if os.path.isfile(f) and not os.path.islink(f) else None
+
+
+MONT_VENDA_DIAS = 60               # a montagem vendida fica até a galeria da venda vencer (60 dias)
+MONT_ALERTA_SEG = 300              # D7: venda paga com montagem sem arquivo depois de 5 min vira alerta no Posto
+
+
+def _mont_venda_dados(venda):
+    """(dados do "criar", paga, cancelada) da venda, lidos do vendas.db (o servidor decide: nada vem do navegador aqui)."""
+    with ev_lock:
+        db = vendas_db()
+        try:
+            evs = db.execute("select tipo, dados from evento where venda = ? order by seq", (venda,)).fetchall()
+        finally:
+            db.close()
+    criar = None
+    for tipo, dados in evs:
+        if tipo == "criar" and criar is None:
+            try:
+                criar = json.loads(dados)
+            except ValueError:
+                criar = {}
+    tipos = {t for t, _ in evs}
+    return criar, "pagar" in tipos, "cancelar" in tipos
+
+
+def mont_vender(venda):
+    """E4: a venda ficou paga. Cada "base|fundo" do aiSel vira montagem VENDIDA: a que o cliente viu (aiMont, se o mid existe
+    e é dessa base e desse fundo), senão a da versão atual, senão entra na fila com a prioridade 0 (venda de app antigo ou
+    da Venda manual: o servidor monta, e recorta antes se a foto ainda não tem recorte). A vendida nunca muda nem sai pela
+    limpeza antes de `expira`. Depois a galeria da venda é refeita (a montagem entra no manifesto pelo _gal_montagens).
+    Venda cancelada: desmarca. Devolve quantas montagens marcou."""
+    criar, paga, cancelada = _mont_venda_dados(venda)
+    if criar is None:
+        return 0
+    cod = criar.get("galeria") if isinstance(criar.get("galeria"), str) and _re_codigo.match(criar["galeria"]) else None
+    if cancelada or not paga:
+        if cancelada:
+            with mont_lock:
+                db = mont_db()
+                try:
+                    db.execute("update montagem set vendida = null, venda = null, expira = null, galeria = null where venda = ?", (venda,))
+                    db.commit()
+                finally:
+                    db.close()
+                mont["st"] = (0.0, None)
+            tk = codigos.get(cod) if cod else None
+            if tk:
+                gal_fila.put(tk)
+        return 0
+    if not mont_cfg()["ligada"] or not os.path.isfile(MONT_REGRAS_ARQ):
+        return 0                                     # (montagem parada não impede marcar: a linha espera na fila e o Posto vê o alerta)
+    ai_mont = criar.get("aiMont") if isinstance(criar.get("aiMont"), dict) else {}
+    agora = time.time()
+    n = 0
+    for k in (criar.get("aiSel") or [])[:20]:
+        if not isinstance(k, str) or not _re_aimont_k.match(k):
+            continue
+        base, bg = k.split("|", 1)
+        base = pid_lib(base)
+        if bg not in FUNDOS_PREVIA:
+            continue
+        r = None
+        mid = ai_mont.get(k) or ai_mont.get("ag_" + k)
+        if isinstance(mid, str) and _re_mid.match(mid):
+            rs = mont_ler("where mid = ? and base = ? and fundo = ? and estado != 'apagada'", (mid, base, bg))
+            r = rs[0] if rs else None
+        if r is None:
+            r, _ = mont_enfileirar(base, bg, MONT_PRIO_PEDIDO, "venda")
+            if r is not None and r["estado"] != "pronta" and not os.path.exists(rec_arquivo(base)):
+                with lock:
+                    arq = (lib.get(base) or {}).get("file")
+                if arq and rec_estado()[0]:
+                    rec_enfileirar(base, arq, REC_LADO_MAX, REC_PRIO_CHECKOUT)
+        if r is None:
+            continue
+        with mont_lock:
+            db = mont_db()
+            try:
+                db.execute("update montagem set vendida = coalesce(vendida, ?), venda = ?, expira = ?, galeria = ? where mid = ?",
+                           (agora, venda, agora + (MONT_VENDA_DIAS + 1) * 86400, cod, r["mid"]))
+                db.commit()
+            finally:
+                db.close()
+            mont["st"] = (0.0, None)
+        n += 1
+    if n:
+        mont_ev.set()
+        tk = codigos.get(cod) if cod else None
+        if tk:
+            gal_fila.put(tk)
+    return n
+
+
+def _gal_montagens(m):
+    """E4 (A8): o SERVIDOR decide a montagem que entra na galeria. Tira do manifesto qualquer item t:'ai' (ou com id de
+    montagem) que tenha vindo de fora e acrescenta as montagens das vendas pagas desta galeria (linha vendida com o código
+    dela), sempre como compradas. Galeria de grupo de escola nunca tem montagem (A13). Devolve (quantas pôs, quantas tirou)."""
+    antes = m.get("fotos") or []
+    ids = [f.get("id") for f in antes if isinstance(f, dict) and isinstance(f.get("id"), str) and _re_mid.match(pid_lib(f["id"]))]
+    conhecidos = set()
+    if ids:
+        conhecidos = {r["mid"] for r in mont_ler("where mid in (%s)" % ",".join("?" * len(ids)), tuple(pid_lib(i) for i in ids))}
+    fotos = [f for f in antes if not (isinstance(f, dict) and (f.get("t") == "ai" or pid_lib(str(f.get("id") or "")) in conhecidos))]
+    tirou = len(antes) - len(fotos)
+    pos = 0
+    cod = m.get("codigo")
+    if m.get("tipo") == "sessao" and cod and os.path.exists(MONT_DB):
+        ses = set(m.get("sessoes") or [])
+        for r in mont_ler("where galeria = ? and vendida is not null and estado != 'apagada' order by vendida, rowid", (cod,)):
+            with sess_lock:
+                card = sess_pid.get(r["base"])
+            if card is not None and ses and card not in ses:
+                continue                             # a leva da base precisa estar nesta galeria (nunca a montagem de outra família)
+            fotos.append({"id": r["mid"], "t": "ai", "base": r["base"], "bg": r["fundo"], "sessao": card or (sorted(ses)[0] if ses else ""),
+                          "direito": "comprada", "canal": "loja"})
+            pos += 1
+    m["fotos"] = fotos
+    return pos, tirou
+
+
+def _gal_montagem_original(token, f):
+    """O arquivo que a galeria entrega da montagem comprada: cópia do final reduzida a 3000 px (D3; o de 5000 px fica no
+    servidor para a impressão), JPEG 88, sem EXIF e sem selo. False enquanto a montagem não está pronta ("chegando")."""
+    rs = mont_ler("where mid = ? and estado = 'pronta' and vendida is not null", (f["id"],))
+    if not rs:
+        return False
+    final, previa, _ = mont_arquivos(rs[0]["dia"], f["id"])
+    if not os.path.isfile(final) or os.path.islink(final):
+        return False
+    from PIL import Image
+    tmp = os.path.join(os.path.dirname(final), ".mont-gal-%s.tmp" % secrets.token_hex(6))
+    try:
+        with Image.open(final) as im:
+            im = im.convert("RGB")
+            im.thumbnail((ALTA_LADO, ALTA_LADO), Image.LANCZOS)
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                im.save(fh, "JPEG", quality=88)
+        REPO.subir(token, f["id"], "original", tmp)
+        if not REPO.existe(token, f["id"], "vitrine"):
+            _vitrine(previa if os.path.isfile(previa) else tmp, None, REPO.abrir(token, f["id"], "vitrine"))
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    return True
+
+
+_mont_imp_lock = threading.Lock()
+
+
+def mont_impressao(mid):
+    """(arquivo, código) do corte de impressão 10x15 (1844x1240) da montagem VENDIDA: feito do final no primeiro pedido
+    (processo de montagem, op "imprimir") e guardado como <mid>_i.jpg; a reimpressão usa o mesmo arquivo. 404 se não
+    existe ou não está pronta, 409 se não foi vendida, 503 se o processo de montagem não respondeu. O caminho é montado aqui."""
+    if not _re_mid.match(mid or ""):
+        return None, 404
+    rs = mont_ler("where mid = ? and estado = 'pronta'", (mid,))
+    if not rs:
+        return None, 404
+    r = rs[0]
+    if not r["vendida"]:
+        return None, 409
+    final, _, imp = mont_arquivos(r["dia"], mid)
+    if os.path.islink(imp) or os.path.islink(final) or not os.path.isfile(final):
+        return None, 404
+    with _mont_imp_lock:
+        if not os.path.isfile(imp):
+            try:
+                j = mont_filho_pedir({"op": "imprimir", "id": mid, "final": final, "bg": r["fundo"], "destino": imp}, 0)
+            except RuntimeError:
+                return None, 503
+            if not j.get("ok") or not os.path.isfile(imp):
+                return None, 503
+            with mont_lock:
+                db = mont_db()
+                try:
+                    db.execute("update montagem set bytes = coalesce(bytes, 0) + ? where mid = ?", (int((j.get("bytes") or {}).get("impressao") or 0), mid))
+                    db.commit()
+                finally:
+                    db.close()
+    return imp, 200
+
+
+def _mont_erro(motivo):
+    """Erro do processo de montagem: espera MONT_ERRO_SEG; morte por memória dobra a espera e para na MONT_MORTES_MAX-ésima."""
+    with mont_lock:
+        mont["erro"] = motivo[:200]
+        mont["erro_em"] = time.time()
+        if "memória insuficiente (código" in motivo:
+            mont["mortes_mem"] += 1
+            mont["espera_s"] = MONT_ERRO_SEG * 2 ** (mont["mortes_mem"] - 1)
+            if mont["mortes_mem"] >= MONT_MORTES_MAX:
+                mont["parado"] = ("montagem parada: o processo foi encerrado por falta de memória %d vezes seguidas. Feche "
+                                  "programas e reinicie o agente" % mont["mortes_mem"])
+                print("  " + mont["parado"])
+        else:
+            mont["espera_s"] = MONT_ERRO_SEG
+
+
+def mont_espera():
+    """(ok, motivo): parada (3 mortes por memória) ou esperando o prazo depois de um erro do filho."""
+    with mont_lock:
+        if mont["parado"]:
+            return False, mont["parado"]
+        if mont["erro"]:
+            if time.time() - mont["erro_em"] < mont["espera_s"]:
+                return False, mont["erro"]
+            mont["erro"] = None
+    return True, None
+
+
+def _mont_filho_fim(p, padrao):
+    try:
+        rc = p.wait(timeout=5)
+    except Exception:
+        rc = None
+    if rc in (-9, 137, 9):
+        return "montagem parou: memória insuficiente (código %s)" % rc
+    return "%s (código %s)" % (padrao, rc)
+
+
+def _mont_abrir(f):
+    """Com o f["lock"]: o filho vivo, ou abre um novo (ambiente limpo, prioridade baixa do sistema)."""
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:
+        motivo = _mont_filho_fim(f["p"], "a montagem parou")
+        f["p"] = None
+        _mont_erro(motivo)
+        raise RuntimeError(motivo)
+    passa = {k.upper() for k in REC_ENV_PASSA}
+    env = {k: v for k, v in os.environ.items() if k.upper() in passa or (MONT_ENV_PREFIXOS and k.upper().startswith(MONT_ENV_PREFIXOS))}
+    extra = {"creationflags": getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)} if os.name == "nt" else {}
+    try:
+        p = subprocess.Popen([sys.executable, MONT_FILHO, "--recortes", RECORTES, "--fundos", BG_DIR, "--montagens", MONTAGENS,
+                              "--modelos", MODELOS], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True,
+                             bufsize=1, encoding="utf-8", env=env, close_fds=True, **extra)
+    except Exception as ex:
+        _mont_erro("erro ao abrir a montagem: %s" % type(ex).__name__)
+        raise RuntimeError(mont["erro"])
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila)
+    try:
+        j = fila.get(timeout=MONT_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "demorou para abrir"}
+    if j is None or not j.get("pronto"):
+        motivo = _mont_filho_fim(p, "a montagem não abriu") if j is None else "a montagem não abriu: %s" % str(j.get("erro") or "")[:120]
+        _rec_filho_matar(f)
+        _mont_erro(motivo)
+        raise RuntimeError(motivo)
+    with mont_lock:
+        if mont["abriu"]:
+            mont["reinicios"] += 1
+        mont.update(abriu=True, erro=None)
+    return f
+
+
+def mont_filho_pedir(msg, i=0):
+    """Manda um pedido ao processo de montagem do trabalhador i e espera a resposta (até MONT_ESPERA_FILHO). Filho que
+    morre ou demora: mont["erro"] e RuntimeError (o trabalhador devolve a linha à fila)."""
+    with mont_filhos_lock:
+        f = mont_filhos.setdefault(i, {"p": None, "fila": None, "lock": threading.Lock(), "seq": 0})
+    with f["lock"]:
+        _mont_abrir(f)
+        f["seq"] += 1
+        rid = "%s.%d" % (msg["id"], f["seq"])
+        try:
+            f["p"].stdin.write(json.dumps({**msg, "id": rid}) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            motivo = _mont_filho_fim(f["p"], "a montagem parou")
+            _rec_filho_matar(f)
+            _mont_erro(motivo)
+            raise RuntimeError(motivo)
+        fim = time.time() + MONT_ESPERA_FILHO
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _rec_filho_matar(f)
+                _mont_erro("a montagem demorou mais de %d s: reiniciada" % MONT_ESPERA_FILHO)
+                raise RuntimeError("tempo")
+            if j is None:
+                motivo = _mont_filho_fim(f["p"], "a montagem parou no meio")
+                f["p"] = None
+                _mont_erro(motivo)
+                raise RuntimeError(motivo)
+            if j.get("id") == rid:
+                return j
+
+
+def _mont_fim(mid, estado, motivo=None, **campos):
+    """Grava o resultado da linha (com o mont_lock). estado None = apaga a linha."""
+    with mont_lock:
+        db = mont_db()
+        try:
+            if estado is None:
+                db.execute("delete from montagem where mid = ?", (mid,))
+            else:
+                cols = {"estado": estado, "motivo": motivo, **campos}
+                db.execute("update montagem set %s where mid = ?" % ", ".join("%s = ?" % k for k in cols), (*cols.values(), mid))
+            db.commit()
+        finally:
+            db.close()
+        if estado == "erro":
+            mont["erro_linha"][mid] = time.time()
+        elif estado != "fila":                       # pronta ou apagada: as tentativas da linha deixam de contar
+            mont["erro_linha"].pop(mid, None)
+            mont["tent"].pop(mid, None)
+        mont["st"] = (0.0, None)
+
+
+def _mont_passo(i=0):
+    """Uma montagem da fila (a de melhor prioridade, a mais antiga). False se não havia o que fazer."""
+    if not mont_ligada() or not mont_espera()[0]:
+        return False
+    livre = mont_livre_gb()
+    pausa = livre is not None and livre < MONT_PISO_GB
+    with mont_lock:
+        if pausa and not mont["pausa_disco"]:
+            print("  montagem em pausa: %.1f GB livres (piso %.0f GB, ETERNA_MONTAGENS_PISO_GB)" % (livre, MONT_PISO_GB))
+        mont["pausa_disco"] = pausa
+        if livre is not None and livre < MONT_PISO0_GB:
+            return False
+        db = mont_db()
+        try:
+            r = _mont_linha(db.execute("select %s from montagem where estado = 'fila' %s order by prio, rowid limit 1"
+                                       % (", ".join(MONT_COLS), "and prio = 0" if pausa else "")).fetchone())
+            if r:
+                db.execute("update montagem set estado = 'fazendo' where mid = ?", (r["mid"],))
+                db.commit()
+        finally:
+            db.close()
+    if not r:
+        return False
+    mid, base, bg = r["mid"], r["base"], r["fundo"]
+    with lock:
+        viva = base in lib
+    if not viva:                                     # a foto saiu da biblioteca (LGPD) com a montagem na fila
+        _mont_fim(mid, None)
+        return True
+    rec_arq = rec_arquivo(base)
+    if not os.path.exists(rec_arq):
+        _mont_fim(mid, "erro", "recorte")
+        return True
+    fundo = mont_fundo_arquivo(bg)
+    if not fundo:
+        _mont_fim(mid, "erro", "fundo")
+        return True
+    mem = rec_mem_livre_gb()
+    if mem is not None and mem < MONT_MEM_MIN_GB:
+        _mont_fim(mid, "fila")
+        with mont_lock:
+            mont["motivo"] = "memória livre insuficiente para montar: %.1f GB (precisa de %.0f GB)" % (mem, MONT_MEM_MIN_GB)
+        time.sleep(5)
+        return True
+    final, previa, _ = mont_arquivos(r["dia"], mid)
+    os.makedirs(os.path.dirname(final), mode=0o700, exist_ok=True)
+    yunet = os.path.join(MODELOS, MONT_YUNET)
+    t0 = time.time()
+    try:
+        j = mont_filho_pedir({"op": "montar", "id": mid, "recorte": rec_arq, "fundo": fundo, "bg": bg, "final": final,
+                              "previa": previa, "yunet": yunet if os.path.isfile(yunet) and not SEM_OPENCV else None}, i)
+    except RuntimeError:
+        with mont_lock:
+            n = mont["tent"][mid] = mont["tent"].get(mid, 0) + 1
+        _mont_apaga_arquivos(r["dia"], mid)
+        if n >= MONT_TENTATIVAS:
+            _mont_fim(mid, "erro", "interno")
+        else:
+            _mont_fim(mid, "fila")                   # o filho morreu ou demorou: a linha volta para a fila
+        return True
+    if not j.get("ok"):
+        _mont_apaga_arquivos(r["dia"], mid)
+        e = str(j.get("erro") or "interno")
+        _mont_fim(mid, "erro", e if e in ("sem_pessoa", "fundo", "recorte", "imagem_grande") else "interno")
+        return True
+    with lock:
+        viva = base in lib
+    if not viva or not os.path.isfile(final) or not os.path.isfile(previa):   # LGPD no meio: nada fica
+        _mont_apaga_arquivos(r["dia"], mid)
+        _mont_fim(mid, None if not viva else "erro", None if not viva else "interno")
+        return True
+    b = j.get("bytes") or {}
+    ro = (j.get("layout") or {}).get("rostos")
+    ms = int((time.time() - t0) * 1000)
+    if r.get("galeria") is None:
+        r = (mont_ler("where mid = ?", (mid,)) or [r])[0]   # a venda pode ter chegado com a montagem na fila
+    _mont_fim(mid, "pronta", None, w=int(j.get("w") or 0), h=int(j.get("h") or 0), bytes=int(b.get("final") or 0) + int(b.get("previa") or 0),
+              sha=str(j.get("sha") or "")[:64], rostos=ro if isinstance(ro, int) else None, pronta=time.time(), ms=ms)
+    tk = codigos.get(r.get("galeria")) if r.get("vendida") and r.get("galeria") else None
+    if tk:
+        gal_fila.put(tk)                             # E4: a montagem vendida que faltava ("chegando") completa a galeria sozinha
+    with mont_lock:
+        mont["mortes_mem"] = 0
+        mont["espera_s"] = MONT_ERRO_SEG
+        mont["motivo"] = None
+        if isinstance(j.get("pico_mb"), (int, float)):
+            mont["pico_mb"] = max(int(j["pico_mb"]), mont["pico_mb"] or 0)
+    return True
+
+
+def mont_trabalho(i=0):
+    while True:
+        try:
+            if not _mont_passo(i):
+                mont_ev.wait(2)
+                mont_ev.clear()
+        except Exception as ex:
+            print("  montagem: erro no trabalhador (%s)" % type(ex).__name__)   # nunca pid, mid ou caminho
+            time.sleep(2)
+
+
+def mont_recuperar(agora=None):
+    """Recuperação (partida, Separar, fundo novo, versão nova, erro que passa): as bases de IA das sessões de hoje com o
+    recorte pronto e sem linha da versão atual em algum fundo ativo entram na fila com a prioridade mais baixa (as
+    preferidas antes das de reserva); linha com erro de fundo, recorte ou interno volta à fila passado MONT_ERRO_SEG.
+    Devolve quantas linhas pediu ou reabriu."""
+    if not mont_ligada():
+        return 0
+    agora = agora or time.time()
+    ativos = mont_fundos()
+    for bg in ativos:                                # baixa o que falta (depois disto o servidor monta sem internet)
+        mont_fundo_arquivo(bg)
+    versoes = {bg: mont_versao(bg) for bg in ativos}
+    bases = [p for p in sess_ia_hoje(agora) if os.path.exists(rec_arquivo(p))]
+    n = 0
+    tem = set()
+    with mont_lock:
+        db = mont_db()
+        try:
+            for k in range(0, len(bases), 400):
+                q = bases[k:k + 400]
+                tem.update(tuple(r) for r in db.execute("select base, fundo, versao from montagem where base in (%s)" % ",".join("?" * len(q)), q))
+            volta = [r[0] for r in db.execute("select mid from montagem where estado = 'erro' and motivo in ('fundo', 'recorte', 'interno') and dia = ?", (_ff_hoje(agora),))
+                     if agora - mont["erro_linha"].get(r[0], 0) >= MONT_ERRO_SEG and mont["tent"].get(r[0], 0) < MONT_TENTATIVAS]
+            for mid in volta:
+                db.execute("update montagem set estado = 'fila', motivo = null where mid = ?", (mid,))
+                n += 1
+            db.commit()
+        finally:
+            db.close()
+    for p in bases:
+        falta = [bg for bg in ativos if versoes[bg] and (p, bg, versoes[bg]) not in tem]
+        if not falta:
+            continue
+        pl = mont_plano(p)
+        if not pl:
+            continue
+        pref, res = mont_preferidos(pl, falta)
+        for bg in pref + res:
+            r, _ = mont_enfileirar(p, bg, MONT_PRIO_RESERVA, "auto")
+            n += 1 if r else 0
+    if n:
+        mont_ev.set()
+    return n
+
+
+def mont_loop():
+    time.sleep(min(MONT_LOOP_SEG, 15))
+    while True:
+        try:
+            mont_recuperar()
+        except Exception as ex:
+            print("  montagem: erro na recuperação (%s)" % type(ex).__name__)
+        time.sleep(MONT_LOOP_SEG)
+
+
+def mont_reabrir():
+    """Linha 'fazendo' de um agente que caiu volta para a fila (o arquivo pela metade é trocado ao refazer). Devolve a fila."""
+    os.makedirs(MONTAGENS, mode=0o700, exist_ok=True)
+    with mont_lock:
+        db = mont_db()
+        try:
+            db.execute("update montagem set estado = 'fila' where estado = 'fazendo'")
+            db.commit()
+            return db.execute("select count(*) from montagem where estado = 'fila'").fetchone()[0]
+        finally:
+            db.close()
+
+
+def mont_partida():
+    """Na partida: linha 'fazendo' de um agente que caiu volta para a fila; abre os trabalhadores e a recuperação."""
+    try:
+        fila = mont_reabrir()
+    except Exception as ex:
+        print("  montagem: não abri o índice (%s)" % type(ex).__name__)
+        return
+    ok_, motivo = mont_estado()
+    c = mont_cfg()
+    print("  montagem dos fundos de IA no servidor: %s%s · fila %d · fundos %s" % (
+        "ligada" if c["ligada"] and ok_ else "desligada", "" if ok_ else " (%s)" % motivo, fila, ", ".join(c["fundos"])))
+    with mont_lock:
+        while len(mont_threads) < MONT_CONC:
+            t = threading.Thread(target=mont_trabalho, args=(len(mont_threads),), daemon=True)
+            t.start()
+            mont_threads.append(t)
+    threading.Thread(target=mont_loop, daemon=True).start()
+
+
+def limpar_montagens(agora=None):
+    """De hora em hora (galeria_loop). Apaga os arquivos e marca a linha 'apagada' (fica 60 dias, sem arquivo): a não
+    vendida com mais de MONT_DIAS dias, a de base que saiu da biblioteca, a de versão antiga não vendida, a vendida com
+    expira vencido e, acima de MONT_TETO_GB, as não vendidas mais antigas (a vendida nunca sai por teto). Arquivo sem linha
+    e temporário esquecido saem; link simbólico nunca é seguido. Devolve quantas montagens apagou."""
+    agora = agora or time.time()
+    linhas = mont_ler("where estado != 'apagada'")
+    with lock:
+        vivas = set(lib)
+    atual = {}
+    apagar, fica = [], []
+    for r in linhas:
+        if r["fundo"] not in atual:
+            atual[r["fundo"]] = mont_versao(r["fundo"])
+        if r["vendida"]:
+            (apagar if (r["expira"] and r["expira"] < agora) or r["base"] not in vivas else fica).append(r)
+        elif r["estado"] == "fazendo":
+            continue                                 # em andamento: o trabalhador decide (confere a biblioteca ao terminar)
+        elif r["estado"] == "fila":
+            if r["base"] not in vivas or r["versao"] != atual[r["fundo"]]:
+                apagar.append(r)
+        elif r["base"] not in vivas or agora - (r["criada"] or 0) > MONT_DIAS * 86400 or r["versao"] != atual[r["fundo"]]:
+            apagar.append(r)
+        else:
+            fica.append(r)
+    total = sum(r["bytes"] or 0 for r in fica if not r["vendida"])
+    for r in sorted((r for r in fica if not r["vendida"]), key=lambda r: r["criada"] or 0):
+        if total <= MONT_TETO_GB * 1024 ** 3:
+            break
+        apagar.append(r)
+        total -= r["bytes"] or 0
+    for r in apagar:
+        _mont_apaga_arquivos(r["dia"], r["mid"])
+    with mont_lock:
+        db = mont_db()
+        try:
+            for r in apagar:
+                db.execute("update montagem set estado = 'apagada', apagada = ? where mid = ?", (agora, r["mid"]))
+            db.execute("delete from montagem where estado = 'apagada' and apagada < ?", (agora - MONT_APAGADA_DIAS * 86400,))
+            db.commit()
+            validos = {r[0] for r in db.execute("select mid from montagem where estado != 'apagada'")}
+        finally:
+            db.close()
+        mont["st"] = (0.0, None)
+    # arquivos sem linha, temporários esquecidos e pastas vazias (sem seguir link)
+    try:
+        with os.scandir(MONTAGENS) as it:
+            pastas = [e for e in it]
+    except OSError:
+        pastas = []
+    for d in pastas:
+        try:
+            if d.is_symlink():
+                os.remove(d.path)                    # o link sai; o alvo nunca é lido nem apagado
+                continue
+            if not d.is_dir(follow_symlinks=False) or not _re_mont_dia.match(d.name):
+                continue
+            vazio = True
+            with os.scandir(d.path) as it:
+                for e in it:
+                    mm = _re_mont_arq.match(e.name)
+                    velho = agora - e.stat(follow_symlinks=False).st_mtime > 3600
+                    if e.is_symlink() or (mm and mm.group(1) not in validos and velho) or (not mm and e.name.endswith(".tmp") and velho):
+                        os.remove(e.path)
+                    else:
+                        vazio = False
+            if vazio and d.name != _ff_hoje(agora):
+                os.rmdir(d.path)
+        except OSError:
+            pass
+    return len(apagar)
+
+
+def mont_apagar_base(pid):
+    """LGPD: tudo da base some na hora (arquivos e linhas, inclusive vendida); o trabalho em andamento não deixa arquivo
+    (o trabalhador confere a biblioteca ao terminar) e nada volta na recuperação (a base saiu das sessões)."""
+    n = 0
+    vendidas = []
+    with mont_lock:
+        db = mont_db()
+        try:
+            for dia, mid, cod in db.execute("select dia, mid, galeria from montagem where base = ?", (pid,)).fetchall():
+                _mont_apaga_arquivos(dia, mid)
+                n += 1
+                if cod:
+                    vendidas.append((cod, mid))
+            db.execute("delete from montagem where base = ?", (pid,))
+            db.commit()
+        finally:
+            db.close()
+        mont["st"] = (0.0, None)
+    for cod, mid in vendidas:                        # E4: a montagem vendida sai também da galeria (manifesto e arquivos)
+        tk = codigos.get(cod)
+        if not tk:
+            continue
+        with gal_lock:
+            m = REPO.ler_manifesto(tk)
+            if m and any(f.get("id") == mid for f in m.get("fotos") or []):
+                m["fotos"] = [f for f in m["fotos"] if f.get("id") != mid]
+                REPO.salvar_manifesto(tk, m)
+        for var in ("original", "vitrine"):
+            try:
+                os.remove(REPO.abrir(tk, mid, var))
+            except (OSError, ValueError):
+                pass
+    return n
+
+
+def mont_status():
+    """/status.montagem (contrato do plano). A parte que lê o banco e o disco fica em cache por 2 s."""
+    c = mont_cfg()
+    ok_, motivo = mont_estado()
+    agora = time.time()
+    with mont_filhos_lock:
+        vivo = any(f["p"] is not None and f["p"].poll() is None for f in mont_filhos.values())
+    with mont_lock:
+        t, s = mont["st"]
+    if s is None or agora - t > 2:
+        s = {"fila": 0, "feitas_hoje": 0, "erros_hoje": 0, "ms_medio": None, "guardado_gb": 0}
+        try:
+            with mont_lock:
+                db = mont_db()
+                try:
+                    hoje = _ff_hoje(agora)
+                    s["fila"] = db.execute("select count(*) from montagem where estado in ('fila', 'fazendo')").fetchone()[0]
+                    n, ms = db.execute("select count(*), avg(ms) from montagem where estado = 'pronta' and dia = ?", (hoje,)).fetchone()
+                    s["feitas_hoje"], s["ms_medio"] = n, int(ms) if ms else None
+                    s["erros_hoje"] = db.execute("select count(*) from montagem where estado = 'erro' and dia = ?", (hoje,)).fetchone()[0]
+                    s["alertas"] = [{"venda": str(r[0] or "")[:40], "fundo": r[1], "estado": r[2]} for r in db.execute(
+                        "select venda, fundo, estado from montagem where vendida is not null and estado in ('fila', 'fazendo', 'erro') and vendida < ? order by vendida limit 20",
+                        (agora - MONT_ALERTA_SEG,))]
+                    s["guardado_gb"] = round(db.execute("select coalesce(sum(bytes), 0) from montagem where estado = 'pronta'").fetchone()[0] / 1024 ** 3, 3)
+                finally:
+                    db.close()
+                mont["st"] = (agora, s)
+        except Exception:
+            pass
+    livre = mont_livre_gb()
+    fundos = list(c["fundos"])
+    with mont_lock:
+        return {"v": 1, "ligada": bool(c["ligada"] and ok_), "checkout": bool(c["ligada"] and ok_ and c["checkout"]), "imprime": bool(c["ligada"] and ok_),
+                "versao": MONT_VERSAO, "motivo": motivo or mont["motivo"] or mont["erro"],
+                "filho": {"vivo": vivo, "reinicios": mont["reinicios"], "mortes_memoria": mont["mortes_mem"]},
+                "parado": bool(mont["parado"]), **s, "pico_mb": mont["pico_mb"],
+                "livre_gb": round(livre, 1) if livre is not None else None,
+                "pausa_disco": bool(livre is not None and livre < MONT_PISO_GB), "dias": MONT_DIAS,
+                "fundos": fundos, "fundos_faltando": [b for b in fundos if not mont_fundo_arquivo(b, baixar=False)],
+                "alertas": s.get("alertas") or []}
 
 
 # v84 (segurança): o Photoroom só monta quando o interruptor do Painel de controle estiver em "Photoroom" também aqui.
@@ -4053,6 +5224,8 @@ def gal_validar(m):
         raise ValueError("manifesto inválido")
     fotos = []
     for f in (m.get("fotos") or [])[:2000]:
+        if isinstance(f, dict) and f.get("t") == "ai":
+            continue                                 # E4 (A8): montagem nunca entra pelo navegador (o agente põe as das vendas pagas)
         if not isinstance(f, dict) or not pid_ok(f.get("id")):
             raise ValueError("foto inválida")
         d = f.get("direito") if f.get("direito") in ("comprada", "cortesia", "venda") else "venda"
@@ -4173,8 +5346,30 @@ def gal_processar(token):
         m = REPO.ler_manifesto(token)
     if not m:
         return
+    try:                                             # E4: as montagens das vendas pagas desta galeria (a venda pode chegar depois da publicação)
+        with gal_lock:
+            m = REPO.ler_manifesto(token) or m
+            antes_ai = [f["id"] for f in m["fotos"] if f.get("t") == "ai"]
+            _gal_montagens(m)
+            if [f["id"] for f in m["fotos"] if f.get("t") == "ai"] != antes_ai:
+                REPO.salvar_manifesto(token, m)
+                mudou_ai = True
+            else:
+                mudou_ai = False
+    except Exception as ex:
+        print("  galeria: montagens não conferidas (%s)" % type(ex).__name__)
+        mudou_ai = False
     falta_orig = falta_vit = 0
     for f in m["fotos"]:
+        if f.get("t") == "ai":
+            if not REPO.existe(token, f["id"], "original"):
+                try:
+                    if not _gal_montagem_original(token, f):
+                        falta_orig += 1
+                except Exception as ex:
+                    print("  galeria: montagem não copiada (%s)" % type(ex).__name__)
+                    falta_orig += 1
+            continue
         if f["direito"] in ("comprada", "cortesia") and not REPO.existe(token, f["id"], "original"):
             with lock:
                 e = lib.get(pid_lib(f["id"]))
@@ -4183,6 +5378,8 @@ def gal_processar(token):
             else:
                 falta_orig += 1
     for f in m["fotos"]:
+        if f.get("t") == "ai":
+            continue                                 # a vitrine da montagem sai junto do original (_gal_montagem_original)
         if not REPO.existe(token, f["id"], "vitrine"):
             with lock:
                 e = lib.get(pid_lib(f["id"]))
@@ -4192,6 +5389,8 @@ def gal_processar(token):
         m = REPO.ler_manifesto(token) or m
         m["envio"] = {"compradas": "ok" if not falta_orig else "pendente", "vitrine": "ok" if not falta_vit else "pendente"}
         REPO.salvar_manifesto(token, m)
+    if mudou_ai:
+        nuvem_galeria_enfileira(token)
 
 
 def galeria_loop():
@@ -4212,6 +5411,10 @@ def galeria_loop():
                 limpar_recortes()
             except Exception as ex:
                 print("  recortes: erro na limpeza", ex)
+            try:
+                limpar_montagens()
+            except Exception as ex:
+                print("  montagens: erro na limpeza (%s)" % type(ex).__name__)
         if time.time() - ultima_limpeza > 86400:
             ultima_limpeza = time.time()
             if rostos["ligado"]:
@@ -4391,11 +5594,12 @@ def galeria_obj(token, m, pids=()):
     pids = set(pids) | gal_livres(m)
     fotos = []
     for f in m["fotos"]:
-        if f["id"] not in pids:
-            continue
+        ai = f.get("t") == "ai"
+        if f["id"] not in pids and not (ai and f["direito"] == "comprada"):
+            continue                                 # E4: a montagem comprada aparece sempre que o acesso foi dado (o rosto não precisa bater nela)
         tem = REPO.existe(token, f["id"], "vitrine")
         livre = f["direito"] in ("comprada", "cortesia")
-        fotos.append({"pid": f["id"], "direito": f["direito"],
+        fotos.append({"pid": f["id"], "direito": f["direito"], **({"t": "ai", "bg": f.get("bg")} if ai else {}),
                       "vitrine": REPO.url(token, f["id"], "vitrine", URL_TTL) if tem else None,
                       "original": REPO.url(token, f["id"], "original", URL_TTL) if livre and REPO.existe(token, f["id"], "original") else None,
                       "chegando": not tem})
@@ -6612,7 +7816,9 @@ def imp_fila_json():
 
 
 def imprimir(imagens, venda, vendedor="", posto=""):
-    """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor."""
+    """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor.
+    E3: o item {"mont": "<mid>"} imprime o corte de impressão que o servidor guarda (só montagem vendida; o arquivo é
+    achado aqui pelo mid, nenhum caminho vem do app)."""
     if not isinstance(imagens, list) or not imagens or len(imagens) > 20:
         return {"ok": False, "error": "nenhuma foto (ou mais de 20)"}
     t0 = time.time()
@@ -6620,10 +7826,19 @@ def imprimir(imagens, venda, vendedor="", posto=""):
     tag = time.strftime("%Y%m%d-%H%M%S") + "_" + re.sub(r"[^A-Za-z0-9-]", "", venda)[:20]
     arqs = []
     for i, im in enumerate(imagens):
-        try:
-            b = base64.b64decode(str(im).split(",", 1)[-1])
-        except Exception:
-            return {"ok": False, "error": "foto %d inválida" % (i + 1)}
+        if isinstance(im, dict):
+            if set(im) != {"mont"} or not isinstance(im["mont"], str):
+                return {"ok": False, "error": "foto %d inválida" % (i + 1)}
+            arq, cod = mont_impressao(im["mont"])
+            if not arq:
+                return {"ok": False, "error": "foto %d: montagem %s" % (i + 1, "não vendida" if cod == 409 else "não encontrada" if cod == 404 else "indisponível no servidor")}
+            with open(arq, "rb") as fh:
+                b = fh.read()
+        else:
+            try:
+                b = base64.b64decode(str(im).split(",", 1)[-1])
+            except Exception:
+                return {"ok": False, "error": "foto %d inválida" % (i + 1)}
         if b[:3] != b"\xff\xd8\xff":
             return {"ok": False, "error": "foto %d não é JPEG" % (i + 1)}
         f = os.path.join(IMP_DIR, "%s_%d.jpg" % (tag, i + 1))
@@ -6802,6 +8017,13 @@ def estado_gravar(body, quem=""):
                         v = {**ok_, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
                     r_ = db.execute("select valor from doc where col = 'config' and id = 'ia'").fetchone()
                     auditoria.append((r_[0] if r_ else None, v))
+                if d["col"] == "config" and d["id"] in ("fundos", "montagem"):   # montagem no servidor: só o formato conhecido
+                    ok_ = None if v is None else (fundos_valida(v) if d["id"] == "fundos" else montagem_valida(v))
+                    if ok_ is None:                             # apagar ou formato inválido (fundo fora do mapa aprovado): recusado
+                        print("  config/%s recusada (%s) · de %s" % (d["id"], "apagar" if v is None else "formato inválido", quem or "?"))
+                        continue
+                    v = {**ok_, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
+                    print("  config/%s: %s · por %s · host %s" % (d["id"], json.dumps(ok_), v["por"] or "?", quem or "?"))
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
                 if txt is not None and len(txt) > ESTADO_MAX:
                     continue
@@ -6824,6 +8046,7 @@ def estado_gravar(body, quem=""):
     if any(isinstance(d, dict) and d.get("col") == "config" for d in docs[:500]):
         _busca_cfg["t"] = 0.0            # janela da selfie mudada no Painel vale na próxima busca
         _ia_cfg["t"] = 0.0               # v93: regra dos cliques de IA vale na próxima sessão que fechar
+        _mont_cfg["t"] = 0.0             # montagem ligada e lista de fundos valem na hora
     if ag_datas:
         dia_marcar(ag_datas)
     for de_, para in auditoria:          # v93 (segurança): quem mudou a regra dos cliques de IA, no console
@@ -6924,6 +8147,20 @@ def _ev_t0(v, em):
     return v
 
 
+_re_aimont_k = re.compile(r"^(ag_)?[0-9a-f]{6,40}\|[a-z0-9]{2,40}$")
+
+
+def _ev_aimont(v):
+    """aiMont da venda: {"<base>|<fundo>": "<mid>"}, a montagem que o cliente viu. Até 20 pares; par inválido sai, a venda fica."""
+    if not isinstance(v, dict):
+        return None
+    out = {}
+    for k, mid in list(v.items())[:40]:
+        if isinstance(k, str) and isinstance(mid, str) and _re_aimont_k.match(k) and _re_mid.match(mid) and len(out) < 20:
+            out[k] = mid
+    return out or None
+
+
 def _ev_limpo(e):
     """Só os campos do contrato, com tipo e tamanho conferidos (o resto do evento é descartado)."""
     if not isinstance(e, dict) or e.get("tipo") not in EV_TIPOS:
@@ -6946,7 +8183,8 @@ def _ev_limpo(e):
     # v92 (estatísticas): produtos, idioma, canal e a hora em que o cliente começou no Checkout. Campo inválido sai; a venda fica.
     em = txt(e.get("em"), 30) or _iso()
     dd.update(cart=_ev_cart(d.get("cart")), lang=d.get("lang") if d.get("lang") in EV_LANGS else None,
-              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em))
+              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em),
+              aiMont=_ev_aimont(d.get("aiMont")))
     if dd.get("vendedor") in CHAVES_PROIBIDAS:
         dd["vendedor"] = None
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
@@ -6966,6 +8204,7 @@ def ev_receber(body):
         if isinstance(d.get("selected"), list):
             sel.update(pid_lib(str(p)[:60]) for p in d["selected"][:200])
     ia_sel = sess_ia_de(sel) if sel else set()
+    vendas_mont = set()
     with ev_lock:
         db = vendas_db()
         try:
@@ -6982,9 +8221,16 @@ def ev_receber(body):
                                  (x["idem"], x["venda"], x["seq"], x["tipo"], x["em"], _ev_dia(x["em"]), x["posto"] or posto,
                                   x["por"], json.dumps(x["dados"], ensure_ascii=False), _iso()))
                 res.append({"idem": x["idem"], "s": "ok" if cur.rowcount else "ja"})
+                if cur.rowcount and x["tipo"] in ("criar", "pagar", "cancelar"):
+                    vendas_mont.add(x["venda"])
             db.commit()                                      # só confirma ao caixa depois de gravado no disco
         finally:
             db.close()
+    for v in vendas_mont:                                    # E4: montagens da venda paga (fora do ev_lock; nunca derruba a venda)
+        try:
+            mont_vender(v)
+        except Exception as ex:
+            print("  montagem: venda não marcada (%s)" % type(ex).__name__)
     return {"ok": True, "resultados": res}
 
 
@@ -7152,7 +8398,7 @@ def backup_loop():
     while True:
         time.sleep(120)
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB) if os.path.exists(b)]   # v92: entradas da bilheteria
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, MONT_DB) if os.path.exists(b)]   # v92: entradas da bilheteria
             if not bancos:
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
@@ -8480,7 +9726,7 @@ class H(BaseHTTPRequestHandler):
 
     def cors(self):
         path = urlparse(self.path).path
-        if path.startswith(("/fila-fotografo", "/visitas")):
+        if path.startswith(("/fila-fotografo", "/visitas", "/montagens")):
             # v87 (segurança N1); v97: /visitas igual: sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
             o = (self.headers.get("Origin") or "").lower()
             if o and o in ORIGENS_REDE:
@@ -8576,6 +9822,47 @@ class H(BaseHTTPRequestHandler):
             print("  visitas: config %s" % str(ex)[:120])
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, 200, nostore=True)
+
+    def mont_rota(self, metodo, path):
+        """Montagem no servidor (E2, E3): despachante único e fechado de /montagens. POST /montagens/lista e
+        GET /montagens/<mid 32 hex>/previa.jpg ou impressao.jpg; qualquer outro caminho = 404 (não existe rota para o final). Guarda: posto + origem local (Host da lista,
+        contra DNS rebinding) -> X-Eterna: 1 no POST -> 120 por minuto por IP -> validação. Nunca CORS aberto (cors())."""
+        mg = _re_mont_get.match(path) if metodo == "GET" else None
+        if not mg and not (metodo == "POST" and path == "/montagens/lista"):
+            return self.js({"error": "not found"}, 404)
+        if not self.posto() or not self.origem_local() or (metodo == "POST" and self.headers.get("X-Eterna") != "1"):
+            return self.js({"error": "origem"}, 403)
+        if not limite_ok(self.client_address[0], "mont", MONT_TAXA):
+            return self.js({"error": "limite"}, 429)
+        if metodo == "POST":
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "campo"}, err)
+            try:
+                r, cod = mont_lista(body)
+            except Exception as ex:
+                print("  montagens/lista: %s" % type(ex).__name__)
+                return self.js({"error": "erro no servidor"}, 500)
+            return self.js(r, cod, nostore=True)
+        if mg.group(2) == "impressao":             # E3: só montagem vendida; feito no primeiro pedido e guardado
+            f, cod = mont_impressao(mg.group(1))
+            if not f:
+                return self.js({"error": "nao_vendida" if cod == 409 else "not found" if cod == 404 else "indisponivel"}, cod)
+        else:
+            f = mont_previa(mg.group(1))
+        try:
+            with open(f, "rb") as fh:
+                data = fh.read()
+        except (OSError, TypeError):
+            return self.js({"error": "not found"}, 404)
+        self.send_response(200)
+        self.cors()
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
 
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
@@ -9130,8 +10417,16 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": str(ex)}, 400)
             if ignoradas:
                 print("  galeria: %d base(s) de IA fora do manifesto (navegador antigo)" % ignoradas)
+            mf = (body.get("manifesto") or {}).get("fotos")
+            ignoradas += sum(1 for f in (mf if isinstance(mf, list) else [])[:2000] if isinstance(f, dict) and f.get("t") == "ai")
             with gal_lock:
                 m = gal_mesclar(novo, REPO.ler_manifesto(t))
+                try:
+                    _, fora_ = _gal_montagens(m)       # E4: só o servidor põe montagem na galeria (das vendas pagas)
+                    ignoradas += fora_
+                except Exception as ex:
+                    print("  galeria: montagens não conferidas (%s)" % type(ex).__name__)
+                    m["fotos"] = [f for f in m["fotos"] if f.get("t") != "ai"]
                 REPO.salvar_manifesto(t, m)
                 if m.get("codigo"):
                     codigos[m["codigo"]] = t
@@ -9264,6 +10559,8 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/montagens" or u.path.startswith("/montagens/"):
+            return self.mont_rota("GET", u.path)
         if u.path.startswith(("/g/", "/galerias/")):
             return self.gal_get(u, q)
         if ("GET", u.path) in AGENDA_ROTAS:          # v97
@@ -9273,11 +10570,12 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/status":
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
             ag_ = agenda_status(publico=True)          # v97: sem os 4 últimos da chave e sem quem salvou (CORS aberto)
+            ms_ = mont_status()                        # montagem no servidor: o mont_lock também fora do lock
             with lock:
                 return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
                                 "copied": state["copied"], "dups": state["dups"], "events": len(events),
                                 "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "backup": backup, "recorte": rs_, "fundos_modo": fundos_modo(),
+                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "backup": backup, "recorte": rs_, "montagem": ms_, "fundos_modo": fundos_modo(),
                                 "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                                 "impressora": IMPRESSORA or None,
                                 "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
@@ -9440,6 +10738,8 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
+        if u.path == "/montagens" or u.path.startswith("/montagens/"):
+            return self.mont_rota("POST", u.path)
         if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
@@ -9657,6 +10957,7 @@ def main():
     rec_versao_cache()                  # v97: recorte de versão anterior sai antes do recorte antecipado
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
+    mont_partida()                      # montagem dos fundos de IA no servidor (desligada por padrão: config/montagem)
     threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=metricas_migra_v2, daemon=True).start()   # v92: resumos antigos ganham os campos v2 (só acrescenta)
     threading.Thread(target=backup_loop, daemon=True).start()

@@ -10,7 +10,7 @@ sleep 1
 kill -0 $SRV 2>/dev/null || { echo "FALHA porta $PORTA ocupada: feche o outro servidor ou rode com PORTA=outra"; echo "FALHAS: 1"; exit 1; }
 export U="http://127.0.0.1:$PORTA/index.html"
 node -e "const h=require('fs').readFileSync('index.html','utf8');const m=h.match(/<script>([\s\S]*?)<\/script>/);new Function(m[1]);" && echo "OK sintaxe do index.html" || { echo "FALHA sintaxe do index.html"; F=1; }
-python3 -m py_compile agente/eterna-agente.py agente/eterna-recorte.py agente/medir-recorte.py && echo "OK sintaxe do agente" || { echo "FALHA sintaxe do agente"; F=1; }
+python3 -m py_compile agente/eterna-agente.py agente/eterna-recorte.py agente/eterna-montagem.py agente/medir-recorte.py && echo "OK sintaxe do agente" || { echo "FALHA sintaxe do agente"; F=1; }
 FALHAS=${F:-0}
 # v94-ux: cada teste conta como FALHA se imprimir FALHA, se terminar sem imprimir OK nem FALHA ou se sair com código diferente de 0
 conta(){ # $1 = nome, $2 = código de saída, $3 = saída
@@ -23,7 +23,7 @@ conta(){ # $1 = nome, $2 = código de saída, $3 = saída
   elif echo "$LINHA" | grep -q "^FALHA"; then FALHAS=$((FALHAS+1)); fi
 }
 # v91: testes do agente que rodam sozinhos (HOME temporário; os outros *_agente.py são chamados pelos .js)
-for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/estatisticas_agente.py testes/v92_testador_agente.py testes/cliques_ia_agente.py testes/cliques_ia_e2e_agente.py testes/cliques_ia_fila_limpeza_agente.py testes/app_offline_agente.py testes/envio_manual_agente.py testes/recorte_birefnet_agente.py testes/visitas_agente.py testes/instalar_recorte.py testes/agenda_agente.py testes/montagens_agente.py testes/galeria_teto_agente.py testes/lgpd_compradas_agente.py; do
+for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/estatisticas_agente.py testes/v92_testador_agente.py testes/cliques_ia_agente.py testes/cliques_ia_e2e_agente.py testes/cliques_ia_fila_limpeza_agente.py testes/app_offline_agente.py testes/envio_manual_agente.py testes/recorte_birefnet_agente.py testes/visitas_agente.py testes/instalar_recorte.py testes/agenda_agente.py testes/montagens_agente.py testes/galeria_teto_agente.py testes/lgpd_compradas_agente.py testes/montagem_servidor_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   conta "$(basename $t)" $RC "$OUT"
 done

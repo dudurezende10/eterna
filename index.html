@@ -722,6 +722,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 @media (min-width:1100px){.gq-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .gq-item{position:relative;margin:0;background:#fff;padding:5px;border-radius:5px;box-shadow:0 16px 36px -18px rgba(0,0,0,.7);display:flex;flex-direction:column;gap:6px}
 .gq-item.on{outline:4px solid #FFB800;outline-offset:2px}
+.gq-ph.gq-ai{background-size:contain!important;background-position:center!important}.gq-ed{font-size:clamp(10px,2.6vw,13px);padding:3px 9px 4px}.gq-edn{margin:4px 2px 0;font-size:13px;font-weight:600;color:inherit;opacity:.85}
 .gq-ph{position:relative;aspect-ratio:3/2;overflow:hidden;border-radius:2px;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none)}
 .gq-ph .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:clamp(13px,2.4vw,24px);letter-spacing:.25em;color:rgba(255,255,255,.42);transform:rotate(-14deg);pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.35)}
 .gq-badge{position:absolute;left:6px;top:6px;padding:4px 10px;border-radius:999px;background:#FFB800;color:#0C2340;font-size:14px;font-weight:800;letter-spacing:.04em}
@@ -1604,7 +1605,7 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   if(s.status==='paga'){dinFechar(id,'substituida','pago_de_outro_jeito',u);if(saveSim())pvCancelEv(r,'pago_de_outro_jeito');toast('Esta sessão já foi paga de outro jeito. A pendência foi encerrada.');render();return false;}
   const at=now().toISOString();const prov=meio==='dinheiro'?'dinheiro':(r.prov||pagProv());
   if(r.escolha&&meio!=='dinheiro'){const PP=PAG_PROV[prov];const ini=(PP&&PP.iniciar({id:r.id,meio,total:r.total}))||{estado:'aguardando'};r.iniciado=ini.estado||'aguardando';} // segurança S3: a maquininha só começa na confirmação
-  s.cart=cartComPreco(r.cart);s.total=r.total;s.nFotos=r.n;s.selected=(r.selected||[]).slice();s.aiSel=(r.aiSel||[]).slice();s.fav=(r.fav||[]).slice();
+  s.cart=cartComPreco(r.cart);s.total=r.total;s.nFotos=r.n;s.selected=(r.selected||[]).slice();s.aiSel=(r.aiSel||[]).slice();if(r.aiMont)s.aiMont={...r.aiMont};else delete s.aiMont;s.fav=(r.fav||[]).slice();
   s.status='paga';s.payment=PAG_NOME[meio];s.paidAt=at;s.caixaEm=at;s.caixaPor=u.name;s.saleNo=r.saleNo||s.saleNo||novoSaleNo();s.seller=LOJA_VENDEDOR;s.prints=r.prints;delete s.din;
   s.vendaId=r.id;if(r.sessoes&&(r.sessoes.length>1||((SIM.galerias||{})[r.token]||{}).venda)){s.sessoes=r.sessoes.slice();s.galVenda=r.token;}s.vendedor=r.vendedor||null;s.posto=r.posto||postoNome();s.pag={prov,ref,em:at,porNome:u.name};impIniciar(s);
   if((r.aiSel||[]).length){const ai=aiOf(r.card);r.aiSel.forEach(k=>{const [ph,bg]=String(k).split('|');if(!ai.bought.some(b=>b.ph===ph&&b.bg===bg))ai.bought.push({ph,bg,paidAt:at,where:'loja'});});}
@@ -1679,7 +1680,7 @@ function pendPainel(o){o=o||{};const din=o.filtro==='dinheiro';const L=din?caixa
       <span class="eyebrow">Seu código</span><div class="din-top"><b class="din-cod">${esc(r.codigo)}</b>${r.saleNo?`<span class="note">Venda ${esc(r.saleNo)}</span>`:''}</div>
       <div class="note">Sessão ${esc(r.card)} · ${hhmm(new Date(r.criada))} <span class="pill ${min>CAIXA_ALERTA_MIN?'warn':'neutral'}">há ${min} min</span> · ${r.n} ${r.n===1?'foto':'fotos'} · ${r.prints} ${r.prints===1?'impressa':'impressas'}</div>
       ${ph.length?`<div class="photos small">${ph.map(p=>photoBtn(p)).join('')}</div>`:''}${acts}${pendRecBtn(r)}</div>`;};
-  const av=pendAntigaHtml()+pendAvisosHtml(); // v96: alerta da janela antiga e avisos de 5 min
+  const av=pendAntigaHtml()+pendAvisosHtml()+montAlertaHtml(); // v96: alerta da janela antiga e avisos de 5 min
   // v97-ux: no Posto não há chips (o botão amarelo Caixa é o filtro); no Caixa, um só: "Dinheiro ✕", que volta ao Posto completo
   const chips=din?`<div class="chips pend-filtro"><button class="chip pend-filtro-on" data-act="posto-filtro" data-f="todos" aria-pressed="true" title="Ver tudo no Posto de venda" aria-label="Tirar o filtro Dinheiro">Dinheiro ${CROSS}</button></div>`:'';
   return `<div class="panel" id="pend-painel"><div class="head"><h2>Aguardando pagamento</h2><div class="row">${chips}${L.length?`<span class="pill ${(din?caixaAtrasada():dinAtrasada())?'warn':'neutral'}">${L.length}</span>`:''}</div></div>${av}
@@ -1833,7 +1834,7 @@ setInterval(pontoFlush,5000);window.addEventListener('online',pontoFlush);
 // dados do evento "criar" (contrato do plano v83). Sem e-mail do vendedor: só o nome declarado.
 function pvDados(r){const ed={};(r.selected||[]).forEach(id=>{const e=SIM.edits&&SIM.edits[id];if(e)ed[id]={b:e.b,c:e.c,s:e.s,t:e.t,z:e.z,x:e.x,y:e.y};});
   return {saleNo:r.saleNo,card:r.card,sessoes:(r.sessoes||[r.card]).slice(0,20),meio:r.meio,prov:r.prov,total:r.total,cart:(r.cart||[]).map(x=>({id:x.id,v:itemV(x)})),prints:r.prints||0,nPh:r.nPh||0,nAI:r.nAI||0,
-    selected:(r.selected||[]).slice(),aiSel:(r.aiSel||[]).slice(),fav:(r.fav||[]).slice(),ed,galeria:r.token?{token:r.token,codigo:r.codigo}:null,vendedor:{nome:(r.vendedor&&r.vendedor.nome)||null},
+    selected:(r.selected||[]).slice(),aiSel:(r.aiSel||[]).slice(),...(r.aiMont&&Object.keys(r.aiMont).length?{aiMont:Object.fromEntries(Object.entries(r.aiMont).filter(([k])=>(r.aiSel||[]).includes(k)).slice(0,20))}:{}),fav:(r.fav||[]).slice(),ed,galeria:r.token?{token:r.token,codigo:r.codigo}:null,vendedor:{nome:(r.vendedor&&r.vendedor.nome)||null},
     /* v92: canal e t0; o idioma só do Checkout (a venda no balcão usaria o idioma da equipe) */canal:r.canal==='checkout'||r.canal==='balcao'?r.canal:null,t0:r.canal==='checkout'&&r.t0?r.t0:null,lang:r.canal==='checkout'?(r.lang||lang()):null};}
 
 // ---------- v83 (parte F): impressão 10×15 pela DNP DS-RX1HS de cada notebook (Chrome; página PR 4×6 = 102×152 mm sem margem; rolo de ~700) ----------
@@ -1875,11 +1876,13 @@ const espera=(p,ms,v)=>Promise.race([p,new Promise(z=>setTimeout(()=>z(v),ms))])
 async function printMontar(fotos,ed){ed=ed||SIM.edits||{};let root=document.getElementById('print-root');if(root)root.remove();root=document.createElement('div');root.id='print-root';root.setAttribute('aria-hidden','true');document.body.appendChild(root);
   const res={ok:[],falhas:[],falhasIA:[],avisos:[]};const pgs=[];
   const prep=await Promise.all(fotos.map(async f=>{
+    // E3: com o servidor montando, a impressão usa o corte 10x15 que ele guarda (só montagem vendida); se o arquivo não vem, o canvas de sempre
+    if(f.t==='ai'&&montSrv()&&/^ag_/.test(f.id)){const mid=await montMidVenda(f.id+'|'+f.bg);if(mid){const u=montUrl(mid,'impressao');if(await espera(loadImg(u),30000,null))return {f,src:u,st:'',mont:mid};}}
     if(f.t==='ai'){const r=await espera(compHi(f.id,f.bg),60000,{err:'tempo'});if(!r||!r.url){res.falhasIA.push(f.k);return null;}(r.avisos||[]).forEach(a=>res.avisos.push({k:f.k,aviso:a}));return {f,src:r.url,st:'',fundo:r.fonte};}
     if(/^ag_/.test(f.id)&&state.agent&&state.agent.url)return {f,src:state.agent.url+'/file/'+f.id.slice(3),st:editStyleObj(ed[f.id])};
     const c=await photoCanvas(f.id);if(!c){res.falhas.push(f.k);return null;}return {f,src:c.toDataURL('image/jpeg',.92),st:editStyleObj(ed[f.id])};}));
   prep.filter(Boolean).forEach(p=>{const pg=document.createElement('div');pg.className='pr-pg';pg.dataset.k=p.f.k;const bx=document.createElement('div');bx.className='pr-box';const im=document.createElement('img');
-    im.alt='';im.setAttribute('style',String(p.st||'').replace(/^;/,''));if(p.fundo)im.dataset.fundo=p.fundo;im.dataset.t=p.f.t;im.src=p.src;bx.appendChild(im);pg.appendChild(bx);root.appendChild(pg);pgs.push([pg,im,p.f]);});
+    im.alt='';im.setAttribute('style',String(p.st||'').replace(/^;/,''));if(p.fundo)im.dataset.fundo=p.fundo;if(p.mont)im.dataset.mont=p.mont;im.dataset.t=p.f.t;im.src=p.src;bx.appendChild(im);pg.appendChild(bx);root.appendChild(pg);pgs.push([pg,im,p.f]);});
   await espera(Promise.all(pgs.map(([,im])=>im.decode().catch(()=>null))),15000,null);
   pgs.forEach(([pg,im,f])=>{if(!im.complete||!im.naturalWidth){pg.remove();(f.t==='ai'?res.falhasIA:res.falhas).push(f.k);return;}if(im.naturalWidth>im.naturalHeight)pg.classList.add('land');res.ok.push(f.k);});
   return res;}
@@ -1896,6 +1899,7 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
   const termLocal=(state.agent&&state.agent.impLocais||[]).includes(String((postoDisp()||{}).nome||postoNome()).trim().toLowerCase()); // terminal com a DNP ligada nele
   if(state.agent&&state.agent.on&&state.agent.impressora&&!termLocal){ // servidor com impressora (ETERNA_IMPRESSORA): a foto sai lá, não na impressora de quem clicou
     job.fase='imprimindo';render();let tM=0;try{const imgs=[];for(const im of document.querySelectorAll('#print-root img')){ // 10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio
+      if(im.dataset.mont&&state.agent.montagem&&state.agent.montagem.imprime){imgs.push({mont:im.dataset.mont});continue;} // E3: o servidor imprime o arquivo que ele guarda
       const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
       tM=performance.now();
       const rr=await (await fetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:s.saleNo||card,vendedor:(state.user&&state.user.name)||'',posto:String((postoDisp()||{}).nome||postoNome()).slice(0,30) /* nome do terminal: o servidor escolhe a DNP dele (ETERNA_IMPRESSORA_POSTOS) */,imagens:imgs})})).json();
@@ -2330,6 +2334,8 @@ function lojaAI(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];co
   return [];}
 // v93: as montagens começam assim que a selfie ou o código acha a sessão, uma por vez, antes de o item aparecer (o COMP guarda)
 function iaAquecer(card){if(fundosModo()!=='local'||!card)return;let its=[];const ja=DS_CACHE.on;try{DS_CACHE.on=true;its=lojaAI(card);}catch(e){return;}finally{if(!ja){DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}
+  if(montSrv()&&montTela()){const ag=its.filter(x=>/^ag_/.test(x.id));if(!ag.length)return; // E2: uma chamada pede o que falta (prioridade do Checkout) e as prontas já contam para a abertura
+    montLista(ag.map(x=>x.id),true,ag.map(x=>x.bg)).then(()=>{ag.forEach(x=>{compose(x.id,x.bg).catch(()=>{});});}).catch(()=>{});return;}
   its.reduce((p,x)=>p.then(()=>compose(x.id,x.bg)).catch(()=>{}),Promise.resolve());}
 function lojaAIAntigo(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];const loc=fundosModo()==='local';const ph=lojaFotos(card).filter(p=>!FIA_RUIM.has(p.id)&&(!loc||/^ag_/.test(p.id)));if(!ph.length)return [];
   const ready=aiPrep(card);let picks=ph.slice(0,2);const dele=new Set(ph.map(p=>p.id)); // v91: o substituto também precisa ser foto do cliente
@@ -2455,7 +2461,7 @@ async function lojaPedido(card){if(state.lojaPedindo)return;lojaFresh(card);if(l
   const selR=c.ch.filter(x=>x.t==='ph').map(x=>x.id),aiR=c.ch.filter(x=>x.t==='ai').map(x=>x.id+'|'+x.bg),favR=c.ch.filter(x=>pkc[x.k]==='fav').map(x=>x.k);
   const id=pvId();
   const rec={id,venue:(typeof VENUE_CFG!=='undefined'&&VENUE_CFG&&VENUE_CFG.id)||'maracana',card,sessoes,token:tok,codigo:m.codigo,criada:now().toISOString(),total:null,prints:null,n:c.ch.length,nPh:c.nPh,nAI:c.nAI,
-    cart:[],selected:selR,aiSel:aiR,fav:favR,meio:null,prov:null,saleNo,vendedor:postoVendedor(),posto:postoNome(),
+    cart:[],selected:selR,aiSel:aiR,aiMont:montSrv()?montDoPedido(aiR):undefined,fav:favR,meio:null,prov:null,saleNo,vendedor:postoVendedor(),posto:postoNome(),
     canal:'checkout',t0:k.t0||null,estado:'escolha',iniciado:'aguardando',fechada:null,por:null,porNome:null,motivo:null,escolha:true,pkg:null,nSes:c.nSes,lang:lang()};
   SIM.caixaDin=SIM.caixaDin||[];SIM.caixaDin.unshift(rec);s.status='aguardando';s.din=id;state.lojaEquipeAte=0;k.aviso=null;
   log(`Checkout: ${sessoes.join(' + ')} escolheu ${c.ch.length} ${c.ch.length===1?'foto':'fotos'} (código ${m.codigo})`);
@@ -2817,7 +2823,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const nSel=more.filter(f=>p.sel[f.pid]).length;const tot=pubTotal(nSel,g);const dig=(g.precos||{}).dig||priceOf('dig'),all=(g.precos||{}).todas||priceOf('mais');
   return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`)}
     <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${T('gq_kidFound',g.fotos.length)}</div>`:''}<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${mine.length?T('gq_yoursD',mine.length):T('gq_none')}</p>
-      ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>
+      ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item${f.t==='ai'?' gq-mont':''}"><div class="gq-ph${f.t==='ai'?' gq-ai':''}" style="${pubImg(f)}">${f.t==='ai'?`<span class="lj-ed gq-ed">${esc(edSeloTxt())}</span>`:''}${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div>${f.t==='ai'?`<figcaption class="gq-edn">${esc(bgNomeCli(bgOf(f.bg)))}</figcaption>`:''}<button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>
       ${mine.length>1?`<button class="lj-cta gq-dlall" data-act="gq-dlall">${ICO.cloud} ${T('gq_dlAll')}</button>`:''}`:''}</section>
     ${more.length?`<section class="gq-sec"><h2 class="lj-h2">${T('gq_more')}</h2><p class="lj-sub">${T('gq_moreD')} ${T('gq_each',fmtR(dig))}</p>
       <div class="gq-grid">${more.map(f=>{const on=!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div><button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button></figure>`;}).join('')}</div>
@@ -3479,8 +3485,48 @@ async function fiaMontar(photoId,bgId,o){o=o||{};const bg=bgOf(bgId);if(!bg)retu
   const out=mkc(ow,oh);const ox=out.getContext('2d');ox.imageSmoothingQuality='high';ox.drawImage(c,(W-sw)/2,bg.telao?(H-sh)/2:H-sh,sw,sh,0,0,ow,oh); // Telão: o grupo está na tela, no alto: corte no meio
   return {url:out.toDataURL('image/jpeg',.92),w:ow,h:oh,fonte,avisos,layout:L};}
 async function compose(photoId,bgId){if(fundosModo()==='photoroom'){if(!state.pr){try{state.pr=await (await fetch(state.agent.url+'/photoroom/status',{cache:'no-store'})).json();}catch(e){}}return composePR(photoId,bgId);}const key=photoId+'|'+bgId;if(COMP[key])return COMP[key];
-  const job=(async()=>{const r=await fiaMontar(photoId,bgId);if(!r.canvas)return r;const bl=await new Promise(z=>r.canvas.toBlob(z,'image/jpeg',.9));if(!bl)return {err:'montagem falhou'};return {url:URL.createObjectURL(bl),w:r.w,h:r.h,layout:r.layout};})();
+  // montagem no servidor (E2): no Checkout e no Posto a montagem vem pronta do servidor do ponto; o navegador não recorta nem monta
+  // antes do primeiro /status (página recém-aberta) ainda não se sabe quem monta: espera, em vez de montar no navegador
+  if(montTela()&&/^ag_/.test(photoId)&&!(state.agent&&state.agent.on))return {pending:'montagem'};
+  const job=montSrv()&&montTela()&&/^ag_/.test(photoId)?montCompose(photoId,bgId):(async()=>{const r=await fiaMontar(photoId,bgId);if(!r.canvas)return r;const bl=await new Promise(z=>r.canvas.toBlob(z,'image/jpeg',.9));if(!bl)return {err:'montagem falhou'};return {url:URL.createObjectURL(bl),w:r.w,h:r.h,layout:r.layout};})();
   COMP[key]=job;job.then(r=>{if(r.pending||r.err)delete COMP[key];else if(r.url)COMPOK.add(key);});return job;}
+// Montagem no servidor (plano docs/planos/2026-11-11-montagem-no-servidor.md, E2). REGRA DO PROJETO: recorte e montagem são
+// feitos e guardados no servidor do ponto; o Checkout só mostra. montSrv(): agente ligado com a montagem ligada E o interruptor
+// config/montagem.checkout (desligado até o Eduardo aprovar a folha lado a lado, D5). Sem isso, tudo como antes (canvas).
+// MONT: "<base>|<fundo>" -> {mid, estado, motivo, w, h, t}. A montagem é pedida em lote (uma chamada para os itens da tela).
+// As telas do Admin (Fundos de IA, Laboratório) continuam no canvas: ele é a referência da paridade.
+const MONT={};let MONT_Q=null;const MONT_VALE_MS=600000,MONT_ESPERA_MAX=180000;let MONT_DE_NOVO_MS=2000;
+const montSrv=()=>{const a=state.agent||{},m=a.montagem;return !!(a.on&&m&&m.v>=1&&m.ligada&&m.checkout);};
+const montTela=()=>!!state.lojaRota||['quiosque','posto','checkout','caixa','fila'].includes(state.view);
+const montUrl=(mid,tipo)=>state.agent.url+'/montagens/'+mid+'/'+(tipo==='impressao'?'impressao':'previa')+'.jpg';
+async function montLista(bases,pedir,fundos){const body={bases:[...new Set(bases.map(b=>String(b).replace(/^ag_/,'')))].slice(0,12)};if(fundos&&fundos.length)body.fundos=[...new Set(fundos)].slice(0,8);if(pedir)body.pedir=true;
+  let r;try{r=await fetch(state.agent.url+'/montagens/lista',{method:'POST',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify(body)});}catch(e){return {falha:'agente'};}
+  if(r.status===404){body.bases.forEach(b=>(body.fundos||[]).forEach(f=>{MONT['ag_'+b+'|'+f]={mid:null,estado:'erro',motivo:'base',w:0,h:0,t:Date.now()};}));return {falha:'base'};}
+  if(!r.ok)return {falha:r.status===429?'limite':r.status===503?'desligada':'erro'};
+  let j;try{j=await r.json();}catch(e){return {falha:'erro'};}
+  (j.itens||[]).forEach(x=>{MONT['ag_'+x.base+'|'+x.fundo]={mid:x.mid||null,estado:x.estado,motivo:x.motivo||null,w:x.w||0,h:x.h||0,t:Date.now()};});return j;}
+// junta os pedidos dos itens da tela numa chamada só (até 12 fotos e 8 fundos por chamada)
+function montBusca(photoId,bgId,pedir){let q=MONT_Q;if(!q||(q.bases.size>=12&&!q.bases.has(photoId))||(q.fundos.size>=8&&!q.fundos.has(bgId))){q=MONT_Q={bases:new Set(),fundos:new Set(),pedir:false,p:null};
+    q.p=new Promise(r=>setTimeout(r,60)).then(()=>{if(MONT_Q===q)MONT_Q=null;return montLista([...q.bases],q.pedir,[...q.fundos]);});}
+  q.bases.add(photoId);q.fundos.add(bgId);if(pedir)q.pedir=true;return q.p.then(()=>MONT[photoId+'|'+bgId]||null);}
+async function montCompose(photoId,bgId){const key=photoId+'|'+bgId;let x=MONT[key];
+  if(!x||x.estado!=='pronta'||Date.now()-x.t>MONT_VALE_MS){await montBusca(photoId,bgId,true);x=MONT[key];}
+  if(!x)return {pending:'montagem'};
+  if(x.estado==='pronta'&&x.mid)return {url:montUrl(x.mid),w:x.w,h:x.h,mid:x.mid};
+  if(x.estado==='erro'&&x.motivo!=='fundo')return {err:x.motivo==='sem_pessoa'?'sem_pessoa':x.motivo==='recorte'||x.motivo==='base'?'recorte falhou':'montagem falhou'};
+  return {pending:'montagem'};}
+// E4: com o servidor entregando a montagem comprada na galeria em qualquer pacote (inclusive só digital), o aviso do Posto
+// "a foto Edição Maracanã não é impressa / ainda não vai para a galeria" (feat/posto-unico: pendMontAviso e o montAviso da Venda
+// manual) deixa de valer: no merge, os dois devolvem '' quando montEntregaDigital() é verdadeiro.
+const montEntregaDigital=()=>montSrv();
+// D7: venda paga com montagem que o servidor não conseguiu fazer em 5 min (/status.montagem.alertas): o Posto avisa a equipe
+function montAlertaHtml(){const m=state.agent&&state.agent.on&&state.agent.montagem;const l=m&&Array.isArray(m.alertas)?m.alertas.slice(0,5):[];if(!l.length)return '';
+  return `<div class="pend-grave mont-alerta" role="alert"><b>Foto Edição Maracanã não ficou pronta no servidor</b>${l.map(a=>`<span>Venda ${esc(String(a.venda||''))} · ${esc((bgOf(a.fundo)||{name:a.fundo}).name)}: ${a.estado==='erro'?'a montagem falhou':'ainda na fila'}. Confira o servidor; se não sair, ofereça outra foto ao cliente.</span>`).join('')}</div>`;}
+// mid da montagem vendida (o da venda, s.aiMont); sem ele (venda de app antigo), o que o servidor tem para a base e o fundo
+async function montMidVenda(key){for(const s of Object.values(SIM.sessions||{})){const m=s&&s.status==='paga'&&s.aiMont&&s.aiMont[key];if(m&&/^[0-9a-f]{32}$/.test(m))return m;}
+  const [id,bg]=key.split('|');await montLista([id],false,[bg]);const x=MONT[key];return x&&x.estado==='pronta'&&x.mid?x.mid:null;}
+// mid da montagem que o cliente viu, para as chaves "<base>|<fundo>" do pedido (vai na venda: aiMont)
+function montDoPedido(ks){const o={};(ks||[]).forEach(k=>{const x=MONT[k];if(x&&x.estado==='pronta'&&/^[0-9a-f]{32}$/.test(x.mid||''))o[k]=x.mid;});return o;}
 // Checkout: fundo de IA só aparece quando dá para montar (modo local: agente com o recorte pronto e foto do agente)
 const FIA_RUIM=new Set();
 function fiaOferece(){if(fundosModo()==='photoroom')return true;const a=state.agent||{};return !!(a.on&&a.recorte&&a.recorte.ok);}
@@ -3493,6 +3539,7 @@ function fiaPanel(){const a=state.agent||{};const r=a.on?a.recorte:null;const lo
   return `<div class="panel" style="gap:10px"><div class="head"><h2>Recorte local</h2>${!a.on?'<span class="pill neutral">agente não encontrado</span>':!r?'<span class="pill warn">agente antigo</span>':r.ok?`<span class="pill good">pronto${r.carregado?'':' · abrindo os modelos'}</span>`:'<span class="pill bad">não instalado</span>'}</div>
     <div class="note">${r&&r.ok!=null?`BiRefNet ${r.provedor==='cuda'?'neste servidor, na placa de vídeo':r.provedor?'neste servidor, no processador':'no servidor do ponto'}${r.ms_medio?` · média ${(r.ms_medio/1000).toFixed(1)} s por foto (${r.feitos} feitas)`:''}. `:''}O servidor do ponto recorta a pessoa e o que encosta nela (a taça na mão, a bandeira, os óculos) e o Eterna monta no fundo com as regras aprovadas. Sem internet e sem custo; os outros computadores não recortam.</div>
     ${r&&r.ia?`<div class="note">Fotos para IA: fila ${+r.ia.fila||0} · p90 ${r.ia.atraso_p90_s!=null?Math.round(r.ia.atraso_p90_s)+' s':'--'} desde a chegada · ${+r.ia.erros||0} ${+r.ia.erros===1?'erro':'erros'}${r.ia.pausa_disco?` · <b>em pausa: ${esc(String(r.ia.livre_gb))} GB livres no disco</b>`:''}</div>`:''}
+    ${a.on&&a.montagem?(m=>`<div class="note">Montagens no servidor: ${m.ligada?`fila ${+m.fila||0} · feitas hoje ${+m.feitas_hoje||0}${m.ms_medio?` · média ${(m.ms_medio/1000).toFixed(1).replace('.',',')} s`:''} · ${String(+m.guardado_gb||0).replace('.',',')} GB guardados · ${m.checkout?'o Checkout mostra as do servidor':'o Checkout ainda monta no navegador (em teste)'}`:`desligadas${m.motivo?' · '+esc(String(m.motivo)):''}`}${m.pausa_disco?` · <b>em pausa: ${esc(String(m.livre_gb))} GB livres no disco</b>`:''}${m.parado?' · <b>paradas: reinicie o agente</b>':''}${(m.fundos_faltando||[]).length?` · <b>falta baixar ${m.fundos_faltando.length} fundo(s)</b>`:''}</div>`)(a.montagem):''}
     ${r&&!r.ok?`<div class="note"><b>${esc(recMotivo(r.motivo).replace(': veja Fundos de IA',''))}</b> · ${esc(r.motivo||'')}. Rode <b>instalar-recorte</b> na pasta do agente do servidor (Mac: instalar-recorte.command; Windows: instalar-recorte.bat, com placa NVIDIA instalar-recorte.bat gpu) e abra o agente de novo. Precisa de 16 GB de memória.</div>`:''}</div>`;}
 function compTile(photoId,b,sel,act){const a=ANAV[photoId];const m=bgMatch(a,b);return `<button class="bg comp" data-act="${act||'fila-bg'}" data-bg="${b.id}" aria-pressed="${sel}"><span class="compimg" data-comp="${photoId}|${b.id}" style="background-image:url(${b.file})"><span class="compst">${fundosModo()==='photoroom'?'Montando no Photoroom...':'Montando...'}</span></span><span class="czoom" data-act="comp-zoom" data-k="${photoId}|${b.id}" data-cap="${esc(b.name)}" role="button" aria-label="Ver grande"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"></path></svg></span>${m!=null?`<span class="cmatch ${m>=85?'hi':m>=70?'mid':'lo'}">Combina ${m}%</span>`:''}<span class="n"><span>${esc(b.name)}</span><span class="note">${esc(matchWhy(a,b)||FRAMING[aiScore(photoId).f])} · ${fmtR(priceOf('fundo'))}</span></span></button>`;}
 state.pr=null;function prPoll(force){if(prPoll.t&&!force&&Date.now()-prPoll.t<15000)return;prPoll.t=Date.now();fetch(state.agent.url+'/photoroom/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=!state.pr||state.pr.configured!==j.configured||state.pr.calls!==j.calls||state.pr.last_error!==j.last_error;state.pr=j;if(ch)render();}).catch(()=>{if(state.pr!==null){state.pr=null;render();}});}
@@ -3502,6 +3549,9 @@ function compHydrate(){if(fundosModo()==='photoroom'&&document.querySelector('[d
       // v97 (selo): a caixa da montagem fica com a proporção dela, sem redesenhar a tela; pronta com o cliente olhando para ela = vista (A9)
       if(r.w>0&&r.h>0){LJ_AR['ai:'+key]=+(r.w/r.h).toFixed(4);const pai=el.parentElement;if(pai&&pai.matches('.lj-lbimg.ai,.lj-gimg.ai,.lj-mimg.ai'))pai.style.setProperty('--ar',LJ_AR['ai:'+key]);}
       if(el.closest('#lj-lb'))edVista('ai:'+key);return;}
+    // montagem no servidor (E2): ainda na fila ou sendo feita: o "Preparando sua foto especial" fica e a tela tenta de novo (nunca fiaFalhou por espera)
+    if(r.pending==='montagem'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Preparando a montagem...</span>';const t0=+el.dataset.mt0||(el.dataset.mt0=Date.now());
+      if(Date.now()-t0<MONT_ESPERA_MAX)setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},MONT_DE_NOVO_MS);return;}
     if(r.pending==='fila'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Na fila do recorte...</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},3000);return;}
     // v97 (E5b): 503 do recorte (modelos abrindo, processo de recorte reiniciando) não tira a foto da venda: tenta de novo em 30 s
     if(r.pending==='recorte'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Recorte local indisponível</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},FIA_REC_DE_NOVO_MS);return;}
@@ -3691,7 +3741,7 @@ const AGENT_VIEWS=['importar','posto','caixa','fotofila','impfila'];
 // revisão (v94-ux): sem conexão e com o agente fora desta origem (app pelo eterna.photo), espaça as tentativas: 5 s, 10 s, 20 s, até 30 s
 async function agentPoll(){const a=state.agent;if(!AGENT_VIEWS.includes(state.view)&&!a.on&&a.tried&&a.url!==location.origin)return;
   if(!a.on&&a.tried&&a.url!==location.origin&&Date.now()<(a.proxima||0))return;
-  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.lastOk=Date.now();a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;a.envio=st.envio&&typeof st.envio==='object'?st.envio:null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
+  try{const st=await (await fetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');const was=a.on;a.on=true;a.lastOk=Date.now();a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.montagem=st.montagem||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;a.envio=st.envio&&typeof st.envio==='object'?st.envio:null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
     const ev=await (await fetch(a.url+'/events?since='+a.cursor,{cache:'no-store'})).json();if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
       if(e.src==='inbox'||known.has(id)||was||a.sessoes)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
@@ -4348,10 +4398,17 @@ function vFundosTeste(){const inat=DATA.backgrounds.filter(b=>!bgAtivo(b)),at=DA
   <div class="panel"><h2>Em teste</h2><div class="note">Estes fundos não aparecem para o cliente (Checkout, balcão e galeria). ${can('configuracao','u')?'Ativar põe o fundo de volta nos Fundos de IA e no Checkout, se houver vaga.':'Para ativar, é preciso poder alterar Configurações do venue.'}</div>
     ${inat.length?`<div class="bgs">${inat.map(b=>bgCard(b,'bg-ativar','Ativar')).join('')}</div>`:'<div class="note">Nenhum fundo em teste.</div>'}</div>
   <div class="panel"><h2>Ativos</h2><div class="note">Os que o cliente vê hoje.</div><div class="bgs">${at.map(b=>bgCard(b,'bg-lab','Mover para o Laboratório')).join('')}</div></div>`;}
+// montagem no servidor (E2): a lista de fundos do Checkout vai para o servidor do ponto (config/fundos), que monta cada base neles.
+// Ids resolvidos: o grupo "campeao" vira o fundo "campeao2" (as variações por bandeira são montadas sob pedido).
+function fundosAtivosSrv(){return [...new Set(bgOn().map(id=>id==='campeao'?'campeao2':id))].filter(id=>bgOf(id)).slice(0,8);}
+function fundosCfgSalva(){if(!can('configuracao','u')||!state.db)return false;const ativos=fundosAtivosSrv();const u=state.user||{};const antes=(state.fundosCfg&&state.fundosCfg.ativos||[]).join(',');if(antes===ativos.join(','))return false;
+  state.fundosCfg={ativos,por:u.email||null,em:now().toISOString()};try{state.db.doc('config/fundos').set(state.fundosCfg);}catch(e){console.warn('db config/fundos',e);return false;}
+  auditLog('fundos_lista','config/fundos',[{campo:'fundos do Checkout no servidor',de:antes||'(padrão)',para:ativos.join(',')}]);return true;}
 function bgMover(id,ativo){const b=bgOf(id);if(!b)return;const antes=bgAtivo(b);if(antes===ativo)return;
   SIM.bgAtivo=SIM.bgAtivo||{};if(ativo===!b.inativo)delete SIM.bgAtivo[id];else SIM.bgAtivo[id]=ativo;
   if(ativo){const g=BG_GROUP[id]||id;const a=bgOn();if(!a.includes(g)&&a.length<BG_MAX){a.push(g);SIM.bgOn=a;}}
   if(!saveSim()){toast('Não gravou, tente de novo');return;}
+  fundosCfgSalva();
   auditLog(ativo?'fundo_ativado':'fundo_laboratorio','fundo:'+id,[{campo:'Fundo '+b.name,de:antes?'ativo':'em teste',para:ativo?'ativo':'em teste'}]);
   log(`Fundo ${b.name}: ${ativo?'ativado':'movido para o Laboratório'}`);toast(ativo?'Fundo ativado':'Fundo movido para o Laboratório');render();}
 function vVestiario(){
@@ -6404,7 +6461,7 @@ document.addEventListener('click',e=>{
     case 'sales-page':state.sales.page=Math.max(0,+d.v||0);render();break; // v94-ux (parte J): paginação da Lista de vendas, sem gravar
     case 'bg-ativar':bgMover(d.id,true);break;
     case 'bg-lab':bgMover(d.id,false);break;
-    case 'bg-on':{let a=bgOn();if(a.includes(d.id))a=a.filter(x=>x!==d.id);else{if(a.length>=BG_MAX){toast('No máximo 5 fundos no Checkout. Tire um antes.');break;}a.push(d.id);}SIM.bgOn=a;saveSim();render();break;}
+    case 'bg-on':{let a=bgOn();if(a.includes(d.id))a=a.filter(x=>x!==d.id);else{if(a.length>=BG_MAX){toast('No máximo 5 fundos no Checkout. Tire um antes.');break;}a.push(d.id);}SIM.bgOn=a;saveSim();fundosCfgSalva();render();break;}
     case 'comp-zoom':{e.preventDefault&&e.preventDefault();const keys=[...document.querySelectorAll('[data-act="comp-zoom"]')].map(x=>({k:x.dataset.k,cap:x.dataset.cap})).filter(x=>COMPURL[x.k]);const i=keys.findIndex(x=>x.k===d.k);if(i<0){toast('A montagem ainda está sendo feita');break;}compModal(keys,i);break;}
     case 'rf-save':{const v=id=>(($('#'+id)||{}).value||'').trim();const body={host:v('rf-host'),port:v('rf-port')||'21',user:v('rf-user'),password:($('#rf-pass')||{}).value||'',dir:v('rf-dir'),tls:!!($('#rf-tls')||{}).checked};if(!body.host||!body.user){toast('Informe servidor e usuário');break;}toast('Testando conexão...');fetch(state.agent.url+'/ftp-remoto/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#rf-pass');if(f)f.value='';toast('Conectado. Buscando fotos novas no servidor.');rftpPoll.t=0;rftpPoll();}else toast(j.error||'Não conectou');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'set-switch':case 'set-logout':{const old=state.user&&state.user.name;log(`${old} saiu de Minhas fotos`);logout();if(a==='set-switch'){state.auth_next='importar';state.auth.switching=old||'';render();}break;}
@@ -6614,6 +6671,8 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='posto'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
 window.ETERNA={lgpdPlano,saveSim,pendMontSemImp,I18N,T,ecoUpd,pendRecomecar,ecoEsperaId,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,bgMigraTelao,bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,pubGaleria,selfieVarias,ynDetect,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
+Object.assign(window.ETERNA,{FIA_PADRAO,FIA_ROSTOS,IMP_PX,ynDetect});
+Object.assign(window.ETERNA,{montEntregaDigital,montAlertaHtml,montMidVenda,montSrv,montLista,MONT,montCompose,montDoPedido,fundosCfgSalva,fundosAtivosSrv,montDeNovoMs:v=>{MONT_DE_NOVO_MS=v;}}); // montagem no servidor (E2) // montagem no servidor (E0): só para o teste de paridade com o agente/eterna-montagem.py
 })();
 </script>
 
