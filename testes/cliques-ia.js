@@ -1,4 +1,5 @@
 // v93 (Eduardo, 06/11 07:54; plano docs/planos/2026-11-06-dois-cliques-ia.md): os 2 primeiros cliques de cada sessão de ponto
+// v94-ux (parte I): "Fotos para os fundos de IA" fica na aba Fundos de IA de Preços e Checkout
 // de campo são só base dos fundos de IA. Critérios do app: 2 (fora da venda normal), 3 (5 montagens com a base certa), 4 (base
 // ruim usa a outra; as duas ruins = jeito antigo), A11 e D2, 8 e 14 (Upload: tags e pílulas), 12 (Painel de controle e guardAct),
 // 13 (Fila do fotógrafo) e 19 (as 5 montagens prontas no COMP em até 4 s depois de o código achar a sessão).
@@ -159,7 +160,7 @@ try{
   const fp=await pe.evaluate(()=>{ETERNA.go('chroma');return document.querySelector('#main').textContent;});
   ok(/Fotos para IA: fila 1 · p90 21 s desde a chegada · 0 erros/.test(fp),'fiaPanel mostra a fila das bases: '+(fp.match(/Fotos para IA[^.]*/)||[''])[0]);
   // 12: Painel de controle
-  await pe.evaluate(()=>ETERNA.go('catalogo'));await pe.waitForTimeout(200);
+  await pe.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await pe.waitForTimeout(200);
   ok(await pe.$('#ia-cfg'),'12: painel "Fotos para os fundos de IA" no Painel de controle');
   const pts=await pe.$$eval('#ia-cfg [data-act="ia-ponto"]',xs=>xs.map(x=>x.dataset.id+':'+x.checked));
   ok(pts.join()==='terminal:true,campo2:true,campo3:true,campo4:true,vestiario:false','12: padrão nos 4 pontos de campo, sem o Vestiário: '+J(pts));

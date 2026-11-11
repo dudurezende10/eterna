@@ -1,4 +1,5 @@
 // Galeria online por QR (critérios 1 a 14) e Loja apartada em #loja (critérios 22 a 26), no modo SIM (sem agente).
+// v94-ux (parte H): "Abrir Checkout" do Admin fica no rodapé do menu (#nav .nav-ck); os cliques usam .rail [data-act="loja-abrir"]
 // O reconhecimento usa o mesmo do app (YuNet + SFace no navegador, índice das fotos de exemplo); a "selfie" é uma foto da própria sessão.
 const {chromium}=require('playwright');const login=require('./_login');const fs=require('fs');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const PR=__dirname+'/prints';fs.mkdirSync(PR,{recursive:true});
@@ -41,7 +42,8 @@ try{
   dbg('2 e 3. token, código curto e texto do QR');
   const tok=q1.paid&&q1.paid.token;ok(TOKRE.test(tok||''),'2: token fora do formato: '+tok);ok(tok&&tok!==card&&!tok.includes(card),'2: token igual ao LP ou contendo o LP');
   const sim1=await L.evaluate(t=>{const S=ETERNA.SIM;return {m:S.galerias[t]};},tok);ok(sim1.m&&sim1.m.sessoes[0]===card&&sim1.m.tipo==='sessao','2: manifesto da sessão não está em SIM.galerias');
-  const cod=(q1.txt.match(/Código (\S+)/)||[])[1];ok(CODRE.test(cod||''),'3: código curto fora do formato: '+q1.txt);ok(cod===q1.paid.codigo,'3: código da tela diferente do manifesto');
+  // v94-ux: "Código X" virou "Seu código: X" (parte F)
+  const cod=(q1.txt.match(/código:? (\S+)/i)||[])[1];ok(CODRE.test(cod||''),'3: código curto fora do formato: '+q1.txt);ok(cod===q1.paid.codigo,'3: código da tela diferente do manifesto');
   ok(q1.title==='https://eterna.photo/#g/'+tok,'3: texto do QR: '+q1.title);
   // ---------- 24. tela final volta sozinha em 5 s; "Voltar ao início" volta antes (criterio 4 substituído pelo adendo A4) ----------
   dbg('24. tela final volta sozinha em 5 s; "Vo');
@@ -57,7 +59,7 @@ try{
   ok(await C.evaluate(()=>!ETERNA.state.kiosk.timer),'24: o timer da tela final deveria morrer ao voltar');
   // tempo configurável no Catálogo (seção Checkout): 10 s
   dbg('catalogo 10s');
-  {const A0=await nova(ctxC,'catalogo');await login(A0);await A0.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await A0.fill('#loja-fim','10');await A0.press('#loja-fim','Tab');await A0.waitForTimeout(150);
+  {const A0=await nova(ctxC,'catalogo');await login(A0);await A0.evaluate(()=>{ETERNA.state.catTab='checkout';/* v94-ux (parte I): aba Checkout */ETERNA.state.view='catalogo';ETERNA.render();});await A0.fill('#loja-fim','10');await A0.press('#loja-fim','Tab');await A0.waitForTimeout(150);
     ok(await A0.evaluate(()=>ETERNA.SIM.lojaFimSeg)===10,'24: o Catálogo não gravou o tempo da tela final');await A0.evaluate(()=>localStorage.removeItem('eterna.session'));await A0.close();
     await C.reload();await C.waitForTimeout(400);await C.clock.pauseAt(new Date(Date.now()+120000));await compraLoja(C,cards[3]||card2); // v79: sessão já paga não paga de novo (revisão 1), então outra sessão
     await C.clock.runFor(9000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: com 10 s, aos 9 s a tela final deveria continuar');
@@ -133,7 +135,7 @@ try{
   // ---------- 9 e 10 na administração ----------
   dbg('9 e 10 na administração');
   const A=await nova(ctx,'admin',{width:1440,height:900});await login(A);await A.evaluate(()=>{ETERNA.state.range={from:'2026-01-01',to:'2099-12-31'};ETERNA.state.view='vendas-lista';ETERNA.render();});await A.waitForTimeout(200);
-  await A.click('[data-act="sales-canal"][data-v="online"]');const v10=await A.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(tr=>tr.innerText));
+  await A.selectOption('select[data-act="sales-canal"]','online');/* v94-ux (parte J): filtro em select */const v10=await A.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(tr=>tr.innerText));
   ok(v10.length===1&&/Online/.test(v10[0])&&/teste/.test(v10[0])&&!/Recibo|Cancelar/.test(v10[0]),'10: filtro Online na Lista de vendas: '+JSON.stringify(v10).slice(0,200));
   const [dl]=await Promise.all([A.waitForEvent('download'),A.click('[data-act="sales-csv"]')]);const csv=fs.readFileSync(await dl.path(),'utf8');ok(/;"?canal"?/.test(csv.split('\n')[0])&&/online/.test(csv),'10: CSV sem a coluna canal');
   await A.evaluate(()=>{ETERNA.state.view='galerias';ETERNA.render();});await A.fill('[data-act="gal-q"]',card);await A.click(`[data-act="gal-open"][data-card="${card}"]`);
@@ -196,7 +198,7 @@ try{
   // CORRIGIR 1: recarregar com eterna.view=checkout (ou quiosque) não abre a Loja para a equipe
   await abaNova('reload-equipe');await login(L2);await L2.evaluate(()=>{localStorage.setItem('eterna.view','checkout');location.hash='';});await L2.reload();await L2.waitForTimeout(500);ok(await L2.evaluate(()=>!ETERNA.state.lojaRota&&location.hash!=='#loja'),'R1: reload com eterna.view=checkout abriu a Loja');
   await L2.evaluate(()=>{localStorage.setItem('eterna.view','quiosque');history.replaceState(null,'','#');});await L2.reload();await L2.waitForTimeout(500);ok(await L2.evaluate(()=>!ETERNA.state.lojaRota&&ETERNA.state.view!=='quiosque'),'R1: reload com eterna.view=quiosque abriu a Loja');
-  await L2.evaluate(()=>{ETERNA.state.view='perfis';ETERNA.render();});ok(!(await L2.$('#nav [data-v="quiosque"]')),'v78: Checkout não é item do menu');{const [J2]=await Promise.all([L2.context().waitForEvent('page'),L2.click('#rail-ck [data-act="loja-abrir"]')]);await J2.waitForLoadState();await J2.waitForTimeout(400); // v81: abre em janela à parte
+  await L2.evaluate(()=>{ETERNA.state.view='perfis';ETERNA.render();});ok(!(await L2.$('#nav [data-v="quiosque"]')),'v78: Checkout não é item do menu');{const [J2]=await Promise.all([L2.context().waitForEvent('page'),L2.click('.rail [data-act="loja-abrir"]')]);await J2.waitForLoadState();await J2.waitForTimeout(400); // v81: abre em janela à parte
   ok(await J2.evaluate(()=>ETERNA.state.lojaRota&&location.hash==='#loja'&&!ETERNA.state.user),'A1: botão Abrir Checkout deveria abrir #loja numa janela à parte');await J2.close();
   await L2.evaluate(()=>ETERNA.go('quiosque'));await L2.waitForTimeout(300);} // o resto do teste segue no Checkout desta aba (caminho antigo, ainda existe)
   await L2.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;}); // v79: a câmera simulada pode achar um rosto no meio dos 3 toques

@@ -1,4 +1,5 @@
 // v84: recorte local dos fundos de IA (sem Photoroom). Agente: POST /recorte com rembg (ISNet + u2net_human_seg), cache,
+// v94-ux (parte I): a Montagem dos fundos fica na aba Avançado de Preços e Checkout
 // acesso só local, 503 sem os modelos. App: montagem no canvas com as regras de docs/fundos-ia-regras.md, impressão com o
 // fundo de 5000 px e o interruptor "Montagem dos fundos" no Painel de controle.
 // Fotos: só as de exemplo do repositório (sprites/c00.webp), ampliadas; nenhuma foto de convidado de fora do repo.
@@ -209,7 +210,7 @@ out.save(sys.argv[2])
   // ---------- 5. interruptor no Painel de controle ----------
   await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(150);
   const otp=await pg.$('.otp');if(otp){await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);}
-  await pg.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(200);
+  await pg.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(200);
   const t5=await pg.evaluate(()=>{const p=document.querySelector('#fundos-modo');return p&&{txt:p.innerText,loc:p.querySelector('[data-m="local"]').getAttribute('aria-pressed'),pr:p.querySelector('[data-m="photoroom"]').getAttribute('aria-pressed')};});
   ok(t5&&/Montagem dos fundos/i.test(t5.txt)&&/Local \(padrão\)/i.test(t5.txt)&&t5.loc==='true'&&t5.pr==='false','5: painel Montagem dos fundos com Local marcado: '+J(t5));
   await ctx.route(ORIG+'/fundos/modo',r=>{modoLog.push(JSON.parse(r.request().postData()||'{}').modo);r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
