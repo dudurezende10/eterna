@@ -424,6 +424,32 @@ try:
         gd = {"erro": str(ex)}
     ok(gd.get("n") == 3 and gd.get("dia") == hoje and set(gd) == {"dia", "n"}, "teto do dia: contagem gravada só com dia e número: %s" % gd)
     shutil.rmtree(H4, ignore_errors=True)
+
+    # v97: o índice é gravado logo depois do lote (até ~2 s), não a cada foto; agente morto antes disso não perde a conta:
+    # na abertura seguinte a foto que já está na inbox volta ao índice e a mesma foto mandada de novo é repetida
+    P5, F5 = porta_45(), porta_45()
+    H5 = tempfile.mkdtemp(prefix="eterna-envio-e-")
+    pe = subir("e", P5, F5, H5, USER + "e", 2)
+    procs.append(pe)
+    idx = os.path.join(H5, "Eterna", "index.json")
+    l1 = [jpeg() for _ in range(3)]
+    r = [enviar(b, "A%d.jpg" % i, porta=P5) for i, b in enumerate(l1)]
+    time.sleep(3.2)
+    n1 = len(json.load(open(idx))) if os.path.exists(idx) else 0
+    ok(all(x[1] == {"ok": True, "resultado": "new"} for x in r) and n1 == 3, "índice gravado logo depois do lote: %s" % n1)
+    l2 = [jpeg() for _ in range(3)]
+    r = [enviar(b, "B%d.jpg" % i, porta=P5) for i, b in enumerate(l2)]
+    pe.kill()                                            # cai antes da gravação agendada
+    pe.wait(5)
+    n2 = len(json.load(open(idx)))
+    pe = subir("e2", P5, F5, H5, USER + "e", 2)
+    procs.append(pe)
+    n3 = len(json.load(open(idx)))
+    r2 = [enviar(b, "B%d.jpg" % i, porta=P5) for i, b in enumerate(l1 + l2)]
+    ok(all(x[1] == {"ok": True, "resultado": "new"} for x in r) and n3 == 6 and all(x[1] == {"ok": True, "resultado": "dup"} for x in r2),
+       "queda antes de gravar o índice: na volta as 6 são repetidas (índice %s -> %s -> %s): %s" % (n1, n2, n3, [x[1] for x in r2]))
+    ok(len([p for p in arquivos(os.path.join(H5, "Eterna", "inbox")) if p.endswith(".jpg")]) == 6, "queda: nenhuma foto duplicada na inbox")
+    shutil.rmtree(H5, ignore_errors=True)
 except SystemExit as ex:
     falhas.append(str(ex))
 except Exception as ex:

@@ -604,6 +604,61 @@ def quick_hash(path, size):
     return h.hexdigest()
 
 
+INDEX_ESPERA = 2.0
+_index_timer = {"t": None}
+
+
+def save_index_logo():
+    """Com o lock na mão: grava o índice daqui a INDEX_ESPERA segundos, uma vez só para as fotos que chegarem nesse meio
+    tempo (o envio pela tela manda centenas em sequência). Se o agente cair antes, o index_conferir da abertura refaz."""
+    if _index_timer["t"] is None:
+        t = threading.Timer(INDEX_ESPERA, _save_index_agendado)
+        t.daemon = True
+        _index_timer["t"] = t
+        t.start()
+
+
+def _save_index_agendado():
+    with lock:
+        _index_timer["t"] = None
+        try:
+            save_index()
+        except Exception as ex:
+            print("  índice: não gravei (%s)" % type(ex).__name__)
+
+
+def index_conferir():
+    """Na abertura: foto de hoje que está na inbox e não está no índice (o agente caiu antes da gravação agendada) volta
+    para ele, para a mesma foto mandada de novo continuar sendo reconhecida como repetida."""
+    ddir = os.path.join(INBOX, time.strftime("%Y-%m-%d"))
+    if not os.path.isdir(ddir):
+        return 0
+    tem = set(seen.values())
+    n = 0
+    for fn in os.listdir(ddir):
+        pid = fn.split("_", 1)[0]
+        if "_" not in fn or not fn.endswith(EXT) or pid in tem:
+            continue
+        try:
+            p = os.path.join(ddir, fn)
+            hq = quick_hash(p, os.path.getsize(p))
+        except OSError:
+            continue
+        if hq[:12] == pid:
+            seen[hq] = pid
+            tem.add(pid)
+            n += 1
+    if n:
+        try:
+            save_index()
+        except Exception:
+            pass
+    return n
+
+
+index_conferir()
+
+
 def jpeg_completo(path, size):
     """Foto inteira? JPEG termina no marcador FFD9 (algumas câmeras deixam uns bytes depois dele); PNG no bloco IEND.
     Há fotos PNG com nome .jpeg (exportações do Roverpix). v80 (segurança I2): arquivo que não começa como JPEG nem PNG é recusado."""
@@ -8717,7 +8772,7 @@ class H(BaseHTTPRequestHandler):
                 if r == "new":
                     with lock:
                         envio_dia_soma()
-                        save_index()
+                        save_index_logo()                  # o índice inteiro não é regravado a cada foto do lote
         finally:
             if tmp and os.path.exists(tmp):
                 try:
