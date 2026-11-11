@@ -4,7 +4,7 @@
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-let ROSTO=false;const POSTS=[];
+let ROSTO=false;const POSTS=[];let GETS=0;
 const st=()=>({ok:true,agent:'eterna-agente',version:3,boot:'b97c',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:true},recorte:{ok:true,carregado:true,provedor:'cpu',modelo:'birefnet-general'},fundos_modo:'local',
   sessoes:{v:2,pausa:60,rostos:true,rev:0,gen:'b97c',hoje:0,abertas:0,dias:1,visitas:{n:0,rev:0,rosto:ROSTO,rosto_em:null,calibracao:0}}});
 (async()=>{
@@ -15,7 +15,7 @@ try{
   await ctx.route(ORIG+'/events*',r=>r.fulfill({status:200,contentType:'application/json',body:'{"events":[],"next":0,"total":0}'}));
   await ctx.route(ORIG+'/biblioteca',r=>r.fulfill({status:200,contentType:'application/json',body:'{"fotos":[]}'}));
   await ctx.route(ORIG+'/sessoes*',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,gen:'b97c',rev:0,pausa:60,rostos:true,completo:true,sessoes:[]})}));
-  await ctx.route(ORIG+'/visitas',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rev:0,completo:true,visitas:[]})}));
+  await ctx.route(ORIG+'/visitas',r=>{GETS++;r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rev:0,completo:true,visitas:[]})});});
   await ctx.route(ORIG+'/visitas?*',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rev:0,completo:true,visitas:[]})}));
   await ctx.route(ORIG+'/visitas/config',r=>{const q=r.request();let j={};try{j=JSON.parse(q.postData()||'{}');}catch(e){}POSTS.push({j,x:q.headers()['x-eterna']});
     if(q.headers()['x-eterna']!=='1')return r.fulfill({status:403,contentType:'application/json',body:'{"error":"origem não autorizada"}'});
@@ -38,6 +38,12 @@ try{
   const naoAdm=await pg.evaluate(async()=>{const u=ETERNA.state.user;const outro=JSON.parse(JSON.stringify(u));outro.menu=['catalogo'];outro.perms={configuracao:{c:false,r:true,u:true,d:false},catalogo:{c:false,r:true,u:true,d:false}};
     ETERNA.state.user=outro;const html=ETERNA.visRostoPanel();await ETERNA.visRostoSalva(true);ETERNA.state.user=u;return {html,adm:ETERNA.isAdminUser?ETERNA.isAdminUser(outro):null};});
   ok(naoAdm.html===''&&POSTS.length===2,'não Admin: sem interruptor e sem POST: '+J({h:naoAdm.html.slice(0,40),n:POSTS.length}));
+  // revisão: agente reiniciado (gen novo) com o mesmo rev das visitas: o app puxa de novo
+  await pg.evaluate(()=>ETERNA.visPull());await pg.waitForTimeout(300);const g0=GETS;
+  await pg.evaluate(()=>ETERNA.visPull());await pg.waitForTimeout(300);
+  ok(GETS===g0,'mesmo gen e rev: não puxa de novo: '+(GETS-g0));
+  await pg.evaluate(()=>{ETERNA.state.agent.sessoes.gen='b97-reiniciado';return ETERNA.visPull();});await pg.waitForTimeout(300);
+  ok(GETS===g0+1,'gen novo com o mesmo rev: puxa de novo: '+(GETS-g0));
   // servidor do ponto fora: interruptor inativo
   await pg.evaluate(()=>{ETERNA.state.agent.sessoes=null;ETERNA.render();});await pg.waitForTimeout(200);
   const fora=await pg.evaluate(()=>{const c=document.querySelector('#vis-rosto [data-act="vis-rosto"]');return c&&c.disabled&&/Servidor do ponto fora/.test(document.getElementById('vis-rosto').textContent);});

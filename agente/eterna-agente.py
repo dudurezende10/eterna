@@ -2656,12 +2656,6 @@ def rec_livre_gb():
         return None
 
 
-def rec_conc():
-    """Trabalhadores de recorte ao mesmo tempo: 2 só com ETERNA_RECORTE_CONC=2 e a placa de vídeo (CUDA) aberta."""
-    with rec_lock:
-        return 2 if REC_CONC == 2 and rec.get("provedor") == "cuda" else 1
-
-
 def rec_status():
     ok, motivo = rec_estado()
     livre = rec_livre_gb()
@@ -3095,7 +3089,7 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
 
 
 def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT):
-    """Põe o recorte na fila (1 de cada vez; 2 só com CUDA, rec_conc) e espera. Devolve (caminho, erro)."""
+    """Põe o recorte na fila (1 de cada vez; 2 só com CUDA e ETERNA_RECORTE_CONC=2) e espera. Devolve (caminho, erro)."""
     lado = lado if lado in REC_LADOS else REC_LADO_MAX
     job, erro = rec_enfileirar(pid, origem, lado, prio)
     if erro:

@@ -3398,10 +3398,11 @@ setTimeout(livePoll,800);setInterval(livePoll,60000);setTimeout(upLoad,300);
 const SRV={gen:null,rev:0,busy:false,sess:{},mat:{},visRev:null,visBusy:false}; // mat: fechadas ainda não materializadas no SIM (até SRV_MAT_MAX por ciclo)
 const SRV_MAT_MAX=12;
 // v97: as visitas do agente (GET /visitas), puxadas quando o rev de /status.sessoes.visitas muda; SIM.visitas é cópia (o agente é o dono)
-async function visPull(){const a=state.agent;const vs=a&&a.sessoes&&a.sessoes.visitas;if(!a||!a.on||!vs||SRV.visBusy||vs.rev===SRV.visRev)return;SRV.visBusy=true;
+async function visPull(){const a=state.agent;const vs=a&&a.sessoes&&a.sessoes.visitas;const vk=(a&&a.sessoes&&a.sessoes.gen||'')+':'+(vs&&vs.rev); // revisão: o rev das visitas recomeça quando o agente reinicia; o gen (boot) separa
+  if(!a||!a.on||!vs||SRV.visBusy||vk===SRV.visRev)return;SRV.visBusy=true;
   try{const j=await (await fetch(a.url+'/visitas'+((a.sessoes.dias||1)>1?'?ontem=1':''),{cache:'no-store'})).json();if(!j||!j.ok)return;
     const levas={},grande={};(j.visitas||[]).forEach(v=>{if(!v||!Array.isArray(v.levas))return;if(v.levas.length>1)v.levas.forEach(c=>{levas[c]=v.levas.slice();});if(v.grande)v.levas.forEach(c=>{grande[c]=true;});});
-    SRV.visRev=vs.rev;const novo={rev:j.rev,levas,grande};if(JSON.stringify(novo)!==JSON.stringify(SIM.visitas||null)){SIM.visitas=novo;saveSim();}
+    SRV.visRev=vk;const novo={rev:j.rev,levas,grande};if(JSON.stringify(novo)!==JSON.stringify(SIM.visitas||null)){SIM.visitas=novo;saveSim();}
     if(state.lojaRota)lojaVisitaAtualiza();else if(state.view==='posto')render(); // a outra janela pode ter gravado antes (storage): redesenha mesmo assim
   }catch(e){}finally{SRV.visBusy=false;}}
 async function srvPull(){const a=state.agent;visPull();if(SRV.busy||!a.sessoes)return;SRV.busy=true;
@@ -5674,10 +5675,7 @@ document.addEventListener('click',e=>{
     case 'set-switch':case 'set-logout':{const old=state.user&&state.user.name;log(`${old} saiu do Upload automático`);logout();if(a==='set-switch'){state.auth_next='importar';state.auth.switching=old||'';render();}break;}
     case 'lib-f':{state.libF[d.k]=d.v;if(d.k==='day'){state.libF.per='dia';state.libF.who='todos';}render();break;}
     case 'fundos-modo':{toast('O recorte é sempre local');break;} // v97: o Photoroom saiu das opções (D6)
-    case 'fundos-modo-v84':{const m=el.dataset.m==='photoroom'?'photoroom':'local';if(fundosModo()===m)break;SIM.fundosModo=m;SIM.fundosModoPor={modo:m,nome:(state.user&&state.user.name)||'',em:now().toISOString()};log(`Montagem dos fundos de IA: ${m==='photoroom'?'Photoroom':'local'}`);Object.keys(COMP).forEach(k=>delete COMP[k]);FIA_RUIM.clear();saveSim();render();
-      fetch(state.agent.url+'/fundos/modo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:m})}).then(r=>r.ok?toast(m==='photoroom'?'Fundos de IA montados pelo Photoroom':'Fundos de IA montados no computador do ponto'):Promise.reject()).catch(()=>toast(m==='photoroom'?'O agente não confirmou: o Photoroom continua bloqueado nele':'Fundos de IA montados no computador do ponto'));break;}
     case 'pr-save':{toast('O recorte é sempre local');break;} // v97: o Photoroom saiu das opções (D6)
-    case 'pr-save-v84':{const inp=$('#pr-key');const key=(inp&&inp.value||'').trim();if(!key){toast('Cole a chave do Photoroom');break;}fetch(state.agent.url+'/photoroom/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})}).then(r=>r.json()).then(j=>{if(j.ok){const f=$('#pr-key');if(f)f.value='';toast(j.sandbox?'Photoroom conectado (modo de testes)':'Photoroom conectado');Object.keys(COMP).forEach(k=>delete COMP[k]);prPoll(true);}else toast(j.error||'Não deu para salvar');}).catch(()=>toast('Agente não encontrado'));break;}
     case 'comp-all':state.compAll=state.compAll===d.card?null:d.card;render();break;
     case 'price-reset':SIM.prices={};saveSim();toast('Preços de hoje restaurados');render();break;
     case 'stock-swap':roloTrocar(postoNome());render();break;
