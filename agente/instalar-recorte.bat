@@ -1,17 +1,27 @@
 @echo off
 rem Eterna - instala o recorte local dos fundos de IA (v97: BiRefNet + a regra do que encosta na pessoa), uma vez por computador.
-rem Cria %USERPROFILE%\Eterna\venv com versoes fixas e baixa os 4 modelos: birefnet-general, u2net_human_seg e isnet-general-use
-rem (pelo rembg, que confere o hash de cada um) e o MoveNet (SHA-256 conferido), cerca de 1,3 GB.
-rem Precisa de 16 GB de memoria. Servidor com placa NVIDIA: rode "instalar-recorte.bat gpu" (usa a placa; driver NVIDIA
-rem recente, serie RTX 50 exige driver e CUDA 12.8 ou mais novos). Rodar de novo nao baixa nada que ja esteja certo.
+rem Cria %USERPROFILE%\Eterna\venv com as versoes fixas de recorte-requisitos.txt (todas as rodas, com SHA-256 conferido pelo
+rem pip: --require-hashes) e baixa os 4 modelos: birefnet-general, u2net_human_seg e isnet-general-use (pelo rembg, que confere
+rem o hash de cada um) e o MoveNet (SHA-256 conferido), cerca de 1,3 GB.
+rem Precisa de 16 GB de memoria. Servidor com placa NVIDIA: rode "instalar-recorte.bat gpu" (usa recorte-requisitos-gpu.txt:
+rem onnxruntime-gpu com CUDA 13 e cuDNN 9 por pip, sem o onnxruntime de CPU; driver NVIDIA 580 ou mais novo).
+rem Rodar de novo nao baixa nada que ja esteja certo. Servidor do estadio (servico como SYSTEM): o venv do servico fica fora
+rem do perfil do usuario, so Administradores e SYSTEM gravam (passo do Ronaldo no docs/CHECKLIST-SERVIDOR.md); use
+rem "instalar-recorte.bat gpu C:\caminho\do\venv" para instalar nele.
 rem Depois, feche e abra o agente (iniciar-eterna.bat): ele passa a usar o Python do venv.
 chcp 65001 >nul
 title Eterna - instalar recorte local
 cd /d "%~dp0"
 set "VENV=%USERPROFILE%\Eterna\venv"
-set "PACOTES=rembg==2.0.86 onnxruntime==1.29.0 opencv-python-headless==4.10.0.84 psutil==7.2.2"
-rem Versao do onnxruntime da placa: a confirmar pelo Ronaldo no servidor (mesma versao do onnxruntime da CPU).
-set "PACOTE_GPU=onnxruntime-gpu[cuda,cudnn]==1.29.0"
+if not "%~2"=="" set "VENV=%~2"
+set "REQ=recorte-requisitos.txt"
+set "GPU="
+if /i "%~1"=="gpu" (
+  set "GPU=1"
+  set "REQ=recorte-requisitos-gpu.txt"
+)
+set "PIPI=--disable-pip-version-check --require-hashes --only-binary=:all:"
+set "BASE=https://raw.githubusercontent.com/dudurezende10/eterna/main/agente"
 where python >nul 2>nul
 if errorlevel 1 (
   echo Python nao encontrado. Instale o Python 3.12 em https://www.python.org/downloads/
@@ -29,33 +39,53 @@ if not exist "%VENV%\Scripts\python.exe" (
     exit /b 1
   )
 )
-echo Instalando %PACOTES% (pode levar alguns minutos)...
-"%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check %PACOTES%
+set "PY=%VENV%\Scripts\python.exe"
+for %%f in (%REQ% recorte-requisitos-ort-gpu.txt instalar-recorte-modelos.py) do (
+  if not exist %%f curl -fsSL -o %%f %BASE%/%%f
+)
+if defined GPU (
+  rem onnxruntime (CPU) e onnxruntime-gpu dividem a mesma pasta: o de CPU sai antes; se os dois estavam instalados, sai o
+  rem da placa tambem e a linha de baixo instala de novo, limpo (do cache do pip, sem baixar outra vez).
+  "%PY%" -m pip show -q onnxruntime >nul 2>nul
+  if not errorlevel 1 (
+    echo Tirando o onnxruntime de CPU, que ocupa a mesma pasta do onnxruntime da placa de video...
+    "%PY%" -m pip uninstall -y -q onnxruntime onnxruntime-gpu
+  )
+) else (
+  "%PY%" -m pip show -q onnxruntime-gpu >nul 2>nul
+  if not errorlevel 1 (
+    echo Este computador tinha o onnxruntime da placa de video; trocando pelo de CPU...
+    "%PY%" -m pip uninstall -y -q onnxruntime onnxruntime-gpu
+  )
+)
+echo Instalando as versoes fixas de %REQ% (com o hash de cada arquivo; pode levar alguns minutos)...
+"%PY%" -m pip install %PIPI% -r %REQ%
 if errorlevel 1 (
-  echo Nao deu para instalar.
+  echo Nao deu para instalar. Se o erro fala de hash, o arquivo baixado nao confere: nao continue e avise o Eduardo.
   pause
   exit /b 1
 )
-if /i "%~1"=="gpu" (
-  echo Trocando o onnxruntime pelo da placa de video: %PACOTE_GPU% com as bibliotecas CUDA e cuDNN...
-  "%VENV%\Scripts\python.exe" -m pip uninstall -y onnxruntime
-  "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check "%PACOTE_GPU%"
+if defined GPU (
+  "%PY%" -c "import onnxruntime as o, sys; sys.exit(0 if 'CUDAExecutionProvider' in o.get_available_providers() else 1)" 2>nul
   if errorlevel 1 (
-    echo Nao deu para instalar o onnxruntime da placa de video.
-    pause
-    exit /b 1
+    echo O onnxruntime da placa de video ficou sem o provedor CUDA: instalando de novo so ele...
+    "%PY%" -m pip install %PIPI% --force-reinstall --no-deps -r recorte-requisitos-ort-gpu.txt
+    if errorlevel 1 (
+      echo Nao deu para instalar o onnxruntime da placa de video.
+      pause
+      exit /b 1
+    )
   )
 )
-if not exist instalar-recorte-modelos.py curl -fsSL -o instalar-recorte-modelos.py https://raw.githubusercontent.com/dudurezende10/eterna/main/agente/instalar-recorte-modelos.py
 echo Baixando os modelos do recorte (birefnet-general, u2net_human_seg, isnet-general-use e MoveNet; cerca de 1,3 GB)...
-"%VENV%\Scripts\python.exe" instalar-recorte-modelos.py
+"%PY%" instalar-recorte-modelos.py
 if errorlevel 1 (
   echo Nao deu para baixar os modelos.
   pause
   exit /b 1
 )
-if /i "%~1"=="gpu" (
-  "%VENV%\Scripts\python.exe" instalar-recorte-modelos.py --provedor
+if defined GPU (
+  "%PY%" instalar-recorte-modelos.py --provedor
   if errorlevel 1 echo ATENCAO: a placa de video nao abriu; o recorte vai rodar no processador. Confira o driver NVIDIA.
 )
 echo.
