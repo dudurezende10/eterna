@@ -2702,7 +2702,7 @@ function drawLojaQR(){const el=$('#lqr');if(!el)return;const p=state.kiosk.paid|
 let lojaQRrz=0;window.addEventListener('resize',()=>{clearTimeout(lojaQRrz);lojaQRrz=setTimeout(()=>{if(state.lojaRota&&state.kiosk.step==='done'&&$('#lqr .lj-final,.lj-final #lqr'))drawLojaQR();},150);});
 // ---------- Loja apartada: rota pública #loja, sem login, sempre em tela cheia ----------
 // Saída da rota só pela equipe: Esc ou 3 toques seguidos no logo. O cliente volta ao Iniciar pelo Sair ou pelos botões de início; sozinho, o Checkout volta
-// com a escolha parada 90 s (LOJA_ESCOLHA_MS), a tela Pronto ou do valor parada 3 min (LOJA_PRONTO_MS) e a tela final do QR (lojaFimSeg, 30 s por padrão).
+// com a escolha parada 90 s (LOJA_ESCOLHA_MS), a tela Pronto ou do valor parada 3 min (LOJA_PRONTO_MS) e a tela final do QR (lojaFimSeg, 40 s por padrão).
 // O temporizador da tela final (k.timer) morre ao sair da rota, trocar de etapa ou recarregar; os prazos de escolha e Pronto são conferidos a cada 5 s.
 const LOJA_VENDEDOR='Checkout (autoatendimento)';
 const LOJA_FIM_PADRAO=40,LOJA_FIM_MIN=5,LOJA_FIM_MAX=120;
@@ -5763,6 +5763,7 @@ function migrateUser(x){if(!x||typeof x!=='object')return x;const pr=x.preset;
     if(!x.mff87){if(pr&&pr!=='custom'&&PRESETS[pr]&&presetMenu(pr).includes('fotofila')&&!x.menu.includes('fotofila'))x.menu.push('fotofila');x.mff87=1;} // v87: Fila do fotógrafo nos perfis da D6 (uma vez)
     if(!x.msis94)migraSis94(x); // v94-ux: Supervisora sem as telas do grupo Sistema (uma vez)
     if(!x.menv96)migraEnvio96(x); // v96-ux: Supervisora com set.c para enviar as fotos do cartão pela tela (uma vez)
+    if(!x.msup98){if(x.preset==='supervisor')x.menu=x.menu.filter(v=>v!=='chute-a-gol');x.msup98=1;} // junção v97+ondas: Chute a gol fora do menu da Supervisora que já tinha migrado (uma vez)
     x.menu=x.menu.filter(v=>MODULE_OF[v]);}
   x.mv=83;
   if(x.inicio&&x.inicio!=='perfis'&&!MODULE_OF[x.inicio])x.inicio=null;

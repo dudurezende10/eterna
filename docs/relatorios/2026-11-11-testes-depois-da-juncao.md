@@ -10,13 +10,19 @@ Rodada de `testes/*.js` no servidor de teste (`idiomas-base`, até a v98.1 `c4fe
 
 | Onde | O que acontece | Origem | Teste que pega |
 |---|---|---|---|
-| Galeria da venda | Nenhuma galeria de venda é publicada no servidor do ponto: o agente recusa com "preços inválidos". Desde a v98.1 o app manda `precos:{todas}` sem `dig` (`galNovo` e `pubGaleria`) e o agente exige os dois (`agente/eterna-agente.py`, validação da galeria). A nuvem aceita `dig` ausente; o agente não. | v98.1 | operacao-agente, caixa-galeria-agente |
-| Tela final do QR no Checkout | A contagem começa em 30 e não em 40. A v97.1 trocou `LOJA_FIM_PADRAO` para 40, mas o estado inicial (`SIM0`) ainda grava `lojaFimSeg:30`, que é um valor válido e vence o padrão. Pontos que já gravaram 30 continuam com 30 mesmo depois de corrigir o `SIM0`. | v97.1 | galeria-qr, v96-testador (item 4) |
 | Ranking de produtos no Painel | "Cortesia porta-retrato" entra no ranking como venda de Porta-retrato com R$ 0, depois dos itens sem venda. `prodKey0` testa "porta-retrato" antes de "cortesia". | v98 | painel (critério 8) |
-| Menu da Supervisora | A Supervisora vê o grupo Sistema só com "Chute a gol". A lista de telas escondidas da Supervisora (`SUP_SEM94`) é das ondas de UX e não tem o Chute a gol, que veio do laboratório v97. | junção | v78-regressao |
 | Menu do Admin em 1366×768 | O menu rola 58 px. Os dois botões amarelos no alto (Abrir Checkout e Caixa, `cace1c4`) ocupam 90 px, e o critério H1 das ondas pede o menu sem rolar. | v96-ux | ondas-ux-h (H1) |
 | Fundos de IA (técnico) | O texto "O Photoroom fica como opção em Preços e Checkout › Avançado" voltou com a junção; o recorte v97 tinha tirado o Photoroom das opções. | junção | v84 (critério 12) |
 | Fontes | `Barlow Condensed` voltou como fonte reserva em `.es-tend` e `.es-g-card` (Estatísticas v97-agenda). A Onda A tirou Cormorant e Barlow do `index.html`. | v97-agenda | ondas-ux-a |
+
+## Defeitos corrigidos depois (11/11, com o ok do Ronaldo)
+
+| Onde | O que acontecia | Correção |
+|---|---|---|
+| Galeria da venda | O agente recusava a galeria com "preços inválidos": desde a v98.1 o app manda só `precos.todas`. | O agente aceita a galeria sem `dig`, como a nuvem. Sem preço por foto, `dig` fica igual a `todas`: qualquer compra online pelo agente custa o pacote, nunca R$ 0. Sem `todas` continua recusada. |
+| Compra na galeria (app) | Sem a Foto digital avulsa, o preço por foto virou 0: a galeria mostrava e gravava a compra online por R$ 0. | Mesma regra do agente (`pubPrecos`): sem preço por foto, qualquer compra custa o pacote. |
+| Tela final do QR no Checkout | Contagem em 30 s pelo `SIM0`. | `SIM0` grava 40. Ponto que já gravou 30 continua com 30 (não dá para saber se foi escolha): troque em Preços e Checkout › Checkout. |
+| Menu da Supervisora | Grupo Sistema aparecia só com "Chute a gol". | `chute-a-gol` entrou em `SUP_SEM94`; uma migração única (`msup98`) tira a tela da Supervisora salva que já tinha migrado. A permissão do Laboratório dela não muda. |
 
 ## Testes corrigidos (desatualizados)
 
@@ -29,6 +35,7 @@ Rodada de `testes/*.js` no servidor de teste (`idiomas-base`, até a v98.1 `c4fe
 | ondas-ux-i | Aba Avançado sem "Montagem dos fundos" (recorte sempre local, `1589be1`); altura da aba Preços medida por produto, porque a v98 tem 12 produtos com a linha do SKU. |
 | v81, permissoes (gaveta) | Pasta Laboratório dentro do Sistema é subpasta, com estilo próprio (`a9b4028`). |
 | ondas-ux-e (E9), v79-regressao, painel, checkout-tela-cheia | Catálogo da Imply (v98 e v98.1): 12 produtos com os nomes da Imply, Fundo de IA fora, "3 fotos digitais e impressas" empata com a Zona Mista e o Ideal escolhe a que imprime mais (D11). |
+| galeria-qr | Tela final do QR com "Comprar mais fotos" antes de "Voltar ao início" (`d5c5d65`); sem preço por foto, a compra online custa o pacote (v98.1). |
 | checkout-tela-cheia | Tela final: QR, instrução da câmera, "ou acesse eterna.photo/g e digite o código" e o código, nessa ordem (`2a1cd80`). Antes o teste estourava o tempo; agora termina. |
 | agenda-estatisticas, visitas-config, posto-checkout, operacao-agente, seg-pareamento-codigo-agente, caixa-galeria-agente | Fonte dos jogos, rosto da família e Postos deste ponto na aba Avançado (v97-junta); aviso do aparelho sem posto "ainda não é um posto" (`5b5d876`). |
 | cliques-ia-e2e | Rotas da equipe no agente pedem sessão (v93): o teste usa a sessão de um admin no HOME temporário (`_agente_sessao`). |

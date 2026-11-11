@@ -66,7 +66,7 @@ try{
     await C.clock.runFor(9000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: com 10 s, aos 9 s a tela final deveria continuar');
     await C.clock.runFor(1300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: com 10 s, deveria voltar aos 10 s');}
   // botão antes do tempo
-  const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-restart');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Voltar ao início" deveria voltar na hora');
+  const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-restart[data-act="loja-new"]');/* "Comprar mais fotos" (d5c5d65) também é .lj-restart e vem antes */ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Voltar ao início" deveria voltar na hora');
   // ---------- 23. escolha parada 90 s sem toque volta ao Iniciar e apaga as marcas (Eduardo, 10/11; substitui o "A3 cancelado" de 27/10) ----------
   dbg('23. escolha parada 90 s volta ao Iniciar');
   const card4=cards[4]||cards[0]; // v79: card3 já foi paga e sessão paga não abre a escolha de novo (revisão 1)
@@ -139,7 +139,8 @@ try{
   // ---------- 10 e 11. compra na galeria ----------
   dbg('10 e 11. compra na galeria');
   const g11=await G.evaluate(()=>{document.querySelector('[data-act="gq-all"]').click();const n=document.querySelectorAll('.gq-sel.on').length;return {n,bar:document.querySelector('.gq-bar').innerText,dig:ETERNA.SIM.prices.dig,};});
-  const precos=await G.evaluate(()=>({dig:(ETERNA.SIM.prices.dig!=null?ETERNA.SIM.prices.dig:39),mais:(ETERNA.SIM.prices.mais!=null?ETERNA.SIM.prices.mais:250)}));
+  // v98.1: sem Foto digital avulsa no catálogo, sem preço por foto: qualquer compra na galeria custa o pacote
+  const precos=await G.evaluate(()=>{const mais=ETERNA.priceOf('mais');return {dig:ETERNA.priceOf('dig')||mais,mais};});
   const esperado=Math.min(g11.n*precos.dig,precos.mais);ok(g11.bar.replace(/\./g,'').replace(/\s/g,' ').includes('R$ '+esperado),'11: todas deveria cobrar '+esperado+': '+g11.bar);
   await G.screenshot({path:PR+'/galeria-cel-galeria.png',fullPage:false});
   await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});const umPid=await G.evaluate(()=>{const b=document.querySelector('[data-act="gq-sel"]');b.click();return b.dataset.pid;});
