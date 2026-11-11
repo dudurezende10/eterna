@@ -540,7 +540,8 @@ def envio_dia_n():
     if envio_dia["dia"] != hoje:
         n = 0
         try:
-            j = json.load(open(ENVIO_DIA_ARQ))
+            with open(ENVIO_DIA_ARQ) as f:
+                j = json.load(f)
             if j.get("dia") == hoje:
                 n = max(0, int(j.get("n") or 0))
         except Exception:
@@ -1513,13 +1514,10 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
                 m["fotos"] = [f for f in m["fotos"] if f not in fora]
                 REPO.salvar_manifesto(t, m)
                 for f in fora:
-                    for v in ("original", "vitrine"):
-                        try:
-                            arq = REPO._arq(t, f["id"], v)
-                            if os.path.exists(arq):
-                                os.remove(arq)
-                        except (AttributeError, ValueError, OSError):
-                            pass
+                    try:
+                        REPO.apagar_foto(t, f["id"])
+                    except (ValueError, OSError) as ex:
+                        falhas.append("cópia da galeria: " + str(ex)[:80])
             nuvem_galeria_enfileira(t)
         except Exception as ex:
             falhas.append("galeria: " + str(ex)[:80])
@@ -3832,6 +3830,7 @@ class Repositorio:
     def url(self, token, pid, variante, ttl): raise NotImplementedError
     def abrir(self, token, pid, variante): raise NotImplementedError
     def apagar(self, token): raise NotImplementedError
+    def apagar_foto(self, token, pid): raise NotImplementedError
     def listar_expiradas(self, agora): raise NotImplementedError
 
 
@@ -3886,6 +3885,13 @@ class RepositorioLocal(Repositorio):
 
     def apagar(self, token):
         shutil.rmtree(self._dir(token), ignore_errors=True)
+
+    def apagar_foto(self, token, pid):
+        """Tira da galeria as cópias de uma foto (original e vitrine); o manifesto é de quem chama."""
+        for v in ("original", "vitrine"):
+            arq = self._arq(token, pid, v)
+            if os.path.exists(arq):
+                os.remove(arq)
 
     def listar_expiradas(self, agora):
         out = []
@@ -8762,11 +8768,12 @@ class H(BaseHTTPRequestHandler):
                         break
                     f.write(ch)
                     resto -= len(ch)
+            erro_jpeg = None if resto else jpeg_envio_erro(tmp, n)   # o arquivo é lido uma vez só
             if resto:
                 motivo = ({"erro": "lenta"}, 408) if lenta else ({"erro": "incompleta"}, 400)
                 self.close_connection = True
-            elif jpeg_envio_erro(tmp, n):
-                motivo = ({"erro": "incompleta"}, 400) if jpeg_envio_erro(tmp, n) == "incompleta" else ({"erro": "nao_jpeg"}, 415)
+            elif erro_jpeg:
+                motivo = ({"erro": "incompleta"}, 400) if erro_jpeg == "incompleta" else ({"erro": "nao_jpeg"}, 415)
             else:
                 r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
                 if r == "new":
