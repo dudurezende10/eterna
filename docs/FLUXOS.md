@@ -117,7 +117,7 @@ flowchart TB
 | Receber fotos pelo FTP, pasta vigiada, cartão ou FTP da rede local | Funciona | A rede local precisa estar de pé |
 | Ler rostos e montar sessões | Funciona | Os modelos precisam já estar no disco; a primeira carga deles vem do site |
 | Selfie no Checkout | Funciona | A busca roda no servidor |
-| Abrir o app em um ponto | Funciona com condição | O servidor precisa ter buscado o app desde que ligou. Servidor reiniciado sem internet responde "app indisponível" |
+| Abrir o app em um ponto | Funciona com condição | O servidor precisa ter buscado o app desde que ligou. Servidor reiniciado sem internet responde `app_indisponivel` |
 | Tela já aberta | Funciona | Não depende de recarregar |
 | Login da equipe | Funciona | Hoje o código é gerado no navegador |
 | Registrar venda | Funciona | A maquininha é avulsa; a conexão dela é não confirmado neste código |

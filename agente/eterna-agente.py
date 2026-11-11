@@ -54,7 +54,25 @@ def _ler_nuvem_env():
 _ler_nuvem_env()
 MAX_PIXELS = 40_000_000
 PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
-APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")
+APP_ORIGIN_PADRAO = "https://eterna.photo"
+
+
+def app_origem_ok(o):
+    """De onde o agente baixa o app: só https://, ou http:// neste computador (testes e desenvolvimento). Sem usuário e senha."""
+    try:
+        u = urlparse(o or "")
+        host = (u.hostname or "").lower()
+        if not host or u.username or u.password:
+            return False
+        return u.scheme == "https" or (u.scheme == "http" and host in ("127.0.0.1", "localhost", "::1"))
+    except ValueError:
+        return False
+
+
+APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN") or APP_ORIGIN_PADRAO
+APP_ORIGIN_RECUSADA = not app_origem_ok(APP_ORIGIN)    # o main() avisa no console
+if APP_ORIGIN_RECUSADA:
+    APP_ORIGIN = APP_ORIGIN_PADRAO
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
 # v97: cópia do app em disco (~/Eterna/app-cache/), para o agente reiniciado sem internet continuar servindo o app,
@@ -79,7 +97,27 @@ APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js",
                   "vendor/ort/ort.min.js", "vendor/ort/ort-wasm-simd.wasm", "vendor/ort/ort-wasm.wasm",
                   "vendor/rostos/face_detection_yunet_2023mar.onnx", "vendor/rostos/face_recognition_sface_2021dec.onnx",
                   "vendor/faceapi/indice-exemplos.json"]
+# os fundos de IA ativos no Checkout (BG_DEF do app, com as variações da Noite de campeão): sem eles a família fica sem as
+# montagens quando a rede cai. Manter igual ao app; o teste testes/app_offline_agente.py confere com o index.html.
+APP_FUNDOS_ATIVOS = ["img/bg-campeao-v81.jpg", "img/bg-campeaoarg.jpg", "img/bg-campeaocol.jpg", "img/bg-mirantesol.jpg",
+                     "img/bg-pb1950.jpg", "img/bg-tunel.jpg", "img/bg-telao.jpg"]
 app_disco_lock = threading.Lock()
+APP_FORA_SEG = 45                           # origem fora: por este tempo ninguém tenta a rede de novo (502 ou disco na hora)
+app_fora = {"ate": 0.0}
+app_travas = {}                             # caminho -> trava: o mesmo arquivo não é baixado duas vezes ao mesmo tempo
+app_travas_lock = threading.Lock()
+
+
+class AppFora(Exception):
+    pass
+
+
+def app_trava(rel):
+    with app_travas_lock:
+        if len(app_travas) > 500:           # caminhos pedidos uma vez só não ficam para sempre
+            for k in [k for k, t in app_travas.items() if not t.locked()]:
+                app_travas.pop(k, None)
+        return app_travas.setdefault(rel, threading.Lock())
 app_revisto = set()                         # caminhos já baixados de novo nesta abertura do agente
 app_fila = queue.Queue()                    # revisão em segundo plano do que foi servido do disco
 
@@ -164,10 +202,19 @@ def app_disco_podar(manter):
 
 
 def app_baixar(rel, timeout=20):
+    if time.time() < app_fora["ate"]:
+        raise AppFora()                             # a origem acabou de falhar: não espera a rede de novo
     url = APP_ORIGIN.rstrip("/") + "/" + rel + ("?t=%d" % int(time.time()) if rel == "index.html" else "")
     req = urllib.request.Request(url, headers={"User-Agent": "eterna-agente"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = r.read(APP_ARQ_MAX + 1)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read(APP_ARQ_MAX + 1)
+    except urllib.error.HTTPError:
+        raise                                       # a origem respondeu (404, 500): está no ar
+    except OSError:                                 # sem rede, recusada, tempo esgotado (URLError e timeout são OSError)
+        app_fora["ate"] = time.time() + APP_FORA_SEG
+        raise
+    app_fora["ate"] = 0.0
     if len(data) > APP_ARQ_MAX:
         raise ValueError("arquivo grande demais")
     return data
@@ -180,37 +227,51 @@ def app_buscar(rel):
     if rel == "index.html":
         if mem and time.time() - mem[1] <= 60:
             return mem[0], "memoria"
-        disco = None if mem else app_disco_ler(rel)
-        try:
-            data = app_baixar(rel, timeout=8 if (mem or disco) else 20)
-        except Exception:
-            if mem:
-                app_cache[rel] = (mem[0], time.time() - 50)   # tenta a rede de novo em ~10 s
-                return mem[0], "memoria"
-            if disco is not None:
-                app_cache[rel] = (disco, time.time() - 50)
-                return disco, "disco"
-            raise
-        app_disco_gravar(rel, data)
-        app_cache[rel] = (data, time.time())
-        app_revisto.add(rel)
-        return data, "rede"
+        with app_trava(rel):
+            return _app_buscar_index(rel)
     if mem:
         return mem[0], "memoria"
     disco = app_disco_ler(rel)
-    if disco is not None:
-        if rel not in app_revisto:
-            app_revisto.add(rel)
-            try:
-                os.utime(app_disco(rel))           # usado agora: fica por último na poda
-            except OSError:
-                pass
-            app_fila.put(rel)
-        return disco, "disco"
-    data = app_baixar(rel)
+    if disco is None:
+        with app_trava(rel):                       # quem esperou a trava encontra o arquivo já baixado
+            mem = app_cache.get(rel)
+            if mem:
+                return mem[0], "memoria"
+            disco = app_disco_ler(rel)
+            if disco is None:
+                data = app_baixar(rel)
+                app_revisto.add(rel)
+                if not app_disco_gravar(rel, data):
+                    app_cache[rel] = (data, time.time())   # disco cheio ou sem permissão: fica só em memória, como antes
+                return data, "rede"
+    if rel not in app_revisto:
+        app_revisto.add(rel)
+        try:
+            os.utime(app_disco(rel))               # usado agora: fica por último na poda
+        except OSError:
+            pass
+        app_fila.put(rel)
+    return disco, "disco"
+
+
+def _app_buscar_index(rel):
+    mem = app_cache.get(rel)
+    if mem and time.time() - mem[1] <= 60:
+        return mem[0], "memoria"
+    disco = None if mem else app_disco_ler(rel)
+    try:
+        data = app_baixar(rel, timeout=8 if (mem or disco) else 20)
+    except Exception:
+        if mem:
+            app_cache[rel] = (mem[0], time.time() - 50)   # tenta a rede de novo em ~10 s
+            return mem[0], "memoria"
+        if disco is not None:
+            app_cache[rel] = (disco, time.time() - 50)
+            return disco, "disco"
+        raise
+    app_disco_gravar(rel, data)
+    app_cache[rel] = (data, time.time())
     app_revisto.add(rel)
-    if not app_disco_gravar(rel, data):
-        app_cache[rel] = (data, time.time())       # disco cheio ou sem permissão: fica só em memória, como antes
     return data, "rede"
 
 
@@ -227,21 +288,30 @@ def app_revisar_loop():
 def app_preaquecer():
     """Na abertura: baixa o index.html e o que falta dos essenciais do Checkout, sem travar o início. Depois, sem contar
     para o app_offline_pronto, os fundos de IA (prévia e impressão), que o Checkout e o Posto montam no navegador."""
-    extras = sorted(set(FUNDOS_PREVIA.values()) | set(FUNDOS_IMPRESSAO.values()))
-    for rel in APP_ESSENCIAIS + extras:
-        try:
-            if rel == "index.html":
-                app_buscar(rel)
-            elif app_disco_ler(rel) is None:
-                data = app_baixar(rel)
-                app_revisto.add(rel)
-                app_disco_gravar(rel, data)
-        except Exception:
-            pass
+    extras = [r for r in sorted(set(FUNDOS_PREVIA.values()) | set(FUNDOS_IMPRESSAO.values())) if r not in APP_FUNDOS_ATIVOS]
+    for volta in range(APP_PRE_VOLTAS):             # origem fora na abertura: tenta de novo de minuto em minuto
+        for rel in APP_ESSENCIAIS + APP_FUNDOS_ATIVOS + extras:
+            try:
+                if rel == "index.html":
+                    app_buscar(rel)
+                elif app_disco_ler(rel) is None:
+                    with app_trava(rel):
+                        if app_disco_ler(rel) is None:
+                            data = app_baixar(rel)
+                            app_revisto.add(rel)
+                            app_disco_gravar(rel, data)
+            except Exception:
+                pass
+        if app_offline_pronto():
+            break
+        time.sleep(APP_PRE_ESPERA)
+
+
+APP_PRE_VOLTAS, APP_PRE_ESPERA = 30, 60
 
 
 def app_offline_pronto():
-    for rel in APP_ESSENCIAIS:
+    for rel in APP_ESSENCIAIS + APP_FUNDOS_ATIVOS:
         p = app_disco(rel)
         if not p or not os.path.isfile(p):
             return False
@@ -9406,11 +9476,12 @@ class H(BaseHTTPRequestHandler):
         try:
             data, _ = app_buscar(rel)
         except urllib.error.HTTPError as ex:
-            return self.js({"error": "not found"}, 404) if ex.code == 404 else self.js({"error": "app indisponível: HTTP %d" % ex.code}, 502)
-        except Exception as ex:
-            return self.js({"error": "app indisponível: %s" % str(ex)[:120]}, 502)
+            return self.js({"error": "not found"}, 404) if ex.code == 404 else self.js({"error": "app_indisponivel"}, 502)
+        except Exception:
+            return self.js({"error": "app_indisponivel"}, 502)
         self.send_response(200)
         self.send_header("Content-Type", APP_TIPOS[os.path.splitext(rel)[1].lower()])
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache" if rel == "index.html" else "max-age=3600")
         self.end_headers()
@@ -9436,6 +9507,8 @@ def main():
     print("Eterna · agente do ponto")
     if os.environ.get("ETERNA_RECORTE_FALSO"):
         print("  ETERNA_RECORTE_FALSO ignorado: o recorte falso é só dos testes (v93, segurança S2)")
+    if APP_ORIGIN_RECUSADA:
+        print("  ETERNA_APP_ORIGIN ignorado: precisa ser https:// (http:// só para 127.0.0.1 ou localhost). Usando %s" % APP_ORIGIN_PADRAO)
     for x in ORIGENS_SEM_ESQUEMA:
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta
