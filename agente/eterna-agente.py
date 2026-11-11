@@ -1156,15 +1156,35 @@ def nuvem_reenviar():
     return {"ok": True, "fotos": fotos, "galerias": gals}
 
 
+def lgpd_galerias_abertas():
+    """Manifestos publicados que ainda valem (nem encerrados nem vencidos): [(token, manifesto)]."""
+    out = []
+    base = getattr(REPO, "base", None)
+    for t in (os.listdir(base) if base and os.path.isdir(base) else []):
+        m = REPO.ler_manifesto(t) if token_ok(t) else None
+        if m and isinstance(m.get("fotos"), list) and not gal_expirou(m):
+            out.append((t, m))
+    return out
+
+
 def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
     """O cliente pediu para apagar as fotos dele (LGPD, art. 18): some do disco (foto, miniatura, recorte), do índice,
     dos rostos lidos, da fila e do bucket da nuvem; as galerias são encerradas aqui e na nuvem (que apaga os rostos
     da AWS). A venda continua no registro financeiro, sem as fotos. Fica uma linha em lgpd.log sem dado pessoal."""
     fotos, nuvem_apagadas, falhas = 0, 0, []
     dias, linhas_foto, apagados_sess = set(), [], []
+    # foto comprada ou de cortesia numa galeria publicada que ainda vale fica com o cliente: não sai daqui nem da nuvem,
+    # e a galeria que tem alguma delas não é encerrada (só perde as fotos apagadas)
+    abertas = lgpd_galerias_abertas()
+    do_cliente = {pid_lib(str(f.get("id") or "")) for _, m in abertas for f in m["fotos"]
+                  if isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia")}
+    preservadas = 0
     for pid in pids:
         pid = pid_lib(pid) if pid_ok(pid) else None
         if not pid:
+            continue
+        if pid in do_cliente:
+            preservadas += 1
             continue
         with lock:
             e = lib.pop(pid, None)
@@ -1236,24 +1256,56 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             _grava_privado(LGPD_EXCLUIDAS, json.dumps(sorted(lgpd_excluidas)))
         except Exception as ex:
             falhas.append(str(ex)[:80])
-    galerias = 0
+    galerias, mantidas = 0, 0
+    fechar = set()
     for t in tokens:
         if not token_ok(t):
             continue
         with gal_lock:
             m = REPO.ler_manifesto(t)
+            if m and any(isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia") for f in (m.get("fotos") or [])) and not gal_expirou(m):
+                mantidas += 1                 # tem foto do cliente: continua no ar
+                continue
             if m:
                 m["expira"], m["encerrada"], m["lgpd"] = _iso(), True, True
                 REPO.salvar_manifesto(t, m)
                 galerias += 1
+        fechar.add(t)
         nuvem_galeria_enfileira(t)            # na nuvem: sai do ar, código curto e rostos apagados
+    # galeria que continua no ar perde as fotos apagadas (manifesto e cópias), sem esperar a republicação do app
+    sairam = set(apagados_sess)
+    for t, _ in (abertas if sairam else []):
+        if t in fechar:
+            continue
+        try:
+            with gal_lock:
+                m = REPO.ler_manifesto(t)
+                if not m or gal_expirou(m):
+                    continue
+                fora = [f for f in (m.get("fotos") or []) if isinstance(f, dict) and pid_lib(str(f.get("id") or "")) in sairam]
+                if not fora:
+                    continue
+                m["fotos"] = [f for f in m["fotos"] if f not in fora]
+                REPO.salvar_manifesto(t, m)
+                for f in fora:
+                    for v in ("original", "vitrine"):
+                        try:
+                            arq = REPO._arq(t, f["id"], v)
+                            if os.path.exists(arq):
+                                os.remove(arq)
+                        except (AttributeError, ValueError, OSError):
+                            pass
+            nuvem_galeria_enfileira(t)
+        except Exception as ex:
+            falhas.append("galeria: " + str(ex)[:80])
     with open(LGPD_LOG, "a", encoding="utf8") as fh:
         for ln in linhas_foto:
             fh.write(ln + "\n")
         fh.write("%s exclusão a pedido do cliente: %d foto(s), %d na nuvem, %d galeria(s), por %s%s\n" % (
             time.strftime("%Y-%m-%d %H:%M:%S"), fotos, nuvem_apagadas, galerias, quem or "-", (" · falhas: " + "; ".join(falhas)) if falhas else ""))
     print(f"  LGPD: {fotos} foto(s) e {galerias} galeria(s) apagadas a pedido do cliente")
-    return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "falhas": falhas[:5]}
+    return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "preservadas": preservadas,
+            "galerias_mantidas": mantidas, "falhas": falhas[:5]}
 
 
 def nuvem_versoes(arquivo, pid):
