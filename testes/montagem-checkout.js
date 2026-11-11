@@ -63,8 +63,11 @@ try{
     await pg.evaluate(([c,ids])=>{const S=ETERNA.SIM;S.invalid={};ids.forEach(id=>{ETERNA.UP['ag_'+id]={src:location.origin+'/thumb/'+id,name:id};});(S.sessions[c].photos||[]).forEach(p=>delete p.invalid);localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.ljEdEsperaMs(1500);ETERNA.montDeNovoMs(250);},[CARD,[...BASES,...FOTOS]]);
     return pg;};
   // (a leva vem do agente falso a cada leitura das sessões: se o código cair no meio de uma leitura, tenta de novo)
-  const abrir=async pg=>{for(let i=0;i<4;i++){await pg.evaluate(()=>{ETERNA.lojaReset();ETERNA.state.kiosk.step='emerg';ETERNA.render();});await pg.waitForTimeout(120);await pg.fill('#kcode',CARD);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(250);
-    if(await pg.evaluate(c=>ETERNA.state.kiosk.code===c,CARD))return;await pg.waitForTimeout(400);}};
+  const abrir=async pg=>{for(let i=0;i<4;i++){await pg.evaluate(()=>{ETERNA.lojaReset();ETERNA.state.kiosk.step='emerg';ETERNA.render();});await pg.waitForTimeout(120);await pg.fill('#kcode',CARD);
+    if(i===0)await pg.evaluate(()=>ETERNA.render()); // redesenho no meio da digitação (validação de foto nova, leitura do agente): o código digitado fica
+    await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(250);
+    if(await pg.evaluate(c=>ETERNA.state.kiosk.code===c,CARD))return;
+    notas.abrir_de_novo=(notas.abrir_de_novo||[]).concat(await pg.evaluate(c=>({tem:!!ETERNA.SIM.sessions[c],lista:ETERNA.demoSessions().some(x=>x.card===c),campo:(document.querySelector('#kcode')||{}).value,passo:ETERNA.state.kiosk.step}),CARD));await pg.waitForTimeout(400);}};
   const K=pg=>pg.evaluate(()=>{const k=ETERNA.state.kiosk;const its=ETERNA.lojaItems(k.code);const x=its[k.ver];return {ver:k.ver,k:x&&x.k,t:x&&x.t,n:its.length};});
   const tela=pg=>pg.evaluate(()=>{const el=document.querySelector('#lj-lb .lj-lbimg.ai .compimg');return el?{ok:el.classList.contains('ok'),bg:el.style.backgroundImage,mk:!!el.querySelector('.lj-aimk'),ed:!!document.querySelector('#lj-lb .lj-lbimg.ai .lj-ed'),ar:getComputedStyle(el.parentElement).getPropertyValue('--ar').trim()}:null;});
 
@@ -175,6 +178,7 @@ try{
     ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'&&(ETERNA.SIM.caixaDin||[]).length>0,8000),'30 ('+modo+'): pedido feito');
     const p30=await pg.evaluate(()=>{const r=ETERNA.SIM.caixaDin[0];return {tem:'aiMont' in r&&r.aiMont!==undefined,ai:(r.aiSel||[]).length};});
     ok(!p30.tem&&p30.ai===2,'30 ('+modo+'): pedido sem aiMont, com o aiSel de sempre: '+J(p30));
+    ok(/não é impressa e ainda não vai para a galeria/.test(await pg.evaluate(()=>ETERNA.pendMontAviso({aiSel:['ag_x|tunel'],selected:[],fav:[],pkg:'zona',prints:0}))),'30 ('+modo+'): com a montagem do servidor desligada o aviso do pacote só digital continua (v97)');
     await pg.close();}
   SRV.modo='novo';SRV.checkout=true;
 
@@ -200,6 +204,32 @@ try{
   ok(al&&/Edição Maracanã não ficou pronta/.test(al)&&/Venda L0-077 · Saída do túnel: a montagem falhou/.test(al)&&/ofereça outra foto/.test(al),'D7: o Posto mostra o alerta da venda com a montagem que falhou: '+J(al));
   SRV.alertas=[];
   ok(await pa.evaluate(()=>ETERNA.montEntregaDigital())===true,'E4: montEntregaDigital() verdadeiro com o servidor entregando (o aviso de pacote só digital do Posto único sai)');
+  // integração (simulação v97): com o servidor entregando, o aviso do pacote só digital e o selo "sem a Edição Maracanã" somem
+  const av=await pa.evaluate(([c,b])=>{const S=ETERNA.SIM;const r={id:'L00-montsrv0a01',card:c,codigo:'MONS-2345',criada:new Date().toISOString(),estado:'escolha',escolha:true,n:2,nSes:2,selected:['ag_pho000000001'],aiSel:['ag_'+b+'|tunel'],fav:[],pkg:'zona',prints:0,total:110,meio:null,canal:'checkout',iniciado:'aguardando',saleNo:'L0-901'};
+    S.caixaDin=[r];ETERNA.saveSim();ETERNA.go('posto');const it=document.querySelector('[data-pend="L00-montsrv0a01"]');return {fn:ETERNA.pendMontAviso(r),item:!!it,aviso:it?it.querySelectorAll('.pend-mont').length:-1,selo:it?it.querySelectorAll('.pend-semmont').length:-1};},[CARD,BASES[1]]);
+  ok(av.fn===''&&av.item&&av.aviso===0&&av.selo===0,'integração: com a montagem do servidor ligada, o pedido com pacote só digital não mostra o aviso nem o selo: '+J(av));
+  await pa.evaluate(()=>{ETERNA.SIM.caixaDin=[];ETERNA.saveSim();});
+  // Venda manual com Fundo de IA: sem aviso; a venda leva o aiSel "<foto>|<fundo>", a montagem conta uma impressão e é a primeira
+  ok(await espera(pa,c=>!!ETERNA.SIM.sessions[c],15000,CARD),'Venda manual: a leva do servidor chegou ao Posto');
+  await pa.evaluate(([c,ids])=>{const S=ETERNA.SIM;S.invalid={};ids.forEach(id=>{ETERNA.UP['ag_'+id]={src:location.origin+'/thumb/'+id,name:id};});(S.sessions[c].photos||[]).forEach(p=>delete p.invalid);ETERNA.saveSim();ETERNA.montDeNovoMs(250);ETERNA.go('posto');},[CARD,[...BASES,...FOTOS]]);
+  const nEv=EVENTOS.length;
+  await pa.click('.posto-rodape [data-act="posto-manual"]');await pa.waitForTimeout(250);
+  await pa.fill('#posto-manual #ck-code',CARD);await pa.waitForTimeout(300);
+  await pa.click(`#posto-manual [data-act="checkout-pick"][data-card="${CARD}"]`);await pa.waitForTimeout(250);
+  await pa.waitForSelector('#posto-manual [data-act="fila-bg"]',{timeout:15000}).catch(()=>{});
+  if(await pa.$('#posto-manual [data-act="fila-bg"]')){
+    await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="fila-bg"]').click());await pa.waitForTimeout(250);
+    ok(!(await pa.$('#posto-manual .pend-mont')),'Venda manual com Fundo de IA e o servidor entregando: sem o aviso');
+    await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="fila-sel"]').click());await pa.waitForTimeout(150);
+    await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="fila-add"][data-id="gramado"]').click());await pa.waitForTimeout(150);
+    await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="checkout-step"][data-s="3"]').click());await pa.waitForTimeout(250);
+    await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="caixa-pay"][data-m="Dinheiro"]').click());await pa.waitForTimeout(150);
+    await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="caixa-confirm"]').click());
+    ok(await (async()=>{const t0=Date.now();while(Date.now()-t0<8000){if(EVENTOS.slice(nEv).some(e=>e.tipo==='criar'))return true;await pa.waitForTimeout(150);}return false;})(),'Venda manual: o evento criar chegou ao servidor');
+    const cm=EVENTOS.slice(nEv).find(e=>e.tipo==='criar');const sm=await pa.evaluate(c=>{const s=ETERNA.SIM.sessions[c];return {st:s.status,bg:s.bg,ai:s.aiSel||[],sel:s.selected||[],prints:s.prints,fav:s.fav||[],imp:s.impressao&&s.impressao.alvo};},CARD);
+    ok(cm&&(cm.dados.aiSel||[]).length===1&&new RegExp('^ag_[0-9a-z]{6,40}\\|'+sm.bg+'$').test(cm.dados.aiSel[0])&&cm.dados.canal==='balcao'&&cm.dados.nAI===1,'Venda manual: o evento criar leva o aiSel no formato <foto>|<fundo>: '+J(cm&&{ai:cm.dados.aiSel,canal:cm.dados.canal,nAI:cm.dados.nAI,bg:sm.bg}));
+    ok(sm.st==='paga'&&sm.ai.length===1&&sm.prints===sm.sel.length+1&&sm.imp===sm.sel.length+1&&sm.fav[0]==='ai:'+sm.ai[0],'Venda manual: a montagem conta uma impressão a mais e é a primeira da fila: '+J(sm));}
+  else ok(false,'Venda manual: o Fundo de IA não apareceu para o teste: '+J(await pa.evaluate(()=>(document.querySelector('#posto-manual')||{innerText:''}).innerText.slice(0,300))));
   await pa.close();
   // ===== E4 (46): na galeria #g a montagem comprada tem o selo e o nome do fundo, nas 5 línguas =====
   const pgq=await ctx.newPage();pgq.on('pageerror',e=>errs.push('galeria: '+e.message));await pgq.goto(U+'#g/tokMontagemTeste000001');await pgq.waitForFunction(()=>window.ETERNA&&ETERNA.pub,null,{timeout:15000});await pgq.waitForTimeout(600);
@@ -210,6 +240,7 @@ try{
       ETERNA.state.lang=lg;ETERNA.render();const its=[...document.querySelectorAll('.gq-item')];return its.map(i=>({ed:(i.querySelector('.gq-ed')||{}).textContent||null,nm:(i.querySelector('.gq-edn')||{}).textContent||null,dl:!!i.querySelector('[data-act="gq-dl"]'),ai:!!i.querySelector('.gq-ph.gq-ai')}));},[lg,midDe('ag_'+BASES[1]+'|tunel')]);
     ok(q.length===2&&q[0].ed===SELO[lg]&&q[0].nm===NOMES[lg]&&q[0].dl&&q[0].ai&&q[1].ed===null&&q[1].nm===null&&q[1].dl,'46 ('+lg+'): a montagem comprada com o selo, o nome do fundo e o botão de baixar; a foto comum sem selo: '+J(q));}
   await pgq.close();
+  ok(!notas.abrir_de_novo,'o código da leva abre na 1ª tentativa, mesmo com a tela redesenhada no meio da digitação: '+J(notas.abrir_de_novo));
 }catch(e){fails.push('erro: '+(e.stack||e.message).slice(0,700));}
 finally{await b.close();}
 if(errs.length)fails.push('erros na página: '+errs.slice(0,3).join(' | '));

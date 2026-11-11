@@ -1251,7 +1251,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v97 · 11/11 16:22"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v97</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v97-sim · 11/11 17:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v97-sim</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1517,7 +1517,12 @@ function caixaDetalhe(s){let detail='';
   return detail;}
 // v83: venda no balcão. Sem baixa de estoque aqui: o rolo baixa no "Saiu certo" da impressão (parte F). Emite criar e pagar na fila local.
 async function caixaConfirm(){const c=state.caixa.session;if(simOf(c).status==='paga'){toast('Esta sessão já está paga');render();return;}const no=simOf(c).saleNo||await pvSaleNo();
-  const s=simOf(c);if(s.status==='paga'){toast('Esta sessão já está paga');render();return;}const nSel=(s.selected||[]).length||null;const prints=printsVenda(s.cart,nSel);const antes=JSON.stringify(SIM);const u=state.user;
+  const s=simOf(c);if(s.status==='paga'){toast('Esta sessão já está paga');render();return;}const nSel=(s.selected||[]).length||null;
+  // montagem no servidor: o Fundo de IA da Venda manual vai na venda como aiSel "<foto>|<fundo>" (o servidor monta, imprime e põe na galeria);
+  // a montagem conta uma impressão a mais e é a primeira da fila. Com a montagem do servidor desligada, nada muda (v97).
+  const aiM=s.bg&&montEntregaDigital()?(()=>{const pk=aiPick(c,s.bg);return pk&&/^ag_/.test(pk.id)?pk.id+'|'+s.bg:null;})():null;
+  const prints=printsVenda(s.cart,nSel)+(aiM?1:0);const antes=JSON.stringify(SIM);const u=state.user;
+  if(aiM){s.aiSel=[aiM];const mm=montDoPedido(s.aiSel);if(Object.keys(mm).length)s.aiMont=mm;else delete s.aiMont;s.fav=['ai:'+aiM,...(s.fav||[]).filter(k=>k!=='ai:'+aiM)];}
   const ab=dinAbertaDe(c);if(ab)dinFechar(ab.id,'substituida','pago_de_outro_jeito',u);
   s.cart=cartComPreco(s.cart);s.total=cartTotal(s.cart);s.nFotos=nSel||0;s.status='paga';s.payment=state.caixa.pay;s.paidAt=now().toISOString();s.prints=prints;delete s.caixaPor;delete s.caixaEm;
   s.vendaId=pvId();s.saleNo=s.saleNo||no;if(!s.seller&&state.posto.manual)s.seller=SELLERS[0];
@@ -1525,7 +1530,7 @@ async function caixaConfirm(){const c=state.caixa.session;if(simOf(c).status==='
   log(`Sessão ${c} paga: ${fmtR(s.total)} em ${s.payment}, ${prints} impressões`);galDaVendaPrep(c); // v96.2: paga e compradas numa gravação só
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return;}
   if(ab)pvCancelEv(ab,'pago_de_outro_jeito');const tok=galDaVenda(c);const g=(SIM.galerias||{})[tok]||{};
-  pvEvento('criar',s.vendaId,pvDados({saleNo:s.saleNo,card:c,meio,prov:s.pag.prov,total:s.total,cart:s.cart,prints,nPh:nSel||0,nAI:(s.aiSel||[]).length,selected:s.selected,aiSel:s.aiSel,fav:s.fav,token:tok,codigo:g.codigo,vendedor:s.vendedor,canal:'balcao'}));
+  pvEvento('criar',s.vendaId,pvDados({saleNo:s.saleNo,card:c,meio,prov:s.pag.prov,total:s.total,cart:s.cart,prints,nPh:nSel||0,nAI:(s.aiSel||[]).length,selected:s.selected,aiSel:s.aiSel,aiMont:s.aiMont,fav:s.fav,token:tok,codigo:g.codigo,vendedor:s.vendedor,canal:'balcao'}));
   pvEvento('pagar',s.vendaId,{ref:null,prov:s.pag.prov});
   toast(s.impressao.estado==='pendente'?'Pagamento recebido. Agora imprima as fotos.':'Pagamento recebido.');render();}
 // ---------- v79: dinheiro do Checkout aguardando caixa (SIM.caixaDin; só a equipe confirma, no Caixa) ----------
@@ -1731,7 +1736,7 @@ async function visitaPost(acao,body){const a=state.agent||{};if(!a.on||!a.url){t
 // O Posto avisa o caixa, sem bloquear a venda. pendMontSemImp = quantas montagens do pedido ficam fora das impressões com "prints" impressas
 // (mesma ordem do impFotos: favoritas, fotos, montagens); com 0 impressas, todas.
 function pendMontSemImp(r,prints){const nAI=(r.aiSel||[]).length;if(!nAI)return 0;const f=impFotos({selected:r.selected||[],aiSel:r.aiSel||[],fav:r.fav||[],prints:Math.max(0,+prints||0),status:'paga'});return nAI-f.fotos.filter(x=>x.t==='ai').length;}
-function pendMontAviso(r){const nAI=(r.aiSel||[]).length;if(!nAI||!r.pkg||r.prints==null)return '';const um=nAI===1;
+function pendMontAviso(r){if(montEntregaDigital())return ''; /* montagem no servidor: a montagem é entregue (impressão e galeria) */const nAI=(r.aiSel||[]).length;if(!nAI||!r.pkg||r.prints==null)return '';const um=nAI===1;
   if(!r.prints)return `<div class="pend-mont" role="status">Este pedido tem ${nAI} ${um?'foto':'fotos'} Edição Maracanã. Neste pacote ${um?'ela não é impressa e ainda não vai':'elas não são impressas e ainda não vão'} para a galeria. Ofereça um pacote com impressão.</div>`;
   const fora=pendMontSemImp(r,r.prints);return fora?`<div class="pend-mont" role="status">${fora} ${fora===1?'foto Edição Maracanã não será impressa':'fotos Edição Maracanã não serão impressas'} neste pacote.</div>`:'';}
 // v96 (P3): pedido do Checkout sem pacote. O caixa vê as fotos escolhidas (com as de fundo de IA), escolhe o pacote e o meio e confirma como antes
@@ -1739,7 +1744,7 @@ function pendEscolhaItem(r,o){const n=r.n||0;const ideal=lojaIdeal(n).pkg;const 
   const fotos=[...(r.selected||[]).map(id=>({t:'ph',id})),...(r.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {t:'ai',id,bg};})];
   const th=x=>x.t==='ai'?`<div class="pend-th ai">${lojaThumb(x)}</div>`:`<button class="pend-th" style="${phStyle(x.id)}" data-act="zoom" data-id="${esc(x.id)}" aria-label="Foto"></button>`;
   const pkgs=DATA.catalog.filter(c=>c.kind==='pacote').map(p=>{const c=lojaPkgCusto(p,n);const on=r.pkg===p.id;
-    return `<button class="pend-pkg${on?' on':''}" data-act="pend-pkg" data-id="${esc(r.id)}" data-p="${esc(p.id)}" aria-pressed="${on}" ${o.rw?'':'disabled'}><b>${esc(p.name)}</b><small>${p.digital==='todas'?'Todas as fotos':p.digital+(p.digital===1?' foto':' fotos')}${p.prints?' · impressas':' · só digital'}${c.extra?` + ${c.extra} ${c.extra===1?'adicional':'adicionais'}`:''}</small><span>${fmtR(c.custo)}</span>${p.id===ideal?'<i class="pill good">Ideal</i>':''}${temMont&&!p.prints?'<em class="pend-semmont">sem a Edição Maracanã</em>':''}</button>`;}).join('');
+    return `<button class="pend-pkg${on?' on':''}" data-act="pend-pkg" data-id="${esc(r.id)}" data-p="${esc(p.id)}" aria-pressed="${on}" ${o.rw?'':'disabled'}><b>${esc(p.name)}</b><small>${p.digital==='todas'?'Todas as fotos':p.digital+(p.digital===1?' foto':' fotos')}${p.prints?' · impressas':' · só digital'}${c.extra?` + ${c.extra} ${c.extra===1?'adicional':'adicionais'}`:''}</small><span>${fmtR(c.custo)}</span>${p.id===ideal?'<i class="pill good">Ideal</i>':''}${temMont&&!p.prints&&!montEntregaDigital()?'<em class="pend-semmont">sem a Edição Maracanã</em>':''}</button>`;}).join('');
   const meios=['cartao','pix','dinheiro'].map(m=>`<button class="pend-meio${r.meio===m?' on':''}" data-act="pend-meio" data-id="${esc(r.id)}" data-m="${m}" aria-pressed="${r.meio===m}" ${o.rw?'':'disabled'}>${ICO[m==='pix'?'pix':m==='cartao'?'card':'cash']} ${MEIO_NOME[m]}</button>`).join('');
   const acts=!o.rw||o.conf||pronto?o.acts:`<div class="note">Escolha o pacote e a forma de pagamento. O cliente vê o valor na tela dele.</div><div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">Cancelar compra</button></div>`;
   return `<div class="din-item pend-esc${o.alvo===r.id?' alvo':''}" data-pend="${esc(r.id)}"><div class="din-top"><span class="din-meio">Checkout · ${r.meio?MEIO_NOME[r.meio]:'escolha o pacote'}</span><span class="din-val">${r.total!=null?fmtR(r.total):'sem valor'}</span></div>
@@ -2127,7 +2132,7 @@ function vCheckoutCorpo(){
   if(sim.lgpd&&sim.status!=='paga')return head+lgpdSelo(sim);
   // LGPD (veio da Fila do balcão): só com galerias 'u'; a confirmação e o lgpd-excluir são os de sempre. Sessão paga: só quando
   // sobra foto não comprada para apagar (o cliente comprou parte e pede para apagar o resto); o recibo continua na tela
-  const montAviso=sim.bg&&sim.status!=='paga'?`<div class="pend-mont" role="status">Esta venda tem foto Edição Maracanã (fundo de IA). Pela Venda manual ela não é impressa e ainda não vai para a galeria. Avise o cliente.</div>`:'';
+  const montAviso=sim.bg&&sim.status!=='paga'&&!montEntregaDigital()?`<div class="pend-mont" role="status">Esta venda tem foto Edição Maracanã (fundo de IA). Pela Venda manual ela não é impressa e ainda não vai para a galeria. Avise o cliente.</div>`:'';
   const lgP=can('galerias','u')?lgpdPlano(s.card):null;const lgPaga=sim.status==='paga';
   const lgN=lgP&&(lgP.pids.length||lgP.fica.length)?lgP.pids.length:s.photos.length; // sessão de demonstração não tem fotos no SIM: vale a contagem da tela
   const lgpdBtn=lgP&&(lgPaga?lgP.pids.length>0:(lgP.pids.length||!lgP.fica.length))?`<div class="pend-cancel"><button class="link-danger" data-act="lgpd-pedir" data-card="${esc(s.card)}" title="${lgPaga?'O cliente pediu para não guardar as fotos que não comprou (LGPD)':'O cliente não comprou e pediu para não guardar as fotos dele (LGPD)'}">Cliente pediu: apagar as fotos</button></div>`:'';
@@ -6049,9 +6054,12 @@ function render(){
     if(state.kiosk.step!=='done')lojaTimerOff();else lojaPendCheck(); // v83: pendência confirmada ou cancelada enquanto a janela não redesenhou
     {const k=state.kiosk;if(k.step==='code'){if(!k.codeDesde)k.codeDesde=Date.now();}else k.codeDesde=0;} // v96: desde quando a tela inicial está parada (valLivre)
     const askAnt=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.lj-ask')?document.activeElement.dataset.act:null;
+    // o código que o cliente está digitando não some quando a tela é redesenhada no meio (foto nova validada, leitura do agente, outra janela)
+    const kcAnt=$('#kcode');const kcVal=kcAnt&&state.kiosk.step==='emerg'?kcAnt.value:'';const kcFoco=!!kcAnt&&document.activeElement===kcAnt;
     try{DS_CACHE.on=true;try{$('#main').innerHTML=vQuiosque()+lojaEquipe();}finally{DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div></div>`;}
     if(location.hash!=='#loja')history.replaceState(null,'','#loja');
     if(state.kiosk.step==='done')drawLojaQR(); // v79: redesenhar (troca de idioma, SIM de outra janela) não pode apagar o QR
+    if(kcVal){const kc=$('#kcode');if(kc&&!kc.value){kc.value=kcVal;if(kcFoco){kc.focus();try{kc.setSelectionRange(kcVal.length,kcVal.length);}catch(e){}}}}
     camMount();if(state.guest.selfie)selfieStop();compHydrate();lojaEco();lojaAskFoco(askAnt);return;}
   document.body.removeAttribute('data-loja');lojaTimerOff();
   if(!VENDA_VIEWS.includes(state.view))document.body.classList.remove('pr-on'); // v83: impressão 10×15 só vale na tela de venda
@@ -6672,7 +6680,7 @@ setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())retu
 window.ETERNA={lgpdPlano,saveSim,pendMontSemImp,I18N,T,ecoUpd,pendRecomecar,ecoEsperaId,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,bgMigraTelao,bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,pubGaleria,selfieVarias,ynDetect,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO};
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 Object.assign(window.ETERNA,{FIA_PADRAO,FIA_ROSTOS,IMP_PX,ynDetect});
-Object.assign(window.ETERNA,{montEntregaDigital,montAlertaHtml,montMidVenda,montSrv,montLista,MONT,montCompose,montDoPedido,fundosCfgSalva,fundosAtivosSrv,montDeNovoMs:v=>{MONT_DE_NOVO_MS=v;}}); // montagem no servidor (E2) // montagem no servidor (E0): só para o teste de paridade com o agente/eterna-montagem.py
+Object.assign(window.ETERNA,{pendMontAviso,montEntregaDigital,montAlertaHtml,montMidVenda,montSrv,montLista,MONT,montCompose,montDoPedido,fundosCfgSalva,fundosAtivosSrv,montDeNovoMs:v=>{MONT_DE_NOVO_MS=v;}}); // montagem no servidor (E2) // montagem no servidor (E0): só para o teste de paridade com o agente/eterna-montagem.py
 })();
 </script>
 
