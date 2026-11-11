@@ -144,7 +144,7 @@ try{
   const esperado=Math.min(g11.n*precos.dig,precos.mais);ok(g11.bar.replace(/\./g,'').replace(/\s/g,' ').includes('R$ '+esperado),'11: todas deveria cobrar '+esperado+': '+g11.bar);
   await G.screenshot({path:PR+'/galeria-cel-galeria.png',fullPage:false});
   await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});const umPid=await G.evaluate(()=>{const b=document.querySelector('[data-act="gq-sel"]');b.click();return b.dataset.pid;});
-  await G.click('[data-act="gq-buy"]');await G.click('[data-act="gq-paym"][data-m="pix"]');await G.click('[data-act="gq-pay"]');await G.waitForTimeout(300);
+  await G.click('[data-act="gq-buy"]');/* v99: a compra pede nome, e-mail e CPF (sem escolher o meio) */await G.fill('#gq-nome','Cliente Teste');await G.fill('#gq-email','cliente@exemplo.com');await G.fill('#gq-doc','529.982.247-25');await G.click('[data-act="gq-pay"]');await G.waitForTimeout(300);
   const g10=await G.evaluate(p=>({vs:ETERNA.SIM.vendasOnline,yours:[...document.querySelectorAll('[data-act="gq-dl"]')].map(b=>b.dataset.pid),step:ETERNA.pub.step}),umPid);
   ok(g10.vs.length===1&&g10.vs[0].canal==='online'&&g10.vs[0].total===precos.dig&&g10.vs[0].n===1&&g10.vs[0].teste===true,'10: venda online: '+JSON.stringify(g10.vs));ok(g10.step==='galeria'&&g10.yours.includes(umPid),'10: foto comprada não foi para Suas fotos');
   // ---------- 26. bandeiras ----------
