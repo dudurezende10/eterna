@@ -3752,7 +3752,10 @@ def gal_validar(m):
         fotos.append(x)
     pr = m.get("precos") or {}
     try:
-        precos = {"dig": max(0.0, float(pr.get("dig"))), "todas": max(0.0, float(pr.get("todas")))}
+        todas = max(0.0, float(pr.get("todas")))
+        # v98.1: sem foto digital avulsa, o app manda só "todas"; sem preço por foto, qualquer compra custa o pacote
+        dig = todas if pr.get("dig") in (None, "") else max(0.0, float(pr.get("dig")))
+        precos = {"dig": dig, "todas": todas}
     except Exception:
         raise ValueError("preços inválidos")
     codigo = m.get("codigo") if isinstance(m.get("codigo"), str) and _re_codigo.match(m.get("codigo")) else None

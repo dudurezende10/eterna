@@ -1339,7 +1339,7 @@ state.viewSalva=false;try{let v=localStorage.getItem('eterna.view');if(v==='sema
 // v96: marca do SIM (catalogoV). A v95 e anteriores só adotam catalogoV===2: um SIM gravado pela v96 cai no aviso de janela antiga
 // nelas (pedido do Checkout sem pacote, sem meio e sem valor não pode ser lido como "Dinheiro R$ 0" por um Posto antigo)
 const SIM_V=3;
-const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'},diario:[],galerias:{},cortesiaLog:[],vendasOnline:[],galFila:[],lojaFimSeg:30,caixaDin:[],catalogoV:SIM_V});
+const SIM0=()=>({sessions:{},stock:{'Caixa 1':58,'Caixa 2':142,'Caixa 3':171},invalid:{},postvisit:{},prices:{},log:[],edits:{},discarded:{},repo:{provider:'aws',bucket:'eterna-maracana',region:'sa-east-1',connected:false,rule:'vendidas-agora'},diario:[],galerias:{},cortesiaLog:[],vendasOnline:[],galFila:[],lojaFimSeg:40,caixaDin:[],catalogoV:SIM_V});
 let SIM=SIM0();
 try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}
 // v79 (I3): devolve true/false. Sem espaço, poda o que dá para refazer (registro antigo e ajustes automáticos de fotos que não estão aqui) e tenta de novo.
@@ -2585,7 +2585,7 @@ function drawLojaQR(){const el=$('#lqr');if(!el)return;const p=state.kiosk.paid|
 let lojaQRrz=0;window.addEventListener('resize',()=>{clearTimeout(lojaQRrz);lojaQRrz=setTimeout(()=>{if(state.lojaRota&&state.kiosk.step==='done'&&$('#lqr .lj-final,.lj-final #lqr'))drawLojaQR();},150);});
 // ---------- Loja apartada: rota pública #loja, sem login, sempre em tela cheia ----------
 // Saída da rota só pela equipe: Esc ou 3 toques seguidos no logo. O cliente volta ao Iniciar pelo Sair ou pelos botões de início; sozinho, o Checkout volta
-// com a escolha parada 90 s (LOJA_ESCOLHA_MS), a tela Pronto ou do valor parada 3 min (LOJA_PRONTO_MS) e a tela final do QR (lojaFimSeg, 30 s por padrão).
+// com a escolha parada 90 s (LOJA_ESCOLHA_MS), a tela Pronto ou do valor parada 3 min (LOJA_PRONTO_MS) e a tela final do QR (lojaFimSeg, 40 s por padrão).
 // O temporizador da tela final (k.timer) morre ao sair da rota, trocar de etapa ou recarregar; os prazos de escolha e Pronto são conferidos a cada 5 s.
 const LOJA_VENDEDOR='Checkout (autoatendimento)';
 const LOJA_FIM_PADRAO=40,LOJA_FIM_MIN=5,LOJA_FIM_MAX=120;
@@ -2823,7 +2823,9 @@ function pubGaleria(){const p=state.pub;if(!p)return {fotos:[]};
   return {tipo:m.tipo,menor:!!m.menor,expira:m.expira,estado:'pronta',precos:{todas:priceOf('mais')},fotos:m.fotos.filter(f=>ok.has(f.id)||livre.has(f.id)).map(f=>({pid:f.id,direito:f.direito,sessao:f.sessao}))};}
 function pubImg(f){const p=state.pub;if(p.modo==='agente'){const src=f.original||f.vitrine; // comprada aparece sem marca d'água (a mesma alta do download)
   return src?`--img:url(&quot;${esc(galUrl(src))}&quot;);--bs:cover;--bp:center`:'';}return phStyle(f.pid);}
-function pubTotal(n,g){const d=(g.precos||{}).dig||priceOf('dig'),all=(g.precos||{}).todas||priceOf('mais');return Math.min(n*d,all);}
+// v98.1 sem Foto digital avulsa: sem preço por foto, qualquer compra na galeria custa o pacote (nunca R$ 0), como no agente
+const pubPrecos=g=>{const all=(g.precos||{}).todas||priceOf('mais');return {dig:(g.precos||{}).dig||priceOf('dig')||all,all};};
+function pubTotal(n,g){const {dig,all}=pubPrecos(g);return Math.min(n*dig,all);}
 async function pubBaixar(pid,i){const p=state.pub;const g=pubGaleria();const f=g.fotos.find(x=>x.pid===pid);if(!f||(f.direito!=='comprada'&&f.direito!=='cortesia'))return;
   const nome=`viva-maracana-${i||1}.jpg`;const salva=href=>{const a=document.createElement('a');a.href=href;a.download=nome;document.body.appendChild(a);a.click();a.remove();};
   if(p.modo==='agente'){
@@ -2843,7 +2845,7 @@ async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGa
       if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();}p.sel={};
       if(j.pedido&&j.pedido.status==='pendente'){p.step='aguardando';p.esperando=pids;pubAguardar(p);render();return;}
       p.step='galeria';render();toast(T('gq_paid'));return;}
-    const m=SIM.galerias[p.token];const dig=priceOf('dig'),all=priceOf('mais');const total=Math.min(pids.length*dig,all);
+    const m=SIM.galerias[p.token];const {dig,all}=pubPrecos(m);const total=Math.min(pids.length*dig,all);
     m.fotos.forEach(f=>{if(pids.includes(f.id)){f.direito='comprada';f.canal='online';delete f.cortesia;}});
     SIM.vendasOnline=SIM.vendasOnline||[];const id='O'+String(SIM.vendasOnline.length+1).padStart(3,'0');const card=(m.fotos.find(f=>f.id===pids[0])||{}).sessao||m.sessoes[0];
     SIM.vendasOnline.push({id,token:p.token,card,pids,n:pids.length,total,pay:p.pagM==='cartao'?'Cartão online':'Pix online',at:now().toISOString(),canal:'online',status:'paga',todas:total<pids.length*dig,teste:true}); // modo SIM: pagamento sempre simulado
@@ -2896,7 +2898,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   // galeria
   const mine=g.fotos.filter(f=>f.direito==='comprada'||f.direito==='cortesia');const more=g.fotos.filter(f=>f.direito==='venda');
   const compra=g.compra!==false; // o servidor do ponto e a nuvem mandam compra:false quando a compra pelo celular está desligada
-  const nSel=compra?more.filter(f=>p.sel[f.pid]).length:0;const tot=pubTotal(nSel,g);const dig=(g.precos||{}).dig||priceOf('dig'),all=(g.precos||{}).todas||priceOf('mais');
+  const nSel=compra?more.filter(f=>p.sel[f.pid]).length:0;const tot=pubTotal(nSel,g);const {dig,all}=pubPrecos(g);
   return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`)}
     <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${T('gq_kidFound',g.fotos.length)}</div>`:''}<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${mine.length?T('gq_yoursD',mine.length):T('gq_none')}</p>
       ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>
@@ -5366,7 +5368,7 @@ const ALL=perm(1,1,1,1),RO=perm(0,1,0,0),RW=perm(1,1,1,0),NONE=perm(0,0,0,0);
 // letra que não se aplica vira false; C, U ou D ligam R; em Permissões, Ver e Alterar só valem juntos
 function permNorm(perms){const o={};MODULES.forEach(([m])=>{const p=(perms&&perms[m])||{};const x={c:false,r:false,u:false,d:false};['c','r','u','d'].forEach(k=>{x[k]=!!p[k]&&opOk(m,k);});if(x.c||x.u||x.d)x.r=true;if(m==='permissoes'){const on=x.r&&x.u;x.r=x.u=on;}o[m]=x;});return o;}
 // v94-ux (parte H, decisão 10): telas do grupo Sistema que saem do menu da Supervisora (os módulos C/R/U/D dela não mudam)
-const SUP_SEM94=['repo','identidade','chroma','vestiario','fundos-teste']; // parte I: o chroma (Fundos de IA técnico) também; a Supervisora mantém a aba Fundos de IA de Preços e Checkout
+const SUP_SEM94=['repo','identidade','chroma','vestiario','fundos-teste','chute-a-gol']; // parte I: o chroma (Fundos de IA técnico) também; a Supervisora mantém a aba Fundos de IA de Preços e Checkout
 const PRESETS={
  admin:{name:'Admin',perms:Object.fromEntries(MODULES.map(([m])=>[m,{...ALL}])),menu:'*',inicio:'painel',desc:'Vê e faz tudo, inclusive Usuários e Permissões.'},
  foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},escala:{...RO},filafoto:{...RO}},menu:['diario','importar','fotofila','escala'],inicio:'importar',desc:'Vê só o menu Fotógrafo: Diário do set, Minhas fotos (com a troca de fotógrafo), Fila do fotógrafo e a Escala 5×2. Não vê: Checkout, Dashboard (vendas, índice, outros fotógrafos), Curadoria, Configurações.'},
@@ -5415,6 +5417,7 @@ function migrateUser(x){if(!x||typeof x!=='object')return x;const pr=x.preset;
     if(!x.mst92){if(pr&&pr!=='custom'&&PRESETS[pr])['estatisticas','calendario'].forEach(v=>{if(presetMenu(pr).includes(v)&&!x.menu.includes(v))x.menu.push(v);});x.mst92=1;} // v92: Estatísticas (Admin) e Calendário (perfis com a Escala), uma vez
     if(!x.mff87){if(pr&&pr!=='custom'&&PRESETS[pr]&&presetMenu(pr).includes('fotofila')&&!x.menu.includes('fotofila'))x.menu.push('fotofila');x.mff87=1;} // v87: Fila do fotógrafo nos perfis da D6 (uma vez)
     if(!x.msis94)migraSis94(x); // v94-ux: Supervisora sem as telas do grupo Sistema (uma vez)
+    if(!x.msup98){if(x.preset==='supervisor')x.menu=x.menu.filter(v=>v!=='chute-a-gol');x.msup98=1;} // junção v97+ondas: Chute a gol fora do menu da Supervisora que já tinha migrado (uma vez)
     x.menu=x.menu.filter(v=>MODULE_OF[v]);}
   x.mv=83;
   if(x.inicio&&x.inicio!=='perfis'&&!MODULE_OF[x.inicio])x.inicio=null;
