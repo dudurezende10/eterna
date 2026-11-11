@@ -284,6 +284,8 @@ FOTO_ENVIO_MAX = 60 * 1024 * 1024          # uma foto por pedido (mesmo teto do 
 FOTO_ENVIO_TAXA = 300                      # fotos por minuto por IP
 FOTO_ENVIO_SIMULT = 4                      # gravações ao mesmo tempo no agente inteiro; o resto recebe 503 na hora
 FOTO_ENVIO_PISO_GB = 2                     # espaço livre mínimo no disco da inbox
+FOTO_ENVIO_MIN = 1024                      # bytes: menor que isto não é foto de câmera
+FOTO_ENVIO_LADO_MIN = 64                   # px no lado menor
 _re_envio_nome = re.compile(r"^[A-Za-z0-9_-]{1,80}\.(jpg|jpeg|JPG|JPEG)$")
 POLL = 2.0
 
@@ -512,15 +514,76 @@ def jpeg_completo(path, size):
     return False
 
 
-def jpeg_de_verdade(path, size):
-    """v96-ux: foto mandada pela tela. Só JPEG (começa com FF D8 FF e tem FF D9 nos últimos 4 KB). PNG com nome .jpg é
-    recusado aqui (no cartão da câmera nunca existe); o jpeg_completo geral não muda."""
+_JPEG_SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+
+
+def jpeg_cabecalho(path):
+    """(largura, altura) lidas dos segmentos do JPEG (do SOI até o quadro SOF, que precisa vir antes do SOS), só com a
+    biblioteca padrão; None se a estrutura não for a de um JPEG. Anda segmento a segmento, sem carregar a imagem."""
+    try:
+        with open(path, "rb") as f:
+            if f.read(2) != b"\xff\xd8":
+                return None
+            for _ in range(2000):                       # teto de segmentos antes do quadro
+                b = f.read(1)
+                if b != b"\xff":
+                    return None
+                m = f.read(1)
+                while m == b"\xff":                     # preenchimento
+                    m = f.read(1)
+                if len(m) != 1:
+                    return None
+                m = m[0]
+                if m in (0x00, 0xD8, 0xD9, 0xDA) or 0xD0 <= m <= 0xD7 or m < 0xC0:
+                    return None                         # dados, fim ou varredura antes do quadro: não é foto
+                t = f.read(2)
+                if len(t) != 2:
+                    return None
+                n = int.from_bytes(t, "big")
+                if n < 2:
+                    return None
+                if m in _JPEG_SOF:
+                    q = f.read(6)
+                    if len(q) != 6 or n < 8 + 3 * q[5] or q[5] not in (1, 3, 4) or q[0] not in (8, 12, 16):
+                        return None
+                    return int.from_bytes(q[3:5], "big"), int.from_bytes(q[1:3], "big")
+                f.seek(n - 2, 1)
+    except OSError:
+        pass
+    return None
+
+
+def jpeg_envio_erro(path, size):
+    """v96-ux: foto mandada pela tela. None = JPEG de câmera inteiro; "nao_jpeg" = não é (PNG com nome .jpg, texto, arquivo
+    que só começa e termina como JPEG, dimensões fora de FOTO_ENVIO_LADO_MIN a 40 MP, menor que FOTO_ENVIO_MIN);
+    "incompleta" = cabeçalho de JPEG certo, mas sem o fim (FF D9 nos últimos 4 KB). Com Pillow instalada, ela também
+    precisa abrir o cabeçalho como JPEG com as mesmas dimensões."""
     try:
         with open(path, "rb") as f:
             ini = f.read(3)
     except OSError:
-        return False
-    return ini == b"\xff\xd8\xff" and jpeg_completo(path, size)
+        return "nao_jpeg"
+    dim = jpeg_cabecalho(path) if ini == b"\xff\xd8\xff" else None
+    if not dim or min(dim) < FOTO_ENVIO_LADO_MIN or dim[0] * dim[1] > MAX_PIXELS:
+        return "nao_jpeg"
+    if not jpeg_completo(path, size):
+        return "incompleta"
+    if size < FOTO_ENVIO_MIN:
+        return "nao_jpeg"
+    if has_pillow():
+        try:
+            from PIL import Image
+            with Image.open(path) as im:
+                if im.format not in ("JPEG", "MPO") or tuple(im.size) != tuple(dim):
+                    return "nao_jpeg"
+        except Exception:
+            return "nao_jpeg"
+    return None
+
+
+def jpeg_de_verdade(path, size):
+    """v96-ux: foto mandada pela tela é um JPEG inteiro (jpeg_envio_erro). O jpeg_completo geral não muda."""
+    return jpeg_envio_erro(path, size) is None
 
 
 def envio_nome(nome):
@@ -8512,10 +8575,8 @@ class H(BaseHTTPRequestHandler):
             if resto:
                 motivo = ({"erro": "incompleta"}, 400)
                 self.close_connection = True
-            elif not jpeg_de_verdade(tmp, n):
-                with open(tmp, "rb") as f:
-                    ini = f.read(3)
-                motivo = ({"erro": "incompleta"}, 400) if ini == b"\xff\xd8\xff" else ({"erro": "nao_jpeg"}, 415)
+            elif jpeg_envio_erro(tmp, n):
+                motivo = ({"erro": "incompleta"}, 400) if jpeg_envio_erro(tmp, n) == "incompleta" else ({"erro": "nao_jpeg"}, 415)
             else:
                 r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
                 if r == "new":

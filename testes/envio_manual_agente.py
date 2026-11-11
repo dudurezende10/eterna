@@ -211,6 +211,18 @@ try:
     ok(r1[0] == 415 and r1[1] == {"erro": "nao_jpeg"}, "18: PNG com nome .jpg: %s" % (r1[:2],))
     ok(r2[0] == 415 and r2[1] == {"erro": "nao_jpeg"}, "18: texto: %s" % (r2[:2],))
     ok(r3[0] == 400 and r3[1] == {"erro": "incompleta"}, "18: JPEG cortado: %s" % (r3[:2],))
+    # 18 (v97): arquivo que só começa e termina como JPEG, foto pequena demais e dimensões acima de 40 MP
+    lixo = b"\xff\xd8\xff" + os.urandom(200 * 1024) + b"\xff\xd9"
+    html = b"\xff\xd8\xff<html><body><script>alert(1)</script>" + b"a" * 4000 + b"</body></html>\xff\xd9"
+    bz = io.BytesIO()
+    Image.new("RGB", (9000, 6000), (10, 20, 30)).save(bz, "JPEG", quality=30)
+    rs = [enviar(lixo, "l.jpg"), enviar(html, "h.jpg"), enviar(jpeg(lado=(40, 30)), "p.jpg"), enviar(bz.getvalue(), "g.jpg")]
+    ok(all(r[0] == 415 and r[1] == {"erro": "nao_jpeg"} for r in rs), "18: lixo de 200 KB, HTML, 40 px e 54 MP dão 415: %s" % [r[:2] for r in rs])
+    bp = io.BytesIO()
+    Image.effect_noise((1200, 800), 40).convert("RGB").save(bp, "JPEG", quality=85, progressive=True)
+    rp = enviar(bp.getvalue(), "prog.jpg")
+    ok(rp[0] == 200 and rp[1] == {"ok": True, "resultado": "new"}, "18: JPEG progressivo de verdade entra: %s" % (rp[:2],))
+    antes.update(p for p in arquivos(INB) if p.endswith("_prog.jpg"))
     ok(set(arquivos(INB)) == antes and tmp_vazio(), "18: nada ficou em inbox nem em ftp-tmp")
     r4 = enviar(jpeg(), "foto.png")
     ok(r4[0] == 415 and r4[1] == {"erro": "formato"}, "extensão fora do cartão: %s" % (r4[:2],))
