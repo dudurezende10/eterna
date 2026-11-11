@@ -79,7 +79,7 @@ try{
   const nDep=await L.evaluate(()=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).filter(x=>x.estado==='escolha').length);
   ok(nDep===1&&(await L.evaluate(()=>(JSON.parse(localStorage.getItem('eterna.sim.v1')).caixaDin||[]).length))===nAntes+1,'clique repetido no Continuar faz um pedido só: '+J({nAntes,nDep}));
   const id1=await pend();let t=await txt();
-  ok(/Pronto!/i.test(t)&&/O atendente vai finalizar sua compra/.test(t)&&/Voltar às fotos/.test(t)&&/Voltar ao início/i.test(t),'4: tela Pronto com código, Voltar às fotos e Voltar ao início: '+t.replace(/\s+/g,' ').slice(0,200));
+  ok(/Pronto!/i.test(t)&&/O atendente vai finalizar sua compra/.test(t)&&/Voltar às fotos/.test(t)&&!/Voltar ao início/i.test(t)&&!(await L.$('.lj-pronto .lj-restart')),'4: tela Pronto com código e Voltar às fotos, sem Voltar ao início (v97: a espera do pagamento não tem saída para o início): '+t.replace(/\s+/g,' ').slice(0,200));
   ok(t.includes((await rec(id1)).codigo||'@@'),'4: tela Pronto mostra o código do pedido');
   await fotografa('pronto');await guarda('pronto');
   const r0=await rec(id1);ok(r0.estado==='escolha'&&r0.total==null,'6: pedido sem pacote nasce em escolha: '+J({e:r0.estado,t:r0.total}));
@@ -116,7 +116,7 @@ try{
 
   // ---- 3. escolha com pedido aberto (cliente voltou pelo código depois de sair) parada 90 s: volta e o Posto vê "o cliente saiu"
   await abrir(c4);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(400);const id4=await pend();
-  await L.click('.lj-pronto .lj-restart[data-act="loja-new"]').catch(()=>{});await L.waitForTimeout(150);
+  await L.waitForTimeout(150); // v97: a tela Pronto não tem mais "Voltar ao início"; o abrir() abaixo recomeça o Checkout
   await L.evaluate(id=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=S.caixaDin.find(x=>x.id===id);delete r.saiu;localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.simFresh();},id4);
   await abrir(c4);s=await st();const aberto=(await rec(id4)).estado;
   if(s.step==='review'||s.step==='talvez'||s.step==='gallery'){await ff(95000);s=await st();r2=await rec(id4);ok(s.step==='code'&&!!r2.saiu,'3: com pedido aberto a escolha parada 90 s volta e o Posto vê "o cliente saiu": '+J({s,aberto,e:r2.estado,saiu:r2.saiu}));}
