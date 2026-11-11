@@ -5994,8 +5994,9 @@ def vis_calib_gravar(linhas, tira=None):
     ligação estava ligada. tira = pids da LGPD (a linha perde o pid). Fora do sess_lock."""
     try:
         os.makedirs(os.path.dirname(VIS_CALIB), exist_ok=True)
-        if tira and os.path.exists(VIS_CALIB):
-            _jsonl_reescreve(VIS_CALIB, lambda o: {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}})
+        for g in ((VIS_CALIB, VIS_CALIB + ".1") if tira else ()):     # o arquivo atual e a cópia da rotação
+            if os.path.exists(g):
+                _jsonl_reescreve(g, lambda o: {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}})
         if not linhas:
             return
         if os.path.exists(VIS_CALIB) and os.path.getsize(VIS_CALIB) > VIS_LOG_MAX:
