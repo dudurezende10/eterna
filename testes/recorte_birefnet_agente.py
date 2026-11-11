@@ -191,7 +191,7 @@ ok("scipy" not in json.dumps(m.rec_estado()) and m.REC_MODELOS[0] == "birefnet-g
 ok("instalar-recorte" in m.REC_COMO and "1,3 GB" in m.REC_COMO and "movenet" in m.REC_COMO and "birefnet-general" in m.REC_COMO, "1: texto do como: " + m.REC_COMO)
 st = m.rec_status()
 ok(st["modelo"] == "birefnet-general" and st["versao"] == "birefnet-1" and "movenet_multipose_lightning_1" in st["auxiliares"]
-   and st["provedor"] is None and st["filho"] == {"vivo": False, "reinicios": 0} and st["ok"] is False, "1: /status.recorte sem modelos: %r" % st)
+   and st["provedor"] is None and st["filho"] == {"vivo": False, "reinicios": 0, "mortes_memoria": 0, "espera_s": 60} and st["parado"] is None and st["ok"] is False, "1: /status.recorte sem modelos: %r" % st)
 src = open(sys.argv[1], encoding="utf-8").read()
 ok("rec_limpa_mascara" not in src and "rec_sem_soltos" not in src and "REC_SINAL" not in src, "E1: o recorte antigo saiu do agente")
 topo = src.split("# ---------- reconhecimento facial", 1)[0]
@@ -200,6 +200,8 @@ ok("import rembg" not in topo and "import onnxruntime" not in topo, "rembg/onnxr
 # ---------- critérios 3, 6 e 8: processo de recorte (modelos falsos) ----------
 m.rec_estado = lambda: (True, None)            # os modelos de verdade não estão aqui; o filho falso não precisa deles
 m.REC_FILHO = os.path.join(AQUI, "_recorte_filho_falso.py")
+m.REC_MEM_MIN_GB = 0                           # a máquina de teste pode ter menos de 6 GB livres (conferido abaixo)
+m.REC_ENV_PREFIXOS = ("RECORTE_FALSO_",)       # as variáveis do filho falso passam pelo ambiente limpo
 dia = time.strftime("%Y-%m-%d")
 ib = os.path.join(m.INBOX, dia)
 os.makedirs(ib, exist_ok=True)
@@ -262,6 +264,7 @@ except ValueError as e_:
 
 # 8. filho morto (kill -9 no meio de uma foto): o agente segue; rec.erro com o motivo; depois do prazo, reabre e recorta
 m._rec_filho_matar(m.rec_filhos[0])
+m.REC_ERRO_SEG = 1
 os.environ["RECORTE_FALSO_DORMIR"] = "3"
 f6 = foto("a97000000006", (900, 600))
 res = {}
@@ -281,12 +284,16 @@ del os.environ["RECORTE_FALSO_DORMIR"]
 st = m.rec_status()
 ok(res.get("r") and res["r"][0] is None and "memória insuficiente" in (res["r"][1] or ""), "8: pedido no meio do kill: %r" % res)
 ok(m.rec["erro"] and "memória insuficiente" in m.rec["erro"] and not st["filho"]["vivo"], "8: rec.erro com o motivo: %r %r" % (m.rec["erro"], st["filho"]))
-m.REC_ERRO_SEG = 1
-m.rec_estado = lambda: (True, None) if time.time() - m.rec["erro_em"] >= m.REC_ERRO_SEG else (False, m.rec["erro"])
+ok(m.rec["mortes_mem"] == 1 and m.rec["espera_s"] == 1 and m.rec_espera()[0] is False, "1: 1ª morte por memória conta e espera: %r" % m.rec)
+m.rec_estado = m.rec_espera                    # o prazo de verdade (sem os pacotes e modelos, que não estão aqui)
 time.sleep(1.1)
 r2, e2 = m.rec_pedir("a97000000006", f6)
 ok(r2 and not e2 and os.path.exists(r2), "8: depois do prazo a próxima foto reabre o filho e recorta: %r" % ((r2, e2),))
 ok(m.rec_status()["filho"]["reinicios"] >= 1, "8: reinícios contados: %r" % m.rec_status()["filho"])
+ok(m.rec["mortes_mem"] == 0 and m.rec["espera_s"] == 1, "1: foto feita zera as mortes seguidas: %r" % m.rec["mortes_mem"])
+# o processo de recorte gravado para a próxima partida
+ok(any(x["pid"] == m.rec_filhos[0]["p"].pid for x in m._rec_pids_ler()) and oct(os.stat(m.REC_PIDS).st_mode & 0o777) == "0o600",
+   "notas: pid do processo de recorte em recorte-filhos.json (600): %r" % m._rec_pids_ler())
 # filho que não abre os modelos: erro com o motivo, sem travar
 m._rec_filho_matar(m.rec_filhos[0])
 os.environ["RECORTE_FALSO_NAO_ABRE"] = "1"
@@ -297,6 +304,89 @@ except RuntimeError:
     ok("não abriram" in (m.rec["erro"] or ""), "filho que não abre: %r" % m.rec["erro"])
 del os.environ["RECORTE_FALSO_NAO_ABRE"]
 m._rec_filho_matar(m.rec_filhos[0])
+ok(m.rec["espera_s"] == m.REC_ERRO_SEG, "1: erro que não é de memória espera o prazo normal: %r" % m.rec["espera_s"])
+
+# ---------- item 1 (Segurança, 10/11): espera crescente e parada depois de 3 mortes por memória ----------
+with m.rec_lock:
+    m.rec.update(erro=None, mortes_mem=0, parado=None, espera_s=1)
+esperas = []
+for k in range(3):
+    m._rec_erro("recorte parou: memória insuficiente (código -9)")
+    esperas.append(m.rec["espera_s"])
+okp, mot = m.rec_espera()
+st = m.rec_status()
+ok(esperas[:2] == [1, 2] and not okp and "parado" in mot and "3 vezes" in mot and st["parado"] and st["filho"]["mortes_memoria"] == 3,
+   "1: espera crescente e parado na 3ª morte: %r %r %r" % (esperas, mot, st.get("parado")))
+with m.rec_lock:
+    m.rec["erro_em"] = 0
+ok(m.rec_espera()[0] is False, "1: parado não volta sozinho com o tempo (só reiniciando o agente)")
+r_, e_ = m.rec_pedir("a97000000007", foto("a97000000007", (900, 600)))
+ok(r_ is None and "parado" in (e_ or ""), "1: pedido com o recorte parado volta com o motivo: %r" % ((r_, e_),))
+with m.rec_lock:
+    m.rec.update(erro=None, mortes_mem=0, parado=None, espera_s=1)
+# memória livre abaixo do mínimo: não abre o processo, motivo claro
+m._rec_filho_matar(m.rec_filhos[0])
+livre0, m.rec_mem_livre_gb, m.REC_MEM_MIN_GB = m.rec_mem_livre_gb, (lambda: 2.0), 6.0
+try:
+    m.rec_carregar()
+    ok(False, "1: com 2 GB livres não deveria abrir o recorte")
+except RuntimeError:
+    ok("memória livre insuficiente" in (m.rec["erro"] or "") and "2.0 GB" in m.rec["erro"] and "6 GB" in m.rec["erro"]
+       and not (m.rec_filhos[0]["p"] and m.rec_filhos[0]["p"].poll() is None), "1: motivo da memória livre: %r" % m.rec["erro"])
+ok(m.rec_status()["mem_livre_gb"] == 2.0 and m.rec["mortes_mem"] == 0, "1: memória livre no /status e sem contar como morte")
+m.rec_mem_livre_gb, m.REC_MEM_MIN_GB = livre0, 0
+v_ = livre0()
+ok(v_ is None or v_ > 0, "1: memória livre medida: %r" % v_)
+with m.rec_lock:
+    m.rec.update(erro=None, espera_s=1)
+
+# ---------- notas: ambiente limpo do processo de recorte ----------
+os.environ.update(MODEL_CHECKSUM_DISABLED="1", PYTHONPATH="/x", AWS_SECRET_ACCESS_KEY="nao", ETERNA_NUVEM_SEGREDO="nao", PYTHONSTARTUP="/x")
+env_ = m.rec_env()
+ok(not {"MODEL_CHECKSUM_DISABLED", "PYTHONPATH", "AWS_SECRET_ACCESS_KEY", "ETERNA_NUVEM_SEGREDO", "PYTHONSTARTUP"} & set(env_) and "PATH" in env_,
+   "notas: ambiente do recorte sem MODEL_CHECKSUM_DISABLED, PYTHONPATH e segredos: %r" % sorted(env_))
+for k in ("MODEL_CHECKSUM_DISABLED", "PYTHONPATH", "AWS_SECRET_ACCESS_KEY", "ETERNA_NUVEM_SEGREDO", "PYTHONSTARTUP"):
+    del os.environ[k]
+ok("env = rec_env()" in src, "notas: o filho abre com rec_env()")
+
+# ---------- notas: processo órfão de uma partida anterior é encerrado; outro processo nunca ----------
+import subprocess as _sp
+orf = _sp.Popen([sys.executable, m.REC_FILHO, "--inbox", m.INBOX, "--recortes", m.RECORTES], stdin=_sp.PIPE, stdout=_sp.PIPE, stderr=_sp.DEVNULL)
+outro = _sp.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+json.dump([{"pid": orf.pid, "agente": 1, "criado": None}, {"pid": outro.pid, "agente": 1, "criado": None}], open(m.REC_PIDS, "w"))
+n_orf = m.rec_orfaos_encerrar()
+try:
+    orf.wait(5)
+except Exception:
+    pass
+ok(n_orf == 1 and orf.poll() is not None and outro.poll() is None and not os.path.exists(m.REC_PIDS),
+   "notas: órfão encerrado, outro processo intacto: %r" % ((n_orf, orf.poll(), outro.poll()),))
+outro.kill()
+# o filho sai sozinho quando o agente cai no meio de uma foto (vigia do pai, fora do Windows)
+if os.name != "nt":
+    meio = _sp.Popen([sys.executable, "-c", """
+import subprocess, sys, os, json
+p = subprocess.Popen([sys.executable, sys.argv[1], "--inbox", sys.argv[2], "--recortes", sys.argv[3]], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env={**os.environ, "RECORTE_FALSO_DORMIR": "20"})
+p.stdout.readline()
+p.stdin.write(json.dumps({"id": "x", "origem": sys.argv[4], "destino": os.path.join(sys.argv[3], "a97000000099.png")}) + "\\n"); p.stdin.flush()
+print(p.pid, flush=True)
+os._exit(0)
+""", m.REC_FILHO, m.INBOX, m.RECORTES, f6], stdout=_sp.PIPE, text=True)
+    pid_neto = int(meio.stdout.readline())
+    meio.wait(10)
+    vivo = True
+    for _ in range(50):
+        time.sleep(0.2)
+        try:
+            os.kill(pid_neto, 0)
+            st_ = open("/proc/%d/stat" % pid_neto).read().split()[2] if os.path.exists("/proc/%d/stat" % pid_neto) else "R"
+            if st_ == "Z":
+                vivo = False
+                break
+        except OSError:
+            vivo = False
+            break
+    ok(not vivo, "notas: o processo de recorte sai quando o agente cai no meio de uma foto")
 
 # ---------- critério 7: versão do cache ----------
 alvo = os.path.join(tempfile.mkdtemp(), "fora.png")

@@ -29,6 +29,7 @@ import time
 import re
 import tempfile
 import hashlib
+import threading
 
 LIMIAR = 128             # 0..255, binarização das máscaras
 SOBREPOSICAO_MIN = 0.05  # componente da máscara fina precisa ter >= 5% dentro da máscara de pessoas
@@ -468,6 +469,15 @@ def main(fabrica=None):
     except Exception as ex:
         manda({"pronto": False, "erro": str(ex)[:200]})
         return 3
+    pai = os.getppid()
+
+    def vigia_pai():                       # o agente caiu no meio de uma foto: o recorte não fica segurando a memória
+        while True:
+            time.sleep(2)
+            if os.getppid() != pai:
+                os._exit(0)
+    if os.name != "nt":
+        threading.Thread(target=vigia_pai, daemon=True).start()
     manda({"pronto": True, "provedor": rc.provedor, "modelos": list(MODELOS) + [POSE[:-5]], "carga_ms": rc.carga_ms})
     for linha in sys.stdin:
         linha = linha.strip()

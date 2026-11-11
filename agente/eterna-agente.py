@@ -2435,7 +2435,20 @@ try:
 except ValueError:
     REC_PISO_GB = 10.0
 REC_ERRO_SEG = 60        # depois de um erro ao abrir os modelos (ou do filho morto), tenta de novo passado este tempo
-rec = {"carregado": False, "erro": None, "erro_em": 0, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0,
+# Segurança (10/11, item 1): o filho morto por falta de memória (-9/137) espera mais a cada vez (60, 120, 240 s) e, na 3ª
+# morte seguida, o recorte para até o agente ser reiniciado (aviso em /status.recorte.parado). Antes de abrir o filho, a
+# memória livre é conferida (psutil; no Linux sem psutil, /proc/meminfo): abaixo de REC_MEM_MIN_GB, recusa com o motivo.
+REC_MORTES_MAX = 3
+REC_MEM_MIN_GB = 6.0     # os testes trocam o atributo do módulo
+REC_MSG_MEM = "memória insuficiente"
+# o processo de recorte recebe só estas variáveis (nada de MODEL_CHECKSUM_DISABLED, PYTHONPATH, AWS_* ou outro segredo)
+REC_ENV_PASSA = ("PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "COMSPEC", "PATHEXT", "TEMP", "TMP",
+                 "TMPDIR", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
+                 "LANG", "LC_ALL", "LC_CTYPE", "REMBG_HOME", "U2NET_HOME", "ETERNA_RECORTE_GPU", "OMP_NUM_THREADS",
+                 "CUDA_VISIBLE_DEVICES", "CUDA_PATH", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH")
+REC_ENV_PREFIXOS = ()    # os testes acrescentam o prefixo das variáveis do filho falso
+REC_PIDS = os.path.join(HOME, "ponto", "recorte-filhos.json")   # processos de recorte abertos (o agente novo encerra os antigos)
+rec = {"carregado": False, "erro": None, "erro_em": 0, "espera_s": 60, "mortes_mem": 0, "parado": None, "mem_livre_gb": None, "feitos": 0, "ms_total": 0, "ms_ultimo": None, "pre_feitos": 0, "pre_falta": 0,
        "fila0": 0, "provedor": None, "carga_ms": None, "etapas_ms": None, "pico_mb": None, "reinicios": 0,
        "ia": {"feitos": 0, "erros": 0, "fila": 0, "atrasos": collections.deque(maxlen=200)}}
 # Recorte antecipado: o cliente nunca espera o "Preparando sua foto especial". Os modelos abrem quando o Eterna liga, e cada
@@ -2528,12 +2541,104 @@ def rec_estado():
     ok, motivo = rec_pose_ok()
     if not ok:
         return False, motivo
+    return rec_espera()
+
+
+def rec_espera():
+    """(ok, motivo) do último erro do recorte: parado depois de REC_MORTES_MAX mortes por memória (até reiniciar o agente),
+    ou esperando o prazo crescente (rec["espera_s"]) antes de tentar abrir o processo de novo."""
     with rec_lock:
+        if rec["parado"]:
+            return False, rec["parado"]
         if rec["erro"]:
-            if time.time() - rec["erro_em"] < REC_ERRO_SEG:
+            if time.time() - rec["erro_em"] < rec["espera_s"]:
                 return False, rec["erro"]
             rec["erro"] = None         # passou o tempo: a próxima foto tenta abrir os modelos de novo
     return True, None
+
+
+def rec_mem_livre_gb():
+    """Memória livre (GB) para o processo de recorte: psutil (no venv do recorte) ou /proc/meminfo; None se não dá para medir."""
+    try:
+        import psutil
+        return psutil.virtual_memory().available / 1024 ** 3
+    except Exception:
+        pass
+    try:
+        with open("/proc/meminfo", encoding="ascii") as f:
+            for linha in f:
+                if linha.startswith("MemAvailable:"):
+                    return int(linha.split()[1]) / 1024 ** 2
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def rec_env():
+    """Ambiente limpo do processo de recorte: só a lista REC_ENV_PASSA (e os prefixos dos testes)."""
+    passa = {k.upper() for k in REC_ENV_PASSA}
+    return {k: v for k, v in os.environ.items() if k.upper() in passa or (REC_ENV_PREFIXOS and k.upper().startswith(REC_ENV_PREFIXOS))}
+
+
+def _rec_pids_ler():
+    try:
+        with open(REC_PIDS, encoding="utf8") as f:
+            j = json.load(f)
+        return [x for x in j if isinstance(x, dict) and isinstance(x.get("pid"), int)] if isinstance(j, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _rec_pids_gravar():
+    with rec_filhos_lock:
+        lst = [{"pid": f["p"].pid, "agente": os.getpid(), "criado": f.get("criado")} for f in rec_filhos.values()
+               if f.get("p") is not None and f["p"].poll() is None]
+    try:
+        os.makedirs(os.path.dirname(REC_PIDS), exist_ok=True)
+        _grava_privado(REC_PIDS, json.dumps(lst))
+    except OSError:
+        pass
+
+
+def _rec_e_filho(pid, criado=None):
+    """True se o processo pid é um eterna-recorte.py (psutil; sem psutil, /proc no Linux). Nunca mata processo de outro tipo."""
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        if criado and abs(p.create_time() - criado) > 2:
+            return False                                 # o número foi reaproveitado por outro processo
+        return any(os.path.basename(c) == os.path.basename(REC_FILHO) for c in p.cmdline())
+    except ImportError:
+        pass
+    except Exception:
+        return False
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            return any(os.path.basename(c.decode("utf8", "replace")) == os.path.basename(REC_FILHO) for c in f.read().split(b"\0") if c)
+    except OSError:
+        return False
+
+
+def rec_orfaos_encerrar():
+    """Na partida: o processo de recorte deixado por um agente que caiu (gravado em REC_PIDS) é encerrado, para não segurar
+    a memória do novo. Devolve quantos foram encerrados."""
+    import signal
+    n = 0
+    for x in _rec_pids_ler():
+        pid = x["pid"]
+        if pid == os.getpid() or not _rec_e_filho(pid, x.get("criado")):
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else 9)
+            n += 1
+            print("  recorte: processo antigo %d encerrado (de uma partida anterior)" % pid)
+        except OSError:
+            pass
+    try:
+        os.remove(REC_PIDS)
+    except OSError:
+        pass
+    return n
 
 
 def _pct(v, q):
@@ -2569,7 +2674,8 @@ def rec_status():
         return {"ok": ok, "motivo": motivo, "carregado": rec["carregado"], "modelos": list(REC_MODELOS),
                 "modelo": REC_MODELOS[0], "auxiliares": list(REC_MODELOS[1:]) + [REC_POSE[:-5]], "versao": REC_VERSAO,
                 "provedor": rec["provedor"], "carga_ms": rec["carga_ms"], "etapas_ms": rec["etapas_ms"], "pico_mb": rec["pico_mb"],
-                "filho": {"vivo": vivo, "reinicios": rec["reinicios"]},
+                "filho": {"vivo": vivo, "reinicios": rec["reinicios"], "mortes_memoria": rec["mortes_mem"], "espera_s": rec["espera_s"]},
+                "parado": rec["parado"], "mem_livre_gb": rec["mem_livre_gb"], "mem_min_gb": REC_MEM_MIN_GB,
                 "fila": sum(1 for j in rec_jobs.values() if not j["pego"]),
                 "antecipado": {"ligado": REC_PRE, "escolhidas": rec.get("pre_escolhidas", 0), "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
                 "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"],
@@ -2625,10 +2731,20 @@ def _rec_filho_matar(f):
 
 
 def _rec_erro(motivo):
+    """Erro do recorte: espera REC_ERRO_SEG; morte por memória dobra a espera a cada vez e para na REC_MORTES_MAX-ésima."""
     with rec_lock:
         rec["erro"] = motivo[:200]
         rec["erro_em"] = time.time()
         rec["carregado"] = False
+        if REC_MSG_MEM + " (código" in motivo:
+            rec["mortes_mem"] += 1
+            rec["espera_s"] = REC_ERRO_SEG * 2 ** (rec["mortes_mem"] - 1)
+            if rec["mortes_mem"] >= REC_MORTES_MAX:
+                rec["parado"] = ("recorte parado: o processo foi encerrado por falta de memória %d vezes seguidas. Feche programas "
+                                 "ou use um computador com 16 GB e reinicie o agente" % rec["mortes_mem"])
+                print("  " + rec["parado"])
+        else:
+            rec["espera_s"] = REC_ERRO_SEG
 
 
 def rec_carregar(i=0):
@@ -2651,8 +2767,18 @@ def _rec_abrir(f):
         f["p"] = None
         _rec_erro(motivo)
         raise RuntimeError(motivo)
-    env = dict(os.environ)
-    env.pop("PYTHONSTARTUP", None)
+    okp, mot = rec_espera()                            # parado (3 mortes por memória) ou dentro do prazo: não abre
+    if not okp:
+        raise RuntimeError(mot)
+    livre = rec_mem_livre_gb()
+    with rec_lock:
+        rec["mem_livre_gb"] = round(livre, 1) if livre is not None else None
+    if livre is not None and livre < REC_MEM_MIN_GB:
+        motivo = ("memória livre insuficiente para abrir o recorte: %.1f GB livres, precisa de %.0f GB (feche programas; o "
+                  "recorte é do servidor do ponto)" % (livre, REC_MEM_MIN_GB))
+        _rec_erro(motivo)
+        raise RuntimeError(motivo)
+    env = rec_env()
     try:
         p = subprocess.Popen([sys.executable, REC_FILHO, "--inbox", INBOX, "--recortes", RECORTES, "--modelos", MODELOS],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1,
@@ -2662,7 +2788,8 @@ def _rec_abrir(f):
         raise
     fila = queue.Queue()
     threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
-    f.update(p=p, fila=fila)
+    f.update(p=p, fila=fila, criado=time.time())
+    _rec_pids_gravar()
     try:
         j = fila.get(timeout=REC_CARGA_SEG)
     except queue.Empty:
@@ -2722,6 +2849,8 @@ def rec_filho_recortar(pid, origem, destino, i=0):
     if not j.get("ok"):
         raise ValueError(str(j.get("erro") or "não deu para recortar")[:200])
     with rec_lock:
+        rec["mortes_mem"] = 0                      # foto feita: as mortes por memória deixam de ser seguidas
+        rec["espera_s"] = REC_ERRO_SEG
         rec["etapas_ms"] = {k: int(v) for k, v in (j.get("ms") or {}).items() if isinstance(v, (int, float))}
         if isinstance(j.get("pico_mb"), (int, float)):
             rec["pico_mb"] = int(j["pico_mb"])
@@ -7805,6 +7934,7 @@ def main():
         imp_retomar()
         threading.Thread(target=imp_monitor, daemon=True).start()
     threading.Thread(target=rostos_thread, daemon=True).start()
+    rec_orfaos_encerrar()               # processo de recorte de uma partida anterior (agente que caiu) não segura memória
     rec_versao_cache()                  # v97: recorte de versão anterior sai antes do recorte antecipado
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
