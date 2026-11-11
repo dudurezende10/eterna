@@ -362,6 +362,12 @@ Admin e Laboratório pedem a prévia ao servidor; saem `fiaMontar` e companhia d
 - Testes: `testes/montagem-checkout.js` (24, 25, 27 a 32, 34 e a ordem do 26) e as rotas (28, 33, 34) em `testes/montagem_servidor_agente.py`. O critério 26 inteiro (os 18 do selo com o servidor montando) não foi repetido: o `selo-edicao.js` segue passando no canvas e o teste novo cobre ordem, abertura na 1ª pronta, espera e imagem no mesmo item.
 - Critério 35 (portão): aberto, é do Eduardo.
 
+## Registro da implementação (E3, 11/11)
+- Agente: `mont_impressao(mid)` e `GET /montagens/<mid>/impressao.jpg` (só montagem `vendida`: 409 `nao_vendida`; feito do `final` no primeiro pedido pelo processo de montagem, guardado como `<mid>_i.jpg`, reimpressão com o mesmo arquivo); `imprimir()` aceita o item `{"mont": "<mid>"}` (só esse campo; não vendida, inexistente ou fora do formato recusada; base64 continua valendo); `/status.montagem.imprime` verdadeiro com a montagem ligada.
+- App: `printMontar` com `montSrv()` usa o corte do servidor (`montMidVenda`: o `mid` do `s.aiMont` da venda paga; sem ele, o que a lista devolve) e marca `data-mont` na imagem; o envio ao `POST /imprimir` manda `{mont}` quando `montagem.imprime`. **Se o arquivo do servidor não vem (409 porque a venda ainda não chegou ao servidor, agente fora), a impressão cai no `compHi` de sempre**: o caixa nunca fica sem imprimir.
+- A impressão pelo servidor também fica atrás do interruptor `checkout` (é o `montSrv()`).
+- Testes: 36 a 40 em `testes/montagem_servidor_agente.py` (409, 1844×1240, corte preso embaixo e Telão no meio, mesmo arquivo na reimpressão, `{mont}` recusado nos 5 casos) e 36 em `testes/montagem-checkout.js` (as 2 imagens vêm de `/montagens/<mid>/impressao.jpg`, nenhum recorte pedido, sem selo; sem o arquivo, canvas). O envio `{mont}` pelo app ao `/imprimir` não tem teste de navegador (precisa de impressora no agente falso); o lado do servidor está coberto.
+
 ## Decisões para o Eduardo (texto original das propostas)
 - D1. Retenção da montagem não vendida: 3 dias (proposta). Mais dias = mais disco (~15 GB por dia no teto).
 - D2. Quantas montagens por visita: as 10 (2 bases × 5 fundos, como pedido; proposta) ou só as 5 que o Checkout mostra, com a reserva feita em ~2 s quando a base preferida é ruim (metade do disco e do tempo).

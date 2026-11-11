@@ -54,7 +54,7 @@ try{
     const fs=j.fundos||ORDEM;const itens=[];(j.bases||[]).forEach(p=>fs.forEach(f=>{const k=p+'|'+f;const e=SRV.estado[k]||'indisponivel';itens.push({base:p,fundo:f,mid:e==='pronta'?midDe('ag_'+k):null,estado:e,motivo:e==='erro'?'sem_pessoa':null,w:e==='pronta'?5000:null,h:e==='pronta'?3333:null});}));
     r.fulfill({status:200,contentType:'application/json',body:J({versao:1,itens})});});
   await ctx.route(ORIG+'/montagens/*/previa.jpg',r=>{SRV.previas.push(r.request().url().split('/').slice(-2)[0]);r.fulfill({status:200,contentType:'image/jpeg',body:PREVIA});});
-  await ctx.route(ORIG+'/montagens/*/impressao.jpg',r=>{SRV.impressoes.push(r.request().url().split('/').slice(-2)[0]);r.fulfill({status:200,contentType:'image/jpeg',body:IMPRESSAO});});
+  await ctx.route(ORIG+'/montagens/*/impressao.jpg',r=>{if(SRV.semImpressao)return r.fulfill({status:409,contentType:'application/json',body:'{"error":"nao_vendida"}'});SRV.impressoes.push(r.request().url().split('/').slice(-2)[0]);r.fulfill({status:200,contentType:'image/jpeg',body:IMPRESSAO});});
     return ctx;};
   let ctx=await novoCtx();
   const espera=async(p,fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await p.evaluate(fn,arg))return true;await p.waitForTimeout(120);}return false;};
@@ -121,7 +121,18 @@ try{
   const sv=await pg2.evaluate(c=>{const s=ETERNA.SIM.sessions[c];return {ai:(s.aiSel||[]).slice().sort(),m:s.aiMont||null,st:s.status};},CARD);
   ok(J(sv.ai)===J(aiEsp)&&sv.m&&aiEsp.every(x=>sv.m[x]===midDe(x)),'32: a sessão paga guarda o aiMont: '+J(sv));
   notas.venda={card:CARD,ai:aiEsp};
-  /*E3*/
+  // ===== E3 (36): a impressão da venda usa o corte 10x15 do servidor; nenhum compHi =====
+  const r36=SRV.recortes;
+  const p36=await pg2.evaluate(async([ai,ph])=>{const r=await ETERNA.printMontar([...ai.map(k=>{const [id,bg]=k.split('|');return {k:'ai:'+k,t:'ai',id,bg};}),{k:ph,t:'ph',id:ph}]);const root=document.getElementById('print-root');
+    const o={ok:r.ok,falhasIA:r.falhasIA,imgs:[...root.querySelectorAll('img')].map(i=>({t:i.dataset.t,src:i.src,mont:i.dataset.mont||null,w:i.naturalWidth,h:i.naturalHeight})),ed:root.querySelectorAll('.lj-ed,.eco-ed,.lj-edn').length};root.remove();document.body.classList.remove('pr-on');return o;},[aiEsp,'ag_'+FOTOS[0]]);
+  const ai36=p36.imgs.filter(x=>x.t==='ai');
+  ok(p36.ok.length===3&&!p36.falhasIA.length&&ai36.length===2&&ai36.every((x,i)=>x.src.endsWith('/montagens/'+midDe(aiEsp[i])+'/impressao.jpg')&&x.mont===midDe(aiEsp[i])&&x.w===1844&&x.h===1240),'36: as 2 montagens da venda vêm de /montagens/<mid>/impressao.jpg, 1844x1240: '+J(p36));
+  ok(SRV.recortes===r36&&aiEsp.every(x=>SRV.impressoes.includes(midDe(x)))&&p36.ed===0,'36/39: nenhum compHi (nenhum recorte pedido) e nenhum selo na impressão: '+J({rec:SRV.recortes-r36,imp:SRV.impressoes}));
+  // o arquivo do servidor não vem (venda ainda não chegou ao servidor): a impressão cai no canvas de sempre, sem travar o caixa
+  SRV.semImpressao=true;
+  const p36b=await pg2.evaluate(async k=>{const [id,bg]=k.split('|');const r=await ETERNA.printMontar([{k:'ai:'+k,t:'ai',id,bg}]);const root=document.getElementById('print-root');const im=root.querySelector('img');const o={ok:r.ok.length,src:im?im.src.slice(0,22):null,w:im&&im.naturalWidth};root.remove();document.body.classList.remove('pr-on');return o;},'ag_'+BASES[1]+'|tunel');
+  ok(p36b.ok===1&&/^data:image\/jpeg/.test(p36b.src||'')&&p36b.w===1844&&SRV.recortes>r36,'36: sem o arquivo do servidor, a impressão usa o canvas (compHi): '+J(p36b));
+  SRV.semImpressao=false;
   await pg2.close();await pg.close();
 
   // 29: servidor com a montagem ligada e sem terminar (filho parado): Preparando e, sem toque, a tela vai para a 1ª foto; nada no navegador

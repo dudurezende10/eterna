@@ -165,7 +165,7 @@ ok(not linhas() and not arquivos_no_disco(), "22: desligada, nenhuma linha e nen
 ok(cfg("montagem", {"ligada": "sim"})["gravados"] == 0 and cfg("montagem", None)["gravados"] == 0, "22: config/montagem inválida ou apagada é recusada")
 ok(cfg("montagem", {"ligada": True, "por": "admin@teste"})["gravados"] == 1, "config/montagem ligada gravada")
 st = m.mont_status()
-ok(st["ligada"] is True and st["checkout"] is False and st["imprime"] is False, "config/montagem ligada: /status.montagem.ligada, com o Checkout ainda fora (D5): %r" % st)
+ok(st["ligada"] is True and st["checkout"] is False, "config/montagem ligada: /status.montagem.ligada, com o Checkout ainda fora (D5): %r" % st)
 
 # ---------- 10 e 11: leva com 2 bases: 10 montagens, preferidas antes das reservas, 2 arquivos por linha ----------
 t0 = time.time()
@@ -319,7 +319,8 @@ ok(H("GET", "/montagens/%s/previa.jpg" % mid1, host="evil.invalid")[0] == 403 an
 # 33: caminhos
 for cam in ("/montagens", "/montagens/", "/montagens/lista", "/montagens/%s" % mid1, "/montagens/%s/final.jpg" % mid1, "/montagens/%s/previa.jpg/x" % mid1,
             "/montagens/%s/previa.png" % mid1, "/montagens/../%s/previa.jpg" % mid1, "/montagens/%s/../previa.jpg" % mid1, "/montagens/%s/previa.jpg" % mid1.upper(),
-            "/montagens/%s/previa.jpg" % (mid1[:-1]), "/montagens/%s/previa.jpg" % ("0" * 32), "/montagens/%2e%2e/previa.jpg", "/montagens/%s/impressao.jpg" % mid1):
+            "/montagens/%s/previa.jpg" % (mid1[:-1]), "/montagens/%s/previa.jpg" % ("0" * 32), "/montagens/%2e%2e/previa.jpg", "/montagens/%s/impressao.jpg" % ("0" * 32),
+            "/montagens/%s/impressao.jpg/x" % mid1, "/montagens/%s/impressao" % mid1):
     ok(H("GET", cam)[0] == 404, "33: GET %s = 404" % cam.replace(mid1, "<mid>"))
 ok(H("POST", "/montagens/outra", {"bases": bases})[0] == 404 and H("POST", "/montagens/%s/previa.jpg" % mid1, {})[0] == 404, "33: POST fora da tabela = 404")
 # 33: validação
@@ -359,6 +360,65 @@ st_, j_, _, _ = H("POST", "/montagens/lista", {"bases": [bases[1]], "fundos": ["
 ok(st_ == 200 and j_["itens"][0]["mid"] in (None, mid1), "E2: pedir com a linha na fila")
 ok(espera(lambda: [r for r in de_base(bases[1]) if r["fundo"] == "tunel"][0]["estado"] == "pronta", 60), "E2: a linha pedida volta a ficar pronta com o mesmo mid")
 ok([r for r in de_base(bases[1]) if r["fundo"] == "tunel"][0]["prio"] == 0, "E2: pedir sobe a prioridade para 0")
+# ---------- E3 (critérios 36 a 40): impressão pelo arquivo do servidor ----------
+ok(m.mont_status()["imprime"] is True, "E3: /status.montagem.imprime")
+st_, j_, _, _ = H("GET", "/montagens/%s/impressao.jpg" % mid1)
+ok(st_ == 409 and j_ == {"error": "nao_vendida"}, "37: corte de impressão de montagem não vendida = 409: %r %r" % (st_, j_))
+ok(not os.path.exists(m.mont_arquivos(HOJE, mid1)[2]), "37: e nada é gerado")
+mid_t = it[(bases[1], "telao")]["mid"]
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set vendida = ?, venda = 'V-IMP', expira = ? where mid in (?, ?)", (time.time(), time.time() + 60 * 86400, mid1, mid_t)); db.commit(); db.close()
+st_, _, c1, hd = H("GET", "/montagens/%s/impressao.jpg" % mid1)
+arq_i = m.mont_arquivos(HOJE, mid1)[2]
+ok(st_ == 200 and hd.get("content-type") == "image/jpeg" and os.path.isfile(arq_i) and stat.S_IMODE(os.stat(arq_i).st_mode) == 0o600, "36: corte de impressão da montagem vendida, guardado como <mid>_i.jpg 600: %r" % st_)
+with Image.open(io.BytesIO(c1)) as im:
+    ok(im.size == (1844, 1240) and im.format == "JPEG" and not im.getexif(), "36: 1844x1240, JPEG sem EXIF: %r" % (im.size,))
+    corte = np.asarray(im.convert("RGB")).astype(int)
+# 38: é o corte do fiaMontar hi (centro na horizontal, preso embaixo) feito do final guardado
+with Image.open(m.mont_arquivos(HOJE, mid1)[0]) as fim:
+    W_, H_ = fim.size
+    k_ = max(1844 / W_, 1240 / H_)
+    sw_, sh_ = 1844 / k_, 1240 / k_
+    ref = np.asarray(fim.convert("RGB").resize((1844, 1240), Image.LANCZOS, box=((W_ - sw_) / 2, H_ - sh_, (W_ - sw_) / 2 + sw_, H_))).astype(int)
+ok(float(np.abs(corte - ref).mean()) < 2.0, "38/39: o corte bate com o final (preso embaixo), sem nada escrito por cima: erro médio %.2f" % float(np.abs(corte - ref).mean()))
+st_, _, ct, _ = H("GET", "/montagens/%s/impressao.jpg" % mid_t)
+with Image.open(io.BytesIO(ct)) as im, Image.open(m.mont_arquivos(HOJE, mid_t)[0]) as fim:
+    W_, H_ = fim.size
+    k_ = max(1844 / W_, 1240 / H_)
+    sw_, sh_ = 1844 / k_, 1240 / k_
+    ref = np.asarray(fim.convert("RGB").resize((1844, 1240), Image.LANCZOS, box=((W_ - sw_) / 2, (H_ - sh_) / 2, (W_ - sw_) / 2 + sw_, (H_ - sh_) / 2 + sh_))).astype(int)
+    embaixo = np.asarray(fim.convert("RGB").resize((1844, 1240), Image.LANCZOS, box=((W_ - sw_) / 2, H_ - sh_, (W_ - sw_) / 2 + sw_, H_))).astype(int)
+    tel = np.asarray(im.convert("RGB")).astype(int)
+    e_meio, e_baixo = float(np.abs(tel - ref).mean()), float(np.abs(tel - embaixo).mean())
+    ok(st_ == 200 and im.size == (1844, 1240) and e_meio < 4.0 and e_baixo > 3 * e_meio, "38: Telão cortado no meio da altura (erro %.2f contra o corte do meio, %.2f contra o de baixo; o resto é do JPEG)" % (e_meio, e_baixo))
+t_i = os.stat(arq_i).st_mtime_ns
+st_, _, c2, _ = H("GET", "/montagens/%s/impressao.jpg" % mid1)
+ok(st_ == 200 and c2 == c1 and os.stat(arq_i).st_mtime_ns == t_i, "40: a reimpressão usa o mesmo arquivo (mesmo SHA, sem refazer)")
+ok(H("GET", "/montagens/%s/impressao.jpg" % mid1, host="evil.invalid")[0] == 403, "33: corte de impressão com Host de fora = 403")
+# 37: POST /imprimir com {mont}: o arquivo do servidor; não vendida ou inexistente recusada; base64 continua valendo
+_imp = (m.IMPRESSORA, m.imp_ps1, m.imprimir_fila, m.imp_pedido)
+m.IMPRESSORA, m.imp_ps1, m.imprimir_fila = "teste", (lambda: None), (lambda *a, **k: None)
+m.imp_pedido = lambda *a, **k: {"id": 1}
+jb = io.BytesIO(); Image.new("RGB", (60, 40), (9, 9, 9)).save(jb, "JPEG")
+b64 = "data:image/jpeg;base64," + __import__("base64").b64encode(jb.getvalue()).decode()
+r37 = m.imprimir([{"mont": mid1}, b64], "V-IMP")
+gravados = sorted(os.path.join(m.IMP_DIR, n) for n in os.listdir(m.IMP_DIR)) if os.path.isdir(m.IMP_DIR) else []
+ok(r37.get("ok") and r37.get("fotos") == 2 and len(gravados) == 2 and open(gravados[0], "rb").read() == c1 and open(gravados[1], "rb").read() == jb.getvalue(),
+   "37: {mont} imprime o arquivo do servidor e o base64 continua valendo: %r" % r37)
+nao_vendida = it[(bases[0], "mirante")]["mid"]
+for item, nome in (({"mont": nao_vendida}, "não vendida"), ({"mont": "0" * 32}, "inexistente"), ({"mont": "../../etc/passwd"}, "fora do formato"), ({"mont": mid1, "arquivo": "/etc/passwd"}, "com campo a mais"), ({"arquivo": "/etc/passwd"}, "sem mont")):
+    r_ = m.imprimir([item], "V-IMP")
+    ok(r_.get("ok") is False, "37: item %s recusado: %r" % (nome, r_))
+ok(len(os.listdir(m.IMP_DIR)) == 2, "37: item recusado não deixa arquivo na pasta de impressão")
+m.IMPRESSORA, m.imp_ps1, m.imprimir_fila, m.imp_pedido = _imp
+with m.mont_lock:
+    db = m.mont_db(); db.execute("update montagem set vendida = null, venda = null, expira = null where mid in (?, ?)", (mid1, mid_t)); db.commit(); db.close()
+for mm_ in (mid1, mid_t):
+    try:
+        os.remove(m.mont_arquivos(HOJE, mm_)[2])
+    except OSError:
+        pass
+
 # 22/E2: desligada = 503
 cfg("montagem", {"ligada": False})
 ok(H("POST", "/montagens/lista", {"bases": bases})[0] == 503 and H("POST", "/montagens/lista", {"bases": bases})[1] == {"error": "montagem_desligada"}, "E2: montagem desligada = 503 montagem_desligada")

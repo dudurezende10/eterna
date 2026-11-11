@@ -3334,7 +3334,7 @@ _mont_fundo_ok = {}                # caminho -> (tamanho, mtime, confere)
 _re_mid = re.compile(r"^[0-9a-f]{32}$")
 _re_mont_dia = re.compile(r"^\d{4}-\d\d-\d\d$")
 _re_mont_arq = re.compile(r"^([0-9a-f]{32})(_p|_i)?\.jpg$")
-_re_mont_get = re.compile(r"^/montagens/([0-9a-f]{32})/(previa)\.jpg$")
+_re_mont_get = re.compile(r"^/montagens/([0-9a-f]{32})/(previa|impressao)\.jpg$")
 MONT_COLS = ("mid", "base", "fundo", "versao", "estado", "motivo", "dia", "w", "h", "bytes", "sha", "rostos", "prio", "origem",
              "criada", "pronta", "ms", "vendida", "venda", "expira", "apagada")
 
@@ -3743,6 +3743,42 @@ def mont_previa(mid):
     except ValueError:
         return None
     return f if os.path.isfile(f) and not os.path.islink(f) else None
+
+
+_mont_imp_lock = threading.Lock()
+
+
+def mont_impressao(mid):
+    """(arquivo, código) do corte de impressão 10x15 (1844x1240) da montagem VENDIDA: feito do final no primeiro pedido
+    (processo de montagem, op "imprimir") e guardado como <mid>_i.jpg; a reimpressão usa o mesmo arquivo. 404 se não
+    existe ou não está pronta, 409 se não foi vendida, 503 se o processo de montagem não respondeu. O caminho é montado aqui."""
+    if not _re_mid.match(mid or ""):
+        return None, 404
+    rs = mont_ler("where mid = ? and estado = 'pronta'", (mid,))
+    if not rs:
+        return None, 404
+    r = rs[0]
+    if not r["vendida"]:
+        return None, 409
+    final, _, imp = mont_arquivos(r["dia"], mid)
+    if os.path.islink(imp) or os.path.islink(final) or not os.path.isfile(final):
+        return None, 404
+    with _mont_imp_lock:
+        if not os.path.isfile(imp):
+            try:
+                j = mont_filho_pedir({"op": "imprimir", "id": mid, "final": final, "bg": r["fundo"], "destino": imp}, 0)
+            except RuntimeError:
+                return None, 503
+            if not j.get("ok") or not os.path.isfile(imp):
+                return None, 503
+            with mont_lock:
+                db = mont_db()
+                try:
+                    db.execute("update montagem set bytes = coalesce(bytes, 0) + ? where mid = ?", (int((j.get("bytes") or {}).get("impressao") or 0), mid))
+                    db.commit()
+                finally:
+                    db.close()
+    return imp, 200
 
 
 def _mont_erro(motivo):
@@ -4179,7 +4215,7 @@ def mont_status():
     livre = mont_livre_gb()
     fundos = list(c["fundos"])
     with mont_lock:
-        return {"v": 1, "ligada": bool(c["ligada"] and ok_), "checkout": bool(c["ligada"] and ok_ and c["checkout"]), "imprime": False,
+        return {"v": 1, "ligada": bool(c["ligada"] and ok_), "checkout": bool(c["ligada"] and ok_ and c["checkout"]), "imprime": bool(c["ligada"] and ok_),
                 "versao": MONT_VERSAO, "motivo": motivo or mont["motivo"] or mont["erro"],
                 "filho": {"vivo": vivo, "reinicios": mont["reinicios"], "mortes_memoria": mont["mortes_mem"]},
                 "parado": bool(mont["parado"]), **s, "pico_mb": mont["pico_mb"],
@@ -6960,7 +6996,9 @@ def imp_fila_json():
 
 
 def imprimir(imagens, venda, vendedor="", posto=""):
-    """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor."""
+    """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor.
+    E3: o item {"mont": "<mid>"} imprime o corte de impressão que o servidor guarda (só montagem vendida; o arquivo é
+    achado aqui pelo mid, nenhum caminho vem do app)."""
     if not isinstance(imagens, list) or not imagens or len(imagens) > 20:
         return {"ok": False, "error": "nenhuma foto (ou mais de 20)"}
     t0 = time.time()
@@ -6968,10 +7006,19 @@ def imprimir(imagens, venda, vendedor="", posto=""):
     tag = time.strftime("%Y%m%d-%H%M%S") + "_" + re.sub(r"[^A-Za-z0-9-]", "", venda)[:20]
     arqs = []
     for i, im in enumerate(imagens):
-        try:
-            b = base64.b64decode(str(im).split(",", 1)[-1])
-        except Exception:
-            return {"ok": False, "error": "foto %d inválida" % (i + 1)}
+        if isinstance(im, dict):
+            if set(im) != {"mont"} or not isinstance(im["mont"], str):
+                return {"ok": False, "error": "foto %d inválida" % (i + 1)}
+            arq, cod = mont_impressao(im["mont"])
+            if not arq:
+                return {"ok": False, "error": "foto %d: montagem %s" % (i + 1, "não vendida" if cod == 409 else "não encontrada" if cod == 404 else "indisponível no servidor")}
+            with open(arq, "rb") as fh:
+                b = fh.read()
+        else:
+            try:
+                b = base64.b64decode(str(im).split(",", 1)[-1])
+            except Exception:
+                return {"ok": False, "error": "foto %d inválida" % (i + 1)}
         if b[:3] != b"\xff\xd8\xff":
             return {"ok": False, "error": "foto %d não é JPEG" % (i + 1)}
         f = os.path.join(IMP_DIR, "%s_%d.jpg" % (tag, i + 1))
@@ -8163,8 +8210,8 @@ class H(BaseHTTPRequestHandler):
         return self.js(r, 200, nostore=True)
 
     def mont_rota(self, metodo, path):
-        """Montagem no servidor (E2): despachante único e fechado de /montagens. POST /montagens/lista e
-        GET /montagens/<mid 32 hex>/previa.jpg; qualquer outro caminho = 404. Guarda: posto + origem local (Host da lista,
+        """Montagem no servidor (E2, E3): despachante único e fechado de /montagens. POST /montagens/lista e
+        GET /montagens/<mid 32 hex>/previa.jpg ou impressao.jpg; qualquer outro caminho = 404 (não existe rota para o final). Guarda: posto + origem local (Host da lista,
         contra DNS rebinding) -> X-Eterna: 1 no POST -> 120 por minuto por IP -> validação. Nunca CORS aberto (cors())."""
         mg = _re_mont_get.match(path) if metodo == "GET" else None
         if not mg and not (metodo == "POST" and path == "/montagens/lista"):
@@ -8183,7 +8230,12 @@ class H(BaseHTTPRequestHandler):
                 print("  montagens/lista: %s" % type(ex).__name__)
                 return self.js({"error": "erro no servidor"}, 500)
             return self.js(r, cod, nostore=True)
-        f = mont_previa(mg.group(1))
+        if mg.group(2) == "impressao":             # E3: só montagem vendida; feito no primeiro pedido e guardado
+            f, cod = mont_impressao(mg.group(1))
+            if not f:
+                return self.js({"error": "nao_vendida" if cod == 409 else "not found" if cod == 404 else "indisponivel"}, cod)
+        else:
+            f = mont_previa(mg.group(1))
         try:
             with open(f, "rb") as fh:
                 data = fh.read()
