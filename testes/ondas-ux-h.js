@@ -26,11 +26,13 @@ try{
     ok(!dif.length,'H2 '+k+': menu ≠ título: '+dif.join(' | '));
     const grps=await pg.$$eval('#nav .grp',g=>g.map(x=>x.textContent.trim()));
     if(k==='venda'){ok(!grps.length&&J(its.map(x=>x.t))===J(['Posto de venda','Fila do fotógrafo','Preços']),'H3 vendedor: '+J({grps,its}));
-      ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&!(await pg.$('#rail-ck [data-v]')),'H4: vendedor com o botão grande Abrir Checkout e sem o botão Posto de venda');}
+      // v96-ux (Eduardo, 10/11, cace1c4): botões amarelos Abrir Checkout e Caixa no alto do menu para quem pode usá-los; o Posto continua só no menu
+      ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&await pg.$('#rail-ck [data-v="caixa"]')&&!(await pg.$('#rail-ck [data-v="posto"]')),'H4: vendedor com os botões Abrir Checkout e Caixa e sem o botão Posto de venda');}
     if(k==='foto')ok(!grps.length&&its.length<=5&&its.length>0,'H3 fotógrafo: sem grupos e até 5 itens: '+J({grps,n:its.length}));
     if(k==='valida')ok(!grps.length,'H3: validador (3 telas) sem grupos');
-    if(k==='admin'||k==='supervisor'){ok(!(await pg.$('#rail-ck [data-act="loja-abrir"]'))&&!(await pg.$('#rail-ck [data-v]')),'H4 '+k+': botões grandes no topo');
-      ok(await pg.$('#nav .nav-ck[data-act="loja-abrir"]'),'H4 '+k+': sem "Abrir Checkout" no rodapé do menu');}
+    // v96-ux (cace1c4) substitui a decisão 9: Admin e Supervisora também têm os botões amarelos no alto e nenhum "Abrir Checkout" no rodapé (v97-junta: botão único)
+    if(k==='admin'||k==='supervisor'){ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&await pg.$('#rail-ck [data-v="caixa"]'),'H4 '+k+': sem os botões amarelos Abrir Checkout e Caixa no topo');
+      ok(!(await pg.$('#nav .nav-ck[data-act="loja-abrir"]')),'H4 '+k+': "Abrir Checkout" repetido no rodapé do menu');}
     if(k==='admin'){
       // H6: no Painel, o grupo Sistema fechado
       await pg.evaluate(()=>ETERNA.go('painel'));await pg.waitForTimeout(100);

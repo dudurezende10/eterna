@@ -14,12 +14,14 @@ try{
   // ---- I1, I3, I5: Admin
   {const {ctx,pg}=await nova(b);ok(await entrar(pg,'eduardo@eduardorezende.com'),'admin não entrou');await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(150);
     ok(J(await abas(pg))===J(['Preços','Checkout','Fundos de IA','Avançado']),'I1: abas do Admin: '+J(await abas(pg)));
-    const i5=await pg.evaluate(()=>({sel:document.querySelectorAll('#main [data-act="cat-tab"][aria-selected="true"]').length,outros:!!document.querySelector('#busca-janela,#ia-cfg,#fundos-modo,#cat-fundos,[data-act="rf-save"],[data-act="cartao-lote"]'),h:document.querySelector('#main').scrollHeight,th:[...document.querySelectorAll('#main th')].map(x=>x.textContent)}));
-    ok(i5.sel===1&&!i5.outros,'I5: só a aba Preços visível: '+J(i5));ok(i5.h<900,'I5: altura da aba Preços >= 900 px: '+i5.h);ok(i5.th.includes('Na semana'),'I: cabeçalho "Na semana": '+J(i5.th));
+    const i5=await pg.evaluate(()=>({sel:document.querySelectorAll('#main [data-act="cat-tab"][aria-selected="true"]').length,outros:!!document.querySelector('#busca-janela,#ia-cfg,#fundos-modo,#cat-fundos,[data-act="rf-save"],[data-act="cartao-lote"]'),h:document.querySelector('#main').scrollHeight,n:document.querySelectorAll('#main tbody tr').length,th:[...document.querySelectorAll('#main th')].map(x=>x.textContent)}));
+    ok(i5.sel===1&&!i5.outros,'I5: só a aba Preços visível: '+J(i5));// v98 (Ronaldo, 11/11): 12 produtos da Imply com a linha do SKU; o limite de 900 px era do catálogo antigo, vale a aba só com a tabela (até 64 px por produto)
+    ok(i5.h<=380+64*i5.n,'I5: aba Preços maior que a tabela: '+J({h:i5.h,n:i5.n}));ok(i5.th.includes('Na semana'),'I: cabeçalho "Na semana": '+J(i5.th));
     for(const t of ['precos','checkout','fundos']){await aba(pg,t);const tx=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(!TEC.test(tx),'I3: texto técnico na aba '+t+': '+(tx.match(TEC)||[''])[0]);}
     await aba(pg,'checkout');ok(await pg.$('#busca-janela')&&await pg.$('#loja-fim')&&await pg.$('#main [data-v="calendario"]'),'I: aba Checkout com tempo da tela final, janela da selfie e Calendário');
     await aba(pg,'fundos');ok((await pg.$$('#cat-fundos [data-act="bg-on"]')).length===5&&await pg.$('#ia-cfg'),'I2: aba Fundos de IA com os 5 fundos e as fotos para os fundos de IA');
-    await aba(pg,'avancado');ok(await pg.$('#fundos-modo')&&await pg.$('[data-act="cartao-lote"]'),'I: aba Avançado com a montagem e os cartões com QR');
+    // v97-recorte (Eduardo, 1589be1): o Photoroom saiu das opções e o painel Montagem dos fundos também (o recorte é sempre local)
+    await aba(pg,'avancado');ok(!(await pg.$('#fundos-modo'))&&await pg.$('[data-act="cartao-lote"]'),'I: aba Avançado com os cartões com QR e sem a Montagem dos fundos');
     // ACT_MOD fixo para as ações de Preços e Checkout
     const am=await pg.evaluate(()=>{const A=ETERNA.ACT_MOD;return ['bg-on','cartao-lote','loja-fim','price','price-reset'].map(k=>k+':'+A[k]);});
     ok(J(am)===J(['bg-on:configuracao','cartao-lote:catalogo','loja-fim:catalogo','price:catalogo','price-reset:catalogo']),'I: ACT_MOD '+J(am));

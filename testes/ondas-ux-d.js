@@ -14,7 +14,9 @@ async function agente(ctx){
   await ctx.route(ORIG+'/biblioteca',r=>r.fulfill({status:200,contentType:'application/json',body:'{"fotos":[]}'}));
   await ctx.route(ORIG+'/fila-fotografo',r=>r.fulfill({status:200,contentType:'application/json',body:'{"ok":true,"grupos":[]}'}));
   await ctx.route(ORIG+'/sessoes*',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,gen:'gD',rev:FEED.rev,pausa:60,rostos:true,completo:true,sessoes:FEED.sessoes})}));
-  await ctx.route(ORIG+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:PX}));}
+  await ctx.route(ORIG+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:PX}));
+  // v93: as contas do FTP vêm de GET /ftp/contas (não mais do /status)
+  await ctx.route(ORIG+'/ftp/contas',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,users:['carlos','samuel']})}));}
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(300);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(300);}
   await require('./_entrar')(pg,email);}

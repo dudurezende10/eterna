@@ -46,7 +46,7 @@ for i in range(n):
 f.quit()
 for _ in range(60):
     c = http.client.HTTPConnection("127.0.0.1", porta, timeout=10)
-    c.request("GET", "/biblioteca", headers={"Host": "127.0.0.1:%d" % porta})
+    c.request("GET", "/biblioteca", headers={"Host": "127.0.0.1:%d" % porta, "Cookie": os.environ.get("ETERNA_TESTE_COOKIE", "")})  # v93: rota da equipe pede sessão
     j = json.loads(c.getresponse().read())
     c.close()
     m = {x["name"]: x["id"] for x in j.get("fotos", [])}

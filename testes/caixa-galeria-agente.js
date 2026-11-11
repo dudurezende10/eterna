@@ -79,7 +79,7 @@ try{
 
   // T2: Parear com clique duplo de verdade (mouse) e cliques repetidos
   await KA.click('[data-act="loja-sair"]');await KA.waitForTimeout(400);ok(await entrar(KA,'admin.teste',SENHA),'admin entra no aparelho do Checkout');
-  await KA.evaluate(()=>ETERNA.go('catalogo'));ok(await espera(KA,()=>!!document.querySelector('#postos-painel [data-act="posto-parear"]')&&Array.isArray(ETERNA.state.posto.lista),15000),'T2: cartão Postos');
+  await KA.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));ok(await espera(KA,()=>!!document.querySelector('#postos-painel [data-act="posto-parear"]')&&Array.isArray(ETERNA.state.posto.lista),15000),'T2: cartão Postos');
   await KA.fill('#posto-nome','Checkout 1');await KA.dblclick('[data-act="posto-parear"]');await KA.click('[data-act="posto-parear"]',{timeout:300}).catch(()=>{});
   ok(await espera(KA,()=>!ETERNA.state.user&&ETERNA.state.posto.estado==='ok',10000),'T2: pareado e conta saiu');
   ok(JSON.parse(sql('estado.db','select count(*) from posto'))[0][0]===1,'T2: dblclick + clique cria 1 posto: '+sql('estado.db','select id,nome from posto'));

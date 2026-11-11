@@ -30,7 +30,7 @@ async function A8(pg){
   // 7: títulos dos grupos do menu: 12px, negrito, maiúsculo, quase branco no rail do Maracanã; item normal; sem quebra nem rolagem lateral
   for(const [w,h] of [[1440,900],[1280,800],[390,844]]){await pg.setViewportSize({width:w,height:h});await pg.waitForTimeout(150);
     if(w<=900)await pg.evaluate(()=>{const m=document.querySelector('#menu-btn');if(m&&m.offsetParent)m.click();});await pg.waitForTimeout(200);
-    const g=await pg.evaluate(()=>{const gs=[...document.querySelectorAll('#nav button.grp')].filter(e=>e.offsetParent);const it=document.querySelector('#nav .navitems button:not(.grp)');const cs=e=>getComputedStyle(e);
+    const g=await pg.evaluate(()=>{const gs=[...document.querySelectorAll('#nav button.grp:not(.navsub)')].filter(e=>e.offsetParent); /* v96-ux (a9b4028): a pasta Laboratório dentro do Sistema é subpasta (600, sem maiúsculas), fora desta regra */const it=document.querySelector('#nav .navitems button:not(.grp)');const cs=e=>getComputedStyle(e);
       return {n:gs.length,fs:gs.map(e=>cs(e).fontSize),fw:gs.map(e=>cs(e).fontWeight),tt:gs.map(e=>cs(e).textTransform),cor:gs.map(e=>cs(e).color),quebra:gs.filter(e=>{const sp=e.querySelector('span');return sp&&sp.getClientRects().length>1||sp.offsetHeight>22;}).map(e=>e.innerText),itw:it?cs(it).fontWeight:null,sw:document.documentElement.scrollWidth<=innerWidth};});
     ok(g.n>=4&&g.fs.every(x=>x==='12px')&&g.fw.every(x=>+x>=700)&&g.tt.every(x=>x==='uppercase'),`7 ${w}: títulos do menu `+J(g));
     ok(g.cor.every(c=>c==='rgba(255, 255, 255, 0.92)'),`7 ${w}: cor dos títulos no Maracanã `+J(g.cor));ok(!g.quebra.length&&g.sw,`7 ${w}: título quebrou linha ou rolagem lateral `+J(g.quebra));ok(g.itw==null||+g.itw<700,`7 ${w}: item do grupo em negrito`);

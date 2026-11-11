@@ -9,11 +9,13 @@
 const {chromium}=require('playwright');const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const net=require('net');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
+// v93: as rotas da equipe no agente pedem sessão (tabela ROTAS); o teste usa a sessão de um admin gravada no estado.db do HOME temporário
+const SA=require('./_agente_sessao');let CK='';
 const PRINTS=path.join(__dirname,'prints');try{fs.mkdirSync(PRINTS,{recursive:true});}catch(e){}
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);return c;};const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));const num={};
 const livre=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p));});});
 function req(porta,method,p,body,headers={}){return new Promise(res=>{const data=body==null?null:Buffer.from(JSON.stringify(body));
-  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,j});});});
+  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...(CK?{Cookie:CK}:{}),...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,j});});});
   r.on('error',e=>res({s:0,err:String(e)}));if(data)r.write(data);r.end();});}
 const hoje=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 
@@ -24,13 +26,14 @@ try{
   proc.stdout.on('data',d=>LOGA+=d);proc.stderr.on('data',d=>LOGA+=d);
   let up=false;for(let i=0;i<80&&!up;i++){await sleep(250);up=(await req(PORTA,'GET','/status')).s===200;}
   if(!up)throw new Error('agente não subiu: '+LOGA.slice(-400));
+  CK=SA.sessao(H);
   // dados vazios: agente sem nenhuma foto; Upload, Fila do fotógrafo e Painel de controle abrem sem erro
-  {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
+  {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await SA.noNavegador(cv,PORTA,[CK]);await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
     await pv.goto(AO+'/index.html');await pv.waitForTimeout(500);await require('./_entrar')(pv,'eduardo@eduardorezende.com');
     for(const v of ['importar','fotofila','catalogo','chroma']){await pv.evaluate(v=>ETERNA.go(v),v);await pv.waitForTimeout(700);}
     const vz=await pv.evaluate(()=>{ETERNA.go('fotofila');return document.querySelector('#main').textContent;});
     ok(!ev.length&&!/Fundo IA/.test(vz),'vazio: telas da equipe sem fotos abrem sem erro: '+ev.join(' | '));await bv.close();}
-  const semear=(quem,n,vazias)=>{try{return JSON.parse(execFileSync('python3',['-I',path.join(__dirname,'_cliques_ia_semear.py'),String(PORTA),String(FTPP),H,quem,String(n),vazias||''],{stdio:['ignore','pipe','pipe']}).toString().trim());}catch(e){throw new Error('semear '+quem+': '+String(e.stdout||'')+String(e.stderr||'').slice(-300)+' · agente: '+LOGA.slice(-700));}};
+  const semear=(quem,n,vazias)=>{try{return JSON.parse(execFileSync('python3',['-I',path.join(__dirname,'_cliques_ia_semear.py'),String(PORTA),String(FTPP),H,quem,String(n),vazias||''],{stdio:['ignore','pipe','pipe'],env:{...process.env,ETERNA_TESTE_COOKIE:CK}}).toString().trim());}catch(e){throw new Error('semear '+quem+': '+String(e.stdout||'')+String(e.stderr||'').slice(-300)+' · agente: '+LOGA.slice(-700));}};
   const sessoes=async()=>((await req(PORTA,'GET','/sessoes')).j||{}).sessoes||[];
   const sesDe=async pid=>(await sessoes()).find(x=>(x.fotos||[]).concat(x.pend||[]).includes(pid));
   const fechada=async(pid,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||20000)){const x=await sesDe(pid);if(x&&x.status==='fechada')return x;await sleep(300);}return null;};
@@ -50,7 +53,7 @@ try{
   const f1='ag_'+S[0],f2='ag_'+S[1];
 
   b=await chromium.launch();
-  const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
+  const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await SA.noNavegador(ctx,PORTA,[CK]);
   let SIMS={};await ctx.route(AO+'/rostos/buscar',r=>r.fulfill({status:200,contentType:'application/json',body:J({rosto:true,fotos:Object.entries(SIMS).map(([id,sim])=>({id,sim,principal:true}))})}));
   const RECS=[];ctx.on('request',r=>{if(/\/recorte/.test(r.url()))RECS.push(r.method()+' '+r.url().replace(AO,'')+' '+(r.postData()||''));});
   const errs=[];const pg=await ctx.newPage();

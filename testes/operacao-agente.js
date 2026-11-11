@@ -119,14 +119,14 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
 
   // 4. pareamento pelo Painel de controle no aparelho do Checkout; a conta do Admin sai do aparelho depois
   const cK=await novo({viewport:{width:1280,height:900}});const KA=vigia(await cK.newPage(),'checkout-admin');await KA.goto(A+'/#loja');
-  ok(await espera(KA,()=>ETERNA.state.posto.estado==='nao'&&/ainda não foi pareado/i.test(document.body.innerText),15000),'Checkout sem pareamento: aviso da equipe');
+  ok(await espera(KA,()=>ETERNA.state.posto.estado==='nao'&&/ainda não foi pareado|ainda não é um posto/i.test(document.body.innerText),15000),'Checkout sem pareamento: aviso da equipe');
   await KA.screenshot({path:path.join(PR,'op-nao-pareado-1280.png')});
   await KA.setViewportSize({width:390,height:844});await KA.screenshot({path:path.join(PR,'op-nao-pareado-390.png')});
   const sobra=await KA.evaluate(()=>document.documentElement.scrollWidth-innerWidth);ok(sobra<=1,'aviso de não pareado sem rolagem lateral em 390 px: '+sobra);await KA.setViewportSize({width:1280,height:900});
   const btnNP=await KA.evaluate(()=>[...document.querySelectorAll('[data-act="posto-tentar"],[data-act="loja-sair"]')].map(b=>{const c=getComputedStyle(b);return {t:b.textContent,cor:c.color,fundo:c.backgroundColor};}));
   ok(btnNP.length===2&&btnNP.every(x=>x.cor!==x.fundo),'botões do aviso de não pareado legíveis (cor do texto diferente do fundo): '+J(btnNP));
   await KA.click('[data-act="loja-sair"]');await KA.waitForTimeout(400);ok(await entrar(KA,'admin.teste',SENHA),'admin sai do aviso pelo botão Sair e entra no aparelho do Checkout');
-  await KA.evaluate(()=>ETERNA.go('catalogo'));ok(await espera(KA,()=>!!document.querySelector('#postos-painel [data-act="posto-parear"]')&&Array.isArray(ETERNA.state.posto.lista),15000),'cartão Postos deste ponto');
+  await KA.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));ok(await espera(KA,()=>!!document.querySelector('#postos-painel [data-act="posto-parear"]')&&Array.isArray(ETERNA.state.posto.lista),15000),'cartão Postos deste ponto');
   await KA.waitForTimeout(300);await KA.fill('#posto-nome','Checkout 1');
   await KA.screenshot({path:path.join(PR,'op-postos-painel.png')});
   await KA.evaluate(()=>{const b=document.querySelector('[data-act="posto-parear"]');b.click();b.click();}); // clique duplo
@@ -237,8 +237,10 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   await SU.waitForTimeout(1500);const tP=await SU.evaluate(()=>document.querySelector('#main').innerText);ok(/painel/i.test(tP)&&!/undefined|NaN/.test(tP),'Painel da supervisora sem undefined/NaN: '+(tP.match(/.{0,60}(undefined|NaN).{0,40}/)||[''])[0].replace(/\s+/g,' '));
   await SU.screenshot({path:path.join(PR,'op-painel-supervisora.png')});
   ok(await SU.evaluate(()=>!ETERNA.canView('estatisticas')),'supervisora não vê Estatísticas');
-  await SU.evaluate(()=>ETERNA.go('catalogo'));await SU.waitForTimeout(800);
-  const supP=await SU.evaluate(()=>({inp:[...document.querySelectorAll('[data-act="price"]')].filter(x=>!x.disabled&&!x.readOnly).length,postos:!!document.querySelector('#postos-painel'),parear:!!document.querySelector('[data-act="posto-parear"]')}));
+  // v94-ux/v97-junta: preços na aba Preços, Postos deste ponto na aba Avançado
+  await SU.evaluate(()=>(ETERNA.state.catTab='precos',ETERNA.go('catalogo')));await SU.waitForTimeout(800);const supInp=await SU.evaluate(()=>[...document.querySelectorAll('[data-act="price"]')].filter(x=>!x.disabled&&!x.readOnly).length);
+  await SU.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));await SU.waitForTimeout(800);
+  const supP=await SU.evaluate(inp=>({inp,postos:!!document.querySelector('#postos-painel'),parear:!!document.querySelector('[data-act="posto-parear"]')}),supInp);
 ok(supP.postos&&supP.parear,'supervisora: preços só leitura, vê e pode parear postos (configuracao.u): '+J(supP));
   await espera(SU,()=>!!ETERNA.state.db,15000);await SU.waitForTimeout(3000);
   const pid0=await SU.evaluate(()=>{const i=document.querySelector('[data-act="price"]');return i&&{id:i.dataset.id,v:i.value,dis:i.disabled};});
@@ -259,7 +261,7 @@ ok(supP.postos&&supP.parear,'supervisora: preços só leitura, vê e pode parear
   await AD.evaluate(()=>ETERNA.go('estatisticas'));await AD.waitForTimeout(2500);const tE=await AD.evaluate(()=>document.querySelector('#main').innerText);
   ok(/estatísticas/i.test(tE)&&!/undefined|NaN/.test(tE),'Estatísticas do admin abrem');await AD.screenshot({path:path.join(PR,'op-estatisticas.png')});
   const met=await AD.evaluate(async()=>{const r=await ETERNA.agFetch(location.origin+'/metricas/dia?dias=1');return {s:r.status,t:(await r.text()).slice(0,4000)};});ok(met.s===200,'admin lê /metricas/dia: '+met.s);
-  await AD.evaluate(()=>ETERNA.go('catalogo'));await AD.waitForTimeout(800);
+  await AD.evaluate(()=>(ETERNA.state.catTab='precos',ETERNA.go('catalogo')));await AD.waitForTimeout(800);
   const preco=await AD.evaluate(()=>{const i=[...document.querySelectorAll('[data-act="price"]')].find(x=>!x.disabled);if(!i)return null;i.value='77';i.dispatchEvent(new Event('input',{bubbles:true}));return i.dataset.id;});
   ok(preco,'admin tem campo de preço editável');await AD.waitForTimeout(4000);
   const precoSrv=sql('estado.db',`select valor from doc where col='sim' and id='prices|${preco}'`);ok(/77/.test(precoSrv),'preço do admin gravado no servidor: '+precoSrv);
@@ -276,16 +278,16 @@ ok(supP.postos&&supP.parear,'supervisora: preços só leitura, vê e pode parear
   const lk2=execFileSync('python3',[AG,'--parear-posto','Caixa 3'],{env:ENV}).toString();const url2=(lk2.match(/http:\/\/\S+/)||[])[0];
   sql('estado.db','update posto_convite set expira=expira-601 where usado is null');const r3=await req(PORTA,'GET',url2.replace(A,''));ok(r3.s===410,'link depois de 10 min: 410: '+r3.s);
   const LK=vigia(await cL.newPage(),'link-checkout');await LK.goto(A+'/#loja');ok(await espera(LK,()=>ETERNA.state.posto.estado==='ok'&&ETERNA.postoDisp().nome==='Caixa 2',15000),'Checkout pareado pelo link');
-  await AD.waitForTimeout(10500);await AD.evaluate(()=>ETERNA.go('catalogo'));if(!ok(await espera(AD,()=>/Caixa 2/.test((document.querySelector('#postos-painel')||{}).textContent||''),12000),'lista mostra Caixa 2'))await AD.screenshot({path:path.join(PR,'op-erro-lista.png')});
+  await AD.waitForTimeout(10500);await AD.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));if(!ok(await espera(AD,()=>/Caixa 2/.test((document.querySelector('#postos-painel')||{}).textContent||''),12000),'lista mostra Caixa 2'))await AD.screenshot({path:path.join(PR,'op-erro-lista.png')});
   const pid2=await LK.evaluate(()=>ETERNA.postoDisp().id);await AD.click(`[data-act="posto-revogar"][data-id="${pid2}"]`);await AD.waitForTimeout(800);
   ok(/revogado/i.test(await toastTxt(AD)),'revogar pelo Painel: '+await toastTxt(AD));
-  await LK.evaluate(()=>ETERNA.postoCarregar());ok(await espera(LK,()=>ETERNA.state.posto.estado==='nao'&&/não foi pareado/i.test(document.body.innerText),8000),'posto revogado volta para o aviso');
+  await LK.evaluate(()=>ETERNA.postoCarregar());ok(await espera(LK,()=>ETERNA.state.posto.estado==='nao'&&/não foi pareado|ainda não é um posto/i.test(document.body.innerText),8000),'posto revogado volta para o aviso');
   ok(await LK.evaluate(()=>localStorage.getItem('eterna.posto.v1'))===null,'revogado: o aparelho esquece o posto');
 
   // 11. telas novas em celular e tablet, idiomas do Checkout
   for(const [w,h] of [[390,844],[820,1180]]){await K.setViewportSize({width:w,height:h});await K.click('[data-act="loja-new"]').catch(()=>{});await K.waitForTimeout(400);
     const sb=await K.evaluate(()=>document.documentElement.scrollWidth-innerWidth);ok(sb<=1,`Checkout pareado em ${w}px sem rolagem lateral: ${sb}`);await K.screenshot({path:path.join(PR,`op-checkout-${w}.png`)});
-    await AD.setViewportSize({width:w,height:h});await AD.evaluate(()=>ETERNA.go('catalogo'));await AD.waitForTimeout(600);
+    await AD.setViewportSize({width:w,height:h});await AD.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));await AD.waitForTimeout(600);
     const sp=await AD.evaluate(()=>{const e=document.querySelector('#postos-painel');return e?Math.round(e.getBoundingClientRect().right-innerWidth):null;});ok(sp!=null&&sp<=1,`cartão Postos em ${w}px dentro da tela: ${sp}`);
     await AD.evaluate(()=>document.querySelector('#postos-painel').scrollIntoView());await AD.screenshot({path:path.join(PR,`op-postos-${w}.png`)});}
   await K.setViewportSize({width:1280,height:900});
@@ -314,7 +316,7 @@ s=ThreadingHTTPServer(('127.0.0.1',int(sys.argv[2])),P);x=ssl.SSLContext(ssl.PRO
     ok(await espera(HA,o=>ETERNA.state.agent.url===o,10000,H),'endereço sem porta: o app acha o agente pela própria origem: '+await HA.evaluate(()=>ETERNA.state.agent.url));
     ok(await entrar(HA,'admin.teste',SENHA),'admin entra por https://posto.eterna.photo');ok(await espera(HA,()=>ETERNA.state.agent.on,15000),'agente conectado pelo endereço com certificado');
     const ckH=(await cH.cookies()).find(c=>c.name==='eterna_sessao');ok(ckH&&ckH.secure&&ckH.httpOnly,'cookie de sessão com Secure em https: '+J(ckH&&{sec:ckH.secure,h:ckH.httpOnly}));
-    await HA.evaluate(()=>ETERNA.go('catalogo'));ok(await espera(HA,()=>!!document.querySelector('#posto-nome')&&Array.isArray(ETERNA.state.posto.lista),15000),'Postos deste ponto pelo endereço com certificado');await HA.waitForTimeout(300);
+    await HA.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));ok(await espera(HA,()=>!!document.querySelector('#posto-nome')&&Array.isArray(ETERNA.state.posto.lista),15000),'Postos deste ponto pelo endereço com certificado');await HA.waitForTimeout(300);
     await HA.fill('#posto-nome','Checkout HTTPS');await HA.click('[data-act="posto-parear"]');ok(await espera(HA,()=>!ETERNA.state.user&&ETERNA.state.posto.estado==='ok',10000),'pareado por https e a conta saiu');
     const ckPH=(await cH.cookies()).find(c=>c.name==='eterna_posto');ok(ckPH&&ckPH.secure&&ckPH.httpOnly&&ckPH.sameSite==='Strict','cookie do posto com Secure em https: '+J(ckPH&&{sec:ckPH.secure}));
     const HK=vigia(await cH.newPage(),'https-checkout');await HK.goto(H+'/#loja');

@@ -36,11 +36,12 @@ try{
     ok(await entrar(V,'loja@eterna.photo'),'E1: vendedor não entrou');
     const e1=await V.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,eb:document.querySelector('#main .head .eyebrow').textContent}));
     ok(e1.v==='posto'&&e1.h1==='Posto de venda'&&e1.eb==='Caixa 1','E1: '+J(e1));
-    // E10: barra com Abrir Checkout e Posto de venda (PIX conta), sem Caixa
+    // E10: barra com Abrir Checkout e Posto de venda (PIX conta)
+    // v96-ux (Eduardo, 10/11, cace1c4): os dois botões amarelos no alto do menu, Abrir Checkout e Caixa, para quem pode usá-los
     // v94-ux (parte H): o botão "Posto de venda" da barra saiu (o Posto está no menu); o número fica no item do menu (#nav [data-v="posto"] #rail-din)
     await V.evaluate(()=>{const S=ETERNA.SIM;S.caixaDin.unshift({id:'L00-teste0pix1',card:'LPTESTEPIX',codigo:'ABCD-EFGH',criada:new Date().toISOString(),total:70,prints:1,n:1,cart:[{id:'arq'}],selected:[],meio:'pix',prov:'pos-manual',estado:'aguardando'});localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.render();});
     const e10=await V.evaluate(()=>({ck:!!document.querySelector('#rail-ck [data-act="loja-abrir"]'),posto:(document.querySelector('#nav [data-v="posto"]')||{}).innerText||'',caixa:!!document.querySelector('#rail-ck [data-v="caixa"]'),din:(document.querySelector('#rail-din')||{}).textContent||'',t:document.querySelector('#rail-ck').innerText}));
-    ok(e10.ck&&/Posto de venda/.test(e10.posto)&&e10.din==='1'&&!e10.caixa&&!/\bCaixa\b/.test(e10.t),'E10: barra do vendedor: '+J(e10));
+    ok(e10.ck&&/Posto de venda/.test(e10.posto)&&e10.din==='1'&&e10.caixa&&/\bCaixa\b/.test(e10.t),'E10: barra do vendedor: '+J(e10));
     await ctx.close();}
   const ctx=await b.newContext({viewport:{width:1440,height:900}});await rotas(ctx);
   const A=vigia(await ctx.newPage(),'A');await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(500);
@@ -86,13 +87,13 @@ try{
   await A.click('#pend-painel [data-act="din-cancel"][data-id="L00-teste0din01"]');await A.waitForTimeout(150);
   ok(await A.evaluate(()=>!!document.querySelector('#pend-painel [data-act="din-cancel-ok"]'))&&(await pendDe(A,'LPTESTEDIN')),'E4: o cancelamento pede o segundo toque');
   await A.click('[data-act="din-cancel-no"]');await A.waitForTimeout(150);
-  // ---- E5: filtro Dinheiro; #caixa abre com o filtro ligado
+  // ---- E5: filtro Dinheiro no Posto; #caixa abre a tela Caixa de antes (v96-ux, Eduardo, cdcf4b5) com o dinheiro aguardando
   await A.click('[data-act="posto-filtro"][data-f="dinheiro"]');await A.waitForTimeout(150);
   let e5=await A.evaluate(()=>[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend));ok(e5.length===1&&e5[0]==='L00-teste0din01','E5: filtro Dinheiro: '+J(e5));
   await A.click('[data-act="posto-filtro"][data-f="todos"]');await A.waitForTimeout(150);
   await A.evaluate(()=>{location.hash='#caixa';});await A.waitForTimeout(400);
   e5=await A.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,ids:[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend),on:(document.querySelector('[data-act="posto-filtro"][aria-pressed="true"]')||{}).dataset}));
-  ok(e5.v==='caixa'&&e5.h1==='Posto de venda (só Dinheiro)'/* revisão: rótulo próprio do #caixa */&&e5.ids.length===1&&e5.ids[0]==='L00-teste0din01'&&e5.on&&e5.on.f==='dinheiro','E5: #caixa com o filtro Dinheiro: '+J(e5));
+  ok(e5.v==='caixa'&&e5.h1==='Caixa'&&e5.ids.includes('L00-teste0din01'),'E5: #caixa abre a tela Caixa com o dinheiro aguardando: '+J(e5));
   // ---- E6: rolo 120 neutro, 99 amarelo, 39 vermelho em Posto, Estoque e Venda manual; nunca verde
   for(const [n,cls] of [[120,'neutral'],[99,'warn'],[39,'bad']]){
     await A.evaluate(n=>{ETERNA.SIM.stock['Caixa 1']=n;localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));ETERNA.go('posto');},n);await A.waitForTimeout(150);
@@ -115,7 +116,8 @@ try{
   ok(e9.v==='checkout'&&e9.h1==='Venda manual'&&/quando o Checkout está fora/.test(e9.eb),'E9: Venda manual: '+J(e9));
   ok(await A.evaluate(()=>ETERNA.lojaIdeal&&true),'E9: lojaIdeal');
   await A.evaluate(()=>ETERNA.go('catalogo'));await A.waitForTimeout(200);
-  ok(/só na Venda manual/.test(await A.evaluate(()=>{const r=[...document.querySelectorAll('#main tr')].find(x=>/Fundo de IA/i.test(x.textContent));return r?r.textContent:'';})),'E9: rótulo "só na Venda manual" na tabela de preços');
+  // v98.1 (Ronaldo, 11/11): produto que não existe na Imply não é cadastrado; o Fundo de IA saiu da tabela de preços
+  ok(!(await A.evaluate(()=>[...document.querySelectorAll('#main tr')].some(x=>/Fundo de IA/i.test(x.textContent)))),'E9: Fundo de IA fora da tabela de preços (v98.1)');
   const big=await L.evaluate(()=>{const s=ETERNA.demoSessions().map(s=>[s.card,ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length]).sort((a,b)=>b[1]-a[1])[0];return s;});
   for(const n of [1,6,Math.min(15,big[1])]){await L.click('[data-act="loja-new"]').catch(()=>{});await ljSessao(L,big[0],n);
     const t=await L.evaluate(()=>document.querySelector('#main').innerText);const lines=await L.evaluate(c=>JSON.stringify(ETERNA.lojaCart(c).lines),big[0]).catch(()=>null);
