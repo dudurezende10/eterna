@@ -5341,6 +5341,31 @@ def _vis_ja_tem_ia(card):
     return False
 
 
+def _vis_ia_reabre(cards, motivo):
+    """Com o sess_lock (Segurança, 10/11, item 6): leva fechada sem bases porque a visita já tinha (visita_ja_tem) e que
+    deixou de ter visita com bases (Separar, escola ou menor protegida, ligação por rosto desligada) volta a ter as N
+    primeiras fotos como bases de IA, e elas vão para a fila de recorte. Devolve as levas reabertas."""
+    out = []
+    for c in sorted(set(cards)):
+        x = sess.get(c)
+        if x is None or x.get("removida") or x["status"] != "fechada":
+            continue
+        r = x.get("ia_regra") or {}
+        if r.get("motivo") != "visita_ja_tem" or x.get("ia") or _vis_ja_tem_ia(c):
+            continue
+        n = r.get("n") or 0
+        fs = x["fotos"]
+        if not n or len(fs) <= n:
+            continue
+        x["ia"] = list(fs[:n])
+        x["ia_regra"] = {"n": n, "motivo": None, "reaberta": motivo}
+        for p in x["ia"]:
+            sess_ia_novos.append((p, REC_PRIO_IA))
+        _sess_toca(x)
+        out.append(c)
+    return out
+
+
 def vis_levas_de(card):
     """As levas da visita do card (só ele, se não está em visita). Com o sess_lock."""
     v = vis_info.get(vis_de.get(card) or "")
@@ -5426,10 +5451,12 @@ def vis_acao(acao, body, quem_ip):
             for c in outros:
                 _vis_aresta(hoje, "separar", card, c, por=por, posto=posto)
             _vis_recalc(hoje)
+            reab = _vis_ia_reabre(de, "separar")       # item 6: a leva que ficou sem visita com bases ganha as dela
             resto = outros[0] if outros else None
             resp = {"ok": True, "visita": (_vis_publico(vis_info[vis_de[resto]]) if resto in vis_de else _vis_sozinha(resto)) if resto else None,
                     "nova": _vis_publico(vis_info[vis_de[card]]) if card in vis_de else _vis_sozinha(card)}
-            log = {"acao": "separar", "card": card, "de": sorted(de), "para": vis_levas_de(card)}
+            log = {"acao": "separar", "card": card, "de": sorted(de), "para": vis_levas_de(card), "bases_reabertas": reab}
+            resp["bases_reabertas"] = reab
         else:
             return {"error": "not found"}, 404
     log.update(por=por, posto=posto, ip=None if quem_ip in ("127.0.0.1", "::1") else quem_ip, em=time.strftime("%Y-%m-%dT%H:%M:%S"))
@@ -5457,6 +5484,7 @@ def vis_cfg_gravar(rosto, por=None, posto=None, quem_ip=None):
     with sess_lock:
         for d in sorted({x["dia"] for x in sess.values()} | set(vis_arestas)):
             _vis_recalc(d)
+        _vis_ia_reabre(list(sess), "rosto_desligado")
     print("  visitas: ligação por rosto %s -> %s · por %s" % ("ligada" if de else "desligada", "ligada" if v["rosto"] else "desligada", v["por"] or "?"))
     vis_log({"acao": "config", "rosto": v["rosto"], "de": de, "por": v["por"], "posto": _vis_txt(posto, 40),
              "ip": None if quem_ip in (None, "127.0.0.1", "::1") else quem_ip, "em": time.strftime("%Y-%m-%dT%H:%M:%S")})
@@ -5647,9 +5675,14 @@ def vis_protege(cards):
     if not novos:
         return
     with sess_lock:
+        antes = {c2 for c in novos for c2 in vis_levas_de(c)}   # as levas que estavam na visita da leva protegida
         vis_prot.update(novos)
         for d in {sess[c]["dia"] for c in novos if c in sess}:
             _vis_recalc(d)
+        reab = _vis_ia_reabre(antes, "protegida")   # item 5: escola ou menor publicada depois da ligação
+    if reab:
+        print("  visitas: %d leva(s) voltaram a ter bases de IA (escola ou menor separada da visita)" % len(reab))
+    sess_gravar()
 
 
 def vis_protege_manifesto(m):

@@ -32,6 +32,17 @@ try{
   ok(r.xIgual,'o pedido de X não muda: '+J(r));
   ok(r.gravado,'o pedido de Y foi gravado no SIM');
   ok(r.nf===-1&&r.zIgual,'gravação que falha desfaz o pedido: '+J({nf:r.nf,z:r.zIgual}));
+  // item 6: bases reabertas pelo servidor entram no app, a não ser que alguma já esteja vendida ou num pedido aberto
+  const ia=await pg.evaluate(()=>{const E=ETERNA,S=E.SIM;S.caixaDin=[];const mk=(card,n)=>({card,srv:true,status:'fechada',ia:[],photos:Array.from({length:n},(_,i)=>({id:'ag_'+card.toLowerCase()+i}))});
+    S.sessions.LPREAB01=mk('LPREAB01',5);S.sessions.LPREAB02=mk('LPREAB02',5);S.sessions.LPREAB03=mk('LPREAB03',5);
+    S.sessions.LPVEND01={card:'LPVEND01',status:'paga',selected:['ag_lpreab020'],photos:[]};
+    S.caixaDin=[{id:'pW',estado:'escolha',escolha:true,selected:['ag_lpreab031']}];
+    const x=(c,re)=>({card:c,ia:[c.toLowerCase()+'0',c.toLowerCase()+'1'],ia_regra:re});
+    E.srvIaCompleta(x('LPREAB01',{n:2,motivo:null,reaberta:'separar'}));E.srvIaCompleta(x('LPREAB02',{n:2,motivo:null,reaberta:'separar'}));
+    E.srvIaCompleta(x('LPREAB03',{n:2,motivo:null,reaberta:'separar'}));
+    S.sessions.LPREAB04=mk('LPREAB04',5);E.srvIaCompleta(x('LPREAB04',{n:2,motivo:null}));
+    return [1,2,3,4].map(i=>(S.sessions['LPREAB0'+i].ia||[]).length);});
+  ok(J(ia)===J([2,0,0,0]),'6: bases reabertas entram; vendida, em pedido aberto ou sem "reaberta" não: '+J(ia));
   const src=await pg.evaluate(()=>document.documentElement.innerHTML.includes("pendTiraLeva(c,d.id)"));
   ok(src,'o Separar do Posto passa o id do pedido');
 }catch(e){fails.push('exceção: '+e.message);}

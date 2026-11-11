@@ -356,6 +356,35 @@ with m.sess_lock:
 ok(xa["ia"] == pa[:2] and xb["ia"] == [] and (xb["ia_regra"] or {}).get("motivo") == "visita_ja_tem" and B in visita(A),
    "D4: a 2ª leva da visita fecha sem bases (visita_ja_tem): %r %r" % ((xa["ia"], xa["ia_regra"]), (xb["ia"], xb["ia_regra"])))
 ok(m.rec_pre_escolha(pb, {"ia": [], "ia_regra": xb["ia_regra"]}) == [], "D4: leva sem bases da visita não é recortada antes")
+# item 6 (Segurança, 10/11): Separar a leva B devolve as bases dela (as 2 primeiras), que vão para a fila de recorte
+with m.sess_lock:
+    m.sess_ia_novos.clear()
+rev0 = xb["rev"]
+r, cod = m.vis_acao("separar", {"card": B, "por": "Ana", "posto": "Caixa 1"}, "127.0.0.1")
+with m.sess_lock:
+    xb2 = dict(m.sess[B])
+    fila_ia = [p for p, _ in m.sess_ia_novos]
+ok(cod == 200 and r.get("bases_reabertas") == [B] and xb2["ia"] == pb[:2] and xb2["ia_regra"].get("reaberta") == "separar"
+   and xb2["rev"] > rev0 and fila_ia == pb[:2], "6: Separar reabre as bases da leva separada: %r %r %r" % (r.get("bases_reabertas"), xb2["ia"], fila_ia))
+with m.sess_lock:
+    xa2 = dict(m.sess[A])
+ok(xa2["ia"] == pa[:2], "6: a leva que já tinha bases continua igual")
+# item 5: escola publicada DEPOIS da ligação: a leva sai da visita e a outra leva, se dependia das bases dela, ganha as suas
+reset()
+fam = P[39]
+A, pa = leva("carlos", T0, [[rosto(fam)]] * 5)
+fecha(T0 + 200)
+B, pb = leva("samuel", T0 + 300, [[rosto(fam)]] * 5)
+fecha(T0 + 600)
+with m.sess_lock:
+    ok(m.sess[B]["ia_regra"].get("motivo") == "visita_ja_tem" and B in m.vis_levas_de(A), "5: começa ligada, B sem bases")
+rev_v = m.vis_rev[0]
+m.vis_protege_manifesto({"tipo": "evento", "fotos": [{"id": pa[0], "sessao": A}], "sessoes": [A]})
+with m.sess_lock:
+    xb3 = dict(m.sess[B])
+    bar = [e.get("barrada") for e in m.vis_arestas[HOJE]]
+ok(visita(A) == [A] and visita(B) == [B] and "escola_menor" in bar and m.vis_rev[0] > rev_v, "5: galeria de escola criada depois separa e recalcula: %r %r" % (visita(A), bar))
+ok(xb3["ia"] == pb[:2] and xb3["ia_regra"].get("reaberta") == "protegida", "5/6: a leva da família volta a ter as bases: %r" % ((xb3["ia"], xb3["ia_regra"]),))
 m.ff_funcao.update(dia="", map={})
 
 # ---------- 29: HTTP: X-Eterna, origem, 429; GET /visitas ----------
