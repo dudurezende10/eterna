@@ -96,9 +96,9 @@ try{
       const sx=await pg.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);ok(sx<=1&&!!(await pg.$('#envio-painel')),'15: rolagem lateral em '+w+' px: '+sx);}
     await pg.setViewportSize({width:1366,height:900});
     // 13: Carlos sempre manda quem=carlos, mesmo trocando o seletor
-    await pg.selectOption('#main select[data-act="imp-key"]','samuel');await pg.waitForTimeout(100);M.posts.length=0;
+    await pg.evaluate(()=>{const x=document.createElement('select');x.dataset.act='imp-key';x.innerHTML='<option value="samuel">samuel</option>';document.body.appendChild(x);x.dispatchEvent(new Event('change',{bubbles:true}));x.remove();});await pg.waitForTimeout(100);M.posts.length=0;
     await escolher(pg,[arq('k1.jpg')]);await fim(pg);
-    ok(M.posts.length===1&&M.posts[0].quem==='carlos','13: Carlos com o seletor em Samuel manda quem=carlos: '+J(M.posts));
+    ok(M.posts.length===1&&M.posts[0].quem==='carlos','13: Carlos (sem seletor; troca disparada por JS) manda quem=carlos: '+J(M.posts));
     // 12: Parar durante o envio
     M.posts.length=0;M.atraso=400;const muitos=Array.from({length:12},(_,i)=>arq('p'+String(i).padStart(2,'0')+'.jpg'));
     await escolher(pg,muitos);

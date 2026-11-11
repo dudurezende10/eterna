@@ -126,6 +126,10 @@ Bom saber:
 - Toda troca fica registrada com o seu nome.
 - O supervisor vê o painel, mas não consegue mudar.
 
+### Seu nome e seu ponto (v96-ux)
+
+No topo de **Minhas fotos** aparecem o seu nome e o seu ponto do dia, como estão na Escala. Não dá para trocar por aqui. Se outro fotógrafo for usar o computador, toque em **Trocar fotógrafo**. Se o ponto estiver errado, fale com a supervisora para corrigir a Escala.
+
 ### O cartão não foi lido: enviar as fotos pela tela (v96-ux)
 
 Use só quando o leitor não reconhecer o cartão. As fotos entram do mesmo jeito que entrariam pelo leitor.
