@@ -181,7 +181,7 @@ try{
   await B.evaluate(c=>{const b=document.createElement('button');b.dataset.act='caixa-open';b.dataset.card=c;document.body.appendChild(b);b.click();b.remove();},C1);await B.waitForTimeout(300);
   const rec=await txt(B,'.receipt');ok(/Recebido por Atendimento e venda às \d\d:\d\d/.test(rec)&&/Impressões: 8/.test(rec)&&/TOTAL\s+R\$ 190/.test(rec),'1.7: recibo: '+rec);
   await B.screenshot({path:`${P}/v79-caixa-recibo.png`});
-  await sleep(600);const g10=await G.evaluate(()=>ETERNA.pub&&ETERNA.pub.step);ok(g10==='consent','rev 10: a galeria deveria sair do "esperando o caixa" sem recarregar: '+g10);await G.close();
+  await sleep(600);const g10=await G.evaluate(()=>ETERNA.pub&&ETERNA.pub.step);ok(g10==='galeria','rev 10 (v96.1): a galeria deveria sair do "esperando o caixa" sem recarregar, direto nas compradas: '+g10);await G.close();
   ok(s7.total===190&&s7.cart.every(x=>typeof x.v==='number'),'I4: venda grava total e preço por item: '+J({t:s7.total,cart:s7.cart}));
   await sleep(400);const dA=await sim(A);ok(dA.sessions[C1].status==='paga'&&dA.caixaDin.find(x=>x.id===r1.id).estado==='confirmada','1.7: a janela do Checkout deveria adotar o SIM novo');
 
