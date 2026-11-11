@@ -82,6 +82,11 @@ try{
     await A8(pg);
     await ctx.close();}
   // ---------- 3. Abrir Checkout em janela à parte ----------
+  // v97: botões do alto do menu: notebook com mouse em 1366×768 pode ter 40 px (o menu cabe sem rolar); tablet deitado 1024×768 (toque) fica com 44 px ou mais
+  for(const [nome,opt,min,max] of [['notebook 1366×768',{viewport:{width:1366,height:768}},40,43],['tablet 1024×768',{viewport:{width:1024,height:768},hasTouch:true,isMobile:true},44,99]]){
+    const ctx=await b.newContext(opt);const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push('rail: '+e.message));await login(pg);await pg.waitForTimeout(200);
+    const hs=await pg.evaluate(()=>[...document.querySelectorAll('.railck')].filter(e=>e.offsetParent).map(e=>Math.round(e.getBoundingClientRect().height)));
+    ok(hs.length>=1&&hs.every(x=>x>=min&&x<=max),`botões do alto do menu no ${nome}: `+J(hs));await ctx.close();}
   {const ctx=await b.newContext({viewport:{width:1440,height:900}});const A=await ctx.newPage();A.on('pageerror',e=>errs.push('3A: '+e.message));
     await login(A);await A.evaluate(()=>{const t=ETERNA.venueToday();ETERNA.state.range={from:t,to:t};ETERNA.state.view='vendas-lista';ETERNA.render();});await A.waitForTimeout(200);
     const v0=await A.evaluate(()=>({view:ETERNA.state.view,hash:location.hash,user:ETERNA.state.user&&ETERNA.state.user.email}));
