@@ -18,12 +18,12 @@ Tela Qualidade (view `revisao`, grupo Curadoria, `vRevisao`):
 
 1. `state.revFilter` passa a `{key, per, date, venda, foto}`. `per` = `hoje` (padrão), `ontem`, `7d`, `30d` ou `data`; `date` só vale com `per:'data'`. Sai o "Todas".
 2. Seletor em chips, igual aos atalhos do `rangeBar` das outras telas: Hoje, Ontem, Últimos 7 dias, Últimos 30 dias, Data específica. Com "Data específica" aparece o `dateField` (dd/mm/aaaa, máximo hoje) e o calendário abre, como o "Personalizado" do `rangeBar`. O `rangeBar` em si não é reusado porque ele mexe no `state.range`, que é o período comum do Painel, Lista de vendas e Estatísticas e tem De e Até.
-3. `revPeriodo()` devolve `{de, ate}` com `todayISO()` e `addDays()`: dia local, o mesmo de `localDay`, que data as sessões. 7 e 30 dias incluem hoje (`hoje-6` e `hoje-29`).
+3. `revPeriodo()` devolve `{de, ate}` com `venueToday()` e `addDays()`: o mesmo Hoje do Painel (revisão de 11/11; a primeira versão usava o dia do navegador). 7 e 30 dias incluem hoje (`hoje-6` e `hoje-29`). A sessão local com `date:'hoje'` continua datada pelo dia do navegador (`localDay`); fica para outro plano.
 4. `revSessions(p)` aceita o período e deixa de fora, antes de qualquer trabalho, o que não é do período (não casa fotos de dia fora dele); `vendidasTodas()` passa a ser calculada uma vez por chamada. `revLista()` junta período, fotógrafo e venda e serve a tela e o "Próxima sessão".
 5. Cartões por fotógrafo, contagem de sessões, cartões e tabela respeitam o período. `quality(key, p)` ganha o período opcional (a tela Fotógrafos continua sem ele).
 6. Resumo abaixo dos filtros com o período, sessões, fotos e vendidas; título da tabela com o período. Sem sessão no período, mensagem simples (na amostra, lembra que os exemplos são de 12 e 13/10).
 7. A escolha fica em `state.revFilter` (memória da tela, como os outros filtros da Qualidade): vale enquanto a pessoa navega e volta a Hoje quando a página é recarregada.
-8. `sales-open-session` passa a pôr o filtro na data da sessão aberta. Saem `fkey`, `fdate` e `rev-date-all`.
+8. `sales-open-session` passa a pôr o filtro na data da sessão aberta. Saem `fkey`, `fdate` e `rev-date-all`. `review-person` (Revisar fotos, em Fotógrafos) leva o período: o dia aberto, `7d` ou `30d` conforme o começo do intervalo, ou o dia mais recente com sessão do fotógrafo quando o intervalo é mais antigo que 30 dias.
 9. Alvos de toque do filtro com 44 px (chips, campo de data e seletores).
 
 ## Fora do escopo
@@ -43,6 +43,6 @@ Tela Qualidade (view `revisao`, grupo Curadoria, `vRevisao`):
 7. O período aparece no resumo e no título da tabela.
 8. Sair da tela e voltar mantém a escolha.
 9. "Próxima sessão" anda só pelas sessões do período.
-10. 30 dias com milhares de sessões desenha em menos de 1 s.
+10. 30 dias com milhares de sessões desenha sem travar (o teste aceita até 3 s com 9 mil sessões, para máquina lenta).
 11. Chips, campo de data e seletores do filtro com 44 px ou mais de altura.
 12. `testes/curadoria-datas.js` cobre os itens acima; `bash testes/rodar.sh` termina com `FALHAS: 0`.

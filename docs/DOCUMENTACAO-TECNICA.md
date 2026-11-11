@@ -1287,6 +1287,7 @@ Plano: `docs/planos/2026-10-28-v83-painel.md` (escrito como v83; publicado como 
 
 ### Outras telas
 
+- Qualidade (view `revisao`): período em `state.revFilter.per` (Hoje por padrão, Ontem, Últimos 7 dias, Últimos 30 dias ou Data específica com `state.revFilter.date`), calculado por `revPeriodo()` com `venueToday()`; `revSessions(p)` e `quality(key, p)` recebem o período e `revLista()` dá a lista da tela já ordenada. Plano `docs/planos/2026-11-11-curadoria-datas.md`, teste `testes/curadoria-datas.js`.
 - Vendas e caixa: só a tabela de vendedores e o link para o Painel.
 - Fotógrafos: quem não tem sessão no período mostra "sem dados" em cor apagada, vai para o fim e não mostra o índice em vermelho; colunas secundárias com `c2` (somem até 1600 px) e `c3` (até 900 px).
 - Catálogo e preços passou a se chamar **Painel de controle** (view e hash continuam `catalogo`; subtítulo "catálogo, preços, Checkout e FTP").
