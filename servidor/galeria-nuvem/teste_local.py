@@ -166,6 +166,20 @@ ok(st == 200 and r.get("ok"), "teto: outra galeria não é afetada")
 for t_ in (tokA, tokM, tokT):                          # tira do ar as galerias deste bloco (coleções apagadas)
     chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=t_, codigo=None, encerrada=True)}, {"x-eterna-ponto": seg})
 
+# foto que saiu do manifesto: os rostos lidos da galeria saem e a coleção se refaz na próxima selfie com consentimento
+col_tok, lidas0 = app.colecao(tok), R.indexadas
+chama("POST", "/ponto/galerias", {"manifesto": manv}, {"x-eterna-ponto": seg})
+ok(col_tok in R.col and ("IDX#" + tok, "M") in T.d, "republicar com as mesmas fotos não mexe nos rostos lidos")
+manp = dict(manv, fotos=[dict(f) for i, f in enumerate(manv["fotos"]) if i != 5])        # a00005 saiu
+st, _ = chama("POST", "/ponto/galerias", {"manifesto": manp}, {"x-eterna-ponto": seg})
+ok(st == 200 and col_tok not in R.col and ("IDX#" + tok, "M") not in T.d and ("COL#" + col_tok, "M") not in T.d, "foto fora do manifesto: coleção de rostos e progresso da leitura apagados")
+ok(chama("GET", "/g/%s/info" % tok)[0] == 200 and chama("GET", "/g/codigo/ABCD-EFGH")[0] == 200, "a galeria continua no ar, com o código curto")
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.2.1")
+ok(st == 200 and r.get("ok") and R.indexadas == lidas0 + 39 and "a00005" not in R.col[col_tok] and "a00005" not in [f["pid"] for f in r["galeria"]["fotos"]],
+   "a selfie seguinte relê só as 39 fotos que ficaram (%d leituras novas)" % (R.indexadas - lidas0))
+chama("POST", "/ponto/galerias", {"manifesto": manv}, {"x-eterna-ponto": seg})          # foto a mais não apaga nada
+ok(col_tok in R.col, "republicar com foto a mais não apaga os rostos lidos")
+
 # encerrar no ponto: some da nuvem e os rostos são apagados
 man2 = dict(man, encerrada=True, expira=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
 st, r = chama("POST", "/ponto/galerias", {"manifesto": man2}, {"x-eterna-ponto": seg})
