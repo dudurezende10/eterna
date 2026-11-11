@@ -24,7 +24,7 @@ try{
   await require('./_login.js')(pg);
   const espera=async(fn,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await pg.evaluate(fn))return true;await pg.waitForTimeout(150);}return false;};
   ok(await espera(()=>ETERNA.state.agent.on&&ETERNA.state.agent.sessoes&&ETERNA.state.agent.sessoes.visitas,15000),'agente falso conectado');
-  await pg.evaluate(()=>(ETERNA.state.catTab='avancado',ETERNA.go('catalogo')));await pg.waitForTimeout(400);
+  await pg.evaluate(()=>{ETERNA.state.catTab='checkout';ETERNA.go('catalogo');});await pg.waitForTimeout(400); // v97: o interruptor fica na aba Checkout de Preços e Checkout
   const painel=await pg.evaluate(()=>{const p=document.getElementById('vis-rosto');const c=p&&p.querySelector('[data-act="vis-rosto"]');return p&&{txt:p.textContent,checked:c.checked,dis:c.disabled};});
   ok(painel&&/Juntar a família pelo rosto \(em teste\)/.test(painel.txt)&&/desligado até a calibração/.test(painel.txt)&&painel.checked===false&&painel.dis===false,'Admin vê o interruptor desligado: '+J(painel));
   await pg.click('[data-act="vis-rosto"]');

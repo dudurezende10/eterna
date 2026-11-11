@@ -90,7 +90,7 @@ try:
     res = [req("POST", "/g/%s/rosto" % T2, SELFIE, ip="10.1.%d.%d" % (i // 200, i % 200 + 1)) for i in range(20)]
     ok(all(s == 200 and j.get("motivo") == "nao_encontrado" for s, j in res), "2: as 20 primeiras sem acerto deveriam dar nao_encontrado: %s" % [s for s, _ in res])
     st, r = req("POST", "/g/%s/rosto" % T2, SELFIE, ip="10.9.9.9")
-    ok(st == 429 and r.get("motivo") == "bloqueado", "2: a 21ª (outro IP) deveria dar 429: %s %s" % (st, r))
+    ok(st == 429 and r.get("motivo") == "bloqueado" and r.get("teto") is True, "2: a 21ª (outro IP) deveria dar 429: %s %s" % (st, r))
     amanha = m._amanha()
     ok(r and abs(m._epoch(r.get("ate")) - amanha) < 2, "2: bloqueio até o início de amanhã: %s" % (r or {}).get("ate"))
     SIMS.update({"b1b1b1b1b1b1": 0.9})

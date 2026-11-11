@@ -36,12 +36,14 @@ try{
     ok(await entrar(V,'loja@eterna.photo'),'E1: vendedor não entrou');
     const e1=await V.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,eb:document.querySelector('#main .head .eyebrow').textContent}));
     ok(e1.v==='posto'&&e1.h1==='Posto de venda'&&e1.eb==='Caixa 1','E1: '+J(e1));
-    // E10: barra com Abrir Checkout e Posto de venda (PIX conta)
-    // v96-ux (Eduardo, 10/11, cace1c4): os dois botões amarelos no alto do menu, Abrir Checkout e Caixa, para quem pode usá-los
+    // E10 (v97-ux, Posto único): botões amarelos Abrir Checkout e Caixa; o item do menu conta todas as pendências (#rail-din) e o Caixa só o dinheiro (#rail-cx)
     // v94-ux (parte H): o botão "Posto de venda" da barra saiu (o Posto está no menu); o número fica no item do menu (#nav [data-v="posto"] #rail-din)
     await V.evaluate(()=>{const S=ETERNA.SIM;S.caixaDin.unshift({id:'L00-teste0pix1',card:'LPTESTEPIX',codigo:'ABCD-EFGH',criada:new Date().toISOString(),total:70,prints:1,n:1,cart:[{id:'arq'}],selected:[],meio:'pix',prov:'pos-manual',estado:'aguardando'});localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.render();});
     const e10=await V.evaluate(()=>({ck:!!document.querySelector('#rail-ck [data-act="loja-abrir"]'),posto:(document.querySelector('#nav [data-v="posto"]')||{}).innerText||'',caixa:!!document.querySelector('#rail-ck [data-v="caixa"]'),din:(document.querySelector('#rail-din')||{}).textContent||'',t:document.querySelector('#rail-ck').innerText}));
-    ok(e10.ck&&/Posto de venda/.test(e10.posto)&&e10.din==='1'&&e10.caixa&&/\bCaixa\b/.test(e10.t),'E10: barra do vendedor: '+J(e10));
+    ok(e10.ck&&/Posto de venda/.test(e10.posto)&&e10.din==='1'&&e10.caixa&&/\bCaixa\b/.test(e10.t)&&!await V.$('#rail-cx'),'E10: barra do vendedor (PIX não conta no Caixa): '+J(e10));
+    await V.evaluate(()=>{const S=ETERNA.SIM;S.caixaDin.unshift({id:'L00-teste0din9',card:'LPTESTEDIN9',codigo:'DINH-2345',criada:new Date().toISOString(),total:70,prints:1,n:1,cart:[{id:'arq'}],selected:[],meio:'dinheiro',prov:'dinheiro',estado:'aguardando'});localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.render();});
+    const e10b=await V.evaluate(()=>({cx:(document.querySelector('#rail-ck [data-v="caixa"] #rail-cx')||{}).textContent||'',din:(document.querySelector('#rail-din')||{}).textContent||'',al:(document.querySelector('#rail-ck [data-v="caixa"]')||{getAttribute(){return ''}}).getAttribute('aria-label')}));
+    ok(e10b.cx==='1'&&e10b.din==='2'&&e10b.al==='Caixa, 1 em dinheiro para confirmar','E10: número do Caixa só com o dinheiro: '+J(e10b));
     await ctx.close();}
   const ctx=await b.newContext({viewport:{width:1440,height:900}});await rotas(ctx);
   const A=vigia(await ctx.newPage(),'A');await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(500);
@@ -87,20 +89,23 @@ try{
   await A.click('#pend-painel [data-act="din-cancel"][data-id="L00-teste0din01"]');await A.waitForTimeout(150);
   ok(await A.evaluate(()=>!!document.querySelector('#pend-painel [data-act="din-cancel-ok"]'))&&(await pendDe(A,'LPTESTEDIN')),'E4: o cancelamento pede o segundo toque');
   await A.click('[data-act="din-cancel-no"]');await A.waitForTimeout(150);
-  // ---- E5: filtro Dinheiro no Posto; #caixa abre a tela Caixa de antes (v96-ux, Eduardo, cdcf4b5) com o dinheiro aguardando
-  await A.click('[data-act="posto-filtro"][data-f="dinheiro"]');await A.waitForTimeout(150);
-  let e5=await A.evaluate(()=>[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend));ok(e5.length===1&&e5[0]==='L00-teste0din01','E5: filtro Dinheiro: '+J(e5));
-  await A.click('[data-act="posto-filtro"][data-f="todos"]');await A.waitForTimeout(150);
+  // ---- E5 (v97-ux, Posto único): sem chips no Posto; #caixa é o Posto só com o dinheiro, título "Caixa"; o chip "Dinheiro ✕" volta ao Posto
+  let e5=await A.evaluate(()=>({chips:document.querySelectorAll('#main [data-act="posto-filtro"]').length,ids:[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend)}));
+  ok(e5.chips===0&&e5.ids.length===2,'E5: Posto sem chips e com as duas pendências: '+J(e5));
   await A.evaluate(()=>{location.hash='#caixa';});await A.waitForTimeout(400);
-  e5=await A.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,ids:[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend),on:(document.querySelector('[data-act="posto-filtro"][aria-pressed="true"]')||{}).dataset}));
-  ok(e5.v==='caixa'&&e5.h1==='Caixa'&&e5.ids.includes('L00-teste0din01'),'E5: #caixa abre a tela Caixa com o dinheiro aguardando: '+J(e5));
+  e5=await A.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,eb:document.querySelector('#main .head .eyebrow').textContent,ids:[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend),chips:[...document.querySelectorAll('#main [data-act="posto-filtro"]')].map(x=>x.dataset.f+':'+x.textContent.trim())}));
+  ok(e5.v==='caixa'&&e5.h1==='Caixa'&&e5.eb==='Posto de venda · Caixa 1'&&e5.ids.length===1&&e5.ids[0]==='L00-teste0din01'&&e5.chips.length===1&&e5.chips[0]==='todos:Dinheiro','E5: #caixa só com o dinheiro: '+J(e5));
+  await A.click('[data-act="posto-filtro"][data-f="todos"]');await A.waitForTimeout(200);
+  e5=await A.evaluate(()=>({v:ETERNA.state.view,hash:location.hash,h1:document.querySelector('#main h1').textContent,n:document.querySelectorAll('#pend-painel [data-pend]').length}));
+  ok(e5.v==='posto'&&e5.hash==='#posto'&&e5.h1==='Posto de venda'&&e5.n===2,'E5: "Dinheiro ✕" volta ao Posto completo: '+J(e5));
   // ---- E6: rolo 120 neutro, 99 amarelo, 39 vermelho em Posto, Estoque e Venda manual; nunca verde
   for(const [n,cls] of [[120,'neutral'],[99,'warn'],[39,'bad']]){
     await A.evaluate(n=>{ETERNA.SIM.stock['Caixa 1']=n;localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));ETERNA.go('posto');},n);await A.waitForTimeout(150);
     const ps=await A.evaluate(()=>[...document.querySelectorAll('#main .pill')].filter(p=>/Rolo:/.test(p.textContent)).map(p=>p.className));
-    ok(ps.length>=1&&ps.length<=2&&ps.every(c=>c.includes(cls)&&!c.includes('good')),`E6: rolo ${n} no Posto (v96-ux: selo no cabeçalho e no Imprimir, como na v96; ${cls}): `+J(ps));
+    ok(ps.length===1&&ps.every(c=>c.includes(cls)&&!c.includes('good')),`E6: rolo ${n} no Posto (v97-ux: um selo só, no cabeçalho; ${cls}): `+J(ps));
     await A.evaluate(()=>ETERNA.go('checkout'));await A.waitForTimeout(150);
-    const pc=await A.evaluate(()=>[...document.querySelectorAll('#main .pill')].filter(p=>/Rolo:/.test(p.textContent)).map(p=>p.className));ok(pc.length===1&&pc[0].includes(cls),`E6: rolo ${n} na Venda manual: `+J(pc));
+    const pc=await A.evaluate(()=>[...document.querySelectorAll('#main .pill')].filter(p=>/Rolo:/.test(p.textContent)).map(p=>p.className));ok(pc.length===1&&pc[0].includes(cls)&&await A.evaluate(()=>ETERNA.state.view==='posto'&&!!document.querySelector('#posto-manual')),`E6: rolo ${n} com a Venda manual aberta no Posto (um selo só): `+J(pc));
+    await A.click('[data-act="posto-manual-fechar"]');await A.waitForTimeout(100);
     await A.evaluate(()=>ETERNA.go('estoque'));await A.waitForTimeout(150);
     const es=await A.evaluate(()=>{const t=[...document.querySelectorAll('#main .tile')].find(x=>/Caixa 1/.test(x.textContent));return t?{c:t.querySelector('.v').style.color,d:t.querySelector('.d').textContent}:null;});
     const esp=n<40?['var(--bad)','Trocar antes do pico']:n<100?['var(--warn)','Trocar logo']:['inherit',''];
@@ -109,11 +114,11 @@ try{
   // ---- E7: agente fora com último dado
   await A.evaluate(()=>{ETERNA.state.agent.on=false;ETERNA.state.agent.lastOk=Date.now()-120000;ETERNA.render();});
   const e7=await A.evaluate(()=>({off:(document.querySelector('#main .conn-off')||{}).textContent||'',good:document.querySelectorAll('#main .posto-head .pill.good').length,ag:/agente ligado|sem agente/.test(document.querySelector('#main').innerText)}));
-  ok(/Sem conexão com o computador do ponto · último dado às \d\d:\d\d/.test(e7.off)&&e7.good===0&&!e7.ag,'E7: '+J(e7));
+  ok(/O computador do ponto não está respondendo\. Chame a TI\.Último dado às \d\d:\d\d/.test(e7.off)&&e7.good===0&&!e7.ag,'E7: '+J(e7));
   // ---- E9: Venda manual pelo link do Posto; fundo de IA nunca no Checkout do cliente
-  await A.click('.posto-rodape [data-act="view"][data-v="checkout"]');await A.waitForTimeout(200);
-  const e9=await A.evaluate(()=>({v:ETERNA.state.view,h1:document.querySelector('#main h1').textContent,eb:document.querySelector('#main .head .eyebrow').textContent}));
-  ok(e9.v==='checkout'&&e9.h1==='Venda manual'&&/quando o Checkout está fora/.test(e9.eb),'E9: Venda manual: '+J(e9));
+  await A.click('.posto-rodape [data-act="posto-manual"]');await A.waitForTimeout(200);
+  const e9=await A.evaluate(()=>{const m=document.querySelector('#posto-manual');return {v:ETERNA.state.view,hash:location.hash,h1:document.querySelector('#main h1').textContent,vis:!!m&&m.offsetParent!==null,h2:m?m.querySelector('h2').textContent:'',nota:m?m.querySelector('.head .note').textContent:''};});
+  ok(e9.v==='posto'&&e9.hash==='#checkout'&&e9.h1==='Posto de venda'&&e9.vis&&e9.h2==='Venda manual'&&/quando o Checkout está fora/.test(e9.nota),'E9: Venda manual dentro do Posto: '+J(e9));
   ok(await A.evaluate(()=>ETERNA.lojaIdeal&&true),'E9: lojaIdeal');
   await A.evaluate(()=>ETERNA.go('catalogo'));await A.waitForTimeout(200);
   // v98.1 (Ronaldo, 11/11): produto que não existe na Imply não é cadastrado; o Fundo de IA saiu da tabela de preços

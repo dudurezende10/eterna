@@ -32,7 +32,7 @@ import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 import unicodedata
-import urllib.request, urllib.error, mimetypes, re, base64
+import urllib.request, urllib.error, urllib.parse, mimetypes, re, base64
 
 # imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
 os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", "40000000")
@@ -55,9 +55,268 @@ def _ler_nuvem_env():
 _ler_nuvem_env()
 MAX_PIXELS = 40_000_000
 PORT = int(os.environ.get("ETERNA_PORTA") or 8765)
-APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN", "https://eterna.photo")  # no servidor de teste, a cópia local (docs/SERVIDOR-DE-TESTE.md)
+APP_ORIGIN_PADRAO = "https://eterna.photo"
+
+
+def app_origem_ok(o):
+    """De onde o agente baixa o app: só https://, ou http:// neste computador (testes e desenvolvimento). Sem usuário e senha."""
+    try:
+        u = urlparse(o or "")
+        host = (u.hostname or "").lower()
+        if not host or u.username or u.password:
+            return False
+        return u.scheme == "https" or (u.scheme == "http" and host in ("127.0.0.1", "localhost", "::1"))
+    except ValueError:
+        return False
+
+
+APP_ORIGIN = os.environ.get("ETERNA_APP_ORIGIN") or APP_ORIGIN_PADRAO
+APP_ORIGIN_RECUSADA = not app_origem_ok(APP_ORIGIN)    # o main() avisa no console
+if APP_ORIGIN_RECUSADA:
+    APP_ORIGIN = APP_ORIGIN_PADRAO
 app_cache = {}
 HOME = os.path.expanduser("~/Eterna")
+# v97: cópia do app em disco (~/Eterna/app-cache/), para o agente reiniciado sem internet continuar servindo o app,
+# as fontes e o vendor. Só caminhos da lista branca; um arquivo por caminho, com o nome do caminho codificado.
+APP_CACHE_DIR = os.path.join(HOME, "app-cache")
+APP_CACHE_TETO = 300 * 1024 * 1024          # soma dos arquivos; passou, apaga os mais antigos
+APP_ARQ_MAX = 80 * 1024 * 1024              # um arquivo só (o maior do app, o modelo SFace, tem ~37 MB)
+APP_TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css",
+             ".woff2": "font/woff2", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+             ".webp": "image/webp", ".svg": "image/svg+xml", ".json": "application/json",
+             ".onnx": "application/octet-stream", ".wasm": "application/wasm", ".bin": "application/octet-stream"}
+APP_PREFIXOS = ("vendor/", "img/", "sprites/")
+_re_app = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")
+# o que o Checkout precisa para abrir e achar o rosto sem rede (baixado na abertura do agente, em segundo plano)
+APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js",
+                  "vendor/fonts/big-shoulders-display-latin-600-normal.woff2",
+                  "vendor/fonts/big-shoulders-display-latin-700-normal.woff2",
+                  "vendor/fonts/big-shoulders-display-latin-800-normal.woff2",
+                  "vendor/fonts/inter-latin-400-normal.woff2", "vendor/fonts/inter-latin-500-normal.woff2",
+                  "vendor/fonts/inter-latin-600-normal.woff2", "vendor/fonts/inter-latin-700-normal.woff2",
+                  "img/brand/viva-maracana-white.png", "img/brand/viva-maracana-azul.png", "img/bg-noite.jpg",
+                  "vendor/ort/ort.min.js", "vendor/ort/ort-wasm-simd.wasm", "vendor/ort/ort-wasm.wasm",
+                  "vendor/rostos/face_detection_yunet_2023mar.onnx", "vendor/rostos/face_recognition_sface_2021dec.onnx",
+                  "vendor/faceapi/indice-exemplos.json"]
+# os fundos de IA ativos no Checkout (BG_DEF do app, com as variações da Noite de campeão): sem eles a família fica sem as
+# montagens quando a rede cai. Manter igual ao app; o teste testes/app_offline_agente.py confere com o index.html.
+APP_FUNDOS_ATIVOS = ["img/bg-campeao-v81.jpg", "img/bg-campeaoarg.jpg", "img/bg-campeaocol.jpg", "img/bg-mirantesol.jpg",
+                     "img/bg-pb1950.jpg", "img/bg-tunel.jpg", "img/bg-telao.jpg"]
+app_disco_lock = threading.Lock()
+APP_FORA_SEG = 45                           # origem fora: por este tempo ninguém tenta a rede de novo (502 ou disco na hora)
+app_fora = {"ate": 0.0}
+app_travas = {}                             # caminho -> trava: o mesmo arquivo não é baixado duas vezes ao mesmo tempo
+app_travas_lock = threading.Lock()
+
+
+class AppFora(Exception):
+    pass
+
+
+def app_trava(rel):
+    with app_travas_lock:
+        if len(app_travas) > 500:           # caminhos pedidos uma vez só não ficam para sempre
+            for k in [k for k, t in app_travas.items() if not t.locked()]:
+                app_travas.pop(k, None)
+        return app_travas.setdefault(rel, threading.Lock())
+app_revisto = set()                         # caminhos já baixados de novo nesta abertura do agente
+app_fila = queue.Queue()                    # revisão em segundo plano do que foi servido do disco
+
+
+def app_rel(path):
+    """Caminho da URL -> caminho relativo do app, ou None se estiver fora da lista branca."""
+    if path in ("", "/"):
+        path = "/index.html"
+    if not path.startswith("/") or path.startswith("//") or "\\" in path or ".." in path or "\x00" in path:
+        return None
+    rel = path[1:]
+    if not _re_app.match(rel):
+        return None
+    if rel != "index.html" and not rel.startswith(APP_PREFIXOS):
+        return None
+    if os.path.splitext(rel)[1].lower() not in APP_TIPOS:
+        return None
+    return rel
+
+
+def app_disco(rel):
+    """Arquivo do cache para o caminho (nome = caminho codificado, sem subpastas); None se cair fora da pasta."""
+    base = os.path.realpath(APP_CACHE_DIR)
+    p = os.path.realpath(os.path.join(base, urllib.parse.quote(rel, safe="")))
+    return p if os.path.dirname(p) == base else None
+
+
+def app_disco_ler(rel):
+    p = app_disco(rel)
+    try:
+        with open(p, "rb") as f:
+            return f.read()
+    except (OSError, TypeError):
+        return None
+
+
+def app_disco_gravar(rel, data):
+    """Grava de forma atômica (.tmp + os.replace) e poda o cache acima do teto. False se não gravou."""
+    p = app_disco(rel)
+    if not p:
+        return False
+    try:
+        os.makedirs(APP_CACHE_DIR, exist_ok=True)
+        tmp = "%s.%d.tmp" % (p, threading.get_ident())
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, p)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return False
+    app_disco_podar(p)
+    return True
+
+
+def app_disco_podar(manter):
+    with app_disco_lock:
+        try:
+            arqs = []
+            for n in os.listdir(APP_CACHE_DIR):
+                q = os.path.join(APP_CACHE_DIR, n)
+                if not os.path.isfile(q):
+                    continue
+                st = os.stat(q)
+                if n.endswith(".tmp"):
+                    if st.st_mtime < time.time() - 3600:     # sobra de gravação interrompida
+                        os.remove(q)
+                    continue
+                arqs.append((st.st_mtime, st.st_size, q))
+            total = sum(a[1] for a in arqs)
+            for mt, tam, q in sorted(arqs):
+                if total <= APP_CACHE_TETO:
+                    break
+                if q == manter:
+                    continue
+                os.remove(q)
+                total -= tam
+        except OSError:
+            pass
+
+
+def app_baixar(rel, timeout=20):
+    if time.time() < app_fora["ate"]:
+        raise AppFora()                             # a origem acabou de falhar: não espera a rede de novo
+    url = APP_ORIGIN.rstrip("/") + "/" + rel + ("?t=%d" % int(time.time()) if rel == "index.html" else "")
+    req = urllib.request.Request(url, headers={"User-Agent": "eterna-agente"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read(APP_ARQ_MAX + 1)
+    except urllib.error.HTTPError:
+        raise                                       # a origem respondeu (404, 500): está no ar
+    except OSError:                                 # sem rede, recusada, tempo esgotado (URLError e timeout são OSError)
+        app_fora["ate"] = time.time() + APP_FORA_SEG
+        raise
+    app_fora["ate"] = 0.0
+    if len(data) > APP_ARQ_MAX:
+        raise ValueError("arquivo grande demais")
+    return data
+
+
+def app_buscar(rel):
+    """(bytes, origem) do arquivo do app: rede primeiro para o index.html (a cada 60 s), disco primeiro para o resto.
+    Sem rede, serve o que estiver no disco. Levanta a exceção da rede se não houver cópia nenhuma."""
+    mem = app_cache.get(rel)
+    if rel == "index.html":
+        if mem and time.time() - mem[1] <= 60:
+            return mem[0], "memoria"
+        with app_trava(rel):
+            return _app_buscar_index(rel)
+    if mem:
+        return mem[0], "memoria"
+    disco = app_disco_ler(rel)
+    if disco is None:
+        with app_trava(rel):                       # quem esperou a trava encontra o arquivo já baixado
+            mem = app_cache.get(rel)
+            if mem:
+                return mem[0], "memoria"
+            disco = app_disco_ler(rel)
+            if disco is None:
+                data = app_baixar(rel)
+                app_revisto.add(rel)
+                if not app_disco_gravar(rel, data):
+                    app_cache[rel] = (data, time.time())   # disco cheio ou sem permissão: fica só em memória, como antes
+                return data, "rede"
+    if rel not in app_revisto:
+        app_revisto.add(rel)
+        try:
+            os.utime(app_disco(rel))               # usado agora: fica por último na poda
+        except OSError:
+            pass
+        app_fila.put(rel)
+    return disco, "disco"
+
+
+def _app_buscar_index(rel):
+    mem = app_cache.get(rel)
+    if mem and time.time() - mem[1] <= 60:
+        return mem[0], "memoria"
+    disco = None if mem else app_disco_ler(rel)
+    try:
+        data = app_baixar(rel, timeout=8 if (mem or disco) else 20)
+    except Exception:
+        if mem:
+            app_cache[rel] = (mem[0], time.time() - 50)   # tenta a rede de novo em ~10 s
+            return mem[0], "memoria"
+        if disco is not None:
+            app_cache[rel] = (disco, time.time() - 50)
+            return disco, "disco"
+        raise
+    app_disco_gravar(rel, data)
+    app_cache[rel] = (data, time.time())
+    app_revisto.add(rel)
+    return data, "rede"
+
+
+def app_revisar_loop():
+    """Baixa de novo, em segundo plano, o que foi servido do disco (uma vez por abertura): a versão nova chega sem travar."""
+    while True:
+        rel = app_fila.get()
+        try:
+            app_disco_gravar(rel, app_baixar(rel))
+        except Exception:
+            pass
+
+
+def app_preaquecer():
+    """Na abertura: baixa o index.html e o que falta dos essenciais do Checkout, sem travar o início. Depois, sem contar
+    para o app_offline_pronto, os fundos de IA (prévia e impressão), que o Checkout e o Posto montam no navegador."""
+    extras = [r for r in sorted(set(FUNDOS_PREVIA.values()) | set(FUNDOS_IMPRESSAO.values())) if r not in APP_FUNDOS_ATIVOS]
+    for volta in range(APP_PRE_VOLTAS):             # origem fora na abertura: tenta de novo de minuto em minuto
+        for rel in APP_ESSENCIAIS + APP_FUNDOS_ATIVOS + extras:
+            try:
+                if rel == "index.html":
+                    app_buscar(rel)
+                elif app_disco_ler(rel) is None:
+                    with app_trava(rel):
+                        if app_disco_ler(rel) is None:
+                            data = app_baixar(rel)
+                            app_revisto.add(rel)
+                            app_disco_gravar(rel, data)
+            except Exception:
+                pass
+        if app_offline_pronto():
+            break
+        time.sleep(APP_PRE_ESPERA)
+
+
+APP_PRE_VOLTAS, APP_PRE_ESPERA = 30, 60
+
+
+def app_offline_pronto():
+    for rel in APP_ESSENCIAIS + APP_FUNDOS_ATIVOS:
+        p = app_disco(rel)
+        if not p or not os.path.isfile(p):
+            return False
+    return True
 # ETERNA_IMPRESSORA: nome da impressora 10x15 ligada neste computador (ex.: DS-RX1). Com ela, o botão Imprimir de
 # qualquer posto manda a foto para cá e ela sai aqui, em vez de sair na impressora do navegador de quem clicou.
 IMPRESSORA = os.environ.get("ETERNA_IMPRESSORA", "").strip()
@@ -92,7 +351,23 @@ INDEX = os.path.join(HOME, "index.json")
 FTPCFG = os.path.join(HOME, "ftp.json")
 FTPTMP = os.path.join(HOME, "ftp-tmp")
 EXT = (".jpg", ".jpeg", ".JPG", ".JPEG")
-FOTO_ENVIO_MAX = 60 * 1024 * 1024          # uma foto enviada pela tela de Upload
+# v96-ux (Minhas fotos, envio manual): fotos do cartão mandadas pela tela quando o leitor não reconhece o cartão
+FOTO_ENVIO_MAX = 60 * 1024 * 1024          # uma foto por pedido (mesmo teto do Ronaldo, fix/seguranca-dados)
+FOTO_ENVIO_TAXA = 300                      # fotos por minuto por IP
+FOTO_ENVIO_SIMULT = 4                      # gravações ao mesmo tempo no agente inteiro; o resto recebe 503 na hora
+FOTO_ENVIO_POR_IP = 2                      # gravações ao mesmo tempo por IP (o app manda 2 por vez)
+FOTO_ENVIO_PRAZO = 120                     # segundos para o corpo de uma foto chegar inteiro; passou, 408 e a vaga volta
+try:                                       # espaço livre mínimo no disco da inbox: o mesmo piso do recorte (10 GB)
+    FOTO_ENVIO_PISO_GB = float(os.environ.get("ETERNA_RECORTES_PISO_GB") or 10)
+except ValueError:
+    FOTO_ENVIO_PISO_GB = 10.0
+try:                                       # fotos novas por dia por esta rota, somando todos os aparelhos
+    FOTO_ENVIO_TETO_DIA = max(1, int(os.environ.get("ETERNA_ENVIO_TETO_DIA") or 20000))
+except ValueError:
+    FOTO_ENVIO_TETO_DIA = 20000
+FOTO_ENVIO_MIN = 1024                      # bytes: menor que isto não é foto de câmera
+FOTO_ENVIO_LADO_MIN = 64                   # px no lado menor
+_re_envio_nome = re.compile(r"^[A-Za-z0-9_-]{1,80}\.(jpg|jpeg|JPG|JPEG)$")
 POLL = 2.0
 
 os.makedirs(INBOX, exist_ok=True)
@@ -253,7 +528,38 @@ def metricas_carrega(dias=3):
 
 
 metricas_carrega()
-state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None}}
+state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None},
+         "envio": {"novas": 0, "repetidas": 0, "recusadas": 0}}
+envio_sem = threading.BoundedSemaphore(FOTO_ENVIO_SIMULT)
+envio_ips = {}                              # ip -> gravações em curso (com o lock)
+envio_dia = {"dia": "", "n": 0}             # fotos novas de hoje pelo envio da tela (com o lock)
+ENVIO_DIA_ARQ = os.path.join(HOME, "envio-dia.json")   # só o dia e o número: o teto do dia vale depois de reiniciar
+
+
+def envio_dia_n():
+    """Fotos novas de hoje pela rota (com o lock na mão). Virou o dia, zera; na primeira vez lê o que ficou gravado."""
+    hoje = time.strftime("%Y-%m-%d")
+    if envio_dia["dia"] != hoje:
+        n = 0
+        try:
+            with open(ENVIO_DIA_ARQ) as f:
+                j = json.load(f)
+            if j.get("dia") == hoje:
+                n = max(0, int(j.get("n") or 0))
+        except Exception:
+            pass
+        envio_dia.update(dia=hoje, n=n)
+    return envio_dia["n"]
+
+
+def envio_dia_soma():
+    envio_dia_n()
+    envio_dia["n"] += 1
+    try:
+        _grava_privado(ENVIO_DIA_ARQ, json.dumps(envio_dia))
+    except Exception:
+        pass
+
 
 if os.path.exists(INDEX):
     try:
@@ -301,6 +607,61 @@ def quick_hash(path, size):
     return h.hexdigest()
 
 
+INDEX_ESPERA = 2.0
+_index_timer = {"t": None}
+
+
+def save_index_logo():
+    """Com o lock na mão: grava o índice daqui a INDEX_ESPERA segundos, uma vez só para as fotos que chegarem nesse meio
+    tempo (o envio pela tela manda centenas em sequência). Se o agente cair antes, o index_conferir da abertura refaz."""
+    if _index_timer["t"] is None:
+        t = threading.Timer(INDEX_ESPERA, _save_index_agendado)
+        t.daemon = True
+        _index_timer["t"] = t
+        t.start()
+
+
+def _save_index_agendado():
+    with lock:
+        _index_timer["t"] = None
+        try:
+            save_index()
+        except Exception as ex:
+            print("  índice: não gravei (%s)" % type(ex).__name__)
+
+
+def index_conferir():
+    """Na abertura: foto de hoje que está na inbox e não está no índice (o agente caiu antes da gravação agendada) volta
+    para ele, para a mesma foto mandada de novo continuar sendo reconhecida como repetida."""
+    ddir = os.path.join(INBOX, time.strftime("%Y-%m-%d"))
+    if not os.path.isdir(ddir):
+        return 0
+    tem = set(seen.values())
+    n = 0
+    for fn in os.listdir(ddir):
+        pid = fn.split("_", 1)[0]
+        if "_" not in fn or not fn.endswith(EXT) or pid in tem:
+            continue
+        try:
+            p = os.path.join(ddir, fn)
+            hq = quick_hash(p, os.path.getsize(p))
+        except OSError:
+            continue
+        if hq[:12] == pid:
+            seen[hq] = pid
+            tem.add(pid)
+            n += 1
+    if n:
+        try:
+            save_index()
+        except Exception:
+            pass
+    return n
+
+
+index_conferir()
+
+
 def jpeg_completo(path, size):
     """Foto inteira? JPEG termina no marcador FFD9 (algumas câmeras deixam uns bytes depois dele); PNG no bloco IEND.
     Há fotos PNG com nome .jpeg (exportações do Roverpix). v80 (segurança I2): arquivo que não começa como JPEG nem PNG é recusado."""
@@ -316,6 +677,87 @@ def jpeg_completo(path, size):
     if ini == b"\x89PNG\r\n\x1a\n":
         return b"IEND" in fim[-16:]
     return False
+
+
+_JPEG_SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+
+
+def jpeg_cabecalho(path):
+    """(largura, altura) lidas dos segmentos do JPEG (do SOI até o quadro SOF, que precisa vir antes do SOS), só com a
+    biblioteca padrão; None se a estrutura não for a de um JPEG. Anda segmento a segmento, sem carregar a imagem."""
+    try:
+        with open(path, "rb") as f:
+            if f.read(2) != b"\xff\xd8":
+                return None
+            for _ in range(2000):                       # teto de segmentos antes do quadro
+                b = f.read(1)
+                if b != b"\xff":
+                    return None
+                m = f.read(1)
+                while m == b"\xff":                     # preenchimento
+                    m = f.read(1)
+                if len(m) != 1:
+                    return None
+                m = m[0]
+                if m in (0x00, 0xD8, 0xD9, 0xDA) or 0xD0 <= m <= 0xD7 or m < 0xC0:
+                    return None                         # dados, fim ou varredura antes do quadro: não é foto
+                t = f.read(2)
+                if len(t) != 2:
+                    return None
+                n = int.from_bytes(t, "big")
+                if n < 2:
+                    return None
+                if m in _JPEG_SOF:
+                    q = f.read(6)
+                    if len(q) != 6 or n < 8 + 3 * q[5] or q[5] not in (1, 3, 4) or q[0] not in (8, 12, 16):
+                        return None
+                    return int.from_bytes(q[3:5], "big"), int.from_bytes(q[1:3], "big")
+                f.seek(n - 2, 1)
+    except OSError:
+        pass
+    return None
+
+
+def jpeg_envio_erro(path, size):
+    """v96-ux: foto mandada pela tela. None = JPEG de câmera inteiro; "nao_jpeg" = não é (PNG com nome .jpg, texto, arquivo
+    que só começa e termina como JPEG, dimensões fora de FOTO_ENVIO_LADO_MIN a 40 MP, menor que FOTO_ENVIO_MIN);
+    "incompleta" = cabeçalho de JPEG certo, mas sem o fim (FF D9 nos últimos 4 KB). Com Pillow instalada, ela também
+    precisa abrir o cabeçalho como JPEG com as mesmas dimensões."""
+    try:
+        with open(path, "rb") as f:
+            ini = f.read(3)
+    except OSError:
+        return "nao_jpeg"
+    dim = jpeg_cabecalho(path) if ini == b"\xff\xd8\xff" else None
+    if not dim or min(dim) < FOTO_ENVIO_LADO_MIN or dim[0] * dim[1] > MAX_PIXELS:
+        return "nao_jpeg"
+    if not jpeg_completo(path, size):
+        return "incompleta"
+    if size < FOTO_ENVIO_MIN:
+        return "nao_jpeg"
+    if has_pillow():
+        try:
+            from PIL import Image
+            with Image.open(path) as im:
+                if im.format not in ("JPEG", "MPO") or tuple(im.size) != tuple(dim):
+                    return "nao_jpeg"
+        except Exception:
+            return "nao_jpeg"
+    return None
+
+
+def jpeg_de_verdade(path, size):
+    """v96-ux: foto mandada pela tela é um JPEG inteiro (jpeg_envio_erro). O jpeg_completo geral não muda."""
+    return jpeg_envio_erro(path, size) is None
+
+
+def envio_nome(nome):
+    """v96-ux: rótulo seguro da foto mandada pela tela. O nome do cliente só passa se casar com a regra (letras, números,
+    _ e -, até 80, extensão do cartão); senão o agente dá o nome. Nunca passa por os.path."""
+    nome = nome if isinstance(nome, str) else ""
+    if _re_envio_nome.match(nome):
+        return nome
+    return "envio_%s_%s.jpg" % (time.strftime("%H%M%S"), secrets.token_hex(2))
 
 
 def has_pillow():
@@ -943,16 +1385,118 @@ def nuvem_reenviar():
     return {"ok": True, "fotos": fotos, "galerias": gals}
 
 
+def lgpd_galerias_abertas():
+    """Manifestos publicados que ainda valem (nem encerrados nem vencidos): [(token, manifesto)]."""
+    out = []
+    for t in REPO.listar():                # repositório que não sabe listar levanta erro: quem chama recusa a exclusão
+        m = REPO.ler_manifesto(t) if token_ok(t) else None
+        if m and isinstance(m.get("fotos"), list) and not gal_expirou(m):
+            out.append((t, m))
+    return out
+
+
+def lgpd_vendas_pagas():
+    """Fotos das vendas pagas no balcão (vendas.db): as escolhidas (selected) e as bases das montagens (aiSel, 'ai:<id>|<fundo>'),
+    em id da biblioteca. Vale mesmo sem galeria publicada. Erro de leitura sobe para quem chama (a exclusão é recusada)."""
+    if not os.path.exists(VENDAS_DB):
+        return set()
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rs = db.execute("select dados from evento where tipo = 'criar' and venda in"
+                            " (select venda from evento where tipo = 'pagar')").fetchall()
+        finally:
+            db.close()
+    out = set()
+    for (dados,) in rs:
+        d = json.loads(dados or "{}")
+        ids = [str(x) for x in d.get("selected") or []] + [re.sub(r"^ai:", "", str(k)).split("|")[0] for k in d.get("aiSel") or []]
+        out.update(pid_lib(i) for i in ids if pid_ok(i))
+    return out
+
+
+def lgpd_recusa(motivo, quem=""):
+    """Sem como conferir o que é do cliente, nada é apagado: fica a linha no registro e o app recebe o erro."""
+    try:
+        with open(LGPD_LOG, "a", encoding="utf8") as fh:
+            fh.write("%s exclusão a pedido do cliente recusada: %s, por %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), motivo, quem or "-"))
+    except OSError:
+        pass
+    print("  LGPD: exclusão recusada (%s); nada foi apagado" % motivo)
+    return {"ok": False, "error": motivo, "fotos": 0, "nuvem": 0, "galerias": 0, "preservadas": 0, "galerias_mantidas": 0,
+            "preservadas_ids": [], "galerias_mantidas_tokens": [], "falhas": [motivo]}
+
+
 def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
     """O cliente pediu para apagar as fotos dele (LGPD, art. 18): some do disco (foto, miniatura, recorte), do índice,
     dos rostos lidos, da fila e do bucket da nuvem; as galerias são encerradas aqui e na nuvem (que apaga os rostos
     da AWS). A venda continua no registro financeiro, sem as fotos. Fica uma linha em lgpd.log sem dado pessoal."""
     fotos, nuvem_apagadas, falhas = 0, 0, []
     dias, linhas_foto, apagados_sess = set(), [], []
-    for pid in pids:
-        pid = pid_lib(pid) if pid_ok(pid) else None
-        if not pid:
-            continue
+    # foto comprada ou de cortesia numa galeria publicada que ainda vale fica com o cliente: não sai daqui nem da nuvem,
+    # e a galeria que tem alguma delas não é encerrada (só perde as fotos apagadas)
+    # e a foto ou a base de montagem de venda paga no balcão fica mesmo antes de a galeria ser publicada (vendas.db)
+    try:
+        pagas = lgpd_vendas_pagas()
+    except Exception as ex:
+        return lgpd_recusa("não deu para conferir as vendas pagas (%s)" % type(ex).__name__, quem)
+    do_cli = lambda m: any(isinstance(f, dict) and (f.get("direito") in ("comprada", "cortesia") or pid_lib(str(f.get("id") or "")) in pagas)
+                           for f in (m.get("fotos") or []))
+    galerias, mantidas, avisar = 0, [], []
+    # Tudo o que decide e tira as fotos das galerias acontece de uma vez, com o gal_lock: a compra online (que usa o mesmo
+    # lock e relê o manifesto) ou entra antes, e a foto fica com o cliente, ou entra depois e já não encontra a foto à venda.
+    # Os arquivos só são apagados depois, quando nenhuma galeria no ar aponta mais para eles.
+    with gal_lock:
+        try:
+            abertas = lgpd_galerias_abertas()
+        except Exception as ex:
+            return lgpd_recusa("não deu para conferir as galerias publicadas (%s)" % type(ex).__name__, quem)
+        do_cliente = pagas | {pid_lib(str(f.get("id") or "")) for _, m in abertas for f in m["fotos"]
+                              if isinstance(f, dict) and f.get("direito") in ("comprada", "cortesia")}
+        alvo, guardadas = [], set()
+        for pid in pids:
+            pid = pid_lib(pid) if pid_ok(pid) else None
+            if not pid:
+                continue
+            if pid in do_cliente:
+                guardadas.add(pid)
+            elif pid not in alvo:
+                alvo.append(pid)
+        sairam = set(alvo)
+        fechar = set()
+        for t in tokens:
+            if not token_ok(t):
+                continue
+            m = REPO.ler_manifesto(t)
+            if m and do_cli(m) and not gal_expirou(m):
+                mantidas.append(t)            # tem foto do cliente: continua no ar
+                continue
+            if m:
+                m["expira"], m["encerrada"], m["lgpd"] = _iso(), True, True
+                REPO.salvar_manifesto(t, m)
+                galerias += 1
+            fechar.add(t)
+            avisar.append(t)                  # na nuvem: sai do ar, código curto e rostos apagados
+        # galeria que continua no ar perde as fotos apagadas (manifesto e cópias), sem esperar a republicação do app
+        for t, m in (abertas if sairam else []):
+            if t in fechar:
+                continue
+            try:
+                fora = [f for f in m["fotos"] if isinstance(f, dict) and pid_lib(str(f.get("id") or "")) in sairam]
+                if not fora:
+                    continue
+                m["fotos"] = [f for f in m["fotos"] if f not in fora]
+                REPO.salvar_manifesto(t, m)
+                avisar.append(t)
+                for f in fora:
+                    try:
+                        REPO.apagar_foto(t, f["id"])
+                    except (ValueError, OSError) as ex:
+                        falhas.append("cópia da galeria: " + str(ex)[:80])
+            except Exception as ex:
+                falhas.append("galeria: " + str(ex)[:80])
+    preservadas = len(guardadas)
+    for pid in alvo:
         with lock:
             e = lib.pop(pid, None)
             hs = [h for h, v in seen.items() if v == pid]
@@ -1023,24 +1567,18 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             _grava_privado(LGPD_EXCLUIDAS, json.dumps(sorted(lgpd_excluidas)))
         except Exception as ex:
             falhas.append(str(ex)[:80])
-    galerias = 0
-    for t in tokens:
-        if not token_ok(t):
-            continue
-        with gal_lock:
-            m = REPO.ler_manifesto(t)
-            if m:
-                m["expira"], m["encerrada"], m["lgpd"] = _iso(), True, True
-                REPO.salvar_manifesto(t, m)
-                galerias += 1
-        nuvem_galeria_enfileira(t)            # na nuvem: sai do ar, código curto e rostos apagados
+    for t in avisar:
+        nuvem_galeria_enfileira(t)
     with open(LGPD_LOG, "a", encoding="utf8") as fh:
         for ln in linhas_foto:
             fh.write(ln + "\n")
         fh.write("%s exclusão a pedido do cliente: %d foto(s), %d na nuvem, %d galeria(s), por %s%s\n" % (
             time.strftime("%Y-%m-%d %H:%M:%S"), fotos, nuvem_apagadas, galerias, quem or "-", (" · falhas: " + "; ".join(falhas)) if falhas else ""))
     print(f"  LGPD: {fotos} foto(s) e {galerias} galeria(s) apagadas a pedido do cliente")
-    return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "falhas": falhas[:5]}
+    # para a tela tirar da sessão só o que saiu: as preservadas (no formato do app) e as galerias do pedido que continuam
+    return {"ok": not falhas, "fotos": fotos, "nuvem": nuvem_apagadas, "galerias": galerias, "preservadas": preservadas,
+            "galerias_mantidas": len(mantidas), "preservadas_ids": sorted("ag_" + p for p in guardadas),
+            "galerias_mantidas_tokens": mantidas, "falhas": falhas[:5]}
 
 
 def nuvem_versoes(arquivo, pid):
@@ -1360,8 +1898,9 @@ except Exception:
     lgpd_excluidas = set()
 
 
-def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
-    """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou)."""
+def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False):
+    """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou).
+    v96-ux: quieto=True (envio pela tela) não põe o nome do arquivo no console; o fluxo é o mesmo."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
     if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo (a câmera recebe "ok" e não reenvia)
@@ -1395,7 +1934,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         else:
             shutil.copy2(src, dst)
     except Exception as ex:
-        print("erro ao copiar", fn, ex)
+        print("erro ao copiar", "(envio pela tela)", type(ex).__name__) if quieto else print("erro ao copiar", fn, ex)
         return None
     sha = hashlib.sha256()                    # assinatura do arquivo gravado: o teste confere foto a foto se chegou íntegra
     with open(dst, "rb") as f:
@@ -1429,7 +1968,8 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None):
         print("  fila do fotógrafo (rostos): %s" % str(ex)[:80])
     rostos_enfileira(pid, dst, 0, time.time())   # S11: foto nova na frente do atraso do boot
     nuvem_enfileira(pid, dst)
-    print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
+    if not quieto:
+        print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
     return "new"
 
 
@@ -3594,6 +4134,8 @@ class Repositorio:
     def url(self, token, pid, variante, ttl): raise NotImplementedError
     def abrir(self, token, pid, variante): raise NotImplementedError
     def apagar(self, token): raise NotImplementedError
+    def apagar_foto(self, token, pid): raise NotImplementedError
+    def listar(self): raise NotImplementedError
     def listar_expiradas(self, agora): raise NotImplementedError
 
 
@@ -3649,11 +4191,20 @@ class RepositorioLocal(Repositorio):
     def apagar(self, token):
         shutil.rmtree(self._dir(token), ignore_errors=True)
 
+    def apagar_foto(self, token, pid):
+        """Tira da galeria as cópias de uma foto (original e vitrine); o manifesto é de quem chama."""
+        for v in ("original", "vitrine"):
+            arq = self._arq(token, pid, v)
+            if os.path.exists(arq):
+                os.remove(arq)
+
+    def listar(self):
+        """Tokens das galerias guardadas (com ou sem manifesto válido)."""
+        return [t for t in (os.listdir(self.base) if os.path.isdir(self.base) else []) if token_ok(t)]
+
     def listar_expiradas(self, agora):
         out = []
-        for t in os.listdir(self.base):
-            if not token_ok(t):
-                continue
+        for t in self.listar():
             m = self.ler_manifesto(t)
             if m and gal_expirou(m, agora):
                 out.append(t)
@@ -5851,8 +6402,9 @@ def vis_calib_gravar(linhas, tira=None):
     ligação estava ligada. tira = pids da LGPD (a linha perde o pid). Fora do sess_lock."""
     try:
         os.makedirs(os.path.dirname(VIS_CALIB), exist_ok=True)
-        if tira and os.path.exists(VIS_CALIB):
-            _jsonl_reescreve(VIS_CALIB, lambda o: {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}})
+        for g in ((VIS_CALIB, VIS_CALIB + ".1") if tira else ()):     # o arquivo atual e a cópia da rotação
+            if os.path.exists(g):
+                _jsonl_reescreve(g, lambda o: {**o, **{k: None for k in ("pa", "pb") if o.get(k) in tira}})
         if not linhas:
             return
         if os.path.exists(VIS_CALIB) and os.path.getsize(VIS_CALIB) > VIS_LOG_MAX:
@@ -7837,6 +8389,7 @@ def met_v2(dia, ss, evs):
         if uc:
             h_add(tempos["transferencia_s"], uc - cap1)
     vs = {}
+    compradas = 0                                     # v97 (selo): montagens (nAI) das vendas pagas do Checkout
     for e in evs or []:
         v = vs.setdefault(e["venda"], {"criar": None, "criar_em": 0, "pagar_em": 0, "pagar_por": None})
         if e["tipo"] == "criar":
@@ -7864,6 +8417,11 @@ def met_v2(dia, ss, evs):
             p["n"] += 1
             p["receita"] = round(p["receita"] + tot, 2)
         canal = c.get("canal") if c.get("canal") in EV_CANAIS else "sem_canal"
+        if canal == "checkout":
+            try:
+                compradas += max(0, int(c.get("nAI") or 0))
+            except (TypeError, ValueError):
+                pass
         g = out["por_canal"].setdefault(canal, {"vendas": 0, "faturamento": 0.0})
         g["vendas"] += 1
         g["faturamento"] = round(g["faturamento"] + tot, 2)
@@ -7880,6 +8438,7 @@ def met_v2(dia, ss, evs):
             nome = _nome_pessoa(v["pagar_por"]) or _nome_pessoa(c.get("vendedor")) or "sem nome"
             h_add(out["por_confirmador"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
     out["entradas"] = entradas_dia(dia)
+    out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     return out
 
 
@@ -7940,6 +8499,9 @@ def operacao_db():
                   " fds int, eventos text, fonte_vendas text, vendas int, receita real, fotos int, sessoes int, sessoes_com_venda int,"
                   " entradas int, entradas_fonte text, clima text, calc_em text, v int)")
         c.execute("create table if not exists entrada_total (dia text, origem text, total int, importacao text, primary key (dia, origem))")
+        # v97 (selo Edição Maracanã): montagens vistas no Checkout, um número acumulado por dia e terminal (id aleatório do navegador).
+        # Sem IP, sessão, rosto, foto ou nome
+        c.execute("create table if not exists montagem_vista (dia text, terminal text, vistas int, em real, primary key (dia, terminal))")
         c.commit()
         _op_criado["arq"] = OPERACAO_DB
     return c
@@ -7977,6 +8539,55 @@ def estado_db_ler(col):
 
 def _hhmm(seg):
     return "%02d:%02d" % (seg // 3600, (seg % 3600) // 60)
+
+
+MONT_TERMINAIS_MAX = 40
+MONT_VISTAS_MAX = 20000
+_re_mont_term = re.compile(r"^[a-z0-9]{8,16}$")
+mont_recusadas = {"n": 0}
+
+
+def montagens_dia(dia):
+    """v97 (selo): soma das montagens vistas no Checkout no dia (todos os terminais), ou None sem registro."""
+    try:
+        r = op_ler("select count(*), sum(vistas) from montagem_vista where dia = ?", (dia,))
+    except Exception:
+        return None
+    return int(r[0][1] or 0) if r and r[0][0] else None
+
+
+def montagens_validar(body):
+    """(dia, terminal, vistas) ou (None, campo recusado). Só hoje e ontem no fuso do agente; vistas inteiro de 0 a 20.000."""
+    if not isinstance(body, dict) or set(body) - {"dia", "terminal", "vistas"}:
+        return None, "campo"
+    dia, term, n = body.get("dia"), body.get("terminal"), body.get("vistas")
+    if not isinstance(dia, str) or dia not in (_ff_hoje(), _ff_hoje(time.time() - 86400)):
+        return None, "dia"
+    if not isinstance(term, str) or not _re_mont_term.match(term):
+        return None, "terminal"
+    if type(n) is not int or n < 0 or n > MONT_VISTAS_MAX:
+        return None, "vistas"
+    return (dia, term, n), None
+
+
+def montagens_gravar(dia, term, n):
+    """Grava o total do terminal no dia (fica o maior: repetir o envio não conta duas vezes). None = já tem 40 terminais no dia."""
+    with op_lock:
+        db = operacao_db()
+        try:
+            r = db.execute("select vistas from montagem_vista where dia = ? and terminal = ?", (dia, term)).fetchone()
+            if r is None:
+                if db.execute("select count(*) from montagem_vista where dia = ?", (dia,)).fetchone()[0] >= MONT_TERMINAIS_MAX:
+                    return None
+                db.execute("insert into montagem_vista (dia, terminal, vistas, em) values (?, ?, ?, ?)", (dia, term, n, time.time()))
+                v = n
+            else:
+                v = max(int(r[0] or 0), n)
+                db.execute("update montagem_vista set vistas = ?, em = ? where dia = ? and terminal = ?", (v, time.time(), dia, term))
+            db.commit()
+            return v
+        finally:
+            db.close()
 
 
 def entradas_dia(dia):
@@ -8209,6 +8820,7 @@ ROTAS = (
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
     ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
@@ -8274,10 +8886,24 @@ agenda_lock = threading.Lock()                    # uma sincronização de jogos
 agenda_wake = threading.Event()
 dia_wake = threading.Event()
 agenda_fonte = {"feriados_ate": None, "ultima": None, "tentativa": None, "ok": None, "erro": None, "pedidos_hoje": 0,
-                "pedidos_dia": None, "restantes": None, "n_por_ano": {}, "ja_no_calendario": 0, "venue_id": None,
-                "apagados_api": [], "teste": None, "rodando": False}
-AF_FONTE_CAMPOS = ("ultima", "tentativa", "ok", "erro", "pedidos_hoje", "pedidos_dia", "restantes", "n_por_ano",
-                   "ja_no_calendario", "venue_id", "apagados_api", "teste")
+                "pedidos_dia": None, "restantes": None, "limite_dia": None, "n_por_ano": {}, "ja_no_calendario": 0, "venue_id": None,
+                "apagados_api": [], "teste": None, "rodando": False, "feriados_anos": []}
+AF_FONTE_CAMPOS = ("ultima", "tentativa", "ok", "erro", "pedidos_hoje", "pedidos_dia", "restantes", "limite_dia", "n_por_ano",
+                   "ja_no_calendario", "venue_id", "apagados_api", "teste", "feriados_anos")
+# Teto global de consultas à API-Football (vale para todos os postos juntos, não por IP): Atualizar no máximo 1 vez a
+# cada 10 min, Testar no máximo 1 vez por minuto, parar com menos de 10 consultas restantes no dia ou passando de 80% do
+# plano diário (100 no grátis; o limite que a API manda no cabeçalho vale por cima), e 6 h de espera depois de uma falha.
+AF_ATUALIZAR_S = 600
+AF_TESTAR_S = 60
+AF_RESTANTES_MIN = 10
+AF_PLANO_DIA = 100
+AF_TETO_PCT = 0.8
+AF_FALHA_S = 6 * 3600
+af_ultimo = {"sync": 0.0, "teste": 0.0}           # time.time() do último começo de cada um (em memória; o arquivo guarda tentativa e teste.em)
+
+
+class AfCota(RuntimeError):
+    """Consulta barrada antes de sair: o teto diário chegou."""
 _af_carregado = [False]
 dia_sujos = set()
 dia_sujos_lock = threading.Lock()
@@ -8339,12 +8965,19 @@ def _agenda_grava(docs):
 
 def agenda_semear_feriados(ano_atual=None):
     """Feriados de AGENDA_DESDE até o ano que vem. Não grava se o id já existe (inclusive apagado: a pessoa apagou, não
-    volta) nem se a data já tem um feriado (os criados antes pelo botão "Adicionar feriados", de id aleatório)."""
+    volta) nem se a data já tem um feriado (os criados antes pelo botão "Adicionar feriados", de id aleatório). Os anos
+    já semeados ficam em agenda-fonte.json (feriados_anos) e não são semeados de novo."""
+    _af_fonte_carrega()
     ano_atual = ano_atual or int(_ff_hoje()[:4])
+    feitos = {a for a in (agenda_fonte.get("feriados_anos") or []) if isinstance(a, int) and not isinstance(a, bool)}
+    anos = [a for a in range(AGENDA_DESDE, ano_atual + 2) if a not in feitos]
+    if not anos:
+        agenda_fonte["feriados_ate"] = ano_atual + 1
+        return 0
     todos = _agenda_todos()
     datas = {v.get("data") for v in todos.values() if v and v.get("tipo") == "feriado"}
     em, novos = _iso(), []
-    for ano in range(AGENDA_DESDE, ano_atual + 2):
+    for ano in anos:
         for data, nome in feriados_de(ano):
             i = agenda_id("feriado|" + data)
             if i in todos or data in datas:
@@ -8354,7 +8987,9 @@ def agenda_semear_feriados(ano_atual=None):
                           "visitante": "", "competicao": "", "obs": nome, "origem": "feriados", "por": "Eterna", "em": em}})
     if novos:
         _agenda_grava(novos)
+    agenda_fonte["feriados_anos"] = sorted(feitos | set(anos))[-50:]   # ano semeado não é semeado de novo
     agenda_fonte["feriados_ate"] = ano_atual + 1
+    _af_fonte_grava()
     return len(novos)
 
 
@@ -8423,11 +9058,43 @@ def _af_msg(ex, cfg):
     return t.replace(cfg["chave"], "····") if cfg and cfg.get("chave") else t
 
 
-def af_get(cfg, rota, params):
-    """GET na API-Football (host fixo, timeout 20 s, resposta até 2 MB). Erro vira RuntimeError sem a chave."""
+def af_cota():
+    """None se ainda cabe uma consulta hoje; senão o motivo (texto curto, sem a chave). Zera a conta na virada do dia."""
     hoje = _ff_hoje()
     if agenda_fonte.get("pedidos_dia") != hoje:
-        agenda_fonte.update(pedidos_dia=hoje, pedidos_hoje=0)
+        agenda_fonte.update(pedidos_dia=hoje, pedidos_hoje=0, restantes=None)
+    rest = agenda_fonte.get("restantes")
+    if isinstance(rest, int) and not isinstance(rest, bool) and rest < AF_RESTANTES_MIN:
+        return "limite diário de consultas da API-Football quase no fim (menos de %d restantes)" % AF_RESTANTES_MIN
+    lim = agenda_fonte.get("limite_dia")
+    lim = lim if isinstance(lim, int) and not isinstance(lim, bool) and lim > 0 else AF_PLANO_DIA
+    if int(agenda_fonte.get("pedidos_hoje") or 0) + 1 > lim * AF_TETO_PCT:
+        return "limite diário de consultas da API-Football quase no fim (80%% do plano usado)"
+    return None
+
+
+def af_espera(tipo, agora=None):
+    """Segundos até poder consultar de novo e o motivo: (0, None), (s, "intervalo") ou (s, "falha").
+    tipo "sync": 10 min entre buscas e 6 h depois de uma falha; tipo "teste": 1 min entre testes."""
+    agora = agora or time.time()
+    if tipo == "teste":
+        t = (agenda_fonte.get("teste") or {}) if isinstance(agenda_fonte.get("teste"), dict) else {}
+        ult = max(af_ultimo["teste"], _epoch(t.get("em") or "") or 0)
+        return (int(ult + AF_TESTAR_S - agora) + 1, "intervalo") if ult and agora - ult < AF_TESTAR_S else (0, None)
+    tent = _epoch(agenda_fonte.get("tentativa") or "") or 0
+    if tent and agenda_fonte.get("ok") is False and agora - tent < AF_FALHA_S:
+        return int(tent + AF_FALHA_S - agora) + 1, "falha"
+    ult = max(af_ultimo["sync"], tent)
+    if ult and agora - ult < AF_ATUALIZAR_S:
+        return int(ult + AF_ATUALIZAR_S - agora) + 1, "intervalo"
+    return 0, None
+
+
+def af_get(cfg, rota, params):
+    """GET na API-Football (host fixo, timeout 20 s, resposta até 2 MB). Erro vira RuntimeError sem a chave."""
+    motivo = af_cota()
+    if motivo:
+        raise AfCota(motivo)
     agenda_fonte["pedidos_hoje"] = int(agenda_fonte.get("pedidos_hoje") or 0) + 1
     req = urllib.request.Request(AF_URL.rstrip("/") + rota + "?" + urlencode(params),
                                  headers={"x-apisports-key": cfg["chave"], "Accept": "application/json", "User-Agent": "eterna-agente"})
@@ -8435,6 +9102,7 @@ def af_get(cfg, rota, params):
         with urllib.request.build_opener(_AfSemRedir).open(req, timeout=20) as r:
             corpo = r.read(AF_RESP_MAX + 1)
             resto = r.headers.get("x-ratelimit-requests-remaining")
+            lim = r.headers.get("x-ratelimit-requests-limit")
     except urllib.error.HTTPError as ex:
         raise RuntimeError("API-Football respondeu HTTP %d%s" % (ex.code, " (chave recusada)" if ex.code in (401, 403) else ""))
     except Exception as ex:
@@ -8447,6 +9115,11 @@ def af_get(cfg, rota, params):
         raise RuntimeError("resposta da API-Football inválida")
     try:
         agenda_fonte["restantes"] = int(resto) if resto is not None else agenda_fonte.get("restantes")
+    except ValueError:
+        pass
+    try:
+        if lim is not None and int(lim) > 0:
+            agenda_fonte["limite_dia"] = int(lim)
     except ValueError:
         pass
     erros = j.get("errors") if isinstance(j, dict) else None
@@ -8562,6 +9235,10 @@ def agenda_jogos_sync(motivo=""):
         cfg = af_cfg()
         if not cfg:
             return {"ok": False, "erro": "sem_chave"}
+        espera, porque = af_espera("sync")
+        if espera:
+            return {"ok": False, "erro": "espera", "motivo": porque, "espera_s": espera}
+        af_ultimo["sync"] = time.time()
         agenda_fonte["rodando"] = True
         hoje = _ff_hoje()
         ano = int(hoje[:4])
@@ -8573,6 +9250,9 @@ def agenda_jogos_sync(motivo=""):
                 try:
                     for p in af_partidas(cfg, venue, t):
                         partidas[p["fixture_id"]] = p
+                except AfCota as ex:
+                    erros.append(_af_msg(ex, cfg))
+                    break
                 except RuntimeError as ex:
                     erros.append("%d: %s" % (t, _af_msg(ex, cfg)))
         except RuntimeError as ex:
@@ -8594,27 +9274,38 @@ def agenda_jogos_sync(motivo=""):
 
 
 def agenda_testar():
-    """"Testar agora" do Painel de controle: uma consulta da temporada atual (mais a busca do estádio na primeira vez)."""
-    _af_fonte_carrega()
-    cfg = af_cfg()
-    if not cfg:
-        return {"ok": False, "erro": "sem_chave"}
-    ano = int(_ff_hoje()[:4])
+    """"Testar agora" do Painel de controle: uma consulta da temporada atual (mais a busca do estádio na primeira vez).
+    Roda dentro do agenda_lock (nunca junto com uma busca) e no máximo 1 vez por minuto (teto global). Não espera as
+    6 h de uma falha da busca: é assim que o Admin confere a chave nova; o teto diário vale igual."""
+    if not agenda_lock.acquire(blocking=False):
+        return {"ok": False, "erro": "ja_rodando"}
     try:
-        n = len(af_partidas(cfg, af_venue(cfg), ano))
-        t = {"em": _iso(), "ok": True, "temporada": ano, "n": n, "erro": None}
-    except RuntimeError as ex:
-        t = {"em": _iso(), "ok": False, "temporada": ano, "n": 0, "erro": _af_msg(ex, cfg)}
-    agenda_fonte["teste"] = t
-    _af_fonte_grava()
-    return t
+        _af_fonte_carrega()
+        cfg = af_cfg()
+        if not cfg:
+            return {"ok": False, "erro": "sem_chave"}
+        espera, _ = af_espera("teste")
+        if espera:
+            return {"ok": False, "erro": "espera", "espera_s": espera}
+        af_ultimo["teste"] = time.time()
+        ano = int(_ff_hoje()[:4])
+        try:
+            n = len(af_partidas(cfg, af_venue(cfg), ano))
+            t = {"em": _iso(), "ok": True, "temporada": ano, "n": n, "erro": None}
+        except RuntimeError as ex:
+            t = {"em": _iso(), "ok": False, "temporada": ano, "n": 0, "erro": _af_msg(ex, cfg)}
+        agenda_fonte["teste"] = t
+        _af_fonte_grava()
+        return t
+    finally:
+        agenda_lock.release()
 
 
 def _agenda_vencida(agora=None):
     """Sincroniza toda segunda às 06:00 (fuso do venue), no boot se a última passou de 7 dias, e de novo 6 h depois de uma falha."""
     agora = agora or time.time()
     ult, tent = _epoch(agenda_fonte.get("ultima") or ""), _epoch(agenda_fonte.get("tentativa") or "")
-    if tent and not agenda_fonte.get("ok") and agora - tent < 6 * 3600:
+    if tent and not agenda_fonte.get("ok") and agora - tent < AF_FALHA_S:
         return False
     if not ult or agora - ult > 7 * 86400:
         return True
@@ -8625,7 +9316,7 @@ def _agenda_vencida(agora=None):
 
 def agenda_loop():
     _af_fonte_carrega()
-    dia_feito = None
+    dia_feito, pendente = None, False
     while True:
         hoje = _ff_hoje()
         if hoje != dia_feito:                    # no boot e na virada do dia (pega a virada do ano sem ninguém)
@@ -8638,9 +9329,14 @@ def agenda_loop():
                 print("  agenda (feriados): %s" % str(ex)[:120])
         acordado = agenda_wake.is_set()
         agenda_wake.clear()
+        pendente = pendente or acordado          # pedido da tela barrado pelo teto (10 min ou 6 h) roda quando abrir
         try:
-            if af_cfg() and (acordado or _agenda_vencida()):
-                agenda_jogos_sync("pedido na tela" if acordado else "agenda")
+            if af_cfg() and (pendente or _agenda_vencida()):
+                r = agenda_jogos_sync("pedido na tela" if pendente else "agenda")
+                if r.get("erro") != "espera" and not r.get("ja_rodando"):
+                    pendente = False
+            elif not af_cfg():
+                pendente = False
         except Exception as ex:
             print("  agenda (jogos): %s" % type(ex).__name__)
         agenda_wake.wait(60)
@@ -8652,13 +9348,14 @@ def agenda_status(publico=False):
     cfg = af_cfg()
     j = {"fonte": "api-football" if cfg else "nenhuma", "chave": bool(cfg), "ultima": agenda_fonte.get("ultima"),
          "ok": agenda_fonte.get("ok"), "erro": agenda_fonte.get("erro")}
-    if publico:
+    if publico:                                  # /status (CORS aberto): só o código, nunca o texto do erro
+        j["erro"] = "falha" if j["erro"] else None
         return {"feriados_ate": agenda_fonte.get("feriados_ate"), "jogos": j}
     j.update(env=bool(cfg and cfg["env"]), final=cfg["chave"][-4:] if cfg else None, salva_em=cfg and cfg.get("em"),
              salva_por=cfg and cfg.get("por"), tentativa=agenda_fonte.get("tentativa"), n_por_ano=agenda_fonte.get("n_por_ano") or {},
              ja_no_calendario=agenda_fonte.get("ja_no_calendario") or 0, teste=agenda_fonte.get("teste"),
              rodando=bool(agenda_fonte.get("rodando")), pedidos_hoje=agenda_fonte.get("pedidos_hoje") if agenda_fonte.get("pedidos_dia") == _ff_hoje() else 0,
-             restantes=agenda_fonte.get("restantes"))
+             restantes=agenda_fonte.get("restantes"), espera_s=af_espera("sync")[0] if cfg else 0)
     return {"ok": True, "feriados_ate": agenda_fonte.get("feriados_ate"), "jogos": j,
             "dias": {"desde": DIA_DESDE, **dia_estado}}
 
@@ -8724,8 +9421,8 @@ def _dia_vendas(dia):
     n = lambda v: int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
     r = lambda v: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
     m = ler(os.path.join(MET_DIR, dia + ".json"))
-    if m and (n(m.get("vendas")) > 0 or n(m.get("sessoes")) > 0):
-        on = m.get("online") if isinstance(m.get("online"), dict) else {}
+    on = (m.get("online") if isinstance(m.get("online"), dict) else {}) if m else {}
+    if m and (n(m.get("vendas")) > 0 or n(m.get("sessoes")) > 0 or n(on.get("vendas")) > 0):   # dia só com venda online também conta
         return {"fonte_vendas": "eterna", "vendas": n(m.get("vendas")) + n(on.get("vendas")), "receita": round(r(m.get("faturamento")) + r(on.get("faturamento")), 2),
                 "fotos": n(m.get("fotos")), "sessoes": n(m.get("sessoes")), "sessoes_com_venda": n(m.get("sessoes_com_venda"))}
     rv = ler(os.path.join(ROVER_DIR, "agg", dia + ".json"))
@@ -8895,10 +9592,11 @@ def totais_gravar(origem, itens, rec, arquivo, por):
     return {"ok": True, "aceitos": len(itens), "recusados": rec[:200], "importacao": iid}
 
 
-def config_do_cadastro(email):
+def admin_do_cadastro(email):
     """O servidor ainda não confere quem está logado (pendência desde a v78; login real no plano de 04/11). Até lá, a
     chave da API-Football só é aceita com o e-mail de alguém que o cadastro do servidor marca como ativo e com
-    Configurações em Alterar (Eduardo, 10/11: o painel fica em Configurações). Barreira, não autenticação.
+    Configurações, Usuários e Permissões em Alterar (o Admin; a Supervisora não tem Usuários). Eduardo, 10/11: a
+    chave fica só com o Admin. Barreira, não autenticação.
     Devolve o nome (para a situação da fonte) ou None."""
     e = str(email or "").strip().lower()
     if not e or len(e) > 200:
@@ -8911,22 +9609,22 @@ def config_do_cadastro(email):
         if not isinstance(u, dict) or str(u.get("email") or "").strip().lower() != e or u.get("active") is False or u.get("deleted"):
             continue
         p = u.get("perms") if isinstance(u.get("perms"), dict) else {}
-        if isinstance(p.get("configuracao"), dict) and p["configuracao"].get("u") is True:
+        if all(isinstance(p.get(m), dict) and p[m].get("u") is True for m in ("configuracao", "usuarios", "permissoes")):
             return re.sub(r"[<>\x00-\x1f]", "", str(u.get("name") or e))[:60]
     return None
 
 
 # Rotas da v97 (deny-by-default): toda rota declara a guarda; guarda desconhecida = 403. Todas em rota_privada (sem CORS
 # aberto), com o Host e a origem do agente (posto + origem_local) e no-store. "gravar" exige X-Eterna: 1 e limite por
-# minuto; "config" exige também o e-mail de alguém com Configurações em Alterar no cadastro do servidor (config_do_cadastro).
+# minuto; "admin" exige também o e-mail de um Admin do cadastro do servidor (admin_do_cadastro).
 #   (método, caminho): (guarda, método do H, pedidos por minuto por IP, corpo máximo)
 AGENDA_ROTAS = {
     ("GET", "/estatisticas/dias"): ("ler", "r_estatisticas_dias", 0, 0),
     ("GET", "/agenda/status"): ("ler", "r_agenda_status", 0, 0),
     ("POST", "/agenda/atualizar"): ("gravar", "r_agenda_atualizar", 1, 1024),
     ("POST", "/ponto/entradas/totais"): ("gravar", "r_entradas_totais", 30, 256 * 1024),
-    ("POST", "/agenda/fonte"): ("config", "r_agenda_fonte", 10, 4096),
-    ("POST", "/agenda/testar"): ("config", "r_agenda_testar", 1, 1024),
+    ("POST", "/agenda/fonte"): ("admin", "r_agenda_fonte", 10, 4096),
+    ("POST", "/agenda/testar"): ("admin", "r_agenda_testar", 1, 1024),
 }
 AGENDA_ROTAS_PATHS = frozenset(p for _, p in AGENDA_ROTAS)
 
@@ -8935,7 +9633,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -9325,6 +10023,29 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, 200, nostore=True)
 
+    def montagens_post(self):
+        """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
+        Mesma guarda do /ponto/entradas (posto + origem + X-Eterna + 30 por minuto), corpo até 1 KB. O console nunca imprime o corpo."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"ok": False, "error": "origem"}, 403)
+        if not limite_ok(self.client_address[0], "montagens", 30):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        v, motivo = montagens_validar(body)
+        if v is None:
+            return self.js({"ok": False, "error": motivo}, 400)
+        try:
+            r = montagens_gravar(*v)
+        except Exception as ex:
+            print("  montagens: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        if r is None:
+            mont_recusadas["n"] += 1
+            return self.js({"ok": False, "error": "muitos_terminais"}, 409)
+        return self.js({"ok": True, "vistas": r}, nostore=True)
+
     def entradas_post(self):
         try:
             return self._entradas_post()
@@ -9352,7 +10073,7 @@ class H(BaseHTTPRequestHandler):
     def agenda_rota(self, metodo, path):
         guarda, nome, por_min, corpo_max = AGENDA_ROTAS[(metodo, path)]
         try:
-            if guarda not in ("ler", "gravar", "config") or not self.posto() or not self.origem_local():
+            if guarda not in ("ler", "gravar", "admin") or not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403, nostore=True)
             body, quem = None, None
             if guarda != "ler":
@@ -9363,10 +10084,10 @@ class H(BaseHTTPRequestHandler):
                 body, err = self.corpo(corpo_max)
                 if err:
                     return self.js({"error": "corpo inválido"}, err, nostore=True)
-            if guarda == "config":
-                quem = config_do_cadastro(body.get("quem"))
+            if guarda == "admin":
+                quem = admin_do_cadastro(body.get("quem"))
                 if not quem:
-                    return self.js({"error": "sem_permissao"}, 403, nostore=True)
+                    return self.js({"error": "so_admin"}, 403, nostore=True)
             return getattr(self, nome)(body, quem)
         except Exception as ex:
             print("  %s: %s" % (path, type(ex).__name__))
@@ -9387,6 +10108,9 @@ class H(BaseHTTPRequestHandler):
     def r_agenda_atualizar(self, body, quem):
         if not af_cfg():
             return self.js({"ok": False, "error": "sem_chave"}, 409, nostore=True)
+        espera, porque = af_espera("sync")       # teto global: 10 min entre buscas, 6 h depois de uma falha
+        if espera:
+            return self.js({"ok": False, "error": "espera", "motivo": porque, "espera_min": (espera + 59) // 60}, 429, nostore=True)
         ja = bool(agenda_fonte.get("rodando"))
         agenda_wake.set()
         return self.js({"ok": True, "ja_rodando": ja}, nostore=True)
@@ -9419,7 +10143,12 @@ class H(BaseHTTPRequestHandler):
     def r_agenda_testar(self, body, quem):
         if not af_cfg():
             return self.js({"ok": False, "error": "sem_chave"}, 409, nostore=True)
-        return self.js(agenda_testar(), nostore=True)
+        t = agenda_testar()
+        if t.get("erro") == "ja_rodando":
+            return self.js({"ok": False, "error": "ja_rodando"}, 409, nostore=True)
+        if t.get("erro") == "espera":
+            return self.js({"ok": False, "error": "espera", "espera_s": t["espera_s"]}, 429, nostore=True)
+        return self.js(t, nostore=True)
 
     def file(self, path):
         try:
@@ -9457,50 +10186,134 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def fotos_enviar_post(self):
-        """POST /fotos/enviar?nome=&quem=: uma foto (o JPEG é o corpo) vinda da tela de Upload. Vale o módulo de Upload da
-        pessoa conectada. O dono é sempre o fotógrafo do login; só quem não é fotógrafo escolhe de quem é a leva."""
-        tam = self.headers.get("Content-Length") or ""
-        n = int(tam) if tam.isdigit() else -1
-        erro = None
-        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
-            erro = ({"error": "origem não autorizada"}, 403)
-        else:
-            eu = auth_quem(self.auth_token())
-            if not eu:
-                erro = ({"erro": "sem_sessao"}, 401)
-            elif not auth_pode(eu["cadastro"], "set", "c"):
-                erro = ({"erro": "sem_permissao"}, 403)
-            elif n <= 0 or n > FOTO_ENVIO_MAX:
-                erro = ({"erro": "tamanho"}, 413)
+        """v96-ux: POST /fotos/enviar?nome=&quem=: uma foto do cartão (o JPEG é o corpo) mandada pela tela Minhas fotos quando o
+        leitor não reconheceu o cartão. Posto + origem local + X-Eterna: 1 e pessoa conectada com Upload (set.c, também em ROTAS).
+        O fotógrafo manda no próprio nome; Admin e Supervisora escolhem no seletor. Entra pelo ingest_file como foto de cartão."""
         q = parse_qs(urlparse(self.path).query)
-        nome = re.sub(r"[^\w.\- ]", "_", os.path.basename((q.get("nome") or [""])[0].replace("\\", "/")))[-120:]
-        if not erro and (not nome.endswith(EXT) or nome.startswith(".")):
+        tam = self.headers.get("Content-Length")
+        ip = self.client_address[0]
+        erro = None
+        try:
+            n = int(tam) if tam is not None else -1
+        except ValueError:
+            n, erro = -1, ({"erro": "tamanho"}, 400)
+        eu = None if erro else auth_quem(self.auth_token())
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            erro = ({"erro": "origem"}, 403)
+        elif erro:
+            pass
+        elif not eu:
+            erro = ({"erro": "sem_sessao"}, 401)
+        elif not auth_pode(eu["cadastro"], "set", "c"):
+            erro = ({"erro": "sem_permissao"}, 403)
+        elif (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "image/jpeg":
             erro = ({"erro": "formato"}, 415)
+        elif erro:
+            pass
+        elif tam is None:
+            erro = ({"erro": "tamanho"}, 411)
+        elif n <= 0 or n > FOTO_ENVIO_MAX:
+            erro = ({"erro": "tamanho"}, 413)
+        quem = sem_acento((q.get("quem") or [""])[0]).strip()
+        cad = (eu or {}).get("cadastro") or {}
+        if cad.get("key") and cad.get("preset") not in ("admin", "supervisor"):
+            quem = sem_acento(str(cad["key"])).strip()      # o fotógrafo manda sempre no próprio nome (igual à tela, impPreso)
+        nome = (q.get("nome") or [""])[0]
+        if not erro and (not quem or quem not in ff_cadastrados()):
+            erro = ({"erro": "quem"}, 400)
+        if not erro and not nome.endswith(EXT):
+            erro = ({"erro": "formato"}, 415)
+        if not erro and not limite_ok(ip, "fotos_enviar", FOTO_ENVIO_TAXA):
+            erro = ({"erro": "taxa"}, 429)
+        if not erro:
+            try:
+                livre = shutil.disk_usage(INBOX).free
+            except OSError:
+                livre = 0
+            if livre < FOTO_ENVIO_PISO_GB * 1024 ** 3:
+                erro = ({"erro": "disco"}, 507)
+        if not erro:
+            with lock:
+                if envio_dia_n() >= FOTO_ENVIO_TETO_DIA:
+                    erro = ({"erro": "teto_dia"}, 429)
+        if not erro:
+            with lock:                              # no máximo FOTO_ENVIO_POR_IP vagas por aparelho
+                if envio_ips.get(ip, 0) >= FOTO_ENVIO_POR_IP:
+                    erro = ({"erro": "ocupado"}, 503)
+                elif not envio_sem.acquire(blocking=False):
+                    erro = ({"erro": "ocupado"}, 503)
+                else:
+                    envio_ips[ip] = envio_ips.get(ip, 0) + 1
         if erro:
             self.close_connection = True           # o corpo não foi lido: esta conexão não serve para o próximo pedido
+            with lock:
+                state["envio"]["recusadas"] += 1
             return self.js(erro[0], erro[1], True)
-        cad = eu["cadastro"]
-        quem = (q.get("quem") or [""])[0]
-        quem = cad.get("key") or (quem if quem in PHOTOGRAPHERS else "") or cad.get("email") or "upload"
-        os.makedirs(FTPTMP, exist_ok=True)
-        tmp = os.path.join(FTPTMP, "envio-%s.tmp" % secrets.token_hex(8))
+        tmp = None
+        r, motivo = None, None
         try:
+            os.makedirs(FTPTMP, exist_ok=True)
+            tmp = os.path.join(FTPTMP, "envio-%s.tmp" % secrets.token_hex(8))
+            fim = time.time() + FOTO_ENVIO_PRAZO      # prazo total da foto: conexão que pinga byte a byte não segura a vaga
+            lenta = False
+            ler = getattr(self.rfile, "read1", None) or self.rfile.read
             with open(tmp, "wb") as f:
                 resto = n
                 while resto > 0:
-                    ch = self.rfile.read(min(1 << 20, resto))
+                    falta = fim - time.time()
+                    if falta <= 0:
+                        lenta = True
+                        break
+                    try:
+                        self.connection.settimeout(max(0.05, min(20, falta)))
+                        ch = ler(min(1 << 20, resto))
+                    except OSError:                    # timeout de leitura: sem dado dentro do prazo
+                        lenta = time.time() >= fim
+                        break
                     if not ch:
                         break
                     f.write(ch)
                     resto -= len(ch)
-            inteira = not resto and jpeg_completo(tmp, n)
-            r = ingest_file(tmp, nome, os.stat(tmp), quem, "ftp", move=True) if inteira else None   # entra como a foto do FTP: mesma sessão e mesmo dono
+            erro_jpeg = None if resto else jpeg_envio_erro(tmp, n)   # o arquivo é lido uma vez só
+            if resto:
+                motivo = ({"erro": "lenta"}, 408) if lenta else ({"erro": "incompleta"}, 400)
+                self.close_connection = True
+            elif erro_jpeg:
+                motivo = ({"erro": "incompleta"}, 400) if erro_jpeg == "incompleta" else ({"erro": "nao_jpeg"}, 415)
+            else:
+                r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
+                if r == "new":
+                    with lock:
+                        envio_dia_soma()
+                        save_index_logo()                  # o índice inteiro não é regravado a cada foto do lote
+        except Exception as ex:                        # disco, permissão ou falha na entrada da foto: 500 com código fixo
+            r, motivo = None, ({"erro": "servidor"}, 500)
+            self.close_connection = True
+            print("  envio pela tela: falha no servidor (%s)" % type(ex).__name__)
         finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        if not inteira:
-            return self.js({"erro": "incompleta"}, 400, True)
-        return self.js({"ok": r in ("new", "dup", "excluida"), "resultado": r or "recusada"}, 200, True)
+            if tmp and os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            with lock:
+                envio_ips[ip] = envio_ips.get(ip, 1) - 1
+                if envio_ips[ip] <= 0:
+                    envio_ips.pop(ip, None)
+            envio_sem.release()
+            try:
+                self.connection.settimeout(20)
+            except OSError:
+                pass
+        if r == "excluida":                            # apagada a pedido do cliente: pela tela não entra de novo
+            r = None
+        res = r or "recusada"
+        with lock:
+            state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
+        print("  envio pela tela: %s %s %.1f MB" % (quem, motivo[0]["erro"] if motivo else res, n / 1e6))
+        if motivo:
+            return self.js(motivo[0], motivo[1], True)
+        return self.js({"ok": bool(r), "resultado": res}, 200, True)
 
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
@@ -9698,8 +10511,9 @@ class H(BaseHTTPRequestHandler):
             tokens = [str(x) for x in (body.get("tokens") or [])][:20]
             if not pids and not tokens:
                 return self.js({"error": "nada para apagar"}, 400)
-            return self.js(lgpd_excluir(pids, tokens, str(body.get("quem") or "")[:80], str(body.get("posto") or "")[:40],
-                                        str(body.get("sessao") or "")[:40]))
+            r = lgpd_excluir(pids, tokens, str(body.get("quem") or "")[:80], str(body.get("posto") or "")[:40],
+                             str(body.get("sessao") or "")[:40])
+            return self.js(r, 503 if r.get("error") else 200)
         if p == "/nuvem/reenviar":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -9812,9 +10626,10 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "not found"}, 404)
             if gal_expirou(m):
                 return self.js({"error": "expirada"}, 410)
-            ate = bloqueio(ip, token) or (gal_teto(token) if m["tipo"] == "sessao" else 0)
-            if ate:
-                return self.js({"motivo": "bloqueado", "ate": _iso(ate)}, 429)
+            ate = bloqueio(ip, token)
+            teto = gal_teto(token) if not ate and m["tipo"] == "sessao" else 0
+            if ate or teto:                     # v96.2: teto = parada até amanhã (o app diz "Tente de novo amanhã")
+                return self.js(dict({"motivo": "bloqueado", "ate": _iso(ate or teto)}, **({"teto": True} if teto else {})), 429)
             if not rostos["ligado"]:
                 return self.js({"motivo": "processando"}, 503)
             if not isinstance(img, str) or not img:
@@ -9882,6 +10697,9 @@ class H(BaseHTTPRequestHandler):
                     m = REPO.ler_manifesto(token)
                     return self.js({"ok": True, "pedido": {"id": ja["id"], "status": "aprovado", "total": ja["total"], "canal": "online", "teste": bool(ja.get("teste")),
                                                            "checkout_url": None, "pix_copia_cola": None}, "galeria": galeria_obj(token, m, a["pids"])})
+                m = REPO.ler_manifesto(token)              # relido com o lock: vale o manifesto de agora, não o de antes da espera
+                if not m or gal_expirou(m):
+                    return self.js({"error": "expirada"}, 410)
                 dire = {f["id"]: f["direito"] for f in m["fotos"]}
                 if not isinstance(pids, list) or not pids or len(pids) > 2000 or len(set(map(str, pids))) != len(pids) \
                         or any(x not in a["pids"] or dire.get(x) != "venda" for x in pids):
@@ -9945,7 +10763,9 @@ class H(BaseHTTPRequestHandler):
                            rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, fundos_modo=fundos_modo(),
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
-                           estatisticas={"v": 2, "migracao": dict(est_migra)}, fuso=fuso_info(), agenda=ag_,
+                           estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
+                           app_offline_pronto=app_offline_pronto(), agenda=ag_,
+                           envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
                            pagamento="teste" if compra_online() else "desligado",
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
             if eu:
@@ -10154,6 +10974,8 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_config_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
+        if u.path == "/ponto/montagens":
+            return self.montagens_post()
         if u.path == "/fundos/modo":
             # o interruptor do Painel de controle grava aqui o modo da montagem; só deste computador
             if not self.loopback() or not self.origem_local():
@@ -10301,34 +11123,23 @@ class H(BaseHTTPRequestHandler):
     # O app servido pelo próprio agente: o navegador abre http://127.0.0.1:8765 e
     # conversa com o agente na mesma origem (sem bloqueio de rede local do Chrome).
     def app(self, path):
-        if path in ("", "/"):
-            path = "/index.html"
-        if ".." in path or (path != "/index.html" and not APP_ARQUIVO.match(path)):
-            return self.js({"error": "not found"}, 404)     # só arquivos do pacote do app (pasta, nome e tipo conhecidos)
-        key = path
-        hit = app_cache.get(key)
-        if not hit or (path == "/index.html" and time.time() - hit[2] > 60):
-            try:
-                req = urllib.request.Request(APP_ORIGIN + path + ("?t=%d" % int(time.time()) if path == "/index.html" else ""),
-                                             headers={"User-Agent": "eterna-agente"})
-                with urllib.request.urlopen(req, timeout=20) as r:
-                    data = r.read()
-                    ctype = r.headers.get("Content-Type") or mimetypes.guess_type(path)[0] or "application/octet-stream"
-                hit = (data, ctype, time.time())
-                app_cache[key] = hit
-            except Exception as ex:
-                if not hit:
-                    return self.js({"error": "app indisponível: %s" % ex}, 502)
-        data, ctype, _ = hit
+        # v97: só a lista branca (app_rel); cópia em disco para abrir sem internet (app_buscar)
+        rel = app_rel(path)
+        if not rel:
+            return self.js({"error": "not found"}, 404)
+        try:
+            data, _ = app_buscar(rel)
+        except urllib.error.HTTPError as ex:
+            return self.js({"error": "not found"}, 404) if ex.code == 404 else self.js({"error": "app_indisponivel"}, 502)
+        except Exception:
+            return self.js({"error": "app_indisponivel"}, 502)
         self.send_response(200)
-        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Type", APP_TIPOS[os.path.splitext(rel)[1].lower()])
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache" if path == "/index.html" else "max-age=3600")
+        self.send_header("Cache-Control", "no-cache" if rel == "index.html" else "max-age=3600")
         self.end_headers()
         self.wfile.write(data)
-
-
-APP_ARQUIVO = re.compile(r"^/(img|vendor|sprites)/[A-Za-z0-9_-][A-Za-z0-9_./-]{0,150}\.(png|jpe?g|svg|webp|gif|ico|js|css|json|woff2?|wasm|onnx|txt)$")
 
 
 def fuso_info():
@@ -10351,6 +11162,8 @@ def main():
     print("Eterna · agente do ponto")
     if os.environ.get("ETERNA_RECORTE_FALSO"):
         print("  ETERNA_RECORTE_FALSO ignorado: o recorte falso é só dos testes (v93, segurança S2)")
+    if APP_ORIGIN_RECUSADA:
+        print("  ETERNA_APP_ORIGIN ignorado: precisa ser https:// (http:// só para 127.0.0.1 ou localhost). Usando %s" % APP_ORIGIN_PADRAO)
     for x in ORIGENS_SEM_ESQUEMA:
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta
@@ -10360,6 +11173,8 @@ def main():
     except Exception as ex:
         print("  sessões: não carreguei (%s)" % str(ex)[:120])
     threading.Thread(target=sess_loop, daemon=True).start()
+    threading.Thread(target=app_preaquecer, daemon=True).start()     # v97: app, fontes e Checkout em disco para abrir sem internet
+    threading.Thread(target=app_revisar_loop, daemon=True).start()
     print(f"  fotos baixadas em: {INBOX}")
     print(f"  abra o Eterna em:  http://127.0.0.1:{PORT}   (mesmo Mac)")
     threading.Thread(target=watcher, daemon=True).start()
@@ -10389,7 +11204,7 @@ def main():
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     _rok, _rmot = rec_estado()
     print("  Recorte local:     " + ("pronto (BiRefNet + a regra do que encosta na pessoa, num processo à parte; abre na partida)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
-    print("  Agenda:            feriados automáticos; jogos " + ("pela API-Football" if af_cfg() else "sem chave (Configurações › Painel de controle)"))
+    print("  Agenda:            feriados automáticos; jogos " + ("pela API-Football" if af_cfg() else "sem chave (Configurações › Preços e Checkout)"))
     print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")

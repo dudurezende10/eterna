@@ -693,6 +693,8 @@ def publicar(ev, corpo):
             novo["encerrada"] = True
     if m.get("encerrada"):                                # encerrada no ponto: sai do ar na nuvem também
         novo["encerrada"] = True
+    # foto que saiu da galeria: os rostos lidos dela saem junto (a coleção se refaz na próxima selfie com consentimento)
+    perdeu = bool(velho) and bool({f.get("id") for f in velho["fotos"]} - {f["id"] for f in novo["fotos"]})
     ttl = ttl_de(novo)
     TABELA.update_item(Key={"pk": "GAL#" + novo["token"], "sk": "M"}, UpdateExpression="SET m = :m, #t = :t",
                        ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":m": json.dumps(novo), ":t": ttl})
@@ -701,6 +703,8 @@ def publicar(ev, corpo):
         if novo["codigo"]:
             TABELA.delete_item(Key={"pk": "COD#" + novo["codigo"], "sk": "M"})
         return resp({"ok": True, "token": novo["token"], "estado": "encerrada"})
+    if perdeu:
+        apagar_rostos(novo["token"])
     if novo["codigo"]:
         TABELA.put_item(Item={"pk": "COD#" + novo["codigo"], "sk": "M", "token": novo["token"], "ttl": ttl})
     # os rostos não são lidos aqui: só depois do primeiro consentimento na galeria (rota /rosto)
@@ -713,10 +717,9 @@ def rosto(token, m, corpo, ip, ctx):
     if corpo.get("consentimento") is not True:
         return resp({"error": "consentimento obrigatório"}, 400)
     restam, ate = falhas(ip, token)
-    if not ate and m["tipo"] == "sessao":
-        ate = teto_galeria(token)
-    if ate:
-        return resp({"motivo": "bloqueado", "ate": iso(ate)}, 429)
+    teto = teto_galeria(token) if not ate and m["tipo"] == "sessao" else 0
+    if ate or teto:                                      # v96.2: teto = parada até amanhã (o app diz "Tente de novo amanhã")
+        return resp(dict({"motivo": "bloqueado", "ate": iso(ate or teto)}, **({"teto": True} if teto else {})), 429)
     img = corpo.get("imagem")
     if not isinstance(img, str) or not img:
         return resp({"error": "sem imagem"}, 400)

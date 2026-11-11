@@ -336,7 +336,12 @@ def envia(rota, corpo, cookie=None, extra=None):
     c.close()
     return r.status, j
 def jpeg(marca):
-    return bytes.fromhex("FFD8FFE000104A46494600010100000100010000") + marca + bytes.fromhex("FFD9")
+    import io, random
+    from PIL import Image
+    im = Image.frombytes("RGB", (160, 120), random.Random(marca).randbytes(160 * 120 * 3))
+    b = io.BytesIO()
+    im.save(b, "JPEG", quality=90)
+    return b.getvalue()
 doc("fot", {"set": {"c": True}}, key="carlos")
 doc("semup", {"painel": {"r": True}})
 ck_fot = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("fot"))   # o endereço já está bloqueado pelo teste acima
@@ -355,7 +360,7 @@ st, _ = envia("/fotos/enviar?nome=c.jpg", jpeg(b"c")[:-2], ck_fot)
 ok(st == 400, "foto cortada: %s" % st)
 st, j = envia("/fotos/enviar?nome=..%2F..%2Fb.jpg&quem=outro", jpeg(b"b"), ck_fot)
 ok(st == 200 and j.get("resultado") == "new", "foto boa entra: %s %s" % (st, j))
-pid = [p for p, e in m.lib.items() if e["file"].endswith("_b.jpg")]
+pid = [p for p, e in m.lib.items() if os.path.basename(e["file"]).startswith(p + "_envio_")]   # v97: nome fora do padrão vira envio_<hora>_<hex>.jpg
 ok(len(pid) == 1 and os.path.dirname(os.path.dirname(m.lib[pid[0]]["file"])) == m.INBOX, "nome com caminho fica na pasta de entrada")
 ok(pid and m.meta[pid[0]]["o"] == "carlos", "o dono é o fotógrafo do login, não o que veio no pedido")
 st, j = envia("/fotos/enviar?nome=b2.jpg", jpeg(b"b"), ck_fot)

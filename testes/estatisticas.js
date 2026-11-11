@@ -154,7 +154,7 @@ try{
     ok(await pg.$('#main [data-act="view"][data-v="calendario"]'),'D3: atalho do Calendário no Painel de controle');
     // 3: venda de verdade no balcão (caixaConfirm) com a tela em inglês: canal balcao, sem lang
     const card2=await pg.evaluate(()=>{const E=ETERNA;const c=E.demoSessions().filter(s=>s.photos.length>=3&&!['paga','cancelada'].includes((E.SIM.sessions[s.card]||{}).status))[2].card;const S=E.SIM;const s=S.sessions[c]=S.sessions[c]||{};
-      s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='caixa';E.render();return c;});
+      s.selected=E.demoSessions().find(x=>x.card===c).photos.slice(0,3).map(p=>p.id);s.cart=[{id:'zona'}];s.status='no caixa';E.state.lang='en';E.state.caixa.session=c;E.state.posto.recibo=c;/* v97-ux: sessão 'no caixa' cobrada pelo recibo em cima do Posto */E.state.caixa.pay='PIX';E.state.caixa.tef=false;E.state.view='posto';E.render();return c;});
     await pg.click('[data-act="caixa-confirm"]');
     for(let i=0;i<60&&!AG.eventos.some(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);i++)await pg.waitForTimeout(200);
     const evB=AG.eventos.find(e=>e.tipo==='criar'&&e.dados&&e.dados.card===card2);await pg.evaluate(()=>{ETERNA.state.lang='pt';});

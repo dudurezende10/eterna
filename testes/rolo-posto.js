@@ -75,12 +75,12 @@ try{
       ok(r.v===30&&r.n===n0&&(await audit(pg)).length===a0&&/Não foi possível gravar a troca do rolo/.test(r.toast),'saveSim falhou: contador e registro desfeitos: '+J(r));}
     // painel Impressão 10×15 e Caixa também têm o selo tocável
     await pôr(pg,{'Caixa 1':10});
-    ok(await pg.evaluate(()=>!!document.querySelector('#imp-painel .rolo-selo')),'Impressão 10×15: selo tocável');
-    await pg.click('#imp-painel .rolo-selo');await pg.waitForTimeout(100);ok(!!(await pg.$('.rolo-ask')),'Impressão 10×15: o selo abre a confirmação');await pg.click('.rolo-ask [data-act="rolo-troca-nao"]');
+    // v97-ux (Posto único): no Posto fica um selo só, o do cabeçalho (o painel Imprimir do Posto não repete o selo)
+    ok(await pg.evaluate(()=>document.querySelectorAll('#main .rolo-selo').length===1&&!document.querySelector('#imp-painel .rolo-selo')),'Posto: um selo de rolo só, no cabeçalho');
     await pg.click('.posto-head .rolo-selo');await pg.waitForTimeout(100);
     await pg.evaluate(()=>ETERNA.go('caixa'));await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>ETERNA.state.roloAsk===null||ETERNA.state.roloAsk===undefined),'trocar de tela fecha a confirmação');
-    if(await pg.evaluate(()=>ETERNA.state.view==='caixa')){const c=await pg.evaluate(()=>({selo:!!document.querySelector('.head .rolo-selo'),troquei:!!document.querySelector('.head .rolo-troquei')}));ok(c.selo&&c.troquei,'Caixa: selo tocável e "Troquei o rolo": '+J(c));}
+    if(await pg.evaluate(()=>ETERNA.state.view==='caixa')){const c=await pg.evaluate(()=>({selo:!!document.querySelector('.head .rolo-selo'),troquei:!!document.querySelector('.head .rolo-troquei')}));ok(c.selo&&c.troquei,'Caixa: selo tocável e "Troquei o rolo": '+J(c));}else ok(false,'Caixa: go(caixa) não abriu a vista Caixa');
     await ctx.close();}
   // sem venda c: selo sem botão e a ação recusada
   {const {ctx,pg}=await nova(b);ok(await entrar(pg,'carlos@eterna.photo'),'carlos não entrou');

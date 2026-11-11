@@ -79,8 +79,8 @@ try:
     ok(not sem_regra, "rota sem regra na tabela ROTAS: %s" % sem_regra)
     ok(m.rota_regra("GET", "/nao-existe") is None and pede("GET", "/nao-existe")[0] == 404, "rota fora da tabela: 404")
     ok(pede("GET", "/agente/eterna-agente.py")[0] == 404, "arquivo fora do app: 404 sem buscar")
-    ok(pede("GET", "/img/x.php")[0] == 404 and pede("GET", "/vendor/a/..%2F..%2Fx.js")[0] == 404 and m.APP_ARQUIVO.match("/vendor/qrcode/qrcode.min.js")
-       and m.APP_ARQUIVO.match("/img/bg-campeao-v81.jpg") and not m.APP_ARQUIVO.match("/img/.git/config"), "pastas do app só com arquivos do pacote")
+    ok(pede("GET", "/img/x.php")[0] == 404 and pede("GET", "/vendor/a/..%2F..%2Fx.js")[0] == 404 and m.app_rel("/vendor/qrcode/qrcode.min.js")
+       and m.app_rel("/img/bg-campeao-v81.jpg") and not m.app_rel("/img/.git/config"), "pastas do app só com arquivos do pacote")
 
     # 2. dinâmico: cada linha da tabela
     for metodo, caminho, tipo, mods in m.ROTAS:

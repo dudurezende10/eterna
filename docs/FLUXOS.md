@@ -117,7 +117,7 @@ flowchart TB
 | Receber fotos pelo FTP, pasta vigiada, cartão ou FTP da rede local | Funciona | A rede local precisa estar de pé |
 | Ler rostos e montar sessões | Funciona | Os modelos precisam já estar no disco; a primeira carga deles vem do site |
 | Selfie no Checkout | Funciona | A busca roda no servidor |
-| Abrir o app em um ponto | Funciona com condição | O servidor precisa ter buscado o app desde que ligou. Servidor reiniciado sem internet responde "app indisponível" |
+| Abrir o app em um ponto | Funciona com condição | O servidor precisa ter buscado o app desde que ligou. Servidor reiniciado sem internet responde `app_indisponivel` |
 | Tela já aberta | Funciona | Não depende de recarregar |
 | Login da equipe | Funciona | Usuário e senha conferidos no servidor |
 | Registrar venda | Funciona | A maquininha é avulsa; a conexão dela é não confirmado neste código |
@@ -255,6 +255,7 @@ flowchart TD
 |---|---|---|
 | Disco é cartão | Tem pasta `DCIM`; no Windows, procura de D: a Z:; verificação a cada 2 s | `list_volumes`, `watcher`, `POLL` |
 | Extensão aceita no cartão e na pasta vigiada | Termina em `.jpg`, `.jpeg`, `.JPG` ou `.JPEG`, com diferença entre maiúscula e minúscula. Um `.Jpg`, por exemplo, não passa | `EXT`, `scan_card`, `pasta_vigiada` |
+| Enviar fotos pela tela (v96-ux) | Plano B quando o leitor não reconhece o cartão. Em Minhas fotos, quem tem `set.c` (Fotógrafo, Supervisora e Admin) abre "Enviar fotos do cartão manualmente" e solta ou escolhe as fotos; cada JPG vai a `POST /fotos/enviar?nome=&quem=` (2 por vez, em ordem de nome, até 2.000 por envio). Só com o Eterna aberto pelo endereço do agente. O agente exige posto, origem local e `X-Eterna: 1`, `Content-Type: image/jpeg`, até 60 MB, fotógrafo cadastrado (não vale login compartilhado), extensão do cartão, 300 fotos por minuto por IP, 2 GB livres e no máximo 4 gravações ao mesmo tempo (503). Confere que é JPEG de verdade (`FF D8 FF` e `FF D9` no fim) e dá o nome do arquivo (rótulo seguro). Entra pelo `ingest_file` como foto de cartão: trilha atrasada do dia da chegada, sem mexer no desvio de relógio; repetida conta como "já estava no servidor". Rede caída: cada foto tenta 3 vezes, depois "Tentar de novo as N que faltaram" | `fotosEnviar`, `fotos_enviar_post`, `jpeg_de_verdade`, `envio_nome` |
 | Extensão aceita no FTP e no FTP remoto | `jpg` ou `jpeg`, sem diferença entre maiúscula e minúscula | `FTPSession.handle`, `rftp_list` |
 | Cartão ainda gravando | Última mudança há menos de 2 s: espera a próxima volta | `scan_card` |
 | Enviar fotos pela tela | Com a tela aberta pelo endereço do servidor, o botão Enviar fotos manda cada JPG a `POST /fotos/enviar` (até 60 MB). Exige sessão e `set:c`. Entra como a foto do FTP. O dono é o fotógrafo do login; quem não é fotógrafo escolhe no seletor. Fora do servidor, o botão Testar com fotos suas guarda só no navegador | `fotosEnviar`, `fotos_enviar_post` |

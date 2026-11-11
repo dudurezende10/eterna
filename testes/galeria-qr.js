@@ -81,7 +81,9 @@ try{
   await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(800);
   await C.click('[data-act="kiosk-sair"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step==='code'&&!ETERNA.state.kiosk.code),'A6: Sair nas fotos não limpou o cliente');
   await C.click('[data-act="kiosk-emerg"]');await C.fill('#kcode',card4);await C.click('[data-act="kiosk-go"]');await C.clock.runFor(800);await C.click('[data-act="kiosk-ok"]');await C.click('.lj-next');await C.clock.runFor(300);
-  await C.click('.lj-pronto [data-act="loja-new"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6 (v96): voltar no Pronto não voltou ao início');
+  // Eduardo (11/11): o Pronto não tem mais "Voltar ao início" (quem recomeça é o caixa, no Posto); a tela volta sozinha parada 3 min
+  ok(await C.evaluate(()=>document.querySelectorAll('[data-act="loja-new"]').length)===0,'A6 (11/11): o Pronto não deveria ter "Voltar ao início"');
+  await C.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);});ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6: o Pronto parado não voltou ao início');
   await C.click('[data-act="kiosk-emerg"]');ok(await C.isVisible('[data-act="kiosk-back"]'),'A6: sem botão de voltar na etapa do código');await C.click('[data-act="kiosk-back"]');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','A6: voltar no código');
   await C.close();await ctxC.close();
   // ---------- 5. galeria pública sem login: consentimento ----------

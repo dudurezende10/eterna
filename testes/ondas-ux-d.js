@@ -36,7 +36,7 @@ try{
     PROIB_D1.forEach(t=>ok(!m.includes(t),'D1: Carlos sem agente vê "'+t+'"'));
     ok(!TEC.test(vis),'D2: texto técnico sem agente: '+(vis.match(TEC)||[])[0]);
     const off=await pg.evaluate(()=>(document.querySelector('#main .conn-off')||{}).textContent||'');
-    ok(/Sem conexão com o computador do ponto/.test(off)&&/Chame a TI/.test(off),'D3: faixa vermelha com Chame a TI: '+off);
+    ok(/^O computador do ponto não está respondendo\. Chame a TI\./.test(off)&&(off.match(/Chame a TI/g)||[]).length===1,'D3: faixa vermelha com Chame a TI: '+off);
     // D5: menu, h1
     const d5=await pg.evaluate(()=>({h1:document.querySelector('#main h1').textContent,nav:[...document.querySelectorAll('#nav [data-v="importar"]')].map(x=>x.textContent).join('|')}));
     ok(d5.h1==='Minhas fotos'&&/Minhas fotos/.test(d5.nav),'D5: menu e h1 "Minhas fotos": '+JSON.stringify(d5));

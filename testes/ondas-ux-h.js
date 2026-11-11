@@ -26,13 +26,11 @@ try{
     ok(!dif.length,'H2 '+k+': menu ≠ título: '+dif.join(' | '));
     const grps=await pg.$$eval('#nav .grp',g=>g.map(x=>x.textContent.trim()));
     if(k==='venda'){ok(!grps.length&&J(its.map(x=>x.t))===J(['Posto de venda','Fila do fotógrafo','Preços']),'H3 vendedor: '+J({grps,its}));
-      // v96-ux (Eduardo, 10/11, cace1c4): botões amarelos Abrir Checkout e Caixa no alto do menu para quem pode usá-los; o Posto continua só no menu
-      ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&await pg.$('#rail-ck [data-v="caixa"]')&&!(await pg.$('#rail-ck [data-v="posto"]')),'H4: vendedor com os botões Abrir Checkout e Caixa e sem o botão Posto de venda');}
+      ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&!(await pg.$('#rail-ck [data-v="posto"]')),'H4: vendedor com o botão grande Abrir Checkout e sem o botão Posto de venda');}
     if(k==='foto')ok(!grps.length&&its.length<=5&&its.length>0,'H3 fotógrafo: sem grupos e até 5 itens: '+J({grps,n:its.length}));
     if(k==='valida')ok(!grps.length,'H3: validador (3 telas) sem grupos');
-    // v96-ux (cace1c4) substitui a decisão 9: Admin e Supervisora também têm os botões amarelos no alto e nenhum "Abrir Checkout" no rodapé (v97-junta: botão único)
-    if(k==='admin'||k==='supervisor'){ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&await pg.$('#rail-ck [data-v="caixa"]'),'H4 '+k+': sem os botões amarelos Abrir Checkout e Caixa no topo');
-      ok(!(await pg.$('#nav .nav-ck[data-act="loja-abrir"]')),'H4 '+k+': "Abrir Checkout" repetido no rodapé do menu');}
+    if(k==='admin'||k==='supervisor'){ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&await pg.$('#rail-ck [data-act="view"][data-v="caixa"]'),'H4 '+k+': botões amarelos Abrir Checkout e Caixa no alto do menu (v96-ux, Eduardo 10/11)');
+      ok(!(await pg.$('#nav .nav-ck[data-act="loja-abrir"]')),'H4 '+k+': "Abrir Checkout" não fica mais no rodapé do menu');}
     if(k==='admin'){
       // H6: no Painel, o grupo Sistema fechado
       await pg.evaluate(()=>ETERNA.go('painel'));await pg.waitForTimeout(100);
@@ -42,16 +40,18 @@ try{
       const rola=await pg.evaluate(()=>{const g=document.querySelector('#railgav');const r=document.querySelector('.rail');return {g:g.scrollHeight-g.clientHeight,r:r.scrollHeight-r.clientHeight,doc:document.querySelector('.rail').getBoundingClientRect().bottom<=innerHeight+1};});
       ok(rola.g<=1&&rola.r<=1,'H1: menu do Admin rola em 1366×768: '+J(rola));
       // H8: links antigos
-      const casos=[['importar','importar'],['caixa','caixa'],['checkout','checkout'],['fila','fila'],['posto','posto'],['catalogo','catalogo'],['vendas','vendas'],['revisao','revisao'],['ajustes','ajustes'],['escala','escala'],['semana','painel'],['set','importar']];
+      const casos=[['importar','importar'],['caixa','caixa'],['checkout','posto'],['fila','posto']/* v97-ux: Venda manual e Fila do balcão são apelidos do Posto */,['posto','posto'],['catalogo','catalogo'],['vendas','vendas'],['revisao','revisao'],['ajustes','ajustes'],['escala','escala'],['semana','painel'],['set','importar']];
       for(const [h,esp] of casos){await pg.evaluate(()=>ETERNA.go('perfis'));await pg.evaluate(h=>{location.hash='#'+h;},h);await pg.waitForTimeout(120);const r=await pg.evaluate(()=>({v:ETERNA.state.view,f:/Algo falhou/.test(document.querySelector('#main').textContent)}));ok(r.v===esp&&!r.f,'H8: #'+h+' deveria abrir '+esp+': '+J(r));}}
     if(k==='supervisor'){const vs=its.map(x=>x.v);ok(!['repo','identidade','chroma','vestiario','fundos-teste','usuarios','permissoes'].some(v=>vs.includes(v)),'H5: supervisora com tela do Sistema: '+J(vs));}
     await ctx.close();}
   // H5 e H7 (funções puras)
   {const {ctx,pg}=await nova(b);
-    const r=await pg.evaluate(V93=>{const E=ETERNA;const out={};
+    const r=await pg.evaluate(V93=>{const E=ETERNA;const out={};const J=JSON.stringify;const RW_C={c:true,r:true,u:false,d:false};
       const antes=k=>({preset:'custom',perms:E.permNorm(V93[k].perms),menu:V93[k].menu==='*'?E.ALL_VIEWS.slice():V93[k].menu.slice()});
       Object.keys(V93).forEach(k=>{const dep={preset:k,perms:E.presetPerms(k),menu:E.presetMenu(k)};out[k]=E.accExtra(dep,antes(k));});
-      out.supPerms=JSON.stringify(E.presetPerms('supervisor'))===JSON.stringify(E.permNorm(V93.supervisor.perms));
+      // v96-ux (Eduardo, 11/11): a Supervisora ganha só set.c (envia as fotos do cartão pela tela, como o Admin)
+      out.supPerms=JSON.stringify(E.presetPerms('supervisor'))===JSON.stringify(E.permNorm({...V93.supervisor.perms,set:RW_C}));
+      if(J(out.supervisor)===J(['perms.set.c']))out.supervisor=[];
       out.adminTudo=E.ALL_VIEWS.every(v=>E.presetMenu('admin').includes(v));return out;},V93);
     ok(['foto','venda','valida','supervisor','quiosque'].every(k=>J(r[k])==='[]'),'H7: accExtra(depois, antes) não vazio: '+J(r));
     ok(r.supPerms,'H5: perms da Supervisora mudaram');ok(r.adminTudo,'H7: Admin sem alguma tela');

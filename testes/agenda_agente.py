@@ -1,14 +1,15 @@
 # v97: agenda automática e série diária no agente (plano docs/planos/2026-11-10-agenda-estatisticas.md, critérios 1, 3 a 7,
-# 11 a 16 e 21, e os da chave da API-Football em Configurações, só para quem altera Configurações). Roda sozinho (testes/rodar.sh) com HOME temporário:
+# 11 a 16 e 21, e os da chave da API-Football em Configurações › Painel de controle, só o Admin). Roda sozinho (testes/rodar.sh) com HOME temporário:
 #   python3 -I testes/agenda_agente.py agente/eterna-agente.py
-# O agente é importado aqui e o servidor HTTP dele roda numa thread (porta 42000-42999); a API-Football é um servidor
+# O agente é importado aqui e o servidor HTTP dele roda numa thread (porta PORTA_BASE + 0 a 899, padrão 42000; a da
+# API falsa é a do agente + 50); a API-Football é um servidor
 # falso local com uma chave falsa. O 2 (feriados iguais aos do app) está em testes/agenda-estatisticas.js; o 17 (histórico
 # da Roverpix) saiu (Eduardo, 10/11: sem retroativo).
 import importlib.util, io, json, os, random, sys, tempfile, threading, time, http.client, contextlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 AG = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "agente", "eterna-agente.py")
-PORTA = 42000 + random.randint(0, 899)
+PORTA = int(os.environ.get("PORTA_BASE") or 42000) + random.randint(0, 899)
 PORTA_API = PORTA + 50
 CHAVE = "FalsaChaveDeTeste0123456789abcd"      # chave falsa: só o servidor falso daqui aceita
 falhas = []
@@ -30,6 +31,7 @@ with contextlib.redirect_stdout(saida):
     sp.loader.exec_module(m)
     m.fuso_ajusta()
 m.AF_URL = "http://127.0.0.1:%d" % PORTA_API
+m.AF_ATUALIZAR_S = m.AF_TESTAR_S = 0                # o teto global tem um bloco próprio no fim; aqui as buscas seguem uma atrás da outra
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _agente_sessao
 COOKIE = _agente_sessao.cookie_sessao(m)      # pessoa conectada (admin): as rotas da equipe pedem sessão (tabela ROTAS)
@@ -122,6 +124,15 @@ with contextlib.redirect_stdout(saida):
     m.agenda_semear_feriados(2026)
     ok(agenda().get(tir, "x") is None, "3: feriado apagado no app não volta depois do boot")
     ok(m.agenda_semear_feriados(2027) == 15, "1: na virada para 2027 entram os de 2028")
+    ok(json.load(open(m.AF_FONTE, encoding="utf8")).get("feriados_anos") == [2026, 2027, 2028], "3: anos de feriado já semeados ficam em agenda-fonte.json")
+    # feriado apagado de verdade (sem lápide, ex.: estado.db reconstruído) não volta num ano já semeado
+    tsj = m.agenda_id("feriado|2026-09-07")
+    with m.estado_lock:
+        db = m.estado_db()
+        db.execute("delete from doc where col = 'agenda' and id = ?", (tsj,))
+        db.commit()
+        db.close()
+    ok(m.agenda_semear_feriados(2027) == 0 and tsj not in agenda(), "3: ano já semeado não recria feriado apagado")
 
     # ---------- 6 e 7: sem chave ----------
     st = m.agenda_status()
@@ -141,6 +152,8 @@ with contextlib.redirect_stdout(saida):
     ok(s == 403 and not os.path.exists(m.AF_CFG), "chave: quem só lê Configurações (e edita o calendário) recebe 403 e nada é gravado: %d" % s)
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "velho@teste.local"}, XE)
     ok(s == 403, "chave: Admin inativo recebe 403")
+    s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "superv@teste.local"}, XE)
+    ok(s == 403 and j.get("error") == "so_admin" and not os.path.exists(m.AF_CFG), "chave: Supervisora (altera Configurações, sem Usuários) recebe 403 e nada é gravado: %d" % s)
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "admin@teste.local"})
     ok(s == 403, "chave: sem X-Eterna recebe 403")
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "admin@teste.local"}, {**XE, "Host": "outro.exemplo:%d" % PORTA})
@@ -215,6 +228,9 @@ with contextlib.redirect_stdout(saida):
     antes = len(vivos())
     r = m.agenda_jogos_sync("teste")
     ok(r["ok"] is False and len(vivos()) == antes and m.agenda_status()["jogos"]["ultima"], "risco 8: falha da API não apaga nada e guarda a última que deu certo")
+    s, j, b = req("GET", "/status")
+    ok(j.get("agenda", {}).get("jogos", {}).get("erro") == "falha" and "Free plans" not in b, "/status só com o código do erro, sem o texto: %s" % json.dumps(j.get("agenda"))[:200])
+    ok("Free plans" in (m.agenda_status()["jogos"]["erro"] or ""), "/agenda/status (rota privada) segue com o motivo")
     API["erro"] = None
     # chave nunca em /status, /agenda/status, arquivo da fonte e console
     s, j, b = req("GET", "/status")
@@ -227,8 +243,9 @@ with contextlib.redirect_stdout(saida):
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "remover", "quem": "admin@teste.local"}, XE)
     ok(s == 200 and not os.path.exists(m.AF_CFG) and m.agenda_status()["jogos"]["fonte"] == "nenhuma", "chave: Remover apaga o arquivo")
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": CHAVE, "quem": "superv@teste.local"}, XE)
-    ok(s == 200 and m.agenda_status()["jogos"]["salva_por"] == "Supervisora", "chave: quem altera Configurações (Supervisora) salva: %d" % s)
-    req("POST", "/agenda/fonte", {"acao": "remover", "quem": "superv@teste.local"}, XE)
+    ok(s == 403 and not os.path.exists(m.AF_CFG), "chave: Supervisora recebe 403 e nada é gravado: %d" % s)
+    s, j, _ = req("POST", "/agenda/testar", {"quem": "superv@teste.local"}, XE)
+    ok(s == 403, "chave: Supervisora não usa Testar agora: %d" % s)
     os.environ["ETERNA_API_FOOTBALL"] = CHAVE
     st = m.agenda_status()["jogos"]
     s, j, _ = req("POST", "/agenda/fonte", {"acao": "salvar", "chave": "B" * 30, "quem": "admin@teste.local"}, XE)
@@ -241,6 +258,8 @@ with contextlib.redirect_stdout(saida):
     os.makedirs(m.MET_DIR, exist_ok=True)
     json.dump({"dia": D(-2), "vendas": 3, "faturamento": 570.0, "fotos": 300, "sessoes": 20, "sessoes_com_venda": 3, "online": {"vendas": 1, "faturamento": 39.0}},
               open(os.path.join(m.MET_DIR, D(-2) + ".json"), "w"))
+    json.dump({"dia": D(-6), "vendas": 0, "faturamento": 0, "fotos": 0, "sessoes": 0, "online": {"vendas": 2, "faturamento": 78.0}},
+              open(os.path.join(m.MET_DIR, D(-6) + ".json"), "w"))
     rv = os.path.join(m.ROVER_DIR, "agg", D(-3) + ".json")
     json.dump({"daily": {"sales": 7, "revenue": 1330.5, "photos": 800, "approaches": 60, "converted": 7}}, open(rv, "w"))
     # jogo em feriado (D-8), fechado e jogo no mesmo dia (D-12)
@@ -262,10 +281,12 @@ with contextlib.redirect_stdout(saida):
     ok(s == 200 and len(L) == 31, "11: /estatisticas/dias traz uma linha por dia: %d %d" % (s, len(L)))
     ok(L[D(-2)]["fonte_vendas"] == "eterna" and L[D(-2)]["vendas"] == 4 and L[D(-2)]["receita"] == 609.0, "11/D6: dia com resumo da Eterna: %r" % L[D(-2)])
     ok(L[D(-3)]["fonte_vendas"] == "roverpix" and L[D(-3)]["vendas"] == 7 and L[D(-3)]["sessoes"] == 60, "11: dia só com Roverpix: %r" % L[D(-3)])
+    ok(L[D(-6)]["fonte_vendas"] == "eterna" and L[D(-6)]["vendas"] == 2 and L[D(-6)]["receita"] == 78.0, "D6: dia só com venda online não fica null: %r" % L[D(-6)])
     ok(L[D(-5)]["fonte_vendas"] is None and L[D(-5)]["vendas"] is None, "11: dia sem nada tem vendas null, não 0: %r" % L[D(-5)])
     j8 = L[D(-8)]
     ok(j8["tipo"] == "jogo" and j8["marcas"]["feriado"] == 1 and j8["marcas"]["jogo"] == 1, "12: jogo em feriado é jogo com a marca de feriado: %r" % j8)
-    ok(L[D(-9)]["tipo"] == "vespera" and L[D(-9)]["marcas"]["vespera"] == 1, "12: dia antes do jogo é véspera: %r" % L[D(-9)])
+    esp9 = "feriado" if L[D(-9)]["marcas"]["feriado"] else "vespera"     # D3: feriado vence véspera (ex.: rodando em 11/11, D-9 é Finados)
+    ok(L[D(-9)]["tipo"] == esp9 and L[D(-9)]["marcas"]["vespera"] == 1, "12: dia antes do jogo é véspera: %r" % L[D(-9)])
     ok(L[D(-12)]["tipo"] == "fechado" and L[D(-12)]["marcas"]["jogo"] == 1, "12: estádio fechado e jogo no mesmo dia = fechado")
     ok(any("Flamengo × Grêmio" in e for e in j8["eventos"]) and all("Ana" not in e for e in j8["eventos"]), "12: eventos curtos, sem quem cadastrou: %r" % j8["eventos"])
     ok((L[D(-2)]["entradas"], L[D(-2)]["entradas_fonte"]) == (1000, "bilheteria"), "13: bip 900 e bilheteria 1000 = 1000 bilheteria: %r" % L[D(-2)])
@@ -283,7 +304,8 @@ with contextlib.redirect_stdout(saida):
     ok({D(-20), D(-21)} <= sujos and m.dia_wake.is_set(), "14: o dia e a véspera vão para o recálculo: %r" % sujos)
     m.dia_consolidar(sujos)
     L = {x["dia"]: x for x in m.dias_periodo(int(HOJE[:4]))["dias"]}
-    ok(L[D(-20)]["tipo"] == "jogo" and L[D(-21)]["tipo"] == "vespera", "14: a linha muda para jogo e a véspera para vespera")
+    ok(L[D(-20)]["tipo"] == "jogo" and L[D(-21)]["marcas"]["vespera"] == 1 and L[D(-21)]["tipo"] == ("feriado" if L[D(-21)]["marcas"]["feriado"] else "vespera"),
+       "14: a linha muda para jogo e a véspera para vespera")
     # 15: resumo da Roverpix sumiu
     os.remove(rv)
     m.dia_consolidar([D(-3)])
@@ -306,6 +328,66 @@ with contextlib.redirect_stdout(saida):
     ok(all(r[0] != "__proto__" and r[1] >= 0 for r in rs) and (D(-1), 1500) in [tuple(r) for r in rs], "16: nada do inválido gravado: %r" % rs)
     imps = m.entradas_importacoes()["importacoes"]
     ok(any(x["origem"] == "bilheteria" and x["arquivo"] == "v.csv" and x["aceitas"] == 1 for x in imps), "16: importação registrada")
+
+    # ---------- teto global de consultas à API-Football ----------
+    m.AF_ATUALIZAR_S, m.AF_TESTAR_S = 600, 60
+    m.af_ultimo.update(sync=0.0, teste=0.0)
+    m.agenda_fonte.update(tentativa=None, ok=None, teste=None, restantes=None, pedidos_hoje=0, pedidos_dia=None)
+    m._janelas.clear()
+    n0 = len(API["pedidos"])
+    r = m.agenda_jogos_sync("teste")
+    ok(r["ok"], "teto: a primeira busca passa: %r" % r)
+    n1 = len(API["pedidos"])
+    r = m.agenda_jogos_sync("teste")
+    ok(r.get("erro") == "espera" and r.get("motivo") == "intervalo" and len(API["pedidos"]) == n1, "teto: segunda busca em menos de 10 min não consulta: %r" % r)
+    m._janelas.clear()
+    s, j, _ = req("POST", "/agenda/atualizar", {}, XE)
+    ok(s == 429 and j.get("error") == "espera" and 1 <= j.get("espera_min", 0) <= 10, "teto: Atualizar em menos de 10 min dá 429 (global, não por IP): %d %r" % (s, j))
+    m.af_ultimo["sync"] = time.time() - 601
+    m.agenda_fonte["tentativa"] = m._iso(time.time() - 601)
+    # falha: 6 h de espera para a busca (também a da tela), o Testar continua
+    API["erro"] = "falha de teste"
+    r = m.agenda_jogos_sync("teste")
+    ok(r["ok"] is False, "teto: busca que falha")
+    m.af_ultimo["sync"] = 0.0
+    r = m.agenda_jogos_sync("teste")
+    ok(r.get("erro") == "espera" and r.get("motivo") == "falha" and r.get("espera_s", 0) > 5 * 3600, "teto: depois de uma falha, 6 h de espera: %r" % r)
+    m._janelas.clear()
+    s, j, _ = req("POST", "/agenda/atualizar", {}, XE)
+    ok(s == 429 and j.get("motivo") == "falha", "teto: Atualizar respeita as 6 h: %d %r" % (s, j))
+    API["erro"] = None
+    # testar: 1 por minuto no total
+    m._janelas.clear()
+    s1 = req("POST", "/agenda/testar", {"quem": "admin@teste.local"}, XE)[0]
+    m._janelas.clear()
+    s2, j2, _ = req("POST", "/agenda/testar", {"quem": "admin@teste.local"}, XE)
+    ok((s1, s2) == (200, 429) and j2.get("error") == "espera", "teto: Testar no máximo 1 vez por minuto: %r" % ((s1, s2),))
+    # testar dentro do agenda_lock
+    m.af_ultimo["teste"] = 0.0
+    m.agenda_fonte["teste"] = None
+    m._janelas.clear()
+    m.agenda_lock.acquire()
+    try:
+        s, j, _ = req("POST", "/agenda/testar", {"quem": "admin@teste.local"}, XE)
+    finally:
+        m.agenda_lock.release()
+    ok(s == 409 and j.get("error") == "ja_rodando", "teto: Testar com a busca rodando dá 409: %d %r" % (s, j))
+    # menos de 10 restantes ou 80% do plano: nenhuma consulta sai
+    m.agenda_fonte.update(tentativa=None, ok=None, pedidos_dia=m._ff_hoje(), restantes=9, pedidos_hoje=0)
+    m.af_ultimo["sync"] = 0.0
+    n2 = len(API["pedidos"])
+    r = m.agenda_jogos_sync("teste")
+    ok(r["ok"] is False and len(API["pedidos"]) == n2 and "quase no fim" in (r.get("erro") or ""), "teto: com menos de 10 restantes, para: %r" % r)
+    m.agenda_fonte.update(tentativa=None, ok=None, restantes=50, pedidos_hoje=80, limite_dia=None)
+    m.af_ultimo["sync"] = 0.0
+    r = m.agenda_jogos_sync("teste")
+    ok(r["ok"] is False and len(API["pedidos"]) == n2, "teto: com 80 de 100 usadas, para: %r" % r)
+    m.agenda_fonte.update(tentativa=None, ok=None, restantes=50, pedidos_hoje=80, limite_dia=7500)
+    m.af_ultimo["sync"] = 0.0
+    r = m.agenda_jogos_sync("teste")
+    ok(r["ok"] and len(API["pedidos"]) > n2, "teto: o limite do plano mandado pela API vale por cima dos 100: %r" % r)
+    m.agenda_fonte.update(pedidos_dia="2000-01-01", pedidos_hoje=99, restantes=0)
+    ok(m.af_cota() is None and m.agenda_fonte["pedidos_hoje"] == 0, "teto: a conta zera na virada do dia")
 
 console = saida.getvalue()
 ok(CHAVE not in console, "7: a chave não aparece no console")

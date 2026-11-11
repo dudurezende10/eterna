@@ -138,6 +138,8 @@ try{
   const adm=await contexto(b,errs);const P=adm.pg;
   await P.goto(U);await P.waitForTimeout(400);
   await entrarTeste(P,'eduardo@eduardorezende.com');
+  // v96.1 (Testador): 45 s. Com a máquina carregada (2 CPUs, outras suítes ao lado) a página fica ocupada 12 a 24 s logo depois do login e o
+  // dbLigar (a cada 5 s) só roda depois; igual na v96 (0596b50). O que se testa é que liga, não em quanto tempo.
   ok(await espera(P,()=>!!ETERNA.state.db,45000),'o Painel liga no servidor do ponto (estado.db)');
   await P.evaluate(()=>{ETERNA.state.catTab='checkout';ETERNA.state.view='catalogo';ETERNA.render();});await P.waitForTimeout(300);
   ok(await P.$('#busca-janela')&&/Procurar fotos dos últimos/.test(await P.textContent('#main')),'campo "Procurar fotos dos últimos __ minutos" no Painel de controle');

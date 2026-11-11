@@ -77,8 +77,8 @@ try{
   const B=await pagina(ctx,'B caixa');ok(await login(B,'loja@eterna.photo'),'1.6: Atendimento não entrou');CAIXA=B;
   // v94-ux: o botão "Caixa" da barra virou "Posto de venda" (data-v="posto"); o Caixa é o Posto com o filtro Dinheiro (parte E, decisão 3)
   // v94-ux (parte H): o Posto de venda saiu da barra e é item do menu (#nav [data-v="posto"]); o número de pendências fica nesse item
-  // v96-ux (Eduardo, 10/11, cace1c4): o botão amarelo Caixa voltou ao alto do menu para quem pode usá-lo; o Posto de venda segue no menu
-  const rail0=await B.evaluate(()=>!!document.querySelector('#nav [data-act="view"][data-v="posto"]')&&!!document.querySelector('#rail-ck [data-v="caixa"]'));ok(rail0,'1.6: menu do Atendimento sem o item Posto de venda ou sem o botão Caixa');
+  // v97-ux (Posto único): o botão amarelo Caixa fica na barra e conta só o dinheiro esperando confirmação (#rail-cx)
+  const rail0=await B.evaluate(()=>{const c=document.querySelector('#rail-ck [data-v="caixa"]');const n=ETERNA.SIM.caixaDin.filter(r=>(r.estado==='aguardando'||r.estado==='escolha')&&r.meio==='dinheiro'&&r.total!=null&&(!r.escolha||r.pkg)).length;return {posto:!!document.querySelector('#nav [data-act="view"][data-v="posto"]'),caixa:!!c,cx:(document.querySelector('#rail-cx')||{}).textContent||'',n};});ok(rail0.posto&&rail0.caixa&&rail0.cx===(rail0.n?String(rail0.n):''),'1.6: item Posto de venda no menu e botão Caixa com o número do dinheiro: '+JSON.stringify(rail0));
   await B.click('#nav [data-v="posto"]');await B.waitForTimeout(250);ok(await B.evaluate(()=>ETERNA.state.view)==='posto','1.6: botão Posto de venda não abriu o Posto');
   ok(/Nenhum pagamento esperando/.test(await txt(B,'#main')),'1.6: Caixa vazio deveria dizer "Nenhum pagamento esperando." (v83)');
 
@@ -157,7 +157,9 @@ try{
   await A.evaluate(()=>{ETERNA.SIM.lojaFimSeg=5;});await sleep(5600);
   ok(await A.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.timer),'1.3: tela do dinheiro aguardando não pode voltar sozinha');
   // v94-ux: na espera não há mais o botão amarelo; a casa pergunta "Cancelar o pedido?" e "Sim, sair" volta ao início (parte G)
-  await A.click('[data-act="loja-new"]');await A.waitForTimeout(150); // v96-ux: no Checkout vale o "Voltar ao início" da v96ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: Voltar ao início');
+  // Eduardo (11/11): na espera não há "Voltar ao início" (o caixa recomeça pelo Posto); parada 3 min, a tela volta sozinha
+  ok(await A.evaluate(()=>document.querySelectorAll('[data-act="loja-new"]').length)===0,'1.3 (11/11): a espera do pagamento não tem "Voltar ao início"');
+  await A.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);});await A.waitForTimeout(150);ok(await A.evaluate(()=>ETERNA.state.kiosk.step)==='code','1.3: a espera parada volta ao início');
 
   // ---- 1.5: galeria no mesmo computador
   fase='1.5';
@@ -440,7 +442,7 @@ try{
     await abrir();await pg.click('[data-act="kiosk-emerg"]');await pg.fill('#kcode',card);await pg.click('[data-act="kiosk-go"]');await pg.waitForTimeout(400);
     // v96 (B2): voltar ao início limpa as marcas da sessão; aqui o cliente marca a foto dele antes de continuar
     await pg.evaluate(c=>{const it=ETERNA.lojaItems(c);ETERNA.lojaPick(c)[it[0].k]='ok';ETERNA.state.kiosk.step='cart';ETERNA.render();},card);await pg.waitForTimeout(150);await pagar(pg,'card');
-    await pg.click('.lj-restart');await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir');
+    await pg.evaluate(()=>{ETERNA.lojaProntoMs(1);ETERNA.state.kiosk.toque=0;ETERNA.state.kiosk.prontoDesde=0;ETERNA.lojaProntoOcioso();ETERNA.lojaProntoMs(180000);ETERNA.render();});await pg.waitForTimeout(250);ok(!(await btn()),'3.3: depois da compra o botão deveria sumir'); // 11/11: a espera não tem "Voltar ao início"; volta parada
     // I1: recarregar a janela do Checkout não entra logado (a sessão salva continua para as outras janelas)
     fase='I1';
     await pg.reload();await pg.waitForTimeout(600);
