@@ -1,4 +1,4 @@
-// v99: cortesias no fluxo de venda (Cortesia SAC com motivo; CORTESIA PORTA-RETRATO entra sozinha com o Porta-retrato).
+// v99: cortesias no fluxo de venda (Cortesia SAC com motivo). v99.3: CORTESIA PORTA-RETRATO parada, sem o Porta-retrato no catálogo.
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
@@ -31,16 +31,16 @@ try{
   ok(r1.cort&&r1.cort.motivo==='espera'&&/40 min/.test(r1.cort.nota)&&r1.cort.por,'motivo, nota e quem: '+J(r1.cort));
   ok(r1.dir&&r1.dir.length===3&&r1.dir.every(d=>d==='cortesia'),'galeria: 3 fotos digitais como cortesia: '+J(r1.dir));
   ok(/Cortesia SAC/.test(r1.rec)&&/Pagamento: Cortesia/.test(r1.rec),'recibo da cortesia: '+r1.rec.slice(0,200));
-  // 2) Porta-retrato leva a CORTESIA PORTA-RETRATO
+  // 2) v99.3: sem o produto Porta-retrato no catálogo, a CORTESIA PORTA-RETRATO fica parada (não entra sozinha em venda nenhuma)
   await abrir(ds[1]);await escolher(1);
-  await A.click('[data-act="fila-add"][data-id="arq"]');await A.click('[data-act="fila-add"][data-id="porta"]');await A.waitForTimeout(100);
-  ok(/CORTESIA PORTA-RETRATO/.test(await A.textContent('#main')),'carrinho mostra a cortesia do porta-retrato');
+  ok(await A.$('[data-act="fila-add"][data-id="porta"]')===null,'Porta-retrato fora do catálogo (v99.3)');
+  await A.click('[data-act="fila-add"][data-id="arq"]');await A.waitForTimeout(100);
   await A.click('[data-act="checkout-step"][data-s="3"]');await A.waitForTimeout(150);await A.click('[data-act="caixa-pay"][data-m="PIX"]');await A.click('[data-act="caixa-confirm"]');await A.waitForTimeout(400);
   const r2=await A.evaluate(c=>{const s=ETERNA.SIM.sessions[c];return {st:s.status,cart:s.cart.map(x=>x.id+':'+x.v),total:s.total,prints:s.prints};},ds[1]);
-  ok(r2.st==='paga'&&J(r2.cart)===J(['arq:70','porta:75','cort_porta:0'])&&r2.total===145&&r2.prints===2,'Porta-retrato com a cortesia e 2 impressões: '+J(r2));
+  ok(r2.st==='paga'&&J(r2.cart)===J(['arq:70'])&&r2.total===70&&r2.prints===1,'venda normal sem cortesia do porta-retrato: '+J(r2));
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}
 if(fails.length){console.log('FALHA cortesias: '+fails.join(' || '));process.exit(1);}
-console.log('OK cortesias: Cortesia SAC e CORTESIA PORTA-RETRATO');process.exit(0);
+console.log('OK cortesias: Cortesia SAC; CORTESIA PORTA-RETRATO parada');process.exit(0);
 })();
