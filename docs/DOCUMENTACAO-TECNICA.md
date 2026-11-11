@@ -1373,6 +1373,7 @@ Plano: `docs/planos/2026-10-29-v83-multiterminal.md` (decisões D1 a D11, notas 
 - O botão LGPD ("Cliente pediu: apagar as fotos") saiu da Fila do balcão e está na etapa 2 da Venda manual, com a mesma regra (`galerias.u`, sessão não paga, confirmação, `lgpd-excluir`).
 - Confirmar dinheiro (`pendConfirmar`) não abre recibo sozinho em nenhuma das vistas. Saíram `vFila`, `vCaixa`, `fila-open`, `fila-back`, `fila-send`, `state.posto.filtro` e `state.posto.filtroCaixa`. Sessão `no caixa` deixada por uma janela antiga aparece em "Vindas da Fila do balcão" e é cobrada pelo `caixaDetalhe`.
 - Testes: `testes/posto-unico.js` (compara a venda em dinheiro, a Venda manual e os `PRESETS` com o resultado da `a9b4028`).
+- Aviso da Edição Maracanã (Eduardo, 11/11): a montagem (`aiSel`) não vai para a galeria do QR e o `impFotos` corta em `s.prints` com as montagens no fim da fila. `pendMontSemImp(r,prints)` conta as montagens fora das impressões (mesma ordem do `impFotos`); `pendMontAviso(r)` mostra `.pend-mont` abaixo dos pacotes no `pendEscolhaItem` (pacote só digital, ou montagens que não cabem) e os pacotes sem impressão ganham o selo `.pend-semmont`. Na Venda manual o aviso aparece com `sim.bg` escolhido (o fundo da Venda manual não entra em `aiSel`, então não é impresso nem vai para a galeria). Só avisa, não bloqueia. Teste `testes/posto-montagem.js`. Pendente: levar a montagem para a galeria e para a impressão dos pacotes só digitais.
 
 ### Impressão 10×15 na DNP DS-RX1HS (parte F)
 
