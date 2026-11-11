@@ -63,6 +63,11 @@ for a in sys.argv[4:]:
     with open(a,'rb') as x: out.append(f.storbinary('STOR '+os.path.basename(a),x)[:3])
 f.quit();print(','.join(out))`,String(FTPP),usuario,users[usuario],...arquivos.map(a=>path.join(IMG,a+'.jpg'))]).toString().trim();}
 
+// v96: o cliente marca as fotos e toca em Continuar (pedido sem pacote nem meio, estado 'escolha'); o caixa escolhe pacote e meio no Posto
+const marcaEPede=(pg,n,duplo)=>pg.evaluate(([n,duplo])=>{const k=ETERNA.state.kiosk;const pk=ETERNA.lojaPick(k.code);ETERNA.lojaItems(k.code).slice(0,n).forEach(x=>pk[x.k]='ok');k.ver=null;k.minhas=false;
+  const b=document.createElement('button');b.dataset.act='loja-cart';b.hidden=true;document.body.appendChild(b);b.click();if(duplo)b.click();b.remove();},[n,!!duplo]);
+const escolhePosto=async(pg,id,meio)=>{const pk=await pg.evaluate(id=>{ETERNA.simFresh();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);return ETERNA.lojaIdeal(r.n).pkg;},id); // o pacote Ideal, como o Checkout antigo sugeria
+  await pg.click(`[data-act="pend-pkg"][data-id="${id}"][data-p="${pk}"]`);await pg.waitForTimeout(120);await pg.click(`[data-act="pend-meio"][data-id="${id}"][data-m="${meio}"]`);await pg.waitForTimeout(150);};
 (async()=>{const b=await chromium.launch({args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--use-file-for-fake-video-capture='+path.join(IMG,'selfie.y4m')]});let b2=null,proxy=null;
 const ctxs=[];const novo=async(o)=>{const c=await b.newContext(Object.assign({viewport:{width:1440,height:900},locale:'pt-BR'},o||{}));await c.grantPermissions(['camera'],{origin:A});ctxs.push(c);return c;};
 try{
@@ -136,24 +141,22 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   ok(await espera(K,()=>ETERNA.state.agent.on&&ETERNA.state.posto.estado==='ok'&&!!document.querySelector('[data-act="kiosk-emerg"]'),15000),'Checkout pareado abre a tela do cliente');
   ok(await espera(K,()=>Object.keys(ETERNA.SIM.sessions||{}).filter(c=>(ETERNA.SIM.sessions[c].photos||[]).some(p=>/^ag_/.test(p.id||p))).length>=3||Object.values(ETERNA.SRV&&ETERNA.SRV.sess||{}).filter(x=>x.status==='fechada').length>=3,20000),'Checkout recebe as sessões do servidor');
   let stR=null;for(let i=0;i<120;i++){stR=(await req(PORTA,'GET','/status',{headers:{Cookie:'eterna_sessao=x'}})).j;const s2=await K.evaluate(()=>ETERNA.state.agent.rostos);if(s2&&s2.ligado)break;await sleep(500);}
+  await K.click('[data-act="kiosk-start"]').catch(()=>{}); // v96: a câmera só liga depois do Iniciar
   const achou=await espera(K,()=>['gallery','review','talvez'].includes(ETERNA.state.kiosk.step),25000);
   if(!achou){notas.push('a câmera falsa não disparou sozinha; camFound chamado');await K.evaluate(()=>ETERNA.camFound());}
   ok(await espera(K,()=>['gallery','review'].includes(ETERNA.state.kiosk.step)&&ETERNA.state.kiosk.so,20000),'selfie acha a sessão da pessoa a: '+J(await K.evaluate(()=>({st:ETERNA.state.kiosk.step,cam:ETERNA.state.cam.status}))));
   const so=await K.evaluate(()=>{const k=ETERNA.state.kiosk;return {card:k.code,ids:(k.so||{}).ids||[],n:ETERNA.lojaItems(k.code).length};});
   ok(so.n===3,'selfie: as 3 fotos da pessoa a, nenhuma da b: '+J(so));
   await K.screenshot({path:path.join(PR,'op-checkout-selfie-fotos.png')});
-  // escolhe 2 fotos (uma pelo ✓ da foto ampliada, outra na grade) e paga com cartão
-  await K.click('[data-act="kiosk-ok"]').catch(()=>{});await K.click('[data-act="kiosk-fechar"]').catch(()=>{});await K.waitForTimeout(200);
-  await K.click('[data-act="kiosk-tog"][data-i="1"]');await K.waitForTimeout(150);
-  ok(await K.evaluate(()=>ETERNA.lojaCart(ETERNA.state.kiosk.code).ch.length)===2,'2 fotos marcadas');
-  await K.click('.lj-foot [data-act="loja-cart"]');await K.waitForTimeout(200);await K.click('[data-act="loja-paym"][data-m="card"]');await K.waitForTimeout(150);
+  // escolhe 2 fotos e toca em Continuar duas vezes (clique duplo): um pedido só, sem pacote, e o Checkout mostra a tela Pronto
+  await K.click('[data-act="kiosk-fechar"]').catch(()=>{});await K.waitForTimeout(150);
+  await marcaEPede(K,2,true);
   await K.screenshot({path:path.join(PR,'op-checkout-carrinho.png')});
-  await K.evaluate(()=>{const b=document.querySelector('[data-act="loja-checkout"]');b.click();b.click();}); // clique duplo
-  ok(await espera(K,()=>ETERNA.state.kiosk.step==='done'&&ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.wait,8000),'cartão: Checkout espera a maquininha');
-  const cardA=so.card;const pendA=await K.evaluate(c=>ETERNA.SIM.caixaDin.filter(r=>r.card===c&&r.estado==='aguardando').map(r=>({id:r.id,saleNo:r.saleNo,total:r.total})),cardA);
+  ok(await espera(K,()=>ETERNA.state.kiosk.step==='done'&&ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.wait,8000),'Checkout manda a escolha ao caixa (tela Pronto)');
+  ok(await K.evaluate(()=>ETERNA.lojaCart(ETERNA.state.kiosk.code).ch.length)===2,'2 fotos marcadas');
+  const cardA=so.card;const pendA=await K.evaluate(c=>ETERNA.SIM.caixaDin.filter(r=>r.card===c&&r.estado==='escolha').map(r=>({id:r.id,saleNo:r.saleNo,total:r.total})),cardA);
   const numP=await K.evaluate(()=>ETERNA.postoDisp().num);ok(pendA.length===1&&pendA[0].saleNo.startsWith('P'+numP+'-'),'1 pendência (clique duplo não duplica), número P'+numP+'-: '+J(pendA));
-  ok(await espera(K,()=>ETERNA.pvFila().length===0,15000),'evento criar sobe do posto');
-  const evA=JSON.parse(sql('vendas.db',`select tipo,count(*) from evento where venda='${pendA[0]&&pendA[0].id}' group by tipo`));ok(J(evA)===J([['criar',1]]),'servidor com 1 criar da venda A: '+J(evA));
+  await sleep(1500);const evA=JSON.parse(sql('vendas.db',`select tipo,count(*) from evento where venda='${pendA[0]&&pendA[0].id}' group by tipo`));ok(J(evA)===J([]),'v96: nada sobe ao servidor antes da confirmação no Posto: '+J(evA));
   await K.screenshot({path:path.join(PR,'op-checkout-aguardando.png')});
   // volta ao início e acha a pessoa "b" (Marinara) pelo código da sessão
   await K.click('[data-act="loja-new"]');await K.waitForTimeout(300);
@@ -163,10 +166,8 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   K.setDefaultTimeout(4000);await K.evaluate(()=>{ETERNA.state.cam.busy=true;});await K.click('[data-act="kiosk-emerg"]');await K.fill('#kcode','LPXXXXX99');await K.click('[data-act="kiosk-go"]');
   ok(/não|invalid|código/i.test(await toastTxt(K)),'código errado avisa: '+await toastTxt(K));
   await K.fill('#kcode',cB.toLowerCase());await K.click('[data-act="kiosk-go"]');ok(await espera(K,()=>ETERNA.state.kiosk.step==='review',5000),'código da sessão abre as fotos: '+cB+' '+J(cards)+' toast '+await toastTxt(K)+' step '+await K.evaluate(()=>ETERNA.state.kiosk.step)+' fotos (id, carregada, inválida, descartada) '+J(await K.evaluate(c=>((ETERNA.SIM.sessions[c]||{}).photos||[]).map(p=>[p.id,!!ETERNA.UP[p.id],!!(ETERNA.SIM.invalid||{})[p.id],!!(ETERNA.SIM.discarded||{})[p.id]]),cB)));
-  await K.click('[data-act="kiosk-tog"][data-i="0"]').catch(async()=>{await K.click('[data-act="kiosk-ok"]');});await K.waitForTimeout(150);
-  await K.evaluate(()=>document.querySelector('[data-act="loja-cart"]:not([disabled])').click());await K.waitForTimeout(200);await K.click('[data-act="loja-paym"][data-m="cash"]');await K.click('[data-act="loja-checkout"]');
-  ok(await espera(K,()=>ETERNA.state.kiosk.step==='done',5000),'dinheiro: aguardando caixa');const pendB=await K.evaluate(c=>(ETERNA.SIM.caixaDin.find(r=>r.card===c&&r.estado==='aguardando')||{}).id,cB);
-  ok(await espera(K,()=>ETERNA.pvFila().length===0,15000),'evento criar da venda B sobe');
+  await marcaEPede(K,1);
+  ok(await espera(K,()=>ETERNA.state.kiosk.step==='done',5000),'venda B: aguardando o caixa');const pendB=await K.evaluate(c=>(ETERNA.SIM.caixaDin.find(r=>r.card===c&&r.estado==='escolha')||{}).id,cB);
 
   // 6. Caixa: vendedor entra no mesmo aparelho (outra aba), confirma "Pago na maquininha" com NSU, imprime e a galeria é publicada
   const CX=vigia(await cK.newPage(),'caixa');await CX.goto(A+'/index.html');await CX.waitForTimeout(400);
@@ -174,6 +175,7 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   ok(await espera(CX,()=>document.querySelectorAll('#pend-painel [data-pend]').length===2,8000),'Caixa vê as 2 pendências: '+await CX.evaluate(()=>document.querySelectorAll('#pend-painel [data-pend]').length));
   await CX.screenshot({path:path.join(PR,'op-caixa-pendencias.png')});
   ok(await espera(CX,c=>{const s=ETERNA.demoSessions().find(x=>x.card===c);return s&&s.photos.length===3;},20000,cardA),'Caixa carrega as sessões do servidor');
+  await escolhePosto(CX,pendA[0].id,'cartao');
   await CX.click(`[data-act="pend-pos"][data-id="${pendA[0].id}"]`);await CX.fill('#pend-ref','4111111111111111');await CX.click(`[data-act="pend-pos-ok"][data-id="${pendA[0].id}"]`);
   ok(/parece número de cartão/.test(await toastTxt(CX)),'NSU com número de cartão recusado: '+await toastTxt(CX));
   await CX.fill('#pend-ref','123456');await CX.evaluate(id=>{const b=document.querySelector(`[data-act="pend-pos-ok"][data-id="${id}"]`);b.click();b.click();},pendA[0].id);
@@ -190,7 +192,7 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   ok(await espera(CX,()=>/Enviado para DNP Teste/.test((document.querySelector('#toast')||{}).textContent||''),30000),'impressão enviada ao servidor: '+await toastTxt(CX));
   const fila=await req(PORTA,'GET','/impressao/fila',{headers:{Cookie:'eterna_sessao='+((await cK.cookies()).find(c=>c.name==='eterna_sessao')||{}).value}});ok(fila.s===200&&J(fila.j).includes(pendA[0].saleNo),'fila da impressora com a venda A: '+fila.s+' '+J(fila.j).slice(0,160));
   // dinheiro da venda B
-  await CX.click(`[data-act="din-confirm"][data-id="${pendB}"]`);ok(await espera(CX,c=>ETERNA.SIM.sessions[c].status==='paga',5000,cB),'dinheiro da venda B recebido');
+  await escolhePosto(CX,pendB,'dinheiro');await CX.click(`[data-act="din-confirm"][data-id="${pendB}"]`);ok(await espera(CX,c=>ETERNA.SIM.sessions[c].status==='paga',5000,cB),'dinheiro da venda B recebido');
   ok(await espera(CX,()=>ETERNA.pvFila().length===0,15000),'pagar B sobe');
   ok(await espera(K,()=>ETERNA.state.kiosk.step==='done'&&ETERNA.state.kiosk.paid&&!ETERNA.state.kiosk.paid.wait,8000),'Checkout (venda B na tela) vira a tela do QR depois da confirmação no Caixa');
   await K.screenshot({path:path.join(PR,'op-checkout-qr.png')});
@@ -203,15 +205,18 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   ag.kill('SIGKILL');await sleep(800);await K.click('[data-act="loja-new"]').catch(()=>{});await K.waitForTimeout(300);
   const cC=await K.evaluate(a=>Object.keys(ETERNA.SIM.sessions).find(c=>/^LP/.test(c)&&!a.includes(c)&&ETERNA.SIM.sessions[c].status!=='paga'&&ETERNA.SIM.sessions[c].status!=='aguardando'),[cardA,cB]);ok(cC,'terceira sessão para a venda offline');
   await K.click('[data-act="kiosk-emerg"]');await K.fill('#kcode',cC);await K.click('[data-act="kiosk-go"]');await K.waitForTimeout(200);
-  await K.click('[data-act="kiosk-tog"][data-i="0"]').catch(async()=>{await K.click('[data-act="kiosk-ok"]');});await K.evaluate(()=>document.querySelector('[data-act="loja-cart"]:not([disabled])').click());
-  await K.click('[data-act="loja-paym"][data-m="pix"]');await K.click('[data-act="loja-checkout"]');
+  await marcaEPede(K,1);
   ok(await espera(K,()=>ETERNA.state.kiosk.step==='done',5000),'offline: Checkout gera a pendência');
-  const pendC=await K.evaluate(c=>ETERNA.SIM.caixaDin.find(r=>r.card===c&&r.estado==='aguardando'),cC);ok(pendC&&pendC.saleNo.startsWith('P'+numP+'-'),'offline: número de venda com o posto guardado (P'+numP+'-): '+(pendC&&pendC.saleNo));
-  await sleep(2500);ok(await K.evaluate(()=>ETERNA.pvFila().length)===1,'offline: a venda fica na fila: '+await K.evaluate(()=>ETERNA.pvFila().length));
+  const pendC=await K.evaluate(c=>ETERNA.SIM.caixaDin.find(r=>r.card===c&&r.estado==='escolha'),cC);ok(pendC&&pendC.saleNo.startsWith('P'+numP+'-'),'offline: número de venda com o posto guardado (P'+numP+'-): '+(pendC&&pendC.saleNo));
+  // v96: o "criar" e o "pagar" saem na confirmação do caixa, que funciona sem o agente
+  await CX.evaluate(()=>{ETERNA.simFresh();ETERNA.render();});ok(await espera(CX,id=>!!document.querySelector(`[data-act="pend-pkg"][data-id="${id}"]`),8000,pendC&&pendC.id),'offline: pedido no Caixa');
+  await escolhePosto(CX,pendC.id,'pix');await CX.click(`[data-act="pend-pos"][data-id="${pendC.id}"]`);await CX.fill('#pend-ref','654321');await CX.click(`[data-act="pend-pos-ok"][data-id="${pendC.id}"]`);
+  ok(await espera(CX,c=>ETERNA.SIM.sessions[c].status==='paga',5000,cC),'offline: venda C confirmada no Caixa sem o agente');
+  await sleep(2500);ok(await CX.evaluate(()=>ETERNA.pvFila().length)===2,'offline: criar e pagar ficam na fila: '+await CX.evaluate(()=>ETERNA.pvFila().length));
   await subir();
-  ok(await espera(K,()=>ETERNA.pvFila().length===0,30000),'agente de volta: a fila sobe');
+  ok(await espera(CX,()=>ETERNA.pvFila().length===0,30000),'agente de volta: a fila sobe');
   await K.reload();await K.waitForTimeout(6000);
-  const evC=JSON.parse(sql('vendas.db',`select count(*) from evento where venda='${pendC.id}'`))[0][0];ok(evC===1,'venda offline gravada uma vez só: '+evC);
+  const evC=JSON.parse(sql('vendas.db',`select count(*) from evento where venda='${pendC.id}'`))[0][0];ok(evC===2,'venda offline gravada uma vez só (criar e pagar): '+evC);
 
   // 8. sessão vencida no servidor: aviso, entrada de novo, fila preservada (aparelho sem posto)
   sql('estado.db','delete from sessao_login');await AD.reload();await AD.waitForTimeout(1500);
@@ -318,19 +323,20 @@ s=ThreadingHTTPServer(('127.0.0.1',int(sys.argv[2])),P);x=ssl.SSLContext(ssl.PRO
     const temY=await espera(HK,()=>Object.entries(ETERNA.SIM.sessions).some(([c,s])=>/^LP/.test(c)&&s.status!=='paga'&&s.status!=='aguardando'),20000);ok(temY,'Checkout https recebe sessões');
     const cY2=cY||await HK.evaluate(()=>Object.entries(ETERNA.SIM.sessions).find(([c,s])=>/^LP/.test(c)&&s.status!=='paga'&&s.status!=='aguardando')[0]);
     await HK.evaluate(()=>{ETERNA.state.cam.busy=true;});await HK.click('[data-act="kiosk-emerg"]');await HK.fill('#kcode',cY2);await HK.click('[data-act="kiosk-go"]');await HK.waitForTimeout(300);
-    await HK.click('[data-act="kiosk-tog"][data-i="0"]').catch(async()=>{await HK.click('[data-act="kiosk-ok"]');});await HK.evaluate(()=>document.querySelector('[data-act="loja-cart"]:not([disabled])').click());
-    await HK.click('[data-act="loja-paym"][data-m="pix"]');await HK.click('[data-act="loja-checkout"]');ok(await espera(HK,()=>ETERNA.state.kiosk.step==='done',5000),'venda pelo Checkout https');
-    const pY=await HK.evaluate(c=>ETERNA.SIM.caixaDin.find(r=>r.card===c&&r.estado==='aguardando'),cY2);ok(await espera(HK,()=>ETERNA.pvFila().length===0,15000),'venda https sobe ao servidor');
-    const posY=JSON.parse(sql('vendas.db',`select count(*) from evento where venda='${pY&&pY.id}'`))[0][0];ok(posY===1,'evento da venda https gravado: '+posY);
+    await marcaEPede(HK,1);ok(await espera(HK,()=>ETERNA.state.kiosk.step==='done',5000),'venda pelo Checkout https');
+    const pY=await HK.evaluate(c=>ETERNA.SIM.caixaDin.find(r=>r.card===c&&r.estado==='escolha'),cY2);ok(!!pY,'pedido https sem pacote no Checkout');
     const img=await HK.evaluate(async()=>{const id=Object.keys(ETERNA.UP).find(k=>/^ag_/.test(k));if(!id)return null;const r=await fetch(ETERNA.UP[id].src.replace('/thumb/','/file/'),{credentials:'same-origin'});return {u:ETERNA.UP[id].src.slice(0,30),s:r.status};});
     ok(img&&img.s===200&&/^https:\/\/posto\.eterna\.photo/.test(img.u),'fotos do Checkout https vêm da própria origem: '+J(img));
     await HK.screenshot({path:path.join(PR,'op-https-checkout.png')});
     // Caixa que acabou de entrar confirma na hora (antes de a aba carregar as sessões): a galeria da venda precisa ser publicada
     const HC=vigia(await cH.newPage(),'https-caixa');await HC.goto(H+'/index.html');await HC.waitForTimeout(300);ok(await entrar(HC,'venda.teste',SENHA+'v'),'vendedor entra por https');
-    ok(await espera(HC,id=>!!document.querySelector(`[data-act="pend-pos"][data-id="${id}"]`),10000,pY.id),'pendência da venda https no Caixa');
+    ok(await espera(HC,id=>!!document.querySelector(`[data-act="pend-pkg"][data-id="${id}"]`),10000,pY.id),'pendência da venda https no Caixa');
     const carregada=await HC.evaluate(c=>{const x=ETERNA.demoSessions().find(s=>s.card===c);return x?x.photos.length:0;},cY2);
+    await escolhePosto(HC,pY.id,'pix');
     await HC.click(`[data-act="pend-pos"][data-id="${pY.id}"]`);await HC.click(`[data-act="pend-pos-ok"][data-id="${pY.id}"]`);
     ok(await espera(HC,c=>ETERNA.SIM.sessions[c].status==='paga',5000,cY2),'venda https paga');
+    ok(await espera(HC,()=>ETERNA.pvFila().length===0,15000),'venda https sobe ao servidor');
+    const posY=JSON.parse(sql('vendas.db',`select count(*) from evento where venda='${pY&&pY.id}'`))[0][0];ok(posY===2,'eventos da venda https gravados (criar e pagar): '+posY);
     const tokY=await HC.evaluate(c=>ETERNA.SIM.sessions[c].galVenda||ETERNA.galDaSessao(c),cY2);let gY=null;for(let i=0;i<60;i++){gY=await req(PORTA,'GET','/g/'+tokY+'/info');if(gY.s===200)break;await sleep(500);}
     ok(gY.s===200,'galeria publicada mesmo com o Caixa confirmando logo depois de entrar (fotos da sessão na aba no clique: '+carregada+'): '+gY.s+' · '+J(await HC.evaluate(t=>({fotos:(ETERNA.SIM.galerias[t]||{}).fotos,fila:(ETERNA.SIM.galFila||[]).find(x=>x.token===t)}),tokY)));
     // outro endereço (eterna.photo pública) não fala com o agente

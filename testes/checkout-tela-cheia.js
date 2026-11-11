@@ -389,10 +389,11 @@ const venda=async(pg,vend,antigo,o)=>{const card=cardsIA[0];await pg.goto(pg.url
   const conf=await vend.evaluate(([id,o,antigo])=>{ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();if(!antigo){ETERNA.pendEscolher(id,{pkg:o.pkg});ETERNA.pendEscolher(id,{meio:o.meio});}return ETERNA.pendConfirmar(id,{ref:o.meio==='dinheiro'?'':'123456'});},[id,o,antigo]);await pg.waitForTimeout(500);
   if(!conf)return {erro:'não confirmou'};
   return pg.evaluate(([id,card])=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=S.caixaDin.find(x=>x.id===id);const s=S.sessions[card];const fila=JSON.parse(localStorage.getItem('eterna.ponto.fila.v1')||'[]').filter(e=>e.venda===id);
+    // idiomas-base: 'tempos' (marcas de tempo da venda para o BI, Ronaldo) não existe na v94; fica fora da comparação
     const tira=(o,ks)=>{o=JSON.parse(JSON.stringify(o||{}));ks.forEach(k=>delete o[k]);return o;};
-    return {rec:tira(r,['id','criada','fechada','token','codigo','t0','escolha','pkg','nSes','lang','pvCriado','saleNo']),saleNo:String(r.saleNo).replace(/\d+$/,''),
-      ses:tira(s,['paidAt','caixaEm','vendaId','galVenda','pick','pag','impressao','din','saleNo']),pag:tira(s.pag,['em']),
-      evs:fila.map(e=>({tipo:e.tipo,seq:e.seq,por:e.por,dados:tira(e.dados,['saleNo','galeria','t0'])})),criarAntesDoPagar:fila.length===2&&fila[0].tipo==='criar'&&Date.parse(fila[0].em)<=Date.parse(fila[1].em)};},[id,card]);};
+    return {rec:tira(r,['id','criada','fechada','token','codigo','t0','escolha','pkg','nSes','lang','pvCriado','saleNo','tempos']),saleNo:String(r.saleNo).replace(/\d+$/,''),
+      ses:tira(s,['paidAt','caixaEm','vendaId','galVenda','pick','pag','impressao','din','saleNo','tempos']),pag:tira(s.pag,['em']),
+      evs:fila.map(e=>({tipo:e.tipo,seq:e.seq,por:e.por,dados:tira(e.dados,['saleNo','galeria','t0','tempos'])})),criarAntesDoPagar:fila.length===2&&fila[0].tipo==='criar'&&Date.parse(fila[0].em)<=Date.parse(fila[1].em)};},[id,card]);};
 // app da v94 servido de uma pasta temporária (outra origem: outro localStorage)
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v94-'));fs.writeFileSync(path.join(dir,'index.html'),execFileSync('git',['show','b92ea0c:index.html'],{cwd:RAIZ,maxBuffer:64*1024*1024}));
 for(const d of ['img','sprites','vendor'])fs.symlinkSync(path.join(RAIZ,d),path.join(dir,d));

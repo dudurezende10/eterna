@@ -3,13 +3,17 @@
 // Revisão: só em aparelho configurado como posto (fora dele o selo é só informação); alerta de troca com mais de 60 sobrando; saveSim que falha desfaz tudo.
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
+const entrarTeste=require('./_entrar');
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
 async function nova(b){const ctx=await b.newContext({viewport:{width:1366,height:1000}});const pg=await ctx.newPage();pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(e.message));return {ctx,pg};}
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.reload();await pg.waitForTimeout(350);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(400);return pg.evaluate(()=>!!ETERNA.state.user);}
+  return entrarTeste(pg,email);} // idiomas-base: entrada com usuário e senha (rotas /auth/* respondidas no navegador)
 const estoque=pg=>pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.sim.v1')).stock);
 const pôr=(pg,v)=>pg.evaluate(v=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));Object.assign(S.stock,v);localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.simFresh();ETERNA.render();},v);
-const posto=(pg,nome)=>pg.evaluate(n=>{localStorage.setItem('eterna.posto.v1',JSON.stringify({id:'P-teste',nome:n}));ETERNA.state.posto.disp={id:'P-teste'};ETERNA.render();},nome);
+// o posto vem do pareamento (idiomas-base): o servidor responde /postos/eu com o posto deste aparelho e postoCarregar preenche state.posto
+const posto=async(pg,nome)=>{await pg.unroute('**/postos/eu').catch(()=>{});
+  await pg.route('**/postos/eu',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,posto:{id:'p_teste1',nome,num:1}})}));
+  await pg.evaluate(async()=>{const a=ETERNA.state.agent;a.url=location.origin;await ETERNA.postoCarregar();ETERNA.render();});};
 const alertaRolo=pg=>pg.evaluate(()=>ETERNA.alerts().filter(a=>a.sev==='bad'&&/Rolo trocado com/.test(a.t)));
 const audit=pg=>pg.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='rolo_troca'));
 const toast=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent);
