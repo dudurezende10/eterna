@@ -158,6 +158,15 @@ try{
     await escolher(pg,[arq('m1.jpg'),arq('m2.jpg')]);await fim(pg);
     ok(M.posts.length===2&&M.posts.every(p=>p.quem==='samuel'),'13: '+email+' escolhendo Samuel: '+J(M.posts));
     const au=await pg.evaluate(()=>ETERNA.auditRead().find(e=>e.acao==='fotos_envio_manual'));ok(au&&au.alvo==='samuel'&&au.por===email&&au.mudancas[0].para===2,'14: auditLog com quem mandou e para quem: '+J(au));
+    // v97: Admin ou Supervisora com fotógrafo vinculado continua escolhendo no seletor: as fotos entram no nome escolhido
+    {M.posts.length=0;await pg.evaluate(()=>{ETERNA.state.user.key='carlos';ETERNA.render();});await pg.waitForTimeout(120);
+      ok(!!(await pg.$('#main select[data-act="imp-key"]'))&&await pg.evaluate(()=>ETERNA.impPreso()===null),'13: '+email+' vinculada ao Carlos continua com o seletor');
+      await pg.selectOption('#main select[data-act="imp-key"]','samuel');await pg.waitForTimeout(120);
+      await escolher(pg,[arq('v1.jpg')]);await fim(pg);
+      ok(M.posts.length===1&&M.posts[0].quem==='samuel','13: '+email+' vinculada ao Carlos, escolhendo Samuel, manda como Samuel: '+J(M.posts.map(p=>p.quem)));
+      await pg.selectOption('#main select[data-act="imp-key"]','todos');await pg.waitForTimeout(120);
+      ok(await pg.evaluate(()=>ETERNA.envioPode().motivo)==='quem','13: '+email+' vinculada, com Todos, não manda no próprio nome');
+      await pg.evaluate(()=>{delete ETERNA.state.user.key;ETERNA.render();});await pg.waitForTimeout(80);}
     if(/supervisor/.test(email)){
       // sem set.c (usuário personalizado): sem link
       await pg.evaluate(()=>{ETERNA.state.user.perms.set.c=false;ETERNA.render();});await pg.waitForTimeout(80);

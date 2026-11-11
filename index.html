@@ -3885,7 +3885,7 @@ const ENVIO_MOTIVO={nao_foto:'não era foto',grande:'acima de 60 MB',cortada:'ch
 const ENVIO_NAO={perm:'Sem permissão para enviar fotos',agente:'O computador do ponto não está respondendo. Chame a TI.',origem:'O computador do ponto não está respondendo. Chame a TI.',
   antigo:'O computador do ponto precisa ser atualizado para receber fotos por aqui. Chame a TI.',quem:'Escolha o fotógrafo acima.'};
 // dono da foto: o fotógrafo logado, sem escolha; Admin e Supervisora escolhem no seletor (nunca "Todos")
-function envioQuem(){const k=fotoKey();if(k)return k;const s=state.imp.key;return s&&s!=='todos'&&P[s]&&P[s].human?s:'';}
+function envioQuem(){const k=impPreso();if(k)return k; /* só o fotógrafo fica preso ao próprio nome; Admin e Supervisora com fotógrafo vinculado escolhem no seletor */const s=state.imp.key;return s&&s!=='todos'&&P[s]&&P[s].human?s:'';}
 function envioPode(){const a=state.agent;if(!can('set','c'))return {ok:false,motivo:'perm'};if(!a.on)return {ok:false,motivo:'agente'};
   if(!fotosNoServidor())return {ok:false,motivo:'origem'};if(!a.envio)return {ok:false,motivo:'antigo'};if(!envioQuem())return {ok:false,motivo:'quem'};return {ok:true};}
 function envioResumo(e){const x=e.erros||{};const pl=(n,s,p)=>n+' '+(n===1?s:p);const out=[];
