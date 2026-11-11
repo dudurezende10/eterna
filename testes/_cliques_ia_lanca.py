@@ -9,6 +9,8 @@ sp = importlib.util.spec_from_file_location("eterna_agente", sys.argv[1])
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
 m.REC_FALSO_SEG = float(sys.argv[2])
+if os.environ.get("ETERNA_TESTE_MONT_MEM_GB"):       # máquina de teste dividida: memória livre mínima para montar
+    m.MONT_MEM_MIN_GB = float(os.environ["ETERNA_TESTE_MONT_MEM_GB"])
 _fazer = m.rec_fazer
 
 

@@ -1434,7 +1434,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
     # e a galeria que tem alguma delas não é encerrada (só perde as fotos apagadas)
     # e a foto ou a base de montagem de venda paga no balcão fica mesmo antes de a galeria ser publicada (vendas.db)
     try:
-        pagas = lgpd_vendas_pagas()
+        pagas = lgpd_vendas_pagas() | mont_bases_vendidas()   # a base de montagem vendida no servidor também fica
     except Exception as ex:
         return lgpd_recusa("não deu para conferir as vendas pagas (%s)" % type(ex).__name__, quem)
     do_cli = lambda m: any(isinstance(f, dict) and (f.get("direito") in ("comprada", "cortesia") or pid_lib(str(f.get("id") or "")) in pagas)
@@ -1493,6 +1493,11 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             except Exception as ex:
                 falhas.append("galeria: " + str(ex)[:80])
     preservadas = len(guardadas)
+    for pid in guardadas:                       # a foto fica, mas as montagens dela que o cliente não comprou saem do servidor
+        try:
+            mont_apagar_nao_vendidas(pid)
+        except Exception as ex:
+            falhas.append("montagem: " + type(ex).__name__)
     for pid in alvo:
         with lock:
             e = lib.pop(pid, None)
@@ -3833,7 +3838,8 @@ def rec_ia_loop():
 # ~/Eterna/montagens/<AAAA-MM-DD>/<mid>.jpg e <mid>_p.jpg (pasta 700, arquivo 600), com mid = 32 hex sorteados aqui: nenhum
 # pid, fundo ou código de sessão em nome de arquivo. Índice em ~/Eterna/ponto/montagens.db (entra no backup; os arquivos
 # não). A fila é o próprio banco (estado 'fila', por prioridade e ordem de entrada): sobrevive ao reinício.
-# Desligada por padrão: liga com config/montagem {"ligada": true} no estado.db (ou ETERNA_MONTAGEM=1, sem documento).
+# Desligada por padrão: liga com config/montagem {"ligada": true} no estado.db. ETERNA_MONTAGEM=1 (simulação) liga a montagem e
+# a exibição no Checkout por cima da config gravada; sem a variável, vale a config.
 # Nunca pegar lock, sess_lock e mont_lock juntos (regra do ff_lock).
 MONTAGENS = os.path.join(HOME, "montagens")
 MONT_DB = os.path.join(HOME, "ponto", "montagens.db")
@@ -3902,11 +3908,13 @@ def montagem_valida(j):
 
 def mont_cfg():
     """{"ligada", "checkout", "fundos"} do estado.db (config/montagem e config/fundos), relido a cada 3 s. Sem documento:
-    ETERNA_MONTAGEM=1 liga (padrão desligada) e os fundos são os 5 do padrão. Nunca chamar com o sess_lock na mão."""
+    padrão desligada e os fundos são os 5 do padrão. ETERNA_MONTAGEM=1 (simulação): "ligada" e "checkout" verdadeiros por cima
+    do documento gravado (que não é alterado); sem a variável vale o documento. Nunca chamar com o sess_lock na mão."""
     agora = time.time()
     if agora - _mont_cfg["t"] < 3 and _mont_cfg["v"] is not None:
         return _mont_cfg["v"]
-    v = {"ligada": os.environ.get("ETERNA_MONTAGEM") == "1", "checkout": False, "fundos": list(MONT_FUNDOS_PADRAO)}
+    forcada = os.environ.get("ETERNA_MONTAGEM") == "1"
+    v = {"ligada": forcada, "checkout": forcada, "fundos": list(MONT_FUNDOS_PADRAO)}
     try:
         if os.path.exists(ESTADO_DB):
             with estado_lock:
@@ -3917,7 +3925,7 @@ def mont_cfg():
                     db.close()
             mo = montagem_valida(json.loads(rs["montagem"])) if rs.get("montagem") else None
             fu = fundos_valida(json.loads(rs["fundos"])) if rs.get("fundos") else None
-            if mo:
+            if mo and not forcada:
                 v.update(ligada=mo["ligada"], checkout=mo["checkout"])
             if fu:
                 v["fundos"] = fu["ativos"]
@@ -4910,6 +4918,34 @@ def mont_apagar_base(pid):
             except (OSError, ValueError):
                 pass
     return n
+
+
+def mont_bases_vendidas():
+    """Bases (id da biblioteca) com montagem vendida guardada no servidor. Erro de leitura sobe para quem chama."""
+    if not os.path.exists(MONT_DB):
+        return set()
+    return {r["base"] for r in mont_ler("where vendida is not null and estado != 'apagada'")}
+
+
+def mont_apagar_nao_vendidas(pid):
+    """LGPD com a base preservada (foto comprada, cortesia ou base de montagem paga): as montagens NÃO vendidas dela saem na
+    hora (arquivos); a linha fica 'apagada', para a recuperação não refazer. A vendida fica. A que está em andamento é do
+    trabalhador (sai na limpeza de 3 dias). Devolve quantas apagou."""
+    if not os.path.exists(MONT_DB):
+        return 0
+    agora = time.time()
+    with mont_lock:
+        db = mont_db()
+        try:
+            rs = db.execute("select dia, mid from montagem where base = ? and vendida is null and estado in ('pronta', 'fila', 'erro')", (pid,)).fetchall()
+            for dia, mid in rs:
+                _mont_apaga_arquivos(dia, mid)
+                db.execute("update montagem set estado = 'apagada', apagada = ? where mid = ?", (agora, mid))
+            db.commit()
+        finally:
+            db.close()
+        mont["st"] = (0.0, None)
+    return len(rs)
 
 
 def mont_status():

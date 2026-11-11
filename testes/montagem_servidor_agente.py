@@ -465,10 +465,11 @@ with Image.open(m.REPO.abrir(TOK, mid_v, "original")) as im:
     ok(max(im.size) == 3000 and im.format == "JPEG" and not im.getexif(), "46/D3: download em JPEG de 3000 px, sem EXIF: %r" % (im.size,))
 with Image.open(m.mont_arquivos(HOJE, mid_v)[0]) as im:
     ok(max(im.size) == 5000, "D3: o arquivo de 5000 px continua guardado no servidor para a impressão")
-# 45: a montagem comprada aparece com qualquer acesso dado, mesmo sem o rosto bater nela; a foto fora do acesso não
+# 45: a montagem comprada aparece com qualquer acesso dado, mesmo sem o rosto bater nela. Desde a v96.1 (release/v97) as
+# outras compradas da venda também aparecem quando a selfie bateu em pelo menos uma foto (aqui as 2 fotos são compradas).
 go = m.galeria_obj(TOK, mg_, {"ag_" + comuns[0]})
 fa = [f for f in go["fotos"] if f.get("t") == "ai"]
-ok(len(go["fotos"]) == 2 and len(fa) == 1 and fa[0]["pid"] == mid_v and fa[0]["bg"] == "tunel" and fa[0]["direito"] == "comprada" and fa[0]["original"] and fa[0]["chegando"] is False,
+ok(len(go["fotos"]) == 3 and all(f.get("direito") == "comprada" for f in go["fotos"]) and len(fa) == 1 and fa[0]["pid"] == mid_v and fa[0]["bg"] == "tunel" and fa[0]["direito"] == "comprada" and fa[0]["original"] and fa[0]["chegando"] is False,
    "45: galeria_obj devolve a montagem comprada (t, bg, original) sem depender do rosto: %r" % [(f["pid"][:8], f.get("t")) for f in go["fotos"]])
 st_, _, corpo_, hd = H("GET", fa[0]["original"])
 ok(st_ == 200 and corpo_[:2] == b"\xff\xd8", "41: a montagem baixa pelo link assinado da galeria: %r" % st_)
@@ -540,9 +541,21 @@ ok(mid44 not in [f["id"] for f in m.REPO.ler_manifesto(TOK)["fotos"]] and mid_v 
 # evento repetido (idem igual) não muda nada; venda sem montagem não toca o índice
 H("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": [evento("V-E4-1", "pagar", 2, {"meio": "pix"}), evento("V-E4-3", "criar", 1, {"card": card_g, "selected": ["ag_" + comuns[0]]}), evento("V-E4-3", "pagar", 2, {})]})
 ok(len(linhas("where vendida is not null")) == 1, "evento repetido e venda sem montagem não mexem nas vendidas")
-# LGPD da base de uma montagem vendida: some do servidor e da galeria
+# LGPD (regra da release v97): a base de montagem PAGA fica com o cliente. A montagem vendida fica (índice, arquivo e galeria);
+# as montagens não vendidas da mesma base saem do servidor na hora e a recuperação não as refaz.
 base_v = b0[1]
-m.lgpd_excluir([base_v], [], quem="teste")
+nv_ = [r for r in linhas("where base = ? and vendida is null and estado = 'pronta'", (base_v,))]
+rl_ = m.lgpd_excluir([base_v], [], quem="teste")
+mg_ = m.REPO.ler_manifesto(TOK)
+ok(rl_["preservadas"] == 1 and rl_["fotos"] == 0 and base_v in m.lib and linhas("where mid = ?", (mid_v,))[0]["estado"] == "pronta"
+   and os.path.isfile(m.mont_arquivos(HOJE, mid_v)[0]) and mid_v in [f["id"] for f in mg_["fotos"]],
+   "LGPD: a montagem paga fica no servidor e na galeria: %r" % rl_)
+m.mont_recuperar()
+ok(nv_ and all(linhas("where mid = ?", (r["mid"],))[0]["estado"] == "apagada" and not any(os.path.exists(f) for f in m.mont_arquivos(r["dia"], r["mid"])) for r in nv_),
+   "LGPD: as montagens não vendidas da base preservada saem (arquivo apagado, linha apagada) e não voltam na recuperação: %r" % [(r["fundo"], linhas("where mid = ?", (r["mid"],))[0]["estado"]) for r in nv_])
+ok(m.mont_bases_vendidas() >= {base_v}, "LGPD: a base com montagem vendida no servidor conta como do cliente")
+# a foto que sai de verdade (mont_apagar_base, chamado pelo lgpd_excluir para cada foto apagada): tudo dela some, também da galeria
+m.mont_apagar_base(base_v)
 mg_ = m.REPO.ler_manifesto(TOK)
 ok(not linhas("where base = ?", (base_v,)) and mid_v not in [f["id"] for f in mg_["fotos"]] and not m.REPO.existe(TOK, mid_v, "original") and not m.REPO.existe(TOK, mid_v, "vitrine"),
    "19/E4: LGPD da base tira a montagem vendida do índice, do manifesto e dos arquivos da galeria")

@@ -23,7 +23,7 @@ conta(){ # $1 = nome, $2 = código de saída, $3 = saída
   elif echo "$LINHA" | grep -q "^FALHA"; then FALHAS=$((FALHAS+1)); fi
 }
 # v91: testes do agente que rodam sozinhos (HOME temporário; os outros *_agente.py são chamados pelos .js)
-for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/estatisticas_agente.py testes/v92_testador_agente.py testes/cliques_ia_agente.py testes/cliques_ia_e2e_agente.py testes/cliques_ia_fila_limpeza_agente.py testes/app_offline_agente.py testes/envio_manual_agente.py testes/recorte_birefnet_agente.py testes/visitas_agente.py testes/instalar_recorte.py testes/agenda_agente.py testes/montagens_agente.py testes/galeria_teto_agente.py testes/lgpd_compradas_agente.py testes/montagem_servidor_agente.py; do
+for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/estatisticas_agente.py testes/v92_testador_agente.py testes/cliques_ia_agente.py testes/cliques_ia_e2e_agente.py testes/cliques_ia_fila_limpeza_agente.py testes/app_offline_agente.py testes/envio_manual_agente.py testes/recorte_birefnet_agente.py testes/visitas_agente.py testes/instalar_recorte.py testes/agenda_agente.py testes/montagens_agente.py testes/galeria_teto_agente.py testes/lgpd_compradas_agente.py testes/montagem_servidor_agente.py testes/montagem_duas_cameras_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   conta "$(basename $t)" $RC "$OUT"
 done
