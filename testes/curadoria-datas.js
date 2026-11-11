@@ -6,9 +6,8 @@ const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.strin
 // fuso do venue por padrão: a sessão local com date:'hoje' é datada pelo dia do navegador; agora = relógio parado nessa hora
 async function nova(b,w,h,tz,agora){const ctx=await b.newContext({viewport:{width:w,height:h},timezoneId:tz||'America/Sao_Paulo'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();pg.setDefaultTimeout(8000);if(agora)await pg.clock.setFixedTime(new Date(agora));
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text())});
-  await pg.goto(U,{waitUntil:'domcontentloaded',timeout:60000});await pg.waitForSelector('[data-act="login-email"]');await pg.waitForTimeout(200);
-  await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(400);return {ctx,pg};}
+  await pg.goto(U,{waitUntil:'domcontentloaded',timeout:60000});await pg.waitForSelector('[data-act="login-usuario"]');await pg.waitForTimeout(200);
+  await require('./_entrar')(pg,'eduardo@eduardorezende.com');/* v93: usuário e senha */return {ctx,pg};}
 // sessões simuladas em dias diferentes (dia do venue, o mesmo Hoje da tela e do Painel): hoje (2), ontem, hoje-6, hoje-7, hoje-29 e hoje-30
 const semear=pg=>pg.evaluate(()=>{const E=ETERNA;const px='data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
   const [y,m,d0]=E.venueToday().split('-').map(Number);const dia=n=>new Date(Date.UTC(y,m-1,d0-n)).toISOString().slice(0,10);
