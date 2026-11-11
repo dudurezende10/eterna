@@ -1291,7 +1291,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.6 · 11/11 21:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.7 · 11/11 22:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5387,28 +5387,28 @@ async function impFilaPoll(){if(state.view!=='impfila'){clearInterval(impFilaTim
 // mesmo visual da Fila do fotógrafo (v87): nome grande, linha de contexto, linha de horário e miniaturas das fotos
 function impMiniOn(){try{return localStorage.getItem('eterna-if-mini-tv')==='1'}catch(e){return false}}
 function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000);setTimeout(impFilaPoll,0);}
-  const F=state.impFila;const agora=F?F.agora:Date.now()/1000;const ps=(F&&F.pedidos)||[];const imps=(F&&F.impressoras&&F.impressoras.length)?F.impressoras:[(F&&F.impressora)||'Impressora'];
-  const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?'agora':`há ${m} min`;};const hm=t=>hhmm(new Date(t*1000));
+  const F=state.impFila;const agora=F?F.agora:Date.now()/1000;const ps=(F&&F.pedidos)||[];const imps=(F&&F.impressoras&&F.impressoras.length)?F.impressoras:[(F&&F.impressora)||TE('if_impressora')];
+  const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?TE('agora'):TE('ha_min',m);};const hm=t=>hhmm(new Date(t*1000));
   const fila=ps.filter(p=>p.estado==='na_fila'),agoraP=ps.filter(p=>p.estado==='imprimindo'),prontas=ps.filter(p=>p.estado==='impresso').sort((a,b)=>b.fim-a.fim).slice(0,12),erros=ps.filter(p=>p.estado==='erro'&&!ps.some(x=>x.id>p.id&&x.venda===p.venda&&x.estado!=='cancelado')).sort((a,b)=>b.fim-a.fim).slice(0,4);const motivoErro=e=>{const m=String(e).match(/ERRO\s+(?:\S+\.jpg:\s*)?(.*)$/);return m?m[1]:String(e);};
-  const est=(F&&F.estados)||{};const off=!!state.impFilaErro;const estPill=n=>{const e=est[n];if(!e)return '';const c=e.estado==='erro'?'bad':e.estado==='imprimindo'?'warn':off?'neutral':'good'; /* v94 (C): sem conexão, nada verde */return `<span class="pill ${c}">${esc(n)} · ${e.estado==='erro'?esc(e.motivo||'parada'):e.estado}</span>`;};
+  const est=(F&&F.estados)||{};const off=!!state.impFilaErro;const estPill=n=>{const e=est[n];if(!e)return '';const c=e.estado==='erro'?'bad':e.estado==='imprimindo'?'warn':off?'neutral':'good'; /* v94 (C): sem conexão, nada verde */return `<span class="pill ${c}">${esc(n)} · ${e.estado==='erro'?esc(e.motivo||TE('if_parada')):esc(TEk('ifst_'+e.estado,e.estado))}</span>`;};
   // controle (fora da tela cheia): cancelar o que espera ou imprime; reimprimir o que saiu, o que faltou ou tudo
-  const acts=p=>{const b=(a,t)=>`<button class="btn" data-act="if-acao" data-a="${a}" data-id="${p.id}">${t}</button>`;if(p.estado==='na_fila'||p.estado==='imprimindo')return `<div class="if-acts">${b('cancelar','Cancelar')}</div>`;if(p.feitas<p.fotos&&p.feitas>0)return `<div class="if-acts">${b('faltantes',p.fotos-p.feitas===1?'Imprimir a que faltou':'Imprimir as '+(p.fotos-p.feitas)+' que faltaram')}${b('reimprimir','Reimprimir tudo')}</div>`;return `<div class="if-acts">${b('reimprimir','Reimprimir')}</div>`;};
+  const acts=p=>{const b=(a,t)=>`<button class="btn" data-act="if-acao" data-a="${a}" data-id="${p.id}">${t}</button>`;if(p.estado==='na_fila'||p.estado==='imprimindo')return `<div class="if-acts">${b('cancelar',TE('cancelar'))}</div>`;if(p.feitas<p.fotos&&p.feitas>0)return `<div class="if-acts">${b('faltantes',TE('if_faltaram',p.fotos-p.feitas))}${b('reimprimir',TE('if_reimp_tudo'))}</div>`;return `<div class="if-acts">${b('reimprimir',TE('imp_reimprimir'))}</div>`;};
   const aviso=p=>p.aviso?`<div class="if-aviso" role="alert">${esc(p.aviso)}</div>`:'';
   const espera=fila.reduce((a,p)=>a+p.fotos,0)+agoraP.reduce((a,p)=>a+p.fotos-p.feitas,0);const minEsp=Math.ceil(espera*14/60/Math.max(1,imps.length));
   const tv=document.body.classList.contains('if-tv');const mini=!tv||impMiniOn();
   const ctx=p=>{const a=[p.posto,p.vendedor&&p.vendedor.split(' ')[0]].filter(Boolean).map(esc).join(' · ');return a?`(${a})`:'';};
-  const fotos=n=>`${n} ${n===1?'foto':'fotos'}`;
+  const fotos=n=>TE('n_fotos',n);
   const thumbs=p=>mini?`<div class="if-thumbs">${Array.from({length:Math.min(p.fotos,12)},(_,i)=>`<span class="if-th ${i<p.feitas?'feita':''}"><img src="${esc(state.agent.url)}/impressao/miniatura?id=${p.id}&n=${i}" alt="" loading="lazy" onerror="this.remove()">${i<p.feitas?ICO.ok:''}</span>`).join('')}</div>`:'';
   const card=(p,cls,linha2,extra)=>`<div class="if-card ${cls}"><div class="if-num">${esc(p.venda)}</div>${ctx(p)?`<div class="if-ctx">${ctx(p)}</div>`:''}<div class="if-meta">${linha2}</div>${extra||''}</div>`;
-  return `<div class="if-wrap"><div class="if-head"><div><div class="eyebrow">${imps.length>1?imps.length+' impressoras · '+imps.map(esc).join(', '):esc(imps[0])}</div><h1>Fila de impressão</h1></div>
-    <div class="row"><span class="if-imps">${imps.map(estPill).join('')}</span>${off?'':`<span class="pill ${espera?'warn':'good'}">${espera?`${fotos(espera)} na fila · cerca de ${minEsp} min`:'Tudo impresso'}</span>`}<button class="btn" data-act="impfila-mini">Miniaturas na tela cheia: ${impMiniOn()?'ligadas':'desligadas'}</button><button class="btn" data-act="impfila-tv">${tv?'Sair da tela cheia':'Tela cheia'}</button></div></div>
+  return `<div class="if-wrap"><div class="if-head"><div><div class="eyebrow">${imps.length>1?TE('if_n_imps',imps.length)+' · '+imps.map(esc).join(', '):esc(imps[0])}</div><h1>${TE('v_impfila')}</h1></div>
+    <div class="row"><span class="if-imps">${imps.map(estPill).join('')}</span>${off?'':`<span class="pill ${espera?'warn':'good'}">${espera?TE('if_espera',fotos(espera),minEsp):TE('if_tudo_imp')}</span>`}<button class="btn" data-act="impfila-mini">${TE('if_mini_tc',impMiniOn())}</button><button class="btn" data-act="impfila-tv">${tv?TE('if_sair_tc'):TE('if_tc')}</button></div></div>
   ${off?faixaConexao({estado:demoOn()?'demo':'off',onde:'servidor de impressão',ultimo:state.impFilaOk}):''}
-  ${erros.length?`<section class="if-erros"><h2>Com erro <span class="if-cnt">${erros.length}</span></h2><div class="if-erros-l">${erros.map(p=>card(p,'err',`${p.feitas} de ${p.fotos} saíram${p.erro?' · '+esc(motivoErro(p.erro).slice(0,90)):''}`,acts(p))).join('')}</div></section>`:''}
+  ${erros.length?`<section class="if-erros"><h2>${TE('if_com_erro')} <span class="if-cnt">${erros.length}</span></h2><div class="if-erros-l">${erros.map(p=>card(p,'err',`${TE('if_sairam',p.feitas,p.fotos)}${p.erro?' · '+esc(motivoErro(p.erro).slice(0,90)):''}`,acts(p))).join('')}</div></section>`:''}
   <div class="if-board">
-    <section class="if-col"><h2>Na fila <span class="if-cnt">${fila.length}</span></h2><div class="if-list">${fila.map((p,i)=>card(p,'fila',`pedido ${hm(p.criado)} · ${fotos(p.fotos)} · ${i===0?'próxima':i+1+'º'} · ${min(p.criado)}`,thumbs(p)+acts(p))).join('')||'<div class="if-vazio">Ninguém esperando</div>'}</div></section>
-    <section class="if-col agora"><h2>Imprimindo agora <span class="if-cnt">${agoraP.length}</span></h2><div class="if-list">${imps.map(n=>{const p=agoraP.find(x=>x.impressora===n)||(imps.length===1?agoraP[0]:null);
-        return `<div class="if-imp">${imps.length>1?`<div class="if-impn">${esc(n)}</div>`:''}${p?card(p,'imp',`início ${hm(p.inicio||p.criado)} · foto ${Math.min(p.feitas+1,p.fotos)} de ${p.fotos} · ${min(p.inicio||p.criado)}`,`${aviso(p)}<div class="if-prog"><i style="width:${Math.round(100*p.feitas/p.fotos)}%"></i></div>${thumbs(p)}${acts(p)}`):'<div class="if-vazio">Livre</div>'}</div>`;}).join('')}</div></section>
-    <section class="if-col pronta"><h2>Prontas · retirar <span class="if-cnt">${prontas.length}</span></h2><div class="if-list">${prontas.map(p=>card(p,'ok',`${imps.length>1&&p.impressora?'<b>'+esc(p.impressora)+'</b> · ':''}pronta ${hm(p.fim)} · ${fotos(p.fotos)} · ${min(p.fim)}`,acts(p))).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}</div></section>
+    <section class="if-col"><h2>${TE('if_na_fila_h')} <span class="if-cnt">${fila.length}</span></h2><div class="if-list">${fila.map((p,i)=>card(p,'fila',`${TE('if_pedido',hm(p.criado))} · ${fotos(p.fotos)} · ${i===0?TE('if_proxima'):TE('if_ordinal',i+1)} · ${min(p.criado)}`,thumbs(p)+acts(p))).join('')||`<div class="if-vazio">${TE('if_ninguem')}</div>`}</div></section>
+    <section class="if-col agora"><h2>${TE('if_imp_agora')} <span class="if-cnt">${agoraP.length}</span></h2><div class="if-list">${imps.map(n=>{const p=agoraP.find(x=>x.impressora===n)||(imps.length===1?agoraP[0]:null);
+        return `<div class="if-imp">${imps.length>1?`<div class="if-impn">${esc(n)}</div>`:''}${p?card(p,'imp',`${TE('if_inicio',hm(p.inicio||p.criado))} · ${TE('if_foto_de',Math.min(p.feitas+1,p.fotos),p.fotos)} · ${min(p.inicio||p.criado)}`,`${aviso(p)}<div class="if-prog"><i style="width:${Math.round(100*p.feitas/p.fotos)}%"></i></div>${thumbs(p)}${acts(p)}`):`<div class="if-vazio">${TE('if_livre')}</div>`}</div>`;}).join('')}</div></section>
+    <section class="if-col pronta"><h2>${TE('if_prontas')} <span class="if-cnt">${prontas.length}</span></h2><div class="if-list">${prontas.map(p=>card(p,'ok',`${imps.length>1&&p.impressora?'<b>'+esc(p.impressora)+'</b> · ':''}${TE('if_pronta',hm(p.fim))} · ${fotos(p.fotos)} · ${min(p.fim)}`,acts(p))).join('')||`<div class="if-vazio">${TE('if_nada_pronto')}</div>`}</div></section>
   </div></div>`;}
 // ---------- Fila do fotógrafo (v87) ----------
 // Painel de senhas das fotos chegando, por fotógrafo, calculado no agente (GET /fila-fotografo, a cada 2 s). Só leitura; tela da
@@ -5423,8 +5423,8 @@ async function fotoFilaPoll(){if(state.view!=='fotofila'){clearInterval(fotoFila
   if(state.view==='fotofila')render();}
 // ponto padrão (igual em todo navegador) quando a Escala não mandou a função do dia ao agente
 function ffPadrao(k){const p=DATA.points.find(x=>x.photographer===k&&x.kind!=='volante'&&x.kind!=='chroma');return p?{tipo:'campo',point:p.id}:null;}
-function ffOnde(f){if(!f||f.tipo==='folga')return 'sem ponto';if(f.tipo==='volante'){const m=VOL_MODES.find(x=>x[0]===f.modo)||VOL_MODES[2];return 'volante · '+m[1].toLowerCase();}
-  const p=DATA.points.find(x=>x.id===f.point);if(!p)return 'sem ponto';return (p.kind==='vestiario'?'set interno · ':'campo · ')+p.name;}
+function ffOnde(f){if(!f||f.tipo==='folga')return TE('ff_sem_ponto');if(f.tipo==='volante'){const m=VOL_MODES.find(x=>x[0]===f.modo)||VOL_MODES[2];return TE('ff_volante')+' · '+m[1].toLowerCase();}
+  const p=DATA.points.find(x=>x.id===f.point);if(!p)return TE('ff_sem_ponto');return (p.kind==='vestiario'?TE('ff_set'):TE('ff_campo'))+' · '+p.name;}
 // v87 (segurança B1): a escolha gravada neste aparelho vale; sem escolha, liga só para quem não é do caixa (sem venda/quiosque)
 // e com a janela fora de tela cheia (botão do app, F11, quiosque ou app instalado). Em qualquer outro caso, desligado.
 function ffTelaCheia(){try{return document.body.classList.contains('if-tv')||!!document.fullscreenElement||!!(window.matchMedia&&matchMedia('(display-mode: fullscreen)').matches)||(screen.height-window.innerHeight<2);}catch(e){return true;}}
@@ -5438,32 +5438,32 @@ function ffFuncaoEnviar(){const f=SIM.funcao;if(!f||f.date!==todayKey()||!state.
 function ffBootNovo(boot){try{if(!boot||localStorage.getItem('eterna.fotofila.boot')===String(boot))return false;localStorage.setItem('eterna.fotofila.boot',String(boot));return true;}catch(e){return false;}}
 // v93: estado das bases de IA do grupo: falta o Nº clique (aberto com menos fotos que a regra), ou ✓ por recorte pronto
 function ffIa(g,col){const ia=g&&g.ia;if(!ia||!(+ia.n>0)||ia.motivo)return '';const n=+g.n||0,N=Math.min(3,+ia.n);
-  if(col!=='pronta'&&n<N)return `<div class="ff-ia">Fundo IA: falta o ${n+1}º clique</div>`;const k=Math.max(0,Math.min(N,+ia.prontas||0));return `<div class="ff-ia">Fundo IA ${'✓'.repeat(k)}${'·'.repeat(N-k)}</div>`;}
+  if(col!=='pronta'&&n<N)return `<div class="ff-ia">${TE('ff_ia_falta',n+1)}</div>`;const k=Math.max(0,Math.min(N,+ia.prontas||0));return `<div class="ff-ia">${TE('ff_ia')} ${'✓'.repeat(k)}${'·'.repeat(N-k)}</div>`;}
 function vFotoFila(){if(!fotoFilaTimer){fotoFilaTimer=setInterval(fotoFilaPoll,2000);setTimeout(fotoFilaPoll,0);}
   const F=state.fotoFila;const agora=F?F.agora:Date.now()/1000;const gs=(F&&Array.isArray(F.grupos))?F.grupos:[];const tv=document.body.classList.contains('if-tv');const mini=ffMiniOn();
   const base=state.agent.url;const pidOk=p=>/^[0-9a-f]{6,40}$/.test(String(p||''));
-  const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?'agora':`há ${m} min`;};
-  const card=(g,col)=>{const k=g.fotografo;const nome=k?(P[k]?P[k].name:k):'Sem fotógrafo';const f=k?(g.funcao||ffPadrao(k)):null;const folga=!!(k&&g.funcao&&g.funcao.tipo==='folga');
+  const min=t=>{const m=Math.max(0,Math.round((agora-t)/60));return m<1?TE('agora'):TE('ha_min',m);};
+  const card=(g,col)=>{const k=g.fotografo;const nome=k?(P[k]?P[k].name:k):TE('ff_sem_fot');const f=k?(g.funcao||ffPadrao(k)):null;const folga=!!(k&&g.funcao&&g.funcao.tipo==='folga');
     const n=+g.n||0;const iap=(col!=='pronta'&&mini&&g.ia&&Array.isArray(g.ia.pids))?g.ia.pids.filter(pidOk).slice(0,3):[]; // v93: as bases de IA primeiro, com a marca
     const pids=(col!=='pronta'&&mini&&Array.isArray(g.pids))?g.pids.filter(p=>pidOk(p)&&!iap.includes(p)).slice(0,6-iap.length):[];
     return `<div class="if-card ff-card ${col==='pronta'?'ok':col==='subindo'?'imp':'fot'}${folga?' folga':''}"><div class="if-num ff-nome">${esc(nome)}${k?'':`<span class="ff-fonte"> · ${esc(g.fonte||'')}</span>`} <span class="ff-onde">(${esc(ffOnde(f))})</span></div>
-      <div class="if-meta">início ${g.inicio?hhmm(new Date(g.inicio*1000)):'--:--'} · ${n} ${n===1?'foto':'fotos'} · ${min(col==='pronta'?(g.pronta_em||g.ultima_chegada):g.inicio)}</div>${folga?'<div class="if-sub ff-alerta">De folga na Escala e mandando fotos</div>':''}${ffIa(g,col)}
-      ${iap.length+pids.length?`<div class="ff-thumbs">${iap.map(p=>`<span class="ff-iamk"><img loading="lazy" alt="Fundo IA" src="${esc(base)}/thumb/${p}"></span>`).join('')}${pids.map(p=>`<img loading="lazy" alt="" src="${esc(base)}/thumb/${p}">`).join('')}</div>`:''}</div>`;};
+      <div class="if-meta">${TE('if_inicio',g.inicio?hhmm(new Date(g.inicio*1000)):'--:--')} · ${TE('n_fotos',n)} · ${min(col==='pronta'?(g.pronta_em||g.ultima_chegada):g.inicio)}</div>${folga?`<div class="if-sub ff-alerta">${TE('ff_folga')}</div>`:''}${ffIa(g,col)}
+      ${iap.length+pids.length?`<div class="ff-thumbs">${iap.map(p=>`<span class="ff-iamk"><img loading="lazy" alt="${TE('ff_ia')}" src="${esc(base)}/thumb/${p}"></span>`).join('')}${pids.map(p=>`<img loading="lazy" alt="" src="${esc(base)}/thumb/${p}">`).join('')}</div>`:''}</div>`;};
   const fot=gs.filter(g=>g.estado==='fotografando').sort((a,b)=>b.inicio-a.inicio),sub=gs.filter(g=>g.estado==='subindo').sort((a,b)=>b.inicio-a.inicio),pr=gs.filter(g=>g.estado==='pronta').sort((a,b)=>(b.pronta_em||0)-(a.pronta_em||0)).slice(0,24);
   const fotos=fot.concat(sub).reduce((a,g)=>a+(+g.n||0),0);
-  return `<div class="if-wrap"><div class="if-head"><div><div class="eyebrow">Fotos chegando ao servidor · por fotógrafo</div><h1>Fila do fotógrafo</h1></div>
-    <div class="row">${state.fotoFilaErro?'':`<span class="pill ${fot.length+sub.length?'warn':'good'}">${fot.length+sub.length?`${fotos} ${fotos===1?'foto':'fotos'} chegando`:'Nada chegando agora'}</span>`}${can('filafoto','u')?`<button class="btn ghost" data-act="fotofila-mini" aria-pressed="${mini}">Miniaturas neste aparelho: ${mini?'ligadas':'desligadas'}</button>`:''}<button class="btn" data-act="fotofila-tv">${tv?'Sair da tela cheia':'Tela cheia'}</button></div></div>
+  return `<div class="if-wrap"><div class="if-head"><div><div class="eyebrow">${TE('ff_eyebrow')}</div><h1>${TE('v_fotofila')}</h1></div>
+    <div class="row">${state.fotoFilaErro?'':`<span class="pill ${fot.length+sub.length?'warn':'good'}">${fot.length+sub.length?TE('ff_chegando_n',fotos):TE('ff_nada_agora')}</span>`}${can('filafoto','u')?`<button class="btn ghost" data-act="fotofila-mini" aria-pressed="${mini}">${TE('ff_mini',mini)}</button>`:''}<button class="btn" data-act="fotofila-tv">${tv?TE('if_sair_tc'):TE('if_tc')}</button></div></div>
   ${state.fotoFilaErro?faixaConexao({estado:demoOn()?'demo':'off',ultimo:state.fotoFilaOk}):''}
   <div class="if-board">
-    <section class="if-col"><h2>Clicando agora <span class="if-cnt">${fot.length}</span></h2><div class="if-list">${fot.map(g=>card(g,'fotografando')).join('')||'<div class="if-vazio">Ninguém clicando agora</div>'}</div></section>
-    <section class="if-col agora"><h2>Chegando <span class="if-cnt">${sub.length}</span></h2><div class="if-list">${sub.map(g=>card(g,'subindo')).join('')||'<div class="if-vazio">Nada chegando</div>'}</div></section>
-    <section class="if-col pronta"><h2>Já no Checkout <span class="if-cnt">${pr.length}</span></h2><div class="if-list">${pr.map(g=>card(g,'pronta')).join('')||'<div class="if-vazio">Nada pronto ainda</div>'}</div></section>
+    <section class="if-col"><h2>${TE('ff_clicando')} <span class="if-cnt">${fot.length}</span></h2><div class="if-list">${fot.map(g=>card(g,'fotografando')).join('')||`<div class="if-vazio">${TE('ff_ninguem')}</div>`}</div></section>
+    <section class="if-col agora"><h2>${TE('ff_chegando')} <span class="if-cnt">${sub.length}</span></h2><div class="if-list">${sub.map(g=>card(g,'subindo')).join('')||`<div class="if-vazio">${TE('ff_nada_chegando')}</div>`}</div></section>
+    <section class="if-col pronta"><h2>${TE('ff_ja_ck')} <span class="if-cnt">${pr.length}</span></h2><div class="if-list">${pr.map(g=>card(g,'pronta')).join('')||`<div class="if-vazio">${TE('if_nada_pronto')}</div>`}</div></section>
   </div></div>`;}
 function vEstoque(){
-  return `<div class="head"><div><div class="eyebrow">Insumos</div><h1>Estoque</h1></div></div>
-  <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · rolo</span><span class="v" style="color:${roloCls(v)==='bad'?'var(--bad)':roloCls(v)==='warn'?'var(--warn)':'inherit'}">${v}</span><span class="d">${v<ROLO_ALERTA?'Trocar antes do pico':v<ROLO_AVISO?'Trocar logo':'de '+ROLO_CAP+' · DNP RX1HS'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">Ímãs 15 x 20</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">Sacolas</span><span class="v" style="color:var(--bad)">310</span><span class="d">pedir</span></div></div>
-  <div class="panel"><h2>Consumo</h2>${hbars([{label:'Impressões semana',v:DATA.totals.prints},{label:'Reimpressões',v:DATA.totals.reprints},{label:'Rolos usados',v:Math.round(DATA.totals.prints/200)}],fmtN)}<div class="note">${fmtN(DATA.totals.prints)} impressões na semana = ${Math.ceil(DATA.totals.prints/200)} rolos. Estoque mínimo sugerido: 10 rolos.</div></div>
-  <div class="row">${can('estoque','u')?`<button class="btn ghost" data-act="stock-swap">Registrar troca de rolo em ${esc(postoNome())}</button>`:''}<button class="btn ghost" data-act="view" data-v="bandeiras">Bandeiras e material de cena →</button></div>`;
+  return `<div class="head"><div><div class="eyebrow">${TE('eq_insumos')}</div><h1>${TE('v_estoque')}</h1></div></div>
+  <div class="tiles">${Object.entries(SIM.stock).map(([k,v])=>`<div class="tile"><span class="eyebrow">${esc(k)} · ${TE('eq_rolo')}</span><span class="v" style="color:${roloCls(v)==='bad'?'var(--bad)':roloCls(v)==='warn'?'var(--warn)':'inherit'}">${v}</span><span class="d">${v<ROLO_ALERTA?TE('eq_trocar_pico'):v<ROLO_AVISO?TE('eq_trocar_logo'):TE('eq_de_cap',ROLO_CAP)+' · DNP RX1HS'}</span></div>`).join('')}<div class="tile"><span class="eyebrow">${TE('eq_imas')}</span><span class="v">1.240</span></div><div class="tile"><span class="eyebrow">${TE('eq_sacolas')}</span><span class="v" style="color:var(--bad)">310</span><span class="d">${TE('eq_pedir')}</span></div></div>
+  <div class="panel"><h2>${TE('eq_consumo')}</h2>${hbars([{label:TE('eq_imp_semana'),v:DATA.totals.prints},{label:TE('eq_reimp'),v:DATA.totals.reprints},{label:TE('eq_rolos'),v:Math.round(DATA.totals.prints/200)}],fmtN)}<div class="note">${TE('eq_consumo_nota',fmtN(DATA.totals.prints),Math.ceil(DATA.totals.prints/200))}</div></div>
+  <div class="row">${can('estoque','u')?`<button class="btn ghost" data-act="stock-swap">${TE('eq_reg_troca',esc(postoNome()))}</button>`:''}<button class="btn ghost" data-act="view" data-v="bandeiras">${TE('eq_ir_band')} →</button></div>`;
 }
 
 // ---------- Fluxo do sistema (quadro de 26/10) ----------
@@ -5543,35 +5543,36 @@ function flagMut(){if(!SIM.flagList)SIM.flagList=FLAGS.map(x=>[...x]);return SIM
 state.flagEd=null;
 function flagEdit(n){const f=n==null?null:flagList().find(x=>x[0]===n);const st=f?flagOf(f):{state:'nova',note:'',point:FLAG_PTS[0]};
   state.flagEd={n:f?f[0]:null,name:f?f[1]:'',country:f?f[2]:'',qty:f?f[3]:1,type:f?f[4]:'A',active:f?!!f[5]:true,img:f?f[6]:'',imgData:f?(f[7]||''):'',state:st.state,note:st.note,point:st.point,confirmDel:false};render();setTimeout(()=>{const el=$('[data-act="fe-field"][data-k="name"]');if(el){el.focus();el.scrollIntoView({block:'center'});}},0);}
-function flagSave(){const e=state.flagEd;if(!e)return;const name=(e.name||'').trim();if(!name){toast('Dê um nome à bandeira');return;}
-  const L=flagMut();const dup=L.find(x=>x[1].toLowerCase()===name.toLowerCase()&&x[0]!==e.n);if(dup){toast('Já existe uma bandeira com esse nome');return;}
+function flagSave(){const e=state.flagEd;if(!e)return;const name=(e.name||'').trim();if(!name){toast(TE('bd_t_nome'));return;}
+  const L=flagMut();const dup=L.find(x=>x[1].toLowerCase()===name.toLowerCase()&&x[0]!==e.n);if(dup){toast(TE('bd_t_existe'));return;}
   const qty=Math.max(0,parseInt(e.qty,10)||0);const isNew=e.n==null;
-  if(isNew&&!can('estoque','c')){toast('Sem permissão para criar em Estoque e bandeiras');return;}
+  if(isNew&&!can('estoque','c')){toast(TE('bd_t_perm'));return;}
   let f;if(isNew){const n=L.reduce((a,x)=>Math.max(a,x[0]),0)+1;f=[n,name,(e.country||'').trim()||name,qty,e.type,e.active?1:0,e.img||'',e.imgData||''];L.push(f);}
   else{f=L.find(x=>x[0]===e.n);const old=f[1];f[1]=name;f[2]=(e.country||'').trim()||name;f[3]=qty;f[4]=e.type;f[5]=e.active?1:0;f[7]=e.imgData||f[7]||'';
     if(old!==name&&SIM.flags&&SIM.flags[old]){SIM.flags[name]=SIM.flags[old];delete SIM.flags[old];}}
   SIM.flags=SIM.flags||{};SIM.flags[name]={...(SIM.flags[name]||{}),state:e.state,note:(e.note||'').trim(),point:e.point};
   saveSim();log(`${isNew?'Nova bandeira':'Bandeira alterada'}: ${name} (${qty} un.)`);if(state.db){try{state.db.doc('bandeiras/'+f[0]).set({n:f[0],name:f[1],country:f[2],qty:f[3],type:f[4],active:!!f[5],state:e.state,note:e.note||'',point:e.point,at:now().toISOString()})}catch(x){}}
-  state.flagEd=null;state.flagFilter=state.flagFilter||'estoque';toast(isNew?'Bandeira cadastrada':'Bandeira salva');render();}
+  state.flagEd=null;state.flagFilter=state.flagFilter||'estoque';toast(isNew?TE('bd_t_cad'):TE('bd_t_salva'));render();}
 function flagDelete(){const e=state.flagEd;if(!e||e.n==null)return;if(!e.confirmDel){e.confirmDel=true;render();return;}
   const L=flagMut();const i=L.findIndex(x=>x[0]===e.n);if(i<0)return;const name=L[i][1];L.splice(i,1);if(SIM.flags)delete SIM.flags[name];saveSim();log('Bandeira excluída: '+name);
-  if(state.db){try{state.db.doc('bandeiras/'+e.n).set({n:e.n,deleted:true,at:now().toISOString()})}catch(x){}}state.flagEd=null;toast('Bandeira excluída');render();}
+  if(state.db){try{state.db.doc('bandeiras/'+e.n).set({n:e.n,deleted:true,at:now().toISOString()})}catch(x){}}state.flagEd=null;toast(TE('bd_t_exc'));render();}
 function flagEditor(){const e=state.flagEd;if(!e)return '';const isNew=e.n==null;
   const img=e.imgData||flagSrc(e.img);
-  return `<div class="panel flaged" style="gap:12px;border-color:var(--accent)"><div class="head"><h2>${isNew?'Nova bandeira':'Editar · '+esc(e.name)}</h2><button class="chip" data-act="fe-cancel">Fechar</button></div>
+  return `<div class="panel flaged" style="gap:12px;border-color:var(--accent)"><div class="head"><h2>${isNew?TE('bd_nova'):TE('bd_editar_x',esc(e.name))}</h2><button class="chip" data-act="fe-cancel">${TE('fechar')}</button></div>
     <div class="grid2" style="grid-template-columns:120px minmax(0,1fr);align-items:start">
-      <label class="flagimg" style="cursor:pointer">${img?`<img src="${esc(img)}" alt="" style="width:120px;height:80px;object-fit:cover;border-radius:4px;display:block;background:var(--surface2)" onerror="this.style.visibility='hidden'">`:'<span style="width:120px;height:80px;border:2px dashed var(--line);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted)">+</span>'}<input type="file" accept="image/*" data-act="fe-img" hidden><span class="note" style="display:block;margin-top:4px">${img?'Trocar foto':'Enviar foto'}</span></label>
+      <label class="flagimg" style="cursor:pointer">${img?`<img src="${esc(img)}" alt="" style="width:120px;height:80px;object-fit:cover;border-radius:4px;display:block;background:var(--surface2)" onerror="this.style.visibility='hidden'">`:'<span style="width:120px;height:80px;border:2px dashed var(--line);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted)">+</span>'}<input type="file" accept="image/*" data-act="fe-img" hidden><span class="note" style="display:block;margin-top:4px">${img?TE('bd_trocar_foto'):TE('bd_enviar_foto')}</span></label>
       <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
-        <label><span class="eyebrow">Nome</span><input type="text" data-act="fe-field" data-k="name" value="${esc(e.name)}" placeholder="Ex.: Flamengo"></label>
-        <label><span class="eyebrow">País ou clube de</span><input type="text" data-act="fe-field" data-k="country" value="${esc(e.country)}" placeholder="Ex.: Brasil"></label>
-        <label><span class="eyebrow">Unidades</span><div class="row" style="flex-wrap:nowrap"><button class="btn" data-act="fe-qty" data-dv="-1" aria-label="Menos uma">−</button><input type="number" min="0" data-act="fe-field" data-k="qty" value="${e.qty}" style="text-align:center"><button class="btn" data-act="fe-qty" data-dv="1" aria-label="Mais uma">+</button></div></label>
-        <label><span class="eyebrow">Pano</span><select data-act="fe-sel" data-k="type"><option value="A" ${e.type==='A'?'selected':''}>Tipo A</option><option value="B" ${e.type==='B'?'selected':''}>Tipo B</option></select></label>
-        <label><span class="eyebrow">Estado</span><select data-act="fe-sel" data-k="state">${FLAG_STATES.map(x=>`<option ${x===e.state?'selected':''}>${x}</option>`).join('')}</select></label>
-        <label><span class="eyebrow">Ponto</span><select data-act="fe-sel" data-k="point">${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===e.point?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
-        <label style="grid-column:1/-1"><span class="eyebrow">Observação</span><input type="text" data-act="fe-field" data-k="note" value="${esc(e.note)}" placeholder="Ex.: haste quebrada, rasgo na borda"></label>
-        <label class="row" style="gap:8px;cursor:pointer;flex-wrap:nowrap"><input type="checkbox" data-act="fe-active" ${e.active?'checked':''} style="width:18px;height:18px;accent-color:var(--accent)"><span>Ativa no catálogo</span></label>
+        <label><span class="eyebrow">${TE('bd_nome')}</span><input type="text" data-act="fe-field" data-k="name" value="${esc(e.name)}" placeholder="${TE('bd_ex')} Flamengo"></label>
+        <label><span class="eyebrow">${TE('bd_pais_clube')}</span><input type="text" data-act="fe-field" data-k="country" value="${esc(e.country)}" placeholder="${TE('bd_ex')} Brasil"></label>
+        <label><span class="eyebrow">${TE('bd_unidades')}</span><div class="row" style="flex-wrap:nowrap"><button class="btn" data-act="fe-qty" data-dv="-1" aria-label="${TE('bd_menos1')}">−</button><input type="number" min="0" data-act="fe-field" data-k="qty" value="${e.qty}" style="text-align:center"><button class="btn" data-act="fe-qty" data-dv="1" aria-label="${TE('bd_mais1')}">+</button></div></label>
+        <label><span class="eyebrow">${TE('bd_pano')}</span><select data-act="fe-sel" data-k="type"><option value="A" ${e.type==='A'?'selected':''}>${TE('bd_tipo_a')}</option><option value="B" ${e.type==='B'?'selected':''}>${TE('bd_tipo_b')}</option></select></label>
+        <label><span class="eyebrow">${TE('bd_estado')}</span><select data-act="fe-sel" data-k="state">${FLAG_STATES.map(x=>`<option value="${x}" ${x===e.state?'selected':''}>${esc(flagEst(x))}</option>`).join('')}</select></label>
+        <label><span class="eyebrow">${TE('bd_ponto')}</span><select data-act="fe-sel" data-k="point">${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===e.point?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
+        <label style="grid-column:1/-1"><span class="eyebrow">${TE('bd_obs')}</span><input type="text" data-act="fe-field" data-k="note" value="${esc(e.note)}" placeholder="${TE('bd_ex_obs')}"></label>
+        <label class="row" style="gap:8px;cursor:pointer;flex-wrap:nowrap"><input type="checkbox" data-act="fe-active" ${e.active?'checked':''} style="width:18px;height:18px;accent-color:var(--accent)"><span>${TE('bd_ativa')}</span></label>
       </div></div>
-    <div class="row"><button class="btn primary" data-act="fe-save">${isNew?'Cadastrar bandeira':'Salvar'}</button>${!isNew?`<button class="btn ghost" data-act="fe-del" style="color:var(--bad);${e.confirmDel?'border-color:var(--bad)':''}">${e.confirmDel?'Confirmar exclusão':'Excluir'}</button>`:''}<button class="btn ghost" data-act="fe-cancel">Cancelar</button></div></div>`;}
+    <div class="row"><button class="btn primary" data-act="fe-save">${isNew?TE('bd_cadastrar'):TE('bd_salvar')}</button>${!isNew?`<button class="btn ghost" data-act="fe-del" style="color:var(--bad);${e.confirmDel?'border-color:var(--bad)':''}">${e.confirmDel?TE('bd_conf_exc'):TE('bd_excluir')}</button>`:''}<button class="btn ghost" data-act="fe-cancel">${TE('cancelar')}</button></div></div>`;}
+const flagEst=s=>TEk('fst_'+String(s).replace(/ /g,'_'),s); // estado da bandeira na tela (o gravado segue em português)
 function flagOf(f){const s=(SIM.flags&&SIM.flags[f[1]])||{};const d=FLAG_DEF[f[1]]||{};return {state:s.state||d.state||'boa',note:s.note||d.note||'',point:s.point||FLAG_PTS[f[0]%4]};}
 function flagStats(f){if(!f[5]||!f[3])return {sessions:0,sold:0,revenue:0,conv:0};const base=FLAG_W[f[1]]!=null?FLAG_W[f[1]]:(h32(f[1])%7);const extra=(SIM.flagUse&&SIM.flagUse[f[1]])||0;const sessions=base+extra;const conv=.74+(h32(f[1]+'c')%17)/100;const sold=Math.round(sessions*conv);return {sessions,sold,revenue:sold*(118+(h32(f[1]+'r')%40)),conv};}
 function vBandeiras(){
@@ -5583,32 +5584,32 @@ function vBandeiras(){
   list=[...list].sort((a,b)=>b.s.sessions-a.s.sessions||a.f[1].localeCompare(b.f[1]));
   const top=act.slice().sort((a,b)=>b.s.sessions-a.s.sessions).slice(0,10);
   const totalSess=act.reduce((a,r)=>a+r.s.sessions,0);
-  const buy=[...attn.map(r=>({t:`${r.f[1]}: ${r.st.state}${r.st.note?' ('+r.st.note+')':''}`,d:r.f[3]===1?'peça única, repor':'repor'})),...single.filter(r=>r.s.sessions>=60&&!attn.includes(r)).map(r=>({t:`${r.f[1]}: peça única com ${r.s.sessions} sessões na semana`,d:'comprar a 2ª unidade'}))];
+  const buy=[...attn.map(r=>({t:TE('dp',r.f[1],flagEst(r.st.state)+(r.st.note?' ('+r.st.note+')':'')),d:r.f[3]===1?TE('bd_unica_repor'):TE('bd_repor')})),...single.filter(r=>r.s.sessions>=60&&!attn.includes(r)).map(r=>({t:TE('dp',r.f[1],TE('bd_unica_sess',r.s.sessions)),d:TE('bd_comprar2')}))];
   const pointName=id=>{const p=DATA.points.find(x=>x.id===id);return p?p.name:'';};
   const byPoint=FLAG_PTS.map(id=>({label:pointName(id),v:act.filter(r=>r.st.point===id).reduce((a,r)=>a+r.f[3],0)}));
-  const thumb=r=>r.f[7]?`<img src="${r.f[7]}" alt="" width="36" height="24" style="object-fit:cover;border-radius:2px;display:block">`:r.f[6]?`<img src="${esc(flagSrc(r.f[6]))}" alt="" width="36" height="24" loading="lazy" style="object-fit:cover;border-radius:2px;background:var(--surface2);display:block" onerror="this.style.visibility='hidden'">`:'<span class="note">sem imagem</span>';
+  const thumb=r=>r.f[7]?`<img src="${r.f[7]}" alt="" width="36" height="24" style="object-fit:cover;border-radius:2px;display:block">`:r.f[6]?`<img src="${esc(flagSrc(r.f[6]))}" alt="" width="36" height="24" loading="lazy" style="object-fit:cover;border-radius:2px;background:var(--surface2);display:block" onerror="this.style.visibility='hidden'">`:`<span class="note">${TE('bd_sem_img')}</span>`;
   const chip=(id,l,n)=>`<button class="chip" data-act="flag-filter" data-f="${id}" aria-pressed="${f===id}">${l} <span class="note">${n}</span></button>`;
-  const stSel=r=>`<select data-act="flag-state" data-n="${esc(r.f[1])}">${FLAG_STATES.map(s=>`<option ${s===r.st.state?'selected':''}>${s}</option>`).join('')}</select>`;
+  const stSel=r=>`<select data-act="flag-state" data-n="${esc(r.f[1])}">${FLAG_STATES.map(s=>`<option value="${s}" ${s===r.st.state?'selected':''}>${esc(flagEst(s))}</option>`).join('')}</select>`;
   const ptSel=r=>`<select data-act="flag-point" data-n="${esc(r.f[1])}">${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===r.st.point?'selected':''}>${p.name}</option>`).join('')}</select>`;
-  const stPill=r=>{const s=r.st.state;const c=s==='defeito'||s==='fora de uso'?'bad':s==='desgastada'?'warn':s==='nova'?'good':'neutral';return `<span class="pill ${c}">${s}</span>`};
-  return `<div class="head"><div><div class="eyebrow">Material de cena · lista Maraca Fly de 26/10</div><h1>Bandeiras</h1></div></div>
-  <div class="tiles">${[['Unidades físicas',units,`${act.length} modelos ativos`],['Modelos no catálogo',rows.length,`${noStock.length} sem estoque`],['Peça única',single.length,'uma unidade só'],['Atenção',attn.length,'desgastada ou com defeito'],['Tipo B',act.filter(r=>r.f[4]==='B').length,'pano diferente'],['Sessões com bandeira',fmtN(totalSess),'estimativa da semana']].map(([l,v,d])=>`<div class="tile"><span class="eyebrow">${l}</span><span class="v"${l==='Atenção'&&attn.length?' style="color:var(--bad)"':''}>${v}</span><span class="d">${d}</span></div>`).join('')}</div>
+  const stPill=r=>{const s=r.st.state;const c=s==='defeito'||s==='fora de uso'?'bad':s==='desgastada'?'warn':s==='nova'?'good':'neutral';return `<span class="pill ${c}">${esc(flagEst(s))}</span>`};
+  return `<div class="head"><div><div class="eyebrow">${TE('bd_eyebrow')}</div><h1>${TE('v_bandeiras')}</h1></div></div>
+  <div class="tiles">${[[TE('bd_unid_fis'),units,TE('bd_modelos_at',act.length)],[TE('bd_modelos_cat'),rows.length,TE('bd_n_sem_est',noStock.length)],[TE('bd_peca_unica'),single.length,TE('bd_uma_so')],[TE('bd_atencao'),attn.length,TE('bd_desg_def')],[TE('bd_tipo_b'),act.filter(r=>r.f[4]==='B').length,TE('bd_pano_dif')],[TE('bd_sess_band'),fmtN(totalSess),TE('bd_estim')]].map(([l,v,d],i)=>`<div class="tile"><span class="eyebrow">${l}</span><span class="v"${i===3&&attn.length?' style="color:var(--bad)"':''}>${v}</span><span class="d">${d}</span></div>`).join('')}</div>
   <div class="grid2">
-    <div class="panel"><h2>Mais usadas na semana</h2>${hbars(top.map(r=>({label:r.f[1].replace(/ \(.*\)$/,''),v:r.s.sessions})),fmtN)}</div>
-    <div class="panel"><h2>Lista de compra sugerida</h2>${buy.length?`<div class="alerts">${buy.map(b=>`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>${esc(b.t)}</b><p>${esc(b.d)}</p></div></div>`).join('')}</div>`:'<div class="note">Nada a repor.</div>'}
-      <h3 style="margin-top:6px">Unidades por ponto</h3>${hbars(byPoint,fmtN)}</div>
+    <div class="panel"><h2>${TE('bd_mais_usadas')}</h2>${hbars(top.map(r=>({label:r.f[1].replace(/ \(.*\)$/,''),v:r.s.sessions})),fmtN)}</div>
+    <div class="panel"><h2>${TE('bd_lista_compra')}</h2>${buy.length?`<div class="alerts">${buy.map(b=>`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>${esc(b.t)}</b><p>${esc(b.d)}</p></div></div>`).join('')}</div>`:`<div class="note">${TE('bd_nada_repor')}</div>`}
+      <h3 style="margin-top:6px">${TE('bd_unid_ponto')}</h3>${hbars(byPoint,fmtN)}</div>
   </div>
   ${flagEditor()}
-  <div class="panel"><div class="head"><h2>Inventário</h2>${can('estoque','c')?'<button class="btn primary" data-act="fe-new">Nova bandeira</button>':''}<div class="chips" style="width:100%">${chip('estoque','Com estoque',act.length)}${chip('unica','Peça única',single.length)}${chip('atencao','Atenção',attn.length)}${chip('B','Tipo B',act.filter(r=>r.f[4]==='B').length)}${chip('sem','Sem estoque',noStock.length)}${chip('todas','Todas',rows.length)}</div></div>
-    <div class="tablewrap"><table><thead><tr><th></th><th>Bandeira</th><th>País</th><th class="num">Unid.</th><th>Pano</th><th>Estado</th><th>Ponto</th><th class="num">Sessões</th><th class="num">Vendidas</th><th class="num">Conv.</th><th class="num">Receita</th>${can('estoque','u')?'<th></th>':''}</tr></thead><tbody>
-    ${list.map(r=>`<tr><td>${thumb(r)}</td><td class="name">${esc(r.f[1])}${r.f[1]===r.f[2]?'':'<span class="note"> · clube</span>'}</td><td class="note">${esc(r.f[2])}</td><td class="num">${r.f[3]}</td><td>${r.f[4]}</td><td>${r.f[3]?stSel(r)+(r.st.note?`<div class="note">${esc(r.st.note)}</div>`:''):'<span class="pill neutral">sem estoque</span>'}</td><td>${r.f[3]?ptSel(r):''}</td><td class="num">${r.f[3]?fmtN(r.s.sessions):'–'}</td><td class="num">${r.f[3]?fmtN(r.s.sold):'–'}</td><td class="num">${r.f[3]?pct(r.s.sold,r.s.sessions):'–'}</td><td class="num">${r.f[3]?fmtR(r.s.revenue):'–'}</td>${can('estoque','u')?`<td><button class="chip" data-act="fe-edit" data-n="${r.f[0]}">Editar</button></td>`:''}</tr>`).join('')}
+  <div class="panel"><div class="head"><h2>${TE('bd_inventario')}</h2>${can('estoque','c')?`<button class="btn primary" data-act="fe-new">${TE('bd_nova')}</button>`:''}<div class="chips" style="width:100%">${chip('estoque',TE('bd_com_estoque'),act.length)}${chip('unica',TE('bd_peca_unica'),single.length)}${chip('atencao',TE('bd_atencao'),attn.length)}${chip('B',TE('bd_tipo_b'),act.filter(r=>r.f[4]==='B').length)}${chip('sem',TE('bd_sem_estoque_c'),noStock.length)}${chip('todas',TE('bd_todas'),rows.length)}</div></div>
+    <div class="tablewrap"><table><thead><tr><th></th><th>${TE('bd_bandeira')}</th><th>${TE('bd_pais')}</th><th class="num">${TE('bd_unid')}</th><th>${TE('bd_pano')}</th><th>${TE('bd_estado')}</th><th>${TE('bd_ponto')}</th><th class="num">${TE('pn_sessoes')}</th><th class="num">${TE('bd_vendidas')}</th><th class="num">${TE('bd_conv')}</th><th class="num">${TE('pn_receita')}</th>${can('estoque','u')?'<th></th>':''}</tr></thead><tbody>
+    ${list.map(r=>`<tr><td>${thumb(r)}</td><td class="name">${esc(r.f[1])}${r.f[1]===r.f[2]?'':`<span class="note"> · ${TE('bd_clube')}</span>`}</td><td class="note">${esc(r.f[2])}</td><td class="num">${r.f[3]}</td><td>${r.f[4]}</td><td>${r.f[3]?stSel(r)+(r.st.note?`<div class="note">${esc(r.st.note)}</div>`:''):`<span class="pill neutral">${TE('bd_sem_estoque')}</span>`}</td><td>${r.f[3]?ptSel(r):''}</td><td class="num">${r.f[3]?fmtN(r.s.sessions):'–'}</td><td class="num">${r.f[3]?fmtN(r.s.sold):'–'}</td><td class="num">${r.f[3]?pct(r.s.sold,r.s.sessions):'–'}</td><td class="num">${r.f[3]?fmtR(r.s.revenue):'–'}</td>${can('estoque','u')?`<td><button class="chip" data-act="fe-edit" data-n="${r.f[0]}">${TE('bd_editar')}</button></td>`:''}</tr>`).join('')}
     </tbody></table></div></div>
   <div class="grid2">
     
-    <div class="panel"><h2>Inconsistências na lista recebida</h2><div class="alerts">
-      <div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Figueirense ("figueira", linha 44)</b><p>Marcado ativo com quantidade 0 e sem imagem. Tem a bandeira ou não?</p></div></div>
-      <div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Irã ativo sem imagem; Iraque sem imagem</b><p>Fotografar a peça para o cadastro.</p></div></div>
-      <div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>Tipo A e Tipo B</b><p>10 bandeiras são Tipo B. Confirmar o que muda (tamanho, tecido, acabamento) para o cadastro.</p></div></div>
+    <div class="panel"><h2>${TE('bd_incons')}</h2><div class="alerts">
+      <div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>${TE('bd_inc1t')}</b><p>${TE('bd_inc1p')}</p></div></div>
+      <div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>${TE('bd_inc2t')}</b><p>${TE('bd_inc2p')}</p></div></div>
+      <div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>${TE('bd_inc3t')}</b><p>${TE('bd_inc3p')}</p></div></div>
     </div></div>
   </div>`;
 }
@@ -5956,6 +5957,140 @@ const EQ={
   fraca_obvia:['Essa senha é fácil de adivinhar. Evite sequências, seu nome, Maracanã, Eterna ou times. Tente uma frase curta.','This password is easy to guess. Avoid sequences, your name, Maracanã, Eterna or football teams. Try a short phrase.','Esta contraseña es fácil de adivinar. Evita secuencias, tu nombre, Maracanã, Eterna o equipos. Prueba una frase corta.','Ce mot de passe est facile à deviner. Évitez les suites, votre nom, Maracanã, Eterna ou les équipes. Essayez une courte phrase.','Dieses Passwort ist leicht zu erraten. Vermeiden Sie Zahlenfolgen, Ihren Namen, Maracanã, Eterna oder Vereine. Versuchen Sie einen kurzen Satz.'],
   fraca_repete_atual:['A senha nova não pode repetir a atual.','The new password cannot be the same as the current one.','La contraseña nueva no puede repetir la actual.','Le nouveau mot de passe ne peut pas être identique à l\'actuel.','Das neue Passwort darf nicht dem aktuellen entsprechen.'],
   fraca_longa:['A senha é longa demais.','The password is too long.','La contraseña es demasiado larga.','Le mot de passe est trop long.','Das Passwort ist zu lang.'],
+  fst_nova:["nova","new","nueva","neuve","neu"],
+  fst_boa:["boa","good","buena","bonne","gut"],
+  fst_desgastada:["desgastada","worn","desgastada","usée","abgenutzt"],
+  fst_defeito:["defeito","damaged","defecto","défaut","defekt"],
+  fst_fora_de_uso:["fora de uso","out of use","fuera de uso","hors d'usage","außer Betrieb"],
+  bd_unica_repor:["peça única, repor","single piece, replace","pieza única, reponer","pièce unique, à remplacer","Einzelstück, ersetzen"],
+  bd_repor:["repor","replace","reponer","à remplacer","ersetzen"],
+  bd_comprar2:["comprar a 2ª unidade","buy a 2nd unit","comprar la 2.ª unidad","acheter un 2e exemplaire","ein 2. Exemplar kaufen"],
+  bd_sem_img:["sem imagem","no image","sin imagen","sans image","kein Bild"],
+  bd_eyebrow:["Material de cena · lista Maraca Fly de 26/10","Props · Maraca Fly list of 10/26","Material de escena · lista Maraca Fly del 26/10","Accessoires · liste Maraca Fly du 26/10","Requisiten · Maraca-Fly-Liste vom 26.10."],
+  bd_unid_fis:["Unidades físicas","Physical units","Unidades físicas","Unités physiques","Physische Einheiten"],
+  bd_modelos_cat:["Modelos no catálogo","Models in the catalog","Modelos en el catálogo","Modèles au catalogue","Modelle im Katalog"],
+  bd_peca_unica:["Peça única","Single piece","Pieza única","Pièce unique","Einzelstück"],
+  bd_uma_so:["uma unidade só","just one unit","una sola unidad","un seul exemplaire","nur ein Exemplar"],
+  bd_atencao:["Atenção","Attention","Atención","Attention","Achtung"],
+  bd_desg_def:["desgastada ou com defeito","worn or damaged","desgastada o con defecto","usée ou défectueuse","abgenutzt oder defekt"],
+  bd_tipo_b:["Tipo B","Type B","Tipo B","Type B","Typ B"],
+  bd_tipo_a:["Tipo A","Type A","Tipo A","Type A","Typ A"],
+  bd_pano_dif:["pano diferente","different fabric","tela diferente","tissu différent","anderer Stoff"],
+  bd_sess_band:["Sessões com bandeira","Sessions with a flag","Sesiones con bandera","Séances avec drapeau","Sitzungen mit Flagge"],
+  bd_estim:["estimativa da semana","weekly estimate","estimación de la semana","estimation de la semaine","Wochenschätzung"],
+  bd_mais_usadas:["Mais usadas na semana","Most used this week","Más usadas en la semana","Les plus utilisés de la semaine","Meistgenutzt diese Woche"],
+  bd_lista_compra:["Lista de compra sugerida","Suggested shopping list","Lista de compra sugerida","Liste d'achats suggérée","Vorgeschlagene Einkaufsliste"],
+  bd_nada_repor:["Nada a repor.","Nothing to replace.","Nada que reponer.","Rien à remplacer.","Nichts zu ersetzen."],
+  bd_unid_ponto:["Unidades por ponto","Units per spot","Unidades por punto","Unités par point","Einheiten pro Standort"],
+  bd_inventario:["Inventário","Inventory","Inventario","Inventaire","Bestand"],
+  bd_nova:["Nova bandeira","New flag","Nueva bandera","Nouveau drapeau","Neue Flagge"],
+  bd_com_estoque:["Com estoque","In stock","Con stock","En stock","Auf Lager"],
+  bd_sem_estoque_c:["Sem estoque","Out of stock","Sin stock","Hors stock","Nicht auf Lager"],
+  bd_sem_estoque:["sem estoque","out of stock","sin stock","hors stock","nicht auf Lager"],
+  bd_todas:["Todas","All","Todas","Tous","Alle"],
+  bd_bandeira:["Bandeira","Flag","Bandera","Drapeau","Flagge"],
+  bd_pais:["País","Country","País","Pays","Land"],
+  bd_unid:["Unid.","Units","Unid.","Unités","Stk."],
+  bd_pano:["Pano","Fabric","Tela","Tissu","Stoff"],
+  bd_estado:["Estado","Condition","Estado","État","Zustand"],
+  bd_ponto:["Ponto","Spot","Punto","Point","Standort"],
+  bd_vendidas:["Vendidas","Sold","Vendidas","Vendues","Verkauft"],
+  bd_conv:["Conv.","Conv.","Conv.","Conv.","Konv."],
+  bd_clube:["clube","club","club","club","Verein"],
+  bd_editar:["Editar","Edit","Editar","Modifier","Bearbeiten"],
+  bd_incons:["Inconsistências na lista recebida","Inconsistencies in the received list","Inconsistencias en la lista recibida","Incohérences dans la liste reçue","Unstimmigkeiten in der erhaltenen Liste"],
+  bd_inc1t:["Figueirense (\"figueira\", linha 44)","Figueirense (\"figueira\", line 44)","Figueirense (\"figueira\", línea 44)","Figueirense (« figueira », ligne 44)","Figueirense („figueira“, Zeile 44)"],
+  bd_inc1p:["Marcado ativo com quantidade 0 e sem imagem. Tem a bandeira ou não?","Marked active with quantity 0 and no image. Do we have the flag or not?","Marcado activo con cantidad 0 y sin imagen. ¿Tenemos la bandera o no?","Marqué actif avec une quantité de 0 et sans image. Avons-nous le drapeau ou non ?","Als aktiv markiert mit Menge 0 und ohne Bild. Haben wir die Flagge oder nicht?"],
+  bd_inc2t:["Irã ativo sem imagem; Iraque sem imagem","Iran active with no image; Iraq with no image","Irán activo sin imagen; Irak sin imagen","Iran actif sans image ; Irak sans image","Iran aktiv ohne Bild; Irak ohne Bild"],
+  bd_inc2p:["Fotografar a peça para o cadastro.","Photograph the piece for the record.","Fotografiar la pieza para el registro.","Photographier la pièce pour la fiche.","Das Stück für die Erfassung fotografieren."],
+  bd_inc3t:["Tipo A e Tipo B","Type A and Type B","Tipo A y Tipo B","Type A et Type B","Typ A und Typ B"],
+  bd_inc3p:["10 bandeiras são Tipo B. Confirmar o que muda (tamanho, tecido, acabamento) para o cadastro.","10 flags are Type B. Confirm what changes (size, fabric, finish) for the record.","10 banderas son Tipo B. Confirmar qué cambia (tamaño, tela, acabado) para el registro.","10 drapeaux sont de Type B. Confirmer ce qui change (taille, tissu, finition) pour la fiche.","10 Flaggen sind Typ B. Klären, was sich ändert (Größe, Stoff, Verarbeitung), für die Erfassung."],
+  bd_trocar_foto:["Trocar foto","Change photo","Cambiar foto","Changer la photo","Foto ändern"],
+  bd_enviar_foto:["Enviar foto","Upload photo","Subir foto","Envoyer une photo","Foto hochladen"],
+  bd_nome:["Nome","Name","Nombre","Nom","Name"],
+  bd_pais_clube:["País ou clube de","Country or club of","País o club de","Pays ou club de","Land oder Verein von"],
+  bd_unidades:["Unidades","Units","Unidades","Unités","Einheiten"],
+  bd_obs:["Observação","Note","Observación","Remarque","Anmerkung"],
+  bd_ex_obs:["Ex.: haste quebrada, rasgo na borda","E.g.: broken pole, tear on the edge","Ej.: asta rota, rasgón en el borde","Ex. : hampe cassée, déchirure au bord","z. B.: Stange gebrochen, Riss am Rand"],
+  bd_ex:["Ex.:","E.g.:","Ej.:","Ex. :","z. B.:"],
+  bd_menos1:["Menos uma","One less","Una menos","Une de moins","Eine weniger"],
+  bd_mais1:["Mais uma","One more","Una más","Une de plus","Eine mehr"],
+  bd_ativa:["Ativa no catálogo","Active in the catalog","Activa en el catálogo","Actif au catalogue","Aktiv im Katalog"],
+  bd_cadastrar:["Cadastrar bandeira","Add flag","Registrar bandera","Enregistrer le drapeau","Flagge anlegen"],
+  bd_salvar:["Salvar","Save","Guardar","Enregistrer","Speichern"],
+  bd_conf_exc:["Confirmar exclusão","Confirm deletion","Confirmar eliminación","Confirmer la suppression","Löschen bestätigen"],
+  bd_excluir:["Excluir","Delete","Eliminar","Supprimer","Löschen"],
+  bd_t_nome:["Dê um nome à bandeira","Give the flag a name","Ponga un nombre a la bandera","Donnez un nom au drapeau","Geben Sie der Flagge einen Namen"],
+  bd_t_existe:["Já existe uma bandeira com esse nome","A flag with that name already exists","Ya existe una bandera con ese nombre","Un drapeau porte déjà ce nom","Eine Flagge mit diesem Namen gibt es schon"],
+  bd_t_perm:["Sem permissão para criar em Estoque e bandeiras","No permission to create in Stock and flags","Sin permiso para crear en Stock y banderas","Pas d'autorisation pour créer dans Stock et drapeaux","Keine Berechtigung zum Anlegen in Bestand und Flaggen"],
+  bd_t_cad:["Bandeira cadastrada","Flag added","Bandera registrada","Drapeau enregistré","Flagge angelegt"],
+  bd_t_salva:["Bandeira salva","Flag saved","Bandera guardada","Drapeau enregistré","Flagge gespeichert"],
+  bd_t_exc:["Bandeira excluída","Flag deleted","Bandera eliminada","Drapeau supprimé","Flagge gelöscht"],
+  if_impressora:["Impressora","Printer","Impresora","Imprimante","Drucker"],
+  if_parada:["parada","stopped","detenida","arrêtée","angehalten"],
+  ifst_imprimindo:["imprimindo","printing","imprimiendo","impression","druckt"],
+  ifst_pronta:["pronta","ready","lista","prête","bereit"],
+  ifst_livre:["livre","free","libre","libre","frei"],
+  ifst_erro:["erro","error","error","erreur","Fehler"],
+  if_reimp_tudo:["Reimprimir tudo","Reprint all","Reimprimir todo","Tout réimprimer","Alles nachdrucken"],
+  if_tudo_imp:["Tudo impresso","All printed","Todo impreso","Tout est imprimé","Alles gedruckt"],
+  if_sair_tc:["Sair da tela cheia","Exit full screen","Salir de pantalla completa","Quitter le plein écran","Vollbild beenden"],
+  if_tc:["Tela cheia","Full screen","Pantalla completa","Plein écran","Vollbild"],
+  if_com_erro:["Com erro","With errors","Con error","En erreur","Mit Fehler"],
+  if_na_fila_h:["Na fila","In queue","En la fila","En file","In der Warteschlange"],
+  if_proxima:["próxima","next","siguiente","suivante","als Nächstes"],
+  if_ninguem:["Ninguém esperando","No one waiting","Nadie esperando","Personne n'attend","Niemand wartet"],
+  if_imp_agora:["Imprimindo agora","Printing now","Imprimiendo ahora","Impression en cours","Wird gerade gedruckt"],
+  if_livre:["Livre","Free","Libre","Libre","Frei"],
+  if_prontas:["Prontas · retirar","Ready · pick up","Listas · retirar","Prêtes · à retirer","Fertig · abholen"],
+  if_nada_pronto:["Nada pronto ainda","Nothing ready yet","Nada listo aún","Rien de prêt pour l'instant","Noch nichts fertig"],
+  ff_sem_ponto:["sem ponto","no spot","sin punto","sans point","kein Standort"],
+  ff_volante:["volante","roaming","volante","volant","mobil"],
+  ff_set:["set interno","indoor set","set interno","plateau intérieur","Innenset"],
+  ff_campo:["campo","field","campo","terrain","Feld"],
+  ff_sem_fot:["Sem fotógrafo","No photographer","Sin fotógrafo","Sans photographe","Ohne Fotograf"],
+  ff_folga:["De folga na Escala e mandando fotos","Off duty on the Schedule and sending photos","Libre en la Escala y enviando fotos","En repos au Planning et envoie des photos","Laut Dienstplan frei und schickt Fotos"],
+  ff_ia:["Fundo IA","AI background","Fondo IA","Fond IA","KI-Hintergrund"],
+  ff_eyebrow:["Fotos chegando ao servidor · por fotógrafo","Photos arriving at the server · by photographer","Fotos llegando al servidor · por fotógrafo","Photos arrivant au serveur · par photographe","Fotos kommen am Server an · pro Fotograf"],
+  ff_nada_agora:["Nada chegando agora","Nothing arriving now","Nada llegando ahora","Rien n'arrive pour l'instant","Gerade kommt nichts an"],
+  ff_clicando:["Clicando agora","Shooting now","Disparando ahora","Prise de vue en cours","Fotografiert gerade"],
+  ff_ninguem:["Ninguém clicando agora","No one shooting now","Nadie disparando ahora","Personne ne photographie","Niemand fotografiert gerade"],
+  ff_chegando:["Chegando","Arriving","Llegando","En arrivée","Kommt an"],
+  ff_nada_chegando:["Nada chegando","Nothing arriving","Nada llegando","Rien n'arrive","Nichts kommt an"],
+  ff_ja_ck:["Já no Checkout","Already on the Checkout","Ya en el Checkout","Déjà sur le Checkout","Schon im Checkout"],
+  eq_insumos:["Insumos","Supplies","Insumos","Fournitures","Verbrauchsmaterial"],
+  eq_rolo:["rolo","roll","rollo","rouleau","Rolle"],
+  eq_trocar_pico:["Trocar antes do pico","Change before the peak","Cambiar antes del pico","Changer avant le pic","Vor der Spitze wechseln"],
+  eq_trocar_logo:["Trocar logo","Change soon","Cambiar pronto","Changer bientôt","Bald wechseln"],
+  eq_imas:["Ímãs 15 x 20","Magnets 15 x 20","Imanes 15 x 20","Aimants 15 x 20","Magnete 15 x 20"],
+  eq_sacolas:["Sacolas","Bags","Bolsas","Sacs","Taschen"],
+  eq_pedir:["pedir","order","pedir","à commander","bestellen"],
+  eq_consumo:["Consumo","Consumption","Consumo","Consommation","Verbrauch"],
+  eq_imp_semana:["Impressões semana","Prints this week","Impresiones semana","Impressions semaine","Drucke diese Woche"],
+  eq_reimp:["Reimpressões","Reprints","Reimpresiones","Réimpressions","Nachdrucke"],
+  eq_rolos:["Rolos usados","Rolls used","Rollos usados","Rouleaux utilisés","Verbrauchte Rollen"],
+  eq_ir_band:["Bandeiras e material de cena","Flags and props","Banderas y material de escena","Drapeaux et accessoires","Flaggen und Requisiten"],
+  dp:[(a,b)=>`${a}: ${b}`,(a,b)=>`${a}: ${b}`,(a,b)=>`${a}: ${b}`,(a,b)=>`${a} : ${b}`,(a,b)=>`${a}: ${b}`],
+  bd_unica_sess:[(n)=>`peça única com ${n} sessões na semana`,(n)=>`single piece with ${n} sessions this week`,(n)=>`pieza única con ${n} sesiones en la semana`,(n)=>`pièce unique avec ${n} séances dans la semaine`,(n)=>`Einzelstück mit ${n} Sitzungen diese Woche`],
+  bd_modelos_at:[(n)=>`${n} modelos ativos`,(n)=>`${n} active models`,(n)=>`${n} modelos activos`,(n)=>`${n} modèles actifs`,(n)=>`${n} aktive Modelle`],
+  bd_n_sem_est:[(n)=>`${n} sem estoque`,(n)=>`${n} out of stock`,(n)=>`${n} sin stock`,(n)=>`${n} hors stock`,(n)=>`${n} nicht auf Lager`],
+  bd_editar_x:[(n)=>`Editar · ${n}`,(n)=>`Edit · ${n}`,(n)=>`Editar · ${n}`,(n)=>`Modifier · ${n}`,(n)=>`Bearbeiten · ${n}`],
+  if_faltaram:[(n)=>n===1?"Imprimir a que faltou":`Imprimir as ${n} que faltaram`,(n)=>n===1?"Print the missing one":`Print the ${n} missing`,(n)=>n===1?"Imprimir la que faltó":`Imprimir las ${n} que faltaron`,(n)=>n===1?"Imprimer celle qui manque":`Imprimer les ${n} manquantes`,(n)=>n===1?"Das fehlende drucken":`Die ${n} fehlenden drucken`],
+  if_n_imps:[(n)=>`${n} impressoras`,(n)=>`${n} printers`,(n)=>`${n} impresoras`,(n)=>`${n} imprimantes`,(n)=>`${n} Drucker`],
+  if_espera:[(f,m)=>`${f} na fila · cerca de ${m} min`,(f,m)=>`${f} in queue · about ${m} min`,(f,m)=>`${f} en la fila · unos ${m} min`,(f,m)=>`${f} en file · environ ${m} min`,(f,m)=>`${f} in der Warteschlange · etwa ${m} Min.`],
+  if_mini_tc:[(on)=>`Miniaturas na tela cheia: ${on?"ligadas":"desligadas"}`,(on)=>`Thumbnails in full screen: ${on?"on":"off"}`,(on)=>`Miniaturas en pantalla completa: ${on?"activadas":"desactivadas"}`,(on)=>`Miniatures en plein écran : ${on?"activées":"désactivées"}`,(on)=>`Miniaturen im Vollbild: ${on?"an":"aus"}`],
+  if_sairam:[(a,b)=>`${a} de ${b} saíram`,(a,b)=>`${a} of ${b} printed`,(a,b)=>`${a} de ${b} salieron`,(a,b)=>`${a} sur ${b} imprimées`,(a,b)=>`${a} von ${b} gedruckt`],
+  if_pedido:[(h)=>`pedido ${h}`,(h)=>`ordered ${h}`,(h)=>`pedido ${h}`,(h)=>`commande ${h}`,(h)=>`bestellt ${h}`],
+  if_ordinal:[(n)=>`${n}º`,(n)=>`#${n}`,(n)=>`${n}.º`,(n)=>`${n}e`,(n)=>`${n}.`],
+  if_inicio:[(h)=>`início ${h}`,(h)=>`started ${h}`,(h)=>`inicio ${h}`,(h)=>`début ${h}`,(h)=>`Beginn ${h}`],
+  if_foto_de:[(a,b)=>`foto ${a} de ${b}`,(a,b)=>`photo ${a} of ${b}`,(a,b)=>`foto ${a} de ${b}`,(a,b)=>`photo ${a} sur ${b}`,(a,b)=>`Foto ${a} von ${b}`],
+  if_pronta:[(h)=>`pronta ${h}`,(h)=>`ready ${h}`,(h)=>`lista ${h}`,(h)=>`prête ${h}`,(h)=>`fertig ${h}`],
+  ff_ia_falta:[(n)=>`Fundo IA: falta o ${n}º clique`,(n)=>`AI background: ${n}${n===1?"st":n===2?"nd":n===3?"rd":"th"} shot missing`,(n)=>`Fondo IA: falta el ${n}.º disparo`,(n)=>`Fond IA : il manque la ${n}${n===1?"re":"e"} prise`,(n)=>`KI-Hintergrund: ${n}. Aufnahme fehlt`],
+  ff_chegando_n:[(n)=>`${n} ${n===1?"foto":"fotos"} chegando`,(n)=>`${n} ${n===1?"photo":"photos"} arriving`,(n)=>`${n} ${n===1?"foto":"fotos"} llegando`,(n)=>`${n} ${n===1?"photo":"photos"} en arrivée`,(n)=>`${n} ${n===1?"Foto kommt":"Fotos kommen"} an`],
+  ff_mini:[(on)=>`Miniaturas neste aparelho: ${on?"ligadas":"desligadas"}`,(on)=>`Thumbnails on this device: ${on?"on":"off"}`,(on)=>`Miniaturas en este aparato: ${on?"activadas":"desactivadas"}`,(on)=>`Miniatures sur cet appareil : ${on?"activées":"désactivées"}`,(on)=>`Miniaturen auf diesem Gerät: ${on?"an":"aus"}`],
+  eq_de_cap:[(n)=>`de ${n}`,(n)=>`of ${n}`,(n)=>`de ${n}`,(n)=>`sur ${n}`,(n)=>`von ${n}`],
+  eq_consumo_nota:[(a,b)=>`${a} impressões na semana = ${b} rolos. Estoque mínimo sugerido: 10 rolos.`,(a,b)=>`${a} prints this week = ${b} rolls. Suggested minimum stock: 10 rolls.`,(a,b)=>`${a} impresiones en la semana = ${b} rollos. Stock mínimo sugerido: 10 rollos.`,(a,b)=>`${a} impressions dans la semaine = ${b} rouleaux. Stock minimum suggéré : 10 rouleaux.`,(a,b)=>`${a} Drucke diese Woche = ${b} Rollen. Empfohlener Mindestbestand: 10 Rollen.`],
+  eq_reg_troca:[(p)=>`Registrar troca de rolo em ${p}`,(p)=>`Log roll change at ${p}`,(p)=>`Registrar cambio de rollo en ${p}`,(p)=>`Enregistrer le changement de rouleau à ${p}`,(p)=>`Rollenwechsel an ${p} erfassen`],
   es_faixas:[["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "mais de 20 min"],["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "over 20 min"],["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "más de 20 min"],["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "plus de 20 min"],["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "über 20 min"]],
   meses_curtos:[["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"],["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sept", "oct", "nov", "dic"],["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]],
   es_sec_a:["Vendas e produtos","Sales and products","Ventas y productos","Ventes et produits","Verkäufe und Produkte"],
