@@ -1063,6 +1063,7 @@ O link fica na **Venda manual**, depois de escolher a sessão. Na v97 mudou o qu
 Bom saber:
 - As fotos que o cliente **comprou** e as **cortesias** não são apagadas. Elas ficam com ele e a galeria paga continua aberta.
 - Saem as fotos que ele não comprou, e o rosto lido nelas é apagado.
+- A sessão paga também tem o botão **Cliente pediu: apagar as fotos**, para apagar só as fotos não compradas.
 - Se houver um pedido aberto no Posto usando essas fotos, cancele o pedido antes.
 - Só quem pode alterar as Galerias online vê o link.
 
