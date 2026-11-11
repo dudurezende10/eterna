@@ -1120,7 +1120,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu">
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v96.1 · 10/11 17:03"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v96.1</span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v96.2 · 11/11 10:11"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b> · v96.2</span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1414,7 +1414,7 @@ async function caixaConfirm(){const c=state.caixa.session;if(simOf(c).status==='
   s.cart=cartComPreco(s.cart);s.total=cartTotal(s.cart);s.nFotos=nSel||0;s.status='paga';s.payment=state.caixa.pay;s.paidAt=now().toISOString();s.prints=prints;delete s.caixaPor;delete s.caixaEm;
   s.vendaId=pvId();s.saleNo=s.saleNo||no;if(!s.seller&&state.view==='checkout')s.seller=SELLERS[0];
   const meio=/dinheiro/i.test(s.payment)?'dinheiro':/pix/i.test(s.payment)?'pix':'cartao';s.vendedor=u?{nome:u.name,email:u.email}:null;s.posto=postoNome();s.pag={prov:meio==='dinheiro'?'dinheiro':pagProv(),ref:null,em:s.paidAt,porNome:u?u.name:null};impIniciar(s);
-  log(`Sessão ${c} paga: ${fmtR(s.total)} em ${s.payment}, ${prints} impressões`);
+  log(`Sessão ${c} paga: ${fmtR(s.total)} em ${s.payment}, ${prints} impressões`);galDaVendaPrep(c); // v96.2: paga e compradas numa gravação só
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return;}
   if(ab)pvCancelEv(ab,'pago_de_outro_jeito');const tok=galDaVenda(c);const g=(SIM.galerias||{})[tok]||{};
   pvEvento('criar',s.vendaId,pvDados({saleNo:s.saleNo,card:c,meio,prov:s.pag.prov,total:s.total,cart:s.cart,prints,nPh:nSel||0,nAI:(s.aiSel||[]).length,selected:s.selected,aiSel:s.aiSel,fav:s.fav,token:tok,codigo:g.codigo,vendedor:s.vendedor,canal:'balcao'}));
@@ -1491,6 +1491,7 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   if((r.aiSel||[]).length){const ai=aiOf(r.card);r.aiSel.forEach(k=>{const [ph,bg]=String(k).split('|');if(!ai.bought.some(b=>b.ph===ph&&b.bg===bg))ai.bought.push({ph,bg,paidAt:at,where:'loja'});});}
   Object.assign(r,{estado:'confirmada',fechada:at,por:u.email,porNome:u.name,motivo:null,saleNo:s.saleNo,ref});const criar=r.escolha&&!r.pvCriado;if(criar)r.pvCriado=true;
   log(`${MEIO_NOME[meio]} confirmado: ${(r.sessoes||[r.card]).join(' + ')} ${fmtR(r.total)} por ${u.name}${ref?' · NSU '+ref:''}`);
+  if(pontoModo()!=='posto')galDaVendaPrep(r.card,r.token); // v96.2: sessão paga e compradas numa gravação só
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast('Não gravou, tente de novo');render();return false;} // I3: nada muda se não gravou
   if(criar)pvEvento('criar',r.id,pvDados(r),{em:r.criada,por:null}); // v96: o mesmo "criar" que o Checkout mandava, com a hora do pedido e sem autor
   if(r.meio)pvEvento('pagar',r.id,{ref,prov});
@@ -2309,6 +2310,9 @@ function cartaoAtrelar(card,txt){const tok=cartaoToken(txt);if(!tok)return {erro
 function cartaoCampo(card){return `<label class="cartao-qr"><span class="eyebrow">Cartão com QR impresso</span><input id="cartao-qr" data-card="${esc(card)}" placeholder="Leia o QR do cartão com o leitor" autocomplete="off" aria-label="Ler o QR do cartão"></label>`;}
 const galCod=card=>{const t=galDaSessao(card);return t?SIM.galerias[t].codigo:'';};
 // venda paga (Loja ou caixa): cria a galeria da sessão se não existir, atualiza os direitos e publica
+// v96.2 (Testador, v79 rev 10): marca as compradas no manifesto que já existe ANTES da gravação da venda paga, para a
+// galeria aberta pelo QR (SIM) ler sessão paga e compradas no mesmo evento storage. Não cria galeria nem grava; galDaVenda depois publica.
+function galDaVendaPrep(card,tok0){const mv=tok0&&(SIM.galerias||{})[tok0];const tok=mv&&mv.venda?tok0:galDaSessao(card);if(tok)galAtualizar(tok);return tok;}
 function galDaVenda(card,tok0){const mv=tok0&&(SIM.galerias||{})[tok0];if(mv&&mv.venda){galAtualizar(tok0);galPublicar(tok0);return tok0;} // v91: galeria própria da venda que juntou sessões
   const ja=galDaSessao(card);const tok=ja||galDaSessao(card,true);if(ja)galAtualizar(tok);galPublicar(tok);return tok;}
 // v91: a galeria da venda ganha as outras sessões achadas pela selfie, só com as fotos do cliente (m.so[card])
@@ -2409,17 +2413,17 @@ async function pubAbrirLivres(p){if(!p.info||p.info.tipo!=='sessao')return false
 const pubKid=p=>!!(p.info&&(p.info.tipo==='evento'||p.info.menor));
 // tentativas por galeria neste navegador (sessionStorage): 5 erros bloqueiam por 15 min. Só contador e hora, nada de imagem.
 function pubTries(p){const k='eterna.gq.'+p.token.slice(0,8);let o={n:0,ate:0};try{o=JSON.parse(sessionStorage.getItem(k)||'null')||o;}catch(e){}return {o,save(){try{sessionStorage.setItem(k,JSON.stringify(o))}catch(e){}}};}
-function pubFalhou(p,motivo){const t=pubTries(p);t.o.n=(t.o.n||0)+1;if(t.o.n>=GQ_MAX){t.o.ate=Date.now()+GQ_BLOQ;t.o.n=0;p.motivo='bloqueado';p.ate=t.o.ate;p.restam=0;}else{p.motivo=motivo;p.restam=GQ_MAX-t.o.n;}t.save();p.step='nao';}
+function pubFalhou(p,motivo){const t=pubTries(p);t.o.n=(t.o.n||0)+1;if(t.o.n>=GQ_MAX){t.o.ate=Date.now()+GQ_BLOQ;t.o.n=0;p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;p.restam=0;}else{p.motivo=motivo;p.restam=GQ_MAX-t.o.n;}t.save();p.step='nao';}
 function pubSelfieAbrir(p){state.guest.selfie={stream:null,ready:false,shot:null,err:null,facing:pubKid(p)?'environment':'user'};p.step='selfie';}
 async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pubTries(p);
-  if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;selfieStop();render();return;}
+  if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;selfieStop();render();return;}
   p.step='buscando';selfieStop();render();
   try{
     try{const im=await loadImg(src);if(im&&await selfieVarias(im)){p.step='nao';p.motivo='varias';return;}}catch(e){} // sem detector: o servidor confere
     if(p.modo==='agente'){const body=JSON.stringify({consentimento:true,versao:GQ_VERSAO+(galNuvem()?'-nuvem2':''),idioma:lang(),imagem:src});src=null;
       const r=await fetch(galApi()+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});const j=await r.json().catch(()=>({}));
       if(state.pub!==p)return;
-      if(r.status===429){p.step='nao';p.motivo='bloqueado';p.ate=Date.parse(j.ate)||Date.now()+GQ_BLOQ;}
+      if(r.status===429){p.step='nao';p.motivo='bloqueado';p.ate=Date.parse(j.ate)||Date.now()+GQ_BLOQ;p.teto=!!j.teto||(p.info&&p.info.tipo==='sessao'&&p.ate-Date.now()>GQ_BLOQ+60e3);} // v96.2: teto do dia diz "amanhã" (nuvem antiga sem o campo: bloqueio maior que o de 15 min)
       else if(r.status===503){p.step='nao';p.motivo='processando';}
       else if(j.ok){p.acesso=j.acesso;p.gal=j.galeria;p.galAt=Date.now();p.aviso=null;p.step='galeria';t.o.n=0;t.save();}
       else{p.step='nao';p.motivo=j.motivo==='varias_pessoas'?'varias':j.motivo==='sem_rosto'?'sem_rosto':'nao_encontrado';p.restam=j.restam!=null?j.restam:p.restam;}}
@@ -2498,7 +2502,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
       ${sf.err?`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`:!(sf.semDetector||sf.botao)?'':`<button class="lj-cta" data-act="gq-snap" ${sf.ready?'':'disabled'}>${ICO.face} ${T('g_snap')}</button>`}`);}
   if(p.step==='buscando')return box(T('gq_comparing'),'','<div class="gq-spin" aria-hidden="true"></div>');
   if(p.step==='nao'){const bl=p.motivo==='bloqueado';const at=p.ate?hhmm(new Date(p.ate)):'';
-    const msg=bl?T('gq_locked',at):p.motivo==='varias'?T('gq_varias'):p.motivo==='sem_rosto'?T('gq_noFace'):p.motivo==='processando'?T('gq_arriving'):T('gq_noMatch');
+    const msg=bl?(p.teto?T('gq_lockedDay'):T('gq_locked',at)):p.motivo==='varias'?T('gq_varias'):p.motivo==='sem_rosto'?T('gq_noFace'):p.motivo==='processando'?T('gq_arriving'):T('gq_noMatch');
     const d=bl?'':p.motivo==='varias'?T('gq_variasD'):p.motivo==='processando'?T('gq_arrivingD'):T('gq_tries',p.restam);
     return box(msg,d,`${bl?'':`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`}${p.livres?`<button class="lj-ghost" data-act="gq-back" data-to="galeria">${T('gq_backMine')}</button>`:''}${help}`);}
   const g=pubGaleria();
@@ -2699,6 +2703,7 @@ const I18N={
  gq_noFace:['Não encontramos um rosto na foto. Tente de frente e com boa luz.','We couldn’t find a face. Try facing the camera in good light.','No encontramos un rostro en la foto. Inténtalo de frente y con buena luz.','Aucun visage trouvé sur la photo. Essayez de face, avec une bonne lumière.','Wir haben kein Gesicht gefunden. Versuch es von vorn und bei gutem Licht.'],
  gq_noMatch:['Esse rosto não aparece nas fotos desta visita.','This face isn’t in the photos from this visit.','Ese rostro no aparece en las fotos de esta visita.','Ce visage n’apparaît pas sur les photos de cette visite.','Dieses Gesicht ist auf den Fotos dieses Besuchs nicht zu sehen.'],
  gq_tries:[n=>`Você tem mais ${n} ${PL(n,'tentativa','tentativas')}.`,n=>`${n} more ${PL(n,'attempt','attempts')}.`,n=>`Te ${PL(n,'queda','quedan')} ${n} ${PL(n,'intento','intentos')}.`,n=>`Il vous reste ${n} ${PL(n,'essai','essais')}.`,n=>`Noch ${n} ${PL(n,'Versuch','Versuche')}.`],
+ gq_lockedDay:['Muitas tentativas. Tente de novo amanhã.','Too many attempts. Try again tomorrow.','Demasiados intentos. Vuelve a intentarlo mañana.','Trop d’essais. Réessayez demain.','Zu viele Versuche. Versuch es morgen wieder.'],
  gq_locked:[t=>`Muitas tentativas. Tente de novo às ${t}.`,t=>`Too many attempts. Try again at ${t}.`,t=>`Demasiados intentos. Vuelve a intentarlo a las ${t}.`,t=>`Trop d’essais. Réessayez à ${t}.`,t=>`Zu viele Versuche. Versuch es um ${t} Uhr wieder.`],
  gq_tryAgain:['Tentar de novo','Try again','Intentar de nuevo','Réessayer','Noch einmal'],
  gq_help:['Precisa de ajuda? Fale com a equipe do Tour.','Need help? Talk to the Tour team.','¿Necesitas ayuda? Habla con el equipo del Tour.','Besoin d’aide ? Parlez à l’équipe du Tour.','Brauchst du Hilfe? Sprich mit dem Tour-Team.'],
@@ -5465,7 +5470,7 @@ document.addEventListener('click',e=>{
     case 'gq-mais':{const p=state.pub;if(!p)break;p.ok=false;p.step='consent';render();scrollTo(0,0);break;} // v96.1: selfie para as à venda em que a pessoa aparece
     case 'gq-agree':{const p=state.pub;if(!p||!p.ok)break;p.consentAt=now().toISOString();pubSelfieAbrir(p);render();break;}
     case 'gq-snap':{const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v||!v.videoWidth)break;const w=Math.min(960,v.videoWidth);const c=mkc(w,w*v.videoHeight/v.videoWidth);c.getContext('2d').drawImage(v,0,0,c.width,c.height);pubMatch(c.toDataURL('image/jpeg',.9));break;}
-    case 'gq-retry':{const p=state.pub;if(!p)break;const t=pubTries(p);if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;}else if(p.motivo==='processando'&&p.modo==='agente'){p.step='consent';}else pubSelfieAbrir(p);render();break;}
+    case 'gq-retry':{const p=state.pub;if(!p)break;const t=pubTries(p);if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;}else if(p.motivo==='processando'&&p.modo==='agente'){p.step='consent';}else pubSelfieAbrir(p);render();break;}
     case 'gq-sel':{const p=state.pub;if(!p)break;p.sel[d.pid]=!p.sel[d.pid];render();break;}
     case 'gq-all':{const p=state.pub;if(!p)break;pubGaleria().fotos.filter(f=>f.direito==='venda').forEach(f=>p.sel[f.pid]=true);render();break;}
     case 'gq-buy':{const p=state.pub;if(!p)break;p.idem=pubUUID();p.pagM=null;p.step='pagar';render();scrollTo(0,0);break;}
@@ -5727,7 +5732,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const antes=simResumo(SIM);const velhas=new Map((SIM.caixaDin||[]).map(r=>[r.id,{estado:r.estado,saiu:r.saiu||null}]));SIM=Object.assign(SIM0(),o);
   if(SIM.caixaDin.some(pendAntigaHoje)){state.janelaAntiga=Date.now();if(!state.lojaRota&&!state.pub&&SIM.caixaDin.some(r=>pendAntigaHoje(r)&&(velhas.get(r.id)||{}).estado!=='confirmada'))toast('Uma janela antiga do Eterna confirmou um pedido do Checkout sem pacote. O QR não foi mostrado ao cliente. Feche e reabra o Checkout e o Posto de venda.');} // B1 (só pedido de hoje)
   const avisou=!state.lojaRota&&!state.pub&&pendAvisos(velhas); // v96: o cliente voltou às fotos ou saiu da tela
-  if(state.pub){const p=state.pub;if(p.step==='aguarda_caixa')pubLoad();return;} // galeria pública: sem redesenhar no meio da selfie; sai do "esperando o caixa" quando confirmar
+  if(state.pub){const p=state.pub;if(p.step==='aguarda_caixa')pubLoad();else if(p.step==='consent'&&p.modo==='sim'&&!p.livres&&!p.acesso)pubAbrirLivres(p).then(ok=>{if(ok&&state.pub===p&&p.step==='consent'&&!p.livres&&!p.acesso){p.livres=true;p.step='galeria';render();}});return;} // v96.2: reforço, as compradas chegaram numa gravação depois da sessão paga // galeria pública: sem redesenhar no meio da selfie; sai do "esperando o caixa" quando confirmar
   const pc=lojaPendCheck(); // v83: o vendedor confirmou ou cancelou a pendência que esta janela do Checkout mostra
   dinVirada();railCk();if(simResumo(SIM)===antes&&!pc&&!avisou)return; // I6: só redesenha quando muda algo que aparece
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});

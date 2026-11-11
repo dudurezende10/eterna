@@ -470,10 +470,9 @@ def rosto(token, m, corpo, ip, ctx):
     if corpo.get("consentimento") is not True:
         return resp({"error": "consentimento obrigatório"}, 400)
     restam, ate = falhas(ip, token)
-    if not ate and m["tipo"] == "sessao":
-        ate = teto_galeria(token)
-    if ate:
-        return resp({"motivo": "bloqueado", "ate": iso(ate)}, 429)
+    teto = teto_galeria(token) if not ate and m["tipo"] == "sessao" else 0
+    if ate or teto:                                      # v96.2: teto = parada até amanhã (o app diz "Tente de novo amanhã")
+        return resp(dict({"motivo": "bloqueado", "ate": iso(ate or teto)}, **({"teto": True} if teto else {})), 429)
     img = corpo.get("imagem")
     if not isinstance(img, str) or not img:
         return resp({"error": "sem imagem"}, 400)

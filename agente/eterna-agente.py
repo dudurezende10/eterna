@@ -6728,9 +6728,10 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "not found"}, 404)
             if gal_expirou(m):
                 return self.js({"error": "expirada"}, 410)
-            ate = bloqueio(ip, token) or (gal_teto(token) if m["tipo"] == "sessao" else 0)
-            if ate:
-                return self.js({"motivo": "bloqueado", "ate": _iso(ate)}, 429)
+            ate = bloqueio(ip, token)
+            teto = gal_teto(token) if not ate and m["tipo"] == "sessao" else 0
+            if ate or teto:                     # v96.2: teto = parada até amanhã (o app diz "Tente de novo amanhã")
+                return self.js(dict({"motivo": "bloqueado", "ate": _iso(ate or teto)}, **({"teto": True} if teto else {})), 429)
             if not rostos["ligado"]:
                 return self.js({"motivo": "processando"}, 503)
             if not isinstance(img, str) or not img:

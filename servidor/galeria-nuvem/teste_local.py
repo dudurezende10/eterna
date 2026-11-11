@@ -156,7 +156,7 @@ chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tokT, codigo=None
 res = [chama("POST", "/g/%s/rosto" % tokT, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True}, ip="9.0.0.%d" % (i + 1)) for i in range(20)]
 ok(all(s_ == 200 and r_["motivo"] == "nao_encontrado" for s_, r_ in res), "teto: as 20 primeiras sem acerto dão nao_encontrado")
 st, r = chama("POST", "/g/%s/rosto" % tokT, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True}, ip="9.0.1.1")
-ok(st == 429 and r["motivo"] == "bloqueado" and app.epoch(r["ate"]) == app._amanha_venue(), "teto: a 21ª de outro IP dá 429 até o início de amanhã")
+ok(st == 429 and r["motivo"] == "bloqueado" and r.get("teto") is True and app.epoch(r["ate"]) == app._amanha_venue(), "teto: a 21ª de outro IP dá 429 até o início de amanhã")
 st, r = chama("POST", "/g/%s/rosto" % tokT, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.1.2")
 ok(st == 429, "teto: parada também para quem bate")
 ok(len([v for k, v in T.d.items() if k[0] == "EVT#" + tokT and v["tipo"] == "galeria_teto_selfie"]) == 1, "teto: um evento de alerta")
