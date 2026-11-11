@@ -100,7 +100,7 @@ try{
   modo='off';await pg.waitForTimeout(2600);
   // v94-ux: o aviso cinza "Sem conexão com o servidor · atualizado há N s" virou a faixa vermelha .conn-off com a hora do último dado (parte C, G3/F1)
   const off=await pg.evaluate(()=>({note:(document.querySelector('#main .conn-off[role="alert"]')||{}).textContent||'',cards:document.querySelectorAll('.ff-card').length,good:document.querySelectorAll('.if-head .pill.good').length}));
-  ok(/^Sem conexão com o computador do ponto · último dado às \d\d:\d\d$/.test(off.note.trim())&&off.cards===6&&off.good===0,'19: aviso e último dado: '+JSON.stringify(off));
+  ok(/^O computador do ponto não está respondendo\. Chame a TI\.Último dado às \d\d:\d\d$/.test(off.note.trim())&&off.cards===6&&off.good===0,'19: aviso e último dado: '+JSON.stringify(off));
   modo='ok';await pg.waitForTimeout(2300);ok(!(await pg.$('#main [role="alert"]')),'19: aviso some quando o agente volta');
   // 20: trocar a função na Escala manda o POST com X-Eterna: 1; a TV (outro navegador) mostra o novo ponto no grupo seguinte
   await pg.evaluate(()=>ETERNA.go('escala'));await pg.waitForTimeout(300);

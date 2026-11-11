@@ -32,7 +32,7 @@ try{
   modo='off';await pg.evaluate(()=>ETERNA.go('fotofila'));
   ok(await espera(pg,()=>!!document.querySelector('.conn-off'))>=0,'C1: faixa vermelha na Fila do fotógrafo sem agente');
   let st=await pg.evaluate(()=>({good:document.querySelectorAll('.if-head .pill.good').length,txt:(document.querySelector('.conn-off')||{}).textContent||'',note:document.querySelectorAll('#main .note[role="alert"]').length}));
-  ok(st.good===0&&/Sem conexão com o computador do ponto/.test(st.txt)&&!/último dado/.test(st.txt)&&st.note===0,'C1: sem pill good, com faixa: '+JSON.stringify(st));
+  ok(st.good===0&&/^O computador do ponto não está respondendo\. Chame a TI\.$/.test(st.txt.trim())&&!/ltimo dado/.test(st.txt)&&st.note===0,'C1: sem pill good, com faixa: '+JSON.stringify(st));
   // sucesso e queda: "último dado às HH:MM"
   modo='ok';ok(await espera(pg,()=>!document.querySelector('.conn-off'))>=0,'C3: faixa some quando o agente volta');
   ok(await pg.evaluate(()=>document.querySelectorAll('.ff-card').length===1),'C1: cartão com o dado do agente');
@@ -40,14 +40,14 @@ try{
   ok(await espera(pg,()=>ETERNA.state.agent.on&&ETERNA.state.agent.lastOk>0,6000)>=0,'C3: agentPoll conecta fora do Upload: '+JSON.stringify(await pg.evaluate(()=>({on:ETERNA.state.agent.on,url:ETERNA.state.agent.url,view:ETERNA.state.view}))));
   modo='off';ok(await espera(pg,()=>!!document.querySelector('.conn-off'))>=0,'C1: faixa volta na queda');
   st=await pg.evaluate(()=>({good:document.querySelectorAll('.if-head .pill.good').length,txt:document.querySelector('.conn-off').textContent,cards:document.querySelectorAll('.ff-card').length}));
-  ok(st.good===0&&/Sem conexão com o computador do ponto · último dado às \d\d:\d\d/.test(st.txt)&&st.cards===1,'C1: último dado às HH:MM e colunas com o último dado: '+JSON.stringify(st));
+  ok(st.good===0&&/O computador do ponto não está respondendo\. Chame a TI\.Último dado às \d\d:\d\d/.test(st.txt)&&st.cards===1,'C1: último dado às HH:MM e colunas com o último dado: '+JSON.stringify(st));
   // C3: volta em até 4 s sem recarregar
   modo='ok';const ms=await espera(pg,()=>!document.querySelector('.conn-off'),4000);ok(ms>=0,'C3: a faixa some em até 4 s');
   // C2: Fila de impressão
   modo='off';await pg.evaluate(()=>ETERNA.go('impfila'));
   ok(await espera(pg,()=>!!document.querySelector('.conn-off'))>=0,'C2: faixa na Fila de impressão');
   st=await pg.evaluate(()=>({txt:document.querySelector('#main').textContent,off:(document.querySelector('.conn-off')||{}).textContent||'',good:document.querySelectorAll('#main .pill.good').length}));
-  ok(!/Tudo impresso/.test(st.txt)&&/Sem conexão com o servidor de impressão/.test(st.off)&&st.good===0,'C2: sem "Tudo impresso" e sem verde: '+JSON.stringify({off:st.off,good:st.good}));
+  ok(!/Tudo impresso/.test(st.txt)&&/O servidor de impressão não está respondendo\. Chame a TI\./.test(st.off)&&st.good===0,'C2: sem "Tudo impresso" e sem verde: '+JSON.stringify({off:st.off,good:st.good}));
   modo='ok';ok(await espera(pg,()=>!document.querySelector('.conn-off')&&/Tudo impresso/.test(document.querySelector('#main').textContent),4000)>=0,'C3: Fila de impressão volta em até 4 s');
   // C4: demonstração sem agente: faixa cinza, não a vermelha
   modo='off';await pg.evaluate(()=>{localStorage.setItem('eterna.demo.v1','1');ETERNA.go('fotofila');});
