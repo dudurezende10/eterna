@@ -118,11 +118,12 @@ try{
     // o evento salvo não pode sumir da tela enquanto o app sincroniza com o servidor (1ª leitura da coleção agenda)
     const amostra=[];for(let i=0;i<32;i++){amostra.push(await p2.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='jogo').length));await sleep(250);}
     ok(amostra.every(x=>x===1),'D3: o jogo salvo pela Supervisora some do calendário durante a 1ª sincronização (quantidade a cada 250 ms por 8 s): '+amostra.join(''));
-    const n=await p2.evaluate(()=>Object.keys(ETERNA.AGENDA).length);ok(n===1,'cliques repetidos no Salvar criam um evento só: '+n);
-    let docs=null;for(let i=0;i<20;i++){const r=await req(porta,'GET','/ponto/docs?col=agenda');docs=r.j&&r.j.docs;if(docs&&docs.length)break;await sleep(250);}
+    const n=await p2.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.origem!=='feriados').length);ok(n===1,'cliques repetidos no Salvar criam um evento só: '+n); // v97: os feriados entram sozinhos pelo servidor
+    let docs=null;for(let i=0;i<20;i++){const r=await req(porta,'GET','/ponto/docs?col=agenda');docs=r.j&&r.j.docs&&r.j.docs.filter(d=>d.valor&&d.valor.origem!=='feriados');if(docs&&docs.length)break;await sleep(250);}
     const dv=docs&&docs[0]&&docs[0].valor;ok(docs&&docs.length===1&&dv.mandante==='Fluminense'&&!/[<>]/.test(J(dv)),'17/D3: evento da Supervisora no estado.db do servidor, limpo: '+J(dv));
-    await p2.click('[data-act="ag-feriados"]');await p2.click('[data-act="ag-feriados"]');await p2.waitForTimeout(300);
-    const nf=await p2.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='feriado').length);ok(nf===15,'19: feriados clicando duas vezes sem duplicar: '+nf);
+    // v97: com o servidor, os feriados (deste ano e do próximo) vêm sozinhos e o botão manual some
+    let nf=0;for(let i=0;i<20&&nf<30;i++){nf=await p2.evaluate(()=>Object.values(ETERNA.AGENDA).filter(a=>a.tipo==='feriado').length);if(nf<30)await sleep(250);}
+    ok(nf===30&&!(await p2.$('[data-act="ag-feriados"]')),'19 (v97): feriados automáticos do servidor, sem duplicar e sem o botão manual: '+nf);
     await p2.screenshot({path:PR+'/v92t-calendario.png',fullPage:true});
     for(const [nm,w,h] of [['cel',390,844],['tab',820,1180]]){await p2.setViewportSize({width:w,height:h});await p2.waitForTimeout(200);ok(await semLateral(p2),`${nm}: Calendário sem rolagem lateral`);await p2.screenshot({path:PR+`/v92t-calendario-${nm}.png`,fullPage:true});}
     await c2.close();
