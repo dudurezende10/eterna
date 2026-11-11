@@ -7,8 +7,11 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   GET  /g/<token>/livres          na venda (sessao): compradas e cortesias só pelo QR, sem selfie (v96.1)
   POST /g/<token>/rosto           selfie com consentimento -> acesso de 1 h + galeria
   POST /g/<token>/galeria         renova os links com o acesso
-  POST /g/<token>/pagamento       compra online: desligada até haver canal (só maquininha Imply por ora)
+  POST /g/<token>/pedido          compra online pela Imply: cria o pedido e devolve o endereço do checkout (v99)
+  GET  /g/pedido/<ON-...>         volta do checkout: confere o pedido na Imply e diz a galeria e a situação (v99)
+  POST /g/<token>/pagamento       rota antiga (compra direta): responde compra_indisponivel
   POST /ponto/galerias            o agente do estádio publica o manifesto (segredo do ponto)
+  GET  /ponto/vendas-online       o agente busca as vendas online pagas (segredo do ponto) (v99)
 
 As fotos ficam no S3 (vitrine/<pid>.jpg e alta/<pid>.jpg, enviadas pelo agente) e saem por link assinado de 5 min.
 A selfie é comparada pelo Rekognition só com os rostos da própria galeria (coleção por galeria), nunca com a base inteira.
@@ -19,6 +22,7 @@ Sem dado pessoal nos eventos: o IP vira hash com sal do dia.
 import base64, hashlib, hmac, json, os, re, secrets, time
 from datetime import datetime, timezone
 import boto3
+import imply
 from boto3.dynamodb.conditions import Key
 from botocore.config import Config
 from botocore.exceptions import ClientError
@@ -32,6 +36,8 @@ COLECAO_PREFIXO = os.environ.get("COLECAO_PREFIXO", "et-maracana-")
 LIMIAR_ADULTO = float(os.environ.get("LIMIAR_ADULTO", "85"))    # semelhança do Rekognition (0 a 100)
 LIMIAR_CRIANCA = float(os.environ.get("LIMIAR_CRIANCA", "95"))  # grupo de escola e sessão de menor: mais rígido
 COMPRA_ONLINE = os.environ.get("COMPRA_ONLINE", "0") == "1"
+VOLTA_URL = os.environ.get("VOLTA_URL", "https://eterna.photo/g/")   # a Imply devolve o cliente para cá com ?idpedido=<ON-...>
+PED_DIAS = 400                                                     # pedido e venda online guardados (conferência, estorno)
 LIMITE_FOTOS_GALERIA = int(os.environ.get("LIMITE_FOTOS_GALERIA", "600"))   # teto de fotos lidas por galeria
 LIMITE_LEITURAS_DIA = int(os.environ.get("LIMITE_LEITURAS_DIA", "15000"))   # IndexFaces por dia (US$ 0,001 cada)
 LIMITE_BUSCAS_DIA = int(os.environ.get("LIMITE_BUSCAS_DIA", "10000"))       # SearchFacesByImage por dia (US$ 0,001 cada)
@@ -50,6 +56,9 @@ EVENTOS_DIAS = 90
 _re_token = re.compile(r"^[A-Za-z0-9_-]{22}$")
 _re_pid = re.compile(r"^(ag_)?[0-9a-f]{6,40}$")
 _re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$")
+_re_ref = re.compile(r"^ON-[A-HJ-NP-Z2-9]{10}$")
+_re_sku = re.compile(r"^[0-9a-f]{40}$")
+_re_passaporte = re.compile(r"^[A-Z0-9]{5,20}$")
 
 
 # ---------- utilidades ----------
@@ -216,7 +225,7 @@ def galeria_obj(token, m, pids=()):
                       "original": link("alta/%s.jpg" % pid, "viva-maracana-%d.jpg" % (i + 1)) if livre and tem("alta/%s.jpg" % pid) else None,
                       "chegando": not v})
     return {"tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"], "estado": "pronta" if ok else "chegando",
-            "precos": m["precos"], "compra": COMPRA_ONLINE, "fotos": fotos}
+            "precos": m["precos"], "catalogo": m.get("catalogo") or [], "compra": compra_ligada(m), "fotos": fotos}
 
 
 def estado(m):
@@ -402,6 +411,244 @@ def senha_email(ev, corpo):
     return resp({"ok": True}, 202)
 
 
+# ---------- compra online pela Imply (v99, plano docs/planos/2026-11-11-compra-online-pela-imply.md) ----------
+# A galeria monta o carrinho com os produtos do catálogo online (mesmos SKU e preço da Imply, publicados pelo ponto no
+# manifesto); a Nuvem confere, cria o pedido (PED#<ON-...>), cadastra a pessoa na Imply (setPessoa) e devolve o endereço do
+# checkout. A volta do cliente não libera nada: a foto só vira comprada quando a consulta à Imply responde pago, na volta
+# (GET /g/pedido/<ref>) ou na conferência agendada dos pendentes (PEDPEND). Venda paga vira registro em VONL, que o agente
+# do estádio busca (GET /ponto/vendas-online) e junta às vendas do ponto.
+_ALFA_REF = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def compra_ligada(m=None):
+    return COMPRA_ONLINE and imply.ligada() and (m is None or bool(m.get("catalogo")))
+
+
+def catalogo_ok(cat):
+    out = []
+    for c in (cat if isinstance(cat, list) else [])[:20]:
+        if not isinstance(c, dict) or not re.match(r"^[a-z0-9_]{1,20}$", str(c.get("id") or "")) or not _re_sku.match(str(c.get("sku") or "")):
+            continue
+        dig = c.get("digital")
+        if dig != "todas":
+            try:
+                dig = max(0, int(dig))
+            except Exception:
+                continue
+        try:
+            preco = round(max(0.0, float(c.get("preco"))), 2)
+        except Exception:
+            continue
+        out.append({"id": c["id"], "sku": c["sku"], "nome": str(c.get("nome") or "")[:80], "preco": preco, "digital": dig,
+                    "kind": "pacote" if c.get("kind") == "pacote" else "adicional"})
+    return out
+
+
+def cesta(m, itens, n):
+    """Confere o carrinho da galeria: produtos do catálogo online, ao menos um pacote, cobrindo as n fotos escolhidas.
+    O preço é o do manifesto (o que o navegador mandar é ignorado). Devolve (itens, total, todas) ou None."""
+    cat = {c["id"]: c for c in m.get("catalogo") or []}
+    if not isinstance(itens, list) or not 1 <= len(itens) <= 5:
+        return None
+    out, total, cobre, todas, pacote = [], 0.0, 0, False, False
+    for i in itens:
+        c = cat.get(str(i.get("id"))) if isinstance(i, dict) else None
+        q = i.get("qtd") if isinstance(i, dict) else None
+        if not c or not isinstance(q, int) or isinstance(q, bool) or not 1 <= q <= 50 or any(x["id"] == c["id"] for x in out):
+            return None
+        out.append({"id": c["id"], "sku": c["sku"], "nome": c["nome"], "qtd": q, "preco": c["preco"]})
+        total += c["preco"] * q
+        pacote = pacote or c["kind"] == "pacote"
+        if c["digital"] == "todas":
+            todas = True
+        else:
+            cobre += c["digital"] * q
+    if not pacote or not (todas or cobre >= n):
+        return None
+    return out, round(total, 2), todas
+
+
+def _ref():
+    return "ON-" + "".join(secrets.choice(_ALFA_REF) for _ in range(10))
+
+
+def pedido(token, m, corpo, ip, pids_acesso):
+    if not compra_ligada(m):
+        evento(token, "compra_tentada", ip)
+        return resp({"ok": False, "motivo": "compra_indisponivel"}, 503)
+    if not contar("PED#" + ip_hash(ip), 3600, 20):
+        return resp({"motivo": "bloqueado"}, 429)
+    dire = {f["id"]: f["direito"] for f in m["fotos"]}
+    a_venda = [f["id"] for f in m["fotos"] if f["id"] in pids_acesso and f["direito"] == "venda"]
+    pids = corpo.get("pids")
+    if not isinstance(pids, list) or not pids or len(set(map(str, pids))) != len(pids) or any(x not in pids_acesso or dire.get(x) != "venda" for x in pids):
+        return resp({"error": "foto fora do acesso ou não está à venda"}, 400)
+    c = cesta(m, corpo.get("itens"), len(pids))
+    if not c:
+        return resp({"error": "carrinho inválido"}, 400)
+    itens, total, todas = c
+    if todas:
+        pids = a_venda                                     # "todas as fotos digitais": todas as à venda que o cliente vê
+    cli = corpo.get("cliente") if isinstance(corpo.get("cliente"), dict) else {}
+    nome = " ".join(str(cli.get("nome") or "").split())[:120]
+    email = str(cli.get("email") or "").strip().lower()
+    cpf = re.sub(r"\D", "", str(cli.get("cpf") or ""))
+    passaporte = re.sub(r"[^A-Z0-9]", "", str(cli.get("passaporte") or "").upper())
+    if len(nome) < 3 or not _re_email.match(email):
+        return resp({"error": "dados", "campo": "nome" if len(nome) < 3 else "email"}, 400)
+    if cpf and not imply.cpf_ok(cpf) or not cpf and not _re_passaporte.match(passaporte):
+        return resp({"error": "dados", "campo": "documento"}, 400)
+    ref, agora = _ref(), time.time()
+    pessoa = imply.de_para(email, SEGREDO_PONTO_SHA256)
+    idioma = str(corpo.get("idioma") or "pt")[:2]
+    marketing = corpo.get("marketing") is True
+    TABELA.put_item(Item={"pk": "PED#" + ref, "sk": "M", "token": token, "pids": json.dumps(sorted(pids)), "itens": json.dumps(itens),
+                          "total": str(total), "todas": todas, "estado": "criado", "nome": nome, "email": email, "pessoa": pessoa,
+                          "idioma": idioma, "criado": iso(agora), "consultas": 0, "ttl": int(agora + PED_DIAS * 86400)})
+    lead(email, idioma, token, marketing, str(corpo.get("versao") or "")[:20], ref)
+    try:
+        tk = imply.set_pessoa(pessoa, nome, email, cpf=cpf or None, passaporte=None if cpf else passaporte)
+        url = imply.checkout(tk, ref, itens, VOLTA_URL)
+    except Exception as ex:                               # a Imply fora ou recusou: o pedido fica registrado com o erro
+        print("pedido %s: Imply falhou: %s" % (ref, str(ex)[:200]))
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e, erro = :x",
+                           ExpressionAttributeValues={":e": "erro", ":x": str(ex)[:200]})
+        evento(token, "pedido_erro", ip, ref=ref)
+        return resp({"ok": False, "motivo": "imply_indisponivel"}, 502)
+    TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "aguardando"})
+    TABELA.put_item(Item={"pk": "PEDPEND", "sk": ref, "criado": int(agora), "ttl": int(agora + 3 * 86400)})
+    evento(token, "pedido_criado", ip, ref=ref, total=total, fotos=len(pids))
+    return resp({"ok": True, "ref": ref, "url": url, "total": total, "fotos": len(pids)})
+
+
+def lead(email, idioma, token, marketing, versao, ref=None):
+    """E-mail de quem comprou ou tentou comprar (lead). O consentimento de marketing é separado e opcional (LGPD):
+    só quem marcou vai para o RD Station (etapa 4 do plano)."""
+    k = {"pk": "LEAD#" + hashlib.sha256(email.encode()).hexdigest()[:32], "sk": "M"}
+    velho = item(k["pk"]) or {}
+    gs = set(json.loads(velho.get("galerias") or "[]")) | {token}
+    peds = (json.loads(velho.get("pedidos") or "[]") + ([ref] if ref else []))[-50:]
+    novo = {**k, "email": email, "idioma": idioma, "galerias": json.dumps(sorted(gs)[-50:]), "pedidos": json.dumps(peds),
+            "primeiro": velho.get("primeiro") or iso(), "ultimo": iso(), "ttl": int(time.time() + PED_DIAS * 86400)}
+    if marketing:
+        novo.update({"marketing": True, "marketing_em": iso(), "marketing_versao": versao})
+    elif velho.get("marketing"):
+        novo.update({k2: velho[k2] for k2 in ("marketing", "marketing_em", "marketing_versao") if k2 in velho})
+    TABELA.put_item(Item=novo)
+
+
+def liberar(ref, it, det):
+    """Pago na Imply: as fotos do pedido viram compradas (canal online) e a venda vai para VONL. Uma vez só por pedido."""
+    try:
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :p, pago = :t",
+                           ConditionExpression="estado <> :p", ExpressionAttributeValues={":p": "pago", ":t": iso()})
+    except ClientError as ex:
+        if ex.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return
+        raise
+    token, pids = it["token"], set(json.loads(it["pids"]))
+    m = manifesto(token)
+    if m:
+        for f in m["fotos"]:
+            if f["id"] in pids and f["direito"] != "comprada":
+                f["direito"], f["canal"] = "comprada", "online"
+                f.pop("cortesia", None)
+        TABELA.update_item(Key={"pk": "GAL#" + token, "sk": "M"}, UpdateExpression="SET m = :m", ExpressionAttributeValues={":m": json.dumps(m)})
+    total = float(it["total"])
+    try:
+        pago = round(float(det.get("valor")), 2) if det.get("valor") is not None else total
+    except Exception:
+        pago = total
+    sessoes = sorted({f.get("sessao") for f in (m or {}).get("fotos", []) if f["id"] in pids and f.get("sessao")})
+    TABELA.put_item(Item={"pk": "VONL", "sk": "%s#%s" % (iso(), ref), "ref": ref, "token": token, "pids": it["pids"], "n": len(pids),
+                          "total": str(total), "pago": str(pago), "diferenca": str(round(pago - total, 2)), "itens": it["itens"],
+                          "todas": bool(it.get("todas")), "sessoes": json.dumps(sessoes), "idpedido": str(det.get("idpedido") or "")[:40],
+                          "meio": str(det.get("meio") or "")[:40], "ttl": int(time.time() + PED_DIAS * 86400)})
+    TABELA.delete_item(Key={"pk": "PEDPEND", "sk": ref})
+    evento(token, "pedido_pago", "", ref=ref, total=pago)
+    email_pago(it)
+
+
+def conferir(ref):
+    """Pergunta à Imply a situação do pedido. Só "pago" libera; "cancelado" encerra o pedido sem liberar."""
+    it = item("PED#" + ref)
+    if not it or it.get("estado") in ("pago", "cancelado", "expirado", "erro"):
+        return it
+    try:
+        st, det = imply.situacao(ref)
+    except Exception as ex:
+        st, det = "desconhecido", {"bruto": "erro: " + str(ex)[:100]}
+    TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET consultas = :n, conferido = :t, resposta = :r",
+                       ExpressionAttributeValues={":n": int(it.get("consultas") or 0) + 1, ":t": iso(), ":r": str(det.get("bruto") or "")[:60]})
+    if st == "pago":
+        liberar(ref, it, det)
+    elif st == "cancelado":
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "cancelado"})
+        TABELA.delete_item(Key={"pk": "PEDPEND", "sk": ref})
+    return item("PED#" + ref)
+
+
+def conferir_pendentes():
+    """A cada 5 min: pedidos sem resposta. Na 1ª hora, todo ciclo; até 24 h, a cada 30 min; depois, expira sem liberar."""
+    agora, feitos = time.time(), 0
+    for p in TABELA.query(KeyConditionExpression=Key("pk").eq("PEDPEND")).get("Items", []):
+        idade = agora - int(p.get("criado") or agora)
+        if idade > 86400:
+            it = conferir(p["sk"])                        # última consulta antes de desistir
+            if it and it.get("estado") not in ("pago", "cancelado"):
+                TABELA.update_item(Key={"pk": "PED#" + p["sk"], "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "expirado"})
+            TABELA.delete_item(Key={"pk": "PEDPEND", "sk": p["sk"]})
+            continue
+        if idade > 3600 and int(agora // 300) % 6:
+            continue
+        conferir(p["sk"])
+        feitos += 1
+    return {"conferidos": feitos}
+
+
+def pedido_volta(ref, ip):
+    if not _re_ref.match(ref) or not contar("VOL#" + ip_hash(ip), 60, 30):
+        return resp({"error": "not found"}, 404)
+    it = conferir(ref)
+    if not it:
+        return resp({"error": "not found"}, 404)
+    return resp({"token": it["token"], "estado": it["estado"], "total": float(it["total"]), "fotos": len(json.loads(it["pids"]))})
+
+
+def vendas_online(ev):
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    desde = str((ev.get("queryStringParameters") or {}).get("desde") or "")[:80]
+    kc = Key("pk").eq("VONL") & Key("sk").gt(desde) if desde else Key("pk").eq("VONL")
+    its = TABELA.query(KeyConditionExpression=kc, Limit=200).get("Items", [])
+    vs = [{"id": x["ref"], "token": x["token"], "pids": json.loads(x["pids"]), "n": int(x["n"]), "total": float(x["pago"]),
+           "esperado": float(x["total"]), "itens": json.loads(x["itens"]), "todas": bool(x.get("todas")), "sessoes": json.loads(x["sessoes"]),
+           "idpedido": x.get("idpedido") or None, "meio": x.get("meio") or None, "em": x["sk"].split("#")[0], "metodo": "imply", "canal": "online"} for x in its]
+    return resp({"vendas": vs, "next": its[-1]["sk"] if its else desde})
+
+
+EMAIL_PAGO = {
+    "pt": ("Suas fotos estão liberadas", "Recebemos o pagamento das suas fotos do Tour Maracanã. Abra a galeria para baixar:", "A galeria fica disponível até"),
+    "en": ("Your photos are ready", "We received the payment for your Maracanã Tour photos. Open the gallery to download them:", "The gallery is available until"),
+    "es": ("Tus fotos están liberadas", "Recibimos el pago de tus fotos del Tour Maracanã. Abre la galería para descargarlas:", "La galería está disponible hasta"),
+}
+
+
+def email_pago(it):
+    if not MAIL_FROM:
+        return
+    m = manifesto(it["token"]) or {}
+    assunto, txt, ate = EMAIL_PAGO.get(it.get("idioma"), EMAIL_PAGO["pt"])
+    link = "https://eterna.photo/#g/" + it["token"]
+    validade = str(m.get("expira") or "")[:10]
+    try:
+        _ses.send_email(FromEmailAddress="%s <%s>" % (MAIL_NOME, MAIL_FROM), Destination={"ToAddresses": [it["email"]]},
+                        Content={"Simple": {"Subject": {"Data": "%s · %s" % (assunto, MAIL_NOME), "Charset": "UTF-8"},
+                                            "Body": {"Text": {"Data": "%s\n\n%s\n\n%s %s" % (txt, link, ate, validade), "Charset": "UTF-8"}}}})
+    except Exception as ex:
+        print("pedido: e-mail de fotos liberadas falhou:", str(ex)[:160])
+
+
 # ---------- rotas ----------
 def ponto_ok(seg):
     h = hashlib.sha256(seg.encode()).hexdigest() if seg else ""
@@ -426,7 +673,8 @@ def publicar(ev, corpo):
     novo = {"v": 1, "token": m["token"], "codigo": m.get("codigo") if _re_codigo.match(str(m.get("codigo") or "")) else None,
             "tipo": m["tipo"], "venue": str(m.get("venue") or "")[:40], "nome": str(m.get("nome") or "")[:120] or None,
             "menor": bool(m.get("menor")), "criada": str(m.get("criada") or iso())[:40], "expira": str(m.get("expira") or "")[:40],
-            "precos": {"dig": max(0.0, float(pr.get("dig") or 0)), "todas": max(0.0, float(pr.get("todas") or 0))}, "fotos": fotos}
+            "precos": {"dig": max(0.0, float(pr.get("dig") or 0)), "todas": max(0.0, float(pr.get("todas") or 0))},
+            "catalogo": catalogo_ok(m.get("catalogo")), "fotos": fotos}
     velho = manifesto(m["token"])
     if velho:                                             # cartão com QR impresso já usado em outra venda: não troca de dono
         s_velho = {f.get("sessao") for f in velho["fotos"] if f.get("sessao")}
@@ -526,6 +774,8 @@ def rosto(token, m, corpo, ip, ctx):
 def handler(ev, ctx):
     if ev.get("limpeza"):                                 # agendada, uma vez por dia
         return limpeza()
+    if ev.get("conferir"):                                # agendada: pedidos online ainda sem resposta da Imply
+        return conferir_pendentes()
     if ev.get("indexar"):                                 # chamada interna em segundo plano
         t = ev["indexar"]
         m = manifesto(t)
@@ -553,6 +803,8 @@ def handler(ev, ctx):
         return publicar(ev, corpo)
     if caminho == "/auth/senha-email" and metodo == "POST":
         return senha_email(ev, corpo)
+    if caminho == "/ponto/vendas-online" and metodo == "GET":
+        return vendas_online(ev)
     partes = caminho.split("/")                           # ['', 'g', token, ação]
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "codigo" and metodo == "GET":
         if not contar("COD#" + ip_hash(ip), 60, 30):
@@ -564,6 +816,8 @@ def handler(ev, ctx):
             return resp({"error": "not found"}, 404)
         evento(it["token"], "codigo_digitado", ip)
         return resp({"token": it["token"]})
+    if len(partes) == 4 and partes[1] == "g" and partes[2] == "pedido" and metodo == "GET":
+        return pedido_volta(partes[3].upper(), ip)
     if len(partes) != 4 or partes[1] != "g" or not _re_token.match(partes[2]):
         return resp({"error": "not found"}, 404)
     token, acao = partes[2], partes[3]
@@ -575,7 +829,7 @@ def handler(ev, ctx):
     if acao == "info" and metodo == "GET":
         evento(token, "qr_aberto", ip)
         return resp({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
-                     "estado": estado(m), "venue": m.get("venue"), "compra": COMPRA_ONLINE})
+                     "estado": estado(m), "venue": m.get("venue"), "compra": compra_ligada(m)})
     if acao == "livres" and metodo == "GET":              # v96.1: compradas e cortesias da venda só pelo QR
         if not contar("LIV#" + ip_hash(ip), 60, 30):
             return resp({"motivo": "bloqueado"}, 429)
@@ -585,7 +839,7 @@ def handler(ev, ctx):
         return resp({"galeria": g})
     if acao == "rosto" and metodo == "POST":
         return rosto(token, m, corpo, ip, ctx)
-    if acao in ("galeria", "pagamento") and metodo == "POST":
+    if acao in ("galeria", "pagamento", "pedido") and metodo == "POST":
         a = item("ACE#" + str(corpo.get("acesso") or "")) if corpo.get("acesso") else None
         if not a or a["token"] != token or int(a["exp"]) < time.time():
             return resp({"error": "acesso inválido ou vencido"}, 401)
@@ -593,6 +847,8 @@ def handler(ev, ctx):
         if acao == "galeria":
             evento(token, "galeria_vista", ip)
             return resp({"galeria": galeria_obj(token, m, pids)})
+        if acao == "pedido":
+            return pedido(token, m, corpo, ip, pids)
         # compra online desligada: por ora a venda é só no balcão, na maquininha Imply
         evento(token, "compra_tentada", ip)
         return resp({"ok": False, "motivo": "compra_indisponivel",

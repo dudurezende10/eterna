@@ -120,6 +120,34 @@ Consequências para o Eterna:
 - Decidido (11/11): produto que não existe na Imply não é cadastrado no Eterna. Fundo de IA e Foto digital avulsa saíram;
   os nomes no Eterna são os da Imply (`dscinterna` sem o prefixo "[POS] [Foto]").
 
+## O que foi construído (v99, 11/11)
+
+- **Galeria** (`index.html`): a oferta e a cesta usam os produtos marcados para venda online no catálogo (PACOTE ZONA MISTA,
+  1 foto adicional, Todas as fotos digitais), com o SKU e o preço da Imply, publicados no manifesto (`catalogo`). A cesta é a
+  mais barata para as fotos escolhidas (`pubCesta`). Antes de pagar, a tela pede nome, e-mail, CPF (ou passaporte) e o
+  consentimento de marketing, opcional. Depois redireciona para o endereço que a Nuvem devolve.
+- **Volta**: a Imply devolve para `https://eterna.photo/g/?idpedido=<ON-...>`. `g/index.html` leva a `#g/pedido/<ON-...>`, e a
+  galeria pergunta à Nuvem a cada 5 s, por até 10 min. Com "pago", abre a galeria com as fotos liberadas.
+- **Nuvem** (`servidor/galeria-nuvem/app.py` + `imply.py`):
+  - `POST /g/<token>/pedido`: confere o acesso, as fotos e a cesta, com o preço do manifesto. Grava o pedido e o lead
+    (e-mail e consentimento), chama o `setPessoa` e devolve o endereço de login automático, que já abre o checkout com o carrinho.
+  - `GET /g/pedido/<ref>`: consulta a Imply.
+  - A cada 5 min, confere os pedidos pendentes. Na 1ª hora, a cada ciclo; até 24 h, a cada 30 min; depois, expira.
+  - Pago: as fotos viram compradas (canal online), a venda vai para `VONL` e o cliente recebe o link por e-mail. Uma vez só por pedido.
+  - O CPF vai para a Imply e não fica guardado na Nuvem.
+- **Agente**: a cada minuto busca `GET /ponto/vendas-online` com o segredo do ponto. Junta a venda às vendas do ponto
+  (`vendas-online.jsonl`, que o app já lê) e marca as fotos como compradas no manifesto local.
+- **Ainda dependem da Imply** (ajustáveis sem mexer no código, pelos parâmetros do template):
+  - `ImplyTipoPessoa`: o código de cliente final.
+  - `ImplyCarrinho`: o formato do predefined-cart. Hoje vai JSON em Base64 com `referencia` e `itens[{idproduto, quantidade}]`.
+  - `ImplyConsulta`: o endereço da consulta, com `{ref}`.
+  - As palavras de situação (`IMPLY_PAGO` e `IMPLY_CANCELADO`).
+  Sem a consulta, nenhum pedido é liberado (fica pendente e expira em 24 h).
+- **Não feito ainda**:
+  - Estorno depois de pago: a consulta só roda até o pagamento.
+  - E-mail obrigatório antes da selfie: hoje ele é pedido na hora de comprar.
+  - Envio ao RD Station.
+
 ## Etapas
 
 1. Catálogo idêntico ao da Imply, com SKU (depende das decisões acima).

@@ -311,17 +311,29 @@ Outras coisas que o cliente pode fazer:
 
 ### Pacotes, adicionais e economia (escolhidos no Posto de venda desde a v96)
 
-O catálogo do Tour mudou na v79:
+Desde a v98 o catálogo é o da Imply: mesmos produtos, nomes, preços e código (SKU). Produto que não existe na Imply não é cadastrado.
 
-| Pacote | O que leva | Preço |
+| Produto | O que leva | Preço | Vende online |
+| --- | --- | --- | --- |
+| Todas as fotos digitais | todas as fotos, só digitais | R$ 250 | sim |
+| Acima de 15 fotos digitais | todas as fotos, só digitais | R$ 250 | não |
+| PACOTE TRIBUNA DE HONRA | 12 fotos, digitais e impressas | R$ 220 | não |
+| PACOTE MARACANÃ | 9 fotos, digitais e impressas | R$ 190 | não |
+| PACOTE GRAMADO | 6 fotos, digitais e impressas | R$ 150 | não |
+| PACOTE ZONA MISTA | 3 fotos, só digitais | R$ 110 | sim |
+| 3 fotos digitais e impressas | 3 fotos, digitais e impressas | R$ 110 | não |
+| PACOTE ARQUIBANCADA | 1 foto, digital e impressa | R$ 70 | não |
+| 1 foto digital e impressa | 1 foto, digital e impressa | R$ 70 | não |
+| 1 foto (adicional) digital ou impressa | 1 foto a mais | R$ 35 | sim |
+| Figurinha Copa | figurinha | R$ 20 | não |
+| Porta-retrato | porta-retrato, com a CORTESIA PORTA-RETRATO | R$ 75 | não |
+
+Cortesias (sem valor, não são venda):
+
+| Cortesia | Quando | O que leva |
 | --- | --- | --- |
-| Maracanã Mais | todas as fotos, só digitais | R$ 250 |
-| Tribuna de Honra | 12 fotos, digitais e impressas | R$ 220 |
-| Maracanã | 9 fotos, digitais e impressas | R$ 190 |
-| Gramado | 6 fotos, digitais e impressas | R$ 150 |
-| Zona Mista | 3 fotos, só digitais | R$ 110 |
-| Arquibancada | 1 foto, digital e impressa | R$ 70 |
-| Foto adicional | 1 foto, digital e impressa | R$ 35 |
+| Cortesia SAC | cliente prejudicado pela operação: espera longa, falha de foto, impressão ou sistema, problema no atendimento | as fotos escolhidas, impressas e digitais |
+| CORTESIA PORTA-RETRATO | entra sozinha, uma para cada Porta-retrato vendido | 1 foto impressa para pôr no porta-retrato |
 
 Todas as impressas são 10×15 cm.
 
@@ -335,6 +347,18 @@ No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 - Impressas: o pacote imprime até o número de fotos escolhidas, mais uma por adicional. Cada adicional sai do rolo do caixa.
 
 Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Painel de controle**.
+
+### Dar a Cortesia SAC (v99)
+
+Só quem pode dar cortesia (Galerias online, alterar) vê o botão.
+
+1. Na **Venda manual** (ou na Fila do balcão), escolha as fotos com o cliente.
+2. Em **Cortesia**, toque em **Cortesia SAC**. Ela ocupa o lugar do pacote.
+3. Toque em **Ir para o pagamento**.
+4. Escolha o **motivo** e escreva **o que aconteceu** (obrigatório).
+5. Toque em **Registrar cortesia e imprimir**.
+
+A venda fica com valor zero e pagamento "Cortesia", com o motivo, o texto e quem deu. As fotos saem impressas e entram na galeria do cliente com o selo Cortesia.
 
 ### Sessão que já foi paga
 
@@ -456,11 +480,13 @@ A aba **Envio** mostra se cada galeria chegou ao computador do ponto:
 ### Ajustes no Catálogo
 
 - **Tempo da tela final do Checkout**: Preços e Checkout › Checkout › "Tempo da tela final com o QR (segundos)". Padrão 40, de 5 a 120.
-- **Preço da foto avulsa na galeria**: item "Foto digital avulsa (galeria online)", hoje R$ 39. "Todas as fotos" custa o mesmo que o Pacote Maracanã Mais.
+- **Preços da galeria online (v99)**: os mesmos do balcão, dos produtos que vendem online (tabela da seção 3). O cliente escolhe as fotos e a galeria monta o mais barato: até 3 fotos, PACOTE ZONA MISTA; de 4 em diante, mais uma foto adicional por foto, até ficar mais caro que Todas as fotos digitais.
 
 ### Ver as vendas da galeria
 
-Em **Lista de vendas**, use o filtro **Canal: Online**. Hoje elas aparecem como **teste** e ficam fora da receita (ver limitações).
+Em **Lista de vendas**, use o filtro **Canal: Online**. A compra online paga na Imply aparece como **Imply online** (v99), com o código do pedido (ON-...). As compras simuladas do servidor de teste aparecem como **teste** e ficam fora da receita.
+
+Como o cliente compra online (v99): escolhe as fotos na galeria, informa nome, e-mail e CPF (ou passaporte, se for estrangeiro) e paga no checkout da Imply, com Pix ou cartão. Ao voltar, a galeria espera a Imply confirmar e libera as fotos. Se ele fechar a página depois de pagar, a Nuvem confere sozinha e manda o link das fotos por e-mail.
 
 ---
 

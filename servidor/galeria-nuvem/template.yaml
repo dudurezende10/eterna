@@ -19,7 +19,24 @@ Parameters:
     Type: String
     Default: "0"
     AllowedValues: ["0", "1"]
-    Description: compra online desligada até haver canal de pagamento (por ora só maquininha Imply no balcão)
+    Description: compra online pela Imply (v99); só liga de fato com ImplyChaveParametro e ImplyTipoPessoa preenchidos
+  ImplyChaveParametro:
+    Type: String
+    Default: ""
+    Description: nome do parâmetro SecureString do SSM com a chave do usuário de serviço da Imply (ex. /eterna/imply-chave); a chave nunca vai no template
+  ImplyTipoPessoa:
+    Type: String
+    Default: ""
+    Description: código tipo_pessoa da Eleven para cliente final (pessoa física), informado pela Imply
+  ImplyConsulta:
+    Type: String
+    Default: ""
+    Description: endereço da consulta do pedido na Imply, com {ref} no lugar do nosso código (vazio = só conferência manual)
+  ImplyCarrinho:
+    Type: String
+    Default: json-b64
+    AllowedValues: [json-b64, json]
+    Description: formato do predefined-cart (a confirmar com a Imply)
   OrigensApp:
     Type: CommaDelimitedList
     Default: "https://eterna.photo,https://www.eterna.photo,http://127.0.0.1:8765,http://localhost:8765,http://192.168.10.218:8765"
@@ -100,6 +117,11 @@ Resources:
           SEGREDO_PONTO_SHA256: !Ref SegredoPontoSha256
           SEGREDO_PONTO_TESTE_SHA256: !Ref SegredoPontoTesteSha256
           COMPRA_ONLINE: !Ref CompraOnline
+          IMPLY_CHAVE_SSM: !Ref ImplyChaveParametro
+          IMPLY_TIPO_PESSOA: !Ref ImplyTipoPessoa
+          IMPLY_CONSULTA: !Ref ImplyConsulta
+          IMPLY_CARRINHO: !Ref ImplyCarrinho
+          VOLTA_URL: https://eterna.photo/g/
           LIMIAR_ADULTO: "85"
           LIMIAR_CRIANCA: "95"
           COLECAO_PREFIXO: et-maracana-
@@ -134,6 +156,10 @@ Resources:
               Effect: Allow
               Action: [rekognition:DetectFaces]
               Resource: "*"
+            - Sid: ChaveDaImply
+              Effect: Allow
+              Action: [ssm:GetParameter]
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eterna/*"
             - Sid: LeituraEmSegundoPlano
               Effect: Allow
               Action: [lambda:InvokeFunction]
@@ -144,6 +170,23 @@ Resources:
           Properties:
             Schedule: rate(1 day)
             Input: '{"limpeza": true}'
+        ConferePedidos:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Input: '{"conferir": true}'
+        PedidoVolta:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/pedido/{ref}"
+            Method: GET
+        VendasOnline:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/vendas-online
+            Method: GET
         Codigo:
           Type: HttpApi
           Properties:

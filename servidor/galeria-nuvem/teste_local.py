@@ -17,6 +17,8 @@ class Tabela:
         k = (Key["pk"], Key["sk"]); it = s.d.setdefault(k, dict(Key)); v = ExpressionAttributeValues or {}; n = ExpressionAttributeNames or {}
         if ConditionExpression and "lk" in it and not it["lk"] < v[":agora"]:
             raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+        if ConditionExpression == "estado <> :p" and it.get("estado") == v[":p"]:
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
         if UpdateExpression.startswith("REMOVE"):
             it.pop(UpdateExpression.split()[1], None); return {}
         if UpdateExpression.startswith("ADD"):
@@ -25,6 +27,14 @@ class Tabela:
             a, b = [x.strip() for x in par.split("=")]
             it[n.get(a, a)] = v[b]
         return {}
+    def query(s, KeyConditionExpression, Limit=None, **k):
+        def casa(c, it):
+            e = c.get_expression(); op, vs = e["operator"], e["values"]
+            if op == "AND": return casa(vs[0], it) and casa(vs[1], it)
+            a = it[0] if vs[0].name == "pk" else it[1]
+            return a == vs[1] if op == "=" else a > vs[1]
+        its = sorted((k_, v) for k_, v in s.d.items() if casa(KeyConditionExpression, k_))
+        return {"Items": [dict(v) for k_, v in its][:Limit]}
 
 
 class Rek:
@@ -187,4 +197,79 @@ chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tok3, codigo=None
 antes = R.indexadas
 st, r = chama("POST", "/g/%s/rosto" % tok3, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True})
 ok(st == 503 and R.indexadas == antes, "teto do dia atingido: nenhuma leitura paga a mais, cliente vê 'processando'")
+
+# v99: compra online pela Imply (Imply simulada: setPessoa, consulta)
+import imply, urllib.parse
+ok(imply.cpf_ok("529.982.247-25") and not imply.cpf_ok("111.111.111-11") and not imply.cpf_ok("529.982.247-24"), "CPF: dígitos verificadores")
+SKU = {"zona": "bd52ae84" + "0" * 32, "extra": "5ef192a2" + "0" * 32, "mais": "0ef59f3f" + "0" * 32}
+cat = [{"id": "zona", "sku": SKU["zona"], "nome": "PACOTE ZONA MISTA", "preco": 110, "digital": 3, "kind": "pacote"},
+       {"id": "extra", "sku": SKU["extra"], "nome": "1 foto (adicional) digital ou impressa", "preco": 35, "digital": 1, "kind": "adicional"},
+       {"id": "mais", "sku": SKU["mais"], "nome": "Todas as fotos digitais", "preco": 250, "digital": "todas", "kind": "pacote"},
+       {"id": "ruim", "sku": "x", "preco": 1, "digital": 1}]
+tokP = "P" * 22
+LIMITE = app.LIMITE_BUSCAS_DIA
+app.LIMITE_LEITURAS_DIA = app.LIMITE_BUSCAS_DIA = 10 ** 6
+chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tokP, codigo="PPPP-PPPP", catalogo=cat)}, {"x-eterna-ponto": seg})
+ok([c["id"] for c in app.manifesto(tokP)["catalogo"]] == ["zona", "extra", "mais"], "catálogo online publicado, item sem SKU válido fora")
+ok(chama("GET", "/g/%s/info" % tokP)[1]["compra"] is False, "sem COMPRA_ONLINE e sem chave da Imply: compra desligada")
+app.COMPRA_ONLINE = True
+imply.CHAVE_SSM, imply.TIPO_PESSOA = "/eterna/imply-chave", "99"
+imply._chave["v"] = "chave-de-teste"
+pessoas, respostas = [], {}
+imply.set_pessoa = lambda *a, **k: pessoas.append((a, k)) or "tk-pessoa"
+imply.situacao = lambda ref: respostas.get(ref, ("pendente", {"bruto": "aguardando"}))
+st, r = chama("POST", "/g/%s/rosto" % tokP, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="5.0.0.1")
+aceP = r["acesso"]
+ok(r["galeria"]["compra"] and [c["id"] for c in r["galeria"]["catalogo"]] == ["zona", "extra", "mais"], "galeria manda o catálogo online e compra ligada")
+venda = [f["pid"] for f in r["galeria"]["fotos"] if f["direito"] == "venda"]
+cli = {"nome": "Cliente Teste", "email": "cliente@exemplo.com", "cpf": "529.982.247-25"}
+ped = lambda corpo, ip="5.0.0.1": chama("POST", "/g/%s/pedido" % tokP, dict({"acesso": aceP}, **corpo), ip=ip)
+ok(ped({"pids": venda[:4], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli})[0] == 400, "carrinho que não cobre as fotos: recusado")
+ok(ped({"pids": venda[:1], "itens": [{"id": "extra", "qtd": 1}], "cliente": cli})[0] == 400, "adicional sem pacote: recusado")
+ok(ped({"pids": venda[:1], "itens": [{"id": "zona", "qtd": 1}], "cliente": dict(cli, cpf="111.111.111-11")})[1].get("campo") == "documento", "CPF inválido: recusado")
+ok(ped({"pids": ["zz0000"], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli})[0] == 400, "foto fora do acesso: recusada")
+st, r = ped({"pids": venda[:4], "itens": [{"id": "zona", "qtd": 1}, {"id": "extra", "qtd": 1}], "cliente": cli, "marketing": True, "idioma": "pt"})
+ok(st == 200 and r["ok"] and r["total"] == 145 and __import__("re").match(r"^ON-[A-Z0-9]{10}$", r["ref"]), "pedido criado: 4 fotos = Zona Mista + 1 adicional = 145")
+ref = r["ref"]
+q = urllib.parse.parse_qs(urllib.parse.urlparse(r["url"]).query)
+destino = base64.b64decode(q["url"][0]).decode()
+dq = urllib.parse.parse_qs(urllib.parse.urlparse(destino).query)
+carr = json.loads(base64.b64decode(dq["predefined-cart"][0]))
+ok(r["url"].startswith("https://maracanatouradmin.eleventickets.com/OAuth2/external?") and q["token"] == ["tk-pessoa"] and destino.startswith("https://maracanatour.eleventickets.com/pt/checkout?"),
+   "endereço: login automático da Imply que cai no checkout")
+ok(carr == {"referencia": ref, "itens": [{"idproduto": SKU["zona"], "quantidade": 1}, {"idproduto": SKU["extra"], "quantidade": 1}]} and dq["urlreturn"] == ["https://eterna.photo/g/"],
+   "predefined-cart com SKU, quantidade e o nosso código; volta para eterna.photo/g/")
+(pa, pk_) = pessoas[-1]
+ok(pa[0].startswith("EP-") and pa[1:3] == ("Cliente Teste", "cliente@exemplo.com") and pk_["cpf"] == "52998224725", "setPessoa com de_para, nome, e-mail e CPF")
+ok("cpf" not in json.dumps(T.d[("PED#" + ref, "M")]).lower() and "52998224725" not in json.dumps({k[0]: v for k, v in T.d.items()}), "CPF não fica guardado na Nuvem")
+lead_ = next(v for k, v in T.d.items() if k[0].startswith("LEAD#"))
+ok(lead_["email"] == "cliente@exemplo.com" and lead_["marketing"] is True and ref in lead_["pedidos"], "lead gravado com consentimento de marketing")
+st, r = chama("GET", "/g/pedido/" + ref)
+ok(st == 200 and r["estado"] == "aguardando" and r["token"] == tokP and app.manifesto(tokP)["fotos"][5]["direito"] == "venda", "volta sem pagamento: nada liberado")
+ok(chama("GET", "/g/pedido/ON-ZZZZZZZZZZ")[0] == 404, "código de pedido inexistente: 404")
+respostas[ref] = ("pago", {"valor": "145.00", "idpedido": "998877", "meio": "pix", "bruto": "pago"})
+st, r = chama("GET", "/g/pedido/" + ref)
+compradas = {f["id"] for f in app.manifesto(tokP)["fotos"] if f["direito"] == "comprada" and f.get("canal") == "online"}
+ok(st == 200 and r["estado"] == "pago" and set(venda[:4]) <= compradas, "pago na Imply: as 4 fotos viram compradas (online)")
+st, r = chama("GET", "/g/pedido/" + ref)
+vs = [v for k, v in T.d.items() if k[0] == "VONL"]
+ok(len(vs) == 1 and vs[0]["pago"] == "145.0" and vs[0]["idpedido"] == "998877", "conferir de novo não duplica a venda")
+st, r = chama("GET", "/ponto/vendas-online", cab={"x-eterna-ponto": seg})
+ok(st == 200 and len(r["vendas"]) == 1 and r["vendas"][0]["id"] == ref and r["vendas"][0]["n"] == 4 and r["vendas"][0]["metodo"] == "imply", "agente busca a venda online")
+ev_v = {"rawPath": "/ponto/vendas-online", "headers": {"x-eterna-ponto": seg}, "queryStringParameters": {"desde": r["next"]}, "requestContext": {"http": {"method": "GET", "sourceIp": "1.1.1.1"}}}
+ok(json.loads(app.handler(ev_v, ctx)["body"])["vendas"] == [], "com o 'desde', nada repetido")
+ok(chama("GET", "/ponto/vendas-online")[0] == 401, "vendas online sem o segredo do ponto: 401")
+# todas as fotos digitais: o pedido leva todas as à venda que o cliente vê; republicar no ponto não desfaz a compra
+st, r = ped({"pids": venda[4:5], "itens": [{"id": "mais", "qtd": 1}], "cliente": dict(cli, cpf="", passaporte="ab 12345")})
+ref2 = r["ref"]
+ok(st == 200 and r["total"] == 250 and r["fotos"] == len(venda) - 4 and "passaporte" in pessoas[-1][1] and pessoas[-1][1]["passaporte"] == "AB12345", "Todas as fotos digitais com passaporte")
+chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tokP, codigo="PPPP-PPPP", catalogo=cat)}, {"x-eterna-ponto": seg})
+ok(set(venda[:4]) <= {f["id"] for f in app.manifesto(tokP)["fotos"] if f["direito"] == "comprada"}, "republicar do ponto não desfaz a compra online")
+# conferência agendada: pendente que pagou depois sem voltar; pendente de mais de 24 h expira
+respostas[ref2] = ("pago", {"valor": 250, "bruto": "aprovado"})
+print("conferir:", app.handler({"conferir": True}, ctx))
+ok(T.d[("PED#" + ref2, "M")]["estado"] == "pago" and not [k for k in T.d if k[0] == "PEDPEND"], "agendada: libera o pedido pago sem a volta do cliente")
+st, r = ped({"pids": venda[:1], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli}, ip="5.0.0.9")
+ok(st == 400, "foto já comprada não entra em pedido novo")
+app.LIMITE_BUSCAS_DIA = LIMITE
 print("\ntudo certo")

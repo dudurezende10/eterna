@@ -1247,8 +1247,55 @@ def nuvem_galerias_loop():
                     db.commit(); db.close()
         except Exception as ex:
             nuvem["galeria_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        if time.time() - nuvem.get("vendas_online_em", 0) > 60:
+            nuvem["vendas_online_em"] = time.time()
+            try:
+                nuvem_vendas_online(seg)
+            except Exception as ex:
+                nuvem["vendas_online_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         nuvem_gal_acorda.wait(5)
         nuvem_gal_acorda.clear()
+
+
+def nuvem_vendas_online(seg):
+    """v99: compra online paga na Imply (conferida pela Nuvem). Junta às vendas do ponto (vendas-online.jsonl, que o app lê em
+    /galerias/vendas) e marca as fotos como compradas no manifesto local. O cursor fica no nuvem.db; o id é o código do pedido."""
+    with nuvem_lock:
+        db = nuvem_db()
+        db.execute("CREATE TABLE IF NOT EXISTS cursor (nome TEXT PRIMARY KEY, valor TEXT)")
+        r = db.execute("SELECT valor FROM cursor WHERE nome='vendas_online'").fetchone()
+        db.close()
+    desde = r[0] if r else ""
+    rq = urllib.request.Request(NUVEM_API + "/ponto/vendas-online?" + urllib.parse.urlencode({"desde": desde}),
+                                headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=20) as resp_:
+        j = json.loads(resp_.read().decode("utf8"))
+    with gal_lock:
+        ja = {v.get("id") for v in vendas_ler()}
+        for v in j.get("vendas") or []:
+            if not isinstance(v, dict) or not re.match(r"^ON-[A-Z0-9]{10}$", str(v.get("id") or "")) or v["id"] in ja:
+                continue
+            pids = [str(x) for x in (v.get("pids") or [])][:2000]
+            m = REPO.ler_manifesto(v.get("token")) if token_ok(v.get("token")) else None
+            if m:
+                for f in m["fotos"]:
+                    if f["id"] in pids and f["direito"] != "comprada":
+                        f["direito"], f["canal"] = "comprada", "online"
+                        f.pop("cortesia", None)
+                REPO.salvar_manifesto(v["token"], m)
+                gal_fila.put(v["token"])
+            anexar(VENDAS, {"id": v["id"], "token": v.get("token"), "sessoes": v.get("sessoes") or [], "pids": pids, "n": len(pids),
+                            "total": float(v.get("total") or 0), "esperado": float(v.get("esperado") or 0), "itens": v.get("itens") or [],
+                            "metodo": "imply", "idpedido": v.get("idpedido"), "meio": v.get("meio"), "em": v.get("em") or _iso(),
+                            "canal": "online", "todas": bool(v.get("todas")), "teste": False})
+            ja.add(v["id"])
+            nuvem["vendas_online"] = nuvem.get("vendas_online", 0) + 1
+    if j.get("next") and j["next"] != desde:
+        with nuvem_lock:
+            db = nuvem_db()
+            db.execute("CREATE TABLE IF NOT EXISTS cursor (nome TEXT PRIMARY KEY, valor TEXT)")
+            db.execute("INSERT OR REPLACE INTO cursor (nome, valor) VALUES ('vendas_online', ?)", (j["next"],))
+            db.commit(); db.close()
 
 
 def nuvem_tem(pid):
@@ -3752,14 +3799,23 @@ def gal_validar(m):
         fotos.append(x)
     pr = m.get("precos") or {}
     try:
-        precos = {"dig": max(0.0, float(pr.get("dig"))), "todas": max(0.0, float(pr.get("todas")))}
+        precos = {"dig": max(0.0, float(pr.get("dig") or 0)), "todas": max(0.0, float(pr.get("todas")))}
     except Exception:
         raise ValueError("preços inválidos")
+    catalogo = []
+    for c in (m.get("catalogo") if isinstance(m.get("catalogo"), list) else [])[:20]:
+        if isinstance(c, dict) and re.match(r"^[a-z0-9_]{1,20}$", str(c.get("id") or "")) and re.match(r"^[0-9a-f]{40}$", str(c.get("sku") or "")):
+            try:
+                catalogo.append({"id": c["id"], "sku": c["sku"], "nome": str(c.get("nome") or "")[:80], "preco": round(max(0.0, float(c.get("preco"))), 2),
+                                 "digital": "todas" if c.get("digital") == "todas" else max(0, int(c.get("digital") or 0)),
+                                 "kind": "pacote" if c.get("kind") == "pacote" else "adicional"})
+            except (TypeError, ValueError):
+                pass
     codigo = m.get("codigo") if isinstance(m.get("codigo"), str) and _re_codigo.match(m.get("codigo")) else None
     return {"v": 1, "token": m["token"], "codigo": codigo, "tipo": m["tipo"], "venue": str(m.get("venue") or "")[:40],
             "nome": (str(m["nome"])[:120] if m.get("nome") else None), "sessoes": [str(s)[:40] for s in (m.get("sessoes") or [])[:200]],
             "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": gal_expira_ok(m.get("expira")),
-            "precos": precos, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
+            "precos": precos, "catalogo": catalogo, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
 
 
 def gal_mesclar(novo, velho):
@@ -9539,7 +9595,7 @@ class H(BaseHTTPRequestHandler):
                 except ValueError:
                     desde = 0
                 vs = vendas_ler()
-                return self.js({"vendas": [{k: v.get(k) for k in ("id", "token", "sessoes", "pids", "n", "total", "metodo", "em", "canal", "todas", "teste")} for v in vs[desde:desde + 500]],
+                return self.js({"vendas": [{k: v.get(k) for k in ("id", "token", "sessoes", "pids", "n", "total", "metodo", "em", "canal", "todas", "teste", "itens", "meio", "idpedido")} for v in vs[desde:desde + 500]],
                                 "next": min(len(vs), desde + 500)})
             if p == "/galerias/status":
                 gs = []
@@ -9831,7 +9887,8 @@ class H(BaseHTTPRequestHandler):
                         or any(x not in a["pids"] or dire.get(x) != "venda" for x in pids):
                     return self.js({"error": "foto fora do acesso ou não está à venda"}, 400)
                 n = len(pids)
-                dig, todas = float(m["precos"]["dig"]), float(m["precos"]["todas"])
+                todas = float(m["precos"]["todas"])
+                dig = float(m["precos"].get("dig") or 0) or todas
                 total = round(min(n * dig, todas), 2)          # o total que o navegador mandar é ignorado
                 ped = PAGAMENTO.criar({"token": token, "pids": pids, "total": total, "metodo": metodo, "idem": idem})
                 if ped["status"] == "aprovado":

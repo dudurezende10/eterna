@@ -1,6 +1,7 @@
 # Galeria na nuvem (plano v85, parte F)
 
-API que atende o celular do cliente fora do estádio: QR, código curto, selfie (Rekognition, só contra os rostos da própria galeria), galeria e download do que foi comprado. Mesmo contrato das rotas `/g/*` do agente, então o app não muda de tela. A compra online fica desligada (`CompraOnline=0`) enquanto o pagamento for só na maquininha Imply no balcão.
+API que atende o celular do cliente fora do estádio: QR, código curto, selfie (Rekognition, só contra os rostos da própria galeria), galeria e download do que foi comprado. Mesmo contrato das rotas `/g/*` do agente, então o app não muda de tela. Compra online pela Imply (v99): o cliente paga no checkout da Imply e a Nuvem libera as fotos quando a Imply confirmar.
+Ela fica desligada até `CompraOnline=1` e a chave e o tipo de pessoa da Imply estarem configurados (ver "Ligar a compra pela Imply").
 
 ## Como funciona
 - O agente do estádio envia as fotos para o bucket (`vitrine/` e `alta/`, parte E) e publica cada galeria em `POST /ponto/galerias`, autenticado pelo segredo do ponto (`~/Eterna/nuvem-segredo.txt`; na nuvem fica só o SHA-256).
@@ -26,6 +27,20 @@ sam deploy --template-file template.yaml --stack-name eterna-galeria --region us
 No fim, `EnderecoApi` é a URL da API (até existir `api.eterna.photo`).
 
 Teste local, sem AWS: `python teste_local.py .`
+
+## Ligar a compra pela Imply (v99)
+1. Guardar a chave do usuário de serviço da Imply como parâmetro protegido. Quem tem a chave digita no CloudShell; ela não
+   vai em arquivo, template, e-mail ou chat:
+   ```bash
+   read -s -p "Chave da Imply: " K && aws ssm put-parameter --region us-east-2 --name /eterna/imply-chave --type SecureString --value "$K" --overwrite; unset K
+   ```
+2. No `sam deploy`, acrescentar em `--parameter-overrides`:
+   `CompraOnline=1 ImplyChaveParametro=/eterna/imply-chave ImplyTipoPessoa=<código da Imply> ImplyConsulta=<endereço com {ref}>`
+   (e `ImplyCarrinho=json` se a Imply pedir o carrinho sem Base64).
+3. Testar primeiro na homologação da Imply, se ela der uma: trocar `IMPLY_ADMIN` e `IMPLY_LOJA` na função.
+
+Rotas novas: `POST /g/<token>/pedido`, `GET /g/pedido/<ref>`, `GET /ponto/vendas-online` (segredo do ponto) e a conferência
+agendada a cada 5 min. Registros no DynamoDB: `PED#<ref>` (pedido), `PEDPEND` (pendentes), `VONL` (vendas pagas), `LEAD#<hash do e-mail>`.
 
 ## Ligar no ponto
 Agente com `ETERNA_GALERIA_API=<EnderecoApi>`. No app, `GAL_API` aponta para a mesma URL: o celular fora do estádio usa a nuvem, e o computador do ponto continua usando o agente.
