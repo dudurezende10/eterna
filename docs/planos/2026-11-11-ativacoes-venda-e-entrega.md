@@ -13,9 +13,9 @@ Este plano substitui as opções do plano de 30/10 (`2026-10-30-maracafly-no-ete
 1. O Eterna vende Drone, Chute a Gol e Snap Pop, além das fotos.
 2. **A venda é no tablet, com tela pensada primeiro para tela pequena.** É o mesmo aparelho do Posto de venda.
 3. **A venda não pede dado do cliente**, para ser rápida. Não há nome, WhatsApp nem país.
-4. **A entrega é por QR.** O vendedor lê o QR do cartão que entrega ao cliente, e o QR fica ligado à venda. O cliente abre a galeria pelo QR, informa o e-mail, faz a selfie e baixa o vídeo, como já acontece com as fotos. **Não há entrega por WhatsApp.**
+4. **A entrega é por QR, ligado no campo, na hora da entrega.** Quando o cartão de memória sai do drone, a equipe lê o QR de um cartão, liga esse QR ao vídeo e entrega o cartão ao cliente. O cliente abre a galeria pelo QR, informa o e-mail, faz a selfie e baixa o vídeo, como já acontece com as fotos. A venda não lê QR. **Não há entrega por WhatsApp.**
 5. **O vídeo fica na nuvem da AWS**, no mesmo lugar da galeria.
-6. **O Drone também tem fotos.** Elas entram no checkout das fotos, junto com as do tour.
+6. **O Drone também tem fotos.** Elas ficam com as outras fotos do tour, na sessão do cliente, e são vendidas no checkout das fotos. O QR do vídeo serve só para o vídeo.
 7. **Cortesia vale para as ativações**, com a mesma regra da Cortesia SAC: motivo, nota e quem deu.
 8. **O admin troca preço e vídeo de demonstração**, e pode desligar um produto no dia ("hoje não vendo").
 9. **Por enquanto, vídeo do Drone e Chute a Gol só se compram no local.** A compra online (Imply, plano `2026-11-11-compra-online-pela-imply.md`) continua só para fotos. As ativações entram nela depois.
@@ -73,10 +73,7 @@ Uma tela nova, **Ativações**, no menu de venda. Ela segue o padrão visual do 
 5. **Pagamento:** PIX, Dinheiro, Débito, Crédito ou **Cortesia**. Na Cortesia, o motivo e a nota são obrigatórios.
 6. **Idioma do cliente:** só para o recibo e para a galeria abrirem no idioma dele. Não é dado pessoal.
 7. **Execução:** imediata ou agendada (dia e hora). Serve para o Drone.
-8. **Ler o QR:** a câmera do tablet lê o QR do cartão entregue ao cliente, e a venda fica ligada a esse cartão.
-   - Uma venda pode ter um QR só.
-   - Um QR já usado em outra venda é recusado.
-9. **Registrar:** grava a venda no servidor do estádio, com número próprio e quem vendeu. Imprime o recibo no idioma do cliente, se houver impressora no posto.
+8. **Registrar:** grava a venda no servidor do estádio, com número próprio e quem vendeu. Imprime o recibo no idioma do cliente, se houver impressora no posto.
    - Uma venda igual registrada em até 2 minutos pelo mesmo vendedor pede confirmação.
 
 A venda fica no servidor, nunca só no navegador (`2026-11-10-dado-no-banco.md`). Se o tablet perder a conexão com o servidor, a tela avisa e não registra. A venda acontece só dentro do estádio, na rede local.
@@ -85,17 +82,25 @@ Todo texto novo entra nos idiomas: `EQ`/`TE` nas telas da equipe e `I18N`/`T` no
 
 ## 4. Entrega
 
-**Ligação do arquivo com a venda:** o nome do arquivo começa com o código do QR da venda. Exemplo: `AB12CD34EF_1.mp4`.
+**O QR é ligado no campo, na entrega.** A venda fica na fila do produto sem QR. Na hora de entregar:
 
-- O sistema recusa arquivo sem o código de uma venda existente.
-- O sistema recusa arquivo de produto que não é vídeo.
+1. a equipe abre a venda na fila (Drone, Chute a Gol ou Snap Pop);
+2. a câmera do tablet lê o QR de um cartão novo;
+3. o vídeo é enviado e fica ligado à venda e a esse QR;
+4. o cartão vai para o cliente.
 
-**Envio:** pela tela de entrega, ou pela pasta vigiada do agente no servidor do estádio. O agente já faz isso com as fotos.
+Regras:
+
+- Uma venda pode ter um QR por vídeo. Um QR já usado é recusado.
+- Só aceita arquivo de produto que entrega vídeo.
+
+**Envio:** o vídeo sai do cartão de memória do drone e é enviado pela tela da fila, ou pela pasta vigiada do agente no servidor do estádio, que já faz isso com as fotos.
 
 - O arquivo sobe para o S3 em partes, mostrando progresso e velocidade.
 - Tamanho, duração, resolução e miniatura saem do próprio arquivo.
+- O cliente pode ler o QR enquanto o envio termina. A galeria mostra "seu vídeo está chegando" até o arquivo ficar pronto.
 
-**Galeria:** o QR da venda abre a galeria no eterna.photo. O caminho é o mesmo das fotos:
+**Galeria:** o QR abre a galeria no eterna.photo. O caminho é o mesmo das fotos:
 
 1. o cliente informa o e-mail;
 2. faz a selfie e dá o aceite de imagem;
@@ -103,14 +108,15 @@ Todo texto novo entra nos idiomas: `EQ`/`TE` nas telas da equipe e `I18N`/`T` no
 
 A galeria conta os downloads de cada arquivo.
 
-**Fotos do Drone:** entram como fotos da sessão. São vendidas no checkout das fotos, com os pacotes de sempre. Se o cliente já tiver galeria de fotos, o vídeo e as fotos aparecem juntos.
+**Fotos do Drone:** ficam com as outras fotos do tour, na sessão do cliente, e são vendidas no checkout das fotos com os pacotes de sempre. Não passam pelo QR do vídeo.
 
 **Itens físicos:** medalha e bola recebem baixa de "entregue" um a um. A venda fica **entregue**, com data e hora, quando todos os itens estiverem entregues.
 
 **Fila do Drone:** lista as vendas de Drone ainda não voadas, por horário de execução. Para cada venda, o host marca:
 
 - **recebido**;
-- **voo feito**, com piloto, drone e bateria.
+- **voo feito**, com piloto, drone e bateria;
+- **entregue**, quando o QR é ligado ao vídeo (passos acima).
 
 Pilotos, drones e baterias têm cadastro simples, com ativo e inativo.
 
@@ -164,9 +170,9 @@ As vendas importadas do sistema antigo aparecem nas mesmas telas, com a origem "
 | Fase | Entrega | Pronto quando |
 |---|---|---|
 | 1. Catálogo e admin | Produtos, variações, regras de preço, vídeos de demonstração, ativo hoje | O admin cadastra os produtos da seção 2 e desliga um deles no dia |
-| 2. Venda no tablet | Tela Ativações, carrinho, cortesia, QR ligado à venda, recibo, Minhas vendas | Venda completa em menos de 60 s no tablet, com teste automático |
+| 2. Venda no tablet | Tela Ativações, carrinho, cortesia, recibo, Minhas vendas | Venda completa em menos de 60 s no tablet, com teste automático |
 | 3. Histórico | Importador das planilhas e passo diário na tarefa da auditoria | Totais por dia no Eterna iguais aos do sistema antigo |
-| 4. Entrega | Envio com o QR no nome, S3 em partes, vídeo na galeria, fila do Drone, itens físicos | O cliente baixa o vídeo pelo QR, com e-mail e selfie |
+| 4. Entrega | QR lido no campo e ligado ao vídeo, S3 em partes, vídeo na galeria, fila do Drone, itens físicos | O cliente baixa o vídeo pelo QR, com e-mail e selfie |
 | 5. Gestão | Vendas das ativações com edição registrada, Painel e Estatísticas | Fechamento do dia por produto, vendedor e pagamento |
 
 A fase 3 pode correr junto com as fases 1 e 2, porque não depende de tela nova.
@@ -175,8 +181,8 @@ Cada fase vira uma versão em `VERSOES.md` e tem teste em `testes/`.
 
 ## 8. Em aberto
 
-1. **Cartão com QR:** usar o mesmo cartão da galeria de fotos ou um cartão próprio das ativações? Quem já tem cartão de fotos pode usar o mesmo, e assim fotos e vídeos ficam numa galeria só.
-2. **Fotos do Drone:** saem da câmera do drone e entram pela pasta vigiada, ou são tiradas do próprio vídeo?
+1. **Cartão com QR (decidido 11/11):** cartão próprio do vídeo, ligado no campo na entrega; as fotos do Drone ficam com as outras fotos.
+2. **Como as fotos do Drone chegam à sessão:** pela câmera do drone, entrando pela pasta vigiada como as fotos do tour.
 3. **Snap Pop:** onde o vídeo é gerado e quem envia o arquivo. A entrega segue a regra do QR.
 4. **Bola Pro e preço por local do Drone:** o admin confere os valores antes da fase 1 ir para o ar.
 5. **Prazo e qualidade do vídeo na nuvem:** quanto tempo fica disponível e se a original em 4K fica só para quem comprou 4K. O volume é de cerca de 120 GB por mês (plano de 30/10, seção 11).
