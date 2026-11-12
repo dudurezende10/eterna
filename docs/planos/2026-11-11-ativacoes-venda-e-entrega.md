@@ -246,7 +246,12 @@ Pedido do Ronaldo (12/11): aproveitar a entrega do vídeo para vender as fotos d
   - Quando roda: ao gravar o vídeo da venda e de hora em hora (antes da limpeza da foto), para quem aceitou e ainda tem a foto: o Tour pode acontecer depois do voo. A galeria **só cresce**: foto que entrou não sai, e a comprada nunca volta a "à venda".
   - O manifesto do vídeo ganha `tour: {token, n}`, e os vídeos já entregues da venda são republicados com ele.
 - **Nuvem:** o vídeo guarda `tour` (token válido e diferente do cartão) e só o mostra se a galeria do Tour existe, é de venda, não venceu e não foi encerrada.
-- **Página do vídeo:** abaixo do vídeo, "Encontramos N fotos suas do Tour" e **Ver minhas fotos**, que abre a galeria das fotos. Lá vale o fluxo de sempre: a selfie confirma que é a pessoa (ninguém vê as fotos de outro só com o cartão do vídeo) e a compra é a online pela Imply.
+- **Página do vídeo (v99.22.0):** abaixo do vídeo, "Encontramos N fotos suas do Tour" e **Ver minhas fotos**, que abria a galeria das fotos com a selfie de sempre.
+- **Mudança da v99.23.0 (pedido do Ronaldo, 12/11):** o cliente desistia no botão e na selfie, e a venda se perdia. Agora as fotos aparecem na própria página do vídeo, sem selfie:
+  - **Por que pode ser sem selfie:** a galeria do Tour de uma ativação só tem as fotos em que o cliente é o rosto principal, achadas pela foto da venda com o aceite dele. A selfie confirmaria o que a foto da venda já confirmou.
+  - **Nuvem:** a galeria do Tour guarda `origem: "ativ"`. Ao abrir o vídeo (acesso do vídeo válido), `video_obj` devolve `tour.acesso` e `tour.galeria`. O acesso é próprio da galeria do Tour: `"t"` + HMAC(`SEGREDO_PONTO_SHA256`, `tour:<acesso do vídeo>:<token>`)[:31], gravado como `ACE#` com todas as fotos de agora e validade igual à menor entre o acesso do vídeo e a galeria. Galeria do Tour sem `origem: "ativ"` continua pela selfie.
+  - **Página:** até 8 miniaturas, compradas primeiro, sem marca d'água e com **Baixar** (o original); à venda com marca d'água. Tocar numa foto à venda, ou em **Comprar minhas fotos**, guarda o acesso no `sessionStorage` (`eterna.gq.tour`, 12 h) e abre `#g/<token do Tour>` direto na galeria, com aquela foto marcada. A galeria mostra **Voltar ao vídeo**, e a compra é a online de sempre.
+  - Até o `sam deploy`, a nuvem não manda o acesso e a página mostra o botão antigo.
 
 ## 5. Vendas: listar, editar, cancelar
 

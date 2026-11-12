@@ -767,7 +767,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .gq-ph .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:clamp(13px,2.4vw,24px);letter-spacing:.25em;color:rgba(255,255,255,.42);transform:rotate(-14deg);pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.35)}
 .gq-badge{position:absolute;left:6px;top:6px;padding:4px 10px;border-radius:999px;background:#FFB800;color:#0C2340;font-size:14px;font-weight:800;letter-spacing:.04em}
 .gq-dl{color:#134078;border-color:#c9d4e4;justify-content:center;width:100%}
-.gq-gv{display:flex;flex-direction:column;gap:12px;margin:8px 0 18px;align-items:stretch}.gq-gv .gq-spin{align-self:center}.gq-gvdl{justify-content:center;text-decoration:none}.gq-tour{border-top:1px solid rgba(255,255,255,.14);padding-top:16px}
+.gq-gv{display:flex;flex-direction:column;gap:12px;margin:8px 0 18px;align-items:stretch}.gq-gv .gq-spin{align-self:center}.gq-gvdl{justify-content:center;text-decoration:none}.gq-tour{border-top:1px solid rgba(255,255,255,.14);padding-top:16px}.gq-tour .gq-grid{gap:8px}.gq-tour a.gq-dl{text-decoration:none;justify-content:center}.gq-tourph{cursor:pointer}
 .gq-sel{position:absolute;right:-8px;top:-8px;width:46px;height:46px;border-radius:50%;border:2px solid #fff;background:rgba(12,35,64,.85);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 16px -6px rgba(0,0,0,.6)}
 .gq-sel svg{width:26px;height:26px}.gq-buyoff{margin-top:14px;font-weight:600}.gq-sel.on{background:#FFB800;color:#0C2340;border-color:#FFB800}
 .gq-dlall,.gq-allbtn{align-self:flex-start}
@@ -1311,7 +1311,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.22.1 · 12/11 13:51"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.23.0 · 12/11 14:07"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2946,7 +2946,9 @@ async function pubLoad(){const p=state.pub;if(p&&p.ref&&!p.token){pubConferir(p)
     else{p.step=net?'chegando':'nao_existe';if(net)pubRetry(p);render();return;}}
   if(p.info.tipo==='video'){pubVideoAbre(p);return;}
   if(p.info.estado==='chegando'){p.step='chegando';pubRetry(p);render();return;}
-  const volta=pubVoltaLe(tok);const sv=pubPedSalvo(tok);if(sv&&sv.acesso&&!p.acesso){p.acesso=sv.acesso;if(await pubRenovar(p)){if(state.pub!==p)return;p.step='galeria';render();if(volta)toast(T(volta==='pago'?'gq_paid':'gq_payCancel'));return;}p.acesso=null;}
+  const volta=pubVoltaLe(tok);const tv=pubTourSalvo(tok);const sv=pubPedSalvo(tok)||tv;if(sv&&sv.acesso&&!p.acesso){p.acesso=sv.acesso;if(await pubRenovar(p)){if(state.pub!==p)return;
+    if(tv&&tv.sel&&((p.gal||{}).fotos||[]).some(f=>f.pid===tv.sel&&f.direito==='venda')){p.sel[tv.sel]=true;try{sessionStorage.setItem(TOUR_KEY,JSON.stringify(Object.assign(tv,{sel:null})));}catch(e){}}
+    p.step='galeria';render();if(volta)toast(T(volta==='pago'?'gq_paid':'gq_payCancel'));return;}p.acesso=null;}
   if(await pubAbrirLivres(p)){if(state.pub!==p)return;p.livres=true;p.step='galeria';render();if(volta)toast(T(volta==='pago'?'gq_paid':'gq_payCancel'));return;} // v96.1: compradas e cortesias direto pelo QR
   if(volta)toast(T(volta==='pago'?'gq_paid':'gq_payCancel'));
   if(state.pub!==p)return;p.step='consent';render();}
@@ -3097,6 +3099,22 @@ async function pubCodigo(){const p=state.pub;const v=(($('#gq-code')||{}).value|
   try{const r=await fetch(galApi()+'/g/codigo/'+c,{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&/^[A-Za-z0-9_-]{22}$/.test(j.token||''))tok=j.token;}}catch(e){}
   if(!tok){const m=Object.values(SIM.galerias||{}).find(x=>x.codigo===c);if(m)tok=m.token;}
   if(!tok){p.err=T('gq_notFound');render();return;}location.hash='#g/'+tok;}
+// v99.23: fotos do Tour achadas pela foto da venda, ali mesmo na página do vídeo (sem selfie: a nuvem manda o acesso e as fotos).
+// Comprada sem marca e com Baixar; à venda com marca, e tocar abre a compra na galeria do Tour já com a foto marcada.
+const TOUR_KEY='eterna.gq.tour',GV_TOUR_MOSTRA=8;
+function pubTourSalvo(tok){try{const o=JSON.parse(sessionStorage.getItem(TOUR_KEY)||'null');return o&&o.token===tok&&o.acesso&&Date.now()-o.em<12*3600000?o:null;}catch(e){return null;}}
+function pubTourBloco(t){const fs=(t.acesso&&t.galeria&&t.galeria.fotos)||[];
+  if(!fs.length)return `<div class="gq-gv gq-tour" data-gv-tour><p class="lj-sub"><b>${T('gv_tour_h',t.n)}</b><br>${T('gv_tour_d')}</p>
+    <a class="lj-cta gq-gvdl" href="#g/${t.token}">${T('gv_tour_ver')} ${ICO.arrow}</a></div>`;
+  const livre=f=>f.direito==='comprada'||f.direito==='cortesia';const mine=fs.filter(livre),more=fs.filter(f=>f.direito==='venda');
+  const ver=[...mine,...more].slice(0,GV_TOUR_MOSTRA);
+  return `<div class="gq-gv gq-tour" data-gv-tour><p class="lj-sub"><b>${T('gv_tour_h',fs.length)}</b><br>${T(more.length?'gv_tour_d2':'gv_tour_tudo')}</p>
+    <div class="gq-grid">${ver.map(f=>`<figure class="gq-item"><div class="gq-ph ${livre(f)?'':'gq-tourph'}" style="${pubImg(f)}" ${livre(f)?'':`data-act="gv-tour" data-pid="${esc(f.pid)}" role="button" tabindex="0" aria-label="${T('gv_tour_comprar')}"`}>${livre(f)?'':'<span class="wm">VIVA MARACANÃ</span>'}</div>${livre(f)&&f.original?`<a class="lj-ghost sm gq-dl" href="${esc(galUrl(f.original))}" download rel="noopener">${ICO.cloud} ${T('gq_dl')}</a>`:''}</figure>`).join('')}</div>
+    ${more.length?`<button class="lj-cta gq-gvdl" data-act="gv-tour">${T('gv_tour_comprar')}${fs.length>ver.length?' · +'+(fs.length-ver.length):''} ${ICO.arrow}</button>`:''}</div>`;}
+function pubTourAbre(pid){const p=state.pub;const t=p&&p.vid&&p.vid.tour;if(!t||!t.acesso)return;
+  try{sessionStorage.setItem(TOUR_KEY,JSON.stringify({token:t.token,acesso:t.acesso,video:p.token,sel:pid||null,em:Date.now()}));}catch(e){}
+  location.hash='#g/'+t.token;}
+function pubTourVolta(p){const o=pubTourSalvo(p.token);return o&&/^[A-Za-z0-9_-]{22}$/.test(o.video||'')?`<section class="gq-sec"><a class="lj-ghost" href="#g/${o.video}" data-gv-volta>${ICO.back} ${T('gv_tour_volta')}</a></section>`:'';}
 function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const deco=`<div class="lj-stripe" aria-hidden="true"></div><div class="lj-dots" aria-hidden="true"></div>`;
   const top=x=>`<div class="lj-top gq-top"><div class="lj-logo">${logo}</div>${langPick(true)}</div>${x||''}`;
@@ -3119,8 +3137,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
       vs.map(v=>v.chegando?`<div class="gq-gv"><div class="gq-spin" aria-hidden="true"></div><p class="lj-sub"><b>${T('gv_chegando')}</b><br>${T('gv_chegandoD')}</p></div>`
         :`<div class="gq-gv"><video data-gv-v="${esc(v.id)}" src="${esc(v.url)}" controls playsinline preload="metadata" style="width:100%;max-height:70vh;border-radius:14px;background:#000"></video>
           <a class="lj-cta gq-gvdl" href="${esc(galUrl(v.baixar))}" download rel="noopener">${ICO.cloud} ${T('gv_baixar')}${vs.length>1?' '+v.n:''}</a></div>`).join('')
-      +(g.tour&&g.tour.n&&/^[A-Za-z0-9_-]{22}$/.test(g.tour.token)?`<div class="gq-gv gq-tour" data-gv-tour><p class="lj-sub"><b>${T('gv_tour_h',g.tour.n)}</b><br>${T('gv_tour_d')}</p>
-          <a class="lj-cta gq-gvdl" href="#g/${g.tour.token}">${T('gv_tour_ver')} ${ICO.arrow}</a></div>`:'')+help);}
+      +(g.tour&&g.tour.n&&/^[A-Za-z0-9_-]{22}$/.test(g.tour.token)?pubTourBloco(g.tour):'')+help);}
   const kid=pubKid(p);
   if(p.step==='consent')return box(T('gq_consentH'),'',`<label class="gq-consent"><input type="checkbox" data-act="gq-consent" ${p.ok?'checked':''}><span>${T((kid?'gq_consentKid':'gq_consentSelf')+(galNuvem()?'Nuvem':'')).split('\n').map((x,i)=>i?`<small>${x}</small>`:`<strong>${x}</strong>`).join('')}</span></label><button class="lj-cta" id="gq-agree" data-act="gq-agree" ${p.ok?'':'disabled'}>${T('gq_agree')} ${ICO.arrow}</button>${p.livres?`<button class="lj-ghost" data-act="gq-back" data-to="galeria">${T('gq_backMine')}</button>`:''}`);
   if(p.step==='selfie'){const sf=state.guest.selfie||{};const mirror=(sf.facing||'user')==='user';
@@ -3156,7 +3173,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
     ${more.length?`<section class="gq-sec"><h2 class="lj-h2">${T('gq_more')}</h2><p class="lj-sub">${T('gq_moreD')} ${pubOferta(g)}</p>
       <div class="gq-grid">${more.map(f=>{const on=compra&&!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>${compra?`<button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button>`:''}</figure>`;}).join('')}</div>
       ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(pubTotal(more.length,g)))}</button>`:`<p class="lj-sub gq-buyoff">${T('gq_buyOff')}</p>`}</section>`:''}
-    ${g.tipo==='sessao'&&!(p.modo==='agente'?p.acesso:p.match)?`<section class="gq-sec gq-findmore"><p class="lj-sub">${T('gq_findMoreD')}</p><button class="lj-cta" data-act="gq-mais">${ICO.face} ${T('gq_findMore')}</button></section>`:''}
+    ${pubTourVolta(p)}${g.tipo==='sessao'&&!(p.modo==='agente'?p.acesso:p.match)?`<section class="gq-sec gq-findmore"><p class="lj-sub">${T('gq_findMoreD')}</p><button class="lj-cta" data-act="gq-mais">${ICO.face} ${T('gq_findMore')}</button></section>`:''}
     ${nSel?`<div class="gq-bar"><span><b>${T('nPhotos',nSel)}</b> · ${fmtR(tot)}${livre>0?`<br><small>${T('gq_moreFree',livre)}</small>`:''}</span><button class="lj-cta" data-act="gq-buy">${T('gq_buy',nSel,fmtR(tot))}</button></div>`:''}
     <p class="gq-help">${T('gq_help')}</p></div>`;}
 // ---------- Galerias online (administração): direito por foto, cortesias, grupos de escola e fila de envio ----------
@@ -3408,6 +3425,10 @@ gv_chegando:['Seu vídeo está chegando','Your video is on its way','Tu video es
 gv_chegandoD:['Ele aparece aqui sozinho em alguns minutos. Pode deixar esta página aberta.','It will show up here on its own in a few minutes. You can keep this page open.','Aparecerá aquí solo en unos minutos. Puedes dejar esta página abierta.','Elle apparaîtra ici d’elle-même dans quelques minutes. Vous pouvez laisser cette page ouverte.','Es erscheint hier von selbst in wenigen Minuten. Du kannst diese Seite offen lassen.'],
 gv_tour_h:[n=>n===1?'Encontramos 1 foto sua do Tour':'Encontramos '+n+' fotos suas do Tour',n=>n===1?'We found 1 photo of you from the Tour':'We found '+n+' photos of you from the Tour',n=>n===1?'Encontramos 1 foto tuya del Tour':'Encontramos '+n+' fotos tuyas del Tour',n=>n===1?'Nous avons trouvé 1 photo de vous au Tour':'Nous avons trouvé '+n+' photos de vous au Tour',n=>n===1?'Wir haben 1 Foto von dir von der Tour gefunden':'Wir haben '+n+' Fotos von dir von der Tour gefunden'],
 gv_tour_d:['Leve as que você não levou no estádio. Uma selfie rápida confirma que é você.','Get the ones you didn’t take at the stadium. A quick selfie confirms it’s you.','Llévate las que no compraste en el estadio. Una selfie rápida confirma que eres tú.','Prenez celles que vous n’avez pas prises au stade. Un selfie rapide confirme que c’est bien vous.','Hol dir die, die du im Stadion nicht mitgenommen hast. Ein kurzes Selfie bestätigt, dass du es bist.'],
+gv_tour_d2:['Toque numa foto para comprar. As que você já levou estão liberadas para baixar.','Tap a photo to buy it. The ones you already got are ready to download.','Toca una foto para comprarla. Las que ya llevaste están listas para descargar.','Touchez une photo pour l’acheter. Celles que vous avez déjà sont prêtes à télécharger.','Tippe auf ein Foto, um es zu kaufen. Die, die du schon hast, kannst du herunterladen.'],
+gv_tour_tudo:['Todas já são suas. É só baixar.','They’re all yours. Just download them.','Todas ya son tuyas. Solo descárgalas.','Elles sont toutes à vous. Il suffit de les télécharger.','Sie gehören alle dir. Einfach herunterladen.'],
+gv_tour_comprar:['Comprar minhas fotos','Buy my photos','Comprar mis fotos','Acheter mes photos','Meine Fotos kaufen'],
+gv_tour_volta:['Voltar ao vídeo','Back to the video','Volver al video','Retour à la vidéo','Zurück zum Video'],
 gv_tour_ver:['Ver minhas fotos','See my photos','Ver mis fotos','Voir mes photos','Meine Fotos ansehen'],
 gv_baixar:['Baixar vídeo','Download video','Descargar video','Télécharger la vidéo','Video herunterladen'],
 gq_mkt:['Quero receber novidades e ofertas do Viva Maracanã por e-mail (opcional).','I want to receive Viva Maracanã news and offers by email (optional).','Quiero recibir novedades y ofertas de Viva Maracanã por correo (opcional).','Je veux recevoir les nouveautés et offres de Viva Maracanã par e-mail (facultatif).','Ich möchte Neuigkeiten und Angebote von Viva Maracanã per E-Mail erhalten (optional).'],
@@ -9968,6 +9989,7 @@ document.addEventListener('click',e=>{
     // galeria pública (#g/<token>): sem usuário, fora do WRITE_OPS
     case 'gq-code-go':pubCodigo();break;
     case 'gq-mais':{const p=state.pub;if(!p)break;p.ok=false;p.step='consent';render();scrollTo(0,0);break;} // v96.1: selfie para as à venda em que a pessoa aparece
+    case 'gv-tour':pubTourAbre(d.pid);break;
     case 'gv-go':{const p=state.pub;if(p&&p.ok&&!p.busy)pubVideoAceite(p);break;}
     case 'gq-agree':{const p=state.pub;if(!p||!p.ok)break;p.consentAt=now().toISOString();pubSelfieAbrir(p);render();break;}
     case 'gq-snap':{const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v||!v.videoWidth)break;const w=Math.min(960,v.videoWidth);const c=mkc(w,w*v.videoHeight/v.videoWidth);c.getContext('2d').drawImage(v,0,0,c.width,c.height);pubMatch(c.toDataURL('image/jpeg',.9));break;}

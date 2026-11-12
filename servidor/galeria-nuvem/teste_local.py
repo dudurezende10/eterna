@@ -339,6 +339,19 @@ ok('"ip"' not in json.dumps(r) and "cliente@" not in json.dumps(r), "vídeo: eve
 ok(chama("POST", "/ponto/galerias", {"manifesto": dict(manV, tour={"token": tokP, "n": 3})}, {"x-eterna-ponto": seg})[0] == 200, "vídeo com fotos do Tour publicado")
 g = chama("POST", "/g/%s/galeria" % tokV, {"acesso": acV})[1]["galeria"]
 ok(g.get("tour") == {"token": tokP, "n": 3}, "vídeo: atalho para as fotos do Tour: %s" % g.get("tour"))
+ok("acesso" not in g["tour"], "vídeo: galeria do Tour comum (sem origem ativ) segue pela selfie")
+chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tokP, codigo="PPPP-PPPP", catalogo=cat, origem="ativ")}, {"x-eterna-ponto": seg})
+ok(app.manifesto(tokP).get("origem") == "ativ", "origem ativ guardada na galeria do Tour")
+g = chama("POST", "/g/%s/galeria" % tokV, {"acesso": acV})[1]["galeria"]
+tg = g["tour"].get("galeria") or {}
+ok(g["tour"].get("acesso") and len(tg.get("fotos") or []) == len(app.manifesto(tokP)["fotos"]) and tg.get("tipo") == "sessao",
+   "vídeo: as fotos do Tour vêm junto, sem selfie: %s" % {k: v for k, v in g["tour"].items() if k != "galeria"})
+ok(any(f["original"] for f in tg["fotos"] if f["direito"] == "comprada") and not any(f["original"] for f in tg["fotos"] if f["direito"] == "venda"),
+   "vídeo: comprada vem com o original, à venda só a vitrine")
+ok(chama("POST", "/g/%s/galeria" % tokV, {"acesso": acV})[1]["galeria"]["tour"]["acesso"] == g["tour"]["acesso"], "vídeo: o acesso do Tour é o mesmo a cada abertura")
+st, r = chama("POST", "/g/%s/galeria" % tokP, {"acesso": g["tour"]["acesso"]})
+ok(st == 200 and len(r["galeria"]["fotos"]) == len(tg["fotos"]), "galeria do Tour abre com o acesso vindo do vídeo")
+ok(chama("POST", "/g/%s/galeria" % tokP, {"acesso": "t" + "0" * 31})[0] == 401, "acesso do Tour inventado é recusado")
 chama("POST", "/ponto/galerias", {"manifesto": dict(manV, tour={"token": "N" * 22, "n": 3})}, {"x-eterna-ponto": seg})
 ok("tour" not in chama("POST", "/g/%s/galeria" % tokV, {"acesso": acV})[1]["galeria"], "vídeo: galeria do Tour que não existe não aparece")
 chama("POST", "/ponto/galerias", {"manifesto": dict(manV, tour={"token": "<x>", "n": 3})}, {"x-eterna-ponto": seg})

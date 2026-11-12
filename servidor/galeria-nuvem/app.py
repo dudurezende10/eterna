@@ -723,7 +723,21 @@ def video_obj(token, m, acesso):
         g = manifesto(t["token"])
         if g and g.get("tipo") == "sessao" and not g.get("encerrada") and not expirou(g):
             out["tour"] = {"token": t["token"], "n": t["n"]}
+            if g.get("origem") == "ativ" and g["fotos"]:
+                out["tour"].update(tour_acesso(t["token"], g, acesso))
     return out
+
+
+def tour_acesso(tok, g, acesso):
+    """v99.23: a galeria do Tour de uma venda de ativação só tem as fotos em que o cliente é o rosto principal, achadas pela
+    foto da venda com o aceite dele. Quem abriu o vídeo vê essas fotos ali mesmo, sem selfie: acesso próprio da galeria do Tour,
+    o mesmo enquanto valer o do vídeo (HMAC), com todas as fotos de agora (a galeria só cresce)."""
+    a = item("ACE#" + acesso) or {}
+    exp = int(min(int(a.get("exp") or time.time() + ACESSO_TTL), epoch(g["expira"]) if g.get("expira") else time.time() + ACESSO_TTL))
+    ta = "t" + hmac.new(SEGREDO_PONTO_SHA256.encode(), ("tour:%s:%s" % (acesso, tok)).encode(), hashlib.sha256).hexdigest()[:31]
+    pids = sorted(f["id"] for f in g["fotos"])
+    TABELA.put_item(Item={"pk": "ACE#" + ta, "sk": "M", "token": tok, "pids": json.dumps(pids), "exp": exp, "ttl": exp + 86400})
+    return {"acesso": ta, "galeria": galeria_obj(tok, g, pids)}
 
 
 def acesso_ok(token, a):
@@ -798,6 +812,8 @@ def publicar(ev, corpo):
             "menor": bool(m.get("menor")), "criada": str(m.get("criada") or iso())[:40], "expira": str(m.get("expira") or "")[:40],
             "precos": {"dig": max(0.0, float(pr.get("dig") or 0)), "todas": max(0.0, float(pr.get("todas") or 0))},
             "catalogo": catalogo_ok(m.get("catalogo")), "fotos": fotos}
+    if m.get("origem") == "ativ":                         # v99.23: galeria do Tour montada pela foto da venda de uma ativação
+        novo["origem"] = "ativ"
     velho = manifesto(m["token"])
     if velho and velho.get("tipo") == "video":            # cartão já ligado a um vídeo de ativação
         return resp({"error": "token já usado por outra sessão"}, 409)
