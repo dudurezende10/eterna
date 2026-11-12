@@ -106,6 +106,12 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 .cartao-qr{display:flex;flex-direction:column;gap:6px;margin-top:14px;max-width:420px}
 .cartao-qr input{width:100%;min-height:44px}
 .mv-tab{width:100%}
+.chip.at-chip{display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:600}.at-ico{flex:none;width:44px;height:44px}
+.at-ico .dr-corpo{animation:atPaira 2.6s ease-in-out infinite}@keyframes atPaira{50%{transform:translateY(-3px)}}
+.at-ico .dr-helice{transform-box:fill-box;transform-origin:center;animation:atGira .35s linear infinite}@keyframes atGira{50%{transform:scaleX(.25)}}
+.at-ico .ch-bola{transform-box:fill-box;transform-origin:center;animation:atChute 2.8s ease-in infinite}@keyframes atChute{0%,25%{transform:translate(0,0) rotate(0)}62%,100%{transform:translate(21px,-14px) rotate(320deg)}}
+.at-ico .sn-brilho{transform-box:fill-box;transform-origin:center;animation:atBrilha 1.8s ease-in-out infinite}.at-ico .sn-b2{animation-delay:.6s}.at-ico .sn-b3{animation-delay:1.2s}@keyframes atBrilha{50%{transform:scale(.3);opacity:.35}}
+@media (prefers-reduced-motion:reduce){.at-ico *{animation:none!important}}
 .av-vitrine{position:relative;display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:12px;overflow:hidden;padding:0;cursor:pointer;background:linear-gradient(135deg,var(--accent,#123a6b),#0b1f3a);box-shadow:0 4px 14px rgba(0,0,0,.18)}
 .av-vitrine img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .3s}
 .av-vitrine:hover img,.av-vitrine:focus-visible img{transform:scale(1.04)}
@@ -1300,7 +1306,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.18.1 · 12/11 11:26"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.18.2 · 12/11 11:38"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5088,7 +5094,7 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chu
       ${p.cat==='drone'&&p.chuva?`<label class="row" style="gap:6px;align-items:center;min-height:44px"><input type="checkbox" data-act="av-chuva" data-i="${i}" ${l.chuva?'checked':''}> ${TE('av_chuva')}</label>`:''}
       </div><div class="row" style="justify-content:flex-end;margin-top:8px"><b data-av-preco="${i}">${fmtR(avCob(l))}</b></div></div>`;};
   return topo+`
-  <div class="panel" id="av-prod"><h2>${TE('av_passo_servico')}</h2><div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${cats.map(c=>`<button class="chip" style="min-height:44px" role="tab" data-act="av-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${esc(atCatNome(c))}</button>`).join('')}</div>
+  <div class="panel" id="av-prod"><h2>${TE('av_passo_servico')}</h2><div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${cats.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="av-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}</span></button>`).join('')}</div>
     ${A.cat==='drone'?`<div style="margin-top:14px"><span class="eyebrow">${TE('av_pessoas_demo')}</span><div class="chips" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:4px">${[1,2,3,4,5].map(n=>`<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${n}" aria-pressed="${A.pessoas===n}">${n}</button>`).join('')}</div></div>`:''}
     ${subTabs}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px">${prods.length?prods.map(card).join(''):`<div class="note">${TE('av_sem_produto')}</div>`}</div></div>
   ${A.cart.length?`<div class="panel" id="av-cart"><h2>${TE('av_carrinho')}</h2>${A.cart.map(linha).join('')}
@@ -5232,7 +5238,7 @@ function vAtivEntrega(){const A=state.ae;if(!A.dia)A.dia=venueToday();if(!A.dado
   const nv=A.dados&&A.dados.nuvem;
   return `<div class="head"><div><h1>${esc(viewLabel('ativ-entrega'))}</h1></div><div style="text-align:right">${dateField('ae-data',A.dia,TE('ar_data'))}
     ${nv?`<div style="margin-top:4px"><span class="pill ${!nv.ligada?'':nv.fila?'warn':'good'}">${!nv.ligada?TE('ae_nuvem_desligada'):nv.fila?TE('ae_nuvem_pend',nv.fila):TE('ae_nuvem_ok')}</span></div>`:''}</div></div>
-  <div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${AE_CATS.map(c=>`<button class="chip" style="min-height:44px" role="tab" data-act="ae-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${esc(atCatNome(c))}${A.dados&&pend(c)?' · '+pend(c):''}</button>`).join('')}</div>
+  <div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${AE_CATS.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="ae-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}${A.dados&&pend(c)?' · '+pend(c):''}</span></button>`).join('')}</div>
   <div class="chips" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"><button class="chip" style="min-height:44px" data-act="ae-ver" data-v="pendentes" aria-pressed="${A.ver==='pendentes'}">${TE('ae_pendentes')}</button><button class="chip" style="min-height:44px" data-act="ae-ver" data-v="entregues" aria-pressed="${A.ver==='entregues'}">${TE('ae_entregues')}</button></div>
   ${A.erro&&!A.dados?`<div class="panel"><div class="note" role="alert">${TE(A.erro)}</div></div>`:''}${!A.dados&&!A.erro?`<div class="panel"><div class="note">${TE('ar_carregando')}</div></div>`:''}
   ${A.dados?(lista.length?lista.map(aeCartao).join(''):`<div class="panel"><div class="note">${A.ver==='entregues'?TE('ae_nada_entregue'):TE('ae_nada_pendente')}</div></div>`):''}
@@ -5712,6 +5718,11 @@ function ativRegras(p){const r=[];if(p.k4)r.push(TE('at_r_k4',fmtR(p.k4)));if(p.
   if(p.extra&&p.extra.limite>0)r.push(TE('at_r_extra',p.extra.limite,fmtR(p.extra.valor)));if(Array.isArray(p.faixas)&&p.faixas.length)r.push(p.faixas.map(fmtR).join(' · ')+' · '+TE('at_r_depois',fmtR(p.depois||0)));
   const i=p.inclui||{};const inc=[i.chutes?TE('at_chutes').toLowerCase()+': '+i.chutes:'',i.videos?TE('at_videos').toLowerCase()+': '+i.videos:'',...(i.itens||[])].filter(Boolean);
   if(inc.length&&p.entrega!=='fisico')r.push(TE('at_r_inclui')+' '+inc.join(', '));return r.join(' · ');}
+const AT_ICONES={
+  drone:'<g class="dr-corpo"><path d="M12 15 20 22M36 15 28 22M12 33 20 26M36 33 28 26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><ellipse class="dr-helice" cx="11" cy="14" rx="8" ry="1.8" fill="#ffb800"/><ellipse class="dr-helice" cx="37" cy="14" rx="8" ry="1.8" fill="#ffb800"/><ellipse class="dr-helice" cx="11" cy="34" rx="8" ry="1.8" fill="#ffb800"/><ellipse class="dr-helice" cx="37" cy="34" rx="8" ry="1.8" fill="#ffb800"/><rect x="18" y="19" width="12" height="10" rx="3.5" fill="currentColor"/><circle cx="24" cy="24" r="2.6" fill="#ffb800"/></g>',
+  chute:'<path d="M21 38V12h24v26" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M27 12v26M33 12v26M39 12v26M21 18h24M21 24h24M21 30h24" stroke="currentColor" stroke-opacity=".35"/><path d="M2 39h44" stroke="#1fa3a8" stroke-width="2.5" stroke-linecap="round"/><g class="ch-bola"><circle cx="10" cy="33" r="5.5" fill="#ffb800"/><path d="M10 30.2l2.7 2-1 3.1h-3.4l-1-3.1z" fill="#134078"/></g>',
+  snap:'<rect x="4" y="14" width="30" height="24" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M15 20.5v11l9.5-5.5z" fill="#ffb800"/><path class="sn-brilho" d="M38 4l1.8 5.2L45 11l-5.2 1.8L38 18l-1.8-5.2L31 11l5.2-1.8z" fill="#ffb800"/><path class="sn-brilho sn-b2" d="M44 21l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z" fill="#1fa3a8"/><path class="sn-brilho sn-b3" d="M26 3l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="currentColor"/>'};
+const atIcone=c=>AT_ICONES[c]?'<svg class="at-ico" viewBox="0 0 48 48" aria-hidden="true">'+AT_ICONES[c]+'</svg>':'';
 const atCatNome=c=>c==='drone'?TE('at_drone'):c==='chute'?TE('at_chute'):TE('at_snap'),atEntNome=e=>({video:TE('at_e_video'),foto:TE('at_e_foto'),fisico:TE('at_e_fisico'),experiencia:TE('at_e_experiencia')})[e],atPedeNome=e=>({pessoas:TE('at_p_pessoas'),participantes:TE('at_p_participantes'),nada:TE('at_p_nada')})[e],atOpNome=p=>p.cat==='snap'?TE('at_tema'):TE('at_local');
 function catAtivacoes(){const rw=can('catalogo','u'),hj=rw||can('configuracao','u');const ed=state.ativEd;
   const sit=p=>!p.ativo?`<span class="pill neutral">${TE('at_inativo')}</span>`:ativForaHoje(p.id)?`<span class="pill warn">${TE('at_fora_hoje')}</span>`:`<span class="pill good">${TE('at_ativo')}</span>`;
