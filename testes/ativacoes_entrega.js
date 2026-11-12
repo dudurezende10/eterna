@@ -30,7 +30,7 @@ try{
   await ctx.route(/\/ativ\/cancelar$/,r=>{const c=JSON.parse(r.request().postData());posts.push(c);D.vendas=D.vendas.filter(x=>x.id!==c.id);r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
   const A=await ctx.newPage();A.on('pageerror',e=>errs.push(e.message));await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(400);
   const E=require('./_entrar');const adm=await E.adminFicticio(A);await E(A,adm);
-  await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;ETERNA.go('ativ-entrega');});await A.waitForTimeout(600);
+  await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;s.ae.fila=true;ETERNA.go('ativ-entrega');});await A.waitForTimeout(600);
   const txt=async s=>(await A.textContent(s))||'';
   ok(/Entrega dos vídeos/.test(await txt('#main .head'))&&/Vídeos aguardando internet: 1/.test(await txt('#main .head')),'título e situação da nuvem: '+await txt('#main .head'));
   ok(/Drone · 2/.test(await txt('#main'))&&/Chute a Gol · 1/.test(await txt('#main'))&&/Snap Pop · 1/.test(await txt('#main')),'pendentes por serviço');

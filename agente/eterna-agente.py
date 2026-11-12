@@ -7526,6 +7526,19 @@ ATIV_CLIENTES_DIR = os.path.join(HOME, "ativ-clientes")
 ATIV_FOTO_MAX = 120 * 1024
 ATIV_PAGAMENTOS = ("PIX", "Dinheiro", "Débito", "Crédito", "Cortesia")
 _re_ativ_id = re.compile(r"^T[A-Za-z0-9]{6,30}$")
+# v99.25 (diretoria, 12/11): cada vídeo comprado ganha uma pulseira numerada (QR só com o número), entregue na venda. Quem
+# entrega começa lendo a pulseira: ela já diz de quem é o vídeo. Número sem zeros à esquerda; nunca repete entre compras.
+_re_pulseira = re.compile(r"^\d{1,12}$")
+
+
+def pulseira_norm(x):
+    t = str(x if x is not None else "").strip()
+    return str(int(t)) if _re_pulseira.match(t) else None
+
+
+def ativ_base(vid):
+    """Número da compra: as vendas de uma compra (uma por serviço) têm o mesmo id e o sufixo D, C ou S."""
+    return vid[:-1] if vid[-1:] in ("D", "C", "S") else vid
 _re_agendada = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
 
 
@@ -7557,6 +7570,15 @@ def ativ_venda_tablet(v):
         itens.append(x)
     if not _ativ_num(v.get("valor"), 1000000) or not _ativ_num(v.get("sugerido") or 0, 1000000):
         return None
+    pulseiras = []
+    if v.get("pulseiras") is not None:
+        if not isinstance(v["pulseiras"], list) or len(v["pulseiras"]) > 100:
+            return None
+        for p in v["pulseiras"]:
+            n = pulseira_norm(p)
+            if not n or n in pulseiras:
+                return None
+            pulseiras.append(n)
     for k, n in (("pais", 60), ("idioma", 30), ("guia", 80), ("vendedor", 80), ("usuario", 120), ("cortesia_motivo", 80), ("cortesia_nota", 1000),
                  ("cliente_nome", 80)):
         if not _ativ_txt(v.get(k) or "", n):
@@ -7585,7 +7607,7 @@ def ativ_venda_tablet(v):
             "usuario": v.get("usuario") or "", "sugerido": v.get("sugerido") or 0, "situacao": "ativa", "cortesia_motivo": v.get("cortesia_motivo") or "",
             "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag, "cliente_nome": (v.get("cliente_nome") or "").strip(), "_foto": foto,
             # v99.22: o cliente aceitou, na venda, que a foto dele procure as fotos do Tour (só vale com a foto)
-            "foto_busca": 1 if foto and v.get("cliente_foto_busca") is True else 0}
+            "foto_busca": 1 if foto and v.get("cliente_foto_busca") is True else 0, "_pulseiras": pulseiras}
 
 
 def ativ_cliente_foto(vid):
@@ -7654,11 +7676,42 @@ def ativ_receber(vendas, enviado_por):
                           vals + [agora, enviado_por])
                 if d["_foto"]:
                     ativ_cliente_foto_grava(d["id"], d["_foto"])
+                ativ_pulseiras_grava(c, d["id"], d["_pulseiras"], agora)
                 out["recebidas"].append(d["id"])
             c.commit()
         finally:
             c.close()
     return out
+
+
+def ativ_pulseiras_grava(c, vid, pulseiras, agora):
+    """Liga as pulseiras à venda (uma por vídeo, na ordem). Número já usado em outra compra não recusa a venda (o tablet vende
+    sem rede): as duas ficam marcadas com conflito e a entrega mostra as duas para quem entrega escolher pelo rosto."""
+    base = ativ_base(vid)
+    for slot, p in enumerate(pulseiras, 1):
+        outras = [v for (v,) in c.execute("select venda from ativ_pulseira where numero=? and venda<>?", (p, vid)) if ativ_base(v) != base]
+        c.execute("insert or ignore into ativ_pulseira (numero, venda, slot, conflito, em) values (?,?,?,?,?)", (p, vid, slot, 1 if outras else 0, agora))
+        if outras:
+            c.execute("update ativ_pulseira set conflito=1 where numero=?", (p,))
+
+
+def ativ_pulseira_busca(n):
+    """GET /ativ/pulseira?n=: as vendas desta pulseira (normalmente uma). -> None se o número é inválido."""
+    p = pulseira_norm(n)
+    if not p:
+        return None
+    c = vendas_db()
+    try:
+        out = []
+        for vid, slot, conf, dia, tipo, sit, nome in c.execute(
+                "select p.venda, p.slot, p.conflito, v.dia, v.tipo, coalesce(v.situacao,'ativa'), v.cliente_nome from ativ_pulseira p"
+                " join ativ_venda v on v.origem='eterna' and v.id=p.venda where p.numero=? order by v.criado desc", (p,)).fetchall():
+            q = c.execute("select qr from ativ_entrega where venda=? and pulseira=? and apagado_em is null", (vid, p)).fetchone()
+            out.append({"venda": vid, "slot": slot, "conflito": bool(conf), "dia": dia, "tipo": tipo, "situacao": sit,
+                        "cliente": nome or "", "qr": q[0] if q else None})
+        return {"numero": p, "vendas": out}
+    finally:
+        c.close()
 
 
 def ativ_cancelar(vid, motivo, eu):
@@ -7963,13 +8016,13 @@ def ativ_pagina_nuvem(qrs):
 
 
 def _ativ_entregas(c, vid):
-    rows = c.execute("select qr, n, bytes, duracao, por, em, nuvem_em, cliente_eventos from ativ_entrega"
+    rows = c.execute("select qr, n, bytes, duracao, por, em, nuvem_em, cliente_eventos, pulseira from ativ_entrega"
                      " where venda=? and apagado_em is null order by n", (vid,)).fetchall()
     pg = ativ_pagina_nuvem([r[0] for r in rows])
     return [{"qr": q, "codigo": cartao_codigo(q), "n": n, "bytes": b, "duracao": d, "por": por, "em": em, "nuvem": bool(ne),
-             "subindo": ativ_video_em_curso.get(q), "cliente": ativ_cliente_resumo(ce),
+             "subindo": ativ_video_em_curso.get(q), "cliente": ativ_cliente_resumo(ce), "pulseira": pu,
              "pagina": pg.get(q) or ({"ok": False, "erro": "", "tentativas": 0} if NUVEM_API else None)}
-            for q, n, b, d, por, em, ne, ce in rows]
+            for q, n, b, d, por, em, ne, ce, pu in rows]
 
 
 def nuvem_video_eventos(seg):
@@ -8018,7 +8071,13 @@ def ativ_fila(dia):
             feitos = set(json.loads(r[17] or "[]"))
             for x in fis:
                 x["entregue"] = x["i"] in feitos
-            out.append({"id": r[0], "tipo": r[1], "criado": r[2], "itens": itens, "pagamento": r[4], "vendedor": r[5], "pessoas": r[6],
+            puls = []
+            for num, slot, conf, vem, vpor, pil, dro, bat in c.execute(
+                    "select numero, slot, conflito, voo_em, voo_por, piloto, drone, bateria from ativ_pulseira where venda=? order by slot", (r[0],)):
+                q = next((e["qr"] for e in ents if e.get("pulseira") == num), None)
+                puls.append({"numero": num, "slot": slot, "conflito": bool(conf), "voo_em": vem, "voo_por": vpor, "piloto": pil,
+                             "drone": dro, "bateria": bat, "qr": q})
+            out.append({"id": r[0], "tipo": r[1], "criado": r[2], "itens": itens, "pagamento": r[4], "vendedor": r[5], "pessoas": r[6], "pulseiras": puls,
                         "videos": ativ_videos_previstos(itens), "idioma": r[8], "piloto": r[9], "drone": r[10], "bateria": r[11],
                         "entregue_em": r[12] or None, "recebido_em": r[13], "recebido_por": r[14], "voo_em": r[15], "voo_por": r[16],
                         "entregas": ents, "fisicos": fis, "cliente": r[18] or "", "foto": os.path.exists(ativ_cliente_foto(r[0]))})
@@ -8037,10 +8096,16 @@ def _ativ_fecha_entrega(c, vid, itens, feitos):
 
 
 def ativ_etapa(body, eu):
-    """POST /ativ/etapa {id, etapa: recebido | voo | item, piloto, drone, bateria, i}. -> None ou o erro."""
+    """POST /ativ/etapa {id, etapa: recebido | voo | item, piloto, drone, bateria, i, pulseira}. -> None ou o erro.
+    v99.25: com a pulseira, o voo fica registrado no vídeo daquela pulseira (dois drones podem voar a mesma compra)."""
     vid, etapa = str(body.get("id") or ""), body.get("etapa")
     if not _re_ativ_id.match(vid) or etapa not in ATIV_ETAPAS:
         return "dados"
+    pul = None
+    if body.get("pulseira") not in (None, ""):
+        pul = pulseira_norm(body.get("pulseira"))
+        if not pul:
+            return "dados"
     agora = time.strftime("%Y-%m-%dT%H:%M:%S")
     with ev_lock:
         c = vendas_db()
@@ -8051,6 +8116,8 @@ def ativ_etapa(body, eu):
             if (r[0] or "ativa") != "ativa":
                 return "cancelada"
             itens = json.loads(r[1] or "[]")
+            if pul and not c.execute("select 1 from ativ_pulseira where numero=? and venda=?", (pul, vid)).fetchone():
+                return "pulseira"
             if etapa == "recebido":
                 c.execute("update ativ_venda set recebido_em=coalesce(recebido_em, ?), recebido_por=coalesce(recebido_por, ?) where origem='eterna' and id=?",
                           (agora, eu, vid))
@@ -8064,6 +8131,9 @@ def ativ_etapa(body, eu):
                     vals.append(v)
                 c.execute("update ativ_venda set piloto=?, drone=?, bateria=?, voo_em=?, voo_por=?, recebido_em=coalesce(recebido_em, ?),"
                           " recebido_por=coalesce(recebido_por, ?) where origem='eterna' and id=?", (*vals, agora, eu, agora, eu, vid))
+                if pul:
+                    c.execute("update ativ_pulseira set piloto=?, drone=?, bateria=?, voo_em=?, voo_por=? where numero=? and venda=?",
+                              (*vals, agora, eu, pul, vid))
             else:
                 fis = ativ_itens_fisicos(itens)
                 i = body.get("i")
@@ -8117,11 +8187,17 @@ def ativ_rascunho(rid):
 
 
 def ativ_video_liga(body, eu):
-    """POST /ativ/video/liga {rascunho, venda, qr}: o vídeo que já está no servidor passa a ser da venda e do cartão.
-    As mesmas conferências de antes (venda ativa, cartão novo, não passa dos vídeos comprados). -> (erro, n do vídeo)."""
+    """POST /ativ/video/liga {rascunho, venda, qr, pulseira}: o vídeo que já está no servidor passa a ser da venda e do cartão.
+    As mesmas conferências de antes (venda ativa, cartão novo, não passa dos vídeos comprados); com a pulseira (v99.25), ela é
+    desta venda e ainda não tem vídeo. -> (erro, n do vídeo)."""
     rid = str(body.get("rascunho") or "")
     if not _re_rascunho.match(rid):
         return "dados", None
+    pul = None
+    if body.get("pulseira") not in (None, ""):
+        pul = pulseira_norm(body.get("pulseira"))
+        if not pul:
+            return "dados", None
     arq = ativ_rascunho(rid)
     with ativ_liga_lock:
         if not os.path.exists(arq):
@@ -8130,12 +8206,23 @@ def ativ_video_liga(body, eu):
         e, n = ativ_video_checa(vid, qr)
         if e:
             return e, None
-        e = ativ_video_grava(vid, qr, n, arq, eu)
+        if pul:
+            c = vendas_db()
+            try:
+                if not c.execute("select 1 from ativ_pulseira where numero=? and venda=?", (pul, vid)).fetchone():
+                    return "pulseira", None
+                if c.execute("select 1 from ativ_entrega where venda=? and pulseira=? and apagado_em is null", (vid, pul)).fetchone():
+                    return "pulseira_usada", None
+            finally:
+                c.close()
+        e = ativ_video_grava(vid, qr, n, arq, eu, pul, rid)
         return e, (None if e else n)
 
 
-def ativ_video_grava(vid, qr, n, tmp, eu):
-    """Arquivo recebido inteiro: guarda, liga ao QR, fecha a venda se completou, põe na fila da nuvem e grava a galeria do vídeo."""
+def ativ_video_grava(vid, qr, n, tmp, eu, pulseira=None, rid=None):
+    """Arquivo recebido inteiro: guarda, liga ao QR, fecha a venda se completou, põe na fila da nuvem e grava a galeria do vídeo.
+    v99.25: o rascunho já começou a subir para a nuvem quando foi solto (video/r-<rid>.mp4); aqui ele só ganha o destino e a
+    nuvem copia para video/<qr>.mp4 por dentro (segundos), sem subir de novo."""
     ok, dur = mp4_info(tmp)
     if not ok:
         return "formato"
@@ -8153,9 +8240,13 @@ def ativ_video_grava(vid, qr, n, tmp, eu):
             if c.execute("select 1 from ativ_entrega where qr=?", (qr,)).fetchone():
                 return "qr_usado"
             r = c.execute("select itens, itens_entregues, idioma, tipo, tour_token, tour_n, foto_busca from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
-            os.replace(tmp, final)
-            c.execute("insert into ativ_entrega (qr, venda, n, arquivo, bytes, md5, duracao, por, em) values (?,?,?,?,?,?,?,?,?)",
-                      (qr, vid, n, final, tam, md5.hexdigest(), dur, eu, agora))
+            try:
+                os.replace(tmp, final)
+                arq = final
+            except OSError:                    # no Windows, o rascunho que ainda está subindo não pode mudar de nome: a fila renomeia no fim
+                arq = tmp
+            c.execute("insert into ativ_entrega (qr, venda, n, arquivo, bytes, md5, duracao, por, em, pulseira) values (?,?,?,?,?,?,?,?,?,?)",
+                      (qr, vid, n, arq, tam, md5.hexdigest(), dur, eu, agora, pulseira))
             itens = json.loads(r[0] or "[]")
             _ativ_fecha_entrega(c, vid, itens, set(json.loads(r[1] or "[]")))
             c.commit()
@@ -8172,7 +8263,8 @@ def ativ_video_grava(vid, qr, n, tmp, eu):
         REPO.salvar_manifesto(qr, m)
     except Exception as ex:
         print("  entrega: galeria do vídeo não gravada (%s)" % type(ex).__name__)
-    nuvem_video_enfileira(qr, final)
+    if not (rid and nuvem_video_destino("r-" + rid, qr)):
+        nuvem_video_enfileira(qr, arq)
     nuvem_galeria_enfileira(qr)
     if r[6]:                                   # a busca das fotos do Tour roda fora da entrega (pode levar alguns segundos)
         threading.Thread(target=ativ_tour_atualiza, args=(vid,), daemon=True).start()
@@ -8318,15 +8410,25 @@ def ativ_videos_limpa(agora=None):
     c = vendas_db()
     try:
         velhos = c.execute("select arquivo from ativ_entrega where em < ?", (lim,)).fetchall()
+        ligados = {os.path.basename(a or "") for (a,) in c.execute("select arquivo from ativ_entrega where arquivo like '%rascunho-%'")}
     finally:
         c.close()
+    abandonados = []
     try:
         for f in os.listdir(ATIV_VIDEOS_DIR):
             p = os.path.join(ATIV_VIDEOS_DIR, f)
-            if f.startswith("rascunho-") and os.path.getmtime(p) < (agora or time.time()) - 86400:
+            if f.startswith("rascunho-") and f not in ligados and os.path.getmtime(p) < (agora or time.time()) - 86400:
                 os.remove(p)
+                abandonados.append("r-" + f[9:-4])
     except OSError:
         pass
+    if abandonados:                            # o rascunho que ninguém ligou a uma venda sai também da nuvem
+        with nuvem_lock:
+            db = nuvem_db()
+            _nuvem_videos_tabela(db)
+            db.executemany("UPDATE videos SET destino='-', prox=0 WHERE qr=? AND destino IS NULL", [(q,) for q in abandonados])
+            db.commit(); db.close()
+        nuvem_video_acorda.set()
     n = 0
     for (arq,) in velhos:
         if arq and os.path.dirname(os.path.abspath(arq)) == os.path.abspath(ATIV_VIDEOS_DIR) and os.path.exists(arq):
@@ -8339,14 +8441,61 @@ def ativ_videos_limpa(agora=None):
 
 
 # Fila dos vídeos para o S3 (nuvem.db, tabela videos): sobe em partes de 8 MB, conferindo o tamanho no fim.
+# v99.25: o vídeo começa a subir assim que é solto na tela (linha "r-<rascunho>", chave video/r-<rascunho>.mp4). Quando a equipe
+# lê o cartão, a linha ganha o destino (o QR) e a nuvem copia por dentro para video/<qr>.mp4 e apaga a cópia do rascunho.
+# destino "-" = rascunho abandonado: só apaga da nuvem.
+def _nuvem_videos_tabela(db):
+    db.execute("CREATE TABLE IF NOT EXISTS videos (qr TEXT PRIMARY KEY, arquivo TEXT, entrou REAL, tentativas INTEGER DEFAULT 0,"
+               " prox REAL DEFAULT 0, feito REAL, bytes INTEGER, erro TEXT)")
+    tem = {r[1] for r in db.execute("PRAGMA table_info(videos)")}
+    for col, tipo in (("destino", "TEXT"), ("copiado", "REAL")):
+        if col not in tem:
+            db.execute("ALTER TABLE videos ADD COLUMN %s %s" % (col, tipo))
+
+
 def nuvem_video_enfileira(qr, arquivo):
     with nuvem_lock:
         db = nuvem_db()
-        db.execute("CREATE TABLE IF NOT EXISTS videos (qr TEXT PRIMARY KEY, arquivo TEXT, entrou REAL, tentativas INTEGER DEFAULT 0,"
-                   " prox REAL DEFAULT 0, feito REAL, bytes INTEGER, erro TEXT)")
+        _nuvem_videos_tabela(db)
         db.execute("INSERT OR IGNORE INTO videos (qr, arquivo, entrou) VALUES (?, ?, ?)", (qr, arquivo, time.time()))
         db.commit(); db.close()
     nuvem_video_acorda.set()
+
+
+def nuvem_video_destino(rq, qr):
+    """O rascunho que já está subindo (ou subiu) passa a ser o vídeo do cartão qr. -> False se o rascunho não está na fila."""
+    with nuvem_lock:
+        db = nuvem_db()
+        _nuvem_videos_tabela(db)
+        r = db.execute("SELECT 1 FROM videos WHERE qr=? AND destino IS NULL", (rq,)).fetchone()
+        if r:
+            db.execute("UPDATE videos SET destino=?, prox=0 WHERE qr=?", (qr, rq))
+            db.commit()
+        db.close()
+    if not r:
+        return False
+    p = ativ_video_em_curso.get(rq)
+    if p:
+        ativ_video_em_curso[qr] = p               # a tela da entrega vê o progresso pelo QR
+    nuvem_video_acorda.set()
+    return True
+
+
+def nuvem_rascunhos():
+    """Rascunhos de hoje na fila da nuvem: {rid: {feito, total, enviado}} para a tela da entrega mostrar antes de ligar."""
+    out = {}
+    try:
+        with nuvem_lock:
+            db = nuvem_db()
+            _nuvem_videos_tabela(db)
+            rs = db.execute("SELECT qr, feito, bytes FROM videos WHERE qr LIKE 'r-%' AND destino IS NULL AND entrou > ?", (time.time() - 86400,)).fetchall()
+            db.close()
+    except Exception:
+        return out
+    for q, feito, b in rs:
+        p = ativ_video_em_curso.get(q)
+        out[q[2:]] = {"feito": bool(feito), "total": (p or {}).get("total") or b, "enviado": (p or {}).get("feito") if p else (b if feito else 0)}
+    return out
 
 
 nuvem_video_acorda = threading.Event()
@@ -8369,49 +8518,84 @@ def nuvem_videos_loop():
         try:
             with nuvem_lock:
                 db = nuvem_db()
-                db.execute("CREATE TABLE IF NOT EXISTS videos (qr TEXT PRIMARY KEY, arquivo TEXT, entrou REAL, tentativas INTEGER DEFAULT 0,"
-                           " prox REAL DEFAULT 0, feito REAL, bytes INTEGER, erro TEXT)")
-                fila = db.execute("SELECT qr, arquivo, tentativas FROM videos WHERE feito IS NULL AND prox <= ? ORDER BY entrou LIMIT 5",
-                                  (time.time(),)).fetchall()
-                nuvem["videos_fila"] = db.execute("SELECT COUNT(*) FROM videos WHERE feito IS NULL").fetchone()[0]
+                _nuvem_videos_tabela(db)
+                fila = db.execute("SELECT qr, arquivo, tentativas, feito, destino FROM videos WHERE (feito IS NULL OR (destino IS NOT NULL AND copiado IS NULL))"
+                                  " AND prox <= ? ORDER BY destino IS NULL, entrou LIMIT 5", (time.time(),)).fetchall()
+                nuvem["videos_fila"] = db.execute("SELECT COUNT(*) FROM videos WHERE (feito IS NULL AND coalesce(destino,'')<>'-')"
+                                                  " OR (destino IS NOT NULL AND destino<>'-' AND copiado IS NULL)").fetchone()[0]
                 db.close()
-            for qr, arquivo, tent in fila:
+            for qr, arquivo, tent, feito, destino in fila:
                 if os.path.exists(NUVEM_PAUSA):
                     break
-                erro = None
+                erro, tam, subiu, rasc = None, None, bool(feito), qr.startswith("r-")
+                chave = "video/%s.mp4" % qr
                 try:
-                    tam = os.path.getsize(arquivo)
-                    prog = ativ_video_em_curso[qr] = {"total": tam, "feito": 0, "inicio": time.time()}
+                    if destino == "-":                 # rascunho abandonado
+                        s3.delete_object(Bucket=NUVEM_BUCKET, Key=chave)
+                    else:
+                        if not subiu:
+                            tam = os.path.getsize(arquivo)
+                            prog = ativ_video_em_curso[qr] = {"total": tam, "feito": 0, "inicio": time.time()}
+                            if destino:
+                                ativ_video_em_curso[destino] = prog
 
-                    def anda(n, prog=prog):
-                        prog["feito"] += n
-                    chave = "video/%s.mp4" % qr
-                    s3.upload_file(arquivo, NUVEM_BUCKET, chave, ExtraArgs={"ContentType": "video/mp4"}, Config=cfg, Callback=anda)
-                    if s3.head_object(Bucket=NUVEM_BUCKET, Key=chave).get("ContentLength") != tam:
-                        raise ValueError("tamanho diferente na nuvem")
+                            def anda(n, prog=prog):
+                                prog["feito"] += n
+                            s3.upload_file(arquivo, NUVEM_BUCKET, chave, ExtraArgs={"ContentType": "video/mp4"}, Config=cfg, Callback=anda)
+                            if s3.head_object(Bucket=NUVEM_BUCKET, Key=chave).get("ContentLength") != tam:
+                                raise ValueError("tamanho diferente na nuvem")
+                            subiu = True
+                        if rasc:
+                            with nuvem_lock:                # a equipe pode ter lido o cartão enquanto subia
+                                db = nuvem_db()
+                                destino = db.execute("SELECT destino FROM videos WHERE qr=?", (qr,)).fetchone()[0]
+                                db.close()
+                            if destino and destino != "-":
+                                alvo = "video/%s.mp4" % destino
+                                tam = tam or s3.head_object(Bucket=NUVEM_BUCKET, Key=chave).get("ContentLength")
+                                s3.copy_object(Bucket=NUVEM_BUCKET, Key=alvo, CopySource={"Bucket": NUVEM_BUCKET, "Key": chave},
+                                               ContentType="video/mp4", MetadataDirective="REPLACE")
+                                if s3.head_object(Bucket=NUVEM_BUCKET, Key=alvo).get("ContentLength") != tam:
+                                    raise ValueError("tamanho diferente na cópia")
+                                s3.delete_object(Bucket=NUVEM_BUCKET, Key=chave)
+                            elif destino == "-":
+                                s3.delete_object(Bucket=NUVEM_BUCKET, Key=chave)
                 except Exception as ex:
                     erro = str(ex)[:200]
                 finally:
                     ativ_video_em_curso.pop(qr, None)
+                    if destino and destino != "-":
+                        ativ_video_em_curso.pop(destino, None)
+                pronto = not erro and (not rasc or bool(destino))      # o vídeo do cartão está na nuvem
                 with nuvem_lock:
                     db = nuvem_db()
                     if erro:
-                        db.execute("UPDATE videos SET tentativas=tentativas+1, prox=?, erro=? WHERE qr=?",
-                                   (time.time() + min(300, 5 * 2 ** min(tent, 6)), erro, qr))
+                        db.execute("UPDATE videos SET tentativas=tentativas+1, prox=?, erro=?, feito=coalesce(feito, ?) WHERE qr=?",
+                                   (time.time() + min(300, 5 * 2 ** min(tent, 6)), erro, time.time() if subiu else None, qr))
                         nuvem["videos_erro"] = time.strftime("%H:%M:%S ") + erro
                     else:
-                        db.execute("UPDATE videos SET feito=?, bytes=?, erro=NULL WHERE qr=?", (time.time(), tam, qr))
-                        nuvem["videos_enviados"] = nuvem.get("videos_enviados", 0) + 1
+                        db.execute("UPDATE videos SET feito=coalesce(feito, ?), bytes=coalesce(?, bytes), erro=NULL, copiado=? WHERE qr=?",
+                                   (time.time(), tam, time.time() if destino else None, qr))
+                        if pronto and destino != "-":
+                            nuvem["videos_enviados"] = nuvem.get("videos_enviados", 0) + 1
                     db.commit(); db.close()
-                if not erro:
+                if pronto and destino != "-":
+                    alvo = destino if rasc else qr
+                    final = os.path.join(ATIV_VIDEOS_DIR, alvo + ".mp4")
                     with ev_lock:
                         c = vendas_db()
                         try:
-                            c.execute("update ativ_entrega set nuvem_em=? where qr=?", (time.strftime("%Y-%m-%dT%H:%M:%S"), qr))
+                            if rasc and arquivo and os.path.exists(arquivo) and not os.path.exists(final):
+                                try:
+                                    os.replace(arquivo, final)       # o nome final que não deu na hora de ligar (arquivo aberto)
+                                    c.execute("update ativ_entrega set arquivo=? where qr=? and arquivo=?", (final, alvo, arquivo))
+                                except OSError:
+                                    pass
+                            c.execute("update ativ_entrega set nuvem_em=? where qr=?", (time.strftime("%Y-%m-%dT%H:%M:%S"), alvo))
                             c.commit()
                         finally:
                             c.close()
-                    nuvem_galeria_enfileira(qr)      # a galeria deixa de dizer "chegando"
+                    nuvem_galeria_enfileira(alvo)      # a galeria deixa de dizer "chegando"
         except Exception as ex:
             nuvem["videos_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         nuvem_video_acorda.wait(10)
@@ -8972,6 +9156,12 @@ def vendas_db():
     if "cliente_eventos" not in {r[1] for r in c.execute("pragma table_info(ativ_entrega)")}:
         c.execute("alter table ativ_entrega add column cliente_eventos text")
     c.execute("create table if not exists ativ_cadastro (tipo text, nome text, ativo integer, primary key (tipo, nome))")
+    # v99.25: pulseira numerada por vídeo; o voo fica na pulseira (dois drones podem voar a mesma compra)
+    c.execute("create table if not exists ativ_pulseira (numero text, venda text, slot integer, conflito integer default 0, em text,"
+              " voo_em text, voo_por text, piloto text, drone text, bateria text, primary key (numero, venda))")
+    c.execute("create index if not exists ativ_pulseira_venda on ativ_pulseira(venda)")
+    if "pulseira" not in {r[1] for r in c.execute("pragma table_info(ativ_entrega)")}:
+        c.execute("alter table ativ_entrega add column pulseira text")
     # v99.24: lotes de cartões com QR (a gráfica imprime; o servidor guarda cada token e código, nunca repetidos)
     c.execute("create table if not exists cartao (token text primary key, codigo text not null unique, lote text not null)")
     c.execute("create index if not exists cartao_lote_i on cartao(lote)")
@@ -9955,6 +10145,7 @@ ROTAS = (
     ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),
     ("GET", "/ativ/cliente-foto", "sessao", ("ativentrega.r",)),     # foto do cliente para quem entrega (some com a limpeza)   # vídeos de demonstração (lista e arquivo)
     ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
+    ("GET", "/ativ/pulseira", "sessao", ("ativentrega.r", "ativvenda.c")),     # v99.25: de quem é a pulseira
     ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
     ("GET", "/ativ/cadastros", "sessao", ("ativentrega.r",)), ("POST", "/ativ/cadastros", "sessao", ("ativentrega.u",)),
     ("GET", "/ativ/cartoes", "sessao", ("catalogo.r",)), ("POST", "/ativ/cartoes/lote", "sessao", ("catalogo.u",)),   # v99.24: lotes de cartões
@@ -11112,12 +11303,13 @@ class H(BaseHTTPRequestHandler):
         if rota == "/ativ/etapa":
             e = ativ_etapa(body, eu.get("usuario") or "")
             if e:
-                return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409, "cadastro": 400}[e])
+                return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409, "cadastro": 400, "pulseira": 409}[e])
             return self.js({"ok": True})
         if rota == "/ativ/video/liga":
             e, n = ativ_video_liga(body, eu.get("usuario") or "")
             if e:
                 return self.js({"error": e}, {"dados": 400, "rascunho": 410, "nao_achou": 404, "cancelada": 409, "qr_usado": 409,
+                                              "pulseira": 409, "pulseira_usada": 409,
                                               "completa": 409, "sem_video": 409, "formato": 415,
                                               "cartao_desconhecido": 409, "cartao_cancelado": 409}[e])
             return self.js({"ok": True, "qr": body["qr"], "codigo": cartao_codigo(body["qr"]), "n": n})
@@ -11193,6 +11385,8 @@ class H(BaseHTTPRequestHandler):
             rid = secrets.token_hex(8)
             os.replace(tmp, ativ_rascunho(rid))
             tmp = None
+            if NUVEM == "s3" and NUVEM_BUCKET:
+                nuvem_video_enfileira("r-" + rid, ativ_rascunho(rid))    # v99.25: já começa a subir, antes de ligar ao cartão
             return self.js({"ok": True, "rascunho": rid, "bytes": n, "duracao": dur})
         except Exception as ex:
             self.close_connection = True
@@ -12135,8 +12329,15 @@ class H(BaseHTTPRequestHandler):
             r = ativ_fila(dia)
             if r is None:
                 return self.js({"error": "data inválida"}, 400)
-            return self.js({"ok": True, "vendas": r, "cadastros": ativ_cadastros(),
+            return self.js({"ok": True, "vendas": r, "cadastros": ativ_cadastros(), "rascunhos": nuvem_rascunhos(),
                             "nuvem": {"ligada": NUVEM == "s3" and bool(NUVEM_BUCKET), "fila": nuvem.get("videos_fila", 0)}}, nostore=True)
+        if u.path == "/ativ/pulseira":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            r = ativ_pulseira_busca((parse_qs(u.query).get("n") or [""])[0])
+            if r is None:
+                return self.js({"error": "dados"}, 400)
+            return self.js(dict(r, ok=True), nostore=True)
         if u.path == "/ativ/cartoes":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
