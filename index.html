@@ -115,6 +115,7 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 .av-vitrine{position:relative;display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:12px;overflow:hidden;padding:0;cursor:pointer;background:linear-gradient(135deg,var(--accent,#123a6b),#0b1f3a);box-shadow:0 4px 14px rgba(0,0,0,.18)}
 .av-vitrine img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .3s}
 .av-vitrine:hover img,.av-vitrine:focus-visible img{transform:scale(1.04)}
+.av-foto-cat{cursor:default}.av-foto-cat:hover img{transform:none}
 .av-play{position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;background:rgba(255,255,255,.94);box-shadow:0 4px 18px rgba(0,0,0,.35)}
 .av-play::after{content:"";position:absolute;left:26px;top:20px;border-style:solid;border-width:12px 0 12px 20px;border-color:transparent transparent transparent var(--accent,#123a6b)}
 .av-nome{font-size:1.05rem}
@@ -1307,7 +1308,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.20.0 · 12/11 12:33"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.20.1 · 12/11 12:41"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5091,6 +5092,8 @@ async function avDemoAbre(nome){let url=AV_DEMO_URL[nome];
 function avGrupos(prods){if(!prods.length||prods[0].cat!=='chute')return [];const m=new Map();
   prods.forEach(p=>{const n=(p.inclui&&p.inclui.chutes)||0;const k=n?'c'+n:'prod';if(!m.has(k))m.set(k,{k,n,rot:n?TE('av_n_chutes',n):TE('av_produtos'),prods:[]});m.get(k).prods.push(p);});
   return [...m.values()].sort((a,b)=>(a.n||99)-(b.n||99));}
+// Chute a Gol e Snap Pop não têm vídeo de demonstração: a foto do serviço no card (img/ativ-*.jpg, imagens ilustrativas)
+const AV_FOTO_CAT={chute:'img/ativ-chute.jpg',snap:'img/ativ-snap.jpg'};
 // ---- miniatura do vídeo de demonstração: quadro tirado do próprio vídeo guardado no tablet, guardada junto dele ----
 const AV_DEMO_THUMB={},avThumbFalhou=new Set();let avThumbRodando=false;
 function avVitrine(p,op){const nome=avDemoNome(p.id,op,state.av.pessoas);const src=AV_DEMO_THUMB[nome];if(!src&&!avThumbFalhou.has(nome))setTimeout(avThumbsPreenche,0);
@@ -5162,7 +5165,7 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chu
   const cob=A.cart.reduce((s,l)=>s+avCob(l),0);
   const card=p=>{const ops=p.opcoes||[];const op=A.local[p.id]||(ops[0]||{}).nome||'';const preco=ativPreco(p,{op,pessoas:A.pessoas,k4:!!(p.k4&&A.k4[p.id]),chuva:!!(p.cat==='drone'&&p.chuva&&A.chuva[p.id])})||0;const temVideo=p.cat==='drone';
     return `<div class="panel" style="margin:0;display:flex;flex-direction:column;gap:8px" data-av-card="${esc(p.id)}">
-      ${temVideo?avVitrine(p,op):''}
+      ${temVideo?avVitrine(p,op):AV_FOTO_CAT[p.cat]?`<div class="av-vitrine av-foto-cat" aria-hidden="true"><img alt="" src="${AV_FOTO_CAT[p.cat]}" loading="lazy"></div>`:''}
       <b class="av-nome">${esc(p.nome)}</b>${ops.length>1?`<label><span class="eyebrow">${esc(atOpNome(p))}</span><select style="width:100%" data-act="av-local" data-id="${esc(p.id)}">${ops.map(o=>`<option ${o.nome===op?'selected':''}>${esc(o.nome)}</option>`).join('')}</select></label>`:''}
       ${p.k4?`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" style="width:22px;height:22px" data-act="av-k4" data-id="${esc(p.id)}" ${A.k4[p.id]?'checked':''}> 4K (+${fmtR(p.k4)})</label>`:''}
       ${p.cat==='drone'&&p.chuva?`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" style="width:22px;height:22px" data-act="av-chuva" data-id="${esc(p.id)}" ${A.chuva[p.id]?'checked':''}> ${TE('av_chuva')}</label>`:''}
