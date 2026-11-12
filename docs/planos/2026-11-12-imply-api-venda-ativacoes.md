@@ -68,7 +68,7 @@ Os outros tipos que vêm junto (ingressos do Tour, combos, cortesias, Museu do F
 - O **horário da ativação é o horário do Tour** (`idapresentacao`), e o estoque de cada ativação é o do produto naquele horário (`esgotado`). Não existe um slot próprio do Drone.
 - O catálogo do tablet passa a ser montado pelo `idtipoproduto`. O nome do produto na Imply (`dscproduto`) é o que liga cada item do Eterna ao `idproduto`. O `idproduto` muda de um horário para outro? Ainda não sabemos: no teste, o mesmo produto teve o mesmo id em 12/11. Conferir num segundo dia antes de guardar o id fixo.
 - Os preços batem com a tabela das ativações no Eterna. O agente vai conferir isso sozinho e avisar quando um preço mudar na Imply.
-- **Dúvida para a Imply:** as ativações e as fotos vêm com `mapa_modo_venda` 1, "Lugar marcado". Os ingressos do Tour vêm como "Quantidade sem lugar marcado". O `ReservarIngresso` da coleção não tem campo de lugar. Perguntar se a reserva desses produtos precisa de um lugar (e qual rota dá o mapa) ou se isso é só um ajuste do cadastro.
+- **Lugar marcado (resolvido em 12/11):** as ativações e as fotos vinham com `mapa_modo_venda` 1, "Lugar marcado", e o `ReservarIngresso` não tem campo de lugar. A pedido do Ronaldo, a Imply mudou todas para "Quantidade sem lugar marcado". Conferido na API no horário de 13/11 09:00: Drone, Chute a Gol, Chute a Gol / Produto, Snap Pop e Foto agora estão sem lugar marcado. O estacionamento continua com lugar marcado, mas não é vendido pelo Eterna.
 
 ## Como fica no Eterna (proposta)
 
@@ -114,5 +114,5 @@ sequenceDiagram
 
 1. ~~Completar o cadastro da pessoa "Viva Maracanã"~~: feito em 12/11, pessoa marcada como Corporativo.
 2. ~~Liberar as ativações e as fotos para esse usuário~~: feito. Elas vêm como produtos dentro dos horários do Tour.
-3. Responder se os produtos com "Lugar marcado" (ativações e fotos) precisam de lugar na reserva.
+3. ~~Produtos com "Lugar marcado"~~: a Imply passou ativações e fotos para quantidade sem lugar marcado (12/11).
 4. Um ambiente ou modo de teste para reservar e confirmar sem gerar venda de verdade, ou a autorização para um teste com cancelamento logo em seguida (decisão do Ronaldo).
