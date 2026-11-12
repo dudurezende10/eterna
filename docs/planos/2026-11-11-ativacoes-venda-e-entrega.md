@@ -17,10 +17,11 @@ Este plano substitui as opções do plano de 30/10 (`2026-10-30-maracafly-no-ete
 5. **O vídeo fica na nuvem da AWS**, no mesmo lugar da galeria.
 6. **O Drone também tem fotos.** Elas ficam com as outras fotos do tour, na sessão do cliente, e são vendidas no checkout das fotos. O QR do vídeo serve só para o vídeo.
 7. **Cortesia vale para as ativações**, com a mesma regra da Cortesia SAC: motivo, nota e quem deu.
-8. **O admin troca preço e vídeo de demonstração**, e pode desligar um produto no dia ("hoje não vendo").
+8. **O admin troca preço** e pode desligar um produto no dia ("hoje não vendo").
 9. **Por enquanto, vídeo do Drone e Chute a Gol só se compram no local.** A compra online (Imply, plano `2026-11-11-compra-online-pela-imply.md`) continua só para fotos. As ativações entram nela depois.
 10. **O histórico do sistema antigo entra no Eterna.** Primeiro, as planilhas exportadas de 01/10 a 11/11. Depois, **a partir de 12/11, as vendas novas entram todo dia, à noite, depois das 19h, quando o tour termina**, até o Ronaldo avisar que o sistema antigo foi desligado.
-11. **Fora deste plano:**
+11. **A venda é local first (12/11):** o vendedor vende com tudo na mão, sem depender de internet nem do servidor. Nada de vídeo carregando ou baixando no tablet: a tela de venda não tem vídeo de demonstração.
+12. **Fora deste plano:**
     - escala da equipe;
     - central de WhatsApp;
     - voos e telemetria;
@@ -72,30 +73,41 @@ Cada produto do catálogo tem:
   - vale com chuva;
   - restrição de local.
 - **O que a venda pede:** participantes (chutes), pessoas no vídeo, ou nenhum dos dois.
-- **Vídeos de demonstração:** até 4 por produto, conforme o número de pessoas.
 - **Ativo** e **ativo hoje**. "Ativo hoje" desliga o produto só naquele dia e volta sozinho no dia seguinte.
 
 A tela de admin é uma aba nova em **Preços e Checkout**, com a mesma permissão `catalogo`. Desligar no dia fica liberado também para o supervisor.
 
 ## 3. Venda no tablet
 
-Uma tela nova, **Ativações**, no menu de venda. Ela segue o padrão visual do Posto de venda.
+Uma tela nova, **Ativações**, no menu de venda. Ela segue o padrão visual do Posto de venda. Feita na v99.17.3, sem o recibo impresso, que fica para depois.
 
 1. **Abas:** Drone, Chute a Gol, Snap Pop. Aparecem só os produtos ativos hoje.
-2. **Demonstração:** tocar no produto abre o vídeo de exemplo em tela cheia, conforme o número de pessoas escolhido.
-   - O tablet baixa os vídeos uma vez, com barra de progresso, e toca sem internet.
-   - Quando o admin troca um vídeo, o tablet baixa só o novo.
+2. **Sem vídeo no tablet (decisão 11 da seção 1):** a tela mostra nome, opções e preço; não carrega nem baixa vídeo.
 3. **Carrinho:** junta produtos das três categorias na mesma venda. Cada item tem local, quantidade e as opções.
    - Os adicionais entram sozinhos: pessoa extra, 4K, chuva.
-   - O carrinho mostra o **preço sugerido**. O vendedor pode mudar o **preço cobrado**, e os dois ficam gravados.
+   - **Preço fixo (decidido 12/11):** vale o preço do catálogo, com os adicionais somados sozinhos. O vendedor não digita valor, diferente do sistema antigo, que aceitava desconto ou acréscimo. Só o admin muda preço, em Preços e Checkout. Venda grátis só como Cortesia.
 4. **Guia (opcional):** escolha do guia pelo nome, com busca. A comissão continua no Portal de Parceiros.
 5. **Pagamento:** PIX, Dinheiro, Débito, Crédito ou **Cortesia**. Na Cortesia, o motivo e a nota são obrigatórios.
 6. **Idioma e país do cliente:** um toque cada, por bandeira. O idioma serve para o recibo e a galeria abrirem no idioma dele. O país alimenta o resumo por país. Nenhum dos dois identifica a pessoa.
 7. **Execução:** imediata ou agendada (dia e hora). Serve para o Drone.
-8. **Registrar:** grava a venda no servidor do estádio, com número próprio e quem vendeu. Imprime o recibo no idioma do cliente, se houver impressora no posto.
+8. **Registrar:** grava a venda no próprio tablet na hora, com número próprio e quem vendeu, e envia ao servidor do estádio. Imprime o recibo no idioma do cliente, se houver impressora no posto.
    - Uma venda igual registrada em até 2 minutos pelo mesmo vendedor pede confirmação.
 
-A venda fica no servidor, nunca só no navegador (`2026-11-10-dado-no-banco.md`). Se o tablet perder a conexão com o servidor, a tela avisa e não registra. A venda acontece só dentro do estádio, na rede local.
+**Local first:** a venda nunca espera a rede.
+- O catálogo fica guardado no tablet. A tela de venda abre e vende sem internet e sem o servidor.
+- A venda é gravada no tablet na hora, numa caixa de saída, com um código gerado no próprio tablet. O envio ao servidor do estádio, pela rede local, acontece em seguida.
+- Sem rede, a venda fica na caixa de saída com a situação "Aguardando envio" e é reenviada sozinha. O servidor reconhece o código, então reenviar nunca duplica.
+- O dono do dado continua sendo o servidor (`2026-11-10-dado-no-banco.md`): a caixa de saída só guarda o que ainda não chegou lá. A venda acontece só dentro do estádio e nunca depende da nuvem.
+
+**Nenhuma venda se perde no tablet (12/11):**
+- A venda é gravada em duas cópias no tablet: `localStorage` (`eterna.ativ.saida.v1`) e IndexedDB (`eterna-ativ`). A tela só diz "registrada" depois que pelo menos uma das duas gravou. Se nenhuma gravar, o carrinho continua na tela com o aviso.
+- Ao abrir o app, as duas cópias são juntadas. Se uma sumir, a outra a devolve.
+- A venda só sai da caixa de saída com o ok do servidor (`POST /ativ/venda`, que devolve as recebidas). Sem rede, o tablet tenta de novo a cada 5 s e quando o aparelho volta à rede. Venda que o servidor já tem conta como recebida, sem duplicar.
+- Venda recusada pelo servidor nunca é apagada. Ela fica no tablet com a situação "Recusada pelo servidor", e o botão **Salvar cópia das vendas não enviadas** baixa um arquivo com elas.
+- Sair da conta, trocar de vendedor ou atualizar o app não mexem na caixa de saída. O app pede ao navegador armazenamento persistente.
+- O servidor confere só o formato. Produto e preço diferentes do catálogo do servidor não são recusados, porque o tablet pode ter vendido com o catálogo que tinha.
+- O cancelamento precisa do servidor: o vendedor cancela a própria venda do dia, e quem tem `venda.d` ou `financeiro.u` cancela qualquer uma. A venda cancelada continua no banco, com motivo, quem e quando, e sai do Resumo das ativações.
+- Um carrinho com mais de um serviço vira uma venda por serviço, com o mesmo número. Assim o resumo por serviço fica certo.
 
 Todo texto novo entra nos idiomas: `EQ`/`TE` nas telas da equipe e `I18N`/`T` no recibo e na galeria. O teste `testes/idiomas.js` cobra as chaves.
 
@@ -173,7 +185,7 @@ Pilotos, drones e baterias têm cadastro simples, com ativo e inativo.
   - Filtro extra "Todos os serviços" e escolha de data, com o botão Hoje.
 - **Painel e Estatísticas:** as ativações entram com as fotos:
   - receita por produto, por vendedor e por forma de pagamento;
-  - preço sugerido × cobrado;
+  - valor da Cortesia (o preço do catálogo que foi dado);
   - arquivos entregues e baixados.
 
 As vendas importadas do sistema antigo aparecem nas mesmas telas, com a origem "Sistema antigo", e só para leitura.
@@ -212,7 +224,7 @@ As vendas importadas do sistema antigo aparecem nas mesmas telas, com a origem "
 
 | Fase | Entrega | Pronto quando |
 |---|---|---|
-| 1. Catálogo e admin | Produtos, variações, regras de preço, vídeos de demonstração, ativo hoje | O admin cadastra os produtos da seção 2 e desliga um deles no dia |
+| 1. Catálogo e admin | Produtos, variações, regras de preço, ativo hoje | O admin cadastra os produtos da seção 2 e desliga um deles no dia |
 | 2. Venda no tablet | Tela Ativações, carrinho, cortesia, recibo, Minhas vendas | Venda completa em menos de 60 s no tablet, com teste automático |
 | 3. Histórico | Importador das planilhas e passo diário na tarefa da auditoria | Totais por dia no Eterna iguais aos do sistema antigo |
 | 4. Entrega | QR lido no campo e ligado ao vídeo, S3 em partes, vídeo na galeria, fila do Drone, itens físicos | O cliente baixa o vídeo pelo QR, com e-mail e selfie |
@@ -230,3 +242,4 @@ Cada fase vira uma versão em `VERSOES.md` e tem teste em `testes/`.
 4. **Preços (decidido 11/11):** ficam os da seção 2, tirados da documentação e das vendas.
 5. **Prazo do vídeo (decidido 11/11):** 30 dias na nuvem; cada vídeo tem no máximo 30 segundos.
 6. **Compra online das ativações:** entra no checkout da Imply depois, quando a compra online das fotos estiver no ar.
+7. **Venda só nos horários da Imply (12/11):** o Ronaldo quer estudar consumir a Imply para vender somente nos horários com vaga (allotment). Ele passa a chave depois. **Por ora a venda é livre.**

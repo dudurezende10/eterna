@@ -7,7 +7,8 @@ const V=(id,tipo,dia,valor,pag,vend,pais,itens,videos)=>({origem:'antigo',id,tip
 const DADOS=[V('drone-1','drone','2026-10-06',180,'PIX','Vendedora Um','Chile',[{produto:'asteroid',op:'Campo',qtd:1}],1),
   V('drone-2','drone','2026-10-06',250,'Crédito','Vendedor Dois','Brasil',[{produto:'inside_out',op:'Banco de Suplentes',qtd:1}],1),
   V('drone-3','drone','2026-10-07',120,'PIX','Vendedora Um','Chile',[{produto:'boomerang',op:'Arquibancada',qtd:1}],1),
-  V('chute-1','chute','2026-10-06',110,'Débito','Vendedor Dois','Argentina',[{produto:'3 Chutes',op:'',qtd:1}],0)];
+  V('chute-1','chute','2026-10-06',110,'Débito','Vendedor Dois','Argentina',[{produto:'3 Chutes',op:'',qtd:1}],0),
+  {...V('TCANC0001D','drone','2026-10-06',999,'PIX','Vendedora Um','Chile',[{produto:'asteroid',op:'Campo',qtd:1}],1),origem:'eterna',situacao:'cancelada'}];
 (async()=>{const b=await chromium.launch();
 try{
   const ctx=await b.newContext({viewport:{width:390,height:844},hasTouch:true});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());

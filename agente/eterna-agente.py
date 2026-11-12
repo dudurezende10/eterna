@@ -7482,18 +7482,129 @@ def ativ_importar(linhas):
     return r
 
 
-def ativ_vendas(de, ate):
+ATIV_TABLET_COLS = (("usuario", "text"), ("sugerido", "real"), ("situacao", "text"), ("cortesia_motivo", "text"), ("cortesia_nota", "text"),
+                    ("agendada", "text"), ("cancel_motivo", "text"), ("cancel_por", "text"), ("cancel_em", "text"), ("enviado_por", "text"))
+ATIV_PAGAMENTOS = ("PIX", "Dinheiro", "Débito", "Crédito", "Cortesia")
+_re_ativ_id = re.compile(r"^T[A-Za-z0-9]{6,30}$")
+_re_agendada = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
+
+
+def ativ_venda_tablet(v):
+    """Venda vinda da caixa de saída do tablet -> linha do banco, ou None. A conferência é só de formato: o tablet vende sem
+    rede e com o catálogo que tinha (local first), então produto e preço não são recusados por diferirem do servidor."""
+    if not isinstance(v, dict) or not _re_ativ_id.match(str(v.get("id") or "")):
+        return None
+    if v.get("tipo") not in ATIV_CATS or not _re_criado.match(str(v.get("criado") or "")) or v.get("pagamento") not in ATIV_PAGAMENTOS:
+        return None
+    its = v.get("itens")
+    if not isinstance(its, list) or not 1 <= len(its) <= 30:
+        return None
+    itens = []
+    for it in its:
+        if not isinstance(it, dict) or not _ativ_txt(it.get("produto"), 60) or not _ativ_txt(it.get("op") or "", 40) or not _ativ_num(it.get("qtd"), 100):
+            return None
+        x = {"produto": it["produto"], "op": it.get("op") or "", "qtd": it["qtd"]}
+        for k, teto in (("pessoas", 100), ("videos", 100), ("sugerido", 1000000), ("cobrado", 1000000)):
+            if it.get(k) is not None:
+                if not _ativ_num(it[k], teto):
+                    return None
+                x[k] = it[k]
+        for k in ("k4", "chuva"):
+            if it.get(k):
+                x[k] = True
+        if it.get("cat") in ATIV_CATS:
+            x["cat"] = it["cat"]
+        itens.append(x)
+    if not _ativ_num(v.get("valor"), 1000000) or not _ativ_num(v.get("sugerido") or 0, 1000000):
+        return None
+    for k, n in (("pais", 60), ("idioma", 30), ("guia", 80), ("vendedor", 80), ("usuario", 120), ("cortesia_motivo", 80), ("cortesia_nota", 300)):
+        if not _ativ_txt(v.get(k) or "", n):
+            return None
+    if v["pagamento"] == "Cortesia" and not (str(v.get("cortesia_motivo") or "").strip() and str(v.get("cortesia_nota") or "").strip()):
+        return None
+    ag = v.get("agendada") or ""
+    if ag and not _re_agendada.match(str(ag)):
+        return None
+    return {"origem": "eterna", "id": v["id"], "tipo": v["tipo"], "dia": v["criado"][:10], "criado": v["criado"], "itens": itens,
+            "valor": v["valor"], "pagamento": v["pagamento"], "vendedor": v.get("vendedor") or "", "vendedor_n": None,
+            "pessoas": sum(int(i.get("pessoas") or 0) for i in itens) or None, "videos": sum(int(i.get("videos") or 0) for i in itens),
+            "resolucao": "4K" if any(i.get("k4") for i in itens) else "", "pais": v.get("pais") or "", "idioma": v.get("idioma") or "",
+            "guia": v.get("guia") or "", "piloto": "", "drone": "", "bateria": "", "entrega": "", "qr": "",
+            "usuario": v.get("usuario") or "", "sugerido": v.get("sugerido") or 0, "situacao": "ativa", "cortesia_motivo": v.get("cortesia_motivo") or "",
+            "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag}
+
+
+def ativ_receber(vendas, enviado_por):
+    """POST /ativ/venda: grava as vendas da caixa de saída do tablet. Venda que já está no banco conta como recebida e não é
+    regravada (o tablet reenvia até ouvir o ok). -> {recebidas:[id], recusadas:[{id, motivo}]}"""
+    out = {"recebidas": [], "recusadas": []}
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    cols = list(ATIV_VENDA_CAMPOS) + [c for c, _ in ATIV_TABLET_COLS if c not in ("cancel_motivo", "cancel_por", "cancel_em", "enviado_por")]
+    with ev_lock:
+        c = vendas_db()
+        try:
+            for v in vendas[:200]:
+                vid = str(v.get("id") or "")[:40] if isinstance(v, dict) else ""
+                if c.execute("select 1 from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone():
+                    out["recebidas"].append(vid)
+                    continue
+                d = ativ_venda_tablet(v)
+                if not d:
+                    out["recusadas"].append({"id": vid, "motivo": "formato"})
+                    continue
+                vals = [json.dumps(d["itens"], ensure_ascii=False) if k == "itens" else d.get(k) for k in cols]
+                c.execute("insert into ativ_venda (" + ",".join(cols) + ", importado_em, enviado_por) values (" + ",".join("?" * (len(cols) + 2)) + ")",
+                          vals + [agora, enviado_por])
+                out["recebidas"].append(d["id"])
+            c.commit()
+        finally:
+            c.close()
+    return out
+
+
+def ativ_cancelar(vid, motivo, eu, pode_todas):
+    """Cancela uma venda do tablet. O vendedor cancela a própria venda do dia; quem tem venda.d ou financeiro.u, qualquer uma.
+    A venda cancelada não some: fica com a situação, o motivo, quem e quando. -> None se ok, ou o erro."""
+    motivo = str(motivo or "").strip()
+    if not _re_ativ_id.match(str(vid or "")) or not motivo or not _ativ_txt(motivo, 200):
+        return "dados"
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select usuario, dia, situacao from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            if not r:
+                return "nao_achou"
+            if r[2] == "cancelada":
+                return None
+            if not pode_todas and (r[0] != eu or r[1] != time.strftime("%Y-%m-%d")):
+                return "permissao"
+            c.execute("update ativ_venda set situacao='cancelada', cancel_motivo=?, cancel_por=?, cancel_em=? where origem='eterna' and id=?",
+                      (motivo, eu, time.strftime("%Y-%m-%dT%H:%M:%S"), vid))
+            c.commit()
+        finally:
+            c.close()
+    return None
+
+
+def ativ_vendas(de, ate, usuario=None):
     """Vendas das ativações entre dois dias (inclusive), para o resumo e as estatísticas."""
     if not (_re_dia.match(de or "") and _re_dia.match(ate or "")) or de > ate:
         return None
+    cols = list(ATIV_VENDA_CAMPOS) + [c for c, _ in ATIV_TABLET_COLS if c != "enviado_por"]
     c = vendas_db()
     try:
-        rows = c.execute("select " + ",".join(ATIV_VENDA_CAMPOS) + " from ativ_venda where dia between ? and ? order by criado", (de, ate)).fetchall()
+        q = "select " + ",".join(cols) + " from ativ_venda where dia between ? and ?"
+        args = [de, ate]
+        if usuario is not None:
+            q += " and origem='eterna' and usuario=?"
+            args.append(usuario)
+        rows = c.execute(q + " order by criado", args).fetchall()
     finally:
         c.close()
     out = []
     for row in rows:
-        d = dict(zip(ATIV_VENDA_CAMPOS, row))
+        d = {k: x for k, x in zip(cols, row) if x is not None or k in ATIV_VENDA_CAMPOS}
+        d["situacao"] = d.get("situacao") or "ativa"
         try:
             d["itens"] = json.loads(d["itens"] or "[]")
         except ValueError:
@@ -7985,6 +8096,11 @@ def vendas_db():
               " pagamento text, vendedor text, vendedor_n int, pessoas int, videos int, resolucao text, pais text, idioma text, guia text,"
               " piloto text, drone text, bateria text, entrega text, qr text, importado_em text, primary key (origem, id))")
     c.execute("create index if not exists ativ_venda_dia on ativ_venda(dia)")
+    # v100 (fase 2): venda feita no tablet (origem "eterna"). Colunas novas entram no banco que já existe.
+    tem = {r[1] for r in c.execute("pragma table_info(ativ_venda)")}
+    for col, tipo in ATIV_TABLET_COLS:
+        if col not in tem:
+            c.execute("alter table ativ_venda add column %s %s" % (col, tipo))
     c.execute("create view if not exists ativ_venda_resumo as select dia, tipo, count(*) as vendas, sum(valor) as valor, sum(videos) as videos"
               " from ativ_venda group by dia, tipo")
     # BI: cada selfie do Checkout. Só contagem e horário: nunca imagem, vetor do rosto, sessão ou venda (não identifica ninguém)
@@ -8957,6 +9073,8 @@ ROTAS = (
     ("POST", "/fotos/enviar", "sessao", ("set.c",)),
     ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")),
     ("GET", "/ativ/vendas", "sessao", ("estatisticas.r", "financeiro.r", "relatorios.r")),   # v100: resumo das ativações
+    ("POST", "/ativ/venda", "sessao", ("venda.c",)), ("GET", "/ativ/minhas", "sessao", ("venda.r",)),   # v100: venda no tablet
+    ("POST", "/ativ/cancelar", "sessao", ("venda.c", "venda.d", "financeiro.u")),
     ("GET", "/roverpix/status", "sessao", ("financeiro.r",)), ("GET", "/roverpix/data", "sessao", ("financeiro.r",)),
     ("POST", "/roverpix/sync", "sessao", ("configuracao.u",)), ("POST", "/roverpix/config", "sessao", ("configuracao.u",)),
     ("GET", "/ftp-remoto/status", "sessao", ("configuracao.r",)), ("POST", "/ftp-remoto/config", "sessao", ("configuracao.u",)),
@@ -10090,6 +10208,27 @@ class H(BaseHTTPRequestHandler):
         self.auth_cookie(auth_sessao_nova(usuario), AUTH_SESSAO)
         return self.js(dict(dados, ok=True), 200, True)
 
+    def ativ_post(self, rota):
+        """v100: POST /ativ/venda {vendas:[...]} (caixa de saída do tablet) e /ativ/cancelar {id, motivo}."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        if not limite_ok(self.client_address[0], "ativ", 120):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(512 * 1024)
+        if err or not isinstance(body, dict):
+            return self.js({"error": "corpo inválido"}, err or 400)
+        eu = self.sessao() or {}
+        cad = eu.get("cadastro")
+        if rota == "/ativ/venda":
+            if not isinstance(body.get("vendas"), list):
+                return self.js({"error": "corpo inválido"}, 400)
+            r = ativ_receber(body["vendas"], eu.get("usuario") or "")
+            return self.js(dict(ok=True, **r))
+        e = ativ_cancelar(body.get("id"), body.get("motivo"), eu.get("usuario") or "", auth_pode(cad, "venda", "d") or auth_pode(cad, "financeiro", "u"))
+        if e:
+            return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "permissao": 403}[e])
+        return self.js({"ok": True})
+
     def ff_funcao_post(self):
         """v87: POST /fila-fotografo/funcao {dia, map}: a função do dia vinda da Escala. Posto + origem + X-Eterna: 1,
         limite por minuto, chaves cadastradas e campos fechados. Grava ~/Eterna/ponto/funcao.json (600)."""
@@ -10973,6 +11112,12 @@ class H(BaseHTTPRequestHandler):
                 r["docs"] = [d if d["id"] == proprio else {"id": d["id"], "valor": {k: d["valor"].get(k) for k in ("email", "name", "key", "active") if isinstance(d["valor"], dict)}}
                              for d in r["docs"]]
             return self.js(r)
+        if u.path == "/ativ/minhas":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            dia = (parse_qs(u.query).get("dia") or [""])[0]
+            r = ativ_vendas(dia, dia, (self.sessao() or {}).get("usuario") or "")
+            return self.js({"ok": True, "vendas": r}, nostore=True) if r is not None else self.js({"error": "data inválida"}, 400)
         if u.path == "/ativ/vendas":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -11099,6 +11244,8 @@ class H(BaseHTTPRequestHandler):
             return self.agenda_rota("POST", u.path)
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
+        if u.path in ("/ativ/venda", "/ativ/cancelar"):
+            return self.ativ_post(u.path)
         if u.path in ("/visitas/juntar", "/visitas/separar"):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
