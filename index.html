@@ -1291,7 +1291,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.10 · 11/11 21:54"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.11 · 11/11 21:59"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1548,7 +1548,7 @@ function whoAt(pid){return humans.filter(k=>pointIdOf(k)===pid);}
 function funcText(key){const f=funcOf(key);if(f.tipo==='volante'){const m=VOL_MODES.find(x=>x[0]===f.modo)||VOL_MODES[2];return 'volante · '+m[1].toLowerCase();}if(f.tipo==='folga')return 'folga';const p=DATA.points.find(x=>x.id===f.point);return p?'campo · '+p.name:'sem ponto';}
 function funcValue(key){const f=funcOf(key);return f.tipo==='volante'?'v:'+(f.modo||'livre'):f.tipo==='campo'&&f.point?'c:'+f.point:'';}
 function funcSelect(key,dis){const camp=DATA.points.filter(p=>p.kind!=='chroma'&&p.kind!=='volante');const v=funcValue(key);
-  return `<select data-act="func-set" data-k="${key}" ${dis?'disabled':''} aria-label="Função de ${esc(P[key].name)}"><optgroup label="Campo (ponto fixo)">${camp.map(p=>`<option value="c:${p.id}" ${v==='c:'+p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</optgroup><optgroup label="Volante">${VOL_MODES.map(([id,n])=>`<option value="v:${id}" ${v==='v:'+id?'selected':''}>${esc(n)}</option>`).join('')}</optgroup><option value="" ${v===''?'selected':''}>Folga</option></select>`;}
+  return `<select data-act="func-set" data-k="${key}" ${dis?'disabled':''} aria-label="${esc(TE('esc_func_de',P[key].name))}"><optgroup label="${esc(TE('esc_campo_fixo'))}">${camp.map(p=>`<option value="c:${p.id}" ${v==='c:'+p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</optgroup><optgroup label="${esc(TE('esc_volante'))}">${VOL_MODES.map(m=>`<option value="v:${m[0]}" ${v==='v:'+m[0]?'selected':''}>${esc(volNome(m))}</option>`).join('')}</optgroup><option value="" ${v===''?'selected':''}>${TE('esc_folga')}</option></select>`;}
 // ---------- Troca do fotógrafo no Upload automático ----------
 // v80 (Eduardo, 28/10): saiu o cartão de check-in da câmera. O fotógrafo de cada foto vem do usuário/subpasta do FTP
 // (cada fotógrafo tem o seu login) e do nome do autor gravado na câmera; check-ins já gravados em SIM.camDia continuam valendo (camWho).
@@ -5219,51 +5219,52 @@ function sessaoVirada(){const u=state.user;if(!u||!u.key)return false;let s=null
 // em "Ver dias anteriores". Hoje vem de funcMap/funcOf (a função do dia gravada na Escala, a mesma do Minhas fotos).
 // Não existe escala gravada para os dias seguintes (folgas fixas saíram na v92): eles mostram o ponto fixo como previsto.
 const ESC_SEMANA=['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+const volNome=m=>TEk('vol_'+m[0],m[1]),volDesc=m=>TEk('vol_'+m[0]+'_d',m[2]);
 function escDias(n,de){const [y,m,d]=todayKey().split('-').map(Number);return Array.from({length:n},(_,i)=>new Date(Date.UTC(y,m-1,d+(de||0)+i)).toISOString().slice(0,10));}
-function escSemana(d){const [y,m,dd]=d.split('-').map(Number);return ESC_SEMANA[new Date(Date.UTC(y,m-1,dd)).getUTCDay()];}
+function escSemana(d){const [y,m,dd]=d.split('-').map(Number);return TE('esc_semana_l')[new Date(Date.UTC(y,m-1,dd)).getUTCDay()];}
 const escDM=d=>d.slice(8,10)+'/'+d.slice(5,7);
 function escFixo(key){return DATA.points.find(x=>x.photographer===key&&x.kind!=='volante')||null;}
 // Função de um dia: hoje igual a funcOf, mas separa "fora da escala" (sem função gravada e sem ponto fixo) da folga marcada
 function escDiaFunc(key,d){if(d===todayKey()){const f=funcMap()[key];if(f)return f;}const p=escFixo(key);return p?{tipo:'campo',point:p.id,previsto:d!==todayKey()}:{tipo:'fora'};}
-function escPontoNome(id){const p=DATA.points.find(x=>x.id===id);return p?p.name:'sem ponto';}
+function escPontoNome(id){const p=DATA.points.find(x=>x.id===id);return p?p.name:TE('esc_sem_ponto');}
 function escVolModo(f){return VOL_MODES.find(x=>x[0]===f.modo)||VOL_MODES[2];}
-function escDiaTxt(f){return f.tipo==='campo'?escPontoNome(f.point):f.tipo==='volante'?'Volante · '+escVolModo(f)[1]:f.tipo==='folga'?'Folga':'A definir';}
+function escDiaTxt(f){return f.tipo==='campo'?escPontoNome(f.point):f.tipo==='volante'?TE('esc_volante')+' · '+volNome(escVolModo(f)):f.tipo==='folga'?TE('esc_folga'):TE('esc_a_definir');}
 // Fotógrafo (tem fotoKey e não muda a Escala, ou seja, não é Admin nem Supervisora): só o dia dele e os próximos 7 dias
 function vEscalaFoto(k){const hoje=todayKey();const f=escDiaFunc(k,hoje);let hero;
-  if(f.tipo==='campo')hero=`<p class="esc-frase">Hoje você está em:</p><p class="esc-ponto">${esc(escPontoNome(f.point))}</p>`;
-  else if(f.tipo==='volante'){const m=escVolModo(f);hero=`<p class="esc-frase">Hoje você está como</p><p class="esc-ponto">Volante</p><p class="esc-modo">${esc(m[1])} · ${esc(m[2])}</p>`;}
-  else if(f.tipo==='folga')hero=`<p class="esc-ponto">Hoje é sua folga</p>`;
-  else hero=`<p class="esc-aviso">Você não está na escala de hoje.</p><p class="esc-modo">Fale com a supervisora.</p>`;
+  if(f.tipo==='campo')hero=`<p class="esc-frase">${TE('esc_hoje_em')}</p><p class="esc-ponto">${esc(escPontoNome(f.point))}</p>`;
+  else if(f.tipo==='volante'){const m=escVolModo(f);hero=`<p class="esc-frase">${TE('esc_hoje_como')}</p><p class="esc-ponto">${TE('esc_volante')}</p><p class="esc-modo">${esc(volNome(m))} · ${esc(volDesc(m))}</p>`;}
+  else if(f.tipo==='folga')hero=`<p class="esc-ponto">${TE('esc_hoje_folga')}</p>`;
+  else hero=`<p class="esc-aviso">${TE('esc_fora')}</p><p class="esc-modo">${TE('esc_fale')}</p>`;
   const prox=escDias(7,1).map(d=>({d,f:escDiaFunc(k,d)}));const prev=prox.some(x=>x.f.previsto);
   return `<div class="head"><div><div class="eyebrow">${esc(P[k].name)} · ${escSemana(hoje)}, ${escDM(hoje)}</div><h1>${esc(viewLabel('escala'))}</h1></div></div>
   <section class="panel esc-hoje" id="esc-hoje" data-tipo="${f.tipo}">${hero}</section>
-  <div class="panel" id="esc-prox"><h2>Próximos 7 dias</h2><ul class="esc-lista">${prox.map(x=>`<li data-d="${x.d}"><span class="esc-dia">${escSemana(x.d)}</span><span class="esc-data">${escDM(x.d)}</span><span class="esc-onde${x.f.tipo==='folga'||x.f.tipo==='fora'?' off':''}">${esc(escDiaTxt(x.f))}</span></li>`).join('')}</ul>
-  ${prev?'<div class="note">Os próximos dias mostram o seu ponto fixo. A supervisora confirma a função de cada dia aqui na Escala.</div>':''}</div>`;}
+  <div class="panel" id="esc-prox"><h2>${TE('esc_prox7')}</h2><ul class="esc-lista">${prox.map(x=>`<li data-d="${x.d}"><span class="esc-dia">${escSemana(x.d)}</span><span class="esc-data">${escDM(x.d)}</span><span class="esc-onde${x.f.tipo==='folga'||x.f.tipo==='fora'?' off':''}">${esc(escDiaTxt(x.f))}</span></li>`).join('')}</ul>
+  ${prev?`<div class="note">${TE('esc_prev_nota')}</div>`:''}</div>`;}
 function vEscala(){
   const fk=fotoKey();if(fk&&!can('escala','u'))return vEscalaFoto(fk);
   const days=DATA.days.slice(-7);const need=4;const prox=escDias(7);
   const cover=days.map(d=>(byDay[d]||[]).filter(r=>P[r.key].human).length);
   const camp=DATA.points.filter(p=>p.kind!=='chroma'&&p.kind!=='volante'&&!p.new);const empty=camp.filter(p=>!whoAt(p.id).length);
   const todaySess=Object.values(SIM.sessions).filter(x=>x.date==='hoje');const cnt=pid=>todaySess.filter(x=>x.point===pid).length;
-  const funcPanel=`<div class="panel"><div class="head"><div><div class="eyebrow">Hoje · ${dlabel(todayKey())}</div><h2>Função de cada fotógrafo</h2></div>${empty.length?`<span class="pill bad">${empty.map(p=>esc(p.name)).join(', ')} sem fotógrafo</span>`:'<span class="pill good">campo coberto</span>'}</div>
-    <div class="tablewrap"><table><thead><tr><th>Fotógrafo</th><th>Função</th><th>Tipo</th><th class="num">Sessões hoje</th></tr></thead><tbody>
-    ${humans.map(k=>{const f=funcOf(k);const pid=pointIdOf(k);return `<tr><td class="name">${esc(P[k].name)}</td><td>${funcSelect(k,!can('escala','u'))}</td><td><span class="pill ${f.tipo==='volante'?'warn':f.tipo==='folga'?'neutral':'good'}">${f.tipo==='folga'?'folga':f.tipo}</span></td><td class="num">${todaySess.filter(x=>x.key===k).length}</td></tr>`}).join('')}
+  const funcPanel=`<div class="panel"><div class="head"><div><div class="eyebrow">${TE('esc_hoje')} · ${dlabel(todayKey())}</div><h2>${TE('esc_funcao_h')}</h2></div>${empty.length?`<span class="pill bad">${TE('esc_sem_foto',empty.map(p=>esc(p.name)).join(', '))}</span>`:`<span class="pill good">${TE('esc_coberto')}</span>`}</div>
+    <div class="tablewrap"><table><thead><tr><th>${TE('ga_fotografo')}</th><th>${TE('esc_funcao')}</th><th>${TE('esc_tipo')}</th><th class="num">${TE('esc_sess_hoje')}</th></tr></thead><tbody>
+    ${humans.map(k=>{const f=funcOf(k);const pid=pointIdOf(k);return `<tr><td class="name">${esc(P[k].name)}</td><td>${funcSelect(k,!can('escala','u'))}</td><td><span class="pill ${f.tipo==='volante'?'warn':f.tipo==='folga'?'neutral':'good'}">${f.tipo==='folga'?TE('esc_folga_min'):TEk('esc_'+f.tipo+'_t',f.tipo)}</span></td><td class="num">${todaySess.filter(x=>x.key===k).length}</td></tr>`}).join('')}
     </tbody></table></div>
-    <div class="note">Trocou para volante, o ponto do campo fica livre e aparece aqui como descoberto. As fotos do volante entram como ${VOL_MODES.map(m=>'"Volante · '+m[1]+'"').join(', ')}, separadas do campo em sessões, vendas e relatórios.${todaySess.length?' Hoje: '+DATA.points.filter(p=>cnt(p.id)).map(p=>esc(p.name)+' '+cnt(p.id)).join(' · '):''}</div></div>`;
+    <div class="note">${TE('esc_func_nota',VOL_MODES.map(m=>'"'+TE('esc_volante')+' · '+volNome(m)+'"').join(', '))}${todaySess.length?TE('esc_hoje_cnt',DATA.points.filter(p=>cnt(p.id)).map(p=>esc(p.name)+' '+cnt(p.id)).join(' · ')):''}</div></div>`;
   const campIds=camp.map(p=>p.id);const proxCob=prox.map(d=>new Set(humans.map(k=>escDiaFunc(k,d)).filter(f=>f.tipo==='campo'&&campIds.includes(f.point)).map(f=>f.point)).size);
-  const proxPanel=`<div class="panel" id="esc-semana"><h2>De hoje aos próximos 6 dias</h2><div class="tablewrap"><div class="grid-week"><div class="hd"></div>${prox.map((d,i)=>`<div class="hd">${i?dlabel(d):'hoje'}</div>`).join('')}
-  ${humans.map(k=>`<div class="lab">${esc(P[k].name)}</div>${prox.map(d=>{const f=escDiaFunc(k,d);const t=escDiaTxt(f);return `<div class="${f.tipo==='folga'||f.tipo==='fora'?'off':'on'}" title="${esc(t)}${f.previsto?' (previsto)':''}">${esc(t)}</div>`;}).join('')}`).join('')}
-  <div class="lab">Cobertura</div>${proxCob.map(c=>`<div class="${c>=need?'on':'off'}" style="${c<need?'color:var(--bad);background:var(--bad-bg)':''}">${c} de ${need}</div>`).join('')}</div></div>
-  <div class="note">Hoje vem da função de cada fotógrafo acima. Os dias seguintes ainda não têm escala gravada: mostram o ponto fixo de cada um como previsto.</div></div>`;
-  return `<div class="head"><div><div class="eyebrow">Escala 5x2 · hoje, ${dlabel(todayKey())} ${shareBtn()}</div><h1>${esc(viewLabel('escala'))}</h1></div></div>
+  const proxPanel=`<div class="panel" id="esc-semana"><h2>${TE('esc_semana_h')}</h2><div class="tablewrap"><div class="grid-week"><div class="hd"></div>${prox.map((d,i)=>`<div class="hd">${i?dlabel(d):TE('esc_hoje_min')}</div>`).join('')}
+  ${humans.map(k=>`<div class="lab">${esc(P[k].name)}</div>${prox.map(d=>{const f=escDiaFunc(k,d);const t=escDiaTxt(f);return `<div class="${f.tipo==='folga'||f.tipo==='fora'?'off':'on'}" title="${esc(t)}${f.previsto?' ('+TE('esc_previsto')+')':''}">${esc(t)}</div>`;}).join('')}`).join('')}
+  <div class="lab">${TE('esc_cobertura')}</div>${proxCob.map(c=>`<div class="${c>=need?'on':'off'}" style="${c<need?'color:var(--bad);background:var(--bad-bg)':''}">${TE('esc_x_de',c,need)}</div>`).join('')}</div></div>
+  <div class="note">${TE('esc_semana_nota')}</div></div>`;
+  return `<div class="head"><div><div class="eyebrow">${TE('esc_eyebrow',dlabel(todayKey()))} ${shareBtn()}</div><h1>${esc(viewLabel('escala'))}</h1></div></div>
   ${funcPanel}
   ${proxPanel}
-  <div class="tiles"><div class="tile"><span class="eyebrow">Turnos disponíveis</span><span class="v">25</span><span class="d">5 pessoas x 5 dias</span></div><div class="tile"><span class="eyebrow">Turnos necessários</span><span class="v">28</span><span class="d">4 pontos x 7 dias</span></div><div class="tile"><span class="eyebrow">Com vestiário</span><span class="v">35</span><span class="d">5 pontos x 7 dias</span></div><div class="tile"><span class="eyebrow">Fotógrafos para 5 pontos</span><span class="v">7</span><span class="d">em 5x2</span></div></div>
-  <details class="tec" id="esc-anteriores"><summary>Ver dias anteriores</summary>
-  <div class="panel"><h2>Quem trabalhou</h2><div class="note">De ${dlabel(days[0])} a ${dlabel(days[6])}, nos dados de vendas.</div><div class="tablewrap"><div class="grid-week"><div class="hd"></div>${days.map(d=>`<div class="hd">${dlabel(d)}</div>`).join('')}
-  ${humans.map(k=>`<div class="lab">${esc(P[k].name)}</div>${days.map(d=>stats[k].perDay.find(x=>x.date===d)||{off:true}).map(p=>`<div class="${p.off?'off':'on'}">${p.off?'folga':fmtR(p.revenue).replace('R$ ','')}</div>`).join('')}`).join('')}
-  <div class="lab">Cobertura</div>${cover.map(c=>`<div class="${c>=need?'on':'off'}" style="${c<need?'color:var(--bad);background:var(--bad-bg)':''}">${c} de ${need}</div>`).join('')}</div></div>
-  <div class="note">Quinta 08/10 (5 em campo, dia fraco) e domingo 11/10 (4) mostram o problema invertido: gente demais no dia fraco e justo no forte. A escala deveria seguir a previsão de PAX.</div></div></details>`;
+  <div class="tiles"><div class="tile"><span class="eyebrow">${TE('esc_disp')}</span><span class="v">25</span><span class="d">${TE('esc_disp_d')}</span></div><div class="tile"><span class="eyebrow">${TE('esc_nec')}</span><span class="v">28</span><span class="d">${TE('esc_nec_d')}</span></div><div class="tile"><span class="eyebrow">${TE('esc_vest')}</span><span class="v">35</span><span class="d">${TE('esc_vest_d')}</span></div><div class="tile"><span class="eyebrow">${TE('esc_5p')}</span><span class="v">7</span><span class="d">${TE('esc_5x2')}</span></div></div>
+  <details class="tec" id="esc-anteriores"><summary>${TE('esc_ver_ant')}</summary>
+  <div class="panel"><h2>${TE('esc_quem')}</h2><div class="note">${TE('esc_de_a',dlabel(days[0]),dlabel(days[6]))}</div><div class="tablewrap"><div class="grid-week"><div class="hd"></div>${days.map(d=>`<div class="hd">${dlabel(d)}</div>`).join('')}
+  ${humans.map(k=>`<div class="lab">${esc(P[k].name)}</div>${days.map(d=>stats[k].perDay.find(x=>x.date===d)||{off:true}).map(p=>`<div class="${p.off?'off':'on'}">${p.off?TE('esc_folga_min'):fmtR(p.revenue).replace('R$ ','')}</div>`).join('')}`).join('')}
+  <div class="lab">${TE('esc_cobertura')}</div>${cover.map(c=>`<div class="${c>=need?'on':'off'}" style="${c<need?'color:var(--bad);background:var(--bad-bg)':''}">${TE('esc_x_de',c,need)}</div>`).join('')}</div></div>
+  <div class="note">${TE('esc_ant_nota')}</div></div></details>`;
 }
 
 // ---------- Gestão: catálogo ----------
@@ -5965,6 +5966,121 @@ const EQ={
   fraca_obvia:['Essa senha é fácil de adivinhar. Evite sequências, seu nome, Maracanã, Eterna ou times. Tente uma frase curta.','This password is easy to guess. Avoid sequences, your name, Maracanã, Eterna or football teams. Try a short phrase.','Esta contraseña es fácil de adivinar. Evita secuencias, tu nombre, Maracanã, Eterna o equipos. Prueba una frase corta.','Ce mot de passe est facile à deviner. Évitez les suites, votre nom, Maracanã, Eterna ou les équipes. Essayez une courte phrase.','Dieses Passwort ist leicht zu erraten. Vermeiden Sie Zahlenfolgen, Ihren Namen, Maracanã, Eterna oder Vereine. Versuchen Sie einen kurzen Satz.'],
   fraca_repete_atual:['A senha nova não pode repetir a atual.','The new password cannot be the same as the current one.','La contraseña nueva no puede repetir la actual.','Le nouveau mot de passe ne peut pas être identique à l\'actuel.','Das neue Passwort darf nicht dem aktuellen entsprechen.'],
   fraca_longa:['A senha é longa demais.','The password is too long.','La contraseña es demasiado larga.','Le mot de passe est trop long.','Das Passwort ist zu lang.'],
+  di_it_equip_0:["Câmera","Camera","Cámara","Appareil photo","Kamera"],
+  di_it_equip_1:["Lente","Lens","Lente","Objectif","Objektiv"],
+  di_it_equip_2:["Flash","Flash","Flash","Flash","Blitz"],
+  di_it_equip_3:["Bateria","Battery","Batería","Batterie","Akku"],
+  di_it_equip_4:["Cartão de memória","Memory card","Tarjeta de memoria","Carte mémoire","Speicherkarte"],
+  di_it_equip_5:["Celular","Phone","Celular","Téléphone","Handy"],
+  di_it_equip_6:["Cabo","Cable","Cable","Câble","Kabel"],
+  di_it_equip_7:["Tripé","Tripod","Trípode","Trépied","Stativ"],
+  di_it_bandeira_0:["Bandeira rasgada","Torn flag","Bandera rota","Drapeau déchiré","Flagge zerrissen"],
+  di_it_bandeira_1:["Bandeira suja","Dirty flag","Bandera sucia","Drapeau sale","Flagge schmutzig"],
+  di_it_bandeira_2:["Bandeira faltando","Missing flag","Bandera faltante","Drapeau manquant","Flagge fehlt"],
+  di_it_bandeira_3:["Mastro","Pole","Mástil","Mât","Mast"],
+  di_it_cenario_0:["Fundo","Backdrop","Fondo","Fond","Hintergrund"],
+  di_it_cenario_1:["Iluminação","Lighting","Iluminación","Éclairage","Beleuchtung"],
+  di_it_cenario_2:["Piso","Floor","Piso","Sol","Boden"],
+  di_it_cenario_3:["Sinalização","Signage","Señalización","Signalétique","Beschilderung"],
+  di_it_convidado_0:["Reclamação","Complaint","Reclamo","Réclamation","Beschwerde"],
+  di_it_convidado_1:["Acidente","Accident","Accidente","Accident","Unfall"],
+  di_it_convidado_2:["Recusa de foto","Refused photo","Rechazo de foto","Refus de photo","Foto abgelehnt"],
+  di_it_convidado_3:["Perdido","Lost","Perdido","Perdu","Verlaufen"],
+  di_it_clima_0:["Chuva","Rain","Lluvia","Pluie","Regen"],
+  di_it_clima_1:["Sol forte","Strong sun","Sol fuerte","Soleil fort","Starke Sonne"],
+  di_it_clima_2:["Vento","Wind","Viento","Vent","Wind"],
+  di_it_sistema_0:["Wi‑Fi","Wi‑Fi","Wi‑Fi","Wi‑Fi","WLAN"],
+  di_it_sistema_1:["5G","5G","5G","5G","5G"],
+  di_it_sistema_2:["Agente do ponto","Point agent","Agente del punto","Agent du point","Standort-Agent"],
+  di_it_sistema_3:["Cartão não lido","Card not read","Tarjeta no leída","Carte non lue","Karte nicht gelesen"],
+  di_it_outro_0:["Outro","Other","Otro","Autre","Sonstiges"],
+  di_t_equip:["Equipamento","Equipment","Equipo","Matériel","Ausrüstung"],
+  di_t_bandeira:["Bandeira","Flag","Bandera","Drapeau","Flagge"],
+  di_t_cenario:["Fundo e cenário","Backdrop and set","Fondo y escenario","Fond et décor","Hintergrund und Kulisse"],
+  di_t_convidado:["Ocorrência com convidado","Guest incident","Incidente con invitado","Incident avec un visiteur","Vorfall mit Gast"],
+  di_t_clima:["Chuva e clima","Rain and weather","Lluvia y clima","Pluie et météo","Regen und Wetter"],
+  di_t_sistema:["Sistema e transferência","System and transfer","Sistema y transferencia","Système et transfert","System und Übertragung"],
+  di_t_outro:["Outro","Other","Otro","Autre","Sonstiges"],
+  di_s_baixa:["Baixa","Low","Baja","Faible","Niedrig"],
+  di_s_media:["Média","Medium","Media","Moyenne","Mittel"],
+  di_s_alta:["Alta","High","Alta","Élevée","Hoch"],
+  di_set:["Set","Set","Set","Plateau","Set"],
+  di_titulo:["Diário do set","Set log","Diario del set","Journal du plateau","Set-Tagebuch"],
+  di_registrar:["Registrar","Record","Registrar","Enregistrer","Erfassen"],
+  di_gravidade:["Gravidade","Severity","Gravedad","Gravité","Schweregrad"],
+  di_ponto:["Ponto","Spot","Punto","Point","Standort"],
+  di_escolher:["Escolher","Choose","Elegir","Choisir","Auswählen"],
+  di_ph:["O que aconteceu, quando e o que você fez","What happened, when and what you did","Qué pasó, cuándo y qué hizo","Ce qui s'est passé, quand et ce que vous avez fait","Was passiert ist, wann und was du getan hast"],
+  di_registros:["Registros","Entries","Registros","Entrées","Einträge"],
+  di_f_hoje:["Hoje","Today","Hoy","Aujourd'hui","Heute"],
+  di_f_abertos:["Em aberto","Open","Abiertos","Ouverts","Offen"],
+  di_f_todos:["Todos","All","Todos","Tous","Alle"],
+  di_hora:["Hora","Time","Hora","Heure","Uhrzeit"],
+  di_quem:["Quem","Who","Quién","Qui","Wer"],
+  di_tipo:["Tipo","Type","Tipo","Type","Typ"],
+  di_registro:["Registro","Entry","Registro","Entrée","Eintrag"],
+  di_grav:["Grav.","Sev.","Grav.","Grav.","Schw."],
+  di_status:["Status","Status","Estado","Statut","Status"],
+  di_resolver:["Resolver","Resolve","Resolver","Résoudre","Erledigen"],
+  di_resolvido:["resolvido","resolved","resuelto","résolu","erledigt"],
+  di_nada:["Nada registrado neste filtro.","Nothing recorded in this filter.","Nada registrado en este filtro.","Rien d'enregistré avec ce filtre.","Nichts erfasst in diesem Filter."],
+  di_descreva:["Descreva o que aconteceu","Describe what happened","Describa qué pasó","Décrivez ce qui s'est passé","Beschreibe, was passiert ist"],
+  di_ok:["Registrado no diário","Recorded in the log","Registrado en el diario","Enregistré dans le journal","Im Tagebuch erfasst"],
+  di_resolvido_t:["Resolvido","Resolved","Resuelto","Résolu","Erledigt"],
+  vol_grupo:["Acompanha o grupo","Follows the group","Acompaña al grupo","Suit le groupe","Begleitet die Gruppe"],
+  vol_grupo_d:["do início ao fim do tour","from start to end of the tour","del inicio al fin del tour","du début à la fin de la visite","von Anfang bis Ende der Tour"],
+  vol_chute:["Chute a gol","Penalty kick","Tiro al arco","Tir au but","Torschuss"],
+  vol_chute_d:["separado das fotos do campo","separate from the field photos","separado de las fotos del campo","séparé des photos du terrain","getrennt von den Fotos auf dem Feld"],
+  vol_livre:["Livre","Free","Libre","Libre","Frei"],
+  vol_livre_d:["estilo voyeur, vários pontos do Maracanã","candid style, several spots in Maracanã","estilo voyeur, varios puntos del Maracanã","style pris sur le vif, plusieurs points du Maracanã","Schnappschuss-Stil, mehrere Standorte im Maracanã"],
+  esc_volante:["Volante","Roaming","Volante","Itinérant","Mobil"],
+  esc_folga:["Folga","Day off","Libre","Repos","Frei"],
+  esc_folga_min:["folga","day off","libre","repos","frei"],
+  esc_a_definir:["A definir","To be defined","A definir","À définir","Offen"],
+  esc_sem_ponto:["sem ponto","no spot","sin punto","sans point","kein Standort"],
+  esc_campo_t:["campo","field","campo","terrain","Feld"],
+  esc_volante_t:["volante","roaming","volante","itinérant","mobil"],
+  esc_hoje_em:["Hoje você está em:","Today you are at:","Hoy estás en:","Aujourd'hui, vous êtes à :","Heute bist du hier:"],
+  esc_hoje_como:["Hoje você está como","Today you are working as","Hoy estás como","Aujourd'hui, vous êtes","Heute bist du als"],
+  esc_hoje_folga:["Hoje é sua folga","Today is your day off","Hoy es tu día libre","Aujourd'hui, c'est votre repos","Heute hast du frei"],
+  esc_fora:["Você não está na escala de hoje.","You are not on today's schedule.","No estás en la escala de hoy.","Vous n'êtes pas au planning aujourd'hui.","Du stehst heute nicht im Dienstplan."],
+  esc_fale:["Fale com a supervisora.","Talk to the supervisor.","Habla con la supervisora.","Parlez à la superviseure.","Sprich mit der Supervisorin."],
+  esc_prox7:["Próximos 7 dias","Next 7 days","Próximos 7 días","7 prochains jours","Nächste 7 Tage"],
+  esc_prev_nota:["Os próximos dias mostram o seu ponto fixo. A supervisora confirma a função de cada dia aqui na Escala.","The next days show your fixed spot. The supervisor confirms each day's role here in the Schedule.","Los próximos días muestran tu punto fijo. La supervisora confirma la función de cada día aquí en la Escala.","Les jours suivants montrent votre point fixe. La superviseure confirme le rôle de chaque jour ici, dans le Planning.","Die nächsten Tage zeigen deinen festen Standort. Die Supervisorin bestätigt die Aufgabe jedes Tages hier im Dienstplan."],
+  esc_hoje:["Hoje","Today","Hoy","Aujourd'hui","Heute"],
+  esc_hoje_min:["hoje","today","hoy","aujourd'hui","heute"],
+  esc_funcao_h:["Função de cada fotógrafo","Each photographer's role","Función de cada fotógrafo","Rôle de chaque photographe","Aufgabe jedes Fotografen"],
+  esc_coberto:["campo coberto","field covered","campo cubierto","terrain couvert","Feld besetzt"],
+  esc_funcao:["Função","Role","Función","Rôle","Aufgabe"],
+  esc_tipo:["Tipo","Type","Tipo","Type","Typ"],
+  esc_sess_hoje:["Sessões hoje","Sessions today","Sesiones hoy","Séances aujourd'hui","Sitzungen heute"],
+  esc_semana_h:["De hoje aos próximos 6 dias","Today and the next 6 days","De hoy a los próximos 6 días","D'aujourd'hui aux 6 jours suivants","Heute und die nächsten 6 Tage"],
+  esc_previsto:["previsto","planned","previsto","prévu","geplant"],
+  esc_cobertura:["Cobertura","Coverage","Cobertura","Couverture","Abdeckung"],
+  esc_semana_nota:["Hoje vem da função de cada fotógrafo acima. Os dias seguintes ainda não têm escala gravada: mostram o ponto fixo de cada um como previsto.","Today comes from each photographer's role above. The following days have no saved schedule yet: they show each person's fixed spot as planned.","Hoy viene de la función de cada fotógrafo arriba. Los días siguientes aún no tienen escala guardada: muestran el punto fijo de cada uno como previsto.","Aujourd'hui vient du rôle de chaque photographe ci-dessus. Les jours suivants n'ont pas encore de planning enregistré : ils montrent le point fixe de chacun comme prévu.","Heute ergibt sich aus der Aufgabe jedes Fotografen oben. Für die folgenden Tage ist noch kein Dienstplan gespeichert: Sie zeigen den festen Standort jeder Person als geplant."],
+  esc_disp:["Turnos disponíveis","Shifts available","Turnos disponibles","Créneaux disponibles","Verfügbare Schichten"],
+  esc_disp_d:["5 pessoas x 5 dias","5 people x 5 days","5 personas x 5 días","5 personnes x 5 jours","5 Personen x 5 Tage"],
+  esc_nec:["Turnos necessários","Shifts needed","Turnos necesarios","Créneaux nécessaires","Benötigte Schichten"],
+  esc_nec_d:["4 pontos x 7 dias","4 spots x 7 days","4 puntos x 7 días","4 points x 7 jours","4 Standorte x 7 Tage"],
+  esc_vest:["Com vestiário","With locker room","Con vestuario","Avec vestiaire","Mit Umkleide"],
+  esc_vest_d:["5 pontos x 7 dias","5 spots x 7 days","5 puntos x 7 días","5 points x 7 jours","5 Standorte x 7 Tage"],
+  esc_5p:["Fotógrafos para 5 pontos","Photographers for 5 spots","Fotógrafos para 5 puntos","Photographes pour 5 points","Fotografen für 5 Standorte"],
+  esc_5x2:["em 5x2","on 5x2","en 5x2","en 5x2","im 5x2-Plan"],
+  esc_ver_ant:["Ver dias anteriores","See previous days","Ver días anteriores","Voir les jours précédents","Vorherige Tage ansehen"],
+  esc_quem:["Quem trabalhou","Who worked","Quién trabajó","Qui a travaillé","Wer gearbeitet hat"],
+  esc_ant_nota:["Quinta 08/10 (5 em campo, dia fraco) e domingo 11/10 (4) mostram o problema invertido: gente demais no dia fraco e justo no forte. A escala deveria seguir a previsão de PAX.","Thursday 10/08 (5 on the field, a slow day) and Sunday 10/11 (4) show the problem reversed: too many people on the slow day and too few on the busy one. The schedule should follow the PAX forecast.","El jueves 08/10 (5 en campo, día flojo) y el domingo 11/10 (4) muestran el problema invertido: demasiada gente en el día flojo y justo en el fuerte. La escala debería seguir la previsión de PAX.","Jeudi 08/10 (5 sur le terrain, jour creux) et dimanche 11/10 (4) montrent le problème inversé : trop de monde le jour creux et juste assez le jour fort. Le planning devrait suivre la prévision de PAX.","Donnerstag 08.10. (5 auf dem Feld, schwacher Tag) und Sonntag 11.10. (4) zeigen das umgekehrte Problem: zu viele Leute am schwachen Tag und knapp am starken. Der Dienstplan sollte der PAX-Prognose folgen."],
+  esc_campo_fixo:["Campo (ponto fixo)","Field (fixed spot)","Campo (punto fijo)","Terrain (point fixe)","Feld (fester Standort)"],
+  esc_sem_perm:["Sem permissão para alterar a escala","No permission to change the schedule","Sin permiso para cambiar la escala","Pas d'autorisation pour modifier le planning","Keine Berechtigung, den Dienstplan zu ändern"],
+  esc_semana_l:[["domingo","segunda","terça","quarta","quinta","sexta","sábado"],["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],["domingo","lunes","martes","miércoles","jueves","viernes","sábado"],["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"],["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"]],
+  di_n_altas:[(n)=>n===1?`${n} alta em aberto`:`${n} altas em aberto`,(n)=>n===1?`${n} high open`:`${n} high open`,(n)=>n===1?`${n} alta abierta`:`${n} altas abiertas`,(n)=>n===1?`${n} élevée ouverte`:`${n} élevées ouvertes`,(n)=>n===1?`${n} hoch offen`:`${n} hoch offen`],
+  di_n_abertos:[(n)=>`${n} em aberto`,(n)=>`${n} open`,(n)=>`${n} abiertos`,(n)=>`${n} ouverts`,(n)=>`${n} offen`],
+  esc_func_de:[(a)=>`Função de ${a}`,(a)=>`Role of ${a}`,(a)=>`Función de ${a}`,(a)=>`Rôle de ${a}`,(a)=>`Aufgabe von ${a}`],
+  esc_sem_foto:[(a)=>`${a} sem fotógrafo`,(a)=>`${a} without a photographer`,(a)=>`${a} sin fotógrafo`,(a)=>`${a} sans photographe`,(a)=>`${a} ohne Fotograf`],
+  esc_func_nota:[(m)=>`Trocou para volante, o ponto do campo fica livre e aparece aqui como descoberto. As fotos do volante entram como ${m}, separadas do campo em sessões, vendas e relatórios.`,(m)=>`When someone switches to roaming, their field spot becomes free and shows here as uncovered. Roaming photos come in as ${m}, separate from the field in sessions, sales and reports.`,(m)=>`Al pasar a volante, el punto del campo queda libre y aparece aquí como descubierto. Las fotos del volante entran como ${m}, separadas del campo en sesiones, ventas e informes.`,(m)=>`En passant itinérant, le point du terrain se libère et apparaît ici comme non couvert. Les photos itinérantes arrivent comme ${m}, séparées du terrain dans les séances, ventes et rapports.`,(m)=>`Wer auf mobil wechselt, gibt seinen Feldstandort frei; er erscheint hier als unbesetzt. Mobile Fotos kommen als ${m}, getrennt vom Feld in Sitzungen, Verkäufen und Berichten.`],
+  esc_hoje_cnt:[(x)=>' Hoje: '+x,(x)=>' Today: '+x,(x)=>' Hoy: '+x,(x)=>' Aujourd’hui : '+x,(x)=>' Heute: '+x],
+  esc_de_a:[(a,b)=>`De ${a} a ${b}, nos dados de vendas.`,(a,b)=>`From ${a} to ${b}, in the sales data.`,(a,b)=>`Del ${a} al ${b}, en los datos de ventas.`,(a,b)=>`Du ${a} au ${b}, dans les données de ventes.`,(a,b)=>`Von ${a} bis ${b}, in den Verkaufsdaten.`],
+  esc_x_de:[(c,n)=>`${c} de ${n}`,(c,n)=>`${c} of ${n}`,(c,n)=>`${c} de ${n}`,(c,n)=>`${c} sur ${n}`,(c,n)=>`${c} von ${n}`],
+  esc_eyebrow:[(d)=>`Escala 5x2 · hoje, ${d}`,(d)=>`5x2 schedule · today, ${d}`,(d)=>`Escala 5x2 · hoy, ${d}`,(d)=>`Planning 5x2 · aujourd'hui, ${d}`,(d)=>`Dienstplan 5x2 · heute, ${d}`],
   rv_sem_fotos_aqui_l:["as fotos desta sessão não estão neste computador (só os números do sistema anterior)","this session's photos are not on this computer (only the numbers from the previous system)","las fotos de esta sesión no están en esta computadora (solo los números del sistema anterior)","les photos de cette séance ne sont pas sur cet ordinateur (seulement les chiffres de l'ancien système)","die Fotos dieser Sitzung sind nicht auf diesem Computer (nur die Zahlen aus dem alten System)"],
   rv_fotos:["Fotos","Photos","Fotos","Photos","Fotos"],
   rv_f_todas:["Todas as fotos","All photos","Todas las fotos","Toutes les photos","Alle Fotos"],
@@ -7683,35 +7799,37 @@ function vAjustes(){
 const DIARIO_TYPES=[['equip','Equipamento'],['bandeira','Bandeira'],['cenario','Fundo e cenário'],['convidado','Ocorrência com convidado'],['clima','Chuva e clima'],['sistema','Sistema e transferência'],['outro','Outro']];
 const DIARIO_ITEMS={equip:['Câmera','Lente','Flash','Bateria','Cartão de memória','Celular','Cabo','Tripé'],bandeira:['Bandeira rasgada','Bandeira suja','Bandeira faltando','Mastro'],cenario:['Fundo','Iluminação','Piso','Sinalização'],convidado:['Reclamação','Acidente','Recusa de foto','Perdido'],clima:['Chuva','Sol forte','Vento'],sistema:['Wi‑Fi','5G','Agente do ponto','Cartão não lido'],outro:['Outro']};
 const DIARIO_SEV=[['baixa','Baixa'],['media','Média'],['alta','Alta']];
+// o item gravado segue em português; na tela, o nome no idioma da equipe
+const diItem=(ty,it)=>{const i=(DIARIO_ITEMS[ty]||[]).indexOf(it);return i<0?it:TEk('di_it_'+ty+'_'+i,it);};
 state.diario={type:'equip',item:'',sev:'media',point:'',text:'',filter:'hoje'};
-function diarioAdd(){const d=state.diario;if(!d.text.trim()&&!d.item){toast('Descreva o que aconteceu');return;}
+function diarioAdd(){const d=state.diario;if(!d.text.trim()&&!d.item){toast(TE('di_descreva'));return;}
   const key=fotoKey();const point=d.point||(key?(DATA.points.find(p=>p.photographer===key)||{}).id||'':'');
   const e={id:'d'+Date.now().toString(36),at:now().toISOString(),date:now().toISOString().slice(0,10),key,by:state.user.email,name:state.user.name,point,type:d.type,item:d.item,sev:d.sev,text:d.text.trim(),status:'aberto'};
   SIM.diario=SIM.diario||[];SIM.diario.unshift(e);saveSim();if(state.db){try{state.db.doc('diario/'+e.id).set(e)}catch(x){console.warn('db diario',x)}}
-  state.diario={...state.diario,item:'',text:'',sev:'media'};log(`Diário: ${e.name} registrou ${e.item||e.type}`);toast('Registrado no diário');render();}
+  state.diario={...state.diario,item:'',text:'',sev:'media'};log(`Diário: ${e.name} registrou ${e.item||e.type}`);toast(TE('di_ok'));render();}
 function diarioSet(id,patch){const e=(SIM.diario||[]).find(x=>x.id===id);if(!e)return;Object.assign(e,patch);saveSim();if(state.db){try{state.db.doc('diario/'+e.id).set(e)}catch(x){}}render();}
 function vDiario(){
   const d=state.diario;const key=fotoKey();const mine=!!key&&!can('diario','d');
   const all=(SIM.diario||[]).filter(e=>!mine||e.by===state.user.email||e.key===key);
   const todayS=now().toISOString().slice(0,10);
   const list=all.filter(e=>d.filter==='hoje'?e.date===todayS:d.filter==='abertos'?e.status==='aberto':true);
-  const typeName=t=>(DIARIO_TYPES.find(x=>x[0]===t)||[t,t])[1];const ptName=id=>{const p=DATA.points.find(x=>x.id===id);return p?p.name:'—'};
-  const sevPill=s=>`<span class="pill ${s==='alta'?'bad':s==='media'?'warn':'neutral'}">${(DIARIO_SEV.find(x=>x[0]===s)||[s,s])[1]}</span>`;
+  const typeName=t=>TEk('di_t_'+t,(DIARIO_TYPES.find(x=>x[0]===t)||[t,t])[1]);const ptName=id=>{const p=DATA.points.find(x=>x.id===id);return p?p.name:'—'};
+  const sevPill=s=>`<span class="pill ${s==='alta'?'bad':s==='media'?'warn':'neutral'}">${TEk('di_s_'+s,(DIARIO_SEV.find(x=>x[0]===s)||[s,s])[1])}</span>`;
   const items=DIARIO_ITEMS[d.type]||[];const myPoint=key?(DATA.points.find(p=>p.photographer===key)||{}).id:'';
   const open=all.filter(e=>e.status==='aberto').length;const alta=all.filter(e=>e.status==='aberto'&&e.sev==='alta').length;
-  return `<div class="head"><div><div class="eyebrow">Set · ${dlabel(todayS)}</div><h1>Diário do set</h1></div><div class="row"><span class="pill ${alta?'bad':'neutral'}">${alta} alta${alta===1?'':'s'} em aberto</span><span class="pill neutral">${open} em aberto</span></div></div>
+  return `<div class="head"><div><div class="eyebrow">${TE('di_set')} · ${dlabel(todayS)}</div><h1>${TE('di_titulo')}</h1></div><div class="row"><span class="pill ${alta?'bad':'neutral'}">${TE('di_n_altas',alta)}</span><span class="pill neutral">${TE('di_n_abertos',open)}</span></div></div>
   <div class="grid2" style="grid-template-columns:minmax(0,400px) minmax(0,1fr)">
-    <div class="panel" style="gap:12px"><h2>Registrar</h2>
-      <div class="chips">${DIARIO_TYPES.map(([k,l])=>`<button class="chip" data-act="di-type" data-k="${k}" aria-pressed="${d.type===k}">${l}</button>`).join('')}</div>
-      <div class="chips">${items.map(it=>`<button class="chip" data-act="di-item" data-k="${esc(it)}" aria-pressed="${d.item===it}">${esc(it)}</button>`).join('')}</div>
-      <div class="grid2" style="grid-template-columns:1fr 1fr"><label><span class="eyebrow">Gravidade</span><div class="chips">${DIARIO_SEV.map(([k,l])=>`<button class="chip" data-act="di-sev" data-k="${k}" aria-pressed="${d.sev===k}">${l}</button>`).join('')}</div></label>
-      <label><span class="eyebrow">Ponto</span><select data-act="di-point"><option value="">${key?esc(ptName(myPoint)):'Escolher'}</option>${DATA.points.map(p=>`<option value="${p.id}" ${d.point===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label></div>
-      <textarea rows="3" data-act="di-text" placeholder="O que aconteceu, quando e o que você fez">${esc(d.text)}</textarea>
-      <div class="row"><button class="btn primary big" data-act="di-add">Registrar</button></div></div>
-    <div class="panel"><div class="head"><h2>Registros</h2><div class="chips">${[['hoje','Hoje'],['abertos','Em aberto'],['todos','Todos']].map(([k,l])=>`<button class="chip" data-act="di-filter" data-k="${k}" aria-pressed="${d.filter===k}">${l}</button>`).join('')}</div></div>
-      ${list.length?`<div class="tablewrap"><table class="wrap"><thead><tr><th>Hora</th>${mine?'':'<th>Quem</th>'}<th>Ponto</th><th>Tipo</th><th>Registro</th><th>Grav.</th><th>Status</th></tr></thead><tbody>
-      ${list.map(e=>`<tr><td class="note">${e.date!==todayS?e.date.split('-').reverse().slice(0,2).join('/')+' ':''}${hhmm(new Date(e.at))}</td>${mine?'':`<td>${esc(e.name||e.by)}</td>`}<td>${esc(ptName(e.point))}</td><td>${esc(typeName(e.type))}</td><td><b>${esc(e.item||'')}</b>${e.item&&e.text?' · ':''}${esc(e.text)}</td><td>${sevPill(e.sev)}</td><td>${e.status==='aberto'?`<button class="chip" data-act="di-done" data-id="${e.id}">Resolver</button>`:`<span class="pill good">resolvido${e.resolvedBy?' · '+esc(e.resolvedBy.split('@')[0]):''}</span>`}</td></tr>`).join('')}
-      </tbody></table></div>`:'<div class="note">Nada registrado neste filtro.</div>'}</div>
+    <div class="panel" style="gap:12px"><h2>${TE('di_registrar')}</h2>
+      <div class="chips">${DIARIO_TYPES.map(([k,l])=>`<button class="chip" data-act="di-type" data-k="${k}" aria-pressed="${d.type===k}">${TEk('di_t_'+k,l)}</button>`).join('')}</div>
+      <div class="chips">${items.map(it=>`<button class="chip" data-act="di-item" data-k="${esc(it)}" aria-pressed="${d.item===it}">${esc(diItem(d.type,it))}</button>`).join('')}</div>
+      <div class="grid2" style="grid-template-columns:1fr 1fr"><label><span class="eyebrow">${TE('di_gravidade')}</span><div class="chips">${DIARIO_SEV.map(([k,l])=>`<button class="chip" data-act="di-sev" data-k="${k}" aria-pressed="${d.sev===k}">${TEk('di_s_'+k,l)}</button>`).join('')}</div></label>
+      <label><span class="eyebrow">${TE('di_ponto')}</span><select data-act="di-point"><option value="">${key?esc(ptName(myPoint)):TE('di_escolher')}</option>${DATA.points.map(p=>`<option value="${p.id}" ${d.point===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+      <textarea rows="3" data-act="di-text" placeholder="${esc(TE('di_ph'))}">${esc(d.text)}</textarea>
+      <div class="row"><button class="btn primary big" data-act="di-add">${TE('di_registrar')}</button></div></div>
+    <div class="panel"><div class="head"><h2>${TE('di_registros')}</h2><div class="chips">${[['hoje',TE('di_f_hoje')],['abertos',TE('di_f_abertos')],['todos',TE('di_f_todos')]].map(([k,l])=>`<button class="chip" data-act="di-filter" data-k="${k}" aria-pressed="${d.filter===k}">${l}</button>`).join('')}</div></div>
+      ${list.length?`<div class="tablewrap"><table class="wrap"><thead><tr><th>${TE('di_hora')}</th>${mine?'':`<th>${TE('di_quem')}</th>`}<th>${TE('di_ponto')}</th><th>${TE('di_tipo')}</th><th>${TE('di_registro')}</th><th>${TE('di_grav')}</th><th>${TE('di_status')}</th></tr></thead><tbody>
+      ${list.map(e=>`<tr><td class="note">${e.date!==todayS?e.date.split('-').reverse().slice(0,2).join('/')+' ':''}${hhmm(new Date(e.at))}</td>${mine?'':`<td>${esc(e.name||e.by)}</td>`}<td>${esc(ptName(e.point))}</td><td>${esc(typeName(e.type))}</td><td><b>${esc(e.item?diItem(e.type,e.item):'')}</b>${e.item&&e.text?' · ':''}${esc(e.text)}</td><td>${sevPill(e.sev)}</td><td>${e.status==='aberto'?`<button class="chip" data-act="di-done" data-id="${e.id}">${TE('di_resolver')}</button>`:`<span class="pill good">${TE('di_resolvido')}${e.resolvedBy?' · '+esc(e.resolvedBy.split('@')[0]):''}</span>`}</td></tr>`).join('')}
+      </tbody></table></div>`:`<div class="note">${TE('di_nada')}</div>`}</div>
   </div>`;
 }
 
@@ -7859,7 +7977,7 @@ document.addEventListener('click',e=>{
     case 'di-sev':state.diario.sev=d.k;render();break;
     case 'di-filter':state.diario.filter=d.k;render();break;
     case 'di-add':diarioAdd();break;
-    case 'di-done':diarioSet(d.id,{status:'resolvido',resolvedBy:state.user.email,resolvedAt:now().toISOString()});toast('Resolvido');break;
+    case 'di-done':diarioSet(d.id,{status:'resolvido',resolvedBy:state.user.email,resolvedAt:now().toISOString()});toast(TE('di_resolvido_t'));break;
     case 'venue-pick':VENUE_CFG={...VENUE_CFG0(),id:d.id,logo:null};saveVenue();toast('Identidade: '+venueName());render();break;
     case 'venue-reset':VENUE_CFG={...VENUE_CFG0(),id:VENUE_CFG.id};saveVenue();render();break;
     case 'venue-logo-clear':VENUE_CFG.logo=null;saveVenue();render();break;
@@ -8192,7 +8310,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 // v94-ux (parte I): lembra se a pessoa abriu ou fechou o "Ajuste fino" (só quando difere do padrão do perfil)
 document.addEventListener('toggle',e=>{const t=e.target;if(!t||!t.classList||!t.classList.contains('perm-fino')||!state.perm)return;state.perm.fino=t.open===(t.dataset.def==='1')?null:{sel:state.perm.sel,open:t.open};},true);
 document.addEventListener('change',e=>{const a=e.target.dataset.act;if(/^sales-(day|seller|pay|canal|status)$/.test(a)&&e.target.tagName==='SELECT'){state.sales[a.slice(6)]=e.target.value;state.sales.page=0;render();return;} // v94-ux (parte J)
-if(a==='es-importar-totais'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(fl&&can('estatisticas','c'))esImportarTotais(fl);return;}if(a==='es-importar'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(fl&&can('estatisticas','c'))esImportar(fl);return;}if(a==='ag-importar'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(!fl||!can('escala','u'))return;if(fl.size>1024*1024){toast(TE('ag_arq_1mb'));return;}fl.text().then(t=>{const r=agImportar(t);state.cal.res={titulo:TE('ag_res',fl.name.replace(/[<>]/g,'').slice(0,60),r.novos,r.atualizados,r.iguais,r.recusadas.length),recusadas:r.recusadas};render();});return;}if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='pn-pdv'){state.painel.pdv=String(e.target.value||'');try{localStorage.setItem('eterna.painel.v1',JSON.stringify(state.painel))}catch(x){}render();return;}if(a==='rev-key'){state.revFilter.key=e.target.value;render();return;}if(a==='rev-venda'){state.revFilter.venda=e.target.value;render();return;}if(a==='rev-date'){state.revFilter.date=e.target.value||'';state.revFilter.per='data';render();return;}if(a==='func-set'){if(!can('escala','u')){toast('Sem permissão para alterar a escala');render();return;}const k=e.target.dataset.k,v=e.target.value;const f=funcOf(k);if(!v)setFunc(k,{tipo:'folga'});else if(v[0]==='c')setFunc(k,{tipo:'campo',point:v.slice(2)});else setFunc(k,{tipo:'volante',modo:v.slice(2),from:f.point||f.from||null});render();return;}if(a==='range-from'&&e.target.value){setRange(e.target.value,state.range.to<e.target.value?e.target.value:state.range.to);return;}if(a==='range-to'&&e.target.value){setRange(state.range.from>e.target.value?e.target.value:state.range.from,e.target.value);return;}if(a==='fe-sel'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='fe-active'){if(state.flagEd)state.flagEd.active=e.target.checked;return;}if(a==='fe-img'){const fl=e.target.files&&e.target.files[0];if(!fl||!state.flagEd)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');const w=360,h=Math.round(360*im.height/im.width);c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);state.flagEd.imgData=c.toDataURL('image/jpeg',.82);render();};im.src=rd.result;};rd.readAsDataURL(fl);return;}if(a==='venue-powered'){VENUE_CFG.powered=e.target.checked;saveVenue();render();return;}if(a==='venue-logo'){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>600*1024){toast('Logo acima de 600 KB: exporte menor');return;}const rd=new FileReader();rd.onload=()=>{VENUE_CFG.logo=rd.result;saveVenue();toast('Logo aplicada');render();};rd.readAsDataURL(f);return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr&&!dr.email0){dr.preset=e.target.value;render();}return;}if(a==='perm-copy-from'){if(state.perm.copy){state.perm.copy.de=String(e.target.value||'');render();}return;}if(a==='user-copy-from'){const dr=state.users.draft;if(dr&&!dr.email0){dr.copyFrom=String(e.target.value||'')||null;render();}return;}if(a==='perm-op'||a==='perm-view'||a==='perm-inicio'||a==='perm-preset'){if(!can('permissoes','u')){if(e.target.type==='checkbox')e.target.checked=!e.target.checked;return;}permChange(a,e.target);return;}if(a==='imp-key'){if(!impPreso())state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){if(!impPreso())state.imp.point=e.target.value;render();}else if(a==='imp-files'&&!demoOn()){e.target.value='';toast('Só no modo demonstração');}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};upSave(id,f,f.name);return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(TE('tr_importados',rows.length));render();}catch(x){toast(TE('tr_arq_inv'))}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='vis-rosto'){if(!guardAct(a)){render();return;}visRostoSalva(!!e.target.checked);return;}else if(a==='ia-ligada'||a==='ia-cliques'||a==='ia-ponto'||a==='ia-volante'){if(!guardAct(a)){render();return;}const c=iaCfg();if(a==='ia-ligada')iaCfgSalva({ligada:!!e.target.checked});else if(a==='ia-volante')iaCfgSalva({volante:!!e.target.checked});else if(a==='ia-cliques')iaCfgSalva({cliques:+e.target.value});else{const id=String(e.target.dataset.id||'');const st=new Set(c.pontos);if(e.target.checked)st.add(id);else st.delete(id);iaCfgSalva({pontos:[...st]});}return;}else if(a==='busca-janela'||a==='busca-janela-dia'){if(!guardAct(a)){render();return;}buscaJanelaSalva(a==='busca-janela-dia'?(e.target.checked?0:BUSCA_JANELA_PADRAO):e.target.value);return;}if(a==='loja-fim'){if(!can('catalogo','u')){toast('Sem permissão para alterar o catálogo');render();return;}let v=Math.round(+e.target.value);if(!(v>=LOJA_FIM_MIN))v=LOJA_FIM_MIN;if(v>LOJA_FIM_MAX)v=LOJA_FIM_MAX;SIM.lojaFimSeg=v;log(`Checkout: tela final com o QR por ${v} s`);saveSim();render();return;}
+if(a==='es-importar-totais'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(fl&&can('estatisticas','c'))esImportarTotais(fl);return;}if(a==='es-importar'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(fl&&can('estatisticas','c'))esImportar(fl);return;}if(a==='ag-importar'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(!fl||!can('escala','u'))return;if(fl.size>1024*1024){toast(TE('ag_arq_1mb'));return;}fl.text().then(t=>{const r=agImportar(t);state.cal.res={titulo:TE('ag_res',fl.name.replace(/[<>]/g,'').slice(0,60),r.novos,r.atualizados,r.iguais,r.recusadas.length),recusadas:r.recusadas};render();});return;}if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='pn-pdv'){state.painel.pdv=String(e.target.value||'');try{localStorage.setItem('eterna.painel.v1',JSON.stringify(state.painel))}catch(x){}render();return;}if(a==='rev-key'){state.revFilter.key=e.target.value;render();return;}if(a==='rev-venda'){state.revFilter.venda=e.target.value;render();return;}if(a==='rev-date'){state.revFilter.date=e.target.value||'';state.revFilter.per='data';render();return;}if(a==='func-set'){if(!can('escala','u')){toast(TE('esc_sem_perm'));render();return;}const k=e.target.dataset.k,v=e.target.value;const f=funcOf(k);if(!v)setFunc(k,{tipo:'folga'});else if(v[0]==='c')setFunc(k,{tipo:'campo',point:v.slice(2)});else setFunc(k,{tipo:'volante',modo:v.slice(2),from:f.point||f.from||null});render();return;}if(a==='range-from'&&e.target.value){setRange(e.target.value,state.range.to<e.target.value?e.target.value:state.range.to);return;}if(a==='range-to'&&e.target.value){setRange(state.range.from>e.target.value?e.target.value:state.range.from,e.target.value);return;}if(a==='fe-sel'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='fe-active'){if(state.flagEd)state.flagEd.active=e.target.checked;return;}if(a==='fe-img'){const fl=e.target.files&&e.target.files[0];if(!fl||!state.flagEd)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');const w=360,h=Math.round(360*im.height/im.width);c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);state.flagEd.imgData=c.toDataURL('image/jpeg',.82);render();};im.src=rd.result;};rd.readAsDataURL(fl);return;}if(a==='venue-powered'){VENUE_CFG.powered=e.target.checked;saveVenue();render();return;}if(a==='venue-logo'){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>600*1024){toast('Logo acima de 600 KB: exporte menor');return;}const rd=new FileReader();rd.onload=()=>{VENUE_CFG.logo=rd.result;saveVenue();toast('Logo aplicada');render();};rd.readAsDataURL(f);return;}if(a==='user-key'){const dr=state.users.draft;if(dr){dr.key=e.target.value||null;}return;}if(a==='user-preset'){const dr=state.users.draft;if(dr&&!dr.email0){dr.preset=e.target.value;render();}return;}if(a==='perm-copy-from'){if(state.perm.copy){state.perm.copy.de=String(e.target.value||'');render();}return;}if(a==='user-copy-from'){const dr=state.users.draft;if(dr&&!dr.email0){dr.copyFrom=String(e.target.value||'')||null;render();}return;}if(a==='perm-op'||a==='perm-view'||a==='perm-inicio'||a==='perm-preset'){if(!can('permissoes','u')){if(e.target.type==='checkbox')e.target.checked=!e.target.checked;return;}permChange(a,e.target);return;}if(a==='imp-key'){if(!impPreso())state.imp.key=e.target.value;render();}else if(a==='repo-set'){if(!SIM.repo)SIM.repo=SIM0().repo;SIM.repo[e.target.dataset.k]=e.target.value;saveSim();render();}else if(a==='imp-point'){if(!impPreso())state.imp.point=e.target.value;render();}else if(a==='imp-files'&&!demoOn()){e.target.value='';toast('Só no modo demonstração');}else if(a==='imp-files'){const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,80);files.sort((x,y)=>x.name.localeCompare(y.name));const ps=files.map(f=>{const id='up_'+Math.random().toString(36).slice(2,10);UP[id]={src:URL.createObjectURL(f),name:f.name};upSave(id,f,f.name);return {id};});let left=ps.length;const go=()=>{if(--left>0)return;ingStart(ps.map(p=>p.black?{id:p.id,kind:'skip'}:{id:p.id,kind:'photo',flag:null,conf:0}));};ps.forEach(p=>detectBlack(p,go));toast(`${files.length} fotos saindo da ${state.imp.mode==='cartao'?'câmera pelo cartão':'câmera pelo celular'}`);e.target.value='';}else if(a==='flag-state'||a==='flag-point'){if(!SIM.flags)SIM.flags={};const n=e.target.dataset.n;SIM.flags[n]=Object.assign({},SIM.flags[n]||{},a==='flag-state'?{state:e.target.value,note:''}:{point:e.target.value});log(`Bandeira ${n}: ${a==='flag-state'?'estado '+e.target.value:'movida'}`);saveSim();render();}else if(a==='train-import'){const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(txt=>{try{const j=JSON.parse(txt);const rows=Array.isArray(j)?j:(j.labels||[]);rows.forEach(r=>{if(r&&r.id)trainSave(r.id,r)});toast(TE('tr_importados',rows.length));render();}catch(x){toast(TE('tr_arq_inv'))}});}else if(a==='checkout-seller'){const sim=simOf(state.checkout.session);sim.seller=e.target.value;saveSim();}else if(a==='checkout-selfie'){if(!e.target.files||!e.target.files.length)return;toast('Procurando pelo rosto...');setTimeout(()=>{const cands=demoSessions().filter(x=>x.status==='pronta'||x.status==='fechada');const pick=cands[Math.floor(Math.random()*cands.length)];if(pick){toast('Encontramos: '+pick.card);checkoutPick(pick.card);}},1200);}else if(a==='vis-rosto'){if(!guardAct(a)){render();return;}visRostoSalva(!!e.target.checked);return;}else if(a==='ia-ligada'||a==='ia-cliques'||a==='ia-ponto'||a==='ia-volante'){if(!guardAct(a)){render();return;}const c=iaCfg();if(a==='ia-ligada')iaCfgSalva({ligada:!!e.target.checked});else if(a==='ia-volante')iaCfgSalva({volante:!!e.target.checked});else if(a==='ia-cliques')iaCfgSalva({cliques:+e.target.value});else{const id=String(e.target.dataset.id||'');const st=new Set(c.pontos);if(e.target.checked)st.add(id);else st.delete(id);iaCfgSalva({pontos:[...st]});}return;}else if(a==='busca-janela'||a==='busca-janela-dia'){if(!guardAct(a)){render();return;}buscaJanelaSalva(a==='busca-janela-dia'?(e.target.checked?0:BUSCA_JANELA_PADRAO):e.target.value);return;}if(a==='loja-fim'){if(!can('catalogo','u')){toast('Sem permissão para alterar o catálogo');render();return;}let v=Math.round(+e.target.value);if(!(v>=LOJA_FIM_MIN))v=LOJA_FIM_MIN;if(v>LOJA_FIM_MAX)v=LOJA_FIM_MAX;SIM.lojaFimSeg=v;log(`Checkout: tela final com o QR por ${v} s`);saveSim();render();return;}
   if(a==='gq-consent'){const p=state.pub;if(p){p.ok=e.target.checked;const b=$('#gq-agree');if(b)b.disabled=!p.ok;}return;}
   if(a==='gal-ev-ses'){if(state.gal.ev)state.gal.ev.sel[e.target.dataset.card]=e.target.checked;return;}
   if(a==='gal-ev-menor'){if(state.gal.ev)state.gal.ev.menor=e.target.checked;return;}
