@@ -4336,7 +4336,8 @@ def _mont_venda_dados(venda):
 def mont_vender(venda):
     """E4: a venda ficou paga. Cada "base|fundo" do aiSel vira montagem VENDIDA: a que o cliente viu (aiMont, se o mid existe
     e é dessa base e desse fundo), senão a da versão atual, senão entra na fila com a prioridade 0 (venda de app antigo ou
-    da Venda manual: o servidor monta, e recorta antes se a foto ainda não tem recorte). A vendida nunca muda nem sai pela
+    da Venda manual: o servidor monta, e recorta antes se a foto ainda não tem recorte). v98 (Eduardo, 12/11): a montagem é uma
+    foto do pacote; só o aiSel conta, o carrinho não é lido (venda nova não tem o item "fundo"; venda antiga com ele dá no mesmo). A vendida nunca muda nem sai pela
     limpeza antes de `expira`. Depois a galeria da venda é refeita (a montagem entra no manifesto pelo _gal_montagens).
     Venda cancelada: desmarca. Devolve quantas montagens marcou."""
     criar, paga, cancelada = _mont_venda_dados(venda)
@@ -8557,7 +8558,8 @@ def met_v2(dia, ss, evs):
         if uc:
             h_add(tempos["transferencia_s"], uc - cap1)
     vs = {}
-    compradas = 0                                     # v97 (selo): montagens (nAI) das vendas pagas do Checkout
+    compradas = 0                                     # v97 (selo): montagens (nAI) das vendas pagas do Checkout (par das "vistas", que só existem no Checkout;
+                                                      # o total de todos os canais é fotos_ia_vendidas). v98: montagem = foto do pacote, sem item no carrinho
     for e in evs or []:
         v = vs.setdefault(e["venda"], {"criar": None, "criar_em": 0, "pagar_em": 0, "pagar_por": None})
         if e["tipo"] == "criar":
