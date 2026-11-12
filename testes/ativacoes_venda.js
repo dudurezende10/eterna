@@ -8,7 +8,7 @@
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-(async()=>{const b=await chromium.launch();
+(async()=>{const b=await chromium.launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
 try{
   const ctx=await b.newContext({viewport:{width:800,height:1200}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
   let rede=false;const recebidas=new Map();
@@ -70,9 +70,17 @@ try{
   ok(/nome do cliente/.test(await A.textContent('#av-erro')),'pede o nome do cliente');
   await A.fill('[data-act="av-nome"]','Cliente Teste');
   const png=Buffer.from(await A.evaluate(()=>{const c=document.createElement('canvas');c.width=1200;c.height=900;const g=c.getContext('2d');g.fillStyle='#c33';g.fillRect(0,0,1200,900);return c.toDataURL('image/png').split(',')[1];}),'base64');
+  // câmera na própria tela: abre, mostra a imagem, Tirar foto guarda e fecha
+  await A.click('[data-act="av-cam-abre"]');await A.waitForTimeout(1200);
+  ok(await A.$('#av-camera video')!==null&&await A.evaluate(()=>document.getElementById('av-cam').videoWidth>0),'câmera aberta na tela');
+  await A.click('[data-act="av-cam-foto"]');await A.waitForTimeout(200);
+  const fc=await A.evaluate(()=>ETERNA.state.av.foto);
+  ok(fc&&fc.startsWith('data:image/jpeg;base64,')&&await A.$('#av-camera')===null&&await A.$('#av-foto-img')!==null,'foto tirada pela câmera: '+(fc||'').length);
+  // sem câmera: o toque escolhe uma foto do aparelho (no Android o seletor abre a câmera)
+  await A.evaluate(()=>{ETERNA.state.av.camFalhou=true;ETERNA.go('ativ-venda');});await A.waitForTimeout(100);
   await A.setInputFiles('[data-act="av-foto"]',{name:'cliente.png',mimeType:'image/png',buffer:png});await A.waitForTimeout(500);
   const ft=await A.evaluate(()=>ETERNA.state.av.foto);
-  ok(ft&&ft.startsWith('data:image/jpeg;base64,')&&ft.length<110000&&await A.$('#av-foto-img')!==null,'foto do cliente reduzida em JPEG: '+(ft||'').length);
+  ok(ft&&ft!==fc&&ft.startsWith('data:image/jpeg;base64,')&&ft.length<110000&&await A.$('#av-foto-img')!==null,'foto do cliente reduzida em JPEG: '+(ft||'').length);
   ok(/Cliente Teste · Chile · Espanhol/.test(await A.textContent('#av-cart'))&&/PIX/.test(await A.textContent('#av-cart')),'resumo com cliente e pagamento: '+await A.textContent('#av-cart'));
   // SEM REDE: registra no tablet
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(600);

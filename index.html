@@ -1306,7 +1306,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.19.0 · 12/11 12:06"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.19.1 · 12/11 12:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -4994,9 +4994,19 @@ async function asCarrega(){let B=[];try{B=await asIdbLe();}catch(e){}const L=asJ
 // até 50 vendas e ~380 KB por envio (o servidor aceita 512 KB): a foto do cliente pesa uns 40 KB
 function asLote(pend){const out=[];let t=0;for(const x of pend){const n=JSON.stringify(x.v).length;if(out.length&&(t+n>380000||out.length>=50))break;out.push(x.v);t+=n;}return out;}
 // foto do cliente: reduzida no tablet (480 px, JPEG) antes de entrar na venda
-async function avFotoReduz(arq){const bm=await createImageBitmap(arq);const k=Math.min(1,480/Math.max(bm.width,bm.height));const c=document.createElement('canvas');
-  c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);let q=.75,u=c.toDataURL('image/jpeg',q);
-  while(u.length>110000&&q>.3){q-=.15;u=c.toDataURL('image/jpeg',q);}return u;}
+function avFotoJpeg(src,w,h){const k=Math.min(1,480/Math.max(w,h));const c=document.createElement('canvas');c.width=Math.round(w*k);c.height=Math.round(h*k);
+  c.getContext('2d').drawImage(src,0,0,c.width,c.height);let q=.75,u=c.toDataURL('image/jpeg',q);while(u.length>110000&&q>.3){q-=.15;u=c.toDataURL('image/jpeg',q);}return u;}
+async function avFotoReduz(arq){const bm=await createImageBitmap(arq);return avFotoJpeg(bm,bm.width,bm.height);}
+const avFotoBotao=()=>{const A=state.av;return (A.foto?`<img src="${A.foto}" alt="" id="av-foto-img" style="width:40px;height:40px;object-fit:cover;border-radius:50%">`:'')+(A.foto?TE('av_foto_outra'):TE('av_foto_cliente'));};
+// câmera na própria tela: só em página segura (https ou o próprio aparelho) e se ela abriu uma vez sem erro
+const avCamPode=()=>!state.av.camFalhou&&window.isSecureContext&&!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
+let avCamSt=null;
+async function avCamAbre(){const A=state.av;try{avCamSt=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});A.cam=true;render();}
+  catch(e){avCamFecha();A.camFalhou=true;toast(TE('av_cam_sem'));render();}}
+function avCamFecha(){if(avCamSt){try{avCamSt.getTracks().forEach(t=>t.stop());}catch(e){}}avCamSt=null;state.av.cam=false;}
+function avCamFoto(){const v=document.getElementById('av-cam');if(!v||!v.videoWidth)return;state.av.foto=avFotoJpeg(v,v.videoWidth,v.videoHeight);avCamFecha();render();}
+// a tela pode ser redesenhada com a câmera aberta (envio, Minhas vendas): o vídeo volta a mostrar a câmera
+setInterval(()=>{const v=document.getElementById('av-cam');if(avCamSt&&v&&v.srcObject!==avCamSt){v.srcObject=avCamSt;v.play&&v.play().catch(()=>{});}if(avCamSt&&state.view!=='ativ-venda')avCamFecha();},300);
 async function asEnviar(){const A=state.av;if(A.enviando)return;const pend=A.saida.filter(x=>x.est==='pendente');if(!pend.length){A.semRede=false;return;}A.enviando=true;
   try{const r=await agFetch(state.agent.url+'/ativ/venda',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendas:asLote(pend)})});
     const j=await r.json().catch(()=>null);if(!r.ok||!j||!j.ok)throw 0;const ok=new Set(j.recebidas||[]),rec=new Map((j.recusadas||[]).map(x=>[x.id,x.motivo]));
@@ -5085,6 +5095,9 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chu
   const topo=`<div class="head"><div><h1>${esc(viewLabel('ativ-venda'))}</h1></div><div style="text-align:right"><div id="av-quem"><b>${esc(u.name||u.email||'')}</b> <span class="note">· ${TE('av_vendedor')}</span></div><div style="margin-top:4px">${status}</div></div></div>
   <div class="chips" role="tablist" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"><button class="chip" style="min-height:44px" role="tab" data-act="av-aba" data-v="nova" aria-selected="${A.aba==='nova'}" aria-pressed="${A.aba==='nova'}">${TE('av_nova')}</button><button class="chip" style="min-height:44px" role="tab" data-act="av-aba" data-v="minhas" aria-selected="${A.aba==='minhas'}" aria-pressed="${A.aba==='minhas'}">${TE('av_minhas')}</button></div>
   ${rec||pend?`<div class="panel" id="av-saida"><div class="note">${rec?TE('av_recusadas_txt'):A.semRede?TE('av_sem_rede_txt'):TE('av_pendentes_txt')}</div><div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost" data-act="av-enviar">${TE('av_enviar_agora')}</button><button class="btn ghost" data-act="av-exportar">${TE('av_exportar')}</button></div></div>`:''}`;
+  const camera=A.cam?`<div id="av-camera" role="dialog" aria-modal="true" style="position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+    <video id="av-cam" autoplay playsinline muted style="max-width:100%;max-height:75vh;border-radius:10px"></video>
+    <div class="row" style="gap:16px"><button class="btn primary" style="min-width:180px;min-height:64px;font-size:1.15rem" data-act="av-cam-foto">${TE('av_cam_foto')}</button><button class="btn ghost" style="min-height:64px;background:#fff" data-act="av-cam-fecha">${TE('av_cancelar')}</button></div></div>`:'';
   const player=A.demo?`<div id="av-demo" role="dialog" aria-modal="true" style="position:fixed;inset:0;z-index:50;background:#000;display:flex;align-items:center;justify-content:center">${A.demo.url?`<video src="${esc(A.demo.url)}" autoplay loop playsinline muted controls style="max-width:100%;max-height:100%"></video>`:`<div style="color:#fff;padding:24px;text-align:center">${TE('av_sem_video')}</div>`}<button class="btn" data-act="av-demo-fechar" style="position:absolute;top:12px;right:12px;min-width:56px;min-height:56px;font-size:1.4rem" aria-label="${esc(TE('av_fechar_video'))}">✕</button></div>`:'';
   if(A.aba==='minhas')return topo+avMinhas()+player;
   let prods=ativLista(A.cat).filter(ativVendavel);const grupos=avGrupos(prods);let subTabs='';
@@ -5107,7 +5120,8 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chu
     ${subTabs}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px">${prods.length?prods.map(card).join(''):`<div class="note">${TE('av_sem_produto')}</div>`}</div></div>
   <div class="panel" id="av-cliente"><h2>${TE('av_passo_cliente')}</h2>
     <div class="row" style="gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:12px"><label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_nome_cliente')}</span><input data-act="av-nome" maxlength="80" autocomplete="off" style="width:100%;min-height:48px" value="${esc(A.nome)}"></label>
-      <label class="btn ghost" style="min-height:48px;display:flex;align-items:center;gap:10px;cursor:pointer">${A.foto?`<img src="${A.foto}" alt="" id="av-foto-img" style="width:40px;height:40px;object-fit:cover;border-radius:50%">`:''}${A.foto?TE('av_foto_outra'):TE('av_foto_cliente')}<input type="file" accept="image/*" capture="environment" data-act="av-foto" style="display:none"></label></div>
+      ${avCamPode()?`<button class="btn ghost" style="min-height:48px;display:flex;align-items:center;gap:10px" data-act="av-cam-abre">${avFotoBotao()}</button>`
+        :`<label class="btn ghost" style="min-height:48px;display:flex;align-items:center;gap:10px;cursor:pointer">${avFotoBotao()}<input type="file" accept="image/*" capture="environment" data-act="av-foto" style="display:none"></label>`}</div>
     <div class="row" style="gap:12px;flex-wrap:wrap">
     <label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_pais')}</span><select class="av-pais" data-act="av-pais" style="width:100%;min-height:48px">${avOpcoesPais(A.pais)}</select></label>
     <label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_idioma')}</span><select data-act="av-idioma" style="width:100%;min-height:48px"><option value="">${esc(TE('av_idioma_ph'))}</option>${AV_IDIOMAS.map(([l,c])=>{const n=avNomeIdioma(l,'pt-BR');return `<option value="${esc(n)}" ${A.idioma===n?'selected':''}>${esc(avNomeIdioma(l))}</option>`;}).join('')}<option value="Outro" ${A.idioma==='Outro'?'selected':''}>${TE('av_outro')}</option></select></label></div></div>
@@ -5119,7 +5133,7 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chu
     <div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><span>${TE('av_total')}</span><b style="font-size:1.6rem" id="av-total">${fmtR(cob)}</b></div></div>`:''}
   ${A.err?`<div class="panel" role="alert" id="av-erro" style="border-color:var(--bad)"><b>${TE(A.err)}</b></div>`:''}
   ${A.dup?`<div class="panel" role="alert" id="av-dup"><b>${TE('av_dup')}</b><div class="row" style="gap:8px;margin-top:8px"><button class="btn primary" data-act="av-dup-sim">${TE('av_dup_sim')}</button><button class="btn ghost" data-act="av-dup-nao">${TE('av_dup_nao')}</button></div></div>`:''}
-  <div class="panel" style="position:sticky;bottom:0;z-index:2"><button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem" data-act="av-registrar" ${A.cart.length?'':'disabled'}>${TE('av_registrar',fmtR(cob))}</button></div>`+player;}
+  <div class="panel" style="position:sticky;bottom:0;z-index:2"><button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem" data-act="av-registrar" ${A.cart.length?'':'disabled'}>${TE('av_registrar',fmtR(cob))}</button></div>`+player+camera;}
 function avMinhas(){const A=state.av,u=state.user||{};const podeCancelar=can('ativvenda','d')||can('financeiro','u');
   const hoje=A.saida.filter(x=>x.v.usuario===u.email&&x.v.criado.slice(0,10)===venueToday()).slice().reverse();
   const valid=hoje.filter(x=>avSituacao(x)[0]!=='cancelada'),porPag={};valid.forEach(x=>{porPag[x.v.pagamento]=(porPag[x.v.pagamento]||0)+(+x.v.valor||0);});
@@ -5150,6 +5164,9 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
   else if(a==='av-registrar'){avRegistrar(false);return;}
   else if(a==='av-dup-sim'){avRegistrar(true);return;}
   else if(a==='av-dup-nao')A.dup=null;
+  else if(a==='av-cam-abre'){avCamAbre();return;}
+  else if(a==='av-cam-foto'){avCamFoto();return;}
+  else if(a==='av-cam-fecha'){avCamFecha();}
   else if(a==='av-enviar'){asEnviar();return;}
   else if(a==='av-exportar'){avExportar();return;}
   else if(a==='av-cancelar')A.cancel=el.dataset.id;
@@ -8813,6 +8830,8 @@ const EQ={
   av_nome_cliente:["Nome do cliente","Customer name","Nombre del cliente","Nom du client","Name des Kunden"],
   av_foto_cliente:["Tirar foto do cliente","Take the customer's photo","Tomar foto del cliente","Prendre la photo du client","Foto des Kunden aufnehmen"],
   av_foto_outra:["Tirar outra foto","Take another photo","Tomar otra foto","Prendre une autre photo","Neues Foto aufnehmen"],
+  av_cam_foto:["Tirar foto","Take photo","Tomar foto","Prendre la photo","Foto aufnehmen"],
+  av_cam_sem:["Não deu para abrir a câmera. Toque de novo para escolher uma foto","Could not open the camera. Tap again to choose a photo","No se pudo abrir la cámara. Toca de nuevo para elegir una foto","Impossible d'ouvrir la caméra. Touchez à nouveau pour choisir une photo","Kamera ließ sich nicht öffnen. Erneut tippen, um ein Foto zu wählen"],
   av_foto_erro:["Não deu para usar esta foto. Tire de novo","This photo could not be used. Take it again","No se pudo usar esta foto. Tómala de nuevo","Impossible d'utiliser cette photo. Reprenez-la","Dieses Foto ging nicht. Bitte neu aufnehmen"],
   av_e_nome:["Escreva o nome do cliente","Write the customer's name","Escribe el nombre del cliente","Écrivez le nom du client","Namen des Kunden eingeben"],
   av_cort_nota:["Conte o que aconteceu","Tell what happened","Cuenta lo que pasó","Racontez ce qui s'est passé","Beschreiben Sie, was passiert ist"],
