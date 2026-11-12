@@ -304,6 +304,15 @@ ok(m.auth_cadastro_recusa({"cadastro": p}, "x", p, dict(p, idioma="en")) is None
 ok(m.auth_cadastro_recusa(sem, "x", p, dict(p, idioma="en")) == "sem_permissao", "troca o idioma de outra pessoa sem permissão")
 ok(m.auth_cadastro_recusa({"cadastro": p}, "x", p, dict(p, idioma="<b>")) == "sem_permissao", "idioma inválido aceito")
 ok(m.auth_cadastro_recusa({"cadastro": p}, "x", p, dict(p, idioma="en", name="Outro")) == "sem_permissao", "trocar o idioma libera mudar o resto do cadastro")
+# 12/11: admin cadastrado antes do módulo ativvenda dá esse módulo ao vendedor novo; quem não é admin continua sem dar o que não tem
+adm_velho = {"email": "adm", "preset": "admin", "active": True, "perms": {k: dict(TUDO) for k in m.AUTH_MODULOS if k != "ativvenda"}}
+vend = {"email": "v.novo", "name": "V", "preset": "ativ", "active": True, "perms": {"ativvenda": {"c": True, "r": True, "u": False, "d": False}}}
+ok(m.auth_cadastro_recusa({"cadastro": adm_velho}, "v.novo", None, vend) is None, "admin antigo não consegue dar o módulo novo")
+ok(m.auth_pode(adm_velho, "ativvenda", "d"), "admin antigo sem o módulo novo")
+sup_velho = dict(adm_velho, preset="supervisor")
+ok(m.auth_cadastro_recusa({"cadastro": sup_velho}, "v.novo", None, vend) == "sem_poder", "perfil que não é admin ganhou o módulo novo sozinho")
+adm_restrito = dict(adm_velho, perms=dict(adm_velho["perms"], ativvenda={"c": False, "r": True, "u": False, "d": False}))
+ok(not m.auth_pode(adm_restrito, "ativvenda", "c"), "admin com o módulo gravado restrito ganhou tudo")
 m.auth_reset_ip.clear()
 cad_reset("fala.ingles", contato="en@exemplo.com", idioma="en")
 m.auth_criar("fala.ingles", "teste")

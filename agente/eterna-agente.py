@@ -7252,14 +7252,25 @@ def auth_ativo(cad):
     return bool(cad) and cad.get("active") is not False
 
 
+def auth_perms(cad):
+    """As permissões gravadas no cadastro. Perfil Admin tem também os módulos criados depois do cadastro dele (a tela já completa assim,
+    pelo perfil): sem isto, o admin cadastrado antes de um módulo novo não consegue dar esse módulo a ninguém, nem a si mesmo."""
+    perms = dict((cad or {}).get("perms") or {})
+    if (cad or {}).get("preset") == "admin":
+        for m in AUTH_MODULOS_NOVOS:                    # só os módulos que surgiram depois; módulo antigo fora do cadastro continua sem acesso
+            if not isinstance(perms.get(m), dict):
+                perms[m] = {"c": True, "r": True, "u": True, "d": True}
+    return perms
+
+
 def auth_pode(cad, modulo, letra):
-    """A permissão do módulo no cadastro: a mesma de Permissões. É ela que decide, não o nome do perfil."""
-    p = ((cad or {}).get("perms") or {}).get(modulo) or {}
+    """A permissão do módulo no cadastro: a mesma de Permissões. É ela que decide, não o nome do perfil (fora o módulo novo do Admin, em auth_perms)."""
+    p = auth_perms(cad).get(modulo) or {}
     return auth_ativo(cad) and p.get(letra) is True
 
 
 def auth_acessos(cad):
-    return {(m, k) for m, p in ((cad or {}).get("perms") or {}).items() if isinstance(p, dict) for k, v in p.items() if v is True}
+    return {(m, k) for m, p in auth_perms(cad).items() if isinstance(p, dict) for k, v in p.items() if v is True}
 
 
 def auth_conferir(usuario, senha, ip=""):
@@ -7378,6 +7389,7 @@ def auth_senhas():
 # Os mesmos limites de permValidate na tela, agora também no servidor: sem isto, quem chama /ponto/docs se daria qualquer acesso, inclusive o de gerar senhas.
 AUTH_MODULOS = ("estoque", "relatorios", "desempenho", "financeiro", "galerias", "qualidade", "diario", "set", "escala", "filafoto", "configuracao",
                 "catalogo", "usuarios", "senhas", "permissoes", "laboratorio", "venda", "quiosque", "estatisticas", "ativvenda", "ativentrega")     # os mesmos de MODULES no app
+AUTH_MODULOS_NOVOS = ("ativvenda",)                    # v99.17: módulos novos que o Admin cadastrado antes recebe inteiros (auth_perms)
 AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "contato", "key", "active"), ("perms", "menu", "preset", "inicio")
 AUTH_IDIOMAS = (None, "", "pt", "en", "es", "fr")
 AUTH_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$")
