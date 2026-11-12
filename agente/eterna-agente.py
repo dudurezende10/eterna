@@ -7061,7 +7061,7 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
 #   POST /ponto/docs {docs:[{col,id,valor}]}  valor null apaga.        -> {ok, rev}
 # O navegador guarda uma cópia e uma fila do que ainda não subiu (sem rede); o servidor é o dono. Backup no S3 com as vendas.
 ESTADO_DB = os.path.join(HOME, "ponto", "estado.db")
-ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda")
+ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda", "ativ")
 ESTADO_MAX = 512 * 1024              # um registro (um usuário, um ajuste de foto) nunca passa disto
 estado_lock = threading.Lock()
 
@@ -7428,6 +7428,8 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
 
 
 def doc_modulos(col, id_doc):
+    if col == "ativ":                                   # v100: catálogo das ativações; "Hoje não vendo" também para quem altera Configurações
+        return ("catalogo", "configuracao") if id_doc.startswith("hoje|") else ("catalogo",)
     if col == "sim":
         for k, mods in DOC_SIM:
             if (id_doc.startswith(k) if k.endswith("|") else id_doc == k):
@@ -7437,6 +7439,40 @@ def doc_modulos(col, id_doc):
     return (m,) if m else None
 
 
+# v100: o mesmo formato que a tela confere (ativOk); produto ou "Hoje não vendo" fora disto é recusado
+ATIV_CATS, ATIV_ENTREGAS, ATIV_PEDE = ("drone", "chute", "snap"), ("video", "foto", "fisico", "experiencia"), ("pessoas", "participantes", "nada")
+
+
+def _ativ_num(v, mx):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and 0 <= v <= mx
+
+
+def _ativ_txt(v, mx):
+    return isinstance(v, str) and len(v) <= mx and "<" not in v and ">" not in v
+
+
+def ativ_valido(id_doc, v):
+    if id_doc.startswith("hoje|"):
+        return re.fullmatch(r"[a-z0-9_]{1,32}", id_doc[5:]) is not None and isinstance(v, dict) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v.get("dia") or "")) is not None
+    if not isinstance(v, dict) or re.fullmatch(r"[a-z0-9_]{1,32}", id_doc) is None or v.get("id") != id_doc:
+        return False
+    if v.get("cat") not in ATIV_CATS or v.get("entrega") not in ATIV_ENTREGAS or v.get("pede") not in ATIV_PEDE:
+        return False
+    if not _ativ_txt(v.get("nome"), 60) or not v["nome"].strip() or not isinstance(v.get("ativo"), bool):
+        return False
+    ops = v.get("opcoes")
+    if not isinstance(ops, list) or not 1 <= len(ops) <= 12 or not all(isinstance(o, dict) and _ativ_txt(o.get("nome"), 40) and _ativ_num(o.get("preco"), 100000) for o in ops):
+        return False
+    ex, inc = v.get("extra"), v.get("inclui")
+    if not (_ativ_num(v.get("k4"), 100000) and _ativ_num(v.get("chuva"), 100000) and isinstance(ex, dict) and _ativ_num(ex.get("limite"), 50) and _ativ_num(ex.get("valor"), 100000)):
+        return False
+    if not (isinstance(inc, dict) and _ativ_num(inc.get("chutes"), 50) and _ativ_num(inc.get("videos"), 20) and isinstance(inc.get("itens"), list)
+            and len(inc["itens"]) <= 10 and all(_ativ_txt(t, 40) for t in inc["itens"])):
+        return False
+    fx = v.get("faixas")
+    return fx is None or (isinstance(fx, list) and 1 <= len(fx) <= 10 and all(_ativ_num(x, 100000) for x in fx) and _ativ_num(v.get("depois"), 100000))
+
+
 def doc_recusa(db, quem, d):
     """O motivo de recusar esta gravação (fora de usuarios), ou None."""
     if not quem:
@@ -7444,6 +7480,8 @@ def doc_recusa(db, quem, d):
     col, id_doc, apaga = d.get("col"), str(d.get("id") or ""), d.get("valor") is None
     if col not in ESTADO_COLS:
         return "colecao"
+    if col == "ativ" and not apaga and not ativ_valido(id_doc, d.get("valor")):
+        return "invalido"
     existe = db.execute("select 1 from doc where col=? and id=? and valor is not null", (col, id_doc)).fetchone() is not None
     if col == "usuarios_login":
         return None if id_doc == quote(quem["usuario"], safe="-_.!~*'()") else "sem_permissao"
