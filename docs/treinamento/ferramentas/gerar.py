@@ -13,7 +13,7 @@ from pptx.dml.color import RGBColor as PRGB
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 
-VERSAO, DATA = "1.0", "12/11/2026"
+VERSAO, DATA = "1.1", "12/11/2026"
 TITULO = "Drone, Chute a Gol e Snap Pop"
 SUB = "Da venda à entrega do vídeo"
 TESTE = "http://192.168.10.178:8799"
@@ -30,7 +30,7 @@ REGRAS = [
     "**Uma venda por serviço.** Drone e Chute a Gol na mesma compra viram duas vendas com o mesmo número; cada uma vai para a sua fila.",
     "**Nome e foto do cliente** servem para a equipe do campo reconhecer a pessoa na entrega. Os dois são apagados sozinhos um dia depois da entrega (ou dois dias depois da venda).",
     "**Fotos do Tour:** só marque a caixa de autorização se o cliente concordar. Com ela, o cliente recebe junto com o vídeo as fotos dele do Tour e compra se quiser.",
-    "**O cartão com QR é a chave do vídeo.** Um cartão por vídeo; cartão já usado é recusado na hora. Entregue o cartão na mão do cliente.",
+    "**O cartão com QR é a chave do vídeo.** Um cartão por vídeo; cartão já usado, de lote cancelado ou que não veio da gráfica é recusado na hora. Entregue o cartão na mão do cliente. O código de 12 letras impresso no cartão serve para o cliente digitar se o QR não ler.",
     "**O vídeo fica 30 dias** disponível para o cliente assistir e baixar.",
     "**Venda errada:** chame o supervisor antes da entrega. O vendedor não cancela; depois de entregue, a venda não é mais cancelada.",
 ]
@@ -57,7 +57,7 @@ VENDA = [
     ("v06-snap", "Snap Pop", "Serviço Snap Pop", [
         "Toque em **Snap Pop**, escolha o tema e toque em **Adicionar**."]),
     ("v07-cliente-nome", "Nome e foto do cliente", "Cliente", [
-        "Digite o **nome do cliente**.", "Toque em **Tirar foto do cliente** e fotografe o rosto, de frente."]),
+        "Digite o **nome do cliente**.", "Toque em **Tirar foto do cliente** e fotografe o rosto, de frente. **Sem a foto a venda não é registrada.**"]),
     ("v08-cliente-foto", "Autorização, país e idioma", "Cliente com foto", [
         "Confira a **foto**. Se ficou ruim, toque em **Tirar outra foto**.",
         "Pergunte se o cliente quer receber as fotos dele do Tour. Só se ele concordar, marque a **autorização** (seção 1.2).",
@@ -70,7 +70,9 @@ VENDA = [
     ("v11-registrada", "Venda registrada", "Aviso de venda registrada", [
         "Aparece **Venda nº … registrada**. Diga o número ao cliente e encaminhe-o para o campo."]),
     ("v12-minhas", "Minhas vendas", "Minhas vendas de hoje", [
-        "Em **Minhas vendas** você vê as suas vendas do dia, o total e se cada uma já foi **enviada ao servidor**."]),
+        "Toque em **Minhas vendas**: as suas vendas do dia, o total e se cada uma já foi **enviada ao servidor**.",
+        "Para achar uma venda, digite no campo de **busca** o número, o nome do cliente, o produto ou o pagamento.",
+        "Cada linha é uma venda: número, hora, cliente, produtos, pagamento, situação e valor."]),
 ]
 ENTREGA = [
     ("e01-menu", "Abrir a entrega", "Menu lateral", [
@@ -83,7 +85,7 @@ ENTREGA = [
     ("e04-voando", "Voando", "Coluna Voando", [
         "O cartão passa para **Voando** e fica **Aguardando vídeo**."]),
     ("e05-soltar", "Soltar o vídeo", "Área do vídeo", [
-        "Tire o cartão de memória do drone, abra a pasta do vídeo e **arraste o arquivo** para esta área (ou clique nela e escolha o arquivo)."]),
+        "Tire o cartão de memória do drone, abra a pasta do vídeo e **arraste o arquivo** para esta área (ou clique nela e escolha o arquivo). Use o arquivo **.MP4** (ou .MOV); o .LRF do drone não é vídeo e é recusado."]),
     ("e06-conferir", "Conferir e escolher a venda", "Confira o vídeo", [
         "Assista ao **vídeo** e confira se é o do cliente.", "Clique na **venda** do cliente (nome, número e produto)."]),
     ("e07-cartao", "Ler o cartão", "Cartão com QR", [
@@ -92,7 +94,7 @@ ENTREGA = [
     ("e08-entregar", "Entregar", "Cartão lido", [
         "Confira o código do cartão e clique em **Entregar vídeo**. Entregue o cartão ao cliente."]),
     ("e09-entregue", "Entregue", "Coluna Entregue", [
-        "O cartão vai para **Entregue**, com o código do cartão e o horário.",
+        "O cartão vai para **Entregue**, com o código do cartão e o horário. **Na nuvem** aparece quando a página do cliente já está no ar; enquanto isso, **Publicando a página do cliente**.",
         "Quando o cliente abre, assiste e baixa, aparece aqui (**Cliente abriu… assistiu… baixou…**)."]),
 ]
 CHUTE_SNAP = [
@@ -101,14 +103,24 @@ CHUTE_SNAP = [
     ("e11-snap", "Snap Pop: começar", "Fila do Snap Pop", [
         "Quando o cliente começar, clique em **Começar**. O resto é igual ao Drone: soltar o vídeo, escolher a venda, ler o cartão e entregar (seção 3)."]),
 ]
+ADMIN = [
+    ("a01-gerar", "Gerar o lote para a gráfica", "Configurações › Preços e Checkout › Avançado › Cartões com QR impresso", [
+        "Digite a **quantidade** de cartões (até 10.000).", "Clique em **Gerar lote para a gráfica (CSV)** e mande o arquivo para a gráfica por um canal seguro."]),
+    ("a02-na-grafica", "Lote na gráfica", "Lista dos lotes", [
+        "Enquanto o lote está **Na gráfica**, o botão só **baixa o mesmo arquivo de novo**; não cria cartões novos.",
+        "Quando os cartões chegarem, clique em **Marcar recebido**. Só então dá para gerar outro lote.",
+        "Se o lote não for impresso ou os cartões se perderem, clique em **Cancelar lote**: nenhum cartão dele é aceito na entrega. Não dá para desfazer."]),
+]
 CLIENTE = [
     ("c01-aceite", "Abrir o vídeo", "Página do vídeo no celular", [
         "O cliente lê o QR do cartão com a câmera do celular e marca a **autorização de uso de imagem**.",
         "Digita o **e-mail**.", "Toca em **Ver meu vídeo**."]),
     ("c02-video", "Assistir e baixar", "Vídeo pronto", [
         "O **vídeo** toca na própria página.", "**Baixar vídeo** salva no celular."]),
-    ("c03-fotos-tour", "Fotos do Tour", "Fotos do Tour encontradas", [
-        "Se ele autorizou na venda e foi encontrado nas fotos do Tour, aparece **Ver minhas fotos**: uma selfie rápida confirma que é ele e ele compra as que quiser."]),
+    ("c03-fotos-tour", "Fotos do Tour", "Fotos do Tour na página do vídeo", [
+        "Se ele autorizou na venda e foi encontrado nas fotos do Tour, as fotos aparecem logo abaixo do vídeo. As que ele já comprou têm **Baixar**.",
+        "As outras aparecem com a marca d'água; tocar numa delas abre a compra com ela já escolhida.",
+        "**Comprar minhas fotos** abre a compra das que faltam. Depois de pagar, ele volta ao vídeo e baixa as fotos ali mesmo."]),
 ]
 
 TREINO = [
@@ -132,6 +144,7 @@ TREINO = [
 
 PROBLEMAS = [("Tablet sem internet", "Registre normalmente. A venda fica no tablet e segue sozinha quando a rede voltar."),
              ("\"Este cartão já foi usado\"", "Pegue outro cartão. Cada cartão serve para um vídeo só."),
+             ("\"Este cartão é de um lote cancelado\" ou \"não é de nenhum lote\"", "Pegue outro cartão e separe este para o supervisor."),
              ("Cliente não está na fila", "Confira com o vendedor o número da venda; ela pode estar aguardando envio no tablet."),
              ("Vídeo errado", "Antes de entregar: clique em Descartar e solte o vídeo certo."),
              ("Venda errada ou desistência", "Chame o supervisor para cancelar, antes da entrega."),
@@ -159,7 +172,7 @@ def manual():
     d.tabela(["Drone", "Chute a Gol / Snap Pop", "O que significa"], COLUNAS, [3.6, 4.0, 8.8])
     d.quebra()
     for titulo, blocos in (("Venda no tablet", VENDA), ("Entrega do Drone", ENTREGA), ("Entrega do Chute a Gol e do Snap Pop", CHUTE_SNAP),
-                           ("O que o cliente vê", CLIENTE)):
+                           ("O que o cliente vê", CLIENTE), ("Administrador: lotes de cartões", ADMIN)):
         d.h1(titulo)
         for chave, t, leg, passos in blocos:
             d.h2(t)
@@ -267,7 +280,7 @@ def apresentacao():
         texto(sl, x + PCm(0.5), PCm(4.6), PCm(6.5), PCm(2.2), dr.upper(), 20, NAVY, True, fonte="Segoe UI Black")
         texto(sl, x + PCm(0.5), PCm(6.9), PCm(6.5), PCm(1.4), "Chute a Gol / Snap Pop: " + cs, 12, CINZA)
         texto(sl, x + PCm(0.5), PCm(9.0), PCm(6.5), PCm(7), oq, 16, NAVY)
-    for secao, blocos in (("Venda no tablet", VENDA), ("Entrega do Drone", ENTREGA), ("Chute a Gol e Snap Pop", CHUTE_SNAP), ("O que o cliente vê", CLIENTE)):
+    for secao, blocos in (("Venda no tablet", VENDA), ("Entrega do Drone", ENTREGA), ("Chute a Gol e Snap Pop", CHUTE_SNAP), ("O que o cliente vê", CLIENTE), ("Lotes de cartões", ADMIN)):
         sl = prs.slides.add_slide(prs.slide_layouts[6]); caixa(sl, 0, 0, W, H, NAVY); caixa(sl, PCm(2), PCm(10.6), PCm(6), PCm(0.25), AMAR)
         texto(sl, PCm(2), PCm(6.5), PCm(30), PCm(4), secao.upper(), 44, BRANCO, True, fonte="Segoe UI Black")
         for chave, t, leg, passos in blocos:

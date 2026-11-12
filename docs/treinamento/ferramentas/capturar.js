@@ -8,6 +8,8 @@ fs.mkdirSync(OUT,{recursive:true});const MARCAS={};const J=JSON.stringify;
 const E=require(path.join(__dirname,'..','..','..','testes','_entrar'));
 const HOJE=new Date().toISOString().slice(0,10);
 const mp4=VIDEO?fs.readFileSync(VIDEO):Buffer.alloc(0);
+// fotos do Tour fictícias (FOTOS=<pasta com 0.jpg a 4.jpg>), no lugar de fotos de clientes
+const FOTOS=[0,1,2,3,4].map(i=>process.env.FOTOS?fs.readFileSync(path.join(process.env.FOTOS,i+'.jpg')):Buffer.alloc(0));
 
 // foto de cliente fictícia (silhueta), no lugar de um rosto de verdade
 const SILHUETA=()=>{const c=document.createElement('canvas');c.width=480;c.height=480;const g=c.getContext('2d');g.fillStyle='#cfd8e3';g.fillRect(0,0,480,480);
@@ -43,7 +45,7 @@ try{
     await shot(A,'v01-entrar',[['[data-act="login-usuario"]','direita','1'],['[data-act="login-senha"]','direita','2'],['button[type=submit]','direita','3']],'button[type=submit]',230);
     await E(A,VEND);await A.waitForTimeout(300);
     await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;});
-    if(await A.evaluate(()=>ETERNA.state.view)!=='ativ-venda'){const m=await A.$('[data-v="ativ-venda"]');if(m){await shot(A,'v02-menu',[['[data-v="ativ-venda"]','direita','1']],'[data-v="ativ-venda"]',200);await m.click();}else await A.evaluate(()=>ETERNA.go('ativ-venda'));}
+    if(await A.evaluate(()=>ETERNA.state.view)!=='ativ-venda'){const m=await A.$('[data-v="ativ-venda"]');if(m){await shot(A,'v02-menu',[['[data-v="ativ-venda"]','direita','1']],'[data-v="ativ-venda"]',200);await A.click('[data-v="ativ-venda"]');}else await A.evaluate(()=>ETERNA.go('ativ-venda'));}
     await A.waitForTimeout(400);
     await shot(A,'v03-servico',[['[data-act="av-cat"][data-c="drone"]','baixo','1'],['[data-act="av-pessoas"][data-v="2"]','baixo','2']],'#av-prod');
     await A.click('[data-act="av-pessoas"][data-v="2"]');await A.waitForTimeout(150);
@@ -68,7 +70,7 @@ try{
     await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
     await shot(A,'v11-registrada',[['#toast','cima','1']],'#toast',260);
     await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(800);
-    await shot(A,'v12-minhas',[['[data-act="av-aba"][data-v="minhas"]','baixo','1']],'#av-minhas, #main');
+    await shot(A,'v12-minhas',[['[data-act="av-aba"][data-v="minhas"]','baixo','1'],['#av-minhas-q','cima','2'],['table.av-tab','baixo','3']],'#av-minhas, #main');
     await ctx.close();}
 
   // ---------------- ENTREGA (computador do campo) ----------------
@@ -78,9 +80,9 @@ try{
       {id:'TDRONE001D',tipo:'drone',criado:HOJE+'T10:05:00',itens:[{produto:'asteroid',op:'Campo',qtd:1,pessoas:2,videos:1,k4:true}],pagamento:'PIX',vendedor:'Ana Souza',videos:1,entregas:[],fisicos:[],recebido_em:null,voo_em:null,entregue_em:null,cliente:'Mariana Costa'},
       {id:'TDRONE002D',tipo:'drone',criado:HOJE+'T10:15:00',itens:[{produto:'boomerang',op:'Arquibancada',qtd:1,pessoas:3,videos:1}],pagamento:'Crédito',vendedor:'Ana Souza',videos:1,entregas:[],fisicos:[],recebido_em:null,voo_em:null,entregue_em:null,cliente:'Paulo Mendes'},
       {id:'TDRONE003D',tipo:'drone',criado:HOJE+'T09:40:00',itens:[{produto:'asteroid',op:'Campo',qtd:1,pessoas:1,videos:1}],pagamento:'PIX',vendedor:'Ana Souza',videos:1,
-       entregas:[{qr:'K'.repeat(21)+'3',codigo:'KP7M-3QXA',n:1,bytes:3135031,duracao:28,nuvem:true,subindo:null,cliente:{aberto:HOJE+'T10:01:00',aceite:HOJE+'T10:01:30',play:HOJE+'T10:02:00',baixou:HOJE+'T10:03:00',baixou_n:1}}],fisicos:[],voo_em:HOJE+'T09:50:00',piloto:'Carlos',drone:'007',bateria:'2',entregue_em:HOJE+'T09:58:00',cliente:'Joana Ribeiro'},
+       entregas:[{qr:'K'.repeat(21)+'3',codigo:'KP7M-3QXA-H2RT',n:1,bytes:3135031,duracao:28,nuvem:true,subindo:null,cliente:{aberto:HOJE+'T10:01:00',aceite:HOJE+'T10:01:30',play:HOJE+'T10:02:00',baixou:HOJE+'T10:03:00',baixou_n:1}}],fisicos:[],voo_em:HOJE+'T09:50:00',piloto:'Carlos',drone:'007',bateria:'2',entregue_em:HOJE+'T09:58:00',cliente:'Joana Ribeiro'},
       {id:'TCHUTE001C',tipo:'chute',criado:HOJE+'T10:10:00',itens:[{produto:'c3',op:'',qtd:1,pessoas:1,videos:1},{produto:'medalha',op:'',qtd:1}],pagamento:'PIX',vendedor:'Ana Souza',videos:1,
-       entregas:[{qr:'Q'.repeat(21)+'1',codigo:'ABCD-EFGH',n:1,bytes:2097152,duracao:20,nuvem:true,subindo:null}],fisicos:[{i:1,nome:'Medalha',entregue:false}],entregue_em:null,cliente:'Mariana Costa'},
+       entregas:[{qr:'Q'.repeat(21)+'1',codigo:'ABCD-EFGH-JKLM',n:1,bytes:2097152,duracao:20,nuvem:true,subindo:null}],fisicos:[{i:1,nome:'Medalha',entregue:false}],entregue_em:null,cliente:'Mariana Costa'},
       {id:'TSNAP0001S',tipo:'snap',criado:HOJE+'T10:20:00',itens:[{produto:'snap_video',op:'Brasil',qtd:1,pessoas:1,videos:1}],pagamento:'PIX',vendedor:'Ana Souza',videos:1,entregas:[],fisicos:[],entregue_em:null,cliente:'Lucas Pereira'}]};
     await ctx.route(/\/ativ\/fila\?/,r=>r.fulfill({status:200,contentType:'application/json',body:J(D)}));
     await ctx.route(/\/ativ\/etapa$/,r=>{const c=JSON.parse(r.request().postData());const v=D.vendas.find(x=>x.id===c.id);
@@ -88,13 +90,13 @@ try{
       if(c.etapa==='item'){v.fisicos[0].entregue=true;v.entregue_em=HOJE+'T10:45:00';}r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
     await ctx.route(/\/ativ\/video$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rascunho:'0123456789abcdef',bytes:mp4.length,duracao:28})}));
     await ctx.route(/\/ativ\/video\/liga$/,r=>{const c=JSON.parse(r.request().postData());const v=D.vendas.find(x=>x.id===c.venda);
-      v.entregas.push({qr:c.qr,codigo:'WXYZ-2345',n:1,bytes:mp4.length,duracao:28,nuvem:true,subindo:null});v.entregue_em=HOJE+'T10:40:00';
-      r.fulfill({status:200,contentType:'application/json',body:J({ok:true,qr:c.qr,codigo:'WXYZ-2345',n:1})});});
+      v.entregas.push({qr:c.qr,codigo:'WXYZ-2345-6789',n:1,bytes:mp4.length,duracao:28,nuvem:true,subindo:null});v.entregue_em=HOJE+'T10:40:00';
+      r.fulfill({status:200,contentType:'application/json',body:J({ok:true,qr:c.qr,codigo:'WXYZ-2345-6789',n:1})});});
     await ctx.route(/\/exemplo\.mp4$/,r=>r.fulfill({status:200,contentType:'video/mp4',body:mp4}));
     const A=await ctx.newPage();await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(400);
     const ENT='bruno.lima';await usuario(A,ENT,'Bruno Lima',{ativentrega:{c:true,r:true,u:true,d:false}});await E(A,ENT);
     await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;});
-    if(await A.evaluate(()=>ETERNA.state.view)!=='ativ-entrega'){const m=await A.$('[data-v="ativ-entrega"]');if(m){await shot(A,'e01-menu',[['[data-v="ativ-entrega"]','direita','1']],'[data-v="ativ-entrega"]',200);await m.click();}else await A.evaluate(()=>ETERNA.go('ativ-entrega'));}
+    if(await A.evaluate(()=>ETERNA.state.view)!=='ativ-entrega'){const m=await A.$('[data-v="ativ-entrega"]');if(m){await shot(A,'e01-menu',[['[data-v="ativ-entrega"]','direita','1']],'[data-v="ativ-entrega"]',200);await A.click('[data-v="ativ-entrega"]');}else await A.evaluate(()=>ETERNA.go('ativ-entrega'));}
     await A.waitForTimeout(800);
     const card='[data-ae-venda="TDRONE001D"]';
     await shot(A,'e02-fila',[['[data-act="ae-cat"][data-c="drone"]','direita','1'],[card+' [data-act="ae-voo"]','direita','2']],'.ae-board');
@@ -120,16 +122,35 @@ try{
     await shot(A,'e11-snap',[['[data-ae-venda="TSNAP0001S"] [data-act="ae-recebido"]','direita','1']],null);
     await ctx.close();}
 
+  // ---------------- LOTES DE CARTÕES (administrador) ----------------
+  {const ctx=await b.newContext({viewport:{width:1500,height:900},deviceScaleFactor:1.25,locale:'pt-BR',acceptDownloads:true});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
+    const lotes=[{id:'L20261020-101500',n:5000,em:'2026-10-20T10:15:00',por:'Ronaldo',situacao:'recebido',mudou_em:'2026-10-27T15:02:00',mudou_por:'Ronaldo',baixado_n:1,usados:3412}];
+    await ctx.route(/\/ativ\/cartoes$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,lotes,max:10000})}));
+    await ctx.route(/\/ativ\/cartoes\/lote$/,r=>{const c=JSON.parse(r.request().postData());let l=lotes.find(x=>x.situacao==='grafica');const novo=!l;
+      if(!l){l={id:'L'+HOJE.replace(/-/g,'')+'-180000',n:c.n,em:HOJE+'T18:00:00',por:'Ronaldo',situacao:'grafica',mudou_em:null,mudou_por:null,baixado_n:0,usados:0};lotes.unshift(l);}l.baixado_n++;
+      r.fulfill({status:200,contentType:'application/json',body:J({ok:true,lote:l.id,novo,n:l.n,csv:'token;codigo;qr',lotes})});});
+    const A=await ctx.newPage();await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(400);
+    const adm=await E.adminFicticio(A);await E(A,adm);
+    await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;s.catTab='avancado';ETERNA.go('catalogo');});await A.waitForTimeout(900);
+    await A.fill('#cartao-n','10000');
+    await shot(A,'a01-gerar',[['#cartao-n','baixo','1'],['[data-act="cartao-lote"]','baixo','2']],'[data-cartao-lotes]',60);
+    await Promise.all([A.waitForEvent('download'),A.click('[data-act="cartao-lote"]')]);await A.waitForTimeout(500);
+    await shot(A,'a02-na-grafica',[['[data-cartao-mesmo]','baixo','1'],['[data-act="cartao-situacao"][data-s="recebido"]','cima','2'],['[data-act="cartao-situacao"][data-s="cancelado"]','baixo','3']],'[data-cartao-lotes]',60);
+    await ctx.close();}
+
   // ---------------- CLIENTE (celular) ----------------
   {const ctx=await b.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
-    const API='https://api-exemplo.invalid',TOK='W'.repeat(22);await ctx.addInitScript(a=>{window.ETERNA_AGENTE=a;},API);
+    const API='https://api-exemplo.invalid',TOK='W'.repeat(22);
+    const TGAL={tipo:'sessao',menor:false,expira:new Date(Date.now()+60*864e5).toISOString(),estado:'pronta',precos:{dig:30,todas:90},catalogo:[],compra:true,
+      fotos:[['ag_c1','comprada'],['ag_v1','venda'],['ag_v2','venda'],['ag_v3','venda'],['ag_v4','venda']].map(([pid,d],i)=>({pid,direito:d,vitrine:API+'/v/'+(i%5)+'.jpg',original:d==='comprada'?API+'/a/'+(i%5)+'.jpg':null,chegando:false}))};await ctx.addInitScript(a=>{window.ETERNA_AGENTE=a;},API);
     await ctx.route(API+'/**',async r=>{const u=new URL(r.request().url());const js=o=>r.fulfill({status:200,contentType:'application/json',body:J(o)});
-      const gal={tipo:'video',servico:'drone',expira:new Date(Date.now()+30*864e5).toISOString(),estado:'pronta',videos:[{id:TOK,n:1,duracao:28,bytes:mp4.length,chegando:false,url:API+'/arquivo.mp4',baixar:'/g/'+TOK+'/baixar?v='+TOK+'&a=AC1'}],tour:{token:'T'.repeat(22),n:6}};
+      const gal={tipo:'video',servico:'drone',expira:new Date(Date.now()+30*864e5).toISOString(),estado:'pronta',videos:[{id:TOK,n:1,duracao:28,bytes:mp4.length,chegando:false,url:API+'/arquivo.mp4',baixar:'/g/'+TOK+'/baixar?v='+TOK+'&a=AC1'}],tour:{token:'T'.repeat(22),n:5,acesso:'TA1',galeria:TGAL}};
       if(u.pathname.endsWith('/info'))return js({ok:true,tipo:'video',menor:false,expira:gal.expira,estado:'pronta',servico:'drone',compra:false});
       if(u.pathname.endsWith('/video'))return js({ok:true,acesso:'AC1',exp:gal.expira,galeria:gal});
       if(u.pathname.endsWith('/galeria'))return js({galeria:gal});
       if(u.pathname.endsWith('/evento'))return js({ok:true});
       if(u.pathname.endsWith('/arquivo.mp4'))return r.fulfill({status:200,contentType:'video/mp4',body:mp4});
+      const fj=u.pathname.match(/\/[va]\/(\d)\.jpg$/);if(fj)return r.fulfill({status:200,contentType:'image/jpeg',body:FOTOS[+fj[1]]});
       return js({});});
     const C=await ctx.newPage();await C.goto(U+'#g/'+TOK);await C.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});
     await C.fill('#gv-email','mariana@exemplo.com');await C.check('[data-act="gv-consent"]');
@@ -138,7 +159,7 @@ try{
     await C.evaluate(()=>{const v=document.querySelector('video[data-gv-v]');if(v)v.currentTime=6;});await C.waitForTimeout(1000);
     await shot(C,'c02-video',[['video[data-gv-v]','cima','1'],['.gq-gvdl','baixo','2']],null);
     await C.evaluate(()=>document.querySelector('[data-gv-tour]').scrollIntoView({block:'end'}));await C.waitForTimeout(200);
-    await shot(C,'c03-fotos-tour',[['[data-gv-tour] a','cima','1']],null);
+    await shot(C,'c03-fotos-tour',[['[data-gv-tour] a.gq-dl','cima','1'],['[data-gv-tour] .gq-tourph','baixo','2'],['[data-gv-tour] button[data-act="gv-tour"]','cima','3']],null);
     await ctx.close();}
 }catch(e){console.log('ERRO',e.stack||e);process.exitCode=1;}
 finally{fs.writeFileSync(path.join(OUT,'marcas.json'),JSON.stringify(MARCAS,null,1));await b.close();}})();
