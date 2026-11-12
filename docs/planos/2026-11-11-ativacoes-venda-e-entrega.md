@@ -19,7 +19,7 @@ Este plano substitui as opções do plano de 30/10 (`2026-10-30-maracafly-no-ete
 7. **Cortesia vale para as ativações**, com a mesma regra da Cortesia SAC: motivo, nota e quem deu.
 8. **O admin troca preço e vídeo de demonstração**, e pode desligar um produto no dia ("hoje não vendo").
 9. **Por enquanto, vídeo do Drone e Chute a Gol só se compram no local.** A compra online (Imply, plano `2026-11-11-compra-online-pela-imply.md`) continua só para fotos. As ativações entram nela depois.
-10. **O histórico do sistema antigo entra no Eterna.** Primeiro, as planilhas exportadas de 01/10 a 11/11. Depois, **a partir de 12/11, as vendas novas entram todo dia**, até o Ronaldo avisar que o sistema antigo foi desligado.
+10. **O histórico do sistema antigo entra no Eterna.** Primeiro, as planilhas exportadas de 01/10 a 11/11. Depois, **a partir de 12/11, as vendas novas entram todo dia, à noite, depois das 19h, quando o tour termina**, até o Ronaldo avisar que o sistema antigo foi desligado.
 11. **Fora deste plano:**
     - escala da equipe;
     - central de WhatsApp;
@@ -179,10 +179,11 @@ As vendas importadas do sistema antigo aparecem nas mesmas telas, com a origem "
 
 **Vendas novas, todo dia, até o desligamento:**
 
-- A tarefa diária da auditoria de vendas (07:30, `maracatour/auditoria-vendas`) já extrai do sistema antigo as vendas de Drone, Chute a Gol e Snap Pop.
-- O mesmo importador lê esse arquivo e envia ao Eterna, logo depois da auditoria. Não é preciso outra extração.
+- **Horário:** todo dia, à noite, depois das 19h, quando o tour termina. Uma tarefa agendada própria, às 19h30, puxa as vendas do dia.
+- A extração usa o mesmo extrator da auditoria de vendas (`maracatour/auditoria-vendas/ferramentas/extrair_maracafly.js`), pela sessão do Ronaldo no Chrome. O importador lê o arquivo e envia ao Eterna.
+- A auditoria das 07:30 continua como está. Se a puxada da noite falhar, a tarefa avisa e a do dia seguinte cobre o dia que faltou.
 - A chave de cada venda é a origem mais o ID antigo. Rodar duas vezes não duplica nada, e uma venda corrigida no sistema antigo é atualizada.
-- Quando o Ronaldo avisar o desligamento, o passo sai da tarefa diária, e as vendas antigas ficam no Eterna como histórico.
+- Quando o Ronaldo avisar o desligamento, a tarefa da noite é desligada, e as vendas antigas ficam no Eterna como histórico.
 
 ## 7. Fases
 
