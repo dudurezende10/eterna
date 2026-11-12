@@ -35,9 +35,9 @@ try{
   ok(/Entrega dos vídeos/.test(await txt('#main .head'))&&/Vídeos aguardando internet: 1/.test(await txt('#main .head')),'título e situação da nuvem: '+await txt('#main .head'));
   ok(/Drone · 2/.test(await txt('#main'))&&/Chute a Gol · 1/.test(await txt('#main'))&&/Snap Pop · 1/.test(await txt('#main')),'pendentes por serviço');
   const card='[data-ae-venda="TDRONE001D"]';
-  // uma fila por ativação, como a Fila de fotos: Próximo a voar, Voando, Delivery do vídeo, Entregue
+  // uma fila por ativação, como a Fila de fotos: Próximo a voar, Voando, Entrega do vídeo, Entregue
   const cols=async()=>A.$$eval('[data-ae-col] h2',x=>x.map(h=>h.childNodes[0].textContent.trim()));
-  ok(J(await cols())===J(['Próximo a voar','Voando','Delivery do vídeo','Entregue']),'colunas do Drone: '+J(await cols()));
+  ok(J(await cols())===J(['Próximo a voar','Voando','Entrega do vídeo','Entregue']),'colunas do Drone: '+J(await cols()));
   const naCol=async(id,c)=>!!(await A.$(`[data-ae-col="${c}"] [data-ae-venda="${id}"]`));
   ok(await naCol('TDRONE001D','proximo')&&/Asteroid · Campo · 2 pessoas/.test(await txt(card))&&await A.$(card+' [data-act="ae-recebido"]')===null,'drone em Próximo a voar, só com Decolar: '+await txt(card));
   await A.click(card+' [data-act="ae-voo"]');await A.waitForTimeout(100);
@@ -49,7 +49,7 @@ try{
   ok(/Aguardando vídeo/.test(await txt(card)),'em Voando, espera o vídeo');
   // Snap Pop: Começar leva para Gravando
   await A.click('[data-act="ae-cat"][data-c="snap"]');await A.waitForTimeout(100);
-  ok(J(await cols())===J(['Próximo a gravar','Gravando','Delivery do vídeo','Entregue'])&&await A.$('#ae-cad')===null,'colunas do Snap Pop, sem cadastro de drones');
+  ok(J(await cols())===J(['Próximo a gravar','Gravando','Entrega do vídeo','Entregue'])&&await A.$('#ae-cad')===null,'colunas do Snap Pop, sem cadastro de drones');
   await A.click('[data-ae-venda="TSNAP0001S"] [data-act="ae-recebido"]');await A.waitForTimeout(300);
   ok(J(posts[1])===J({id:'TSNAP0001S',etapa:'recebido'})&&await naCol('TSNAP0001S','andamento'),'Começar: Snap Pop em Gravando');
   await A.click('[data-act="ae-cat"][data-c="drone"]');await A.waitForTimeout(100);

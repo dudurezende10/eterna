@@ -37,7 +37,7 @@ REGRAS = [
 
 COLUNAS = [("Próximo a voar", "Próximo a gravar", "Venda feita; o cliente ainda não foi atendido no campo."),
            ("Voando", "Gravando", "Decolou (ou começou); esperando o vídeo."),
-           ("Delivery do vídeo", "Delivery do vídeo", "Vídeo ligado ao cartão; falta algum item físico (ex.: medalha) ou o envio."),
+           ("Entrega do vídeo", "Entrega do vídeo", "Vídeo ligado ao cartão; falta algum item físico (ex.: medalha) ou o envio."),
            ("Entregue", "Entregue", "Tudo entregue. Mostra quando o cliente abriu, assistiu e baixou.")]
 
 # (chave do print, título, legenda, passos) — o número de cada passo é o da seta no print
