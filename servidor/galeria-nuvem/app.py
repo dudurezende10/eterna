@@ -99,6 +99,24 @@ def item(pk, sk="M"):
     return TABELA.get_item(Key={"pk": pk, "sk": sk}).get("Item")
 
 
+def codigo_liga(codigo, token, ttl):
+    """v99.23.7: o código digitável (XXXX-XXXX) nunca troca de dono. Com muitos cartões, dois tokens podem dar o mesmo código;
+    o segundo fica só com o QR (que é único) e o código continua abrindo a galeria do primeiro. Nunca abre a de outro."""
+    it = item("COD#" + codigo)
+    if it and it.get("token") != token:
+        print("ALERTA código repetido %s: fica com a galeria que chegou primeiro; a nova abre só pelo QR" % codigo)
+        return False
+    TABELA.put_item(Item={"pk": "COD#" + codigo, "sk": "M", "token": token, "ttl": ttl})
+    return True
+
+
+def codigo_solta(codigo, token):
+    """Galeria encerrada solta só o código que é dela."""
+    it = item("COD#" + codigo)
+    if it and it.get("token") == token:
+        TABELA.delete_item(Key={"pk": "COD#" + codigo, "sk": "M"})
+
+
 def manifesto(token):
     it = item("GAL#" + token)
     return json.loads(it["m"]) if it else None
@@ -701,10 +719,10 @@ def publicar_video(m):
                        ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":m": json.dumps(novo), ":t": ttl})
     if novo.get("encerrada"):
         if novo["codigo"]:
-            TABELA.delete_item(Key={"pk": "COD#" + novo["codigo"], "sk": "M"})
+            codigo_solta(novo["codigo"], novo["token"])
         return resp({"ok": True, "token": novo["token"], "estado": "encerrada"})
     if novo["codigo"]:
-        TABELA.put_item(Item={"pk": "COD#" + novo["codigo"], "sk": "M", "token": novo["token"], "ttl": ttl})
+        codigo_liga(novo["codigo"], novo["token"], ttl)
     return resp({"ok": True, "token": novo["token"], "estado": estado(novo)})
 
 
@@ -842,12 +860,12 @@ def publicar(ev, corpo):
     if novo.get("encerrada"):
         apagar_rostos(novo["token"])
         if novo["codigo"]:
-            TABELA.delete_item(Key={"pk": "COD#" + novo["codigo"], "sk": "M"})
+            codigo_solta(novo["codigo"], novo["token"])
         return resp({"ok": True, "token": novo["token"], "estado": "encerrada"})
     if perdeu:
         apagar_rostos(novo["token"])
     if novo["codigo"]:
-        TABELA.put_item(Item={"pk": "COD#" + novo["codigo"], "sk": "M", "token": novo["token"], "ttl": ttl})
+        codigo_liga(novo["codigo"], novo["token"], ttl)
     # os rostos não são lidos aqui: só depois do primeiro consentimento na galeria (rota /rosto)
     return resp({"ok": True, "token": novo["token"], "estado": estado(novo)})
 

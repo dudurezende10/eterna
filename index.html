@@ -1311,7 +1311,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.23.6 · 12/11 17:36"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.23.7 · 12/11 17:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2813,7 +2813,7 @@ function galDaSessao(card,criar){SIM.galerias=SIM.galerias||{};const f=Object.va
 function cartaoCodigo(tok){let h1=0x811c9dc5,h2=0x9e3779b9;for(let i=0;i<tok.length;i++){const c=tok.charCodeAt(i);h1=Math.imul(h1^c,16777619)>>>0;h2=Math.imul(h2^c,2246822519)>>>0;}
   let c='';for(let i=0;i<8;i++){const v=i<4?(h1>>>(i*7)):(h2>>>((i-4)*7));c+=GAL_ALFA[v&31];if(i===3)c+='-';}return c;}
 function cartaoToken(txt){const t=String(txt||'').trim();const m=t.match(/#g\/([A-Za-z0-9_-]{22})(?![A-Za-z0-9_-])/)||t.match(/^([A-Za-z0-9_-]{22})$/);return m?m[1]:null;}
-function cartaoLote(n){const out=['token;codigo;qr'];const ja=new Set();for(let i=0;i<n;i++){let t;do{let s='';for(const b of galRand(16))s+=String.fromCharCode(b);t=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}while(ja.has(t)||(SIM.galerias||{})[t]||!/^[A-Za-z0-9]/.test(t));ja.add(t); /* v99.23.5: token começando com - ou _ o Excel da gráfica lia como fórmula (#NOME?) */out.push(`${t};${cartaoCodigo(t)};${GAL_BASE_PADRAO}${t}`);}return out.join(String.fromCharCode(10));}
+function cartaoLote(n){const out=['token;codigo;qr'];const ja=new Set(),cods=new Set();for(let i=0;i<n;i++){let t;do{let s='';for(const b of galRand(16))s+=String.fromCharCode(b);t=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}while(ja.has(t)||(SIM.galerias||{})[t]||!/^[A-Za-z0-9]/.test(t)||cods.has(cartaoCodigo(t)));ja.add(t);cods.add(cartaoCodigo(t)); /* v99.23.7: código digitável também único no lote */ /* v99.23.5: token começando com - ou _ o Excel da gráfica lia como fórmula (#NOME?) */out.push(`${t};${cartaoCodigo(t)};${GAL_BASE_PADRAO}${t}`);}return out.join(String.fromCharCode(10));}
 function cartaoAtrelar(card,txt){const tok=cartaoToken(txt);if(!tok)return {erro:'Não é o QR de um cartão Eterna'};
   const atual=galDaSessao(card);if(atual===tok)return {ok:true,ja:true,token:tok};
   const outra=(SIM.galerias||{})[tok];if(outra)return {erro:`Este cartão já está na venda ${(outra.sessoes||[]).join(', ')}. Pegue outro cartão.`};
