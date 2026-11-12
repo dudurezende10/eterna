@@ -249,5 +249,32 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 5. desativar a distribuição do CloudFront e apagar o certificado;
 6. remover os CNAME da GoDaddy.
 
+## 9b. Retenção no bucket por pasta (proposta, 12/11)
+
+**Achado (12/11, só leitura com o usuário do agente):** o objeto mais antigo de cada pasta (`backup/`, `alta/`, `vitrine/`) é de 05/11, sete dias antes. Tudo indica que a regra de teste da seção 8.1 (expirar com 7 dias) vale para o **bucket inteiro**, inclusive `backup/` e `video/`. O usuário do agente não tem `s3:GetLifecycleConfiguration` nem `s3:GetBucketVersioning` (correto), então a regra real precisa ser conferida pelo Ronaldo no console. Com essa regra, o vídeo some do S3 no dia 7, embora a página do cliente prometa 30 dias.
+
+**Proposta de regras por pasta** (aplicar com `put-bucket-lifecycle-configuration`, pelo Ronaldo):
+
+| Pasta | O que é | Regra proposta |
+|---|---|---|
+| `alta/`, `vitrine/` | fotos das galerias | apagar com 61 dias (galeria vale até 60, `GAL_DIAS`) |
+| `video/` | vídeos das ativações | apagar com 31 dias (página vale 30, `ATIV_VIDEO_DIAS`) |
+| `backup/<pc>/dia/` | cópia diária dos bancos (vendas, estado, operação, lotes de cartões) | Glacier Instant Retrieval com 30 dias; apagar com 400 dias (como os pedidos na nuvem) |
+| `backup/<pc>/<banco>`, `metricas/`, `sessoes/` | cópia mais recente | não expira; versionamento ligado, versão antiga apagada com 30 dias |
+| todas | upload interrompido | `AbortIncompleteMultipartUpload` com 1 dia |
+
+```json
+{"Rules":[
+ {"ID":"fotos-61d","Filter":{"Prefix":"alta/"},"Status":"Enabled","Expiration":{"Days":61}},
+ {"ID":"vitrine-61d","Filter":{"Prefix":"vitrine/"},"Status":"Enabled","Expiration":{"Days":61}},
+ {"ID":"video-31d","Filter":{"Prefix":"video/"},"Status":"Enabled","Expiration":{"Days":31}},
+ {"ID":"backup-dia","Filter":{"Prefix":"backup/"},"Status":"Enabled","NoncurrentVersionExpiration":{"NoncurrentDays":30}},
+ {"ID":"multipart","Filter":{"Prefix":""},"Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}
+]}
+```
+A regra da cópia diária (`backup/<pc>/dia/`, Glacier e 400 dias) depende do nome do computador no prefixo; montar com o nome real (`backup/<pc>/dia/`) na hora de aplicar.
+
+**No servidor do ponto:** o vídeo das ativações (`~/Eterna/ativ-videos`) não é apagado nunca (`apagado_em` não é preenchido em lugar nenhum). Falta a limpeza local, que deveria seguir o mesmo prazo, para o disco não encher.
+
 ## 10. Antes da produção
 As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.
