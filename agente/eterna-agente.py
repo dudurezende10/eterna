@@ -7427,6 +7427,81 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("bgPodioV86", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
 
 
+ATIV_VENDA_CAMPOS = ("origem", "id", "tipo", "dia", "criado", "itens", "valor", "pagamento", "vendedor", "vendedor_n", "pessoas", "videos",
+                     "resolucao", "pais", "idioma", "guia", "piloto", "drone", "bateria", "entrega", "qr")
+_re_dia = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_re_criado = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+
+
+def ativ_venda_ok(v):
+    """Uma venda das ativações no formato do banco (o importador já normalizou). Campo de cliente nunca passa."""
+    if not isinstance(v, dict) or set(v) - set(ATIV_VENDA_CAMPOS):
+        return False
+    if v.get("origem") not in ("antigo",) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", str(v.get("id") or "")):
+        return False
+    if v.get("tipo") not in ATIV_CATS or not _re_dia.match(str(v.get("dia") or "")) or not _re_criado.match(str(v.get("criado") or "")):
+        return False
+    if not str(v["criado"]).startswith(v["dia"]) or not isinstance(v.get("itens"), list) or len(v["itens"]) > 30:
+        return False
+    for it in v["itens"]:
+        if not isinstance(it, dict) or not _ativ_txt(it.get("produto"), 60) or not _ativ_txt(it.get("op") or "", 40) or not _ativ_num(it.get("qtd"), 100):
+            return False
+    if not _ativ_num(v.get("valor"), 1000000):
+        return False
+    for k in ("pagamento", "vendedor", "resolucao", "pais", "idioma", "guia", "piloto", "drone", "bateria", "entrega", "qr"):
+        if not _ativ_txt(v.get(k) or "", 80):
+            return False
+    for k in ("vendedor_n", "pessoas", "videos"):
+        if v.get(k) is not None and not _ativ_num(v.get(k), 1000):
+            return False
+    return True
+
+
+def ativ_importar(linhas):
+    """Grava (ou atualiza) vendas das ativações. Rodar de novo não duplica: a chave é origem + id. -> contagens"""
+    r = {"novas": 0, "atualizadas": 0, "iguais": 0, "recusadas": 0}
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with ev_lock:
+        c = vendas_db()
+        try:
+            for v in linhas:
+                if not ativ_venda_ok(v):
+                    r["recusadas"] += 1
+                    continue
+                vals = [json.dumps(v["itens"], ensure_ascii=False) if k == "itens" else v.get(k) for k in ATIV_VENDA_CAMPOS]
+                antes = c.execute("select " + ",".join(ATIV_VENDA_CAMPOS) + " from ativ_venda where origem=? and id=?", (v["origem"], v["id"])).fetchone()
+                if antes is not None and list(antes) == vals:
+                    r["iguais"] += 1
+                    continue
+                c.execute("insert or replace into ativ_venda (" + ",".join(ATIV_VENDA_CAMPOS) + ", importado_em) values (" + ",".join("?" * (len(ATIV_VENDA_CAMPOS) + 1)) + ")",
+                          vals + [agora])
+                r["atualizadas" if antes is not None else "novas"] += 1
+            c.commit()
+        finally:
+            c.close()
+    return r
+
+
+def ativ_vendas(de, ate):
+    """Vendas das ativações entre dois dias (inclusive), para o resumo e as estatísticas."""
+    if not (_re_dia.match(de or "") and _re_dia.match(ate or "")) or de > ate:
+        return None
+    c = vendas_db()
+    try:
+        rows = c.execute("select " + ",".join(ATIV_VENDA_CAMPOS) + " from ativ_venda where dia between ? and ? order by criado", (de, ate)).fetchall()
+    finally:
+        c.close()
+    out = []
+    for row in rows:
+        d = dict(zip(ATIV_VENDA_CAMPOS, row))
+        try:
+            d["itens"] = json.loads(d["itens"] or "[]")
+        except ValueError:
+            d["itens"] = []
+        out.append(d)
+    return out
+
+
 def doc_modulos(col, id_doc):
     if col == "ativ":                                   # v100: catálogo das ativações; "Hoje não vendo" também para quem altera Configurações
         return ("catalogo", "configuracao") if id_doc.startswith("hoje|") else ("catalogo",)
@@ -7904,6 +7979,14 @@ def vendas_db():
               " avg((julianday(t.pagamento) - julianday(t.inicio_checkout)) * 86400) as seg_checkout,"
               " avg((julianday(t.terminou_impressao) - julianday(t.entrou_na_fila)) * 86400) as seg_impressao"
               " from evento c join venda_tempos t on t.venda = c.venda where c.tipo = 'criar' group by c.dia")
+    # v100: vendas de Drone, Chute a Gol e Snap Pop. Por ora só as do sistema antigo (origem "antigo"), importadas por
+    # agente/ativacoes-importar.py; nunca nome, WhatsApp ou foto do cliente. Chave: origem + id da venda na origem.
+    c.execute("create table if not exists ativ_venda (origem text, id text, tipo text, dia text, criado text, itens text, valor real,"
+              " pagamento text, vendedor text, vendedor_n int, pessoas int, videos int, resolucao text, pais text, idioma text, guia text,"
+              " piloto text, drone text, bateria text, entrega text, qr text, importado_em text, primary key (origem, id))")
+    c.execute("create index if not exists ativ_venda_dia on ativ_venda(dia)")
+    c.execute("create view if not exists ativ_venda_resumo as select dia, tipo, count(*) as vendas, sum(valor) as valor, sum(videos) as videos"
+              " from ativ_venda group by dia, tipo")
     # BI: cada selfie do Checkout. Só contagem e horário: nunca imagem, vetor do rosto, sessão ou venda (não identifica ninguém)
     c.execute("create table if not exists selfie (em text, dia text, hora int, origem text, resultado text, fotos int, ms int)")
     c.execute("create index if not exists selfie_dia_i on selfie(dia)")
@@ -8873,6 +8956,7 @@ ROTAS = (
     ("GET", "/biblioteca", "sessao", ("set.r", "estoque.r")), ("GET", "/events", "sessao", ("set.r", "estoque.r")),
     ("POST", "/fotos/enviar", "sessao", ("set.c",)),
     ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")),
+    ("GET", "/ativ/vendas", "sessao", ("estatisticas.r", "financeiro.r", "relatorios.r")),   # v100: resumo das ativações
     ("GET", "/roverpix/status", "sessao", ("financeiro.r",)), ("GET", "/roverpix/data", "sessao", ("financeiro.r",)),
     ("POST", "/roverpix/sync", "sessao", ("configuracao.u",)), ("POST", "/roverpix/config", "sessao", ("configuracao.u",)),
     ("GET", "/ftp-remoto/status", "sessao", ("configuracao.r",)), ("POST", "/ftp-remoto/config", "sessao", ("configuracao.u",)),
@@ -10889,6 +10973,12 @@ class H(BaseHTTPRequestHandler):
                 r["docs"] = [d if d["id"] == proprio else {"id": d["id"], "valor": {k: d["valor"].get(k) for k in ("email", "name", "key", "active") if isinstance(d["valor"], dict)}}
                              for d in r["docs"]]
             return self.js(r)
+        if u.path == "/ativ/vendas":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            q = parse_qs(u.query)
+            r = ativ_vendas((q.get("de") or [""])[0], (q.get("ate") or [""])[0])
+            return self.js({"ok": True, "vendas": r}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)

@@ -1291,7 +1291,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.17.1 · 12/11 00:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.17.2 · 12/11 09:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1463,6 +1463,7 @@ const VIEWS=[
  ['fotografos','Fotógrafos','índice e métricas','Dashboard'],
  ['vendas','Vendedores','vendas de cada vendedor','Dashboard'],
  ['vendas-lista','Lista de vendas','venda a venda','Dashboard'],
+ ['ativ-resumo','Resumo das ativações','Drone, Chute a Gol e Snap Pop','Dashboard'],
  ['galerias','Galerias online','QR, cortesias e escolas','Dashboard'],
  ['calendario','Calendário de eventos','jogos, shows e feriados','Dashboard'], // Eduardo (11/11): saiu do grupo Fotógrafo; permissões iguais (módulo escala)
  ['revisao','Qualidade','revisão de fotos','Curadoria'],
@@ -4891,6 +4892,52 @@ function esFotoLinhas(D){const fs=esFotografos();const nomes=new Map(fs.map(f=>[
   const dias={};(state.es._ds||[]).forEach(d=>{if(!d||!ISO_DIA.test(d.dia))return;Object.entries(d.por_fotografo||{}).forEach(([k,v])=>{if(v&&(numF(v.fotos)>0||numF(v.sessoes)>0))(dias[k]=dias[k]||[]).push({dia:d.dia,sessoes:numF(v.sessoes),fotos:numF(v.fotos),vendas:numF(v.vendas),faturamento:numF(v.faturamento)});});});
   return [...nomes].map(([k,nome])=>{const v=D.fotografos[k]||{};const ses=numF(v.sessoes);const F=esFaixas(v.clique||[]);const dd=(dias[k]||[]).sort((a,b)=>a.dia.localeCompare(b.dia));
     return {k,nome,dias_prod:dd.length,sessoes:ses,fotos:numF(v.fotos),fps:ses?numF(v.fotos)/ses:null,vendas:numF(v.vendas),conversao:ses?numF(v.sessoes_com_venda)/ses:null,rps:ses?numF(v.faturamento)/ses:null,faturamento:numF(v.faturamento),clique:F.iMed==null?null:F.iMed,cliqueT:F.mediana,dias:dd};});}
+// ---------- Resumo das ativações (v100): a tela de celular do gestor, como o resumo do sistema antigo ----------
+// Lê /ativ/vendas do servidor do ponto. Hoje só as vendas importadas do sistema antigo; quando a venda no tablet entrar, as dela.
+state.ar={tipo:'drone',per:'dia',dia:null,cache:{},busy:false,erro:null};
+const AR_TIPOS=['drone','chute','snap','todos'];
+function arPeriodo(){const A=state.ar;const d=A.dia||venueToday();
+  if(A.per==='mes'){const de=d.slice(0,8)+'01';const [y,m]=d.split('-').map(Number);const ate=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10);return [de,ate];}
+  if(A.per==='semana'){const [y,m,dd]=d.split('-').map(Number);const w=(new Date(Date.UTC(y,m-1,dd)).getUTCDay()+6)%7;const de=addDays(d,-w);return [de,addDays(de,6)];}
+  return [d,d];}
+function arMover(n){const A=state.ar;const d=A.dia||venueToday();if(A.per==='mes'){const [y,m]=d.split('-').map(Number);A.dia=new Date(Date.UTC(y,m-1+n,1)).toISOString().slice(0,10);}
+  else A.dia=addDays(d,n*(A.per==='semana'?7:1));arPull(true);render();}
+async function arPull(forca){const A=state.ar;if(!esOn())return;const [de,ate]=arPeriodo();const k=de+'|'+ate;const c=A.cache[k];
+  if(A.busy){if(A.busy!==k)A.depois=true;return;}if(!forca&&c&&Date.now()-c.em<60e3)return;A.busy=k;A.depois=false;
+  try{const r=await agFetch(state.agent.url+'/ativ/vendas?de='+de+'&ate='+ate,{cache:'no-store'});const j=await r.json();if(!r.ok||!j||!j.ok||!Array.isArray(j.vendas))throw 0;A.cache[k]={em:Date.now(),vendas:j.vendas};A.erro=null;}
+  catch(e){A.erro='ar_sem_servidor';}finally{A.busy=false;if(A.depois)arPull(true);if(state.view==='ativ-resumo')render();}}
+// agrupa: [{k, vendas, valor}] do maior para o menor valor
+function arGrupo(L,f){const m=new Map();L.forEach(v=>{const k=f(v)||'—';const x=m.get(k)||{k,vendas:0,valor:0};x.vendas++;x.valor+=+v.valor||0;m.set(k,x);});return [...m.values()].sort((a,b)=>b.valor-a.valor||b.vendas-a.vendas);}
+function arServicos(L){const nomes={};AR_TIPOS.slice(0,3).forEach(t=>ativLista(t).forEach(p=>{nomes[p.id]=p.nome;}));const m=new Map();L.forEach(v=>(v.itens||[]).forEach(i=>{const k=String(nomes[i.produto]||i.produto||'—')+(i.op?' · '+i.op:'');m.set(k,(m.get(k)||0)+(+i.qtd||1));}));return [...m.entries()].sort((a,b)=>b[1]-a[1]);}
+function vAtivResumo(){const A=state.ar;if(!A.dia)A.dia=venueToday();arPull(false);const [de,ate]=arPeriodo();const c=A.cache[de+'|'+ate];
+  const L=c?c.vendas.filter(v=>A.tipo==='todos'||v.tipo===A.tipo):[];const total=L.reduce((s,v)=>s+(+v.valor||0),0);const videos=L.reduce((s,v)=>s+(+v.videos||0),0);
+  const tNome={drone:TE('at_drone'),chute:TE('at_chute'),snap:TE('at_snap'),todos:TE('ar_todos')};
+  const titulo=A.per==='dia'?fmtDiaLongo(de):TE('ar_de_ate',fmtDiaCurto(de),fmtDiaCurto(ate));
+  const lista=(h,G,id)=>`<div class="panel" id="${id}"><h2>${h}</h2>${G.length?G.map(x=>`<div class="row" style="justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line)"><div><div class="name">${esc(x.k)}</div><div class="note">${TE('ar_n_vendas',x.vendas)}</div></div><b style="white-space:nowrap">${fmtR(x.valor)}</b></div>`).join(''):`<div class="note">${TE('ar_sem_vendas')}</div>`}</div>`;
+  const serv=arServicos(L);
+  return `<div class="head"><div><div class="eyebrow">${TE('ar_eyebrow')}</div><h1>${esc(viewLabel('ativ-resumo'))}</h1></div></div>
+  <div class="panel" id="ar-filtros"><label style="display:block"><span class="eyebrow">${TE('ar_tipo')}</span><select data-act="ar-tipo" style="width:100%">${AR_TIPOS.map(t=>`<option value="${t}" ${A.tipo===t?'selected':''}>${esc(tNome[t])}</option>`).join('')}</select></label>
+    <div class="chips" role="tablist" style="margin-top:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${[['dia',TE('ar_dia')],['semana',TE('ar_semana')],['mes',TE('ar_mes')]].map(([k,l])=>`<button class="chip" role="tab" data-act="ar-per" data-p="${k}" aria-selected="${A.per===k}" aria-pressed="${A.per===k}">${l}</button>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px"><button class="btn ghost" data-act="ar-mover" data-n="-1" aria-label="${esc(TE('ar_antes'))}">‹</button><b id="ar-titulo">${esc(titulo)}</b><button class="btn ghost" data-act="ar-mover" data-n="1" aria-label="${esc(TE('ar_depois'))}">›</button></div>
+    <div class="row" style="justify-content:center;align-items:end;gap:8px;margin-top:8px">${dateField('ar-data',A.dia,TE('ar_data'))}<button class="btn ghost" data-act="ar-hoje">${TE('ar_hoje')}</button></div>
+    <div class="note" style="text-align:center">${TE('ar_arraste')}</div></div>
+  ${A.erro&&!c?`<div class="panel"><div class="note" role="alert">${TE(A.erro)}</div></div>`:''}
+  ${!c&&!A.erro?`<div class="panel"><div class="note">${TE('ar_carregando')}</div></div>`:''}
+  ${c?`<div class="panel" id="ar-total" style="text-align:center"><div class="eyebrow">${TE('ar_total')}</div><div style="font-size:2.2rem;font-weight:800">${fmtR(total)}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"><div class="panel" style="margin:0"><div class="note">${TE('ar_vendas')}</div><b style="font-size:1.4rem">${L.length}</b></div><div class="panel" style="margin:0"><div class="note">${TE('at_videos')}</div><b style="font-size:1.4rem">${videos}</b></div></div></div>
+  ${lista(TE('ar_por_pagamento'),arGrupo(L,v=>v.pagamento),'ar-pag')}
+  ${lista(TE('ar_por_vendedor'),arGrupo(L,v=>v.vendedor),'ar-vend')}
+  <div class="panel" id="ar-serv"><h2>${TE('ar_servicos')}</h2>${serv.length?serv.map(([k,n])=>`<div class="row" style="justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)"><span>${esc(k)}</span><b>${n}</b></div>`).join(''):`<div class="note">${TE('ar_sem_vendas')}</div>`}</div>
+  ${lista(TE('ar_por_pais'),arGrupo(L,v=>v.pais),'ar-pais')}`:''}`;}
+const fmtDiaLongo=d=>{try{return new Intl.DateTimeFormat(localeTela(),{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}).format(new Date(d+'T12:00:00Z'));}catch(e){return d;}};
+const fmtDiaCurto=d=>{try{return new Intl.DateTimeFormat(localeTela(),{day:'2-digit',month:'2-digit',timeZone:'UTC'}).format(new Date(d+'T12:00:00Z'));}catch(e){return d;}};
+document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('[data-act^="ar-"]');if(!el||state.view!=='ativ-resumo'||el.tagName==='INPUT'||el.tagName==='SELECT')return;const a=el.dataset.act,A=state.ar;
+  if(a==='ar-per'){A.per=el.dataset.p;arPull(true);render();}else if(a==='ar-mover')arMover(+el.dataset.n);else if(a==='ar-hoje'){A.dia=venueToday();arPull(true);render();}});
+document.addEventListener('change',e=>{const a=e.target.dataset&&e.target.dataset.act;if(state.view!=='ativ-resumo')return;const A=state.ar;
+  if(a==='ar-tipo'){A.tipo=AR_TIPOS.includes(e.target.value)?e.target.value:'drone';render();}else if(a==='ar-data'&&/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)){A.dia=e.target.value;arPull(true);render();}});
+(function(){let x0=null,y0=null;document.addEventListener('touchstart',e=>{if(state.view!=='ativ-resumo'||e.target.closest('input,select,button'))return;x0=e.touches[0].clientX;y0=e.touches[0].clientY;},{passive:true});
+  document.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>70&&Math.abs(dx)>2*Math.abs(dy))arMover(dx<0?1:-1);},{passive:true});})();
+setInterval(()=>{if(state.view==='ativ-resumo'&&document.visibilityState==='visible')arPull(false);},10e3); // busca logo quando o servidor volta; renova a cada minuto
 function vEstatisticas(){const M=state.es;const on=esOn();if(!esSecoes().some(s=>s[0]===M.sec))M.sec='a';
   if(M.sec==='g')return `<div class="head pn-head"><div><div class="eyebrow">${TE('g_dashboard')} · ${esc(venueName())}</div><h1>${TE('v_estatisticas')}</h1></div></div>${esChips()}<div class="es-sec">${esSecG()}</div>`; // v97: g tem chips de ano, sem o período
   if(on){esPull();if(M.sec==='f')esImpPull();}const p=esPeriodo();const chave=p.de+'|'+p.ate;const ds=M.chave===chave&&M.dias?M.dias:[];M._ds=ds;
@@ -5840,7 +5887,7 @@ const MODULES=[
  ['estoque','Estoque e bandeiras',['bandeiras','estoque','impfila']],
  ['relatorios','Relatórios',['alertas']],
  ['desempenho','Índice do fotógrafo',['fotografos']],
- ['financeiro','Números de vendas',['painel','vendas','vendas-lista']],
+ ['financeiro','Números de vendas',['painel','vendas','vendas-lista','ativ-resumo']],
  ['estatisticas','Estatísticas',['estatisticas']],
  ['galerias','Galerias online',['galerias']],
  ['qualidade','Qualidade e IA',['revisao','treino']],
@@ -5939,6 +5986,7 @@ function migrateUser(x){if(!x||typeof x!=='object')return x;const pr=x.preset;
     if(!x.mcg97){if(x.menu.includes('vestiario')&&!x.menu.includes('chute-a-gol'))x.menu.push('chute-a-gol');x.mcg97=1;} // v97: Chute a gol no Laboratório para quem já via o Vestiário (uma vez)
     if(!x.mpv83){if(pr&&pr!=='custom'&&PRESETS[pr]&&presetMenu(pr).includes('posto')&&!x.menu.includes('posto'))x.menu.push('posto');if(pr==='venda'&&(!x.inicio||x.inicio==='perfis'))x.inicio='posto';x.mpv83=1;} // v83: Posto de venda nos perfis com venda (uma vez)
     if(!x.mst92){if(pr&&pr!=='custom'&&PRESETS[pr])['estatisticas','calendario'].forEach(v=>{if(presetMenu(pr).includes(v)&&!x.menu.includes(v))x.menu.push(v);});x.mst92=1;} // v92: Estatísticas (Admin) e Calendário (perfis com a Escala), uma vez
+    if(!x.mar100){if(x.menu.includes('vendas-lista')&&!x.menu.includes('ativ-resumo'))x.menu.splice(x.menu.indexOf('vendas-lista')+1,0,'ativ-resumo');x.mar100=1;} // v100: Resumo das ativações para quem já via a Lista de vendas (uma vez)
     if(!x.mff87){if(pr&&pr!=='custom'&&PRESETS[pr]&&presetMenu(pr).includes('fotofila')&&!x.menu.includes('fotofila'))x.menu.push('fotofila');x.mff87=1;} // v87: Fila do fotógrafo nos perfis da D6 (uma vez)
     if(!x.msis94)migraSis94(x); // v94-ux: Supervisora sem as telas do grupo Sistema (uma vez)
     if(!x.menv96)migraEnvio96(x); // v96-ux: Supervisora com set.c para enviar as fotos do cartão pela tela (uma vez)
@@ -6653,6 +6701,28 @@ const EQ={
   at_extra_val:["Valor por pessoa extra","Price per extra person","Valor por persona extra","Prix par personne supplémentaire","Preis pro zusätzlicher Person"],
   at_chutes:["Chutes","Shots","Tiros","Tirs","Schüsse"],
   at_videos:["Vídeos","Videos","Videos","Vidéos","Videos"],
+  ar_eyebrow:["Drone, Chute a Gol e Snap Pop","Drone, Shot on goal and Snap Pop","Dron, Tiro a puerta y Snap Pop","Drone, Tir au but et Snap Pop","Drohne, Torschuss und Snap Pop"],
+  ar_todos:["Todos os serviços","All services","Todos los servicios","Tous les services","Alle Leistungen"],
+  ar_tipo:["Serviço","Service","Servicio","Service","Leistung"],
+  ar_dia:["Dia","Day","Día","Jour","Tag"],
+  ar_semana:["Semana","Week","Semana","Semaine","Woche"],
+  ar_mes:["Mês","Month","Mes","Mois","Monat"],
+  ar_antes:["Período anterior","Previous period","Período anterior","Période précédente","Vorheriger Zeitraum"],
+  ar_depois:["Próximo período","Next period","Período siguiente","Période suivante","Nächster Zeitraum"],
+  ar_data:["Data","Date","Fecha","Date","Datum"],
+  ar_hoje:["Hoje","Today","Hoy","Aujourd'hui","Heute"],
+  ar_arraste:["Arraste para o lado para trocar o período","Swipe sideways to change the period","Desliza hacia el lado para cambiar el período","Glissez sur le côté pour changer de période","Zur Seite wischen, um den Zeitraum zu wechseln"],
+  ar_de_ate:[(a,b)=>a+" a "+b,(a,b)=>a+" to "+b,(a,b)=>a+" a "+b,(a,b)=>a+" au "+b,(a,b)=>a+" bis "+b],
+  ar_total:["Total vendido","Total sold","Total vendido","Total vendu","Gesamtumsatz"],
+  ar_vendas:["Vendas","Sales","Ventas","Ventes","Verkäufe"],
+  ar_n_vendas:[n=>"vendas: "+n,n=>"sales: "+n,n=>"ventas: "+n,n=>"ventes : "+n,n=>"Verkäufe: "+n],
+  ar_por_pagamento:["Por forma de pagamento","By payment method","Por forma de pago","Par moyen de paiement","Nach Zahlungsart"],
+  ar_por_vendedor:["Por vendedor","By seller","Por vendedor","Par vendeur","Nach Verkäufer"],
+  ar_servicos:["Serviços vendidos","Services sold","Servicios vendidos","Services vendus","Verkaufte Leistungen"],
+  ar_por_pais:["Por país","By country","Por país","Par pays","Nach Land"],
+  ar_sem_vendas:["Nenhuma venda no período","No sales in this period","Ninguna venta en el período","Aucune vente sur la période","Keine Verkäufe im Zeitraum"],
+  ar_carregando:["Carregando as vendas…","Loading sales…","Cargando las ventas…","Chargement des ventes…","Verkäufe werden geladen…"],
+  ar_sem_servidor:["Sem conexão com o servidor do ponto: o resumo das ativações vem de lá","No connection to the venue server: the activations summary comes from it","Sin conexión con el servidor del punto: el resumen de activaciones viene de allí","Pas de connexion au serveur du point : le résumé des activations en vient","Keine Verbindung zum Standortserver: die Übersicht kommt von dort"],
   at_itens:["Itens físicos (separados por vírgula)","Physical items (comma-separated)","Artículos físicos (separados por coma)","Articles physiques (séparés par des virgules)","Physische Artikel (durch Komma getrennt)"],
   at_faixas:["Preço por quantidade: 1, 2, 3… (separados por vírgula)","Price by quantity: 1, 2, 3… (comma-separated)","Precio por cantidad: 1, 2, 3… (separados por coma)","Prix selon la quantité : 1, 2, 3… (séparés par des virgules)","Preis nach Menge: 1, 2, 3 … (durch Komma getrennt)"],
   at_depois:["Cada um a mais","Each additional","Cada uno más","Chaque supplémentaire","Jedes weitere"],
@@ -8336,6 +8406,7 @@ const EQ={
   v_vendas:["Vendedores","Sellers","Vendedores","Vendeurs","Verkäufer"],
   vd_vendas:["vendas de cada vendedor","sales by seller","ventas de cada vendedor","ventes de chaque vendeur","Verkäufe je Verkäufer"],
   v_vendas_lista:["Lista de vendas","Sales list","Lista de ventas","Liste des ventes","Verkaufsliste"],
+  v_ativ_resumo:["Resumo das ativações","Activations summary","Resumen de activaciones","Résumé des activations","Aktivierungen – Übersicht"],
   vd_vendas_lista:["venda a venda","sale by sale","venta a venta","vente par vente","Verkauf für Verkauf"],
   v_galerias:["Galerias online","Online galleries","Galerías online","Galeries en ligne","Online-Galerien"],
   vd_galerias:["QR, cortesias e escolas","QR codes, complimentary photos and schools","QR, cortesías y escuelas","QR codes, offerts et écoles","QR-Codes, Gratisfotos und Schulen"],
@@ -8875,7 +8946,7 @@ function vDiario(){
   </div>`;
 }
 
-const VIEWFN={minhasenha:vMinhaSenha,estatisticas:vEstatisticas,calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:()=>vPosto({filtro:'todos'}),'vendas-lista':vVendasLista,importar:vImportar,repo:vRepo,fila:()=>vPosto({filtro:'todos'}),caixa:()=>vPosto({filtro:'dinheiro'}),posto:()=>vPosto({filtro:'todos'}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'chute-a-gol':vChuteAGol,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const VIEWFN={minhasenha:vMinhaSenha,estatisticas:vEstatisticas,calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:()=>vPosto({filtro:'todos'}),'vendas-lista':vVendasLista,'ativ-resumo':vAtivResumo,importar:vImportar,repo:vRepo,fila:()=>vPosto({filtro:'todos'}),caixa:()=>vPosto({filtro:'dinheiro'}),posto:()=>vPosto({filtro:'todos'}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'chute-a-gol':vChuteAGol,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   document.documentElement.lang=localeTela();
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
@@ -9539,7 +9610,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='posto'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,priceOf,lojaMaisIds,EQ,TE,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais,pubGaleria,selfieVarias,ynDetect,esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,bgMigraTelao,bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},I18N,T,ecoUpd,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,lgpdPlano,saveSim,pendMontSemImp,pendRecomecar,ecoEsperaId,fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},ATIV_PADRAO,ativPreco,ativOk,ativForaHoje,ativVendavel,ativLista,idiomaEquipe};
+window.ETERNA={impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,priceOf,lojaMaisIds,EQ,TE,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais,pubGaleria,selfieVarias,ynDetect,esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,bgMigraTelao,bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},I18N,T,ecoUpd,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,lgpdPlano,saveSim,pendMontSemImp,pendRecomecar,ecoEsperaId,fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},ATIV_PADRAO,ativPreco,ativOk,ativForaHoje,ativVendavel,ativLista,idiomaEquipe,arPeriodo,arGrupo,arServicos,arPull};
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 })();
 </script>

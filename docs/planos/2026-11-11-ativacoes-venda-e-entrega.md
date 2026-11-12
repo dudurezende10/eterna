@@ -162,14 +162,15 @@ Pilotos, drones e baterias têm cadastro simples, com ativo e inativo.
   - **Totais do filtro:** vendas, arquivos, pessoas e valor.
   - **Edição:** feita por formulário. Cada mudança grava quem mudou, quando, o valor anterior e o novo. Ao trocar itens, dá para manter o valor negociado.
   - **Cancelamento:** pede motivo. Venda cancelada não some; aparece separada.
-- **Resumo no celular:** para o gestor acompanhar de qualquer lugar, como o resumo do sistema antigo, que o Ronaldo usa hoje.
+- **Resumo no celular** (tela **Resumo das ativações**, no Dashboard, feita na v99.17.2): para o gestor acompanhar de qualquer lugar, como o resumo do sistema antigo, que o Ronaldo usa hoje. Fica no módulo Números de vendas, e quem já via a Lista de vendas ganha a tela no menu.
   - **Filtros:** produto (Drone, Chute a Gol, Snap Pop); dia, semana ou mês, com setas e arrastar para mudar o dia.
   - **Totais:** total vendido, número de vendas e de vídeos.
   - **Por pagamento:** vendas e valor de PIX, Crédito, Dinheiro, Débito e Cortesia.
   - **Por vendedor:** vendas e valor, do maior para o menor, pelo nome.
   - **Serviços vendidos:** quantidade por produto e local.
   - **Por país:** vendas e valor.
-  - Atualiza sozinho a cada venda nova, com som opcional.
+  - Atualiza sozinho a cada minuto; quando a venda no tablet entrar, a cada venda nova, com som opcional.
+  - Filtro extra "Todos os serviços" e escolha de data, com o botão Hoje.
 - **Painel e Estatísticas:** as ativações entram com as fotos:
   - receita por produto, por vendedor e por forma de pagamento;
   - preço sugerido × cobrado;
@@ -179,27 +180,32 @@ As vendas importadas do sistema antigo aparecem nas mesmas telas, com a origem "
 
 ## 6. Histórico do sistema antigo
 
-**Carga inicial (de 01/10 a 11/11):**
+**Como funciona (feito na v99.17.2):**
 
-- Fonte: as duas planilhas exportadas pelo Ronaldo.
-  - Drone: 1.754 vendas.
-  - Chute a Gol e Snap Pop: duas seções no mesmo arquivo.
-- As planilhas ficam no computador do Ronaldo e **não entram no repositório**, porque têm nome e WhatsApp de clientes.
-- O importador:
-  - lê as planilhas;
-  - converte datas e valores (o valor vira centavos);
-  - separa os itens ("1x 5 Chutes");
-  - envia ao servidor só o que o Eterna usa: data, produto, local, itens, pessoas, valor, pagamento, vendedor, guia, idioma, piloto, drone, bateria, QR e situação da entrega.
-- Nome e WhatsApp do cliente **não são importados.** A venda nova também não tem esses dados.
+- O importador é `agente/ativacoes-importar.py`. Ele roda no servidor do ponto, com o mesmo HOME do agente, e grava na tabela `ativ_venda` do `vendas.db`.
+- Ele aceita dois tipos de arquivo:
+  - a planilha exportada do sistema antigo (`.csv` com separador `;`; Chute a Gol e Snap Pop vêm em seções `##chute_gol` e `##snap_pop`);
+  - a extração diária das telas de venda (`.json`), descrita abaixo.
+- Nome, WhatsApp e foto do cliente são lidos e descartados no importador. O agente também recusa qualquer venda que traga um campo fora da lista (`ATIV_VENDA_CAMPOS`).
+- O que é gravado: dia e hora, itens (produto, local ou tema, quantidade), valor em reais, pagamento, vendedor, pessoas ou participantes, vídeos, resolução, país, idioma, guia, piloto, drone, bateria, entrega e QR.
+- Ajustes na leitura:
+  - venda de R$ 0 vira **Cortesia**;
+  - "asteroid_campo" vira produto Asteroid com local Campo;
+  - FLA, FLU e BRA viram Vídeo com IA com o tema;
+  - o idioma é gravado em português;
+  - o país é gravado sem o DDI.
+- **Vendedor:** a extração diária mostra "VendedorNN". A opção `--vendedores` aponta para a lista dos 12 tablets, que fica fora do repositório, e troca o número pelo nome.
+- **Chave:** a origem mais o ID antigo. Rodar duas vezes não duplica nada, e uma venda corrigida no sistema antigo é atualizada.
+- **Leitura:** a rota `GET /ativ/vendas?de=&ate=` exige Estatísticas, Financeiro ou Relatórios. Ela alimenta o Resumo das ativações (seção 5).
+
+**Carga inicial (de 01/10 a 11/11):** as duas planilhas exportadas pelo Ronaldo e as extrações diárias da auditoria de vendas. As planilhas ficam no computador do Ronaldo e **não entram no repositório**.
 
 **Vendas novas, todo dia, até o desligamento:**
 
-- **Horário:** todo dia, à noite, depois das 19h, quando o tour termina.
-- **Fonte:** o robô de auditoria que já roda na VM do portal de parceiros. Ele entra sozinho no sistema antigo, sem depender do Chrome do Ronaldo, e grava um arquivo por dia com as vendas, sem dado de cliente: criação, serviços e itens, QR, vendedor, valor, pagamento, pessoas ou participantes, vídeos, entrega e piloto.
-- **O que falta no robô:** uma passada às 19h30, além das que ele já faz, e as colunas país, idioma, guia, resolução, drone e bateria. A mudança é feita no repositório do robô, que é publicado na VM pelo Ronaldo.
-- **Envio:** o importador do Eterna lê esses arquivos e grava as vendas no servidor do Eterna.
-- A auditoria das 07:30 continua como está. Se a puxada da noite falhar, a tarefa avisa e a do dia seguinte cobre o dia que faltou.
-- A chave de cada venda é a origem mais o ID antigo. Rodar duas vezes não duplica nada, e uma venda corrigida no sistema antigo é atualizada.
+- **Horário:** 19h30, depois que o tour termina.
+- **Fonte:** o extrator de vendas da auditoria diária, que lê as telas de venda do sistema antigo pelo Chrome do Ronaldo, só para leitura. Ele gera o mesmo `.json` que o importador já lê, sem dado de cliente.
+- O robô da VM do portal de parceiros não é usado nesta etapa.
+- A auditoria das 07:30 continua como está. Se a puxada da noite falhar, a do dia seguinte cobre o dia que faltou, porque reimportar não duplica.
 - Quando o Ronaldo avisar o desligamento, a tarefa da noite é desligada, e as vendas antigas ficam no Eterna como histórico.
 
 ## 7. Fases

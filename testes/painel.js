@@ -43,7 +43,7 @@ try{
   ok(await view(pg)==='painel'&&await pg.evaluate(()=>location.hash)==='#painel','2: admin deveria cair em #painel: '+await view(pg));
   const dash=await pg.$$eval('#nav .navg',gs=>{const g=gs.find(x=>x.querySelector('.grp').textContent.trim()==='Dashboard');return g?[...g.querySelectorAll('button[data-v]')].map(x=>x.textContent.trim().split('\n')[0]):[];});
   const dashV=await pg.$$eval('#nav .navg',gs=>{const g=gs.find(x=>x.querySelector('.grp').textContent.trim()==='Dashboard');return g?[...g.querySelectorAll('button[data-v]')].map(x=>x.dataset.v):[];});
-  ok(J(dashV)===J(['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias','calendario']),'1: ordem do Dashboard '+J(dashV));ok(!(await pg.$('#nav [data-v="semana"]')),'1: Semana ainda no menu');
+  ok(J(dashV)===J(['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','ativ-resumo','galerias','calendario']),'1: ordem do Dashboard '+J(dashV));ok(!(await pg.$('#nav [data-v="semana"]')),'1: Semana ainda no menu');
   await pg.click('#rail-brand');await pg.waitForTimeout(120);ok(await view(pg)==='perfis','2: logo deveria abrir o Início');
   await pg.evaluate(()=>{location.hash='#semana';});await pg.waitForTimeout(200);ok(await view(pg)==='painel','4: #semana deveria abrir o Painel: '+await view(pg));
   // FTP sem o agente: o cartão aparece no Painel de controle, desligado, com a pílula e a nota
