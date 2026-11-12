@@ -2,7 +2,7 @@
 # do drone ligado ao QR de um cartão novo (QR usado é recusado, só mp4, a venda não passa do número de vídeos), item físico com
 # baixa um a um, venda entregue quando tudo foi entregue (e aí não cancela), galeria do vídeo gravada e vídeo na fila da nuvem.
 #   HOME=$(mktemp -d) USERPROFILE=$HOME python3 -I testes/ativacoes_entrega_agente.py agente/eterna-agente.py
-import http.client, importlib.util, json, os, re, sqlite3, struct, sys, threading, time
+import base64, http.client, importlib.util, json, os, re, sqlite3, struct, sys, threading, time
 from http.server import ThreadingHTTPServer
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -68,6 +68,8 @@ HOJE = time.strftime("%Y-%m-%d")
 CODIGO_APP = "4B3J-GCRL"            # cartaoCodigo("abcdefghijklmnopqrstuv") no app
 QR1, QR2, QR3 = "A" * 21 + "1", "B" * 21 + "2", "C" * 21 + "3"
 RW = {"c": True, "r": True, "u": True, "d": True}
+JPG = b"\xff\xd8\xff\xe0" + b"\x00" * 200 + b"\xff\xd9"
+FOTO = "data:image/jpeg;base64," + base64.b64encode(JPG).decode()
 
 
 def venda(vid, tipo, itens):
@@ -86,12 +88,28 @@ try:
     eq = S.cookie_sessao(m, "campo-ativ", {"ativentrega": RW})
     sup = S.cookie_sessao(m, "supervisora-ativ", {"ativvenda": RW, "ativentrega": RW})
     st, j = req("POST", "/ativ/venda", ven, {"vendas": [
-        venda("TDRONE001D", "drone", [{"cat": "drone", "produto": "asteroid", "op": "Campo", "qtd": 1, "pessoas": 2, "videos": 1}]),
+        dict(venda("TDRONE001D", "drone", [{"cat": "drone", "produto": "asteroid", "op": "Campo", "qtd": 1, "pessoas": 2, "videos": 1}]),
+             cliente_nome="Cliente Teste", cliente_foto=FOTO),
         venda("TCHUTE001C", "chute", [{"cat": "chute", "produto": "c5mv", "op": "", "qtd": 1, "pessoas": 1, "videos": 1}])]})
     ok(st == 200 and len(j.get("recebidas", [])) == 2, "vendas gravadas: %s %s" % (st, j))
     # quem vê a fila
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, ven)
     ok(st == 403, "vendedor não vê a fila de entrega: %s" % st)
+    # nome e foto do cliente: para quem entrega reconhecer a pessoa; a foto fica em arquivo, fora do banco
+    st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
+    f0 = {v["id"]: v for v in j.get("vendas", [])}
+    ok(f0.get("TDRONE001D", {}).get("cliente") == "Cliente Teste" and f0["TDRONE001D"].get("foto") is True and f0.get("TCHUTE001C", {}).get("foto") is False,
+       "fila com o nome e a foto do cliente: %s" % f0.get("TDRONE001D"))
+    c0 = http.client.HTTPConnection("127.0.0.1", m.PORT, timeout=10)
+    c0.request("GET", "/ativ/cliente-foto?id=TDRONE001D", headers={"Host": HOST, "Cookie": eq})
+    r0 = c0.getresponse()
+    ok(r0.status == 200 and r0.getheader("Content-Type") == "image/jpeg" and r0.read() == JPG, "foto do cliente para quem entrega: %s" % r0.status)
+    c0.close()
+    st, j = req("GET", "/ativ/cliente-foto?id=TDRONE001D", ven)
+    ok(st == 403, "vendedor não abre a foto pela entrega: %s" % st)
+    st, j = req("POST", "/ativ/venda", ven, {"vendas": [dict(venda("TFOTO0001D", "drone", [{"cat": "drone", "produto": "asteroid", "op": "Campo", "qtd": 1}]),
+                                                            cliente_foto="data:image/png;base64,AAAA")]})
+    ok(j.get("recusadas") == [{"id": "TFOTO0001D", "motivo": "formato"}], "foto que não é JPEG recusada: %s" % j)
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
     fila = {v["id"]: v for v in j.get("vendas", [])}
     ok(st == 200 and set(fila) == {"TDRONE001D", "TCHUTE001C"}, "fila do dia: %s %s" % (st, j))
@@ -163,6 +181,11 @@ try:
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
     ch = {v["id"]: v for v in j.get("vendas", [])}.get("TCHUTE001C", {})
     ok(ch.get("entregue_em") and ch["fisicos"][0]["entregue"], "medalha entregue: venda entregue: %s" % ch)
+    # nome e foto saem um dia depois da entrega (ou dois depois da venda)
+    ok(m.ativ_clientes_limpa() == 0 and os.path.exists(m.ativ_cliente_foto("TDRONE001D")), "nome e foto ficam enquanto servem")
+    ok(m.ativ_clientes_limpa(time.time() + 1.5 * 86400) >= 1 and not os.path.exists(m.ativ_cliente_foto("TDRONE001D")), "foto sai um dia depois da entrega")
+    st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
+    ok({v["id"]: v for v in j.get("vendas", [])}.get("TDRONE001D", {}).get("cliente") == "", "nome sai junto")
     # limpeza: depois de 30 dias o arquivo sai do servidor do ponto, a entrega continua registrada
     ok(m.ativ_videos_limpa() == 0 and os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo novo fica")
     ok(m.ativ_videos_limpa(time.time() + 31 * 86400) == 2 and not os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo de 31 dias sai")

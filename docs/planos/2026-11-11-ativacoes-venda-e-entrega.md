@@ -91,11 +91,14 @@ A Nova venda segue esta ordem (12/11):
    - O tablet copia os vídeos em segundo plano para o IndexedDB (`eterna-ativ`, store `demo`), sem barra e sem espera, e só baixa de novo quando o arquivo muda no servidor. Na venda, o vídeo toca do tablet.
    - Vídeo que ainda não está no tablet toca do servidor do ponto, se houver rede. Sem os dois, a tela diz que o vídeo ainda não está no tablet e a venda segue.
    - Rotas: `GET /ativ/demo/lista` e `GET /ativ/demo/<nome>` (com `ativvenda.r` ou `catalogo.r`).
-3. **Venda (carrinho):** cada card tem o local e o botão **Adicionar**. O carrinho junta produtos das três categorias. Cada item tem local, quantidade, pessoas e as opções.
-   - Os adicionais entram sozinhos: pessoa extra, 4K, chuva.
-   - **Preço fixo (decidido 12/11):** vale o preço do catálogo, com os adicionais somados sozinhos. O vendedor não digita valor, diferente do sistema antigo, que aceitava desconto ou acréscimo. Só o admin muda preço, em Preços e Checkout. Venda grátis só como Cortesia.
+3. **Venda (carrinho, v99.18.3):** tudo se escolhe no card antes de **Adicionar**: local, 4K, chuva e o número de pessoas (no Chute a Gol, participantes), de 1 a 5. O preço do card já mostra o valor com essas escolhas.
+   - A linha da venda não se edita: tem só a **lixeira**. Para mudar, tira e coloca de novo. O mesmo produto com a mesma escolha soma na linha ("2×").
+   - O número de pessoas não muda o preço do drone; acréscimo por pessoa só se o admin configurar em Preços.
+   - **Preço fixo (decidido 12/11):** vale o preço do catálogo, com os adicionais somados sozinhos. O vendedor não digita valor, diferente do sistema antigo, que aceitava desconto ou acréscimo.
 4. **Cliente:** país numa lista com bandeira, com os principais no topo e todos os países do mundo em ordem alfabética; idioma numa lista com Português, Espanhol, Inglês, Francês, Alemão, Italiano e Outro. O nome fica gravado em português. O idioma serve para o recibo e a galeria abrirem no idioma dele. O país alimenta o resumo por país. Nenhum dos dois identifica a pessoa.
-5. **Pagamento:** PIX, Dinheiro, Débito, Crédito ou **Cortesia**. Na Cortesia, o motivo e a nota são obrigatórios.
+   - **Nome e foto do cliente (v99.19.0, Ronaldo, 12/11):** o nome é obrigatório e a foto, tirada pela câmera do tablet, é opcional. Servem só para quem entrega o vídeo reconhecer a pessoa no campo, a quase 1 km do foyer onde ela comprou. A foto é reduzida no tablet (480 px, JPEG) e vai junto com a venda. No servidor do ponto ela fica em arquivo (`~/Eterna/ativ-clientes/<venda>.jpg`), fora do banco e fora da nuvem, e só a tela de entrega a abre (`GET /ativ/cliente-foto`, `ativentrega.r`). **LGPD:** o nome e a foto saem sozinhos um dia depois da entrega ou dois dias depois da venda, o que vier primeiro (limpeza de hora em hora). No tablet, a foto sai da caixa de saída assim que o servidor recebe a venda.
+**Resumo da venda** (v99.18.3): logo antes de Registrar, como na compra de passagem: os itens descritos, o cliente (nome, país e idioma, com a foto), o pagamento e o total.
+5. **Pagamento:** PIX, Dinheiro, Débito, Crédito ou **Cortesia**. Na Cortesia, o motivo e o relato são obrigatórios: o vendedor conta o que aconteceu num campo de texto grande (até 1000 caracteres). O motivo "Falha na operação" não diz qual foi a falha; quem conta é o vendedor (12/11).
 6. **Registrar** (botão fixo embaixo): grava a venda no próprio tablet na hora, com número próprio e quem vendeu, e envia ao servidor do estádio. Imprime o recibo no idioma do cliente, se houver impressora no posto.
    - Uma venda igual registrada em até 2 minutos pelo mesmo vendedor pede confirmação.
 

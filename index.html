@@ -1306,7 +1306,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.18.4 · 12/11 11:58"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.19.0 · 12/11 12:06"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1460,7 +1460,7 @@ const cortChips=cart=>can('galerias','u')?`<div class="eyebrow">${TE('po_cortesi
 const pagEscolha=cart=>ehCortesia(cart)?`<div class="row" style="align-items:end"><label><span class="eyebrow">${TE('po_motivo_cort')}</span><select id="cort-mot">${CORT_MOTIVOS.map(([k,l])=>`<option value="${k}">${TEk('cort_'+k,l)}</option>`).join('')}</select></label><label style="flex:1;min-width:200px"><span class="eyebrow">${TE('po_o_que_houve')}</span><input type="text" id="cort-nota" maxlength="200" placeholder="${esc(TE('po_o_que_houve_ph'))}"></label></div>`
   :`<div class="chips">${['PIX','Cartão de crédito','Cartão de débito','Dinheiro'].map(m=>`<button class="chip" data-act="caixa-pay" data-m="${m}" aria-pressed="${state.caixa.pay===m}">${esc(pagNome(m))}</button>`).join('')}</div>`;
 const pagBotao=(cart,total)=>ehCortesia(cart)?TE('po_reg_cortesia'):TE('po_receber_imp',fmtR(total));
-const CORT_MOTIVOS=[['espera','Espera longa'],['operacao','Falha da operação (foto, impressão, sistema)'],['atendimento','Problema no atendimento'],['outro','Outro']];
+const CORT_MOTIVOS=[['espera','Espera longa'],['operacao','Falha na operação'],['atendimento','Problema no atendimento'],['outro','Outro']];
 
 // Menus da v78 (decisão do Eduardo, 27/10): grupos que abrem e fecham na barra lateral; cada grupo precisa ficar contíguo.
 // Grupo vazio = tela sem item no menu: Início (abre pelo logo) e o Checkout (abre pelo botão "Abrir Checkout", em #loja).
@@ -4974,7 +4974,7 @@ const AV_PAISES_TOPO=['BR','AR','CL','UY','PY','CO','PE','BO','MX','US','GB','PT
 const AV_PAISES='AD AE AF AG AI AL AM AO AR AT AU AW AZ BA BB BD BE BF BG BH BI BJ BM BN BO BR BS BT BW BY BZ CA CD CF CG CH CI CL CM CN CO CR CU CV CW CY CZ DE DJ DK DM DO DZ EC EE EG ER ES ET FI FJ FM FR GA GB GD GE GH GM GN GQ GR GT GW GY HK HN HR HT HU ID IE IL IN IQ IR IS IT JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MG MH MK ML MM MN MO MR MT MU MV MW MX MY MZ NA NE NG NI NL NO NP NR NZ OM PA PE PG PH PK PL PR PS PT PW PY QA RO RS RU RW SA SB SC SD SE SG SI SK SL SM SN SO SR SS ST SV SY SZ TD TG TH TJ TL TM TN TO TR TT TV TW TZ UA UG US UY UZ VA VC VE VN VU WS XK YE ZA ZM ZW'.split(' ');
 const AV_IDIOMAS=[['pt'],['es'],['en'],['fr'],['de'],['it']]; // sem bandeira: idioma não é país (inglês, espanhol e francês valem em vários)
 const AV_LOCAL_ARQ={'Campo':'campo','Arquibancada':'arquibancada','Banco de Suplentes':'banco'};
-state.av={aba:'nova',cat:'drone',pessoas:1,cart:[],pag:null,cortMot:'',cortNota:'',pais:'',idioma:'',err:null,dup:null,saida:[],srv:{},enviando:false,semRede:false,cancel:null,ultimo:null,demo:null,local:{},k4:{},chuva:{},sub:{}};
+state.av={aba:'nova',cat:'drone',pessoas:1,cart:[],pag:null,cortMot:'',cortNota:'',nome:'',foto:null,pais:'',idioma:'',err:null,dup:null,saida:[],srv:{},enviando:false,semRede:false,cancel:null,ultimo:null,demo:null,local:{},k4:{},chuva:{},sub:{}};
 const avBandeira=c=>String.fromCodePoint(...[...c].map(x=>0x1F1E6+x.charCodeAt(0)-65));
 const avNomePais=(c,loc)=>{try{return new Intl.DisplayNames([loc||localeTela()],{type:'region'}).of(c);}catch(e){return c;}};
 const avNomeIdioma=(c,loc)=>{try{const n=new Intl.DisplayNames([loc||localeTela()],{type:'language'}).of(c);return n.charAt(0).toUpperCase()+n.slice(1);}catch(e){return c;}};
@@ -4991,10 +4991,16 @@ async function asGrava(L){const hoje=venueToday();L=L.filter(x=>x.est!=='enviada
   try{localStorage.setItem(AS_KEY,JSON.stringify(L));ok=true;}catch(e){}
   try{await asIdbGrava(L);ok=true;}catch(e){}return ok;}
 async function asCarrega(){let B=[];try{B=await asIdbLe();}catch(e){}const L=asJunta(asLer(),B);state.av.saida=L;if(B.length!==L.length||asLer().length!==L.length)await asGrava(L);return L;}
+// até 50 vendas e ~380 KB por envio (o servidor aceita 512 KB): a foto do cliente pesa uns 40 KB
+function asLote(pend){const out=[];let t=0;for(const x of pend){const n=JSON.stringify(x.v).length;if(out.length&&(t+n>380000||out.length>=50))break;out.push(x.v);t+=n;}return out;}
+// foto do cliente: reduzida no tablet (480 px, JPEG) antes de entrar na venda
+async function avFotoReduz(arq){const bm=await createImageBitmap(arq);const k=Math.min(1,480/Math.max(bm.width,bm.height));const c=document.createElement('canvas');
+  c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);let q=.75,u=c.toDataURL('image/jpeg',q);
+  while(u.length>110000&&q>.3){q-=.15;u=c.toDataURL('image/jpeg',q);}return u;}
 async function asEnviar(){const A=state.av;if(A.enviando)return;const pend=A.saida.filter(x=>x.est==='pendente');if(!pend.length){A.semRede=false;return;}A.enviando=true;
-  try{const r=await agFetch(state.agent.url+'/ativ/venda',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendas:pend.slice(0,50).map(x=>x.v)})});
+  try{const r=await agFetch(state.agent.url+'/ativ/venda',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendas:asLote(pend)})});
     const j=await r.json().catch(()=>null);if(!r.ok||!j||!j.ok)throw 0;const ok=new Set(j.recebidas||[]),rec=new Map((j.recusadas||[]).map(x=>[x.id,x.motivo]));
-    const L=asJunta(asLer(),state.av.saida).map(x=>ok.has(x.v.id)?{...x,est:'enviada',em:new Date().toISOString()}:rec.has(x.v.id)?{...x,est:'recusada',motivo:rec.get(x.v.id)}:x);
+    const L=asJunta(asLer(),state.av.saida).map(x=>ok.has(x.v.id)?{...x,v:{...x.v,cliente_foto:undefined},est:'enviada',em:new Date().toISOString()}:rec.has(x.v.id)?{...x,est:'recusada',motivo:rec.get(x.v.id)}:x);
     await asGrava(L);A.semRede=false;}
   catch(e){A.semRede=true;}finally{A.enviando=false;if(state.view==='ativ-venda')render();}}
 async function avMinhasPull(){if(!esOn())return;try{const r=await agFetch(state.agent.url+'/ativ/minhas?dia='+venueToday(),{cache:'no-store'});const j=await r.json();if(r.ok&&j&&j.ok)state.av.srv=Object.fromEntries(j.vendas.map(v=>[v.id,v]));}catch(e){}}
@@ -5040,6 +5046,7 @@ async function avThumbsPreenche(){if(avThumbRodando)return;avThumbRodando=true;
 function avLinhaNova(p){const A=state.av;return {pid:p.id,cat:p.cat,op:A.local[p.id]||(p.opcoes[0]||{}).nome||'',qtd:1,pessoas:p.pede!=='nada'?A.pessoas:1,k4:!!(p.k4&&A.k4[p.id]),chuva:!!(p.cat==='drone'&&p.chuva&&A.chuva[p.id])};}
 // o que foi vendido, em palavras, para o vendedor conferir antes de registrar (serviço, local, pessoas, 4K, chuva)
 // país e idioma guardados em português; no resumo, no idioma da tela
+const avResCli=()=>[state.av.nome.trim()||'—',avClienteTxt()].join(' · '); // sem redesenhar a tela enquanto digita (o toque em Registrar não se perde)
 function avClienteTxt(){const A=state.av;const c=AV_PAISES.find(x=>avNomePais(x,'pt-BR')===A.pais);const l=AV_IDIOMAS.find(([x])=>avNomeIdioma(x,'pt-BR')===A.idioma);
   return (A.pais?(c?avNomePais(c,localeTela()):A.pais):'—')+' · '+(A.idioma==='Outro'?TE('av_outro'):A.idioma?(l?avNomeIdioma(l[0]):A.idioma):'—');}
 function avDescr(l){const p=avProd(l);if(!p)return '';return [atCatNome(p.cat),(p.opcoes||[]).length>1?l.op:'',p.pede==='pessoas'?TE('av_n_pessoas',l.pessoas):p.pede==='participantes'?TE('av_n_part',l.pessoas):'',l.k4?'4K':'',l.chuva?TE('av_chuva'):''].filter(Boolean).join(' · ');}
@@ -5053,6 +5060,7 @@ const avNumero=id=>String(id||'').replace(/^T/,'').replace(/[DCS]$/,'').slice(-6
 async function avRegistrar(forca){const A=state.av;A.err=null;
   if(!A.cart.length){A.err='av_e_vazio';render();return;}if(!A.pag){A.err='av_e_pag';render();return;}
   if(A.pag==='Cortesia'&&(!A.cortMot||!A.cortNota.trim())){A.err='av_e_cort';render();return;}
+  if(!A.nome.trim()){A.err='av_e_nome';render();return;}
   const u=state.user||{};const assin=JSON.stringify(A.cart.map(l=>[l.pid,l.op,l.qtd,l.pessoas,l.k4,l.chuva]))+A.pag;
   if(!forca&&A.ultimo&&A.ultimo.assin===assin&&A.ultimo.usuario===u.email&&Date.now()-A.ultimo.em<120e3){A.dup=true;render();return;}
   const base=avCodigo(),criado=venueToday()+'T'+new Date().toTimeString().slice(0,8),grupos={};
@@ -5060,10 +5068,10 @@ async function avRegistrar(forca){const A=state.av;A.err=null;
   const vendas=Object.entries(grupos).map(([cat,ls])=>({id:base+{drone:'D',chute:'C',snap:'S'}[cat],tipo:cat,criado,pagamento:A.pag,
     itens:ls.map(l=>{const p=avProd(l);const it={cat,produto:l.pid,op:l.op,qtd:l.qtd,videos:avVideos(l),sugerido:avSug(l),cobrado:avCob(l)};if(p&&p.pede!=='nada')it.pessoas=l.pessoas;if(l.k4)it.k4=true;if(l.chuva)it.chuva=true;return it;}),
     valor:ls.reduce((s,l)=>s+avCob(l),0),sugerido:ls.reduce((s,l)=>s+avSug(l),0),pais:A.pais,idioma:A.idioma,
-    vendedor:u.name||u.email||'',usuario:u.email||'',...(A.pag==='Cortesia'?{cortesia_motivo:A.cortMot,cortesia_nota:A.cortNota.trim().slice(0,300)}:{})}));
+    cliente_nome:A.nome.trim().slice(0,80),...(A.foto?{cliente_foto:A.foto}:{}),vendedor:u.name||u.email||'',usuario:u.email||'',...(A.pag==='Cortesia'?{cortesia_motivo:A.cortMot,cortesia_nota:A.cortNota.trim().slice(0,1000)}:{})}));
   const L=asJunta(asLer(),state.av.saida).concat(vendas.map(v=>({v,est:'pendente'})));
   if(!(await asGrava(L))){A.err='av_e_gravar';render();return;} // nada ficou gravado: o carrinho continua
-  A.ultimo={assin,usuario:u.email,em:Date.now()};A.dup=null;A.cart=[];A.pag=null;A.cortMot='';A.cortNota='';A.pais='';A.idioma='';A.pessoas=1;
+  A.ultimo={assin,usuario:u.email,em:Date.now()};A.dup=null;A.cart=[];A.pag=null;A.cortMot='';A.cortNota='';A.nome='';A.foto=null;A.pais='';A.idioma='';A.pessoas=1;
   toast(TE('av_registrada',avNumero(base)));render();asEnviar();}
 function avSituacao(x){const s=state.av.srv[x.v.id];if(s&&s.situacao==='cancelada')return ['cancelada',TE('av_s_cancelada')];
   return x.est==='enviada'?['enviada',TE('av_s_enviada')]:x.est==='recusada'?['recusada',TE('av_s_recusada')]:['pendente',TE('av_s_pendente')];}
@@ -5097,13 +5105,16 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chu
   <div class="panel" id="av-prod"><h2>${TE('av_passo_servico')}</h2><div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${cats.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="av-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}</span></button>`).join('')}</div>
     ${prods.some(p=>p.pede!=='nada')?`<div style="margin-top:14px"><span class="eyebrow">${A.cat==='chute'?TE('at_p_participantes'):TE('av_pessoas_demo')}</span><div class="chips" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:4px">${Array.from({length:AV_MAX_PESSOAS},(_,k)=>k+1).map(n=>`<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${n}" aria-pressed="${A.pessoas===n}">${n}</button>`).join('')}</div></div>`:''}
     ${subTabs}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px">${prods.length?prods.map(card).join(''):`<div class="note">${TE('av_sem_produto')}</div>`}</div></div>
-  <div class="panel" id="av-cliente"><h2>${TE('av_passo_cliente')}</h2><div class="row" style="gap:12px;flex-wrap:wrap">
+  <div class="panel" id="av-cliente"><h2>${TE('av_passo_cliente')}</h2>
+    <div class="row" style="gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:12px"><label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_nome_cliente')}</span><input data-act="av-nome" maxlength="80" autocomplete="off" style="width:100%;min-height:48px" value="${esc(A.nome)}"></label>
+      <label class="btn ghost" style="min-height:48px;display:flex;align-items:center;gap:10px;cursor:pointer">${A.foto?`<img src="${A.foto}" alt="" id="av-foto-img" style="width:40px;height:40px;object-fit:cover;border-radius:50%">`:''}${A.foto?TE('av_foto_outra'):TE('av_foto_cliente')}<input type="file" accept="image/*" capture="environment" data-act="av-foto" style="display:none"></label></div>
+    <div class="row" style="gap:12px;flex-wrap:wrap">
     <label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_pais')}</span><select class="av-pais" data-act="av-pais" style="width:100%;min-height:48px">${avOpcoesPais(A.pais)}</select></label>
     <label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_idioma')}</span><select data-act="av-idioma" style="width:100%;min-height:48px"><option value="">${esc(TE('av_idioma_ph'))}</option>${AV_IDIOMAS.map(([l,c])=>{const n=avNomeIdioma(l,'pt-BR');return `<option value="${esc(n)}" ${A.idioma===n?'selected':''}>${esc(avNomeIdioma(l))}</option>`;}).join('')}<option value="Outro" ${A.idioma==='Outro'?'selected':''}>${TE('av_outro')}</option></select></label></div></div>
   <div class="panel" id="av-pag"><h2>${TE('av_pagamento')}</h2><div class="chips" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px">${AV_PAGS.map(p=>`<button class="chip" style="min-height:48px" data-act="av-pag" data-p="${p}" aria-pressed="${A.pag===p}">${esc(avPagNome(p))}</button>`).join('')}</div>
-    ${A.pag==='Cortesia'?`<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:10px;align-items:end"><label><span class="eyebrow">${TE('av_cort_motivo')}</span><select data-act="av-cmot"><option value="">—</option>${CORT_MOTIVOS.map(([k,l])=>`<option value="${esc(l)}" ${A.cortMot===l?'selected':''}>${TEk('cort_'+k,l)}</option>`).join('')}</select></label><label style="flex:1;min-width:200px"><span class="eyebrow">${TE('av_cort_nota')}</span><input data-act="av-cnota" maxlength="300" value="${esc(A.cortNota)}"></label></div>`:''}</div>
+    ${A.pag==='Cortesia'?`<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px"><label><span class="eyebrow">${TE('av_cort_motivo')}</span><select data-act="av-cmot" style="width:100%;min-height:48px"><option value="">—</option>${CORT_MOTIVOS.map(([k,l])=>`<option value="${esc(l)}" ${A.cortMot===l?'selected':''}>${TEk('cort_'+k,l)}</option>`).join('')}</select></label><label><span class="eyebrow">${TE('av_cort_nota')}</span><textarea data-act="av-cnota" maxlength="1000" rows="4" style="width:100%;font:inherit;padding:10px;resize:vertical">${esc(A.cortNota)}</textarea></label></div>`:''}</div>
   ${A.cart.length?`<div class="panel" id="av-cart" style="border:2px solid var(--accent,#134078)"><h2>${TE('av_carrinho')}</h2>${A.cart.map(linha).join('')}
-    <div class="row" style="justify-content:space-between;gap:12px;margin-top:10px;flex-wrap:wrap"><span class="note">${TE('av_passo_cliente')}</span><b>${esc(avClienteTxt())}</b></div>
+    <div class="row" style="justify-content:space-between;gap:12px;margin-top:10px;flex-wrap:wrap"><span class="note">${TE('av_passo_cliente')}</span><span class="row" style="gap:8px;align-items:center">${A.foto?`<img src="${A.foto}" alt="" style="width:36px;height:36px;object-fit:cover;border-radius:50%">`:''}<b id="av-res-cli">${esc(avResCli())}</b></span></div>
     <div class="row" style="justify-content:space-between;gap:12px;margin-top:6px"><span class="note">${TE('av_pagamento')}</span><b>${A.pag?esc(avPagNome(A.pag)):'—'}</b></div>
     <div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><span>${TE('av_total')}</span><b style="font-size:1.6rem" id="av-total">${fmtR(cob)}</b></div></div>`:''}
   ${A.err?`<div class="panel" role="alert" id="av-erro" style="border-color:var(--bad)"><b>${TE(A.err)}</b></div>`:''}
@@ -5148,8 +5159,10 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 document.addEventListener('change',e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-venda'||!a||!a.startsWith('av-'))return;const A=state.av;
   if(a==='av-k4')A.k4[t.dataset.id]=t.checked;else if(a==='av-chuva')A.chuva[t.dataset.id]=t.checked;
   else if(a==='av-local')A.local[t.dataset.id]=t.value;else if(a==='av-pais')A.pais=t.value;else if(a==='av-idioma')A.idioma=t.value;
-  else if(a==='av-cmot')A.cortMot=t.value;else return;render();});
-document.addEventListener('input',e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-venda')return;if(a==='av-cnota')state.av.cortNota=t.value;});
+  else if(a==='av-cmot')A.cortMot=t.value;
+  else if(a==='av-foto'&&t.files&&t.files[0]){avFotoReduz(t.files[0]).then(u=>{A.foto=u;render();}).catch(()=>toast(TE('av_foto_erro')));return;}
+  else return;render();});
+document.addEventListener('input',e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-venda')return;if(a==='av-cnota')state.av.cortNota=t.value;else if(a==='av-nome'){state.av.nome=t.value;const r=document.getElementById('av-res-cli');if(r)r.textContent=avResCli();}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.view==='ativ-venda'&&state.av.demo){state.av.demo=null;render();}});
 // ao abrir o app: junta as duas cópias, pede armazenamento persistente e tenta enviar; depois, a cada 5 s enquanto houver pendente
 asCarrega().then(()=>{asEnviar();if(state.view==='ativ-venda')render();});
@@ -5219,7 +5232,7 @@ function aeCartao(v){const A=state.ae,[cls,sit]=aeSituacao(v),podeU=can('ativent
   const ents=v.entregas.map(x=>`<div class="row" style="justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);flex-wrap:wrap"><span>${TE('ae_video_n',x.n)} · ${TE('ae_cartao')} <b>${esc(x.codigo)}</b>${x.duracao?' · '+Math.round(x.duracao)+' s':''} · ${aeMB(x.bytes||0)}</span>
     <span class="pill ${x.nuvem?'good':'warn'}">${x.nuvem?TE('ae_na_nuvem'):x.subindo?TE('ae_nuvem_subindo',Math.round(100*x.subindo.feito/Math.max(1,x.subindo.total))):TE('ae_nuvem_fila')}</span></div>`).join('');
   const fis=(v.fisicos||[]).map(x=>`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-act="ae-item" data-id="${esc(v.id)}" data-i="${x.i}" ${x.entregue?'checked disabled':''} ${podeU?'':'disabled'}> ${esc(x.nome)}${x.entregue?' · '+TE('ae_item_ok'):''}</label>`).join('');
-  return `<div class="panel" data-ae-venda="${esc(v.id)}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><b>${TE('av_numero',avNumero(v.id))}</b> · ${esc(v.criado.slice(11,16))}<div class="note">${esc(aeItensTxt(v))}</div><div class="note">${TE('ae_vendido_por',esc(v.vendedor||'—'))}</div></div><span class="pill ${cls}">${esc(sit)}</span></div>
+  return `<div class="panel" data-ae-venda="${esc(v.id)}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="row" style="gap:12px;align-items:center">${aeFoto(v,64)}<div>${v.cliente?`<b style="font-size:1.1rem">${esc(v.cliente)}</b><br>`:''}<b>${TE('av_numero',avNumero(v.id))}</b> · ${esc(v.criado.slice(11,16))}<div class="note">${esc(aeItensTxt(v))}</div><div class="note">${TE('ae_vendido_por',esc(v.vendedor||'—'))}</div></div></div><span class="pill ${cls}">${esc(sit)}</span></div>
     ${v.voo_em?`<div class="note" style="margin-top:6px">${TE('ae_voo_info',esc(v.piloto),esc(v.drone),esc(v.bateria),esc(v.voo_em.slice(11,16)))}</div>`:''}
     ${ents}${fis?`<div style="margin-top:8px"><span class="eyebrow">${TE('ae_itens')}</span>${fis}</div>`:''}
     ${!v.entregue_em?`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
@@ -5227,6 +5240,7 @@ function aeCartao(v){const A=state.ae,[cls,sit]=aeSituacao(v),podeU=can('ativent
       ${podeU&&v.tipo==='drone'&&!v.voo_em&&!F?`<button class="btn ghost" style="min-height:44px" data-act="ae-voo" data-id="${esc(v.id)}">${TE('ae_voo')}</button>`:''}</div>`:''}
     ${F?`<div class="row" style="gap:8px;margin-top:10px;align-items:end;flex-wrap:wrap" id="ae-voo-form">${sel('piloto',TE('ae_piloto'))}${sel('drone',TE('ae_drone'))}${sel('bateria',TE('ae_bateria'))}<button class="btn primary" style="min-height:44px" data-act="ae-voo-ok" data-id="${esc(v.id)}">${TE('ae_voo_ok')}</button><button class="btn ghost" style="min-height:44px" data-act="ae-voo-nao">${TE('av_dup_nao')}</button></div>
       ${!((cad.piloto||[]).some(x=>x.ativo)&&(cad.drone||[]).some(x=>x.ativo)&&(cad.bateria||[]).some(x=>x.ativo))?`<div class="note" role="alert">${TE('ae_sem_cadastro')}</div>`:''}`:''}</div>`;}
+const aeFoto=(v,px)=>v.foto?`<img src="${esc(state.agent.url)}/ativ/cliente-foto?id=${encodeURIComponent(v.id)}" alt="" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:50%;flex:none">`:'';
 function aeSel(v,t,rot){const cad=(state.ae.dados&&state.ae.dados.cadastros)||{};return `<label style="flex:1;min-width:120px"><span class="eyebrow">${rot}</span><select data-ae-voo="${t}" style="width:100%;min-height:44px"><option value="">—</option>${(cad[t]||[]).filter(x=>x.ativo).map(x=>`<option ${v[t]===x.nome?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></label>`;}
 // topo da tela: soltar o vídeo, conferir, escolher a venda do dia (lixeira para cancelar), ler o cartão e entregar
 function aeNovo(){const A=state.ae,N=A.nv;if(!can('ativentrega','c'))return '';
@@ -5234,7 +5248,7 @@ function aeNovo(){const A=state.ae,N=A.nv;if(!can('ativentrega','c'))return '';
     <b style="font-size:1.2rem">${TE('ae_drop')}</b><span class="note">${TE('ae_drop_sub')}</span><input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" data-act="ae-arquivo" style="display:none"></label>`;
   const L=(A.dados&&A.dados.vendas||[]).filter(v=>!v.entregue_em&&v.videos-aeEntregues(v)>0);const v=L.find(x=>x.id===N.venda)||null;
   const podeX=can('ativvenda','d')||can('financeiro','u');const cad=(A.dados&&A.dados.cadastros)||{};
-  const linha=x=>`<div class="row" style="gap:8px;align-items:stretch;margin-top:8px"><button class="chip" style="flex:1;min-height:60px;border-radius:12px;display:flex;gap:12px;align-items:center;text-align:left;padding:8px 12px" data-act="ae-nv-venda" data-id="${esc(x.id)}" aria-pressed="${N.venda===x.id}">${atIcone(x.tipo)}<span><b>${TE('av_numero',avNumero(x.id))}</b> · ${esc(x.criado.slice(11,16))} · ${esc(aeItensTxt(x))}<br><span style="opacity:.75">${TE('ae_vendido_por',esc(x.vendedor||'—'))} · ${esc(aeSituacao(x)[1])}</span></span></button>
+  const linha=x=>`<div class="row" style="gap:8px;align-items:stretch;margin-top:8px"><button class="chip" style="flex:1;min-height:60px;border-radius:12px;display:flex;gap:12px;align-items:center;text-align:left;padding:8px 12px" data-act="ae-nv-venda" data-id="${esc(x.id)}" aria-pressed="${N.venda===x.id}">${aeFoto(x,48)||atIcone(x.tipo)}<span>${x.cliente?`<b>${esc(x.cliente)}</b> · `:''}<b>${TE('av_numero',avNumero(x.id))}</b> · ${esc(x.criado.slice(11,16))} · ${esc(aeItensTxt(x))}<br><span style="opacity:.75">${TE('ae_vendido_por',esc(x.vendedor||'—'))} · ${esc(aeSituacao(x)[1])}</span></span></button>
       ${podeX&&!x.entregas.length?`<button class="btn ghost" style="min-width:60px" data-act="ae-nv-lixo" data-id="${esc(x.id)}" aria-label="${esc(TE('av_cancelar'))}">${ICO_LIXO}</button>`:''}</div>
     ${N.cancel===x.id?`<div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin:6px 0 4px"><label style="flex:1;min-width:200px"><span class="eyebrow">${TE('av_cancel_motivo')}</span><input data-ae-cmotivo maxlength="200" style="width:100%;min-height:44px"></label><button class="btn primary" style="min-height:44px" data-act="ae-nv-lixo-ok" data-id="${esc(x.id)}">${TE('av_cancel_ok')}</button><button class="btn ghost" style="min-height:44px" data-act="ae-nv-lixo-nao">${TE('av_dup_nao')}</button></div>`:''}`;
   const pronto=!!(N.rascunho&&v&&N.qr);
@@ -8572,7 +8586,7 @@ const EQ={
   po_o_que_houve:["O que aconteceu","What happened","Qué pasó","Ce qui s'est passé","Was ist passiert"],
   po_o_que_houve_ph:["ex.: esperou 40 min pela impressão","e.g. waited 40 min for printing","ej.: esperó 40 min por la impresión","ex. : a attendu 40 min l'impression","z. B. 40 Min. auf den Druck gewartet"],
   cort_espera:["Espera longa","Long wait","Espera larga","Longue attente","Lange Wartezeit"],
-  cort_operacao:["Falha da operação (foto, impressão, sistema)","Operational failure (photo, printing, system)","Falla de la operación (foto, impresión, sistema)","Défaillance de l'opération (photo, impression, système)","Betriebsfehler (Foto, Druck, System)"],
+  cort_operacao:["Falha na operação","Operational failure","Falla en la operación","Défaillance de l'opération","Betriebsfehler"],
   cort_atendimento:["Problema no atendimento","Customer service problem","Problema en la atención","Problème d'accueil","Problem im Service"],
   cort_outro:["Outro","Other","Otro","Autre","Sonstiges"],
   po_reg_cortesia:["Registrar cortesia e imprimir","Record complimentary and print","Registrar cortesía e imprimir","Enregistrer l'offre et imprimer","Gratisfotos erfassen und drucken"],
@@ -8796,7 +8810,12 @@ const EQ={
   av_p_credito:["Crédito","Credit","Crédito","Crédit","Kreditkarte"],
   av_p_cortesia:["Cortesia","Complimentary","Cortesía","Offert","Gratis"],
   av_cort_motivo:["Motivo da cortesia","Reason for the complimentary sale","Motivo de la cortesía","Motif de l'offre","Grund für die Gratisleistung"],
-  av_cort_nota:["Nota (obrigatória)","Note (required)","Nota (obligatoria)","Note (obligatoire)","Notiz (Pflicht)"],
+  av_nome_cliente:["Nome do cliente","Customer name","Nombre del cliente","Nom du client","Name des Kunden"],
+  av_foto_cliente:["Tirar foto do cliente","Take the customer's photo","Tomar foto del cliente","Prendre la photo du client","Foto des Kunden aufnehmen"],
+  av_foto_outra:["Tirar outra foto","Take another photo","Tomar otra foto","Prendre une autre photo","Neues Foto aufnehmen"],
+  av_foto_erro:["Não deu para usar esta foto. Tire de novo","This photo could not be used. Take it again","No se pudo usar esta foto. Tómala de nuevo","Impossible d'utiliser cette photo. Reprenez-la","Dieses Foto ging nicht. Bitte neu aufnehmen"],
+  av_e_nome:["Escreva o nome do cliente","Write the customer's name","Escribe el nombre del cliente","Écrivez le nom du client","Namen des Kunden eingeben"],
+  av_cort_nota:["Conte o que aconteceu","Tell what happened","Cuenta lo que pasó","Racontez ce qui s'est passé","Beschreiben Sie, was passiert ist"],
   av_pais:["País do cliente","Customer's country","País del cliente","Pays du client","Land des Kunden"],
   av_idioma:["Idioma do cliente","Customer's language","Idioma del cliente","Langue du client","Sprache des Kunden"],
   av_outro:["Outro","Other","Otro","Autre","Andere"],

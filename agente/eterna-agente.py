@@ -4497,6 +4497,7 @@ def gal_processar(token):
 def galeria_loop():
     ultima_limpeza = 0
     ultima_rec = 0
+    ultima_cli = 0
     while True:
         try:
             token = gal_fila.get(timeout=600)
@@ -4512,6 +4513,12 @@ def galeria_loop():
                 limpar_recortes()
             except Exception as ex:
                 print("  recortes: erro na limpeza", ex)
+        if time.time() - ultima_cli > 3600:
+            ultima_cli = time.time()
+            try:
+                ativ_clientes_limpa()
+            except Exception as ex:
+                print("  venda: erro na limpeza do nome e da foto do cliente", ex)
         if time.time() - ultima_limpeza > 86400:
             ultima_limpeza = time.time()
             try:
@@ -7500,7 +7507,13 @@ def ativ_importar(linhas):
 
 ATIV_TABLET_COLS = (("usuario", "text"), ("sugerido", "real"), ("situacao", "text"), ("cortesia_motivo", "text"), ("cortesia_nota", "text"),
                     ("agendada", "text"), ("cancel_motivo", "text"), ("cancel_por", "text"), ("cancel_em", "text"), ("enviado_por", "text"),
-                    ("recebido_em", "text"), ("recebido_por", "text"), ("voo_em", "text"), ("voo_por", "text"), ("itens_entregues", "text"))
+                    ("recebido_em", "text"), ("recebido_por", "text"), ("voo_em", "text"), ("voo_por", "text"), ("itens_entregues", "text"),
+                    ("cliente_nome", "text"))
+# Nome e foto do cliente (Ronaldo, 12/11): só para quem entrega o vídeo reconhecer a pessoa no campo, a quase 1 km do foyer
+# onde ela comprou. Servem só a isso (LGPD, finalidade): a foto fica em arquivo no servidor do ponto (não vai ao banco nem à
+# nuvem) e os dois saem sozinhos um dia depois da entrega, ou dois dias depois da venda, o que vier primeiro.
+ATIV_CLIENTES_DIR = os.path.join(HOME, "ativ-clientes")
+ATIV_FOTO_MAX = 120 * 1024
 ATIV_PAGAMENTOS = ("PIX", "Dinheiro", "Débito", "Crédito", "Cortesia")
 _re_ativ_id = re.compile(r"^T[A-Za-z0-9]{6,30}$")
 _re_agendada = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
@@ -7534,7 +7547,8 @@ def ativ_venda_tablet(v):
         itens.append(x)
     if not _ativ_num(v.get("valor"), 1000000) or not _ativ_num(v.get("sugerido") or 0, 1000000):
         return None
-    for k, n in (("pais", 60), ("idioma", 30), ("guia", 80), ("vendedor", 80), ("usuario", 120), ("cortesia_motivo", 80), ("cortesia_nota", 300)):
+    for k, n in (("pais", 60), ("idioma", 30), ("guia", 80), ("vendedor", 80), ("usuario", 120), ("cortesia_motivo", 80), ("cortesia_nota", 1000),
+                 ("cliente_nome", 80)):
         if not _ativ_txt(v.get(k) or "", n):
             return None
     if v["pagamento"] == "Cortesia" and not (str(v.get("cortesia_motivo") or "").strip() and str(v.get("cortesia_nota") or "").strip()):
@@ -7542,13 +7556,67 @@ def ativ_venda_tablet(v):
     ag = v.get("agendada") or ""
     if ag and not _re_agendada.match(str(ag)):
         return None
+    foto = None
+    if v.get("cliente_foto"):
+        f = str(v["cliente_foto"])
+        if not f.startswith("data:image/jpeg;base64,") or len(f) > ATIV_FOTO_MAX * 4 // 3 + 40:
+            return None
+        try:
+            foto = base64.b64decode(f.split(",", 1)[1], validate=True)
+        except (ValueError, TypeError):
+            return None
+        if not foto.startswith(b"\xff\xd8") or len(foto) > ATIV_FOTO_MAX:
+            return None
     return {"origem": "eterna", "id": v["id"], "tipo": v["tipo"], "dia": v["criado"][:10], "criado": v["criado"], "itens": itens,
             "valor": v["valor"], "pagamento": v["pagamento"], "vendedor": v.get("vendedor") or "", "vendedor_n": None,
             "pessoas": sum(int(i.get("pessoas") or 0) for i in itens) or None, "videos": sum(int(i.get("videos") or 0) for i in itens),
             "resolucao": "4K" if any(i.get("k4") for i in itens) else "", "pais": v.get("pais") or "", "idioma": v.get("idioma") or "",
             "guia": v.get("guia") or "", "piloto": "", "drone": "", "bateria": "", "entrega": "", "qr": "",
             "usuario": v.get("usuario") or "", "sugerido": v.get("sugerido") or 0, "situacao": "ativa", "cortesia_motivo": v.get("cortesia_motivo") or "",
-            "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag}
+            "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag, "cliente_nome": (v.get("cliente_nome") or "").strip(), "_foto": foto}
+
+
+def ativ_cliente_foto(vid):
+    return os.path.join(ATIV_CLIENTES_DIR, "%s.jpg" % vid)
+
+
+def ativ_cliente_foto_grava(vid, foto):
+    try:
+        os.makedirs(ATIV_CLIENTES_DIR, exist_ok=True)
+        tmp = ativ_cliente_foto(vid) + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(foto)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, ativ_cliente_foto(vid))
+    except OSError as ex:
+        print("  venda: foto do cliente não gravada (%s)" % type(ex).__name__)
+
+
+def ativ_clientes_limpa(agora=None):
+    """Nome e foto do cliente saem um dia depois da entrega ou dois dias depois da venda (o que vier primeiro). -> quantas vendas."""
+    t = agora or time.time()
+    um = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t - 86400))
+    dois = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t - 2 * 86400))
+    with ev_lock:
+        c = vendas_db()
+        try:
+            ids = [r[0] for r in c.execute("select id from ativ_venda where origem='eterna'"
+                                           " and ((coalesce(entrega,'')<>'' and entrega<?) or criado<?)", (um, dois))]
+            sai = [i for i in ids if os.path.exists(ativ_cliente_foto(i))]
+            n = c.execute("update ativ_venda set cliente_nome='' where origem='eterna' and coalesce(cliente_nome,'')<>''"
+                          " and ((coalesce(entrega,'')<>'' and entrega<?) or criado<?)", (um, dois)).rowcount
+            c.commit()
+        finally:
+            c.close()
+    for i in sai:
+        try:
+            os.remove(ativ_cliente_foto(i))
+        except OSError:
+            pass
+    return max(n, len(sai))
 
 
 def ativ_receber(vendas, enviado_por):
@@ -7556,7 +7624,7 @@ def ativ_receber(vendas, enviado_por):
     regravada (o tablet reenvia até ouvir o ok). -> {recebidas:[id], recusadas:[{id, motivo}]}"""
     out = {"recebidas": [], "recusadas": []}
     agora = time.strftime("%Y-%m-%dT%H:%M:%S")
-    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada"]
+    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome"]
     with ev_lock:
         c = vendas_db()
         try:
@@ -7572,6 +7640,8 @@ def ativ_receber(vendas, enviado_por):
                 vals = [json.dumps(d["itens"], ensure_ascii=False) if k == "itens" else d.get(k) for k in cols]
                 c.execute("insert into ativ_venda (" + ",".join(cols) + ", importado_em, enviado_por) values (" + ",".join("?" * (len(cols) + 2)) + ")",
                           vals + [agora, enviado_por])
+                if d["_foto"]:
+                    ativ_cliente_foto_grava(d["id"], d["_foto"])
                 out["recebidas"].append(d["id"])
             c.commit()
         finally:
@@ -7751,7 +7821,7 @@ def ativ_fila(dia):
     try:
         out = []
         for r in c.execute("select id, tipo, criado, itens, pagamento, vendedor, pessoas, videos, idioma, piloto, drone, bateria, entrega,"
-                           " recebido_em, recebido_por, voo_em, voo_por, itens_entregues from ativ_venda"
+                           " recebido_em, recebido_por, voo_em, voo_por, itens_entregues, cliente_nome from ativ_venda"
                            " where origem='eterna' and dia=? and coalesce(situacao,'ativa')='ativa' order by criado", (dia,)).fetchall():
             itens = json.loads(r[3] or "[]")
             ents = _ativ_entregas(c, r[0])
@@ -7762,7 +7832,7 @@ def ativ_fila(dia):
             out.append({"id": r[0], "tipo": r[1], "criado": r[2], "itens": itens, "pagamento": r[4], "vendedor": r[5], "pessoas": r[6],
                         "videos": ativ_videos_previstos(itens), "idioma": r[8], "piloto": r[9], "drone": r[10], "bateria": r[11],
                         "entregue_em": r[12] or None, "recebido_em": r[13], "recebido_por": r[14], "voo_em": r[15], "voo_por": r[16],
-                        "entregas": ents, "fisicos": fis})
+                        "entregas": ents, "fisicos": fis, "cliente": r[18] or "", "foto": os.path.exists(ativ_cliente_foto(r[0]))})
         return out
     finally:
         c.close()
@@ -9545,7 +9615,8 @@ ROTAS = (
     ("POST", "/ativ/venda", "sessao", ("ativvenda.c",)), ("GET", "/ativ/minhas", "sessao", ("ativvenda.r",)),   # v100: venda no tablet
     ("POST", "/ativ/cancelar", "sessao", ("ativvenda.d", "financeiro.u")),
     ("GET", "/ativ/equipe", "sessao", ("estatisticas.r", "financeiro.r", "ativvenda.d")),
-    ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),   # vídeos de demonstração (lista e arquivo)
+    ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),
+    ("GET", "/ativ/cliente-foto", "sessao", ("ativentrega.r",)),     # foto do cliente para quem entrega (some com a limpeza)   # vídeos de demonstração (lista e arquivo)
     ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
     ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
     ("GET", "/ativ/cadastros", "sessao", ("ativentrega.r",)), ("POST", "/ativ/cadastros", "sessao", ("ativentrega.u",)),
@@ -11689,6 +11760,19 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "private, max-age=86400")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if u.path == "/ativ/cliente-foto":
+            vid = (parse_qs(u.query).get("id") or [""])[0]
+            if not _re_ativ_id.match(vid) or not os.path.isfile(ativ_cliente_foto(vid)):
+                return self.js({"error": "not found"}, 404)
+            with open(ativ_cliente_foto(vid), "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, no-store")
             self.end_headers()
             self.wfile.write(data)
             return
