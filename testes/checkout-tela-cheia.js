@@ -88,6 +88,10 @@ ok(ini.h>=120&&ini.alt&&/INICIAR/i.test(ini.txt),'P1: Iniciar grande (≥ 120 px
 await shot(L,'v96-iniciar.png');
 for(const [l,t] of [['en',/start/i],['es',/iniciar/i],['fr',/commencer/i],['de',/starten/i],['pt',/iniciar/i]]){await L.click(`[data-act="lang"][data-l="${l}"]`);await L.waitForTimeout(60);ok(t.test(await L.textContent('[data-act="kiosk-start"]')),'P1: Iniciar em '+l);}
 await L.click('[data-act="kiosk-start"]');for(let i=0;i<20&&!(await cam()).stream;i++)await sleep(100);c=await cam();ok(c.on&&c.stream&&c.face,'P1: Iniciar liga a câmera: '+JSON.stringify(c));
+// v99.22.1: na selfie há Voltar ao início, que desliga a câmera
+ok(await L.$('.lj-cam ~ .lj-row [data-act="kiosk-back"]')!==null,'P1: Voltar ao início na tela da selfie');
+await L.click('.lj-cam ~ .lj-row [data-act="kiosk-back"]');await L.waitForTimeout(200);c=await cam();ok(c.ini&&!c.stream&&!c.on,'P1: Voltar ao início desliga a câmera e mostra o Iniciar: '+JSON.stringify(c));
+await L.click('[data-act="kiosk-start"]');for(let i=0;i<20&&!(await cam()).stream;i++)await sleep(100);
 await L.click('[data-act="kiosk-emerg"]');await L.waitForTimeout(200);c=await cam();ok(!c.stream&&!c.on,'P1: digitar o código desliga a câmera: '+JSON.stringify(c));
 await L.click('[data-act="kiosk-back"]');await L.waitForTimeout(200);c=await cam();ok(c.ini&&!c.stream,'P1: voltar mostra o Iniciar de novo: '+JSON.stringify(c));
 await L.evaluate(()=>ETERNA.lojaCamMs(1200));await L.click('[data-act="kiosk-start"]');await L.waitForTimeout(400);ok((await cam()).stream,'P1: ligou de novo');
