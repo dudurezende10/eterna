@@ -1306,7 +1306,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.18.3 · 12/11 11:48"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.18.4 · 12/11 11:58"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5090,10 +5090,9 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chu
       ${p.k4?`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" style="width:22px;height:22px" data-act="av-k4" data-id="${esc(p.id)}" ${A.k4[p.id]?'checked':''}> 4K (+${fmtR(p.k4)})</label>`:''}
       ${p.cat==='drone'&&p.chuva?`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" style="width:22px;height:22px" data-act="av-chuva" data-id="${esc(p.id)}" ${A.chuva[p.id]?'checked':''}> ${TE('av_chuva')}</label>`:''}
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:auto"><b class="av-preco">${fmtR(preco)}</b><button class="btn primary" style="min-height:44px" data-act="av-add" data-id="${esc(p.id)}">${TE('av_adicionar')}</button></div></div>`;};
-  const LIXO='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
   const linha=(l,i)=>{const p=avProd(l);if(!p)return '';
     return `<div class="row" style="gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)" data-av-linha="${i}"><b style="min-width:34px;font-size:1.1rem">${l.qtd}×</b><div style="flex:1;min-width:0"><b>${esc(p.nome)}</b><div class="note">${esc(avDescr(l))}</div></div>
-      <b data-av-preco="${i}" style="white-space:nowrap">${fmtR(avCob(l))}</b><button class="btn ghost" style="min-width:48px;min-height:48px" data-act="av-tirar" data-i="${i}" aria-label="${esc(TE('av_tirar',p.nome))}">${LIXO}</button></div>`;};
+      <b data-av-preco="${i}" style="white-space:nowrap">${fmtR(avCob(l))}</b><button class="btn ghost" style="min-width:48px;min-height:48px" data-act="av-tirar" data-i="${i}" aria-label="${esc(TE('av_tirar',p.nome))}">${ICO_LIXO}</button></div>`;};
   return topo+`
   <div class="panel" id="av-prod"><h2>${TE('av_passo_servico')}</h2><div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${cats.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="av-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}</span></button>`).join('')}</div>
     ${prods.some(p=>p.pede!=='nada')?`<div style="margin-top:14px"><span class="eyebrow">${A.cat==='chute'?TE('at_p_participantes'):TE('av_pessoas_demo')}</span><div class="chips" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:4px">${Array.from({length:AV_MAX_PESSOAS},(_,k)=>k+1).map(n=>`<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${n}" aria-pressed="${A.pessoas===n}">${n}</button>`).join('')}</div></div>`:''}
@@ -5160,16 +5159,17 @@ setInterval(()=>{if(state.view==='ativ-venda'&&document.visibilityState==='visib
 setTimeout(()=>avDemoCopia(),8e3);setInterval(()=>avDemoCopia(),10*60e3);
 window.addEventListener('online',()=>asEnviar());
 // ---------- Entrega dos vídeos (v100, fase 4; plano 2026-11-11-ativacoes, seção 4) ----------
-// A equipe de campo abre a venda na fila do dia, marca recebido e voo feito (piloto, drone e bateria do cadastro), lê com a
-// câmera o QR de um cartão novo, escolhe o vídeo do cartão do drone e manda ao servidor do ponto. O servidor guarda, liga o
-// vídeo ao QR, sobe para a nuvem em partes e o QR vira a galeria do vídeo. Medalha e bola têm baixa uma a uma.
+// Fluxo do computador do ponto (Ronaldo, 12/11): o drone pousa, alguém abre o cartão de memória, arrasta o vídeo para a tela
+// (ou escolhe o arquivo). O vídeo já começa a subir para o servidor enquanto a pessoa confere o vídeo, escolhe a venda do dia
+// (com lixeira para cancelar, quem pode) e lê o QR de um cartão novo. Entregar liga o vídeo à venda e ao cartão; o servidor
+// sobe para a nuvem em partes e o QR vira a galeria do vídeo. Cliente chegou e voo feito ficam na fila; medalha e bola um a um.
 // O dado é do servidor (dado no banco): a tela só lê /ativ/fila e manda cada ação; nada fica guardado no navegador.
-state.ae={cat:'drone',dia:null,ver:'pendentes',dados:null,erro:null,busy:false,voo:null,ent:null,cad:false,envio:null};
+state.ae={cat:'drone',dia:null,ver:'pendentes',dados:null,erro:null,busy:false,voo:null,cad:false,nv:null};
 const AE_CATS=['drone','chute','snap'];
 async function aePull(){const A=state.ae;if(!esOn()||A.busy)return;A.busy=true;const dia=A.dia||venueToday();
   try{const r=await agFetch(state.agent.url+'/ativ/fila?dia='+dia,{cache:'no-store'});const j=await r.json();if(!r.ok||!j||!j.ok)throw 0;A.dados=j;A.erro=null;}
   catch(e){A.erro='ae_sem_servidor';}finally{A.busy=false;if(state.view==='ativ-entrega'&&!aeOcupado())render();}}
-const aeOcupado=()=>!!(state.ae.envio&&state.ae.envio.subindo)||!!document.activeElement&&document.activeElement.matches&&document.activeElement.matches('#main input,#main select');
+const aeOcupado=()=>!!state.ae.nv||!!document.activeElement&&document.activeElement.matches&&document.activeElement.matches('#main input,#main select');
 const aeEntregues=v=>v.entregas.length;
 function aeSituacao(v){if(v.entregue_em)return ['good',TE('ae_s_entregue')];
   if(v.tipo==='drone'&&!v.voo_em)return v.recebido_em?['warn',TE('ae_s_aguarda_voo')]:['warn',TE('ae_s_aguarda')];
@@ -5181,56 +5181,79 @@ const aeItensTxt=v=>v.itens.map(i=>{const p=state.ativ.produtos[i.produto]||ATIV
 const aeMB=b=>(b/1048576).toFixed(b<10485760?1:0).replace('.',',')+' MB';
 // ---- leitura do QR do cartão: câmera (BarcodeDetector) ou leitor/pistola, que digita o link e dá Enter ----
 let aeCam=null;
-async function aeCamLiga(){const E=state.ae.ent;if(!E)return;if(!('BarcodeDetector' in window)){E.semCam=true;render();return;}
+async function aeCamLiga(){const E=state.ae.nv;if(!E)return;if(!('BarcodeDetector' in window)){E.semCam=true;render();return;}
   try{const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});const det=new BarcodeDetector({formats:['qr_code']});
     aeCam={st,det,vivo:true};E.cam=true;render();const v=document.getElementById('ae-cam');if(v){v.srcObject=st;await v.play().catch(()=>{});}
     const roda=async()=>{if(!aeCam||!aeCam.vivo)return;const vv=document.getElementById('ae-cam');
       if(vv&&vv.readyState>=2){try{const cs=await det.detect(vv);const t=cs.map(c=>cartaoToken(c.rawValue)).find(Boolean);if(t){aeQrLido(t);return;}}catch(e){}}
       setTimeout(roda,250);};roda();}
   catch(e){E.semCam=true;E.cam=false;render();}}
-function aeCamDesliga(){if(aeCam){aeCam.vivo=false;try{aeCam.st.getTracks().forEach(t=>t.stop());}catch(e){}aeCam=null;}if(state.ae.ent)state.ae.ent.cam=false;}
-function aeQrLido(t){const E=state.ae.ent;if(!E)return;aeCamDesliga();const usado=(state.ae.dados&&state.ae.dados.vendas||[]).some(v=>v.entregas.some(x=>x.qr===t));
+function aeCamDesliga(){if(aeCam){aeCam.vivo=false;try{aeCam.st.getTracks().forEach(t=>t.stop());}catch(e){}aeCam=null;}if(state.ae.nv)state.ae.nv.cam=false;}
+function aeQrLido(t){const E=state.ae.nv;if(!E)return;aeCamDesliga();const usado=(state.ae.dados&&state.ae.dados.vendas||[]).some(v=>v.entregas.some(x=>x.qr===t));
   if(usado){E.err='ae_e_qr_usado';E.qr=null;}else{E.qr=t;E.err=null;}try{navigator.vibrate&&navigator.vibrate(80);}catch(e){}render();}
-// ---- envio do vídeo ao servidor do ponto, com progresso ----
-function aeEnviar(arq){const A=state.ae,E=A.ent;if(!E||!E.qr||!arq)return;if(!/\.(mp4|mov)$/i.test(arq.name)){E.err='ae_e_formato';render();return;}
-  const x=new XMLHttpRequest();A.envio={venda:E.venda,qr:E.qr,total:arq.size,feito:0,inicio:Date.now(),subindo:true,x};
-  x.open('POST',`${state.agent.url}/ativ/video?venda=${encodeURIComponent(E.venda)}&qr=${encodeURIComponent(E.qr)}`);x.withCredentials=true;
-  x.setRequestHeader('X-Eterna','1');x.setRequestHeader('Content-Type','video/mp4');
-  x.upload.onprogress=ev=>{if(ev.lengthComputable){A.envio.feito=ev.loaded;aeProgresso();}};
-  x.onload=()=>{let j={};try{j=JSON.parse(x.responseText||'{}');}catch(e){}A.envio=null;
-    if(x.status===200&&j.ok){toast(TE('ae_entregue_ok',j.codigo||''));A.ent=null;aePull();}else{E.err='ae_e_'+(j.error||'servidor');}render();};
-  x.onerror=x.onabort=()=>{A.envio=null;E.err='ae_e_rede';render();};x.send(arq);render();}
-function aeProgresso(){const e=state.ae.envio,el=document.getElementById('ae-prog');if(!e||!el)return;const p=e.total?e.feito/e.total:0,s=(Date.now()-e.inicio)/1000;
+// ---- o vídeo sobe assim que é solto; a venda e o cartão vêm depois ----
+function aeSolta(arq){const A=state.ae;if(!arq||!can('ativentrega','c'))return;if(!/\.(mp4|mov)$/i.test(arq.name)){toast(TE('ae_e_formato'));return;}
+  aeDescarta();const N=A.nv={nome:arq.name,url:URL.createObjectURL(arq),total:arq.size,feito:0,inicio:Date.now(),subindo:true,rascunho:null,dur:null,err:null,venda:null,qr:null,cancel:null};
+  const x=new XMLHttpRequest();N.x=x;x.open('POST',state.agent.url+'/ativ/video');x.withCredentials=true;x.setRequestHeader('X-Eterna','1');x.setRequestHeader('Content-Type','video/mp4');
+  x.upload.onprogress=ev=>{if(ev.lengthComputable){N.feito=ev.loaded;aeProgresso();}};
+  x.onload=()=>{let j={};try{j=JSON.parse(x.responseText||'{}');}catch(e){}N.subindo=false;N.x=null;if(A.nv!==N)return;
+    if(x.status===200&&j.ok){N.rascunho=j.rascunho;N.dur=j.duracao;}else N.err='ae_e_'+(j.error||'servidor');render();};
+  x.onerror=()=>{N.subindo=false;N.x=null;if(A.nv===N){N.err='ae_e_rede';render();}};x.send(arq);render();}
+function aeDescarta(){const N=state.ae.nv;if(!N)return;state.ae.nv=null;try{N.x&&N.x.abort();}catch(e){}try{URL.revokeObjectURL(N.url);}catch(e){}aeCamDesliga();}
+function aeProgresso(){const e=state.ae.nv,el=document.getElementById('ae-prog');if(!e||!el)return;const p=e.total?e.feito/e.total:0,s=(Date.now()-e.inicio)/1000;
   el.querySelector('progress').value=p;el.querySelector('span').textContent=TE('ae_subindo',Math.round(p*100),aeMB(e.feito),aeMB(e.total),s>1?aeMB(e.feito/s)+'/s':'—');}
+async function aeLiga(){const A=state.ae,N=A.nv;if(!N||!N.rascunho||!N.venda||!N.qr)return;const v=(A.dados&&A.dados.vendas||[]).find(x=>x.id===N.venda);if(!v)return;
+  if(v.tipo==='drone'&&!v.voo_em){const f=document.getElementById('ae-nv-voo');const g=t=>((f&&f.querySelector(`[data-ae-voo="${t}"]`))||{}).value||'';
+    const c={id:v.id,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria')};if(!c.piloto||!c.drone||!c.bateria){N.err='ae_e_cadastro';render();return;}
+    if(!await aeAcao(c))return;}
+  const j=await aeAcao({rascunho:N.rascunho,venda:N.venda,qr:N.qr},'/ativ/video/liga');if(!j)return;
+  toast(TE('ae_entregue_ok',j.codigo||''));aeDescarta();await aePull();render();}
+async function aeCancelaVenda(id,motivo){if(!motivo){toast(TE('av_cancel_motivo'));return;}
+  try{const r=await agFetch(state.agent.url+'/ativ/cancelar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,motivo})});const j=await r.json().catch(()=>({}));
+    if(!r.ok){toast(j.error==='entregue'?TE('av_cancel_entregue'):TE('ae_e_servidor'));return;}}
+  catch(e){toast(TE('ae_sem_servidor'));return;}
+  if(state.ae.nv){state.ae.nv.cancel=null;if(state.ae.nv.venda===id)state.ae.nv.venda=null;}toast(TE('av_cancelada_ok'));await aePull();render();}
 // ---- tela ----
-function aeCartao(v){const A=state.ae,[cls,sit]=aeSituacao(v),podeU=can('ativentrega','u'),podeC=can('ativentrega','c');const E=A.ent&&A.ent.venda===v.id?A.ent:null;const F=A.voo===v.id;
-  const cad=(A.dados&&A.dados.cadastros)||{piloto:[],drone:[],bateria:[]};const sel=(t,rot)=>`<label style="flex:1;min-width:120px"><span class="eyebrow">${rot}</span><select data-ae-voo="${t}" style="width:100%;min-height:44px"><option value="">—</option>${(cad[t]||[]).filter(x=>x.ativo).map(x=>`<option ${v[t]===x.nome?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></label>`;
+function aeCartao(v){const A=state.ae,[cls,sit]=aeSituacao(v),podeU=can('ativentrega','u');const F=A.voo===v.id;
+  const cad=(A.dados&&A.dados.cadastros)||{piloto:[],drone:[],bateria:[]};const sel=(t,rot)=>aeSel(v,t,rot);
   const ents=v.entregas.map(x=>`<div class="row" style="justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);flex-wrap:wrap"><span>${TE('ae_video_n',x.n)} · ${TE('ae_cartao')} <b>${esc(x.codigo)}</b>${x.duracao?' · '+Math.round(x.duracao)+' s':''} · ${aeMB(x.bytes||0)}</span>
     <span class="pill ${x.nuvem?'good':'warn'}">${x.nuvem?TE('ae_na_nuvem'):x.subindo?TE('ae_nuvem_subindo',Math.round(100*x.subindo.feito/Math.max(1,x.subindo.total))):TE('ae_nuvem_fila')}</span></div>`).join('');
   const fis=(v.fisicos||[]).map(x=>`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-act="ae-item" data-id="${esc(v.id)}" data-i="${x.i}" ${x.entregue?'checked disabled':''} ${podeU?'':'disabled'}> ${esc(x.nome)}${x.entregue?' · '+TE('ae_item_ok'):''}</label>`).join('');
-  const falta=v.videos-aeEntregues(v);
   return `<div class="panel" data-ae-venda="${esc(v.id)}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><b>${TE('av_numero',avNumero(v.id))}</b> · ${esc(v.criado.slice(11,16))}<div class="note">${esc(aeItensTxt(v))}</div><div class="note">${TE('ae_vendido_por',esc(v.vendedor||'—'))}</div></div><span class="pill ${cls}">${esc(sit)}</span></div>
     ${v.voo_em?`<div class="note" style="margin-top:6px">${TE('ae_voo_info',esc(v.piloto),esc(v.drone),esc(v.bateria),esc(v.voo_em.slice(11,16)))}</div>`:''}
     ${ents}${fis?`<div style="margin-top:8px"><span class="eyebrow">${TE('ae_itens')}</span>${fis}</div>`:''}
     ${!v.entregue_em?`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
       ${podeU&&!v.recebido_em?`<button class="btn ghost" style="min-height:44px" data-act="ae-recebido" data-id="${esc(v.id)}">${TE('ae_recebido')}</button>`:''}
-      ${podeU&&v.tipo==='drone'&&!v.voo_em&&!F?`<button class="btn ghost" style="min-height:44px" data-act="ae-voo" data-id="${esc(v.id)}">${TE('ae_voo')}</button>`:''}
-      ${podeC&&falta>0&&!E&&(v.tipo!=='drone'||v.voo_em)?`<button class="btn primary" style="min-height:44px" data-act="ae-entregar" data-id="${esc(v.id)}">${TE('ae_entregar',aeEntregues(v)+1)}</button>`:''}</div>`:''}
+      ${podeU&&v.tipo==='drone'&&!v.voo_em&&!F?`<button class="btn ghost" style="min-height:44px" data-act="ae-voo" data-id="${esc(v.id)}">${TE('ae_voo')}</button>`:''}</div>`:''}
     ${F?`<div class="row" style="gap:8px;margin-top:10px;align-items:end;flex-wrap:wrap" id="ae-voo-form">${sel('piloto',TE('ae_piloto'))}${sel('drone',TE('ae_drone'))}${sel('bateria',TE('ae_bateria'))}<button class="btn primary" style="min-height:44px" data-act="ae-voo-ok" data-id="${esc(v.id)}">${TE('ae_voo_ok')}</button><button class="btn ghost" style="min-height:44px" data-act="ae-voo-nao">${TE('av_dup_nao')}</button></div>
+      ${!((cad.piloto||[]).some(x=>x.ativo)&&(cad.drone||[]).some(x=>x.ativo)&&(cad.bateria||[]).some(x=>x.ativo))?`<div class="note" role="alert">${TE('ae_sem_cadastro')}</div>`:''}`:''}</div>`;}
+function aeSel(v,t,rot){const cad=(state.ae.dados&&state.ae.dados.cadastros)||{};return `<label style="flex:1;min-width:120px"><span class="eyebrow">${rot}</span><select data-ae-voo="${t}" style="width:100%;min-height:44px"><option value="">—</option>${(cad[t]||[]).filter(x=>x.ativo).map(x=>`<option ${v[t]===x.nome?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></label>`;}
+// topo da tela: soltar o vídeo, conferir, escolher a venda do dia (lixeira para cancelar), ler o cartão e entregar
+function aeNovo(){const A=state.ae,N=A.nv;if(!can('ativentrega','c'))return '';
+  if(!N)return `<label class="panel" id="ae-drop" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:150px;border:2px dashed var(--accent,#134078);cursor:pointer;text-align:center">
+    <b style="font-size:1.2rem">${TE('ae_drop')}</b><span class="note">${TE('ae_drop_sub')}</span><input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" data-act="ae-arquivo" style="display:none"></label>`;
+  const L=(A.dados&&A.dados.vendas||[]).filter(v=>!v.entregue_em&&v.videos-aeEntregues(v)>0);const v=L.find(x=>x.id===N.venda)||null;
+  const podeX=can('ativvenda','d')||can('financeiro','u');const cad=(A.dados&&A.dados.cadastros)||{};
+  const linha=x=>`<div class="row" style="gap:8px;align-items:stretch;margin-top:8px"><button class="chip" style="flex:1;min-height:60px;border-radius:12px;display:flex;gap:12px;align-items:center;text-align:left;padding:8px 12px" data-act="ae-nv-venda" data-id="${esc(x.id)}" aria-pressed="${N.venda===x.id}">${atIcone(x.tipo)}<span><b>${TE('av_numero',avNumero(x.id))}</b> · ${esc(x.criado.slice(11,16))} · ${esc(aeItensTxt(x))}<br><span style="opacity:.75">${TE('ae_vendido_por',esc(x.vendedor||'—'))} · ${esc(aeSituacao(x)[1])}</span></span></button>
+      ${podeX&&!x.entregas.length?`<button class="btn ghost" style="min-width:60px" data-act="ae-nv-lixo" data-id="${esc(x.id)}" aria-label="${esc(TE('av_cancelar'))}">${ICO_LIXO}</button>`:''}</div>
+    ${N.cancel===x.id?`<div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin:6px 0 4px"><label style="flex:1;min-width:200px"><span class="eyebrow">${TE('av_cancel_motivo')}</span><input data-ae-cmotivo maxlength="200" style="width:100%;min-height:44px"></label><button class="btn primary" style="min-height:44px" data-act="ae-nv-lixo-ok" data-id="${esc(x.id)}">${TE('av_cancel_ok')}</button><button class="btn ghost" style="min-height:44px" data-act="ae-nv-lixo-nao">${TE('av_dup_nao')}</button></div>`:''}`;
+  const pronto=!!(N.rascunho&&v&&N.qr);
+  return `<div class="panel" id="ae-nv" style="border:2px solid var(--accent,#134078)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">${TE('ae_passo_conf')}</h2><button class="btn ghost" data-act="ae-nv-descarta">${TE('ae_descartar')}</button></div>
+    <video src="${esc(N.url)}" controls muted playsinline preload="metadata" style="width:100%;max-height:45vh;background:#000;border-radius:10px;margin-top:8px"></video>
+    <div class="row" style="justify-content:space-between;gap:8px;margin-top:6px;flex-wrap:wrap"><span class="note">${esc(N.nome)} · ${aeMB(N.total)}</span>
+      ${N.subindo?`<div id="ae-prog" style="flex:1;min-width:220px"><progress style="width:100%" max="1" value="${N.total?N.feito/N.total:0}"></progress><span class="note"></span></div>`:N.rascunho?`<span class="pill good">${TE('ae_no_servidor',N.dur?Math.round(N.dur)+' s':'')}</span>`:''}</div>
+    <h2 style="margin-top:16px">${TE('ae_passo_venda')}</h2>
+    ${!A.dados?`<div class="note">${TE('ar_carregando')}</div>`:L.length?L.map(linha).join(''):`<div class="note">${TE('ae_sem_venda_video')}</div>`}
+    ${v&&v.tipo==='drone'&&!v.voo_em?`<div class="row" id="ae-nv-voo" style="gap:8px;margin-top:12px;align-items:end;flex-wrap:wrap">${aeSel(v,'piloto',TE('ae_piloto'))}${aeSel(v,'drone',TE('ae_drone'))}${aeSel(v,'bateria',TE('ae_bateria'))}</div>
       ${!((cad.piloto||[]).some(x=>x.ativo)&&(cad.drone||[]).some(x=>x.ativo)&&(cad.bateria||[]).some(x=>x.ativo))?`<div class="note" role="alert">${TE('ae_sem_cadastro')}</div>`:''}`:''}
-    ${E?aeEntregaForm(E):''}</div>`;}
-function aeEntregaForm(E){const A=state.ae,e=A.envio;
-  return `<div class="panel" id="ae-entrega" style="margin:10px 0 0">
-    ${!E.qr?`<h2>${TE('ae_passo_qr')}</h2>
-      ${E.cam?`<video id="ae-cam" playsinline muted style="width:100%;max-height:50vh;background:#000;border-radius:8px"></video>`:`<button class="btn primary" style="width:100%;min-height:56px" data-act="ae-cam">${TE('ae_ler_qr')}</button>`}
-      ${E.semCam?`<div class="note" role="alert" style="margin-top:6px">${TE('ae_sem_camera')}</div>`:''}
-      <label style="display:block;margin-top:10px"><span class="eyebrow">${TE('ae_qr_manual')}</span><input data-act="ae-qr-txt" style="width:100%;min-height:44px" autocomplete="off" placeholder="https://eterna.photo/#g/…"></label>`
-    :`<div class="row" style="justify-content:space-between;align-items:center"><span>${TE('ae_cartao')} <b>${esc(cartaoCodigo(E.qr))}</b></span>${e?'':`<button class="btn ghost" data-act="ae-qr-troca">${TE('ae_trocar_cartao')}</button>`}</div>
-      <h2 style="margin-top:10px">${TE('ae_passo_video')}</h2>
-      ${e?`<div id="ae-prog"><progress style="width:100%" max="1" value="${e.total?e.feito/e.total:0}"></progress><span class="note"></span></div>`
-        :`<label class="btn primary" style="width:100%;min-height:56px;display:flex;align-items:center;justify-content:center">${TE('ae_escolher_video')}<input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" data-act="ae-arquivo" style="display:none"></label>`}`}
-    ${E.err?`<div class="note" role="alert" style="color:var(--bad);margin-top:8px"><b>${TEk(E.err,TE('ae_e_servidor'))}</b></div>`:''}
-    ${e?'':`<button class="btn ghost" style="margin-top:10px" data-act="ae-cancela">${TE('av_dup_nao')}</button>`}</div>`;}
+    ${v?`<h2 style="margin-top:16px">${TE('ae_passo_qr')}</h2>
+      ${!N.qr?`${N.cam?`<video id="ae-cam" playsinline muted style="width:100%;max-height:50vh;background:#000;border-radius:8px"></video>`:`<button class="btn ghost" style="width:100%;min-height:52px" data-act="ae-cam">${TE('ae_ler_qr')}</button>`}
+        ${N.semCam?`<div class="note" role="alert" style="margin-top:6px">${TE('ae_sem_camera')}</div>`:''}
+        <label style="display:block;margin-top:10px"><span class="eyebrow">${TE('ae_qr_manual')}</span><input data-act="ae-qr-txt" style="width:100%;min-height:44px" autocomplete="off" placeholder="https://eterna.photo/#g/…"></label>`
+      :`<div class="row" style="justify-content:space-between;align-items:center"><span>${TE('ae_cartao')} <b>${esc(cartaoCodigo(N.qr))}</b></span><button class="btn ghost" data-act="ae-qr-troca">${TE('ae_trocar_cartao')}</button></div>`}`:''}
+    ${N.err?`<div class="note" role="alert" style="color:var(--bad);margin-top:8px"><b>${TEk(N.err,TE('ae_e_servidor'))}</b></div>`:''}
+    <button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem;margin-top:14px" data-act="ae-nv-liga" ${pronto?'':'disabled'}>${N.subindo&&v&&N.qr?TE('ae_esperando_envio'):TE('ae_ligar_video')}</button></div>`;}
 function aeCadastros(){const A=state.ae,cad=(A.dados&&A.dados.cadastros)||{};if(!can('ativentrega','u'))return '';
   return `<div class="panel" id="ae-cad"><button class="btn ghost" data-act="ae-cad" aria-expanded="${A.cad}">${TE('ae_cadastros')} ${A.cad?'▴':'▾'}</button>
     ${A.cad?['piloto','drone','bateria'].map(t=>`<div style="margin-top:12px"><span class="eyebrow">${({piloto:TE('ae_cad_piloto'),drone:TE('ae_cad_drone'),bateria:TE('ae_cad_bateria')})[t]}</span><div class="row" style="gap:6px;flex-wrap:wrap;margin:6px 0">${(cad[t]||[]).map(x=>`<button class="chip" data-act="ae-cad-liga" data-t="${t}" data-n="${esc(x.nome)}" aria-pressed="${x.ativo}" title="${esc(x.ativo?TE('ae_desligar'):TE('ae_ligar'))}">${esc(x.nome)}${x.ativo?'':' · '+TE('ae_inativo')}</button>`).join('')||`<span class="note">${TE('ae_nenhum')}</span>`}</div>
@@ -5241,6 +5264,7 @@ function vAtivEntrega(){const A=state.ae;if(!A.dia)A.dia=venueToday();if(!A.dado
   const nv=A.dados&&A.dados.nuvem;
   return `<div class="head"><div><h1>${esc(viewLabel('ativ-entrega'))}</h1></div><div style="text-align:right">${dateField('ae-data',A.dia,TE('ar_data'))}
     ${nv?`<div style="margin-top:4px"><span class="pill ${!nv.ligada?'':nv.fila?'warn':'good'}">${!nv.ligada?TE('ae_nuvem_desligada'):nv.fila?TE('ae_nuvem_pend',nv.fila):TE('ae_nuvem_ok')}</span></div>`:''}</div></div>
+  ${A.dados||A.nv?aeNovo():''}
   <div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${AE_CATS.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="ae-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}${A.dados&&pend(c)?' · '+pend(c):''}</span></button>`).join('')}</div>
   <div class="chips" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"><button class="chip" style="min-height:44px" data-act="ae-ver" data-v="pendentes" aria-pressed="${A.ver==='pendentes'}">${TE('ae_pendentes')}</button><button class="chip" style="min-height:44px" data-act="ae-ver" data-v="entregues" aria-pressed="${A.ver==='entregues'}">${TE('ae_entregues')}</button></div>
   ${A.erro&&!A.dados?`<div class="panel"><div class="note" role="alert">${TE(A.erro)}</div></div>`:''}${!A.dados&&!A.erro?`<div class="panel"><div class="note">${TE('ar_carregando')}</div></div>`:''}
@@ -5252,23 +5276,30 @@ document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.
   else if(a==='ae-voo'){A.voo=id;}else if(a==='ae-voo-nao'){A.voo=null;}
   else if(a==='ae-voo-ok'){const f=document.getElementById('ae-voo-form');const g=t=>(f.querySelector(`[data-ae-voo="${t}"]`)||{}).value||'';const c={id,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria')};
     if(!c.piloto||!c.drone||!c.bateria){toast(TE('ae_e_cadastro'));return;}if(await aeAcao(c)){A.voo=null;await aePull();}}
-  else if(a==='ae-entregar'){aeCamDesliga();A.ent={venda:id,qr:null,err:null,cam:false};}
   else if(a==='ae-cam'){aeCamLiga();return;}
-  else if(a==='ae-qr-troca'){A.ent.qr=null;A.ent.err=null;}
-  else if(a==='ae-cancela'){aeCamDesliga();A.ent=null;}
+  else if(a==='ae-qr-troca'&&A.nv){A.nv.qr=null;A.nv.err=null;}
+  else if(a==='ae-nv-descarta'){aeDescarta();}
+  else if(a==='ae-nv-venda'&&A.nv){A.nv.venda=A.nv.venda===id?null:id;A.nv.err=null;A.nv.cancel=null;}
+  else if(a==='ae-nv-lixo'&&A.nv){A.nv.cancel=A.nv.cancel===id?null:id;}
+  else if(a==='ae-nv-lixo-nao'&&A.nv){A.nv.cancel=null;}
+  else if(a==='ae-nv-lixo-ok'){const m=((document.querySelector('[data-ae-cmotivo]')||{}).value||'').trim();aeCancelaVenda(id,m);return;}
+  else if(a==='ae-nv-liga'){aeLiga();return;}
   else if(a==='ae-cad'){A.cad=!A.cad;}
   else if(a==='ae-cad-add'){const i=document.querySelector(`[data-ae-novo="${el.dataset.t}"]`);const n=(i&&i.value||'').trim();if(!n)return;const j=await aeAcao({tipo:el.dataset.t,nome:n,ativo:true},'/ativ/cadastros');if(j){A.dados&&(A.dados.cadastros=j.cadastros);}}
   else if(a==='ae-cad-liga'){const cad=(A.dados&&A.dados.cadastros||{})[el.dataset.t]||[];const x=cad.find(y=>y.nome===el.dataset.n);if(!x)return;const j=await aeAcao({tipo:el.dataset.t,nome:x.nome,ativo:!x.ativo},'/ativ/cadastros');if(j&&A.dados)A.dados.cadastros=j.cadastros;}
   else return;render();});
 document.addEventListener('change',async e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-entrega'||!a)return;const A=state.ae;
   if(a==='ae-item'&&t.checked){t.disabled=true;if(await aeAcao({id:t.dataset.id,etapa:'item',i:+t.dataset.i}))await aePull();else{t.checked=false;t.disabled=false;}}
-  else if(a==='ae-arquivo'&&t.files&&t.files[0])aeEnviar(t.files[0]);
+  else if(a==='ae-arquivo'&&t.files&&t.files[0])aeSolta(t.files[0]);
   else if(a==='ae-data'&&/^\d{4}-\d{2}-\d{2}$/.test(t.value)){A.dia=t.value;A.dados=null;aePull();render();}});
 document.addEventListener('keydown',e=>{const t=e.target;if(state.view!=='ativ-entrega'||!t.dataset||t.dataset.act!=='ae-qr-txt'||e.key!=='Enter')return;e.preventDefault();
-  const tok=cartaoToken(t.value);if(tok)aeQrLido(tok);else{state.ae.ent.err='ae_e_nao_qr';render();}});
+  const tok=cartaoToken(t.value);if(tok)aeQrLido(tok);else if(state.ae.nv){state.ae.nv.err='ae_e_nao_qr';render();}});
 document.addEventListener('paste',e=>{const t=e.target;if(state.view!=='ativ-entrega'||!t.dataset||t.dataset.act!=='ae-qr-txt')return;setTimeout(()=>{const tok=cartaoToken(t.value);if(tok)aeQrLido(tok);},0);});
 setInterval(()=>{if(state.view==='ativ-entrega'&&document.visibilityState==='visible')aePull();else if(state.view!=='ativ-entrega'&&aeCam)aeCamDesliga();},10e3);
-setInterval(()=>{if(state.ae.envio)aeProgresso();},1e3);
+setInterval(()=>{if(state.ae.nv&&state.ae.nv.subindo)aeProgresso();},1e3);
+// arrastar o vídeo do cartão para qualquer ponto da tela; fora do fluxo o navegador não abre o arquivo por engano
+document.addEventListener('dragover',e=>{if(state.view==='ativ-entrega')e.preventDefault();});
+document.addEventListener('drop',e=>{if(state.view!=='ativ-entrega')return;e.preventDefault();const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f&&!state.ae.nv)aeSolta(f);});
 function vEstatisticas(){const M=state.es;const on=esOn();if(!esSecoes().some(s=>s[0]===M.sec))M.sec='a';
   if(M.sec==='g')return `<div class="head pn-head"><div><div class="eyebrow">${TE('g_dashboard')} · ${esc(venueName())}</div><h1>${TE('v_estatisticas')}</h1></div></div>${esChips()}<div class="es-sec">${esSecG()}</div>`; // v97: g tem chips de ano, sem o período
   if(on){esPull();if(M.sec==='f')esImpPull();}const p=esPeriodo();const chave=p.de+'|'+p.ate;const ds=M.chave===chave&&M.dias?M.dias:[];M._ds=ds;
@@ -5722,6 +5753,7 @@ function ativRegras(p){const r=[];if(p.k4)r.push(TE('at_r_k4',fmtR(p.k4)));if(p.
   if(p.extra&&p.extra.limite>0)r.push(TE('at_r_extra',p.extra.limite,fmtR(p.extra.valor)));if(Array.isArray(p.faixas)&&p.faixas.length)r.push(p.faixas.map(fmtR).join(' · ')+' · '+TE('at_r_depois',fmtR(p.depois||0)));
   const i=p.inclui||{};const inc=[i.chutes?TE('at_chutes').toLowerCase()+': '+i.chutes:'',i.videos?TE('at_videos').toLowerCase()+': '+i.videos:'',...(i.itens||[])].filter(Boolean);
   if(inc.length&&p.entrega!=='fisico')r.push(TE('at_r_inclui')+' '+inc.join(', '));return r.join(' · ');}
+const ICO_LIXO='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
 const AT_ICONES={
   drone:'<g class="dr-corpo"><path d="M12 15 20 22M36 15 28 22M12 33 20 26M36 33 28 26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><ellipse class="dr-helice" cx="11" cy="14" rx="8" ry="1.8" fill="#ffb800"/><ellipse class="dr-helice" cx="37" cy="14" rx="8" ry="1.8" fill="#ffb800"/><ellipse class="dr-helice" cx="11" cy="34" rx="8" ry="1.8" fill="#ffb800"/><ellipse class="dr-helice" cx="37" cy="34" rx="8" ry="1.8" fill="#ffb800"/><rect x="18" y="19" width="12" height="10" rx="3.5" fill="currentColor"/><circle cx="24" cy="24" r="2.6" fill="#ffb800"/></g>',
   chute:'<path d="M21 38V12h24v26" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M27 12v26M33 12v26M39 12v26M21 18h24M21 24h24M21 30h24" stroke="currentColor" stroke-opacity=".35"/><path d="M2 39h44" stroke="#1fa3a8" stroke-width="2.5" stroke-linecap="round"/><g class="ch-bola"><circle cx="10" cy="33" r="5.5" fill="#ffb800"/><path d="M10 30.2l2.7 2-1 3.1h-3.4l-1-3.1z" fill="#134078"/></g>',
@@ -8810,13 +8842,21 @@ const EQ={
   ae_drone:["Drone","Drone","Dron","Drone","Drohne"],
   ae_bateria:["Bateria","Battery","Batería","Batterie","Akku"],
   ae_sem_cadastro:["Cadastre pilotos, drones e baterias no fim desta tela","Register pilots, drones and batteries at the bottom of this screen","Registra pilotos, drones y baterías al final de esta pantalla","Enregistrez pilotes, drones et batteries en bas de cet écran","Piloten, Drohnen und Akkus unten auf dieser Seite erfassen"],
-  ae_passo_qr:["1. Cartão com QR","1. QR card","1. Tarjeta con QR","1. Carte QR","1. QR-Karte"],
+  ae_passo_qr:["3. Cartão com QR","3. QR card","3. Tarjeta con QR","3. Carte QR","3. QR-Karte"],
+  ae_passo_conf:["1. Confira o vídeo","1. Check the video","1. Revisa el video","1. Vérifiez la vidéo","1. Video prüfen"],
+  ae_passo_venda:["2. Para qual venda é este vídeo?","2. Which sale is this video for?","2. ¿Para qué venta es este video?","2. Pour quelle vente est cette vidéo ?","2. Zu welchem Verkauf gehört dieses Video?"],
+  ae_drop:["Arraste aqui o vídeo do cartão do drone","Drag the video from the drone's card here","Arrastra aquí el video de la tarjeta del dron","Glissez ici la vidéo de la carte du drone","Video von der Drohnenkarte hierher ziehen"],
+  ae_drop_sub:["ou toque para escolher o arquivo (.mp4 ou .mov)","or tap to choose the file (.mp4 or .mov)","o toca para elegir el archivo (.mp4 o .mov)","ou touchez pour choisir le fichier (.mp4 ou .mov)","oder tippen, um die Datei zu wählen (.mp4 oder .mov)"],
+  ae_descartar:["Descartar","Discard","Descartar","Abandonner","Verwerfen"],
+  ae_sem_venda_video:["Nenhuma venda do dia esperando vídeo","No sale today waiting for a video","Ninguna venta del día esperando video","Aucune vente du jour en attente de vidéo","Kein Verkauf von heute wartet auf ein Video"],
+  ae_ligar_video:["Entregar vídeo","Deliver video","Entregar video","Livrer la vidéo","Video übergeben"],
+  ae_esperando_envio:["Aguardando o vídeo chegar ao servidor","Waiting for the video to reach the server","Esperando que el video llegue al servidor","En attente de l'arrivée de la vidéo sur le serveur","Warten, bis das Video auf dem Server ist"],
+  ae_no_servidor:[d=>"Vídeo no servidor"+(d?" · "+d:""),d=>"Video on the server"+(d?" · "+d:""),d=>"Video en el servidor"+(d?" · "+d:""),d=>"Vidéo sur le serveur"+(d?" · "+d:""),d=>"Video auf dem Server"+(d?" · "+d:"")],
+  ae_e_rascunho:["O vídeo saiu do servidor. Solte o vídeo de novo","The video left the server. Drop the video again","El video salió del servidor. Suelta el video de nuevo","La vidéo n'est plus sur le serveur. Déposez-la à nouveau","Das Video ist nicht mehr auf dem Server. Bitte erneut ablegen"],
   ae_ler_qr:["Ler o QR do cartão com a câmera","Read the card QR with the camera","Leer el QR de la tarjeta con la cámara","Lire le QR de la carte avec la caméra","Karten-QR mit der Kamera lesen"],
   ae_sem_camera:["Este aparelho não lê QR pela câmera. Use o leitor ou cole o link do cartão abaixo.","This device cannot read QR with the camera. Use the scanner or paste the card link below.","Este aparato no lee QR con la cámara. Usa el lector o pega el enlace de la tarjeta abajo.","Cet appareil ne lit pas le QR avec la caméra. Utilisez le lecteur ou collez le lien de la carte ci-dessous.","Dieses Gerät liest keinen QR mit der Kamera. Scanner benutzen oder den Kartenlink unten einfügen."],
   ae_qr_manual:["Ou leitor de QR / link do cartão","Or QR scanner / card link","O lector de QR / enlace de la tarjeta","Ou lecteur QR / lien de la carte","Oder QR-Scanner / Kartenlink"],
   ae_trocar_cartao:["Trocar cartão","Change card","Cambiar tarjeta","Changer de carte","Karte wechseln"],
-  ae_passo_video:["2. Vídeo do cartão do drone","2. Video from the drone's card","2. Video de la tarjeta del dron","2. Vidéo de la carte du drone","2. Video von der Drohnenkarte"],
-  ae_escolher_video:["Escolher o vídeo","Choose the video","Elegir el video","Choisir la vidéo","Video auswählen"],
   ae_cadastros:["Pilotos, drones e baterias","Pilots, drones and batteries","Pilotos, drones y baterías","Pilotes, drones et batteries","Piloten, Drohnen und Akkus"],
   ae_cad_piloto:["Pilotos","Pilots","Pilotos","Pilotes","Piloten"],
   ae_cad_drone:["Drones","Drones","Drones","Drones","Drohnen"],
@@ -8848,7 +8888,6 @@ const EQ={
   ae_vendido_por:[n=>"Vendido por "+n,n=>"Sold by "+n,n=>"Vendido por "+n,n=>"Vendu par "+n,n=>"Verkauft von "+n],
   ae_voo_info:[(p,d,b,h)=>"Voo às "+h+" · piloto "+p+" · drone "+d+" · bateria "+b,(p,d,b,h)=>"Flight at "+h+" · pilot "+p+" · drone "+d+" · battery "+b,(p,d,b,h)=>"Vuelo a las "+h+" · piloto "+p+" · dron "+d+" · batería "+b,(p,d,b,h)=>"Vol à "+h+" · pilote "+p+" · drone "+d+" · batterie "+b,(p,d,b,h)=>"Flug um "+h+" · Pilot "+p+" · Drohne "+d+" · Akku "+b],
   ae_video_n:[n=>"Vídeo "+n,n=>"Video "+n,n=>"Video "+n,n=>"Vidéo "+n,n=>"Video "+n],
-  ae_entregar:[n=>"Entregar vídeo "+n,n=>"Deliver video "+n,n=>"Entregar video "+n,n=>"Livrer la vidéo "+n,n=>"Video "+n+" übergeben"],
   ae_entregue_ok:[c=>"Vídeo ligado ao cartão "+c,c=>"Video linked to card "+c,c=>"Video vinculado a la tarjeta "+c,c=>"Vidéo associée à la carte "+c,c=>"Video mit Karte "+c+" verknüpft"],
   ae_nuvem_subindo:[p=>"Subindo "+p+"%",p=>"Uploading "+p+"%",p=>"Subiendo "+p+"%",p=>"Envoi "+p+" %",p=>"Hochladen "+p+" %"],
   ae_nuvem_pend:[n=>"Vídeos aguardando internet: "+n,n=>"Videos waiting for internet: "+n,n=>"Videos esperando internet: "+n,n=>"Vidéos en attente d'internet : "+n,n=>"Videos warten auf Internet: "+n],
@@ -10105,7 +10144,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='posto'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,priceOf,lojaMaisIds,EQ,TE,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais,pubGaleria,selfieVarias,ynDetect,esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,bgMigraTelao,bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},I18N,T,ecoUpd,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,lgpdPlano,saveSim,pendMontSemImp,pendRecomecar,ecoEsperaId,fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},ATIV_PADRAO,ativPreco,ativOk,ativForaHoje,ativVendavel,ativLista,idiomaEquipe,asLer,asCarrega,asEnviar,asJunta,avCodigo,avNumero,avDemoCopia,avDemoNome,arEquipe,aePull,aeQrLido,aeEnviar,arPeriodo,arGrupo,arServicos,arPull};
+window.ETERNA={impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,priceOf,lojaMaisIds,EQ,TE,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais,pubGaleria,selfieVarias,ynDetect,esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,bgMigraTelao,bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},I18N,T,ecoUpd,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,bgMigraPodio,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,lgpdPlano,saveSim,pendMontSemImp,pendRecomecar,ecoEsperaId,fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},ATIV_PADRAO,ativPreco,ativOk,ativForaHoje,ativVendavel,ativLista,idiomaEquipe,asLer,asCarrega,asEnviar,asJunta,avCodigo,avNumero,avDemoCopia,avDemoNome,arEquipe,aePull,aeQrLido,aeSolta,arPeriodo,arGrupo,arServicos,arPull};
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 })();
 </script>

@@ -182,17 +182,22 @@ Tela **Entrega dos vídeos** (menu Venda), módulo `ativentrega` (Criar = ligar 
 
 - **Fila do dia** por serviço (Drone, Chute a Gol, Snap Pop), com Pendentes e Entregues, na ordem da venda (não há agendamento de voo, 12/11). Situação em palavras: "Aguardando o cliente", "Aguardando voo", "Aguardando vídeo", "Entrega pendente", "Entregue".
 - **Cliente chegou** e **Voo feito** (Drone): o voo pede piloto, drone e bateria, escolhidos do cadastro ativo. O cadastro fica no fim da tela: inclui e liga ou desliga, nunca apaga.
-- **Entregar vídeo N:**
-  1. o QR do cartão é lido pela câmera do tablet (`BarcodeDetector`, Chrome do Android) ou pelo leitor, que digita o link; colar o link também vale. Cartão já usado é recusado na hora;
-  2. a equipe escolhe o vídeo do cartão do drone (.mp4 ou .mov) e ele vai ao servidor do ponto com barra de progresso e velocidade.
-- **Servidor do ponto** (`POST /ativ/video?venda=&qr=`, um vídeo por vez, até 1 GB): confere a venda (ativa e ainda sem todos os vídeos que comprou) e o QR (formato, nunca usado numa entrega nem numa galeria de fotos) antes de ler o arquivo, confere que é mp4/mov e lê a duração do próprio arquivo. Guarda em `~/Eterna/ativ-videos/<qr>.mp4`, grava a linha em `ativ_entrega` e o QR na venda.
+- **Entregar o vídeo (v99.18.4, fluxo do computador do ponto, decisão do Ronaldo em 12/11):** o drone pousa, alguém abre o cartão de memória no computador e:
+  1. **arrasta o vídeo para a tela** (ou toca para escolher o arquivo). O vídeo já começa a subir para o servidor do ponto, com barra de progresso e velocidade, enquanto a pessoa segue;
+  2. **confere o vídeo**, que toca ali mesmo (do próprio arquivo, sem esperar o envio); "Descartar" desiste;
+  3. **escolhe a venda** na lista das vendas do dia que esperam vídeo, de todos os serviços. A **lixeira** cancela a venda, com motivo, para quem pode cancelar (seção 5) e só enquanto nenhum vídeo dela foi entregue. Drone sem voo marcado pede piloto, drone e bateria ali mesmo;
+  4. **lê o QR de um cartão novo** pela câmera (`BarcodeDetector`, Chrome do Android) ou pelo leitor, que digita o link; colar o link também vale. Cartão já usado é recusado na hora;
+  5. **Entregar vídeo** liga o vídeo à venda e ao cartão. A partir daí o QR é a chave do cliente.
+- **Servidor do ponto:** `POST /ativ/video` (um vídeo por vez, até 1 GB) recebe o arquivo, confere que é mp4/mov, lê a duração do próprio arquivo e guarda como rascunho (`~/Eterna/ativ-videos/rascunho-<id>.mp4`). `POST /ativ/video/liga {rascunho, venda, qr}` confere a venda (ativa e ainda sem todos os vídeos que comprou) e o QR (formato, nunca usado numa entrega nem numa galeria de fotos), passa o arquivo para `~/Eterna/ativ-videos/<qr>.mp4`, grava a linha em `ativ_entrega` e o QR na venda. Rascunho que não virou entrega sai em um dia.
 - **Itens físicos** (medalha, bola, do catálogo do pacote): baixa um a um. A venda fica **entregue**, com data e hora, quando todos os vídeos têm QR e todos os itens tiveram baixa. Entregue não cancela.
 - **Nuvem:** o vídeo entra numa fila própria (`nuvem.db`, tabela `videos`) e sobe para `video/<qr>.mp4` no bucket em partes de 8 MB, conferindo o tamanho no fim. Sem internet, tenta de novo com espera crescente. A tela mostra "Aguardando internet", "Subindo N%" ou "Na nuvem".
 - **Galeria do vídeo:** o QR vira o token de uma galeria `tipo: "video"` (manifesto com o vídeo, o idioma da venda e validade de 30 dias), publicada pela fila de galerias de sempre.
 - **Prazo:** o arquivo sai do servidor do ponto depois de 30 dias (limpeza diária); a linha da entrega fica como registro.
-- Rotas: `GET /ativ/fila?dia=`, `POST /ativ/etapa`, `POST /ativ/video`, `GET|POST /ativ/cadastros`. Testes: `testes/ativacoes_entrega_agente.py` e `testes/ativacoes_entrega.js`.
+- Rotas: `GET /ativ/fila?dia=`, `POST /ativ/etapa`, `POST /ativ/video`, `POST /ativ/video/liga`, `GET|POST /ativ/cadastros`. Testes: `testes/ativacoes_entrega_agente.py` e `testes/ativacoes_entrega.js`.
 
 ### 4b. Falta (parte 2): o vídeo na galeria da nuvem
+
+Decidido em 12/11: o QR abre o vídeo direto, com o aceite de uso de imagem e o e-mail, **sem selfie** (o reconhecimento de rosto não compara com vídeo, e o cartão físico já prova a compra). Fica registrado, com data e hora, quando o cliente abriu o QR, deu play e baixou (o botão Baixar passa pela galeria da nuvem, que grava e manda para o vídeo); o servidor do ponto traz esses registros e mostra na venda. Sobe primeiro uma versão leve (1080p) para tocar no celular e depois o original para baixar (ffmpeg no servidor do ponto). Guarda: arquivo no servidor do ponto 30 dias, link do cliente 30 dias, cópia no S3 1 ano (armazenamento mais barato depois de 30 dias). Quadros do vídeo com as pessoas entram como fotos no Checkout.
 
 - A Lambda da galeria (`servidor/galeria-nuvem/app.py`) ainda só conhece fotos: aceitar o manifesto `tipo: "video"`, devolver o link assinado do vídeo (`video/<qr>.mp4`) e "seu vídeo está chegando" enquanto ele não estiver no bucket, e contar os downloads.
 - A página do cliente (`index.html`, `#g/<token>`) precisa do player e do botão de baixar, sem passar o vídeo inteiro pela memória do celular.

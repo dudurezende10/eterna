@@ -7846,6 +7846,32 @@ def ativ_video_checa(vid, qr):
     return None, n + 1
 
 
+ativ_liga_lock = threading.Lock()
+_re_rascunho = re.compile(r"^[0-9a-f]{16}$")
+
+
+def ativ_rascunho(rid):
+    return os.path.join(ATIV_VIDEOS_DIR, "rascunho-%s.mp4" % rid)
+
+
+def ativ_video_liga(body, eu):
+    """POST /ativ/video/liga {rascunho, venda, qr}: o vídeo que já está no servidor passa a ser da venda e do cartão.
+    As mesmas conferências de antes (venda ativa, cartão novo, não passa dos vídeos comprados). -> (erro, n do vídeo)."""
+    rid = str(body.get("rascunho") or "")
+    if not _re_rascunho.match(rid):
+        return "dados", None
+    arq = ativ_rascunho(rid)
+    with ativ_liga_lock:
+        if not os.path.exists(arq):
+            return "rascunho", None
+        vid, qr = str(body.get("venda") or ""), str(body.get("qr") or "")
+        e, n = ativ_video_checa(vid, qr)
+        if e:
+            return e, None
+        e = ativ_video_grava(vid, qr, n, arq, eu)
+        return e, (None if e else n)
+
+
 def ativ_video_grava(vid, qr, n, tmp, eu):
     """Arquivo recebido inteiro: guarda, liga ao QR, fecha a venda se completou, põe na fila da nuvem e grava a galeria do vídeo."""
     ok, dur = mp4_info(tmp)
@@ -7896,6 +7922,13 @@ def ativ_videos_limpa(agora=None):
         velhos = c.execute("select arquivo from ativ_entrega where em < ?", (lim,)).fetchall()
     finally:
         c.close()
+    try:
+        for f in os.listdir(ATIV_VIDEOS_DIR):
+            p = os.path.join(ATIV_VIDEOS_DIR, f)
+            if f.startswith("rascunho-") and os.path.getmtime(p) < (agora or time.time()) - 86400:
+                os.remove(p)
+    except OSError:
+        pass
     n = 0
     for (arq,) in velhos:
         if arq and os.path.dirname(os.path.abspath(arq)) == os.path.abspath(ATIV_VIDEOS_DIR) and os.path.exists(arq):
@@ -9514,7 +9547,7 @@ ROTAS = (
     ("GET", "/ativ/equipe", "sessao", ("estatisticas.r", "financeiro.r", "ativvenda.d")),
     ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),   # vídeos de demonstração (lista e arquivo)
     ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
-    ("POST", "/ativ/video", "sessao", ("ativentrega.c",)),
+    ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
     ("GET", "/ativ/cadastros", "sessao", ("ativentrega.r",)), ("POST", "/ativ/cadastros", "sessao", ("ativentrega.u",)),
     ("GET", "/roverpix/status", "sessao", ("financeiro.r",)), ("GET", "/roverpix/data", "sessao", ("financeiro.r",)),
     ("POST", "/roverpix/sync", "sessao", ("configuracao.u",)), ("POST", "/roverpix/config", "sessao", ("configuracao.u",)),
@@ -10671,6 +10704,12 @@ class H(BaseHTTPRequestHandler):
             if e:
                 return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409, "cadastro": 400}[e])
             return self.js({"ok": True})
+        if rota == "/ativ/video/liga":
+            e, n = ativ_video_liga(body, eu.get("usuario") or "")
+            if e:
+                return self.js({"error": e}, {"dados": 400, "rascunho": 410, "nao_achou": 404, "cancelada": 409, "qr_usado": 409,
+                                              "completa": 409, "sem_video": 409, "formato": 415}[e])
+            return self.js({"ok": True, "qr": body["qr"], "codigo": cartao_codigo(body["qr"]), "n": n})
         if rota == "/ativ/cadastros":
             e = ativ_cadastro_set(body)
             return self.js({"error": e}, 400) if e else self.js({"ok": True, "cadastros": ativ_cadastros()})
@@ -10680,27 +10719,21 @@ class H(BaseHTTPRequestHandler):
         return self.js({"ok": True})
 
     def ativ_video_post(self, u):
-        """v100 fase 4: POST /ativ/video?venda=&qr= com o mp4 no corpo (a tela da fila manda o arquivo do cartão do drone).
-        Origem local + X-Eterna: 1 + ativentrega.c (ROTAS). A venda e o QR são conferidos antes de ler o corpo."""
-        q = parse_qs(u.query)
-        vid, qr = (q.get("venda") or [""])[0], (q.get("qr") or [""])[0]
+        """v100 fase 4: POST /ativ/video com o mp4 no corpo. O vídeo sobe assim que é solto na tela, antes de a equipe escolher a
+        venda e ler o cartão: fica como rascunho (~/Eterna/ativ-videos/rascunho-<id>.mp4) até POST /ativ/video/liga.
+        Origem local + X-Eterna: 1 + ativentrega.c (ROTAS)."""
         tam = self.headers.get("Content-Length")
         try:
             n = int(tam) if tam is not None else -1
         except ValueError:
             n = -1
-        eu = self.sessao() or {}
-        erro, num = None, None
+        erro = None
         if not self.origem_local() or self.headers.get("X-Eterna") != "1":
             erro = ({"error": "origem"}, 403)
         elif n <= 0 or n > ATIV_VIDEO_MAX:
             erro = ({"error": "tamanho"}, 413)
         elif not limite_ok(self.client_address[0], "ativ_video", 30):
             erro = ({"error": "taxa"}, 429)
-        else:
-            e, num = ativ_video_checa(vid, qr)
-            if e:
-                erro = ({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409, "qr_usado": 409, "completa": 409, "sem_video": 409}[e])
         if not erro:
             try:
                 if shutil.disk_usage(HOME).free < n + 2 * 1024 ** 3:
@@ -10733,11 +10766,13 @@ class H(BaseHTTPRequestHandler):
             if resto:
                 self.close_connection = True
                 return self.js({"error": "incompleto"}, 400, True)
-            e = ativ_video_grava(vid, qr, num, tmp, eu.get("usuario") or "")
-            if e:
-                return self.js({"error": e}, {"formato": 415, "qr_usado": 409}[e], True)
+            ok, dur = mp4_info(tmp)
+            if not ok:
+                return self.js({"error": "formato"}, 415, True)
+            rid = secrets.token_hex(8)
+            os.replace(tmp, ativ_rascunho(rid))
             tmp = None
-            return self.js({"ok": True, "qr": qr, "codigo": cartao_codigo(qr), "n": num})
+            return self.js({"ok": True, "rascunho": rid, "bytes": n, "duracao": dur})
         except Exception as ex:
             self.close_connection = True
             print("  entrega: falha ao receber o vídeo (%s)" % type(ex).__name__)
@@ -11803,7 +11838,7 @@ class H(BaseHTTPRequestHandler):
             return self.ff_funcao_post()
         if u.path == "/ativ/video":
             return self.ativ_video_post(u)
-        if u.path in ("/ativ/etapa", "/ativ/cadastros"):
+        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga"):
             return self.ativ_post(u.path)
         if u.path in ("/ativ/venda", "/ativ/cancelar"):
             return self.ativ_post(u.path)

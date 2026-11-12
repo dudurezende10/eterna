@@ -56,6 +56,14 @@ def mp4(segundos):
     return caixa(b"ftyp", b"isom\x00\x00\x02\x00isomiso2") + caixa(b"moov", caixa(b"mvhd", mvhd)) + caixa(b"mdat", b"\x00" * 5000)
 
 
+def entrega(venda, qr, bruto, cookie):
+    """vídeo sobe como rascunho e depois é ligado à venda e ao cartão (a tela faz assim)"""
+    st, j = req("POST", "/ativ/video", cookie, bruto=bruto, tipo="video/mp4")
+    if st != 200:
+        return st, j
+    return req("POST", "/ativ/video/liga", cookie, {"rascunho": j["rascunho"], "venda": venda, "qr": qr})
+
+
 HOJE = time.strftime("%Y-%m-%d")
 CODIGO_APP = "4B3J-GCRL"            # cartaoCodigo("abcdefghijklmnopqrstuv") no app
 QR1, QR2, QR3 = "A" * 21 + "1", "B" * 21 + "2", "C" * 21 + "3"
@@ -99,22 +107,34 @@ try:
     ok(st == 200, "voo feito: %s %s" % (st, j))
     st, j = req("POST", "/ativ/etapa", ven, {"id": "TDRONE001D", "etapa": "recebido"})
     ok(st == 403, "vendedor não marca etapa: %s" % st)
-    # vídeo: conferências antes de ler o arquivo
-    st, j = req("POST", "/ativ/video?venda=TDRONE001D&qr=curto", eq, bruto=mp4(30), tipo="video/mp4")
+    # vídeo: sobe como rascunho assim que é solto na tela; depois liga à venda e ao cartão
+    st, j = req("POST", "/ativ/video", eq, bruto=mp4(30), tipo="video/mp4")
+    ok(st == 200 and re.match(r"^[0-9a-f]{16}$", j.get("rascunho") or "") and j.get("duracao") == 30.0, "rascunho: %s %s" % (st, j))
+    st, j = req("POST", "/ativ/video/liga", eq, {"rascunho": j.get("rascunho"), "venda": "TDRONE001D", "qr": "curto"})
     ok(st == 400, "QR inválido: %s" % st)
-    st, j = req("POST", "/ativ/video?venda=TDRONE001D&qr=" + QR1, eq, bruto=b"nao e video" * 100, tipo="video/mp4")
+    st, j = req("POST", "/ativ/video/liga", eq, {"rascunho": "0" * 16, "venda": "TDRONE001D", "qr": QR1})
+    ok(st == 410 and j.get("error") == "rascunho", "rascunho que não existe: %s %s" % (st, j))
+    st, j = req("POST", "/ativ/video", eq, bruto=b"nao e video" * 100, tipo="video/mp4")
     ok(st == 415, "arquivo que não é mp4: %s %s" % (st, j))
-    st, j = req("POST", "/ativ/video?venda=TDRONE001D&qr=" + QR1, eq, bruto=mp4(30), tipo="video/mp4", xe=False)
+    st, j = req("POST", "/ativ/video", eq, bruto=mp4(30), tipo="video/mp4", xe=False)
     ok(st == 403, "sem X-Eterna: %s" % st)
-    st, j = req("POST", "/ativ/video?venda=TDRONE001D&qr=" + QR1, ven, bruto=mp4(30), tipo="video/mp4")
+    st, j = req("POST", "/ativ/video", ven, bruto=mp4(30), tipo="video/mp4")
     ok(st == 403, "vendedor não manda vídeo: %s" % st)
-    st, j = req("POST", "/ativ/video?venda=TDRONE001D&qr=" + QR1, eq, bruto=mp4(30), tipo="video/mp4")
+    st, j = req("POST", "/ativ/video/liga", ven, {"rascunho": "0" * 16, "venda": "TDRONE001D", "qr": QR1})
+    ok(st == 403, "vendedor não liga vídeo: %s" % st)
+    st, j = entrega("TDRONE001D", QR1, mp4(30), eq)
     ok(st == 200 and j.get("n") == 1 and re.match(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$", j.get("codigo") or ""), "vídeo ligado ao QR: %s %s" % (st, j))
     ok(os.path.getsize(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")) == len(mp4(30)) and not [f for f in os.listdir(m.ATIV_VIDEOS_DIR) if f.endswith(".tmp")],
        "arquivo guardado, sem sobra")
-    st, j = req("POST", "/ativ/video?venda=TDRONE001D&qr=" + QR2, eq, bruto=mp4(30), tipo="video/mp4")
+    sobra = [f for f in os.listdir(m.ATIV_VIDEOS_DIR) if f.startswith("rascunho-")]
+    ok(len(sobra) == 1, "só o rascunho do teste do QR inválido sobrou: %s" % sobra)
+    m.ativ_videos_limpa()
+    ok(len([f for f in os.listdir(m.ATIV_VIDEOS_DIR) if f.startswith("rascunho-")]) == 1, "rascunho novo fica")
+    m.ativ_videos_limpa(time.time() + 2 * 86400)
+    ok(not [f for f in os.listdir(m.ATIV_VIDEOS_DIR) if f.startswith("rascunho-")], "rascunho de mais de um dia sai")
+    st, j = entrega("TDRONE001D", QR2, mp4(30), eq)
     ok(st == 409 and j.get("error") == "completa", "venda com o vídeo que comprou não recebe outro: %s %s" % (st, j))
-    st, j = req("POST", "/ativ/video?venda=TCHUTE001C&qr=" + QR1, eq, bruto=mp4(20), tipo="video/mp4")
+    st, j = entrega("TCHUTE001C", QR1, mp4(20), eq)
     ok(st == 409 and j.get("error") == "qr_usado", "QR já usado: %s %s" % (st, j))
     # galeria do vídeo e fila da nuvem
     man = m.REPO.ler_manifesto(QR1)
@@ -132,7 +152,7 @@ try:
     st, j = req("POST", "/ativ/cancelar", sup, {"id": "TDRONE001D", "motivo": "teste"})
     ok(st == 409, "entregue não cancela: %s" % st)
     # chute: vídeo e a medalha, um a um
-    st, j = req("POST", "/ativ/video?venda=TCHUTE001C&qr=" + QR3, eq, bruto=mp4(20), tipo="video/mp4")
+    st, j = entrega("TCHUTE001C", QR3, mp4(20), eq)
     ok(st == 200, "vídeo do chute: %s %s" % (st, j))
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
     ch = {v["id"]: v for v in j.get("vendas", [])}.get("TCHUTE001C", {})
