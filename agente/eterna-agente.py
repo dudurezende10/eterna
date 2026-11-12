@@ -7848,11 +7848,31 @@ def ativ_cliente_resumo(evs):
             "baixou": pri("video_baixou"), "baixou_n": sum(1 for e in evs if e.get("tipo") == "video_baixou")}
 
 
+def ativ_pagina_nuvem(qrs):
+    """v99.23.6: a página do cliente (galeria do vídeo) publicada na API da nuvem? {qr: {"ok": bool, "erro": texto, "tentativas": n}}.
+    O arquivo no S3 sozinho não basta: sem a página, o QR do cartão abre "não encontrado"."""
+    if not qrs or not NUVEM_API:
+        return {}
+    try:
+        db = nuvem_db()
+        try:
+            db.execute("CREATE TABLE IF NOT EXISTS galerias (token TEXT PRIMARY KEY, prox REAL, tentativas INTEGER, feito REAL, erro TEXT)")
+            rows = db.execute("select token, feito, erro, tentativas from galerias where token in (%s)" % ",".join("?" * len(qrs)), list(qrs)).fetchall()
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return {}
+    return {t: {"ok": bool(f), "erro": (e or "")[:120] if not f else "", "tentativas": int(n or 0)} for t, f, e, n in rows}
+
+
 def _ativ_entregas(c, vid):
+    rows = c.execute("select qr, n, bytes, duracao, por, em, nuvem_em, cliente_eventos from ativ_entrega"
+                     " where venda=? and apagado_em is null order by n", (vid,)).fetchall()
+    pg = ativ_pagina_nuvem([r[0] for r in rows])
     return [{"qr": q, "codigo": cartao_codigo(q), "n": n, "bytes": b, "duracao": d, "por": por, "em": em, "nuvem": bool(ne),
-             "subindo": ativ_video_em_curso.get(q), "cliente": ativ_cliente_resumo(ce)}
-            for q, n, b, d, por, em, ne, ce in c.execute("select qr, n, bytes, duracao, por, em, nuvem_em, cliente_eventos from ativ_entrega"
-                                                         " where venda=? and apagado_em is null order by n", (vid,))]
+             "subindo": ativ_video_em_curso.get(q), "cliente": ativ_cliente_resumo(ce),
+             "pagina": pg.get(q) or ({"ok": False, "erro": "", "tentativas": 0} if NUVEM_API else None)}
+            for q, n, b, d, por, em, ne, ce in rows]
 
 
 def nuvem_video_eventos(seg):

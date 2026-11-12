@@ -221,6 +221,22 @@ try:
     e1 = [e for v in j.get("vendas", []) for e in v.get("entregas", []) if e["qr"] == QR1][0]
     ok(e1["cliente"] == {"aberto": "2026-11-12T13:01:00Z", "aceite": None, "play": "2026-11-12T13:03:00Z", "baixou": "2026-11-12T13:06:00Z", "baixou_n": 2},
        "fila mostra quando o cliente abriu, deu play e baixou (e quantas vezes): %s" % e1["cliente"])
+    # v99.23.6: a página do cliente na nuvem (galeria do vídeo publicada) aparece na fila: recusada, publicada
+    m.NUVEM_API = "https://api.teste"
+    try:
+        nd = m.nuvem_db()
+        nd.execute("CREATE TABLE IF NOT EXISTS galerias (token TEXT PRIMARY KEY, prox REAL, tentativas INTEGER, feito REAL, erro TEXT)")
+        nd.execute("INSERT OR REPLACE INTO galerias (token, prox, tentativas, feito, erro) VALUES (?, 0, 4, NULL, 'HTTP Error 400: Bad Request')", (QR1,))
+        nd.commit()
+        e1 = [e for v in req("GET", "/ativ/fila?dia=" + HOJE, eq)[1]["vendas"] for e in v["entregas"] if e["qr"] == QR1][0]
+        ok(e1["pagina"] == {"ok": False, "erro": "HTTP Error 400: Bad Request", "tentativas": 4}, "página recusada pela nuvem aparece na fila: %s" % e1["pagina"])
+        nd.execute("UPDATE galerias SET feito=?, erro=NULL WHERE token=?", (time.time(), QR1))
+        nd.commit()
+        nd.close()
+        e1 = [e for v in req("GET", "/ativ/fila?dia=" + HOJE, eq)[1]["vendas"] for e in v["entregas"] if e["qr"] == QR1][0]
+        ok(e1["pagina"]["ok"] is True, "página publicada: %s" % e1["pagina"])
+    finally:
+        m.NUVEM_API = velho_api
     # limpeza: depois de 30 dias o arquivo sai do servidor do ponto, a entrega continua registrada
     ok(m.ativ_videos_limpa() == 0 and os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo novo fica")
     ok(m.ativ_videos_limpa(time.time() + 31 * 86400) == 2 and not os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo de 31 dias sai")

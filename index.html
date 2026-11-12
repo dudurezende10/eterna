@@ -1311,7 +1311,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.23.4 · 12/11 17:34"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.23.6 · 12/11 17:36"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2813,7 +2813,7 @@ function galDaSessao(card,criar){SIM.galerias=SIM.galerias||{};const f=Object.va
 function cartaoCodigo(tok){let h1=0x811c9dc5,h2=0x9e3779b9;for(let i=0;i<tok.length;i++){const c=tok.charCodeAt(i);h1=Math.imul(h1^c,16777619)>>>0;h2=Math.imul(h2^c,2246822519)>>>0;}
   let c='';for(let i=0;i<8;i++){const v=i<4?(h1>>>(i*7)):(h2>>>((i-4)*7));c+=GAL_ALFA[v&31];if(i===3)c+='-';}return c;}
 function cartaoToken(txt){const t=String(txt||'').trim();const m=t.match(/#g\/([A-Za-z0-9_-]{22})(?![A-Za-z0-9_-])/)||t.match(/^([A-Za-z0-9_-]{22})$/);return m?m[1]:null;}
-function cartaoLote(n){const out=['token;codigo;qr'];const ja=new Set();for(let i=0;i<n;i++){let t;do{let s='';for(const b of galRand(16))s+=String.fromCharCode(b);t=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}while(ja.has(t)||(SIM.galerias||{})[t]);ja.add(t);out.push(`${t};${cartaoCodigo(t)};${GAL_BASE_PADRAO}${t}`);}return out.join(String.fromCharCode(10));}
+function cartaoLote(n){const out=['token;codigo;qr'];const ja=new Set();for(let i=0;i<n;i++){let t;do{let s='';for(const b of galRand(16))s+=String.fromCharCode(b);t=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}while(ja.has(t)||(SIM.galerias||{})[t]||!/^[A-Za-z0-9]/.test(t));ja.add(t); /* v99.23.5: token começando com - ou _ o Excel da gráfica lia como fórmula (#NOME?) */out.push(`${t};${cartaoCodigo(t)};${GAL_BASE_PADRAO}${t}`);}return out.join(String.fromCharCode(10));}
 function cartaoAtrelar(card,txt){const tok=cartaoToken(txt);if(!tok)return {erro:'Não é o QR de um cartão Eterna'};
   const atual=galDaSessao(card);if(atual===tok)return {ok:true,ja:true,token:tok};
   const outra=(SIM.galerias||{})[tok];if(outra)return {erro:`Este cartão já está na venda ${(outra.sessoes||[]).join(', ')}. Pegue outro cartão.`};
@@ -5357,10 +5357,17 @@ const aeQuando=s=>{const d=new Date(s);if(isNaN(d))return '';const h=hhmm(d);ret
 function aeCliTxt(c){c=c||{};if(!c.aberto&&!c.aceite)return TE('ae_cli_nao_abriu');
   return [TE('ae_cli_abriu',aeQuando(c.aberto||c.aceite)),c.play?TE('ae_cli_assistiu',aeQuando(c.play)):'',c.baixou?TE('ae_cli_baixou',aeQuando(c.baixou))+(c.baixou_n>1?' ('+c.baixou_n+'×)':''):''].filter(Boolean).join(' · ');}
 // ---- tela ----
+// v99.23.6: "Na nuvem" só com o arquivo no S3 E a página do cliente publicada; sem a página o QR do cartão abre "não encontrado"
+const aePagErro=x=>!!(x.pagina&&!x.pagina.ok&&x.pagina.erro);
+function aeNuvemPill(x){const pg=x.pagina;
+  if(aePagErro(x))return `<span class="pill bad" data-ae-pag="erro">${TE('ae_pag_erro',pg.tentativas)}</span>`;
+  if(x.nuvem&&(!pg||pg.ok))return `<span class="pill good">${TE('ae_na_nuvem')}</span>`;
+  if(x.nuvem)return `<span class="pill warn" data-ae-pag="fila">${TE('ae_pag_fila')}</span>`;
+  return `<span class="pill warn">${x.subindo?TE('ae_nuvem_subindo',Math.round(100*x.subindo.feito/Math.max(1,x.subindo.total))):TE('ae_nuvem_fila')}</span>`;}
 function aeCartao(v){const A=state.ae,podeU=can('ativentrega','u');const F=A.voo===v.id;const et=aeEtapa(v);
   const cad=(A.dados&&A.dados.cadastros)||{piloto:[],drone:[],bateria:[]};const sel=(t,rot)=>aeSel(v,t,rot);
   const ents=v.entregas.map(x=>`<div class="row" style="justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);flex-wrap:wrap"><span>${TE('ae_video_n',x.n)} · ${TE('ae_cartao')} <b>${esc(x.codigo)}</b>${x.duracao?' · '+Math.round(x.duracao)+' s':''} · ${aeMB(x.bytes||0)}</span>
-    <span class="pill ${x.nuvem?'good':'warn'}">${x.nuvem?TE('ae_na_nuvem'):x.subindo?TE('ae_nuvem_subindo',Math.round(100*x.subindo.feito/Math.max(1,x.subindo.total))):TE('ae_nuvem_fila')}</span>${x.nuvem?`<div class="note" style="flex-basis:100%" data-ae-cli>${aeCliTxt(x.cliente)}</div>`:''}</div>`).join('');
+    ${aeNuvemPill(x)}${x.nuvem&&(!x.pagina||x.pagina.ok)?`<div class="note" style="flex-basis:100%" data-ae-cli>${aeCliTxt(x.cliente)}</div>`:''}</div>`).join('');
   const fis=(v.fisicos||[]).map(x=>`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-act="ae-item" data-id="${esc(v.id)}" data-i="${x.i}" ${x.entregue?'checked disabled':''} ${podeU?'':'disabled'}> ${esc(x.nome)}${x.entregue?' · '+TE('ae_item_ok'):''}</label>`).join('');
   const cls=et==='entregue'?'ok':et==='delivery'?'imp':et==='andamento'?'fila':'';
   return `<div class="if-card ae-card ${cls}" data-ae-venda="${esc(v.id)}"><div class="row" style="gap:10px;align-items:center">${aeFoto(v,52)}<div style="min-width:0">${v.cliente?`<b style="font-size:1.05rem">${esc(v.cliente)}</b><br>`:''}<b>${TE('av_numero',avNumero(v.id))}</b> · ${esc(v.criado.slice(11,16))}<div class="note">${esc(aeItensTxt(v))}</div><div class="note">${TE('ae_vendido_por',esc(v.vendedor||'—'))}</div></div></div>
@@ -5416,7 +5423,8 @@ function vAtivEntrega(){const A=state.ae;if(!A.dia)A.dia=venueToday();if(!A.dado
     return `<section class="if-col ae-col-${e}${e==='delivery'?' agora':e==='entregue'?' pronta':''}" data-ae-col="${e}"><h2>${esc(aeColNome(A.cat,e))} <span class="if-cnt">${vs.length}</span></h2><div class="if-list">${vs.map(aeCartao).join('')||`<div class="if-vazio">${TE('ae_col_vazia')}</div>`}</div></section>`;};
   const nv=A.dados&&A.dados.nuvem;
   return `<div class="head"><div><h1>${esc(viewLabel('ativ-entrega'))}</h1></div><div style="text-align:right">${dateField('ae-data',A.dia,TE('ar_data'))}
-    ${nv?`<div style="margin-top:4px"><span class="pill ${!nv.ligada?'':nv.fila?'warn':'good'}">${!nv.ligada?TE('ae_nuvem_desligada'):nv.fila?TE('ae_nuvem_pend',nv.fila):TE('ae_nuvem_ok')}</span></div>`:''}</div></div>
+    ${nv?(()=>{const er=(A.dados.vendas||[]).reduce((s,v)=>s+v.entregas.filter(aePagErro).length,0);
+      return `<div style="margin-top:4px"><span class="pill ${er?'bad':!nv.ligada?'':nv.fila?'warn':'good'}" ${er?'data-ae-pag-topo role="alert"':''}>${er?TE('ae_pag_erros',er):!nv.ligada?TE('ae_nuvem_desligada'):nv.fila?TE('ae_nuvem_pend',nv.fila):TE('ae_nuvem_ok')}</span></div>`;})():''}</div></div>
   ${A.dados||A.nv?aeNovo():''}
   <div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${AE_CATS.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="ae-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}${A.dados&&pend(c)?' · '+pend(c):''}</span></button>`).join('')}</div>
   ${A.erro&&!A.dados?`<div class="panel"><div class="note" role="alert">${TE(A.erro)}</div></div>`:''}${!A.dados&&!A.erro?`<div class="panel"><div class="note">${TE('ar_carregando')}</div></div>`:''}
@@ -9002,6 +9010,9 @@ const EQ={
   ae_cli_abriu:[h=>"Cliente abriu "+h,h=>"Customer opened "+h,h=>"El cliente abrió "+h,h=>"Client a ouvert "+h,h=>"Kunde geöffnet "+h],
   ae_cli_assistiu:[h=>"assistiu "+h,h=>"watched "+h,h=>"vio "+h,h=>"a regardé "+h,h=>"angesehen "+h],
   ae_cli_baixou:[h=>"baixou "+h,h=>"downloaded "+h,h=>"descargó "+h,h=>"a téléchargé "+h,h=>"heruntergeladen "+h],
+  ae_pag_fila:["Publicando a página do cliente","Publishing the customer page","Publicando la página del cliente","Publication de la page client","Kundenseite wird veröffentlicht"],
+  ae_pag_erro:[n=>"A nuvem recusou a página do cliente ("+n+" tentativas). O QR ainda não abre: avise a TI",n=>"The cloud refused the customer page ("+n+" tries). The QR does not open yet: tell IT",n=>"La nube rechazó la página del cliente ("+n+" intentos). El QR aún no abre: avisa a TI",n=>"Le cloud a refusé la page client ("+n+" essais). Le QR ne s’ouvre pas encore : prévenez l’informatique",n=>"Die Cloud hat die Kundenseite abgelehnt ("+n+" Versuche). Der QR öffnet noch nicht: IT informieren"],
+  ae_pag_erros:[n=>n===1?"1 vídeo sem página na nuvem: avise a TI":n+" vídeos sem página na nuvem: avise a TI",n=>n===1?"1 video without a cloud page: tell IT":n+" videos without a cloud page: tell IT",n=>n===1?"1 video sin página en la nube: avisa a TI":n+" videos sin página en la nube: avisa a TI",n=>n===1?"1 vidéo sans page dans le cloud : prévenez l’informatique":n+" vidéos sans page dans le cloud : prévenez l’informatique",n=>n===1?"1 Video ohne Cloud-Seite: IT informieren":n+" Videos ohne Cloud-Seite: IT informieren"],
   ae_na_nuvem:["Na nuvem","In the cloud","En la nube","Dans le cloud","In der Cloud"],
   ae_nuvem_fila:["Aguardando internet","Waiting for internet","Esperando internet","En attente d'internet","Wartet auf Internet"],
   ae_item_ok:["entregue","delivered","entregado","livré","übergeben"],

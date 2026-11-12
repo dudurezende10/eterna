@@ -35,6 +35,13 @@ try{
   ok(/Entrega dos vídeos/.test(await txt('#main .head'))&&/Vídeos aguardando internet: 1/.test(await txt('#main .head')),'título e situação da nuvem: '+await txt('#main .head'));
   ok(/Drone · 2/.test(await txt('#main'))&&/Chute a Gol · 1/.test(await txt('#main'))&&/Snap Pop · 1/.test(await txt('#main')),'pendentes por serviço');
   const card='[data-ae-venda="TDRONE001D"]';
+  // v99.23.6: arquivo no S3 mas página recusada pela nuvem: erro em vermelho no cartão e no topo, nunca "Na nuvem"
+  Object.assign(D.vendas[1].entregas[0],{nuvem:true,pagina:{ok:false,erro:'HTTP Error 400: Bad Request',tentativas:4}});await A.evaluate(async()=>{await ETERNA.aePull();ETERNA.render();});
+  await A.click('[data-act="ae-cat"][data-c="chute"]');await A.waitForTimeout(100);
+  ok(/A nuvem recusou a página do cliente \(4 tentativas\)/.test(await txt('[data-ae-venda="TCHUTE001C"] [data-ae-pag="erro"]'))&&!/Na nuvem/.test(await txt('[data-ae-venda="TCHUTE001C"]')),'página recusada: erro no cartão, sem "Na nuvem"');
+  ok(/1 vídeo sem página na nuvem: avise a TI/.test(await txt('[data-ae-pag-topo]')),'página recusada: aviso no topo');
+  Object.assign(D.vendas[1].entregas[0],{nuvem:false,pagina:null});await A.evaluate(async()=>{await ETERNA.aePull();ETERNA.render();});
+  await A.click('[data-act="ae-cat"][data-c="drone"]');await A.waitForTimeout(100);
   // uma fila por ativação, como a Fila de fotos: Próximo a voar, Voando, Entrega do vídeo, Entregue
   const cols=async()=>A.$$eval('[data-ae-col] h2',x=>x.map(h=>h.childNodes[0].textContent.trim()));
   ok(J(await cols())===J(['Próximo a voar','Voando','Entrega do vídeo','Entregue']),'colunas do Drone: '+J(await cols()));
@@ -92,8 +99,8 @@ try{
   ok(J(posts.slice(-1)[0])===J({id:'TCHUTE001C',etapa:'item',i:0})&&await naCol('TCHUTE001C','entregue'),'baixa da medalha: vai para Entregue: '+J(posts));
   await A.click('[data-act="ae-cat"][data-c="drone"]');await A.waitForTimeout(100);
   // cadastro
-  await A.click('[data-act="ae-cad"]');await A.fill('[data-ae-novo="piloto"]','Piloto Dois');await A.click('[data-act="ae-cad-add"][data-t="piloto"]');await A.waitForTimeout(300);
-  ok(J(posts.slice(-1)[0])===J({tipo:'piloto',nome:'Piloto Dois',ativo:true})&&/Piloto Dois/.test(await txt('#ae-cad')),'piloto cadastrado');
+  await A.click('[data-act="ae-cad"]');await A.fill('[data-ae-novo="piloto"]','Piloto Dois');await A.click('[data-act="ae-cad-add"][data-t="piloto"]');for(let i=0;i<30&&!/Piloto Dois/.test(await txt('#ae-cad'));i++)await A.waitForTimeout(100);
+  ok(J(posts.slice(-1)[0])===J({tipo:'piloto',nome:'Piloto Dois',ativo:true})&&/Piloto Dois/.test(await txt('#ae-cad')),'piloto cadastrado: '+J(posts.slice(-2))+' | '+(await txt('#ae-cad')).replace(/\s+/g,' ').slice(0,200));
   // só Ver: nenhum botão
   await A.evaluate(()=>{const u=ETERNA.state.user;u.perms={...u.perms,ativentrega:{c:false,r:true,u:false,d:false}};ETERNA.go('ativ-entrega');});await A.click('[data-act="ae-cat"][data-c="drone"]');await A.waitForTimeout(100);
   D.vendas[0].entregue_em=null;D.vendas[0].entregas=[];await A.evaluate(()=>ETERNA.aePull());await A.waitForTimeout(300);
