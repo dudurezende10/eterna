@@ -11,7 +11,8 @@ try{
   let chegou=false;const chamadas=[];
   await ctx.route(API+'/**',async r=>{const u=new URL(r.request().url());const body=r.request().postData()?JSON.parse(r.request().postData()):null;chamadas.push([u.pathname,body]);
     const gal=a=>({tipo:'video',servico:'drone',expira:'2026-12-12T12:00:00',estado:chegou?'pronta':'chegando',
-      videos:[{id:TOK,n:1,duracao:30,bytes:1000,chegando:!chegou,url:chegou?API+'/arquivo.mp4':null,baixar:chegou?'/g/'+TOK+'/baixar?v='+TOK+'&a='+a:null}]});
+      videos:[{id:TOK,n:1,duracao:30,bytes:1000,chegando:!chegou,url:chegou?API+'/arquivo.mp4':null,baixar:chegou?'/g/'+TOK+'/baixar?v='+TOK+'&a='+a:null}],
+      ...(chegou?{tour:{token:'T'.repeat(22),n:4}}:{})});
     const js=(o,st)=>r.fulfill({status:st||200,contentType:'application/json',body:JSON.stringify(o)});
     if(u.pathname.endsWith('/info'))return js({ok:true,tipo:'video',menor:false,expira:'2026-12-12T12:00:00',estado:'chegando',servico:'drone',compra:false});
     if(u.pathname.endsWith('/video')){if(!body.consentimento||!/@/.test(body.email))return js({error:'x',campo:'email'},400);return js({ok:true,acesso:'AC1',exp:'2026-12-12T12:00:00Z',galeria:gal('AC1')});}
@@ -39,6 +40,9 @@ try{
   const v=await pg.$('video[data-gv-v]');ok(!!v,'player do vídeo');
   const href=await pg.$eval('.gq-gvdl',a=>a.href);
   ok(href===API+'/g/'+TOK+'/baixar?v='+TOK+'&a=AC1','Baixar passa pela galeria (registra o download): '+href);
+  // v99.22: fotos do Tour achadas pela foto da venda
+  ok(/Encontramos 4 fotos suas do Tour/.test(await pg.textContent('body')),'atalho das fotos do Tour');
+  ok(await pg.$eval('[data-gv-tour] a',a=>a.getAttribute('href'))==='#g/'+'T'.repeat(22),'atalho leva à galeria das fotos');
   await pg.evaluate(()=>document.querySelector('video[data-gv-v]').dispatchEvent(new Event('play')));await pg.waitForTimeout(200);
   await pg.evaluate(()=>document.querySelector('video[data-gv-v]').dispatchEvent(new Event('play')));await pg.waitForTimeout(200);
   const plays=chamadas.filter(c=>c[0].endsWith('/evento'));

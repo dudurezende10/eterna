@@ -683,6 +683,12 @@ def publicar_video(m):
             "tipo": "video", "venue": str(m.get("venue") or "")[:40], "servico": sv if _re_servico.match(sv) else "",
             "idioma": str(m.get("idioma") or "")[:20], "criada": str(m.get("criada") or iso())[:40], "expira": str(m.get("expira") or "")[:40],
             "menor": False, "fotos": [], "precos": {"dig": 0.0, "todas": 0.0}, "catalogo": [], "videos": vs}
+    t = m.get("tour")                                     # v99.22: as fotos do Tour achadas pela foto da venda (outra galeria)
+    if isinstance(t, dict) and _re_token.match(str(t.get("token") or "")) and t.get("token") != m["token"]:
+        try:
+            novo["tour"] = {"token": t["token"], "n": max(0, min(500, int(t.get("n") or 0)))}
+        except (TypeError, ValueError):
+            pass
     if velho:                                             # validade nunca aumenta; encerrada não volta
         if velho.get("expira") and epoch(velho["expira"]) < epoch(novo["expira"]):
             novo["expira"] = velho["expira"]
@@ -710,8 +716,14 @@ def video_obj(token, m, acesso):
         vs.append({"id": v["id"], "n": v["n"], "duracao": v["duracao"], "bytes": v["bytes"], "chegando": not ok,
                    "url": link(v["chave"], ttl=VIDEO_TTL) if ok else None,
                    "baixar": "/g/%s/baixar?v=%s&a=%s" % (token, v["id"], acesso) if ok else None})
-    return {"tipo": "video", "servico": m.get("servico") or "", "expira": m["expira"],
-            "estado": "pronta" if any(not v["chegando"] for v in vs) else "chegando", "videos": vs}
+    out = {"tipo": "video", "servico": m.get("servico") or "", "expira": m["expira"],
+           "estado": "pronta" if any(not v["chegando"] for v in vs) else "chegando", "videos": vs}
+    t = m.get("tour")
+    if t and t.get("n"):
+        g = manifesto(t["token"])
+        if g and g.get("tipo") == "sessao" and not g.get("encerrada") and not expirou(g):
+            out["tour"] = {"token": t["token"], "n": t["n"]}
+    return out
 
 
 def acesso_ok(token, a):

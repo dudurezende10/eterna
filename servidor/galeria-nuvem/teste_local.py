@@ -335,6 +335,14 @@ tipos = [e["tipo"] for e in r["eventos"][tokV]]
 ok(st == 200 and list(r["eventos"]) == [tokV] and {"qr_aberto", "video_aceite", "video_play", "video_baixou"} <= set(tipos)
    and all(app.epoch(e["em"]) > 0 for e in r["eventos"][tokV]), "vídeo: o agente recebe abriu, aceite, play e baixou com data e hora: %s" % tipos)
 ok('"ip"' not in json.dumps(r) and "cliente@" not in json.dumps(r), "vídeo: eventos sem IP nem e-mail")
+# v99.22: fotos do Tour achadas pela foto da venda (outra galeria, tipo sessao): o vídeo mostra o atalho
+ok(chama("POST", "/ponto/galerias", {"manifesto": dict(manV, tour={"token": tokP, "n": 3})}, {"x-eterna-ponto": seg})[0] == 200, "vídeo com fotos do Tour publicado")
+g = chama("POST", "/g/%s/galeria" % tokV, {"acesso": acV})[1]["galeria"]
+ok(g.get("tour") == {"token": tokP, "n": 3}, "vídeo: atalho para as fotos do Tour: %s" % g.get("tour"))
+chama("POST", "/ponto/galerias", {"manifesto": dict(manV, tour={"token": "N" * 22, "n": 3})}, {"x-eterna-ponto": seg})
+ok("tour" not in chama("POST", "/g/%s/galeria" % tokV, {"acesso": acV})[1]["galeria"], "vídeo: galeria do Tour que não existe não aparece")
+chama("POST", "/ponto/galerias", {"manifesto": dict(manV, tour={"token": "<x>", "n": 3})}, {"x-eterna-ponto": seg})
+ok("tour" not in json.loads(T.d[("GAL#" + tokV, "M")]["m"]), "vídeo: token do Tour inválido não é gravado")
 st, r = chama("POST", "/ponto/galerias", {"manifesto": dict(manV, encerrada=True)}, {"x-eterna-ponto": seg})
 ok(st == 200 and chama("GET", "/g/%s/info" % tokV)[0] == 410 and chama("GET", "/g/codigo/VVVV-WWWW")[0] == 404, "vídeo: venda cancelada encerra o cartão")
 print("\ntudo certo")

@@ -81,12 +81,16 @@ try{
   await A.setInputFiles('[data-act="av-foto"]',{name:'cliente.png',mimeType:'image/png',buffer:png});await A.waitForTimeout(500);
   const ft=await A.evaluate(()=>ETERNA.state.av.foto);
   ok(ft&&ft!==fc&&ft.startsWith('data:image/jpeg;base64,')&&ft.length<110000&&await A.$('#av-foto-img')!==null,'foto do cliente reduzida em JPEG: '+(ft||'').length);
+  // v99.22: com a foto aparece o aceite para procurar as fotos do Tour (desmarcado); marcado, vai na venda
+  ok(await A.$('[data-act="av-busca"]')!==null&&!(await A.$eval('[data-act="av-busca"]',e=>e.checked)),'aceite das fotos do Tour aparece com a foto, desmarcado');
+  await A.check('[data-act="av-busca"]');
   ok(/Cliente Teste · Chile · Espanhol/.test(await A.textContent('#av-cart'))&&/PIX/.test(await A.textContent('#av-cart')),'resumo com cliente e pagamento: '+await A.textContent('#av-cart'));
   // SEM REDE: registra no tablet
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(600);
   let s=await A.evaluate(async()=>({ls:ETERNA.asLer(),cart:ETERNA.state.av.cart.length}));
   ok(s.ls.length===2&&s.ls.every(x=>x.est==='pendente')&&s.cart===0,'sem rede: duas vendas (Drone e Chute) guardadas no tablet: '+J(s));
   const d=s.ls.find(x=>x.v.tipo==='drone'),c=s.ls.find(x=>x.v.tipo==='chute');
+  ok(d.v.cliente_foto_busca===true&&await A.evaluate(()=>ETERNA.state.av.busca)===false,'aceite vai na venda e a próxima venda começa sem ele');
   ok(d&&c&&d.v.id.slice(0,-1)===c.v.id.slice(0,-1)&&d.v.valor===500&&c.v.valor===110&&c.v.sugerido===110&&d.v.pais==='Chile'&&d.v.idioma==='Espanhol'&&d.v.itens[0].videos===2&&d.v.itens[0].k4&&d.v.cliente_nome==='Cliente Teste'&&/^data:image\/jpeg/.test(d.v.cliente_foto||''),'uma venda por serviço, mesmo número, valores e cliente: '+J(s.ls.map(x=>x.v)));
   await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(100);
   ok(/Sem conexão/.test(await A.textContent('#main'))&&/Aguardando envio/.test(await A.textContent('#av-minhas'))&&await A.$('#av-prod')===null,'aba Minhas vendas: sem conexão e aguardando envio');

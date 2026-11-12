@@ -236,6 +236,18 @@ Decidido em 12/11: o QR abre o vídeo direto, com o aceite de uso de imagem e o 
 
 **Ainda falta:** versão leve (1080p) para tocar no celular antes do original e quadros do vídeo como fotos no Checkout. Os dois pedem o ffmpeg no servidor do ponto (download a autorizar).
 
+### 4c. Feito na v99.22.0: fotos do Tour pela foto da venda
+
+Pedido do Ronaldo (12/11): aproveitar a entrega do vídeo para vender as fotos do Tour que o cliente não comprou no estádio (ticket médio). LGPD: aviso e aceite do cliente.
+
+- **Venda (tablet):** com a foto do cliente tirada, aparece a caixa "O cliente autoriza usar esta foto para encontrar as fotos dele do Tour", desmarcada. Marcada, a venda leva `cliente_foto_busca: true`. Sem foto, a caixa não aparece, e o servidor só aceita o aceite junto com a foto (`ativ_venda.foto_busca`).
+- **Servidor do ponto:** a foto da venda é procurada nas fotos do dia com o mesmo reconhecimento das selfies (`buscar`, dia todo, sem janela), localmente; a foto nunca vai à nuvem e continua saindo sozinha no prazo de sempre (seção 4a). Entram só as fotos com semelhança ≥ `LIMITE` em que ele é o **rosto principal**; base de IA nunca entra. Até 60 fotos.
+  - As fotos formam uma **galeria de venda própria** (`tipo: "sessao"`, `origem: "ativ"`, token novo guardado em `ativ_venda.tour_token`/`tour_n`), com os preços e o catálogo online da galeria de venda mais recente. Sem nenhuma galeria de venda para copiar preço, nada é criado (tenta de novo depois).
+  - Quando roda: ao gravar o vídeo da venda e de hora em hora (antes da limpeza da foto), para quem aceitou e ainda tem a foto: o Tour pode acontecer depois do voo. A galeria **só cresce**: foto que entrou não sai, e a comprada nunca volta a "à venda".
+  - O manifesto do vídeo ganha `tour: {token, n}`, e os vídeos já entregues da venda são republicados com ele.
+- **Nuvem:** o vídeo guarda `tour` (token válido e diferente do cartão) e só o mostra se a galeria do Tour existe, é de venda, não venceu e não foi encerrada.
+- **Página do vídeo:** abaixo do vídeo, "Encontramos N fotos suas do Tour" e **Ver minhas fotos**, que abre a galeria das fotos. Lá vale o fluxo de sempre: a selfie confirma que é a pessoa (ninguém vê as fotos de outro só com o cartão do vídeo) e a compra é a online pela Imply.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.
@@ -322,3 +334,4 @@ Cada fase vira uma versão em `VERSOES.md` e tem teste em `testes/`.
 5. **Prazo do vídeo (decidido 11/11):** 30 dias na nuvem; cada vídeo tem no máximo 30 segundos.
 6. **Compra online das ativações:** entra no checkout da Imply depois, quando a compra online das fotos estiver no ar.
 7. **Venda só nos horários da Imply (12/11):** o Ronaldo quer estudar consumir a Imply para vender somente nos horários com vaga (allotment). Ele passa a chave depois. **Por ora a venda é livre.**
+8. **Drone preenchido pelo arquivo do cartão (12/11, a fazer quando houver drone):** na operação o vídeo sai direto do cartão do drone (sem WhatsApp), então o arquivo chega com os metadados originais (modelo e, em geral, número de série). Ideia: o servidor aprende cada drone (na primeira entrega alguém escolhe o drone, o servidor guarda o número de série lido do arquivo, e dali em diante o drone já vem marcado). A bateria não vem no vídeo e segue escolhida à mão; o piloto pode vir de quem está logado. Falta um vídeo original de cada drone para confirmar em que campo o número vem.

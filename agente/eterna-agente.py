@@ -4522,6 +4522,10 @@ def galeria_loop():
         if time.time() - ultima_cli > 3600:
             ultima_cli = time.time()
             try:
+                ativ_tour_passa()                  # v99.22: antes da limpeza, enquanto a foto do cliente existe
+            except Exception as ex:
+                print("  tour: erro na passada", ex)
+            try:
                 ativ_clientes_limpa()
             except Exception as ex:
                 print("  venda: erro na limpeza do nome e da foto do cliente", ex)
@@ -7514,7 +7518,7 @@ def ativ_importar(linhas):
 ATIV_TABLET_COLS = (("usuario", "text"), ("sugerido", "real"), ("situacao", "text"), ("cortesia_motivo", "text"), ("cortesia_nota", "text"),
                     ("agendada", "text"), ("cancel_motivo", "text"), ("cancel_por", "text"), ("cancel_em", "text"), ("enviado_por", "text"),
                     ("recebido_em", "text"), ("recebido_por", "text"), ("voo_em", "text"), ("voo_por", "text"), ("itens_entregues", "text"),
-                    ("cliente_nome", "text"))
+                    ("cliente_nome", "text"), ("foto_busca", "integer"), ("tour_token", "text"), ("tour_n", "integer"))
 # Nome e foto do cliente (Ronaldo, 12/11): só para quem entrega o vídeo reconhecer a pessoa no campo, a quase 1 km do foyer
 # onde ela comprou. Servem só a isso (LGPD, finalidade): a foto fica em arquivo no servidor do ponto (não vai ao banco nem à
 # nuvem) e os dois saem sozinhos um dia depois da entrega, ou dois dias depois da venda, o que vier primeiro.
@@ -7579,7 +7583,9 @@ def ativ_venda_tablet(v):
             "resolucao": "4K" if any(i.get("k4") for i in itens) else "", "pais": v.get("pais") or "", "idioma": v.get("idioma") or "",
             "guia": v.get("guia") or "", "piloto": "", "drone": "", "bateria": "", "entrega": "", "qr": "",
             "usuario": v.get("usuario") or "", "sugerido": v.get("sugerido") or 0, "situacao": "ativa", "cortesia_motivo": v.get("cortesia_motivo") or "",
-            "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag, "cliente_nome": (v.get("cliente_nome") or "").strip(), "_foto": foto}
+            "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag, "cliente_nome": (v.get("cliente_nome") or "").strip(), "_foto": foto,
+            # v99.22: o cliente aceitou, na venda, que a foto dele procure as fotos do Tour (só vale com a foto)
+            "foto_busca": 1 if foto and v.get("cliente_foto_busca") is True else 0}
 
 
 def ativ_cliente_foto(vid):
@@ -7630,7 +7636,7 @@ def ativ_receber(vendas, enviado_por):
     regravada (o tablet reenvia até ouvir o ok). -> {recebidas:[id], recusadas:[{id, motivo}]}"""
     out = {"recebidas": [], "recusadas": []}
     agora = time.strftime("%Y-%m-%dT%H:%M:%S")
-    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome"]
+    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome", "foto_busca"]
     with ev_lock:
         c = vendas_db()
         try:
@@ -8026,7 +8032,7 @@ def ativ_video_grava(vid, qr, n, tmp, eu):
         try:
             if c.execute("select 1 from ativ_entrega where qr=?", (qr,)).fetchone():
                 return "qr_usado"
-            r = c.execute("select itens, itens_entregues, idioma, tipo from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            r = c.execute("select itens, itens_entregues, idioma, tipo, tour_token, tour_n, foto_busca from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
             os.replace(tmp, final)
             c.execute("insert into ativ_entrega (qr, venda, n, arquivo, bytes, md5, duracao, por, em) values (?,?,?,?,?,?,?,?,?)",
                       (qr, vid, n, final, tam, md5.hexdigest(), dur, eu, agora))
@@ -8040,13 +8046,149 @@ def ativ_video_grava(vid, qr, n, tmp, eu):
          "criada": _iso(), "expira": expira, "idioma": r[2] or "", "servico": r[3], "fotos": [],
          "precos": {"dig": 0.0, "todas": 0.0}, "catalogo": [], "moeda": "BRL", "envio": {"compradas": "ok", "vitrine": "ok"},
          "videos": [{"id": qr, "chave": "video/%s.mp4" % qr, "bytes": tam, "duracao": dur, "n": n}]}
+    if r[4] and r[5]:
+        m["tour"] = {"token": r[4], "n": int(r[5])}
     try:
         REPO.salvar_manifesto(qr, m)
     except Exception as ex:
         print("  entrega: galeria do vídeo não gravada (%s)" % type(ex).__name__)
     nuvem_video_enfileira(qr, final)
     nuvem_galeria_enfileira(qr)
+    if r[6]:                                   # a busca das fotos do Tour roda fora da entrega (pode levar alguns segundos)
+        threading.Thread(target=ativ_tour_atualiza, args=(vid,), daemon=True).start()
     return None
+
+
+# ---------- v99.22: fotos do Tour pela foto da venda ----------
+# Com o aceite do cliente na venda, a foto dele (a mesma que a equipe usa para reconhecê-lo na entrega) é procurada nas fotos
+# do Tour do dia, aqui no servidor do ponto (a foto nunca vai à nuvem). As fotos em que ele é o rosto principal formam uma
+# galeria de venda própria (tipo sessao, com os preços e o catálogo online de hoje), e a página do vídeo mostra
+# "encontramos N fotos suas do Tour". Na galeria, a selfie de sempre confirma que é ele antes de abrir as fotos e a compra.
+ATIV_TOUR_MAX = 60
+_tour_base = {"t": 0.0, "v": None}
+_tour_lock = threading.Lock()
+
+
+def ativ_tour_base():
+    """Preços e catálogo online da galeria de venda mais recente (os mesmos do Checkout de hoje). Cache de 10 min."""
+    if _tour_base["v"] and time.time() - _tour_base["t"] < 600:
+        return _tour_base["v"]
+    melhor = None
+    for t in REPO.listar():
+        try:
+            m = REPO.ler_manifesto(t)
+        except Exception:
+            m = None
+        if not m or m.get("tipo") != "sessao" or m.get("origem") == "ativ" or not m.get("precos"):
+            continue
+        if not melhor or str(m.get("criada") or "") > str(melhor.get("criada") or ""):
+            melhor = m
+    v = {"precos": melhor["precos"], "catalogo": melhor.get("catalogo") or []} if melhor else None
+    _tour_base.update(t=time.time(), v=v)
+    return v
+
+
+def ativ_tour_fotos(vid):
+    """[(id do manifesto, sessão)] das fotos do Tour de hoje em que o rosto da foto da venda é o principal; None sem como procurar."""
+    arq = ativ_cliente_foto(vid)
+    if not rostos["ligado"] or not os.path.isfile(arq):
+        return None
+    with open(arq, "rb") as f:
+        b = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+    r = buscar([b], dias=1, janela=0)
+    b = None
+    if r.get("varias") or not r.get("rosto"):
+        return []
+    out = []
+    with sess_lock:
+        for x in r.get("fotos") or []:
+            if x["sim"] < LIMITE or not x.get("principal"):
+                continue
+            card = sess_pid.get(x["id"])
+            se = sess.get(card or "")
+            if se is not None and x["id"] in (se.get("ia") or ()):     # base de IA nunca é vendida como foto
+                continue
+            out.append(("ag_" + x["id"], card or ""))
+    return out[:ATIV_TOUR_MAX]
+
+
+def ativ_tour_atualiza(vid):
+    """Procura de novo e, se achou foto nova, cria ou amplia a galeria do Tour do cliente e põe o atalho nos vídeos da venda.
+    -> {token, n} ou None. A galeria só cresce: foto que já entrou não sai (o cliente pode ter comprado)."""
+    with _tour_lock:
+        with ev_lock:
+            c = vendas_db()
+            try:
+                r = c.execute("select foto_busca, tour_token, situacao from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            finally:
+                c.close()
+        if not r or not r[0] or r[2] == "cancelada":
+            return None
+        achou = ativ_tour_fotos(vid)
+        tok = r[1] or None
+        velho = REPO.ler_manifesto(tok) if tok else None
+        ja = [f for f in (velho or {}).get("fotos") or []]
+        novas = [(i, s_) for i, s_ in (achou or []) if i not in {f["id"] for f in ja}][:max(0, ATIV_TOUR_MAX - len(ja))]
+        if not novas:
+            return {"token": tok, "n": len(ja)} if velho else None
+        base = ativ_tour_base()
+        if not base:
+            print("  tour: sem galeria de venda para copiar preços; fotos do Tour do cliente ficam para depois")
+            return None
+        tok = tok or secrets.token_urlsafe(16)
+        fotos = [{"id": f["id"], "sessao": f.get("sessao") or "", "direito": f.get("direito") or "venda", "canal": f.get("canal")} for f in ja]
+        fotos += [{"id": i, "sessao": s_, "direito": "venda", "canal": None} for i, s_ in novas]
+        m = gal_validar({"token": tok, "codigo": cartao_codigo(tok), "tipo": "sessao", "venue": ATIV_VENUE,
+                         "sessoes": sorted({f["sessao"] for f in fotos if f["sessao"]}), "criada": (velho or {}).get("criada") or _iso(),
+                         "expira": (velho or {}).get("expira"), "precos": base["precos"], "catalogo": base["catalogo"], "fotos": fotos})
+        m["origem"] = "ativ"
+        with gal_lock:
+            m = gal_mesclar(m, velho)
+            m["origem"] = "ativ"
+            REPO.salvar_manifesto(tok, m)
+            codigos[m["codigo"]] = tok
+        gal_fila.put(tok)
+        nuvem_galeria_enfileira(tok)
+        n = len(m["fotos"])
+        with ev_lock:
+            c = vendas_db()
+            try:
+                c.execute("update ativ_venda set tour_token=?, tour_n=? where origem='eterna' and id=?", (tok, n, vid))
+                qrs = [x[0] for x in c.execute("select qr from ativ_entrega where venda=?", (vid,))]
+                c.commit()
+            finally:
+                c.close()
+        for qr in qrs:                             # o atalho aparece na página dos vídeos que já foram entregues
+            try:
+                mv = REPO.ler_manifesto(qr)
+                if mv and mv.get("tipo") == "video":
+                    mv["tour"] = {"token": tok, "n": n}
+                    REPO.salvar_manifesto(qr, mv)
+                    nuvem_galeria_enfileira(qr)
+            except Exception as ex:
+                print("  tour: atalho no vídeo não gravado (%s)" % type(ex).__name__)
+        return {"token": tok, "n": n}
+
+
+def ativ_tour_passa():
+    """De hora em hora (antes da limpeza da foto do cliente): o Tour pode acontecer depois do voo, então quem aceitou e ainda
+    tem a foto guardada é procurado de novo. -> quantas vendas olhou."""
+    with ev_lock:
+        c = vendas_db()
+        try:
+            ids = [x[0] for x in c.execute("select id from ativ_venda where origem='eterna' and foto_busca=1 and situacao<>'cancelada'"
+                                           " and dia>=?", (time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400)),))]
+        finally:
+            c.close()
+    n = 0
+    for vid in ids:
+        if os.path.isfile(ativ_cliente_foto(vid)):
+            try:
+                ativ_tour_atualiza(vid)
+                n += 1
+            except Exception as ex:
+                print("  tour: erro na busca (%s)" % str(ex)[:120])
+    return n
 
 
 def ativ_videos_limpa(agora=None):
