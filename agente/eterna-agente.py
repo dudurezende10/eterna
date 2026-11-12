@@ -7406,7 +7406,7 @@ def auth_senhas():
 # Os mesmos limites de permValidate na tela, agora também no servidor: sem isto, quem chama /ponto/docs se daria qualquer acesso, inclusive o de gerar senhas.
 AUTH_MODULOS = ("estoque", "relatorios", "desempenho", "financeiro", "galerias", "qualidade", "diario", "set", "escala", "filafoto", "configuracao",
                 "catalogo", "usuarios", "senhas", "permissoes", "laboratorio", "venda", "quiosque", "estatisticas", "ativvenda", "ativentrega")     # os mesmos de MODULES no app
-AUTH_MODULOS_NOVOS = ("ativvenda",)                    # v99.17: módulos novos que o Admin cadastrado antes recebe inteiros (auth_perms)
+AUTH_MODULOS_NOVOS = ("ativvenda", "ativentrega")     # v99.17 e v99.23.2 (entrega):  módulos novos que o Admin cadastrado antes recebe inteiros (auth_perms)
 AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "contato", "key", "active"), ("perms", "menu", "preset", "inicio")
 AUTH_IDIOMAS = (None, "", "pt", "en", "es", "fr")
 AUTH_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$")

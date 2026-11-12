@@ -309,6 +309,9 @@ adm_velho = {"email": "adm", "preset": "admin", "active": True, "perms": {k: dic
 vend = {"email": "v.novo", "name": "V", "preset": "ativ", "active": True, "perms": {"ativvenda": {"c": True, "r": True, "u": False, "d": False}}}
 ok(m.auth_cadastro_recusa({"cadastro": adm_velho}, "v.novo", None, vend) is None, "admin antigo não consegue dar o módulo novo")
 ok(m.auth_pode(adm_velho, "ativvenda", "d"), "admin antigo sem o módulo novo")
+# 12/11 (v99.23.2): o mesmo para a Entrega dos vídeos; sem isto o admin antigo via a tela e o servidor recusava a fila (403)
+adm_sem_ativ = dict(adm_velho, perms={k: v for k, v in adm_velho["perms"].items() if k not in ("ativvenda", "ativentrega")})
+ok(m.auth_pode(adm_sem_ativ, "ativentrega", "r") and m.auth_pode(adm_sem_ativ, "ativentrega", "u"), "admin antigo sem a Entrega dos vídeos")
 sup_velho = dict(adm_velho, preset="supervisor")
 ok(m.auth_cadastro_recusa({"cadastro": sup_velho}, "v.novo", None, vend) == "sem_poder", "perfil que não é admin ganhou o módulo novo sozinho")
 adm_restrito = dict(adm_velho, perms=dict(adm_velho["perms"], ativvenda={"c": False, "r": True, "u": False, "d": False}))
