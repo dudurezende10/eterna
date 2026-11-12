@@ -198,6 +198,21 @@ Tela **Entrega dos vídeos** (menu Venda), módulo `ativentrega` (Criar = ligar 
 - **Prazo:** o arquivo sai do servidor do ponto depois de 30 dias (limpeza diária); a linha da entrega fica como registro.
 - Rotas: `GET /ativ/fila?dia=`, `POST /ativ/etapa`, `POST /ativ/video`, `POST /ativ/video/liga`, `GET|POST /ativ/cadastros`. Testes: `testes/ativacoes_entrega_agente.py` e `testes/ativacoes_entrega.js`.
 
+### 4a.1 Fila por ativação (v99.21.0, Ronaldo, 12/11)
+
+Igual à Fila de fotos: em cada serviço (Drone, Chute a Gol, Snap Pop) quatro colunas no lugar de Pendentes/Entregues.
+
+| Coluna | Drone | Chute a Gol | Snap Pop | Entra quando |
+|---|---|---|---|---|
+| 1 | Próximo a voar | Próximo a chutar | Próximo a gravar | a venda chega do tablet |
+| 2 | Voando | Chutando | Gravando | Drone: **Decolar** (piloto, drone e bateria). Chute e Snap: **Começar** |
+| 3 | Delivery do vídeo | Delivery do vídeo | Delivery do vídeo | o primeiro vídeo ligado a um cartão (ou, sem vídeo, só faltam itens) |
+| 4 | Entregue | Entregue | Entregue | todos os vídeos com cartão e todos os itens com baixa |
+
+- O card de Voando lembra de arrastar o vídeo do cartão de memória no topo da tela. No fluxo do vídeo, as vendas que já voaram ou começaram aparecem primeiro.
+- O cadastro de pilotos, drones e baterias só aparece no Drone e diz para que serve.
+- O aviso de erro da fila separa "sem permissão", "erro do servidor" e "sem conexão".
+
 ### 4b. Feito na v99.20.0: o vídeo na galeria da nuvem
 
 Decidido em 12/11: o QR abre o vídeo direto, com o aceite de uso de imagem e o e-mail, **sem selfie** (o reconhecimento de rosto não compara com vídeo, e o cartão físico já prova a compra). Fica registrado, com data e hora, quando o cliente abriu o QR, aceitou, deu play e baixou.

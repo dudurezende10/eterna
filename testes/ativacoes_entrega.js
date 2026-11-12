@@ -35,15 +35,24 @@ try{
   ok(/Entrega dos vídeos/.test(await txt('#main .head'))&&/Vídeos aguardando internet: 1/.test(await txt('#main .head')),'título e situação da nuvem: '+await txt('#main .head'));
   ok(/Drone · 2/.test(await txt('#main'))&&/Chute a Gol · 1/.test(await txt('#main'))&&/Snap Pop · 1/.test(await txt('#main')),'pendentes por serviço');
   const card='[data-ae-venda="TDRONE001D"]';
-  ok(/Aguardando o cliente/.test(await txt(card))&&/Asteroid · Campo · 2 pessoas/.test(await txt(card))&&await A.$(card+' [data-act="ae-entregar"]')===null,'drone antes do voo, sem botão de entregar: '+await txt(card));
-  await A.click(card+' [data-act="ae-recebido"]');await A.waitForTimeout(300);
-  ok(posts[0]&&posts[0].etapa==='recebido'&&/Aguardando voo/.test(await txt(card)),'cliente chegou: '+J(posts));
+  // uma fila por ativação, como a Fila de fotos: Próximo a voar, Voando, Delivery do vídeo, Entregue
+  const cols=async()=>A.$$eval('[data-ae-col] h2',x=>x.map(h=>h.childNodes[0].textContent.trim()));
+  ok(J(await cols())===J(['Próximo a voar','Voando','Delivery do vídeo','Entregue']),'colunas do Drone: '+J(await cols()));
+  const naCol=async(id,c)=>!!(await A.$(`[data-ae-col="${c}"] [data-ae-venda="${id}"]`));
+  ok(await naCol('TDRONE001D','proximo')&&/Asteroid · Campo · 2 pessoas/.test(await txt(card))&&await A.$(card+' [data-act="ae-recebido"]')===null,'drone em Próximo a voar, só com Decolar: '+await txt(card));
   await A.click(card+' [data-act="ae-voo"]');await A.waitForTimeout(100);
   ok((await A.$$('[data-ae-voo="bateria"] option')).length===2,'bateria inativa fora da lista');
-  await A.click('[data-act="ae-voo-ok"]');await A.waitForTimeout(100);ok(posts.length===1,'voo sem piloto não vai');
+  await A.click('[data-act="ae-voo-ok"]');await A.waitForTimeout(100);ok(posts.length===0,'voo sem piloto não vai');
   await A.selectOption('[data-ae-voo="piloto"]','Piloto Um');await A.selectOption('[data-ae-voo="drone"]','007');await A.selectOption('[data-ae-voo="bateria"]','3');
   await A.click('[data-act="ae-voo-ok"]');await A.waitForTimeout(300);
-  ok(J(posts[1])===J({id:'TDRONE001D',etapa:'voo',piloto:'Piloto Um',drone:'007',bateria:'3'})&&/piloto Piloto Um · drone 007 · bateria 3/.test(await txt(card)),'voo feito: '+J(posts[1]));
+  ok(J(posts[0])===J({id:'TDRONE001D',etapa:'voo',piloto:'Piloto Um',drone:'007',bateria:'3'})&&/piloto Piloto Um · drone 007 · bateria 3/.test(await txt(card))&&await naCol('TDRONE001D','andamento'),'decolou: vai para Voando: '+J(posts[0]));
+  ok(/Aguardando vídeo/.test(await txt(card)),'em Voando, espera o vídeo');
+  // Snap Pop: Começar leva para Gravando
+  await A.click('[data-act="ae-cat"][data-c="snap"]');await A.waitForTimeout(100);
+  ok(J(await cols())===J(['Próximo a gravar','Gravando','Delivery do vídeo','Entregue'])&&await A.$('#ae-cad')===null,'colunas do Snap Pop, sem cadastro de drones');
+  await A.click('[data-ae-venda="TSNAP0001S"] [data-act="ae-recebido"]');await A.waitForTimeout(300);
+  ok(J(posts[1])===J({id:'TSNAP0001S',etapa:'recebido'})&&await naCol('TSNAP0001S','andamento'),'Começar: Snap Pop em Gravando');
+  await A.click('[data-act="ae-cat"][data-c="drone"]');await A.waitForTimeout(100);
   // fluxo do computador: o vídeo solto na tela sobe na hora
   ok(await A.$('#ae-drop')!==null,'área para soltar o vídeo');
   await A.evaluate(()=>{const dt=new DataTransfer();dt.items.add(new File([new Uint8Array(300000)],'DJI_0001.MP4',{type:'video/mp4'}));
@@ -51,7 +60,7 @@ try{
   ok(video&&video.n===300000&&video.xe==='1','vídeo sobe ao ser solto: '+J(video));
   ok(await A.$('#ae-nv video')!==null&&/Vídeo no servidor · 30 s/.test(await txt('#ae-nv')),'vídeo para conferir, já no servidor: '+await txt('#ae-nv'));
   ok(await A.$('[data-act="ae-nv-liga"][disabled]')!==null,'sem venda e cartão não entrega');
-  ok(J(await A.$$eval('[data-act="ae-nv-venda"]',x=>x.map(b=>b.dataset.id)))===J(['TDRONE001D','TDRONE002D','TSNAP0001S']),'vendas do dia que esperam vídeo, de todos os serviços');
+  ok(J(await A.$$eval('[data-act="ae-nv-venda"]',x=>x.map(b=>b.dataset.id)))===J(['TDRONE001D','TSNAP0001S','TDRONE002D']),'vendas do dia que esperam vídeo, de todos os serviços (as que já voaram ou começaram primeiro)');
   // lixeira
   await A.click('[data-act="ae-nv-lixo"][data-id="TSNAP0001S"]');await A.click('[data-act="ae-nv-lixo-ok"]');await A.waitForTimeout(100);
   ok(!posts.some(p=>p.motivo!==undefined),'cancelar pede motivo');
@@ -63,7 +72,7 @@ try{
   await A.evaluate(()=>{delete window.BarcodeDetector;});await A.click('[data-act="ae-cam"]');await A.waitForTimeout(150);
   ok(/não lê QR pela câmera/.test(await txt('#ae-nv')),'sem câmera: avisa e oferece o leitor');
   await A.fill('[data-act="ae-qr-txt"]','https://eterna.photo/#g/'+QRV);await A.press('[data-act="ae-qr-txt"]','Enter');await A.waitForTimeout(100);
-  ok(/já foi usado/.test(await txt('#ae-nv')),'cartão já usado recusado na hora');
+  ok(/já foi usado/.test(await txt('#ae-nv')),'cartão já usado recusado na hora: '+await txt('#ae-nv'));
   await A.fill('[data-act="ae-qr-txt"]','qualquer coisa');await A.press('[data-act="ae-qr-txt"]','Enter');await A.waitForTimeout(100);
   ok(/Não é o QR de um cartão Eterna/.test(await txt('#ae-nv')),'texto que não é QR do cartão');
   await A.fill('[data-act="ae-qr-txt"]','https://eterna.photo/#g/'+QRN);await A.press('[data-act="ae-qr-txt"]','Enter');await A.waitForTimeout(100);
@@ -74,21 +83,21 @@ try{
   await A.click('[data-act="ae-nv-liga"]');await A.waitForTimeout(500);
   ok(J(posts.slice(-2))===J([{id:'TDRONE002D',etapa:'voo',piloto:'Piloto Um',drone:'007',bateria:'3'},{rascunho:'0123456789abcdef',venda:'TDRONE002D',qr:QRN}]),'voo e depois o vídeo ligado à venda e ao cartão: '+J(posts.slice(-2)));
   ok(await A.$('#ae-nv')===null&&await A.$('#ae-drop')!==null,'entregue: a tela volta para soltar o próximo vídeo');
-  await A.click('[data-act="ae-ver"][data-v="entregues"]');await A.waitForTimeout(100);
-  ok(/Entregue/.test(await txt('[data-ae-venda="TDRONE002D"]'))&&/WXYZ-2345/.test(await txt('[data-ae-venda="TDRONE002D"]')),'drone entregue, com o cartão: '+await txt('#main'));
+  ok(await naCol('TDRONE002D','entregue')&&/Entregue às/.test(await txt('[data-ae-venda="TDRONE002D"]'))&&/WXYZ-2345/.test(await txt('[data-ae-venda="TDRONE002D"]')),'drone entregue, com o cartão: '+await txt('#main'));
   // chute: medalha
-  await A.click('[data-act="ae-ver"][data-v="pendentes"]');await A.click('[data-act="ae-cat"][data-c="chute"]');await A.waitForTimeout(100);
+  await A.click('[data-act="ae-cat"][data-c="chute"]');await A.waitForTimeout(100);
   const cc='[data-ae-venda="TCHUTE001C"]';
-  ok(/ABCD-EFGH/.test(await txt(cc))&&/Aguardando internet/.test(await txt(cc))&&/Entrega pendente/.test(await txt(cc)),'chute com vídeo na fila da nuvem e medalha pendente: '+await txt(cc));
+  ok(/ABCD-EFGH/.test(await txt(cc))&&/Aguardando internet/.test(await txt(cc))&&await naCol('TCHUTE001C','delivery'),'chute com vídeo na fila da nuvem e medalha pendente: '+await txt(cc));
   await A.check(cc+' [data-act="ae-item"]');await A.waitForTimeout(400);
-  ok(J(posts.slice(-1)[0])===J({id:'TCHUTE001C',etapa:'item',i:0}),'baixa da medalha: '+J(posts));
+  ok(J(posts.slice(-1)[0])===J({id:'TCHUTE001C',etapa:'item',i:0})&&await naCol('TCHUTE001C','entregue'),'baixa da medalha: vai para Entregue: '+J(posts));
+  await A.click('[data-act="ae-cat"][data-c="drone"]');await A.waitForTimeout(100);
   // cadastro
   await A.click('[data-act="ae-cad"]');await A.fill('[data-ae-novo="piloto"]','Piloto Dois');await A.click('[data-act="ae-cad-add"][data-t="piloto"]');await A.waitForTimeout(300);
   ok(J(posts.slice(-1)[0])===J({tipo:'piloto',nome:'Piloto Dois',ativo:true})&&/Piloto Dois/.test(await txt('#ae-cad')),'piloto cadastrado');
   // só Ver: nenhum botão
   await A.evaluate(()=>{const u=ETERNA.state.user;u.perms={...u.perms,ativentrega:{c:false,r:true,u:false,d:false}};ETERNA.go('ativ-entrega');});await A.click('[data-act="ae-cat"][data-c="drone"]');await A.waitForTimeout(100);
   D.vendas[0].entregue_em=null;D.vendas[0].entregas=[];await A.evaluate(()=>ETERNA.aePull());await A.waitForTimeout(300);
-  ok(await A.$('#ae-drop')===null&&await A.$('[data-act="ae-recebido"]')===null&&await A.$('#ae-cad')===null,'só Ver: sem soltar vídeo, sem botões nem cadastro');
+  ok(await A.$('#ae-drop')===null&&await A.$('[data-act="ae-voo"]')===null&&await A.$('#ae-cad')===null,'só Ver: sem soltar vídeo, sem botões nem cadastro');
   await A.evaluate(()=>ETERNA.idiomaEquipe('en'));await A.waitForTimeout(200);
   ok(/Video delivery/.test(await txt('#main'))&&/Waiting for the video/.test(await txt('#main')),'tela em inglês');
   ok(!errs.length,'erros de página: '+errs.join(' | '));

@@ -341,6 +341,9 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .if-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
 .if-col.agora{border-color:#FFB800}
 .if-col.pronta{border-color:#2e9e5b}
+.ae-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px;align-items:start}
+@media (max-width:1100px){.ae-board{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:640px){.ae-board{grid-template-columns:1fr}}
+.ae-board .if-col h2{font-size:15px}.ae-card{gap:4px}
 .if-cnt{font-size:13px;letter-spacing:0;background:var(--line);border-radius:999px;padding:2px 10px}
 .if-card{border-radius:10px;padding:10px 12px;border:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
 .if-card.fila{background:#EEF4FD;border-color:#5B8FD0}
@@ -1308,7 +1311,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.20.1 · 12/11 12:41"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.21.0 · 12/11 12:47"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5253,13 +5256,23 @@ window.addEventListener('online',()=>asEnviar());
 // (com lixeira para cancelar, quem pode) e lê o QR de um cartão novo. Entregar liga o vídeo à venda e ao cartão; o servidor
 // sobe para a nuvem em partes e o QR vira a galeria do vídeo. Cliente chegou e voo feito ficam na fila; medalha e bola um a um.
 // O dado é do servidor (dado no banco): a tela só lê /ativ/fila e manda cada ação; nada fica guardado no navegador.
-state.ae={cat:'drone',dia:null,ver:'pendentes',dados:null,erro:null,busy:false,voo:null,cad:false,nv:null};
+state.ae={cat:'drone',dia:null,dados:null,erro:null,busy:false,voo:null,cad:false,nv:null};
 const AE_CATS=['drone','chute','snap'];
 async function aePull(){const A=state.ae;if(!esOn()||A.busy)return;A.busy=true;const dia=A.dia||venueToday();
-  try{const r=await agFetch(state.agent.url+'/ativ/fila?dia='+dia,{cache:'no-store'});const j=await r.json();if(!r.ok||!j||!j.ok)throw 0;A.dados=j;A.erro=null;}
+  try{const r=await agFetch(state.agent.url+'/ativ/fila?dia='+dia,{cache:'no-store'});const j=await r.json().catch(()=>null);
+    if(r.status===401||r.status===403){A.erro='ae_sem_permissao';}else if(!r.ok||!j||!j.ok){A.erro='ae_e_servidor';}else{A.dados=j;A.erro=null;}}
   catch(e){A.erro='ae_sem_servidor';}finally{A.busy=false;if(state.view==='ativ-entrega'&&!aeOcupado())render();}}
 const aeOcupado=()=>!!state.ae.nv||!!document.activeElement&&document.activeElement.matches&&document.activeElement.matches('#main input,#main select');
 const aeEntregues=v=>v.entregas.length;
+// Fila por ativação (Ronaldo, 12/11), como a Fila de fotos: Próximo a voar -> Voando -> Delivery do vídeo -> Entregue.
+// Drone: Decolar (piloto, drone e bateria) leva para Voando. Chute a Gol e Snap Pop: Começar (cliente chegou) leva para Chutando/Gravando.
+// Delivery: já tem vídeo ligado a um cartão (ou só faltam itens). Entregue: todos os vídeos com cartão e todos os itens com baixa.
+const AE_ETAPAS=['proximo','andamento','delivery','entregue'];
+function aeEtapa(v){if(v.entregue_em)return 'entregue';if(aeEntregues(v)>0)return 'delivery';
+  if(v.tipo==='drone'?v.voo_em:v.recebido_em)return v.videos>0?'andamento':'delivery';return 'proximo';}
+const AE_COL_TXT={proximo:{drone:'ae_col_proximo_drone',chute:'ae_col_proximo_chute',snap:'ae_col_proximo_snap'},andamento:{drone:'ae_col_andamento_drone',chute:'ae_col_andamento_chute',snap:'ae_col_andamento_snap'},
+  delivery:'ae_col_delivery',entregue:'ae_col_entregue'};
+const aeColNome=(c,e)=>{const k=AE_COL_TXT[e];return TE(typeof k==='string'?k:k[c]);};
 function aeSituacao(v){if(v.entregue_em)return ['good',TE('ae_s_entregue')];
   if(v.tipo==='drone'&&!v.voo_em)return v.recebido_em?['warn',TE('ae_s_aguarda_voo')]:['warn',TE('ae_s_aguarda')];
   if(aeEntregues(v)<v.videos)return ['warn',TE('ae_s_video')];return ['warn',TE('ae_s_itens')];}
@@ -5307,18 +5320,19 @@ const aeQuando=s=>{const d=new Date(s);if(isNaN(d))return '';const h=hhmm(d);ret
 function aeCliTxt(c){c=c||{};if(!c.aberto&&!c.aceite)return TE('ae_cli_nao_abriu');
   return [TE('ae_cli_abriu',aeQuando(c.aberto||c.aceite)),c.play?TE('ae_cli_assistiu',aeQuando(c.play)):'',c.baixou?TE('ae_cli_baixou',aeQuando(c.baixou))+(c.baixou_n>1?' ('+c.baixou_n+'×)':''):''].filter(Boolean).join(' · ');}
 // ---- tela ----
-function aeCartao(v){const A=state.ae,[cls,sit]=aeSituacao(v),podeU=can('ativentrega','u');const F=A.voo===v.id;
+function aeCartao(v){const A=state.ae,podeU=can('ativentrega','u');const F=A.voo===v.id;const et=aeEtapa(v);
   const cad=(A.dados&&A.dados.cadastros)||{piloto:[],drone:[],bateria:[]};const sel=(t,rot)=>aeSel(v,t,rot);
   const ents=v.entregas.map(x=>`<div class="row" style="justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);flex-wrap:wrap"><span>${TE('ae_video_n',x.n)} · ${TE('ae_cartao')} <b>${esc(x.codigo)}</b>${x.duracao?' · '+Math.round(x.duracao)+' s':''} · ${aeMB(x.bytes||0)}</span>
     <span class="pill ${x.nuvem?'good':'warn'}">${x.nuvem?TE('ae_na_nuvem'):x.subindo?TE('ae_nuvem_subindo',Math.round(100*x.subindo.feito/Math.max(1,x.subindo.total))):TE('ae_nuvem_fila')}</span>${x.nuvem?`<div class="note" style="flex-basis:100%" data-ae-cli>${aeCliTxt(x.cliente)}</div>`:''}</div>`).join('');
   const fis=(v.fisicos||[]).map(x=>`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-act="ae-item" data-id="${esc(v.id)}" data-i="${x.i}" ${x.entregue?'checked disabled':''} ${podeU?'':'disabled'}> ${esc(x.nome)}${x.entregue?' · '+TE('ae_item_ok'):''}</label>`).join('');
-  return `<div class="panel" data-ae-venda="${esc(v.id)}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="row" style="gap:12px;align-items:center">${aeFoto(v,64)}<div>${v.cliente?`<b style="font-size:1.1rem">${esc(v.cliente)}</b><br>`:''}<b>${TE('av_numero',avNumero(v.id))}</b> · ${esc(v.criado.slice(11,16))}<div class="note">${esc(aeItensTxt(v))}</div><div class="note">${TE('ae_vendido_por',esc(v.vendedor||'—'))}</div></div></div><span class="pill ${cls}">${esc(sit)}</span></div>
-    ${v.voo_em?`<div class="note" style="margin-top:6px">${TE('ae_voo_info',esc(v.piloto),esc(v.drone),esc(v.bateria),esc(v.voo_em.slice(11,16)))}</div>`:''}
-    ${ents}${fis?`<div style="margin-top:8px"><span class="eyebrow">${TE('ae_itens')}</span>${fis}</div>`:''}
-    ${!v.entregue_em?`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-      ${podeU&&!v.recebido_em?`<button class="btn ghost" style="min-height:44px" data-act="ae-recebido" data-id="${esc(v.id)}">${TE('ae_recebido')}</button>`:''}
-      ${podeU&&v.tipo==='drone'&&!v.voo_em&&!F?`<button class="btn ghost" style="min-height:44px" data-act="ae-voo" data-id="${esc(v.id)}">${TE('ae_voo')}</button>`:''}</div>`:''}
-    ${F?`<div class="row" style="gap:8px;margin-top:10px;align-items:end;flex-wrap:wrap" id="ae-voo-form">${sel('piloto',TE('ae_piloto'))}${sel('drone',TE('ae_drone'))}${sel('bateria',TE('ae_bateria'))}<button class="btn primary" style="min-height:44px" data-act="ae-voo-ok" data-id="${esc(v.id)}">${TE('ae_voo_ok')}</button><button class="btn ghost" style="min-height:44px" data-act="ae-voo-nao">${TE('av_dup_nao')}</button></div>
+  const cls=et==='entregue'?'ok':et==='delivery'?'imp':et==='andamento'?'fila':'';
+  return `<div class="if-card ae-card ${cls}" data-ae-venda="${esc(v.id)}"><div class="row" style="gap:10px;align-items:center">${aeFoto(v,52)}<div style="min-width:0">${v.cliente?`<b style="font-size:1.05rem">${esc(v.cliente)}</b><br>`:''}<b>${TE('av_numero',avNumero(v.id))}</b> · ${esc(v.criado.slice(11,16))}<div class="note">${esc(aeItensTxt(v))}</div><div class="note">${TE('ae_vendido_por',esc(v.vendedor||'—'))}</div></div></div>
+    ${v.voo_em?`<div class="note" style="margin-top:4px">${TE('ae_voo_info',esc(v.piloto),esc(v.drone),esc(v.bateria),esc(v.voo_em.slice(11,16)))}</div>`:''}
+    ${et==='andamento'?`<div class="note" style="margin-top:4px"><b>${TE('ae_s_video')}</b> · ${TE('ae_arraste_dica')}</div>`:''}
+    ${ents}${fis?`<div style="margin-top:6px"><span class="eyebrow">${TE('ae_itens')}</span>${fis}</div>`:''}
+    ${v.entregue_em?`<div class="note" style="margin-top:4px">${TE('ae_entregue_as',esc(v.entregue_em.slice(11,16)))}</div>`:''}
+    ${et==='proximo'&&podeU&&!F?`<button class="btn primary" style="min-height:48px;margin-top:8px;width:100%" data-act="${v.tipo==='drone'?'ae-voo':'ae-recebido'}" data-id="${esc(v.id)}">${TE(v.tipo==='drone'?'ae_decolar':'ae_comecar')}</button>`:''}
+    ${F?`<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px" id="ae-voo-form">${sel('piloto',TE('ae_piloto'))}${sel('drone',TE('ae_drone'))}${sel('bateria',TE('ae_bateria'))}<div class="row" style="gap:6px"><button class="btn primary" style="flex:1;min-height:44px" data-act="ae-voo-ok" data-id="${esc(v.id)}">${TE('ae_voo_ok')}</button><button class="btn ghost" style="min-height:44px" data-act="ae-voo-nao">${TE('av_dup_nao')}</button></div></div>
       ${!((cad.piloto||[]).some(x=>x.ativo)&&(cad.drone||[]).some(x=>x.ativo)&&(cad.bateria||[]).some(x=>x.ativo))?`<div class="note" role="alert">${TE('ae_sem_cadastro')}</div>`:''}`:''}</div>`;}
 const aeFoto=(v,px)=>v.foto?`<img src="${esc(state.agent.url)}/ativ/cliente-foto?id=${encodeURIComponent(v.id)}" alt="" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:50%;flex:none">`:'';
 function aeSel(v,t,rot){const cad=(state.ae.dados&&state.ae.dados.cadastros)||{};return `<label style="flex:1;min-width:120px"><span class="eyebrow">${rot}</span><select data-ae-voo="${t}" style="width:100%;min-height:44px"><option value="">—</option>${(cad[t]||[]).filter(x=>x.ativo).map(x=>`<option ${v[t]===x.nome?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></label>`;}
@@ -5326,7 +5340,7 @@ function aeSel(v,t,rot){const cad=(state.ae.dados&&state.ae.dados.cadastros)||{}
 function aeNovo(){const A=state.ae,N=A.nv;if(!can('ativentrega','c'))return '';
   if(!N)return `<label class="panel" id="ae-drop" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:150px;border:2px dashed var(--accent,#134078);cursor:pointer;text-align:center">
     <b style="font-size:1.2rem">${TE('ae_drop')}</b><span class="note">${TE('ae_drop_sub')}</span><input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" data-act="ae-arquivo" style="display:none"></label>`;
-  const L=(A.dados&&A.dados.vendas||[]).filter(v=>!v.entregue_em&&v.videos-aeEntregues(v)>0);const v=L.find(x=>x.id===N.venda)||null;
+  const L=(A.dados&&A.dados.vendas||[]).filter(v=>!v.entregue_em&&v.videos-aeEntregues(v)>0).sort((a,b)=>(aeEtapa(a)==='proximo')-(aeEtapa(b)==='proximo'));const v=L.find(x=>x.id===N.venda)||null;
   const podeX=can('ativvenda','d')||can('financeiro','u');const cad=(A.dados&&A.dados.cadastros)||{};
   const linha=x=>`<div class="row" style="gap:8px;align-items:stretch;margin-top:8px"><button class="chip" style="flex:1;min-height:60px;border-radius:12px;display:flex;gap:12px;align-items:center;text-align:left;padding:8px 12px" data-act="ae-nv-venda" data-id="${esc(x.id)}" aria-pressed="${N.venda===x.id}">${aeFoto(x,48)||atIcone(x.tipo)}<span>${x.cliente?`<b>${esc(x.cliente)}</b> · `:''}<b>${TE('av_numero',avNumero(x.id))}</b> · ${esc(x.criado.slice(11,16))} · ${esc(aeItensTxt(x))}<br><span style="opacity:.75">${TE('ae_vendido_por',esc(x.vendedor||'—'))} · ${esc(aeSituacao(x)[1])}</span></span></button>
       ${podeX&&!x.entregas.length?`<button class="btn ghost" style="min-width:60px" data-act="ae-nv-lixo" data-id="${esc(x.id)}" aria-label="${esc(TE('av_cancelar'))}">${ICO_LIXO}</button>`:''}</div>
@@ -5349,23 +5363,23 @@ function aeNovo(){const A=state.ae,N=A.nv;if(!can('ativentrega','c'))return '';
     ${N.err?`<div class="note" role="alert" style="color:var(--bad);margin-top:8px"><b>${TEk(N.err,TE('ae_e_servidor'))}</b></div>`:''}
     <button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem;margin-top:14px" data-act="ae-nv-liga" ${pronto?'':'disabled'}>${N.subindo&&v&&N.qr?TE('ae_esperando_envio'):TE('ae_ligar_video')}</button></div>`;}
 function aeCadastros(){const A=state.ae,cad=(A.dados&&A.dados.cadastros)||{};if(!can('ativentrega','u'))return '';
-  return `<div class="panel" id="ae-cad"><button class="btn ghost" data-act="ae-cad" aria-expanded="${A.cad}">${TE('ae_cadastros')} ${A.cad?'▴':'▾'}</button>
+  return `<div class="panel" id="ae-cad"><button class="btn ghost" data-act="ae-cad" aria-expanded="${A.cad}">${TE('ae_cadastros')} ${A.cad?'▴':'▾'}</button><div class="note" style="margin-top:6px">${TE('ae_cadastros_d')}</div>
     ${A.cad?['piloto','drone','bateria'].map(t=>`<div style="margin-top:12px"><span class="eyebrow">${({piloto:TE('ae_cad_piloto'),drone:TE('ae_cad_drone'),bateria:TE('ae_cad_bateria')})[t]}</span><div class="row" style="gap:6px;flex-wrap:wrap;margin:6px 0">${(cad[t]||[]).map(x=>`<button class="chip" data-act="ae-cad-liga" data-t="${t}" data-n="${esc(x.nome)}" aria-pressed="${x.ativo}" title="${esc(x.ativo?TE('ae_desligar'):TE('ae_ligar'))}">${esc(x.nome)}${x.ativo?'':' · '+TE('ae_inativo')}</button>`).join('')||`<span class="note">${TE('ae_nenhum')}</span>`}</div>
       <div class="row" style="gap:6px"><input data-ae-novo="${t}" maxlength="40" placeholder="${esc(TE('ae_novo'))}" style="flex:1;min-height:44px"><button class="btn ghost" data-act="ae-cad-add" data-t="${t}">${TE('av_adicionar')}</button></div></div>`).join(''):''}</div>`;}
 function vAtivEntrega(){const A=state.ae;if(!A.dia)A.dia=venueToday();if(!A.dados&&!A.erro)aePull();if(!AE_CATS.includes(A.cat))A.cat='drone';
   const L=A.dados?A.dados.vendas:[];const da=c=>L.filter(v=>v.tipo===c);const pend=c=>da(c).filter(v=>!v.entregue_em).length;
-  const lista=da(A.cat).filter(v=>A.ver==='entregues'?!!v.entregue_em:!v.entregue_em);
+  const col=e=>{const vs=da(A.cat).filter(v=>aeEtapa(v)===e);if(e==='entregue')vs.sort((a,b)=>String(b.entregue_em).localeCompare(String(a.entregue_em)));
+    return `<section class="if-col ae-col-${e}${e==='delivery'?' agora':e==='entregue'?' pronta':''}" data-ae-col="${e}"><h2>${esc(aeColNome(A.cat,e))} <span class="if-cnt">${vs.length}</span></h2><div class="if-list">${vs.map(aeCartao).join('')||`<div class="if-vazio">${TE('ae_col_vazia')}</div>`}</div></section>`;};
   const nv=A.dados&&A.dados.nuvem;
   return `<div class="head"><div><h1>${esc(viewLabel('ativ-entrega'))}</h1></div><div style="text-align:right">${dateField('ae-data',A.dia,TE('ar_data'))}
     ${nv?`<div style="margin-top:4px"><span class="pill ${!nv.ligada?'':nv.fila?'warn':'good'}">${!nv.ligada?TE('ae_nuvem_desligada'):nv.fila?TE('ae_nuvem_pend',nv.fila):TE('ae_nuvem_ok')}</span></div>`:''}</div></div>
   ${A.dados||A.nv?aeNovo():''}
   <div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${AE_CATS.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="ae-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}${A.dados&&pend(c)?' · '+pend(c):''}</span></button>`).join('')}</div>
-  <div class="chips" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"><button class="chip" style="min-height:44px" data-act="ae-ver" data-v="pendentes" aria-pressed="${A.ver==='pendentes'}">${TE('ae_pendentes')}</button><button class="chip" style="min-height:44px" data-act="ae-ver" data-v="entregues" aria-pressed="${A.ver==='entregues'}">${TE('ae_entregues')}</button></div>
   ${A.erro&&!A.dados?`<div class="panel"><div class="note" role="alert">${TE(A.erro)}</div></div>`:''}${!A.dados&&!A.erro?`<div class="panel"><div class="note">${TE('ar_carregando')}</div></div>`:''}
-  ${A.dados?(lista.length?lista.map(aeCartao).join(''):`<div class="panel"><div class="note">${A.ver==='entregues'?TE('ae_nada_entregue'):TE('ae_nada_pendente')}</div></div>`):''}
-  ${aeCadastros()}`;}
+  ${A.dados?`<div class="ae-board">${AE_ETAPAS.map(col).join('')}</div>`:''}
+  ${A.cat==='drone'?aeCadastros():''}`;}
 document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.closest('[data-act^="ae-"]');if(!el||state.view!=='ativ-entrega'||el.tagName==='INPUT'||el.tagName==='SELECT')return;const a=el.dataset.act,A=state.ae,id=el.dataset.id;
-  if(a==='ae-cat'){A.cat=el.dataset.c;}else if(a==='ae-ver'){A.ver=el.dataset.v==='entregues'?'entregues':'pendentes';}
+  if(a==='ae-cat'){A.cat=el.dataset.c;A.voo=null;}
   else if(a==='ae-recebido'){if(await aeAcao({id,etapa:'recebido'}))await aePull();}
   else if(a==='ae-voo'){A.voo=id;}else if(a==='ae-voo-nao'){A.voo=null;}
   else if(a==='ae-voo-ok'){const f=document.getElementById('ae-voo-form');const g=t=>(f.querySelector(`[data-ae-voo="${t}"]`)||{}).value||'';const c={id,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria')};
@@ -8940,9 +8954,7 @@ const EQ={
   ae_nuvem_fila:["Aguardando internet","Waiting for internet","Esperando internet","En attente d'internet","Wartet auf Internet"],
   ae_item_ok:["entregue","delivered","entregado","livré","übergeben"],
   ae_itens:["Itens","Items","Ítems","Articles","Artikel"],
-  ae_recebido:["Cliente chegou","Customer arrived","Llegó el cliente","Client arrivé","Kunde ist da"],
-  ae_voo:["Voo feito","Flight done","Vuelo hecho","Vol effectué","Flug erledigt"],
-  ae_voo_ok:["Confirmar voo","Confirm flight","Confirmar vuelo","Confirmer le vol","Flug bestätigen"],
+  ae_voo_ok:["Confirmar decolagem","Confirm take-off","Confirmar despegue","Confirmer le décollage","Abheben bestätigen"],
   ae_piloto:["Piloto","Pilot","Piloto","Pilote","Pilot"],
   ae_drone:["Drone","Drone","Dron","Drone","Drohne"],
   ae_bateria:["Bateria","Battery","Batería","Batterie","Akku"],
@@ -8962,6 +8974,21 @@ const EQ={
   ae_sem_camera:["Este aparelho não lê QR pela câmera. Use o leitor ou cole o link do cartão abaixo.","This device cannot read QR with the camera. Use the scanner or paste the card link below.","Este aparato no lee QR con la cámara. Usa el lector o pega el enlace de la tarjeta abajo.","Cet appareil ne lit pas le QR avec la caméra. Utilisez le lecteur ou collez le lien de la carte ci-dessous.","Dieses Gerät liest keinen QR mit der Kamera. Scanner benutzen oder den Kartenlink unten einfügen."],
   ae_qr_manual:["Ou leitor de QR / link do cartão","Or QR scanner / card link","O lector de QR / enlace de la tarjeta","Ou lecteur QR / lien de la carte","Oder QR-Scanner / Kartenlink"],
   ae_trocar_cartao:["Trocar cartão","Change card","Cambiar tarjeta","Changer de carte","Karte wechseln"],
+  ae_col_proximo_drone:["Próximo a voar","Next to fly","Próximo a volar","Prochain vol","Als Nächstes"],
+  ae_col_proximo_chute:["Próximo a chutar","Next to kick","Próximo a patear","Prochain tir","Als Nächstes"],
+  ae_col_proximo_snap:["Próximo a gravar","Next to record","Próximo a grabar","Prochain enregistrement","Als Nächstes"],
+  ae_col_andamento_drone:["Voando","Flying","Volando","En vol","Im Flug"],
+  ae_col_andamento_chute:["Chutando","Kicking","Pateando","En train de tirer","Beim Schießen"],
+  ae_col_andamento_snap:["Gravando","Recording","Grabando","Enregistrement","Aufnahme"],
+  ae_col_delivery:["Delivery do vídeo","Video delivery","Entrega del video","Livraison de la vidéo","Videoübergabe"],
+  ae_col_entregue:["Entregue","Delivered","Entregado","Livré","Übergeben"],
+  ae_col_vazia:["Ninguém aqui","Nobody here","Nadie aquí","Personne ici","Niemand hier"],
+  ae_decolar:["Decolar","Take off","Despegar","Décoller","Abheben"],
+  ae_comecar:["Começar","Start","Empezar","Commencer","Starten"],
+  ae_arraste_dica:["arraste o vídeo do cartão de memória no topo da tela","drag the memory card video to the top of the screen","arrastra el video de la tarjeta de memoria arriba de la pantalla","glissez la vidéo de la carte mémoire en haut de l’écran","Video von der Speicherkarte oben auf den Bildschirm ziehen"],
+  ae_entregue_as:[h=>"Entregue às "+h,h=>"Delivered at "+h,h=>"Entregado a las "+h,h=>"Livré à "+h,h=>"Übergeben um "+h],
+  ae_sem_permissao:["Seu acesso não abre a fila de entrega. Fale com o administrador.","Your access does not open the delivery queue. Talk to the administrator.","Tu acceso no abre la cola de entrega. Habla con el administrador.","Votre accès n’ouvre pas la file de livraison. Parlez à l’administrateur.","Dein Zugang öffnet die Übergabe-Warteschlange nicht. Sprich mit dem Administrator."],
+  ae_cadastros_d:["Quem pilota, qual drone e qual bateria: escolhidos ao decolar, para saber depois quem voou com o quê.","Who flies, which drone and which battery: chosen at take-off, to know later who flew with what.","Quién pilota, qué dron y qué batería: se eligen al despegar, para saber después quién voló con qué.","Qui pilote, quel drone et quelle batterie : choisis au décollage, pour savoir ensuite qui a volé avec quoi.","Wer fliegt, welche Drohne und welcher Akku: beim Abheben gewählt, um später zu wissen, wer womit geflogen ist."],
   ae_cadastros:["Pilotos, drones e baterias","Pilots, drones and batteries","Pilotos, drones y baterías","Pilotes, drones et batteries","Piloten, Drohnen und Akkus"],
   ae_cad_piloto:["Pilotos","Pilots","Pilotos","Pilotes","Piloten"],
   ae_cad_drone:["Drones","Drones","Drones","Drones","Drohnen"],
@@ -8973,10 +9000,6 @@ const EQ={
   ae_novo:["Nome ou número","Name or number","Nombre o número","Nom ou numéro","Name oder Nummer"],
   ae_nuvem_desligada:["Nuvem desligada neste servidor","Cloud off on this server","Nube apagada en este servidor","Cloud désactivé sur ce serveur","Cloud auf diesem Server aus"],
   ae_nuvem_ok:["Vídeos na nuvem","Videos in the cloud","Videos en la nube","Vidéos dans le cloud","Videos in der Cloud"],
-  ae_pendentes:["Pendentes","Pending","Pendientes","En attente","Offen"],
-  ae_entregues:["Entregues","Delivered","Entregados","Livrés","Übergeben"],
-  ae_nada_pendente:["Nenhuma entrega pendente neste serviço","No pending delivery for this service","Ninguna entrega pendiente en este servicio","Aucune livraison en attente pour ce service","Keine offene Übergabe für diese Leistung"],
-  ae_nada_entregue:["Nenhuma venda entregue neste serviço","No sale delivered for this service","Ninguna venta entregada en este servicio","Aucune vente livrée pour ce service","Kein Verkauf für diese Leistung übergeben"],
   ae_e_servidor:["Não deu certo. Tente de novo ou chame o supervisor","It did not work. Try again or call the supervisor","No funcionó. Intenta de nuevo o llama al supervisor","Ça n'a pas marché. Réessayez ou appelez le superviseur","Hat nicht geklappt. Erneut versuchen oder den Supervisor rufen"],
   ae_e_rede:["O envio caiu. Confira a rede e mande de novo","The upload dropped. Check the network and send again","El envío se cayó. Revisa la red y envía de nuevo","L'envoi a échoué. Vérifiez le réseau et renvoyez","Upload abgebrochen. Netz prüfen und erneut senden"],
   ae_e_qr_usado:["Este cartão já foi usado. Pegue um cartão novo","This card was already used. Take a new card","Esta tarjeta ya se usó. Toma una tarjeta nueva","Cette carte a déjà été utilisée. Prenez une nouvelle carte","Diese Karte wurde schon benutzt. Neue Karte nehmen"],
