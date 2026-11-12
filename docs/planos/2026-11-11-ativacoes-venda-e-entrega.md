@@ -28,19 +28,38 @@ Este plano substitui as opções do plano de 30/10 (`2026-10-30-maracafly-no-ete
 
 ## 2. Catálogo
 
-Produtos e preços praticados hoje, conferidos na tela de venda e nas planilhas de 01/10 a 11/11:
+Produtos e preços praticados hoje, conferidos no levantamento do sistema antigo (docs 02 e 17) e nas vendas de 01/10 a 11/11. Esses são os valores da carga inicial. Depois disso, quem muda preço é o admin. **Nenhum preço fica fixo no código.**
 
-| Produto | Opções | Preço hoje |
+| Produto | Local | Preço |
 |---|---|---|
-| Drone, Asteroid | Campo ou Arquibancada | Campo R$ 180 |
-| Drone, Boomerang | Campo ou Arquibancada (vale com chuva) | Arquibancada R$ 120 |
-| Drone, Inside Out | Campo, Arquibancada ou Banco de Suplentes | Campo R$ 220 |
-| Adicionais do Drone | Pessoas no vídeo (1 a 4); Qualidade 4K | 4K + R$ 70 |
-| Chute a Gol | 3 Chutes; 5 Chutes | R$ 110; R$ 140 |
-| Itens do Chute a Gol | Medalha avulsa; Mini bola; Bola Pro | Medalha R$ 60; Mini bola R$ 115; Bola Pro a confirmar |
-| Snap Pop | Vídeo com IA, tema Brasil, Flamengo ou Fluminense | 1 R$ 110 · 2 R$ 190 · 3 R$ 290 · a partir do 4º, + R$ 90 cada |
+| Drone, Asteroid | Campo ou Arquibancada | R$ 180 |
+| Drone, Boomerang | Campo ou Arquibancada | R$ 120 |
+| Drone, Boomerang com chuva | No modo chuva, só o Boomerang é vendido | R$ 180 |
+| Drone, Inside Out | Campo ou Arquibancada | R$ 220 |
+| Drone, Inside Out | Banco de Suplentes | R$ 250 |
 
-Os preços que faltam nesta tabela (cada local do Drone e a Bola Pro) são cadastrados pelo admin, que lê na tela de venda atual. **Nenhum preço fica fixo no código.**
+Adicionais do Drone:
+
+- **4K:** + R$ 70.
+- **Pessoas no vídeo:** de 1 a 4 na demonstração. Nas vendas de outubro, o preço não mudou até 8 pessoas, então a cobrança por pessoa extra começa desligada.
+
+| Chute a Gol | Preço |
+|---|---|
+| 3 Chutes | R$ 110 |
+| 5 Chutes | R$ 140 |
+| 3 Chutes + Medalha + Vídeo | R$ 149 |
+| 5 Chutes + Medalha + Vídeo | R$ 169 |
+| 5 Chutes + Mini bola + Medalha + Vídeo | R$ 229 |
+| 5 Chutes + Bola Semi-Pro + Medalha + Vídeo | R$ 259 |
+| 5 Chutes + Bola Pro + Medalha + Vídeo | R$ 279 |
+| Avulsos: Medalha R$ 60 · Mini bola R$ 115 · Bola Semi-Pro R$ 170 · Bola Pro R$ 195 | |
+
+| Snap Pop (vídeo com IA; tema Brasil, Flamengo ou Fluminense) | Preço |
+|---|---|
+| 1 vídeo | R$ 110 |
+| 2 vídeos | R$ 190 |
+| 3 vídeos | R$ 290 |
+| A partir do 4º | + R$ 90 cada |
 
 Cada produto do catálogo tem:
 
@@ -122,7 +141,7 @@ Pilotos, drones e baterias têm cadastro simples, com ativo e inativo.
 
 **Prazo da galeria e LGPD:**
 
-- O vídeo vendido segue o prazo da galeria.
+- **O vídeo fica 30 dias na nuvem** e depois é apagado. Os vídeos são curtos.
 - O vídeo de venda cancelada é apagado.
 - A venda não guarda dado pessoal. E-mail e selfie seguem as regras atuais da galeria.
 
@@ -182,8 +201,8 @@ Cada fase vira uma versão em `VERSOES.md` e tem teste em `testes/`.
 ## 8. Em aberto
 
 1. **Cartão com QR (decidido 11/11):** cartão próprio do vídeo, ligado no campo na entrega; as fotos do Drone ficam com as outras fotos.
-2. **Como as fotos do Drone chegam à sessão:** pela câmera do drone, entrando pela pasta vigiada como as fotos do tour.
-3. **Snap Pop:** onde o vídeo é gerado e quem envia o arquivo. A entrega segue a regra do QR.
-4. **Bola Pro e preço por local do Drone:** o admin confere os valores antes da fase 1 ir para o ar.
-5. **Prazo e qualidade do vídeo na nuvem:** quanto tempo fica disponível e se a original em 4K fica só para quem comprou 4K. O volume é de cerca de 120 GB por mês (plano de 30/10, seção 11).
+2. **Fotos do Drone (decidido 11/11):** quadros tirados do próprio vídeo, no ângulo aberto que pega o campo. Entram na sessão de fotos do cliente, junto com as do tour. Falta definir como cada quadro chega à sessão certa: pela venda do Drone, pela hora do voo ou por reconhecimento facial.
+3. **Snap Pop (decidido 11/11):** o vídeo é gerado depois, por uma integração a fazer. Até lá, o Eterna vende e registra o Snap Pop, e a entrega segue a regra do QR quando o arquivo existir.
+4. **Preços (decidido 11/11):** ficam os da seção 2, tirados da documentação e das vendas.
+5. **Prazo do vídeo (decidido 11/11):** 30 dias na nuvem.
 6. **Compra online das ativações:** entra no checkout da Imply depois, quando a compra online das fotos estiver no ar.
