@@ -490,8 +490,9 @@ with m.gal_lock:
 m.REC_FALSO_SEG = 0
 with m.mont_lock:
     m.mont["parado"] = "teste"                      # segura a montagem para ver o "chegando"
-dados_2 = {"saleNo": "L0-044", "card": card_g, "sessoes": [card_g], "meio": "dinheiro", "total": 70, "selected": [], "aiSel": ["ag_%s|mirante" % comuns[1], "ag_%s|naoexiste" % comuns[1], "../x|tunel"],
-           "galeria": {"token": TOK, "codigo": COD}, "canal": "balcao"}
+dados_2 = {"saleNo": "L0-044", "card": card_g, "sessoes": [card_g], "meio": "dinheiro", "total": 110, "selected": [], "aiSel": ["ag_%s|mirante" % comuns[1], "ag_%s|naoexiste" % comuns[1], "../x|tunel"],
+           "galeria": {"token": TOK, "codigo": COD}, "canal": "balcao",
+           "cart": [{"id": "arq", "v": 70}, {"id": "fundo", "v": 40}]}   # v98: venda antiga com o item "Fundo de IA" segue valendo (a V-E4-1, sem o item, é a venda nova)
 H("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": [evento("V-E4-2", "criar", 1, dados_2), evento("V-E4-2", "pagar", 2, {"meio": "dinheiro"})]})
 with m.mont_lock:
     m.mont["parado"] = None

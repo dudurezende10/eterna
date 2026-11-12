@@ -121,7 +121,8 @@ try{
   ok(e9.v==='posto'&&e9.hash==='#checkout'&&e9.h1==='Posto de venda'&&e9.vis&&e9.h2==='Venda manual'&&/quando o Checkout está fora/.test(e9.nota),'E9: Venda manual dentro do Posto: '+J(e9));
   ok(await A.evaluate(()=>ETERNA.lojaIdeal&&true),'E9: lojaIdeal');
   await A.evaluate(()=>ETERNA.go('catalogo'));await A.waitForTimeout(200);
-  ok(/só na Venda manual/.test(await A.evaluate(()=>{const r=[...document.querySelectorAll('#main tr')].find(x=>/Fundo de IA/i.test(x.textContent));return r?r.textContent:'';})),'E9: rótulo "só na Venda manual" na tabela de preços');
+  // v98 (Eduardo, 12/11): "Fundo de IA" saiu do catálogo (a montagem é uma foto do pacote); a tabela de preços não tem mais a linha
+  ok(await A.evaluate(()=>![...document.querySelectorAll('#main tr')].some(x=>/Fundo de IA|só na Venda manual/i.test(x.textContent))),'E9 (v98): a tabela de preços não tem mais o Fundo de IA');
   const big=await L.evaluate(()=>{const s=ETERNA.demoSessions().map(s=>[s.card,ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length]).sort((a,b)=>b[1]-a[1])[0];return s;});
   for(const n of [1,6,Math.min(15,big[1])]){await L.click('[data-act="loja-new"]').catch(()=>{});await ljSessao(L,big[0],n);
     const t=await L.evaluate(()=>document.querySelector('#main').innerText);const lines=await L.evaluate(c=>JSON.stringify(ETERNA.lojaCart(c).lines),big[0]).catch(()=>null);
