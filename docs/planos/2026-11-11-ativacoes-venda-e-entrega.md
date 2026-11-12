@@ -90,7 +90,7 @@ Uma tela nova, **Ativações**, no menu de venda. Ela segue o padrão visual do 
    - O carrinho mostra o **preço sugerido**. O vendedor pode mudar o **preço cobrado**, e os dois ficam gravados.
 4. **Guia (opcional):** escolha do guia pelo nome, com busca. A comissão continua no Portal de Parceiros.
 5. **Pagamento:** PIX, Dinheiro, Débito, Crédito ou **Cortesia**. Na Cortesia, o motivo e a nota são obrigatórios.
-6. **Idioma do cliente:** só para o recibo e para a galeria abrirem no idioma dele. Não é dado pessoal.
+6. **Idioma e país do cliente:** um toque cada, por bandeira. O idioma serve para o recibo e a galeria abrirem no idioma dele. O país alimenta o resumo por país. Nenhum dos dois identifica a pessoa.
 7. **Execução:** imediata ou agendada (dia e hora). Serve para o Drone.
 8. **Registrar:** grava a venda no servidor do estádio, com número próprio e quem vendeu. Imprime o recibo no idioma do cliente, se houver impressora no posto.
    - Uma venda igual registrada em até 2 minutos pelo mesmo vendedor pede confirmação.
@@ -98,6 +98,13 @@ Uma tela nova, **Ativações**, no menu de venda. Ela segue o padrão visual do 
 A venda fica no servidor, nunca só no navegador (`2026-11-10-dado-no-banco.md`). Se o tablet perder a conexão com o servidor, a tela avisa e não registra. A venda acontece só dentro do estádio, na rede local.
 
 Todo texto novo entra nos idiomas: `EQ`/`TE` nas telas da equipe e `I18N`/`T` no recibo e na galeria. O teste `testes/idiomas.js` cobra as chaves.
+
+## 3b. Vendedores
+
+Cada vendedor tem cadastro próprio no Eterna, com nome e login, no perfil "Atendimento e venda". Hoje são 12 tablets, cada um com o seu vendedor. A lista de tablets e logins fica com o Ronaldo e entra direto no cadastro do servidor, fora deste repositório.
+
+- A venda grava quem vendeu, e o resumo mostra o vendedor pelo nome.
+- As vendas importadas do sistema antigo são ligadas ao vendedor pelo nome. Um nome que não estiver no cadastro aparece como veio.
 
 ## 4. Entrega
 
@@ -155,6 +162,14 @@ Pilotos, drones e baterias têm cadastro simples, com ativo e inativo.
   - **Totais do filtro:** vendas, arquivos, pessoas e valor.
   - **Edição:** feita por formulário. Cada mudança grava quem mudou, quando, o valor anterior e o novo. Ao trocar itens, dá para manter o valor negociado.
   - **Cancelamento:** pede motivo. Venda cancelada não some; aparece separada.
+- **Resumo no celular:** para o gestor acompanhar de qualquer lugar, como o resumo do sistema antigo, que o Ronaldo usa hoje.
+  - **Filtros:** produto (Drone, Chute a Gol, Snap Pop); dia, semana ou mês, com setas e arrastar para mudar o dia.
+  - **Totais:** total vendido, número de vendas e de vídeos.
+  - **Por pagamento:** vendas e valor de PIX, Crédito, Dinheiro, Débito e Cortesia.
+  - **Por vendedor:** vendas e valor, do maior para o menor, pelo nome.
+  - **Serviços vendidos:** quantidade por produto e local.
+  - **Por país:** vendas e valor.
+  - Atualiza sozinho a cada venda nova, com som opcional.
 - **Painel e Estatísticas:** as ativações entram com as fotos:
   - receita por produto, por vendedor e por forma de pagamento;
   - preço sugerido × cobrado;
@@ -179,8 +194,10 @@ As vendas importadas do sistema antigo aparecem nas mesmas telas, com a origem "
 
 **Vendas novas, todo dia, até o desligamento:**
 
-- **Horário:** todo dia, à noite, depois das 19h, quando o tour termina. Uma tarefa agendada própria, às 19h30, puxa as vendas do dia.
-- A extração usa o mesmo extrator da auditoria de vendas (`maracatour/auditoria-vendas/ferramentas/extrair_maracafly.js`), pela sessão do Ronaldo no Chrome. O importador lê o arquivo e envia ao Eterna.
+- **Horário:** todo dia, à noite, depois das 19h, quando o tour termina.
+- **Fonte:** o robô de auditoria que já roda na VM do portal de parceiros. Ele entra sozinho no sistema antigo, sem depender do Chrome do Ronaldo, e grava um arquivo por dia com as vendas, sem dado de cliente: criação, serviços e itens, QR, vendedor, valor, pagamento, pessoas ou participantes, vídeos, entrega e piloto.
+- **O que falta no robô:** uma passada às 19h30, além das que ele já faz, e as colunas país, idioma, guia, resolução, drone e bateria. A mudança é feita no repositório do robô, que é publicado na VM pelo Ronaldo.
+- **Envio:** o importador do Eterna lê esses arquivos e grava as vendas no servidor do Eterna.
 - A auditoria das 07:30 continua como está. Se a puxada da noite falhar, a tarefa avisa e a do dia seguinte cobre o dia que faltou.
 - A chave de cada venda é a origem mais o ID antigo. Rodar duas vezes não duplica nada, e uma venda corrigida no sistema antigo é atualizada.
 - Quando o Ronaldo avisar o desligamento, a tarefa da noite é desligada, e as vendas antigas ficam no Eterna como histórico.
