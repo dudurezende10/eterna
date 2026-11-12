@@ -18,12 +18,23 @@ Ela fica desligada até `CompraOnline=1` e a chave e o tipo de pessoa da Imply e
 - Eventos sem dado pessoal (IP com hash e sal do dia), guardados por 90 dias: `qr_aberto`, `codigo_digitado`, `selfie_ok`, `selfie_nao`, `selfie_sem_rosto`, `galeria_vista`, `compra_tentada`, `livres_vistas` (v96.1: compradas e cortesias abertas só pelo QR, com a contagem; `selfie_ok` também leva `livres`) e `galeria_teto_selfie` (v96.1: 20 selfies sem acerto no dia na galeria de venda, somando IPs; a selfie da galeria para até o dia seguinte e o log ganha uma linha `ALERTA`).
 
 ## Instalar ou atualizar (AWS CloudShell, região us-east-2)
+**Atenção (12/11):** o código está na branch `idiomas-base` (clonar com `-b idiomas-base`). `SegredoPontoSha256` e
+`SegredoPontoTesteSha256` são `NoEcho`: o `describe-stacks` devolve `****` no lugar deles. Nunca montar o
+`--parameter-overrides` a partir do `describe-stacks` sem trocar esses dois pelos valores de verdade: foi assim que, em 12/11,
+os dois viraram `****` e a nuvem passou a recusar os servidores (401) até o deploy seguinte. Os valores são o SHA-256 do
+`~/Eterna/nuvem-segredo.txt` de cada servidor (estádio e teste); calcular no próprio servidor, nunca mandar o segredo.
 ```bash
-rm -rf eterna && git clone --depth 1 https://github.com/dudurezende10/eterna.git && cd eterna/servidor/galeria-nuvem
+rm -rf eterna && git clone --depth 1 -b idiomas-base https://github.com/dudurezende10/eterna.git && cd eterna/servidor/galeria-nuvem
 sam deploy --template-file template.yaml --stack-name eterna-galeria --region us-east-2 --resolve-s3 \
   --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset \
-  --parameter-overrides Bucket=<bucket> SegredoPontoSha256=<SHA-256 do segredo do ponto> EmailOrcamento=<e-mail do alerta>
+  --parameter-overrides Bucket=<bucket> SegredoPontoSha256=<SHA-256 do segredo do ponto> SegredoPontoTesteSha256=<SHA-256 do segredo do teste>   EmailOrcamento=<e-mail do alerta> <os outros parâmetros que já estão na stack>
 ```
+Para atualizar sem redigitar os outros parâmetros (tira os dois `NoEcho` da leitura e passa os dois de verdade):
+```bash
+P=$(aws cloudformation describe-stacks --stack-name eterna-galeria --region us-east-2 --query "Stacks[0].Parameters[].[ParameterKey,ParameterValue]" --output text | awk '$1 !~ /^SegredoPonto/ {printf "%s=%s ", $1, $2}')
+sam deploy ... --parameter-overrides $P SegredoPontoSha256=<SHA-256 do estádio> SegredoPontoTesteSha256=<SHA-256 do teste>
+```
+Depois do deploy, conferir que o servidor publica: `GET /ponto/vendas-online` com o cabeçalho `x-eterna-ponto` responde 200 (401 = segredo errado).
 No fim, `EnderecoApi` é a URL da API (até existir `api.eterna.photo`).
 
 Teste local, sem AWS: `python teste_local.py .`

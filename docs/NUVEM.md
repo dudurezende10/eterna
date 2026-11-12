@@ -280,5 +280,11 @@ A regra da cópia diária (`backup/<pc>/dia/`, Glacier e 400 dias) depende do no
 
 **No servidor do ponto:** o vídeo das ativações (`~/Eterna/ativ-videos`) não é apagado nunca (`apagado_em` não é preenchido em lugar nenhum). Falta a limpeza local, que deveria seguir o mesmo prazo, para o disco não encher.
 
+## 9c. Deploy de 12/11 (v99.20 a v99.24 na nuvem)
+
+- O `sam deploy` falhava desde 11/11: a descrição de `ImplyTipoPessoa` no `template.yaml` tinha `: ` sem aspas (corrigido em `80adab4`).
+- O primeiro deploy montou os parâmetros com `describe-stacks`, que devolve `****` nos dois `NoEcho` (`SegredoPontoSha256`, `SegredoPontoTesteSha256`). Os dois foram gravados como `****` e a nuvem recusou os servidores (401) por ~25 min. O deploy seguinte passou os SHA-256 de verdade, calculados dos `nuvem-segredo.txt` (estádio: `~/Eterna` do notebook, o mesmo do kit do Eduardo; teste: `Eterna-servidor-local`). Os dois voltaram a responder 200, e a página do vídeo do cartão H7KY-HWGG publicou sozinha na tentativa 29.
+- O `README.md` da galeria agora avisa disso e traz o comando certo.
+
 ## 10. Antes da produção
 As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.
