@@ -158,8 +158,9 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   const numP=await K.evaluate(()=>ETERNA.postoDisp().num);ok(pendA.length===1&&pendA[0].saleNo.startsWith('P'+numP+'-'),'1 pendência (clique duplo não duplica), número P'+numP+'-: '+J(pendA));
   await sleep(1500);const evA=JSON.parse(sql('vendas.db',`select tipo,count(*) from evento where venda='${pendA[0]&&pendA[0].id}' group by tipo`));ok(J(evA)===J([]),'v96: nada sobe ao servidor antes da confirmação no Posto: '+J(evA));
   await K.screenshot({path:path.join(PR,'op-checkout-aguardando.png')});
-  // volta ao início e acha a pessoa "b" (Marinara) pelo código da sessão
-  await K.click('[data-act="loja-new"]');await K.waitForTimeout(300);
+  // volta ao início e acha a pessoa "b" (Marinara) pelo código da sessão. v97 (Eduardo): na espera do pagamento o cliente não tem
+  // "Voltar ao início"; quem volta o Checkout é o caixa ("Recomeçar o Checkout"), e a compra continua no Posto
+  await K.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});await K.waitForTimeout(300);
   const cardB=await K.evaluate(()=>Object.keys(ETERNA.SIM.sessions).find(c=>{const s=ETERNA.SIM.sessions[c];return /^LP/.test(c)&&s.status!=='aguardando'&&s.status!=='paga'&&(s.photographer==='marinara'||s.foto==='marinara'||s.key==='marinara');})||null);
   const cards=await K.evaluate(()=>Object.entries(ETERNA.SIM.sessions).filter(([c])=>/^LP/.test(c)).map(([c,s])=>({c,st:s.status||'',p:s.photographer||s.key||s.foto||'',n:(s.photos||[]).length})));
   const cB=cardB||(cards.find(x=>x.c!==cardA&&x.n===1)||{}).c;ok(cB,'sessão da pessoa b no Checkout: '+J(cards));

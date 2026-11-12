@@ -1291,7 +1291,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.7 · 11/11 22:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.7.1 · 11/11 21:27"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1826,6 +1826,7 @@ function postoDisp(){const d=state.posto&&state.posto.disp;return d&&typeof d===
 state.posto={disp:(()=>{try{const d=JSON.parse(localStorage.getItem('eterna.posto.v1')||'null');return d&&typeof d==='object'&&d.id?{id:String(d.id),nome:String(d.nome||'').slice(0,40),num:+d.num||0}:null;}catch(e){return null;}})(),estado:null,lista:null}; // o último posto confirmado pelo servidor (sem rede, o número da venda segue P<n>)
 // Todo pedido ao agente (fora da galeria /g/) vai por aqui: cookie da sessão ou do posto (mesma origem) e X-Eterna: 1.
 // 401 sem_sessao com alguém conectado neste navegador = a sessão terminou no servidor: volta para a entrada com aviso.
+function agLimite(ms){try{return AbortSignal.timeout?AbortSignal.timeout(ms):undefined;}catch(e){return undefined;}}
 function agFetch(u,o){o=o||{};return fetch(u,Object.assign({},o,{credentials:'same-origin',headers:Object.assign({},o.headers||{},{'X-Eterna':'1'})})).then(r=>{
   if(r.status===401&&state.user&&!authSite()&&!state.lojaRota&&!state.pub&&String(u).startsWith(location.origin+'/')&&!/\/postos\/eu$/.test(String(u).split('?')[0]))
     r.clone().json().then(j=>{if(j&&j.erro==='sem_sessao'&&state.user&&!agFetch.saiu){agFetch.saiu=Date.now();logout();toast('Sua sessão terminou. Entre de novo.');setTimeout(()=>{agFetch.saiu=0;},5000);}}).catch(()=>{});
@@ -4026,11 +4027,11 @@ const AGENT_VIEWS=['importar','posto','caixa','fotofila','impfila'];
 // revisão (v94-ux): sem conexão e com o agente fora desta origem (app pelo eterna.photo), espaça as tentativas: 5 s, 10 s, 20 s, até 30 s
 async function agentPoll(){const a=state.agent;await a.sonda;if(!AGENT_VIEWS.includes(state.view)&&!a.on&&a.tried&&a.url!==location.origin)return;
   if(!a.on&&a.tried&&a.url!==location.origin&&Date.now()<(a.proxima||0))return;
-  try{const st=await (await agFetch(a.url+'/status',{cache:'no-store'})).json();if(!st.ok)throw new Error('x');
+  try{const st=await (await agFetch(a.url+'/status',{cache:'no-store',signal:agLimite(8000)})).json();if(!st.ok)throw new Error('x');
     // agente em outro endereço (página aberta pelo site ou por outro endereço): sem sessão nem posto lá, fica indisponível
     if(a.url!==location.origin){const era=a.on||!a.outra;a.on=false;a.outra=true;a.tried=true;if(!a.outraAviso&&!state.pub&&!state.lojaRota){a.outraAviso=1;toast('Servidor do ponto encontrado: abra o Eterna pelo endereço do servidor do ponto');}if(era)render();return;}
     a.outra=false;const was=a.on;a.on=true;a.lastOk=Date.now();a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;a.envio=st.envio&&typeof st.envio==='object'?st.envio:null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;postoCarregar();let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
-    const evr=await agFetch(a.url+'/events?since='+a.cursor,{cache:'no-store'});const ev=evr.ok?await evr.json():{events:[]}; // sem Upload/Estoque (ou só o posto): sem a lista de chegadas
+    const evr=await agFetch(a.url+'/events?since='+a.cursor,{cache:'no-store',signal:agLimite(8000)});const ev=evr.ok?await evr.json():{events:[]}; // sem Upload/Estoque (ou só o posto): sem a lista de chegadas
     if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
       if(e.src==='inbox'||known.has(id)||was||a.sessoes)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
@@ -4061,7 +4062,7 @@ async function visPull(){const a=state.agent;const vs=a&&a.sessoes&&a.sessoes.vi
 async function srvPull(){const a=state.agent;visPull();if(SRV.busy||!a.sessoes)return;SRV.busy=true;
   try{if(SRV.gen!==a.sessoes.gen){SRV.gen=a.sessoes.gen;SRV.rev=0;SRV.sess={};SRV.mat={};}
     if(a.sessoes.rev===SRV.rev){if(srvMaterializa()&&(state.view==='importar'||state.view==='fotofila'))render();return;}
-    const j=await (await agFetch(a.url+'/sessoes?desde='+SRV.rev,{cache:'no-store'})).json();if(!j||!j.ok)return;
+    const j=await (await agFetch(a.url+'/sessoes?desde='+SRV.rev,{cache:'no-store',signal:agLimite(8000)})).json();if(!j||!j.ok)return; // v99.7.1: pedido que não volta não trava a lista de sessões para sempre (SRV.busy)
     if(j.gen!==SRV.gen){SRV.gen=j.gen;SRV.rev=0;SRV.sess={};SRV.mat={};return;}
     if(j.completo)SRV.sess={};
     const hoje=localDay(Date.now()/1000);let mudou=false; // dia local, como o do agente (todayKey é UTC)

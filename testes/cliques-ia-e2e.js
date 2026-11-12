@@ -112,8 +112,8 @@ try{
     let r=await ETERNA.faceFind([cv],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);const a={code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id),tot:(ETERNA.demoSessions().find(s=>s.card===k.code)||{photos:[]}).photos.length};
     ETERNA.lojaReset();ETERNA.SIM.sessions[c].menor=true;ETERNA.state.agent.rostos={ligado:true};r=await ETERNA.faceFind([cv],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
     const m={code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id)};delete ETERNA.SIM.sessions[c].menor;ETERNA.lojaReset();return {a,m};},xS.card);
-  // v97 (Eduardo, 10/11): a selfie abre a leva inteira (e a visita); a base continua fora das fotos
-  ok(s15.a.code===xS.card&&s15.a.fotos.length===s15.a.tot&&s15.a.tot>0&&s15.a.ai.length===5&&!s15.a.items.includes('ph:'+f2)&&!s15.a.items.includes('ph:'+f1),'A15: selfie pela base: a leva inteira, 5 montagens, base nunca como foto: '+J(s15.a));
+  // v99.2 (Ronaldo e Eduardo, 11/11): sai a leva inteira da v97; a selfie abre só o que tem o rosto dela; a base continua fora das fotos
+  ok(s15.a.code===xS.card&&s15.a.fotos.length===0&&s15.a.ai.length===5&&!s15.a.items.includes('ph:'+f2)&&!s15.a.items.includes('ph:'+f1),'A15: selfie pela base: só o que tem o rosto dela, 5 montagens, base nunca como foto: '+J(s15.a));
   ok(s15.m.code===xS.card&&s15.m.fotos.length===0&&s15.m.ai.length===5&&s15.m.ai.every(x=>x===f2),'A11: menor: só a base reconhecida: '+J(s15.m));
   SIMS={};
   // idiomas: Checkout com as montagens em en, es, fr, de, sem erro e sem texto novo em português
@@ -173,7 +173,7 @@ try{
   const xSb=(await sessoes()).find(x=>x.card===xS.card);ok(xSb&&J(xSb.ia)===J(xS.ia),'12: a sessão já fechada não mudou');
   // Upload usa a regra do servidor: a nova sessão mostra só "Fundo IA 1"
   await pe.evaluate(()=>ETERNA.go('importar'));
-  ok(await esp2(c=>{const b=document.querySelector(`.up-sess[data-card="${c}"]`);return b&&[...b.querySelectorAll('.ph .tag-ia')].length===1;},15000,xN1&&xN1.card),'12/14: com 1 clique, só uma base marcada no Upload');
+  ok(await esp2(c=>{const b=document.querySelector(`.up-sess[data-card="${c}"]`);return b&&[...b.querySelectorAll('.ph .tag-ia')].length===1;},30000,xN1&&xN1.card) /* v99.7.1: 30 s; com o notebook carregado a lista do Upload pode levar uma volta a mais */,'12/14: com 1 clique, só uma base marcada no Upload: '+J(await pe.evaluate(c=>{const b=document.querySelector(`.up-sess[data-card="${c}"]`);const S=ETERNA.SRV;return {c,bloco:!!b,tags:b?[...b.querySelectorAll('.tag-ia')].map(t=>t.textContent):null,srv:!!(S.sess||{})[c],rev:[S.rev,(ETERNA.state.agent.sessoes||{}).rev],busy:S.busy,view:ETERNA.state.view,lastOk:Date.now()-(ETERNA.state.agent.lastOk||0),err:ETERNA.state.agent.err};},xN1&&xN1.card))+' agente: '+J(await (async()=>{try{const r=await req(PORTA,'GET','/status');return ((r.j||{}).sessoes||{}).rev;}catch(e){return String(e).slice(0,80);}})()));
   // sem configuracao.u: campos desabilitados e guardAct barra (nada sobe ao agente)
   await pe.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));
   const r12=await pe.evaluate(()=>{const u=ETERNA.state.user;const p0=u.perms;u.perms={...p0,configuracao:{r:true}};ETERNA.render();const dis=[...document.querySelectorAll('#ia-cfg input')].every(x=>x.disabled);
