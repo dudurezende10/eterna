@@ -26,8 +26,9 @@ try{
   const cab=await A.textContent('#main .head');
   ok(/Drone, Chute a Gol e Snap Pop/.test(cab)&&!/Ativa/.test(cab)&&/vendedor/.test(await A.textContent('#av-quem')),'título com os três serviços, sem ativações, e o vendedor no topo: '+cab);
   ok(await A.$('[data-act="av-guia"]')===null&&await A.$('[data-act="av-quando"]')===null,'sem guia e sem agendar voo');
-  const ordem=await A.evaluate(()=>['av-prod','av-cart','av-cliente','av-pag'].map(id=>document.getElementById(id).getBoundingClientRect().top));
-  ok(ordem.every((y,i)=>!i||y>ordem[i-1]),'ordem: serviço, venda, cliente, pagamento: '+J(ordem));
+  const ordem=await A.evaluate(()=>['av-prod','av-cliente','av-pag'].map(id=>document.getElementById(id).getBoundingClientRect().top));
+  ok(ordem.every((y,i)=>!i||y>ordem[i-1])&&await A.$('#av-cart')===null,'ordem: serviço, cliente, pagamento; venda vazia não aparece: '+J(ordem));
+  ok(await A.$('.av-vit-rot')===null,'miniatura sem legenda');
   ok((await A.$$('select[data-act="av-pais"] option')).length>150&&(await A.$$('select[data-act="av-idioma"] option')).length===8,'país em lista com todos os países, idioma com os principais e Outro');
   // vídeo de demonstração: 3 pessoas, copiado para o tablet e tocado de lá
   await A.evaluate(async()=>{ETERNA.state.agent.on=true;await ETERNA.avDemoCopia();});
@@ -41,6 +42,8 @@ try{
   await A.evaluate(()=>{ETERNA.state.agent.on=false;});
   // carrinho: Asteroid (Campo) com 4K e 2 vídeos + 3 Chutes
   await A.click('[data-act="av-add"][data-id="asteroid"]');await A.waitForTimeout(80);
+  const ordem2=await A.evaluate(()=>['av-prod','av-cart','av-cliente'].map(id=>document.getElementById(id).getBoundingClientRect().top));
+  ok(ordem2.every((y,i)=>!i||y>ordem2[i-1]),'venda aparece entre o serviço e o cliente: '+J(ordem2));
   await A.click('[data-act="av-mais"][data-i="0"][data-k="qtd"]');await A.check('[data-act="av-k4"][data-i="0"]');await A.waitForTimeout(80);
   ok(/R\$\s?500/.test(await A.textContent('#av-total')),'Asteroid ×2 com 4K = 500: '+await A.textContent('#av-total'));
   await A.click('[data-act="av-cat"][data-c="chute"]');await A.click('[data-act="av-add"][data-id="c3"]');await A.waitForTimeout(80);
