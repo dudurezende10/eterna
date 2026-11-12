@@ -104,7 +104,10 @@ sequenceDiagram
 
 1. **Venda sem internet num horário que esgotou:** com local first, o tablet pode vender uma vaga que já acabou na Imply. Proposta: a venda vale e o painel avisa o supervisor para remanejar o horário.
 2. **Nome e documento na reserva:** a API pede `{nome, documento}` e a venda das ativações não pede dado do cliente (decisão de 11/11). Proposta: mandar "Viva Maracanã" e o CNPJ da Maracatour, com o número da venda no localizador.
-3. **Pagamento:** a compra pela API sai faturada para a pessoa "Viva Maracanã" na Imply. Falta definir com o financeiro como isso fecha com o que o tablet recebeu (PIX, cartão e dinheiro).
+3. **Pagamento (em estudo, Ronaldo, 12/11):** o pagamento é feito no POS da Imply. A ideia em estudo: o Eterna lê o QR da cobrança que o POS imprime, com o localizador de 12 dígitos da venda na Imply, e grava o localizador no registro da venda do Eterna. Isso define quem tira a vaga do estoque:
+   - **Se o POS lança a venda do produto na Imply** (o vendedor escolhe Asteroid, 3 Chutes etc. no POS), o estoque já cai pelo POS. O Eterna **não reserva pela API**: usa a API só para ler o estoque e mostrar as vagas no tablet, e o localizador lido no POS liga a venda do Eterna à venda da Imply. É a conciliação com o financeiro, venda a venda.
+   - **Se o POS só cobra um valor**, sem produto, a reserva continua sendo do servidor do Eterna pela API (seção acima), e o localizador do POS liga a cobrança à reserva.
+   - Para decidir: ver no POS como a venda das ativações é lançada hoje. Perguntar à Imply se a API consegue consultar uma venda do POS pelo localizador, para conferir produto, horário e valor.
 4. **Horário na venda:** hoje a tela de venda não escolhe horário. Com slot, passa a escolher. Proposta: o próximo horário com vaga vem escolhido.
 
 ## Pendências com a Imply
