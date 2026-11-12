@@ -44,7 +44,7 @@ json.dump({"extraido_em": "2026-10-04T20:00:00", "dados": [{"tipo": "drone", "di
            "rows": [{"attrs": {"saleId": "101"}, "cells": [{"txt": "101"}, {"txt": "2026-10-01 10:00:00"}, {"txt": "Fulano Inventado"}, {"txt": "+55 21 90000-0001"},
                                                           {"txt": "1x boomerang_arquibancada"}, {"txt": "Vendedor03 MaracaTour"}, {"txt": "R$ 0,00"}, {"txt": "PIX"}, {"txt": "3"}]}]}]},
           open(DIA, "w", encoding="utf-8"))
-open(VEND, "w", encoding="utf-8").write("tablet 03 - vendedora.teste\n")
+open(VEND, "w", encoding="utf-8").write("tablet 03 - vendedora.teste\ntablet 05 - ana.teste\n")
 
 
 def roda(*args):
@@ -84,6 +84,7 @@ try:
     v = dict(zip(m.ATIV_VENDA_CAMPOS, db.execute("select " + ",".join(m.ATIV_VENDA_CAMPOS) + " from ativ_venda where id='drone-101'").fetchone()))
     ok(v["vendedor"] == "Vendedora Teste" and v["vendedor_n"] == 3 and v["pais"] == "Chile" and v["idioma"] == "Espanhol" and v["valor"] == 120
        and json.loads(v["itens"]) == [{"produto": "boomerang", "op": "Arquibancada", "qtd": 1}] and v["guia"] == "", "drone normalizado: %s" % v)
+    ok(db.execute("select vendedor, vendedor_n from ativ_venda where id='drone-102'").fetchone() == ("Ana Teste", 5), "número do tablet pelo nome da planilha")
     c3 = db.execute("select itens, pagamento, idioma from ativ_venda where id='chute-201'").fetchone()
     ok(json.loads(c3[0]) == [{"produto": "3 Chutes", "op": "", "qtd": 1}, {"produto": "1 Medalha avulsa", "op": "", "qtd": 1}] and c3[1] == "Débito" and c3[2] == "Inglês",
        "chute com dois itens, pagamento e idioma: %s" % (c3,))

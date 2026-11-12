@@ -98,6 +98,8 @@ def normalizar(tipo, c, vendedores):
     vend = txt(g("Vendedor"))
     n = re.search(r"vendedor\s*0*(\d+)", vend, re.I)
     vn = int(n.group(1)) if n else None
+    if vn is None:                      # a planilha traz o nome; o número do tablet vem da lista
+        vn = next((k for k, nome in vendedores.items() if nome.lower() == vend.lower()), None)
     return {
         "origem": "antigo", "id": tipo + "-" + vid, "tipo": tipo, "dia": dt.strftime("%Y-%m-%d"), "criado": dt.strftime("%Y-%m-%dT%H:%M:%S"),
         "itens": itens(tipo, g("Descrição dos Serviços", "Itens da venda")), "valor": valor, "pagamento": pagamento(g("Pagamento"), valor),
