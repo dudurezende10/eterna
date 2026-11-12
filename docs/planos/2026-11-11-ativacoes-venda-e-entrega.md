@@ -253,6 +253,17 @@ Pedido do Ronaldo (12/11): aproveitar a entrega do vídeo para vender as fotos d
   - **Página:** até 8 miniaturas, compradas primeiro, sem marca d'água e com **Baixar** (o original); à venda com marca d'água. Tocar numa foto à venda, ou em **Comprar minhas fotos**, guarda o acesso no `sessionStorage` (`eterna.gq.tour`, 12 h) e abre `#g/<token do Tour>` direto na galeria, com aquela foto marcada. A galeria mostra **Voltar ao vídeo**, e a compra é a online de sempre.
   - Até o `sam deploy`, a nuvem não manda o acesso e a página mostra o botão antigo.
 
+### 4d. Cartões com QR: lotes no servidor (v99.23.7 a v99.24.0, Ronaldo, 12/11)
+
+Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do Ronaldo: gerar uma lista, não imprimir, gerar outra, e perder o controle (ou repetir número).
+
+- **Onde:** Configurações › Preços e Checkout › Avançado › Cartões com QR impresso. Precisa do servidor do ponto e de `catalogo.u`.
+- **O servidor gera e guarda** cada cartão (tabelas `cartao` e `cartao_lote` no `vendas.db`; `cartao_lote` no agente). Token (QR) com 22 caracteres aleatórios e código digitável de **12 letras** `XXXX-XXXX-XXXX` (antes 8). Os dois são chave única no banco: **não repetem entre lotes**, nunca.
+- **Um lote "na gráfica" por vez**, até 10.000 cartões. Enquanto ele está na gráfica, o botão só **baixa o mesmo arquivo de novo** (cada download fica contado). Lote novo só depois de **Marcar recebido** ou **Cancelar lote**. A tabela mostra quem gerou, quando, quantos já foram usados e quem mudou a situação.
+- **Lote cancelado** (não foi impresso, ou os cartões se perderam): na entrega, os cartões dele são recusados (`cartao_cancelado`). Cartão que não veio de lote nenhum também (`cartao_desconhecido`), a partir do primeiro lote gerado no servidor.
+- **Na nuvem** o código digitável nunca troca de dono (`codigo_liga`/`codigo_solta` em `servidor/galeria-nuvem/app.py`): se dois tokens dessem o mesmo código, o código fica com o primeiro; o outro abre só pelo QR. A nuvem e a página do cliente aceitam 8 letras (galerias de fotos) e 12 (cartão). **Precisa de `sam deploy`.**
+- Testes: `testes/cartoes_lote_agente.py`, `testes/cartoes_lote.js`, `servidor/galeria-nuvem/teste_local.py`.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.

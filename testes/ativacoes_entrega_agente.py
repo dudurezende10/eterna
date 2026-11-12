@@ -65,7 +65,7 @@ def entrega(venda, qr, bruto, cookie):
 
 
 HOJE = time.strftime("%Y-%m-%d")
-CODIGO_APP = "4B3J-GCRL"            # cartaoCodigo("abcdefghijklmnopqrstuv") no app
+CODIGO_APP = "4G6N-TGGM-WZXG"           # cartaoCodigo("abcdefghijklmnopqrstuv") no app
 QR1, QR2, QR3 = "A" * 21 + "1", "B" * 21 + "2", "C" * 21 + "3"
 RW = {"c": True, "r": True, "u": True, "d": True}
 JPG = b"\xff\xd8\xff\xe0" + b"\x00" * 200 + b"\xff\xd9"
@@ -141,7 +141,7 @@ try:
     st, j = req("POST", "/ativ/video/liga", ven, {"rascunho": "0" * 16, "venda": "TDRONE001D", "qr": QR1})
     ok(st == 403, "vendedor não liga vídeo: %s" % st)
     st, j = entrega("TDRONE001D", QR1, mp4(30), eq)
-    ok(st == 200 and j.get("n") == 1 and re.match(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$", j.get("codigo") or ""), "vídeo ligado ao QR: %s %s" % (st, j))
+    ok(st == 200 and j.get("n") == 1 and re.match(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$", j.get("codigo") or ""), "vídeo ligado ao QR: %s %s" % (st, j))
     ok(os.path.getsize(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")) == len(mp4(30)) and not [f for f in os.listdir(m.ATIV_VIDEOS_DIR) if f.endswith(".tmp")],
        "arquivo guardado, sem sobra")
     sobra = [f for f in os.listdir(m.ATIV_VIDEOS_DIR) if f.startswith("rascunho-")]

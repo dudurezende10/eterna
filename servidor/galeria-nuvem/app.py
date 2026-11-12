@@ -2,7 +2,7 @@
 
 API que atende o celular do cliente fora do estádio, com o mesmo contrato das rotas /g/* do agente
 (galeria-qr-fase1.md), para o app não mudar de tela:
-  GET  /g/codigo/<XXXX-XXXX>      código curto -> token
+  GET  /g/codigo/<XXXX-XXXX[-XXXX]> código curto -> token (12 no cartão)
   GET  /g/<token>/info            tipo, validade, estado
   GET  /g/<token>/livres          na venda (sessao): compradas e cortesias só pelo QR, sem selfie (v96.1)
   POST /g/<token>/rosto           selfie com consentimento -> acesso de 1 h + galeria
@@ -63,7 +63,7 @@ EVENTO_DISTINTOS, EVENTO_JANELA, EVENTO_HORA = 2, 24 * 3600, 60
 EVENTOS_DIAS = 90
 _re_token = re.compile(r"^[A-Za-z0-9_-]{22}$")
 _re_pid = re.compile(r"^(ag_)?[0-9a-f]{6,40}$")
-_re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$")
+_re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4})?$")   # v99.24: cartão com 12
 _re_ref = re.compile(r"^ON-[A-HJ-NP-Z2-9]{10}$")
 _re_sku = re.compile(r"^[0-9a-f]{40}$")
 _re_passaporte = re.compile(r"^[A-Z0-9]{5,20}$")

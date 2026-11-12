@@ -4079,7 +4079,7 @@ SEM_OPENCV = bool(os.environ.get("ETERNA_SEM_OPENCV"))
 os.makedirs(GALERIAS, exist_ok=True)
 _re_token = re.compile(r"^[A-Za-z0-9_-]{22}$")
 _re_pid = re.compile(r"^(ag_)?[0-9a-f]{6,40}$")
-_re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$")
+_re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4})?$")   # v99.24: cartão com 12
 _re_sig = re.compile(r"^[0-9a-f]{64}$")
 gal_lock = threading.RLock()
 gal_fila = queue.Queue()
@@ -7703,19 +7703,116 @@ GAL_ALFA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def cartao_codigo(tok):
-    """O mesmo cálculo do app (cartaoCodigo): código XXXX-XXXX impresso no cartão, tirado do token."""
+    """O mesmo cálculo do app (cartaoCodigo): código XXXX-XXXX-XXXX impresso no cartão, tirado do token (v99.24: 12 letras, 60 bits;
+    o registro de lotes garante que não repete)."""
     h1, h2 = 0x811c9dc5, 0x9e3779b9
     for ch in tok:
         c = ord(ch)
         h1 = ((h1 ^ c) * 16777619) & 0xFFFFFFFF
         h2 = ((h2 ^ c) * 2246822519) & 0xFFFFFFFF
     out = ""
-    for i in range(8):
-        v = (h1 >> (i * 7)) if i < 4 else (h2 >> ((i - 4) * 7))
+    for i in range(12):
+        v = (h1 >> (i * 5)) if i < 6 else (h2 >> ((i - 6) * 5))
         out += GAL_ALFA[v & 31]
-        if i == 3:
+        if i in (3, 7):
             out += "-"
     return out
+
+
+# ---- v99.24: lotes de cartões com QR, gerados e guardados no servidor ----
+# Um lote "na gráfica" por vez: clicar de novo baixa o mesmo arquivo; outro lote só depois de marcar o anterior como recebido
+# ou cancelado. Token e código são únicos entre todos os lotes (chave e unique no banco). Na entrega, cartão de lote cancelado
+# ou fora de qualquer lote é recusado (depois que existe o primeiro lote).
+CARTAO_MAX_LOTE = 10000
+_re_lote = re.compile(r"^L\d{8}-\d{6}$")
+
+
+def cartao_token_novo():
+    while True:
+        t = base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("=")
+        if t[0].isalnum():                  # começando com - ou _ o Excel da gráfica lê como fórmula
+            return t
+
+
+def cartao_lotes(c=None):
+    fecha = c is None
+    c = c or vendas_db()
+    try:
+        rs = c.execute("select l.id, l.n, l.em, l.por, l.situacao, l.mudou_em, l.mudou_por, l.baixado_n, l.baixado_em,"
+                       " (select count(*) from cartao k join ativ_entrega e on e.qr = k.token where k.lote = l.id)"
+                       " from cartao_lote l order by l.em desc").fetchall()
+        return [dict(zip(("id", "n", "em", "por", "situacao", "mudou_em", "mudou_por", "baixado_n", "baixado_em", "usados"), r)) for r in rs]
+    finally:
+        if fecha:
+            c.close()
+
+
+def cartao_csv(c, lote):
+    linhas = ["token;codigo;qr"] + ["%s;%s;https://eterna.photo/#g/%s" % (t, k, t) for t, k in
+                                    c.execute("select token, codigo from cartao where lote=? order by rowid", (lote,))]
+    return "\n".join(linhas)
+
+
+def cartao_lote(n, por):
+    """POST /ativ/cartoes/lote {n}: o lote que está na gráfica (mesmo arquivo) ou um novo. -> (erro, {lote, csv, novo})."""
+    with ev_lock:
+        c = vendas_db()
+        try:
+            aberto = c.execute("select id from cartao_lote where situacao='grafica'").fetchone()
+            if aberto:
+                lote, novo = aberto[0], False
+            else:
+                try:
+                    n = int(n)
+                except (TypeError, ValueError):
+                    return "dados", None
+                if not 1 <= n <= CARTAO_MAX_LOTE:
+                    return "dados", None
+                lote, novo = "L" + time.strftime("%Y%m%d-%H%M%S"), True
+                if c.execute("select 1 from cartao_lote where id=?", (lote,)).fetchone():
+                    return "dados", None
+                feitos = 0
+                while feitos < n:
+                    t = cartao_token_novo()
+                    cur = c.execute("insert or ignore into cartao (token, codigo, lote) values (?,?,?)", (t, cartao_codigo(t), lote))
+                    feitos += cur.rowcount
+                c.execute("insert into cartao_lote (id, n, em, por, situacao, baixado_n) values (?,?,?,?, 'grafica', 0)",
+                          (lote, n, time.strftime("%Y-%m-%dT%H:%M:%S"), por))
+            c.execute("update cartao_lote set baixado_n = baixado_n + 1, baixado_em=? where id=?", (time.strftime("%Y-%m-%dT%H:%M:%S"), lote))
+            c.commit()
+            return None, {"lote": lote, "novo": novo, "n": c.execute("select n from cartao_lote where id=?", (lote,)).fetchone()[0],
+                          "csv": cartao_csv(c, lote)}
+        finally:
+            c.close()
+
+
+def cartao_lote_muda(lote, situacao, por):
+    """POST /ativ/cartoes/situacao {lote, situacao}: grafica -> recebido ou cancelado; recebido -> cancelado (cartões perdidos)."""
+    if not _re_lote.match(str(lote or "")) or situacao not in ("recebido", "cancelado"):
+        return "dados"
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select situacao from cartao_lote where id=?", (lote,)).fetchone()
+            if not r:
+                return "nao_achou"
+            if r[0] == "cancelado" or r[0] == situacao:
+                return "situacao"
+            c.execute("update cartao_lote set situacao=?, mudou_em=?, mudou_por=? where id=?", (situacao, time.strftime("%Y-%m-%dT%H:%M:%S"), por, lote))
+            c.commit()
+            return None
+        finally:
+            c.close()
+
+
+def cartao_situacao(c, qr):
+    """None = pode usar; senão o erro da entrega. Antes do primeiro lote no servidor, qualquer cartão vale (como era)."""
+    if not c.execute("select 1 from cartao_lote limit 1").fetchone():
+        return None
+    r = c.execute("select l.situacao from cartao k join cartao_lote l on l.id = k.lote where k.token=?", (qr,)).fetchone()
+    if not r:
+        return "cartao_desconhecido"
+    return "cartao_cancelado" if r[0] == "cancelado" else None
 
 
 def ativ_videos_previstos(itens):
@@ -7994,6 +8091,9 @@ def ativ_video_checa(vid, qr):
             return "cancelada", None
         if c.execute("select 1 from ativ_entrega where qr=?", (qr,)).fetchone():
             return "qr_usado", None
+        e = cartao_situacao(c, qr)
+        if e:
+            return e, None
         prev = ativ_videos_previstos(json.loads(r[1] or "[]"))
         n = c.execute("select count(*) from ativ_entrega where venda=? and apagado_em is null", (vid,)).fetchone()[0]
         if n >= prev:
@@ -8872,6 +8972,11 @@ def vendas_db():
     if "cliente_eventos" not in {r[1] for r in c.execute("pragma table_info(ativ_entrega)")}:
         c.execute("alter table ativ_entrega add column cliente_eventos text")
     c.execute("create table if not exists ativ_cadastro (tipo text, nome text, ativo integer, primary key (tipo, nome))")
+    # v99.24: lotes de cartões com QR (a gráfica imprime; o servidor guarda cada token e código, nunca repetidos)
+    c.execute("create table if not exists cartao (token text primary key, codigo text not null unique, lote text not null)")
+    c.execute("create index if not exists cartao_lote_i on cartao(lote)")
+    c.execute("create table if not exists cartao_lote (id text primary key, n integer, em text, por text, situacao text,"
+              " mudou_em text, mudou_por text, baixado_n integer, baixado_em text)")
     c.execute("create view if not exists ativ_venda_resumo as select dia, tipo, count(*) as vendas, sum(valor) as valor, sum(videos) as videos"
               " from ativ_venda group by dia, tipo")
     # BI: cada selfie do Checkout. Só contagem e horário: nunca imagem, vetor do rosto, sessão ou venda (não identifica ninguém)
@@ -9852,6 +9957,8 @@ ROTAS = (
     ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
     ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
     ("GET", "/ativ/cadastros", "sessao", ("ativentrega.r",)), ("POST", "/ativ/cadastros", "sessao", ("ativentrega.u",)),
+    ("GET", "/ativ/cartoes", "sessao", ("catalogo.r",)), ("POST", "/ativ/cartoes/lote", "sessao", ("catalogo.u",)),   # v99.24: lotes de cartões
+    ("POST", "/ativ/cartoes/situacao", "sessao", ("catalogo.u",)),
     ("GET", "/roverpix/status", "sessao", ("financeiro.r",)), ("GET", "/roverpix/data", "sessao", ("financeiro.r",)),
     ("POST", "/roverpix/sync", "sessao", ("configuracao.u",)), ("POST", "/roverpix/config", "sessao", ("configuracao.u",)),
     ("GET", "/ftp-remoto/status", "sessao", ("configuracao.r",)), ("POST", "/ftp-remoto/config", "sessao", ("configuracao.u",)),
@@ -11011,8 +11118,19 @@ class H(BaseHTTPRequestHandler):
             e, n = ativ_video_liga(body, eu.get("usuario") or "")
             if e:
                 return self.js({"error": e}, {"dados": 400, "rascunho": 410, "nao_achou": 404, "cancelada": 409, "qr_usado": 409,
-                                              "completa": 409, "sem_video": 409, "formato": 415}[e])
+                                              "completa": 409, "sem_video": 409, "formato": 415,
+                                              "cartao_desconhecido": 409, "cartao_cancelado": 409}[e])
             return self.js({"ok": True, "qr": body["qr"], "codigo": cartao_codigo(body["qr"]), "n": n})
+        if rota == "/ativ/cartoes/lote":
+            e, r = cartao_lote(body.get("n"), eu.get("usuario") or "")
+            if e:
+                return self.js({"error": e}, 400)
+            return self.js(dict(r, ok=True, lotes=cartao_lotes()))
+        if rota == "/ativ/cartoes/situacao":
+            e = cartao_lote_muda(body.get("lote"), body.get("situacao"), eu.get("usuario") or "")
+            if e:
+                return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "situacao": 409}[e])
+            return self.js({"ok": True, "lotes": cartao_lotes()})
         if rota == "/ativ/cadastros":
             e = ativ_cadastro_set(body)
             return self.js({"error": e}, 400) if e else self.js({"ok": True, "cadastros": ativ_cadastros()})
@@ -12019,6 +12137,10 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "data inválida"}, 400)
             return self.js({"ok": True, "vendas": r, "cadastros": ativ_cadastros(),
                             "nuvem": {"ligada": NUVEM == "s3" and bool(NUVEM_BUCKET), "fila": nuvem.get("videos_fila", 0)}}, nostore=True)
+        if u.path == "/ativ/cartoes":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js({"ok": True, "lotes": cartao_lotes(), "max": CARTAO_MAX_LOTE}, nostore=True)
         if u.path == "/ativ/minhas":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -12154,7 +12276,7 @@ class H(BaseHTTPRequestHandler):
             return self.ff_funcao_post()
         if u.path == "/ativ/video":
             return self.ativ_video_post(u)
-        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga"):
+        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao"):
             return self.ativ_post(u.path)
         if u.path in ("/ativ/venda", "/ativ/cancelar"):
             return self.ativ_post(u.path)

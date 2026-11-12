@@ -369,4 +369,7 @@ chama("POST", "/ponto/galerias", {"manifesto": dict(manY, encerrada=True)}, {"x-
 ok(chama("GET", "/g/codigo/XXXX-YYYY")[1].get("token") == "X" * 22, "encerrar o segundo não apaga o código do primeiro")
 chama("POST", "/ponto/galerias", {"manifesto": dict(manX, encerrada=True)}, {"x-eterna-ponto": seg})
 ok(chama("GET", "/g/codigo/XXXX-YYYY")[0] == 404, "encerrar o primeiro solta o código")
+# v99.24: cartão com código de 12 letras
+ok(chama("POST", "/ponto/galerias", {"manifesto": dict(manV, token="K" * 22, codigo="ABCD-EFGH-JKLM", encerrada=False)}, {"x-eterna-ponto": seg})[0] == 200
+   and chama("GET", "/g/codigo/abcd-efgh-jklm")[1].get("token") == "K" * 22, "código de 12 letras do cartão abre o vídeo")
 print("\ntudo certo")

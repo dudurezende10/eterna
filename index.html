@@ -1311,7 +1311,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.23.8 · 12/11 17:54"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.24.0 · 12/11 18:22"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1398,7 +1398,7 @@ function editStyleObj(e){if(!e)return '';const t=Math.round((e.t||0)/5)*5;return
 function phStyle(id){if(/^black_/.test(id))return '--img:none;--bs:auto;--bp:center';if(UP[id])return `--img:url(${UP[id].src});--bs:cover;--bp:center`+editStyle(id);const s=spriteOf[id];if(!s)return '';const col=s.i%s.cols,row=Math.floor(s.i/s.cols);const bx=s.cols>1?100*col/(s.cols-1):0,by=s.rows>1?100*row/(s.rows-1):0;return `--img:url(sprites/${s.file});--bs:${s.cols*100}% ${s.rows*100}%;--bp:${bx}% ${by}%`+editStyle(id)}
 
 // ---------- state ----------
-const state={view:'perfis',person:null,session:null,personDay:null,period:'all',imp:{key:'samuel',point:'campo4',photos:[],sent:0,mode:'cartao',timer:null},revFilter:{key:'all',per:'hoje',date:'',venda:'all',foto:'all'},reviews:{},db:null,
+const state={view:'perfis',cartoes:{lotes:null,busy:false,vez:false,erro:null},person:null,session:null,personDay:null,period:'all',imp:{key:'samuel',point:'campo4',photos:[],sent:0,mode:'cartao',timer:null},revFilter:{key:'all',per:'hoje',date:'',venda:'all',foto:'all'},reviews:{},db:null,
   fila:{session:null},caixa:{session:null,pay:'PIX',tef:false,tefStatus:null},guest:{selfie:null},kiosk:{code:'',step:'code'},pub:null,lojaRota:false,navOpen:{},navCur:null,drawer:false,gal:{tab:'sessoes',card:null,q:'',cort:null,ev:null,qr:null}};
 // v92 (revisão): t0 = hora em que o cliente saiu da tela inicial do Checkout, gravada na própria troca de etapa (setter), não no desenho
 function kioskT0(k){let st=k.step;delete k.step;Object.defineProperty(k,'step',{enumerable:true,configurable:true,get(){return st;},set(v){if(v&&v!=='code'&&v!=='emerg'&&!this.t0)this.t0=now().toISOString();st=v;}});return k;}
@@ -2811,9 +2811,22 @@ function galDaSessao(card,criar){SIM.galerias=SIM.galerias||{};const f=Object.va
 // Cartão com QR impresso: o QR é eterna.photo/#g/<token de 22 caracteres> e o código impresso sai do próprio token
 // (o mesmo cálculo aqui e na hora de gerar o lote). Lido dentro da venda, o token do cartão vira o token da galeria da venda.
 function cartaoCodigo(tok){let h1=0x811c9dc5,h2=0x9e3779b9;for(let i=0;i<tok.length;i++){const c=tok.charCodeAt(i);h1=Math.imul(h1^c,16777619)>>>0;h2=Math.imul(h2^c,2246822519)>>>0;}
-  let c='';for(let i=0;i<8;i++){const v=i<4?(h1>>>(i*7)):(h2>>>((i-4)*7));c+=GAL_ALFA[v&31];if(i===3)c+='-';}return c;}
+  let c='';for(let i=0;i<12;i++){const v=i<6?(h1>>>(i*5)):(h2>>>((i-6)*5));c+=GAL_ALFA[v&31];if(i===3||i===7)c+='-';}return c;} // v99.24: 12 letras
 function cartaoToken(txt){const t=String(txt||'').trim();const m=t.match(/#g\/([A-Za-z0-9_-]{22})(?![A-Za-z0-9_-])/)||t.match(/^([A-Za-z0-9_-]{22})$/);return m?m[1]:null;}
-function cartaoLote(n){const out=['token;codigo;qr'];const ja=new Set(),cods=new Set();for(let i=0;i<n;i++){let t;do{let s='';for(const b of galRand(16))s+=String.fromCharCode(b);t=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}while(ja.has(t)||(SIM.galerias||{})[t]||!/^[A-Za-z0-9]/.test(t)||cods.has(cartaoCodigo(t)));ja.add(t);cods.add(cartaoCodigo(t)); /* v99.23.7: código digitável também único no lote */ /* v99.23.5: token começando com - ou _ o Excel da gráfica lia como fórmula (#NOME?) */out.push(`${t};${cartaoCodigo(t)};${GAL_BASE_PADRAO}${t}`);}return out.join(String.fromCharCode(10));}
+// v99.24: o lote de cartões é gerado e guardado no servidor (agente: cartao_lote). Um lote na gráfica por vez; clicar de novo baixa o mesmo arquivo.
+async function cartoesPull(){const C=state.cartoes;if(C.busy||!esOn())return;C.busy=true;
+  try{const r=await agFetch(state.agent.url+'/ativ/cartoes',{cache:'no-store'});const j=await r.json().catch(()=>null);C.erro=r.ok&&j&&j.ok?null:'cf_lote_e_servidor';if(!C.erro)C.lotes=j.lotes;}
+  catch(e){C.erro='cf_lote_e_servidor';}finally{C.busy=false;C.vez=true;render();}}
+async function cartoesLote(n){const C=state.cartoes;
+  try{const r=await agFetch(state.agent.url+'/ativ/cartoes/lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n})});const j=await r.json().catch(()=>null);
+    if(!r.ok||!j||!j.ok){toast(TE('cf_lote_e_servidor'));return;}C.lotes=j.lotes;
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+j.csv],{type:'text/csv'}));a.download=`cartoes-qr-${j.lote}-${j.n}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+    log(`Lote de cartões ${j.lote} (${j.n}) ${j.novo?'gerado':'baixado de novo'}`);toast(j.novo?TE('cf_lote',j.n):TE('cf_lote_mesmo',j.n));render();}
+  catch(e){toast(TE('cf_lote_e_servidor'));}}
+async function cartoesSituacao(lote,situacao){const C=state.cartoes;
+  try{const r=await agFetch(state.agent.url+'/ativ/cartoes/situacao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lote,situacao})});const j=await r.json().catch(()=>null);
+    if(!r.ok||!j||!j.ok){toast(TE('cf_lote_e_servidor'));return;}C.lotes=j.lotes;log(`Lote de cartões ${lote}: ${situacao}`);render();}
+  catch(e){toast(TE('cf_lote_e_servidor'));}}
 function cartaoAtrelar(card,txt){const tok=cartaoToken(txt);if(!tok)return {erro:'Não é o QR de um cartão Eterna'};
   const atual=galDaSessao(card);if(atual===tok)return {ok:true,ja:true,token:tok};
   const outra=(SIM.galerias||{})[tok];if(outra)return {erro:`Este cartão já está na venda ${(outra.sessoes||[]).join(', ')}. Pegue outro cartão.`};
@@ -3095,7 +3108,7 @@ function pubVoltaLe(tok){try{const o=JSON.parse(sessionStorage.getItem('eterna.g
 function pubAguardar(p){clearTimeout(p.at);p.at=setTimeout(async()=>{if(state.pub!==p||p.step!=='aguardando')return;
   try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});if(r.status===401){pubAcessoVenceu(p);return;}const j=await r.json();if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();const ok=(p.esperando||[]).every(pid=>(j.galeria.fotos||[]).some(f=>f.pid===pid&&f.direito==='comprada'));if(ok){p.step='galeria';render();toast(T('gq_paid'));return;}}}catch(e){}
   pubAguardar(p);},5000);}
-async function pubCodigo(){const p=state.pub;const v=(($('#gq-code')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(v.length!==8){p.err=T('gq_notFound');render();return;}const c=v.slice(0,4)+'-'+v.slice(4);let tok=null;
+async function pubCodigo(){const p=state.pub;const v=(($('#gq-code')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(v.length!==8&&v.length!==12){p.err=T('gq_notFound');render();return;}const c=v.match(/.{4}/g).join('-'); /* v99.24: cartão com 12 */let tok=null;
   try{const r=await fetch(galApi()+'/g/codigo/'+c,{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&/^[A-Za-z0-9_-]{22}$/.test(j.token||''))tok=j.token;}}catch(e){}
   if(!tok){const m=Object.values(SIM.galerias||{}).find(x=>x.codigo===c);if(m)tok=m.token;}
   if(!tok){p.err=T('gq_notFound');render();return;}location.hash='#g/'+tok;}
@@ -3121,7 +3134,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const box=(h,d,extra)=>`<div class="gq ${p.step==='galeria'?'gq-gal':''}">${deco}${top()}<div class="gq-mid"><h1 class="lj-h2 gq-h">${h}</h1>${d?`<p class="lj-sub">${d}</p>`:''}${extra||''}</div></div>`;
   const help=`<p class="gq-help">${T('gq_help')}</p>`;
   if(p.step==='carregando')return box(T('gq_loading'),'','<div class="gq-spin" aria-hidden="true"></div>');
-  if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button>${help}`);
+  if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button>${help}`);
   if(p.step==='nao_existe')return box(T('gq_notFound'),'',`<button class="lj-ghost" data-act="gq-back" data-to="codigo">${T('gq_codeH')}</button>${help}`);
   if(p.step==='expirada')return box(T('gq_expired'),T('gq_expiredD'),help);
   if(p.step==='chegando')return box(T('gq_arriving'),T('gq_arrivingD'),help);
@@ -5866,7 +5879,13 @@ function vCatalogo(){if(esOn()&&isAdminUser(state.user))agStatusPull();const aba
   ${DATA.catalog.map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}${c.id==='fundo'?' · '+TE('cf_so_manual'):''}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="${esc(TE('cf_preco_de',c.name))}" ${rw?'':'disabled'}></td><td class="num" style="white-space:nowrap">${real?real.units:TE('cf_novo')}</td></tr>`}).join('')}
   </tbody></table></div>${rw?`<div class="row"><button class="btn ghost" data-act="price-reset">${TE('cf_voltar_precos')}</button><span class="note">${TE('cf_proximo')}</span></div>`:''}</div>`;
 }
-function catCartoes(){return `<div class="panel"><h2>${TE('cf_cartoes_h')}</h2><div class="row" style="align-items:end"><label><span class="eyebrow">${TE('cf_quantidade')}</span><input type="number" id="cartao-n" min="1" max="10000" value="1000" style="width:110px;text-align:right"></label><button class="btn" data-act="cartao-lote" ${can('catalogo','u')?'':'disabled'}>${TE('cf_gerar_lote')}</button></div><div class="note">${TE('cf_cartoes_nota')}</div></div>`;}
+function catCartoes(){const C=state.cartoes,rw=can('catalogo','u');if(!C.vez&&!C.busy)setTimeout(cartoesPull,0);
+  const L=C.lotes||[],aberto=L.find(x=>x.situacao==='grafica'),dh=x=>x?x.slice(8,10)+'/'+x.slice(5,7)+'/'+x.slice(0,4)+' '+x.slice(11,16):'—';
+  const sit=x=>x.situacao==='grafica'?TE('cf_lote_grafica'):x.situacao==='recebido'?TE('cf_lote_recebido'):TE('cf_lote_cancelado');
+  const tab=L.length?`<div class="tablewrap"><table data-cartao-lotes><thead><tr><th>${TE('cf_lote_t_lote')}</th><th>${TE('cf_lote_t_gerado')}</th><th class="num">${TE('cf_quantidade')}</th><th class="num">${TE('cf_lote_t_usados')}</th><th>${TE('cf_lote_t_situacao')}</th><th class="num">${TE('cf_lote_t_baixado')}</th><th></th></tr></thead><tbody>${L.map(x=>`<tr data-lote="${esc(x.id)}" data-sit="${esc(x.situacao)}"><td>${esc(x.id)}</td><td>${dh(x.em)} · ${esc(x.por||'')}</td><td class="num">${x.n}</td><td class="num">${x.usados}</td><td>${sit(x)}${x.mudou_em?` <span class="note">${dh(x.mudou_em)} · ${esc(x.mudou_por||'')}</span>`:''}</td><td class="num">${x.baixado_n}×</td><td style="white-space:nowrap">${rw&&x.situacao==='grafica'?`<button class="btn ghost" data-act="cartao-situacao" data-l="${esc(x.id)}" data-s="recebido">${TE('cf_lote_receber')}</button> `:''}${rw&&x.situacao!=='cancelado'?`<button class="btn ghost" data-act="cartao-situacao" data-l="${esc(x.id)}" data-s="cancelado">${TE('cf_lote_cancelar')}</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'';
+  const acao=aberto?`<button class="btn" data-act="cartao-lote" data-cartao-mesmo ${rw?'':'disabled'}>${TE('cf_lote_baixar',aberto.n)}</button><span class="note">${TE('cf_lote_aberto')}</span>`
+    :`<label><span class="eyebrow">${TE('cf_quantidade')}</span><input type="number" id="cartao-n" min="1" max="10000" value="1000" style="width:110px;text-align:right"></label><button class="btn" data-act="cartao-lote" ${rw&&esOn()&&C.lotes?'':'disabled'}>${TE('cf_gerar_lote')}</button>`;
+  return `<div class="panel"><h2>${TE('cf_cartoes_h')}</h2><div class="row" style="align-items:end">${acao}</div>${C.erro?`<p class="note" style="color:var(--bad,#c0392b)">${TE(C.erro)}</p>`:''}${tab}<div class="note">${TE('cf_cartoes_nota')}</div></div>`;}
 // ---------- Ativações: Drone, Chute a Gol e Snap Pop (v100, plano docs/planos/2026-11-11-ativacoes-venda-e-entrega.md) ----------
 // Catálogo no servidor do ponto: coleção "ativ" do estado.db, um registro por produto (id) e um por produto fora do dia
 // ("hoje|<id>", volta sozinho no dia seguinte). Preço em reais, como o resto do catálogo. ATIV_PADRAO é só a carga inicial:
@@ -7410,7 +7429,23 @@ const EQ={
   cf_cartoes_h:["Cartões com QR impresso","Cards with printed QR","Tarjetas con QR impreso","Cartes avec QR imprimé","Karten mit gedrucktem QR"],
   cf_quantidade:["Quantidade","Quantity","Cantidad","Quantité","Menge"],
   cf_gerar_lote:["Gerar lote para a gráfica (CSV)","Generate batch for the print shop (CSV)","Generar lote para la imprenta (CSV)","Générer un lot pour l'imprimeur (CSV)","Charge für die Druckerei erzeugen (CSV)"],
-  cf_cartoes_nota:["Cada linha traz o QR (endereço da galeria) e o código de 8 letras para imprimir no cartão. O cartão só abre fotos depois de lido dentro de uma venda.","Each line has the QR (gallery address) and the 8-letter code to print on the card. The card only opens photos after being scanned during a sale.","Cada línea trae el QR (dirección de la galería) y el código de 8 letras para imprimir en la tarjeta. La tarjeta solo abre fotos después de leída dentro de una venta.","Chaque ligne contient le QR (adresse de la galerie) et le code de 8 lettres à imprimer sur la carte. La carte n'ouvre les photos qu'après avoir été lue lors d'une vente.","Jede Zeile enthält den QR (Galerieadresse) und den 8-stelligen Code für die Karte. Die Karte öffnet Fotos erst, nachdem sie bei einem Verkauf gescannt wurde."],
+  cf_lote:[(n)=>`Lote de ${n} cartões gerado`,(n)=>`Batch of ${n} cards generated`,(n)=>`Lote de ${n} tarjetas generado`,(n)=>`Lot de ${n} cartes généré`,(n)=>`Charge mit ${n} Karten erzeugt`],
+  cf_lote_mesmo:[(n)=>`O mesmo lote de ${n} cartões, baixado de novo`,(n)=>`The same batch of ${n} cards, downloaded again`,(n)=>`El mismo lote de ${n} tarjetas, descargado de nuevo`,(n)=>`Le même lot de ${n} cartes, téléchargé à nouveau`,(n)=>`Dieselbe Charge mit ${n} Karten, erneut geladen`],
+  cf_lote_baixar:[(n)=>`Baixar de novo o lote na gráfica (${n})`,(n)=>`Download the batch at the print shop again (${n})`,(n)=>`Descargar de nuevo el lote en la imprenta (${n})`,(n)=>`Retélécharger le lot chez l'imprimeur (${n})`,(n)=>`Charge in der Druckerei erneut laden (${n})`],
+  cf_lote_aberto:["Um lote novo só depois de marcar este como recebido ou cancelado.","A new batch only after marking this one as received or cancelled.","Un lote nuevo solo después de marcar este como recibido o cancelado.","Un nouveau lot seulement après avoir marqué celui-ci comme reçu ou annulé.","Eine neue Charge erst, wenn diese als erhalten oder storniert markiert ist."],
+  cf_lote_grafica:["Na gráfica","At the print shop","En la imprenta","Chez l'imprimeur","In der Druckerei"],
+  cf_lote_recebido:["Recebido","Received","Recibido","Reçu","Erhalten"],
+  cf_lote_cancelado:["Cancelado (cartões recusados)","Cancelled (cards refused)","Cancelado (tarjetas rechazadas)","Annulé (cartes refusées)","Storniert (Karten abgelehnt)"],
+  cf_lote_receber:["Marcar recebido","Mark received","Marcar recibido","Marquer reçu","Als erhalten markieren"],
+  cf_lote_cancelar:["Cancelar lote","Cancel batch","Cancelar lote","Annuler le lot","Charge stornieren"],
+  cf_lote_cancelar_conf:["Cancelar o lote? Nenhum cartão dele será aceito na entrega. Não dá para desfazer.","Cancel the batch? None of its cards will be accepted at delivery. This cannot be undone.","¿Cancelar el lote? Ninguna tarjeta suya se aceptará en la entrega. No se puede deshacer.","Annuler le lot ? Aucune de ses cartes ne sera acceptée à la livraison. Irréversible.","Charge stornieren? Keine ihrer Karten wird bei der Übergabe angenommen. Nicht rückgängig zu machen."],
+  cf_lote_e_servidor:["Sem o servidor do ponto não dá para gerar nem ver os lotes","Without the venue server batches cannot be generated or listed","Sin el servidor del punto no se pueden generar ni ver los lotes","Sans le serveur du point, impossible de générer ou voir les lots","Ohne den Server vor Ort können keine Chargen erzeugt oder angezeigt werden"],
+  cf_lote_t_lote:["Lote","Batch","Lote","Lot","Charge"],
+  cf_lote_t_gerado:["Gerado em / por","Generated on / by","Generado el / por","Généré le / par","Erzeugt am / von"],
+  cf_lote_t_usados:["Usados","Used","Usadas","Utilisées","Benutzt"],
+  cf_lote_t_situacao:["Situação","Status","Situación","Statut","Status"],
+  cf_lote_t_baixado:["Baixado","Downloaded","Descargado","Téléchargé","Geladen"],
+  cf_cartoes_nota:["Cada linha traz o QR (endereço da galeria) e o código de 12 letras para imprimir no cartão. Os lotes ficam guardados no servidor e nenhum token ou código se repete entre eles. Cartão de lote cancelado é recusado na entrega. O cartão só abre fotos depois de lido dentro de uma venda.","Each line has the QR (gallery address) and the 12-letter code to print on the card. Batches are kept on the server and no token or code repeats between them. Cards from a cancelled batch are refused at delivery. The card only opens photos after being scanned during a sale.","Cada línea trae el QR (dirección de la galería) y el código de 12 letras para imprimir en la tarjeta. Los lotes quedan guardados en el servidor y ningún token o código se repite entre ellos. Una tarjeta de lote cancelado se rechaza en la entrega. La tarjeta solo abre fotos después de leída dentro de una venta.","Chaque ligne contient le QR (adresse de la galerie) et le code de 12 lettres à imprimer sur la carte. Les lots sont conservés sur le serveur et aucun jeton ni code ne se répète entre eux. Une carte d'un lot annulé est refusée à la livraison. La carte n'ouvre les photos qu'après avoir été lue lors d'une vente.","Jede Zeile enthält den QR (Galerieadresse) und den 8-stelligen Code für die Karte. Die Karte öffnet Fotos erst, nachdem sie bei einem Verkauf gescannt wurde."],
   aj_exposicao:["Exposição","Exposure","Exposición","Exposition","Belichtung"],
   aj_contraste:["Contraste","Contrast","Contraste","Contraste","Kontrast"],
   aj_saturacao:["Saturação","Saturation","Saturación","Saturation","Sättigung"],
@@ -7459,7 +7494,6 @@ const EQ={
   cf_este_ap:[(n,p)=>`este aparelho: ${n} · P${p}`,(n,p)=>`this device: ${n} · P${p}`,(n,p)=>`este dispositivo: ${n} · P${p}`,(n,p)=>`cet appareil : ${n} · P${p}`,(n,p)=>`dieses Gerät: ${n} · P${p}`],
   cf_pareado:[(n)=>`Aparelho pareado: ${n}. Sua conta saiu deste aparelho.`,(n)=>`Device paired: ${n}. Your account signed out of this device.`,(n)=>`Dispositivo emparejado: ${n}. Su cuenta salió de este dispositivo.`,(n)=>`Appareil appairé : ${n}. Votre compte s'est déconnecté de cet appareil.`,(n)=>`Gerät gekoppelt: ${n}. Dein Konto wurde auf diesem Gerät abgemeldet.`],
   cf_ftp_novas:[(n,u,f)=>`${n} fotos novas desde que o agente abriu${u?' · última às '+u:''}${f?' · '+f+' chegando':''}.`,(n,u,f)=>`${n} new photos since the agent started${u?' · last at '+u:''}${f?' · '+f+' arriving':''}.`,(n,u,f)=>`${n} fotos nuevas desde que abrió el agente${u?' · última a las '+u:''}${f?' · '+f+' llegando':''}.`,(n,u,f)=>`${n} nouvelles photos depuis le démarrage de l'agent${u?' · dernière à '+u:''}${f?' · '+f+' en cours d\'arrivée':''}.`,(n,u,f)=>`${n} neue Fotos seit dem Start des Agenten${u?' · zuletzt um '+u:''}${f?' · '+f+' kommen an':''}.`],
-  cf_lote:[(n)=>`Lote de ${n} cartões gerado`,(n)=>`Batch of ${n} cards generated`,(n)=>`Lote de ${n} tarjetas generado`,(n)=>`Lot de ${n} cartes généré`,(n)=>`Charge mit ${n} Karten erzeugt`],
   aj_foto_de:[(a,b)=>`Foto ${a} de ${b}`,(a,b)=>`Photo ${a} of ${b}`,(a,b)=>`Foto ${a} de ${b}`,(a,b)=>`Photo ${a} sur ${b}`,(a,b)=>`Foto ${a} von ${b}`],
   aj_pela_ia:[(n)=>`${n} pela IA`,(n)=>`${n} by AI`,(n)=>`${n} por la IA`,(n)=>`${n} par l'IA`,(n)=>`${n} durch KI`],
   aj_a_mao:[(n)=>`${n} à mão`,(n)=>`${n} by hand`,(n)=>`${n} a mano`,(n)=>`${n} à la main`,(n)=>`${n} von Hand`],
@@ -9068,6 +9102,8 @@ const EQ={
   ae_nuvem_ok:["Vídeos na nuvem","Videos in the cloud","Videos en la nube","Vidéos dans le cloud","Videos in der Cloud"],
   ae_e_servidor:["Não deu certo. Tente de novo ou chame o supervisor","It did not work. Try again or call the supervisor","No funcionó. Intenta de nuevo o llama al supervisor","Ça n'a pas marché. Réessayez ou appelez le superviseur","Hat nicht geklappt. Erneut versuchen oder den Supervisor rufen"],
   ae_e_rede:["O envio caiu. Confira a rede e mande de novo","The upload dropped. Check the network and send again","El envío se cayó. Revisa la red y envía de nuevo","L'envoi a échoué. Vérifiez le réseau et renvoyez","Upload abgebrochen. Netz prüfen und erneut senden"],
+  ae_e_cartao_desconhecido:["Este cartão não é de nenhum lote da gráfica. Pegue outro cartão","This card is not from any print batch. Take another card","Esta tarjeta no es de ningún lote de la imprenta. Toma otra tarjeta","Cette carte ne vient d'aucun lot de l'imprimeur. Prenez une autre carte","Diese Karte gehört zu keiner Druckcharge. Andere Karte nehmen"],
+  ae_e_cartao_cancelado:["Este cartão é de um lote cancelado. Pegue outro cartão","This card is from a cancelled batch. Take another card","Esta tarjeta es de un lote cancelado. Toma otra tarjeta","Cette carte vient d'un lot annulé. Prenez une autre carte","Diese Karte stammt aus einer stornierten Charge. Andere Karte nehmen"],
   ae_e_qr_usado:["Este cartão já foi usado. Pegue um cartão novo","This card was already used. Take a new card","Esta tarjeta ya se usó. Toma una tarjeta nueva","Cette carte a déjà été utilisée. Prenez une nouvelle carte","Diese Karte wurde schon benutzt. Neue Karte nehmen"],
   ae_e_nao_qr:["Não é o QR de um cartão Eterna","This is not an Eterna card QR","No es el QR de una tarjeta Eterna","Ce n'est pas le QR d'une carte Eterna","Kein QR einer Eterna-Karte"],
   ae_e_formato:["Escolha o vídeo (.mp4 ou .mov) do cartão do drone","Choose the video (.mp4 or .mov) from the drone's card","Elige el video (.mp4 o .mov) de la tarjeta del dron","Choisissez la vidéo (.mp4 ou .mov) de la carte du drone","Video (.mp4 oder .mov) von der Drohnenkarte wählen"],
@@ -10077,7 +10113,8 @@ document.addEventListener('click',e=>{
         .catch(()=>toast('Sem conexão com o servidor. Nada foi apagado.'));break;}
     case 'eco-qr':{const tok=galDaSessao(d.card);const m=tok&&SIM.galerias&&SIM.galerias[tok];if(!m){toast('Esta venda não tem galeria online');break;}const sim=SIM.sessions[d.card]||{};
       if(!ECO_CH){toast('Este navegador não fala com a tela do cliente');break;}try{ECO_CH.postMessage({tipo:'mostrar-qr',em:Date.now(),card:d.card,token:tok,codigo:m.codigo||null,total:saleTotal(sim)});toast('QR enviado para a tela do cliente');}catch(e){toast('Não consegui falar com a tela do cliente');}break;}
-    case 'cartao-lote':{const n=Math.max(1,Math.min(10000,+(($('#cartao-n')||{}).value)||0));const csv=cartaoLote(n);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));a.download=`cartoes-qr-${todayKey()}-${n}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);log(`Lote de ${n} cartões com QR gerado`);toast(TE('cf_lote',n));break;}
+    case 'cartao-lote':{const n=Math.max(1,Math.min(10000,+(($('#cartao-n')||{}).value)||0));cartoesLote(n);break;}
+    case 'cartao-situacao':{if(d.s==='cancelado'&&!confirm(TE('cf_lote_cancelar_conf')))break;cartoesSituacao(d.l,d.s);break;}
     case 'gal-abrir':window.open(galLink(d.t),'_blank');break;
     case 'gal-reenviar':{const it=(SIM.galFila||[]).find(x=>x.token===d.t);if(it){it.prox=0;it.estado='pendente';saveSim();galFilaTick();}else galPublicar(d.t);toast(TE('ga_reenviando'));render();break;}
     case 'gal-menor':{const s=simOf(d.card);s.menor=!s.menor;galDasSessao(d.card).forEach(t=>{galAtualizar(t);galPublicar(t);});log(`Sessão ${d.card}: ${s.menor?'com':'sem'} menor`);saveSim();render();break;}
