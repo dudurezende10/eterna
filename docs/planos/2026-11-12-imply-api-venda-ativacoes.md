@@ -87,6 +87,14 @@ sequenceDiagram
 ```
 
 - **A chave fica só no servidor do estádio.** O tablet nunca fala com a Imply.
+- **Allotment (12/11, Ronaldo):** as ativações são vendidas conforme o estoque de cada horário na Imply. **Quem precisa de internet é só o servidor do estádio.** O tablet precisa apenas do Wi-Fi do estádio para falar com o servidor, que faz a ponte:
+  - de minuto em minuto, o servidor lê na Imply os horários e o estoque de cada produto e serve isso aos tablets;
+  - quando o vendedor escolhe horário e produto, o servidor reserva na hora na Imply (a vaga fica presa por 20 min) e confirma quando a venda é concluída;
+  - os tablets veem o mesmo estoque, porque todos leem do servidor. Uma venda num tablet tira a vaga dos outros no próximo minuto, ou na hora, quando a reserva volta.
+- **Quando falta conexão:**
+  - **Sem o Wi-Fi do estádio:** o tablet vende pelo último estoque que recebeu (local first) e manda ao servidor quando voltar.
+  - **Sem a internet do servidor:** os tablets continuam vendendo pelo último estoque, e as vendas ficam "Aguardando Imply".
+  - Nos dois casos pode acontecer de vender uma vaga que acabou: é a decisão 1 abaixo.
 - **Local first continua:** a venda é gravada no tablet antes de tudo. O servidor reserva e confirma na Imply quando recebe. Sem internet no estádio, a venda fica "Aguardando Imply" e o servidor tenta de novo.
 - **Reenvio sem duplicar:** o localizador é o número da venda. Se a confirmação já foi feita, o servidor não reserva de novo.
 - **Cancelamento** no Eterna chama `CancelarIngressos` com o mesmo localizador.
