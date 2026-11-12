@@ -141,7 +141,7 @@ Pilotos, drones e baterias têm cadastro simples, com ativo e inativo.
 
 **Prazo da galeria e LGPD:**
 
-- **O vídeo fica 30 dias na nuvem** e depois é apagado. Os vídeos são curtos.
+- **O vídeo fica 30 dias na nuvem** e depois é apagado. Cada vídeo tem no máximo 30 segundos.
 - O vídeo de venda cancelada é apagado.
 - A venda não guarda dado pessoal. E-mail e selfie seguem as regras atuais da galeria.
 
@@ -204,5 +204,5 @@ Cada fase vira uma versão em `VERSOES.md` e tem teste em `testes/`.
 2. **Fotos do Drone (decidido 11/11):** quadros tirados do próprio vídeo, no ângulo aberto que pega o campo. Entram na sessão de fotos do cliente, junto com as do tour. Falta definir como cada quadro chega à sessão certa: pela venda do Drone, pela hora do voo ou por reconhecimento facial.
 3. **Snap Pop (decidido 11/11):** o vídeo é gerado depois, por uma integração a fazer. Até lá, o Eterna vende e registra o Snap Pop, e a entrega segue a regra do QR quando o arquivo existir.
 4. **Preços (decidido 11/11):** ficam os da seção 2, tirados da documentação e das vendas.
-5. **Prazo do vídeo (decidido 11/11):** 30 dias na nuvem.
+5. **Prazo do vídeo (decidido 11/11):** 30 dias na nuvem; cada vídeo tem no máximo 30 segundos.
 6. **Compra online das ativações:** entra no checkout da Imply depois, quando a compra online das fotos estiver no ar.
