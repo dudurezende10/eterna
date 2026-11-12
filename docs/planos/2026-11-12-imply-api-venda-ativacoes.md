@@ -37,6 +37,12 @@ Base: `<IMPLY_URL>/api/SuperIngressoV02/v01/`. Toda resposta vem com HTTP 200, `
 - `GetApresentacoes` responde o erro **13089, cadastro incompleto**: a pessoa "Viva Maracanã" na Imply está sem o bairro no endereço. Até isso ser preenchido, não dá para ver horários nem produtos.
 - Nenhuma reserva nem compra foi feita.
 
+## Novo teste, 12/11 à tarde (depois do aviso da Imply de que liberou produtos e ativações)
+
+- Só leitura (eventos, dias, horários e produtos). Nenhuma reserva nem compra.
+- `GetEventos` continua devolvendo **só o Tour Oficial Maracanã** para o usuário da API: as ativações ainda não aparecem para ele (a liberação pode ter sido feita para outro usuário ou só para o PDV).
+- `GetApresentacoes` continua com o erro **13089**: o cadastro da pessoa "Viva Maracanã" está sem o **bairro** (é o único campo do endereço que falta).
+
 ## Como fica no Eterna (proposta)
 
 ```mermaid
