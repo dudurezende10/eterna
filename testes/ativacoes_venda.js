@@ -44,6 +44,10 @@ try{
   await A.click('[data-act="av-mais"][data-i="0"][data-k="qtd"]');await A.check('[data-act="av-k4"][data-i="0"]');await A.waitForTimeout(80);
   ok(/R\$\s?500/.test(await A.textContent('#av-total')),'Asteroid ×2 com 4K = 500: '+await A.textContent('#av-total'));
   await A.click('[data-act="av-cat"][data-c="chute"]');await A.click('[data-act="av-add"][data-id="c3"]');await A.waitForTimeout(80);
+  ok(J(await A.$$eval('[data-act="av-sub"]',x=>x.map(b=>b.textContent)))===J(['3 Chutes','5 Chutes','Produtos']),'Chute a Gol em abas: 3 Chutes, 5 Chutes, Produtos');
+  ok(await A.$('[data-act="av-add"][data-id="c5"]')===null,'5 Chutes fica na aba dele');
+  await A.click('[data-act="av-sub"][data-v="prod"]');ok(await A.$('[data-act="av-add"][data-id="medalha"]')!==null&&await A.$('[data-act="av-add"][data-id="c3"]')===null,'aba Produtos: medalha e bolas');
+  await A.click('[data-act="av-sub"][data-v="c3"]');
   ok(/R\$\s?610/.test(await A.textContent('#av-total')),'total pelo catálogo, 500 + 110: '+await A.textContent('#av-total'));
   ok(await A.$('#av-cart input[type="number"]')===null,'preço fixo: o vendedor não digita valor');
   // sem pagamento não registra
