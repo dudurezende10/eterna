@@ -205,6 +205,18 @@ Resources:
             ApiId: !Ref Api
             Path: "/g/{token}/livres"
             Method: GET
+        VideoBaixar:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: "/g/{token}/baixar"
+            Method: GET
+        EventosPonto:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/eventos
+            Method: GET
         Acoes:
           Type: HttpApi
           Properties:

@@ -12,6 +12,11 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   POST /g/<token>/pagamento       rota antiga (compra direta): responde compra_indisponivel
   POST /ponto/galerias            o agente do estádio publica o manifesto (segredo do ponto)
   GET  /ponto/vendas-online       o agente busca as vendas online pagas (segredo do ponto) (v99)
+  Vídeo das ativações (Drone, Chute a Gol, Snap Pop; v99.20): galeria tipo "video", o cartão com QR é a chave, sem selfie
+  POST /g/<token>/video           aceite de uso de imagem + e-mail -> acesso e o link do vídeo (ou "chegando")
+  POST /g/<token>/evento          o cliente deu play (registro com data e hora)
+  GET  /g/<token>/baixar?v=&a=    registra o download e manda para o link assinado do arquivo (attachment)
+  GET  /ponto/eventos?tokens=     o agente busca quando o cliente abriu, deu play e baixou (segredo do ponto)
 
 As fotos ficam no S3 (vitrine/<pid>.jpg e alta/<pid>.jpg, enviadas pelo agente) e saem por link assinado de 5 min.
 A selfie é comparada pelo Rekognition só com os rostos da própria galeria (coleção por galeria), nunca com a base inteira.
@@ -47,6 +52,9 @@ rek = boto3.client("rekognition", region_name=REGIAO)
 lam = boto3.client("lambda", region_name=REGIAO)
 
 URL_TTL = 300
+VIDEO_TTL = 3600                                           # link do vídeo no player: dá para voltar e rever sem renovar
+VIDEO_EVENTOS = ("qr_aberto", "codigo_digitado", "video_aceite", "video_play", "video_baixou")
+_re_servico = re.compile(r"^[a-z]{0,20}$")
 ACESSO_TTL = 3600
 FALHAS, BLOQUEIO = 5, 15 * 60
 TETO_DIA = int(os.environ.get("TETO_SELFIES_DIA", "20"))   # v96.1: selfies sem acerto por galeria de venda por dia (todos os IPs)
@@ -190,11 +198,11 @@ def tem_s3(chave):
         return False
 
 
-def link(chave, nome=None):
+def link(chave, nome=None, ttl=URL_TTL):
     p = {"Bucket": BUCKET, "Key": chave}
     if nome:
         p["ResponseContentDisposition"] = 'attachment; filename="%s"' % nome
-    return s3.generate_presigned_url("get_object", Params=p, ExpiresIn=URL_TTL)
+    return s3.generate_presigned_url("get_object", Params=p, ExpiresIn=ttl)
 
 
 def livres(m):
@@ -229,6 +237,8 @@ def galeria_obj(token, m, pids=()):
 
 
 def estado(m):
+    if m["tipo"] == "video":
+        return "pronta" if any(tem_s3(v["chave"]) for v in m["videos"]) else "chegando"
     return "pronta" if any(tem_s3("vitrine/%s.jpg" % pid_lib(f["id"])) for f in m["fotos"][:30]) else "chegando"
 
 
@@ -655,13 +665,114 @@ def ponto_ok(seg):
     return bool(h) and any(x and hmac.compare_digest(h, x) for x in (SEGREDO_PONTO_SHA256, SEGREDO_TESTE_SHA256))
 
 
+# ---------- vídeo das ativações: o cartão com QR é a chave, sem selfie (o rosto não compara com vídeo) ----------
+def publicar_video(m):
+    vs = []
+    for v in (m.get("videos") or [])[:5]:
+        if not isinstance(v, dict) or not _re_token.match(str(v.get("id") or "")) or v.get("chave") != "video/%s.mp4" % v.get("id"):
+            return resp({"error": "vídeo inválido"}, 400)
+        vs.append({"id": v["id"], "chave": v["chave"], "bytes": max(0, int(v.get("bytes") or 0)),
+                   "duracao": max(0.0, float(v.get("duracao") or 0)), "n": max(1, int(v.get("n") or 1))})
+    if not vs:
+        return resp({"error": "vídeo inválido"}, 400)
+    velho = manifesto(m["token"])
+    if velho and velho.get("tipo") != "video":            # cartão já usado numa galeria de fotos
+        return resp({"error": "token já usado por outra sessão"}, 409)
+    sv = str(m.get("servico") or "")
+    novo = {"v": 1, "token": m["token"], "codigo": m.get("codigo") if _re_codigo.match(str(m.get("codigo") or "")) else None,
+            "tipo": "video", "venue": str(m.get("venue") or "")[:40], "servico": sv if _re_servico.match(sv) else "",
+            "idioma": str(m.get("idioma") or "")[:20], "criada": str(m.get("criada") or iso())[:40], "expira": str(m.get("expira") or "")[:40],
+            "menor": False, "fotos": [], "precos": {"dig": 0.0, "todas": 0.0}, "catalogo": [], "videos": vs}
+    if velho:                                             # validade nunca aumenta; encerrada não volta
+        if velho.get("expira") and epoch(velho["expira"]) < epoch(novo["expira"]):
+            novo["expira"] = velho["expira"]
+        if velho.get("encerrada"):
+            novo["encerrada"] = True
+    if m.get("encerrada"):
+        novo["encerrada"] = True
+    ttl = ttl_de(novo)
+    TABELA.update_item(Key={"pk": "GAL#" + novo["token"], "sk": "M"}, UpdateExpression="SET m = :m, #t = :t",
+                       ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":m": json.dumps(novo), ":t": ttl})
+    if novo.get("encerrada"):
+        if novo["codigo"]:
+            TABELA.delete_item(Key={"pk": "COD#" + novo["codigo"], "sk": "M"})
+        return resp({"ok": True, "token": novo["token"], "estado": "encerrada"})
+    if novo["codigo"]:
+        TABELA.put_item(Item={"pk": "COD#" + novo["codigo"], "sk": "M", "token": novo["token"], "ttl": ttl})
+    return resp({"ok": True, "token": novo["token"], "estado": estado(novo)})
+
+
+def video_obj(token, m, acesso):
+    """Os vídeos do cartão: link para tocar (inline) e o endereço do Baixar, que passa por aqui para registrar o download."""
+    vs = []
+    for v in m["videos"]:
+        ok = tem_s3(v["chave"])
+        vs.append({"id": v["id"], "n": v["n"], "duracao": v["duracao"], "bytes": v["bytes"], "chegando": not ok,
+                   "url": link(v["chave"], ttl=VIDEO_TTL) if ok else None,
+                   "baixar": "/g/%s/baixar?v=%s&a=%s" % (token, v["id"], acesso) if ok else None})
+    return {"tipo": "video", "servico": m.get("servico") or "", "expira": m["expira"],
+            "estado": "pronta" if any(not v["chegando"] for v in vs) else "chegando", "videos": vs}
+
+
+def acesso_ok(token, a):
+    it = item("ACE#" + str(a or "")) if a else None
+    return bool(it) and it["token"] == token and int(it["exp"]) >= time.time()
+
+
+def video_aceite(token, m, corpo, ip):
+    if not contar("VID#" + ip_hash(ip), 60, 20):
+        return resp({"motivo": "bloqueado"}, 429)
+    if corpo.get("consentimento") is not True:
+        return resp({"error": "consentimento obrigatório"}, 400)
+    email = str(corpo.get("email") or "").strip().lower()[:254]
+    if not _re_email.match(email):
+        return resp({"error": "e-mail inválido", "campo": "email"}, 400)
+    idioma, versao = str(corpo.get("idioma") or "pt")[:2], str(corpo.get("versao") or "")[:20]
+    TABELA.put_item(Item={"pk": "CON#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "tipo": "video", "versao": versao,
+                          "idioma": idioma, "ttl": int(time.time() + 400 * 86400)})
+    lead(email, idioma, token, corpo.get("marketing") is True, versao)
+    # o acesso vale enquanto a galeria valer: o aceite é uma vez por aparelho (o cartão continua sendo a chave)
+    acesso = secrets.token_urlsafe(24)
+    exp = int(max(time.time() + ACESSO_TTL, epoch(m["expira"])))
+    TABELA.put_item(Item={"pk": "ACE#" + acesso, "sk": "M", "token": token, "pids": "[]", "exp": exp, "ttl": exp + 86400})
+    evento(token, "video_aceite", ip, marketing=int(corpo.get("marketing") is True))
+    return resp({"ok": True, "acesso": acesso, "exp": iso(exp), "galeria": video_obj(token, m, acesso)})
+
+
+def video_baixar(token, m, q, ip):
+    v = next((x for x in m["videos"] if x["id"] == str(q.get("v") or "")), None)
+    if not v or not acesso_ok(token, q.get("a")):
+        return resp({"error": "acesso inválido ou vencido"}, 401)
+    if not contar("BXV#" + ip_hash(ip), 60, 20):
+        return resp({"motivo": "bloqueado"}, 429)
+    if not tem_s3(v["chave"]):
+        return resp({"motivo": "chegando"}, 404)
+    evento(token, "video_baixou", ip, v=v["id"])
+    nome = "viva-maracana-%s%s.mp4" % (m.get("servico") or "video", "-%d" % v["n"] if len(m["videos"]) > 1 else "")
+    return {"statusCode": 302, "headers": {"Location": link(v["chave"], nome, VIDEO_TTL), "Cache-Control": "no-store"}, "body": ""}
+
+
+def eventos_ponto(ev):
+    """O agente traz, para a tela de entrega, quando o cliente abriu o QR, aceitou, deu play e baixou (sem IP nem e-mail)."""
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    toks = [t for t in str((ev.get("queryStringParameters") or {}).get("tokens") or "").split(",") if _re_token.match(t)][:50]
+    out = {}
+    for t in toks:
+        its = TABELA.query(KeyConditionExpression=Key("pk").eq("EVT#" + t), Limit=300).get("Items", [])
+        out[t] = [{"tipo": x["tipo"], "em": x["sk"].split("#")[0]} for x in its if x.get("tipo") in VIDEO_EVENTOS]
+    return resp({"eventos": out})
+
+
 def publicar(ev, corpo):
     seg = (ev.get("headers") or {}).get("x-eterna-ponto", "")
     if not ponto_ok(seg):
         return resp({"error": "não autorizado"}, 401)
     m = corpo.get("manifesto")
-    if not isinstance(m, dict) or not _re_token.match(str(m.get("token") or "")) or m.get("tipo") not in ("sessao", "evento"):
+    if not isinstance(m, dict) or not _re_token.match(str(m.get("token") or "")) or m.get("tipo") not in ("sessao", "evento", "video"):
         return resp({"error": "manifesto inválido"}, 400)
+    if m["tipo"] == "video":
+        return publicar_video(m)
     fotos = []
     for f in (m.get("fotos") or [])[:2000]:
         if not isinstance(f, dict) or not _re_pid.match(str(f.get("id") or "")):
@@ -676,6 +787,8 @@ def publicar(ev, corpo):
             "precos": {"dig": max(0.0, float(pr.get("dig") or 0)), "todas": max(0.0, float(pr.get("todas") or 0))},
             "catalogo": catalogo_ok(m.get("catalogo")), "fotos": fotos}
     velho = manifesto(m["token"])
+    if velho and velho.get("tipo") == "video":            # cartão já ligado a um vídeo de ativação
+        return resp({"error": "token já usado por outra sessão"}, 409)
     if velho:                                             # cartão com QR impresso já usado em outra venda: não troca de dono
         s_velho = {f.get("sessao") for f in velho["fotos"] if f.get("sessao")}
         s_novo = {f["sessao"] for f in novo["fotos"] if f["sessao"]}
@@ -808,6 +921,8 @@ def handler(ev, ctx):
         return senha_email(ev, corpo)
     if caminho == "/ponto/vendas-online" and metodo == "GET":
         return vendas_online(ev)
+    if caminho == "/ponto/eventos" and metodo == "GET":
+        return eventos_ponto(ev)
     partes = caminho.split("/")                           # ['', 'g', token, ação]
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "codigo" and metodo == "GET":
         if not contar("COD#" + ip_hash(ip), 60, 30):
@@ -831,8 +946,27 @@ def handler(ev, ctx):
         return resp({"error": "expirada"}, 410)
     if acao == "info" and metodo == "GET":
         evento(token, "qr_aberto", ip)
+        if m["tipo"] == "video":
+            return resp({"ok": True, "tipo": "video", "menor": False, "expira": m["expira"], "estado": estado(m), "venue": m.get("venue"),
+                         "servico": m.get("servico") or "", "idioma": m.get("idioma") or "", "compra": False})
         return resp({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
                      "estado": estado(m), "venue": m.get("venue"), "compra": compra_ligada(m)})
+    if m["tipo"] == "video":                              # vídeo: aceite, play, baixar e renovar os links; nada de selfie nem compra
+        if acao == "video" and metodo == "POST":
+            return video_aceite(token, m, corpo, ip)
+        if acao == "baixar" and metodo == "GET":
+            return video_baixar(token, m, ev.get("queryStringParameters") or {}, ip)
+        if acao in ("galeria", "evento") and metodo == "POST":
+            if not acesso_ok(token, corpo.get("acesso")):
+                return resp({"error": "acesso inválido ou vencido"}, 401)
+            if acao == "galeria":
+                return resp({"galeria": video_obj(token, m, corpo["acesso"])})
+            if corpo.get("tipo") != "video_play" or not contar("EVP#" + token, 60, 10):
+                return resp({"ok": False}, 400 if corpo.get("tipo") != "video_play" else 429)
+            v = next((x["id"] for x in m["videos"] if x["id"] == str(corpo.get("v") or "")), None)
+            evento(token, "video_play", ip, v=v)
+            return resp({"ok": True})
+        return resp({"error": "not found"}, 404)
     if acao == "livres" and metodo == "GET":              # v96.1: compradas e cortesias da venda só pelo QR
         if not contar("LIV#" + ip_hash(ip), 60, 30):
             return resp({"motivo": "bloqueado"}, 429)

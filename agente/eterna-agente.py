@@ -1791,6 +1791,12 @@ def nuvem_galerias_loop():
                 nuvem_vendas_online(seg)
             except Exception as ex:
                 nuvem["vendas_online_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        if time.time() - nuvem.get("video_eventos_em", 0) > 120:
+            nuvem["video_eventos_em"] = time.time()
+            try:
+                nuvem_video_eventos(seg)
+            except Exception as ex:
+                nuvem["video_eventos_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         nuvem_gal_acorda.wait(5)
         nuvem_gal_acorda.clear()
 
@@ -7806,11 +7812,52 @@ def ativ_cadastro_set(body):
     return None
 
 
+def ativ_cliente_resumo(evs):
+    """Linha do tempo do cliente no vídeo: a primeira vez que abriu, aceitou, deu play e baixou, e quantas vezes baixou."""
+    try:
+        evs = json.loads(evs or "[]")
+    except ValueError:
+        evs = []
+    pri = lambda *ts: min((e["em"] for e in evs if e.get("tipo") in ts), default=None)
+    return {"aberto": pri("qr_aberto", "codigo_digitado"), "aceite": pri("video_aceite"), "play": pri("video_play"),
+            "baixou": pri("video_baixou"), "baixou_n": sum(1 for e in evs if e.get("tipo") == "video_baixou")}
+
+
 def _ativ_entregas(c, vid):
     return [{"qr": q, "codigo": cartao_codigo(q), "n": n, "bytes": b, "duracao": d, "por": por, "em": em, "nuvem": bool(ne),
-             "subindo": ativ_video_em_curso.get(q)}
-            for q, n, b, d, por, em, ne in c.execute("select qr, n, bytes, duracao, por, em, nuvem_em from ativ_entrega where venda=? and apagado_em is null"
-                                                     " order by n", (vid,))]
+             "subindo": ativ_video_em_curso.get(q), "cliente": ativ_cliente_resumo(ce)}
+            for q, n, b, d, por, em, ne, ce in c.execute("select qr, n, bytes, duracao, por, em, nuvem_em, cliente_eventos from ativ_entrega"
+                                                         " where venda=? and apagado_em is null order by n", (vid,))]
+
+
+def nuvem_video_eventos(seg):
+    """De 2 em 2 minutos: traz da galeria da nuvem quando o cliente abriu, deu play e baixou cada vídeo entregue nos últimos 31 dias."""
+    lim = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 31 * 86400))
+    c = vendas_db()
+    try:
+        qrs = [q for (q,) in c.execute("select qr from ativ_entrega where apagado_em is null and nuvem_em is not null and em >= ? order by em desc"
+                                       " limit 500", (lim,))]
+    finally:
+        c.close()
+    n = 0
+    for i in range(0, len(qrs), 50):
+        rq = urllib.request.Request(NUVEM_API + "/ponto/eventos?" + urllib.parse.urlencode({"tokens": ",".join(qrs[i:i + 50])}),
+                                    headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(rq, timeout=20) as r:
+            j = json.loads(r.read().decode("utf8"))
+        with ev_lock:
+            c = vendas_db()
+            try:
+                for q, evs in (j.get("eventos") or {}).items():
+                    if q in qrs and isinstance(evs, list):
+                        evs = sorted(({"tipo": str(e.get("tipo"))[:20], "em": str(e.get("em"))[:20]} for e in evs if isinstance(e, dict)),
+                                     key=lambda e: e["em"])[:200]
+                        n += c.execute("update ativ_entrega set cliente_eventos=? where qr=? and coalesce(cliente_eventos,'')<>?",
+                                       (json.dumps(evs), q, json.dumps(evs))).rowcount
+                c.commit()
+            finally:
+                c.close()
+    return n
 
 
 def ativ_fila(dia):
@@ -8639,6 +8686,9 @@ def vendas_db():
     c.execute("create table if not exists ativ_entrega (qr text primary key, venda text, n integer, arquivo text, bytes integer, md5 text,"
               " duracao real, por text, em text, nuvem_em text, apagado_em text)")
     c.execute("create index if not exists ativ_entrega_venda on ativ_entrega(venda)")
+    # v99.20: quando o cliente abriu o QR, aceitou, deu play e baixou (vem da galeria da nuvem; sem IP nem e-mail)
+    if "cliente_eventos" not in {r[1] for r in c.execute("pragma table_info(ativ_entrega)")}:
+        c.execute("alter table ativ_entrega add column cliente_eventos text")
     c.execute("create table if not exists ativ_cadastro (tipo text, nome text, ativo integer, primary key (tipo, nome))")
     c.execute("create view if not exists ativ_venda_resumo as select dia, tipo, count(*) as vendas, sum(valor) as valor, sum(videos) as videos"
               " from ativ_venda group by dia, tipo")

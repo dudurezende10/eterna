@@ -186,6 +186,33 @@ try:
     ok(m.ativ_clientes_limpa(time.time() + 1.5 * 86400) >= 1 and not os.path.exists(m.ativ_cliente_foto("TDRONE001D")), "foto sai um dia depois da entrega")
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
     ok({v["id"]: v for v in j.get("vendas", [])}.get("TDRONE001D", {}).get("cliente") == "", "nome sai junto")
+    # v99.20: o que o cliente fez com o vídeo vem da galeria da nuvem (abriu, aceitou, play, baixou) e aparece na fila
+    cn = m.vendas_db(); cn.execute("update ativ_entrega set nuvem_em=? where qr=?", ("2026-11-12T10:00:00", QR1)); cn.commit(); cn.close()
+    pedidos = []
+
+    class Resp:
+        def __init__(s, corpo): s.corpo = corpo
+        def read(s): return s.corpo
+        def __enter__(s): return s
+        def __exit__(s, *a): return False
+
+    def falso_urlopen(rq, timeout=0):
+        pedidos.append((rq.full_url, rq.get_header("X-eterna-ponto")))
+        return Resp(json.dumps({"eventos": {QR1: [{"tipo": "video_baixou", "em": "2026-11-12T13:06:00Z"}, {"tipo": "qr_aberto", "em": "2026-11-12T13:01:00Z"},
+                                                   {"tipo": "video_play", "em": "2026-11-12T13:03:00Z"}, {"tipo": "video_baixou", "em": "2026-11-12T13:09:00Z"}],
+                                             "QRDEOUTRO0000000000000": [{"tipo": "qr_aberto", "em": "2026-11-12T13:00:00Z"}]}}).encode())
+    velho_api, velho_open = m.NUVEM_API, m.urllib.request.urlopen
+    m.NUVEM_API, m.urllib.request.urlopen = "https://api.teste", falso_urlopen
+    try:
+        n = m.nuvem_video_eventos("seg-teste")
+    finally:
+        m.NUVEM_API, m.urllib.request.urlopen = velho_api, velho_open
+    ok(n == 1 and len(pedidos) == 1 and "/ponto/eventos?tokens=" + QR1 in pedidos[0][0] and pedidos[0][1] == "seg-teste",
+       "eventos do vídeo pedidos à nuvem só para o que já subiu, com o segredo do ponto: %s %s" % (n, pedidos))
+    st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
+    e1 = [e for v in j.get("vendas", []) for e in v.get("entregas", []) if e["qr"] == QR1][0]
+    ok(e1["cliente"] == {"aberto": "2026-11-12T13:01:00Z", "aceite": None, "play": "2026-11-12T13:03:00Z", "baixou": "2026-11-12T13:06:00Z", "baixou_n": 2},
+       "fila mostra quando o cliente abriu, deu play e baixou (e quantas vezes): %s" % e1["cliente"])
     # limpeza: depois de 30 dias o arquivo sai do servidor do ponto, a entrega continua registrada
     ok(m.ativ_videos_limpa() == 0 and os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo novo fica")
     ok(m.ativ_videos_limpa(time.time() + 31 * 86400) == 2 and not os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo de 31 dias sai")

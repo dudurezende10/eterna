@@ -198,14 +198,24 @@ Tela **Entrega dos vídeos** (menu Venda), módulo `ativentrega` (Criar = ligar 
 - **Prazo:** o arquivo sai do servidor do ponto depois de 30 dias (limpeza diária); a linha da entrega fica como registro.
 - Rotas: `GET /ativ/fila?dia=`, `POST /ativ/etapa`, `POST /ativ/video`, `POST /ativ/video/liga`, `GET|POST /ativ/cadastros`. Testes: `testes/ativacoes_entrega_agente.py` e `testes/ativacoes_entrega.js`.
 
-### 4b. Falta (parte 2): o vídeo na galeria da nuvem
+### 4b. Feito na v99.20.0: o vídeo na galeria da nuvem
 
-Decidido em 12/11: o QR abre o vídeo direto, com o aceite de uso de imagem e o e-mail, **sem selfie** (o reconhecimento de rosto não compara com vídeo, e o cartão físico já prova a compra). Fica registrado, com data e hora, quando o cliente abriu o QR, deu play e baixou (o botão Baixar passa pela galeria da nuvem, que grava e manda para o vídeo); o servidor do ponto traz esses registros e mostra na venda. Sobe primeiro uma versão leve (1080p) para tocar no celular e depois o original para baixar (ffmpeg no servidor do ponto). Guarda: arquivo no servidor do ponto 30 dias, link do cliente 30 dias, cópia no S3 1 ano (armazenamento mais barato depois de 30 dias). Quadros do vídeo com as pessoas entram como fotos no Checkout.
+Decidido em 12/11: o QR abre o vídeo direto, com o aceite de uso de imagem e o e-mail, **sem selfie** (o reconhecimento de rosto não compara com vídeo, e o cartão físico já prova a compra). Fica registrado, com data e hora, quando o cliente abriu o QR, aceitou, deu play e baixou.
 
-- A Lambda da galeria (`servidor/galeria-nuvem/app.py`) ainda só conhece fotos: aceitar o manifesto `tipo: "video"`, devolver o link assinado do vídeo (`video/<qr>.mp4`) e "seu vídeo está chegando" enquanto ele não estiver no bucket, e contar os downloads.
-- A página do cliente (`index.html`, `#g/<token>`) precisa do player e do botão de baixar, sem passar o vídeo inteiro pela memória do celular.
-- No bucket: regra de prazo de 30 dias para o prefixo `video/`. Na política do agente: `s3:AbortMultipartUpload`.
-- Esses passos pedem `sam deploy` da nuvem, que o Ronaldo faz; nunca a partir de `idiomas-base`.
+- **Nuvem** (`servidor/galeria-nuvem/app.py`): aceita o manifesto `tipo: "video"` (os vídeos em `video/<qr>.mp4`; cartão de vídeo não vira galeria de fotos e vice-versa). Rotas:
+  - `GET /g/<token>/info`: tipo, serviço e "chegando" enquanto o arquivo não está no bucket;
+  - `POST /g/<token>/video {consentimento, email, marketing, idioma, versao}`: grava o aceite (`CON#`, tipo `video`) e o e-mail como lead; devolve um acesso que vale até a galeria vencer e o link do vídeo (1 h);
+  - `POST /g/<token>/galeria {acesso}`: renova os links;
+  - `POST /g/<token>/evento {acesso, tipo: "video_play", v}`: o play;
+  - `GET /g/<token>/baixar?v=&a=`: registra o download e redireciona (302) para o arquivo com `attachment` (`viva-maracana-<serviço>.mp4`); o vídeo não passa pela memória do celular;
+  - `GET /ponto/eventos?tokens=` (segredo do ponto): abriu, aceite, play e baixou de até 50 cartões, sem IP nem e-mail.
+- **Página do cliente** (`#g/<token>`): título do serviço, aceite e e-mail (novidades opcionais), depois o player e o botão **Baixar vídeo**. "Seu vídeo está chegando" confere de 15 em 15 s. O aceite vale para o aparelho até a galeria vencer; sem rede o acesso guardado não se perde, só a recusa da nuvem o apaga.
+- **Servidor do ponto:** de 2 em 2 minutos busca esses registros dos vídeos já na nuvem (31 dias) e guarda em `ativ_entrega.cliente_eventos`. A tela de entrega mostra em cada vídeo "Cliente abriu 13:01 · assistiu 13:03 · baixou 13:06 (2×)", ou "Cliente ainda não abriu o vídeo".
+- Testes: `servidor/galeria-nuvem/teste_local.py` (parte do vídeo), `testes/galeria_video.js`, `testes/ativacoes_entrega_agente.py`.
+
+**Para ir ao ar (Ronaldo, nunca a partir de `idiomas-base`):** `sam deploy` da nuvem (rotas novas `GET /g/{token}/baixar` e `GET /ponto/eventos` no `template.yaml`); no bucket, regra de prazo para o prefixo `video/` (apagar em 30 dias); na política do usuário do agente, `s3:AbortMultipartUpload`.
+
+**Ainda falta:** versão leve (1080p) para tocar no celular antes do original e quadros do vídeo como fotos no Checkout. Os dois pedem o ffmpeg no servidor do ponto (download a autorizar).
 
 ## 5. Vendas: listar, editar, cancelar
 

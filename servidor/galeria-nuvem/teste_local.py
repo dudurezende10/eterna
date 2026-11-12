@@ -65,8 +65,13 @@ class Rek:
 
 class S3:
     heads = 0
-    def head_object(s, Bucket, Key): S3.heads += 1; return {}
-    def generate_presigned_url(s, *a, **k): return "https://x/" + k["Params"]["Key"]
+    faltam = set()                            # chaves que ainda não estão no bucket
+    def head_object(s, Bucket, Key):
+        S3.heads += 1
+        if Key in S3.faltam: raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        return {}
+    def generate_presigned_url(s, *a, **k):
+        p = k["Params"]; return "https://x/" + p["Key"] + ("?dl=" + p["ResponseContentDisposition"] if "ResponseContentDisposition" in p else "") + "&ttl=%d" % k["ExpiresIn"]
 
 
 T, R = Tabela(), Rek()
@@ -85,10 +90,12 @@ man = {"token": tok, "codigo": "ABCD-EFGH", "tipo": "sessao", "expira": exp, "pr
        "fotos": [{"id": ("b" if i >= 38 else "a") + "%05x" % i, "direito": "comprada" if i < 2 else "venda"} for i in range(40)]}
 
 
-def chama(metodo, caminho, corpo=None, cab=None, ip="1.2.3.4"):
+def chama(metodo, caminho, corpo=None, cab=None, ip="1.2.3.4", q=None):
     ev = {"rawPath": caminho, "headers": cab or {}, "body": json.dumps(corpo) if corpo else None,
-          "requestContext": {"http": {"method": metodo, "sourceIp": ip}}}
+          "requestContext": {"http": {"method": metodo, "sourceIp": ip}}, "queryStringParameters": q}
     r = app.handler(ev, ctx)
+    if r["statusCode"] == 302:
+        return 302, r["headers"]
     return r["statusCode"], json.loads(r["body"])
 
 
@@ -286,4 +293,48 @@ ok(T.d[("PED#" + ref2, "M")]["estado"] == "pago" and not [k for k in T.d if k[0]
 st, r = ped({"pids": venda[:1], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli}, ip="5.0.0.9")
 ok(st == 400, "foto já comprada não entra em pedido novo")
 app.LIMITE_BUSCAS_DIA = LIMITE
+
+# ---------- vídeo das ativações (v99.20): o cartão é a chave, aceite + e-mail, sem selfie; abriu, play e baixou com data e hora ----------
+tokV = "V" * 22
+manV = {"token": tokV, "codigo": "VVVV-WWWW", "tipo": "video", "servico": "drone", "idioma": "Espanhol", "expira": exp, "fotos": [],
+        "videos": [{"id": tokV, "chave": "video/%s.mp4" % tokV, "bytes": 1000, "duracao": 30.0, "n": 1}]}
+ok(chama("POST", "/ponto/galerias", {"manifesto": dict(manV, videos=[{"id": tokV, "chave": "video/outro.mp4"}])}, {"x-eterna-ponto": seg})[0] == 400,
+   "vídeo: chave fora de video/<qr>.mp4 recusada")
+S3.faltam.add("video/%s.mp4" % tokV)
+st, r = chama("POST", "/ponto/galerias", {"manifesto": manV}, {"x-eterna-ponto": seg})
+ok(st == 200 and r["estado"] == "chegando", "vídeo: publicado antes do arquivo chegar = chegando")
+ok(chama("POST", "/ponto/galerias", {"manifesto": dict(man, token=tokV)}, {"x-eterna-ponto": seg})[0] == 409, "vídeo: cartão do vídeo não vira galeria de fotos")
+ok(chama("POST", "/ponto/galerias", {"manifesto": dict(manV, token=tok)}, {"x-eterna-ponto": seg})[0] == 409, "vídeo: cartão de fotos não vira galeria de vídeo")
+st, r = chama("GET", "/g/%s/info" % tokV)
+ok(st == 200 and r["tipo"] == "video" and r["estado"] == "chegando" and r["servico"] == "drone" and r["compra"] is False, "vídeo: info com o serviço, chegando")
+ok(chama("GET", "/g/codigo/VVVV-WWWW")[1].get("token") == tokV, "vídeo: código curto do cartão")
+ok(chama("POST", "/g/%s/rosto" % tokV, {"consentimento": True, "imagem": "x"})[0] == 404, "vídeo: sem selfie")
+ok(chama("POST", "/g/%s/video" % tokV, {"email": "a@b.com"})[0] == 400, "vídeo: sem o aceite, recusado")
+st, r = chama("POST", "/g/%s/video" % tokV, {"consentimento": True, "email": "nao-e-email"})
+ok(st == 400 and r.get("campo") == "email", "vídeo: e-mail obrigatório e válido")
+st, r = chama("POST", "/g/%s/video" % tokV, {"consentimento": True, "email": "Cliente@Exemplo.com", "idioma": "es", "versao": "v1", "marketing": False})
+acV = r.get("acesso")
+ok(st == 200 and acV and r["galeria"]["estado"] == "chegando" and r["galeria"]["videos"][0]["url"] is None, "vídeo: aceite dá acesso; o vídeo ainda está chegando")
+ok([v for k, v in T.d.items() if k[0] == "CON#" + tokV][0]["tipo"] == "video", "vídeo: aceite registrado")
+leadV = [v for k, v in T.d.items() if k[0].startswith("LEAD#") and v["email"] == "cliente@exemplo.com"][0]
+ok(tokV in leadV["galerias"], "vídeo: e-mail guardado como lead, ligado ao cartão")
+S3.faltam.clear()
+st, r = chama("POST", "/g/%s/galeria" % tokV, {"acesso": acV})
+v0 = r["galeria"]["videos"][0]
+ok(st == 200 and v0["url"].startswith("https://x/video/%s.mp4" % tokV) and "ttl=3600" in v0["url"] and "dl=" not in v0["url"]
+   and v0["baixar"] == "/g/%s/baixar?v=%s&a=%s" % (tokV, tokV, acV), "vídeo: chegou; link para tocar (1 h) e o Baixar pela galeria")
+ok(chama("POST", "/g/%s/galeria" % tokV, {"acesso": "x" * 32})[0] == 401, "vídeo: acesso inventado recusado")
+ok(chama("POST", "/g/%s/evento" % tokV, {"acesso": acV, "tipo": "video_play", "v": tokV})[0] == 200, "vídeo: play registrado")
+ok(chama("POST", "/g/%s/evento" % tokV, {"acesso": acV, "tipo": "outro"})[0] == 400, "vídeo: só o play é aceito como evento do cliente")
+ok(chama("GET", "/g/%s/baixar" % tokV, q={"v": tokV, "a": "errado"})[0] == 401, "vídeo: baixar sem acesso recusado")
+st, h = chama("GET", "/g/%s/baixar" % tokV, q={"v": tokV, "a": acV})
+ok(st == 302 and 'attachment; filename="viva-maracana-drone.mp4"' in h["Location"], "vídeo: baixar manda para o arquivo, com o nome do serviço")
+ok(chama("GET", "/ponto/eventos", q={"tokens": tokV})[0] == 401, "vídeo: eventos só com o segredo do ponto")
+st, r = chama("GET", "/ponto/eventos", cab={"x-eterna-ponto": seg}, q={"tokens": tokV + ",lixo"})
+tipos = [e["tipo"] for e in r["eventos"][tokV]]
+ok(st == 200 and list(r["eventos"]) == [tokV] and {"qr_aberto", "video_aceite", "video_play", "video_baixou"} <= set(tipos)
+   and all(app.epoch(e["em"]) > 0 for e in r["eventos"][tokV]), "vídeo: o agente recebe abriu, aceite, play e baixou com data e hora: %s" % tipos)
+ok('"ip"' not in json.dumps(r) and "cliente@" not in json.dumps(r), "vídeo: eventos sem IP nem e-mail")
+st, r = chama("POST", "/ponto/galerias", {"manifesto": dict(manV, encerrada=True)}, {"x-eterna-ponto": seg})
+ok(st == 200 and chama("GET", "/g/%s/info" % tokV)[0] == 410 and chama("GET", "/g/codigo/VVVV-WWWW")[0] == 404, "vídeo: venda cancelada encerra o cartão")
 print("\ntudo certo")
