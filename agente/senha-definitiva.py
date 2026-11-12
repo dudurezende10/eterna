@@ -5,8 +5,7 @@
 # Uso (no servidor, com a pasta de dados do agente):
 #   python agente/senha-definitiva.py --casa <pasta home do servidor> --perfil ativ
 #   python agente/senha-definitiva.py --casa <pasta home do servidor> julio.gama pedro.nunes
-# --aceitar-fraca: o administrador aceita uma senha que o filtro recusaria (só o mínimo de 8 caracteres continua). Vale só aqui;
-#   a tela segue exigindo senha forte. Pedido do Ronaldo (12/11) para os vendedores das ativações, que operam sob supervisão no estádio.
+# A opção --aceitar-fraca existiu só para a carga inicial dos vendedores (12/11, commit 6902737) e foi retirada a pedido do Ronaldo.
 # --perfil ativ = todos os acessos ativos com o perfil "Vendedor Drone, Chute a Gol e Snap Pop".
 import argparse, getpass, importlib.util, json, os, secrets, sys, time
 
@@ -15,8 +14,6 @@ ap = argparse.ArgumentParser(description="Define a mesma senha definitiva para o
 ap.add_argument("--casa", required=True, help="pasta home do servidor (a mesma que o agente usa)")
 ap.add_argument("--perfil", help="todos os acessos ativos deste perfil (ex.: ativ)")
 ap.add_argument("usuarios", nargs="*", help="logins, se não usar --perfil")
-ap.add_argument("--aceitar-fraca", action="store_true",
-                help="aceita a senha mesmo que o filtro a ache fácil de adivinhar (mínimo de 8 caracteres); decisão do administrador, fica no histórico")
 a = ap.parse_args()
 if not os.path.isdir(a.casa):
     sys.exit("pasta não encontrada: " + a.casa)
@@ -60,12 +57,6 @@ s2 = getpass.getpass("Repita a senha: ")
 if s1 != s2:
     sys.exit("as duas não batem; nada mudou")
 fracas = [(u, r) for u in alvo for r in [m.auth_senha_fraca(u, cads[u].get("name"), s1)] if r]
-if a.aceitar_fraca:
-    if len(s1) < 8:
-        sys.exit("senha recusada: curta (mínimo 8); nada mudou")
-    if fracas:
-        print("aviso: o filtro acha esta senha fácil de adivinhar; gravando assim mesmo (--aceitar-fraca)")
-    fracas = []
 if fracas:
     motivos = {"curta": "curta (mínimo %d)" % m.AUTH_SENHA_MIN, "so_numeros": "só números", "repetida": "letras repetidas",
                "obvia": "fácil de adivinhar (nome, sequência ou palavra óbvia)"}
@@ -82,7 +73,7 @@ with m.estado_lock:
                        " atualizada=excluded.atualizada", (u, h, sal, m.AUTH_N, time.time()))
             db.execute("delete from sessao_login where usuario=?", (u,))
             db.execute("delete from reset_senha where usuario=?", (u,))
-            m.auth_log(db, u, "senha_definida_terminal_fraca" if a.aceitar_fraca else "senha_definida_terminal", "terminal", "")
+            m.auth_log(db, u, "senha_definida_terminal", "terminal", "")
         db.commit()
     finally:
         db.close()
