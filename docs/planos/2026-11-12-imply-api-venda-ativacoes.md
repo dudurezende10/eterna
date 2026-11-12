@@ -1,6 +1,15 @@
 # Venda pela API da Imply: Drone, Chute a Gol, Snap Pop e fotos (12/11/2026)
 
-**Situação:** credencial recebida em 12/11. Em 12/11 à noite a Imply completou o cadastro e marcou a pessoa "Viva Maracanã" como **Corporativo**: a leitura passou a mostrar horários e produtos, com as ativações e as fotos. Venda ainda não construída.
+**Decisão (Ronaldo, 12/11 à noite): a venda das ativações pela API foi abandonada.** A ativação é vendida e cobrada no POS da Imply, como hoje, e o POS é quem tira a vaga do horário (allotment). O tablet do Eterna continua registrando a venda para a entrega (cliente, foto, voo, vídeo), sem horário e sem reserva na Imply. Nada do que está abaixo será construído agora; o documento fica como registro do estudo.
+
+Por que foi abandonada:
+- **Escolher o horário no tablet e cobrar no POS não fecha.** O vendedor poderia escolher um horário no tablet e outro no POS.
+- **O POS não cobra uma reserva feita pela API** pelo localizador (resposta da Imply, 12/11).
+- **Cobrar um valor avulso no POS foi descartado:** valor digitado à mão abre margem para desvio.
+
+O que fica: a credencial de leitura e o mapa dos produtos (tabela abaixo) para consulta; a ligação da venda do Eterna com a venda do POS (ler o localizador do comprovante) pode voltar como ideia de conciliação no futuro.
+
+**Histórico:** credencial recebida em 12/11. Em 12/11 à noite a Imply completou o cadastro e marcou a pessoa "Viva Maracanã" como **Corporativo**: a leitura passou a mostrar horários e produtos, com as ativações e as fotos. Venda ainda não construída.
 
 **Por quê:** hoje os tablets vendem as ativações sem falar com a Imply, e os horários (slots) de cada ativação não baixam. Com a API, cada venda do Eterna reserva e confirma a vaga na Imply, e o estoque do horário cai na hora. A mesma API serve depois para a venda online das fotos e das ativações (plano `2026-11-11-compra-online-pela-imply.md`).
 
