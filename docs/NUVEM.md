@@ -253,6 +253,8 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 
 **Achado (12/11, só leitura com o usuário do agente):** o objeto mais antigo de cada pasta (`backup/`, `alta/`, `vitrine/`) é de 05/11, sete dias antes. Tudo indica que a regra de teste da seção 8.1 (expirar com 7 dias) vale para o **bucket inteiro**, inclusive `backup/` e `video/`. O usuário do agente não tem `s3:GetLifecycleConfiguration` nem `s3:GetBucketVersioning` (correto), então a regra real precisa ser conferida pelo Ronaldo no console. Com essa regra, o vídeo some do S3 no dia 7, embora a página do cliente prometa 30 dias.
 
+**Confirmado pelo Ronaldo no CloudShell (12/11):** uma única regra `teste-apaga-7-dias`, sem filtro (bucket inteiro), expira com 7 dias; versionamento nunca ligado. O backup diário e o vídeo também somem no dia 7.
+
 **Proposta de regras por pasta** (aplicar com `put-bucket-lifecycle-configuration`, pelo Ronaldo):
 
 | Pasta | O que é | Regra proposta |
