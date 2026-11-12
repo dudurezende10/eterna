@@ -176,6 +176,29 @@ Pilotos, drones e baterias têm cadastro simples, com ativo e inativo.
 - O vídeo de venda cancelada é apagado.
 - A venda não guarda dado pessoal. E-mail e selfie seguem as regras atuais da galeria.
 
+### 4a. Feito na v99.18.0: entrega no servidor do ponto e no tablet
+
+Tela **Entrega dos vídeos** (menu Venda), módulo `ativentrega` (Criar = ligar o QR e mandar o vídeo; Ver = a fila; Alterar = recebido, voo, itens e o cadastro) e perfil pronto **Equipe de campo** (só esta tela). O Supervisor tem o módulo inteiro.
+
+- **Fila do dia** por serviço (Drone, Chute a Gol, Snap Pop), com Pendentes e Entregues, na ordem da venda (não há agendamento de voo, 12/11). Situação em palavras: "Aguardando o cliente", "Aguardando voo", "Aguardando vídeo", "Entrega pendente", "Entregue".
+- **Cliente chegou** e **Voo feito** (Drone): o voo pede piloto, drone e bateria, escolhidos do cadastro ativo. O cadastro fica no fim da tela: inclui e liga ou desliga, nunca apaga.
+- **Entregar vídeo N:**
+  1. o QR do cartão é lido pela câmera do tablet (`BarcodeDetector`, Chrome do Android) ou pelo leitor, que digita o link; colar o link também vale. Cartão já usado é recusado na hora;
+  2. a equipe escolhe o vídeo do cartão do drone (.mp4 ou .mov) e ele vai ao servidor do ponto com barra de progresso e velocidade.
+- **Servidor do ponto** (`POST /ativ/video?venda=&qr=`, um vídeo por vez, até 1 GB): confere a venda (ativa e ainda sem todos os vídeos que comprou) e o QR (formato, nunca usado numa entrega nem numa galeria de fotos) antes de ler o arquivo, confere que é mp4/mov e lê a duração do próprio arquivo. Guarda em `~/Eterna/ativ-videos/<qr>.mp4`, grava a linha em `ativ_entrega` e o QR na venda.
+- **Itens físicos** (medalha, bola, do catálogo do pacote): baixa um a um. A venda fica **entregue**, com data e hora, quando todos os vídeos têm QR e todos os itens tiveram baixa. Entregue não cancela.
+- **Nuvem:** o vídeo entra numa fila própria (`nuvem.db`, tabela `videos`) e sobe para `video/<qr>.mp4` no bucket em partes de 8 MB, conferindo o tamanho no fim. Sem internet, tenta de novo com espera crescente. A tela mostra "Aguardando internet", "Subindo N%" ou "Na nuvem".
+- **Galeria do vídeo:** o QR vira o token de uma galeria `tipo: "video"` (manifesto com o vídeo, o idioma da venda e validade de 30 dias), publicada pela fila de galerias de sempre.
+- **Prazo:** o arquivo sai do servidor do ponto depois de 30 dias (limpeza diária); a linha da entrega fica como registro.
+- Rotas: `GET /ativ/fila?dia=`, `POST /ativ/etapa`, `POST /ativ/video`, `GET|POST /ativ/cadastros`. Testes: `testes/ativacoes_entrega_agente.py` e `testes/ativacoes_entrega.js`.
+
+### 4b. Falta (parte 2): o vídeo na galeria da nuvem
+
+- A Lambda da galeria (`servidor/galeria-nuvem/app.py`) ainda só conhece fotos: aceitar o manifesto `tipo: "video"`, devolver o link assinado do vídeo (`video/<qr>.mp4`) e "seu vídeo está chegando" enquanto ele não estiver no bucket, e contar os downloads.
+- A página do cliente (`index.html`, `#g/<token>`) precisa do player e do botão de baixar, sem passar o vídeo inteiro pela memória do celular.
+- No bucket: regra de prazo de 30 dias para o prefixo `video/`. Na política do agente: `s3:AbortMultipartUpload`.
+- Esses passos pedem `sam deploy` da nuvem, que o Ronaldo faz; nunca a partir de `idiomas-base`.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.

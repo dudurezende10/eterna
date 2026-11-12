@@ -50,9 +50,9 @@ try{
       const antes=k=>({preset:'custom',perms:E.permNorm(V93[k].perms),menu:V93[k].menu==='*'?E.ALL_VIEWS.slice():V93[k].menu.slice()});
       Object.keys(V93).forEach(k=>{const dep={preset:k,perms:E.presetPerms(k),menu:E.presetMenu(k)};out[k]=E.accExtra(dep,antes(k));});
       // v96-ux (Eduardo, 11/11): a Supervisora ganha só set.c (envia as fotos do cartão pela tela, como o Admin)
-      out.supPerms=JSON.stringify(E.presetPerms('supervisor'))===JSON.stringify(E.permNorm({...V93.supervisor.perms,set:RW_C,ativvenda:{c:true,r:true,u:true,d:true}}));
-      // v100 (Ronaldo, 12/11): e o tablet de venda do Drone, Chute a Gol e Snap Pop inteiro (vende, vê e cancela com o vídeo não entregue)
-      if(J(out.supervisor)===J(['perms.set.c','perms.ativvenda.c','perms.ativvenda.r','perms.ativvenda.d']))out.supervisor=[];
+      out.supPerms=JSON.stringify(E.presetPerms('supervisor'))===JSON.stringify(E.permNorm({...V93.supervisor.perms,set:RW_C,ativvenda:{c:true,r:true,u:true,d:true},ativentrega:{c:true,r:true,u:true,d:true}}));
+      // v100 (Ronaldo, 12/11): e o tablet de venda do Drone, Chute a Gol e Snap Pop inteiro (vende, vê e cancela com o vídeo não entregue) e a Entrega dos vídeos
+      if(J(out.supervisor)===J(['perms.set.c','perms.ativvenda.c','perms.ativvenda.r','perms.ativvenda.d','perms.ativentrega.c','perms.ativentrega.r','perms.ativentrega.u']))out.supervisor=[];
       out.adminTudo=E.ALL_VIEWS.every(v=>E.presetMenu('admin').includes(v));return out;},V93);
     ok(['foto','venda','valida','supervisor','quiosque'].every(k=>J(r[k])==='[]'),'H7: accExtra(depois, antes) não vazio: '+J(r));
     ok(r.supPerms,'H5: perms da Supervisora mudaram');ok(r.adminTudo,'H7: Admin sem alguma tela');

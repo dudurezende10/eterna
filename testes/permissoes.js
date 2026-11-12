@@ -18,7 +18,7 @@ async function abrirPerm(pg,email){await pg.evaluate(()=>{ETERNA.state.perm.tab=
 const ck=(pg,m,op)=>pg.click(`.perm-tbl input[data-act="perm-op"][data-m="${m}"][data-op="${op}"]`);
 const draft=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.state.perm.draft)));
 // v94-ux (parte H): grupos Venda e Sistema (Repositório, Identidade, Usuários, Permissões e o antigo Laboratório)
-const MENUS={Venda:['posto','ativ-venda'],Dashboard:['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','ativ-resumo','galerias','calendario'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','fotofila','escala'],'Configurações':['catalogo','ajustes'],'Sistema':['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']}; // parte I: Fundos de IA (técnico) no Sistema
+const MENUS={Venda:['posto','ativ-venda','ativ-entrega'],Dashboard:['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','ativ-resumo','galerias','calendario'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','fotofila','escala'],'Configurações':['catalogo','ajustes'],'Sistema':['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']}; // parte I: Fundos de IA (técnico) no Sistema
 (async()=>{const b=await chromium.launch();
 try{
   // ---------- 1, 2, 3, 4, 19 e menus: admin ----------
