@@ -7373,7 +7373,7 @@ def auth_senhas():
 
 # Os mesmos limites de permValidate na tela, agora também no servidor: sem isto, quem chama /ponto/docs se daria qualquer acesso, inclusive o de gerar senhas.
 AUTH_MODULOS = ("estoque", "relatorios", "desempenho", "financeiro", "galerias", "qualidade", "diario", "set", "escala", "filafoto", "configuracao",
-                "catalogo", "usuarios", "senhas", "permissoes", "laboratorio", "venda", "quiosque", "estatisticas")     # os mesmos de MODULES no app
+                "catalogo", "usuarios", "senhas", "permissoes", "laboratorio", "venda", "quiosque", "estatisticas", "ativvenda")     # os mesmos de MODULES no app
 AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "contato", "key", "active"), ("perms", "menu", "preset", "inicio")
 AUTH_IDIOMAS = (None, "", "pt", "en", "es", "fr")
 AUTH_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$")
@@ -7562,28 +7562,59 @@ def ativ_receber(vendas, enviado_por):
     return out
 
 
-def ativ_cancelar(vid, motivo, eu, pode_todas):
-    """Cancela uma venda do tablet. O vendedor cancela a própria venda do dia; quem tem venda.d ou financeiro.u, qualquer uma.
-    A venda cancelada não some: fica com a situação, o motivo, quem e quando. -> None se ok, ou o erro."""
+def ativ_cancelar(vid, motivo, eu):
+    """Cancela uma venda do tablet (Ronaldo, 12/11): só o administrador e quem tem ativvenda.d ou financeiro.u (a rota confere),
+    e só enquanto o vídeo não foi entregue. O vendedor não cancela. A venda cancelada não some: fica com a situação, o
+    motivo, quem e quando. -> None se ok, ou o erro."""
     motivo = str(motivo or "").strip()
     if not _re_ativ_id.match(str(vid or "")) or not motivo or not _ativ_txt(motivo, 200):
         return "dados"
     with ev_lock:
         c = vendas_db()
         try:
-            r = c.execute("select usuario, dia, situacao from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            r = c.execute("select situacao, entrega, qr from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
             if not r:
                 return "nao_achou"
-            if r[2] == "cancelada":
+            if r[0] == "cancelada":
                 return None
-            if not pode_todas and (r[0] != eu or r[1] != time.strftime("%Y-%m-%d")):
-                return "permissao"
+            if (r[1] or "").strip() or (r[2] or "").strip():
+                return "entregue"
             c.execute("update ativ_venda set situacao='cancelada', cancel_motivo=?, cancel_por=?, cancel_em=? where origem='eterna' and id=?",
                       (motivo, eu, time.strftime("%Y-%m-%dT%H:%M:%S"), vid))
             c.commit()
         finally:
             c.close()
     return None
+
+
+ATIV_VISTOS = {}            # usuario -> {nome, em, ip}: o tablet chama /ativ/minhas a cada 30 s com a tela aberta
+ATIV_DEMO_DIR = os.path.join(HOME, "ativ-demo")
+_re_ativ_demo = re.compile(r"^[a-z0-9_]{1,60}_[1-9]\.mp4$")
+
+
+def ativ_visto(eu, ip):
+    if eu and eu.get("usuario"):
+        ATIV_VISTOS[eu["usuario"]] = {"nome": ((eu.get("cadastro") or {}).get("name") or eu["usuario"])[:80], "em": time.time(), "ip": ip}
+
+
+def ativ_equipe():
+    """Quem está com a tela de venda aberta: visto nos últimos 2 minutos = conectado agora."""
+    agora = time.time()
+    return sorted(({"usuario": u, "nome": v["nome"], "visto_ha_s": int(agora - v["em"]), "agora": agora - v["em"] < 120}
+                   for u, v in ATIV_VISTOS.items() if agora - v["em"] < 16 * 3600), key=lambda x: x["visto_ha_s"])
+
+
+def ativ_demo_lista():
+    """Vídeos de demonstração no servidor do ponto (~/Eterna/ativ-demo/<produto>_<local>_<pessoas>.mp4)."""
+    out = []
+    try:
+        for n in sorted(os.listdir(ATIV_DEMO_DIR)):
+            if _re_ativ_demo.match(n):
+                st = os.stat(os.path.join(ATIV_DEMO_DIR, n))
+                out.append({"nome": n, "tamanho": st.st_size, "versao": int(st.st_mtime)})
+    except OSError:
+        pass
+    return out
 
 
 def ativ_vendas(de, ate, usuario=None):
@@ -9073,8 +9104,10 @@ ROTAS = (
     ("POST", "/fotos/enviar", "sessao", ("set.c",)),
     ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")),
     ("GET", "/ativ/vendas", "sessao", ("estatisticas.r", "financeiro.r", "relatorios.r")),   # v100: resumo das ativações
-    ("POST", "/ativ/venda", "sessao", ("venda.c",)), ("GET", "/ativ/minhas", "sessao", ("venda.r",)),   # v100: venda no tablet
-    ("POST", "/ativ/cancelar", "sessao", ("venda.c", "venda.d", "financeiro.u")),
+    ("POST", "/ativ/venda", "sessao", ("ativvenda.c",)), ("GET", "/ativ/minhas", "sessao", ("ativvenda.r",)),   # v100: venda no tablet
+    ("POST", "/ativ/cancelar", "sessao", ("ativvenda.d", "financeiro.u")),
+    ("GET", "/ativ/equipe", "sessao", ("estatisticas.r", "financeiro.r", "ativvenda.d")),
+    ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),   # vídeos de demonstração (lista e arquivo)
     ("GET", "/roverpix/status", "sessao", ("financeiro.r",)), ("GET", "/roverpix/data", "sessao", ("financeiro.r",)),
     ("POST", "/roverpix/sync", "sessao", ("configuracao.u",)), ("POST", "/roverpix/config", "sessao", ("configuracao.u",)),
     ("GET", "/ftp-remoto/status", "sessao", ("configuracao.r",)), ("POST", "/ftp-remoto/config", "sessao", ("configuracao.u",)),
@@ -10222,11 +10255,12 @@ class H(BaseHTTPRequestHandler):
         if rota == "/ativ/venda":
             if not isinstance(body.get("vendas"), list):
                 return self.js({"error": "corpo inválido"}, 400)
+            ativ_visto(eu, self.client_address[0])
             r = ativ_receber(body["vendas"], eu.get("usuario") or "")
             return self.js(dict(ok=True, **r))
-        e = ativ_cancelar(body.get("id"), body.get("motivo"), eu.get("usuario") or "", auth_pode(cad, "venda", "d") or auth_pode(cad, "financeiro", "u"))
+        e = ativ_cancelar(body.get("id"), body.get("motivo"), eu.get("usuario") or "")
         if e:
-            return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "permissao": 403}[e])
+            return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "entregue": 409}[e])
         return self.js({"ok": True})
 
     def ff_funcao_post(self):
@@ -11112,9 +11146,34 @@ class H(BaseHTTPRequestHandler):
                 r["docs"] = [d if d["id"] == proprio else {"id": d["id"], "valor": {k: d["valor"].get(k) for k in ("email", "name", "key", "active") if isinstance(d["valor"], dict)}}
                              for d in r["docs"]]
             return self.js(r)
+        if u.path == "/ativ/equipe":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js({"ok": True, "equipe": ativ_equipe()}, nostore=True)
+        if u.path.startswith("/ativ/demo/"):
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            nome = u.path[len("/ativ/demo/"):]
+            if nome == "lista":
+                return self.js({"ok": True, "videos": ativ_demo_lista()}, nostore=True)
+            if not _re_ativ_demo.match(nome) or not os.path.isfile(os.path.join(ATIV_DEMO_DIR, nome)):
+                return self.js({"error": "not found"}, 404)
+            try:
+                with open(os.path.join(ATIV_DEMO_DIR, nome), "rb") as f:
+                    data = f.read()
+            except OSError:
+                return self.js({"error": "not found"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, max-age=86400")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if u.path == "/ativ/minhas":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
+            ativ_visto(self.sessao(), self.client_address[0])
             dia = (parse_qs(u.query).get("dia") or [""])[0]
             r = ativ_vendas(dia, dia, (self.sessao() or {}).get("usuario") or "")
             return self.js({"ok": True, "vendas": r}, nostore=True) if r is not None else self.js({"error": "data inválida"}, 400)

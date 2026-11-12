@@ -15,6 +15,7 @@ try{
   const pedidos=[];
   await ctx.route(/\/ativ\/vendas\?/,r=>{const u=new URL(r.request().url());const de=u.searchParams.get('de'),ate=u.searchParams.get('ate');pedidos.push(de+'|'+ate);
     r.fulfill({status:200,contentType:'application/json',body:J({ok:true,vendas:DADOS.filter(v=>v.dia>=de&&v.dia<=ate)})});});
+  await ctx.route(/\/ativ\/equipe$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,equipe:[{usuario:'v1',nome:'Vendedora Um',visto_ha_s:12,agora:true},{usuario:'v2',nome:'Vendedor Dois',visto_ha_s:900,agora:false}]})}));
   const A=await ctx.newPage();A.on('pageerror',e=>errs.push(e.message));await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(400);
   const E=require('./_entrar');const adm=await E.adminFicticio(A);await E(A,adm);
   // período
@@ -37,6 +38,11 @@ try{
   // seta para a semana anterior: sem vendas
   await A.click('[data-act="ar-mover"][data-n="-1"]');await A.waitForTimeout(400);
   ok(/R\$\s?0/.test(await A.textContent('#ar-total'))&&/Nenhuma venda/.test(await A.textContent('#ar-pag')),'semana anterior vazia');
+  // quem está com a tela de venda aberta
+  await A.evaluate(()=>ETERNA.arEquipe());await A.waitForTimeout(300);
+  const eq=await A.textContent('#ar-equipe');
+  ok(/Equipe agora/.test(eq)&&/Vendedora Um\s*Conectado/.test(eq)&&/Vendedor Dois\s*Visto há 15 min/.test(eq),'equipe agora: '+eq);
+  ok(!/ativações/i.test(await A.textContent('#main .head')),'título sem a palavra ativações');
   // data escolhida e Hoje
   await A.click('[data-act="ar-per"][data-p="dia"]');await A.fill('[data-act="ar-data"]','2026-10-07');await A.dispatchEvent('[data-act="ar-data"]','change');await A.waitForTimeout(400);
   ok(/R\$\s?120/.test(await A.textContent('#ar-total')),'data escolhida: '+await A.textContent('#ar-total'));
@@ -48,7 +54,7 @@ try{
   ok(/servidor do ponto/.test(await A.textContent('#main')),'aviso sem servidor');
   // idioma
   await A.evaluate(()=>ETERNA.idiomaEquipe('es'));await A.waitForTimeout(200);
-  ok(/Resumen de activaciones/.test(await A.textContent('#main')),'tela em espanhol');
+  ok(/Dron, Tiro y Snap/.test(await A.textContent('#main'))&&/Equipo ahora/.test(await A.textContent('#main')),'tela em espanhol');
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}

@@ -20,7 +20,7 @@ Este plano substitui as opções do plano de 30/10 (`2026-10-30-maracafly-no-ete
 8. **O admin troca preço** e pode desligar um produto no dia ("hoje não vendo").
 9. **Por enquanto, vídeo do Drone e Chute a Gol só se compram no local.** A compra online (Imply, plano `2026-11-11-compra-online-pela-imply.md`) continua só para fotos. As ativações entram nela depois.
 10. **O histórico do sistema antigo entra no Eterna.** Primeiro, as planilhas exportadas de 01/10 a 11/11. Depois, **a partir de 12/11, as vendas novas entram todo dia, à noite, depois das 19h, quando o tour termina**, até o Ronaldo avisar que o sistema antigo foi desligado.
-11. **A venda é local first (12/11):** o vendedor vende com tudo na mão, sem depender de internet nem do servidor. Nada de vídeo carregando ou baixando no tablet: a tela de venda não tem vídeo de demonstração.
+11. **A venda é local first (12/11):** o vendedor vende com tudo na mão, sem depender de internet nem do servidor. Nada de vídeo carregando ou baixando na hora da venda: os vídeos de demonstração ficam guardados no tablet (seção 3, item 2).
 12. **Fora deste plano:**
     - escala da equipe;
     - central de WhatsApp;
@@ -79,19 +79,27 @@ A tela de admin é uma aba nova em **Preços e Checkout**, com a mesma permissã
 
 ## 3. Venda no tablet
 
-Uma tela nova, **Ativações**, no menu de venda. Ela segue o padrão visual do Posto de venda. Feita na v99.17.3, sem o recibo impresso, que fica para depois.
+Uma tela nova no menu Venda, com o título **Drone, Chute a Gol e Snap Pop** (sem a palavra "Ativações", Ronaldo, 12/11). Ela segue o padrão visual do Posto de venda. Feita na v99.17.3 e refeita na v99.17.4, sem o recibo impresso, que fica para depois.
 
-1. **Abas:** Drone, Chute a Gol, Snap Pop. Aparecem só os produtos ativos hoje.
-2. **Sem vídeo no tablet (decisão 11 da seção 1):** a tela mostra nome, opções e preço; não carrega nem baixa vídeo.
-3. **Carrinho:** junta produtos das três categorias na mesma venda. Cada item tem local, quantidade e as opções.
+No topo, o nome de quem está logado e a situação do envio. Duas abas: **Nova venda** e **Minhas vendas**.
+
+A Nova venda segue esta ordem (12/11):
+
+1. **Serviço:** Drone, Chute a Gol, Snap Pop. Aparecem só os produtos ativos hoje. O Snap Pop é vídeo com IA, não voo: conta "Vídeos com IA".
+2. **Pessoas no vídeo e vídeo de demonstração (Drone):** o vendedor escolhe de 1 a 5 pessoas. Cada produto tem um botão **Ver vídeo com N pessoas**, que abre em tela cheia o vídeo daquele produto, local e número de pessoas, para convencer o cliente.
+   - Os vídeos ficam no servidor do ponto, em `~/Eterna/ativ-demo/<produto>_<campo|arquibancada|banco>_<pessoas>.mp4` (35 vídeos em 720p sem áudio, 199 MB; os originais em 1080p estão fora do repositório).
+   - O tablet copia os vídeos em segundo plano para o IndexedDB (`eterna-ativ`, store `demo`), sem barra e sem espera, e só baixa de novo quando o arquivo muda no servidor. Na venda, o vídeo toca do tablet.
+   - Vídeo que ainda não está no tablet toca do servidor do ponto, se houver rede. Sem os dois, a tela diz que o vídeo ainda não está no tablet e a venda segue.
+   - Rotas: `GET /ativ/demo/lista` e `GET /ativ/demo/<nome>` (com `ativvenda.r` ou `catalogo.r`).
+3. **Venda (carrinho):** cada card tem o local e o botão **Adicionar**. O carrinho junta produtos das três categorias. Cada item tem local, quantidade, pessoas e as opções.
    - Os adicionais entram sozinhos: pessoa extra, 4K, chuva.
    - **Preço fixo (decidido 12/11):** vale o preço do catálogo, com os adicionais somados sozinhos. O vendedor não digita valor, diferente do sistema antigo, que aceitava desconto ou acréscimo. Só o admin muda preço, em Preços e Checkout. Venda grátis só como Cortesia.
-4. **Guia (opcional):** escolha do guia pelo nome, com busca. A comissão continua no Portal de Parceiros.
+4. **Cliente:** país numa lista com bandeira, com os principais no topo e todos os países do mundo em ordem alfabética; idioma numa lista com Português, Espanhol, Inglês, Francês, Alemão, Italiano e Outro. O nome fica gravado em português. O idioma serve para o recibo e a galeria abrirem no idioma dele. O país alimenta o resumo por país. Nenhum dos dois identifica a pessoa.
 5. **Pagamento:** PIX, Dinheiro, Débito, Crédito ou **Cortesia**. Na Cortesia, o motivo e a nota são obrigatórios.
-6. **Idioma e país do cliente:** um toque cada, por bandeira. O idioma serve para o recibo e a galeria abrirem no idioma dele. O país alimenta o resumo por país. Nenhum dos dois identifica a pessoa.
-7. **Execução:** imediata ou agendada (dia e hora). Serve para o Drone.
-8. **Registrar:** grava a venda no próprio tablet na hora, com número próprio e quem vendeu, e envia ao servidor do estádio. Imprime o recibo no idioma do cliente, se houver impressora no posto.
+6. **Registrar** (botão fixo embaixo): grava a venda no próprio tablet na hora, com número próprio e quem vendeu, e envia ao servidor do estádio. Imprime o recibo no idioma do cliente, se houver impressora no posto.
    - Uma venda igual registrada em até 2 minutos pelo mesmo vendedor pede confirmação.
+
+**Fora da tela (12/11):** o guia não é escolhido na venda; a escolha dele fica no projeto de guias que já existe. Não há agendamento de voo.
 
 **Local first:** a venda nunca espera a rede.
 - O catálogo fica guardado no tablet. A tela de venda abre e vende sem internet e sem o servidor.
@@ -106,15 +114,19 @@ Uma tela nova, **Ativações**, no menu de venda. Ela segue o padrão visual do 
 - Venda recusada pelo servidor nunca é apagada. Ela fica no tablet com a situação "Recusada pelo servidor", e o botão **Salvar cópia das vendas não enviadas** baixa um arquivo com elas.
 - Sair da conta, trocar de vendedor ou atualizar o app não mexem na caixa de saída. O app pede ao navegador armazenamento persistente.
 - O servidor confere só o formato. Produto e preço diferentes do catálogo do servidor não são recusados, porque o tablet pode ter vendido com o catálogo que tinha.
-- O cancelamento precisa do servidor: o vendedor cancela a própria venda do dia, e quem tem `venda.d` ou `financeiro.u` cancela qualquer uma. A venda cancelada continua no banco, com motivo, quem e quando, e sai do Resumo das ativações.
+- O cancelamento precisa do servidor. **O vendedor não cancela** (12/11): só o administrador e quem tem `ativvenda.d` ou `financeiro.u`, e só enquanto o vídeo não foi entregue (venda com entrega ou QR ligado devolve 409). O botão Cancelar só aparece para quem tem a permissão. A venda cancelada continua no banco, com motivo, quem e quando, e sai do Resumo.
 - Um carrinho com mais de um serviço vira uma venda por serviço, com o mesmo número. Assim o resumo por serviço fica certo.
 
 Todo texto novo entra nos idiomas: `EQ`/`TE` nas telas da equipe e `I18N`/`T` no recibo e na galeria. O teste `testes/idiomas.js` cobra as chaves.
 
 ## 3b. Vendedores
 
-Cada vendedor tem cadastro próprio no Eterna, com nome e login, no perfil "Atendimento e venda". Hoje são 12 tablets, cada um com o seu vendedor. A lista de tablets e logins fica com o Ronaldo e entra direto no cadastro do servidor, fora deste repositório.
+Cada vendedor tem cadastro próprio no Eterna, com nome e login. Hoje são 12 tablets, cada um com o seu vendedor. A lista de tablets e logins fica com o Ronaldo e entra direto no cadastro do servidor, fora deste repositório.
 
+- **Módulo próprio, `ativvenda` (12/11):** Criar = registrar venda; Ver = abrir a tela e ver as próprias vendas; Excluir = cancelar venda com o vídeo não entregue. A tela saiu do módulo Posto de venda.
+- **Perfil pronto "Vendedor Drone, Chute a Gol e Snap Pop":** só `ativvenda` Criar e Ver, menu só com a tela de venda, que abre direto ao entrar. O vendedor não vê o resto do sistema e não cancela. O Supervisor tem o módulo inteiro; o Admin, como sempre, tudo.
+- **Login:** o admin cadastra a pessoa em Usuários, escolhe o perfil acima e gera a senha provisória em Senhas de acesso. No tablet, o vendedor entra com o e-mail e a senha e troca a senha no primeiro acesso.
+- **Quem está logado:** o tablet chama o servidor a cada 30 s com a tela aberta. No Resumo, o painel **Equipe agora** mostra cada vendedor visto nas últimas 16 h: "Conectado" (visto há menos de 2 min) ou "Visto há N min". Rota `GET /ativ/equipe` (com `estatisticas.r`, `financeiro.r` ou `ativvenda.d`). Fica só na memória do servidor.
 - A venda grava quem vendeu, e o resumo mostra o vendedor pelo nome.
 - As vendas importadas do sistema antigo são ligadas ao vendedor pelo nome. Um nome que não estiver no cadastro aparece como veio.
 

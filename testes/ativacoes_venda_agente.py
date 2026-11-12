@@ -1,6 +1,6 @@
 # v100 (fase 2): venda das ativações no tablet, local first. O tablet guarda a venda e reenvia até ouvir o ok:
 # reenviar não duplica, venda com formato ruim volta como recusada (o tablet não apaga), Cortesia exige motivo e nota,
-# Minhas vendas só traz as do próprio vendedor, cancelamento pelo vendedor (só a própria do dia) e pelo gestor,
+# Minhas vendas só traz as do próprio vendedor, cancelamento só por quem tem permissão e com o vídeo não entregue,
 # banco antigo (sem as colunas novas) ganha as colunas, e quem não vende não grava.
 #   HOME=$(mktemp -d) python3 -I testes/ativacoes_venda_agente.py agente/eterna-agente.py
 import http.client, importlib.util, json, os, sqlite3, sys, threading, time
@@ -69,9 +69,12 @@ def venda(vid, **k):
 
 RW = {"c": True, "r": True, "u": True, "d": True}
 try:
-    ven = S.cookie_sessao(m, "vendedora-ativ", {"venda": {"c": True, "r": True, "u": False, "d": False}})
-    ven2 = S.cookie_sessao(m, "vendedor2-ativ", {"venda": {"c": True, "r": True, "u": False, "d": False}})
-    ger = S.cookie_sessao(m, "gestor-ativ", {"financeiro": RW, "venda": RW})
+    VEND = {"ativvenda": {"c": True, "r": True, "u": False, "d": False}}
+    ven = S.cookie_sessao(m, "vendedora-ativ", VEND)
+    ven2 = S.cookie_sessao(m, "vendedor2-ativ", VEND)
+    ger = S.cookie_sessao(m, "gestor-ativ", {"financeiro": RW})
+    sup = S.cookie_sessao(m, "supervisora-ativ", {"ativvenda": RW})
+    posto = S.cookie_sessao(m, "posto-ativ", {"venda": RW})
     foto = S.cookie_sessao(m, "foto-ativ", {"set": RW})
     st, j = req("POST", "/ativ/venda", ven, {"vendas": [venda("TAAAAAA1D"), venda("TAAAAAA2C", tipo="chute", itens=[{"cat": "chute", "produto": "c3", "op": "", "qtd": 1, "cobrado": 110}], valor=110),
                                                        venda("TRUIM0001", pagamento="Fiado"), venda("TCORT0001", pagamento="Cortesia", valor=0, cortesia_motivo="Imprensa")]})
@@ -90,13 +93,19 @@ try:
     st, j = req("GET", "/ativ/minhas?dia=" + HOJE, ven)
     ok(st == 200 and sorted(x["id"] for x in j.get("vendas", [])) == ["TAAAAAA1D", "TAAAAAA2C", "TCORT0002"], "minhas vendas só as da vendedora: %s" % j)
     ok(isinstance(j["vendas"][0]["itens"], list) and j["vendas"][0].get("sugerido") is not None, "minhas vendas com itens e sugerido")
-    # cancelar
-    st, j = req("POST", "/ativ/cancelar", ven, {"id": "TOUTRO001", "motivo": "teste"})
-    ok(st == 403, "vendedora não cancela venda de outro: %s" % st)
-    st, j = req("POST", "/ativ/cancelar", ven, {"id": "TAAAAAA2C", "motivo": ""})
+    # cancelar: o vendedor não cancela; administrador e quem tem permissão cancelam, enquanto o vídeo não foi entregue
+    st, j = req("POST", "/ativ/cancelar", ven, {"id": "TAAAAAA2C", "motivo": "teste"})
+    ok(st == 403, "vendedora não cancela nem a própria: %s" % st)
+    st, j = req("POST", "/ativ/cancelar", sup, {"id": "TAAAAAA2C", "motivo": ""})
     ok(st == 400, "cancelar pede motivo: %s" % st)
-    st, j = req("POST", "/ativ/cancelar", ven, {"id": "TAAAAAA2C", "motivo": "cliente desistiu"})
-    ok(st == 200, "vendedora cancela a própria: %s %s" % (st, j))
+    st, j = req("POST", "/ativ/cancelar", sup, {"id": "TAAAAAA2C", "motivo": "cliente desistiu"})
+    ok(st == 200, "quem tem a permissão cancela: %s %s" % (st, j))
+    db = sqlite3.connect(m.VENDAS_DB)
+    db.execute("update ativ_venda set qr='QRENTREGUE' where id='TCORT0002'")
+    db.commit()
+    db.close()
+    st, j = req("POST", "/ativ/cancelar", sup, {"id": "TCORT0002", "motivo": "teste"})
+    ok(st == 409, "vídeo entregue não cancela: %s %s" % (st, j))
     st, j = req("POST", "/ativ/cancelar", ger, {"id": "TOUTRO001", "motivo": "venda em dobro"})
     ok(st == 200, "gestor cancela qualquer uma: %s %s" % (st, j))
     st, j = req("GET", "/ativ/vendas?de=%s&ate=%s" % (HOJE, HOJE), ger)
@@ -104,9 +113,34 @@ try:
     ok(sit.get("TAAAAAA2C") == "cancelada" and sit.get("TOUTRO001") == "cancelada" and sit.get("TAAAAAA1D") == "ativa" and sit.get("drone-1") == "ativa",
        "situação no resumo, venda antiga continua: %s" % sit)
     db = sqlite3.connect(m.VENDAS_DB)
-    ok(db.execute("select cancel_motivo, cancel_por from ativ_venda where id='TAAAAAA2C'").fetchone() == ("cliente desistiu", "vendedora-ativ"), "cancelamento registrado")
+    ok(db.execute("select cancel_motivo, cancel_por from ativ_venda where id='TAAAAAA2C'").fetchone() == ("cliente desistiu", "supervisora-ativ"), "cancelamento registrado")
     db.close()
+    # quem está em cada tablet
+    st, j = req("GET", "/ativ/equipe", ger)
+    eq = {x["usuario"]: x for x in j.get("equipe", [])}
+    ok(st == 200 and eq.get("vendedora-ativ", {}).get("agora") is True and "vendedor2-ativ" in eq, "equipe conectada: %s" % j)
+    st, j = req("GET", "/ativ/equipe", ven)
+    ok(st == 403, "vendedor não vê a equipe: %s" % st)
+    # vídeos de demonstração
+    os.makedirs(m.ATIV_DEMO_DIR, exist_ok=True)
+    open(os.path.join(m.ATIV_DEMO_DIR, "asteroid_campo_2.mp4"), "wb").write(b"ftypmp42" + b"0" * 104)
+    open(os.path.join(m.ATIV_DEMO_DIR, "../fora.mp4"), "wb").write(b"x")
+    st, j = req("GET", "/ativ/demo/lista", ven)
+    ok(st == 200 and [v["nome"] for v in j.get("videos", [])] == ["asteroid_campo_2.mp4"], "lista dos vídeos: %s" % j)
+    c = http.client.HTTPConnection("127.0.0.1", m.PORT, timeout=30)
+    c.request("GET", "/ativ/demo/asteroid_campo_2.mp4", None, {"Host": HOST, "X-Eterna": "1", "Cookie": ven})
+    r = c.getresponse()
+    corpo = r.read()
+    c.close()
+    ok(r.status == 200 and r.getheader("Content-Type") == "video/mp4" and len(corpo) == 112, "vídeo entregue: %s" % r.status)
+    for ruim in ("/ativ/demo/..%2Ffora.mp4", "/ativ/demo/fora.mp4", "/ativ/demo/x.exe"):
+        st, j = req("GET", ruim, ven)
+        ok(st == 404, "nome fora do padrão: %s %s" % (ruim, st))
+    st, j = req("GET", "/ativ/demo/lista", foto)
+    ok(st == 403, "fotógrafo não lista os vídeos: %s" % st)
     # quem não vende
+    st, j = req("POST", "/ativ/venda", posto, {"vendas": [venda("TPOSTO001")]})
+    ok(st == 403, "o Posto de venda das fotos não grava ativação sem o módulo: %s" % st)
     st, j = req("POST", "/ativ/venda", foto, {"vendas": [venda("TFOTO0001")]})
     ok(st == 403, "fotógrafo não grava venda: %s" % st)
     st, j = req("GET", "/ativ/minhas?dia=" + HOJE, foto)
@@ -122,4 +156,4 @@ finally:
 if falhas:
     print("FALHA ativacoes_venda_agente: " + " || ".join(falhas))
     sys.exit(1)
-print("OK ativacoes_venda_agente: recebe sem duplicar, recusa formato ruim, cortesia com motivo e nota, minhas vendas, cancelamento com permissão, banco antigo migrado")
+print("OK ativacoes_venda_agente: recebe sem duplicar, recusa formato ruim, cortesia com motivo e nota, minhas vendas, cancelamento com permissão, equipe conectada, vídeos de demonstração, banco antigo migrado")
