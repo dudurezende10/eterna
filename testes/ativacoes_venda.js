@@ -69,6 +69,9 @@ try{
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
   ok(/nome do cliente/.test(await A.textContent('#av-erro')),'pede o nome do cliente');
   await A.fill('[data-act="av-nome"]','Cliente Teste');
+  // v99.23.1: sem a foto do cliente não registra
+  await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
+  ok(/Tire a foto do cliente/.test(await A.textContent('#av-erro'))&&(await A.evaluate(()=>ETERNA.state.av.cart.length))>0,'pede a foto do cliente e não registra');
   const png=Buffer.from(await A.evaluate(()=>{const c=document.createElement('canvas');c.width=1200;c.height=900;const g=c.getContext('2d');g.fillStyle='#c33';g.fillRect(0,0,1200,900);return c.toDataURL('image/png').split(',')[1];}),'base64');
   // câmera na própria tela: abre, mostra a imagem, Tirar foto guarda e fecha
   await A.click('[data-act="av-cam-abre"]');await A.waitForTimeout(1200);
@@ -112,13 +115,21 @@ try{
   ok(recebidas.size===2&&s.every(x=>x.est==='enviada'),'rede voltou: enviadas, servidor recebeu 2: '+recebidas.size+' '+J(s.map(x=>x.est)));
   await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(100);
   ok(!/Tudo enviado|Aguardando envio|Sem conexão/.test(await A.textContent('#main .head'))&&/Enviada ao servidor/.test(await A.textContent('#av-minhas')),'tela mostra tudo enviado');
+  // v99.23.1: tabela com busca
+  ok(await A.$('#av-minhas table.av-tab tbody tr[data-av-venda]')!==null&&/Cliente Teste/.test(await A.textContent('#av-minhas tbody')),'minhas vendas em tabela, com o cliente');
+  {const n0=await A.$$eval('#av-minhas tr[data-av-venda]',e=>e.length);
+  await A.click('#av-minhas-q');await A.keyboard.type('xyz-nada');await A.waitForTimeout(100);
+  ok(await A.$$eval('#av-minhas tr[data-av-venda]',e=>e.length)===0&&/Nenhuma venda encontrada/.test(await A.textContent('#av-minhas'))&&await A.evaluate(()=>document.activeElement&&document.activeElement.id)==='av-minhas-q','busca sem resultado, foco no campo');
+  await A.fill('#av-minhas-q','cliente teste');await A.waitForTimeout(100);
+  ok(await A.$$eval('#av-minhas tr[data-av-venda]',e=>e.length)===n0,'busca pelo cliente, sem maiúscula: '+n0);
+  await A.fill('#av-minhas-q','');await A.waitForTimeout(100);}
   ok((await A.$$('[data-act="av-cancelar"]')).length===2,'admin vê Cancelar');
   await A.evaluate(()=>{const u=ETERNA.state.user;u.perms={...u.perms,ativvenda:{c:true,r:true,u:false,d:false},financeiro:{c:false,r:false,u:false,d:false}};});await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(100);
   ok((await A.$$('[data-act="av-cancelar"]')).length===0,'vendedor sem a permissão não vê Cancelar');
   await A.evaluate(()=>{const u=ETERNA.state.user;u.perms={...u.perms,ativvenda:{c:true,r:true,u:true,d:true},financeiro:{c:true,r:true,u:true,d:true}};});
   await A.click('[data-act="av-aba"][data-v="nova"]');
   // venda igual em 2 minutos pede confirmação
-  const vende=async()=>{await A.click('[data-act="av-cat"][data-c="drone"]');await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Dinheiro"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.click('[data-act="av-registrar"]');await A.waitForTimeout(400);};
+  const vende=async()=>{await A.click('[data-act="av-cat"][data-c="drone"]');await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Dinheiro"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await A.click('[data-act="av-registrar"]');await A.waitForTimeout(400);};
   await vende();await vende();
   ok(await A.$('#av-dup')!==null&&(await A.evaluate(()=>ETERNA.state.av.cart.length))===1,'venda igual pede confirmação e o carrinho fica');
   await A.click('[data-act="av-dup-sim"]');await A.waitForTimeout(500);
@@ -126,16 +137,16 @@ try{
   // Cortesia exige motivo e nota
   await A.click('[data-act="av-add"][data-id="asteroid"]');await A.click('[data-act="av-pag"][data-p="Cortesia"]');await A.waitForTimeout(80);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(150);
   ok(/motivo e a nota/.test(await A.textContent('#av-erro')),'cortesia sem motivo');
-  await A.selectOption('[data-act="av-cmot"]',{index:1});await A.fill('[data-act="av-cnota"]','Equipe da TV');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
+  await A.selectOption('[data-act="av-cmot"]',{index:1});await A.fill('[data-act="av-cnota"]','Equipe da TV');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
   const ct=await A.evaluate(()=>ETERNA.asLer().find(x=>x.v.pagamento==='Cortesia'));
   ok(ct&&ct.v.valor===0&&ct.v.cortesia_nota==='Equipe da TV'&&ct.v.cortesia_motivo&&ct.v.sugerido===180,'cortesia gravada com valor 0, sugerido e nota: '+J(ct&&ct.v));
   // armazenamento: sem localStorage a cópia do IndexedDB segura; sem nenhum, o carrinho fica
   rede=false;
   await A.evaluate(()=>{window.__set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='eterna.ativ.saida.v1')throw new Error('QuotaExceededError');return window.__set.call(this,k,v);};});
-  await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Débito"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
+  await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Débito"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
   ok((await A.evaluate(()=>ETERNA.state.av.saida.length))===6&&(await A.evaluate(()=>ETERNA.state.av.cart.length))===0,'localStorage cheio: gravou no IndexedDB');
   await A.evaluate(()=>{window.__idb=indexedDB.open;indexedDB.open=()=>{throw new Error('sem IndexedDB');};});
-  await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Crédito"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
+  await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Crédito"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
   ok((await A.evaluate(()=>ETERNA.state.av.cart.length))===1&&/não pôde ser gravada/.test(await A.textContent('#av-erro')),'sem nenhum armazenamento: avisa e o carrinho continua');
   await A.evaluate(()=>{Storage.prototype.setItem=window.__set;indexedDB.open=window.__idb;});
   // idioma
