@@ -18,12 +18,18 @@ Base: `sim/v97-montagem` (`c81c999`). Branch `feat/ia-no-pacote`.
 ## Como fica
 
 1. **Uma foto como as outras.** Montagem e foto normal ficam na mesma grade e cada uma ocupa uma vaga do pacote. Sem preço próprio e sem linha "Fundo de IA" em carrinho, recibo, Posto ou listas. Passou do pacote: a regra de sempre (adicional de R$ 35 ou pacote maior), igual para as duas. No Maracanã Mais não há adicional: as montagens escolhidas entram.
-2. **Catálogo.** `fundo` sai do `DATA.catalog`. Fica em `CAT_ANTIGO` (nome e preço de R$ 40) só para ler venda antiga: `catName`, `priceOf` e `itemV` seguem respondendo, então recibo, Lista de vendas, CSV, Painel e Estatísticas não mudam para o histórico. Migração `catMigraFundo()` na abertura (pode rodar sempre): apaga `SIM.prices.fundo` e, nas sessões não pagas, tira o item `fundo` do carrinho e o `bg`.
+2. **Catálogo.** `fundo` sai do `DATA.catalog`. Fica em `CAT_ANTIGO` (nome e preço de R$ 40) só para ler venda antiga: `catName`, `priceOf` e `itemV` seguem respondendo, então recibo, Lista de vendas, CSV, Painel e Estatísticas não mudam para o histórico. Migração `catMigraFundo()` na abertura, no `simFresh` e no ouvinte `storage` (pode rodar sempre): só nas vendas em aberto (nem paga nem cancelada) tira o item `fundo` do carrinho e o `bg`. O preço editado (`SIM.prices.fundo`) fica, para a venda muito antiga sem total.
 3. **Venda manual.** Sai o bloco "Fundo de IA", o `fila-bg`, o `s.bg` e a linha "Fundo: X". Com `montEntregaDigital()` e montagens da sessão (`lojaAI`), elas aparecem na mesma grade das fotos, com o selo, marcadas por `fila-ai` em `s.aiSel`. `n` = fotos + montagens em todo lugar (impressas, `nFotos`, texto). Nota para o vendedor quando a escolha passa do que o carrinho cobre (a Venda manual continua com o carrinho montado à mão, como já era para foto normal). Com a montagem do servidor desligada a Venda manual não tem montagem.
 4. **Entrega.** A montagem segue o pacote: galeria sempre que o servidor entrega; impressa se houver vaga de impressão. Sai o "+1 impressão" e a ida para a frente da fila. Com a montagem do servidor desligada, o aviso do Posto (`pendMontAviso`) continua igual.
 5. **Selo e destaque** ("Edição Maracanã", "Suas fotos especiais") continuam. Textos que falavam em compra à parte, R$ 40 ou "só na Venda manual" saem.
 6. **Números.** Mantém a contagem de montagens vendidas (montagens escolhidas em pedidos pagos, Checkout e balcão), sem receita própria. Linhas antigas do produto `fundo` continuam nos relatórios quando existirem.
-7. **Agente.** `mont_vender`, `_gal_montagens`, impressão e LGPD já trabalham pelo `aiSel`; confirmar por teste que a venda sem `fundo` no carrinho e a venda antiga com `fundo` dão o mesmo resultado. "Compradas" das Estatísticas passa a contar todos os canais.
+7. **Agente.** `mont_vender`, `_gal_montagens`, impressão e LGPD já trabalham pelo `aiSel`; confirmar por teste que a venda sem `fundo` no carrinho e a venda antiga com `fundo` dão o mesmo resultado. "Compradas" das Estatísticas (vistas × compradas) **segue só do Checkout**, porque as "vistas" só existem lá; o total de todos os canais é `fotos_ia_vendidas`. **Decisão a confirmar com o Eduardo.**
+
+## Revisão (12/11)
+
+- Agente fora na confirmação da Venda manual com montagem marcada: a venda não fecha, as marcas ficam e o caixa é avisado (`vmAiPresa`, `VM_AI_FORA`); a saída é tentar de novo ou "Vender sem as fotos Edição Maracanã" (`fila-ai-limpa`, por escolha do caixa, com registro no log).
+- Recibo de venda paga conta pelo que a venda gravou (`s.nGal`), não pelo estado do agente na hora.
+- Não entrou: montagens de outras levas da visita na Venda manual. A venda manual é de uma sessão e a galeria dela só tem essa sessão; o servidor (`_gal_montagens`) recusa montagem de base de outra leva, então ela seria vendida sem chegar à galeria. Precisa da venda manual por visita (galeria da venda com as levas) antes.
 
 ## Fora
 

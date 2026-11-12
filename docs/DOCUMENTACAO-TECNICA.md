@@ -1238,7 +1238,8 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 | `zona` | Pacote Zona Mista | R$ 110 | 3 | 0 |
 | `arq` | Pacote Arquibancada | R$ 70 | 1 | 1 |
 | `extra` | Foto adicional | R$ 35 | 1 | 1 |
-| `fundo`, `dig` | sem mudança | R$ 40, R$ 39 | | |
+| `dig` | sem mudança | R$ 39 | | |
+| `fundo` | **saiu do catálogo na v98 (12/11)**: a montagem de IA é uma foto do pacote. Fica só em `CAT_ANTIGO` (nome e R$ 40) para ler venda antiga | | | |
 
 - **Migração única.** Preços editados antes para `maracana`, `zona`, `arq` e `extra` são descartados uma vez, com registro no log. A versão fica em `localStorage['eterna.catalogo.v']` e em `SIM.catalogoV=2`, para um `SIM` antigo não repetir a migração.
 - **Fotos com fundo de IA contam dentro do pacote** no Checkout (decisão do Eduardo). Número de fotos = fotos do campo + fotos com fundo de IA. O carrinho não leva mais itens `fundo`. A compra continua registrando quais são de IA (`aiOf(card).bought`, `s.aiSel`). A receita de fundo só soma o que foi pago no balcão.
