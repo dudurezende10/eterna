@@ -27,7 +27,7 @@ try{
   ok(/Drone, Chute a Gol e Snap Pop/.test(cab)&&!/Ativa/.test(cab)&&/vendedor/.test(await A.textContent('#av-quem')),'título com os três serviços, sem ativações, e o vendedor no topo: '+cab);
   ok(await A.$('[data-act="av-guia"]')===null&&await A.$('[data-act="av-quando"]')===null,'sem guia e sem agendar voo');
   const ordem=await A.evaluate(()=>['av-prod','av-cliente','av-pag'].map(id=>document.getElementById(id).getBoundingClientRect().top));
-  ok(ordem.every((y,i)=>!i||y>ordem[i-1])&&await A.$('#av-cart')===null,'ordem: serviço, cliente, pagamento; venda vazia não aparece: '+J(ordem));
+  ok(ordem.every((y,i)=>!i||y>ordem[i-1])&&await A.$('#av-cart')===null,'ordem: serviço, cliente, pagamento; resumo vazio não aparece: '+J(ordem));
   ok(await A.$('.av-vit-rot')===null,'miniatura sem legenda');
   ok((await A.$$('select[data-act="av-pais"] option')).length>150&&(await A.$$('select[data-act="av-idioma"] option')).length===8,'país em lista com todos os países, idioma com os principais e Outro');
   // vídeo de demonstração: 3 pessoas, copiado para o tablet e tocado de lá
@@ -40,11 +40,18 @@ try{
   ok(await A.$('#av-demo video')===null&&/ainda não está no tablet/.test(await A.textContent('#av-demo')),'vídeo que não existe: aviso, sem ficar carregando');
   await A.click('[data-act="av-demo-fechar"]');await A.click('[data-act="av-pessoas"][data-v="1"]');
   await A.evaluate(()=>{ETERNA.state.agent.on=false;});
-  // carrinho: Asteroid (Campo) com 4K e 2 vídeos + 3 Chutes
-  await A.click('[data-act="av-add"][data-id="asteroid"]');await A.waitForTimeout(80);
-  const ordem2=await A.evaluate(()=>['av-prod','av-cart','av-cliente'].map(id=>document.getElementById(id).getBoundingClientRect().top));
-  ok(ordem2.every((y,i)=>!i||y>ordem2[i-1]),'venda aparece entre o serviço e o cliente: '+J(ordem2));
-  await A.click('[data-act="av-mais"][data-i="0"][data-k="qtd"]');await A.check('[data-act="av-k4"][data-i="0"]');await A.waitForTimeout(80);
+  // carrinho: tudo escolhido no card (4K, pessoas) e a linha só de leitura, com lixeira. Asteroid (Campo) 4K duas vezes + 3 Chutes
+  await A.check('[data-act="av-k4"][data-id="asteroid"]');await A.waitForTimeout(80);
+  ok(/R\$\s?250/.test(await A.textContent('[data-av-card="asteroid"] .av-preco')),'preço do card já com 4K: '+await A.textContent('[data-av-card="asteroid"] .av-preco'));
+  await A.click('[data-act="av-add"][data-id="asteroid"]');await A.click('[data-act="av-add"][data-id="asteroid"]');await A.waitForTimeout(80);
+  const ordem2=await A.evaluate(()=>['av-prod','av-cliente','av-pag','av-cart'].map(id=>document.getElementById(id).getBoundingClientRect().top));
+  ok(ordem2.every((y,i)=>!i||y>ordem2[i-1]),'resumo da venda logo antes de registrar: '+J(ordem2));
+  ok((await A.$$('[data-av-linha]')).length===1&&/2×/.test(await A.textContent('[data-av-linha="0"]'))&&/Drone · Campo · 1 pessoa · 4K/.test(await A.textContent('[data-av-linha="0"]')),'igual soma na mesma linha, descrita: '+await A.textContent('#av-cart'));
+  ok(await A.$('#av-cart select, #av-cart input, [data-act="av-mais"]')===null,'linha sem nada para mexer');
+  await A.click('[data-act="av-pessoas"][data-v="3"]');await A.click('[data-act="av-add"][data-id="boomerang"]');await A.waitForTimeout(80);
+  ok(/Boomerang/.test(await A.textContent('#av-cart'))&&/3 pessoas/.test(await A.textContent('[data-av-linha="1"]')),'Boomerang com 3 pessoas');
+  await A.click('[data-act="av-tirar"][data-i="1"]');await A.click('[data-act="av-pessoas"][data-v="1"]');await A.waitForTimeout(80);
+  ok(!/Boomerang/.test(await A.textContent('#av-cart')),'lixeira tira a linha');
   ok(/R\$\s?500/.test(await A.textContent('#av-total')),'Asteroid ×2 com 4K = 500: '+await A.textContent('#av-total'));
   await A.click('[data-act="av-cat"][data-c="chute"]');await A.click('[data-act="av-add"][data-id="c3"]');await A.waitForTimeout(80);
   ok(J(await A.$$eval('[data-act="av-sub"]',x=>x.map(b=>b.textContent)))===J(['3 Chutes','5 Chutes','Produtos']),'Chute a Gol em abas: 3 Chutes, 5 Chutes, Produtos');
@@ -53,10 +60,12 @@ try{
   await A.click('[data-act="av-sub"][data-v="c3"]');
   ok(/R\$\s?610/.test(await A.textContent('#av-total')),'total pelo catálogo, 500 + 110: '+await A.textContent('#av-total'));
   ok(await A.$('#av-cart input[type="number"]')===null,'preço fixo: o vendedor não digita valor');
+  ok(/— · —/.test(await A.textContent('#av-cart')),'resumo sem cliente ainda: '+await A.textContent('#av-cart'));
   // sem pagamento não registra
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
   ok(/forma de pagamento/.test(await A.textContent('#av-erro')),'pede pagamento');
-  await A.click('[data-act="av-pag"][data-p="PIX"]');await A.selectOption('[data-act="av-pais"]','Chile');await A.selectOption('[data-act="av-idioma"]','Espanhol');
+  await A.click('[data-act="av-pag"][data-p="PIX"]');await A.selectOption('[data-act="av-pais"]','Chile');await A.selectOption('[data-act="av-idioma"]','Espanhol');await A.waitForTimeout(80);
+  ok(/Chile · Espanhol/.test(await A.textContent('#av-cart'))&&/PIX/.test(await A.textContent('#av-cart')),'resumo com cliente e pagamento: '+await A.textContent('#av-cart'));
   // SEM REDE: registra no tablet
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(600);
   let s=await A.evaluate(async()=>({ls:ETERNA.asLer(),cart:ETERNA.state.av.cart.length}));
@@ -82,7 +91,7 @@ try{
   s=await A.evaluate(()=>ETERNA.asLer());
   ok(recebidas.size===2&&s.every(x=>x.est==='enviada'),'rede voltou: enviadas, servidor recebeu 2: '+recebidas.size+' '+J(s.map(x=>x.est)));
   await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(100);
-  ok(/Tudo enviado/.test(await A.textContent('#main'))&&/Enviada ao servidor/.test(await A.textContent('#av-minhas')),'tela mostra tudo enviado');
+  ok(!/Tudo enviado|Aguardando envio|Sem conexão/.test(await A.textContent('#main .head'))&&/Enviada ao servidor/.test(await A.textContent('#av-minhas')),'tela mostra tudo enviado');
   ok((await A.$$('[data-act="av-cancelar"]')).length===2,'admin vê Cancelar');
   await A.evaluate(()=>{const u=ETERNA.state.user;u.perms={...u.perms,ativvenda:{c:true,r:true,u:false,d:false},financeiro:{c:false,r:false,u:false,d:false}};});await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(100);
   ok((await A.$$('[data-act="av-cancelar"]')).length===0,'vendedor sem a permissão não vê Cancelar');

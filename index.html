@@ -1306,7 +1306,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.18.2 · 12/11 11:38"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.18.3 · 12/11 11:48"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -4974,7 +4974,7 @@ const AV_PAISES_TOPO=['BR','AR','CL','UY','PY','CO','PE','BO','MX','US','GB','PT
 const AV_PAISES='AD AE AF AG AI AL AM AO AR AT AU AW AZ BA BB BD BE BF BG BH BI BJ BM BN BO BR BS BT BW BY BZ CA CD CF CG CH CI CL CM CN CO CR CU CV CW CY CZ DE DJ DK DM DO DZ EC EE EG ER ES ET FI FJ FM FR GA GB GD GE GH GM GN GQ GR GT GW GY HK HN HR HT HU ID IE IL IN IQ IR IS IT JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MG MH MK ML MM MN MO MR MT MU MV MW MX MY MZ NA NE NG NI NL NO NP NR NZ OM PA PE PG PH PK PL PR PS PT PW PY QA RO RS RU RW SA SB SC SD SE SG SI SK SL SM SN SO SR SS ST SV SY SZ TD TG TH TJ TL TM TN TO TR TT TV TW TZ UA UG US UY UZ VA VC VE VN VU WS XK YE ZA ZM ZW'.split(' ');
 const AV_IDIOMAS=[['pt'],['es'],['en'],['fr'],['de'],['it']]; // sem bandeira: idioma não é país (inglês, espanhol e francês valem em vários)
 const AV_LOCAL_ARQ={'Campo':'campo','Arquibancada':'arquibancada','Banco de Suplentes':'banco'};
-state.av={aba:'nova',cat:'drone',pessoas:1,cart:[],pag:null,cortMot:'',cortNota:'',pais:'',idioma:'',err:null,dup:null,saida:[],srv:{},enviando:false,semRede:false,cancel:null,ultimo:null,demo:null,local:{},sub:{}};
+state.av={aba:'nova',cat:'drone',pessoas:1,cart:[],pag:null,cortMot:'',cortNota:'',pais:'',idioma:'',err:null,dup:null,saida:[],srv:{},enviando:false,semRede:false,cancel:null,ultimo:null,demo:null,local:{},k4:{},chuva:{},sub:{}};
 const avBandeira=c=>String.fromCodePoint(...[...c].map(x=>0x1F1E6+x.charCodeAt(0)-65));
 const avNomePais=(c,loc)=>{try{return new Intl.DisplayNames([loc||localeTela()],{type:'region'}).of(c);}catch(e){return c;}};
 const avNomeIdioma=(c,loc)=>{try{const n=new Intl.DisplayNames([loc||localeTela()],{type:'language'}).of(c);return n.charAt(0).toUpperCase()+n.slice(1);}catch(e){return c;}};
@@ -5037,7 +5037,12 @@ async function avThumbsPreenche(){if(avThumbRodando)return;avThumbRodando=true;
     const u=await avDemoThumb(nome);if(u){document.querySelectorAll('img[data-av-thumb="'+CSS.escape(nome)+'"]').forEach(i=>{i.src=u;i.hidden=false;});}else avThumbFalhou.add(nome);}}
   finally{avThumbRodando=false;}}
 // ---- carrinho ----
-function avLinhaNova(p){const A=state.av;return {pid:p.id,cat:p.cat,op:A.local[p.id]||(p.opcoes[0]||{}).nome||'',qtd:1,pessoas:p.pede==='pessoas'?A.pessoas:1,k4:false,chuva:false};}
+function avLinhaNova(p){const A=state.av;return {pid:p.id,cat:p.cat,op:A.local[p.id]||(p.opcoes[0]||{}).nome||'',qtd:1,pessoas:p.pede!=='nada'?A.pessoas:1,k4:!!(p.k4&&A.k4[p.id]),chuva:!!(p.cat==='drone'&&p.chuva&&A.chuva[p.id])};}
+// o que foi vendido, em palavras, para o vendedor conferir antes de registrar (serviço, local, pessoas, 4K, chuva)
+// país e idioma guardados em português; no resumo, no idioma da tela
+function avClienteTxt(){const A=state.av;const c=AV_PAISES.find(x=>avNomePais(x,'pt-BR')===A.pais);const l=AV_IDIOMAS.find(([x])=>avNomeIdioma(x,'pt-BR')===A.idioma);
+  return (A.pais?(c?avNomePais(c,localeTela()):A.pais):'—')+' · '+(A.idioma==='Outro'?TE('av_outro'):A.idioma?(l?avNomeIdioma(l[0]):A.idioma):'—');}
+function avDescr(l){const p=avProd(l);if(!p)return '';return [atCatNome(p.cat),(p.opcoes||[]).length>1?l.op:'',p.pede==='pessoas'?TE('av_n_pessoas',l.pessoas):p.pede==='participantes'?TE('av_n_part',l.pessoas):'',l.k4?'4K':'',l.chuva?TE('av_chuva'):''].filter(Boolean).join(' · ');}
 const avProd=l=>state.ativ.produtos[l.pid]||ATIV_PADRAO.find(p=>p.id===l.pid);
 const avSug=l=>{const p=avProd(l);return p?(ativPreco(p,{op:l.op,qtd:l.qtd,pessoas:l.pessoas,k4:l.k4,chuva:l.chuva})||0):0;};
 const avCob=l=>state.av.pag==='Cortesia'?0:avSug(l); // preço fixo (Ronaldo, 12/11): vale o do catálogo; só o admin muda, em Preços e Checkout
@@ -5063,13 +5068,12 @@ async function avRegistrar(forca){const A=state.av;A.err=null;
 function avSituacao(x){const s=state.av.srv[x.v.id];if(s&&s.situacao==='cancelada')return ['cancelada',TE('av_s_cancelada')];
   return x.est==='enviada'?['enviada',TE('av_s_enviada')]:x.est==='recusada'?['recusada',TE('av_s_recusada')]:['pendente',TE('av_s_pendente')];}
 const avPagNome=p=>({PIX:'PIX',Dinheiro:TE('av_p_dinheiro'),'Débito':TE('av_p_debito'),'Crédito':TE('av_p_credito'),Cortesia:TE('av_p_cortesia')})[p]||p;
-function avPasso(i,k,v,rot){return `<div><span class="eyebrow">${esc(rot)}</span><div class="row" style="gap:4px;align-items:center"><button class="btn ghost" style="min-width:44px;min-height:44px" data-act="av-menos" data-i="${i}" data-k="${k}" aria-label="${esc(TE('av_menos'))}">−</button><b style="min-width:28px;text-align:center" data-av-n="${k}">${v}</b><button class="btn ghost" style="min-width:44px;min-height:44px" data-act="av-mais" data-i="${i}" data-k="${k}" aria-label="${esc(TE('av_mais'))}">+</button></div></div>`;}
 function avOpcoesPais(sel){const loc=localeTela();const op=c=>{const n=avNomePais(c,'pt-BR');return `<option value="${esc(n)}" ${sel===n?'selected':''}>${avBandeira(c)} ${esc(avNomePais(c,loc))}</option>`;};
   const resto=AV_PAISES.filter(c=>!AV_PAISES_TOPO.includes(c)).map(c=>[c,avNomePais(c,loc)]).sort((a,b)=>a[1].localeCompare(b[1],loc));
   return `<option value="">${esc(TE('av_pais_ph'))}</option><optgroup label="${esc(TE('av_principais'))}">${AV_PAISES_TOPO.map(op).join('')}</optgroup><optgroup label="${esc(TE('av_todos_paises'))}">${resto.map(([c])=>op(c)).join('')}</optgroup>`;}
 function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chute','snap'];if(!cats.includes(A.cat))A.cat='drone';
   const pend=A.saida.filter(x=>x.est==='pendente').length,rec=A.saida.filter(x=>x.est==='recusada').length;
-  const status=rec?`<span class="pill bad" role="status">${TE('av_st_recusadas',rec)}</span>`:pend?`<span class="pill warn" role="status">${A.semRede?TE('av_st_sem_rede',pend):TE('av_st_pendentes',pend)}</span>`:`<span class="pill good" role="status">${TE('av_st_ok')}</span>`;
+  const status=rec?`<span class="pill bad" role="status">${TE('av_st_recusadas',rec)}</span>`:pend?`<span class="pill warn" role="status">${A.semRede?TE('av_st_sem_rede',pend):TE('av_st_pendentes',pend)}</span>`:'';
   const topo=`<div class="head"><div><h1>${esc(viewLabel('ativ-venda'))}</h1></div><div style="text-align:right"><div id="av-quem"><b>${esc(u.name||u.email||'')}</b> <span class="note">· ${TE('av_vendedor')}</span></div><div style="margin-top:4px">${status}</div></div></div>
   <div class="chips" role="tablist" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"><button class="chip" style="min-height:44px" role="tab" data-act="av-aba" data-v="nova" aria-selected="${A.aba==='nova'}" aria-pressed="${A.aba==='nova'}">${TE('av_nova')}</button><button class="chip" style="min-height:44px" role="tab" data-act="av-aba" data-v="minhas" aria-selected="${A.aba==='minhas'}" aria-pressed="${A.aba==='minhas'}">${TE('av_minhas')}</button></div>
   ${rec||pend?`<div class="panel" id="av-saida"><div class="note">${rec?TE('av_recusadas_txt'):A.semRede?TE('av_sem_rede_txt'):TE('av_pendentes_txt')}</div><div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost" data-act="av-enviar">${TE('av_enviar_agora')}</button><button class="btn ghost" data-act="av-exportar">${TE('av_exportar')}</button></div></div>`:''}`;
@@ -5079,31 +5083,30 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const cats=['drone','chu
   if(grupos.length>1){const g=grupos.find(x=>x.k===A.sub[A.cat])||grupos[0];A.sub[A.cat]=g.k;prods=g.prods;
     subTabs=`<div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(${grupos.length},1fr);gap:8px;margin-top:14px">${grupos.map(x=>`<button class="chip" style="min-height:44px" role="tab" data-act="av-sub" data-v="${esc(x.k)}" aria-selected="${x.k===g.k}" aria-pressed="${x.k===g.k}">${esc(x.rot)}</button>`).join('')}</div>`;}
   const cob=A.cart.reduce((s,l)=>s+avCob(l),0);
-  const card=p=>{const ops=p.opcoes||[];const op=A.local[p.id]||(ops[0]||{}).nome||'';const preco=ativPreco(p,{op,pessoas:A.pessoas})||0;const temVideo=p.cat==='drone';
+  const card=p=>{const ops=p.opcoes||[];const op=A.local[p.id]||(ops[0]||{}).nome||'';const preco=ativPreco(p,{op,pessoas:A.pessoas,k4:!!(p.k4&&A.k4[p.id]),chuva:!!(p.cat==='drone'&&p.chuva&&A.chuva[p.id])})||0;const temVideo=p.cat==='drone';
     return `<div class="panel" style="margin:0;display:flex;flex-direction:column;gap:8px" data-av-card="${esc(p.id)}">
       ${temVideo?avVitrine(p,op):''}
       <b class="av-nome">${esc(p.nome)}</b>${ops.length>1?`<label><span class="eyebrow">${esc(atOpNome(p))}</span><select style="width:100%" data-act="av-local" data-id="${esc(p.id)}">${ops.map(o=>`<option ${o.nome===op?'selected':''}>${esc(o.nome)}</option>`).join('')}</select></label>`:''}
+      ${p.k4?`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" style="width:22px;height:22px" data-act="av-k4" data-id="${esc(p.id)}" ${A.k4[p.id]?'checked':''}> 4K (+${fmtR(p.k4)})</label>`:''}
+      ${p.cat==='drone'&&p.chuva?`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" style="width:22px;height:22px" data-act="av-chuva" data-id="${esc(p.id)}" ${A.chuva[p.id]?'checked':''}> ${TE('av_chuva')}</label>`:''}
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:auto"><b class="av-preco">${fmtR(preco)}</b><button class="btn primary" style="min-height:44px" data-act="av-add" data-id="${esc(p.id)}">${TE('av_adicionar')}</button></div></div>`;};
-  const linha=(l,i)=>{const p=avProd(l);if(!p)return '';const ops=p.opcoes||[];
-    return `<div class="panel" style="margin:0 0 8px" data-av-linha="${i}"><div class="row" style="justify-content:space-between;align-items:center"><div><b>${esc(p.nome)}</b><div class="note">${esc(atCatNome(p.cat))}</div></div><button class="btn ghost" data-act="av-tirar" data-i="${i}" aria-label="${esc(TE('av_tirar',p.nome))}">✕</button></div>
-      <div class="row" style="flex-wrap:wrap;gap:10px;align-items:end;margin-top:8px">
-      ${ops.length>1?`<label><span class="eyebrow">${esc(atOpNome(p))}</span><select data-act="av-op" data-i="${i}">${ops.map(o=>`<option ${o.nome===l.op?'selected':''}>${esc(o.nome)}</option>`).join('')}</select></label>`:''}
-      ${avPasso(i,'qtd',l.qtd,p.cat==='snap'?TE('av_videos_ia'):p.cat==='drone'?TE('at_videos'):TE('av_qtd'))}
-      ${p.pede!=='nada'?avPasso(i,'pessoas',l.pessoas,p.pede==='participantes'?TE('at_p_participantes'):TE('at_p_pessoas')):''}
-      ${p.k4?`<label class="row" style="gap:6px;align-items:center;min-height:44px"><input type="checkbox" data-act="av-k4" data-i="${i}" ${l.k4?'checked':''}> 4K (+${fmtR(p.k4)})</label>`:''}
-      ${p.cat==='drone'&&p.chuva?`<label class="row" style="gap:6px;align-items:center;min-height:44px"><input type="checkbox" data-act="av-chuva" data-i="${i}" ${l.chuva?'checked':''}> ${TE('av_chuva')}</label>`:''}
-      </div><div class="row" style="justify-content:flex-end;margin-top:8px"><b data-av-preco="${i}">${fmtR(avCob(l))}</b></div></div>`;};
+  const LIXO='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
+  const linha=(l,i)=>{const p=avProd(l);if(!p)return '';
+    return `<div class="row" style="gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)" data-av-linha="${i}"><b style="min-width:34px;font-size:1.1rem">${l.qtd}×</b><div style="flex:1;min-width:0"><b>${esc(p.nome)}</b><div class="note">${esc(avDescr(l))}</div></div>
+      <b data-av-preco="${i}" style="white-space:nowrap">${fmtR(avCob(l))}</b><button class="btn ghost" style="min-width:48px;min-height:48px" data-act="av-tirar" data-i="${i}" aria-label="${esc(TE('av_tirar',p.nome))}">${LIXO}</button></div>`;};
   return topo+`
   <div class="panel" id="av-prod"><h2>${TE('av_passo_servico')}</h2><div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${cats.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="av-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}</span></button>`).join('')}</div>
-    ${A.cat==='drone'?`<div style="margin-top:14px"><span class="eyebrow">${TE('av_pessoas_demo')}</span><div class="chips" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:4px">${[1,2,3,4,5].map(n=>`<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${n}" aria-pressed="${A.pessoas===n}">${n}</button>`).join('')}</div></div>`:''}
+    ${prods.some(p=>p.pede!=='nada')?`<div style="margin-top:14px"><span class="eyebrow">${A.cat==='chute'?TE('at_p_participantes'):TE('av_pessoas_demo')}</span><div class="chips" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:4px">${Array.from({length:AV_MAX_PESSOAS},(_,k)=>k+1).map(n=>`<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${n}" aria-pressed="${A.pessoas===n}">${n}</button>`).join('')}</div></div>`:''}
     ${subTabs}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px">${prods.length?prods.map(card).join(''):`<div class="note">${TE('av_sem_produto')}</div>`}</div></div>
-  ${A.cart.length?`<div class="panel" id="av-cart"><h2>${TE('av_carrinho')}</h2>${A.cart.map(linha).join('')}
-    <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px"><span class="note">${TE('av_total')}</span><b style="font-size:1.4rem" id="av-total">${fmtR(cob)}</b></div></div>`:''}
   <div class="panel" id="av-cliente"><h2>${TE('av_passo_cliente')}</h2><div class="row" style="gap:12px;flex-wrap:wrap">
     <label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_pais')}</span><select class="av-pais" data-act="av-pais" style="width:100%;min-height:48px">${avOpcoesPais(A.pais)}</select></label>
     <label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_idioma')}</span><select data-act="av-idioma" style="width:100%;min-height:48px"><option value="">${esc(TE('av_idioma_ph'))}</option>${AV_IDIOMAS.map(([l,c])=>{const n=avNomeIdioma(l,'pt-BR');return `<option value="${esc(n)}" ${A.idioma===n?'selected':''}>${esc(avNomeIdioma(l))}</option>`;}).join('')}<option value="Outro" ${A.idioma==='Outro'?'selected':''}>${TE('av_outro')}</option></select></label></div></div>
   <div class="panel" id="av-pag"><h2>${TE('av_pagamento')}</h2><div class="chips" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px">${AV_PAGS.map(p=>`<button class="chip" style="min-height:48px" data-act="av-pag" data-p="${p}" aria-pressed="${A.pag===p}">${esc(avPagNome(p))}</button>`).join('')}</div>
     ${A.pag==='Cortesia'?`<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:10px;align-items:end"><label><span class="eyebrow">${TE('av_cort_motivo')}</span><select data-act="av-cmot"><option value="">—</option>${CORT_MOTIVOS.map(([k,l])=>`<option value="${esc(l)}" ${A.cortMot===l?'selected':''}>${TEk('cort_'+k,l)}</option>`).join('')}</select></label><label style="flex:1;min-width:200px"><span class="eyebrow">${TE('av_cort_nota')}</span><input data-act="av-cnota" maxlength="300" value="${esc(A.cortNota)}"></label></div>`:''}</div>
+  ${A.cart.length?`<div class="panel" id="av-cart" style="border:2px solid var(--accent,#134078)"><h2>${TE('av_carrinho')}</h2>${A.cart.map(linha).join('')}
+    <div class="row" style="justify-content:space-between;gap:12px;margin-top:10px;flex-wrap:wrap"><span class="note">${TE('av_passo_cliente')}</span><b>${esc(avClienteTxt())}</b></div>
+    <div class="row" style="justify-content:space-between;gap:12px;margin-top:6px"><span class="note">${TE('av_pagamento')}</span><b>${A.pag?esc(avPagNome(A.pag)):'—'}</b></div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><span>${TE('av_total')}</span><b style="font-size:1.6rem" id="av-total">${fmtR(cob)}</b></div></div>`:''}
   ${A.err?`<div class="panel" role="alert" id="av-erro" style="border-color:var(--bad)"><b>${TE(A.err)}</b></div>`:''}
   ${A.dup?`<div class="panel" role="alert" id="av-dup"><b>${TE('av_dup')}</b><div class="row" style="gap:8px;margin-top:8px"><button class="btn primary" data-act="av-dup-sim">${TE('av_dup_sim')}</button><button class="btn ghost" data-act="av-dup-nao">${TE('av_dup_nao')}</button></div></div>`:''}
   <div class="panel" style="position:sticky;bottom:0;z-index:2"><button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem" data-act="av-registrar" ${A.cart.length?'':'disabled'}>${TE('av_registrar',fmtR(cob))}</button></div>`+player;}
@@ -5127,12 +5130,12 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
   if(a==='av-cat')A.cat=el.dataset.c;
   else if(a==='av-sub')A.sub[A.cat]=el.dataset.v;
   else if(a==='av-aba'){A.aba=el.dataset.v==='minhas'?'minhas':'nova';if(A.aba==='minhas')avMinhasPull().then(()=>{if(state.view==='ativ-venda')render();});}
-  else if(a==='av-pessoas')A.pessoas=Math.max(1,Math.min(5,+el.dataset.v||1));
+  else if(a==='av-pessoas')A.pessoas=Math.max(1,Math.min(AV_MAX_PESSOAS,+el.dataset.v||1));
   else if(a==='av-demo'){const p=ativLista().find(x=>x.id===el.dataset.id);if(p)avDemoAbre(avDemoNome(p.id,A.local[p.id]||(p.opcoes[0]||{}).nome,A.pessoas));return;}
   else if(a==='av-demo-fechar')A.demo=null;
-  else if(a==='av-add'){const p=ativLista().find(x=>x.id===el.dataset.id);if(p)A.cart.push(avLinhaNova(p));A.err=null;}
+  else if(a==='av-add'){const p=ativLista().find(x=>x.id===el.dataset.id);if(!p)return;const n=avLinhaNova(p);const k=x=>[x.pid,x.op,x.pessoas,x.k4,x.chuva].join('|');
+    const ja=A.cart.find(x=>k(x)===k(n));if(ja)ja.qtd++;else A.cart.push(n);A.err=null;toast(TE('av_adicionado',p.nome+' · '+avDescr(n)));}
   else if(a==='av-tirar')A.cart.splice(i,1);
-  else if(a==='av-mais'||a==='av-menos'){const l=A.cart[i];if(!l)return;const k=el.dataset.k;l[k]=Math.max(1,Math.min(99,(l[k]||1)+(a==='av-mais'?1:-1)));}
   else if(a==='av-pag'){A.pag=el.dataset.p;A.err=null;}
   else if(a==='av-registrar'){avRegistrar(false);return;}
   else if(a==='av-dup-sim'){avRegistrar(true);return;}
@@ -5143,8 +5146,8 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
   else if(a==='av-cancel-nao')A.cancel=null;
   else if(a==='av-cancel-ok'){const m=(document.querySelector('[data-act="av-cmotivo"]')||{}).value||'';avCancelar(el.dataset.id,m.trim());return;}
   else return;render();});
-document.addEventListener('change',e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-venda'||!a||!a.startsWith('av-'))return;const A=state.av,l=A.cart[+t.dataset.i];
-  if(a==='av-op'&&l)l.op=t.value;else if(a==='av-k4'&&l)l.k4=t.checked;else if(a==='av-chuva'&&l)l.chuva=t.checked;
+document.addEventListener('change',e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-venda'||!a||!a.startsWith('av-'))return;const A=state.av;
+  if(a==='av-k4')A.k4[t.dataset.id]=t.checked;else if(a==='av-chuva')A.chuva[t.dataset.id]=t.checked;
   else if(a==='av-local')A.local[t.dataset.id]=t.value;else if(a==='av-pais')A.pais=t.value;else if(a==='av-idioma')A.idioma=t.value;
   else if(a==='av-cmot')A.cortMot=t.value;else return;render();});
 document.addEventListener('input',e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-venda')return;if(a==='av-cnota')state.av.cortNota=t.value;});
@@ -5676,6 +5679,7 @@ function catCartoes(){return `<div class="panel"><h2>${TE('cf_cartoes_h')}</h2><
 // Catálogo no servidor do ponto: coleção "ativ" do estado.db, um registro por produto (id) e um por produto fora do dia
 // ("hoje|<id>", volta sozinho no dia seguinte). Preço em reais, como o resto do catálogo. ATIV_PADRAO é só a carga inicial:
 // vai para o servidor uma vez (primeiro admin que abrir a aba) e daí em diante quem muda é o admin.
+const AV_MAX_PESSOAS=5; // pessoas no vídeo: o mesmo limite do seletor, da linha da venda e dos vídeos de demonstração
 const ATIV_CATS=['drone','chute','snap'],ATIV_ENTREGAS=['video','foto','fisico','experiencia'],ATIV_PEDE=['pessoas','participantes','nada'];
 const atOp=(nome,preco)=>({nome,preco});
 const ATIV_PADRAO=[
@@ -8749,10 +8753,11 @@ const EQ={
   vd_vendas:["vendas de cada vendedor","sales by seller","ventas de cada vendedor","ventes de chaque vendeur","Verkäufe je Verkäufer"],
   v_vendas_lista:["Lista de vendas","Sales list","Lista de ventas","Liste des ventes","Verkaufsliste"],
   v_ativ_venda:["Drone, Chute a Gol e Snap Pop","Drone, Shot on goal and Snap Pop","Dron, Tiro a puerta y Snap Pop","Drone, Tir au but et Snap Pop","Drohne, Torschuss und Snap Pop"],
-  av_qtd:["Quantidade","Quantity","Cantidad","Quantité","Menge"],
   av_chuva:["Com chuva","Rain","Con lluvia","Avec pluie","Bei Regen"],
   av_total:["Total","Total","Total","Total","Gesamt"],
-  av_carrinho:["Venda","Sale","Venta","Vente","Verkauf"],
+  av_carrinho:["Resumo da venda","Sale summary","Resumen de la venta","Récapitulatif de la vente","Verkaufsübersicht"],
+  av_adicionado:[n=>"Adicionado: "+n,n=>"Added: "+n,n=>"Añadido: "+n,n=>"Ajouté : "+n,n=>"Hinzugefügt: "+n],
+  av_n_part:[n=>n+(n>1?" participantes":" participante"),n=>n+(n>1?" participants":" participant"),n=>n+(n>1?" participantes":" participante"),n=>n+(n>1?" participants":" participant"),n=>n+" Teilnehmer"],
   av_pagamento:["Pagamento","Payment","Pago","Paiement","Zahlung"],
   av_p_dinheiro:["Dinheiro","Cash","Efectivo","Espèces","Bargeld"],
   av_p_debito:["Débito","Debit","Débito","Débit","Debitkarte"],
@@ -8857,7 +8862,6 @@ const EQ={
   av_passo_servico:["Serviço","Service","Servicio","Service","Leistung"],
   av_pessoas_demo:["Pessoas no vídeo","People in the video","Personas en el video","Personnes dans la vidéo","Personen im Video"],
   av_adicionar:["Adicionar","Add","Agregar","Ajouter","Hinzufügen"],
-  av_videos_ia:["Vídeos com IA","AI videos","Videos con IA","Vidéos avec IA","KI-Videos"],
   av_passo_cliente:["Cliente","Customer","Cliente","Client","Kunde"],
   av_pais_ph:["Escolha o país","Choose the country","Elige el país","Choisissez le pays","Land wählen"],
   av_principais:["Principais","Most common","Principales","Principaux","Häufigste"],
@@ -8883,7 +8887,6 @@ const EQ={
   av_s_pendente:["Aguardando envio","Waiting to send","Esperando envío","En attente d'envoi","Wartet auf Versand"],
   av_s_recusada:["Recusada pelo servidor","Refused by the server","Rechazada por el servidor","Refusée par le serveur","Vom Server abgelehnt"],
   av_s_cancelada:["Cancelada","Cancelled","Cancelada","Annulée","Storniert"],
-  av_st_ok:["Tudo enviado","Everything sent","Todo enviado","Tout est envoyé","Alles gesendet"],
   av_st_pendentes:[n=>"Aguardando envio: "+n,n=>"Waiting to send: "+n,n=>"Esperando envío: "+n,n=>"En attente d'envoi : "+n,n=>"Wartet auf Versand: "+n],
   av_st_sem_rede:[n=>"Sem conexão · no tablet: "+n,n=>"No connection · on the tablet: "+n,n=>"Sin conexión · en la tableta: "+n,n=>"Sans connexion · sur la tablette : "+n,n=>"Keine Verbindung · auf dem Tablet: "+n],
   av_st_recusadas:[n=>"Recusadas pelo servidor: "+n,n=>"Refused by the server: "+n,n=>"Rechazadas por el servidor: "+n,n=>"Refusées par le serveur : "+n,n=>"Vom Server abgelehnt: "+n],
