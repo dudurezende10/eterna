@@ -1,6 +1,6 @@
 # Venda pela API da Imply: Drone, Chute a Gol, Snap Pop e fotos (12/11/2026)
 
-**Situação:** credencial recebida em 12/11. Leitura testada. Venda ainda não construída.
+**Situação:** credencial recebida em 12/11. Em 12/11 à noite a Imply completou o cadastro e marcou a pessoa "Viva Maracanã" como **Corporativo**: a leitura passou a mostrar horários e produtos, com as ativações e as fotos. Venda ainda não construída.
 
 **Por quê:** hoje os tablets vendem as ativações sem falar com a Imply, e os horários (slots) de cada ativação não baixam. Com a API, cada venda do Eterna reserva e confirma a vaga na Imply, e o estoque do horário cai na hora. A mesma API serve depois para a venda online das fotos e das ativações (plano `2026-11-11-compra-online-pela-imply.md`).
 
@@ -43,6 +43,33 @@ Base: `<IMPLY_URL>/api/SuperIngressoV02/v01/`. Toda resposta vem com HTTP 200, `
 - `GetEventos` continua devolvendo **só o Tour Oficial Maracanã** para o usuário da API: as ativações ainda não aparecem para ele (a liberação pode ter sido feita para outro usuário ou só para o PDV).
 - `GetApresentacoes` continua com o erro **13089**: o cadastro da pessoa "Viva Maracanã" está sem o **bairro** (é o único campo do endereço que falta).
 
+## Teste depois do cadastro completo (12/11 à noite)
+
+Só leitura. Nenhuma reserva nem compra. A Imply completou o endereço (bairro) e marcou a pessoa "Viva Maracanã" como Corporativo.
+
+- O erro 13089 sumiu: `GetApresentacoes` devolve os horários do dia, e `GetProdutos` devolve 57 produtos por horário.
+- `GetEventos` continua com um evento só, o **Tour Oficial Maracanã**. **As ativações não são eventos próprios: são produtos dentro de cada horário do Tour**, separados pelo tipo de produto (`idtipoproduto`, `dsctipoproduto`).
+- Horário que já passou ou fechou para venda responde `GetProdutos` com o erro code 0, "Não disponível esse tipo de evento no momento no WS". Para o Eterna, isso quer dizer "horário fechado".
+- Campos de cada produto: `idproduto`, `idtipoproduto`, `dsctipoproduto`, `dscproduto`, `valor`, `taxa`, `preco_ctaxa`, `desconto`, `valor_sem_desconto`, `esgotado`, `mapa_modo_venda` e `mapa_modo_venda_detail`.
+
+Tipos de produto que interessam ao Eterna. Os valores são sem a taxa da Imply (10%), que vem em `taxa` e `preco_ctaxa`.
+
+| Tipo (`dsctipoproduto`) | `idtipoproduto` | Produtos (valor) |
+|---|---|---|
+| Drone | `2b84d57f11d1e713fc66eda8db0596374f0b9dd6` | Asteroid (180), Boomerang (Arquibancada) (120), Inside Out (Bench) (250), Inside Out (Campo) (220), Drone Grupos (15) |
+| Chute a Gol | `092b352b3bc0e4b4e6bc95c5171ee3a0f023584b` | 3 Chutes (110), 5 Chutes (140), 3 Chutes + 1 Medalha + 1 Vídeo (149), 5 Chutes + 1 Medalha + 1 Vídeo (169), 5 Chutes + 1 Mini bola + 1 Medalha + 1 Vídeo (229), 5 Chutes + 1 Bola Semi-Pro + 1 Medalha + 1 Vídeo (259), 5 Chutes + 1 Bola Pro + 1 Medalha + 1 Vídeo (279) |
+| Chute a Gol / Produto | `a7847f1623f14298428eec77a80e7554a5b20cc9` | 1 Medalha avulsa (60), 1 Mini bola (115), 1 Bola Semi-Pro (170), 1 Bola Pro (195) |
+| Snap Pop | `b34741dc22020df8cd751e9df801997ed0af9dff` | 1 pessoa (110), 2 pessoas (190), 3 pessoas (290) |
+| Foto | `8d1ddc94d7d7af3d69d24be08ca54ff501874923` | Todas as fotos digitais (250), 12 fotos (220), 9 fotos (190), 6 fotos (150), 3 fotos digitais (110), 1 foto digital + impressa (70), 1 foto adicional (35), Porta-retrato (75), Figurinha Copa (20) |
+
+Os outros tipos que vêm junto (ingressos do Tour, combos, cortesias, Museu do Flamengo, estacionamento) não são vendidos pelo Eterna.
+
+**O que muda na proposta abaixo:**
+- O **horário da ativação é o horário do Tour** (`idapresentacao`), e o estoque de cada ativação é o do produto naquele horário (`esgotado`). Não existe um slot próprio do Drone.
+- O catálogo do tablet passa a ser montado pelo `idtipoproduto`. O nome do produto na Imply (`dscproduto`) é o que liga cada item do Eterna ao `idproduto`. O `idproduto` muda de um horário para outro? Ainda não sabemos: no teste, o mesmo produto teve o mesmo id em 12/11. Conferir num segundo dia antes de guardar o id fixo.
+- Os preços batem com a tabela das ativações no Eterna. O agente vai conferir isso sozinho e avisar quando um preço mudar na Imply.
+- **Dúvida para a Imply:** as ativações e as fotos vêm com `mapa_modo_venda` 1, "Lugar marcado". Os ingressos do Tour vêm como "Quantidade sem lugar marcado". O `ReservarIngresso` da coleção não tem campo de lugar. Perguntar se a reserva desses produtos precisa de um lugar (e qual rota dá o mapa) ou se isso é só um ajuste do cadastro.
+
 ## Como fica no Eterna (proposta)
 
 ```mermaid
@@ -74,5 +101,7 @@ sequenceDiagram
 
 ## Pendências com a Imply
 
-1. Completar o cadastro da pessoa "Viva Maracanã" (endereço com bairro). Sem isso a API não mostra horários (erro 13089).
-2. Liberar as ativações (Drone, Chute a Gol, Snap Pop) e as fotos para esse usuário. Até 12/11 só o Tour aparece.
+1. ~~Completar o cadastro da pessoa "Viva Maracanã"~~: feito em 12/11, pessoa marcada como Corporativo.
+2. ~~Liberar as ativações e as fotos para esse usuário~~: feito. Elas vêm como produtos dentro dos horários do Tour.
+3. Responder se os produtos com "Lugar marcado" (ativações e fotos) precisam de lugar na reserva.
+4. Um ambiente ou modo de teste para reservar e confirmar sem gerar venda de verdade, ou a autorização para um teste com cancelamento logo em seguida (decisão do Ronaldo).
