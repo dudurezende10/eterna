@@ -280,6 +280,11 @@ Cada fase vira uma versão em `VERSOES.md` e tem teste em `testes/`.
 ## 8. Em aberto
 
 - **https no servidor do ponto (12/11):** o navegador só abre a câmera dentro da página (leitura do QR do cartão e foto do cliente com Tirar foto) em página segura. Caminho definitivo: um endereço próprio (por exemplo `ponto.eterna.photo`) apontando para o IP do servidor na rede do estádio, com certificado Let's Encrypt renovado sozinho por desafio de DNS. Precisa do acesso ao DNS do domínio. Enquanto isso, nos tablets de teste: no Chrome, `chrome://flags/#unsafely-treat-insecure-origin-as-secure` com o endereço do servidor.
+  - **Decisão da TI (12/11):** o servidor definitivo fica só por IP, sem nome de DNS. Então a página continua em http e a câmera dentro dela depende do navegador tratar o IP como seguro. Caminhos, do melhor para o pior:
+    1. **Política do Chrome pelo Intune** (tablets gerenciados): `OverrideSecurityRestrictionsOnInsecureOrigin` com `http://<IP do servidor>:8799`. Vale para todos os tablets de uma vez, sem mexer em cada um.
+    2. **Flag no Chrome de cada tablet**, a mesma acima. Feita uma vez por aparelho; fica salva.
+    3. **Sem nada:** a foto do cliente abre a câmera nativa do Android pelo botão (já funciona, v99.19.1). A leitura do QR na entrega roda no computador do campo: se ele for o próprio servidor (`127.0.0.1`) a câmera abre; senão, um leitor de QR USB (funciona como teclado) resolve.
+  - O IP definitivo do servidor vem com a máquina definitiva (Ronaldo, 13/11).
 
 1. **Cartão com QR (decidido 11/11):** cartão próprio do vídeo, ligado no campo na entrega; as fotos do Drone ficam com as outras fotos.
 2. **Fotos do Drone (decidido 11/11):** quadros tirados do próprio vídeo, no ângulo aberto que pega o campo. Entram na sessão de fotos do cliente, junto com as do tour. Falta definir como cada quadro chega à sessão certa: pela venda do Drone, pela hora do voo ou por reconhecimento facial.
