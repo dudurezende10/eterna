@@ -209,27 +209,31 @@ try{
     S.caixaDin=[r];ETERNA.saveSim();ETERNA.go('posto');const it=document.querySelector('[data-pend="L00-montsrv0a01"]');return {fn:ETERNA.pendMontAviso(r),item:!!it,aviso:it?it.querySelectorAll('.pend-mont').length:-1,selo:it?it.querySelectorAll('.pend-semmont').length:-1};},[CARD,BASES[1]]);
   ok(av.fn===''&&av.item&&av.aviso===0&&av.selo===0,'integração: com a montagem do servidor ligada, o pedido com pacote só digital não mostra o aviso nem o selo: '+J(av));
   await pa.evaluate(()=>{ETERNA.SIM.caixaDin=[];ETERNA.saveSim();});
-  // Venda manual com Fundo de IA: sem aviso; a venda leva o aiSel "<foto>|<fundo>", a montagem conta uma impressão e é a primeira
+  // v98 (Eduardo, 12/11): Venda manual sem Fundo de IA. As montagens da sessão aparecem na grade como fotos; a marcada vai na venda como
+  // aiSel "<foto>|<fundo>" e conta no pacote (sem impressão a mais, sem ir para a frente da fila, sem item no carrinho)
   ok(await espera(pa,c=>!!ETERNA.SIM.sessions[c],15000,CARD),'Venda manual: a leva do servidor chegou ao Posto');
   await pa.evaluate(([c,ids])=>{const S=ETERNA.SIM;S.invalid={};ids.forEach(id=>{ETERNA.UP['ag_'+id]={src:location.origin+'/thumb/'+id,name:id};});(S.sessions[c].photos||[]).forEach(p=>delete p.invalid);ETERNA.saveSim();ETERNA.montDeNovoMs(250);ETERNA.go('posto');},[CARD,[...BASES,...FOTOS]]);
   const nEv=EVENTOS.length;
   await pa.click('.posto-rodape [data-act="posto-manual"]');await pa.waitForTimeout(250);
   await pa.fill('#posto-manual #ck-code',CARD);await pa.waitForTimeout(300);
   await pa.click(`#posto-manual [data-act="checkout-pick"][data-card="${CARD}"]`);await pa.waitForTimeout(250);
-  await pa.waitForSelector('#posto-manual [data-act="fila-bg"]',{timeout:15000}).catch(()=>{});
-  if(await pa.$('#posto-manual [data-act="fila-bg"]')){
-    await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="fila-bg"]').click());await pa.waitForTimeout(250);
-    ok(!(await pa.$('#posto-manual .pend-mont')),'Venda manual com Fundo de IA e o servidor entregando: sem o aviso');
+  await pa.waitForSelector('#posto-manual [data-act="fila-ai"]',{timeout:15000}).catch(()=>{});
+  ok(await pa.evaluate(()=>!document.querySelector('#posto-manual [data-act="fila-bg"]')&&!/Fundo de IA/.test(document.querySelector('#posto-manual').textContent)),'Venda manual: sem o bloco Fundo de IA');
+  if(await pa.$('#posto-manual [data-act="fila-ai"]')){
+    const g=await pa.evaluate(()=>{const f=[...document.querySelectorAll('#posto-manual .photos > *')];return {ai:f.filter(x=>x.dataset.act==='fila-ai').length,ph:f.filter(x=>x.dataset.act==='fila-sel').length,selo:!!document.querySelector('#posto-manual [data-act="fila-ai"] .lj-ed')};});
+    ok(g.ai>=1&&g.ph>=1&&g.selo,'Venda manual: montagens e fotos na mesma grade, montagem com o selo: '+J(g));
+    await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="fila-ai"]').click());await pa.waitForTimeout(250);
+    ok(!(await pa.$('#posto-manual .pend-mont')),'Venda manual com montagem e o servidor entregando: sem o aviso');
     await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="fila-sel"]').click());await pa.waitForTimeout(150);
     await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="fila-add"][data-id="gramado"]').click());await pa.waitForTimeout(150);
     await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="checkout-step"][data-s="3"]').click());await pa.waitForTimeout(250);
     await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="caixa-pay"][data-m="Dinheiro"]').click());await pa.waitForTimeout(150);
     await pa.evaluate(()=>document.querySelector('#posto-manual [data-act="caixa-confirm"]').click());
     ok(await (async()=>{const t0=Date.now();while(Date.now()-t0<8000){if(EVENTOS.slice(nEv).some(e=>e.tipo==='criar'))return true;await pa.waitForTimeout(150);}return false;})(),'Venda manual: o evento criar chegou ao servidor');
-    const cm=EVENTOS.slice(nEv).find(e=>e.tipo==='criar');const sm=await pa.evaluate(c=>{const s=ETERNA.SIM.sessions[c];return {st:s.status,bg:s.bg,ai:s.aiSel||[],sel:s.selected||[],prints:s.prints,fav:s.fav||[],imp:s.impressao&&s.impressao.alvo};},CARD);
-    ok(cm&&(cm.dados.aiSel||[]).length===1&&new RegExp('^ag_[0-9a-z]{6,40}\\|'+sm.bg+'$').test(cm.dados.aiSel[0])&&cm.dados.canal==='balcao'&&cm.dados.nAI===1,'Venda manual: o evento criar leva o aiSel no formato <foto>|<fundo>: '+J(cm&&{ai:cm.dados.aiSel,canal:cm.dados.canal,nAI:cm.dados.nAI,bg:sm.bg}));
-    ok(sm.st==='paga'&&sm.ai.length===1&&sm.prints===sm.sel.length+1&&sm.imp===sm.sel.length+1&&sm.fav[0]==='ai:'+sm.ai[0],'Venda manual: a montagem conta uma impressão a mais e é a primeira da fila: '+J(sm));}
-  else ok(false,'Venda manual: o Fundo de IA não apareceu para o teste: '+J(await pa.evaluate(()=>(document.querySelector('#posto-manual')||{innerText:''}).innerText.slice(0,300))));
+    const cm=EVENTOS.slice(nEv).find(e=>e.tipo==='criar');const sm=await pa.evaluate(c=>{const s=ETERNA.SIM.sessions[c];return {st:s.status,bg:s.bg||null,ai:s.aiSel||[],sel:s.selected||[],prints:s.prints,fav:s.fav||[],imp:s.impressao&&s.impressao.alvo,cart:(s.cart||[]).map(x=>x.id),total:s.total,n:s.nFotos};},CARD);
+    ok(cm&&(cm.dados.aiSel||[]).length===1&&/^ag_[0-9a-z]{6,40}\|[a-z0-9]+$/.test(cm.dados.aiSel[0])&&cm.dados.canal==='balcao'&&cm.dados.nAI===1&&cm.dados.nPh===1&&!(cm.dados.cart||[]).some(x=>x.id==='fundo'),'Venda manual: o evento criar leva o aiSel no formato <foto>|<fundo>, sem item fundo: '+J(cm&&{ai:cm.dados.aiSel,canal:cm.dados.canal,nAI:cm.dados.nAI,nPh:cm.dados.nPh,cart:cm.dados.cart}));
+    ok(sm.st==='paga'&&sm.ai.length===1&&sm.sel.length===1&&sm.n===2&&sm.prints===2&&sm.imp===2&&!sm.fav.length&&sm.bg===null&&J(sm.cart)===J(['gramado'])&&sm.total===150,'Venda manual: a montagem conta como foto do pacote (2 fotos, 2 impressas, só o pacote no carrinho): '+J(sm));}
+  else ok(false,'Venda manual: as montagens não apareceram na grade para o teste: '+J(await pa.evaluate(()=>(document.querySelector('#posto-manual')||{innerText:''}).innerText.slice(0,300))));
   await pa.close();
   // ===== E4 (46): na galeria #g a montagem comprada tem o selo e o nome do fundo, nas 5 línguas =====
   const pgq=await ctx.newPage();pgq.on('pageerror',e=>errs.push('galeria: '+e.message));await pgq.goto(U+'#g/tokMontagemTeste000001');await pgq.waitForFunction(()=>window.ETERNA&&ETERNA.pub,null,{timeout:15000});await pgq.waitForTimeout(600);

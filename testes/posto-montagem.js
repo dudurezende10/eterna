@@ -42,18 +42,14 @@ try{const ctx=await b.newContext({viewport:{width:1366,height:900}});await ctx.r
   ok(await pg.evaluate(id=>{const b=document.querySelector(`[data-act="din-confirm"][data-id="${id}"]`);return !!b&&!b.disabled;},A),'A: o botão de confirmar continua ativo com o aviso');
   await pg.click(`[data-act="din-confirm"][data-id="${A}"]`);await pg.waitForTimeout(400);
   ok(await pg.evaluate(id=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));const r=S.caixaDin.find(x=>x.id===id);return r.estado==='confirmada'&&S.sessions[r.card].status==='paga'&&S.sessions[r.card].aiSel.length===1;},A),'A: a venda com o aviso é confirmada normalmente');
-  // Venda manual: com Fundo de IA escolhido, o aviso aparece; sem ele, não
+  // v98 (Eduardo, 12/11): a Venda manual não tem mais Fundo de IA; com a montagem do servidor desligada não há montagem nem aviso ali
   await pg.click('.posto-rodape [data-act="posto-manual"]');await pg.waitForTimeout(250);
-  const c=await pg.evaluate(()=>[...document.querySelectorAll('#posto-manual [data-act="checkout-pick"]')].map(x=>x.dataset.card).sort()[0]);await pg.click(`#posto-manual [data-act="checkout-pick"][data-card="${c}"]`);await pg.waitForTimeout(250);
-  ok(!await pg.$('#posto-manual .pend-mont'),'Venda manual sem Fundo de IA: sem aviso');
-  await pg.waitForSelector('#posto-manual [data-act="fila-bg"]',{timeout:8000}).catch(()=>{});
-  if(await pg.$('#posto-manual [data-act="fila-bg"]')){await pg.evaluate(()=>document.querySelector('#posto-manual [data-act="fila-bg"]').click());await pg.waitForTimeout(250);
-    const m=await pg.evaluate(()=>(document.querySelector('#posto-manual .pend-mont')||{}).textContent||'');ok(/Edição Maracanã/.test(m)&&/não é impressa e ainda não vai para a galeria/.test(m),'Venda manual com Fundo de IA: aviso: '+m);
-    ok(await pg.evaluate(()=>{const b=document.querySelector('#posto-manual [data-act="checkout-step"][data-s="3"]');return !!b;}),'Venda manual: o aviso não tira o botão do pagamento');}
-  else ok(false,'Venda manual: o Fundo de IA não apareceu para o teste');
+  const c=await pg.evaluate(()=>[...document.querySelectorAll('#posto-manual [data-act="checkout-pick"]')].map(x=>x.dataset.card).sort()[0]);await pg.click(`#posto-manual [data-act="checkout-pick"][data-card="${c}"]`);await pg.waitForTimeout(1200);
+  const vm=await pg.evaluate(()=>{const m=document.querySelector('#posto-manual');return {aviso:!!m.querySelector('.pend-mont'),bg:!!m.querySelector('[data-act="fila-bg"]'),ai:m.querySelectorAll('[data-act="fila-ai"]').length,txt:/Fundo de IA/.test(m.textContent),fotos:m.querySelectorAll('[data-act="fila-sel"]').length};});
+  ok(!vm.aviso&&!vm.bg&&!vm.ai&&!vm.txt&&vm.fotos>0,'Venda manual: sem Fundo de IA, sem montagem (servidor desligado) e sem aviso: '+J(vm));
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}
 if(fails.length){console.log('FALHA posto-montagem: '+fails.join(' || '));process.exit(1);}
-console.log('OK posto-montagem: aviso da Edição Maracanã no pedido do Checkout e na Venda manual (pacote só digital, impressões que não cabem, sem montagem)');process.exit(0);
+console.log('OK posto-montagem: aviso da Edição Maracanã no pedido do Checkout (pacote só digital, impressões que não cabem, sem montagem); Venda manual sem Fundo de IA');process.exit(0);
 })();
