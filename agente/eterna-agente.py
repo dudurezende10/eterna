@@ -7797,7 +7797,26 @@ def ativ_cadastros():
 
 
 def ativ_cadastro_set(body):
-    """POST /ativ/cadastros {tipo, nome, ativo}: inclui ou liga/desliga um piloto, drone ou bateria. Nunca apaga (o nome fica nas vendas)."""
+    """POST /ativ/cadastros {tipo, nome, ativo}: inclui ou liga/desliga um piloto, drone ou bateria. Nunca apaga (o nome fica nas vendas).
+    {carga: [{tipo, nome}, ...]}: carga inicial; inclui só o que falta e não mexe em quem já está (nem religa quem foi desligado)."""
+    if "carga" in body:
+        L = body.get("carga")
+        if not isinstance(L, list) or not 0 < len(L) <= 200:
+            return "dados"
+        itens = []
+        for x in L:
+            t, n = (x or {}).get("tipo") if isinstance(x, dict) else None, str((x or {}).get("nome") or "").strip() if isinstance(x, dict) else ""
+            if t not in ATIV_CAD_TIPOS or not n or not _ativ_txt(n, 40):
+                return "dados"
+            itens.append((t, n))
+        with ev_lock:
+            c = vendas_db()
+            try:
+                c.executemany("insert or ignore into ativ_cadastro (tipo, nome, ativo) values (?, ?, 1)", itens)
+                c.commit()
+            finally:
+                c.close()
+        return None
     tipo, nome = body.get("tipo"), str(body.get("nome") or "").strip()
     if tipo not in ATIV_CAD_TIPOS or not nome or not _ativ_txt(nome, 40):
         return "dados"
@@ -8220,7 +8239,8 @@ def _ativ_txt(v, mx):
 
 def ativ_valido(id_doc, v):
     if id_doc.startswith("hoje|"):
-        return re.fullmatch(r"[a-z0-9_]{1,32}", id_doc[5:]) is not None and isinstance(v, dict) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v.get("dia") or "")) is not None
+        # hoje|<produto> ou hoje|<produto>.<local> (um local fora de venda no dia)
+        return re.fullmatch(r"[a-z0-9_]{1,32}(\.[a-z0-9_]{1,28})?", id_doc[5:]) is not None and isinstance(v, dict) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v.get("dia") or "")) is not None
     if not isinstance(v, dict) or re.fullmatch(r"[a-z0-9_]{1,32}", id_doc) is None or v.get("id") != id_doc:
         return False
     if v.get("cat") not in ATIV_CATS or v.get("entrega") not in ATIV_ENTREGAS or v.get("pede") not in ATIV_PEDE:

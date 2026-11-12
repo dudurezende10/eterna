@@ -213,6 +213,10 @@ Igual à Fila de fotos: em cada serviço (Drone, Chute a Gol, Snap Pop) quatro c
 - O cadastro de pilotos, drones e baterias só aparece no Drone e diz para que serve.
 - O aviso de erro da fila separa "sem permissão", "erro do servidor" e "sem conexão".
 
+**Cadastro de pilotos, drones e baterias (v99.21.1):** botão **Carga inicial** com a frota do sistema antigo: drones 006, 007, 141, 228, 999, LARANJA e ROSA e baterias 1 a 20 (`POST /ativ/cadastros {carga: [...]}` inclui só o que falta e não religa quem foi desligado). Pilotos são pessoas: entram pelo cadastro na tela (ou direto no banco do servidor do ponto), nunca pelo código.
+
+**Fora de venda no dia (v99.21.1, como "Configuração de experiências" do sistema antigo):** em Catálogo › Ativações, além do "Hoje não vendo" do produto, cada local (ou tema) de um produto com mais de um tem o seu: por exemplo, o Banco de Suplentes sai e Campo e Arquibancada seguem. Produto sem nenhum local à venda sai; serviço sem nenhum produto à venda some da tela de venda. Tudo volta sozinho no dia seguinte. Gravado em `ativ/hoje|<produto>.<local>`.
+
 ### 4b. Feito na v99.20.0: o vídeo na galeria da nuvem
 
 Decidido em 12/11: o QR abre o vídeo direto, com o aceite de uso de imagem e o e-mail, **sem selfie** (o reconhecimento de rosto não compara com vídeo, e o cartão físico já prova a compra). Fica registrado, com data e hora, quando o cliente abriu o QR, aceitou, deu play e baixou.

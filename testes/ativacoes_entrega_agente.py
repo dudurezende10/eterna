@@ -186,6 +186,14 @@ try:
     ok(m.ativ_clientes_limpa(time.time() + 1.5 * 86400) >= 1 and not os.path.exists(m.ativ_cliente_foto("TDRONE001D")), "foto sai um dia depois da entrega")
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
     ok({v["id"]: v for v in j.get("vendas", [])}.get("TDRONE001D", {}).get("cliente") == "", "nome sai junto")
+    # carga inicial dos cadastros: inclui só o que falta e não religa quem foi desligado
+    st, j = req("POST", "/ativ/cadastros", eq, {"carga": [{"tipo": "drone", "nome": "ROSA"}, {"tipo": "bateria", "nome": "4"}, {"tipo": "bateria", "nome": "19"}]})
+    bat = {x["nome"]: x["ativo"] for x in (j.get("cadastros") or {}).get("bateria", [])}
+    ok(st == 200 and {"nome": "ROSA", "ativo": True} in j["cadastros"]["drone"] and bat.get("19") is True, "carga inicial inclui o que falta: %s" % j)
+    st, j0 = req("POST", "/ativ/cadastros", eq, {"tipo": "bateria", "nome": "19", "ativo": False})
+    st, j = req("POST", "/ativ/cadastros", eq, {"carga": [{"tipo": "bateria", "nome": "19"}]})
+    ok({x["nome"]: x["ativo"] for x in j["cadastros"]["bateria"]}.get("19") is False, "carga de novo não religa quem foi desligado")
+    ok(req("POST", "/ativ/cadastros", eq, {"carga": [{"tipo": "outro", "nome": "x"}]})[0] == 400, "carga com tipo errado recusada")
     # v99.20: o que o cliente fez com o vídeo vem da galeria da nuvem (abriu, aceitou, play, baixou) e aparece na fila
     cn = m.vendas_db(); cn.execute("update ativ_entrega set nuvem_em=? where qr=?", ("2026-11-12T10:00:00", QR1)); cn.commit(); cn.close()
     pedidos = []

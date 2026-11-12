@@ -36,6 +36,14 @@ try{
   ok(hj.fora&&!hj.vend&&/Fora hoje/.test(hj.txt)&&/Voltar a vender hoje/.test(hj.txt),'Hoje não vendo: '+J(hj));
   const amanha=await A.evaluate(()=>{const s=ETERNA.state;s.ativ.hoje.boomerang.dia='2000-01-01';return ETERNA.ativVendavel(s.ativ.produtos.boomerang);});
   ok(amanha,'no dia seguinte o produto volta sozinho');
+  // um local fora de venda no dia (o Banco de Suplentes oculto do sistema antigo); sem local nenhum, o produto sai
+  await A.click('[data-act="ativ-hoje"][data-id="inside_out.banco_de_suplentes"]');await A.waitForTimeout(150);
+  const lo=await A.evaluate(()=>{const p=ETERNA.ativLista('drone').find(x=>x.id==='inside_out');return {ops:ETERNA.ativOps(p).map(o=>o.nome),vend:ETERNA.ativVendavel(p),riscado:document.querySelectorAll('#ativ-drone tr[data-ativ="inside_out"] [data-op-fora]').length};});
+  ok(J(lo)===J({ops:['Campo','Arquibancada'],vend:true,riscado:1}),'Banco de Suplentes fora hoje, Campo e Arquibancada seguem: '+J(lo));
+  await A.click('[data-act="ativ-hoje"][data-id="inside_out.campo"]');await A.click('[data-act="ativ-hoje"][data-id="inside_out.arquibancada"]');await A.waitForTimeout(150);
+  ok(await A.evaluate(()=>!ETERNA.ativVendavel(ETERNA.ativLista('drone').find(x=>x.id==='inside_out'))),'sem local à venda, o produto sai');
+  for(const k of ['banco_de_suplentes','campo','arquibancada'])await A.click(`[data-act="ativ-hoje"][data-id="inside_out.${k}"]`);await A.waitForTimeout(150);
+  ok(await A.evaluate(()=>ETERNA.ativVendavel(ETERNA.ativLista('drone').find(x=>x.id==='inside_out'))&&ETERNA.ativOps(ETERNA.ativLista('drone').find(x=>x.id==='inside_out')).length===3),'locais voltam');
   // produto novo, com erro de nome antes
   await A.click('[data-act="ativ-novo"][data-c="chute"]');await A.waitForTimeout(150);
   await A.click('[data-act="ativ-salvar"]');await A.waitForTimeout(150);
