@@ -46,11 +46,16 @@ try{
     {id:'TPUL00000AD',tipo:'drone',criado:HOJE+'T09:00:00',cliente:'Cliente Dois',foto:false,itens:[{produto:'asteroid',op:'Campo',qtd:1,pessoas:1,videos:1}],pagamento:'PIX',vendedor:'Vendedora Um',videos:1,entregas:[],fisicos:[],
      pulseiras:[{numero:'31',slot:1,conflito:true,voo_em:null,qr:null}],entregue_em:null},
     {id:'TPUL00000BD',tipo:'drone',criado:HOJE+'T09:30:00',cliente:'Cliente Três',foto:false,itens:[{produto:'asteroid',op:'Campo',qtd:1,pessoas:1,videos:1}],pagamento:'PIX',vendedor:'Vendedora Um',videos:1,entregas:[],fisicos:[],
-     pulseiras:[{numero:'31',slot:1,conflito:true,voo_em:null,qr:null}],entregue_em:null}]};
+     pulseiras:[{numero:'31',slot:1,conflito:true,voo_em:null,qr:null}],entregue_em:null},
+    {id:'TPUL00002C',tipo:'chute',criado:HOJE+'T10:10:00',cliente:'Cliente Chute',foto:false,itens:[{produto:'chute3v',op:'',qtd:1,videos:1}],pagamento:'PIX',vendedor:'Vendedora Um',videos:1,entregas:[],fisicos:[],
+     pulseiras:[{numero:'678',slot:1,conflito:false,voo_em:null,qr:null}],recebido_em:null,voo_em:null,entregue_em:null},
+    {id:'TPUL00003C',tipo:'chute',criado:HOJE+'T10:12:00',cliente:'Cliente Só Chute',foto:false,itens:[{produto:'chute3',op:'',qtd:1,videos:0}],pagamento:'PIX',vendedor:'Vendedora Um',videos:0,entregas:[],fisicos:[],
+     pulseiras:[{numero:'345',slot:1,conflito:false,voo_em:null,qr:null}],recebido_em:null,voo_em:null,entregue_em:null}]};
   const posts=[];
   await ctx.route(/\/ativ\/fila\?/,r=>r.fulfill({status:200,contentType:'application/json',body:J(D)}));
   await ctx.route(/\/ativ\/etapa$/,r=>{const c=JSON.parse(r.request().postData());posts.push(c);const v=D.vendas.find(x=>x.id===c.id);const p=v.pulseiras.find(x=>x.numero===c.pulseira);
-    if(c.etapa==='voo'&&p)Object.assign(p,{voo_em:HOJE+'T10:30:00',piloto:c.piloto,drone:c.drone,bateria:c.bateria});r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
+    if(c.etapa==='voo'&&p)Object.assign(p,{voo_em:HOJE+'T10:30:00',piloto:c.piloto,drone:c.drone,bateria:c.bateria});
+    if(c.etapa==='chutou'&&p){p.voo_em=HOJE+'T10:35:00';v.recebido_em=p.voo_em;}r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
   let segura=null;await ctx.route(/\/ativ\/video$/,async r=>{if(segura)await segura.p;r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rascunho:'0123456789abcdef',bytes:300000,duracao:30})});});
   await ctx.route(/\/ativ\/video\/liga$/,r=>{const c=JSON.parse(r.request().postData());posts.push(c);const v=D.vendas.find(x=>x.id===c.venda);
     v.entregas.push({qr:c.qr,codigo:'WXYZ-2345-6789',n:1,bytes:300000,duracao:30,nuvem:true,pagina:{ok:true},subindo:null,em:HOJE+'T10:41:00',pulseira:c.pulseira,cliente:{}});v.pulseiras.find(x=>x.numero===c.pulseira).qr=c.qr;
@@ -106,6 +111,14 @@ try{
   solta();segura=null;await P.waitForTimeout(800);
   ok(J(posts.slice(-1)[0])===J({rascunho:'0123456789abcdef',venda:'TPUL00001D',qr:'M'.repeat(21)+'3',pulseira:'777'}),'o vídeo chegou e foi entregue sozinho no cartão certo: '+J(posts.slice(-1)));}
   ok(!(await P.$('[data-act="ae-fila"]'))&&!(await P.$('.ae-board'))&&!(await P.$('#ae-drop'))&&await P.$('#ae-pul'),'v99.28: a venda só se abre pela pulseira (sem fila completa nem vídeo solto)');
+  // v99.30: Chute a Gol: Chutou é a entrega; com vídeo, o vídeo do chute é opcional e não fala em drone
+  for(const [n,id,video] of [['345','TPUL00003C',false],['678','TPUL00002C',true]]){
+    await P.fill('#ae-pul-txt',n);await P.press('#ae-pul-txt','Enter');await P.waitForTimeout(300);
+    ok(await P.$('#ae-at [data-act="ae-chutou"]')&&!(await P.$('#ae-drop'))&&!/drone/i.test(await txt('#ae-at')),'chute '+n+': só o Chutou antes do chute: '+await txt('#ae-at'));
+    await P.click('#ae-at [data-act="ae-chutou"]');await P.waitForTimeout(400);
+    ok(J(posts.slice(-1)[0])===J({id,etapa:'chutou',pulseira:n})&&/Atendimento concluído: chutou às 10:35/.test(await txt('#ae-at')),'chute '+n+': Chutou conclui: '+await txt('#ae-at'));
+    ok(video===!!(await P.$('#ae-drop'))&&(!video||(/Vídeo do chute \(opcional\)/.test(await txt('#ae-at'))&&/Arraste aqui o vídeo/.test(await txt('#ae-drop'))&&!/drone/i.test(await txt('#ae-at')))),'chute '+n+': vídeo opcional só se comprou: '+await txt('#ae-at'));
+    await P.click('#ae-at button.primary[data-act="ae-at-fecha"]');await P.waitForTimeout(200);}
   // idioma
   await P.evaluate(()=>{ETERNA.state.ae.fila=false;ETERNA.setLangEq&&ETERNA.setLangEq('en');});
 }catch(e){fails.push('erro: '+e.message+' '+(e.stack.match(/pulseira\.js:\d+/)||[''])[0]);}
