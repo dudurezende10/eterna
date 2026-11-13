@@ -360,13 +360,15 @@ Use quando um aparelho for perdido, trocado ou sair do ponto.
 
 **Galeria da venda no aparelho pareado.** Depois que o Caixa confirma o pagamento, o aparelho pareado publica a galeria da venda (QR e código). Se a sessão ainda estiver chegando do servidor, a galeria espera as fotos e é publicada sozinha em seguida.
 
-### Fotos de mais de uma sessão (v91)
+### Fotos de mais de uma sessão (v91, regra da selfie desde a v99.2)
 
-Quando o cliente olha para a câmera, o Checkout junta todas as sessões do dia em que ele aparece: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. Cada sessão em que ele aparece entra inteira, inclusive as fotos da família em que ele não está, porque a família costuma vir junta ao balcão. A tela abre direto na primeira foto ampliada; ele passa as fotos com as setas ou arrastando, marca com ✓ e pode tocar em **Ver todas** para ver a grade. O ponto e a hora aparecem no canto da foto.
+Quando o cliente olha para a câmera, o Checkout procura em todas as sessões do dia (dentro do tempo de busca) e abre **só as fotos em que ele aparece**: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. A selfie nunca abre a sessão inteira, nem as fotos da família em que ele não está. A tela abre direto na primeira foto ampliada; ele passa as fotos com as setas ou arrastando, marca com ✓ e pode tocar em **Ver todas** para ver a grade. O ponto e a hora aparecem no canto da foto.
 
-Se o cliente aparece só no fundo das fotos de outra família (o rosto dele bem menor que o das pessoas da frente), aquela sessão não entra inteira: entram só as fotos em que ele aparece.
+**Família em que alguém ficou de fora:** na escolha, toque em **Adicionar outra pessoa**. A selfie dessa pessoa, ali no balcão, soma as fotos dela às já abertas, mantendo as marcas. Nunca abra as fotos de alguém que não está presente.
 
-Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer, nunca a sessão inteira; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+
+**Drone (v99.26):** as fotos tiradas do vídeo do Drone entram como fotos de fotógrafo, com o piloto como origem. A selfie também acha essas fotos no Checkout.
 
 A compra é uma venda só, mesmo com fotos de várias sessões. Foto que já foi comprada não aparece de novo. Pelo código do recibo (o código da sessão) abre a sessão inteira; pelo código da galeria, a compra daquela venda. Depois de 5 códigos errados seguidos, o campo trava por 1 minuto (recarregar a página não destrava).
 
@@ -1140,8 +1142,8 @@ Lista de operação no servidor do ponto:
 
 ## 7. Limitações de hoje
 
-- **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
-- **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.
+- **No celular do cliente aparece "Suas fotos estão chegando".** A galeria do QR abre pela nuvem. Esse aviso aparece enquanto as fotos daquela venda ainda não subiram (internet do ponto caída ou fila de envio cheia). Elas sobem sozinhas quando a conexão volta: peça para o cliente abrir o QR de novo mais tarde.
+- **Para demonstrar** sem depender da internet, use **Abrir galeria** em Galerias online, no próprio computador do ponto.
 - **Compra pelo celular está desligada (v93).** A galeria mostra as fotos e pede para o cliente falar com a equipe no balcão. A venda é feita no Checkout.
 - **Cartão e PIX**: o sistema ainda não conversa com a maquininha (sem TEF). Quem confirma é você, depois de ver a maquininha aprovar.
 - **Checkout e Posto de venda no mesmo notebook**: nesta etapa o Checkout e o Posto de venda (com o Caixa dentro dele) precisam estar no mesmo notebook e no mesmo navegador. Os notebooks ainda não conversam entre si; isso entra na próxima etapa.
