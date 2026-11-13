@@ -88,7 +88,7 @@ APP_TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript
 APP_PREFIXOS = ("vendor/", "img/", "sprites/")
 _re_app = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")
 # o que o Checkout precisa para abrir e achar o rosto sem rede (baixado na abertura do agente, em segundo plano)
-APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js",
+APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js", "vendor/jsqr/jsQR.js",
                   "vendor/fonts/big-shoulders-display-latin-600-normal.woff2",
                   "vendor/fonts/big-shoulders-display-latin-700-normal.woff2",
                   "vendor/fonts/big-shoulders-display-latin-800-normal.woff2",

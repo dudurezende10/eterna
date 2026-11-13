@@ -25,6 +25,7 @@ Eterna é o sistema de captura, validação, venda e entrega de fotos do Tour do
 | Guia da equipe | `docs/GUIA-DA-EQUIPE.md` | passo a passo do menu, do Checkout e do caixa (dinheiro aguardando caixa), do Upload automático (check-in e ajuste automático), das Galerias online, das Permissões e dos 2 cliques de IA do fotógrafo (v93), em linguagem simples |
 | Planos | `docs/planos/` | um plano por entrega, com as revisões de código e de segurança ao lado |
 | Lib de QR | `vendor/qrcode/qrcode.min.js` | qrcodejs 1.0.0 (MIT), cópia local para o ponto offline |
+| Leitura de QR pela câmera | `vendor/jsqr/jsQR.js` | jsQR 1.4.0 (Apache-2.0), usada por `qrLeitor()` quando o navegador não tem o BarcodeDetector (Windows); está em `APP_ESSENCIAIS` do agente, guardada para funcionar sem internet |
 | Versões | `VERSOES.md` | uma linha por versão (vNN, commit, o que entrou) |
 | Testes | `testes/` | `testes/rodar.sh` roda tudo |
 | Fundos de IA | `img/bg-*.jpg` | metadados em `DATA.backgrounds` no index.html |

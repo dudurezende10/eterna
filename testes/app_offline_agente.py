@@ -41,7 +41,7 @@ CACHE = os.path.join(H, "Eterna", "app-cache")
 INDEX = b"<!doctype html><title>teste</title><p>app de teste v97</p>"
 FONTE = "vendor/fonts/inter-latin-400-normal.woff2"
 FONTE_B = open(os.path.join(RAIZ, FONTE), "rb").read()
-ESSENCIAIS = ["vendor/qrcode/qrcode.min.js", "img/brand/viva-maracana-white.png", "img/brand/viva-maracana-azul.png", "img/bg-noite.jpg",
+ESSENCIAIS = ["vendor/qrcode/qrcode.min.js", "vendor/jsqr/jsQR.js", "img/brand/viva-maracana-white.png", "img/brand/viva-maracana-azul.png", "img/bg-noite.jpg",
               "vendor/ort/ort.min.js", "vendor/ort/ort-wasm-simd.wasm", "vendor/ort/ort-wasm.wasm",
               "vendor/rostos/face_detection_yunet_2023mar.onnx", "vendor/rostos/face_recognition_sface_2021dec.onnx",
               "vendor/faceapi/indice-exemplos.json"] + ["vendor/fonts/%s.woff2" % n for n in (
