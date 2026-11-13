@@ -21,21 +21,21 @@ try{
   const E=require('./_entrar');const adm=await E.adminFicticio(A);await E(A,adm);
   await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;ETERNA.go('ativ-venda');});await A.waitForTimeout(300);
   await A.click('[data-act="av-add"][data-id="asteroid"]');await A.click('[data-act="av-add"][data-id="asteroid"]');await A.waitForTimeout(100);
-  ok((await A.$$('[data-act="av-pul"]')).length===2&&/Pulseira do vídeo 1 de 2/.test(await A.textContent('#av-cart')),'dois vídeos, dois campos de pulseira');
+  ok((await A.$$('[data-act="av-pul"]')).length===2&&/Pulseira 1 de 2/.test(await A.textContent('#av-cart')),'dois vídeos, dois campos de pulseira');
   await A.click('[data-act="av-pag"][data-p="PIX"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto='data:image/jpeg;base64,/9j/2Q==';});
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(150);
-  ok(/Leia a pulseira de cada vídeo/.test(await A.textContent('#av-erro'))&&!enviadas.length,'sem pulseira não registra');
+  ok(/Leia a pulseira de cada item/.test(await A.textContent('#av-erro'))&&!enviadas.length,'sem pulseira não registra');
   await A.fill('[data-act="av-pul"][data-k="0"]','00123');await A.press('[data-act="av-pul"][data-k="0"]','Enter');await A.waitForTimeout(100);
   ok(await A.evaluate(()=>document.activeElement.dataset.k)==='1','Enter do leitor pula para a pulseira seguinte');
   await A.keyboard.type('123');await A.click('[data-act="av-registrar"]');await A.waitForTimeout(150);
-  ok(/A mesma pulseira está em dois vídeos/.test(await A.textContent('#av-erro')),'0123 e 123 são a mesma pulseira');
+  ok(/A mesma pulseira está em dois itens/.test(await A.textContent('#av-erro')),'0123 e 123 são a mesma pulseira');
   await A.fill('[data-act="av-pul"][data-k="1"]','555');await A.press('[data-act="av-pul"][data-k="1"]','Tab');await A.waitForTimeout(400);
   ok(/Pulseira já usada na venda nº 234AB9/.test(await A.textContent('[data-av-pul-aviso="0-1"]')),'pulseira já usada avisada na hora: '+await A.textContent('[data-av-pul-aviso="0-1"]'));
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(150);
   ok(/já foi usada em outra venda/.test(await A.textContent('#av-erro'))&&!enviadas.length,'pulseira usada não registra');
   await A.fill('[data-act="av-pul"][data-k="1"]','777');await A.press('[data-act="av-pul"][data-k="1"]','Tab');await A.waitForTimeout(300);
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(800);
-  ok(enviadas.length===1&&J(enviadas[0].pulseiras)===J(['123','777']),'venda enviada com as pulseiras: '+J(enviadas.map(v=>v.pulseiras)));
+  ok(enviadas.length===1&&J(enviadas[0].pulseiras.map(p=>p.n))===J(['123','777'])&&enviadas[0].pulseiras.every(p=>p.meio==='digitado'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$/.test(p.em)),'venda enviada com as pulseiras: '+J(enviadas.map(v=>v.pulseiras)));
   await A.close();
 
   // ---------------- ENTREGA ----------------

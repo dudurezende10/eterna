@@ -46,8 +46,8 @@ try{
   await A.check('[data-act="av-k4"][data-id="asteroid"]');await A.waitForTimeout(80);
   ok(/R\$\s?250/.test(await A.textContent('[data-av-card="asteroid"] .av-preco')),'preço do card já com 4K: '+await A.textContent('[data-av-card="asteroid"] .av-preco'));
   await A.click('[data-act="av-add"][data-id="asteroid"]');await A.click('[data-act="av-add"][data-id="asteroid"]');await A.waitForTimeout(80);
-  const ordem2=await A.evaluate(()=>['av-prod','av-cliente','av-pag','av-cart'].map(id=>document.getElementById(id).getBoundingClientRect().top));
-  ok(ordem2.every((y,i)=>!i||y>ordem2[i-1]),'resumo da venda logo antes de registrar: '+J(ordem2));
+  const ordem2=await A.evaluate(()=>['av-prod','av-cart','av-cliente','av-pag'].map(id=>document.getElementById(id).getBoundingClientRect().top));
+  ok(ordem2.every((y,i)=>!i||y>ordem2[i-1]),'v99.28: itens com a pulseira logo depois do serviço, antes do cliente: '+J(ordem2));
   ok((await A.$$('[data-av-linha]')).length===1&&/2×/.test(await A.textContent('[data-av-linha="0"]'))&&/Drone · Campo · 1 pessoa · 4K/.test(await A.textContent('[data-av-linha="0"]')),'igual soma na mesma linha, descrita: '+await A.textContent('#av-cart'));
   ok(await A.$('#av-cart select, #av-cart input:not([data-act="av-pul"]), [data-act="av-mais"]')===null,'linha sem nada para mexer');
   await A.click('[data-act="av-pessoas"][data-v="3"]');await A.click('[data-act="av-add"][data-id="boomerang"]');await A.waitForTimeout(80);

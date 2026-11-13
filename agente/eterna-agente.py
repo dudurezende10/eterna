@@ -7526,6 +7526,8 @@ ATIV_CLIENTES_DIR = os.path.join(HOME, "ativ-clientes")
 ATIV_FOTO_MAX = 120 * 1024
 ATIV_PAGAMENTOS = ("PIX", "Dinheiro", "Débito", "Crédito", "Cortesia")
 _re_ativ_id = re.compile(r"^T[A-Za-z0-9]{6,30}$")
+ATIV_PUL_MEIOS = ("camera", "digitado")       # v99.28: como a pulseira foi lida (estatística)
+_re_ativ_hora = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
 # v99.25 (diretoria, 12/11): cada vídeo comprado ganha uma pulseira numerada (QR só com o número), entregue na venda. Quem
 # entrega começa lendo a pulseira: ela já diz de quem é o vídeo. Número sem zeros à esquerda; nunca repete entre compras.
 _re_pulseira = re.compile(r"^\d{1,12}$")
@@ -7574,11 +7576,16 @@ def ativ_venda_tablet(v):
     if v.get("pulseiras") is not None:
         if not isinstance(v["pulseiras"], list) or len(v["pulseiras"]) > 100:
             return None
+        vistos = set()
         for p in v["pulseiras"]:
-            n = pulseira_norm(p)
-            if not n or n in pulseiras:
+            d = p if isinstance(p, dict) else {"n": p}
+            n = pulseira_norm(d.get("n"))
+            if not n or n in vistos:
                 return None
-            pulseiras.append(n)
+            vistos.add(n)
+            meio = d.get("meio") if d.get("meio") in ATIV_PUL_MEIOS else None
+            em = str(d.get("em") or "")[:19] if _re_ativ_hora.match(str(d.get("em") or "")[:19]) else None
+            pulseiras.append((n, meio, em))
     for k, n in (("pais", 60), ("idioma", 30), ("guia", 80), ("vendedor", 80), ("usuario", 120), ("cortesia_motivo", 80), ("cortesia_nota", 1000),
                  ("cliente_nome", 80)):
         if not _ativ_txt(v.get(k) or "", n):
@@ -7676,7 +7683,7 @@ def ativ_receber(vendas, enviado_por):
                           vals + [agora, enviado_por])
                 if d["_foto"]:
                     ativ_cliente_foto_grava(d["id"], d["_foto"])
-                ativ_pulseiras_grava(c, d["id"], d["_pulseiras"], agora)
+                ativ_pulseiras_grava(c, d["id"], d["_pulseiras"], agora, d.get("usuario") or enviado_por)
                 out["recebidas"].append(d["id"])
             c.commit()
         finally:
@@ -7684,15 +7691,99 @@ def ativ_receber(vendas, enviado_por):
     return out
 
 
-def ativ_pulseiras_grava(c, vid, pulseiras, agora):
-    """Liga as pulseiras à venda (uma por vídeo, na ordem). Número já usado em outra compra não recusa a venda (o tablet vende
-    sem rede): as duas ficam marcadas com conflito e a entrega mostra as duas para quem entrega escolher pelo rosto."""
+def ativ_pulseiras_grava(c, vid, pulseiras, agora, por=""):
+    """Liga as pulseiras à venda (uma por item, na ordem). Número já usado em outra compra não recusa a venda (o tablet vende
+    sem rede): as duas ficam marcadas com conflito e a entrega mostra as duas para quem entrega escolher pelo rosto.
+    pulseiras: [(numero, meio, lido_em)] ou [numero]."""
     base = ativ_base(vid)
     for slot, p in enumerate(pulseiras, 1):
-        outras = [v for (v,) in c.execute("select venda from ativ_pulseira where numero=? and venda<>?", (p, vid)) if ativ_base(v) != base]
-        c.execute("insert or ignore into ativ_pulseira (numero, venda, slot, conflito, em) values (?,?,?,?,?)", (p, vid, slot, 1 if outras else 0, agora))
+        n, meio, lido = p if isinstance(p, tuple) else (p, None, None)
+        outras = [v for (v,) in c.execute("select venda from ativ_pulseira where numero=? and venda<>?", (n, vid)) if ativ_base(v) != base]
+        if c.execute("insert or ignore into ativ_pulseira (numero, venda, slot, conflito, em, por, meio, lido_em) values (?,?,?,?,?,?,?,?)",
+                     (n, vid, slot, 1 if outras else 0, agora, por, meio, lido)).rowcount:
+            c.execute("insert into ativ_pulseira_log (venda, slot, numero, de, acao, em, por, meio) values (?,?,?,?,?,?,?,?)",
+                      (vid, slot, n, None, "venda", lido or agora, por, meio))
         if outras:
-            c.execute("update ativ_pulseira set conflito=1 where numero=?", (p,))
+            c.execute("update ativ_pulseira set conflito=1 where numero=?", (n,))
+
+
+def ativ_pulseiras_edita(body, eu, outros):
+    """v99.28: POST /ativ/pulseiras {id, pulseiras:[{slot, n, meio}]}: põe ou troca a pulseira de um item depois da venda (o vendedor
+    esqueceu ou leu a errada). O vendedor corrige as próprias vendas; outros (ativvenda.u, ativvenda.d ou financeiro.u) qualquer uma.
+    Pulseira de item que já decolou, começou ou tem vídeo entregue não muda. Número de outra compra é recusado (aqui há rede).
+    Cada troca fica no histórico (ativ_pulseira_log). -> (erro, {numero_usado}) ou (None, pulseiras da venda)."""
+    vid = str((body or {}).get("id") or "")
+    lista = (body or {}).get("pulseiras")
+    if not _re_ativ_id.match(vid) or not isinstance(lista, list) or not 1 <= len(lista) <= 100:
+        return "dados", None
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select coalesce(situacao,'ativa'), usuario, itens, recebido_em from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            if not r:
+                return "nao_achou", None
+            if r[0] == "cancelada":
+                return "cancelada", None
+            if not outros and (r[1] or "") != eu:
+                return "sem_permissao", None
+            try:
+                total = sum(ativ_pul_n_item(i) for i in json.loads(r[2] or "[]"))
+            except (ValueError, TypeError):
+                total = 0
+            atual = {sl: (n, vo) for n, sl, vo in c.execute("select numero, slot, voo_em from ativ_pulseira where venda=?", (vid,))}
+            usadas = {pu for (pu,) in c.execute("select pulseira from ativ_entrega where venda=? and pulseira is not null", (vid,))}
+            novo, base = {}, ativ_base(vid)
+            for x in lista:
+                if not isinstance(x, dict) or not isinstance(x.get("slot"), int) or not 1 <= x["slot"] <= max(total, 1):
+                    return "dados", None
+                n = pulseira_norm(x.get("n"))
+                if not n:
+                    return "dados", None
+                novo[x["slot"]] = (n, x.get("meio") if x.get("meio") in ATIV_PUL_MEIOS else None)
+            fica = {sl: v[0] for sl, v in atual.items() if sl not in novo}
+            nums = list(fica.values()) + [n for n, _ in novo.values()]
+            if len(nums) != len(set(nums)):
+                return "repetida", None
+            for sl, (n, _) in novo.items():
+                velho = atual.get(sl)
+                if velho and velho[0] == n:
+                    continue
+                if velho and (velho[1] or velho[0] in usadas):
+                    return "travada", None
+                for (v,) in c.execute("select p.venda from ativ_pulseira p join ativ_venda a on a.origem='eterna' and a.id=p.venda"
+                                      " where p.numero=? and coalesce(a.situacao,'ativa')<>'cancelada'", (n,)):
+                    if ativ_base(v) != base:
+                        return "pulseira_usada", {"venda": v}
+            for sl, (n, meio) in sorted(novo.items()):
+                velho = atual.get(sl)
+                if velho and velho[0] == n:
+                    continue
+                if velho:
+                    c.execute("delete from ativ_pulseira where numero=? and venda=?", (velho[0], vid))
+                c.execute("insert into ativ_pulseira (numero, venda, slot, conflito, em, por, meio, lido_em) values (?,?,?,0,?,?,?,?)",
+                          (n, vid, sl, agora, eu, meio, agora))
+                c.execute("insert into ativ_pulseira_log (venda, slot, numero, de, acao, em, por, meio) values (?,?,?,?,?,?,?,?)",
+                          (vid, sl, n, velho[0] if velho else None, "trocou" if velho else "incluiu", agora, eu, meio))
+            c.commit()
+            return None, ativ_pulseiras_de(c, vid)
+        finally:
+            c.close()
+
+
+def ativ_pul_n_item(i):
+    """Quantas pulseiras um item leva: uma por vídeo; item sem vídeo, uma por unidade (v99.28: cada item tem a sua)."""
+    if not isinstance(i, dict):
+        return 0
+    q = int(i.get("qtd") or 1) if isinstance(i.get("qtd"), (int, float)) else 1
+    return int(i.get("videos") or 0) if isinstance(i.get("videos"), (int, float)) and i.get("videos") else max(1, q)
+
+
+def ativ_pulseiras_de(c, vid):
+    """As pulseiras de uma venda, para o tablet: número, item (slot) e se ainda pode trocar."""
+    usadas = {pu for (pu,) in c.execute("select pulseira from ativ_entrega where venda=? and pulseira is not null", (vid,))}
+    return [{"numero": n, "slot": sl, "travada": bool(vo) or n in usadas}
+            for n, sl, vo in c.execute("select numero, slot, voo_em from ativ_pulseira where venda=? order by slot", (vid,))]
 
 
 def ativ_pulseira_busca(n):
@@ -8811,6 +8902,21 @@ def ativ_vendas(de, ate, usuario=None):
         rows = c.execute(q + " order by criado", args).fetchall()
         ids = [r[1] for r in rows if r[0] == "eterna"]
         etapas = ativ_etapas(c, ids)
+        puls, movs = {}, {}
+        for i in range(0, len(ids), 400):
+            parte = ids[i:i + 400]
+            ph = ",".join("?" * len(parte))
+            for vid in parte:
+                puls[vid] = []
+            for vid in {v for (v,) in c.execute("select distinct venda from ativ_pulseira where venda in (%s)" % ph, parte)}:
+                puls[vid] = ativ_pulseiras_de(c, vid)
+            for vid, acao, meio, n in c.execute("select venda, acao, coalesce(meio,''), count(*) from ativ_pulseira_log where venda in (%s)"
+                                                " group by venda, acao, meio" % ph, parte):
+                m = movs.setdefault(vid, {"camera": 0, "digitado": 0, "corrigidas": 0})
+                if acao == "venda" and meio in ("camera", "digitado"):
+                    m[meio] += n
+                elif acao in ("trocou", "incluiu"):
+                    m["corrigidas"] += n
     finally:
         c.close()
     out = []
@@ -8823,6 +8929,8 @@ def ativ_vendas(de, ate, usuario=None):
             d["itens"] = []
         if d["origem"] == "eterna":
             d["etapas"] = etapas.get(d["id"]) or {}
+            d["pulseiras"] = puls.get(d["id"]) or []
+            d["pul_mov"] = movs.get(d["id"]) or {"camera": 0, "digitado": 0, "corrigidas": 0}
         out.append(d)
     return out
 
@@ -9372,6 +9480,13 @@ def vendas_db():
     c.execute("create table if not exists ativ_pulseira (numero text, venda text, slot integer, conflito integer default 0, em text,"
               " voo_em text, voo_por text, piloto text, drone text, bateria text, primary key (numero, venda))")
     c.execute("create index if not exists ativ_pulseira_venda on ativ_pulseira(venda)")
+    # v99.28: quem ligou a pulseira, como (câmera ou digitado) e quando foi lida; e o histórico de cada movimento
+    tem = {r[1] for r in c.execute("pragma table_info(ativ_pulseira)")}
+    for col in ("por", "meio", "lido_em"):
+        if col not in tem:
+            c.execute("alter table ativ_pulseira add column %s text" % col)
+    c.execute("create table if not exists ativ_pulseira_log (venda text, slot integer, numero text, de text, acao text, em text, por text, meio text)")
+    c.execute("create index if not exists ativ_pulseira_log_venda on ativ_pulseira_log(venda)")
     # v99.26: fotos tiradas do vídeo (cliente e aéreas), que entram no Eterna como foto de fotógrafo
     c.execute("create table if not exists ativ_foto (venda text, qr text, pid text, tipo text, t real, em text, primary key (qr, pid))")
     c.execute("create index if not exists ativ_foto_venda on ativ_foto(venda)")
@@ -10361,6 +10476,7 @@ ROTAS = (
     ("GET", "/ativ/cliente-foto", "sessao", ("ativentrega.r",)),     # foto do cliente para quem entrega (some com a limpeza)   # vídeos de demonstração (lista e arquivo)
     ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
     ("GET", "/ativ/pulseira", "sessao", ("ativentrega.r", "ativvenda.c")),     # v99.25: de quem é a pulseira
+    ("POST", "/ativ/pulseiras", "sessao", ("ativvenda.c", "ativvenda.u", "ativvenda.d", "financeiro.u")),   # v99.28: corrigir a pulseira
     ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
     ("GET", "/ativ/cadastros", "sessao", ("ativentrega.r",)), ("POST", "/ativ/cadastros", "sessao", ("ativentrega.u",)),
     ("GET", "/ativ/cartoes", "sessao", ("catalogo.r",)), ("POST", "/ativ/cartoes/lote", "sessao", ("catalogo.u",)),   # v99.24: lotes de cartões
@@ -11515,6 +11631,13 @@ class H(BaseHTTPRequestHandler):
             ativ_visto(eu, self.client_address[0])
             r = ativ_receber(body["vendas"], eu.get("usuario") or "")
             return self.js(dict(ok=True, **r))
+        if rota == "/ativ/pulseiras":
+            outros = any(auth_pode(cad, *x.split(".")) for x in ("ativvenda.u", "ativvenda.d", "financeiro.u"))
+            e, r = ativ_pulseiras_edita(body, eu.get("usuario") or "", outros)
+            if e:
+                return self.js(dict({"error": e}, **(r or {})), {"dados": 400, "nao_achou": 404, "cancelada": 409, "sem_permissao": 403,
+                                                                "repetida": 409, "travada": 409, "pulseira_usada": 409}[e])
+            return self.js({"ok": True, "pulseiras": r})
         if rota == "/ativ/etapa":
             e = ativ_etapa(body, eu.get("usuario") or "")
             if e:
@@ -12695,7 +12818,7 @@ class H(BaseHTTPRequestHandler):
             return self.ativ_video_post(u)
         if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao"):
             return self.ativ_post(u.path)
-        if u.path in ("/ativ/venda", "/ativ/cancelar"):
+        if u.path in ("/ativ/venda", "/ativ/cancelar", "/ativ/pulseiras"):
             return self.ativ_post(u.path)
         if u.path in ("/visitas/juntar", "/visitas/separar"):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
