@@ -12685,8 +12685,13 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "origem não autorizada"}, 403)
             ativ_visto(self.sessao(), self.client_address[0])
             dia = (parse_qs(u.query).get("dia") or [""])[0]
-            r = ativ_vendas(dia, dia, (self.sessao() or {}).get("usuario") or "")
-            return self.js({"ok": True, "vendas": r}, nostore=True) if r is not None else self.js({"error": "data inválida"}, 400)
+            eu = self.sessao() or {}
+            # v99.28: a supervisão (quem corrige a venda dos outros) vê as vendas do dia de todos os vendedores
+            todos = any(auth_pode(eu.get("cadastro"), *x.split(".")) for x in ("ativvenda.u", "ativvenda.d", "financeiro.u"))
+            r = ativ_vendas(dia, dia, None if todos else (eu.get("usuario") or ""))
+            if r is not None and todos:
+                r = [v for v in r if v.get("origem") == "eterna"]
+            return self.js({"ok": True, "vendas": r, "todos": todos}, nostore=True) if r is not None else self.js({"error": "data inválida"}, 400)
         if u.path == "/ativ/vendas":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)

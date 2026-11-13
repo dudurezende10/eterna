@@ -90,8 +90,8 @@ try{
   ok(await P.$('#ae-at')===null&&await P.$('#ae-pul'),'Próximo cliente volta para a leitura da pulseira');
   await P.click('#ae-agora [data-act="ae-at-abre"][data-n="777"]');await P.waitForTimeout(200);
   ok(await P.$('#ae-at[data-ae-at="777"]')&&/Voo às 10:20/.test(await txt('#ae-at')),'tocar na faixa Agora abre o atendimento');
-  await P.click('#ae-at [data-act="ae-at-fecha"]');await P.click('[data-act="ae-fila"]');await P.waitForTimeout(200);
-  ok(await P.$('.ae-board')&&await P.$('#ae-drop'),'fila completa (e o fluxo de venda sem pulseira) recolhida num botão');
+  await P.click('#ae-at [data-act="ae-at-fecha"]');await P.waitForTimeout(200);
+  ok(!(await P.$('[data-act="ae-fila"]'))&&!(await P.$('.ae-board'))&&!(await P.$('#ae-drop'))&&await P.$('#ae-pul'),'v99.28: a venda só se abre pela pulseira (sem fila completa nem vídeo solto)');
   // idioma
   await P.evaluate(()=>{ETERNA.state.ae.fila=false;ETERNA.setLangEq&&ETERNA.setLangEq('en');});
 }catch(e){fails.push('erro: '+e.message+' '+(e.stack.match(/pulseira\.js:\d+/)||[''])[0]);}
