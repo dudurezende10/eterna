@@ -283,6 +283,7 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
   - **Por país:** vendas e valor.
   - Atualiza sozinho a cada minuto; quando a venda no tablet entrar, a cada venda nova, com som opcional.
   - Filtro extra "Todos os serviços" e escolha de data, com o botão Hoje.
+  - **Tempo de cada etapa** (v99.27): das vendas do tablet no período, quantas chegaram a cada etapa (vendido, chegou ao campo, decolou ou começou, vídeo entregue, vídeo na nuvem, cliente abriu, cliente baixou), em quantidade e porcentagem, e a mediana do tempo desde a etapa anterior que a venda tem. Embaixo, a velocidade real do envio dos vídeos à nuvem no período (vídeos, MB, tempo por vídeo e Mbit/s, medianas), medida pelo próprio servidor a cada envio. Rota `GET /ativ/vendas` devolve `etapas` (segundos) em cada venda do tablet e `envio`.
 - **Painel e Estatísticas:** as ativações entram com as fotos:
   - receita por produto, por vendedor e por forma de pagamento;
   - valor da Cortesia (o preço do catálogo que foi dado);

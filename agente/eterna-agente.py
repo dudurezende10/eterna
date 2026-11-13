@@ -8589,9 +8589,31 @@ def _nuvem_videos_tabela(db):
     db.execute("CREATE TABLE IF NOT EXISTS videos (qr TEXT PRIMARY KEY, arquivo TEXT, entrou REAL, tentativas INTEGER DEFAULT 0,"
                " prox REAL DEFAULT 0, feito REAL, bytes INTEGER, erro TEXT)")
     tem = {r[1] for r in db.execute("PRAGMA table_info(videos)")}
-    for col, tipo in (("destino", "TEXT"), ("copiado", "REAL")):
+    for col, tipo in (("destino", "TEXT"), ("copiado", "REAL"), ("seg", "REAL")):    # v99.27: seg = quanto levou o envio
         if col not in tem:
             db.execute("ALTER TABLE videos ADD COLUMN %s %s" % (col, tipo))
+
+
+def nuvem_envio_medido(de, ate):
+    """v99.27: velocidade real de envio dos vídeos à nuvem no período (só envios que deram certo na primeira passada do
+    arquivo): quantos, mediana de MB, de segundos por vídeo e de Mbit/s."""
+    try:
+        t0 = time.mktime(time.strptime(de, "%Y-%m-%d"))
+        t1 = time.mktime(time.strptime(ate, "%Y-%m-%d")) + 86400
+        with nuvem_lock:
+            db = nuvem_db()
+            try:
+                _nuvem_videos_tabela(db)
+                rows = db.execute("SELECT bytes, seg FROM videos WHERE feito >= ? AND feito < ? AND seg > 0 AND bytes > 0", (t0, t1)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return None
+    if not rows:
+        return {"n": 0}
+    med = lambda xs: (sorted(xs)[len(xs) // 2] if len(xs) % 2 else sum(sorted(xs)[len(xs) // 2 - 1:len(xs) // 2 + 1]) / 2)
+    return {"n": len(rows), "mb": round(med([b / 1e6 for b, _ in rows]), 1), "seg": round(med([sg for _, sg in rows]), 1),
+            "mbps": round(med([b * 8 / sg / 1e6 for b, sg in rows]), 1)}
 
 
 def nuvem_video_enfileira(qr, arquivo):
@@ -8668,7 +8690,7 @@ def nuvem_videos_loop():
             for qr, arquivo, tent, feito, destino in fila:
                 if os.path.exists(NUVEM_PAUSA):
                     break
-                erro, tam, subiu, rasc = None, None, bool(feito), qr.startswith("r-")
+                erro, tam, subiu, rasc, seg = None, None, bool(feito), qr.startswith("r-"), None
                 chave = "video/%s.mp4" % qr
                 try:
                     if destino == "-":                 # rascunho abandonado
@@ -8683,6 +8705,7 @@ def nuvem_videos_loop():
                             def anda(n, prog=prog):
                                 prog["feito"] += n
                             s3.upload_file(arquivo, NUVEM_BUCKET, chave, ExtraArgs={"ContentType": "video/mp4"}, Config=cfg, Callback=anda)
+                            seg = time.time() - prog["inicio"]
                             if s3.head_object(Bucket=NUVEM_BUCKET, Key=chave).get("ContentLength") != tam:
                                 raise ValueError("tamanho diferente na nuvem")
                             subiu = True
@@ -8715,8 +8738,8 @@ def nuvem_videos_loop():
                                    (time.time() + min(300, 5 * 2 ** min(tent, 6)), erro, time.time() if subiu else None, qr))
                         nuvem["videos_erro"] = time.strftime("%H:%M:%S ") + erro
                     else:
-                        db.execute("UPDATE videos SET feito=coalesce(feito, ?), bytes=coalesce(?, bytes), erro=NULL, copiado=? WHERE qr=?",
-                                   (time.time(), tam, time.time() if destino else None, qr))
+                        db.execute("UPDATE videos SET feito=coalesce(feito, ?), bytes=coalesce(?, bytes), erro=NULL, copiado=?, seg=coalesce(?, seg) WHERE qr=?",
+                                   (time.time(), tam, time.time() if destino else None, seg, qr))
                         if pronto and destino != "-":
                             nuvem["videos_enviados"] = nuvem.get("videos_enviados", 0) + 1
                     db.commit(); db.close()
@@ -8786,6 +8809,8 @@ def ativ_vendas(de, ate, usuario=None):
             q += " and origem='eterna' and usuario=?"
             args.append(usuario)
         rows = c.execute(q + " order by criado", args).fetchall()
+        ids = [r[1] for r in rows if r[0] == "eterna"]
+        etapas = ativ_etapas(c, ids)
     finally:
         c.close()
     out = []
@@ -8796,8 +8821,54 @@ def ativ_vendas(de, ate, usuario=None):
             d["itens"] = json.loads(d["itens"] or "[]")
         except ValueError:
             d["itens"] = []
+        if d["origem"] == "eterna":
+            d["etapas"] = etapas.get(d["id"]) or {}
         out.append(d)
     return out
+
+
+def _ativ_ts(x):
+    """Hora gravada -> segundos. Sem Z é a hora do servidor do ponto; com Z (eventos da nuvem) é UTC."""
+    try:
+        x = str(x or "")
+        if not x:
+            return None
+        if x.endswith("Z"):
+            import calendar
+            return calendar.timegm(time.strptime(x[:19], "%Y-%m-%dT%H:%M:%S"))
+        return int(time.mktime(time.strptime(x[:19], "%Y-%m-%dT%H:%M:%S")))
+    except (ValueError, OverflowError):
+        return None
+
+
+def ativ_etapas(c, ids):
+    """v99.27: o caminho de cada venda do tablet, em segundos, para o tempo de cada etapa nas estatísticas:
+    venda, chegou ao campo, decolou (ou começou), vídeo entregue, na nuvem, cliente abriu e cliente baixou.
+    Com mais de um vídeo vale o primeiro de cada etapa; "na nuvem" só quando todos os vídeos entregues subiram."""
+    out = {}
+    for i in range(0, len(ids), 400):
+        parte = ids[i:i + 400]
+        ph = ",".join("?" * len(parte))
+        for vid, criado, rec, voo in c.execute("select id, criado, recebido_em, voo_em from ativ_venda where origem='eterna' and id in (%s)" % ph, parte):
+            out[vid] = {"venda": _ativ_ts(criado), "recebido": _ativ_ts(rec), "voo": _ativ_ts(voo)}
+        for vid, voo in c.execute("select venda, min(voo_em) from ativ_pulseira where venda in (%s) and voo_em is not null group by venda" % ph, parte):
+            e = out.get(vid)
+            if e is not None:
+                t = _ativ_ts(voo)
+                e["voo"] = min(x for x in (e["voo"], t) if x is not None) if (e["voo"] or t) else None
+        ent = {}
+        for vid, em, ne, ce in c.execute("select venda, em, nuvem_em, cliente_eventos from ativ_entrega where venda in (%s)" % ph, parte):
+            ent.setdefault(vid, []).append((em, ne, ativ_cliente_resumo(ce)))
+        for vid, L in ent.items():
+            e = out.get(vid)
+            if e is None:
+                continue
+            pri = lambda xs: min((x for x in xs if x is not None), default=None)
+            e["entregue"] = pri(_ativ_ts(em) for em, _, _ in L)
+            e["nuvem"] = max(_ativ_ts(ne) or 0 for _, ne, _ in L) if all(ne for _, ne, _ in L) else None
+            e["aberto"] = pri(_ativ_ts(cl["aberto"]) for _, _, cl in L)
+            e["baixou"] = pri(_ativ_ts(cl["baixou"]) for _, _, cl in L)
+    return {k: {a: b for a, b in v.items() if b is not None} for k, v in out.items()}
 
 
 def doc_modulos(col, id_doc):
@@ -12497,8 +12568,9 @@ class H(BaseHTTPRequestHandler):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             q = parse_qs(u.query)
-            r = ativ_vendas((q.get("de") or [""])[0], (q.get("ate") or [""])[0])
-            return self.js({"ok": True, "vendas": r}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
+            de, ate = (q.get("de") or [""])[0], (q.get("ate") or [""])[0]
+            r = ativ_vendas(de, ate)
+            return self.js({"ok": True, "vendas": r, "envio": nuvem_envio_medido(de, ate)}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)

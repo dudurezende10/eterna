@@ -8,13 +8,16 @@ const DADOS=[V('drone-1','drone','2026-10-06',180,'PIX','Vendedora Um','Chile',[
   V('drone-2','drone','2026-10-06',250,'Crédito','Vendedor Dois','Brasil',[{produto:'inside_out',op:'Banco de Suplentes',qtd:1}],1),
   V('drone-3','drone','2026-10-07',120,'PIX','Vendedora Um','Chile',[{produto:'boomerang',op:'Arquibancada',qtd:1}],1),
   V('chute-1','chute','2026-10-06',110,'Débito','Vendedor Dois','Argentina',[{produto:'3 Chutes',op:'',qtd:1}],0),
-  {...V('TCANC0001D','drone','2026-10-06',999,'PIX','Vendedora Um','Chile',[{produto:'asteroid',op:'Campo',qtd:1}],1),origem:'eterna',situacao:'cancelada'}];
+  {...V('TCANC0001D','drone','2026-10-06',999,'PIX','Vendedora Um','Chile',[{produto:'asteroid',op:'Campo',qtd:1}],1),origem:'eterna',situacao:'cancelada'},
+  // v99.27: tempo de cada etapa (segundos desde a venda: A passou por todas; B foi direto ao voo e não subiu ainda)
+  {...V('TETAPA001D','drone','2026-10-20',180,'PIX','Vendedora Um','Chile',[{produto:'asteroid',op:'Campo',qtd:1}],1),origem:'eterna',etapas:{venda:1e6,recebido:1e6+300,voo:1e6+600,entregue:1e6+900,nuvem:1e6+960,aberto:1e6+4560,baixou:1e6+4620}},
+  {...V('TETAPA002D','drone','2026-10-20',180,'PIX','Vendedora Um','Chile',[{produto:'asteroid',op:'Campo',qtd:1}],1),origem:'eterna',etapas:{venda:2e6,voo:2e6+1200,entregue:2e6+1500}}];
 (async()=>{const b=await chromium.launch();
 try{
   const ctx=await b.newContext({viewport:{width:390,height:844},hasTouch:true});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
   const pedidos=[];
   await ctx.route(/\/ativ\/vendas\?/,r=>{const u=new URL(r.request().url());const de=u.searchParams.get('de'),ate=u.searchParams.get('ate');pedidos.push(de+'|'+ate);
-    r.fulfill({status:200,contentType:'application/json',body:J({ok:true,vendas:DADOS.filter(v=>v.dia>=de&&v.dia<=ate)})});});
+    r.fulfill({status:200,contentType:'application/json',body:J({ok:true,vendas:DADOS.filter(v=>v.dia>=de&&v.dia<=ate),envio:de==='2026-10-20'?{n:3,mb:142,seg:75,mbps:15.1}:{n:0}})});});
   await ctx.route(/\/ativ\/equipe$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,equipe:[{usuario:'v1',nome:'Vendedora Um',visto_ha_s:12,agora:true},{usuario:'v2',nome:'Vendedor Dois',visto_ha_s:900,agora:false}]})}));
   const A=await ctx.newPage();A.on('pageerror',e=>errs.push(e.message));await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(400);
   const E=require('./_entrar');const adm=await E.adminFicticio(A);await E(A,adm);
@@ -48,6 +51,14 @@ try{
   ok(/R\$\s?120/.test(await A.textContent('#ar-total')),'data escolhida: '+await A.textContent('#ar-total'));
   await A.click('[data-act="ar-hoje"]');await A.waitForTimeout(300);
   ok(await A.evaluate(()=>ETERNA.state.ar.dia===ETERNA.venueToday()),'Hoje volta para o dia de hoje');
+  // tempo de cada etapa
+  await A.evaluate(()=>{const s=ETERNA.state;s.ar.dia='2026-10-20';s.ar.per='dia';s.ar.tipo='drone';ETERNA.arPull(true);});await A.waitForTimeout(400);
+  const et=await A.evaluate(()=>[...document.querySelectorAll('#ar-etapas [data-ar-etapa]')].map(e=>[e.dataset.arEtapa,e.querySelector('.name').textContent,e.querySelector('.note').textContent,e.querySelector('b').textContent].join('|')));
+  const esp=['venda|Vendido no tablet|2 vendas · 100%|','recebido|Chegou ao campo|1 vendas · 50%|em 5 min','voo|Decolou ou começou|2 vendas · 100%|em 13 min','entregue|Vídeo entregue|2 vendas · 100%|em 5 min','nuvem|Vídeo na nuvem|1 vendas · 50%|em 1 min','aberto|Cliente abriu|1 vendas · 50%|em 1 h','baixou|Cliente baixou|1 vendas · 50%|em 1 min'];
+  ok(J(et)===J(esp),'tempo de cada etapa: '+J(et));
+  ok(/Envio à nuvem: 3 vídeos · 142 MB em 1 min por vídeo · 15.1 Mbit\/s/.test(await A.textContent('#ar-envio')),'velocidade do envio: '+await A.textContent('#ar-etapas'));
+  await A.evaluate(()=>{ETERNA.state.ar.dia='2026-10-06';ETERNA.arPull(true);});await A.waitForTimeout(400);
+  ok(/Sem vendas do tablet/.test(await A.textContent('#ar-etapas')),'dia só com vendas do sistema antigo: sem etapas');
   // sem servidor
   await A.evaluate(()=>{const s=ETERNA.state;s.ar.cache={};s.ar.dia='2026-10-06';});await ctx.unroute(/\/ativ\/vendas\?/);await ctx.route(/\/ativ\/vendas\?/,r=>r.fulfill({status:500,body:'x'}));
   await A.evaluate(()=>ETERNA.arPull(true));await A.waitForTimeout(400);
