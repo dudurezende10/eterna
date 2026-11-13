@@ -62,6 +62,7 @@ try{
     r.fulfill({status:200,contentType:'application/json',body:J({ok:true,qr:c.qr,codigo:'WXYZ-2345-6789',n:1})});});
   const P=await ctx.newPage();P.on('pageerror',e=>errs.push(e.message));await P.goto(U);await P.waitForTimeout(500);if(await P.$('[data-act="login-usuario"]'))await E(P,adm);
   await P.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;ETERNA.go('ativ-entrega');});await P.waitForTimeout(600);
+  ok(!(await P.$('[data-act="ae-data"]')),'v99.30.8: entrega sem seletor de data');
   P.setDefaultTimeout(3000);const txt=async s=>(await P.textContent(s))||'';
   ok(await P.$('#ae-pul')&&await P.evaluate(()=>document.activeElement.id)==='ae-pul-txt','começa pela pulseira, com o campo pronto para o leitor');
   ok(await P.$('.ae-board')===null&&await P.$('#ae-drop')===null,'sem a fila completa nem escolher venda na tela inicial');
