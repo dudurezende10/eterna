@@ -3,8 +3,9 @@
 const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');
 const AG=path.join(__dirname,'..','agente','eterna-agente.py');const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const S=require('./_agente_sessao');let CK=null; // pessoa conectada (admin): as rotas da equipe pedem sessão
 function req(porta,method,p,{headers,body}={}){return new Promise(res=>{const data=body==null?null:Buffer.from(typeof body==='string'?body:JSON.stringify(body));
-  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...(headers||{})}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch).toString();let j=null;try{j=JSON.parse(b)}catch(e){}res({s:rs.statusCode,h:rs.headers,b,j});});});
+  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...(CK?{Cookie:CK}:{}),...(method==='POST'?{'X-Eterna':'1'}:{}),...(headers||{})}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch).toString();let j=null;try{j=JSON.parse(b)}catch(e){}res({s:rs.statusCode,h:rs.headers,b,j});});});
   r.on('error',e=>res({s:0,err:String(e)}));if(data)r.write(data);r.end();});}
 // cliente FTP: devolve as respostas do servidor em ordem
 function ftp(porta,passos){const py=`
@@ -37,7 +38,7 @@ const bib=async porta=>((await req(porta,'GET','/biblioteca')).j||{}).fotos||[];
 (async()=>{const procs=[];const home=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-seg-'));const porta=17000+Math.floor(Math.random()*900),ftpP=porta+1000;
 try{
   // ---------- I7: ftp.json novo com senhas de 12+ caracteres, chmod 600, senhas fora do console ----------
-  let A=await subir(home,porta,ftpP);procs.push(A.p);const cfgP=path.join(home,'Eterna','ftp.json');const cfg=JSON.parse(fs.readFileSync(cfgP,'utf8'));
+  let A=await subir(home,porta,ftpP);procs.push(A.p);CK=S.sessao(home);const cfgP=path.join(home,'Eterna','ftp.json');const cfg=JSON.parse(fs.readFileSync(cfgP,'utf8'));
   const pws=Object.values(cfg.users);ok(pws.length&&pws.every(x=>String(x).length>=12),'I7: senhas novas com menos de 12 caracteres');ok((fs.statSync(cfgP).mode&0o777)===0o600,'I7: ftp.json sem chmod 600');
   ok(!pws.some(x=>A.log().includes(x)),'I7: senha do FTP impressa no console');
   // ---------- I2: sem REST STREAM; REST 5000 recusado; arquivo que não é JPEG nem PNG não entra ----------
@@ -56,10 +57,11 @@ try{
   // ---------- I4: /rostos/projecao só com ETERNA_TESTE_CARGA, por POST ----------
   ok((await req(porta,'GET','/rostos/projecao?n=6000000')).s!==200,'I4: GET /rostos/projecao ainda responde');ok((await req(porta,'POST','/rostos/projecao',{body:{n:6000000}})).s===404,'I4: POST sem ETERNA_TESTE_CARGA deveria dar 404');
   // ---------- I5: trocar servidor, porta ou usuário do FTP remoto exige senha nova ----------
-  fs.writeFileSync(path.join(home,'Eterna','ftp-remoto.json'),J({host:'127.0.0.1',port:1,user:'estadio',password:'segredo-salvo',dir:'',tls:false}));
+  fs.writeFileSync(path.join(home,'Eterna','ftp-remoto.json'),J({host:'127.0.0.1',port:21,user:'estadio',password:'segredo-salvo',dir:'',tls:false}));
+  fs.writeFileSync(path.join(home,'Eterna','ftp-remoto-hosts.txt'),'127.0.0.1\n'); // fora da rede interna, só nome ou IP listado no servidor
   let c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'10.9.9.9',port:21,user:'estadio',password:''}});ok(c.s===400&&/senha/.test(c.b),'I5: host novo sem senha deveria dar 400: '+c.s+' '+c.b);
-  c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'127.0.0.1',port:1,user:'outro',password:''}});ok(c.s===400,'I5: usuário novo sem senha deveria dar 400: '+c.s);
-  c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'127.0.0.1',port:1,user:'estadio',password:''}});ok(c.s===502,'I5: mesmo servidor sem senha deveria reaproveitar a salva e tentar conectar (502 aqui): '+c.s);
+  c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'127.0.0.1',port:21,user:'outro',password:''}});ok(c.s===400,'I5: usuário novo sem senha deveria dar 400: '+c.s);
+  c=await req(porta,'POST','/ftp-remoto/config',{body:{host:'127.0.0.1',port:21,user:'estadio',password:''}});ok(c.s===502,'I5: mesmo servidor sem senha deveria reaproveitar a salva e tentar conectar (502 aqui): '+c.s);
   A.p.kill('SIGKILL');await sleep(400);
   // ---------- B1: login compartilhado com subpasta = fotógrafo cadastrado ----------
   cfg.users.ctp='ctp-compartilhado-123';cfg.compartilhado=['ctp'];fs.writeFileSync(cfgP,J(cfg));

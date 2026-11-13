@@ -114,7 +114,7 @@ try{
     for(const v of ['painel','caixa']){const e=await A.evaluate(v=>{try{ETERNA.state.view=v;ETERNA.render();return document.querySelector('#main').innerText.length>50;}catch(x){return 'erro '+x.message;}},v);ok(e===true,'3: '+v+' no admin: '+e);}
     // v81 final: Esc na janela do Checkout volta ao início do #loja, sem apagar o login do admin; a janela não fica ligada ao admin (opener)
     await L.keyboard.press('Escape');await L.waitForTimeout(300);
-    const le=await L.evaluate(()=>({h:location.hash,rota:ETERNA.state.lojaRota,user:!!ETERNA.state.user,step:ETERNA.state.kiosk.step,login:!!document.querySelector('[data-act="login-email"]'),op:window.opener,s:!!localStorage.getItem('eterna.session')}));
+    const le=await L.evaluate(()=>({h:location.hash,rota:ETERNA.state.lojaRota,user:!!ETERNA.state.user,step:ETERNA.state.kiosk.step,login:!!document.querySelector('[data-act="login-usuario"]'),op:window.opener,s:!!localStorage.getItem('eterna.session')}));
     ok(le.h==='#loja'&&le.rota&&!le.user&&le.step==='code'&&!le.login&&le.op===null&&le.s,'3: Esc na janela do Checkout: '+J(le));
     // trocar o endereço na janela do Checkout (cliente digita #caixa, ou #painel) volta ao #loja sem apagar a sessão do admin
     for(const h of ['#caixa','#painel','']){await L.evaluate(h=>{location.hash=h;},h);await L.waitForTimeout(300);

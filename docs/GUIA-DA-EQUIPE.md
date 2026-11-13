@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v97 (11/11/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v99 (11/11/2026).
 
 Três nomes para guardar:
 
@@ -104,7 +104,7 @@ O Painel responde em poucos segundos "como foi o período": faturamento, fotos, 
 - **Vendas**: quantos atendimentos viraram venda, foram descartados ou cancelados, e os brindes.
 - **Fotos**: quanto das fotos vendidas saiu impressa, e as reimpressões.
 - **Sessões**: de cada 100 sessões, quantas chegaram ao balcão e quantas compraram. A frase diz onde está a maior perda.
-- **Ranking de produtos**: sempre os 7 itens do catálogo do Tour; o que vem de nomes antigos da Roverpix fica em "Outros (catálogo antigo)". Cortesias não entram.
+- **Ranking de produtos**: sempre os produtos do catálogo (o de antes da v98, que voltou na v99.3); nome que não é de nenhum deles fica em "Outros (catálogo antigo)". As cortesias (Cortesia SAC e CORTESIA PORTA-RETRATO) aparecem depois dos produtos vendidos, com quantas foram dadas e "cortesia" no lugar do valor. Elas não contam na receita nem na posição do ranking. Só aparecem quando houve alguma no período.
 - **Pagamentos**: quanto entrou por modalidade. Dinheiro aguardando caixa aparece numa nota e não entra no total.
 - **Dia a dia**: toque para abrir a tabela.
 - **"total de 07/10 a 15/10"**: com os números importados, Vendas, Fotos, Ranking e Pagamentos só existem como total do período inteiro.
@@ -156,7 +156,7 @@ O FTP do estádio é configurado pela administração em **Configurações › P
 
 1. No alto de **Minhas fotos** aparece **Neste computador**, com o nome de quem está logado.
 2. Toque em **Trocar fotógrafo**. Quem estava sai.
-3. O próximo fotógrafo entra com o e-mail dele e o código.
+3. O próximo fotógrafo entra com o usuário e a senha dele.
 4. Ele volta direto para **Minhas fotos**.
 
 Para só sair, sem trocar, toque em **Sair**.
@@ -312,19 +312,63 @@ Só quem pode alterar Configurações (Admin e Supervisor, pelos perfis prontos)
 
 ### Abrir
 
-1. No computador do Checkout, entre com o e-mail do aparelho. Se ele tiver o perfil Checkout, a tela abre sozinha.
+1. No computador do Checkout, entre com o usuário do aparelho. Se ele tiver o perfil Checkout, a tela abre sozinha.
 2. Em outro computador, toque em **Abrir Checkout**. No celular, é o ícone de tela ao lado do botão Menu.
 3. O Checkout abre em tela cheia, sem menu e sem login. É a tela do cliente.
 
-**A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu e-mail e o código, ou use outra janela.
+**A aba do Checkout nunca entra logada.** Depois que uma aba virou Checkout, recarregar, digitar outro endereço ou duplicar a aba leva sempre à tela do cliente ou ao login. Para usar o sistema, entre de novo com o seu usuário e a sua senha, ou use outra janela.
 
-### Fotos de mais de uma sessão (v91)
+### Posto automático (10/11/2026)
 
-Quando o cliente olha para a câmera, o Checkout junta todas as sessões do dia em que ele aparece: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. Cada sessão em que ele aparece entra inteira, inclusive as fotos da família em que ele não está, porque a família costuma vir junta ao balcão. A tela abre direto na primeira foto ampliada; ele passa as fotos com as setas ou arrastando, marca com ✓ e pode tocar em **Ver todas** para ver a grade. O ponto e a hora aparecem no canto da foto.
+Não é preciso parear o aparelho. Basta ligar o computador na rede do ponto, abrir o Eterna pelo atalho e um **Admin** entrar com usuário e senha uma vez: o servidor registra o aparelho sozinho como **Posto 1**, **Posto 2**... e cada venda fica marcada com o posto onde foi feita. O Checkout aberto por esse aparelho funciona na hora. Só os aparelhos da rede do ponto viram posto: quem entra de fora (pelo Tailscale) e o próprio computador do servidor usam o sistema normalmente, sem virar posto. Fotógrafo ou vendedor que entra num aparelho que ainda não é posto vê "Este aparelho ainda não é um posto": chame um Admin. Depois disso, qualquer pessoa da equipe usa o posto. O posto só deixa de valer se ficar mais de 30 dias seguidos sem abrir o Eterna (aí um Admin entra de novo), ou se a pessoa que o criou for removida.
 
-Se o cliente aparece só no fundo das fotos de outra família (o rosto dele bem menor que o das pessoas da frente), aquela sessão não entra inteira: entram só as fotos em que ele aparece.
+O pareamento abaixo continua existindo só para um aparelho que precisa abrir o Checkout **sem ninguém conectado** (ex.: um tablet fixo ou a TV da Fila).
 
-Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer, nunca a sessão inteira; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+**Parear um aparelho sem pessoa conectada (Admin, opcional)**
+
+1. No próprio aparelho, abra o Eterna pelo endereço do servidor do ponto (`https://posto.eterna.photo`). Não use eterna.photo.
+2. Entre com um usuário que pode alterar o Painel de controle (Admin).
+3. Abra **Configurações › Painel de controle** e vá a **Postos deste ponto**.
+4. Escreva o nome do aparelho (ex.: Checkout 1) e toque **uma vez** em **Parear este aparelho**. O botão mostra **Pareando…** até terminar. Tocar de novo não cria outro posto.
+5. Pronto: o Checkout abre nesse aparelho sem ninguém conectado. A conta do Admin sai do aparelho logo depois de parear (o aparelho continua pareado). Para usar o sistema ali de novo, entre com usuário e senha.
+
+A lista mostra cada aparelho, o número (P1, P2...), quem pareou, o último uso e se está ativo. Dica: no computador do ponto, use como nome o mesmo do rolo de papel (ex.: Caixa 1).
+
+**"Este aparelho ainda não foi pareado"**
+
+Aparece no Checkout de um aparelho sem ninguém conectado, ou que foi revogado. O que fazer:
+
+1. Confira se a página foi aberta pelo endereço do servidor do ponto.
+2. Toque em **Sair**, entre com o seu usuário e a sua senha e abra o Checkout de novo: o aparelho vira posto sozinho.
+3. Depois, toque em **Tentar de novo**. **Sair** volta para a entrada.
+
+As vendas que o aparelho já tinha na fila ficam guardadas e sobem depois do pareamento.
+
+**Revogar um aparelho (Admin)**
+
+Use quando um aparelho for perdido, trocado ou sair do ponto.
+
+1. Em **Postos deste ponto**, ache o aparelho na lista.
+2. Toque em **Revogar**. A situação muda para **revogado** na hora.
+3. Aquele aparelho passa a mostrar "Este aparelho ainda não foi pareado". Para voltar a usar, pareie de novo (ele ganha um número novo).
+
+**Outros avisos**
+
+- **"abra o Eterna pelo endereço do servidor do ponto"**: a página foi aberta pelo endereço errado (por exemplo eterna.photo). Abra pelo endereço do servidor do ponto, o mesmo dos postos.
+- **"alterações não foram aceitas (sem permissão)"**: a sua conta não pode mudar aquilo. Peça a quem pode.
+- **Preços** no Painel de controle: quem não tem o Catálogo vê os preços, mas não muda.
+
+**Galeria da venda no aparelho pareado.** Depois que o Caixa confirma o pagamento, o aparelho pareado publica a galeria da venda (QR e código). Se a sessão ainda estiver chegando do servidor, a galeria espera as fotos e é publicada sozinha em seguida.
+
+### Fotos de mais de uma sessão (v91, regra da selfie desde a v99.2)
+
+Quando o cliente olha para a câmera, o Checkout procura em todas as sessões do dia (dentro do tempo de busca) e abre **só as fotos em que ele aparece**: com a família num ponto e, mais tarde, sozinho em outro ponto, com outro fotógrafo. A selfie nunca abre a sessão inteira, nem as fotos da família em que ele não está. A tela abre direto na primeira foto ampliada; ele passa as fotos com as setas ou arrastando, marca com ✓ e pode tocar em **Ver todas** para ver a grade. O ponto e a hora aparecem no canto da foto.
+
+**Família em que alguém ficou de fora:** na escolha, toque em **Adicionar outra pessoa**. A selfie dessa pessoa, ali no balcão, soma as fotos dela às já abertas, mantendo as marcas. Nunca abra as fotos de alguém que não está presente.
+
+Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+
+**Drone (v99.26):** as fotos tiradas do vídeo do Drone entram como fotos de fotógrafo, com o piloto como origem. A selfie também acha essas fotos no Checkout.
 
 A compra é uma venda só, mesmo com fotos de várias sessões. Foto que já foi comprada não aparece de novo. Pelo código do recibo (o código da sessão) abre a sessão inteira; pelo código da galeria, a compra daquela venda. Depois de 5 códigos errados seguidos, o campo trava por 1 minuto (recarregar a página não destrava).
 
@@ -332,13 +376,15 @@ A compra é uma venda só, mesmo com fotos de várias sessões. Foto que já foi
 
 A câmera procura só as fotos dos **últimos 90 minutos** (a família que fotografou antes disso já foi embora, e a busca fica mais rápida e mais segura). Se o cliente voltar depois, a câmera não acha: peça o **código do recibo** (começa com LP) ou o **código da galeria** (exemplo: `K7QM-4WXR`). O código abre a sessão de qualquer hora do dia.
 
+**"Buscando suas fotos…"** Se a sessão acabou de ser fotografada, as fotos podem levar alguns segundos para chegar ao Checkout. Depois de digitar o código e tocar em **Ver minhas fotos**, o botão fica desativado e mostra "Buscando suas fotos…" por até 4 segundos. É normal. Não toque de novo: assim que as fotos chegam, a sessão abre. Se não chegarem, aparece o aviso de código não encontrado; espere um pouco e tente de novo. Código de sessão sem foto disponível, ou de outro dia, responde na hora, sem espera.
+
 O tempo muda em **Configurações › Preços e Checkout**, aba **Checkout**, em **Procurar fotos dos últimos __ minutos** (de 15 a 480 minutos, ou **Dia todo**). Só Admin e Supervisor mudam. Vale na hora para todos os caixas do ponto. Em dia cheio, diminua; em dia calmo, pode aumentar.
 
 ### Computador do cliente: Chrome em modo quiosque
 
 No terminal que fica virado para o cliente, abra o Chrome em modo quiosque. Assim o cliente não vê a barra de endereço, as abas nem os botões do navegador.
 
-1. Entre com o perfil **Checkout** (o e-mail do aparelho) ou abra direto `eterna.photo/#loja`.
+1. Entre com o perfil **Checkout** (o usuário do aparelho) ou abra direto `eterna.photo/#loja`.
 2. Abra o Chrome em modo quiosque (atalho do Chrome com a opção `--kiosk`). A TI do ponto deixa o atalho pronto.
 3. Para sair do modo quiosque, a equipe usa Alt+F4 no Windows ou Cmd+Q no Mac.
 
@@ -358,7 +404,7 @@ O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o n
 
 1. A tela do Checkout mostra o botão grande **Iniciar**. A câmera fica desligada até o cliente tocar nele.
 2. O cliente toca em **Iniciar** e olha para a câmera. O Checkout encontra as fotos dele e a câmera desliga.
-3. Se a câmera não encontrar (ou se as fotos são de mais de 90 minutos atrás), ele toca em **Digitar seu código** e digita o código da sessão (começa com LP). Se nenhum rosto aparecer na câmera por 1 minuto (gente passando atrás não conta), ela desliga e a tela volta ao **Iniciar**. Em qualquer caso ela desliga 3 minutos depois do Iniciar.
+3. Se a câmera não encontrar (ou se as fotos são de mais de 90 minutos atrás), ele toca em **Digite sua sessão** e digita o código da sessão (começa com LP). Se nenhum rosto aparecer na câmera por 1 minuto (gente passando atrás não conta), ela desliga e a tela volta ao **Iniciar**. Em qualquer caso ela desliga 3 minutos depois do Iniciar.
 4. A foto aparece na tela inteira. Ele passa com as setas, arrastando o dedo ou com as teclas de seta, e toca em ✓ nas que quer levar e em ✗ nas que não quer. **Ver todas** mostra a grade.
 5. Com fotos marcadas aparece **Continuar · N fotos** no canto de baixo. É o único botão que faz o pedido (o carrinho do canto de cima só mostra quantas estão marcadas). Ao tocar, o cliente vê **Pronto! O atendente vai finalizar sua compra**, com o código dele e quantas fotos escolheu. O Checkout não mostra pacote, preço nem forma de pagamento. Se ele quiser mudar a escolha, toca em **Voltar às fotos**: volta para as fotos com tudo o que já tinha marcado e a compra sai do seu **Aguardando pagamento** (aparece o aviso "O cliente do código ... voltou às fotos"). Quando ele tocar em Continuar de novo, ela volta. Depois que você escolhe o pacote ou a forma de pagamento no Posto, **Voltar às fotos** some e o cliente vê "O atendente já está finalizando sua compra.": a compra fica com você (para mudar, cancele e peça para ele escolher de novo).
    - Se o cliente parar na escolha das fotos sem tocar na tela por 90 segundos, o Checkout volta ao **Iniciar** e as fotos marcadas por ele são apagadas: quem chegar depois começa do zero e não vê as fotos de ninguém. Ele também pode sair quando quiser pelo botão **Sair**, no canto de cima. Se já tiver marcado fotos, o Checkout pergunta "Sair e apagar as fotos marcadas?" (Sim ou Não). Isso não vale depois do Continuar: aí valem as regras da tela Pronto e do valor (abaixo).
@@ -369,7 +415,7 @@ O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o n
    - Se o preço do pacote mudar em Preços e Checkout depois da sua escolha, ao confirmar o Eterna mostra o valor novo (o cliente também vê) e pede para confirmar de novo.
 8. Cobre na maquininha e confirme como antes (**Pago na maquininha** ou **Recebi R$ X**). O Checkout mostra a tela final com o QR, o código da galeria e o **Valor pago R$ X** que você confirmou.
 9. Se você cancelar, o Checkout do cliente volta ao início.
-10. Imprima as fotos no Posto de venda. A tela final com o QR fica 30 segundos e volta sozinha ao **Iniciar**. Para atender o próximo antes disso, toque em **Voltar ao início** (só a tela final com o QR tem esse botão).
+10. Imprima as fotos no Posto de venda. A tela final com o QR fica 40 segundos e volta sozinha ao **Iniciar**. Para atender o próximo antes disso, toque em **Voltar ao início** (só a tela final com o QR tem esse botão).
 
 ### Recomeçar o Checkout (v97)
 
@@ -395,17 +441,26 @@ Outras coisas que o cliente pode fazer:
 
 ### Pacotes, adicionais e economia (escolhidos no Posto de venda desde a v96)
 
-O catálogo do Tour mudou na v79:
+Na v99.3 (11/11) voltou o catálogo de antes da v98: a lista da Imply ficou de lado por decisão do Ronaldo.
 
-| Pacote | O que leva | Preço |
+| Produto | O que leva | Preço |
 | --- | --- | --- |
-| Maracanã Mais | todas as fotos, só digitais | R$ 250 |
-| Tribuna de Honra | 12 fotos, digitais e impressas | R$ 220 |
-| Maracanã | 9 fotos, digitais e impressas | R$ 190 |
-| Gramado | 6 fotos, digitais e impressas | R$ 150 |
-| Zona Mista | 3 fotos, só digitais | R$ 110 |
-| Arquibancada | 1 foto, digital e impressa | R$ 70 |
-| Foto adicional | 1 foto, digital e impressa | R$ 35 |
+| Pacote Maracanã Mais | todas as fotos, só digitais | R$ 250 |
+| Pacote Tribuna de Honra | 12 fotos, digitais e impressas | R$ 220 |
+| Pacote Maracanã | 9 fotos, digitais e impressas | R$ 190 |
+| Pacote Gramado | 6 fotos, digitais e impressas | R$ 150 |
+| Pacote Zona Mista | 3 fotos, só digitais | R$ 110 |
+| Pacote Arquibancada | 1 foto, digital e impressa | R$ 70 |
+| Foto adicional | 1 foto a mais, digital e impressa | R$ 35 |
+| Fundo de IA | uma foto do campo com o grupo no fundo escolhido | R$ 40 |
+| Foto digital avulsa | uma foto em alta, comprada na galeria online | R$ 39 |
+
+Cortesias (sem valor, não são venda):
+
+| Cortesia | Quando | O que leva |
+| --- | --- | --- |
+| Cortesia SAC | cliente prejudicado pela operação: espera longa, falha de foto, impressão ou sistema, problema no atendimento | as fotos escolhidas, impressas e digitais |
+| CORTESIA PORTA-RETRATO | entra sozinha, uma para cada Porta-retrato vendido (parada desde a v99.3: o Porta-retrato saiu com a lista da Imply) | 1 foto impressa para pôr no porta-retrato |
 
 Todas as impressas são 10×15 cm.
 
@@ -420,9 +475,21 @@ No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 
 Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Configurações › Preços e Checkout**.
 
+### Dar a Cortesia SAC (v99)
+
+Só quem pode dar cortesia (Galerias online, alterar) vê o botão.
+
+1. No **Posto de venda**, abra a **Venda manual** e escolha as fotos com o cliente.
+2. Em **Cortesia**, toque em **Cortesia SAC**. Ela ocupa o lugar do pacote.
+3. Toque em **Ir para o pagamento**.
+4. Escolha o **motivo** e escreva **o que aconteceu** (obrigatório).
+5. Toque em **Registrar cortesia e imprimir**.
+
+A venda fica com valor zero e pagamento "Cortesia", com o motivo, o texto e quem deu. As fotos saem impressas e entram na galeria do cliente com o selo Cortesia.
+
 ### Sessão que já foi paga
 
-Se o cliente volta ao Checkout com fotos que já comprou, aparece "Estas fotos já foram compradas. Fale com a equipe para comprar mais." O Checkout **não deixa pagar de novo**. Para vender mais fotos para ele, use a **Venda manual**, dentro do Posto de venda.
+Se o cliente volta ao Checkout com fotos que já comprou, a tela mostra o QR da compra e o botão **Comprar mais fotos**. As fotos já compradas não aparecem nem são cobradas de novo. Cada foto a mais custa o preço de **1 foto (adicional) digital ou impressa**, digital e impressa, e vira uma venda nova, com número e impressão próprios.
 
 ### Dinheiro: aguardando caixa (vendedor e caixa)
 
@@ -476,7 +543,7 @@ O botão só aparece na tela da câmera e **some de vez** assim que o Checkout c
 - depois de 10 minutos;
 - depois da primeira compra.
 
-Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o seu e-mail e o código. No computador do perfil Checkout esse botão nunca aparece.
+Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o seu usuário e a sua senha. No computador do perfil Checkout esse botão nunca aparece.
 
 **Painel do logo e Esc**
 
@@ -485,7 +552,7 @@ Se o botão sumiu, use o painel do logo ou o Esc (abaixo) e entre de novo com o 
   - **Sair do Checkout**: fecha o Checkout.
   - **Fechar**: volta para o cliente.
 - **Esc** no teclado sai do Checkout na hora.
-- Sair sempre leva para a tela de login. Para voltar ao sistema, entre de novo com o seu e-mail e o código.
+- Sair sempre leva para a tela de login. Para voltar ao sistema, entre de novo com o seu usuário e a sua senha.
 - Não deixe o painel aberto na frente do cliente. A lista mostra sessões de outras famílias.
 
 ---
@@ -539,12 +606,14 @@ A aba **Envio** mostra se cada galeria chegou ao computador do ponto:
 
 ### Ajustes em Preços e Checkout
 
-- **Tempo da tela final do Checkout**: Configurações › Preços e Checkout › aba Checkout › "Tempo da tela final com o QR (segundos)". Padrão 30, de 5 a 120.
-- **Preço da foto avulsa na galeria**: aba Preços, item "Foto digital avulsa (galeria online)", hoje R$ 39. "Todas as fotos" custa o mesmo que o Pacote Maracanã Mais.
+- **Tempo da tela final do Checkout**: Configurações › Preços e Checkout › aba Checkout › "Tempo da tela final com o QR (segundos)". Padrão 40, de 5 a 120.
+- **Preços da galeria online (v99.3)**: cada foto custa a **Foto digital avulsa**; se sair mais caro que o **Pacote Maracanã Mais**, a compra vira o pacote (todas as fotos). Os preços são os de Preços e Checkout.
 
 ### Ver as vendas da galeria
 
-Em **Lista de vendas**, use o filtro **Canal: Online**. Hoje elas aparecem como **teste** e ficam fora da receita (ver limitações).
+Em **Lista de vendas**, use o filtro **Canal: Online**. As compras simuladas do servidor de teste aparecem como **teste** e ficam fora da receita.
+
+A compra online paga no checkout da Imply (v99) está **desligada**: dependia da lista da Imply (código SKU de cada produto), que ficou de lado na v99.3, e das respostas da Imply. Enquanto isso, a compra das fotos é no balcão.
 
 ---
 
@@ -568,7 +637,7 @@ As letras vêm do inglês (Create, Read, Update, Delete). Embaixo do nome de cad
 ### Cadastrar uma pessoa
 
 1. Abra **Sistema** › **Usuários** › **Novo usuário**.
-2. Escreva o nome e o e-mail.
+2. Escreva o nome e o usuário. Se você tiver a permissão em Senhas de acesso, a tela mostra uma senha provisória para entregar à pessoa.
 3. Se for fotógrafo, escolha o nome dele em **Fotógrafo vinculado**.
 4. Em **Perfil**, escolha um perfil pronto (tabela abaixo). Se ainda não souber o que liberar, escolha **Sem acesso ainda**.
 5. Toque em **Criar acesso**.
@@ -594,7 +663,7 @@ Ao mudar uma caixa à mão, o perfil vira **Personalizado**. É normal.
 
 ### Copiar permissões de outra pessoa
 
-1. Em **Permissões**, toque na pessoa e depois em **Copiar permissões de…** (ou, em **Usuários**, abra a pessoa e toque em **Copiar permissões de…**).
+1. Em **Permissões**, toque na pessoa e depois em **Copiar permissões de…**.
 2. Escolha de quem copiar. Vêm as caixas de cada parte, o menu e a tela inicial. Nome, e-mail e status não mudam.
 3. Confira a lista **O que muda**. Nada é gravado antes de confirmar.
 4. Se a outra pessoa tiver acessos que você não tem, eles ficam de fora e aparecem no aviso **Ficou de fora**. O resto é copiado.
@@ -656,8 +725,16 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 
 ### Preparar o notebook (TI do ponto, uma vez)
 
-1. Instale a DNP RX1HS com papel PR 4×6 (10×15) e deixe a **DNP como impressora padrão** do notebook.
-2. Abra o Chrome do Eterna com a opção `--kiosk-printing`. Assim a foto sai direto na DNP, sem a janela de impressão do Chrome. A TI do ponto deixa o atalho pronto.
+1. Instale o driver da DNP DS-RX1HS e ligue no USB. Em **Configurações › Impressoras › DNP › Preferências de impressão**, escolha o papel **PR 4×6 (10×15)**.
+2. Deixe a **DNP como impressora padrão** e desligue "Permitir que o Windows gerencie minha impressora padrão" (senão o Windows troca a padrão sozinho).
+3. Crie um atalho **Eterna** na Área de Trabalho com o destino `"C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir=C:\Eterna\chrome --kiosk-printing --unsafely-treat-insecure-origin-as-secure=<endereço do servidor do ponto> <endereço do servidor do ponto>/#posto` e abra o Eterna sempre por ele. O `--user-data-dir` dá ao Eterna um Chrome só dele, que abre sempre como processo novo: sem isso, se outro Chrome estiver aberto (até em segundo plano), o `--kiosk-printing` é ignorado e a janela de impressão aparece. Com `--kiosk-printing`, a foto sai direto na DNP. O `--unsafely-treat-insecure-origin-as-secure` libera a câmera enquanto o endereço não tem certificado. O atalho abre o **Posto de venda** (`/#posto`): o vendedor entra com usuário e senha e abre o Checkout pelo botão **Abrir Checkout**. Com `--kiosk-printing` a prévia de impressão do Chrome aparece por um instante e fecha sozinha: não precisa clicar. Para conferir: `chrome://version` mostra `--kiosk-printing` na linha de comando. O jeito mais fácil de criar o atalho é dar duplo clique em `servidor/posto/preparar-posto-eterna.cmd` (cria os dois atalhos e confere a impressora padrão; para mandar por e-mail, vai zipado), ou o script `servidor/posto/criar-atalho-eterna.ps1` (uma vez por máquina; `-AoLigar` também abre o Eterna quando o Windows entra).
+4. O posto imprime na DNP ligada nele quando o servidor tem `ETERNA_IMPRESSORA_POSTOS="*=local"` (veja a documentação técnica).
+5. O `preparar-posto-eterna.cmd` também instala o **programa de impressão**: a foto vai direto para a DNP, sem a prévia do Chrome aparecer. Ele liga sozinho com o Windows, escondido. Se ele estiver parado, o Eterna imprime pelo Chrome como antes (a prévia pisca e fecha sozinha).
+6. Sem arquivo anexo: no PowerShell do posto, a linha abaixo baixa o instalador do ramo `idiomas-base` e roda (foi assim que o posto do Bernardo foi instalado em 10/11, e é o que foi mandado ao Bernardo e ao Rafael):
+
+   ```powershell
+   $f="$env:TEMP\preparar-posto-eterna.cmd"; Invoke-WebRequest "https://raw.githubusercontent.com/dudurezende10/eterna/idiomas-base/servidor/posto/preparar-posto-eterna.cmd" -OutFile $f -UseBasicParsing; cmd /c $f
+   ```
 3. Com `--kiosk-printing`, tudo o que for impresso nesse Chrome sai na DNP. Cartaz A4 de grupo de escola: imprima no computador do ponto.
 
 ### O que tem no Posto de venda
@@ -698,14 +775,16 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 1. Na venda já impressa, toque em **Reimprimir**.
 2. Marque as fotos que vão sair de novo.
 3. Escolha o motivo: Falhou, Outra cópia, Cor ou Outro.
-4. Toque em **Reimprimir N fotos** e depois em **Saiu certo** ou **Não saiu**.
+4. Toque em **Reimprimir N fotos**. Nos postos com o programa de impressão, a DNP confere e a reimpressão é registrada sozinha; sem ele, toque em **Saiu certo** ou **Não saiu**.
 
 ### Trocar o rolo de 700
 
 1. O rolo da DNP faz cerca de 700 fotos. O contador "Rolo: X de 700" fica no alto do Posto de venda.
-2. Abaixo de 40, o contador fica vermelho e aparece em **Alertas**. Troque antes do pico.
-3. Troque o rolo e a fita na DNP.
-4. Registre a troca: no Posto de venda (veja **Troquei o rolo** logo abaixo) ou em **Dashboard › Estoque**, em **Registrar troca de rolo** (no Estoque, só quem tem permissão de editar Estoque). O contador volta a 700.
+2. Com 100 ou menos, o contador fica amarelo: separe um rolo novo. Abaixo de 40, fica vermelho piscando, aparece uma faixa vermelha no alto do Posto de venda e do Caixa ("Rolo acabando: faltam N fotos") e um alerta grave em **Alertas**. Troque antes do pico.
+3. Quando a impressora avisa um problema (papel ou fita no fim, tampa aberta, papel enroscado), a faixa fica vermelha cheia com o aviso da própria DNP.
+4. Nos postos com o programa de impressão, o contador é o da própria DNP e a troca de rolo é percebida sozinha: não precisa registrar.
+5. Troque o rolo e a fita na DNP.
+6. Sem o programa de impressão, registre a troca: no Posto de venda (veja **Troquei o rolo** logo abaixo) ou em **Dashboard › Estoque**, em **Registrar troca de rolo** (no Estoque, só quem tem permissão de editar Estoque). O contador volta a 700.
 
 ### Troquei o rolo (v96)
 
@@ -1011,6 +1090,33 @@ O recorte da pessoa ficou mais preciso. O que a pessoa segura, como a bandeira, 
 Em **Sistema › Laboratório › Chute a gol** está a ficha de um produto em teste: a foto do cliente com o goleiro em frente à trave, segurando a placa "Fiz um gol no Maracanã" na língua dele. A tela explica onde fica, quem é o goleiro, quantos cliques e o material. Ainda não é vendido. Só o Admin vê o Laboratório.
 ---
 
+## Novidades da v93: servidor do ponto com acesso por pessoa ou aparelho
+
+O servidor do ponto só abre os dados para quem entrou com usuário e senha ou para um aparelho pareado.
+
+- **Postos**: o aparelho da rede do ponto vira posto sozinho quando um Admin entra nele (veja "Posto automático" na parte 3). Só aparelho sem ninguém conectado precisa de pareamento.
+- **Código no Checkout**: com a sessão recém-fotografada, o botão mostra "Buscando suas fotos…" por alguns segundos (veja "Cliente que volta horas depois").
+- **Galeria da venda**: o aparelho pareado publica a galeria depois que o Caixa confirma o pagamento.
+- **Compra pelo celular**: desligada. A galeria mostra as fotos e pede para o cliente falar com a equipe no balcão.
+- **Senha provisória**: logo depois de cadastrar uma pessoa, o botão **Gerar senha provisória** espera alguns segundos o cadastro chegar ao servidor.
+- **Sessão vencida**: se o login venceu e a página é recarregada, a tela volta à entrada sem o aviso "Sua sessão terminou". É só entrar de novo (detalhe conhecido).
+
+### Para o TI (Ronaldo)
+
+Lista de operação no servidor do ponto:
+
+1. **Endereço com certificado.** Os aparelhos abrem o Eterna por `https://posto.eterna.photo`. No `nuvem.env`: `ETERNA_ORIGENS=https://posto.eterna.photo` (mais os endereços do Tailscale, se houver).
+2. **Proxy.** O proxy na frente do Eterna repassa o `Host` original e manda `X-Forwarded-Proto: https`. Sem isso, o login e o pareamento não ficam guardados no aparelho.
+3. **Parear de novo todos os aparelhos** em `https://posto.eterna.photo` (Painel de controle › Postos deste ponto). O pareamento vale por endereço: aparelho pareado em outro endereço precisa parear de novo.
+4. **Abrir o app pelo endereço do servidor**, nunca por eterna.photo. Aberto por outro endereço, o app avisa "abra o Eterna pelo endereço do servidor do ponto".
+5. **FTP embutido, portas passivas.** O FTP do Eterna usa só modo passivo, na faixa `ETERNA_FTP_PASV` (padrão 50000-50050). Libere essa faixa no firewall, além da porta 21. Câmera em modo ativo não envia.
+6. **Outro FTP na porta 21.** Onde já houver outro servidor FTP (por exemplo o IIS do estádio), use `ETERNA_FTP=0` para desligar o FTP embutido.
+7. **Teste com a câmera Canon.** Uma hora, com uma foto a cada 6 minutos e a câmera em RAW+JPEG. O FTP embutido recebe só JPEG. Se a câmera travar a fila por causa do RAW, use `ETERNA_FTP_RAW=descartar` (o RAW é recebido e descartado, sem erro).
+8. **Configurações inválidas são ignoradas.** `ftp-remoto.json` com servidor fora da rede do ponto ou porta diferente de 21/990, e `roverpix.json` com endereço que não é o oficial, agora são ignorados. Confira o log do agente depois de reiniciar e, se preciso, refaça a configuração pelo Painel de controle. Servidor FTP do estádio com nome (ou IP fora da rede interna): um por linha em `~/Eterna/ftp-remoto-hosts.txt`.
+9. **Status.** Sem login, o `/status` mostra só que o Eterna está no ar. Impressora, nuvem e rostos se conferem no app, com login de administrador.
+
+---
+
 ## 6. O que dizer ao cliente
 
 **Sobre o QR**
@@ -1036,9 +1142,9 @@ Em **Sistema › Laboratório › Chute a gol** está a ficha de um produto em t
 
 ## 7. Limitações de hoje
 
-- **No celular do cliente aparece "Suas fotos estão chegando".** Nesta fase as fotos ainda ficam no computador do ponto e o celular não chega até ele. Vai funcionar quando a nuvem entrar (fase 2). Não prometa download pelo celular por enquanto.
-- **Para demonstrar**, use **Abrir galeria** em Galerias online, no próprio computador do ponto. Ali a galeria funciona de verdade.
-- **Compras na galeria online são de teste.** Nada é cobrado. Elas aparecem na Lista de vendas como "teste" e não entram na receita.
+- **No celular do cliente aparece "Suas fotos estão chegando".** A galeria do QR abre pela nuvem. Esse aviso aparece enquanto as fotos daquela venda ainda não subiram (internet do ponto caída ou fila de envio cheia). Elas sobem sozinhas quando a conexão volta: peça para o cliente abrir o QR de novo mais tarde.
+- **Para demonstrar** sem depender da internet, use **Abrir galeria** em Galerias online, no próprio computador do ponto.
+- **Compra pelo celular está desligada (v93).** A galeria mostra as fotos e pede para o cliente falar com a equipe no balcão. A venda é feita no Checkout.
 - **Cartão e PIX**: o sistema ainda não conversa com a maquininha (sem TEF). Quem confirma é você, depois de ver a maquininha aprovar.
 - **Checkout e Posto de venda no mesmo notebook**: nesta etapa o Checkout e o Posto de venda (com o Caixa dentro dele) precisam estar no mesmo notebook e no mesmo navegador. Os notebooks ainda não conversam entre si; isso entra na próxima etapa.
 - **Ícone do celular no cartão do QR** está quase invisível na tela final. Ajuste previsto.
@@ -1047,6 +1153,7 @@ Em **Sistema › Laboratório › Chute a gol** está a ficha de um produto em t
 - **Compra feita na galeria da escola** não aparece na galeria da sessão da família, e vice-versa.
 - **"Baixar todas"** baixa as fotos uma por uma (ainda não há arquivo ZIP).
 - **Fotos com fundo de IA (Edição Maracanã)** ainda não aparecem na galeria por QR. No pacote só digital elas não chegam ao cliente: ofereça um pacote com impressão. Isso muda numa próxima versão. A compra de fundo de IA depois da visita, que existia na tela Convidado, volta na galeria online numa próxima fase.
-- **Permissões e confirmação do caixa**: nesta fase organizam o que cada pessoa vê e faz, mas ainda são conferidas só no navegador. Ainda não são uma trava de segurança no servidor. Isso entra quando o servidor entrar.
+- **Permissões**: desde a v93, o servidor do ponto confere a permissão de cada pessoa ou aparelho em cada pedido. O que a conta não pode mudar volta com o aviso "alterações não foram aceitas (sem permissão)".
+- **Sessão vencida ao recarregar**: a tela volta à entrada sem o aviso "Sua sessão terminou". Basta entrar de novo.
 - **Painel: a parte Eterna são as vendas deste computador.** Dois computadores podem mostrar totais diferentes até as vendas irem para o servidor.
 - **Fotógrafo sem o próprio índice**: no perfil pronto, o fotógrafo não vê a tela Fotógrafos. Decisão confirmada pelo Eduardo.

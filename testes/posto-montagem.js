@@ -1,7 +1,7 @@
 // Eduardo (11/11): o Posto avisa o caixa quando o pedido tem foto com fundo de IA (Edição Maracanã, aiSel) e o pacote não a imprime.
 // A montagem ainda não vai para a galeria do QR e só chega ao cliente impressa. O aviso não bloqueia a venda.
 // Pedido com 1 montagem + 2 fotos: Zona Mista e Maracanã Mais avisam; Gramado não; pedido sem montagem nunca avisa. Sem agente.
-const {chromium}=require('playwright');
+const {chromium}=require('playwright');const entrarTeste=require('./_entrar');/* v93: usuário e senha */
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
 const UM='Este pedido tem 1 foto Edição Maracanã. Neste pacote ela não é impressa e ainda não vai para a galeria. Ofereça um pacote com impressão.';
@@ -9,7 +9,7 @@ const DOIS='Este pedido tem 2 fotos Edição Maracanã. Neste pacote elas não s
 (async()=>{const b=await chromium.launch();
 try{const ctx=await b.newContext({viewport:{width:1366,height:900}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(400);
-  await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(150);await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(450);
+  await entrarTeste(pg,'eduardo@eduardorezende.com');
   // pedidos do Checkout: A = 2 fotos + 1 montagem; B = 3 fotos, sem montagem; C = 1 foto + 2 montagens; D = 4 fotos + 1 montagem
   const pk=await pg.evaluate(()=>{const E=ETERNA,S=E.SIM;const bg=E.bgOn()[0].id||E.bgOn()[0];const ds=E.demoSessions().filter(s=>s.status!=='paga'&&s.status!=='aberta'&&s.photos.length>=6).sort((a,b)=>a.card<b.card?-1:1);
     const ped=(id,s,nPh,nAI,cod)=>({id,card:s.card,codigo:cod,criada:new Date().toISOString(),estado:'escolha',escolha:true,n:nPh+nAI,nSes:nPh+nAI,selected:s.photos.slice(0,nPh).map(p=>p.id),aiSel:s.photos.slice(nPh,nPh+nAI).map(p=>p.id+'|'+bg),fav:[],pkg:null,total:null,meio:null,canal:'checkout',iniciado:'aguardando',saleNo:'L0-9'+id.slice(-2)});

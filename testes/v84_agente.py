@@ -4,6 +4,9 @@
 import importlib.util, json, os, sys, tempfile
 from PIL import Image
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao               # para aqui se o HOME não for temporário
 sp = importlib.util.spec_from_file_location("ag", sys.argv[1])
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)

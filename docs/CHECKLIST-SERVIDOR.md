@@ -60,7 +60,12 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 - [ ] `~/Eterna/nuvem.env` com nuvem, bucket, perfil, região e API da galeria (tabela em [NUVEM.md](NUVEM.md)), mais:
   - `ETERNA_PASTA`: a pasta raiz do FTP (passo 6);
   - `ETERNA_IMPRESSORA`: o nome exato da DNP (passo 5);
-  - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. O passo 8 acrescenta os do Tailscale.
+  - `ETERNA_ORIGENS`: todos os endereços pelos quais o Eterna é aberto, separados por vírgula. Com o endereço com certificado dos postos: `ETERNA_ORIGENS=https://posto.eterna.photo` (mais os do Tailscale, que o passo 8 acrescenta);
+  - `ETERNA_FTP=0`: no estádio o FTP das câmeras é o IIS na porta 21 (passo 6); o FTP embutido do Eterna fica desligado.
+- [ ] Endereço com certificado (`posto.eterna.photo`): o proxy na frente do Eterna repassa o `Host` original e manda `X-Forwarded-Proto: https` (assim o cookie de login e o do posto saem com `Secure`). Depois de trocar o endereço, **parear de novo cada aparelho** no endereço novo (Painel de controle › Postos deste ponto): o cookie do posto vale por endereço.
+- [ ] Abrir o app nos aparelhos sempre pelo endereço do servidor do ponto (`https://posto.eterna.photo`), nunca por eterna.photo.
+- [ ] Depois de reiniciar o agente, conferir no log que `ftp-remoto.json` e `roverpix.json` foram aceitos: servidor FTP fora da rede do ponto (ou porta diferente de 21/990) e endereço da Roverpix que não é o oficial são ignorados. Se for o caso, refazer pelo Painel de controle (nome de servidor FTP: um por linha em `~/Eterna/ftp-remoto-hosts.txt`).
+- [ ] Conferir no app (com login de administrador), no Upload automático e no Painel de controle, que a nuvem está ligada e conectada. Sem login, o `/status` mostra só que o Eterna está no ar.
 - [ ] Conferir em `/status`: `nuvem.ligada` = true e `s3_ok` = true.
 - [ ] Depois de 2 minutos ligado, conferir em `/status`: `backup.ok` = true (sem isso, a série diária das Estatísticas e o calendário ficam só neste disco).
 - [ ] Chave da API-Football (v97): o Admin abre o Eterna pelo servidor (http://127.0.0.1:8765 ou o endereço do Tailscale), vai em Configurações › Painel de controle › Calendário de eventos · fonte dos jogos, cola a chave e toca em Testar agora. Nunca mandar a chave por chat ou e-mail. Alternativa: `ETERNA_API_FOOTBALL` no `nuvem.env` (aí a tela mostra "definida no servidor").
@@ -80,6 +85,8 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 - [ ] Uma **subpasta por fotógrafo** (ex.: `\carlos`). Na câmera, o destino aponta para a subpasta dela: é assim que o Eterna sabe quem tirou a foto.
 - [ ] Na câmera: Wi-Fi do ponto, servidor = IP reservado, porta 21, usuário do FTP, modo passivo ligado. A câmera precisa aparecer na lista de clientes do roteador; o app do celular só configura, quem conecta é a câmera.
 - [ ] Teste: tirar uma foto, e ela aparece em Upload automático em segundos, com o rosto lido.
+- [ ] A faixa de portas passivas precisa de regra de firewall própria (além da 21). Se um dia o FTP embutido do Eterna for usado no lugar do IIS: faixa `ETERNA_FTP_PASV` (padrão 50000-50050), só modo passivo.
+- [ ] Teste da Canon por 1 hora, com uma foto a cada 6 minutos (a câmera pode desligar o Wi-Fi entre uma e outra) e com a câmera em RAW+JPEG. No FTP embutido, o `.CR3` recebe 553 (só JPEG): confirmar que a câmera segue mandando os JPEG. Se ela travar a fila no 553, ligar `ETERNA_FTP_RAW=descartar` (o RAW é recebido e jogado fora, sem erro).
 
 ## 7. Ligar sozinho
 
@@ -88,6 +95,7 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
   - cria a tarefa "Eterna" do **sistema** (SYSTEM), que liga o Eterna com o Windows sem ninguém entrar e sem senha de usuário, e religa se cair;
   - desliga o atalho do vigia na pasta Inicializar, para não subirem dois;
   - libera o firewall: Python, 8765 e 2121, e desfaz o bloqueio que o Windows grava quando alguém clica em **Cancelar** na pergunta do firewall;
+  - instala o **ffmpeg para a máquina toda** (`winget install --id Gyan.FFmpeg -e --scope machine`), que tira as fotos do vídeo do Drone; o Eterna roda como SISTEMA e não enxerga um ffmpeg instalado só no perfil de um usuário. Sem ffmpeg o vídeo é entregue, só não saem as fotos;
   - não deixa dormir na tomada nem com a tampa fechada;
   - põe o atalho "Eterna" na área de trabalho de todos;
   - liga o Eterna e mostra os endereços para os pontos.
@@ -108,6 +116,10 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
 ## 9. Teste final, de ponta a ponta
 
 - [ ] Do servidor: `http://127.0.0.1:8765` abre.
+- [ ] Postos: cada aparelho vira posto sozinho quando alguém da equipe entra nele (10/11/2026). Pareamento (Painel de controle › Postos deste ponto) só para aparelho que abre o Checkout sem ninguém conectado, como a TV da Fila.
+- [ ] DNP ligada no posto: `ETERNA_IMPRESSORA_POSTOS="*=local"` no servidor, DNP como padrão no posto e Chrome aberto com `--kiosk-printing`.
+- [ ] `ETERNA_POSTO_REDE` com a faixa da rede do ponto (ex.: `192.168.10.0/24`). Vazia desliga o posto automático. Atrás de proxy, só depois de tratar `X-Forwarded-For`.
+- [ ] Em cada posto: `preparar-posto-eterna.cmd` rodado (atalho + programa de impressão) e um Admin entrou uma vez pelo atalho.
 - [ ] De um posto ou celular no Wi-Fi do ponto: `http://<ip-reservado>:8765` abre, com as fotos visíveis.
 - [ ] De fora, com Tailscale: `http://<nome-do-servidor>:8765` abre, com as miniaturas e a foto ampliada.
 - [ ] Câmera → foto aparece → selfie no Checkout acha a pessoa → venda → impressão na DNP → QR abre a galeria no celular (eterna.photo).

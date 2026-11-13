@@ -2,7 +2,7 @@
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 async function nova(b,w=1366,h=768){const ctx=await b.newContext({viewport:{width:w,height:h}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(350);return {ctx,pg};}
 const itens=pg=>pg.$$eval('#nav button[data-v]',bs=>bs.map(b=>({v:b.dataset.v,t:(b.querySelector('span')||b).textContent.trim(),title:b.getAttribute('title')||''})));
 // perfis da v93 (antes da parte H), para o H7: ninguém ganha tela nem letra
@@ -50,8 +50,9 @@ try{
       const antes=k=>({preset:'custom',perms:E.permNorm(V93[k].perms),menu:V93[k].menu==='*'?E.ALL_VIEWS.slice():V93[k].menu.slice()});
       Object.keys(V93).forEach(k=>{const dep={preset:k,perms:E.presetPerms(k),menu:E.presetMenu(k)};out[k]=E.accExtra(dep,antes(k));});
       // v96-ux (Eduardo, 11/11): a Supervisora ganha só set.c (envia as fotos do cartão pela tela, como o Admin)
-      out.supPerms=JSON.stringify(E.presetPerms('supervisor'))===JSON.stringify(E.permNorm({...V93.supervisor.perms,set:RW_C}));
-      if(J(out.supervisor)===J(['perms.set.c']))out.supervisor=[];
+      out.supPerms=JSON.stringify(E.presetPerms('supervisor'))===JSON.stringify(E.permNorm({...V93.supervisor.perms,set:RW_C,ativvenda:{c:true,r:true,u:true,d:true},ativentrega:{c:true,r:true,u:true,d:true}}));
+      // v100 (Ronaldo, 12/11): e o tablet de venda do Drone, Chute a Gol e Snap Pop inteiro (vende, vê e cancela com o vídeo não entregue) e a Entrega dos vídeos
+      if(J(out.supervisor)===J(['perms.set.c','perms.ativvenda.c','perms.ativvenda.r','perms.ativvenda.d','perms.ativentrega.c','perms.ativentrega.r','perms.ativentrega.u']))out.supervisor=[];
       out.adminTudo=E.ALL_VIEWS.every(v=>E.presetMenu('admin').includes(v));return out;},V93);
     ok(['foto','venda','valida','supervisor','quiosque'].every(k=>J(r[k])==='[]'),'H7: accExtra(depois, antes) não vazio: '+J(r));
     ok(r.supPerms,'H5: perms da Supervisora mudaram');ok(r.adminTudo,'H7: Admin sem alguma tela');

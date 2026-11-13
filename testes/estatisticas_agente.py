@@ -264,12 +264,16 @@ env = {**os.environ, "HOME": HB, "USERPROFILE": HB, "ETERNA_PORTA": str(PORTA), 
        "ETERNA_APP_ORIGIN": "http://127.0.0.1:9", "ETERNA_SEM_OPENCV": "1", "USER": "eterna-teste-sem-cartao"}
 for k in ("ETERNA_PASTA", "ETERNA_ORIGENS", "ETERNA_BUCKET"):
     env.pop(k, None)
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao
+COOKIE = _agente_sessao.cookie_sub(AG, HB)      # pessoa conectada (admin): as rotas da equipe pedem sessão
 
 
 def req(metodo, path, body=None, headers=None):
     c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=15)
     try:
-        hs = {"Host": "127.0.0.1:%d" % PORTA, **(headers or {})}
+        hs = {"Host": "127.0.0.1:%d" % PORTA, "Cookie": COOKIE, **(headers or {})}
         data = json.dumps(body).encode() if body is not None else None
         if data is not None:
             hs["Content-Type"] = "application/json"

@@ -3,7 +3,7 @@
 # quem usa o computador. A pasta Eterna (fotos, sessões, nuvem.env, chaves) continua no perfil do usuário dono (ex.: Rafael).
 # Passos: acha a pasta do Eterna; para o Eterna e o vigia do usuário; desliga o atalho do vigia na pasta Inicializar
 # (senão sobem dois); cria a tarefa "Eterna" (SYSTEM, ao iniciar, religa se cair); libera o firewall (Python e portas 8765 e
-# 2121, inclusive desfazendo bloqueio de "Cancelar"); impede dormir na tomada e com a tampa fechada; atalho "Eterna" na área
+# 2121, inclusive desfazendo bloqueio de "Cancelar"); instala o ffmpeg para a máquina (fotos do vídeo do Drone); impede dormir na tomada e com a tampa fechada; atalho "Eterna" na área
 # de trabalho de todos; liga e confere.
 #   powershell -ExecutionPolicy Bypass -File instalar-servidor.ps1                       (acha a pasta sozinho)
 #   powershell -ExecutionPolicy Bypass -File instalar-servidor.ps1 -Base C:\Users\RafaelMelo
@@ -64,6 +64,23 @@ New-NetFirewallRule -DisplayName 'Eterna 8765 e FTP 2121' -Direction Inbound -Pr
 $pol = Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Where-Object { $_.AllowLocalFirewallRules -eq 'False' }
 if ($pol) { Aviso ('a política da empresa ignora regras locais no perfil ' + (($pol | ForEach-Object Name) -join ', ') + ': quem estiver nessa rede não conecta') } else { Ok 'Python e portas 8765 e 2121 liberados' }
 
+Passo 'ffmpeg (fotos tiradas do vídeo do Drone)'
+function AchaFfmpeg {
+  $c = @((Get-Command ffmpeg -ErrorAction SilentlyContinue | ForEach-Object Source), "$env:ProgramFiles\WinGet\Links\ffmpeg.exe") +
+       @(Get-ChildItem "$env:ProgramFiles\WinGet\Packages\Gyan.FFmpeg*\*\bin\ffmpeg.exe" -ErrorAction SilentlyContinue | ForEach-Object FullName)
+  $c | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+}
+$ff = AchaFfmpeg
+if (-not $ff) {
+  $wg = Get-Command winget -ErrorAction SilentlyContinue
+  if ($wg) {
+    # para a máquina toda: o Eterna roda como SISTEMA e não enxerga o que foi instalado só no perfil de um usuário
+    & $wg.Source install --id Gyan.FFmpeg -e --scope machine --silent --accept-source-agreements --accept-package-agreements | Out-Host
+    $ff = AchaFfmpeg
+  }
+}
+if ($ff) { Ok $ff } else { Aviso 'sem ffmpeg: o vídeo é entregue, mas sem as fotos do Drone. Como administrador: winget install --id Gyan.FFmpeg -e --scope machine' }
+
 Passo 'Energia'
 powercfg /change standby-timeout-ac 0 | Out-Null
 powercfg /change hibernate-timeout-ac 0 | Out-Null
@@ -88,8 +105,8 @@ Start-ScheduledTask -TaskName 'Eterna'
 $fim = (Get-Date).AddMinutes(3); $no = $false
 while ((Get-Date) -lt $fim) { if ((curl.exe -s -o NUL -w '%{http_code}' -m 5 http://127.0.0.1:8765/status) -eq '200') { $no = $true; break }; Start-Sleep 3 }
 if (-not $no) { Aviso ('o Eterna não respondeu em 3 minutos; veja ' + (Join-Path $Base 'Eterna\vigia.log')) } else {
-  $s = curl.exe -s -m 5 http://127.0.0.1:8765/status | ConvertFrom-Json
-  Ok ('no ar · impressora ' + $(if ($s.impressora) { $s.impressora } else { 'nenhuma' }) + ' · nuvem ' + $(if ($s.nuvem.s3_ok) { 'ok' } else { 'sem conexão' }) + ' · rostos ' + $s.rostos.lidas)
+  # sem login o /status diz só que o Eterna está no ar; impressora, nuvem e rostos aparecem no app (Upload e Painel de controle)
+  Ok 'no ar · impressora, nuvem e rostos: confira no app, com login'
   $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | ForEach-Object IPAddress
   Write-Host ''
   Write-Host '   Endereços para os pontos:' -ForegroundColor Cyan

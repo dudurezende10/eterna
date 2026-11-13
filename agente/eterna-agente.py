@@ -27,10 +27,11 @@ Para outros computadores da rede (checkout, quiosque) usarem este agente:
 Para receber de um servidor FTP que já existe na máquina, vigiando a pasta dele:
      ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
-import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections
-import array, itertools, operator, tempfile
+import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections, tempfile
+import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
+import unicodedata
 import urllib.request, urllib.error, urllib.parse, mimetypes, re, base64
 
 # imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
@@ -87,7 +88,7 @@ APP_TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript
 APP_PREFIXOS = ("vendor/", "img/", "sprites/")
 _re_app = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")
 # o que o Checkout precisa para abrir e achar o rosto sem rede (baixado na abertura do agente, em segundo plano)
-APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js",
+APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js", "vendor/jsqr/jsQR.js",
                   "vendor/fonts/big-shoulders-display-latin-600-normal.woff2",
                   "vendor/fonts/big-shoulders-display-latin-700-normal.woff2",
                   "vendor/fonts/big-shoulders-display-latin-800-normal.woff2",
@@ -325,6 +326,7 @@ IMPRESSORAS = [x.strip() for x in IMPRESSORA.split(",") if x.strip()]
 # ETERNA_IMPRESSORA_POSTOS="Caixa 1=DS-RX1|DS-RX1 (2);Caixa 2=DS-RX1 (3);Caixa 3=DS-RX1 (3)". Terminal fora da lista usa
 # qualquer impressora livre. Cada venda sai inteira numa impressora só.
 # "Caixa 4=local": esse terminal imprime na DNP ligada nele mesmo (o navegador imprime, o servidor não entra).
+# "*=local": todo posto que não está na lista imprime na DNP ligada nele (o computador do servidor segue na ETERNA_IMPRESSORA).
 IMP_POSTOS, IMP_LOCAIS = {}, []
 for _x in os.environ.get("ETERNA_IMPRESSORA_POSTOS", "").split(";"):
     _k, _, _v = _x.partition("=")
@@ -842,6 +844,7 @@ def rostos_db():
     c.execute("create table if not exists foto (pid text primary key, dia text, n int, lida real)")
     c.execute("create table if not exists rosto (pid text, dia text, larg real, emb blob)")
     c.execute("create index if not exists rosto_dia on rosto(dia)")
+    c.execute("create index if not exists rosto_pid on rosto(pid)")   # cada foto lida apaga e regrava os rostos dela; sem isto, varre a tabela inteira (1,2 milhão de linhas: 4,5 s por foto)
     # B1 (segurança, 10/11): os rostos com score e pose de qualidade (score >= SESS_Q_SCORE e frontal), para o anel das
     # visitas refeito no boot (vis_idx_boot) só com o que passaria em _sess_qualidade. Tabela à parte: a "rosto" não muda.
     c.execute("create table if not exists rosto_q (pid text, dia text, emb blob)")
@@ -1782,8 +1785,61 @@ def nuvem_galerias_loop():
                     db.commit(); db.close()
         except Exception as ex:
             nuvem["galeria_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        if time.time() - nuvem.get("vendas_online_em", 0) > 60:
+            nuvem["vendas_online_em"] = time.time()
+            try:
+                nuvem_vendas_online(seg)
+            except Exception as ex:
+                nuvem["vendas_online_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        if time.time() - nuvem.get("video_eventos_em", 0) > 120:
+            nuvem["video_eventos_em"] = time.time()
+            try:
+                nuvem_video_eventos(seg)
+            except Exception as ex:
+                nuvem["video_eventos_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         nuvem_gal_acorda.wait(5)
         nuvem_gal_acorda.clear()
+
+
+def nuvem_vendas_online(seg):
+    """v99: compra online paga na Imply (conferida pela Nuvem). Junta às vendas do ponto (vendas-online.jsonl, que o app lê em
+    /galerias/vendas) e marca as fotos como compradas no manifesto local. O cursor fica no nuvem.db; o id é o código do pedido."""
+    with nuvem_lock:
+        db = nuvem_db()
+        db.execute("CREATE TABLE IF NOT EXISTS cursor (nome TEXT PRIMARY KEY, valor TEXT)")
+        r = db.execute("SELECT valor FROM cursor WHERE nome='vendas_online'").fetchone()
+        db.close()
+    desde = r[0] if r else ""
+    rq = urllib.request.Request(NUVEM_API + "/ponto/vendas-online?" + urllib.parse.urlencode({"desde": desde}),
+                                headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=20) as resp_:
+        j = json.loads(resp_.read().decode("utf8"))
+    with gal_lock:
+        ja = {v.get("id") for v in vendas_ler()}
+        for v in j.get("vendas") or []:
+            if not isinstance(v, dict) or not re.match(r"^ON-[A-Z0-9]{10}$", str(v.get("id") or "")) or v["id"] in ja:
+                continue
+            pids = [str(x) for x in (v.get("pids") or [])][:2000]
+            m = REPO.ler_manifesto(v.get("token")) if token_ok(v.get("token")) else None
+            if m:
+                for f in m["fotos"]:
+                    if f["id"] in pids and f["direito"] != "comprada":
+                        f["direito"], f["canal"] = "comprada", "online"
+                        f.pop("cortesia", None)
+                REPO.salvar_manifesto(v["token"], m)
+                gal_fila.put(v["token"])
+            anexar(VENDAS, {"id": v["id"], "token": v.get("token"), "sessoes": v.get("sessoes") or [], "pids": pids, "n": len(pids),
+                            "total": float(v.get("total") or 0), "esperado": float(v.get("esperado") or 0), "itens": v.get("itens") or [],
+                            "metodo": "imply", "idpedido": v.get("idpedido"), "meio": v.get("meio"), "em": v.get("em") or _iso(),
+                            "canal": "online", "todas": bool(v.get("todas")), "teste": False})
+            ja.add(v["id"])
+            nuvem["vendas_online"] = nuvem.get("vendas_online", 0) + 1
+    if j.get("next") and j["next"] != desde:
+        with nuvem_lock:
+            db = nuvem_db()
+            db.execute("CREATE TABLE IF NOT EXISTS cursor (nome TEXT PRIMARY KEY, valor TEXT)")
+            db.execute("INSERT OR REPLACE INTO cursor (nome, valor) VALUES ('vendas_online', ?)", (j["next"],))
+            db.commit(); db.close()
 
 
 def nuvem_tem(pid):
@@ -1849,17 +1905,17 @@ except Exception:
 
 
 def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False):
-    """Leva um arquivo para a inbox. Devolve 'new', 'dup' ou None. v96-ux: quieto=True (envio pela tela) não põe o nome do
-    arquivo no console; o fluxo é o mesmo."""
+    """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou).
+    v96-ux: quieto=True (envio pela tela) não põe o nome do arquivo no console; o fluxo é o mesmo."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
-    if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo
+    if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo (a câmera recebe "ok" e não reenvia)
         if move:
             try:
                 os.remove(src)
             except OSError:
                 pass
-        return None
+        return "excluida"
     with lock:
         if dedupe_set is not None:
             if h in dedupe_set:
@@ -1951,7 +2007,7 @@ def scan_card(vol):
 
 # ---------------------------------------------------------------- FTP --------
 # Receptor FTP mínimo (só biblioteca padrão) para o Canon Content Transfer
-# Professional e para câmeras com FTP embutido. Modo passivo e ativo, STOR,
+# Professional e para câmeras com FTP embutido. Só modo passivo, STOR,
 # pastas aceitas e ignoradas (tudo cai na inbox por data).
 
 PHOTOGRAPHERS = ["carlos", "marinara", "samuel", "yago", "marcio", "klassius", "sandessa", "dudu"]
@@ -2077,17 +2133,66 @@ def lan_ip():
             return "127.0.0.1"
 
 
+# FTP embutido: só modo passivo, numa faixa fixa de portas (firewall), conexão de dados só do mesmo IP do controle, só JPEG,
+# até FOTO_ENVIO_MAX por arquivo, no máximo FTP_POR_IP sessões por IP e FTP_TOTAL no total. ETERNA_FTP=0 desliga (servidor com IIS).
+# Sem login: no máximo FTP_SEM_LOGIN_IP por IP, FTP_TOTAL - FTP_RESERVA no total, FTP_LOGIN_S para entrar e linha de até
+# FTP_LINHA bytes: quem só abre conexões não ocupa o lugar da câmera nem a memória do servidor.
+FTP_POR_IP, FTP_TOTAL, FTP_RESERVA, FTP_SEM_LOGIN_IP = 8, 64, 16, 2
+FTP_OCIOSO_S, FTP_LOGIN_S, FTP_DADOS_S, FTP_LINHA, FTP_TENTATIVAS = 300, 25, 30, 4096, 3
+ftp_conexoes = {}          # ip -> sessões abertas
+ftp_sem_login = {}         # ip -> sessões abertas ainda sem login
+FTP_RAW_EXT = (".cr3", ".cr2", ".nef", ".arw", ".raf", ".dng", ".orf", ".rw2")   # ETERNA_FTP_RAW=descartar: recebe e descarta (sem 553)
+
+
+def ftp_faixa_pasv():
+    try:
+        a, b = (int(x) for x in (os.environ.get("ETERNA_FTP_PASV") or "50000-50050").split("-", 1))
+        if 1024 <= a <= b <= 65535:
+            return a, b
+    except ValueError:
+        pass
+    return 50000, 50050
+
+
+def ftp_ip(a):
+    return a[4:] if a.startswith("::ffff:") else a
+
+
 class FTPSession(threading.Thread):
     def __init__(self, conn, addr, users, compartilhado=()):
         super().__init__(daemon=True)
         self.conn, self.addr, self.users = conn, addr, users
         self.compartilhado = {str(x).lower() for x in (compartilhado or ())}
         self.user = None
+        self.login_ok = None   # o usuário cuja senha foi aceita: só ele vira dono das fotos (USER depois do login zera)
         self.ok = False
         self.cwd = "/"
         self.pasv = None       # socket de escuta (modo passivo)
-        self.port_addr = None  # (ip, porta) do modo ativo
         self.rest = 0
+        self.tmpdir = None     # pasta temporária desta sessão (mkdtemp), nunca derivada do nome de usuário
+        self.n = 0
+        self.anonima = True    # conta em ftp_sem_login até a senha ser aceita (o ftp_server já contou na entrada)
+        self.prazo = time.time() + FTP_LOGIN_S   # prazo ABSOLUTO para entrar: NOOP, FEAT e afins antes do login não renovam
+        self.tentativas = 0    # USER e PASS sem login nesta conexão (até FTP_TENTATIVAS pares); acima disso a conexão fecha
+        self.fechar = False
+
+    def marca_login(self, logado):
+        """Passa a sessão de "sem login" para "logada" (ou volta, num USER depois do login) e ajusta o tempo de espera."""
+        ip = ftp_ip(self.addr[0])
+        with lock:
+            if logado and self.anonima:
+                ftp_sem_login[ip] = ftp_sem_login.get(ip, 1) - 1
+                if ftp_sem_login[ip] <= 0:
+                    ftp_sem_login.pop(ip, None)
+            elif not logado and not self.anonima:
+                ftp_sem_login[ip] = ftp_sem_login.get(ip, 0) + 1
+            self.anonima = not logado
+        if not logado:
+            self.prazo = time.time() + FTP_LOGIN_S       # voltou a ficar sem login: prazo novo (as tentativas continuam contando)
+        try:
+            self.conn.settimeout(FTP_OCIOSO_S if logado else FTP_LOGIN_S)
+        except OSError:
+            pass
 
     def send(self, line):
         try:
@@ -2096,25 +2201,81 @@ class FTPSession(threading.Thread):
             pass
 
     def data_conn(self):
-        if self.pasv:
-            self.pasv.settimeout(20)
-            d, _ = self.pasv.accept()
-            self.pasv.close()
+        """A conexão de dados do modo passivo, só do mesmo IP do controle (outro IP é fechado e a espera continua); None se não veio."""
+        if not self.pasv:
+            return None
+        fim = time.time() + 20
+        try:
+            while True:
+                resto = fim - time.time()
+                if resto <= 0:
+                    return None
+                self.pasv.settimeout(resto)
+                try:
+                    d, a = self.pasv.accept()
+                except (socket.timeout, OSError):
+                    return None
+                if ftp_ip(a[0]) == ftp_ip(self.addr[0]):
+                    d.settimeout(FTP_DADOS_S)
+                    return d
+                print("ftp: conexão de dados de %s recusada (controle em %s)" % (a[0], self.addr[0]))
+                try:
+                    d.close()
+                except OSError:
+                    pass
+        finally:
+            try:
+                self.pasv.close()
+            except OSError:
+                pass
             self.pasv = None
-            return d
-        if self.port_addr:
-            d = socket.create_connection(self.port_addr, timeout=20)
-            self.port_addr = None
-            return d
-        return None
 
     def run(self):
+        try:
+            self._run()
+        finally:
+            with lock:
+                ip = ftp_ip(self.addr[0])
+                ftp_conexoes[ip] = ftp_conexoes.get(ip, 1) - 1
+                if ftp_conexoes[ip] <= 0:
+                    ftp_conexoes.pop(ip, None)
+                if self.anonima:
+                    ftp_sem_login[ip] = ftp_sem_login.get(ip, 1) - 1
+                    if ftp_sem_login[ip] <= 0:
+                        ftp_sem_login.pop(ip, None)
+            if self.pasv:
+                try:
+                    self.pasv.close()
+                except OSError:
+                    pass
+            if self.tmpdir:
+                shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self):
+        self.conn.settimeout(FTP_LOGIN_S)         # sem login: 25 s; depois do 230, 5 min parado encerra
         self.send("220 Eterna FTP pronto")
         f = self.conn.makefile("rb")
         try:
             while True:
-                raw = f.readline()
+                if self.anonima:                     # sem login: só o tempo que resta do prazo, conte o que for mandado
+                    resto = self.prazo - time.time()
+                    if resto <= 0:
+                        self.send("421 Tempo para entrar esgotado")
+                        break
+                    self.conn.settimeout(resto)
+                try:
+                    raw = f.readline(FTP_LINHA + 1)
+                except socket.timeout:
+                    if self.anonima:
+                        self.send("421 Tempo para entrar esgotado")
+                    break
                 if not raw:
+                    break
+                if self.anonima and time.time() > self.prazo:
+                    self.send("421 Tempo para entrar esgotado")
+                    break
+                if len(raw) > FTP_LINHA or not raw.endswith(b"\n"):
+                    self.send("500 Linha longa demais")   # linha sem fim ou gigante: fecha sem guardar o resto
                     break
                 line = raw.decode("utf-8", "replace").strip()
                 if not line:
@@ -2123,7 +2284,7 @@ class FTPSession(threading.Thread):
                 cmd = parts[0].upper()
                 arg = parts[1] if len(parts) > 1 else ""
                 self.handle(cmd, arg)
-                if cmd == "QUIT":
+                if cmd == "QUIT" or self.fechar:
                     break
         except Exception as ex:
             print("ftp sessão:", ex)
@@ -2134,8 +2295,16 @@ class FTPSession(threading.Thread):
                 pass
 
     def handle(self, cmd, arg):
+        if cmd in ("USER", "PASS") and self.anonima:
+            self.tentativas += 1                       # cada USER e cada PASS sem login: 3 tentativas = 3 pares
+            if self.tentativas > 2 * FTP_TENTATIVAS:
+                self.send("421 Muitas tentativas nesta conexão")
+                self.fechar = True
+                return
         if cmd == "USER":
-            self.user = arg.strip().lower()
+            self.ok, self.login_ok = False, None      # trocar de usuário pede a senha de novo
+            self.marca_login(False)
+            self.user = arg.strip().lower()[:64]
             self.send("331 Senha")
             return
         if cmd == "PASS":
@@ -2146,14 +2315,16 @@ class FTPSession(threading.Thread):
             if self.user in self.users and hmac.compare_digest(str(self.users[self.user]), arg):
                 with lock:
                     FTP_FALHAS.pop(self.addr[0], None)
-                self.ok = True
+                self.ok, self.login_ok = True, self.user
+                self.marca_login(True)
                 with lock:
                     state["ftp"]["last_user"] = self.user
                 print(f"ftp: {self.user} conectado de {self.addr[0]}")
                 self.send("230 Bem-vindo ao Eterna, " + self.user)
             else:
+                self.ok, self.login_ok = False, None
                 ftp_falhou(self.addr[0])
-                print(f"ftp: login recusado para '{self.user}' de {self.addr[0]}")
+                print("ftp: login recusado para %r de %s" % (re.sub(r"[^\w.@-]", "?", self.user or "")[:40], self.addr[0]))
                 self.send("530 Usuário ou senha incorretos")
             return
         if cmd == "SYST":
@@ -2166,7 +2337,7 @@ class FTPSession(threading.Thread):
             self.send("200 OK"); return
         if cmd == "QUIT":
             self.send("221 Até logo"); return
-        if not self.ok:
+        if not self.ok or not self.login_ok:
             self.send("530 Faça login"); return
         if cmd in ("PWD", "XPWD"):
             self.send(f'257 "{self.cwd}"'); return
@@ -2194,10 +2365,21 @@ class FTPSession(threading.Thread):
         if cmd in ("PASV", "EPSV"):
             if self.pasv:
                 self.pasv.close()
-            self.pasv = socket.socket()
-            self.pasv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.pasv.bind(("0.0.0.0", 0))
-            self.pasv.listen(1)
+                self.pasv = None
+            a, b = ftp_faixa_pasv()
+            for pp in random.sample(range(a, b + 1), b - a + 1):
+                sk = socket.socket()
+                if os.name != "nt":                # porta em TIME_WAIT volta a servir (no Windows o REUSEADDR deixaria dividir a porta)
+                    sk.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    sk.bind(("0.0.0.0", pp))
+                    sk.listen(1)
+                    self.pasv = sk
+                    break
+                except OSError:
+                    sk.close()
+            if not self.pasv:
+                self.send("425 Sem porta livre para o modo passivo"); return
             port = self.pasv.getsockname()[1]
             if cmd == "EPSV":
                 self.send(f"229 Modo passivo (|||{port}|)")
@@ -2205,14 +2387,8 @@ class FTPSession(threading.Thread):
                 ip = self.conn.getsockname()[0].replace(".", ",")
                 self.send(f"227 Modo passivo ({ip},{port // 256},{port % 256})")
             return
-        if cmd == "PORT":
-            p = arg.split(",")
-            self.port_addr = (".".join(p[:4]), int(p[4]) * 256 + int(p[5]))
-            self.send("200 OK"); return
-        if cmd == "EPRT":
-            p = arg.split("|")
-            self.port_addr = (p[2], int(p[3]))
-            self.send("200 OK"); return
+        if cmd in ("PORT", "EPRT"):
+            self.send("502 Use o modo passivo (PASV)"); return
         if cmd in ("LIST", "NLST", "MLSD"):
             d = self.data_conn()
             self.send("150 Lista")
@@ -2224,32 +2400,65 @@ class FTPSession(threading.Thread):
         if cmd in ("DELE", "RMD", "RNFR", "RNTO", "RETR"):
             self.send("550 Não permitido"); return
         if cmd == "STOR":
-            name = os.path.basename(arg.strip().replace("\\", "/")) or f"foto_{int(time.time())}.jpg"
+            name = re.sub(r"[^\w.\- ]", "_", os.path.basename(arg.strip().replace("\\", "/")))[-120:].lstrip(".") or "foto_%d.jpg" % int(time.time())
+            if name.lower().endswith(FTP_RAW_EXT) and os.environ.get("ETERNA_FTP_RAW") == "descartar":
+                d = self.data_conn()               # câmera em RAW+JPEG que trava com 553: recebe e joga fora, sem gravar
+                if not d:
+                    self.send("425 Abra a conexão de dados (modo passivo)"); return
+                self.send("150 Pode enviar")
+                total = 0
+                try:
+                    while total <= 2 * FOTO_ENVIO_MAX:
+                        ch = d.recv(256 * 1024)
+                        if not ch:
+                            break
+                        total += len(ch)
+                except OSError:
+                    pass
+                finally:
+                    d.close()
+                self.send("226 Recebido (RAW descartado)"); return
+            if not name.lower().endswith((".jpg", ".jpeg")):
+                if self.pasv:                      # nada é gravado: a conexão de dados nem é aceita
+                    self.pasv.close()
+                    self.pasv = None
+                self.send("553 Só fotos JPEG"); return
             d = self.data_conn()
             if not d:
                 self.send("425 Abra a conexão de dados (modo passivo)"); return
             self.send("150 Pode enviar")
-            tmpdir = os.path.join(FTPTMP, self.user)
-            os.makedirs(tmpdir, exist_ok=True)
-            tmp = os.path.join(tmpdir, "%d_%s" % (self.ident, name))
+            if not self.tmpdir:
+                os.makedirs(FTPTMP, exist_ok=True)
+                self.tmpdir = tempfile.mkdtemp(prefix="s-", dir=FTPTMP)
+            self.n += 1
+            tmp = os.path.join(self.tmpdir, "%d_%s" % (self.n, name))
             size = 0
-            caiu = False
+            caiu = grande = False
             try:
                 with open(tmp, "wb") as out:
                     while True:
                         chunk = d.recv(256 * 1024)
                         if not chunk:
                             break
-                        out.write(chunk)
                         size += len(chunk)
+                        if size > FOTO_ENVIO_MAX:
+                            grande = True
+                            break
+                        out.write(chunk)
             except OSError:
                 caiu = True
             finally:
                 d.close()
             self.rest = 0
+            if grande:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                print("ftp: %s passou de %d MB; recusado" % (name, FOTO_ENVIO_MAX // (1024 * 1024)))
+                self.send("552 Arquivo grande demais"); return
             st = os.stat(tmp)
-            jpg = name.lower().endswith((".jpg", ".jpeg"))
-            if jpg and (caiu or not jpeg_completo(tmp, st.st_size)):
+            if caiu or not jpeg_completo(tmp, st.st_size):
                 with lock:
                     state["ftp"]["incompletas"] = state["ftp"].get("incompletas", 0) + 1
                 print(f"ftp: {name} chegou incompleto ({size/1e6:.1f} MB), recusado; a câmera manda de novo")
@@ -2259,26 +2468,33 @@ class FTPSession(threading.Thread):
                     pass
                 self.send("426 Transferência incompleta, envie de novo")
                 return
-            if jpg:
-                # v80 (segurança B1): o dono é sempre o login. Subpasta = fotógrafo só para login marcado como "compartilhado"
-                # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
-                quem = self.user
-                sub = self.cwd.strip("/").split("/")[-1].lower()
-                if self.user in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
-                    quem = sub
-                r = ingest_file(tmp, name, st, quem, "ftp", move=True)
-                if r:
-                    save_index()
-                with lock:
-                    state["ftp"]["received"] += 1
-            else:
-                print(f"ftp: {name} recebido ({size/1e6:.1f} MB), não é JPG; guardado em {tmp}")
-            self.send(f"226 Recebido {name}")
+            # v80 (segurança B1): o dono é sempre o login aceito. Subpasta = fotógrafo só para login marcado como "compartilhado"
+            # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
+            quem = self.login_ok
+            sub = self.cwd.strip("/").split("/")[-1].lower()
+            if self.login_ok in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
+                quem = sub
+            r = ingest_file(tmp, name, st, quem, "ftp", move=True)
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            if r is None:                          # não gravou: a câmera manda de novo
+                self.send("451 Não deu para gravar; envie de novo"); return
+            if r == "new":
+                save_index()
+            with lock:
+                state["ftp"]["received"] += 1
+            self.send("226 Recebido " + name)
             return
         self.send("502 Comando não suportado: " + cmd)
 
 
 def ftp_server():
+    if os.environ.get("ETERNA_FTP") == "0":
+        print("  FTP embutido:      desligado (ETERNA_FTP=0)")
+        return
     cfg = load_ftp_cfg()
     users = cfg["users"]
     srv = socket.socket()
@@ -2306,6 +2522,20 @@ def ftp_server():
     while True:
         try:
             conn, addr = srv.accept()
+            ip = ftp_ip(addr[0])
+            with lock:
+                demais = ftp_conexoes.get(ip, 0) >= FTP_POR_IP or sum(ftp_conexoes.values()) >= FTP_TOTAL \
+                    or ftp_sem_login.get(ip, 0) >= FTP_SEM_LOGIN_IP or sum(ftp_sem_login.values()) >= FTP_TOTAL - FTP_RESERVA
+                if not demais:
+                    ftp_conexoes[ip] = ftp_conexoes.get(ip, 0) + 1
+                    ftp_sem_login[ip] = ftp_sem_login.get(ip, 0) + 1
+            if demais:
+                try:
+                    conn.sendall(b"421 Muitas conexoes; tente de novo\r\n")
+                    conn.close()
+                except OSError:
+                    pass
+                continue
             FTPSession(conn, addr, users, cfg.get("compartilhado") or ()).start()
         except Exception as ex:
             print("ftp:", ex)
@@ -2325,7 +2555,12 @@ rftp_wake = threading.Event()
 def rftp_cfg():
     try:
         c = json.load(open(RFTP_CFG))
-        return c if c.get("host") and c.get("user") else None
+        if not (c.get("host") and c.get("user")):
+            return None
+        if not rftp_host_ok(str(c["host"])) or int(c.get("port") or 21) not in (21, 990):
+            rftp["erro"] = "servidor fora da rede do ponto (ftp-remoto-hosts.txt) ou porta diferente de 21/990"
+            return None
+        return c
     except Exception:
         return None
 
@@ -2339,6 +2574,25 @@ def rftp_save(c):
         pass
     rftp["erro"] = None
     rftp_wake.set()
+
+
+RFTP_HOSTS = os.path.join(HOME, "ftp-remoto-hosts.txt")     # nomes (ou IPs fora da rede interna) aceitos para o FTP do estádio
+
+
+def rftp_host_ok(host):
+    """O FTP do estádio fica na rede do ponto: IP privado (10/8, 172.16/12, 192.168/16) ou um nome listado no servidor."""
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.version == 4 and any(ip in ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")):
+            return True
+    except ValueError:
+        pass
+    try:
+        with open(RFTP_HOSTS, encoding="utf-8") as f:
+            return host.lower() in {x.strip().lower() for x in f if x.strip() and not x.lstrip().startswith("#")}
+    except OSError:
+        return False
 
 
 def rftp_connect(c):
@@ -2539,10 +2793,18 @@ def rover_cfg():
         c = json.load(open(ROVER_CFG))
         if c.get("api_key"):
             c.setdefault("base_url", "https://beta.api.roverpix.com/api/v1")
+            b = str(c["base_url"]).rstrip("/")
+            if (b[:-len("/api/v1")] if b.endswith("/api/v1") else b) not in ROVER_BASES:
+                print("  Roverpix: endereço em roverpix.json não é um dos oficiais; configuração ignorada")
+                return None
             return c
     except Exception:
         pass
     return None
+
+
+ROVER_BASES = ("https://beta.api.roverpix.com", "https://api.roverpix.com")    # os únicos destinos da chave da Roverpix
+PR_COMPOSE_HORA = 300                                                           # montagens do Photoroom por posto ou pessoa, por hora
 
 
 def rover_save_cfg(base_url, api_key):
@@ -2631,8 +2893,8 @@ def rv_aggregate(day, orders, payments, photos):
     # fotos por fotógrafo (ou estação de chroma); receita pelo cartão vendido
     card_key, cards, sold_cards = {}, {}, {}
     for p in photos:
-        nm = (p.get("photographer_name") or "").strip()
-        pdv = (p.get("pdv_name") or "").strip()
+        nm = re.sub(r"[<>\"'`&]", "", str(p.get("photographer_name") or "")).strip()[:60]   # nome vem de fora: nunca vira HTML
+        pdv = re.sub(r"[<>\"'`&]", "", str(p.get("pdv_name") or "")).strip()[:60]
         if nm:
             key, human, name = rv_key(nm), True, nm
         else:
@@ -3808,6 +4070,7 @@ LIMITE_MENOR = 0.50     # grupo de escola: só as fotos em que o rosto da crian�
 URL_TTL = 900           # link assinado de foto: 15 min
 ACESSO_TTL = 3600       # acesso depois da selfie: 1 h
 GAL_MAX_CORPO = 2 * 1024 * 1024
+GAL_DIAS = 60                                            # validade máxima de uma galeria (a mesma do app)
 GAL_FALHAS, GAL_BLOQUEIO = 5, 15 * 60
 GAL_TETO_DIA = 20       # v96.1: selfies sem acerto por galeria de venda por dia, somando todos os IPs; depois, galeria parada até amanhã
 GAL_EVENTO_DISTINTOS, GAL_EVENTO_JANELA = 2, 24 * 3600   # grupo de escola: crianças diferentes por (ip, token) em 24 h
@@ -3816,7 +4079,7 @@ SEM_OPENCV = bool(os.environ.get("ETERNA_SEM_OPENCV"))
 os.makedirs(GALERIAS, exist_ok=True)
 _re_token = re.compile(r"^[A-Za-z0-9_-]{22}$")
 _re_pid = re.compile(r"^(ag_)?[0-9a-f]{6,40}$")
-_re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$")
+_re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4})?$")   # v99.24: cartão com 12
 _re_sig = re.compile(r"^[0-9a-f]{64}$")
 gal_lock = threading.RLock()
 gal_fila = queue.Queue()
@@ -3986,14 +4249,33 @@ class PagamentoSimulado(Pagamento):
         raise NotImplementedError
 
 
+class PagamentoDesligado(Pagamento):
+    """Sem adquirente real: a galeria não vende pelo celular (POST /g/<t>/pagamento responde 501, "compra": false)."""
+    def criar(self, pedido):
+        raise NotImplementedError("compra_indisponivel")
+
+    def consultar(self, id):
+        return {"id": id, "status": "desconhecido"}
+
+    def webhook(self, corpo, cabecalhos):
+        raise NotImplementedError
+
+
 def pagamento_escolhido():
-    tipo = (os.environ.get("ETERNA_PAGAMENTO") or "simulado").lower()
-    if tipo == "simulado":
+    """O pagamento simulado (aprova tudo, venda marcada como teste) só existe com ETERNA_PAGAMENTO=simulado E ETERNA_MODO_TESTE=1."""
+    tipo = (os.environ.get("ETERNA_PAGAMENTO") or "desligado").lower()
+    if tipo == "simulado" and os.environ.get("ETERNA_MODO_TESTE") == "1":
         return PagamentoSimulado()
+    if tipo in ("simulado", "desligado"):
+        return PagamentoDesligado()
     raise NotImplementedError("ETERNA_PAGAMENTO=%s ainda não implementado (fase 2; chaves em ~/Eterna/pagamento.json)" % tipo)
 
 
 PAGAMENTO = pagamento_escolhido()
+
+
+def compra_online():
+    return not isinstance(PAGAMENTO, PagamentoDesligado)
 
 
 def _iso(t=None):
@@ -4047,6 +4329,16 @@ def _gal_confere_sessoes(m, fotos, compradas=()):
     return n
 
 
+def gal_expira_ok(v):
+    """Validade pedida pelo navegador, nunca além de agora + GAL_DIAS (sem data ou inválida: agora + GAL_DIAS)."""
+    teto = time.time() + GAL_DIAS * 86400
+    try:
+        t = _epoch(str(v)[:40]) if v else None
+    except Exception:
+        t = None
+    return _iso(min(t, teto) if t else teto)
+
+
 def gal_validar(m):
     """Manifesto vindo do app: só os campos conhecidos, com tipos e tamanhos checados."""
     if not isinstance(m, dict) or not token_ok(m.get("token")) or m.get("tipo") not in ("sessao", "evento"):
@@ -4064,14 +4356,26 @@ def gal_validar(m):
         fotos.append(x)
     pr = m.get("precos") or {}
     try:
-        precos = {"dig": max(0.0, float(pr.get("dig"))), "todas": max(0.0, float(pr.get("todas")))}
+        todas = max(0.0, float(pr.get("todas")))
+        # v98.1: sem foto digital avulsa, o app manda só "todas"; sem preço por foto, qualquer compra custa o pacote
+        dig = todas if pr.get("dig") in (None, "") else max(0.0, float(pr.get("dig")))
+        precos = {"dig": dig, "todas": todas}
     except Exception:
         raise ValueError("preços inválidos")
+    catalogo = []
+    for c in (m.get("catalogo") if isinstance(m.get("catalogo"), list) else [])[:20]:
+        if isinstance(c, dict) and re.match(r"^[a-z0-9_]{1,20}$", str(c.get("id") or "")) and re.match(r"^[0-9a-f]{40}$", str(c.get("sku") or "")):
+            try:
+                catalogo.append({"id": c["id"], "sku": c["sku"], "nome": str(c.get("nome") or "")[:80], "preco": round(max(0.0, float(c.get("preco"))), 2),
+                                 "digital": "todas" if c.get("digital") == "todas" else max(0, int(c.get("digital") or 0)),
+                                 "kind": "pacote" if c.get("kind") == "pacote" else "adicional"})
+            except (TypeError, ValueError):
+                pass
     codigo = m.get("codigo") if isinstance(m.get("codigo"), str) and _re_codigo.match(m.get("codigo")) else None
     return {"v": 1, "token": m["token"], "codigo": codigo, "tipo": m["tipo"], "venue": str(m.get("venue") or "")[:40],
             "nome": (str(m["nome"])[:120] if m.get("nome") else None), "sessoes": [str(s)[:40] for s in (m.get("sessoes") or [])[:200]],
-            "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": str(m.get("expira") or "")[:40],
-            "precos": precos, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
+            "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": gal_expira_ok(m.get("expira")),
+            "precos": precos, "catalogo": catalogo, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
 
 
 def gal_mesclar(novo, velho):
@@ -4091,6 +4395,8 @@ def gal_mesclar(novo, velho):
         novo["expira"] = velho["expira"]
     if velho.get("encerrada"):
         novo["encerrada"] = True
+    if velho.get("menor"):
+        novo["menor"] = True                     # grupo de menor marcado no servidor não é desmarcado pelo navegador
     return novo
 
 
@@ -4197,6 +4503,7 @@ def gal_processar(token):
 def galeria_loop():
     ultima_limpeza = 0
     ultima_rec = 0
+    ultima_cli = 0
     while True:
         try:
             token = gal_fila.get(timeout=600)
@@ -4212,8 +4519,22 @@ def galeria_loop():
                 limpar_recortes()
             except Exception as ex:
                 print("  recortes: erro na limpeza", ex)
+        if time.time() - ultima_cli > 3600:
+            ultima_cli = time.time()
+            try:
+                ativ_tour_passa()                  # v99.22: antes da limpeza, enquanto a foto do cliente existe
+            except Exception as ex:
+                print("  tour: erro na passada", ex)
+            try:
+                ativ_clientes_limpa()
+            except Exception as ex:
+                print("  venda: erro na limpeza do nome e da foto do cliente", ex)
         if time.time() - ultima_limpeza > 86400:
             ultima_limpeza = time.time()
+            try:
+                ativ_videos_limpa()
+            except Exception as ex:
+                print("  entrega: erro na limpeza dos vídeos", ex)
             if rostos["ligado"]:
                 try:
                     limpar_rostos()
@@ -4400,7 +4721,7 @@ def galeria_obj(token, m, pids=()):
                       "original": REPO.url(token, f["id"], "original", URL_TTL) if livre and REPO.existe(token, f["id"], "original") else None,
                       "chegando": not tem})
     return {"tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"], "estado": gal_estado(token, m),
-            "precos": m["precos"], "fotos": fotos}
+            "precos": m["precos"], "fotos": fotos, "compra": compra_online()}
 
 
 def gal_estado(token, m):
@@ -6356,6 +6677,11 @@ if os.environ.get("ETERNA_REDE"):
 HOSTS_OK |= ORIGENS_REDE_HOSTS
 
 
+def host_ok(host):
+    """Host de um pedido que não é público: o do agente (contra DNS rebinding)."""
+    return host in HOSTS_OK or host in ("127.0.0.1:%d" % PORT, "localhost:%d" % PORT)
+
+
 IMP_MAX_CORPO = 60 * 1024 * 1024
 IMP_DIR = os.path.join(HOME, "impressao")
 # Imprime cada JPEG numa folha 10x15 da impressora do servidor, sem margem e preenchendo a folha (corta o excesso,
@@ -6373,7 +6699,12 @@ $motivos = @{3='pouco papel'; 4='sem papel'; 5='ribbon acabando'; 6='sem ribbon'
 # Uma foto por trabalho, e a próxima só depois que a anterior SAIU (fila do Windows vazia e a impressora parada): a DS-RX1
 # descartava o que chegava enquanto imprimia. Sem papel, sem ribbon ou desligada, espera (avisando o motivo) em vez de
 # mandar a próxima e perder a foto. Trabalho "Printed, Retained" (Windows guardando o impresso) não conta como pendente.
-function Espera-Livre {
+# Com a impressora parada, fila vazia não libera nada: nada é enviado e, se o trabalho da foto sumiu do Windows, ela não saiu.
+$param = @(4, 6, 7, 8, 9, 11)
+# ETERNA_IMP_SEM_ESTADO: impressora cujo estado no Windows fica preso depois de um aviso (a laser do teste, por USB): não confia nele
+if ($env:ETERNA_IMP_SEM_ESTADO) { $param = @(); $motivos = @{} }
+$script:perdida = $false
+function Espera-Livre([switch]$Foto) {
   $ini = Get-Date; $ultimo = $null
   while ($true) {
     if (Cancelado) { return $false }
@@ -6386,7 +6717,11 @@ function Espera-Livre {
     elseif (@($fila | Where-Object { "$($_.JobStatus)" -match 'Error|Offline|PaperOut|Blocked|UserIntervention' }).Count) { $aviso = 'a impressora parou (' + $fila[0].JobStatus + ')' }
     elseif (((Get-Date) - $ini).TotalSeconds -gt 120) { $aviso = 'a impressora não termina há mais de 2 minutos' }
     if ($aviso -ne $ultimo) { Diz ("AVISO " + $aviso); $ultimo = $aviso }
-    if ($p -and $fila.Count -eq 0 -and $p.PrinterStatus -ne 4) { return $true }
+    $parada = $p -and ($p.WorkOffline -or ($param -contains [int]$p.DetectedErrorState))
+    if ($p -and $fila.Count -eq 0 -and $p.PrinterStatus -ne 4) {
+      if (-not $parada) { return $true }
+      if ($Foto) { $script:perdida = $true; return $true }
+    }
     Start-Sleep -Milliseconds 500
   }
 }
@@ -6402,7 +6737,7 @@ foreach ($f in $Arquivos) {
     if (-not $doc.PrinterSettings.IsValid) { throw "impressora '$Impressora' não encontrada" }
     $doc.DocumentName = "Eterna " + [IO.Path]::GetFileNameWithoutExtension($f)
     $ps = $doc.PrinterSettings.PaperSizes | Where-Object { $a=[Math]::Min($_.Width,$_.Height); $b=[Math]::Max($_.Width,$_.Height); $a -ge 395 -and $a -le 420 -and $b -ge 595 -and $b -le 625 } | Select-Object -First 1
-    if ($ps) { $doc.DefaultPageSettings.PaperSize = $ps }
+    if ($ps -and -not $env:ETERNA_IMP_PAPEL_PADRAO) { $doc.DefaultPageSettings.PaperSize = $ps }   # ETERNA_IMP_PAPEL_PADRAO: teste em impressora comum, usa o papel que já está nela
     $doc.DefaultPageSettings.Landscape = $false
     $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)
     $doc.OriginAtMargins = $false
@@ -6418,7 +6753,8 @@ foreach ($f in $Arquivos) {
     $doc.Print()
     $img.Dispose()
     Start-Sleep -Seconds 2                          # o trabalho aparece na fila do Windows
-    if (-not (Espera-Livre)) { break }              # FOTO = saiu da impressora, não só entregue ao Windows
+    if (-not (Espera-Livre -Foto)) { break }        # FOTO = saiu da impressora, não só entregue ao Windows
+    if ($script:perdida) { $erros += ([IO.Path]::GetFileName($f) + ": saiu da fila do Windows com a impressora parada, sem imprimir"); break }
     Diz ("FOTO " + [IO.Path]::GetFileName($f) + " " + (Get-Date -Format HH:mm:ss))
   } catch { $erros += ([IO.Path]::GetFileName($f) + ": " + $_.Exception.Message) }
 }
@@ -6544,6 +6880,8 @@ def imp_acao(body):
             return {"ok": False, "error": "ação inválida"}
         if j["estado"] in ("na_fila", "imprimindo"):
             return {"ok": False, "error": "esse pedido ainda está na fila"}
+        if any(x["venda"] == j["venda"] and x["estado"] in ("na_fila", "imprimindo") for x in imp_fila):
+            return {"ok": False, "error": "essa venda já está na fila"}
         arqs = list(j.get("arquivos") or [])
         if acao == "faltantes":
             arqs = arqs[j.get("feitas") or 0:]
@@ -6554,6 +6892,7 @@ def imp_acao(body):
     novo = imp_pedido(venda, vendedor, posto, arqs)
     with lock:
         novo["reimpressao_de"] = pid
+        novo["venda_id"] = j.get("venda_id") or ""
         imp_salvar()
     threading.Thread(target=imprimir_fila, args=(imp_ps1(), arqs, venda, {"kb": 0}, novo), daemon=True).start()
     return {"ok": True, "pedido": novo["id"]}
@@ -6611,10 +6950,16 @@ def imp_fila_json():
             "postos": {k: v for k, v in IMP_POSTOS.items()}, "agora": agora, "pedidos": jobs}
 
 
-def imprimir(imagens, venda, vendedor="", posto=""):
+def imprimir(imagens, venda, vendedor="", posto="", venda_id=""):
     """Recebe as fotos já montadas pelo app (JPEG em base64) e manda cada uma para a impressora deste servidor."""
     if not isinstance(imagens, list) or not imagens or len(imagens) > 20:
         return {"ok": False, "error": "nenhuma foto (ou mais de 20)"}
+    with lock:                 # a mesma venda ainda na fila: não entra de novo (novo clique, outra aba, tela recarregada)
+        ativo = next((j for j in imp_fila if venda and j["venda"] == venda and j["estado"] in ("na_fila", "imprimindo")), None)
+        if ativo:
+            frente = sum(1 for j in imp_fila if j["estado"] in ("na_fila", "imprimindo") and j["id"] < ativo["id"])
+            return {"ok": True, "ja_na_fila": True, "fotos": ativo["fotos"], "impressora": IMPRESSORA, "pedido": ativo["id"], "na_frente": frente,
+                    "gravar_ms": 0, "spooler_ms": 0, "kb": 0}
     t0 = time.time()
     os.makedirs(IMP_DIR, exist_ok=True)
     tag = time.strftime("%Y%m%d-%H%M%S") + "_" + re.sub(r"[^A-Za-z0-9-]", "", venda)[:20]
@@ -6633,6 +6978,7 @@ def imprimir(imagens, venda, vendedor="", posto=""):
     ps1 = imp_ps1()
     ms = {"gravar_ms": round((time.time() - t0) * 1000), "spooler_ms": 0, "kb": round(sum(os.path.getsize(a) for a in arqs) / 1024)}
     job = imp_pedido(venda, vendedor, posto, arqs)
+    job["venda_id"] = venda_id
     threading.Thread(target=imprimir_fila, args=(ps1, arqs, venda, ms, job), daemon=True).start()
     with lock:
         frente = sum(1 for j in imp_fila if j["estado"] in ("na_fila", "imprimindo") and j["id"] < job["id"])
@@ -6712,6 +7058,10 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
                 job["erro"] = saida[-200:]
             imp_salvar()
         try:
+            ev_fila(job)
+        except Exception as ex:
+            print("  tempos da fila não gravados:", str(ex)[:200])
+        try:
             os.remove(imp_flag_cancelar(job["id"]))
         except OSError:
             pass
@@ -6732,7 +7082,7 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
 #   POST /ponto/docs {docs:[{col,id,valor}]}  valor null apaga.        -> {ok, rev}
 # O navegador guarda uma cópia e uma fila do que ainda não subiu (sem rede); o servidor é o dono. Backup no S3 com as vendas.
 ESTADO_DB = os.path.join(HOME, "ponto", "estado.db")
-ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda")
+ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda", "ativ")
 ESTADO_MAX = 512 * 1024              # um registro (um usuário, um ajuste de foto) nunca passa disto
 estado_lock = threading.Lock()
 
@@ -6745,6 +7095,2265 @@ def estado_db():
     c.execute("create table if not exists doc (col text, id text, valor text, rev integer, em text, primary key (col, id))")
     c.execute("create index if not exists doc_rev on doc(col, rev)")
     return c
+
+
+# Entrada da equipe: usuário e senha conferidos aqui, no servidor, para funcionar sem internet e sem e-mail. Mora no estado.db,
+# em tabelas próprias, fora de /ponto/docs e dos feeds: credencial guarda só o hash scrypt com sal, sessao_login só o hash do token
+# (o navegador fica com o token em cookie HttpOnly). O admin cadastra; a senha que ele gera é provisória e a pessoa troca na entrada.
+AUTH_ID = re.compile(r"^[a-z0-9][a-z0-9._@+-]{1,99}$")
+AUTH_N, AUTH_SESSAO, AUTH_ERROS, AUTH_BLOQUEIO, AUTH_SENHA_MIN = 2 ** 17, 12 * 3600, 5, 900, 10
+AUTH_PROVISORIA_S, AUTH_ERROS_IP = 72 * 3600, 30
+AUTH_RESET_S, AUTH_RESET_INTERVALO, AUTH_RESET_IP = 30 * 60, 15 * 60, 10   # esqueci a senha: vale 30 min, 1 pedido a cada 15 min por usuário, 10 por hora por endereço
+AUTH_COOKIE = "eterna_sessao"
+auth_cpu = threading.BoundedSemaphore(2)      # scrypt usa 128 MB por conta: várias tentativas juntas não derrubam o servidor
+auth_ip_erros = {}                            # erros recentes por endereço, contra quem testa uma senha em muitos usuários
+auth_reset_ip = {}                            # pedidos de "esqueci a senha" por endereço
+
+
+def auth_db():
+    c = estado_db()
+    c.execute("create table if not exists credencial (usuario text primary key, hash text, sal text, n integer,"
+              " provisoria integer, erros integer default 0, bloqueado_ate real default 0, atualizada real)")
+    c.execute("create table if not exists sessao_login (token text primary key, usuario text, expira real)")
+    c.execute("create table if not exists login_log (em real, usuario text, acao text, por text, ip text)")
+    c.execute("create table if not exists reset_senha (usuario text primary key, hash text, sal text, n integer, expira real, pedido real)")
+    # posto pareado: cada aparelho (Checkout, caixa, TV) recebe um cookie próprio; aqui fica só o SHA-256 do token
+    c.execute("create table if not exists posto (id text primary key, nome text, num integer, hash text unique, criado_por text, criado_em real,"
+              " ultimo_uso real, ip_ultimo text, revogado_em real)")
+    c.execute("create table if not exists posto_convite (hash text primary key, nome text, expira real, usado real)")
+    return c
+
+
+def auth_hash(senha, sal, n):
+    with auth_cpu:
+        return hashlib.scrypt(senha.encode("utf-8"), salt=bytes.fromhex(sal), n=n, r=8, p=1, maxmem=256 * 1024 * 1024, dklen=32).hex()
+
+
+# Regra da senha nova, sempre conferida aqui: tamanho, e nada que um atacante tente primeiro. Não exige maiúscula nem símbolo: isso só
+# gera Senha@2026. Uma frase longa passa; o que sobra depois de tirar sequências e palavras óbvias é que precisa ter tamanho.
+AUTH_SEQUENCIAS = ("abcdefghijklmnopqrstuvwxyz", "0123456789", "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm", "1qaz2wsx", "1q2w3e4r5t", "q1w2e3r4t5", "a1b2c3d4")
+AUTH_OBVIAS = ("senha", "password", "pass", "admin", "administrador", "usuario", "teste", "test", "mudar", "trocar", "acesso", "login", "entrar",
+               "welcome", "bemvindo", "iloveyou", "teamo", "amor", "deus", "jesus", "mae", "pai", "familia", "brasil", "riodejaneiro", "rio",
+               "flamengo", "fluminense", "vasco", "botafogo", "corinthians", "palmeiras", "santos", "saopaulo", "gremio", "cruzeiro",
+               "maracana", "vivamaracana", "viva", "maracatour", "eterna", "futebol", "estadio", "tour", "fotografo", "fotos", "foto", "vendedor",
+               "caixa", "supervisor", "checkout", "roverpix", "qwerty", "letmein", "dragon", "monkey")
+AUTH_LEET = str.maketrans("@4310$57", "aaeiosst")
+
+
+def auth_norm(s):
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]", "", s.translate(AUTH_LEET))
+
+
+def auth_senha_fraca(usuario, nome, senha):
+    """O código do motivo de recusar esta senha nova, ou None se ela serve. Quem escreve a mensagem é a tela, no idioma da pessoa."""
+    if len(senha) < AUTH_SENHA_MIN:
+        return "curta"
+    if not re.search(r"[^\W\d_]", senha):
+        return "so_numeros"
+    cru = senha.lower()
+    if len(set(cru)) < 5:
+        return "repetida"
+    for base in AUTH_SEQUENCIAS:
+        for seq in (base, base[::-1]):
+            for tam in range(len(seq), 3, -1):
+                for i in range(len(seq) - tam + 1):
+                    cru = cru.replace(seq[i:i + tam], "")
+    resto = auth_norm(cru)
+    proprias = [p for p in re.split(r"[^a-z0-9]+", auth_norm_nome(usuario + " " + (nome or ""))) if len(p) >= 3]
+    for p in sorted(set(AUTH_OBVIAS) | {auth_norm(x) for x in proprias}, key=len, reverse=True):
+        resto = resto.replace(p, "")
+    if len(resto) < 6:
+        return "obvia"
+    return None
+
+
+def auth_norm_nome(s):
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+
+
+def auth_log(db, usuario, acao, por="", ip=""):
+    db.execute("insert into login_log values (?, ?, ?, ?, ?)", (time.time(), usuario, acao, por, ip))
+
+
+def auth_provisoria():
+    return "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(12))
+
+
+def auth_criar(usuario, por="", ip=""):
+    """Gera a senha provisória, mostrada uma única vez, para quem já está no cadastro."""
+    senha = auth_provisoria()
+    sal = secrets.token_hex(16)
+    h = auth_hash(senha, sal, AUTH_N)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("insert into credencial (usuario, hash, sal, n, provisoria, erros, bloqueado_ate, atualizada) values (?, ?, ?, ?, 1, 0, 0, ?)"
+                       " on conflict(usuario) do update set hash=excluded.hash, sal=excluded.sal, n=excluded.n, provisoria=1, erros=0, bloqueado_ate=0,"
+                       " atualizada=excluded.atualizada", (usuario, h, sal, AUTH_N, time.time()))
+            db.execute("delete from sessao_login where usuario=?", (usuario,))
+            db.execute("delete from reset_senha where usuario=?", (usuario,))
+            auth_log(db, usuario, "senha_provisoria", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return senha
+
+
+def auth_enviar_reset(destino, senha, idioma=None):
+    """A nuvem manda o e-mail pelo SES, com o segredo do ponto. Sem internet ou sem nuvem configurada, levanta erro."""
+    if not NUVEM_API:
+        raise RuntimeError("nuvem não configurada")
+    rq = urllib.request.Request(NUVEM_API + "/auth/senha-email", data=json.dumps({"email": destino, "senha": senha, "idioma": idioma or "pt"}).encode(), method="POST",
+                                headers={"Content-Type": "application/json", "X-Eterna-Ponto": nuvem_segredo(), "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=20) as r:
+        r.read()
+
+
+def auth_destino(usuario, cad):
+    d = str((cad or {}).get("contato") or (usuario if "@" in usuario else "")).strip().lower()
+    return d if AUTH_EMAIL.match(d) else ""
+
+
+def auth_esqueci(usuario, ip=""):
+    """Senha provisória por e-mail. Fica ao lado da senha atual, que continua valendo: pedir em nome de outra pessoa não a tira do ar.
+    Só para quem está ativo, já tem senha e tem e-mail; quem pede nunca fica sabendo qual foi o caso."""
+    agora = time.time()
+    pedidos = [t for t in auth_reset_ip.get(ip, []) if t > agora - 3600]
+    if len(pedidos) >= AUTH_RESET_IP:
+        return False
+    auth_reset_ip[ip] = pedidos + [agora]
+    with estado_lock:
+        db = auth_db()
+        try:
+            tem = db.execute("select 1 from credencial where usuario=?", (usuario,)).fetchone()
+            cad = auth_cadastro(db, usuario)
+            ant = db.execute("select pedido from reset_senha where usuario=?", (usuario,)).fetchone()
+        finally:
+            db.close()
+    destino = auth_destino(usuario, cad)
+    if not tem or not auth_ativo(cad) or not destino or (ant and ant[0] > agora - AUTH_RESET_INTERVALO):
+        return False
+    senha, sal = auth_provisoria(), secrets.token_hex(16)
+    h = auth_hash(senha, sal, AUTH_N)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("insert or replace into reset_senha values (?, ?, ?, ?, ?, ?)", (usuario, h, sal, AUTH_N, agora + AUTH_RESET_S, agora))
+            auth_log(db, usuario, "reset_pedido", "", ip)
+            db.commit()
+        finally:
+            db.close()
+    try:
+        auth_enviar_reset(destino, senha, (cad or {}).get("idioma"))
+        return True
+    except Exception as ex:
+        print("  esqueci a senha: envio falhou: %s" % str(ex)[:160])
+        with estado_lock:
+            db = auth_db()
+            try:
+                db.execute("delete from reset_senha where usuario=?", (usuario,))
+                auth_log(db, usuario, "reset_falhou", "", ip)
+                db.commit()
+            finally:
+                db.close()
+        return False
+
+
+def auth_cadastro(db, usuario):
+    r = db.execute("select valor from doc where col='usuarios' and id=? and valor is not null", (quote(usuario, safe="-_.!~*'()"),)).fetchone()
+    return json.loads(r[0]) if r else None
+
+
+def auth_ativo(cad):
+    return bool(cad) and cad.get("active") is not False
+
+
+def auth_perms(cad):
+    """As permissões gravadas no cadastro. Perfil Admin tem também os módulos criados depois do cadastro dele (a tela já completa assim,
+    pelo perfil): sem isto, o admin cadastrado antes de um módulo novo não consegue dar esse módulo a ninguém, nem a si mesmo."""
+    perms = dict((cad or {}).get("perms") or {})
+    if (cad or {}).get("preset") == "admin":
+        for m in AUTH_MODULOS_NOVOS:                    # só os módulos que surgiram depois; módulo antigo fora do cadastro continua sem acesso
+            if not isinstance(perms.get(m), dict):
+                perms[m] = {"c": True, "r": True, "u": True, "d": True}
+    return perms
+
+
+def auth_pode(cad, modulo, letra):
+    """A permissão do módulo no cadastro: a mesma de Permissões. É ela que decide, não o nome do perfil (fora o módulo novo do Admin, em auth_perms)."""
+    p = auth_perms(cad).get(modulo) or {}
+    return auth_ativo(cad) and p.get(letra) is True
+
+
+def auth_acessos(cad):
+    return {(m, k) for m, p in auth_perms(cad).items() if isinstance(p, dict) for k, v in p.items() if v is True}
+
+
+def auth_conferir(usuario, senha, ip=""):
+    """-> (situação, dados): ok, provisoria, nao ou bloqueado. Usuário inexistente custa o mesmo tempo que senha errada."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            c = db.execute("select usuario, hash, sal, n, provisoria, bloqueado_ate, atualizada from credencial where usuario=?", (usuario,)).fetchone()
+            cad = auth_cadastro(db, usuario) if c else None
+            rs = db.execute("select hash, sal, n, expira from reset_senha where usuario=?", (usuario,)).fetchone() if c else None
+        finally:
+            db.close()
+    agora = time.time()
+    falhas = [t for t in auth_ip_erros.get(ip, []) if t > agora - AUTH_BLOQUEIO]
+    if len(falhas) >= AUTH_ERROS_IP:
+        return "bloqueado", None
+    if not c:
+        auth_hash(senha, "00" * 16, AUTH_N)
+        auth_ip_erros[ip] = falhas + [agora]
+        return "nao", None
+    por_reset = bool(rs) and rs[3] > agora and hmac.compare_digest(auth_hash(senha, rs[1], rs[2]), rs[0])
+    if c[5] > agora and not por_reset:                  # o bloqueio segura a senha digitada, não a que chegou no e-mail da pessoa
+        return "bloqueado", None
+    certa = por_reset or hmac.compare_digest(auth_hash(senha, c[2], c[3]), c[1])
+    if c[4] and c[6] < agora - AUTH_PROVISORIA_S and not por_reset:       # senha provisória vencida: quem pode gera outra
+        certa = False
+    if not certa:
+        auth_ip_erros[ip] = falhas + [agora]
+    with estado_lock:
+        db = auth_db()
+        try:
+            if certa and auth_ativo(cad):
+                db.execute("update credencial set erros=0, bloqueado_ate=0 where usuario=?", (usuario,))
+                auth_log(db, usuario, "entrou", "", ip)
+                db.commit()
+                return ("provisoria" if c[4] or por_reset else "ok"), {"usuario": c[0], "cadastro": cad}
+            db.execute("update credencial set erros=erros+1 where usuario=?", (usuario,))
+            erros = db.execute("select erros from credencial where usuario=?", (usuario,)).fetchone()[0]
+            if erros >= AUTH_ERROS:
+                db.execute("update credencial set erros=0, bloqueado_ate=? where usuario=?", (time.time() + AUTH_BLOQUEIO, usuario))
+                auth_log(db, usuario, "bloqueado", "", ip)
+            else:
+                auth_log(db, usuario, "erro", "", ip)
+            db.commit()
+        finally:
+            db.close()
+    return "nao", None
+
+
+def auth_trocar(usuario, nova, ip=""):
+    sal = secrets.token_hex(16)
+    h = auth_hash(nova, sal, AUTH_N)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("update credencial set hash=?, sal=?, n=?, provisoria=0, erros=0, bloqueado_ate=0, atualizada=? where usuario=?",
+                       (h, sal, AUTH_N, time.time(), usuario))
+            db.execute("delete from sessao_login where usuario=?", (usuario,))
+            db.execute("delete from reset_senha where usuario=?", (usuario,))
+            auth_log(db, usuario, "trocou_senha", usuario, ip)
+            db.commit()
+        finally:
+            db.close()
+
+
+def auth_sessao_nova(usuario):
+    token = secrets.token_urlsafe(32)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from sessao_login where expira < ?", (time.time(),))
+            db.execute("insert into sessao_login values (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), usuario, time.time() + AUTH_SESSAO))
+            db.commit()
+        finally:
+            db.close()
+    return token
+
+
+def auth_quem(token):
+    """A pessoa dona deste token, se a sessão vale e o cadastro segue ativo; senão None."""
+    if not token:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select usuario from sessao_login where token=? and expira > ?", (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
+            if not r:
+                return None
+            cad = auth_cadastro(db, r[0])
+        finally:
+            db.close()
+    return {"usuario": r[0], "cadastro": cad} if auth_ativo(cad) else None
+
+
+def auth_ler_cadastro(usuario):
+    with estado_lock:
+        db = auth_db()
+        try:
+            cad = auth_cadastro(db, usuario)
+            tem = bool(db.execute("select 1 from credencial where usuario=?", (usuario,)).fetchone())
+        finally:
+            db.close()
+    return cad, tem
+
+
+def auth_senhas():
+    """Quem tem senha e quando trocou, para quem pode Ver em Senhas de acesso. Nunca o hash."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            return {r[0]: {"provisoria": bool(r[1]), "atualizada": r[2]} for r in db.execute("select usuario, provisoria, atualizada from credencial")}
+        finally:
+            db.close()
+
+
+# Os mesmos limites de permValidate na tela, agora também no servidor: sem isto, quem chama /ponto/docs se daria qualquer acesso, inclusive o de gerar senhas.
+AUTH_MODULOS = ("estoque", "relatorios", "desempenho", "financeiro", "galerias", "qualidade", "diario", "set", "escala", "filafoto", "configuracao",
+                "catalogo", "usuarios", "senhas", "permissoes", "laboratorio", "venda", "quiosque", "estatisticas", "ativvenda", "ativentrega")     # os mesmos de MODULES no app
+AUTH_MODULOS_NOVOS = ("ativvenda", "ativentrega")     # v99.17 e v99.23.2 (entrega):  módulos novos que o Admin cadastrado antes recebe inteiros (auth_perms)
+AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "contato", "key", "active"), ("perms", "menu", "preset", "inicio")
+AUTH_IDIOMAS = (None, "", "pt", "en", "es", "fr")
+AUTH_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$")
+
+
+def auth_cadastro_recusa(quem, id_doc, antes, depois):
+    """O motivo de recusar esta gravação em usuarios, ou None. quem é a sessão de quem grava."""
+    if not quem:
+        return "sem_sessao"
+    ed = quem["cadastro"]
+    if antes is None and depois is None:
+        return None
+    if antes is None:
+        if not auth_pode(ed, "usuarios", "c"):
+            return "sem_permissao"
+    elif depois is None:
+        if not auth_pode(ed, "usuarios", "d"):
+            return "sem_permissao"
+    else:
+        if any(antes.get(c) != depois.get(c) for c in AUTH_CAMPOS_CADASTRO) and not auth_pode(ed, "usuarios", "u"):
+            return "sem_permissao"
+        if any(antes.get(c) != depois.get(c) for c in AUTH_CAMPOS_ACESSO) and not auth_pode(ed, "permissoes", "u"):
+            return "sem_permissao"
+        if antes.get("contato") != depois.get("contato") and not auth_pode(ed, "senhas", "u"):
+            return "sem_permissao"                      # é para onde a senha provisória vai: mudar o e-mail vale tanto quanto gerar outra senha
+    if depois is not None and depois.get("idioma") not in AUTH_IDIOMAS:
+        return "sem_permissao"
+    if antes is not None and depois is not None and antes.get("idioma") != depois.get("idioma") and antes.get("email") != ed.get("email") and not auth_pode(ed, "usuarios", "u"):
+        return "sem_permissao"                          # o próprio idioma cada um troca; o de outra pessoa pede Alterar em Cadastro de usuários
+    novos = auth_acessos(depois) - auth_acessos(antes)
+    if novos - auth_acessos(ed):
+        return "sem_poder"                              # não dá um acesso que não tem
+    if antes is not None and antes.get("email") != ed.get("email") and auth_acessos(antes) - auth_acessos(ed):
+        return "alvo_maior"                             # não mexe em quem tem mais acesso
+    return None
+
+
+# Quem grava cada coleção de /ponto/docs (fora usuarios, que tem a regra acima): o módulo, com Criar ou Alterar para gravar
+# e Excluir ou Alterar para apagar. Na coleção "sim", pelo começo do id; id desconhecido é recusado.
+DOC_COL_MOD = {"diario": "diario", "treino": "qualidade", "reviews": "qualidade", "bandeiras": "estoque", "funcao": "escala",
+               "agenda": "escala", "config": "configuracao"}
+DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
+           ("stock|", ("estoque", "venda")),          # o rolo de papel do posto baixa na impressão, feita no caixa
+           ("flags|", ("estoque",)), ("flagList", ("estoque",)),
+           # gravados ao montar as sessões e no Upload (fotógrafo), no caixa e na Curadoria
+           ("flagUse|", ("set", "estoque", "venda")), ("invalid|", ("set", "qualidade", "venda", "estoque")),
+           ("edits|", ("set", "qualidade")), ("discarded|", ("set", "qualidade")), ("ai|", ("venda", "qualidade")),
+           ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
+           ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("fundosModo", ("configuracao",)),
+           ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
+           ("bgPodioV86", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
+
+
+ATIV_VENDA_CAMPOS = ("origem", "id", "tipo", "dia", "criado", "itens", "valor", "pagamento", "vendedor", "vendedor_n", "pessoas", "videos",
+                     "resolucao", "pais", "idioma", "guia", "piloto", "drone", "bateria", "entrega", "qr")
+_re_dia = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_re_criado = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+
+
+def ativ_venda_ok(v):
+    """Uma venda das ativações no formato do banco (o importador já normalizou). Campo de cliente nunca passa."""
+    if not isinstance(v, dict) or set(v) - set(ATIV_VENDA_CAMPOS):
+        return False
+    if v.get("origem") not in ("antigo",) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", str(v.get("id") or "")):
+        return False
+    if v.get("tipo") not in ATIV_CATS or not _re_dia.match(str(v.get("dia") or "")) or not _re_criado.match(str(v.get("criado") or "")):
+        return False
+    if not str(v["criado"]).startswith(v["dia"]) or not isinstance(v.get("itens"), list) or len(v["itens"]) > 30:
+        return False
+    for it in v["itens"]:
+        if not isinstance(it, dict) or not _ativ_txt(it.get("produto"), 60) or not _ativ_txt(it.get("op") or "", 40) or not _ativ_num(it.get("qtd"), 100):
+            return False
+    if not _ativ_num(v.get("valor"), 1000000):
+        return False
+    for k in ("pagamento", "vendedor", "resolucao", "pais", "idioma", "guia", "piloto", "drone", "bateria", "entrega", "qr"):
+        if not _ativ_txt(v.get(k) or "", 80):
+            return False
+    for k in ("vendedor_n", "pessoas", "videos"):
+        if v.get(k) is not None and not _ativ_num(v.get(k), 1000):
+            return False
+    return True
+
+
+def ativ_importar(linhas):
+    """Grava (ou atualiza) vendas das ativações. Rodar de novo não duplica: a chave é origem + id. -> contagens"""
+    r = {"novas": 0, "atualizadas": 0, "iguais": 0, "recusadas": 0}
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with ev_lock:
+        c = vendas_db()
+        try:
+            for v in linhas:
+                if not ativ_venda_ok(v):
+                    r["recusadas"] += 1
+                    continue
+                vals = [json.dumps(v["itens"], ensure_ascii=False) if k == "itens" else v.get(k) for k in ATIV_VENDA_CAMPOS]
+                antes = c.execute("select " + ",".join(ATIV_VENDA_CAMPOS) + " from ativ_venda where origem=? and id=?", (v["origem"], v["id"])).fetchone()
+                if antes is not None and list(antes) == vals:
+                    r["iguais"] += 1
+                    continue
+                c.execute("insert or replace into ativ_venda (" + ",".join(ATIV_VENDA_CAMPOS) + ", importado_em) values (" + ",".join("?" * (len(ATIV_VENDA_CAMPOS) + 1)) + ")",
+                          vals + [agora])
+                r["atualizadas" if antes is not None else "novas"] += 1
+            c.commit()
+        finally:
+            c.close()
+    return r
+
+
+ATIV_TABLET_COLS = (("usuario", "text"), ("sugerido", "real"), ("situacao", "text"), ("cortesia_motivo", "text"), ("cortesia_nota", "text"),
+                    ("agendada", "text"), ("cancel_motivo", "text"), ("cancel_por", "text"), ("cancel_em", "text"), ("enviado_por", "text"),
+                    ("recebido_em", "text"), ("recebido_por", "text"), ("voo_em", "text"), ("voo_por", "text"), ("itens_entregues", "text"),
+                    ("cliente_nome", "text"), ("foto_busca", "integer"), ("tour_token", "text"), ("tour_n", "integer"))
+# Nome e foto do cliente (Ronaldo, 12/11): só para quem entrega o vídeo reconhecer a pessoa no campo, a quase 1 km do foyer
+# onde ela comprou. Servem só a isso (LGPD, finalidade): a foto fica em arquivo no servidor do ponto (não vai ao banco nem à
+# nuvem) e os dois saem sozinhos um dia depois da entrega, ou dois dias depois da venda, o que vier primeiro.
+ATIV_CLIENTES_DIR = os.path.join(HOME, "ativ-clientes")
+ATIV_FOTO_MAX = 120 * 1024
+ATIV_PAGAMENTOS = ("PIX", "Dinheiro", "Débito", "Crédito", "Cortesia")
+_re_ativ_id = re.compile(r"^T[A-Za-z0-9]{6,30}$")
+ATIV_PUL_MEIOS = ("camera", "digitado")       # v99.28: como a pulseira foi lida (estatística)
+_re_ativ_hora = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+# v99.25 (diretoria, 12/11): cada vídeo comprado ganha uma pulseira numerada (QR só com o número), entregue na venda. Quem
+# entrega começa lendo a pulseira: ela já diz de quem é o vídeo. Número sem zeros à esquerda; nunca repete entre compras.
+_re_pulseira = re.compile(r"^\d{1,12}$")
+
+
+def pulseira_norm(x):
+    t = str(x if x is not None else "").strip()
+    return str(int(t)) if _re_pulseira.match(t) else None
+
+
+def ativ_base(vid):
+    """Número da compra: as vendas de uma compra (uma por serviço) têm o mesmo id e o sufixo D, C ou S."""
+    return vid[:-1] if vid[-1:] in ("D", "C", "S") else vid
+_re_agendada = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
+
+
+def ativ_venda_tablet(v):
+    """Venda vinda da caixa de saída do tablet -> linha do banco, ou None. A conferência é só de formato: o tablet vende sem
+    rede e com o catálogo que tinha (local first), então produto e preço não são recusados por diferirem do servidor."""
+    if not isinstance(v, dict) or not _re_ativ_id.match(str(v.get("id") or "")):
+        return None
+    if v.get("tipo") not in ATIV_CATS or not _re_criado.match(str(v.get("criado") or "")) or v.get("pagamento") not in ATIV_PAGAMENTOS:
+        return None
+    its = v.get("itens")
+    if not isinstance(its, list) or not 1 <= len(its) <= 30:
+        return None
+    itens = []
+    for it in its:
+        if not isinstance(it, dict) or not _ativ_txt(it.get("produto"), 60) or not _ativ_txt(it.get("op") or "", 40) or not _ativ_num(it.get("qtd"), 100):
+            return None
+        x = {"produto": it["produto"], "op": it.get("op") or "", "qtd": it["qtd"]}
+        for k, teto in (("pessoas", 100), ("videos", 100), ("sugerido", 1000000), ("cobrado", 1000000)):
+            if it.get(k) is not None:
+                if not _ativ_num(it[k], teto):
+                    return None
+                x[k] = it[k]
+        for k in ("k4", "chuva"):
+            if it.get(k):
+                x[k] = True
+        if it.get("cat") in ATIV_CATS:
+            x["cat"] = it["cat"]
+        itens.append(x)
+    if not _ativ_num(v.get("valor"), 1000000) or not _ativ_num(v.get("sugerido") or 0, 1000000):
+        return None
+    pulseiras = []
+    if v.get("pulseiras") is not None:
+        if not isinstance(v["pulseiras"], list) or len(v["pulseiras"]) > 100:
+            return None
+        vistos = set()
+        for p in v["pulseiras"]:
+            d = p if isinstance(p, dict) else {"n": p}
+            n = pulseira_norm(d.get("n"))
+            if not n or n in vistos:
+                return None
+            vistos.add(n)
+            meio = d.get("meio") if d.get("meio") in ATIV_PUL_MEIOS else None
+            em = str(d.get("em") or "")[:19] if _re_ativ_hora.match(str(d.get("em") or "")[:19]) else None
+            pulseiras.append((n, meio, em))
+    for k, n in (("pais", 60), ("idioma", 30), ("guia", 80), ("vendedor", 80), ("usuario", 120), ("cortesia_motivo", 80), ("cortesia_nota", 1000),
+                 ("cliente_nome", 80)):
+        if not _ativ_txt(v.get(k) or "", n):
+            return None
+    if v["pagamento"] == "Cortesia" and not (str(v.get("cortesia_motivo") or "").strip() and str(v.get("cortesia_nota") or "").strip()):
+        return None
+    ag = v.get("agendada") or ""
+    if ag and not _re_agendada.match(str(ag)):
+        return None
+    foto = None
+    if v.get("cliente_foto"):
+        f = str(v["cliente_foto"])
+        if not f.startswith("data:image/jpeg;base64,") or len(f) > ATIV_FOTO_MAX * 4 // 3 + 40:
+            return None
+        try:
+            foto = base64.b64decode(f.split(",", 1)[1], validate=True)
+        except (ValueError, TypeError):
+            return None
+        if not foto.startswith(b"\xff\xd8") or len(foto) > ATIV_FOTO_MAX:
+            return None
+    return {"origem": "eterna", "id": v["id"], "tipo": v["tipo"], "dia": v["criado"][:10], "criado": v["criado"], "itens": itens,
+            "valor": v["valor"], "pagamento": v["pagamento"], "vendedor": v.get("vendedor") or "", "vendedor_n": None,
+            "pessoas": sum(int(i.get("pessoas") or 0) for i in itens) or None, "videos": sum(int(i.get("videos") or 0) for i in itens),
+            "resolucao": "4K" if any(i.get("k4") for i in itens) else "", "pais": v.get("pais") or "", "idioma": v.get("idioma") or "",
+            "guia": v.get("guia") or "", "piloto": "", "drone": "", "bateria": "", "entrega": "", "qr": "",
+            "usuario": v.get("usuario") or "", "sugerido": v.get("sugerido") or 0, "situacao": "ativa", "cortesia_motivo": v.get("cortesia_motivo") or "",
+            "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag, "cliente_nome": (v.get("cliente_nome") or "").strip(), "_foto": foto,
+            # v99.22: o cliente aceitou, na venda, que a foto dele procure as fotos do Tour (só vale com a foto)
+            "foto_busca": 1 if foto and v.get("cliente_foto_busca") is True else 0, "_pulseiras": pulseiras}
+
+
+def ativ_cliente_foto(vid):
+    return os.path.join(ATIV_CLIENTES_DIR, "%s.jpg" % vid)
+
+
+def ativ_cliente_foto_grava(vid, foto):
+    try:
+        os.makedirs(ATIV_CLIENTES_DIR, exist_ok=True)
+        tmp = ativ_cliente_foto(vid) + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(foto)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, ativ_cliente_foto(vid))
+    except OSError as ex:
+        print("  venda: foto do cliente não gravada (%s)" % type(ex).__name__)
+
+
+def ativ_clientes_limpa(agora=None):
+    """Nome e foto do cliente saem um dia depois da entrega ou dois dias depois da venda (o que vier primeiro). -> quantas vendas."""
+    t = agora or time.time()
+    um = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t - 86400))
+    dois = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t - 2 * 86400))
+    with ev_lock:
+        c = vendas_db()
+        try:
+            ids = [r[0] for r in c.execute("select id from ativ_venda where origem='eterna'"
+                                           " and ((coalesce(entrega,'')<>'' and entrega<?) or criado<?)", (um, dois))]
+            sai = [i for i in ids if os.path.exists(ativ_cliente_foto(i))]
+            n = c.execute("update ativ_venda set cliente_nome='' where origem='eterna' and coalesce(cliente_nome,'')<>''"
+                          " and ((coalesce(entrega,'')<>'' and entrega<?) or criado<?)", (um, dois)).rowcount
+            c.commit()
+        finally:
+            c.close()
+    for i in sai:
+        try:
+            os.remove(ativ_cliente_foto(i))
+        except OSError:
+            pass
+    return max(n, len(sai))
+
+
+def ativ_receber(vendas, enviado_por):
+    """POST /ativ/venda: grava as vendas da caixa de saída do tablet. Venda que já está no banco conta como recebida e não é
+    regravada (o tablet reenvia até ouvir o ok). -> {recebidas:[id], recusadas:[{id, motivo}]}"""
+    out = {"recebidas": [], "recusadas": []}
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome", "foto_busca"]
+    with ev_lock:
+        c = vendas_db()
+        try:
+            for v in vendas[:200]:
+                vid = str(v.get("id") or "")[:40] if isinstance(v, dict) else ""
+                if c.execute("select 1 from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone():
+                    out["recebidas"].append(vid)
+                    continue
+                d = ativ_venda_tablet(v)
+                if not d:
+                    out["recusadas"].append({"id": vid, "motivo": "formato"})
+                    continue
+                vals = [json.dumps(d["itens"], ensure_ascii=False) if k == "itens" else d.get(k) for k in cols]
+                c.execute("insert into ativ_venda (" + ",".join(cols) + ", importado_em, enviado_por) values (" + ",".join("?" * (len(cols) + 2)) + ")",
+                          vals + [agora, enviado_por])
+                if d["_foto"]:
+                    ativ_cliente_foto_grava(d["id"], d["_foto"])
+                ativ_pulseiras_grava(c, d["id"], d["_pulseiras"], agora, d.get("usuario") or enviado_por)
+                out["recebidas"].append(d["id"])
+            c.commit()
+        finally:
+            c.close()
+    return out
+
+
+def ativ_pulseiras_grava(c, vid, pulseiras, agora, por=""):
+    """Liga as pulseiras à venda (uma por item, na ordem). Número já usado em outra compra não recusa a venda (o tablet vende
+    sem rede): as duas ficam marcadas com conflito e a entrega mostra as duas para quem entrega escolher pelo rosto.
+    pulseiras: [(numero, meio, lido_em)] ou [numero]."""
+    base = ativ_base(vid)
+    for slot, p in enumerate(pulseiras, 1):
+        n, meio, lido = p if isinstance(p, tuple) else (p, None, None)
+        # v99.30.2: a pulseira vale no dia (o número volta a ser usado em outro dia)
+        outras = [v for (v,) in c.execute(
+            "select p.venda from ativ_pulseira p join ativ_venda a on a.origem='eterna' and a.id=p.venda where p.numero=? and p.venda<>?"
+            " and coalesce(a.situacao,'ativa')<>'cancelada' and a.dia=(select dia from ativ_venda where origem='eterna' and id=?)", (n, vid, vid))
+            if ativ_base(v) != base]
+        if c.execute("insert or ignore into ativ_pulseira (numero, venda, slot, conflito, em, por, meio, lido_em) values (?,?,?,?,?,?,?,?)",
+                     (n, vid, slot, 1 if outras else 0, agora, por, meio, lido)).rowcount:
+            c.execute("insert into ativ_pulseira_log (venda, slot, numero, de, acao, em, por, meio) values (?,?,?,?,?,?,?,?)",
+                      (vid, slot, n, None, "venda", lido or agora, por, meio))
+        for v in outras + [vid] if outras else []:
+            c.execute("update ativ_pulseira set conflito=1 where numero=? and venda=?", (n, v))
+
+
+def ativ_pulseiras_edita(body, eu, outros):
+    """v99.28: POST /ativ/pulseiras {id, pulseiras:[{slot, n, meio}]}: põe ou troca a pulseira de um item depois da venda (o vendedor
+    esqueceu ou leu a errada). O vendedor corrige as próprias vendas; outros (ativvenda.u, ativvenda.d ou financeiro.u) qualquer uma.
+    Pulseira de item que já decolou, começou ou tem vídeo entregue não muda. Número de outra compra é recusado (aqui há rede).
+    Cada troca fica no histórico (ativ_pulseira_log). -> (erro, {numero_usado}) ou (None, pulseiras da venda)."""
+    vid = str((body or {}).get("id") or "")
+    lista = (body or {}).get("pulseiras")
+    if not _re_ativ_id.match(vid) or not isinstance(lista, list) or not 1 <= len(lista) <= 100:
+        return "dados", None
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select coalesce(situacao,'ativa'), usuario, itens, recebido_em from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            if not r:
+                return "nao_achou", None
+            if r[0] == "cancelada":
+                return "cancelada", None
+            if not outros and (r[1] or "") != eu:
+                return "sem_permissao", None
+            try:
+                total = sum(ativ_pul_n_item(i) for i in json.loads(r[2] or "[]"))
+            except (ValueError, TypeError):
+                total = 0
+            atual = {sl: (n, vo) for n, sl, vo in c.execute("select numero, slot, voo_em from ativ_pulseira where venda=?", (vid,))}
+            usadas = {pu for (pu,) in c.execute("select pulseira from ativ_entrega where venda=? and pulseira is not null", (vid,))}
+            novo, base = {}, ativ_base(vid)
+            for x in lista:
+                if not isinstance(x, dict) or not isinstance(x.get("slot"), int) or not 1 <= x["slot"] <= max(total, 1):
+                    return "dados", None
+                n = pulseira_norm(x.get("n"))
+                if not n:
+                    return "dados", None
+                novo[x["slot"]] = (n, x.get("meio") if x.get("meio") in ATIV_PUL_MEIOS else None)
+            fica = {sl: v[0] for sl, v in atual.items() if sl not in novo}
+            nums = list(fica.values()) + [n for n, _ in novo.values()]
+            if len(nums) != len(set(nums)):
+                return "repetida", None
+            for sl, (n, _) in novo.items():
+                velho = atual.get(sl)
+                if velho and velho[0] == n:
+                    continue
+                if velho and (velho[1] or velho[0] in usadas):
+                    return "travada", None
+                for (v,) in c.execute("select p.venda from ativ_pulseira p join ativ_venda a on a.origem='eterna' and a.id=p.venda"
+                                      " where p.numero=? and coalesce(a.situacao,'ativa')<>'cancelada'"
+                                      " and a.dia=(select dia from ativ_venda where origem='eterna' and id=?)", (n, vid)):
+                    if ativ_base(v) != base:
+                        return "pulseira_usada", {"venda": v}
+            for sl, (n, meio) in sorted(novo.items()):
+                velho = atual.get(sl)
+                if velho and velho[0] == n:
+                    continue
+                if velho:
+                    c.execute("delete from ativ_pulseira where numero=? and venda=?", (velho[0], vid))
+                c.execute("insert into ativ_pulseira (numero, venda, slot, conflito, em, por, meio, lido_em) values (?,?,?,0,?,?,?,?)",
+                          (n, vid, sl, agora, eu, meio, agora))
+                c.execute("insert into ativ_pulseira_log (venda, slot, numero, de, acao, em, por, meio) values (?,?,?,?,?,?,?,?)",
+                          (vid, sl, n, velho[0] if velho else None, "trocou" if velho else "incluiu", agora, eu, meio))
+            c.commit()
+            return None, ativ_pulseiras_de(c, vid)
+        finally:
+            c.close()
+
+
+def ativ_pul_n_item(i):
+    """Quantas pulseiras um item leva: uma por vídeo; item sem vídeo, uma por unidade (v99.28: cada item tem a sua)."""
+    if not isinstance(i, dict):
+        return 0
+    q = int(i.get("qtd") or 1) if isinstance(i.get("qtd"), (int, float)) else 1
+    return int(i.get("videos") or 0) if isinstance(i.get("videos"), (int, float)) and i.get("videos") else max(1, q)
+
+
+def ativ_pulseiras_de(c, vid):
+    """As pulseiras de uma venda, para o tablet: número, item (slot) e se ainda pode trocar."""
+    usadas = {pu for (pu,) in c.execute("select pulseira from ativ_entrega where venda=? and pulseira is not null", (vid,))}
+    return [{"numero": n, "slot": sl, "travada": bool(vo) or n in usadas}
+            for n, sl, vo in c.execute("select numero, slot, voo_em from ativ_pulseira where venda=? order by slot", (vid,))]
+
+
+def ativ_pulseira_busca(n):
+    """GET /ativ/pulseira?n=: as vendas desta pulseira (normalmente uma). -> None se o número é inválido."""
+    p = pulseira_norm(n)
+    if not p:
+        return None
+    c = vendas_db()
+    try:
+        out = []
+        for vid, slot, conf, dia, tipo, sit, nome in c.execute(
+                "select p.venda, p.slot, p.conflito, v.dia, v.tipo, coalesce(v.situacao,'ativa'), v.cliente_nome from ativ_pulseira p"
+                " join ativ_venda v on v.origem='eterna' and v.id=p.venda where p.numero=? order by v.criado desc", (p,)).fetchall():
+            q = c.execute("select qr from ativ_entrega where venda=? and pulseira=? and apagado_em is null", (vid, p)).fetchone()
+            out.append({"venda": vid, "slot": slot, "conflito": bool(conf), "dia": dia, "tipo": tipo, "situacao": sit,
+                        "cliente": nome or "", "qr": q[0] if q else None})
+        return {"numero": p, "vendas": out}
+    finally:
+        c.close()
+
+
+def ativ_cancelar(vid, motivo, eu):
+    """Cancela uma venda do tablet (Ronaldo, 12/11): só o administrador e quem tem ativvenda.d ou financeiro.u (a rota confere),
+    e só enquanto o vídeo não foi entregue. O vendedor não cancela. A venda cancelada não some: fica com a situação, o
+    motivo, quem e quando. -> None se ok, ou o erro."""
+    motivo = str(motivo or "").strip()
+    if not _re_ativ_id.match(str(vid or "")) or not motivo or not _ativ_txt(motivo, 200):
+        return "dados"
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select situacao, entrega, qr from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            if not r:
+                return "nao_achou"
+            if r[0] == "cancelada":
+                return None
+            if (r[1] or "").strip() or (r[2] or "").strip():
+                return "entregue"
+            c.execute("update ativ_venda set situacao='cancelada', cancel_motivo=?, cancel_por=?, cancel_em=? where origem='eterna' and id=?",
+                      (motivo, eu, time.strftime("%Y-%m-%dT%H:%M:%S"), vid))
+            c.commit()
+        finally:
+            c.close()
+    return None
+
+
+# ---------- Entrega (v100, fase 4; plano 2026-11-11-ativacoes, seção 4) ----------
+# A equipe abre a venda na fila do dia, marca recebido e voo feito (piloto, drone, bateria), lê o QR de um cartão novo e manda o
+# vídeo. O vídeo fica em ~/Eterna/ativ-videos/<qr>.mp4, entra na fila da nuvem (S3 em partes) e o QR vira a galeria do vídeo.
+ATIV_VIDEOS_DIR = os.path.join(HOME, "ativ-videos")
+ATIV_VIDEO_MAX = 1024 * 1024 * 1024          # 1 GB por vídeo (o do drone tem ~30 s; 4K HEVC fica entre 100 e 250 MB)
+ATIV_VIDEO_PRAZO = 1800                      # segundos para o vídeo chegar inteiro pela rede do estádio
+ATIV_VIDEO_DIAS = 30                         # o vídeo fica 30 dias na nuvem (decisão 11/11)
+ATIV_CAD_TIPOS = ("piloto", "drone", "bateria")
+ATIV_ETAPAS = ("recebido", "voo", "item", "chutou")
+_re_qr = re.compile(r"^[A-Za-z0-9_-]{22}$")
+ATIV_VENUE = os.environ.get("ETERNA_VENUE", "maracana")
+ativ_video_lock = threading.Lock()
+ativ_video_em_curso = {}                     # qr -> {"total", "feito", "inicio"}: progresso da subida para a nuvem (tela da fila)
+GAL_ALFA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def cartao_codigo(tok):
+    """O mesmo cálculo do app (cartaoCodigo): código XXXX-XXXX-XXXX impresso no cartão, tirado do token (v99.24: 12 letras, 60 bits;
+    o registro de lotes garante que não repete)."""
+    h1, h2 = 0x811c9dc5, 0x9e3779b9
+    for ch in tok:
+        c = ord(ch)
+        h1 = ((h1 ^ c) * 16777619) & 0xFFFFFFFF
+        h2 = ((h2 ^ c) * 2246822519) & 0xFFFFFFFF
+    out = ""
+    for i in range(12):
+        v = (h1 >> (i * 5)) if i < 6 else (h2 >> ((i - 6) * 5))
+        out += GAL_ALFA[v & 31]
+        if i in (3, 7):
+            out += "-"
+    return out
+
+
+# ---- v99.24: lotes de cartões com QR, gerados e guardados no servidor ----
+# Um lote "na gráfica" por vez: clicar de novo baixa o mesmo arquivo; outro lote só depois de marcar o anterior como recebido
+# ou cancelado. Token e código são únicos entre todos os lotes (chave e unique no banco). Na entrega, cartão de lote cancelado
+# ou fora de qualquer lote é recusado (depois que existe o primeiro lote).
+CARTAO_MAX_LOTE = 10000
+_re_lote = re.compile(r"^L\d{8}-\d{6}$")
+
+
+def cartao_token_novo():
+    while True:
+        t = base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("=")
+        if t[0].isalnum():                  # começando com - ou _ o Excel da gráfica lê como fórmula
+            return t
+
+
+def cartao_lotes(c=None):
+    fecha = c is None
+    c = c or vendas_db()
+    try:
+        rs = c.execute("select l.id, l.n, l.em, l.por, l.situacao, l.mudou_em, l.mudou_por, l.baixado_n, l.baixado_em,"
+                       " (select count(*) from cartao k join ativ_entrega e on e.qr = k.token where k.lote = l.id)"
+                       " from cartao_lote l order by l.em desc").fetchall()
+        return [dict(zip(("id", "n", "em", "por", "situacao", "mudou_em", "mudou_por", "baixado_n", "baixado_em", "usados"), r)) for r in rs]
+    finally:
+        if fecha:
+            c.close()
+
+
+def cartao_csv(c, lote):
+    linhas = ["token;codigo;qr"] + ["%s;%s;https://eterna.photo/#g/%s" % (t, k, t) for t, k in
+                                    c.execute("select token, codigo from cartao where lote=? order by rowid", (lote,))]
+    return "\n".join(linhas)
+
+
+def cartao_lote(n, por):
+    """POST /ativ/cartoes/lote {n}: o lote que está na gráfica (mesmo arquivo) ou um novo. -> (erro, {lote, csv, novo})."""
+    with ev_lock:
+        c = vendas_db()
+        try:
+            aberto = c.execute("select id from cartao_lote where situacao='grafica'").fetchone()
+            if aberto:
+                lote, novo = aberto[0], False
+            else:
+                try:
+                    n = int(n)
+                except (TypeError, ValueError):
+                    return "dados", None
+                if not 1 <= n <= CARTAO_MAX_LOTE:
+                    return "dados", None
+                lote, novo = "L" + time.strftime("%Y%m%d-%H%M%S"), True
+                if c.execute("select 1 from cartao_lote where id=?", (lote,)).fetchone():
+                    return "dados", None
+                feitos = 0
+                while feitos < n:
+                    t = cartao_token_novo()
+                    cur = c.execute("insert or ignore into cartao (token, codigo, lote) values (?,?,?)", (t, cartao_codigo(t), lote))
+                    feitos += cur.rowcount
+                c.execute("insert into cartao_lote (id, n, em, por, situacao, baixado_n) values (?,?,?,?, 'grafica', 0)",
+                          (lote, n, time.strftime("%Y-%m-%dT%H:%M:%S"), por))
+            c.execute("update cartao_lote set baixado_n = baixado_n + 1, baixado_em=? where id=?", (time.strftime("%Y-%m-%dT%H:%M:%S"), lote))
+            c.commit()
+            return None, {"lote": lote, "novo": novo, "n": c.execute("select n from cartao_lote where id=?", (lote,)).fetchone()[0],
+                          "csv": cartao_csv(c, lote)}
+        finally:
+            c.close()
+
+
+def cartao_lote_muda(lote, situacao, por):
+    """POST /ativ/cartoes/situacao {lote, situacao}: grafica -> recebido ou cancelado; recebido -> cancelado (cartões perdidos)."""
+    if not _re_lote.match(str(lote or "")) or situacao not in ("recebido", "cancelado"):
+        return "dados"
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select situacao from cartao_lote where id=?", (lote,)).fetchone()
+            if not r:
+                return "nao_achou"
+            if r[0] == "cancelado" or r[0] == situacao:
+                return "situacao"
+            c.execute("update cartao_lote set situacao=?, mudou_em=?, mudou_por=? where id=?", (situacao, time.strftime("%Y-%m-%dT%H:%M:%S"), por, lote))
+            c.commit()
+            return None
+        finally:
+            c.close()
+
+
+def cartao_situacao(c, qr):
+    """None = pode usar; senão o erro da entrega. Antes do primeiro lote no servidor, qualquer cartão vale (como era)."""
+    if not c.execute("select 1 from cartao_lote limit 1").fetchone():
+        return None
+    r = c.execute("select l.situacao from cartao k join cartao_lote l on l.id = k.lote where k.token=?", (qr,)).fetchone()
+    if not r:
+        return "cartao_desconhecido"
+    return "cartao_cancelado" if r[0] == "cancelado" else None
+
+
+def ativ_videos_previstos(itens):
+    """Quantos vídeos a venda entrega (o tablet grava 'videos' em cada item)."""
+    return sum(int(i.get("videos") or 0) for i in itens if isinstance(i, dict))
+
+
+def ativ_catalogo():
+    """Produtos das ativações gravados pela tela Preços e Checkout (estado.db, coleção ativ)."""
+    out = []
+    for (v,) in estado_db_ler("ativ"):
+        try:
+            d = json.loads(v) if isinstance(v, str) else v
+        except ValueError:
+            continue
+        if isinstance(d, dict) and d.get("id") and d.get("cat"):
+            out.append(d)
+    return out
+
+
+def ativ_itens_fisicos(itens):
+    """Itens físicos da venda (medalha, bola), um por unidade, na ordem: [{i, nome}]. Vêm do catálogo do servidor."""
+    try:
+        cat = {p["id"]: p for p in (ativ_catalogo() or [])}
+    except Exception:
+        cat = {}
+    out = []
+    for it in itens:
+        p = cat.get(it.get("produto")) or {}
+        for nome in ((p.get("inclui") or {}).get("itens") or []):
+            for _ in range(int(it.get("qtd") or 1)):
+                out.append({"i": len(out), "nome": str(nome)[:40]})
+    return out
+
+
+def mp4_info(caminho):
+    """(é mp4/mov, duração em s ou None): lê as caixas do arquivo (ftyp no começo; mvhd dentro de moov)."""
+    try:
+        with open(caminho, "rb") as f:
+            cab = f.read(12)
+            if len(cab) < 12 or cab[4:8] != b"ftyp":
+                return False, None
+            f.seek(0)
+            tam_arq = os.fstat(f.fileno()).st_size
+            pos = 0
+            while pos + 8 <= tam_arq:
+                f.seek(pos)
+                h = f.read(16)
+                n, tipo = int.from_bytes(h[:4], "big"), h[4:8]
+                cab_n = 8
+                if n == 1:
+                    n, cab_n = int.from_bytes(h[8:16], "big"), 16
+                elif n == 0:
+                    n = tam_arq - pos
+                if n < cab_n:
+                    break
+                if tipo == b"moov":
+                    f.seek(pos + cab_n)
+                    moov = f.read(min(n - cab_n, 4 * 1024 * 1024))
+                    i = moov.find(b"mvhd")
+                    if i >= 4:
+                        ver = moov[i + 4]
+                        if ver == 1:
+                            esc, dur = int.from_bytes(moov[i + 24:i + 28], "big"), int.from_bytes(moov[i + 28:i + 36], "big")
+                        else:
+                            esc, dur = int.from_bytes(moov[i + 16:i + 20], "big"), int.from_bytes(moov[i + 20:i + 24], "big")
+                        return True, (round(dur / esc, 2) if esc else None)
+                    return True, None
+                pos += n
+            return True, None
+    except OSError:
+        return False, None
+
+
+def ativ_cadastros():
+    c = vendas_db()
+    try:
+        out = {t: [] for t in ATIV_CAD_TIPOS}
+        for tipo, nome, ativo in c.execute("select tipo, nome, ativo from ativ_cadastro order by tipo, nome collate nocase"):
+            if tipo in out:
+                out[tipo].append({"nome": nome, "ativo": bool(ativo)})
+        return out
+    finally:
+        c.close()
+
+
+def ativ_cadastro_set(body):
+    """POST /ativ/cadastros {tipo, nome, ativo}: inclui ou liga/desliga um piloto, drone ou bateria. Nunca apaga (o nome fica nas vendas).
+    {carga: [{tipo, nome}, ...]}: carga inicial; inclui só o que falta e não mexe em quem já está (nem religa quem foi desligado)."""
+    if "carga" in body:
+        L = body.get("carga")
+        if not isinstance(L, list) or not 0 < len(L) <= 200:
+            return "dados"
+        itens = []
+        for x in L:
+            t, n = (x or {}).get("tipo") if isinstance(x, dict) else None, str((x or {}).get("nome") or "").strip() if isinstance(x, dict) else ""
+            if t not in ATIV_CAD_TIPOS or not n or not _ativ_txt(n, 40):
+                return "dados"
+            itens.append((t, n))
+        with ev_lock:
+            c = vendas_db()
+            try:
+                c.executemany("insert or ignore into ativ_cadastro (tipo, nome, ativo) values (?, ?, 1)", itens)
+                c.commit()
+            finally:
+                c.close()
+        return None
+    tipo, nome = body.get("tipo"), str(body.get("nome") or "").strip()
+    if tipo not in ATIV_CAD_TIPOS or not nome or not _ativ_txt(nome, 40):
+        return "dados"
+    with ev_lock:
+        c = vendas_db()
+        try:
+            c.execute("insert into ativ_cadastro (tipo, nome, ativo) values (?, ?, ?) on conflict(tipo, nome) do update set ativo=excluded.ativo",
+                      (tipo, nome, 1 if body.get("ativo", True) else 0))
+            c.commit()
+        finally:
+            c.close()
+    return None
+
+
+def ativ_cliente_resumo(evs):
+    """Linha do tempo do cliente no vídeo: a primeira vez que abriu, aceitou, deu play e baixou, e quantas vezes baixou."""
+    try:
+        evs = json.loads(evs or "[]")
+    except ValueError:
+        evs = []
+    pri = lambda *ts: min((e["em"] for e in evs if e.get("tipo") in ts), default=None)
+    return {"aberto": pri("qr_aberto", "codigo_digitado"), "aceite": pri("video_aceite"), "play": pri("video_play"),
+            "baixou": pri("video_baixou"), "baixou_n": sum(1 for e in evs if e.get("tipo") == "video_baixou")}
+
+
+def ativ_pagina_nuvem(qrs):
+    """v99.23.6: a página do cliente (galeria do vídeo) publicada na API da nuvem? {qr: {"ok": bool, "erro": texto, "tentativas": n}}.
+    O arquivo no S3 sozinho não basta: sem a página, o QR do cartão abre "não encontrado"."""
+    if not qrs or not NUVEM_API:
+        return {}
+    try:
+        db = nuvem_db()
+        try:
+            db.execute("CREATE TABLE IF NOT EXISTS galerias (token TEXT PRIMARY KEY, prox REAL, tentativas INTEGER, feito REAL, erro TEXT)")
+            rows = db.execute("select token, feito, erro, tentativas from galerias where token in (%s)" % ",".join("?" * len(qrs)), list(qrs)).fetchall()
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return {}
+    return {t: {"ok": bool(f), "erro": (e or "")[:120] if not f else "", "tentativas": int(n or 0)} for t, f, e, n in rows}
+
+
+def _ativ_entregas(c, vid):
+    rows = c.execute("select qr, n, bytes, duracao, por, em, nuvem_em, cliente_eventos, pulseira from ativ_entrega"
+                     " where venda=? and apagado_em is null order by n", (vid,)).fetchall()
+    pg = ativ_pagina_nuvem([r[0] for r in rows])
+    return [{"qr": q, "codigo": cartao_codigo(q), "n": n, "bytes": b, "duracao": d, "por": por, "em": em, "nuvem": bool(ne),
+             "subindo": ativ_video_em_curso.get(q), "cliente": ativ_cliente_resumo(ce), "pulseira": pu,
+             "pagina": pg.get(q) or ({"ok": False, "erro": "", "tentativas": 0} if NUVEM_API else None)}
+            for q, n, b, d, por, em, ne, ce, pu in rows]
+
+
+def nuvem_video_eventos(seg):
+    """De 2 em 2 minutos: traz da galeria da nuvem quando o cliente abriu, deu play e baixou cada vídeo entregue nos últimos 31 dias."""
+    lim = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 31 * 86400))
+    c = vendas_db()
+    try:
+        qrs = [q for (q,) in c.execute("select qr from ativ_entrega where apagado_em is null and nuvem_em is not null and em >= ? order by em desc"
+                                       " limit 500", (lim,))]
+    finally:
+        c.close()
+    n = 0
+    for i in range(0, len(qrs), 50):
+        rq = urllib.request.Request(NUVEM_API + "/ponto/eventos?" + urllib.parse.urlencode({"tokens": ",".join(qrs[i:i + 50])}),
+                                    headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(rq, timeout=20) as r:
+            j = json.loads(r.read().decode("utf8"))
+        with ev_lock:
+            c = vendas_db()
+            try:
+                for q, evs in (j.get("eventos") or {}).items():
+                    if q in qrs and isinstance(evs, list):
+                        evs = sorted(({"tipo": str(e.get("tipo"))[:20], "em": str(e.get("em"))[:20]} for e in evs if isinstance(e, dict)),
+                                     key=lambda e: e["em"])[:200]
+                        n += c.execute("update ativ_entrega set cliente_eventos=? where qr=? and coalesce(cliente_eventos,'')<>?",
+                                       (json.dumps(evs), q, json.dumps(evs))).rowcount
+                c.commit()
+            finally:
+                c.close()
+    return n
+
+
+def ativ_fila(dia):
+    """GET /ativ/fila?dia=: vendas do tablet no dia (ativas), da mais antiga para a mais nova, com a situação da entrega em palavras."""
+    if not _re_dia.match(str(dia or "")):
+        return None
+    c = vendas_db()
+    try:
+        out = []
+        for r in c.execute("select id, tipo, criado, itens, pagamento, vendedor, pessoas, videos, idioma, piloto, drone, bateria, entrega,"
+                           " recebido_em, recebido_por, voo_em, voo_por, itens_entregues, cliente_nome from ativ_venda"
+                           " where origem='eterna' and dia=? and coalesce(situacao,'ativa')='ativa' order by criado", (dia,)).fetchall():
+            itens = json.loads(r[3] or "[]")
+            ents = _ativ_entregas(c, r[0])
+            fis = ativ_itens_fisicos(itens)
+            feitos = set(json.loads(r[17] or "[]"))
+            for x in fis:
+                x["entregue"] = x["i"] in feitos
+            puls = []
+            # v99.29.3: vídeo entregue antes de a venda ter pulseira (pulseira incluída depois, em Corrigir pulseira): a pulseira
+            # fica com o vídeo entregue sem pulseira do mesmo número (n = slot), e com o voo da venda
+            soltas = [e for e in ents if not e.get("pulseira")]
+            for num, slot, conf, vem, vpor, pil, dro, bat in c.execute(
+                    "select numero, slot, conflito, voo_em, voo_por, piloto, drone, bateria from ativ_pulseira where venda=? order by slot", (r[0],)):
+                q = next((e["qr"] for e in ents if e.get("pulseira") == num), None)
+                if not q:
+                    e = next((e for e in soltas if e.get("n") == slot), None)
+                    if e:
+                        soltas.remove(e)
+                        q = e["qr"]
+                        vem, vpor = vem or r[15] or e.get("em"), vpor or r[16]
+                        pil, dro, bat = pil or r[9], dro or r[10], bat or r[11]
+                puls.append({"numero": num, "slot": slot, "conflito": bool(conf), "voo_em": vem, "voo_por": vpor, "piloto": pil,
+                             "drone": dro, "bateria": bat, "qr": q})
+            out.append({"id": r[0], "tipo": r[1], "criado": r[2], "itens": itens, "pagamento": r[4], "vendedor": r[5], "pessoas": r[6], "pulseiras": puls,
+                        "videos": ativ_videos_previstos(itens), "idioma": r[8], "piloto": r[9], "drone": r[10], "bateria": r[11],
+                        "entregue_em": r[12] or None, "recebido_em": r[13], "recebido_por": r[14], "voo_em": r[15], "voo_por": r[16],
+                        "entregas": ents, "fisicos": fis, "cliente": r[18] or "", "foto": os.path.exists(ativ_cliente_foto(r[0]))})
+        return out
+    finally:
+        c.close()
+
+
+def _ativ_fecha_entrega(c, vid, itens, feitos):
+    """Venda entregue quando todos os vídeos têm QR e todos os itens físicos tiveram baixa."""
+    n = c.execute("select count(*) from ativ_entrega where venda=? and apagado_em is null", (vid,)).fetchone()[0]
+    qrs = ",".join(q for (q,) in c.execute("select qr from ativ_entrega where venda=? and apagado_em is null order by n", (vid,)))
+    # v99.30: no Chute a Gol o chute é a entrega: cada pulseira precisa ter chutado (ativ_pulseira.voo_em = hora do chute)
+    tipo = (c.execute("select tipo from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone() or [""])[0]
+    chutes = [e for (e,) in c.execute("select voo_em from ativ_pulseira where venda=?", (vid,))] if tipo == "chute" else []
+    chutou = bool(chutes) and all(chutes)
+    pronto = (n >= ativ_videos_previstos(itens) and len(feitos) >= len(ativ_itens_fisicos(itens)) and (not chutes or chutou)
+              and (n or feitos or chutou))
+    if chutes:      # v99.30.3: no Chute a Gol o vídeo é opcional: chutou (e itens com baixa) é entregue
+        pronto = chutou and len(feitos) >= len(ativ_itens_fisicos(itens))
+    c.execute("update ativ_venda set qr=?, entrega=? where origem='eterna' and id=?",
+              (qrs, time.strftime("%Y-%m-%dT%H:%M:%S") if pronto else "", vid))
+
+
+def ativ_etapa(body, eu):
+    """POST /ativ/etapa {id, etapa: recebido | voo | item | chutou, piloto, drone, bateria, i, pulseira}. -> None ou o erro.
+    v99.30: chutou (Chute a Gol, com a pulseira): o chute é a entrega do produto; a hora fica em ativ_pulseira.voo_em.
+    v99.25: com a pulseira, o voo fica registrado no vídeo daquela pulseira (dois drones podem voar a mesma compra)."""
+    vid, etapa = str(body.get("id") or ""), body.get("etapa")
+    if not _re_ativ_id.match(vid) or etapa not in ATIV_ETAPAS:
+        return "dados"
+    pul = None
+    if body.get("pulseira") not in (None, ""):
+        pul = pulseira_norm(body.get("pulseira"))
+        if not pul:
+            return "dados"
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select situacao, itens, itens_entregues from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            if not r:
+                return "nao_achou"
+            if (r[0] or "ativa") != "ativa":
+                return "cancelada"
+            itens = json.loads(r[1] or "[]")
+            if pul and not c.execute("select 1 from ativ_pulseira where numero=? and venda=?", (pul, vid)).fetchone():
+                return "pulseira"
+            if etapa == "recebido":
+                c.execute("update ativ_venda set recebido_em=coalesce(recebido_em, ?), recebido_por=coalesce(recebido_por, ?) where origem='eterna' and id=?",
+                          (agora, eu, vid))
+            elif etapa == "chutou":
+                if not pul:
+                    return "pulseira"
+                c.execute("update ativ_venda set recebido_em=coalesce(recebido_em, ?), recebido_por=coalesce(recebido_por, ?) where origem='eterna' and id=?",
+                          (agora, eu, vid))
+                c.execute("update ativ_pulseira set voo_em=coalesce(voo_em, ?), voo_por=coalesce(voo_por, ?) where numero=? and venda=?", (agora, eu, pul, vid))
+                _ativ_fecha_entrega(c, vid, itens, set(json.loads(r[2] or "[]")))
+            elif etapa == "voo":
+                ativos = {(t, n) for t, n, a in c.execute("select tipo, nome, ativo from ativ_cadastro") if a}
+                vals = []
+                for t in ATIV_CAD_TIPOS:
+                    v = str(body.get(t) or "").strip()
+                    if not v or (t, v) not in ativos:
+                        return "cadastro"
+                    vals.append(v)
+                c.execute("update ativ_venda set piloto=?, drone=?, bateria=?, voo_em=?, voo_por=?, recebido_em=coalesce(recebido_em, ?),"
+                          " recebido_por=coalesce(recebido_por, ?) where origem='eterna' and id=?", (*vals, agora, eu, agora, eu, vid))
+                if pul:
+                    c.execute("update ativ_pulseira set piloto=?, drone=?, bateria=?, voo_em=?, voo_por=? where numero=? and venda=?",
+                              (*vals, agora, eu, pul, vid))
+            else:
+                fis = ativ_itens_fisicos(itens)
+                i = body.get("i")
+                if not isinstance(i, int) or isinstance(i, bool) or not 0 <= i < len(fis):
+                    return "dados"
+                feitos = sorted(set(json.loads(r[2] or "[]")) | {i})
+                c.execute("update ativ_venda set itens_entregues=? where origem='eterna' and id=?", (json.dumps(feitos), vid))
+                _ativ_fecha_entrega(c, vid, itens, feitos)
+            c.commit()
+        finally:
+            c.close()
+    return None
+
+
+def ativ_video_checa(vid, qr):
+    """Antes de receber o arquivo: a venda aceita mais um vídeo e o QR é de um cartão novo. -> (erro, n do vídeo)."""
+    if not _re_ativ_id.match(str(vid or "")) or not _re_qr.match(str(qr or "")):
+        return "dados", None
+    c = vendas_db()
+    try:
+        r = c.execute("select situacao, itens from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+        if not r:
+            return "nao_achou", None
+        if (r[0] or "ativa") != "ativa":
+            return "cancelada", None
+        if c.execute("select 1 from ativ_entrega where qr=?", (qr,)).fetchone():
+            return "qr_usado", None
+        e = cartao_situacao(c, qr)
+        if e:
+            return e, None
+        prev = ativ_videos_previstos(json.loads(r[1] or "[]"))
+        n = c.execute("select count(*) from ativ_entrega where venda=? and apagado_em is null", (vid,)).fetchone()[0]
+        if n >= prev:
+            return "sem_video" if not prev else "completa", None
+    finally:
+        c.close()
+    try:
+        if REPO.ler_manifesto(qr):              # cartão já usado numa galeria de fotos
+            return "qr_usado", None
+    except Exception:
+        pass
+    return None, n + 1
+
+
+ativ_liga_lock = threading.Lock()
+_re_rascunho = re.compile(r"^[0-9a-f]{16}$")
+
+
+def ativ_rascunho(rid):
+    return os.path.join(ATIV_VIDEOS_DIR, "rascunho-%s.mp4" % rid)
+
+
+def ativ_video_liga(body, eu):
+    """POST /ativ/video/liga {rascunho, venda, qr, pulseira}: o vídeo que já está no servidor passa a ser da venda e do cartão.
+    As mesmas conferências de antes (venda ativa, cartão novo, não passa dos vídeos comprados); com a pulseira (v99.25), ela é
+    desta venda e ainda não tem vídeo. -> (erro, n do vídeo)."""
+    rid = str(body.get("rascunho") or "")
+    if not _re_rascunho.match(rid):
+        return "dados", None
+    pul = None
+    if body.get("pulseira") not in (None, ""):
+        pul = pulseira_norm(body.get("pulseira"))
+        if not pul:
+            return "dados", None
+    arq = ativ_rascunho(rid)
+    with ativ_liga_lock:
+        if not os.path.exists(arq):
+            return "rascunho", None
+        vid, qr = str(body.get("venda") or ""), str(body.get("qr") or "")
+        e, n = ativ_video_checa(vid, qr)
+        if e:
+            return e, None
+        if pul:
+            c = vendas_db()
+            try:
+                if not c.execute("select 1 from ativ_pulseira where numero=? and venda=?", (pul, vid)).fetchone():
+                    return "pulseira", None
+                if c.execute("select 1 from ativ_entrega where venda=? and pulseira=? and apagado_em is null", (vid, pul)).fetchone():
+                    return "pulseira_usada", None
+            finally:
+                c.close()
+        e = ativ_video_grava(vid, qr, n, arq, eu, pul, rid)
+        return e, (None if e else n)
+
+
+def ativ_video_grava(vid, qr, n, tmp, eu, pulseira=None, rid=None):
+    """Arquivo recebido inteiro: guarda, liga ao QR, fecha a venda se completou, põe na fila da nuvem e grava a galeria do vídeo.
+    v99.25: o rascunho já começou a subir para a nuvem quando foi solto (video/r-<rid>.mp4); aqui ele só ganha o destino e a
+    nuvem copia para video/<qr>.mp4 por dentro (segundos), sem subir de novo."""
+    ok, dur = mp4_info(tmp)
+    if not ok:
+        return "formato"
+    os.makedirs(ATIV_VIDEOS_DIR, exist_ok=True)
+    final = os.path.join(ATIV_VIDEOS_DIR, qr + ".mp4")
+    md5 = hashlib.md5()
+    with open(tmp, "rb") as f:
+        for ch in iter(lambda: f.read(1 << 20), b""):
+            md5.update(ch)
+    tam = os.path.getsize(tmp)
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with ev_lock:
+        c = vendas_db()
+        try:
+            if c.execute("select 1 from ativ_entrega where qr=?", (qr,)).fetchone():
+                return "qr_usado"
+            r = c.execute("select itens, itens_entregues, idioma, tipo, tour_token, tour_n, foto_busca from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            try:
+                os.replace(tmp, final)
+                arq = final
+            except OSError:                    # no Windows, o rascunho que ainda está subindo não pode mudar de nome: a fila renomeia no fim
+                arq = tmp
+            c.execute("insert into ativ_entrega (qr, venda, n, arquivo, bytes, md5, duracao, por, em, pulseira) values (?,?,?,?,?,?,?,?,?,?)",
+                      (qr, vid, n, arq, tam, md5.hexdigest(), dur, eu, agora, pulseira))
+            itens = json.loads(r[0] or "[]")
+            _ativ_fecha_entrega(c, vid, itens, set(json.loads(r[1] or "[]")))
+            c.commit()
+        finally:
+            c.close()
+    expira = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() + ATIV_VIDEO_DIAS * 86400))
+    m = {"v": 1, "token": qr, "codigo": cartao_codigo(qr), "tipo": "video", "venue": ATIV_VENUE, "nome": None, "sessoes": [], "menor": False,
+         "criada": _iso(), "expira": expira, "idioma": r[2] or "", "servico": r[3], "fotos": [],
+         "precos": {"dig": 0.0, "todas": 0.0}, "catalogo": [], "moeda": "BRL", "envio": {"compradas": "ok", "vitrine": "ok"},
+         "videos": [{"id": qr, "chave": "video/%s.mp4" % qr, "bytes": tam, "duracao": dur, "n": n}]}
+    if r[4] and r[5]:
+        m["tour"] = {"token": r[4], "n": int(r[5])}
+    try:
+        REPO.salvar_manifesto(qr, m)
+    except Exception as ex:
+        print("  entrega: galeria do vídeo não gravada (%s)" % type(ex).__name__)
+    if not (rid and nuvem_video_destino("r-" + rid, qr, arq)):
+        nuvem_video_enfileira(qr, arq)
+    nuvem_galeria_enfileira(qr)
+    if r[3] in ATIV_FOTOS_TIPOS:               # v99.26: fotos do vídeo (o ffmpeg leva alguns segundos); no fim atualiza a página
+        threading.Thread(target=ativ_fotos_video, args=(vid, qr), daemon=True).start()
+    elif r[6]:                                 # a busca das fotos do Tour roda fora da entrega (pode levar alguns segundos)
+        threading.Thread(target=ativ_tour_atualiza, args=(vid,), daemon=True).start()
+    return None
+
+
+# ---------- v99.22: fotos do Tour pela foto da venda ----------
+# Com o aceite do cliente na venda, a foto dele (a mesma que a equipe usa para reconhecê-lo na entrega) é procurada nas fotos
+# do Tour do dia, aqui no servidor do ponto (a foto nunca vai à nuvem). As fotos em que ele é o rosto principal formam uma
+# galeria de venda própria (tipo sessao, com os preços e o catálogo online de hoje), e a página do vídeo mostra
+# "encontramos N fotos suas do Tour". Na galeria, a selfie de sempre confirma que é ele antes de abrir as fotos e a compra.
+ATIV_TOUR_MAX = 60
+_tour_base = {"t": 0.0, "v": None}
+_tour_lock = threading.Lock()
+
+
+def ativ_tour_base():
+    """Preços e catálogo online da galeria de venda mais recente (os mesmos do Checkout de hoje). Cache de 10 min."""
+    if _tour_base["v"] and time.time() - _tour_base["t"] < 600:
+        return _tour_base["v"]
+    melhor = None
+    for t in REPO.listar():
+        try:
+            m = REPO.ler_manifesto(t)
+        except Exception:
+            m = None
+        if not m or m.get("tipo") != "sessao" or m.get("origem") == "ativ" or not m.get("precos"):
+            continue
+        if not melhor or str(m.get("criada") or "") > str(melhor.get("criada") or ""):
+            melhor = m
+    v = {"precos": melhor["precos"], "catalogo": melhor.get("catalogo") or []} if melhor else None
+    _tour_base.update(t=time.time(), v=v)
+    return v
+
+
+def ativ_tour_fotos(vid):
+    """[(id do manifesto, sessão)] das fotos do Tour de hoje em que o rosto da foto da venda é o principal; None sem como procurar."""
+    arq = ativ_cliente_foto(vid)
+    if not rostos["ligado"] or not os.path.isfile(arq):
+        return None
+    with open(arq, "rb") as f:
+        b = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+    r = buscar([b], dias=1, janela=0)
+    b = None
+    if r.get("varias") or not r.get("rosto"):
+        return []
+    out = []
+    with sess_lock:
+        for x in r.get("fotos") or []:
+            if x["sim"] < LIMITE or not x.get("principal"):
+                continue
+            card = sess_pid.get(x["id"])
+            se = sess.get(card or "")
+            if se is not None and x["id"] in (se.get("ia") or ()):     # base de IA nunca é vendida como foto
+                continue
+            out.append(("ag_" + x["id"], card or ""))
+    return out[:ATIV_TOUR_MAX]
+
+
+# ---------- v99.26: fotos do Drone tiradas do vídeo ----------
+# Depois de entregar, o servidor tira do vídeo as fotos do cliente (começo do vídeo: rosto grande e nítido) e as aéreas
+# (segunda metade: as mais nítidas). Cada uma entra no Eterna pela mesma porta das fotos dos fotógrafos (ingest_file):
+# sessão, leitura de rostos (o cliente acha no Checkout pela selfie), vitrine e nuvem. As desta venda vão também para a
+# página do vídeo (tabela ativ_foto), sem depender da busca pelo rosto: são do vídeo que ele comprou.
+ATIV_FOTOS_TIPOS = ("drone",)
+ATIV_FOTOS_CLIENTE, ATIV_FOTOS_AEREAS = 4, 2
+ATIV_FOTOS_INICIO = 15                      # segundos: o cliente aparece de perto no começo do vídeo (teste de 12/11)
+
+
+def ffmpeg_bin():
+    """O ffmpeg do servidor. O Eterna roda como tarefa do SISTEMA: o instalador põe o ffmpeg para a máquina (pasta WinGet
+    em Program Files); um winget feito por um usuário fica no perfil dele, então os perfis também são procurados."""
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    cs = [os.environ.get("ETERNA_FFMPEG"), shutil.which("ffmpeg"),
+          os.path.join(pf, "WinGet", "Links", "ffmpeg.exe"),
+          os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links", "ffmpeg.exe"),
+          os.path.join(os.path.expanduser("~"), "AppData", "Local", "Microsoft", "WinGet", "Links", "ffmpeg.exe")]
+    if sys.platform.startswith("win"):
+        cs += sorted(glob.glob(os.path.join(pf, "WinGet", "Packages", "Gyan.FFmpeg*", "*", "bin", "ffmpeg.exe")), reverse=True)
+        cs += sorted(glob.glob(r"C:\Users\*\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe"))
+        cs += sorted(glob.glob(r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg*\*\bin\ffmpeg.exe"), reverse=True)
+    for c in cs:
+        if c and os.path.isfile(c):
+            return c
+    return None
+
+
+def _quadro_nota(path, det):
+    """(nitidez, área do maior rosto em fração da imagem)."""
+    import cv2
+    im = cv2.imread(path)
+    if im is None:
+        return 0.0, 0.0
+    nit = float(cv2.Laplacian(cv2.cvtColor(im, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+    rosto = 0.0
+    if det is not None:
+        h, w = im.shape[:2]
+        e = 640.0 / max(h, w)
+        p = cv2.resize(im, (int(w * e), int(h * e)))
+        det.setInputSize((p.shape[1], p.shape[0]))
+        _, fs = det.detect(p)
+        if fs is not None and len(fs):
+            rosto = float(max(f[2] * f[3] for f in fs)) / (p.shape[0] * p.shape[1])
+    return nit, rosto
+
+
+def ativ_fotos_escolhe(notas, n, espaco):
+    """As n melhores [(nota, t, arquivo)], com pelo menos `espaco` segundos entre elas, na ordem do vídeo."""
+    out = []
+    for nota, t, p in sorted(notas, key=lambda x: -x[0]):
+        if nota <= 0:
+            break
+        if all(abs(t - u) >= espaco for _, u, _ in out):
+            out.append((nota, t, p))
+        if len(out) >= n:
+            break
+    return sorted(out, key=lambda x: x[1])
+
+
+def ativ_fotos_video(vid, qr):
+    """-> quantas fotos do vídeo entraram no Eterna."""
+    ff = ffmpeg_bin()
+    if not ff:
+        print("  fotos do vídeo: ffmpeg não instalado")
+        return 0
+    c = vendas_db()
+    try:
+        r = c.execute("select e.arquivo, e.duracao, e.pulseira, v.tipo, v.voo_em, v.piloto from ativ_entrega e"
+                      " join ativ_venda v on v.origem='eterna' and v.id=e.venda where e.qr=? and e.venda=?", (qr, vid)).fetchone()
+        p = c.execute("select piloto, voo_em from ativ_pulseira where venda=? and numero=?", (vid, r[2])).fetchone() if r and r[2] else None
+        ja = c.execute("select 1 from ativ_foto where qr=?", (qr,)).fetchone()
+    finally:
+        c.close()
+    if not r or r[3] not in ATIV_FOTOS_TIPOS or ja:
+        return 0
+    arq = next((a for a in (r[0], os.path.join(ATIV_VIDEOS_DIR, qr + ".mp4")) if a and os.path.exists(a)), None)
+    if not arq:
+        return 0
+    tmp = tempfile.mkdtemp(prefix="quadros-", dir=ATIV_VIDEOS_DIR)
+    n = 0
+    try:
+        sem_janela = {"creationflags": 0x08000000} if sys.platform.startswith("win") else {}
+        subprocess.run([ff, "-v", "error", "-nostdin", "-i", arq, "-vf", "fps=2", "-q:v", "2", os.path.join(tmp, "q%04d.jpg")],
+                       timeout=900, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **sem_janela)
+        quadros = sorted(glob.glob(os.path.join(tmp, "q*.jpg")))
+        det = None
+        try:
+            det = leitor()[0]
+        except Exception:
+            pass
+        dur = float(r[1] or 0) or len(quadros) * 0.5
+        inicio = min(ATIV_FOTOS_INICIO, dur * 0.4)  # vídeo curto (13 s): o cliente nos primeiros 40%, a aérea no fim
+        perto, longe = [], []
+        for i, q in enumerate(quadros):
+            t = i * 0.5
+            nit, rosto = _quadro_nota(q, det)
+            if t < inicio:
+                perto.append((nit * (rosto if det is not None else 1.0), t, q))
+            elif t >= max(inicio, dur / 2):
+                longe.append((nit, t, q))
+        esc = [("cliente", x) for x in ativ_fotos_escolhe(perto, ATIV_FOTOS_CLIENTE, 1.5)] + \
+              [("aerea", x) for x in ativ_fotos_escolhe(longe, ATIV_FOTOS_AEREAS, 5)]
+        quando = (p and p[1]) or r[4] or time.strftime("%Y-%m-%dT%H:%M:%S")
+        t0 = time.mktime(time.strptime(quando, "%Y-%m-%dT%H:%M:%S"))
+        quem = "Drone" + (" · " + ((p and p[0]) or r[5]) if (p and p[0]) or r[5] else "")
+        cod = cartao_codigo(qr).replace("-", "")
+        linhas = []
+        for k, (tipo, (_, t, q)) in enumerate(esc, 1):
+            os.utime(q, (t0 + t, t0 + t))            # a foto "foi tirada" na hora do voo: dia e sessão certos
+            st = os.stat(q)
+            h = quick_hash(q, st.st_size)
+            res = ingest_file(q, "DRONE_%s_%02d.jpg" % (cod, k), st, quem, "drone", move=True, quieto=True)
+            if res in ("new", "dup"):
+                linhas.append((vid, qr, seen.get(h) or h[:12], tipo, t, _iso()))
+                n += res == "new"
+        with ev_lock:
+            c = vendas_db()
+            try:
+                c.executemany("insert or ignore into ativ_foto (venda, qr, pid, tipo, t, em) values (?,?,?,?,?,?)", linhas)
+                c.commit()
+            finally:
+                c.close()
+        print("  fotos do vídeo: %d do cliente e %d aéreas" % (sum(1 for x in esc if x[0] == "cliente"), sum(1 for x in esc if x[0] == "aerea")))
+    except Exception as ex:
+        print("  fotos do vídeo: %s" % str(ex)[:160])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        ativ_tour_atualiza(vid)
+    except Exception as ex:
+        print("  fotos do vídeo: página do vídeo não atualizada (%s)" % str(ex)[:120])
+    return n
+
+
+def ativ_tour_atualiza(vid):
+    """Procura de novo e, se achou foto nova, cria ou amplia a galeria do Tour do cliente e põe o atalho nos vídeos da venda.
+    -> {token, n} ou None. A galeria só cresce: foto que já entrou não sai (o cliente pode ter comprado)."""
+    with _tour_lock:
+        with ev_lock:
+            c = vendas_db()
+            try:
+                r = c.execute("select foto_busca, tour_token, situacao from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+                do_video = [p for (p,) in c.execute("select pid from ativ_foto where venda=? order by tipo='aerea', t", (vid,))]
+            finally:
+                c.close()
+        if not r or (not r[0] and not do_video) or r[2] == "cancelada":
+            return None
+        with sess_lock:                        # v99.26: as fotos do próprio vídeo entram primeiro, mesmo sem a busca pelo rosto
+            achou = [("ag_" + p, sess_pid.get(p) or "") for p in do_video]
+        busca = ativ_tour_fotos(vid) if r[0] else None
+        achou += [x for x in (busca or []) if x[0] not in {a[0] for a in achou}]
+        tok = r[1] or None
+        velho = REPO.ler_manifesto(tok) if tok else None
+        ja = [f for f in (velho or {}).get("fotos") or []]
+        novas = [(i, s_) for i, s_ in (achou or []) if i not in {f["id"] for f in ja}][:max(0, ATIV_TOUR_MAX - len(ja))]
+        if not novas:
+            return {"token": tok, "n": len(ja)} if velho else None
+        base = ativ_tour_base()
+        if not base:
+            print("  tour: sem galeria de venda para copiar preços; fotos do Tour do cliente ficam para depois")
+            return None
+        tok = tok or secrets.token_urlsafe(16)
+        fotos = [{"id": f["id"], "sessao": f.get("sessao") or "", "direito": f.get("direito") or "venda", "canal": f.get("canal")} for f in ja]
+        fotos += [{"id": i, "sessao": s_, "direito": "venda", "canal": None} for i, s_ in novas]
+        m = gal_validar({"token": tok, "codigo": cartao_codigo(tok), "tipo": "sessao", "venue": ATIV_VENUE,
+                         "sessoes": sorted({f["sessao"] for f in fotos if f["sessao"]}), "criada": (velho or {}).get("criada") or _iso(),
+                         "expira": (velho or {}).get("expira"), "precos": base["precos"], "catalogo": base["catalogo"], "fotos": fotos})
+        m["origem"] = "ativ"
+        with gal_lock:
+            m = gal_mesclar(m, velho)
+            m["origem"] = "ativ"
+            REPO.salvar_manifesto(tok, m)
+            codigos[m["codigo"]] = tok
+        gal_fila.put(tok)
+        nuvem_galeria_enfileira(tok)
+        n = len(m["fotos"])
+        with ev_lock:
+            c = vendas_db()
+            try:
+                c.execute("update ativ_venda set tour_token=?, tour_n=? where origem='eterna' and id=?", (tok, n, vid))
+                qrs = [x[0] for x in c.execute("select qr from ativ_entrega where venda=?", (vid,))]
+                c.commit()
+            finally:
+                c.close()
+        for qr in qrs:                             # o atalho aparece na página dos vídeos que já foram entregues
+            try:
+                mv = REPO.ler_manifesto(qr)
+                if mv and mv.get("tipo") == "video":
+                    mv["tour"] = {"token": tok, "n": n}
+                    REPO.salvar_manifesto(qr, mv)
+                    nuvem_galeria_enfileira(qr)
+            except Exception as ex:
+                print("  tour: atalho no vídeo não gravado (%s)" % type(ex).__name__)
+        return {"token": tok, "n": n}
+
+
+def ativ_tour_passa():
+    """De hora em hora (antes da limpeza da foto do cliente): o Tour pode acontecer depois do voo, então quem aceitou e ainda
+    tem a foto guardada é procurado de novo. -> quantas vendas olhou."""
+    with ev_lock:
+        c = vendas_db()
+        try:
+            ids = [x[0] for x in c.execute("select id from ativ_venda where origem='eterna' and foto_busca=1 and situacao<>'cancelada'"
+                                           " and dia>=?", (time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400)),))]
+        finally:
+            c.close()
+    n = 0
+    for vid in ids:
+        if os.path.isfile(ativ_cliente_foto(vid)):
+            try:
+                ativ_tour_atualiza(vid)
+                n += 1
+            except Exception as ex:
+                print("  tour: erro na busca (%s)" % str(ex)[:120])
+    return n
+
+
+def ativ_videos_limpa(agora=None):
+    """Uma vez por dia: o vídeo guardado no servidor do ponto sai depois de ATIV_VIDEO_DIAS (o mesmo prazo da nuvem, que tem
+    a regra própria no bucket). A linha da entrega fica, como registro de que o vídeo foi entregue."""
+    lim = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime((agora or time.time()) - ATIV_VIDEO_DIAS * 86400))
+    c = vendas_db()
+    try:
+        velhos = c.execute("select arquivo from ativ_entrega where em < ?", (lim,)).fetchall()
+        ligados = {os.path.basename(a or "") for (a,) in c.execute("select arquivo from ativ_entrega where arquivo like '%rascunho-%'")}
+    finally:
+        c.close()
+    abandonados = []
+    try:
+        for f in os.listdir(ATIV_VIDEOS_DIR):
+            p = os.path.join(ATIV_VIDEOS_DIR, f)
+            if f.startswith("rascunho-") and f not in ligados and os.path.getmtime(p) < (agora or time.time()) - 86400:
+                os.remove(p)
+                abandonados.append("r-" + f[9:-4])
+    except OSError:
+        pass
+    if abandonados:                            # o rascunho que ninguém ligou a uma venda sai também da nuvem
+        with nuvem_lock:
+            db = nuvem_db()
+            _nuvem_videos_tabela(db)
+            db.executemany("UPDATE videos SET destino='-', prox=0 WHERE qr=? AND destino IS NULL", [(q,) for q in abandonados])
+            db.commit(); db.close()
+        nuvem_video_acorda.set()
+    n = 0
+    for (arq,) in velhos:
+        if arq and os.path.dirname(os.path.abspath(arq)) == os.path.abspath(ATIV_VIDEOS_DIR) and os.path.exists(arq):
+            try:
+                os.remove(arq)
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
+# Fila dos vídeos para o S3 (nuvem.db, tabela videos): sobe em partes de 8 MB, conferindo o tamanho no fim.
+# v99.25: o vídeo começa a subir assim que é solto na tela (linha "r-<rascunho>", chave video/r-<rascunho>.mp4). Quando a equipe
+# lê o cartão, a linha ganha o destino (o QR) e a nuvem copia por dentro para video/<qr>.mp4 e apaga a cópia do rascunho.
+# destino "-" = rascunho abandonado: só apaga da nuvem.
+def _nuvem_videos_tabela(db):
+    db.execute("CREATE TABLE IF NOT EXISTS videos (qr TEXT PRIMARY KEY, arquivo TEXT, entrou REAL, tentativas INTEGER DEFAULT 0,"
+               " prox REAL DEFAULT 0, feito REAL, bytes INTEGER, erro TEXT)")
+    tem = {r[1] for r in db.execute("PRAGMA table_info(videos)")}
+    for col, tipo in (("destino", "TEXT"), ("copiado", "REAL"), ("seg", "REAL")):    # v99.27: seg = quanto levou o envio
+        if col not in tem:
+            db.execute("ALTER TABLE videos ADD COLUMN %s %s" % (col, tipo))
+
+
+def nuvem_envio_medido(de, ate):
+    """v99.27: velocidade real de envio dos vídeos à nuvem no período (só envios que deram certo na primeira passada do
+    arquivo): quantos, mediana de MB, de segundos por vídeo e de Mbit/s."""
+    try:
+        t0 = time.mktime(time.strptime(de, "%Y-%m-%d"))
+        t1 = time.mktime(time.strptime(ate, "%Y-%m-%d")) + 86400
+        with nuvem_lock:
+            db = nuvem_db()
+            try:
+                _nuvem_videos_tabela(db)
+                rows = db.execute("SELECT bytes, seg FROM videos WHERE feito >= ? AND feito < ? AND seg > 0 AND bytes > 0", (t0, t1)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return None
+    if not rows:
+        return {"n": 0}
+    med = lambda xs: (sorted(xs)[len(xs) // 2] if len(xs) % 2 else sum(sorted(xs)[len(xs) // 2 - 1:len(xs) // 2 + 1]) / 2)
+    return {"n": len(rows), "mb": round(med([b / 1e6 for b, _ in rows]), 1), "seg": round(med([sg for _, sg in rows]), 1),
+            "mbps": round(med([b * 8 / sg / 1e6 for b, sg in rows]), 1)}
+
+
+def nuvem_video_enfileira(qr, arquivo):
+    with nuvem_lock:
+        db = nuvem_db()
+        _nuvem_videos_tabela(db)
+        db.execute("INSERT OR IGNORE INTO videos (qr, arquivo, entrou) VALUES (?, ?, ?)", (qr, arquivo, time.time()))
+        db.commit(); db.close()
+    nuvem_video_acorda.set()
+
+
+def nuvem_video_destino(rq, qr, arquivo=None):
+    """O rascunho que já está subindo (ou subiu) passa a ser o vídeo do cartão qr. -> False se o rascunho não está na fila.
+    v99.30.6: arquivo = onde o vídeo ficou depois de ligado (o rascunho que ainda esperava na fila muda de nome na entrega)."""
+    with nuvem_lock:
+        db = nuvem_db()
+        _nuvem_videos_tabela(db)
+        r = db.execute("SELECT 1 FROM videos WHERE qr=? AND destino IS NULL", (rq,)).fetchone()
+        if r:
+            db.execute("UPDATE videos SET destino=?, prox=0, arquivo=coalesce(?, arquivo) WHERE qr=?", (qr, arquivo, rq))
+            db.commit()
+        db.close()
+    if not r:
+        return False
+    p = ativ_video_em_curso.get(rq)
+    if p:
+        ativ_video_em_curso[qr] = p               # a tela da entrega vê o progresso pelo QR
+    nuvem_video_acorda.set()
+    return True
+
+
+def nuvem_rascunhos():
+    """Rascunhos de hoje na fila da nuvem: {rid: {feito, total, enviado}} para a tela da entrega mostrar antes de ligar."""
+    out = {}
+    try:
+        with nuvem_lock:
+            db = nuvem_db()
+            _nuvem_videos_tabela(db)
+            rs = db.execute("SELECT qr, feito, bytes FROM videos WHERE qr LIKE 'r-%' AND destino IS NULL AND entrou > ?", (time.time() - 86400,)).fetchall()
+            db.close()
+    except Exception:
+        return out
+    for q, feito, b in rs:
+        p = ativ_video_em_curso.get(q)
+        out[q[2:]] = {"feito": bool(feito), "total": (p or {}).get("total") or b, "enviado": (p or {}).get("feito") if p else (b if feito else 0)}
+    return out
+
+
+nuvem_video_acorda = threading.Event()
+
+
+def nuvem_videos_loop():
+    if NUVEM != "s3" or not NUVEM_BUCKET:
+        return
+    try:
+        import boto3
+        from boto3.s3.transfer import TransferConfig
+        from botocore.config import Config
+        s3 = boto3.session.Session(profile_name=NUVEM_PERFIL, region_name=NUVEM_REGIAO).client(
+            "s3", config=Config(retries={"max_attempts": 3, "mode": "standard"}, connect_timeout=10, read_timeout=120))
+    except Exception as ex:
+        nuvem["videos_erro"] = "não conectou: %s" % str(ex)[:160]
+        return
+    cfg = TransferConfig(multipart_threshold=8 * 1024 * 1024, multipart_chunksize=8 * 1024 * 1024, max_concurrency=2, use_threads=True)
+    while True:
+        try:
+            with nuvem_lock:
+                db = nuvem_db()
+                _nuvem_videos_tabela(db)
+                fila = db.execute("SELECT qr, arquivo, tentativas, feito, destino FROM videos WHERE (feito IS NULL OR (destino IS NOT NULL AND copiado IS NULL))"
+                                  " AND prox <= ? ORDER BY destino IS NULL, entrou LIMIT 5", (time.time(),)).fetchall()
+                nuvem["videos_fila"] = db.execute("SELECT COUNT(*) FROM videos WHERE (feito IS NULL AND coalesce(destino,'')<>'-')"
+                                                  " OR (destino IS NOT NULL AND destino<>'-' AND copiado IS NULL)").fetchone()[0]
+                db.close()
+            for qr, arquivo, tent, feito, destino in fila:
+                if os.path.exists(NUVEM_PAUSA):
+                    break
+                erro, tam, subiu, rasc, seg = None, None, bool(feito), qr.startswith("r-"), None
+                chave = "video/%s.mp4" % qr
+                try:
+                    if destino == "-":                 # rascunho abandonado
+                        s3.delete_object(Bucket=NUVEM_BUCKET, Key=chave)
+                    else:
+                        if not subiu:
+                            if not os.path.exists(arquivo) and destino and destino != "-":   # v99.30.6: renomeado na entrega
+                                arquivo = os.path.join(ATIV_VIDEOS_DIR, destino + ".mp4")
+                            tam = os.path.getsize(arquivo)
+                            prog = ativ_video_em_curso[qr] = {"total": tam, "feito": 0, "inicio": time.time()}
+                            if destino:
+                                ativ_video_em_curso[destino] = prog
+
+                            def anda(n, prog=prog):
+                                prog["feito"] += n
+                            s3.upload_file(arquivo, NUVEM_BUCKET, chave, ExtraArgs={"ContentType": "video/mp4"}, Config=cfg, Callback=anda)
+                            seg = time.time() - prog["inicio"]
+                            if s3.head_object(Bucket=NUVEM_BUCKET, Key=chave).get("ContentLength") != tam:
+                                raise ValueError("tamanho diferente na nuvem")
+                            subiu = True
+                        if rasc:
+                            with nuvem_lock:                # a equipe pode ter lido o cartão enquanto subia
+                                db = nuvem_db()
+                                destino = db.execute("SELECT destino FROM videos WHERE qr=?", (qr,)).fetchone()[0]
+                                db.close()
+                            if destino and destino != "-":
+                                alvo = "video/%s.mp4" % destino
+                                tam = tam or s3.head_object(Bucket=NUVEM_BUCKET, Key=chave).get("ContentLength")
+                                s3.copy_object(Bucket=NUVEM_BUCKET, Key=alvo, CopySource={"Bucket": NUVEM_BUCKET, "Key": chave},
+                                               ContentType="video/mp4", MetadataDirective="REPLACE")
+                                if s3.head_object(Bucket=NUVEM_BUCKET, Key=alvo).get("ContentLength") != tam:
+                                    raise ValueError("tamanho diferente na cópia")
+                                s3.delete_object(Bucket=NUVEM_BUCKET, Key=chave)
+                            elif destino == "-":
+                                s3.delete_object(Bucket=NUVEM_BUCKET, Key=chave)
+                except Exception as ex:
+                    erro = str(ex)[:200]
+                finally:
+                    ativ_video_em_curso.pop(qr, None)
+                    if destino and destino != "-":
+                        ativ_video_em_curso.pop(destino, None)
+                pronto = not erro and (not rasc or bool(destino))      # o vídeo do cartão está na nuvem
+                with nuvem_lock:
+                    db = nuvem_db()
+                    if erro:
+                        db.execute("UPDATE videos SET tentativas=tentativas+1, prox=?, erro=?, feito=coalesce(feito, ?) WHERE qr=?",
+                                   (time.time() + min(300, 5 * 2 ** min(tent, 6)), erro, time.time() if subiu else None, qr))
+                        nuvem["videos_erro"] = time.strftime("%H:%M:%S ") + erro
+                    else:
+                        db.execute("UPDATE videos SET feito=coalesce(feito, ?), bytes=coalesce(?, bytes), erro=NULL, copiado=?, seg=coalesce(?, seg) WHERE qr=?",
+                                   (time.time(), tam, time.time() if destino else None, seg, qr))
+                        if pronto and destino != "-":
+                            nuvem["videos_enviados"] = nuvem.get("videos_enviados", 0) + 1
+                    db.commit(); db.close()
+                if pronto and destino != "-":
+                    alvo = destino if rasc else qr
+                    final = os.path.join(ATIV_VIDEOS_DIR, alvo + ".mp4")
+                    with ev_lock:
+                        c = vendas_db()
+                        try:
+                            if rasc and arquivo and os.path.exists(arquivo) and not os.path.exists(final):
+                                try:
+                                    os.replace(arquivo, final)       # o nome final que não deu na hora de ligar (arquivo aberto)
+                                    c.execute("update ativ_entrega set arquivo=? where qr=? and arquivo=?", (final, alvo, arquivo))
+                                except OSError:
+                                    pass
+                            c.execute("update ativ_entrega set nuvem_em=? where qr=?", (time.strftime("%Y-%m-%dT%H:%M:%S"), alvo))
+                            c.commit()
+                        finally:
+                            c.close()
+                    nuvem_galeria_enfileira(alvo)      # a galeria deixa de dizer "chegando"
+        except Exception as ex:
+            nuvem["videos_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        nuvem_video_acorda.wait(10)
+        nuvem_video_acorda.clear()
+
+
+ATIV_VISTOS = {}            # usuario -> {nome, em, ip}: o tablet chama /ativ/minhas a cada 30 s com a tela aberta
+ATIV_DEMO_DIR = os.path.join(HOME, "ativ-demo")
+_re_ativ_demo = re.compile(r"^[a-z0-9_]{1,60}_[1-9]\.mp4$")
+
+
+def ativ_visto(eu, ip):
+    if eu and eu.get("usuario"):
+        ATIV_VISTOS[eu["usuario"]] = {"nome": ((eu.get("cadastro") or {}).get("name") or eu["usuario"])[:80], "em": time.time(), "ip": ip}
+
+
+def ativ_equipe():
+    """Quem está com a tela de venda aberta: visto nos últimos 2 minutos = conectado agora."""
+    agora = time.time()
+    return sorted(({"usuario": u, "nome": v["nome"], "visto_ha_s": int(agora - v["em"]), "agora": agora - v["em"] < 120}
+                   for u, v in ATIV_VISTOS.items() if agora - v["em"] < 16 * 3600), key=lambda x: x["visto_ha_s"])
+
+
+def ativ_demo_lista():
+    """Vídeos de demonstração no servidor do ponto (~/Eterna/ativ-demo/<produto>_<local>_<pessoas>.mp4)."""
+    out = []
+    try:
+        for n in sorted(os.listdir(ATIV_DEMO_DIR)):
+            if _re_ativ_demo.match(n):
+                st = os.stat(os.path.join(ATIV_DEMO_DIR, n))
+                out.append({"nome": n, "tamanho": st.st_size, "versao": int(st.st_mtime)})
+    except OSError:
+        pass
+    return out
+
+
+def ativ_vendas(de, ate, usuario=None):
+    """Vendas das ativações entre dois dias (inclusive), para o resumo e as estatísticas."""
+    if not (_re_dia.match(de or "") and _re_dia.match(ate or "")) or de > ate:
+        return None
+    cols = list(ATIV_VENDA_CAMPOS) + [c for c, _ in ATIV_TABLET_COLS if c != "enviado_por"]
+    c = vendas_db()
+    try:
+        q = "select " + ",".join(cols) + " from ativ_venda where dia between ? and ?"
+        args = [de, ate]
+        if usuario is not None:
+            q += " and origem='eterna' and usuario=?"
+            args.append(usuario)
+        rows = c.execute(q + " order by criado", args).fetchall()
+        ids = [r[1] for r in rows if r[0] == "eterna"]
+        etapas = ativ_etapas(c, ids)
+        puls, movs = {}, {}
+        for i in range(0, len(ids), 400):
+            parte = ids[i:i + 400]
+            ph = ",".join("?" * len(parte))
+            for vid in parte:
+                puls[vid] = []
+            for vid in {v for (v,) in c.execute("select distinct venda from ativ_pulseira where venda in (%s)" % ph, parte)}:
+                puls[vid] = ativ_pulseiras_de(c, vid)
+            for vid, acao, meio, n in c.execute("select venda, acao, coalesce(meio,''), count(*) from ativ_pulseira_log where venda in (%s)"
+                                                " group by venda, acao, meio" % ph, parte):
+                m = movs.setdefault(vid, {"camera": 0, "digitado": 0, "corrigidas": 0})
+                if acao == "venda" and meio in ("camera", "digitado"):
+                    m[meio] += n
+                elif acao in ("trocou", "incluiu"):
+                    m["corrigidas"] += n
+    finally:
+        c.close()
+    out = []
+    for row in rows:
+        d = {k: x for k, x in zip(cols, row) if x is not None or k in ATIV_VENDA_CAMPOS}
+        d["situacao"] = d.get("situacao") or "ativa"
+        try:
+            d["itens"] = json.loads(d["itens"] or "[]")
+        except ValueError:
+            d["itens"] = []
+        if d["origem"] == "eterna":
+            d["etapas"] = etapas.get(d["id"]) or {}
+            d["pulseiras"] = puls.get(d["id"]) or []
+            d["pul_mov"] = movs.get(d["id"]) or {"camera": 0, "digitado": 0, "corrigidas": 0}
+        out.append(d)
+    return out
+
+
+def _ativ_ts(x):
+    """Hora gravada -> segundos. Sem Z é a hora do servidor do ponto; com Z (eventos da nuvem) é UTC."""
+    try:
+        x = str(x or "")
+        if not x:
+            return None
+        if x.endswith("Z"):
+            import calendar
+            return calendar.timegm(time.strptime(x[:19], "%Y-%m-%dT%H:%M:%S"))
+        return int(time.mktime(time.strptime(x[:19], "%Y-%m-%dT%H:%M:%S")))
+    except (ValueError, OverflowError):
+        return None
+
+
+def ativ_etapas(c, ids):
+    """v99.27: o caminho de cada venda do tablet, em segundos, para o tempo de cada etapa nas estatísticas:
+    venda, chegou ao campo, decolou (ou começou), vídeo entregue, na nuvem, cliente abriu e cliente baixou.
+    Com mais de um vídeo vale o primeiro de cada etapa; "na nuvem" só quando todos os vídeos entregues subiram."""
+    out = {}
+    for i in range(0, len(ids), 400):
+        parte = ids[i:i + 400]
+        ph = ",".join("?" * len(parte))
+        for vid, criado, rec, voo in c.execute("select id, criado, recebido_em, voo_em from ativ_venda where origem='eterna' and id in (%s)" % ph, parte):
+            out[vid] = {"venda": _ativ_ts(criado), "recebido": _ativ_ts(rec), "voo": _ativ_ts(voo)}
+        for vid, voo in c.execute("select venda, min(voo_em) from ativ_pulseira where venda in (%s) and voo_em is not null group by venda" % ph, parte):
+            e = out.get(vid)
+            if e is not None:
+                t = _ativ_ts(voo)
+                e["voo"] = min(x for x in (e["voo"], t) if x is not None) if (e["voo"] or t) else None
+        ent = {}
+        for vid, em, ne, ce in c.execute("select venda, em, nuvem_em, cliente_eventos from ativ_entrega where venda in (%s)" % ph, parte):
+            ent.setdefault(vid, []).append((em, ne, ativ_cliente_resumo(ce)))
+        for vid, L in ent.items():
+            e = out.get(vid)
+            if e is None:
+                continue
+            pri = lambda xs: min((x for x in xs if x is not None), default=None)
+            e["entregue"] = pri(_ativ_ts(em) for em, _, _ in L)
+            e["nuvem"] = max(_ativ_ts(ne) or 0 for _, ne, _ in L) if all(ne for _, ne, _ in L) else None
+            e["aberto"] = pri(_ativ_ts(cl["aberto"]) for _, _, cl in L)
+            e["baixou"] = pri(_ativ_ts(cl["baixou"]) for _, _, cl in L)
+    return {k: {a: b for a, b in v.items() if b is not None} for k, v in out.items()}
+
+
+def doc_modulos(col, id_doc):
+    if col == "ativ":                                   # v100: catálogo das ativações; "Hoje não vendo" também para quem altera Configurações
+        return ("catalogo", "configuracao") if id_doc.startswith("hoje|") else ("catalogo",)
+    if col == "sim":
+        for k, mods in DOC_SIM:
+            if (id_doc.startswith(k) if k.endswith("|") else id_doc == k):
+                return mods
+        return None
+    m = DOC_COL_MOD.get(col)
+    return (m,) if m else None
+
+
+# v100: o mesmo formato que a tela confere (ativOk); produto ou "Hoje não vendo" fora disto é recusado
+ATIV_CATS, ATIV_ENTREGAS, ATIV_PEDE = ("drone", "chute", "snap"), ("video", "foto", "fisico", "experiencia"), ("pessoas", "participantes", "nada")
+
+
+def _ativ_num(v, mx):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and 0 <= v <= mx
+
+
+def _ativ_txt(v, mx):
+    return isinstance(v, str) and len(v) <= mx and "<" not in v and ">" not in v
+
+
+def ativ_valido(id_doc, v):
+    if id_doc.startswith("hoje|"):
+        # hoje|<produto> ou hoje|<produto>.<local> (um local fora de venda no dia)
+        return re.fullmatch(r"[a-z0-9_]{1,32}(\.[a-z0-9_]{1,28})?", id_doc[5:]) is not None and isinstance(v, dict) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v.get("dia") or "")) is not None
+    if not isinstance(v, dict) or re.fullmatch(r"[a-z0-9_]{1,32}", id_doc) is None or v.get("id") != id_doc:
+        return False
+    if v.get("cat") not in ATIV_CATS or v.get("entrega") not in ATIV_ENTREGAS or v.get("pede") not in ATIV_PEDE:
+        return False
+    if not _ativ_txt(v.get("nome"), 60) or not v["nome"].strip() or not isinstance(v.get("ativo"), bool):
+        return False
+    ops = v.get("opcoes")
+    if not isinstance(ops, list) or not 1 <= len(ops) <= 12 or not all(isinstance(o, dict) and _ativ_txt(o.get("nome"), 40) and _ativ_num(o.get("preco"), 100000) for o in ops):
+        return False
+    ex, inc = v.get("extra"), v.get("inclui")
+    if not (_ativ_num(v.get("k4"), 100000) and _ativ_num(v.get("chuva"), 100000) and isinstance(ex, dict) and _ativ_num(ex.get("limite"), 50) and _ativ_num(ex.get("valor"), 100000)):
+        return False
+    if not (isinstance(inc, dict) and _ativ_num(inc.get("chutes"), 50) and _ativ_num(inc.get("videos"), 20) and isinstance(inc.get("itens"), list)
+            and len(inc["itens"]) <= 10 and all(_ativ_txt(t, 40) for t in inc["itens"])):
+        return False
+    fx = v.get("faixas")
+    return fx is None or (isinstance(fx, list) and 1 <= len(fx) <= 10 and all(_ativ_num(x, 100000) for x in fx) and _ativ_num(v.get("depois"), 100000))
+
+
+def doc_recusa(db, quem, d):
+    """O motivo de recusar esta gravação (fora de usuarios), ou None."""
+    if not quem:
+        return "sem_sessao"
+    col, id_doc, apaga = d.get("col"), str(d.get("id") or ""), d.get("valor") is None
+    if col not in ESTADO_COLS:
+        return "colecao"
+    if col == "ativ" and not apaga and not ativ_valido(id_doc, d.get("valor")):
+        return "invalido"
+    existe = db.execute("select 1 from doc where col=? and id=? and valor is not null", (col, id_doc)).fetchone() is not None
+    if col == "usuarios_login":
+        return None if id_doc == quote(quem["usuario"], safe="-_.!~*'()") else "sem_permissao"
+    if col == "usuarios_log" or (col == "sim" and id_doc.startswith("cortesiaLog|")):
+        if apaga or existe:
+            return "so_acrescenta"
+        if col == "usuarios_log":
+            return None
+    mods = doc_modulos(col, id_doc)
+    if not mods:
+        return "desconhecido"
+    letras = ("d", "u") if apaga else ("u",) if existe else ("c", "u")
+    return None if any(auth_pode(quem["cadastro"], mo, le) for mo in mods for le in letras) else "sem_permissao"
+
+
+def auth_filtrar_docs(body, quem, ip="", posto=None):
+    """/ponto/docs: cada gravação passa pela regra da sua coleção (usuarios: auth_cadastro_recusa; outras: doc_recusa).
+    Aparelho pareado sem pessoa conectada não grava. O recusado sai da resposta como "recusados" (o app não reenvia)."""
+    docs = body.get("docs") if isinstance(body.get("docs"), list) else []
+    fica, recusados, apagados, motivos = [], max(0, len(docs) - 500), [], {}       # acima de 500 por pedido: recusado, não some calado
+    if recusados:
+        motivos["excesso"] = recusados
+    with estado_lock:
+        db = auth_db()
+        try:
+            for d in docs[:500]:
+                if not isinstance(d, dict):
+                    continue
+                if d.get("col") != "usuarios":
+                    motivo = doc_recusa(db, quem, d)
+                    if motivo:
+                        recusados += 1
+                        motivos[motivo] = motivos.get(motivo, 0) + 1
+                    else:
+                        fica.append(d)
+                    continue
+                r = db.execute("select valor from doc where col='usuarios' and id=? and valor is not null", (str(d.get("id")),)).fetchone()
+                antes = json.loads(r[0]) if r else None
+                depois = d.get("valor") if isinstance(d.get("valor"), dict) else None
+                motivo = auth_cadastro_recusa(quem, d.get("id"), antes, depois)
+                if motivo:
+                    recusados += 1
+                    auth_log(db, str((antes or depois or {}).get("email") or d.get("id"))[:120], "cadastro_recusado:" + motivo, (quem or {}).get("usuario", ""), ip)
+                    continue
+                fica.append(d)
+                if antes and depois is None and antes.get("email"):
+                    apagados.append(antes["email"])
+            if motivos:
+                auth_log(db, ("posto:" + posto["id"]) if posto and not quem else (quem or {}).get("usuario", "?"),
+                         "docs_recusados:" + ",".join("%s=%d" % kv for kv in sorted(motivos.items())), (quem or {}).get("usuario", ""), ip)
+            db.commit()
+        finally:
+            db.close()
+    for email in apagados:
+        auth_remover(str(email), (quem or {}).get("usuario", ""), ip)     # sem cadastro, a senha não fica para trás
+    return dict(body, docs=fica), recusados
+
+
+def auth_remover(usuario, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from credencial where usuario=?", (usuario,))
+            db.execute("delete from sessao_login where usuario=?", (usuario,))
+            db.execute("delete from reset_senha where usuario=?", (usuario,))
+            # os postos que a pessoa criou caem junto (pareados por ela ou automáticos)
+            for (pid,) in db.execute("select id from posto where revogado_em is null and criado_por in (?, ?)", (usuario, "auto:" + usuario)).fetchall():
+                db.execute("update posto set revogado_em=? where id=?", (time.time(), pid))
+                auth_log(db, "posto:" + pid, "posto_revogado", por, ip)
+            auth_log(db, usuario, "removido", por, ip)
+            db.commit()
+        finally:
+            db.close()
+
+
+def auth_criar_admin(usuario, nome):
+    """python eterna-agente.py --criar-admin <usuário> "<nome>": no próprio servidor; a senha provisória aparece só nesta tela.
+    Também recupera o acesso de quem ficou sem nenhum administrador."""
+    usuario = usuario.strip().lower()
+    if not AUTH_ID.match(usuario):
+        print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
+        return 1
+    tudo = {"c": True, "r": True, "u": True, "d": True}
+    id_doc = quote(usuario, safe="-_.!~*'()")
+    atual, _ = auth_ler_cadastro(usuario)
+    cad = dict(atual or {}, v=1, email=usuario, name=(atual or {}).get("name") or nome or usuario, preset="admin", active=True,
+               perms={m: dict(tudo) for m in AUTH_MODULOS}, createdBy=(atual or {}).get("createdBy") or "servidor")
+    estado_gravar({"docs": [{"col": "usuarios", "id": id_doc, "valor": cad}]})
+    print("Administrador %s. Senha provisória, troque na primeira entrada: %s" % (usuario, auth_criar(usuario, "servidor")))
+    return 0
+
+
+# ---------- Postos pareados ----------
+# O Admin pareia cada aparelho uma vez (Painel de controle, ou o link de uso único do comando --parear-posto). O aparelho guarda
+# o cookie eterna_posto (HttpOnly, 400 dias, revogável); o servidor guarda só o hash. O posto abre o Checkout sem pessoa logada.
+POSTO_COOKIE = "eterna_posto"
+POSTO_IDADE = 400 * 86400
+POSTO_CONVITE_S = 600
+posto_uso = {}                       # id -> última gravação de ultimo_uso (no máximo uma por minuto)
+POSTO_REPETIDO_S = 15
+posto_recentes = {}                  # (pessoa, hash do login, nome) -> (hora, token, posto) dos últimos pareamentos, contra clique repetido
+posto_par_lock = threading.Lock()
+POSTO_AUTO_IDADE = 30 * 86400        # posto automático: cai depois de 30 dias sem uso; cada uso renova (revisão do Eduardo, 10/11)
+POSTO_AUTO_DIA = 3                   # no máximo 3 postos automáticos por pessoa e IP em 24 h
+posto_auto_feitos = {}               # (pessoa, ip) -> horas das criações nas últimas 24 h
+
+
+def posto_redes():
+    """ETERNA_POSTO_REDE: faixa(s) da rede do ponto, ex.: 192.168.10.0/24 (várias separadas por vírgula). Vazia desliga o posto automático."""
+    import ipaddress
+    redes = []
+    for x in os.environ.get("ETERNA_POSTO_REDE", "").split(","):
+        try:
+            if x.strip():
+                redes.append(ipaddress.ip_network(x.strip(), strict=False))
+        except ValueError:
+            pass
+    return redes
+
+
+def _sha(t):
+    return hashlib.sha256(t.encode()).hexdigest()
+
+
+def posto_auto_ok(ip, ip_servidor="", redes=None):
+    """Aparelho da rede do ponto (ETERNA_POSTO_REDE), que vira posto quando um Admin entra nele. Tailscale/VPN (100.64.0.0/10),
+    o próprio servidor e endereços fora da faixa não viram posto: quem acessa de fora (Ronaldo e Eduardo) usa o sistema sem criar posto.
+    Atrás de proxy o IP visto é o do proxy: não ligar o automático lá sem tratar X-Forwarded-For (só vindo de ETERNA_PROXY_IP)."""
+    import ipaddress
+    redes = posto_redes() if redes is None else redes
+    if not redes:
+        return False
+    try:
+        a = ipaddress.ip_address(str(ip).split("%")[0])
+        if a.version == 6 and a.ipv4_mapped:
+            a = a.ipv4_mapped
+    except ValueError:
+        return False
+    if a.is_loopback or str(a) == str(ip_servidor) or a in ipaddress.ip_network("100.64.0.0/10"):
+        return False
+    return a.is_private and any(a in r for r in redes)
+
+
+def posto_auto_cota(usuario, ip):
+    """True e conta mais um, se esta pessoa ainda pode criar posto automático deste IP hoje."""
+    agora = time.time()
+    k = (usuario, str(ip))
+    feitos = [t for t in posto_auto_feitos.get(k, []) if agora - t < 86400]
+    if len(feitos) >= POSTO_AUTO_DIA:
+        posto_auto_feitos[k] = feitos
+        return False
+    posto_auto_feitos[k] = feitos + [agora]
+    return True
+
+
+def posto_nome_ok(nome):
+    n = re.sub(r"[<>\"'`&\x00-\x1f]", "", str(nome or "")).strip()[:40]
+    return n or None
+
+
+def posto_criar(nome, por="", ip="", aparelho=""):
+    """-> (token, {id, nome, num}). O token sai só aqui, para o cookie deste aparelho.
+    Posto automático: por = "auto:<pessoa>" e aparelho = User-Agent, gravados na auditoria para o Admin reconhecer o aparelho."""
+    token, pid = secrets.token_urlsafe(32), "p_" + secrets.token_hex(4)
+    with estado_lock:
+        db = auth_db()
+        try:
+            num = (db.execute("select coalesce(max(num), 0) from posto").fetchone()[0] or 0) + 1
+            nome = nome or "Posto %d" % num     # posto automático: nome pelo número
+            db.execute("insert into posto values (?, ?, ?, ?, ?, ?, ?, ?, ?)", (pid, nome, num, _sha(token), por, time.time(), None, ip, None))
+            auth_log(db, "posto:" + pid, ("posto_auto " + re.sub(r"[\x00-\x1f]", "", str(aparelho))[:200]).strip() if aparelho else "posto_pareado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return token, {"id": pid, "nome": nome, "num": num}
+
+
+def posto_quem(token, ip=""):
+    """O posto deste cookie, se não foi revogado; senão None."""
+    if not token or len(token) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select id, nome, num, criado_por, ultimo_uso, criado_em from posto where hash=? and revogado_em is null", (_sha(token),)).fetchone()
+            if r and str(r[3] or "").startswith("auto:") and time.time() - (r[4] or r[5] or 0) > POSTO_AUTO_IDADE:
+                r = None                     # posto automático parado há mais de 30 dias: não vale mais
+            if r and time.time() - posto_uso.get(r[0], 0) > 60:
+                posto_uso[r[0]] = time.time()
+                db.execute("update posto set ultimo_uso=?, ip_ultimo=? where id=?", (time.time(), ip, r[0]))
+                db.commit()
+        finally:
+            db.close()
+    return {"id": r[0], "nome": r[1], "num": r[2], "auto": str(r[3] or "").startswith("auto:")} if r else None
+
+
+def posto_lista():
+    with estado_lock:
+        db = auth_db()
+        try:
+            cols = ("id", "nome", "num", "criado_por", "criado_em", "ultimo_uso", "ip_ultimo", "revogado_em")
+            return [dict(zip(cols, r)) for r in db.execute("select %s from posto order by num" % ", ".join(cols))]
+        finally:
+            db.close()
+
+
+def posto_revogar(pid, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            n = db.execute("update posto set revogado_em=? where id=? and revogado_em is null", (time.time(), str(pid))).rowcount
+            if n:
+                auth_log(db, "posto:" + str(pid), "posto_revogado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    # Limpeza de cortesia: quem garante que o pareamento repetido não devolve posto revogado é o posto_ativo em postos_post.
+    with posto_par_lock:
+        for k in [k for k, v in posto_recentes.items() if v[2]["id"] == str(pid)]:
+            posto_recentes.pop(k, None)
+    return bool(n)
+
+
+def posto_ativo(pid):
+    """True se o posto existe e não foi revogado."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            return bool(db.execute("select 1 from posto where id=? and revogado_em is null", (str(pid),)).fetchone())
+        finally:
+            db.close()
+
+
+def posto_convite_novo(nome):
+    codigo = secrets.token_urlsafe(18)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from posto_convite where expira < ?", (time.time() - 86400,))
+            db.execute("insert into posto_convite values (?, ?, ?, ?)", (_sha(codigo), nome, time.time() + POSTO_CONVITE_S, None))
+            db.commit()
+        finally:
+            db.close()
+    return codigo
+
+
+def posto_convite_ver(codigo):
+    """O nome do posto do convite, se ainda vale, sem gastar o código."""
+    if not codigo or len(codigo) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select nome from posto_convite where hash=? and usado is null and expira >= ?", (_sha(codigo), time.time())).fetchone()
+        finally:
+            db.close()
+    return r[0] if r else None
+
+
+def posto_convite_usar(codigo):
+    """O nome do posto do convite, uma única vez e dentro de 10 min; senão None."""
+    if not codigo or len(codigo) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select nome, expira from posto_convite where hash=? and usado is null", (_sha(codigo),)).fetchone()
+            if not r or r[1] < time.time():
+                return None
+            db.execute("update posto_convite set usado=? where hash=?", (time.time(), _sha(codigo)))
+            db.commit()
+        finally:
+            db.close()
+    return r[0]
+
+
+def posto_parear_cli(nome):
+    """python eterna-agente.py --parear-posto "<nome>": link de uso único (10 min) para parear um aparelho sem entrar no app."""
+    n = posto_nome_ok(nome)
+    if not n:
+        print("Nome do posto inválido.")
+        return 1
+    codigo = posto_convite_novo(n)
+    print("Abra no aparelho \"%s\" em até 10 minutos (vale uma vez), trocando 127.0.0.1 pelo endereço do servidor na rede se for outro aparelho:" % n)
+    print("  http://127.0.0.1:%d/postos/aceitar?c=%s" % (PORT, codigo))
+    return 0
 
 
 def estado_revs():
@@ -6844,7 +9453,7 @@ def estado_gravar(body, quem=""):
 # apagado: os rostos e as fotos saem por prazo (LGPD), os números ficam. GET /metricas/dia?de=AAAA-MM-DD&ate=AAAA-MM-DD.
 VENDAS_DB = os.path.join(HOME, "ponto", "vendas.db")
 MET_DIR = os.path.join(HOME, "ponto", "metricas")
-EV_TIPOS = ("criar", "pagar", "cancelar", "impressao", "rolo")
+EV_TIPOS = ("criar", "pagar", "cancelar", "impressao", "rolo")   # "fila" só o próprio servidor grava (ev_fila)
 _re_ev_id = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_-]{2,80}$")
 ev_lock = threading.Lock()
 
@@ -6858,7 +9467,97 @@ def vendas_db():
               " posto text, por text, dados text, recebido text)")
     c.execute("create index if not exists evento_dia on evento(dia)")
     c.execute("create index if not exists evento_venda on evento(venda)")
+    # BI: uma linha por venda com os tempos (início do Checkout, escolha, pedido, pagamento, fila e saída da impressão)
+    c.execute("create view if not exists venda_tempos as select venda, max(case when tipo = 'criar' then json_extract(dados, '$.saleNo') end) as numero,"
+              " max(posto) as posto, max(case when tipo = 'criar' then json_extract(dados, '$.vendedor') end) as vendedor,"
+              " max(case when tipo = 'criar' then json_extract(dados, '$.tempos.inicio') end) as inicio_checkout,"
+              " max(case when tipo = 'criar' then json_extract(dados, '$.tempos.escolha') end) as escolha_fotos,"
+              " max(case when tipo = 'criar' then em end) as pedido, max(case when tipo = 'pagar' then em end) as pagamento,"
+              " min(case when tipo = 'fila' then json_extract(dados, '$.entrou') end) as entrou_na_fila,"
+              " min(case when tipo = 'fila' then json_extract(dados, '$.comecou') end) as comecou_impressao,"
+              " max(case when tipo = 'fila' then json_extract(dados, '$.terminou') end) as terminou_impressao,"
+              " max(case when tipo = 'impressao' and json_extract(dados, '$.resultado') = 'ok' then em end) as saiu_certo"
+              " from evento group by venda")
+    # BI: resumo por dia. Hoje conta pagamento, fotos que saíram na fila e os tempos em segundos
+    c.execute("create view if not exists venda_dia as select c.dia as dia, count(*) as pedidos, sum(t.pagamento is not null) as pagas,"
+              " sum(t.pagamento is not null and json_extract(c.dados, '$.meio') = 'cartao') as cartao,"
+              " sum(t.pagamento is not null and json_extract(c.dados, '$.meio') = 'pix') as pix,"
+              " sum(t.pagamento is not null and json_extract(c.dados, '$.meio') = 'dinheiro') as dinheiro,"
+              " sum(case when t.pagamento is not null then json_extract(c.dados, '$.total') end) as receita,"
+              " sum((select coalesce(sum(json_extract(f.dados, '$.feitas')), 0) from evento f where f.venda = c.venda and f.tipo = 'fila')) as fotos_impressas,"
+              " avg((julianday(t.escolha_fotos) - julianday(t.inicio_checkout)) * 86400) as seg_escolha,"
+              " avg((julianday(t.pagamento) - julianday(t.pedido)) * 86400) as seg_aguardando_pagamento,"
+              " avg((julianday(t.pagamento) - julianday(t.inicio_checkout)) * 86400) as seg_checkout,"
+              " avg((julianday(t.terminou_impressao) - julianday(t.entrou_na_fila)) * 86400) as seg_impressao"
+              " from evento c join venda_tempos t on t.venda = c.venda where c.tipo = 'criar' group by c.dia")
+    # v100: vendas de Drone, Chute a Gol e Snap Pop. Por ora só as do sistema antigo (origem "antigo"), importadas por
+    # agente/ativacoes-importar.py; nunca nome, WhatsApp ou foto do cliente. Chave: origem + id da venda na origem.
+    c.execute("create table if not exists ativ_venda (origem text, id text, tipo text, dia text, criado text, itens text, valor real,"
+              " pagamento text, vendedor text, vendedor_n int, pessoas int, videos int, resolucao text, pais text, idioma text, guia text,"
+              " piloto text, drone text, bateria text, entrega text, qr text, importado_em text, primary key (origem, id))")
+    c.execute("create index if not exists ativ_venda_dia on ativ_venda(dia)")
+    # v100 (fase 2): venda feita no tablet (origem "eterna"). Colunas novas entram no banco que já existe.
+    tem = {r[1] for r in c.execute("pragma table_info(ativ_venda)")}
+    for col, tipo in ATIV_TABLET_COLS:
+        if col not in tem:
+            c.execute("alter table ativ_venda add column %s %s" % (col, tipo))
+    # v100 fase 4: cada vídeo entregue fica ligado ao QR do cartão (o token do cartão é o da galeria do vídeo)
+    c.execute("create table if not exists ativ_entrega (qr text primary key, venda text, n integer, arquivo text, bytes integer, md5 text,"
+              " duracao real, por text, em text, nuvem_em text, apagado_em text)")
+    c.execute("create index if not exists ativ_entrega_venda on ativ_entrega(venda)")
+    # v99.20: quando o cliente abriu o QR, aceitou, deu play e baixou (vem da galeria da nuvem; sem IP nem e-mail)
+    if "cliente_eventos" not in {r[1] for r in c.execute("pragma table_info(ativ_entrega)")}:
+        c.execute("alter table ativ_entrega add column cliente_eventos text")
+    c.execute("create table if not exists ativ_cadastro (tipo text, nome text, ativo integer, primary key (tipo, nome))")
+    # v99.25: pulseira numerada por vídeo; o voo fica na pulseira (dois drones podem voar a mesma compra)
+    c.execute("create table if not exists ativ_pulseira (numero text, venda text, slot integer, conflito integer default 0, em text,"
+              " voo_em text, voo_por text, piloto text, drone text, bateria text, primary key (numero, venda))")
+    c.execute("create index if not exists ativ_pulseira_venda on ativ_pulseira(venda)")
+    # v99.28: quem ligou a pulseira, como (câmera ou digitado) e quando foi lida; e o histórico de cada movimento
+    tem = {r[1] for r in c.execute("pragma table_info(ativ_pulseira)")}
+    for col in ("por", "meio", "lido_em"):
+        if col not in tem:
+            c.execute("alter table ativ_pulseira add column %s text" % col)
+    c.execute("create table if not exists ativ_pulseira_log (venda text, slot integer, numero text, de text, acao text, em text, por text, meio text)")
+    c.execute("create index if not exists ativ_pulseira_log_venda on ativ_pulseira_log(venda)")
+    # v99.26: fotos tiradas do vídeo (cliente e aéreas), que entram no Eterna como foto de fotógrafo
+    c.execute("create table if not exists ativ_foto (venda text, qr text, pid text, tipo text, t real, em text, primary key (qr, pid))")
+    c.execute("create index if not exists ativ_foto_venda on ativ_foto(venda)")
+    if "pulseira" not in {r[1] for r in c.execute("pragma table_info(ativ_entrega)")}:
+        c.execute("alter table ativ_entrega add column pulseira text")
+    # v99.24: lotes de cartões com QR (a gráfica imprime; o servidor guarda cada token e código, nunca repetidos)
+    c.execute("create table if not exists cartao (token text primary key, codigo text not null unique, lote text not null)")
+    c.execute("create index if not exists cartao_lote_i on cartao(lote)")
+    c.execute("create table if not exists cartao_lote (id text primary key, n integer, em text, por text, situacao text,"
+              " mudou_em text, mudou_por text, baixado_n integer, baixado_em text)")
+    c.execute("create view if not exists ativ_venda_resumo as select dia, tipo, count(*) as vendas, sum(valor) as valor, sum(videos) as videos"
+              " from ativ_venda group by dia, tipo")
+    # BI: cada selfie do Checkout. Só contagem e horário: nunca imagem, vetor do rosto, sessão ou venda (não identifica ninguém)
+    c.execute("create table if not exists selfie (em text, dia text, hora int, origem text, resultado text, fotos int, ms int)")
+    c.execute("create index if not exists selfie_dia_i on selfie(dia)")
+    c.execute("create view if not exists selfie_dia as select dia, origem, count(*) as selfies, sum(resultado = 'achou') as achou,"
+              " sum(resultado = 'nao_achou') as nao_achou, sum(resultado = 'sem_rosto') as sem_rosto, sum(resultado = 'varias_pessoas') as varias_pessoas,"
+              " sum(resultado = 'erro') as erro, avg(ms) as ms_medio from selfie group by dia, origem")
+    c.execute("create view if not exists selfie_hora as select dia, hora, count(*) as selfies, sum(resultado = 'achou') as achou from selfie group by dia, hora")
     return c
+
+
+def selfie_registra(origem, r, t0):
+    """Conta uma selfie para o BI. Falha aqui nunca atrapalha a busca do cliente."""
+    try:
+        r = r or {}
+        res = "erro" if r.get("error") else "varias_pessoas" if r.get("varias") else "sem_rosto" if not r.get("rosto") else "achou" if r.get("fotos") else "nao_achou"
+        agora = time.time()
+        with ev_lock:
+            db = vendas_db()
+            try:
+                db.execute("insert into selfie values (?, ?, ?, ?, ?, ?, ?)", (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), _ff_hoje(agora),
+                           time.localtime(agora).tm_hour, origem, res, len(r.get("fotos") or []), int((agora - t0) * 1000)))
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  selfie: não registrou:", str(ex)[:120])
 
 
 def _ev_dia(em):
@@ -6924,6 +9623,19 @@ def _ev_t0(v, em):
     return v
 
 
+def _ev_dnp(v):
+    """Leitura do firmware da DNP (eterna-impressao.ps1): contadores inteiros, status e de onde veio. Outro formato: descarta."""
+    if not isinstance(v, dict):
+        return None
+    i = lambda k: int(v[k]) if isinstance(v.get(k), (int, float)) and not isinstance(v.get(k), bool) and 0 <= v[k] <= 10 ** 7 else None
+    o = {k: i(k) for k in ("mqty", "antes", "saiu", "restantes", "vida", "vida_antes", "status")}
+    o["conferido"] = v.get("conferido") is True
+    o["texto"] = re.sub(r"[<>]", "", str(v.get("texto") or ""))[:40] or None
+    o["origem"] = v.get("origem") if v.get("origem") in ("impressao", "leitura", "troca") else None
+    o = {k: x for k, x in o.items() if x is not None and x is not False}
+    return o if ("mqty" in o or "vida" in o) else None
+
+
 def _ev_limpo(e):
     """Só os campos do contrato, com tipo e tamanho conferidos (o resto do evento é descartado)."""
     if not isinstance(e, dict) or e.get("tipo") not in EV_TIPOS:
@@ -6941,7 +9653,10 @@ def _ev_limpo(e):
           "sessoes": [x for x in lista(d.get("sessoes"))[:20] if re.match(r"^[A-Z0-9]{4,20}$", x)],
           "vendedor": txt((d.get("vendedor") or {}).get("nome") if isinstance(d.get("vendedor"), dict) else None),
           "resultado": txt(d.get("resultado"), 12), "n": num(d.get("n")), "reimpressao": bool(d.get("reimpressao")),
-          "motivo": txt(d.get("motivo"), 40), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
+          "tempos": {k: txt(v, 30) for k, v in (d.get("tempos") if isinstance(d.get("tempos"), dict) else {}).items() if k in ("inicio", "escolha") and v} or None,
+          "motivo": txt(d.get("motivo"), 40), "semFoto": num(d.get("semFoto")), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
+          # impressão: as fotos impressas; impressão e rolo: a leitura da DNP pelo programa de impressão do posto (auditoria do rolo)
+          "fotos": lista(d.get("fotos")) if e.get("tipo") == "impressao" else [], "dnp": _ev_dnp(d.get("dnp")),
           "galeria": (txt((d.get("galeria") or {}).get("codigo"), 12) if isinstance(d.get("galeria"), dict) else None)}
     # v92 (estatísticas): produtos, idioma, canal e a hora em que o cliente começou no Checkout. Campo inválido sai; a venda fica.
     em = txt(e.get("em"), 30) or _iso()
@@ -6952,6 +9667,49 @@ def _ev_limpo(e):
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
             "por": _txt_chave((e.get("por") or {}).get("nome") if isinstance(e.get("por"), dict) else None, 60),
             "posto": _txt_chave(e.get("posto"), 40), "dados": {k: v for k, v in dd.items() if v not in (None, "", [], 0, False)}}
+
+
+def ev_impressoes(ids):
+    """Histórico de impressão das vendas pedidas, direto do banco (eventos "impressao"): o que a tela do Posto mostra
+    (impressa, por quem, reimpressões, "não saiu") vem daqui, não do navegador. Até 100 vendas por pedido."""
+    ids = [x for x in ids if isinstance(x, str) and _re_ev_id.match(x)][:100]
+    out = {v: [] for v in ids}
+    if not ids:
+        return out
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rows = db.execute("select idem, venda, em, posto, por, dados from evento where tipo = 'impressao' and venda in (%s) order by em, seq"
+                              % ",".join("?" * len(ids)), ids).fetchall()
+        finally:
+            db.close()
+    for idem, venda, em, posto, por, dados in rows:
+        try:
+            d = json.loads(dados or "{}")
+        except Exception:
+            d = {}
+        out[venda].append({"idem": idem, "em": em, "posto": posto, "por": por, "resultado": d.get("resultado"), "n": int(d.get("n") or 0),
+                           "reimpressao": bool(d.get("reimpressao")), "motivo": d.get("motivo"), "fotos": d.get("fotos") or [],
+                           "semFoto": int(d.get("semFoto") or 0), "dnp": d.get("dnp")})
+    return out
+
+
+def ev_fila(job):
+    """Pedido terminado na fila: grava os tempos na venda (evento "fila"), para o BI."""
+    vid = job.get("venda_id") or ""
+    if not _re_ev_id.match(vid):
+        return
+    em = _iso(job.get("fim"))
+    dados = {"pedido": job["id"], "estado": job["estado"], "fotos": job["fotos"], "feitas": job["feitas"], "entrou": _iso(job["criado"]),
+             "comecou": _iso(job["inicio"]) if job.get("inicio") else None, "terminou": em, "impressora": job.get("impressora")}
+    with ev_lock:
+        db = vendas_db()
+        try:
+            db.execute("insert or ignore into evento values (?,?,?,?,?,?,?,?,?,?)", ("%s:fila:%d" % (vid, job["id"]), vid, 100000 + job["id"], "fila", em, _ev_dia(em),
+                                                                                       job.get("posto") or "", job.get("vendedor") or None, json.dumps(dados, ensure_ascii=False), _iso()))
+            db.commit()
+        finally:
+            db.close()
 
 
 def ev_receber(body):
@@ -6993,7 +9751,7 @@ def metricas_dia(dia):
     (ponto/eventos) e vendas online (galerias/vendas-online.jsonl). Por fotógrafo, vendedor, posto e meio de pagamento."""
     m = {"dia": dia, "gerado": _iso(), "fotos": 0, "fotos_com_rosto": 0, "rostos": 0, "sessoes": 0, "sessoes_com_venda": 0,
          "vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0, "fotos_ia_vendidas": 0, "impressoes": 0, "impressoes_falhas": 0,
-         "canceladas": 0, "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0},
+         "canceladas": 0, "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0}, "rolo": {},
          "por_fotografo": {}, "por_vendedor": {}, "por_posto": {}, "por_meio": {}}
     try:
         db = rostos_db()
@@ -7039,6 +9797,31 @@ def metricas_dia(dia):
                 m["impressoes"] += int(d.get("n") or 0)
             else:
                 m["impressoes_falhas"] += int(d.get("n") or 0)
+        # auditoria do rolo por posto: o contador de vida da DNP (folhas que a impressora cortou) contra as fotos que o Eterna
+        # registrou como impressas. folhas_dnp - folhas_eterna > 0 = folha saída sem registro (fora do Eterna, erro, teste)
+        if e["tipo"] in ("impressao", "rolo") and isinstance(d.get("dnp"), dict):
+            dn = d["dnp"]
+            r = m["rolo"].setdefault(e.get("posto") or "sem posto", {"vida_ini": None, "vida_fim": None, "folhas_dnp": 0, "folhas_eterna": 0,
+                                                                       "reimpressoes": 0, "trocas": 0, "restantes": None, "leituras": 0})
+            r["leituras"] += 1
+            # o contador de vida só cresce: menor e maior do dia, sem depender da ordem dos eventos
+            for x in (dn.get("vida_antes"), dn.get("vida")):
+                if x is not None:
+                    r["vida_ini"] = x if r["vida_ini"] is None else min(r["vida_ini"], x)
+                    r["vida_fim"] = x if r["vida_fim"] is None else max(r["vida_fim"], x)
+            if dn.get("restantes") is not None and (dn.get("vida") or 0) >= r.get("_vr", -1):
+                r["restantes"], r["_vr"] = dn["restantes"], dn.get("vida") or 0
+            if dn.get("origem") == "troca":
+                r["trocas"] += 1
+            if e["tipo"] == "impressao" and d.get("resultado") == "ok":
+                r["folhas_eterna"] += int(d.get("n") or 0)
+                if d.get("reimpressao"):
+                    r["reimpressoes"] += int(d.get("n") or 0)
+    for r in m["rolo"].values():
+        if r["vida_ini"] is not None and r["vida_fim"] is not None:
+            r["folhas_dnp"] = max(0, r["vida_fim"] - r["vida_ini"])
+        r["diferenca"] = r["folhas_dnp"] - r["folhas_eterna"]
+        r.pop("_vr", None)
     com_venda = set()
     for v in vendas.values():
         c = v["criar"]
@@ -7675,6 +10458,90 @@ def agenda_valida(doc_id, v):
     if len(json.dumps(out, ensure_ascii=False).encode("utf8")) > AGENDA_MAX:
         return None
     return out
+
+
+# Quem pode cada rota do agente. Nada abre sem estar aqui: rota fora da tabela responde 404 sem tocar o disco.
+#   publica          qualquer um: o app, o /status mínimo, a galeria do cliente (/g/) e o webhook do adquirente
+#   posto_ou_sessao  aparelho pareado (cookie eterna_posto) ou pessoa conectada com um dos módulos (vazio = qualquer pessoa)
+#   sessao           pessoa conectada com um dos módulos (vazio = qualquer pessoa conectada; a rota confere o resto)
+#   teste            só com ETERNA_TESTE_CARGA=1 e pessoa com Painel de controle (Alterar)
+# Caminho terminado em "/" vale como prefixo. Fora das públicas: Host do agente, Origin conhecida e, em POST, X-Eterna: 1.
+FOTOS_LER = ("venda.r", "quiosque.r", "set.r", "estoque.r", "galerias.r", "qualidade.r")        # ver fotos e sessões
+VENDER = ("venda.c", "quiosque.c", "galerias.c")                                          # o que o Checkout faz numa venda
+ROTAS = (
+    ("GET", "/", "publica", ()), ("GET", "/index.html", "publica", ()),
+    ("GET", "/img/", "publica", ()), ("GET", "/vendor/", "publica", ()), ("GET", "/sprites/", "publica", ()),
+    ("GET", "/status", "publica", ()),                          # sem credencial, só {ok, agent, version, boot}
+    ("GET", "/g/", "publica", ()), ("POST", "/g/", "publica", ()), ("POST", "/pagamento/webhook/", "publica", ()),
+    ("GET", "/postos/aceitar", "publica", ()), ("POST", "/postos/aceitar", "publica", ()),   # o código de uso único (10 min) é a credencial
+    ("POST", "/auth/entrar", "publica", ()), ("POST", "/auth/trocar", "publica", ()), ("POST", "/auth/sair", "publica", ()),
+    ("POST", "/auth/esqueci", "publica", ()),
+    ("GET", "/auth/eu", "sessao", ()), ("GET", "/auth/senhas", "sessao", ()),
+    ("POST", "/auth/senha/gerar", "sessao", ()), ("POST", "/auth/senha/cancelar", "sessao", ()),
+    ("GET", "/postos/eu", "publica", ()),                       # a rota confere Host e responde 401 sem_posto
+    ("GET", "/ftp/contas", "sessao", ("configuracao.r",)),
+    ("GET", "/postos", "sessao", ("configuracao.r",)),
+    ("POST", "/postos/parear", "sessao", ("configuracao.u",)), ("POST", "/postos/revogar", "sessao", ("configuracao.u",)),
+    # o que o Checkout usa: posto pareado ou pessoa conectada com o módulo
+    ("GET", "/thumb/", "posto_ou_sessao", FOTOS_LER), ("GET", "/file/", "posto_ou_sessao", FOTOS_LER),
+    ("GET", "/sessoes", "posto_ou_sessao", FOTOS_LER),
+    ("GET", "/ponto/docs", "posto_ou_sessao", ()),              # posto: só sim, config e agenda
+    ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
+    ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
+    ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
+    ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
+    ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
+    ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
+    ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
+    ("GET", "/photoroom/status", "posto_ou_sessao", VENDER + ("configuracao.r",)),    # sem Painel de controle: só {configured, fundos_modo}
+    ("GET", "/photoroom/result/", "posto_ou_sessao", VENDER), ("POST", "/photoroom/compose", "posto_ou_sessao", VENDER),
+    ("GET", "/fila-fotografo", "posto_ou_sessao", ("filafoto.r",)),
+    # só a equipe, pelo módulo
+    ("GET", "/biblioteca", "sessao", ("set.r", "estoque.r")), ("GET", "/events", "sessao", ("set.r", "estoque.r")),
+    ("POST", "/fotos/enviar", "sessao", ("set.c",)),
+    ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")),
+    ("GET", "/ativ/vendas", "sessao", ("estatisticas.r", "financeiro.r", "relatorios.r")),   # v100: resumo das ativações
+    ("POST", "/ativ/venda", "sessao", ("ativvenda.c",)), ("GET", "/ativ/minhas", "sessao", ("ativvenda.r",)),   # v100: venda no tablet
+    ("POST", "/ativ/cancelar", "sessao", ("ativvenda.d", "financeiro.u")),
+    ("GET", "/ativ/equipe", "sessao", ("estatisticas.r", "financeiro.r", "ativvenda.d")),
+    ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),
+    ("GET", "/ativ/cliente-foto", "sessao", ("ativentrega.r",)),     # foto do cliente para quem entrega (some com a limpeza)   # vídeos de demonstração (lista e arquivo)
+    ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
+    ("GET", "/ativ/pulseira", "sessao", ("ativentrega.r", "ativvenda.c")),     # v99.25: de quem é a pulseira
+    ("POST", "/ativ/pulseiras", "sessao", ("ativvenda.c", "ativvenda.u", "ativvenda.d", "financeiro.u")),   # v99.28: corrigir a pulseira
+    ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
+    ("GET", "/ativ/cadastros", "sessao", ("ativentrega.r",)), ("POST", "/ativ/cadastros", "sessao", ("ativentrega.u",)),
+    ("GET", "/ativ/cartoes", "sessao", ("catalogo.r",)), ("POST", "/ativ/cartoes/lote", "sessao", ("catalogo.u",)),   # v99.24: lotes de cartões
+    ("POST", "/ativ/cartoes/situacao", "sessao", ("catalogo.u",)),
+    ("GET", "/roverpix/status", "sessao", ("financeiro.r",)), ("GET", "/roverpix/data", "sessao", ("financeiro.r",)),
+    ("POST", "/roverpix/sync", "sessao", ("configuracao.u",)), ("POST", "/roverpix/config", "sessao", ("configuracao.u",)),
+    ("GET", "/ftp-remoto/status", "sessao", ("configuracao.r",)), ("POST", "/ftp-remoto/config", "sessao", ("configuracao.u",)),
+    ("POST", "/photoroom/config", "sessao", ("configuracao.u",)), ("POST", "/fundos/modo", "sessao", ("configuracao.u",)),
+    ("POST", "/nuvem/reenviar", "sessao", ("configuracao.u",)),
+    ("POST", "/fila-fotografo/funcao", "sessao", ("escala.u",)),
+    ("POST", "/ponto/entradas", "sessao", ("estatisticas.c",)), ("GET", "/ponto/entradas/importacoes", "sessao", ("estatisticas.r",)),
+    ("GET", "/estatisticas/dias", "sessao", ("estatisticas.r",)), ("GET", "/agenda/status", "sessao", ()),   # v97-agenda (Eduardo); a rota confere o resto (agenda_rota)
+    ("POST", "/agenda/atualizar", "sessao", ("escala.u", "configuracao.u")), ("POST", "/ponto/entradas/totais", "sessao", ("estatisticas.c",)),
+    ("POST", "/agenda/fonte", "sessao", ("configuracao.u",)), ("POST", "/agenda/testar", "sessao", ("configuracao.u",)),
+    ("GET", "/visitas", "posto_ou_sessao", FOTOS_LER), ("POST", "/visitas/juntar", "posto_ou_sessao", ("venda.u",)),   # v97-recorte (Eduardo); a rota confere o resto
+    ("POST", "/visitas/separar", "posto_ou_sessao", ("venda.u",)), ("POST", "/visitas/config", "sessao", ("configuracao.u",)),
+    ("GET", "/impressao/fila", "sessao", ("venda.r",)), ("GET", "/impressao/miniatura", "sessao", ("venda.r",)),
+    ("POST", "/imprimir", "sessao", ("venda.c", "venda.u")), ("POST", "/impressao/acao", "sessao", ("venda.u",)),
+    ("GET", "/galerias/vendas", "sessao", ("galerias.r",)), ("GET", "/galerias/status", "sessao", ("galerias.r",)),
+    ("POST", "/galerias/encerrar", "sessao", ("galerias.d",)),
+    ("POST", "/lgpd/excluir", "sessao", ("galerias.d",)),
+    ("POST", "/rostos/medir", "sessao", ("qualidade.r",)),
+    ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
+)
+
+
+def rota_regra(metodo, path):
+    """-> (tipo, módulos) da rota, ou None se ela não existe."""
+    for m, c, tipo, mods in ROTAS:
+        if m == metodo and (path == c or (c.endswith("/") and c != "/" and path.startswith(c))):
+            return tipo, mods
+    return None
 
 
 # ---------- Agenda automática e série diária (v97; plano docs/planos/2026-11-10-agenda-estatisticas.md) ----------
@@ -8448,7 +11315,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -8474,38 +11341,68 @@ class H(BaseHTTPRequestHandler):
             # v87 (risco 4): a TV aberta pelo endereço de ETERNA_ORIGENS vê as miniaturas (só /thumb/, não o original)
             return not o or o in ORIGENS_REDE
         # contra DNS rebinding: o Host precisa ser o do agente (127.0.0.1, localhost ou o IP da rede com ETERNA_REDE)
-        if host not in HOSTS_OK:
+        if not host_ok(host):
             return False
         return not o or o in self.origens_ok(path)
 
+    def origens_aceitas(self):
+        """Origin aceita fora das rotas públicas: a do próprio agente (pelo Host pedido), ETERNA_ORIGENS e ETERNA_APP_ORIGIN."""
+        host = (self.headers.get("Host") or "").lower()
+        return {"http://" + host, "https://" + host, "http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT} | ORIGENS_REDE | {APP_ORIGIN.rstrip("/").lower()}
+
     def cors(self):
+        """CORS aberto (*) só na galeria do cliente (/g/); as outras rotas só para as origens aceitas, sem cabeçalho livre."""
         path = urlparse(self.path).path
-        if path.startswith(("/fila-fotografo", "/visitas")):
-            # v87 (segurança N1); v97: /visitas igual: sem CORS aberto; só as origens declaradas em ETERNA_ORIGENS (o app do agente é a mesma origem)
-            o = (self.headers.get("Origin") or "").lower()
-            if o and o in ORIGENS_REDE:
-                self.send_header("Access-Control-Allow-Origin", o)
-                self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        if path.startswith("/g/"):
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             return
-        if rota_privada(path):
-            o = self.headers.get("Origin") or ""
-            if o and o in self.origens_ok(path):
-                self.send_header("Access-Control-Allow-Origin", o)
-                self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna" if path in ("/ponto/entradas", "/fotos/enviar", "/ponto/montagens") or path in AGENDA_ROTAS_PATHS else "Content-Type")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            return
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if o and o in self.origens_aceitas() and (o in ORIGENS_REDE or not path.startswith(("/fila-fotografo", "/visitas"))):
+            self.send_header("Access-Control-Allow-Origin", o)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def autoriza(self, metodo):
+        """Primeira coisa de do_GET e do_POST: aplica ROTAS. True = o pedido segue; False = a resposta já foi dada."""
+        self.__dict__.pop("_eu", None)
+        self.__dict__.pop("_posto", None)
+        regra = rota_regra(metodo, urlparse(self.path).path)
+        if regra is None:
+            self.js({"error": "not found"}, 404)
+            return False
+        tipo, mods = regra
+        if tipo == "publica":
+            return True
+        if tipo == "teste" and not os.environ.get("ETERNA_TESTE_CARGA"):
+            self.js({"error": "not found"}, 404)       # fora do teste de carga, a rota não existe
+            return False
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if not host_ok((self.headers.get("Host") or "").lower()) or (o and o not in self.origens_aceitas()) \
+                or (metodo == "POST" and self.headers.get("X-Eterna") != "1"):
+            self.js({"erro": "origem"}, 403, True)
+            return False
+        eu = self.sessao()
+        if tipo == "teste":
+            pode = bool(eu) and auth_pode(eu["cadastro"], "configuracao", "u")
+        else:
+            pode = bool(eu) and (not mods or any(auth_pode(eu["cadastro"], *x.split(".")) for x in mods))
+        if pode or (tipo == "posto_ou_sessao" and self.posto_atual()):
+            return True
+        if eu:
+            self.js({"erro": "sem_permissao"}, 403, True)
+        else:
+            self.js({"erro": "sem_sessao"}, 401, True)
+        return False
 
     def do_OPTIONS(self):
-        self.send_response(204)
+        p = urlparse(self.path).path
+        self.send_response(204 if rota_regra("GET", p) or rota_regra("POST", p) else 404)
         self.cors()
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def js(self, obj, code=200, nostore=False):
@@ -8516,8 +11413,363 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if nostore:
             self.send_header("Cache-Control", "no-store")
+        cookie = self.__dict__.pop("cookie_novo", None)
+        if cookie is not None:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
+
+    def cookie_val(self, nome):
+        for parte in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = parte.strip().partition("=")
+            if k == nome:
+                return v
+        return None
+
+    def auth_token(self):
+        return self.cookie_val(AUTH_COOKIE)
+
+    def auth_cookie(self, token, idade, nome=AUTH_COOKIE):
+        https = (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
+        self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (nome, token, idade, "; Secure" if https else "")
+
+    def sessao(self):
+        """A pessoa conectada neste pedido (cookie eterna_sessao), lida uma vez por pedido."""
+        if "_eu" not in self.__dict__:
+            self._eu = auth_quem(self.auth_token())
+        return self._eu
+
+    def posto_atual(self):
+        """O posto pareado deste aparelho (cookie eterna_posto), lido uma vez por pedido."""
+        if "_posto" not in self.__dict__:
+            self._posto = posto_quem(self.cookie_val(POSTO_COOKIE), self.client_address[0])
+        return self._posto
+
+    def html(self, texto, code=200):
+        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Eterna</title>"
+                "<body style='font-family:system-ui;padding:32px;max-width:520px'>%s</body>" % texto).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        cookie = self.__dict__.pop("cookie_novo", None)
+        if cookie is not None:
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def postos_get(self, u, q):
+        """GET /postos/eu (o posto deste aparelho), GET /postos (lista, configuracao.r), GET /postos/aceitar?c= (link de uso único)."""
+        if not host_ok((self.headers.get("Host") or "").lower()):
+            return self.js({"erro": "origem"}, 403)
+        if u.path == "/postos/eu":
+            p = self.posto_atual()
+            if not p:
+                # aparelho da rede do ponto com um Admin conectado: vira posto sozinho, sem parear (Ronaldo, 10/11).
+                # Só Admin (configuracao.u): o cookie de posto abre rotas da venda; fotógrafo no celular pela Wi-Fi não vira posto (Eduardo, 10/11).
+                eu = self.sessao()
+                if not eu:
+                    return self.js({"erro": "sem_posto"}, 401, True)
+                try:
+                    ip_srv = self.connection.getsockname()[0]
+                except OSError:
+                    ip_srv = ""
+                ip = self.client_address[0]
+                if not posto_auto_ok(ip, ip_srv):
+                    return self.js({"ok": True, "posto": None, "remoto": True}, 200, True)   # acesso remoto: sem posto, sem bloquear
+                if not auth_pode(eu["cadastro"], "configuracao", "u"):
+                    return self.js({"erro": "sem_posto"}, 401, True)
+                chave, agora = (eu["usuario"], _sha(self.auth_token() or ""), "auto"), time.time()
+                with posto_par_lock:             # várias janelas do mesmo navegador ao mesmo tempo: um posto só
+                    for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:
+                        posto_recentes.pop(k, None)
+                    if chave in posto_recentes and posto_ativo(posto_recentes[chave][2]["id"]):
+                        _, token, p = posto_recentes[chave]
+                    elif not posto_auto_cota(eu["usuario"], ip):
+                        return self.js({"erro": "limite_postos"}, 429, True)
+                    else:
+                        token, p = posto_criar(None, "auto:" + eu["usuario"], ip, self.headers.get("User-Agent") or "?")
+                        p = dict(p, auto=True)
+                        posto_recentes[chave] = (agora, token, p)
+                self.auth_cookie(token, POSTO_AUTO_IDADE, POSTO_COOKIE)
+            elif p.get("auto"):
+                self.auth_cookie(self.cookie_val(POSTO_COOKIE), POSTO_AUTO_IDADE, POSTO_COOKIE)   # cada uso renova os 30 dias
+            return self.js({"ok": True, "posto": p}, 200, True)
+        if u.path == "/postos/aceitar":
+            # abrir o link (ou a prévia do WhatsApp) só mostra o botão; o código é gasto no POST do botão
+            c = (q.get("c") or [""])[0]
+            nome = posto_convite_ver(c)
+            if not nome:
+                return self.html("<h2>Link vencido ou já usado</h2><p>Gere outro no servidor do ponto.</p>", 410)
+            return self.html("<h2>Parear este aparelho</h2><p>Este aparelho vai virar o posto <b>%s</b>.</p><form method='post' action='/postos/aceitar'>"
+                             "<input type='hidden' name='c' value='%s'><button type='submit' style='font-size:18px;padding:10px 18px'>Parear este aparelho</button></form>"
+                             % (nome, re.sub(r"[^A-Za-z0-9_-]", "", c)))
+        if u.path == "/postos":
+            eu = self.sessao()
+            if not eu:
+                return self.js({"erro": "sem_sessao"}, 401, True)
+            if not auth_pode(eu["cadastro"], "configuracao", "r"):
+                return self.js({"erro": "sem_permissao"}, 403, True)
+            return self.js({"ok": True, "postos": posto_lista()}, 200, True)
+        return self.js({"error": "not found"}, 404)
+
+    def postos_aceitar_post(self):
+        """POST /postos/aceitar (botão da página do link): gasta o código de uso único e grava o cookie do posto."""
+        o = (self.headers.get("Origin") or "").rstrip("/").lower()
+        if not host_ok((self.headers.get("Host") or "").lower()) or (o and o not in self.origens_aceitas()):
+            return self.js({"erro": "origem"}, 403)
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if not 0 < n <= 512:
+            return self.html("<h2>Pedido inválido</h2>", 400)
+        c = (parse_qs(self.rfile.read(n).decode("utf-8", "replace")).get("c") or [""])[0]
+        nome = posto_convite_usar(c)
+        if not nome:
+            return self.html("<h2>Link vencido ou já usado</h2><p>Gere outro no servidor do ponto.</p>", 410)
+        token, p = posto_criar(nome, "convite", self.client_address[0])
+        self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+        return self.html("<h2>Aparelho pareado</h2><p>Este aparelho agora é o posto <b>%s</b> (P%d).</p><p><a href='/#loja'>Abrir o Checkout</a> · <a href='/'>Abrir o Eterna</a></p>"
+                         % (p["nome"], p["num"]))
+
+    def postos_post(self, u):
+        """POST /postos/parear {nome} (grava o cookie deste aparelho) e POST /postos/revogar {id}: sessão com configuracao.u."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"erro": "origem"}, 403)
+        eu = self.sessao()
+        if not eu:
+            return self.js({"erro": "sem_sessao"}, 401, True)
+        if not auth_pode(eu["cadastro"], "configuracao", "u"):
+            return self.js({"erro": "sem_permissao"}, 403, True)
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        if u.path == "/postos/parear":
+            nome = posto_nome_ok(b.get("nome"))
+            if not nome:
+                return self.js({"erro": "nome"}, 400, True)
+            chave, agora = (eu["usuario"], _sha(self.auth_token() or ""), nome), time.time()
+            with posto_par_lock:                 # clique repetido (mesmo login deste navegador e mesmo nome em 15 s): o mesmo posto, sem criar outro
+                for k in [k for k, v in posto_recentes.items() if agora - v[0] > POSTO_REPETIDO_S]:
+                    posto_recentes.pop(k, None)
+                if chave in posto_recentes and not posto_ativo(posto_recentes[chave][2]["id"]):
+                    posto_recentes.pop(chave, None)
+                if chave in posto_recentes:
+                    _, token, p = posto_recentes[chave]
+                else:
+                    token, p = posto_criar(nome, eu["usuario"], self.client_address[0])
+                    posto_recentes[chave] = (agora, token, p)
+            self.auth_cookie(token, POSTO_IDADE, POSTO_COOKIE)
+            return self.js({"ok": True, "posto": p}, 200, True)
+        if u.path == "/postos/revogar":
+            if not posto_revogar(b.get("id"), eu["usuario"], self.client_address[0]):
+                return self.js({"erro": "not found"}, 404, True)
+            return self.js({"ok": True}, 200, True)
+        return self.js({"error": "not found"}, 404)
+
+    def auth_get(self):
+        """GET /auth/eu: quem está conectado neste navegador. GET /auth/senhas: quem tem senha, para quem pode Ver em Senhas de acesso."""
+        if not self.posto() or not self.origem_local():
+            return self.js({"error": "origem não autorizada"}, 403)
+        eu = auth_quem(self.auth_token())
+        if not eu:
+            return self.js({"erro": "sem_sessao"}, 401, True)
+        if urlparse(self.path).path == "/auth/senhas":
+            if not auth_pode(eu["cadastro"], "senhas", "r"):
+                return self.js({"erro": "sem_permissao"}, 403, True)
+            return self.js({"ok": True, "senhas": auth_senhas()}, 200, True)
+        return self.js(dict(eu, ok=True), 200, True)
+
+    def auth_post(self, u):
+        """POST /auth/entrar, /auth/trocar, /auth/sair, /auth/esqueci, /auth/senha/gerar, /auth/senha/cancelar. Respostas sem cache; a senha nunca vai para log."""
+        if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        ip = self.client_address[0]
+        usuario = str(b.get("usuario") or "").strip().lower()
+        if u.path == "/auth/sair":
+            token = self.auth_token()
+            if token:
+                with estado_lock:
+                    db = auth_db()
+                    try:
+                        db.execute("delete from sessao_login where token=?", (hashlib.sha256(token.encode()).hexdigest(),))
+                        db.commit()
+                    finally:
+                        db.close()
+            self.auth_cookie("", 0)
+            return self.js({"ok": True}, 200, True)
+        if u.path == "/auth/esqueci":
+            if AUTH_ID.match(usuario):                  # em segundo plano: a resposta e o tempo são os mesmos para qualquer usuário
+                threading.Thread(target=auth_esqueci, args=(usuario, ip), daemon=True).start()
+            return self.js({"ok": True}, 200, True)
+        if u.path in ("/auth/senha/gerar", "/auth/senha/cancelar"):
+            eu = auth_quem(self.auth_token())
+            if not eu:
+                return self.js({"erro": "sem_sessao"}, 401, True)
+            if not AUTH_ID.match(usuario) or usuario == eu["usuario"]:
+                return self.js({"erro": "usuario"}, 400, True)
+            cad, tem = auth_ler_cadastro(usuario)
+            if auth_acessos(cad) - auth_acessos(eu["cadastro"]):
+                return self.js({"erro": "alvo_maior"}, 403, True)    # senão, quem gera senha entraria como alguém com mais acesso
+            if u.path == "/auth/senha/gerar":
+                if not auth_pode(eu["cadastro"], "senhas", "u" if tem else "c"):
+                    return self.js({"erro": "sem_permissao"}, 403, True)
+                if not cad:
+                    return self.js({"erro": "sem_cadastro"}, 404, True)
+                return self.js({"ok": True, "usuario": usuario, "senha": auth_criar(usuario, eu["usuario"], ip)}, 200, True)
+            if u.path == "/auth/senha/cancelar":
+                if not auth_pode(eu["cadastro"], "senhas", "d"):
+                    return self.js({"erro": "sem_permissao"}, 403, True)
+                auth_remover(usuario, eu["usuario"], ip)
+                return self.js({"ok": True}, 200, True)
+            return self.js({"erro": "pedido"}, 400, True)
+        senha = str(b.get("senha") or "")
+        if not AUTH_ID.match(usuario) or not 0 < len(senha) <= 200:
+            return self.js({"erro": "incorreto"}, 401, True)
+        situacao, dados = auth_conferir(usuario, senha, ip)
+        if situacao == "bloqueado":
+            return self.js({"erro": "bloqueado"}, 429, True)
+        if situacao == "nao":
+            return self.js({"erro": "incorreto"}, 401, True)
+        if u.path == "/auth/trocar":
+            nova = str(b.get("nova") or "")
+            motivo = "repete_atual" if nova == senha else "longa" if len(nova) > 200 else auth_senha_fraca(usuario, (dados["cadastro"] or {}).get("name"), nova)
+            if motivo:
+                return self.js({"erro": "fraca", "motivo": motivo}, 400, True)
+            auth_trocar(usuario, nova, ip)
+            situacao = "ok"
+        elif situacao == "provisoria":
+            return self.js({"ok": False, "troca": True}, 200, True)
+        self.auth_cookie(auth_sessao_nova(usuario), AUTH_SESSAO)
+        return self.js(dict(dados, ok=True), 200, True)
+
+    def ativ_post(self, rota):
+        """v100: POST /ativ/venda {vendas:[...]} (caixa de saída do tablet) e /ativ/cancelar {id, motivo}."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem não autorizada"}, 403)
+        if not limite_ok(self.client_address[0], "ativ", 120):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(512 * 1024)
+        if err or not isinstance(body, dict):
+            return self.js({"error": "corpo inválido"}, err or 400)
+        eu = self.sessao() or {}
+        cad = eu.get("cadastro")
+        if rota == "/ativ/venda":
+            if not isinstance(body.get("vendas"), list):
+                return self.js({"error": "corpo inválido"}, 400)
+            ativ_visto(eu, self.client_address[0])
+            r = ativ_receber(body["vendas"], eu.get("usuario") or "")
+            return self.js(dict(ok=True, **r))
+        if rota == "/ativ/pulseiras":
+            outros = any(auth_pode(cad, *x.split(".")) for x in ("ativvenda.u", "ativvenda.d", "financeiro.u"))
+            e, r = ativ_pulseiras_edita(body, eu.get("usuario") or "", outros)
+            if e:
+                return self.js(dict({"error": e}, **(r or {})), {"dados": 400, "nao_achou": 404, "cancelada": 409, "sem_permissao": 403,
+                                                                "repetida": 409, "travada": 409, "pulseira_usada": 409}[e])
+            return self.js({"ok": True, "pulseiras": r})
+        if rota == "/ativ/etapa":
+            e = ativ_etapa(body, eu.get("usuario") or "")
+            if e:
+                return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409, "cadastro": 400, "pulseira": 409}[e])
+            return self.js({"ok": True})
+        if rota == "/ativ/video/liga":
+            e, n = ativ_video_liga(body, eu.get("usuario") or "")
+            if e:
+                return self.js({"error": e}, {"dados": 400, "rascunho": 410, "nao_achou": 404, "cancelada": 409, "qr_usado": 409,
+                                              "pulseira": 409, "pulseira_usada": 409,
+                                              "completa": 409, "sem_video": 409, "formato": 415,
+                                              "cartao_desconhecido": 409, "cartao_cancelado": 409}[e])
+            return self.js({"ok": True, "qr": body["qr"], "codigo": cartao_codigo(body["qr"]), "n": n})
+        if rota == "/ativ/cartoes/lote":
+            e, r = cartao_lote(body.get("n"), eu.get("usuario") or "")
+            if e:
+                return self.js({"error": e}, 400)
+            return self.js(dict(r, ok=True, lotes=cartao_lotes()))
+        if rota == "/ativ/cartoes/situacao":
+            e = cartao_lote_muda(body.get("lote"), body.get("situacao"), eu.get("usuario") or "")
+            if e:
+                return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "situacao": 409}[e])
+            return self.js({"ok": True, "lotes": cartao_lotes()})
+        if rota == "/ativ/cadastros":
+            e = ativ_cadastro_set(body)
+            return self.js({"error": e}, 400) if e else self.js({"ok": True, "cadastros": ativ_cadastros()})
+        e = ativ_cancelar(body.get("id"), body.get("motivo"), eu.get("usuario") or "")
+        if e:
+            return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "entregue": 409}[e])
+        return self.js({"ok": True})
+
+    def ativ_video_post(self, u):
+        """v100 fase 4: POST /ativ/video com o mp4 no corpo. O vídeo sobe assim que é solto na tela, antes de a equipe escolher a
+        venda e ler o cartão: fica como rascunho (~/Eterna/ativ-videos/rascunho-<id>.mp4) até POST /ativ/video/liga.
+        Origem local + X-Eterna: 1 + ativentrega.c (ROTAS)."""
+        tam = self.headers.get("Content-Length")
+        try:
+            n = int(tam) if tam is not None else -1
+        except ValueError:
+            n = -1
+        erro = None
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            erro = ({"error": "origem"}, 403)
+        elif n <= 0 or n > ATIV_VIDEO_MAX:
+            erro = ({"error": "tamanho"}, 413)
+        elif not limite_ok(self.client_address[0], "ativ_video", 30):
+            erro = ({"error": "taxa"}, 429)
+        if not erro:
+            try:
+                if shutil.disk_usage(HOME).free < n + 2 * 1024 ** 3:
+                    erro = ({"error": "disco"}, 507)
+            except OSError:
+                pass
+        if not erro and not ativ_video_lock.acquire(blocking=False):
+            erro = ({"error": "ocupado"}, 503)       # um vídeo por vez: a rede do estádio é uma só
+        if erro:
+            self.close_connection = True
+            return self.js(erro[0], erro[1], True)
+        tmp = None
+        try:
+            os.makedirs(ATIV_VIDEOS_DIR, exist_ok=True)
+            tmp = os.path.join(ATIV_VIDEOS_DIR, "recebendo-%s.tmp" % secrets.token_hex(8))
+            fim = time.time() + ATIV_VIDEO_PRAZO
+            ler = getattr(self.rfile, "read1", None) or self.rfile.read
+            resto = n
+            with open(tmp, "wb") as f:
+                while resto > 0 and time.time() < fim:
+                    try:
+                        self.connection.settimeout(max(0.05, min(30, fim - time.time())))
+                        ch = ler(min(1 << 20, resto))
+                    except OSError:
+                        break
+                    if not ch:
+                        break
+                    f.write(ch)
+                    resto -= len(ch)
+            if resto:
+                self.close_connection = True
+                return self.js({"error": "incompleto"}, 400, True)
+            ok, dur = mp4_info(tmp)
+            if not ok:
+                return self.js({"error": "formato"}, 415, True)
+            rid = secrets.token_hex(8)
+            os.replace(tmp, ativ_rascunho(rid))
+            tmp = None
+            if NUVEM == "s3" and NUVEM_BUCKET:
+                nuvem_video_enfileira("r-" + rid, ativ_rascunho(rid))    # v99.25: já começa a subir, antes de ligar ao cartão
+            return self.js({"ok": True, "rascunho": rid, "bytes": n, "duracao": dur})
+        except Exception as ex:
+            self.close_connection = True
+            print("  entrega: falha ao receber o vídeo (%s)" % type(ex).__name__)
+            return self.js({"error": "servidor"}, 500, True)
+        finally:
+            if tmp and os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            ativ_video_lock.release()
 
     def ff_funcao_post(self):
         """v87: POST /fila-fotografo/funcao {dia, map}: a função do dia vinda da Escala. Posto + origem + X-Eterna: 1,
@@ -8741,8 +11993,8 @@ class H(BaseHTTPRequestHandler):
 
     def fotos_enviar_post(self):
         """v96-ux: POST /fotos/enviar?nome=&quem=: uma foto do cartão (o JPEG é o corpo) mandada pela tela Minhas fotos quando o
-        leitor não reconheceu o cartão. Mesmo contrato do Ronaldo (fix/seguranca-dados, b06b67b); aqui sem login no servidor:
-        posto + origem local + X-Eterna: 1 (mesmo nível de /ponto/entradas). Entra pelo ingest_file como foto de cartão."""
+        leitor não reconheceu o cartão. Posto + origem local + X-Eterna: 1 e pessoa conectada com Upload (set.c, também em ROTAS).
+        O fotógrafo manda no próprio nome; Admin e Supervisora escolhem no seletor. Entra pelo ingest_file como foto de cartão."""
         q = parse_qs(urlparse(self.path).query)
         tam = self.headers.get("Content-Length")
         ip = self.client_address[0]
@@ -8751,8 +12003,15 @@ class H(BaseHTTPRequestHandler):
             n = int(tam) if tam is not None else -1
         except ValueError:
             n, erro = -1, ({"erro": "tamanho"}, 400)
+        eu = None if erro else auth_quem(self.auth_token())
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
             erro = ({"erro": "origem"}, 403)
+        elif erro:
+            pass
+        elif not eu:
+            erro = ({"erro": "sem_sessao"}, 401)
+        elif not auth_pode(eu["cadastro"], "set", "c"):
+            erro = ({"erro": "sem_permissao"}, 403)
         elif (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "image/jpeg":
             erro = ({"erro": "formato"}, 415)
         elif erro:
@@ -8762,6 +12021,9 @@ class H(BaseHTTPRequestHandler):
         elif n <= 0 or n > FOTO_ENVIO_MAX:
             erro = ({"erro": "tamanho"}, 413)
         quem = sem_acento((q.get("quem") or [""])[0]).strip()
+        cad = (eu or {}).get("cadastro") or {}
+        if cad.get("key") and cad.get("preset") not in ("admin", "supervisor"):
+            quem = sem_acento(str(cad["key"])).strip()      # o fotógrafo manda sempre no próprio nome (igual à tela, impPreso)
         nome = (q.get("nome") or [""])[0]
         if not erro and (not quem or quem not in ff_cadastrados()):
             erro = ({"erro": "quem"}, 400)
@@ -8849,6 +12111,8 @@ class H(BaseHTTPRequestHandler):
                 self.connection.settimeout(20)
             except OSError:
                 pass
+        if r == "excluida":                            # apagada a pedido do cliente: pela tela não entra de novo
+            r = None
         res = r or "recusada"
         with lock:
             state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
@@ -8915,6 +12179,13 @@ class H(BaseHTTPRequestHandler):
         return not o or o in ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)
 
     def corpo(self, limite):
+        if getattr(self, "_corpo_lido", None) is not None:      # já lido por video_nuvem_repassa (que não respondeu)
+            b, self._corpo_lido = self._corpo_lido, None
+            try:
+                b = json.loads(b.decode("utf-8") or "{}")
+                return (b, None) if isinstance(b, dict) else (None, 400)
+            except Exception:
+                return None, 400
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -8941,7 +12212,7 @@ class H(BaseHTTPRequestHandler):
     def gal_get(self, u, q):
         p = u.path
         ip = self.client_address[0]
-        if p.startswith("/galerias/"):
+        if p in ("/galerias/vendas", "/galerias/status"):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             if p == "/galerias/vendas":
@@ -8950,7 +12221,7 @@ class H(BaseHTTPRequestHandler):
                 except ValueError:
                     desde = 0
                 vs = vendas_ler()
-                return self.js({"vendas": [{k: v.get(k) for k in ("id", "token", "sessoes", "pids", "n", "total", "metodo", "em", "canal", "todas", "teste")} for v in vs[desde:desde + 500]],
+                return self.js({"vendas": [{k: v.get(k) for k in ("id", "token", "sessoes", "pids", "n", "total", "metodo", "em", "canal", "todas", "teste", "itens", "meio", "idpedido")} for v in vs[desde:desde + 500]],
                                 "next": min(len(vs), desde + 500)})
             if p == "/galerias/status":
                 gs = []
@@ -8982,7 +12253,7 @@ class H(BaseHTTPRequestHandler):
             if gal_expirou(m):
                 return self.js({"error": "expirada"}, 410)
             return self.js({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
-                            "estado": gal_estado(token, m), "venue": m.get("venue")})
+                            "estado": gal_estado(token, m), "venue": m.get("venue"), "compra": compra_online()})
         if acao == "livres" and len(partes) == 4:       # v96.1: compradas e cortesias da venda só pelo QR (sem selfie)
             if not limite_ok(ip, "livres", 30):
                 return self.js({"motivo": "bloqueado"}, 429)
@@ -9038,9 +12309,65 @@ class H(BaseHTTPRequestHandler):
             return None
         return self.js({"error": "not found"}, 404)
 
+    def video_nuvem_repassa(self, u, metodo):
+        """v99.28.2: a página do vídeo do cartão (aceite e e-mail, renovar, play, baixar) mora na galeria da nuvem. Aberta pelo
+        endereço do servidor do ponto, o navegador não fala direto com a nuvem (ela só aceita eterna.photo): o servidor repassa
+        esses quatro pedidos, só para cartão de vídeo entregue e só com a nuvem configurada. -> True se respondeu."""
+        m = re.match(r"^/g/([A-Za-z0-9_-]{22})/(video|galeria|evento|baixar)$", u.path)
+        if not m or not NUVEM_API or (metodo == "GET") != (m.group(2) == "baixar"):
+            return False
+        c = vendas_db()
+        try:
+            video = c.execute("select 1 from ativ_entrega where qr=? and apagado_em is null", (m.group(1),)).fetchone()
+            # v99.28.3: a galeria do Tour aberta pela página do vídeo traz o acesso que a nuvem deu pela foto da venda (sem
+            # selfie); a galeria tenta na nuvem e, se a nuvem recusar (acesso dado aqui, por selfie no ponto), segue aqui
+            tour = not video and m.group(2) == "galeria" and c.execute(
+                "select 1 from ativ_venda where origem='eterna' and tour_token=?", (m.group(1),)).fetchone()
+        finally:
+            c.close()
+        if not video and not tour:
+            return False
+        corpo = None
+        if metodo == "POST":
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 16 * 1024:
+                self.js({"error": "corpo inválido"}, 413)
+                return True
+            corpo = self.rfile.read(n) if n else b"{}"
+
+        class SemSeguir(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k):
+                return None
+        rq = urllib.request.Request(NUVEM_API + u.path + ("?" + u.query if u.query else ""), data=corpo, method=metodo,
+                                    headers={"Content-Type": "application/json", "User-Agent": "eterna-agente"})
+        try:
+            r = urllib.request.build_opener(SemSeguir).open(rq, timeout=20)
+            st, hd, bd = r.status, r.headers, r.read(2 * 1024 * 1024)
+        except urllib.error.HTTPError as e:
+            st, hd, bd = e.code, e.headers, e.read(2 * 1024 * 1024)
+        except Exception:
+            if tour:
+                self._corpo_lido = corpo
+                return False
+            self.js({"error": "sem conexão com a nuvem"}, 502)
+            return True
+        if tour and st >= 400:
+            self._corpo_lido = corpo
+            return False
+        self.send_response(st)
+        for k in ("Content-Type", "Location", "Cache-Control"):
+            if hd.get(k):
+                self.send_header(k, hd.get(k))
+        self.send_header("Content-Length", str(len(bd)))
+        self.end_headers()
+        self.wfile.write(bd)
+        return True
+
     def gal_post(self, u):
         p = u.path
         ip = self.client_address[0]
+        if p.startswith("/g/") and self.video_nuvem_repassa(u, "POST"):
+            return None
         if p.startswith("/pagamento/webhook/"):
             return self.js({"error": "webhook reservado para o adquirente real (fase 2)"}, 501)
         if p == "/lgpd/excluir":
@@ -9068,7 +12395,8 @@ class H(BaseHTTPRequestHandler):
             body, err = self.corpo(8 * 1024 * 1024)
             if err:
                 return self.js({"error": "corpo inválido"}, err)
-            return self.js(estado_gravar(body, quem=self.client_address[0]))
+            body, recusados = auth_filtrar_docs(body, self.sessao(), self.client_address[0], self.posto_atual())
+            return self.js(dict(estado_gravar(body, quem=self.client_address[0]), recusados=recusados))
         if p == "/ponto/eventos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -9093,7 +12421,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, err)
             try:
                 return self.js(imprimir(body.get("imagens") or [], str(body.get("venda") or "")[:40],
-                                        str(body.get("vendedor") or "")[:60], str(body.get("posto") or "")[:40]))
+                                        str(body.get("vendedor") or "")[:60], str(body.get("posto") or "")[:40], str(body.get("venda_id") or "")[:80]))
             except Exception as ex:
                 return self.js({"ok": False, "error": str(ex)[:300]}, 500)
         if p in ("/galerias/publicar", "/galerias/encerrar"):
@@ -9130,6 +12458,14 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": str(ex)}, 400)
             if ignoradas:
                 print("  galeria: %d base(s) de IA fora do manifesto (navegador antigo)" % ignoradas)
+            eu = self.sessao()
+            if not (eu and auth_pode(eu["cadastro"], "galerias", "u")):
+                # cortesia nova só com galerias.u; a que já está no servidor fica (republicação do Checkout)
+                ja = {f["id"] for f in (REPO.ler_manifesto(t) or {}).get("fotos") or [] if f.get("direito") == "cortesia"}
+                for f in novo["fotos"]:
+                    if f["direito"] == "cortesia" and f["id"] not in ja:
+                        f["direito"] = "venda"
+                        f.pop("cortesia", None)
             with gal_lock:
                 m = gal_mesclar(novo, REPO.ler_manifesto(t))
                 REPO.salvar_manifesto(t, m)
@@ -9204,6 +12540,9 @@ class H(BaseHTTPRequestHandler):
                 acesso = secrets.token_urlsafe(24)
                 acessos[acesso] = {"token": token, "pids": pids, "exp": agora + ACESSO_TTL}
             return self.js({"ok": True, "acesso": acesso, "exp": _iso(acessos[acesso]["exp"]), "galeria": galeria_obj(token, m, pids)})
+        if acao == "pagamento" and not compra_online():
+            self.corpo(64 * 1024)
+            return self.js({"error": "compra_indisponivel"}, 501)      # sem adquirente: compra só no balcão
         if acao in ("galeria", "pagamento"):
             body, err = self.corpo(64 * 1024)
             if err:
@@ -9235,7 +12574,8 @@ class H(BaseHTTPRequestHandler):
                         or any(x not in a["pids"] or dire.get(x) != "venda" for x in pids):
                     return self.js({"error": "foto fora do acesso ou não está à venda"}, 400)
                 n = len(pids)
-                dig, todas = float(m["precos"]["dig"]), float(m["precos"]["todas"])
+                todas = float(m["precos"]["todas"])
+                dig = float(m["precos"].get("dig") or 0) or todas
                 total = round(min(n * dig, todas), 2)          # o total que o navegador mandar é ignorado
                 ped = PAGAMENTO.criar({"token": token, "pids": pids, "total": total, "metodo": metodo, "idem": idem})
                 if ped["status"] == "aprovado":
@@ -9262,28 +12602,46 @@ class H(BaseHTTPRequestHandler):
         return self.js({"error": "not found"}, 404)
 
     def do_GET(self):
+        if not self.autoriza("GET"):
+            return
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        if u.path.startswith(("/g/", "/galerias/")):
+        if u.path.startswith("/g/") and self.video_nuvem_repassa(u, "GET"):
+            return None
+        if u.path.startswith("/g/") or u.path in ("/galerias/vendas", "/galerias/status"):
             return self.gal_get(u, q)
+        if u.path in ("/auth/eu", "/auth/senhas"):
+            return self.auth_get()
+        if u.path in ("/postos", "/postos/eu", "/postos/aceitar"):
+            return self.postos_get(u, q)
         if ("GET", u.path) in AGENDA_ROTAS:          # v97
             return self.agenda_rota("GET", u.path)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/status":
+            minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT}
+            o = (self.headers.get("Origin") or "").rstrip("/").lower()
+            confiavel = host_ok((self.headers.get("Host") or "").lower()) and (not o or o in self.origens_aceitas())
+            eu = self.sessao() if confiavel else None
+            if not eu and not (confiavel and self.posto_atual()):
+                return self.js(minimo, nostore=True)     # sem pessoa conectada nem aparelho pareado: só que o agente está no ar
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
             ag_ = agenda_status(publico=True)          # v97: sem os 4 últimos da chave e sem quem salvou (CORS aberto)
             with lock:
-                return self.js({"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "card": state["card"],
-                                "copied": state["copied"], "dups": state["dups"], "events": len(events),
-                                "inbox": INBOX, "platform": sys.platform, "ftp": state["ftp"],
-                                "rostos": {**rostos, "fila": fila_rostos.qsize()}, "nuvem": nuvem, "backup": backup, "recorte": rs_, "fundos_modo": fundos_modo(),
-                                "galeria_publica": os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
-                                "impressora": IMPRESSORA or None,
-                                "impressora_locais": IMP_LOCAIS, "sessoes": ss_,
-                                "estatisticas": {"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, "fuso": fuso_info(), "app_offline_pronto": app_offline_pronto(), "agenda": ag_,
-                                "envio": {"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
-                                "galerias": {"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))}})
+                ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
+                st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
+                           platform=sys.platform, ftp=ftp_,
+                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, fundos_modo=fundos_modo(),
+                           galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
+                           impressora=IMPRESSORA or None, sessoes=ss_,
+                           estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
+                           app_offline_pronto=app_offline_pronto(), agenda=ag_,
+                           envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
+                           pagamento="teste" if compra_online() else "desligado",
+                           galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
+            if eu:
+                st_["impressora_locais"] = IMP_LOCAIS
+            return self.js(st_, nostore=True)
         if u.path == "/sessoes":
             if not self.origem_privada_ok(u.path):
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -9333,6 +12691,11 @@ class H(BaseHTTPRequestHandler):
             if not self.posto() or not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
             return self.js(ff_json(), nostore=True)
+        if u.path == "/ponto/impressoes":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            ids = ",".join(parse_qs(u.query).get("vendas") or []).split(",")
+            return self.js({"ok": True, "vendas": ev_impressoes(ids)}, nostore=True)
         if u.path == "/ponto/docs/revs":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -9343,7 +12706,97 @@ class H(BaseHTTPRequestHandler):
             col = (parse_qs(u.query).get("col") or [""])[0]
             if col not in ESTADO_COLS:
                 return self.js({"error": "coleção inválida"}, 400)
-            return self.js(estado_col(col))
+            eu = self.sessao()
+            if not eu and col not in ("sim", "config", "agenda"):
+                return self.js({"erro": "sem_permissao"}, 403, True)     # aparelho pareado sem pessoa: só o que o Checkout lê
+            cad = (eu or {}).get("cadastro")
+            if col in ("usuarios_log", "usuarios_login") and not any(auth_pode(cad, *x.split(".")) for x in FOTOS_LER + ("usuarios.r", "permissoes.r")):
+                return self.js({"erro": "sem_permissao"}, 403, True)
+            r = estado_col(col)
+            if col == "usuarios" and not auth_pode(cad, "usuarios", "r"):
+                # sem Cadastro de usuários: o próprio cadastro inteiro; dos outros, só o nome (e o fotógrafo vinculado)
+                proprio = quote(eu["usuario"], safe="-_.!~*'()")
+                r["docs"] = [d if d["id"] == proprio else {"id": d["id"], "valor": {k: d["valor"].get(k) for k in ("email", "name", "key", "active") if isinstance(d["valor"], dict)}}
+                             for d in r["docs"]]
+            return self.js(r)
+        if u.path == "/ativ/equipe":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js({"ok": True, "equipe": ativ_equipe()}, nostore=True)
+        if u.path.startswith("/ativ/demo/"):
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            nome = u.path[len("/ativ/demo/"):]
+            if nome == "lista":
+                return self.js({"ok": True, "videos": ativ_demo_lista()}, nostore=True)
+            if not _re_ativ_demo.match(nome) or not os.path.isfile(os.path.join(ATIV_DEMO_DIR, nome)):
+                return self.js({"error": "not found"}, 404)
+            try:
+                with open(os.path.join(ATIV_DEMO_DIR, nome), "rb") as f:
+                    data = f.read()
+            except OSError:
+                return self.js({"error": "not found"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, max-age=86400")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if u.path == "/ativ/cliente-foto":
+            vid = (parse_qs(u.query).get("id") or [""])[0]
+            if not _re_ativ_id.match(vid) or not os.path.isfile(ativ_cliente_foto(vid)):
+                return self.js({"error": "not found"}, 404)
+            with open(ativ_cliente_foto(vid), "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, no-store")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if u.path in ("/ativ/fila", "/ativ/cadastros"):
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            if u.path == "/ativ/cadastros":
+                return self.js({"ok": True, "cadastros": ativ_cadastros()}, nostore=True)
+            dia = (parse_qs(u.query).get("dia") or [""])[0]
+            r = ativ_fila(dia)
+            if r is None:
+                return self.js({"error": "data inválida"}, 400)
+            return self.js({"ok": True, "vendas": r, "cadastros": ativ_cadastros(), "rascunhos": nuvem_rascunhos(),
+                            "nuvem": {"ligada": NUVEM == "s3" and bool(NUVEM_BUCKET), "fila": nuvem.get("videos_fila", 0)}}, nostore=True)
+        if u.path == "/ativ/pulseira":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            r = ativ_pulseira_busca((parse_qs(u.query).get("n") or [""])[0])
+            if r is None:
+                return self.js({"error": "dados"}, 400)
+            return self.js(dict(r, ok=True), nostore=True)
+        if u.path == "/ativ/cartoes":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js({"ok": True, "lotes": cartao_lotes(), "max": CARTAO_MAX_LOTE}, nostore=True)
+        if u.path == "/ativ/minhas":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            ativ_visto(self.sessao(), self.client_address[0])
+            dia = (parse_qs(u.query).get("dia") or [""])[0]
+            eu = self.sessao() or {}
+            # v99.28: a supervisão (quem corrige a venda dos outros) vê as vendas do dia de todos os vendedores
+            todos = any(auth_pode(eu.get("cadastro"), *x.split(".")) for x in ("ativvenda.u", "ativvenda.d", "financeiro.u"))
+            r = ativ_vendas(dia, dia, None if todos else (eu.get("usuario") or ""))
+            if r is not None and todos:
+                r = [v for v in r if v.get("origem") == "eterna"]
+            return self.js({"ok": True, "vendas": r, "todos": todos}, nostore=True) if r is not None else self.js({"error": "data inválida"}, 400)
+        if u.path == "/ativ/vendas":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            q = parse_qs(u.query)
+            de, ate = (q.get("de") or [""])[0], (q.get("ate") or [""])[0]
+            r = ativ_vendas(de, ate)
+            return self.js({"ok": True, "vendas": r, "envio": nuvem_envio_medido(de, ate)}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -9406,12 +12859,18 @@ class H(BaseHTTPRequestHandler):
                 meta_dirty[0] = False
                 save_meta()
             return self.js({"fotos": out, "total": len(out), "boot": BOOT})
+        if u.path == "/ftp/contas":
+            with lock:                                   # os logins do FTP embutido (sem senha), para o cartão do Upload
+                return self.js({"ok": True, "port": state["ftp"].get("port"), "ip": state["ftp"].get("ip"), "users": list(state["ftp"].get("users") or [])}, nostore=True)
         if u.path == "/ftp-remoto/status":
             c = rftp_cfg()
             return self.js({**rftp, "configurado": bool(c), "host": c and c.get("host"), "port": c and c.get("port"),
                             "user": c and c.get("user"), "dir": c and c.get("dir"), "tls": bool(c and c.get("tls"))})
         if u.path == "/photoroom/status":
             c = pr_cfg()
+            eu = self.sessao()
+            if not (eu and auth_pode(eu["cadastro"], "configuracao", "r")):
+                return self.js({"configured": bool(c), "fundos_modo": fundos_modo()})   # Checkout e quem não configura: só se está ligado
             with pr_lock:
                 return self.js({**pr, "configured": bool(c), "sandbox": bool(c and c["api_key"].startswith("sandbox_"))})
         if u.path.startswith("/photoroom/result/"):
@@ -9438,9 +12897,17 @@ class H(BaseHTTPRequestHandler):
         return self.app(u.path)
 
     def do_POST(self):
+        if not self.autoriza("POST"):
+            return
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path.startswith(("/g/", "/galerias/", "/pagamento/")) or u.path in ("/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar"):
+            return self.auth_post(u)
+        if u.path in ("/postos/parear", "/postos/revogar"):
+            return self.postos_post(u)
+        if u.path == "/postos/aceitar":
+            return self.postos_aceitar_post()
+        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
@@ -9450,6 +12917,12 @@ class H(BaseHTTPRequestHandler):
             return self.agenda_rota("POST", u.path)
         if u.path == "/fila-fotografo/funcao":
             return self.ff_funcao_post()
+        if u.path == "/ativ/video":
+            return self.ativ_video_post(u)
+        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao"):
+            return self.ativ_post(u.path)
+        if u.path in ("/ativ/venda", "/ativ/cancelar", "/ativ/pulseiras"):
+            return self.ativ_post(u.path)
         if u.path in ("/visitas/juntar", "/visitas/separar"):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
@@ -9471,37 +12944,43 @@ class H(BaseHTTPRequestHandler):
             _grava_privado(FUNDOS_MODO_CFG, json.dumps({"modo": modo, "em": time.strftime("%Y-%m-%dT%H:%M:%S")}))
             return self.js({"ok": True, "modo": modo})
         if u.path == "/roverpix/config":
-            # só o app aberto pelo próprio agente pode trocar a chave
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            # só o app aberto pelo próprio agente pode trocar a chave; o endereço da Roverpix é um dos oficiais
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
-            key = (body.get("api_key") or "").strip()
-            if not key:
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            key = str(body.get("api_key") or "").strip()
+            if not key or len(key) > 400:
                 return self.js({"error": "informe a chave"}, 400)
-            rover_save_cfg(body.get("base_url"), key)
+            base = str(body.get("base_url") or ROVER_BASES[0]).strip().rstrip("/")
+            base = base[:-len("/api/v1")] if base.endswith("/api/v1") else base
+            if base not in ROVER_BASES:
+                return self.js({"error": "endereço da Roverpix não reconhecido"}, 400)
+            rover_save_cfg(base, key)
             return self.js({"ok": True})
         if u.path == "/ftp-remoto/config":
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
             old = rftp_cfg() or {}
             try:
                 porta_n = int(body.get("port") or 21)
             except Exception:
                 return self.js({"error": "porta inválida"}, 400)
-            c = {"host": (body.get("host") or "").strip(), "port": porta_n,
-                 "user": (body.get("user") or "").strip(), "password": body.get("password") or "",
-                 "dir": (body.get("dir") or "").strip(), "tls": bool(body.get("tls"))}
+            c = {"host": str(body.get("host") or "").strip()[:200], "port": porta_n,
+                 "user": str(body.get("user") or "").strip()[:200], "password": str(body.get("password") or "")[:200],
+                 "dir": str(body.get("dir") or "").strip()[:300], "tls": bool(body.get("tls"))}
             if not c["host"] or not c["user"]:
                 return self.js({"error": "informe servidor e usuário"}, 400)
+            if porta_n not in (21, 990):
+                return self.js({"error": "porta inválida: use 21 (FTP) ou 990 (FTP com TLS)"}, 400)
+            if not rftp_host_ok(c["host"]):
+                return self.js({"error": "servidor fora da rede do ponto: use o IP da rede interna ou cadastre o nome em ftp-remoto-hosts.txt no servidor"}, 400)
+            if not limite_ok(self.client_address[0], "rftp-config", 5):
+                return self.js({"error": "muitos testes seguidos; espere um minuto"}, 429)
             # v80 (segurança I5): a senha salva só vale para o mesmo servidor, porta e usuário (não manda a senha para outro host)
             mesmo = old and old.get("host") == c["host"] and int(old.get("port") or 21) == c["port"] and old.get("user") == c["user"]
             if not c["password"]:
@@ -9511,27 +12990,28 @@ class H(BaseHTTPRequestHandler):
             try:
                 t = rftp_connect(c)
                 t.quit()
-            except Exception as ex:
-                return self.js({"error": "não conectou: %s" % ex}, 502)
+            except Exception:
+                return self.js({"error": "não conectou: confira servidor, porta, usuário e senha"}, 502)
             rftp_save(c)
             return self.js({"ok": True})
         if u.path in ("/photoroom/config", "/photoroom/compose"):
             # só o app aberto pelo próprio agente usa a chave (ninguém de fora gasta os créditos)
-            if origin and not origin.startswith(("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)):
+            if origin and origin.rstrip("/").lower() not in self.origens_aceitas():
                 return self.js({"error": "origem não autorizada"}, 403)
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except Exception:
-                return self.js({"error": "corpo inválido"}, 400)
+            body, err = self.corpo(4096 if u.path == "/photoroom/config" else 32 * 1024 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
             if u.path == "/photoroom/config":
-                key = (body.get("api_key") or "").strip()
-                if not key:
+                key = str(body.get("api_key") or "").strip()
+                if not key or len(key) > 400:
                     return self.js({"error": "informe a chave"}, 400)
                 pr_save(key)
                 return self.js({"ok": True, "sandbox": key.startswith("sandbox_")})
             if fundos_modo() != "photoroom":           # v84: montagem local é o padrão; o Photoroom só com o interruptor ligado
                 return self.js({"ok": False, "error": "photoroom_desligado"}, 409)
+            quem = (self.sessao() or {}).get("usuario") or ("posto:" + (self.posto_atual() or {}).get("id", "?"))
+            if not limite_ok(quem, "photoroom-compose", PR_COMPOSE_HORA, 3600):
+                return self.js({"error": "muitas montagens nesta hora; use a montagem local"}, 429)
             try:
                 if body.get("pid"):
                     with lock:
@@ -9548,7 +13028,8 @@ class H(BaseHTTPRequestHandler):
                                   hi=bool(body.get("hi")), recorte=bool(body.get("recorte")))
                 return self.js({"ok": True, "url": "/photoroom/result/" + name})
             except Exception as ex:
-                return self.js({"error": str(ex)}, 502)
+                print("  photoroom: %s" % str(ex)[:160])
+                return self.js({"error": "Photoroom não respondeu"}, 502)
         if u.path == "/roverpix/sync":
             rover_wake.set()
             return self.js({"ok": True})
@@ -9581,7 +13062,14 @@ class H(BaseHTTPRequestHandler):
             try:
                 if u.path == "/rostos/buscar":
                     # janela: a do Painel (estado.db); a galeria por QR manda todo:true (dia todo)
-                    return self.js(buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if body.get("todo") is True else None))
+                    todo, t0 = body.get("todo") is True, time.time()
+                    try:
+                        r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None)
+                    except Exception as ex:
+                        selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0)
+                        raise
+                    selfie_registra("qr" if todo else "checkout", r, t0)
+                    return self.js(r)
                 return self.js(medir(body.get("sessoes") or {}))
             except Exception as ex:
                 return self.js({"error": str(ex)}, 500)
@@ -9607,6 +13095,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache" if rel == "index.html" else "max-age=3600")
         self.end_headers()
         self.wfile.write(data)
+
 
 def fuso_info():
     """Fuso do servidor: nome (TZ ou ETERNA_TZ) e deslocamento atual em minutos (−180 no Rio)."""
@@ -9649,6 +13138,7 @@ def main():
     threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=nuvem_loop, daemon=True).start()
     threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
+    threading.Thread(target=nuvem_videos_loop, daemon=True).start()
     if IMPRESSORA and not os.environ.get("ETERNA_IMPRESSORA_TESTE"):
         imp_retomar()
         threading.Thread(target=imp_monitor, daemon=True).start()
@@ -9665,7 +13155,8 @@ def main():
     threading.Thread(target=pasta_vigiada, daemon=True).start()
     gal_indexar()
     threading.Thread(target=galeria_loop, daemon=True).start()
-    print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__, type(PAGAMENTO).__name__))
+    print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__,
+          "de TESTE (aprova sem cobrar)" if compra_online() else "desligado (compra só no balcão)"))
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     _rok, _rmot = rec_estado()
     print("  Recorte local:     " + ("pronto (BiRefNet + a regra do que encosta na pessoa, num processo à parte; abre na partida)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
@@ -9680,4 +13171,8 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 3 and sys.argv[1] == "--criar-admin":
+        sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
+        sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()

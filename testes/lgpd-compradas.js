@@ -7,7 +7,7 @@
 // Servidor que preservou foto que a tela ainda não sabia que era do cliente (compra online de agora): a tela busca as vendas
 // online, refaz a conta e só tira o que o servidor apagou; a galeria que o servidor manteve não é marcada como encerrada.
 // Agente falso (page.route), como em checkout-varias-sessoes.js.
-const {chromium}=require('playwright');const {execFileSync}=require('child_process');
+const {chromium}=require('playwright');const entrarTeste=require('./_entrar');/* v93: usuário e senha */const {execFileSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
 const cores=execFileSync('python3',['-c',`
@@ -61,8 +61,7 @@ try{
   ok(rec.card==='LPTSOLO02'&&rec.sel.join()==='ag_aaa000000001,ag_bbb000000002','uma venda só, ancorada em B, com uma foto de A: '+J(rec));
   // o Posto (outra janela, admin)
   const pg2=await ctx.newPage();pg2.on('pageerror',e=>errs.push(e.message));await pg2.goto(U);await pg2.waitForTimeout(400);
-  await pg2.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg2.click('button[type=submit]');await pg2.waitForTimeout(200);
-  {const otp=await pg2.$('.otp');if(otp){await pg2.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg2.waitForTimeout(500);}}
+  await entrarTeste(pg2,'eduardo@eduardorezende.com');await pg2.waitForTimeout(150);
   const apagar=async card=>{await pg2.evaluate(card=>{ETERNA.simFresh();const b=document.createElement('button');b.dataset.act='lgpd-excluir';b.dataset.card=card;document.body.appendChild(b);b.click();b.remove();},card);await pg2.waitForTimeout(700);
     return pg2.evaluate(()=>(document.querySelector('#toast')||{}).textContent||'');};
   const sA=()=>pg2.evaluate(()=>{ETERNA.simFresh();const s=ETERNA.SIM.sessions.LPTFAMA01;return {fotos:s.photos.map(p=>p.id.slice(3,6)+p.id.slice(-1)).join(),lgpd:s.lgpd?{n:s.lgpd.n,ficaram:s.lgpd.ficaram}:null};});

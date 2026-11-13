@@ -1,12 +1,13 @@
 // v94-ux (parte I): a grade de permissões fica no "Ajuste fino" (<details>, fechado para perfil pronto); o teste abre antes de usar
 // v80: "Copiar permissões de…" em Permissões e no cadastro de Usuários (pedido do Eduardo, 28/10).
 // Copia módulos C/R/U/D, menu e tela inicial; passa por permValidate; o que quem copia não pode dar fica de fora e é listado; registra permissoes_copiadas.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;const P=__dirname+'/prints';require('fs').mkdirSync(P,{recursive:true});
 async function nova(b){const ctx=await b.newContext({viewport:{width:1366,height:1000}});const pg=await ctx.newPage();pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text())});return {ctx,pg};}
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.reload();await pg.waitForTimeout(350);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(400);return pg.evaluate(()=>!!ETERNA.state.user);}
+  await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const acesso=(pg,e)=>pg.evaluate(e=>{const u=ETERNA.USERS[e];return u?JSON.parse(JSON.stringify({perms:ETERNA.permNorm(u.perms),menu:[...u.menu].sort(),inicio:u.inicio||null,preset:u.preset,name:u.name,active:u.active})):null;},e);
 const log=(pg,acao)=>pg.evaluate(a=>ETERNA.auditRead().filter(e=>e.acao===a),acao);
 const toast=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent);
@@ -39,9 +40,9 @@ try{
     const l2=await log(pg,'permissoes_copiadas');ok(l2.some(e=>e.alvo==='carlos@eterna.photo'&&e.de==='qualidade@eterna.photo'),'2: auditLog da cópia para o Carlos');
     // o histórico mostra a cópia
     await pg.click('[data-act="perm-tab"][data-t="historico"]');await pg.waitForTimeout(100);ok(/copiou permissões para/.test(await pg.textContent('#main'))&&/copiado de/.test(await pg.textContent('#main')),'2: histórico sem a cópia');
-    // Usuários › Copiar permissões de… abre Permissões com o painel de cópia
-    await pg.evaluate(()=>ETERNA.go('usuarios'));await pg.waitForTimeout(80);await pg.click('[data-act="user-sel"][data-e="marinara@eterna.photo"]');await pg.waitForTimeout(80);await pg.click('[data-act="perm-copy-open"]');await pg.waitForTimeout(120);
-    ok(await pg.evaluate(()=>ETERNA.state.view==='permissoes'&&ETERNA.state.perm.sel==='marinara@eterna.photo'&&!!document.querySelector('select[data-act="perm-copy-from"]')),'2: botão do cadastro deveria abrir a cópia em Permissões');
+    // a cópia fica só em Permissões: o cadastro não repete o botão
+    await pg.evaluate(()=>ETERNA.go('usuarios'));await pg.waitForTimeout(80);await pg.click('[data-act="user-sel"][data-e="marinara@eterna.photo"]');await pg.waitForTimeout(80);
+    ok(!await pg.$('[data-act="perm-copy-open"]'),'2: o cadastro não deveria repetir o botão de copiar');
     await ctx.close();}
   {const {ctx,pg}=await nova(b);await pg.goto(U);await pg.waitForTimeout(300);
     // ---------- 3. preparar um gerente (não admin) que edita permissões ----------

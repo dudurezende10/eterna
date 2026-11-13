@@ -457,7 +457,9 @@ TOK = "Ab3dEf6hIj9lMn0pQr2tUv"
 man = {"token": TOK, "tipo": "sessao", "sessoes": [xk["card"]], "expira": "2099-01-01T00:00:00Z", "precos": {"dig": 39, "todas": 250},
        "fotos": [{"id": "ag_" + K[0], "sessao": xk["card"], "direito": "venda"}, {"id": "ag_" + K[2], "sessao": xk["card"], "direito": "venda"}]}
 cn = http.client.HTTPConnection("127.0.0.1", PT, timeout=10)
-cn.request("POST", "/galerias/publicar", json.dumps({"manifesto": man}), {"Content-Type": "application/json"})
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao as _S   # v93 (ramo idiomas-base): rotas do agente pedem sessão (ou posto) e X-Eterna: 1
+cn.request("POST", "/galerias/publicar", json.dumps({"manifesto": man}), {"Content-Type": "application/json", "X-Eterna": "1", "Cookie": _S.cookie_sessao(m)})
 rr = cn.getresponse(); rj = json.loads(rr.read() or b"{}")
 gv = m.REPO.ler_manifesto(TOK) or {}
 ok(rr.status == 200 and rj.get("ignoradas") == 1, "18: publicar responde ok com ignoradas 1: %r %r" % (rr.status, rj))

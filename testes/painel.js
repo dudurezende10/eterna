@@ -1,5 +1,6 @@
 // v80: Painel no Dashboard (substitui a Semana). Critérios 1 a 29 de docs/planos/2026-10-28-v83-painel.md.
 // Sobe um LIVE de teste com ETERNA.applyLive (14 e 30 dias, 2 pontos, nomes maliciosos) e o agente (critério 25) num HOME temporário.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const {spawn}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
@@ -10,8 +11,7 @@ async function nova(b,w,h,extra){const ctx=await b.newContext({viewport:{width:w
   let dialogo=false;pg.on('dialog',d=>{dialogo=true;d.dismiss().catch(()=>{});});pg.dialogo=()=>dialogo;return {ctx,pg};}
 async function sair(pg){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.reload();await pg.waitForTimeout(350);}
 async function entrar(pg,email,hash){await pg.goto(U+(hash||''));await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await sair(pg);if(hash){await pg.goto(U+hash);await pg.waitForTimeout(300);}}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+  await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const view=pg=>pg.evaluate(()=>ETERNA.state.view);
 const abrir=(pg,from,to,fonte,pdv)=>pg.evaluate(([f,t,fo,pd])=>{ETERNA.state.range={from:f,to:t};ETERNA.state.painel={fonte:fo||'tudo',pdv:pd||''};ETERNA.state.view='painel';ETERNA.render();},[from,to,fonte,pdv]);
 const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\s+/g,' ').trim():null;},s);
@@ -33,7 +33,8 @@ function mkLive(n,o){o=o||{};const t=ETERNA.venueToday();const add=(iso,k)=>{con
 const MK=mkLive.toString();
 const live=(pg,n,o)=>pg.evaluate(([src,n,o])=>{const f=new Function('return '+src)();ETERNA.applyLive(f(n,o));return Object.keys(ETERNA.live.days).length;},[MK,n,o||{}]);
 const dvz=()=>{const d=new Date();return d;};
-function req(porta,p,headers){return new Promise(res=>{const r=http.request({host:'127.0.0.1',port:porta,method:'GET',path:p,headers:headers||{}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>res({s:rs.statusCode,h:rs.headers,b:Buffer.concat(ch).toString()}));});r.on('error',e=>res({s:0,err:String(e)}));r.end();});}
+const S=require('./_agente_sessao');let CK=null; // sessão de admin no agente de verdade (critério 25)
+function req(porta,p,headers){return new Promise(res=>{const r=http.request({host:'127.0.0.1',port:porta,method:'GET',path:p,headers:{...(CK?{Cookie:CK}:{}),...(headers||{})}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>res({s:rs.statusCode,h:rs.headers,b:Buffer.concat(ch).toString()}));});r.on('error',e=>res({s:0,err:String(e)}));r.end();});}
 
 (async()=>{const b=await chromium.launch();let agente=null;const home=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-painel-'));
 try{
@@ -42,7 +43,7 @@ try{
   ok(await view(pg)==='painel'&&await pg.evaluate(()=>location.hash)==='#painel','2: admin deveria cair em #painel: '+await view(pg));
   const dash=await pg.$$eval('#nav .navg',gs=>{const g=gs.find(x=>x.querySelector('.grp').textContent.trim()==='Dashboard');return g?[...g.querySelectorAll('button[data-v]')].map(x=>x.textContent.trim().split('\n')[0]):[];});
   const dashV=await pg.$$eval('#nav .navg',gs=>{const g=gs.find(x=>x.querySelector('.grp').textContent.trim()==='Dashboard');return g?[...g.querySelectorAll('button[data-v]')].map(x=>x.dataset.v):[];});
-  ok(J(dashV)===J(['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','galerias','calendario']),'1: ordem do Dashboard '+J(dashV));ok(!(await pg.$('#nav [data-v="semana"]')),'1: Semana ainda no menu');
+  ok(J(dashV)===J(['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','ativ-resumo','galerias','calendario']),'1: ordem do Dashboard '+J(dashV));ok(!(await pg.$('#nav [data-v="semana"]')),'1: Semana ainda no menu');
   await pg.click('#rail-brand');await pg.waitForTimeout(120);ok(await view(pg)==='perfis','2: logo deveria abrir o Início');
   await pg.evaluate(()=>{location.hash='#semana';});await pg.waitForTimeout(200);ok(await view(pg)==='painel','4: #semana deveria abrir o Painel: '+await view(pg));
   // FTP sem o agente: o cartão aparece no Painel de controle, desligado, com a pílula e a nota
@@ -62,10 +63,11 @@ try{
   ok(dz[0]&&dz[0].c==='67%'&&dz[0].pcs[2]==='<1%'&&/868/.test(dz[0].leg)&&/424/.test(dz[0].leg),'7: rosca Vendas '+J(dz[0]));
   dz.forEach((d,i)=>{const s=d.pcs.reduce((a,x)=>a+(parseInt(x)||0),0);ok(s===100||d.pcs.includes('<1%'),'7: rosca '+i+' não soma 100: '+J(d.pcs));});
   const rk=await pg.$$eval('.pn-rank li',ls=>ls.map(l=>({nm:l.querySelector('.nm').childNodes[0].textContent.trim(),det:(l.querySelector('.nm small')||{}).textContent||'',rv:l.querySelector('.rv').textContent.replace(/\u00a0/g,' '),top:l.classList.contains('top'),off:l.classList.contains('off')})));
+  // v98.1 (Ronaldo, 11/11): o ranking usa os nomes exatos da Imply
   const nomes=rk.map(r=>r.nm);['Maracanã Mais','Tribuna de Honra','Maracanã','Gramado','Zona Mista','Arquibancada','Foto adicional','Outros (catálogo antigo)'].forEach(n=>ok(nomes.includes(n),'8: ranking sem '+n+' '+J(nomes)));
-  ok(rk[0]&&rk[0].nm==='Maracanã Mais'&&rk[0].top&&/104 pacotes · 3\.294 fotos/.test(rk[0].det)&&rk[0].rv==='R$ 26.000','8: Maracanã Mais '+J(rk[0]));
-  const fa=rk.find(r=>r.nm==='Foto adicional');ok(fa&&/268 unid\./.test(fa.det)&&fa.rv==='R$ 6.515','8: Foto adicional '+J(fa));ok(!nomes.some(n=>/cortesia/i.test(n)),'8: cortesia no ranking');
-  const offI=rk.map((r,i)=>r.off?i:-1).filter(i=>i>=0);ok(offI.length&&offI.every(i=>i>=rk.length-offI.length)&&rk.filter(r=>r.off).every(r=>r.rv==='sem venda'),'8: itens sem venda no fim com "sem venda"');
+  ok(rk[0]&&rk[0].nm==='Maracanã Mais'&&rk[0].top&&/104 pacotes · 3\.294 fotos/.test(rk[0].det)&&rk[0].rv==='R$ 26.000','8: Maracanã Mais (catálogo de antes, v99.3) '+J(rk[0]));
+  const fa=rk.find(r=>r.nm==='Foto adicional');ok(fa&&/268 unid\./.test(fa.det)&&fa.rv==='R$ 6.515','8: Foto adicional '+J(fa));const cs=rk.find(r=>r.nm==='Cortesia SAC'),cp=rk.find(r=>r.nm==='CORTESIA PORTA-RETRATO');ok(cs&&/^16 dadas/.test(cs.det)&&cs.rv==='cortesia'&&!cs.top&&!cs.off&&cp&&/^2 dadas/.test(cp.det)&&cp.rv==='cortesia','8: cortesias no ranking com a quantidade, sem valor (Ronaldo, 11/11): '+J([cs,cp]));
+  const offI=rk.map((r,i)=>r.off?i:-1).filter(i=>i>=0);ok(offI.length&&offI.every(i=>i>=rk.length-offI.length)&&rk.filter(r=>r.off).every(r=>r.rv==='sem venda'),'8: itens sem venda no fim com "sem venda": '+J(rk.map(r=>[r.nm,r.rv,r.off])));
   const somas=await pg.evaluate(()=>{const D=ETERNA.painelDados({from:'2026-10-07',to:'2026-10-15',fonte:'roverpix'});return {rk:D.produtos.reduce((a,p)=>a+p.receita,0)};});ok(Math.abs(somas.rk-(115397-0))<=1,'8: soma do ranking '+somas.rk+' (produtos sem cortesia somam 115.397)');
   const pay=await pg.evaluate(()=>({tot:document.querySelector('.pn-pay tfoot .rcv').textContent.replace(/\u00a0/g,' '),cc:[...document.querySelectorAll('.pn-pay tbody tr:not(.barrow)')].map(r=>r.innerText.replace(/\s+/g,' ')).find(x=>/Cartão de crédito/.test(x)),take:[...document.querySelectorAll('.pn-panel')].find(p=>/Pagamentos/.test(p.querySelector('h2').textContent)).querySelector('.pn-take').textContent}));
   ok(pay.tot==='R$ 115.397'&&/56%/.test(pay.cc)&&/Cartão de crédito responde por 56%/.test(pay.take),'9: pagamentos '+J(pay));
@@ -124,7 +126,7 @@ try{
   {const {ctx:c2,pg:p2}=await nova(b,1440,900,{locale:'en-US'});await entrar(p2,'eduardo@eduardorezende.com');const mmdd=/\b10\/(0[7-9]|1[0-5])\/2026\b/;
     for(const v of ['painel','fotografos','vendas']){await p2.evaluate(v=>{ETERNA.state.range={from:'2026-10-07',to:'2026-10-15'};ETERNA.state.view=v;ETERNA.render();},v);await p2.waitForTimeout(80);
       const d=await p2.$$eval('.rangebar .datef-t',e=>e.map(x=>x.textContent));ok(J(d)===J(['07/10/2026','15/10/2026']),'13: datas em '+v+' '+J(d));ok(!mmdd.test(await main(p2)),'13: data mm/dd em '+v);}
-    await p2.evaluate(()=>{ETERNA.state.revFilter.date='2026-10-12';ETERNA.state.view='revisao';ETERNA.render();});await p2.waitForTimeout(100);ok((await p2.$$eval('.datef-t',e=>e.map(x=>x.textContent))).includes('12/10/2026'),'13: data na Qualidade');
+    await p2.evaluate(()=>{ETERNA.state.revFilter.per='data';ETERNA.state.revFilter.date='2026-10-12';ETERNA.state.view='revisao';ETERNA.render();});await p2.waitForTimeout(100);ok((await p2.$$eval('.datef-t',e=>e.map(x=>x.textContent))).includes('12/10/2026'),'13: data na Qualidade');
     await p2.evaluate(()=>{ETERNA.state.gal.tab='grupos';ETERNA.state.view='galerias';ETERNA.render();});await p2.waitForTimeout(80);const nv=await p2.$('[data-act="gal-ev-novo"]');if(nv){await nv.click();await p2.waitForTimeout(100);await p2.evaluate(()=>{const i=document.querySelector('[data-act="gal-ev-data"]');i.value='2026-10-09';i.dispatchEvent(new Event('change',{bubbles:true}));});await p2.waitForTimeout(100);
       ok((await p2.$$eval('.datef-t',e=>e.map(x=>x.textContent))).includes('09/10/2026'),'13: data no grupo de Galerias');}else ok(false,'13: Galerias sem "novo grupo"');
     await c2.close();}
@@ -215,15 +217,15 @@ try{
     fs.writeFileSync(path.join(agg,'2026-10-20.json'),JSON.stringify({daily:{approaches:3,viewed:3,converted:2,sales:2,revenue:300,prints:2,reprints:0,photos:30,photosSold:6,pax:null},sellers:{},payments:{pix:{count:2,amount:300}},products:{},rows:{},people:{},orders:[]}));
     const uo=new URL(U);agente=spawn('python3',[path.join(__dirname,'..','agente','eterna-agente.py')],{env:{...process.env,HOME:home,ETERNA_PORTA:String(porta),ETERNA_APP_ORIGIN:uo.origin,ETERNA_SEM_OPENCV:'1',NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});let log='';agente.stdout.on('data',d=>log+=d);agente.stderr.on('data',d=>log+=d);
     let up=false;for(let i=0;i<60&&!up;i++){await sleep(250);up=(await req(porta,'/status')).s===200;}ok(up,'25: agente não subiu '+log.slice(-300));
-    if(up){const fora=await req(porta,'/roverpix/data',{Origin:'https://exemplo.com'});ok(!fora.h['access-control-allow-origin'],'25: /roverpix/data com origem estranha devolveu CORS '+fora.h['access-control-allow-origin']);
+    if(up){ok((await req(porta,'/roverpix/data')).s===401,'25: /roverpix/data sem sessão deveria dar 401');CK=S.sessao(home);const fora=await req(porta,'/roverpix/data',{Origin:'https://exemplo.com'});ok(!fora.h['access-control-allow-origin'],'25: /roverpix/data com origem estranha devolveu CORS '+fora.h['access-control-allow-origin']);
       const fs2=await req(porta,'/roverpix/status',{Origin:'https://exemplo.com'});ok(!fs2.h['access-control-allow-origin'],'25: /roverpix/status com origem estranha devolveu CORS');
       const app=await req(porta,'/roverpix/data',{Origin:uo.origin});ok(app.h['access-control-allow-origin']===uo.origin,'25: ETERNA_APP_ORIGIN perdeu o acesso '+J(app.h['access-control-allow-origin']));
       const loc=await req(porta,'/roverpix/data');ok(loc.s===200&&/"ok": true/.test(loc.b),'25: mesma origem sem Origin deveria funcionar '+loc.s);
       // app aberto pelo agente: livePoll lê /roverpix/status e /roverpix/data
-      const {ctx:c6,pg:p6}=await nova(b,1280,900);await p6.goto(`http://127.0.0.1:${porta}/index.html`);let lv=false;for(let i=0;i<40&&!lv;i++){await sleep(250);lv=await p6.evaluate(()=>!!(window.ETERNA&&ETERNA.live)).catch(()=>false);}
+      const {ctx:c6,pg:p6}=await nova(b,1280,900);await S.noNavegador(c6,porta,[CK]);await p6.goto(`http://127.0.0.1:${porta}/index.html`);let lv=false;for(let i=0;i<40&&!lv;i++){await sleep(250);lv=await p6.evaluate(()=>!!(window.ETERNA&&ETERNA.live)).catch(()=>false);}
       ok(lv,'25: app aberto em 127.0.0.1 não carregou o LIVE pelo livePoll');
       // v80: o cartão do FTP do estádio fica em Configurações › Painel de controle (configuracao.r para ver, .u para alterar), não no Upload
-      const UA=`http://127.0.0.1:${porta}/index.html`;const ent=async e=>{await p6.evaluate(()=>localStorage.removeItem('eterna.session'));await p6.goto(UA);await p6.waitForTimeout(500);await p6.fill('[data-act="login-email"]',e);await p6.click('button[type=submit]');await p6.waitForTimeout(150);const c=(await p6.textContent('.otp')).replace(/\s/g,'');await p6.fill('[data-act="login-code"]',c);await p6.waitForTimeout(500);};
+      const UA=`http://127.0.0.1:${porta}/index.html`;const ent=async e=>{await p6.evaluate(()=>localStorage.removeItem('eterna.session'));await p6.goto(UA);await p6.waitForTimeout(500);await entrarTeste(p6,e);};
       await ent('eduardo@eduardorezende.com');await p6.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.go('catalogo');});let ft=null;for(let i=0;i<20&&!ft;i++){await sleep(250);ft=await p6.$('[data-act="rf-save"]');}
       const tc=await p6.textContent('#main');ok(ft&&/Servidor FTP do estádio/.test(tc)&&/Preços e Checkout/.test(tc),'FTP: admin deveria ver o FTP em Preços e Checkout'); // v94-ux: o Painel de controle virou Preços e Checkout
       await p6.evaluate(()=>ETERNA.go('importar'));await sleep(600);ok(!/Servidor FTP do estádio/.test(await p6.textContent('#main')),'FTP: o cartão do FTP ainda está no Upload automático');

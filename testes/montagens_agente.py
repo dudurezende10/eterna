@@ -81,10 +81,15 @@ for k in ("ETERNA_PASTA", "ETERNA_ORIGENS", "ETERNA_BUCKET"):
     env.pop(k, None)
 
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao   # v93: as rotas da equipe pedem sessão (tabela ROTAS); o teste usa um admin no HOME temporário
+COOKIE = _agente_sessao.cookie_sub(AG, HB)
+
+
 def req(metodo, path, body=None, headers=None, cru=None):
     c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=15)
     try:
-        hs = {"Host": "127.0.0.1:%d" % PORTA, **(headers or {})}
+        hs = {"Host": "127.0.0.1:%d" % PORTA, "Cookie": COOKIE, **(headers or {})}
         data = cru if cru is not None else (json.dumps(body).encode() if body is not None else None)
         if data is not None:
             hs["Content-Type"] = "application/json"
@@ -144,7 +149,7 @@ try:
     st = req("GET", "/status")[1] or {}
     ok(t41 == (409, {"ok": False, "error": "muitos_terminais"}) and (st.get("estatisticas") or {}).get("montagens_recusadas") == 1, "20: 41º terminal: 409 e /status: %r" % ((t41, st.get("estatisticas")),))
     # 21: resumo do dia: soma dos terminais e compradas só das vendas pagas do Checkout
-    sv, jv = req("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": E})
+    sv, jv = req("POST", "/ponto/eventos", {"posto": "Caixa 1", "eventos": E}, {"X-Eterna": "1"})
     ok(sv == 200, "21: eventos aceitos: %r" % ((sv, jv),))
     mh = mont()
     ok(mh == {"vistas": 39 * 2 + 37, "compradas": 3}, "21: montagens no /metricas/dia: %r" % mh)

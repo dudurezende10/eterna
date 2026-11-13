@@ -3,6 +3,7 @@
 // (galeria pública no modo agente, Lista de vendas com venda de teste, todas as telas e a Loja com agente) e, no modo SIM,
 // o Checkout em 3 tamanhos x 5 idiomas, recarregar telas, Lista de vendas/CSV, Catálogo › Checkout e o recibo com QR.
 // Sobe agentes em 8796 (sem OpenCV) e 8795 (com OpenCV, se houver), com HOME temporário, e derruba tudo no fim.
+const entrarTeste=require('./_entrar');
 const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const net=require('net');const crypto=require('crypto');
 const {chromium}=require('playwright');
 // v96: em tela estreita as bandeiras do Checkout ficam recolhidas no botão de idioma; o teste troca o idioma pelo próprio botão da bandeira
@@ -11,8 +12,10 @@ const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-ag
 const fails=[];const notas=[];const errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const DBG=process.env.V77_DEBUG;const T0=Date.now();const dbg=s=>{if(DBG)console.error(((Date.now()-T0)/1000).toFixed(1)+'s '+s);};
 const ignora=t=>/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|404|403|401|400/.test(t);
+const S=require('./_agente_sessao');const CKS={}; // sessão de admin por agente: as rotas da equipe pedem sessão (a galeria /g/ não)
 function req(porta,method,p,{body,headers={}}={}){return new Promise(res=>{const data=body==null?null:(Buffer.isBuffer(body)?body:Buffer.from(typeof body==='string'?body:JSON.stringify(body)));
-  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,b,j,h:rs.headers});});});
+  const eq=!p.startsWith('/g/')&&CKS[porta]?{Cookie:CKS[porta],...(method==='POST'?{'X-Eterna':'1'}:{})}:{};
+  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...eq,...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,b,j,h:rs.headers});});});
   r.on('error',e=>res({s:0,err:String(e)}));if(data)r.write(data);r.end();});}
 const tok=()=>crypto.randomBytes(16).toString('base64url');
 const ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const cod=()=>{const u=crypto.randomBytes(8);let c='';for(let i=0;i<8;i++){c+=ALFA[u[i]%32];if(i===3)c+='-';}return c;};
@@ -37,8 +40,7 @@ async function maquininha(pg){const ctx=pg.context();const base=pg.url().split('
   const id=await pg.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id)return;
   await V.evaluate(id=>{ETERNA.simFresh();ETERNA.state.view='posto';ETERNA.render();const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);if(r&&r.escolha){ETERNA.pendEscolher(id,{pkg:ETERNA.lojaIdeal(r.n).pkg});ETERNA.pendEscolher(id,{meio:'pix'});}return ETERNA.pendConfirmar(id,{ref:''});},id); // v96: o caixa escolhe pacote e meio
   for(let i=0;i<30;i++){if(await pg.evaluate(()=>!!document.querySelector('#lqr canvas,#lqr img')))break;await sleep(100);}await sleep(600);} // a galeria é publicada logo depois da confirmação
-async function login(pg,U){await pg.goto(U);await pg.waitForTimeout(500);if(await pg.evaluate(()=>!!ETERNA.state.user))return;await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(200);
-  const c=(await pg.textContent('.otp')).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(500);}
+async function login(pg,U){await pg.goto(U);await pg.waitForTimeout(500);if(await pg.evaluate(()=>!!ETERNA.state.user))return;await entrarTeste(pg,'eduardo@eduardorezende.com');}
 // chaves de I18N que aparecem cruas no DOM (só as com cara de chave: camelCase ou com _)
 const cruas=pg=>pg.evaluate(ks=>{const t=' '+document.body.innerText+' '+[...document.querySelectorAll('[title],[aria-label],[placeholder]')].map(e=>(e.title||'')+' '+(e.getAttribute('aria-label')||'')+' '+(e.placeholder||'')).join(' ')+' ';return ks.filter(k=>new RegExp('[^A-Za-z0-9_]'+k+'[^A-Za-z0-9_]').test(t));},KEYS);
 const HTML=fs.readFileSync(path.join(RAIZ,'index.html'),'utf8');
@@ -62,7 +64,7 @@ try{
   fs.mkdirSync(path.join(H,'Eterna','galerias',TZ),{recursive:true});fs.writeFileSync(path.join(H,'Eterna','galerias',TZ,'sessao.json'),JSON.stringify({...MZ,expira:new Date(Date.now()-3600e3).toISOString(),encerrada:true}));
   // galeria vencida pela data (não encerrada), também apagada pela limpeza diária
   const TEX=tok();const MEX=manifesto(TEX,fz,{sessoes:['LPX']});fs.mkdirSync(path.join(H,'Eterna','galerias',TEX),{recursive:true});fs.writeFileSync(path.join(H,'Eterna','galerias',TEX,'sessao.json'),JSON.stringify({...MEX,criada:new Date(Date.now()-61*864e5).toISOString(),expira:new Date(Date.now()-864e5).toISOString()}));
-  const A=await subir(P,{ETERNA_SEM_OPENCV:'1',ETERNA_APP_ORIGIN:undefined},H);procs.push(A.p);
+  const A=await subir(P,{ETERNA_SEM_OPENCV:'1',ETERNA_APP_ORIGIN:undefined},H);procs.push(A.p);CKS[P]=S.sessao(H);
   let r=await req(P,'GET','/g/'+TZ+'/info');ok(r.s===410,'S2: galeria encerrada antes de subir deveria dar 410, deu '+r.s);
   // ---- S9: app publicado em https://eterna.photo continua liberado; origem do agente funciona; outra origem 403
   for(let i=0;i<40;i++){r=await req(P,'GET','/biblioteca');if(r.s===200&&JSON.stringify(r.j||{}).includes(pids[0]))break;await sleep(250);}
@@ -171,9 +173,9 @@ print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)
   fotosNoInbox(H2,bufs.length>=6?pp.slice(0,3).map((p,i)=>[p,bufs[i]]).concat([[pp[3],jpegsLisos(1)[0]]],pA.map((p,i)=>[p,bufs[3+i]])):pp.map((p,i)=>[p,jpegsLisos(4)[i]]));
   // galeria encerrada no HOME do agente B: a limpeza da primeira publicação cria a lápide; o app tem que tratar o 410
   const TZ2=tok();const MZ2=manifesto(TZ2,[{id:'ag_'+pp[3],sessao:'LPZ2',direito:'venda',canal:null}],{sessoes:['LPZ2']});fs.mkdirSync(path.join(H2,'Eterna','galerias',TZ2),{recursive:true});fs.writeFileSync(path.join(H2,'Eterna','galerias',TZ2,'sessao.json'),JSON.stringify({...MZ2,encerrada:true,expira:new Date(Date.now()-60e3).toISOString()}));
-  const B=await subir(P2,{ETERNA_APP_ORIGIN:ORIG,...(temCV?{}:{ETERNA_SEM_OPENCV:'1'})},H2);procs.push(B.p);
+  const B=await subir(P2,{ETERNA_APP_ORIGIN:ORIG,ETERNA_PAGAMENTO:'simulado',ETERNA_MODO_TESTE:'1',...(temCV?{}:{ETERNA_SEM_OPENCV:'1'})},H2);procs.push(B.p);CKS[P2]=S.sessao(H2);
   let lig=false;if(temCV){for(let i=0;i<160;i++){const s=(await req(P2,'GET','/status')).j;if(s&&s.rostos&&s.rostos.ligado&&s.rostos.lidas>=7){lig=true;break;}await sleep(500);}}
-  const ctxA=await b.newContext({viewport:{width:390,height:844},locale:'pt-BR'});
+  const ctxA=await b.newContext({viewport:{width:390,height:844},locale:'pt-BR'});await S.noNavegador(ctxA,P2,[CKS[P2],S.posto(H2,'Checkout v77')]); // pessoa conectada e aparelho pareado
   await ctxA.addInitScript(()=>{window.__toasts=[];document.addEventListener('DOMContentLoaded',()=>{const t=document.querySelector('#toast');if(t)new MutationObserver(()=>{if(t.textContent)window.__toasts.push(t.textContent);}).observe(t,{childList:true,characterData:true,subtree:true});});});
   const AVISO='Agente do ponto conectado';
   if(!lig){notas.push('B: galeria no modo agente não testada (sem OpenCV ou reconhecimento não ligou)');}

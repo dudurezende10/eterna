@@ -5,9 +5,10 @@ const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.strin
 const PX=Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=','base64');
 const LANGS=['pt','en','es','fr','de'];
 const SEU={pt:'Seu código',en:'Your code',es:'Tu código',fr:'Votre code',de:'Dein Code'};
+const ETERNA_TYPE={pt:/Digite sua sessão/,en:/Enter your session/,es:/Escribe tu sesión/,fr:/Saisissez votre session/,de:/Sitzung eingeben/}; // v97-junta (VERSOES): "Digite sua sessão" na tela inicial
 const PROIB=/recibo|receipt|reçu|Beleg|pedido|\border\b|commande|Bestell/i;
 const CHAVES=['receiptCode','typeCode','codeBad','cam_nomatch','cam_nocam','gq_codeH','gq_codeIs','ljYourCode','ljTypeCode']; // v96-ux: no Checkout valem as chaves da v96 (ljYourCode na tela Pronto, ljTypeCode no Iniciar)
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(450);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);}
 (async()=>{const b=await chromium.launch();
 try{
   const ctx=await b.newContext({viewport:{width:1440,height:900}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
@@ -29,9 +30,9 @@ try{
   ok(await A.evaluate(()=>/Seu código/.test(document.querySelector('#din-q').placeholder)&&!!document.querySelector('#pend-painel .eyebrow')),'F: placeholder e rótulo "Seu código" no Posto');
   for(const q of [dados.c2,dados.card2]){await A.fill('#din-q','');await A.type('#din-q',q);await A.waitForTimeout(200);
     const ids=await A.evaluate(()=>[...document.querySelectorAll('#pend-painel [data-pend]')].map(x=>x.dataset.pend));ok(ids.length===1&&ids[0]==='L00-ondasf00002','F3: busca por '+q+': '+J(ids));}
-  // recibo: "Seu código: X · eterna.photo/#g · 60 dias"
+  // recibo: "Seu código: X · eterna.photo/g · 60 dias (11/11: endereço curto)"
   await A.evaluate(c=>{ETERNA.state.caixa.session=c;ETERNA.state.posto.recibo=c;ETERNA.render();},dados.card1);await A.waitForTimeout(300);
-  const rec=await A.evaluate(()=>(document.querySelector('.receipt')||{}).textContent||'');ok(new RegExp('Seu código: '+dados.c1+' · eterna\\.photo/#g · 60 dias').test(rec),'F: recibo com "Seu código": '+rec.slice(-160));
+  const rec=await A.evaluate(()=>(document.querySelector('.receipt')||{}).textContent||'');ok(new RegExp('Seu código: '+dados.c1+' · eterna\\.photo/g · 60 dias').test(rec),'F: recibo com "Seu código": '+rec.slice(-160));
   // F2 e F1 no Checkout
   const L=await ctx.newPage();L.on('pageerror',e=>errs.push('L: '+e.message));await L.goto(U+'#loja');await L.waitForTimeout(800);await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
   const tenta=async v=>{await L.evaluate(()=>{ETERNA.state.kiosk.step='code';ETERNA.render();});await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',v);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(250);
@@ -51,7 +52,7 @@ try{
     await L.evaluate(([lg,c])=>{const k=ETERNA.state.kiosk;k.code=c.card;k.paid={wait:false,codigo:c.code,token:c.tok,total:110,prints:3};ETERNA.render();},[lg,{card:dados.card1,code:dados.c1,tok:null}]);t.fim=await L.evaluate(()=>document.querySelector('#main').innerText);
     await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});
     for(const [k,v] of Object.entries(t)){ok(!PROIB.test(v),`F1 ${lg} ${k}: texto com recibo/pedido: `+(v.match(PROIB)||[])[0]);}
-    ['cam','cod','espera','din','fim'].forEach(k=>ok(new RegExp(SEU[lg],'i').test(t[k])||(k==='cam'&&lg==='de'&&/Code eingeben/.test(t[k]))/* v96-ux: botão da v96 */||(k==='cod'&&new RegExp(lg==='pt'?'seu código':lg==='en'?'your code':lg==='es'?'tu código':lg==='fr'?'votre code':'deinen Code','i').test(t[k])),`F1 ${lg} ${k}: falta "${SEU[lg]}": `+t[k].replace(/\s+/g,' ').slice(0,160)));}
+    ['cam','cod','espera','din','fim'].forEach(k=>ok(new RegExp(SEU[lg],'i').test(t[k])||(k==='cam'&&ETERNA_TYPE[lg].test(t[k]))/* v97-junta: na tela inicial o botão é "Digite sua sessão" (ljTypeCode) */||(k==='cod'&&new RegExp(lg==='pt'?'seu código':lg==='en'?'your code':lg==='es'?'tu código':lg==='fr'?'votre code':'deinen Code','i').test(t[k])),`F1 ${lg} ${k}: falta "${SEU[lg]}": `+t[k].replace(/\s+/g,' ').slice(0,160)));}
   // galeria: tela de código
   const G=await ctx.newPage();G.on('pageerror',e=>errs.push('G: '+e.message));await G.goto(U+'#g/abcdefghijklmnop');await G.waitForTimeout(600);
   for(const lg of LANGS){const t=await G.evaluate(lg=>{ETERNA.state.lang=lg;ETERNA.state.pub.step='codigo';ETERNA.render();return document.querySelector('#main').innerText;},lg);

@@ -2,6 +2,8 @@
 
 30/10/2026. Documento de planejamento: junta o que o MaracaFly faz hoje e o que o Eterna já tem, e lista os caminhos possíveis para cada parte. **Não registra decisões.** As decisões saem da conversa entre Ronaldo e Eduardo.
 
+**Em 11/11 o Ronaldo decidiu venda e entrega:** ver `2026-11-11-ativacoes-venda-e-entrega.md`, que vale sobre este texto onde os dois divergem (sem dados do cliente, entrega por QR e galeria, sem WhatsApp, escala fora).
+
 **Já definido pelo Ronaldo (30/10):** o Eterna é sistema da Viva Maracanã, e a operação do drone também passa a ser da Viva Maracanã; o WhatsApp será uma conta nova; a comissão do guia já existe por fora, no Portal de Parceiros (seção 7); o Snap Pop é um produto novo, com aba própria; a venda de campo acontece só dentro do estádio, com rede local e internet (sem 4G).
 
 Fonte do MaracaFly: a documentação de levantamento em `maracatour/maracafly-doc/docs` (docs 00 a 20). Este texto cita o número do doc em vez de repetir o detalhe.

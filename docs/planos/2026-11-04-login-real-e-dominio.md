@@ -1,6 +1,6 @@
 # Login com usuário e senha e domínio eterna.photo no Microsoft 365 (04/11/2026)
 
-**Situação: desenho definido pelo Ronaldo em 04/11, aguardando o ok do Eduardo. Claude: não implemente sem esse ok.**
+**Situação: etapas 1 e 2 prontas na branch `login-senha`, autorizadas pelo Ronaldo em 04/11. As demais seguem por etapa.**
 
 **O que mudou no mesmo dia:** a primeira versão pedia código por e-mail para entrar. Isso deixaria de fora quem não tem e-mail e quem está sem internet. O acesso passa a ser por usuário e senha, conferidos no servidor do estádio. O e-mail fica só para recuperar a senha.
 
@@ -21,8 +21,9 @@
 1. **Usuário e senha, conferidos no servidor do estádio.** Funciona sem internet e não exige e-mail. Quem acessa de fora entra no mesmo servidor, com a mesma senha.
 2. **Tudo fica no servidor, no mesmo banco:** `~/Eterna/ponto/estado.db`.
 3. **A senha nunca fica legível.** É guardada só como hash `scrypt` com sal por pessoa. Nem o admin consegue ver.
-4. **O admin cadastra as pessoas.** Não há autocadastro.
-5. **Cada pessoa troca a própria senha.** Quem esquecer recupera pelo e-mail, se tiver, ou pede uma senha provisória ao admin.
+4. **O cadastro segue as permissões de Cadastro de usuários.** Não há autocadastro.
+   **Gerar senha tem módulo próprio, Senhas de acesso, com as 4 ações:** Criar gera a primeira, Ver mostra quem tem senha, Alterar gera outra e Excluir cancela. O perfil Admin vem com ele, e dá para tirar de uma pessoa. O servidor decide pela permissão, não pelo nome do perfil.
+5. **Cada pessoa troca a própria senha.** Quem esquecer pede pela tela e recebe uma senha provisória por e-mail. Sem e-mail, pede a quem tem a permissão. A tela responde igual para qualquer usuário, e mudar o e-mail de alguém exige Alterar em Senhas de acesso.
 6. **Um serviço de e-mail simples no servidor** manda a recuperação de senha. Ele não é necessário para entrar.
 7. **A galeria do cliente segue aberta pelo QR**, e o FTP das câmeras não muda.
 
@@ -76,9 +77,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Esqueci a senha"] --> B{"Tem e-mail no cadastro e o servidor tem internet?"}
-    B -->|"Sim"| C["Recebe um código de uso único, válido por 10 minutos"]
-    C --> D["Digita o código e cria a senha"]
+    A["Esqueci a senha"] --> B{"Ativo, com senha, com e-mail no cadastro e o servidor com internet?"}
+    B -->|"Sim"| C["Recebe uma senha provisória, válida por 30 minutos. A senha atual continua valendo"]
+    C --> D["Entra com ela e cria a senha nova"]
     B -->|"Não"| E["Pede ao admin"]
     E --> F["Admin gera uma senha provisória, mostrada uma vez"]
     F --> G["Entra e cria a própria senha"]
@@ -88,7 +89,7 @@ flowchart TD
 
 1. O admin informa nome, usuário, permissões e, se houver, e-mail.
 2. O servidor gera a senha provisória, mostrada uma única vez.
-3. No primeiro acesso, a pessoa cria a própria senha, com no mínimo 8 caracteres.
+3. No primeiro acesso, a pessoa cria a própria senha, com no mínimo 10 caracteres. O servidor recusa senhas óbvias, e a provisória vence em 72 horas.
 
 **Primeiro admin:** criado por um comando no próprio servidor. Nenhuma senha fica no código nem no repositório.
 
@@ -96,14 +97,16 @@ flowchart TD
 
 ## 6. Serviço de e-mail
 
-- Uma função `enviar_email` no agente, com novas tentativas.
-- O envio passa por uma rota nova na nuvem, autenticada com o segredo do ponto que o servidor já tem, e sai pelo SES de `hello@eterna.photo`. Assim nenhuma senha de e-mail nova fica no servidor.
+- A função `auth_enviar_reset`, no agente, faz uma tentativa. Se falhar, a pessoa pode pedir de novo ou falar com o admin.
+- O envio passa pela rota `POST /auth/senha-email` na nuvem, autenticada com o segredo do ponto que o servidor já tem, e sai pelo SES de `hello@eterna.photo`. Assim nenhuma senha de e-mail nova fica no servidor.
 - A rota aceita só a mensagem de recuperação de senha, com limite por hora.
 - Sem internet, a tela indica pedir ao admin. O login continua normal.
 
 ## 7. Etapas
 
 Cada etapa sobe separada, para nenhuma venda parar por causa dela.
+
+**Ordem de instalação:** o servidor busca a tela no eterna.photo. Ao unir com a `main`, a tela nova chega a todos os servidores em até 1 minuto. Por isso o agente novo vai primeiro para o servidor e os administradores são criados antes da união.
 
 | # | O que entra | Efeito para a equipe |
 |---|---|---|

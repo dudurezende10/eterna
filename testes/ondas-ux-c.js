@@ -1,13 +1,14 @@
 // v94-ux parte C: sem conexão nunca verde (critérios C1 a C4 do plano docs/planos/2026-11-09-ondas-ux.md).
-// Agente falso por page.route num endereço diferente da página (como o app aberto pelo eterna.photo falando com 127.0.0.1:8765).
+// Agente falso por page.route no mesmo endereço da página (desde a v93 o app aberto por outro endereço não usa o agente: avisa
+// "abra o Eterna pelo endereço do servidor do ponto"; docs/GUIA-DA-EQUIPE.md). As rotas do agente que o teste não usa respondem 404.
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
-const AG='http://127.0.0.1:8899';
+const AG=new URL(U).origin;
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);};
 let modo='off';
 const feed=()=>({ok:true,agora:Date.now()/1000,grupos:[{id:'LPK7Q2M9X',estado:'pronta',fotografo:'carlos',fonte:'ftp',inicio:Date.now()/1000-200,ultima_chegada:Date.now()/1000-100,pronta_em:Date.now()/1000-60,n:6,pids:[]}]});
 async function agente(ctx){
-  await ctx.route(AG+'/**',r=>r.abort()); // o resto do agente fica fora (registrada antes: as rotas de baixo vencem)
+  await ctx.route(/\/(ponto|postos?|sessoes|recorte|visitas|ftp|agenda|metricas|estatisticas|photoroom|thumb|file)(\/|\?|$)/,r=>r.fulfill({status:404,contentType:'application/json',body:'{}'})); // o resto do agente fica fora (registrada antes: as rotas de baixo vencem)
   const resp=(r,body)=>modo==='ok'?r.fulfill({status:200,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify(body)}):r.abort();
   await ctx.route(AG+'/status',r=>resp(r,{ok:true,agent:'eterna-agente',version:3,boot:'bc',card:null,copied:0,dups:0,events:0,ftp:null}));
   await ctx.route(AG+'/events*',r=>resp(r,{events:[],next:0,total:0}));
@@ -17,8 +18,7 @@ async function agente(ctx){
 }
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(300);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(300);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(400);}
+  await require('./_entrar')(pg,email);}
 const espera=async(pg,fn,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||6000)){if(await pg.evaluate(fn))return Date.now()-t0;await pg.waitForTimeout(150);}return -1;};
 (async()=>{
 const b=await chromium.launch();const errs=[];
@@ -36,7 +36,7 @@ try{
   // sucesso e queda: "último dado às HH:MM"
   modo='ok';ok(await espera(pg,()=>!document.querySelector('.conn-off'))>=0,'C3: faixa some quando o agente volta');
   ok(await pg.evaluate(()=>document.querySelectorAll('.ff-card').length===1),'C1: cartão com o dado do agente');
-  // C3: o agentPoll continua tentando fora do Upload (agente em outro endereço, como pelo eterna.photo)
+  // C3: o agentPoll continua tentando fora do Upload
   ok(await espera(pg,()=>ETERNA.state.agent.on&&ETERNA.state.agent.lastOk>0,6000)>=0,'C3: agentPoll conecta fora do Upload: '+JSON.stringify(await pg.evaluate(()=>({on:ETERNA.state.agent.on,url:ETERNA.state.agent.url,view:ETERNA.state.view}))));
   modo='off';ok(await espera(pg,()=>!!document.querySelector('.conn-off'))>=0,'C1: faixa volta na queda');
   st=await pg.evaluate(()=>({good:document.querySelectorAll('.if-head .pill.good').length,txt:document.querySelector('.conn-off').textContent,cards:document.querySelectorAll('.ff-card').length}));

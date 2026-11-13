@@ -166,7 +166,7 @@ Teste local sem AWS e sem custo: `python servidor/galeria-nuvem/teste_local.py s
 - `GAL_API` = `https://whe2hyve2j.execute-api.us-east-2.amazonaws.com` (até existir `api.eterna.photo`) define a base das rotas da galeria fora do estádio: `galApi()` usa `window.ETERNA_AGENTE` (porta pública de teste), depois `GAL_API` em https e, por último, o agente local.
 - `galUrl(u)` aceita link absoluto (S3 ou CloudFront) ou relativo (agente).
 - `galBase()` monta o link do QR: `state.agent.galPublica` (vindo de `/status`), depois `window.ETERNA_AGENTE` e, por último, `https://eterna.photo/#g/`.
-- `galNuvem()` diz se a galeria está sendo atendida pela nuvem. Nesse caso o consentimento usa `gq_consentSelfNuvem` / `gq_consentKidNuvem`, que citam a AWS nos Estados Unidos e o apagamento dos rostos, e a versão gravada é `GQ_VERSAO-aws`.
+- `galNuvem()` diz se a galeria está sendo atendida pela nuvem. Nesse caso o consentimento usa `gq_consentSelfNuvem` / `gq_consentKidNuvem`, que citam a comparação só com as fotos da galeria e o apagamento dos rostos, e a versão gravada é `GQ_VERSAO-nuvem3`.
 - Sem essas configurações, o comportamento é igual ao da v82.
 
 ## 6. Ferramentas de teste
@@ -248,6 +248,43 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 4. desativar a chave e apagar o usuário `eterna-agente-teste` e a política;
 5. desativar a distribuição do CloudFront e apagar o certificado;
 6. remover os CNAME da GoDaddy.
+
+## 9b. Retenção no bucket por pasta (aplicada no bucket de teste em 12/11)
+
+**Achado (12/11, só leitura com o usuário do agente):** o objeto mais antigo de cada pasta (`backup/`, `alta/`, `vitrine/`) é de 05/11, sete dias antes. Tudo indica que a regra de teste da seção 8.1 (expirar com 7 dias) vale para o **bucket inteiro**, inclusive `backup/` e `video/`. O usuário do agente não tem `s3:GetLifecycleConfiguration` nem `s3:GetBucketVersioning` (correto), então a regra real precisa ser conferida pelo Ronaldo no console. Com essa regra, o vídeo some do S3 no dia 7, embora a página do cliente prometa 30 dias.
+
+**Confirmado pelo Ronaldo no CloudShell (12/11):** uma única regra `teste-apaga-7-dias`, sem filtro (bucket inteiro), expira com 7 dias; versionamento nunca ligado. O backup diário e o vídeo também somem no dia 7.
+
+**Aplicado pelo Ronaldo no CloudShell (12/11, ~19h):** versionamento ligado e as 7 regras abaixo (`fotos-alta-61d`, `fotos-vitrine-61d`, `video-31d`, `backup-dia-400d`, `backup-sessoes-60d`, `backup-versao-antiga-30d`, `limpa-marcadores-e-uploads`), com `backup/ronaldosantos/`. O backup seguiu chegando depois. **No bucket de produção, aplicar o mesmo** trocando o bucket e o nome do computador.
+
+**Proposta de regras por pasta** (aplicar com `put-bucket-lifecycle-configuration`, pelo Ronaldo):
+
+| Pasta | O que é | Regra proposta |
+|---|---|---|
+| `alta/`, `vitrine/` | fotos das galerias | apagar com 61 dias (galeria vale até 60, `GAL_DIAS`) |
+| `video/` | vídeos das ativações | apagar com 31 dias (página vale 30, `ATIV_VIDEO_DIAS`) |
+| `backup/<pc>/dia/` | cópia diária dos bancos (vendas, estado, operação, lotes de cartões) | Glacier Instant Retrieval com 30 dias; apagar com 400 dias (como os pedidos na nuvem) |
+| `backup/<pc>/<banco>`, `metricas/`, `sessoes/` | cópia mais recente | não expira; versionamento ligado, versão antiga apagada com 30 dias |
+| todas | upload interrompido | `AbortIncompleteMultipartUpload` com 1 dia |
+
+```json
+{"Rules":[
+ {"ID":"fotos-61d","Filter":{"Prefix":"alta/"},"Status":"Enabled","Expiration":{"Days":61}},
+ {"ID":"vitrine-61d","Filter":{"Prefix":"vitrine/"},"Status":"Enabled","Expiration":{"Days":61}},
+ {"ID":"video-31d","Filter":{"Prefix":"video/"},"Status":"Enabled","Expiration":{"Days":31}},
+ {"ID":"backup-dia","Filter":{"Prefix":"backup/"},"Status":"Enabled","NoncurrentVersionExpiration":{"NoncurrentDays":30}},
+ {"ID":"multipart","Filter":{"Prefix":""},"Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}
+]}
+```
+A regra da cópia diária (`backup/<pc>/dia/`, Glacier e 400 dias) depende do nome do computador no prefixo; montar com o nome real (`backup/<pc>/dia/`) na hora de aplicar.
+
+**No servidor do ponto:** o vídeo das ativações (`~/Eterna/ativ-videos/<qr>.mp4`) é apagado pela limpeza diária `ativ_videos_limpa` depois de `ATIV_VIDEO_DIAS` (30 dias, o mesmo prazo da página); a linha de `ativ_entrega` fica como registro. O rascunho (`rascunho-<id>.mp4`) que ninguém ligou a um cartão sai em 1 dia, e desde a v99.25 sai também da nuvem (`video/r-<id>.mp4`). (Corrigido em 12/11: a versão anterior desta nota dizia que nada apagava o vídeo local.)
+
+## 9c. Deploy de 12/11 (v99.20 a v99.24 na nuvem)
+
+- O `sam deploy` falhava desde 11/11: a descrição de `ImplyTipoPessoa` no `template.yaml` tinha `: ` sem aspas (corrigido em `80adab4`).
+- O primeiro deploy montou os parâmetros com `describe-stacks`, que devolve `****` nos dois `NoEcho` (`SegredoPontoSha256`, `SegredoPontoTesteSha256`). Os dois foram gravados como `****` e a nuvem recusou os servidores (401) por ~25 min. O deploy seguinte passou os SHA-256 de verdade, calculados dos `nuvem-segredo.txt` (estádio: `~/Eterna` do notebook, o mesmo do kit do Eduardo; teste: `Eterna-servidor-local`). Os dois voltaram a responder 200, e a página do vídeo do cartão H7KY-HWGG publicou sozinha na tentativa 29.
+- O `README.md` da galeria agora avisa disso e traz o comando certo.
 
 ## 10. Antes da produção
 As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.

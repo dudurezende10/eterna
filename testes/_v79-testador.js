@@ -1,10 +1,11 @@
 // Conferência do testador na v79 (1440 e 390): Ideal 4/7/8/13, economia, dinheiro → Caixa em outra janela, sessão paga reaberta,
 // botão da equipe só na câmera, recarregar /#loja e ?x#caixa na aba do Checkout, interruptor do ajuste no Upload, tela final 390 pt/de.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');
 const U=process.env.U||'http://127.0.0.1:8971/index.html';const P=__dirname+'/prints';fs.mkdirSync(P,{recursive:true});
 const fails=[],errs=[],notas=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
 function vigia(pg,nome){pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(`${nome}: ${e.message}`));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API|ERR_|net::|onnxruntime|404/.test(m.text()))errs.push(`${nome}: ${m.text()}`);});return pg;}
-async function codigo(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function codigo(pg,email){await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const ruim=async(pg,onde)=>{const t=await pg.evaluate(()=>document.body.innerText);const m=t.match(/\b(null|NaN|undefined)\b|\[object Object\]/);ok(!m,`${onde}: texto visível com "${m&&m[0]}" ... ${m?t.slice(Math.max(0,m.index-60),m.index+40).replace(/\s+/g,' '):''}`);};
 const semRolagem=async(pg,onde)=>ok(await pg.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${onde}: rolagem horizontal`);
 async function sessao(pg,card,nPh,nAI){await pg.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;const k=ETERNA.state.kiosk;if(k.step!=='code'){k.step='code';ETERNA.render();}});

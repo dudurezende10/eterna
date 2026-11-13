@@ -2,7 +2,7 @@
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 async function nova(b,semear){const ctx=await b.newContext({viewport:{width:1366,height:768}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(350);if(semear){await pg.evaluate(semear);await pg.reload();await pg.waitForTimeout(350);}return {ctx,pg};}
 const abas=pg=>pg.$$eval('#main [data-act="cat-tab"]',bs=>bs.map(b=>b.textContent.trim()));
@@ -14,8 +14,9 @@ try{
   // ---- I1, I3, I5: Admin
   {const {ctx,pg}=await nova(b);ok(await entrar(pg,'eduardo@eduardorezende.com'),'admin não entrou');await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(150);
     ok(J(await abas(pg))===J(['Preços','Checkout','Fundos de IA','Avançado']),'I1: abas do Admin: '+J(await abas(pg)));
-    const i5=await pg.evaluate(()=>({sel:document.querySelectorAll('#main [data-act="cat-tab"][aria-selected="true"]').length,outros:!!document.querySelector('#busca-janela,#ia-cfg,#fundos-modo,#cat-fundos,[data-act="rf-save"],[data-act="cartao-lote"]'),h:document.querySelector('#main').scrollHeight,th:[...document.querySelectorAll('#main th')].map(x=>x.textContent)}));
-    ok(i5.sel===1&&!i5.outros,'I5: só a aba Preços visível: '+J(i5));ok(i5.h<900,'I5: altura da aba Preços >= 900 px: '+i5.h);ok(i5.th.includes('Na semana'),'I: cabeçalho "Na semana": '+J(i5.th));
+    const i5=await pg.evaluate(()=>({sel:document.querySelectorAll('#main [data-act="cat-tab"][aria-selected="true"]').length,outros:!!document.querySelector('#busca-janela,#ia-cfg,#fundos-modo,#cat-fundos,[data-act="rf-save"],[data-act="cartao-lote"]'),h:document.querySelector('#main').scrollHeight,n:document.querySelectorAll('#main tbody tr').length,th:[...document.querySelectorAll('#main th')].map(x=>x.textContent)}));
+    ok(i5.sel===1&&!i5.outros,'I5: só a aba Preços visível: '+J(i5));// v98 (Ronaldo, 11/11): 12 produtos da Imply com a linha do SKU; o limite de 900 px era do catálogo antigo, vale a aba só com a tabela (até 64 px por produto)
+    ok(i5.h<=380+64*i5.n,'I5: aba Preços maior que a tabela: '+J({h:i5.h,n:i5.n}));ok(i5.th.includes('Na semana'),'I: cabeçalho "Na semana": '+J(i5.th));
     for(const t of ['precos','checkout','fundos']){await aba(pg,t);const tx=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(!TEC.test(tx),'I3: texto técnico na aba '+t+': '+(tx.match(TEC)||[''])[0]);}
     await aba(pg,'checkout');ok(await pg.$('#busca-janela')&&await pg.$('#loja-fim')&&await pg.$('#main [data-v="calendario"]'),'I: aba Checkout com tempo da tela final, janela da selfie e Calendário');
     await aba(pg,'fundos');ok((await pg.$$('#cat-fundos [data-act="bg-on"]')).length===5&&await pg.$('#ia-cfg'),'I2: aba Fundos de IA com os 5 fundos e as fotos para os fundos de IA');

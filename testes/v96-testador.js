@@ -1,6 +1,6 @@
 // v96 (Testador, 10/11): critérios do Checkout em tela cheia com os prazos de verdade (relógio do Playwright, sem mexer nas constantes):
 // câmera 60 s sem rosto e teto de 3 min desde o Iniciar (só rosto renova); escolha parada 90 s volta ao Iniciar e apaga marcas (toque renova);
-// tela Pronto e do valor paradas 3 min voltam; tela final do QR com "Valor pago" e "Voltamos ao início em 30" que volta sozinha.
+// tela Pronto e do valor paradas 3 min voltam; tela final do QR com "Valor pago" e "Voltamos ao início em 40" que volta sozinha.
 // Também: "Voltar às fotos" inativo depois que o caixa escolheu só o pacote; textos ao cliente sem "caixa" e sem travessão em 5 línguas;
 // cliques repetidos no Continuar fazem um pedido só; nada rola nem sai da tela em 1920, 1366, 1536×730 e 390 nas telas do cliente.
 const {chromium}=require('playwright');const fs=require('fs');const net=require('net');const path=require('path');const {spawn}=require('child_process');
@@ -98,10 +98,10 @@ try{
   await V.screenshot({path:`${SHOTS}/v96-final-posto-1366x768.png`});
   await V.evaluate(id=>{ETERNA.simFresh();ETERNA.render();return ETERNA.pendConfirmar(id,{ref:''});},id1);
   for(let i=0;i<30;i++){if(await L.evaluate(()=>!!document.querySelector('#lqr canvas,#lqr img')))break;await sleep(100);}
-  t=await txt();ok(/Valor pago R\$/.test(t)&&/Voltamos ao início em\s*(30|29)/.test(t),'4: tela final com "Valor pago" e "Voltamos ao início em 30": '+t.replace(/\s+/g,' ').slice(0,240));
+  t=await txt();ok(/Valor pago R\$/.test(t)&&/Voltamos ao início em\s*(40|39)/.test(t),'4: tela final com "Valor pago" e "Voltamos ao início em 40": '+t.replace(/\s+/g,' ').slice(0,240));
   await fotografa('final');await guarda('final');
-  await ff(20000);s=await st();ok(s.step==='done','4: aos 20 s a tela final continua');
-  await ff(12000);s=await st();ok(s.step==='code'&&s.ini,'4: aos 30 s a tela final volta sozinha ao Iniciar: '+J(s));
+  await ff(30000);s=await st();ok(s.step==='done','4: aos 30 s a tela final continua');
+  await ff(12000);s=await st();ok(s.step==='code'&&s.ini,'4: aos 40 s a tela final volta sozinha ao Iniciar: '+J(s));
 
   // ---- 4. tela Pronto parada 3 min volta (relógio real); a do valor também; Posto vê "o cliente saiu"
   await abrir(c3);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');await L.waitForTimeout(400);const id2=await pend();
@@ -131,4 +131,4 @@ try{
     const lj=bloco.split('\n').filter(l=>/^\s*(lj\w*):/.test(l)&&PROIBIDO.test(l.replace(/^\s*\w+:/,'')));ok(!lj.length,'5: nenhuma frase lj* do I18N (Checkout) com "caixa" ou travessão: '+lj.map(x=>x.trim().slice(0,90)).join(' | '));}
 }catch(e){fails.push('erro: '+e.message.split('\n')[0]);}
 await b.close();if(srv)srv.kill();
-const bom=!fails.length&&!errs.length;console.log(`${bom?'OK':'FALHA'} v96-testador: ${n} verificações com o relógio de verdade (câmera 60 s e 3 min, escolha 90 s, Pronto e valor 3 min, QR 30 s), telas em 4 tamanhos e 5 línguas${fails.length?' · '+fails.slice(0,12).join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(bom?0:1);})();
+const bom=!fails.length&&!errs.length;console.log(`${bom?'OK':'FALHA'} v96-testador: ${n} verificações com o relógio de verdade (câmera 60 s e 3 min, escolha 90 s, Pronto e valor 3 min, QR 40 s), telas em 4 tamanhos e 5 línguas${fails.length?' · '+fails.slice(0,12).join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(bom?0:1);})();

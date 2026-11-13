@@ -55,6 +55,36 @@ ET = os.path.join(HB, "Eterna")
 LOG = {}
 
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao   # v93: as rotas da equipe pedem sessão (tabela ROTAS); o teste usa um admin no HOME temporário
+COOK = {}
+
+
+class _ComSessao:
+    """Socket cru dos critérios 20 e seguintes: o primeiro POST leva o cookie da sessão do agente daquela porta."""
+    def __init__(self, s, porta):
+        self.s, self.p, self.primeiro = s, porta, True
+
+    def sendall(self, b):
+        if self.primeiro and b.startswith(b"POST ") and COOK.get(self.p):
+            b = b.replace(b"\r\n", ("\r\nCookie: %s\r\n" % COOK[self.p]).encode(), 1)
+        self.primeiro = False
+        return self.s.sendall(b)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.s.close()
+
+    def __getattr__(self, k):
+        return getattr(self.s, k)
+
+
+def conexao(ender, *a, **k):
+    return _ComSessao(socket.create_connection(ender, *a, **k), ender[1])
+
+
 def ambiente(porta, ftpp, home, user):
     e = {**os.environ, "HOME": home, "USERPROFILE": home, "ETERNA_PORTA": str(porta), "ETERNA_FTP_PORTA": str(ftpp),
          "ETERNA_APP_ORIGIN": "http://127.0.0.1:9", "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "6", "ETERNA_LEITORES": "1",
@@ -71,6 +101,7 @@ def subir(nome, porta, ftpp, home, user, piso, extras=()):
     with open(os.path.join(home, "Eterna", "ftp.json"), "w") as f:
         json.dump({"users": usuarios, "compartilhado": ["equipe"]}, f)
     os.chmod(os.path.join(home, "Eterna", "ftp.json"), 0o600)
+    COOK[porta] = _agente_sessao.cookie_sub(AG, home)
     p = subprocess.Popen([sys.executable, "-I", "-u", LANCA, AG, str(piso), *extras], env=ambiente(porta, ftpp, home, user),
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     LOG[nome] = []
@@ -86,7 +117,9 @@ def subir(nome, porta, ftpp, home, user, piso, extras=()):
 
 def req(method, path, body=None, headers=None, porta=None, timeout=30):
     porta = porta or PORTA
-    h = {"Host": "127.0.0.1:%d" % porta, **(headers or {})}
+    h = {"Host": "127.0.0.1:%d" % porta, "Cookie": COOK.get(porta, ""), **(headers or {})}
+    if not h["Cookie"]:
+        h.pop("Cookie")
     c = http.client.HTTPConnection("127.0.0.1", porta, timeout=timeout)
     try:
         if isinstance(body, (dict, list)):
@@ -131,6 +164,8 @@ CARTAO = os.path.join("/media", USER, "samuel")
 procs = []
 try:
     procs.append(subir("a", PORTA, FTPP, HB, USER, 2))
+    rs = enviar(jpeg(), extra={"Cookie": ""})
+    ok(rs[0] == 401 and (rs[1] or {}).get("erro") == "sem_sessao", "v93: sem sessão, 401: %r" % (rs[:2],))
     hoje = time.strftime("%Y-%m-%d")
     INB = os.path.join(ET, "inbox")
     st0 = req("GET", "/status")[1]
@@ -249,7 +284,7 @@ try:
     ok("passwd" not in nomes_bib and "com espa" not in nomes_bib, "19: /biblioteca só com o rótulo")
 
     # 20: Content-Length acima de 60 MB (sem ler o corpo, conexão fechada) e sem Content-Length
-    s = socket.create_connection(("127.0.0.1", PORTA), timeout=10)
+    s = conexao(("127.0.0.1", PORTA), timeout=10)
     s.sendall(("POST /fotos/enviar?nome=a.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
                "Content-Length: %d\r\n\r\n" % (PORTA, 60 * 1024 * 1024 + 1)).encode())
     t0 = time.time()
@@ -262,7 +297,7 @@ try:
     s.close()
     ok(resp.startswith(b"HTTP/1.0 413") or resp.startswith(b"HTTP/1.1 413"), "20: 413 acima de 60 MB: %r" % resp[:40])
     ok(b'"tamanho"' in resp and time.time() - t0 < 5, "20: resposta na hora e conexão fechada (sem ler o corpo)")
-    s = socket.create_connection(("127.0.0.1", PORTA), timeout=10)
+    s = conexao(("127.0.0.1", PORTA), timeout=10)
     s.sendall(("POST /fotos/enviar?nome=a.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n\r\n" % PORTA).encode())
     resp = s.recv(4096)
     s.close()
@@ -270,7 +305,7 @@ try:
 
     # 20 (v97): Content-Length que não é número dá 400, sem derrubar a rota
     for cl in ("abc", "\u00b2", "-5x"):
-        s = socket.create_connection(("127.0.0.1", PORTA), timeout=10)
+        s = conexao(("127.0.0.1", PORTA), timeout=10)
         s.sendall(("POST /fotos/enviar?nome=a.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
                    "Content-Length: %s\r\n\r\n" % (PORTA, cl)).encode("latin-1"))
         resp = b""
@@ -305,7 +340,7 @@ try:
     lg = jpeg()
     r = enviar(lg, "LGPD_1.JPG")
     pid = [os.path.basename(p)[:12] for p in arquivos(INB) if p.endswith("_LGPD_1.JPG")]
-    rl = req("POST", "/lgpd/excluir", {"pids": pid})
+    rl = req("POST", "/lgpd/excluir", {"pids": pid}, {"X-Eterna": "1"})
     ok(r[1] == {"ok": True, "resultado": "new"} and pid and rl[0] == 200, "25: preparar LGPD: %s %s" % (r[:2], rl[:2]))
     antes = set(arquivos(INB))
     r = enviar(lg, "LGPD_1.JPG")
@@ -324,7 +359,7 @@ try:
     # vagas por aparelho: 2 gravações em curso do mesmo IP, a 3ª recebe 503 na hora
     presos = []
     for i in range(2):
-        s = socket.create_connection(("127.0.0.1", PORTA), timeout=10)
+        s = conexao(("127.0.0.1", PORTA), timeout=10)
         s.sendall(("POST /fotos/enviar?nome=p%d.jpg&quem=carlos HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: image/jpeg\r\nX-Eterna: 1\r\n"
                    "Content-Length: 100000\r\n\r\n" % (i, PORTA)).encode() + b"\xff\xd8\xff")
         presos.append(s)
@@ -375,7 +410,7 @@ try:
            "Content-Length: 100000\r\n\r\n" % P4).encode() + b"\xff\xd8\xff"
     presos = []
     for i in range(4):
-        s = socket.create_connection(("127.0.0.1", P4), timeout=10)
+        s = conexao(("127.0.0.1", P4), timeout=10)
         s.sendall(cab)
         presos.append(s)
     time.sleep(0.6)
@@ -385,7 +420,7 @@ try:
         s.close()
     time.sleep(0.6)
     # conexão lenta: um byte a cada 0,4 s nunca termina a foto; em 3 s o agente responde 408 e solta a vaga
-    s = socket.create_connection(("127.0.0.1", P4), timeout=10)
+    s = conexao(("127.0.0.1", P4), timeout=10)
     s.sendall(cab)
     t0 = time.time()
     resp = b""

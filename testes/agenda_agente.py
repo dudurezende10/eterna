@@ -32,6 +32,9 @@ with contextlib.redirect_stdout(saida):
     m.fuso_ajusta()
 m.AF_URL = "http://127.0.0.1:%d" % PORTA_API
 m.AF_ATUALIZAR_S = m.AF_TESTAR_S = 0                # o teto global tem um bloco próprio no fim; aqui as buscas seguem uma atrás da outra
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao
+COOKIE = _agente_sessao.cookie_sessao(m)      # pessoa conectada (admin): as rotas da equipe pedem sessão (tabela ROTAS)
 HOJE = m._ff_hoje()
 D = lambda n: m._dia_mais(HOJE, n)
 
@@ -77,7 +80,7 @@ time.sleep(0.3)
 
 def req(metodo, path, corpo=None, cab=None):
     c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=60)
-    h = {"Host": "127.0.0.1:%d" % PORTA, "Content-Type": "application/json"}
+    h = {"Host": "127.0.0.1:%d" % PORTA, "Content-Type": "application/json", "Cookie": COOKIE}
     h.update(cab or {})
     c.request(metodo, path, body=None if corpo is None else json.dumps(corpo), headers=h)
     r = c.getresponse()

@@ -9,11 +9,13 @@
 const {chromium}=require('playwright');const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const net=require('net');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
+// v93: as rotas da equipe no agente pedem sessão (tabela ROTAS); o teste usa a sessão de um admin gravada no estado.db do HOME temporário
+const SA=require('./_agente_sessao');let CK='';
 const PRINTS=path.join(__dirname,'prints');try{fs.mkdirSync(PRINTS,{recursive:true});}catch(e){}
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);return c;};const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));const num={};
 const livre=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p));});});
 function req(porta,method,p,body,headers={}){return new Promise(res=>{const data=body==null?null:Buffer.from(JSON.stringify(body));
-  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,j});});});
+  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...(CK?{Cookie:CK}:{}),...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,j});});});
   r.on('error',e=>res({s:0,err:String(e)}));if(data)r.write(data);r.end();});}
 const hoje=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 
@@ -24,14 +26,14 @@ try{
   proc.stdout.on('data',d=>LOGA+=d);proc.stderr.on('data',d=>LOGA+=d);
   let up=false;for(let i=0;i<80&&!up;i++){await sleep(250);up=(await req(PORTA,'GET','/status')).s===200;}
   if(!up)throw new Error('agente não subiu: '+LOGA.slice(-400));
+  CK=SA.sessao(H);
   // dados vazios: agente sem nenhuma foto; Upload, Fila do fotógrafo e Painel de controle abrem sem erro
-  {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
-    await pv.goto(AO+'/index.html');await pv.waitForTimeout(500);await pv.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pv.click('button[type=submit]');await pv.waitForTimeout(200);
-    await pv.fill('[data-act="login-code"]',(await pv.textContent('.otp')).replace(/\s/g,''));await pv.waitForTimeout(600);
+  {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await SA.noNavegador(cv,PORTA,[CK]);await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
+    await pv.goto(AO+'/index.html');await pv.waitForTimeout(500);await require('./_entrar')(pv,'eduardo@eduardorezende.com');
     for(const v of ['importar','fotofila','catalogo','chroma']){await pv.evaluate(v=>ETERNA.go(v),v);await pv.waitForTimeout(700);}
     const vz=await pv.evaluate(()=>{ETERNA.go('fotofila');return document.querySelector('#main').textContent;});
     ok(!ev.length&&!/Fundo IA/.test(vz),'vazio: telas da equipe sem fotos abrem sem erro: '+ev.join(' | '));await bv.close();}
-  const semear=(quem,n,vazias)=>{try{return JSON.parse(execFileSync('python3',['-I',path.join(__dirname,'_cliques_ia_semear.py'),String(PORTA),String(FTPP),H,quem,String(n),vazias||''],{stdio:['ignore','pipe','pipe']}).toString().trim());}catch(e){throw new Error('semear '+quem+': '+String(e.stdout||'')+String(e.stderr||'').slice(-300)+' · agente: '+LOGA.slice(-700));}};
+  const semear=(quem,n,vazias)=>{try{return JSON.parse(execFileSync('python3',['-I',path.join(__dirname,'_cliques_ia_semear.py'),String(PORTA),String(FTPP),H,quem,String(n),vazias||''],{stdio:['ignore','pipe','pipe'],env:{...process.env,ETERNA_TESTE_COOKIE:CK}}).toString().trim());}catch(e){throw new Error('semear '+quem+': '+String(e.stdout||'')+String(e.stderr||'').slice(-300)+' · agente: '+LOGA.slice(-700));}};
   const sessoes=async()=>((await req(PORTA,'GET','/sessoes')).j||{}).sessoes||[];
   const sesDe=async pid=>(await sessoes()).find(x=>(x.fotos||[]).concat(x.pend||[]).includes(pid));
   const fechada=async(pid,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||20000)){const x=await sesDe(pid);if(x&&x.status==='fechada')return x;await sleep(300);}return null;};
@@ -51,7 +53,7 @@ try{
   const f1='ag_'+S[0],f2='ag_'+S[1];
 
   b=await chromium.launch();
-  const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
+  const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await SA.noNavegador(ctx,PORTA,[CK]);
   let SIMS={};await ctx.route(AO+'/rostos/buscar',r=>r.fulfill({status:200,contentType:'application/json',body:J({rosto:true,fotos:Object.entries(SIMS).map(([id,sim])=>({id,sim,principal:true}))})}));
   const RECS=[];ctx.on('request',r=>{if(/\/recorte/.test(r.url()))RECS.push(r.method()+' '+r.url().replace(AO,'')+' '+(r.postData()||''));});
   const errs=[];const pg=await ctx.newPage();
@@ -110,8 +112,8 @@ try{
     let r=await ETERNA.faceFind([cv],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);const a={code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id),items:ETERNA.lojaItems(k.code).map(x=>x.t+':'+x.id),tot:(ETERNA.demoSessions().find(s=>s.card===k.code)||{photos:[]}).photos.length};
     ETERNA.lojaReset();ETERNA.SIM.sessions[c].menor=true;ETERNA.state.agent.rostos={ligado:true};r=await ETERNA.faceFind([cv],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
     const m={code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id)};delete ETERNA.SIM.sessions[c].menor;ETERNA.lojaReset();return {a,m};},xS.card);
-  // v97 (Eduardo, 10/11): a selfie abre a leva inteira (e a visita); a base continua fora das fotos
-  ok(s15.a.code===xS.card&&s15.a.fotos.length===s15.a.tot&&s15.a.tot>0&&s15.a.ai.length===5&&!s15.a.items.includes('ph:'+f2)&&!s15.a.items.includes('ph:'+f1),'A15: selfie pela base: a leva inteira, 5 montagens, base nunca como foto: '+J(s15.a));
+  // v99.2 (Ronaldo e Eduardo, 11/11): sai a leva inteira da v97; a selfie abre só o que tem o rosto dela; a base continua fora das fotos
+  ok(s15.a.code===xS.card&&s15.a.fotos.length===0&&s15.a.ai.length===5&&!s15.a.items.includes('ph:'+f2)&&!s15.a.items.includes('ph:'+f1),'A15: selfie pela base: só o que tem o rosto dela, 5 montagens, base nunca como foto: '+J(s15.a));
   ok(s15.m.code===xS.card&&s15.m.fotos.length===0&&s15.m.ai.length===5&&s15.m.ai.every(x=>x===f2),'A11: menor: só a base reconhecida: '+J(s15.m));
   SIMS={};
   // idiomas: Checkout com as montagens em en, es, fr, de, sem erro e sem texto novo em português
@@ -128,8 +130,7 @@ try{
   // ---------- equipe ----------
   const pe=await ctx.newPage();const errs2=[];pe.on('pageerror',e=>errs2.push(e.message));pe.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|404|ort|wasm|face-api|models/i.test(m.text()))errs2.push('console: '+m.text());});
   await pe.goto(AO+'/index.html');await pe.waitForTimeout(500);
-  await pe.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pe.click('button[type=submit]');await pe.waitForTimeout(200);
-  await pe.fill('[data-act="login-code"]',(await pe.textContent('.otp')).replace(/\s/g,''));await pe.waitForTimeout(600);
+  await require('./_entrar')(pe,'eduardo@eduardorezende.com');
   const esp2=async(fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await pe.evaluate(fn,arg))return true;await pe.waitForTimeout(200);}return false;};
   await pe.evaluate(()=>{ETERNA.state.imp.key='todos';ETERNA.state.imp.point='todos';ETERNA.go('importar');});
   ok(await esp2(c=>!!document.querySelector(`.up-sess[data-card="${c}"]`),20000,xS.card),'Upload com as sessões do agente');
@@ -172,7 +173,7 @@ try{
   const xSb=(await sessoes()).find(x=>x.card===xS.card);ok(xSb&&J(xSb.ia)===J(xS.ia),'12: a sessão já fechada não mudou');
   // Upload usa a regra do servidor: a nova sessão mostra só "Fundo IA 1"
   await pe.evaluate(()=>ETERNA.go('importar'));
-  ok(await esp2(c=>{const b=document.querySelector(`.up-sess[data-card="${c}"]`);return b&&[...b.querySelectorAll('.ph .tag-ia')].length===1;},15000,xN1&&xN1.card),'12/14: com 1 clique, só uma base marcada no Upload');
+  ok(await esp2(c=>{const b=document.querySelector(`.up-sess[data-card="${c}"]`);return b&&[...b.querySelectorAll('.ph .tag-ia')].length===1;},30000,xN1&&xN1.card) /* v99.7.1: 30 s; com o notebook carregado a lista do Upload pode levar uma volta a mais */,'12/14: com 1 clique, só uma base marcada no Upload: '+J(await pe.evaluate(c=>{const b=document.querySelector(`.up-sess[data-card="${c}"]`);const S=ETERNA.SRV;return {c,bloco:!!b,tags:b?[...b.querySelectorAll('.tag-ia')].map(t=>t.textContent):null,srv:!!(S.sess||{})[c],rev:[S.rev,(ETERNA.state.agent.sessoes||{}).rev],busy:S.busy,view:ETERNA.state.view,lastOk:Date.now()-(ETERNA.state.agent.lastOk||0),err:ETERNA.state.agent.err};},xN1&&xN1.card))+' agente: '+J(await (async()=>{try{const r=await req(PORTA,'GET','/status');return ((r.j||{}).sessoes||{}).rev;}catch(e){return String(e).slice(0,80);}})()));
   // sem configuracao.u: campos desabilitados e guardAct barra (nada sobe ao agente)
   await pe.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));
   const r12=await pe.evaluate(()=>{const u=ETERNA.state.user;const p0=u.perms;u.perms={...p0,configuracao:{r:true}};ETERNA.render();const dis=[...document.querySelectorAll('#ia-cfg input')].every(x=>x.disabled);
@@ -186,8 +187,7 @@ try{
   ok(await esp2(()=>/Fotos para IA: fila \d+ · p90 \d+ s desde a chegada · \d+ erros?/.test(document.querySelector('#main').textContent),8000),'fiaPanel: linha "Fotos para IA"');
   // sem agente: o app servido pelo rodar.sh (sem servidor do ponto); Painel de controle e Checkout sem erro
   {const cn=await b.newContext({viewport:{width:1366,height:900}});await cn.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pn=await cn.newPage();const en=[];pn.on('pageerror',e=>en.push(e.message));
-    await pn.goto(U);await pn.waitForTimeout(500);await pn.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pn.click('button[type=submit]');await pn.waitForTimeout(200);
-    await pn.fill('[data-act="login-code"]',(await pn.textContent('.otp')).replace(/\s/g,''));await pn.waitForTimeout(600);
+    await pn.goto(U);await pn.waitForTimeout(500);await require('./_entrar')(pn,'eduardo@eduardorezende.com');
     await pn.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));await pn.waitForTimeout(300);
     await pn.click('#ia-cfg [data-act="ia-volante"]');await pn.waitForTimeout(300);
     const sn=await pn.evaluate(()=>({c:ETERNA.iaCfg(),toast:(document.querySelector('#toast')||{}).textContent||'',db:!!ETERNA.state.db}));

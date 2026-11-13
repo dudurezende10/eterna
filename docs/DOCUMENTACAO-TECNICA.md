@@ -751,7 +751,7 @@ Igual no app (`SIM.galerias[token]`) e no agente (`~/Eterna/galerias/<token>/ses
 | Adaptador | Interface | Fase 1 | Fase 2 |
 | --- | --- | --- | --- |
 | Armazenamento `Repositorio` | `salvar_manifesto`, `ler_manifesto`, `subir`, `existe`, `url`, `abrir`, `apagar`, `listar_expiradas` | `RepositorioLocal` em `~/Eterna/galerias/<token>/{sessao.json,original/,vitrine/}` | `ETERNA_REPO=s3` (`put_object`, `generate_presigned_url`) ou `azure` (`upload_blob`, `generate_blob_sas`). Hoje levantam `NotImplementedError` |
-| Pagamento `Pagamento` | `criar(pedido)`, `consultar(id)`, `webhook(corpo,cabecalhos)` | `PagamentoSimulado`: aprova na hora e devolve `teste:true` | `ETERNA_PAGAMENTO=<provedor>` (Mercado Pago ou Asaas), chaves em `~/Eterna/pagamento.json` (chmod 600). Liberação só pelo webhook assinado ou pela consulta |
+| Pagamento `Pagamento` | `criar(pedido)`, `consultar(id)`, `webhook(corpo,cabecalhos)` | `PagamentoDesligado` (padrão, v93): `POST /g/<t>/pagamento` responde 501 `compra_indisponivel` e a galeria manda `compra:false`. `PagamentoSimulado` (aprova na hora, `teste:true`) só com `ETERNA_PAGAMENTO=simulado` e `ETERNA_MODO_TESTE=1` | `ETERNA_PAGAMENTO=<provedor>` (Mercado Pago ou Asaas), chaves em `~/Eterna/pagamento.json` (chmod 600). Liberação só pelo webhook assinado ou pela consulta |
 
 - As rotas não mudam quando o adaptador muda. Sem SDK nesta fase.
 - O preço é sempre recalculado no agente: `min(n × dig, todas)`. O `total` mandado pelo navegador é ignorado.
@@ -847,7 +847,7 @@ No navegador (modo SIM), as tentativas ficam em `sessionStorage` (`eterna.gq.<to
 | `~/Eterna/galeria-segredo.json` | segredo HMAC (chmod 600) |
 | `~/Eterna/pagamento.json` | chaves do adquirente (fase 2, chmod 600) |
 
-Variáveis novas: `ETERNA_REPO` (padrão `local`), `ETERNA_PAGAMENTO` (padrão `simulado`), `ETERNA_SEM_OPENCV` (testes).
+Variáveis novas: `ETERNA_REPO` (padrão `local`), `ETERNA_PAGAMENTO` (v93: padrão desligado; `simulado` só com `ETERNA_MODO_TESTE=1`), `ETERNA_SEM_OPENCV` (testes).
 
 ### Estado novo no app (`SIM`)
 
@@ -1248,7 +1248,8 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 - Carrinho: selo Ideal, linha "+ N adicionais de R$ X" por pacote, resumo linha a linha (`.lj-sum`) antes do Total, "Cabem mais N fotos neste pacote sem pagar mais" quando sobra espaço. "Impressas prontas em 2 minutos" só aparece com impressas e fora do Dinheiro.
 - **Valor gravado (I4).** A venda grava `s.total` e o preço de cada item (`{id,v}`) em `lojaPay`, `lojaDinheiro`, `dinConfirmar` e `caixaConfirm`. Lista de vendas, CSV, recibo, Início e Caixa leem o gravado (`saleTotal`, `itemV`). O preço atual só vale para venda antiga sem total.
 - Vendas antigas reconstruídas da Roverpix (`reconSale`) usam o Ideal do catálogo atual.
-- **Sessão paga não paga de novo.** Nenhuma forma de pagamento tira uma sessão de `paga`. Reaberta no Checkout, mostra `ljAlreadyPaid` ("Estas fotos já foram compradas. Fale com a equipe para comprar mais.", 5 línguas); `lojaPay` e `lojaDinheiro` recusam.
+- **Sessão paga não paga de novo.** Nenhuma forma de pagamento tira uma sessão de `paga`. Reaberta no Checkout, mostra o QR e `ljMais`. `lojaMais` cria a venda complementar em uma sessão-filha (`<sessão>M2`, campo `pai`), só com as fotos ainda não compradas; `lojaCart` cobra cada foto como `extra`, sem pacote.
+- **Tempos da venda.** `ljTempo` marca `inicio` e `escolha` na sessão, e o evento `criar` leva `tempos`. O agente grava o evento `fila` quando o pedido termina (`ev_fila`). A visão `venda_tempos` do `vendas.db` traz uma linha por venda para o BI.
 - `fmtR` usa espaço fixo entre R$ e o valor.
 
 ### Pendências de segurança e de tela (v79)
@@ -1287,6 +1288,7 @@ Plano: `docs/planos/2026-10-28-v83-painel.md` (escrito como v83; publicado como 
 
 ### Outras telas
 
+- Qualidade (view `revisao`): período em `state.revFilter.per` (Hoje por padrão, Ontem, Últimos 7 dias, Últimos 30 dias ou Data específica com `state.revFilter.date`), calculado por `revPeriodo()` com `venueToday()`; `revSessions(p)` e `quality(key, p)` recebem o período e `revLista()` dá a lista da tela já ordenada. Plano `docs/planos/2026-11-11-curadoria-datas.md`, teste `testes/curadoria-datas.js`.
 - Vendas e caixa: só a tabela de vendedores e o link para o Painel.
 - Fotógrafos: quem não tem sessão no período mostra "sem dados" em cor apagada, vai para o fim e não mostra o índice em vermelho; colunas secundárias com `c2` (somem até 1600 px) e `c3` (até 900 px).
 - Catálogo e preços passou a se chamar **Painel de controle** (view e hash continuam `catalogo`; subtítulo "catálogo, preços, Checkout e FTP").
@@ -1301,11 +1303,11 @@ Plano: `docs/planos/2026-10-28-v83-painel.md` (escrito como v83; publicado como 
 - Ficaram: `camDay` e `camWho` (check-ins já gravados em `SIM.camDia` continuam valendo), o nome do autor gravado na câmera (`keyByName`), o palpite pela Roverpix (`camGuess`) e a sessão.
 - `libWho` usa primeiro o login do FTP (segurança I1), quando ele bate com um fotógrafo do cadastro; depois a câmera (check-in antigo ou nome gravado), o palpite pela Roverpix e a sessão. FTP com nome desconhecido continua em `ftp:<nome>`.
 
-### Copiar permissões de… (Permissões e Usuários)
+### Copiar permissões de… (Permissões)
 
 - `permCopia(de, alvo, editor)`: copia `perms` (C/R/U/D), `menu` e `inicio` da origem; nunca nome, e-mail, status. Letra ou tela que o editor não tem (e o alvo ainda não tem) fica de fora e volta em `fora`; tela inicial fora do menu vira vazia; `preset` por `presetMatch`.
 - Em Permissões: botão "Copiar permissões de…" (`perm-copy`), escolha da pessoa (`perm-copy-from`), prévia com `permDiff` e o que ficou de fora, "Confirmar e salvar" (`perm-copy-ok`, em `WRITE_OPS` `u` e `ACT_MOD` `permissoes`). `permCopiaSalvar` passa por `permRO` e `permValidate` como uma edição manual e grava `permissoes_copiadas` (`de`, `para`, `fora`, `mudancas`).
-- Em Usuários: no editor, "Copiar permissões de…" (`perm-copy-open`) abre Permissões com a cópia; no cadastro novo, "Começar com as permissões de…" (`user-copy-from`) troca o perfil pelo da pessoa escolhida (filtrado pelo que o editor pode dar) e registra `criar` e `permissoes_copiadas`.
+- Em Usuários: no cadastro novo, "Começar com as permissões de…" (`user-copy-from`) troca o perfil pelo da pessoa escolhida (filtrado pelo que o editor pode dar) e registra `criar` e `permissoes_copiadas`.
 
 ### Agente (revisão de segurança da v80)
 
@@ -1568,6 +1570,29 @@ Pedidos do Eduardo (01/11 11:39 e 12:12) e devoluções da segurança (B1 a B3) 
 - **Janela da selfie** (Eduardo, 01/11 16:46 e 16:51): no Checkout, a selfie só considera as sessões com a última foto (`cap1`; sem clique, `ultima_chegada`) nos últimos N minutos. O valor fica em `estado.db` (`col='config'`, `id='busca'`, `{janela_min, por, em}`), gravado pelo Painel de controle › Checkout (`buscaJanelaPanel`, `buscaJanelaSalva`, ações `busca-janela` e `busca-janela-dia` em `WRITE_OPS`/`ACT_MOD` com `configuracao`, `auditLog('busca_janela')`) e lido pelo agente em cada busca (`busca_janela_cfg`, cache de 3 s, zerado quando `POST /ponto/docs` grava `config`). Valores: 0 (dia todo) ou 15 a 480 (`_busca_janela`). `ETERNA_BUSCA_JANELA_MIN` é só o padrão inicial (90). Com `ETERNA_BUSCA_DIAS` definida, a janela não vale (dia todo dos dias da busca; `/status.sessoes.janela_fixa`). `/status.sessoes` traz `janela_min` e `janela_padrao`. O filtro do agente é por pid (`sess_pids_janela`, sob o `sess_lock`, fora do `_mat_lock`) antes do produto da matriz; sem sessão em memória, sem filtro. `POST /rostos/buscar` com `todo:true` (a galeria por QR) procura o dia todo. No app: `buscaJanelaMin()` (o do Painel, senão o do `/status`, senão 90), `sesUltima(card)` (`SIM.sessions[card].cap1`, gravado pelo `ingClose` das sessões do servidor, senão `closedAt`), filtro em `faceFind` só no Checkout. Código do recibo e da galeria, Upload e Fila não mudam.
 - Testes: `testes/v91-seguranca.js`, `testes/selfie_rapidez.py` (B5, corrida, janela e Painel), `testes/sessoes_agente.py` (desvio), `testes/fila_fotografo_agente.py` (risco 4 do `/file/` com o comportamento real e o limite).
 
+## Selfie da galeria só pela câmera (04/11/2026)
+
+A galeria não aceita mais foto escolhida do aparelho: saíram o botão, o `#gq-file` e o texto `g_pickFile`.
+
+- `selfieMount` liga a captura automática assim que o vídeo chega (`onloadeddata`). Antes ela dependia de outro redesenho da tela e podia nunca disparar.
+- Depois de 10 s sem captura, aparece o botão de tirar a foto (`sf.botao`, ação `gq-snap`).
+- Com a câmera bloqueada ou ausente, a tela mostra `gq_camBloq` e o botão de tentar de novo. A equipe do Tour é a saída de quem não consegue liberar.
+
+O servidor de teste está descrito em `docs/SERVIDOR-DE-TESTE.md`.
+
+## Estatísticas no banco (05/11/2026)
+
+Tudo em `~/Eterna/ponto/vendas.db`.
+
+| Onde | O que tem |
+| --- | --- |
+| `venda_tempos` | Uma linha por venda: início do Checkout, escolha, pedido, pagamento, fila e impressão |
+| `venda_dia` | Por dia: pedidos, pagas, cartão, PIX, dinheiro, receita, fotos impressas e tempos médios em segundos |
+| `selfie` | Cada selfie da busca local: horário, origem (`checkout` ou `qr`), resultado, fotos achadas e duração |
+| `selfie_dia`, `selfie_hora` | Totais por dia e origem, e por hora |
+
+`selfie` não guarda imagem, vetor do rosto, sessão nem venda, para não identificar ninguém. A selfie da galeria em eterna.photo fica nos eventos da nuvem (`EVT#<token>`, tipos `selfie_*`) e não entra nessas tabelas.
+
 ## Estatísticas e calendário de eventos (v92, 05/11/2026)
 
 Plano, critérios e decisões: `docs/planos/2026-11-05-estatisticas.md`. Testes: `testes/estatisticas.js`, `testes/estatisticas_agente.py`, `testes/v92-testador.js`, `testes/v92_testador_agente.py` (todos no `rodar.sh`).
@@ -1687,6 +1712,97 @@ Segurança de sessão (D2), sem relação com ponto. Usuário com `key` (fotógr
 - A agenda automática de jogos entrou na v97 (seção "Agenda automática e série diária (v97)").
 - Também fora da v92: tempo da fila de impressão, idioma de quem foi ao Checkout e não comprou, exportar as estatísticas em CSV, conector do bip ou da catraca (formato do bip vem do Ronaldo), estatísticas de vários venues pela nuvem.
 
+## Acesso ao servidor do ponto, postos pareados, FTP e configuração (v93, 09/11/2026)
+
+**Quem pode cada rota.** Todas as rotas do agente estão numa tabela única, `ROTAS` (`rota_regra`), aplicada por `H.autoriza` antes de qualquer outra coisa em `do_GET` e `do_POST`. Tipos:
+
+| Tipo | Quem | Exemplos |
+| --- | --- | --- |
+| `publica` | qualquer um | app (`/`, `/index.html`, `img/`, `vendor/`, `sprites/`), `/status` mínimo, galeria do cliente `/g/*`, webhook, `/auth/entrar`, `/postos/aceitar` |
+| `posto_ou_sessao` | aparelho pareado ou pessoa conectada com o módulo | `/thumb/`, `/file/`, `/sessoes` (venda, quiosque, set, estoque, galerias ou qualidade, Ver); `/ponto/eventos`, `/rostos/buscar`, `/galerias/publicar`, recorte, Photoroom (venda, quiosque ou galerias, Criar); `/ponto/docs` (regra por documento); `/fila-fotografo` (filafoto, Ver) |
+| `sessao` | pessoa conectada com o módulo | `/biblioteca` e `/events` (`set.r` ou `estoque.r`), `/metricas*` (`estatisticas.r` ou `financeiro.r`), `/roverpix/*`, configurações (`configuracao.u`), impressão (`venda`), `/galerias/vendas|status|encerrar` e `/lgpd/excluir` (`galerias`) |
+| `teste` | `ETERNA_TESTE_CARGA=1` e `configuracao.u` | `/rostos/projecao`, `/nuvem/link` |
+
+Rota fora da tabela responde 404. Fora das públicas, o `Host` precisa ser do agente, a `Origin` (quando vem) precisa ser a do próprio agente, de `ETERNA_ORIGENS` ou de `ETERNA_APP_ORIGIN`, e todo POST leva `X-Eterna: 1`. Respostas: 401 `sem_sessao`, 403 `sem_permissao` ou `origem`. CORS aberto (`*`) só em `/g/*`. `/status` sem credencial devolve só `{ok, agent, version, boot}`; com posto ou sessão, o resto (sem logins do FTP nem pastas; `impressora_locais` só com sessão). `/photoroom/status` sem `configuracao.r` devolve só `{configured, fundos_modo}`.
+
+**Gravação de documentos.** `POST /ponto/docs` confere documento por documento (`auth_filtrar_docs`): `usuarios` pela regra de cadastro; `usuarios_login` só o próprio; `usuarios_log` e `sim/cortesiaLog|*` só acrescentam; as outras coleções pelo módulo (`DOC_COL_MOD`) e a coleção `sim` pelo começo do id (`DOC_SIM`; `stock|` também com `venda`, porque a impressão baixa o rolo). Id desconhecido é recusado. Aparelho pareado sem pessoa conectada não grava. O recusado volta em `recusados` (o app não reenvia) e fica no `login_log`.
+
+**Postos pareados.** Cookie `eterna_posto` (HttpOnly, SameSite=Strict, 400 dias), só o SHA-256 no `estado.db` (`posto`, `posto_convite`). Rotas: `POST /postos/parear {nome}` e `POST /postos/revogar {id}` (`configuracao.u`), `GET /postos` (`configuracao.r`), `GET /postos/eu`, `GET /postos/aceitar?c=` (link de uso único de 10 min gerado por `python eterna-agente.py --parear-posto "<nome>"`). O número do posto (`P1`, `P2`...) vira o prefixo do número da venda. No app: cartão "Postos deste ponto" no Painel de controle, `postoCarregar`, `postoDisp`, `pontoModo() === 'posto'`; Checkout sem pareamento mostra "Este aparelho ainda não foi pareado". Todo pedido ao agente passa por `agFetch` (cookie e `X-Eterna: 1`); 401 `sem_sessao` com alguém conectado leva à entrada com "Sua sessão terminou". A fila de vendas do aparelho nunca descarta por 401.
+
+**Posto automático (Ronaldo, 10/11/2026).** Pedido da operação: chegar uma máquina na rede do ponto e ela funcionar como posto, sem passo manual. `GET /postos/eu` sem cookie de posto e com sessão de pessoa (`self.sessao()`) cria o posto na hora (`posto_criar(None, usuario, ip)`, nome `Posto N` pelo número) e grava o cookie `eterna_posto`; sem sessão continua 401 `sem_posto`. Só vira posto quem está na rede local do ponto (`posto_auto_ok`: IP privado, fora do Tailscale/VPN `100.64.0.0/10`, fora do loopback e diferente do IP do próprio servidor). Quem acessa de fora (Ronaldo e Eduardo pelo Tailscale) recebe 200 `{posto: null, remoto: true}`: usa o sistema e abre o Checkout para testar, sem criar posto. Várias janelas do mesmo navegador em 15 s reaproveitam o mesmo posto (`posto_recentes`, chave pessoa + hash do login + `auto`). O registro no `estado.db` e o `auth_log` (`posto_pareado`, `por` = a pessoa) seguem iguais, então o rastreio por posto continua. O pareamento manual (`POST /postos/parear`, link de uso único) fica para aparelho que abre o Checkout sem ninguém conectado. No Posto de venda saiu o segundo botão "Abrir Checkout" do cabeçalho; fica o do menu.
+
+**Posto automático: regras da revisão de segurança (Eduardo, 10/11/2026).** O cookie de posto abre rotas da venda (`/sessoes`, `/file/`, `/rostos/buscar`, `/galerias/publicar`, `/photoroom/compose`), então virar posto ficou restrito:
+
+| Regra | Como ficou |
+|---|---|
+| Quem cria | Só Admin (`auth_pode(cadastro, "configuracao", "u")`). Outro perfil num aparelho que ainda não é posto recebe 401 `sem_posto` (tela "Este aparelho ainda não é um posto"). Na instalação, um Admin entra uma vez no aparelho pelo atalho. |
+| Onde | Só IP dentro de `ETERNA_POSTO_REDE` (faixa da rede do ponto, ex.: `192.168.10.0/24`; várias separadas por vírgula). Vazia desliga o automático. Continua excluindo loopback, Tailscale `100.64.0.0/10` e o IP do próprio servidor. A faixa é configurada uma vez no servidor; só muda se o roteador do ponto mudar de faixa. |
+| Validade | Posto automático (`criado_por` = `auto:<pessoa>`) cai depois de 30 dias **sem uso** (`POSTO_AUTO_IDADE`, conferido em `posto_quem` por `ultimo_uso`). Cada `GET /postos/eu` renova o cookie por mais 30 dias, então posto usado não vence. Pareamento manual segue com 400 dias. |
+| Teto | 3 postos automáticos por pessoa e IP em 24 h (`posto_auto_cota`); passou disso, 429 `limite_postos`. |
+| Auditoria | `login_log`: `usuario` = `posto:<id>`, `acao` = `posto_auto <User-Agent>`, `por` = `auto:<pessoa>`, `ip`. A lista de postos mostra `criado_por` = `auto:<pessoa>`. |
+| Pessoa removida | `auth_remover` revoga os postos que ela criou (pareados ou automáticos), com `posto_revogado` na auditoria. |
+
+Testes em `testes/postos_agente.py` (parte "Posto automático"): perfil sem `configuracao.u` não vira posto, Admin vira com cookie de 30 dias, uso renova, auditoria com `auto:` e User-Agent, teto de 3, 31 dias parado não vale, remoção revoga, faixa vazia desliga.
+
+Ainda a fazer, antes de produção: atrás do proxy de `posto.eterna.photo` o IP visto é o do proxy, então o automático só deve ser ligado lá depois de aceitar `X-Forwarded-For` vindo só de um `ETERNA_PROXY_IP`. `--unsafely-treat-insecure-origin-as-secure` é só do servidor de teste: no ponto o atalho usa `https://posto.eterna.photo` (o instalador só põe a flag quando o endereço é `http://`). Sugestões ainda em aberto: criar o posto por POST com `X-Eterna: 1` e abrir o atalho com `--app=`.
+
+**Impressão no posto (10/11/2026).** `ETERNA_IMPRESSORA_POSTOS` aceita `*=local`: todo posto que não está na lista imprime na DNP ligada nele (`impNoServidor()` falso quando `pontoModo() === 'posto'` e `impressora_locais` tem `*`; o navegador imprime com `--kiosk-printing`). O computador do servidor continua imprimindo na `ETERNA_IMPRESSORA`.
+
+**Programa de impressão do posto (10/11/2026).** Com `--kiosk-printing` o Chrome ainda mostra a prévia por um instante. Para a foto sair sem prévia nenhuma, cada posto roda `servidor/posto/eterna-impressao.ps1` (PowerShell do Windows, nada a instalar), escondido, ligado pelo atalho "Eterna impressao" na inicialização. Ele escuta só em `127.0.0.1:8790` e só aceita pedido com `Origin` igual ao endereço do Eterna passado em `-Endereco` (obrigatório; sem IP fixo no script). `GET /status` devolve a impressora padrão; `POST /imprimir {venda, imagens:[data:image/jpeg;base64,...]}` (até 20 fotos, 80 MB) grava as fotos numa página igual ao `#print-root` do index.html e manda imprimir por um Chrome só do programa (perfil `C:\Eterna\chrome-impressao`, `--kiosk-printing`, janela fora da tela em -32000,-32000, fecha sozinho no `afterprint`). Assim a foto sai igual à impressão pelo Chrome do Eterna e a prévia acontece fora da vista. A primeira versão imprimia pelo System.Drawing e a foto saiu pálida na DNP (10/11): o Windows descarta a correção de cor (ICM) que o Chrome usa, então esse caminho foi abandonado. Responde o pré-voo do Chrome para rede local (`Access-Control-Allow-Private-Network`). Log em `C:\Eterna\impressao.log`. No `index.html`, `impImprimir` em modo posto chama `impLocal()`: se `/status` não responde em 1,5 s, volta ao `window.print()` de antes. As fotos vão em JPEG de até 1800 px (`impJpegs()`, o mesmo da impressão pelo servidor). O `preparar-posto-eterna.cmd` leva uma cópia do `.ps1` depois do segundo `#ETERNA#`: mudou o `.ps1`, rode `servidor/posto/montar-preparar-posto.ps1`. Ainda a fazer: registrar no servidor a impressão feita no posto (venda, posto e pessoa), como já acontece na impressão pelo servidor.
+
+**Rolo pela DNP e auditoria de impressão (10/11/2026, pedido do Ronaldo).** O contador do rolo deixa de depender do "Saiu certo". O programa de impressão conversa com o firmware da DNP pelo USB, só com comandos de leitura: interface usbprint `{28d78fad-5a12-11d1-ae5b-0000f803a8c2}` do fabricante `VID_1343` (DS-RX1). O comando tem 32 bytes: `ESC P` + comando (6) + argumento (16) + 8 espaços. A resposta traz 8 dígitos de tamanho e os dados. São usados `STATUS` (0 pronta, 1 imprimindo, 900 espera; 1000 ou mais é erro: 1000 tampa, 1100 papel acabou, 1200 fita acabou, 1300 enrosco...), `INFO MQTY` (contador do rolo, com margem de 50: `restantes = MQTY - 50`) e `MNT_RD COUNTER_LIFE` (folhas cortadas desde a fábrica). A DNP só é consultada com a fila do Windows vazia, para o comando nunca se misturar aos dados de uma impressão. O driver do Windows (pacote DNP 1.2.3.0) não expõe nada disso. Leituras no posto do Bernardo em 10/11: MQTY 740, vida 20, firmware 02.21.
+
+- `POST /imprimir`: lê a DNP antes (com erro, recusa com o texto da DNP) e, depois do Chrome, espera a fila esvaziar e o MQTY descer o número de fotos (até 60 s + 25 s por foto). Responde com `dnp` = `{mqty, antes, saiu, restantes, vida, vida_antes, status, texto, conferido}`. `GET /status` também traz `dnp`.
+- App: com `dnp.conferido`, `impOk` roda sozinho (sem "Saiu certo"). O rolo do posto passa a ser `dnp.restantes`. Sem conferência (DNP com erro ou sem resposta), os botões continuam e o Posto mostra o aviso da DNP.
+- `dnpLer`: no posto, a cada 5 min (e nunca durante uma impressão), lê `/status`. Se algo mudou desde a última leitura (`localStorage['eterna.dnp.v1']` por posto), atualiza o rolo e manda o evento `rolo` com `dnp` (origem `leitura`). Se o MQTY sobe mais de 5, é rolo novo: origem `troca`, registro de auditoria `rolo_troca` por "DNP".
+- Servidor: o contrato do evento (`_ev_limpo`) passa a guardar `fotos` (impressão) e `dnp` (`_ev_dnp`, só números, status, texto e origem). Antes, a lista de fotos impressas era descartada.
+- Auditoria (`metricas_dia` → `rolo` por posto): `vida_ini` e `vida_fim` (menor e maior contador de vida do dia), `folhas_dnp` (folhas que a DNP cortou), `folhas_eterna` (fotos registradas como impressas, com `reimpressoes` à parte), `diferenca = folhas_dnp - folhas_eterna` (folha sem registro: impressão por fora do Eterna, teste, erro), `trocas` e `restantes`. Junto com `fotos_vendidas` e `impressoes` do mesmo resumo, dá para bater vendido × registrado × cortado pela impressora.
+- Alerta visual do rolo (Ronaldo, 10/11, sobre as regras da v96 do Eduardo): `ROLO_AVISO=100` deixa o selo amarelo; abaixo de `ROLO_ALERTA=40` o selo fica vermelho piscando (`rolo-pisca`, sem animação com `prefers-reduced-motion`), `roloFaixa()` põe uma faixa vermelha no alto do Posto e do Caixa e o item em Alertas passa a grave. Status da DNP 1000 ou mais (ou rolo em 0): faixa vermelha cheia com o texto da DNP. O alerta grave de troca com mais de 60 sobrando (`ROLO_SOBRA`) vale também para a troca detectada pela DNP (`de` = restantes antes).
+- Enquanto o programa imprime, o Posto mostra "Imprimindo e conferindo com a impressora..." no lugar dos botões (`IMP_CONF`, `job.local`).
+- Teste real no posto do Bernardo (10/11 15:41, reimpressão de 1 foto da P3-001): MQTY 740 → 739, vida 20 → 21, registrada sozinha, rolo do Posto 690 → 689. O MQTY desce 1 por foto 10×15. A margem de 50 vem do protocolo DNP; com o rolo de 700 e 9 folhas já cortadas nele (`COUNTER_P`), 740 - 50 = 690 bate com 700 - 9 com diferença de 1.
+- **Histórico de impressão mora no banco** (10/11, Ronaldo: "se tivesse gravando no banco a gente não teria esse problema e ainda faria estatística"). Antes, `s.impressao` e `s.impressoes` viviam só no `localStorage['eterna.sim.v1']`; outra aba do mesmo posto gravando o SIM por cima apagava a reimpressão registrada (P3-001: 2 reimpressões no banco, 1 na tela depois de recarregar). Agora o registro é o evento `impressao` no `vendas.db` (que já subia por `POST /ponto/eventos`) e a tela é refeita dele: `GET /ponto/impressoes?vendas=id1,id2` (até 100, `posto_ou_sessao` com permissão de venda, sem CORS aberto) devolve, por venda, `[{idem, em, posto, por, resultado, n, reimpressao, motivo, fotos, semFoto, dnp}]` em ordem (`ev_impressoes`). No app, `impSrvLer` (ao abrir e a cada 15 s, as 100 vendas pagas mais recentes com impressão) guarda em `IMP_SRV` e `impRefaz(s)` remonta `s.impressoes` = eventos do servidor + os da fila de envio deste navegador (`eterna.ponto.fila.v1`, sem repetir `idem`); `feitas` = fotos das impressões ok que não são reimpressão; `impressa` quando `feitas` alcança `alvo` (por quem e a que horas = o evento que fechou), senão `pendente`. Venda que o servidor ainda não respondeu fica como está. `impOk`/`impFalha` mandam o evento com a mesma hora do registro local. O evento passa a guardar também `semFoto`.
+
+**FTP embutido.** Só modo passivo, em faixa fixa (`ETERNA_FTP_PASV`, padrão 50000-50050), com a conexão de dados aceita só do IP do controle; `PORT`/`EPRT` respondem 502. `USER` depois do login zera a sessão; o dono da foto é o login aceito. Pasta temporária por sessão; só `.jpg`/`.jpeg` (553 antes de abrir a transferência); até 60 MB (552); controle parado 5 min encerra; 8 sessões por IP e 64 no total (421). Foto apagada a pedido do cliente responde 226 sem entrar; falha ao gravar responde 451 (a câmera reenvia). `ETERNA_FTP=0` desliga o FTP embutido.
+
+**Compra pelo celular.** Desligada por padrão: `/g/<t>/info` e a galeria mandam `compra: false`, `POST /g/<t>/pagamento` responde 501 `compra_indisponivel` e a `#g` mostra "fale com a equipe no balcão" (`gq_buyOff`, 5 línguas). Pagamento simulado só com `ETERNA_PAGAMENTO=simulado` e `ETERNA_MODO_TESTE=1`; `/status.pagamento` = `teste` ou `desligado`.
+
+**Configuração.** A chave da Roverpix só vai para `https://beta.api.roverpix.com` ou `https://api.roverpix.com` (`ROVER_BASES`). O FTP do estádio aceita IP da rede interna (10/8, 172.16/12, 192.168/16) ou nome listado em `~/Eterna/ftp-remoto-hosts.txt`, portas 21 ou 990, 5 testes por minuto, erro sem detalhe da conexão. Corpos com teto (`corpo()`): 4 KB nas chaves, 32 MB na montagem do Photoroom. Nome de fotógrafo e de ponto vindos da Roverpix sem caracteres de HTML (sinais de menor e maior, aspas, crase e &), até 60 caracteres; o seletor de fotógrafo do Upload escapa o nome.
+
+**Testes.** `testes/_agente_sessao.{py,js}` cria pessoa com sessão e posto pareado no `estado.db` do agente de teste. Novos: `postos_agente.py`, `seguranca_rotas_agente.py` (toda linha de `ROTAS` e rota no código sem regra), `seguranca_ftp_agente.py`, `seguranca_config_agente.py`, `posto-checkout.js`, `seguranca-config.js`.
+
+**Ajustes da revisão (v93).** FTP: 25 s para entrar, 2 sessões sem login por IP, 16 das 64 vagas reservadas para quem entrou, linha de comando de até 4 KB; `ETERNA_FTP_RAW=descartar` aceita RAW e descarta. Galeria publicada: cortesia nova só com `galerias.u` (a que já está no servidor fica), validade até 60 dias (`GAL_DIAS`), `menor` marcado no servidor não sai. Coleção `sim`: `edits|`/`discarded|` com set ou qualidade, `invalid|` com set, qualidade, venda ou estoque, `flagUse|` com set, estoque ou venda, `ai|` com venda ou qualidade, `lojaFimSeg` com catalogo. `GET /ponto/docs?col=usuarios` sem `usuarios.r` devolve o próprio cadastro e, dos outros, só nome e fotógrafo vinculado; `usuarios_log`/`usuarios_login` só para quem tem módulo de equipe. `GET /ftp/contas` (`configuracao.r`) no cartão do Upload. `/postos/aceitar`: o GET mostra o botão e o POST gasta o código. `roverpix.json` e `ftp-remoto.json` conferidos também ao ler. Pastas do app (`img/`, `vendor/`, `sprites/`) só com nome e tipo de arquivo do pacote (`APP_ARQUIVO`). `/photoroom/compose`: até 300 por posto ou pessoa por hora. App: gravação recusada mostra "N alterações não foram aceitas (sem permissão)" e fica em `eterna.db.recusados.v1`; agente em outro endereço fica indisponível com aviso; página aberta por `https://posto.eterna.photo` usa o agente na mesma origem (`state.agent.sonda`); depois de parear pela tela, a conta do Admin sai do aparelho; o posto confirmado fica em `eterna.posto.v1` até um 401. Os testes do agente param sem HOME temporário (`_agente_sessao`) e usam um administrador fictício (`adminFicticio` em `_entrar.js`).
+
+### Etapa 1 da v93: pareamento, Checkout e operação (10/11/2026)
+
+**Pareamento repetido.** `POST /postos/parear` guarda por 15 s (`POSTO_REPETIDO_S`) o último pareamento de cada combinação (pessoa, SHA-256 do login deste navegador, nome). O mesmo pedido nesse prazo devolve o mesmo posto e o mesmo cookie, sem criar outro (`posto_recentes`, `posto_par_lock`). Outro login da mesma pessoa, ou outro nome, cria posto novo. Posto revogado nunca é devolvido: `posto_ativo(pid)` confere antes, e `posto_revogar` limpa a lembrança. No app, o botão fica desativado com "Pareando…" (`state.posto.pareando`) até a resposta; "Revogar" desativa o botão e marca o posto como revogado na lista na hora, e o servidor confirma em seguida.
+
+Resposta do pareamento:
+
+```json
+{ "ok": true, "posto": { "id": "p_1a2b3c4d", "nome": "Checkout 1", "num": 3 } }
+```
+
+`GET /postos/eu`: `{"ok": true, "posto": {...}}` ou 401 `{"erro": "sem_posto"}`. `POST /postos/aceitar` (botão da página do link) confere o `Host` e a `Origin` (quando vem) como as outras rotas; fora disso, 403 `origem`.
+
+**Endereço com certificado.** Os aparelhos abrem o app por `https://posto.eterna.photo`, atrás de um proxy que repassa o `Host` original e manda `X-Forwarded-Proto: https`. Com esse cabeçalho, os cookies de login e de posto saem com `Secure`. `ETERNA_ORIGENS` precisa ter `https://posto.eterna.photo`. O cookie do posto vale por endereço: ao trocar o endereço, cada aparelho é pareado de novo. Entrada de `ETERNA_ORIGENS` sem `http://` ou `https://` é ignorada com aviso no log.
+
+**Código no Checkout.** `lojaCodEspera(txt)` (app) espera a sessão aparecer antes de `lojaCodigo` conferir o código, quando o código `LP...` é de uma sessão que a aba já conhece sem fotos ou que está na fila para entrar (`SRV.mat`). Espera até 4 s (`LJ_ESPERA_MAX`), com intervalo crescente (`LJ_ESPERA_MS` = 200, 400, 800, 1200 ms), chamando `srvMaterializa` e `srvPull`. Não espera (responde na hora) quando o campo está travado pelos erros, quando a sessão tem todas as fotos descartadas ou recusadas (`ljSessSemFoto`) ou quando é de fora dos dias do Checkout. Qualquer erro encerra a espera. Durante a espera, o botão fica desativado com `T('codeSearching')` ("Buscando suas fotos…", 5 línguas) e o texto digitado fica em `kiosk.codTxt`. `lojaReset` troca `kiosk.codN`: a espera de um cliente nunca abre a sessão depois que a tela voltou ao início. A normalização do código é única (`ljCodNorm`).
+
+**Galeria da venda no aparelho pareado.** `pendConfirmar` chama `galDaVenda` também com `pontoModo() === 'posto'`; o servidor aceita `/galerias/publicar` do posto (rota `posto_ou_sessao`, `VENDER`). Venda confirmada antes de a aba conhecer a sessão: `galAtualizar` mantém as fotos que já estavam e marca `m.pendSess`; a fila (`galFilaTick`) mostra o estado `aguardando` e refaz a galeria a cada volta. `srvMaterializa` monta a sessão do servidor por cima do registro sem fotos (as fotos entram, os dados da venda ficam) e chama `galFilaTick`; `srvPull` não pula sessão fechada que a aba conhece sem fotos.
+
+**Outros ajustes.**
+
+- FTP embutido: prazo fixo de 25 s para entrar (`FTP_LOGIN_S`, contado do início da conexão; comandos antes do login não renovam), até 3 pares `USER`/`PASS` por conexão (`FTP_TENTATIVAS`). Acima disso, 421 e a conexão fecha.
+- `/photoroom/status` aceita também quem tem `configuracao.r` (o Photoroom aparece para quem vê o Painel de controle).
+- Senha provisória: `authSenhaProvisoria` tenta de novo por até 10 s, com espera crescente, enquanto o servidor responde 404 (cadastro novo ainda subindo).
+- Preços e "Voltar aos preços de hoje" no Painel de controle ficam só leitura sem `catalogo.u`.
+- Checkout sem pareamento (`ljNaoPareado`): texto centralizado e botões do Checkout (`lj-cta`, `lj-ghost`).
+
+**Detalhe conhecido.** Ao recarregar a página com a sessão de login vencida, o app volta à entrada sem o aviso "Sua sessão terminou" (o aviso aparece só quando o 401 chega com o app aberto).
+
+**Testes.** Novos: `testes/operacao-agente.js` (operação de ponta a ponta com o agente: entrada, cadastro, FTP, Upload, pareamento, Checkout, Caixa, venda sem rede e endereço com certificado), `testes/caixa-galeria-agente.js`, `testes/checkout-codigo-espera.js`, `testes/seg-pareamento-codigo-agente.js` (pareamento repetido com dois logins, revogação, proxy HTTPS e código com as fotos carregando).
+
+**IMPORTANTE (operação).** Antes de usar no ponto: (1) `ETERNA_ORIGENS=https://posto.eterna.photo` e proxy com `Host` e `X-Forwarded-Proto`; (2) re-parear todos os aparelhos no endereço novo; (3) firewall com a faixa passiva do FTP (`ETERNA_FTP_PASV`) ou `ETERNA_FTP=0` onde outro FTP usa a porta 21; (4) conferir no log se `ftp-remoto.json` e `roverpix.json` foram aceitos (configuração fora das regras é ignorada); (5) teste da Canon com intervalo de 6 min e RAW+JPEG. Lista completa no `GUIA-DA-EQUIPE.md` (Para o TI) e no `CHECKLIST-SERVIDOR.md`.
 ## Agenda automática e série diária (v97, 10/11/2026)
 
 Plano: `docs/planos/2026-11-10-agenda-estatisticas.md` (com as decisões do Eduardo de 10/11 e os pontos de contato no fim).

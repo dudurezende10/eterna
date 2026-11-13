@@ -1,6 +1,6 @@
 // v96-ux (Eduardo, 11/11): Minhas fotos do fotógrafo. Nome e ponto como texto (sem seletor) para o Fotógrafo; Admin e
 // Supervisora com os seletores. Agente falso por page.route na própria origem; nada de foto de cliente.
-const {chromium}=require('playwright');
+const {chromium}=require('playwright');const entrarTeste=require('./_entrar');/* v93: usuário e senha */
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);return c;};const J=JSON.stringify;
 const PX=Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=','base64');
@@ -14,8 +14,7 @@ async function agente(ctx){
   await ctx.route(ORIG+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:PX}));}
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(250);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(250);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(400);
+  await entrarTeste(pg,email);
   await pg.evaluate(()=>ETERNA.go('importar'));const t0=Date.now();while(Date.now()-t0<6000&&!(await pg.evaluate(()=>ETERNA.state.agent.on)))await pg.waitForTimeout(150);await pg.waitForTimeout(200);}
 (async()=>{const b=await chromium.launch();const errs=[];
 const nova=async()=>{const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await agente(ctx);const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));return {ctx,pg};};

@@ -125,8 +125,7 @@ try{
   // ---------- equipe: Upload, Fila do fotógrafo, Painel de controle ----------
   const pe=await ctx.newPage();const errs2=[];pe.on('pageerror',e=>errs2.push(e.message));
   await pe.goto(U);await pe.waitForTimeout(400);
-  await pe.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pe.click('button[type=submit]');await pe.waitForTimeout(150);
-  await pe.fill('[data-act="login-code"]',(await pe.textContent('.otp')).replace(/\s/g,''));await pe.waitForTimeout(500);
+  await require('./_entrar')(pe,'eduardo@eduardorezende.com');
   const esp2=async(fn,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await pe.evaluate(fn))return true;await pe.waitForTimeout(150);}return false;};
   await pe.evaluate(()=>{ETERNA.state.imp.key='todos';ETERNA.state.imp.point='todos';ETERNA.go('importar');});
   ok(await esp2(()=>document.querySelectorAll('#up-sessoes .up-sess').length>=6,15000),'Upload com as sessões');

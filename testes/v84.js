@@ -4,12 +4,15 @@
 // fundo de 5000 px e o interruptor "Montagem dos fundos" no Painel de controle.
 // Fotos: só as de exemplo do repositório (sprites/c00.webp), ampliadas; nenhuma foto de convidado de fora do repo.
 // Memória: só isnet-general-use e u2net_human_seg (nunca birefnet). Sem rembg no ambiente, a parte do recorte real é pulada com aviso.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
 const fails=[],errs=[],notas=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const S=require('./_agente_sessao');const CKS={}; // sessão de admin no agente de verdade: as rotas da equipe pedem sessão
 function req(porta,method,p,{body,headers={}}={}){return new Promise(res=>{const data=body==null?null:Buffer.from(typeof body==='string'?body:JSON.stringify(body));
-  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,b,j,h:rs.headers});});});
+  const eq=CKS[porta]?{Cookie:CKS[porta],...(method==='POST'?{'X-Eterna':'1'}:{})}:{};
+  const r=http.request({host:'127.0.0.1',port:porta,method,path:p,headers:{...(data?{'Content-Type':'application/json','Content-Length':data.length}:{}),...eq,...headers}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{const b=Buffer.concat(ch);let j=null;try{j=JSON.parse(b.toString())}catch(e){}res({s:rs.statusCode,b,j,h:rs.headers});});});
   r.on('error',e=>res({s:0,err:String(e)}));if(data)r.write(data);r.end();});}
 const dia=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 async function subir(porta,env,home){const p=spawn('python3',[AG],{env:{...process.env,HOME:home,ETERNA_PORTA:String(porta),ETERNA_FTP_PORTA:String(porta+1000),ETERNA_APP_ORIGIN:'http://127.0.0.1:9',ETERNA_LEITORES:'1',ETERNA_SEM_OPENCV:'1',...env},stdio:['ignore','pipe','pipe']});let log='';p.stdout.on('data',d=>log+=d);p.stderr.on('data',d=>log+=d);
@@ -46,7 +49,7 @@ for nome,(c,r) in (('${PIDS.meio}',(2,0)),('${PIDS.inteiro}',(3,0)),('${PIDS.ocu
   const CUT={};
   if(!temRembg){notas.push('recorte real (BiRefNet) pulado: ETERNA_RECORTE_REAL=1, ETERNA_RECORTE_MOVENET e os modelos em ~/.rembg');}
   else{fs.mkdirSync(path.join(H,'Eterna','modelos'),{recursive:true});fs.copyFileSync(MOVENET,path.join(H,'Eterna','modelos','movenet_multipose_lightning_1.onnx'));
-    const A=await subir(PORTA,{REMBG_HOME:path.join(REAL_HOME,'.rembg')},H);procs.push(A.p);
+    const A=await subir(PORTA,{REMBG_HOME:path.join(REAL_HOME,'.rembg')},H);procs.push(A.p);CKS[PORTA]=S.sessao(H);
     let st=(await req(PORTA,'GET','/status')).j;ok(st.recorte&&st.recorte.ok===true&&st.recorte.carregado===false,'2: /status com recorte pronto e ainda não carregado: '+J(st.recorte));
     ok(/Recorte local:\s+pronto/.test(A.log()),'2: console mostra o recorte: '+A.log().slice(0,600));
     for(const k of ['meio','inteiro','oculos']){const t0=Date.now();const r=await req(PORTA,'POST','/recorte',{body:{pid:PIDS[k]}});const ms=Date.now()-t0;
@@ -98,7 +101,7 @@ print(json.dumps({'taca_encostada':zona(sys.argv[2],(1250,850,1400,1100)),'taca_
 
   // ---------- 3. agente sem os modelos: 503 com o comando de instalação ----------
   {const H2=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v84b-'));const ib=path.join(H2,'Eterna','inbox',dia());fs.mkdirSync(ib,{recursive:true});fs.writeFileSync(path.join(ib,PIDS.meio+'_IMG.jpg'),FOTO.meio);
-    const vazio=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v84-sem-'));const B=await subir(PORTA+1,{REMBG_HOME:vazio,U2NET_HOME:vazio},H2);procs.push(B.p);
+    const vazio=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v84-sem-'));const B=await subir(PORTA+1,{REMBG_HOME:vazio,U2NET_HOME:vazio},H2);procs.push(B.p);CKS[PORTA+1]=S.sessao(H2);
     const st=(await req(PORTA+1,'GET','/status')).j;ok(st.ok&&st.recorte&&st.recorte.ok===false&&/modelos/.test(st.recorte.motivo),'3: /status recorte {ok:false,motivo}: '+J(st.recorte));
     const r=await req(PORTA+1,'POST','/recorte',{body:{pid:PIDS.meio}});
     ok(r.s===503&&r.j&&r.j.error==='recorte_indisponivel'&&/instalar-recorte/.test(r.j.como)&&/rembg==2\.0\.86/.test(r.j.como)&&!/\[cli\]/.test(r.j.como)&&/não instalado/.test(r.j.motivo),'3: 503 recorte_indisponivel: '+J({s:r.s,j:r.j}));
@@ -142,12 +145,10 @@ out.save(sys.argv[2])
   await ctx.route(ORIG+'/photoroom/compose',r=>{let q={};try{q=JSON.parse(r.request().postData()||'{}');}catch(e){}prLog.push(q);r.fulfill({status:200,contentType:'application/json',body:J({ok:false,error:'teste'})});});
   const pg=await ctx.newPage();pg.setDefaultTimeout(15000);pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(500);
-  // tela de entrada: o e-mail já vem focado; na etapa do código, o código
-  const foco=await pg.evaluate(()=>({v:ETERNA.state.view,act:document.activeElement&&document.activeElement.dataset.act}));ok(foco.v==='entrar'&&foco.act==='login-email','0: ao abrir sem sessão, o campo de e-mail já vem focado: '+J(foco));
-  await pg.type('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.evaluate(()=>ETERNA.render());
-  ok(await pg.evaluate(()=>document.activeElement&&document.activeElement.dataset.act)!=='login-code','0: outro render da entrada não pula para outro campo');
-  await pg.click('button[type=submit]');await pg.waitForTimeout(200);
-  ok(await pg.evaluate(()=>document.activeElement&&document.activeElement.dataset.act)==='login-code','0: na etapa do código, o campo do código vem focado');
+  // tela de entrada: o usuário já vem focado
+  const foco=await pg.evaluate(()=>({v:ETERNA.state.view,act:document.activeElement&&document.activeElement.dataset.act}));ok(foco.v==='entrar'&&foco.act==='login-usuario','0: ao abrir sem sessão, o campo de usuário já vem focado: '+J(foco));
+  await pg.type('[data-act="login-usuario"]','eduardo@eduardorezende.com');await pg.evaluate(()=>ETERNA.render());
+  ok(await pg.evaluate(()=>document.activeElement&&document.activeElement.dataset.act)==='login-usuario','0: outro render da entrada não pula para outro campo');
   await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(500);
   const mont=(id,bg)=>pg.evaluate(async([id,bg])=>{const r=await ETERNA.fiaMontar(id,bg);if(!r.canvas)return r;const c=r.canvas,x=c.getContext('2d');const L=r.layout;
     // cinza: R, G e B iguais (±2) numa grade; diferença do fundo puro no meio da borda de baixo do grupo
@@ -212,8 +213,7 @@ out.save(sys.argv[2])
   await pg.evaluate(()=>{ETERNA.state.agent.on=false;ETERNA.state.agent.recorte=null;});
 
   // ---------- 5. v97 (D6): sem escolha de montagem; o Photoroom guardado e inativo (critérios 12 e 13 do plano v97) ----------
-  await pg.fill('[data-act="login-email"]','eduardo@eduardorezende.com');await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(otp){await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);}
+  await entrarTeste(pg,'eduardo@eduardorezende.com');
   const prReq=[];pg.on('request',q=>{if(/\/photoroom\//.test(q.url()))prReq.push(q.url());});
   await pg.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(200);
   const t5=await pg.evaluate(()=>({painel:!!document.querySelector('#fundos-modo'),txt:document.querySelector('#main').innerText}));

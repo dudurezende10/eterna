@@ -18,10 +18,14 @@ def ok(c, msg):
 
 PORTA = int(os.environ.get("PORTA_TESTE") or 49701)
 H = tempfile.mkdtemp()
-os.environ.update(HOME=H, USERPROFILE=H, ETERNA_SEM_OPENCV="1", ETERNA_PORTA=str(PORTA))
+os.environ.update(HOME=H, USERPROFILE=H, ETERNA_SEM_OPENCV="1", ETERNA_PORTA=str(PORTA),
+                  ETERNA_PAGAMENTO="simulado", ETERNA_MODO_TESTE="1")   # v93: a compra pelo agente só existe simulada e em teste (7b)
 sp = importlib.util.spec_from_file_location("ag", AG)
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao   # v93: as rotas da equipe pedem sessão (tabela ROTAS) e todo POST leva X-Eterna
+COOKIE = _agente_sessao.cookie_sessao(m)
 
 
 class H2(m.H):
@@ -35,7 +39,7 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 
 def req(caminho, corpo, origem=None):
     c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=10)
-    hd = {"Content-Type": "application/json"}
+    hd = {"Content-Type": "application/json", "X-Eterna": "1", "Cookie": COOKIE}
     if origem:
         hd["Origin"] = origem
     c.request("POST", caminho, body=json.dumps(corpo).encode(), headers=hd)

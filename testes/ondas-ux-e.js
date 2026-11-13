@@ -11,7 +11,7 @@ const IMG=fs.readFileSync(TMP+'/a.jpg');
 async function rotas(ctx){await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
   await ctx.route(ORIG+'/file/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:IMG}));await ctx.route(ORIG+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:IMG}));}
 function vigia(pg,n){pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(n+': '+e.message));return pg;}
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 async function sair(pg){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(350);}
 const sim=pg=>pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.sim.v1')));
 const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\s+/g,' '):'';},s);
@@ -121,7 +121,8 @@ try{
   ok(e9.v==='posto'&&e9.hash==='#checkout'&&e9.h1==='Posto de venda'&&e9.vis&&e9.h2==='Venda manual'&&/quando o Checkout está fora/.test(e9.nota),'E9: Venda manual dentro do Posto: '+J(e9));
   ok(await A.evaluate(()=>ETERNA.lojaIdeal&&true),'E9: lojaIdeal');
   await A.evaluate(()=>ETERNA.go('catalogo'));await A.waitForTimeout(200);
-  ok(/só na Venda manual/.test(await A.evaluate(()=>{const r=[...document.querySelectorAll('#main tr')].find(x=>/Fundo de IA/i.test(x.textContent));return r?r.textContent:'';})),'E9: rótulo "só na Venda manual" na tabela de preços');
+  // v98.1 (Ronaldo, 11/11): produto que não existe na Imply não é cadastrado; o Fundo de IA saiu da tabela de preços
+  ok(!(await A.evaluate(()=>[...document.querySelectorAll('#main tr')].some(x=>/Fundo de IA/i.test(x.textContent)))),'E9: Fundo de IA fora da tabela de preços (v98.1)');
   const big=await L.evaluate(()=>{const s=ETERNA.demoSessions().map(s=>[s.card,ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length]).sort((a,b)=>b[1]-a[1])[0];return s;});
   for(const n of [1,6,Math.min(15,big[1])]){await L.click('[data-act="loja-new"]').catch(()=>{});await ljSessao(L,big[0],n);
     const t=await L.evaluate(()=>document.querySelector('#main').innerText);const lines=await L.evaluate(c=>JSON.stringify(ETERNA.lojaCart(c).lines),big[0]).catch(()=>null);

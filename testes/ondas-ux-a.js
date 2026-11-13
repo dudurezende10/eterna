@@ -4,8 +4,7 @@ const {chromium}=require('playwright');const {spawn}=require('child_process');co
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;const RAIZ=path.join(__dirname,'..');
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(400);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);}
 const fontesOk=pg=>pg.evaluate(async()=>{await document.fonts.load('800 40px "Big Shoulders Display"');await document.fonts.load('400 16px Inter');await document.fonts.ready;
   const h=document.querySelector('h1');return {bsd:document.fonts.check('800 40px "Big Shoulders Display"'),inter:document.fonts.check('400 16px Inter'),h1:h?getComputedStyle(h).fontFamily:''};});
 (async()=>{

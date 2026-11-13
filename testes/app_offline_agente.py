@@ -41,7 +41,7 @@ CACHE = os.path.join(H, "Eterna", "app-cache")
 INDEX = b"<!doctype html><title>teste</title><p>app de teste v97</p>"
 FONTE = "vendor/fonts/inter-latin-400-normal.woff2"
 FONTE_B = open(os.path.join(RAIZ, FONTE), "rb").read()
-ESSENCIAIS = ["vendor/qrcode/qrcode.min.js", "img/brand/viva-maracana-white.png", "img/brand/viva-maracana-azul.png", "img/bg-noite.jpg",
+ESSENCIAIS = ["vendor/qrcode/qrcode.min.js", "vendor/jsqr/jsQR.js", "img/brand/viva-maracana-white.png", "img/brand/viva-maracana-azul.png", "img/bg-noite.jpg",
               "vendor/ort/ort.min.js", "vendor/ort/ort-wasm-simd.wasm", "vendor/ort/ort-wasm.wasm",
               "vendor/rostos/face_detection_yunet_2023mar.onnx", "vendor/rostos/face_recognition_sface_2021dec.onnx",
               "vendor/faceapi/indice-exemplos.json"] + ["vendor/fonts/%s.woff2" % n for n in (
@@ -91,11 +91,17 @@ for k in ("ETERNA_PASTA", "ETERNA_ORIGENS", "ETERNA_BUCKET"):
     env.pop(k, None)
 
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao   # v93: as rotas da equipe pedem sessão (tabela ROTAS); o teste usa um admin no HOME temporário
+COOKIE = _agente_sessao.cookie_sub(AG, H)
+
+
 def get(path):
     c = http.client.HTTPConnection("127.0.0.1", PORTA, timeout=30)
     try:
         c.putrequest("GET", path, skip_host=True, skip_accept_encoding=True)   # caminho cru, sem normalizar
         c.putheader("Host", "127.0.0.1:%d" % PORTA)
+        c.putheader("Cookie", COOKIE)
         c.endheaders()
         r = c.getresponse()
         return r.status, r.getheader("Content-Type") or "", r.read()

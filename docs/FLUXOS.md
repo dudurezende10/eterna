@@ -119,7 +119,7 @@ flowchart TB
 | Selfie no Checkout | Funciona | A busca roda no servidor |
 | Abrir o app em um ponto | Funciona com condição | O servidor precisa ter buscado o app desde que ligou. Servidor reiniciado sem internet responde `app_indisponivel` |
 | Tela já aberta | Funciona | Não depende de recarregar |
-| Login da equipe | Funciona | Hoje o código é gerado no navegador |
+| Login da equipe | Funciona | Usuário e senha conferidos no servidor |
 | Registrar venda | Funciona | A maquininha é avulsa; a conexão dela é não confirmado neste código |
 | Imprimir | Funciona | No servidor ou na DNP do ponto |
 | Fundo de IA com recorte local (modo padrão) | Funciona | Precisa do recorte instalado |
@@ -258,6 +258,7 @@ flowchart TD
 | Enviar fotos pela tela (v96-ux) | Plano B quando o leitor não reconhece o cartão. Em Minhas fotos, quem tem `set.c` (Fotógrafo, Supervisora e Admin) abre "Enviar fotos do cartão manualmente" e solta ou escolhe as fotos; cada JPG vai a `POST /fotos/enviar?nome=&quem=` (2 por vez, em ordem de nome, até 2.000 por envio). Só com o Eterna aberto pelo endereço do agente. O agente exige posto, origem local e `X-Eterna: 1`, `Content-Type: image/jpeg`, até 60 MB, fotógrafo cadastrado (não vale login compartilhado), extensão do cartão, 300 fotos por minuto por IP, 2 GB livres e no máximo 4 gravações ao mesmo tempo (503). Confere que é JPEG de verdade (`FF D8 FF` e `FF D9` no fim) e dá o nome do arquivo (rótulo seguro). Entra pelo `ingest_file` como foto de cartão: trilha atrasada do dia da chegada, sem mexer no desvio de relógio; repetida conta como "já estava no servidor". Rede caída: cada foto tenta 3 vezes, depois "Tentar de novo as N que faltaram" | `fotosEnviar`, `fotos_enviar_post`, `jpeg_de_verdade`, `envio_nome` |
 | Extensão aceita no FTP e no FTP remoto | `jpg` ou `jpeg`, sem diferença entre maiúscula e minúscula | `FTPSession.handle`, `rftp_list` |
 | Cartão ainda gravando | Última mudança há menos de 2 s: espera a próxima volta | `scan_card` |
+| Enviar fotos pela tela | Com a tela aberta pelo endereço do servidor, o botão Enviar fotos manda cada JPG a `POST /fotos/enviar` (até 60 MB). Exige sessão e `set:c`. Entra como a foto do FTP. O dono é o fotógrafo do login; quem não é fotógrafo escolhe no seletor. Fora do servidor, o botão Testar com fotos suas guarda só no navegador | `fotosEnviar`, `fotos_enviar_post` |
 | Porta do FTP | Tenta 21 e depois 2121. `ETERNA_FTP_PORTA` é só para testes | `ftp_server` |
 | Login FTP bloqueado | 5 erros seguidos por endereço bloqueiam por 900 s (15 min). Durante o bloqueio, responde "tente de novo em 15 minutos". Login certo zera a contagem | `FTP_MAX_FALHAS`, `FTP_BLOQUEIO_S`, `ftp_bloqueado`, `ftp_falhou` |
 | Foto completa | JPEG: começa com o marcador de início e tem o marcador de fim nos últimos 4 KB. PNG com nome de JPEG é aceito se tiver o bloco final. Outro conteúdo é recusado | `jpeg_completo` |
@@ -985,7 +986,7 @@ flowchart TD
 | Fim do dia | Pedido aguardando de dia anterior vira não pago, motivo `fim_do_dia`. Fechados com mais de 30 dias saem, com teto de 1000. | `dinVirada`, `DIN_DIAS`, `DIN_MAX` |
 | Alerta de espera | Mais de 15 minutos. | `CAIXA_ALERTA_MIN`, `dinAtrasada` |
 | Caixa do balcão | Paga direto, sem pedido do Checkout. Fecha pedido aberto com motivo `pago_de_outro_jeito`. | `caixaConfirm`, `vCaixa` |
-| Pagamento simulado | `PagamentoSimulado`, padrão de `ETERNA_PAGAMENTO`, só na galeria atendida pelo servidor. Aprova na hora, marca `teste: true` e fica fora das métricas. Outro valor impede o agente de iniciar. Webhook responde 501. | `PagamentoSimulado`, `pagamento_escolhido`, `metricas_dia`, `gal_post` |
+| Pagamento pelo celular | v93: desligado por padrão (`PagamentoDesligado`): `POST /g/<t>/pagamento` responde 501 `compra_indisponivel`, `/g/<t>/info` e a galeria mandam `compra:false` e a `#g` mostra "fale com a equipe no balcão" (`gq_buyOff`). `PagamentoSimulado` (aprova na hora, `teste: true`, fora das métricas) só com `ETERNA_PAGAMENTO=simulado` e `ETERNA_MODO_TESTE=1`. Outro valor impede o agente de iniciar. Webhook responde 501. | `PagamentoDesligado`, `PagamentoSimulado`, `pagamento_escolhido`, `compra_online`, `gal_post` |
 
 #### Divergências
 
@@ -1091,7 +1092,7 @@ stateDiagram-v2
 | Foto contada | Linha `FOTO` só depois da fila do Windows vazia e impressora parada. A próxima só vai depois disso. | PowerShell `Espera-Livre`, `imprimir_fila` |
 | Pedido impresso | Saída 0, última linha `OK` e fotos contadas iguais às enviadas. Faltando uma, com erro "X de Y". | `imprimir_fila` |
 | Avisos | Pouco papel, sem papel, ribbon acabando, sem ribbon, tampa aberta, papel preso, desligada ou sem cabo, pede manutenção, bandeja cheia, não encontrada no Windows, impressora parou, não termina há mais de 2 minutos. Aviso não derruba o pedido: fica esperando até resolver ou cancelar. | `IMP_ESTADO_PS1`, `Espera-Livre`, `imprimir_fila` |
-| Monitor | O app lê a fila a cada 2 s. O estado das impressoras é lido do Windows a cada 10 s. Colunas: Na fila, Imprimindo agora, Prontas (12 últimas), Com erro ou canceladas (4 últimas). Previsão de 14 s por foto. Terminados somem depois de 3 h. Guarda os 200 últimos pedidos. | `vImpFila`, `impFilaPoll`, `imp_monitor`, `imp_fila_json`, `imp_pedido` |
+| Monitor | O app lê a fila a cada 2 s. O estado das impressoras é lido do Windows a cada 10 s. Colunas: Na fila, Imprimindo agora, Prontas (12 últimas). Erros ficam numa faixa vermelha acima das colunas (4 últimos), até reimprimir; canceladas não aparecem. Previsão de 14 s por foto. Terminados somem depois de 3 h. Guarda os 200 últimos pedidos. | `vImpFila`, `impFilaPoll`, `imp_monitor`, `imp_fila_json`, `imp_pedido` |
 | Ações do monitor | Na fila ou imprimindo: Cancelar. Com parte impressa: Imprimir as que faltaram e Reimprimir tudo. Demais: Reimprimir. Nos dois casos, pedido novo, com as fotos que ainda existem no disco. | `vImpFila`, `imp_acao`, ação `if-acao` |
 | Reinício do servidor | Pedido na fila ou imprimindo volta para a fila, a partir da foto que faltava. | `imp_retomar`, `imp_salvar` |
 | Sem impressora real | `ETERNA_IMPRESSORA_TESTE` simula 6 s por foto e desliga o monitor do Windows. Sem `ETERNA_IMPRESSORA`, a rota responde 503. | `imprimir_fila`, `imp_monitor`, `gal_post` |
@@ -1284,29 +1285,18 @@ flowchart TD
   SESSAO -->|"sim"| LOGADO["Pessoa conectada"]
   SESSAO -->|"não"| ENTRAR
 
-  ENTRAR --> EMAIL{"E-mail com formato válido?"}
-  EMAIL -->|"não"| ERROEMAIL["Aviso: digite um e-mail válido"]
-  ERROEMAIL --> ENTRAR
-  EMAIL -->|"sim"| MAIL{"Endereço do serviço de e-mail está preenchido?"}
-  MAIL -->|"não, é o caso hoje"| CODLOCAL["Código de 6 dígitos gerado no navegador e mostrado em uma caixa de entrada simulada"]
-  MAIL -->|"sim, não usado hoje"| RESPOSTA{"Resposta do serviço"}
-  RESPOSTA -->|"enviado"| CODREAL["Código enviado por e-mail"]
-  RESPOSTA -->|"pedidos demais"| ESPERA["Aviso: aguarde antes de pedir outro"]
-  RESPOSTA -->|"e-mail recusado"| ERROEMAIL
-  RESPOSTA -->|"outra resposta ou sem resposta"| CODLOCAL
+  ENTRAR --> SITE{"Aberto pelo site público?"}
+  SITE -->|"sim"| SOSERV["Aviso: a entrada da equipe é pelo endereço do servidor"]
+  SITE -->|"não"| DIGITA["Digita usuário e senha"]
+  DIGITA --> BLOQ{"Usuário bloqueado?"}
+  BLOQ -->|"sim"| ESPERA["Aviso: espere 15 minutos ou fale com o administrador"]
   ESPERA --> ENTRAR
-
-  CODLOCAL --> VENCEU{"Passaram 10 minutos?"}
-  CODREAL --> VENCEU
-  VENCEU -->|"sim"| EXPIROU["Aviso: código expirado"]
-  EXPIROU --> ENTRAR
-  VENCEU -->|"não"| CONFERE{"Código confere?"}
-  CONFERE -->|"não"| ERRADO["Aviso: código incorreto; pode reenviar ou trocar o e-mail"]
-  ERRADO --> VENCEU
-  CONFERE -->|"sim"| CADASTRO{"E-mail no cadastro e ativo?"}
-  CADASTRO -->|"não"| SEMCADASTRO["Aviso: este e-mail não tem acesso"]
-  SEMCADASTRO --> ENTRAR
-  CADASTRO -->|"sim"| GRAVA["Salva a sessão e o último acesso"]
+  BLOQ -->|"não"| CONFERE{"Servidor confere a senha e o cadastro ativo?"}
+  CONFERE -->|"não"| ERRADO["Aviso: usuário ou senha incorretos; 5 erros bloqueiam"]
+  ERRADO --> ENTRAR
+  CONFERE -->|"sim, senha provisória"| CRIA["Pessoa cria a própria senha"]
+  CRIA --> GRAVA["Servidor abre a sessão em cookie; salva o último acesso"]
+  CONFERE -->|"sim, senha definitiva"| GRAVA
   GRAVA --> LOGADO
 
   LOGADO --> INICIO{"Tela inicial da pessoa está permitida?"}
@@ -1329,7 +1319,7 @@ flowchart TD
 
   MOSTRA --> SAIR{"Como a sessão termina?"}
   SEMACESSO --> SAIR
-  SAIR -->|"botão sair"| LOGOUT["Apaga a sessão salva e o vendedor do ponto"]
+  SAIR -->|"botão sair"| LOGOUT["Encerra a sessão no servidor; apaga a sessão salva e o vendedor do ponto"]
   SAIR -->|"cadastro removido ou desativado em outra tela ou computador"| REMOVIDO["Aviso: seu acesso foi removido"]
   REMOVIDO --> LOGOUT
   SAIR -->|"sessão com mais de 12 horas, ao recarregar"| ENTRAR
@@ -1345,12 +1335,18 @@ flowchart TD
 
 | Decisão | Regra exata | Onde no código |
 |---|---|---|
-| Serviço de e-mail | `MAIL_API=''` na v91. Vazio: o código nasce no navegador. Os serviços `/auth/codigo` e `/auth/verificar` existem em `servidor/email` e na nuvem, mas o app não aponta para eles | `MAIL_API`, `mailApi`, `sendCode` |
-| Código | 6 dígitos, validade de 10 minutos | `sendCode`, `checkCode` |
-| Modo real, quando ligado | 202 = enviado; 429 = aguarde; 400 = e-mail inválido; outra resposta = modo local. Na conferência: 200 grava o token e entra; "expirado" volta ao e-mail; sem conexão avisa | `sendCode`, `checkCode` |
-| Cadastro | `userFor`: e-mail existente e `active` diferente de falso. O pedido de código não consulta o cadastro; a conferência acontece em `login` | `userFor`, `login` |
-| Sessão salva | Validade de 12 horas, em `eterna.session`; não é carregada em aba marcada como Checkout | `sessionLoad`, `LOJA_ABA` |
-| Módulos | 17 módulos, cada um com Criar, Ver, Alterar e Excluir | `MODULES`, `OPS`, `can` |
+| Senha | Conferida no servidor, em `POST /auth/entrar`. Guardada só como hash `scrypt` com sal, na tabela `credencial` do `estado.db`. Fora de `/ponto/docs` | `auth_conferir`, `authEntrar` |
+| Cadastro | Criar em Cadastro de usuários cadastra. O identificador é o usuário, e o e-mail não é exigido. O servidor confere cada gravação em `usuarios`: sem sessão nada grava, e ninguém dá um acesso que não tem nem mexe em quem tem mais acesso | `auth_filtrar_docs`, `auth_cadastro_recusa`, `userSave` |
+| Senhas de acesso | Módulo próprio. Criar gera a primeira senha provisória, Ver mostra quem tem senha, Alterar gera outra, Excluir cancela. Não vale para si mesmo nem para quem tem mais acesso. A provisória aparece uma vez e só serve para criar a definitiva | `auth_post`, `auth_pode`, `senhaBotoes` |
+| Idioma | Equipe e cliente têm idiomas separados. A pessoa da equipe escolhe na entrada ou no menu, e fica no cadastro dela. O cliente troca no Checkout e na galeria, sem afetar a equipe. A moeda é da unidade e não muda com o idioma. Regras em `docs/planos/2026-11-04-idiomas.md`. |
+| Esqueci a senha | A pessoa pede pela tela. Se estiver ativa, já tiver senha e tiver e-mail, recebe uma senha provisória que vale 30 minutos e só serve para criar a nova. A senha atual continua valendo até lá. Limites: 1 pedido a cada 15 minutos por usuário e 10 por hora por endereço. A tela responde igual em todos os casos. Sem e-mail, a pessoa pede a quem tem Senhas de acesso. Mudar o e-mail de alguém exige Alterar em Senhas de acesso. |
+| Senha nova | 10 caracteres ou mais, com letras. O servidor recusa sequências, repetição, nome da pessoa e palavras óbvias, também com troca de letras por números, como `M4r4c4n4@2026`. A senha provisória vence em 72 horas | `auth_senha_fraca` |
+| Bloqueio | 5 erros seguidos bloqueiam o usuário por 15 minutos, e 30 erros do mesmo endereço param as tentativas. Senha provisória nova libera o usuário. A mensagem é igual para usuário inexistente e senha errada | `auth_conferir` |
+| Primeiro administrador | `python eterna-agente.py --criar-admin <usuário> "<nome>"`, no próprio servidor | `auth_criar_admin` |
+| Site público | Em eterna.photo a tela não pede senha: o site não fala com o servidor | `authSite`, `vEntrar` |
+| Servidor exige o login | **Ainda não.** As outras rotas não conferem a sessão; a senha controla a entrada na tela | `auth_post` |
+| Sessão salva | Validade de 12 horas, em `eterna.session`, conferida com `GET /auth/eu` ao abrir e pelo cookie `HttpOnly`; não é carregada em aba marcada como Checkout | `sessionLoad`, `LOJA_ABA` |
+| Módulos | 18 módulos, cada um com Criar, Ver, Alterar e Excluir | `MODULES`, `OPS`, `can` |
 | Perfis prontos | Admin, Fotógrafo, Atendimento e venda, Validador, Supervisor, Checkout; cadastro também pode nascer sem acesso | `PRESETS`, `SEED_USERS` |
 | Ver uma tela | Módulo com Ver e tela no menu da pessoa. Checkout: Ver em `quiosque` ou `venda`. Permissões: exige também Alterar | `canView`, `menuOk` |
 | Tela de abertura | `inicio` permitido; sem telas = sem acesso; só Checkout = primeira tela sem menu; demais = Início | `homeView`, `isBare` |

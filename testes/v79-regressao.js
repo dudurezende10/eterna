@@ -5,6 +5,7 @@
 // → Ideal Maracanã R$ 190 com 8 impressas (Gramado + 2 adicionais = R$ 220, também 8 impressas). Economia contra a compra avulsa
 // real (Arquibancada + adicionais): 70 + 7 × 35 = 315 − 190 = R$ 125. Também cobre as correções da revisão (B1, I1 a I6, N1, N4, N6, revisor 1 a 12).
 // Checkout (#loja) e Caixa ficam em duas janelas do mesmo navegador (mesmo contexto do Playwright). Prints em testes/prints/v79-*.png.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');
 // v96: em tela estreita as bandeiras do Checkout ficam recolhidas no botão de idioma; o teste troca o idioma pelo próprio botão da bandeira
 const idioma=(pg,l)=>pg.evaluate(l=>{const b=document.querySelector(`[data-act="lang"][data-l="${l}"]`);if(b)b.click();},l);
@@ -19,9 +20,8 @@ async function nova(b,w,h){const ctx=await b.newContext({viewport:{width:w||1280
 async function pagina(ctx,nome){return vigia(await ctx.newPage(),nome);}
 async function login(pg,email){await pg.goto(U);await pg.waitForTimeout(350);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.reload();await pg.waitForTimeout(350);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
-async function codigo(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+  await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function codigo(pg,email){await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const txt=(pg,sel)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\s+/g,' ').trim():null;},sel);
 const toastTxt=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent.replace(/\s+/g,' '));
 const sim=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.SIM)));
@@ -63,12 +63,13 @@ try{
 
   // ---- 4.6 e 4.7: Ideal por número de fotos (campo + IA), preços padrão e preço do extra trocado
   fase='4.6';
-  const esp={1:['arq',0,70],2:['arq',1,105],3:['zona',0,110],4:['zona',1,145],5:['gramado',0,150],6:['gramado',0,150],7:['gramado',1,185],8:['maracana',0,190],9:['maracana',0,190],10:['tribuna',0,220],11:['tribuna',0,220],12:['tribuna',0,220],13:['mais',0,250],20:['mais',0,250]};
+  // v98 (catálogo da Imply): "3 fotos digitais e impressas" custa o mesmo que a Zona Mista (R$ 110) e imprime 3; no empate o Ideal vai para o que dá mais impressas (D11)
+  const esp={1:['arq',0,70],2:['arq',1,105],3:['foto3',0,110],4:['foto3',1,145],5:['gramado',0,150],6:['gramado',0,150],7:['gramado',1,185],8:['maracana',0,190],9:['maracana',0,190],10:['tribuna',0,220],11:['tribuna',0,220],12:['tribuna',0,220],13:['mais',0,250],20:['mais',0,250]};
   const ideal=await A.evaluate(ns=>ns.map(n=>{const x=ETERNA.lojaIdeal(n);return [n,x.pkg,x.extra,x.custo];}),Object.keys(esp).map(Number));
   ideal.forEach(([n,p,e,c])=>ok(J([p,e,c])===J(esp[n]),`4.6: Ideal com ${n} fotos ${J([p,e,c])} (esperado ${J(esp[n])})`));
   const ideal45=await A.evaluate(()=>{ETERNA.SIM.prices.extra=45;const r=ETERNA.lojaIdeal(4);delete ETERNA.SIM.prices.extra;return r;});
   const empate=await A.evaluate(()=>{ETERNA.SIM.prices.gramado=145;const r=ETERNA.lojaIdeal(4);delete ETERNA.SIM.prices.gramado;return r;});
-  ok(empate.pkg==='gramado'&&empate.custo===145,'D11: empate de preço (Zona + 1 = Gramado a R$ 145) deveria ir para o que dá mais impressas: '+J(empate));
+  ok(['gramado','foto3'].includes(empate.pkg)&&empate.custo===145,'D11: empate de preço (Zona + 1 = 3 fotos impressas + 1 = Gramado a R$ 145) deveria ir para um dos que dão 4 impressas: '+J(empate));
   ok(ideal45.pkg==='gramado'&&ideal45.custo===150,'4.7: com a adicional a R$ 45 e 4 fotos o Ideal deveria ser 6 fotos R$ 150 (Zona + 1 = R$ 155): '+J(ideal45));
 
   // ---- Caixa aberto antes do pedido (janela B, Atendimento e venda)
@@ -98,8 +99,8 @@ try{
   const valorNo=async v=>{for(let i=0;i<30;i++){if((await cliente()).includes(v))return true;await sleep(100);}return false;};
   let pv=await posto();
   ok(pv&&pv.on===null&&pv.ideal==='maracana'&&pv.val==='sem valor'&&!pv.confirma,'4.1 (v96): Posto sem pacote marcado, Ideal Maracanã (9 fotos) para 8 escolhidas, sem valor e sem confirmar: '+J(pv));
-  ok(pv&&J(pv.extras)===J({mais:'',tribuna:'',maracana:'',gramado:'+ 2 adicionais',zona:'+ 5 adicionais',arq:'+ 7 adicionais'}),'4.1: adicionais de cada pacote no Posto: '+J(pv&&pv.extras));
-  ok(pv&&J(pv.precos)===J({mais:'R$ 250',tribuna:'R$ 220',maracana:'R$ 190',gramado:'R$ 220',zona:'R$ 285',arq:'R$ 315'}),'4.2: custo de cada pacote para 8 fotos (com adicionais): '+J(pv&&pv.precos));
+  ok(pv&&J(pv.extras)===J({mais:'',acima15:'',tribuna:'',maracana:'',gramado:'+ 2 adicionais',zona:'+ 5 adicionais',foto3:'+ 5 adicionais',arq:'+ 7 adicionais',foto1:'+ 7 adicionais'})/* v98: pacotes da Imply */,'4.1: adicionais de cada pacote no Posto: '+J(pv&&pv.extras));
+  ok(pv&&J(pv.precos)===J({mais:'R$ 250',acima15:'R$ 250',tribuna:'R$ 220',maracana:'R$ 190',gramado:'R$ 220',zona:'R$ 285',foto3:'R$ 285',arq:'R$ 315',foto1:'R$ 315'})/* v98: pacotes da Imply */,'4.2: custo de cada pacote para 8 fotos (com adicionais): '+J(pv&&pv.precos));
   ok(pv&&pv.ths===8&&pv.ia===4,'regra (a): as 4 com fundo de IA aparecem e contam como fotos do pacote: '+J(pv&&{ths:pv.ths,ia:pv.ia}));
   let e=await escolhe({pkg:'maracana'});
   ok(e.ok&&e.total===190&&e.prints===8&&J(e.cart)===J(['maracana:190'])&&e.n===8&&e.nAI===4&&e.save===125&&e.sobra===1,'4.2/4.3/N6/4.4: Ideal Maracanã: R$ 190, 8 impressas, fundo de IA dentro do pacote (sem linha paga), economia R$ 125 e sobra 1: '+J(e));
@@ -112,7 +113,7 @@ try{
   // casos sem pedido aberto (cálculo do Posto, o mesmo vendaCalc da v94)
   const vc=await A.evaluate(()=>{const f=(n,p,ns)=>{const c=ETERNA.vendaCalc(n,ns||n,p);return {total:c.total,prints:c.prints,cart:c.cart.map(x=>x.id).join('+'),save:c.save,sobra:c.sobra};};
     return {zona4:[ETERNA.lojaIdeal(4).pkg,f(4,'zona')],gram4:f(4,'gramado'),um:[ETERNA.lojaIdeal(1).pkg,f(1,'arq')],trib10:[ETERNA.lojaIdeal(10).pkg,f(10,'tribuna')],mais13:[ETERNA.lojaIdeal(13).pkg,f(13,'mais')],gram7:[ETERNA.lojaIdeal(7).pkg,f(7,'gramado')],trib7:f(7,'tribuna'),nada:f(3,'naoexiste')};});
-  ok(vc.zona4[0]==='zona'&&J(vc.zona4[1])===J({total:145,prints:1,cart:'zona+extra',save:30,sobra:0}),'4.6: 4 fotos no Ideal Zona Mista + 1 adicional (R$ 145, 1 impressa, economia R$ 30): '+J(vc.zona4));
+  ok(vc.zona4[0]==='foto3'&&J(vc.zona4[1])===J({total:145,prints:1,cart:'zona+extra',save:30,sobra:0}),'4.6: 4 fotos: Ideal 3 fotos digitais e impressas + 1 (v98); Zona Mista + 1 adicional segue R$ 145, 1 impressa, economia R$ 30: '+J(vc.zona4));
   ok(J(vc.gram4)===J({total:150,prints:4,cart:'gramado',save:25,sobra:2}),'4.4: Gramado com 4 escolhidas: 4 impressas, sobra 2, economia R$ 25: '+J(vc.gram4));
   ok(vc.um[0]==='arq'&&J(vc.um[1])===J({total:70,prints:1,cart:'arq',save:0,sobra:0}),'4.6: com 1 foto, Arquibancada R$ 70 sem economia: '+J(vc.um));
   ok(vc.trib10[0]==='tribuna'&&vc.trib10[1].total===220&&vc.trib10[1].prints===10&&vc.trib10[1].sobra===2,'4.6: 10 fotos no Tribuna (10 impressas, sobra 2): '+J(vc.trib10));
@@ -248,7 +249,7 @@ try{
   const d13=await sim(B);const x13=d13.caixaDin.find(x=>x.id===r13.id);
   ok(x13.estado==='substituida'&&d13.sessions[C4].status==='paga'&&d13.sessions[C4].payment==='PIX (maquininha)','1.13: PIX confirmado na maquininha: '+J({x13,st:d13.sessions[C4].status,pay:d13.sessions[C4].payment}));
   ok(!(await B.evaluate(id=>!!document.querySelector(`[data-act="din-confirm"][data-id="${id}"]`),r13.id)),'1.13: substituída não pode ficar no Caixa');
-  ok(d13.sessions[C4].prints===1,'4.8 (regra a, catálogo novo): 3 do campo + 1 de IA = Zona Mista (só digital) + 1 adicional impressa: '+d13.sessions[C4].prints);
+  ok(d13.sessions[C4].prints===4,'4.8 (regra a, catálogo da Imply, v98): 3 do campo + 1 de IA = 3 fotos digitais e impressas + 1 adicional impressa: '+d13.sessions[C4].prints);
 
   // ---- 4.8: PIX no caso do print baixa 8 impressas
   fase='4.8';
@@ -282,7 +283,8 @@ try{
   const D=await pagina(ctx,'D admin');ok(await login(D,'eduardo@eduardorezende.com'),'1.10: admin não entrou');
   // catálogo novo do Tour em Catálogo e preços: 9 produtos, nesta ordem, com os preços novos
   await verView(D,'catalogo');const catv=await D.evaluate(()=>[...document.querySelectorAll('#main tbody tr')].map(r=>[r.querySelector('.name').textContent,+r.querySelector('input[data-act="price"]').value]));
-  ok(J(catv)===J([['Pacote Maracanã Mais',250],['Pacote Tribuna de Honra',220],['Pacote Maracanã',190],['Pacote Gramado',150],['Pacote Zona Mista',110],['Pacote Arquibancada',70],['Foto adicional',35],['Fundo de IA',40],['Foto digital avulsa (galeria online)',39]]),'catálogo novo: '+J(catv));
+  // v99: mais as duas cortesias, sem valor. v98.1 (Ronaldo, 11/11): os 12 produtos de fotos da Imply, com os nomes da Imply; Fundo de IA e Foto digital avulsa fora do catálogo
+  ok(J(catv)===J([['Todas as fotos digitais',250],['Acima de 15 fotos digitais',250],['PACOTE TRIBUNA DE HONRA',220],['PACOTE MARACANÃ',190],['PACOTE GRAMADO',150],['PACOTE ZONA MISTA',110],['3 fotos digitais e impressas',110],['PACOTE ARQUIBANCADA',70],['1 foto digital e impressa',70],['1 foto (adicional) digital ou impressa',35],['Figurinha Copa',20],['Porta-retrato',75],['Cortesia SAC',0],['CORTESIA PORTA-RETRATO',0]]),'catálogo novo: '+J(catv));
   const lista=async()=>{await D.evaluate(()=>{const t=new Date();const h=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');ETERNA.state.range={from:h,to:h};ETERNA.state.view='vendas-lista';ETERNA.render();});await D.waitForTimeout(200);
     return D.evaluate(()=>{const tl={};document.querySelectorAll('.tile').forEach(t=>{tl[t.querySelector('.eyebrow').textContent.trim()]=t.querySelector('.v').textContent.trim();});return {tl,rows:[...document.querySelectorAll('#main tbody tr')].map(r=>r.innerText.replace(/\s+/g,' '))};});};
   let L=await lista();const rowAg=L.rows.find(r=>r.includes(r10.id));
@@ -329,7 +331,7 @@ try{
   const D2=await pagina(ctx,'D2 boot');await D2.goto(U);await D2.waitForTimeout(600);
   const b12=await D2.evaluate(id=>{const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);return {e:r.estado,por:r.por,m:r.motivo,st:ETERNA.SIM.sessions[r.card].status};},r12.id);
   ok(b12.e==='nao_paga'&&b12.por==='sistema'&&b12.m==='fim_do_dia'&&b12.st==='pronta','1.12: virada no boot: '+J(b12));
-  const mig=await D2.evaluate(()=>({p:ETERNA.SIM.prices,v:ETERNA.SIM.catalogoV,l:ETERNA.SIM.log.slice(0,3).map(x=>x.t)}));ok(mig.p.maracana==null&&mig.p.gramado===155&&mig.v===3&&mig.l.some(t=>/^Catálogo novo do Tour: preços editados de Pacote Maracanã voltaram/.test(t)),'catálogo novo: preço editado do Maracanã antigo deveria sair uma vez: '+J(mig));await D2.close();
+  const mig=await D2.evaluate(()=>({p:ETERNA.SIM.prices,v:ETERNA.SIM.catalogoV,l:ETERNA.SIM.log.slice(0,3).map(x=>x.t)}));ok(mig.p.maracana==null&&mig.p.gramado===155&&mig.v===3&&mig.l.some(t=>/^Catálogo novo do Tour: preços editados de Pacote Maracanã voltaram/i.test(t)/* v98.1: nome da Imply, PACOTE MARACANÃ */),'catálogo novo: preço editado do Maracanã antigo deveria sair uma vez: '+J(mig));await D2.close();
   // retenção (D8): fechadas há mais de 30 dias saem
   const ret=await D.evaluate(()=>{ETERNA.SIM.caixaDin.push({id:'Dvelho',card:'X',estado:'cancelada',criada:new Date(Date.now()-40*864e5).toISOString(),fechada:new Date(Date.now()-40*864e5).toISOString()});ETERNA.dinVirada();return ETERNA.SIM.caixaDin.some(x=>x.id==='Dvelho');});
   ok(!ret,'D8: registro fechado há 40 dias deveria sair');
@@ -356,7 +358,7 @@ try{
     if(modo==='voltar'){await pg.evaluate(()=>ETERNA.go('quiosque'));await pg.waitForTimeout(300); /* v81: o botão abre janela à parte; o Checkout na mesma aba segue por go('quiosque') */ok(await pg.evaluate(()=>ETERNA.state.lojaRota),'1.15: Abrir Checkout');await pg.goBack();await pg.waitForTimeout(400);}
     else{await pg.goto(U+'#loja');await pg.reload();await pg.waitForTimeout(500);ok(await pg.evaluate(()=>ETERNA.state.lojaRota&&!ETERNA.state.user),'1.15/I1: #loja aberto direto não carrega a sessão salva');
       if(modo==='hash-caixa')await pg.evaluate(()=>{location.hash='#caixa';});else await pg.evaluate(t=>{location.hash='#g/'+t;},tok1);await pg.waitForTimeout(500);}
-    const r=await pg.evaluate(()=>({u:!!ETERNA.state.user,s:localStorage.getItem('eterna.session'),v:ETERNA.state.view,loja:ETERNA.state.lojaRota,pub:!!ETERNA.pub,login:!!document.querySelector('[data-act="login-email"]'),din:!!document.querySelector('[data-act="din-confirm"]')}));
+    const r=await pg.evaluate(()=>({u:!!ETERNA.state.user,s:localStorage.getItem('eterna.session'),v:ETERNA.state.view,loja:ETERNA.state.lojaRota,pub:!!ETERNA.pub,login:!!document.querySelector('[data-act="login-usuario"]'),din:!!document.querySelector('[data-act="din-confirm"]')}));
     // v81: na aba do Checkout aberta direto (sem login), trocar o endereço não apaga a sessão salva (é o mesmo navegador do admin): #caixa volta ao #loja; #g abre a galeria
     if(modo==='voltar')ok(!r.u&&!r.s&&!r.loja&&!r.din&&r.login&&r.v==='entrar',`1.15 ${modo}: ${J(r)}`);
     else if(modo==='hash-caixa'){const h=await pg.evaluate(()=>location.hash);ok(!r.u&&r.s&&r.loja&&!r.din&&r.v==='quiosque'&&h==='#loja',`1.15/v81 ${modo}: ${J(r)} ${h}`);}
@@ -384,7 +386,7 @@ try{
     await pg.screenshot({path:`${P}/v79-upload-ajuste-desligado.png`});
     // 2.5: trocar de fotógrafo mantém desligado
     await pg.click('[data-act="set-switch"]');await pg.waitForTimeout(200);
-    await pg.fill('[data-act="login-email"]','marinara@eterna.photo');await pg.click('button[type=submit]');await pg.waitForTimeout(150);const cc=(await pg.textContent('.otp')).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',cc);await pg.waitForTimeout(400);
+    await entrarTeste(pg,'marinara@eterna.photo');
     t=await txt(pg,'#aj-auto');ok(/Desligado por Carlos/.test(t)&&/Desligado$/.test(t),'2.5: trocar de fotógrafo deveria manter desligado: '+t);
     ok(!(await pg.$('#nav [data-v="ajustes"]'))&&!(await pg.evaluate(()=>ETERNA.canView('ajustes'))),'2.6: Fotógrafo com Ajuste automático no menu');
     await pg.evaluate(()=>{location.hash='#ajustes';});await pg.waitForTimeout(250);ok(await pg.evaluate(()=>ETERNA.state.view)!=='ajustes','2.6: #ajustes abriu para o Fotógrafo');

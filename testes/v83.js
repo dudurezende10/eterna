@@ -2,6 +2,7 @@
 // v94-ux (parte H): "Abrir Checkout" do Admin fica no rodapé do menu (#nav .nav-ck); os cliques usam .rail [data-act="loja-abrir"]
 // Minhas vendas de hoje (34), fila local de eventos, alertas locais e foto com fundo de IA impressa com o fundo de 5000 px.
 // O "agente" aqui é só o page.route do Playwright na própria origem (/file/, /thumb/, /photoroom/*): nenhuma rede de verdade.
+const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');const os=require('os');const path=require('path');const {execFileSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;const P=__dirname+'/prints';fs.mkdirSync(P,{recursive:true});
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -32,7 +33,7 @@ async function rotas(ctx){
     if(composeFalha)return r.fulfill({status:500,contentType:'application/json',body:J({error:'falha de teste'})});r.fulfill({status:200,contentType:'image/png',body:IMG.cut});});
   await ctx.route(ORIG+'/photoroom/result/**',r=>{const u=r.request().url();r.fulfill({status:200,contentType:'image/png',body:/op\.png$/.test(u)?IMG.op:/hi\.png$/.test(u)?IMG.hi:IMG.lo});});}
 function vigia(pg,nome){pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(`${nome}: ${e.message}`));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API|ERR_|net::|onnxruntime|404|status of 50/.test(m.text()))errs.push(`${nome}: ${m.text()}`);});return pg;}
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function entrar(pg,email){await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 const sim=pg=>pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.sim.v1')));
 const toastTxt=pg=>pg.evaluate(()=>document.querySelector('#toast').textContent);
 const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\s+/g,' '):'';},s);
@@ -194,7 +195,8 @@ try{
   ok(r23.filter(x=>x.land).length===4&&r23.find(x=>x.k==='ag_pbbb00000002'&&!x.land),'23: só as deitadas com .land: '+J(r23.map(x=>[x.k,x.land])));
   ok(await A.evaluate(()=>window.__prints)===1,'23: window.print uma vez');ok(!(await A.evaluate(()=>document.body.classList.contains('pr-on'))),'23: pr-on sai depois do afterprint');
   const pdf=await pdfImpresso(A);fs.writeFileSync(`${P}/v83-impressao-5.pdf`,pdf);const pp=pdfPaginas(pdf);
-  ok(pp.n===5&&pp.mb.length>=5&&pp.mb.every(([w,h])=>Math.abs(w-MM(102))<2&&Math.abs(h-MM(152))<2),'23: PDF com 5 páginas de 102×152 mm: '+J(pp));
+  // 24c3668 (Ronaldo, 10/11, teste na DNP): @page sem tamanho fixo, a foto cobre o papel escolhido na impressora; o PDF sai no papel padrão
+  ok(pp.n===5&&pp.mb.length>=5&&pp.mb.every(([w,h])=>w===pp.mb[0][0]&&h===pp.mb[0][1]),'23: PDF com 5 páginas do mesmo papel: '+J(pp));
   await A.evaluate(()=>document.body.classList.add('pr-on'));await A.emulateMedia({media:'print'});const g23=await A.evaluate(()=>{const p=document.querySelector('#print-root .pr-pg.land');const bx=p.querySelector('.pr-box').getBoundingClientRect();const pg=p.getBoundingClientRect();const im=p.querySelector('img');return {pw:pg.width,ph:pg.height,bw:bx.width,bh:bx.height,fit:getComputedStyle(im).objectFit,tf:getComputedStyle(p.querySelector('.pr-box')).transform};});await A.emulateMedia({media:null});await A.evaluate(()=>document.body.classList.remove('pr-on'));
   ok(Math.abs(g23.bw-g23.pw)<2&&Math.abs(g23.bh-g23.ph)<2&&g23.fit==='cover'&&g23.tf!=='none','23: foto deitada girada preenchendo a página: '+J(g23));
   // ---- 24: Saiu certo baixa exatamente 5, uma vez só
@@ -204,7 +206,10 @@ try{
   await A.reload();await A.waitForTimeout(500);await A.evaluate(()=>{ETERNA.state.view='posto';ETERNA.render();});s24=await sim(A);
   ok(s24.stock['Caixa 1']===est23-5&&!(await A.$('#print-root')),'24: repetir ou recarregar não baixa de novo: '+s24.stock['Caixa 1']);
   // reimpressão (R4): o vendedor escolhe a foto; "Não saiu" não baixa; "Saiu certo" baixa 1 e grava a lista exata; entra no CSV
-  const reimp=async(k,res)=>{await A.click('[data-act="imp-reprint"][data-card="LPV83A"]');await A.waitForTimeout(100);await A.click(`[data-act="imp-repick"][data-card="LPV83A"][data-k="${k}"]`);await A.click('[data-act="imp-motivo"][data-m="falhou"]');
+  const reimp=async(k,res)=>{await A.click('[data-act="imp-reprint"][data-card="LPV83A"]');await A.waitForTimeout(100);
+    // abre com todas as impressas marcadas (um clique só); aqui o vendedor desmarca as outras e fica só com k
+    for(const o of await A.evaluate(()=>ETERNA.state.impRe.sel.slice()))if(o!==k)await A.click(`[data-act="imp-repick"][data-card="LPV83A"][data-k="${o}"]`);
+    if(!(await A.evaluate(()=>ETERNA.state.impRe.sel.slice())).includes(k))await A.click(`[data-act="imp-repick"][data-card="LPV83A"][data-k="${k}"]`);await A.click('[data-act="imp-motivo"][data-m="falhou"]');
     await A.evaluate(()=>{window.print=()=>{};});await A.click('[data-act="imp-reprint-ok"][data-card="LPV83A"]');await A.waitForSelector(`[data-act="${res}"][data-card="LPV83A"]`,{timeout:15000});
     const r=await raiz(A);ok((await sim(A)).stock['Caixa 1']===est23-5-(res==='imp-falha'?0:0),'24: a reimpressão não baixa antes do Saiu certo');await A.click(`[data-act="${res}"][data-card="LPV83A"]`);await A.waitForTimeout(250);return r;};
   const rf=await reimp('ag_aaaa00000003','imp-falha');s24=await sim(A);
@@ -213,7 +218,8 @@ try{
   const re24=(s24.sessions.LPV83A.impressoes||[]).filter(x=>x.reimpressao&&x.resultado==='ok');
   ok(rk.length===1&&s24.stock['Caixa 1']===est23-6&&re24.length===1&&re24[0].n===1&&re24[0].motivo==='falhou'&&J(re24[0].fotos)===J(['ag_aaaa00000003']),'24: reimpressão de 1 (falhou) com a lista exata: '+J({e:s24.stock['Caixa 1'],re24}));
   // limite: até prints (5) por reimpressão; a grade só mostra as já impressas
-  await A.click('[data-act="imp-reprint"][data-card="LPV83A"]');await A.waitForTimeout(80);ok(await A.evaluate(()=>document.querySelectorAll('[data-act="imp-repick"][data-card="LPV83A"]').length)===5,'24: grade da reimpressão com as 5 impressas');await A.click('[data-act="imp-reprint-no"]');
+  await A.click('[data-act="imp-reprint"][data-card="LPV83A"]');await A.waitForTimeout(80);ok(await A.evaluate(()=>document.querySelectorAll('[data-act="imp-repick"][data-card="LPV83A"]').length)===5,'24: grade da reimpressão com as 5 impressas');
+  ok(await A.evaluate(()=>ETERNA.state.impRe.sel.length===5&&!document.querySelector('[data-act="imp-reprint-ok"][data-card="LPV83A"]').disabled),'24: reimpressão abre com as 5 marcadas e o botão ativo');await A.click('[data-act="imp-reprint-no"]');
   const csv=await A.evaluate(()=>ETERNA.salesCSV(ETERNA.allSales()));const hdr=csv.split('\n')[0];const lin=csv.split('\n').find(l=>l.includes('LPV83A'))||'';
   ok(/;"?posto"?;"?pagamento_ref"?;"?impressao"?$/.test(hdr)&&/reimpressão 1 \(falhou\)/.test(lin)&&lin.includes('445566')&&!lin.includes('@'),'24: CSV com posto;pagamento_ref;impressao e a reimpressão: '+J({hdr:hdr.slice(-60),lin:lin.slice(-160)}));
   // "Não saiu": volta a pendente sem baixar

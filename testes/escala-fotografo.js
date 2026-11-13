@@ -1,14 +1,13 @@
 // Eduardo (11/11): Escala do fotógrafo com "Hoje você está em:" e os próximos 7 dias; Admin começa em hoje com os dias
 // anteriores recolhidos; Calendário de eventos no grupo Dashboard. Print do fotógrafo em 1366 em ESCALA_PRINTS (ou testes/prints).
-const {chromium}=require('playwright');const fs=require('fs');
+const {chromium}=require('playwright');const entrarTeste=require('./_entrar');/* v93: usuário e senha */const fs=require('fs');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const PR=process.env.ESCALA_PRINTS||__dirname+'/prints';fs.mkdirSync(PR,{recursive:true});
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
 async function nova(b,w,h){const ctx=await b.newContext({viewport:{width:w||1366,height:h||768}});const pg=await ctx.newPage();pg.setDefaultTimeout(8000);
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text())});return {ctx,pg};}
-async function entrar(pg,email){await pg.goto(U,{waitUntil:'domcontentloaded',timeout:60000});await pg.waitForSelector('[data-act="login-email"]');await pg.waitForTimeout(200);
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  const otp=await pg.$('.otp');if(!otp)return false;const c=(await otp.textContent()).replace(/\s/g,'');await pg.fill('[data-act="login-code"]',c);await pg.waitForTimeout(400);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function entrar(pg,email){await pg.goto(U,{waitUntil:'domcontentloaded',timeout:60000});await pg.waitForSelector('[data-act="login-usuario"]');await pg.waitForTimeout(200);
+  return entrarTeste(pg,email);}
 // grava a função de hoje de uma pessoa (a mesma estrutura do setFunc) e abre a Escala
 const funcHoje=(pg,k,f)=>pg.evaluate(([k,f])=>{const d=new Date().toISOString().slice(0,10);const S=ETERNA.SIM;const m=S.funcao&&S.funcao.date===d?S.funcao.map:{};if(f)m[k]=f;else delete m[k];S.funcao={date:d,map:m};ETERNA.go('escala');},[k,f]);
 const hero=pg=>pg.evaluate(()=>{const h=document.querySelector('#esc-hoje');return h?{t:h.innerText.replace(/\s+/g,' ').trim(),tipo:h.dataset.tipo,px:parseFloat(getComputedStyle(h.querySelector('.esc-ponto,.esc-aviso')).fontSize),peso:+getComputedStyle(h.querySelector('.esc-ponto,.esc-aviso')).fontWeight}:null;});

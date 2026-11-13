@@ -3,7 +3,7 @@
 // Parte A: agente falso por page.route na própria origem (/status com e sem "envio", /fotos/enviar com respostas por nome).
 // Parte B: agente DE VERDADE (testes/_envio_lanca.py, HOME temporário, porta 45xxx) servindo o app: 6 fotos geradas aqui entram
 // e a sessão atrasada do Carlos aparece em Minhas fotos. Nunca foto de cliente: JPEG liso gerado por Pillow.
-const {chromium}=require('playwright');const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const net=require('net');
+const {chromium}=require('playwright');const entrarTeste=require('./_entrar');/* v93: usuário e senha */const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');const net=require('net');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);return c;};const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -13,22 +13,24 @@ const arq=(name,body)=>({name,mimeType:/\.png$/.test(name)?'image/png':'image/jp
 // agente falso: M.resp(nome, tentativa) devolve {status, body} ou 'abort'; M.posts guarda {nome, quem, t}
 function novoM(){return {posts:[],resp:null,atraso:0,status:{}};}
 async function agente(ctx,M,base){base=base||ORIG;
+  // v93: agFetch manda X-Eterna; fora da origem o navegador pede a liberação (OPTIONS) antes, como o agente de verdade responde
+  const H=base===ORIG?{}:{'access-control-allow-origin':ORIG,'access-control-allow-headers':'X-Eterna, Content-Type','access-control-allow-methods':'GET, POST, OPTIONS'};
+  if(base!==ORIG)await ctx.route(base+'/**',r=>r.request().method()==='OPTIONS'?r.fulfill({status:204,headers:H}):r.fallback());
   await ctx.route(base+'/status',r=>{const st={ok:true,agent:'eterna-agente',version:3,boot:'bE',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:true},sessoes:{v:2,pausa:60,rostos:true,rev:1,gen:'gE',hoje:0,abertas:0},envio:{v:1,max_mb:60,novas:0,repetidas:0,recusadas:0},...M.status};if(M.antigo)delete st.envio;
-    r.fulfill({status:200,contentType:'application/json',body:J(st)});});
-  await ctx.route(base+'/events*',r=>r.fulfill({status:200,contentType:'application/json',body:'{"events":[],"next":0,"total":0}'}));
-  await ctx.route(base+'/biblioteca',r=>r.fulfill({status:200,contentType:'application/json',body:'{"fotos":[]}'}));
-  await ctx.route(base+'/fila-fotografo',r=>r.fulfill({status:200,contentType:'application/json',body:'{"ok":true,"grupos":[]}'}));
-  await ctx.route(base+'/sessoes*',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,gen:'gE',rev:1,pausa:60,rostos:true,completo:true,sessoes:[]})}));
-  await ctx.route(base+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:PX}));
+    r.fulfill({headers:H,status:200,contentType:'application/json',body:J(st)});});
+  await ctx.route(base+'/events*',r=>r.fulfill({headers:H,status:200,contentType:'application/json',body:'{"events":[],"next":0,"total":0}'}));
+  await ctx.route(base+'/biblioteca',r=>r.fulfill({headers:H,status:200,contentType:'application/json',body:'{"fotos":[]}'}));
+  await ctx.route(base+'/fila-fotografo',r=>r.fulfill({headers:H,status:200,contentType:'application/json',body:'{"ok":true,"grupos":[]}'}));
+  await ctx.route(base+'/sessoes*',r=>r.fulfill({headers:H,status:200,contentType:'application/json',body:J({ok:true,gen:'gE',rev:1,pausa:60,rostos:true,completo:true,sessoes:[]})}));
+  await ctx.route(base+'/thumb/**',r=>r.fulfill({headers:H,status:200,contentType:'image/jpeg',body:PX}));
   await ctx.route(base+'/fotos/enviar*',async r=>{const u=new URL(r.request().url());const nome=u.searchParams.get('nome'),quem=u.searchParams.get('quem');
     const h=r.request().headers();const n=M.posts.filter(p=>p.nome===nome).length+1;M.posts.push({nome,quem,t:Date.now(),xe:h['x-eterna'],ct:h['content-type']});
     if(M.atraso)await sleep(M.atraso);const x=M.resp?M.resp(nome,n):null;
     if(x==='abort')return r.abort('connectionreset');const st=x&&x.status||200;const body=x&&x.body||{ok:true,resultado:'new'};
-    r.fulfill({status:st,contentType:'application/json',body:J(body)});});}
+    r.fulfill({headers:H,status:st,contentType:'application/json',body:J(body)});});}
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(250);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(250);}
-  await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-  await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(400);}
+  await entrarTeste(pg,email);}
 const espera=async(pg,fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||8000)){if(await pg.evaluate(fn,arg))return true;await pg.waitForTimeout(100);}return false;};
 const abrir=async pg=>{await pg.evaluate(()=>ETERNA.go('importar'));await espera(pg,()=>ETERNA.state.agent.tried||ETERNA.state.agent.on,6000);await pg.waitForTimeout(150);
   const l=await pg.$('#main [data-act="envio-abrir"]');if(l){await l.click();await pg.waitForTimeout(120);}return !!l;};
@@ -37,8 +39,10 @@ const faixa=pg=>pg.evaluate(()=>{const f=document.querySelector('#main .up-faixa
 const escolher=async(pg,files)=>{const [fc]=await Promise.all([pg.waitForEvent('filechooser',{timeout:5000}),pg.click('#envio-painel [data-act="envio-escolher"]')]);await fc.setFiles(files);};
 const fim=pg=>espera(pg,()=>!ETERNA.state.imp.envio&&!!ETERNA.state.imp.envioFim,30000);
 const livre=()=>new Promise(r=>{const t=()=>{const p=45000+Math.floor(Math.random()*1000);const s=net.createServer();s.once('error',()=>t());s.listen(p,'127.0.0.1',()=>s.close(()=>r(p)));};t();});
-function post(porta,p,body,headers){return new Promise(res=>{const data=Buffer.from(J(body));const r=http.request({host:'127.0.0.1',port:porta,method:'POST',path:p,headers:{'Content-Type':'application/json','Content-Length':data.length,...(headers||{})}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>res({s:rs.statusCode}));});r.on('error',()=>res({s:0}));r.write(data);r.end();});}
-function get(porta,p){return new Promise(res=>{http.get({host:'127.0.0.1',port:porta,path:p},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{let j=null;try{j=JSON.parse(Buffer.concat(ch).toString())}catch(e){}res({s:rs.statusCode,j});});}).on('error',()=>res({s:0}));});}
+// v93: os pedidos diretos ao agente de verdade levam a sessão do Carlos (aberta no estado.db do HOME do teste, ver SESSAO)
+let SESSAO=null;const ck=()=>SESSAO?{Cookie:SESSAO()}:{};
+function post(porta,p,body,headers){return new Promise(res=>{const data=Buffer.from(J(body));const r=http.request({host:'127.0.0.1',port:porta,method:'POST',path:p,headers:{'Content-Type':'application/json','Content-Length':data.length,...ck(),...(headers||{})}},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>res({s:rs.statusCode}));});r.on('error',()=>res({s:0}));r.write(data);r.end();});}
+function get(porta,p){return new Promise(res=>{http.get({host:'127.0.0.1',port:porta,path:p,headers:ck()},rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{let j=null;try{j=JSON.parse(Buffer.concat(ch).toString())}catch(e){}res({s:rs.statusCode,j});});}).on('error',()=>res({s:0}));});}
 
 (async()=>{const b=await chromium.launch();const errs=[];let proc=null;const HB=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-envio-app-'));let LOGA='';
 const nova=async(w,h)=>{const ctx=await b.newContext({viewport:{width:w||1366,height:h||900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));
@@ -211,6 +215,7 @@ try{
 
   // ---------- B: agente de verdade servindo o app ----------
   {const PORTA=await livre(),FTPP=await livre();const AO='http://127.0.0.1:'+PORTA;
+    {let c=null;SESSAO=()=>c||(c=execFileSync('python3',['-I',path.join(__dirname,'_agente_sessao.py'),AG,'sessao','carlos@eterna.photo'],{env:{...process.env,HOME:HB,USERPROFILE:HB,ETERNA_SEM_OPENCV:'1'}}).toString().trim().split(/\r?\n/).pop());}
     proc=spawn('python3',['-I','-u',path.join(__dirname,'_envio_lanca.py'),AG,'2'],{env:{...process.env,HOME:HB,USERPROFILE:HB,ETERNA_PORTA:String(PORTA),ETERNA_FTP_PORTA:String(FTPP),ETERNA_APP_ORIGIN:ORIG,ETERNA_SEM_OPENCV:'1',ETERNA_SESSAO_PAUSA:'8',ETERNA_LEITORES:'1',USER:'eterna-teste-sem-cartao'},stdio:['ignore','pipe','pipe']});
     proc.stdout.on('data',d=>LOGA+=d);proc.stderr.on('data',d=>LOGA+=d);
     let up=false;for(let i=0;i<120&&!up;i++){await sleep(250);up=(await get(PORTA,'/status')).s===200;}
@@ -230,9 +235,9 @@ for i in range(6):
     ex=Image.Exif();ex.get_ifd(0x8769)[0x9003]=time.strftime("%Y:%m:%d %H:%M:%S",time.localtime(time.time()-7200+i))
     im.save(os.path.join(d,"IMG_%04d.JPG"%(i+1)),"JPEG",quality=85,exif=ex.tobytes())
 `,DIR]);
-    const {ctx,pg}=await nova();await pg.goto(AO+'/index.html');await pg.waitForTimeout(400);
-    await pg.fill('[data-act="login-email"]','carlos@eterna.photo');await pg.click('button[type=submit]');await pg.waitForTimeout(150);
-    await pg.fill('[data-act="login-code"]',(await pg.textContent('.otp')).replace(/\s/g,''));await pg.waitForTimeout(500);
+    const {ctx,pg}=await nova();
+    const cs=SESSAO().split('=');await ctx.addCookies([{name:cs[0],value:cs.slice(1).join('='),url:AO}]);
+    await pg.goto(AO+'/index.html');await pg.waitForTimeout(400);await entrarTeste(pg,'carlos@eterna.photo');await pg.waitForTimeout(150);
     ok(await espera(pg,()=>ETERNA.state.agent.on&&!!ETERNA.state.agent.envio,10000),'B: agente de verdade com /status.envio');
     ok(await abrir(pg),'B: link');
     await escolher(pg,fs.readdirSync(DIR).sort().map(n=>path.join(DIR,n)));

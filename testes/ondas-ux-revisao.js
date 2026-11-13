@@ -9,7 +9,7 @@ const IMG=fs.readFileSync(TMP+'/a.jpg');
 async function rotas(ctx){await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
   await ctx.route(ORIG+'/file/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:IMG}));await ctx.route(ORIG+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:IMG}));}
 function vigia(pg,n){pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(n+': '+e.message));return pg;}
-async function entrar(pg,email){await pg.fill('[data-act="login-email"]',email);await pg.click('button[type=submit]');await pg.waitForTimeout(150);const otp=await pg.$('.otp');if(!otp)return false;await pg.fill('[data-act="login-code"]',(await otp.textContent()).replace(/\s/g,''));await pg.waitForTimeout(450);return pg.evaluate(()=>!!ETERNA.state.user);}
+async function entrar(pg,email){await require('./_entrar')(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
 async function sair(pg){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.goto(U);await pg.waitForTimeout(350);}
 const sim=pg=>pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.sim.v1')));
 const txt=(pg,s)=>pg.evaluate(s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\s+/g,' '):'';},s);

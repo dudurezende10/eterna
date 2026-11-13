@@ -1,0 +1,1281 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entendendo o Eterna</title>
+<!--
+  Fonte do guia "Entendendo o Eterna". O PDF (docs/Entendendo-o-Eterna.pdf) sai daqui com docs/guia/gerar-pdf.js.
+  Cada <section class="pagina"> é uma folha A4 deitada. O sumário e os números de página são montados pelo script no fim.
+  Fluxos: <pre class="fluxo"> com uma linha por caixa:
+    texto           caixa comum
+    ! texto         caixa de início
+    ? pergunta | Rótulo: saída | Rótulo: saída     pergunta com saídas para baixo
+    > rótulo        seta (o rótulo é opcional)
+    = texto         caixa de fim (azul)
+-->
+<style>
+:root{
+  --azul:#134078; --azul-esc:#0f2a4f; --amarelo:#f5c400; --amarelo-claro:#fff4c2;
+  --texto:#1d2733; --cinza:#5b6776; --linha:#c9d3e0; --fundo-caixa:#eaf0f8; --branco:#ffffff;
+}
+@page{ size:A4 landscape; margin:0 }
+*{ box-sizing:border-box }
+html,body{ margin:0; padding:0; background:#d9dee5; color:var(--texto);
+  font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif; font-size:9.6pt; line-height:1.42 }
+.pagina{ width:297mm; height:210mm; margin:0 auto 8mm; background:var(--branco); position:relative; overflow:hidden;
+  padding:12mm 16mm 16mm; page-break-after:always; break-after:page }
+.pagina:last-child{ page-break-after:auto; break-after:auto }
+@media print{ html,body{ background:#fff } .pagina{ margin:0 } }
+
+/* cabeçalho de cada página */
+.kicker{ color:#8a6a00; font-size:8.4pt; letter-spacing:.08em; text-transform:uppercase; margin:0 0 1mm }
+h1{ color:var(--azul); font-size:19pt; line-height:1.15; margin:0; padding-bottom:2.2mm; border-bottom:2.2px solid var(--amarelo) }
+h2{ color:var(--azul); font-size:12pt; margin:4.5mm 0 2mm }
+h3{ font-size:9.8pt; margin:3.5mm 0 1.2mm; color:var(--texto) }
+p{ margin:0 0 2mm }
+.serve{ margin:3mm 0 0; color:var(--texto) }
+ul{ margin:0; padding-left:5mm } li{ margin:0 0 1.1mm }
+.duas{ column-count:2; column-gap:9mm } .duas li{ break-inside:avoid }
+.rodape{ position:absolute; left:16mm; right:16mm; bottom:7mm; display:flex; justify-content:space-between; font-size:7.8pt; color:var(--cinza);
+  border-top:1px solid #e3e8ef; padding-top:1.6mm }
+b,strong{ font-weight:650 }
+.nota{ font-size:8.6pt; color:var(--cinza) }
+
+/* tabelas */
+table{ border-collapse:collapse; width:100%; font-size:8.9pt; margin:1mm 0 2mm }
+th{ text-align:left; background:var(--azul); color:#fff; font-weight:600; padding:1.6mm 2.4mm }
+td{ padding:1.4mm 2.4mm; border-bottom:1px solid #e1e7ef; vertical-align:top }
+tr:nth-child(even) td{ background:#f6f8fb }
+td:first-child{ font-weight:600; color:var(--azul-esc) }
+.t-livre td:first-child{ font-weight:400; color:var(--texto) }
+
+/* capa */
+.capa{ background:var(--azul); color:#fff; padding:0 }
+.capa .miolo{ position:absolute; left:22mm; top:58mm; right:22mm }
+.capa .marca{ font-size:12pt; margin-bottom:4mm; opacity:.95 }
+.capa h1{ color:#fff; font-size:38pt; border:0; padding:0; margin:0 0 6mm }
+.capa .faixa{ width:62mm; height:2.6mm; background:var(--amarelo); margin-bottom:7mm }
+.capa .sub{ font-size:13pt; margin-bottom:3mm }
+.capa .versao{ font-size:9.5pt; opacity:.85 }
+.capa .pe{ position:absolute; left:22mm; bottom:14mm; right:22mm; font-size:8.6pt; opacity:.8; border-top:1px solid rgba(255,255,255,.25); padding-top:3mm }
+
+/* sumário */
+.sumario{ column-count:2; column-gap:14mm; margin-top:4mm }
+.sumario .parte{ break-inside:avoid; margin-bottom:3.2mm }
+.sumario .parte h3{ color:#8a6a00; font-size:8.4pt; letter-spacing:.08em; text-transform:uppercase; margin:0 0 1mm; font-weight:600 }
+.sumario a{ display:flex; gap:2mm; color:var(--texto); text-decoration:none; font-size:9.4pt; padding:.45mm 0 }
+.sumario a .pontos{ flex:1; border-bottom:1px dotted #b7c1cf; transform:translateY(-1.1mm) }
+.sumario a .pg{ color:var(--azul); font-weight:600; min-width:6mm; text-align:right }
+
+/* fluxos */
+.fluxo{ display:flex; flex-wrap:wrap; align-items:flex-start; row-gap:4mm; margin:2.5mm 0 3mm; font-family:inherit; white-space:normal }
+.fx-col{ display:flex; flex-direction:column; align-items:center; width:25mm }
+.fx-n{ width:25mm; min-height:12mm; padding:1.4mm 1.6mm; border:1.3px solid var(--azul); background:var(--fundo-caixa); border-radius:1.6mm;
+  font-size:8.2pt; line-height:1.25; text-align:center; display:flex; align-items:center; justify-content:center }
+.fx-q{ background:#fff; border:1.8px solid #d4a800; border-radius:5mm }
+.fx-ini{ font-weight:600 }
+.fx-fim{ background:var(--azul); color:#fff; border-color:var(--azul) }
+.fx-s{ min-width:7.5mm; height:12mm; position:relative; flex:none; padding:0 2.6mm 0 1.2mm }
+.fx-s::before{ content:""; position:absolute; left:.8mm; right:1.8mm; top:6mm; border-top:1.3px solid #66788f }
+.fx-s::after{ content:""; position:absolute; right:.4mm; top:calc(6mm - 1.3mm); border:1.3mm solid transparent; border-left:1.8mm solid #66788f; border-right:0 }
+.fx-s span{ display:block; margin-top:.9mm; font-size:6.9pt; background:var(--amarelo-claro); padding:0 .8mm; border-radius:.8mm; white-space:nowrap }
+.fx-r{ width:23.5mm; margin-top:4.5mm; position:relative; border:1.1px dashed #7b8aa0; background:#f7f8fa; border-radius:1.4mm; font-size:7.7pt; line-height:1.22; text-align:center; padding:1.2mm 1.2mm }
+.fx-r::before{ content:""; position:absolute; left:50%; top:-4.5mm; height:4.5mm; border-left:1.1px solid #7b8aa0 }
+.fx-r b{ display:inline-block; background:var(--amarelo-claro); font-size:7pt; padding:0 .9mm; border-radius:.8mm; margin-bottom:.6mm }
+.fx-r + .fx-r{ margin-top:2.5mm } .fx-r + .fx-r::before{ top:-2.5mm; height:2.5mm }
+
+/* blocos */
+.ler{ margin-top:1mm } .ler h3{ margin-top:0 }
+.grade2{ display:grid; grid-template-columns:1fr 1fr; gap:8mm }
+.grade3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:6mm }
+.cartao{ border:1px solid var(--linha); border-top:3px solid var(--azul); border-radius:1.5mm; padding:2.6mm 3mm; background:#fbfcfe }
+.cartao h3{ margin:0 0 1.2mm; color:var(--azul) }
+.cartao.amarelo{ border-top-color:var(--amarelo) }
+.lado{ display:grid; grid-template-columns:1fr 1fr; gap:6mm; margin-top:3mm }
+.zona{ border:1.3px solid var(--linha); border-radius:2mm; padding:2.5mm 3mm }
+.zona h3{ margin:0 0 2mm; color:var(--azul) }
+.zona .itens{ display:flex; flex-wrap:wrap; gap:2mm }
+.zona .itens span{ border:1.2px solid var(--azul); background:var(--fundo-caixa); border-radius:1.4mm; padding:1.2mm 2mm; font-size:8.3pt }
+.zona.net{ border-color:#d4a800; background:#fffdf3 }
+.zona.net .itens span{ background:#fff; border-color:#d4a800 }
+.ponte{ text-align:center; font-size:8.4pt; color:var(--cinza); margin-top:1.5mm }
+.destaque{ background:var(--amarelo-claro); border-left:3px solid var(--amarelo); padding:2mm 3mm; margin:2mm 0; font-size:9pt }
+</style>
+</head>
+<body>
+
+<!-- ============================== CAPA ============================== -->
+<section class="pagina capa" data-sem-numero>
+  <div class="miolo">
+    <div class="marca">Viva Maracanã</div>
+    <h1>Entendendo o Eterna</h1>
+    <div class="faixa"></div>
+    <div class="sub">O sistema de fotos e vídeos do Tour, explicado para quem não é de tecnologia</div>
+    <div class="versao">Versão v99.26 · 12 de novembro de 2026</div>
+  </div>
+  <div class="pe">Este guia descreve a versão atual do sistema, a partir da leitura do programa em 12/11/2026. Para os passos do dia a dia, use o Guia da equipe.</div>
+</section>
+
+<!-- ============================== SUMÁRIO ============================== -->
+<section class="pagina" id="sumario">
+  <h1>Sumário</h1>
+  <div class="sumario" id="sumario-lista"></div>
+</section>
+
+<!-- ============================== PARA COMEÇAR ============================== -->
+<section class="pagina" id="poucas-palavras" data-parte="Para começar" data-titulo="O Eterna em poucas palavras">
+  <div class="kicker">Para começar</div>
+  <h1>O Eterna em poucas palavras</h1>
+  <p class="serve">O Eterna é o sistema de fotos do Tour do Maracanã. Ele entra no lugar da Roverpix em 01/12/2026. Faz tudo o que acontece com uma foto: recebe da câmera, separa por família, encontra a pessoa pela selfie, vende, imprime e entrega no celular. Desde novembro ele também vende e entrega os vídeos do <b>Drone</b>, do <b>Chute a Gol</b> e do <b>Snap Pop</b>, no lugar do sistema antigo.</p>
+  <h2>O caminho de uma foto</h2>
+<pre class="fluxo">
+! Fotógrafo clica
+>
+Foto chega ao servidor
+>
+Eterna separa por família
+>
+Família toca em Iniciar e olha para a câmera
+>
+Eterna acha as fotos dela
+>
+Família escolhe, o vendedor cobra
+>
+= Foto impressa na hora e no celular pelo QR
+</pre>
+  <h2>O caminho de um vídeo</h2>
+<pre class="fluxo">
+! Vendedor vende no tablet
+>
+Cliente ganha uma pulseira numerada
+>
+Voo do drone, chute ou gravação
+>
+Vídeo sobe para a nuvem
+>
+Cliente recebe um cartão com QR
+>
+= Cliente assiste e baixa no celular
+</pre>
+  <div class="ler"><h3>Como ler estes fluxos</h3>
+  <ul>
+    <li>O fotógrafo só clica. A foto segue sozinha para o servidor, um computador que fica no próprio estádio.</li>
+    <li>O Eterna agrupa as fotos tiradas em sequência da mesma família. Cada grupo é uma <b>sessão</b>.</li>
+    <li>No fim do passeio, a pessoa olha para a câmera do balcão. O Eterna compara o rosto e mostra só as fotos em que ela aparece.</li>
+    <li>A família escolhe as fotos na tela e o vendedor cobra na maquininha. Ela recebe a foto impressa, a versão digital pelo QR, ou as duas.</li>
+    <li>Nas ativações, a venda é no tablet, longe do campo. A pulseira liga o cliente à compra até a entrega do vídeo, que chega ao celular por um cartão com QR.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="ideias" data-parte="Para começar" data-titulo="As ideias que explicam o resto">
+  <div class="kicker">Para começar</div>
+  <h1>As ideias que explicam o resto</h1>
+  <h2>Cinco ideias</h2>
+  <ul>
+    <li><b>1. O estádio não depende da internet para vender.</b> Fotos, vendas e impressão ficam no servidor local. Os tablets das ativações vendem até sem rede. Se a internet cair, o atendimento continua.</li>
+    <li><b>2. A internet serve para guardar e entregar.</b> O servidor manda cópias para a nuvem, que são computadores alugados fora do estádio (na AWS). É de lá que a família abre as fotos e os vídeos no celular, mesmo depois de ir embora.</li>
+    <li><b>3. O rosto é a chave.</b> O cliente não precisa decorar número nem procurar a foto em uma lista: o rosto encontra as fotos dele, e só as fotos em que ele aparece. Rosto é dado pessoal sensível, por isso a lei de proteção de dados (LGPD) exige cuidado especial.</li>
+    <li><b>4. A venda não pode esperar.</b> O sistema prepara parte do trabalho antes de o cliente chegar, como as fotos com fundo de IA, para ninguém esperar no balcão. Nas ativações, os vídeos de demonstração já estão guardados no tablet.</li>
+    <li><b>5. Nada importante deve ficar só no navegador.</b> Todo registro de operação (venda, impressão, cortesia, cancelamento) é gravado no banco do servidor, que tem cópia na nuvem. A tela só segura o que ainda não subiu. Alguns dados ainda faltam seguir essa regra, como mostra o capítulo "O que precisa de atenção".</li>
+  </ul>
+  <h2>Quem faz o quê</h2>
+  <table>
+    <tr><th style="width:27%">Pessoa</th><th>O que faz no Eterna</th></tr>
+    <tr><td>Fotógrafo</td><td>Clica. A foto vai sozinha, e a tela Minhas fotos mostra o que está chegando</td></tr>
+    <tr><td>Vendedor do balcão</td><td>Atende a família no Posto de venda, escolhe o pacote, cobra e confere a impressão</td></tr>
+    <tr><td>Caixa</td><td>Confirma o dinheiro recebido, no próprio Posto de venda</td></tr>
+    <tr><td>Família</td><td>Olha para a câmera, escolhe as fotos e recebe impressas ou no celular</td></tr>
+    <tr><td>Vendedor do tablet</td><td>Vende Drone, Chute a Gol e Snap Pop, tira a foto do cliente e lê a pulseira</td></tr>
+    <tr><td>Piloto e equipe de entrega</td><td>No campo, leem a pulseira, voam ou gravam, soltam o vídeo e entregam o cartão com QR</td></tr>
+    <tr><td>Supervisor</td><td>Acompanha a operação e os números, desliga um produto no dia</td></tr>
+    <tr><td>TI</td><td>Dá suporte a distância, cuida do servidor e da nuvem e libera novas versões</td></tr>
+  </table>
+  <p class="nota">O tamanho da operação: cerca de 15 mil fotos por dia, 7 fotógrafos e uma expectativa de 1.000 vendas de fotos por dia, todos os dias do ano, mais as vendas das ativações em 12 tablets.</p>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="visao-geral" data-parte="Para começar" data-titulo="Visão geral da plataforma">
+  <div class="kicker">Para começar</div>
+  <h1>Visão geral da plataforma</h1>
+  <p class="serve">Serve para mostrar as peças do Eterna e onde cada uma fica, antes de ler os demais fluxos.</p>
+  <h2>O Eterna inteiro</h2>
+  <div class="lado">
+    <div class="zona">
+      <h3>No local do Tour</h3>
+      <div class="itens">
+        <span>Câmera ou cartão do fotógrafo</span><span>Servidor do Eterna (computador do ponto)</span><span>Fotos, vendas e vídeos guardados</span>
+        <span>Checkout: tela da família</span><span>Posto de venda: tela do vendedor e do caixa</span><span>Impressoras de fotos</span>
+        <span>Tablets das ativações</span><span>Computador do campo (entrega dos vídeos)</span>
+      </div>
+    </div>
+    <div class="zona net">
+      <h3>Na internet</h3>
+      <div class="itens">
+        <span>Site que entrega as telas (eterna.photo)</span><span>Nuvem: fotos, vídeos e cópias de segurança</span><span>Galeria online das fotos</span>
+        <span>Página do vídeo</span><span>Família no celular</span><span>Suporte remoto da TI</span><span>Serviços externos opcionais</span>
+      </div>
+    </div>
+  </div>
+  <div class="ponte">O servidor do ponto manda para a nuvem as fotos, os vídeos, as galerias e as cópias de segurança. O caminho contrário só traz o que o cliente fez na página do vídeo.</div>
+  <div class="ler" style="margin-top:4mm"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>A foto sai da câmera e vai para o servidor, um computador que fica no próprio local do Tour. É ele que guarda as fotos, as vendas e os vídeos, para o atendimento não depender da internet.</li>
+    <li>O vendedor e a família usam telas abertas no navegador, ligadas a esse servidor. A impressão sai de uma impressora ligada ao servidor ou ao próprio ponto de venda.</li>
+    <li>O computador do ponto guarda uma cópia das telas. Se a internet cair, o Checkout e o Posto de venda continuam abrindo pelo endereço dele.</li>
+    <li>Os tablets das ativações guardam o catálogo e as vendas e mandam tudo ao servidor pela rede do estádio. O computador do campo recebe os vídeos dos cartões de memória.</li>
+    <li>O servidor também copia fotos e vídeos para a nuvem. Assim, a família abre a galeria ou o vídeo no celular com um código QR ou um código escrito, mesmo depois de ir embora.</li>
+    <li>Sem internet, o Tour continua recebendo fotos, achando a família pelo rosto, vendendo e imprimindo. Param a subida para a nuvem (que espera em fila), o suporte remoto e a atualização do programa. Os serviços externos são opcionais: os relatórios da Roverpix, do sistema atual, e a busca dos jogos para o calendário.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<!-- ============================== DA CÂMERA ATÉ A FOTO PRONTA ============================== -->
+<section class="pagina" id="entrada-fotos" data-parte="Da câmera até a foto pronta" data-titulo="Entrada de fotos">
+  <div class="kicker">Da câmera até a foto pronta</div>
+  <h1>Entrada de fotos</h1>
+  <p class="serve">Serve para mostrar por onde uma foto entra no Eterna e quando ela é recusada.</p>
+  <h2>Da câmera ao registro</h2>
+<pre class="fluxo">
+! Câmera pela rede, cartão, pasta da rede ou envio pela tela
+>
+? A foto chegou inteira? | Não: Espera ou pede novo envio
+> Sim
+? Cliente pediu para apagar? | Sim: Foto não entra
+> Não
+? Foto já existe no Eterna? | Sim: Repetida: não duplica e avisa
+> Não
+= Continua em: Depois da chegada
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>A foto chega por quatro caminhos: direto da câmera do fotógrafo, pelo cartão de memória, por uma pasta ou outro computador da rede, ou enviada pela tela <b>Minhas fotos</b> quando o leitor não lê o cartão. Depois disso, todas passam pelas mesmas perguntas.</li>
+    <li>A primeira pergunta evita vender uma foto cortada. Se a câmera manda um arquivo pela metade, o Eterna o apaga e pede o envio de novo, e a foto precisa vir inteira outra vez.</li>
+    <li>A segunda respeita o cliente. Foto que uma família pediu para apagar não volta, mesmo que a câmera ou o cartão a mandem de novo.</li>
+    <li>A terceira evita foto em dobro na tela de venda. Se o mesmo cartão for lido duas vezes, por exemplo, nada se duplica.</li>
+    <li>A câmera entra com usuário e senha e manda só JPEG. Depois de 5 erros seguidos, aquele aparelho fica bloqueado por 15 minutos.</li>
+    <li>O envio pela tela (plano B do cartão) aceita só JPEG de verdade, tem um teto de fotos por dia e para se o disco do servidor estiver quase cheio. As fotos entram como fotos de cartão.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="depois-chegada" data-parte="Da câmera até a foto pronta" data-titulo="Depois da chegada">
+  <div class="kicker">Da câmera até a foto pronta</div>
+  <h1>Depois da chegada</h1>
+  <p class="serve">Serve para mostrar como a foto aceita fica pronta para ser vista, encontrada pelo rosto e enviada à internet.</p>
+  <h2>Três trabalhos ao mesmo tempo</h2>
+<pre class="fluxo">
+! Foto registrada no servidor
+>
+Cria cópia menor para as telas
+>
+Anota câmera, autor e hora
+>
+= Continua em: Sessões de fotos
+</pre>
+<pre class="fluxo">
+! Ao mesmo tempo
+>
+? Leitura de rostos está ligada? | Não: Sem rostos: sessão só por tempo
+> Sim
+Procura rostos para a busca
+</pre>
+<pre class="fluxo">
+! Ao mesmo tempo
+>
+? Envio à internet está ligado? | Não: Fica só no servidor
+> Sim
+= Entra na fila de envio
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul class="duas">
+    <li>Primeiro, o Eterna cria uma cópia menor da foto, para as telas abrirem rápido, e anota a hora do clique. Se a cópia falhar, ele usa a própria foto original, e a venda não para.</li>
+    <li>Depois, três trabalhos andam juntos. A foto já segue para formar a sessão, sem esperar a leitura dos rostos.</li>
+    <li>A leitura de rostos é o que permite à família se achar olhando para a câmera. Se esse recurso estiver desligado, as sessões continuam sendo formadas, só pelo tempo.</li>
+    <li>Rosto muito pequeno, como o de quem passa ao fundo, é ignorado. Foto que não abre conta como sem rosto e é lida de novo quando o servidor religar. Os dados de rosto são apagados depois de 60 dias.</li>
+    <li>O envio à internet é o que alimenta a galeria da família. Se estiver desligado, a foto continua disponível no local, mas não chega à galeria.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="sessoes" data-parte="Da câmera até a foto pronta" data-titulo="Sessões de fotos">
+  <div class="kicker">Da câmera até a foto pronta</div>
+  <h1>Sessões de fotos</h1>
+  <p class="serve">Serve para mostrar como o Eterna separa as fotos de cada família em um grupo, a sessão.</p>
+  <h2>Como nasce uma sessão</h2>
+<pre class="fluxo">
+! Foto entra com a hora do clique
+>
+Separa ao vivo e atrasadas
+>
+? Mais de 1 minuto de diferença? | Sim: Abre outra sessão, pelo tempo
+> Não
+? O rosto parece o da sessão? | Bem diferente: Sessão nova | Dúvida ou sem rosto: Fica na sessão aberta
+> Parece
+Entra na sessão mais parecida
+>
+Fecha: pausa, novo dia ou reinício
+>
+= Continua em: Foto pronta
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>Cada fotógrafo tem sua própria sequência. Fotos de cartão, ou que chegam mais de 10 minutos depois do clique, ficam em uma sequência separada, para não se misturarem com a família que está sendo fotografada agora.</li>
+    <li>O tempo decide primeiro. Se o fotógrafo passa mais de 1 minuto entre um clique e outro, o Eterna entende que a família mudou e abre outra sessão.</li>
+    <li>Quando o tempo não separa, o rosto ajuda. O Eterna percebe que outra família chegou quando aparece um rosto bem diferente, mesmo sem pausa do fotógrafo. Ele espera a leitura do rosto por até 20 segundos; depois disso, decide só pelo tempo.</li>
+    <li>A sessão que acabou de ser separada fica "fechando" por 1 minuto e ainda pode se juntar à nova, por exemplo quando as fotos do pai e da mãe vêm antes da foto do grupo. Na dúvida, a foto fica na sessão aberta, e o vendedor não precisa decidir nada.</li>
+    <li>A sessão fecha quando para de chegar foto por 1 minuto, quando o dia vira ou quando o servidor reinicia. Depois disso, ela só muda se o cliente pedir para apagar uma foto.</li>
+    <li>A tela Minhas fotos mostra as sessões de hoje, com o motivo de cada uma ter começado: primeira do dia, pausa de 1 minuto, rostos novos, servidor reiniciado ou atrasada.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="foto-pronta" data-parte="Da câmera até a foto pronta" data-titulo="Foto pronta para venda">
+  <div class="kicker">Da câmera até a foto pronta</div>
+  <h1>Foto pronta para venda</h1>
+  <p class="serve">Serve para mostrar o que acontece entre o fechamento da sessão e a foto aparecer para a família na tela de venda.</p>
+  <h2>Da sessão fechada à tela de venda</h2>
+<pre class="fluxo">
+! Sessão fechada chega às telas
+>
+? Alguém de olhos fechados? | Sim: Sai da venda e fica guardada
+> Não
+Ajuste automático de luz e cor
+>
+? Equipe mexe na foto? | Ajusta: Ajuste à mão fica protegido | Descarta: Descartada, pode ser recuperada
+> Não
+= Foto pronta para a família
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>Assim que a sessão fecha, a foto já pode aparecer para a família. A checagem de olhos fechados e o ajuste de luz correm por trás e não seguram a venda.</li>
+    <li>Olhos fechados é o único motivo que tira uma foto da venda sozinho. Foto em que nenhum rosto foi achado continua à venda. Se um cliente está sendo atendido, a checagem espera, por no máximo 10 minutos seguidos, para não atrapalhar o balcão.</li>
+    <li>O ajuste automático acerta brilho, contraste e cor, e a foto original nunca é alterada. O fotógrafo liga ou desliga o ajuste automático na tela dele. Se o vendedor ajustou à mão, a máquina não troca esse ajuste sem que alguém peça.</li>
+    <li>O vendedor pode descartar uma foto ruim, que sai da venda, e recuperá-la depois.</li>
+    <li>À parte, a <b>Fila do fotógrafo</b> mostra em três colunas onde estão as sessões: "Clicando agora", "Chegando" e "Já no Checkout", que é a tela de venda da família. Ela também avisa quando falta o segundo clique para os fundos de IA.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="fundos-ia" data-parte="Da câmera até a foto pronta" data-titulo="Recorte e fundos de IA">
+  <div class="kicker">Da câmera até a foto pronta</div>
+  <h1>Recorte e fundos de IA</h1>
+  <p class="serve">Serve para mostrar como a família recebe a foto com um cenário do Maracanã trocado por inteligência artificial (IA), a "Edição Maracanã".</p>
+  <h2>Dos dois primeiros cliques à venda</h2>
+<pre class="fluxo">
+! 1º clique corpo inteiro, 2º mais fechado
+>
+? Ponto de campo e sessão com mais de 2 fotos? | Não: Nada é separado; as fotos ficam à venda
+> Sim
+Servidor recorta as pessoas, com a sessão aberta
+>
+? Recorte deu certo? | Não: Só a montagem sai; as fotos normais continuam
+> Sim
+Monta os 5 fundos
+>
+= Aparecem primeiro, com o selo Edição Maracanã
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>Recortar é separar a pessoa do fundo da foto. Nos 4 pontos de campo, os 2 primeiros cliques de cada sessão são feitos para isso: o 1º de corpo inteiro e o 2º mais fechado. Essas 2 fotos não são vendidas como foto; viram a base das montagens. Volante e Vestiário ficam fora, e o Admin pode mudar a regra.</li>
+    <li>Se o fotógrafo esquecer o enquadramento, o sistema usa as 2 primeiras fotos assim mesmo. Sessão com 2 fotos ou menos não separa nada.</li>
+    <li>O recorte começa assim que as fotos chegam. Quando a família chega ao balcão, as 5 montagens já estão prontas, uma para cada fundo: Noite de campeão, Mirante ao pôr do sol, Arquibancada 1950, Saída do túnel e Telão do Maracanã.</li>
+    <li>No Checkout, as montagens aparecem primeiro, com a faixa amarela <b>Edição Maracanã</b>. Cada uma conta como uma foto do pacote. A faixa é só da tela: a foto impressa sai sem ela.</li>
+    <li>Tudo roda no próprio computador do ponto, sem internet e sem custo por foto. O serviço externo de recorte usado antes saiu das opções. Os recortes ficam guardados 2 dias.</li>
+    <li>A montagem ainda não vai para a galeria online. No pacote só digital ela não chega ao cliente, por isso o Posto avisa o vendedor.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<!-- ============================== DO CLIENTE ATÉ A FOTO ENTREGUE ============================== -->
+<section class="pagina" id="encontrar" data-parte="Do cliente até a foto entregue" data-titulo="Encontrar as fotos">
+  <div class="kicker">Do cliente até a foto entregue</div>
+  <h1>Encontrar as fotos</h1>
+  <p class="serve">Serve para levar o cliente, na tela de venda (chamada de Checkout), até as fotos dele, sem que ele veja as fotos de outras pessoas.</p>
+  <h2>Do rosto até as fotos</h2>
+<pre class="fluxo">
+! Cliente toca em Iniciar
+>
+? Como ele entra? | Código da sessão: Abre a sessão inteira | Equipe: Abre pela lista de sessões
+> Câmera
+Eterna compara o rosto com as fotos
+>
+? Achou fotos da pessoa? | Não: Volta ao Iniciar ou pede o código | Só parecidas: Pergunta: esta sessão também é sua?
+> Sim
+Mostra só as fotos em que ela aparece
+>
+= Continua em: Checkout
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>A família termina o passeio e para em frente à tela. A câmera só liga quando alguém toca em <b>Iniciar</b>, e tira a selfie sozinha. Vai uma pessoa por vez: com duas na frente da câmera, a busca não roda. Sem rosto por 1 minuto, ou 3 minutos depois do Iniciar, a câmera desliga.</li>
+    <li>O Eterna procura só nas sessões com foto nos últimos 90 minutos, por padrão. Assim, a busca fica em quem acabou de passar pelo Tour. Admin e Supervisor mudam esse tempo.</li>
+    <li>O rosto abre só as fotos em que a pessoa aparece, nunca a sessão inteira, para proteger as outras famílias (LGPD). Ela pode aparecer em várias sessões do dia, com fotógrafos diferentes: tudo vira uma compra só.</li>
+    <li>Quando a semelhança é só parecida, o Eterna pergunta ao cliente, e é ele quem decide se aquelas fotos são dele. Sessão de criança ou de grupo de escola nunca entra assim.</li>
+    <li>Se a câmera não resolver, o cliente toca em <b>Digite sua sessão</b> e digita o código do recibo, que abre a sessão inteira. Depois de 5 códigos errados seguidos, o campo trava por 1 minuto. No Posto, o vendedor também junta as fotos da mesma família com <b>Juntar outra leva</b>.</li>
+    <li>Se a venda já foi paga, a tela mostra de novo o QR Code (o quadradinho que o celular lê) e oferece <b>Comprar mais fotos</b>.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="checkout" data-parte="Do cliente até a foto entregue" data-titulo="Checkout">
+  <div class="kicker">Do cliente até a foto entregue</div>
+  <h1>Checkout</h1>
+  <p class="serve">Serve para transformar as fotos escolhidas em um pedido. O cliente só escolhe as fotos; pacote e pagamento ficam com o vendedor.</p>
+  <h2>Da escolha até o pedido</h2>
+<pre class="fluxo">
+! Edição Maracanã primeiro, depois as fotos de hoje
+>
+Cliente marca ✓ ou ✗ em cada foto
+>
+? Parou 90 segundos sem tocar? | Sim: Volta ao Iniciar e apaga as marcas
+> Não
+Toca em Continuar: "Pronto! O atendente vai finalizar"
+>
+Vendedor escolhe o pacote no Posto
+>
+Tela mostra o valor a pagar
+>
+= Continua em: Pagamento
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>A foto aparece na tela inteira. O cliente passa com as setas ou arrastando o dedo, marca o que quer levar e pode ver todas em grade. Ele troca o idioma pela bandeira: português, inglês, espanhol, francês ou alemão.</li>
+    <li>O Checkout não mostra pacote, preço nem forma de pagamento. Ao tocar em <b>Continuar</b>, o pedido aparece no Posto de venda, em <b>Aguardando pagamento</b>, com as fotos escolhidas.</li>
+    <li>O vendedor mostra as fotos e escolhe o pacote. O <b>Ideal</b> vem marcado: é o mais barato para o que foi escolhido, já somando as fotos adicionais. Os pacotes vão de R$ 70 a R$ 250, e a foto adicional custa R$ 35. A tela mostra quanto o cliente economiza.</li>
+    <li>Assim que o pacote é escolhido, o cliente vê "Valor a pagar" e, depois da forma de pagamento, onde pagar. Se o vendedor trocar o pacote, o valor muda na hora. Cada escolha fica registrada com o nome de quem fez.</li>
+    <li>Antes de o vendedor escolher, o cliente ainda pode tocar em <b>Voltar às fotos</b>. Depois, a compra fica com o vendedor. Se a tela ficar parada 3 minutos, ela volta ao Iniciar e o pedido continua no Posto; o vendedor também pode usar <b>Recomeçar o Checkout</b>.</li>
+    <li>Hoje o Checkout e o Posto de venda precisam estar no mesmo computador, em duas janelas: uma no monitor do cliente e outra no notebook da equipe.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="pagamento" data-parte="Do cliente até a foto entregue" data-titulo="Pagamento">
+  <div class="kicker">Do cliente até a foto entregue</div>
+  <h1>Pagamento</h1>
+  <p class="serve">Serve para separar o pedido do cliente da venda de verdade: só a equipe transforma um no outro, depois de receber o dinheiro.</p>
+  <h2>Do pedido até a venda</h2>
+<pre class="fluxo">
+! Cliente vê o valor e onde pagar
+>
+? O que o vendedor faz? | Cancelar compra: Cliente volta ao início | Nada até a virada do dia: Vira não paga
+> Confirma
+? O pedido ainda está aguardando? | Não: Avisa quem já confirmou; nada muda
+> Sim
+Venda paga: cliente recebe o QR
+>
+= Continua em: Fila de impressão e Galeria online
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>A maquininha é avulsa e não conversa com o Eterna. Por isso, quem confirma o pagamento é sempre uma pessoa com permissão para isso, depois de ver a maquininha aprovar.</li>
+    <li>Tudo da venda acontece em uma tela só, o <b>Posto de venda</b>. O <b>Caixa</b> é o mesmo Posto mostrando só o dinheiro a confirmar, e o número ao lado do botão diz quantos esperam. Pedido esperando há mais de 15 minutos fica destacado e aparece em Alertas.</li>
+    <li>O número da autorização da maquininha é opcional, de 4 a 12 números. Se o vendedor digitar algo com cara de número de cartão, o Eterna recusa e nada é gravado.</li>
+    <li>Antes de fechar, o Eterna confere se o pedido ainda está aguardando, para a mesma venda não ser fechada duas vezes. Quem tentar depois vê "Já confirmada por" e a hora. Só aí o cliente recebe o QR Code, e a impressão e a galeria começam.</li>
+    <li>Cancelar devolve o cliente ao início. Pedido esquecido vira não pago na virada do dia. Quando o Checkout está fora, a <b>Venda manual</b>, dentro do Posto, monta a venda direto.</li>
+    <li>A <b>Cortesia SAC</b> atende o cliente prejudicado pela operação. Só quem pode dar cortesia vê o botão, e o motivo e "o que aconteceu" são obrigatórios. A venda fica com valor zero e guarda quem deu.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="impressao" data-parte="Do cliente até a foto entregue" data-titulo="Fila de impressão">
+  <div class="kicker">Do cliente até a foto entregue</div>
+  <h1>Fila de impressão</h1>
+  <p class="serve">Serve para levar as fotos pagas até o papel e confirmar que elas saíram certas.</p>
+  <h2>Do pagamento até o papel</h2>
+<pre class="fluxo">
+! Venda paga
+>
+? O pacote inclui fotos impressas? | Não: Sem impressão para esta venda
+> Sim
+Vendedor escolhe e manda imprimir
+>
+? Por onde imprime? | Neste computador: Sai na impressora ligada ao Posto
+> Servidor
+? A impressora está bem? | Não: Fila espera e mostra o motivo
+> Sim
+? Equipe confere: saiu certo? | Não saiu: Tentativa registrada; nada descontado
+> Sim
+= Baixa no rolo; venda impressa
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>Logo depois do pagamento, a família vê o QR Code ao lado da foto escolhida, grande o bastante para o celular ler a cerca de 1 metro. Depois de 40 segundos, por padrão, a tela volta ao Iniciar para a próxima família.</li>
+    <li>O vendedor vê primeiro as fotos favoritas e pode trocar quais vão para o papel. Se nenhuma ficar pronta para imprimir, o Eterna avisa para tentar de novo.</li>
+    <li>Há dois caminhos. Se o servidor tem impressora, o pedido entra em uma fila única, por ordem de chegada; cada posto pode ter a sua impressora, e cada venda sai inteira numa só. Se não, a impressão sai direto na impressora ligada ao computador do vendedor.</li>
+    <li>Se faltar papel ou a tampa estiver aberta, a fila espera, sem pular foto, e mostra o motivo. A equipe resolve ou cancela. Se um pedido parar no meio, dá para imprimir só o que faltou.</li>
+    <li>A venda só termina quando o vendedor responde "Saiu certo". É essa resposta que desconta a foto do rolo, que tem 700 fotos. Ao trocar o rolo, o vendedor registra a troca em <b>Troquei o rolo</b>. Impressões e reimpressões ficam gravadas no servidor.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="galeria" data-parte="Do cliente até a foto entregue" data-titulo="Galeria online e compra pela internet">
+  <div class="kicker">Do cliente até a foto entregue</div>
+  <h1>Galeria online e compra pela internet</h1>
+  <p class="serve">Serve para entregar as fotos no celular do cliente depois da visita, com uma selfie que confirma quem é.</p>
+  <h2>Do QR Code até o download</h2>
+<pre class="fluxo">
+! Cliente abre o QR ou digita o código
+>
+? Galeria pronta e dentro do prazo? | Vencida ou não encontrada: Avisa que a galeria não abre | Fotos chegando: Pede para aguardar e tenta de novo
+> Sim
+Cliente autoriza e tira uma selfie
+>
+? O rosto bate com a galeria? | Não: Tenta de novo; 5 erros bloqueiam 15 min
+> Sim
+? A foto já é do cliente? | À venda: Vê com marca d'água; compra no balcão
+> Comprada
+= Baixa a foto em alta qualidade
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>Depois da venda, o servidor publica a galeria na nuvem. Se falhar, ele tenta de novo sozinho. Quem abre a galeria muito cedo vê um aviso de que as fotos estão chegando, e a página tenta outra vez. O código escrito também é resolvido pela nuvem.</li>
+    <li>A autorização para usar o rosto é obrigatória. Quando as fotos são de uma criança, quem autoriza é o responsável. A selfie é tirada só pela câmera do celular, que dispara sozinha ao ver o rosto.</li>
+    <li>A selfie impede que alguém veja as fotos só por ter o QR Code. Ela é comparada só com as fotos daquela galeria, e os rostos lidos são apagados quando a galeria vence ou é encerrada. No grupo de escola, abrem só as fotos em que a criança aparece. O acesso vale 1 hora.</li>
+    <li>Foto comprada ou de cortesia pode ser baixada em alta qualidade. Foto à venda aparece só com marca d'água. Hoje a compra pelo celular está desligada: a galeria mostra as fotos e pede para o cliente falar com a equipe no balcão.</li>
+    <li>Depois de 60 dias, ou se a equipe encerrar antes, a galeria sai do ar e aquele QR Code nunca mais abre. As montagens da Edição Maracanã ainda não aparecem na galeria.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="lgpd" data-parte="Do cliente até a foto entregue" data-titulo="Exclusão LGPD">
+  <div class="kicker">Do cliente até a foto entregue</div>
+  <h1>Exclusão LGPD</h1>
+  <p class="serve">Serve para atender o cliente que pede para não guardar as fotos dele, um direito ligado à LGPD (a lei brasileira de proteção de dados).</p>
+  <h2>Do pedido até a exclusão</h2>
+<pre class="fluxo">
+! Cliente pede à equipe para apagar
+>
+Vendedor abre a sessão na Venda manual
+>
+? Tem permissão? | Não: O link de apagar não aparece
+> Sim
+? Há pedido aberto com essas fotos? | Sim: Cancelar o pedido antes
+> Não
+? Confirma? Não dá para desfazer | Cancelou ou sem conexão: Nada é apagado
+> Sim
+Apaga as fotos não compradas e os rostos
+>
+= Guarda o registro, sem nenhuma imagem
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>O pedido é sempre feito a uma pessoa da equipe. A galeria e o Checkout não têm essa opção. O funcionário abre a sessão da família na Venda manual, dentro do Posto de venda, e toca em <b>Cliente pediu: apagar as fotos</b>.</li>
+    <li>Só quem pode cuidar das galerias online vê o link. A pergunta de confirmação diz quantas fotos saem e quantas ficam, porque a exclusão não tem volta. Se o funcionário cancelar ou o servidor não responder, nada é apagado.</li>
+    <li>As fotos que o cliente comprou e as cortesias ficam com ele, e a galeria paga continua aberta. Saem as fotos que ele não comprou, do estádio e da internet, junto com o rosto lido nelas. A sessão já paga também tem o link, para apagar só o que não foi comprado.</li>
+    <li>O Eterna guarda uma marca para a mesma foto não voltar a entrar. Se algum passo falhar, a equipe é avisada para olhar o registro.</li>
+    <li>O registro diz quantas fotos saíram, quem pediu e em qual posto, sem guardar imagem. Mesmo sem nenhum pedido, rostos, sessões e galerias são apagados em 60 dias.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<!-- ============================== ATIVAÇÕES ============================== -->
+<section class="pagina" id="ativacoes" data-parte="Drone, Chute a Gol e Snap Pop (ativações)" data-titulo="As ativações em poucas palavras">
+  <div class="kicker">Drone, Chute a Gol e Snap Pop (ativações)</div>
+  <h1>As ativações em poucas palavras</h1>
+  <p class="serve">Além das fotos, o Eterna vende e entrega os vídeos das três ativações do Tour. O cliente compra no foyer, a quase 1 km do campo, e recebe o vídeo no celular por um cartão com QR.</p>
+  <h2>Da venda à entrega do vídeo</h2>
+<pre class="fluxo">
+! Venda no tablet, com nome e foto
+>
+Pulseira numerada lida para cada vídeo
+>
+No campo, a equipe lê a pulseira
+>
+Decolar ou Começar
+>
+Vídeo solto no computador do campo
+>
+Cartão com QR lido e Entregar
+>
+= Cliente assiste e baixa no celular
+</pre>
+  <div class="grade3">
+    <div class="cartao"><h3>Drone</h3>Vídeo do voo em três tipos (Asteroid, Boomerang e Inside Out), no Campo, na Arquibancada ou no Banco de Suplentes. Adicional 4K. Com chuva, só o Boomerang é vendido. Preços da carga inicial de R$ 120 a R$ 250.</div>
+    <div class="cartao"><h3>Chute a Gol</h3>3 ou 5 chutes, com ou sem medalha, vídeo e bola. Medalha e bola são itens físicos, entregues um a um. Preços da carga inicial de R$ 110 a R$ 279, e itens avulsos.</div>
+    <div class="cartao"><h3>Snap Pop</h3>Vídeo feito com IA, nos temas Brasil, Flamengo ou Fluminense. O vídeo é gerado depois, por uma integração ainda a fazer. Preços da carga inicial de R$ 110 por 1 vídeo a R$ 290 por 3.</div>
+  </div>
+  <div class="ler" style="margin-top:3mm"><h3>As telas das ativações</h3>
+  <ul class="duas">
+    <li><b>Drone, Chute a Gol e Snap Pop</b>, no tablet: a venda. O vendedor tem um perfil próprio, que só vende e vê as próprias vendas.</li>
+    <li><b>Entrega dos vídeos</b>, no computador do campo: a fila do dia, a pulseira, o vídeo e o cartão. Perfil Equipe de campo.</li>
+    <li><b>Resumo das ativações</b>, no Dashboard, feito para o celular do gestor: total vendido, por pagamento, por vendedor, por serviço e por país.</li>
+    <li>O Admin troca preços e pode tirar um produto, ou só um local, da venda naquele dia. Volta sozinho no dia seguinte. O histórico do sistema antigo entra no Eterna toda noite, até ele ser desligado.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="venda-tablet" data-parte="Drone, Chute a Gol e Snap Pop (ativações)" data-titulo="Venda no tablet">
+  <div class="kicker">Drone, Chute a Gol e Snap Pop (ativações)</div>
+  <h1>Venda no tablet</h1>
+  <p class="serve">Serve para mostrar como o vendedor registra a venda com tudo na mão, sem depender de internet nem do servidor.</p>
+  <h2>Do serviço ao registro</h2>
+<pre class="fluxo">
+! Escolhe o serviço; o cliente vê o vídeo de demonstração
+>
+No card: local, 4K, chuva e pessoas; Adicionar
+>
+Cliente: nome, foto, país e idioma
+>
+Uma pulseira por vídeo
+>
+Pagamento e resumo
+>
+Registrar: grava no tablet
+>
+? O servidor do ponto respondeu? | Não: "Aguardando envio"; tenta a cada 5 s
+> Sim
+= Venda guardada no servidor
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul class="duas">
+    <li><b>Local first.</b> O catálogo e os vídeos de demonstração ficam guardados no tablet. A tela abre e vende sem internet e sem o servidor. Nada carrega na hora da venda.</li>
+    <li>O preço é o do catálogo, com os adicionais somados sozinhos. O vendedor não digita valor. A linha do carrinho não se edita: tem só a lixeira.</li>
+    <li>O <b>nome e a foto do cliente são obrigatórios</b>. Servem só para a equipe do campo reconhecer a pessoa. A foto sai reduzida do tablet e fica em arquivo no servidor do ponto, fora do banco e fora da nuvem.</li>
+    <li>Nome e foto são apagados sozinhos <b>1 dia depois da entrega ou 2 dias depois da venda</b>, o que vier primeiro. País e idioma não identificam a pessoa: servem para o resumo e para a página abrir no idioma dele.</li>
+    <li>Com a foto tirada, aparece uma caixa, desmarcada, para o cliente autorizar procurar as fotos dele do Tour.</li>
+    <li>Pagamento por PIX, Dinheiro, Débito, Crédito ou Cortesia. Na Cortesia, o motivo e o relato do que aconteceu são obrigatórios.</li>
+    <li>Registrar grava a venda no tablet em duas cópias e só então diz "registrada". O envio ao servidor vem em seguida. Sem rede, a venda espera e é reenviada sozinha. O servidor reconhece o código da venda, então reenviar nunca duplica.</li>
+    <li>Um carrinho com mais de um serviço vira <b>uma venda por serviço, com o mesmo número</b>. Uma venda igual em até 2 minutos pede confirmação.</li>
+    <li>Venda recusada pelo servidor nunca é apagada do tablet. Sair da conta ou atualizar o app não mexe nas vendas que esperam envio.</li>
+    <li>O vendedor não cancela. Só o Admin e quem tem permissão cancelam, com motivo, e só enquanto o vídeo não foi entregue.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="pulseira" data-parte="Drone, Chute a Gol e Snap Pop (ativações)" data-titulo="Pulseira numerada por vídeo">
+  <div class="kicker">Drone, Chute a Gol e Snap Pop (ativações)</div>
+  <h1>Pulseira numerada por vídeo</h1>
+  <p class="serve">Serve para ligar a pessoa à compra, do foyer até o campo, sem pedir documento e sem depender de chamar pelo nome.</p>
+  <h2>Da venda ao atendimento no campo</h2>
+<pre class="fluxo">
+! Cada vídeo comprado ganha uma pulseira
+>
+Tablet lê o número: leitor, câmera ou digitado
+>
+? O número já está nesta venda? | Sim: Recusada na hora
+> Não
+? Já foi usado em outra compra? | Sim: Bloqueada (com rede)
+> Não
+Pulseira gravada na venda
+>
+= No campo, a pulseira abre o atendimento
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>A pulseira entrou na v99.25, a pedido da diretoria. Cada vídeo comprado tem a sua, e ela é <b>obrigatória</b>: sem pulseira, a venda não registra.</li>
+    <li>O QR da pulseira guarda <b>só o número</b>. Não tem nome, foto nem dado da compra. Quem achar uma pulseira perdida não descobre nada sobre o cliente.</li>
+    <li>O número <b>não repete entre compras</b>. Na própria venda, o tablet recusa o mesmo número duas vezes. Com rede, ele consulta o servidor e bloqueia a pulseira que já foi usada em outra compra.</li>
+    <li>No campo, ler a pulseira abre o atendimento daquela pessoa: a foto, o nome, o número e o que ela comprou. Acabou o passo de procurar a venda numa lista.</li>
+    <li>O voo é gravado na pulseira. Por isso, dois drones podem voar a mesma compra ao mesmo tempo, cada um com a sua pulseira.</li>
+    <li>Venda de antes da pulseira continua sendo atendida pela fila completa, que fica num botão na tela de entrega.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="entrega" data-parte="Drone, Chute a Gol e Snap Pop (ativações)" data-titulo="Entrega no computador do campo">
+  <div class="kicker">Drone, Chute a Gol e Snap Pop (ativações)</div>
+  <h1>Entrega no computador do campo</h1>
+  <p class="serve">Serve para mostrar o caminho do atendimento no campo, começando pela pulseira e terminando com o cartão na mão do cliente.</p>
+  <h2>Da pulseira ao próximo cliente</h2>
+<pre class="fluxo">
+! Lê a pulseira
+>
+Abre o atendimento: foto, nome, pulseira
+>
+Decolar: piloto, drone e bateria (Chute e Snap: Começar)
+>
+Solta o vídeo na tela e confere
+>
+? Lê o cartão com QR: vale? | Não: Recusado: já usado, de lote cancelado ou fora de lote
+> Sim
+Entregar; baixa de medalha e bola
+>
+= Próximo cliente
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul class="duas">
+    <li>O drone pousa, alguém abre o cartão de memória no computador do campo e arrasta o vídeo para a tela, ou escolhe o arquivo. O vídeo já é daquela pulseira. Ele toca ali mesmo, para conferir.</li>
+    <li><b>Decolar</b> pede piloto, drone e bateria, escolhidos do cadastro. O cadastro liga e desliga, nunca apaga. Já vem com a frota do sistema antigo; os pilotos entram pela tela.</li>
+    <li>O cartão com QR é lido pela câmera do computador ou por um leitor que digita o número. Se o QR não ler, a equipe digita o código de 12 letras impresso no cartão.</li>
+    <li><b>Entregar</b> liga o vídeo à venda e ao cartão. A partir daí, o cartão é a chave do cliente. Depois, <b>Próximo cliente</b> limpa a tela.</li>
+    <li>A venda fica <b>entregue</b>, com data e hora, quando todos os vídeos têm cartão e todos os itens físicos tiveram baixa. Venda entregue não cancela.</li>
+    <li>A faixa <b>Agora</b> mostra quem está voando ou gravando e quem ainda tem item faltando.</li>
+    <li>A fila completa, num botão, tem quatro colunas por serviço: Próximo a voar (a chutar, a gravar), Voando (Chutando, Gravando), Entrega do vídeo e Entregue.</li>
+    <li>Em cada vídeo, a tela mostra a situação da subida e o que o cliente fez: "Cliente abriu 13:01, assistiu 13:03, baixou 13:06", ou "ainda não abriu".</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="video-nuvem" data-parte="Drone, Chute a Gol e Snap Pop (ativações)" data-titulo="O vídeo até a nuvem">
+  <div class="kicker">Drone, Chute a Gol e Snap Pop (ativações)</div>
+  <h1>O vídeo até a nuvem</h1>
+  <p class="serve">Serve para mostrar por que o cliente consegue baixar o vídeo segundos depois de receber o cartão.</p>
+  <h2>Do arquivo solto à página do cliente</h2>
+<pre class="fluxo">
+! Vídeo solto na tela
+>
+Chega ao servidor do ponto como rascunho
+>
+Já começa a subir para a nuvem
+>
+? O cartão foi lido? | Ninguém ligou em 1 dia: Rascunho apagado aqui e na nuvem
+> Sim
+Nuvem copia por dentro, com o nome do cartão
+>
+Página do cliente publicada
+>
+= "Na nuvem"
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>O vídeo começa a subir para a nuvem <b>assim que é solto</b>, enquanto a equipe confere o vídeo e pega o cartão. Ele ainda não tem dono na nuvem: é um rascunho.</li>
+    <li>Quando o cartão é lido, a nuvem só <b>copia o arquivo por dentro</b> com o nome do cartão. Isso leva segundos, porque o vídeo não sobe de novo. Vale mesmo se o cartão for lido no meio da subida: a cópia espera o fim.</li>
+    <li>O servidor aceita só vídeo mp4 ou mov, até 1 GB, e lê a duração do próprio arquivo. A subida é feita em partes, e o tamanho é conferido no fim.</li>
+    <li>Sem internet, a subida espera e tenta de novo, com espera crescente. A venda e a entrega não param.</li>
+    <li>A tela de entrega mostra "Aguardando internet", "Subindo" com a porcentagem, "Publicando a página do cliente" e, no fim, "Na nuvem". Um erro aparece em vermelho, com a contagem no topo da tela.</li>
+    <li>Se o cliente ler o QR antes do fim, a página diz "Seu vídeo está chegando" e confere de novo a cada 15 segundos.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="cartoes" data-parte="Drone, Chute a Gol e Snap Pop (ativações)" data-titulo="Cartões com QR em lotes">
+  <div class="kicker">Drone, Chute a Gol e Snap Pop (ativações)</div>
+  <h1>Cartões com QR em lotes</h1>
+  <p class="serve">Serve para controlar os cartões impressos na gráfica, sem perder a conta e sem nunca repetir um número.</p>
+  <h2>Do lote gerado ao cartão aceito</h2>
+<pre class="fluxo">
+! Gera o lote no servidor (até 10.000 cartões)
+>
+Lote "na gráfica": baixa sempre o mesmo arquivo
+>
+? A gráfica entregou? | Não foi impresso ou se perdeu: Cancelar lote
+> Sim
+Marcar recebido
+>
+? Na entrega, o cartão é de lote recebido? | Lote cancelado ou fora de lote: Recusado
+> Sim
+= Cartão aceito e ligado ao vídeo
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>O lote é gerado e guardado no servidor do ponto, em Configurações › Preços e Checkout › Avançado › Cartões com QR impresso. Só quem pode alterar o catálogo gera.</li>
+    <li>Fica <b>um lote "na gráfica" por vez</b>. Enquanto ele está lá, o botão só baixa o mesmo arquivo de novo, e cada download fica contado. Um lote novo só sai depois de <b>Marcar recebido</b> ou <b>Cancelar lote</b>.</li>
+    <li>Cada cartão tem um QR com 22 caracteres aleatórios e um código de <b>12 letras</b>, no formato XXXX-XXXX-XXXX, impresso no cartão para digitar se o QR não ler. Os dois nunca repetem, nem entre lotes.</li>
+    <li>Na entrega, cartão de lote cancelado é recusado, e cartão que não veio de lote nenhum também. Cartão já usado em outra entrega é recusado na hora.</li>
+    <li>A tabela dos lotes mostra quem gerou, quando, quantos cartões já foram usados e quem mudou a situação.</li>
+    <li>Na nuvem, um código escrito nunca troca de dono: se dois cartões dessem o mesmo código, ele fica com o primeiro, e o outro abre só pelo QR.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="pagina-cliente" data-parte="Drone, Chute a Gol e Snap Pop (ativações)" data-titulo="A página do cliente">
+  <div class="kicker">Drone, Chute a Gol e Snap Pop (ativações)</div>
+  <h1>A página do cliente</h1>
+  <p class="serve">Serve para mostrar o que o cliente vê ao ler o cartão com o celular.</p>
+  <h2>Do cartão ao vídeo baixado</h2>
+<pre class="fluxo">
+! Cliente lê o cartão ou digita o código
+>
+? O vídeo já chegou? | Não: "Seu vídeo está chegando"
+> Sim
+Aceite de uso de imagem e e-mail
+>
+Assiste ao vídeo
+>
+Baixar vídeo
+>
+Drone: fotos tiradas do próprio vídeo
+>
+? Autorizou procurar as fotos do Tour? | Não: Só as do vídeo
+> Sim
+= Fotos do Tour na mesma página
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul class="duas">
+    <li>O cartão abre o vídeo direto, <b>sem selfie</b>: o reconhecimento de rosto não compara com vídeo, e o cartão físico já prova a compra.</li>
+    <li>O cliente dá o aceite de uso de imagem e informa o e-mail. Receber novidades é opcional. O aceite vale naquele aparelho até a página vencer.</li>
+    <li>O vídeo toca na própria página. <b>Baixar vídeo</b> salva o arquivo direto no celular, com o nome do serviço. A página abre no idioma escolhido na venda.</li>
+    <li>As <b>fotos do Tour</b> aparecem só se o cliente autorizou na venda. O servidor do ponto compara a foto da venda com as fotos do dia. A foto da venda nunca vai à nuvem.</li>
+    <li>Entram só as fotos em que ele é o rosto principal, até 60. A busca se repete de hora em hora enquanto a foto existe, porque o Tour pode acontecer depois do voo.</li>
+    <li><b>Drone:</b> ao ligar o vídeo, o servidor tira dele 4 fotos do cliente (começo do vídeo, rosto grande e nítido) e 2 aéreas. Elas entram como fotos de fotógrafo, com sessão e rostos lidos: o cliente também as acha no Checkout pela selfie. Na página do vídeo aparecem primeiro, mesmo sem a autorização do Tour.</li>
+    <li>A página mostra até 8 miniaturas. As compradas vêm sem marca d'água e com <b>Baixar</b>; as à venda, com marca. Tocar numa foto à venda abre a galeria do Tour com aquela foto marcada e um <b>Voltar ao vídeo</b>.</li>
+    <li>A compra pelo celular ainda está desligada. Por enquanto, a página serve para o cliente ver as fotos e comprar no balcão.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="prazos-ativacoes" data-parte="Drone, Chute a Gol e Snap Pop (ativações)" data-titulo="Prazos e estatísticas das ativações">
+  <div class="kicker">Drone, Chute a Gol e Snap Pop (ativações)</div>
+  <h1>Prazos e estatísticas das ativações</h1>
+  <p class="serve">Serve para dizer quanto tempo cada coisa fica guardada e o que o Eterna anota em cada passo.</p>
+  <div class="grade2">
+    <div>
+      <h2>Quanto tempo fica</h2>
+      <table>
+        <tr><th>O quê</th><th>Prazo</th></tr>
+        <tr><td>Nome e foto do cliente</td><td>1 dia depois da entrega ou 2 dias depois da venda, o que vier primeiro</td></tr>
+        <tr><td>Vídeo na nuvem</td><td>30 dias; a regra do armazenamento apaga com 31</td></tr>
+        <tr><td>Vídeo no servidor do ponto</td><td>30 dias, na limpeza diária</td></tr>
+        <tr><td>Página do cliente</td><td>30 dias</td></tr>
+        <tr><td>Rascunho sem cartão</td><td>1 dia, no servidor e na nuvem</td></tr>
+        <tr><td>Venda e registro da entrega</td><td>Ficam, sem dado pessoal, como histórico</td></tr>
+      </table>
+    </div>
+    <div>
+      <h2>O que fica registrado</h2>
+      <table class="t-livre">
+        <tr><th>Momento</th><th>O que é anotado</th></tr>
+        <tr><td><b>Vendeu</b></td><td>Hora, vendedor, itens, pagamento, país e idioma</td></tr>
+        <tr><td><b>Recebeu</b></td><td>Hora em que o cliente chegou ao campo e quem atendeu</td></tr>
+        <tr><td><b>Decolou</b></td><td>Hora, piloto, drone e bateria (ou o Começar)</td></tr>
+        <tr><td><b>Entregou</b></td><td>Hora, cartão e itens físicos com baixa</td></tr>
+        <tr><td><b>Subiu</b></td><td>Quando o vídeo e a página ficaram na nuvem</td></tr>
+        <tr><td><b>Cliente</b></td><td>Quando abriu, aceitou, assistiu e baixou, e quantas vezes</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="ler" style="margin-top:2mm"><h3>Como ler</h3>
+  <ul>
+    <li>O servidor do ponto busca na nuvem, de 2 em 2 minutos, o que o cliente fez na página. Vêm só os momentos, sem endereço de internet e sem e-mail.</li>
+    <li>O <b>Resumo das ativações</b> mostra por dia, semana ou mês o total vendido, as vendas por pagamento, por vendedor, por serviço e por país, e quais vendedores estão conectados agora. As vendas canceladas ficam de fora. O painel <b>Tempo de cada etapa</b> mostra quantas vendas passaram por cada momento acima, o tempo típico entre um e outro e a velocidade real do envio dos vídeos à nuvem.</li>
+    <li>As vendas do sistema antigo entram toda noite, às 19h30, sem nenhum dado de cliente, e aparecem nas mesmas telas, só para leitura.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<!-- ============================== POR TRÁS DAS TELAS ============================== -->
+<section class="pagina" id="entrada-permissoes" data-parte="Por trás das telas" data-titulo="Entrada e permissões">
+  <div class="kicker">Por trás das telas</div>
+  <h1>Entrada e permissões</h1>
+  <p class="serve">Este fluxo mostra como o Eterna decide quem pode entrar e o que cada pessoa pode ver e fazer.</p>
+  <h2>Quem entra e o que vê</h2>
+<pre class="fluxo">
+! Quem está abrindo o Eterna?
+>
+? É cliente? | Link da galeria ou cartão: Vê a própria galeria ou vídeo | Tela do Checkout: Escolhe fotos sem se identificar
+> Equipe
+? Entrou há menos de 12 horas? | Sim: Segue direto
+> Não
+? E-mail e senha certos? | Não: Aviso; 5 erros bloqueiam 15 min
+> Sim
+? Tem alguma tela liberada? | Não: Aviso: acesso ainda não liberado
+> Sim
+= Vê só as telas do seu perfil
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>A primeira pergunta separa o público da equipe. A família que abre a galeria ou o cartão do vídeo e o cliente que escolhe fotos no Checkout não fazem cadastro.</li>
+    <li>A pessoa da equipe entra com e-mail e senha, conferidos pelo servidor do ponto. O Admin gera uma senha provisória, e a pessoa troca no primeiro acesso por uma senha forte. A entrada vale 12 horas.</li>
+    <li>O aparelho da rede do ponto vira <b>posto</b> sozinho quando um Admin entra nele (Posto 1, Posto 2...). Cada venda fica marcada com o posto. Um aparelho sem ninguém conectado, como a TV da fila, pode ser pareado, e o Admin pode revogar.</li>
+    <li>O servidor confere a permissão de cada pessoa ou aparelho em cada pedido. A permissão é dada por tela, com quatro palavras: Criar, Ver, Alterar e Excluir. Há perfis prontos, como Vendedor Drone, Chute a Gol e Snap Pop e Equipe de campo.</li>
+    <li>As telas da equipe estão em cinco idiomas, escolhidos no cadastro de cada pessoa.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="onde-ficam" data-parte="Por trás das telas" data-titulo="Onde as informações ficam">
+  <div class="kicker">Por trás das telas</div>
+  <h1>Onde as informações ficam</h1>
+  <p class="serve">Este fluxo mostra como uma venda chega ao servidor, o computador central do Eterna, sem se perder quando algo falha.</p>
+  <h2>Da tela até a cópia de segurança</h2>
+<pre class="fluxo">
+! Vendedor registra a venda
+>
+Fica na fila de envio da tela
+>
+? O servidor está respondendo? | Não: Segura e tenta de novo
+> Sim
+Servidor guarda no banco e confirma
+>
+= Cópia de segurança vai à nuvem
+</pre>
+  <div class="grade2">
+    <div class="ler"><h3>Como ler este fluxo</h3>
+    <ul>
+      <li>A regra do projeto: todo registro de operação mora no banco do servidor. A tela é redesenhada a partir do servidor e só segura o que ainda não subiu.</li>
+      <li>Assim, o vendedor continua atendendo mesmo que a rede caia. Se a mesma venda chegar duas vezes, ela conta uma vez só.</li>
+      <li>No tablet das ativações, a venda fica em duas cópias até o servidor confirmar.</li>
+      <li>O risco real está na tela: se os dados dela forem apagados antes do envio, o que ainda não tinha subido é perdido.</li>
+      <li>A cada 2 minutos, se algo mudou, o servidor manda à nuvem uma cópia dos bancos. Uma vez por dia, guarda também uma cópia datada.</li>
+      <li>O vigia pergunta a cada 30 segundos se o servidor está bem e, depois de três faltas seguidas, cerca de 1 minuto e meio, religa o programa. As filas das telas continuam de onde pararam.</li>
+    </ul></div>
+    <div><h3>O que fica onde</h3>
+    <table>
+      <tr><th style="width:32%">Lugar</th><th>O que guarda</th></tr>
+      <tr><td>Servidor do ponto</td><td>Fotos originais, sessões, rostos, vendas, impressões, rolo, usuários, cortesias, vídeos e a foto do cliente das ativações</td></tr>
+      <tr><td>Nuvem</td><td>Fotos em alta e com marca d'água, vídeos, galerias, cópias dos bancos</td></tr>
+      <tr><td>Tela ou tablet</td><td>Só o que ainda não subiu, as preferências do aparelho e uma cópia das telas</td></tr>
+    </table></div>
+  </div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="internet" data-parte="Por trás das telas" data-titulo="O que sobe para a internet">
+  <div class="kicker">Por trás das telas</div>
+  <h1>O que sobe para a internet</h1>
+  <p class="serve">Este fluxo mostra o que sai do servidor para a nuvem, os computadores contratados na internet (AWS), e como a foto chega ao celular do cliente.</p>
+  <h2>Da foto nova até o celular do cliente</h2>
+<pre class="fluxo">
+! Servidor liga
+>
+? Conectou à nuvem ao ligar? | Não: Fotos só sobem se a equipe pedir o reenvio
+> Sim
+Toda foto nova entra na fila
+>
+? O envio deu certo? | Não: Espera e tenta de novo
+> Sim
+Foto guardada na nuvem
+>
+Venda publica a galeria
+>
+? Comprou ou ganhou de cortesia? | Não: Vê só a amostra com marca d'água
+> Sim
+= Baixa a foto em alta qualidade
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul class="duas">
+    <li>A nuvem é um armazenamento da AWS (Amazon), na região de Ohio, nos Estados Unidos, a única liberada no plano da conta. Ele é privado: nada abre sem um link assinado, que dura 5 minutos.</li>
+    <li>O servidor tenta falar com a nuvem uma única vez, ao ligar. Se estava sem internet nesse momento, as fotos novas não entram na fila, e a equipe precisa pedir o reenvio depois.</li>
+    <li>Com a conexão certa, toda foto entra na fila, mesmo antes da compra. O arquivo original nunca sobe: vai uma versão em alta qualidade, sem os dados da câmera, e uma amostra menor com marca d'água.</li>
+    <li>Se o envio falhar, o Eterna espera de 5 segundos a 5 minutos e tenta de novo, sem desistir. Cada arquivo é conferido na chegada.</li>
+    <li>A galeria e o código escrito são atendidos por um pequeno programa na nuvem, com uma tabela própria. A selfie é comparada ali, só com os rostos daquela galeria.</li>
+    <li>Os vídeos das ativações sobem por uma fila própria, em partes, e as cópias dos bancos sobem a cada 2 minutos. Os prazos de cada pasta estão na página seguinte.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="prazos-nuvem" data-parte="Por trás das telas" data-titulo="Quanto tempo cada coisa fica na nuvem">
+  <div class="kicker">Por trás das telas</div>
+  <h1>Quanto tempo cada coisa fica na nuvem</h1>
+  <p class="serve">O armazenamento da nuvem é dividido em pastas. Cada pasta tem uma regra que apaga sozinha o que passou do prazo, para não guardar dado pessoal além do necessário nem pagar por espaço à toa.</p>
+  <h2>Regras por pasta</h2>
+  <table>
+    <tr><th style="width:24%">Pasta</th><th style="width:36%">O que é</th><th>Regra</th></tr>
+    <tr><td>Fotos em alta</td><td>Fotos das galerias, para baixar</td><td>Apagadas com 61 dias (a galeria vale até 60)</td></tr>
+    <tr><td>Fotos com marca d'água</td><td>Amostras das galerias</td><td>Apagadas com 61 dias</td></tr>
+    <tr><td>Vídeos</td><td>Vídeos das ativações</td><td>Apagados com 31 dias (a página vale 30)</td></tr>
+    <tr><td>Cópia diária</td><td>Cópia datada dos bancos: vendas, estado da equipe, operação e lotes de cartões</td><td>Vai para um armazenamento mais barato (Glacier Instant Retrieval) com 30 dias e é apagada com 400 dias</td></tr>
+    <tr><td>Sessões</td><td>Cópia das sessões de fotos</td><td>Apagadas com 60 dias</td></tr>
+    <tr><td>Cópia mais recente</td><td>Última cópia de cada banco e das métricas</td><td>Não expira. O versionamento fica ligado: cada troca guarda a versão anterior, apagada em 30 dias</td></tr>
+    <tr><td>Todas</td><td>Envio interrompido no meio</td><td>Descartado com 1 dia</td></tr>
+  </table>
+  <div class="ler"><h3>Como ler</h3>
+  <ul>
+    <li>As regras foram aplicadas em 12/11/2026 no armazenamento de teste. Antes disso, uma regra única de teste apagava tudo com 7 dias. No armazenamento de produção, as mesmas regras precisam ser aplicadas antes de abrir para clientes.</li>
+    <li>O versionamento é o que permite voltar uma cópia dos bancos para o dia anterior se a última sair errada.</li>
+    <li>Além dos arquivos, a nuvem guarda as galerias e o código escrito de cada uma até 7 dias depois de a galeria vencer, e o aceite do cliente por 400 dias, como prova do consentimento.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="atualizacao" data-parte="Por trás das telas" data-titulo="Atualização do programa">
+  <div class="kicker">Por trás das telas</div>
+  <h1>Atualização do programa</h1>
+  <p class="serve">Este fluxo mostra como uma nova versão do Eterna chega ao local sem deixar a operação parada se algo der errado.</p>
+  <h2>Da versão nova até o local</h2>
+<pre class="fluxo">
+! Versão marcada como pronta
+>
+? Passou na checagem? | Não: Versão não é publicada
+> Sim
+Fica disponível na internet
+>
+Vigia religa o programa
+>
+? Arquivo novo chegou perfeito? | Não: Mantém a versão que já estava
+> Sim
+Troca pela versão nova
+>
+= Liga o Eterna
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>Alguém marca uma versão como pronta, e uma checagem automática impede a publicação se o programa tiver erro de montagem.</li>
+    <li>O servidor não fica procurando novidade o tempo todo. Ele só olha quando o vigia religa o programa: quando o vigia inicia com o Eterna parado ou depois de três faltas seguidas.</li>
+    <li>Antes de trocar, o vigia confere o tamanho do arquivo, compara a impressão digital dele com a publicada e testa se o programa monta. Qualquer falha mantém a versão atual, e o Eterna liga do mesmo jeito.</li>
+    <li>A troca hoje não olha o horário nem verifica se há venda aberta ou fila de impressão. Se a versão nova falhar depois de trocada, não há volta automática para a anterior.</li>
+    <li>As telas seguem outro caminho. A novidade publicada no site chega ao servidor em até 60 segundos e aparece quando a tela é recarregada. O servidor guarda uma cópia das telas, das letras e dos fundos, para elas abrirem mesmo sem internet.</li>
+    <li>Depois de cada atualização, todas as janelas do Eterna abertas no balcão precisam ser fechadas e abertas de novo. Uma janela antiga pode atrapalhar o caixa, e o Posto avisa quando vê uma.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="instalacao" data-parte="Por trás das telas" data-titulo="Instalação do servidor">
+  <div class="kicker">Por trás das telas</div>
+  <h1>Instalação do servidor</h1>
+  <p class="serve">Este fluxo mostra o que o instalador faz para deixar um computador pronto para funcionar como servidor do Eterna.</p>
+  <h2>Do instalador até o servidor no ar</h2>
+<pre class="fluxo">
+! Roda o instalador
+>
+? Permissão e preparo estão certos? | Não: Mostra o erro e para
+> Sim
+Faz o Eterna subir com o Windows
+>
+Libera a rede e impede de dormir
+>
+Cria o atalho na área de trabalho
+>
+Liga e confere se responde
+>
+? Respondeu em até 3 minutos? | Não: Avisa para ver o registro do vigia
+> Sim
+= Mostra a situação e os endereços
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>O instalador primeiro confere três coisas: permissão de administrador (o nível mais alto de acesso ao computador), a preparação feita antes nesse computador e o vigia. Se faltar algo, ele mostra o erro e para, mas o que já foi feito não é desfeito.</li>
+    <li>Depois, cria uma tarefa automática no Windows. Assim, quando o computador reinicia, o Eterna volta sozinho. Se o vigia cair, ela o religa em 1 minuto.</li>
+    <li>Em seguida, libera a passagem pela proteção do computador para que caixas, tablets e câmeras consigam conversar com o servidor. Se uma regra da empresa impedir isso, ele avisa.</li>
+    <li>O computador também é ajustado para não dormir na tomada e não parar quando a tampa é fechada.</li>
+    <li>No fim, o instalador pergunta a cada 3 segundos se o Eterna está respondendo. Se sim, mostra como estão a impressora, a nuvem e a leitura de rostos, além dos endereços para abrir nas telas.</li>
+    <li>O recorte dos fundos de IA tem instalador próprio, rodado uma vez: pede um computador com 16 GB de memória e usa a placa de vídeo quando houver.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="numeros" data-parte="Por trás das telas" data-titulo="Números e relatórios">
+  <div class="kicker">Por trás das telas</div>
+  <h1>Números e relatórios</h1>
+  <p class="serve">Este fluxo mostra de onde saem os números do Painel e das Estatísticas e o que conta como venda.</p>
+  <h2>Como os números chegam às telas</h2>
+<pre class="fluxo">
+! Fotos, sessões e vendas do dia
+>
+A cada 10 minutos, monta o resumo
+>
+? Como está cada venda? | Cancelada sem pagar: Conta separada | Outra situação: Fica fora da conta
+> Paga
+Conta como venda e faturamento
+>
+Guarda o resumo do dia
+>
+= Painel, Estatísticas e Resumo das ativações
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul class="duas">
+    <li>A cada 10 minutos, o servidor junta as fotos, as sessões e as vendas de hoje e de ontem. O resumo de cada dia fica guardado sem prazo para sair.</li>
+    <li>Só venda paga entra no faturamento. Um pedido que a família abriu e não pagou não infla o resultado. Cortesia aparece à parte e não conta na receita.</li>
+    <li>O <b>Painel</b>, para Admin e Supervisor, mostra faturamento, fotos, sessões, gasto por visitante, receita por dia, ranking de produtos e pagamentos, com comparação ao período anterior.</li>
+    <li>Os cartões do Painel podem usar o Eterna, a Roverpix (o sistema de fotos de hoje) ou os dois. Se o dado da Roverpix tiver mais de 15 minutos, aparece uma etiqueta de desatualizado.</li>
+    <li>As <b>Estatísticas</b>, só para o Admin, têm sete seções: vendas e produtos, fotógrafos, rapidez, dias e eventos, visitantes, movimento, e jogos e ano a ano. O <b>Calendário de eventos</b> guarda jogos, shows e feriados para comparar os dias.</li>
+    <li>O <b>Resumo das ativações</b> traz os números do Drone, do Chute a Gol e do Snap Pop, incluindo o histórico do sistema antigo.</li>
+    <li>O Eterna não faz controle de ponto. Presença, falta e atraso continuam no sistema do RH.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="vida-foto" data-parte="Por trás das telas" data-titulo="A vida de uma foto">
+  <div class="kicker">Por trás das telas</div>
+  <h1>A vida de uma foto</h1>
+  <p class="serve">Este fluxo acompanha uma foto desde o clique do fotógrafo até o dia em que ela sai do sistema.</p>
+  <h2>Da chegada à exclusão</h2>
+<pre class="fluxo">
+! Chegando ao servidor
+>
+? É nova? | Cópia, cortada ou já excluída: Ignorada ou repetida
+> Sim
+Guardada no servidor
+>
+Leitura do rosto apagada em 60 dias
+>
+Cópia na nuvem
+>
+Venda: na galeria por 60 dias
+>
+= Galeria vencida ou encerrada
+</pre>
+  <div class="ler"><h3>Como ler este fluxo</h3>
+  <ul>
+    <li>A câmera manda a foto pela rede para o servidor. Foto repetida gera um aviso e não entra de novo. Foto de quem pediu exclusão também não volta, e arquivo cortado tem 10 minutos para ser reenviado pela câmera.</li>
+    <li>Foto nova fica guardada e entra em uma sessão. O Eterna considera a sessão encerrada quando o fotógrafo passa 1 minuto sem clicar, e a leitura de rostos ajuda a separar ou juntar as fotos de cada grupo.</li>
+    <li>O original fica no servidor sem prazo: só sai a pedido do cliente. Já a leitura do rosto, usada para encontrar as fotos da família, é apagada depois de 60 dias.</li>
+    <li>Quando há venda, a família ganha uma galeria que vale 60 dias e não aumenta se for publicada de novo. Ao vencer ou ser encerrada, ela sai do ar na limpeza diária e aquele link não reabre. Na nuvem, a cópia da foto é apagada com 61 dias.</li>
+    <li>Se o cliente pede a exclusão, saem as fotos que ele não comprou, as cópias e as leituras de rosto. As compradas e as cortesias ficam com ele. A venda continua no registro, e os números do dia ficam.</li>
+  </ul></div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<!-- ============================== O QUE FALTA ============================== -->
+<section class="pagina" id="atencao" data-parte="O que falta" data-titulo="O que precisa de atenção">
+  <div class="kicker">O que falta</div>
+  <h1>O que precisa de atenção</h1>
+  <p class="serve">Estas são as diferenças entre o esperado e o sistema que mais importam para a operação.</p>
+  <h2>O que o sistema faz diferente do esperado</h2>
+  <table>
+    <tr><th style="width:19%">Assunto</th><th style="width:31%">O que se esperava</th><th>O que acontece hoje</th></tr>
+    <tr><td>Falta de internet</td><td>Tudo continua funcionando</td><td>A venda continua, mas se o servidor ligar sem internet as fotos novas não entram na fila da nuvem até alguém pedir o reenvio ou reiniciar o programa</td></tr>
+    <tr><td>Dados só no navegador</td><td>Nada importante fica só no navegador</td><td>Os pedidos esperando o caixa, o registro de operação e a situação da sessão no posto ainda ficam lá</td></tr>
+    <tr><td>Compra pela internet</td><td>O cliente compra pela galeria</td><td>A compra está desligada; a galeria pede para falar com a equipe no balcão</td></tr>
+    <tr><td>Fotos enviadas à internet</td><td>Sobem só as vendidas</td><td>Sobem todas as fotos novas</td></tr>
+    <tr><td>Qualidade da foto</td><td>Várias checagens automáticas</td><td>Só olhos fechados tira uma foto da venda</td></tr>
+    <tr><td>Edição Maracanã</td><td>A montagem chega ao cliente em qualquer pacote</td><td>Ela ainda não vai para a galeria online; no pacote só digital, não chega ao cliente</td></tr>
+    <tr><td>Pagamento</td><td>Cartão e PIX ficam pagos sozinhos</td><td>A venda só existe depois que o vendedor confirma, porque a maquininha não conversa com o Eterna</td></tr>
+    <tr><td>Controle do papel</td><td>A impressora informa o consumo</td><td>A conta depende da resposta do vendedor</td></tr>
+    <tr><td>Checkout e Posto</td><td>Em computadores diferentes</td><td>Precisam estar no mesmo computador e no mesmo navegador</td></tr>
+    <tr><td>Câmera no tablet</td><td>A câmera abre dentro da página</td><td>Sem endereço seguro, o tablet usa a câmera do Android pelo botão, e o QR do cartão é lido por um leitor ou pelo próprio servidor</td></tr>
+    <tr><td>Nuvem de produção</td><td>Pronta para clientes</td><td>As regras de prazo estão no armazenamento de teste; falta aplicar no de produção e passar a conta para o plano pago</td></tr>
+  </table>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="nao-sabemos" data-parte="O que falta" data-titulo="O que ainda não sabemos">
+  <div class="kicker">O que falta</div>
+  <h1>O que ainda não sabemos</h1>
+  <p class="serve">Perguntas que só um dia real de operação, ou um teste próprio, vai responder.</p>
+  <h2>Em aberto</h2>
+  <ul>
+    <li><b>Reconhecimento de rostos:</b> se os ajustes acertam em um dia real de Tour, com o estádio cheio.</li>
+    <li><b>Câmeras:</b> se reenviam mesmo uma foto que chegou incompleta. Se não reenviarem, a foto pode se perder.</li>
+    <li><b>Recuperar dados:</b> nunca testamos trazer os dados de volta a partir da cópia de segurança.</li>
+    <li><b>Venda entre computadores:</b> um Checkout em outro computador parece não ver que a sessão foi paga.</li>
+    <li><b>Maquininha:</b> como ela se comporta sem a internet do estádio.</li>
+    <li><b>Internet do estádio:</b> se a subida aguenta um dia cheio de fotos e vídeos. Se for menor que o necessário, a fila cresce durante o dia e esvazia depois do expediente.</li>
+    <li><b>Pulseira e cartão no campo:</b> quanto tempo leva cada entrega com a pulseira, num dia de fila, e quantos cartões se perdem.</li>
+    <li><b>Drone pelo arquivo:</b> se o vídeo do cartão do drone traz o número de série, para o Eterna marcar o drone sozinho.</li>
+  </ul>
+  <div class="destaque">O prazo das fotos na internet, que aparecia aqui na versão anterior deste guia, foi conferido e corrigido em 12/11/2026: as regras por pasta estão em "Quanto tempo cada coisa fica na nuvem".</div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="para-onde" data-parte="O que falta" data-titulo="Para onde o Eterna vai">
+  <div class="kicker">O que falta</div>
+  <h1>Para onde o Eterna vai</h1>
+  <p class="serve">Hoje o Eterna funciona, mas ainda é uma versão em teste. A entrada por e-mail e senha conferidos pelo servidor e a permissão checada em cada pedido já estão prontas. Estes são os próximos passos.</p>
+  <h2>Antes de atender clientes de verdade, em 01/12</h2>
+  <table>
+    <tr><th style="width:26%">Passo</th><th>Em palavras simples</th></tr>
+    <tr><td>Nuvem de produção</td><td>Armazenamento próprio de produção, com as regras de prazo, e a conta da AWS no plano pago</td></tr>
+    <tr><td>Conexão protegida</td><td>Tudo que trafega na rede do estádio vai cifrado, inclusive selfies, e a câmera abre dentro da página nos tablets</td></tr>
+    <tr><td>Cópia de segurança resistente</td><td>Uma cópia que nem um ataque consiga apagar, com a recuperação testada de verdade</td></tr>
+    <tr><td>Alertas</td><td>O sistema avisa quando algo cai, em vez de esperar alguém perceber</td></tr>
+    <tr><td>Calibrar o reconhecimento</td><td>Medir o acerto dos rostos em um dia real do Tour</td></tr>
+    <tr><td>Privacidade</td><td>O relatório de impacto exigido pela LGPD</td></tr>
+  </table>
+  <h2>Depois disso</h2>
+  <ul class="duas">
+    <li><b>Compra pelo celular:</b> fotos e, depois, os vídeos das ativações comprados na galeria.</li>
+    <li><b>Edição Maracanã na galeria:</b> as montagens chegando ao cliente também no pacote só digital.</li>
+    <li><b>Fotos do Drone:</b> quadros tirados do próprio vídeo entrando na sessão de fotos do cliente.</li>
+    <li><b>Snap Pop:</b> a integração que gera o vídeo com IA.</li>
+    <li><b>Vídeo leve:</b> uma versão menor para tocar no celular antes do original.</li>
+    <li><b>Servidor em Linux:</b> um sistema operacional mais próprio para servidor, no lugar do Windows.</li>
+    <li><b>Suporte pela VPN:</b> o acesso a distância passa pela conexão protegida da empresa.</li>
+    <li><b>Eterna como produto:</b> o sistema poderá ser oferecido a outros locais, cada um com seus dados separados.</li>
+  </ul>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<!-- ============================== PARA CONSULTAR ============================== -->
+<section class="pagina" id="palavras" data-parte="Para consultar" data-titulo="Palavras do Eterna">
+  <div class="kicker">Para consultar</div>
+  <h1>Palavras do Eterna</h1>
+  <div class="grade2" style="margin-top:4mm">
+    <table>
+      <tr><th style="width:30%">Palavra</th><th>O que quer dizer</th></tr>
+      <tr><td>Sessão</td><td>Grupo de fotos tiradas em sequência da mesma pessoa ou família</td></tr>
+      <tr><td>Servidor</td><td>Computador que fica no estádio e guarda fotos, vendas e vídeos. Também chamado de computador do ponto</td></tr>
+      <tr><td>Nuvem</td><td>Computadores alugados fora do estádio (AWS), usados para cópias, galerias e vídeos</td></tr>
+      <tr><td>Galeria</td><td>Página onde a família vê as fotos no celular</td></tr>
+      <tr><td>QR</td><td>Código quadrado que o celular lê para abrir a galeria ou o vídeo</td></tr>
+      <tr><td>Checkout</td><td>Tela em que a família escolhe as fotos</td></tr>
+      <tr><td>Posto de venda</td><td>Tela do vendedor e do caixa, onde a venda é fechada</td></tr>
+      <tr><td>Recorte</td><td>Separar a pessoa do fundo da foto</td></tr>
+      <tr><td>Fundo de IA</td><td>Cenário colocado atrás da pessoa depois do recorte</td></tr>
+      <tr><td>Edição Maracanã</td><td>Selo das fotos com fundo de IA no Checkout</td></tr>
+      <tr><td>DNP</td><td>Marca da impressora de fotos</td></tr>
+    </table>
+    <table>
+      <tr><th style="width:30%">Palavra</th><th>O que quer dizer</th></tr>
+      <tr><td>Ativações</td><td>Drone, Chute a Gol e Snap Pop, vendidos à parte das fotos</td></tr>
+      <tr><td>Pulseira</td><td>Pulseira numerada com QR, uma por vídeo comprado, que liga a pessoa à compra</td></tr>
+      <tr><td>Cartão com QR</td><td>Cartão impresso entregue com o vídeo; abre a página do cliente</td></tr>
+      <tr><td>Lote</td><td>Conjunto de cartões gerado no servidor e mandado à gráfica</td></tr>
+      <tr><td>Rascunho</td><td>Vídeo solto na tela que ainda não foi ligado a um cartão</td></tr>
+      <tr><td>Local first</td><td>A venda é gravada primeiro no próprio aparelho e enviada depois</td></tr>
+      <tr><td>Vigia</td><td>Pequeno programa que mantém o Eterna ligado e troca a versão quando há uma nova</td></tr>
+      <tr><td>Roverpix</td><td>Sistema de fotos usado hoje, que o Eterna vai substituir</td></tr>
+      <tr><td>Sistema antigo</td><td>Sistema que vendia as ativações antes do Eterna</td></tr>
+      <tr><td>LGPD</td><td>Lei brasileira de proteção de dados pessoais</td></tr>
+      <tr><td>Cópia de segurança</td><td>Duplicata dos dados, para recuperar se algo se perder</td></tr>
+    </table>
+  </div>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<section class="pagina" id="detalhes" data-parte="Para consultar" data-titulo="Onde estão os detalhes">
+  <div class="kicker">Para consultar</div>
+  <h1>Onde estão os detalhes</h1>
+  <p class="serve">Este guia explica o todo, e os detalhes ficam nestes documentos, todos no repositório do Eterna:</p>
+  <table style="margin-top:3mm">
+    <tr><th style="width:42%">Quero saber</th><th>Onde está</th></tr>
+    <tr><td>Cada regra e cada caminho dos fluxos</td><td>docs/FLUXOS.md</td></tr>
+    <tr><td>Como usar no dia a dia</td><td>docs/GUIA-DA-EQUIPE.md</td></tr>
+    <tr><td>Como o sistema é construído</td><td>docs/DOCUMENTACAO-TECNICA.md</td></tr>
+    <tr><td>O que entrou em cada versão</td><td>VERSOES.md</td></tr>
+    <tr><td>Como instalar um servidor</td><td>docs/CHECKLIST-SERVIDOR.md</td></tr>
+    <tr><td>Como a nuvem funciona e os prazos por pasta</td><td>docs/NUVEM.md</td></tr>
+    <tr><td>Drone, Chute a Gol e Snap Pop: venda e entrega</td><td>docs/planos/2026-11-11-ativacoes-venda-e-entrega.md</td></tr>
+    <tr><td>Manual e treinamento das ativações</td><td>docs/treinamento/entregaveis/</td></tr>
+    <tr><td>Onde mora cada dado</td><td>docs/planos/2026-11-10-dado-no-banco.md</td></tr>
+    <tr><td>O que falta para virar produto</td><td>docs/pesquisa/2026-11-02-eterna-como-produto.md</td></tr>
+    <tr><td>O que o mercado tem e o Eterna não</td><td>docs/pesquisa/2026-11-02-o-que-o-mercado-tem-e-o-eterna-nao.md</td></tr>
+    <tr><td>Este guia (fonte e como gerar o PDF)</td><td>docs/guia/</td></tr>
+  </table>
+  <div class="rodape"><span>Entendendo o Eterna</span><span class="num"></span></div>
+</section>
+
+<script>
+(function(){
+  // fluxos: troca cada <pre class="fluxo"> pelas caixas
+  function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  document.querySelectorAll("pre.fluxo").forEach(function(pre){
+    var div = document.createElement("div"); div.className = "fluxo";
+    var html = "";
+    pre.textContent.split("\n").map(function(l){ return l.trim(); }).filter(Boolean).forEach(function(l){
+      if (l[0] === ">") {
+        var r = l.slice(1).trim();
+        html += '<div class="fx-s">' + (r ? "<span>" + esc(r) + "</span>" : "") + "</div>";
+      } else if (l[0] === "?") {
+        var partes = l.slice(1).split("|").map(function(x){ return x.trim(); });
+        html += '<div class="fx-col"><div class="fx-n fx-q">' + esc(partes[0]) + "</div>";
+        partes.slice(1).forEach(function(p){
+          var i = p.indexOf(":");
+          html += '<div class="fx-r"><b>' + esc(p.slice(0, i).trim()) + "</b><br>" + esc(p.slice(i + 1).trim()) + "</div>";
+        });
+        html += "</div>";
+      } else if (l[0] === "=") {
+        html += '<div class="fx-n fx-fim">' + esc(l.slice(1).trim()) + "</div>";
+      } else if (l[0] === "!") {
+        html += '<div class="fx-n fx-ini">' + esc(l.slice(1).trim()) + "</div>";
+      } else {
+        html += '<div class="fx-n">' + esc(l) + "</div>";
+      }
+    });
+    div.innerHTML = html;
+    pre.replaceWith(div);
+  });
+
+  // números de página e sumário
+  var paginas = Array.prototype.slice.call(document.querySelectorAll("section.pagina"));
+  var partes = [], porParte = {};
+  paginas.forEach(function(p, i){
+    var n = p.querySelector(".rodape .num"); if (n) n.textContent = String(i + 1);
+    var parte = p.getAttribute("data-parte"), titulo = p.getAttribute("data-titulo");
+    if (!parte || !titulo) return;
+    if (!porParte[parte]) { porParte[parte] = []; partes.push(parte); }
+    porParte[parte].push({ id: p.id, titulo: titulo, pg: i + 1 });
+  });
+  var lista = document.getElementById("sumario-lista");
+  lista.innerHTML = partes.map(function(parte){
+    return '<div class="parte"><h3>' + esc(parte) + "</h3>" + porParte[parte].map(function(it){
+      return '<a href="#' + it.id + '"><span>' + esc(it.titulo) + '</span><span class="pontos"></span><span class="pg">' + it.pg + "</span></a>";
+    }).join("") + "</div>";
+  }).join("");
+  document.documentElement.setAttribute("data-pronto", "1");
+})();
+</script>
+</body>
+</html>

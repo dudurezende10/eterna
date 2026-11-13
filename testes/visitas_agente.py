@@ -392,8 +392,13 @@ srv = m.ThreadingHTTPServer(("127.0.0.1", PORTA), m.H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _agente_sessao
+COOKIE = _agente_sessao.cookie_sessao(m)      # pessoa conectada (admin): as rotas da equipe pedem sessão (tabela ROTAS)
+
+
 def req(method, path, body=None, headers=None):
-    h = {"Host": "127.0.0.1:%d" % PORTA, **(headers or {})}
+    h = {"Host": "127.0.0.1:%d" % PORTA, "Cookie": COOKIE, **(headers or {})}
     data = json.dumps(body).encode() if body is not None else None
     if data:
         h["Content-Type"] = "application/json"

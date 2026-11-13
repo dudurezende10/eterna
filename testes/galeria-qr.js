@@ -48,15 +48,15 @@ try{
   ok(q1.title==='https://eterna.photo/#g/'+tok,'3: texto do QR: '+q1.title);
   // ---------- 24. tela final volta sozinha em 5 s; "Voltar ao início" volta antes (criterio 4 substituído pelo adendo A4) ----------
   dbg('24. tela final volta sozinha em 5 s; "Vo');
-  // relógio parado antes da compra: o tempo real gasto nos cliques não conta na tela final (adendo 3: 30 s, configurável)
+  // relógio parado antes da compra: o tempo real gasto nos cliques não conta na tela final (adendo 3: 30 s, configurável; 40 s desde 11/11, Ronaldo)
   // o relógio do Playwright vale para o contexto inteiro: a Loja com relógio roda num contexto próprio
   const ctxC=await b.newContext({viewport:{width:1280,height:900},locale:'pt-BR'});const C=await nova(ctxC,'clock');await C.clock.install();await C.goto(U+'#loja');await C.waitForTimeout(500);await C.clock.pauseAt(new Date(Date.now()+60000));
   const card2=cards[1]||cards[0];await compraLoja(C,card2);const tok2=await C.evaluate(()=>ETERNA.state.kiosk.paid.token);
   ok(TOKRE.test(tok2||'')&&tok2!==tok,'2: dois pagamentos deveriam gerar tokens diferentes');
-  ok((await C.textContent('#lj-volta-n')).trim()==='30','24: a contagem deveria começar em 30');
-  await C.clock.runFor(25000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: aos 25 s a tela final deveria continuar');
-  const n3=await C.textContent('#lj-volta-n');ok(/^[3-5]$/.test((n3||'').trim()),'24: contagem visível aos 25 s deveria mostrar uns 5 s, mostra '+n3);
-  await C.clock.runFor(5300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: aos 30 s deveria voltar para a câmera');
+  {const n0=(await C.textContent('#lj-volta-n')).trim();ok(n0==='40','24: a contagem deveria começar em 40, começou em '+n0);}
+  await C.clock.runFor(35000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: aos 35 s a tela final deveria continuar');
+  const n3=await C.textContent('#lj-volta-n');ok(/^[3-5]$/.test((n3||'').trim()),'24: contagem visível aos 35 s deveria mostrar uns 5 s, mostra '+n3);
+  await C.clock.runFor(5300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: aos 40 s deveria voltar para a câmera');
   ok(await C.evaluate(()=>!ETERNA.state.kiosk.timer),'24: o timer da tela final deveria morrer ao voltar');
   // tempo configurável no Catálogo (seção Checkout): 10 s
   dbg('catalogo 10s');
@@ -66,7 +66,7 @@ try{
     await C.clock.runFor(9000);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='done','24: com 10 s, aos 9 s a tela final deveria continuar');
     await C.clock.runFor(1300);ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: com 10 s, deveria voltar aos 10 s');}
   // botão antes do tempo
-  const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-restart');ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Voltar ao início" deveria voltar na hora');
+  const card3=cards[2]||cards[0];await compraLoja(C,card3);await C.clock.runFor(1000);await C.click('.lj-restart[data-act="loja-new"]');/* "Comprar mais fotos" (d5c5d65) também é .lj-restart e vem antes */ok(await C.evaluate(()=>ETERNA.state.kiosk.step)==='code','24: "Voltar ao início" deveria voltar na hora');
   // ---------- 23. escolha parada 90 s sem toque volta ao Iniciar e apaga as marcas (Eduardo, 10/11; substitui o "A3 cancelado" de 27/10) ----------
   dbg('23. escolha parada 90 s volta ao Iniciar');
   const card4=cards[4]||cards[0]; // v79: card3 já foi paga e sessão paga não abre a escolha de novo (revisão 1)
@@ -139,11 +139,12 @@ try{
   // ---------- 10 e 11. compra na galeria ----------
   dbg('10 e 11. compra na galeria');
   const g11=await G.evaluate(()=>{document.querySelector('[data-act="gq-all"]').click();const n=document.querySelectorAll('.gq-sel.on').length;return {n,bar:document.querySelector('.gq-bar').innerText,dig:ETERNA.SIM.prices.dig,};});
-  const precos=await G.evaluate(()=>({dig:(ETERNA.SIM.prices.dig!=null?ETERNA.SIM.prices.dig:39),mais:(ETERNA.SIM.prices.mais!=null?ETERNA.SIM.prices.mais:250)}));
+  // v98.1: sem Foto digital avulsa no catálogo, sem preço por foto: qualquer compra na galeria custa o pacote
+  const precos=await G.evaluate(()=>{const mais=ETERNA.priceOf('mais');return {dig:ETERNA.priceOf('dig')||mais,mais};});
   const esperado=Math.min(g11.n*precos.dig,precos.mais);ok(g11.bar.replace(/\./g,'').replace(/\s/g,' ').includes('R$ '+esperado),'11: todas deveria cobrar '+esperado+': '+g11.bar);
   await G.screenshot({path:PR+'/galeria-cel-galeria.png',fullPage:false});
   await G.evaluate(()=>{ETERNA.pub.sel={};ETERNA.render();});const umPid=await G.evaluate(()=>{const b=document.querySelector('[data-act="gq-sel"]');b.click();return b.dataset.pid;});
-  await G.click('[data-act="gq-buy"]');await G.click('[data-act="gq-paym"][data-m="pix"]');await G.click('[data-act="gq-pay"]');await G.waitForTimeout(300);
+  await G.click('[data-act="gq-buy"]');/* v99: a compra pede nome, e-mail e CPF (sem escolher o meio) */await G.fill('#gq-nome','Cliente Teste');await G.fill('#gq-email','cliente@exemplo.com');await G.fill('#gq-doc','529.982.247-25');await G.click('[data-act="gq-pay"]');await G.waitForTimeout(300);
   const g10=await G.evaluate(p=>({vs:ETERNA.SIM.vendasOnline,yours:[...document.querySelectorAll('[data-act="gq-dl"]')].map(b=>b.dataset.pid),step:ETERNA.pub.step}),umPid);
   ok(g10.vs.length===1&&g10.vs[0].canal==='online'&&g10.vs[0].total===precos.dig&&g10.vs[0].n===1&&g10.vs[0].teste===true,'10: venda online: '+JSON.stringify(g10.vs));ok(g10.step==='galeria'&&g10.yours.includes(umPid),'10: foto comprada não foi para Suas fotos');
   // ---------- 26. bandeiras ----------
@@ -214,7 +215,7 @@ try{
   ok(!(await L2.$('[data-act="loja-list"]')),'S4b: "Sessões esperando" visível para o cliente');
   await L2.keyboard.press('Escape');await L2.waitForTimeout(150);ok(await L2.evaluate(()=>ETERNA.state.view==='quiosque'&&ETERNA.state.lojaRota&&!ETERNA.state.user&&ETERNA.state.kiosk.step==='code'&&location.hash==='#loja'),'25/v81: Esc na aba do Checkout sem login volta ao início do #loja (não vai ao login)');
   await abaNova('loja-logada');await login(L2);await L2.goto(U+'#loja');await L2.waitForTimeout(400);ok(await L2.evaluate(()=>ETERNA.state.lojaRota&&!!ETERNA.state.user),'25: logado, #loja deveria abrir a Loja');
-  await L2.keyboard.press('Escape');await L2.waitForTimeout(150);const e25=await L2.evaluate(()=>({lj:ETERNA.state.lojaRota,v:ETERNA.state.view,user:!!ETERNA.state.user,login:!!document.querySelector('[data-act="login-email"]')}));ok(!e25.lj&&e25.v==='entrar'&&!e25.user&&e25.login,'25: Esc logado deveria ir para o login (nunca para o app): '+JSON.stringify(e25));
+  await L2.keyboard.press('Escape');await L2.waitForTimeout(150);const e25=await L2.evaluate(()=>({lj:ETERNA.state.lojaRota,v:ETERNA.state.view,user:!!ETERNA.state.user,login:!!document.querySelector('[data-act="login-usuario"]')}));ok(!e25.lj&&e25.v==='entrar'&&!e25.user&&e25.login,'25: Esc logado deveria ir para o login (nunca para o app): '+JSON.stringify(e25));
   // CORRIGIR 1: recarregar com eterna.view=checkout (ou quiosque) não abre a Loja para a equipe
   await abaNova('reload-equipe');await login(L2);await L2.evaluate(()=>{localStorage.setItem('eterna.view','checkout');location.hash='';});await L2.reload();await L2.waitForTimeout(500);ok(await L2.evaluate(()=>!ETERNA.state.lojaRota&&location.hash!=='#loja'),'R1: reload com eterna.view=checkout abriu a Loja');
   await L2.evaluate(()=>{localStorage.setItem('eterna.view','quiosque');history.replaceState(null,'','#');});await L2.reload();await L2.waitForTimeout(500);ok(await L2.evaluate(()=>!ETERNA.state.lojaRota&&ETERNA.state.view!=='quiosque'),'R1: reload com eterna.view=quiosque abriu a Loja');
