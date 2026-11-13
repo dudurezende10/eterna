@@ -104,7 +104,7 @@ def espera(cond, s=8):
 
 
 HOJE = time.strftime("%Y-%m-%d")
-QR1, QR2, QR3 = "P" * 21 + "1", "Q" * 21 + "2", "R" * 21 + "3"
+QR1, QR2, QR3, QR4 = "P" * 21 + "1", "Q" * 21 + "2", "R" * 21 + "3", "S" * 21 + "4"
 RW = {"c": True, "r": True, "u": True, "d": True}
 
 
@@ -187,7 +187,13 @@ try:
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
     e2 = [e for e in {v["id"]: v for v in j["vendas"]}["TPULABC01D"]["entregas"] if e["qr"] == QR2]
     ok(e2 and e2[0]["subindo"] and e2[0]["subindo"]["total"] > 0 and e2[0]["nuvem"] is False, "a entrega mostra o progresso da subida: %s" % e2)
+    # v99.30.6: outro vídeo entregue enquanto o 2 sobe: o rascunho dele ainda espera na fila e muda de nome na entrega
+    st, j = req("POST", "/ativ/video", eq, bruto=mp4(20, 7000), tipo="video/mp4")
+    r4 = j.get("rascunho")
+    st, j = req("POST", "/ativ/video/liga", eq, {"rascunho": r4, "venda": "TPULABC01C", "qr": QR4, "pulseira": "42"})
+    ok(st == 200 and not os.path.exists(m.ativ_rascunho(r4)), "vídeo 4 ligado com o rascunho ainda na fila: %s %s" % (st, j))
     solta.set()
+    ok(espera(lambda: OBJ.get("video/%s.mp4" % QR4)), "o vídeo 4 sobe com o nome novo do arquivo: %s %s" % (LOG, m.nuvem.get("videos_erro")))
     ok(espera(lambda: OBJ.get("video/%s.mp4" % QR2)), "depois da subida, copiado para o QR: %s" % LOG)
     ok(espera(lambda: os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR2 + ".mp4"))
               and m.vendas_db().execute("select arquivo, nuvem_em is not null from ativ_entrega where qr=?", (QR2,)).fetchone()

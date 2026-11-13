@@ -8384,7 +8384,7 @@ def ativ_video_grava(vid, qr, n, tmp, eu, pulseira=None, rid=None):
         REPO.salvar_manifesto(qr, m)
     except Exception as ex:
         print("  entrega: galeria do vídeo não gravada (%s)" % type(ex).__name__)
-    if not (rid and nuvem_video_destino("r-" + rid, qr)):
+    if not (rid and nuvem_video_destino("r-" + rid, qr, arq)):
         nuvem_video_enfileira(qr, arq)
     nuvem_galeria_enfileira(qr)
     if r[3] in ATIV_FOTOS_TIPOS:               # v99.26: fotos do vídeo (o ffmpeg leva alguns segundos); no fim atualiza a página
@@ -8746,14 +8746,15 @@ def nuvem_video_enfileira(qr, arquivo):
     nuvem_video_acorda.set()
 
 
-def nuvem_video_destino(rq, qr):
-    """O rascunho que já está subindo (ou subiu) passa a ser o vídeo do cartão qr. -> False se o rascunho não está na fila."""
+def nuvem_video_destino(rq, qr, arquivo=None):
+    """O rascunho que já está subindo (ou subiu) passa a ser o vídeo do cartão qr. -> False se o rascunho não está na fila.
+    v99.30.6: arquivo = onde o vídeo ficou depois de ligado (o rascunho que ainda esperava na fila muda de nome na entrega)."""
     with nuvem_lock:
         db = nuvem_db()
         _nuvem_videos_tabela(db)
         r = db.execute("SELECT 1 FROM videos WHERE qr=? AND destino IS NULL", (rq,)).fetchone()
         if r:
-            db.execute("UPDATE videos SET destino=?, prox=0 WHERE qr=?", (qr, rq))
+            db.execute("UPDATE videos SET destino=?, prox=0, arquivo=coalesce(?, arquivo) WHERE qr=?", (qr, arquivo, rq))
             db.commit()
         db.close()
     if not r:
@@ -8818,6 +8819,8 @@ def nuvem_videos_loop():
                         s3.delete_object(Bucket=NUVEM_BUCKET, Key=chave)
                     else:
                         if not subiu:
+                            if not os.path.exists(arquivo) and destino and destino != "-":   # v99.30.6: renomeado na entrega
+                                arquivo = os.path.join(ATIV_VIDEOS_DIR, destino + ".mp4")
                             tam = os.path.getsize(arquivo)
                             prog = ativ_video_em_curso[qr] = {"total": tam, "feito": 0, "inicio": time.time()}
                             if destino:
