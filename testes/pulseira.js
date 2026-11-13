@@ -86,6 +86,7 @@ try{
   await P.click('[data-act="ae-nv-liga"]');await P.waitForTimeout(500);
   ok(J(posts.slice(-1)[0])===J({rascunho:'0123456789abcdef',venda:'TPUL00001D',qr:QRN,pulseira:'123'}),'entrega com a pulseira: '+J(posts.slice(-1)));
   ok(/Vídeo entregue/.test(await txt('#ae-at'))&&/WXYZ-2345-6789/.test(await txt('#ae-at'))&&/Na nuvem/.test(await txt('#ae-at')),'atendimento mostra o vídeo entregue e na nuvem: '+await txt('#ae-at'));
+  ok((await P.$$('#ae-at [data-act="ae-at-fecha"]')).length===1,'v99.29.4: um Próximo cliente só');
   await P.click('#ae-at button.primary[data-act="ae-at-fecha"]');await P.waitForTimeout(200);
   ok(await P.$('#ae-at')===null&&await P.$('#ae-pul'),'Próximo cliente volta para a leitura da pulseira');
   await P.click('#ae-agora [data-act="ae-at-abre"][data-n="777"]');await P.waitForTimeout(200);
