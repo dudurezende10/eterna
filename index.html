@@ -1314,7 +1314,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.30.4 · 13/11 14:21"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.30.5 · 13/11 14:26"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5520,10 +5520,13 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
     <div style="margin-top:4px"><span class="pill">${TE('ae_pul_de',p.numero,p.slot||1,tot)}</span>${p.conflito?` <span class="pill bad">${TE('ae_pul_conflito')}</span>`:''}</div></div>
     ${fim?'':`<button class="btn ghost" style="min-height:48px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button>`}</div>`;
   const fis=(v.fisicos||[]).length?`<div style="margin-top:12px"><span class="eyebrow">${TE('ae_itens')}</span>${v.fisicos.map(x=>`<label class="row" style="gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-act="ae-item" data-id="${esc(v.id)}" data-i="${x.i}" ${x.entregue?'checked disabled':''} ${podeU?'':'disabled'}> ${esc(x.nome)}${x.entregue?' · '+TE('ae_item_ok'):''}</label>`).join('')}</div>`:'';
+  // v99.30.5: o QR do cartão entregue também na tela
+  if(ent)setTimeout(()=>{const el=document.getElementById('ae-at-qr'),u=GAL_BASE_PADRAO+ent.qr;if(el&&el.dataset.qr!==u)qrDraw(el,u,160,ent.codigo);},0); // o mesmo link impresso no cartão
   if(ent)return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid var(--good,#1b7f3b)">${topo(true)}
     <div class="row" style="justify-content:space-between;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center"><span><b>${TE('ae_video_entregue')}</b> · ${TE('ae_cartao')} <b>${esc(ent.codigo)}</b> · ${esc((ent.em||'').slice(11,16))}</span>${aeNuvemPill(ent)}</div>
     ${ent.nuvem&&(!ent.pagina||ent.pagina.ok)?`<div class="note" data-ae-cli>${aeCliTxt(ent.cliente)}</div>`:''}
-    <a class="btn ghost" id="ae-at-pagina" style="width:100%;min-height:52px;margin-top:12px;display:flex;align-items:center;justify-content:center" href="${esc(galLink(ent.qr))}" target="_blank" rel="noopener">${TE('ae_ver_pagina')}</a>${fis}
+    <div class="row" style="gap:16px;align-items:center;margin-top:12px;flex-wrap:wrap"><div id="ae-at-qr" style="background:#fff;padding:8px;border-radius:8px;line-height:0" aria-label="${esc(TE('ae_cartao'))} ${esc(ent.codigo)}"></div>
+    <a class="btn ghost" id="ae-at-pagina" style="flex:1;min-width:220px;min-height:52px;display:flex;align-items:center;justify-content:center" href="${esc(galLink(ent.qr))}" target="_blank" rel="noopener">${TE('ae_ver_pagina')}</a></div>${fis}
     <button class="btn primary" style="width:100%;min-height:56px;margin-top:14px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button></div>`;
   // v99.30: Chute a Gol: o chute é a entrega do produto. "Chutou" marca a pulseira; com vídeo, depois vêm o vídeo e o cartão
   const chute=v.tipo==='chute',chutouEm=chute&&p.voo_em?esc(p.voo_em.slice(11,16)):'';
