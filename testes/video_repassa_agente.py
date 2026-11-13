@@ -36,7 +36,10 @@ class Nuvem(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        pedidos.append(("POST", self.path, json.loads(self.rfile.read(n) or b"{}")))
+        b = json.loads(self.rfile.read(n) or b"{}")
+        pedidos.append(("POST", self.path, b))
+        if b.get("acesso") == "LOCAL":
+            return self.resp(401, {"error": "acesso inválido ou vencido"})
         self.resp(200, {"ok": True, "acesso": "A1", "galeria": {"videos": []}} if self.path.endswith("/video") else {"ok": True})
 
     def do_GET(self):
@@ -58,7 +61,7 @@ m.NUVEM_API = "http://127.0.0.1:%d" % nv.server_address[1]
 srv = ThreadingHTTPServer(("127.0.0.1", 0), m.H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 U = "http://127.0.0.1:%d" % srv.server_address[1]
-QR, OUTRO = "V" * 22, "W" * 22
+QR, OUTRO, TOUR = "V" * 22, "W" * 22, "T" * 22
 
 
 def pede(metodo, path, corpo=None):
@@ -84,6 +87,19 @@ try:
     st, hd, _ = pede("GET", "/g/%s/baixar?v=1&a=A1" % QR)
     ok(st == 302 and hd.get("Location") == "https://s3.exemplo/assinado" and pedidos[-1][1] == "/g/%s/baixar?v=1&a=A1" % QR,
        "baixar: o redirecionamento para o link assinado chega ao navegador: %s %s" % (st, dict(hd)))
+    # galeria do Tour aberta pela página do vídeo: o acesso da nuvem (foto da venda) vale; acesso daqui segue aqui
+    c = m.vendas_db()
+    c.execute("insert into ativ_venda (origem, id, tipo, dia, criado, valor, tour_token) values ('eterna', 'TREPASSA1D', 'drone', ?, ?, 100, ?)",
+              (time.strftime("%Y-%m-%d"), time.strftime("%Y-%m-%dT%H:%M:%S"), TOUR))
+    c.commit()
+    c.close()
+    st, _, b = pede("POST", "/g/%s/galeria" % TOUR, {"acesso": "NUVEM"})
+    ok(st == 200 and pedidos[-1][1] == "/g/%s/galeria" % TOUR, "galeria do Tour com o acesso da nuvem, sem selfie: %s %s" % (st, b))
+    n = len(pedidos)
+    st, _, b = pede("POST", "/g/%s/galeria" % TOUR, {"acesso": "LOCAL"})
+    ok(len(pedidos) == n + 1 and st in (401, 404) and b"error" in b, "acesso recusado pela nuvem segue para a galeria daqui: %s %s" % (st, b))
+    st, _, _ = pede("POST", "/g/%s/evento" % TOUR, {"acesso": "NUVEM"})
+    ok(len(pedidos) == n + 1, "galeria do Tour: só a abertura vai à nuvem")
     n = len(pedidos)
     pede("POST", "/g/%s/video" % OUTRO, {"consentimento": True})
     pede("POST", "/g/%s/rosto" % QR, {})

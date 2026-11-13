@@ -12146,6 +12146,13 @@ class H(BaseHTTPRequestHandler):
         return not o or o in ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)
 
     def corpo(self, limite):
+        if getattr(self, "_corpo_lido", None) is not None:      # já lido por video_nuvem_repassa (que não respondeu)
+            b, self._corpo_lido = self._corpo_lido, None
+            try:
+                b = json.loads(b.decode("utf-8") or "{}")
+                return (b, None) if isinstance(b, dict) else (None, 400)
+            except Exception:
+                return None, 400
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -12278,10 +12285,15 @@ class H(BaseHTTPRequestHandler):
             return False
         c = vendas_db()
         try:
-            if not c.execute("select 1 from ativ_entrega where qr=? and apagado_em is null", (m.group(1),)).fetchone():
-                return False
+            video = c.execute("select 1 from ativ_entrega where qr=? and apagado_em is null", (m.group(1),)).fetchone()
+            # v99.28.3: a galeria do Tour aberta pela página do vídeo traz o acesso que a nuvem deu pela foto da venda (sem
+            # selfie); a galeria tenta na nuvem e, se a nuvem recusar (acesso dado aqui, por selfie no ponto), segue aqui
+            tour = not video and m.group(2) == "galeria" and c.execute(
+                "select 1 from ativ_venda where origem='eterna' and tour_token=?", (m.group(1),)).fetchone()
         finally:
             c.close()
+        if not video and not tour:
+            return False
         corpo = None
         if metodo == "POST":
             n = int(self.headers.get("Content-Length") or 0)
@@ -12301,8 +12313,14 @@ class H(BaseHTTPRequestHandler):
         except urllib.error.HTTPError as e:
             st, hd, bd = e.code, e.headers, e.read(2 * 1024 * 1024)
         except Exception:
+            if tour:
+                self._corpo_lido = corpo
+                return False
             self.js({"error": "sem conexão com a nuvem"}, 502)
             return True
+        if tour and st >= 400:
+            self._corpo_lido = corpo
+            return False
         self.send_response(st)
         for k in ("Content-Type", "Location", "Cache-Control"):
             if hd.get(k):
