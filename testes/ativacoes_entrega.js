@@ -76,7 +76,7 @@ try{
   // drone sem voo marcado: piloto, drone e bateria antes de entregar
   await A.click('[data-act="ae-nv-venda"][data-id="TDRONE002D"]');await A.waitForTimeout(100);
   ok(await A.$('#ae-nv-voo [data-ae-voo="piloto"]')!==null,'drone sem voo pede piloto, drone e bateria');
-  await A.evaluate(()=>{delete window.BarcodeDetector;});await A.click('[data-act="ae-cam"]');await A.waitForTimeout(150);
+  await A.evaluate(()=>{delete window.BarcodeDetector;navigator.mediaDevices.getUserMedia=()=>Promise.reject(new Error('sem câmera'));});await A.click('[data-act="ae-cam"]');await A.waitForTimeout(800);
   ok(/não lê QR pela câmera/.test(await txt('#ae-nv')),'sem câmera: avisa e oferece o leitor');
   await A.fill('[data-act="ae-qr-txt"]','https://eterna.photo/#g/'+QRV);await A.press('[data-act="ae-qr-txt"]','Enter');await A.waitForTimeout(100);
   ok(/já foi usado/.test(await txt('#ae-nv')),'cartão já usado recusado na hora: '+await txt('#ae-nv'));
