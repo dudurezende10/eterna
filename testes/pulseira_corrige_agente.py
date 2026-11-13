@@ -64,6 +64,13 @@ try:
     vs = {v["id"]: v for v in m.ativ_vendas(HOJE, HOJE)}
     ok(vs["TCORR0001D"]["pul_mov"] == {"camera": 1, "digitado": 0, "corrigidas": 2}, "movimentos para a estatística: %s" % vs["TCORR0001D"]["pul_mov"])
     ok(m.ativ_pulseira_busca("512")["vendas"][0]["venda"] == "TCORR0001D" and not m.ativ_pulseira_busca("502")["vendas"], "a entrega acha pela nova")
+    # v99.30: Chute a Gol sem vídeo: o chute é a entrega (Chutou na pulseira fecha a venda)
+    fila = lambda vid: next(v for v in m.ativ_fila(HOJE) if v["id"] == vid)
+    ok(not fila("TCORR0001C")["entregue_em"], "chute ainda não entregue")
+    ok(m.ativ_etapa({"id": "TCORR0001C", "etapa": "chutou"}, "v1") == "pulseira", "Chutou sem pulseira")
+    ok(m.ativ_etapa({"id": "TCORR0001C", "etapa": "chutou", "pulseira": "601"}, "v1") is None, "Chutou")
+    f = fila("TCORR0001C")
+    ok(f["entregue_em"] and f["pulseiras"][0]["voo_em"] and f["recebido_em"], "Chutou entrega a venda: %s" % f)
     # v99.29.3: vídeo entregue antes de a venda ter pulseira; a pulseira incluída depois fica com esse vídeo (não pede decolar de novo)
     m.ativ_receber([venda("TCORR0003D", "drone", [{"cat": "drone", "produto": "asteroid", "op": "Campo", "qtd": 1, "pessoas": 1, "videos": 1}], [], "v1")], "v1")
     c = m.vendas_db()

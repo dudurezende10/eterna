@@ -272,6 +272,13 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 - Com o cartão lido e o vídeo ainda subindo, o botão vira "Entregar quando o vídeo terminar de subir". Tocou, a entrega fica marcada e conclui sozinha no cartão daquele pedido quando o vídeo chega ao servidor.
 - Exemplo com dois voos: lê a pulseira A e decola; lê a B e decola. A pousou: toca no pedido A, solta o vídeo, lê o cartão, Entregar. Sem esperar, toca no pedido B e faz o mesmo.
 
+### 4f. Chute a Gol: o chute é a entrega (v99.30.0, Ronaldo, 13/11)
+
+- O cliente do Chute a Gol tem pulseira, mas não ganha foto nem vídeo obrigatoriamente: chutar no gol é a entrega do produto.
+- Aberto pela pulseira, o atendimento mostra o botão **Chutou**. Tocou, a pulseira fica com a hora do chute (`ativ_pulseira.voo_em`, etapa `chutou`) e, sem vídeo e sem itens pendentes, a venda fica entregue ("Atendimento concluído: chutou às HH:MM").
+- Se a venda tiver vídeo, depois do Chutou vêm o vídeo e o cartão, como no drone. Com medalha ou bola, falta dar baixa nos itens.
+- A venda só fica entregue quando todas as pulseiras dela chutaram.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.

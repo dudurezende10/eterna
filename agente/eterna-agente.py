@@ -7838,7 +7838,7 @@ ATIV_VIDEO_MAX = 1024 * 1024 * 1024          # 1 GB por vídeo (o do drone tem ~
 ATIV_VIDEO_PRAZO = 1800                      # segundos para o vídeo chegar inteiro pela rede do estádio
 ATIV_VIDEO_DIAS = 30                         # o vídeo fica 30 dias na nuvem (decisão 11/11)
 ATIV_CAD_TIPOS = ("piloto", "drone", "bateria")
-ATIV_ETAPAS = ("recebido", "voo", "item")
+ATIV_ETAPAS = ("recebido", "voo", "item", "chutou")
 _re_qr = re.compile(r"^[A-Za-z0-9_-]{22}$")
 ATIV_VENUE = os.environ.get("ETERNA_VENUE", "maracana")
 ativ_video_lock = threading.Lock()
@@ -8191,13 +8191,19 @@ def _ativ_fecha_entrega(c, vid, itens, feitos):
     """Venda entregue quando todos os vídeos têm QR e todos os itens físicos tiveram baixa."""
     n = c.execute("select count(*) from ativ_entrega where venda=? and apagado_em is null", (vid,)).fetchone()[0]
     qrs = ",".join(q for (q,) in c.execute("select qr from ativ_entrega where venda=? and apagado_em is null order by n", (vid,)))
-    pronto = n >= ativ_videos_previstos(itens) and len(feitos) >= len(ativ_itens_fisicos(itens)) and (n or feitos)
+    # v99.30: no Chute a Gol o chute é a entrega: cada pulseira precisa ter chutado (ativ_pulseira.voo_em = hora do chute)
+    tipo = (c.execute("select tipo from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone() or [""])[0]
+    chutes = [e for (e,) in c.execute("select voo_em from ativ_pulseira where venda=?", (vid,))] if tipo == "chute" else []
+    chutou = bool(chutes) and all(chutes)
+    pronto = (n >= ativ_videos_previstos(itens) and len(feitos) >= len(ativ_itens_fisicos(itens)) and (not chutes or chutou)
+              and (n or feitos or chutou))
     c.execute("update ativ_venda set qr=?, entrega=? where origem='eterna' and id=?",
               (qrs, time.strftime("%Y-%m-%dT%H:%M:%S") if pronto else "", vid))
 
 
 def ativ_etapa(body, eu):
-    """POST /ativ/etapa {id, etapa: recebido | voo | item, piloto, drone, bateria, i, pulseira}. -> None ou o erro.
+    """POST /ativ/etapa {id, etapa: recebido | voo | item | chutou, piloto, drone, bateria, i, pulseira}. -> None ou o erro.
+    v99.30: chutou (Chute a Gol, com a pulseira): o chute é a entrega do produto; a hora fica em ativ_pulseira.voo_em.
     v99.25: com a pulseira, o voo fica registrado no vídeo daquela pulseira (dois drones podem voar a mesma compra)."""
     vid, etapa = str(body.get("id") or ""), body.get("etapa")
     if not _re_ativ_id.match(vid) or etapa not in ATIV_ETAPAS:
@@ -8222,6 +8228,13 @@ def ativ_etapa(body, eu):
             if etapa == "recebido":
                 c.execute("update ativ_venda set recebido_em=coalesce(recebido_em, ?), recebido_por=coalesce(recebido_por, ?) where origem='eterna' and id=?",
                           (agora, eu, vid))
+            elif etapa == "chutou":
+                if not pul:
+                    return "pulseira"
+                c.execute("update ativ_venda set recebido_em=coalesce(recebido_em, ?), recebido_por=coalesce(recebido_por, ?) where origem='eterna' and id=?",
+                          (agora, eu, vid))
+                c.execute("update ativ_pulseira set voo_em=coalesce(voo_em, ?), voo_por=coalesce(voo_por, ?) where numero=? and venda=?", (agora, eu, pul, vid))
+                _ativ_fecha_entrega(c, vid, itens, set(json.loads(r[2] or "[]")))
             elif etapa == "voo":
                 ativos = {(t, n) for t, n, a in c.execute("select tipo, nome, ativo from ativ_cadastro") if a}
                 vals = []

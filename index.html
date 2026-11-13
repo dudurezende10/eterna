@@ -1314,7 +1314,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.29.5 · 13/11 14:02"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.30.0 · 13/11 14:07"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5489,6 +5489,7 @@ function aeAtAbre(venda,n){const A=state.ae;aeCamDesliga();if(A.nv&&!A.nv.chave)
 function aeAtFecha(){const A=state.ae;aeCamDesliga();if(A.nv&&!A.nv.chave)aeDescarta();A.nv=null;A.at=null;A.pulErr=null;A.pulOpc=null;render();}
 // estado de cada vídeo por pulseira: aguarda, voando (drone) / em andamento, vídeo entregue
 function aePulEstado(v,p){if(p.qr)return 'entregue';if(v.tipo==='drone')return p.voo_em?'voando':'aguarda';
+  if(v.tipo==='chute'){if(!p.voo_em)return 'aguarda';return (+v.videos)||(v.fisicos||[]).some(x=>!x.entregue)?'andamento':'entregue';} // v99.30: o chute é a entrega
   if(!(+v.videos)&&v.recebido_em)return (v.fisicos||[]).some(x=>!x.entregue)?'andamento':'entregue'; // v99.28: item sem vídeo: começou e acabou
   return v.recebido_em?'andamento':'aguarda';}
 function aePulPainel(){const A=state.ae;const L=A.dados?A.dados.vendas:[];
@@ -5519,8 +5520,15 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
     <div class="row" style="justify-content:space-between;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center"><span><b>${TE('ae_video_entregue')}</b> · ${TE('ae_cartao')} <b>${esc(ent.codigo)}</b> · ${esc((ent.em||'').slice(11,16))}</span>${aeNuvemPill(ent)}</div>
     ${ent.nuvem&&(!ent.pagina||ent.pagina.ok)?`<div class="note" data-ae-cli>${aeCliTxt(ent.cliente)}</div>`:''}${fis}
     <button class="btn primary" style="width:100%;min-height:56px;margin-top:14px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button></div>`;
-  const voa=v.tipo==='drone'?!!p.voo_em:!!v.recebido_em;
-  // v99.29.5: venda sem vídeo (Chute a Gol, Snap Pop): o atendimento é só liberar (Começar) e dar baixa nos itens; depois, pronto
+  const voa=v.tipo==='drone'||chute?!!p.voo_em:!!v.recebido_em;
+  // v99.30: Chute a Gol: o chute é a entrega do produto. "Chutou" marca a pulseira; com vídeo, depois vêm o vídeo e o cartão
+  const chute=v.tipo==='chute',chutouEm=chute&&p.voo_em?esc(p.voo_em.slice(11,16)):'';
+  const btChutou=podeU?`<button class="btn primary" style="width:100%;min-height:64px;font-size:1.2rem;margin-top:8px" data-act="ae-chutou" data-id="${esc(v.id)}">${TE('ae_chutou')}</button>`:'';
+  if(chute&&!(+v.videos)){const falta=(v.fisicos||[]).some(x=>!x.entregue);
+    return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid ${chutouEm&&!falta?'var(--good,#1b7f3b)':'var(--accent,#134078)'}">${topo(!!chutouEm)}
+    ${chutouEm?`<div style="margin-top:14px"><b style="font-size:1.15rem">${TE(falta?'ae_ch_itens':'ae_ch_pronto',chutouEm)}</b></div>`:`<div class="note" style="margin-top:14px">${TE('ae_ch_dica')}</div>${btChutou}`}
+    ${fis}${chutouEm?`<button class="btn primary" style="width:100%;min-height:56px;margin-top:14px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button>`:''}</div>`;}
+  // v99.29.5: venda sem vídeo (Snap Pop): o atendimento é só liberar (Começar) e dar baixa nos itens; depois, pronto
   if(!(+v.videos)&&v.tipo!=='drone'){const falta=(v.fisicos||[]).some(x=>!x.entregue);
     return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid ${v.recebido_em&&!falta?'var(--good,#1b7f3b)':'var(--accent,#134078)'}">${topo(!!v.recebido_em)}
     ${v.recebido_em?`<div style="margin-top:14px"><b style="font-size:1.15rem">${TE(falta?'ae_sv_itens':'ae_sv_pronto',esc(v.recebido_em.slice(11,16)))}</b><div class="note">${TE('ae_sv_sem_video')}</div></div>`
@@ -5530,6 +5538,7 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
       :`<div class="row" id="ae-at-voo" style="gap:8px;align-items:end;flex-wrap:wrap">${aeSel(p,'piloto',TE('ae_piloto'))}${aeSel(p,'drone',TE('ae_drone'))}${aeSel(p,'bateria',TE('ae_bateria'))}</div>
         ${!((cad.piloto||[]).some(x=>x.ativo)&&(cad.drone||[]).some(x=>x.ativo)&&(cad.bateria||[]).some(x=>x.ativo))?`<div class="note" role="alert">${TE('ae_sem_cadastro')}</div>`:''}
         ${podeU?`<button class="btn primary" style="width:100%;min-height:56px;margin-top:8px;font-size:1.1rem" data-act="ae-at-voo">${TE('ae_decolar')}</button>`:''}`)
+    :chute?(chutouEm?`<div class="note">${TE('ae_chutou_as',chutouEm)}</div>`:`<div class="note">${TE('ae_ch_dica_video')}</div>${btChutou}`)
     :(v.recebido_em?`<div class="note">${TE('ae_comecou_as',esc(v.recebido_em.slice(11,16)))}</div>`:podeU?`<button class="btn primary" style="width:100%;min-height:56px" data-act="ae-recebido" data-id="${esc(v.id)}">${TE('ae_comecar')}</button>`:'');
   aeCampoArquivo();
   const passo2=!N?`<label class="panel" id="ae-drop" for="ae-file" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:120px;margin:0;border:2px dashed var(--accent,#134078);cursor:pointer;text-align:center${voa?'':';opacity:.55'}">
@@ -5544,7 +5553,7 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
       :`<div class="row" style="justify-content:space-between;align-items:center"><span>${TE('ae_cartao')} <b>${esc(cartaoCodigo(N.qr))}</b></span><button class="btn ghost" data-act="ae-qr-troca">${TE('ae_trocar_cartao')}</button></div>`):`<div class="note">${TE('ae_cartao_depois')}</div>`;
   const pronto=!!(N&&(N.rascunho||(N.subindo&&!N.auto))&&N.qr&&voa);
   return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid var(--accent,#134078)">${topo(false)}
-    <h2 style="margin-top:16px">${TE(v.tipo==='drone'?'ae_at_p1_drone':'ae_at_p1')}</h2>${passo1}
+    <h2 style="margin-top:16px">${TE(chute?'ae_at_p1_chute':v.tipo==='drone'?'ae_at_p1_drone':'ae_at_p1')}</h2>${passo1}
     <h2 style="margin-top:16px">${TE('ae_at_p2')}</h2>${podeC?passo2:''}
     <h2 style="margin-top:16px">${TE('ae_at_p3')}</h2>${passo3}
     ${N&&N.err?`<div class="note" role="alert" style="color:var(--bad);margin-top:8px"><b>${TEk(N.err,TE('ae_e_servidor'))}</b></div>`:''}
@@ -5640,6 +5649,7 @@ function vAtivEntrega(){const A=state.ae;if(!A.dia)A.dia=venueToday();if(!A.dado
 document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.closest('[data-act^="ae-"]');if(!el||state.view!=='ativ-entrega'||el.tagName==='INPUT'||el.tagName==='SELECT')return;const a=el.dataset.act,A=state.ae,id=el.dataset.id;
   if(a==='ae-cat'){A.cat=el.dataset.c;A.voo=null;}
   else if(a==='ae-recebido'){if(await aeAcao({id,etapa:'recebido'}))await aePull();}
+  else if(a==='ae-chutou'&&A.at){el.disabled=true;if(await aeAcao({id,etapa:'chutou',pulseira:A.at.numero}))await aePull();else el.disabled=false;}
   else if(a==='ae-voo'){A.voo=id;}else if(a==='ae-voo-nao'){A.voo=null;}
   else if(a==='ae-voo-ok'){const f=document.getElementById('ae-voo-form');const g=t=>(f.querySelector(`[data-ae-voo="${t}"]`)||{}).value||'';const c={id,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria')};
     if(!c.piloto||!c.drone||!c.bateria){toast(TE('ae_e_cadastro'));return;}if(await aeAcao(c)){A.voo=null;A.vooSel=null;await aePull();}}
@@ -9333,8 +9343,15 @@ const EQ={
   ae_proximo_cliente:["Próximo cliente","Next customer","Siguiente cliente","Client suivant","Nächster Kunde"],
   ae_video_entregue:["Vídeo entregue","Video delivered","Video entregado","Vidéo livrée","Video übergeben"],
   ae_at_p1_drone:["1. Decolar","1. Take off","1. Despegar","1. Décoller","1. Abheben"],
+  ae_chutou:["Chutou","Kicked","Pateó","A tiré","Hat geschossen"],
+  ae_chutou_as:[h=>"Chutou às "+h,h=>"Kicked at "+h,h=>"Pateó a las "+h,h=>"A tiré à "+h,h=>"Geschossen um "+h],
+  ae_at_p1_chute:["1. Chute","1. Kick","1. Patada","1. Tir","1. Schuss"],
+  ae_ch_dica:["O chute é a entrega: toque em Chutou quando o cliente chutar.","The kick is the delivery: tap Kicked when the customer kicks.","La patada es la entrega: toca Pateó cuando el cliente patee.","Le tir est la remise : touchez A tiré quand le client tire.","Der Schuss ist die Übergabe: Tippen Sie auf Hat geschossen, wenn der Kunde schießt."],
+  ae_ch_dica_video:["Toque em Chutou quando o cliente chutar. Depois, o vídeo.","Tap Kicked when the customer kicks. Then the video.","Toca Pateó cuando el cliente patee. Después, el video.","Touchez A tiré quand le client tire. Ensuite, la vidéo.","Tippen Sie auf Hat geschossen, wenn der Kunde schießt. Dann das Video."],
+  ae_ch_pronto:[h=>"Atendimento concluído: chutou às "+h+".",h=>"Service completed: kicked at "+h+".",h=>"Atención concluida: pateó a las "+h+".",h=>"Service terminé : a tiré à "+h+".",h=>"Betreuung abgeschlossen: geschossen um "+h+"."],
+  ae_ch_itens:[h=>"Chutou às "+h+". Falta entregar os itens abaixo.",h=>"Kicked at "+h+". Hand over the items below.",h=>"Pateó a las "+h+". Falta entregar los ítems de abajo.",h=>"A tiré à "+h+". Remettez les articles ci-dessous.",h=>"Geschossen um "+h+". Die Artikel unten fehlen noch."],
   ae_sv_liberar:["Esta venda não tem vídeo. Toque em Começar quando o cliente for jogar.","This sale has no video. Tap Start when the customer goes to play.","Esta venta no tiene video. Toca Empezar cuando el cliente vaya a jugar.","Cette vente n'a pas de vidéo. Touchez Commencer quand le client va jouer.","Dieser Verkauf hat kein Video. Tippen Sie auf Starten, wenn der Kunde spielt."],
-  ae_sv_pronto:[h=>"Atendido às "+h+". Nada mais a fazer.",h=>"Served at "+h+". Nothing else to do.",h=>"Atendido a las "+h+". Nada más que hacer.",h=>"Servi à "+h+". Plus rien à faire.",h=>"Bedient um "+h+". Nichts weiter zu tun."],
+  ae_sv_pronto:[h=>"Atendimento concluído às "+h+".",h=>"Service completed at "+h+".",h=>"Atención concluida a las "+h+".",h=>"Service terminé à "+h+".",h=>"Betreuung abgeschlossen um "+h+"."],
   ae_sv_itens:[h=>"Começou às "+h+". Falta entregar os itens abaixo.",h=>"Started at "+h+". Hand over the items below.",h=>"Empezó a las "+h+". Falta entregar los ítems de abajo.",h=>"Commencé à "+h+". Remettez les articles ci-dessous.",h=>"Begonnen um "+h+". Die Artikel unten fehlen noch."],
   ae_sv_sem_video:["Esta venda não tem vídeo.","This sale has no video.","Esta venta no tiene video.","Cette vente n'a pas de vidéo.","Dieser Verkauf hat kein Video."],
   ae_at_p1:["1. Começar","1. Start","1. Empezar","1. Commencer","1. Starten"],
