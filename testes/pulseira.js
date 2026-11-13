@@ -93,7 +93,7 @@ try{
   ok(/Vídeo entregue/.test(await txt('#ae-at'))&&/WXYZ-2345-6789/.test(await txt('#ae-at'))&&/Na nuvem/.test(await txt('#ae-at')),'atendimento mostra o vídeo entregue e na nuvem: '+await txt('#ae-at'));
   ok((await P.$$('#ae-at [data-act="ae-at-fecha"]')).length===1,'v99.29.4: um Próximo cliente só');
   ok(/#g\/N{21}2$/.test(await P.getAttribute('#ae-at-pagina','href')||''),'v99.30.1: entregue abre a página do vídeo e das fotos do cliente');
-  ok(/#g\/N{21}2$/.test(await P.getAttribute('#ae-at-qr','data-qr')||'')&&await P.$('#ae-at-qr canvas, #ae-at-qr img'),'v99.30.5: QR do cartão na tela');
+  ok(/#g\/N{21}2$/.test(await P.getAttribute('#ae-at-qr','data-qr')||'')&&await P.$('#ae-at-qr canvas, #ae-at-qr img'),'v99.30.5: QR do cartão na tela (vídeo já na nuvem)');
   await P.click('#ae-at button.primary[data-act="ae-at-fecha"]');await P.waitForTimeout(200);
   ok(await P.$('#ae-at')===null&&await P.$('#ae-pul'),'Próximo cliente volta para a leitura da pulseira');
   await P.click('#ae-agora [data-act="ae-at-abre"][data-n="777"]');await P.waitForTimeout(200);

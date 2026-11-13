@@ -32,7 +32,7 @@ try{
   const E=require('./_entrar');const adm=await E.adminFicticio(A);await E(A,adm);
   await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;s.ae.fila=true;ETERNA.go('ativ-entrega');});await A.waitForTimeout(600);
   const txt=async s=>(await A.textContent(s))||'';
-  ok(/Entrega dos vídeos/.test(await txt('#main .head'))&&/Vídeos aguardando internet: 1/.test(await txt('#main .head')),'título e situação da nuvem: '+await txt('#main .head'));
+  ok(/Entrega dos vídeos/.test(await txt('#main .head'))&&/Vídeos na fila da nuvem: 1/.test(await txt('#main .head')),'título e situação da nuvem: '+await txt('#main .head'));
   ok(/Drone · 2/.test(await txt('#main'))&&/Chute a Gol · 1/.test(await txt('#main'))&&/Snap Pop · 1/.test(await txt('#main')),'pendentes por serviço');
   const card='[data-ae-venda="TDRONE001D"]';
   // v99.23.6: arquivo no S3 mas página recusada pela nuvem: erro em vermelho no cartão e no topo, nunca "Na nuvem"
@@ -94,7 +94,7 @@ try{
   // chute: medalha
   await A.click('[data-act="ae-cat"][data-c="chute"]');await A.waitForTimeout(100);
   const cc='[data-ae-venda="TCHUTE001C"]';
-  ok(/ABCD-EFGH/.test(await txt(cc))&&/Aguardando internet/.test(await txt(cc))&&await naCol('TCHUTE001C','delivery'),'chute com vídeo na fila da nuvem e medalha pendente: '+await txt(cc));
+  ok(/ABCD-EFGH/.test(await txt(cc))&&/Na fila da nuvem/.test(await txt(cc))&&await naCol('TCHUTE001C','delivery'),'chute com vídeo na fila da nuvem e medalha pendente: '+await txt(cc));
   await A.check(cc+' [data-act="ae-item"]');await A.waitForTimeout(400);
   ok(J(posts.slice(-1)[0])===J({id:'TCHUTE001C',etapa:'item',i:0})&&await naCol('TCHUTE001C','entregue'),'baixa da medalha: vai para Entregue: '+J(posts));
   await A.click('[data-act="ae-cat"][data-c="drone"]');await A.waitForTimeout(100);
