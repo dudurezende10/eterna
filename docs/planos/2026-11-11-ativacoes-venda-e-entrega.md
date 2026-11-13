@@ -276,7 +276,7 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 
 - O cliente do Chute a Gol tem pulseira, mas não ganha foto nem vídeo obrigatoriamente: chutar no gol é a entrega do produto.
 - Aberto pela pulseira, o atendimento mostra o botão **Chutou**. Tocou, a pulseira fica com a hora do chute (`ativ_pulseira.voo_em`, etapa `chutou`) e, sem vídeo e sem itens pendentes, a venda fica entregue ("Atendimento concluído: chutou às HH:MM").
-- Se a venda tiver vídeo, depois do Chutou vêm o vídeo e o cartão, como no drone. Com medalha ou bola, falta dar baixa nos itens.
+- O vídeo do Chute a Gol não é do drone e é opcional (v99.30.3): Chutou conclui o atendimento mesmo em venda com vídeo; embaixo fica "Vídeo do chute (opcional)" para soltar o vídeo e ler o cartão, agora ou depois. Com medalha ou bola, falta dar baixa nos itens.
 - A venda só fica entregue quando todas as pulseiras dela chutaram.
 
 ## 5. Vendas: listar, editar, cancelar

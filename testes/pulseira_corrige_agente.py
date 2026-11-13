@@ -80,6 +80,10 @@ try:
     ok(m.ativ_etapa({"id": "TCORR0001C", "etapa": "chutou", "pulseira": "601"}, "v1") is None, "Chutou")
     f = fila("TCORR0001C")
     ok(f["entregue_em"] and f["pulseiras"][0]["voo_em"] and f["recebido_em"], "Chutou entrega a venda: %s" % f)
+    # v99.30.3: Chute a Gol com vídeo: Chutou entrega mesmo sem o vídeo (opcional)
+    m.ativ_receber([venda("TCORR0004C", "chute", [{"cat": "chute", "produto": "chute3v", "op": "", "qtd": 1, "videos": 1}], ["801"])], "v1")
+    ok(m.ativ_etapa({"id": "TCORR0004C", "etapa": "chutou", "pulseira": "801"}, "v1") is None and fila("TCORR0004C")["entregue_em"],
+       "chute com vídeo: chutou é entregue: %s" % fila("TCORR0004C"))
     # v99.29.3: vídeo entregue antes de a venda ter pulseira; a pulseira incluída depois fica com esse vídeo (não pede decolar de novo)
     m.ativ_receber([venda("TCORR0003D", "drone", [{"cat": "drone", "produto": "asteroid", "op": "Campo", "qtd": 1, "pessoas": 1, "videos": 1}], [], "v1")], "v1")
     c = m.vendas_db()

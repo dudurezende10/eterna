@@ -8202,6 +8202,8 @@ def _ativ_fecha_entrega(c, vid, itens, feitos):
     chutou = bool(chutes) and all(chutes)
     pronto = (n >= ativ_videos_previstos(itens) and len(feitos) >= len(ativ_itens_fisicos(itens)) and (not chutes or chutou)
               and (n or feitos or chutou))
+    if chutes:      # v99.30.3: no Chute a Gol o vídeo é opcional: chutou (e itens com baixa) é entregue
+        pronto = chutou and len(feitos) >= len(ativ_itens_fisicos(itens))
     c.execute("update ativ_venda set qr=?, entrega=? where origem='eterna' and id=?",
               (qrs, time.strftime("%Y-%m-%dT%H:%M:%S") if pronto else "", vid))
 

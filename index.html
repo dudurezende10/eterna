@@ -1314,7 +1314,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.30.2 · 13/11 14:16"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.30.3 · 13/11 14:18"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5493,7 +5493,7 @@ function aeAtAbre(venda,n){const A=state.ae;aeCamDesliga();if(A.nv&&!A.nv.chave)
 function aeAtFecha(){const A=state.ae;aeCamDesliga();if(A.nv&&!A.nv.chave)aeDescarta();A.nv=null;A.at=null;A.pulErr=null;A.pulOpc=null;render();}
 // estado de cada vídeo por pulseira: aguarda, voando (drone) / em andamento, vídeo entregue
 function aePulEstado(v,p){if(p.qr)return 'entregue';if(v.tipo==='drone')return p.voo_em?'voando':'aguarda';
-  if(v.tipo==='chute'){if(!p.voo_em)return 'aguarda';return (+v.videos)||(v.fisicos||[]).some(x=>!x.entregue)?'andamento':'entregue';} // v99.30: o chute é a entrega
+  if(v.tipo==='chute'){if(!p.voo_em)return 'aguarda';return (v.fisicos||[]).some(x=>!x.entregue)?'andamento':'entregue';} // v99.30: o chute é a entrega (o vídeo, se houver, não segura)
   if(!(+v.videos)&&v.recebido_em)return (v.fisicos||[]).some(x=>!x.entregue)?'andamento':'entregue'; // v99.28: item sem vídeo: começou e acabou
   return v.recebido_em?'andamento':'aguarda';}
 function aePulPainel(){const A=state.ae;const L=A.dados?A.dados.vendas:[];
@@ -5547,7 +5547,7 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
     :(v.recebido_em?`<div class="note">${TE('ae_comecou_as',esc(v.recebido_em.slice(11,16)))}</div>`:podeU?`<button class="btn primary" style="width:100%;min-height:56px" data-act="ae-recebido" data-id="${esc(v.id)}">${TE('ae_comecar')}</button>`:'');
   aeCampoArquivo();
   const passo2=!N?`<label class="panel" id="ae-drop" for="ae-file" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:120px;margin:0;border:2px dashed var(--accent,#134078);cursor:pointer;text-align:center${voa?'':';opacity:.55'}">
-      <b style="font-size:1.15rem">${TE('ae_drop')}</b><span class="note">${TE('ae_drop_sub')}</span>${A.dropErr?`<span class="note" role="alert" id="ae-drop-err" style="color:var(--bad);font-weight:600">${TE('ae_e_formato_arq',esc(A.dropErr))}</span>`:''}</label>`
+      <b style="font-size:1.15rem">${TE(v.tipo==='drone'?'ae_drop':'ae_drop_video')}</b><span class="note">${TE('ae_drop_sub')}</span>${A.dropErr?`<span class="note" role="alert" id="ae-drop-err" style="color:var(--bad);font-weight:600">${TE('ae_e_formato_arq',esc(A.dropErr))}</span>`:''}</label>`
     :`<video src="${esc(N.url)}" controls muted playsinline preload="metadata" style="width:100%;max-height:40vh;background:#000;border-radius:10px"></video>
       <div class="row" style="justify-content:space-between;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center"><span class="note">${esc(N.nome)} · ${aeMB(N.total)}</span>
         ${N.subindo?`<div id="ae-prog" style="flex:1;min-width:220px"><progress style="width:100%" max="1" value="${N.total?N.feito/N.total:0}"></progress><span class="note"></span></div>`:N.rascunho?`<span class="pill good">${TE('ae_no_servidor',N.dur?Math.round(N.dur)+' s':'')}</span>`:''}
@@ -5557,6 +5557,16 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
         <label style="display:block;margin-top:10px"><span class="eyebrow">${TE('ae_qr_manual')}</span><input data-act="ae-qr-txt" style="width:100%;min-height:44px" autocomplete="off" placeholder="https://eterna.photo/#g/…"></label>`
       :`<div class="row" style="justify-content:space-between;align-items:center"><span>${TE('ae_cartao')} <b>${esc(cartaoCodigo(N.qr))}</b></span><button class="btn ghost" data-act="ae-qr-troca">${TE('ae_trocar_cartao')}</button></div>`):`<div class="note">${TE('ae_cartao_depois')}</div>`;
   const pronto=!!(N&&(N.rascunho||(N.subindo&&!N.auto))&&N.qr&&voa);
+  // v99.30.3: Chute a Gol com vídeo: Chutou conclui o atendimento; o vídeo (não é do drone) é opcional e pode vir depois
+  if(chute){const falta=(v.fisicos||[]).some(x=>!x.entregue);
+    if(!chutouEm)return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid var(--accent,#134078)">${topo(false)}
+      <h2 style="margin-top:16px">${TE('ae_at_p1_chute')}</h2><div class="note">${TE('ae_ch_dica')}</div>${btChutou}${fis}</div>`;
+    return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid ${falta?'var(--accent,#134078)':'var(--good,#1b7f3b)'}">${topo(true)}
+      <div style="margin-top:14px"><b style="font-size:1.15rem">${TE(falta?'ae_ch_itens':'ae_ch_pronto',chutouEm)}</b></div>${fis}
+      ${podeC?`<h2 style="margin-top:18px">${TE('ae_ch_video')}</h2>${passo2}${N?`<div style="margin-top:10px">${passo3}</div>
+      ${N.err?`<div class="note" role="alert" style="color:var(--bad);margin-top:8px"><b>${TEk(N.err,TE('ae_e_servidor'))}</b></div>`:''}
+      <button class="btn primary" style="width:100%;min-height:56px;margin-top:10px" data-act="ae-nv-liga" ${pronto?'':'disabled'}>${N.auto?TE('ae_entrega_marcada'):N.subindo&&N.qr?TE('ae_entregar_ao_subir'):TE('ae_entregar')}</button>`:''}`:''}
+      <button class="btn primary" style="width:100%;min-height:56px;margin-top:14px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button></div>`;}
   return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid var(--accent,#134078)">${topo(false)}
     <h2 style="margin-top:16px">${TE(chute?'ae_at_p1_chute':v.tipo==='drone'?'ae_at_p1_drone':'ae_at_p1')}</h2>${passo1}
     <h2 style="margin-top:16px">${TE('ae_at_p2')}</h2>${podeC?passo2:''}
@@ -9349,6 +9359,8 @@ const EQ={
   ae_video_entregue:["Vídeo entregue","Video delivered","Video entregado","Vidéo livrée","Video übergeben"],
   ae_at_p1_drone:["1. Decolar","1. Take off","1. Despegar","1. Décoller","1. Abheben"],
   ae_ver_pagina:["Abrir o vídeo e as fotos do cliente","Open the customer's video and photos","Abrir el video y las fotos del cliente","Ouvrir la vidéo et les photos du client","Video und Fotos des Kunden öffnen"],
+  ae_drop_video:["Arraste aqui o vídeo","Drag the video here","Arrastra aquí el video","Glissez la vidéo ici","Video hierher ziehen"],
+  ae_ch_video:["Vídeo do chute (opcional)","Kick video (optional)","Video de la patada (opcional)","Vidéo du tir (facultatif)","Video vom Schuss (optional)"],
   ae_chutou:["Chutou","Kicked","Pateó","A tiré","Hat geschossen"],
   ae_chutou_as:[h=>"Chutou às "+h,h=>"Kicked at "+h,h=>"Pateó a las "+h,h=>"A tiré à "+h,h=>"Geschossen um "+h],
   ae_at_p1_chute:["1. Chute","1. Kick","1. Patada","1. Tir","1. Schuss"],
