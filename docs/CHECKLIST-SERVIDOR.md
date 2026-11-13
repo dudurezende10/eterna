@@ -95,6 +95,7 @@ Comandos em **PowerShell como administrador**, salvo quando o passo diz "no usu�
   - cria a tarefa "Eterna" do **sistema** (SYSTEM), que liga o Eterna com o Windows sem ninguém entrar e sem senha de usuário, e religa se cair;
   - desliga o atalho do vigia na pasta Inicializar, para não subirem dois;
   - libera o firewall: Python, 8765 e 2121, e desfaz o bloqueio que o Windows grava quando alguém clica em **Cancelar** na pergunta do firewall;
+  - instala o **ffmpeg para a máquina toda** (`winget install --id Gyan.FFmpeg -e --scope machine`), que tira as fotos do vídeo do Drone; o Eterna roda como SISTEMA e não enxerga um ffmpeg instalado só no perfil de um usuário. Sem ffmpeg o vídeo é entregue, só não saem as fotos;
   - não deixa dormir na tomada nem com a tampa fechada;
   - põe o atalho "Eterna" na área de trabalho de todos;
   - liga o Eterna e mostra os endereços para os pontos.

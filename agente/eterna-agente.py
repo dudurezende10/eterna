@@ -8337,8 +8337,18 @@ ATIV_FOTOS_INICIO = 15                      # segundos: o cliente aparece de per
 
 
 def ffmpeg_bin():
-    for c in (os.environ.get("ETERNA_FFMPEG"), shutil.which("ffmpeg"),
-              os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links", "ffmpeg.exe")):
+    """O ffmpeg do servidor. O Eterna roda como tarefa do SISTEMA: o instalador põe o ffmpeg para a máquina (pasta WinGet
+    em Program Files); um winget feito por um usuário fica no perfil dele, então os perfis também são procurados."""
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    cs = [os.environ.get("ETERNA_FFMPEG"), shutil.which("ffmpeg"),
+          os.path.join(pf, "WinGet", "Links", "ffmpeg.exe"),
+          os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links", "ffmpeg.exe"),
+          os.path.join(os.path.expanduser("~"), "AppData", "Local", "Microsoft", "WinGet", "Links", "ffmpeg.exe")]
+    if sys.platform.startswith("win"):
+        cs += sorted(glob.glob(os.path.join(pf, "WinGet", "Packages", "Gyan.FFmpeg*", "*", "bin", "ffmpeg.exe")), reverse=True)
+        cs += sorted(glob.glob(r"C:\Users\*\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe"))
+        cs += sorted(glob.glob(r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg*\*\bin\ffmpeg.exe"), reverse=True)
+    for c in cs:
         if c and os.path.isfile(c):
             return c
     return None
