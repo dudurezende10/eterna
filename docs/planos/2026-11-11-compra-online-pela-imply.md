@@ -155,3 +155,28 @@ Consequências para o Eterna:
 2. E-mail obrigatório + consentimento antes da selfie, gravado na Nuvem.
 3. Pedido online + redirecionamento + conferência + liberação (depende das respostas 1 a 7 da Imply, com homologação).
 4. Envio ao RD Station de quem consentiu, com o que não comprou.
+
+## Teste da compra pela API SuperIngressoV02 (13/11/2026)
+
+Caminho novo, que dispensa o `setPessoa` e o `predefined-cart`: a Nuvem reserva os produtos com o nosso localizador e
+pede à Imply o link de pagamento. A documentação (YAADE da Imply, coleção "WS SuperIngressoV02") traz:
+
+| Passo | Chamada | Para quê |
+|---|---|---|
+| 1 | `PUT ReservarIngresso/` | Reserva cada unidade com `localizador` = o nosso código do pedido |
+| 2 | `GET GetPaymentGateway/<idpessoa>/<localizador>` | Meios de pagamento do pedido (id criptografado de cada um) |
+| 3 | `POST /api/ws/?ws=SuperIngressoV02&formato=json`, `method` `IniciarPagamento`, `params` `[token, localizador, idpessoa, id_metodo, url_retorno]` | Começa o pagamento e volta para a nossa URL |
+| 4 | `method` `GetCart`, `params` `[token, idpessoa, status, idmovimentacao]` | Situação da compra (`PA`, `RE`, `CA`) para liberar as fotos |
+| 5 | `method` `ConcluirPagamento`, `params` `[token, agencia, idpessoa]` | Fecha o pagamento |
+
+`ConfirmacaoCompra` não serve para a venda online: ela marca a reserva como paga sem cobrar ninguém.
+
+Resultado do teste, com a credencial ws_viva_maracana (a mesma de `imply-ws.env`):
+
+- **Reserva funciona:** 1 Figurinha Copa (R$ 22 com taxa), horário de 13/11 15:15, localizador `ETT13151005`. A resposta trouxe
+  `status: true` e vencimento em 14/11 15:10. Não foi paga e cai sozinha.
+- **Pagamento bloqueado:** `GetPaymentGateway`, `IniciarPagamento` e `GetCart` respondem "Sem permissão" (`error.code` 0).
+
+Para seguir, a Imply precisa liberar para o usuário ws_viva_maracana os métodos `GetPaymentGateway`, `IniciarPagamento`,
+`ConcluirPagamento` e `GetCart`, e dizer o código de agência que vai no `ConcluirPagamento`. O relatório de vendas por
+período (`/tickets/reports/producer/sales`) não aparece no YAADE para o nosso login.
