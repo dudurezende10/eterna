@@ -64,6 +64,17 @@ try:
     vs = {v["id"]: v for v in m.ativ_vendas(HOJE, HOJE)}
     ok(vs["TCORR0001D"]["pul_mov"] == {"camera": 1, "digitado": 0, "corrigidas": 2}, "movimentos para a estatística: %s" % vs["TCORR0001D"]["pul_mov"])
     ok(m.ativ_pulseira_busca("512")["vendas"][0]["venda"] == "TCORR0001D" and not m.ativ_pulseira_busca("502")["vendas"], "a entrega acha pela nova")
+    # v99.29.3: vídeo entregue antes de a venda ter pulseira; a pulseira incluída depois fica com esse vídeo (não pede decolar de novo)
+    m.ativ_receber([venda("TCORR0003D", "drone", [{"cat": "drone", "produto": "asteroid", "op": "Campo", "qtd": 1, "pessoas": 1, "videos": 1}], [], "v1")], "v1")
+    c = m.vendas_db()
+    c.execute("update ativ_venda set voo_em=?, piloto='P', drone='D1', bateria='B1' where id='TCORR0003D'", (HOJE + "T09:58:00",))
+    c.execute("insert into ativ_entrega (qr, venda, n, em) values (?, 'TCORR0003D', 1, ?)", ("Q" * 22, HOJE + "T09:59:00"))
+    c.commit()
+    c.close()
+    e, ps = m.ativ_pulseiras_edita({"id": "TCORR0003D", "pulseiras": [{"slot": 1, "n": "567"}]}, "v1", False)
+    p = next(v for v in m.ativ_fila(HOJE) if v["id"] == "TCORR0003D")["pulseiras"]
+    ok(e is None and p and p[0]["qr"] == "Q" * 22 and p[0]["voo_em"] == HOJE + "T09:58:00" and p[0]["piloto"] == "P",
+       "pulseira incluída depois fica com o vídeo já entregue: %s %s" % (e, p))
 except Exception as ex:
     import traceback
     traceback.print_exc()

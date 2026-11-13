@@ -8163,9 +8163,19 @@ def ativ_fila(dia):
             for x in fis:
                 x["entregue"] = x["i"] in feitos
             puls = []
+            # v99.29.3: vídeo entregue antes de a venda ter pulseira (pulseira incluída depois, em Corrigir pulseira): a pulseira
+            # fica com o vídeo entregue sem pulseira do mesmo número (n = slot), e com o voo da venda
+            soltas = [e for e in ents if not e.get("pulseira")]
             for num, slot, conf, vem, vpor, pil, dro, bat in c.execute(
                     "select numero, slot, conflito, voo_em, voo_por, piloto, drone, bateria from ativ_pulseira where venda=? order by slot", (r[0],)):
                 q = next((e["qr"] for e in ents if e.get("pulseira") == num), None)
+                if not q:
+                    e = next((e for e in soltas if e.get("n") == slot), None)
+                    if e:
+                        soltas.remove(e)
+                        q = e["qr"]
+                        vem, vpor = vem or r[15] or e.get("em"), vpor or r[16]
+                        pil, dro, bat = pil or r[9], dro or r[10], bat or r[11]
                 puls.append({"numero": num, "slot": slot, "conflito": bool(conf), "voo_em": vem, "voo_por": vpor, "piloto": pil,
                              "drone": dro, "bateria": bat, "qr": q})
             out.append({"id": r[0], "tipo": r[1], "criado": r[2], "itens": itens, "pagamento": r[4], "vendedor": r[5], "pessoas": r[6], "pulseiras": puls,
