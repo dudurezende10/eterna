@@ -64,6 +64,15 @@ try:
     vs = {v["id"]: v for v in m.ativ_vendas(HOJE, HOJE)}
     ok(vs["TCORR0001D"]["pul_mov"] == {"camera": 1, "digitado": 0, "corrigidas": 2}, "movimentos para a estatística: %s" % vs["TCORR0001D"]["pul_mov"])
     ok(m.ativ_pulseira_busca("512")["vendas"][0]["venda"] == "TCORR0001D" and not m.ativ_pulseira_busca("502")["vendas"], "a entrega acha pela nova")
+    # v99.30.2: a pulseira vale no dia: o mesmo número em outro dia não é de outra compra
+    ONTEM = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
+    r = m.ativ_receber([{**venda("TCORR0009D", "drone", [{"cat": "drone", "produto": "asteroid", "op": "Campo", "qtd": 1, "pessoas": 1, "videos": 1}], ["512"]),
+                         "criado": ONTEM + "T10:00:00"}], "v1")
+    c = m.vendas_db()
+    conf = c.execute("select venda, conflito from ativ_pulseira where numero='512' order by venda").fetchall()
+    c.close()
+    ok(r["recebidas"] == ["TCORR0009D"] and conf == [("TCORR0001D", 0), ("TCORR0009D", 0)], "mesmo número ontem não é conflito: %s %s" % (r, conf))
+    ok(m.ativ_pulseiras_edita({"id": "TCORR0002D", "pulseiras": [{"slot": 1, "n": "777"}]}, "sup", True)[0] is None, "troca livre do número")
     # v99.30: Chute a Gol sem vídeo: o chute é a entrega (Chutou na pulseira fecha a venda)
     fila = lambda vid: next(v for v in m.ativ_fila(HOJE) if v["id"] == vid)
     ok(not fila("TCORR0001C")["entregue_em"], "chute ainda não entregue")

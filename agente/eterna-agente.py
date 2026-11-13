@@ -7698,13 +7698,17 @@ def ativ_pulseiras_grava(c, vid, pulseiras, agora, por=""):
     base = ativ_base(vid)
     for slot, p in enumerate(pulseiras, 1):
         n, meio, lido = p if isinstance(p, tuple) else (p, None, None)
-        outras = [v for (v,) in c.execute("select venda from ativ_pulseira where numero=? and venda<>?", (n, vid)) if ativ_base(v) != base]
+        # v99.30.2: a pulseira vale no dia (o número volta a ser usado em outro dia)
+        outras = [v for (v,) in c.execute(
+            "select p.venda from ativ_pulseira p join ativ_venda a on a.origem='eterna' and a.id=p.venda where p.numero=? and p.venda<>?"
+            " and coalesce(a.situacao,'ativa')<>'cancelada' and a.dia=(select dia from ativ_venda where origem='eterna' and id=?)", (n, vid, vid))
+            if ativ_base(v) != base]
         if c.execute("insert or ignore into ativ_pulseira (numero, venda, slot, conflito, em, por, meio, lido_em) values (?,?,?,?,?,?,?,?)",
                      (n, vid, slot, 1 if outras else 0, agora, por, meio, lido)).rowcount:
             c.execute("insert into ativ_pulseira_log (venda, slot, numero, de, acao, em, por, meio) values (?,?,?,?,?,?,?,?)",
                       (vid, slot, n, None, "venda", lido or agora, por, meio))
-        if outras:
-            c.execute("update ativ_pulseira set conflito=1 where numero=?", (n,))
+        for v in outras + [vid] if outras else []:
+            c.execute("update ativ_pulseira set conflito=1 where numero=? and venda=?", (n, v))
 
 
 def ativ_pulseiras_edita(body, eu, outros):
@@ -7752,7 +7756,8 @@ def ativ_pulseiras_edita(body, eu, outros):
                 if velho and (velho[1] or velho[0] in usadas):
                     return "travada", None
                 for (v,) in c.execute("select p.venda from ativ_pulseira p join ativ_venda a on a.origem='eterna' and a.id=p.venda"
-                                      " where p.numero=? and coalesce(a.situacao,'ativa')<>'cancelada'", (n,)):
+                                      " where p.numero=? and coalesce(a.situacao,'ativa')<>'cancelada'"
+                                      " and a.dia=(select dia from ativ_venda where origem='eterna' and id=?)", (n, vid)):
                     if ativ_base(v) != base:
                         return "pulseira_usada", {"venda": v}
             for sl, (n, meio) in sorted(novo.items()):
