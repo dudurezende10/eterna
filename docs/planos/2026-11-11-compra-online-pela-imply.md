@@ -180,3 +180,9 @@ Resultado do teste, com a credencial ws_viva_maracana (a mesma de `imply-ws.env`
 Para seguir, a Imply precisa liberar para o usuário ws_viva_maracana os métodos `GetPaymentGateway`, `IniciarPagamento`,
 `ConcluirPagamento` e `GetCart`, e dizer o código de agência que vai no `ConcluirPagamento`. O relatório de vendas por
 período (`/tickets/reports/producer/sales`) não aparece no YAADE para o nosso login.
+
+**Resposta da Imply (Diego, 13/11 15:45):** venda pela API não tem o modal de pagamento da web. Toda venda pela API entra
+como **"Venda Externa"** (`idformapag` informado por e-mail, guardado fora do repositório). Ou seja: quem cobra o cliente é
+o Eterna, por um meio de pagamento próprio, e depois a Nuvem chama `ConfirmacaoCompra` com o localizador, a referência
+do pagamento (`codigo_referencia`) e a forma "Venda Externa". É o mesmo modelo dos parceiros (ICD, Clubinho, C2RIO).
+Decisão pendente (Ronaldo): qual meio de pagamento (PIX e cartão) e em nome de quem a conta é aberta.
