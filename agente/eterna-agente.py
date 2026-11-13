@@ -12269,9 +12269,54 @@ class H(BaseHTTPRequestHandler):
             return None
         return self.js({"error": "not found"}, 404)
 
+    def video_nuvem_repassa(self, u, metodo):
+        """v99.28.2: a página do vídeo do cartão (aceite e e-mail, renovar, play, baixar) mora na galeria da nuvem. Aberta pelo
+        endereço do servidor do ponto, o navegador não fala direto com a nuvem (ela só aceita eterna.photo): o servidor repassa
+        esses quatro pedidos, só para cartão de vídeo entregue e só com a nuvem configurada. -> True se respondeu."""
+        m = re.match(r"^/g/([A-Za-z0-9_-]{22})/(video|galeria|evento|baixar)$", u.path)
+        if not m or not NUVEM_API or (metodo == "GET") != (m.group(2) == "baixar"):
+            return False
+        c = vendas_db()
+        try:
+            if not c.execute("select 1 from ativ_entrega where qr=? and apagado_em is null", (m.group(1),)).fetchone():
+                return False
+        finally:
+            c.close()
+        corpo = None
+        if metodo == "POST":
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 16 * 1024:
+                self.js({"error": "corpo inválido"}, 413)
+                return True
+            corpo = self.rfile.read(n) if n else b"{}"
+
+        class SemSeguir(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k):
+                return None
+        rq = urllib.request.Request(NUVEM_API + u.path + ("?" + u.query if u.query else ""), data=corpo, method=metodo,
+                                    headers={"Content-Type": "application/json", "User-Agent": "eterna-agente"})
+        try:
+            r = urllib.request.build_opener(SemSeguir).open(rq, timeout=20)
+            st, hd, bd = r.status, r.headers, r.read(2 * 1024 * 1024)
+        except urllib.error.HTTPError as e:
+            st, hd, bd = e.code, e.headers, e.read(2 * 1024 * 1024)
+        except Exception:
+            self.js({"error": "sem conexão com a nuvem"}, 502)
+            return True
+        self.send_response(st)
+        for k in ("Content-Type", "Location", "Cache-Control"):
+            if hd.get(k):
+                self.send_header(k, hd.get(k))
+        self.send_header("Content-Length", str(len(bd)))
+        self.end_headers()
+        self.wfile.write(bd)
+        return True
+
     def gal_post(self, u):
         p = u.path
         ip = self.client_address[0]
+        if p.startswith("/g/") and self.video_nuvem_repassa(u, "POST"):
+            return None
         if p.startswith("/pagamento/webhook/"):
             return self.js({"error": "webhook reservado para o adquirente real (fase 2)"}, 501)
         if p == "/lgpd/excluir":
@@ -12510,6 +12555,8 @@ class H(BaseHTTPRequestHandler):
             return
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path.startswith("/g/") and self.video_nuvem_repassa(u, "GET"):
+            return None
         if u.path.startswith("/g/") or u.path in ("/galerias/vendas", "/galerias/status"):
             return self.gal_get(u, q)
         if u.path in ("/auth/eu", "/auth/senhas"):
