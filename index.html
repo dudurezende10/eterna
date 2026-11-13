@@ -1311,7 +1311,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.25.0 · 12/11 20:51"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.25.1 · 12/11 21:07"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5397,7 +5397,7 @@ function aeProgresso(){const e=state.ae.nv,el=document.getElementById('ae-prog')
 async function aeLiga(){const A=state.ae,N=A.nv;if(!N||!N.rascunho||!N.venda||!N.qr)return;const v=(A.dados&&A.dados.vendas||[]).find(x=>x.id===N.venda);if(!v)return;
   if(v.tipo==='drone'&&!v.voo_em&&!N.pul){const f=document.getElementById('ae-nv-voo');const g=t=>((f&&f.querySelector(`[data-ae-voo="${t}"]`))||{}).value||'';
     const c={id:v.id,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria')};if(!c.piloto||!c.drone||!c.bateria){N.err='ae_e_cadastro';render();return;}
-    if(!await aeAcao(c))return;}
+    if(!await aeAcao(c))return;A.vooSel=null;}
   const j=await aeAcao({rascunho:N.rascunho,venda:N.venda,qr:N.qr,...(N.pul?{pulseira:N.pul}:{})},'/ativ/video/liga');if(!j)return;
   toast(TE('ae_entregue_ok',j.codigo||''));aeDescarta();await aePull();render();}
 // ---- v99.25: a entrega começa pela pulseira. Ela já diz de quem é o vídeo: não há mais "para qual venda é este vídeo?" ----
@@ -5498,7 +5498,7 @@ function aeCartao(v){const A=state.ae,podeU=can('ativentrega','u');const F=A.voo
 const ICO_QR='<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>';
 const aeFoto=(v,px)=>v.foto?`<img src="${esc(state.agent.url)}/ativ/cliente-foto?id=${encodeURIComponent(v.id)}" alt="" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:50%;flex:none">`:'';
 function aeSel(v,t,rot){ // v: a venda ou a pulseira (o voo fica na pulseira desde a v99.25)
-const cad=(state.ae.dados&&state.ae.dados.cadastros)||{};return `<label style="flex:1;min-width:120px"><span class="eyebrow">${rot}</span><select data-ae-voo="${t}" style="width:100%;min-height:44px"><option value="">—</option>${(cad[t]||[]).filter(x=>x.ativo).map(x=>`<option ${v[t]===x.nome?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></label>`;}
+const cad=(state.ae.dados&&state.ae.dados.cadastros)||{};return `<label style="flex:1;min-width:120px"><span class="eyebrow">${rot}</span><select data-ae-voo="${t}" style="width:100%;min-height:44px"><option value="">—</option>${(cad[t]||[]).filter(x=>x.ativo).map(x=>`<option ${(v[t]||(state.ae.vooSel||{})[t])===x.nome?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></label>`;}
 // topo da tela: soltar o vídeo, conferir, escolher a venda do dia (lixeira para cancelar), ler o cartão e entregar
 // v99.23.3: o campo de arquivo mora fora do #main. Dentro, qualquer redesenho (fila a cada 10 s, situação do servidor) trocava o
 // campo com a janela de escolher aberta, e o vídeo escolhido se perdia sem aviso.
@@ -5557,7 +5557,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.
   else if(a==='ae-recebido'){if(await aeAcao({id,etapa:'recebido'}))await aePull();}
   else if(a==='ae-voo'){A.voo=id;}else if(a==='ae-voo-nao'){A.voo=null;}
   else if(a==='ae-voo-ok'){const f=document.getElementById('ae-voo-form');const g=t=>(f.querySelector(`[data-ae-voo="${t}"]`)||{}).value||'';const c={id,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria')};
-    if(!c.piloto||!c.drone||!c.bateria){toast(TE('ae_e_cadastro'));return;}if(await aeAcao(c)){A.voo=null;await aePull();}}
+    if(!c.piloto||!c.drone||!c.bateria){toast(TE('ae_e_cadastro'));return;}if(await aeAcao(c)){A.voo=null;A.vooSel=null;await aePull();}}
   else if(a==='ae-cam'){aeCamLiga();return;}
   else if(a==='ae-qr-troca'&&A.nv){A.nv.qr=null;A.nv.err=null;}
   else if(a==='ae-nv-descarta'){aeDescarta();}
@@ -5574,12 +5574,14 @@ document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.
   else if(a==='ae-at-fecha'){aeAtFecha();return;}
   else if(a==='ae-at-voo'&&A.at){const f=document.getElementById('ae-at-voo');const g=t=>((f&&f.querySelector(`[data-ae-voo="${t}"]`))||{}).value||'';
     const c={id:A.at.venda,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria'),pulseira:A.at.numero};if(!c.piloto||!c.drone||!c.bateria){toast(TE('ae_e_cadastro'));return;}
-    if(await aeAcao(c))await aePull();}
+    if(await aeAcao(c)){A.vooSel=null;await aePull();}}
   else if(a==='ae-cad'){A.cad=!A.cad;}
   else if(a==='ae-cad-carga'){const j=await aeAcao({carga:AE_CARGA},'/ativ/cadastros');if(j&&A.dados){A.dados.cadastros=j.cadastros;toast(TE('ae_cad_carga_ok'));}}
   else if(a==='ae-cad-add'){const i=document.querySelector(`[data-ae-novo="${el.dataset.t}"]`);const n=(i&&i.value||'').trim();if(!n)return;const j=await aeAcao({tipo:el.dataset.t,nome:n,ativo:true},'/ativ/cadastros');if(j){A.dados&&(A.dados.cadastros=j.cadastros);}}
   else if(a==='ae-cad-liga'){const cad=(A.dados&&A.dados.cadastros||{})[el.dataset.t]||[];const x=cad.find(y=>y.nome===el.dataset.n);if(!x)return;const j=await aeAcao({tipo:el.dataset.t,nome:x.nome,ativo:!x.ativo},'/ativ/cadastros');if(j&&A.dados)A.dados.cadastros=j.cadastros;}
   else return;render();});
+// a escolha de piloto, drone e bateria fica guardada até o voo ser gravado: a atualização da tela a cada 10 s não apaga
+document.addEventListener('change',e=>{const t=e.target;if(state.view==='ativ-entrega'&&t.dataset&&t.dataset.aeVoo){state.ae.vooSel={...(state.ae.vooSel||{}),[t.dataset.aeVoo]:t.value};}});
 document.addEventListener('change',async e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-entrega'||!a)return;const A=state.ae;
   if(a==='ae-item'&&t.checked){t.disabled=true;if(await aeAcao({id:t.dataset.id,etapa:'item',i:+t.dataset.i}))await aePull();else{t.checked=false;t.disabled=false;}}
   else if(a==='ae-arquivo'&&t.files&&t.files[0]){const f=t.files[0];t.value='';aeSolta(f);} // value limpo: o mesmo arquivo de novo também vale

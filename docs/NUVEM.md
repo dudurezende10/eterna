@@ -278,7 +278,7 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 ```
 A regra da cópia diária (`backup/<pc>/dia/`, Glacier e 400 dias) depende do nome do computador no prefixo; montar com o nome real (`backup/<pc>/dia/`) na hora de aplicar.
 
-**No servidor do ponto:** o vídeo das ativações (`~/Eterna/ativ-videos`) não é apagado nunca (`apagado_em` não é preenchido em lugar nenhum). Falta a limpeza local, que deveria seguir o mesmo prazo, para o disco não encher.
+**No servidor do ponto:** o vídeo das ativações (`~/Eterna/ativ-videos/<qr>.mp4`) é apagado pela limpeza diária `ativ_videos_limpa` depois de `ATIV_VIDEO_DIAS` (30 dias, o mesmo prazo da página); a linha de `ativ_entrega` fica como registro. O rascunho (`rascunho-<id>.mp4`) que ninguém ligou a um cartão sai em 1 dia, e desde a v99.25 sai também da nuvem (`video/r-<id>.mp4`). (Corrigido em 12/11: a versão anterior desta nota dizia que nada apagava o vídeo local.)
 
 ## 9c. Deploy de 12/11 (v99.20 a v99.24 na nuvem)
 

@@ -13,15 +13,15 @@ from pptx.dml.color import RGBColor as PRGB
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 
-VERSAO, DATA = "1.1", "12/11/2026"
+VERSAO, DATA = "1.2", "12/11/2026"
 TITULO = "Drone, Chute a Gol e Snap Pop"
 SUB = "Da venda à entrega do vídeo"
 TESTE = "http://192.168.10.178:8799"
 
 # ---------------------------------------------------------------- conteúdo (uma vez só; o Word e o PowerPoint leem daqui)
-ETAPAS = [("Venda", "Vendedor", "Tablet, no foyer", "Escolhe o serviço, registra o cliente (nome e foto) e o pagamento."),
+ETAPAS = [("Venda", "Vendedor", "Tablet, no foyer", "Escolhe o serviço, registra o cliente (nome e foto), entrega uma pulseira por vídeo e registra o pagamento."),
           ("Voo ou gravação", "Piloto / operador", "Campo", "Marca a decolagem (Drone) ou o começo (Chute a Gol, Snap Pop)."),
-          ("Entrega", "Equipe de entrega", "Computador do campo", "Solta o vídeo, escolhe a venda, lê o cartão com QR e entrega."),
+          ("Entrega", "Equipe de entrega", "Computador do campo", "Lê a pulseira, decola, solta o vídeo, lê o cartão com QR e entrega."),
           ("Cliente", "O próprio cliente", "Celular", "Lê o QR do cartão, aceita o uso de imagem, assiste e baixa o vídeo.")]
 
 REGRAS = [
@@ -30,6 +30,7 @@ REGRAS = [
     "**Uma venda por serviço.** Drone e Chute a Gol na mesma compra viram duas vendas com o mesmo número; cada uma vai para a sua fila.",
     "**Nome e foto do cliente** servem para a equipe do campo reconhecer a pessoa na entrega. Os dois são apagados sozinhos um dia depois da entrega (ou dois dias depois da venda).",
     "**Fotos do Tour:** só marque a caixa de autorização se o cliente concordar. Com ela, o cliente recebe junto com o vídeo as fotos dele do Tour e compra se quiser.",
+    "**Uma pulseira por vídeo.** Cada vídeo comprado ganha uma pulseira numerada, colocada no cliente na hora da venda. Na entrega, é a pulseira que diz de quem é o vídeo. Pulseira já usada é recusada.",
     "**O cartão com QR é a chave do vídeo.** Um cartão por vídeo; cartão já usado, de lote cancelado ou que não veio da gráfica é recusado na hora. Entregue o cartão na mão do cliente. O código de 12 letras impresso no cartão serve para o cliente digitar se o QR não ler.",
     "**O vídeo fica 30 dias** disponível para o cliente assistir e baixar.",
     "**Venda errada:** chame o supervisor antes da entrega. O vendedor não cancela; depois de entregue, a venda não é mais cancelada.",
@@ -62,6 +63,9 @@ VENDA = [
         "Confira a **foto**. Se ficou ruim, toque em **Tirar outra foto**.",
         "Pergunte se o cliente quer receber as fotos dele do Tour. Só se ele concordar, marque a **autorização** (seção 1.2).",
         "Escolha o **país** do cliente.", "Escolha o **idioma** do cliente (é o idioma da página do vídeo)."]),
+    ("v09-pulseira", "Pulseira de cada vídeo", "Pulseiras no resumo", [
+        "Passe a **pulseira** no leitor (ou digite o número). O leitor já pula para o campo seguinte.",
+        "Sem leitor, toque na **câmera** e mostre o QR da pulseira. Cada vídeo tem o seu campo e a sua pulseira; coloque no pulso do cliente. **Sem pulseira a venda não é registrada.**"]),
     ("v09-resumo", "Conferir o resumo", "Resumo da venda", [
         "Confira cada **linha** com o cliente.", "Errou? Toque na **lixeira** da linha e adicione de novo.", "Confira o **total**."]),
     ("v10-pagamento", "Pagamento e registro", "Pagamento", [
@@ -77,31 +81,33 @@ VENDA = [
 ENTREGA = [
     ("e01-menu", "Abrir a entrega", "Menu lateral", [
         "Clique em **Entrega dos vídeos**."]),
-    ("e02-fila", "A fila do Drone", "Fila por serviço", [
-        "Escolha o serviço (**Drone**, **Chute a Gol**, **Snap Pop**). O número ao lado é quantos clientes esperam.",
-        "Quando o cliente for voar, clique em **Decolar** no cartão dele."]),
-    ("e03-decolar", "Decolar", "Piloto, drone e bateria", [
-        "Escolha o **piloto**.", "Escolha o **drone**.", "Escolha a **bateria**.", "Clique em **Confirmar decolagem**."]),
-    ("e04-voando", "Voando", "Coluna Voando", [
-        "O cartão passa para **Voando** e fica **Aguardando vídeo**."]),
-    ("e05-soltar", "Soltar o vídeo", "Área do vídeo", [
-        "Tire o cartão de memória do drone, abra a pasta do vídeo e **arraste o arquivo** para esta área (ou clique nela e escolha o arquivo). Use o arquivo **.MP4** (ou .MOV); o .LRF do drone não é vídeo e é recusado."]),
-    ("e06-conferir", "Conferir e escolher a venda", "Confira o vídeo", [
-        "Assista ao **vídeo** e confira se é o do cliente.", "Clique na **venda** do cliente (nome, número e produto)."]),
-    ("e07-cartao", "Ler o cartão", "Cartão com QR", [
+    ("e02-pulseira", "Ler a pulseira", "Começo da entrega", [
+        "Passe a **pulseira** do cliente no leitor (o campo já fica pronto) ou digite o número e tecle Enter.",
+        "Sem leitor, clique em **Câmera** e mostre o QR da pulseira.",
+        "Em **Agora** estão todos que estão voando, gravando ou com item faltando. Clique em um para abrir."]),
+    ("e03-decolar", "Decolar", "Atendimento do cliente", [
+        "Confira a **foto, o nome e a pulseira**.", "Escolha o **piloto** e o **drone**.", "Escolha a **bateria**.", "Clique em **Decolar**."]),
+    ("e04-soltar", "Soltar o vídeo", "Área do vídeo", [
+        "Tire o cartão de memória do drone e **arraste o vídeo** para esta área (ou clique nela e escolha o arquivo). Use o **.MP4** (ou .MOV); o .LRF não é vídeo. O vídeo já é deste cliente: não precisa escolher a venda."]),
+    ("e05-conferir", "Conferir o vídeo", "Vídeo do cliente", [
+        "Assista ao **vídeo** e confira se é o do cliente. Errado? Clique em **Descartar** e solte o certo.",
+        "O vídeo já começa a ir para a internet: **Enviando à nuvem** e depois **Já na nuvem**."]),
+    ("e06-cartao", "Ler o cartão", "Cartão com QR", [
         "Clique em **Ler o QR do cartão com a câmera** e mostre o QR do cartão.",
         "Ou use o **leitor de QR**: com o cursor neste campo, passe o cartão no leitor."]),
-    ("e08-entregar", "Entregar", "Cartão lido", [
-        "Confira o código do cartão e clique em **Entregar vídeo**. Entregue o cartão ao cliente."]),
-    ("e09-entregue", "Entregue", "Coluna Entregue", [
-        "O cartão vai para **Entregue**, com o código do cartão e o horário. **Na nuvem** aparece quando a página do cliente já está no ar; enquanto isso, **Publicando a página do cliente**.",
-        "Quando o cliente abre, assiste e baixa, aparece aqui (**Cliente abriu… assistiu… baixou…**)."]),
+    ("e07-entregar", "Entregar", "Cartão lido", [
+        "Confira o código do cartão e clique em **Entregar**. Entregue o cartão ao cliente."]),
+    ("e08-entregue", "Entregue", "Vídeo entregue", [
+        "Aparece **Vídeo entregue**, com o cartão e a hora. **Na nuvem** quer dizer que o cliente já pode abrir; enquanto isso, **Publicando a página do cliente**.",
+        "Clique em **Próximo cliente** e leia a próxima pulseira."]),
+    ("e09-fila", "Fila completa", "Fila do dia", [
+        "**Ver a fila completa do dia** mostra todas as vendas por serviço (Próximo a voar, Voando, Entrega do vídeo, Entregue) e quando o cliente abriu, assistiu e baixou. Serve também para venda antiga, sem pulseira."]),
 ]
 CHUTE_SNAP = [
-    ("e10-medalha", "Chute a Gol: itens físicos", "Medalha pendente", [
-        "Ao entregar a medalha (ou a bola), marque o **item**. Com tudo entregue, a venda vai para **Entregue**."]),
-    ("e11-snap", "Snap Pop: começar", "Fila do Snap Pop", [
-        "Quando o cliente começar, clique em **Começar**. O resto é igual ao Drone: soltar o vídeo, escolher a venda, ler o cartão e entregar (seção 3)."]),
+    ("e10-medalha", "Chute a Gol: itens físicos", "Atendimento do Chute a Gol", [
+        "Leia a pulseira. Ao entregar a medalha (ou a bola), marque o **item**."]),
+    ("e11-snap", "Snap Pop: começar", "Atendimento do Snap Pop", [
+        "Leia a pulseira e clique em **Começar**. O resto é igual ao Drone: soltar o vídeo, ler o cartão e entregar (seção 3)."]),
 ]
 ADMIN = [
     ("a01-gerar", "Gerar o lote para a gráfica", "Configurações › Preços e Checkout › Avançado › Cartões com QR impresso", [
@@ -129,12 +135,12 @@ TREINO = [
                "Alguns cartões com QR de treino e um vídeo curto qualquer (.mp4) no computador do campo.",
                "Tudo o que for feito no servidor de teste não vai para o caixa nem para o cliente."]),
     ("Vendedor", ["Faça 3 vendas: um Drone com 2 pessoas e 4K, um Chute a Gol com medalha e um Snap Pop.",
-                  "Em todas, cliente com nome começando por TREINO e foto de um colega.",
+                  "Em todas, cliente com nome começando por TREINO, foto de um colega e uma pulseira de treino por vídeo.",
                   "Numa delas, desligue o Wi-Fi do tablet, registre e veja \"Aguardando envio\"; ligue de novo e veja a venda seguir.",
                   "Confira tudo em Minhas vendas."]),
-    ("Entrega", ["Ache as vendas de treino na fila de cada serviço.",
+    ("Entrega", ["Leia a pulseira de uma venda de treino.",
                  "Drone: Decolar com piloto, drone e bateria.",
-                 "Solte o vídeo de exemplo, escolha a venda, leia um cartão de treino e entregue.",
+                 "Solte o vídeo de exemplo, leia um cartão de treino e entregue; depois Próximo cliente.",
                  "Tente ler o mesmo cartão de novo numa outra venda: o Eterna recusa.",
                  "Chute a Gol: marque a medalha. Snap Pop: Começar e entregar."]),
     ("Cliente", ["Com o celular, leia o QR do cartão entregue.",
@@ -145,7 +151,9 @@ TREINO = [
 PROBLEMAS = [("Tablet sem internet", "Registre normalmente. A venda fica no tablet e segue sozinha quando a rede voltar."),
              ("\"Este cartão já foi usado\"", "Pegue outro cartão. Cada cartão serve para um vídeo só."),
              ("\"Este cartão é de um lote cancelado\" ou \"não é de nenhum lote\"", "Pegue outro cartão e separe este para o supervisor."),
-             ("Cliente não está na fila", "Confira com o vendedor o número da venda; ela pode estar aguardando envio no tablet."),
+             ("\"Nenhuma venda com a pulseira\"", "Confira o número. A venda pode estar aguardando envio no tablet: confira com o vendedor."),
+             ("Pulseira em duas vendas", "O Eterna mostra as duas com a foto: escolha pelo rosto e avise o supervisor."),
+             ("\"Pulseira já usada\" no tablet", "Pegue outra pulseira e separe esta para o supervisor."),
              ("Vídeo errado", "Antes de entregar: clique em Descartar e solte o vídeo certo."),
              ("Venda errada ou desistência", "Chame o supervisor para cancelar, antes da entrega."),
              ("Cliente vê \"Seu vídeo está chegando\"", "O vídeo ainda está subindo para a internet. A página atualiza sozinha; peça para aguardar alguns minutos."),

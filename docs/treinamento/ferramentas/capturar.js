@@ -65,6 +65,8 @@ try{
     await A.check('[data-act="av-busca"]');await A.selectOption('[data-act="av-pais"]','Brasil').catch(()=>{});await A.selectOption('[data-act="av-idioma"]','Português').catch(()=>{});await A.waitForTimeout(100);
     await shot(A,'v08-cliente-foto',[['#av-foto-img','cima','1'],['[data-act="av-busca"]','esquerda','2'],['[data-act="av-pais"]','baixo','3'],['[data-act="av-idioma"]','baixo','4']],'#av-cliente');
     await A.click('[data-act="av-pag"][data-p="PIX"]');await A.waitForTimeout(150);
+    await A.fill('[data-act="av-pul"][data-i="0"][data-k="0"]','1042');await A.press('[data-act="av-pul"][data-i="0"][data-k="0"]','Enter');await A.waitForTimeout(100);
+    await shot(A,'v09-pulseira',[['[data-act="av-pul"][data-i="0"][data-k="0"]','baixo','1'],['[data-act="av-pul-cam"][data-i="0"][data-k="0"]','esquerda','2']],'#av-cart');
     await shot(A,'v09-resumo',[['[data-av-linha="0"]','esquerda','1'],['[data-act="av-tirar"][data-i="0"]','esquerda','2'],['#av-total','esquerda','3']],'#av-cart');
     await shot(A,'v10-pagamento',[['[data-act="av-pag"][data-p="PIX"]','baixo','1'],['[data-act="av-registrar"]','cima','2']],'#av-pag');
     await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
@@ -84,13 +86,18 @@ try{
       {id:'TCHUTE001C',tipo:'chute',criado:HOJE+'T10:10:00',itens:[{produto:'c3',op:'',qtd:1,pessoas:1,videos:1},{produto:'medalha',op:'',qtd:1}],pagamento:'PIX',vendedor:'Ana Souza',videos:1,
        entregas:[{qr:'Q'.repeat(21)+'1',codigo:'ABCD-EFGH-JKLM',n:1,bytes:2097152,duracao:20,nuvem:true,subindo:null}],fisicos:[{i:1,nome:'Medalha',entregue:false}],entregue_em:null,cliente:'Mariana Costa'},
       {id:'TSNAP0001S',tipo:'snap',criado:HOJE+'T10:20:00',itens:[{produto:'snap_video',op:'Brasil',qtd:1,pessoas:1,videos:1}],pagamento:'PIX',vendedor:'Ana Souza',videos:1,entregas:[],fisicos:[],entregue_em:null,cliente:'Lucas Pereira'}]};
+    // v99.25: uma pulseira por vídeo
+    const PU=(numero,x)=>({numero,slot:1,conflito:false,voo_em:null,qr:null,...(x||{})});
+    D.rascunhos={};D.vendas[0].pulseiras=[PU('1042')];D.vendas[1].pulseiras=[PU('1050',{voo_em:HOJE+'T10:24:00',piloto:'Rafaela',drone:'141',bateria:'5'})];
+    D.vendas[2].pulseiras=[PU('1031',{qr:'K'.repeat(21)+'3'})];D.vendas[3].pulseiras=[PU('1043',{qr:'Q'.repeat(21)+'1'})];D.vendas[4].pulseiras=[PU('1060')];
     await ctx.route(/\/ativ\/fila\?/,r=>r.fulfill({status:200,contentType:'application/json',body:J(D)}));
     await ctx.route(/\/ativ\/etapa$/,r=>{const c=JSON.parse(r.request().postData());const v=D.vendas.find(x=>x.id===c.id);
-      if(c.etapa==='recebido')v.recebido_em=HOJE+'T10:22:00';if(c.etapa==='voo')Object.assign(v,{voo_em:HOJE+'T10:30:00',piloto:c.piloto,drone:c.drone,bateria:c.bateria});
+      if(c.etapa==='recebido')v.recebido_em=HOJE+'T10:22:00';if(c.etapa==='voo')Object.assign(v.pulseiras.find(p=>p.numero===c.pulseira)||v,{voo_em:HOJE+'T10:30:00',piloto:c.piloto,drone:c.drone,bateria:c.bateria});
       if(c.etapa==='item'){v.fisicos[0].entregue=true;v.entregue_em=HOJE+'T10:45:00';}r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
     await ctx.route(/\/ativ\/video$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rascunho:'0123456789abcdef',bytes:mp4.length,duracao:28})}));
     await ctx.route(/\/ativ\/video\/liga$/,r=>{const c=JSON.parse(r.request().postData());const v=D.vendas.find(x=>x.id===c.venda);
-      v.entregas.push({qr:c.qr,codigo:'WXYZ-2345-6789',n:1,bytes:mp4.length,duracao:28,nuvem:true,subindo:null});v.entregue_em=HOJE+'T10:40:00';
+      v.entregas.push({qr:c.qr,codigo:'WXYZ-2345-6789',n:1,bytes:mp4.length,duracao:28,nuvem:true,pagina:{ok:true},subindo:null,em:HOJE+'T10:40:00',pulseira:c.pulseira,cliente:{}});v.entregue_em=HOJE+'T10:40:00';
+      const pp=v.pulseiras.find(p=>p.numero===c.pulseira);if(pp)pp.qr=c.qr;
       r.fulfill({status:200,contentType:'application/json',body:J({ok:true,qr:c.qr,codigo:'WXYZ-2345-6789',n:1})});});
     await ctx.route(/\/exemplo\.mp4$/,r=>r.fulfill({status:200,contentType:'video/mp4',body:mp4}));
     const A=await ctx.newPage();await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(400);
@@ -98,28 +105,32 @@ try{
     await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;});
     if(await A.evaluate(()=>ETERNA.state.view)!=='ativ-entrega'){const m=await A.$('[data-v="ativ-entrega"]');if(m){await shot(A,'e01-menu',[['[data-v="ativ-entrega"]','direita','1']],'[data-v="ativ-entrega"]',200);await A.click('[data-v="ativ-entrega"]');}else await A.evaluate(()=>ETERNA.go('ativ-entrega'));}
     await A.waitForTimeout(800);
-    const card='[data-ae-venda="TDRONE001D"]';
-    await shot(A,'e02-fila',[['[data-act="ae-cat"][data-c="drone"]','direita','1'],[card+' [data-act="ae-voo"]','direita','2']],'.ae-board');
-    await A.click(card+' [data-act="ae-voo"]');await A.waitForTimeout(200);
-    await A.selectOption(card+' [data-ae-voo="piloto"]','Carlos');await A.selectOption(card+' [data-ae-voo="drone"]','007');await A.selectOption(card+' [data-ae-voo="bateria"]','3');
-    await shot(A,'e03-decolar',[[card+' [data-ae-voo="piloto"]','esquerda','1'],[card+' [data-ae-voo="drone"]','esquerda','2'],[card+' [data-ae-voo="bateria"]','esquerda','3'],[card+' [data-act="ae-voo-ok"]','esquerda','4']],card,60);
-    await A.click(card+' [data-act="ae-voo-ok"]');await A.waitForTimeout(400);
-    await shot(A,'e04-voando',[['[data-ae-col="andamento"] '+card,'baixo','1']],'[data-ae-col="andamento"]',40);
-    await shot(A,'e05-soltar',[['#ae-drop','cima','1']],'#ae-drop',60);
-    await A.evaluate(async()=>{const r=await fetch('/exemplo.mp4');const bl=await r.blob();const dt=new DataTransfer();dt.items.add(new File([bl],'DJI_0001.MP4',{type:'video/mp4'}));
+    const pul=async n=>{await A.fill('#ae-pul-txt',n);await A.press('#ae-pul-txt','Enter');await A.waitForTimeout(400);};
+    await shot(A,'e02-pulseira',[['#ae-pul-txt','baixo','1'],['[data-act="ae-pul-cam"]','baixo','2'],['#ae-agora [data-act="ae-at-abre"]','cima','3']],'#ae-pul, #ae-agora');
+    await pul('1042');
+    await A.selectOption('#ae-at-voo [data-ae-voo="piloto"]','Carlos');await A.selectOption('#ae-at-voo [data-ae-voo="drone"]','007');await A.selectOption('#ae-at-voo [data-ae-voo="bateria"]','3');
+    await shot(A,'e03-decolar',[['#ae-at .pill','baixo','1'],['#ae-at-voo [data-ae-voo="piloto"]','baixo','2'],['#ae-at-voo [data-ae-voo="bateria"]','baixo','3'],['[data-act="ae-at-voo"]','cima','4']],'#ae-at');
+    await A.click('[data-act="ae-at-voo"]');await A.waitForTimeout(500);
+    await shot(A,'e04-soltar',[['#ae-drop','cima','1']],'#ae-at');
+    await A.evaluate(async()=>{const b=await (await fetch('/exemplo.mp4')).arrayBuffer();const dt=new DataTransfer();dt.items.add(new File([b],'DJI_0042.MP4',{type:'video/mp4'}));
       document.getElementById('ae-drop').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true}));});
-    await A.waitForTimeout(1500);await A.evaluate(()=>{const v=document.querySelector('#ae-nv video');if(v){v.currentTime=6;}});await A.waitForTimeout(800);
-    await shot(A,'e06-conferir',[['#ae-nv video','direita','1'],['[data-act="ae-nv-venda"][data-id="TDRONE001D"]','esquerda','2']],'#ae-nv');
-    await A.click('[data-act="ae-nv-venda"][data-id="TDRONE001D"]');await A.waitForTimeout(200);
-    await shot(A,'e07-cartao',[['[data-act="ae-cam"]','direita','1'],['[data-act="ae-qr-txt"]','direita','2']],'#ae-nv');
+    await A.waitForTimeout(1200);D.rascunhos={'0123456789abcdef':{feito:true,total:mp4.length,enviado:mp4.length}};await A.evaluate(()=>ETERNA.aePull());await A.waitForTimeout(600);
+    await A.evaluate(()=>{const v=document.querySelector('#ae-at video');if(v){v.currentTime=6;}});await A.waitForTimeout(800);
+    await shot(A,'e05-conferir',[['#ae-at video','direita','1'],['#ae-rasc-nuvem','cima','2']],'#ae-at');
+    await shot(A,'e06-cartao',[['[data-act="ae-cam"]','direita','1'],['[data-act="ae-qr-txt"]','direita','2']],'#ae-at');
     await A.fill('[data-act="ae-qr-txt"]','https://eterna.photo/#g/'+QRN);await A.press('[data-act="ae-qr-txt"]','Enter');await A.waitForTimeout(200);
-    await shot(A,'e08-entregar',[['[data-act="ae-nv-liga"]','direita','1']],'#ae-nv');
-    await A.click('[data-act="ae-nv-liga"]');await A.waitForTimeout(800);
-    await shot(A,'e09-entregue',[['[data-ae-col="delivery"] '+card+', [data-ae-col="entregue"] '+card,'esquerda','1'],['[data-ae-col="entregue"] [data-ae-venda="TDRONE003D"]','esquerda','2']],null);
-    await A.click('[data-act="ae-cat"][data-c="chute"]');await A.waitForTimeout(300);
-    await shot(A,'e10-medalha',[['[data-ae-venda="TCHUTE001C"] [data-act="ae-item"]','baixo','1']],'[data-ae-venda="TCHUTE001C"]',60);
-    await A.click('[data-act="ae-cat"][data-c="snap"]');await A.waitForTimeout(300);
-    await shot(A,'e11-snap',[['[data-ae-venda="TSNAP0001S"] [data-act="ae-recebido"]','direita','1']],null);
+    await shot(A,'e07-entregar',[['[data-act="ae-nv-liga"]','direita','1']],'#ae-at');
+    await A.click('[data-act="ae-nv-liga"]');await A.waitForTimeout(900);
+    await shot(A,'e08-entregue',[['#ae-at .pill.good','esquerda','1'],['#ae-at button.primary[data-act="ae-at-fecha"]','cima','2']],'#ae-at');
+    await A.click('#ae-at button.primary[data-act="ae-at-fecha"]');await A.waitForTimeout(300);
+    await pul('1043');
+    await shot(A,'e10-medalha',[['#ae-at [data-act="ae-item"]','baixo','1']],'#ae-at',60);
+    await A.click('#ae-at button.primary[data-act="ae-at-fecha"]');await A.waitForTimeout(300);
+    await pul('1060');
+    await shot(A,'e11-snap',[['#ae-at [data-act="ae-recebido"]','baixo','1']],'#ae-at');
+    await A.click('#ae-at [data-act="ae-at-fecha"]');await A.waitForTimeout(300);
+    await A.click('[data-act="ae-fila"]');await A.waitForTimeout(400);
+    await shot(A,'e09-fila',[['[data-act="ae-fila"]','baixo','1']],null);
     await ctx.close();}
 
   // ---------------- LOTES DE CARTÕES (administrador) ----------------

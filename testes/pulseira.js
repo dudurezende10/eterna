@@ -70,6 +70,8 @@ try{
   ok(await P.$('[data-act="ae-nv-venda"]')===null,'sem "para qual venda é este vídeo"');
   await P.click('[data-act="ae-at-voo"]');await P.waitForTimeout(100);ok(!posts.length,'Decolar sem piloto não vai');
   await P.selectOption('#ae-at-voo [data-ae-voo="piloto"]','Piloto Um');await P.selectOption('#ae-at-voo [data-ae-voo="drone"]','007');await P.selectOption('#ae-at-voo [data-ae-voo="bateria"]','3');
+  await P.evaluate(()=>{document.activeElement&&document.activeElement.blur();ETERNA.render();});await P.waitForTimeout(100);
+  ok(await P.$eval('#ae-at-voo [data-ae-voo="bateria"]',x=>x.value)==='3','a atualização da tela não apaga piloto, drone e bateria escolhidos');
   await P.click('[data-act="ae-at-voo"]');await P.waitForTimeout(400);
   ok(J(posts[0])===J({id:'TPUL00001D',etapa:'voo',piloto:'Piloto Um',drone:'007',bateria:'3',pulseira:'123'})&&/Voo às 10:30/.test(await txt('#ae-at')),'Decolar grava o voo na pulseira: '+J(posts[0]));
   await P.evaluate(()=>{const dt=new DataTransfer();dt.items.add(new File([new Uint8Array(300000)],'DJI_0002.MP4',{type:'video/mp4'}));
