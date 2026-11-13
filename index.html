@@ -343,6 +343,9 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .if-col.pronta{border-color:#2e9e5b}
 .ae-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px;align-items:start}
 @media (max-width:1100px){.ae-board{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:640px){.ae-board{grid-template-columns:1fr}}
+.ae-pedidos{display:grid;gap:12px;align-items:start}.ae-pedidos>div>.panel{margin-bottom:12px}
+@media (min-width:1000px){.ae-pedidos.aberto{grid-template-columns:minmax(280px,360px) minmax(0,1fr)}.ae-pedidos.aberto #ae-agora>div{grid-template-columns:1fr!important}}
+@media (max-width:999px){.ae-pedidos.aberto .ae-ped-at{order:-1}}
 .ae-board .if-col h2{font-size:15px}.ae-card{gap:4px}
 .if-cnt{font-size:13px;letter-spacing:0;background:var(--line);border-radius:999px;padding:2px 10px}
 .if-card{border-radius:10px;padding:10px 12px;border:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
@@ -1311,7 +1314,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.28.3 · 13/11 13:13"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.29.0 · 13/11 13:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5391,7 +5394,10 @@ function pulCamFecha(){if(pulCam){pulCam.vivo=false;try{pulCam.st.getTracks().fo
 // (com lixeira para cancelar, quem pode) e lê o QR de um cartão novo. Entregar liga o vídeo à venda e ao cartão; o servidor
 // sobe para a nuvem em partes e o QR vira a galeria do vídeo. Cliente chegou e voo feito ficam na fila; medalha e bola um a um.
 // O dado é do servidor (dado no banco): a tela só lê /ativ/fila e manda cada ação; nada fica guardado no navegador.
-state.ae={cat:'drone',dia:null,dados:null,erro:null,busy:false,voo:null,cad:false,nv:null,at:null,pulErr:null,pulOpc:null,fila:false};
+state.ae={cat:'drone',dia:null,dados:null,erro:null,busy:false,voo:null,cad:false,nv:null,nvs:{},at:null,pulErr:null,pulOpc:null,fila:false};
+// v99.29: cada atendimento (pulseira) é um pedido, como no delivery: o vídeo solto num pedido continua subindo quando se vai
+// para outro, e "Entregar" com o vídeo ainda subindo fica marcado e conclui sozinho quando o vídeo chega ao servidor.
+const aeChave=(venda,n)=>venda+'|'+n;
 const AE_CATS=['drone','chute','snap'];
 async function aePull(){const A=state.ae;if(!esOn()||A.busy)return;A.busy=true;const dia=A.dia||venueToday();
   try{const r=await agFetch(state.agent.url+'/ativ/fila?dia='+dia,{cache:'no-store'});const j=await r.json().catch(()=>null);
@@ -5436,21 +5442,31 @@ function aeQrLido(t){const E=state.ae.nv;if(!E)return;aeCamDesliga();const usado
 // ---- o vídeo sobe assim que é solto; a venda e o cartão vêm depois ----
 function aeSolta(arq){const A=state.ae;if(!arq||!can('ativentrega','c'))return;A.dropErr=null;
   if(!/\.(mp4|mov)$/i.test(arq.name)){A.dropErr=arq.name;render();return;} // v99.23.3: aviso fixo na área, com o nome do arquivo
-  aeDescarta();const N=A.nv={nome:arq.name,url:URL.createObjectURL(arq),total:arq.size,feito:0,inicio:Date.now(),subindo:true,rascunho:null,dur:null,err:null,venda:A.at?A.at.venda:null,pul:A.at?A.at.numero:null,qr:null,cancel:null};
+  aeDescarta();const N=A.nv={nome:arq.name,url:URL.createObjectURL(arq),total:arq.size,feito:0,inicio:Date.now(),subindo:true,rascunho:null,dur:null,err:null,venda:A.at?A.at.venda:null,pul:A.at?A.at.numero:null,qr:null,cancel:null,auto:false};
+  if(A.at){N.chave=aeChave(A.at.venda,A.at.numero);A.nvs[N.chave]=N;}
   const x=new XMLHttpRequest();N.x=x;x.open('POST',state.agent.url+'/ativ/video');x.withCredentials=true;x.setRequestHeader('X-Eterna','1');x.setRequestHeader('Content-Type','video/mp4');
-  x.upload.onprogress=ev=>{if(ev.lengthComputable){N.feito=ev.loaded;aeProgresso();}};
-  x.onload=()=>{let j={};try{j=JSON.parse(x.responseText||'{}');}catch(e){}N.subindo=false;N.x=null;if(A.nv!==N)return;
-    if(x.status===200&&j.ok){N.rascunho=j.rascunho;N.dur=j.duracao;setTimeout(aePull,1500);}else N.err='ae_e_'+(j.error||'servidor');render();};
-  x.onerror=()=>{N.subindo=false;N.x=null;if(A.nv===N){N.err='ae_e_rede';render();}};x.send(arq);render();}
-function aeDescarta(){const N=state.ae.nv;if(!N)return;state.ae.nv=null;try{N.x&&N.x.abort();}catch(e){}try{URL.revokeObjectURL(N.url);}catch(e){}aeCamDesliga();}
+  x.upload.onprogress=ev=>{if(ev.lengthComputable){N.feito=ev.loaded;aeProgresso();aePedidoAtualiza(N);}};
+  const vivo=()=>A.nv===N||(N.chave&&A.nvs[N.chave]===N);
+  x.onload=()=>{let j={};try{j=JSON.parse(x.responseText||'{}');}catch(e){}N.subindo=false;N.x=null;if(!vivo())return;
+    if(x.status===200&&j.ok){N.rascunho=j.rascunho;N.dur=j.duracao;if(N.auto&&N.qr){aeLiga(N);return;}setTimeout(aePull,1500);}else{N.err='ae_e_'+(j.error||'servidor');N.auto=false;}
+    if(A.nv===N)render();else aePedidoAtualiza(N);};
+  x.onerror=()=>{N.subindo=false;N.x=null;N.auto=false;if(vivo()){N.err='ae_e_rede';if(A.nv===N)render();else aePedidoAtualiza(N);}};x.send(arq);render();}
+// situação do vídeo de um pedido na lista (sem redesenhar a tela)
+function aePedidoTxt(N){if(!N)return '';if(N.err)return TE('ae_ped_erro');if(N.subindo)return N.auto?TE('ae_ped_auto',Math.round(100*N.feito/Math.max(1,N.total))):TE('ae_ped_subindo',Math.round(100*N.feito/Math.max(1,N.total)));
+  return N.qr?TE('ae_ped_pronto'):TE('ae_ped_cartao');}
+function aePedidoAtualiza(N){if(!N||!N.chave)return;const el=document.querySelector(`[data-ae-ped="${CSS.escape(N.chave)}"]`);if(el)el.textContent=aePedidoTxt(N);}
+function aeDescarta(N){const A=state.ae;N=N||A.nv;if(!N)return;if(A.nv===N){A.nv=null;aeCamDesliga();}if(N.chave&&A.nvs[N.chave]===N)delete A.nvs[N.chave];
+  try{N.x&&N.x.abort();}catch(e){}try{URL.revokeObjectURL(N.url);}catch(e){}}
 function aeProgresso(){const e=state.ae.nv,el=document.getElementById('ae-prog');if(!e||!el)return;const p=e.total?e.feito/e.total:0,s=(Date.now()-e.inicio)/1000;
   el.querySelector('progress').value=p;el.querySelector('span').textContent=TE('ae_subindo',Math.round(p*100),aeMB(e.feito),aeMB(e.total),s>1?aeMB(e.feito/s)+'/s':'—');}
-async function aeLiga(){const A=state.ae,N=A.nv;if(!N||!N.rascunho||!N.venda||!N.qr)return;const v=(A.dados&&A.dados.vendas||[]).find(x=>x.id===N.venda);if(!v)return;
+async function aeLiga(N0){const A=state.ae,N=N0||A.nv;if(!N||!N.venda||!N.qr)return;
+  if(!N.rascunho){if(N.subindo&&N.pul){N.auto=true;if(A.nv===N)render();aePedidoAtualiza(N);}return;} // ainda subindo: entrega sozinho quando chegar
+  const v=(A.dados&&A.dados.vendas||[]).find(x=>x.id===N.venda);if(!v)return;
   if(v.tipo==='drone'&&!v.voo_em&&!N.pul){const f=document.getElementById('ae-nv-voo');const g=t=>((f&&f.querySelector(`[data-ae-voo="${t}"]`))||{}).value||'';
     const c={id:v.id,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria')};if(!c.piloto||!c.drone||!c.bateria){N.err='ae_e_cadastro';render();return;}
     if(!await aeAcao(c))return;A.vooSel=null;}
-  const j=await aeAcao({rascunho:N.rascunho,venda:N.venda,qr:N.qr,...(N.pul?{pulseira:N.pul}:{})},'/ativ/video/liga');if(!j)return;
-  toast(TE('ae_entregue_ok',j.codigo||''));aeDescarta();await aePull();render();}
+  const j=await aeAcao({rascunho:N.rascunho,venda:N.venda,qr:N.qr,...(N.pul?{pulseira:N.pul}:{})},'/ativ/video/liga');if(!j){N.auto=false;if(A.nv===N)render();else aePedidoAtualiza(N);return;}
+  toast(TE('ae_entregue_ok',j.codigo||'')+(A.nv!==N&&N.pul?' · '+TE('ae_pul_curta',N.pul)+(v&&v.cliente?' · '+v.cliente:''):''));const aberto=A.nv===N;aeDescarta(N);await aePull();if(aberto||!aeOcupado())render();}
 // ---- v99.25: a entrega começa pela pulseira. Ela já diz de quem é o vídeo: não há mais "para qual venda é este vídeo?" ----
 const aePulDe=(v,n)=>(v.pulseiras||[]).find(p=>p.numero===n);
 async function aePulAbre(raw){const A=state.ae,n=pulNorm(raw);A.pulOpc=null;if(!n){A.pulErr='ae_e_pul_invalida';render();return;}
@@ -5461,8 +5477,8 @@ async function aePulAbre(raw){const A=state.ae,n=pulNorm(raw);A.pulOpc=null;if(!
   if(achou.length>1){A.pulOpc={n,vendas:achou.map(x=>x.venda)};A.pulErr=null;render();return;}
   if(achou[0].dia!==A.dia){A.dia=achou[0].dia;A.dados=null;await aePull();}
   aeAtAbre(achou[0].venda,n);}
-function aeAtAbre(venda,n){const A=state.ae;aeDescarta();A.at={venda,numero:n};A.pulErr=null;A.pulOpc=null;A.voo=null;render();window.scrollTo&&window.scrollTo(0,0);}
-function aeAtFecha(){const A=state.ae;aeDescarta();A.at=null;A.pulErr=null;A.pulOpc=null;render();}
+function aeAtAbre(venda,n){const A=state.ae;aeCamDesliga();if(A.nv&&!A.nv.chave)aeDescarta();A.at={venda,numero:n};A.nv=A.nvs[aeChave(venda,n)]||null;A.pulErr=null;A.pulOpc=null;A.voo=null;render();window.scrollTo&&window.scrollTo(0,0);}
+function aeAtFecha(){const A=state.ae;aeCamDesliga();if(A.nv&&!A.nv.chave)aeDescarta();A.nv=null;A.at=null;A.pulErr=null;A.pulOpc=null;render();}
 // estado de cada vídeo por pulseira: aguarda, voando (drone) / em andamento, vídeo entregue
 function aePulEstado(v,p){if(p.qr)return 'entregue';if(v.tipo==='drone')return p.voo_em?'voando':'aguarda';
   if(!(+v.videos)&&v.recebido_em)return (v.fisicos||[]).some(x=>!x.entregue)?'andamento':'entregue'; // v99.28: item sem vídeo: começou e acabou
@@ -5476,10 +5492,11 @@ function aePulPainel(){const A=state.ae;const L=A.dados?A.dados.vendas:[];
     ${A.pulErr?`<div class="note" role="alert" id="ae-pul-err" style="color:var(--bad);font-weight:600;margin-top:6px">${A.pulErr==='ae_e_pul_nao'?TE('ae_e_pul_nao',A.pulNum):TEk(A.pulErr,TE('ae_e_servidor'))}</div>`:''}${opc}</div>`;}
 // faixa "agora": todo mundo voando ou em andamento, esperando o vídeo, ou só com itens faltando (de todos os serviços e de todos da equipe)
 function aeAgora(){const A=state.ae,L=A.dados?A.dados.vendas:[],out=[];
-  L.filter(v=>!v.entregue_em).forEach(v=>{(v.pulseiras||[]).forEach(p=>{const e=aePulEstado(v,p);if(e==='voando'||e==='andamento')out.push({v,p,e});});
+  L.filter(v=>!v.entregue_em).forEach(v=>{(v.pulseiras||[]).forEach(p=>{const e=aePulEstado(v,p);if(e==='voando'||e==='andamento'||(e!=='entregue'&&A.nvs[aeChave(v.id,p.numero)])||(A.at&&A.at.venda===v.id&&A.at.numero===p.numero&&e!=='entregue'))out.push({v,p,e});});
     if((v.pulseiras||[]).length&&(v.pulseiras||[]).every(p=>p.qr)&&(v.fisicos||[]).some(x=>!x.entregue))out.push({v,p:v.pulseiras[0],e:'itens'});});
   if(!out.length)return `<div class="panel" id="ae-agora"><span class="eyebrow">${TE('ae_agora')}</span><div class="note">${TE('ae_agora_vazio')}</div></div>`;
-  return `<div class="panel" id="ae-agora"><span class="eyebrow">${TE('ae_agora')} · ${out.length}</span><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px">${out.map(({v,p,e})=>`<button class="chip" style="min-height:60px;display:flex;gap:10px;align-items:center;text-align:left;border-radius:12px;padding:6px 10px" data-act="ae-at-abre" data-id="${esc(v.id)}" data-n="${esc(p.numero)}">${aeFoto(v,40)||atIcone(v.tipo)}<span style="min-width:0"><b>${esc(v.cliente||TE('av_numero',avNumero(v.id)))}</b><br><span class="note" style="margin:0">${TE('ae_pul_curta',p.numero)} · ${esc(TE('ae_pul_e_'+(e==='andamento'?v.tipo:e)))}${e==='voando'&&p.voo_em?' '+esc(p.voo_em.slice(11,16)):''}</span></span></button>`).join('')}</div></div>`;}
+  return `<div class="panel" id="ae-agora"><span class="eyebrow">${TE('ae_agora')} · ${out.length}</span><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px">${out.map(({v,p,e})=>{const k=aeChave(v.id,p.numero),N=A.nvs[k],sel=!!(A.at&&A.at.venda===v.id&&A.at.numero===p.numero);
+    return `<button class="chip" style="min-height:60px;display:flex;gap:10px;align-items:center;text-align:left;border-radius:12px;padding:6px 10px${sel?';outline:3px solid var(--accent,#134078)':''}" ${sel?'aria-current="true"':''} data-act="ae-at-abre" data-id="${esc(v.id)}" data-n="${esc(p.numero)}">${aeFoto(v,40)||atIcone(v.tipo)}<span style="min-width:0"><b>${esc(v.cliente||TE('av_numero',avNumero(v.id)))}</b><br><span class="note" style="margin:0">${TE('ae_pul_curta',p.numero)} · ${esc(TE('ae_pul_e_'+(e==='andamento'?v.tipo:e)))}${e==='voando'&&p.voo_em?' '+esc(p.voo_em.slice(11,16)):''}</span>${N?`<br><b class="note" style="margin:0" data-ae-ped="${esc(k)}">${esc(aePedidoTxt(N))}</b>`:''}</span></button>`;}).join('')}</div></div>`;}
 // o atendimento de uma pulseira: quem é, decolar, soltar o vídeo, ler o cartão, entregar
 function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x=>x.id===A.at.venda);
   if(!v)return `<div class="panel" id="ae-at"><div class="note">${A.dados?TE('ae_e_nao_achou'):TE('ar_carregando')}</div><button class="btn ghost" style="margin-top:8px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button></div>`;
@@ -5513,13 +5530,13 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
         ${N.semCam?`<div class="note" role="alert" style="margin-top:6px">${TE('ae_sem_camera')}</div>`:''}
         <label style="display:block;margin-top:10px"><span class="eyebrow">${TE('ae_qr_manual')}</span><input data-act="ae-qr-txt" style="width:100%;min-height:44px" autocomplete="off" placeholder="https://eterna.photo/#g/…"></label>`
       :`<div class="row" style="justify-content:space-between;align-items:center"><span>${TE('ae_cartao')} <b>${esc(cartaoCodigo(N.qr))}</b></span><button class="btn ghost" data-act="ae-qr-troca">${TE('ae_trocar_cartao')}</button></div>`):`<div class="note">${TE('ae_cartao_depois')}</div>`;
-  const pronto=!!(N&&N.rascunho&&N.qr&&voa);
+  const pronto=!!(N&&(N.rascunho||(N.subindo&&!N.auto))&&N.qr&&voa);
   return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid var(--accent,#134078)">${topo}
     <h2 style="margin-top:16px">${TE(v.tipo==='drone'?'ae_at_p1_drone':'ae_at_p1')}</h2>${passo1}
     <h2 style="margin-top:16px">${TE('ae_at_p2')}</h2>${podeC?passo2:''}
     <h2 style="margin-top:16px">${TE('ae_at_p3')}</h2>${passo3}
     ${N&&N.err?`<div class="note" role="alert" style="color:var(--bad);margin-top:8px"><b>${TEk(N.err,TE('ae_e_servidor'))}</b></div>`:''}
-    ${podeC?`<button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem;margin-top:14px" data-act="ae-nv-liga" ${pronto?'':'disabled'}>${N&&N.subindo&&N.qr?TE('ae_esperando_envio'):TE('ae_entregar')}</button>`:''}${fis}</div>`;}
+    ${podeC?`<button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem;margin-top:14px" data-act="ae-nv-liga" ${pronto?'':'disabled'}>${N&&N.auto?TE('ae_entrega_marcada'):N&&N.subindo&&N.qr?TE('ae_entregar_ao_subir'):TE('ae_entregar')}</button>`:''}${N&&N.auto?`<div class="note" style="margin-top:6px">${TE('ae_entrega_marcada_dica')}</div>`:''}${fis}</div>`;}
 async function aeCancelaVenda(id,motivo){if(!motivo){toast(TE('av_cancel_motivo'));return;}
   try{const r=await agFetch(state.agent.url+'/ativ/cancelar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,motivo})});const j=await r.json().catch(()=>({}));
     if(!r.ok){toast(j.error==='entregue'?TE('av_cancel_entregue'):TE('ae_e_servidor'));return;}}
@@ -5601,7 +5618,7 @@ function vAtivEntrega(){const A=state.ae;if(!A.dia)A.dia=venueToday();if(!A.dado
   return `<div class="head"><div><h1>${esc(viewLabel('ativ-entrega'))}</h1></div><div style="text-align:right">${dateField('ae-data',A.dia,TE('ar_data'))}
     ${nv?(()=>{const er=(A.dados.vendas||[]).reduce((s,v)=>s+v.entregas.filter(aePagErro).length,0);
       return `<div style="margin-top:4px"><span class="pill ${er?'bad':!nv.ligada?'':nv.fila?'warn':'good'}" ${er?'data-ae-pag-topo role="alert"':''}>${er?TE('ae_pag_erros',er):!nv.ligada?TE('ae_nuvem_desligada'):nv.fila?TE('ae_nuvem_pend',nv.fila):TE('ae_nuvem_ok')}</span></div>`;})():''}</div></div>
-  ${A.at?aeAtend():A.nv?aeNovo():`${aePulPainel()}${A.dados?aeAgora():''}`}
+  ${A.nv&&!A.at?aeNovo():`<div class="ae-pedidos${A.at?' aberto':''}"><div class="ae-ped-lista">${aePulPainel()}${A.dados?aeAgora():''}</div>${A.at?`<div class="ae-ped-at">${aeAtend()}</div>`:''}</div>`}
   ${A.at||A.nv||A.fila?'':aeCadastros()}
   ${A.at||A.nv||!A.fila?'':`${A.dados?aeNovo():''}
   <div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${AE_CATS.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="ae-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}${A.dados&&pend(c)?' · '+pend(c):''}</span></button>`).join('')}</div>
@@ -9255,6 +9272,14 @@ const EQ={
   ae_descartar:["Descartar","Discard","Descartar","Abandonner","Verwerfen"],
   ae_sem_venda_video:["Nenhuma venda do dia esperando vídeo","No sale today waiting for a video","Ninguna venta del día esperando video","Aucune vente du jour en attente de vidéo","Kein Verkauf von heute wartet auf ein Video"],
   ae_ligar_video:["Entregar vídeo","Deliver video","Entregar video","Livrer la vidéo","Video übergeben"],
+  ae_ped_subindo:[p=>"Vídeo subindo "+p+"%",p=>"Video uploading "+p+"%",p=>"Video subiendo "+p+"%",p=>"Vidéo en envoi "+p+" %",p=>"Video wird hochgeladen "+p+" %"],
+  ae_ped_auto:[p=>"Entrega marcada · vídeo subindo "+p+"%",p=>"Delivery set · video uploading "+p+"%",p=>"Entrega marcada · video subiendo "+p+"%",p=>"Remise prévue · vidéo en envoi "+p+" %",p=>"Übergabe vorgemerkt · Video wird hochgeladen "+p+" %"],
+  ae_ped_cartao:["Vídeo pronto · falta o cartão","Video ready · card missing","Video listo · falta la tarjeta","Vidéo prête · carte manquante","Video fertig · Karte fehlt"],
+  ae_ped_pronto:["Vídeo pronto para entregar","Video ready to deliver","Video listo para entregar","Vidéo prête à remettre","Video bereit zur Übergabe"],
+  ae_ped_erro:["O vídeo não subiu: abra o pedido","The video did not upload: open the order","El video no se subió: abre el pedido","La vidéo n'a pas été envoyée : ouvrez la commande","Das Video wurde nicht hochgeladen: Auftrag öffnen"],
+  ae_entregar_ao_subir:["Entregar quando o vídeo terminar de subir","Deliver when the video finishes uploading","Entregar cuando el video termine de subir","Remettre quand la vidéo aura fini d'être envoyée","Übergeben, sobald das Video hochgeladen ist"],
+  ae_entrega_marcada:["Entrega marcada: conclui sozinha","Delivery set: it completes by itself","Entrega marcada: se completa sola","Remise prévue : elle se termine toute seule","Übergabe vorgemerkt: wird automatisch abgeschlossen"],
+  ae_entrega_marcada_dica:["Pode atender o próximo. Quando o vídeo chegar ao servidor, ele é entregue neste cartão.","You can serve the next one. When the video reaches the server, it is delivered on this card.","Puedes atender al siguiente. Cuando el video llegue al servidor, se entrega en esta tarjeta.","Vous pouvez servir le suivant. Quand la vidéo arrive sur le serveur, elle est remise sur cette carte.","Sie können den Nächsten bedienen. Sobald das Video auf dem Server ist, wird es auf dieser Karte übergeben."],
   ae_esperando_envio:["Aguardando o vídeo chegar ao servidor","Waiting for the video to reach the server","Esperando que el video llegue al servidor","En attente de l'arrivée de la vidéo sur le serveur","Warten, bis das Video auf dem Server ist"],
   ae_no_servidor:[d=>"Vídeo no servidor"+(d?" · "+d:""),d=>"Video on the server"+(d?" · "+d:""),d=>"Video en el servidor"+(d?" · "+d:""),d=>"Vidéo sur le serveur"+(d?" · "+d:""),d=>"Video auf dem Server"+(d?" · "+d:"")],
   ae_e_rascunho:["O vídeo saiu do servidor. Solte o vídeo de novo","The video left the server. Drop the video again","El video salió del servidor. Suelta el video de nuevo","La vidéo n'est plus sur le serveur. Déposez-la à nouveau","Das Video ist nicht mehr auf dem Server. Bitte erneut ablegen"],

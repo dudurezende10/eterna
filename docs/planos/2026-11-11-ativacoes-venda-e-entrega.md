@@ -264,6 +264,14 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 - **Na nuvem** o código digitável nunca troca de dono (`codigo_liga`/`codigo_solta` em `servidor/galeria-nuvem/app.py`): se dois tokens dessem o mesmo código, o código fica com o primeiro; o outro abre só pelo QR. A nuvem e a página do cliente aceitam 8 letras (galerias de fotos) e 12 (cartão). **Precisa de `sam deploy`.**
 - Testes: `testes/cartoes_lote_agente.py`, `testes/cartoes_lote.js`, `servidor/galeria-nuvem/teste_local.py`.
 
+### 4e. Atendimentos ao mesmo tempo, como pedidos de delivery (v99.29.0, Ronaldo, 13/11)
+
+- A entrega só se abre pela pulseira (lida pela câmera ou digitada). Cada pulseira é um pedido, e a área de soltar o vídeo fica dentro dele, já identificada: não há escolher venda nem conferir rosto.
+- Vários pedidos andam juntos. A lista "Agora" mostra cada um com o estado (voando, vídeo subindo, falta o cartão, entrega marcada). Em tela larga, a lista e a leitura da próxima pulseira ficam à esquerda e o pedido aberto à direita; em tela estreita, o pedido aberto fica em cima.
+- O vídeo solto num pedido continua subindo quando se abre outro pedido ou se toca em Próximo cliente.
+- Com o cartão lido e o vídeo ainda subindo, o botão vira "Entregar quando o vídeo terminar de subir". Tocou, a entrega fica marcada e conclui sozinha no cartão daquele pedido quando o vídeo chega ao servidor.
+- Exemplo com dois voos: lê a pulseira A e decola; lê a B e decola. A pousou: toca no pedido A, solta o vídeo, lê o cartão, Entregar. Sem esperar, toca no pedido B e faz o mesmo.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.

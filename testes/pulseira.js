@@ -51,7 +51,7 @@ try{
   await ctx.route(/\/ativ\/fila\?/,r=>r.fulfill({status:200,contentType:'application/json',body:J(D)}));
   await ctx.route(/\/ativ\/etapa$/,r=>{const c=JSON.parse(r.request().postData());posts.push(c);const v=D.vendas.find(x=>x.id===c.id);const p=v.pulseiras.find(x=>x.numero===c.pulseira);
     if(c.etapa==='voo'&&p)Object.assign(p,{voo_em:HOJE+'T10:30:00',piloto:c.piloto,drone:c.drone,bateria:c.bateria});r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
-  await ctx.route(/\/ativ\/video$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rascunho:'0123456789abcdef',bytes:300000,duracao:30})}));
+  let segura=null;await ctx.route(/\/ativ\/video$/,async r=>{if(segura)await segura.p;r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rascunho:'0123456789abcdef',bytes:300000,duracao:30})});});
   await ctx.route(/\/ativ\/video\/liga$/,r=>{const c=JSON.parse(r.request().postData());posts.push(c);const v=D.vendas.find(x=>x.id===c.venda);
     v.entregas.push({qr:c.qr,codigo:'WXYZ-2345-6789',n:1,bytes:300000,duracao:30,nuvem:true,pagina:{ok:true},subindo:null,em:HOJE+'T10:41:00',pulseira:c.pulseira,cliente:{}});v.pulseiras.find(x=>x.numero===c.pulseira).qr=c.qr;
     r.fulfill({status:200,contentType:'application/json',body:J({ok:true,qr:c.qr,codigo:'WXYZ-2345-6789',n:1})});});
@@ -90,7 +90,19 @@ try{
   ok(await P.$('#ae-at')===null&&await P.$('#ae-pul'),'Próximo cliente volta para a leitura da pulseira');
   await P.click('#ae-agora [data-act="ae-at-abre"][data-n="777"]');await P.waitForTimeout(200);
   ok(await P.$('#ae-at[data-ae-at="777"]')&&/Voo às 10:20/.test(await txt('#ae-at')),'tocar na faixa Agora abre o atendimento');
+  ok(await P.$('.ae-pedidos.aberto #ae-agora [aria-current="true"][data-n="777"]')&&await P.$('.ae-pedidos.aberto #ae-pul'),'v99.29: o pedido aberto fica junto da lista de pedidos e da leitura da próxima pulseira');
+  // v99.29: dois atendimentos ao mesmo tempo, como pedidos de delivery: o vídeo continua subindo e a entrega marcada conclui sozinha
+  {let solta;segura={p:new Promise(r=>solta=r)};const n0=posts.length;
+  await P.evaluate(()=>{const dt=new DataTransfer();dt.items.add(new File([new Uint8Array(300000)],'DJI_0003.MP4',{type:'video/mp4'}));
+    document.getElementById('ae-drop').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true}));});await P.waitForTimeout(300);
+  await P.fill('[data-act="ae-qr-txt"]','https://eterna.photo/#g/'+'M'.repeat(21)+'3');await P.press('[data-act="ae-qr-txt"]','Enter');await P.waitForTimeout(100);
+  ok(/Entregar quando o vídeo terminar de subir/.test(await txt('[data-act="ae-nv-liga"]'))&&!(await P.$('[data-act="ae-nv-liga"][disabled]')),'com o vídeo subindo, já dá para marcar a entrega: '+await txt('[data-act="ae-nv-liga"]'));
+  await P.click('[data-act="ae-nv-liga"]');await P.waitForTimeout(200);
+  ok(/Entrega marcada/.test(await txt('#ae-at'))&&posts.length===n0,'entrega marcada, ainda sem ligar: '+await txt('#ae-at'));
   await P.click('#ae-at [data-act="ae-at-fecha"]');await P.waitForTimeout(200);
+  ok(await P.$('#ae-at')===null&&/Entrega marcada/.test(await txt('#ae-agora [data-n="777"]')),'próximo cliente: o pedido segue na lista com a entrega marcada: '+await txt('#ae-agora'));
+  solta();segura=null;await P.waitForTimeout(800);
+  ok(J(posts.slice(-1)[0])===J({rascunho:'0123456789abcdef',venda:'TPUL00001D',qr:'M'.repeat(21)+'3',pulseira:'777'}),'o vídeo chegou e foi entregue sozinho no cartão certo: '+J(posts.slice(-1)));}
   ok(!(await P.$('[data-act="ae-fila"]'))&&!(await P.$('.ae-board'))&&!(await P.$('#ae-drop'))&&await P.$('#ae-pul'),'v99.28: a venda só se abre pela pulseira (sem fila completa nem vídeo solto)');
   // idioma
   await P.evaluate(()=>{ETERNA.state.ae.fila=false;ETERNA.setLangEq&&ETERNA.setLangEq('en');});
