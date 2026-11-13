@@ -8266,7 +8266,9 @@ def ativ_video_grava(vid, qr, n, tmp, eu, pulseira=None, rid=None):
     if not (rid and nuvem_video_destino("r-" + rid, qr)):
         nuvem_video_enfileira(qr, arq)
     nuvem_galeria_enfileira(qr)
-    if r[6]:                                   # a busca das fotos do Tour roda fora da entrega (pode levar alguns segundos)
+    if r[3] in ATIV_FOTOS_TIPOS:               # v99.26: fotos do vídeo (o ffmpeg leva alguns segundos); no fim atualiza a página
+        threading.Thread(target=ativ_fotos_video, args=(vid, qr), daemon=True).start()
+    elif r[6]:                                 # a busca das fotos do Tour roda fora da entrega (pode levar alguns segundos)
         threading.Thread(target=ativ_tour_atualiza, args=(vid,), daemon=True).start()
     return None
 
@@ -8324,6 +8326,131 @@ def ativ_tour_fotos(vid):
     return out[:ATIV_TOUR_MAX]
 
 
+# ---------- v99.26: fotos do Drone tiradas do vídeo ----------
+# Depois de entregar, o servidor tira do vídeo as fotos do cliente (começo do vídeo: rosto grande e nítido) e as aéreas
+# (segunda metade: as mais nítidas). Cada uma entra no Eterna pela mesma porta das fotos dos fotógrafos (ingest_file):
+# sessão, leitura de rostos (o cliente acha no Checkout pela selfie), vitrine e nuvem. As desta venda vão também para a
+# página do vídeo (tabela ativ_foto), sem depender da busca pelo rosto: são do vídeo que ele comprou.
+ATIV_FOTOS_TIPOS = ("drone",)
+ATIV_FOTOS_CLIENTE, ATIV_FOTOS_AEREAS = 4, 2
+ATIV_FOTOS_INICIO = 15                      # segundos: o cliente aparece de perto no começo do vídeo (teste de 12/11)
+
+
+def ffmpeg_bin():
+    for c in (os.environ.get("ETERNA_FFMPEG"), shutil.which("ffmpeg"),
+              os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links", "ffmpeg.exe")):
+        if c and os.path.isfile(c):
+            return c
+    return None
+
+
+def _quadro_nota(path, det):
+    """(nitidez, área do maior rosto em fração da imagem)."""
+    import cv2
+    im = cv2.imread(path)
+    if im is None:
+        return 0.0, 0.0
+    nit = float(cv2.Laplacian(cv2.cvtColor(im, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+    rosto = 0.0
+    if det is not None:
+        h, w = im.shape[:2]
+        e = 640.0 / max(h, w)
+        p = cv2.resize(im, (int(w * e), int(h * e)))
+        det.setInputSize((p.shape[1], p.shape[0]))
+        _, fs = det.detect(p)
+        if fs is not None and len(fs):
+            rosto = float(max(f[2] * f[3] for f in fs)) / (p.shape[0] * p.shape[1])
+    return nit, rosto
+
+
+def ativ_fotos_escolhe(notas, n, espaco):
+    """As n melhores [(nota, t, arquivo)], com pelo menos `espaco` segundos entre elas, na ordem do vídeo."""
+    out = []
+    for nota, t, p in sorted(notas, key=lambda x: -x[0]):
+        if nota <= 0:
+            break
+        if all(abs(t - u) >= espaco for _, u, _ in out):
+            out.append((nota, t, p))
+        if len(out) >= n:
+            break
+    return sorted(out, key=lambda x: x[1])
+
+
+def ativ_fotos_video(vid, qr):
+    """-> quantas fotos do vídeo entraram no Eterna."""
+    ff = ffmpeg_bin()
+    if not ff:
+        print("  fotos do vídeo: ffmpeg não instalado")
+        return 0
+    c = vendas_db()
+    try:
+        r = c.execute("select e.arquivo, e.duracao, e.pulseira, v.tipo, v.voo_em, v.piloto from ativ_entrega e"
+                      " join ativ_venda v on v.origem='eterna' and v.id=e.venda where e.qr=? and e.venda=?", (qr, vid)).fetchone()
+        p = c.execute("select piloto, voo_em from ativ_pulseira where venda=? and numero=?", (vid, r[2])).fetchone() if r and r[2] else None
+        ja = c.execute("select 1 from ativ_foto where qr=?", (qr,)).fetchone()
+    finally:
+        c.close()
+    if not r or r[3] not in ATIV_FOTOS_TIPOS or ja:
+        return 0
+    arq = next((a for a in (r[0], os.path.join(ATIV_VIDEOS_DIR, qr + ".mp4")) if a and os.path.exists(a)), None)
+    if not arq:
+        return 0
+    tmp = tempfile.mkdtemp(prefix="quadros-", dir=ATIV_VIDEOS_DIR)
+    n = 0
+    try:
+        sem_janela = {"creationflags": 0x08000000} if sys.platform.startswith("win") else {}
+        subprocess.run([ff, "-v", "error", "-nostdin", "-i", arq, "-vf", "fps=2", "-q:v", "2", os.path.join(tmp, "q%04d.jpg")],
+                       timeout=900, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **sem_janela)
+        quadros = sorted(glob.glob(os.path.join(tmp, "q*.jpg")))
+        det = None
+        try:
+            det = leitor()[0]
+        except Exception:
+            pass
+        dur = float(r[1] or 0) or len(quadros) * 0.5
+        inicio = min(ATIV_FOTOS_INICIO, dur * 0.4)  # vídeo curto (13 s): o cliente nos primeiros 40%, a aérea no fim
+        perto, longe = [], []
+        for i, q in enumerate(quadros):
+            t = i * 0.5
+            nit, rosto = _quadro_nota(q, det)
+            if t < inicio:
+                perto.append((nit * (rosto if det is not None else 1.0), t, q))
+            elif t >= max(inicio, dur / 2):
+                longe.append((nit, t, q))
+        esc = [("cliente", x) for x in ativ_fotos_escolhe(perto, ATIV_FOTOS_CLIENTE, 1.5)] + \
+              [("aerea", x) for x in ativ_fotos_escolhe(longe, ATIV_FOTOS_AEREAS, 5)]
+        quando = (p and p[1]) or r[4] or time.strftime("%Y-%m-%dT%H:%M:%S")
+        t0 = time.mktime(time.strptime(quando, "%Y-%m-%dT%H:%M:%S"))
+        quem = "Drone" + (" · " + ((p and p[0]) or r[5]) if (p and p[0]) or r[5] else "")
+        cod = cartao_codigo(qr).replace("-", "")
+        linhas = []
+        for k, (tipo, (_, t, q)) in enumerate(esc, 1):
+            os.utime(q, (t0 + t, t0 + t))            # a foto "foi tirada" na hora do voo: dia e sessão certos
+            st = os.stat(q)
+            h = quick_hash(q, st.st_size)
+            res = ingest_file(q, "DRONE_%s_%02d.jpg" % (cod, k), st, quem, "drone", move=True, quieto=True)
+            if res in ("new", "dup"):
+                linhas.append((vid, qr, seen.get(h) or h[:12], tipo, t, _iso()))
+                n += res == "new"
+        with ev_lock:
+            c = vendas_db()
+            try:
+                c.executemany("insert or ignore into ativ_foto (venda, qr, pid, tipo, t, em) values (?,?,?,?,?,?)", linhas)
+                c.commit()
+            finally:
+                c.close()
+        print("  fotos do vídeo: %d do cliente e %d aéreas" % (sum(1 for x in esc if x[0] == "cliente"), sum(1 for x in esc if x[0] == "aerea")))
+    except Exception as ex:
+        print("  fotos do vídeo: %s" % str(ex)[:160])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        ativ_tour_atualiza(vid)
+    except Exception as ex:
+        print("  fotos do vídeo: página do vídeo não atualizada (%s)" % str(ex)[:120])
+    return n
+
+
 def ativ_tour_atualiza(vid):
     """Procura de novo e, se achou foto nova, cria ou amplia a galeria do Tour do cliente e põe o atalho nos vídeos da venda.
     -> {token, n} ou None. A galeria só cresce: foto que já entrou não sai (o cliente pode ter comprado)."""
@@ -8332,11 +8459,15 @@ def ativ_tour_atualiza(vid):
             c = vendas_db()
             try:
                 r = c.execute("select foto_busca, tour_token, situacao from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+                do_video = [p for (p,) in c.execute("select pid from ativ_foto where venda=? order by tipo='aerea', t", (vid,))]
             finally:
                 c.close()
-        if not r or not r[0] or r[2] == "cancelada":
+        if not r or (not r[0] and not do_video) or r[2] == "cancelada":
             return None
-        achou = ativ_tour_fotos(vid)
+        with sess_lock:                        # v99.26: as fotos do próprio vídeo entram primeiro, mesmo sem a busca pelo rosto
+            achou = [("ag_" + p, sess_pid.get(p) or "") for p in do_video]
+        busca = ativ_tour_fotos(vid) if r[0] else None
+        achou += [x for x in (busca or []) if x[0] not in {a[0] for a in achou}]
         tok = r[1] or None
         velho = REPO.ler_manifesto(tok) if tok else None
         ja = [f for f in (velho or {}).get("fotos") or []]
@@ -9160,6 +9291,9 @@ def vendas_db():
     c.execute("create table if not exists ativ_pulseira (numero text, venda text, slot integer, conflito integer default 0, em text,"
               " voo_em text, voo_por text, piloto text, drone text, bateria text, primary key (numero, venda))")
     c.execute("create index if not exists ativ_pulseira_venda on ativ_pulseira(venda)")
+    # v99.26: fotos tiradas do vídeo (cliente e aéreas), que entram no Eterna como foto de fotógrafo
+    c.execute("create table if not exists ativ_foto (venda text, qr text, pid text, tipo text, t real, em text, primary key (qr, pid))")
+    c.execute("create index if not exists ativ_foto_venda on ativ_foto(venda)")
     if "pulseira" not in {r[1] for r in c.execute("pragma table_info(ativ_entrega)")}:
         c.execute("alter table ativ_entrega add column pulseira text")
     # v99.24: lotes de cartões com QR (a gráfica imprime; o servidor guarda cada token e código, nunca repetidos)
