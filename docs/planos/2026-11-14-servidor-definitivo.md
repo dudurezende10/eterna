@@ -246,3 +246,12 @@ No Checkout, depois da primeira selfie, o "Adicionar outra pessoa" mostrava "Câ
 guardada (`state.cam.err`) e o `camStart` nunca mais tentava; no Windows a câmera recém-desligada pode recusar a reabertura por
 um instante. Correção (`lojaCamLigar` / `camStart`): o toque do cliente limpa a falha anterior (menos "câmera bloqueada", que é
 permissão negada) e, se a câmera vier ocupada, tenta de novo até 3 vezes antes de desistir.
+
+### Fundo de IA nunca preparado na frente do cliente (14/11, 18h45)
+
+Regra do Ronaldo: o recorte é feito quando a foto sobe no servidor, nunca no Checkout; "Preparando sua foto especial" na frente do
+cliente põe a credibilidade em risco.
+- Servidor (`rec_pre_loop`): com placa de vídeo (cerca de 1 s por foto), toda foto com gente é recortada assim que chega, com a sessão
+  ainda aberta, a mais nova primeiro; foto sem pessoa é pulada. Na CPU continua o antigo (só as bases, sessões fechadas).
+- Checkout (`ljPrepara`): achado pela selfie ou pelo código, o cliente vê "Achamos você · Separando suas fotos..." até as montagens com
+  fundo ficarem prontas (só a composição no navegador, o recorte já está pronto); teto de 8 s (`LJ_PREP_MS`), depois abre com o que houver.

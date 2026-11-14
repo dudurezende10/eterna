@@ -2535,8 +2535,13 @@ function lojaAI(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];co
     return out;}
   return [];}
 // v93: as montagens começam assim que a selfie ou o código acha a sessão, uma por vez, antes de o item aparecer (o COMP guarda)
-function iaAquecer(card){if(fundosModo()!=='local'||!card)return;let its=[];const ja=DS_CACHE.on;try{DS_CACHE.on=true;its=lojaAI(card);}catch(e){return;}finally{if(!ja){DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}
-  its.reduce((p,x)=>p.then(()=>compose(x.id,x.bg)).catch(()=>{}),Promise.resolve());}
+function iaAquecer(card){if(fundosModo()!=='local'||!card)return Promise.resolve();let its=[];const ja=DS_CACHE.on;try{DS_CACHE.on=true;its=lojaAI(card);}catch(e){return Promise.resolve();}finally{if(!ja){DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}
+  return its.reduce((p,x)=>p.then(()=>compose(x.id,x.bg)).catch(()=>{}),Promise.resolve());}
+// 14/11 (Ronaldo): a montagem nunca é feita na frente do cliente. Achado, ele vê "Achamos você · separando suas fotos" até as
+// montagens com fundo ficarem prontas (o recorte já vem pronto do servidor); teto de LJ_PREP_MS e a galeria abre com o que houver
+let LJ_PREP_MS=8000;
+function ljPrepara(card){const k=state.kiosk;k.prep=card;const fim=()=>{if(state.kiosk===k&&k.prep===card){k.prep=null;render();}};
+  Promise.race([iaAquecer(card),new Promise(r=>setTimeout(r,LJ_PREP_MS))]).then(fim,fim);}
 function lojaAIAntigo(card){const s=sessionObj(card);if(!s||!fiaOferece())return [];const loc=fundosModo()==='local';const ph=lojaFotos(card).filter(p=>!FIA_RUIM.has(p.id)&&(!loc||/^ag_/.test(p.id)));if(!ph.length)return [];
   const ready=aiPrep(card);let picks=ph.slice(0,2);const dele=new Set(ph.map(p=>p.id)); // v91: o substituto também precisa ser foto do cliente
   // v97 (E5b): foto real do agente (ag_) não passa pela nota simulada (aiOk, por hash, barrava ~25% ao acaso); FIA_RUIM, o fit do fundo e o recorte continuam
@@ -3344,6 +3349,7 @@ const I18N={
  tvSim:['Sim, sou eu','Yes, it’s me','Sí, soy yo','Oui, c’est moi','Ja, das bin ich'],
  tvNao:['Não sou eu','Not me','No soy yo','Ce n’est pas moi','Das bin ich nicht'],
  foundYou:['Achamos você','We found you','Te encontramos','Nous vous avons trouvé','Wir haben dich gefunden'],
+ ljSeparando:['Separando suas fotos...','Getting your photos ready...','Separando tus fotos...','Nous rassemblons vos photos...','Deine Fotos werden zusammengestellt...'],
  // v99.2: "Adicionar outra pessoa" (a selfie de quem ficou de fora soma as fotos dela às já abertas, com a pessoa ali autorizando)
  addPerson:['Adicionar outra pessoa','Add another person','Agregar otra persona','Ajouter une autre personne','Weitere Person hinzufügen'],
  addPersonSub:['Agora a selfie da outra pessoa: as fotos dela entram junto com as suas','Now a selfie of the other person: their photos are added to yours','Ahora la selfie de la otra persona: sus fotos se suman a las tuyas','Maintenant le selfie de l’autre personne : ses photos s’ajoutent aux vôtres','Jetzt ein Selfie der anderen Person: ihre Fotos kommen zu deinen dazu'],
@@ -3524,6 +3530,7 @@ function vQuiosque(){
   const steps=n=>`<div class="lj-steps">${T('steps').map((t,i)=>`<span class="${i+1<n?'done':i+1===n?'cur':''}"><b>${i+1<n?'✓':i+1}</b>${t}</span>`).join('<i></i>')}</div>`;
   const topR=x=>`<div class="lj-topr">${ljLangOv()}${x}</div>`;
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v96: sem etapa de pacote e pagamento no Checkout
+  if(k.prep&&k.prep===k.code&&k.step==='review')return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2">${T('foundYou')}</h1><p class="lj-sub" aria-live="polite">${T('ljSeparando')}</p></div></div>`;
   const pagoTudo=lojaJaPaga(k.code)||!!(k.so&&k.so.cards&&!lojaFotos(k.code).length); // v91 (revisão C3): achado pela selfie e tudo já comprado
   if((k.step==='review'||k.step==='cart')&&pagoTudo){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (com o botão de comprar mais)
     const pc=lojaJaPaga(k.code)?k.code:(soCards(k.code).find(c=>lojaJaPaga(c))||k.code);const sim=SIM.sessions[pc]||{};const tok=sim.galVenda||galDaSessao(pc);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){setTimeout(()=>{if(state.kiosk===k&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
@@ -9864,7 +9871,7 @@ function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Dat
   const ok=x=>state.view==='quiosque'||x.status!=='paga'; // checkout: toda sessão ainda não paga (como a lista ao lado); quiosque: todas
   const open=(card,fotos)=>{c.busy=false;c.status='found';camStatus();
     if(state.view==='quiosque'&&state.kiosk.mais){lojaCliente();lojaAbrirSo({[card]:(fotos&&fotos.length?fotos:lojaTodas(card)).slice()},card);} // v99.2: outra pessoa, soma
-    else if(state.view==='quiosque'){lojaCliente();lojaPickLimpa(card);state.kiosk.code=card;state.kiosk.so={card,ids:fotos||[]};state.kiosk.step='gallery';toast(T('foundYou'));render();iaAquecer(card);}
+    else if(state.view==='quiosque'){lojaCliente();lojaPickLimpa(card);state.kiosk.code=card;state.kiosk.so={card,ids:fotos||[]};state.kiosk.step='gallery';toast(T('foundYou'));ljPrepara(card);render();}
     else if(state.posto.manual&&(state.view==='posto'||state.view==='caixa')){toast('Encontramos: '+card);checkoutPick(card);}
     else{c.status='idle';}};
   const v=$('#cam-video');
@@ -9930,7 +9937,7 @@ function lojaAbrirSo(minhas,anc,ext){const k=state.kiosk;const mais=k.mais;
   // v97: base (levas achadas) e fix (fotos só achadas: menor, escola, "talvez") deixam o Checkout refazer a visita quando o Posto junta ou separa
   const fix=Object.assign({},(ext&&ext.fix)||{});cards.forEach(c=>{if(ext&&ext.base&&!ext.base.includes(c)&&!lojaVisCards(ext.base).includes(c))fix[c]=(minhas[c]||[]).slice();});
   if(!mais)ljTempo(anc,'inicio');Object.assign(k,{code:anc,so:{card:anc,cards,ids,base:ext&&ext.base&&ext.base.length?ext.base.slice():null,fix,visita:!!(ext&&ext.base&&ext.base.length)},tv:null,galTok:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false,mais:null,camOn:false});if(mais)camStop();else ljAbrirEd(k); // v97 (selo, A4)
-  toast(T(mais?'addedPerson':'foundYou'));render();lojaPreload(anc);iaAquecer(anc);}
+  toast(T(mais?'addedPerson':'foundYou'));ljPrepara(anc);render();lojaPreload(anc);}
 // proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
 const LJ_AR={};
 function ljAspecto(id){const u=lojaPreUrl(id);if(!u||LJ_AR[id])return;const im=LJ_PRE[u]||new Image();const ok=()=>{if(!im.naturalWidth||!im.naturalHeight)return;LJ_AR[id]=+(im.naturalWidth/im.naturalHeight).toFixed(4);
@@ -10336,7 +10343,7 @@ document.addEventListener('click',e=>{
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':{const c=state.caixa.session;state.caixa.reprint=state.caixa.reprint===c?null:c;render();break;} // v83: abre o painel de impressão desta venda (sem baixa aqui)
     case 'kiosk-go':{lojaCliente();const k=state.kiosk;if(k.codEsp)break;const txt=($('#kcode')||{}).value||'';
-      const abre=()=>{const r=lojaCodigo(txt);if(!r)return;lojaPickLimpa(r.card);k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;ljTempo(r.card,'inicio');ljAbrirEd(k);render();iaAquecer(r.card);};
+      const abre=()=>{const r=lojaCodigo(txt);if(!r)return;lojaPickLimpa(r.card);k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;ljTempo(r.card,'inicio');ljAbrirEd(k);ljPrepara(r.card);render();};
       const p=lojaCodEspera(txt);if(!p){abre();break;}const passo=k.step,n=k.codN=(k.codN||0)+1;k.codEsp=true;k.codTxt=txt;render(); // botão desativado com "Buscando suas fotos…"; codTxt guarda o que o cliente digitou
       p.then(()=>{if(k.codN!==n)return;k.codEsp=false;if(state.kiosk!==k||k.step!==passo)return;abre();if(k.step===passo)render();});break;} // lojaReset troca codN: a espera de um cliente nunca abre a sessão depois que a tela voltou ao início
     case 'kiosk-back':lojaReset();render();break;
