@@ -189,3 +189,13 @@ O agente passou a aceitar o IP do aparelho pelo `X-Real-IP` só quando o pedido 
 (limites por IP juntos, posto automático desligado). Ressalva: o nome é público com IP privado; DNS que bloqueia esse tipo de
 resposta (proteção contra "DNS rebinding" em alguns roteadores/firewalls) não resolve o nome: se um aparelho não abrir, conferir
 o DNS que ele usa.
+
+## Acesso remoto pelo Tailscale (14/11)
+
+Mesma rede do Tailscale da TI que já liga o notebook do Ronaldo e o Mac do Eduardo. `servidor/linux/tailscale.sh` instala pelo
+repositório oficial, entra na rede (login da conta da TI pelo link que aparece), anuncia a rota `192.168.10.10/32` e libera
+22/80/443/8765/8797 só na interface `tailscale0`. Com a rota aprovada no painel, `https://posto.eterna.photo` abre de fora do
+estádio com o mesmo certificado (câmera inclusive). No painel: aprovar a rota e desligar a expiração da chave da máquina.
+
+SSH: cada pessoa com a própria chave, via `servidor/linux/acesso-ssh.sh <login> "<linha do .pub>"` (sem senha, sem sudo, lê os
+registros). Deploy não usa SSH: é o git (o vigia aplica o ramo em até 1 minuto). Sudo para o Eduardo é decisão do Ronaldo.
