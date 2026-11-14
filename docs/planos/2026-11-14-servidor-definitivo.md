@@ -14,8 +14,8 @@
 | HD de fotos | Seagate Exos 4 TB (ST4000NM000B, disco de servidor), **sem partição, sem formatar** | O instalador formata (ext4) e monta em `/srv/eterna-midia` |
 | Placa de vídeo | NVIDIA **GeForce RTX 5060 Ti 16 GB** (Blackwell) com o driver livre `nouveau`; sem driver NVIDIA, sem CUDA. Tem também o vídeo integrado AMD | Instalar o driver NVIDIA (módulos abertos, versão que suporte Blackwell) e conferir que o `onnxruntime-gpu` tem suporte a essa geração |
 | Rede | `enp8s0` 2,5 Gb em 192.168.10.10/24, gateway 192.168.10.1; duas portas 10 Gb (Intel 82599, fibra SFP+) e Wi-Fi desligados | |
-| **DNS** | **O DNS do gateway (192.168.10.1) não responde.** A internet funciona por IP e os DNS 1.1.1.1 e 8.8.8.8 respondem | Sem DNS o servidor não acha GitHub, PyPI, AWS nem o relógio. Corrigir antes de tudo |
-| **Relógio** | **Cerca de 10 h adiantado** (15/11 00:38 UTC quando eram 14/11 14:36 UTC), fuso UTC, NTP sem nenhuma fonte (por causa do DNS) | Hora errada estraga horário de venda, assinatura da AWS (backup recusado) e certificados. Acertar junto com o DNS; fuso `America/Sao_Paulo` |
+| **DNS** | **O DNS do gateway (192.168.10.1) não responde.** A internet funciona por IP e os DNS 1.1.1.1 e 8.8.8.8 respondem | Sem DNS o servidor não acha GitHub, PyPI, AWS nem o relógio. **Corrigido em 14/11:** `/etc/systemd/resolved.conf.d/eterna-dns.conf` com 1.1.1.1 e 8.8.8.8 (não mexe no netplan). O certo é o gateway voltar a responder DNS, porque as estações sofrem do mesmo |
+| **Relógio** | **Cerca de 10 h adiantado** (15/11 00:38 UTC quando eram 14/11 14:36 UTC), fuso UTC, NTP sem nenhuma fonte (por causa do DNS) | Hora errada estraga horário de venda, assinatura da AWS (backup recusado) e certificados. **Corrigido em 14/11:** fuso `America/Sao_Paulo`, chrony reiniciado depois do DNS, sincronizado com os servidores da Canonical |
 | Portas abertas | Só SSH (22). Firewall `ufw` ligado | |
 | SSH | Só chave; senha e root desligados | Já está como deve |
 | Usuários | Só `ubuntu` (grupo sudo, `sudo` pede senha) | Comandos com `sudo` rodam no terminal do Ronaldo, que tem a senha |
