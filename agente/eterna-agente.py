@@ -2139,9 +2139,8 @@ def lan_ip():
 # FTP_LINHA bytes: quem só abre conexões não ocupa o lugar da câmera nem a memória do servidor.
 FTP_POR_IP, FTP_TOTAL, FTP_RESERVA, FTP_SEM_LOGIN_IP = 8, 64, 16, 2
 FTP_OCIOSO_S, FTP_LOGIN_S, FTP_DADOS_S, FTP_LINHA, FTP_TENTATIVAS = 300, 25, 30, 4096, 3
-# tamanho máximo do pedaço TCP pedido na conexão de dados do FTP (0 = o do sistema). No estádio, o Wi-Fi da rede do servidor
-# deixava passar a abertura da conexão e descartava os pacotes cheios (1448): a foto chegava com 0 bytes.
-FTP_MSS = int(os.environ.get("ETERNA_FTP_MSS") or 536)
+# tamanho máximo do pedaço TCP pedido na conexão de dados do FTP (0 = o do sistema), para rede que descarta pacote cheio.
+FTP_MSS = int(os.environ.get("ETERNA_FTP_MSS") or 0)
 ftp_conexoes = {}          # ip -> sessões abertas
 ftp_sem_login = {}         # ip -> sessões abertas ainda sem login
 FTP_RAW_EXT = (".cr3", ".cr2", ".nef", ".arw", ".raf", ".dng", ".orf", ".rw2")   # ETERNA_FTP_RAW=descartar: recebe e descarta (sem 553)
@@ -2286,6 +2285,7 @@ class FTPSession(threading.Thread):
                 parts = line.split(" ", 1)
                 cmd = parts[0].upper()
                 arg = parts[1] if len(parts) > 1 else ""
+                self.cmds = (getattr(self, "cmds", []) + ["%s %s" % (cmd, "***" if cmd == "PASS" else arg[:40])])[-12:]
                 self.handle(cmd, arg)
                 if cmd == "QUIT" or self.fechar:
                     break
@@ -2470,6 +2470,7 @@ class FTPSession(threading.Thread):
                 with lock:
                     state["ftp"]["incompletas"] = state["ftp"].get("incompletas", 0) + 1
                 print(f"ftp: {name} chegou incompleto ({size/1e6:.1f} MB), recusado; a câmera manda de novo")
+                print("ftp: comandos antes: " + " | ".join(getattr(self, "cmds", [])))
                 try:
                     os.remove(tmp)
                 except OSError:
