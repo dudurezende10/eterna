@@ -17,7 +17,7 @@ getent hosts github.com >/dev/null && ok "DNS" || falha "DNS não resolve github
 echo "Discos"
 findmnt "$DADOS" >/dev/null && ok "bancos no NVMe: $DADOS ($(df -h --output=avail "$DADOS" | tail -1 | xargs) livres)" || falha "$DADOS não montado"
 findmnt "$MIDIA" >/dev/null && ok "fotos no HD: $MIDIA ($(df -h --output=avail "$MIDIA" | tail -1 | xargs) livres)" || falha "$MIDIA não montado"
-for p in inbox recortes ativ-videos ativ-clientes ativ-demo; do
+for p in inbox ftp-tmp recortes ativ-videos ativ-clientes ativ-demo; do
   [ "$(readlink "$DADOS/Eterna/$p" 2>/dev/null)" = "$MIDIA/$p" ] || falha "$DADOS/Eterna/$p não aponta para o HD"
 done
 [ "$(readlink "$DADOS/Eterna/inbox" 2>/dev/null)" = "$MIDIA/inbox" ] && ok "pastas de fotos e vídeos apontam para o HD"
