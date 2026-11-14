@@ -6669,6 +6669,8 @@ def ff_funcao_validar(body):
     return dia, limpo, ignoradas
 
 
+# proxy com certificado no próprio servidor (servidor/linux/certificado.sh): só dele o X-Real-IP vale (ver H.parse_request)
+PROXY_IP = (os.environ.get("ETERNA_PROXY_IP") or "").strip()
 HOSTS_OK = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 if os.environ.get("ETERNA_REDE"):
     HOSTS_OK.add("%s:%d" % (lan_ip(), PORT))
@@ -9195,7 +9197,7 @@ def _sha(t):
 def posto_auto_ok(ip, ip_servidor="", redes=None):
     """Aparelho da rede do ponto (ETERNA_POSTO_REDE), que vira posto quando um Admin entra nele. Tailscale/VPN (100.64.0.0/10),
     o próprio servidor e endereços fora da faixa não viram posto: quem acessa de fora (Ronaldo e Eduardo) usa o sistema sem criar posto.
-    Atrás de proxy o IP visto é o do proxy: não ligar o automático lá sem tratar X-Forwarded-For (só vindo de ETERNA_PROXY_IP)."""
+    Atrás do proxy, o IP aqui já é o do aparelho: H.parse_request troca pelo X-Real-IP quando o pedido vem de ETERNA_PROXY_IP."""
     import ipaddress
     redes = posto_redes() if redes is None else redes
     if not redes:
@@ -11323,6 +11325,21 @@ class H(BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+    def parse_request(self):
+        """Atrás do proxy com certificado (nginx no próprio servidor, servidor/linux/certificado.sh) todo pedido chega do IP do
+        proxy. Só quando o pedido vem de ETERNA_PROXY_IP, o IP do aparelho é o X-Real-IP que o proxy escreve (o proxy apaga o que o
+        aparelho mandou). Assim limites por IP, posto automático e registros veem o aparelho, não o proxy."""
+        ok = super().parse_request()
+        if ok and PROXY_IP and self.client_address and self.client_address[0] == PROXY_IP:
+            real = (self.headers.get("X-Real-IP") or "").strip()
+            try:
+                import ipaddress
+                ipaddress.ip_address(real)
+                self.client_address = (real, self.client_address[1])
+            except ValueError:
+                pass
+        return ok
 
     def origens_ok(self, path):
         locais = ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)

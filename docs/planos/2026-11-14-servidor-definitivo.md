@@ -169,3 +169,23 @@ passam lá (postos, ativações venda, estatísticas, agenda, LGPD, pulseira); o
 4. ~~Nobreak no servidor?~~ Tem (Ronaldo, 14/11). Se ele tiver cabo USB ou rede, ligar ao servidor (NUT) para desligar com os bancos fechados quando a bateria acabar.
 5. "VPN tudo local": as estações entram por VPN mesmo dentro do estádio, ou só quem está fora?
 6. ~~Levar os dados do teste?~~ Começar zerado (Ronaldo, 14/11): primeiro entender a estrutura do servidor, depois instalar com um instalador novo que deixa tudo pronto.
+
+## Certificado (https://posto.eterna.photo), pedido do Ronaldo em 14/11
+
+Sem certificado o navegador mostra "Não seguro" e não abre a câmera. A zona `posto.eterna.photo` já está delegada do GoDaddy
+para o Route 53 (conta 741796256738). Desenho:
+
+1. **AWS (CloudShell, Ronaldo):** `servidor/linux/certificado-aws-cloudshell.sh` cria o registro A `posto.eterna.photo` ->
+   192.168.10.10 e o usuário IAM `eterna-certbot-estadio`, que só pode criar o TXT `_acme-challenge.posto.eterna.photo`. A chave
+   aparece só na tela do CloudShell.
+2. **Chave no servidor (Ronaldo):** `sudo install -d -m 700 /root/.aws` e colar a chave em `/root/.aws/credentials`
+   (`sudo nano`), dono root, 600. Nunca por chat ou e-mail.
+3. **Servidor:** `sudo bash /opt/eterna/app/servidor/linux/certificado.sh`: nginx na 443 com o certificado do Let's Encrypt
+   (desafio de DNS: o servidor não fica aberto para a internet), renovação automática, `ETERNA_PROXY_IP=127.0.0.1` e o
+   endereço em `ETERNA_ORIGENS`.
+
+O agente passou a aceitar o IP do aparelho pelo `X-Real-IP` só quando o pedido vem de `ETERNA_PROXY_IP`
+(`H.parse_request`, teste `testes/proxy_ip_agente.py`): sem isso, atrás do proxy, todos os aparelhos teriam o IP do proxy
+(limites por IP juntos, posto automático desligado). Ressalva: o nome é público com IP privado; DNS que bloqueia esse tipo de
+resposta (proteção contra "DNS rebinding" em alguns roteadores/firewalls) não resolve o nome: se um aparelho não abrir, conferir
+o DNS que ele usa.
