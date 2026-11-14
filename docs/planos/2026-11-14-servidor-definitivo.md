@@ -44,9 +44,13 @@ no processador) nos dois caminhos e só ligar a placa se o acerto for o mesmo e 
 
 ## Rede e endereço
 
-- As telas que abrem a câmera (selfie no Checkout e foto do cliente na venda do tablet) só funcionam em endereço com certificado
-  (`https`). Endereço previsto: `posto.eterna.photo` apontando para o IP local do servidor, com proxy na frente do agente
-  (já descrito no CHECKLIST-SERVIDOR, passo 4). Cada aparelho é pareado de novo no endereço novo.
+- **Começo pelo IP** (decisão do Ronaldo, 14/11): os aparelhos abrem `http://192.168.10.10:8765`; DNS e certificado
+  (`posto.eterna.photo`, com proxy na frente, CHECKLIST-SERVIDOR passo 4) ficam para depois, com calma.
+- Consequência: o navegador só abre a câmera em endereço com certificado ou em `localhost`. Com o IP, a selfie do Checkout e a
+  foto do cliente no tablet ficam sem câmera, a menos que cada aparelho marque esse endereço como confiável no Chrome:
+  política `OverrideSecurityRestrictionsOnInsecureOrigin` (Chrome gerenciado) ou, aparelho a aparelho,
+  `chrome://flags/#unsafely-treat-insecure-origin-as-secure` com `http://192.168.10.10:8765`. A venda do tablet funciona sem a foto.
+- Quando o DNS entrar, cada aparelho é pareado de novo no endereço novo (o cookie do posto vale por endereço).
 - `ETERNA_ORIGENS` e `ETERNA_POSTO_REDE` passam para a faixa da rede `vm-vivalocal`.
 - FTP das câmeras apontado para o servidor novo.
 - Impressão continua no posto (DNP pelo USB do posto); o servidor não precisa de impressora.
