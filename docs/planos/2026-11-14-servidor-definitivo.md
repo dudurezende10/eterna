@@ -2,6 +2,27 @@
 
 **Situação:** levantamento de requisitos com o Ronaldo, antes da instalação. Nada instalado ainda.
 
+## Servidor como encontrado (levantamento por SSH, 14/11, só leitura)
+
+| Item | Encontrado | Consequência |
+|---|---|---|
+| Nome e sistema | `srv-viva-maracana`, Ubuntu 26.04.1 LTS, kernel 7.0 | Python do sistema é 3.14: conferir se `onnxruntime-gpu`, OpenCV e rembg já têm pacote para 3.14; se não, Python 3.13 próprio (uv) só para o Eterna |
+| Placa-mãe | Gigabyte B650M AORUS ELITE AX | |
+| Processador | AMD Ryzen 9 9900X3D, mas **só 6 núcleos visíveis e sem SMT** (um dos dois blocos de núcleos e o hyperthreading desligados na BIOS) | Ligando na BIOS: 12 núcleos / 24 linhas. Não impede começar |
+| Memória | 64 GB (59 GiB úteis), swap 8 GB | Folgada |
+| Disco do sistema | NVMe **Kingston KC3000 1 TB** (não é o NV2: este tem cache próprio e aguenta mais gravação). LVM com só 100 GB em uso pelo `/`; cerca de 850 GB livres no grupo | Bancos e miniaturas cabem no NVMe com folga: criar volume próprio para `~/Eterna` |
+| HD de fotos | Seagate Exos 4 TB (ST4000NM000B, disco de servidor), **sem partição, sem formatar** | O instalador formata (ext4) e monta em `/srv/eterna-midia` |
+| Placa de vídeo | NVIDIA **GeForce RTX 5060 Ti 16 GB** (Blackwell) com o driver livre `nouveau`; sem driver NVIDIA, sem CUDA. Tem também o vídeo integrado AMD | Instalar o driver NVIDIA (módulos abertos, versão que suporte Blackwell) e conferir que o `onnxruntime-gpu` tem suporte a essa geração |
+| Rede | `enp8s0` 2,5 Gb em 192.168.10.10/24, gateway 192.168.10.1; duas portas 10 Gb (Intel 82599, fibra SFP+) e Wi-Fi desligados | |
+| **DNS** | **O DNS do gateway (192.168.10.1) não responde.** A internet funciona por IP e os DNS 1.1.1.1 e 8.8.8.8 respondem | Sem DNS o servidor não acha GitHub, PyPI, AWS nem o relógio. Corrigir antes de tudo |
+| **Relógio** | **Cerca de 10 h adiantado** (15/11 00:38 UTC quando eram 14/11 14:36 UTC), fuso UTC, NTP sem nenhuma fonte (por causa do DNS) | Hora errada estraga horário de venda, assinatura da AWS (backup recusado) e certificados. Acertar junto com o DNS; fuso `America/Sao_Paulo` |
+| Portas abertas | Só SSH (22). Firewall `ufw` ligado | |
+| SSH | Só chave; senha e root desligados | Já está como deve |
+| Usuários | Só `ubuntu` (grupo sudo, `sudo` pede senha) | Comandos com `sudo` rodam no terminal do Ronaldo, que tem a senha |
+| Software | git sim; sem pip, ffmpeg, Docker, servidor web, smartctl, nvme-cli, NUT | Tudo pelo instalador |
+| Nobreak | Nada ligado no USB | Ligar o cabo USB do nobreak, se ele tiver |
+| Atualizações | `unattended-upgrades` ligado | Segurar o driver NVIDIA fora da atualização automática |
+
 ## O que já está decidido
 
 | Tema | Decisão |
@@ -9,7 +30,7 @@
 | Máquina | Servidor dedicado com Ubuntu, na rede `vm-vivalocal`, IP fixo 192.168.10.10 |
 | Acesso de manutenção | SSH com chave (sem senha trafegando); `sudo` continua pedindo a senha do usuário |
 | Acesso das estações | Tudo local: postos, tablets e computador da entrega falam com o servidor pela rede do estádio; de fora, só pela VPN (FortiGate, decisão de 02/11). Tailscale sai |
-| Sistema e bancos | No disco da placa-mãe (flash) |
+| Sistema e bancos | No NVMe da placa-mãe (Kingston KC3000 1 TB) |
 | Fotos e vídeos | No HD de 4 TB |
 | IA de imagem | Na placa de vídeo do servidor |
 
