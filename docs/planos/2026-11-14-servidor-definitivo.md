@@ -199,3 +199,10 @@ estádio com o mesmo certificado (câmera inclusive). No painel: aprovar a rota 
 
 SSH: cada pessoa com a própria chave, via `servidor/linux/acesso-ssh.sh <login> "<linha do .pub>"` (sem senha, sem sudo, lê os
 registros). Deploy não usa SSH: é o git (o vigia aplica o ramo em até 1 minuto). Sudo para o Eduardo é decisão do Ronaldo.
+
+## Deploy quando a gente quiser (decisão do Ronaldo, 14/11)
+
+O vigia do servidor acompanha só o ramo `producao` (`/etc/eterna/vigia.env`, `RAMO=producao`). Trabalho do dia a dia segue no
+`idiomas-base` sem ir para o estádio. Para mandar: GitHub › Actions › **deploy-estadio** › Run workflow (escolhe o ramo, padrão
+`idiomas-base`), ou `git push origin idiomas-base:producao`. Só avança, nunca força; o vigia aplica em até 1 minuto, testa e
+volta sozinho se o agente não subir. Acompanhar em `http://<servidor>:8797`.

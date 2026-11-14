@@ -1,0 +1,30 @@
+# Deploy no servidor do estádio quando a gente quiser: Actions › deploy-estadio › Run workflow.
+# Leva o ramo escolhido (padrão idiomas-base) para o ramo `producao`, que é o único que o vigia do servidor acompanha
+# (/etc/eterna/vigia.env, RAMO=producao). Em até 1 minuto o servidor aplica, testa e, se o agente não subir, volta sozinho.
+# Só avança (sem força): se `producao` tiver algo que o ramo escolhido não tem, recusa.
+# Pelo terminal dá no mesmo: git push origin idiomas-base:producao
+name: deploy-estadio
+on:
+  workflow_dispatch:
+    inputs:
+      ramo:
+        description: 'Ramo que vai para o servidor do estádio'
+        default: 'idiomas-base'
+        required: true
+permissions:
+  contents: write
+concurrency: deploy-estadio
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ramo }}
+          fetch-depth: 0
+      - name: Confere o agente
+        run: python3 -m py_compile agente/eterna-agente.py
+      - name: Leva para producao (só avança)
+        run: |
+          git push origin "HEAD:refs/heads/producao"
+          echo "producao = $(git rev-parse --short HEAD): $(git log -1 --format=%s)" >> "$GITHUB_STEP_SUMMARY"
