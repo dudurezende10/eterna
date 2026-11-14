@@ -2524,10 +2524,26 @@ def ftp_server():
     ip = lan_ip()
     with lock:
         state["ftp"].update({"port": port, "ip": ip, "users": sorted(users)})
-    print(f"  FTP ligado em:     {ip}  porta {port}" + ("" if port == 21 else "  (porta 21 pede sudo; use 2121 no app)"))
+    extra = None
+    if port == 21 and not os.environ.get("ETERNA_FTP_PORTA"):
+        # 2121 também, ao mesmo tempo: roteador com "FTP ALG" mexe só na 21 e trava o envio (login entra, foto chega vazia)
+        extra = socket.socket()
+        extra.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            extra.bind(("0.0.0.0", 2121))
+            extra.listen(8)
+            threading.Thread(target=ftp_aceita, args=(extra, users, cfg), daemon=True).start()
+        except OSError:
+            extra.close()
+            extra = None
+    print(f"  FTP ligado em:     {ip}  porta {port}" + (" e 2121" if extra else "") + ("" if port == 21 else "  (porta 21 pede sudo; use 2121 no app)"))
     # v80 (segurança I7): senhas nunca no console nem no log; ficam só em ~/Eterna/ftp.json (chmod 600)
     print("  usuários do FTP: " + ", ".join(sorted(users)) + "  (senhas em ~/Eterna/ftp.json)")
     print()
+    ftp_aceita(srv, users, cfg)
+
+
+def ftp_aceita(srv, users, cfg):
     while True:
         try:
             conn, addr = srv.accept()
