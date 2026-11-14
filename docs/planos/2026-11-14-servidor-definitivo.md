@@ -55,6 +55,35 @@ no processador) nos dois caminhos e só ligar a placa se o acerto for o mesmo e 
 - FTP das câmeras apontado para o servidor novo.
 - Impressão continua no posto (DNP pelo USB do posto); o servidor não precisa de impressora.
 
+## Estratégia da instalação (decisão de 14/11: começar zerado)
+
+1. **Conhecer o servidor** pelo SSH, só leitura: discos e partições, placa de vídeo e driver, memória, processador, versão do
+   Ubuntu, rede, o que já está instalado e rodando, nobreak no USB. O resultado vira a seção "Servidor como encontrado" deste plano.
+2. **Escrever o instalador** `servidor/linux/instalar.sh`, que se pode rodar de novo sem estragar nada (cada passo confere
+   antes de fazer) e termina com um teste que diz o que ficou certo e o que faltou.
+3. **Ensaiar** o instalador numa máquina virtual Ubuntu igual, antes do servidor.
+4. **Instalar no servidor**, rodar o teste do instalador e depois o teste de ponta a ponta do CHECKLIST-SERVIDOR (passo 9).
+
+### O que o instalador põe no lugar
+
+| Parte | O quê |
+|---|---|
+| Usuário e permissões | Usuário de sistema `eterna`, sem login; `~/Eterna` só dele (700); `nuvem.env` 600; o administrador entra por SSH com chave, sem senha pelo SSH |
+| Discos | HD de 4 TB pelo UUID em `/srv/eterna-midia`; pastas de fotos e vídeos ligadas a `~/Eterna`; o serviço não sobe sem o HD |
+| Linguagens e bibliotecas | Python 3 do Ubuntu num ambiente próprio (`venv`), com versões fixas e hash conferido (como os `recorte-requisitos*.txt`): OpenCV, NumPy, Pillow, boto3, rembg, `onnxruntime-gpu`; ffmpeg; git |
+| Placa de vídeo | Driver NVIDIA do Ubuntu; CUDA e cuDNN vêm como pacotes do Python junto do `onnxruntime-gpu`; teste confirma que o provedor CUDA está ativo e não caiu no processador |
+| Modelos de IA | Rostos (YuNet, SFace), recorte (BiRefNet e os do rembg), MoveNet, com SHA-256 conferido |
+| Serviço | `eterna.service` no systemd: liga com a máquina, religa se cair, fuso `America/Sao_Paulo`, registro no journal |
+| Vigia | O mesmo papel do `eterna-vigia.ps1`: a cada 30 s confere `/status`, três faltas e religa; busca versão nova só de release conferida por SHA-256 e, se algo falhar, fica a versão do disco |
+| Rede | Firewall (ufw): 8765 e FTP das câmeras só para a rede do estádio, SSH só para a rede da TI/VPN |
+| Saúde | SMART dos dois discos (alerta do desgaste do NV2), NUT do nobreak, atualizações de segurança do Ubuntu sem tocar no driver NVIDIA |
+
+### Versão que vai para o servidor
+
+O vigia de produção só aceita **release** do GitHub (tag `vNN` com SHA-256), e hoje o repositório não tem nenhuma release
+publicada. Antes de instalar, decidir com o Eduardo: publicar a primeira release a partir do `main` atual (que já recebeu o
+`idiomas-base` na v99.30.7) ou deixar o servidor no canal de teste no início.
+
 ## O que falta construir para Linux
 
 1. Instalador para Ubuntu: usuário `eterna`, Python em ambiente próprio, dependências com hash (como os `recorte-requisitos*.txt`), ffmpeg, serviço systemd que volta sozinho, fuso `America/Sao_Paulo`.
@@ -77,4 +106,4 @@ no processador) nos dois caminhos e só ligar a placa se o acerto for o mesmo e 
 3. Modelo da placa de vídeo e memória dela (sai no `nvidia-smi`), memória RAM e processador.
 4. ~~Nobreak no servidor?~~ Tem (Ronaldo, 14/11). Se ele tiver cabo USB ou rede, ligar ao servidor (NUT) para desligar com os bancos fechados quando a bateria acabar.
 5. "VPN tudo local": as estações entram por VPN mesmo dentro do estádio, ou só quem está fora?
-6. Levar os dados do servidor de teste (notebook) ou começar zerado?
+6. ~~Levar os dados do teste?~~ Começar zerado (Ronaldo, 14/11): primeiro entender a estrutura do servidor, depois instalar com um instalador novo que deixa tudo pronto.
