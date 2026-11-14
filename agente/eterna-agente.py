@@ -3935,7 +3935,7 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT
         return None, str(ex)[:200]
 
 
-def rec_pre_escolha(fotos, x=None):
+def rec_pre_escolha(fotos, x=None, sem_pessoa=()):
     """Só as fotos que o Checkout vai mostrar com fundo de IA. v93 (plano dos cliques de IA, A14): as bases de IA da
     sessão (x["ia"]) quando ela tem; senão as 2 primeiras da sessão. O extra por pessoa (até 10 recortes por sessão) saiu:
     desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade.
@@ -3952,8 +3952,9 @@ def rec_pre_escolha(fotos, x=None):
         # revisão (A14): as bases e, com a prioridade mais baixa, as 2 primeiras fotos normais, o plano B do Checkout quando as
         # duas bases são ruins (lojaAIAntigo); só usa a máquina livre
         ia = list(x["ia"])
-        return ia + [p for p in fotos if p not in ia][:2]
-    return list(fotos[:2])
+        return ia + [p for p in fotos if p not in ia and p not in sem_pessoa][:2]
+    # 14/11: foto sem pessoa (chão, teste, céu) não conta; segue para a próxima da sessão, que é a que o Checkout vai usar
+    return [p for p in fotos if p not in sem_pessoa][:2]
 
 
 def rec_pre_loop():
@@ -3964,6 +3965,7 @@ def rec_pre_loop():
         return
     time.sleep(15)                                  # deixa a biblioteca e as sessões carregarem
     vistos = set()
+    sem_pessoa = set()
     while True:
         try:
             ok, _ = rec_estado()
@@ -3976,7 +3978,7 @@ def rec_pre_loop():
                     fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {})}) for x in ss]
                 pids = []
                 for fs, xx in fotos_ss:
-                    pids += rec_pre_escolha(fs, xx)
+                    pids += rec_pre_escolha(fs, xx, sem_pessoa)
                 falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
                 with rec_lock:
                     rec["pre_falta"] = len(falta)
@@ -3993,6 +3995,8 @@ def rec_pre_loop():
                         if path:
                             rec["pre_feitos"] += 1
                     if not path:
+                        if erro == "sem_pessoa":
+                            sem_pessoa.add(pid)
                         print("  recorte antecipado %s: %s" % (pid, erro))
         except Exception as ex:
             print("  recorte antecipado:", str(ex)[:160])

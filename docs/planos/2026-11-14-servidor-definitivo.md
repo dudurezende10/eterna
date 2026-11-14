@@ -230,3 +230,12 @@ o celular só conseguia mandar o primeiro pedaço de cada foto (login e conexão
 Correção no AP, só na rede vm-local: modo WPA2, cifra CCMP (AES), mesma senha; aplicado e salvo. Depois disso o CTP mandou
 as fotos inteiras (2 a 3 MB cada) para /srv/eterna-midia/ftp/ctp e o Eterna recebeu sozinho ("via ftp ctp").
 Se outro Wi-Fi do estádio for usado para fotos, conferir a mesma coisa: WPA2 + CCMP, sem TKIP.
+
+### Fundo de IA feito na hora em vez de antes (14/11, 18h30)
+
+Teste do Ronaldo: as fotos chegaram às 18:10, mas o recorte delas só saiu às 18:32, quando ele entrou no Checkout.
+O recorte antecipado pegava só as 2 primeiras fotos da sessão; elas não tinham pessoa ("sem_pessoa") e ele parava ali.
+O Checkout então usou as fotos seguintes, que não estavam recortadas. Correção (`rec_pre_escolha` / `rec_pre_loop`):
+foto sem pessoa não conta e o recorte antecipado segue para as próximas da sessão até ter 2 com gente.
+O recorte roda na placa de vídeo (RTX 5060 Ti; log "recorte: modelos abertos ... (placa de vídeo)").
+A regra dos 2 primeiros cliques só para fundo de IA não valeu porque o fotógrafo "ctp" não tem função do dia (A4 do plano de 06/11).
