@@ -66,8 +66,14 @@ no processador) nos dois caminhos e só ligar a placa se o acerto for o mesmo e 
 
 ## Perguntas em aberto
 
-1. O disco da placa-mãe é NVMe/SSD ou memória flash tipo eMMC/pendrive? E o tamanho? (eMMC e pendrive se desgastam com a gravação contínua do SQLite.)
-2. O HD de 4 TB é disco mecânico ou SSD? Tem cópia (RAID ou outro disco)? Hoje só os bancos vão para o S3 a cada 2 min; as fotos não.
+1. ~~Tipo do disco da placa-mãe?~~ NVMe Kingston NV2 (Ronaldo, 14/11). Serve para os bancos (SQLite em WAL). Não tem memória
+   própria de cache e aguenta menos gravação que um SSD de servidor: acompanhar o desgaste pelo SMART (`nvme smart-log`, campo
+   `percentage_used`) e mandar o número para a tela de situação do servidor. Falta o tamanho (sai no SSH).
+2. ~~Tipo do HD?~~ Mecânico (Ronaldo, 14/11). Serve para guardar fotos e vídeos (gravação em sequência). Dois cuidados:
+   - **Miniaturas:** o Checkout abre dezenas de miniaturas por sessão, e disco mecânico demora em leitura espalhada. Se o NVMe
+     tiver espaço, `thumbs/` fica no NVMe (cerca de 30 KB por foto, uns 450 MB por dia) com prazo de limpeza; o original fica no HD.
+   - **Cópia:** um disco só, sem RAID. Se ele quebrar, perdem-se as fotos que ainda não subiram para a nuvem (as vendidas sobem
+     para a galeria; as não vendidas só existem nele). Decidir depois: segundo HD em espelho ou aceitar o risco.
 3. Modelo da placa de vídeo e memória dela (sai no `nvidia-smi`), memória RAM e processador.
 4. ~~Nobreak no servidor?~~ Tem (Ronaldo, 14/11). Se ele tiver cabo USB ou rede, ligar ao servidor (NUT) para desligar com os bancos fechados quando a bateria acabar.
 5. "VPN tudo local": as estações entram por VPN mesmo dentro do estádio, ou só quem está fora?
