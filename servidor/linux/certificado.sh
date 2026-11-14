@@ -11,7 +11,7 @@
 #     X-Real-IP só vindo de ETERNA_PROXY_IP=127.0.0.1. A porta 80 só manda para o https.
 #   - Renova sozinho (certbot.timer, a cada 60 dias) e recarrega o nginx.
 #
-# Antes: a chave da AWS do certbot em /root/.aws/credentials (perfil default), colocada pelo Ronaldo direto no servidor.
+# A chave da AWS do certbot: o próprio script pede na tela na primeira vez e grava em /root/.aws/credentials (só root).
 #   sudo bash /opt/eterna/app/servidor/linux/certificado.sh
 set -Eeuo pipefail
 NOME="${ETERNA_NOME:-posto.eterna.photo}"
@@ -25,7 +25,18 @@ trap 'para "erro na linha $LINENO: $BASH_COMMAND"' ERR
 [ "$(id -u)" = 0 ] || { echo "Rode com sudo"; exit 1; }
 
 passo "1. Conferências"
-[ -s /root/.aws/credentials ] || para "falta a chave da AWS do certbot em /root/.aws/credentials (ver docs/planos/2026-11-14-servidor-definitivo.md, seção Certificado)"
+if ! grep -qs '^aws_secret_access_key' /root/.aws/credentials; then
+  # pede aqui a chave que o certificado-aws-cloudshell.sh mostrou (a secreta não aparece ao colar); grava só neste servidor
+  echo "   Chave da AWS do certbot (a que o CloudShell mostrou). Cole com o botão direito e aperte Enter."
+  read -rp  "   aws_access_key_id: " KID; KID="${KID//[[:space:]]/}"
+  read -rsp "   aws_secret_access_key (não aparece): " KSEC; echo; KSEC="${KSEC//[[:space:]]/}"
+  [[ "$KID" =~ ^AKIA[A-Z0-9]{16}$ ]] || para "aws_access_key_id não parece certa (AKIA + 16 letras/números)"
+  [[ "$KSEC" =~ ^[A-Za-z0-9/+]{40}$ ]] || para "aws_secret_access_key não parece certa (40 caracteres)"
+  install -d -m 700 /root/.aws
+  ( umask 077; printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$KID" "$KSEC" >/root/.aws/credentials )
+  unset KSEC
+  ok "chave gravada em /root/.aws/credentials (só root)"
+fi
 chmod 700 /root/.aws; chmod 600 /root/.aws/credentials
 IP="$(getent ahostsv4 "$NOME" | awk 'NR==1{print $1}')"
 [ -n "$IP" ] || para "$NOME não resolve (falta o registro A no Route 53)"
