@@ -222,3 +222,11 @@ Pelo cabo o FTP do Eterna recebeu fotos; pelo Wi-Fi VM-LOCAL o celular (CTP) ent
 nenhum byte (MSS menor não mudou; firewall do servidor sem descarte relevante). O Rafael instalou o vsftpd
 (raiz `/srv/eterna-midia/ftp/<login>`, passivo 40000-40100) e o FTP do Eterna foi desligado (`servidor/linux/ftp-externo.sh`,
 `ETERNA_FTP=0` e `ETERNA_PASTA`). Alternativa pronta: SFTP (`servidor/linux/sftp-ctp.sh`).
+
+### FTP do celular resolvido (14/11, 18h)
+
+Causa: o Wi-Fi VM-LOCAL (AP Intelbras RW6302, 192.168.0.11) estava em "WPA ou WPA2" com cifra "TKIP e CCMP". Com TKIP no meio,
+o celular só conseguia mandar o primeiro pedaço de cada foto (login e conexão abriam, os dados paravam). Pelo cabo sempre funcionou.
+Correção no AP, só na rede vm-local: modo WPA2, cifra CCMP (AES), mesma senha; aplicado e salvo. Depois disso o CTP mandou
+as fotos inteiras (2 a 3 MB cada) para /srv/eterna-midia/ftp/ctp e o Eterna recebeu sozinho ("via ftp ctp").
+Se outro Wi-Fi do estádio for usado para fotos, conferir a mesma coisa: WPA2 + CCMP, sem TKIP.
