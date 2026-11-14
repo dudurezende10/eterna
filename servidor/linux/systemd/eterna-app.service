@@ -1,0 +1,18 @@
+# Eterna · serve a tela (index.html e vendor/) da cópia do git em /opt/eterna/app só para o agente, em 127.0.0.1:8798.
+# O agente busca daqui (ETERNA_APP_ORIGIN) em vez do eterna.photo: tela e agente sempre do mesmo commit, e sem depender da internet.
+[Unit]
+Description=Eterna (tela, cópia local do git)
+After=network.target
+
+[Service]
+DynamicUser=yes
+ExecStart=/usr/bin/python3 -I -m http.server 8798 --bind 127.0.0.1 --directory /opt/eterna/app
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

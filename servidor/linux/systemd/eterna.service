@@ -1,0 +1,32 @@
+# Eterna · agente do servidor do estádio (porta 8765, FTP das câmeras 21/2121). Instalado por servidor/linux/instalar.sh.
+[Unit]
+Description=Eterna (agente do ponto)
+Wants=network-online.target eterna-app.service
+After=network-online.target eterna-app.service
+# sem o HD das fotos ou o volume dos bancos montados, o Eterna não sobe (as fotos nunca caem no disco errado)
+RequiresMountsFor=/srv/eterna /srv/eterna-midia
+StartLimitIntervalSec=0
+
+[Service]
+User=eterna
+Group=eterna
+SupplementaryGroups=video render
+WorkingDirectory=/srv/eterna
+Environment=HOME=/srv/eterna TZ=America/Sao_Paulo PYTHONUNBUFFERED=1 LANG=C.UTF-8
+ExecStart=/opt/eterna/venv/bin/python -I -u /opt/eterna/app/agente/eterna-agente.py
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+LimitNOFILE=65536
+# FTP das câmeras na porta 21 sem ser root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/srv/eterna /srv/eterna-midia
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

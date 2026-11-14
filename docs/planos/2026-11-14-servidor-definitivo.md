@@ -123,6 +123,29 @@ O vigia de produção só aceita **release** do GitHub (tag `vNN` com SHA-256), 
 publicada. Antes de instalar, decidir com o Eduardo: publicar a primeira release a partir do `main` atual (que já recebeu o
 `idiomas-base` na v99.30.7) ou deixar o servidor no canal de teste no início.
 
+## Instalador (feito em 14/11, `servidor/linux/`)
+
+| Arquivo | Para quê |
+|---|---|
+| `instalar.sh` | Roda com sudo, uma vez (e de novo quantas vezes precisar). Passos 0 a 14: conferências, pacotes, driver NVIDIA 595 *server* (módulos abertos, pré-compilados do Ubuntu), HD formatado só se vazio e com `FORMATAR` digitado, volume de 300 GB no NVMe, usuários, pastas, git, venv, modelos, `nuvem.env`, serviços, firewall, SMART, conferência |
+| `verificar.sh` | Só lê e diz o que está certo e o que falta (discos, SMART, placa e CUDA, serviços, agente, vigia, FTP, firewall) |
+| `eterna-vigia.py` | Deploy pelo git com volta automática, religa agente travado, situação na 8797. Copiado para `/opt/eterna/vigia`, não se atualiza pelo git |
+| `systemd/*.service` | `eterna-app` (tela do git em 127.0.0.1:8798), `eterna` (agente), `eterna-vigia` |
+| `requisitos.txt` / `gerar-requisitos.py` | 48 pacotes Python com versão e SHA-256 fixos (mesmas versões do recorte do Windows, mais boto3 e cryptography) |
+
+Onde fica cada coisa no servidor:
+
+| Caminho | Disco | Dono | O quê |
+|---|---|---|---|
+| `/opt/eterna/app` | NVMe (`/`) | eterna-deploy (o agente só lê) | Cópia do git |
+| `/opt/eterna/venv` | NVMe (`/`) | root (o agente só lê) | Python e bibliotecas |
+| `/srv/eterna` | NVMe, volume `eterna-dados` 300 GB | eterna | `~/Eterna`: bancos, miniaturas, modelos, `nuvem.env` |
+| `/srv/eterna-midia` | HD 4 TB | eterna | inbox, recortes, ativ-videos, ativ-clientes, ativ-demo (ligadas a `~/Eterna` por link) |
+| `/etc/eterna/vigia.env` | | root | Branch que o servidor segue |
+
+Conferido antes de instalar (14/11): o agente liga no Python 3.14 do servidor sem aviso e 6 suítes de teste do agente
+passam lá (postos, ativações venda, estatísticas, agenda, LGPD, pulseira); o `login_agente` depende do Pillow e roda depois do venv.
+
 ## O que falta construir para Linux
 
 1. Instalador para Ubuntu: usuário `eterna`, Python em ambiente próprio, dependências com hash (como os `recorte-requisitos*.txt`), ffmpeg, serviço systemd que volta sozinho, fuso `America/Sao_Paulo`.
