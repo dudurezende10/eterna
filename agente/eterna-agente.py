@@ -2139,6 +2139,9 @@ def lan_ip():
 # FTP_LINHA bytes: quem só abre conexões não ocupa o lugar da câmera nem a memória do servidor.
 FTP_POR_IP, FTP_TOTAL, FTP_RESERVA, FTP_SEM_LOGIN_IP = 8, 64, 16, 2
 FTP_OCIOSO_S, FTP_LOGIN_S, FTP_DADOS_S, FTP_LINHA, FTP_TENTATIVAS = 300, 25, 30, 4096, 3
+# tamanho máximo do pedaço TCP pedido na conexão de dados do FTP (0 = o do sistema). No estádio, o Wi-Fi da rede do servidor
+# deixava passar a abertura da conexão e descartava os pacotes cheios (1448): a foto chegava com 0 bytes. 1200 passa.
+FTP_MSS = int(os.environ.get("ETERNA_FTP_MSS") or 1200)
 ftp_conexoes = {}          # ip -> sessões abertas
 ftp_sem_login = {}         # ip -> sessões abertas ainda sem login
 FTP_RAW_EXT = (".cr3", ".cr2", ".nef", ".arw", ".raf", ".dng", ".orf", ".rw2")   # ETERNA_FTP_RAW=descartar: recebe e descarta (sem 553)
@@ -2371,6 +2374,11 @@ class FTPSession(threading.Thread):
                 sk = socket.socket()
                 if os.name != "nt":                # porta em TIME_WAIT volta a servir (no Windows o REUSEADDR deixaria dividir a porta)
                     sk.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                if FTP_MSS and hasattr(socket, "TCP_MAXSEG"):
+                    try:                           # pedaços menores: Wi-Fi que descarta pacote cheio (só a abertura passa, 0 bytes)
+                        sk.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, FTP_MSS)
+                    except OSError:
+                        pass
                 try:
                     sk.bind(("0.0.0.0", pp))
                     sk.listen(1)
