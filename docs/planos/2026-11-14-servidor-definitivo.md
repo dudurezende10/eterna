@@ -78,6 +78,24 @@ no processador) nos dois caminhos e só ligar a placa se o acerto for o mesmo e 
 | Rede | Firewall (ufw): 8765 e FTP das câmeras só para a rede do estádio, SSH só para a rede da TI/VPN |
 | Saúde | SMART dos dois discos (alerta do desgaste do NV2), NUT do nobreak, atualizações de segurança do Ubuntu sem tocar no driver NVIDIA |
 
+### Quem mexe no servidor e como a versão nova chega (requisito do Ronaldo, 14/11)
+
+Ronaldo (no Brasil) e Eduardo (em Miami) trabalham pelo Claude e pelo git. O deploy tem de ser direto: mandou para o GitHub,
+o servidor aplica. Desenho:
+
+- **Deploy sem entrar no servidor.** O vigia busca o GitHub a cada minuto (o mesmo modelo do `supervisor.py` do servidor de
+  teste, que já funciona assim para o Claude do Eduardo). Não precisa abrir porta nenhuma para fora: é o servidor que busca.
+- **Branch de produção protegida.** O servidor segue uma branch só dele (`producao`), que só anda por fast-forward e por pull
+  request aprovado (proteção da branch no GitHub). Quem tem push nas outras branches não chega ao servidor sozinho: hoje,
+  no servidor de teste, quem tem push no `idiomas-base` executa código no notebook, e na produção isso não pode acontecer.
+- **Aplica com segurança.** Antes de trocar: confere que o código compila; troca; religa; se o `/status` não responder em
+  1min30, volta sozinho para a versão anterior e registra o motivo. A situação (versão no ar, última troca, erro) fica numa
+  página só de leitura, como a 8797 do teste, para o Claude de qualquer um dos dois conferir o deploy.
+- **Acesso de manutenção** (diagnóstico, logs, instalação), separado do deploy:
+  - cada pessoa com o seu próprio usuário e a sua chave SSH (Ronaldo e Eduardo), para o registro dizer quem fez o quê;
+  - de fora do estádio, só pela VPN FortiGate: o Eduardo precisa de um usuário de VPN (pedir à TI/infra) que funcione de Miami;
+  - `sudo` com senha de cada um; o Claude de cada um usa o SSH da própria máquina.
+
 ### Versão que vai para o servidor
 
 O vigia de produção só aceita **release** do GitHub (tag `vNN` com SHA-256), e hoje o repositório não tem nenhuma release
