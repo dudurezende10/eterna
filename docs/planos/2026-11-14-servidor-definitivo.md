@@ -206,3 +206,19 @@ O vigia do servidor acompanha só o ramo `producao` (`/etc/eterna/vigia.env`, `R
 `idiomas-base` sem ir para o estádio. Para mandar: GitHub › Actions › **deploy-estadio** › Run workflow (escolhe o ramo, padrão
 `idiomas-base`), ou `git push origin idiomas-base:producao`. Só avança, nunca força; o vigia aplica em até 1 minuto, testa e
 volta sozinho se o agente não subir. Acompanhar em `http://<servidor>:8797`.
+
+## Dados do servidor antigo (14/11, pedido do Ronaldo)
+
+O servidor de teste do notebook do Ronaldo tinha dados reais (vendas das ativações, selfies, cadastros, agenda, estoque,
+usuários, galerias, vídeos, Roverpix). Pacote montado lá com os bancos fechados (checkpoint do WAL, integridade conferida) e os
+caminhos do Windows convertidos para `/srv/eterna/Eterna/...` (fila e vídeos da nuvem, entregas). Fora do pacote: app-cache,
+modelos, nuvem.env, nuvem-segredo.txt, ftp.json, ftp-tmp, nuvem-tmp. `servidor/linux/migrar-dados.sh` para o Eterna, guarda o
+antes em `/srv/eterna/antes-migracao-<data>.tgz`, soma fotos e vídeos no HD, substitui bancos e configurações, liga e confere.
+Depois disso valem os logins e senhas do servidor antigo. Nuvem (credencial AWS) e Imply ficam para depois.
+
+## FTP (14/11, tarde)
+
+Pelo cabo o FTP do Eterna recebeu fotos; pelo Wi-Fi VM-LOCAL o celular (CTP) entra, mas a conexão de dados abre e não recebe
+nenhum byte (MSS menor não mudou; firewall do servidor sem descarte relevante). O Rafael instalou o vsftpd
+(raiz `/srv/eterna-midia/ftp/<login>`, passivo 40000-40100) e o FTP do Eterna foi desligado (`servidor/linux/ftp-externo.sh`,
+`ETERNA_FTP=0` e `ETERNA_PASTA`). Alternativa pronta: SFTP (`servidor/linux/sftp-ctp.sh`).
