@@ -160,7 +160,10 @@ if [ ! -d /opt/eterna/app/.git ]; then
   runuser -u eterna-deploy -- env HOME=/opt/eterna/deploy git clone --quiet --filter=blob:none --branch "$RAMO" "$REPO_URL" /opt/eterna/app >>"$LOGI" 2>&1
   ok "clonado $REPO_URL ($RAMO)"
 else
-  ok "código já está em /opt/eterna/app ($(runuser -u eterna-deploy -- env HOME=/opt/eterna/deploy git -C /opt/eterna/app rev-parse --short HEAD))"
+  # instalador rodado de novo: traz o código ao commit mais novo do ramo (só fast-forward), como o vigia faria
+  runuser -u eterna-deploy -- env HOME=/opt/eterna/deploy git -C /opt/eterna/app pull --quiet --ff-only origin "$RAMO" >>"$LOGI" 2>&1 \
+    || info "não consegui atualizar o código (sem rede ou não é fast-forward); sigo com o que está no disco"
+  ok "código em /opt/eterna/app ($(runuser -u eterna-deploy -- env HOME=/opt/eterna/deploy git -C /opt/eterna/app log -1 --format='%h %s' | cut -c1-70))"
 fi
 chmod 755 /opt/eterna/app
 install -d -m 755 /etc/eterna
