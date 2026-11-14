@@ -178,8 +178,31 @@ chown -R root:root /opt/eterna/venv; chmod -R go-w /opt/eterna/venv
 ok "$(/opt/eterna/venv/bin/python --version), $(grep -c '^[a-z0-9]' "$REQ") pacotes"
 
 passo "9. Modelos de IA (recorte e pose; cerca de 1,3 GB na primeira vez)"
-runuser -u eterna -- env HOME="$DADOS" /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/instalar-recorte-modelos.py >>"$LOGI" 2>&1 \
-  || para "modelos do recorte não baixaram: ver $LOGI"
+# A internet do estádio corta downloads longos (14/11: o BiRefNet de 973 MB caiu em 2%). Se os modelos já foram baixados
+# com retomada (~/eterna-instalar/baixar-modelos.sh, curl -C -), copia daqui; o script abaixo confere o hash de cada um
+# e só baixa o que faltar. Até 3 tentativas.
+if [ -d "$AQUI/modelos/rembg" ]; then
+  for f in "$AQUI"/modelos/rembg/*/*.onnx; do
+    [ -s "$f" ] || continue
+    n="$(basename "$(dirname "$f")")"
+    install -d -o eterna -g eterna -m 755 "$DADOS/.rembg" "$DADOS/.rembg/models" "$DADOS/.rembg/models/$n"
+    [ -s "$DADOS/.rembg/models/$n/$(basename "$f")" ] || install -o eterna -g eterna -m 644 "$f" "$DADOS/.rembg/models/$n/"
+  done
+  install -d -o eterna -g eterna -m 755 "$DADOS/Eterna/modelos"
+  for f in "$AQUI"/modelos/eterna/*.onnx; do
+    [ -s "$f" ] || continue
+    [ -s "$DADOS/Eterna/modelos/$(basename "$f")" ] || install -o eterna -g eterna -m 644 "$f" "$DADOS/Eterna/modelos/"
+  done
+  info "modelos copiados de $AQUI/modelos"
+fi
+feito=0
+for t in 1 2 3; do
+  if (cd "$DADOS" && runuser -u eterna -- env HOME="$DADOS" /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/instalar-recorte-modelos.py >>"$LOGI" 2>&1); then
+    feito=1; break
+  fi
+  info "tentativa $t falhou (rede); tentando de novo"
+done
+[ "$feito" = 1 ] || para "modelos do recorte não baixaram: ver $LOGI (dica: rodar ~/eterna-instalar/baixar-modelos.sh antes)"
 ok "modelos em $DADOS/.rembg e $DADOS/Eterna/modelos (rostos o agente pega do app na primeira abertura)"
 
 passo "10. Configuração do ponto (nuvem.env)"
