@@ -69,6 +69,6 @@ no processador) nos dois caminhos e só ligar a placa se o acerto for o mesmo e 
 1. O disco da placa-mãe é NVMe/SSD ou memória flash tipo eMMC/pendrive? E o tamanho? (eMMC e pendrive se desgastam com a gravação contínua do SQLite.)
 2. O HD de 4 TB é disco mecânico ou SSD? Tem cópia (RAID ou outro disco)? Hoje só os bancos vão para o S3 a cada 2 min; as fotos não.
 3. Modelo da placa de vídeo e memória dela (sai no `nvidia-smi`), memória RAM e processador.
-4. Nobreak no servidor?
+4. ~~Nobreak no servidor?~~ Tem (Ronaldo, 14/11). Se ele tiver cabo USB ou rede, ligar ao servidor (NUT) para desligar com os bancos fechados quando a bateria acabar.
 5. "VPN tudo local": as estações entram por VPN mesmo dentro do estádio, ou só quem está fora?
 6. Levar os dados do servidor de teste (notebook) ou começar zerado?
