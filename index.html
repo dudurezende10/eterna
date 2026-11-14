@@ -2550,8 +2550,12 @@ function lojaAIAntigo(card){const s=sessionObj(card);if(!s||!fiaOferece())return
   if(ready){const ok=aiCands(card).filter(c=>(real(c.id)||aiOk(c))&&dele.has(c.id));picks=picks.map(p=>{if(real(p.id))return p;const sc=aiScore(p.id);return aiOk(sc)?p:null;});
     picks=picks.map(p=>p||ok.find(c=>!picks.some(q=>q&&q.id===c.id))).filter(Boolean);
     const seen=new Set();picks=picks.filter(p=>!seen.has(p.id)&&seen.add(p.id));}
-  const out=[];picks.forEach(p=>{const f=aiScore(p.id).f;const a=ANAV[p.id];
-    bgOn().map(o=>bgFor(o,card)).filter(b=>b&&b.fit.includes(f)).map(b=>({b,m:bgMatch(a,b)||0})).sort((x,y)=>y.m-x.m).slice(0,3).forEach(x=>{if(!FIA_RUIM.has(p.id)&&!FIA_RUIM.has(p.id+'|'+x.b.id)&&(!loc||/^ag_/.test(p.id)))out.push({t:'ai',id:p.id,bg:x.b.id,k:'ai:'+p.id+'|'+x.b.id});});});
+  // 14/11 (Ronaldo): sem as bases de IA da regra, vale o mesmo dos cliques de IA: UMA montagem por fundo aprovado (bgOn), cada
+  // fundo com a foto indicada em FIA_BASE entre as 2 escolhidas (a outra se a indicada não servir). Antes eram os 3 fundos que mais
+  // combinavam com cada foto: o Campeão saía 2 vezes e a Arquibancada 1950 ficava de fora.
+  const out=[];const ids=picks.map(p=>p.id).filter(id=>!FIA_RUIM.has(id)&&(!loc||/^ag_/.test(id)));if(!ids.length)return out;
+  bgOn().forEach(o=>{const b=bgFor(o,card);if(!b)return;const i=Math.min(b.id in FIA_BASE?FIA_BASE[b.id]:1,ids.length-1);
+    const id=[ids[i],...ids.filter((_,j)=>j!==i)].find(x=>!FIA_RUIM.has(x+'|'+b.id));if(id)out.push({t:'ai',id,bg:b.id,k:'ai:'+id+'|'+b.id});});
   return out;}
 function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=soCards(card).length>1;let ant=null;
   const ph=lojaFotos(card).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi){o.lb=lojaBloco(p.ses);if(p.ses!==ant){o.blk=o.lb;ant=p.ses;}}return o;});
