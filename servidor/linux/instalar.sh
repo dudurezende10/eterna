@@ -44,7 +44,7 @@ passo "0. Conferências antes de começar"
 ok "$PRETTY_NAME"
 getent hosts github.com >/dev/null || para "sem DNS (github.com não resolve). Ver /etc/systemd/resolved.conf.d/eterna-dns.conf"
 ok "DNS"
-chronyc tracking 2>/dev/null | grep -q 'Leap status *: Normal' || para "relógio não sincronizado (chronyc tracking)"
+[[ "$(chronyc tracking 2>/dev/null)" == *'Leap status     : Normal'* ]] || para "relógio não sincronizado (chronyc tracking)"
 ok "relógio sincronizado: $(date '+%d/%m/%Y %H:%M %Z')"
 [ "$(timedatectl show -p Timezone --value)" = "America/Sao_Paulo" ] || { timedatectl set-timezone America/Sao_Paulo; ok "fuso ajustado"; }
 
@@ -55,7 +55,7 @@ apt-get install -y -q $APT_PACOTES >>"$LOGI" 2>&1
 ok "$APT_PACOTES"
 
 passo "2. Driver da placa NVIDIA"
-if lspci | grep -qi 'NVIDIA'; then
+if [[ "$(lspci)" == *NVIDIA* ]]; then   # sem "| grep -q": com pipefail o SIGPIPE do lspci dava falso (14/11)
   if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1; then
     ok "driver no ar: $(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader)"
   else
@@ -217,7 +217,7 @@ systemctl enable -q --now eterna-app.service eterna.service eterna-vigia.service
 ok "eterna-app (tela, 127.0.0.1:8798), eterna (agente, 8765 e FTP), eterna-vigia (deploy e saúde, 8797)"
 
 passo "12. Firewall (ufw)"
-ufw status | grep -q '^Status: active' || info "ufw estava desligado; regras gravadas, ligar com: sudo ufw enable (depois de conferir o SSH)"
+[[ "$(ufw status)" == *'Status: active'* ]] || info "ufw estava desligado; regras gravadas, ligar com: sudo ufw enable (depois de conferir o SSH)"
 ufw allow from "$REDE_ESTADIO" to any port 22 proto tcp comment 'SSH da rede do estadio' >/dev/null
 for p in 8765 8797 21 2121 50000:50050; do
   ufw allow from "$REDE_ESTADIO" to any port "$p" proto tcp comment 'Eterna' >/dev/null
