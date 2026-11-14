@@ -9819,13 +9819,17 @@ function camWanted(){return ((state.view==='posto'||state.view==='caixa')&&state
 // segurança S1: só um rosto visto (camFaceCheck, k.camRosto) renova o prazo, movimento nunca; e há um teto absoluto (LOJA_CAM_TETO) desde
 // o Iniciar (k.camDesde), que desliga mesmo com uma busca em andamento
 let LOJA_CAM_MS=60000,LOJA_CAM_TETO=3*60e3;
-function lojaCamLigar(){const k=state.kiosk;lojaCliente();k.camOn=true;state.cam.lastTry=0;k.camDesde=Date.now();k.camRosto=0;if(k.camT)clearTimeout(k.camT);
+function lojaCamLigar(){const k=state.kiosk;lojaCliente();k.camOn=true;state.cam.lastTry=0;if(state.cam.err&&state.cam.err!=='câmera bloqueada'&&!state.cam.stream)state.cam.err=null; // 14/11: toque do cliente tenta a câmera de novo (a falha anterior não fica presa)
+  k.camDesde=Date.now();k.camRosto=0;if(k.camT)clearTimeout(k.camT);
   const vigia=()=>{k.camT=null;if(state.kiosk!==k||k.step!=='code'||!k.camOn)return;const c=state.cam;const ag=Date.now();const ult=Math.max(k.camDesde||0,k.camRosto||0);const resta=LOJA_CAM_MS-(ag-ult);const teto=LOJA_CAM_TETO-(ag-(k.camDesde||0));
     if(teto>0&&(c.busy||resta>0)){k.camT=setTimeout(vigia,Math.max(250,Math.min(c.busy?1000:resta,teto)));return;}k.camOn=false;c.busy=false;camStop();render();};
   k.camT=setTimeout(vigia,Math.min(LOJA_CAM_MS,LOJA_CAM_TETO));render();}
-async function camStart(){const c=state.cam;if(c.stream||c.err)return;if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){c.err='sem câmera';render();return;}
+async function camStart(tent){const c=state.cam;if(c.stream||(c.err&&!tent))return;if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){c.err='sem câmera';render();return;}
   c.wait=setTimeout(()=>{c.wait=null;if(!c.stream&&!c.err){c.err='câmera sem resposta';camMount();}},3000);
-  try{const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});clearTimeout(c.wait);c.wait=null;c.stream=st;c.err=null;clearTimeout(c.sim);c.sim=null;c.status='idle';render();}catch(e){clearTimeout(c.wait);c.wait=null;c.err=e&&e.name==='NotAllowedError'?'câmera bloqueada':'sem câmera';c.status='off';render();}}
+  try{const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});clearTimeout(c.wait);c.wait=null;c.stream=st;c.err=null;clearTimeout(c.sim);c.sim=null;c.status='idle';render();}catch(e){clearTimeout(c.wait);c.wait=null;
+    // 14/11: a câmera recém-desligada (selfie anterior) às vezes ainda está presa no Windows: tenta de novo antes de desistir
+    if(e&&(e.name==='NotReadableError'||e.name==='AbortError'||e.name==='TrackStartError')&&(tent||0)<3&&camWanted()){setTimeout(()=>{if(camWanted()&&!state.cam.stream)camStart((tent||0)+1);},700);return;}
+    c.err=e&&e.name==='NotAllowedError'?'câmera bloqueada':'sem câmera';c.status='off';render();}}
 function camStop(){const c=state.cam;if(c.stream){c.stream.getTracks().forEach(t=>t.stop());c.stream=null;}clearInterval(c.timer);c.timer=null;clearTimeout(c.sim);c.sim=null;c.status='off';c.prev=null;c.armed=false;}
 function camMount(){const c=state.cam;const v=$('#cam-video');
   if(state.view==='quiosque'&&!camWanted()&&(c.stream||c.wait)){clearTimeout(c.wait);c.wait=null;camStop();} // v96: fora da etapa da câmera, nada ligado

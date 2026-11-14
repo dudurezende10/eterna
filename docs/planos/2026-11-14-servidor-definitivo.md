@@ -239,3 +239,10 @@ O Checkout então usou as fotos seguintes, que não estavam recortadas. Correç�
 foto sem pessoa não conta e o recorte antecipado segue para as próximas da sessão até ter 2 com gente.
 O recorte roda na placa de vídeo (RTX 5060 Ti; log "recorte: modelos abertos ... (placa de vídeo)").
 A regra dos 2 primeiros cliques só para fundo de IA não valeu porque o fotógrafo "ctp" não tem função do dia (A4 do plano de 06/11).
+
+### "Adicionar outra pessoa" sem câmera (14/11, 18h35)
+
+No Checkout, depois da primeira selfie, o "Adicionar outra pessoa" mostrava "Câmera indisponível". A falha de câmera ficava
+guardada (`state.cam.err`) e o `camStart` nunca mais tentava; no Windows a câmera recém-desligada pode recusar a reabertura por
+um instante. Correção (`lojaCamLigar` / `camStart`): o toque do cliente limpa a falha anterior (menos "câmera bloqueada", que é
+permissão negada) e, se a câmera vier ocupada, tenta de novo até 3 vezes antes de desistir.
