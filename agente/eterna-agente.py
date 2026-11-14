@@ -9187,6 +9187,33 @@ def auth_criar_admin(usuario, nome):
     return 0
 
 
+def auth_criar_vendedor(usuario, nome):
+    """python eterna-agente.py --criar-vendedor <usuário> "<nome>" (senha pela entrada padrão): no próprio servidor, perfil
+    "Vendedor Drone, Chute a Gol e Snap Pop" (só o tablet de venda). A senha é a que a operação definiu para os tablets, sem troca
+    obrigatória; aqui não passa pela regra de senha fraca da tela (decisão do Ronaldo, 14/11)."""
+    usuario = usuario.strip().lower()
+    if not AUTH_ID.match(usuario):
+        print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
+        return 1
+    senha = sys.stdin.readline().rstrip(chr(13) + chr(10))
+    if len(senha) < 8:
+        print("Senha curta (mínimo 8).")
+        return 1
+    id_doc = quote(usuario, safe="-_.!~*'()")
+    atual, _ = auth_ler_cadastro(usuario)
+    if atual and atual.get("preset") not in (None, "ativ"):
+        print("%s já existe com outro perfil (%s): nada mudou." % (usuario, atual.get("preset")))
+        return 1
+    cad = dict(atual or {}, v=2, email=usuario, name=nome or usuario, preset="ativ", key=None, active=True,
+               perms={"ativvenda": {"c": True, "r": True, "u": False, "d": False}}, menu=["ativ-venda"], inicio="ativ-venda",
+               createdBy=(atual or {}).get("createdBy") or "servidor")
+    estado_gravar({"docs": [{"col": "usuarios", "id": id_doc, "valor": cad}]})
+    auth_criar(usuario, "servidor")
+    auth_trocar(usuario, senha)
+    print("ok %s (%s): vendedor do tablet" % (usuario, cad["name"]))
+    return 0
+
+
 # ---------- Postos pareados ----------
 # O Admin pareia cada aparelho uma vez (Painel de controle, ou o link de uso único do comando --parear-posto). O aparelho guarda
 # o cookie eterna_posto (HttpOnly, 400 dias, revogável); o servidor guarda só o hash. O posto abre o Checkout sem pessoa logada.
@@ -13215,6 +13242,8 @@ def main():
 if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-admin":
         sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--criar-vendedor":
+        sys.exit(auth_criar_vendedor(sys.argv[2], " ".join(sys.argv[3:])))
     if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
         sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()
