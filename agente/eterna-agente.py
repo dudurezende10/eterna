@@ -3972,14 +3972,24 @@ def rec_pre_loop():
             if ok:
                 rec_carregar()                          # modelos na memória antes do primeiro cliente
                 dias = {time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400)) for i in range(BUSCA_DIAS)}
+                with rec_lock:
+                    gpu = rec.get("provedor") not in (None, "cpu")
+                # 14/11 (Ronaldo): na placa de vídeo (cerca de 1 s por foto) toda foto com gente é recortada assim que chega,
+                # com a sessão ainda aberta; o Checkout nunca prepara recorte na frente do cliente. Na CPU, como antes.
                 with sess_lock:
-                    ss = sorted((x for x in sess.values() if x["status"] == "fechada" and not x.get("removida") and x["dia"] in dias),
-                                key=lambda x: -(x.get("fechada_em") or 0))
+                    ss = sorted((x for x in sess.values() if x["status"] in (("fechada", "aberta") if gpu else ("fechada",))
+                                 and not x.get("removida") and x["dia"] in dias),
+                                key=lambda x: -(x.get("ultima_chegada") or x.get("fechada_em") or 0))
                     fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {})}) for x in ss]
                 pids = []
                 for fs, xx in fotos_ss:
-                    pids += rec_pre_escolha(fs, xx, sem_pessoa)
+                    if gpu:
+                        pids += [p for p in fs if p not in sem_pessoa]
+                    else:
+                        pids += rec_pre_escolha(fs, xx, sem_pessoa)
                 falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
+                if gpu:
+                    falta = sorted(falta, key=lambda p: -((meta.get(p) or {}).get("u") or 0))[:12]   # a mais nova primeiro; refaz a lista a cada 12
                 with rec_lock:
                     rec["pre_falta"] = len(falta)
                     rec["pre_escolhidas"] = len(pids)
@@ -4000,7 +4010,7 @@ def rec_pre_loop():
                         print("  recorte antecipado %s: %s" % (pid, erro))
         except Exception as ex:
             print("  recorte antecipado:", str(ex)[:160])
-        time.sleep(15)
+        time.sleep(3)
 
 
 def _ia_ocupadas(pr):
