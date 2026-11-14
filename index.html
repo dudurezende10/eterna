@@ -2510,6 +2510,7 @@ function lojaBloco(c){const s=sessionObj(c)||{};const sim=SIM.sessions[c]||{};co
 // fundo de cada (os 5 de bgOn), cada um com a base indicada em FIA_BASE (0 = corpo inteiro, 1 = fechada; fundo fora do mapa = 1).
 // Base ruim (FIA_RUIM, olhos fechados, sem imagem): o fundo usa a outra. Sem base boa, o jeito antigo (lojaAIAntigo: as 2
 // primeiras fotos do cliente, que seguem à venda). Um conjunto por venda, da sessão âncora; a próxima só se a âncora não tem (D2).
+// 14/11 (Ronaldo): os 2 cliques de IA são do joelho para cima (corpo inteiro não funciona em nenhum fundo); 0 = 1º clique, 1 = 2º
 const FIA_BASE={arq1950:0,podio:0,telao:1,campeao2:1,campeaoarg:1,campeaocol:1,mirante:1,tunel:1};
 function lojaAIBase(card){const so=state.kiosk&&state.kiosk.so;const sel=so&&so.card===card&&so.cards;
   const ord=[card,...soCards(card).filter(c=>c!==card).sort((a,b)=>sesHora(a)-sesHora(b))];
@@ -4456,7 +4457,7 @@ const upHora=t=>t?new Date(t*1000).toLocaleTimeString(localeEq(),{hour:'2-digit'
 // v93: bases dos fundos de IA. Sessão fechada: x.ia do servidor ("Fundo IA 1 · corpo inteiro", "Fundo IA 2 · fechada"); aberta:
 // as N primeiras pela regra do Painel de controle ("Fundo IA?"). Nunca só "IA", que é o rótulo do ajuste automático (ajTag).
 const UP_IA_MOTIVO={volante:'Volante: sem fotos de IA',sem_funcao:'Sem função do dia: fotos de IA não separadas',poucas_fotos:'Poucas fotos: ficaram à venda',ponto_fora:'Ponto fora da regra: sem fotos de IA',desligada:'Regra desligada: sem fotos de IA',visita_ja_tem:'A família já tem as fotos de IA: todas à venda'}; // v97 (D4): bases por visita
-const UP_IA_TAG=['Fundo IA 1 · corpo inteiro','Fundo IA 2 · fechada','Fundo IA 3'];
+const UP_IA_TAG=['Fundo IA 1 · do joelho para cima','Fundo IA 2 · do joelho para cima','Fundo IA 3']; // 14/11 (Ronaldo): os 2 cliques de IA são fechados, nunca corpo inteiro
 // regra e recortes prontos das bases vêm do servidor (o /fila-fotografo traz g.ia por sessão: n, motivo, pids e prontas), no
 // máximo a cada 5 s com o Upload aberto; a regra não é repetida no app
 state.upIa={};let UP_IA_T=0;
@@ -7633,8 +7634,8 @@ const EQ={
   cf_ia_quantos:["Quantos cliques","How many shots","Cuántos disparos","Combien de prises","Wie viele Aufnahmen"],
   cf_ia_pontos:["Em quais pontos","At which spots","En qué puntos","À quels points","An welchen Standorten"],
   cf_ia_nota:["Os primeiros cliques de cada sessão destes pontos não aparecem como fotos à venda: viram as montagens nos fundos de IA. Vale para as sessões que fecharem depois da mudança.","The first shots of each session at these spots are not shown as photos for sale: they become the AI background composites. Applies to sessions that close after the change.","Los primeros disparos de cada sesión de estos puntos no aparecen como fotos a la venta: se vuelven los montajes en los fondos de IA. Vale para las sesiones que cierren después del cambio.","Les premières prises de chaque séance de ces points n'apparaissent pas comme photos en vente : elles deviennent les montages sur les fonds IA. S'applique aux séances clôturées après le changement.","Die ersten Aufnahmen jeder Sitzung an diesen Standorten erscheinen nicht als Verkaufsfotos: Sie werden zu den KI-Hintergrund-Montagen. Gilt für Sitzungen, die nach der Änderung schließen."],
-  cf_ia_c1:["1º clique: corpo inteiro","1st shot: full body","1.er disparo: cuerpo entero","1re prise : en pied","1. Aufnahme: ganzer Körper"],
-  cf_ia_c2:["2º clique: mais fechado","2nd shot: closer","2.º disparo: más cerrado","2e prise : plus serré","2. Aufnahme: näher"],
+  cf_ia_c1:["1º clique: fechado, do joelho para cima","1st shot: close, from the knees up","1.er disparo: cerrado, de las rodillas hacia arriba","1re prise : serrée, des genoux vers le haut","1. Aufnahme: nah, ab den Knien aufwärts"],
+  cf_ia_c2:["2º clique: fechado, do joelho para cima","2nd shot: close, from the knees up","2.º disparo: cerrado, de las rodillas hacia arriba","2e prise : serrée, des genoux vers le haut","2. Aufnahme: nah, ab den Knien aufwärts"],
   cf_e:["e","and","y","et","und"],
   cf_ia_prox:["Vale para as próximas sessões que fecharem","Applies to the next sessions that close","Vale para las próximas sesiones que se cierren","S'applique aux prochaines séances clôturées","Gilt für die nächsten Sitzungen, die schließen"],
   cf_postos_eb:["Aparelhos do ponto","Point devices","Dispositivos del punto","Appareils du point","Geräte des Standorts"],
@@ -7844,8 +7845,8 @@ const EQ={
   up_iam_ponto_fora:["Ponto fora da regra: sem fotos de IA","Spot outside the rule: no AI photos","Punto fuera de la regla: sin fotos de IA","Point hors règle : pas de photos IA","Standort außerhalb der Regel: keine KI-Fotos"],
   up_iam_desligada:["Regra desligada: sem fotos de IA","Rule off: no AI photos","Regla desactivada: sin fotos de IA","Règle désactivée : pas de photos IA","Regel aus: keine KI-Fotos"],
   up_iam_visita_ja_tem:["A família já tem as fotos de IA: todas à venda","The family already has the AI photos: all for sale","La familia ya tiene las fotos de IA: todas a la venta","La famille a déjà les photos IA : toutes en vente","Die Familie hat die KI-Fotos schon: alle im Verkauf"],
-  up_iat_0:["Fundo IA 1 · corpo inteiro","AI background 1 · full body","Fondo IA 1 · cuerpo entero","Fond IA 1 · en pied","KI-Hintergrund 1 · ganzer Körper"],
-  up_iat_1:["Fundo IA 2 · fechada","AI background 2 · close-up","Fondo IA 2 · cerrada","Fond IA 2 · serré","KI-Hintergrund 2 · nah"],
+  up_iat_0:["Fundo IA 1 · do joelho para cima","AI background 1 · knees up","Fondo IA 1 · de rodillas arriba","Fond IA 1 · genoux et au-dessus","KI-Hintergrund 1 · ab Knien"],
+  up_iat_1:["Fundo IA 2 · do joelho para cima","AI background 2 · knees up","Fondo IA 2 · de rodillas arriba","Fond IA 2 · genoux et au-dessus","KI-Hintergrund 2 · ab Knien"],
   up_iat_2:["Fundo IA 3","AI background 3","Fondo IA 3","Fond IA 3","KI-Hintergrund 3"],
   up_fundo_q:["Fundo IA?","AI background?","¿Fondo IA?","Fond IA ?","KI-Hintergrund?"],
   up_fundos_ia:["Fundos de IA","AI backgrounds","Fondos de IA","Fonds IA","KI-Hintergründe"],

@@ -270,8 +270,9 @@ Vale nos 4 pontos de campo (Terminal Campo, Foto Campo 2, 3 e 4). Volante e Vest
 
 **Fotógrafo: em toda sessão, comece assim**
 
-1. **1º clique: corpo inteiro** do grupo, da cabeça aos pés.
-2. **2º clique: mais fechado**, do joelho ou da cintura para cima.
+1. **1º clique: fechado, do joelho para cima.**
+2. **2º clique: fechado, do joelho para cima**, outra pose.
+- **Nunca corpo inteiro nesses 2 cliques.** Corpo inteiro não funciona em nenhum fundo de IA (Ronaldo, 14/11).
 3. Depois, faça as fotos normais da sessão.
 
 **O que acontece com essas 2 fotos**
@@ -284,7 +285,7 @@ Vale nos 4 pontos de campo (Terminal Campo, Foto Campo 2, 3 e 4). Volante e Vest
 
 **Como conferir em Minhas fotos**
 
-- As 2 fotos aparecem com a marca **Fundo IA 1** e **Fundo IA 2**. Passe o mouse sobre a marca para ler o texto inteiro: **Fundo IA 1 · corpo inteiro** e **Fundo IA 2 · fechada**.
+- As 2 fotos aparecem com a marca **Fundo IA 1** e **Fundo IA 2**. Passe o mouse sobre a marca para ler o texto inteiro: **Fundo IA 1 · do joelho para cima** e **Fundo IA 2 · do joelho para cima**.
 - Com a sessão ainda aberta, a marca aparece como **Fundo IA?**. Ela confirma quando a sessão fecha.
 - A marca **IA** sozinha continua sendo a do ajuste automático. É outra coisa.
 - O cabeçalho da sessão mostra **Fundos de IA: 2 de 2 prontas**. Se a sessão não teve fotos separadas, mostra o motivo: volante, ponto fora da regra, sem função do dia, poucas fotos ou regra desligada.
