@@ -218,7 +218,8 @@ print(json.dumps({'faixa':px[round(W*.06),round(H*.6)],'centro':px[W//2,round(H*
     ARQ.pedidos.length=0;await pg.click(`#lib-painel .ph[data-id="ag_${ordem[0]}"] .zoom`);z=await zoomPronto(pg,ordem[0]);
     ok(/foto 1 de 400/.test(z.cap),'G3: o zoom percorre as 400 da tela: '+z.cap);
     // seta segurada por 30 fotos: o original só é pedido onde a pessoa para
-    ARQ.pedidos.length=0;for(let i=0;i<30;i++){await pg.keyboard.press('ArrowRight');await pg.waitForTimeout(30);}
+    // (a repetição da tecla acontece dentro da página, a cada 30 ms, para o ritmo não depender da máquina do teste)
+    ARQ.pedidos.length=0;await pg.evaluate(()=>new Promise(fim=>{let i=0;const t=setInterval(()=>{document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));if(++i===30){clearInterval(t);fim();}},30);}));
     z=await zoomPronto(pg,ordem[30]);
     ok(/foto 31 de 400/.test(z.cap)&&idDoZoom(z)===ordem[30],'V1: 30 passos chegam à foto 31: '+z.cap);
     ok(ARQ.pedidos.length<=2&&pedidosDe(ordem[30])===1,'V2: segurar a seta por 30 fotos pede no máximo 2 originais: '+ARQ.pedidos.length+' ('+ARQ.pedidos.join()+')');
