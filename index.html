@@ -1,14 +1,14 @@
 <!doctype html><html lang="pt-BR"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}.facepick{margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:10px}
 .facecand{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card,#fff);border:1px solid var(--line,#ddd);border-radius:12px;padding:8px;cursor:pointer;font:inherit;color:inherit}
 .facecand .ph{width:120px;height:90px;border-radius:8px}
-.ae-fila-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px}
-.ae-fc{display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;min-height:72px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg,#fff);color:inherit;font:inherit;cursor:pointer}
-.ae-fc:hover{border-color:var(--accent,#134078)}.ae-fc.sel{outline:3px solid var(--accent,#134078);outline-offset:-1px}.ae-fc[disabled]{cursor:default}
-.ae-fc-foto{flex:none;width:48px;height:48px;display:flex;align-items:center;justify-content:center}.ae-fc-foto .at-ico{width:40px;height:40px}
-.ae-fc-txt{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
-.ae-fc-l1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.ae-fc-l1 .note{margin:0;white-space:nowrap}
-.ae-fc-prod{font-size:14px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.ae-fc-l3{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.ae-fc-l3 .note{margin:0}
+.ae-fila-lista{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.ae-fl{display:grid;grid-template-columns:44px minmax(120px,1.2fr) minmax(160px,2.4fr) minmax(90px,.8fr) minmax(130px,1fr);gap:14px;align-items:center;text-align:left;width:100%;min-height:64px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg,#fff);color:inherit;font:inherit;cursor:pointer}
+.ae-fl:hover{border-color:var(--accent,#134078)}.ae-fl.sel{outline:3px solid var(--accent,#134078);outline-offset:-1px}.ae-fl[disabled]{cursor:default}
+.ae-fl-foto{width:44px;height:44px;display:flex;align-items:center;justify-content:center}.ae-fl-foto .at-ico{width:36px;height:36px}
+.ae-fl-cli,.ae-fl-prod,.ae-fl-pul{display:flex;flex-direction:column;gap:2px;min-width:0}.ae-fl .note{margin:0;font-size:13px}
+.ae-fl-prod .note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ae-fl-cli b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ae-fl-sit{justify-self:end}
+@media (max-width:720px){.ae-fl{grid-template-columns:44px 1fr auto;row-gap:4px}.ae-fl-foto{grid-row:span 2}.ae-fl-prod{grid-column:2 / 4}.ae-fl-pul{grid-column:2}.ae-fl-sit{grid-column:3;grid-row:1}}
 </style></head><body>
 <title>Viva Maracanã · Fotos</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -5571,20 +5571,29 @@ function aeAgora(){const A=state.ae,L=A.dados?A.dados.vendas:[],out=[];
 // 15/11: fila de entrega em tabela (foto, cliente, produto, hora, o que falta): o que ainda não foi entregue hoje, de todos os serviços.
 // Um toque na linha abre o atendimento da primeira pulseira que falta. "Entregues" mostra as de hoje já entregues.
 function aeFilaTabela(){const A=state.ae,L=A.dados?A.dados.vendas:[];const ent=!!A.filaEnt;
-  const vs=L.filter(v=>ent?!!v.entregue_em:!v.entregue_em).sort((a,b)=>ent?String(b.entregue_em).localeCompare(String(a.entregue_em)):String(a.criado).localeCompare(String(b.criado)));
-  const nPend=L.filter(v=>!v.entregue_em).length,nEnt=L.length-nPend;
-  // cartão: foto | cliente e hora / produto e itens / pulseira e o que falta. Grade que se ajusta à largura (sem rolagem lateral)
-  const cartao=v=>{const p=(v.pulseiras||[]).find(x=>aePulEstado(v,x)!=='entregue')||(v.pulseiras||[])[0];const sel=!!(A.at&&A.at.venda===v.id);
-    const falta=ent?TE('ae_entregue_as',esc(String(v.entregue_em||'').slice(11,16))):esc(aeColNome(v.tipo,aeEtapa(v)));
+  // 15/11: uma linha por entrega (cada pulseira é um atendimento), de todas as vendas do dia, não só da venda aberta
+  const linhas=[];L.forEach(v=>{const P=v.pulseiras||[],tot=P.length;
+    if(!tot){linhas.push({v,p:null,k:0,tot:0,e:v.entregue_em?'entregue':'aguarda'});return;}
+    P.forEach((p,i)=>{let e=v.entregue_em?'entregue':aePulEstado(v,p);linhas.push({v,p,k:i+1,tot,e});});
+    if(!v.entregue_em&&P.every(p=>p.qr)&&(v.fisicos||[]).some(x=>!x.entregue))linhas.push({v,p:P[0],k:0,tot,e:'itens'});});
+  const feita=l=>l.e==='entregue';
+  const vs=linhas.filter(l=>ent?feita(l):!feita(l)).sort((x,y)=>ent?String(y.v.entregue_em||y.p&&y.p.voo_em||'').localeCompare(String(x.v.entregue_em||x.p&&x.p.voo_em||'')):String(x.v.criado).localeCompare(String(y.v.criado))||x.k-y.k);
+  const nPend=linhas.filter(l=>!feita(l)).length,nEnt=linhas.length-nPend;
+  const situ=l=>{const e=l.e,v=l.v;if(e==='entregue')return v.entregue_em?TE('ae_entregue_as',esc(String(v.entregue_em).slice(11,16))):esc(aeColNome(v.tipo,'entregue'));
+    if(e==='aguarda')return esc(aeColNome(v.tipo,'proximo'));if(e==='voando')return esc(TE('ae_pul_e_voando'))+(l.p&&l.p.voo_em?' '+esc(l.p.voo_em.slice(11,16)):'');
+    return esc(TE('ae_pul_e_'+(e==='andamento'?v.tipo:e)));};
+  const cor=e=>e==='entregue'?'good':e==='aguarda'?'':'warn';
+  const linha=l=>{const v=l.v,p=l.p;const sel=!!(p&&A.at&&A.at.venda===v.id&&A.at.numero===p.numero);
     const attrs=p?`data-act="ae-at-abre" data-id="${esc(v.id)}" data-n="${esc(p.numero)}"`:'disabled';
-    return `<button class="ae-fc${sel?' sel':''}" ${attrs} data-ae-fila="${esc(v.id)}" ${sel?'aria-current="true"':''}>
-      <span class="ae-fc-foto">${aeFoto(v,48)||atIcone(v.tipo)}</span>
-      <span class="ae-fc-txt"><span class="ae-fc-l1"><b>${esc(v.cliente||TE('av_numero',avNumero(v.id)))}</b><span class="note">${esc(String(v.criado||'').slice(11,16))}</span></span>
-        <span class="ae-fc-prod"><b>${esc(atCatNome(v.tipo))}</b> · ${esc(aeItensTxt(v))}</span>
-        <span class="ae-fc-l3">${p&&!ent?`<span class="pill">${TE('ae_pul_curta',p.numero)}</span>`:''}<span class="pill ${ent?'good':'warn'}">${falta}</span>${v.cliente?`<span class="note">${TE('av_numero',avNumero(v.id))}</span>`:''}</span></span></button>`;};
+    return `<button class="ae-fl${sel?' sel':''}" ${attrs} data-ae-fila="${esc(v.id)}" ${sel?'aria-current="true"':''}>
+      <span class="ae-fl-foto">${aeFoto(v,44)||atIcone(v.tipo)}</span>
+      <span class="ae-fl-cli"><b>${esc(v.cliente||TE('av_numero',avNumero(v.id)))}</b><span class="note">${esc(String(v.criado||'').slice(11,16))}${v.cliente?' · '+TE('av_numero',avNumero(v.id)):''}</span></span>
+      <span class="ae-fl-prod"><b>${esc(atCatNome(v.tipo))}</b><span class="note">${esc(aeItensTxt(v))}</span></span>
+      <span class="ae-fl-pul">${p?`<b>${TE('ae_pul_curta',p.numero)}</b>${l.tot>1&&l.k?`<span class="note">${l.k} / ${l.tot}</span>`:''}`:''}</span>
+      <span class="ae-fl-sit"><span class="pill ${cor(l.e)}">${situ(l)}</span></span></button>`;};
   return `<div class="panel" id="ae-fila-tab"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">${TE('ae_fila_titulo')}</h2>
     <div class="chips" role="tablist" style="margin:0"><button class="chip" role="tab" data-act="ae-fila-ent" data-v="0" aria-selected="${!ent}" aria-pressed="${!ent}">${TE('ae_fila_falta')} · ${nPend}</button><button class="chip" role="tab" data-act="ae-fila-ent" data-v="1" aria-selected="${ent}" aria-pressed="${ent}">${TE('ae_fila_entregues')} · ${nEnt}</button></div></div>
-    ${vs.length?`<div class="ae-fila-grade">${vs.map(cartao).join('')}</div>`:`<div class="note" style="margin-top:8px">${ent?TE('ae_fila_nada_ent'):TE('ae_fila_nada')}</div>`}</div>`;}
+    ${vs.length?`<div class="ae-fila-lista">${vs.map(linha).join('')}</div>`:`<div class="note" style="margin-top:8px">${ent?TE('ae_fila_nada_ent'):TE('ae_fila_nada')}</div>`}</div>`;}
 // o atendimento de uma pulseira: quem é, decolar, soltar o vídeo, ler o cartão, entregar
 function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x=>x.id===A.at.venda);
   if(!v)return `<div class="panel" id="ae-at"><div class="note">${A.dados?TE('ae_e_nao_achou'):TE('ar_carregando')}</div><button class="btn ghost" style="margin-top:8px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button></div>`;
