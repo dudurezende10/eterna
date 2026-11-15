@@ -2,15 +2,15 @@
 
 Responda em português do Brasil. Contexto do produto em `docs/CONTEXTO-ETERNA.md`; esteira em `docs/AGENTES.md`.
 
-## Atualizar o servidor de teste
+## Servidor do estádio (onde o Eterna roda)
 
-O servidor de teste é o notebook do Ronaldo. Ninguém entra nele: você envia para a branch `idiomas-base` e ele se atualiza sozinho em até 1 minuto. Leia `docs/SERVIDOR-DE-TESTE.md` antes de mexer.
+Servidor `srv-viva-maracana` (Ubuntu, `192.168.10.10`), alcançado de fora só pela VPN MaracaTour, por SSH com a chave de cada pessoa. Ninguém copia arquivo nele: você envia para a branch `idiomas-base` e ele se atualiza sozinho em até 1 minuto. Antes de mexer, leia `docs/SERVIDOR-ESTADIO.md` (quem acessa e como, comandos de leitura, o que precisa de `sudo`).
 
 ```bash
 git checkout idiomas-base && git pull
 # altere e teste
 git add <arquivos> && git commit -m "O que mudou" && git push origin idiomas-base
-curl http://100.115.186.26:8797/
+ssh srv-viva-maracana 'curl -s http://127.0.0.1:8797/'   # confere o commit no ar
 ```
 
 ## Regras
