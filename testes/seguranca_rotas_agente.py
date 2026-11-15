@@ -146,7 +146,7 @@ try:
         for i in nao[nome]:
             st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "sim", "id": i, "valor": 2}]}, cookie=ck)
             ok(j.get("recusados") == 1, "perfil %s não deveria gravar %s: %s" % (nome, i, j))
-    # galeria publicada pelo posto: cortesia nova vira venda; validade no máximo 60 dias; menor do servidor não é desmarcado
+    # galeria publicada pelo posto: cortesia nova vira venda; validade no máximo 30 dias; menor do servidor não é desmarcado
     import time as _t
     tok = "b" * 22
     man = {"v": 1, "token": tok, "codigo": None, "tipo": "sessao", "venue": "maracana", "sessoes": [], "menor": True, "criada": m._iso(),
@@ -155,7 +155,7 @@ try:
     st, j, _ = pede("POST", "/galerias/publicar", {"manifesto": man}, cookie=posto)
     gm = m.REPO.ler_manifesto(tok) or {}
     ok(st == 200 and [f["direito"] for f in gm.get("fotos", [])] == ["venda", "venda"], "cortesia do posto deveria virar venda: %s %s" % (st, gm.get("fotos")))
-    ok(m._epoch(gm.get("expira")) <= _t.time() + 60 * 86400 + 5, "validade além de 60 dias: %s" % gm.get("expira"))
+    ok(m._epoch(gm.get("expira")) <= _t.time() + 30 * 86400 + 5, "validade além de 30 dias: %s" % gm.get("expira"))
     st, j, _ = pede("POST", "/galerias/publicar", {"manifesto": dict(man, menor=False)}, cookie=adm)
     gm = m.REPO.ler_manifesto(tok) or {}
     ok(gm.get("menor") is True and [f["direito"] for f in gm["fotos"]] == ["cortesia", "venda"], "admin dá cortesia; menor segue marcado: %s" % gm)

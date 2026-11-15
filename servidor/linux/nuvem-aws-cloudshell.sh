@@ -3,7 +3,7 @@
 # 1) usuário IAM eterna-servidor-estadio, que SÓ lê, grava e apaga no bucket do Eterna (fotos alta/vitrine, backup dos
 #    bancos, cópia dos originais) e lista esse bucket: não mexe em mais nada da conta;
 # 2) retenção do bucket por pasta (substitui a regra de teste "apaga tudo com 7 dias", que apagaria o backup):
-#      alta/ e vitrine/ 60 dias (galeria do cliente) · backup/ 400 dias (bancos e histórico diário)
+#      alta/ e vitrine/ 30 dias (galeria do cliente: 30 dias para ver e baixar) · backup/ 400 dias (bancos e histórico diário)
 #      originais/ 180 dias (cópia das fotos do HD) · envio pela metade apagado em 1 dia;
 # 3) a chave desse usuário aparece só aqui na tela do CloudShell: digitar no servidor (nuvem-ligar.sh), nunca em chat ou e-mail.
 #   bash nuvem-aws-cloudshell.sh
@@ -17,8 +17,8 @@ aws s3api put-public-access-block --bucket "$BUCKET" --public-access-block-confi
   BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 cat >/tmp/ciclo.json <<'POL'
 {"Rules": [
-  {"ID": "alta-60d",         "Status": "Enabled", "Filter": {"Prefix": "alta/"},      "Expiration": {"Days": 60}},
-  {"ID": "vitrine-60d",      "Status": "Enabled", "Filter": {"Prefix": "vitrine/"},   "Expiration": {"Days": 60}},
+  {"ID": "alta-30d",         "Status": "Enabled", "Filter": {"Prefix": "alta/"},      "Expiration": {"Days": 30}},
+  {"ID": "vitrine-30d",      "Status": "Enabled", "Filter": {"Prefix": "vitrine/"},   "Expiration": {"Days": 30}},
   {"ID": "originais-180d",   "Status": "Enabled", "Filter": {"Prefix": "originais/"}, "Expiration": {"Days": 180}},
   {"ID": "backup-400d",      "Status": "Enabled", "Filter": {"Prefix": "backup/"},    "Expiration": {"Days": 400}},
   {"ID": "envio-incompleto", "Status": "Enabled", "Filter": {"Prefix": ""}, "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}}
@@ -28,6 +28,8 @@ aws s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" --lifecycle-conf
 rm -f /tmp/ciclo.json
 aws s3api put-bucket-tagging --bucket "$BUCKET" --tagging 'TagSet=[{Key=projeto,Value=eterna},{Key=uso,Value=producao-estadio}]'
 echo "ok bucket $BUCKET: privado, retenção por pasta"
+# bash nuvem-aws-cloudshell.sh --so-retencao   só reaplica a retenção (não mexe no usuário nem cria chave)
+[ "${1:-}" = --so-retencao ] && { aws s3api get-bucket-lifecycle-configuration --bucket "$BUCKET" --query 'Rules[].[ID,Expiration.Days]' --output text; exit 0; }
 aws iam get-user --user-name "$USUARIO" >/dev/null 2>&1 || aws iam create-user --user-name "$USUARIO" --tags Key=projeto,Value=eterna >/dev/null
 cat >/tmp/politica.json <<POL
 {

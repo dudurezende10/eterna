@@ -1121,7 +1121,7 @@ Lista de operação no servidor do ponto:
 ## 6. O que dizer ao cliente
 
 **Sobre o QR**
-- "Aponte a câmera do celular para este QR. Suas fotos ficam disponíveis por 60 dias."
+- "Aponte a câmera do celular para este QR. Suas fotos ficam disponíveis por 30 dias."
 - "Se o QR não abrir, entre em eterna.photo/#g e digite este código."
 
 **Sobre a selfie**

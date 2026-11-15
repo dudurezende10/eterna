@@ -20,7 +20,7 @@ sem nenhum dos dois, serve o JPG original.
    O checkout, o quiosque e a selfie do convidado buscam aqui. Liga sozinho se
    houver OpenCV:  python3 -m pip install opencv-python-headless numpy
    A selfie usada na busca não é gravada. Leituras de rosto: ~/Eterna/rostos.db,
-   apagadas depois de 60 dias (validade da galeria online).
+   apagadas depois de 30 dias (validade da galeria online).
 
 Para outros computadores da rede (checkout, quiosque) usarem este agente:
      ETERNA_REDE=1 python3 eterna-agente.py
@@ -795,7 +795,7 @@ LIMITE = 0.45          # semelhança mínima (cosseno SFace) para dizer "é a me
 LIMITE_TALVEZ = 0.38   # entre este e LIMITE a busca devolve como "talvez": o app pergunta "é uma destas?"
 ROSTO_MIN = 40         # rostos menores que isso (px, foto reduzida a 1600) são fundo/arquibancada: ignorados
 LADO = 1600
-RETENCAO_DIAS = 60     # D10: a selfie da galeria online precisa achar as fotos até o dia 60
+RETENCAO_DIAS = 30     # D10: a selfie da galeria online precisa achar as fotos até o dia 30 (validade da galeria, 15/11)
 # ETERNA_BUSCA_DIAS: a selfie do Checkout procura em hoje e nos N-1 dias anteriores (padrão 1, só hoje). Teste com fotos de ontem: 2
 BUSCA_DIAS = max(1, int(os.environ.get("ETERNA_BUSCA_DIAS") or 1))
 BUSCA_DIAS_EXPLICITA = bool((os.environ.get("ETERNA_BUSCA_DIAS") or "").strip())
@@ -4109,7 +4109,7 @@ LIMITE_MENOR = 0.50     # grupo de escola: só as fotos em que o rosto da crian�
 URL_TTL = 900           # link assinado de foto: 15 min
 ACESSO_TTL = 3600       # acesso depois da selfie: 1 h
 GAL_MAX_CORPO = 2 * 1024 * 1024
-GAL_DIAS = 60                                            # validade máxima de uma galeria (a mesma do app)
+GAL_DIAS = 30                                            # validade máxima de uma galeria (a mesma do app)
 GAL_FALHAS, GAL_BLOQUEIO = 5, 15 * 60
 GAL_TETO_DIA = 20       # v96.1: selfies sem acerto por galeria de venda por dia, somando todos os IPs; depois, galeria parada até amanhã
 GAL_EVENTO_DISTINTOS, GAL_EVENTO_JANELA = 2, 24 * 3600   # grupo de escola: crianças diferentes por (ip, token) em 24 h

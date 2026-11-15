@@ -2814,7 +2814,7 @@ const flagSvg=c=>`<svg class="lj-flag" viewBox="0 0 30 20" preserveAspectRatio="
 // ---------- Galeria online por QR (fase 1): token e código por sessão, manifesto, fila de envio ao agente ----------
 // O QR da Loja aponta para https://eterna.photo/#g/<token>. O token nasce aqui (crypto), então a Loja nunca trava sem internet.
 // Manifesto igual no SIM e no agente: {v,token,codigo,tipo:'sessao'|'evento',nome,sessoes,menor,criada,expira,precos,moeda,fotos,envio}.
-const GAL_BASE_PADRAO='https://eterna.photo/#g/',GAL_API='https://whe2hyve2j.execute-api.us-east-2.amazonaws.com',galApi=()=>window.ETERNA_AGENTE||(GAL_API&&location.protocol==='https:'?GAL_API:state.agent.url),galNuvem=()=>!!GAL_API&&galApi()===GAL_API,galUrl=u=>/^https?:/.test(u||'')?u:galApi()+u,galBase=()=>(state.agent&&state.agent.galPublica?state.agent.galPublica.replace(/\/$/,'')+'/#g/':window.ETERNA_AGENTE?window.ETERNA_AGENTE+'/#g/':GAL_BASE_PADRAO),GAL_DIAS=60,GAL_ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',GAL_LIMITE_MENOR=.50,GQ_VERSAO='2026-11-04',GQ_MAX=5,GQ_BLOQ=15*60000;
+const GAL_BASE_PADRAO='https://eterna.photo/#g/',GAL_API='https://whe2hyve2j.execute-api.us-east-2.amazonaws.com',galApi=()=>window.ETERNA_AGENTE||(GAL_API&&location.protocol==='https:'?GAL_API:state.agent.url),galNuvem=()=>!!GAL_API&&galApi()===GAL_API,galUrl=u=>/^https?:/.test(u||'')?u:galApi()+u,galBase=()=>(state.agent&&state.agent.galPublica?state.agent.galPublica.replace(/\/$/,'')+'/#g/':window.ETERNA_AGENTE?window.ETERNA_AGENTE+'/#g/':GAL_BASE_PADRAO),GAL_DIAS=30,GAL_ALFA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',GAL_LIMITE_MENOR=.50,GQ_VERSAO='2026-11-04',GQ_MAX=5,GQ_BLOQ=15*60000;
 function galRand(n){const u=new Uint8Array(n);crypto.getRandomValues(u);return u;}
 function galToken(){SIM.galerias=SIM.galerias||{};let t;do{let s='';for(const b of galRand(16))s+=String.fromCharCode(b);t=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}while(SIM.galerias[t]);return t;}
 function galCodigo(){const usados=new Set(Object.values(SIM.galerias||{}).map(m=>m.codigo));let c;do{const u=galRand(8);c='';for(let i=0;i<8;i++){c+=GAL_ALFA[u[i]%32];if(i===3)c+='-';}}while(usados.has(c));return c;}
@@ -3336,7 +3336,7 @@ const I18N={
  bgTunel:['Saída do túnel','Out of the tunnel','Salida del túnel','Sortie du tunnel','Aus dem Spielertunnel'],
  bgPodio:['Pódio de campeão',"Champions' podium",'Podio de campeón','Podium du champion','Siegerpodest'],
  aiMaking:['Preparando sua foto especial...','Preparing your special photo...','Preparando tu foto especial...','Nous préparons votre photo spéciale...','Ihr besonderes Foto wird vorbereitet...'],
- gallery:['Galeria online por 60 dias','Online gallery for 60 days','Galería online por 60 días','Galerie en ligne pendant 60 jours','Online-Galerie für 60 Tage'],
+ gallery:['Galeria online por 30 dias','Online gallery for 30 days','Galería online por 30 días','Galerie en ligne pendant 30 jours','Online-Galerie für 30 Tage'],
  payH:['Como prefere pagar?','How would you like to pay?','¿Cómo prefieres pagar?','Comment souhaitez-vous payer ?','Wie möchtest du bezahlen?'],
  card:['Cartão','Card','Tarjeta','Carte','Karte'],pix:['PIX','PIX','PIX','PIX','PIX'],cash:['Dinheiro','Cash','Efectivo','Espèces','Bargeld'],
  total:['Total','Total','Total','Total','Gesamt'],
@@ -3407,7 +3407,7 @@ const I18N={
  gq_arriving:['Suas fotos estão chegando','Your photos are on their way','Tus fotos están llegando','Vos photos arrivent','Deine Fotos sind unterwegs'],
  gq_arrivingD:['Volte em alguns minutos.','Come back in a few minutes.','Vuelve en unos minutos.','Revenez dans quelques minutes.','Schau in ein paar Minuten wieder vorbei.'],
  gq_expired:['Esta galeria expirou','This gallery has expired','Esta galería ha caducado','Cette galerie a expiré','Diese Galerie ist abgelaufen'],
- gq_expiredD:['As fotos ficam disponíveis por 60 dias.','Photos stay available for 60 days.','Las fotos están disponibles durante 60 días.','Les photos restent disponibles 60 jours.','Die Fotos sind 60 Tage lang verfügbar.'],
+ gq_expiredD:['As fotos ficam disponíveis por 30 dias.','Photos stay available for 30 days.','Las fotos están disponibles durante 30 días.','Les photos restent disponibles 30 jours.','Die Fotos sind 30 Tage lang verfügbar.'],
  gq_notFound:['Galeria não encontrada','Gallery not found','Galería no encontrada','Galerie introuvable','Galerie nicht gefunden'],
  gq_codeH:['Digite seu código','Type your code','Escribe tu código','Saisissez votre code','Gib deinen Code ein'],
  gq_codeIs:[c=>`Seu código: ${c}`,c=>`Your code: ${c}`,c=>`Tu código: ${c}`,c=>`Votre code : ${c}`,c=>`Dein Code: ${c}`],
@@ -6962,7 +6962,7 @@ const EQ={
   rc_vendedor:["Vendedor","Seller","Vendedor","Vendeur","Verkäufer"],
   rc_pagamento:["Pagamento","Payment","Pago","Paiement","Zahlung"],
   rc_impressoes:["Impressões","Prints","Impresiones","Impressions","Drucke"],
-  rc_60:["60 dias","60 days","60 días","60 jours","60 Tage"],
+  rc_60:["30 dias","30 days","30 días","30 jours","30 Tage"],
   rc_duvidas:["Dúvidas: WhatsApp do Tour ou","Questions: Tour WhatsApp or","Dudas: WhatsApp del Tour o","Questions : WhatsApp du Tour ou","Fragen: WhatsApp der Tour oder"],
   rc_recebido:[(p,h)=>`Recebido por ${p}${h?' às '+h:''}`,(p,h)=>`Received by ${p}${h?' at '+h:''}`,(p,h)=>`Recibido por ${p}${h?' a las '+h:''}`,(p,h)=>`Reçu par ${p}${h?' à '+h:''}`,(p,h)=>`Angenommen von ${p}${h?' um '+h:''}`],
   rc_galeria:["Galeria","Gallery","Galería","Galerie","Galerie"],
@@ -7395,7 +7395,7 @@ const EQ={
   rp_t3:["uma sessão (cartão)","one session (card)","una sesión (tarjeta)","une séance (carte)","eine Sitzung (Karte)"],
   rp_t3n:["acervo do venue","venue archive","acervo del venue","archives du site","Archiv des Veranstaltungsorts"],
   rp_t4:["uma galeria online (QR), prefixo pelo token, sem listagem","one online gallery (QR), prefixed by token, no listing","una galería online (QR), prefijo por el token, sin listado","une galerie en ligne (QR), préfixe par jeton, sans listage","eine Online-Galerie (QR), Präfix per Token, ohne Auflistung"],
-  rp_t4n:["60 dias","60 days","60 días","60 jours","60 Tage"],
+  rp_t4n:["30 dias","30 days","30 días","30 jours","30 Tage"],
   rp_t5:["manifesto: sessões, direito por foto, preços, validade","manifest: sessions, rights per photo, prices, expiry","manifiesto: sesiones, derecho por foto, precios, validez","manifeste : séances, droits par photo, prix, validité","Manifest: Sitzungen, Rechte pro Foto, Preise, Gültigkeit"],
   rp_t6:["miniatura de 900 px com marca d'água","900 px thumbnail with watermark","miniatura de 900 px con marca de agua","miniature de 900 px avec filigrane","900-px-Vorschau mit Wasserzeichen"],
   rp_t6n:["fotos à venda","photos for sale","fotos a la venta","photos en vente","Fotos im Verkauf"],
@@ -7405,7 +7405,7 @@ const EQ={
   rp_t8n:["fundos de IA","AI backgrounds","fondos de IA","fonds IA","KI-Hintergründe"],
   rp_t9:["molduras, fundos, logos","frames, backgrounds, logos","marcos, fondos, logos","cadres, fonds, logos","Rahmen, Hintergründe, Logos"],
   rp_t10:["relatórios XLSX gerados","generated XLSX reports","informes XLSX generados","rapports XLSX générés","erzeugte XLSX-Berichte"],
-  rp_pastas_nota:["Um caminho por sessão permite link direto para a galeria, apagar por prazo (60 dias de download, originais por 12 meses) e vender o acervo depois sem reprocessar.","One path per session allows a direct gallery link, deletion by deadline (60 days of download, originals for 12 months) and selling the archive later without reprocessing.","Una ruta por sesión permite enlace directo a la galería, borrar por plazo (60 días de descarga, originales por 12 meses) y vender el acervo después sin reprocesar.","Un chemin par séance permet un lien direct vers la galerie, la suppression par échéance (60 jours de téléchargement, originaux 12 mois) et la vente ultérieure des archives sans retraitement.","Ein Pfad pro Sitzung erlaubt direkten Galerielink, Löschen nach Frist (60 Tage Download, Originale 12 Monate) und späteren Verkauf des Archivs ohne Neuverarbeitung."],
+  rp_pastas_nota:["Um caminho por sessão permite link direto para a galeria, apagar por prazo (30 dias de download, originais por 12 meses) e vender o acervo depois sem reprocessar.","One path per session allows a direct gallery link, deletion by deadline (30 days of download, originals for 12 months) and selling the archive later without reprocessing.","Una ruta por sesión permite enlace directo a la galería, borrar por plazo (30 días de descarga, originales por 12 meses) y vender el acervo después sin reprocesar.","Un chemin par séance permet un lien direct vers la galerie, la suppression par échéance (30 jours de téléchargement, originaux 12 mois) et la vente ultérieure des archives sans retraitement.","Ein Pfad pro Sitzung erlaubt direkten Galerielink, Löschen nach Frist (30 Tage Download, Originale 12 Monate) und späteren Verkauf des Archivs ohne Neuverarbeitung."],
   rp_sync_h:["Sincronização por dia","Sync by day","Sincronización por día","Synchronisation par jour","Synchronisierung pro Tag"],
   rp_dia:["Dia","Day","Día","Jour","Tag"],
   rp_sessoes:["Sessões","Sessions","Sesiones","Séances","Sitzungen"],
@@ -7472,7 +7472,7 @@ const EQ={
   rx_sincronizado:[(h)=>`sincronizado ${h}`,(h)=>`synced ${h}`,(h)=>`sincronizado ${h}`,(h)=>`synchronisé ${h}`,(h)=>`synchronisiert ${h}`],
   rx_dias_cache:[(n)=>`${n} dias em cache`,(n)=>`${n} days cached`,(n)=>`${n} días en caché`,(n)=>`${n} jours en cache`,(n)=>`${n} Tage im Cache`],
   id_identidade:[(n)=>`Identidade: ${n}`,(n)=>`Identity: ${n}`,(n)=>`Identidad: ${n}`,(n)=>`Identité : ${n}`,(n)=>`Identität: ${n}`],
-  id_recibo_txt:[(v)=>`${v}\nVenda E001 · Sessão LP6ZM8K74\nVendedor: Thais\nPacote 2 fotos                       R$ 120,00\nTOTAL                               R$ 120,00\nSeu código: K7QM-4WXR · eterna.photo/g · 60 dias`,(v)=>`${v}\nSale E001 · Session LP6ZM8K74\nSeller: Thais\n2-photo package                      R$ 120,00\nTOTAL                               R$ 120,00\nYour code: K7QM-4WXR · eterna.photo/g · 60 days`,(v)=>`${v}\nVenta E001 · Sesión LP6ZM8K74\nVendedor: Thais\nPaquete 2 fotos                      R$ 120,00\nTOTAL                               R$ 120,00\nSu código: K7QM-4WXR · eterna.photo/g · 60 días`,(v)=>`${v}\nVente E001 · Séance LP6ZM8K74\nVendeur : Thais\nForfait 2 photos                     R$ 120,00\nTOTAL                               R$ 120,00\nVotre code : K7QM-4WXR · eterna.photo/g · 60 jours`,(v)=>`${v}\nVerkauf E001 · Sitzung LP6ZM8K74\nVerkäufer: Thais\nPaket 2 Fotos                        R$ 120,00\nGESAMT                              R$ 120,00\nDein Code: K7QM-4WXR · eterna.photo/g · 60 Tage`],
+  id_recibo_txt:[(v)=>`${v}\nVenda E001 · Sessão LP6ZM8K74\nVendedor: Thais\nPacote 2 fotos                       R$ 120,00\nTOTAL                               R$ 120,00\nSeu código: K7QM-4WXR · eterna.photo/g · 30 dias`,(v)=>`${v}\nSale E001 · Session LP6ZM8K74\nSeller: Thais\n2-photo package                      R$ 120,00\nTOTAL                               R$ 120,00\nYour code: K7QM-4WXR · eterna.photo/g · 30 days`,(v)=>`${v}\nVenta E001 · Sesión LP6ZM8K74\nVendedor: Thais\nPaquete 2 fotos                      R$ 120,00\nTOTAL                               R$ 120,00\nSu código: K7QM-4WXR · eterna.photo/g · 30 días`,(v)=>`${v}\nVente E001 · Séance LP6ZM8K74\nVendeur : Thais\nForfait 2 photos                     R$ 120,00\nTOTAL                               R$ 120,00\nVotre code : K7QM-4WXR · eterna.photo/g · 30 jours`,(v)=>`${v}\nVerkauf E001 · Sitzung LP6ZM8K74\nVerkäufer: Thais\nPaket 2 Fotos                        R$ 120,00\nGESAMT                              R$ 120,00\nDein Code: K7QM-4WXR · eterna.photo/g · 30 Tage`],
   cf_precos:["Preços","Prices","Precios","Prix","Preise"],
   cf_checkout:["Checkout","Checkout","Checkout","Checkout","Checkout"],
   cf_fundos:["Fundos de IA","AI backgrounds","Fondos de IA","Fonds IA","KI-Hintergründe"],
@@ -9009,7 +9009,7 @@ const EQ={
   po_recibo:["Recibo","Receipt","Recibo","Reçu","Beleg"],
   po_pago:["pago","paid","pagado","payé","bezahlt"],
   po_gal_online:["Galeria online","Online gallery","Galería online","Galerie en ligne","Online-Galerie"],
-  po_gal_nota:[(n)=>`${n} fotos em alta · 60 dias para baixar · arquivos 3.000 px`,(n)=>`${n} high-resolution photos · 60 days to download · 3,000 px files`,(n)=>`${n} fotos en alta · 60 días para descargar · archivos de 3.000 px`,(n)=>`${n} photos en haute définition · 60 jours pour télécharger · fichiers de 3 000 px`,(n)=>`${n} Fotos in hoher Auflösung · 60 Tage zum Herunterladen · Dateien mit 3.000 px`],
+  po_gal_nota:[(n)=>`${n} fotos em alta · 30 dias para baixar · arquivos 3.000 px`,(n)=>`${n} high-resolution photos · 30 days to download · 3,000 px files`,(n)=>`${n} fotos en alta · 30 días para descargar · archivos de 3.000 px`,(n)=>`${n} photos en haute définition · 30 jours pour télécharger · fichiers de 3 000 px`,(n)=>`${n} Fotos in hoher Auflösung · 30 Tage zum Herunterladen · Dateien mit 3.000 px`],
   po_abrir_gal:["Abrir a galeria online","Open the online gallery","Abrir la galería online","Ouvrir la galerie en ligne","Online-Galerie öffnen"],
   po_mostrar_cli:["Mostrar ao cliente","Show the customer","Mostrar al cliente","Montrer au client","Dem Kunden zeigen"],
   po_fechar_imp:["Fechar impressão","Close printing","Cerrar impresión","Fermer l'impression","Druck schließen"],

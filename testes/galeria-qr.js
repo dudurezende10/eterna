@@ -132,9 +132,9 @@ try{
   dbg('13. cinco idiomas, sem chave crua');
   for(const l of ['en','es','fr','de','pt']){await G.click(`.lj-langs [data-l="${l}"]`);await G.waitForTimeout(80);const cr=await gqCruas(G);ok(!cr.length,'13: chave crua em '+l+': '+cr.slice(0,3).join(','));}
   const en=await G.evaluate(()=>{const b=document.querySelector('.lj-langs [data-l="en"]');b.click();return document.body.innerText;});ok(/Your photos/i.test(en),'13: inglês não trocou os textos');await G.click('.lj-langs [data-l="pt"]');
-  // ---------- 14. data "Disponível até" = criada + 60 dias ----------
+  // ---------- 14. data "Disponível até" = criada + 30 dias ----------
   dbg('14. data "Disponível até" = criada + 60 ');
-  const g14=await G.evaluate(t=>{const m=ETERNA.SIM.galerias[t];const d=new Date(new Date(m.criada).getTime()+60*864e5).toLocaleDateString('pt-BR');return {ok:document.querySelector('.gq-until').textContent.includes(d),txt:document.querySelector('.gq-until').textContent,d};},tok);
+  const g14=await G.evaluate(t=>{const m=ETERNA.SIM.galerias[t];const d=new Date(new Date(m.criada).getTime()+30*864e5).toLocaleDateString('pt-BR');return {ok:document.querySelector('.gq-until').textContent.includes(d),txt:document.querySelector('.gq-until').textContent,d};},tok);
   ok(g14.ok,'14: data de validade: '+JSON.stringify(g14));
   // ---------- 10 e 11. compra na galeria ----------
   dbg('10 e 11. compra na galeria');

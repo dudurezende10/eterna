@@ -2,6 +2,8 @@
 
 Responda em português do Brasil. Contexto do produto em `docs/CONTEXTO-ETERNA.md`; esteira em `docs/AGENTES.md`.
 
+**Antes de programar ou publicar, leia `docs/DESENVOLVER.md`**: mapa do sistema, ramos, como o deploy chega ao servidor do estádio, como testar no seu computador e como conferir no servidor.
+
 ## Servidor do estádio (onde o Eterna roda)
 
 Servidor `srv-viva-maracana` (Ubuntu, `192.168.10.10`), alcançado de fora só pela VPN MaracaTour, por SSH com a chave de cada pessoa. Ninguém copia arquivo nele: você envia para a branch `idiomas-base` e ele se atualiza sozinho em até 1 minuto. Antes de mexer, leia `docs/SERVIDOR-ESTADIO.md` (quem acessa e como, comandos de leitura, o que precisa de `sudo`).
