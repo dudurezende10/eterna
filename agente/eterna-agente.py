@@ -5872,6 +5872,53 @@ def _sess_faces_db(pids):
     return out
 
 
+def sess_dono_corrigir(agora=None):
+    """15/11 (grafia Klacius): sessão fechada SEM fotógrafo cujas fotos resolvem TODAS para o mesmo fotógrafo cadastrado, pela
+    regra única (ff_quem com o autor ou o dono gravado na câmera, que passa por fotografo_chave), recebe a chave dele, com
+    rev novo para os navegadores atualizarem a cópia. Fotos de donos diferentes, alguma foto sem dono ou sem registro no
+    índice: fica como está. Sessão que já tem fotógrafo, aberta ou removida nunca é tocada.
+    Janela: só as sessões em memória, de hoje e de ontem. São os dias que o /sessoes entrega e que o metricas_loop refaz (o
+    resumo do dia lê o arquivo de sessões); dia mais antigo fica como está, porque refazer o resumo dele perderia números
+    que já saíram por prazo (rostos). A correção fica registrada na própria sessão (dono_corrigido: quem, quando, de, para,
+    motivo), que vai para o arquivo do dia e para o backup. Rodar de novo não muda nada. Trabalho de memória: não lê arquivo.
+    As travas são pegas uma de cada vez (sess_lock, lock, sess_lock), nunca uma dentro da outra. Devolve [(card, dia, chave)]."""
+    agora = time.time() if agora is None else agora
+    with sess_lock:
+        cands = {x["card"]: list(x["fotos"]) + list(x["pend"]) for x in sess.values()
+                 if x.get("status") == "fechada" and not x.get("removida") and not x.get("fotografo")}
+    cands = {c: p for c, p in cands.items() if p}
+    if not cands:
+        return []
+    quer = {p for pids in cands.values() for p in pids}
+    with lock:
+        metas = {p: dict(meta[p]) for p in quer if isinstance(meta.get(p), dict)}
+    cad = ff_cadastrados()
+    acha = {}
+    for card, pids in cands.items():
+        donos = set()
+        for p in pids:
+            mm = metas.get(p)
+            k, via = ff_quem(mm.get("o"), mm.get("autor"), mm.get("dono"), mm.get("serie"), mm.get("s") or "", cad) if mm else (None, "")
+            donos.add((k, via) if k else None)
+            if None in donos or len({d[0] for d in donos}) > 1:
+                break
+        if None not in donos and len({d[0] for d in donos}) == 1:
+            acha[card] = (sorted(donos)[0], pids)
+    feitas = []
+    with sess_lock:
+        for card, ((k, via), pids) in acha.items():
+            x = sess.get(card)
+            if (x is None or x.get("fotografo") or x.get("removida") or x.get("status") != "fechada"
+                    or list(x["fotos"]) + list(x["pend"]) != pids):
+                continue
+            x["dono_corrigido"] = {"em": _iso(agora), "por": "servidor", "de": None, "para": k, "fonte_antes": x.get("fonte"),
+                                   "motivo": "autor_ou_dono_da_camera"}
+            x["fotografo"], x["fonte"] = k, via
+            _sess_toca(x)
+            feitas.append((card, x["dia"], k))
+    return feitas
+
+
 def sess_carregar(agora=None):
     """No boot: lê as sessões gravadas de ontem e hoje; a que não estava fechada fecha com "reinicio" (S8). As fotos que
     chegaram sem sessão (queda entre a chegada e a gravação) são reagrupadas pela mesma regra, com os rostos do
@@ -5939,6 +5986,12 @@ def sess_carregar(agora=None):
         vis_idx_boot(agora)
     except Exception as ex:
         print("  visitas: rostos do boot indisponíveis (%s)" % str(ex)[:80])
+    try:                                             # 15/11: sessão fechada sem fotógrafo que é toda de um cadastrado
+        feitas = sess_dono_corrigir(agora)           # nunca impede a partida; o metricas_loop refaz o resumo de hoje e ontem
+        if feitas:
+            print("  sessões: %d sem fotógrafo passaram ao dono das fotos (autor ou dono da câmera)" % len(feitas))
+    except Exception as ex:
+        print("  sessões: dono das fotos não conferido (%s)" % type(ex).__name__)
     sess_gravar()
     return n_lidas, novas, hoje
 

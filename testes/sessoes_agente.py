@@ -393,6 +393,80 @@ ok(sb and all(de(p) is sb for p in orfas) and sb["motivo"] == "reagrupada" and s
    "boot: reagrupadas com os rostos do banco: %r" % ((sb and (sb["motivo"], sb["fechada_por"], sb["dec"])),))
 ok(not m.sess_rostos_mem, "boot: nenhum vetor fica em memória depois de fechar")
 
+# 15/11 (grafia Klacius): sessão fechada sem fotógrafo cujas fotos são todas do mesmo cadastrado (autor ou dono da câmera)
+# recebe a chave dele na partida; mista, com foto sem dono ou sem registro fica; a que já tem fotógrafo nunca muda
+reset(); LIG[0] = False
+for arq in os.listdir(m.SESS_DIR):
+    if arq.startswith(m._ff_hoje(T2)) or arq.startswith(m._ff_hoje(T2 - 86400)):
+        os.remove(os.path.join(m.SESS_DIR, arq))
+TD = T2 + 900
+casos = {"toda": ("666600001111", ["Klacius", "KLACIUS", ("dono", "Klacius Ank Guarino")]), "mista": ("666600002222", ["Klacius", "Yago"]),
+         "semdono": ("666600003333", ["Klacius", ""]), "semmeta": ("666600004444", ["Klacius", None]), "outro": ("666600005555", ["Fulano de Tal", "Fulano de Tal"])}
+pd = {}
+for i, (nome, (serie, autores)) in enumerate(casos.items()):
+    pd[nome] = [add("equipe", TD + i * 0.1 + j, cap=TD - 3 + j, serie=serie) for j in range(len(autores))]
+    for pid, au in zip(pd[nome], autores):
+        if au is None:
+            continue
+        m.meta[pid] = {"o": "equipe", "s": "ftp", "u": TD + 1, "serie": serie, **({au[0]: au[1]} if isinstance(au, tuple) else {"autor": au})}
+        m.lib[pid] = {"file": "/x", "thumb": "/x"}
+pd["carlos"] = [add("carlos", TD + 5 + j, cap=TD + 2 + j) for j in range(2)]
+for pid in pd["carlos"]:
+    m.meta[pid] = {"o": "carlos", "s": "ftp", "u": TD + 5, "autor": "Klacius"}
+    m.lib[pid] = {"file": "/x", "thumb": "/x"}
+cd = {k: de(v[0])["card"] for k, v in pd.items()}
+ok(all(de(pd[k][0])["fotografo"] is None for k in casos) and de(pd["carlos"][0])["fotografo"] == "carlos" and len(set(cd.values())) == 6, "dono: cenário montado: %r" % cd)
+diaD = de(pd["toda"][0])["dia"]
+m.ev_receber({"posto": "Caixa 1", "eventos": [
+    {"tipo": "criar", "idem": "vdono1:1", "venda": "vdono1", "seq": 1, "em": m._iso(TD + 20), "dados": {"card": cd["toda"], "total": 120, "nPhotos": 2, "canal": "checkout", "meio": "pix"}},
+    {"tipo": "pagar", "idem": "vdono1:2", "venda": "vdono1", "seq": 2, "em": m._iso(TD + 25), "dados": {}}]})
+ok(m.sess_dono_corrigir(TD + 30) == [], "dono: sessão aberta não é tocada")
+m.sess_gravar()
+ma = m.metricas_dia(diaD)["por_fotografo"]
+ok("klassius" not in ma and ma.get("sem fotógrafo", {}).get("sessoes") == 5 and ma["sem fotógrafo"]["vendas"] == 1, "dono: antes, tudo em sem fotógrafo: %r" % ma)
+reset()
+rev_antes = m.sess_rev[0]
+m.sess_carregar(agora=TD + 200)
+xt = m.sess[cd["toda"]]
+ok(xt["fotografo"] == "klassius" and xt["fonte"] == "ftp" and xt["rev"] > rev_antes and xt["status"] == "fechada" and xt["fotos"] == pd["toda"],
+   "dono: a sessão toda dele vira klassius com rev novo: %r" % ((xt["fotografo"], xt["fonte"], xt["rev"], rev_antes),))
+dc = xt.get("dono_corrigido") or {}
+ok(dc.get("por") == "servidor" and dc.get("de") is None and dc.get("para") == "klassius" and dc.get("em") and dc.get("motivo") == "autor_ou_dono_da_camera" and dc.get("fonte_antes") == "câmera ···1111",
+   "dono: a correção fica registrada na sessão (quem, quando, de, para, motivo): %r" % dc)
+ok(all(m.sess[cd[k]]["fotografo"] is None and "dono_corrigido" not in m.sess[cd[k]] for k in ("mista", "semdono", "semmeta", "outro")),
+   "dono: mista, com foto sem dono, sem registro ou de desconhecido ficam: %r" % {k: m.sess[cd[k]]["fotografo"] for k in casos})
+ok(m.sess[cd["carlos"]]["fotografo"] == "carlos" and "dono_corrigido" not in m.sess[cd["carlos"]], "dono: sessão que já tem fotógrafo nunca muda")
+jd = {x["card"]: x for x in json.load(open(os.path.join(m.SESS_DIR, diaD + ".json"), encoding="utf8"))["sessoes"]}
+ok(jd[cd["toda"]]["fotografo"] == "klassius" and jd[cd["toda"]]["dono_corrigido"]["para"] == "klassius" and jd[cd["mista"]]["fotografo"] is None, "dono: gravado no arquivo do dia")
+fd = [x for x in m.sess_feed(rev_antes)["sessoes"] if x["card"] == cd["toda"]] if diaD == m._ff_hoje() else None
+ok(fd is None or (len(fd) == 1 and fd[0]["fotografo"] == "klassius" and fd[0]["dono_corrigido"]["para"] == "klassius"), "dono: o /sessoes entrega a sessão corrigida: %r" % fd)
+md = m.metricas_dia(diaD)["por_fotografo"]
+ok(md.get("klassius", {}).get("sessoes") == 1 and md["klassius"]["fotos"] == 3 and md["klassius"]["vendas"] == 1 and md["klassius"]["faturamento"] == 120 and md["klassius"]["sessoes_com_venda"] == 1
+   and md["sem fotógrafo"]["sessoes"] == 4 and md["sem fotógrafo"]["vendas"] == 0 and md["sem fotógrafo"]["fotos"] == 8,
+   "dono: o resumo do dia soma a sessão e a venda no nome dele: %r" % md)
+rev_d = m.sess_rev[0]
+ok(m.sess_dono_corrigir(TD + 300) == [] and m.sess_rev[0] == rev_d, "dono: a segunda rodada não muda nada")
+reset()
+m.sess_carregar(agora=TD + 400)
+ok(m.sess[cd["toda"]]["fotografo"] == "klassius" and m.sess[cd["toda"]]["rev"] == xt["rev"] and m.sess[cd["toda"]]["dono_corrigido"] == dc, "dono: outra partida não corrige de novo")
+# medida: 3.000 sessões sem fotógrafo de 5 fotos (15.000 fotos) não atrasam a partida
+reset()
+with m.sess_lock:
+    for i in range(3000):
+        fotosv = ["%012x" % (0xd00000000000 + i * 8 + j) for j in range(5)]
+        for pv in fotosv:
+            m.meta[pv] = {"o": "equipe", "s": "ftp", "u": TD, "serie": "9999%08d" % i, "autor": "Klacius" if i % 2 else "Fulano"}
+        xv = m._sess_normaliza({"card": "LPV%06d" % i, "dia": diaD, "k": diaD + "|cam:%d" % i, "fotografo": None, "fonte": "câmera", "status": "fechada", "fotos": fotosv, "aberta_em": TD, "rev": 1})
+        m.sess[xv["card"]] = xv
+t0v = time.time()
+nv = len(m.sess_dono_corrigir(TD + 500))
+dtv = time.time() - t0v
+ok(nv == 1500 and dtv < 5, "dono: 3.000 sessões (15.000 fotos) em %.2f s, %d corrigidas" % (dtv, nv))
+print("dono: 3000 sessões, 15000 fotos: %.3f s" % dtv, file=sys.stderr)
+for i in range(3000 * 8):
+    m.meta.pop("%012x" % (0xd00000000000 + i), None)
+reset()
+
 # v91 parte B: a venda achada pela selfie junta várias sessões; o evento guarda as sessões (só códigos válidos)
 ev = m._ev_limpo({"tipo": "criar", "idem": "vtest01:1", "venda": "vtest01", "dados": {"card": "LPAAAA111", "sessoes": ["LPAAAA111", "LPBBBB222", "<script>", "lp minúsculo"], "total": 190}})
 ok(ev and ev["dados"].get("sessoes") == ["LPAAAA111", "LPBBBB222"], "parte B: evento criar guarda as sessões da venda: %r" % (ev and ev["dados"]))

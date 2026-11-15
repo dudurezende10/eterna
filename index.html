@@ -4244,7 +4244,7 @@ async function srvPull(){const a=state.agent;visPull();if(SRV.busy||!a.sessoes)r
       if(x.removida){delete SRV.sess[x.card];delete SRV.mat[x.card];if(SIM.sessions[x.card])srvLgpd(x);continue;}
       if(deHoje)SRV.sess[x.card]=x;
       if(x.status!=='fechada')continue;
-      if(SIM.sessions[x.card]&&(SIM.sessions[x.card].photos||[]).length){srvIaCompleta(x);srvLgpd(x);continue;} // fechada não muda (S8), só pela LGPD; sem fotos (venda que chegou antes) ainda materializa
+      if(SIM.sessions[x.card]&&(SIM.sessions[x.card].photos||[]).length){srvIaCompleta(x);srvLgpd(x);srvDono(x);continue;} // fechada não muda (S8), só pela LGPD; sem fotos (venda que chegou antes) ainda materializa
       SRV.mat[x.card]={...x,_pausa:j.pausa};}
     SRV.rev=j.rev;const novas=srvMaterializa();if((novas||mudou)&&(state.view==='importar'||state.view==='fotofila'))render();
   }catch(e){}finally{SRV.busy=false;}}
@@ -4272,6 +4272,10 @@ function srvIaCompleta(x){const s=SIM.sessions[x.card];if(!s||!s.srv||s.status==
   const tem=new Set((s.photos||[]).map(p=>p.id));s.ia=x.ia.map(p=>'ag_'+p).filter(id=>tem.has(id));saveSim();}
 // v91 (revisão 5): sessão do servidor que perdeu fotos pela LGPD. Sem venda paga, as fotos saem da sessão deste navegador;
 // com venda paga, nada some do registro e fica uma linha no log.
+// 15/11: o servidor corrigiu o fotógrafo de uma sessão fechada que estava sem (dono_corrigido); a cópia deste aparelho segue o servidor.
+// Só sessão do servidor, só com a marca da correção e só para fotógrafo que a tela conhece
+function srvDono(x){const s=SIM.sessions[x.card];const c=x.dono_corrigido;if(!s||!s.srv||!c||typeof c!=='object'||c.para!==x.fotografo||!x.fotografo||!Object.prototype.hasOwnProperty.call(P,x.fotografo)||!P[x.fotografo].human||s.key===x.fotografo)return false;
+  s.key=x.fotografo;log(`Sessão ${x.card}: fotógrafo acertado pelo servidor (${P[x.fotografo].name})`);saveSim();return true;}
 function srvLgpd(x){const s=SIM.sessions[x.card];if(!s||!s.srv)return;const keep=new Set(x.removida?[]:(x.fotos||[]).map(p=>'ag_'+p));const fora=(s.photos||[]).filter(p=>!keep.has(p.id));if(!fora.length)return;
   if(s.status==='paga'){if(!s.lgpdLog){s.lgpdLog=1;log(`Sessão ${x.card}: ${fora.length} ${fora.length===1?'foto apagada':'fotos apagadas'} a pedido do cliente depois da venda paga (a venda continua no registro)`);saveSim();}return;}
   const dela=new Set((s.photos||[]).map(p=>p.id));s.photos=s.photos.filter(p=>keep.has(p.id));if(Array.isArray(s.ia))s.ia=s.ia.filter(id=>keep.has(id)); /* v93 */s.selected=(s.selected||[]).filter(id=>keep.has(id)||!dela.has(id)); /* v91: foto de outra sessão da mesma venda não sai aqui */if(x.removida)s.removida=true;log(`Sessão ${x.card}: ${fora.length} ${fora.length===1?'foto saiu':'fotos saíram'} a pedido do cliente (LGPD)`);saveSim();}

@@ -100,6 +100,16 @@ try{
   FEED.rostos=false;FEED.rev=16;S_ABERTA.rev=16;
   ok(await espera(pg,()=>/Rostos desligados neste computador: as sessões estão sendo separadas só por tempo \(1 minuto\)\./.test((document.querySelector('#up-sessoes .up-aviso')||{}).textContent||'')),'aviso de rostos desligados');
   FEED.rostos=true;
+  // 15/11: sessão fechada sem fotógrafo que o servidor corrige (dono_corrigido) passa ao nome dele na cópia do aparelho e na Qualidade
+  {const S_SEM=sessao({card:'LPD2N5AAA',fotografo:null,fonte:'câmera ···6666',n:3,rev:17}),S_OUT=sessao({card:'LPD2N5BBB',fotografo:null,fonte:'câmera ···7777',n:2,rev:17});
+    FEED.sessoes.push(S_SEM,S_OUT);FEED.rev=17;
+    ok(await espera(pg,()=>!!(ETERNA.SIM.sessions.LPD2N5AAA&&ETERNA.SIM.sessions.LPD2N5BBB),15000),'dono: as duas sessões sem fotógrafo chegam ao SIM');
+    const antes=await pg.evaluate(()=>[ETERNA.SIM.sessions.LPD2N5AAA.key,ETERNA.SIM.sessions.LPD2N5BBB.key]);ok(antes[0]!=='klassius'&&antes[1]!=='klassius','dono: antes da correção não é dele: '+antes);
+    Object.assign(S_SEM,{fotografo:'klassius',fonte:'cartão',dono_corrigido:{em:new Date().toISOString(),por:'servidor',de:null,para:'klassius',motivo:'autor_ou_dono_da_camera'},rev:18});
+    Object.assign(S_OUT,{fotografo:'klassius',rev:18});FEED.rev=18; // sem a marca da correção: sessão fechada não muda
+    ok(await espera(pg,()=>ETERNA.SIM.sessions.LPD2N5AAA.key==='klassius',15000),'dono: a sessão corrigida no servidor passa ao klassius: '+await pg.evaluate(()=>ETERNA.SIM.sessions.LPD2N5AAA.key));
+    const dep=await pg.evaluate(()=>({out:ETERNA.SIM.sessions.LPD2N5BBB.key,rev:(ETERNA.revSessions().find(x=>x.card==='LPD2N5AAA')||{}).key,nome:ETERNA.P.klassius.name,salvo:JSON.parse(localStorage.getItem('eterna.sim.v1')).sessions.LPD2N5AAA.key}));
+    ok(dep.out===antes[1]&&dep.rev==='klassius'&&dep.nome==='Klacius'&&dep.salvo==='klassius','dono: sem a marca não muda; a Qualidade lista a sessão no nome dele e o SIM foi gravado: '+JSON.stringify(dep));}
   // celular: cabeçalho quebra a linha sem estourar
   await pg.setViewportSize({width:390,height:844});await pg.waitForTimeout(300);await pg.evaluate(()=>window.scrollTo(0,document.querySelector('#up-sessoes').offsetTop-10));await pg.waitForTimeout(400);
   ok(await pg.evaluate(()=>[...document.querySelectorAll('.up-sess')].every(b=>b.scrollWidth<=b.clientWidth+1)&&document.querySelector('#up-sessoes').scrollWidth<=document.querySelector('#up-sessoes').clientWidth+1),'celular: painel e blocos sem rolagem lateral');
