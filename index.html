@@ -1977,7 +1977,14 @@ const PV_FILA='eterna.ponto.fila.v1',PV_SEQV='eterna.ponto.seqv.v1',PV_SEQ='eter
 const pvDispId=()=>{const d=pontoModo()==='posto'?postoDisp():null;return d&&d.id?d.id:'L00';};
 function pvId(){const r=[...galRand(4)].map(b=>(b%36).toString(36)).join('');return pvDispId()+'-'+Date.now().toString(36)+r;}
 // número do dia gerado dentro do mesmo navigator.locks da fila: as duas janelas do notebook nunca tiram o mesmo número. Devolve uma Promise.
-function pvSaleNo(){return new Promise(res=>{let ok=false;const g=()=>{if(ok)return;ok=true;res(pvSaleNoGera());};
+// 15/11: o número vem do servidor (sequência única do dia para todas as estações; antes era um contador do navegador e
+// repetia entre estações e janelas). Sem servidor, o contador local com a marca do aparelho (nunca igual ao de outra estação).
+async function pvSaleNoSrv(){const a=state.agent;if(!a||!a.on||!a.url||demoOn())return null;const d=pontoModo()==='posto'?postoDisp():null;const pre=d&&d.num?'P'+d.num:'L0';
+  const ab=typeof AbortController==='function'?new AbortController():null;const tm=ab?setTimeout(()=>ab.abort(),4000):null;
+  try{const r=await agFetch(a.url+'/ponto/numero',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:ab?ab.signal:undefined});const j=r.ok?await r.json():null;
+    return j&&j.ok&&j.n>0?pre+'-'+String(j.n).padStart(3,'0'):null;}catch(e){return null;}finally{if(tm)clearTimeout(tm);}}
+async function pvSaleNo(){const s=await pvSaleNoSrv();return s||pvSaleNoLocal();}
+function pvSaleNoLocal(){return new Promise(res=>{let ok=false;const g=()=>{if(ok)return;ok=true;res(pvSaleNoGera()+'-'+[...galRand(3)].map(b=>(b%36).toString(36)).join('').toUpperCase());};
   try{if(navigator.locks&&typeof navigator.locks.request==='function'){navigator.locks.request('eterna-ponto-fila',g).catch(g);return;}}catch(e){}g();});}
 function pvSaleNoGera(){const d=pontoModo()==='posto'?postoDisp():null;const pre=d&&d.num?'P'+d.num:'L0';const hoje=todayISO();let o=null;try{o=JSON.parse(localStorage.getItem(PV_SEQ)||'null');}catch(e){}
   if(!o||o.dia!==hoje)o={dia:hoje,n:0};o.n++;try{localStorage.setItem(PV_SEQ,JSON.stringify(o));}catch(e){}return pre+'-'+String(o.n).padStart(3,'0');}
@@ -6470,7 +6477,9 @@ function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000)
   const tv=document.body.classList.contains('if-tv');const mini=!tv||impMiniOn();
   const ctx=p=>{const a=[p.posto,p.vendedor&&p.vendedor.split(' ')[0]].filter(Boolean).map(esc).join(' · ');return a?`(${a})`:'';};
   const fotos=n=>TE('n_fotos',n);
-  const thumbs=p=>mini&&!p.local?`<div class="if-thumbs">${Array.from({length:Math.min(p.fotos,12)},(_,i)=>`<span class="if-th ${i<p.feitas?'feita':''}"><img src="${esc(state.agent.url)}/impressao/miniatura?id=${p.id}&n=${i}" alt="" loading="lazy" onerror="this.remove()">${i<p.feitas?ICO.ok:''}</span>`).join('')}</div>`:'';
+  // 15/11: pedido da DNP de um posto: as miniaturas são as fotos da venda (ids que o servidor manda)
+  const thumbsLocal=p=>`<div class="if-thumbs">${(p.ids||[]).slice(0,12).map((id,i)=>`<span class="if-th ${p.estado==='impresso'?'feita':''}"><img src="${esc(state.agent.url)}/thumb/${encodeURIComponent(id)}" alt="" loading="lazy" onerror="this.remove()">${p.estado==='impresso'?ICO.ok:''}</span>`).join('')}</div>`;
+  const thumbs=p=>p.local?((p.ids||[]).length?thumbsLocal(p):''):mini?`<div class="if-thumbs">${Array.from({length:Math.min(p.fotos,12)},(_,i)=>`<span class="if-th ${i<p.feitas?'feita':''}"><img src="${esc(state.agent.url)}/impressao/miniatura?id=${p.id}&n=${i}" alt="" loading="lazy" onerror="this.remove()">${i<p.feitas?ICO.ok:''}</span>`).join('')}</div>`:'';
   const card=(p,cls,linha2,extra)=>`<div class="if-card ${cls}"><div class="if-num">${esc(p.venda)}</div>${ctx(p)?`<div class="if-ctx">${ctx(p)}</div>`:''}<div class="if-meta">${linha2}</div>${extra||''}</div>`;
   return `<div class="if-wrap"><div class="if-head"><div><div class="eyebrow">${imps.length>1?TE('if_n_imps',imps.length)+' · '+imps.map(esc).join(', '):esc(imps[0])}</div><h1>${TE('v_impfila')}</h1></div>
     <div class="row"><span class="if-imps">${imps.map(estPill).join('')}</span>${off?'':`<span class="pill ${espera?'warn':'good'}">${espera?TE('if_espera',fotos(espera),minEsp):TE('if_tudo_imp')}</span>`}<button class="btn" data-act="impfila-mini">${TE('if_mini_tc',impMiniOn())}</button><button class="btn" data-act="impfila-tv">${tv?TE('if_sair_tc'):TE('if_tc')}</button></div></div>
@@ -6480,7 +6489,7 @@ function vImpFila(){if(!impFilaTimer){impFilaTimer=setInterval(impFilaPoll,2000)
     <section class="if-col"><h2>${TE('if_na_fila_h')} <span class="if-cnt">${fila.length}</span></h2><div class="if-list">${fila.map((p,i)=>card(p,'fila',`${TE('if_pedido',hm(p.criado))} · ${fotos(p.fotos)} · ${i===0?TE('if_proxima'):TE('if_ordinal',i+1)} · ${min(p.criado)}`,thumbs(p)+acts(p))).join('')||`<div class="if-vazio">${TE('if_ninguem')}</div>`}</div></section>
     <section class="if-col agora"><h2>${TE('if_imp_agora')} <span class="if-cnt">${agoraP.length}</span></h2><div class="if-list">${imps.map(n=>{const p=agoraP.find(x=>x.impressora===n)||(imps.length===1?agoraP[0]:null);
         return `<div class="if-imp">${imps.length>1?`<div class="if-impn">${esc(n)}</div>`:''}${p?card(p,'imp',`${TE('if_inicio',hm(p.inicio||p.criado))} · ${TE('if_foto_de',Math.min(p.feitas+1,p.fotos),p.fotos)} · ${min(p.inicio||p.criado)}`,`${aviso(p)}<div class="if-prog"><i style="width:${Math.round(100*p.feitas/p.fotos)}%"></i></div>${thumbs(p)}${acts(p)}`):`<div class="if-vazio">${TE('if_livre')}</div>`}</div>`;}).join('')}</div></section>
-    <section class="if-col pronta"><h2>${TE('if_prontas')} <span class="if-cnt">${prontas.length}</span></h2><div class="if-list">${prontas.map(p=>card(p,'ok',`${imps.length>1&&p.impressora?'<b>'+esc(p.impressora)+'</b> · ':''}${TE('if_pronta',hm(p.fim))} · ${fotos(p.fotos)} · ${min(p.fim)}`,acts(p))).join('')||`<div class="if-vazio">${TE('if_nada_pronto')}</div>`}</div></section>
+    <section class="if-col pronta"><h2>${TE('if_prontas')} <span class="if-cnt">${prontas.length}</span></h2><div class="if-list">${prontas.map(p=>card(p,'ok',`${imps.length>1&&p.impressora?'<b>'+esc(p.impressora)+'</b> · ':''}${TE('if_pronta',hm(p.fim))} · ${fotos(p.fotos)} · ${min(p.fim)}`,(p.local?thumbs(p):'')+acts(p))).join('')||`<div class="if-vazio">${TE('if_nada_pronto')}</div>`}</div></section>
   </div></div>`;}
 // ---------- Fila do fotógrafo (v87) ----------
 // Painel de senhas das fotos chegando, por fotógrafo, calculado no agente (GET /fila-fotografo, a cada 2 s). Só leitura; tela da

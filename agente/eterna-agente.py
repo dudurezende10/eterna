@@ -7039,6 +7039,20 @@ def imp_monitor():
         time.sleep(10)
 
 
+IMP_NAO_SAIU_S = 15 * 60
+
+
+def _imp_ids(l):
+    """Ids das fotos (sem o prefixo ag_ do app) para as miniaturas da fila; até 12, só o formato de id do agente."""
+    out = []
+    for x in (l if isinstance(l, list) else []):
+        x = str(x or "")
+        x = x[3:] if x.startswith("ag_") else x
+        if re.match(r"^[A-Za-z0-9_-]{1,80}$", x) and x not in out:
+            out.append(x)
+    return out[:12]
+
+
 def imp_fila_postos(agora=None):
     """15/11: fila das DNPs ligadas em cada posto (impressão local), montada pelo banco de vendas de hoje: cada venda com
     impressão é um pedido na DNP do posto que vendeu. Sem evento de impressão = esperando no posto; "ok" = impresso;
@@ -7069,7 +7083,8 @@ def imp_fila_postos(agora=None):
             continue
         v = vendas.setdefault(venda, {"imps": []})
         if tipo == "criar":
-            v.update(posto=posto, criado=t, venda=d.get("saleNo") or venda, vendedor=d.get("vendedor") or "", fotos=int(d.get("prints") or 0))
+            v.update(posto=posto, criado=t, venda=d.get("saleNo") or venda, vendedor=d.get("vendedor") or "", fotos=int(d.get("prints") or 0),
+                     ids=list(d.get("selected") or []) + list(d.get("aiSel") or []))
             if posto and posto not in postos:
                 postos.append(posto)
         elif tipo == "cancelar":
@@ -7084,13 +7099,22 @@ def imp_fila_postos(agora=None):
             continue
         j = {"id": "v:" + vid, "local": True, "venda": v.get("venda") or vid, "vendedor": v.get("vendedor") or "", "posto": v["posto"],
              "impressora": v["posto"], "fotos": max(v.get("fotos", 0), 1), "feitas": 0, "estado": "na_fila", "criado": v.get("criado") or agora,
-             "inicio": None, "fim": None, "erro": None}
+             "inicio": None, "fim": None, "erro": None, "ids": _imp_ids(v.get("ids"))}
         if v["imps"]:
             t, d = v["imps"][-1]
+            if d.get("fotos"):
+                j["ids"] = _imp_ids(d.get("fotos")) or j["ids"]       # as fotos que foram para a DNP (miniaturas na fila)
+            dnp_txt = (d.get("dnp") or {}).get("texto") if int((d.get("dnp") or {}).get("status") or 0) >= 1000 else None
             if d.get("resultado") == "ok":
                 j.update(estado="impresso", feitas=j["fotos"], fim=t, inicio=t)
+            elif dnp_txt:
+                j.update(estado="erro", fim=t, erro="não saiu · " + str(dnp_txt))
+            elif agora - t < IMP_NAO_SAIU_S:
+                # 15/11: "Não saiu" tocado no posto sem erro da DNP: a venda volta a esperar a impressão no posto (não é
+                # "Com erro"); passados IMP_NAO_SAIU_S sem imprimir de novo, sai da fila
+                j.update(estado="na_fila")
             else:
-                j.update(estado="erro", fim=t, erro="não saiu" + (" · " + d["dnp"]["texto"] if (d.get("dnp") or {}).get("texto") else ""))
+                continue
         if j["estado"] in ("na_fila", "erro") or agora - (j["fim"] or agora) < 3 * 3600:
             jobs.append(j)
     estados = {}
@@ -9614,6 +9638,22 @@ PEDIDO_MAX = 64 * 1024
 _re_pedido = re.compile(r"^p_[A-Za-z0-9_-]{1,80}$")
 
 
+# 15/11 (teste com várias estações): o número da venda vinha de um contador no navegador de cada estação e repetia
+# (três vendas "L0-001" no mesmo Caixa). Agora o servidor dá o número: uma sequência só por dia para todas as estações.
+def numero_venda(dia=None):
+    dia = dia or _ff_hoje()
+    with estado_lock:
+        db = estado_db()
+        try:
+            db.execute("create table if not exists venda_seq (dia text primary key, n integer not null)")
+            db.execute("insert into venda_seq (dia, n) values (?, 1) on conflict(dia) do update set n = n + 1", (dia,))
+            n = db.execute("select n from venda_seq where dia = ?", (dia,)).fetchone()[0]
+            db.commit()
+        finally:
+            db.close()
+    return {"ok": True, "dia": dia, "n": int(n)}
+
+
 def pedidos_db():
     db = estado_db()
     db.execute("create table if not exists pedido (id text primary key, posto text, estado text, valor text, criada text, em real)")
@@ -10829,6 +10869,7 @@ ROTAS = (
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),   # vendas do posto sem impressão, para recuperar (15/11)
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
@@ -11657,7 +11698,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -12779,6 +12820,10 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, err)
             body, recusados = auth_filtrar_docs(body, self.sessao(), self.client_address[0], self.posto_atual())
             return self.js(dict(estado_gravar(body, quem=self.client_address[0]), recusados=recusados))
+        if p == "/ponto/numero":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js(numero_venda())
         if p == "/ponto/pedidos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -13324,7 +13369,7 @@ class H(BaseHTTPRequestHandler):
             return self.postos_post(u)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
-        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()

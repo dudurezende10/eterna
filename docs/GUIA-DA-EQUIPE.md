@@ -47,6 +47,8 @@ O menu fica do lado esquerdo e é dividido em grupos:
 2. O número ao lado de **Caixa** mostra quantos pedidos esperam o caixa: pagamento em dinheiro a confirmar e pedido do Checkout em que o caixa ainda escolhe o pacote e a forma de pagamento. Os pedidos do Checkout ficam guardados no servidor: o Caixa daquele computador vê os pedidos feitos nele, em qualquer navegador.
 3. **Cada estação vê só as suas vendas e os seus pedidos.** O servidor reconhece a estação pelo pareamento. Se o navegador da estação for limpo ou trocado, as vendas pagas daquela estação que ainda não imprimiram voltam sozinhas do servidor para a lista de impressão, em até 1 minuto.
 4. **Fila de impressão** (Dashboard) mostra a DNP de todas as estações: as vendas esperando impressão em cada uma, as impressas nas últimas 3 horas, as que não saíram e o estado de cada DNP (livre ou com erro, como sem papel). Cancelar e reimprimir são feitos na própria estação.
+   - Cada pedido mostra as miniaturas das fotos da venda, para saber qual foto acabou de sair. **Com erro** só aparece quando a DNP avisa (sem papel, sem fita, tampa aberta). "Não saiu" tocado no posto sem aviso da DNP volta para **Na fila** e, se não for impresso de novo em 15 minutos, sai da fila.
+   - O número da venda vem do servidor: uma sequência só do dia para todas as estações (P3-014, P5-015…), sem repetir. Sem o servidor, o posto usa um número próprio com uma marca do aparelho.
 3. Toque no nome do grupo para abrir. Toque de novo para fechar. Quem vê até 5 telas vê a lista direta, sem grupos.
 4. O grupo da tela em que você está fica sempre aberto.
 5. Para voltar ao **Início**, toque no logo.

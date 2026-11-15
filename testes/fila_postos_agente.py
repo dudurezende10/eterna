@@ -14,7 +14,7 @@ def ev(idem, venda, tipo, posto, **d):
 
 
 m.ev_receber({"eventos": [
-    ev("ev-c1", "venda-1", "criar", "Posto 1", saleNo="P1-001", prints=3),
+    ev("ev-c1", "venda-1", "criar", "Posto 1", saleNo="P1-001", prints=3, selected=["ag_foto-a", "ag_foto-b", "<x>"]),
     ev("ev-c2", "venda-2", "criar", "Posto 2", saleNo="P2-001", prints=2),
     ev("ev-i2", "venda-2", "impressao", "Posto 2", resultado="ok", n=2, dnp={"mqty": 300, "status": 0}),
     ev("ev-c3", "venda-3", "criar", "Posto 3", saleNo="P3-001", prints=1),
@@ -22,6 +22,8 @@ m.ev_receber({"eventos": [
     ev("ev-c4", "venda-4", "criar", "Posto 1", saleNo="P1-002", prints=2),
     ev("ev-x4", "venda-4", "cancelar", "Posto 1"),
     ev("ev-c5", "venda-5", "criar", "Posto 4", saleNo="P4-001", prints=0),
+    ev("ev-c6", "venda-6", "criar", "Posto 4", saleNo="P4-002", prints=1),
+    ev("ev-i6", "venda-6", "impressao", "Posto 4", resultado="nao_saiu", n=1, fotos=["ag_foto-z"], dnp={"mqty": 200, "status": 0}),
 ]})
 f = m.imp_fila_json()
 por = {p["venda"]: p for p in f["pedidos"]}
@@ -33,6 +35,10 @@ ok(por.get("P3-001", {}).get("estado") == "erro" and "sem papel" in (por["P3-001
 ok("P1-002" not in por and "P4-001" not in por, "cancelada e sem impressão ficam fora: %s" % sorted(por))
 ok(f["estados"].get("Posto 3", {}).get("estado") == "erro" and f["estados"]["Posto 3"].get("motivo") == "sem papel", "DNP do posto 3 parada: %s" % f["estados"].get("Posto 3"))
 ok(f["estados"].get("Posto 1", {}).get("pendentes") == 1, "posto 1 com 1 esperando: %s" % f["estados"].get("Posto 1"))
+ok(por.get("P1-001", {}).get("ids") == ["foto-a", "foto-b"], "miniaturas: ids das fotos da venda, sem o prefixo e sem id inválido: %s" % por.get("P1-001"))
+ok(por.get("P4-002", {}).get("estado") == "na_fila" and por["P4-002"].get("ids") == ["foto-z"], "'Não saiu' sem erro da DNP volta a esperar no posto, não é erro: %s" % por.get("P4-002"))
+f2 = m.imp_fila_postos(time.time() + m.IMP_NAO_SAIU_S + 60)
+ok("P4-002" not in {p["venda"] for p in f2[2]}, "'Não saiu' parado há mais de 15 min sai da fila")
 ok(all(p.get("local") for p in f["pedidos"]), "pedidos dos postos marcados como locais")
 r = m.vendas_posto_sem_impressao("Posto 1")
 ok([v["venda"] for v in r["vendas"]] == ["venda-1"] and r["vendas"][0]["dados"].get("saleNo") == "P1-001", "posto 1 recupera só a venda sem impressão: %s" % r)
