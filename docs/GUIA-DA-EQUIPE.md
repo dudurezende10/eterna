@@ -1086,7 +1086,7 @@ Bom saber:
 - Feriados e jogos no Maracanã entram sozinhos no **Calendário de eventos** (veja **Cadastrar o calendário**).
 - **Estatísticas › Jogos e ano a ano** compara dia de jogo com dia normal. Só o Admin vê.
 - A chave da API de jogos fica só com o Admin, em **Configurações › Preços e Checkout**, aba **Checkout**.
-- **Juntar a família pelo rosto (em teste)** fica no mesmo lugar, só para o Admin, e vem desligado. Enquanto estiver desligado, o caixa junta as fotos da mesma família pelo botão **Juntar outra leva**, no pedido do Posto de venda, e desfaz com **Separar**.
+- **Juntar a família pelo rosto (em teste)** fica no mesmo lugar, só para o Admin, e vem desligado. Enquanto estiver desligado, cada leva fica separada; as fotos dos outros da família aparecem pela selfie ou pela **Foto do grupo** no Checkout. O pedido não tem mais o bloco "Levas desta família" (Juntar outra leva, código LP, Separar), retirado em 15/11.
 
 ### Recorte novo dos fundos de IA
 
