@@ -2236,7 +2236,8 @@ function minhasVendas(trava){const u=state.user;if(!u)return '';const hoje=today
 // ---------- v83 (parte E): venda acompanhada. O Checkout publica o que o cliente vê; o Posto de venda só lê (nada vai para o agente) ----------
 const ECO_CH=(()=>{try{return window.BroadcastChannel?new BroadcastChannel('eterna-loja'):null;}catch(e){return null;}})();
 state.eco=null;let ecoUlt=0,ecoTimer=null;
-function lojaEcoMsg(){const k=state.kiosk;const m={tipo:'estado',em:Date.now(),step:k.step,lang:lang()};
+const ECO_TAB=Math.random().toString(36).slice(2,10);const ECO_OUTRAS={}; // 15/11: cada janela do Checkout se identifica para o Posto
+function lojaEcoMsg(){const k=state.kiosk;const m={tipo:'estado',em:Date.now(),step:k.step,lang:lang(),tab:ECO_TAB};
   if(k.code&&(k.step==='review'||k.step==='cart'||k.step==='done')&&sessionObj(k.code)){const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);
     m.card=k.code;m.i=Math.max(0,Math.min(items.length-1,k.i||0));m.n=items.length;const x=items[m.i];if(x)m.foto={t:x.t,id:x.id,bg:x.bg||null,st:pk[x.k]||''};
     m.esc=c.ch.map(x=>({t:x.t,id:x.id,bg:x.bg||null,fav:pk[x.k]==='fav'}));m.pkg=null;m.ideal=c.n?lojaIdeal(c.n).pkg:null;m.lines=[];m.total=null;m.prints=0;m.pay=null;} // v96: pacote e valor são do caixa
@@ -2245,17 +2246,17 @@ function lojaEcoMsg(){const k=state.kiosk;const m={tipo:'estado',em:Date.now(),s
   return m;}
 function lojaEco(){if(!ECO_CH||!state.lojaRota)return;const d=Date.now()-ecoUlt;if(d<300){if(!ecoTimer)ecoTimer=setTimeout(()=>{ecoTimer=null;lojaEco();},300-d);return;}
   ecoUlt=Date.now();try{ECO_CH.postMessage(lojaEcoMsg());}catch(e){}}
-function lojaEcoFim(){if(ECO_CH)try{ECO_CH.postMessage({tipo:'fim',em:Date.now()});}catch(e){}}
+function lojaEcoFim(){if(ECO_CH)try{ECO_CH.postMessage({tipo:'fim',em:Date.now(),tab:ECO_TAB});}catch(e){}}
 setInterval(()=>{if(state.lojaRota){if(lojaProntoOcioso()||lojaEscolhaOciosa())return;lojaEco();lojaVisitaAtualiza();if(lojaPendCheck())render();}},5000);
 // S2: qualquer toque ou tecla no Checkout conta como cliente presente na tela Pronto e na do valor; v96: também na escolha, com roda e arrasto
 ['pointerdown','keydown','wheel','touchmove'].forEach(t=>document.addEventListener(t,()=>{if(state.lojaRota)state.kiosk.toque=Date.now();},true));
 window.addEventListener('pagehide',()=>{if(state.lojaRota)lojaEcoFim();});
 // segurança (S1): a mensagem do canal vira uma lista fechada de campos conhecidos; números viram número e textos só de listas ou formatos conhecidos
 const ECO_ID=/^[A-Za-z0-9_|:-]{1,80}$/;
-function ecoNorm(m){if(!m||typeof m!=='object')return null;if(m.tipo==='fim')return {tipo:'fim'};const n=v=>{v=+v;return isFinite(v)?v:0;};const id=v=>typeof v==='string'&&ECO_ID.test(v)?v:null;
+function ecoNorm(m){if(!m||typeof m!=='object')return null;const tab=typeof m.tab==='string'&&/^[a-z0-9]{1,12}$/.test(m.tab)?m.tab:null;if(m.tipo==='fim')return {tipo:'fim',tab};const n=v=>{v=+v;return isFinite(v)?v:0;};const id=v=>typeof v==='string'&&ECO_ID.test(v)?v:null;
   const foto=x=>x&&typeof x==='object'&&id(x.id)?{t:x.t==='ai'?'ai':'ph',id:id(x.id),bg:id(x.bg),st:['ok','fav','no'].includes(x.st)?x.st:'',fav:!!x.fav}:null;
   const pk=v=>DATA.catalog.some(c=>c.id===v&&c.kind==='pacote')?v:null;
-  const o={tipo:'estado',em:n(m.em),step:['review','cart','done'].includes(m.step)?m.step:'code',lang:LANGS.some(l=>l[0]===m.lang)?m.lang:'pt'};
+  const o={tipo:'estado',tab,em:n(m.em),step:['review','cart','done'].includes(m.step)?m.step:'code',lang:LANGS.some(l=>l[0]===m.lang)?m.lang:'pt'};
   if(o.step!=='code'&&id(m.card)){o.card=m.card;o.i=Math.max(0,Math.floor(n(m.i)));o.n=Math.max(0,Math.floor(n(m.n)));o.foto=foto(m.foto);o.esc=(Array.isArray(m.esc)?m.esc:[]).slice(0,60).map(foto).filter(Boolean);
     o.pkg=pk(m.pkg);o.ideal=pk(m.ideal);o.lines=(Array.isArray(m.lines)?m.lines:[]).slice(0,4).map(l=>({t:l&&l.t==='pkg'?'pkg':'extra',n:Math.max(0,Math.floor(n(l&&l.n))),v:n(l&&l.v)}));
     o.total=m.total==null?null:n(m.total);o.prints=Math.max(0,Math.floor(n(m.prints)));o.pay=['card','pix','cash'].includes(m.pay)?m.pay:null;}
@@ -2264,7 +2265,10 @@ function ecoNorm(m){if(!m||typeof m!=='object')return null;if(m.tipo==='fim')ret
 if(ECO_CH)ECO_CH.onmessage=ev=>{const q=ev.data;
   if(q&&q.tipo==='mostrar-qr'){if(!state.lojaRota||typeof q.token!=='string'||!/^[A-Za-z0-9_-]{8,40}$/.test(q.token))return;const k=state.kiosk;lojaTimerOff();k.code=typeof q.card==='string'?q.card:k.code;
     lojaFim({token:q.token,codigo:typeof q.codigo==='string'?q.codigo:null,total:+q.total||0,meio:null,wait:false});return;}
-  if(state.lojaRota||state.pub)return;const m=ecoNorm(ev.data);if(!m)return;
+  if(state.lojaRota){const o=ecoNorm(q);if(o&&o.tab&&o.tab!==ECO_TAB){if(o.tipo==='fim')delete ECO_OUTRAS[o.tab];else ECO_OUTRAS[o.tab]={m:o,at:Date.now()};}return;}
+  if(state.pub)return;const m=ecoNorm(ev.data);if(!m)return;
+  // 15/11: duas janelas do Checkout no mesmo computador: a parada (tela inicial ou fechada) não apaga a que tem cliente
+  const ant0=state.eco;if(ant0&&ant0.m&&m.tab&&ant0.m.tab&&m.tab!==ant0.m.tab&&ant0.m.step!=='code'&&(m.tipo==='fim'||m.step==='code')&&Date.now()-ant0.at<15000){state.ecoOutra=Date.now();return;}
   const ant=state.eco;const sem=JSON.stringify(Object.assign({},m,{em:0}));const mudou=!ant||ant.sem!==sem;
   state.eco={m:m.tipo==='fim'?null:m,fim:m.tipo==='fim',at:Date.now(),sem,mudouEm:mudou?Date.now():ant.mudouEm};ecoUpd(mudou);};
 const ecoOff=()=>{const e=state.eco;return !e||e.fim||!e.m||Date.now()-e.at>15000;};
@@ -2273,11 +2277,12 @@ function ecoBody(){const e=state.eco;
   if(ecoOff())return `<div class="eco-off"><b>${TE('po_ck_fechado')}</b><span class="note">${esc(TE('po_ck_fechado_nota'))}</span></div>`;
   const m=e.m;const fl=`<span class="eco-flag" title="${esc(TE('po_idioma_cli'))}">${flagSvg(m.lang||'pt')}</span>`;const par=Math.max(0,Math.floor((Date.now()-e.mudouEm)/1000));
   const idade=`<span class="note" id="eco-age">${par>=5?TE('parado_ha',par):TE('agora')}</span>`;
-  if(!m.card)return `<div class="eco-wait"><b>${TE('po_ck_camera')}</b><span class="note">${TE('po_esperando_cli')}</span><div class="row">${fl}${idade}</div></div>`;
+  const duas=state.ecoOutra&&Date.now()-state.ecoOutra<20000?`<div class="pill warn" role="status" style="display:block;white-space:normal;margin-bottom:8px">${esc(TE('po_duas_ck'))}</div>`:'';
+  if(!m.card)return `${duas}<div class="eco-wait"><b>${TE('po_ck_camera')}</b><span class="note">${TE('po_esperando_cli')}</span><div class="row">${fl}${idade}</div></div>`;
   const so=sessionObj(m.card);const big=m.foto&&m.step==='review'?(m.foto.t==='ph'?`<div class="eco-big" style="${bigStyle(m.foto.id)}">${m.foto.st?`<span class="pill ${m.foto.st==='no'?'neutral':'good'} eco-st">${m.foto.st==='no'?TE('po_nao_quer'):m.foto.st==='fav'?TE('po_favorita'):TE('po_escolhida')}</span>`:''}</div>`:ecoThumb(m.foto,'eco-big')):'';
   const etapa={review:TE('po_foto_de',m.i+1,m.n),cart:TE('po_pkg_pag'),done:m.wait?TE('po_esp_pag'):TE('po_pago_t')}[m.step]||m.step;
   const meio=m.meio||(m.pay?PAY_MEIO[m.pay]:null);
-  return `<div class="eco-meta"><div><div class="eyebrow">${TE('sessao_x',esc(m.card))}${so&&P[so.key]?' · '+esc(P[so.key].name):''}</div><b>${esc(etapa)}</b></div><div class="row">${fl}${idade}</div></div>
+  return `${duas}<div class="eco-meta"><div><div class="eyebrow">${TE('sessao_x',esc(m.card))}${so&&P[so.key]?' · '+esc(P[so.key].name):''}</div><b>${esc(etapa)}</b></div><div class="row">${fl}${idade}</div></div>
     ${big}
     ${m.step==='done'&&m.pend&&m.wait?(()=>{const r=ecoPendR();const r0=r||dinAbertas().find(x=>x.id===m.pend);
       const esc0=!r&&(!r0||r0.escolha); // v96: pedido do Checkout sem pacote: o caixa escolhe em "Aguardando pagamento"
@@ -2740,6 +2745,7 @@ let LOJA_PRONTO_MS=3*60e3;
 function lojaSaiu(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.escolha||!p.pend)return false;
   lojaFresh(k.code);return lojaSaiuPed((SIM.caixaDin||[]).find(x=>x.id===p.pend));}
 function lojaSaiuPed(r){if(!r||!aberta(r)||r.saiu)return false;
+  if(Object.values(ECO_OUTRAS).some(o=>Date.now()-o.at<15000&&o.m.step==='done'&&o.m.pend===r.id))return false; // 15/11: o cliente está na tela Pronto de outra janela do Checkout
   r.saiu=now().toISOString();SIM.log.unshift({t:`Checkout: o cliente do pedido ${r.saleNo||r.id} saiu da tela sem pagar (a compra continua no Posto)`,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);saveSim();return true;}
 function lojaProntoOcioso(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.escolha)return false;
   if(Date.now()-Math.max(k.toque||0,k.prontoDesde||0)<LOJA_PRONTO_MS)return false;
@@ -9104,7 +9110,8 @@ const EQ={
   po_nenhum_din:["Nenhum dinheiro esperando confirmação.","No cash waiting for confirmation.","Ningún efectivo esperando confirmación.","Aucune somme en espèces en attente de confirmation.","Kein Bargeld wartet auf Bestätigung."],
   po_nenhum_pag:["Nenhum pagamento esperando.","No payments waiting.","Ningún pago esperando.","Aucun paiement en attente.","Keine Zahlungen ausstehend."],
   po_aviso_voltou:[(c)=>`O cliente do código ${c} voltou às fotos. A compra saiu daqui e volta quando ele tocar em Continuar.`,(c)=>`The customer with code ${c} went back to the photos. The purchase left this list and comes back when they tap Continue.`,(c)=>`El cliente del código ${c} volvió a las fotos. La compra salió de aquí y vuelve cuando toque Continuar.`,(c)=>`Le client du code ${c} est revenu aux photos. L'achat a quitté cette liste et reviendra quand il touchera Continuer.`,(c)=>`Der Kunde mit dem Code ${c} ist zu den Fotos zurückgekehrt. Der Kauf ist hier entfernt und kommt zurück, wenn er auf Weiter tippt.`],
-  po_aviso_saiu:[(c)=>`O cliente do código ${c} saiu da tela do Checkout sem pagar. A compra continua aqui: cancele ou espere ele voltar.`,(c)=>`The customer with code ${c} left the Checkout screen without paying. The purchase stays here: cancel it or wait for them to come back.`,(c)=>`El cliente del código ${c} salió de la pantalla del Checkout sin pagar. La compra sigue aquí: cancela o espera a que vuelva.`,(c)=>`Le client du code ${c} a quitté l'écran du Checkout sans payer. L'achat reste ici : annulez ou attendez son retour.`,(c)=>`Der Kunde mit dem Code ${c} hat den Checkout-Bildschirm ohne Zahlung verlassen. Der Kauf bleibt hier: abbrechen oder auf seine Rückkehr warten.`],
+  po_duas_ck:["Há duas janelas do Checkout abertas neste computador. Feche a que não está com o cliente.","Two Checkout windows are open on this computer. Close the one the customer is not using.","Hay dos ventanas del Checkout abiertas en este equipo. Cierre la que no está usando el cliente.","Deux fenêtres du Checkout sont ouvertes sur cet ordinateur. Fermez celle que le client n’utilise pas.","Auf diesem Computer sind zwei Checkout-Fenster offen. Schließen Sie das, das der Kunde nicht benutzt."],
+ po_aviso_saiu:[(c)=>`O cliente do código ${c} saiu da tela do Checkout sem pagar. A compra continua aqui: cancele ou espere ele voltar.`,(c)=>`The customer with code ${c} left the Checkout screen without paying. The purchase stays here: cancel it or wait for them to come back.`,(c)=>`El cliente del código ${c} salió de la pantalla del Checkout sin pagar. La compra sigue aquí: cancela o espera a que vuelva.`,(c)=>`Le client du code ${c} a quitté l'écran du Checkout sans payer. L'achat reste ici : annulez ou attendez son retour.`,(c)=>`Der Kunde mit dem Code ${c} hat den Checkout-Bildschirm ohne Zahlung verlassen. Der Kauf bleibt hier: abbrechen oder auf seine Rückkehr warten.`],
   po_janela_antiga:[(c)=>`<b>Pedido ${c} confirmado por uma janela antiga do Eterna.</b> O QR não foi mostrado ao cliente. Feche e reabra o Checkout e o Posto de venda neste balcão e confira o pagamento com o cliente.`,(c)=>`<b>Order ${c} confirmed by an old Eterna window.</b> The QR code was not shown to the customer. Close and reopen the Checkout and the Point of sale at this counter and check the payment with the customer.`,(c)=>`<b>Pedido ${c} confirmado por una ventana antigua de Eterna.</b> El QR no se mostró al cliente. Cierra y vuelve a abrir el Checkout y el Puesto de venta en este mostrador y verifica el pago con el cliente.`,(c)=>`<b>Commande ${c} confirmée par une ancienne fenêtre d'Eterna.</b> Le QR code n'a pas été montré au client. Fermez et rouvrez le Checkout et le Point de vente à ce comptoir et vérifiez le paiement avec le client.`,(c)=>`<b>Bestellung ${c} wurde von einem alten Eterna-Fenster bestätigt.</b> Der QR-Code wurde dem Kunden nicht gezeigt. Schließen und öffnen Sie Checkout und Verkaufsstelle an diesem Schalter erneut und prüfen Sie die Zahlung mit dem Kunden.`],
   po_separar:["Separar","Split off","Separar","Séparer","Abtrennen"],
   po_juntar_leva:["Juntar outra leva","Add another batch","Juntar otra tanda","Ajouter une autre série","Weitere Serie hinzufügen"],
