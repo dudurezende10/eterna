@@ -19,7 +19,7 @@ if command -v tailscale >/dev/null; then
 fi
 rm -f /etc/apt/sources.list.d/tailscale.list /usr/share/keyrings/tailscale-archive-keyring.gpg
 rm -rf /var/lib/tailscale
-command -v tailscale >/dev/null && para "o tailscale continua instalado"
+hash -r; command -v tailscale >/dev/null && para "o tailscale continua instalado"
 ok "Tailscale desinstalado (programa, serviço e repositório)"
 
 # regras do firewall do Tailscale, da última para a primeira (o número muda a cada exclusão)
