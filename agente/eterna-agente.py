@@ -6981,14 +6981,112 @@ def imp_monitor():
         time.sleep(10)
 
 
+def imp_fila_postos(agora=None):
+    """15/11: fila das DNPs ligadas em cada posto (impressão local), montada pelo banco de vendas de hoje: cada venda com
+    impressão é um pedido na DNP do posto que vendeu. Sem evento de impressão = esperando no posto; "ok" = impresso;
+    "nao_saiu" = erro. O estado da DNP é a última leitura do programa de impressão do posto (eventos impressao e rolo)."""
+    agora = agora or time.time()
+    dia = _ev_dia(_iso(agora))
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rows = db.execute("select venda, tipo, em, posto, por, dados from evento where dia = ? and tipo in ('criar','cancelar','impressao','rolo') "
+                              "order by em", (dia,)).fetchall()
+        finally:
+            db.close()
+    vendas, dnp, postos = {}, {}, []
+    for venda, tipo, em, posto, por, dados in rows:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            d = {}
+        posto = (posto or "").strip()
+        t = _epoch(em) or agora
+        if tipo == "rolo":
+            nome = str(d.get("posto") or posto or "").strip()[:40]
+            if nome and nome not in postos:
+                postos.append(nome)
+            if nome and d.get("dnp"):
+                dnp[nome] = (t, d["dnp"])
+            continue
+        v = vendas.setdefault(venda, {"imps": []})
+        if tipo == "criar":
+            v.update(posto=posto, criado=t, venda=d.get("saleNo") or venda, vendedor=d.get("vendedor") or "", fotos=int(d.get("prints") or 0))
+            if posto and posto not in postos:
+                postos.append(posto)
+        elif tipo == "cancelar":
+            v["cancelada"] = True
+        else:
+            v["imps"].append((t, d))
+            if posto and d.get("dnp"):
+                dnp[posto] = (t, d["dnp"])
+    jobs = []
+    for vid, v in vendas.items():
+        if not v.get("posto") or v.get("cancelada") or (v.get("fotos", 0) <= 0 and not v["imps"]):
+            continue
+        j = {"id": "v:" + vid, "local": True, "venda": v.get("venda") or vid, "vendedor": v.get("vendedor") or "", "posto": v["posto"],
+             "impressora": v["posto"], "fotos": max(v.get("fotos", 0), 1), "feitas": 0, "estado": "na_fila", "criado": v.get("criado") or agora,
+             "inicio": None, "fim": None, "erro": None}
+        if v["imps"]:
+            t, d = v["imps"][-1]
+            if d.get("resultado") == "ok":
+                j.update(estado="impresso", feitas=j["fotos"], fim=t, inicio=t)
+            else:
+                j.update(estado="erro", fim=t, erro="não saiu" + (" · " + d["dnp"]["texto"] if (d.get("dnp") or {}).get("texto") else ""))
+        if j["estado"] in ("na_fila", "erro") or agora - (j["fim"] or agora) < 3 * 3600:
+            jobs.append(j)
+    estados = {}
+    for nome in postos:
+        t, d = dnp.get(nome, (None, {}))
+        st = int(d.get("status") or 0)
+        e = {"estado": "erro" if st >= 1000 else "livre", "motivo": d.get("texto") if st >= 1000 else None, "pendentes":
+             sum(1 for j in jobs if j["impressora"] == nome and j["estado"] == "na_fila"), "em": t, "local": True}
+        if d.get("restantes") is not None:
+            e["restantes"] = d["restantes"]
+        estados[nome] = e
+    return postos, estados, jobs
+
+
+def vendas_posto_sem_impressao(posto, agora=None):
+    """15/11: as vendas de hoje do posto que têm impressão e ainda não saíram certo (sem "ok" e sem cancelar), com o que o
+    posto precisa para imprimir. O posto que perdeu o navegador (limpeza, troca de navegador, computador trocado) recupera daqui."""
+    dia = _ev_dia(_iso(agora or time.time()))
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rows = db.execute("select venda, tipo, em, dados from evento where dia = ? and posto = ? and tipo in ('criar','cancelar','impressao') "
+                              "order by em", (dia, str(posto)[:40])).fetchall()
+        finally:
+            db.close()
+    vs = {}
+    for venda, tipo, em, dados in rows:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            d = {}
+        v = vs.setdefault(venda, {"venda": venda})
+        if tipo == "criar":
+            v.update(em=em, dados={k: d.get(k) for k in ("saleNo", "card", "sessoes", "meio", "prov", "total", "prints", "cart", "selected", "aiSel", "vendedor") if d.get(k) is not None})
+        elif tipo == "cancelar" or (tipo == "impressao" and d.get("resultado") == "ok"):
+            v["fim"] = True
+    return {"ok": True, "vendas": [v for v in vs.values() if v.get("dados") and not v.get("fim") and (v["dados"].get("prints") or 0) > 0]}
+
+
 def imp_fila_json():
     agora = time.time()
     with lock:
         jobs = [{k: v for k, v in j.items() if k != "arquivos"} for j in imp_fila
                 if j["estado"] in ("na_fila", "imprimindo") or agora - (j["fim"] or agora) < 3 * 3600]
         estados = {k: dict(v) for k, v in imp_estado.items()}
-    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": IMPRESSORAS, "estados": estados,
-            "postos": {k: v for k, v in IMP_POSTOS.items()}, "agora": agora, "pedidos": jobs}
+    try:
+        pp, pe, pj = imp_fila_postos(agora)
+    except Exception as ex:
+        print("  fila dos postos: não leu:", str(ex)[:120])
+        pp, pe, pj = [], {}, []
+    imps = list(IMPRESSORAS) + [x for x in pp if x not in IMPRESSORAS]
+    estados.update({k: v for k, v in pe.items() if k not in estados})
+    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": imps, "estados": estados,
+            "postos": {k: v for k, v in IMP_POSTOS.items()}, "agora": agora, "pedidos": jobs + pj}
 
 
 def imprimir(imagens, venda, vendedor="", posto="", venda_id=""):
@@ -10673,6 +10771,7 @@ ROTAS = (
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
+    ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),   # vendas do posto sem impressão, para recuperar (15/11)
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
@@ -11499,7 +11598,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -12903,6 +13002,16 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "origem não autorizada"}, 403)
             ids = ",".join(parse_qs(u.query).get("vendas") or []).split(",")
             return self.js({"ok": True, "vendas": ev_impressoes(ids)}, nostore=True)
+        if u.path == "/ponto/vendas-posto":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            posto = (q.get("posto") or [""])[0]
+            pa = self.posto_atual()
+            if pa and not self.sessao() and pa.get("nome"):
+                posto = str(pa["nome"])[:30]              # aparelho pareado sem pessoa: só as vendas dele
+            if not posto:
+                return self.js({"error": "posto obrigatório"}, 400)
+            return self.js(vendas_posto_sem_impressao(posto), nostore=True)
         if u.path == "/ponto/pedidos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
