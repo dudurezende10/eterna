@@ -315,9 +315,30 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .pend-pkg.on,.pend-meio.on{border-color:#134078;background:#eef4fc;box-shadow:0 0 0 1.5px #134078 inset}
 .pend-meios{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px}.pend-meio{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;border:1.5px solid var(--line,#d9dee6);background:#fff;color:inherit;font-weight:700;cursor:pointer}.pend-meio svg{width:28px;height:20px}
 .posto-head .row{flex-wrap:wrap}
-.posto-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px;align-items:start}
+.posto-cols{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:14px;align-items:start}
 .posto-cols>div{display:flex;flex-direction:column;gap:14px;min-width:0}
 @media (max-width:980px){.posto-cols{grid-template-columns:minmax(0,1fr)}}
+/* 15/11: Posto compacto. Checkout parado numa linha; fila de pedidos em linhas; o pedido escolhido em passos */
+.posto-eco .eco-off,.posto-eco .eco-wait{padding:6px 4px;flex-direction:row;flex-wrap:wrap;justify-content:space-between;text-align:left;gap:4px 10px}
+.posto-eco .head{margin-bottom:6px}.posto-eco h2,#pend-painel h2{font-size:20px}
+.pend-rows{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.pend-row{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;text-align:left;padding:8px 10px;border-radius:10px;border:1.5px solid var(--line,#d9dee6);background:#fff;color:inherit;cursor:pointer;font:inherit}
+.pend-row:hover{border-color:#134078}.pend-row.on{border-color:#134078;background:#eef4fc;box-shadow:0 0 0 1.5px #134078 inset}
+.pend-row.alvo{outline:3px solid var(--warn,#c98a00);outline-offset:1px}
+.pend-row-cod{font-family:'Big Shoulders Display','Arial Narrow',sans-serif;font-weight:800;font-size:20px;letter-spacing:.08em;line-height:1}
+.pend-row-val{font-weight:800;white-space:nowrap}.pend-row-meta{font-size:12px;color:#5b6b83;min-width:0}.pend-row .pill{justify-self:end;font-size:11px}
+.pend-det .din-item{border:0;padding:0;background:none}.pend-det-vazio{min-height:120px;display:flex;align-items:center;justify-content:center}
+.pend-cab{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}.pend-cab>div{display:flex;flex-direction:column;gap:4px}
+.pend-det .pend-ths{flex-wrap:nowrap;overflow-x:auto;margin:6px 0}.pend-det .pend-th{width:72px;flex:0 0 auto}
+.pend-passos{display:flex;gap:6px;list-style:none;margin:6px 0 10px;padding:0;counter-reset:p}.pend-passos li{flex:1}
+.pend-passos button{width:100%;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;border:1.5px solid var(--line,#d9dee6);background:#fff;color:#5b6b83;font:inherit;font-weight:700;cursor:pointer}
+.pend-passos button:disabled{cursor:default}.pend-passos button span{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#e6eaf0;color:#134078;font-size:13px;flex:0 0 auto}.pend-passos button span svg{width:14px;height:14px}
+.pend-passos li.on button{border-color:#134078;color:#0C2340;box-shadow:0 0 0 1.5px #134078 inset}.pend-passos li.on button span{background:#134078;color:#fff}
+.pend-passos li.feito button{color:#0C2340}.pend-passos li.feito button span{background:#1f8a4c;color:#fff}
+.pend-det .pend-pkgs{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}.pend-det .pend-pkg{padding:10px 12px;min-height:58px}
+.pend-det .pend-meios{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.pend-det .pend-meio{justify-content:center;padding:14px 10px;font-size:16px}
+.pend-res{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line,#e3e7ee)}.pend-res span{color:#5b6b83;font-size:13px}
+.pend-passo-corpo{margin-bottom:10px}
 .eco-off,.eco-wait{display:flex;flex-direction:column;gap:6px;padding:28px 14px;text-align:center;align-items:center}
 .eco-big{position:relative;width:100%;aspect-ratio:3/2;border-radius:6px;overflow:hidden;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none)}
 .eco-big .compimg{position:absolute;inset:0;background-size:cover;background-position:center}.eco-big .compimg .compst{display:none}
@@ -1723,7 +1744,7 @@ function postoAlias(v){if(v==='checkout')return {v:'posto',manual:canView('check
 function postoManualOn(){if(state.posto.manual)return;state.posto.manual=true;state.posto.recibo=null;state.caixa.reprint=null;state.caixa.session=state.checkout.session||null;}
 // "← Outra sessão" e "Fechar venda manual": a sessão que estava 'no checkout' volta ao estado anterior
 function checkoutVoltar(){const sim=state.checkout.session?simOf(state.checkout.session):null;if(sim&&sim.status==='no checkout'){sim.status=DATA.sampled.find(x=>x.card===state.checkout.session)?'pronta':'fechada';saveSim();}state.checkout.session=null;state.checkout.step=1;state.fila.session=null;state.caixa.session=null;}
-state.pend={ref:null,err:null};
+state.pend={ref:null,err:null,sel:null,passo:null};
 // NSU/autorização (D4): opcional, só números, de 4 a 12. 13 a 19 números parecem cartão: recusa e nunca grava.
 const refLimpa=v=>String(v==null?'':v).replace(/[\s.\-\/]/g,'');
 function refErro(v){const t=refLimpa(v);if(!t)return null;if(/^\d{13,19}$/.test(t))return 'Isso parece número de cartão. Digite só o NSU ou a autorização do comprovante (4 a 12 números).';if(!/^\d{4,12}$/.test(t))return 'NSU ou autorização: só números, de 4 a 12.';return null;}
@@ -1804,9 +1825,29 @@ function pendRecomecar(id){simFresh();const r=(SIM.caixaDin||[]).find(x=>x.id===
   toast(TE('po_monitor_voltou'));return true;}
 // pendência mostrada com as ações no bloco "Agora no Checkout": só quando o Checkout espera o pagamento dela e ela é a única aberta
 function ecoPendR(){if(ecoOff())return null;const m=state.eco.m;if(!(m&&m.step==='done'&&m.wait&&m.pend))return null;const L=dinAbertas();return L.length===1&&L[0].id===m.pend&&!L[0].escolha?L[0]:null;} // v96-ux: pedido do Checkout (escolha:true) tem pacote e meio escolhidos no Posto, em "Aguardando pagamento"
-function pendPainel(o){o=o||{};const din=o.filtro==='dinheiro';const L=din?caixaAbertas():dinAbertas();const q=(state.caixa.dinQ||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  const norm=x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');const vis=q?L.filter(r=>norm(r.codigo).includes(q)||norm(r.card).includes(q)):L;
+// 15/11 (Ronaldo: espaço perdido, scroll, pedidos empilhados sem saber onde um termina): "Aguardando pagamento" vira uma lista
+// curta (uma linha por pedido) e só o pedido escolhido aparece inteiro, ao lado, em passos (Pacote, Pagamento, Confirmar).
+// Escolhido: o que o caixa tocou; senão o que o Checkout está esperando; senão o primeiro da lista.
+function pendListaDe(o){const din=o.filtro==='dinheiro';const L=din?caixaAbertas():dinAbertas();const q=(state.caixa.dinQ||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const norm=x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');return {din,L,vis:q?L.filter(r=>norm(r.codigo).includes(q)||norm(r.card).includes(q)):L};}
+function pendSelId(vis){const s=state.pend.sel;if(s&&vis.some(r=>r.id===s))return s;const alvo=state.eco&&state.eco.m&&state.eco.m.pend;
+  if(alvo&&vis.some(r=>r.id===alvo))return alvo;return vis.length?vis[0].id:null;}
+function pendPainel(o){o=o||{};const {din,L,vis}=pendListaDe(o);
   const alvo=state.eco&&state.eco.m&&state.eco.m.pend;state.ecoEsperaMostrado=ecoEsperaId(); // ecoUpd redesenha quando a espera do monitor muda (botão Recomeçar)
+  const sel=pendSelId(vis);
+  const linha=r=>{const min=dinMin(r);const on=r.id===sel;const meio=r.meio?meioNome(r.meio):r.escolha?TE('po_escolha_pkg'):meioNome(meioDe(r));
+    return `<button class="pend-row${on?' on':''}${alvo===r.id?' alvo':''}" data-act="pend-sel" data-id="${esc(r.id)}" data-pend="${esc(r.id)}" aria-pressed="${on}">
+      <b class="pend-row-cod">${esc(r.codigo)}</b><span class="pend-row-val">${r.total!=null?fmtR(r.total):TE('sem_valor')}</span>
+      <span class="pend-row-meta">${r.saleNo?esc(TE('venda_x',r.saleNo))+' · ':''}${hhmm(new Date(r.criada))} · ${esc(meio)}</span><span class="pill ${r.saiu?'warn':min>CAIXA_ALERTA_MIN?'warn':'neutral'}">${r.saiu?TE('po_saiu_curto'):TE('ha_min',min)}</span></button>`;};
+  const av=pendAntigaHtml()+pendAvisosHtml(); // v96: alerta da janela antiga e avisos de 5 min
+  // v97-ux: no Posto não há chips (o botão amarelo Caixa é o filtro); no Caixa, um só: "Dinheiro ✕", que volta ao Posto completo
+  const chips=din?`<div class="chips pend-filtro"><button class="chip pend-filtro-on" data-act="posto-filtro" data-f="todos" aria-pressed="true" title="${esc(TE('po_ver_tudo'))}" aria-label="${esc(TE('po_tirar_filtro'))}">${TE('meio_dinheiro')} ${CROSS}</button></div>`:'';
+  return `<div class="panel" id="pend-painel"><div class="head"><h2>${TE('po_aguardando')}</h2><div class="row">${chips}${L.length?`<span class="pill ${(din?caixaAtrasada():dinAtrasada())?'warn':'neutral'}">${L.length}</span>`:''}</div></div>${av}
+    ${L.length?`${L.length>3||state.caixa.dinQ?`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="${esc(TE('po_busca_ph'))}" aria-label="${esc(TE('po_busca_aria'))}" autocomplete="off">`:''}${vis.length?`<div class="pend-rows">${vis.map(linha).join('')}</div>`:`<div class="note">${TE('po_nenhum_cod')}</div>`}`:`<div class="note">${din?TE('po_nenhum_din'):TE('po_nenhum_pag')}</div>`}</div>`;}
+// o pedido escolhido, inteiro (lado direito do Posto)
+function pendDetalhe(o){o=o||{};const {vis}=pendListaDe(o);const id=pendSelId(vis);const r=vis.find(x=>x.id===id);
+  if(!r)return `<div class="panel pend-det pend-det-vazio"><div class="note">${TE('po_det_vazio')}</div></div>`;
+  const alvo=state.eco&&state.eco.m&&state.eco.m.pend;
   const item=r=>{const meio=meioDe(r);const min=dinMin(r);const ph=(r.sessoes||[r.card]).flatMap(c=>{const so=sessionObj(c);return so?so.photos.filter(p=>(r.selected||[]).includes(p.id)):[];}).slice(0,4);
     const conf=state.caixa.dinCancel===r.id;const rw=can('venda','c');const ico=ICO[meio==='pix'?'pix':meio==='cartao'?'card':'cash'];
     const acts=o.semId===r.id?`<div class="note">${esc(TE('po_confirme_bloco'))}</div>`:pendAcoes(r);
@@ -1815,11 +1856,7 @@ function pendPainel(o){o=o||{};const din=o.filtro==='dinheiro';const L=din?caixa
       <span class="eyebrow">${TE('seu_codigo')}</span><div class="din-top"><b class="din-cod">${esc(r.codigo)}</b>${r.saleNo?`<span class="note">${TE('venda_x',esc(r.saleNo))}</span>`:''}</div>
       <div class="note">${TE('sessao_x',esc(r.card))} · ${hhmm(new Date(r.criada))} <span class="pill ${min>CAIXA_ALERTA_MIN?'warn':'neutral'}">${TE('ha_min',min)}</span> · ${TE('n_fotos',r.n)} · ${TE('n_impressas',r.prints)}</div>
       ${ph.length?`<div class="photos small">${ph.map(p=>photoBtn(p)).join('')}</div>`:''}${acts}${pendRecBtn(r)}</div>`;};
-  const av=pendAntigaHtml()+pendAvisosHtml(); // v96: alerta da janela antiga e avisos de 5 min
-  // v97-ux: no Posto não há chips (o botão amarelo Caixa é o filtro); no Caixa, um só: "Dinheiro ✕", que volta ao Posto completo
-  const chips=din?`<div class="chips pend-filtro"><button class="chip pend-filtro-on" data-act="posto-filtro" data-f="todos" aria-pressed="true" title="${esc(TE('po_ver_tudo'))}" aria-label="${esc(TE('po_tirar_filtro'))}">${TE('meio_dinheiro')} ${CROSS}</button></div>`:'';
-  return `<div class="panel" id="pend-painel"><div class="head"><h2>${TE('po_aguardando')}</h2><div class="row">${chips}${L.length?`<span class="pill ${(din?caixaAtrasada():dinAtrasada())?'warn':'neutral'}">${L.length}</span>`:''}</div></div>${av}
-    ${L.length?`${`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="${esc(TE('po_busca_ph'))}" aria-label="${esc(TE('po_busca_aria'))}" autocomplete="off">`}${vis.length?`<div class="din-list">${vis.map(item).join('')}</div>`:`<div class="note">${TE('po_nenhum_cod')}</div>`}`:`<div class="note">${din?TE('po_nenhum_din'):TE('po_nenhum_pag')}</div>`}</div>`;}
+  return `<div class="panel pend-det" id="pend-det">${item(r)}</div>`;}
 const dinPainel=pendPainel; // nome da v79
 // v96 (item 8 e S2): o Checkout tirou o pedido ("Voltar às fotos") ou o cliente saiu da tela sem pagar. O Posto avisa na hora (toast) e mostra
 // o aviso por 5 min no alto de "Aguardando pagamento". Só lê o SIM que a janela do Checkout gravou (evento storage).
@@ -1879,14 +1916,25 @@ function pendEscolhaItem(r,o){const n=r.n||0;const ideal=lojaIdeal(n).pkg;const 
   const pkgs=mais?'':DATA.catalog.filter(c=>c.kind==='pacote').map(p=>{const c=lojaPkgCusto(p,n);const on=r.pkg===p.id;
     return `<button class="pend-pkg${on?' on':''}" data-act="pend-pkg" data-id="${esc(r.id)}" data-p="${esc(p.id)}" aria-pressed="${on}" ${o.rw?'':'disabled'}><b>${esc(p.name)}</b><small>${p.digital==='todas'?TE('po_todas_fotos'):TE('n_fotos',p.digital)}${p.prints?' · '+TE('po_impressas'):' · '+TE('po_so_digital')}${c.extra?` + ${TE('n_adic',c.extra)}`:''}</small><span>${fmtR(c.custo)}</span>${p.id===ideal?`<i class="pill good">${TE('ideal')}</i>`:''}${temMont&&!p.prints?`<em class="pend-semmont">${TE('po_sem_edicao')}</em>`:''}</button>`;}).join('');
   const meios=['cartao','pix','dinheiro'].map(m=>`<button class="pend-meio${r.meio===m?' on':''}" data-act="pend-meio" data-id="${esc(r.id)}" data-m="${m}" aria-pressed="${r.meio===m}" ${o.rw?'':'disabled'}>${ICO[m==='pix'?'pix':m==='cartao'?'card':'cash']} ${meioNome(m)}</button>`).join('');
-  const acts=!o.rw||o.conf||pronto?o.acts:`<div class="note">${TE('po_escolha_pkg_meio')}</div><div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">${TE('po_cancelar_compra')}</button></div>`;
-  return `<div class="din-item pend-esc${o.alvo===r.id?' alvo':''}" data-pend="${esc(r.id)}"><div class="din-top"><span class="din-meio">Checkout · ${r.meio?meioNome(r.meio):TE('po_escolha_pkg')}</span><span class="din-val">${r.total!=null?fmtR(r.total):TE('sem_valor')}</span></div>
-    <div class="din-top"><b class="din-cod">${esc(r.codigo)}</b>${r.saleNo?`<span class="note">${TE('venda_x',esc(r.saleNo))}</span>`:''}</div>
+  // 15/11: passo a passo. 1 Pacote → 2 Pagamento → 3 Confirmar; cada escolha avança sozinha e o passo já feito volta pelo número
+  const pkgOk=!!(r.pkg||mais),meioOk=!!MEIO_NOME[r.meio];let passo=!pkgOk?1:!meioOk?2:3;
+  const ov=state.pend.passo&&state.pend.passo.id===r.id?state.pend.passo.p:0;if(ov&&ov<passo)passo=ov;
+  const nomes=[TE('pacote'),TE('pagamento'),TE('po_passo_conf')],feito=[pkgOk,meioOk,false];
+  const barra=`<ol class="pend-passos">${nomes.map((t,i)=>{const k=i+1;const pode=k!==passo&&feito.slice(0,k-1).every(Boolean);
+    return `<li class="${k===passo?'on':feito[i]?'feito':''}"><button data-act="pend-passo" data-id="${esc(r.id)}" data-p="${k}" ${pode&&o.rw?'':'disabled'} aria-current="${k===passo?'step':'false'}"><span>${feito[i]&&k!==passo?ICO.ok:k}</span>${esc(t)}</button></li>`;}).join('')}</ol>`;
+  const pkgNome=mais?TE('po_comprar_mais',TE('n_adicionais',n)):r.pkg?esc(catName(r.pkg)):'';
+  // DRY: o valor fica só no cabeçalho e no botão de confirmar; o resumo diz o que foi escolhido, uma vez
+  const resumo=[pkgOk?`<div class="pend-res"><span>${TE('pacote')}</span><b>${pkgNome}</b></div>`:'',meioOk&&passo===3?`<div class="pend-res"><span>${TE('pagamento')}</span><b>${esc(meioNome(r.meio))}</b></div>`:''].join('');
+  const corpo=passo===1?(mais?`<div class="note">${TE('po_comprar_mais',TE('n_adicionais',n))}</div>`:`<div class="pend-pkgs">${pkgs}</div>${pendMontAviso(r)}`)
+    :passo===2?`${resumo}<div class="pend-meios">${meios}</div>`:resumo;
+  const cancel=`<div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">${TE('po_cancelar_compra')}</button></div>`;
+  const acts=!o.rw?o.acts:o.conf||(passo===3&&pronto)?o.acts:cancel;
+  return `<div class="din-item pend-esc${o.alvo===r.id?' alvo':''}" data-pend="${esc(r.id)}">
+    <div class="pend-cab"><div><span class="eyebrow">Checkout${r.saleNo?' · '+esc(TE('venda_x',r.saleNo)):''}</span><b class="din-cod">${esc(r.codigo)}</b></div><span class="din-val">${r.total!=null?fmtR(r.total):TE('sem_valor')}</span></div>
     ${r.saiu?`<div class="pend-saiu"><span class="pill warn">${TE('po_cli_saiu',hhmm(new Date(r.saiu)))}</span></div>`:''}${pendRecPill(r)}
-    <div class="note">${TE('sessao_x',esc(r.card))} · ${hhmm(new Date(r.criada))} <span class="pill ${o.min>CAIXA_ALERTA_MIN?'warn':'neutral'}">${TE('ha_min',o.min)}</span> · ${TE('n_escolhidas',n)}${r.prints!=null?` · ${TE('n_impressas',r.prints)}`:''}</div>
+    <div class="note">${TE('sessao_x',esc(r.card))} · ${TE('n_escolhidas',n)}${r.prints!=null?` · ${TE('n_impressas',r.prints)}`:''}</div>
     <div class="pend-ths">${fotos.map(th).join('')}</div>${pendVisitaHtml(r)}
-    ${mais?`<div class="note">${TE('po_comprar_mais',TE('n_adicionais',n))}</div>`:`<div class="eyebrow">${TE('pacote')}</div><div class="pend-pkgs">${pkgs}</div>${pendMontAviso(r)}`}
-    <div class="eyebrow">${TE('po_forma_pag')}</div><div class="pend-meios">${meios}</div>${acts}${pendRecBtn(r)}</div>`;}
+    ${barra}<div class="pend-passo-corpo">${corpo}</div>${acts}${pendRecBtn(r)}</div>`;}
 // ---------- v83: modo do aparelho, posto, vendedor ----------
 // Etapa 1 (este notebook, sem rede): só 'local' (aberto pelo agente neste computador) ou 'off'. 'posto' e 'nao_pareado' entram com o pareamento (etapa 2).
 function pontoModo(){const h=location.hostname;const loop=h==='127.0.0.1'||h==='localhost';if(postoDisp())return 'posto';return loop&&state.agent&&state.agent.on?'local':'off';}
@@ -2348,8 +2396,8 @@ function vPosto(o){o=o||{};const a=state.agent;const filtro=o.filtro==='dinheiro
   const filaBalcao=balcao.length?`<div class="panel"><h2>${TE('po_vindas_fila')}</h2><div class="sess">${balcao.map(s=>`<button class="scard" data-act="caixa-open" data-card="${esc(s.card)}"${trava?` disabled title="${esc(TE('po_feche_vm_sess'))}"`:''}><div class="code">${esc(s.card)}</div><div class="meta"><span>${esc(P[s.key]?P[s.key].name:'')}</span><span>${fmtR(cartTotal(simOf(s.card).cart))}</span></div></button>`).join('')}</div></div>`:'';
   return `${roloFaixa()}<div class="head posto-head"><div><div class="eyebrow">${esc(cx?postoTitulo():postoNome())}</div><h1>${esc(viewLabel(cx?'caixa':'posto'))}</h1></div><div class="row">${roloSelo('neutral')}</div></div>
   ${conn}${recibo}${manual}
-  <div class="posto-cols"><div><div class="panel"><div class="head"><h2>${TE('po_agora_ck')}</h2></div><div id="eco">${ecoBody()}</div></div></div>
-    <div>${pendPainel({filtro,semId:ep?ep.id:null})}${impPainel(null,{semRolo:true})}${filaBalcao}</div></div>
+  <div class="posto-cols"><div class="posto-esq"><div class="panel posto-eco"><div class="head"><h2>${TE('po_agora_ck')}</h2></div><div id="eco">${ecoBody()}</div></div>${pendPainel({filtro,semId:ep?ep.id:null})}${filaBalcao}</div>
+    <div class="posto-dir">${pendDetalhe({filtro,semId:ep?ep.id:null})}${impPainel(null,{semRolo:true})}</div></div>
   ${minhasVendas(trava)}
   ${canView('checkout')&&!man?`<div class="posto-rodape"><button class="btn ghost" data-act="posto-manual">${TE('vm_link')}</button></div>`:''}`;}
 function drawQR(){const el=$('#qrbox');if(!el)return;const card=state.caixa.session;const tok=card&&galDaSessao(card);if(!tok){el.innerHTML='';return;}qrDraw(el,galBase()+tok,110,SIM.galerias[tok].codigo);}
@@ -9178,6 +9226,9 @@ const EQ={
   po_confirme_bloco:["Confirme no bloco \"Agora no Checkout\".","Confirm in the \"Now in Checkout\" box.","Confirma en el bloque \"Ahora en el Checkout\".","Confirmez dans le bloc « En ce moment au Checkout ».","Bestätigen Sie im Feld „Jetzt im Checkout“."],
   po_ver_tudo:["Ver tudo no Posto de venda","See everything at the Point of sale","Ver todo en el Puesto de venta","Tout voir au Point de vente","Alles an der Verkaufsstelle ansehen"],
   po_tirar_filtro:["Tirar o filtro Dinheiro","Remove the Cash filter","Quitar el filtro Efectivo","Retirer le filtre Espèces","Bargeld-Filter entfernen"],
+  po_passo_conf:["Confirmar","Confirm","Confirmar","Confirmer","Bestätigen"],
+  po_saiu_curto:["saiu da tela","left the screen","salió de la pantalla","a quitté l'écran","Bildschirm verlassen"],
+  po_det_vazio:["Nenhum pedido aguardando pagamento. Quando o cliente terminar no Checkout, o pedido aparece aqui.","No order awaiting payment. When the customer finishes at Checkout, the order shows up here.","Ningún pedido esperando pago. Cuando el cliente termine en el Checkout, el pedido aparece aquí.","Aucune commande en attente de paiement. Quand le client termine au Checkout, la commande apparaît ici.","Keine Bestellung wartet auf Zahlung. Sobald der Kunde im Checkout fertig ist, erscheint die Bestellung hier."],
   po_aguardando:["Aguardando pagamento","Awaiting payment","Esperando pago","En attente de paiement","Zahlung ausstehend"],
   po_busca_ph:["Seu código (XXXX-XXXX) ou sessão","Your code (XXXX-XXXX) or session","Tu código (XXXX-XXXX) o sesión","Votre code (XXXX-XXXX) ou session","Ihr Code (XXXX-XXXX) oder Sitzung"],
   po_busca_aria:["Buscar pagamento","Search payment","Buscar pago","Rechercher un paiement","Zahlung suchen"],
@@ -10504,7 +10555,9 @@ document.addEventListener('click',e=>{
     case 'kiosk-minhas':state.kiosk.minhas=true;state.kiosk.minhasI=null;render();break;
     case 'kiosk-minhas-i':state.kiosk.minhasI=d.i!=null&&state.kiosk.minhasI==null?+d.i:null;render();break;
     case 'kiosk-minhas-x':if(state.kiosk.minhasI!=null)state.kiosk.minhasI=null;else state.kiosk.minhas=false;render();break;
-    case 'pend-pkg':pendEscolher(d.id,{pkg:d.p});break;
+    case 'pend-pkg':state.pend.passo=null;pendEscolher(d.id,{pkg:d.p});break;
+    case 'pend-sel':state.pend.sel=d.id;state.pend.passo=null;state.pend.ref=null;state.caixa.dinCancel=null;render();break;
+    case 'pend-passo':state.pend.passo={id:d.id,p:+d.p||1};render();break;
     case 'visita-juntar-abrir':state.caixa.visJuntar=state.caixa.visJuntar===d.id?null:d.id;render();break;
     case 'visita-juntar':{const b=d.lp?String(($('#vis-lp')||{}).value||'').trim().toUpperCase().replace(/\s+/g,''):d.b;if(!/^LP[A-Z0-9]{5,10}$/.test(b||'')){toast('Digite o código LP da leva');break;}
       if(b===d.a||visitaDe(d.a).includes(b)){toast('Esta leva já é desta família');break;}if(!confirm('Esta leva é desta família?'))break;
@@ -10513,7 +10566,7 @@ document.addEventListener('click',e=>{
     case 'visita-separar':{const c=d.card;if(!c||!confirm('Esta leva não é deles?'))break;
       visitaPost('separar',{card:c}).then(j=>{if(!j)return;auditLog('visita_separar',c,[{campo:'visita',de:(j.visita||{}).id||null,para:(j.nova||{}).id||null}],{visita:(j.visita||{}).id||null,posto:postoNome(),porNome:(state.user&&state.user.name)||null});
         const n=pendTiraLeva(c,d.id);log(`Visita: ${c} separada (${postoNome()})`);if(n>=0)toast(n?'Leva separada: as fotos dela saíram do pedido':'Leva separada da família');render();});break;}
-    case 'pend-meio':pendEscolher(d.id,{meio:d.m});break;
+    case 'pend-meio':state.pend.passo=null;pendEscolher(d.id,{meio:d.m});break;
     case 'loja-mais':lojaCliente();lojaMais();break;
     case 'loja-exit':case 'loja-new':lojaSaiu();lojaCliente();lojaReset();render();break; // R3: saindo da tela Pronto ou do valor, o Posto vê "o cliente saiu"
     case 'loja-list':state.kiosk.list=!state.kiosk.list;render();break;
