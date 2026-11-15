@@ -153,7 +153,78 @@ try{
   await pg.click('.panel table tbody tr[data-act="person"]');await pg.waitForTimeout(100);const nomeF=await pg.textContent('h1');ok(await pg.$('.head .rel-exp'),'Fotógrafo aberto: sem Exportar no topo');
   a=await baixar('xlsx');ok(a,'Fotógrafo aberto: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Fotógrafo aberto');const s=x.abas[0];const nTela=await pg.evaluate(()=>document.querySelectorAll('.panel table tbody tr').length);ok(s.nome==='Dia a dia'&&s.cab.includes('Filtros: Fotógrafo: '+nomeF)&&s.dados.length===nTela+1&&s.dados[s.dados.length-1][0].v==='Total','Fotógrafo aberto: '+J([s.nome,s.cab,s.dados.length,nTela]));}
-  // FIM-FATIA
+  // ---------- critério 14: Escala (hoje e a semana da tela) e Diário (o filtro da tela) ----------
+  await abrir('escala');ok(await pg.$('.head .rel-exp'),'Escala: sem Exportar no topo');
+  const telaEsc=await pg.evaluate(()=>{const c=[...document.querySelectorAll('#esc-semana .grid-week > div')].map(e=>e.textContent);const L=[];for(let i=8;i<c.length;i+=8)L.push(c.slice(i,i+8));return {L,hoje:new Date().toISOString().slice(0,10),nHoje:document.querySelectorAll('.panel table tbody tr').length};});
+  const maisDias=(d,k)=>{const [y,m,dd]=d.split('-').map(Number);return new Date(Date.UTC(y,m-1,dd+k)).toISOString().slice(0,10);};
+  a=await baixar('xlsx');ok(a,'Escala: XLS não baixou · '+await toast());
+  if(a){const x=await xlsx(a,'Escala');const s=x.abas[1];ok(x.abas.length===2&&x.abas[0].dados.length===telaEsc.nHoje&&J(x.abas[0].colunas)===J(['Fotógrafo','Função','Tipo','Sessões hoje']),'Escala: aba de hoje '+J([x.abas.length,x.abas[0].colunas,x.abas[0].dados.length]));
+    ok(s.cab.includes(`Período: ${dBR(telaEsc.hoje)} a ${dBR(maisDias(telaEsc.hoje,6))}`),'Escala: período '+J(s.cab));
+    const esperado=[];telaEsc.L.forEach(l=>l.slice(1).forEach(t=>esperado.push([l[0],t])));
+    ok(s.dados.length===esperado.length&&esperado.length>=14&&s.dados.every((l,i)=>l[0].v===esperado[i][0]&&l[1].t==='n'&&l[2].v.replace(/ \(previsto\)$/,'')===esperado[i][1]),'Escala: semana do arquivo × tela '+J([s.dados.length,esperado.length,s.dados.slice(0,2).map(txt),esperado.slice(0,2)]));
+    ok(!/presen|falta|atraso|hor.rio/i.test(J(x.abas.map(q=>[q.colunas,q.cab]))),'Escala: o arquivo não pode sugerir controle de ponto');}
+  a=await baixar('pdf');ok(a&&pdfLer(a.buf).objs&&pdfLer(a.buf).linhas[0]==='Escala','Escala: PDF');
+  // Diário: registros de teste (texto livre com acento, quebra de linha e sinais de fórmula)
+  await abrir('diario',`const h=new Date();const hoje=h.toISOString().slice(0,10);const ontem=new Date(h.getTime()-864e5);const u=ETERNA.state.user;
+    ETERNA.SIM.diario=[{id:'dt1',at:h.toISOString(),date:hoje,key:null,by:u.email,name:u.name,point:'campo2',type:'convidado',item:'Reclamação',sev:'alta',text:'=SOMA(A1) visitante pediu para refazer\\na foto <b>da família</b>',status:'aberto'},
+      {id:'dt2',at:h.toISOString(),date:hoje,key:'yago',by:'outra-pessoa',name:'Pessoa de teste',point:'campo3',type:'equip',item:'Bateria',sev:'media',text:'',status:'resolvido',resolvedBy:'alguem'},
+      {id:'dt3',at:ontem.toISOString(),date:ontem.toISOString().slice(0,10),key:'marinara',by:'terceira-pessoa',name:'Terceira pessoa',point:'',type:'clima',item:'Chuva',sev:'baixa',text:'chuva forte às 15h',status:'aberto'}];ETERNA.state.diario.filter='hoje';`);
+  ok(await pg.$('.head .rel-exp'),'Diário: sem Exportar no topo');
+  a=await baixar('xlsx');ok(a,'Diário: XLS não baixou · '+await toast());
+  if(a){const x=await xlsx(a,'Diário');const s=x.abas[0];ok(J(s.colunas)===J(['Data','Hora','Quem','Ponto','Tipo','Registro','Grav.','Status'])&&s.dados.length===2&&(await pg.$$('table.wrap tbody tr')).length===2,'Diário de hoje: '+J([s.colunas,s.dados.map(txt)]));
+    ok(s.cab.includes('Filtros: Registros: Hoje')&&s.cab.includes('Uso interno')&&s.cab.includes(`Período: ${dBR(telaEsc.hoje)}`),'Diário: cabeçalho '+J(s.cab));
+    ok(s.dados[0][5].t==='s'&&s.dados[0][5].v.startsWith('Reclamação · =SOMA(A1) visitante')&&s.dados[0][5].v.includes('<b>da família</b>')&&s.dados[1][7].v==='resolvido · alguem','Diário: registro '+J(s.dados.map(txt)));}
+  await abrir('diario',`ETERNA.state.diario.filter='todos';`);a=await baixar('xlsx');if(a){const x=await xlsx(a,'Diário todos');ok(x.abas[0].dados.length===3&&x.abas[0].cab.includes(`Período: ${dBR(maisDias(telaEsc.hoje,-1))} a ${dBR(telaEsc.hoje)}`),'Diário, Todos: '+J([x.abas[0].dados.length,x.abas[0].cab]));}else ok(false,'Diário, Todos: XLS não baixou');
+  a=await baixar('pdf');ok(a&&pdfLer(a.buf).objs&&pdfLer(a.buf).linhas.some(l=>l.includes('=SOMA(A1) visitante')),'Diário: PDF');
+  // quem é fotógrafo (sem alterar a Escala e sem excluir no Diário) exporta só o que a tela dele mostra
+  await pg.evaluate(()=>{const u=ETERNA.state.user;window.__u=JSON.stringify(u);u.key='yago';u.perms.escala.u=false;u.perms.diario.d=false;ETERNA.state.view='diario';ETERNA.render();});
+  a=await baixar('xlsx');if(a){const x=await xlsx(a,'Diário do fotógrafo');const s=x.abas[0];ok(!s.colunas.includes('Quem')&&s.dados.length===2&&!J(s.dados).includes('Terceira pessoa')&&!J(s.dados).includes('chuva forte'),'Diário do fotógrafo: saiu registro de outra pessoa '+J(s.dados.map(txt)));}else ok(false,'Diário do fotógrafo: XLS não baixou');
+  await abrir('escala');a=await baixar('xlsx');if(a){const x=await xlsx(a,'Escala do fotógrafo');ok(x.abas.length===1&&x.abas[0].dados.length===8&&x.abas[0].cab.includes('Filtros: Fotógrafo: Yago')&&J(x.abas[0].colunas)===J(['Dia','Função']),'Escala do fotógrafo: '+J([x.abas.length,x.abas[0].cab,x.abas[0].dados.length]));}else ok(false,'Escala do fotógrafo: XLS não baixou');
+  const volta=()=>pg.evaluate(()=>{const u=ETERNA.state.user;const o=JSON.parse(window.__u);Object.keys(u).forEach(k=>delete u[k]);Object.assign(u,o);});await volta();
+
+  // ---------- critério 9: sem a permissão da tela o botão não aparece e o clique forçado não baixa nada ----------
+  const forcado=async rot=>{const r=await pg.evaluate(()=>{ETERNA.state.view='bandeiras';const r={pode:ETERNA.relPode('bandeiras'),botao:ETERNA.relBotao('bandeiras')};document.querySelector('#main').insertAdjacentHTML('beforeend','<div class="rel-exp"><button data-act="rel-exportar" data-fmt="pdf">x</button><button data-act="rel-exportar" data-fmt="xlsx">x</button></div>');return r;});
+    ok(r.pode===false&&r.botao==='',rot+': o botão apareceria');for(const f of ['pdf','xlsx']){const a=await baixar(f);ok(!a&&(await toast())===await TE('sem_acesso_tela'),rot+': clique forçado em '+f+' · '+await toast());}};
+  const antesN=await pg.evaluate(()=>ETERNA.auditRead().length);
+  await pg.evaluate(()=>{const u=ETERNA.state.user;window.__u=JSON.stringify(u);u.perms.estoque.r=false;ETERNA.state.view='painel';ETERNA.render();});await forcado('Sem Ver em Estoque e bandeiras');await volta();
+  await pg.evaluate(()=>{const u=ETERNA.state.user;window.__u=JSON.stringify(u);u.preset='supervisor';u.menu=(u.menu||[]).filter(v=>v!=='bandeiras');ETERNA.state.view='painel';ETERNA.render();});await forcado('Sem Bandeiras no menu');await volta();
+  ok(await pg.evaluate(n=>ETERNA.auditRead().length===n,antesN),'Clique recusado não pode ficar registrado como exportação');
+
+  // ---------- critério 10: cada exportação fica no histórico (local e usuarios_log), sem o conteúdo ----------
+  await abrir('bandeiras',`ETERNA.state.flagFilter='atencao';window.__docs=[];window.__db=ETERNA.state.db;ETERNA.state.db={doc:p=>({set:v=>{window.__docs.push([p,JSON.parse(JSON.stringify(v))]);}})};`);
+  const pedidos=[];const ouve=r=>{if(!/^(blob|data):/.test(r.url())&&r.resourceType()!=='image')pedidos.push(r.url());};await pg.waitForTimeout(400);pg.on('request',ouve); // as imagens das bandeiras são da tela, não do Exportar
+  a=await baixar('pdf');pg.off('request',ouve);ok(a,'Bandeiras (registro): PDF não baixou');ok(!pedidos.length,'Exportar fez pedido de rede: '+pedidos.slice(0,2).join(', '));
+  const reg=await pg.evaluate(()=>{const d=window.__docs.slice();ETERNA.state.db=window.__db;const l=ETERNA.auditRead()[0];return {d,l,guardado:JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]')[0]};});
+  ok(reg.d.length===1&&/^usuarios_log\/L/.test(reg.d[0][0])&&reg.d[0][1].acao==='relatorio_exportado'&&reg.d[0][1].alvo==='relatorio/bandeiras'&&reg.d[0][1].mudancas[0].para==='pdf'&&reg.d[0][1].linhas>0&&reg.d[0][1].por===ADM,'Registro em usuarios_log: '+J(reg.d).slice(0,300));
+  ok(reg.l&&reg.l.id===reg.d[0][1].id&&reg.guardado&&reg.guardado.id===reg.l.id,'Registro local (o que sobe na reconexão) não é o mesmo do servidor');
+  ok(!J(reg.d).includes('1+1')&&!J(reg.d).includes('Vasco')&&J(reg.d[0][1].filtros)===J([['Inventário','Atenção']]),'O registro levou conteúdo do relatório ou perdeu o filtro '+J(reg.d[0][1].filtros));
+  await abrir('permissoes',`ETERNA.state.perm.tab='historico';ETERNA.state.perm.logQ='';`);const hist=await pg.evaluate(()=>{const tr=document.querySelector('.perm-log tbody tr');return tr?[...tr.children].map(td=>td.textContent):null;});
+  ok(hist&&hist[2]==='exportou o relatório'&&hist[3]==='Bandeiras'&&/^PDF · \d+ linhas · Inventário: Atenção$/.test(hist[4])&&hist[1].startsWith('Admin de teste'),'Permissões › Histórico: '+J(hist));
+
+  // ---------- critério 8: idioma da pessoa em inglês; chaves rel_* nas 5 línguas ----------
+  await pg.evaluate(()=>{window.__u=JSON.stringify(ETERNA.state.user);ETERNA.state.user.idioma='en';ETERNA.state.view='bandeiras';ETERNA.render();});
+  ok((await pg.textContent('.rel-exp'))==='ExportPDFXLS','Inglês: botão '+await pg.textContent('.rel-exp'));
+  a=await baixar('xlsx');if(a){const x=await xlsx(a,'Inglês');const s=x.abas[0];ok(J(s.colunas)===J(['Flag','Country','Units','Fabric','Condition','Note','Spot'])&&s.cab[0]==='Flags · Inventory'&&s.cab.some(l=>/^Position as of: /.test(l))&&s.cab.includes('Generated by: Admin de teste')&&s.cab.includes('Internal use')&&s.cab.includes('Filters: Inventory: Attention')&&s.nome==='Inventory','Inglês: '+J([s.nome,s.colunas,s.cab]));}else ok(false,'Inglês: XLS não baixou');
+  a=await baixar('pdf');if(a){const p=pdfLer(a.buf);ok(p.linhas[0]==='Flags'&&p.rodape.length===p.paginas&&/\(Page 1 of \d+\) Tj/.test(p.texto)&&p.linhas.includes('Internal use'),'Inglês PDF: '+J(p.linhas.slice(0,6)));}else ok(false,'Inglês: PDF não baixou');
+  await volta();
+  const chaves=await pg.evaluate(()=>Object.entries(ETERNA.EQ).filter(([k])=>k.startsWith('rel_')).map(([k,v])=>[k,Array.isArray(v)?v.length:0,Array.isArray(v)&&v.every(x=>typeof x==='function'?String(x(3,4)).length>0:typeof x==='string'&&x.length>0)]));
+  ok(chaves.length>=17&&chaves.every(c=>c[1]===5&&c[2])&&['rel_exportar','rel_pdf','rel_xls','rel_periodo','rel_posicao_em','rel_filtros','rel_gerado_em','rel_gerado_por','rel_interno','rel_pagina','rel_sem_linhas','rel_muitas_pdf','rel_falhou','rel_ok','rel_aud'].every(k=>chaves.some(c=>c[0]===k)),'Chaves rel_* nas 5 línguas: '+J(chaves.filter(c=>c[1]!==5||!c[2])));
+
+  // ---------- critério 12: nada de print, rede ou vendor (o CSV de Jogos e ano a ano, que precisa do servidor, é coberto por agenda-estatisticas.js) ----------
+  {const fonte=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');const i=fonte.indexOf('// ---------- Exportar relatório (PDF | XLS)'),f=fonte.indexOf('const VIEWFN=');const bloco=fonte.slice(i,f).replace(/^\/\/.*$/gm,'');
+    ok(i>0&&f>i&&!/\bprint\s*\(|fetch\s*\(|agFetch|XMLHttpRequest|sendBeacon|WebSocket|importScripts|vendor\//.test(bloco),'O bloco do Exportar chama impressão, rede ou vendor');
+    ok((fonte.match(/@media print/g)||[]).length===1&&(fonte.match(/window\.print\(/g)||[]).length<=3,'index.html ganhou @media print ou window.print');}
+  if(SAIDA){await abrir('painel',`ETERNA.state.range=${J(R7)};`);await pg.waitForTimeout(300);fs.mkdirSync(SAIDA,{recursive:true});await pg.screenshot({path:path.join(SAIDA,'tela-painel-exportar-1920x1080.png')});
+    await abrir('bandeiras');await pg.waitForTimeout(300);await pg.screenshot({path:path.join(SAIDA,'tela-bandeiras-exportar-1920x1080.png')});}
+
+  // ---------- critério 4: data e hora do cabeçalho no fuso do venue, mesmo com o aparelho em outro fuso ----------
+  {const c2=await b.newContext({viewport:{width:1280,height:900},locale:'pt-BR',timezoneId:'Asia/Tokyo',acceptDownloads:true});await c2.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const p2=await c2.newPage();p2.setDefaultTimeout(8000);p2.on('pageerror',e=>errs.push('Tóquio: '+e.message));
+    await p2.goto(U);await p2.waitForTimeout(400);const adm=await entrarTeste.adminFicticio(p2);await entrarTeste(p2,adm);await p2.evaluate(()=>{ETERNA.state.view='bandeiras';ETERNA.render();});
+    const espera=p2.waitForEvent('download',{timeout:3000}).catch(()=>null);const t0=Date.now();await p2.click('.rel-exp [data-fmt="pdf"]');const dl=await espera;
+    if(dl){const pp=path.join(tmp,'toquio.pdf');await dl.saveAs(pp);const p=pdfLer(fs.readFileSync(pp));const l=p.linhas.find(x=>/^Gerado em: /.test(x))||'';
+      const sp=ms=>{const o=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(ms)).map(x=>[x.type,x.value]));return `Gerado em: ${o.day}/${o.month}/${o.year} ${o.hour}:${o.minute}`;};
+      ok([t0-60e3,t0,t0+60e3].map(sp).includes(l),'Fuso do venue: "'+l+'" com o aparelho em Tóquio, esperado '+sp(t0));}else ok(false,'Fuso do venue: PDF não baixou');
+    await c2.close();}
 
 
   await ctx.close();
