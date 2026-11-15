@@ -5,7 +5,7 @@ Rodado pelo eterna-backup-originais.timer a cada 10 min, como o usuário eterna,
   das fotos já copiadas, NÃO apaga nada (HD com defeito ou fora do lugar não pode virar exclusão em massa);
 - a retenção (180 dias) é do próprio bucket (nuvem-aws-cloudshell.sh).
 """
-import base64, hashlib, os, sqlite3, sys, time
+import base64, hashlib, json, os, re, socket, sqlite3, sys, time
 
 MIDIA = "/srv/eterna-midia"
 INBOX = MIDIA + "/inbox"
@@ -96,6 +96,10 @@ def main():
             db.execute("DELETE FROM feito WHERE chave=?", (k,))
             db.commit()
             apagadas += 1
+    # pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): rodada completa sem erro
+    pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
+    s3.put_object(Bucket=bucket, Key="backup/%s/pulso-originais.json" % pc, ContentType="application/json",
+                  Body=json.dumps({"em": time.time(), "novos": novos, "total": len(vistos)}).encode())
     print("originais: %d novos (%.1f MB), %d apagados da nuvem (LGPD), %d no total" % (novos, bytes_ / 1e6, apagadas, len(vistos)))
     return 0
 

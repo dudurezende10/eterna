@@ -10034,11 +10034,21 @@ def backup_loop():
         return
     pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
     ultimo = None
+    ok_em = None
     while True:
         time.sleep(120)
+        # 15/11: pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): a cada rodada, mesmo sem mudança. Sem pulso
+        # novo há 30 min (servidor desligado, sem internet) ou com ok_em velho (backup falhando), a AWS manda e-mail.
+        try:
+            _s3_cliente().put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/pulso.json" % pc, ContentType="application/json",
+                                     Body=json.dumps({"em": time.time(), "ok_em": ok_em, "ok": backup.get("ok"), "erro": backup.get("erro")}).encode())
+        except Exception as ex:
+            print("  backup na nuvem (pulso):", str(ex)[:160])
+        falhou = False
         try:
             backup_arquivos(pc)
         except Exception as ex:
+            falhou = True
             backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
             print("  backup na nuvem (arquivos):", str(ex)[:160])
         try:
@@ -10047,6 +10057,8 @@ def backup_loop():
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
             if marca == ultimo:
+                if not falhou:
+                    ok_em = time.time()
                 continue
             s3 = _s3_cliente()
             hoje = _ff_hoje()
@@ -10071,7 +10083,9 @@ def backup_loop():
                         s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
                                       ContentType="application/json")
             ultimo = marca
-            backup.update(em=_iso(), ok=True, erro=None)
+            if not falhou:
+                ok_em = time.time()
+                backup.update(em=_iso(), ok=True, erro=None)
         except Exception as ex:
             backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
             print("  backup na nuvem:", str(ex)[:160])
