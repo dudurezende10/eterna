@@ -7,7 +7,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((Get-Content -Raw -
 pause
 exit /b
 #ETERNA#
-$Endereco = "http://192.168.10.178:8799"   # servidor do Eterna; mudou o servidor, troque aqui e rode de novo
+$Endereco = "https://posto.eterna.photo"   # servidor do Eterna no estadio (srv-viva-maracana); mudou o servidor, troque aqui e rode de novo
+$Reserva = "http://192.168.10.10:8765"     # o mesmo servidor pelo IP (usado so se o https falhar)
+$IpServidor = "192.168.10.10"
 $chrome = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe", "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if (-not $chrome) { Write-Host "Chrome nao encontrado. Instale o Google Chrome e rode de novo."; return }
 $pasta = "C:\Eterna"
@@ -15,6 +17,8 @@ $perfil = "$pasta\chrome"
 New-Item -ItemType Directory -Force $perfil | Out-Null
 $argumentos = "--user-data-dir=`"$perfil`" --kiosk-printing --no-first-run --no-default-browser-check"
 if ($Endereco -like "http://*") { $argumentos += " --unsafely-treat-insecure-origin-as-secure=$Endereco" }
+# o Chrome do Eterna acha o servidor pelo IP, sem depender do DNS da internet (sem internet a venda continua)
+if ($Endereco -like "https://*") { $argumentos += " --host-resolver-rules=`"MAP $(([Uri]$Endereco).Host) $IpServidor`"" }
 $argumentos += " $Endereco/#posto"
 $w = New-Object -ComObject WScript.Shell
 $inicio = [Environment]::GetFolderPath("Startup")
@@ -28,7 +32,7 @@ $prog = "$pasta\eterna-impressao.ps1"
 $partes = (Get-Content -Raw -Encoding UTF8 $env:ETERNA_CMD) -split ('#'+'ETERNA'+'#')
 Set-Content -Path $prog -Value $partes[2].Trim() -Encoding UTF8
 $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$argImp = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$prog`" -Endereco $Endereco"
+$argImp = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$prog`" -Endereco `"$Endereco,$Reserva`""
 $s = $w.CreateShortcut((Join-Path $inicio "Eterna impressao.lnk")); $s.TargetPath = $ps; $s.Arguments = $argImp; $s.WindowStyle = 7
 $s.Description = "Eterna - impressao direta na DNP"; $s.Save()
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like "*eterna-impressao.ps1*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
@@ -55,10 +59,10 @@ else { Write-Host "Tudo certo. Feche todos os Chromes e abra o Eterna pelo atalh
 #   do Windows vazia, para nunca misturar com os dados de uma impressão. restantes = MQTY - 50 (margem que a DNP soma ao rolo).
 # Log: C:\Eterna\impressao.log
 
-param([Parameter(Mandatory = $true)][string]$Endereco)   # endereço do Eterna neste ponto; só ele pode mandar imprimir
+param([Parameter(Mandatory = $true)][string]$Endereco)   # endereço(s) do Eterna neste ponto, separados por vírgula; só eles podem mandar imprimir
 
 $Porta = 8790
-$Origens = @($Endereco.TrimEnd("/"))
+$Origens = @($Endereco -split "," | ForEach-Object { $_.Trim().TrimEnd("/") } | Where-Object { $_ })   # um ou mais endereços, separados por vírgula
 $Log = "C:\Eterna\impressao.log"
 $MaxCorpo = 80MB
 $MaxFotos = 20
