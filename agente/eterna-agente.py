@@ -1091,14 +1091,69 @@ _busca = {"m": None}
 _busca_lock = threading.Lock()
 
 
-def buscar(imagens, dias=1, janela=None):
-    """Lê o maior rosto de cada imagem (dataURL/base64), faz a média e devolve as fotos com o rosto."""
+def buscar(imagens, dias=1, janela=None, grupo=False):
+    """Lê o maior rosto de cada imagem (dataURL/base64), faz a média e devolve as fotos com o rosto.
+    grupo=True (15/11, foto do grupo no Checkout): cada rosto da foto é uma pessoa buscada, como várias selfies somadas."""
     np = _cv["np"]; cv2 = _cv["cv2"]
     dias = max(int(dias or 1), BUSCA_DIAS)
     with _busca_lock:
         if not _busca["m"]:
             _busca["m"] = leitor()
+        if grupo:
+            return _buscar_grupo(imagens, dias, *_busca["m"], janela=janela)
         return _buscar(imagens, dias, *_busca["m"], janela=janela)
+
+
+# Foto do grupo (Ronaldo, 15/11): família ou amigos juntos na câmera do Checkout. Vale o quadro com mais rostos; entram os
+# rostos com pelo menos GRUPO_RAZAO da largura do maior (quem está bem ao fundo, a fila, não entra), até GRUPO_MAX pessoas.
+# Cada rosto é buscado sozinho e as fotos se somam (a de cada um e as do grupo junto); por foto fica a maior semelhança.
+GRUPO_MAX = 8
+GRUPO_RAZAO = 0.35
+
+
+def grupo_rostos(fs):
+    """fs = ler_rostos(...) (do maior para o menor) -> os rostos do grupo."""
+    if not fs:
+        return []
+    return [x for x in fs if x[0] >= GRUPO_RAZAO * fs[0][0]][:GRUPO_MAX]
+
+
+def grupo_juntar(resultados):
+    """Junta os buscar_vetor de cada pessoa: por foto, a maior semelhança; principal se foi principal para alguém."""
+    melhor = {}
+    for r in resultados:
+        for f in r.get("fotos") or []:
+            o = melhor.get(f["id"])
+            if o is None:
+                melhor[f["id"]] = dict(f)
+            else:
+                o["sim"] = max(o["sim"], f["sim"])
+                o["principal"] = bool(o.get("principal") or f.get("principal"))
+    return sorted(melhor.values(), key=lambda x: -x["sim"])[:500]
+
+
+def _buscar_grupo(imagens, dias, det, rec, janela=None):
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    melhor = []
+    for b in imagens[:5]:
+        raw = base64.b64decode(b.split(",", 1)[-1])
+        if not img_aceita(raw):
+            continue
+        try:
+            img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+        except Exception:
+            img = None
+        if img is None:
+            continue
+        fs = grupo_rostos(ler_rostos(img, det, rec))
+        if len(fs) > len(melhor):
+            melhor = fs
+    del imagens
+    if not melhor:
+        return {"rosto": False, "fotos": [], "pessoas": 0}
+    rs = [buscar_vetor(v, dias, janela) for _l, v in melhor]
+    return {"rosto": True, "fotos": grupo_juntar(rs), "pessoas": len(melhor), "limite": LIMITE,
+            "janela_min": rs[0].get("janela_min") if rs else None}
 
 
 def _buscar(imagens, dias, det, rec, janela=None):
@@ -13395,7 +13450,7 @@ class H(BaseHTTPRequestHandler):
                     # janela: a do Painel (estado.db); a galeria por QR manda todo:true (dia todo)
                     todo, t0 = body.get("todo") is True, time.time()
                     try:
-                        r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None)
+                        r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None, grupo=body.get("grupo") is True)
                     except Exception as ex:
                         selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0)
                         raise

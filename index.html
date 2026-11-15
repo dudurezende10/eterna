@@ -2679,6 +2679,7 @@ const ICO={
   card:'<svg viewBox="0 0 48 34" width="56" height="40" aria-hidden="true"><rect x="1" y="1" width="46" height="32" rx="4" fill="#3b6fd8"/><rect x="1" y="7" width="46" height="5" fill="#1d2b4f"/><rect x="6" y="16" width="9" height="7" rx="1.5" fill="#ffd36b"/><path d="M6 27h16" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".8"/><path d="M36 16.5c1.6 1.5 1.6 4.5 0 6M39.5 14.5c2.8 2.6 2.8 7.4 0 10" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
   pix:'<svg viewBox="0 0 40 40" width="44" height="44" aria-hidden="true"><path d="M20 3l7 7-7 7-7-7zM20 23l7 7-7 7-7-7zM10 13l7 7-7 7-7-7zM30 13l7 7-7 7-7-7z" fill="#32bcad"/></svg>',
   cash:'<svg viewBox="0 0 48 30" width="56" height="36" aria-hidden="true"><rect x="1" y="1" width="46" height="28" rx="3" fill="#3a9a5b"/><rect x="5" y="5" width="38" height="20" rx="2" fill="none" stroke="#bfe8c9" stroke-width="1.2"/><circle cx="24" cy="15" r="6.5" fill="#bfe8c9"/><text x="24" y="18.6" text-anchor="middle" font-size="9" font-weight="700" fill="#2a7444" font-family="Arial,sans-serif">R$</text></svg>',
+  grupo:'<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3"/><circle cx="5" cy="10" r="2.2"/><circle cx="19" cy="10" r="2.2"/><path d="M6.5 20c.4-3.2 2.7-5.5 5.5-5.5s5.1 2.3 5.5 5.5M1.5 19c.3-2.3 1.7-4 3.5-4.2M22.5 19c-.3-2.3-1.7-4-3.5-4.2"/></svg>',
   face:'<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="9" cy="10" r=".8" fill="currentColor"/><circle cx="15" cy="10" r=".8" fill="currentColor"/><path d="M9 15c1.6 1.4 4.4 1.4 6 0"/></svg>',
   keys:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>',
   arrow:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
@@ -2689,7 +2690,7 @@ const ICO={
 // com pedido aberto, o pedido guarda as fotos dele e a sessão só perde as marcas do Checkout
 function lojaPickLimpa(card){const s=card&&SIM.sessions[card];if(!s||s.status==='paga'||!s.pick||!Object.keys(s.pick).length)return false;
   s.pick={};if(s.status!=='aguardando'){s.selected=[];s.aiSel=[];s.fav=[];}saveSim();return true;}
-function lojaReset(){const k=state.kiosk;if(k.code)lojaPickLimpa(k.code);state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{step:'code',mais:null,escolhaDesde:0,sairAsk:false,t0:null,code:'',so:null,tv:null,lgOpen:false,camOn:false,minhas:false,minhasI:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null,codEsp:false,codTxt:'',codN:(k.codN||0)+1,verKs:null,verCode:null,edAbriu:0,edVistos:null,edT0:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
+function lojaReset(){const k=state.kiosk;if(k.code)lojaPickLimpa(k.code);state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{step:'code',mais:null,grupo:false,escolhaDesde:0,sairAsk:false,t0:null,code:'',so:null,tv:null,lgOpen:false,camOn:false,minhas:false,minhasI:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null,codEsp:false,codTxt:'',codN:(k.codN||0)+1,verKs:null,verCode:null,edAbriu:0,edVistos:null,edT0:null});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 // relê o SIM da outra janela sem perder as escolhas desta sessão no Checkout
 function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk)simOf(card).pick=pk;}
 // revisão 1: nenhuma forma de pagamento tira uma sessão de "paga" (comprar mais é com a equipe)
@@ -3345,6 +3346,11 @@ const I18N={
  ljBackPhotos:['Voltar às fotos','Back to photos','Volver a las fotos','Retour aux photos','Zurück zu den Fotos'],
  ljSeeMine:['Ver minhas fotos','See my photos','Ver mis fotos','Voir mes photos','Meine Fotos ansehen'],
  ljClose:['Fechar','Close','Cerrar','Fermer','Schließen'],
+ ljGrupo:['Foto do grupo','Group photo','Foto del grupo','Photo du groupe','Gruppenfoto'],
+ ljGrupoSub:['Todos juntos, de frente para a câmera. Buscamos as fotos de cada um e as do grupo','Everyone together, facing the camera. We find each person\'s photos and the group\'s','Todos juntos, de frente a la cámara. Buscamos las fotos de cada uno y las del grupo','Tous ensemble, face à la caméra. Nous trouvons les photos de chacun et du groupe','Alle zusammen, Blick in die Kamera. Wir finden die Fotos von jedem und von der Gruppe'],
+ ljGrupoFoto:['Tirar a foto','Take the photo','Tomar la foto','Prendre la photo','Foto aufnehmen'],
+ ljUmaPessoa:['Uma pessoa só','Just one person','Solo una persona','Une seule personne','Nur eine Person'],
+ ljGrupoAchou:[n=>n+' pessoas na foto',n=>n+' people in the photo',n=>n+' personas en la foto',n=>n+' personnes sur la photo',n=>n+' Personen auf dem Foto'],
  ljStart:['Iniciar','Start','Iniciar','Commencer','Starten'],
  ljStartSub:['Toque para encontrar suas fotos','Tap to find your photos','Toca para encontrar tus fotos','Touchez pour trouver vos photos','Tippe, um deine Fotos zu finden'],
  ljTypeCode:['Digite sua sessão','Enter your session','Escribe tu sesión','Saisissez votre session','Sitzung eingeben'],
@@ -3556,16 +3562,20 @@ function vQuiosque(){
         ${emerg?`<p class="lj-sub">${T('typeCode')}</p>
           <input type="text" class="lj-code" id="kcode" placeholder="XXXX-XXXX" value="${esc(k.codTxt||k.code)}" aria-label="${T('receiptCode')}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="14" inputmode="text" autofocus>
           <div class="lj-row"><button class="lj-cta" data-act="kiosk-go"${k.codEsp?' disabled aria-busy="true"':''}>${k.codEsp?T('codeSearching'):T('seeMine')+' '+ICO.arrow}</button>${ljVoltar('kiosk-back','')}</div>`
+        // 15/11 (Ronaldo): foto do grupo, alternativa à selfie: cada rosto da foto é buscado como uma selfie e as fotos se somam
+        :k.camOn&&k.grupo?`<p class="lj-sub">${T('ljGrupoSub')}</p>
+          <div class="lj-cam">${camBox()}</div>
+          <div class="lj-row"><button class="lj-cta" data-act="kiosk-grupo-foto">${ICO.grupo} ${T('ljGrupoFoto')}</button><button class="lj-ghost lj-alt" data-act="kiosk-selfie">${ICO.face} ${T('ljUmaPessoa')}</button>${k.mais?`<button class="lj-ghost lj-alt" data-act="kiosk-mais-volta">${T('backMine')}</button>`:ljVoltar('kiosk-back','lj-alt')}</div>`
         :k.mais?`<p class="lj-sub">${T('addPersonSub')}</p>
           ${k.camOn?`<div class="lj-cam">${camBox()}</div>`:`<button class="lj-start" data-act="kiosk-start">${ICO.face}<span>${T('ljStart')}</span></button>`}
-          <button class="lj-ghost lj-alt" data-act="kiosk-mais-volta">${T('backMine')}</button>`
+          <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-grupo">${ICO.grupo} ${T('ljGrupo')}</button><button class="lj-ghost lj-alt" data-act="kiosk-mais-volta">${T('backMine')}</button></div>`
         :k.camOn?`<p class="lj-sub">${T('lookCam')}</p>
           <div class="lj-cam">${camBox()}</div>
-          <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button>${ljVoltar('kiosk-back','lj-alt')}</div>`
+          <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-grupo">${ICO.grupo} ${T('ljGrupo')}</button><button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button>${ljVoltar('kiosk-back','lj-alt')}</div>`
         // v96 (Eduardo, 09/11): a câmera não fica ligada direto; o cliente toca em Iniciar
         :`<p class="lj-sub">${T('ljStartSub')}</p>
           <button class="lj-start" data-act="kiosk-start">${ICO.face}<span>${T('ljStart')}</span></button>
-          <button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button>`}
+          <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-grupo">${ICO.grupo} ${T('ljGrupo')}</button><button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button></div>`}
       </div></div>`;}
   if(k.step==='talvez'&&k.tv&&k.tv.ask[k.tv.i]){const q=k.tv.ask[k.tv.i]; // v91 (B3): confirmação de SESSÃO inteira, com até 3 miniaturas pequenas
     return `<div class="lj lj-full lj-hero lj-tv">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div><div class="lj-topr">${ljLangOv()}${ljSairBtn('lj-ghost sm')}</div></div>
@@ -3792,33 +3802,35 @@ function buscaJanelaMin(){const a=state.agent;const ag=a&&a.on&&a.sessoes&&a.ses
   const c=state.buscaCfg;const v=c?buscaJanelaOk(c.janela_min):null;if(v!=null)return v;return ag?+ag.janela_min:BUSCA_JANELA_PADRAO;}
 // hora da última foto da sessão (ms): clique corrigido do servidor (cap1), senão o fechamento; null = sem hora (amostra)
 function sesUltima(c){const s=SIM.sessions[c];if(!s)return null;if(s.cap1)return s.cap1*1000;const t=s.closedAt?Date.parse(s.closedAt):NaN;return isNaN(t)?null:t;}
-async function faceAgente(srcs,todo){const a=state.agent;if(!a.on||!a.rostos||!a.rostos.ligado)return null;
+async function faceAgente(srcs,todo,grupo){const a=state.agent;if(!a.on||!a.rostos||!a.rostos.ligado)return null;
   // v96 (segurança S1): a busca desiste em 9 s (agente travado não segura a câmera ligada nem o balcão em "Procurando")
   const ab=typeof AbortController==='function'?new AbortController():null;const tm=ab?setTimeout(()=>ab.abort(),FACE_BUSCA_MS):null;
-  try{const r=await agFetch(a.url+'/rostos/buscar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(todo?{imagens:srcs.map(toJpeg),todo:true}:{imagens:srcs.map(toJpeg)}),signal:ab?ab.signal:undefined});return r.ok?await r.json():null;}catch(e){return null}finally{if(tm)clearTimeout(tm);}}
+  try{const r=await agFetch(a.url+'/rostos/buscar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({imagens:srcs.map(toJpeg)},todo?{todo:true}:{},grupo?{grupo:true}:{})),signal:ab?ab.signal:undefined});return r.ok?await r.json():null;}catch(e){return null}finally{if(tm)clearTimeout(tm);}}
 let FACE_BUSCA_MS=9000;
-async function faceFind(srcs,ok){srcs=[].concat(srcs);
+async function faceFind(srcs,ok,grupo){srcs=[].concat(srcs);
   // v91 (Eduardo, 01/11 16:46): no Checkout, só as sessões com a última foto nos últimos N minutos (Painel de controle; 0 = dia
   // todo). O agente filtra as fotos dele; aqui sai a sessão deste navegador mais velha que a janela. Galeria por QR: dia todo.
   const ck=!state.pub&&(state.lojaRota||state.view==='quiosque');const jan=ck?buscaJanelaMin():0;const desde=jan?Date.now()-jan*60e3:0;
   const sess=demoSessions().filter(x=>(!ok||ok(x))&&(!desde||!(sesUltima(x.card)<desde)));const temLocal=sess.some(x=>x.photos.some(p=>!/^ag_/.test(p.id)));
-  const ag=await faceAgente(srcs,!ck);if(ag&&ag.varias)return {varias:true,list:[],sims:{}};const agSim={},agPri={};if(ag&&ag.fotos)for(const f of ag.fotos){agSim['ag_'+f.id]=f.sim;agPri['ag_'+f.id]=f.principal!==false;} // v91 (B5): principal = o rosto que bateu é dos maiores da foto (agente antigo, sem o campo: conta como principal)
-  let me=null;if(temLocal&&!ag){try{ // v91 (rapidez): com o servidor do ponto respondendo, nada de abrir o face-api do navegador para as fotos de amostra
+  const ag=await faceAgente(srcs,!ck,grupo);if(ag&&ag.varias&&!grupo)return {varias:true,list:[],sims:{}};const agSim={},agPri={};if(ag&&ag.fotos)for(const f of ag.fotos){agSim['ag_'+f.id]=f.sim;agPri['ag_'+f.id]=f.principal!==false;} // v91 (B5): principal = o rosto que bateu é dos maiores da foto (agente antigo, sem o campo: conta como principal)
+  let me=null,mes=null;if(temLocal&&!ag&&grupo){try{ // foto do grupo sem o servidor (demonstração): todos os rostos do quadro com mais rostos
+    for(const im of srcs){const fs=(await faceRead(im)).sort((a,b)=>b.a-a.a);const g=fs.filter(x=>x.a>=fs[0].a*.35*.35).slice(0,8).map(x=>x.d);if(!mes||g.length>mes.length)mes=g;}if(mes&&!mes.length)mes=null;}catch(e){}}
+  if(temLocal&&!ag&&!grupo){try{ // v91 (rapidez): com o servidor do ponto respondendo, nada de abrir o face-api do navegador para as fotos de amostra
     const ds=[];for(const im of srcs){const fs=await faceRead(im);if(pessoas(fs.map(x=>({w:Math.sqrt(x.a)})))===2)return {varias:true,list:[],sims:{}};if(fs.length)ds.push(fs.sort((a,b)=>b.a-a.a)[0].d);}
     if(ds.length){me=new Float32Array(128);for(const d of ds)for(let i=0;i<128;i++)me[i]+=d[i]/ds.length;let n=0;for(let i=0;i<128;i++)n+=me[i]*me[i];n=Math.sqrt(n)||1;for(let i=0;i<128;i++)me[i]/=n;}}catch(e){if(!ag)throw e}}
-  if(!me&&!(ag&&ag.rosto))return {semRosto:true,list:[],sims:{}};
-  if(me){await facePre();faceIndexAll();if(state.face.busy&&state.face.total-state.face.done<=20)await FACEQ;}
+  if(!me&&!mes&&!(ag&&ag.rosto))return {semRosto:true,list:[],sims:{}};
+  if(me||mes){await facePre();faceIndexAll();if(state.face.busy&&state.face.total-state.face.done<=20)await FACEQ;}
   // semelhança >= 0,45: é a pessoa; entre 0,38 e 0,45: talvez, só entra perguntando "é uma destas?"
   const res={},talvez={},sims={};
   for(const x of sess){for(const p of (x.ia&&x.ia.length?x.photos.concat(x.ia.map(id=>({id}))):x.photos)){let sc=null; // v93: as bases de IA também acham a sessão
       if(/^ag_/.test(p.id)){if(agSim[p.id]!=null)sc=agSim[p.id];}
-      else if(me){const l=FACEIDX[p.id];if(l){let best=-1;for(const d of l){let t=0;for(let i=0;i<128;i++)t+=d[i]*me[i];if(t>best)best=t}sc=best;}}
+      else if(me||mes){const l=FACEIDX[p.id];if(l){let best=-1;for(const q of (mes||[me]))for(const d of l){let t=0;for(let i=0;i<128;i++)t+=d[i]*q[i];if(t>best)best=t}sc=best;}}
       if(sc!=null)sims[p.id]=sc;if(sc==null||sc<FACE_DUV)continue;const alvo=sc>=FACE_SIM?res:talvez;const r=alvo[x.card]||(alvo[x.card]={card:x.card,fotos:[],sc:0,pri:0});r.fotos.push(p.id);r.sc=Math.max(r.sc,sc);if(!/^ag_/.test(p.id)||agPri[p.id])r.pri++;}}
   const ord=o=>Object.values(o).sort((a,b)=>b.fotos.length-a.fotos.length||b.sc-a.sc);let list=ord(res);
   let clara=list.length===1||(list.length>1&&(list[0].fotos.length>list[1].fotos.length||list[0].sc-list[1].sc>=FACE_MARGEM));
   if(!list.length){list=ord(talvez).slice(0,4);clara=false;}
   // v91 parte B: res e talvez completos (todas as sessões, de qualquer fotógrafo e ponto) para o Checkout juntar
-  return {list,clara,servidor:!!ag,sims,res:Object.values(res),talvez:Object.values(talvez)};}
+  return {list,clara,servidor:!!ag,sims,res:Object.values(res),talvez:Object.values(talvez),pessoas:ag?ag.pessoas||0:(mes?mes.length:0)};}
 // Medição: cada foto tem o maior rosto procurado nas outras fotos; acerto = a sessão dela vem em primeiro.
 async function faceMeasure(){const a=state.agent;
   if(a.on&&a.rostos&&a.rostos.ligado){const sessoes={};for(const x of demoSessions()){const ids=x.photos.filter(p=>/^ag_/.test(p.id)).map(p=>p.id.slice(3));if(ids.length)sessoes[x.card]=ids;}
@@ -5577,9 +5589,10 @@ function aeFilaTabela(){const A=state.ae,L=A.dados?A.dados.vendas:[];const ent=!
     P.forEach((p,i)=>{let e=v.entregue_em?'entregue':aePulEstado(v,p);linhas.push({v,p,k:i+1,tot,e});});
     if(!v.entregue_em&&P.every(p=>p.qr)&&(v.fisicos||[]).some(x=>!x.entregue))linhas.push({v,p:P[0],k:0,tot,e:'itens'});});
   const feita=l=>l.e==='entregue';
-  const vs=linhas.filter(l=>ent?feita(l):!feita(l)).sort((x,y)=>ent?String(y.v.entregue_em||y.p&&y.p.voo_em||'').localeCompare(String(x.v.entregue_em||x.p&&x.p.voo_em||'')):String(x.v.criado).localeCompare(String(y.v.criado))||x.k-y.k);
+  const quando=l=>{const x=l.p&&l.p.qr?(l.v.entregas||[]).find(y=>y.qr===l.p.qr):null;return String((x&&x.em)||l.v.entregue_em||'');}; // hora da entrega: a do vídeo daquela pulseira; sem vídeo, a da venda
+  const vs=linhas.filter(l=>ent?feita(l):!feita(l)).sort((x,y)=>ent?quando(y).localeCompare(quando(x)):String(x.v.criado).localeCompare(String(y.v.criado))||x.k-y.k);
   const nPend=linhas.filter(l=>!feita(l)).length,nEnt=linhas.length-nPend;
-  const situ=l=>{const e=l.e,v=l.v;if(e==='entregue')return v.entregue_em?TE('ae_entregue_as',esc(String(v.entregue_em).slice(11,16))):esc(aeColNome(v.tipo,'entregue'));
+  const situ=l=>{const e=l.e,v=l.v;if(e==='entregue'){const h=quando(l);return /\d\d:\d\d/.test(h.slice(11,16))?TE('ae_entregue_as',esc(h.slice(11,16))):esc(aeColNome(v.tipo,'entregue'));}
     if(e==='aguarda')return esc(aeColNome(v.tipo,'proximo'));if(e==='voando')return esc(TE('ae_pul_e_voando'))+(l.p&&l.p.voo_em?' '+esc(l.p.voo_em.slice(11,16)):'');
     return esc(TE('ae_pul_e_'+(e==='andamento'?v.tipo:e)));};
   const cor=e=>e==='entregue'?'good':e==='aguarda'?'':'warn';
@@ -9942,11 +9955,12 @@ function camMount(){const c=state.cam;const v=$('#cam-video');
   if(!c.timer){c.prev=null;c.armed=false;c.still=0;c.moved=0;c.timer=setInterval(camTick,250);}
   camStatus();}
 let camFaceT=0;
-async function camFaceCheck(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||c.looking||v.readyState<2||!camWanted())return;
+async function camFaceCheck(){if(camGrupo())return;const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||c.looking||v.readyState<2||!camWanted())return;
   if(c.status==='found'||c.status==='pick'||c.status==='searching')return;if(Date.now()-(c.lastTry||0)<8000&&!c.armed)return;
   c.looking=true;try{const d=(await ynDetect(v,.7))[0];
     if(d&&d.w>=v.videoWidth*.12&&camWanted()&&!c.busy){c.lastTry=Date.now();if(state.view==='quiosque')state.kiosk.camRosto=Date.now();c.armed=false;c.moved=0;camFound();}}catch(e){}finally{c.looking=false;}}
-function camTick(){const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||v.readyState<2)return;if(Date.now()-camFaceT>1200){camFaceT=Date.now();camFaceCheck();}
+const camGrupo=()=>state.view==='quiosque'&&!!state.kiosk.grupo; // foto do grupo: só no botão Tirar a foto
+function camTick(){if(camGrupo())return;const c=state.cam;const v=$('#cam-video');if(!v||!c.stream||c.busy||v.readyState<2)return;if(Date.now()-camFaceT>1200){camFaceT=Date.now();camFaceCheck();}
   if(!c.cv){c.cv=document.createElement('canvas');c.cv.width=48;c.cv.height=36;}
   const ctx=c.cv.getContext('2d',{willReadFrequently:true});ctx.drawImage(v,0,0,48,36);const d=ctx.getImageData(8,4,32,28).data;
   const g=new Float32Array(32*28);for(let i=0;i<g.length;i++)g[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;
@@ -9964,9 +9978,10 @@ function camFound(){const c=state.cam;if(c.busy)return;c.busy=true;c.lastTry=Dat
     else if(state.view==='quiosque'){lojaCliente();lojaPickLimpa(card);state.kiosk.code=card;state.kiosk.so={card,ids:fotos||[]};state.kiosk.step='gallery';toast(T('foundYou'));ljPrepara(card);render();}
     else if(state.posto.manual&&(state.view==='posto'||state.view==='caixa')){toast('Encontramos: '+card);checkoutPick(card);}
     else{c.status='idle';}};
-  const v=$('#cam-video');
-  if(c.stream&&v&&v.videoWidth){(async()=>{const fr=[];const ek=Math.min(1,960/v.videoWidth);for(let k=0;k<3;k++){const cv=mkc(Math.round(v.videoWidth*ek),Math.round(v.videoHeight*ek));cv.getContext('2d').drawImage(v,0,0,cv.width,cv.height);fr.push(cv);if(k<2)await new Promise(r=>setTimeout(r,250));}return faceFind(fr,ok);})()
+  const v=$('#cam-video');const grp=camGrupo();
+  if(c.stream&&v&&v.videoWidth){(async()=>{const fr=[];const ek=Math.min(1,960/v.videoWidth);for(let k=0;k<3;k++){const cv=mkc(Math.round(v.videoWidth*ek),Math.round(v.videoHeight*ek));cv.getContext('2d').drawImage(v,0,0,cv.width,cv.height);fr.push(cv);if(k<2)await new Promise(r=>setTimeout(r,250));}return faceFind(fr,ok,grp);})()
     .then(r=>{if(!vale()){c.busy=false;return;}
+      if(grp&&r.pessoas>1)toast(T('ljGrupoAchou',r.pessoas));
       if(state.view==='quiosque'&&!r.varias&&r.res&&r.res.length&&lojaJuntar(r.res,r.talvez,r.sims)){c.busy=false;c.status='found';camStatus();return;} // v91: todas as sessões dela (só com foto clara; sem nenhuma, o "É uma destas?" de antes)
       if(r.list.length&&r.clara){open(r.list[0].card,r.list[0].fotos);return;}
       if(r.list.length){c.busy=false;c.status='pick';c.cands=r.list.slice(0,4);render();return;}
@@ -10437,7 +10452,10 @@ document.addEventListener('click',e=>{
       const p=lojaCodEspera(txt);if(!p){abre();break;}const passo=k.step,n=k.codN=(k.codN||0)+1;k.codEsp=true;k.codTxt=txt;render(); // botão desativado com "Buscando suas fotos…"; codTxt guarda o que o cliente digitou
       p.then(()=>{if(k.codN!==n)return;k.codEsp=false;if(state.kiosk!==k||k.step!==passo)return;abre();if(k.step===passo)render();});break;} // lojaReset troca codN: a espera de um cliente nunca abre a sessão depois que a tela voltou ao início
     case 'kiosk-back':lojaReset();render();break;
-    case 'kiosk-start':lojaCamLigar();break;
+    case 'kiosk-start':state.kiosk.grupo=false;lojaCamLigar();break;
+    case 'kiosk-grupo':{const k=state.kiosk;k.grupo=true;state.cam.status='idle';if(k.camOn)render();else lojaCamLigar();break;}
+    case 'kiosk-selfie':{state.kiosk.grupo=false;state.cam.status='idle';state.cam.lastTry=0;render();break;}
+    case 'kiosk-grupo-foto':{if(!camGrupo()||state.cam.busy)break;camFound();break;}
     // v99.2 (Ronaldo, 11/11): quem ficou de fora tira a selfie e as fotos dela somam às abertas; sem selfie nova nada muda
     case 'kiosk-mais':{const k=state.kiosk;if(!k.so||k.so.visita)break;k.mais={so:k.so,i:k.i||0,ver:k.ver||0};k.step='code';state.cam.status='idle';lojaCamLigar();break;}
     case 'kiosk-mais-volta':{const k=state.kiosk;const m=k.mais;if(!m)break;if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{so:m.so,code:m.so.card,step:'review',i:m.i,ver:m.ver,mais:null,camOn:false,tv:null});camStop();render();break;}

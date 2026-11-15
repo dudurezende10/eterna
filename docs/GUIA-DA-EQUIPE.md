@@ -369,6 +369,8 @@ Quando o cliente olha para a câmera, o Checkout procura em todas as sessões do
 
 **Família em que alguém ficou de fora:** na escolha, toque em **Adicionar outra pessoa**. A selfie dessa pessoa, ali no balcão, soma as fotos dela às já abertas, mantendo as marcas. Nunca abra as fotos de alguém que não está presente.
 
+**Foto do grupo (15/11):** em vez de uma selfie por pessoa, toque em **Foto do grupo** (na tela inicial, na câmera ou em Adicionar outra pessoa). Todos ficam juntos de frente para a câmera e alguém toca em **Tirar a foto**: cada rosto vira uma busca, como se fossem várias selfies, e entram as fotos de cada um sozinho e as do grupo junto. Quem está bem ao fundo (a fila) não conta; até 8 pessoas por foto. É uma opção a mais: a selfie de uma pessoa continua igual, e **Uma pessoa só** volta para ela.
+
 Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
 
 **Drone (v99.26):** as fotos tiradas do vídeo do Drone entram como fotos de fotógrafo, com o piloto como origem. A selfie também acha essas fotos no Checkout.
