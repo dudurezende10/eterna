@@ -12,6 +12,7 @@ LOGIN="${1:-}"; CHAVE="${2:-}"
 case "$LOGIN" in root|ubuntu|eterna|eterna-deploy) echo "login reservado"; exit 1;; esac
 if [ "$CHAVE" = --remover ]; then
   id "$LOGIN" >/dev/null 2>&1 && { pkill -u "$LOGIN" || true; userdel -r "$LOGIN" 2>/dev/null || userdel "$LOGIN"; }
+  rm -f "/etc/ssh/sshd_config.d/61-eterna-acesso-$LOGIN.conf"; sshd -t && systemctl reload ssh
   echo "acesso de $LOGIN removido"; exit 0
 fi
 [[ "$CHAVE" =~ ^(ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa)\ [A-Za-z0-9+/=]+(\ .*)?$ ]] || { echo "chave pública inválida (cole a linha inteira do arquivo .pub)"; exit 1; }
@@ -22,5 +23,15 @@ H="$(getent passwd "$LOGIN" | cut -d: -f6)"
 install -d -m 700 -o "$LOGIN" -g "$LOGIN" "$H/.ssh"
 grep -qxF "$CHAVE" "$H/.ssh/authorized_keys" 2>/dev/null || echo "$CHAVE" >>"$H/.ssh/authorized_keys"
 chown "$LOGIN:$LOGIN" "$H/.ssh/authorized_keys"; chmod 600 "$H/.ssh/authorized_keys"
+# o 01-hardening.conf (Rafael) só deixa entrar o ubuntu; soma este login (AllowUsers é cumulativo entre arquivos)
+CONF="/etc/ssh/sshd_config.d/61-eterna-acesso-$LOGIN.conf"
+printf '# Eterna · acesso SSH de %s (servidor/linux/acesso-ssh.sh); só chave, sem sudo
+AllowUsers %s
+' "$LOGIN" "$LOGIN" >"$CONF"
+chmod 644 "$CONF"
+sshd -t || { rm -f "$CONF"; echo "configuração do SSH recusada: nada mudou"; exit 1; }
+T="$(sshd -T -C "user=$LOGIN,host=x,addr=192.168.10.11")"
+[[ "$T" == *"allowusers $LOGIN"* && "$T" == *"allowusers ubuntu"* && "$T" == *"passwordauthentication no"* ]] || { rm -f "$CONF"; echo "o SSH não aplicou o acesso: nada mudou"; exit 1; }
+systemctl reload ssh
 echo "ok: $LOGIN entra com a chave $(ssh-keygen -lf <(echo "$CHAVE") | awk '{print $2}')"
 echo "    de fora do estádio, com a VPN MaracaTour (FortiClient) ligada: ssh $LOGIN@192.168.10.10"
