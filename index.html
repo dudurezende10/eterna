@@ -173,7 +173,7 @@ svg text{font-family:var(--body);fill:var(--muted);font-size:12px}
 .photos.small{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
 .ph{position:relative;aspect-ratio:3/2;max-width:100%;border-radius:4px;overflow:hidden;background:#1a1917;border:2px solid transparent;cursor:pointer;display:block;width:100%;padding:0}
 .ph::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
-.ph[data-real]{aspect-ratio:1/1}.ph[data-real]::before{background-size:contain;background-position:center}
+.ph[data-real]{aspect-ratio:1/1}.ph[data-real]::before{inset:var(--ri,0);background-size:var(--rbs,contain);background-position:var(--rbp,center)}
 .ph[data-off="1"]::before{opacity:.3} .ph[data-off="1"] .tag{background:var(--bad)}
 .ph[data-v="1"]{border-color:var(--good)} .ph[data-v="-1"]{border-color:var(--bad)} .ph[data-sel="1"]{border-color:var(--accent)}
 .ph .tag{position:absolute;left:6px;top:6px;font-size:12px;letter-spacing:.08em;padding:2px 7px;border-radius:3px;background:rgba(20,19,17,.78);color:#fafaf8}
@@ -1406,8 +1406,18 @@ function editStyleObj(e){if(!e)return '';const t=Math.round((e.t||0)/5)*5;return
 // zoom na proporção da própria foto. As fotos de exemplo (sprites) seguem 3:2. Plano docs/planos/2026-11-15-biblioteca-fotos-inteiras.md
 function fotoSrc(id){if(UP[id])return UP[id].src;return /^ag_/.test(id)&&state.agent&&state.agent.url?state.agent.url+'/thumb/'+id.slice(3):'';}
 const fotoReal=id=>fotoSrc(id)?' data-real="1"':'';
-const FOTO_AR={}; // largura/altura de cada foto real, medida uma vez pela miniatura
-function fotoAr(id,pronto){if(FOTO_AR[id])return FOTO_AR[id];const im=new Image();im.onload=()=>{if(im.naturalWidth&&im.naturalHeight){FOTO_AR[id]=im.naturalWidth/im.naturalHeight;pronto();}};im.src=fotoSrc(id);return 0;}
+// original da foto do agente (/file/); foto sem original separado (enviada pela tela) devolve a própria miniatura
+function fotoOriginal(id){const th=fotoSrc(id);return th&&/^ag_/.test(id)&&state.agent&&state.agent.url?th.replace('/thumb/','/file/'):th;}
+// largura/altura de cada foto real, medida uma vez pela miniatura: número = medida, 'pedindo' ou 'erro' = não pedir de novo
+const FOTO_AR={};
+function fotoAr(id,pronto){const v=FOTO_AR[id];if(v>0)return v;if(v)return 0;FOTO_AR[id]='pedindo';const im=new Image();
+  im.onload=()=>{if(im.naturalWidth&&im.naturalHeight){FOTO_AR[id]=im.naturalWidth/im.naturalHeight;pronto();}else FOTO_AR[id]='erro';};im.onerror=()=>{FOTO_AR[id]='erro';};im.src=fotoSrc(id);return 0;}
+// miniatura de foto com "Recorte (zoom)" acima de 100%: a janela é a caixa da própria foto (como no zoom), não a célula quadrada.
+// O mesmo scale + translate do --tf vira tamanho e posição do fundo, que a caixa da foto corta. Sem a proporção ainda: foto inteira.
+let REC_T=0;
+function recMini(id){const e=SIM.edits&&SIM.edits[id];if(!e||!(e.z>100)||!fotoSrc(id))return '';const ar=fotoAr(id,()=>{clearTimeout(REC_T);REC_T=setTimeout(render,60);});if(!ar)return ';--tf:none';
+  const z=e.z/100,pos=v=>(50-z*(v||0)/(z-1)).toFixed(2)+'%',m=(ar>=1?(100-100/ar)/2:(100-100*ar)/2).toFixed(3)+'%';
+  return `;--tf:none;--ri:${ar>=1?m+' 0':'0 '+m};--rbs:${e.z}% ${e.z}%;--rbp:${pos(e.x)} ${pos(e.y)}`;}
 function phStyle(id){if(/^black_/.test(id))return '--img:none;--bs:auto;--bp:center';if(UP[id])return `--img:url(${UP[id].src});--bs:cover;--bp:center`+editStyle(id);const s=spriteOf[id];if(!s)return '';const col=s.i%s.cols,row=Math.floor(s.i/s.cols);const bx=s.cols>1?100*col/(s.cols-1):0,by=s.rows>1?100*row/(s.rows-1):0;return `--img:url(sprites/${s.file});--bs:${s.cols*100}% ${s.rows*100}%;--bp:${bx}% ${by}%`+editStyle(id)}
 
 // ---------- state ----------
@@ -1546,7 +1556,7 @@ function sparkIdx(perDay){
 function hbars(items,fmt){const max=Math.max(...items.map(i=>i.v))||1;return `<div class="bars">${items.map(i=>`<div class="bar"><span>${esc(i.label)}</span><div class="track"><div class="fill" style="width:${100*i.v/max}%"></div></div><span class="val">${fmt?fmt(i.v):i.v}</span></div>`).join('')}</div>`}
 function quality(key,p){const rs=Object.values(state.reviews).filter(r=>r.key===key&&(!p||(r.date>=p.de&&r.date<=p.ate)));const ph=rs.flatMap(r=>Object.values(r.photos||{}));const good=ph.filter(v=>v===1).length,bad=ph.filter(v=>v===-1).length;const scored=rs.filter(r=>r.score);return {sessions:rs.length,rated:good+bad,good,bad,goodPct:(good+bad)?Math.round(100*good/(good+bad)):null,score:scored.length?(scored.reduce((a,r)=>a+r.score,0)/scored.length):null}}
 const CHECK='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg>',CROSS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phStyle(p.id)}"${fotoReal(p.id)} data-act="${o.act||'zoom'}" data-id="${p.id}" ${o.sel?'data-sel="1"':''} ${o.v?`data-v="${o.v}"`:''} aria-label="${esc(o.label||'Foto')}">${o.tag?`<span class="tag${o.tagCls?' '+o.tagCls:''}"${o.tagTitle?` title="${esc(o.tag)}"`:''}>${esc(o.tag)}</span>`:''}${o.wm?'<span class="wm">ETERNA</span>':''}${o.zoom!==false?`<span class="zoom" data-act="zoom" data-id="${p.id}" role="button" aria-label="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg></span>`:''}<span class="mark">${o.v===-1?CROSS:CHECK}</span></button>`;
+const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phStyle(p.id)}${recMini(p.id)}"${fotoReal(p.id)} data-act="${o.act||'zoom'}" data-id="${p.id}" ${o.sel?'data-sel="1"':''} ${o.v?`data-v="${o.v}"`:''} aria-label="${esc(o.label||'Foto')}">${o.tag?`<span class="tag${o.tagCls?' '+o.tagCls:''}"${o.tagTitle?` title="${esc(o.tag)}"`:''}>${esc(o.tag)}</span>`:''}${o.wm?'<span class="wm">ETERNA</span>':''}${o.zoom!==false?`<span class="zoom" data-act="zoom" data-id="${p.id}" role="button" aria-label="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg></span>`:''}<span class="mark">${o.v===-1?CROSS:CHECK}</span></button>`;
 
 // ---------- Perfis ----------
 function vPerfis(){
@@ -3609,7 +3619,7 @@ function ljMinhas(k){const ch=lojaCart(k.code).ch;const i=k.minhasI!=null&&ch[k.
   return `<div class="lj-minhas" role="dialog" aria-modal="true" aria-label="${T('ljSeeMine')}"><button class="lj-ovb lj-mx" data-act="kiosk-minhas-x" aria-label="${T('ljClose')}">${ICO.no}</button>
     ${i!=null?`<button class="lj-mbigw" data-act="kiosk-minhas-i" aria-label="${T('ljClose')}">${th(ch[i],'lj-mbig')}</button>`
       :`<div class="lj-mgrid" style="--mc:${ch.length<=1?1:ch.length<=4?2:ch.length<=9?3:ch.length<=16?4:ch.length<=30?6:8};--mr:${Math.ceil(ch.length/(ch.length<=1?1:ch.length<=4?2:ch.length<=9?3:ch.length<=16?4:ch.length<=30?6:8))}">${ch.map((x,j)=>`<button class="lj-mth" data-act="kiosk-minhas-i" data-i="${j}" aria-label="${j+1} / ${ch.length}">${th(x,'lj-mimg')}</button>`).join('')}</div>`}</div>`;}
-function bigStyle(id){let st=phStyle(id);if(/^ag_/.test(id)&&state.agent&&state.agent.url)st=st.replace('/thumb/','/file/');return st;}
+function bigStyle(id){const st=phStyle(id),th=fotoSrc(id),hi=fotoOriginal(id);return hi!==th?st.replace(th,hi):st;}
 function lojaMark(v){const k=state.kiosk;const items=lojaItems(k.code);const x=items[k.i||0];if(!x)return;const pk=lojaPick(k.code);
   pk[x.k]=pk[x.k]===v?'':v;if(!pk[x.k])delete pk[x.k];lojaSync(k.code);
   if(pk[x.k]&&(k.i||0)<items.length-1)k.i++;if(k.ver!=null)k.ver=k.i||0;render();}
@@ -7904,6 +7914,9 @@ const EQ={
   lb_fotos:[(n)=>`${fmtN(n)} ${n===1?'foto':'fotos'}`,(n)=>`${fmtN(n)} ${n===1?'photo':'photos'}`,(n)=>`${fmtN(n)} ${n===1?'foto':'fotos'}`,(n)=>`${fmtN(n)} ${n===1?'photo':'photos'}`,(n)=>`${fmtN(n)} ${n===1?'Foto':'Fotos'}`],
   lb_vends:[(n)=>`${fmtN(n)} ${n===1?'vendida':'vendidas'}`,(n)=>`${fmtN(n)} sold`,(n)=>`${fmtN(n)} ${n===1?'vendida':'vendidas'}`,(n)=>`${fmtN(n)} ${n===1?'vendue':'vendues'}`,(n)=>`${fmtN(n)} verkauft`],
   lb_nvends:[(n)=>`${fmtN(n)} não vendidas`,(n)=>`${fmtN(n)} not sold`,(n)=>`${fmtN(n)} no vendidas`,(n)=>`${fmtN(n)} non vendues`,(n)=>`${fmtN(n)} nicht verkauft`],
+  zm_vendida:["vendida","sold","vendida","vendue","verkauft"],
+  zm_descartada:["descartada","discarded","descartada","écartée","verworfen"],
+  zm_teclas:["← → para navegar · Esc fecha","← → to browse · Esc closes","← → para navegar · Esc cierra","← → pour naviguer · Échap ferme","← → zum Blättern · Esc schließt"],
   zm_pos:[(i,n)=>`foto ${i} de ${n}`,(i,n)=>`photo ${i} of ${n}`,(i,n)=>`foto ${i} de ${n}`,(i,n)=>`photo ${i} sur ${n}`,(i,n)=>`Foto ${i} von ${n}`],
   lb_ses_das:[(h)=>`Sessão das ${h}`,(h)=>`Session at ${h}`,(h)=>`Sesión de las ${h}`,(h)=>`Séance de ${h}`,(h)=>`Sitzung um ${h}`],
   lb_nota:[(adm)=>`Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera${adm?', pelo usuário (subpasta) do FTP':''} ou pela sessão da foto. Vendida = foto escolhida numa venda paga.`,(adm)=>`Time the photo arrived on the computer. Photographer from the name saved in the camera${adm?', the FTP user (subfolder)':''} or the photo's session. Sold = photo chosen in a paid sale.`,(adm)=>`Hora en que la foto llegó a la computadora. Fotógrafo por el nombre grabado en la cámara${adm?', por el usuario (subcarpeta) del FTP':''} o por la sesión de la foto. Vendida = foto elegida en una venta pagada.`,(adm)=>`Heure d'arrivée de la photo sur l'ordinateur. Photographe d'après le nom enregistré dans l'appareil${adm?', l\'utilisateur (sous-dossier) du FTP':''} ou la séance de la photo. Vendue = photo choisie dans une vente payée.`,(adm)=>`Uhrzeit, zu der das Foto auf dem Computer ankam. Fotograf aus dem in der Kamera gespeicherten Namen${adm?', dem FTP-Benutzer (Unterordner)':''} oder der Sitzung des Fotos. Verkauft = Foto aus einem bezahlten Verkauf.`],
@@ -10167,17 +10180,24 @@ function shareLink(){syncHash();const url=location.href;const done=()=>toast(TE(
 const shareBtn=()=>`<button class="chip" data-act="share-view" title="${TE('share_tip')}">${TE('share')}</button>`;
 function toast(msg){const t=$('#toast');t.textContent=msg;t.setAttribute('data-on','');clearTimeout(t._t);t._t=setTimeout(()=>t.removeAttribute('data-on'),2400)}
 function compModal(keys,i){const show=j=>{i=(j+keys.length)%keys.length;const x=keys[i];openModal(`--img:url(${COMPURL[x.k]})`,x.cap+' · '+(i+1)+' de '+keys.length+(COMPLOW[x.k]?' · foto de exemplo em miniatura: a montagem com foto real sai em alta resolução':''),true);const pv=$('#modal-prev'),nx=$('#modal-next');pv.hidden=nx.hidden=keys.length<2;$('#modal-kbd').textContent='';MODAL.comp={show,get i(){return i}};};MODAL.list=[];show(i);}
-function openModal(style,cap,isImg){const mo=$('#modal');const im=$('#modal-img');im.className=isImg?'big img':'big';im.style.cssText=style;$('#modal-cap').textContent=cap||'';mo.setAttribute('data-open','');$('#modal-close').focus();}
+function openModal(style,cap,isImg){clearTimeout(ZOOM_HI_T);const mo=$('#modal');const im=$('#modal-img');im.className=isImg?'big img':'big';im.style.cssText=style;$('#modal-cap').textContent=cap||'';mo.setAttribute('data-open','');$('#modal-close').focus();}
 const MODAL={list:[],i:0,label:'',ctx:{},adjust:false};
-// zoom da foto real: o original por cima da miniatura (que já está no navegador), na proporção da foto, sem cortar
-function modalStyle(id){const th=fotoSrc(id);if(!th)return phStyle(id);const hi=/^ag_/.test(id)&&state.agent&&state.agent.url?th.replace('/thumb/','/file/'):th;
+// zoom da foto real, na proporção da foto e sem cortar. Abre com a miniatura (já está no navegador); o original (/file/) só é pedido
+// depois de ZOOM_HI_MS parado na foto, porque o /file/ tem limite de pedidos por minuto e segurar a seta estouraria. FOTO_HI por id:
+// 'ok' = original carregado (entra por cima da miniatura), 'pedindo', 'erro' (404, 429, rede: fica a miniatura; reabrir a foto tenta de novo)
+const FOTO_HI={};const ZOOM_HI_MS=250;let ZOOM_HI_T=0;
+function modalStyle(id){const th=fotoSrc(id);if(!th)return phStyle(id);const hi=fotoOriginal(id);
   const ar=fotoAr(id,()=>{const p=curPhoto();if(p&&p.id===id&&$('#modal').hasAttribute('data-open'))$('#modal-img').style.setProperty('--arn',FOTO_AR[id]);});
-  return `--img:url(${hi})${hi!==th?`,url(${th})`:''}${ar?';--arn:'+ar:''}`+editStyle(id);}
+  return `--img:${hi!==th&&FOTO_HI[id]==='ok'?`url(${hi}),`:''}url(${th})${ar?';--arn:'+ar:''}`+editStyle(id);}
+function zoomOriginal(id){const hi=fotoOriginal(id);if(hi===fotoSrc(id)||FOTO_HI[id]==='ok'||FOTO_HI[id]==='pedindo')return;
+  ZOOM_HI_T=setTimeout(()=>{FOTO_HI[id]='pedindo';const im=new Image();im.onerror=()=>{FOTO_HI[id]='erro';};
+    im.onload=()=>{FOTO_HI[id]='ok';const p=curPhoto();if(p&&p.id===id&&$('#modal').hasAttribute('data-open'))applyEditLive();};im.src=hi;},ZOOM_HI_MS);}
 function fotoHora(id){if(!/^ag_/.test(id))return '';const f=(state.lib||[]).find(x=>'ag_'+x.id===id);return f&&f.t?new Date(f.t*1000).toLocaleTimeString(localeEq(),{hour:'2-digit',minute:'2-digit'}):'';}
 // as setas param nas pontas (não dão a volta): a primeira foto só tem a seta da direita e a última só a da esquerda
-function showModal(i){MODAL.comp=null;const n=MODAL.list.length;if(!n)return;MODAL.i=Math.max(0,Math.min(n-1,i));const p=MODAL.list[MODAL.i];
-  openModal(modalStyle(p.id),[MODAL.label,TE('zm_pos',MODAL.i+1,n),fotoHora(p.id),p.sold?'vendida':'',SIM.discarded[p.id]?'descartada':''].filter(Boolean).join(' · '));$('#modal-img').classList.toggle('real',!!fotoSrc(p.id));
-  $('#modal-prev').hidden=MODAL.i<=0;$('#modal-next').hidden=MODAL.i>=n-1;$('#modal-kbd').textContent=n>1?'← → para navegar · Esc fecha':'';renderModalTools();}
+function showModal(i){MODAL.comp=null;const n=MODAL.list.length;if(!n)return;MODAL.i=Math.max(0,Math.min(n-1,i));const p=MODAL.list[MODAL.i];const real=!!fotoSrc(p.id);
+  if(FOTO_AR[p.id]==='erro')delete FOTO_AR[p.id]; // miniatura que falhou: uma tentativa nova a cada vez que a foto é aberta
+  openModal(modalStyle(p.id),[MODAL.label,TE('zm_pos',MODAL.i+1,n),fotoHora(p.id),p.sold?TE('zm_vendida'):'',SIM.discarded[p.id]?TE('zm_descartada'):''].filter(Boolean).join(' · '));$('#modal-img').classList.toggle('real',real);if(real)zoomOriginal(p.id);
+  $('#modal-prev').hidden=MODAL.i<=0;$('#modal-next').hidden=MODAL.i>=n-1;$('#modal-kbd').textContent=n>1?TE('zm_teclas'):'';renderModalTools();}
 function openGallery(list,id,label,ctx){MODAL.list=list;MODAL.label=label||'';MODAL.ctx=ctx||{};MODAL.adjust=false;const i=Math.max(0,list.findIndex(p=>p.id===id));showModal(i);}
 function modalIr(d){if(MODAL.comp)return MODAL.comp.show(MODAL.comp.i+d);const j=MODAL.i+d;if(j>=0&&j<MODAL.list.length)showModal(j);}
 function curPhoto(){return MODAL.list[MODAL.i]}
@@ -10588,7 +10608,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuS
   if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver==null&&(e.key==='Enter')&&!/INPUT|TEXTAREA|SELECT|BUTTON/.test(e.target.tagName)){state.kiosk.ver=state.kiosk.i||0;render();e.preventDefault();return;}
   if(state.view==='quiosque'&&state.kiosk.step==='review'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){if(e.key==='ArrowRight'){state.kiosk.i=(state.kiosk.i||0)+1;render();e.preventDefault();return;}if(e.key==='ArrowLeft'){state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();e.preventDefault();return;}if(e.key==='Enter'||e.key===' '){const b=$('[data-act="kiosk-ok"]');if(b){b.click();e.preventDefault();return;}}}if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&(MODAL.list.length>1||MODAL.comp)&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){modalIr(1);e.preventDefault();}if(e.key==='ArrowLeft'){modalIr(-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){lojaCliente();state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}});
-function closeModal(){$('#modal').removeAttribute('data-open');if(state.view==='ajustes'||state.posto.manual||state.view==='caixa')render();}
+function closeModal(){clearTimeout(ZOOM_HI_T);$('#modal').removeAttribute('data-open');if(state.view==='ajustes'||state.posto.manual||state.view==='caixa')render();}
 $('#modal-close').addEventListener('click',closeModal);
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 $('#modal-prev').addEventListener('click',e=>{e.stopPropagation();modalIr(-1)});

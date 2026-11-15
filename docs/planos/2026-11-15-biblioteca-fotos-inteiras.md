@@ -13,7 +13,8 @@ Pedido do Eduardo, olhando Fotógrafo › Minhas fotos no servidor do estádio. 
 ## Como fica
 
 1. Miniatura de foto real (enviada ou do agente, `data-real` no `.ph`): célula quadrada com a foto inteira dentro (`contain`), centralizada. Vertical aparece em pé, horizontal deitada, as duas com o mesmo lado maior, e a grade segue alinhada. Vale para a Biblioteca, Minhas fotos de hoje, Sessões de hoje, Qualidade (sessão aberta), Posto e Venda manual, Ajustes e a escolha de cortesia nas Galerias. Na Fila do fotógrafo e nas miniaturas do pedido no Posto a caixa segue do mesmo tamanho, com a foto inteira dentro. As fotos de exemplo (sprites) seguem 3:2.
-2. Zoom: a caixa toma a proporção da própria foto (`--arn`, medida pela miniatura) e o maior tamanho que cabe na tela, sem cortar. Mostra o original (`/file/`) por cima da miniatura, que já está no navegador e aparece na hora. Avaliar, ajustar, descartar e arrastar o recorte seguem iguais.
+2. Zoom: a caixa toma a proporção da própria foto (`--arn`, medida pela miniatura) e o maior tamanho que cabe na tela, sem cortar. Abre com a miniatura, que já está no navegador. O original (`/file/`) só é pedido depois de 250 ms parado na foto e entra por cima dela: o `/file/` tem limite de 120 pedidos por minuto por IP, e pedir a cada passo da seta estourava o limite e deixava o espelho do Checkout e a prévia de Ajustes sem foto no mesmo aparelho. Se o `/file/` falhar (404, 429, rede), a miniatura fica; reabrir a foto tenta de novo, uma vez. Avaliar, ajustar, descartar e arrastar o recorte seguem iguais e não pedem nada de novo.
+   Miniatura de foto com "Recorte (zoom)" acima de 100%: a janela mostrada é a caixa da própria foto, igual à do zoom, e não a célula quadrada (`recMini`).
 3. Setas: param nas pontas, em todo zoom de fotos. A primeira foto só tem a seta da direita, a última só a da esquerda; teclado (← →) e deslizar seguem a mesma regra.
 4. Zoom aberto pela Biblioteca (ou por Minhas fotos de hoje, do fotógrafo): as setas percorrem todas as fotos que a tela mostra, na mesma ordem, atravessando sessões (`libOrdem`). Aberto por um bloco de Sessões de hoje: continua dentro da sessão.
 5. Título do zoom: nome da lista, "foto 12 de 50" e a hora da foto (`zm_pos`, 5 idiomas).
@@ -28,7 +29,10 @@ Não muda: Checkout do cliente, galeria online, agente.
 - Pela Biblioteca, as setas seguem a ordem da tela e atravessam sessões; com filtro, só as fotos do filtro. Pelo bloco da sessão, só a sessão.
 - Título com posição e hora. 390 px sem rolagem lateral, com e sem o zoom aberto.
 - Avaliar (Boa, Ruim) no zoom da Qualidade continua funcionando, com os botões visíveis sem rolar.
+- O zoom abre sem pedir o original; segurar a seta por 30 fotos pede no máximo 2 originais; `/file/` com 404 ou 429 deixa a miniatura inteira na tela, sem pedido repetido, e reabrir tenta de novo.
+- Com mais de 400 fotos, a grade e o zoom ficam nas 400 mais novas do filtro.
+- Miniatura com recorte de 200% mostra a mesma janela do zoom, sem invadir as faixas da célula.
 
 ## Ficou de fora (decisão do Eduardo)
 
-Ainda cortam por desenho (`cover`): Checkout do cliente (grade e tela cheia, `lj-`), espelho do Checkout no Posto (`eco`), galeria online (`gq-`), "É você?" da selfie (`facecand`), capa da sessão em Ajustes, miniaturas pequenas das Galerias (lista de cortesias e sessões do grupo). Em 390 px as setas do zoom ficam por cima da beirada da foto horizontal (já era assim).
+Ainda cortam por desenho (`cover`): Checkout do cliente (grade e tela cheia, `lj-`), espelho do Checkout no Posto (`eco`), galeria online (`gq-`), "É você?" da selfie (`facecand`), capa da sessão em Ajustes, miniaturas pequenas das Galerias (lista de cortesias e sessões do grupo). Em 390 px as setas do zoom ficam por cima da beirada da foto horizontal (já era assim). O recorte não aparece nas miniaturas de Sessões de hoje (são `<img>`, já era assim) nem muda nas miniaturas do pedido no Posto (caixa 3:2).
