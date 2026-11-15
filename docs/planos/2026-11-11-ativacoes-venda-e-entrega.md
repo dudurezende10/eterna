@@ -288,6 +288,8 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 
 - O seletor de pessoas tem 1 a 5 e o botão **6+**; acima de 5 aparece **− N +** (até 20). O preço do cartão e da venda já soma a pessoa extra pela regra do produto (Pessoas incluídas e Valor por pessoa extra, no cadastro do produto). Drones: 5 pessoas incluídas, R$ 15 por pessoa a mais. O vídeo de demonstração continua o de 5 pessoas.
 
+**Catálogo sempre no servidor (15/11):** o servidor do estádio nunca tinha recebido o catálogo (a tela mostrava o padrão de dentro do app). Ao gravar só o Asteroid, os outros 14 sumiram da tela e da venda até serem gravados de novo no servidor (mesmos preços; Drone com 5 incluídas e R$ 15 por pessoa a mais). Agora, se o servidor ainda não tem o catálogo, a primeira gravação (Editar ou Hoje não vendo) manda o catálogo inteiro, nunca um item sozinho.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.

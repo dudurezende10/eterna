@@ -86,6 +86,9 @@ APP_TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript
              ".webp": "image/webp", ".svg": "image/svg+xml", ".json": "application/json",
              ".onnx": "application/octet-stream", ".wasm": "application/wasm", ".bin": "application/octet-stream"}
 APP_PREFIXOS = ("vendor/", "img/", "sprites/")
+INSTALADOR_URL = "https://raw.githubusercontent.com/dudurezende10/eterna/idiomas-base/servidor/posto/preparar-posto-eterna.cmd"
+INSTALADOR_MAX = 2 * 1024 * 1024
+_instalador = {"dado": None, "em": 0.0}
 _re_app = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")
 # o que o Checkout precisa para abrir e achar o rosto sem rede (baixado na abertura do agente, em segundo plano)
 APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js", "vendor/jsqr/jsQR.js",
@@ -10807,7 +10810,8 @@ VENDER = ("venda.c", "quiosque.c", "galerias.c")                                
 ROTAS = (
     ("GET", "/", "publica", ()), ("GET", "/index.html", "publica", ()),
     ("GET", "/img/", "publica", ()), ("GET", "/vendor/", "publica", ()), ("GET", "/sprites/", "publica", ()),
-    ("GET", "/status", "publica", ()),                          # sem credencial, só {ok, agent, version, boot}
+    ("GET", "/status", "publica", ()),
+    ("GET", "/instalar", "publica", ()),                        # 15/11: baixa o instalador do posto (o mesmo do repositório público)                          # sem credencial, só {ok, agent, version, boot}
     ("GET", "/g/", "publica", ()), ("POST", "/g/", "publica", ()), ("POST", "/pagamento/webhook/", "publica", ()),
     ("GET", "/postos/aceitar", "publica", ()), ("POST", "/postos/aceitar", "publica", ()),   # o código de uso único (10 min) é a credencial
     ("POST", "/auth/entrar", "publica", ()), ("POST", "/auth/trocar", "publica", ()), ("POST", "/auth/sair", "publica", ()),
@@ -11718,6 +11722,31 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def instalar_posto(self):
+        """GET /instalar (15/11): a estação abre posto.eterna.photo/instalar no navegador e baixa o instalador, sem e-mail
+        nem pendrive. É o arquivo público do repositório (sem segredo); fica 10 min em memória e, sem internet, a última cópia."""
+        agora = time.time()
+        if not _instalador["dado"] or agora - _instalador["em"] > 600:
+            try:
+                req = urllib.request.Request(INSTALADOR_URL, headers={"User-Agent": "eterna-agente"})
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    d = r.read(INSTALADOR_MAX + 1)
+                if 0 < len(d) <= INSTALADOR_MAX:
+                    _instalador.update(dado=d, em=agora)
+            except Exception:
+                pass
+        if not _instalador["dado"]:
+            return self.js({"error": "instalador_indisponivel"}, 502)
+        d = _instalador["dado"]
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", 'attachment; filename="preparar-posto-eterna.cmd"')
+        self.send_header("Content-Length", str(len(d)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(d)
+        return None
 
     def autoriza(self, metodo):
         """Primeira coisa de do_GET e do_POST: aplica ROTAS. True = o pedido segue; False = a resposta já foi dada."""
@@ -12975,6 +13004,8 @@ class H(BaseHTTPRequestHandler):
             return self.auth_get()
         if u.path in ("/postos", "/postos/eu", "/postos/aceitar"):
             return self.postos_get(u, q)
+        if u.path == "/instalar":
+            return self.instalar_posto()
         if ("GET", u.path) in AGENDA_ROTAS:          # v97
             return self.agenda_rota("GET", u.path)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):

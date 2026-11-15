@@ -6318,15 +6318,21 @@ function ativCampo(x,k,v){const num=s=>{const n=Number(String(s).replace(',','.'
   if(k==='faixas'){const L=String(v).split(/[,;]/).map(s=>s.trim()).filter(Boolean).map(num);if(L.length)x.faixas=L;else{delete x.faixas;delete x.depois;}return;}
   const [a,b]=k.split('.');if(b)x[a][b]=num(v);else x[a]=num(v);}
 const ativSlug=t=>String(t).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,28)||'produto';
+// 15/11 (Ronaldo: tudo salvaguardado no servidor): com o servidor ainda sem o catálogo, a tela mostra o padrão de dentro do app;
+// gravar um produto sozinho faria o servidor ter só ele e os outros sumirem da venda. Antes de qualquer gravação, o catálogo
+// que está na tela vai inteiro para o servidor.
+function ativSemeia(){if(!state.db||!state.ativ.carregado||Object.keys(state.ativ.produtos).length)return;const u=state.user||{};const em=now().toISOString();
+  ativLista().forEach(p=>{const v={...p,ativo:p.ativo!==false,por:u.email||null,em};if(ativOk(v)){state.ativ.produtos[p.id]=v;state.db.doc('ativ/'+p.id).set(v);}});
+  auditLog('ativ_carga','ativ',[{campo:'produtos',de:0,para:Object.keys(state.ativ.produtos).length}]);ativGuarda();}
 function ativSalvar(){const x=state.ativEd;if(!x)return;x.nome=(x.nome||'').trim();if(!x.nome){state.ativErr='at_err_nome';render();return;}
   x.opcoes=x.opcoes.map(o=>({nome:(o.nome||'').trim(),preco:o.preco}));if(x.faixas&&x.depois==null)x.depois=0;
   if(!x.id){let id=ativSlug(x.nome),i=2;const base=id;while(ativLista().some(p=>p.id===id))id=base+'_'+(i++);x.id=id;}
   const u=state.user||{};const novo={...x,por:u.email||null,em:now().toISOString()};if(!ativOk(novo)){state.ativErr='at_err_preco';render();return;}
   const antes=state.ativ.produtos[x.id]||ativLista().find(p=>p.id===x.id);const mud=[];['nome','entrega','pede','ativo','k4','chuva'].forEach(k=>{if(!antes||JSON.stringify(antes[k])!==JSON.stringify(novo[k]))mud.push({campo:k,de:antes?antes[k]:null,para:novo[k]});});
   ['opcoes','extra','inclui','faixas','depois'].forEach(k=>{if(!antes||JSON.stringify(antes[k])!==JSON.stringify(novo[k]))mud.push({campo:k,de:antes?JSON.stringify(antes[k]):null,para:JSON.stringify(novo[k])});});
-  state.ativ.produtos[x.id]=novo;ativGuarda();if(state.db)state.db.doc('ativ/'+x.id).set(novo);auditLog(antes?'ativ_editar':'ativ_criar','ativ/'+x.id,mud.length?mud:[{campo:'sem_mudanca',de:null,para:null}]);
+  ativSemeia();state.ativ.produtos[x.id]=novo;ativGuarda();if(state.db)state.db.doc('ativ/'+x.id).set(novo);auditLog(antes?'ativ_editar':'ativ_criar','ativ/'+x.id,mud.length?mud:[{campo:'sem_mudanca',de:null,para:null}]);
   state.ativEd=null;state.ativErr=null;toast(state.db?TE('at_salvo'):TE('cf_so_navegador'));render();}
-function ativHoje(id){const pid=id.split('.')[0];const p=state.ativ.produtos[pid]||ativLista().find(x=>x.id===pid);if(!p)return;const fora=ativForaHoje(id);const u=state.user||{};
+function ativHoje(id){const pid=id.split('.')[0];const p=state.ativ.produtos[pid]||ativLista().find(x=>x.id===pid);if(!p)return;ativSemeia();const fora=ativForaHoje(id);const u=state.user||{};
   if(fora){delete state.ativ.hoje[id];if(state.db)state.db.doc('ativ/hoje|'+id).set(null);}
   else{const v={dia:venueToday(),por:u.email||null,em:now().toISOString()};state.ativ.hoje[id]=v;if(state.db)state.db.doc('ativ/hoje|'+id).set(v);}
   ativGuarda();auditLog('ativ_hoje','ativ/'+id,[{campo:'fora_hoje',de:fora,para:!fora}]);render();}
