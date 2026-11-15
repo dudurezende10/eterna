@@ -146,9 +146,9 @@ try{
   ok(cx.includes(cod1)&&cx.includes(C1)&&cx.includes('R$ 190')&&/há \d+ min/.test(cx)&&/8 fotos escolhidas · 8 impressas/.test(cx),'1.6: pendência no Caixa sem recarregar: '+cx.slice(0,300));
   ok(await B.evaluate(()=>document.querySelectorAll('.din-item .ph,.din-item .pend-th').length)>=1,'1.6: miniaturas das fotos na pendência');
   ok(await B.evaluate(()=>(document.querySelector('#rail-din')||{}).textContent)==='1','1.6: número de pendências na barra');
-  await B.fill('#din-q',cod1.replace('-','').toLowerCase());await B.waitForTimeout(150);ok((await txt(B,'.din-list')||'').includes(cod1),'1.6: busca sem hífen não achou');
+  await B.fill('#din-q',cod1.replace('-','').toLowerCase());await B.waitForTimeout(150);ok((await txt(B,'#pend-painel')||'').includes(cod1),'1.6: busca sem hífen não achou');
   await B.fill('#din-q','ZZZZ');await B.waitForTimeout(150);ok(/Nenhum pagamento com esse código/.test(await txt(B,'#main')),'1.6: busca errada deveria esvaziar');
-  await B.fill('#din-q',cod1);await B.waitForTimeout(150);ok((await txt(B,'.din-list')||'').includes(cod1),'1.6: busca com hífen não achou');
+  await B.fill('#din-q',cod1);await B.waitForTimeout(150);ok((await txt(B,'#pend-painel')||'').includes(cod1),'1.6: busca com hífen não achou');
   await B.fill('#din-q','');await B.waitForTimeout(100);await B.screenshot({path:`${P}/v79-caixa-aguardando.png`});
 
   // ---- 1.3: a tela final do dinheiro volta sozinha (tempo configurado)
@@ -234,7 +234,7 @@ try{
   fase='1.9';
   await lojaSessao(A,C3,2,0);await pagar(A,'cash');const r9=(await sim(A)).caixaDin[0];await sleep(600);
   await B.click(`[data-act="din-cancel"][data-id="${r9.id}"]`);await B.waitForTimeout(150);
-  ok(/Cancelar esta compra\? Ela não vira venda\./.test(await txt(B,'.din-list')),'1.9: falta a segunda confirmação do cancelar');
+  ok(/Cancelar esta compra\? Ela não vira venda\./.test(await txt(B,'#pend-det')),'1.9: falta a segunda confirmação do cancelar');
   ok((await sim(B)).caixaDin.find(x=>x.id===r9.id).estado==='escolha','1.9: o primeiro toque não pode cancelar');
   await B.click(`[data-act="din-cancel-ok"][data-id="${r9.id}"]`);await B.waitForTimeout(250);
   const d9=await sim(B);const x9=d9.caixaDin.find(x=>x.id===r9.id);
