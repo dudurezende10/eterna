@@ -7109,7 +7109,8 @@ def imp_fila_postos(agora=None):
             dnp_txt = (d.get("dnp") or {}).get("texto") if int((d.get("dnp") or {}).get("status") or 0) >= 1000 else None
             if d.get("resultado") == "ok":
                 j.update(estado="impresso", feitas=j["fotos"], fim=t, inicio=t)
-            elif dnp_txt:
+            elif dnp_txt and int((dnp.get(v["posto"], (None, {}))[1] or {}).get("status") or 0) >= 1000:
+                # erro da DNP só enquanto a DNP do posto continua parada (a última leitura dela); voltou ao normal, segue a regra abaixo
                 j.update(estado="erro", fim=t, erro="não saiu · " + str(dnp_txt))
             elif agora - t < IMP_NAO_SAIU_S:
                 # 15/11: "Não saiu" tocado no posto sem erro da DNP: a venda volta a esperar a impressão no posto (não é
