@@ -431,7 +431,7 @@ xt = m.sess[cd["toda"]]
 ok(xt["fotografo"] == "klassius" and xt["fonte"] == "ftp" and xt["rev"] > rev_antes and xt["status"] == "fechada" and xt["fotos"] == pd["toda"],
    "dono: a sessão toda dele vira klassius com rev novo: %r" % ((xt["fotografo"], xt["fonte"], xt["rev"], rev_antes),))
 dc = xt.get("dono_corrigido") or {}
-ok(dc.get("por") == "servidor" and dc.get("de") is None and dc.get("para") == "klassius" and dc.get("em") and dc.get("motivo") == "autor_ou_dono_da_camera" and dc.get("fonte_antes") == "câmera ···1111",
+ok(dc.get("por") == "servidor" and dc.get("de") is None and dc.get("para") == "klassius" and dc.get("em") and dc.get("motivo") == "autor_da_camera+dono_da_camera" and dc.get("fonte_antes") == "câmera ···1111",
    "dono: a correção fica registrada na sessão (quem, quando, de, para, motivo): %r" % dc)
 ok(all(m.sess[cd[k]]["fotografo"] is None and "dono_corrigido" not in m.sess[cd[k]] for k in ("mista", "semdono", "semmeta", "outro")),
    "dono: mista, com foto sem dono, sem registro ou de desconhecido ficam: %r" % {k: m.sess[cd[k]]["fotografo"] for k in casos})
@@ -449,6 +449,23 @@ ok(m.sess_dono_corrigir(TD + 300) == [] and m.sess_rev[0] == rev_d, "dono: a seg
 reset()
 m.sess_carregar(agora=TD + 400)
 ok(m.sess[cd["toda"]]["fotografo"] == "klassius" and m.sess[cd["toda"]]["rev"] == xt["rev"] and m.sess[cd["toda"]]["dono_corrigido"] == dc, "dono: outra partida não corrige de novo")
+# o motivo gravado é o caminho que valeu (a origem vem antes do autor no ff_quem) e a fonte é a via da primeira foto
+ok(m.ff_quem_como("klacius", "Yago", "", "", "cartao") == ("klassius", "cartão", "origem") and m.ff_quem_como("equipe", "Klacius", "", "", "ftp") == ("klassius", "ftp", "autor_da_camera")
+   and m.ff_quem_como("equipe", "", "Klacius Ank", "", "ftp") == ("klassius", "ftp", "dono_da_camera") and m.ff_quem_como("equipe", "Fulano", "", "", "ftp") == (None, "pasta", None)
+   and m.ff_quem("klacius", "Yago", "", "", "cartao") == ("klassius", "cartão"), "dono: ff_quem_como diz o caminho")
+reset()
+with m.sess_lock:
+    for card_o, metas_o in (("LPORIG001", [{"o": "klacius", "s": "cartao", "autor": "Yago"}, {"o": "klacius", "s": "ftp"}]),
+                            ("LPORIG002", [{"o": "equipe", "s": "ftp", "autor": "Klacius"}, {"o": "equipe", "s": "cartao", "autor": "Klacius"}])):
+        fotos_o = ["%012x" % (0xc00000000000 + int(card_o[-1]) * 16 + j) for j in range(len(metas_o))]
+        for pv, mo in zip(fotos_o, metas_o):
+            m.meta[pv] = dict(mo, u=TD)
+        xo = m._sess_normaliza({"card": card_o, "dia": diaD, "k": diaD + "|src:" + card_o, "fotografo": None, "fonte": "pasta", "status": "fechada", "fotos": fotos_o, "aberta_em": TD, "rev": 1})
+        m.sess[card_o] = xo
+ok(sorted(c for c, _, _ in m.sess_dono_corrigir(TD + 450)) == ["LPORIG001", "LPORIG002"], "dono: as duas do motivo corrigidas")
+ok(m.sess["LPORIG001"]["dono_corrigido"]["motivo"] == "origem" and m.sess["LPORIG001"]["fonte"] == "cartão" and m.sess["LPORIG001"]["fotografo"] == "klassius",
+   "dono: resolvida pela origem grava motivo origem (não autor) e a via da primeira foto: %r" % ((m.sess["LPORIG001"]["dono_corrigido"], m.sess["LPORIG001"]["fonte"]),))
+ok(m.sess["LPORIG002"]["dono_corrigido"]["motivo"] == "autor_da_camera" and m.sess["LPORIG002"]["fonte"] == "ftp", "dono: resolvida pelo autor grava autor_da_camera e a via da primeira foto: %r" % (m.sess["LPORIG002"]["dono_corrigido"],))
 # medida: 3.000 sessões sem fotógrafo de 5 fotos (15.000 fotos) não atrasam a partida
 reset()
 with m.sess_lock:

@@ -4228,7 +4228,7 @@ setTimeout(livePoll,800);setInterval(livePoll,60000);setTimeout(upLoad,300);
 // mesma sessão (mesmo código LP) em qualquer navegador: posto, Checkout, PC pelo Tailscale, Mac do curador. SRV.sess guarda
 // as de hoje (aberta, separada e fechada) para o painel "Sessões de hoje" do Upload; só a fechada entra no SIM. Foto que já
 // está numa sessão deste navegador (montada aqui antes desta versão) não duplica.
-const SRV={gen:null,rev:0,busy:false,sess:{},mat:{},visRev:null,visBusy:false}; // mat: fechadas ainda não materializadas no SIM (até SRV_MAT_MAX por ciclo)
+const SRV={gen:null,rev:0,busy:false,sess:{},mat:{},visRev:null,visBusy:false,ontemGen:null,ontemT:0}; // mat: fechadas ainda não materializadas no SIM (até SRV_MAT_MAX por ciclo)
 const SRV_MAT_MAX=12;
 // v97: as visitas do agente (GET /visitas), puxadas quando o rev de /status.sessoes.visitas muda; SIM.visitas é cópia (o agente é o dono)
 async function visPull(){const a=state.agent;const vs=a&&a.sessoes&&a.sessoes.visitas;const vk=(a&&a.sessoes&&a.sessoes.gen||'')+':'+(vs&&vs.rev); // revisão: o rev das visitas recomeça quando o agente reinicia; o gen (boot) separa
@@ -4240,6 +4240,7 @@ async function visPull(){const a=state.agent;const vs=a&&a.sessoes&&a.sessoes.vi
   }catch(e){}finally{SRV.visBusy=false;}}
 async function srvPull(){const a=state.agent;visPull();if(SRV.busy||!a.sessoes)return;SRV.busy=true;
   try{if(SRV.gen!==a.sessoes.gen){SRV.gen=a.sessoes.gen;SRV.rev=0;SRV.sess={};SRV.mat={};}
+    if(SRV.ontemGen!==SRV.gen&&Date.now()-SRV.ontemT>60000)srvOntem(); // uma vez por partida do agente (e na carga da página); não espera
     if(a.sessoes.rev===SRV.rev){if(srvMaterializa()&&(state.view==='importar'||state.view==='fotofila'))render();return;}
     const j=await (await agFetch(a.url+'/sessoes?desde='+SRV.rev,{cache:'no-store',signal:agLimite(8000)})).json();if(!j||!j.ok)return; // v99.7.1: pedido que não volta não trava a lista de sessões para sempre (SRV.busy)
     if(j.gen!==SRV.gen){SRV.gen=j.gen;SRV.rev=0;SRV.sess={};SRV.mat={};return;}
@@ -4253,7 +4254,7 @@ async function srvPull(){const a=state.agent;visPull();if(SRV.busy||!a.sessoes)r
       if(x.removida){delete SRV.sess[x.card];delete SRV.mat[x.card];if(SIM.sessions[x.card])srvLgpd(x);continue;}
       if(deHoje)SRV.sess[x.card]=x;
       if(x.status!=='fechada')continue;
-      if(SIM.sessions[x.card]&&(SIM.sessions[x.card].photos||[]).length){srvIaCompleta(x);srvLgpd(x);srvDono(x);continue;} // fechada não muda (S8), só pela LGPD; sem fotos (venda que chegou antes) ainda materializa
+      if(SIM.sessions[x.card]&&(SIM.sessions[x.card].photos||[]).length){srvIaCompleta(x);srvLgpd(x);srvDono(x);continue;} // fechada não muda (S8), só pela LGPD e pela correção do fotógrafo feita no servidor (srvDono, 15/11); sem fotos (venda que chegou antes) ainda materializa
       SRV.mat[x.card]={...x,_pausa:j.pausa};}
     SRV.rev=j.rev;const novas=srvMaterializa();if((novas||mudou)&&(state.view==='importar'||state.view==='fotofila'))render();
   }catch(e){}finally{SRV.busy=false;}}
@@ -4279,12 +4280,20 @@ function srvIaCompleta(x){const s=SIM.sessions[x.card];if(!s||!s.srv||s.status==
   if(Array.isArray(s.ia)){if(s.ia.length||!(x.ia_regra&&x.ia_regra.reaberta))return;const vend=vendidasTodas();
     if(x.ia.some(p=>vend.has('ag_'+p)||(SIM.caixaDin||[]).some(r=>aberta(r)&&(r.selected||[]).includes('ag_'+p))))return;}
   const tem=new Set((s.photos||[]).map(p=>p.id));s.ia=x.ia.map(p=>'ag_'+p).filter(id=>tem.has(id));saveSim();}
+// 15/11: o servidor corrigiu o fotógrafo de uma sessão fechada que estava sem (dono_corrigido); a cópia deste aparelho segue o servidor.
+// Só sessão do servidor, só com a marca da correção e só para fotógrafo que a tela conhece. Vale também para sessão paga (a venda
+// passa à estatística dele, como no resumo do dia do servidor). O log() já grava o SIM.
+function srvDono(x){const s=SIM.sessions[x.card];const c=x.dono_corrigido;if(!s||!s.srv||!c||typeof c!=='object'||c.para!==x.fotografo||!x.fotografo||!Object.prototype.hasOwnProperty.call(P,x.fotografo)||!P[x.fotografo].human||s.key===x.fotografo)return false;
+  s.key=x.fotografo;log(`Sessão ${x.card}: fotógrafo acertado pelo servidor (${P[x.fotografo].name})`);return true;}
+// A correção de ONTEM: o /sessoes só entrega ontem com ?ontem=1 (com ETERNA_BUSCA_DIAS >= 2 o srvPull já recebe). O servidor só corrige
+// na partida, então basta um pedido por partida do agente (gen) e na carga da página; falha tenta de novo depois de 1 min. Só aplica o
+// srvDono nas sessões de ontem: nada de ontem entra no painel do Upload nem é materializado aqui.
+async function srvOntem(){const a=state.agent;const g=SRV.gen;if(!a||!a.on||!a.sessoes||!g)return;SRV.ontemT=Date.now();if((a.sessoes.dias||1)>1){SRV.ontemGen=g;return;}
+  try{const j=await (await agFetch(a.url+'/sessoes?desde=0&ontem=1',{cache:'no-store',signal:agLimite(8000)})).json();if(!j||!j.ok||j.gen!==g)return;
+    const ontem=localDay(Date.now()/1000-86400);let n=0;(j.sessoes||[]).forEach(x=>{if(x&&x.dia===ontem&&x.status==='fechada'&&!x.removida&&srvDono(x))n++;});
+    SRV.ontemGen=g;if(n&&['revisao','fotografos','painel','estatisticas'].includes(state.view))render();}catch(e){}}
 // v91 (revisão 5): sessão do servidor que perdeu fotos pela LGPD. Sem venda paga, as fotos saem da sessão deste navegador;
 // com venda paga, nada some do registro e fica uma linha no log.
-// 15/11: o servidor corrigiu o fotógrafo de uma sessão fechada que estava sem (dono_corrigido); a cópia deste aparelho segue o servidor.
-// Só sessão do servidor, só com a marca da correção e só para fotógrafo que a tela conhece
-function srvDono(x){const s=SIM.sessions[x.card];const c=x.dono_corrigido;if(!s||!s.srv||!c||typeof c!=='object'||c.para!==x.fotografo||!x.fotografo||!Object.prototype.hasOwnProperty.call(P,x.fotografo)||!P[x.fotografo].human||s.key===x.fotografo)return false;
-  s.key=x.fotografo;log(`Sessão ${x.card}: fotógrafo acertado pelo servidor (${P[x.fotografo].name})`);saveSim();return true;}
 function srvLgpd(x){const s=SIM.sessions[x.card];if(!s||!s.srv)return;const keep=new Set(x.removida?[]:(x.fotos||[]).map(p=>'ag_'+p));const fora=(s.photos||[]).filter(p=>!keep.has(p.id));if(!fora.length)return;
   if(s.status==='paga'){if(!s.lgpdLog){s.lgpdLog=1;log(`Sessão ${x.card}: ${fora.length} ${fora.length===1?'foto apagada':'fotos apagadas'} a pedido do cliente depois da venda paga (a venda continua no registro)`);saveSim();}return;}
   const dela=new Set((s.photos||[]).map(p=>p.id));s.photos=s.photos.filter(p=>keep.has(p.id));if(Array.isArray(s.ia))s.ia=s.ia.filter(id=>keep.has(id)); /* v93 */s.selected=(s.selected||[]).filter(id=>keep.has(id)||!dela.has(id)); /* v91: foto de outra sessão da mesma venda não sai aqui */if(x.removida)s.removida=true;log(`Sessão ${x.card}: ${fora.length} ${fora.length===1?'foto saiu':'fotos saíram'} a pedido do cliente (LGPD)`);saveSim();}

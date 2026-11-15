@@ -4905,21 +4905,26 @@ def _ff_hoje(t=None):
 def ff_quem(o, autor, dono, serie, s="", cad=None):
     """(fotógrafo|None, fonte). Regra D2 da v85: 1) a origem, se cadastrada; 2) o autor ou o dono gravado na câmera, se
     cadastrado; 3) nenhum, e a fonte diz de onde veio (nunca o nome de subpasta não cadastrada nem a série completa)."""
+    return ff_quem_como(o, autor, dono, serie, s, cad)[:2]
+
+
+def ff_quem_como(o, autor, dono, serie, s="", cad=None):
+    """O ff_quem com o caminho que valeu: (fotógrafo|None, fonte, "origem" | "autor_da_camera" | "dono_da_camera" | None)."""
     cad = cad if cad is not None else ff_cadastrados()
     via = "cartão" if s == "cartao" else "ftp"
     k = fotografo_chave(o, inteiro=True)              # origem (login, pasta): só o nome inteiro, nunca o primeiro nome
     if k and k in cad:
-        return k, via
-    for nome in (autor, dono):
+        return k, via, "origem"
+    for nome, como in ((autor, "autor_da_camera"), (dono, "dono_da_camera")):
         k = fotografo_chave(nome)                    # "Klacius", "KLACIUS", "Klacius Ank Guarino" = klassius
         if k and (k in cad or k.split()[0] in cad):
-            return (k if k in cad else k.split()[0]), via
+            return (k if k in cad else k.split()[0]), via, como
     serie = re.sub(r"\D", "", str(serie or ""))
     if serie:
-        return None, "câmera ···" + serie[-4:]
+        return None, "câmera ···" + serie[-4:], None
     if o == "ftp-estadio":
-        return None, "ftp-estadio"
-    return None, ("cartão" if s == "cartao" else "pasta")
+        return None, "ftp-estadio", None
+    return None, ("cartão" if s == "cartao" else "pasta"), None
 
 
 def ff_cadastrados():
@@ -5874,13 +5879,16 @@ def _sess_faces_db(pids):
 
 def sess_dono_corrigir(agora=None):
     """15/11 (grafia Klacius): sessão fechada SEM fotógrafo cujas fotos resolvem TODAS para o mesmo fotógrafo cadastrado, pela
-    regra única (ff_quem com o autor ou o dono gravado na câmera, que passa por fotografo_chave), recebe a chave dele, com
+    regra única (ff_quem: a origem, o autor ou o dono gravado na câmera, tudo por fotografo_chave), recebe a chave dele, com
     rev novo para os navegadores atualizarem a cópia. Fotos de donos diferentes, alguma foto sem dono ou sem registro no
     índice: fica como está. Sessão que já tem fotógrafo, aberta ou removida nunca é tocada.
-    Janela: só as sessões em memória, de hoje e de ontem. São os dias que o /sessoes entrega e que o metricas_loop refaz (o
-    resumo do dia lê o arquivo de sessões); dia mais antigo fica como está, porque refazer o resumo dele perderia números
-    que já saíram por prazo (rostos). A correção fica registrada na própria sessão (dono_corrigido: quem, quando, de, para,
-    motivo), que vai para o arquivo do dia e para o backup. Rodar de novo não muda nada. Trabalho de memória: não lê arquivo.
+    Janela: só as sessões em memória, de hoje e de ontem. São os dias que o metricas_loop refaz (o resumo do dia lê o
+    arquivo de sessões) e que o /sessoes entrega (hoje sempre; ontem com ?ontem=1, que o app pede uma vez a cada partida do
+    agente, srvOntem); dia mais antigo fica como está, porque refazer o resumo dele perderia números que já saíram por prazo
+    (rostos). A correção fica registrada na própria sessão (dono_corrigido: quem, quando, de, para e o motivo = o caminho que
+    valeu: origem, autor_da_camera ou dono_da_camera, juntos por "+" quando as fotos resolveram por caminhos diferentes), que
+    vai para o arquivo do dia e para o backup. A fonte nova é a via da primeira foto. Rodar de novo não muda nada. Trabalho
+    de memória: não lê arquivo.
     As travas são pegas uma de cada vez (sess_lock, lock, sess_lock), nunca uma dentro da outra. Devolve [(card, dia, chave)]."""
     agora = time.time() if agora is None else agora
     with sess_lock:
@@ -5895,24 +5903,26 @@ def sess_dono_corrigir(agora=None):
     cad = ff_cadastrados()
     acha = {}
     for card, pids in cands.items():
-        donos = set()
+        chaves, comos, via1 = set(), set(), None
         for p in pids:
             mm = metas.get(p)
-            k, via = ff_quem(mm.get("o"), mm.get("autor"), mm.get("dono"), mm.get("serie"), mm.get("s") or "", cad) if mm else (None, "")
-            donos.add((k, via) if k else None)
-            if None in donos or len({d[0] for d in donos}) > 1:
+            k, via, como = ff_quem_como(mm.get("o"), mm.get("autor"), mm.get("dono"), mm.get("serie"), mm.get("s") or "", cad) if mm else (None, "", None)
+            chaves.add(k)
+            comos.add(como)
+            via1 = via if via1 is None else via1
+            if k is None or len(chaves) > 1:
                 break
-        if None not in donos and len({d[0] for d in donos}) == 1:
-            acha[card] = (sorted(donos)[0], pids)
+        if len(chaves) == 1 and None not in chaves:
+            acha[card] = (chaves.pop(), via1, "+".join(sorted(comos)), pids)
     feitas = []
     with sess_lock:
-        for card, ((k, via), pids) in acha.items():
+        for card, (k, via, como, pids) in acha.items():
             x = sess.get(card)
             if (x is None or x.get("fotografo") or x.get("removida") or x.get("status") != "fechada"
                     or list(x["fotos"]) + list(x["pend"]) != pids):
                 continue
             x["dono_corrigido"] = {"em": _iso(agora), "por": "servidor", "de": None, "para": k, "fonte_antes": x.get("fonte"),
-                                   "motivo": "autor_ou_dono_da_camera"}
+                                   "motivo": como}
             x["fotografo"], x["fonte"] = k, via
             _sess_toca(x)
             feitas.append((card, x["dia"], k))

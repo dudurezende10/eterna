@@ -30,8 +30,8 @@ async function agente(ctx){
     sessoes:FEED.semSessoes?undefined:{v:2,pausa:60,rostos:FEED.rostos,rev:FEED.rev,gen:FEED.gen,hoje:FEED.sessoes.length,abertas:1}})}));
   await ctx.route(ORIG+'/events*',r=>r.fulfill({status:200,contentType:'application/json',body:'{"events":[],"next":0,"total":0}'}));
   await ctx.route(ORIG+'/biblioteca',r=>r.fulfill({status:200,contentType:'application/json',body:'{"fotos":[]}'}));
-  await ctx.route(ORIG+'/sessoes*',r=>{const desde=+new URL(r.request().url()).searchParams.get('desde')||0;
-    r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,gen:FEED.gen,rev:FEED.rev,pausa:60,rostos:FEED.rostos,completo:!desde,sessoes:FEED.sessoes.filter(x=>x.rev>desde)})});});
+  await ctx.route(ORIG+'/sessoes*',r=>{const q=new URL(r.request().url()).searchParams;const desde=+q.get('desde')||0;const ont=q.get('ontem')==='1';if(ont)FEED.ontemReqs=(FEED.ontemReqs||0)+1; // como o agente: ontem só com ?ontem=1
+    r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,gen:FEED.gen,rev:FEED.rev,pausa:60,rostos:FEED.rostos,completo:!desde,sessoes:FEED.sessoes.filter(x=>x.rev>desde&&(ont||x.dia===hoje))})});});
   await ctx.route(ORIG+'/thumb/**',r=>{const id=r.request().url().split('/').pop();r.fulfill({status:200,contentType:'image/jpeg',body:cores[parseInt(id.slice(-3),16)%cores.length]});});
   await ctx.route(ORIG+'/file/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:cores[0]}));}
 const espera=async(pg,fn,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||8000)){if(await pg.evaluate(fn))return true;await pg.waitForTimeout(200);}return false;};
@@ -105,11 +105,34 @@ try{
     FEED.sessoes.push(S_SEM,S_OUT);FEED.rev=17;
     ok(await espera(pg,()=>!!(ETERNA.SIM.sessions.LPD2N5AAA&&ETERNA.SIM.sessions.LPD2N5BBB),15000),'dono: as duas sessões sem fotógrafo chegam ao SIM');
     const antes=await pg.evaluate(()=>[ETERNA.SIM.sessions.LPD2N5AAA.key,ETERNA.SIM.sessions.LPD2N5BBB.key]);ok(antes[0]!=='klassius'&&antes[1]!=='klassius','dono: antes da correção não é dele: '+antes);
-    Object.assign(S_SEM,{fotografo:'klassius',fonte:'cartão',dono_corrigido:{em:new Date().toISOString(),por:'servidor',de:null,para:'klassius',motivo:'autor_ou_dono_da_camera'},rev:18});
+    Object.assign(S_SEM,{fotografo:'klassius',fonte:'cartão',dono_corrigido:{em:new Date().toISOString(),por:'servidor',de:null,para:'klassius',motivo:'autor_da_camera'},rev:18});
     Object.assign(S_OUT,{fotografo:'klassius',rev:18});FEED.rev=18; // sem a marca da correção: sessão fechada não muda
     ok(await espera(pg,()=>ETERNA.SIM.sessions.LPD2N5AAA.key==='klassius',15000),'dono: a sessão corrigida no servidor passa ao klassius: '+await pg.evaluate(()=>ETERNA.SIM.sessions.LPD2N5AAA.key));
     const dep=await pg.evaluate(()=>({out:ETERNA.SIM.sessions.LPD2N5BBB.key,rev:(ETERNA.revSessions().find(x=>x.card==='LPD2N5AAA')||{}).key,nome:ETERNA.P.klassius.name,salvo:JSON.parse(localStorage.getItem('eterna.sim.v1')).sessions.LPD2N5AAA.key}));
-    ok(dep.out===antes[1]&&dep.rev==='klassius'&&dep.nome==='Klacius'&&dep.salvo==='klassius','dono: sem a marca não muda; a Qualidade lista a sessão no nome dele e o SIM foi gravado: '+JSON.stringify(dep));}
+    ok(dep.out===antes[1]&&dep.rev==='klassius'&&dep.nome==='Klacius'&&dep.salvo==='klassius','dono: sem a marca não muda; a Qualidade lista a sessão no nome dele e o SIM foi gravado: '+JSON.stringify(dep));
+    // sessão já paga (a venda passa a ele, o resto da venda fica) e fotógrafo que a tela não conhece (não muda)
+    const S_PAGA=sessao({card:'LPD2N5CCC',fotografo:null,fonte:'câmera ···8888',n:2,rev:19}),S_DESC=sessao({card:'LPD2N5DDD',fotografo:null,fonte:'câmera ···9999',n:2,rev:19});
+    FEED.sessoes.push(S_PAGA,S_DESC);FEED.rev=19;
+    ok(await espera(pg,()=>!!(ETERNA.SIM.sessions.LPD2N5CCC&&ETERNA.SIM.sessions.LPD2N5DDD),15000),'dono: a paga e a de desconhecido chegam ao SIM');
+    const a2=await pg.evaluate(()=>{const s=ETERNA.SIM.sessions.LPD2N5CCC;s.status='paga';s.total=120;s.selected=[s.photos[0].id];return [s.key,ETERNA.SIM.sessions.LPD2N5DDD.key];});
+    const marca=p=>({em:new Date().toISOString(),por:'servidor',de:null,para:p,motivo:'autor_da_camera'});
+    Object.assign(S_PAGA,{fotografo:'klassius',dono_corrigido:marca('klassius'),rev:20});Object.assign(S_DESC,{fotografo:'zzninguem',dono_corrigido:marca('zzninguem'),rev:20});FEED.rev=20;
+    ok(await espera(pg,()=>ETERNA.SIM.sessions.LPD2N5CCC.key==='klassius',15000),'dono: a sessão paga também passa ao klassius: '+await pg.evaluate(()=>ETERNA.SIM.sessions.LPD2N5CCC.key));
+    const d2=await pg.evaluate(()=>{const s=ETERNA.SIM.sessions.LPD2N5CCC;return {st:s.status,tot:s.total,sel:(s.selected||[]).length,desc:ETERNA.SIM.sessions.LPD2N5DDD.key};});
+    ok(d2.st==='paga'&&d2.tot===120&&d2.sel===1&&d2.desc===a2[1]&&d2.desc!=='zzninguem','dono: a venda da paga fica como estava e fotógrafo que a tela não conhece não entra: '+JSON.stringify(d2));
+    // sessão de ONTEM: o feed normal não traz; o app pede ontem uma vez por partida do agente (gen) e aplica só a correção
+    const ontem=(()=>{const d=new Date(Date.now()-86400000);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
+    await pg.evaluate(o=>{['abc0000000f1','abc0000000f2'].forEach(p=>{ETERNA.UP['ag_'+p]={src:ETERNA.state.agent.url+'/thumb/'+p,name:p};}); // as fotos de ontem já estão na biblioteca do aparelho
+      ETERNA.SIM.sessions.LPD2N5ONT={key:'sem',srv:true,date:o,time:'10:00',pdv:'',point:'',status:'fechada',selected:[],cart:[],bg:null,photos:[{id:'ag_abc0000000f1',sold:0}]};
+      ETERNA.SIM.sessions.LPD2N5ON2={key:'sem',srv:true,date:o,time:'10:05',pdv:'',point:'',status:'fechada',selected:[],cart:[],bg:null,photos:[{id:'ag_abc0000000f2',sold:0}]};},ontem);
+    FEED.sessoes.push(sessao({card:'LPD2N5ONT',dia:ontem,fotos:['abc0000000f1'],fotografo:'klassius',dono_corrigido:marca('klassius'),rev:21}),sessao({card:'LPD2N5ON2',dia:ontem,fotos:['abc0000000f2'],fotografo:'klassius',rev:21}));
+    await pg.waitForTimeout(2500);const r0=FEED.ontemReqs||0;ok(await pg.evaluate(()=>ETERNA.SIM.sessions.LPD2N5ONT.key)==='sem','dono: sem partida nova do agente, ontem não é pedido de novo');
+    FEED.gen='b90-dono';FEED.rev=21;
+    ok(await espera(pg,()=>ETERNA.SIM.sessions.LPD2N5ONT.key==='klassius',20000),'dono: a sessão de ontem corrigida no servidor passa ao klassius: '+await pg.evaluate(()=>ETERNA.SIM.sessions.LPD2N5ONT.key));
+    await pg.waitForTimeout(3000);
+    const d3=await pg.evaluate(()=>({on2:ETERNA.SIM.sessions.LPD2N5ON2.key,painel:Object.keys(ETERNA.SRV.sess).filter(c=>/^LPD2N5ON/.test(c)).length,rev:(ETERNA.revSessions().find(x=>x.card==='LPD2N5ONT')||{}).key}));
+    ok(r0>=1&&FEED.ontemReqs===r0+1,'dono: um pedido de ontem na carga e um só por partida do agente: '+r0+' -> '+FEED.ontemReqs);
+    ok(d3.on2==='sem'&&d3.painel===0&&d3.rev==='klassius','dono: ontem sem a marca não muda, ontem não entra no painel do Upload e a Qualidade segue o servidor: '+JSON.stringify(d3));}
   // celular: cabeçalho quebra a linha sem estourar
   await pg.setViewportSize({width:390,height:844});await pg.waitForTimeout(300);await pg.evaluate(()=>window.scrollTo(0,document.querySelector('#up-sessoes').offsetTop-10));await pg.waitForTimeout(400);
   ok(await pg.evaluate(()=>[...document.querySelectorAll('.up-sess')].every(b=>b.scrollWidth<=b.clientWidth+1)&&document.querySelector('#up-sessoes').scrollWidth<=document.querySelector('#up-sessoes').clientWidth+1),'celular: painel e blocos sem rolagem lateral');

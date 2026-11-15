@@ -112,12 +112,12 @@ try{
   ok(e10.r===150&&e10.v===1&&e10.g===1&&J(e10.px)===J([1,150])&&e10.tot===150,'10: fonte Eterna '+J(e10));ok(e10.ag.n===1&&e10.ag.total===70&&/Dinheiro aguardando caixa: 1/.test(e10.nota),'10: dinheiro aguardando só na nota '+J(e10.ag));
   ok(/R\$ ?150/.test((await k('receita'))),'10: cartão de Faturamento com a venda do Eterna');
   ok(await pg.evaluate(h=>ETERNA.painelDados({from:h,to:h,fonte:'roverpix'}).kpi.receita===0,hoje),'10: fonte Roverpix mostrou a venda do Eterna');
-  // 14 (sem LIVE): 4 atalhos × 3 fontes; Fotógrafos e Vendas; Klássius e Sandessa "sem dados" apagados
+  // 14 (sem LIVE): 4 atalhos × 3 fontes; Fotógrafos e Vendas; Klacius e Sandessa "sem dados" apagados
   const ruim=/\b(null|NaN|undefined|Infinity)\b/;const chips=async()=>pg.$$eval('.rangebar [data-act="range"]',e=>e.slice(0,4).map(x=>[x.dataset.f,x.dataset.t]));
   for(const [f,t] of await chips())for(const fo of ['tudo','roverpix','eterna']){await abrir(pg,f,t,fo);const m=await main(pg);ok(!ruim.test(m),`14: Painel sem LIVE ${f}..${t} ${fo}: `+(m.match(ruim)||[''])[0]);}
   await pg.evaluate(()=>{ETERNA.state.range={from:'2026-10-07',to:'2026-10-15'};ETERNA.state.view='fotografos';ETERNA.render();});await pg.waitForTimeout(100);ok(!ruim.test(await main(pg)),'14: Fotógrafos com null/NaN');
-  const kl=await pg.evaluate(()=>[...document.querySelectorAll('.pcard')].filter(c=>/Kl[aá]ssius|Sandessa/.test(c.querySelector('.nm').textContent)).map(c=>{const i=c.querySelector('.idx');return [i.textContent,i.classList.contains('none'),getComputedStyle(i).color];}));
-  ok(kl.length===2&&kl.every(([t,n,c])=>t==='sem dados'&&n&&c!=='rgb(179, 64, 42)'),'14: Klássius e Sandessa '+J(kl));
+  const kl=await pg.evaluate(()=>[...document.querySelectorAll('.pcard')].filter(c=>/Kl[aá](ss|c)ius|Sandessa/.test(c.querySelector('.nm').textContent)).map(c=>{const i=c.querySelector('.idx');return [i.textContent,i.classList.contains('none'),getComputedStyle(i).color];}));
+  ok(kl.length===2&&kl.every(([t,n,c])=>t==='sem dados'&&n&&c!=='rgb(179, 64, 42)'),'14: Klacius e Sandessa '+J(kl));
   await pg.screenshot({path:P+'/fotografos-1440.png',fullPage:true});
   // 16: tabelas de Fotógrafos e Vendas sem corte a 1440
   const tw=async()=>pg.$$eval('#main .tablewrap',e=>e.map(x=>x.scrollWidth<=x.clientWidth+1));ok((await tw()).every(Boolean),'16: tabela de Fotógrafos cortada');
