@@ -122,6 +122,37 @@ try{
   await es('b');await pg.click('[data-act="es-ord"][data-c="nome"]');await pg.waitForTimeout(80);const telaB=await pg.evaluate(()=>[...document.querySelectorAll('.es-fotos tbody .es-link')].map(e=>e.textContent));
   a=await baixar('xlsx');ok(a,'Estatísticas b: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Estatísticas b');const d=x.abas[0].dados;ok(telaB.length>1&&J(d.map(l=>l[0].v))===J(telaB),'Estatísticas b: ordem do arquivo × tela');const y=d.find(l=>l[0].v==='Yago');ok(y&&y[2].v===14&&y[8].v===1570.5&&Math.abs(y[6].v-0.5)<1e-9,'Estatísticas b: números do Yago '+J(y&&txt(y)));}
+  // ---------- critério 6: Lista de vendas com vendedor e status filtrados e mais de 50 linhas: todas as do filtro, nenhuma fora ----------
+  const vs=await pg.evaluate(de=>{ETERNA.state.range={from:de,to:'2099-12-31'};const S=ETERNA.state.sales;Object.assign(S,{day:'all',seller:'all',pay:'all',q:'',canal:'all',status:'paga',page:0});const c={};const todas=ETERNA.salesFiltradas();todas.forEach(r=>{c[r.seller]=(c[r.seller]||0)+1;});
+    const [seller,n]=Object.entries(c).sort((a,b)=>b[1]-a[1])[0];S.seller=seller;ETERNA.state.view='vendas-lista';ETERNA.render();
+    return {seller,n,tot:todas.length,tile:document.querySelector('.sl-tiles .tile .v').textContent.replace(/\D/g,''),naTela:document.querySelectorAll('.sl-tbl tbody tr').length,nos:ETERNA.salesFiltradas().map(r=>r.no)};},R7.from);
+  ok(vs.n>50&&vs.n<vs.tot&&vs.naTela===50&&+vs.tile===vs.n,'Lista de vendas: cenário do teste '+J([vs.n,vs.tot,vs.naTela,vs.tile]));
+  ok(await pg.$('.head .rel-exp')&&await pg.$('[data-act="sales-csv"]'),'Lista de vendas: sem Exportar ou sem o CSV antigo');
+  a=await baixar('xlsx');ok(a,'Lista de vendas: XLS não baixou · '+await toast());
+  if(a){const x=await xlsx(a,'Lista de vendas');const s=x.abas[0];ok(x.abas.length===1&&J(s.colunas)===J(['Venda','Data','Hora','Sessão','Vendedor','Itens','Fotos','Impr.','Pagamento','Total','Status','Canal']),'Lista de vendas: colunas '+J(s.colunas));
+    ok(s.dados.length===vs.n&&J(s.dados.map(l=>l[0].v))===J(vs.nos),'Lista de vendas: '+s.dados.length+' linhas no arquivo para '+vs.n+' no filtro');
+    ok(s.dados.every(l=>l[4].v===vs.seller&&l[10].v==='paga'),'Lista de vendas: linha fora do filtro no arquivo');
+    ok(s.dados.every(l=>l[1].t==='n'&&l[6].t==='n'&&l[9].t==='n'),'Lista de vendas: data, fotos ou total não são número');
+    ok(s.cab.some(l=>l.includes('Vendedor: '+vs.seller)&&l.includes('Status: paga'))&&!J(x).includes('pagamento_ref'),'Lista de vendas: filtros no cabeçalho '+J(s.cab));}
+  a=await baixar('pdf');ok(a,'Lista de vendas: PDF não baixou · '+await toast());
+  if(a){const p=pdfLer(a.buf);ok(p.ini&&p.fim&&p.xref&&p.objs&&p.paginas>1&&p.rodape.length===p.paginas&&p.rodape.every(([i,n],k)=>i===k+1&&n===p.paginas),'Lista de vendas PDF: páginas '+p.paginas+' × rodapé '+p.rodape.length);
+    ok(p.linhas.filter(l=>l==='Venda').length===p.paginas,'Lista de vendas PDF: cabeçalho da tabela não repete em cada página');ok(vs.nos.every(n=>p.linhas.includes(n)),'Lista de vendas PDF: faltam vendas');}
+  {const espera=pg.waitForEvent('download',{timeout:1500}).catch(()=>null);await pg.click('[data-act="sales-csv"]');const dl=await espera;ok(dl&&dl.suggestedFilename()==='eterna-vendas.csv','Lista de vendas: o Exportar CSV antigo parou');}
+  // critério 11: mais de 2.000 linhas não vira PDF (o XLS sai)
+  await pg.evaluate(()=>{const f=ETERNA.REL['vendas-lista'];window.__relOrig=f;ETERNA.REL['vendas-lista']=()=>{const R=f();const L=R.abas[0].linhas;R.abas[0].linhas=Array.from({length:2001},(_,i)=>L[i%L.length]);return R;};});
+  a=await baixar('pdf');ok(!a&&(await toast())===await TE('rel_muitas_pdf','2.001'),'PDF com 2.001 linhas deveria ser recusado · '+await toast());
+  a=await baixar('xlsx');ok(a&&(await xlsx(a,'2.001 linhas')).abas[0].dados.length===2001,'XLS com 2.001 linhas deveria sair');
+  await pg.evaluate(()=>{ETERNA.REL['vendas-lista']=window.__relOrig;});
+
+  // ---------- Fotógrafos: tabela do período e, com a pessoa aberta, o dia a dia dela ----------
+  await abrir('fotografos',`ETERNA.state.range=${J(R7)};ETERNA.state.person=null;ETERNA.state.personDay=null;`);
+  ok(await pg.$('.head .rel-exp'),'Fotógrafos: sem Exportar no topo');const telaF=await pg.evaluate(()=>[...document.querySelectorAll('.panel table tbody tr')].map(tr=>[tr.children[0].textContent,tr.children[1].textContent,tr.children[9].textContent.replace(/\D/g,'')]));
+  a=await baixar('xlsx');ok(a,'Fotógrafos: XLS não baixou · '+await toast());
+  if(a){const x=await xlsx(a,'Fotógrafos');const d=x.abas[0].dados;ok(x.abas[0].colunas.length===15&&d.length===telaF.length&&d.every((l,i)=>l[0].v===telaF[i][0]&&(!l[1]||String(l[1].v)===telaF[i][1])&&String(Math.round(l[10].v))===telaF[i][2]),'Fotógrafos: arquivo × tela '+J([d.slice(0,2).map(txt),telaF.slice(0,2)]));}
+  a=await baixar('pdf');ok(a&&pdfLer(a.buf).objs&&/841\.89 595\.28/.test(pdfLer(a.buf).texto),'Fotógrafos: PDF em paisagem');
+  await pg.click('.panel table tbody tr[data-act="person"]');await pg.waitForTimeout(100);const nomeF=await pg.textContent('h1');ok(await pg.$('.head .rel-exp'),'Fotógrafo aberto: sem Exportar no topo');
+  a=await baixar('xlsx');ok(a,'Fotógrafo aberto: XLS não baixou · '+await toast());
+  if(a){const x=await xlsx(a,'Fotógrafo aberto');const s=x.abas[0];const nTela=await pg.evaluate(()=>document.querySelectorAll('.panel table tbody tr').length);ok(s.nome==='Dia a dia'&&s.cab.includes('Filtros: Fotógrafo: '+nomeF)&&s.dados.length===nTela+1&&s.dados[s.dados.length-1][0].v==='Total','Fotógrafo aberto: '+J([s.nome,s.cab,s.dados.length,nTela]));}
   // FIM-FATIA
 
 
