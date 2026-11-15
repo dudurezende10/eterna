@@ -45,6 +45,34 @@ def arquivos():
                     yield a, "originais/%s/%s" % (sub, os.path.relpath(a, base).replace(os.sep, "/"))
 
 
+GRANDE = 64 * 1024 * 1024
+
+
+def enviar(s3, bucket, a, chave, tam):
+    """Sobe um arquivo conferido; devolve o MD5 (hex) do arquivo do disco. Levanta erro se a nuvem não ficou igual."""
+    h = hashlib.md5()
+    if tam <= GRANDE:
+        with open(a, "rb") as f:
+            corpo = f.read()
+        h.update(corpo)
+        r = s3.put_object(Bucket=bucket, Key=chave, Body=corpo, StorageClass="STANDARD_IA",
+                          ContentMD5=base64.b64encode(h.digest()).decode())
+        if r.get("ETag", "").strip('"') != h.hexdigest():
+            raise ValueError("ETag diferente")
+    else:
+        from boto3.s3.transfer import TransferConfig
+        s3.upload_file(a, bucket, chave, ExtraArgs={"StorageClass": "STANDARD_IA", "ChecksumAlgorithm": "CRC32"},
+                       Config=TransferConfig(multipart_threshold=GRANDE, multipart_chunksize=16 * 1024 * 1024,
+                                             max_concurrency=4, use_threads=True))
+        with open(a, "rb") as f:
+            for bloco in iter(lambda: f.read(8 * 1024 * 1024), b""):
+                h.update(bloco)
+    n = s3.head_object(Bucket=bucket, Key=chave).get("ContentLength")
+    if n != tam:
+        raise ValueError("tamanho na nuvem %s, no disco %s" % (n, tam))
+    return h.hexdigest()
+
+
 def main():
     cfg = env()
     if cfg.get("ETERNA_NUVEM") != "s3" or not cfg.get("ETERNA_BUCKET"):
@@ -75,21 +103,24 @@ def main():
                 continue
             if feitos.get(chave) == (st.st_size, st.st_mtime):
                 continue
-            # 15/11: um arquivo que falha (BadDigest num vídeo grande, rede) não derruba a rodada: os outros sobem e ele
-            # tenta de novo na próxima; a rodada termina com erro e o pulso não é gravado (o alerta da AWS avisa se durar)
-            try:
-                with open(a, "rb") as f:
-                    corpo = f.read()
-                md5 = hashlib.md5(corpo)
-                r = s3.put_object(Bucket=bucket, Key=chave, Body=corpo, StorageClass="STANDARD_IA",
-                                  ContentMD5=base64.b64encode(md5.digest()).decode())
-                del corpo
-                if r.get("ETag", "").strip('"') != md5.hexdigest():
-                    raise ValueError("ETag diferente")
-            except Exception as ex:
-                falhas.append("%s: %s" % (chave, str(ex)[:160]))
+            # 15/11: a cópia confere cada arquivo. Até 64 MB: envio único com MD5 (a nuvem recusa se chegar diferente).
+            # Acima (vídeos de 230 MB do Drone): envio em partes direto do disco; cada parte conferida pela AWS e reenviada
+            # sozinha se falhar (o MD5 do envio único brigava com a conferência da própria biblioteca e a AWS recusava o
+            # vídeo inteiro: BadDigest). Depois do envio, o tamanho gravado na nuvem tem que bater. Até 3 tentativas; se
+            # ainda falhar, os outros arquivos seguem e ele volta na próxima rodada (sem pulso: o alerta avisa se durar).
+            erro = None
+            for tentativa in range(3):
+                try:
+                    md5 = enviar(s3, bucket, a, chave, st.st_size)
+                    erro = None
+                    break
+                except Exception as ex:
+                    erro = ex
+                    time.sleep(5 * (tentativa + 1))
+            if erro is not None:
+                falhas.append("%s: %s" % (chave, str(erro)[:160]))
                 continue
-            db.execute("INSERT OR REPLACE INTO feito VALUES (?,?,?,?,?)", (chave, st.st_size, st.st_mtime, md5.hexdigest(), time.time()))
+            db.execute("INSERT OR REPLACE INTO feito VALUES (?,?,?,?,?)", (chave, st.st_size, st.st_mtime, md5, time.time()))
             db.commit()
             novos += 1
             bytes_ += st.st_size

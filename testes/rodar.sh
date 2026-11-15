@@ -30,6 +30,7 @@ for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/login_agente.p
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   conta "$(basename $t)" $RC "$OUT"
 done
+OUT=$(python3 -I testes/backup_originais_envio.py servidor/linux/backup-originais.py 2>&1); conta backup_originais_envio $? "$OUT"
 for t in testes/*.js; do
   case "$(basename $t)" in _*) continue;; esac
   OUT=$(node "$t" 2>&1); RC=$?
