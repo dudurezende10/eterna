@@ -5128,8 +5128,12 @@ const avFotoBotao=()=>{const A=state.av;return (A.foto?`<img src="${A.foto}" alt
 // câmera na própria tela: só em página segura (https ou o próprio aparelho) e se ela abriu uma vez sem erro
 const avCamPode=()=>!state.av.camFalhou&&window.isSecureContext&&!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
 let avCamSt=null;
-async function avCamAbre(){const A=state.av;try{avCamSt=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});A.cam=true;render();}
-  catch(e){avCamFecha();A.camFalhou=true;toast(TE('av_cam_sem'));render();}}
+async function avCamAbre(tent){const A=state.av;try{avCamSt=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});A.cam=true;render();}
+  catch(e){avCamFecha();
+    // 15/11: câmera ocupada por outra aba ou recém-solta (NotReadable/Abort) tenta de novo 3 vezes; só recusa de verdade (sem permissão, sem câmera) desliga o botão
+    if(e&&(e.name==='NotReadableError'||e.name==='AbortError'||e.name==='TrackStartError')&&(tent||0)<3){setTimeout(()=>{if(state.view==='ativ-venda'&&!avCamSt)avCamAbre((tent||0)+1);},700);return;}
+    if(e&&(e.name==='NotAllowedError'||e.name==='NotFoundError'||e.name==='SecurityError'))A.camFalhou=true;
+    toast(TE('av_cam_sem'));render();}}
 function avCamFecha(){if(avCamSt){try{avCamSt.getTracks().forEach(t=>t.stop());}catch(e){}}avCamSt=null;state.av.cam=false;}
 function avCamFoto(){const v=document.getElementById('av-cam');if(!v||!v.videoWidth)return;state.av.foto=avFotoJpeg(v,v.videoWidth,v.videoHeight);avCamFecha();render();}
 // a tela pode ser redesenhada com a câmera aberta (envio, Minhas vendas): o vídeo volta a mostrar a câmera
