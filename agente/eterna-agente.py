@@ -9276,6 +9276,11 @@ def posto_auto_ok(ip, ip_servidor="", redes=None):
         return False
     if a.is_loopback or str(a) == str(ip_servidor) or a in ipaddress.ip_network("100.64.0.0/10"):
         return False
+    # 15/11: quem entra pela VPN do FortiGate chega com o IP do próprio firewall (NAT, o primeiro endereço da faixa, ex.:
+    # 192.168.10.1) ou com um IP de ETERNA_REMOTO_IPS: é acesso remoto (Ronaldo, Eduardo), nunca posto
+    remotos = {x.strip() for x in (os.environ.get("ETERNA_REMOTO_IPS") or "").split(",") if x.strip()}
+    if str(a) in remotos or any(r.num_addresses > 2 and a == r.network_address + 1 for r in redes):
+        return False
     return a.is_private and any(a in r for r in redes)
 
 

@@ -281,3 +281,7 @@ Ainda só no navegador (`docs/planos/2026-11-10-dado-no-banco.md`, sem mudança 
 ### Alerta quando o backup para (15/11)
 
 Vigia de fora do servidor, para avisar também quando ele está desligado ou sem internet. O Eterna grava `backup/<pc>/pulso.json` a cada 2 min (hora, último backup bom, erro) e a cópia dos originais grava `pulso-originais.json` a cada rodada. A função `eterna-alerta-backup` (Lambda, a cada 10 min, `servidor/nuvem/alerta-backup.sh` no CloudShell) manda e-mail pelo SNS quando: pulso com mais de 30 min (servidor sem contato), último backup bom com mais de 30 min (backup falhando, com o erro) ou originais sem rodar há 3 h. Avisa no começo, repete a cada 6 h e avisa quando volta. Destinatários passados como argumento no CloudShell (fora do repositório); cada um confirma a inscrição no e-mail da AWS.
+
+### Acesso pela VPN não vira posto (15/11)
+
+Pela VPN do FortiGate o servidor vê todo acesso remoto com o IP do próprio firewall (NAT, `192.168.10.1`), que está dentro da `ETERNA_POSTO_REDE`. Resultado: o Checkout aberto pelo Eduardo de fora mostrava "Este aparelho ainda não é um posto" e, com login, viraria posto. `posto_auto_ok` passa a tratar como remoto o primeiro endereço de cada faixa (o firewall) e os IPs de `ETERNA_REMOTO_IPS` (vírgula): `/postos/eu` responde `{posto: null, remoto: true}` e o Checkout abre para teste sem criar posto. O login vale por endereço: quem entrou em `http://192.168.10.10:8765` precisa entrar de novo em `https://posto.eterna.photo` (usar sempre este).
