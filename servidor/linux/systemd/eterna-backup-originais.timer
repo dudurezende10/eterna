@@ -1,0 +1,11 @@
+# Eterna · a cada 10 min, cópia dos originais novos para a nuvem.
+[Unit]
+Description=Eterna (cópia dos originais a cada 10 min)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

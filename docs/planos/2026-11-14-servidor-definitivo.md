@@ -259,3 +259,15 @@ cliente põe a credibilidade em risco.
 ## Tailscale sai; acesso remoto pela VPN do FortiGate (15/11)
 
 Por ordem da diretoria, o acesso de fora do estádio passa a ser só pela VPN do FortiGate da Maracatour (FortiClient, perfil MaracaTour, IPsec IKEv2). Com a VPN ligada, o servidor é alcançado direto pelo IP da rede do estádio (`ssh ubuntu@192.168.10.10`, `https://posto.eterna.photo`). O Tailscale estava instalado e deslogado; sai por inteiro com `sudo bash /opt/eterna/app/servidor/linux/tailscale-remover.sh` (programa, serviço, repositório, regras `tailscale0` do firewall e endereços 100.x/.ts.net do `ETERNA_ORIGENS`). O `tailscale.sh` foi apagado do repositório.
+
+## Nuvem, backup e cópia dos originais (15/11)
+
+Achado em 15/11: o servidor do estádio estava sem nuvem (`ETERNA_NUVEM` vazio), portanto sem backup dos bancos (o `backup_loop` usa o mesmo bucket) e com os originais das fotos só no HD de 4 TB, sem cópia. O servidor de teste do notebook usava o bucket de teste com a chave do perfil `eterna-teste`; o servidor novo nunca recebeu essa configuração.
+
+Correção, em dois passos:
+1. **CloudShell** (`servidor/linux/nuvem-aws-cloudshell.sh`): usuário IAM `eterna-servidor-estadio`, só com leitura, gravação e exclusão no bucket do Eterna; chave nova, exclusiva do servidor (a do notebook não é reaproveitada). A retenção do bucket deixa de ser "tudo com 7 dias" (regra de teste, que apagaria o backup) e passa a ser por pasta: `alta/` e `vitrine/` 60 dias, `originais/` 180 dias, `backup/` 400 dias.
+2. **Servidor** (`sudo bash servidor/linux/nuvem-ligar.sh`): pede o bucket e a chave (a secreta sem eco), grava em `/srv/eterna/.aws` (perfil `eterna-estadio`, 600, dono `eterna`), testa gravar e apagar no bucket, liga `ETERNA_NUVEM=s3` no `nuvem.env`, instala o `eterna-backup-originais.timer` e confere nuvem, backup e originais.
+
+Cópia dos originais (`servidor/linux/backup-originais.py`, a cada 10 min): cada arquivo novo de `/srv/eterna-midia/inbox/<dia>/` vai para `originais/<dia>/<arquivo>` (STANDARD_IA, conferido por MD5); registro do que já subiu em `/srv/eterna/Eterna/backup-originais.db`. LGPD: foto apagada pelo Eterna sai também da nuvem; se faltar de uma vez mais de 10% do que já subiu, nada é apagado (HD com defeito não vira exclusão em massa). Isso muda a decisão anterior de não subir o original: ele sobe só como cópia de segurança, nunca para a galeria.
+
+Também em 15/11: o servidor foi desligado sem desligamento normal em 14/11 às 21:00 (o registro do sistema termina no meio); precisa de nobreak e de orientação para ninguém tirar da tomada.
