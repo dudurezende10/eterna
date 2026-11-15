@@ -62,7 +62,7 @@ def main():
     db = sqlite3.connect(DB, timeout=30)
     db.execute("CREATE TABLE IF NOT EXISTS feito (chave TEXT PRIMARY KEY, tam INTEGER, mtime REAL, md5 TEXT, em REAL)")
     feitos = {k: (t, m) for k, t, m in db.execute("SELECT chave, tam, mtime FROM feito")}
-    vistos, novos, bytes_ = set(), 0, 0
+    vistos, novos, bytes_, falhas = set(), 0, 0, []
     agora = time.time()
     for a, chave in arquivos():
         if True:
@@ -75,13 +75,20 @@ def main():
                 continue
             if feitos.get(chave) == (st.st_size, st.st_mtime):
                 continue
-            with open(a, "rb") as f:
-                corpo = f.read()
-            md5 = hashlib.md5(corpo)
-            r = s3.put_object(Bucket=bucket, Key=chave, Body=corpo, StorageClass="STANDARD_IA",
-                              ContentMD5=base64.b64encode(md5.digest()).decode())
-            if r.get("ETag", "").strip('"') != md5.hexdigest():
-                raise SystemExit("ETag diferente em " + chave)
+            # 15/11: um arquivo que falha (BadDigest num vídeo grande, rede) não derruba a rodada: os outros sobem e ele
+            # tenta de novo na próxima; a rodada termina com erro e o pulso não é gravado (o alerta da AWS avisa se durar)
+            try:
+                with open(a, "rb") as f:
+                    corpo = f.read()
+                md5 = hashlib.md5(corpo)
+                r = s3.put_object(Bucket=bucket, Key=chave, Body=corpo, StorageClass="STANDARD_IA",
+                                  ContentMD5=base64.b64encode(md5.digest()).decode())
+                del corpo
+                if r.get("ETag", "").strip('"') != md5.hexdigest():
+                    raise ValueError("ETag diferente")
+            except Exception as ex:
+                falhas.append("%s: %s" % (chave, str(ex)[:160]))
+                continue
             db.execute("INSERT OR REPLACE INTO feito VALUES (?,?,?,?,?)", (chave, st.st_size, st.st_mtime, md5.hexdigest(), time.time()))
             db.commit()
             novos += 1
@@ -96,6 +103,11 @@ def main():
             db.execute("DELETE FROM feito WHERE chave=?", (k,))
             db.commit()
             apagadas += 1
+    if falhas:
+        print("originais: %d novos, %d com falha (tentam de novo na próxima rodada):" % (novos, len(falhas)))
+        for x in falhas[:20]:
+            print("  " + x)
+        return 1
     # pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): rodada completa sem erro
     pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
     s3.put_object(Bucket=bucket, Key="backup/%s/pulso-originais.json" % pc, ContentType="application/json",
