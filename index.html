@@ -476,6 +476,10 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-cam{position:relative;padding:14px;border-radius:50%;background:radial-gradient(circle,rgba(255,184,0,0) 58%,rgba(255,184,0,.35) 60%,rgba(255,184,0,0) 62%,rgba(255,184,0,0) 66%,rgba(255,184,0,.22) 68%,rgba(255,184,0,0) 70%)}
 .lj-cam .face{width:min(300px,62vw);width:min(300px,62vw,max(160px,calc(100dvh - 440px)));aspect-ratio:1;border-radius:50%;border:4px solid #FFB800;background:#0C2340;box-shadow:0 20px 60px -20px rgba(0,0,0,.6)}
 .lj-cam .camst{background:transparent;color:#fff;font-weight:600}
+/* 15/11: foto do grupo em quadro largo (a família inteira cabe; a busca usa o quadro todo da câmera) */
+.lj-cam.lj-cam-grupo{border-radius:22px;background:none;padding:0}
+.lj-cam-grupo .face{width:min(720px,88vw,calc((100dvh - 400px)*16/9));min-width:min(320px,88vw);aspect-ratio:16/9;border-radius:18px}
+.lj-cam-grupo .face video{border-radius:14px;object-fit:cover}.lj-cam-grupo .face .ring{display:none}
 .lj-cam .camst[data-st="found"]{background:#005500}.lj-cam .camst[data-st="noface"],.lj-cam .camst[data-st="nomatch"]{background:#b3261e}
 .lj-code{width:min(420px,90vw);font-size:28px;text-align:center;letter-spacing:.12em;padding:14px;border-radius:14px;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.08);color:#fff}
 .lj-wait{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;width:min(760px,100%)}
@@ -3564,7 +3568,7 @@ function vQuiosque(){
           <div class="lj-row"><button class="lj-cta" data-act="kiosk-go"${k.codEsp?' disabled aria-busy="true"':''}>${k.codEsp?T('codeSearching'):T('seeMine')+' '+ICO.arrow}</button>${ljVoltar('kiosk-back','')}</div>`
         // 15/11 (Ronaldo): foto do grupo, alternativa à selfie: cada rosto da foto é buscado como uma selfie e as fotos se somam
         :k.camOn&&k.grupo?`<p class="lj-sub">${T('ljGrupoSub')}</p>
-          <div class="lj-cam">${camBox()}</div>
+          <div class="lj-cam lj-cam-grupo">${camBox()}</div>
           <div class="lj-row"><button class="lj-cta" data-act="kiosk-grupo-foto">${ICO.grupo} ${T('ljGrupoFoto')}</button><button class="lj-ghost lj-alt" data-act="kiosk-selfie">${ICO.face} ${T('ljUmaPessoa')}</button>${k.mais?`<button class="lj-ghost lj-alt" data-act="kiosk-mais-volta">${T('backMine')}</button>`:ljVoltar('kiosk-back','lj-alt')}</div>`
         :k.mais?`<p class="lj-sub">${T('addPersonSub')}</p>
           ${k.camOn?`<div class="lj-cam">${camBox()}</div>`:`<button class="lj-start" data-act="kiosk-start">${ICO.face}<span>${T('ljStart')}</span></button>`}
