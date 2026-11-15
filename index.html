@@ -173,6 +173,7 @@ svg text{font-family:var(--body);fill:var(--muted);font-size:12px}
 .photos.small{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
 .ph{position:relative;aspect-ratio:3/2;max-width:100%;border-radius:4px;overflow:hidden;background:#1a1917;border:2px solid transparent;cursor:pointer;display:block;width:100%;padding:0}
 .ph::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
+.ph[data-real]{aspect-ratio:1/1}.ph[data-real]::before{background-size:contain;background-position:center}
 .ph[data-off="1"]::before{opacity:.3} .ph[data-off="1"] .tag{background:var(--bad)}
 .ph[data-v="1"]{border-color:var(--good)} .ph[data-v="-1"]{border-color:var(--bad)} .ph[data-sel="1"]{border-color:var(--accent)}
 .ph .tag{position:absolute;left:6px;top:6px;font-size:12px;letter-spacing:.08em;padding:2px 7px;border-radius:3px;background:rgba(20,19,17,.78);color:#fafaf8}
@@ -203,8 +204,11 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .modal .big{width:min(96vw,960px);aspect-ratio:3/2;background:#1a1917;border-radius:6px;position:relative;overflow:hidden;touch-action:none}
 .modal .big::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
 .modal .big.img::before{background:var(--img) center/contain no-repeat}
+.modal .big.real{width:min(96vw,calc((100vh - 132px)*var(--arn,1.5)));width:min(96vw,calc((100dvh - 132px)*var(--arn,1.5)));aspect-ratio:var(--arn,1.5)}
+.modal .big.real::before{background-image:var(--img);background-repeat:no-repeat;background-size:contain;background-position:center}
 .modal[data-tools]{flex-direction:column;justify-content:flex-start;align-items:center;padding-top:56px;overflow:auto;gap:12px}
 .modal[data-tools] .big{width:min(96vw,760px);flex:none}
+.modal[data-tools] .big.real{width:min(96vw,760px,calc(max(180px,100vh - 250px)*var(--arn,1.5)));width:min(96vw,760px,calc(max(180px,100dvh - 250px)*var(--arn,1.5)))}
 .modal .tools{display:none}
 .modal[data-tools] .tools{display:flex;position:static;width:min(96vw,760px);flex-direction:column;gap:8px;align-items:center;flex:none}
 .modal[data-tools] .cap{position:static;padding-bottom:24px}
@@ -273,7 +277,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .up-sess.on{border:2px solid #FFB800;box-shadow:0 0 0 3px rgba(255,184,0,.18)}
 .up-sess-h{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:13px}.up-sess-h .up-lp{font-family:var(--display);font-size:18px;letter-spacing:.08em}.up-sess-h .up-nome{font-weight:600}
 .up-sess-h .pill.up-on{background:#FFB800;color:#0C2340}.up-sess-h .chip{margin-left:auto}
-.up-sess .ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:var(--flt,none)}
+.up-sess .ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:var(--flt,none)}
 .up-aviso .pill{white-space:normal;line-height:1.35;display:inline-block}
 .up-sess .ph[data-pend="1"]{opacity:.6}.up-sess .up-mais{align-self:center;justify-self:start}
 @media (max-width:700px){.up-sess-h{font-size:12px;gap:4px 8px}.up-sess-h .chip{margin-left:0}}
@@ -299,7 +303,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .pend-grave{display:flex;flex-direction:column;gap:6px;margin:0 0 10px;padding:10px 12px;border-radius:8px;border:2px solid var(--bad,#c0392b);background:rgba(192,57,43,.1);font-size:14px}
 .vis-bloco{display:flex;flex-direction:column;gap:6px;margin:8px 0;padding:8px 10px;border:1px solid var(--line,#d9d9d6);border-radius:8px}.vis-leva{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px}.vis-leva small{color:var(--muted,#6b7280)}.vis-cands{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end}.vis-cand{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 4px;border:1px solid var(--line,#d9d9d6);border-radius:8px;background:none;font:inherit;font-size:12px;cursor:pointer}.vis-cand .pend-th{width:56px;pointer-events:none}.vis-lp input{width:130px;text-transform:uppercase}
 .pend-ths{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.pend-th{position:relative;width:84px;aspect-ratio:3/2;border-radius:6px;border:0;padding:0;overflow:hidden;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);cursor:zoom-in}
-.pend-th.ai .compimg{position:absolute;inset:0;background-size:cover;background-position:center}.pend-th .lj-aimk{font-size:10px;gap:2px;padding:2px}.pend-th .lj-spin{width:14px;height:14px}.pend-th .laibadge{position:absolute;right:3px;bottom:3px;color:#FFB800}.pend-th .laibadge svg{width:14px;height:14px}
+.pend-th[data-real]{background-size:contain;background-position:center}.pend-th.ai .compimg{position:absolute;inset:0;background-size:cover;background-position:center}.pend-th .lj-aimk{font-size:10px;gap:2px;padding:2px}.pend-th .lj-spin{width:14px;height:14px}.pend-th .laibadge{position:absolute;right:3px;bottom:3px;color:#FFB800}.pend-th .laibadge svg{width:14px;height:14px}
 .pend-pkgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;margin:4px 0 8px}.pend-pkg{position:relative;display:grid;grid-template-columns:1fr auto;gap:2px 8px;text-align:left;padding:8px 10px;border-radius:10px;border:1.5px solid var(--line,#d9dee6);background:#fff;color:inherit;cursor:pointer}
 .pend-pkg b{grid-column:1}.pend-pkg small{grid-column:1;color:#5b6b83;font-size:12px}.pend-pkg span{grid-column:2;grid-row:1/span 2;align-self:center;font-weight:800}.pend-pkg i{position:absolute;top:-8px;right:8px;font-style:normal;font-size:10px}
 .pend-mont{margin:2px 0 10px;padding:10px 12px;border-radius:10px;background:#fff6d6;border:1.5px solid #FFB800;color:#5a4300;font-size:14px;font-weight:600}
@@ -374,7 +378,7 @@ body.if-tv .if-wrap{height:calc(100vh - 40px)}body.if-tv .if-num{font-size:40px}
 .ff-onde{display:block;font-weight:500;color:var(--muted);font-size:15px;letter-spacing:0;line-height:1.25;margin-top:2px}
 .ff-fonte{font-size:.55em;font-weight:700}
 .ff-thumbs{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
-.ff-thumbs img{width:56px;height:56px;object-fit:cover;border-radius:6px;background:#0C2340}
+.ff-thumbs img{width:56px;height:56px;object-fit:contain;border-radius:6px;background:#0C2340}
 /* v93: bases dos fundos de IA (os primeiros cliques da sessão) na Fila do fotógrafo e no Upload */
 .ff-ia{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:4px;background:#25282A;color:#FFB800;font-weight:600;font-size:13px;letter-spacing:.02em}
 .ff-iamk{position:relative;display:inline-block;line-height:0}.ff-iamk img{outline:2px solid #FFB800;outline-offset:-2px}
@@ -783,7 +787,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .galgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .galph{position:relative;display:flex;flex-direction:column;gap:6px;align-items:flex-start;padding:5px;border-radius:8px;border:1px solid var(--line);background:var(--surface);text-align:left}
 .gq-campo{display:flex;flex-direction:column;gap:4px;text-align:left;font-size:13px;width:100%}.gq-campo input{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:inherit}.gq-cesta{text-align:left;font-size:14px;opacity:.9}.gq-mkt{margin:4px 0}
-.galph .ph{width:100%;aspect-ratio:3/2;border-radius:5px}.galph.cortesia{border-color:var(--warn)}.galph.comprada{opacity:.75;cursor:default}
+.galph .ph{width:100%;aspect-ratio:3/2;border-radius:5px}.galph .ph[data-real]{aspect-ratio:1/1}.galph.cortesia{border-color:var(--warn)}.galph.comprada{opacity:.75;cursor:default}
 .galmini{display:inline-block;width:60px;height:40px;border-radius:4px;vertical-align:middle}
 .galqr{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#0C2340}
 .galqr .note{color:#4a5568;word-break:break-all}.galcode{font-size:24px;letter-spacing:.12em}
@@ -1398,6 +1402,12 @@ const hasImg=id=>!!(spriteOf[id]||UP[id]);
 function editStyle(id){return editStyleObj(SIM.edits&&SIM.edits[id]);}
 // v83: o mesmo ajuste vale para a tela e para a impressão (#print-root): --flt e --tf
 function editStyleObj(e){if(!e)return '';const t=Math.round((e.t||0)/5)*5;return `;--flt:${t?`url(#wb${t<0?'m':'p'}${Math.abs(t)}) `:''}brightness(${(e.b||100)/100}) contrast(${(e.c||100)/100}) saturate(${(e.s!=null?e.s:100)/100});--tf:scale(${(e.z||100)/100}) translate(${e.x||0}%,${e.y||0}%)`}
+// Foto real (enviada ou do agente) aparece inteira para a equipe, nunca cortada: miniatura em célula quadrada com a foto contida,
+// zoom na proporção da própria foto. As fotos de exemplo (sprites) seguem 3:2. Plano docs/planos/2026-11-15-biblioteca-fotos-inteiras.md
+function fotoSrc(id){if(UP[id])return UP[id].src;return /^ag_/.test(id)&&state.agent&&state.agent.url?state.agent.url+'/thumb/'+id.slice(3):'';}
+const fotoReal=id=>fotoSrc(id)?' data-real="1"':'';
+const FOTO_AR={}; // largura/altura de cada foto real, medida uma vez pela miniatura
+function fotoAr(id,pronto){if(FOTO_AR[id])return FOTO_AR[id];const im=new Image();im.onload=()=>{if(im.naturalWidth&&im.naturalHeight){FOTO_AR[id]=im.naturalWidth/im.naturalHeight;pronto();}};im.src=fotoSrc(id);return 0;}
 function phStyle(id){if(/^black_/.test(id))return '--img:none;--bs:auto;--bp:center';if(UP[id])return `--img:url(${UP[id].src});--bs:cover;--bp:center`+editStyle(id);const s=spriteOf[id];if(!s)return '';const col=s.i%s.cols,row=Math.floor(s.i/s.cols);const bx=s.cols>1?100*col/(s.cols-1):0,by=s.rows>1?100*row/(s.rows-1):0;return `--img:url(sprites/${s.file});--bs:${s.cols*100}% ${s.rows*100}%;--bp:${bx}% ${by}%`+editStyle(id)}
 
 // ---------- state ----------
@@ -1536,7 +1546,7 @@ function sparkIdx(perDay){
 function hbars(items,fmt){const max=Math.max(...items.map(i=>i.v))||1;return `<div class="bars">${items.map(i=>`<div class="bar"><span>${esc(i.label)}</span><div class="track"><div class="fill" style="width:${100*i.v/max}%"></div></div><span class="val">${fmt?fmt(i.v):i.v}</span></div>`).join('')}</div>`}
 function quality(key,p){const rs=Object.values(state.reviews).filter(r=>r.key===key&&(!p||(r.date>=p.de&&r.date<=p.ate)));const ph=rs.flatMap(r=>Object.values(r.photos||{}));const good=ph.filter(v=>v===1).length,bad=ph.filter(v=>v===-1).length;const scored=rs.filter(r=>r.score);return {sessions:rs.length,rated:good+bad,good,bad,goodPct:(good+bad)?Math.round(100*good/(good+bad)):null,score:scored.length?(scored.reduce((a,r)=>a+r.score,0)/scored.length):null}}
 const CHECK='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg>',CROSS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phStyle(p.id)}" data-act="${o.act||'zoom'}" data-id="${p.id}" ${o.sel?'data-sel="1"':''} ${o.v?`data-v="${o.v}"`:''} aria-label="${esc(o.label||'Foto')}">${o.tag?`<span class="tag${o.tagCls?' '+o.tagCls:''}"${o.tagTitle?` title="${esc(o.tag)}"`:''}>${esc(o.tag)}</span>`:''}${o.wm?'<span class="wm">ETERNA</span>':''}${o.zoom!==false?`<span class="zoom" data-act="zoom" data-id="${p.id}" role="button" aria-label="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg></span>`:''}<span class="mark">${o.v===-1?CROSS:CHECK}</span></button>`;
+const photoBtn=(p,o={})=>`<button class="ph${o.cls?' '+o.cls:''}" style="${phStyle(p.id)}"${fotoReal(p.id)} data-act="${o.act||'zoom'}" data-id="${p.id}" ${o.sel?'data-sel="1"':''} ${o.v?`data-v="${o.v}"`:''} aria-label="${esc(o.label||'Foto')}">${o.tag?`<span class="tag${o.tagCls?' '+o.tagCls:''}"${o.tagTitle?` title="${esc(o.tag)}"`:''}>${esc(o.tag)}</span>`:''}${o.wm?'<span class="wm">ETERNA</span>':''}${o.zoom!==false?`<span class="zoom" data-act="zoom" data-id="${p.id}" role="button" aria-label="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg></span>`:''}<span class="mark">${o.v===-1?CROSS:CHECK}</span></button>`;
 
 // ---------- Perfis ----------
 function vPerfis(){
@@ -1833,7 +1843,7 @@ function pendMontAviso(r){const nAI=(r.aiSel||[]).length;if(!nAI||!r.pkg||r.prin
 // v96 (P3): pedido do Checkout sem pacote. O caixa vê as fotos escolhidas (com as de fundo de IA), escolhe o pacote e o meio e confirma como antes
 function pendEscolhaItem(r,o){const n=r.n||0;const ideal=lojaIdeal(n).pkg;const mais=vendaMais(r.card);const temMont=(r.aiSel||[]).length>0;const pronto=r.total!=null&&(r.pkg||mais)&&MEIO_NOME[r.meio];
   const fotos=[...(r.selected||[]).map(id=>({t:'ph',id})),...(r.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {t:'ai',id,bg};})];
-  const th=x=>x.t==='ai'?`<div class="pend-th ai">${lojaThumb(x)}</div>`:`<button class="pend-th" style="${phStyle(x.id)}" data-act="zoom" data-id="${esc(x.id)}" aria-label="Foto"></button>`;
+  const th=x=>x.t==='ai'?`<div class="pend-th ai">${lojaThumb(x)}</div>`:`<button class="pend-th" style="${phStyle(x.id)}"${fotoReal(x.id)} data-act="zoom" data-id="${esc(x.id)}" aria-label="Foto"></button>`;
   const pkgs=mais?'':DATA.catalog.filter(c=>c.kind==='pacote').map(p=>{const c=lojaPkgCusto(p,n);const on=r.pkg===p.id;
     return `<button class="pend-pkg${on?' on':''}" data-act="pend-pkg" data-id="${esc(r.id)}" data-p="${esc(p.id)}" aria-pressed="${on}" ${o.rw?'':'disabled'}><b>${esc(p.name)}</b><small>${p.digital==='todas'?TE('po_todas_fotos'):TE('n_fotos',p.digital)}${p.prints?' · '+TE('po_impressas'):' · '+TE('po_so_digital')}${c.extra?` + ${TE('n_adic',c.extra)}`:''}</small><span>${fmtR(c.custo)}</span>${p.id===ideal?`<i class="pill good">${TE('ideal')}</i>`:''}${temMont&&!p.prints?`<em class="pend-semmont">${TE('po_sem_edicao')}</em>`:''}</button>`;}).join('');
   const meios=['cartao','pix','dinheiro'].map(m=>`<button class="pend-meio${r.meio===m?' on':''}" data-act="pend-meio" data-id="${esc(r.id)}" data-m="${m}" aria-pressed="${r.meio===m}" ${o.rw?'':'disabled'}>${ICO[m==='pix'?'pix':m==='cartao'?'card':'cash']} ${meioNome(m)}</button>`).join('');
@@ -3245,7 +3255,7 @@ function vGalerias(){const G=state.gal;const rw=can('galerias','u');
       ${m&&G.qr===tok?galQrBox(tok):''}
       ${sim.menor?`<div class="note">${TE('ga_menor_nota')}</div>`:''}
       <div class="note">${TE('ga_toque')}</div>
-      <div class="galgrid">${sel.photos.map(p=>{const d=dir(p.id);return `<button class="galph ${d}" data-act="gal-cort" data-card="${esc(sel.card)}" data-pid="${esc(p.id)}" ${d==='comprada'||!rw?'disabled':''} aria-label="${d}"><span class="ph" style="${phStyle(p.id)}"></span><span class="pill ${d==='comprada'?'good':d==='cortesia'?'warn':'neutral'}">${gaDir(d)}</span></button>`;}).join('')}</div>
+      <div class="galgrid">${sel.photos.map(p=>{const d=dir(p.id);return `<button class="galph ${d}" data-act="gal-cort" data-card="${esc(sel.card)}" data-pid="${esc(p.id)}" ${d==='comprada'||!rw?'disabled':''} aria-label="${d}"><span class="ph" style="${phStyle(p.id)}"${fotoReal(p.id)}></span><span class="pill ${d==='comprada'?'good':d==='cortesia'?'warn':'neutral'}">${gaDir(d)}</span></button>`;}).join('')}</div>
       ${c?`<div class="galcort panel" style="gap:10px">${c.rm?`<h3 style="margin:0">${TE('ga_retirar_q')}</h3><div class="row"><button class="btn primary" data-act="gal-cort-rm" data-card="${esc(c.card)}" data-pid="${esc(c.pid)}">${TE('ga_retirar')}</button><button class="chip" data-act="gal-cort" data-card="">${TE('cancelar')}</button></div>`
         :`<h3 style="margin:0">${TE('ga_dar')}</h3><div class="row" style="align-items:end"><label><span class="eyebrow">${TE('ga_motivo')}</span><select id="gal-motivo">${GAL_MOTIVOS.map(([k,l])=>`<option value="${k}">${esc(gaMot(k))}</option>`).join('')}</select></label><label style="flex:1;min-width:180px"><span class="eyebrow">${TE('ga_nota_opc')}</span><input type="text" id="gal-nota" maxlength="200" placeholder="${esc(TE('ga_nota_ex'))}"></label></div>
         <div class="row"><button class="btn primary" data-act="gal-cort-ok" data-card="${esc(c.card)}" data-pid="${esc(c.pid)}">${TE('ga_confirmar')}</button><button class="chip" data-act="gal-cort" data-card="">${TE('cancelar')}</button></div>`}</div>`:''}</div>`;}
@@ -4128,11 +4138,17 @@ function camWho(serie,day,autor){if(serie){const k=camDay(day)[serie];if(k)retur
 function libWho(f,ix){const o=(f.origem||'').toLowerCase();if(f.via==='ftp'){const kf=Object.keys(P).find(k=>P[k].human&&(k===o||P[k].name.toLowerCase()===o||keyByName(o)===k));if(kf)return kf;}const kc=camWho(f.serie,f.day,f.autor);if(kc)return kc;const kg=camGuess(f);if(kg)return kg;const x=ix.ses['ag_'+f.id];if(x&&x.key&&P[x.key])return x.key;if(f.via==='ftp')return 'ftp:'+o;return 'sem';}
 // v96-ux (Eduardo, 11/11): o fotógrafo vê só "Minhas fotos de hoje", agrupadas por sessão, sem filtros; Admin e Supervisora
 // continuam com a Biblioteca inteira (Dia, Hora, Fotógrafo e Venda)
+function libDoFoto(k,ix,hoje){const todas=state.lib.filter(f=>f.day===hoje&&libWho(f,ix)===k).sort((a,b)=>b.t-a.t);
+  const grupos=new Map();todas.slice(0,400).forEach(f=>{const x=ix.ses['ag_'+f.id]||null;if(!grupos.has(x))grupos.set(x,[]);grupos.get(x).push(f);});
+  return {todas,lista:[...grupos.entries()].map(([x,fs])=>({x,fs:fs.slice().sort((a,b)=>a.t-b.t)})).sort((a,b)=>b.fs[b.fs.length-1].t-a.fs[a.fs.length-1].t)};}
+function libDoFiltro(ix){const F=state.libF;const nowS=Date.now()/1000;const hoje=localDay(nowS);const day=F.day==='ontem'?localDay(nowS-86400):hoje;const all=state.lib.filter(f=>f.day===day);
+  const ph=all.filter(f=>{const h=new Date(f.t*1000).getHours();if(F.per==='1h'&&!(day===hoje&&nowS-f.t<=3600))return false;if(F.per==='2h'&&!(day===hoje&&nowS-f.t<=7200))return false;if(/^\d+$/.test(F.per)&&h!==+F.per)return false;if(F.who!=='todos'&&libWho(f,ix)!==F.who)return false;const v=ix.sold.has('ag_'+f.id);if(F.venda==='vendidas'&&!v)return false;if(F.venda==='nao'&&v)return false;return true;}).sort((a,b)=>b.t-a.t);
+  return {all,ph};}
+// ids das fotos da Biblioteca na ordem em que a tela mostra (as mesmas 400 da grade): é a lista que o zoom percorre
+function libOrdem(){const ix=libIndex();const preso=impPreso();return (preso?libDoFoto(preso,ix,localDay(Date.now()/1000)).lista.flatMap(g=>g.fs):libDoFiltro(ix).ph.slice(0,400)).map(f=>'ag_'+f.id);}
 function libPanelFoto(k,ix,hoje){const hora=t=>new Date(t*1000).toLocaleTimeString(localeEq(),{hour:'2-digit',minute:'2-digit'});const pl=(n,a,b)=>fmtN(n)+' '+(n===1?a:b);
-  const todas=state.lib.filter(f=>f.day===hoje&&libWho(f,ix)===k).sort((a,b)=>b.t-a.t);const ph=todas.slice(0,400);
+  const {todas,lista}=libDoFoto(k,ix,hoje);
   const vend=f=>ix.sold.has('ag_'+f.id);const nSold=todas.filter(vend).length;
-  const grupos=new Map();ph.forEach(f=>{const x=ix.ses['ag_'+f.id]||null;if(!grupos.has(x))grupos.set(x,[]);grupos.get(x).push(f);});
-  const lista=[...grupos.entries()].map(([x,fs])=>({x,fs:fs.slice().sort((a,b)=>a.t-b.t)})).sort((a,b)=>b.fs[b.fs.length-1].t-a.fs[a.fs.length-1].t);
   const bloco=g=>{const v=g.fs.filter(vend).length;return `<div class="lib-ses"><div class="lib-ses-h"><b>${g.x?TE('lb_ses_das',hora(g.fs[0].t)):TE('lb_sem_sessao')}</b><span>${TE('lb_fotos',g.fs.length)}</span><span>${TE('lb_vends',v)}</span></div>
     <div class="photos small">${g.fs.map(f=>photoBtn({id:'ag_'+f.id},{label:f.name,tag:(vend(f)?TE('lb_vendida')+' · ':'')+hora(f.t)})).join('')}</div></div>`;};
   return `<div class="panel" id="lib-minhas"><div class="head"><div><div class="eyebrow">${TE('lb_guardadas')}</div><h2>${TE('lb_minhas')}</h2></div><div class="row"><span class="pill neutral">${TE('lb_fotos',todas.length)}</span><span class="pill good">${TE('lb_vends',nSold)}</span></div></div>
@@ -4140,14 +4156,13 @@ function libPanelFoto(k,ix,hoje){const hora=t=>new Date(t*1000).toLocaleTimeStri
     <div class="note">${TE('lb_nota_foto')}</div></div>`;}
 function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=Date.now()/1000;const hoje=localDay(nowS),ontem=localDay(nowS-86400);const day=F.day==='ontem'?ontem:hoje;const ix=libIndex();
   const preso=impPreso();if(preso)return libPanelFoto(preso,ix,hoje);
-  const all=state.lib.filter(f=>f.day===day);
+  const sel=libDoFiltro(ix);const all=sel.all,ph=sel.ph;
   const whoName=k=>k==='sem'?TE('up_sem_foto'):k.startsWith('ftp:')?k.slice(4):(P[k]?P[k].name:k);
   const whos=[...new Set(all.map(f=>libWho(f,ix)))];
   const hours=[...new Set(all.map(f=>new Date(f.t*1000).getHours()))].sort((a,b)=>a-b);
-  let ph=all.filter(f=>{const h=new Date(f.t*1000).getHours();if(F.per==='1h'&&!(day===hoje&&nowS-f.t<=3600))return false;if(F.per==='2h'&&!(day===hoje&&nowS-f.t<=7200))return false;if(/^\d+$/.test(F.per)&&h!==+F.per)return false;if(F.who!=='todos'&&libWho(f,ix)!==F.who)return false;const v=ix.sold.has('ag_'+f.id);if(F.venda==='vendidas'&&!v)return false;if(F.venda==='nao'&&v)return false;return true;});
-  const nSold=ph.filter(f=>ix.sold.has('ag_'+f.id)).length;ph=ph.slice().sort((a,b)=>b.t-a.t);
+  const nSold=ph.filter(f=>ix.sold.has('ag_'+f.id)).length;
   const chip=(k,v,l)=>`<button class="chip" data-act="lib-f" data-k="${k}" data-v="${esc(String(v))}" aria-pressed="${String(F[k])===String(v)}">${l}</button>`;
-  return `<div class="panel"><div class="head"><div><div class="eyebrow">${TE('lb_guardadas')}</div><h2>${TE('lb_biblioteca')}</h2></div><div class="row"><span class="pill neutral">${TE('lb_fotos',ph.length)}</span><span class="pill good">${TE('lb_vends',nSold)}</span><span class="pill warn">${TE('lb_nvends',ph.length-nSold)}</span></div></div>
+  return `<div class="panel" id="lib-painel"><div class="head"><div><div class="eyebrow">${TE('lb_guardadas')}</div><h2>${TE('lb_biblioteca')}</h2></div><div class="row"><span class="pill neutral">${TE('lb_fotos',ph.length)}</span><span class="pill good">${TE('lb_vends',nSold)}</span><span class="pill warn">${TE('lb_nvends',ph.length-nSold)}</span></div></div>
     <div class="libf"><span class="eyebrow">${TE('lb_dia')}</span>${chip('day','hoje',TE('lb_hoje')+' · '+state.lib.filter(f=>f.day===hoje).length)}${chip('day','ontem',TE('lb_ontem')+' · '+state.lib.filter(f=>f.day===ontem).length)}</div>
     <div class="libf"><span class="eyebrow">${TE('lb_hora')}</span>${chip('per','dia',TE('lb_dia_todo'))}${day===hoje?chip('per','1h',TE('lb_1h'))+chip('per','2h',TE('lb_2h')):''}${hours.map(h=>chip('per',h,String(h).padStart(2,'0')+'h')).join('')}</div>
     <div class="libf"><span class="eyebrow">${TE('ga_fotografo')}</span>${chip('who','todos',TE('mf_todos'))}${[...humans,...whos.filter(k=>!humans.includes(k)&&!(P[k]&&hiddenPerson(k,P[k].name)))].map(k=>{const n=all.filter(f=>libWho(f,ix)===k).length;return chip('who',k,esc(whoName(k))+(n?' · '+n:''));}).join('')}</div>
@@ -7889,6 +7904,7 @@ const EQ={
   lb_fotos:[(n)=>`${fmtN(n)} ${n===1?'foto':'fotos'}`,(n)=>`${fmtN(n)} ${n===1?'photo':'photos'}`,(n)=>`${fmtN(n)} ${n===1?'foto':'fotos'}`,(n)=>`${fmtN(n)} ${n===1?'photo':'photos'}`,(n)=>`${fmtN(n)} ${n===1?'Foto':'Fotos'}`],
   lb_vends:[(n)=>`${fmtN(n)} ${n===1?'vendida':'vendidas'}`,(n)=>`${fmtN(n)} sold`,(n)=>`${fmtN(n)} ${n===1?'vendida':'vendidas'}`,(n)=>`${fmtN(n)} ${n===1?'vendue':'vendues'}`,(n)=>`${fmtN(n)} verkauft`],
   lb_nvends:[(n)=>`${fmtN(n)} não vendidas`,(n)=>`${fmtN(n)} not sold`,(n)=>`${fmtN(n)} no vendidas`,(n)=>`${fmtN(n)} non vendues`,(n)=>`${fmtN(n)} nicht verkauft`],
+  zm_pos:[(i,n)=>`foto ${i} de ${n}`,(i,n)=>`photo ${i} of ${n}`,(i,n)=>`foto ${i} de ${n}`,(i,n)=>`photo ${i} sur ${n}`,(i,n)=>`Foto ${i} von ${n}`],
   lb_ses_das:[(h)=>`Sessão das ${h}`,(h)=>`Session at ${h}`,(h)=>`Sesión de las ${h}`,(h)=>`Séance de ${h}`,(h)=>`Sitzung um ${h}`],
   lb_nota:[(adm)=>`Hora em que a foto chegou ao computador. Fotógrafo pelo nome gravado na câmera${adm?', pelo usuário (subpasta) do FTP':''} ou pela sessão da foto. Vendida = foto escolhida numa venda paga.`,(adm)=>`Time the photo arrived on the computer. Photographer from the name saved in the camera${adm?', the FTP user (subfolder)':''} or the photo's session. Sold = photo chosen in a paid sale.`,(adm)=>`Hora en que la foto llegó a la computadora. Fotógrafo por el nombre grabado en la cámara${adm?', por el usuario (subcarpeta) del FTP':''} o por la sesión de la foto. Vendida = foto elegida en una venta pagada.`,(adm)=>`Heure d'arrivée de la photo sur l'ordinateur. Photographe d'après le nom enregistré dans l'appareil${adm?', l\'utilisateur (sous-dossier) du FTP':''} ou la séance de la photo. Vendue = photo choisie dans une vente payée.`,(adm)=>`Uhrzeit, zu der das Foto auf dem Computer ankam. Fotograf aus dem in der Kamera gespeicherten Namen${adm?', dem FTP-Benutzer (Unterordner)':''} oder der Sitzung des Fotos. Verkauft = Foto aus einem bezahlten Verkauf.`],
   mf_conectado_c:[(c)=>` · cartão ${c} inserido`,(c)=>` · card ${c} inserted`,(c)=>` · tarjeta ${c} insertada`,(c)=>` · carte ${c} insérée`,(c)=>` · Karte ${c} eingesteckt`],
@@ -10153,8 +10169,17 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.setAttribute('data-o
 function compModal(keys,i){const show=j=>{i=(j+keys.length)%keys.length;const x=keys[i];openModal(`--img:url(${COMPURL[x.k]})`,x.cap+' · '+(i+1)+' de '+keys.length+(COMPLOW[x.k]?' · foto de exemplo em miniatura: a montagem com foto real sai em alta resolução':''),true);const pv=$('#modal-prev'),nx=$('#modal-next');pv.hidden=nx.hidden=keys.length<2;$('#modal-kbd').textContent='';MODAL.comp={show,get i(){return i}};};MODAL.list=[];show(i);}
 function openModal(style,cap,isImg){const mo=$('#modal');const im=$('#modal-img');im.className=isImg?'big img':'big';im.style.cssText=style;$('#modal-cap').textContent=cap||'';mo.setAttribute('data-open','');$('#modal-close').focus();}
 const MODAL={list:[],i:0,label:'',ctx:{},adjust:false};
-function showModal(i){MODAL.comp=null;const n=MODAL.list.length;if(!n)return;MODAL.i=(i+n)%n;const p=MODAL.list[MODAL.i];openModal(phStyle(p.id),`${MODAL.label} · foto ${MODAL.i+1} de ${n}${p.sold?' · vendida':''}${SIM.discarded[p.id]?' · descartada':''}`);$('#modal-prev').hidden=n<2;$('#modal-next').hidden=n<2;$('#modal-kbd').textContent=n>1?'← → para navegar · Esc fecha':'';renderModalTools();}
+// zoom da foto real: o original por cima da miniatura (que já está no navegador), na proporção da foto, sem cortar
+function modalStyle(id){const th=fotoSrc(id);if(!th)return phStyle(id);const hi=/^ag_/.test(id)&&state.agent&&state.agent.url?th.replace('/thumb/','/file/'):th;
+  const ar=fotoAr(id,()=>{const p=curPhoto();if(p&&p.id===id&&$('#modal').hasAttribute('data-open'))$('#modal-img').style.setProperty('--arn',FOTO_AR[id]);});
+  return `--img:url(${hi})${hi!==th?`,url(${th})`:''}${ar?';--arn:'+ar:''}`+editStyle(id);}
+function fotoHora(id){if(!/^ag_/.test(id))return '';const f=(state.lib||[]).find(x=>'ag_'+x.id===id);return f&&f.t?new Date(f.t*1000).toLocaleTimeString(localeEq(),{hour:'2-digit',minute:'2-digit'}):'';}
+// as setas param nas pontas (não dão a volta): a primeira foto só tem a seta da direita e a última só a da esquerda
+function showModal(i){MODAL.comp=null;const n=MODAL.list.length;if(!n)return;MODAL.i=Math.max(0,Math.min(n-1,i));const p=MODAL.list[MODAL.i];
+  openModal(modalStyle(p.id),[MODAL.label,TE('zm_pos',MODAL.i+1,n),fotoHora(p.id),p.sold?'vendida':'',SIM.discarded[p.id]?'descartada':''].filter(Boolean).join(' · '));$('#modal-img').classList.toggle('real',!!fotoSrc(p.id));
+  $('#modal-prev').hidden=MODAL.i<=0;$('#modal-next').hidden=MODAL.i>=n-1;$('#modal-kbd').textContent=n>1?'← → para navegar · Esc fecha':'';renderModalTools();}
 function openGallery(list,id,label,ctx){MODAL.list=list;MODAL.label=label||'';MODAL.ctx=ctx||{};MODAL.adjust=false;const i=Math.max(0,list.findIndex(p=>p.id===id));showModal(i);}
+function modalIr(d){if(MODAL.comp)return MODAL.comp.show(MODAL.comp.i+d);const j=MODAL.i+d;if(j>=0&&j<MODAL.list.length)showModal(j);}
 function curPhoto(){return MODAL.list[MODAL.i]}
 function editOf(id){if(!SIM.edits)SIM.edits={};if(!SIM.edits[id])SIM.edits[id]={b:100,c:100,s:100,t:0,z:100,x:0,y:0};return SIM.edits[id]}
 function renderModalTools(){const el=$('#modal-tools');const mo=$('#modal');const p=curPhoto();const c=MODAL.ctx;if(!p||(!c.review&&!c.edit)){el.innerHTML='';mo.removeAttribute('data-tools');return;}
@@ -10165,7 +10190,7 @@ function renderModalTools(){const el=$('#modal-tools');const mo=$('#modal');cons
     sl=c.quick?`<div class="sliders">${S('b','Exposição',40,180)}${S('c','Contraste',50,160)}<div class="hint">Ajuste rápido no balcão: a foto escura ou estourada não precisa perder a venda. Vale para a impressão e para a galeria. <button class="tb" data-act="m-reset" style="padding:4px 10px;min-height:28px;margin-left:8px">Restaurar original</button></div></div>`
     :`<div class="sliders">${S('b','Exposição',40,180)}${S('c','Contraste',50,160)}${S('s','Saturação',0,200)}${S('z','Recorte (zoom)',100,250)}<div class="hint">Arraste a foto para enquadrar quando o recorte passar de 100%. Tudo salva na hora e vale para a fila, o caixa e a galeria. <button class="tb" data-act="m-reset" style="padding:4px 10px;min-height:28px;margin-left:8px">Restaurar original</button></div></div>`;}
   el.innerHTML=`<div class="bar">${bar}</div>${sl}`;}
-function applyEditLive(){const p=curPhoto();if(!p)return;$('#modal-img').style.cssText=phStyle(p.id);}
+function applyEditLive(){const p=curPhoto();if(!p)return;$('#modal-img').style.cssText=modalStyle(p.id);}
 function setEdit(k,v){const p=curPhoto();const e=editOf(p.id);e[k]=v;saveSim();applyEditLive();const sv=$(`[data-sv="${k}"]`);if(sv)sv.textContent=v;}
 function toggleSel(card,id){const s=simOf(card);s.selected=s.selected||[];s.selected=s.selected.includes(id)?s.selected.filter(x=>x!==id):[...s.selected,id];saveSim();}
 
@@ -10277,9 +10302,11 @@ document.addEventListener('click',e=>{
     case 'session':state.session=d.card;render();window.scrollTo({top:0});break;
     case 'back-sessions':state.session=null;render();break;
     case 'zoom':{e.stopPropagation();const id=d.id;
-      if(state.view==='importar'){const sx=upSessDe(id);if(sx&&state.agent.sessoes){openGallery(upSessIds(sx).map(i=>({id:i})),id,`${upNome(sx)} · ${sx.card}`,{});break;}const all=[...(state.ing.cur?state.ing.cur.photos:[]),...state.ing.done.flatMap(x=>x.photos)];openGallery(all,id,`${impName()} · ingestão`,{});break;}
+      if(state.view==='importar'){const lb=el.closest('#lib-painel,#lib-minhas');
+        if(lb){const ids=libOrdem();if(ids.includes(id)){openGallery(ids.map(i=>({id:i})),id,TE(lb.id==='lib-minhas'?'lb_minhas':'lb_biblioteca'),{});break;}}
+        const sx=upSessDe(id);if(sx&&state.agent.sessoes){openGallery(upSessIds(sx).map(i=>({id:i})),id,`${upNome(sx)} · ${sx.card}`,{});break;}const all=[...(state.ing.cur?state.ing.cur.photos:[]),...state.ing.done.flatMap(x=>x.photos)];openGallery(all,id,`${impName()} · ingestão`,{});break;}
       if(state.view==='revisao'&&state.session){const ss=revSessions().find(x=>x.card===state.session);openGallery(ss.photos.filter(p=>hasImg(p.id)),id,`${P[ss.key].name} · ${ss.card}`,{review:true});break;}
-      const s=demoSessions().find(x=>x.photos.find(p=>p.id===id));if(s)openGallery(s.photos.filter(p=>hasImg(p.id)),id,`${P[s.key]?P[s.key].name:''} · ${s.card}`,(state.posto.manual&&(state.view==='posto'||state.view==='caixa'))?{edit:true,quick:true}:{});else openModal(phStyle(id),'');break;}
+      const s=demoSessions().find(x=>x.photos.find(p=>p.id===id));if(s)openGallery(s.photos.filter(p=>hasImg(p.id)),id,`${P[s.key]?P[s.key].name:''} · ${s.card}`,(state.posto.manual&&(state.view==='posto'||state.view==='caixa'))?{edit:true,quick:true}:{});else openGallery([{id}],id,'',{});break;}
     case 'm-rate':{e.stopPropagation();const p=curPhoto();const r=draft();const v=+d.v;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();break;}
     case 'm-adjust':e.stopPropagation();MODAL.adjust=!MODAL.adjust;renderModalTools();break;
     case 'm-discard':{e.stopPropagation();const p=curPhoto();SIM.discarded[p.id]=!SIM.discarded[p.id];saveSim();render();showModal(MODAL.i);break;}
@@ -10559,14 +10586,14 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuS
     if(e.key==='Escape'){k.ver=null;render();e.preventDefault();e.stopPropagation();return;}
     if(e.key==='Enter'||e.key===' '){const b=$('.lj-lbbar [data-act="kiosk-ok"]');if(b)b.click();e.preventDefault();return;}}
   if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver==null&&(e.key==='Enter')&&!/INPUT|TEXTAREA|SELECT|BUTTON/.test(e.target.tagName)){state.kiosk.ver=state.kiosk.i||0;render();e.preventDefault();return;}
-  if(state.view==='quiosque'&&state.kiosk.step==='review'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){if(e.key==='ArrowRight'){state.kiosk.i=(state.kiosk.i||0)+1;render();e.preventDefault();return;}if(e.key==='ArrowLeft'){state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();e.preventDefault();return;}if(e.key==='Enter'||e.key===' '){const b=$('[data-act="kiosk-ok"]');if(b){b.click();e.preventDefault();return;}}}if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&(MODAL.list.length>1||MODAL.comp)&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i+1);else showModal(MODAL.i+1);e.preventDefault();}if(e.key==='ArrowLeft'){if(MODAL.comp)MODAL.comp.show(MODAL.comp.i-1);else showModal(MODAL.i-1);e.preventDefault();}}
+  if(state.view==='quiosque'&&state.kiosk.step==='review'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){if(e.key==='ArrowRight'){state.kiosk.i=(state.kiosk.i||0)+1;render();e.preventDefault();return;}if(e.key==='ArrowLeft'){state.kiosk.i=Math.max(0,(state.kiosk.i||0)-1);render();e.preventDefault();return;}if(e.key==='Enter'||e.key===' '){const b=$('[data-act="kiosk-ok"]');if(b){b.click();e.preventDefault();return;}}}if(state.view==='treino'&&!$('#modal').hasAttribute('data-open')&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=e.key.toLowerCase();if(k==='p'){trainVerdict('pode');e.preventDefault();return;}if(k==='n'){trainVerdict('nao');e.preventDefault();return;}if(k==='d'){trainVerdict('duvida');e.preventDefault();return;}if(k==='arrowright'){state.train.i=(state.train.i+1)%TRAIN.length;render();return;}if(k==='arrowleft'){state.train.i=(state.train.i-1+TRAIN.length)%TRAIN.length;render();return;}if(/^[1-9]$/.test(k)){const r=TRAIN_REASONS[+k-1];if(r){trainToggleReason(r[0]);e.preventDefault();}return;}if(k==='enter'){const p=TRAIN[state.train.i];if(state.train.labels[p.id]){trainNext();}return;}}if(e.key==='Escape'&&$('#modal').hasAttribute('data-open'))closeModal();if($('#modal').hasAttribute('data-open')&&(MODAL.list.length>1||MODAL.comp)&&e.target.tagName!=='INPUT'){if(e.key==='ArrowRight'){modalIr(1);e.preventDefault();}if(e.key==='ArrowLeft'){modalIr(-1);e.preventDefault();}}
   if($('#modal').hasAttribute('data-open')&&MODAL.ctx.review&&e.target.tagName!=='INPUT'){const k=e.key.toLowerCase();if(k==='b'||k==='r'){const p=curPhoto();const r=draft();const v=k==='b'?1:-1;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();}}if(e.key==='Enter'&&e.target.id==='kcode'){lojaCliente();state.kiosk.code=e.target.value.trim().toUpperCase();state.kiosk.step='gallery';render();}});
 function closeModal(){$('#modal').removeAttribute('data-open');if(state.view==='ajustes'||state.posto.manual||state.view==='caixa')render();}
 $('#modal-close').addEventListener('click',closeModal);
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
-$('#modal-prev').addEventListener('click',e=>{e.stopPropagation();if(MODAL.comp)return MODAL.comp.show(MODAL.comp.i-1);showModal(MODAL.i-1)});
-$('#modal-next').addEventListener('click',e=>{e.stopPropagation();if(MODAL.comp)return MODAL.comp.show(MODAL.comp.i+1);showModal(MODAL.i+1)});
-let swipeX=null;$('#modal').addEventListener('touchstart',e=>{const p=curPhoto();swipeX=(MODAL.adjust&&p&&editOf(p.id).z>100)?null:e.touches[0].clientX},{passive:true});$('#modal').addEventListener('touchend',e=>{if(swipeX==null||MODAL.list.length<2)return;const dx=e.changedTouches[0].clientX-swipeX;if(Math.abs(dx)>40)showModal(MODAL.i+(dx<0?1:-1));swipeX=null;});
+$('#modal-prev').addEventListener('click',e=>{e.stopPropagation();modalIr(-1)});
+$('#modal-next').addEventListener('click',e=>{e.stopPropagation();modalIr(1)});
+let swipeX=null;$('#modal').addEventListener('touchstart',e=>{const p=curPhoto();swipeX=(MODAL.adjust&&p&&editOf(p.id).z>100)?null:e.touches[0].clientX},{passive:true});$('#modal').addEventListener('touchend',e=>{if(swipeX==null||MODAL.list.length<2)return;const dx=e.changedTouches[0].clientX-swipeX;if(Math.abs(dx)>40)modalIr(dx<0?1:-1);swipeX=null;});
 $('#modal-tools').addEventListener('input',e=>{const k=e.target.dataset.k;if(k)setEdit(k,+e.target.value);});
 (()=>{const im=$('#modal-img');let drag=null;im.addEventListener('pointerdown',e=>{if(!MODAL.adjust)return;const p=curPhoto();if(!p)return;const ed=editOf(p.id);if(ed.z<=100)return;drag={x0:e.clientX,y0:e.clientY,ex:ed.x,ey:ed.y,w:im.clientWidth,h:im.clientHeight};im.setPointerCapture(e.pointerId);e.preventDefault();});
   im.addEventListener('pointermove',e=>{if(!drag)return;const p=curPhoto();const ed=editOf(p.id);const z=ed.z/100;ed.x=Math.max(-30,Math.min(30,Math.round(drag.ex+(e.clientX-drag.x0)/drag.w*100/z)));ed.y=Math.max(-30,Math.min(30,Math.round(drag.ey+(e.clientY-drag.y0)/drag.h*100/z)));applyEditLive();});

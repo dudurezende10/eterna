@@ -74,8 +74,10 @@ try{
   await pg.click('.up-sess[data-card="LPH3D8W2R"] .ph >> nth=1');await pg.waitForTimeout(300);
   const cap0=await pg.textContent('#modal-cap');ok(/LPH3D8W2R · foto 2 de 5/.test(cap0)&&await pg.evaluate(()=>document.querySelector('#modal').classList.contains('open')||getComputedStyle(document.querySelector('#modal')).display!=='none'),'22: clicar abre o modal grande da sessão: '+cap0);
   await pg.screenshot({path:path.join(PRINTS,'v91-upload-modal.png')});
-  const caps=[];for(let i=0;i<5;i++){await pg.click('#modal-next');await pg.waitForTimeout(80);caps.push(await pg.textContent('#modal-cap'));}
-  ok(caps.every(c=>/LPH3D8W2R/.test(c))&&/foto 2 de 5/.test(caps[4])&&/foto 1 de 5/.test(caps[3]),'22: as setas percorrem só a sessão: '+caps.join(' | '));
+  // 15/11: as setas param nas pontas (não dão mais a volta): da foto 2 são 3 passos até a última, e ali a seta da direita some
+  const caps=[];for(let i=0;i<3;i++){await pg.click('#modal-next');await pg.waitForTimeout(80);caps.push(await pg.textContent('#modal-cap'));}
+  await pg.keyboard.press('ArrowRight');await pg.waitForTimeout(80);caps.push(await pg.textContent('#modal-cap'));
+  ok(caps.every(c=>/LPH3D8W2R/.test(c))&&/foto 3 de 5/.test(caps[0])&&/foto 5 de 5/.test(caps[2])&&/foto 5 de 5/.test(caps[3])&&await pg.evaluate(()=>document.querySelector('#modal-next').hidden&&!document.querySelector('#modal-prev').hidden),'22: as setas percorrem só a sessão e param na última: '+caps.join(' | '));
   await pg.keyboard.press('Escape');await pg.waitForTimeout(200);
   // 23: filtros Fotógrafo e Ponto
   await pg.selectOption('select[data-act="imp-key"]','samuel');await pg.waitForTimeout(300);
