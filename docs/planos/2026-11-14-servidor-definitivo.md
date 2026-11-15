@@ -271,3 +271,9 @@ Correção, em dois passos:
 Cópia dos originais (`servidor/linux/backup-originais.py`, a cada 10 min): cada arquivo novo de `/srv/eterna-midia/inbox/<dia>/` vai para `originais/<dia>/<arquivo>` (STANDARD_IA, conferido por MD5); registro do que já subiu em `/srv/eterna/Eterna/backup-originais.db`. LGPD: foto apagada pelo Eterna sai também da nuvem; se faltar de uma vez mais de 10% do que já subiu, nada é apagado (HD com defeito não vira exclusão em massa). Isso muda a decisão anterior de não subir o original: ele sobe só como cópia de segurança, nunca para a galeria.
 
 Também em 15/11: o servidor foi desligado sem desligamento normal em 14/11 às 21:00 (o registro do sistema termina no meio); precisa de nobreak e de orientação para ninguém tirar da tomada.
+
+### Backup ampliado (15/11, auditoria do que ficava fora)
+
+A auditoria mostrou registros que existiam só no disco do servidor. Passam a ir para `backup/<pc>/arquivos/` a cada 2 min, só o que mudou: índice das fotos (`index.json`: fotógrafo, hora, sessão de cada foto), manifestos das galerias vendidas (`galerias/<token>/sessao.json`), todas as sessões e métricas diárias (antes só hoje e ontem), `metricas.jsonl`, registro e lista da LGPD, função do dia (regra 15), visitas, fila de impressão, agenda e modo dos fundos. A fila da nuvem (`nuvem.db`) entra junto com os bancos. A cópia dos originais passa a levar também `ativ-videos/` e `ativ-clientes/` (Drone, Chute a Gol, Snap Pop). Fora de propósito: leituras de rosto (biometria), chaves e segredos, recortes e miniaturas (refeitos do original).
+
+Ainda só no navegador (`docs/planos/2026-11-10-dado-no-banco.md`, sem mudança desde 10/11): cortesias, pedidos do Checkout aguardando o Caixa (desistências), registro de operação dos postos e "sessão perdida". Também: `ETERNA_GALERIA_API` não está ligado no servidor do estádio, então as galerias não são publicadas na nuvem.

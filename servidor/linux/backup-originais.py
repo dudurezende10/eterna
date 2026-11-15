@@ -7,7 +7,9 @@ Rodado pelo eterna-backup-originais.timer a cada 10 min, como o usuário eterna,
 """
 import base64, hashlib, os, sqlite3, sys, time
 
-INBOX = "/srv/eterna-midia/inbox"
+MIDIA = "/srv/eterna-midia"
+INBOX = MIDIA + "/inbox"
+ATIV = ("ativ-videos", "ativ-clientes")
 E = "/srv/eterna/Eterna"
 DB = os.path.join(E, "backup-originais.db")
 EXT = (".jpg", ".jpeg", ".png", ".heic", ".cr3", ".cr2", ".arw", ".nef", ".dng", ".mp4", ".mov")
@@ -24,6 +26,23 @@ def env():
     except OSError:
         pass
     return v
+
+
+def arquivos():
+    """(caminho, chave): originais das fotos por dia + vídeos e fotos das ativações (Drone, Chute a Gol, Snap Pop, 15/11)."""
+    for dia in sorted(os.listdir(INBOX)):
+        pasta = os.path.join(INBOX, dia)
+        if os.path.isdir(pasta):
+            for nome in sorted(os.listdir(pasta)):
+                if nome.lower().endswith(EXT):
+                    yield os.path.join(pasta, nome), "originais/%s/%s" % (dia, nome)
+    for sub in ATIV:
+        base = os.path.join(MIDIA, sub)
+        for raiz, _d, nomes in os.walk(base):
+            for nome in sorted(nomes):
+                if nome.lower().endswith(EXT):
+                    a = os.path.join(raiz, nome)
+                    yield a, "originais/%s/%s" % (sub, os.path.relpath(a, base).replace(os.sep, "/"))
 
 
 def main():
@@ -45,19 +64,12 @@ def main():
     feitos = {k: (t, m) for k, t, m in db.execute("SELECT chave, tam, mtime FROM feito")}
     vistos, novos, bytes_ = set(), 0, 0
     agora = time.time()
-    for dia in sorted(os.listdir(INBOX)):
-        pasta = os.path.join(INBOX, dia)
-        if not os.path.isdir(pasta):
-            continue
-        for nome in sorted(os.listdir(pasta)):
-            if not nome.lower().endswith(EXT):
-                continue
-            a = os.path.join(pasta, nome)
+    for a, chave in arquivos():
+        if True:
             try:
                 st = os.stat(a)
             except OSError:
                 continue
-            chave = "originais/%s/%s" % (dia, nome)
             vistos.add(chave)
             if agora - st.st_mtime < 60:                      # ainda chegando
                 continue

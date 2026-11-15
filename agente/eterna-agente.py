@@ -9994,6 +9994,40 @@ def metricas_loop():
 # sessões de hoje e ontem. Rosto nenhum vai para o backup: só números, códigos e nomes de vendedor e fotógrafo.
 backup = {"em": None, "ok": None, "erro": None}
 
+# 15/11: os registros que não são banco também vão para o backup (antes ficavam só no disco do servidor): índice das fotos
+# (quem fotografou, quando, sessão), manifestos das galerias vendidas, todas as sessões e métricas do dia, registro da LGPD,
+# função do dia, visitas, fila de impressão e agenda. Só o que mudou desde a última rodada; chave backup/<pc>/arquivos/<caminho>.
+# Fica de fora de propósito: rostos (biometria), chaves e segredos, recortes e miniaturas (refeitos a partir do original).
+_backup_vistos = {}
+
+
+def backup_arquivos_lista():
+    out = [INDEX, METRICAS_ARQ, LGPD_EXCLUIDAS, LGPD_LOG, FF_FUNCAO, AF_FONTE, VIS_LOG, VIS_CALIB, IMP_FILA, FUNDOS_MODO_CFG]
+    for pasta, so in ((SESS_DIR, None), (MET_DIR, None), (GALERIAS, "sessao.json")):
+        for raiz, _dirs, arqs in os.walk(pasta):
+            out += [os.path.join(raiz, a) for a in arqs if (so is None and not a.endswith(".tmp")) or a == so]
+    return [a for a in out if os.path.isfile(a)]
+
+
+def backup_arquivos(pc):
+    novos = []
+    for a in backup_arquivos_lista():
+        st = os.stat(a)
+        if _backup_vistos.get(a) != (st.st_size, st.st_mtime):
+            novos.append((a, (st.st_size, st.st_mtime)))
+    if not novos:
+        return 0
+    s3 = _s3_cliente()
+    for a, marca in novos:
+        with open(a, "rb") as f:
+            corpo = f.read()
+        rel = os.path.relpath(a, HOME).replace(os.sep, "/")
+        s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/arquivos/%s" % (pc, rel), Body=corpo,
+                      ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
+        _backup_vistos[a] = marca
+    backup.update(em=_iso(), ok=True, erro=None)
+    return len(novos)
+
 
 def backup_loop():
     if not NUVEM_BUCKET:
@@ -10003,7 +10037,12 @@ def backup_loop():
     while True:
         time.sleep(120)
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB) if os.path.exists(b)]   # v92: entradas da bilheteria
+            backup_arquivos(pc)
+        except Exception as ex:
+            backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
+            print("  backup na nuvem (arquivos):", str(ex)[:160])
+        try:
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem
             if not bancos:
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
