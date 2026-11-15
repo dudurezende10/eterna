@@ -255,3 +255,7 @@ cliente põe a credibilidade em risco.
   ainda aberta, a mais nova primeiro; foto sem pessoa é pulada. Na CPU continua o antigo (só as bases, sessões fechadas).
 - Checkout (`ljPrepara`): achado pela selfie ou pelo código, o cliente vê "Achamos você · Separando suas fotos..." até as montagens com
   fundo ficarem prontas (só a composição no navegador, o recorte já está pronto); teto de 8 s (`LJ_PREP_MS`), depois abre com o que houver.
+
+## Tailscale sai; acesso remoto pela VPN do FortiGate (15/11)
+
+Por ordem da diretoria, o acesso de fora do estádio passa a ser só pela VPN do FortiGate da Maracatour (FortiClient, perfil MaracaTour, IPsec IKEv2). Com a VPN ligada, o servidor é alcançado direto pelo IP da rede do estádio (`ssh ubuntu@192.168.10.10`, `https://posto.eterna.photo`). O Tailscale estava instalado e deslogado; sai por inteiro com `sudo bash /opt/eterna/app/servidor/linux/tailscale-remover.sh` (programa, serviço, repositório, regras `tailscale0` do firewall e endereços 100.x/.ts.net do `ETERNA_ORIGENS`). O `tailscale.sh` foi apagado do repositório.
