@@ -472,9 +472,6 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-code{width:min(420px,90vw);font-size:28px;text-align:center;letter-spacing:.12em;padding:14px;border-radius:14px;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.08);color:#fff}
 .lj-wait{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;width:min(760px,100%)}
 .lj-wait button{text-align:left;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:#fff;display:flex;flex-direction:column;gap:2px}.lj-wait span{font-size:14px;color:#c7d5ea}
-.lj-steps{display:flex;align-items:center;gap:8px;font-size:14px;color:#a9bddb;font-weight:600}
-.lj-steps span{display:inline-flex;align-items:center;gap:6px}.lj-steps b{width:24px;height:24px;border-radius:50%;border:1.5px solid currentColor;display:inline-flex;align-items:center;justify-content:center;font-size:14px}
-.lj-steps .cur{color:#fff}.lj-steps .cur b{background:#FFB800;border-color:#FFB800;color:#0C2340}.lj-steps .done{color:#9fe0b0}.lj-steps i{width:22px;height:1.5px;background:rgba(255,255,255,.3)}
 .lj-cartpill{display:inline-flex;align-items:center;gap:8px;height:50px;padding:0 16px;border-radius:999px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.06);color:#fff;font-weight:700}
 .lj-cartpill b{min-width:24px;height:24px;border-radius:12px;background:rgba(255,255,255,.2);display:inline-flex;align-items:center;justify-content:center;font-size:14px;padding:0 6px}
 .lj-cartpill.on{background:#fff;color:#134078;border-color:#fff}.lj-cartpill.on b{background:#FFB800;color:#0C2340}.lj-cartpill svg{width:24px;height:24px}
@@ -553,6 +550,9 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-ovtr .lj-lbx{width:auto;padding:0 14px 0 12px;font-weight:600;font-size:14px;white-space:nowrap}
 .lj .lj-ovtr .lj-ovb.lj-ovlg{width:auto;min-width:72px;padding:0 14px 0 12px;font-weight:700;font-size:15px;opacity:1;white-space:nowrap}.lj-ovlg span,.lj-cplg{display:inline!important;font-size:14px;font-weight:600}
 .lj-title .lj-telacheia{display:inline-flex;align-items:center;gap:8px}.lj-telacheia svg{width:20px;height:20px}
+.lj .lj-title{align-items:center;flex-wrap:nowrap}.lj-tnome{display:flex;align-items:baseline;gap:18px;min-width:0}.lj-tacts{display:flex;align-items:center;gap:12px;margin-left:auto;flex:none}
+.lj-tacts .lj-ghost{display:inline-flex;align-items:center;gap:8px;margin:0;white-space:nowrap}.lj-tacts .lj-ghost svg{width:20px;height:20px}
+@media (max-width:900px){.lj .lj-title{flex-wrap:wrap}.lj-tacts{margin-left:0}}
 .lj-ovtr .lj-cartpill{height:44px;padding:0 12px;gap:6px;border:0;background:transparent;font-size:14px;white-space:nowrap}
 .lj-ovtr .lj-cartpill.on{background:rgba(255,255,255,.92)}.lj-ovtr .lj-cartpill svg{width:22px;height:22px}.lj-ovtr .lj-cartpill b{height:24px;min-width:24px;font-size:14px} /* v96-ux: letra mínima de 14 px no cliente (ondas, parte L) */
 .lj-ovtr .lj-langs{background:transparent;border:0;padding:0;gap:0}
@@ -674,8 +674,8 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj .lj-heroin input.lj-code:focus{border-color:#FFB800;outline:none;box-shadow:0 0 0 4px rgba(255,184,0,.35)}
 .lj .lj-heroin input.lj-code::placeholder{color:rgba(255,255,255,.7);opacity:1}
 /* v96-ux: pacotes, espera, tela final e "Cancelar o pedido?" das ondas (parte G) saíram: no Checkout vale a v96 (ljPronto, valor no Posto) */
-@media (max-width:900px){.lj-co{grid-template-columns:1fr}.lj-order{position:static}.lj-steps span{font-size:0;gap:0}.lj-steps i{width:12px}}
-@media (max-width:640px){.lj-stage{grid-template-columns:minmax(0,1fr)}.lj-nav{display:none}.lj-print{width:100%}.lj-foot{flex-direction:column;align-items:stretch}.lj-next{width:100%}.lj-strip{order:2}.lj-cartpill span{display:none}.lj-steps{display:none}.lj-pkg{grid-template-columns:20px 44px minmax(0,1fr) auto;}.lj-pkg .lj-badge{display:none}.lj-pkgn{font-size:26px}.lj-minis{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.lj-no{width:64px;height:64px}.lj-yes{width:84px;height:84px}.lj .lj-v{opacity:.3}}
+@media (max-width:900px){.lj-co{grid-template-columns:1fr}.lj-order{position:static}}
+@media (max-width:640px){.lj-stage{grid-template-columns:minmax(0,1fr)}.lj-nav{display:none}.lj-print{width:100%}.lj-foot{flex-direction:column;align-items:stretch}.lj-next{width:100%}.lj-strip{order:2}.lj-cartpill span{display:none}.lj-pkg{grid-template-columns:20px 44px minmax(0,1fr) auto;}.lj-pkg .lj-badge{display:none}.lj-pkgn{font-size:26px}.lj-minis{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.lj-no{width:64px;height:64px}.lj-yes{width:84px;height:84px}.lj .lj-v{opacity:.3}}
 @media (max-height:720px){.lj-heroin:has(.lj-cam){gap:6px;padding:4px 0}.lj-cam{padding:8px}}
 /* v96: janela do Windows não maximizada (ex.: 1366×657): a câmera cabe sem rolar */
 @media (max-height:700px){.lj-heroin{gap:10px}}
@@ -696,7 +696,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-order{gap:12px;padding:clamp(16px,2vw,24px)}
 .lj-pay{min-height:74px;gap:4px}
 .lj-total b{font-size:40px}
-@media (max-width:1100px){.lj-steps span{font-size:0;gap:0}.lj-steps i{width:10px}}
+
 /* v96-ux: bandeira da galeria (gq-) com alvo de 44×44 (ondas, parte K); no Checkout (.lj) valem os 72 px da v96 */
 .lj-langs button{width:44px;height:44px;padding:7px}.lj-langs .lj-flag{width:30px;height:30px}
 @media (max-width:640px){.lj-top{flex-wrap:wrap}.lj-logo .vlogo{height:26px!important}}
@@ -3340,7 +3340,6 @@ const I18N={
  camera:['Câmera','Camera','Cámara','Caméra','Kamera'],
  notFound:['Não achamos','We couldn’t find','No encontramos','Introuvable :','Nicht gefunden:'],
  back:['Voltar','Back','Volver','Retour','Zurück'],
- steps:[['Fotos','Pagamento','Pronto'],['Photos','Payment','Done'],['Fotos','Pago','Listo'],['Photos','Paiement','Terminé'],['Fotos','Zahlung','Fertig']],
  choose:['Escolha suas fotos','Choose your photos','Elige tus fotos','Choisissez vos photos','Wähle deine Fotos'],
  cont:['Continuar','Continue','Continuar','Continuer','Weiter'],
  // v96: overlay da foto em tela cheia
@@ -3562,7 +3561,6 @@ function vQuiosque(){
   const s=sessionObj(k.code);if(!s)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${ljLangOv()}<span></span></div><div class="lj-heroin"><h1 class="lj-h1">${T('notFound')}<br>${esc(k.code)}</h1><button class="lj-cta" data-act="kiosk-back">${ICO.back} ${T('back')}</button></div></div>`;
   const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);const nSel=c.ch.length;
   const cartPill=`<span class="lj-cartpill ${nSel?'on':''}" role="status" aria-label="${T('nPhotos',nSel)}">${ICO.cart}<b>${nSel}</b><span class="lj-cplg">${T('ljEscolhidas')}</span></span>`; // v96: só o contador (sem preço e sem ação); quem faz o pedido é o Continuar
-  const steps=n=>`<div class="lj-steps">${T('steps').map((t,i)=>`<span class="${i+1<n?'done':i+1===n?'cur':''}"><b>${i+1<n?'✓':i+1}</b>${t}</span>`).join('<i></i>')}</div>`;
   const topR=x=>`<div class="lj-topr">${ljLangOv()}${x}</div>`;
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v96: sem etapa de pacote e pagamento no Checkout
   if(k.prep&&k.prep===k.code&&k.step==='review')return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2">${T('foundYou')}</h1><p class="lj-sub" aria-live="polite">${T('ljSeparando')}</p></div></div>`;
@@ -3590,16 +3588,16 @@ function vQuiosque(){
         <div class="lj-lbbar"><div class="lj-actions"><button class="lj-no ${vs==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${vs==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div></div>
         ${nSel?`<button class="lj-next lj-ovnext" data-act="loja-cart">${T('cont')} · ${T('nPhotos',nSel)} ${ICO.arrow}</button>`:''}</div>`:'';
     if(vq)return `<div class="lj lj-full lj-review lj-fs">${caixa}${ljSairAsk(k)}</div>`;
-    return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljSairBtn('lj-ghost sm')}${cartPill}`)}</div>
-      <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n} ${n===1?'foto':'fotos'}</span>${k.so&&!k.so.visita?`<button class="lj-ghost sm lj-maisp" data-act="kiosk-mais">${ICO.face} ${T('addPerson')}</button>`:''}${n?`<button class="lj-ghost sm lj-telacheia" data-act="kiosk-ver" data-i="${Math.min(k.verUlt||0,n-1)}">${ICO.full} ${T('ljTelaCheia')}</button>`:''}</div>
+    return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR(`${ljSairBtn('lj-ghost sm')}${cartPill}`)}</div>
+      <div class="lj-title"><div class="lj-tnome"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${T('nPhotos',n)}</span></div><div class="lj-tacts">${k.so&&!k.so.visita?`<button class="lj-ghost sm lj-maisp" data-act="kiosk-mais">${ICO.face} ${T('addPerson')}</button>`:''}${n?`<button class="lj-ghost sm lj-telacheia" data-act="kiosk-ver" data-i="${Math.min(k.verUlt||0,n-1)}">${ICO.full} ${T('ljTelaCheia')}</button>`:''}</div></div>
       <div class="lj-grid">${items.map((q,i)=>(q.edIni?`<div class="lj-edh"><span class="lj-edeb">${esc(edSeloTxt())}</span><h3>${T('edTitulo')}</h3></div>`:'')+(q.edFotos?`<div class="lj-blk lj-edfotos">${T('edFotos')}</div>`:'')+(q.blk?`<div class="lj-blk">${esc(q.blk)}</div>`:'')+card(q,i)).join('')}</div>
       <div class="lj-foot"><span class="lj-hint">${nSel?T('tapCheck'):''}</span>
         <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div>${ljSairAsk(k)}</div>`;}
   // o QR vem ao lado de uma foto escolhida pelo cliente (como no sistema anterior): com várias pessoas no balcão, cada uma
   // reconhece o próprio QR e ninguém lê o do vizinho. v96-ux: o QR saiu de cima da foto e ficou grande (320 px ou mais em 1920, lido a 1 m)
-  if(k.step==='done'&&k.paid&&k.paid.wait)return ljPronto(k,logo,photo,stripe,deco,steps,topR); // todo pedido do Checkout espera o caixa na tela Pronto
+  if(k.step==='done'&&k.paid&&k.paid.wait)return ljPronto(k,logo,photo,stripe,deco,topR); // todo pedido do Checkout espera o caixa na tela Pronto
   if(k.step==='done'){const p=k.paid||{};const fotoQR=((SIM.sessions[k.code]||{}).selected||[])[0]||null;
-    return `<div class="lj lj-full lj-done lj-fim" lang="${lang()}">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(3)}${topR(`<button class="lj-ic" data-act="loja-new" aria-label="${T('nextGuest')}">${ICO.home}</button>`)}</div>
+    return `<div class="lj lj-full lj-done lj-fim" lang="${lang()}">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR(`<button class="lj-ic" data-act="loja-new" aria-label="${T('nextGuest')}">${ICO.home}</button>`)}</div>
       <div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><div class="lj-eyebrow">${T('thanks')}</div><h1 class="lj-h1">${T('storyGoes')}</h1>
         ${p.total>0?`<div class="lj-pago">${T('ljPaidValue',fmtR(p.total))}</div>`:''}<p class="lj-sub">${p.prints?T('printsReady',p.prints)+'<br>':''}${T('scanQR')}</p>
         <div class="lj-qrcard lj-final${fotoQR?' lj-qrcom':''}"><div class="lj-qrcol"><div id="lqr" class="lj-qr" aria-label="QR"></div><span class="lj-qrinst">${ICO.phone} ${T('qrInst1')}</span>${p.codigo?`<span class="lj-qrinst">${T('qrInst2')}</span><b class="lj-qrcode">${T('gq_codeIs',p.codigo)}</b>`:''}</div>${fotoQR?`<div class="lj-qrfoto" style="${bigStyle(fotoQR)}"></div>`:''}</div>
@@ -3612,7 +3610,7 @@ function vQuiosque(){
 const LJ_FRASE={cartao:'ljPayMachine',pix:'ljPosPixH',dinheiro:'ljPayCash'};
 // Eduardo (11/11): na espera do pagamento o cliente não tem "Voltar ao início" nem a casa do topo (apertava e perdia o pedido). Recomeçar é do caixa,
 // no Posto ("Recomeçar o Checkout", pendRecomecar); sozinha, a tela volta ao início parada LOJA_PRONTO_MS. O logo segue só com os 3 toques da equipe.
-function ljPronto(k,logo,photo,stripe,deco,steps,topR){const p=k.paid;const tem=!!p.pkg&&p.total!=null;const tarde=lojaCaixaComecou((SIM.caixaDin||[]).find(x=>x.id===p.pend));
+function ljPronto(k,logo,photo,stripe,deco,topR){const p=k.paid;const tem=!!p.pkg&&p.total!=null;const tarde=lojaCaixaComecou((SIM.caixaDin||[]).find(x=>x.id===p.pend));
   const langs=topR(''); // só o seletor de idioma (a tela Pronto não tem Voltar ao início)
   if(tem)return `<div class="lj lj-full lj-done lj-pronto lj-temvalor" lang="${lang()}">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${langs}</div>
     <div class="lj-heroin"><div class="lj-valorl">${T('ljPayValue')}</div><div class="lj-valor">${fmtR(p.total)}</div><div class="lj-nfotos">${T('nPhotos',p.n||0)}</div>
