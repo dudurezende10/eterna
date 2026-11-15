@@ -150,6 +150,29 @@ r = m.ingest_file(f7, "IMG_0001.JPG", os.stat(f7), "EOS_DIGITAL", "cartao")
 gs = [g for g in m.ff_json()["grupos"] if g["fonte"] == "cartão"]
 ok(r == "new" and len(gs) == 1 and gs[0]["fotografo"] == "yago" and gs[0]["estado"] == "subindo", "7: cartão com autor Yago: %r %r" % (r, gs))
 
+# 7b (15/11): a câmera grava o autor "Klacius" (o nome certo, o da tela); a chave do cadastro segue klassius. Uma regra só
+# de apelido (FOTOGRAFO_APELIDO / fotografo_chave), usada pelo ff_quem, pela subpasta do FTP e pela Roverpix.
+cad7 = m.ff_cadastrados()
+for autor7 in ("Klacius", "KLACIUS", "klácius", " Klacius ", "Klacius Ank Guarino", "Klassius", "Klássius"):
+    ok(m.ff_quem("EOS_DIGITAL", autor7, "", "555500006666", "cartao", cad7) == ("klassius", "cartão"), "7b: autor %r vira klassius: %r" % (autor7, m.ff_quem("EOS_DIGITAL", autor7, "", "555500006666", "cartao", cad7)))
+ok(m.ff_quem("ftp-estadio", "", "Klacius Ank Guarino", "", "", cad7) == ("klassius", "ftp"), "7b: dono da câmera Klacius vira klassius")
+ok(m.ff_quem("equipe", "Fulano de Tal", "", "555500006666", "ftp", cad7) == (None, "câmera ···6666"), "7b: autor desconhecido continua sem fotógrafo: %r" % (m.ff_quem("equipe", "Fulano de Tal", "", "555500006666", "ftp", cad7),))
+ok(m.ff_quem("EOS_DIGITAL", "Klaus", "", "", "cartao", cad7) == (None, "cartão"), "7b: nome parecido que não é apelido não vira fotógrafo")
+ok(m.fotografo_chave("Klacius Ank Guarino") == "klassius" and m.fotografo_chave("Márcio") == "marcio" and m.fotografo_chave("") == "" and m.fotografo_chave(None) == "", "7b: fotografo_chave")
+ok(m.rv_key("Klacius Ank Guarino") == "klassius" and m.rv_key("Samuel Silva") == "samuel", "7b: a Roverpix usa a mesma regra: %r" % m.rv_key("Klacius Ank Guarino"))
+ok(m.rftp_origem("/fotos/Klacius/IMG_1.JPG", "/fotos") == "klassius" and m.rftp_origem("/fotos/fulano/IMG_1.JPG", "/fotos") == "ftp-estadio", "7b: subpasta do FTP do estádio com a grafia da câmera")
+ok("klassius" in m.PHOTOGRAPHERS and "klacius" not in m.PHOTOGRAPHERS, "7b: a chave interna (login do FTP) não mudou")
+# cadastro do servidor: só o nome padrão antigo é acertado; nome editado por alguém e a chave ficam
+m.estado_gravar({"docs": [{"col": "usuarios", "id": "klassius%40eterna.photo", "valor": {"email": "klassius@eterna.photo", "name": "Klássius", "key": "klassius", "preset": "foto", "active": True}},
+                          {"col": "usuarios", "id": "k2%40eterna.photo", "valor": {"email": "k2@eterna.photo", "name": "Klassius Guarino", "key": "klassius", "preset": "foto", "active": True}},
+                          {"col": "usuarios", "id": "outro%40eterna.photo", "valor": {"email": "outro@eterna.photo", "name": "Klassius", "key": "samuel", "preset": "foto", "active": True}}]})
+n7 = m.usuarios_grafia()
+us7 = {d["id"]: d["valor"] for d in m.estado_col("usuarios")["docs"]}
+ok(n7 == 1 and us7["klassius%40eterna.photo"]["name"] == "Klacius" and us7["klassius%40eterna.photo"]["key"] == "klassius" and us7["klassius%40eterna.photo"]["email"] == "klassius@eterna.photo",
+   "7b: nome padrão antigo vira Klacius, chave e e-mail ficam: %r %r" % (n7, us7.get("klassius%40eterna.photo")))
+ok(us7["k2%40eterna.photo"]["name"] == "Klassius Guarino" and us7["outro%40eterna.photo"]["name"] == "Klassius", "7b: nome editado ou de outra chave não muda")
+ok(m.usuarios_grafia() == 0, "7b: rodar de novo não muda nada")
+
 # 9: a função nova vale só para os grupos novos
 t9 = time.time() + 1000
 with m.ff_lock:

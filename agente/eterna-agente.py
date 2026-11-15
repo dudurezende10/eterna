@@ -2481,6 +2481,7 @@ class FTPSession(threading.Thread):
             # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
             quem = self.login_ok
             sub = self.cwd.strip("/").split("/")[-1].lower()
+            sub = FOTOGRAFO_APELIDO.get(sem_acento(sub), sub)      # subpasta com a grafia da câmera = o fotógrafo do cadastro
             if self.login_ok in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
                 quem = sub
             r = ingest_file(tmp, name, st, quem, "ftp", move=True)
@@ -2685,6 +2686,48 @@ def sem_acento(t):
     return "".join(ch for ch in unicodedata.normalize("NFD", str(t)) if not unicodedata.combining(ch)).lower()
 
 
+# Grafia do nome que difere da chave do cadastro. A câmera e a Roverpix gravam "Klacius" (o nome certo, o da tela); a chave
+# interna segue "klassius" (login do FTP, e-mail, sessões, vendas e históricos já gravados). Regra única: todo ponto que
+# decide o fotógrafo por um nome escrito por alguém (autor ou dono da câmera, subpasta, Roverpix) passa por fotografo_chave.
+# No app, o par é o KEY_ALIAS do index.html.
+FOTOGRAFO_APELIDO = {"klacius": "klassius", "classius": "klassius", "clacius": "klassius"}
+NOME_TELA_ANTIGO = {"klassius": (("Klassius", "Klássius"), "Klacius")}     # chave -> (nomes padrão antigos, nome certo)
+
+
+def fotografo_chave(nome):
+    """Nome escrito (qualquer caixa ou acento) -> como o cadastro conhece: sem acento, minúsculas e, se o nome inteiro ou o
+    primeiro nome é um apelido ("Klacius Ank Guarino"), a chave do cadastro. Nome que não é apelido volta só normalizado."""
+    k = sem_acento(nome or "").strip()
+    if not k:
+        return ""
+    if k in FOTOGRAFO_APELIDO:
+        return FOTOGRAFO_APELIDO[k]
+    primeiro = "".join(ch for ch in k.split()[0] if ch.isalnum())
+    return FOTOGRAFO_APELIDO.get(primeiro, k)
+
+
+def usuarios_grafia():
+    """Uma vez na partida: cadastro do fotógrafo que ainda tem o nome de tela padrão antigo passa ao nome certo. Só troca
+    quando o nome gravado é exatamente o padrão antigo (nome que alguém editou fica); chave, e-mail e permissões não mudam.
+    A gravação passa pelo estado_gravar, então os navegadores recebem o nome novo pela sincronização. Devolve quantos mudou."""
+    try:
+        docs = estado_col("usuarios")["docs"]
+    except Exception:
+        return 0
+    muda = []
+    for d in docs:
+        v = d.get("valor")
+        if not isinstance(v, dict) or v.get("deleted"):
+            continue
+        regra = NOME_TELA_ANTIGO.get(str(v.get("key") or ""))
+        if regra and v.get("name") in regra[0]:
+            muda.append({"col": "usuarios", "id": d["id"], "valor": dict(v, name=regra[1])})
+    if muda:
+        estado_gravar({"docs": muda}, "servidor")
+        print("  Cadastro: nome de tela de %d fotógrafo(s) acertado para a grafia da câmera" % len(muda))
+    return len(muda)
+
+
 def rftp_origem(path, pasta):
     """v81 (segurança B1): dono da foto do FTP do estádio. A subpasta logo abaixo da pasta configurada (prefixo de
     c["dir"]) só vira o fotógrafo se estiver cadastrada; qualquer outro caso (pasta fora do prefixo, /outro, /../) é "ftp-estadio"."""
@@ -2692,7 +2735,7 @@ def rftp_origem(path, pasta):
     base = [x for x in str(pasta or "").replace("\\", "/").split("/") if x]
     if ".." in parts or "." in parts or parts[:len(base)] != base or len(parts) < len(base) + 2:
         return "ftp-estadio"
-    sub = sem_acento(parts[len(base)])
+    sub = fotografo_chave(parts[len(base)])
     return sub if sub in {sem_acento(x) for x in ftp_cadastrados()} else "ftp-estadio"
 
 
@@ -3012,8 +3055,8 @@ def rv_key(name):
     first = "".join(ch for ch in n.split()[0] if ch.isalnum()) if n.split() else "x"
     if "chroma" in n:
         return "chroma" + "".join(ch for ch in n if ch.isdigit())[:2]
-    # grafias da Roverpix que diferem do cadastro do Eterna
-    first = {"klacius": "klassius", "classius": "klassius", "clacius": "klassius"}.get(first, first)
+    # grafias da Roverpix que diferem do cadastro do Eterna (a mesma regra do autor da câmera)
+    first = FOTOGRAFO_APELIDO.get(first, first)
     return first or "x"
 
 
@@ -4852,11 +4895,11 @@ def ff_quem(o, autor, dono, serie, s="", cad=None):
     cadastrado; 3) nenhum, e a fonte diz de onde veio (nunca o nome de subpasta não cadastrada nem a série completa)."""
     cad = cad if cad is not None else ff_cadastrados()
     via = "cartão" if s == "cartao" else "ftp"
-    k = sem_acento(o or "").strip()
+    k = fotografo_chave(o)
     if k and k in cad:
         return k, via
     for nome in (autor, dono):
-        k = sem_acento(nome or "").strip()
+        k = fotografo_chave(nome)                    # "Klacius", "KLACIUS", "Klacius Ank Guarino" = klassius
         if k and (k in cad or k.split()[0] in cad):
             return (k if k in cad else k.split()[0]), via
     serie = re.sub(r"\D", "", str(serie or ""))
@@ -13270,6 +13313,10 @@ def main():
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=metricas_loop, daemon=True).start()
+    try:
+        usuarios_grafia()               # nome de tela padrão antigo do fotógrafo vira a grafia da câmera (só o padrão)
+    except Exception as e:
+        print("  Cadastro: grafia do nome não conferida (%s)" % type(e).__name__)
     threading.Thread(target=metricas_migra_v2, daemon=True).start()   # v92: resumos antigos ganham os campos v2 (só acrescenta)
     threading.Thread(target=backup_loop, daemon=True).start()
     threading.Thread(target=agenda_loop, daemon=True).start()      # v97: feriados sem clique e jogos da API-Football

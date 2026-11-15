@@ -50,6 +50,17 @@ try{
   await ctx.route('**/fila-fotografo/funcao',r=>{const q=r.request();let body=null;try{body=JSON.parse(q.postData()||'null');}catch(e){}posts.push({h:q.headers(),body});
     const c=body&&body.map&&body.map.carlos;if(c)funcNova=c;r.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'});});
   ok(await entrar(pg,'eduardo@eduardorezende.com'),'login do admin');
+  // 15/11: o nome de tela é Klacius (como na câmera); a chave interna segue klassius e o autor da câmera cai nela (KEY_ALIAS)
+  {const k=await pg.evaluate(()=>{const E=ETERNA,ix={ses:{},sold:new Set()},f=(autor,x)=>E.libWho({id:'zz',via:'cartao',origem:'EOS_DIGITAL',serie:'',day:'2026-11-15',t:1,autor,...(x||{})},ix);
+      const U=E.USERS,e='klassius@eterna.photo',antes=U[e]?U[e].name:null;const r={nome:E.P.klassius&&E.P.klassius.name,semChaveNova:!E.P.klacius,cad:antes,
+        quem:[f('Klacius'),f('KLACIUS'),f('Klácius'),f('Klacius Ank Guarino'),f('Klassius')],ftp:f('',{via:'ftp',origem:'klacius'}),outro:f('Fulano de Tal'),parecido:f('Klaus')};
+      if(U[e]){U[e].name='Klássius';E.migrateUsers(false);r.padrao=U[e].name;U[e].name='Klassius Guarino';E.migrateUsers(false);r.editado=U[e].name;U[e].name=antes;r.chave=U[e].key;}return r;});
+    ok(k.nome==='Klacius'&&k.semChaveNova&&k.cad==='Klacius','grafia: nome de tela Klacius na lista e no cadastro, sem chave nova: '+JSON.stringify(k));
+    ok(k.quem.every(x=>x==='klassius')&&k.ftp==='klassius','grafia: autor da câmera Klacius (qualquer caixa, com sobrenome) e subpasta caem no klassius: '+JSON.stringify(k));
+    ok(k.outro==='sem'&&k.parecido==='sem','grafia: autor desconhecido continua sem fotógrafo: '+JSON.stringify(k));
+    ok(k.padrao==='Klacius'&&k.editado==='Klassius Guarino'&&k.chave==='klassius','grafia: só o nome padrão antigo do cadastro é acertado; nome editado e chave ficam: '+JSON.stringify(k));
+    await pg.evaluate(()=>{ETERNA.state.view='fotografos';ETERNA.render();});await pg.waitForTimeout(150);
+    const tx=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(!/Kl[aá]ssius/.test(tx),'grafia: a tela de Fotógrafos não mostra mais a grafia antiga');}
   // 14: no grupo Fotógrafo, logo abaixo do Upload automático
   await pg.evaluate(()=>{ETERNA.state.view='importar';ETERNA.render();});await pg.waitForTimeout(150);
   const vs=await navVs(pg);ok(vs.indexOf('fotofila')===vs.indexOf('importar')+1,'14: fotofila logo abaixo do Upload automático: '+vs.join(','));
