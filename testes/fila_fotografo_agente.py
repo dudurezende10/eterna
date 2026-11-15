@@ -160,6 +160,10 @@ ok(m.ff_quem("equipe", "Fulano de Tal", "", "555500006666", "ftp", cad7) == (Non
 ok(m.ff_quem("EOS_DIGITAL", "Klaus", "", "", "cartao", cad7) == (None, "cartão"), "7b: nome parecido que não é apelido não vira fotógrafo")
 ok(m.fotografo_chave("Klacius Ank Guarino") == "klassius" and m.fotografo_chave("Márcio") == "marcio" and m.fotografo_chave("") == "" and m.fotografo_chave(None) == "", "7b: fotografo_chave")
 ok(m.rv_key("Klacius Ank Guarino") == "klassius" and m.rv_key("Samuel Silva") == "samuel", "7b: a Roverpix usa a mesma regra: %r" % m.rv_key("Klacius Ank Guarino"))
+ok(m.rftp_origem("/fotos/klacius/IMG_1.JPG", "/fotos") == "klassius" and m.rftp_origem("/fotos/Klacius qualquer coisa/IMG_1.JPG", "/fotos") == "ftp-estadio"
+   and m.rftp_origem("/fotos/Klacius-2/IMG_1.JPG", "/fotos") == "ftp-estadio", "7b: pasta só pelo nome inteiro (B1): %r" % m.rftp_origem("/fotos/Klacius qualquer coisa/IMG_1.JPG", "/fotos"))
+ok(m.ff_quem("Klacius qualquer coisa", "", "", "", "ftp", cad7)[0] is None and m.ff_quem("klacius", "", "", "", "ftp", cad7) == ("klassius", "ftp"), "7b: origem só pelo nome inteiro")
+ok(m.fotografo_chave("Klacius Ank", inteiro=True) == "klacius ank" and m.fotografo_chave("KLACIUS", inteiro=True) == "klassius", "7b: fotografo_chave inteiro")
 ok(m.rftp_origem("/fotos/Klacius/IMG_1.JPG", "/fotos") == "klassius" and m.rftp_origem("/fotos/fulano/IMG_1.JPG", "/fotos") == "ftp-estadio", "7b: subpasta do FTP do estádio com a grafia da câmera")
 ok("klassius" in m.PHOTOGRAPHERS and "klacius" not in m.PHOTOGRAPHERS, "7b: a chave interna (login do FTP) não mudou")
 # cadastro do servidor: só o nome padrão antigo é acertado; nome editado por alguém e a chave ficam
@@ -171,7 +175,10 @@ us7 = {d["id"]: d["valor"] for d in m.estado_col("usuarios")["docs"]}
 ok(n7 == 1 and us7["klassius%40eterna.photo"]["name"] == "Klacius" and us7["klassius%40eterna.photo"]["key"] == "klassius" and us7["klassius%40eterna.photo"]["email"] == "klassius@eterna.photo",
    "7b: nome padrão antigo vira Klacius, chave e e-mail ficam: %r %r" % (n7, us7.get("klassius%40eterna.photo")))
 ok(us7["k2%40eterna.photo"]["name"] == "Klassius Guarino" and us7["outro%40eterna.photo"]["name"] == "Klassius", "7b: nome editado ou de outra chave não muda")
-ok(m.usuarios_grafia() == 0, "7b: rodar de novo não muda nada")
+lg7 = [d["valor"] for d in m.estado_col("usuarios_log")["docs"] if d["valor"].get("por") == "servidor"]
+ok(len(lg7) == 1 and lg7[0]["alvo"] == "klassius@eterna.photo" and lg7[0]["acao"] == "alterar" and lg7[0]["mudancas"] == [{"campo": "name", "de": "Klássius", "para": "Klacius"}] and lg7[0]["em"] and lg7[0]["motivo"]
+   and us7["klassius%40eterna.photo"].get("updatedBy") == "servidor", "7b: a troca fica no histórico do cadastro (quem, quando, de, para, por quê): %r" % lg7)
+ok(m.usuarios_grafia() == 0 and len([d for d in m.estado_col("usuarios_log")["docs"] if d["valor"].get("por") == "servidor"]) == 1, "7b: rodar de novo não muda nada")
 
 # 9: a função nova vale só para os grupos novos
 t9 = time.time() + 1000

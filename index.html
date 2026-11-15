@@ -2432,6 +2432,7 @@ const PAX_BY_DAY={};DATA.daily.forEach(x=>{if(x.pax)PAX_BY_DAY[x.date]=x.pax;});
 // 15/11: o nome certo, o da tela, é Klacius (como na câmera); a chave interna segue klassius (login do FTP, e-mail, históricos).
 // No agente, o par é FOTOGRAFO_APELIDO / fotografo_chave.
 const KEY_ALIAS={klacius:'klassius',classius:'klassius',clacius:'klassius'};
+// O MESMO mapa existe no agente (NOME_TELA_ANTIGO em agente/eterna-agente.py, usado por usuarios_grafia): mudou aqui, mude lá.
 // nome de tela padrão antigo -> o certo; só troca o que é exatamente o padrão (nome que alguém editou fica). O cadastro do servidor é acertado pelo agente (usuarios_grafia); aqui é a cópia do aparelho
 const NOME_TELA_ANTIGO={klassius:[['Klassius','Klássius'],'Klacius']};
 function nomeTelaCerto(u){const r=u&&typeof u==='object'&&typeof u.key==='string'&&Object.prototype.hasOwnProperty.call(NOME_TELA_ANTIGO,u.key)?NOME_TELA_ANTIGO[u.key]:null;if(r&&r[0].includes(u.name))u.name=r[1];return u;}
@@ -4147,7 +4148,9 @@ function libIndex(){const ses={},sold=new Set();const vend=vendidasTodas();Objec
 // Câmera de cada fotógrafo no dia: pelo número de série da câmera (vem sozinho na foto) ou pelo nome do autor gravado na câmera.
 function camDay(day){SIM.camDia=SIM.camDia||{};return SIM.camDia[day]||(SIM.camDia[day]={});}
 const normName=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
-function keyByName(n){n=normName(n);if(!n)return null;const al=KEY_ALIAS[n]||KEY_ALIAS[n.split(/\s+/)[0]];if(al&&humans.includes(al))return al;return humans.find(k=>normName(P[k].name)===n||n.split(/\s+/)[0]===normName(P[k].name)||k===n)||null;}
+function keyByName(n){n=normName(n);if(!n)return null;const p1=n.split(/\s+/)[0].replace(/[^\p{L}\p{N}]/gu,''); // primeiro nome sem pontuação, como o fotografo_chave do agente ("Klacius," = Klacius)
+  const al=(Object.prototype.hasOwnProperty.call(KEY_ALIAS,n)&&KEY_ALIAS[n])||(Object.prototype.hasOwnProperty.call(KEY_ALIAS,p1)&&KEY_ALIAS[p1]);if(al&&humans.includes(al))return al;
+  return humans.find(k=>normName(P[k].name)===n||n.split(/\s+/)[0]===normName(P[k].name)||p1===normName(P[k].name)||k===n||k===p1)||null;}
 function camWho(serie,day,autor){if(serie){const k=camDay(day)[serie];if(k)return k;}return keyByName(autor);}
 // v80 (segurança I1): o login do FTP (o agente grava sempre o usuário que mandou) vem antes da câmera e do nome gravado nela
 function libWho(f,ix){const o=(f.origem||'').toLowerCase();if(f.via==='ftp'){const kf=Object.keys(P).find(k=>P[k].human&&(k===o||P[k].name.toLowerCase()===o||keyByName(o)===k));if(kf)return kf;}const kc=camWho(f.serie,f.day,f.autor);if(kc)return kc;const kg=camGuess(f);if(kg)return kg;const x=ix.ses['ag_'+f.id];if(x&&x.key&&P[x.key])return x.key;if(f.via==='ftp')return 'ftp:'+o;return 'sem';}

@@ -53,7 +53,7 @@ try{
   // 15/11: o nome de tela é Klacius (como na câmera); a chave interna segue klassius e o autor da câmera cai nela (KEY_ALIAS)
   {const k=await pg.evaluate(()=>{const E=ETERNA,ix={ses:{},sold:new Set()},f=(autor,x)=>E.libWho({id:'zz',via:'cartao',origem:'EOS_DIGITAL',serie:'',day:'2026-11-15',t:1,autor,...(x||{})},ix);
       const U=E.USERS,e='klassius@eterna.photo',antes=U[e]?U[e].name:null;const r={nome:E.P.klassius&&E.P.klassius.name,semChaveNova:!E.P.klacius,cad:antes,
-        quem:[f('Klacius'),f('KLACIUS'),f('Klácius'),f('Klacius Ank Guarino'),f('Klassius')],ftp:f('',{via:'ftp',origem:'klacius'}),outro:f('Fulano de Tal'),parecido:f('Klaus')};
+        quem:[f('Klacius'),f('KLACIUS'),f('Klácius'),f('Klacius Ank Guarino'),f('Klassius'),f('Klassius Guarino'),f('Klacius, Ank'),f('Klacius.')],ftp:f('',{via:'ftp',origem:'klacius'}),outro:f('Fulano de Tal'),parecido:f('Klaus')};
       if(U[e]){U[e].name='Klássius';E.migrateUsers(false);r.padrao=U[e].name;U[e].name='Klassius Guarino';E.migrateUsers(false);r.editado=U[e].name;U[e].name=antes;r.chave=U[e].key;}return r;});
     ok(k.nome==='Klacius'&&k.semChaveNova&&k.cad==='Klacius','grafia: nome de tela Klacius na lista e no cadastro, sem chave nova: '+JSON.stringify(k));
     ok(k.quem.every(x=>x==='klassius')&&k.ftp==='klassius','grafia: autor da câmera Klacius (qualquer caixa, com sobrenome) e subpasta caem no klassius: '+JSON.stringify(k));

@@ -2481,7 +2481,7 @@ class FTPSession(threading.Thread):
             # em ~/Eterna/ftp.json e só se a subpasta for um fotógrafo cadastrado (CWD /outro não troca o dono da foto).
             quem = self.login_ok
             sub = self.cwd.strip("/").split("/")[-1].lower()
-            sub = FOTOGRAFO_APELIDO.get(sem_acento(sub), sub)      # subpasta com a grafia da câmera = o fotógrafo do cadastro
+            sub = fotografo_chave(sub, inteiro=True) if sem_acento(sub).strip() in FOTOGRAFO_APELIDO else sub   # subpasta com a grafia da câmera (nome inteiro) = o fotógrafo do cadastro
             if self.login_ok in self.compartilhado and sub and (sub in self.users or sub in PHOTOGRAPHERS):
                 quem = sub
             r = ingest_file(tmp, name, st, quem, "ftp", move=True)
@@ -2691,17 +2691,23 @@ def sem_acento(t):
 # decide o fotógrafo por um nome escrito por alguém (autor ou dono da câmera, subpasta, Roverpix) passa por fotografo_chave.
 # No app, o par é o KEY_ALIAS do index.html.
 FOTOGRAFO_APELIDO = {"klacius": "klassius", "classius": "klassius", "clacius": "klassius"}
-NOME_TELA_ANTIGO = {"klassius": (("Klassius", "Klássius"), "Klacius")}     # chave -> (nomes padrão antigos, nome certo)
+# chave -> (nomes padrão antigos, nome certo). O MESMO mapa existe no index.html (NOME_TELA_ANTIGO, usado por nomeTelaCerto):
+# mudou aqui, mude lá, senão o servidor e a cópia do aparelho mostram nomes diferentes.
+NOME_TELA_ANTIGO = {"klassius": (("Klassius", "Klássius"), "Klacius")}
 
 
-def fotografo_chave(nome):
+def fotografo_chave(nome, inteiro=False):
     """Nome escrito (qualquer caixa ou acento) -> como o cadastro conhece: sem acento, minúsculas e, se o nome inteiro ou o
-    primeiro nome é um apelido ("Klacius Ank Guarino"), a chave do cadastro. Nome que não é apelido volta só normalizado."""
+    primeiro nome é um apelido ("Klacius Ank Guarino"), a chave do cadastro. Nome que não é apelido volta só normalizado.
+    inteiro=True: só o nome inteiro vale como apelido. É o que se usa para nome de pasta e origem (segurança B1: uma pasta
+    "Klacius qualquer coisa" não vira o fotógrafo); o primeiro nome fica para o autor e o dono da câmera e para a Roverpix."""
     k = sem_acento(nome or "").strip()
     if not k:
         return ""
     if k in FOTOGRAFO_APELIDO:
         return FOTOGRAFO_APELIDO[k]
+    if inteiro:
+        return k
     primeiro = "".join(ch for ch in k.split()[0] if ch.isalnum())
     return FOTOGRAFO_APELIDO.get(primeiro, k)
 
@@ -2709,23 +2715,29 @@ def fotografo_chave(nome):
 def usuarios_grafia():
     """Uma vez na partida: cadastro do fotógrafo que ainda tem o nome de tela padrão antigo passa ao nome certo. Só troca
     quando o nome gravado é exatamente o padrão antigo (nome que alguém editou fica); chave, e-mail e permissões não mudam.
-    A gravação passa pelo estado_gravar, então os navegadores recebem o nome novo pela sincronização. Devolve quantos mudou."""
-    try:
-        docs = estado_col("usuarios")["docs"]
-    except Exception:
-        return 0
-    muda = []
-    for d in docs:
+    A gravação passa pelo estado_gravar, então os navegadores recebem o nome novo pela sincronização, e cada troca fica no
+    histórico do cadastro (usuarios_log: quem = servidor, quando, de, para e o motivo). Devolve quantos mudou.
+    Falha aqui sobe para quem chamou (o main registra no console). Lê e depois grava sem uma trava única: só na partida,
+    antes de o servidor HTTP abrir."""
+    em = _iso()
+    muda, n = [], 0
+    for d in estado_col("usuarios")["docs"]:
         v = d.get("valor")
         if not isinstance(v, dict) or v.get("deleted"):
             continue
         regra = NOME_TELA_ANTIGO.get(str(v.get("key") or ""))
         if regra and v.get("name") in regra[0]:
-            muda.append({"col": "usuarios", "id": d["id"], "valor": dict(v, name=regra[1])})
+            n += 1
+            muda.append({"col": "usuarios", "id": d["id"], "valor": dict(v, name=regra[1], updatedBy="servidor", updatedAt=em)})
+            lid = "Lsrv-grafia-" + hashlib.sha256(d["id"].encode("utf8")).hexdigest()[:12]
+            muda.append({"col": "usuarios_log", "id": lid, "valor": {
+                "id": lid, "em": em, "por": "servidor", "alvo": str(v.get("email") or ""), "acao": "alterar",
+                "mudancas": [{"campo": "name", "de": v.get("name"), "para": regra[1]}],
+                "motivo": "grafia do nome como na câmera", "venue": "maracana", "origem": "agente"}})
     if muda:
         estado_gravar({"docs": muda}, "servidor")
-        print("  Cadastro: nome de tela de %d fotógrafo(s) acertado para a grafia da câmera" % len(muda))
-    return len(muda)
+        print("  Cadastro: nome de tela de %d fotógrafo(s) acertado para a grafia da câmera" % n)
+    return n
 
 
 def rftp_origem(path, pasta):
@@ -2735,7 +2747,7 @@ def rftp_origem(path, pasta):
     base = [x for x in str(pasta or "").replace("\\", "/").split("/") if x]
     if ".." in parts or "." in parts or parts[:len(base)] != base or len(parts) < len(base) + 2:
         return "ftp-estadio"
-    sub = fotografo_chave(parts[len(base)])
+    sub = fotografo_chave(parts[len(base)], inteiro=True)      # pasta: só o nome inteiro (nunca o primeiro nome)
     return sub if sub in {sem_acento(x) for x in ftp_cadastrados()} else "ftp-estadio"
 
 
@@ -4895,7 +4907,7 @@ def ff_quem(o, autor, dono, serie, s="", cad=None):
     cadastrado; 3) nenhum, e a fonte diz de onde veio (nunca o nome de subpasta não cadastrada nem a série completa)."""
     cad = cad if cad is not None else ff_cadastrados()
     via = "cartão" if s == "cartao" else "ftp"
-    k = fotografo_chave(o)
+    k = fotografo_chave(o, inteiro=True)              # origem (login, pasta): só o nome inteiro, nunca o primeiro nome
     if k and k in cad:
         return k, via
     for nome in (autor, dono):
@@ -13313,6 +13325,8 @@ def main():
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=metricas_loop, daemon=True).start()
+    # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
+    # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.
     try:
         usuarios_grafia()               # nome de tela padrão antigo do fotógrafo vira a grafia da câmera (só o padrão)
     except Exception as e:

@@ -14,9 +14,13 @@ Pedido do Eduardo: o nome certo do fotógrafo é com C, **Klacius**, como a câm
 2. A chave interna continua `klassius`. Trocar a chave pediria migração de sessões, vendas e métricas e quebraria o envio das câmeras (login do FTP). Não se renomeia chave, login nem e-mail.
 3. Uma regra só de apelido, de nome escrito para chave do cadastro:
    - agente: `FOTOGRAFO_APELIDO` e `fotografo_chave(nome)` (sem acento, minúsculas; vale o nome inteiro ou o primeiro nome, então "Klacius Ank Guarino" serve). Usam a regra: `ff_quem` (origem, autor e dono), `rftp_origem` (subpasta do FTP do estádio), a subpasta do login compartilhado do FTP embutido e `rv_key` (Roverpix).
-   - app: `KEY_ALIAS`, que já valia para a Roverpix (`aliasLive`), entra em `keyByName`. Por ele passam `libWho`, `camWho` e `impWho`, ou seja, os chips da Biblioteca e de Minhas fotos e o fotógrafo da sessão quando o servidor não informou.
+   - O primeiro nome só vale para o autor e o dono gravados na câmera e para a Roverpix. Nome de pasta e origem usam `fotografo_chave(nome, inteiro=True)`: só o nome inteiro é apelido, para não afrouxar a regra B1 (pasta "Klacius qualquer coisa" continua `ftp-estadio`; pasta "klacius" vira `klassius`).
+   - app: `KEY_ALIAS`, que já valia para a Roverpix (`aliasLive`), entra em `keyByName`, que segue a mesma leitura do agente: o primeiro nome sem pontuação ("Klacius," serve) comparado com o apelido, com o nome de tela e com a chave ("Klassius Guarino", a grafia antiga com sobrenome, também resolve). Por ele passam `libWho`, `camWho` e `impWho`, ou seja, os chips da Biblioteca e de Minhas fotos e o fotógrafo da sessão quando o servidor não informou.
    - Grafia nova de alguém entra nesses dois mapas. Nunca vira chave nova.
 4. Cadastro já gravado com o nome padrão antigo ("Klassius" ou "Klássius", exatamente, e chave `klassius`): o agente acerta no servidor na partida (`usuarios_grafia`, pelo `estado_gravar`, então os navegadores recebem pela sincronização). A cópia do aparelho é acertada por `nomeTelaCerto` no `migrateUser`, sem gravar no servidor. Nome que alguém editou não é tocado.
+   - A troca fica registrada no servidor: o cadastro ganha `updatedBy: "servidor"` e `updatedAt`, e o histórico (`usuarios_log`) ganha uma linha com `por: "servidor"`, `acao: "alterar"`, quando, de, para e o motivo. O id da linha é fixo por cadastro, então não duplica.
+   - `usuarios_grafia` roda no `main`, antes de o servidor HTTP abrir e fora de thread, porque lê e grava sem uma trava única. Falha sobe para o `main`, que registra no console.
+   - O mapa `NOME_TELA_ANTIGO` existe nos dois arquivos (agente e `index.html`), com comentário cruzado: muda num, muda no outro.
 
 ## O que muda sozinho e o que não muda
 
@@ -34,4 +38,5 @@ Corrigir as sessões antigas dele que ficaram sem fotógrafo. Caminho proposto, 
 2. `ff_quem` com autor "Klacius", "KLACIUS", "Klácius" ou "Klacius Ank Guarino" devolve `klassius`; o dono da câmera também; autor desconhecido e nome parecido ("Klaus") continuam sem fotógrafo.
 3. `PHOTOGRAPHERS` segue com `klassius`; não existe chave `klacius`.
 4. `usuarios_grafia` troca só o nome padrão antigo da chave `klassius`, mantém chave e e-mail, não toca em nome editado nem em outra chave, e rodar de novo não muda nada.
-5. No app, `libWho` leva o autor "Klacius" (e a subpasta `klacius`) para `klassius`; autor desconhecido fica em "Sem fotógrafo".
+5. Pasta "Klacius qualquer coisa" continua `ftp-estadio`; pasta "klacius" vira `klassius`. A troca do cadastro aparece no `usuarios_log` com `por: "servidor"`.
+6. No app, `libWho` leva o autor "Klacius" (e a subpasta `klacius`) para `klassius`; autor desconhecido fica em "Sem fotógrafo".
