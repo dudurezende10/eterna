@@ -9384,10 +9384,26 @@ def auth_criar_admin(usuario, nome):
     return 0
 
 
-def auth_criar_vendedor(usuario, nome):
+_P = lambda c, r, u, d: {"c": bool(c), "r": bool(r), "u": bool(u), "d": bool(d)}
+# Perfis que a linha de comando cadastra (os mesmos de PRESETS no app: módulos, menu e tela inicial iguais)
+PERFIS_CLI = {
+    "ativ": {"perms": {"ativvenda": _P(1, 1, 0, 0), "ativentrega": _P(1, 1, 1, 0)}, "menu": ["ativ-venda", "ativ-entrega"],
+             "inicio": "ativ-venda", "rotulo": "vendedor e entrega das ativações"},
+    "venda": {"perms": {"venda": _P(1, 1, 1, 0), "quiosque": _P(1, 1, 1, 0), "catalogo": _P(0, 1, 0, 0), "filafoto": _P(0, 1, 0, 0)},
+              "menu": ["quiosque", "checkout", "fila", "caixa", "posto", "catalogo", "fotofila"], "inicio": "posto",
+              "rotulo": "atendimento e venda das fotos (Checkout)"},
+}
+
+
+def auth_criar_vendedor(usuario, nome, perfil="ativ"):
     """python eterna-agente.py --criar-vendedor <usuário> "<nome>" (senha pela entrada padrão): no próprio servidor, perfil
-    "Vendedor Drone, Chute a Gol e Snap Pop" (só o tablet de venda). A senha é a que a operação definiu para os tablets, sem troca
-    obrigatória; aqui não passa pela regra de senha fraca da tela (decisão do Ronaldo, 14/11)."""
+    "Vendedor Drone, Chute a Gol e Snap Pop" (venda e entrega das ativações). ETERNA_PERFIL=venda cadastra no perfil
+    "Atendimento e venda" (Checkout das fotos). A senha é a que a operação definiu, sem troca obrigatória; aqui não passa
+    pela regra de senha fraca da tela (decisão do Ronaldo, 14/11)."""
+    if perfil not in PERFIS_CLI:
+        print("Perfil inválido: use " + " ou ".join(PERFIS_CLI))
+        return 1
+    pf = PERFIS_CLI[perfil]
     usuario = usuario.strip().lower()
     if not AUTH_ID.match(usuario):
         print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
@@ -9398,16 +9414,16 @@ def auth_criar_vendedor(usuario, nome):
         return 1
     id_doc = quote(usuario, safe="-_.!~*'()")
     atual, _ = auth_ler_cadastro(usuario)
-    if atual and atual.get("preset") not in (None, "ativ"):
+    if atual and atual.get("preset") not in (None, perfil):
         print("%s já existe com outro perfil (%s): nada mudou." % (usuario, atual.get("preset")))
         return 1
-    cad = dict(atual or {}, v=2, email=usuario, name=nome or usuario, preset="ativ", key=None, active=True,
-               perms={"ativvenda": {"c": True, "r": True, "u": False, "d": False}}, menu=["ativ-venda"], inicio="ativ-venda",
+    cad = dict(atual or {}, v=2, email=usuario, name=(atual or {}).get("name") or nome or usuario, preset=perfil, key=None, active=True,
+               perms={k: dict(v) for k, v in pf["perms"].items()}, menu=list(pf["menu"]), inicio=pf["inicio"], mae1511=1,
                createdBy=(atual or {}).get("createdBy") or "servidor")
     estado_gravar({"docs": [{"col": "usuarios", "id": id_doc, "valor": cad}]})
     auth_criar(usuario, "servidor")
     auth_trocar(usuario, senha)
-    print("ok %s (%s): vendedor do tablet" % (usuario, cad["name"]))
+    print("ok %s (%s): %s" % (usuario, cad["name"], pf["rotulo"]))
     return 0
 
 
@@ -13639,7 +13655,7 @@ if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-admin":
         sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-vendedor":
-        sys.exit(auth_criar_vendedor(sys.argv[2], " ".join(sys.argv[3:])))
+        sys.exit(auth_criar_vendedor(sys.argv[2], " ".join(sys.argv[3:]), os.environ.get("ETERNA_PERFIL") or "ativ"))
     if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
         sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()
