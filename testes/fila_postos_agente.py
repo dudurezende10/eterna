@@ -23,7 +23,7 @@ m.ev_receber({"eventos": [
     ev("ev-x4", "venda-4", "cancelar", "Posto 1"),
     ev("ev-c5", "venda-5", "criar", "Posto 4", saleNo="P4-001", prints=0),
     ev("ev-c6", "venda-6", "criar", "Posto 4", saleNo="P4-002", prints=1),
-    ev("ev-i6", "venda-6", "impressao", "Posto 4", resultado="nao_saiu", n=1, fotos=["ag_foto-z"], dnp={"mqty": 200, "status": 0}),
+    ev("ev-i6", "venda-6", "impressao", "Posto 4", resultado="nao_saiu", n=1, fotos=["ag_foto-z", "ai:ag_foto-z|tunel", "ai:ag_foto-y|campeao"], dnp={"mqty": 200, "status": 0}),
 ]})
 f = m.imp_fila_json()
 por = {p["venda"]: p for p in f["pedidos"]}
@@ -36,7 +36,7 @@ ok("P1-002" not in por and "P4-001" not in por, "cancelada e sem impressão fica
 ok(f["estados"].get("Posto 3", {}).get("estado") == "erro" and f["estados"]["Posto 3"].get("motivo") == "sem papel", "DNP do posto 3 parada: %s" % f["estados"].get("Posto 3"))
 ok(f["estados"].get("Posto 1", {}).get("pendentes") == 1, "posto 1 com 1 esperando: %s" % f["estados"].get("Posto 1"))
 ok(por.get("P1-001", {}).get("ids") == ["foto-a", "foto-b"], "miniaturas: ids das fotos da venda, sem o prefixo e sem id inválido: %s" % por.get("P1-001"))
-ok(por.get("P4-002", {}).get("estado") == "na_fila" and por["P4-002"].get("ids") == ["foto-z"], "'Não saiu' sem erro da DNP volta a esperar no posto, não é erro: %s" % por.get("P4-002"))
+ok(por.get("P4-002", {}).get("estado") == "na_fila" and por["P4-002"].get("ids") == ["foto-z", "foto-y"], "'Não saiu' sem erro da DNP volta a esperar no posto, não é erro: %s" % por.get("P4-002"))
 f2 = m.imp_fila_postos(time.time() + m.IMP_NAO_SAIU_S + 60)
 ok("P4-002" not in {p["venda"] for p in f2[2]}, "'Não saiu' parado há mais de 15 min sai da fila")
 ok(all(p.get("local") for p in f["pedidos"]), "pedidos dos postos marcados como locais")

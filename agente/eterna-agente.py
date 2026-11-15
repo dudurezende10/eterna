@@ -7047,6 +7047,8 @@ def _imp_ids(l):
     out = []
     for x in (l if isinstance(l, list) else []):
         x = str(x or "")
+        x = x[3:] if x.startswith("ai:") else x            # foto com fundo de IA "ai:ag_<id>|<fundo>": a miniatura é a foto dela
+        x = x.split("|", 1)[0]
         x = x[3:] if x.startswith("ag_") else x
         if re.match(r"^[A-Za-z0-9_-]{1,80}$", x) and x not in out:
             out.append(x)
