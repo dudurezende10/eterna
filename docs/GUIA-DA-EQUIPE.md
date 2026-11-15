@@ -114,6 +114,44 @@ Atendimento e venda, Fotógrafo, Validador e Checkout não veem o Painel.
 
 ---
 
+## 1B. Exportar relatório em PDF ou XLS (15/11/2026)
+
+No topo de algumas telas existe o grupo **Exportar**, com dois botões: **PDF** e **XLS**. O arquivo é baixado para o computador, na pasta de downloads. Nada é impresso.
+
+### Onde tem
+
+| Tela | O que vai no arquivo |
+| --- | --- |
+| Painel | Resumo, Dia a dia, Produtos, Pagamentos e Atendimentos do período escolhido |
+| Estatísticas | A seção aberta: Vendas e produtos, Fotógrafos ou Visitantes. As outras seções não exportam. |
+| Bandeiras | O inventário do filtro escolhido (Com estoque, Atenção etc.), a lista de compra e as unidades por ponto |
+| Lista de vendas | Todas as vendas do período e dos filtros, não só as 50 da página |
+| Fotógrafos | A tabela do período. Com um fotógrafo aberto, o dia a dia dele. |
+| Escala | A função de hoje e a semana que a tela mostra |
+| Diário do set | Os registros do filtro escolhido (Hoje, Em aberto ou Todos) |
+
+### Como usar
+
+1. Deixe a tela como você quer ver no relatório: período, filtros e ordem.
+2. Toque em **PDF** para ler ou mandar para alguém, ou em **XLS** para abrir no Excel e fazer contas.
+3. Aparece "Arquivo gerado com N linhas" e o arquivo vai para a pasta de downloads, com o nome da tela e o período.
+
+### O que saber
+
+- O arquivo traz o que a tela mostra: mesmo período, mesmos filtros, mesma ordem.
+- No começo do arquivo vêm o período (ou "Posição em", nas Bandeiras), os filtros, a data e a hora no horário do Rio e o nome de quem gerou.
+- Todo arquivo leva a marca **Uso interno**. O Diário do set pode citar visitantes: não mande o arquivo para fora da equipe.
+- Em Bandeiras, as colunas Sessões, Vendidas, Conversão e Receita não vão para o arquivo, porque ainda são estimativa.
+- O PDF tem só o cabeçalho e as tabelas, sem gráficos.
+- Relatório com mais de 2.000 linhas não sai em PDF: use o XLS ou escolha um período menor.
+- "Nada para exportar neste período ou filtro": a tela está vazia. Mude o período ou o filtro.
+- O arquivo sai no idioma de quem está conectado.
+- Só exporta quem já vê a tela. Quem não tem acesso à tela não vê o botão.
+- Cada exportação fica registrada em **Permissões › Histórico**: quem exportou, de qual tela, em qual formato, o período e os filtros.
+- Os botões **Exportar CSV** do Painel e da Lista de vendas continuam onde estavam.
+
+---
+
 ## 2. Fotógrafo (Minhas fotos e Escala)
 
 ### O que o fotógrafo vê

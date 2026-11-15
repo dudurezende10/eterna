@@ -5,7 +5,6 @@ const entrarTeste=require('./_entrar');
 const {chromium}=require('playwright');const fs=require('fs');const os=require('os');const path=require('path');const zlib=require('zlib');const {spawnSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-const SAIDA=process.env.REL_SAIDA||''; // pasta para guardar os arquivos gerados (exemplos); vazio = não guarda
 
 // ---------- leitura do ZIP (só método 0, como o app grava) ----------
 function zipLer(buf){const out={};let e=buf.length-22;while(e>=0&&buf.readUInt32LE(e)!==0x06054b50)e--;if(e<0)throw new Error('zip sem fim');
@@ -34,8 +33,8 @@ try{
   const TE=(k,...a)=>pg.evaluate(([k,a])=>ETERNA.TE(k,...a),[k,a]);
   let nArq=0;
   // clica no botão da tela e devolve o arquivo; sem download em 1,5 s devolve null (e o toast)
-  async function baixar(fmt,guarda){const espera=pg.waitForEvent('download',{timeout:1500}).catch(()=>null);await pg.click(`.rel-exp [data-act="rel-exportar"][data-fmt="${fmt}"]`);const dl=await espera;if(!dl)return null;
-    const p=path.join(tmp,(++nArq)+'-'+dl.suggestedFilename());await dl.saveAs(p);const buf=fs.readFileSync(p);if(SAIDA&&guarda){fs.mkdirSync(SAIDA,{recursive:true});fs.copyFileSync(p,path.join(SAIDA,guarda));}return {nome:dl.suggestedFilename(),buf,p};}
+  async function baixar(fmt){const espera=pg.waitForEvent('download',{timeout:1500}).catch(()=>null);await pg.click(`.rel-exp [data-act="rel-exportar"][data-fmt="${fmt}"]`);const dl=await espera;if(!dl)return null;
+    const p=path.join(tmp,(++nArq)+'-'+dl.suggestedFilename());await dl.saveAs(p);const buf=fs.readFileSync(p);return {nome:dl.suggestedFilename(),buf,p};}
   // abre o .xlsx: ZIP válido (também pelo python3 -m zipfile), todo XML bem formado, e devolve as abas com as linhas [{t:'s'|'n', v, s}]
   async function xlsx(a,rot){const z=zipLer(a.buf);const py=spawnSync('python3',['-I','-m','zipfile','-l',a.p],{encoding:'utf8'});ok(py.status===0&&/xl\/workbook\.xml/.test(py.stdout),rot+': python3 -m zipfile não abriu o xlsx');
     const r=await pg.evaluate(z=>{const P=new DOMParser();const mal=[];const doc={};Object.entries(z).forEach(([n,x])=>{const d=P.parseFromString(x,'application/xml');if(d.querySelector('parsererror'))mal.push(n);doc[n]=d;});
@@ -58,7 +57,7 @@ try{
   ok((await pg.textContent('.rel-exp'))==='ExportarPDFXLS','Bandeiras: texto do botão '+J(await pg.textContent('.rel-exp')));
   const tela=await pg.evaluate(()=>({nomes:ETERNA.flagLinhas().list.map(r=>r.f[1]),unid:ETERNA.flagLinhas().list.map(r=>r.f[3]),linhasTela:[...document.querySelectorAll('.panel table tbody tr td.name')].map(td=>td.firstChild.textContent),todas:ETERNA.flagLinhas().rows.length,venue:document.querySelector('#venue-name')?document.querySelector('#venue-name').textContent:''}));
   ok(tela.nomes.length>=2&&tela.nomes.length<tela.todas&&J(tela.nomes)===J(tela.linhasTela),'Bandeiras: o filtro Atenção da tela não bate com flagLinhas '+J([tela.nomes.length,tela.linhasTela.length]));
-  let a=await baixar('xlsx','exemplo-bandeiras.xlsx');ok(a,'Bandeiras: XLS não baixou · '+await toast());
+  let a=await baixar('xlsx');ok(a,'Bandeiras: XLS não baixou · '+await toast());
   if(a){ok(/^eterna-[a-z0-9_-]+-bandeiras-\d{4}-\d{2}-\d{2}\.xlsx$/.test(a.nome),'Bandeiras: nome do arquivo '+a.nome);const x=await xlsx(a,'Bandeiras');const inv=x.abas[0];
     ok(x.abas.length===3,'Bandeiras: abas '+J(x.abas.map(s=>s.nome)));
     ok(J(inv.dados.slice(0,tela.nomes.length).map(l=>l[0].v))===J(tela.nomes),'Bandeiras: linhas do arquivo fora do filtro ou da ordem da tela');
@@ -72,7 +71,7 @@ try{
     ok(x.abas[1].dados.some(l=>l[0].v===HOSTIL)&&!x.abas[1].dados.some(l=>/sess/i.test(txt(l).join(' '))),'Bandeiras: lista de compra '+J(x.abas[1].dados.map(txt)));
     ok(x.abas[2].dados.length===5&&x.abas[2].dados.every(l=>l[1].t==='n'),'Bandeiras: unidades por ponto '+J(x.abas[2].dados.map(txt)));}
   // PDF: estrutura, cabeçalho e páginas (critério 4)
-  a=await baixar('pdf','exemplo-bandeiras.pdf');ok(a,'Bandeiras: PDF não baixou · '+await toast());
+  a=await baixar('pdf');ok(a,'Bandeiras: PDF não baixou · '+await toast());
   if(a){const p=pdfLer(a.buf);ok(p.ini&&p.fim&&p.xref&&p.objs,'Bandeiras PDF: estrutura '+J([p.ini,p.fim,p.xref,p.objs]));
     ok(p.paginas>=1&&p.rodape.length===p.paginas&&p.rodape.every(([i,n],k)=>i===k+1&&n===p.paginas),'Bandeiras PDF: páginas '+p.paginas+' × rodapé '+J(p.rodape));
     ok(p.linhas[0]==='Bandeiras'&&p.linhas.some(l=>/^Posi..o em: \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/.test(l))&&p.linhas.includes('Gerado por: Admin de teste')&&p.linhas.includes('Uso interno'),'Bandeiras PDF: cabeçalho '+J(p.linhas.slice(0,8)));
@@ -85,7 +84,7 @@ try{
   ok(await pg.$('.pn-head .rel-exp')&&await pg.$('[data-act="pn-csv"]'),'Painel: sem Exportar ou sem o CSV antigo');
   const pn=await pg.evaluate(()=>({tela:document.querySelector('.pn-kpi[data-k="receita"] .pn-big').textContent.replace(/\D/g,''),k:ETERNA.state.painelUlt.kpi,dias:ETERNA.state.painelUlt.dias.length}));
   const dBR=d=>d.split('-').reverse().join('/');
-  a=await baixar('xlsx','exemplo-painel.xlsx');ok(a,'Painel: XLS não baixou · '+await toast());
+  a=await baixar('xlsx');ok(a,'Painel: XLS não baixou · '+await toast());
   if(a){ok(a.nome.endsWith(`-painel-${R7.from}_${R7.to}.xlsx`),'Painel: nome do arquivo '+a.nome);const x=await xlsx(a,'Painel');const dd=x.abas[1];
     ok(J(x.abas.map(s=>s.nome))===J(['Resumo','Dia a dia','Produtos','Pagamentos','Atendimentos']),'Painel: abas '+J(x.abas.map(s=>s.nome)));
     ok(dd.cab.includes(`Período: ${dBR(R7.from)} a ${dBR(R7.to)}`),'Painel: período no cabeçalho '+J(dd.cab));
@@ -95,7 +94,7 @@ try{
     ok(dd.dados.slice(0,-1).every(l=>l[0].t==='n'&&l[0].v>40000&&l[iR].t==='n'),'Painel: dia ou receita não são número');
     const res=x.abas[0].dados.find(l=>l[0].v==='Faturamento');ok(res&&res[1].v===pn.k.receita,'Painel: faturamento do Resumo');
     ok(x.abas[2].dados.length>1&&x.abas[3].dados.length>1&&x.abas[4].dados.length>=2,'Painel: abas vazias '+J(x.abas.map(s=>s.dados.length)));}
-  a=await baixar('pdf','exemplo-painel.pdf');ok(a,'Painel: PDF não baixou · '+await toast());
+  a=await baixar('pdf');ok(a,'Painel: PDF não baixou · '+await toast());
   if(a){const p=pdfLer(a.buf);ok(p.ini&&p.fim&&p.xref&&p.objs,'Painel PDF: estrutura');ok(p.paginas>=1&&p.rodape.length===p.paginas&&p.rodape.every(([i,n],k)=>i===k+1&&n===p.paginas),'Painel PDF: páginas '+p.paginas+' × rodapé '+J(p.rodape));
     ok(p.linhas[0]==='Painel'&&p.linhas[1].length>2&&p.linhas.includes(`Per\xedodo: ${dBR(R7.from)} a ${dBR(R7.to)}`)&&p.linhas.includes('Gerado por: Admin de teste'),'Painel PDF: cabeçalho '+J(p.linhas.slice(0,8)));
     ok(p.linhas.some(l=>l==='R$ '+new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(pn.k.receita)),'Painel PDF: sem o total de receita');
@@ -214,8 +213,6 @@ try{
   {const fonte=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');const i=fonte.indexOf('// ---------- Exportar relatório (PDF | XLS)'),f=fonte.indexOf('const VIEWFN=');const bloco=fonte.slice(i,f).replace(/^\/\/.*$/gm,'');
     ok(i>0&&f>i&&!/\bprint\s*\(|fetch\s*\(|agFetch|XMLHttpRequest|sendBeacon|WebSocket|importScripts|vendor\//.test(bloco),'O bloco do Exportar chama impressão, rede ou vendor');
     ok((fonte.match(/@media print/g)||[]).length===1&&(fonte.match(/window\.print\(/g)||[]).length<=3,'index.html ganhou @media print ou window.print');}
-  if(SAIDA){await abrir('painel',`ETERNA.state.range=${J(R7)};`);await pg.waitForTimeout(300);fs.mkdirSync(SAIDA,{recursive:true});await pg.screenshot({path:path.join(SAIDA,'tela-painel-exportar-1920x1080.png')});
-    await abrir('bandeiras');await pg.waitForTimeout(300);await pg.screenshot({path:path.join(SAIDA,'tela-bandeiras-exportar-1920x1080.png')});}
 
   // ---------- critério 4: data e hora do cabeçalho no fuso do venue, mesmo com o aparelho em outro fuso ----------
   {const c2=await b.newContext({viewport:{width:1280,height:900},locale:'pt-BR',timezoneId:'Asia/Tokyo',acceptDownloads:true});await c2.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const p2=await c2.newPage();p2.setDefaultTimeout(8000);p2.on('pageerror',e=>errs.push('Tóquio: '+e.message));
