@@ -284,6 +284,10 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 - Com a leitura da pulseira (4e), o quadro da fila por ativação (4a.1) ficou sem botão e a equipe deixou de ver o que faltava entregar. Agora a tela de entrega tem a **Fila de entrega** fixa, abaixo do Agora: **uma linha por entrega** (cada pulseira é um atendimento; uma venda de 3 pessoas dá 3 linhas), de todas as vendas do dia, da mais antiga para a mais nova. Colunas: foto, cliente (hora e número da venda), produto e itens, pulseira (1 / 3), situação em palavras (próximo a voar ou chutar, voando desde, chutando, faltam itens, entregue). Na tela estreita a linha quebra em duas, sem rolagem lateral. Um toque na linha abre o atendimento daquela pulseira. A aba **Entregues** mostra as de hoje já entregues.
 - Quem só entrega (perfil Equipe de campo) não vê o cadastro de pilotos, drones e baterias nem o estado da nuvem: isso fica para quem tem Alterar em Configurações (Supervisor e Admin). Erro de envio do vídeo continua aparecendo para todos.
 
+### 4h. Drone com mais de 5 pessoas (Ronaldo, 15/11)
+
+- O seletor de pessoas tem 1 a 5 e o botão **6+**; acima de 5 aparece **− N +** (até 20). O preço do cartão e da venda já soma a pessoa extra pela regra do produto (Pessoas incluídas e Valor por pessoa extra, no cadastro do produto). Drones: 5 pessoas incluídas, R$ 15 por pessoa a mais. O vídeo de demonstração continua o de 5 pessoas.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.
