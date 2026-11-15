@@ -5560,6 +5560,20 @@ function aeAgora(){const A=state.ae,L=A.dados?A.dados.vendas:[],out=[];
   if(!out.length)return `<div class="panel" id="ae-agora"><span class="eyebrow">${TE('ae_agora')}</span><div class="note">${TE('ae_agora_vazio')}</div></div>`;
   return `<div class="panel" id="ae-agora"><span class="eyebrow">${TE('ae_agora')} · ${out.length}</span><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px">${out.map(({v,p,e})=>{const k=aeChave(v.id,p.numero),N=A.nvs[k],sel=!!(A.at&&A.at.venda===v.id&&A.at.numero===p.numero);
     return `<button class="chip" style="min-height:60px;display:flex;gap:10px;align-items:center;text-align:left;border-radius:12px;padding:6px 10px${sel?';outline:3px solid var(--accent,#134078)':''}" ${sel?'aria-current="true"':''} data-act="ae-at-abre" data-id="${esc(v.id)}" data-n="${esc(p.numero)}">${aeFoto(v,40)||atIcone(v.tipo)}<span style="min-width:0"><b>${esc(v.cliente||TE('av_numero',avNumero(v.id)))}</b><br><span class="note" style="margin:0">${TE('ae_pul_curta',p.numero)} · ${esc(TE('ae_pul_e_'+(e==='andamento'?v.tipo:e)))}${e==='voando'&&p.voo_em?' '+esc(p.voo_em.slice(11,16)):''}</span>${N?`<br><b class="note" style="margin:0" data-ae-ped="${esc(k)}">${esc(aePedidoTxt(N))}</b>`:''}</span></button>`;}).join('')}</div></div>`;}
+// 15/11: fila de entrega em tabela (foto, cliente, produto, hora, o que falta): o que ainda não foi entregue hoje, de todos os serviços.
+// Um toque na linha abre o atendimento da primeira pulseira que falta. "Entregues" mostra as de hoje já entregues.
+function aeFilaTabela(){const A=state.ae,L=A.dados?A.dados.vendas:[];const ent=!!A.filaEnt;
+  const vs=L.filter(v=>ent?!!v.entregue_em:!v.entregue_em).sort((a,b)=>ent?String(b.entregue_em).localeCompare(String(a.entregue_em)):String(a.criado).localeCompare(String(b.criado)));
+  const nPend=L.filter(v=>!v.entregue_em).length,nEnt=L.length-nPend;
+  const linha=v=>{const p=(v.pulseiras||[]).find(x=>aePulEstado(v,x)!=='entregue')||(v.pulseiras||[])[0];const sel=!!(A.at&&A.at.venda===v.id);
+    const falta=ent?TE('ae_entregue_as',esc(String(v.entregue_em||'').slice(11,16))):esc(aeColNome(v.tipo,aeEtapa(v)));
+    const abre=p?` data-act="ae-at-abre" data-id="${esc(v.id)}" data-n="${esc(p.numero)}" tabindex="0" role="button" style="cursor:pointer${sel?';outline:3px solid var(--accent,#134078)':''}"`:'';
+    return `<tr${abre} data-ae-fila="${esc(v.id)}"><td style="width:52px">${aeFoto(v,40)||atIcone(v.tipo)}</td><td class="name"><b>${esc(v.cliente||TE('av_numero',avNumero(v.id)))}</b>${v.cliente?`<div class="note" style="margin:0">${TE('av_numero',avNumero(v.id))}</div>`:''}</td>
+      <td><b>${esc(atCatNome(v.tipo))}</b><div class="note" style="margin:0">${esc(aeItensTxt(v))}</div></td><td class="num">${esc(String(v.criado||'').slice(11,16))}</td><td>${p&&!ent?`<span class="pill">${TE('ae_pul_curta',p.numero)}</span> `:''}${falta}</td></tr>`;};
+  return `<div class="panel" id="ae-fila-tab"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">${TE('ae_fila_titulo')} <span class="if-cnt">${nPend}</span></h2>
+    <div class="chips" role="tablist"><button class="chip" role="tab" data-act="ae-fila-ent" data-v="0" aria-selected="${!ent}" aria-pressed="${!ent}">${TE('ae_fila_falta')} · ${nPend}</button><button class="chip" role="tab" data-act="ae-fila-ent" data-v="1" aria-selected="${ent}" aria-pressed="${ent}">${TE('ae_fila_entregues')} · ${nEnt}</button></div></div>
+    ${vs.length?`<div class="tablewrap"><table><thead><tr><th></th><th>${TE('ae_fila_cliente')}</th><th>${TE('ae_fila_produto')}</th><th class="num">${TE('ae_fila_hora')}</th><th>${ent?TE('ae_fila_entrega'):TE('ae_fila_falta_col')}</th></tr></thead><tbody>${vs.map(linha).join('')}</tbody></table></div>`
+      :`<div class="note">${ent?TE('ae_fila_nada_ent'):TE('ae_fila_nada')}</div>`}</div>`;}
 // o atendimento de uma pulseira: quem é, decolar, soltar o vídeo, ler o cartão, entregar
 function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x=>x.id===A.at.venda);
   if(!v)return `<div class="panel" id="ae-at"><div class="note">${A.dados?TE('ae_e_nao_achou'):TE('ar_carregando')}</div><button class="btn ghost" style="margin-top:8px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button></div>`;
@@ -5696,7 +5710,9 @@ function aeNovo(){const A=state.ae,N=A.nv;if(!can('ativentrega','c'))return '';a
     <button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem;margin-top:14px" data-act="ae-nv-liga" ${pronto?'':'disabled'}>${N.subindo&&v&&N.qr?TE('ae_esperando_envio'):TE('ae_ligar_video')}</button></div>`;}
 // carga inicial (como a do catálogo de venda): a frota do sistema antigo. Pilotos são pessoas: entram pelo cadastro, não pelo código.
 const AE_CARGA=[...['006','007','141','228','999','LARANJA','ROSA'].map(n=>({tipo:'drone',nome:n})),...Array.from({length:20},(_,i)=>({tipo:'bateria',nome:String(i+1)}))];
-function aeCadastros(){const A=state.ae,cad=(A.dados&&A.dados.cadastros)||{};if(!can('ativentrega','u'))return '';
+// 15/11: quem só entrega (perfil Equipe de campo) vê o atendimento; cadastros e estado da nuvem são de quem gerencia (Configurações)
+const aeGestor=()=>can('ativentrega','u')&&can('configuracao','u');
+function aeCadastros(){const A=state.ae,cad=(A.dados&&A.dados.cadastros)||{};if(!aeGestor())return '';
   const falta=AE_CARGA.filter(x=>!(cad[x.tipo]||[]).some(y=>y.nome===x.nome)).length;
   return `<div class="panel" id="ae-cad"><button class="btn ghost" data-act="ae-cad" aria-expanded="${A.cad}">${TE('ae_cadastros')} ${A.cad?'▴':'▾'}</button><div class="note" style="margin-top:6px">${TE('ae_cadastros_d')}</div>${A.cad&&falta?`<button class="btn ghost" style="margin-top:8px" data-act="ae-cad-carga">${TE('ae_cad_carga',falta)}</button>`:''}
     ${A.cad?['piloto','drone','bateria'].map(t=>`<div style="margin-top:12px"><span class="eyebrow">${({piloto:TE('ae_cad_piloto'),drone:TE('ae_cad_drone'),bateria:TE('ae_cad_bateria')})[t]}</span><div class="row" style="gap:6px;flex-wrap:wrap;margin:6px 0">${(cad[t]||[]).map(x=>`<button class="chip" data-act="ae-cad-liga" data-t="${t}" data-n="${esc(x.nome)}" aria-pressed="${x.ativo}" title="${esc(x.ativo?TE('ae_desligar'):TE('ae_ligar'))}">${esc(x.nome)}${x.ativo?'':' · '+TE('ae_inativo')}</button>`).join('')||`<span class="note">${TE('ae_nenhum')}</span>`}</div>
@@ -5710,8 +5726,9 @@ function vAtivEntrega(){const A=state.ae;{const hj=venueToday();if(A.dia!==hj){A
   const nv=A.dados&&A.dados.nuvem;
   return `<div class="head"><div><h1>${esc(viewLabel('ativ-entrega'))}</h1></div><div style="text-align:right">
     ${nv?(()=>{const er=(A.dados.vendas||[]).reduce((s,v)=>s+v.entregas.filter(aePagErro).length,0);
+      if(!er&&!aeGestor())return '';
       return `<div style="margin-top:4px"><span class="pill ${er?'bad':!nv.ligada?'':nv.fila?'warn':'good'}" ${er?'data-ae-pag-topo role="alert"':''}>${er?TE('ae_pag_erros',er):!nv.ligada?TE('ae_nuvem_desligada'):nv.fila?TE('ae_nuvem_pend',nv.fila):TE('ae_nuvem_ok')}</span></div>`;})():''}</div></div>
-  ${A.nv&&!A.at?aeNovo():`<div class="ae-pedidos${A.at?' aberto':''}"><div class="ae-ped-lista">${aePulPainel()}${A.dados?aeAgora():''}</div>${A.at?`<div class="ae-ped-at">${aeAtend()}</div>`:''}</div>`}
+  ${A.nv&&!A.at?aeNovo():`<div class="ae-pedidos${A.at?' aberto':''}"><div class="ae-ped-lista">${aePulPainel()}${A.dados?aeAgora()+aeFilaTabela():''}</div>${A.at?`<div class="ae-ped-at">${aeAtend()}</div>`:''}</div>`}
   ${A.at||A.nv||A.fila?'':aeCadastros()}
   ${A.at||A.nv||!A.fila?'':`${A.dados?aeNovo():''}
   <div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${AE_CATS.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="ae-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}${A.dados&&pend(c)?' · '+pend(c):''}</span></button>`).join('')}</div>
@@ -5734,6 +5751,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.
   else if(a==='ae-nv-lixo-ok'){const m=((document.querySelector('[data-ae-cmotivo]')||{}).value||'').trim();aeCancelaVenda(id,m);return;}
   else if(a==='ae-nv-liga'){aeLiga();return;}
   else if(a==='ae-fila'){A.fila=!A.fila;}
+  else if(a==='ae-fila-ent'){A.filaEnt=el.dataset.v==='1';}
   else if(a==='ae-pul-ok'){aePulAbre((document.getElementById('ae-pul-txt')||{}).value);return;}
   else if(a==='ae-pul-cam'){pulCamAbre(n=>aePulAbre(n));return;}
   else if(a==='ae-pul-opc'){aeAtAbre(id,A.pulOpc&&A.pulOpc.n);return;}
@@ -9414,6 +9432,17 @@ const EQ={
   ae_pul_e_snap:["gravando","recording","grabando","enregistrement","nimmt auf"],
   ae_pul_e_itens:["faltam itens","items missing","faltan artículos","articles manquants","Artikel fehlen"],
   ae_agora:["Agora","Now","Ahora","En cours","Jetzt"],
+  ae_fila_titulo:["Fila de entrega","Delivery queue","Fila de entrega","File de livraison","Übergabe-Warteschlange"],
+  ae_fila_falta:["Falta entregar","To deliver","Falta entregar","À livrer","Noch zu übergeben"],
+  ae_fila_entregues:["Entregues","Delivered","Entregados","Livrés","Übergeben"],
+  ae_fila_cliente:["Cliente","Customer","Cliente","Client","Kunde"],
+  ae_fila_produto:["Produto","Product","Producto","Produit","Produkt"],
+  ae_fila_hora:["Venda","Sale","Venta","Vente","Verkauf"],
+  ae_fila_falta_col:["O que falta","What is missing","Qué falta","Ce qui manque","Was fehlt"],
+  ae_fila_entrega:["Entrega","Delivery","Entrega","Livraison","Übergabe"],
+  ae_entregue_as:[h=>`entregue às ${h}`,h=>`delivered at ${h}`,h=>`entregado a las ${h}`,h=>`livré à ${h}`,h=>`übergeben um ${h}`],
+  ae_fila_nada:["Nada esperando entrega agora.","Nothing waiting for delivery now.","Nada esperando entrega ahora.","Rien en attente de livraison.","Nichts wartet gerade auf Übergabe."],
+  ae_fila_nada_ent:["Nenhuma entrega hoje ainda.","No deliveries today yet.","Ninguna entrega hoy todavía.","Aucune livraison aujourd’hui.","Heute noch keine Übergabe."],
   ae_agora_vazio:["Ninguém voando nem esperando vídeo","Nobody flying or waiting for a video","Nadie volando ni esperando video","Personne en vol ni en attente de vidéo","Niemand fliegt oder wartet auf ein Video"],
   ae_proximo_cliente:["Próximo cliente","Next customer","Siguiente cliente","Client suivant","Nächster Kunde"],
   ae_video_entregue:["Vídeo entregue","Video delivered","Video entregado","Vidéo livrée","Video übergeben"],

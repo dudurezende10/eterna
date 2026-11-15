@@ -279,6 +279,11 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 - O vídeo do Chute a Gol não é do drone e é opcional (v99.30.3): Chutou conclui o atendimento mesmo em venda com vídeo; embaixo fica "Vídeo do chute (opcional)" para soltar o vídeo e ler o cartão, agora ou depois. Com medalha ou bola, falta dar baixa nos itens.
 - A venda só fica entregue quando todas as pulseiras dela chutaram.
 
+### 4g. Fila de entrega em tabela e tela enxuta para quem entrega (Ronaldo, 15/11)
+
+- Com a leitura da pulseira (4e), o quadro da fila por ativação (4a.1) ficou sem botão e a equipe deixou de ver o que faltava entregar. Agora a tela de entrega tem a **Fila de entrega** fixa, abaixo do Agora: tabela com foto, cliente (e número da venda), produto e itens, hora da venda, pulseira e o que falta (a etapa de 4a.1). Um toque na linha abre o atendimento da primeira pulseira que falta. A aba **Entregues** mostra as de hoje já entregues, com a hora.
+- Quem só entrega (perfil Equipe de campo) não vê o cadastro de pilotos, drones e baterias nem o estado da nuvem: isso fica para quem tem Alterar em Configurações (Supervisor e Admin). Erro de envio do vídeo continua aparecendo para todos.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.
