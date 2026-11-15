@@ -44,7 +44,7 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
 1. No alto do menu ficam dois botões amarelos: **Abrir Checkout** e **Caixa**. Só aparecem para quem pode usar.
-2. O número ao lado de **Caixa** mostra quantos pagamentos em dinheiro esperam confirmação.
+2. O número ao lado de **Caixa** mostra quantos pedidos esperam o caixa: pagamento em dinheiro a confirmar e pedido do Checkout em que o caixa ainda escolhe o pacote e a forma de pagamento. Os pedidos do Checkout ficam guardados no servidor: o Caixa daquele computador vê os pedidos feitos nele, em qualquer navegador.
 3. Toque no nome do grupo para abrir. Toque de novo para fechar. Quem vê até 5 telas vê a lista direta, sem grupos.
 4. O grupo da tela em que você está fica sempre aberto.
 5. Para voltar ao **Início**, toque no logo.

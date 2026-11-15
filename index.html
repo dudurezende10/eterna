@@ -551,6 +551,8 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-ovb{width:44px;height:44px;flex:none;border-radius:999px;border:0;padding:0;background:transparent;color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;opacity:.85;font:inherit}
 .lj-ovb:hover{opacity:1;background:rgba(255,255,255,.1)}.lj-ovb svg{width:22px;height:22px}
 .lj-ovtr .lj-lbx{width:auto;padding:0 14px 0 12px;font-weight:600;font-size:14px;white-space:nowrap}
+.lj .lj-ovtr .lj-ovb.lj-ovlg{width:auto;min-width:72px;padding:0 14px 0 12px;font-weight:700;font-size:15px;opacity:1;white-space:nowrap}.lj-ovlg span,.lj-cplg{display:inline!important;font-size:14px;font-weight:600}
+.lj-title .lj-telacheia{display:inline-flex;align-items:center;gap:8px}.lj-telacheia svg{width:20px;height:20px}
 .lj-ovtr .lj-cartpill{height:44px;padding:0 12px;gap:6px;border:0;background:transparent;font-size:14px;white-space:nowrap}
 .lj-ovtr .lj-cartpill.on{background:rgba(255,255,255,.92)}.lj-ovtr .lj-cartpill svg{width:22px;height:22px}.lj-ovtr .lj-cartpill b{height:24px;min-width:24px;font-size:14px} /* v96-ux: letra mínima de 14 px no cliente (ondas, parte L) */
 .lj-ovtr .lj-langs{background:transparent;border:0;padding:0;gap:0}
@@ -1427,7 +1429,19 @@ let SIM=SIM0();
 try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}
 // v79 (I3): devolve true/false. Sem espaço, poda o que dá para refazer (registro antigo e ajustes automáticos de fotos que não estão aqui) e tenta de novo.
 let simSobeT=null,SIM_SRV=null; // SIM_SRV: id -> JSON do que o servidor tem (último visto ou enviado); null antes da primeira leitura (v90)
-function saveSim(){if(state.db&&SIM_SRV){clearTimeout(simSobeT);simSobeT=setTimeout(simSobe,300);}const put=()=>localStorage.setItem('eterna.sim.v1',JSON.stringify(SIM));try{put();state.simCheio=0;return true;}catch(e){try{simPodar();put();state.simCheio=0;return true;}catch(e2){state.simCheio=Date.now();return false;}}}
+// 15/11: pedidos do Checkout também no servidor (/ponto/pedidos): cada posto grava os seus e lê de volta os dele, então o Caixa
+// do computador vê o pedido em qualquer navegador dele e o registro entra no backup. Pedido fechado no servidor fecha aqui também.
+var PED_ENV={},pedSobeT=null;
+function pedLigado(){return !!(typeof state!=='undefined'&&state.agent&&state.agent.on&&state.agent.url&&!demoOn());}
+function pedAgenda(){if(!pedLigado())return;clearTimeout(pedSobeT);pedSobeT=setTimeout(pedSobe,600);}
+async function pedSobe(){if(!pedLigado())return;const nome=postoNome();const L=(SIM.caixaDin||[]).filter(r=>r&&r.id&&r.posto===nome&&PED_ENV[r.id]!==JSON.stringify(r)).slice(0,200);if(!L.length)return;
+  try{const r=await agFetch(state.agent.url+'/ponto/pedidos',{method:'POST',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({pedidos:L})});if(r.ok)L.forEach(x=>{PED_ENV[x.id]=JSON.stringify(x);});}catch(e){}}
+async function pedDesce(){if(!pedLigado())return;try{const r=await agFetch(state.agent.url+'/ponto/pedidos?posto='+encodeURIComponent(postoNome()),{headers:{'X-Eterna':'1'}});if(!r.ok)return;const j=await r.json();
+  simFresh();if(!Array.isArray(SIM.caixaDin))SIM.caixaDin=[];const L=SIM.caixaDin;let mudou=false;
+  (j.pedidos||[]).forEach(x=>{if(!x||!x.id)return;const i=L.findIndex(y=>y&&y.id===x.id);if(i<0){L.push(x);mudou=true;}else if(aberta(L[i])&&!aberta(x)){L[i]=x;mudou=true;}PED_ENV[x.id]=JSON.stringify(x);});
+  if(mudou){L.sort((a,b)=>String(b.criada||'').localeCompare(String(a.criada||'')));saveSim();render();}else pedAgenda();}catch(e){}}
+setInterval(()=>{pedDesce();},15000);setTimeout(()=>{pedDesce();},4000);
+function saveSim(){pedAgenda();if(state.db&&SIM_SRV){clearTimeout(simSobeT);simSobeT=setTimeout(simSobe,300);}const put=()=>localStorage.setItem('eterna.sim.v1',JSON.stringify(SIM));try{put();state.simCheio=0;return true;}catch(e){try{simPodar();put();state.simCheio=0;return true;}catch(e2){state.simCheio=Date.now();return false;}}}
 function simPodar(){SIM.log=(SIM.log||[]).slice(0,20);const ed=SIM.edits||{};Object.keys(ed).forEach(id=>{if(ed[id]&&ed[id].auto===true&&!UP[id]&&!(typeof spriteOf!=='undefined'&&spriteOf[id]))delete ed[id];});}
 // v79: Checkout e Caixa em duas janelas do mesmo navegador. simFresh relê o SIM gravado pela outra janela antes de mexer no caixa.
 function simFresh(){try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}if(!Array.isArray(SIM.caixaDin))SIM.caixaDin=[];
@@ -1674,7 +1688,7 @@ const pendSemMeio=r=>!!(r&&r.escolha&&(!r.pkg||r.total==null||!MEIO_NOME[r.meio]
 const pendMeioTxt=r=>pendSemMeio(r)?TE('po_pkg_pend'):meioNome(meioDe(r));
 // v97-ux (Posto único): dinheiro esperando confirmação = pendência aberta, com pacote, valor e meio dinheiro. Pedido do Checkout sem pacote ou
 // sem meio não conta (meioDe devolveria 'dinheiro' para ele). É o número do botão amarelo Caixa e a lista da vista Caixa.
-const dinEspera=r=>aberta(r)&&!pendSemMeio(r)&&meioDe(r)==='dinheiro';
+const dinEspera=r=>aberta(r)&&(pendSemMeio(r)||meioDe(r)==='dinheiro'); // 15/11: pedido do Checkout sem pacote também espera o caixa (antes só aparecia no Posto completo)
 const caixaAbertas=()=>dinAbertas().filter(dinEspera);
 const caixaAtrasada=()=>caixaAbertas().some(r=>dinMin(r)>CAIXA_ALERTA_MIN);
 // telas de venda: posto (completa) e caixa (o Posto só com o dinheiro) são views; checkout (Venda manual) e fila são apelidos do Posto
@@ -3318,6 +3332,9 @@ const I18N={
  cont:['Continuar','Continue','Continuar','Continuer','Weiter'],
  // v96: overlay da foto em tela cheia
  ljVerTodas:['Ver todas','See all','Ver todas','Tout voir','Alle ansehen'],
+ ljTelaCheia:['Ver em tela cheia','See full screen','Ver en pantalla completa','Voir en plein écran','Im Vollbild ansehen'],
+ ljOutraP:['Outra pessoa','Another person','Otra persona','Autre personne','Weitere Person'],
+ ljEscolhidas:['escolhidas','chosen','elegidas','choisies','ausgewählt'],
  ljPrev:['Foto anterior','Previous photo','Foto anterior','Photo précédente','Vorheriges Foto'],
  ljNext:['Próxima foto','Next photo','Foto siguiente','Photo suivante','Nächstes Foto'],
  ljLang:['Idioma','Language','Idioma','Langue','Sprache'],
@@ -3531,7 +3548,7 @@ function vQuiosque(){
         <div class="lj-row"><button class="lj-cta" data-act="kiosk-tv-sim">${ICO.ok} ${T('tvSim')}</button><button class="lj-ghost" data-act="kiosk-tv-nao">${ICO.no} ${T('tvNao')}</button></div></div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${ljLangOv()}<span></span></div><div class="lj-heroin"><h1 class="lj-h1">${T('notFound')}<br>${esc(k.code)}</h1><button class="lj-cta" data-act="kiosk-back">${ICO.back} ${T('back')}</button></div></div>`;
   const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);const nSel=c.ch.length;
-  const cartPill=`<span class="lj-cartpill ${nSel?'on':''}" role="status" aria-label="${T('nPhotos',nSel)}">${ICO.cart}<b>${nSel}</b></span>`; // v96: só o contador (sem preço e sem ação); quem faz o pedido é o Continuar
+  const cartPill=`<span class="lj-cartpill ${nSel?'on':''}" role="status" aria-label="${T('nPhotos',nSel)}">${ICO.cart}<b>${nSel}</b><span class="lj-cplg">${T('ljEscolhidas')}</span></span>`; // v96: só o contador (sem preço e sem ação); quem faz o pedido é o Continuar
   const steps=n=>`<div class="lj-steps">${T('steps').map((t,i)=>`<span class="${i+1<n?'done':i+1===n?'cur':''}"><b>${i+1<n?'✓':i+1}</b>${t}</span>`).join('<i></i>')}</div>`;
   const topR=x=>`<div class="lj-topr">${ljLangOv()}${x}</div>`;
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v96: sem etapa de pacote e pagamento no Checkout
@@ -3553,7 +3570,7 @@ function vQuiosque(){
     const caixa=vq?`<div class="lj-lb lj-lbfs" id="lj-lb" role="region" aria-label="${v+1} / ${n}">
         <div class="lj-lbmid">${img(vq,vs,'lj-lbimg',vq.lb)}</div>
         <div class="lj-ovtl"><div class="lj-logo lj-ovlogo" data-act="loja-logo">${logo}</div></div>
-        <div class="lj-ovtr">${ljLangOv()}${ljSairBtn('lj-ovb')}${cartPill}${k.so&&!k.so.visita?`<button class="lj-ovb lj-maisp" data-act="kiosk-mais" aria-label="${T('addPerson')}" title="${T('addPerson')}">${ICO.face}</button>`:''}<button class="lj-ovb lj-lbx" data-act="kiosk-fechar" aria-label="${T('ljVerTodas')}" title="${T('ljVerTodas')}">${ICO.grid}</button></div>
+        <div class="lj-ovtr">${ljLangOv()}${ljSairBtn('lj-ovb')}${cartPill}${k.so&&!k.so.visita?`<button class="lj-ovb lj-maisp lj-ovlg" data-act="kiosk-mais" aria-label="${T('addPerson')}" title="${T('addPerson')}">${ICO.face}<span>${T('ljOutraP')}</span></button>`:''}<button class="lj-ovb lj-lbx lj-ovlg" data-act="kiosk-fechar" aria-label="${T('ljVerTodas')}" title="${T('ljVerTodas')}">${ICO.grid}<span>${T('ljVerTodas')}</span></button></div>
         <button class="lj-lbnav prev" data-act="kiosk-ver" data-i="${v-1}" ${v===0?'disabled':''} aria-label="${T('ljPrev')}">‹</button>
         <button class="lj-lbnav next" data-act="kiosk-ver" data-i="${v+1}" ${v>=n-1?'disabled':''} aria-label="${T('ljNext')}">›</button>
         <span class="lj-lbcnt">${v+1} / ${n}</span>
@@ -3561,7 +3578,7 @@ function vQuiosque(){
         ${nSel?`<button class="lj-next lj-ovnext" data-act="loja-cart">${T('cont')} · ${T('nPhotos',nSel)} ${ICO.arrow}</button>`:''}</div>`:'';
     if(vq)return `<div class="lj lj-full lj-review lj-fs">${caixa}${ljSairAsk(k)}</div>`;
     return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${steps(1)}${topR(`${ljSairBtn('lj-ghost sm')}${cartPill}`)}</div>
-      <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n} ${n===1?'foto':'fotos'}</span>${k.so&&!k.so.visita?`<button class="lj-ghost sm lj-maisp" data-act="kiosk-mais">${ICO.face} ${T('addPerson')}</button>`:''}</div>
+      <div class="lj-title"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${n} ${n===1?'foto':'fotos'}</span>${k.so&&!k.so.visita?`<button class="lj-ghost sm lj-maisp" data-act="kiosk-mais">${ICO.face} ${T('addPerson')}</button>`:''}${n?`<button class="lj-ghost sm lj-telacheia" data-act="kiosk-ver" data-i="${Math.min(k.verUlt||0,n-1)}">${ICO.full} ${T('ljTelaCheia')}</button>`:''}</div>
       <div class="lj-grid">${items.map((q,i)=>(q.edIni?`<div class="lj-edh"><span class="lj-edeb">${esc(edSeloTxt())}</span><h3>${T('edTitulo')}</h3></div>`:'')+(q.edFotos?`<div class="lj-blk lj-edfotos">${T('edFotos')}</div>`:'')+(q.blk?`<div class="lj-blk">${esc(q.blk)}</div>`:'')+card(q,i)).join('')}</div>
       <div class="lj-foot"><span class="lj-hint">${nSel?T('tapCheck'):''}</span>
         <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div>${ljSairAsk(k)}</div>`;}
@@ -10366,7 +10383,7 @@ document.addEventListener('click',e=>{
     case 'kiosk-next':state.kiosk.i=(state.kiosk.i||0)+1;render();break;
     case 'kiosk-jump':state.kiosk.i=+d.i;render();break;
     case 'kiosk-ver':{const k=state.kiosk;const n=lojaItems(k.code).length;const i=+d.i;if(i>=0&&i<n){k.ver=i;k.i=i;}render();break;}
-    case 'kiosk-fechar':state.kiosk.ver=null;render();break;
+    case 'kiosk-fechar':state.kiosk.verUlt=state.kiosk.ver;state.kiosk.ver=null;render();break;
     case 'kiosk-tv-sim':case 'kiosk-tv-nao':{const tv=state.kiosk.tv;if(!tv)break;const q=tv.ask[tv.i];if(q&&a==='kiosk-tv-sim')tv.minhas[q.card]=(q.todas||q.fotos).slice(); /* B4 (Eduardo, 01/11): só as fotos em dúvida, nunca a sessão inteira */tv.i++;if(tv.i>=tv.ask.length){lojaAbrirSo(tv.minhas,tv.anc,tv.ext);break;}render();break;}
     case 'kiosk-tog':{const k=state.kiosk;const items=lojaItems(k.code);const x=items[+d.i];if(!x)break;const pk=lojaPick(k.code);k.i=+d.i;
       if(pk[x.k]==='ok')delete pk[x.k];else pk[x.k]='ok';lojaSync(k.code);render();break;}

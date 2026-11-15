@@ -9449,6 +9449,63 @@ def estado_col(col):
     return {"ok": True, "rev": rev, "docs": docs}
 
 
+# 15/11: pedidos do Checkout guardados no servidor (antes só no navegador do posto, SIM.caixaDin). Cada posto grava os seus e
+# lê de volta os dele: o Caixa daquele computador vê o pedido mesmo em outro navegador ou depois de limpar o navegador, e o
+# registro entra no backup do estado.db. Pedido fechado (confirmado, cancelado, não pago, substituído) não volta a ficar aberto.
+PEDIDO_ABERTO = ("aguardando", "escolha")
+PEDIDO_ESTADOS = PEDIDO_ABERTO + ("confirmada", "cancelada", "nao_paga", "substituida")
+PEDIDO_MAX = 64 * 1024
+_re_pedido = re.compile(r"^p_[A-Za-z0-9_-]{1,80}$")
+
+
+def pedidos_db():
+    db = estado_db()
+    db.execute("create table if not exists pedido (id text primary key, posto text, estado text, valor text, criada text, em real)")
+    db.execute("create index if not exists pedido_posto on pedido(posto, criada)")
+    return db
+
+
+def pedidos_gravar(lista, posto_srv=None):
+    """Grava os pedidos que o posto mandou. Devolve {ok, gravados, recusados}."""
+    gravados = recusados = 0
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            for r in (lista if isinstance(lista, list) else [])[:200]:
+                if not isinstance(r, dict) or not _re_pedido.match(str(r.get("id") or "")) or r.get("estado") not in PEDIDO_ESTADOS:
+                    recusados += 1
+                    continue
+                txt = json.dumps(r, ensure_ascii=False)
+                posto = str(r.get("posto") or "")[:60]
+                if len(txt) > PEDIDO_MAX or not posto or (posto_srv and posto != posto_srv):
+                    recusados += 1
+                    continue
+                velho = db.execute("select estado from pedido where id = ?", (r["id"],)).fetchone()
+                if velho and velho[0] not in PEDIDO_ABERTO and (r["estado"] in PEDIDO_ABERTO or r["estado"] != velho[0]):
+                    recusados += 1                      # fechado não reabre nem troca de desfecho
+                    continue
+                db.execute("insert into pedido values (?,?,?,?,?,?) on conflict(id) do update set estado = excluded.estado, "
+                           "valor = excluded.valor, em = excluded.em", (r["id"], posto, r["estado"], txt, str(r.get("criada") or "")[:40], time.time()))
+                gravados += 1
+            db.commit()
+        finally:
+            db.close()
+    return {"ok": True, "gravados": gravados, "recusados": recusados}
+
+
+def pedidos_do_posto(posto, dias=2):
+    """Os pedidos do posto criados nos últimos dias (os abertos sempre, de qualquer dia)."""
+    desde = time.strftime("%Y-%m-%d", time.localtime(time.time() - max(1, min(int(dias), 31)) * 86400))
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            rows = db.execute("select valor from pedido where posto = ? and (criada >= ? or estado in ('aguardando','escolha')) "
+                              "order by criada desc limit 500", (str(posto)[:60], desde)).fetchall()
+        finally:
+            db.close()
+    return {"ok": True, "pedidos": [json.loads(x[0]) for x in rows]}
+
+
 def estado_gravar(body, quem=""):
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
     auditoria = []
@@ -10615,6 +10672,7 @@ ROTAS = (
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
@@ -11441,7 +11499,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -12538,6 +12596,14 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, err)
             body, recusados = auth_filtrar_docs(body, self.sessao(), self.client_address[0], self.posto_atual())
             return self.js(dict(estado_gravar(body, quem=self.client_address[0]), recusados=recusados))
+        if p == "/ponto/pedidos":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(4 * 1024 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            pa = self.posto_atual()
+            return self.js(pedidos_gravar(body.get("pedidos"), str(pa.get("nome") or "")[:30] if pa and not self.sessao() else None))
         if p == "/ponto/eventos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -12837,6 +12903,21 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "origem não autorizada"}, 403)
             ids = ",".join(parse_qs(u.query).get("vendas") or []).split(",")
             return self.js({"ok": True, "vendas": ev_impressoes(ids)}, nostore=True)
+        if u.path == "/ponto/pedidos":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            q = parse_qs(u.query)
+            posto = (q.get("posto") or [""])[0]
+            pa = self.posto_atual()
+            if pa and not self.sessao() and pa.get("nome"):
+                posto = str(pa["nome"])[:30]              # aparelho pareado sem pessoa: só os pedidos dele
+            if not posto:
+                return self.js({"error": "posto obrigatório"}, 400)
+            try:
+                dias = int((q.get("dias") or ["2"])[0])
+            except ValueError:
+                dias = 2
+            return self.js(pedidos_do_posto(posto, dias), nostore=True)
         if u.path == "/ponto/docs/revs":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -13048,7 +13129,7 @@ class H(BaseHTTPRequestHandler):
             return self.postos_post(u)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
-        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
