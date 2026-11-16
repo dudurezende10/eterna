@@ -10683,6 +10683,7 @@ def met_v2(dia, ss, evs):
     out["entradas"] = entradas_dia(dia)
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     out["selfies"] = selfies_dia(dia)
+    out["pessoas"] = pessoas_dia(dia)
     return out
 
 
@@ -10789,6 +10790,52 @@ MONT_TERMINAIS_MAX = 40
 MONT_VISTAS_MAX = 20000
 _re_mont_term = re.compile(r"^[a-z0-9]{8,16}$")
 mont_recusadas = {"n": 0}
+
+
+PESSOA_PERTO = 80   # largura do rosto (px na foto lida, lado 1600) a partir da qual a pessoa está em primeiro plano, não ao fundo
+
+
+def pessoas_dia(dia):
+    """16/11 (Ronaldo: quantas pessoas abordamos?): quantas pessoas diferentes aparecem nas fotos do dia, agrupando os rostos
+    lidos com o mesmo critério da busca por selfie (LIMITE). Só contagens: nenhuma imagem, rosto ou identificação sai daqui.
+    Agrupamento guloso, do rosto maior para o menor, pelo centro de cada grupo; dois rostos da mesma foto nunca são a mesma
+    pessoa. É estimativa: a mesma pessoa de perfil ou muito de longe pode virar duas, e a equipe aparece junto."""
+    try:
+        import numpy as np
+        db = rostos_db()
+        try:
+            rows = db.execute("select pid, larg, emb from rosto where dia = ?", (dia,)).fetchall()
+        finally:
+            db.close()
+    except Exception:
+        return None
+    vazio = {"rostos": 0, "fotos_com_rosto": 0, "pessoas": 0, "pessoas_perto": 0, "uma_foto": 0, "duas_ou_mais": 0}
+    if not rows:
+        return vazio
+    M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128).copy()
+    M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
+    larg = [float(r[1] or 0) for r in rows]
+    soma, pids, maior = [], [], []
+    for i in sorted(range(len(rows)), key=lambda k: -larg[k]):
+        v, pid = M[i], rows[i][0]
+        j = -1
+        if soma:
+            C = np.stack(soma)
+            C = C / np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
+            s = C @ v
+            for k in np.argsort(-s):
+                if s[k] < LIMITE:
+                    break
+                if pid not in pids[k]:
+                    j = int(k)
+                    break
+        if j < 0:
+            soma.append(v.copy()); pids.append({pid}); maior.append(larg[i])
+        else:
+            soma[j] += v; pids[j].add(pid); maior[j] = max(maior[j], larg[i])
+    return {"rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(soma),
+            "pessoas_perto": sum(1 for x in maior if x >= PESSOA_PERTO), "uma_foto": sum(1 for p in pids if len(p) == 1),
+            "duas_ou_mais": sum(1 for p in pids if len(p) >= 2)}
 
 
 def selfies_dia(dia):
