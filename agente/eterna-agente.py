@@ -10684,6 +10684,7 @@ def met_v2(dia, ss, evs):
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     out["selfies"] = selfies_dia(dia)
     out["pessoas"] = pessoas_dia(dia)
+    out["balcao"] = balcao_dia(dia, evs)
     return out
 
 
@@ -10792,7 +10793,156 @@ _re_mont_term = re.compile(r"^[a-z0-9]{8,16}$")
 mont_recusadas = {"n": 0}
 
 
+def balcao_dia(dia, evs):
+    """16/11 (funil): sessões que chegaram ao balcão no dia: as de um pedido do Checkout (pago ou não; os pedidos moram no
+    servidor desde 15/11) somadas às de uma venda registrada. Antes de 15/11 só as vendas existem: devolve None."""
+    cards = set()
+    for e in evs or []:
+        if e.get("tipo") == "criar":
+            d = e.get("dados") or {}
+            cards.update(str(c) for c in ([d.get("card")] + list(d.get("sessoes") or [])) if c)
+    if dia < "2026-11-15":
+        return None
+    try:
+        with estado_lock:
+            db = pedidos_db()
+            try:
+                rows = db.execute("select valor from pedido where substr(criada, 1, 10) between ? and ?",
+                                  (_ff_hoje(time.mktime(time.strptime(dia, "%Y-%m-%d")) - 86400), dia)).fetchall()
+            finally:
+                db.close()
+        for (txt,) in rows:
+            r = json.loads(txt)
+            try:
+                from datetime import datetime
+                quando = _ff_hoje(datetime.fromisoformat(str(r.get("criada")).replace("Z", "+00:00")).timestamp())
+            except Exception:
+                quando = str(r.get("criada") or "")[:10]
+            if quando == dia:
+                cards.update(str(c) for c in ([r.get("card")] + list(r.get("sessoes") or [])) if c)
+    except Exception:
+        pass
+    return len(cards)
+
+
+# 16/11 (Ronaldo): visitantes do Tour em tempo real, da API pública do Maraca Acessos (as catracas; só totais, sem código de
+# ingresso). Substitui a importação de CSV de entradas. Sem internet ou com o Maraca Acessos fora, responde sem os números.
+ACESSOS_API = os.environ.get("ETERNA_ACESSOS_API", "https://maraca-acessos.onrender.com").rstrip("/")
+_acessos_cache = {}
+
+
+def visitantes(de, ate):
+    if not (_re_dia.match(de or "") and _re_dia.match(ate or "")) or de > ate:
+        return None
+    k = de + "|" + ate
+    c = _acessos_cache.get(k)
+    hoje = _ff_hoje()
+    if c and time.time() - c[0] < (60 if ate >= hoje else 3600):
+        return c[1]
+    try:
+        rq = urllib.request.Request(ACESSOS_API + "/api/stats?" + urllib.parse.urlencode({"de": de, "ate": ate}),
+                                    headers={"User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(rq, timeout=25) as r:
+            j = json.loads(r.read(400000).decode("utf8"))
+        ph = (j.get("por_hora") or {})
+        out = {"ok": True, "de": de, "ate": ate, "total": int(j.get("total_hoje") or 0), "anterior": int(j.get("total_ontem") or 0),
+               "por_hora": [int(x or 0) for x in (ph.get("hoje") or [])][:24],
+               "por_canal": [{"canal": str(x.get("canal") or "")[:40], "n": int(x.get("n") or 0)} for x in (j.get("por_canal") or [])][:10],
+               "atualizado": j.get("atualizado_em"), "fonte": "Maraca Acessos"}
+    except Exception as ex:
+        if c:
+            return c[1]
+        return {"ok": False, "erro": str(ex)[:120]}
+    if len(_acessos_cache) > 60:
+        _acessos_cache.clear()
+    _acessos_cache[k] = (time.time(), out)
+    return out
+
+
 PESSOA_PERTO = 80   # largura do rosto (px na foto lida, lado 1600) a partir da qual a pessoa está em primeiro plano, não ao fundo
+
+
+def _pessoas_agrupa(rows, np):
+    """rows = [(pid, largura, emb)] -> (centros, fotos de cada pessoa, maior largura, (pid, vetor) do maior rosto)."""
+    M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128).copy()
+    M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
+    larg = [float(r[1] or 0) for r in rows]
+    soma, pids, maior, rep = [], [], [], []
+    for i in sorted(range(len(rows)), key=lambda k: -larg[k]):
+        v, pid = M[i], rows[i][0]
+        j = -1
+        if soma:
+            C = np.stack(soma)
+            C = C / np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
+            s = C @ v
+            for k in np.argsort(-s):
+                if s[k] < LIMITE:
+                    break
+                if pid not in pids[k]:
+                    j = int(k)
+                    break
+        if j < 0:
+            soma.append(v.copy()); pids.append({pid}); maior.append(larg[i]); rep.append((pid, v))
+        else:
+            soma[j] += v; pids[j].add(pid); maior[j] = max(maior[j], larg[i])
+    return soma, pids, maior, rep
+
+
+def pessoas_rostos(dia):
+    """16/11 (Ronaldo, conferir a contagem): um recorte pequeno do maior rosto de cada pessoa do dia, com quantas fotos ela
+    tem. Só leitura, só para a gestão (qualidade.r), não grava nada e não sai do servidor por outro caminho."""
+    try:
+        import numpy as np
+        db = rostos_db()
+        try:
+            rows = db.execute("select pid, larg, emb from rosto where dia = ?", (dia,)).fetchall()
+        finally:
+            db.close()
+    except Exception:
+        return None
+    if not rows:
+        return {"ok": True, "dia": dia, "pessoas": []}
+    soma, pids, maior, rep = _pessoas_agrupa(rows, np)
+    cv2 = _cv["cv2"]
+    out = []
+    with _busca_lock:
+        if not _busca["m"]:
+            _busca["m"] = leitor()
+        det, rec = _busca["m"]
+        for n, (pid, v) in enumerate(rep):
+            img_b64 = None
+            with lock:
+                e = lib.get(pid)
+            try:
+                img = cv2.imread(e["file"]) if e else None
+                if img is not None:
+                    h, w = img.shape[:2]
+                    k = min(1.0, LADO / max(h, w))
+                    if k < 1:
+                        img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
+                    det.setInputSize((img.shape[1], img.shape[0]))
+                    _, f = det.detect(img)
+                    melhor, ms = None, -1.0
+                    for r in (f if f is not None else []):
+                        e2 = rec.feature(rec.alignCrop(img, r)).flatten().astype("float32")
+                        sv = float((e2 / (np.linalg.norm(e2) or 1)) @ v)
+                        if sv > ms:
+                            melhor, ms = r, sv
+                    if melhor is not None:
+                        x, y, bw, bh = [float(t) for t in melhor[:4]]
+                        m = 0.35
+                        x0, y0 = max(0, int(x - m * bw)), max(0, int(y - m * bh))
+                        x1, y1 = min(img.shape[1], int(x + bw * (1 + m))), min(img.shape[0], int(y + bh * (1 + m)))
+                        cr = img[y0:y1, x0:x1]
+                        if cr.size:
+                            cr = cv2.resize(cr, (140, int(140 * cr.shape[0] / max(1, cr.shape[1]))), interpolation=cv2.INTER_AREA)
+                            ok, buf = cv2.imencode(".jpg", cr, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                            if ok:
+                                img_b64 = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
+            except Exception:
+                img_b64 = None
+            out.append({"n": n + 1, "fotos": len(pids[n]), "larg": round(maior[n]), "rosto": img_b64})
+    return {"ok": True, "dia": dia, "pessoas": out}
 
 
 def pessoas_dia(dia):
@@ -10812,27 +10962,7 @@ def pessoas_dia(dia):
     vazio = {"rostos": 0, "fotos_com_rosto": 0, "pessoas": 0, "pessoas_perto": 0, "uma_foto": 0, "duas_ou_mais": 0}
     if not rows:
         return vazio
-    M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128).copy()
-    M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
-    larg = [float(r[1] or 0) for r in rows]
-    soma, pids, maior = [], [], []
-    for i in sorted(range(len(rows)), key=lambda k: -larg[k]):
-        v, pid = M[i], rows[i][0]
-        j = -1
-        if soma:
-            C = np.stack(soma)
-            C = C / np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
-            s = C @ v
-            for k in np.argsort(-s):
-                if s[k] < LIMITE:
-                    break
-                if pid not in pids[k]:
-                    j = int(k)
-                    break
-        if j < 0:
-            soma.append(v.copy()); pids.append({pid}); maior.append(larg[i])
-        else:
-            soma[j] += v; pids[j].add(pid); maior[j] = max(maior[j], larg[i])
+    soma, pids, maior, _rep = _pessoas_agrupa(rows, np)
     return {"rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(soma),
             "pessoas_perto": sum(1 for x in maior if x >= PESSOA_PERTO), "uma_foto": sum(1 for p in pids if len(p) == 1),
             "duas_ou_mais": sum(1 for p in pids if len(p) >= 2)}
@@ -11150,7 +11280,7 @@ ROTAS = (
     # só a equipe, pelo módulo
     ("GET", "/biblioteca", "sessao", ("set.r", "estoque.r")), ("GET", "/events", "sessao", ("set.r", "estoque.r")),
     ("POST", "/fotos/enviar", "sessao", ("set.c",)),
-    ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")),
+    ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/visitantes", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/pessoas/rostos", "sessao", ("qualidade.r",)),
     ("GET", "/ativ/vendas", "sessao", ("estatisticas.r", "financeiro.r", "relatorios.r")),   # v100: resumo das ativações
     ("POST", "/ativ/venda", "sessao", ("ativvenda.c",)), ("GET", "/ativ/minhas", "sessao", ("ativvenda.r",)),   # v100: venda no tablet
     ("POST", "/ativ/cancelar", "sessao", ("ativvenda.d", "financeiro.u")),
@@ -11965,7 +12095,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -13544,6 +13674,19 @@ class H(BaseHTTPRequestHandler):
             de, ate = (q.get("de") or [""])[0], (q.get("ate") or [""])[0]
             r = ativ_vendas(de, ate)
             return self.js({"ok": True, "vendas": r, "envio": nuvem_envio_medido(de, ate)}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
+        if u.path == "/pessoas/rostos":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            dia = (parse_qs(u.query).get("dia") or [""])[0]
+            r = pessoas_rostos(dia) if _re_dia.match(dia) else None
+            return self.js(r if r is not None else {"error": "dia inválido"}, 200 if r is not None else 400, nostore=True)
+        if u.path == "/visitantes":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            q = parse_qs(u.query)
+            hoje = _ff_hoje()
+            r = visitantes((q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0])
+            return self.js(r if r is not None else {"error": "datas inválidas"}, 200 if r is not None else 400, nostore=True)
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
