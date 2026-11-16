@@ -44,6 +44,7 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
 1. No alto do menu ficam dois botões amarelos: **Abrir Checkout** e **Caixa**. Só aparecem para quem pode usar.
+   - O Checkout abre numa janela própria. Arraste a janela para o monitor do cliente e toque nela uma vez: ela fica em tela cheia. Se alguém sair da tela cheia (Esc ou F11), o próximo toque volta.
 2. O número ao lado de **Caixa** mostra quantos pedidos esperam o caixa: pagamento em dinheiro a confirmar e pedido do Checkout em que o caixa ainda escolhe o pacote e a forma de pagamento. Os pedidos do Checkout ficam guardados no servidor: o Caixa daquele computador vê os pedidos feitos nele, em qualquer navegador.
 3. **Cada estação vê só as suas vendas e os seus pedidos.** O servidor reconhece a estação pelo pareamento. Se o navegador da estação for limpo ou trocado, as vendas pagas daquela estação que ainda não imprimiram voltam sozinhas do servidor para a lista de impressão, em até 1 minuto.
 4. **Fila de impressão** (Dashboard) mostra a DNP de todas as estações: as vendas esperando impressão em cada uma, as impressas nas últimas 3 horas, as que não saíram e o estado de cada DNP (livre ou com erro, como sem papel). Cancelar e reimprimir são feitos na própria estação.

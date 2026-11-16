@@ -2877,6 +2877,11 @@ function lojaAbrir(){try{sessionStorage.setItem('eterna.lojaTab','1')}catch(e){}
   state.pub=null;state.lojaRota=true;state.view='quiosque';lojaReset();if(location.hash!=='#loja')history.pushState(null,'','#loja');render();window.scrollTo({top:0});}
 // v81 (Eduardo, 28/10): "Abrir Checkout" abre o Checkout numa janela à parte (o vendedor arrasta para o segundo monitor); esta aba fica no admin, logada.
 // A janela nova cai em #loja: marca eterna.lojaTab e não carrega o login (I1). As vendas voltam para cá pelo evento 'storage' de eterna.sim.v1.
+// 16/11 (Ronaldo): a janela do Checkout fica em tela cheia. O navegador só deixa entrar em tela cheia num toque, então o primeiro
+// toque na janela do cliente (do vendedor ao arrumar a tela ou do cliente no Iniciar) já liga; se alguém sair (Esc, F11), o próximo toque volta.
+function lojaTelaCheia(){if(!state.lojaRota||!LOJA_ABA_NOW()||document.fullscreenElement||!document.documentElement.requestFullscreen)return;
+  try{document.documentElement.requestFullscreen({navigationUI:'hide'}).catch(()=>{});}catch(e){}}
+document.addEventListener('pointerdown',lojaTelaCheia,true);
 function LOJA_ABA_NOW(){try{return sessionStorage.getItem('eterna.lojaTab')==='1';}catch(e){return false;}}
 function lojaJanela(){const u=state.user;if(u)try{localStorage.setItem('eterna.posto.vendedor',JSON.stringify({email:u.email,nome:u.name}));}catch(e){} // v83: vendedor declarado das vendas deste Checkout
   let w=null;try{w=window.open(location.pathname+'#loja','eterna-checkout','popup,width=1280,height=800');}catch(e){w=null;}
@@ -2887,7 +2892,7 @@ function lojaJanela(){const u=state.user;if(u)try{localStorage.setItem('eterna.p
 // v81: Esc na aba do Checkout (janela do cliente) sem login só volta ao início do #loja: não apaga o login salvo do admin (mesmo navegador) nem abre o login
 // Esc na tela Pronto ou do valor: o Posto vê "o cliente saiu" (lojaSaiu confere a etapa)
 function lojaEsc(){lojaEcoFim();lojaSaiu();if(LOJA_ABA_NOW()&&!state.user){lojaTimerOff();lojaReset();camStop();state.lojaToques=[];state.kiosk.equipe=false;render();return;}lojaSair();}
-function lojaSair(){lojaEcoFim();lojaTimerOff();lojaReset();camStop();state.lojaRota=false;state.lojaToques=[];state.lojaEquipeAte=0;state.lojaDe=null;state.lojaSaidaEquipe=false;history.replaceState(null,'','#');
+function lojaSair(){try{if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(()=>{});}catch(e){}lojaEcoFim();lojaTimerOff();lojaReset();camStop();state.lojaRota=false;state.lojaToques=[];state.lojaEquipeAte=0;state.lojaDe=null;state.lojaSaidaEquipe=false;history.replaceState(null,'','#');
   try{localStorage.removeItem('eterna.session')}catch(e){}
   if(state.user){logout();return;}state.user=null;state.view='entrar';render();}
 // B1: só na tela da câmera, antes de qualquer toque de cliente (lojaCliente zera), nos 10 min depois de "Abrir Checkout" pela equipe
