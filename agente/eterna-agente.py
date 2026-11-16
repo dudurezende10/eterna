@@ -10325,12 +10325,33 @@ def backup_arquivos(pc):
     return len(novos)
 
 
+# 16/11 (alarme falso das 10:44): a hora do último backup bom ficava só na memória e o pulso sai antes da primeira rodada;
+# a cada reinício (deploy, galeria-ligar) o pulso ia com "nunca" e a AWS mandava "backup falhando desde nunca". Agora fica no disco.
+BACKUP_OK_ARQ = os.path.join(HOME, "backup-ok.txt")
+
+
+def _backup_ok_le():
+    try:
+        return float(open(BACKUP_OK_ARQ, encoding="utf8").read().strip())
+    except Exception:
+        return None
+
+
+def _backup_ok_grava(t):
+    try:
+        with open(BACKUP_OK_ARQ + ".tmp", "w", encoding="utf8") as f:
+            f.write(str(t))
+        os.replace(BACKUP_OK_ARQ + ".tmp", BACKUP_OK_ARQ)
+    except Exception:
+        pass
+
+
 def backup_loop():
     if not NUVEM_BUCKET:
         return
     pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
     ultimo = None
-    ok_em = None
+    ok_em = _backup_ok_le()
     while True:
         time.sleep(120)
         # 15/11: pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): a cada rodada, mesmo sem mudança. Sem pulso
@@ -10355,6 +10376,7 @@ def backup_loop():
             if marca == ultimo:
                 if not falhou:
                     ok_em = time.time()
+                    _backup_ok_grava(ok_em)
                 continue
             s3 = _s3_cliente()
             hoje = _ff_hoje()
@@ -10381,6 +10403,7 @@ def backup_loop():
             ultimo = marca
             if not falhou:
                 ok_em = time.time()
+                _backup_ok_grava(ok_em)
                 backup.update(em=_iso(), ok=True, erro=None)
         except Exception as ex:
             backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
