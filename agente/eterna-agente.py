@@ -10862,47 +10862,117 @@ def visitantes(de, ate):
 PESSOA_PERTO = 80   # largura do rosto (px na foto lida, lado 1600) a partir da qual a pessoa está em primeiro plano, não ao fundo
 
 
-def _pessoas_agrupa(rows, np):
-    """rows = [(pid, largura, emb)] -> (centros, fotos de cada pessoa, maior largura, (pid, vetor) do maior rosto)."""
+# 16/11 (v2, conferência do Ronaldo nos rostos de 15/11: muita gente repetida). A v1 agrupava todos os rostos pelo limite
+# da selfie e cada rosto de perfil, de costas, tapado (câmera, taça, mão) ou pequeno virava uma pessoa nova. Agora:
+#  1. Só rosto bom cria pessoa: frontal e nítido (tabela rosto_q) e com pelo menos PESSOA_SEMENTE px.
+#  2. Os rostos bons se juntam por média do grupo (não pelo melhor par), com PESSOA_JUNTA; dois rostos da mesma foto nunca.
+#  3. Os outros rostos (perfil, pequenos) não criam pessoa: entram na pessoa mais parecida da MESMA sessão (a família que
+#     estava junto) com PESSOA_SESSAO, ou de qualquer sessão com LIMITE; sem par, ficam como "sem identificar".
+#  4. Quem aparece em PESSOA_EQUIPE sessões ou mais é a equipe (fotógrafo, guia, supervisor), contada à parte.
+PESSOA_SEMENTE = 60
+PESSOA_JUNTA = 0.40
+PESSOA_SESSAO = 0.25
+PESSOA_EQUIPE = 4
+
+
+def _pessoas_sessoes(dia):
+    """{pid: card} das sessões do dia."""
+    out = {}
+    try:
+        a = os.path.join(SESS_DIR, dia + ".json")
+        for x in (json.load(open(a, encoding="utf8")).get("sessoes") or []) if os.path.exists(a) else []:
+            if isinstance(x, dict) and x.get("card"):
+                for p in list(x.get("fotos") or []) + list(x.get("pend") or []):
+                    if isinstance(p, str):
+                        out[p] = x["card"]
+    except Exception:
+        pass
+    return out
+
+
+def _pessoas_agrupa(rows, np, boas=None, sess=None):
+    """rows = [(pid, largura, emb)]; boas = set de emb (bytes) frontais e nítidos; sess = {pid: card}.
+    -> lista de pessoas {pids:set, cards:set, maior, rep:(pid, vetor), equipe} e quantos rostos ficaram sem identificar."""
+    boas = boas or set()
+    sess = sess or {}
     M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128).copy()
     M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
     larg = [float(r[1] or 0) for r in rows]
-    soma, pids, maior, rep = [], [], [], []
-    for i in sorted(range(len(rows)), key=lambda k: -larg[k]):
-        v, pid = M[i], rows[i][0]
-        j = -1
-        if soma:
-            C = np.stack(soma)
-            C = C / np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
-            s = C @ v
-            for k in np.argsort(-s):
-                if s[k] < LIMITE:
-                    break
-                if pid not in pids[k]:
-                    j = int(k)
-                    break
-        if j < 0:
-            soma.append(v.copy()); pids.append({pid}); maior.append(larg[i]); rep.append((pid, v))
-        else:
-            soma[j] += v; pids[j].add(pid); maior[j] = max(maior[j], larg[i])
-    return soma, pids, maior, rep
+    sem = [i for i in range(len(rows)) if rows[i][2] in boas and larg[i] >= PESSOA_SEMENTE]
+    resto = [i for i in range(len(rows)) if i not in set(sem)]
+    # 2. agrupamento por média (aglomerativo): começa cada rosto bom sozinho e junta o par de grupos mais parecido
+    G = [{"m": [i], "pids": {rows[i][0]}} for i in sem]
+    while len(G) > 1:
+        C = np.stack([M[g["m"]].mean(axis=0) for g in G])
+        C /= np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
+        S = C @ C.T
+        np.fill_diagonal(S, -1)
+        for a in range(len(G)):
+            for b in range(a + 1, len(G)):
+                if G[a]["pids"] & G[b]["pids"]:
+                    S[a, b] = S[b, a] = -1
+        a, b = np.unravel_index(int(np.argmax(S)), S.shape)
+        if S[a, b] < PESSOA_JUNTA:
+            break
+        a, b = min(a, b), max(a, b)
+        G[a]["m"] += G[b]["m"]; G[a]["pids"] |= G[b]["pids"]
+        G.pop(b)
+    # 3. rostos que não criam pessoa: na mais parecida da mesma sessão, ou de qualquer uma pelo limite da selfie
+    sem_id = 0
+    if G:
+        C = np.stack([M[g["m"]].mean(axis=0) for g in G])
+        C /= np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
+        cards = [{sess.get(rows[k][0]) for k in g["m"]} - {None} for g in G]
+        for i in sorted(resto, key=lambda k: -larg[k]):
+            sv = C @ M[i]
+            pid, cd = rows[i][0], sess.get(rows[i][0])
+            alvo = -1
+            for k in np.argsort(-sv):
+                if pid in G[k]["pids"]:
+                    continue
+                if (cd and cd in cards[k] and sv[k] >= PESSOA_SESSAO) or sv[k] >= LIMITE:
+                    alvo = int(k)
+                break
+            if alvo < 0:
+                sem_id += 1
+                continue
+            G[alvo]["m"].append(i); G[alvo]["pids"].add(pid)
+            if cd:
+                cards[alvo].add(cd)
+    else:
+        sem_id = len(resto)
+    out = []
+    for g in G:
+        r0 = max(g["m"], key=lambda k: larg[k])
+        cs = {sess.get(rows[k][0]) for k in g["m"]} - {None}
+        out.append({"pids": g["pids"], "cards": cs, "maior": max(larg[k] for k in g["m"]), "rep": (rows[r0][0], M[r0]),
+                    "equipe": len(cs) >= PESSOA_EQUIPE})
+    out.sort(key=lambda p: -p["maior"])
+    return out, sem_id
+
+
+def _pessoas_le(dia):
+    import numpy as np
+    db = rostos_db()
+    try:
+        rows = db.execute("select pid, larg, emb from rosto where dia = ?", (dia,)).fetchall()
+        boas = {b for (b,) in db.execute("select emb from rosto_q where dia = ?", (dia,))}
+    finally:
+        db.close()
+    return np, rows, boas
 
 
 def pessoas_rostos(dia):
     """16/11 (Ronaldo, conferir a contagem): um recorte pequeno do maior rosto de cada pessoa do dia, com quantas fotos ela
     tem. Só leitura, só para a gestão (qualidade.r), não grava nada e não sai do servidor por outro caminho."""
     try:
-        import numpy as np
-        db = rostos_db()
-        try:
-            rows = db.execute("select pid, larg, emb from rosto where dia = ?", (dia,)).fetchall()
-        finally:
-            db.close()
+        np, rows, boas = _pessoas_le(dia)
     except Exception:
         return None
     if not rows:
         return {"ok": True, "dia": dia, "pessoas": []}
-    soma, pids, maior, rep = _pessoas_agrupa(rows, np)
+    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia))
+    rep = [p["rep"] for p in P]
     cv2 = _cv["cv2"]
     out = []
     with _busca_lock:
@@ -10941,8 +11011,9 @@ def pessoas_rostos(dia):
                                 img_b64 = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
             except Exception:
                 img_b64 = None
-            out.append({"n": n + 1, "fotos": len(pids[n]), "larg": round(maior[n]), "rosto": img_b64})
-    return {"ok": True, "dia": dia, "pessoas": out}
+            out.append({"n": n + 1, "fotos": len(P[n]["pids"]), "sessoes": len(P[n]["cards"]), "equipe": P[n]["equipe"],
+                        "larg": round(P[n]["maior"]), "rosto": img_b64})
+    return {"ok": True, "dia": dia, "pessoas": out, "sem_identificar": sem_id}
 
 
 def pessoas_dia(dia):
@@ -10951,21 +11022,17 @@ def pessoas_dia(dia):
     Agrupamento guloso, do rosto maior para o menor, pelo centro de cada grupo; dois rostos da mesma foto nunca são a mesma
     pessoa. É estimativa: a mesma pessoa de perfil ou muito de longe pode virar duas, e a equipe aparece junto."""
     try:
-        import numpy as np
-        db = rostos_db()
-        try:
-            rows = db.execute("select pid, larg, emb from rosto where dia = ?", (dia,)).fetchall()
-        finally:
-            db.close()
+        np, rows, boas = _pessoas_le(dia)
     except Exception:
         return None
-    vazio = {"rostos": 0, "fotos_com_rosto": 0, "pessoas": 0, "pessoas_perto": 0, "uma_foto": 0, "duas_ou_mais": 0}
+    vazio = {"v": 2, "rostos": 0, "fotos_com_rosto": 0, "pessoas": 0, "equipe": 0, "sem_identificar": 0, "pessoas_perto": 0, "uma_foto": 0, "duas_ou_mais": 0}
     if not rows:
         return vazio
-    soma, pids, maior, _rep = _pessoas_agrupa(rows, np)
-    return {"rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(soma),
-            "pessoas_perto": sum(1 for x in maior if x >= PESSOA_PERTO), "uma_foto": sum(1 for p in pids if len(p) == 1),
-            "duas_ou_mais": sum(1 for p in pids if len(p) >= 2)}
+    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia))
+    cli = [p for p in P if not p["equipe"]]
+    return {"v": 2, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli), "equipe": len(P) - len(cli),
+            "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
+            "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2)}
 
 
 def selfies_dia(dia):
