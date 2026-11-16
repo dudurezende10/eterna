@@ -10483,7 +10483,7 @@ function relVendasLista(){const f=state.sales;const rows=salesFiltradas();const 
     rows.map(r=>[r.no,r.date==='hoje'?todayISO():r.date,r.time,r.card,r.seller,r.items.map(catName).join(' + '),r.photos,r.prints,pagTxt(r.pay),r.total==null?null:r.total,statusLabel(r.status),r.canal==='online'?'Online':'Checkout']));
   return R;}
 // Fotógrafos: a tabela do período; com um fotógrafo aberto, o dia a dia dele (e as sessões do dia aberto)
-function relFotografos(){const st=buildStats(rangeDays());const R=relNovo('fotografos',viewLabel('fotografos'));R.periodo={de:state.range.from,ate:state.range.to};const fr=(a,b)=>b?a/b:null;const pk=fotoKey()||state.person;
+function relFotografos(){const st=buildStats(rangeDays());const R=relNovo('fotografos',viewLabel('fotografos'));R.periodo={de:state.range.from,ate:state.range.to};const fr=(a,b)=>b?a/b:null;const pk=state.person; // a mesma seleção da tela (vFotografos): quem tem vínculo de fotógrafo e vê a tabela exporta a tabela
   if(pk&&st[pk]){const s=st[pk];R.filtros=[[TE('pn_fotografo'),s.name]];
     relAba(R,TE('pn_dia_a_dia'),s.name+' · '+TE('pn_dia_a_dia'),[relC(TE('pn_dia'),'data'),relC(TE('fo_indice'),'int'),relC(TE('pn_receita'),'moeda'),relC(TE('pn_sessoes'),'int'),relC(TE('fo_vendidas'),'int'),relC(TE('fo_conv'),'pct'),relC(TE('fo_cliques'),'int'),relC(TE('fo_cliques_sess'),'dec1'),relC(TE('fo_fotos_vend'),'int'),relC(TE('fo_fotos_vend')+' %','pct'),relC(TE('es_fora_sess_c'),'int')],
       s.days?s.perDay.map(p=>p.off?[p.date,TE('fo_folga')]:[p.date,p.index,p.revenue,p.cards,p.cardsSold,p.conv,p.photos,p.ppc,p.photosSold,fr(p.photosSold,p.photos),unlinked[s.key+'|'+p.date]||null]):[],

@@ -12205,7 +12205,7 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": False, "error": "espera", "espera_s": t["espera_s"]}, 429, nostore=True)
         return self.js(t, nostore=True)
 
-    def file(self, path):
+    def file(self, path, cache="max-age=86400"):
         try:
             with open(path, "rb") as f:
                 data = f.read()
@@ -12215,7 +12215,7 @@ class H(BaseHTTPRequestHandler):
         self.cors()
         self.send_header("Content-Type", "image/png" if path.endswith(".png") else "image/jpeg")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "max-age=86400")
+        self.send_header("Cache-Control", cache)
         self.end_headers()
         self.wfile.write(data)
 
@@ -13142,7 +13142,10 @@ class H(BaseHTTPRequestHandler):
                 e = lib.get(pid)
             if not e:
                 return self.js({"error": "not found"}, 404)
-            return self.file(e["thumb"] if u.path.startswith("/thumb/") else e["file"])
+            if u.path.startswith("/thumb/"):
+                return self.file(e["thumb"])
+            # o original (o zoom da equipe baixa este arquivo): só no aparelho de quem pediu e por pouco tempo, nunca em proxy
+            return self.file(e["file"], cache="private, max-age=300")
         return self.app(u.path)
 
     def do_POST(self):

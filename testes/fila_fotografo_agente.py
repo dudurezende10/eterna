@@ -408,6 +408,10 @@ try:
     ok(cods[:120].count(200) == 120 and cods[120] == 429, "risco 4: limite de 120 originais por minuto por IP: %r" % cods[115:])
     ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: o limite é por IP")
     ok(all(req("GET", "/file/" + pid)[0] == 200 for _ in range(130)), "risco 4: o computador do ponto (loopback) sem limite")
+    # 16/11: o original fica só no aparelho de quem pediu e por 5 min; a miniatura segue como era
+    hf, ht = req("GET", "/file/" + pid)[2], req("GET", "/thumb/" + pid)[2]
+    cc = lambda h: {k.lower(): v for k, v in h.items()}.get("cache-control")
+    ok(cc(hf) == "private, max-age=300" and cc(ht) == "max-age=86400", "cache do original e da miniatura: %r %r" % (cc(hf), cc(ht)))
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: miniatura com Origin de fora")
     # contrato: sem série completa, sem nome de arquivo
     txt = json.dumps(fila())

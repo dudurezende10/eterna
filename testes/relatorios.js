@@ -208,6 +208,13 @@ try{
   a=await baixar('xlsx');ok(a,'Fotógrafos: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Fotógrafos');const d=x.abas[0].dados;ok(x.abas[0].colunas.length===15&&d.length===telaF.length&&d.every((l,i)=>l[0].v===telaF[i][0]&&(!l[1]||String(l[1].v)===telaF[i][1])&&String(Math.round(l[10].v))===telaF[i][2]),'Fotógrafos: arquivo × tela '+J([d.slice(0,2).map(txt),telaF.slice(0,2)]));}
   a=await baixar('pdf');ok(a&&pdfLer(a.buf).objs&&/841\.89 595\.28/.test(pdfLer(a.buf).texto),'Fotógrafos: PDF em paisagem');
+  // admin com vínculo de fotógrafo: a tela abre direto no dia a dia dele (render) e o arquivo sai da mesma seleção da tela (state.person)
+  await pg.evaluate(()=>{ETERNA.state.user.key='yago';ETERNA.state.person=null;ETERNA.render();});await pg.waitForTimeout(100);const telaV=await pg.evaluate(()=>({h1:document.querySelector('#main h1').textContent,n:document.querySelectorAll('.panel table tbody tr').length,person:ETERNA.state.person}));
+  a=await baixar('xlsx');ok(a,'Fotógrafos (admin com vínculo): XLS não baixou · '+await toast());
+  if(a){const x=await xlsx(a,'Fotógrafos (admin com vínculo)');const s=x.abas[0];ok(telaV.h1==='Yago'&&telaV.person==='yago'&&s.nome==='Dia a dia'&&s.cab.includes('Filtros: Fotógrafo: '+telaV.h1)&&s.dados.length===telaV.n+1,'Fotógrafos (admin com vínculo): o arquivo tem que ser o que a tela mostra '+J([telaV,s.nome,s.cab,s.dados.length]));}
+  // a seleção do arquivo é a da tela: sem pessoa aberta sai a tabela de todos, mesmo para quem tem vínculo
+  ok(await pg.evaluate(()=>{const p=ETERNA.state.person;ETERNA.state.person=null;const R=ETERNA.REL.fotografos();ETERNA.state.person=p;return R.abas.length>=1&&R.abas[0].colunas.length===15&&!(R.filtros||[]).length;}),'Fotógrafos: relFotografos tem que seguir state.person, como a tela');
+  await pg.evaluate(()=>{ETERNA.state.user.key=null;ETERNA.state.person=null;ETERNA.render();});await pg.waitForTimeout(60);
   await pg.click('.panel table tbody tr[data-act="person"]');await pg.waitForTimeout(100);const nomeF=await pg.textContent('h1');ok(await pg.$('.head .rel-exp'),'Fotógrafo aberto: sem Exportar no topo');
   a=await baixar('xlsx');ok(a,'Fotógrafo aberto: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Fotógrafo aberto');const s=x.abas[0];const nTela=await pg.evaluate(()=>document.querySelectorAll('.panel table tbody tr').length);ok(s.nome==='Dia a dia'&&s.cab.includes('Filtros: Fotógrafo: '+nomeF)&&s.dados.length===nTela+1&&s.dados[s.dados.length-1][0].v==='Total','Fotógrafo aberto: '+J([s.nome,s.cab,s.dados.length,nTela]));}
