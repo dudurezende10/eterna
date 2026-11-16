@@ -10525,6 +10525,7 @@ def met_v2(dia, ss, evs):
             h_add(out["por_confirmador"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
     out["entradas"] = entradas_dia(dia)
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
+    out["selfies"] = selfies_dia(dia)
     return out
 
 
@@ -10631,6 +10632,30 @@ MONT_TERMINAIS_MAX = 40
 MONT_VISTAS_MAX = 20000
 _re_mont_term = re.compile(r"^[a-z0-9]{8,16}$")
 mont_recusadas = {"n": 0}
+
+
+def selfies_dia(dia):
+    """16/11 (relatório do dia): as selfies do Checkout e da galeria por QR, da tabela selfie (só contagem e horário, nunca
+    imagem nem pessoa): totais por origem e resultado, tempo médio da busca e a lista do dia (hora, origem, resultado, fotos)."""
+    try:
+        with ev_lock:
+            db = vendas_db()
+            try:
+                rows = db.execute("select em, origem, resultado, fotos, ms from selfie where dia = ? order by em", (dia,)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return None
+    por = {}
+    for em, origem, res, n, ms in rows:
+        o = por.setdefault(origem or "?", {"selfies": 0, "achou": 0, "nao_achou": 0, "sem_rosto": 0, "varias_pessoas": 0, "erro": 0,
+                                            "fotos": 0, "ms_soma": 0})
+        o["selfies"] += 1
+        o[res if res in o else "erro"] += 1
+        o["fotos"] += int(n or 0)
+        o["ms_soma"] += int(ms or 0)
+    return {"por_origem": por, "lista": [{"em": str(em)[11:19], "origem": o, "resultado": r, "fotos": int(n or 0), "ms": int(ms or 0)}
+                                         for em, o, r, n, ms in rows][:2000]}
 
 
 def montagens_dia(dia):
