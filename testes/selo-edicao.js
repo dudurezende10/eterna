@@ -24,9 +24,9 @@ const FEED=[{card:CARD,dia:hoje,fotografo:'carlos',fonte:'ftp',ponto:'terminal',
 // ordem dos fundos ativos (BG_DEF) e a base de cada um (FIA_BASE: arq1950 usa a 1ª, os outros a 2ª)
 const ORDEM=['mirantedia','arq1950','telao']; // 16/11: três fundos
 const BASE_DE=bg=>bg==='arq1950'?BASES[0]:BASES[1];
-const NOMES={pt:['Mirante do Rio','Arquibancada 1950','Telão do Maracanã'],en:['Rio lookout','1950 Stands','Maracanã big screen'],
-  es:['Mirador de Río','Tribuna de 1950','Pantalla gigante del Maracanã'],fr:['Belvédère de Rio','Tribunes de 1950','Écran géant du Maracanã'],
-  de:['Aussichtspunkt über Rio','Tribüne 1950','Maracanã-Großbildleinwand']};
+const NOMES={pt:['Mirante do Rio','Maracanã 1950','Telão do Maracanã'],en:['Rio lookout','Maracanã 1950','Maracanã big screen'],
+  es:['Mirador de Río','Maracanã 1950','Pantalla gigante del Maracanã'],fr:['Belvédère de Rio','Maracanã 1950','Écran géant du Maracanã'],
+  de:['Aussichtspunkt über Rio','Maracanã 1950','Maracanã-Großbildleinwand']};
 const SELO={pt:'Edição Maracanã',en:'Maracanã Edition',es:'Edición Maracanã',fr:'Édition Maracanã',de:'Maracanã-Edition'};
 const TIT={pt:'Suas fotos especiais',en:'Your special photos',es:'Tus fotos especiales',fr:'Vos photos spéciales',de:'Ihre besonderen Fotos'};
 const SEP={pt:'Suas fotos de hoje',en:'Your photos from today',es:'Tus fotos de hoy',fr:'Vos photos du jour',de:'Ihre Fotos von heute'};
@@ -175,7 +175,7 @@ try{
   // 12: no Posto, cada miniatura de montagem do pedido tem o selo e o nome do fundo no title
   await pg2.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});await pg2.waitForTimeout(600);
   const p12=await pg2.evaluate(id=>{const el=document.querySelector(`[data-pend="${id}"]`);if(!el)return null;return [...el.querySelectorAll('.pend-th.ai')].map(t=>({ed:(t.querySelector('.lj-ed')||{}).textContent,title:(t.querySelector('.laibadge')||{}).title,corte:(()=>{const e=t.querySelector('.lj-ed');return e?e.scrollWidth>e.clientWidth+1:true;})()}));},ped.id);
-  ok(p12&&p12.length===2&&p12.every(x=>x.ed==='Edição Maracanã'&&!x.corte)&&J(p12.map(x=>x.title).sort())===J(['Arquibancada 1950','Mirante do Rio']),'12: miniaturas de montagem do pedido com o selo e o nome do fundo: '+J(p12));
+  ok(p12&&p12.length===2&&p12.every(x=>x.ed==='Edição Maracanã'&&!x.corte)&&J(p12.map(x=>x.title).sort())===J(['Maracanã 1950','Mirante do Rio']),'12: miniaturas de montagem do pedido com o selo e o nome do fundo: '+J(p12));
   if(PRINTS)await pg2.locator(`[data-pend="${ped.id}"]`).screenshot({path:path.join(PRINTS,'posto-pedido-com-selo.png'),timeout:5000}).catch(()=>{});
   // o caixa escolhe o pacote no Posto: o Checkout mostra o valor e o "Ver minhas fotos"
   await pg2.evaluate(id=>ETERNA.pendEscolher(id,{pkg:'gramado',meio:'pix'}),ped.id);

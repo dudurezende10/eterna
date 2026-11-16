@@ -153,7 +153,7 @@ try:
     s, ct, b = get("/" + FONTE)
     ok(s == 200 and b == FONTE_B and ct == "font/woff2", "a: fonte: %r %r %d" % (s, ct, len(b)))
     # v97: sem um fundo ativo (o Telão) na origem, não fica pronto; com ele, fica (o pré-aquecimento tenta de novo)
-    ok(len(FUNDOS) == 3 and "img/bg-telao-v2.jpg" in FUNDOS and "img/bg-mirantedia.jpg" in FUNDOS and "img/bg-pb1950.jpg" in FUNDOS and all(os.path.isfile(os.path.join(RAIZ, f)) for f in FUNDOS), "fundos ativos do app: %r" % FUNDOS)
+    ok(len(FUNDOS) == 3 and "img/bg-telao-v2.jpg" in FUNDOS and "img/bg-mirantedia.jpg" in FUNDOS and "img/bg-maracana1950.jpg" in FUNDOS and all(os.path.isfile(os.path.join(RAIZ, f)) for f in FUNDOS), "fundos ativos do app: %r" % FUNDOS)
     ok(not esperar_pronto(4), "a: sem o fundo do Telão no disco, app_offline_pronto não pode ser true")
     pôr("img/bg-telao-v2.jpg", b"x" * 64)
     s, ct, b = get("/img/bg-telao-v2.jpg")

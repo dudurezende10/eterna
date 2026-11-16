@@ -3,6 +3,8 @@
 // resultado tem que ser igual, número a número, à conta de antes (refeita aqui com os números antigos). Recorte ESTREITO
 // (casal, pessoa sozinha) do joelho para cima: no Mirante do Rio corta no quadril (74%) com o topo no mesmo lugar; no Telão
 // corta no peito e enche a tela. Entre os dois não há salto; a largura nunca passa do teto do caso largo; nenhum rosto é cortado.
+// Regra 21 (fundo novo "Maracanã 1950", mesmo id arq1950): centro, encostado embaixo, até 92% da largura e NADA do recorte acima
+// de 32% da altura (o título fica no céu), nem braço erguido; estreito corta no quadril; a impressão 10×15 guarda o título inteiro.
 // Vale para a prévia (fiaMontar) e para a impressão (compHi). Recortes sintéticos com as proporções das fotos de calibração
 // (644×1080, 1492×1016 e 2156×1468), nunca foto de cliente.
 const {chromium}=require('playwright');const login=require('./_login.js');
@@ -46,7 +48,42 @@ try{
       // prévia e impressão com o recorte estreito servido pelo /recorte
       const pv=await E.fiaMontar('ag_9a0000000001',bg);const hi=await E.compHi('ag_9a0000000001',bg);
       o.montar[bg]={pv:pv.layout?{est:pv.layout.estreito,corte:pv.layout.corte,w:pv.w,h:pv.h}:pv,hi:hi.layout?{est:hi.layout.estreito,corte:hi.layout.corte,w:hi.w,h:hi.h,av:hi.avisos}:hi};}
+    // ---- Maracanã 1950 (regra 21) ----
+    {const bg='arq1950',B=E.bgOf(bg),R=E.FIA_REGRAS[bg];const pl=new Image();pl.src=B.file;await pl.decode();const W=pl.naturalWidth,H=pl.naturalHeight;const hi=new Image();hi.src=B.fileHi;await hi.decode();
+      const x=o.m1950={file:B.file,hi:B.fileHi,W,H,hw:hi.naturalWidth,hh:hi.naturalHeight,regra:R,casos:{}};
+      // braço erguido: tronco largo e um braço fino que sobe bem acima das cabeças (o topo da caixa é a mão)
+      const braco=()=>{const c=rec(1500,700);const g=c.getContext('2d');g.fillStyle='#f0f';g.fillRect(600,300,90,620);return c;};
+      for(const [n,c] of [['casal',rec(644,1080)],['sozinha',rec(1492,1016,'t')],['grupo',rec(2156,1468)],['braco',braco()]]){const m=E.fiaMedir(c);const L=E.fiaLayout(m,bg,W,H);x.casos[n]={q:m.box.w/m.box.h,modo:L.modo,est:L.estreito,corte:L.corte,zoom:L.zoom,topo:L.dst.y/H,base:(L.dst.y+L.dst.h)/H,larg:L.dst.w/W,cx:(L.dst.x+L.dst.w/2)/W};}
+      // faixa inteira de razões, com e sem rosto na linha do corte: o topo nunca sobe de 34%
+      let topoMin=1,largMax=0;for(let i=30;i<=260;i+=5)for(const ro of [null,[{top:.55,bot:.75,h:.2}]]){const m=E.fiaMedir(rec(i*10,i>160?600:1000));const L=E.fiaLayout(m,bg,W,H,ro);topoMin=Math.min(topoMin,L.dst.y/H);largMax=Math.max(largMax,L.dst.w/W);}x.topoMin=topoMin;x.largMax=largMax;
+      // montagem de verdade com o braço erguido: nenhum ponto do recorte (magenta vira cinza médio; comparado com o fundo puro) acima de 32%
+      window.__recBraco=braco().toDataURL('image/png');}
     o.de=E.FIA_ESTREITO_DE;o.ate=E.FIA_ESTREITO_ATE;return o;},[ANTES]);
+  // o /recorte passa a devolver o recorte de braço erguido; a prévia e a impressão do Maracanã 1950 com ele
+  await ctx.unroute(ORIG+'/recorte');const pngB=(await pg.evaluate(()=>window.__recBraco)).split(',')[1];await ctx.route(ORIG+'/recorte',q=>q.fulfill({status:200,contentType:'image/png',body:Buffer.from(pngB,'base64')}));
+  const z=await pg.evaluate(async()=>{const E=ETERNA,bg='arq1950',B=E.bgOf(bg);const carrega=async u=>{const im=new Image();im.src=u;await im.decode();return im;};const dados=(im,w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(im,0,0,w,h);return x.getImageData(0,0,w,h).data;};
+    const r=await E.fiaMontar('ag_9a0000000002',bg);if(!r.canvas)return {falha:r};const W=r.w,H=r.h;const A=r.canvas.getContext('2d').getImageData(0,0,W,H).data;const P=dados(await carrega(B.file),W,H);
+    // fundo puro em cinza para comparar (o fiaPB converte o quadro inteiro; o arquivo já é cinza)
+    let acima=0,abaixo=0,cor=0;const lim=Math.floor(H*.32);for(let y=0;y<H;y+=2)for(let x=0;x<W;x+=2){const i=(y*W+x)*4;if(Math.abs(A[i]-A[i+1])>2||Math.abs(A[i+1]-A[i+2])>2)cor++;const d=Math.abs(A[i]-P[i]);if(d>12){if(y<lim)acima++;else abaixo++;}}
+    const L=r.layout;const o={W,H,acima,abaixo,cor,topo:L.dst.y/H,mono:L.mono,fonte:r.fonte};
+    // impressão: 1844×1240 do fundo de 5000 px; o título (letras claras no céu escuro, no alto e no centro) inteiro, com folga do alto
+    const h=await E.compHi('ag_9a0000000002',bg);if(!h.url)return {...o,hi:h};const im=await carrega(h.url);const D=dados(im,h.w,h.h);let y0=-1;for(let y=0;y<Math.round(h.h*.2)&&y0<0;y++){let n=0;for(let x=Math.round(h.w*.3);x<h.w*.7;x++){if(D[(y*h.w+x)*4]>190)n++;}if(n>3)y0=y;}
+    // a mesma medida no arquivo de 5000 px: a 1ª linha clara do título, para saber onde ela tem que cair na impressão
+    const hp=await carrega(B.fileHi);const hw=hp.naturalWidth,hh=hp.naturalHeight;const F=dados(hp,hw,hh);let f0=-1;for(let y=0;y<Math.round(hh*.2)&&f0<0;y++){let n=0;for(let x=Math.round(hw*.3);x<hw*.7;x++){if(F[(y*hw+x)*4]>190)n++;}if(n>8)f0=y;}
+    return {...o,imp:{w:h.w,h:h.h,av:h.avisos,fonte:h.fonte,titulo:y0,tituloArq:f0/hh,est:h.layout.estreito}};});
+  r.z=z;
+  {const x=r.m1950,C=x.casos;
+    ok(x.file==='img/bg-maracana1950.jpg'&&x.hi==='img/fundos-5k/maracana1950.jpg'&&x.W===2400&&x.hw===5000&&Math.abs(x.W/x.H-x.hw/x.hh)<.002,'1950: arquivos novos (2400 e 5000 px, mesma proporção): '+J([x.file,x.hi,x.W,x.H,x.hw,x.hh]));
+    ok(J(x.regra)===J({mono:{contraste:1.1},meio:{corte:1,alt:.66,larg:.92,cx:.5},inteiro:{corte:.62,alt:.66,larg:.92,cx:.5},estreito:{corte:.74,alt:.66,larg:.92,cx:.5}})&&!x.regra.largo,'1950: regra 21 (sem o modo largo com zoom do fundo antigo): '+J(x.regra));
+    ok(C.casal.est===1&&C.casal.corte===.74&&Math.abs(C.casal.topo-.34)<.002&&Math.abs(C.casal.base-1)<.001&&Math.abs(C.casal.cx-.5)<.002,'1950 casal (estreito): corte no quadril, topo a 34%, encostado embaixo, no centro: '+J(C.casal));
+    {const c=C.braco;ok(c.modo==='meio'&&c.corte>=.74&&c.zoom===1&&c.topo>=.34-.001&&Math.abs(c.base-1)<.001&&c.larg<=.92+.001,'1950 braço erguido: a mão (topo do recorte) fica em 34% ou abaixo: '+J(c));}
+    for(const n of ['sozinha','grupo']){const c=C[n];ok(c.est===0&&c.corte===1&&c.zoom===1&&c.modo==='meio'&&c.topo>=.34-.001&&Math.abs(c.base-1)<.001&&c.larg<=.92+.001&&Math.abs(c.cx-.5)<.002,'1950 '+n+' (largo): recorte inteiro, limitado pela largura (92%) ou pelo topo a 34%, sem zoom do fundo: '+J(c));}
+    ok(x.topoMin>=.34-.001&&x.largMax<=.92+.001,'1950: em toda a faixa de proporções, com e sem rosto no corte, o topo fica em 34% ou abaixo e a largura até 92%: '+J([x.topoMin,x.largMax]));
+    if(!z||z.falha||!z.imp||!z.imp.w)ok(false,'1950: a montagem com braço erguido não saiu: '+J(z).slice(0,300));
+    else{ok(z.acima===0&&z.abaixo>2000&&z.topo>=.34-.001,'1950 braço erguido: nenhum ponto do recorte acima de 32% da altura (a pessoa está abaixo): '+J({acima:z.acima,abaixo:z.abaixo,topo:z.topo}));
+      ok(z.cor===0&&z.mono&&z.mono.contraste===1.1&&z.fonte==='img/bg-maracana1950.jpg','1950: a montagem inteira em tons de cinza, pessoa incluída: '+J({cor:z.cor,mono:z.mono}));
+      ok(z.imp.w===1844&&z.imp.h===1240&&!(z.imp.av||[]).length&&z.imp.fonte==='img/fundos-5k/maracana1950.jpg','1950: impressão 10×15 com o fundo de 5000 px, sem aviso: '+J(z.imp));
+      ok(z.imp.titulo>=40&&z.imp.titulo<=120&&z.imp.tituloArq>.04&&z.imp.tituloArq<.07,'1950: o título inteiro dentro da impressão, com folga do alto (1ª linha do título a '+z.imp.titulo+' px de 1240; no arquivo a '+(z.imp.tituloArq*100).toFixed(1)+'% do alto): '+J(z.imp));}}
   if(!r.Q||!r.Q.telao)throw new Error('o Telão não montou: '+J(r).slice(0,300));
   // as entradas "meio" não mudaram; o caso estreito existe só no Mirante do Rio e no Telão
   for(const bg of ['mirantedia','telao'])ok(J(r.regras[bg].meio)===J(ANTES[bg])&&r.regras[bg].est&&r.regras[bg].est.corte===ESTREITO[bg].corte&&r.regras[bg].est.alt===ESTREITO[bg].alt&&r.regras[bg].est.larg===ANTES[bg].larg,bg+': a entrada "meio" tem que ser a de antes e a "estreito" a aprovada: '+J(r.regras[bg]));
@@ -66,4 +103,4 @@ try{
 }catch(e){fails.push('erro: '+(e.stack||e.message).slice(0,600));}
 finally{await b.close();}
 if(errs.length)fails.push('erros na página: '+errs.slice(0,3).join(' | '));
-console.log(`${fails.length?'FALHA':'OK'} proporcao-montagens: recorte largo igual a antes e recorte estreito maior (quadril no Mirante do Rio, peito no Telão), sem salto, com teto de largura e sem cortar rosto, na prévia e na impressão${fails.length?' · '+fails.join(' | '):''}`);process.exit(fails.length?1:0);})();
+console.log(`${fails.length?'FALHA':'OK'} proporcao-montagens: recorte largo igual a antes e recorte estreito maior (quadril no Mirante do Rio, peito no Telão), sem salto, com teto de largura e sem cortar rosto, na prévia e na impressão; Maracanã 1950 abaixo do título, com o título inteiro na impressão${fails.length?' · '+fails.join(' | '):''}`);process.exit(fails.length?1:0);})();

@@ -44,8 +44,8 @@ try{
 
   // 7: nomes para o cliente nas 5 línguas
   const c7=await pg.evaluate(ids=>{const o={};['pt','en','es','fr','de'].forEach(l=>{ETERNA.state.lang=l;o[l]=ids.map(i=>ETERNA.bgNomeCli(ETERNA.bgOf(i)));});ETERNA.state.lang='pt';return o;},TRINCA);
-  ok(J(c7)===J({pt:['Mirante do Rio','Arquibancada 1950','Telão do Maracanã'],en:['Rio lookout','1950 Stands','Maracanã big screen'],es:['Mirador de Río','Tribuna de 1950','Pantalla gigante del Maracanã'],
-    fr:['Belvédère de Rio','Tribunes de 1950','Écran géant du Maracanã'],de:['Aussichtspunkt über Rio','Tribüne 1950','Maracanã-Großbildleinwand']}),'7: nomes nas 5 línguas: '+J(c7));
+  ok(J(c7)===J({pt:['Mirante do Rio','Maracanã 1950','Telão do Maracanã'],en:['Rio lookout','Maracanã 1950','Maracanã big screen'],es:['Mirador de Río','Maracanã 1950','Pantalla gigante del Maracanã'],
+    fr:['Belvédère de Rio','Maracanã 1950','Écran géant du Maracanã'],de:['Aussichtspunkt über Rio','Maracanã 1950','Maracanã-Großbildleinwand']}),'7: nomes nas 5 línguas: '+J(c7));
 
   // 3: aparelho com a lista antiga salva (SIM.bgOn): mostra a trinca e não cria bgOn2 sozinho
   for(const [nome,lista] of [['5 fundos',['campeao','mirante','arq1950','tunel','telao']],['4 fundos',['campeao','mirante','arq1950','tunel']],['com pódio',['campeao','podio','mirante','arq1950','tunel']],['lista vazia',[]]]){
@@ -162,7 +162,7 @@ try{
   if(RENDER){fs.mkdirSync(RENDER,{recursive:true});const b64=u=>Buffer.from(String(u).split(',')[1],'base64');
     fs.writeFileSync(path.join(RENDER,'telao-montagem.png'),b64(te.png));
     const mj=await pg.evaluate(async id=>(await ETERNA.fiaMontar(id,'mirantedia')).canvas.toDataURL('image/jpeg',.9),M1);fs.writeFileSync(path.join(RENDER,'mirante-do-rio-meio-corpo.jpg'),b64(mj));
-    if(pb[false].jpg)fs.writeFileSync(path.join(RENDER,'arquibancada-1950-preto-e-branco.jpg'),b64(pb[false].jpg));
+    if(pb[false].jpg)fs.writeFileSync(path.join(RENDER,'maracana-1950-preto-e-branco.jpg'),b64(pb[false].jpg));
     execFileSync('python3',['-c',`
 import sys
 from PIL import Image,ImageChops
@@ -197,7 +197,7 @@ m.resize((1288,920),Image.LANCZOS).save(d+'/telao-montagem-1288.jpg',quality=88)
   const p2=await cb.newPage();p2.setDefaultTimeout(20000);p2.on('pageerror',e=>errs.push('servidor: '+e.message));
   await login(p2);
   // 4: a lista antiga do servidor chega (primeira leitura: o servidor vale por cima) e o Checkout segue com a trinca
-  ok(await espera(p2,()=>Array.isArray(ETERNA.SIM.bgOn)&&ETERNA.SIM.bgOn.length===5,20000),'4: a lista antiga do servidor (sim/bgOn) chegou ao aparelho');
+  ok(await espera(p2,()=>Array.isArray(ETERNA.SIM.bgOn)&&ETERNA.SIM.bgOn.length===5,45000),/* em máquina de 2 núcleos a 1ª leitura chega em 20 a 25 s (as montagens das bases ocupam a página); eram 20 s de espera */'4: a lista antiga do servidor (sim/bgOn) chegou ao aparelho');
   ok(await espera(p2,c=>!!ETERNA.SIM.sessions[c]&&ETERNA.state.agent.on&&ETERNA.state.agent.recorte&&ETERNA.state.agent.recorte.ok,20000,CARD),'6: a sessão do servidor chegou e o recorte está pronto');
   await p2.waitForTimeout(2500);   // tempo de o aparelho mandar o que quisesse mandar
   const s4=await p2.evaluate(()=>({on:ETERNA.bgOn(),mem:ETERNA.SIM.bgOn,mem2:ETERNA.SIM.bgOn2}));

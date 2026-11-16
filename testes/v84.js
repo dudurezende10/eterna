@@ -170,20 +170,20 @@ out.save(sys.argv[2])
   // Túnel: teto de 75% da altura; corpo inteiro no joelho
   const m4=await mont('ag_'+PIDS.meio,'tunel'),m4b=await mont('ag_'+PIDS.inteiro,'tunel');
   ok(m4.modo==='meio'&&m4.dst.h<=.75*m4.h+1&&near(m4.dst.y+m4.dst.h,m4.h,1)&&m4b.corte===.62&&m4b.dst.h<=.75*m4b.h+1,'4: Túnel com teto de 75%: '+J({m4:m4.dst,m4b:m4b.dst,h:m4.h}));
-  // 1950: tudo em preto e branco; corpo inteiro 60%/78%; meio corpo no umbigo (72%)
+  // 1950 (16/11: fundo novo "Maracanã 1950", regra 21): tudo em preto e branco; até 66% da altura (topo a 34%, abaixo do título) e 92% da largura; corpo inteiro do joelho para cima (62%)
   const m5=await mont('ag_'+PIDS.inteiro,'arq1950'),m6=await mont('ag_'+PIDS.meio,'arq1950');
   ok(m5.cinza&&m6.cinza,'4: o 1950 sai inteiro em preto e branco: '+J({m5:m5.cinza,m6:m6.cinza}));
-  ok((m5.modo==='inteiro'&&m5.corte===.6&&m5.dst.h<=.78*m5.h+1||m5.modo==='largo'&&m5.corte===.55)&&near(m5.dst.y+m5.dst.h,m5.h,1),'4: 1950 corpo inteiro 60%/78% (ou largo): '+J(m5));
-  ok(m6.modo==='meio'&&m6.corte===.72&&near(m6.dst.y+m6.dst.h,m6.h,1),'4: 1950 meio corpo no umbigo: '+J(m6));
-  // família larga no 1950: zoom do fundo (80%), corte a 55%, até 105% da largura; no Campeão, sem zoom
+  ok(m5.modo==='inteiro'&&m5.corte===.62&&m5.dst.h<=.66*m5.h+1&&m5.dst.w<=.92*m5.w+1&&near(m5.dst.y+m5.dst.h,m5.h,1),'4: 1950 corpo inteiro do joelho para cima, até 66% da altura: '+J(m5));
+  ok(m6.modo==='meio'&&m6.corte>=.74&&m6.corte<=1&&m6.dst.y>=.34*m6.h-1&&m6.dst.w<=.92*m6.w+1&&near(m6.dst.y+m6.dst.h,m6.h,1),'4: 1950 meio corpo abaixo do título (topo a 34% ou mais), encostado embaixo: '+J(m6));
+  // família larga no 1950: com o fundo novo não há mais zoom do fundo nem modo largo; limitada pela largura (92%) e abaixo do título
   const m7=await mont('ag_c84000000003','arq1950'),m7c=await mont('ag_c84000000003','campeao2');
-  ok(m7.modo==='largo'&&m7.zoom===.8&&m7.corte===.55&&m7.dst.w<=1.05*m7.w+1&&near(m7.dst.y+m7.dst.h,m7.h,1)&&m7.cinza&&m7c.zoom===1&&m7c.modo==='inteiro','4: família larga no 1950 com zoom do fundo: '+J({m7,m7c:[m7c.modo,m7c.zoom]}));
+  ok(m7.modo==='inteiro'&&m7.zoom===1&&m7.corte===.62&&m7.dst.w<=.92*m7.w+1&&m7.dst.y>=.34*m7.h-1&&near(m7.dst.y+m7.dst.h,m7.h,1)&&m7.cinza&&m7c.zoom===1&&m7c.modo==='inteiro','4: família larga no 1950 sem zoom do fundo, dentro da largura e abaixo do título: '+J({m7,m7c:[m7c.modo,m7c.zoom]}));
   // D5 / regra 10: a linha de corte desce até a base do rosto mais baixo + 15% (função pura e, com foto de exemplo, pelo YuNet do app)
   const pura=await pg.evaluate(()=>{const h=100,w=150,rows=[];for(let y=0;y<h;y++)rows.push(y>=10&&y<90?[5,145]:null);const m={W:1500,H:1000,w,h,k:.1,rows,box:{x:5,y:10,w:141,h:80},trunc:false};
     const a=ETERNA.fiaLayout(m,'arq1950',5000,3571),b=ETERNA.fiaLayout(m,'arq1950',5000,3571,[{top:.5,bot:.6,h:.1}]);return {a:[a.modo,a.corteFinal],b:[b.modo,b.corteFinal,b.src.y+b.src.h]};});
-  ok(pura.a[0]==='largo'&&near(pura.a[1],.55,.02)&&near(pura.b[2]*0.1,61.5,1.5),'4: corte desce até a base do rosto + 15%: '+J(pura));
+  ok(pura.a[0]==='inteiro'&&near(pura.a[1],.62,.02)&&near(pura.b[2]*0.1,61.5,1.5),'4: corte desce até a base do rosto + 15%: '+J(pura));
   if(CUT.crianca){const mc=await pg.evaluate(async()=>{const r=await ETERNA.fiaMontar('ag_e84000000005','arq1950');return r.layout?{modo:r.layout.modo,cf:r.layout.corteFinal,ro:r.layout.rostos}:r;});
-    ok(mc.modo==="largo"&&mc.ro>=4&&mc.cf>.57,'4: família larga no 1950 com criança baixa: o corte desce e o rosto dela fica inteiro: '+J(mc));}
+    ok(mc.modo==="inteiro"&&mc.ro>=4&&mc.cf>.57,'4: família larga no 1950 com criança baixa: o corte desce e o rosto dela fica inteiro: '+J(mc));}
   // contraste do grupo no 1950 (+10%) e nenhum filtro no Campeão
   const rg=await pg.evaluate(()=>JSON.stringify(ETERNA.FIA_REGRAS));ok(/"arq1950":\{"mono":\{"contraste":1.1\}/.test(rg)&&!/campeao2":\{"mono/.test(rg),'4: contraste +10% só no 1950: '+rg.slice(0,200));
   // impressão: fundo de 5000 px (fileHi) e pelo menos 1844×1240 em 10×15
@@ -191,7 +191,7 @@ out.save(sys.argv[2])
   ok(hi.fonte==='img/fundos-5k/campeao.jpg'&&Math.max(hi.w,hi.h)>=1844&&Math.min(hi.w,hi.h)>=1240&&hi.url==='data:image/jpeg;base64,'&&!(hi.av||[]).length,'4: impressão do fileHi com 1844×1240 ou mais: '+J(hi));
   // impressão da v83 (printMontar) com a montagem local
   const pm=await pg.evaluate(async id=>{const r=await ETERNA.printMontar([{k:'ai:'+id+'|arq1950',t:'ai',id,bg:'arq1950'}],{});const im=document.querySelector('#print-root .pr-pg img');const out={ok:r.ok,falhasIA:r.falhasIA,fundo:im&&im.dataset.fundo,w:im&&im.naturalWidth,h:im&&im.naturalHeight};document.getElementById('print-root').remove();return out;},'ag_'+PIDS.inteiro);
-  ok(pm.ok.length===1&&!pm.falhasIA.length&&pm.fundo==='img/fundos-5k/pb1950.jpg'&&pm.w>=1844,'4: a impressão da v83 imprime a foto de IA com a montagem local: '+J(pm));
+  ok(pm.ok.length===1&&!pm.falhasIA.length&&pm.fundo==='img/fundos-5k/maracana1950.jpg'&&pm.w>=1844,'4: a impressão da v83 imprime a foto de IA com a montagem local: '+J(pm));
   ok(!prLog.length,'4: nenhum pedido ao Photoroom na montagem local: '+prLog.length);
   // recorte não instalado: a prévia mostra o aviso, sem erro
   const p503=await pg.evaluate(async()=>{const r=await ETERNA.compose('ag_d84000000004','campeao2');const el=document.createElement('span');el.className='compimg';el.dataset.comp='ag_d84000000004|mirante';document.body.appendChild(el);ETERNA.compHydrate();
