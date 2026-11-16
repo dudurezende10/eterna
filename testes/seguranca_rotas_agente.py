@@ -129,11 +129,15 @@ try:
     ok(st == 200 and "calls" in j, "/photoroom/status com só configuracao.r: %s %s" % (st, j))
     # /ftp/contas: Painel de controle (Ver)
     ok(pede("GET", "/ftp/contas", cookie=foto)[0] == 403 and pede("GET", "/ftp/contas", cookie=adm)[0] == 200, "/ftp/contas só com configuracao.r")
+    # 16/11: Treino da IA. Ler com qualidade.r, marcar com qualidade.u (a Supervisora marca), o interruptor com configuracao.u
+    so_ver = S.cookie_sessao(m, "so-ver-rotas", {"qualidade": {"r": True}})
+    ok(pede("GET", "/treino/dias", cookie=so_ver)[0] == 200 and pede("POST", "/treino/rotulo", {"pid": "abc123abc123", "v": 1}, cookie=so_ver)[0] == 403
+       and pede("POST", "/treino/config", {"ponto": "medir"}, cookie=so_ver)[0] == 403, "treino: só ver não marca nem liga a análise")
     # coleção sim por perfil (cópia dos PRESETS do index.html): cada perfil grava o que a tela dele grava
     RW, RO, ALL = {"c": True, "r": True, "u": True}, {"r": True}, {"c": True, "r": True, "u": True, "d": True}
     perfis = {"foto": {"set": RW, "diario": RW, "escala": RO, "filafoto": RO},
               "venda": {"venda": RW, "quiosque": RW, "catalogo": RO, "filafoto": RO},
-              "supervisor": {"relatorios": RO, "desempenho": RO, "financeiro": RO, "diario": ALL, "set": RO, "venda": RW, "qualidade": RO, "estoque": ALL,
+              "supervisor": {"relatorios": RO, "desempenho": RO, "financeiro": RO, "diario": ALL, "set": RO, "venda": RW, "qualidade": {"r": True, "u": True}, "estoque": ALL,
                              "configuracao": RW, "escala": RW, "laboratorio": RO, "catalogo": RO, "galerias": RW, "filafoto": {"r": True, "u": True}}}
     grava = {"foto": ["edits|ag_x1", "discarded|ag_x1", "invalid|ag_x1", "flagUse|br", "autoAj", "autoAjPor", "camDia|2026-11-09"],
              "venda": ["stock|Caixa 1", "ai|ag_x1", "invalid|ag_x2", "flagUse|ar"],
