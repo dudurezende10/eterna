@@ -5280,8 +5280,8 @@ function arEtapas(L){const V=L.filter(v=>v.origem==='eterna'&&v.etapas&&v.etapas
 function arEtapasPainel(L,env){const E=arEtapas(L);
   const ev=env&&env.n?`<div class="note" id="ar-envio" style="margin-top:8px">${esc(TE('ar_envio',env.n,env.mb,arDur(env.seg),env.mbps))}</div>`:'';
   return `<div class="panel" id="ar-etapas"><h2>${TE('ar_etapas')}</h2>${E?`<div class="note">${TE('ar_etapas_d')}</div>${E.map(x=>`<div class="row" data-ar-etapa="${x.k}" style="justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line)"><div><div class="name">${TE('ar_et_'+x.k)}</div><div class="note">${TE('ar_et_n',x.n,x.pct)}</div></div><b style="white-space:nowrap">${x.med==null?'':esc(TE('ar_et_tempo',arDur(x.med)))}</b></div>`).join('')}`:`<div class="note">${TE('ar_et_sem')}</div>`}${ev}</div>`;}
-function vAtivResumo(){const A=state.ar;if(!A.dia)A.dia=venueToday();arPull(false);if(A.equipe===null){A.equipe=[];arEquipe();}
-  const eq=arVeEquipe()?`<div class="panel" id="ar-equipe"><h2>${TE('ar_equipe')}</h2>${A.equipe.length?A.equipe.map(x=>`<div class="row" style="justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line)"><span>${esc(x.nome)}</span><span class="pill ${x.agora?'good':''}">${x.agora?TE('ar_conectado'):TE('ar_visto_ha',Math.max(1,Math.round(x.visto_ha_s/60)))}</span></div>`).join(''):`<div class="note">${TE('ar_ninguem')}</div>`}</div>`:'';const [de,ate]=arPeriodo();const c=A.cache[de+'|'+ate];
+function vAtivResumo(){const A=state.ar;if(!A.dia)A.dia=venueToday();arPull(false);
+  const eq='';const [de,ate]=arPeriodo();const c=A.cache[de+'|'+ate]; // 16/11 (Ronaldo): sai o painel Equipe agora do Resumo; não fazia sentido ali
   const L=c?c.vendas.filter(v=>v.situacao!=='cancelada'&&(A.tipo==='todos'||v.tipo===A.tipo)):[];const total=L.reduce((s,v)=>s+(+v.valor||0),0);const videos=L.reduce((s,v)=>s+(+v.videos||0),0);
   const tNome={drone:TE('at_drone'),chute:TE('at_chute'),snap:TE('at_snap'),todos:TE('ar_todos')};
   const titulo=A.per==='dia'?fmtDiaLongo(de):TE('ar_de_ate',fmtDiaCurto(de),fmtDiaCurto(ate));

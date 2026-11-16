@@ -42,9 +42,7 @@ try{
   await A.click('[data-act="ar-mover"][data-n="-1"]');await A.waitForTimeout(400);
   ok(/R\$\s?0/.test(await A.textContent('#ar-total'))&&/Nenhuma venda/.test(await A.textContent('#ar-pag')),'semana anterior vazia');
   // quem está com a tela de venda aberta
-  await A.evaluate(()=>ETERNA.arEquipe());await A.waitForTimeout(300);
-  const eq=await A.textContent('#ar-equipe');
-  ok(/Equipe agora/.test(eq)&&/Vendedora Um\s*Conectado/.test(eq)&&/Vendedor Dois\s*Visto há 15 min/.test(eq),'equipe agora: '+eq);
+  ok(await A.$('#ar-equipe')===null,'16/11: o Resumo não tem mais o painel Equipe agora');
   ok(!/ativações/i.test(await A.textContent('#main .head')),'título sem a palavra ativações');
   // data escolhida e Hoje
   await A.click('[data-act="ar-per"][data-p="dia"]');await A.fill('[data-act="ar-data"]','2026-10-07');await A.dispatchEvent('[data-act="ar-data"]','change');await A.waitForTimeout(400);
@@ -65,7 +63,7 @@ try{
   ok(/servidor do ponto/.test(await A.textContent('#main')),'aviso sem servidor');
   // idioma
   await A.evaluate(()=>ETERNA.idiomaEquipe('es'));await A.waitForTimeout(200);
-  ok(/Dron, Tiro y Snap/.test(await A.textContent('#main'))&&/Equipo ahora/.test(await A.textContent('#main')),'tela em espanhol');
+  ok(/Dron, Tiro y Snap/.test(await A.textContent('#main')),'tela em espanhol');
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}

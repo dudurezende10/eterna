@@ -129,7 +129,7 @@ Cada vendedor tem cadastro próprio no Eterna, com nome e login. Hoje são 12 ta
 - **Módulo próprio, `ativvenda` (12/11):** Criar = registrar venda; Ver = abrir a tela e ver as próprias vendas; Excluir = cancelar venda com o vídeo não entregue. A tela saiu do módulo Posto de venda.
 - **Perfil pronto "Vendedor Drone, Chute a Gol e Snap Pop":** só `ativvenda` Criar e Ver, menu só com a tela de venda, que abre direto ao entrar. O vendedor não vê o resto do sistema e não cancela. O Supervisor tem o módulo inteiro; o Admin, como sempre, tudo.
 - **Login:** o admin cadastra a pessoa em Usuários, escolhe o perfil acima e gera a senha provisória em Senhas de acesso. No tablet, o vendedor entra com o e-mail e a senha e troca a senha no primeiro acesso.
-- **Quem está logado:** o tablet chama o servidor a cada 30 s com a tela aberta. No Resumo, o painel **Equipe agora** mostra cada vendedor visto nas últimas 16 h: "Conectado" (visto há menos de 2 min) ou "Visto há N min". Rota `GET /ativ/equipe` (com `estatisticas.r`, `financeiro.r` ou `ativvenda.d`). Fica só na memória do servidor.
+- **Quem está logado:** o tablet chama o servidor a cada 30 s com a tela aberta. Até 16/11, o Resumo tinha o painel **Equipe agora**, que mostrava cada vendedor visto nas últimas 16 h: "Conectado" (visto há menos de 2 min) ou "Visto há N min". Rota `GET /ativ/equipe` (com `estatisticas.r`, `financeiro.r` ou `ativvenda.d`). Fica só na memória do servidor. Em 16/11 o painel saiu do Resumo (Ronaldo: não fazia sentido ali); a rota continua, sem tela.
 - A venda grava quem vendeu, e o resumo mostra o vendedor pelo nome.
 - As vendas importadas do sistema antigo são ligadas ao vendedor pelo nome. Um nome que não estiver no cadastro aparece como veio.
 
