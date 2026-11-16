@@ -24,7 +24,72 @@ def p90(v):
     return v[min(len(v) - 1, int(0.9 * len(v)))] if v else None
 
 
+def medir_montagem():
+    """--montagem: mede o processo de montagem (agente/eterna-montagem.py) com um recorte desenhado aqui (nenhuma foto):
+    tempo por montagem e pico de memória, na prévia e na impressão dos 3 fundos ativos. Os fundos vêm da pasta img/ do
+    repositório. Uso: python3 -I agente/medir-recorte.py --montagem [--voltas 3]"""
+    raiz = os.path.dirname(AQUI)
+    try:
+        from PIL import Image, ImageDraw, ImageFilter
+    except ImportError:
+        print("falta o Pillow (o mesmo ambiente do agente: numpy, pillow e opencv-python-headless)")
+        return 2
+    tmp = tempfile.mkdtemp(prefix="eterna-medir-mtg-")
+    try:
+        rec, mont = os.path.join(tmp, "recortes"), os.path.join(tmp, "montagens")
+        os.makedirs(rec)
+        os.makedirs(mont)
+        im = Image.new("RGBA", (3000, 2000), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        for i, cx in enumerate((1250, 1750)):
+            d.ellipse([cx - 140, 500, cx + 140, 860], fill=(226 - 40 * i, 190 - 30 * i, 160 - 30 * i, 255))
+            d.rounded_rectangle([cx - 330, 840, cx + 330, 2300], radius=110, fill=(40 + 120 * i, 80, 150 - 60 * i, 255))
+        im = im.convert("RGBa").filter(ImageFilter.GaussianBlur(1.6)).convert("RGBA")
+        im.save(os.path.join(rec, "aaaaaaaaaaaa.png"), "PNG", compress_level=3)
+        regras = json.loads(subprocess.run([sys.executable, "-I", os.path.join(AQUI, "eterna-montagem.py"), "--regras"],
+                                           capture_output=True, text=True).stdout)
+        modelos = arg("--modelos") or os.path.expanduser("~/Eterna/modelos")
+        yunet = os.path.join(modelos, "face_detection_yunet_2023mar.onnx")
+        p = subprocess.Popen([sys.executable, "-I", os.path.join(AQUI, "eterna-montagem.py"), "--recortes", rec, "--fundos", os.path.join(raiz, "img"),
+                              "--montagens", mont, "--modelos", modelos], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+        pronto = json.loads(p.stdout.readline() or "{}")
+        if not pronto.get("pronto"):
+            print("o processo de montagem não abriu:", pronto.get("erro"))
+            return 3
+        print("processo aberto em %s ms · rostos: %s" % (pronto.get("carga_ms"), "YuNet" if os.path.isfile(yunet) else "sem o modelo (monta sem rostos)"))
+        voltas = int(arg("--voltas") or 3)
+        tempos, pico, n = {}, 0, 0
+        for v in range(voltas):
+            for fundo in ("mirantedia", "arq1950", "telao"):
+                for tipo in ("p", "i"):
+                    n += 1
+                    dest = os.path.join(mont, "aaaaaaaaaaaa", "%s-%08x-%s.jpg" % (fundo, v, tipo))
+                    req = {"id": str(n), "op": "montar", "recorte": os.path.join(rec, "aaaaaaaaaaaa.png"), "fundo": fundo,
+                           "previa_fundo": os.path.join(raiz, regras["fundos"][fundo]["previa"]), "hi_fundo": os.path.join(raiz, regras["fundos"][fundo]["hi"]),
+                           "yunet": yunet if os.path.isfile(yunet) else None, "p": dest if tipo == "p" else None, "i": dest if tipo == "i" else None}
+                    t0 = time.time()
+                    p.stdin.write(json.dumps(req) + "\n")
+                    p.stdin.flush()
+                    j = json.loads(p.stdout.readline() or "{}")
+                    if not j.get("ok"):
+                        print("montagem %s %s falhou: %s" % (fundo, tipo, j.get("erro")))
+                        return 4
+                    tempos.setdefault((fundo, tipo), []).append(int((time.time() - t0) * 1000))
+                    pico = max(pico, j.get("pico_mb") or 0)
+        p.stdin.close()
+        p.wait(timeout=10)
+        print("montagem (ms, mediana de %d; a 1ª de cada recorte e de cada fundo inclui abrir os arquivos):" % voltas)
+        for fundo in ("mirantedia", "arq1950", "telao"):
+            print("  %-11s prévia %5d · impressão %5d" % (fundo, statistics.median(tempos[(fundo, "p")]), statistics.median(tempos[(fundo, "i")])))
+        print("pico de memória do processo: %d MB" % pico)
+        return 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
+    if "--montagem" in sys.argv:
+        return medir_montagem()
     if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
         print(__doc__ or "uso: medir-recorte.py <pasta> [--gpu auto|cpu] [--saida <pasta>]")
         return 2
