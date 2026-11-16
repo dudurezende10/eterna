@@ -1,4 +1,4 @@
-// Exportar relatório (PDF | XLS) nas telas de dados. Critérios de docs/planos/2026-11-15-exportar-relatorios.md.
+// Exportar relatório (ícones PDF | XLS e, onde a tela já tinha, CSV no mesmo grupo) nas telas de dados. Critérios de docs/planos/2026-11-15-exportar-relatorios.md.
 // Lê os bytes do arquivo baixado: o .xlsx como ZIP (diretório, CRC e XML de cada parte) e o .pdf pela estrutura (cabeçalho, xref, páginas e rodapé).
 // Sem dado real: usuário fictício, vendas de teste montadas aqui e os dados de exemplo do próprio index.html.
 const entrarTeste=require('./_entrar');
@@ -48,13 +48,21 @@ try{
     // (a linha vazia não existe no XML: é um salto no número da linha)
     r.abas.forEach(ab=>{const L=ab.linhas||[];const iv=L.findIndex((l,i)=>i>0&&l[0]!==L[i-1][0]+1);const semN=l=>l.slice(1);ab.cab=L.slice(0,iv).map(l=>l[1]?l[1].v:'');ab.colunas=semN(L[iv]||[]).map(c=>c?c.v:'');ab.dados=L.slice(iv+1).map(semN);ab.seguidas=L.slice(iv).every((l,i,A)=>!i||l[0]===A[i-1][0]+1);});return r;}
   const txt=l=>l.map(c=>c?c.v:null);
+  // 16/11: o grupo mostra um ícone por formato (sem texto no botão); o nome do formato fica no aria-label e no title
+  const grupo=sel=>pg.evaluate(sel=>{const g=document.querySelector(sel);return g?[...g.querySelectorAll('button')].map(b=>({fmt:b.dataset.fmt,act:b.dataset.act,rot:b.getAttribute('aria-label'),tit:b.title,ico:!!b.querySelector('svg.rel-ic.'+b.dataset.fmt+'[aria-hidden="true"]'),
+    solto:[...b.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()),w:b.offsetWidth,h:b.offsetHeight,cor:getComputedStyle(b.querySelector('svg')||b).color})):null;},sel);
+  const grupoOk=(g,fmts,rots,rot)=>{ok(g&&J(g.map(x=>x.fmt))===J(fmts),rot+': ícones do grupo '+J(g&&g.map(x=>x.fmt)));if(!g)return;
+    ok(g.every(x=>x.ico&&!x.solto),rot+': botão sem ícone ou com texto solto '+J(g));ok(g.every(x=>x.w>=40&&x.h>=40),rot+': alvo de toque menor que 40 px '+J(g.map(x=>[x.w,x.h])));
+    ok(J(g.map(x=>x.rot))===J(rots)&&g.every(x=>x.tit===x.rot),rot+': aria-label ou title '+J(g.map(x=>[x.rot,x.tit])));ok(new Set(g.map(x=>x.cor)).size===g.length,rot+': os ícones têm a mesma cor '+J(g.map(x=>x.cor)));};
+  const csvBaixa=async act=>{const espera=pg.waitForEvent('download',{timeout:1500}).catch(()=>null);await pg.click(`.rel-exp [data-act="${act}"]`);const dl=await espera;if(!dl)return null;const p=path.join(tmp,(++nArq)+'-'+dl.suggestedFilename());await dl.saveAs(p);return {nome:dl.suggestedFilename(),txt:fs.readFileSync(p,'utf8')};};
 
   // ---------- critério 1 (parte): Bandeiras tem o botão no topo; 3 e 5: chip Atenção, nome hostil, sem as colunas de estimativa ----------
   const HOSTIL='=1+1 <b>&"';
   await abrir('bandeiras',`const L=ETERNA.flagLinhas().rows.map(r=>r.f.slice());L.push([9001,${J(HOSTIL)},'Teste',2,'A',1,'']);L.push([9002,'Ação Ünica 東京','Teste',1,'B',1,'']);ETERNA.SIM.flagList=L;ETERNA.SIM.flags=ETERNA.SIM.flags||{};
     ETERNA.SIM.flags[${J(HOSTIL)}]={state:'defeito',note:'rasgo'+String.fromCharCode(1)+' no canto (2 cm)',point:'campo2'};ETERNA.SIM.flags['Ação Ünica 東京']={state:'desgastada',note:'',point:'campo3'};ETERNA.state.flagFilter='atencao';`);
   ok(await pg.$('.head .rel-exp [data-fmt="pdf"]')&&await pg.$('.head .rel-exp [data-fmt="xlsx"]'),'Bandeiras: sem Exportar PDF e XLS no topo');
-  ok((await pg.textContent('.rel-exp'))==='ExportarPDFXLS','Bandeiras: texto do botão '+J(await pg.textContent('.rel-exp')));
+  ok((await pg.textContent('.rel-exp>span'))==='Exportar','Bandeiras: rótulo do grupo '+J(await pg.textContent('.rel-exp>span')));
+  grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],['Exportar PDF','Exportar XLS'],'Bandeiras (2 ícones)');
   const tela=await pg.evaluate(()=>({nomes:ETERNA.flagLinhas().list.map(r=>r.f[1]),unid:ETERNA.flagLinhas().list.map(r=>r.f[3]),linhasTela:[...document.querySelectorAll('.panel table tbody tr td.name')].map(td=>td.firstChild.textContent),todas:ETERNA.flagLinhas().rows.length,venue:document.querySelector('#venue-name')?document.querySelector('#venue-name').textContent:''}));
   ok(tela.nomes.length>=2&&tela.nomes.length<tela.todas&&J(tela.nomes)===J(tela.linhasTela),'Bandeiras: o filtro Atenção da tela não bate com flagLinhas '+J([tela.nomes.length,tela.linhasTela.length]));
   let a=await baixar('xlsx');ok(a,'Bandeiras: XLS não baixou · '+await toast());
@@ -81,7 +89,8 @@ try{
   // ---------- critérios 2 e 4: Painel em 7 dias (dados de exemplo do index.html): 5 abas, total de receita igual ao da tela ----------
   const R7=await pg.evaluate(()=>{const f=ETERNA.state.range.from;const [y,m,d]=f.split('-').map(Number);return {from:f,to:new Date(Date.UTC(y,m-1,d+6)).toISOString().slice(0,10)};});
   await abrir('painel',`ETERNA.state.range=${J(R7)};ETERNA.state.painel={fonte:'tudo',pdv:''};`);
-  ok(await pg.$('.pn-head .rel-exp')&&await pg.$('[data-act="pn-csv"]'),'Painel: sem Exportar ou sem o CSV antigo');
+  grupoOk(await grupo('.pn-head .rel-exp'),['pdf','xlsx','csv'],['Exportar PDF','Exportar XLS','Exportar CSV'],'Painel (3 ícones)');
+  ok(await pg.evaluate(()=>document.querySelectorAll('[data-act="pn-csv"]').length===1&&!!document.querySelector('.pn-head .rel-exp [data-act="pn-csv"]')&&!document.querySelector('.pn-btn[data-act="pn-csv"]')),'Painel: o CSV tem que estar só dentro do grupo Exportar');
   const pn=await pg.evaluate(()=>({tela:document.querySelector('.pn-kpi[data-k="receita"] .pn-big').textContent.replace(/\D/g,''),k:ETERNA.state.painelUlt.kpi,dias:ETERNA.state.painelUlt.dias.length,
     notas:ETERNA.state.painelUlt.notas,notasTela:(document.querySelector('.pn-notas')||{textContent:''}).textContent,semCon:ETERNA.TE('pn_nota_sem_con'),gasto:ETERNA.state.painelUlt.dias.map(x=>x.pax?Math.round(x.receita/x.pax):null)}));
   // revisão, item 2: as notas da tela (sem conexão, filtro de ponto e avisos) são as mesmas do arquivo
@@ -110,7 +119,9 @@ try{
     ok(p.linhas.join(' ').includes(pn.semCon),'Painel PDF: sem a nota da tela');
     ok(/\/MediaBox \[0 0 841\.89 595\.28\]/.test(p.texto),'Painel PDF: 10 colunas deveriam sair em paisagem');}
   // critério 13: o CSV antigo do Painel continua
-  {const espera=pg.waitForEvent('download',{timeout:1500}).catch(()=>null);await pg.click('[data-act="pn-csv"]');const dl=await espera;ok(dl&&/^eterna-painel-.*\.csv$/.test(dl.suggestedFilename()),'Painel: o Exportar CSV antigo parou');}
+  // 16/11: o CSV é o mesmo de antes (mesma função, mesmo nome), só mudou de lugar
+  {const dl=await csvBaixa('pn-csv');const esp=await pg.evaluate(()=>['\ufeff'+ETERNA.painelCSV(ETERNA.state.painelUlt),'eterna-painel-'+ETERNA.state.painelUlt.range.from+'_'+ETERNA.state.painelUlt.range.to+'.csv']);
+    ok(dl&&dl.nome===esp[1]&&dl.txt===esp[0]&&dl.txt.length>100,'Painel: o CSV do grupo não é o mesmo arquivo de antes '+J(dl&&[dl.nome,dl.txt.length,esp[0].length]));}
   // critério 11: período sem dado não gera arquivo
   await abrir('painel',`ETERNA.state.range={from:'2019-01-01',to:'2019-01-07'};`);a=await baixar('xlsx');ok(!a&&(await toast())===await TE('rel_sem_linhas'),'Painel vazio: deveria avisar que não há linhas · '+await toast());
   await pg.evaluate(r=>{ETERNA.state.range=r;},R7);
@@ -119,7 +130,12 @@ try{
   const DIAS=[{dia:R7.from,v:2,vendas:5,faturamento:900.5,sessoes:10,sessoes_com_venda:5,fotos:100,por_idioma:{pt:{vendas:3,faturamento:500},en:{vendas:2,faturamento:400.5}},por_produto:{gramado:{n:3,receita:450},arquibancada:{n:2,receita:450.5}},por_meio:{pix:{vendas:5,faturamento:900.5}},por_posto:{'Caixa 1':{vendas:5,faturamento:900.5}},por_hora:{10:{vendas:5,faturamento:900.5,sessoes:10,fotos:100}},por_fotografo:{yago:{sessoes:6,fotos:60,vendas:3,faturamento:500.5,sessoes_com_venda:3},marinara:{sessoes:4,fotos:40,vendas:2,faturamento:400,sessoes_com_venda:2}},montagens:{vistas:8,compradas:2}},
     {dia:R7.to,v:2,vendas:5,faturamento:1070,sessoes:8,sessoes_com_venda:4,fotos:90,por_idioma:{pt:{vendas:1,faturamento:70},es:{vendas:4,faturamento:1000}},por_fotografo:{yago:{sessoes:8,fotos:90,vendas:5,faturamento:1070,sessoes_com_venda:4}}}];
   const es=sec=>abrir('estatisticas',`const M=ETERNA.state.es;M.sec=${J(sec)};M.rover=false;M.foto=null;M.ord='faturamento';M.dir=-1;M.chave=${J(R7.from+'|'+R7.to)};M.dias=${J(DIAS)};M.em=Date.now();`);
-  for(const s of ['a','b','c','d','e','f','g']){await es(s);const tem=!!(await pg.$('.head .rel-exp'));ok(tem===['a','b','e'].includes(s),'Estatísticas seção '+s+': botão '+(tem?'sobrando':'faltando'));}
+  for(const s of ['a','b','c','d','e','f','g']){await es(s);const tem=!!(await pg.$('.head .rel-exp'));ok(tem===['a','b','e'].includes(s),'Estatísticas seção '+s+': botão '+(tem?'sobrando':'faltando'));
+    if(tem)grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],['Exportar PDF','Exportar XLS'],'Estatísticas seção '+s+' (2 ícones)');}
+  // o CSV dos dias do ano é de outra tabela (seção Jogos e ano a ano): fica junto dela, com o ícone novo (testes/agenda-estatisticas.js clica nele com o servidor)
+  {const fonte=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');ok(/\$\{relBotao\('',\{act:'es-dias-csv',rot:TE\('es_baixar_csv'\)\}\)\}/.test(fonte)&&!/<button[^>]*data-act="(es-dias-csv|pn-csv|sales-csv)"/.test(fonte),'CSV fora do grupo Exportar no index.html');
+    const g=await pg.evaluate(()=>{const d=document.createElement('div');d.innerHTML=ETERNA.relBotao('',{act:'es-dias-csv',rot:ETERNA.TE('es_baixar_csv')});return [...d.querySelectorAll('button')].map(b=>[b.dataset.act,b.dataset.fmt,b.getAttribute('aria-label'),!!b.querySelector('svg.rel-ic.csv')]);});
+    ok(J(g)===J([['es-dias-csv','csv','Baixar dias (CSV)',true]]),'Estatísticas, dias do ano: grupo só com o CSV '+J(g));}
   await es('e');const telaE=await pg.evaluate(()=>[...document.querySelectorAll('.es-sec table tbody tr')].map(tr=>[...tr.children].map(td=>td.textContent)));
   a=await baixar('xlsx');ok(a,'Estatísticas e: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Estatísticas e');const d=x.abas[0].dados;ok(x.abas.length===1&&J(x.abas[0].colunas)===J(['Idioma','Vendas','Faturamento','Ticket']),'Estatísticas e: abas ou colunas '+J([x.abas.length,x.abas[0].colunas]));
@@ -137,7 +153,8 @@ try{
     const cel={};ETERNA.salesFiltradas().forEach(r=>[r.no,r.time,r.card,r.seller].forEach(t=>{t=String(t||'');if(t&&!/[^\x20-\xff]/.test(t))cel[t]=(cel[t]||0)+1;}));
     return {seller,n,tot:todas.length,tile:document.querySelector('.sl-tiles .tile .v').textContent.replace(/\D/g,''),naTela:document.querySelectorAll('.sl-tbl tbody tr').length,nos:ETERNA.salesFiltradas().map(r=>r.no),celulas:Object.entries(cel)};},R7.from);
   ok(vs.n>50&&vs.n<vs.tot&&vs.naTela===50&&+vs.tile===vs.n,'Lista de vendas: cenário do teste '+J([vs.n,vs.tot,vs.naTela,vs.tile]));
-  ok(await pg.$('.head .rel-exp')&&await pg.$('[data-act="sales-csv"]'),'Lista de vendas: sem Exportar ou sem o CSV antigo');
+  grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx','csv'],['Exportar PDF','Exportar XLS',await pg.evaluate(()=>ETERNA.TE('sl_csv',ETERNA.salesFiltradas().length))],'Lista de vendas (3 ícones)');
+  ok(await pg.evaluate(()=>document.querySelectorAll('[data-act="sales-csv"]').length===1&&!!document.querySelector('.head .rel-exp [data-act="sales-csv"]')&&!document.querySelector('.btn[data-act="sales-csv"]')),'Lista de vendas: o CSV tem que estar só dentro do grupo Exportar');
   a=await baixar('xlsx');ok(a,'Lista de vendas: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Lista de vendas');const s=x.abas[0];ok(x.abas.length===1&&J(s.colunas)===J(['Venda','Data','Hora','Sessão','Vendedor','Itens','Fotos','Impr.','Pagamento','Total','Status','Canal']),'Lista de vendas: colunas '+J(s.colunas));
     ok(s.dados.length===vs.n&&J(s.dados.map(l=>l[0].v))===J(vs.nos),'Lista de vendas: '+s.dados.length+' linhas no arquivo para '+vs.n+' no filtro');
@@ -152,7 +169,8 @@ try{
     ok(p.linhas.filter(l=>/^\d{2}\/\d{2}\/\d{4}$/.test(l)).length===vs.n&&!p.linhas.some(l=>/^\d{2}\/\d{2}\/\d{0,3}$/.test(l)),'Lista de vendas PDF: data partida em duas linhas');
     ok(vs.celulas.every(([t,n])=>cont(t)>=n),'Lista de vendas PDF: código, hora ou vendedor partido '+J(vs.celulas.filter(([t,n])=>cont(t)<n).slice(0,4)));
     ok(['Venda','Data','Hora','Sess\xe3o','Vendedor','Itens','Fotos','Impr.','Pagamento','Total','Status','Canal'].every(h=>cont(h)===p.paginas),'Lista de vendas PDF: título de coluna partido');}
-  {const espera=pg.waitForEvent('download',{timeout:1500}).catch(()=>null);await pg.click('[data-act="sales-csv"]');const dl=await espera;ok(dl&&dl.suggestedFilename()==='eterna-vendas.csv','Lista de vendas: o Exportar CSV antigo parou');}
+  {const dl=await csvBaixa('sales-csv');const esp=await pg.evaluate(()=>'\ufeff'+ETERNA.salesCSV(ETERNA.allSales()));
+    ok(dl&&dl.nome==='eterna-vendas.csv'&&dl.txt===esp&&dl.txt.split('\n').length>50,'Lista de vendas: o CSV do grupo não é o mesmo arquivo de antes '+J(dl&&[dl.nome,dl.txt.length,esp.length]));}
   // critério 11: mais de 2.000 linhas não vira PDF (o XLS sai)
   await pg.evaluate(()=>{const f=ETERNA.REL['vendas-lista'];window.__relOrig=f;ETERNA.REL['vendas-lista']=()=>{const R=f();const L=R.abas[0].linhas;R.abas[0].linhas=Array.from({length:2001},(_,i)=>L[i%L.length]);return R;};});
   a=await baixar('pdf');ok(!a&&(await toast())===await TE('rel_muitas_pdf','2.001'),'PDF com 2.001 linhas deveria ser recusado · '+await toast());
@@ -163,7 +181,8 @@ try{
   await pg.evaluate(()=>{ETERNA.REL['vendas-lista']=window.__relOrig;});
   // revisão, item 10: clique duplo gera um arquivo e um registro só; os botões voltam depois
   {let nDl=0;const conta=()=>{nDl++;};pg.on('download',conta);const antes=await pg.evaluate(()=>ETERNA.auditRead().length);
-    await pg.dblclick('.rel-exp [data-act="rel-exportar"][data-fmt="xlsx"]');const preso=await pg.evaluate(()=>[ETERNA.relOcupado(),ETERNA.relExportar('pdf'),[...document.querySelectorAll('.rel-exp button')].every(b=>b.disabled)]);
+    await pg.dblclick('.rel-exp [data-act="rel-exportar"][data-fmt="xlsx"]');const preso=await pg.evaluate(()=>[ETERNA.relOcupado(),ETERNA.relExportar('pdf'),[...document.querySelectorAll('.rel-exp button')].every(b=>b.disabled),document.querySelectorAll('.rel-exp button:disabled').length,ETERNA.relBotao('vendas-lista',{act:'sales-csv',rot:'x'}).split(' disabled>').length-1]);
+    ok(preso.splice(3,2).join()==='3,3','Exportação em curso: os três ícones (PDF, XLS e CSV) têm que ficar desabilitados');
     await pg.waitForTimeout(1300);pg.off('download',conta);const dep=await pg.evaluate(()=>[ETERNA.auditRead().length,ETERNA.relOcupado(),[...document.querySelectorAll('.rel-exp button')].some(b=>b.disabled)]);
     ok(nDl===1&&dep[0]===antes+1&&J(preso)===J([true,false,true])&&dep[1]===false&&dep[2]===false,'Clique duplo no Exportar: '+J({arquivos:nDl,registros:dep[0]-antes,preso,dep}));}
   // revisão, item 1: tabela de 12 colunas com dados realistas direto no escritor do PDF. Só o texto longo quebra, e entre palavras.
@@ -185,7 +204,7 @@ try{
 
   // ---------- Fotógrafos: tabela do período e, com a pessoa aberta, o dia a dia dela ----------
   await abrir('fotografos',`ETERNA.state.range=${J(R7)};ETERNA.state.person=null;ETERNA.state.personDay=null;`);
-  ok(await pg.$('.head .rel-exp'),'Fotógrafos: sem Exportar no topo');const telaF=await pg.evaluate(()=>[...document.querySelectorAll('.panel table tbody tr')].map(tr=>[tr.children[0].textContent,tr.children[1].textContent,tr.children[9].textContent.replace(/\D/g,'')]));
+  ok(await pg.$('.head .rel-exp'),'Fotógrafos: sem Exportar no topo');grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],['Exportar PDF','Exportar XLS'],'Fotógrafos (2 ícones)');const telaF=await pg.evaluate(()=>[...document.querySelectorAll('.panel table tbody tr')].map(tr=>[tr.children[0].textContent,tr.children[1].textContent,tr.children[9].textContent.replace(/\D/g,'')]));
   a=await baixar('xlsx');ok(a,'Fotógrafos: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Fotógrafos');const d=x.abas[0].dados;ok(x.abas[0].colunas.length===15&&d.length===telaF.length&&d.every((l,i)=>l[0].v===telaF[i][0]&&(!l[1]||String(l[1].v)===telaF[i][1])&&String(Math.round(l[10].v))===telaF[i][2]),'Fotógrafos: arquivo × tela '+J([d.slice(0,2).map(txt),telaF.slice(0,2)]));}
   a=await baixar('pdf');ok(a&&pdfLer(a.buf).objs&&/841\.89 595\.28/.test(pdfLer(a.buf).texto),'Fotógrafos: PDF em paisagem');
@@ -208,7 +227,7 @@ try{
     ETERNA.SIM.diario=[{id:'dt1',at:h.toISOString(),date:hoje,key:null,by:u.email,name:u.name,point:'campo2',type:'convidado',item:'Reclamação',sev:'alta',text:'=SOMA(A1) visitante pediu para refazer\\na foto <b>da família</b>',status:'aberto'},
       {id:'dt2',at:h.toISOString(),date:hoje,key:'yago',by:'outra-pessoa',name:'Pessoa de teste',point:'campo3',type:'equip',item:'Bateria',sev:'media',text:'',status:'resolvido',resolvedBy:'alguem'},
       {id:'dt3',at:ontem.toISOString(),date:ontem.toISOString().slice(0,10),key:'marinara',by:'terceira-pessoa',name:'Terceira pessoa',point:'',type:'clima',item:'Chuva',sev:'baixa',text:'chuva forte às 15h',status:'aberto'}];ETERNA.state.diario.filter='hoje';`);
-  ok(await pg.$('.head .rel-exp'),'Diário: sem Exportar no topo');
+  ok(await pg.$('.head .rel-exp'),'Diário: sem Exportar no topo');grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],['Exportar PDF','Exportar XLS'],'Diário (2 ícones)');
   a=await baixar('xlsx');ok(a,'Diário: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Diário');const s=x.abas[0];ok(J(s.colunas)===J(['Data','Hora','Quem','Ponto','Tipo','Registro','Grav.','Status'])&&s.dados.length===2&&(await pg.$$('table.wrap tbody tr')).length===2,'Diário de hoje: '+J([s.colunas,s.dados.map(txt)]));
     ok(s.cab.includes('Filtros: Registros: Hoje')&&s.cab.includes('Uso interno')&&s.cab.includes(`Período: ${dBR(telaEsc.hoje)}`),'Diário: cabeçalho '+J(s.cab));
@@ -243,12 +262,21 @@ try{
   {const h=await pg.evaluate(()=>ETERNA.auditText({acao:'relatorio_exportado',alvo:'relatorio/estatisticas-b',por:'x',mudancas:[{campo:'formato',para:'xlsx'}],linhas:3}).pessoa);ok(h==='Estatísticas · '+await TE('es_sec_b'),'Histórico: seção de Estatísticas exportada '+J(h));}
   // ---------- critério 8: idioma da pessoa em inglês; chaves rel_* nas 5 línguas ----------
   await pg.evaluate(()=>{window.__u=JSON.stringify(ETERNA.state.user);ETERNA.state.user.idioma='en';ETERNA.state.view='bandeiras';ETERNA.render();});
-  ok((await pg.textContent('.rel-exp'))==='ExportPDFXLS','Inglês: botão '+await pg.textContent('.rel-exp'));
+  ok((await pg.textContent('.rel-exp>span'))==='Export','Inglês: rótulo do grupo '+await pg.textContent('.rel-exp>span'));
+  grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],['Export PDF','Export XLS'],'Inglês (2 ícones)');
   a=await baixar('xlsx');if(a){const x=await xlsx(a,'Inglês');const s=x.abas[0];ok(J(s.colunas)===J(['Flag','Country','Units','Fabric','Condition','Note','Spot'])&&s.cab[0]==='Flags · Inventory'&&s.cab.some(l=>/^Position as of: /.test(l))&&s.cab.includes('Generated by: Admin de teste')&&s.cab.includes('Internal use')&&s.cab.includes('Filters: Inventory: Attention')&&s.nome==='Inventory','Inglês: '+J([s.nome,s.colunas,s.cab]));}else ok(false,'Inglês: XLS não baixou');
   a=await baixar('pdf');if(a){const p=pdfLer(a.buf);ok(p.linhas[0]==='Flags'&&p.rodape.length===p.paginas&&/\(Page 1 of \d+\) Tj/.test(p.texto)&&p.linhas.includes('Internal use'),'Inglês PDF: '+J(p.linhas.slice(0,6)));}else ok(false,'Inglês: PDF não baixou');
   await volta();
+  // 16/11: nome do formato no aria-label e no title nas 5 línguas, com 2 ícones (Bandeiras) e com 3 (Painel)
+  {const ESP={pt:['Exportar','Exportar PDF','Exportar XLS','Exportar CSV'],en:['Export','Export PDF','Export XLS','Export CSV'],es:['Exportar','Exportar PDF','Exportar XLS','Exportar CSV'],fr:['Exporter','Exporter en PDF','Exporter en XLS','Exporter en CSV'],de:['Exportieren','PDF exportieren','XLS exportieren','CSV exportieren']};
+    // a tela da equipe tem 4 línguas (IDIOMAS_EQ); o alemão existe no dicionário e é conferido por ele
+    const dic=await pg.evaluate(()=>['rel_exportar','rel_pdf_t','rel_xls_t','pn_csv'].map(k=>ETERNA.EQ[k]));ok(J(dic.map(v=>v[4]))===J(ESP.de)&&Object.keys(ESP).every((lg,i)=>J(dic.map(v=>v[i]))===J(ESP[lg])),'Dicionário dos rótulos do Exportar nas 5 línguas '+J(dic));
+    ok(await pg.evaluate(()=>ETERNA.EQ.sl_csv.length===5&&ETERNA.EQ.es_baixar_csv.length===5&&ETERNA.EQ.sl_csv.every(f=>/CSV/.test(f(3)))&&ETERNA.EQ.es_baixar_csv.every(t=>/CSV/.test(t))),'Rótulos do CSV da Lista de vendas e dos dias nas 5 línguas');
+    for(const lg of await pg.evaluate(()=>ETERNA.IDIOMAS_EQ.map(x=>x[0]))){const e=ESP[lg];await pg.evaluate(lg=>{window.__u=JSON.stringify(ETERNA.state.user);ETERNA.state.user.idioma=lg;ETERNA.state.view='bandeiras';ETERNA.render();},lg);
+      ok(await pg.getAttribute('.head .rel-exp','aria-label')===e[0],lg+': aria-label do grupo');grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],e.slice(1,3),lg+' Bandeiras');
+      await pg.evaluate(()=>{ETERNA.state.view='painel';ETERNA.render();});grupoOk(await grupo('.pn-head .rel-exp'),['pdf','xlsx','csv'],e.slice(1),lg+' Painel');await volta();}}
   const chaves=await pg.evaluate(()=>Object.entries(ETERNA.EQ).filter(([k])=>k.startsWith('rel_')).map(([k,v])=>[k,Array.isArray(v)?v.length:0,Array.isArray(v)&&v.every(x=>typeof x==='function'?String(x(3,4)).length>0:typeof x==='string'&&x.length>0)]));
-  ok(chaves.length>=17&&chaves.every(c=>c[1]===5&&c[2])&&['rel_exportar','rel_pdf','rel_xls','rel_periodo','rel_posicao_em','rel_filtros','rel_gerado_em','rel_gerado_por','rel_interno','rel_pagina','rel_sem_linhas','rel_muitas_pdf','rel_falhou','rel_ok','rel_aud'].every(k=>chaves.some(c=>c[0]===k)),'Chaves rel_* nas 5 línguas: '+J(chaves.filter(c=>c[1]!==5||!c[2])));
+  ok(chaves.length>=17&&chaves.every(c=>c[1]===5&&c[2])&&['rel_exportar','rel_pdf','rel_xls','rel_pdf_t','rel_xls_t','rel_periodo','rel_posicao_em','rel_filtros','rel_gerado_em','rel_gerado_por','rel_interno','rel_pagina','rel_sem_linhas','rel_muitas_pdf','rel_falhou','rel_ok','rel_aud'].every(k=>chaves.some(c=>c[0]===k)),'Chaves rel_* nas 5 línguas: '+J(chaves.filter(c=>c[1]!==5||!c[2])));
 
   // ---------- critério 12: nada de print, rede ou vendor (o CSV de Jogos e ano a ano, que precisa do servidor, é coberto por agenda-estatisticas.js) ----------
   {const fonte=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');const i=fonte.indexOf('// ---------- Exportar relatório (PDF | XLS)'),f=fonte.indexOf('const VIEWFN=');const bloco=fonte.slice(i,f).replace(/^\/\/.*$/gm,'');

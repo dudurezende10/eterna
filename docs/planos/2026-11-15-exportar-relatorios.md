@@ -101,3 +101,15 @@ Cada construtor (`REL[view]`) usa as mesmas funções de dado da tela. É proibi
 - Gráficos e logo no PDF.
 - Trocar os "Exportar CSV" antigos pelo botão novo.
 - Defeito achado e não corrigido aqui: o "Exportar CSV" da Lista de vendas (`sales-csv`) ignora os filtros e o período da tela e baixa todas as vendas, embora o botão mostre a contagem filtrada. O XLS novo respeita os filtros.
+
+## Ícones no lugar dos nomes e CSV no mesmo grupo (16/11/2026)
+
+Pedido do Eduardo (16/11, 11:36): no Exportar, símbolo em vez do nome do formato, e o CSV junto do PDF e do XLS onde a tela tiver os três.
+
+- O grupo Exportar mostra um ícone por formato: folha com o canto dobrado, faixa na cor do formato e a sigla (PDF vermelho, XLS verde, CSV azul). Desenho próprio em SVG, sem logotipo de marca (`relIcone`, CSS `.rel-ic`). As cores são fixas e de tom médio porque no tema do Maracanã `--good` e `--pn-focus` não mudam no escuro e `--bad` muda; a folha usa `--surface`.
+- O nome do formato fica no `aria-label` e no `title` de cada botão, nas 5 línguas (`rel_pdf_t`, `rel_xls_t` e, para o CSV, as chaves que já existiam: `pn_csv`, `sl_csv`, `es_baixar_csv`). Botão de 44 × 40 px, foco com contorno, e a trava de uma exportação por vez (`relTrava`, `relOcupado`) desabilita os três.
+- `relBotao(view, csv)`: o segundo argumento (`{act, rot}`) põe o CSV como terceiro ícone. A ação é a mesma de antes (`pn-csv`, `sales-csv`, `es-dias-csv`), com a mesma função geradora, o mesmo nome de arquivo e a mesma permissão. O botão separado saiu.
+- Três ícones: Painel e Lista de vendas. Dois ícones: Bandeiras, Fotógrafos, Estatísticas (seções a, b, e), Diário do set e Escala.
+- Estatísticas: o CSV dos dias do ano é de outra tabela (seção Jogos e ano a ano, que não tem PDF nem XLS), então continua junto dela, em "Mês a mês", num grupo só com o ícone do CSV. Não foi para o topo.
+- Nenhum CSV novo foi criado. Botões de importar CSV não mudaram. O defeito do `sales-csv` (ignora os filtros) segue como estava.
+- Teste: `testes/relatorios.js` (3 ícones nas duas telas, 2 nas outras, rótulos nas línguas, alvo de toque, os três desabilitados durante a exportação, CSV igual ao da função de antes) e `testes/agenda-estatisticas.js` (CSV dos dias junto da tabela).

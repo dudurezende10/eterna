@@ -987,12 +987,18 @@ body[data-bare] #topo-idiomas,body.if-tv #topo-idiomas{display:none}
 .pn-seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:3px;gap:2px}
 .pn-seg button{min-height:30px;padding:0 7px;border-radius:4px;font-size:13px;font-weight:500;color:var(--muted)}
 .pn-seg button[aria-pressed="true"]{background:var(--surface2);color:var(--pn-focus);font-weight:600;box-shadow:inset 0 0 0 1px rgba(19,64,120,.25)}
-/* Exportar (PDF | XLS) no topo das telas de dados: mesmo desenho do .pn-seg */
+/* Exportar no topo das telas de dados: um ícone por formato (PDF, XLS e, onde a tela tem, CSV); mesmo desenho do .pn-seg */
 .rel-exp{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:3px;gap:2px;flex:none}
 .rel-exp>span{font-size:13px;font-weight:600;color:var(--muted);padding:0 6px 0 8px}
-.rel-exp button{min-height:40px;min-width:48px;padding:0 10px;border-radius:4px;font-size:13px;font-weight:600;color:var(--pn-focus)}
+.rel-exp button{min-height:40px;min-width:44px;padding:0 8px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}
 .rel-exp button:hover,.rel-exp button:focus-visible{background:var(--surface2)}
+.rel-exp button:focus-visible{outline:2px solid var(--pn-focus);outline-offset:1px}
 .rel-exp button:disabled{opacity:.5;cursor:default}
+.rel-ic{width:28px;height:28px;display:block;flex:none}
+.rel-ic .fl{fill:var(--surface)}
+.rel-ic text{font:700 8.5px/1 system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;letter-spacing:.3px;fill:#fff}
+/* cor fixa por formato, de tom médio: lê sobre a superfície clara e a escura (no tema do Maracanã --good e --pn-focus não mudam no escuro e --bad muda, então as variáveis não serviam aqui) */
+.rel-ic.pdf{color:#c8452f}.rel-ic.xlsx{color:#1f8a4c}.rel-ic.csv{color:#2f6fb7}
 /* cartões */
 .pn-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
 .pn-kpi{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:18px 20px 16px;display:flex;flex-direction:column;min-width:0}
@@ -2507,7 +2513,7 @@ function vVendasLista(){
   // v94-ux (parte J, D-1): filtros em 5 <select> (mesmos data-act, valor em el.value), 4 cartões, sem Ponto e Fotógrafo na tabela, 50 por página
   const sel=(act,k,rot,ops)=>`<label class="sl-f"><span class="eyebrow">${rot}</span><select data-act="${act}" aria-label="${rot}">${ops.map(([v,l])=>`<option value="${esc(v)}" ${f[k]===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label>`;
   const POR=50;const nPag=Math.max(1,Math.ceil(rows.length/POR));const pg=Math.min(Math.max(0,f.page|0),nPag-1);f.page=pg;
-  return `<div class="head"><div><div class="eyebrow">${TE('periodo')} · ${rangeLabel()}</div><h1>${TE('v_vendas_lista')}</h1></div><div class="row">${liveBadge()}<button class="btn ghost" data-act="sales-csv">${TE('sl_csv',rows.length)}</button>${relBotao('vendas-lista')}${shareBtn()}</div></div>
+  return `<div class="head"><div><div class="eyebrow">${TE('periodo')} · ${rangeLabel()}</div><h1>${TE('v_vendas_lista')}</h1></div><div class="row">${liveBadge()}${relBotao('vendas-lista',{act:'sales-csv',rot:TE('sl_csv',rows.length)})}${shareBtn()}</div></div>
   ${rangeBar()}
   
   <div class="tiles sl-tiles"><div class="tile"><span class="eyebrow">${TE('pn_vendas')}</span><span class="v">${fmtN(ok.length)}</span></div><div class="tile"><span class="eyebrow">${TE('pn_receita')}</span><span class="v">${fmtR(rev)}</span></div><div class="tile"><span class="eyebrow">${TE('ticket')}</span><span class="v">${ok.length?fmtR(rev/ok.length):'–'}</span></div><div class="tile"><span class="eyebrow">${TE('sl_aguard')}</span><span class="v">${ag.length}</span><span class="d">${fmtR(ag.reduce((a,r)=>a+(r.total||0),0))} · ${TE('sl_fora_rec')}</span></div></div>
@@ -4785,7 +4791,7 @@ function vPainel(){const sales=allSalesSim();const pontos=painelPontos(sales);co
   const extra=`<label class="pn-sel"><span>${TE('pn_ponto')}</span><select data-act="pn-pdv" ${f.pdvOn?'':'disabled'} aria-label="${esc(TE('pn_ponto')+(f.pdvOn?'':TE('pn_ponto_off')))}"><option value="">${TE('pn_todos')}</option>${pontos.map(p=>`<option value="${esc(p)}" ${f.pdv===p?'selected':''}>${esc(p)}</option>`).join('')}</select></label>
     <div class="pn-seg" role="group" aria-label="${esc(TE('pn_fonte'))}">${[['tudo',TE('pn_tudo')],['roverpix',TE('pn_sa')],['eterna','Eterna']].map(([k,l])=>`<button data-act="pn-fonte" data-v="${k}" aria-pressed="${f.fonte===k}">${l}</button>`).join('')}</div>`;
   const notas=D.notas=painelNotas(D,f);
-  const head=`<div class="pn-head"><div><p class="eyebrow">${TE('pn_periodo')} · ${esc(per)} · ${esc(fonteTxt)}</p><h1>${esc(viewLabel('painel'))}</h1></div><div class="row">${velho}<button class="btn pn-btn" data-act="pn-csv"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>${TE('pn_csv')}</button>${relBotao('painel')}</div></div>
+  const head=`<div class="pn-head"><div><p class="eyebrow">${TE('pn_periodo')} · ${esc(per)} · ${esc(fonteTxt)}</p><h1>${esc(viewLabel('painel'))}</h1></div><div class="row">${velho}${relBotao('painel',{act:'pn-csv',rot:TE('pn_csv')})}</div></div>
     ${rangeBar('',extra,true)}${notas.length?`<p class="pn-notas">${notas.map(esc).join(' ')}</p>`:''}`;
   const vs=D.prevKpi?TE('periodo_a',dBR(D.prev.from).slice(0,5),dBR(D.prev.to).slice(0,5)):'';const dl=k=>D.prevKpi&&D.fonte!=='eterna'?pnDelta(deltaOf(K[k],D.prevKpi[k]),vs):'';
   const traco='<span class="pn-none">—</span>';const et=f.fonte==='eterna';
@@ -5968,7 +5974,7 @@ function esSecG(){const M=state.es;const adm=isAdminUser(state.user);const at=+v
   return `${topo}${fuso}${faixa}
   <div class="es-g-cards">${card('jogo','jogo')}${card('normal','normal')}</div><p class="note" id="es-pareado">${esc(frase)}</p>
   <section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_por_tipo')}</h2><p class="pn-take">${TE('es_por_tipo_take')}</p></div></div>${esTab(cabT,linT)}</section>
-  <section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_mes_a_mes')}</h2><p class="pn-take">${TE('es_mm_take',ano,ano-1)}</p></div><button class="btn ghost" data-act="es-dias-csv">${TE('es_baixar_csv')}</button></div>${usados.length?barras+esTab(cabM,linM):`<div class="note">${TE('es_sem_meses')}</div>`}</section>
+  <section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_mes_a_mes')}</h2><p class="pn-take">${TE('es_mm_take',ano,ano-1)}</p></div>${relBotao('',{act:'es-dias-csv',rot:TE('es_baixar_csv')})}</div>${usados.length?barras+esTab(cabM,linM):`<div class="note">${TE('es_sem_meses')}</div>`}</section>
   <p class="note">${TE('es_g_nota1')} <a href="#calendario">${TE('v_calendario')}</a>${TE('es_g_nota2',esc(dBR(cA.desde||'2026-11-10')))}</p>`;}
 // total de visitantes por dia (bilheteria), CSV dia;total, enviado em blocos de 1000 dias
 function esTotaisParse(txt){const L=String(txt||'').replace(/^﻿/,'').split(/\r?\n/);const dias=[],rec=[];const vistos=new Set();
@@ -9668,6 +9674,8 @@ const EQ={
   rel_exportar:["Exportar","Export","Exportar","Exporter","Exportieren"],
   rel_pdf:["PDF","PDF","PDF","PDF","PDF"],
   rel_xls:["XLS","XLS","XLS","XLS","XLS"],
+  rel_pdf_t:["Exportar PDF","Export PDF","Exportar PDF","Exporter en PDF","PDF exportieren"],
+  rel_xls_t:["Exportar XLS","Export XLS","Exportar XLS","Exporter en XLS","XLS exportieren"],
   rel_periodo:["Período","Period","Período","Période","Zeitraum"],
   rel_posicao_em:["Posição em","Position as of","Posición al","Situation au","Stand vom"],
   rel_filtros:["Filtros","Filters","Filtros","Filtres","Filter"],
@@ -10347,8 +10355,18 @@ function relNome(R,ext){const limpa=s=>semAcento(s).replace(/[^a-z0-9_-]+/g,'-')
 // quem exporta é quem já vê a tela: mesma regra da tela (menu + módulo em Ver), conferida de novo no clique
 function relPode(view){if(!Object.prototype.hasOwnProperty.call(REL,view)||!canView(view)||!can(MODULE_OF[view],'r'))return false;
   return view!=='estatisticas'||['a','b','e'].includes(state.es.sec);}
-function relBotao(view){if(!relPode(view))return '';const oc=relOcupado()?' disabled':'';
-  return `<div class="rel-exp" role="group" aria-label="${esc(TE('rel_exportar'))}"><span>${TE('rel_exportar')}</span><button data-act="rel-exportar" data-fmt="pdf"${oc}>${TE('rel_pdf')}</button><button data-act="rel-exportar" data-fmt="xlsx"${oc}>${TE('rel_xls')}</button></div>`;}
+// Ícone de arquivo por formato (desenho próprio: folha com o canto dobrado, faixa na cor do formato e a sigla; a marca de cima muda: linhas, grade, vírgulas).
+// Cor por formato no CSS (.rel-ic.pdf vermelho, .xlsx verde, .csv azul), em tom que lê no tema claro e no escuro; a folha usa --surface.
+const REL_ICO_MARCA={pdf:'<path d="M9 6.5h5M9 9.5h9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  xlsx:'<path d="M8.5 5.5h6.5v6h-6.5zM8.5 8.5h6.5M11.75 5.5v6" fill="none" stroke="currentColor" stroke-width="1.2"/>',
+  csv:'<path d="M9.6 7.2v1.6l-1 1.6M13.6 7.2v1.6l-1 1.6M17.6 7.2v1.6l-1 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'};
+const REL_ICO_SIGLA={pdf:'PDF',xlsx:'XLS',csv:'CSV'};
+function relIcone(fmt){return `<svg class="rel-ic ${fmt}" viewBox="0 0 28 28" aria-hidden="true" focusable="false"><path class="fl" d="M6 2.5h10.5L22 8v17.5H6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M16.5 2.5V8H22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>${REL_ICO_MARCA[fmt]}<rect x="1.5" y="13.5" width="25" height="10.5" rx="2" fill="currentColor"/><text x="14" y="21.9" text-anchor="middle">${REL_ICO_SIGLA[fmt]}</text></svg>`;}
+// Grupo Exportar: PDF e XLS da tela (se ela tem construtor em REL e a pessoa pode) e, onde a tela já tinha CSV, o CSV como terceiro ícone
+// (csv = {act, rot}: a mesma ação de antes; o rótulo vai no aria-label e no title). O nome do formato fica no aria-label e no title, nas 5 línguas.
+function relBotao(view,csv){const pode=relPode(view);if(!pode&&!csv)return '';const oc=relOcupado()?' disabled':'';
+  const bt=(attrs,rot,fmt)=>`<button ${attrs} aria-label="${esc(rot)}" title="${esc(rot)}"${oc}>${relIcone(fmt)}</button>`;
+  return `<div class="rel-exp" role="group" aria-label="${esc(TE('rel_exportar'))}"><span>${TE('rel_exportar')}</span>${pode?bt('data-act="rel-exportar" data-fmt="pdf"',TE('rel_pdf_t'),'pdf')+bt('data-act="rel-exportar" data-fmt="xlsx"',TE('rel_xls_t'),'xlsx'):''}${csv?bt(`data-act="${csv.act}" data-fmt="csv"`,csv.rot,'csv'):''}</div>`;}
 function relBaixar(blob,nome){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nome;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);}
 // registro: quem, qual relatório, formato, período, quantas linhas e filtros. Nunca o conteúdo.
 function relAudita(R,fmt,linhas){return auditLog('relatorio_exportado','relatorio/'+R.id,[{campo:'formato',para:fmt}],{periodo:R.periodo||null,linhas,filtros:(R.filtros||[]).map(f=>f.map(x=>String(x).slice(0,60)))});}
