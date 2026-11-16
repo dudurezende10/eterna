@@ -167,9 +167,9 @@ out.save(sys.argv[2])
   // Mirante: corpo inteiro do joelho para cima, centro em 45%
   const m3=await mont('ag_'+PIDS.inteiro,'mirante');const cx3=(m3.dst.x+m3.dst.w/2)/m3.w;
   ok(m3.modo==='inteiro'&&m3.corte===.62&&near(m3.dst.y+m3.dst.h,m3.h,1)&&(near(cx3,.45,.01)||m3.dst.x<=0.5||near(m3.dst.x+m3.dst.w,m3.w,1)),'4: Mirante joelho e centro 45%: '+J({m3,cx3}));
-  // Túnel: teto de 75% da altura; corpo inteiro no joelho
+  // Túnel (16/11, regra 22, imagem nova): nada acima de 23,4% da altura (a faixa); corpo inteiro no joelho (o resto em tunel-v2.js)
   const m4=await mont('ag_'+PIDS.meio,'tunel'),m4b=await mont('ag_'+PIDS.inteiro,'tunel');
-  ok(m4.modo==='meio'&&m4.dst.h<=.75*m4.h+1&&near(m4.dst.y+m4.dst.h,m4.h,1)&&m4b.corte===.62&&m4b.dst.h<=.75*m4b.h+1,'4: Túnel com teto de 75%: '+J({m4:m4.dst,m4b:m4b.dst,h:m4.h}));
+  ok(m4.modo==='meio'&&m4.dst.y>=.234*m4.h-1&&near(m4.dst.y+m4.dst.h,m4.h,1)&&m4b.corte===.62&&m4b.dst.y>=.234*m4b.h-1,'4: Túnel abaixo da faixa (topo a 23,4% ou mais): '+J({m4:m4.dst,m4b:m4b.dst,h:m4.h}));
   // 1950 (16/11: fundo novo "Maracanã 1950", regra 21): tudo em preto e branco; até 66% da altura (topo a 34%, abaixo do título) e 92% da largura; corpo inteiro do joelho para cima (62%)
   const m5=await mont('ag_'+PIDS.inteiro,'arq1950'),m6=await mont('ag_'+PIDS.meio,'arq1950');
   ok(m5.cinza&&m6.cinza,'4: o 1950 sai inteiro em preto e branco: '+J({m5:m5.cinza,m6:m6.cinza}));

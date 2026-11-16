@@ -33,7 +33,7 @@ im.save(sys.argv[1]+'/largomeio.png')
   const d=await pg.evaluate(()=>{const b=ETERNA.bgOf('podio');return b&&{name:b.name,file:b.file,fileHi:b.fileHi,ang:b.ang,luz:b.luz,dir:b.dir,mono:b.mono,fit:b.fit,pos:b.pos,inativo:!!b.inativo,ativo:ETERNA.bgAtivo(b),
     on:ETERNA.bgOn(),opts:ETERNA.bgOpts().map(o=>o.id),ai:ETERNA.aiBgs().map(x=>x.id),regra:ETERNA.FIA_REGRAS.podio,flag:ETERNA.SIM.bgPodioV86};});
   ok(d&&d.name==='Pódio de campeão'&&d.file==='img/bg-podio.jpg'&&d.fileHi==='img/fundos-5k/podio.jpg'&&d.ang==='baixo'&&d.luz==='sol'&&d.dir==='frontal'&&d.mono===false&&J(d.fit)===J(['meio','close','inteiro'])&&d.inativo&&!d.ativo,'1 (v97, E8): DATA.backgrounds podio, agora em Laboratório › Fundos em teste: '+J(d));
-  ok(d&&J(d.on)===J(['mirantedia','arq1950','telao'])&&!d.opts.includes('podio')&&d.ai.includes('telao')&&d.ai.length===3,'1 (16/11): três fundos no Checkout, o pódio no Laboratório: '+J(d&&{on:d.on,ai:d.ai}));
+  ok(d&&J(d.on)===J(['mirantedia','arq1950','telao','tunel'])&&!d.opts.includes('podio')&&d.ai.includes('telao')&&d.ai.length===4,'1 (16/11): quatro fundos no Checkout (com o túnel v2), o pódio no Laboratório: '+J(d&&{on:d.on,ai:d.ai}));
   // daqui em diante o pódio é ligado à mão (SIM.bgAtivo.podio, como em Laboratório › Ativar):
   // as regras da v86 (layout, impressão) continuam valendo para quem reativar o pódio
   await pg.evaluate(()=>{ETERNA.SIM.bgAtivo={...(ETERNA.SIM.bgAtivo||{}),podio:true};localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});await pg.reload();await pg.waitForTimeout(400);
@@ -61,16 +61,16 @@ im.save(sys.argv[1]+'/largomeio.png')
   // ---------- 3. lista salva (16/11): vale SIM.bgOn2; a chave antiga (SIM.bgOn) e as migrações da v86 e da v97 saíram ----------
   const salvar=async(f)=>{await pg.evaluate(f);await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'null');if(s){s.bgAtivo=s.bgAtivo||{};if(s.bgAtivo.podio==null)s.bgAtivo.podio=true;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));}});await pg.reload();await pg.waitForTimeout(400);};
   const lerSim=()=>pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');return {bgOn:s.bgOn,bgOn2:s.bgOn2,flag:s.bgPodioV86,on:ETERNA.bgOn(),k:localStorage.getItem('eterna.bgpodio.v'),mig:typeof ETERNA.bgMigraTelao};});
-  // lista antiga salva com 4 fundos e sem as marcas: nada é migrado, a antiga fica como está e o Checkout mostra a trinca
+  // lista antiga salva com 4 fundos e sem as marcas: nada é migrado, a antiga fica como está e o Checkout mostra o padrão (os 4 de 16/11)
   await salvar(()=>{localStorage.removeItem('eterna.bgpodio.v');const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.bgOn=['campeao','mirante','arq1950','tunel'];delete s.bgPodioV86;s.caixaDin=s.caixaDin||[];s.catalogoV=3;localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
-  let m=await lerSim();ok(J(m.bgOn)===J(['campeao','mirante','arq1950','tunel'])&&m.bgOn2==null&&m.flag==null&&m.k==null&&m.mig==='undefined'&&J(m.on)===J(['mirantedia','arq1950','telao']),'3: lista antiga não é migrada nem lida; sem bgOn2 vale a trinca: '+J(m));
+  let m=await lerSim();ok(J(m.bgOn)===J(['campeao','mirante','arq1950','tunel'])&&m.bgOn2==null&&m.flag==null&&m.k==null&&m.mig==='undefined'&&J(m.on)===J(['mirantedia','arq1950','telao','tunel']),'3: lista antiga não é migrada nem lida; sem bgOn2 vale o padrão: '+J(m));
   // o usuário põe o pódio (ligado à mão acima): grava em bgOn2 e fica depois de recarregar; tira: não volta
   await login(pg);await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(200);
   await pg.click('[data-act="bg-on"][data-id="podio"]');await pg.waitForTimeout(150);await pg.reload();await pg.waitForTimeout(400);
-  m=await lerSim();ok(J(m.bgOn2)===J(['mirantedia','arq1950','telao','podio'])&&J(m.on)===J(m.bgOn2)&&J(m.bgOn)===J(['campeao','mirante','arq1950','tunel']),'3: pôr o pódio grava bgOn2 (a chave antiga fica intacta): '+J(m));
+  m=await lerSim();ok(J(m.bgOn2)===J(['mirantedia','arq1950','telao','tunel','podio'])&&J(m.on)===J(m.bgOn2)&&J(m.bgOn)===J(['campeao','mirante','arq1950','tunel']),'3: pôr o pódio grava bgOn2 (a chave antiga fica intacta): '+J(m));
   await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(200);
   await pg.click('[data-act="bg-on"][data-id="podio"]');await pg.waitForTimeout(150);await pg.reload();await pg.waitForTimeout(400);
-  m=await lerSim();ok(J(m.bgOn2)===J(['mirantedia','arq1950','telao'])&&!m.on.includes('podio'),'3: tirou o pódio e ele voltou: '+J(m));
+  m=await lerSim();ok(J(m.bgOn2)===J(['mirantedia','arq1950','telao','tunel'])&&!m.on.includes('podio'),'3: tirou o pódio e ele voltou: '+J(m));
   // escolha salva com 5 fundos: não passa de 5 nem troca nada
   await salvar(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));s.bgAtivo={imprensa:true,podio:true};s.bgOn2=['mirantedia','arq1950','telao','podio','imprensa'];localStorage.setItem('eterna.sim.v1',JSON.stringify(s));});
   m=await lerSim();ok(J(m.bgOn2)===J(['mirantedia','arq1950','telao','podio','imprensa'])&&J(m.on)===J(m.bgOn2),'3: com 5 já escolhidos, nada muda: '+J(m));
@@ -79,10 +79,10 @@ im.save(sys.argv[1]+'/largomeio.png')
   m=await lerSim();ok(J(m.bgOn2)===J([])&&J(m.on)===J([]),'3: lista vazia salva voltou ao padrão: '+J(m));
   await pg.reload();await pg.waitForTimeout(300);m=await lerSim();ok(J(m.bgOn2)===J([])&&J(m.on)===J([]),'3: lista vazia mudou no segundo carregamento: '+J(m));
   // sem escolha salva: segue o padrão (BG_DEF), sem gravar bgOn2
-  await salvar(()=>{localStorage.clear();});m=await lerSim();ok(m.bgOn==null&&m.bgOn2==null&&J(m.on)===J(['mirantedia','arq1950','telao']),'3 (16/11): sem escolha salva, padrão com a trinca: '+J(m));
-  // tela Fundos de IA cita os três fundos
+  await salvar(()=>{localStorage.clear();});m=await lerSim();ok(m.bgOn==null&&m.bgOn2==null&&J(m.on)===J(['mirantedia','arq1950','telao','tunel']),'3 (16/11): sem escolha salva, padrão com os 4: '+J(m));
+  // tela Fundos de IA cita os quatro fundos (16/11: o túnel v2 entrou)
   await login(pg);await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(200);
-  const txt=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(/três fundos/.test(txt)&&/Mirante do Rio/.test(txt)&&/Telão do Maracanã/.test(txt)&&!/cinco fundos/.test(txt),'3 (16/11): textos dos Fundos de IA com os três: '+txt.slice(0,300));
+  const txt=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(/quatro fundos/.test(txt)&&/Mirante do Rio/.test(txt)&&/Telão do Maracanã/.test(txt)&&/Saída do túnel/.test(txt)&&!/cinco fundos/.test(txt),'3 (16/11): textos dos Fundos de IA com os quatro: '+txt.slice(0,300));
 
   // ---------- 4. agente: mapa fixo com o pódio (prévia e impressão) ----------
   {const HA=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v86-ag-'));let out='';
