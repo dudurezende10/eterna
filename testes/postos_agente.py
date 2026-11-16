@@ -164,6 +164,7 @@ try:
     ok(not m.posto_auto_ok("192.168.10.178", "192.168.10.178", rede), "o próprio servidor não vira posto")
     ok(not m.posto_auto_ok("192.168.20.5", "", rede), "IP fora da faixa não vira posto")
     ok(not m.posto_auto_ok("100.115.186.26", "", rede), "Tailscale não vira posto")
+    ok(not m.posto_auto_ok("192.168.10.1", "", rede), "o firewall (VPN com NAT, primeiro endereço da faixa) não vira posto")
     ok(not m.posto_auto_ok("192.168.10.50", "", []), "ETERNA_POSTO_REDE vazia desliga o automático")
     os.environ.pop("ETERNA_POSTO_REDE", None)
     ok(not m.posto_auto_ok("192.168.10.50", ""), "sem ETERNA_POSTO_REDE o automático fica desligado")

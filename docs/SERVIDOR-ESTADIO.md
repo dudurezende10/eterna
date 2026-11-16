@@ -66,8 +66,11 @@ Se o vigia recusar (campo `recusados` ou `erro`), o servidor continua na versão
 
 Reiniciar ou parar serviço à mão, instalar pacote, mexer em `nuvem.env`, chaves, firewall, SSH ou usuários, trocar o ramo do vigia, restaurar backup. Os scripts para isso ficam em `servidor/linux/` e são rodados por ele: `ssh -t srv-viva-maracana "sudo bash /opt/eterna/app/servidor/linux/<script>.sh"`.
 
+Cadastro da equipe por comando (`vendedores.sh`, senha digitada pelo Ronaldo, sem troca obrigatória; os logins vão só na linha de comando): sem opção cria no perfil "Vendedor Drone, Chute a Gol e Snap Pop" (venda e entrega das ativações); com `--perfil venda` antes dos logins, no perfil "Atendimento e venda" (Checkout das fotos). Bilheteria não tem login no Eterna: ingresso é vendido na Imply.
+
 ## Cuidados
 
 - Os dados são de clientes (LGPD): ler para investigar, nunca copiar fotos ou bancos para fora do servidor.
 - Nada de senha, chave ou endereço externo da VPN em commit: o repositório é público.
 - Nuvem e backup: `docs/planos/2026-11-14-servidor-definitivo.md` (seção de 15/11).
+- Galeria online (QR do recibo, selfie e vídeo do cartão fora do estádio): `galeria-ligar.sh` grava `ETERNA_GALERIA_API` no `nuvem.env`, confere se a nuvem reconhece o segredo do servidor (se não, mostra o SHA-256 para a stack `eterna-galeria`) e reinicia; as galerias que ficaram para trás sobem sozinhas. Sem ela o celular abre "Galeria não encontrada" (16/11: o servidor novo veio sem essa linha).

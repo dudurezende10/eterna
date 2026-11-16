@@ -44,7 +44,12 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
 1. No alto do menu ficam dois botões amarelos: **Abrir Checkout** e **Caixa**. Só aparecem para quem pode usar.
-2. O número ao lado de **Caixa** mostra quantos pagamentos em dinheiro esperam confirmação.
+   - O Checkout abre numa janela própria. Arraste a janela para o monitor do cliente e toque nela uma vez: ela fica em tela cheia. Se alguém sair da tela cheia (Esc ou F11), o próximo toque volta.
+2. O número ao lado de **Caixa** mostra quantos pedidos esperam o caixa: pagamento em dinheiro a confirmar e pedido do Checkout em que o caixa ainda escolhe o pacote e a forma de pagamento. Os pedidos do Checkout ficam guardados no servidor: o Caixa daquele computador vê os pedidos feitos nele, em qualquer navegador.
+3. **Cada estação vê só as suas vendas e os seus pedidos.** O servidor reconhece a estação pelo pareamento. Se o navegador da estação for limpo ou trocado, as vendas pagas daquela estação que ainda não imprimiram voltam sozinhas do servidor para a lista de impressão, em até 1 minuto.
+4. **Fila de impressão** (Dashboard) mostra a DNP de todas as estações: as vendas esperando impressão em cada uma, as impressas nas últimas 3 horas, as que não saíram e o estado de cada DNP (livre ou com erro, como sem papel). Cancelar e reimprimir são feitos na própria estação.
+   - Cada pedido mostra as miniaturas das fotos da venda, para saber qual foto acabou de sair. **Com erro** só aparece quando a DNP avisa (sem papel, sem fita, tampa aberta). "Não saiu" tocado no posto sem aviso da DNP volta para **Na fila** e, se não for impresso de novo em 15 minutos, sai da fila.
+   - O número da venda vem do servidor: uma sequência só do dia para todas as estações (P3-014, P5-015…), sem repetir. Sem o servidor, o posto usa um número próprio com uma marca do aparelho.
 3. Toque no nome do grupo para abrir. Toque de novo para fechar. Quem vê até 5 telas vê a lista direta, sem grupos.
 4. O grupo da tela em que você está fica sempre aberto.
 5. Para voltar ao **Início**, toque no logo.
@@ -405,7 +410,9 @@ Quando o cliente olha para a câmera, o Checkout procura em todas as sessões do
 
 **Família em que alguém ficou de fora:** na escolha, toque em **Adicionar outra pessoa**. A selfie dessa pessoa, ali no balcão, soma as fotos dela às já abertas, mantendo as marcas. Nunca abra as fotos de alguém que não está presente.
 
-Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+**Foto do grupo (15/11):** em vez de uma selfie por pessoa, toque em **Foto do grupo** (na tela inicial, na câmera ou em Adicionar outra pessoa). A câmera vira um quadro largo, para caber a família inteira. Todos ficam juntos de frente para a câmera e alguém toca em **Tirar a foto**: cada rosto vira uma busca, como se fossem várias selfies, e entram as fotos de cada um sozinho e as do grupo junto. Quem está bem ao fundo (a fila) não conta; até 8 pessoas por foto. É uma opção a mais: a selfie de uma pessoa continua igual, e **Uma pessoa só** volta para ela.
+
+Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim. Na sessão em que o cliente já foi achado, as fotos em que ele aparece mais longe (rosto pequeno, como na beira do campo) entram junto, sem pergunta.
 
 **Drone (v99.26):** as fotos tiradas do vídeo do Drone entram como fotos de fotógrafo, com o piloto como origem. A selfie também acha essas fotos no Checkout.
 
@@ -447,7 +454,7 @@ O balcão tem o monitor do cliente na frente, com a maquininha presa nele, e o n
 4. A foto aparece na tela inteira. Ele passa com as setas, arrastando o dedo ou com as teclas de seta, e toca em ✓ nas que quer levar e em ✗ nas que não quer. **Ver todas** mostra a grade.
 5. Com fotos marcadas aparece **Continuar · N fotos** no canto de baixo. É o único botão que faz o pedido (o carrinho do canto de cima só mostra quantas estão marcadas). Ao tocar, o cliente vê **Pronto! O atendente vai finalizar sua compra**, com o código dele e quantas fotos escolheu. O Checkout não mostra pacote, preço nem forma de pagamento. Se ele quiser mudar a escolha, toca em **Voltar às fotos**: volta para as fotos com tudo o que já tinha marcado e a compra sai do seu **Aguardando pagamento** (aparece o aviso "O cliente do código ... voltou às fotos"). Quando ele tocar em Continuar de novo, ela volta. Depois que você escolhe o pacote ou a forma de pagamento no Posto, **Voltar às fotos** some e o cliente vê "O atendente já está finalizando sua compra.": a compra fica com você (para mudar, cancele e peça para ele escolher de novo).
    - Se o cliente parar na escolha das fotos sem tocar na tela por 90 segundos, o Checkout volta ao **Iniciar** e as fotos marcadas por ele são apagadas: quem chegar depois começa do zero e não vê as fotos de ninguém. Ele também pode sair quando quiser pelo botão **Sair**, no canto de cima. Se já tiver marcado fotos, o Checkout pergunta "Sair e apagar as fotos marcadas?" (Sim ou Não). Isso não vale depois do Continuar: aí valem as regras da tela Pronto e do valor (abaixo).
-6. No **Posto de venda**, a compra aparece em **Aguardando pagamento** com as fotos escolhidas (inclusive as de fundo de IA). Mostre as fotos ao cliente, escolha o **pacote** (o **Ideal** vem marcado com a etiqueta) e a **forma de pagamento**.
+6. No **Posto de venda**, a compra entra como uma linha em **Aguardando pagamento** e abre ao lado, com as fotos escolhidas (inclusive as de fundo de IA). Siga os passos de cima: **1 Pacote** (o **Ideal** vem marcado), **2 Pagamento** e **3 Confirmar**. Cada escolha passa para o passo seguinte; para mudar uma escolha, toque no número do passo.
 7. Assim que você escolhe o pacote, a tela do cliente mostra **Valor a pagar R$ X** e quantas fotos são, sem o nome do pacote. Antes de você escolher a forma de pagamento aparece "O atendente vai informar a forma de pagamento"; depois, "Pague na maquininha" (Cartão), "Pague com PIX na maquininha" (PIX) ou "Pague em dinheiro ao atendente" (Dinheiro). Ele pode tocar em **Ver minhas fotos** para ver as escolhidas. Se você trocar o pacote, o valor muda na hora na tela dele. Cada escolha ou troca de pacote e de forma de pagamento fica no registro de auditoria com o seu nome e o valor.
    - Na tela Pronto e na tela do valor o cliente não tem mais o botão **Voltar ao início** (v97). Ele apertava sem querer e perdia o pedido. Para voltar a tela dele ao começo, use **Recomeçar o Checkout** no seu notebook (veja abaixo).
    - Se a tela Pronto ou a tela do valor ficar parada por 3 minutos (ou a equipe apertar Esc), o Checkout volta sozinho ao **Iniciar**. A compra continua em **Aguardando pagamento** com "O cliente saiu da tela": cancele ou espere ele voltar.
@@ -766,10 +773,10 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 
 1. Instale o driver da DNP DS-RX1HS e ligue no USB. Em **Configurações › Impressoras › DNP › Preferências de impressão**, escolha o papel **PR 4×6 (10×15)**.
 2. Deixe a **DNP como impressora padrão** e desligue "Permitir que o Windows gerencie minha impressora padrão" (senão o Windows troca a padrão sozinho).
-3. Crie um atalho **Eterna** na Área de Trabalho com o destino `"C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir=C:\Eterna\chrome --kiosk-printing --unsafely-treat-insecure-origin-as-secure=<endereço do servidor do ponto> <endereço do servidor do ponto>/#posto` e abra o Eterna sempre por ele. O `--user-data-dir` dá ao Eterna um Chrome só dele, que abre sempre como processo novo: sem isso, se outro Chrome estiver aberto (até em segundo plano), o `--kiosk-printing` é ignorado e a janela de impressão aparece. Com `--kiosk-printing`, a foto sai direto na DNP. O `--unsafely-treat-insecure-origin-as-secure` libera a câmera enquanto o endereço não tem certificado. O atalho abre o **Posto de venda** (`/#posto`): o vendedor entra com usuário e senha e abre o Checkout pelo botão **Abrir Checkout**. Com `--kiosk-printing` a prévia de impressão do Chrome aparece por um instante e fecha sozinha: não precisa clicar. Para conferir: `chrome://version` mostra `--kiosk-printing` na linha de comando. O jeito mais fácil de criar o atalho é dar duplo clique em `servidor/posto/preparar-posto-eterna.cmd` (cria os dois atalhos e confere a impressora padrão; para mandar por e-mail, vai zipado), ou o script `servidor/posto/criar-atalho-eterna.ps1` (uma vez por máquina; `-AoLigar` também abre o Eterna quando o Windows entra).
+3. O instalador (passo 6) cria o atalho **Eterna** na Área de Trabalho e na inicialização do Windows: um Chrome só do Eterna (`--user-data-dir=C:\Eterna\chrome --kiosk-printing`) aberto em **https://posto.eterna.photo/#posto**. Desde 15/11 esse Chrome acha o servidor pelo IP 192.168.10.10 sem depender do DNS da internet (`--host-resolver-rules`), então o posto vende mesmo sem internet. Abra o Eterna sempre por esse atalho.
 4. O posto imprime na DNP ligada nele quando o servidor tem `ETERNA_IMPRESSORA_POSTOS="*=local"` (veja a documentação técnica).
 5. O `preparar-posto-eterna.cmd` também instala o **programa de impressão**: a foto vai direto para a DNP, sem a prévia do Chrome aparecer. Ele liga sozinho com o Windows, escondido. Se ele estiver parado, o Eterna imprime pelo Chrome como antes (a prévia pisca e fecha sozinha).
-6. Sem arquivo anexo: no PowerShell do posto, a linha abaixo baixa o instalador do ramo `idiomas-base` e roda (foi assim que o posto do Bernardo foi instalado em 10/11, e é o que foi mandado ao Bernardo e ao Rafael):
+6. **Pelo navegador (desde 15/11):** na estação (rede do estádio ou VPN), abra **https://posto.eterna.photo/instalar**. Baixa o `preparar-posto-eterna.cmd`; abra o arquivo baixado e, se o Windows avisar, toque em **Mais informações › Executar assim mesmo**. Sem e-mail nem pendrive. Ou, no PowerShell do posto, a mesma linha de sempre (baixa do ramo `idiomas-base` e roda; estação instalada antes de 15/11 roda de novo para trocar o servidor de teste pelo do estádio):
 
    ```powershell
    $f="$env:TEMP\preparar-posto-eterna.cmd"; Invoke-WebRequest "https://raw.githubusercontent.com/dudurezende10/eterna/idiomas-base/servidor/posto/preparar-posto-eterna.cmd" -OutFile $f -UseBasicParsing; cmd /c $f
@@ -779,8 +786,9 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 ### O que tem no Posto de venda
 
 - **Agora no Checkout**: o que o cliente está vendo e escolhendo, ao vivo.
-- **Aguardando pagamento**: as escolhas do Checkout esperando você escolher o pacote, a forma de pagamento e confirmar. No pedido que o monitor do cliente está esperando aparece o botão **Recomeçar o Checkout**.
-- **Impressão 10×15**: as vendas pagas, com as fotos para imprimir já marcadas, e o contador do rolo.
+- **Aguardando pagamento** (à esquerda): uma linha por pedido, com código, valor, hora e há quanto tempo espera. Toque na linha para abrir o pedido.
+- **O pedido aberto** (à direita): fotos, os passos Pacote, Pagamento e Confirmar e o **Cancelar compra**. No pedido que o monitor do cliente está esperando aparece o botão **Recomeçar o Checkout**.
+- **Impressão 10×15** (abaixo do pedido): as vendas pagas, com as fotos para imprimir já marcadas, e o contador do rolo.
 - **Minhas vendas de hoje**: as suas vendas neste notebook, com o valor de cada uma. Não mostra total. O botão **Recibo** abre o recibo com o QR em cima do Posto.
 - **Caixa** (botão amarelo no alto do menu): o mesmo Posto só com o dinheiro esperando confirmação. **Dinheiro ✕** volta ao Posto completo.
 - **Venda manual (quando o Checkout está fora)**: link no fim do Posto. Abre um bloco no alto da própria tela, com a câmera do balcão, o código da sessão, as fotos, o pacote, o Fundo de IA e o pagamento. **Fechar venda manual** fecha o bloco. Com uma sessão aberta na Venda manual, os botões Recibo ficam apagados até você fechar.
@@ -1118,7 +1126,7 @@ Bom saber:
 - Feriados e jogos no Maracanã entram sozinhos no **Calendário de eventos** (veja **Cadastrar o calendário**).
 - **Estatísticas › Jogos e ano a ano** compara dia de jogo com dia normal. Só o Admin vê.
 - A chave da API de jogos fica só com o Admin, em **Configurações › Preços e Checkout**, aba **Checkout**.
-- **Juntar a família pelo rosto (em teste)** fica no mesmo lugar, só para o Admin, e vem desligado. Enquanto estiver desligado, o caixa junta as fotos da mesma família pelo botão **Juntar outra leva**, no pedido do Posto de venda, e desfaz com **Separar**.
+- **Juntar a família pelo rosto (em teste)** fica no mesmo lugar, só para o Admin, e vem desligado. Enquanto estiver desligado, cada leva fica separada; as fotos dos outros da família aparecem pela selfie ou pela **Foto do grupo** no Checkout. O pedido não tem mais o bloco "Levas desta família" (Juntar outra leva, código LP, Separar), retirado em 15/11.
 
 ### Recorte novo dos fundos de IA
 

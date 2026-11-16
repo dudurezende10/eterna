@@ -34,6 +34,15 @@ Para atualizar sem redigitar os outros parâmetros (tira os dois `NoEcho` da lei
 P=$(aws cloudformation describe-stacks --stack-name eterna-galeria --region us-east-2 --query "Stacks[0].Parameters[].[ParameterKey,ParameterValue]" --output text | awk '$1 !~ /^SegredoPonto/ {printf "%s=%s ", $1, $2}')
 sam deploy ... --parameter-overrides $P SegredoPontoSha256=<SHA-256 do estádio> SegredoPontoTesteSha256=<SHA-256 do teste>
 ```
+Só trocar o segredo de um servidor (16/11: o servidor novo do estádio, `galeria-ligar.sh` mostra o SHA-256), sem
+redeploy do código e sem tocar nos outros parâmetros (os `NoEcho` ficam com o valor anterior):
+```bash
+SHA=<SHA-256 que o galeria-ligar.sh mostrou>
+PARAMS=$(for k in $(aws cloudformation describe-stacks --stack-name eterna-galeria --region us-east-2 --query "Stacks[0].Parameters[].ParameterKey" --output text); do
+  if [ "$k" = SegredoPontoSha256 ]; then echo "ParameterKey=$k,ParameterValue=$SHA"; else echo "ParameterKey=$k,UsePreviousValue=true"; fi; done)
+aws cloudformation update-stack --stack-name eterna-galeria --region us-east-2 --use-previous-template   --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --parameters $PARAMS &&
+aws cloudformation wait stack-update-complete --stack-name eterna-galeria --region us-east-2 && echo PRONTO
+```
 Depois do deploy, conferir que o servidor publica: `GET /ponto/vendas-online` com o cabeçalho `x-eterna-ponto` responde 200 (401 = segredo errado).
 No fim, `EnderecoApi` é a URL da API (até existir `api.eterna.photo`).
 

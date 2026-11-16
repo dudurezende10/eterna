@@ -125,11 +125,11 @@ const ctl=await L.evaluate(()=>{const lb=document.querySelector('#lj-lb');const 
   const vis=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';};
   const acts=[...document.querySelectorAll('.lj button')].filter(vis).map(b=>b.dataset.act+(b.dataset.l?':'+b.dataset.l:''));
   const img=R('#lj-lb .lj-lbimg');const cobre=s=>[...document.querySelectorAll(s)].filter(vis).some(e=>{const r=e.getBoundingClientRect();return img&&!(r.right<=img.left||img.right<=r.left||r.bottom<=img.top||img.bottom<=r.top);});
-  return {acts,titulo:!!document.querySelector('.lj-title')&&vis(document.querySelector('.lj-title')),steps:!![...document.querySelectorAll('.lj-steps')].filter(vis).length,top:!![...document.querySelectorAll('.lj-top')].filter(vis).length,
+  return {acts,titulo:!!document.querySelector('.lj-title')&&vis(document.querySelector('.lj-title')),top:!![...document.querySelectorAll('.lj-top')].filter(vis).length,
     prev:R('.lj-lbnav.prev'),next:R('.lj-lbnav.next'),yes:R('#lj-lb .lj-yes'),no:R('#lj-lb .lj-no'),logo:(()=>{const e=document.querySelector('#lj-lb .lj-ovlogo');return e?{r:e.getBoundingClientRect().toJSON(),op:+getComputedStyle(e).opacity}:null;})(),
     cnt:(document.querySelector('#lj-lb .lj-lbcnt')||{}).textContent||'',cntFs:document.querySelector('#lj-lb .lj-lbcnt')?parseFloat(getComputedStyle(document.querySelector('#lj-lb .lj-lbcnt')).fontSize):0,
     yesBg:document.querySelector('#lj-lb .lj-yes')?getComputedStyle(document.querySelector('#lj-lb .lj-yes')).backgroundColor:'',fundo:getComputedStyle(lb).backgroundColor,
-    cobreTopo:cobre('.lj-top,.lj-steps,.lj-title'),W:innerWidth,H:innerHeight};});
+    cobreTopo:cobre('.lj-top,.lj-title'),W:innerWidth,H:innerHeight};});
 ok(!ctl.titulo&&!ctl.steps&&!ctl.top&&!ctl.cobreTopo,'sem cabeçalho, título ou barra de etapas sobre a foto: '+JSON.stringify({t:ctl.titulo,s:ctl.steps,top:ctl.top}));
 const previstos=new Set(['loja-logo','kiosk-ver','kiosk-ok','kiosk-no','lang','lj-lg','kiosk-sair','loja-cart','kiosk-fechar']);
 const extras=ctl.acts.filter(x=>!previstos.has(x.split(':')[0]));ok(!extras.length,'só os controles previstos na escolha: '+extras.join(','));

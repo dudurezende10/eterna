@@ -75,3 +75,4 @@ ok "backup dos bancos sem erro"
 systemctl start eterna-backup-originais.service
 ok "$(journalctl -u eterna-backup-originais.service -n 20 --no-pager | grep -o 'originais: .*' | tail -1)"
 printf '\nPronto. Nuvem, backup dos bancos e cópia dos originais ligados.\n'
+printf 'Galeria online (QR e selfie fora do estádio): sudo bash /opt/eterna/app/servidor/linux/galeria-ligar.sh\n'

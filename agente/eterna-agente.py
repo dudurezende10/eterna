@@ -86,6 +86,9 @@ APP_TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript
              ".webp": "image/webp", ".svg": "image/svg+xml", ".json": "application/json",
              ".onnx": "application/octet-stream", ".wasm": "application/wasm", ".bin": "application/octet-stream"}
 APP_PREFIXOS = ("vendor/", "img/", "sprites/")
+INSTALADOR_URL = "https://raw.githubusercontent.com/dudurezende10/eterna/idiomas-base/servidor/posto/preparar-posto-eterna.cmd"
+INSTALADOR_MAX = 2 * 1024 * 1024
+_instalador = {"dado": None, "em": 0.0}
 _re_app = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")
 # o que o Checkout precisa para abrir e achar o rosto sem rede (baixado na abertura do agente, em segundo plano)
 APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js", "vendor/jsqr/jsQR.js",
@@ -1091,14 +1094,69 @@ _busca = {"m": None}
 _busca_lock = threading.Lock()
 
 
-def buscar(imagens, dias=1, janela=None):
-    """Lê o maior rosto de cada imagem (dataURL/base64), faz a média e devolve as fotos com o rosto."""
+def buscar(imagens, dias=1, janela=None, grupo=False):
+    """Lê o maior rosto de cada imagem (dataURL/base64), faz a média e devolve as fotos com o rosto.
+    grupo=True (15/11, foto do grupo no Checkout): cada rosto da foto é uma pessoa buscada, como várias selfies somadas."""
     np = _cv["np"]; cv2 = _cv["cv2"]
     dias = max(int(dias or 1), BUSCA_DIAS)
     with _busca_lock:
         if not _busca["m"]:
             _busca["m"] = leitor()
+        if grupo:
+            return _buscar_grupo(imagens, dias, *_busca["m"], janela=janela)
         return _buscar(imagens, dias, *_busca["m"], janela=janela)
+
+
+# Foto do grupo (Ronaldo, 15/11): família ou amigos juntos na câmera do Checkout. Vale o quadro com mais rostos; entram os
+# rostos com pelo menos GRUPO_RAZAO da largura do maior (quem está bem ao fundo, a fila, não entra), até GRUPO_MAX pessoas.
+# Cada rosto é buscado sozinho e as fotos se somam (a de cada um e as do grupo junto); por foto fica a maior semelhança.
+GRUPO_MAX = 8
+GRUPO_RAZAO = 0.35
+
+
+def grupo_rostos(fs):
+    """fs = ler_rostos(...) (do maior para o menor) -> os rostos do grupo."""
+    if not fs:
+        return []
+    return [x for x in fs if x[0] >= GRUPO_RAZAO * fs[0][0]][:GRUPO_MAX]
+
+
+def grupo_juntar(resultados):
+    """Junta os buscar_vetor de cada pessoa: por foto, a maior semelhança; principal se foi principal para alguém."""
+    melhor = {}
+    for r in resultados:
+        for f in r.get("fotos") or []:
+            o = melhor.get(f["id"])
+            if o is None:
+                melhor[f["id"]] = dict(f)
+            else:
+                o["sim"] = max(o["sim"], f["sim"])
+                o["principal"] = bool(o.get("principal") or f.get("principal"))
+    return sorted(melhor.values(), key=lambda x: -x["sim"])[:500]
+
+
+def _buscar_grupo(imagens, dias, det, rec, janela=None):
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    melhor = []
+    for b in imagens[:5]:
+        raw = base64.b64decode(b.split(",", 1)[-1])
+        if not img_aceita(raw):
+            continue
+        try:
+            img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+        except Exception:
+            img = None
+        if img is None:
+            continue
+        fs = grupo_rostos(ler_rostos(img, det, rec))
+        if len(fs) > len(melhor):
+            melhor = fs
+    del imagens
+    if not melhor:
+        return {"rosto": False, "fotos": [], "pessoas": 0}
+    rs = [buscar_vetor(v, dias, janela) for _l, v in melhor]
+    return {"rosto": True, "fotos": grupo_juntar(rs), "pessoas": len(melhor), "limite": LIMITE,
+            "janela_min": rs[0].get("janela_min") if rs else None}
 
 
 def _buscar(imagens, dias, det, rec, janela=None):
@@ -1755,6 +1813,25 @@ def nuvem_galerias_loop():
         return
     seg = nuvem_segredo()
     print(f"  Galeria na nuvem:  {NUVEM_API}")
+    # 16/11: galeria publicada aqui enquanto a nuvem estava desligada nunca entrou na fila (QR e selfie fora do estádio davam
+    # "não encontrada"). Na partida, toda galeria aberta que a fila não conhece entra uma vez; as já enviadas não se repetem.
+    try:
+        base = getattr(REPO, "base", None)
+        toks = [t for t in (os.listdir(base) if base and os.path.isdir(base) else []) if token_ok(t)]
+        with nuvem_lock:
+            db = nuvem_db()
+            db.execute("CREATE TABLE IF NOT EXISTS galerias (token TEXT PRIMARY KEY, prox REAL, tentativas INTEGER, feito REAL, erro TEXT)")
+            n0 = db.total_changes
+            for t in toks:
+                m = REPO.ler_manifesto(t)
+                if m and not m.get("encerrada"):
+                    db.execute("INSERT OR IGNORE INTO galerias (token, prox, tentativas, feito) VALUES (?, 0, 0, NULL)", (t,))
+            novas = db.total_changes - n0
+            db.commit(); db.close()
+        if novas:
+            print(f"  Galeria na nuvem:  {novas} galeria(s) que não tinham ido entram na fila agora")
+    except Exception as ex:
+        nuvem["galeria_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
     while True:
         try:
             with nuvem_lock:
@@ -7106,14 +7183,139 @@ def imp_monitor():
         time.sleep(10)
 
 
+IMP_NAO_SAIU_S = 15 * 60
+
+
+def _imp_ids(l):
+    """Ids das fotos (sem o prefixo ag_ do app) para as miniaturas da fila; até 12, só o formato de id do agente."""
+    out = []
+    for x in (l if isinstance(l, list) else []):
+        x = str(x or "")
+        x = x[3:] if x.startswith("ai:") else x            # foto com fundo de IA "ai:ag_<id>|<fundo>": a miniatura é a foto dela
+        x = x.split("|", 1)[0]
+        x = x[3:] if x.startswith("ag_") else x
+        if re.match(r"^[A-Za-z0-9_-]{1,80}$", x) and x not in out:
+            out.append(x)
+    return out[:12]
+
+
+def imp_fila_postos(agora=None):
+    """15/11: fila das DNPs ligadas em cada posto (impressão local), montada pelo banco de vendas de hoje: cada venda com
+    impressão é um pedido na DNP do posto que vendeu. Sem evento de impressão = esperando no posto; "ok" = impresso;
+    "nao_saiu" = erro. O estado da DNP é a última leitura do programa de impressão do posto (eventos impressao e rolo)."""
+    agora = agora or time.time()
+    dia = _ev_dia(_iso(agora))
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rows = db.execute("select venda, tipo, em, posto, por, dados from evento where dia = ? and tipo in ('criar','cancelar','impressao','rolo') "
+                              "order by em", (dia,)).fetchall()
+        finally:
+            db.close()
+    vendas, dnp, postos = {}, {}, []
+    for venda, tipo, em, posto, por, dados in rows:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            d = {}
+        posto = (posto or "").strip()
+        t = _epoch(em) or agora
+        if tipo == "rolo":
+            nome = str(d.get("posto") or posto or "").strip()[:40]
+            if nome and nome not in postos:
+                postos.append(nome)
+            if nome and d.get("dnp"):
+                dnp[nome] = (t, d["dnp"])
+            continue
+        v = vendas.setdefault(venda, {"imps": []})
+        if tipo == "criar":
+            v.update(posto=posto, criado=t, venda=d.get("saleNo") or venda, vendedor=d.get("vendedor") or "", fotos=int(d.get("prints") or 0),
+                     ids=list(d.get("selected") or []) + list(d.get("aiSel") or []))
+            if posto and posto not in postos:
+                postos.append(posto)
+        elif tipo == "cancelar":
+            v["cancelada"] = True
+        else:
+            v["imps"].append((t, d))
+            if posto and d.get("dnp"):
+                dnp[posto] = (t, d["dnp"])
+    jobs = []
+    for vid, v in vendas.items():
+        if not v.get("posto") or v.get("cancelada") or (v.get("fotos", 0) <= 0 and not v["imps"]):
+            continue
+        j = {"id": "v:" + vid, "local": True, "venda": v.get("venda") or vid, "vendedor": v.get("vendedor") or "", "posto": v["posto"],
+             "impressora": v["posto"], "fotos": max(v.get("fotos", 0), 1), "feitas": 0, "estado": "na_fila", "criado": v.get("criado") or agora,
+             "inicio": None, "fim": None, "erro": None, "ids": _imp_ids(v.get("ids"))}
+        if v["imps"]:
+            t, d = v["imps"][-1]
+            if d.get("fotos"):
+                j["ids"] = _imp_ids(d.get("fotos")) or j["ids"]       # as fotos que foram para a DNP (miniaturas na fila)
+            dnp_txt = (d.get("dnp") or {}).get("texto") if int((d.get("dnp") or {}).get("status") or 0) >= 1000 else None
+            if d.get("resultado") == "ok":
+                j.update(estado="impresso", feitas=j["fotos"], fim=t, inicio=t)
+            elif dnp_txt and int((dnp.get(v["posto"], (None, {}))[1] or {}).get("status") or 0) >= 1000:
+                # erro da DNP só enquanto a DNP do posto continua parada (a última leitura dela); voltou ao normal, segue a regra abaixo
+                j.update(estado="erro", fim=t, erro="não saiu · " + str(dnp_txt))
+            elif agora - t < IMP_NAO_SAIU_S:
+                # 15/11: "Não saiu" tocado no posto sem erro da DNP: a venda volta a esperar a impressão no posto (não é
+                # "Com erro"); passados IMP_NAO_SAIU_S sem imprimir de novo, sai da fila
+                j.update(estado="na_fila")
+            else:
+                continue
+        if j["estado"] in ("na_fila", "erro") or agora - (j["fim"] or agora) < 3 * 3600:
+            jobs.append(j)
+    estados = {}
+    for nome in postos:
+        t, d = dnp.get(nome, (None, {}))
+        st = int(d.get("status") or 0)
+        e = {"estado": "erro" if st >= 1000 else "livre", "motivo": d.get("texto") if st >= 1000 else None, "pendentes":
+             sum(1 for j in jobs if j["impressora"] == nome and j["estado"] == "na_fila"), "em": t, "local": True}
+        if d.get("restantes") is not None:
+            e["restantes"] = d["restantes"]
+        estados[nome] = e
+    return postos, estados, jobs
+
+
+def vendas_posto_sem_impressao(posto, agora=None):
+    """15/11: as vendas de hoje do posto que têm impressão e ainda não saíram certo (sem "ok" e sem cancelar), com o que o
+    posto precisa para imprimir. O posto que perdeu o navegador (limpeza, troca de navegador, computador trocado) recupera daqui."""
+    dia = _ev_dia(_iso(agora or time.time()))
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rows = db.execute("select venda, tipo, em, dados from evento where dia = ? and posto = ? and tipo in ('criar','cancelar','impressao') "
+                              "order by em", (dia, str(posto)[:40])).fetchall()
+        finally:
+            db.close()
+    vs = {}
+    for venda, tipo, em, dados in rows:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            d = {}
+        v = vs.setdefault(venda, {"venda": venda})
+        if tipo == "criar":
+            v.update(em=em, dados={k: d.get(k) for k in ("saleNo", "card", "sessoes", "meio", "prov", "total", "prints", "cart", "selected", "aiSel", "vendedor") if d.get(k) is not None})
+        elif tipo == "cancelar" or (tipo == "impressao" and d.get("resultado") == "ok"):
+            v["fim"] = True
+    return {"ok": True, "vendas": [v for v in vs.values() if v.get("dados") and not v.get("fim") and (v["dados"].get("prints") or 0) > 0]}
+
+
 def imp_fila_json():
     agora = time.time()
     with lock:
         jobs = [{k: v for k, v in j.items() if k != "arquivos"} for j in imp_fila
                 if j["estado"] in ("na_fila", "imprimindo") or agora - (j["fim"] or agora) < 3 * 3600]
         estados = {k: dict(v) for k, v in imp_estado.items()}
-    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": IMPRESSORAS, "estados": estados,
-            "postos": {k: v for k, v in IMP_POSTOS.items()}, "agora": agora, "pedidos": jobs}
+    try:
+        pp, pe, pj = imp_fila_postos(agora)
+    except Exception as ex:
+        print("  fila dos postos: não leu:", str(ex)[:120])
+        pp, pe, pj = [], {}, []
+    imps = list(IMPRESSORAS) + [x for x in pp if x not in IMPRESSORAS]
+    estados.update({k: v for k, v in pe.items() if k not in estados})
+    return {"ok": True, "impressora": IMPRESSORA or None, "impressoras": imps, "estados": estados,
+            "postos": {k: v for k, v in IMP_POSTOS.items()}, "agora": agora, "pedidos": jobs + pj}
 
 
 def imprimir(imagens, venda, vendedor="", posto="", venda_id=""):
@@ -9326,10 +9528,26 @@ def auth_criar_admin(usuario, nome):
     return 0
 
 
-def auth_criar_vendedor(usuario, nome):
+_P = lambda c, r, u, d: {"c": bool(c), "r": bool(r), "u": bool(u), "d": bool(d)}
+# Perfis que a linha de comando cadastra (os mesmos de PRESETS no app: módulos, menu e tela inicial iguais)
+PERFIS_CLI = {
+    "ativ": {"perms": {"ativvenda": _P(1, 1, 0, 0), "ativentrega": _P(1, 1, 1, 0)}, "menu": ["ativ-venda", "ativ-entrega"],
+             "inicio": "ativ-venda", "rotulo": "vendedor e entrega das ativações"},
+    "venda": {"perms": {"venda": _P(1, 1, 1, 0), "quiosque": _P(1, 1, 1, 0), "catalogo": _P(0, 1, 0, 0), "filafoto": _P(0, 1, 0, 0)},
+              "menu": ["quiosque", "checkout", "fila", "caixa", "posto", "catalogo", "fotofila"], "inicio": "posto",
+              "rotulo": "atendimento e venda das fotos (Checkout)"},
+}
+
+
+def auth_criar_vendedor(usuario, nome, perfil="ativ"):
     """python eterna-agente.py --criar-vendedor <usuário> "<nome>" (senha pela entrada padrão): no próprio servidor, perfil
-    "Vendedor Drone, Chute a Gol e Snap Pop" (só o tablet de venda). A senha é a que a operação definiu para os tablets, sem troca
-    obrigatória; aqui não passa pela regra de senha fraca da tela (decisão do Ronaldo, 14/11)."""
+    "Vendedor Drone, Chute a Gol e Snap Pop" (venda e entrega das ativações). ETERNA_PERFIL=venda cadastra no perfil
+    "Atendimento e venda" (Checkout das fotos). A senha é a que a operação definiu, sem troca obrigatória; aqui não passa
+    pela regra de senha fraca da tela (decisão do Ronaldo, 14/11)."""
+    if perfil not in PERFIS_CLI:
+        print("Perfil inválido: use " + " ou ".join(PERFIS_CLI))
+        return 1
+    pf = PERFIS_CLI[perfil]
     usuario = usuario.strip().lower()
     if not AUTH_ID.match(usuario):
         print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
@@ -9340,16 +9558,16 @@ def auth_criar_vendedor(usuario, nome):
         return 1
     id_doc = quote(usuario, safe="-_.!~*'()")
     atual, _ = auth_ler_cadastro(usuario)
-    if atual and atual.get("preset") not in (None, "ativ"):
+    if atual and atual.get("preset") not in (None, perfil):
         print("%s já existe com outro perfil (%s): nada mudou." % (usuario, atual.get("preset")))
         return 1
-    cad = dict(atual or {}, v=2, email=usuario, name=nome or usuario, preset="ativ", key=None, active=True,
-               perms={"ativvenda": {"c": True, "r": True, "u": False, "d": False}}, menu=["ativ-venda"], inicio="ativ-venda",
+    cad = dict(atual or {}, v=2, email=usuario, name=(atual or {}).get("name") or nome or usuario, preset=perfil, key=None, active=True,
+               perms={k: dict(v) for k, v in pf["perms"].items()}, menu=list(pf["menu"]), inicio=pf["inicio"], mae1511=1,
                createdBy=(atual or {}).get("createdBy") or "servidor")
     estado_gravar({"docs": [{"col": "usuarios", "id": id_doc, "valor": cad}]})
     auth_criar(usuario, "servidor")
     auth_trocar(usuario, senha)
-    print("ok %s (%s): vendedor do tablet" % (usuario, cad["name"]))
+    print("ok %s (%s): %s" % (usuario, cad["name"], pf["rotulo"]))
     return 0
 
 
@@ -9400,6 +9618,11 @@ def posto_auto_ok(ip, ip_servidor="", redes=None):
     except ValueError:
         return False
     if a.is_loopback or str(a) == str(ip_servidor) or a in ipaddress.ip_network("100.64.0.0/10"):
+        return False
+    # 15/11: quem entra pela VPN do FortiGate chega com o IP do próprio firewall (NAT, o primeiro endereço da faixa, ex.:
+    # 192.168.10.1) ou com um IP de ETERNA_REMOTO_IPS: é acesso remoto (Ronaldo, Eduardo), nunca posto
+    remotos = {x.strip() for x in (os.environ.get("ETERNA_REMOTO_IPS") or "").split(",") if x.strip()}
+    if str(a) in remotos or any(r.num_addresses > 2 and a == r.network_address + 1 for r in redes):
         return False
     return a.is_private and any(a in r for r in redes)
 
@@ -9567,6 +9790,79 @@ def estado_col(col):
         finally:
             db.close()
     return {"ok": True, "rev": rev, "docs": docs}
+
+
+# 15/11: pedidos do Checkout guardados no servidor (antes só no navegador do posto, SIM.caixaDin). Cada posto grava os seus e
+# lê de volta os dele: o Caixa daquele computador vê o pedido mesmo em outro navegador ou depois de limpar o navegador, e o
+# registro entra no backup do estado.db. Pedido fechado (confirmado, cancelado, não pago, substituído) não volta a ficar aberto.
+PEDIDO_ABERTO = ("aguardando", "escolha")
+PEDIDO_ESTADOS = PEDIDO_ABERTO + ("confirmada", "cancelada", "nao_paga", "substituida")
+PEDIDO_MAX = 64 * 1024
+_re_pedido = re.compile(r"^p_[A-Za-z0-9_-]{1,80}$")
+
+
+# 15/11 (teste com várias estações): o número da venda vinha de um contador no navegador de cada estação e repetia
+# (três vendas "L0-001" no mesmo Caixa). Agora o servidor dá o número: uma sequência só por dia para todas as estações.
+def numero_venda(dia=None):
+    dia = dia or _ff_hoje()
+    with estado_lock:
+        db = estado_db()
+        try:
+            db.execute("create table if not exists venda_seq (dia text primary key, n integer not null)")
+            db.execute("insert into venda_seq (dia, n) values (?, 1) on conflict(dia) do update set n = n + 1", (dia,))
+            n = db.execute("select n from venda_seq where dia = ?", (dia,)).fetchone()[0]
+            db.commit()
+        finally:
+            db.close()
+    return {"ok": True, "dia": dia, "n": int(n)}
+
+
+def pedidos_db():
+    db = estado_db()
+    db.execute("create table if not exists pedido (id text primary key, posto text, estado text, valor text, criada text, em real)")
+    db.execute("create index if not exists pedido_posto on pedido(posto, criada)")
+    return db
+
+
+def pedidos_gravar(lista, posto_srv=None):
+    """Grava os pedidos que o posto mandou. Devolve {ok, gravados, recusados}."""
+    gravados = recusados = 0
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            for r in (lista if isinstance(lista, list) else [])[:200]:
+                if not isinstance(r, dict) or not _re_pedido.match(str(r.get("id") or "")) or r.get("estado") not in PEDIDO_ESTADOS:
+                    recusados += 1
+                    continue
+                txt = json.dumps(r, ensure_ascii=False)
+                posto = str(r.get("posto") or "")[:60]
+                if len(txt) > PEDIDO_MAX or not posto or (posto_srv and posto != posto_srv):
+                    recusados += 1
+                    continue
+                velho = db.execute("select estado from pedido where id = ?", (r["id"],)).fetchone()
+                if velho and velho[0] not in PEDIDO_ABERTO and (r["estado"] in PEDIDO_ABERTO or r["estado"] != velho[0]):
+                    recusados += 1                      # fechado não reabre nem troca de desfecho
+                    continue
+                db.execute("insert into pedido values (?,?,?,?,?,?) on conflict(id) do update set estado = excluded.estado, "
+                           "valor = excluded.valor, em = excluded.em", (r["id"], posto, r["estado"], txt, str(r.get("criada") or "")[:40], time.time()))
+                gravados += 1
+            db.commit()
+        finally:
+            db.close()
+    return {"ok": True, "gravados": gravados, "recusados": recusados}
+
+
+def pedidos_do_posto(posto, dias=2):
+    """Os pedidos do posto criados nos últimos dias (os abertos sempre, de qualquer dia)."""
+    desde = time.strftime("%Y-%m-%d", time.localtime(time.time() - max(1, min(int(dias), 31)) * 86400))
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            rows = db.execute("select valor from pedido where posto = ? and (criada >= ? or estado in ('aguardando','escolha')) "
+                              "order by criada desc limit 500", (str(posto)[:60], desde)).fetchall()
+        finally:
+            db.close()
+    return {"ok": True, "pedidos": [json.loads(x[0]) for x in rows]}
 
 
 def estado_gravar(body, quem=""):
@@ -10154,16 +10450,47 @@ def backup_arquivos(pc):
     return len(novos)
 
 
+# 16/11 (alarme falso das 10:44): a hora do último backup bom ficava só na memória e o pulso sai antes da primeira rodada;
+# a cada reinício (deploy, galeria-ligar) o pulso ia com "nunca" e a AWS mandava "backup falhando desde nunca". Agora fica no disco.
+BACKUP_OK_ARQ = os.path.join(HOME, "backup-ok.txt")
+
+
+def _backup_ok_le():
+    try:
+        return float(open(BACKUP_OK_ARQ, encoding="utf8").read().strip())
+    except Exception:
+        return None
+
+
+def _backup_ok_grava(t):
+    try:
+        with open(BACKUP_OK_ARQ + ".tmp", "w", encoding="utf8") as f:
+            f.write(str(t))
+        os.replace(BACKUP_OK_ARQ + ".tmp", BACKUP_OK_ARQ)
+    except Exception:
+        pass
+
+
 def backup_loop():
     if not NUVEM_BUCKET:
         return
     pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
     ultimo = None
+    ok_em = _backup_ok_le()
     while True:
         time.sleep(120)
+        # 15/11: pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): a cada rodada, mesmo sem mudança. Sem pulso
+        # novo há 30 min (servidor desligado, sem internet) ou com ok_em velho (backup falhando), a AWS manda e-mail.
+        try:
+            _s3_cliente().put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/pulso.json" % pc, ContentType="application/json",
+                                     Body=json.dumps({"em": time.time(), "ok_em": ok_em, "ok": backup.get("ok"), "erro": backup.get("erro")}).encode())
+        except Exception as ex:
+            print("  backup na nuvem (pulso):", str(ex)[:160])
+        falhou = False
         try:
             backup_arquivos(pc)
         except Exception as ex:
+            falhou = True
             backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
             print("  backup na nuvem (arquivos):", str(ex)[:160])
         try:
@@ -10172,6 +10499,9 @@ def backup_loop():
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
             if marca == ultimo:
+                if not falhou:
+                    ok_em = time.time()
+                    _backup_ok_grava(ok_em)
                 continue
             s3 = _s3_cliente()
             hoje = _ff_hoje()
@@ -10196,7 +10526,10 @@ def backup_loop():
                         s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
                                       ContentType="application/json")
             ultimo = marca
-            backup.update(em=_iso(), ok=True, erro=None)
+            if not falhou:
+                ok_em = time.time()
+                _backup_ok_grava(ok_em)
+                backup.update(em=_iso(), ok=True, erro=None)
         except Exception as ex:
             backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
             print("  backup na nuvem:", str(ex)[:160])
@@ -10340,6 +10673,7 @@ def met_v2(dia, ss, evs):
             h_add(out["por_confirmador"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
     out["entradas"] = entradas_dia(dia)
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
+    out["selfies"] = selfies_dia(dia)
     return out
 
 
@@ -10446,6 +10780,30 @@ MONT_TERMINAIS_MAX = 40
 MONT_VISTAS_MAX = 20000
 _re_mont_term = re.compile(r"^[a-z0-9]{8,16}$")
 mont_recusadas = {"n": 0}
+
+
+def selfies_dia(dia):
+    """16/11 (relatório do dia): as selfies do Checkout e da galeria por QR, da tabela selfie (só contagem e horário, nunca
+    imagem nem pessoa): totais por origem e resultado, tempo médio da busca e a lista do dia (hora, origem, resultado, fotos)."""
+    try:
+        with ev_lock:
+            db = vendas_db()
+            try:
+                rows = db.execute("select em, origem, resultado, fotos, ms from selfie where dia = ? order by em", (dia,)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return None
+    por = {}
+    for em, origem, res, n, ms in rows:
+        o = por.setdefault(origem or "?", {"selfies": 0, "achou": 0, "nao_achou": 0, "sem_rosto": 0, "varias_pessoas": 0, "erro": 0,
+                                            "fotos": 0, "ms_soma": 0})
+        o["selfies"] += 1
+        o[res if res in o else "erro"] += 1
+        o["fotos"] += int(n or 0)
+        o["ms_soma"] += int(ms or 0)
+    return {"por_origem": por, "lista": [{"em": str(em)[11:19], "origem": o, "resultado": r, "fotos": int(n or 0), "ms": int(ms or 0)}
+                                         for em, o, r, n, ms in rows][:2000]}
 
 
 def montagens_dia(dia):
@@ -10703,7 +11061,8 @@ VENDER = ("venda.c", "quiosque.c", "galerias.c")                                
 ROTAS = (
     ("GET", "/", "publica", ()), ("GET", "/index.html", "publica", ()),
     ("GET", "/img/", "publica", ()), ("GET", "/vendor/", "publica", ()), ("GET", "/sprites/", "publica", ()),
-    ("GET", "/status", "publica", ()),                          # sem credencial, só {ok, agent, version, boot}
+    ("GET", "/status", "publica", ()),
+    ("GET", "/instalar", "publica", ()),                        # 15/11: baixa o instalador do posto (o mesmo do repositório público)                          # sem credencial, só {ok, agent, version, boot}
     ("GET", "/g/", "publica", ()), ("POST", "/g/", "publica", ()), ("POST", "/pagamento/webhook/", "publica", ()),
     ("GET", "/postos/aceitar", "publica", ()), ("POST", "/postos/aceitar", "publica", ()),   # o código de uso único (10 min) é a credencial
     ("POST", "/auth/entrar", "publica", ()), ("POST", "/auth/trocar", "publica", ()), ("POST", "/auth/sair", "publica", ()),
@@ -10721,6 +11080,9 @@ ROTAS = (
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
+    ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
+    ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),   # vendas do posto sem impressão, para recuperar (15/11)
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
@@ -11547,7 +11909,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -11612,6 +11974,31 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Eterna")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def instalar_posto(self):
+        """GET /instalar (15/11): a estação abre posto.eterna.photo/instalar no navegador e baixa o instalador, sem e-mail
+        nem pendrive. É o arquivo público do repositório (sem segredo); fica 10 min em memória e, sem internet, a última cópia."""
+        agora = time.time()
+        if not _instalador["dado"] or agora - _instalador["em"] > 600:
+            try:
+                req = urllib.request.Request(INSTALADOR_URL, headers={"User-Agent": "eterna-agente"})
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    d = r.read(INSTALADOR_MAX + 1)
+                if 0 < len(d) <= INSTALADOR_MAX:
+                    _instalador.update(dado=d, em=agora)
+            except Exception:
+                pass
+        if not _instalador["dado"]:
+            return self.js({"error": "instalador_indisponivel"}, 502)
+        d = _instalador["dado"]
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", 'attachment; filename="preparar-posto-eterna.cmd"')
+        self.send_header("Content-Length", str(len(d)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(d)
+        return None
 
     def autoriza(self, metodo):
         """Primeira coisa de do_GET e do_POST: aplica ROTAS. True = o pedido segue; False = a resposta já foi dada."""
@@ -12473,11 +12860,27 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"vendas": [{k: v.get(k) for k in ("id", "token", "sessoes", "pids", "n", "total", "metodo", "em", "canal", "todas", "teste", "itens", "meio", "idpedido")} for v in vs[desde:desde + 500]],
                                 "next": min(len(vs), desde + 500)})
             if p == "/galerias/status":
+                # 16/11: ?dia=AAAA-MM-DD (fuso do ponto) traz também código, hora, sessões e as fotos de cada galeria criada no
+                # dia, para a gestão ver de quem é cada uma (a selfie não fica ligada a ninguém). O token inteiro nunca sai daqui.
+                dia = (q.get("dia") or [""])[0]
+                dia = dia if re.match(r"^\d{4}-\d{2}-\d{2}$", dia) else None
                 gs = []
                 for t in sorted(os.listdir(GALERIAS))[:2000]:
                     if token_ok(t):
                         m = REPO.ler_manifesto(t) or {}
-                        gs.append({"token8": t[:8], "estado": "expirada" if m and gal_expirou(m) else gal_estado(t, m) if m else "?", "envio": m.get("envio")})
+                        g = {"token8": t[:8], "estado": "expirada" if m and gal_expirou(m) else gal_estado(t, m) if m else "?", "envio": m.get("envio")}
+                        if dia:
+                            try:
+                                from datetime import datetime
+                                cr = datetime.fromisoformat(str(m.get("criada")).replace("Z", "+00:00")).timestamp()
+                            except Exception:
+                                continue
+                            if _ff_hoje(cr) != dia:
+                                continue
+                            g.update(codigo=m.get("codigo"), criada=m.get("criada"), venda=bool(m.get("venda")), tipo=m.get("tipo"),
+                                     sessoes=list(m.get("sessoes") or [])[:20], substituida=bool(m.get("substituida")),
+                                     fotos=[{"id": f.get("id"), "direito": f.get("direito")} for f in (m.get("fotos") or [])[:60]])
+                        gs.append(g)
                 return self.js({"fila": gal_fila.qsize(), "galerias": gs})
             return self.js({"error": "not found"}, 404)
         partes = p.split("/")          # ['', 'g', token, ação, ...]
@@ -12646,6 +13049,18 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, err)
             body, recusados = auth_filtrar_docs(body, self.sessao(), self.client_address[0], self.posto_atual())
             return self.js(dict(estado_gravar(body, quem=self.client_address[0]), recusados=recusados))
+        if p == "/ponto/numero":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js(numero_venda())
+        if p == "/ponto/pedidos":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(4 * 1024 * 1024)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            pa = self.posto_atual()
+            return self.js(pedidos_gravar(body.get("pedidos"), str(pa.get("nome") or "")[:30] if pa and not self.sessao() else None))
         if p == "/ponto/eventos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -12863,6 +13278,8 @@ class H(BaseHTTPRequestHandler):
             return self.auth_get()
         if u.path in ("/postos", "/postos/eu", "/postos/aceitar"):
             return self.postos_get(u, q)
+        if u.path == "/instalar":
+            return self.instalar_posto()
         if ("GET", u.path) in AGENDA_ROTAS:          # v97
             return self.agenda_rota("GET", u.path)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
@@ -12945,6 +13362,31 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "origem não autorizada"}, 403)
             ids = ",".join(parse_qs(u.query).get("vendas") or []).split(",")
             return self.js({"ok": True, "vendas": ev_impressoes(ids)}, nostore=True)
+        if u.path == "/ponto/vendas-posto":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            posto = (q.get("posto") or [""])[0]
+            pa = self.posto_atual()
+            if pa and not self.sessao() and pa.get("nome"):
+                posto = str(pa["nome"])[:30]              # aparelho pareado sem pessoa: só as vendas dele
+            if not posto:
+                return self.js({"error": "posto obrigatório"}, 400)
+            return self.js(vendas_posto_sem_impressao(posto), nostore=True)
+        if u.path == "/ponto/pedidos":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            q = parse_qs(u.query)
+            posto = (q.get("posto") or [""])[0]
+            pa = self.posto_atual()
+            if pa and not self.sessao() and pa.get("nome"):
+                posto = str(pa["nome"])[:30]              # aparelho pareado sem pessoa: só os pedidos dele
+            if not posto:
+                return self.js({"error": "posto obrigatório"}, 400)
+            try:
+                dias = int((q.get("dias") or ["2"])[0])
+            except ValueError:
+                dias = 2
+            return self.js(pedidos_do_posto(posto, dias), nostore=True)
         if u.path == "/ponto/docs/revs":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -13159,7 +13601,7 @@ class H(BaseHTTPRequestHandler):
             return self.postos_post(u)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
-        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
@@ -13316,7 +13758,7 @@ class H(BaseHTTPRequestHandler):
                     # janela: a do Painel (estado.db); a galeria por QR manda todo:true (dia todo)
                     todo, t0 = body.get("todo") is True, time.time()
                     try:
-                        r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None)
+                        r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None, grupo=body.get("grupo") is True)
                     except Exception as ex:
                         selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0)
                         raise
@@ -13415,6 +13857,9 @@ def main():
     threading.Thread(target=galeria_loop, daemon=True).start()
     print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__,
           "de TESTE (aprova sem cobrar)" if compra_online() else "desligado (compra só no balcão)"))
+    if not NUVEM_API:
+        print("  Galeria na nuvem:  DESLIGADA (ETERNA_GALERIA_API vazio): o QR, a selfie e o vídeo do cartão não abrem fora do "
+              "estádio. Ligar: sudo bash /opt/eterna/app/servidor/linux/galeria-ligar.sh")
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     _rok, _rmot = rec_estado()
     print("  Recorte local:     " + ("pronto (BiRefNet + a regra do que encosta na pessoa, num processo à parte; abre na partida)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
@@ -13432,7 +13877,7 @@ if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-admin":
         sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-vendedor":
-        sys.exit(auth_criar_vendedor(sys.argv[2], " ".join(sys.argv[3:])))
+        sys.exit(auth_criar_vendedor(sys.argv[2], " ".join(sys.argv[3:]), os.environ.get("ETERNA_PERFIL") or "ativ"))
     if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
         sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()

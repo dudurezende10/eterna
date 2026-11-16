@@ -5,12 +5,12 @@
 #   --unsafely-treat-insecure-origin-as-secure  libera a câmera enquanto o endereço não tem certificado
 #
 # Uso (PowerShell no posto):
-#   powershell -ExecutionPolicy Bypass -File criar-atalho-eterna.ps1 -Endereco http://192.168.10.178:8799
+#   powershell -ExecutionPolicy Bypass -File criar-atalho-eterna.ps1 -Endereco https://posto.eterna.photo
 #   ... -AoLigar     também abre o Eterna sozinho quando o Windows entra
 #   ... -Remover     apaga os atalhos criados por este script
 # Trocou o servidor (ex.: https://posto.eterna.photo)? Rode de novo com o endereço novo.
 param(
-    [string]$Endereco = "http://192.168.10.178:8799",
+    [string]$Endereco = "https://posto.eterna.photo",
     [switch]$AoLigar,
     [switch]$Remover
 )
@@ -37,6 +37,7 @@ $perfil = "C:\Eterna\chrome"
 New-Item -ItemType Directory -Force $perfil | Out-Null
 $argumentos = "--user-data-dir=`"$perfil`" --kiosk-printing --no-first-run --no-default-browser-check"
 if ($Endereco -like "http://*") { $argumentos += " --unsafely-treat-insecure-origin-as-secure=$Endereco" }
+if ($Endereco -eq "https://posto.eterna.photo") { $argumentos += " --host-resolver-rules=`"MAP posto.eterna.photo 192.168.10.10`"" }   # sem DNS da internet
 $argumentos += " $Endereco/#posto"   # abre o Posto de venda: o vendedor entra e abre o Checkout por ali
 
 $w = New-Object -ComObject WScript.Shell

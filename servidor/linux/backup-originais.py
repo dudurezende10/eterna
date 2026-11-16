@@ -5,7 +5,7 @@ Rodado pelo eterna-backup-originais.timer a cada 10 min, como o usuário eterna,
   das fotos já copiadas, NÃO apaga nada (HD com defeito ou fora do lugar não pode virar exclusão em massa);
 - a retenção (180 dias) é do próprio bucket (nuvem-aws-cloudshell.sh).
 """
-import base64, hashlib, os, sqlite3, sys, time
+import base64, hashlib, json, os, re, socket, sqlite3, sys, time
 
 MIDIA = "/srv/eterna-midia"
 INBOX = MIDIA + "/inbox"
@@ -45,6 +45,34 @@ def arquivos():
                     yield a, "originais/%s/%s" % (sub, os.path.relpath(a, base).replace(os.sep, "/"))
 
 
+GRANDE = 64 * 1024 * 1024
+
+
+def enviar(s3, bucket, a, chave, tam):
+    """Sobe um arquivo conferido; devolve o MD5 (hex) do arquivo do disco. Levanta erro se a nuvem não ficou igual."""
+    h = hashlib.md5()
+    if tam <= GRANDE:
+        with open(a, "rb") as f:
+            corpo = f.read()
+        h.update(corpo)
+        r = s3.put_object(Bucket=bucket, Key=chave, Body=corpo, StorageClass="STANDARD_IA",
+                          ContentMD5=base64.b64encode(h.digest()).decode())
+        if r.get("ETag", "").strip('"') != h.hexdigest():
+            raise ValueError("ETag diferente")
+    else:
+        from boto3.s3.transfer import TransferConfig
+        s3.upload_file(a, bucket, chave, ExtraArgs={"StorageClass": "STANDARD_IA", "ChecksumAlgorithm": "CRC32"},
+                       Config=TransferConfig(multipart_threshold=GRANDE, multipart_chunksize=16 * 1024 * 1024,
+                                             max_concurrency=4, use_threads=True))
+        with open(a, "rb") as f:
+            for bloco in iter(lambda: f.read(8 * 1024 * 1024), b""):
+                h.update(bloco)
+    n = s3.head_object(Bucket=bucket, Key=chave).get("ContentLength")
+    if n != tam:
+        raise ValueError("tamanho na nuvem %s, no disco %s" % (n, tam))
+    return h.hexdigest()
+
+
 def main():
     cfg = env()
     if cfg.get("ETERNA_NUVEM") != "s3" or not cfg.get("ETERNA_BUCKET"):
@@ -62,7 +90,7 @@ def main():
     db = sqlite3.connect(DB, timeout=30)
     db.execute("CREATE TABLE IF NOT EXISTS feito (chave TEXT PRIMARY KEY, tam INTEGER, mtime REAL, md5 TEXT, em REAL)")
     feitos = {k: (t, m) for k, t, m in db.execute("SELECT chave, tam, mtime FROM feito")}
-    vistos, novos, bytes_ = set(), 0, 0
+    vistos, novos, bytes_, falhas = set(), 0, 0, []
     agora = time.time()
     for a, chave in arquivos():
         if True:
@@ -75,14 +103,24 @@ def main():
                 continue
             if feitos.get(chave) == (st.st_size, st.st_mtime):
                 continue
-            with open(a, "rb") as f:
-                corpo = f.read()
-            md5 = hashlib.md5(corpo)
-            r = s3.put_object(Bucket=bucket, Key=chave, Body=corpo, StorageClass="STANDARD_IA",
-                              ContentMD5=base64.b64encode(md5.digest()).decode())
-            if r.get("ETag", "").strip('"') != md5.hexdigest():
-                raise SystemExit("ETag diferente em " + chave)
-            db.execute("INSERT OR REPLACE INTO feito VALUES (?,?,?,?,?)", (chave, st.st_size, st.st_mtime, md5.hexdigest(), time.time()))
+            # 15/11: a cópia confere cada arquivo. Até 64 MB: envio único com MD5 (a nuvem recusa se chegar diferente).
+            # Acima (vídeos de 230 MB do Drone): envio em partes direto do disco; cada parte conferida pela AWS e reenviada
+            # sozinha se falhar (o MD5 do envio único brigava com a conferência da própria biblioteca e a AWS recusava o
+            # vídeo inteiro: BadDigest). Depois do envio, o tamanho gravado na nuvem tem que bater. Até 3 tentativas; se
+            # ainda falhar, os outros arquivos seguem e ele volta na próxima rodada (sem pulso: o alerta avisa se durar).
+            erro = None
+            for tentativa in range(3):
+                try:
+                    md5 = enviar(s3, bucket, a, chave, st.st_size)
+                    erro = None
+                    break
+                except Exception as ex:
+                    erro = ex
+                    time.sleep(5 * (tentativa + 1))
+            if erro is not None:
+                falhas.append("%s: %s" % (chave, str(erro)[:160]))
+                continue
+            db.execute("INSERT OR REPLACE INTO feito VALUES (?,?,?,?,?)", (chave, st.st_size, st.st_mtime, md5, time.time()))
             db.commit()
             novos += 1
             bytes_ += st.st_size
@@ -96,6 +134,15 @@ def main():
             db.execute("DELETE FROM feito WHERE chave=?", (k,))
             db.commit()
             apagadas += 1
+    if falhas:
+        print("originais: %d novos, %d com falha (tentam de novo na próxima rodada):" % (novos, len(falhas)))
+        for x in falhas[:20]:
+            print("  " + x)
+        return 1
+    # pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): rodada completa sem erro
+    pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
+    s3.put_object(Bucket=bucket, Key="backup/%s/pulso-originais.json" % pc, ContentType="application/json",
+                  Body=json.dumps({"em": time.time(), "novos": novos, "total": len(vistos)}).encode())
     print("originais: %d novos (%.1f MB), %d apagados da nuvem (LGPD), %d no total" % (novos, bytes_ / 1e6, apagadas, len(vistos)))
     return 0
 

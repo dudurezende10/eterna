@@ -224,7 +224,7 @@ ETERNA_RECORTE_GPU=auto
 # ETERNA_NUVEM=
 # ETERNA_BUCKET=
 # ETERNA_AWS_REGIAO=us-east-2
-# ETERNA_GALERIA_API=
+ETERNA_GALERIA_API=https://whe2hyve2j.execute-api.us-east-2.amazonaws.com
 EOF
   ok "criado $ENV"
 else
