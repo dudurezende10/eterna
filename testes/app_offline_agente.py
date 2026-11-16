@@ -66,7 +66,7 @@ pôr("index.html", INDEX)
 pôr(FONTE, FONTE_B)
 pôr("vendor/segredo.exe", b"nao")
 pôr("README.md", b"nao")
-for rel in ESSENCIAIS + [f for f in FUNDOS if f != "img/bg-telao.jpg"]:
+for rel in ESSENCIAIS + [f for f in FUNDOS if f != "img/bg-telao-v2.jpg"]:
     pôr(rel, b"x" * 64)                     # conteúdo falso: só conta o arquivo existir
 
 pedidos = []
@@ -153,10 +153,10 @@ try:
     s, ct, b = get("/" + FONTE)
     ok(s == 200 and b == FONTE_B and ct == "font/woff2", "a: fonte: %r %r %d" % (s, ct, len(b)))
     # v97: sem um fundo ativo (o Telão) na origem, não fica pronto; com ele, fica (o pré-aquecimento tenta de novo)
-    ok(len(FUNDOS) >= 5 and "img/bg-telao.jpg" in FUNDOS and all(os.path.isfile(os.path.join(RAIZ, f)) for f in FUNDOS), "fundos ativos do app: %r" % FUNDOS)
+    ok(len(FUNDOS) == 3 and "img/bg-telao-v2.jpg" in FUNDOS and "img/bg-mirantedia.jpg" in FUNDOS and "img/bg-pb1950.jpg" in FUNDOS and all(os.path.isfile(os.path.join(RAIZ, f)) for f in FUNDOS), "fundos ativos do app: %r" % FUNDOS)
     ok(not esperar_pronto(4), "a: sem o fundo do Telão no disco, app_offline_pronto não pode ser true")
-    pôr("img/bg-telao.jpg", b"x" * 64)
-    s, ct, b = get("/img/bg-telao.jpg")
+    pôr("img/bg-telao-v2.jpg", b"x" * 64)
+    s, ct, b = get("/img/bg-telao-v2.jpg")
     ok(s == 200 and ct == "image/jpeg", "a: fundo do Telão servido: %r %r" % (s, ct))
     ok(esperar_pronto(), "a: /status.app_offline_pronto deveria virar true com os essenciais e os fundos ativos baixados: %r" % status().get("app_offline_pronto"))
     ok(all(os.path.isfile(os.path.join(CACHE, f.replace("/", "%2F"))) for f in FUNDOS), "a: fundos ativos no disco: %r" % sorted(os.listdir(CACHE)))
