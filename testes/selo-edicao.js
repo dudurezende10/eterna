@@ -22,10 +22,11 @@ const CARD='LPSELO001';
 const FEED=[{card:CARD,dia:hoje,fotografo:'carlos',fonte:'ftp',ponto:'terminal',trilha:'vivo',atrasada:false,status:'fechada',motivo:'pausa',aberta_em:a-900,ultima_chegada:a-850,cap0:a-902,cap1:a-852,fonte_t:'cap',fechada_em:a-790,fechada_por:'pausa',
   fotos:[...BASES,...FOTOS],pend:[],dec:{},sim_abertura:null,fundida_em:null,removida:false,rev:1,ia:BASES.slice(),ia_regra:{n:2,motivo:null}}];
 // ordem dos fundos ativos (BG_DEF) e a base de cada um (FIA_BASE: arq1950 usa a 1ª, os outros a 2ª)
-const ORDEM=['campeao2','mirante','arq1950','tunel','telao'];const BASE_DE=bg=>bg==='arq1950'?BASES[0]:BASES[1];
-const NOMES={pt:['Noite de campeão','Mirante ao pôr do sol','Arquibancada 1950','Saída do túnel','Telão do Maracanã'],en:["Champions' night",'Lookout at sunset','1950 Stands','Out of the tunnel','Maracanã big screen'],
-  es:['Noche de campeón','Mirador al atardecer','Tribuna de 1950','Salida del túnel','Pantalla gigante del Maracanã'],fr:['Nuit de champion','Belvédère au coucher du soleil','Tribunes de 1950','Sortie du tunnel','Écran géant du Maracanã'],
-  de:['Meisternacht','Aussichtspunkt bei Sonnenuntergang','Tribüne 1950','Aus dem Spielertunnel','Maracanã-Großbildleinwand']};
+const ORDEM=['mirantedia','arq1950','telao']; // 16/11: três fundos
+const BASE_DE=bg=>bg==='arq1950'?BASES[0]:BASES[1];
+const NOMES={pt:['Mirante do Rio','Arquibancada 1950','Telão do Maracanã'],en:['Rio lookout','1950 Stands','Maracanã big screen'],
+  es:['Mirador de Río','Tribuna de 1950','Pantalla gigante del Maracanã'],fr:['Belvédère de Rio','Tribunes de 1950','Écran géant du Maracanã'],
+  de:['Aussichtspunkt über Rio','Tribüne 1950','Maracanã-Großbildleinwand']};
 const SELO={pt:'Edição Maracanã',en:'Maracanã Edition',es:'Edición Maracanã',fr:'Édition Maracanã',de:'Maracanã-Edition'};
 const TIT={pt:'Suas fotos especiais',en:'Your special photos',es:'Tus fotos especiales',fr:'Vos photos spéciales',de:'Ihre besonderen Fotos'};
 const SEP={pt:'Suas fotos de hoje',en:'Your photos from today',es:'Tus fotos de hoy',fr:'Vos photos du jour',de:'Ihre Fotos von heute'};
@@ -61,20 +62,20 @@ try{
   const vistas=()=>pg.evaluate(()=>{const L=ETERNA.edLer();return Object.values(L.dias).reduce((s,n)=>s+n,0);});
   const ver=async i=>{await pg.evaluate(i=>{const el=document.createElement('button');el.dataset.act='kiosk-ver';el.dataset.i=String(i);document.body.appendChild(el);el.click();el.remove();},i);await pg.waitForTimeout(150);};
 
-  // 1: ordem fixa: as 5 montagens na ordem de bgOn, depois as 6 fotos comuns
+  // 1: ordem fixa: as 3 montagens na ordem de bgOn, depois as 6 fotos comuns
   const ord=await pg.evaluate(c=>ETERNA.lojaItems(c).map(x=>x.t==='ai'?'ai:'+x.bg+':'+x.id.slice(3):'ph:'+x.id.slice(3)),CARD);
   ok(J(ord)===J([...ORDEM.map(bg=>'ai:'+bg+':'+BASE_DE(bg)),...FOTOS.map(id=>'ph:'+id)]),'1: montagens primeiro, na ordem de bgOn, e as 6 fotos depois: '+J(ord));
   const its0=await pg.evaluate(c=>ETERNA.lojaItems(c).map(x=>({k:x.k,lb:x.lb||null,edIni:!!x.edIni,edFotos:!!x.edFotos})),CARD);
-  ok(its0[0].edIni&&its0.filter(x=>x.edIni).length===1&&its0[5].edFotos&&its0.filter(x=>x.edFotos).length===1&&its0.every(x=>!x.lb),'1/A8: marcas edIni e edFotos e montagem sem "ponto · hora": '+J(its0));
+  ok(its0[0].edIni&&its0.filter(x=>x.edIni).length===1&&its0[3].edFotos&&its0.filter(x=>x.edFotos).length===1&&its0.every(x=>!x.lb),'1/A8: marcas edIni e edFotos e montagem sem "ponto · hora": '+J(its0));
 
   // 3/4: nenhuma montagem pronta (as duas bases seguras no recorte): abre na 1ª montagem, com o "Preparando" e o selo
   BASES.forEach(x=>HOLD.add(x));
   await abrir();let k=await K();
   const prep=await pg.evaluate(()=>({mk:!!document.querySelector('#lj-lb .lj-lbimg.ai .lj-aimk'),ed:(document.querySelector('#lj-lb .lj-lbimg.ai .lj-ed')||{}).textContent,nm:(document.querySelector('#lj-lb .lj-edn')||{}).textContent}));
-  ok(k.ver===0&&k.t==='ai'&&prep.mk&&/edição maracanã/i.test(prep.ed||'')&&prep.nm==='Noite de campeão','3: em preparo, abre na 1ª montagem com o Preparando, o selo e o nome do fundo: '+J({k,prep}));
+  ok(k.ver===0&&k.t==='ai'&&prep.mk&&/edição maracanã/i.test(prep.ed||'')&&prep.nm==='Mirante do Rio','3: em preparo, abre na 1ª montagem com o Preparando, o selo e o nome do fundo: '+J({k,prep}));
   ok(await vistas()===0,'15: montagem em preparo não conta como vista');
   await pg.waitForTimeout(2000);k=await K();
-  ok(k.ver===5&&k.t==='ph'&&k.k==='ag_'+FOTOS[0],'4: sem montagem pronta e sem toque, depois da espera a tela vai para a 1ª foto comum: '+J(k));
+  ok(k.ver===3&&k.t==='ph'&&k.k==='ag_'+FOTOS[0],'4: sem montagem pronta e sem toque, depois da espera a tela vai para a 1ª foto comum: '+J(k));
   // 4: com um toque antes da espera, a tela não anda sozinha
   await abrir();await pg.mouse.move(960,540);await pg.mouse.down();await pg.mouse.up();await pg.waitForTimeout(2000);k=await K();
   ok(k.ver===0&&k.t==='ai','4: com um toque antes da espera, a tela fica na montagem: '+J(k));
@@ -83,7 +84,7 @@ try{
   await pg.evaluate(()=>ETERNA.ljEdEsperaMs(600000));await abrir();solta(BASES[0]);await pg.evaluate(id=>ETERNA.compose(id,'arq1950'),'ag_'+BASES[0]);
   k=await K();ok(k.ver===0,'4: antes da espera, a tela fica na montagem em preparo: '+J(k));
   await pg.evaluate(()=>{ETERNA.lojaEdEspera(ETERNA.state.kiosk.edAbriu);ETERNA.ljEdEsperaMs(1500);});await pg.waitForTimeout(200);k=await K();
-  ok(k.ver===2&&k.k==='ai:ag_'+BASES[0]+'|arq1950','4: depois da espera, a tela vai para a 1ª montagem pronta: '+J(k));
+  ok(k.ver===1&&k.k==='ai:ag_'+BASES[0]+'|arq1950','4: depois da espera, a tela vai para a 1ª montagem pronta: '+J(k));
   const v0=await vistas();ok(v0===1,'15: a montagem pronta que apareceu na tela cheia conta 1: '+v0);
   // 3: a montagem fica pronta com o cliente olhando: mesmo item, sem redesenhar a tela
   await ver(0);await pg.evaluate(()=>{document.querySelector('#lj-lb').dataset.marca='1';});solta(BASES[1]);
@@ -97,7 +98,7 @@ try{
   // 2: com as montagens prontas, o código e a selfie abrem na 1ª montagem, com o selo e o nome do fundo
   await abrir();k=await K();
   const p2=await pg.evaluate(()=>({ed:(document.querySelector('#lj-lb .lj-ed')||{}).textContent,nm:(document.querySelector('#lj-lb .lj-edn')||{}).textContent,lb:!!document.querySelector('#lj-lb .lj-lbsrc:not(.lj-edn)')}));
-  ok(k.ver===0&&k.t==='ai'&&/edição maracanã/i.test(p2.ed||'')&&p2.nm==='Noite de campeão'&&!p2.lb,'2: o código abre na 1ª montagem com selo e nome do fundo (sem ponto · hora): '+J({k,p2}));
+  ok(k.ver===0&&k.t==='ai'&&/edição maracanã/i.test(p2.ed||'')&&p2.nm==='Mirante do Rio'&&!p2.lb,'2: o código abre na 1ª montagem com selo e nome do fundo (sem ponto · hora): '+J({k,p2}));
   const sf=await pg.evaluate(async()=>{ETERNA.lojaReset();const c=document.createElement('canvas');c.width=64;c.height=64;const r=await ETERNA.faceFind([c],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);await new Promise(f=>setTimeout(f,150));const k=ETERNA.state.kiosk;const its=ETERNA.lojaItems(k.code);return {code:k.code,ver:k.ver,t:its[k.ver]&&its[k.ver].t,step:k.step};});
   ok(sf.code===CARD&&sf.ver===0&&sf.t==='ai','2: a selfie abre na 1ª montagem: '+J(sf));
 
@@ -119,14 +120,14 @@ try{
   ok(ls.v&&ls.v.terminal===ls.t&&Object.keys(ls.v).sort().join()==='dias,terminal','17: localStorage só com o terminal e o número por dia: '+J(ls));
 
   // 5: âncora: na 3ª foto comum, a 2ª montagem falha; a tela fica na mesma foto e as marcas ficam
-  await abrir();await ver(7);await pg.evaluate(id=>{const k=ETERNA.state.kiosk;ETERNA.lojaPick(k.code)[id]='ok';ETERNA.lojaSync(k.code);ETERNA.render();},'ag_'+FOTOS[2]);
+  await abrir();await ver(5);await pg.evaluate(id=>{const k=ETERNA.state.kiosk;ETERNA.lojaPick(k.code)[id]='ok';ETERNA.lojaSync(k.code);ETERNA.render();},'ag_'+FOTOS[2]);
   // (com uma base ruim o fundo usa a outra base; as duas ruins tiram o Mirante da lista)
-  let a5=await K();await pg.evaluate(ks=>ks.forEach(k=>ETERNA.fiaFalhou(k)),BASES.map(x=>'ag_'+x+'|mirante'));await pg.waitForTimeout(200);let b5=await K();
+  let a5=await K();await pg.evaluate(ks=>ks.forEach(k=>ETERNA.fiaFalhou(k)),BASES.map(x=>'ag_'+x+'|mirantedia'));await pg.waitForTimeout(200);let b5=await K();
   const pk5=await pg.evaluate(id=>ETERNA.lojaPick(ETERNA.state.kiosk.code)[id],'ag_'+FOTOS[2]);
-  ok(a5.k==='ag_'+FOTOS[2]&&b5.k===a5.k&&b5.n===10&&b5.cnt==='7 / 10'&&pk5==='ok','5: montagem falhou: a mesma foto na tela, contador ajustado e a marca fica: '+J({a5,b5,pk5}));
-  await pg.evaluate(ks=>{ks.forEach(k=>ETERNA.FIA_RUIM.delete(k));ETERNA.render();},BASES.map(x=>'ag_'+x+'|mirante'));await pg.waitForTimeout(150);const c5=await K();
-  ok(c5.k===a5.k&&c5.n===11&&c5.cnt==='8 / 11','5: montagem nova no início: a mesma foto continua na tela: '+J(c5));
-  await ver(8);const d5=await K();ok(d5.k==='ag_'+FOTOS[3],'5: as setas continuam andando um item: '+J(d5));
+  ok(a5.k==='ag_'+FOTOS[2]&&b5.k===a5.k&&b5.n===8&&b5.cnt==='5 / 8'&&pk5==='ok','5: montagem falhou: a mesma foto na tela, contador ajustado e a marca fica: '+J({a5,b5,pk5}));
+  await pg.evaluate(ks=>{ks.forEach(k=>ETERNA.FIA_RUIM.delete(k));ETERNA.render();},BASES.map(x=>'ag_'+x+'|mirantedia'));await pg.waitForTimeout(150);const c5=await K();
+  ok(c5.k===a5.k&&c5.n===9&&c5.cnt==='6 / 9','5: montagem nova no início: a mesma foto continua na tela: '+J(c5));
+  await ver(6);const d5=await K();ok(d5.k==='ag_'+FOTOS[3],'5: as setas continuam andando um item: '+J(d5));
   await pg.evaluate(id=>{const k=ETERNA.state.kiosk;delete ETERNA.lojaPick(k.code)[id];ETERNA.lojaSync(k.code);},'ag_'+FOTOS[2]);
 
   // 7/8: grade e as 5 línguas
@@ -135,12 +136,12 @@ try{
     const fs1=await pg.evaluate(()=>({ed:(document.querySelector('#lj-lb .lj-ed')||{}).textContent,nm:(document.querySelector('#lj-lb .lj-edn')||{}).textContent}));
     await pg.evaluate(()=>{ETERNA.state.kiosk.ver=null;ETERNA.render();});await pg.waitForTimeout(150);
     const g=await pg.evaluate(()=>{const grid=document.querySelector('.lj-grid');const kids=[...grid.children];const iH=kids.findIndex(x=>x.classList.contains('lj-edh'));const iC=kids.findIndex(x=>x.classList.contains('lj-gcard'));
-      const iS=kids.findIndex(x=>x.classList.contains('lj-edfotos'));const cards=[...grid.querySelectorAll('.lj-gcard')];const i6=kids.indexOf(cards[5]);
+      const iS=kids.findIndex(x=>x.classList.contains('lj-edfotos'));const cards=[...grid.querySelectorAll('.lj-gcard')];const i6=kids.indexOf(cards[3]);
       return {iH,iC,iS,i6,eb:(grid.querySelector('.lj-edeb')||{}).textContent,h3:(grid.querySelector('.lj-edh h3')||{}).textContent,sep:(grid.querySelector('.lj-edfotos')||{}).textContent,
-        tags:cards.slice(0,5).map(c=>(c.querySelector('.lj-tag')||{}).textContent.trim()),eds:cards.map(c=>!!c.querySelector('.lj-ed')),txt:document.querySelector('.lj').innerText};});
+        tags:cards.slice(0,3).map(c=>(c.querySelector('.lj-tag')||{}).textContent.trim()),eds:cards.map(c=>!!c.querySelector('.lj-ed')),txt:document.querySelector('.lj').innerText};});
     ok(fs1.ed===SELO[lg]&&fs1.nm===NOMES[lg][0],'8 '+lg+': selo e nome do fundo na tela cheia: '+J(fs1));
-    ok(g.iH===0&&g.iC===1&&g.eb===SELO[lg]&&g.h3===TIT[lg]&&g.sep===SEP[lg]&&g.iS===g.i6-1&&J(g.tags)===J(NOMES[lg])&&J(g.eds)===J([true,true,true,true,true,false,false,false,false,false,false]),'7/8 '+lg+': grade com o título, o selo nas 5 montagens, o nome do fundo e o separador: '+J({...g,txt:undefined}));
-    ok(!/[—–]/.test(fs1.ed+fs1.nm+g.eb+g.h3+g.sep+g.tags.join(''))&&!/\bed(Selo|Titulo|Fotos)\b|\bbg(Arq1950|Mirante|Campeao|Tunel|Podio)\b/.test(g.txt),'8 '+lg+': sem travessão e sem chave crua');}
+    ok(g.iH===0&&g.iC===1&&g.eb===SELO[lg]&&g.h3===TIT[lg]&&g.sep===SEP[lg]&&g.iS===g.i6-1&&J(g.tags)===J(NOMES[lg])&&J(g.eds)===J([true,true,true,false,false,false,false,false,false]),'7/8 '+lg+': grade com o título, o selo nas 3 montagens, o nome do fundo e o separador: '+J({...g,txt:undefined}));
+    ok(!/[—–]/.test(fs1.ed+fs1.nm+g.eb+g.h3+g.sep+g.tags.join(''))&&!/\bed(Selo|Titulo|Fotos)\b|\bbg(Arq1950|Mirante|MiranteDia|Telao|Campeao|Tunel|Podio)\b/.test(g.txt),'8 '+lg+': sem travessão e sem chave crua');}
   await pg.evaluate(()=>{ETERNA.state.lang='pt';ETERNA.render();});
 
   // 9: selo no canto da imagem, dentro dela, sem encostar no logo nem nos controles, em 4 tamanhos
@@ -151,9 +152,9 @@ try{
     const dentro=(x,y)=>x&&y&&x.x>=y.x-1&&x.y>=y.y-1&&x.r<=y.r+1&&x.b<=y.b+1;const cruza=(x,y)=>x&&y&&x.x<y.r&&y.x<x.r&&x.y<y.b&&y.y<x.b;
     ok(dentro(r.ed,r.img)&&dentro(r.nm,r.img)&&!cruza(r.ed,r.logo)&&!cruza(r.ed,r.tl)&&!cruza(r.ed,r.tr)&&!r.corte&&r.ed.h<r.fs*2.6&&r.ed.y-r.img.y<2,'9 '+w+'×'+h+': selo no canto de cima da imagem, sem encostar no logo nem nos controles, sem quebra: '+J(r));
     if(PRINTS&&w===1920){fs.mkdirSync(PRINTS,{recursive:true});await pg.screenshot({path:path.join(PRINTS,'checkout-1920-tela-cheia-1a-montagem.png')});
-      await pg.evaluate(()=>{ETERNA.state.kiosk.ver=null;ETERNA.render();});await espera(pg,()=>document.querySelectorAll('.lj-gimg .compimg.ok').length>=5,8000);await pg.waitForTimeout(300);
+      await pg.evaluate(()=>{ETERNA.state.kiosk.ver=null;ETERNA.render();});await espera(pg,()=>document.querySelectorAll('.lj-gimg .compimg.ok').length>=3,8000);await pg.waitForTimeout(300);
       await pg.screenshot({path:path.join(PRINTS,'checkout-1920-grade-inicio.png')});
-      await pg.evaluate(()=>{ETERNA.state.kiosk.ver=2;ETERNA.state.kiosk.i=2;ETERNA.render();});await espera(pg,()=>!!document.querySelector('#lj-lb .compimg.ok'),8000);await pg.waitForTimeout(300);
+      await pg.evaluate(()=>{ETERNA.state.kiosk.ver=1;ETERNA.state.kiosk.i=1;ETERNA.render();});await espera(pg,()=>!!document.querySelector('#lj-lb .compimg.ok'),8000);await pg.waitForTimeout(300);
       await pg.screenshot({path:path.join(PRINTS,'checkout-1920-tela-cheia-arquibancada.png')});}
   }
   await pg.setViewportSize({width:1920,height:1080});
@@ -164,17 +165,17 @@ try{
   await abrir();await ver(0);
   ok(await espera(pg2,()=>!!document.querySelector('#eco .eco-big .eco-ed'),8000),'12: eco da tela do cliente com o selo na montagem atual');
   const eco=await pg2.evaluate(()=>{const e=document.querySelector('#eco .eco-big .eco-ed');return e&&{t:e.textContent,title:e.title,tag:!!document.querySelector('#eco .eco-tag')};});
-  ok(eco&&eco.t==='Edição Maracanã'&&eco.title==='Noite de campeão'&&!eco.tag,'12: eco com "Edição Maracanã" e o nome do fundo no title: '+J(eco));
+  ok(eco&&eco.t==='Edição Maracanã'&&eco.title==='Mirante do Rio'&&!eco.tag,'12: eco com "Edição Maracanã" e o nome do fundo no title: '+J(eco));
   // 11: marcar 2 montagens e 3 fotos: o pedido tem as mesmas fotos, aiSel, n e valor (só a ordem mudou)
-  const esc11=['ai:ag_'+BASES[1]+'|campeao2','ai:ag_'+BASES[0]+'|arq1950','ag_'+FOTOS[0],'ag_'+FOTOS[1],'ag_'+FOTOS[2]];
+  const esc11=['ai:ag_'+BASES[1]+'|mirantedia','ai:ag_'+BASES[0]+'|arq1950','ag_'+FOTOS[0],'ag_'+FOTOS[1],'ag_'+FOTOS[2]];
   await pg.evaluate(ks=>{const k=ETERNA.state.kiosk;const pk=ETERNA.lojaPick(k.code);ks.forEach(x=>pk[x]='ok');ETERNA.lojaSync(k.code);const c=ETERNA.lojaCart(k.code);ETERNA.lojaPedir();window.__c11=c;return true;},esc11);
   ok(await espera(pg,()=>ETERNA.state.kiosk.step==='done'&&(ETERNA.SIM.caixaDin||[]).length>0,8000),'11: pedido feito no Checkout');
   const ped=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;const c=window.__c11;const r=ETERNA.SIM.caixaDin[0];const v=ETERNA.vendaCalc(5,c.nSes,'gramado');return {n:r.n,sel:(r.selected||[]).slice().sort(),ai:(r.aiSel||[]).slice().sort(),nSes:r.nSes,cn:c.n,cnSes:c.nSes,ch:c.ch.map(x=>x.t),v:v.total,id:r.id,step:k.step};});
-  ok(ped.n===5&&J(ped.sel)===J(esc11.slice(2).sort())&&J(ped.ai)===J([BASES[1]+'|campeao2',BASES[0]+'|arq1950'].map(x=>'ag_'+x).sort())&&ped.cn===5&&ped.cnSes===8&&J(ped.ch)===J(['ai','ai','ph','ph','ph'])&&ped.v===150&&ped.step==='done','11: pedido com as mesmas fotos, aiSel, n e valor; Ver minhas fotos com as montagens primeiro: '+J(ped));
+  ok(ped.n===5&&J(ped.sel)===J(esc11.slice(2).sort())&&J(ped.ai)===J([BASES[1]+'|mirantedia',BASES[0]+'|arq1950'].map(x=>'ag_'+x).sort())&&ped.cn===5&&ped.cnSes===8&&J(ped.ch)===J(['ai','ai','ph','ph','ph'])&&ped.v===150&&ped.step==='done','11: pedido com as mesmas fotos, aiSel, n e valor; Ver minhas fotos com as montagens primeiro: '+J(ped));
   // 12: no Posto, cada miniatura de montagem do pedido tem o selo e o nome do fundo no title
   await pg2.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});await pg2.waitForTimeout(600);
   const p12=await pg2.evaluate(id=>{const el=document.querySelector(`[data-pend="${id}"]`);if(!el)return null;return [...el.querySelectorAll('.pend-th.ai')].map(t=>({ed:(t.querySelector('.lj-ed')||{}).textContent,title:(t.querySelector('.laibadge')||{}).title,corte:(()=>{const e=t.querySelector('.lj-ed');return e?e.scrollWidth>e.clientWidth+1:true;})()}));},ped.id);
-  ok(p12&&p12.length===2&&p12.every(x=>x.ed==='Edição Maracanã'&&!x.corte)&&J(p12.map(x=>x.title).sort())===J(['Arquibancada 1950','Noite de campeão']),'12: miniaturas de montagem do pedido com o selo e o nome do fundo: '+J(p12));
+  ok(p12&&p12.length===2&&p12.every(x=>x.ed==='Edição Maracanã'&&!x.corte)&&J(p12.map(x=>x.title).sort())===J(['Arquibancada 1950','Mirante do Rio']),'12: miniaturas de montagem do pedido com o selo e o nome do fundo: '+J(p12));
   if(PRINTS)await pg2.locator(`[data-pend="${ped.id}"]`).screenshot({path:path.join(PRINTS,'posto-pedido-com-selo.png'),timeout:5000}).catch(()=>{});
   // o caixa escolhe o pacote no Posto: o Checkout mostra o valor e o "Ver minhas fotos"
   await pg2.evaluate(id=>ETERNA.pendEscolher(id,{pkg:'gramado',meio:'pix'}),ped.id);

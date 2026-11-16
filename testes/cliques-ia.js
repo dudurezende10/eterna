@@ -1,8 +1,8 @@
 // v93 (Eduardo, 06/11 07:54; plano docs/planos/2026-11-06-dois-cliques-ia.md): os 2 primeiros cliques de cada sessão de ponto
 // v94-ux (parte I): "Fotos para os fundos de IA" fica na aba Fundos de IA de Preços e Checkout
-// de campo são só base dos fundos de IA. Critérios do app: 2 (fora da venda normal), 3 (5 montagens com a base certa), 4 (base
+// de campo são só base dos fundos de IA. Critérios do app: 2 (fora da venda normal), 3 (3 montagens com a base certa; 16/11: três fundos), 4 (base
 // ruim usa a outra; as duas ruins = jeito antigo), A11 e D2, 8 e 14 (Upload: tags e pílulas), 12 (Painel de controle e guardAct),
-// 13 (Fila do fotógrafo) e 19 (as 5 montagens prontas no COMP em até 4 s depois de o código achar a sessão).
+// 13 (Fila do fotógrafo) e 19 (as 3 montagens prontas no COMP em até 4 s depois de o código achar a sessão).
 // Agente falso (page.route): /status com o recorte pronto, /sessoes, /thumb/, /file/, /recorte (PNG sintético de uma silhueta),
 // /fila-fotografo. Nenhuma foto de convidado: quadrados de cor e uma silhueta desenhada.
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');
@@ -67,7 +67,7 @@ try{
     s.status=st0;s.selected=sel0;delete ETERNA.SIM.galerias[tok];ETERNA.SIM.galFila=(ETERNA.SIM.galFila||[]).filter(x=>x.token!==tok);return {g1,iaDepois:iaDepois===undefined,g2,g3,imp:imp.includes(f1),impNaoPaga:impNaoPaga.includes(f1)};},['ag_'+A[0]]);
   ok(paga.g1.join()==='comprada'&&paga.iaDepois&&paga.g2.join()==='comprada'&&paga.g3===0&&paga.imp&&!paga.impNaoPaga,'segurança: base paga fica na galeria e na impressão (srvPull não mexe em sessão paga; republicação mantém); a não vendida fica fora: '+J(paga));
   const pou=await pg.evaluate(()=>ETERNA.demoSessions().find(x=>x.card==='LPTIAPOU4').photos.length);ok(pou===3,'9: poucas fotos: as 3 à venda: '+pou);
-  // Checkout pelo código (19: as 5 montagens começam já, sem esperar o item aparecer)
+  // Checkout pelo código (19: as 3 montagens começam já, sem esperar o item aparecer)
   await pg.fill('#kcode','LPTIACAM1').catch(()=>{});
   const temCampo=await pg.$('#kcode');
   const t0=Date.now();
@@ -76,20 +76,20 @@ try{
     const rs=await Promise.race([Promise.all(ks.map(async k=>{for(let i=0;i<80&&!ETERNA.COMP[k];i++)await new Promise(r=>setTimeout(r,50));return ETERNA.COMP[k]?await ETERNA.COMP[k]:{err:'sem COMP'};})),new Promise(r=>setTimeout(()=>r(null),8000))]);
     return {n:ks.length,ok:rs?rs.filter(r=>r&&r.url).length:0,ms:performance.now()-t,err:rs?rs.filter(r=>!r||!r.url).map(r=>r&&(r.err||r.pending)):['tempo']};});
   num.montagens_ms=Date.now()-t0;
-  ok(pronto.n===5&&pronto.ok===5,'19: as 5 montagens prontas no COMP: '+J(pronto));
+  ok(pronto.n===3&&pronto.ok===3,'19: as 3 montagens prontas no COMP: '+J(pronto));
   ok(num.montagens_ms<=4000,'19: em até 4 s depois do código: '+num.montagens_ms+' ms');
   // 3: uma por fundo, com a base indicada
   const it=await pg.evaluate(()=>({ai:ETERNA.lojaAI('LPTIACAM1').map(x=>x.bg+'='+x.id+'@'+x.ses),items:ETERNA.lojaItems('LPTIACAM1').map(x=>x.t+':'+x.id),fotos:ETERNA.lojaFotos('LPTIACAM1').map(p=>p.id),on:ETERNA.bgOn()}));
   const f1='ag_'+A[0],f2='ag_'+A[1];
-  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2,telao:f2};
-  ok(it.ai.length===5&&new Set(it.ai.map(x=>x.split('=')[0])).size===5&&it.ai.every(x=>{const [bg,r]=x.split('=');return esper[bg]===r.split('@')[0]&&r.endsWith('@LPTIACAM1');}),'3: 5 montagens, 1950 e Pódio na foto 1, as outras na foto 2: '+J(it.ai));
+  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,mirantedia:f2,tunel:f2,telao:f2};
+  ok(it.ai.length===3&&J(it.ai.map(x=>x.split('=')[0]))===J(['mirantedia','arq1950','telao'])&&it.ai.every(x=>{const [bg,r]=x.split('=');return esper[bg]===r.split('@')[0]&&r.endsWith('@LPTIACAM1');}),'3: 3 montagens (Mirante do Rio, 1950, Telão), 1950 na foto 1, as outras na foto 2: '+J(it.ai));
   ok(it.fotos.length===6&&!it.fotos.includes(f1)&&!it.fotos.includes(f2),'2: Checkout com as 6 fotos normais: '+J(it.fotos));
   ok(it.items.filter(x=>x.startsWith('ph:')).length===6&&!it.items.includes('ph:'+f1)&&!it.items.includes('ph:'+f2),'2: as bases nunca como foto na revisão: '+J(it.items));
   ok(PEDIDOS.every(p=>p.endsWith('|2400'))&&new Set(PEDIDOS.map(p=>p.split('|')[0])).size===2,'19: só os recortes das 2 bases: '+J(PEDIDOS));
   // 4: base 2 com olhos fechados = tudo na base 1; as duas ruins = jeito antigo (2 fotos normais)
   const r4=await pg.evaluate(([f1,f2])=>{ETERNA.SIM.invalid[f2]='olhos fechados';const um=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);ETERNA.FIA_RUIM.add(f1);const ant=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);
     delete ETERNA.SIM.invalid[f2];ETERNA.FIA_RUIM.delete(f1);return {um,ant};},[f1,f2]);
-  ok(r4.um.length===5&&r4.um.every(x=>x===f1),'4: base ruim usa a outra: '+J(r4.um));
+  ok(r4.um.length===3&&r4.um.every(x=>x===f1),'4: base ruim usa a outra: '+J(r4.um));
   ok(r4.ant.length>0&&!r4.ant.includes(f1)&&!r4.ant.includes(f2)&&r4.ant.every(x=>it.fotos.slice(0,2).includes(x)),'4: as duas ruins: jeito antigo com as 2 primeiras fotos normais: '+J(r4.ant));
   // A11: sessão de menor achada pela selfie sem a base em so.ids = sem as bases; D2: âncora sem ia passa para a próxima sessão
   const r11=await pg.evaluate(([f1,f2])=>{const k=ETERNA.state.kiosk;const so0=k.so;const card='LPTIACAM1';const fotos=ETERNA.lojaFotos(card).map(p=>p.id);
@@ -97,7 +97,7 @@ try{
     k.so={card:'LPTIASEM5',cards:['LPTIASEM5','LPTIACAM1'],ids:ETERNA.lojaIdsSo({LPTIASEM5:['x'],LPTIACAM1:[f1,f2]})};const s2=ETERNA.lojaAIBase('LPTIASEM5');const ai2=ETERNA.lojaAI('LPTIASEM5').length;
     k.so=so0;return {s1,s2,ai2};},[f1,f2]);
   ok(r11.s1.bases.join()===f2,'A11: só a base que está em so.ids: '+J(r11.s1));
-  ok(r11.s2.ses==='LPTIACAM1'&&r11.s2.bases.length===2&&r11.ai2===5,'D2: âncora sem ia usa a próxima sessão (um conjunto de 5): '+J(r11));
+  ok(r11.s2.ses==='LPTIACAM1'&&r11.s2.bases.length===2&&r11.ai2===3,'D2: âncora sem ia usa a próxima sessão (um conjunto de 3): '+J(r11));
   // A15 (R3): pela selfie, sessão achada só pela base de IA; nenhuma base como foto; sessão de menor só com a base reconhecida
   SIMS={[A[1]]:.72};
   const r15=await pg.evaluate(async([f1,f2])=>{const c=document.createElement('canvas');c.width=64;c.height=64;const k=ETERNA.state.kiosk;
@@ -109,8 +109,8 @@ try{
     delete ETERNA.SIM.sessions.LPTIACAM1.menor;ETERNA.lojaReset();return {a,b};},[f1,f2]);
   ok(r15.a.achou.join()==='LPTIACAM1'&&r15.a.code==='LPTIACAM1','A15: a selfie acha a sessão só pela base: '+J(r15.a.achou));
   // v97 (Eduardo, 10/11): a selfie abre a leva inteira (e a visita); a base continua fora das fotos
-  ok(r15.a.fotos.length===r15.a.tot&&r15.a.tot>0&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===5,'A15: a leva inteira, nenhuma base como foto, com as 5 montagens: '+J(r15.a));
-  ok(r15.b.code==='LPTIACAM1'&&r15.b.fotos.length===0&&r15.b.ai.length===5&&r15.b.ai.every(x=>x===f2),'A15: menor: só a base reconhecida nas montagens, nenhuma foto de fora: '+J(r15.b));
+  ok(r15.a.fotos.length===r15.a.tot&&r15.a.tot>0&&!r15.a.items.includes('ph:'+f1)&&!r15.a.items.includes('ph:'+f2)&&r15.a.items.filter(x=>x.startsWith('ai:')).length===3,'A15: a leva inteira, nenhuma base como foto, com as 3 montagens: '+J(r15.a));
+  ok(r15.b.code==='LPTIACAM1'&&r15.b.fotos.length===0&&r15.b.ai.length===3&&r15.b.ai.every(x=>x===f2),'A15: menor: só a base reconhecida nas montagens, nenhuma foto de fora: '+J(r15.b));
   SIMS={};
   // "Todas" conta só as fotos normais (+ as montagens escolhidas)
   const nSes=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;k.code='LPTIACAM1';k.so=null;return ETERNA.lojaCart('LPTIACAM1').nSes;});
