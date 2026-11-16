@@ -6097,7 +6097,7 @@ function esSecU(){const V=esVis(),ds=esDiasAtuais();const soma=f=>ds.reduce((a,d
   const passos=[
     {n:vis,t:TE('esf_vis'),cor:'#2F6FD6',c:null},
     {n:pes,t:TE('esf_pes'),s:TE('esf_n_ses',fmtN(ses)),cor:'#2A8FD9',c:[pct(pes,vis),TE('esf_c_vis')]},
-    {n:fotos,t:TE('esf_fotos'),cor:'#1F9E9A',c:[pes?esMed(fotos/pes):'—',TE('esf_c_pes')]},
+    {n:fotos,t:TE('esf_fotos'),cor:'#1F9E9A',c:[pes?fmtN(Math.round(fotos/pes)):'—',TE('esf_c_pes')]},
     {n:bal,t:TE('esf_balcao'),cor:'#22A15A',c:[pct(bal,ses),TE('esf_c_bal')]},
     {n:comp,t:TE('esf_comp'),cor:'#C98F00',c:[pct(comp,bal),TE('esf_c_comp')]},
     {n:fc,t:TE('esf_fc'),cor:'#D9701C',c:[pct(fc,fotos),TE('esf_c_fc')+(fat?' · '+fmtR(fat):'')]}];
