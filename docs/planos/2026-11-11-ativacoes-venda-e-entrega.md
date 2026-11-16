@@ -291,6 +291,14 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 
 **Catálogo sempre no servidor (15/11):** o servidor do estádio nunca tinha recebido o catálogo (a tela mostrava o padrão de dentro do app). Ao gravar só o Asteroid, os outros 14 sumiram da tela e da venda até serem gravados de novo no servidor (mesmos preços; Drone com 5 incluídas e R$ 15 por pessoa a mais). Agora, se o servidor ainda não tem o catálogo, a primeira gravação (Editar ou Hoje não vendo) manda o catálogo inteiro, nunca um item sozinho.
 
+### 4i. Ingresso do cliente obrigatório na venda (Ronaldo, 16/11)
+
+- É pelo ingresso que a ativação se liga à venda original (Imply). No passo **Cliente**, antes do nome, fica o campo **Ingresso do cliente (localizador)** com o botão **Ler QR do ingresso**, que abre a câmera (mesmo leitor da pulseira). O localizador também pode ser digitado (12 caracteres, maiúsculas, sem espaço), mas o normal é ler o QR.
+- Sem ingresso válido a venda não é registrada. Formato do localizador (QR conferido em 29/10, plano v85): 4 dígitos do mês e dia + 8 letras e números, por exemplo `1116AB12CD34`. O número de reimpressão (10 caracteres) e mês ou dia impossíveis são recusados. Não se confere se o mês e o dia batem com hoje, porque o ingresso pode ter sido comprado em outro dia.
+- A venda grava `ingresso` e `ingresso_meio` (`camera` ou `digitado`), nas colunas novas de `ativ_venda`, e o resumo `/ativ/vendas` passa a trazê-las. Uma compra com Drone e Chute a Gol leva o mesmo ingresso nas duas vendas. O mesmo ingresso pode aparecer em compras diferentes, porque o cliente pode voltar e comprar mais.
+- O servidor não recusa venda sem ingresso, porque um tablet com a página antiga vende sem rede e a venda não pode se perder. Nesse caso o campo fica vazio e a obrigatoriedade vale na tela.
+- Testes: `testes/ativacoes_venda.js` cobre o pedido do ingresso, a recusa da reimpressão e do mês 13, a leitura do QR com texto em volta e o ingresso nas duas vendas.
+
 ## 5. Vendas: listar, editar, cancelar
 
 - **Minhas vendas (vendedor):** as vendas do dia com número, hora, QR, itens, pagamento e valor, e os totais por forma de pagamento.
