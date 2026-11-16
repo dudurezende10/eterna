@@ -12733,11 +12733,27 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"vendas": [{k: v.get(k) for k in ("id", "token", "sessoes", "pids", "n", "total", "metodo", "em", "canal", "todas", "teste", "itens", "meio", "idpedido")} for v in vs[desde:desde + 500]],
                                 "next": min(len(vs), desde + 500)})
             if p == "/galerias/status":
+                # 16/11: ?dia=AAAA-MM-DD (fuso do ponto) traz também código, hora, sessões e as fotos de cada galeria criada no
+                # dia, para a gestão ver de quem é cada uma (a selfie não fica ligada a ninguém). O token inteiro nunca sai daqui.
+                dia = (q.get("dia") or [""])[0]
+                dia = dia if re.match(r"^\d{4}-\d{2}-\d{2}$", dia) else None
                 gs = []
                 for t in sorted(os.listdir(GALERIAS))[:2000]:
                     if token_ok(t):
                         m = REPO.ler_manifesto(t) or {}
-                        gs.append({"token8": t[:8], "estado": "expirada" if m and gal_expirou(m) else gal_estado(t, m) if m else "?", "envio": m.get("envio")})
+                        g = {"token8": t[:8], "estado": "expirada" if m and gal_expirou(m) else gal_estado(t, m) if m else "?", "envio": m.get("envio")}
+                        if dia:
+                            try:
+                                from datetime import datetime
+                                cr = datetime.fromisoformat(str(m.get("criada")).replace("Z", "+00:00")).timestamp()
+                            except Exception:
+                                continue
+                            if _ff_hoje(cr) != dia:
+                                continue
+                            g.update(codigo=m.get("codigo"), criada=m.get("criada"), venda=bool(m.get("venda")), tipo=m.get("tipo"),
+                                     sessoes=list(m.get("sessoes") or [])[:20], substituida=bool(m.get("substituida")),
+                                     fotos=[{"id": f.get("id"), "direito": f.get("direito")} for f in (m.get("fotos") or [])[:60]])
+                        gs.append(g)
                 return self.js({"fila": gal_fila.qsize(), "galerias": gs})
             return self.js({"error": "not found"}, 404)
         partes = p.split("/")          # ['', 'g', token, ação, ...]
