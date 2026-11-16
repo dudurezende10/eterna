@@ -1,7 +1,7 @@
 // Exportar relatório (ícones PDF | XLS e, onde a tela já tinha, CSV no mesmo grupo) nas telas de dados. Critérios de docs/planos/2026-11-15-exportar-relatorios.md.
 // Lê os bytes do arquivo baixado: o .xlsx como ZIP (diretório, CRC e XML de cada parte) e o .pdf pela estrutura (cabeçalho, xref, páginas e rodapé).
 // Sem dado real: usuário fictício, vendas de teste montadas aqui e os dados de exemplo do próprio index.html.
-const entrarTeste=require('./_entrar');
+const entrarTeste=require('./_entrar');const escalaLigada=require('./_escala');
 const {chromium}=require('playwright');const fs=require('fs');const os=require('os');const path=require('path');const zlib=require('zlib');const {spawnSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
@@ -26,7 +26,7 @@ function pdfLer(buf){const s=buf.toString('latin1');const r={ini:s.startsWith('%
 (async()=>{const b=await chromium.launch();const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-rel-'));
 try{
   const ctx=await b.newContext({viewport:{width:1920,height:1080},locale:'pt-BR',timezoneId:'America/Sao_Paulo',acceptDownloads:true});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
-  const pg=await ctx.newPage();pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text())});
+  let pg=await ctx.newPage();pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text())});
   await pg.goto(U);await pg.waitForTimeout(400);const ADM=await entrarTeste.adminFicticio(pg);ok(await entrarTeste(pg,ADM),'admin fictício não entrou');
   const abrir=(v,pre)=>pg.evaluate(([v,pre])=>{if(pre)new Function(pre)();ETERNA.state.view=v;ETERNA.render();},[v,pre||'']);
   const toast=()=>pg.evaluate(()=>{const t=document.querySelector('#toast');return t&&t.hasAttribute('data-on')?t.textContent:'';});
@@ -212,7 +212,12 @@ try{
   a=await baixar('xlsx');ok(a,'Fotógrafo aberto: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Fotógrafo aberto');const s=x.abas[0];const nTela=await pg.evaluate(()=>document.querySelectorAll('.panel table tbody tr').length);ok(s.nome==='Dia a dia'&&s.cab.includes('Filtros: Fotógrafo: '+nomeF)&&s.dados.length===nTela+1&&s.dados[s.dados.length-1][0].v==='Total','Fotógrafo aberto: '+J([s.nome,s.cab,s.dados.length,nTela]));}
   // ---------- critério 14: Escala (hoje e a semana da tela) e Diário (o filtro da tela) ----------
-  await abrir('escala');ok(await pg.$('.head .rel-exp'),'Escala: sem Exportar no topo');
+  // 16/11: a Escala está desligada no app (ESCALA_ON=false): nesta janela ela não tem tela nem exportação
+  ok(await pg.evaluate(()=>ETERNA.escalaOn()===false&&!ETERNA.REL.escala&&ETERNA.relPode('escala')===false&&ETERNA.relBotao('escala')===''),'Escala desligada: não pode ter Exportar');
+  // a exportação da Escala continua conferida numa janela com a chave ligada (testes/_escala.js), para religar sem surpresa
+  const pgA=pg;const ctxE=await b.newContext({viewport:{width:1920,height:1080},locale:'pt-BR',timezoneId:'America/Sao_Paulo',acceptDownloads:true});await ctxE.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await escalaLigada(ctxE);
+  pg=await ctxE.newPage();pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push('Escala ligada: '+e.message));await pg.goto(U);await pg.waitForTimeout(400);ok(await entrarTeste(pg,await entrarTeste.adminFicticio(pg)),'Escala ligada: admin fictício não entrou');
+  await abrir('escala');ok(await pg.$('.head .rel-exp'),'Escala: sem Exportar no topo');grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],['Exportar PDF','Exportar XLS'],'Escala (2 ícones)');
   const telaEsc=await pg.evaluate(()=>{const c=[...document.querySelectorAll('#esc-semana .grid-week > div')].map(e=>e.textContent);const L=[];for(let i=8;i<c.length;i+=8)L.push(c.slice(i,i+8));return {L,hoje:new Date().toISOString().slice(0,10),nHoje:document.querySelectorAll('.panel table tbody tr').length};});
   const maisDias=(d,k)=>{const [y,m,dd]=d.split('-').map(Number);return new Date(Date.UTC(y,m-1,dd+k)).toISOString().slice(0,10);};
   a=await baixar('xlsx');ok(a,'Escala: XLS não baixou · '+await toast());
@@ -222,6 +227,10 @@ try{
     ok(s.dados.length===esperado.length&&esperado.length>=14&&s.dados.every((l,i)=>l[0].v===esperado[i][0]&&l[1].t==='n'&&l[2].v.replace(/ \(previsto\)$/,'')===esperado[i][1]),'Escala: semana do arquivo × tela '+J([s.dados.length,esperado.length,s.dados.slice(0,2).map(txt),esperado.slice(0,2)]));
     ok(!/presen|falta|atraso|hor.rio/i.test(J(x.abas.map(q=>[q.colunas,q.cab]))),'Escala: o arquivo não pode sugerir controle de ponto');}
   a=await baixar('pdf');ok(a&&pdfLer(a.buf).objs&&pdfLer(a.buf).linhas[0]==='Escala','Escala: PDF');
+  // quem é fotógrafo (sem alterar a Escala) exporta só os dias dele
+  await pg.evaluate(()=>{const u=ETERNA.state.user;u.key='yago';u.perms.escala.u=false;});
+  await abrir('escala');a=await baixar('xlsx');if(a){const x=await xlsx(a,'Escala do fotógrafo');ok(x.abas.length===1&&x.abas[0].dados.length===8&&x.abas[0].cab.includes('Filtros: Fotógrafo: Yago')&&J(x.abas[0].colunas)===J(['Dia','Função']),'Escala do fotógrafo: '+J([x.abas.length,x.abas[0].cab,x.abas[0].dados.length]));}else ok(false,'Escala do fotógrafo: XLS não baixou');
+  await ctxE.close();pg=pgA;
   // Diário: registros de teste (texto livre com acento, quebra de linha e sinais de fórmula)
   await abrir('diario',`const h=new Date();const hoje=h.toISOString().slice(0,10);const ontem=new Date(h.getTime()-864e5);const u=ETERNA.state.user;
     ETERNA.SIM.diario=[{id:'dt1',at:h.toISOString(),date:hoje,key:null,by:u.email,name:u.name,point:'campo2',type:'convidado',item:'Reclamação',sev:'alta',text:'=SOMA(A1) visitante pediu para refazer\\na foto <b>da família</b>',status:'aberto'},
@@ -237,7 +246,6 @@ try{
   // quem é fotógrafo (sem alterar a Escala e sem excluir no Diário) exporta só o que a tela dele mostra
   await pg.evaluate(()=>{const u=ETERNA.state.user;window.__u=JSON.stringify(u);u.key='yago';u.perms.escala.u=false;u.perms.diario.d=false;ETERNA.state.view='diario';ETERNA.render();});
   a=await baixar('xlsx');if(a){const x=await xlsx(a,'Diário do fotógrafo');const s=x.abas[0];ok(!s.colunas.includes('Quem')&&s.dados.length===2&&!J(s.dados).includes('Terceira pessoa')&&!J(s.dados).includes('chuva forte'),'Diário do fotógrafo: saiu registro de outra pessoa '+J(s.dados.map(txt)));}else ok(false,'Diário do fotógrafo: XLS não baixou');
-  await abrir('escala');a=await baixar('xlsx');if(a){const x=await xlsx(a,'Escala do fotógrafo');ok(x.abas.length===1&&x.abas[0].dados.length===8&&x.abas[0].cab.includes('Filtros: Fotógrafo: Yago')&&J(x.abas[0].colunas)===J(['Dia','Função']),'Escala do fotógrafo: '+J([x.abas.length,x.abas[0].cab,x.abas[0].dados.length]));}else ok(false,'Escala do fotógrafo: XLS não baixou');
   const volta=()=>pg.evaluate(()=>{const u=ETERNA.state.user;const o=JSON.parse(window.__u);Object.keys(u).forEach(k=>delete u[k]);Object.assign(u,o);});await volta();
 
   // ---------- critério 9: sem a permissão da tela o botão não aparece e o clique forçado não baixa nada ----------

@@ -22,13 +22,13 @@ const hoje=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth(
 (async()=>{let proc=null,b=null;const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v93-app-'));let LOGA='';
 try{
   const PORTA=await livre(),FTPP=await livre();const AO='http://127.0.0.1:'+PORTA;
-  proc=spawn('python3',['-I','-u',path.join(__dirname,'_cliques_ia_lanca.py'),AG,'0.3'],{env:{...process.env,HOME:H,USERPROFILE:H,ETERNA_PORTA:String(PORTA),ETERNA_FTP_PORTA:String(FTPP),ETERNA_APP_ORIGIN:ORIG,ETERNA_SEM_OPENCV:'1',ETERNA_SESSAO_PAUSA:'5',ETERNA_LEITORES:'1',USER:'eterna-teste-sem-cartao',ETERNA_PRE_RECORTE:'1'},stdio:['ignore','pipe','pipe']});
+  proc=spawn('python3',['-I','-u',path.join(__dirname,'_cliques_ia_lanca.py'),AG,'0.3'],{env:{...process.env,HOME:H,USERPROFILE:H,ETERNA_PORTA:String(PORTA),ETERNA_FTP_PORTA:String(FTPP),ETERNA_APP_ORIGIN:ORIG,ETERNA_SEM_OPENCV:'1',ETERNA_SESSAO_PAUSA:'5',ETERNA_LEITORES:'1',ETERNA_FUNCAO_DIA:'1'/* 16/11: Escala desligada por padrão; este teste roda com ela ligada no agente e no app (testes/_escala.js) */,USER:'eterna-teste-sem-cartao',ETERNA_PRE_RECORTE:'1'},stdio:['ignore','pipe','pipe']});
   proc.stdout.on('data',d=>LOGA+=d);proc.stderr.on('data',d=>LOGA+=d);
   let up=false;for(let i=0;i<80&&!up;i++){await sleep(250);up=(await req(PORTA,'GET','/status')).s===200;}
   if(!up)throw new Error('agente não subiu: '+LOGA.slice(-400));
   CK=SA.sessao(H);
   // dados vazios: agente sem nenhuma foto; Upload, Fila do fotógrafo e Painel de controle abrem sem erro
-  {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await SA.noNavegador(cv,PORTA,[CK]);await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
+  {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await SA.noNavegador(cv,PORTA,[CK]);await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await require('./_escala')(cv);const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
     await pv.goto(AO+'/index.html');await pv.waitForTimeout(500);await require('./_entrar')(pv,'eduardo@eduardorezende.com');
     for(const v of ['importar','fotofila','catalogo','chroma']){await pv.evaluate(v=>ETERNA.go(v),v);await pv.waitForTimeout(700);}
     const vz=await pv.evaluate(()=>{ETERNA.go('fotofila');return document.querySelector('#main').textContent;});
@@ -53,7 +53,7 @@ try{
   const f1='ag_'+S[0],f2='ag_'+S[1];
 
   b=await chromium.launch();
-  const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await SA.noNavegador(ctx,PORTA,[CK]);
+  const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await SA.noNavegador(ctx,PORTA,[CK]);await require('./_escala')(ctx);
   let SIMS={};await ctx.route(AO+'/rostos/buscar',r=>r.fulfill({status:200,contentType:'application/json',body:J({rosto:true,fotos:Object.entries(SIMS).map(([id,sim])=>({id,sim,principal:true}))})}));
   const RECS=[];ctx.on('request',r=>{if(/\/recorte/.test(r.url()))RECS.push(r.method()+' '+r.url().replace(AO,'')+' '+(r.postData()||''));});
   const errs=[];const pg=await ctx.newPage();
@@ -186,7 +186,7 @@ try{
   await pe.evaluate(()=>ETERNA.go('chroma'));await pe.waitForTimeout(300);
   ok(await esp2(()=>/Fotos para IA: fila \d+ · p90 \d+ s desde a chegada · \d+ erros?/.test(document.querySelector('#main').textContent),8000),'fiaPanel: linha "Fotos para IA"');
   // sem agente: o app servido pelo rodar.sh (sem servidor do ponto); Painel de controle e Checkout sem erro
-  {const cn=await b.newContext({viewport:{width:1366,height:900}});await cn.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pn=await cn.newPage();const en=[];pn.on('pageerror',e=>en.push(e.message));
+  {const cn=await b.newContext({viewport:{width:1366,height:900}});await cn.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await require('./_escala')(cn);const pn=await cn.newPage();const en=[];pn.on('pageerror',e=>en.push(e.message));
     await pn.goto(U);await pn.waitForTimeout(500);await require('./_entrar')(pn,'eduardo@eduardorezende.com');
     await pn.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));await pn.waitForTimeout(300);
     await pn.click('#ia-cfg [data-act="ia-volante"]');await pn.waitForTimeout(300);

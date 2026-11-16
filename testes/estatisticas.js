@@ -184,7 +184,7 @@ try{
     ok(J(r.primeira)===J(['ag_aaaaaaaaaaaa'])&&r.todos===3&&r.edit==='Copa do Brasil'&&r.novo&&r.apagado&&r.apagado2&&r.outroApagou,'Testador 3: o calendário não perde nem ressuscita eventos na leitura do servidor: '+J(r));
     await ctx.close();}
   // Escala sem folgas fixas nem abonos
-  {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'supervisor@eterna.photo');await pg.evaluate(()=>ETERNA.go('escala'));
+  {const {ctx,pg}=await nova();await require('./_escala')(ctx);/* 16/11: a Escala está desligada no app; conferida com a chave ligada */await agente(ctx);await entrar(pg,'supervisor@eterna.photo');await pg.evaluate(()=>ETERNA.go('escala'));ok(await pg.evaluate(()=>ETERNA.state.view==='escala'),'Escala (chave ligada) não abriu');
     const r=await pg.evaluate(()=>({f:!!document.getElementById('folgas-fixas'),a:!!document.getElementById('abonos'),b:!!document.querySelector('[data-act="folga-fixa"]')}));
     ok(!r.f&&!r.a&&!r.b,'Escala sem folgas fixas e sem abonos: '+J(r));await ctx.close();}
 }catch(e){fails.push('exceção: '+String(e&&e.stack||e).slice(0,600));}

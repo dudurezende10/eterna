@@ -34,6 +34,7 @@ let RECORTES=0;const PEDIDOS=[];let SIMS={};
 const b=await chromium.launch();const errs=[];
 try{
   const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
+  await require('./_escala')(ctx); // 16/11: a Escala está desligada no app; a regra dos cliques por ponto é testada com a chave ligada
   await ctx.route(ORIG+'/status',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,agent:'eterna-agente',version:3,boot:'b93',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:true},
     sessoes:{v:2,pausa:60,rostos:true,rev:6,gen:'b93',hoje:6,abertas:1,dias:1},recorte:{ok:true,carregado:true,feitos:4,ms_medio:7000,fila:0,ia:{ligada:true,fila:1,feitos:4,erros:0,atraso_p50_s:9.5,atraso_p90_s:21.2}},fundos_modo:'local'})}));
   await ctx.route(ORIG+'/events*',r=>r.fulfill({status:200,contentType:'application/json',body:'{"events":[],"next":0,"total":0}'}));

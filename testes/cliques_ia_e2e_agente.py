@@ -32,7 +32,8 @@ HB = tempfile.mkdtemp(prefix="eterna-v93-e2e-")
 REC_SEG = 0.5
 env = {**os.environ, "HOME": HB, "USERPROFILE": HB, "ETERNA_PORTA": str(PORTA), "ETERNA_FTP_PORTA": str(FTPP),
        "ETERNA_APP_ORIGIN": "http://127.0.0.1:9", "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "6", "ETERNA_LEITORES": "1",
-       "USER": "eterna93c%d" % os.getpid(), "PYTHONUNBUFFERED": "1"}
+       "USER": "eterna93c%d" % os.getpid(), "PYTHONUNBUFFERED": "1",
+       "ETERNA_FUNCAO_DIA": "1"}            # 16/11: a Escala está desligada por padrão; este teste roda com a função do dia ligada
 for k in ("ETERNA_PASTA", "ETERNA_RECORTE_FALSO", "ETERNA_SEM_RECORTE", "ETERNA_BUSCA_DIAS", "ETERNA_PRE_RECORTE"):
     env.pop(k, None)
 REC = os.path.join(HB, "Eterna", "recortes")

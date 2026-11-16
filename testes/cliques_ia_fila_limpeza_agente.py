@@ -36,7 +36,9 @@ def novo_env(pausa, extra=None):
     hb = tempfile.mkdtemp(prefix="eterna-v93-fl-")
     e = {**os.environ, "HOME": hb, "USERPROFILE": hb, "ETERNA_PORTA": str(porta_livre()), "ETERNA_FTP_PORTA": str(porta_livre()),
          "ETERNA_APP_ORIGIN": "http://127.0.0.1:9", "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": str(pausa), "ETERNA_LEITORES": "1",
-         "USER": "eterna93f%d" % os.getpid(), "PYTHONUNBUFFERED": "1", **(extra or {})}
+         "USER": "eterna93f%d" % os.getpid(), "PYTHONUNBUFFERED": "1",
+         "ETERNA_FUNCAO_DIA": "1",           # 16/11: a Escala está desligada por padrão; este teste roda com a função do dia ligada
+         **(extra or {})}
     for k in ("ETERNA_PASTA", "ETERNA_RECORTE_FALSO", "ETERNA_SEM_RECORTE", "ETERNA_BUSCA_DIAS", "ETERNA_PRE_RECORTE", "ETERNA_RECORTE_CONC"):
         e.pop(k, None)
     if extra and "ETERNA_RECORTES_GB" in extra:

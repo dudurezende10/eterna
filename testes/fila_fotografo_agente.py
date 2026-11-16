@@ -180,7 +180,19 @@ ok(len(lg7) == 1 and lg7[0]["alvo"] == "klassius@eterna.photo" and lg7[0]["acao"
    and us7["klassius%40eterna.photo"].get("updatedBy") == "servidor", "7b: a troca fica no histórico do cadastro (quem, quando, de, para, por quê): %r" % lg7)
 ok(m.usuarios_grafia() == 0 and len([d for d in m.estado_col("usuarios_log")["docs"] if d["valor"].get("por") == "servidor"]) == 1, "7b: rodar de novo não muda nada")
 
-# 9: a função nova vale só para os grupos novos
+# Escala desligada (16/11): por padrão o agente não usa a função do dia; a sessão nasce sem função e sem ponto e a regra
+# dos cliques de IA cai em "sem_funcao", mesmo com função guardada numa sessão aberta antes do deploy
+CFG_IA = {"ligada": True, "cliques": 2, "pontos": ["campo2"], "volante": False}
+X_ANT = {"fotografo": "carlos", "funcao": {"tipo": "campo", "point": "campo2"}}
+with m.ff_lock:
+    m.ff_funcao.update(dia=m._ff_hoje(), map={"carlos": {"tipo": "campo", "point": "campo2"}})
+ok(m.FUNCAO_DIA_ON is False and m._ff_func_snapshot("carlos") is None, "Escala desligada: a chave nasce desligada e a sessão não recebe função")
+ok(m._sess_ia_regra(X_ANT, CFG_IA) == (0, "sem_funcao"), "Escala desligada: regra de IA = sem_funcao: %r" % (m._sess_ia_regra(X_ANT, CFG_IA),))
+m.FUNCAO_DIA_ON = True                      # religar (ETERNA_FUNCAO_DIA=1): tudo volta
+ok(m._ff_func_snapshot("carlos") == {"tipo": "campo", "point": "campo2"} and m._sess_ia_regra(X_ANT, CFG_IA) == (2, None), "Escala religada: função e regra de volta")
+with m.ff_lock:
+    m.ff_funcao.update(dia="", map={})
+# 9: a função nova vale só para os grupos novos (com a função do dia ligada)
 t9 = time.time() + 1000
 with m.ff_lock:
     m.ff_funcao.update(dia=m._ff_hoje(), map={"klassius": {"tipo": "campo", "point": "campo2"}})
@@ -240,7 +252,8 @@ HB = tempfile.mkdtemp()
 FTPP = PORTA + 1000
 ORIG = "http://eterna-tv.local:%d" % PORTA
 env = {**os.environ, "HOME": HB, "ETERNA_PORTA": str(PORTA), "ETERNA_FTP_PORTA": str(FTPP), "ETERNA_APP_ORIGIN": "http://127.0.0.1:9",
-       "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "3", "ETERNA_ORIGENS": ORIG, "ETERNA_LEITORES": "1"}
+       "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "3", "ETERNA_ORIGENS": ORIG, "ETERNA_LEITORES": "1",
+       "ETERNA_FUNCAO_DIA": "1"}            # a parte B começa com a função do dia ligada; o fim dela desliga (o padrão)
 env.pop("ETERNA_PASTA", None)
 env["USER"] = "eterna-teste-sem-cartao"     # o vigia de cartões procura em /media/<USER>/: nenhum cartão do computador entra
 sys.dont_write_bytecode = True
@@ -407,6 +420,30 @@ try:
     depois = sorted((g["id"], g["fotografo"], g["n"]) for g in fila())
     ok(antes == depois and sum(x[2] for x in depois) == 3 + 9 + 4 + 3, "10: depois de reiniciar, os mesmos grupos e n: %r %r" % (antes, depois))
     ok(g_de("samuel")["funcao"] == {"tipo": "volante", "modo": "chute"}, "10: a função do dia volta do funcao.json")
+    # Escala desligada (16/11): o mesmo agente, agora sem ETERNA_FUNCAO_DIA (o padrão). O POST responde 409 e o funcao.json
+    # não muda (conteúdo e data); a permissão continua conferida antes; sessão nova nasce sem função e fecha sem base de IA
+    time.sleep(2.3)
+    A.terminate(); A.wait(10)
+    del env["ETERNA_FUNCAO_DIA"]
+    arq0, st0 = open(fj, "rb").read(), os.stat(fj)
+    A = subir(); procs.append(A)
+    s, j, _ = req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {"yago": {"tipo": "campo", "point": "campo2"}}}, H1)
+    ok(s == 409 and j == {"error": "escala_desligada"}, "desligada: POST da função responde 409: %r %r" % (s, j))
+    st1 = os.stat(fj)
+    ok(open(fj, "rb").read() == arq0 and st1.st_mtime_ns == st0.st_mtime_ns and b"samuel" in arq0, "desligada: funcao.json intocado (conteúdo e data)")
+    ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}}, {"X-Eterna": "1", "Cookie": ""})[0] == 401, "desligada: sem sessão continua 401 (a permissão vem antes do 409)")
+    ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}}, {"X-Eterna": "1", "Cookie": COOKIE_POSTO})[0] == 401, "desligada: posto sem pessoa continua 401")
+    ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}})[0] == 403, "desligada: POST sem X-Eterna continua 403")
+    ftp_envia("yago", [("Y%d.JPG" % i, jpeg(cor())) for i in range(4)])
+    g = g_de("yago")
+    ok(g and g["n"] == 4 and g["funcao"] is None and g["ia"]["n"] == 0 and g["ia"]["motivo"] == "sem_funcao", "desligada: grupo novo sem função e sem base de IA: %r" % g)
+    time.sleep(6)                                # pausa de 3 s fecha a sessão; o arquivo do dia grava a cada 2 s
+    s, sj, _ = req("GET", "/sessoes?desde=0")
+    xs = [x for x in (sj or {}).get("sessoes", []) if x.get("fotografo") == "yago"]
+    ok(len(xs) == 1 and xs[0]["status"] == "fechada" and xs[0]["ia"] == [] and (xs[0].get("ia_regra") or {}).get("motivo") == "sem_funcao"
+       and len(xs[0]["fotos"]) == 4 and xs[0].get("funcao") is None and xs[0].get("ponto") is None,
+       "desligada: sessão nova fecha com ia [], motivo sem_funcao e as 4 fotos à venda: %r" % [(x.get("status"), x.get("ia"), x.get("ia_regra"), len(x.get("fotos") or [])) for x in xs])
+    ok(open(fj, "rb").read() == arq0 and os.stat(fj).st_mtime_ns == st0.st_mtime_ns, "desligada: funcao.json intocado depois da sessão")
 finally:
     for p in procs:
         try:

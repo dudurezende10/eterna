@@ -4888,6 +4888,11 @@ FF_PRONTA_MIN = 15              # D1 (Eduardo, 30/10): sai da coluna final 15 mi
 FF_PIDS = 6                     # miniaturas por grupo aberto (risco 2: o pid abre o original)
 FF_PRONTAS_MAX = 24             # cartões na coluna final
 FF_FUNCAO = os.path.join(HOME, "ponto", "funcao.json")
+# Escala desligada (Eduardo, 16/11/2026; docs/planos/2026-11-16-escala-desligada.md): a função do dia saiu do Eterna. Desligada,
+# a sessão nasce sem função e sem ponto, a regra dos cliques de IA cai em "sem_funcao" (nada sai da venda) e o POST
+# /fila-fotografo/funcao responde 409 sem gravar. O funcao.json, os documentos funcao/<dia> e o backup ficam como estão.
+# Religar: ETERNA_FUNCAO_DIA=1 no ambiente do agente (e ESCALA_ON=true no index.html).
+FUNCAO_DIA_ON = os.environ.get("ETERNA_FUNCAO_DIA") == "1"
 FF_TIPOS = ("campo", "volante", "folga")
 FF_MODOS = ("grupo", "chute", "livre")
 _re_ff_point = re.compile(r"^[a-z0-9_-]{1,24}$")
@@ -4944,6 +4949,8 @@ def ff_cadastrados():
 
 
 def _ff_func_snapshot(chave):
+    if not FUNCAO_DIA_ON:
+        return None
     if not chave or ff_funcao.get("dia") not in (_ff_hoje(), time.strftime("%Y-%m-%d", time.gmtime())):
         return None
     f = (ff_funcao.get("map") or {}).get(chave)
@@ -5194,7 +5201,7 @@ def _sess_ia_regra(x, cfg=None):
     cfg = cfg or ia_cfg_mem()
     if not cfg.get("ligada"):
         return 0, "desligada"
-    f = x.get("funcao")
+    f = x.get("funcao") if FUNCAO_DIA_ON else None   # desligada: nem a função guardada em sessão aberta antes do deploy vale
     if not x.get("fotografo") or not isinstance(f, dict):
         return 0, "sem_funcao"                       # A4: sem função do dia ou sem cadastro, nada some da venda
     if f.get("tipo") == "volante":
@@ -12018,6 +12025,8 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "origem não autorizada"}, 403)
         if not limite_ok(self.client_address[0], "ff-funcao", 30):
             return self.js({"error": "muitos pedidos"}, 429)
+        if not FUNCAO_DIA_ON:            # Escala desligada: janela antiga aberta não religa nada; o arquivo não é tocado
+            return self.js({"error": "escala_desligada"}, 409)
         body, err = self.corpo(4096)
         if err:
             return self.js({"error": "corpo inválido"}, err)

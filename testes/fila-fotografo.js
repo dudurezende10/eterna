@@ -1,7 +1,7 @@
 // v87: Fila do fotógrafo. Parte 1: o agente (testes/fila_fotografo_agente.py, critérios 1 a 13, HOME temporário).
 // Parte 2: o app no Playwright com o /fila-fotografo simulado (critérios 14 a 22), e os prints de desktop e tela cheia em
 // FOTOFILA_PRINTS (padrão: testes/prints/). Dados e miniaturas simulados (quadrados de cor), nunca foto de convidado.
-const entrarTeste=require('./_entrar');
+const entrarTeste=require('./_entrar');const escalaLigada=require('./_escala'); // 16/11: a Escala está desligada no app; ponto, função e aviso de folga são testados com a chave ligada (o desligado está em escala-desligada.js)
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
@@ -35,7 +35,7 @@ function feed(extra){const a=Date.now()/1000;return {ok:true,agora:a,rev:88,paus
   {id:'G011',estado:'pronta',fotografo:'samuel',fonte:'ftp',funcao:null,inicio:a-400,ultima_chegada:a-300,ultimo_clique:a-305,pronta_em:a-280,n:6,pids:[]},
   ...(extra||[])]};}
 const b=await chromium.launch();const errs=[];
-const novo=async(w,h,cheia)=>{const W=w||1440,H=h||900;const ctx=await b.newContext({viewport:{width:W,height:H},screen:{width:W,height:cheia?H:H+120},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();
+const novo=async(w,h,cheia)=>{const W=w||1440,H=h||900;const ctx=await b.newContext({viewport:{width:W,height:H},screen:{width:W,height:cheia?H:H+120},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await escalaLigada(ctx);const pg=await ctx.newPage();
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text());});return {ctx,pg};};
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>{localStorage.removeItem('eterna.session');});await pg.goto(U);await pg.waitForTimeout(350);}
   await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}

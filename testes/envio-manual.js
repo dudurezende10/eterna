@@ -220,9 +220,9 @@ try{
     proc.stdout.on('data',d=>LOGA+=d);proc.stderr.on('data',d=>LOGA+=d);
     let up=false;for(let i=0;i<120&&!up;i++){await sleep(250);up=(await get(PORTA,'/status')).s===200;}
     if(!up)throw new Error('agente não subiu: '+LOGA.slice(-400));
-    // função do dia (como a Escala manda): o Carlos no campo4, o ponto que a tela Minhas fotos dele filtra
+    // 16/11: a Escala está desligada. O agente recusa a função do dia (409) e Minhas fotos do Carlos não filtra por ponto
     const hj=(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
-    ok((await post(PORTA,'/fila-fotografo/funcao',{dia:hj,map:{carlos:{tipo:'campo',point:'campo4'}}},{'X-Eterna':'1'})).s===200,'B: função do dia');
+    ok((await post(PORTA,'/fila-fotografo/funcao',{dia:hj,map:{carlos:{tipo:'campo',point:'campo4'}}},{'X-Eterna':'1'})).s===409,'B: função do dia recusada com a Escala desligada');
     const DIR=path.join(HB,'fotos-geradas');fs.mkdirSync(DIR,{recursive:true});
     execFileSync('python3',['-I','-c',`
 import io,os,sys,time,random

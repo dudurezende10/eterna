@@ -18,7 +18,7 @@ async function abrirPerm(pg,email){await pg.evaluate(()=>{ETERNA.state.perm.tab=
 const ck=(pg,m,op)=>pg.click(`.perm-tbl input[data-act="perm-op"][data-m="${m}"][data-op="${op}"]`);
 const draft=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.state.perm.draft)));
 // v94-ux (parte H): grupos Venda e Sistema (Repositório, Identidade, Usuários, Permissões e o antigo Laboratório)
-const MENUS={Venda:['posto','ativ-venda','ativ-entrega'],Dashboard:['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','ativ-resumo','galerias','calendario'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','fotofila','escala'],'Configurações':['catalogo','ajustes'],'Sistema':['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']}; // parte I: Fundos de IA (técnico) no Sistema
+const MENUS={Venda:['posto','ativ-venda','ativ-entrega'],Dashboard:['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','ativ-resumo','galerias','calendario'],Curadoria:['revisao','treino','alertas'],'Fotógrafo':['diario','importar','fotofila'],'Configurações':['catalogo','ajustes'],'Sistema':['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']}; // parte I: Fundos de IA (técnico) no Sistema
 (async()=>{const b=await chromium.launch();
 try{
   // ---------- 1, 2, 3, 4, 19 e menus: admin ----------
@@ -100,7 +100,7 @@ try{
     ok(await pg.evaluate(()=>!window.__xss&&!document.querySelector('#main img[src="x"]')&&document.querySelector('#main').innerText.includes('<img src=x')),'14: nome com <img onerror> executou ou não apareceu como texto');
     await pg.evaluate(()=>{ETERNA.state.db=null;});
     // Carlos sem o Upload
-    await entrar(pg,'carlos@eterna.photo');const v5=await nav(pg);ok(!v5.includes('importar')&&v5.includes('diario')&&v5.includes('escala'),'5: menu do Carlos '+JSON.stringify(v5));
+    await entrar(pg,'carlos@eterna.photo');const v5=await nav(pg);ok(!v5.includes('importar')&&v5.includes('diario')&&v5.includes('fotofila')&&!v5.includes('escala')/* 16/11: Escala desligada */,'5: menu do Carlos '+JSON.stringify(v5));
     await pg.evaluate(()=>{ETERNA.state.view='importar';ETERNA.render();});ok(await pg.evaluate(()=>ETERNA.state.view)!=='importar','5: render() deixou abrir o Upload');
     await pg.evaluate(()=>{location.hash='#importar';});await pg.waitForTimeout(150);ok(/Sem acesso a esta tela/.test(await toastTxt(pg))&&await pg.evaluate(()=>ETERNA.state.view)!=='importar','5: #importar deveria dar "Sem acesso a esta tela"');
     await ctx.close();}
@@ -153,7 +153,7 @@ try{
     const r9=await pg.evaluate(()=>{const U=ETERNA.USERS;return {n:Object.keys(U).length,v2:Object.values(U).every(u=>u.v===2),mixFin:U['mix@eterna.photo'].perms.financeiro.r,mixMenu:U['mix@eterna.photo'].menu,mixEsc:U['mix@eterna.photo'].perms.escala.r,mixCfgU:U['mix@eterna.photo'].perms.configuracao.u,lojaFin:U['loja@eterna.photo'].perms.financeiro.r,carlosMenu:U['carlos@eterna.photo'].menu,carlosIni:U['carlos@eterna.photo'].inicio,saved:JSON.parse(localStorage.getItem('eterna.users.v1'))['mix@eterna.photo'].v};});
     ok(r9.n===4&&r9.v2,'9: usuários sumiram ou sem v:2 '+JSON.stringify(r9));ok(r9.mixFin===true&&r9.mixMenu.includes('vendas-lista')&&r9.mixMenu.includes('checkout'),'9: personalizado com venda deveria ganhar Números de vendas e a Lista '+JSON.stringify(r9.mixMenu));
     ok(r9.mixEsc===true&&r9.mixCfgU===false,'9: personalizado: Configuração R vira Escala R, sem ganhar Alterar');ok(r9.lojaFin===false,'9: loja@ (perfil venda) não deveria ver Números de vendas');
-    ok(JSON.stringify(r9.carlosMenu)===JSON.stringify(['diario','importar','fotofila','escala'])&&r9.carlosIni==='importar','9: fotógrafo migrado '+JSON.stringify(r9.carlosMenu)+' '+r9.carlosIni);ok(r9.saved===2,'9: migração não gravou');
+    ok(JSON.stringify(r9.carlosMenu)===JSON.stringify(['diario','importar','fotofila'])/* 16/11: Escala desligada */&&r9.carlosIni==='importar','9: fotógrafo migrado '+JSON.stringify(r9.carlosMenu)+' '+r9.carlosIni);ok(r9.saved===2,'9: migração não gravou');
     await ctx.close();}
   // ---------- 10, 11: travas do administrador ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'eduardo@eduardorezende.com');await abrirPerm(pg,'eduardo@eduardorezende.com');
