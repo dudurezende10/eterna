@@ -2,8 +2,8 @@
 .facecand{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card,#fff);border:1px solid var(--line,#ddd);border-radius:12px;padding:8px;cursor:pointer;font:inherit;color:inherit}
 .facecand .ph{width:120px;height:90px;border-radius:8px}
 .ae-fila-lista{display:flex;flex-direction:column;gap:6px;margin-top:10px}
-.ae-fl{display:grid;grid-template-columns:44px minmax(120px,1.2fr) minmax(160px,2.4fr) minmax(90px,.8fr) minmax(130px,1fr);gap:14px;align-items:center;text-align:left;width:100%;min-height:64px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg,#fff);color:inherit;font:inherit;cursor:pointer}
-.ae-fl:hover{border-color:var(--accent,#134078)}.ae-fl.sel{outline:3px solid var(--accent,#134078);outline-offset:-1px}.ae-fl[disabled]{cursor:default}
+.ae-fl{display:grid;grid-template-columns:44px minmax(120px,1.2fr) minmax(160px,2.4fr) minmax(90px,.8fr) minmax(130px,1fr);gap:14px;align-items:center;text-align:left;width:100%;min-height:64px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg,#fff);color:inherit;font:inherit;cursor:default}
+.ae-fl.sel{outline:3px solid var(--accent,#134078);outline-offset:-1px}
 .ae-fl-foto{width:44px;height:44px;display:flex;align-items:center;justify-content:center}.ae-fl-foto .at-ico{width:36px;height:36px}
 .ae-fl-cli,.ae-fl-prod,.ae-fl-pul{display:flex;flex-direction:column;gap:2px;min-width:0}.ae-fl .note{margin:0;font-size:13px}
 .ae-fl-prod .note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ae-fl-cli b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -5652,7 +5652,8 @@ function aeAgora(){const A=state.ae,L=A.dados?A.dados.vendas:[],out=[];
   return `<div class="panel" id="ae-agora"><span class="eyebrow">${TE('ae_agora')} · ${out.length}</span><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px">${out.map(({v,p,e})=>{const k=aeChave(v.id,p.numero),N=A.nvs[k],sel=!!(A.at&&A.at.venda===v.id&&A.at.numero===p.numero);
     return `<button class="chip" style="min-height:60px;display:flex;gap:10px;align-items:center;text-align:left;border-radius:12px;padding:6px 10px${sel?';outline:3px solid var(--accent,#134078)':''}" ${sel?'aria-current="true"':''} data-act="ae-at-abre" data-id="${esc(v.id)}" data-n="${esc(p.numero)}">${aeFoto(v,40)||atIcone(v.tipo)}<span style="min-width:0"><b>${esc(v.cliente||TE('av_numero',avNumero(v.id)))}</b><br><span class="note" style="margin:0">${TE('ae_pul_curta',p.numero)} · ${esc(TE('ae_pul_e_'+(e==='andamento'?v.tipo:e)))}${e==='voando'&&p.voo_em?' '+esc(p.voo_em.slice(11,16)):''}</span>${N?`<br><b class="note" style="margin:0" data-ae-ped="${esc(k)}">${esc(aePedidoTxt(N))}</b>`:''}</span></button>`;}).join('')}</div></div>`;}
 // 15/11: fila de entrega em tabela (foto, cliente, produto, hora, o que falta): o que ainda não foi entregue hoje, de todos os serviços.
-// Um toque na linha abre o atendimento da primeira pulseira que falta. "Entregues" mostra as de hoje já entregues.
+// "Entregues" mostra as de hoje já entregues. 16/11 (Ronaldo): a linha só informa, não abre o atendimento; abrir pela fila deixava
+// entregar sem a pessoa estar com a pulseira. O atendimento abre só lendo a pulseira (leitor, câmera ou número digitado).
 function aeFilaTabela(){const A=state.ae,L=A.dados?A.dados.vendas:[];const ent=!!A.filaEnt;
   // 15/11: uma linha por entrega (cada pulseira é um atendimento), de todas as vendas do dia, não só da venda aberta
   const linhas=[];L.forEach(v=>{const P=v.pulseiras||[],tot=P.length;
@@ -5668,13 +5669,12 @@ function aeFilaTabela(){const A=state.ae,L=A.dados?A.dados.vendas:[];const ent=!
     return esc(TE('ae_pul_e_'+(e==='andamento'?v.tipo:e)));};
   const cor=e=>e==='entregue'?'good':e==='aguarda'?'':'warn';
   const linha=l=>{const v=l.v,p=l.p;const sel=!!(p&&A.at&&A.at.venda===v.id&&A.at.numero===p.numero);
-    const attrs=p?`data-act="ae-at-abre" data-id="${esc(v.id)}" data-n="${esc(p.numero)}"`:'disabled';
-    return `<button class="ae-fl${sel?' sel':''}" ${attrs} data-ae-fila="${esc(v.id)}" ${sel?'aria-current="true"':''}>
+    return `<div class="ae-fl${sel?' sel':''}" data-ae-fila="${esc(v.id)}" ${sel?'aria-current="true"':''}>
       <span class="ae-fl-foto">${aeFoto(v,44)||atIcone(v.tipo)}</span>
       <span class="ae-fl-cli"><b>${esc(v.cliente||TE('av_numero',avNumero(v.id)))}</b><span class="note">${esc(String(v.criado||'').slice(11,16))}${v.cliente?' · '+TE('av_numero',avNumero(v.id)):''}</span></span>
       <span class="ae-fl-prod"><b>${esc(atCatNome(v.tipo))}</b><span class="note">${esc(aeItensTxt(v))}</span></span>
       <span class="ae-fl-pul">${p?`<b>${TE('ae_pul_curta',p.numero)}</b>${l.tot>1&&l.k?`<span class="note">${l.k} / ${l.tot}</span>`:''}`:''}</span>
-      <span class="ae-fl-sit"><span class="pill ${cor(l.e)}">${situ(l)}</span></span></button>`;};
+      <span class="ae-fl-sit"><span class="pill ${cor(l.e)}">${situ(l)}</span></span></div>`;};
   return `<div class="panel" id="ae-fila-tab"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">${TE('ae_fila_titulo')}</h2>
     <div class="chips" role="tablist" style="margin:0"><button class="chip" role="tab" data-act="ae-fila-ent" data-v="0" aria-selected="${!ent}" aria-pressed="${!ent}">${TE('ae_fila_falta')} · ${nPend}</button><button class="chip" role="tab" data-act="ae-fila-ent" data-v="1" aria-selected="${ent}" aria-pressed="${ent}">${TE('ae_fila_entregues')} · ${nEnt}</button></div></div>
     ${vs.length?`<div class="ae-fila-lista">${vs.map(linha).join('')}</div>`:`<div class="note" style="margin-top:8px">${ent?TE('ae_fila_nada_ent'):TE('ae_fila_nada')}</div>`}</div>`;}
