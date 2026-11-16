@@ -3989,6 +3989,7 @@ def rec_trabalho(i=0):
                         if job.get("u"):
                             ia["atrasos"].append(max(0.0, time.time() - job["u"]))
             job["ev"].set()
+            mtg_recorte_pronto(job["pid"], job.get("err"))   # montagem no servidor: só anota (fila leve, sem lock)
 
 
 def rec_apagar(pid):
@@ -4114,14 +4115,17 @@ def rec_pre_loop():
                                 key=lambda x: -(x.get("ultima_chegada") or x.get("fechada_em") or 0))
                     fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {})}) for x in ss]
                 pids = []
+                cand = set()                            # as bases dos fundos de IA (as que a montagem no servidor espera)
                 for fs, xx in fotos_ss:
                     if gpu:
                         pids += [p for p in fs if p not in sem_pessoa]
+                        cand.update(rec_pre_escolha(fs, xx, sem_pessoa))
                     else:
                         pids += rec_pre_escolha(fs, xx, sem_pessoa)
                 falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
                 if gpu:
-                    falta = sorted(falta, key=lambda p: -((meta.get(p) or {}).get("u") or 0))[:12]   # a mais nova primeiro; refaz a lista a cada 12
+                    # as candidatas a base primeiro; depois a mais nova primeiro; refaz a lista a cada 12
+                    falta = sorted(falta, key=lambda p: (p not in cand, -((meta.get(p) or {}).get("u") or 0)))[:12]
                 with rec_lock:
                     rec["pre_falta"] = len(falta)
                     rec["pre_escolhidas"] = len(pids)
@@ -4214,6 +4218,862 @@ def rec_ia_loop():
                     andando[pid] = (job, pr, andando_n.pop(pid, 0))
         except Exception as ex:
             print("  recorte das bases de IA:", str(ex)[:160])
+
+
+# ---------- Montagem dos fundos de IA no servidor (E1; plano docs/planos/2026-11-16-montagem-no-servidor.md) ----------
+# O servidor monta os fundos ativos assim que o recorte da base fica pronto, com o mesmo enquadramento do navegador, e guarda
+# a prévia e o arquivo de impressão em ~/Eterna/montagens/<pid>/<fundo>-<versao>-<p|i>.jpg. Quem monta é um processo à
+# parte (agente/eterna-montagem.py, só processador, prioridade baixa, 1 montagem por vez), aberto no padrão do recorte.
+# Chave única config/montagem.modo no estado.db: "desligada" (padrão: nada roda, nenhuma pasta é criada), "sombra" (monta
+# e guarda, nenhuma tela lê) ou "ligada" (E2: Checkout e Posto leem). ETERNA_MONTAGEM=0 força "desligada".
+# É cache (refaz do recorte, como ~/Eterna/recortes): sem banco. Os nomes mont_*/montagens_* são de outra coisa (contagem
+# das montagens vistas, POST /ponto/montagens); aqui tudo é mtg_/MTG_.
+MONTAGENS = os.path.join(HOME, "montagens")
+MTG_VERSAO = "m2"
+MTG_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-montagem.py")   # testes podem trocar (m.MTG_FILHO)
+MTG_MOTOR = MTG_FILHO    # de onde saem as regras para a versão (sempre o motor de verdade, mesmo com o filho dos testes)
+MTG_DIAS = 2             # prazo do que não foi vendido (igual ao dos recortes)
+try:
+    MTG_TETO_GB = float(os.environ.get("ETERNA_MONTAGENS_GB") or 20)
+except ValueError:
+    MTG_TETO_GB = 20.0
+MTG_FILA_MAX = 500
+MTG_P0_MAX = 40          # pedidos do Checkout esperando; acima disso 429 (o posto cai na reserva do navegador)
+MTG_TAXA = 240           # pedidos por minuto por IP em cada uma das duas rotas
+MTG_ESPERA_FILHO = 60    # s numa montagem; acima disso o filho é reiniciado
+MTG_CARGA_SEG = 60       # s para o filho abrir (numpy, Pillow, OpenCV)
+MTG_ERRO_SEG = 60
+MTG_MORTES_MAX = 3
+MTG_ERRO_DE_NOVO = 600   # s: montagem que deu erro só volta sozinha depois disto (o pedido do Checkout tenta na hora)
+MTG_P_PEDIDO, MTG_P_VIVO, MTG_P_RESERVA, MTG_P_IMPRESSAO, MTG_P_REFAZER = 0, 1, 2, 3, 4
+MTG_MODOS = ("desligada", "sombra", "ligada")
+# os fundos com montagem local: o mesmo conteúdo de FUNDOS do eterna-montagem.py e de DATA.backgrounds do app (caminhos do
+# app); conferido por testes/app_offline_agente.py e testes/montagem-paridade.js
+MTG_FUNDOS = {
+    "mirantedia": {"previa": "img/bg-mirantedia.jpg", "hi": "img/fundos-5k/mirantedia.jpg", "mono": False, "impAlto": False, "telao": None},
+    "arq1950": {"previa": "img/bg-maracana1950.jpg", "hi": "img/fundos-5k/maracana1950.jpg", "mono": True, "impAlto": True, "telao": None},
+    "telao": {"previa": "img/bg-telao-v2.jpg", "hi": "img/bg-telao-v2.jpg", "mono": False, "impAlto": False,
+              "telao": {"w": 4096, "h": 2924, "quad": [[884, 181], [3485, 525], [3582, 1931], [848, 1681]]}},
+    "campeao2": {"previa": "img/bg-campeao-v81.jpg", "hi": "img/fundos-5k/campeao.jpg", "mono": False, "impAlto": False, "telao": None},
+    "mirante": {"previa": "img/bg-mirantesol.jpg", "hi": "img/fundos-5k/mirantesol.jpg", "mono": False, "impAlto": False, "telao": None},
+    "tunel": {"previa": "img/bg-tunel.jpg", "hi": "img/fundos-5k/tunel.jpg", "mono": False, "impAlto": False, "telao": None},
+    "podio": {"previa": "img/bg-podio.jpg", "hi": "img/fundos-5k/podio.jpg", "mono": False, "impAlto": False, "telao": None},
+}
+MTG_ATIVOS = ("mirantedia", "arq1950", "telao")     # os que o servidor monta sozinho (BG_DEF do app); os outros, só sob pedido
+# qual base (0 = 1ª, 1 = 2ª) cada fundo prefere: cópia de FIA_BASE do app, conferida por teste
+MTG_BASE = {"arq1950": 0, "podio": 0, "telao": 1, "mirantedia": 1, "campeao2": 1, "campeaoarg": 1, "campeaocol": 1, "mirante": 1, "tunel": 1}
+MTG_PIDS = os.path.join(HOME, "ponto", "montagem-filhos.json")
+_re_mtg = re.compile(r"^(ag_)?([0-9a-f]{6,40})/([a-z0-9]{2,40})\.jpg$")
+_re_mtg_arq = re.compile(r"^([a-z0-9]{2,40})-([0-9a-f]{8})-([pif])\.jpg$")
+_re_mtg_pid = re.compile(r"^[0-9a-f]{6,40}$")
+mtg = {"erro": None, "erro_em": 0, "espera_s": MTG_ERRO_SEG, "mortes_mem": 0, "parado": None, "reinicios": 0, "abriu": False,
+       "feitas": 0, "erros": 0, "ms_total": 0, "ms_n": 0, "fila0": 0, "atrasos": collections.deque(maxlen=200),
+       "pausa_disco": False, "bytes": None, "versoes": {}, "log_em": 0.0, "log_n": (0, 0)}
+mtg_lock = threading.Lock()        # só contadores e a fila (nunca junto do lock, do sess_lock ou do rec_lock)
+mtg_fila = queue.PriorityQueue()   # (prioridade, seq, trabalho)
+mtg_jobs = {}                      # (pid, fundo) -> trabalho na fila ou em andamento (sob o mtg_lock)
+_mtg_seq = itertools.count()
+mtg_filho = {"p": None, "fila": None, "lock": threading.Lock(), "seq": 0}
+mtg_threads = []
+mtg_prontos = collections.deque(maxlen=4000)   # (pid, erro) dos recortes que terminaram (fila leve: o rec_trabalho só anota)
+mtg_acorda = threading.Event()
+mtg_sem_pessoa = {}                # pid -> quando (recorte ou montagem sem pessoa: não se tenta de novo)
+mtg_ruins = {}                     # (pid, fundo) -> (versão, erro, quando)
+mtg_espera_rec = {}                # pid -> {fundo: (tipos, prioridade)}: montagem pedida antes de o recorte existir
+mtg_completas = set()              # (pid, fundo, versão, preferida) que já tem tudo em disco (o laço não confere de novo)
+mtg_refeitas = set()               # (pid, fundo, versão) postas na fila na partida ou na troca de versão: seguem com a prioridade 4
+_mtg_cfg = {"t": 0.0, "v": None}
+_mtg_sha = {}                      # caminho -> (tamanho, mtime, sha256)
+_mtg_dims = {}                     # caminho -> (tamanho, mtime, (w, h))
+_mtg_motor = {"m": None, "chave": None}
+
+
+def montagem_valida(j):
+    """config/montagem gravada pelo Painel de controle: só {"modo": desligada|sombra|ligada, "por", "em"}; o resto = None."""
+    if not isinstance(j, dict) or j.get("modo") not in MTG_MODOS or set(j) - {"modo", "por", "em"}:
+        return None
+    return {"modo": j["modo"], "por": str(j.get("por") or "")[:120] or None, "em": str(j.get("em") or "")[:40] or None}
+
+
+def mtg_cfg():
+    """{"modo"} da montagem no servidor (estado.db config/montagem), relida a cada 3 s; sem documento, "desligada".
+    ETERNA_MONTAGEM=0 vence tudo. Nunca chamar com sess_lock, rec_lock ou mtg_lock na mão."""
+    if os.environ.get("ETERNA_MONTAGEM") == "0":
+        return {"modo": "desligada", "forcada": True}
+    agora = time.time()
+    if agora - _mtg_cfg["t"] < 3 and _mtg_cfg["v"] is not None:
+        return _mtg_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'montagem' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                v = montagem_valida(json.loads(r[0])) or {"modo": "desligada"}     # gravado mas ilegível: desligada
+    except Exception:                                # erro de leitura (banco ocupado): fica o último valor lido
+        v = _mtg_cfg["v"]
+    v = v or {"modo": "desligada"}
+    _mtg_cfg.update(t=agora, v=v)
+    return v
+
+
+def mtg_motor():
+    """As tabelas do eterna-montagem.py (REGRAS, FUNDOS, regra_do_fundo), lidas do arquivo para a versão da montagem:
+    regra nova = montagem nova. O arquivo só importa a biblioteca padrão no topo; nada é gravado ao lado dele. None se faltar."""
+    try:
+        st = os.stat(MTG_MOTOR)
+    except OSError:
+        return None
+    k = (MTG_MOTOR, st.st_size, st.st_mtime)
+    if _mtg_motor["chave"] != k:
+        mod = None
+        try:
+            import types
+            mod = types.ModuleType("eterna_montagem_regras")
+            mod.__file__ = MTG_MOTOR
+            with open(MTG_MOTOR, encoding="utf8") as f:
+                exec(compile(f.read(), MTG_MOTOR, "exec"), mod.__dict__)
+            mod.regra_do_fundo("telao")
+        except Exception:
+            mod = None
+        _mtg_motor.update(m=mod, chave=k)
+    return _mtg_motor["m"]
+
+
+def mtg_fundo_arquivo(fundo, hi, baixar=True):
+    """Arquivo do fundo (prévia ou impressão) no app-cache; se faltar, baixa da origem do app. Sem o arquivo: ValueError("fundo")."""
+    f = MTG_FUNDOS.get(fundo)
+    rel = f and f["hi" if hi else "previa"]
+    p = rel and app_disco(rel)
+    if not p:
+        raise ValueError("fundo")
+    if os.path.isfile(p):
+        return p
+    if not baixar:
+        raise ValueError("fundo")
+    try:
+        data = app_baixar(rel)
+        if not data or not app_disco_gravar(rel, data) or not os.path.isfile(p):
+            raise ValueError("fundo")
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError("fundo")
+    return p
+
+
+def _mtg_sha_arquivo(p):
+    st = os.stat(p)
+    v = _mtg_sha.get(p)
+    if v is None or v[0] != st.st_size or v[1] != st.st_mtime:
+        h = hashlib.sha256()
+        with open(p, "rb") as f:
+            for b in iter(lambda: f.read(1 << 20), b""):
+                h.update(b)
+        v = (st.st_size, st.st_mtime, h.hexdigest())
+        _mtg_sha[p] = v
+    return v[2]
+
+
+def mtg_versao(fundo, baixar=False):
+    """8 hex que mudam quando muda o motor (MTG_VERSAO), o recorte (REC_VERSAO), a regra ou a geometria do fundo, ou um
+    dos dois arquivos dele. None sem o motor ou sem os arquivos (baixar=True busca os que faltam)."""
+    mod = mtg_motor()
+    if mod is None or fundo not in MTG_FUNDOS:
+        return None
+    try:
+        a, b = mtg_fundo_arquivo(fundo, False, baixar), mtg_fundo_arquivo(fundo, True, baixar)
+        txt = "|".join((MTG_VERSAO, REC_VERSAO, json.dumps(mod.regra_do_fundo(fundo), sort_keys=True),
+                        json.dumps(MTG_FUNDOS[fundo], sort_keys=True), _mtg_sha_arquivo(a), _mtg_sha_arquivo(b)))
+    except (ValueError, OSError, TypeError):
+        return None
+    return hashlib.sha256(txt.encode("utf8")).hexdigest()[:8]
+
+
+def mtg_dims(fundo):
+    """(w, h) da prévia: o tamanho natural do arquivo de prévia do fundo. (None, None) sem o arquivo."""
+    try:
+        p = mtg_fundo_arquivo(fundo, False, False)
+        st = os.stat(p)
+    except (ValueError, OSError):
+        return None, None
+    v = _mtg_dims.get(p)
+    if v is None or v[0] != st.st_size or v[1] != st.st_mtime:
+        v = (st.st_size, st.st_mtime, jpeg_cabecalho(p) or (None, None))
+        _mtg_dims[p] = v
+    return v[2]
+
+
+def mtg_arquivo(pid, fundo, tipo, versao=None):
+    versao = versao or mtg_versao(fundo)
+    return os.path.join(MONTAGENS, pid, "%s-%s-%s.jpg" % (fundo, versao, tipo)) if versao else None
+
+
+def mtg_info(pid):
+    return os.path.join(MONTAGENS, pid, "info-%s.json" % MTG_VERSAO)
+
+
+def mtg_candidatas(x):
+    """As bases de IA da sessão x ({"fotos", "ia", "ia_regra"}), na ordem (1ª, 2ª). Hoje: as bases dos cliques de IA
+    (x["ia"]) quando há; senão as 2 primeiras fotos da sessão que não deram sem_pessoa (a mesma escolha do
+    rec_pre_escolha e do lojaAIAntigo do app); leva cuja visita já tem as bases: nenhuma.
+    É AQUI que a fatia 2 (reconhecer a foto da bandeira) encaixa: só esta função muda."""
+    if (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
+        return []
+    if x.get("ia"):
+        return list(x["ia"])[:2]
+    return [p for p in (x.get("fotos") or []) if p not in mtg_sem_pessoa][:2]
+
+
+def mtg_preferida(fundo, n):
+    """Índice (entre n candidatas) da base que o fundo prefere: MTG_BASE, como o FIA_BASE do app (fundo fora do mapa = 2ª)."""
+    return max(0, min(MTG_BASE.get(fundo, 1), n - 1))
+
+
+def mtg_livre_gb():
+    try:
+        return shutil.disk_usage(MONTAGENS if os.path.isdir(MONTAGENS) else HOME).free / 1024 ** 3
+    except OSError:
+        return None
+
+
+def mtg_no_hd():
+    """A pasta das montagens está fora do disco do ~/Eterna (no servidor: link para o HD de mídia, feito pelo instalar.sh)."""
+    try:
+        return os.path.realpath(MONTAGENS) != os.path.join(os.path.realpath(HOME), "montagens")
+    except OSError:
+        return False
+
+
+def mtg_espera():
+    """(ok, motivo) do último erro do processo de montagem (igual ao rec_espera)."""
+    with mtg_lock:
+        if mtg["parado"]:
+            return False, mtg["parado"]
+        if mtg["erro"]:
+            if time.time() - mtg["erro_em"] < mtg["espera_s"]:
+                return False, mtg["erro"]
+            mtg["erro"] = None
+    return True, None
+
+
+def mtg_estado():
+    """(ok, motivo): chave ligada (sombra ou ligada), motor e pacotes presentes e processo sem erro recente."""
+    cfg = mtg_cfg()
+    if cfg["modo"] == "desligada":
+        return False, "desligada no servidor (ETERNA_MONTAGEM=0)" if cfg.get("forcada") else "desligada"
+    if not os.path.isfile(MTG_FILHO) or mtg_motor() is None:
+        return False, "não instalado: falta o eterna-montagem.py na pasta do agente"
+    import importlib.util
+    falta = [x for x in ("PIL", "numpy") if importlib.util.find_spec(x) is None]
+    if falta:
+        return False, "não instalado: faltam pacotes (" + ", ".join(falta) + ")"
+    return mtg_espera()
+
+
+def _mtg_pids_gravar():
+    p = mtg_filho.get("p")
+    lst = [{"pid": p.pid, "agente": os.getpid(), "criado": mtg_filho.get("criado")}] if p is not None and p.poll() is None else []
+    try:
+        os.makedirs(os.path.dirname(MTG_PIDS), exist_ok=True)
+        _grava_privado(MTG_PIDS, json.dumps(lst))
+    except OSError:
+        pass
+
+
+def _mtg_e_filho(pid, criado=None):
+    """True se o processo pid é um processo de montagem (psutil; sem psutil, /proc no Linux). Nunca mata outro tipo."""
+    nomes = {os.path.basename(MTG_FILHO), "eterna-montagem.py"}
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        if criado and abs(p.create_time() - criado) > 2:
+            return False
+        return any(os.path.basename(c) in nomes for c in p.cmdline())
+    except ImportError:
+        pass
+    except Exception:
+        return False
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            return any(os.path.basename(c.decode("utf8", "replace")) in nomes for c in f.read().split(b"\0") if c)
+    except OSError:
+        return False
+
+
+def mtg_orfaos_encerrar():
+    """Na partida: o processo de montagem deixado por um agente que caiu (MTG_PIDS) é encerrado. Devolve quantos."""
+    import signal
+    n = 0
+    try:
+        with open(MTG_PIDS, encoding="utf8") as f:
+            lst = json.load(f)
+    except (OSError, ValueError):
+        return 0
+    for x in lst if isinstance(lst, list) else []:
+        pid = x.get("pid") if isinstance(x, dict) else None
+        if not isinstance(pid, int) or pid == os.getpid() or not _mtg_e_filho(pid, x.get("criado")):
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else 9)
+            n += 1
+        except OSError:
+            pass
+    try:
+        os.remove(MTG_PIDS)
+    except OSError:
+        pass
+    if n:
+        print("  montagem-srv: %d processo(s) de uma partida anterior encerrado(s)" % n)
+    return n
+
+
+def _mtg_filho_fim(p, padrao):
+    try:
+        rc = p.wait(timeout=5)
+    except Exception:
+        rc = None
+    if rc in (-9, 137, 9):
+        return "montagem parou: memória insuficiente (código %s)" % rc
+    return "%s (código %s)" % (padrao, rc)
+
+
+def _mtg_erro(motivo):
+    """Erro do processo: espera MTG_ERRO_SEG; morte por memória dobra a espera a cada vez e para na MTG_MORTES_MAX-ésima."""
+    with mtg_lock:
+        mtg["erro"] = motivo[:200]
+        mtg["erro_em"] = time.time()
+        if "memória insuficiente (código" in motivo:
+            mtg["mortes_mem"] += 1
+            mtg["espera_s"] = MTG_ERRO_SEG * 2 ** (mtg["mortes_mem"] - 1)
+            if mtg["mortes_mem"] >= MTG_MORTES_MAX:
+                mtg["parado"] = ("montagem parada: o processo foi encerrado por falta de memória %d vezes seguidas. Reinicie o agente"
+                                 % mtg["mortes_mem"])
+        else:
+            mtg["espera_s"] = MTG_ERRO_SEG
+        parado = mtg["parado"]
+    print("  montagem-srv: processo parou: %s" % (parado or motivo)[:160])
+
+
+def _mtg_abrir():
+    """Com o mtg_filho["lock"]: o processo de montagem vivo, ou abre um novo (só aqui a pasta das montagens é criada)."""
+    f = mtg_filho
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:                             # morreu entre uma montagem e outra
+        motivo = _mtg_filho_fim(f["p"], "a montagem parou")
+        f["p"] = None
+        _mtg_erro(motivo)
+        raise RuntimeError(motivo)
+    okp, mot = mtg_espera()
+    if not okp:
+        raise RuntimeError(mot)
+    t0 = time.time()
+    try:
+        os.makedirs(MONTAGENS, exist_ok=True)
+        p = subprocess.Popen([sys.executable, "-I", MTG_FILHO, "--recortes", RECORTES, "--fundos", APP_CACHE_DIR,
+                              "--montagens", MONTAGENS, "--modelos", MODELOS],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1,
+                             encoding="utf-8", env=rec_env(), close_fds=True)
+    except Exception as ex:
+        _mtg_erro("erro ao abrir a montagem: %s" % type(ex).__name__)
+        raise RuntimeError("abrir")
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila, criado=time.time())
+    _mtg_pids_gravar()
+    try:
+        j = fila.get(timeout=MTG_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "demorou mais de %d s para abrir" % MTG_CARGA_SEG}
+    if j is None:
+        motivo = _mtg_filho_fim(p, "a montagem parou ao abrir")
+        _rec_filho_matar(f)
+        _mtg_erro(motivo)
+        raise RuntimeError(motivo)
+    if not j.get("pronto") or j.get("versao") != MTG_VERSAO:
+        _rec_filho_matar(f)
+        _mtg_erro("erro ao abrir a montagem: %s" % (str(j.get("erro") or "")[:120] or "versão %s" % str(j.get("versao"))[:20]))
+        raise RuntimeError("abrir")
+    with mtg_lock:
+        if mtg["abriu"]:
+            mtg["reinicios"] += 1
+        mtg["abriu"] = True
+        mtg["erro"] = None
+    print("  montagem-srv: processo aberto em %d ms" % int((time.time() - t0) * 1000))
+    return f
+
+
+def mtg_filho_montar(req):
+    """Manda uma montagem ao processo e espera (até MTG_ESPERA_FILHO). Devolve a resposta {"ok": True, ...}. Resposta de
+    erro do motor: ValueError(código). Processo que morre ou demora: RuntimeError (reabre depois, com espera crescente)."""
+    f = mtg_filho
+    with f["lock"]:
+        _mtg_abrir()
+        f["seq"] += 1
+        rid = str(f["seq"])
+        try:
+            f["p"].stdin.write(json.dumps(dict(req, id=rid, op="montar")) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            motivo = _mtg_filho_fim(f["p"], "a montagem parou")
+            _rec_filho_matar(f)
+            _mtg_erro(motivo)
+            raise RuntimeError(motivo)
+        fim = time.time() + MTG_ESPERA_FILHO
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _rec_filho_matar(f)
+                _mtg_erro("montagem demorou mais de %d s: reiniciada" % MTG_ESPERA_FILHO)
+                raise RuntimeError("tempo")
+            if j is None:
+                motivo = _mtg_filho_fim(f["p"], "a montagem parou no meio de uma foto")
+                f["p"] = None
+                _mtg_erro(motivo)
+                raise RuntimeError(motivo)
+            if j.get("id") == rid:
+                break
+    if not j.get("ok"):
+        raise ValueError(str(j.get("erro") or "interno")[:40])
+    with mtg_lock:
+        mtg["mortes_mem"] = 0
+        mtg["espera_s"] = MTG_ERRO_SEG
+    return j
+
+
+def mtg_fechar_filho():
+    """Chave desligada: o processo de montagem sai da memória."""
+    with mtg_filho["lock"]:
+        if mtg_filho.get("p") is not None:
+            _rec_filho_matar(mtg_filho)
+            _mtg_pids_gravar()
+
+
+def _mtg_limita(d, n):
+    while len(d) > n:
+        d.pop(next(iter(d)))
+
+
+def _mtg_info_gravar(pid, j):
+    """info-m2.json da foto: a medida de frente e do recorte que o motor devolveu (a E3 decide com isso; a E1 só guarda)."""
+    try:
+        m = j.get("medida") if isinstance(j.get("medida"), dict) else {}
+        fr = j.get("frente") if isinstance(j.get("frente"), dict) else None
+        info = {"v": MTG_VERSAO, "frente": fr and {"rostos": int(fr.get("rostos") or 0), "frontais": int(fr.get("frontais") or 0), "ok": bool(fr.get("ok"))},
+                "trunc": bool(m.get("trunc")), "q": m.get("q") if isinstance(m.get("q"), (int, float)) else None, "em": int(time.time())}
+        _grava_privado(mtg_info(pid), json.dumps(info))
+    except OSError:
+        pass
+
+
+def _mtg_fazer(job):
+    """Uma montagem (uma base num fundo). Nunca com lock, sess_lock ou rec_lock na mão."""
+    pid, fundo = job["pid"], job["fundo"]
+    if job.get("cancel") or mtg_cfg()["modo"] == "desligada":
+        return "cancelado"
+    with lock:
+        e = lib.get(pid)
+    if not e:
+        return "cancelado"
+    versao = mtg_versao(fundo, baixar=True)
+    if not versao:
+        return "fundo"
+    with mtg_lock:
+        pedidos = set(job["tipos"])
+    tipos = [t for t in ("p", "i") if t in pedidos and not os.path.exists(mtg_arquivo(pid, fundo, t, versao))]
+    if not tipos:
+        return None
+    rec_p = rec_arquivo(pid)
+    if not os.path.exists(rec_p):
+        # o recorte ainda não existe: pede sem esperar (a fila da montagem não para) e volta quando ele ficar pronto
+        if pid in mtg_sem_pessoa:
+            return "sem_pessoa"
+        with mtg_lock:
+            mtg_espera_rec.setdefault(pid, {})[fundo] = (set(tipos), job["prio"])
+            _mtg_limita(mtg_espera_rec, 2000)
+        if e.get("file") and os.path.exists(e["file"]) and rec_estado()[0]:
+            rec_enfileirar(pid, e["file"], REC_LADO_MAX, REC_PRIO_CHECKOUT if job["prio"] == MTG_P_PEDIDO else REC_PRIO_ANTECIPADO)
+        return "recorte_espera"
+    livre = mtg_livre_gb()
+    if job["prio"] != MTG_P_PEDIDO and livre is not None and livre < REC_PISO_GB:
+        return "disco"
+    yunet = os.path.join(MODELOS, MOD_DET)
+    req = {"recorte": rec_p, "fundo": fundo, "yunet": yunet if os.path.isfile(yunet) else None,
+           "previa_fundo": mtg_fundo_arquivo(fundo, False), "hi_fundo": mtg_fundo_arquivo(fundo, True),
+           "p": mtg_arquivo(pid, fundo, "p", versao) if "p" in tipos else None,
+           "i": mtg_arquivo(pid, fundo, "i", versao) if "i" in tipos else None}
+    t0 = time.time()
+    try:
+        j = mtg_filho_montar(req)
+    except ValueError as ex:
+        erro = str(ex) if str(ex) in ("sem_pessoa", "fundo", "recorte", "imagem_grande", "caminho_recusado") else "interno"
+        if erro == "sem_pessoa":
+            mtg_sem_pessoa[pid] = time.time()
+            _mtg_limita(mtg_sem_pessoa, 20000)
+        else:
+            mtg_ruins[(pid, fundo)] = (versao, erro, time.time())
+            _mtg_limita(mtg_ruins, 20000)
+        return erro
+    except RuntimeError:
+        return "processo"
+    ms = int((time.time() - t0) * 1000)
+    with lock:
+        viva = pid in lib
+    if not viva or job.get("cancel"):                 # LGPD no meio da montagem: nada dela fica
+        mtg_apagar(pid)
+        return "cancelado"
+    _mtg_info_gravar(pid, j)
+    mtg_ruins.pop((pid, fundo), None)
+    by = j.get("bytes") if isinstance(j.get("bytes"), dict) else {}
+    feitas = [t for t in tipos if os.path.exists(mtg_arquivo(pid, fundo, t, versao))]
+    atraso = None
+    if job.get("pref") and "p" in feitas and job.get("u") \
+            and all(os.path.exists(mtg_arquivo(pid, f, "p") or "") for f in job.get("grupo") or ()):
+        atraso = max(0.0, time.time() - job["u"])    # da chegada da foto até as prévias preferidas dela prontas
+    with mtg_lock:
+        mtg["feitas"] += len(feitas)
+        mtg["ms_total"] += ms
+        mtg["ms_n"] += 1
+        if mtg["bytes"] is not None:
+            mtg["bytes"] += sum(int(v) for v in by.values() if isinstance(v, (int, float)))
+        if atraso is not None:
+            mtg["atrasos"].append(atraso)
+    return None
+
+
+def mtg_trabalho():
+    """O único trabalhador da fila de montagem (1 por vez: a montagem é processador e não disputa com a chegada das fotos)."""
+    while True:
+        _, _, job = mtg_fila.get()
+        with mtg_lock:
+            if job["pego"]:
+                continue                             # o mesmo trabalho entrou de novo com prioridade maior: já foi
+            job["pego"] = True
+            if job["p0"]:
+                mtg["fila0"] = max(0, mtg["fila0"] - 1)
+        erro = "interno"
+        try:
+            erro = _mtg_fazer(job)
+        except Exception as ex:
+            print("  montagem-srv: erro numa montagem (%s)" % type(ex).__name__)   # nunca o id nem o caminho
+        finally:
+            job["err"] = erro
+            with mtg_lock:
+                if mtg_jobs.get((job["pid"], job["fundo"])) is job:
+                    del mtg_jobs[(job["pid"], job["fundo"])]
+                if erro and erro not in ("cancelado", "recorte_espera", "disco", "sem_pessoa"):
+                    mtg["erros"] += 1
+            job["ev"].set()
+
+
+def mtg_enfileirar(pid, fundo, tipos, prio, u=None, pref=False, grupo=()):
+    """Põe a montagem (uma base num fundo) na fila sem esperar e devolve (trabalho, erro). Um trabalho por (pid, fundo):
+    pedido repetido só sobe a prioridade e soma os tipos. Recusa com a fila cheia; abaixo do piso de disco só passa a
+    prioridade 0 (pedido do Checkout). Erros: desligada, disco, fila_cheia."""
+    if mtg_cfg()["modo"] == "desligada":
+        return None, "desligada"
+    livre = mtg_livre_gb()
+    pausa = livre is not None and livre < REC_PISO_GB
+    with mtg_lock:
+        if pausa and not mtg["pausa_disco"]:
+            print("  montagem-srv: em pausa: %.1f GB livres (piso %.0f GB); só os pedidos do Checkout montam" % (livre, REC_PISO_GB))
+        mtg["pausa_disco"] = pausa
+        if pausa and prio != MTG_P_PEDIDO:
+            return None, "disco"
+        if not mtg_threads:
+            t = threading.Thread(target=mtg_trabalho, daemon=True)
+            t.start()
+            mtg_threads.append(t)
+        k = (pid, fundo)
+        job = mtg_jobs.get(k)
+        if job is None:
+            if sum(1 for x in mtg_jobs.values() if not x["pego"]) >= MTG_FILA_MAX or (prio == MTG_P_PEDIDO and mtg["fila0"] >= MTG_P0_MAX):
+                return None, "fila_cheia"
+            job = {"pid": pid, "fundo": fundo, "tipos": set(tipos), "prio": prio, "p0": prio == MTG_P_PEDIDO, "pego": False,
+                   "ev": threading.Event(), "u": u, "pref": bool(pref), "grupo": tuple(grupo), "err": None}
+            mtg_jobs[k] = job
+            if job["p0"]:
+                mtg["fila0"] += 1
+            mtg_fila.put((prio, next(_mtg_seq), job))
+            return job, None
+        if not job["pego"]:
+            job["tipos"] |= set(tipos)
+            if prio < job["prio"]:
+                if prio == MTG_P_PEDIDO and not job["p0"]:
+                    if mtg["fila0"] >= MTG_P0_MAX:
+                        return job, None             # segue com a prioridade que tinha
+                    job["p0"] = True
+                    mtg["fila0"] += 1
+                job["prio"] = prio
+                mtg_fila.put((prio, next(_mtg_seq), job))
+        return job, None
+
+
+def mtg_recorte_pronto(pid, erro=None):
+    """Chamado pelo rec_trabalho quando um recorte termina: só anota numa fila leve (quem olha a sessão é o mtg_loop)."""
+    mtg_prontos.append((pid, erro))
+    mtg_acorda.set()
+
+
+def mtg_cancelar(pid):
+    """LGPD: o que há do pid na fila ou em andamento não deixa arquivo."""
+    with mtg_lock:
+        for (p, _), j in mtg_jobs.items():
+            if p == pid:
+                j["cancel"] = True
+        mtg_espera_rec.pop(pid, None)
+
+
+def mtg_apagar(pid):
+    """LGPD e limpeza: apaga ~/Eterna/montagens/<pid>/ inteira, sem seguir link (um link no lugar da pasta é só desfeito)."""
+    if not isinstance(pid, str) or not _re_mtg_pid.match(pid):
+        return False
+    p = os.path.join(MONTAGENS, pid)
+    try:
+        if os.path.islink(p):
+            os.remove(p)
+        elif os.path.isdir(p):
+            shutil.rmtree(p)                           # o rmtree não segue links de dentro da pasta
+        else:
+            return False
+    except OSError:
+        return False
+    for k in [k for k in mtg_completas if k[0] == pid]:
+        mtg_completas.discard(k)
+    return True
+
+
+def limpar_montagens(agora=None):
+    """De hora em hora (galeria_loop): apaga a pasta de foto que saiu da biblioteca, arquivo de versão antiga, arquivo com
+    mais de MTG_DIAS, .tmp com mais de 1 h e, acima de MTG_TETO_GB, os mais antigos. Não toca em vendidas/ (E4) nem em
+    ~/Eterna/recortes. Devolve quantos arquivos apagou."""
+    agora = agora or time.time()
+    if not os.path.isdir(MONTAGENS):
+        with mtg_lock:
+            mtg["bytes"] = 0
+        return 0
+    with lock:
+        vivas = set(lib)
+    atuais = {f: mtg_versao(f) for f in MTG_FUNDOS}
+    itens, n = [], 0
+
+    def apaga(p):
+        try:
+            os.remove(p)
+            return 1
+        except OSError:
+            return 0
+    try:
+        pastas = sorted(os.listdir(MONTAGENS))
+    except OSError:
+        return 0
+    for pid in pastas:
+        d = os.path.join(MONTAGENS, pid)
+        if pid == "vendidas" or not _re_mtg_pid.match(pid) or os.path.islink(d) or not os.path.isdir(d):
+            continue
+        if pid not in vivas:
+            try:
+                n += len(os.listdir(d))
+            except OSError:
+                pass
+            mtg_apagar(pid)
+            continue
+        try:
+            nomes = os.listdir(d)
+        except OSError:
+            continue
+        for nome in nomes:
+            p = os.path.join(d, nome)
+            try:
+                st = os.lstat(p)
+            except OSError:
+                continue
+            velho = agora - st.st_mtime > MTG_DIAS * 86400
+            m_ = _re_mtg_arq.match(nome)
+            if nome.endswith(".tmp"):
+                if agora - st.st_mtime > 3600:
+                    n += apaga(p)
+            elif m_:
+                atual = atuais.get(m_.group(1))
+                if velho or (atual and m_.group(2) != atual) or m_.group(1) not in MTG_FUNDOS:
+                    n += apaga(p)
+                else:
+                    itens.append((st.st_mtime, st.st_size, p))
+            elif nome.startswith("info-") and nome.endswith(".json"):
+                if velho or nome != "info-%s.json" % MTG_VERSAO:
+                    n += apaga(p)
+            elif velho:
+                n += apaga(p)
+        try:
+            if not [x for x in os.listdir(d) if not x.startswith("info-")]:
+                shutil.rmtree(d)                       # só sobrou o info (ou nada): a pasta sai
+        except OSError:
+            pass
+    total = sum(x[1] for x in itens)
+    for _, tam, p in sorted(itens):
+        if total <= MTG_TETO_GB * 1024 ** 3:
+            break
+        if apaga(p):
+            total -= tam
+            n += 1
+    mtg_completas.clear()
+    with mtg_lock:
+        mtg["bytes"] = total
+    return n
+
+
+def mtg_status():
+    """/status.montagem (fora do lock, como o rec_status)."""
+    cfg = mtg_cfg()
+    ok, motivo = mtg_estado()
+    livre = mtg_livre_gb()
+    p = mtg_filho.get("p")
+    with mtg_lock:
+        n = mtg["ms_n"]
+        return {"v": 1, "modo": cfg["modo"], "ok": ok, "motivo": motivo, "versao": MTG_VERSAO,
+                "fundos": dict(mtg["versoes"]) if cfg["modo"] != "desligada" else {},
+                "filho": {"vivo": p is not None and p.poll() is None, "reinicios": mtg["reinicios"]}, "parado": mtg["parado"],
+                "fila": sum(1 for j in mtg_jobs.values() if not j["pego"]), "feitas": mtg["feitas"], "erros": mtg["erros"],
+                "ms_medio": int(mtg["ms_total"] / n) if n else None,
+                "atraso_p50_s": _pct(mtg["atrasos"], 0.5), "atraso_p90_s": _pct(mtg["atrasos"], 0.9),
+                "guardado_gb": round((mtg["bytes"] or 0) / 1024 ** 3, 2), "livre_gb": round(livre, 1) if livre is not None else None,
+                "piso_gb": REC_PISO_GB, "pausa_disco": bool(mtg["pausa_disco"]), "no_hd": mtg_no_hd()}
+
+
+def _mtg_linha_partida(modo, versoes):
+    print("  montagem-srv: modo=%s versao=%s fundos=%s pasta=%s no_hd=%s" % (
+        modo, MTG_VERSAO, ",".join("%s:%s" % (f, versoes.get(f) or "sem-arquivo") for f in MTG_ATIVOS), MONTAGENS,
+        "sim" if mtg_no_hd() else "nao"))
+
+
+def _mtg_linha_5min(agora):
+    with mtg_lock:
+        n = (mtg["feitas"], mtg["erros"])
+        if agora - mtg["log_em"] < 300 or n == mtg["log_n"]:
+            return
+        mtg["log_em"], mtg["log_n"] = agora, n
+        fila = sum(1 for j in mtg_jobs.values() if not j["pego"])
+        ms = int(mtg["ms_total"] / mtg["ms_n"]) if mtg["ms_n"] else 0
+        p50, p90 = _pct(mtg["atrasos"], 0.5), _pct(mtg["atrasos"], 0.9)
+        gb = (mtg["bytes"] or 0) / 1024 ** 3
+    livre = mtg_livre_gb()
+    print("  montagem-srv: feitas=%d fila=%d erros=%d ms_medio=%d atraso p50/p90=%s/%s s disco=%.2f GB guardados, %s GB livres" % (
+        n[0], fila, n[1], ms, "--" if p50 is None else p50, "--" if p90 is None else p90, gb, "?" if livre is None else "%.1f" % livre))
+
+
+def mtg_passada(refazer=False):
+    """Uma volta do mtg_loop: para cada sessão de hoje, as candidatas (mtg_candidatas) e o que falta da versão atual de
+    cada fundo ativo: prévia da base preferida (prioridade 1), prévia da outra base (2) e, com a prévia pronta, a impressão
+    da preferida (3). refazer (partida do agente ou troca de versão): tudo com prioridade 4. Devolve quantos enfileirou."""
+    versoes = dict(mtg["versoes"])
+    hoje = _ff_hoje()
+    with sess_lock:
+        ss = sorted((x for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
+                    key=lambda x: -(x.get("ultima_chegada") or x.get("fechada_em") or 0))
+        ss = [{"fotos": list(x["fotos"]), "ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {})} for x in ss]
+    n = 0
+    for x in ss:
+        cands = mtg_candidatas(x)
+        if not cands:
+            continue
+        pref = {f: cands[mtg_preferida(f, len(cands))] for f in MTG_ATIVOS}
+        for fundo in MTG_ATIVOS:
+            v = versoes.get(fundo)
+            if not v:
+                continue
+            for pid in cands:
+                e_pref = pref[fundo] == pid
+                k = (pid, fundo, v, e_pref)
+                if k in mtg_completas or pid in mtg_sem_pessoa or not os.path.exists(rec_arquivo(pid)):
+                    continue
+                ruim = mtg_ruins.get((pid, fundo))
+                if ruim and ruim[0] == v and time.time() - ruim[2] < MTG_ERRO_DE_NOVO:
+                    continue
+                tem_p = os.path.exists(mtg_arquivo(pid, fundo, "p", v))
+                if tem_p and (not e_pref or os.path.exists(mtg_arquivo(pid, fundo, "i", v))):
+                    mtg_completas.add(k)
+                    continue
+                if refazer:
+                    mtg_refeitas.add((pid, fundo, v))
+                velha = (pid, fundo, v) in mtg_refeitas
+                if not tem_p:
+                    with lock:
+                        u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
+                    job, _ = mtg_enfileirar(pid, fundo, ("p",), MTG_P_REFAZER if velha else MTG_P_VIVO if e_pref else MTG_P_RESERVA,
+                                            u=None if velha else u or None, pref=e_pref,
+                                            grupo=[f for f in MTG_ATIVOS if pref[f] == pid and versoes.get(f)])
+                else:
+                    job, _ = mtg_enfileirar(pid, fundo, ("i",), MTG_P_REFAZER if velha else MTG_P_IMPRESSAO)
+                n += 1 if job is not None else 0
+    if len(mtg_completas) > 200000:
+        mtg_completas.clear()
+    return n
+
+
+def mtg_volta(visto):
+    """Uma volta do mtg_loop (visto guarda o modo e as versões da volta anterior). Com a chave desligada não faz nada:
+    nenhuma pasta, nenhum processo."""
+    modo = mtg_cfg()["modo"]
+    if modo == "desligada":
+        mtg_prontos.clear()
+        if visto["modo"] not in (None, "desligada"):
+            print("  montagem-srv: modo=desligada versao=%s" % MTG_VERSAO)
+            mtg_fechar_filho()
+        visto["modo"] = modo
+        return
+    if not mtg_estado()[0]:                              # parada, ou esperando o prazo depois de um erro do processo
+        mtg_prontos.clear()
+        return
+    versoes = {f: mtg_versao(f, baixar=True) for f in MTG_ATIVOS}
+    refazer = False
+    if modo != visto["modo"] or versoes != visto["versoes"]:
+        with mtg_lock:
+            mtg["versoes"] = dict(versoes)
+        mtg_completas.clear()
+        mtg_refeitas.clear()
+        _mtg_linha_partida(modo, versoes)
+        refazer = visto["versoes"] != versoes            # partida do agente, chave recém-ligada ou troca de versão
+        visto.update(modo=modo, versoes=versoes)
+        if mtg["bytes"] is None:
+            limpar_montagens()                           # mede o que já está guardado (e tira o que é de versão antiga)
+    while mtg_prontos:
+        pid, erro = mtg_prontos.popleft()
+        if erro == "sem_pessoa":
+            mtg_sem_pessoa[pid] = time.time()
+            _mtg_limita(mtg_sem_pessoa, 20000)
+        with mtg_lock:
+            esp = mtg_espera_rec.pop(pid, None)
+        if esp and not erro:
+            for fundo, (tipos, prio) in esp.items():
+                mtg_enfileirar(pid, fundo, tipos, prio)
+    mtg_passada(refazer)
+    agora = time.time()
+    _mtg_linha_5min(agora)
+    with mtg_lock:
+        cheio = mtg["bytes"] is not None and mtg["bytes"] > MTG_TETO_GB * 1024 ** 3
+    if cheio and agora - visto.get("limpeza", 0) > 600:  # passou do teto antes da limpeza de hora em hora
+        visto["limpeza"] = agora
+        limpar_montagens()
+
+
+def mtg_loop():
+    """A cada 2 s (ou quando um recorte termina): com a chave em sombra ou ligada, mantém em disco as montagens das
+    sessões de hoje."""
+    visto = {"modo": None, "versoes": None, "limpeza": 0.0}
+    while True:
+        mtg_acorda.wait(2)
+        mtg_acorda.clear()
+        try:
+            mtg_volta(visto)
+        except Exception as ex:
+            print("  montagem-srv: erro no laço (%s)" % type(ex).__name__)
+            time.sleep(5)
 
 
 # v84 (segurança): o Photoroom só monta quando o interruptor do Painel de controle estiver em "Photoroom" também aqui.
@@ -4690,6 +5550,10 @@ def galeria_loop():
                 limpar_recortes()
             except Exception as ex:
                 print("  recortes: erro na limpeza", ex)
+            try:
+                limpar_montagens()
+            except Exception as ex:
+                print("  montagem-srv: erro na limpeza (%s)" % type(ex).__name__)
         if time.time() - ultima_cli > 3600:
             ultima_cli = time.time()
             try:
@@ -5703,6 +6567,8 @@ def sess_esquecer(pid):
     v93: sai também das bases de IA, e os recortes dela são apagados na hora (o trabalho na fila é cancelado)."""
     rec_cancelar(pid)
     rec_apagar(pid)
+    mtg_cancelar(pid)                   # montagem no servidor: o trabalho na fila ou em andamento não deixa arquivo
+    mtg_apagar(pid)
     _sess_esquecer(pid)
 
 
@@ -9900,6 +10766,11 @@ def estado_gravar(body, quem=""):
                         v = {**ok_, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
                     r_ = db.execute("select valor from doc where col = 'config' and id = 'ia'").fetchone()
                     auditoria.append((r_[0] if r_ else None, v))
+                if d["col"] == "config" and d["id"] == "montagem" and v is not None:   # montagem no servidor: só {modo, por, em}
+                    v = montagem_valida(v)
+                    if v is None:
+                        print("  config/montagem recusada (formato inválido) · de %s" % (quem or "?"))
+                        continue
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
                 if txt is not None and len(txt) > ESTADO_MAX:
                     continue
@@ -9922,6 +10793,8 @@ def estado_gravar(body, quem=""):
     if any(isinstance(d, dict) and d.get("col") == "config" for d in docs[:500]):
         _busca_cfg["t"] = 0.0            # janela da selfie mudada no Painel vale na próxima busca
         _ia_cfg["t"] = 0.0               # v93: regra dos cliques de IA vale na próxima sessão que fechar
+        _mtg_cfg["t"] = 0.0              # chave da montagem no servidor vale na hora
+        mtg_acorda.set()
     if ag_datas:
         dia_marcar(ag_datas)
     for de_, para in auditoria:          # v93 (segurança): quem mudou a regra dos cliques de IA, no console
@@ -11088,6 +11961,7 @@ ROTAS = (
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
     ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
     ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
+    ("GET", "/montagem/", "posto_ou_sessao", VENDER), ("POST", "/montagens/pedir", "posto_ou_sessao", VENDER),   # montagem feita no servidor
     ("GET", "/photoroom/status", "posto_ou_sessao", VENDER + ("configuracao.r",)),    # sem Painel de controle: só {configured, fundos_modo}
     ("GET", "/photoroom/result/", "posto_ou_sessao", VENDER), ("POST", "/photoroom/compose", "posto_ou_sessao", VENDER),
     ("GET", "/fila-fotografo", "posto_ou_sessao", ("filafoto.r",)),
@@ -11909,7 +12783,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/montagens/pedir", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -12757,6 +13631,101 @@ class H(BaseHTTPRequestHandler):
             return self.js(motivo[0], motivo[1], True)
         return self.js({"ok": bool(r), "resultado": res}, 200, True)
 
+    def montagem_get(self, u, q):
+        """GET /montagem/<pid>/<fundo>.jpg?t=p|i[&v=<versao>]: a prévia ou o arquivo de impressão que o servidor montou.
+        Posto pareado ou pessoa com módulo de venda (ROTAS). Pronta: o JPEG, sem cache no aparelho. Ainda não feita: 202 e o
+        pedido sobe para a prioridade 0. Tudo que não existe responde o mesmo 404 (a rota não diz se a foto existe)."""
+        nf = {"error": "not found"}
+        if mtg_cfg()["modo"] == "desligada":
+            return self.js({"error": "montagem_desligada"}, 503, True)
+        m = _re_mtg.match(u.path[len("/montagem/"):])
+        t = q.get("t", [""])[0]
+        v = q.get("v", [""])[0]
+        if not m or t not in ("p", "i") or m.group(3) not in MTG_FUNDOS or (v and not re.match(r"^[0-9a-f]{8}$", v)):
+            return self.js(nf, 404, True)
+        if not limite_ok(self.client_address[0], "montagem", MTG_TAXA):
+            return self.js({"error": "muitos pedidos"}, 429, True)
+        pid, fundo = m.group(2), m.group(3)
+        with lock:
+            viva = pid in lib
+        if not viva or pid in mtg_sem_pessoa:
+            return self.js(nf, 404, True)
+        if mtg["parado"]:
+            return self.js({"error": "montagem_parada"}, 503, True)
+        versao = mtg_versao(fundo)
+        if versao and v and v != versao:
+            return self.js({"error": "versao"}, 409, True)
+        arq = mtg_arquivo(pid, fundo, t, versao) if versao else None
+        if arq and os.path.isfile(arq):
+            base = os.path.realpath(MONTAGENS)
+            if os.path.commonpath([os.path.realpath(arq), base]) != base:
+                return self.js(nf, 404, True)
+            try:
+                with open(arq, "rb") as f:
+                    data = f.read()
+            except OSError:
+                return self.js(nf, 404, True)
+            self.send_response(200)
+            self.cors()
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Eterna-Montagem", versao)
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        job, erro = mtg_enfileirar(pid, fundo, (t,), MTG_P_PEDIDO)
+        if erro == "fila_cheia":
+            return self.js({"error": "muitos pedidos"}, 429, True)
+        if erro:
+            return self.js({"error": "montagem_desligada"}, 503, True)
+        return self.js({"estado": "fila"}, 202, True)
+
+    def montagens_pedir_post(self):
+        """POST /montagens/pedir {pids (até 4), fundos (até 5), tipos ["p"] ou ["p","i"]}: o estado de cada montagem e, para
+        as que faltam, um pedido com a prioridade 0 (passa na frente de tudo que o servidor monta sozinho)."""
+        if mtg_cfg()["modo"] == "desligada":
+            return self.js({"error": "montagem_desligada"}, 503, True)
+        if not limite_ok(self.client_address[0], "montagens-pedir", MTG_TAXA):
+            return self.js({"error": "muitos pedidos"}, 429, True)
+        body, err = self.corpo(2048)
+        if err:
+            return self.js({"error": "corpo inválido"}, err, True)
+        pids, fundos, tipos = body.get("pids"), body.get("fundos"), body.get("tipos", ["p"])
+        if not isinstance(pids, list) or not 1 <= len(pids) <= 4 or not all(isinstance(p, str) and _re_pid.match(p) for p in pids) \
+                or not isinstance(fundos, list) or not 1 <= len(fundos) <= 5 or not all(isinstance(f, str) and f in MTG_FUNDOS for f in fundos) \
+                or tipos not in (["p"], ["p", "i"]) or set(body) - {"pids", "fundos", "tipos"}:
+            return self.js({"error": "pedido inválido"}, 400, True)
+        if mtg["parado"]:
+            return self.js({"error": "montagem_parada"}, 503, True)
+        pids = list(dict.fromkeys(pid_lib(p) for p in pids))
+        fundos = list(dict.fromkeys(fundos))
+        with lock:
+            fora = [p for p in pids if p not in lib]
+        if fora:
+            return self.js({"error": "foto não encontrada no agente"}, 404, True)
+        itens = []
+        for pid in pids:
+            for fundo in fundos:
+                versao = mtg_versao(fundo)
+                w, h = mtg_dims(fundo)
+                tem = {t: bool(versao) and os.path.isfile(mtg_arquivo(pid, fundo, t, versao)) for t in ("p", "i")}
+                ruim = mtg_ruins.get((pid, fundo))
+                if all(tem[t] for t in tipos):
+                    estado = "pronta"
+                elif pid in mtg_sem_pessoa:
+                    estado = "sem_pessoa"
+                elif ruim and ruim[0] == versao and time.time() - ruim[2] < 30:
+                    estado = "erro"                          # acabou de falhar: o pedido seguinte (30 s) tenta de novo
+                else:
+                    job, erro = mtg_enfileirar(pid, fundo, [t for t in tipos if not tem[t]], MTG_P_PEDIDO)
+                    if erro == "fila_cheia":
+                        return self.js({"error": "muitos pedidos"}, 429, True)
+                    estado = "fila" if job is not None else "erro"
+                itens.append({"pid": "ag_" + pid, "fundo": fundo, "versao": versao, "estado": estado, "p": tem["p"], "i": tem["i"], "w": w, "h": h})
+        return self.js({"ok": True, "v": 1, "itens": itens}, nostore=True)
+
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
         agente; os postos pareados entram na etapa 2 com a mesma regra do /photoroom/compose) e só fotos da biblioteca."""
@@ -13292,12 +14261,13 @@ class H(BaseHTTPRequestHandler):
             if not eu and not (confiavel and self.posto_atual()):
                 return self.js(minimo, nostore=True)     # sem pessoa conectada nem aparelho pareado: só que o agente está no ar
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
+            mt_ = mtg_status()                         # montagem no servidor: também fora do lock
             ag_ = agenda_status(publico=True)          # v97: sem os 4 últimos da chave e sem quem salvou (CORS aberto)
             with lock:
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
                            platform=sys.platform, ftp=ftp_,
-                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, fundos_modo=fundos_modo(),
+                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
                            estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
@@ -13574,6 +14544,8 @@ class H(BaseHTTPRequestHandler):
             if not self.posto() or not m:
                 return self.js({"error": "not found"}, 404)
             return self.png_bytes(os.path.join(RECORTES, m.group(2) + ".png"))
+        if u.path.startswith("/montagem/"):
+            return self.montagem_get(u, q)
         if u.path.startswith("/thumb/") or u.path.startswith("/file/"):
             # v91 (segurança, 01/11): o /file/ (original) pela rede (ETERNA_ORIGENS) fica aceito até o pareamento da v83 etapa 2,
             # com limite por IP: FILE_TAXA por minuto. O computador do ponto (loopback) não tem limite (Checkout e pré-carga).
@@ -13605,6 +14577,8 @@ class H(BaseHTTPRequestHandler):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
+        if u.path == "/montagens/pedir":
+            return self.montagens_pedir_post()
         if u.path == "/fotos/enviar":
             return self.fotos_enviar_post()
         if ("POST", u.path) in AGENDA_ROTAS:         # v97
@@ -13841,6 +14815,9 @@ def main():
     rec_versao_cache()                  # v97: recorte de versão anterior sai antes do recorte antecipado
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
+    mtg_orfaos_encerrar()               # processo de montagem de uma partida anterior
+    print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta
+    threading.Thread(target=mtg_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
     # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
     # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.

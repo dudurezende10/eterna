@@ -19,7 +19,7 @@ HD_MODELO="ST4000NM000B"                           # Seagate Exos 4 TB das fotos
 DADOS_VG="ubuntu-vg"; DADOS_LV="eterna-dados"; DADOS_TAM="300G"   # bancos e miniaturas, no NVMe
 DADOS="/srv/eterna"                                # home do usuário eterna (~/Eterna fica aqui)
 MIDIA="/srv/eterna-midia"                          # HD de 4 TB
-MIDIA_PASTAS="inbox ftp-tmp recortes ativ-videos ativ-clientes ativ-demo"   # o que vai para o HD (miniaturas ficam no NVMe); ftp-tmp no HD: a foto que chega passa para a inbox sem copiar
+MIDIA_PASTAS="inbox ftp-tmp recortes montagens ativ-videos ativ-clientes ativ-demo"   # o que vai para o HD (miniaturas ficam no NVMe); ftp-tmp no HD: a foto que chega passa para a inbox sem copiar
 REDE_ESTADIO="192.168.10.0/24"
 IP_SERVIDOR="192.168.10.10"
 NVIDIA_PACOTES="nvidia-headless-595-server-open nvidia-utils-595-server linux-modules-nvidia-595-server-open-generic"
