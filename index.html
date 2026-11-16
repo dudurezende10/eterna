@@ -10106,7 +10106,11 @@ function lojaJuntar(res,tv,sims){const k=state.kiosk;sims=sims||{};const claras=
   // 09/11). A visita inteira da v97 abria a foto de outra pessoa fotografada segundos depois na mesma leva. O código do recibo
   // continua abrindo a sessão toda.
   const inteira=()=>false;const base=claras.filter(inteira).map(r=>r.card),fix={};claras.forEach(r=>{if(!inteira(r))fix[r.card]=r.fotos.slice();});
-  const minhas={};lojaVisCards(base).forEach(c=>{minhas[c]=lojaTodas(c);});claras.forEach(r=>{if(!minhas[r.card])minhas[r.card]=fix[r.card]||r.fotos.slice();});const ja=new Set(Object.keys(minhas));
+  const minhas={};lojaVisCards(base).forEach(c=>{minhas[c]=lojaTodas(c);});claras.forEach(r=>{if(!minhas[r.card])minhas[r.card]=fix[r.card]||r.fotos.slice();});
+  // 16/11 (selfie do Igor: 29 fotos achadas, 17 abertas): na sessão em que a pessoa já foi confirmada, as fotos "talvez" (rosto pequeno,
+  // de longe, como na beira do campo) entram junto. Antes eram descartadas sem pergunta, porque o "É uma destas?" só pergunta sessão nova.
+  (tv||[]).forEach(r=>{if(!minhas[r.card]||!fix[r.card]||!r.fotos)return;const l=[...new Set([...minhas[r.card],...r.fotos])];minhas[r.card]=l;fix[r.card]=l;});
+  const ja=new Set(Object.keys(minhas));
   const ask=(tv||[]).filter(r=>!ja.has(r.card)&&r.fotos&&r.fotos.length&&sessionObj(r.card)&&!lojaSesProtegida(r.card)).sort((a,b)=>b.sc-a.sc).slice(0,3)
     .map(r=>({card:r.card,todas:r.fotos.slice(),fotos:r.fotos.slice().sort((x,y)=>(sims[y]||0)-(sims[x]||0)).slice(0,3)}));
   if(ask.length){Object.assign(k,{tv:{anc,minhas,ask,i:0,sim:[],ext:{base,fix}},step:'talvez',code:'',so:null});lojaPreload(anc,minhas,0);render();return true;}

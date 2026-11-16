@@ -374,7 +374,7 @@ Quando o cliente olha para a câmera, o Checkout procura em todas as sessões do
 
 **Foto do grupo (15/11):** em vez de uma selfie por pessoa, toque em **Foto do grupo** (na tela inicial, na câmera ou em Adicionar outra pessoa). A câmera vira um quadro largo, para caber a família inteira. Todos ficam juntos de frente para a câmera e alguém toca em **Tirar a foto**: cada rosto vira uma busca, como se fossem várias selfies, e entram as fotos de cada um sozinho e as do grupo junto. Quem está bem ao fundo (a fila) não conta; até 8 pessoas por foto. É uma opção a mais: a selfie de uma pessoa continua igual, e **Uma pessoa só** volta para ela.
 
-Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim.
+Se o Eterna achar o cliente só parecido numa outra sessão, ele pergunta antes: **"Esta sessão também é sua?"**, com até 3 fotos pequenas. **Sim, sou eu** junta só as fotos em que ele parece aparecer; **Não sou eu** deixa de fora. Sessão de criança ou de grupo de escola nunca entra assim. Na sessão em que o cliente já foi achado, as fotos em que ele aparece mais longe (rosto pequeno, como na beira do campo) entram junto, sem pergunta.
 
 **Drone (v99.26):** as fotos tiradas do vídeo do Drone entram como fotos de fotógrafo, com o piloto como origem. A selfie também acha essas fotos no Checkout.
 
