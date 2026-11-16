@@ -7886,7 +7886,12 @@ def ativ_importar(linhas):
 ATIV_TABLET_COLS = (("usuario", "text"), ("sugerido", "real"), ("situacao", "text"), ("cortesia_motivo", "text"), ("cortesia_nota", "text"),
                     ("agendada", "text"), ("cancel_motivo", "text"), ("cancel_por", "text"), ("cancel_em", "text"), ("enviado_por", "text"),
                     ("recebido_em", "text"), ("recebido_por", "text"), ("voo_em", "text"), ("voo_por", "text"), ("itens_entregues", "text"),
-                    ("cliente_nome", "text"), ("foto_busca", "integer"), ("tour_token", "text"), ("tour_n", "integer"))
+                    ("cliente_nome", "text"), ("foto_busca", "integer"), ("tour_token", "text"), ("tour_n", "integer"),
+                    ("ingresso", "text"), ("ingresso_meio", "text"))
+# 16/11 (Ronaldo): o ingresso do cliente (localizador da Imply, lido do QR ou digitado) liga a ativação à venda original.
+# Formato do localizador: MMDD + 8 letras e números. Venda sem ingresso válido (tablet com página antiga) é gravada assim mesmo,
+# com o campo vazio: o tablet vende sem rede e a venda não pode se perder.
+_re_ingresso = re.compile(r"^(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[A-Z0-9]{8}$")
 # Nome e foto do cliente (Ronaldo, 12/11): só para quem entrega o vídeo reconhecer a pessoa no campo, a quase 1 km do foyer
 # onde ela comprou. Servem só a isso (LGPD, finalidade): a foto fica em arquivo no servidor do ponto (não vai ao banco nem à
 # nuvem) e os dois saem sozinhos um dia depois da entrega, ou dois dias depois da venda, o que vier primeiro.
@@ -7963,6 +7968,8 @@ def ativ_venda_tablet(v):
     ag = v.get("agendada") or ""
     if ag and not _re_agendada.match(str(ag)):
         return None
+    ing = str(v.get("ingresso") or "").strip().upper()[:20]
+    ing = ing if _re_ingresso.match(ing) else ""
     foto = None
     if v.get("cliente_foto"):
         f = str(v["cliente_foto"])
@@ -7982,7 +7989,8 @@ def ativ_venda_tablet(v):
             "usuario": v.get("usuario") or "", "sugerido": v.get("sugerido") or 0, "situacao": "ativa", "cortesia_motivo": v.get("cortesia_motivo") or "",
             "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag, "cliente_nome": (v.get("cliente_nome") or "").strip(), "_foto": foto,
             # v99.22: o cliente aceitou, na venda, que a foto dele procure as fotos do Tour (só vale com a foto)
-            "foto_busca": 1 if foto and v.get("cliente_foto_busca") is True else 0, "_pulseiras": pulseiras}
+            "foto_busca": 1 if foto and v.get("cliente_foto_busca") is True else 0, "_pulseiras": pulseiras,
+            "ingresso": ing, "ingresso_meio": (v.get("ingresso_meio") if v.get("ingresso_meio") in ("camera", "digitado") else "digitado") if ing else ""}
 
 
 def ativ_cliente_foto(vid):
@@ -8033,7 +8041,8 @@ def ativ_receber(vendas, enviado_por):
     regravada (o tablet reenvia até ouvir o ok). -> {recebidas:[id], recusadas:[{id, motivo}]}"""
     out = {"recebidas": [], "recusadas": []}
     agora = time.strftime("%Y-%m-%dT%H:%M:%S")
-    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome", "foto_busca"]
+    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome", "foto_busca",
+                                     "ingresso", "ingresso_meio"]
     with ev_lock:
         c = vendas_db()
         try:

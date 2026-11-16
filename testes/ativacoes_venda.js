@@ -67,10 +67,19 @@ try{
   await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
   ok(/forma de pagamento/.test(await A.textContent('#av-erro')),'pede pagamento');
   await A.click('[data-act="av-pag"][data-p="PIX"]');await A.selectOption('[data-act="av-pais"]','Chile');await A.selectOption('[data-act="av-idioma"]','Espanhol');await A.waitForTimeout(80);
+  // 16/11: sem o ingresso do cliente não registra; número de reimpressão (10 caracteres) e mês/dia impossíveis são recusados
+  await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
+  ok(/ingresso do cliente/.test(await A.textContent('#av-erro')),'pede o ingresso: '+await A.textContent('#av-erro'));
+  await A.fill('[data-act="av-ing"]','102972U3H6');await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
+  ok(/Localizador inválido/.test(await A.textContent('#av-erro')),'reimpressão recusada');
+  await A.fill('[data-act="av-ing"]','1399AB12CD34');await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
+  ok(/Localizador inválido/.test(await A.textContent('#av-erro')),'mês 13 recusado');
+  await A.fill('[data-act="av-ing"]','1116ab12cd34');ok(await A.evaluate(()=>ETERNA.state.av.ing)==='1116AB12CD34','digitado vira maiúsculas');
+  ok(await A.evaluate(()=>[ETERNA.ingNorm('1116AB12CD34'),ETERNA.ingNorm('x 1116AB12CD34 y'),ETERNA.ingNorm('102972U3H6')].join('|'))==='1116AB12CD34|1116AB12CD34|','QR com só o localizador ou com texto em volta');
   // sem o nome do cliente não registra; a foto é reduzida no tablet e vai na venda
   await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
   ok(/nome do cliente/.test(await A.textContent('#av-erro')),'pede o nome do cliente');
-  await A.fill('[data-act="av-nome"]','Cliente Teste');
+  await A.fill('[data-act="av-ing"]','1116AB12CD34');await A.fill('[data-act="av-nome"]','Cliente Teste');
   // v99.23.1: sem a foto do cliente não registra
   await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(100);
   ok(/Tire a foto do cliente/.test(await A.textContent('#av-erro'))&&(await A.evaluate(()=>ETERNA.state.av.cart.length))>0,'pede a foto do cliente e não registra');
@@ -96,6 +105,7 @@ try{
   const d=s.ls.find(x=>x.v.tipo==='drone'),c=s.ls.find(x=>x.v.tipo==='chute');
   ok(d.v.cliente_foto_busca===true,'a foto da venda vai marcada para procurar as fotos do Tour');
   ok(d&&c&&d.v.id.slice(0,-1)===c.v.id.slice(0,-1)&&d.v.valor===500&&c.v.valor===110&&c.v.sugerido===110&&d.v.pais==='Chile'&&d.v.idioma==='Espanhol'&&d.v.itens[0].videos===2&&d.v.itens[0].k4&&d.v.cliente_nome==='Cliente Teste'&&/^data:image\/jpeg/.test(d.v.cliente_foto||''),'uma venda por serviço, mesmo número, valores e cliente: '+J(s.ls.map(x=>x.v)));
+  ok(d&&c&&d.v.ingresso==='1116AB12CD34'&&d.v.ingresso_meio==='digitado'&&c.v.ingresso==='1116AB12CD34','ingresso vai nas duas vendas: '+(d&&d.v.ingresso));
   await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(100);
   ok(/Sem conexão/.test(await A.textContent('#main'))&&/Aguardando envio/.test(await A.textContent('#av-minhas'))&&await A.$('#av-prod')===null,'aba Minhas vendas: sem conexão e aguardando envio');
   await A.click('[data-act="av-aba"][data-v="nova"]');
@@ -130,7 +140,7 @@ try{
   await A.evaluate(()=>{const u=ETERNA.state.user;u.perms={...u.perms,ativvenda:{c:true,r:true,u:true,d:true},financeiro:{c:true,r:true,u:true,d:true}};});
   await A.click('[data-act="av-aba"][data-v="nova"]');
   // venda igual em 2 minutos pede confirmação
-  const vende=async()=>{await A.click('[data-act="av-cat"][data-c="drone"]');await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Dinheiro"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(400);};
+  const vende=async()=>{await A.click('[data-act="av-cat"][data-c="drone"]');await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Dinheiro"]');await A.fill('[data-act="av-ing"]','1116AB12CD34');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(400);};
   await vende();await vende();
   ok(await A.$('#av-dup')!==null&&(await A.evaluate(()=>ETERNA.state.av.cart.length))===1,'venda igual pede confirmação e o carrinho fica');
   await A.click('[data-act="av-dup-sim"]');await A.waitForTimeout(500);
@@ -138,16 +148,16 @@ try{
   // Cortesia exige motivo e nota
   await A.click('[data-act="av-add"][data-id="asteroid"]');await A.click('[data-act="av-pag"][data-p="Cortesia"]');await A.waitForTimeout(80);await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(150);
   ok(/motivo e a nota/.test(await A.textContent('#av-erro')),'cortesia sem motivo');
-  await A.selectOption('[data-act="av-cmot"]',{index:1});await A.fill('[data-act="av-cnota"]','Equipe da TV');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
+  await A.selectOption('[data-act="av-cmot"]',{index:1});await A.fill('[data-act="av-cnota"]','Equipe da TV');await A.fill('[data-act="av-ing"]','1116AB12CD34');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
   const ct=await A.evaluate(()=>ETERNA.asLer().find(x=>x.v.pagamento==='Cortesia'));
   ok(ct&&ct.v.valor===0&&ct.v.cortesia_nota==='Equipe da TV'&&ct.v.cortesia_motivo&&ct.v.sugerido===180,'cortesia gravada com valor 0, sugerido e nota: '+J(ct&&ct.v));
   // armazenamento: sem localStorage a cópia do IndexedDB segura; sem nenhum, o carrinho fica
   rede=false;
   await A.evaluate(()=>{window.__set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='eterna.ativ.saida.v1')throw new Error('QuotaExceededError');return window.__set.call(this,k,v);};});
-  await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Débito"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
+  await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Débito"]');await A.fill('[data-act="av-ing"]','1116AB12CD34');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
   ok((await A.evaluate(()=>ETERNA.state.av.saida.length))===6&&(await A.evaluate(()=>ETERNA.state.av.cart.length))===0,'localStorage cheio: gravou no IndexedDB');
   await A.evaluate(()=>{window.__idb=indexedDB.open;indexedDB.open=()=>{throw new Error('sem IndexedDB');};});
-  await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Crédito"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
+  await A.click('[data-act="av-add"][data-id="boomerang"]');await A.click('[data-act="av-pag"][data-p="Crédito"]');await A.fill('[data-act="av-ing"]','1116AB12CD34');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto=ETERNA.state.av.foto||'data:image/jpeg;base64,/9j/2Q==';});await pul(A);await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
   ok((await A.evaluate(()=>ETERNA.state.av.cart.length))===1&&/não pôde ser gravada/.test(await A.textContent('#av-erro')),'sem nenhum armazenamento: avisa e o carrinho continua');
   await A.evaluate(()=>{Storage.prototype.setItem=window.__set;indexedDB.open=window.__idb;});
   // idioma

@@ -282,6 +282,7 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 ### 4g. Fila de entrega em tabela e tela enxuta para quem entrega (Ronaldo, 15/11)
 
 - Com a leitura da pulseira (4e), o quadro da fila por ativação (4a.1) ficou sem botão e a equipe deixou de ver o que faltava entregar. Agora a tela de entrega tem a **Fila de entrega** fixa, abaixo do Agora: **uma linha por entrega** (cada pulseira é um atendimento; uma venda de 3 pessoas dá 3 linhas), de todas as vendas do dia, da mais antiga para a mais nova. Colunas: foto, cliente (hora e número da venda), produto e itens, pulseira (1 / 3), situação em palavras (próximo a voar ou chutar, voando desde, chutando, faltam itens, entregue). Na tela estreita a linha quebra em duas, sem rolagem lateral. Um toque na linha abre o atendimento daquela pulseira. A aba **Entregues** mostra as de hoje já entregues.
+- **A fila só informa (Ronaldo, 16/11):** tocar na linha não abre mais o atendimento. Abrir pela fila deixava registrar o voo ou o chute e entregar o vídeo sem a pessoa estar com a pulseira. O atendimento abre só pela leitura da pulseira (leitor, câmera ou número digitado). O quadro **Agora** continua abrindo o que já está em andamento, porque ali só chega quem já passou pela pulseira.
 - Quem só entrega (perfil Equipe de campo) não vê o cadastro de pilotos, drones e baterias nem o estado da nuvem: isso fica para quem tem Alterar em Configurações (Supervisor e Admin). Erro de envio do vídeo continua aparecendo para todos.
 
 ### 4h. Drone com mais de 5 pessoas (Ronaldo, 15/11)
@@ -289,6 +290,14 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 - O seletor de pessoas tem 1 a 5 e o botão **6+**; acima de 5 aparece **− N +** (até 20). O preço do cartão e da venda já soma a pessoa extra pela regra do produto (Pessoas incluídas e Valor por pessoa extra, no cadastro do produto). Drones: 5 pessoas incluídas, R$ 15 por pessoa a mais. O vídeo de demonstração continua o de 5 pessoas.
 
 **Catálogo sempre no servidor (15/11):** o servidor do estádio nunca tinha recebido o catálogo (a tela mostrava o padrão de dentro do app). Ao gravar só o Asteroid, os outros 14 sumiram da tela e da venda até serem gravados de novo no servidor (mesmos preços; Drone com 5 incluídas e R$ 15 por pessoa a mais). Agora, se o servidor ainda não tem o catálogo, a primeira gravação (Editar ou Hoje não vendo) manda o catálogo inteiro, nunca um item sozinho.
+
+### 4i. Ingresso do cliente obrigatório na venda (Ronaldo, 16/11)
+
+- É pelo ingresso que a ativação se liga à venda original (Imply). No passo **Cliente**, antes do nome, fica o campo **Ingresso do cliente (localizador)** com o botão **Ler QR do ingresso**, que abre a câmera (mesmo leitor da pulseira). O localizador também pode ser digitado (12 caracteres, maiúsculas, sem espaço), mas o normal é ler o QR.
+- Sem ingresso válido a venda não é registrada. Formato do localizador (QR conferido em 29/10, plano v85): 4 dígitos do mês e dia + 8 letras e números, por exemplo `1116AB12CD34`. O número de reimpressão (10 caracteres) e mês ou dia impossíveis são recusados. Não se confere se o mês e o dia batem com hoje, porque o ingresso pode ter sido comprado em outro dia.
+- A venda grava `ingresso` e `ingresso_meio` (`camera` ou `digitado`), nas colunas novas de `ativ_venda`, e o resumo `/ativ/vendas` passa a trazê-las. Uma compra com Drone e Chute a Gol leva o mesmo ingresso nas duas vendas. O mesmo ingresso pode aparecer em compras diferentes, porque o cliente pode voltar e comprar mais.
+- O servidor não recusa venda sem ingresso, porque um tablet com a página antiga vende sem rede e a venda não pode se perder. Nesse caso o campo fica vazio e a obrigatoriedade vale na tela.
+- Testes: `testes/ativacoes_venda.js` cobre o pedido do ingresso, a recusa da reimpressão e do mês 13, a leitura do QR com texto em volta e o ingresso nas duas vendas.
 
 ## 5. Vendas: listar, editar, cancelar
 
