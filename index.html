@@ -183,6 +183,7 @@ svg text{font-family:var(--body);fill:var(--muted);font-size:12px}
 .ph::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
 .ph[data-real]{aspect-ratio:1/1}.ph[data-real]::before{inset:var(--ri,0);background-size:var(--rbs,contain);background-position:var(--rbp,center)}
 .ph[data-off="1"]::before{opacity:.3} .ph[data-off="1"] .tag{background:var(--bad)}
+.ph[data-aviso="1"] .tag{background:var(--warn);color:#25282A} /* 16/11: olhos fechados é só aviso, a foto segue à venda */
 .ph[data-v="1"]{border-color:var(--good)} .ph[data-v="-1"]{border-color:var(--bad)} .ph[data-sel="1"]{border-color:var(--accent)}
 .ph .tag{position:absolute;left:6px;top:6px;font-size:12px;letter-spacing:.08em;padding:2px 7px;border-radius:3px;background:rgba(20,19,17,.78);color:#fafaf8}
 .ph .mark{position:absolute;right:6px;bottom:6px;width:26px;height:26px;border-radius:50%;display:none;align-items:center;justify-content:center;color:#fff}
@@ -1542,8 +1543,9 @@ function demoSessions(){if(DS_CACHE.on&&DS_CACHE.v)return DS_CACHE.v;
   const list=[];
   for(const s of DATA.sampled){const sim=SIM.sessions[s.card];list.push({card:s.card,key:s.key,pdv:s.pdv,time:s.time,date:s.date,photos:s.photos.filter(p=>hasImg(p.id)&&!SIM.discarded[p.id]).map(p=>({id:p.id,sold:p.sold})),total:s.total,soldTotal:s.soldTotal,demo:true,status:sim?sim.status:'pronta'});}
   // v93: as bases dos fundos de IA (sim.ia, os primeiros cliques da sessão) nunca entram em photos (não são vendidas como foto);
-  // ficam em ia, sem o filtro de olhos fechados (a montagem decide pela base boa, lojaAI)
-  for(const [card,sim] of Object.entries(SIM.sessions)){const iaS=Array.isArray(sim.ia)&&sim.ia.length?new Set(sim.ia):null;const ok=(sim.photos||[]).filter(p=>!(iaS&&iaS.has(p.id))&&hasImg(p.id)&&!SIM.discarded[p.id]&&!(SIM.invalid&&SIM.invalid[p.id]));
+  // ficam em ia (a montagem decide pela base boa, lojaAI). 16/11 (Eduardo): olho fechado (SIM.invalid) é só aviso, a foto segue à venda;
+  // só o descarte tira a foto daqui
+  for(const [card,sim] of Object.entries(SIM.sessions)){const iaS=Array.isArray(sim.ia)&&sim.ia.length?new Set(sim.ia):null;const ok=(sim.photos||[]).filter(p=>!(iaS&&iaS.has(p.id))&&hasImg(p.id)&&!SIM.discarded[p.id]);
     const ia=iaS?[...iaS].filter(id=>hasImg(id)&&!SIM.discarded[id]):[];if(sim.photos&&sim.photos.length&&!ok.length&&!ia.length)continue; // fotos que não estão mais neste aparelho: sessão some da lista
     if(!DATA.sampled.find(s=>s.card===card))list.push({card,key:sim.key,pdv:sim.pdv,time:sim.time,date:sim.date,photos:ok,ia,total:(sim.photos||[]).length-(iaS?(sim.photos||[]).filter(p=>iaS.has(p.id)).length:0),soldTotal:0,demo:false,status:sim.status});}
   if(DS_CACHE.on){DS_CACHE.v=list;DS_CACHE.m=new Map(list.map(x=>[x.card,x]));}
@@ -3045,11 +3047,11 @@ function lojaCodigo(txt){const v=ljCodNorm(txt);if(Date.now()<LJ_COD.ate){toast(
   return erro();}
 // v93: código de sessão que a aba já conhece mas cujas fotos ainda não carregaram (aba recém-aberta, antes do primeiro /sessoes),
 // ou que chegou e espera a vez de entrar (SRV.mat): espera até 4 s a sessão aparecer antes de conferir. Sem espera -> null.
-// Sessão com todas as fotos descartadas ou recusadas, ou fora dos dias do Checkout, não espera: responde na hora.
+// Sessão com todas as fotos descartadas, ou fora dos dias do Checkout, não espera: responde na hora.
 // Intervalo crescente (LJ_ESPERA_MS) e qualquer erro no caminho encerra a espera (quem chamou confere o código e avisa).
 const LJ_ESPERA_MS=[200,400,800,1200],LJ_ESPERA_MAX=4000;
 function ljSessSemFoto(v){const s=SIM.sessions[v];if(!s)return false;const ph=s.photos||[];
-  if(ph.length&&ph.every(p=>(SIM.discarded||{})[p.id]||(SIM.invalid||{})[p.id]))return true;
+  if(ph.length&&ph.every(p=>(SIM.discarded||{})[p.id]))return true; // 16/11: olho fechado é só aviso, não conta
   const t=Date.parse(s.closedAt||'');if(!t)return false;const a=state.agent;const n=Math.max(1,(a&&a.sessoes&&a.sessoes.dias)||1);
   return !Array.from({length:n},(_,i)=>localDay(Date.now()/1000-i*86400)).includes(localDay(t/1000));}
 function lojaCodEspera(txt){const v=ljCodNorm(txt);const a=state.agent;
@@ -4494,9 +4496,9 @@ function ingClose(how,srv){const g=state.ing;if(!srv&&state.agent&&state.agent.o
   if(!SIM.invalid)SIM.invalid={};let bad=[];c.photos.forEach(p=>{const r=validatePhoto(p.id);if(r){if(!demo)SIM.invalid[p.id]=r;p.invalid=r;bad.push(r);}});g.n.invalid=(g.n.invalid||0)+bad.length;
   const real=c.photos.filter(p=>/^(ag_|up_)/.test(p.id)||UP[p.id]).map(p=>p.id);
   if(real.length){VAL_FILA=VAL_FILA.then(valLivre).then(()=>validateReal(real)).then(res=>{const b=Object.entries(res);b.forEach(([id,r])=>{if(!demo)SIM.invalid[id]=r;const ph=c.photos.find(p=>p.id===id);if(ph)ph.invalid=r;});g.n.invalid=(g.n.invalid||0)+b.length;
-      g.feed.unshift({k:b.length?'warn':'ok',t:`Validação ${card}: ${real.length-b.length} válidas${b.length?`, ${b.length} não ${b.length===1?'válida':'válidas'}`:''}`,s:b.length?`IA barrou: ${[...new Set(b.map(x=>x[1]))].join(', ')}. Ficam no acervo, fora da fila.`:'rosto e olhos aprovados em todas'});render();}).catch(()=>{});}
-  else g.feed.unshift({k:bad.length?'warn':'ok',t:`Validação: ${c.photos.length-bad.length} válidas${bad.length?`, ${bad.length} não ${bad.length===1?'válida':'válidas'}`:''}`,s:bad.length?`IA barrou: ${[...new Set(bad)].join(', ')}. Ficam no acervo, fora da fila.`:'técnica e IA aprovaram todas'});
-  g.done.unshift({card,n:c.photos.length-bad.length,how,flag,photos:c.photos});
+      g.feed.unshift({k:b.length?'warn':'ok',t:TE('mf_val_t',card,real.length),s:b.length?TE('mf_val_aviso',b.length):TE('mf_val_ok')});render();}).catch(()=>{});}
+  else g.feed.unshift({k:bad.length?'warn':'ok',t:TE('mf_val_t','',c.photos.length),s:bad.length?TE('mf_val_aviso',bad.length):TE('mf_val_ok')});
+  g.done.unshift({card,n:c.photos.length,how,flag,photos:c.photos}); // 16/11: foto com aviso (olhos fechados) também vai à venda
   log(`Upload por ${srcName()}: sessão ${card} de ${P[skey]?P[skey].name:'fotógrafo não identificado'}, ${c.photos.length} fotos, fechada por ${how}${flag?', bandeira '+flag:''}`);saveSim();
 }
 // Upload com "Todos": cada grupo fica com o fotógrafo das fotos (nome na câmera, usuário do FTP, sessão; check-in antigo gravado continua valendo)
@@ -4561,7 +4563,7 @@ function vImportarCore(){
   ${demoOn()?`<div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?TE('mf_recebendo_btn'):TE('mf_simular',esc(name),srcName())}</button>${g.running?`<button class="btn ghost" data-act="ing-stop">${TE('mf_parar')}</button>`:''}${fotosNoServidor()?(state.imp.envio?`<span class="btn ghost" aria-live="polite">${TE('mf_enviando',state.imp.envio.feitas,state.imp.envio.total)}</span>`:`<label class="btn primary" style="cursor:pointer">${TE('mf_enviar')}<input type="file" accept="image/jpeg" multiple data-act="imp-files" style="display:none"></label>`):`<label class="btn ghost" style="cursor:pointer">${TE('mf_testar')}<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>`}${g.n.arrived||g.done.length?`<button class="btn ghost" data-act="ing-reset">${TE('mf_limpar')}</button>`:''}</div>`:''}
   ${sessAg?upSessoes(L):''}${demoOn()||!state.agent.sessoes?`${cur?`<div class="panel"><div class="head"><h2>${TE('mf_formacao')}</h2><span class="note">${TE('mf_formacao_n',cur)}</span></div><div class="photos small">${g.cur.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.flag?p.flag:'',label:TE('rv_foto_n',i+1)})).join('')}</div></div>`:''}
   ${g.done.length?`<div class="panel"><div class="head"><h2>${TE('mf_criadas')}</h2><span class="note">${TE('mf_na_fila')}</span></div>
-    ${g.done.map(s=>`<div class="eyebrow" style="margin:6px 0 8px">${TE('mf_leva',s.card,s.n,esc(s.how))} · ${s.flag?`<span class="pill good">${TE('mf_bandeira',esc(s.flag))}</span>`:`<span class="pill neutral">${TE('mf_sem_bandeira')}</span>`}</div><div class="photos small">${s.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.invalid?TE('mf_nao_valida')+' · '+p.invalid:(p.conf&&p.conf<70?`${p.flag}? ${p.conf}%`:''),label:TE('rv_foto_n',i+1)}).replace('<button class="ph"',`<button class="ph" data-off="${p.invalid?1:0}"`)).join('')}</div>`).join('')}</div>`:''}`:''}
+    ${g.done.map(s=>`<div class="eyebrow" style="margin:6px 0 8px">${TE('mf_leva',s.card,s.n,esc(s.how))} · ${s.flag?`<span class="pill good">${TE('mf_bandeira',esc(s.flag))}</span>`:`<span class="pill neutral">${TE('mf_sem_bandeira')}</span>`}</div><div class="photos small">${s.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.invalid?TE('mf_aviso_olhos'):(p.conf&&p.conf<70?`${p.flag}? ${p.conf}%`:''),label:TE('rv_foto_n',i+1)}).replace('<button class="ph"',`<button class="ph" data-aviso="${p.invalid?1:0}"`)).join('')}</div>`).join('')}</div>`:''}`:''}
   ${libPanel()}
   ${adm?`<details class="tec"><summary>${TE('mf_detalhes')}</summary>${leitor}${feed}</details>`:''}
   `;
@@ -8135,7 +8137,10 @@ const EQ={
   mf_criadas:["Sessões criadas nesta leva","Sessions created in this batch","Sesiones creadas en esta tanda","Séances créées dans ce lot","In diesem Stapel erstellte Sitzungen"],
   mf_na_fila:["na fila","queued","en cola","en file","in der Warteschlange"],
   mf_sem_bandeira:["sem bandeira","no flag","sin bandera","sans drapeau","keine Flagge"],
-  mf_nao_valida:["NÃO VÁLIDA","NOT VALID","NO VÁLIDA","NON VALIDE","UNGÜLTIG"],
+  mf_aviso_olhos:["aviso: olhos fechados","warning: eyes closed","aviso: ojos cerrados","avertissement : yeux fermés","Hinweis: Augen geschlossen"],
+  mf_val_t:[(c,n)=>`Validação ${c?c+': ':''}${n} fotos`,(c,n)=>`Check ${c?c+': ':''}${n} photos`,(c,n)=>`Validación ${c?c+': ':''}${n} fotos`,(c,n)=>`Vérification ${c?c+' : ':''}${n} photos`,(c,n)=>`Prüfung ${c?c+': ':''}${n} Fotos`],
+  mf_val_aviso:[(n)=>`aviso: olhos fechados em ${n}. Seguem à venda no Checkout.`,(n)=>`warning: eyes closed in ${n}. They stay for sale at Checkout.`,(n)=>`aviso: ojos cerrados en ${n}. Siguen a la venta en el Checkout.`,(n)=>`avertissement : yeux fermés sur ${n}. Elles restent en vente au Checkout.`,(n)=>`Hinweis: Augen geschlossen bei ${n}. Sie bleiben im Checkout zum Verkauf.`],
+  mf_val_ok:["rosto e olhos sem aviso em todas","no face or eye warning on any","rostro y ojos sin aviso en todas","aucun avertissement visage ou yeux","bei keinem Foto ein Hinweis zu Gesicht oder Augen"],
   mf_detalhes:["Detalhes técnicos","Technical details","Detalles técnicos","Détails techniques","Technische Details"],
   mf_aj_sem_perm:["Sem permissão para alterar em Upload, câmeras e ajustes","No permission to change Upload, cameras and adjustments","Sin permiso para cambiar Carga, cámaras y ajustes","Pas d'autorisation pour modifier Import, appareils et réglages","Keine Berechtigung, Upload, Kameras und Anpassungen zu ändern"],
   mf_aj_on:["Ajuste automático ligado","Automatic adjustment on","Ajuste automático activado","Réglage automatique activé","Automatische Anpassung an"],
