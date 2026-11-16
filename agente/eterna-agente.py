@@ -1611,6 +1611,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
                 time.strftime("%Y-%m-%d %H:%M:%S"), nome or "-", pid, sessao or "-", posto or "-", quem or "-"))
             md = {"pid": pid, "nome": nome, "apagada": time.time(), "motivo": "lgpd", "sessao": sessao or None, "posto": posto or None, "por": quem or None}
             metricas.append(md); metrica_grava(md)
+    falhas += treino_lgpd(alvo)             # 16/11: marcações do treino e ajuste, aviso, descarte e treino antigo do estado.db
     try:
         sess_esquecer_disco(apagados_sess)   # v91 (S14): o pid sai também dos arquivos de sessão dos dias anteriores
     except Exception as ex:
@@ -9970,6 +9971,9 @@ def estado_gravar(body, quem=""):
                 if d["col"] == "config" and d["id"] == "visitas":   # B1: o interruptor só muda pela rota /visitas/config
                     print("  config/visitas recusada pela sincronização (só POST /visitas/config) · de %s" % (quem or "?"))
                     continue
+                if d["col"] == "config" and d["id"] == "treino":    # 16/11: o interruptor da análise só pela rota /treino/config
+                    print("  config/treino recusada pela sincronização (só POST /treino/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
                     if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
                         print("  config/ia: apagar recusado · de %s" % (quem or "?"))
@@ -10576,7 +10580,7 @@ def backup_loop():
             backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
             print("  backup na nuvem (arquivos):", str(ex)[:160])
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB, TREINO_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
             if not bancos:
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
@@ -11376,6 +11380,513 @@ def agenda_valida(doc_id, v):
     return out
 
 
+# ---------- Treino da IA (16/11, Curadoria › Treino da IA, plano "Curadoria › Treino da IA", fatia F1) ----------
+# A equipe (Admin e Supervisora) marca fotos reais do servidor para ensinar a IA, sem nenhuma foto sair do servidor: a tela
+# mostra a miniatura pelo /thumb/ de sempre e aqui só moram os rótulos (texto). ~/Eterna/ponto/treino.db (vai para o backup):
+#   rotulo       um por foto (o último), com quem e quando (carimbados aqui pela sessão de login, nunca pelo navegador)
+#   rotulo_hist  só acrescenta: cada gravação, para refazer a história de uma marcação
+#   lote, medida vazias nesta entrega (marcação em lote e medidas de exposição e do ponto, nas próximas fatias)
+# Amostra do dia (GET /treino/amostra): das sessões fechadas de ~/Eterna/ponto/sessoes/<dia>.json, fotos em ordem de clique,
+# com semente fixa por dia e modo (todos os aparelhos recebem a mesma ordem). Modos: "ia" (1ª a 4ª foto de cada sessão,
+# espalhadas pelas horas), "qualidade" (sorteio por hora proporcional ao volume) e "misto" (padrão, 60/40).
+# Interruptor da análise (Eduardo, 16/11: "um LIGA E DESLIGA"): estado.db config/treino {ponto, exposicao}, cada um
+# "desligada" | "medir" | "ligada", padrão desligada. Desligada = o servidor não analisa nada; medir = analisa e só mostra na
+# tela de treino; ligada = aplica. Só pela rota POST /treino/config (Painel de controle em Alterar); o estado_gravar recusa.
+# Nesta entrega nenhuma análise roda ainda: a chave existe para a medida de exposição e o reconhecimento do ponto obedecerem.
+TREINO_DB = os.path.join(HOME, "ponto", "treino.db")
+treino_lock = threading.Lock()
+TREINO_PONTOS = ("gramado", "arquibancada", "trofeu", "chute", "outro")
+TREINO_NIVEIS = ("boa", "ajustar", "fraca", "nao_vai")
+TREINO_QUAL_MOTIVOS = ("desfocada", "olhos", "cortada", "semrosto", "estourada", "escura", "chuva", "expressao", "torta",
+                       "repetida", "fundo", "outro")
+TREINO_CAMPOS = frozenset(("pid", "v", "ponto", "ia", "qual", "duvida", "obs", "base_em"))
+TREINO_MODOS = ("misto", "ia", "qualidade")
+TREINO_ANALISE = ("desligada", "medir", "ligada")
+TREINO_CFG_PADRAO = {"ponto": "desligada", "exposicao": "desligada"}
+TREINO_DIAS = 60
+TREINO_OBS_MAX = 200
+_re_treino_slug = re.compile(r"^[a-z][a-z0-9_]{0,23}$")
+_re_treino_quem = re.compile(r"^[a-z0-9][a-z0-9._@+-]{0,99}$")
+_treino_cache = collections.OrderedDict()   # dia -> {"t", "mt", "fotos", "idx", "sessoes"} (até 4 dias inteiros na memória)
+_treino_conta = {}                          # dia -> (mtime, fotos, sessoes): só os números, para /treino/dias
+_treino_cfg = {"t": 0.0, "v": None}
+_treino_n = {"t": 0.0, "n": 0}
+
+
+def treino_db():
+    """Conexão ao treino.db (chamar com o treino_lock)."""
+    os.makedirs(os.path.dirname(TREINO_DB), exist_ok=True)
+    c = sqlite3.connect(TREINO_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("pragma synchronous=full")
+    c.execute("create table if not exists rotulo (pid text primary key, v integer, dia text, fotografo text, card text, ordem integer,"
+              " dados text, por text, em text, origem text, lote text)")
+    c.execute("create index if not exists rotulo_dia on rotulo(dia)")
+    c.execute("create table if not exists rotulo_hist (pid text, dados text, por text, em text)")
+    c.execute("create index if not exists rotulo_hist_pid on rotulo_hist(pid)")
+    c.execute("create table if not exists lote (id text primary key, dados text, por text, em text)")
+    c.execute("create table if not exists medida (pid text, tipo text, valor text, em text, primary key (pid, tipo))")
+    return c
+
+
+def _treino_em():
+    """Hora da gravação com milissegundos (o base_em do conflito compara este texto)."""
+    t = time.time()
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t)) + ".%03d" % int((t % 1) * 1000)
+
+
+def _treino_rostos(dia):
+    """{pid: rostos lidos} do dia (rostos.db do Ronaldo); {} sem o banco (agente sem OpenCV). Nunca cria o banco."""
+    if not os.path.exists(ROSTOS_DB):
+        return {}
+    try:
+        db = sqlite3.connect(ROSTOS_DB, timeout=5)
+        try:
+            return {p: n for p, n in db.execute("select pid, count(*) from rosto where dia = ? group by pid", (dia,))}
+        finally:
+            db.close()
+    except Exception:
+        return {}
+
+
+def _treino_ler_dia(dia):
+    """-> (fotos, sessoes) das sessões FECHADAS do dia: [{pid, card, fotografo, t, ordem, n_sessao, rostos}], fotos de cada
+    sessão em ordem de clique (cap da câmera; sem ele, data do arquivo; sem ela, chegada)."""
+    a = os.path.join(SESS_DIR, dia + ".json")
+    try:
+        lista = json.load(open(a, encoding="utf8")).get("sessoes") or []
+    except Exception:
+        return [], 0
+    ses = [x for x in lista if isinstance(x, dict) and x.get("status") == "fechada" and not x.get("removida") and isinstance(x.get("card"), str)]
+    pids = {p for x in ses for p in (x.get("fotos") or []) if isinstance(p, str)}
+    with lock:
+        tm = {p: (_num((meta.get(p) or {}).get("cap")) or _num((meta.get(p) or {}).get("mt")) or _num((meta.get(p) or {}).get("u")),
+                  _num((meta.get(p) or {}).get("u"))) for p in pids}
+    rostos = _treino_rostos(dia)
+    fotos = []
+    for x in ses:
+        fs = [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+        fs.sort(key=lambda p: tm.get(p, (0.0, 0.0)))
+        quem = x.get("fotografo") if isinstance(x.get("fotografo"), str) else None
+        for i, p in enumerate(fs):
+            fotos.append({"pid": p, "card": x["card"], "fotografo": quem, "t": round(tm.get(p, (0.0,))[0] or 0.0, 1), "ordem": i + 1,
+                          "n_sessao": len(fs), "rostos": rostos.get(p)})
+    return fotos, len(ses)
+
+
+def treino_fotos_dia(dia):
+    """Cache de 60 s do arquivo do dia (o de hoje muda; o mtime vale para os outros)."""
+    a = os.path.join(SESS_DIR, dia + ".json")
+    try:
+        mt = os.path.getmtime(a)
+    except OSError:
+        return {"fotos": [], "idx": {}, "sessoes": 0}
+    agora = time.time()
+    with treino_lock:
+        c = _treino_cache.get(dia)
+        if c and (agora - c["t"] < 60 or c["mt"] == mt):
+            _treino_cache.move_to_end(dia)
+            return c
+    fotos, n = _treino_ler_dia(dia)
+    c = {"t": agora, "mt": mt, "fotos": fotos, "idx": {f["pid"]: f for f in fotos}, "sessoes": n}
+    with treino_lock:
+        _treino_cache[dia] = c
+        _treino_cache.move_to_end(dia)
+        while len(_treino_cache) > 4:
+            _treino_cache.popitem(last=False)
+        _treino_conta[dia] = (mt, len(fotos), n)
+    return c
+
+
+def _treino_hora(f):
+    return time.localtime(f["t"]).tm_hour if f.get("t") else -1
+
+
+def _treino_ordem_ia(fotos, rnd):
+    """1ª a 4ª foto de cada sessão, uma hora de cada vez (espalhadas pelo dia)."""
+    por = {}
+    for f in fotos:
+        if f["ordem"] <= 4:
+            por.setdefault(_treino_hora(f), []).append(f)
+    for h in sorted(por):
+        rnd.shuffle(por[h])
+    out, horas = [], sorted(por)
+    while horas:
+        for h in list(horas):
+            out.append(por[h].pop(0))
+            if not por[h]:
+                horas.remove(h)
+    return out
+
+
+def _treino_ordem_qualidade(fotos, rnd):
+    """Sorteio por hora proporcional ao volume (amostra estratificada: cada hora entra na proporção das fotos dela)."""
+    por = {}
+    for f in fotos:
+        por.setdefault(_treino_hora(f), []).append(f)
+    chave = []
+    for h in sorted(por):
+        lst = por[h]
+        rnd.shuffle(lst)
+        chave += [((j + rnd.random()) / len(lst), f["pid"], f) for j, f in enumerate(lst)]
+    chave.sort(key=lambda x: (x[0], x[1]))
+    return [x[2] for x in chave]
+
+
+def treino_semente(dia, modo):
+    return hashlib.sha256(("treino|%s|%s" % (dia, modo)).encode()).hexdigest()[:12]
+
+
+def treino_ordem(fotos, dia, modo):
+    rnd = random.Random(int(treino_semente(dia, modo), 16))
+    if modo == "ia":
+        return _treino_ordem_ia(fotos, rnd)
+    if modo == "qualidade":
+        return _treino_ordem_qualidade(fotos, rnd)
+    ia, ql = _treino_ordem_ia(fotos, rnd), _treino_ordem_qualidade(fotos, rnd)
+    out, vistos, i, j = [], set(), 0, 0
+    while i < len(ia) or j < len(ql):            # misto: 3 de IA para 2 de qualidade (60/40)
+        for fonte in ("ia", "ia", "ia", "q", "q"):
+            while True:
+                if fonte == "ia":
+                    if i >= len(ia):
+                        break
+                    f, i = ia[i], i + 1
+                else:
+                    if j >= len(ql):
+                        break
+                    f, j = ql[j], j + 1
+                if f["pid"] not in vistos:
+                    vistos.add(f["pid"])
+                    out.append(f)
+                    break
+    return out
+
+
+def treino_vazio(doc):
+    """Marcação sem nada (o "desfazer" da tela grava assim a primeira marcação desfeita): conta como não marcada."""
+    if not isinstance(doc, dict):
+        return True
+    ia, qual = doc.get("ia") or {}, doc.get("qual") or {}
+    return not (doc.get("ponto") or doc.get("duvida") or doc.get("obs") or qual.get("nivel") or qual.get("motivos") or qual.get("ajuste")
+                or ia.get("motivos") or ia.get("serve") is not None or ia.get("frente") is not None)
+
+
+def treino_rotulos(dia):
+    """{pid: documento} das marcações do dia."""
+    with treino_lock:
+        db = treino_db()
+        try:
+            rows = db.execute("select pid, dados from rotulo where dia = ?", (dia,)).fetchall()   # vazias vêm também (o desfazer)
+        finally:
+            db.close()
+    out = {}
+    for p, d in rows:
+        try:
+            out[p] = json.loads(d)
+        except ValueError:
+            pass
+    return out
+
+
+def treino_amostra(dia, fotografo=None, modo="misto", n=150, marcadas=False):
+    """GET /treino/amostra: fotos do dia para marcar, na mesma ordem para todo mundo. Pula as já marcadas (com marcadas=True,
+    traz também essas, com o rótulo) e as que saíram da biblioteca (LGPD, prazo)."""
+    c = treino_fotos_dia(dia)
+    with lock:
+        fotos = [f for f in c["fotos"] if f["pid"] in lib]
+    rot = treino_rotulos(dia)
+    itens = []
+    for f in treino_ordem(fotos, dia, modo):
+        if fotografo and f["fotografo"] != fotografo:
+            continue
+        r = rot.get(f["pid"])
+        if r is not None and treino_vazio(r):
+            r = None
+        if r is not None and not marcadas:
+            continue
+        itens.append(dict(f, rotulo=r))
+        if len(itens) >= n:
+            break
+    return {"v": 1, "dia": dia, "modo": modo, "semente": treino_semente(dia, modo), "total_dia": len(fotos), "itens": itens}
+
+
+def treino_dias():
+    """GET /treino/dias: os últimos 60 dias com sessão, com fotos, sessões fechadas e quantas já foram marcadas."""
+    try:
+        nomes = sorted((x[:-5] for x in os.listdir(SESS_DIR) if x.endswith(".json") and _re_dia.match(x[:-5])), reverse=True)[:TREINO_DIAS]
+    except OSError:
+        nomes = []
+    with treino_lock:
+        db = treino_db()
+        try:
+            rot = {}
+            for d_, dados in db.execute("select dia, dados from rotulo"):
+                try:
+                    if not treino_vazio(json.loads(dados)):
+                        rot[d_] = rot.get(d_, 0) + 1
+                except ValueError:
+                    pass
+        finally:
+            db.close()
+    out = []
+    for d in nomes:
+        try:
+            mt = os.path.getmtime(os.path.join(SESS_DIR, d + ".json"))
+        except OSError:
+            continue
+        with treino_lock:
+            cn = _treino_conta.get(d)
+        if not cn or cn[0] != mt:
+            c = treino_fotos_dia(d)
+            cn = (mt, len(c["fotos"]), c["sessoes"])
+            with treino_lock:
+                _treino_conta[d] = cn
+                for k in [k for k in _treino_conta if k not in nomes]:
+                    _treino_conta.pop(k, None)
+        if cn[1]:
+            out.append({"dia": d, "fotos": cn[1], "sessoes": cn[2], "rotuladas": rot.get(d, 0)})
+    return {"v": 1, "dias": out}
+
+
+def treino_pid_info(pid):
+    """A foto (pid da biblioteca) numa sessão fechada: {pid, card, fotografo, ordem, ...} e o dia; None se não está."""
+    with lock:
+        e = lib.get(pid)
+    if not e:
+        return None, None
+    dias = []
+    with sess_lock:
+        x = sess.get(sess_pid.get(pid) or "")
+        if x is not None and x.get("dia"):
+            dias.append(x["dia"])
+    d0 = os.path.basename(os.path.dirname(e.get("file") or ""))
+    if _re_dia.match(d0):
+        try:
+            t0 = time.mktime(time.strptime(d0, "%Y-%m-%d")) + 43200
+            dias += [d0, _ff_hoje(t0 - 86400), _ff_hoje(t0 + 86400)]
+        except Exception:
+            pass
+    for d in dict.fromkeys(dias):
+        f = treino_fotos_dia(d)["idx"].get(pid)
+        if f:
+            return f, d
+    return None, None
+
+
+def _treino_bool(v):
+    return v is None or isinstance(v, bool)
+
+
+def _treino_lista(v, permitido=None, maximo=12):
+    if not isinstance(v, list) or len(v) > maximo or len(set(map(str, v))) != len(v):
+        return False
+    return all(isinstance(x, str) and (x in permitido if permitido else bool(_re_treino_slug.match(x))) for x in v)
+
+
+def treino_valida(corpo):
+    """Formato fechado do POST /treino/rotulo. -> (campos, None) ou (None, nome do campo recusado)."""
+    if not isinstance(corpo, dict):
+        return None, "campo"
+    for k in corpo:
+        if k not in TREINO_CAMPOS:
+            return None, "campo"
+    if corpo.get("v") != 1 or isinstance(corpo.get("v"), bool):
+        return None, "v"
+    if not pid_ok(corpo.get("pid")):
+        return None, "pid"
+    ponto = corpo.get("ponto")
+    if ponto is not None and ponto not in TREINO_PONTOS:
+        return None, "ponto"
+    ia = corpo.get("ia") if corpo.get("ia") is not None else {}
+    if not isinstance(ia, dict) or set(ia) - {"serve", "motivos", "frente"} or not _treino_bool(ia.get("serve")) or not _treino_bool(ia.get("frente")) \
+            or not _treino_lista(ia.get("motivos", []), None, 8):
+        return None, "ia"
+    qual = corpo.get("qual") if corpo.get("qual") is not None else {}
+    if not isinstance(qual, dict) or set(qual) - {"nivel", "motivos", "ajuste"} or (qual.get("nivel") is not None and qual.get("nivel") not in TREINO_NIVEIS) \
+            or not _treino_lista(qual.get("motivos", []), TREINO_QUAL_MOTIVOS, 12) or not _treino_lista(qual.get("ajuste", []), None, 8):
+        return None, "qual"
+    if not isinstance(corpo.get("duvida", False), bool):
+        return None, "duvida"
+    obs = corpo.get("obs", "")
+    if obs is None:
+        obs = ""
+    if not isinstance(obs, str) or len(obs) > TREINO_OBS_MAX:
+        return None, "obs"
+    obs = "".join(ch for ch in obs if ch >= " " and ch != "\x7f").strip()
+    base = corpo.get("base_em")
+    if base is not None and (not isinstance(base, str) or len(base) > 40):
+        return None, "base_em"
+    return {"pid": pid_lib(corpo["pid"]), "ponto": ponto,
+            "ia": {"serve": ia.get("serve"), "motivos": list(ia.get("motivos", [])), "frente": ia.get("frente")},
+            "qual": {"nivel": qual.get("nivel"), "motivos": list(qual.get("motivos", [])), "ajuste": list(qual.get("ajuste", []))},
+            "duvida": corpo.get("duvida", False), "obs": obs, "base_em": base}, None
+
+
+def treino_gravar(quem, corpo):
+    """POST /treino/rotulo. quem = usuário da sessão de login (por e em são daqui, nunca do navegador). -> (status, resposta).
+    Outra pessoa marcou depois da versão que o aparelho tinha (base_em velho): 409 outro_marcou com o documento atual."""
+    v, campo = treino_valida(corpo)
+    if v is None:
+        return 400, {"ok": False, "error": "campo", "campo": campo}
+    if not isinstance(quem, str) or not _re_treino_quem.match(quem):
+        return 403, {"ok": False, "error": "sem_permissao"}
+    f, dia = treino_pid_info(v["pid"])
+    if not f:
+        return 404, {"ok": False, "error": "pid"}
+    doc = {"v": 1, "pid": v["pid"], "dia": dia, "fotografo": f["fotografo"], "card": f["card"], "ordem": f["ordem"],
+           "ponto": v["ponto"], "ia": v["ia"], "qual": v["qual"], "duvida": v["duvida"], "obs": v["obs"],
+           "por": quem, "em": None, "origem": "mao", "lote": None}
+    with treino_lock:
+        db = treino_db()
+        try:
+            r = db.execute("select dados, por, em from rotulo where pid = ?", (v["pid"],)).fetchone()
+            if r and r[1] != quem and r[2] != v["base_em"]:
+                try:
+                    atual = json.loads(r[0])
+                except ValueError:
+                    atual = None
+                return 409, {"ok": False, "error": "outro_marcou", "doc": atual}
+            em = _treino_em()
+            if r and r[2] and em <= r[2]:
+                em = r[2][:-3] + "%03d" % min(999, int(r[2][-3:]) + 1)   # mesma hora no relógio: a versão nova vem depois
+            doc["em"] = em
+            txt = json.dumps(doc, ensure_ascii=False)
+            db.execute("insert into rotulo values (?,?,?,?,?,?,?,?,?,?,?) on conflict(pid) do update set v = excluded.v, dia = excluded.dia,"
+                       " fotografo = excluded.fotografo, card = excluded.card, ordem = excluded.ordem, dados = excluded.dados, por = excluded.por,"
+                       " em = excluded.em, origem = excluded.origem, lote = excluded.lote",
+                       (v["pid"], 1, dia, f["fotografo"], f["card"], f["ordem"], txt, quem, em, "mao", None))
+            db.execute("insert into rotulo_hist values (?,?,?,?)", (v["pid"], txt, quem, em))
+            db.commit()
+        finally:
+            db.close()
+    _treino_n["t"] = 0.0
+    return 200, {"ok": True, "doc": doc}
+
+
+def treino_lgpd(pids):
+    """LGPD: as marcações e medidas das fotos apagadas saem do treino.db, e os documentos do estado.db ligados à foto (ajuste,
+    aviso da validação, descarte e o treino antigo) viram apagados com rev novo (os navegadores tiram a cópia). -> falhas"""
+    falhas = []
+    pids = [p for p in pids if pid_ok(p)]
+    if not pids:
+        return falhas
+    try:
+        with treino_lock:
+            db = treino_db()
+            try:
+                for p in pids:
+                    for tab in ("rotulo", "rotulo_hist", "medida"):
+                        db.execute("delete from %s where pid = ?" % tab, (p,))
+                db.commit()
+            finally:
+                db.close()
+        _treino_n["t"] = 0.0
+        with treino_lock:
+            for c in _treino_cache.values():
+                c["idx"] = {k: x for k, x in c["idx"].items() if k not in set(pids)}
+                c["fotos"] = [x for x in c["fotos"] if x["pid"] not in set(pids)]
+    except Exception as ex:
+        falhas.append("treino: " + str(ex)[:80])
+    if not os.path.exists(ESTADO_DB):
+        return falhas
+    ids = [("sim", "%s|ag_%s" % (k, p)) for p in pids for k in ("edits", "invalid", "discarded")] + \
+          [("treino", x) for p in pids for x in ("ag_" + p, p)]
+    try:
+        with estado_lock:
+            db = estado_db()
+            try:
+                rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0]
+                for col, i in ids:
+                    if db.execute("select 1 from doc where col = ? and id = ? and valor is not null", (col, i)).fetchone():
+                        rev += 1
+                        db.execute("update doc set valor = null, rev = ?, em = ? where col = ? and id = ?", (rev, _iso(), col, i))
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        falhas.append("estado: " + str(ex)[:80])
+    return falhas
+
+
+def treino_cfg_valida(j):
+    """config/treino: {ponto, exposicao}, cada um desligada | medir | ligada (por e em são de auditoria). Outro formato = None."""
+    if not isinstance(j, dict) or j.get("ponto") not in TREINO_ANALISE or j.get("exposicao") not in TREINO_ANALISE:
+        return None
+    return {"ponto": j["ponto"], "exposicao": j["exposicao"]}
+
+
+def treino_cfg():
+    """O interruptor da análise (estado.db config/treino), relido a cada 3 s. Sem documento ou ilegível: tudo desligado."""
+    agora = time.time()
+    if agora - _treino_cfg["t"] < 3 and _treino_cfg["v"] is not None:
+        return _treino_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'treino' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                j = json.loads(r[0])
+                v = treino_cfg_valida(j)
+                if v is not None:
+                    v = {**v, "por": j.get("por"), "em": j.get("em")}
+    except Exception:
+        v = _treino_cfg["v"]
+    v = v or dict(TREINO_CFG_PADRAO, por=None, em=None)
+    _treino_cfg.update(t=agora, v=v)
+    return v
+
+
+def treino_cfg_gravar(corpo, quem):
+    """POST /treino/config {ponto?, exposicao?}: muda uma das análises (ou as duas). por = usuário da sessão. -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"ponto", "exposicao"}:
+        return 400, {"ok": False, "error": "campo"}
+    de = treino_cfg()
+    novo = {"ponto": corpo.get("ponto", de["ponto"]), "exposicao": corpo.get("exposicao", de["exposicao"])}
+    if treino_cfg_valida(novo) is None:
+        return 400, {"ok": False, "error": "valor"}
+    v = {**novo, "por": str(quem or "")[:100] or None, "em": _iso()}
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "treino", json.dumps(v, ensure_ascii=False), rev, _iso()))
+            db.commit()
+        finally:
+            db.close()
+    _treino_cfg.update(t=time.time(), v=dict(v))
+    print("  treino: análise do ponto %s -> %s, da exposição %s -> %s · por %s" % (de["ponto"], v["ponto"], de["exposicao"], v["exposicao"], v["por"] or "?"))
+    return 200, {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"]}
+
+
+def treino_status():
+    """/status.treino: quantas marcações, o interruptor e o que ainda não existe (modelo do ponto, ajuste de exposição)."""
+    agora = time.time()
+    if agora - _treino_n["t"] > 30:
+        n = _treino_n["n"]
+        try:
+            if os.path.exists(TREINO_DB):
+                with treino_lock:
+                    db = treino_db()
+                    try:
+                        n = sum(1 for (d_,) in db.execute("select dados from rotulo") if not treino_vazio(json.loads(d_)))
+                    finally:
+                        db.close()
+            else:
+                n = 0
+        except Exception:
+            pass
+        _treino_n.update(t=agora, n=n)
+    c = treino_cfg()
+    return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": None, "ajuste": None}
+
+
 # Quem pode cada rota do agente. Nada abre sem estar aqui: rota fora da tabela responde 404 sem tocar o disco.
 #   publica          qualquer um: o app, o /status mínimo, a galeria do cliente (/g/) e o webhook do adquirente
 #   posto_ou_sessao  aparelho pareado (cookie eterna_posto) ou pessoa conectada com um dos módulos (vazio = qualquer pessoa)
@@ -11453,6 +11964,11 @@ ROTAS = (
     ("POST", "/galerias/encerrar", "sessao", ("galerias.d",)),
     ("POST", "/lgpd/excluir", "sessao", ("galerias.d",)),
     ("POST", "/rostos/medir", "sessao", ("qualidade.r",)),
+    # 16/11: Treino da IA (Curadoria). Ler: Qualidade e IA em Ver; marcar: em Alterar (a rota confere origem, limite e corpo);
+    # o interruptor da análise do servidor é do Painel de controle em Alterar (muda o que o servidor faz com toda foto)
+    ("GET", "/treino/dias", "sessao", ("qualidade.r",)), ("GET", "/treino/amostra", "sessao", ("qualidade.r",)),
+    ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
+    ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -12236,7 +12752,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 class H(BaseHTTPRequestHandler):
@@ -12805,6 +13321,54 @@ class H(BaseHTTPRequestHandler):
             print("  visitas: config %s" % str(ex)[:120])
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, 200, nostore=True)
+
+    def treino_get(self, u):
+        """16/11: GET /treino/dias, /treino/amostra?dia=&fotografo=&modo=&n= e /treino/rotulos?dia= (só texto: a foto vem
+        pelo /thumb/ de sempre e não sai do servidor por aqui)."""
+        if not self.origem_local():
+            return self.js({"error": "origem não autorizada"}, 403)
+        q = parse_qs(u.query)
+        um = lambda k: (q.get(k) or [""])[0]
+        try:
+            if u.path == "/treino/dias":
+                return self.js(treino_dias(), nostore=True)
+            dia = um("dia")
+            if not _re_dia.match(dia):
+                return self.js({"error": "dia"}, 400)
+            if u.path == "/treino/rotulos":
+                return self.js({"v": 1, "dia": dia, "rotulos": list(treino_rotulos(dia).values())}, nostore=True)
+            modo = um("modo") or "misto"
+            quem = um("fotografo")
+            n = um("n") or "150"
+            if modo not in TREINO_MODOS:
+                return self.js({"error": "modo"}, 400)
+            if quem and not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,39}", quem):
+                return self.js({"error": "fotografo"}, 400)
+            if not n.isdigit() or not 1 <= int(n) <= 400:
+                return self.js({"error": "n"}, 400)
+            return self.js(treino_amostra(dia, quem or None, modo, int(n), um("marcadas") == "1"), nostore=True)
+        except Exception as ex:
+            print("  treino: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500)
+
+    def treino_post(self, path):
+        """16/11: POST /treino/rotulo (qualidade.u) e /treino/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
+        (conferido no autoriza), 120 por minuto por pessoa e corpo até 4 KB. O console nunca imprime o corpo."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        eu = self.sessao() or {}
+        quem = eu.get("usuario") or ""
+        if not limite_ok("u:" + quem, "treino", 120):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        try:
+            st, r = treino_gravar(quem, body) if path == "/treino/rotulo" else treino_cfg_gravar(body, quem)
+        except Exception as ex:
+            print("  treino: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        return self.js(r, st, nostore=True)
 
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
@@ -13634,6 +14198,10 @@ class H(BaseHTTPRequestHandler):
                 return self.js(minimo, nostore=True)     # sem pessoa conectada nem aparelho pareado: só que o agente está no ar
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
             ag_ = agenda_status(publico=True)          # v97: sem os 4 últimos da chave e sem quem salvou (CORS aberto)
+            try:
+                tr_ = treino_status()                  # 16/11: Treino da IA (contagem e interruptor), fora do lock
+            except Exception:
+                tr_ = None
             with lock:
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
@@ -13644,7 +14212,7 @@ class H(BaseHTTPRequestHandler):
                            estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
                            app_offline_pronto=app_offline_pronto(), agenda=ag_,
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
-                           pagamento="teste" if compra_online() else "desligado",
+                           pagamento="teste" if compra_online() else "desligado", treino=tr_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
@@ -13829,6 +14397,8 @@ class H(BaseHTTPRequestHandler):
             de, ate = (q.get("de") or [""])[0], (q.get("ate") or [""])[0]
             r = ativ_vendas(de, ate)
             return self.js({"ok": True, "vendas": r, "envio": nuvem_envio_medido(de, ate)}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
+        if u.path in ("/treino/dias", "/treino/amostra", "/treino/rotulos"):
+            return self.treino_get(u)
         if u.path == "/pessoas/rostos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -13978,6 +14548,8 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
             return self.visitas_config_post()
+        if u.path in ("/treino/rotulo", "/treino/config"):
+            return self.treino_post(u.path)
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
