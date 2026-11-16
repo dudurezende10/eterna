@@ -5,10 +5,11 @@
 #   sudo bash /opt/eterna/app/servidor/linux/vendedores.sh luis.andrade yasmim.moraes ...
 # Checkout das fotos (perfil "Atendimento e venda"): --perfil venda antes dos logins.
 #   sudo bash /opt/eterna/app/servidor/linux/vendedores.sh --perfil venda beatriz.andrade ...
+# Só Snap Pop (perfil "Vendedor Snap Pop", 16/11): --perfil snap.
 set -euo pipefail
 PERFIL=ativ
 if [ "${1:-}" = "--perfil" ]; then PERFIL="${2:-}"; shift 2; fi
-case "$PERFIL" in ativ|venda) ;; *) echo "perfil: ativ ou venda"; exit 1;; esac
+case "$PERFIL" in ativ|snap|venda) ;; *) echo "perfil: ativ, snap ou venda"; exit 1;; esac
 [ "$(id -u)" = 0 ] || { echo "Rode com sudo"; exit 1; }
 [ $# -ge 1 ] || { echo "uso: vendedores.sh login1 login2 ..."; exit 1; }
 echo "Perfil: $PERFIL · $# login(s)"
