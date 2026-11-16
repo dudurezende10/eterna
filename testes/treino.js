@@ -132,7 +132,10 @@ try{
     await pg.reload();await pg.waitForTimeout(300);
     ok(await pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').filter(e=>e.acao==='migracao_treino16').length)===1,'a migração roda uma vez só');
     await entrarTeste(pg,'supervisor@eterna.photo');await espera(pg,()=>ETERNA.state.agent.on,8000);
+    // marcação que ficou na fila antes de recarregar a página sobe ao abrir a tela (sem precisar Carregar)
+    await pg.evaluate(p=>localStorage.setItem('eterna.treino.fila.v1',JSON.stringify([{pid:p,u:'supervisor@eterna.photo',t:1,corpo:{pid:p,v:1,ponto:'outro',ia:{serve:null,motivos:[],frente:null},qual:{nivel:null,motivos:[],ajuste:[]},duvida:false,obs:'',base_em:null}}])),PIDS[5]);
     await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
+    ok(await espera(pg,()=>ETERNA.trFila().length===0,5000)&&R.posts.length===1&&R.posts[0].b.pid===PIDS[5],'fila de antes de recarregar sobe ao abrir a tela: '+J(R.posts));R.posts.length=0;
     await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12);
     await pg.evaluate(()=>document.activeElement&&document.activeElement.blur());await pg.keyboard.press('c');await pg.keyboard.press('Enter');await pg.waitForTimeout(400);
     ok(R.posts.length===1&&R.posts[0].b.ponto==='chute','Supervisora marca: '+J(R.posts));

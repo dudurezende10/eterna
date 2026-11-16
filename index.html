@@ -6821,7 +6821,7 @@ function trGravar(pid,corpo){const t=state.train;const ant=t.docs[pid]||null;
 async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user)return;trEnviar.on=true;let mudou=false;
   try{for(;;){const x=trFila().find(trMinha);if(!x)break;let r=null,j=null;
       try{r=await agFetch(u+'/treino/rotulo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(x.corpo)});j=await r.json().catch(()=>null);}catch(e){r=null;}
-      if(!r||r.status===401||r.status===429||r.status>=500){clearTimeout(trEnviar.tm);trEnviar.tm=setTimeout(trEnviar,15000);break;} // sem rede, sessão, limite ou servidor: a fila espera
+      if(!r||r.status===401||r.status===429||r.status>=500){clearTimeout(trEnviar.tm);trEnviar.tm=setTimeout(()=>{trEnviar.tm=null;trEnviar();},15000);break;} // sem rede, sessão, limite ou servidor: a fila espera
       const resto=trFila().filter(y=>!(y.pid===x.pid&&y.t===x.t&&trMinha(y)));const t=state.train;
       if(r.ok&&j&&j.doc){const mais=resto.find(y=>y.pid===x.pid&&trMinha(y));if(mais)mais.corpo.base_em=j.doc.em;else t.docs[x.pid]=j.doc;
         if(t.rasc[x.pid])t.rasc[x.pid].base=j.doc.em;}
@@ -6856,7 +6856,7 @@ function vTreinoMarcar(){const t=state.train;const ag=trAg();
     <label>${TE('ga_fotografo')} <select data-act="tr-foto"><option value="">${TE('tr_todos')}</option>${fotografos.map(k=>`<option value="${esc(k)}" ${k===t.foto?'selected':''}>${esc(P[k]?P[k].name:k)}</option>`).join('')}</select></label>
     <label>${TE('tr_modo')} <select data-act="tr-modo">${TR_MODOS.map(m=>`<option value="${m}" ${m===t.modo?'selected':''}>${TEk('tr_m_'+m,m)}</option>`).join('')}</select></label>
     <button class="btn" data-act="tr-carregar" ${t.carregando||!t.dia?'disabled':''}>${t.carregando?TE('tr_carregando'):TE('tr_carregar')}</button></div>`;
-  const fila=trFila().filter(trMinha).length;
+  const fila=trFila().filter(trMinha).length;if(fila&&!trEnviar.on&&!trEnviar.tm)setTimeout(trEnviar,0); // fila de antes de recarregar a página sobe ao abrir a tela
   const nota=`<div class="note">${t.erro?TE(t.erro):t.itens.length?TE('tr_amostra_n',t.itens.length,t.total||0):TE('tr_escolha')}${fila?' · '+TE('tr_fila_n',fila):''}</div>`;
   const p=trAtual();if(!p)return sel+nota;
   const r=trRasc(p.pid),d=t.docs[p.pid];const pode=can('qualidade','u');const src=fotoSrc(p.id);
