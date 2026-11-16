@@ -7483,6 +7483,10 @@ def auth_db():
     c.execute("create table if not exists credencial (usuario text primary key, hash text, sal text, n integer,"
               " provisoria integer, erros integer default 0, bloqueado_ate real default 0, atualizada real)")
     c.execute("create table if not exists sessao_login (token text primary key, usuario text, expira real)")
+    try:                                                # 16/11: "ver como" (admin assume a visão de outra pessoa); por = o admin
+        c.execute("alter table sessao_login add column por text")
+    except sqlite3.OperationalError:
+        pass
     c.execute("create table if not exists login_log (em real, usuario text, acao text, por text, ip text)")
     c.execute("create table if not exists reset_senha (usuario text primary key, hash text, sal text, n integer, expira real, pedido real)")
     # posto pareado: cada aparelho (Checkout, caixa, TV) recebe um cookie próprio; aqui fica só o SHA-256 do token
@@ -7721,13 +7725,14 @@ def auth_trocar(usuario, nova, ip=""):
             db.close()
 
 
-def auth_sessao_nova(usuario):
+def auth_sessao_nova(usuario, por=None, dur=None):
     token = secrets.token_urlsafe(32)
     with estado_lock:
         db = auth_db()
         try:
             db.execute("delete from sessao_login where expira < ?", (time.time(),))
-            db.execute("insert into sessao_login values (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), usuario, time.time() + AUTH_SESSAO))
+            db.execute("insert into sessao_login (token, usuario, expira, por) values (?, ?, ?, ?)",
+                       (hashlib.sha256(token.encode()).hexdigest(), usuario, time.time() + (dur or AUTH_SESSAO), por))
             db.commit()
         finally:
             db.close()
@@ -7741,13 +7746,71 @@ def auth_quem(token):
     with estado_lock:
         db = auth_db()
         try:
-            r = db.execute("select usuario from sessao_login where token=? and expira > ?", (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
+            r = db.execute("select usuario, por from sessao_login where token=? and expira > ?", (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
             if not r:
                 return None
             cad = auth_cadastro(db, r[0])
+            adm = auth_cadastro(db, r[1]) if r[1] else None
         finally:
             db.close()
-    return {"usuario": r[0], "cadastro": cad} if auth_ativo(cad) else None
+    if not auth_ativo(cad):
+        return None
+    if r[1]:                                            # "ver como": vale só enquanto quem assumiu segue Admin e ativo
+        if not (auth_ativo(adm) and adm.get("preset") == "admin"):
+            return None
+        return {"usuario": r[0], "cadastro": cad, "assumido_por": r[1], "assumido_nome": adm.get("name") or r[1]}
+    return {"usuario": r[0], "cadastro": cad}
+
+
+# 16/11 (Ronaldo): "ver como". Admin (Ronaldo, Eduardo) entra na visão de outra pessoa para conferir o que ela vê. Só olha:
+# o servidor recusa toda gravação nessa sessão (ASSUMIR_LIVRES fora), o início e o fim ficam no login_log e a sessão dura
+# ASSUMIR_S. A sessão do admin fica guardada no cookie ASSUMIR_COOKIE e volta com /auth/voltar.
+ASSUMIR_S = 4 * 3600
+ASSUMIR_COOKIE = "eterna_sessao_adm"
+ASSUMIR_LIVRES = ("/auth/voltar", "/auth/sair")
+
+
+def auth_assumir_recusa(eu, usuario):
+    """O motivo de recusar que eu veja como usuario, ou None."""
+    if not eu or eu.get("assumido_por"):
+        return "sem_sessao"
+    if (eu["cadastro"] or {}).get("preset") != "admin":
+        return "sem_permissao"
+    if not AUTH_ID.match(usuario or "") or usuario == eu["usuario"]:
+        return "usuario"
+    cad, _ = auth_ler_cadastro(usuario)
+    if not auth_ativo(cad):
+        return "sem_cadastro"
+    if cad.get("preset") == "admin" or auth_acessos(cad) - auth_acessos(eu["cadastro"]):
+        return "alvo_maior"
+    return None
+
+
+def auth_sessao_apaga(token):
+    if not token:
+        return
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from sessao_login where token=?", (hashlib.sha256(token.encode()).hexdigest(),))
+            db.commit()
+        finally:
+            db.close()
+
+
+def auth_registra(usuario, acao, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            auth_log(db, usuario, acao, por, ip)
+            db.commit()
+        finally:
+            db.close()
+
+
+def auth_quem_cadastro(usuario):
+    cad, _ = auth_ler_cadastro(usuario)
+    return {"usuario": usuario, "cadastro": cad}
 
 
 def auth_ler_cadastro(usuario):
@@ -8036,11 +8099,16 @@ def ativ_clientes_limpa(agora=None):
     return max(n, len(sai))
 
 
+# perfil que vende só parte das ativações (o tablet mostra só essas abas; aqui a mesma regra)
+ATIV_PERFIL_CATS = {"snap": ("snap",)}
+
+
 def ativ_receber(vendas, enviado_por):
     """POST /ativ/venda: grava as vendas da caixa de saída do tablet. Venda que já está no banco conta como recebida e não é
     regravada (o tablet reenvia até ouvir o ok). -> {recebidas:[id], recusadas:[{id, motivo}]}"""
     out = {"recebidas": [], "recusadas": []}
     agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    so = ATIV_PERFIL_CATS.get(((auth_ler_cadastro(enviado_por)[0] if enviado_por else None) or {}).get("preset"))
     cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome", "foto_busca",
                                      "ingresso", "ingresso_meio"]
     with ev_lock:
@@ -8054,6 +8122,9 @@ def ativ_receber(vendas, enviado_por):
                 d = ativ_venda_tablet(v)
                 if not d:
                     out["recusadas"].append({"id": vid, "motivo": "formato"})
+                    continue
+                if so and (d.get("tipo") not in so or any(it.get("cat") and it["cat"] not in so for it in d["itens"])):
+                    out["recusadas"].append({"id": vid, "motivo": "categoria"})
                     continue
                 vals = [json.dumps(d["itens"], ensure_ascii=False) if k == "itens" else d.get(k) for k in cols]
                 c.execute("insert into ativ_venda (" + ",".join(cols) + ", importado_em, enviado_por) values (" + ",".join("?" * (len(cols) + 2)) + ")",
@@ -9542,6 +9613,8 @@ _P = lambda c, r, u, d: {"c": bool(c), "r": bool(r), "u": bool(u), "d": bool(d)}
 PERFIS_CLI = {
     "ativ": {"perms": {"ativvenda": _P(1, 1, 0, 0), "ativentrega": _P(1, 1, 1, 0)}, "menu": ["ativ-venda", "ativ-entrega"],
              "inicio": "ativ-venda", "rotulo": "vendedor e entrega das ativações"},
+    "snap": {"perms": {"ativvenda": _P(1, 1, 0, 0), "ativentrega": _P(1, 1, 1, 0)}, "menu": ["ativ-venda", "ativ-entrega"],
+             "inicio": "ativ-venda", "rotulo": "vendedor e entrega só do Snap Pop"},
     "venda": {"perms": {"venda": _P(1, 1, 1, 0), "quiosque": _P(1, 1, 1, 0), "catalogo": _P(0, 1, 0, 0), "filafoto": _P(0, 1, 0, 0)},
               "menu": ["quiosque", "checkout", "fila", "caixa", "posto", "catalogo", "fotofila"], "inicio": "posto",
               "rotulo": "atendimento e venda das fotos (Checkout)"},
@@ -11322,6 +11395,7 @@ ROTAS = (
     ("POST", "/auth/esqueci", "publica", ()),
     ("GET", "/auth/eu", "sessao", ()), ("GET", "/auth/senhas", "sessao", ()),
     ("POST", "/auth/senha/gerar", "sessao", ()), ("POST", "/auth/senha/cancelar", "sessao", ()),
+    ("POST", "/auth/assumir", "sessao", ()), ("POST", "/auth/voltar", "publica", ()),
     ("GET", "/postos/eu", "publica", ()),                       # a rota confere Host e responde 401 sem_posto
     ("GET", "/ftp/contas", "sessao", ("configuracao.r",)),
     ("GET", "/postos", "sessao", ("configuracao.r",)),
@@ -12300,8 +12374,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if nostore:
             self.send_header("Cache-Control", "no-store")
-        cookie = self.__dict__.pop("cookie_novo", None)
-        if cookie is not None:
+        for cookie in self.__dict__.pop("cookie_novo", []):
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
@@ -12318,7 +12391,7 @@ class H(BaseHTTPRequestHandler):
 
     def auth_cookie(self, token, idade, nome=AUTH_COOKIE):
         https = (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
-        self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (nome, token, idade, "; Secure" if https else "")
+        self.__dict__.setdefault("cookie_novo", []).append("%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (nome, token, idade, "; Secure" if https else ""))
 
     def sessao(self):
         """A pessoa conectada neste pedido (cookie eterna_sessao), lida uma vez por pedido."""
@@ -12339,8 +12412,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        cookie = self.__dict__.pop("cookie_novo", None)
-        if cookie is not None:
+        for cookie in self.__dict__.pop("cookie_novo", []):
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
@@ -12478,17 +12550,33 @@ class H(BaseHTTPRequestHandler):
         ip = self.client_address[0]
         usuario = str(b.get("usuario") or "").strip().lower()
         if u.path == "/auth/sair":
-            token = self.auth_token()
-            if token:
-                with estado_lock:
-                    db = auth_db()
-                    try:
-                        db.execute("delete from sessao_login where token=?", (hashlib.sha256(token.encode()).hexdigest(),))
-                        db.commit()
-                    finally:
-                        db.close()
+            auth_sessao_apaga(self.auth_token())
             self.auth_cookie("", 0)
+            if self.cookie_val(ASSUMIR_COOKIE):                # saiu durante o "ver como": a sessão do admin também acaba
+                auth_sessao_apaga(self.cookie_val(ASSUMIR_COOKIE))
+                self.auth_cookie("", 0, ASSUMIR_COOKIE)
             return self.js({"ok": True}, 200, True)
+        if u.path == "/auth/assumir":
+            eu = auth_quem(self.auth_token())
+            motivo = auth_assumir_recusa(eu, usuario)
+            if motivo:
+                return self.js({"erro": motivo}, {"sem_sessao": 401, "sem_permissao": 403, "alvo_maior": 403, "sem_cadastro": 404}.get(motivo, 400), True)
+            self.auth_cookie(auth_sessao_nova(usuario, eu["usuario"], ASSUMIR_S), ASSUMIR_S)
+            self.auth_cookie(self.auth_token(), AUTH_SESSAO, ASSUMIR_COOKIE)
+            auth_registra(usuario, "ver_como", eu["usuario"], ip)
+            return self.js(dict(auth_quem_cadastro(usuario), ok=True, assumido_por=eu["usuario"], assumido_nome=(eu["cadastro"] or {}).get("name") or eu["usuario"]), 200, True)
+        if u.path == "/auth/voltar":
+            eu = auth_quem(self.auth_token())
+            adm_tok = self.cookie_val(ASSUMIR_COOKIE)
+            adm = auth_quem(adm_tok)
+            if not adm or adm.get("assumido_por") or (adm["cadastro"] or {}).get("preset") != "admin":
+                return self.js({"erro": "sem_assumir"}, 401, True)
+            if eu and eu.get("assumido_por"):
+                auth_sessao_apaga(self.auth_token())
+                auth_registra(eu["usuario"], "ver_como_fim", adm["usuario"], ip)
+            self.auth_cookie(adm_tok, AUTH_SESSAO)
+            self.auth_cookie("", 0, ASSUMIR_COOKIE)
+            return self.js(dict(adm, ok=True), 200, True)
         if u.path == "/auth/esqueci":
             if AUTH_ID.match(usuario):                  # em segundo plano: a resposta e o tempo são os mesmos para qualquer usuário
                 threading.Thread(target=auth_esqueci, args=(usuario, ip), daemon=True).start()
@@ -13861,7 +13949,10 @@ class H(BaseHTTPRequestHandler):
             return
         u = urlparse(self.path)
         origin = self.headers.get("Origin") or ""
-        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar"):
+        eu = self.sessao()
+        if eu and eu.get("assumido_por") and u.path not in ASSUMIR_LIVRES:
+            return self.js({"erro": "so_ver"}, 403, True)    # "ver como" só olha: nada se grava em nome da pessoa
+        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar", "/auth/assumir", "/auth/voltar"):
             return self.auth_post(u)
         if u.path in ("/postos/parear", "/postos/revogar"):
             return self.postos_post(u)

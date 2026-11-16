@@ -140,6 +140,8 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 .eco-pend.eco-acao,.eco-pend.eco-comcod{display:flex;flex-direction:column;align-items:flex-start;gap:8px}.eco-cod{font-size:40px}.eco-val{font-size:22px;font-weight:700}
 details.mv-det>summary{cursor:pointer;list-style:none}details.mv-det>summary::-webkit-details-marker{display:none}details.mv-det>summary h2{display:inline}details.mv-det>summary::after{content:' ▾';color:var(--muted)}details.mv-det:not([open])>summary::after{content:' ▸'}
 .posto-recibo{margin-bottom:14px}
+.assumido-faixa{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:#C98F00;color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-weight:600}
+.assumido-faixa .btn{background:#fff;color:#0C2340;border-color:#fff;min-height:40px}
 .demo-faixa{background:var(--surface2);color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:13px;margin-bottom:12px}
 /* v96 (Eduardo, 10/11): selo do rolo tocável (Posto, Impressão 10×15, Caixa), "Troquei o rolo" com rolo baixo e a confirmação curta */
 button.pill.rolo-selo{cursor:pointer;font:inherit;font-size:12px;min-height:32px;padding:2px 12px;background:var(--surface)}button.pill.rolo-selo.bad{background:var(--bad-bg)}
@@ -1990,7 +1992,9 @@ state.posto={disp:(()=>{try{const d=JSON.parse(localStorage.getItem('eterna.post
 // Todo pedido ao agente (fora da galeria /g/) vai por aqui: cookie da sessão ou do posto (mesma origem) e X-Eterna: 1.
 // 401 sem_sessao com alguém conectado neste navegador = a sessão terminou no servidor: volta para a entrada com aviso.
 function agLimite(ms){try{return AbortSignal.timeout?AbortSignal.timeout(ms):undefined;}catch(e){return undefined;}}
-function agFetch(u,o){o=o||{};return fetch(u,Object.assign({},o,{credentials:'same-origin',headers:Object.assign({},o.headers||{},{'X-Eterna':'1'})})).then(r=>{
+function agFetch(u,o){o=o||{};
+  if(state.assumido&&String(o.method||'GET').toUpperCase()!=='GET')return Promise.resolve(new Response(JSON.stringify({erro:'so_ver'}),{status:403,headers:{'Content-Type':'application/json'}}));
+  return fetch(u,Object.assign({},o,{credentials:'same-origin',headers:Object.assign({},o.headers||{},{'X-Eterna':'1'})})).then(r=>{
   if(r.status===401&&state.user&&!authSite()&&!state.lojaRota&&!state.pub&&String(u).startsWith(location.origin+'/')&&!/\/postos\/eu$/.test(String(u).split('?')[0]))
     r.clone().json().then(j=>{if(j&&j.erro==='sem_sessao'&&state.user&&!agFetch.saiu){agFetch.saiu=Date.now();logout();toast('Sua sessão terminou. Entre de novo.');setTimeout(()=>{agFetch.saiu=0;},5000);}}).catch(()=>{});
   if(r.status===401&&state.lojaRota&&!/\/postos\/eu$/.test(String(u).split('?')[0])&&Date.now()-(postoCarregar.t||0)>10000)postoCarregar(); // Checkout: o posto foi revogado?
@@ -2094,7 +2098,7 @@ function pvPoda(l){const lim=Date.now()-PV_DIAS*864e5;let fora=l.filter(e=>Date.
   return fica;}
 // revisão (segurança): venda de sessão criada no modo demonstração não sobe ao servidor (fica local, como teste)
 function pvDemo(venda,dados){const card=(dados&&dados.card)||((SIM.caixaDin||[]).find(r=>r.id===venda)||{}).card||(Object.entries(SIM.sessions).find(([,s])=>s&&s.vendaId===venda)||[])[0];return !!(card&&SIM.sessions[card]&&SIM.sessions[card].demo);}
-function pvEvento(tipo,venda,dados,o){if(!venda)return null;o=o||{};if(pvDemo(venda,dados))return {venda,tipo,em:now().toISOString(),teste:true};const u='por' in o?o.por:state.user;const em=o.em||now().toISOString();const por={nome:u?String(u.name||'').replace(/[<>]/g,'').slice(0,60):null};
+function pvEvento(tipo,venda,dados,o){if(!venda||state.assumido)return null;o=o||{};if(pvDemo(venda,dados))return {venda,tipo,em:now().toISOString(),teste:true};const u='por' in o?o.por:state.user;const em=o.em||now().toISOString();const por={nome:u?String(u.name||'').replace(/[<>]/g,'').slice(0,60):null};
   const grava=()=>{let sq={};try{sq=JSON.parse(localStorage.getItem(PV_SEQV)||'{}')||{};}catch(e){sq={};}
     const seq=(+sq[venda]||0)+1;sq[venda]=seq;const ks=Object.keys(sq);if(ks.length>3000)ks.slice(0,ks.length-3000).forEach(k=>delete sq[k]);
     const ev={idem:venda+':'+seq,venda,seq,tipo,em,por,dados:dados||{}};const l=pvPoda(pvFila().concat([ev]));
@@ -5436,7 +5440,7 @@ function avPulConfere(){const A=state.av,todas=[];const porLinha=A.cart.map(l=>{
 // O QR do ingresso traz só o localizador: 12 caracteres, 4 dígitos do mês e dia + 8 letras e números (conferido em 29/10, plano v85).
 function ingNorm(raw){const s=String(raw||'').toUpperCase();const ok=x=>/^(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[A-Z0-9]{8}$/.test(x)?x:'';
   const t=ok(s.replace(/[^A-Z0-9]/g,''));if(t)return t;const m=s.match(/(?:^|[^A-Z0-9])(\d{4}[A-Z0-9]{8})(?![A-Z0-9])/);return m?ok(m[1]):'';}
-async function avRegistrar(forca){const A=state.av;A.err=null;
+async function avRegistrar(forca){const A=state.av;A.err=null;if(state.assumido){toast(TE('vc_so_ver'));return;}
   if(!A.cart.length){A.err='av_e_vazio';render();return;}if(!A.pag){A.err='av_e_pag';render();return;}
   if(A.pag==='Cortesia'&&(!A.cortMot||!A.cortNota.trim())){A.err='av_e_cort';render();return;}
   const ING=ingNorm(A.ing);if(!ING){A.err=A.ing?'av_e_ingresso_inv':'av_e_ingresso';render();return;}
@@ -5464,7 +5468,8 @@ const avPagNome=p=>({PIX:'PIX',Dinheiro:TE('av_p_dinheiro'),'Débito':TE('av_p_d
 function avOpcoesPais(sel){const loc=localeTela();const op=c=>{const n=avNomePais(c,'pt-BR');return `<option value="${esc(n)}" ${sel===n?'selected':''}>${avBandeira(c)} ${esc(avNomePais(c,loc))}</option>`;};
   const resto=AV_PAISES.filter(c=>!AV_PAISES_TOPO.includes(c)).map(c=>[c,avNomePais(c,loc)]).sort((a,b)=>a[1].localeCompare(b[1],loc));
   return `<option value="">${esc(TE('av_pais_ph'))}</option><optgroup label="${esc(TE('av_principais'))}">${AV_PAISES_TOPO.map(op).join('')}</optgroup><optgroup label="${esc(TE('av_todos_paises'))}">${resto.map(([c])=>op(c)).join('')}</optgroup>`;}
-function vAtivVenda(){const A=state.av,u=state.user||{};const todas=['drone','chute','snap'];const cats0=todas.filter(c=>ativLista(c).some(ativVendavel));const cats=cats0.length?cats0:todas;if(!cats.includes(A.cat))A.cat=cats[0];
+const ATIV_PERFIL_CATS={snap:['snap']}; // perfil que vende só parte das ativações (o servidor recusa o resto)
+function vAtivVenda(){const A=state.av,u=state.user||{};const todas=ATIV_PERFIL_CATS[u.preset]||['drone','chute','snap'];const cats0=todas.filter(c=>ativLista(c).some(ativVendavel));const cats=cats0.length?cats0:todas;if(!cats.includes(A.cat))A.cat=cats[0];
   const pend=A.saida.filter(x=>x.est==='pendente').length,rec=A.saida.filter(x=>x.est==='recusada').length;
   const status=rec?`<span class="pill bad" role="status">${TE('av_st_recusadas',rec)}</span>`:pend?`<span class="pill warn" role="status">${A.semRede?TE('av_st_sem_rede',pend):TE('av_st_pendentes',pend)}</span>`:'';
   const topo=`<div class="head"><div><h1>${esc(viewLabel('ativ-venda'))}</h1></div><div style="text-align:right"><div id="av-quem"><b>${esc(u.name||u.email||'')}</b> <span class="note">· ${TE('av_vendedor')}</span></div><div style="margin-top:4px">${status}</div></div></div>
@@ -7052,6 +7057,7 @@ const PRESETS={
  supervisor:{name:'Supervisor',perms:{ativvenda:{...ALL},ativentrega:{...ALL},relatorios:{...RO},desempenho:{...RO},financeiro:{...RO},diario:{...ALL},set:perm(1,1,0,0),venda:{...RW},qualidade:{...RO},estoque:{...ALL},configuracao:{...RW},escala:{...RW},laboratorio:{...RO},catalogo:{...RO},galerias:{...RW},filafoto:perm(0,1,1,0)},menu:ALL_VIEWS.filter(v=>!SUP_SEM94.includes(v)),inicio:'painel',desc:'Posto de venda, Dashboard inteiro (sem cancelar venda), Curadoria só para ver, menu Fotógrafo (envia as fotos do cartão pela tela em nome de um fotógrafo) e Configurações (Preços e Checkout com os Fundos de IA, Ajuste automático). Não vê: o grupo Sistema (Usuários, Permissões, Repositório, Identidade, Fundos de IA técnico, Laboratório).'},
  quiosque:{name:'Checkout (tela do cliente)',perms:{quiosque:{...RW}},menu:['quiosque'],inicio:'quiosque',desc:'Só o Checkout em tela cheia, para o computador do cliente.'},
  campo:{name:'Equipe de campo',perms:{ativentrega:perm(1,1,1,0)},menu:['ativ-entrega'],inicio:'ativ-entrega',desc:'Só a Entrega dos vídeos: marca recebido e voo feito, lê o QR do cartão, manda o vídeo e dá baixa em medalha e bola. Não vende e não vê o resto do sistema.'},
+ snap:{name:'Vendedor Snap Pop',perms:{ativvenda:perm(1,1,0,0),ativentrega:perm(1,1,1,0)},menu:['ativ-venda','ativ-entrega'],inicio:'ativ-venda',desc:'Venda e Entrega só do Snap Pop: registra a venda, vê as próprias vendas do dia e faz a entrega. Não vende Drone nem Chute a Gol, não cancela e não vê o resto do sistema.'}, // 16/11: planilha de liberação (Snap Pop vende só Snap Pop)
  ativ:{name:'Vendedor Drone, Chute a Gol e Snap Pop',perms:{ativvenda:perm(1,1,0,0),ativentrega:perm(1,1,1,0)},menu:['ativ-venda','ativ-entrega'],inicio:'ativ-venda',desc:'Venda e Entrega dos vídeos: registra a venda, vê as próprias vendas do dia e faz a entrega (voo, cartão com QR, vídeo, medalha e bola). Não cancela e não vê o resto do sistema.'}, // 15/11 (Ronaldo): quem vende também entrega
 };
 // Escala ligada ou desligada: uma função só acerta VIEWS, MODULES, MODULE_INFO, ALL_VIEWS e os perfis prontos (as listas acima estão
@@ -7557,6 +7563,18 @@ const EQ={
   us_desativado:["desativado","deactivated","desactivado","désactivé","deaktiviert"],
   us_perfil_acessos:["Perfil e acessos","Profile and access","Perfil y accesos","Profil et accès","Profil und Zugänge"],
   us_editar_perm:["Editar permissões","Edit permissions","Editar permisos","Modifier les autorisations","Berechtigungen bearbeiten"],
+  vc_titulo:["Ver como esta pessoa","View as this person","Ver como esta persona","Voir comme cette personne","Als diese Person ansehen"],
+  vc_nota:["Abre o sistema exatamente como ela vê, só para olhar. Nada é gravado em nome dela.","Opens the system exactly as they see it, view only. Nothing is saved in their name.","Abre el sistema exactamente como lo ve, solo para mirar. No se guarda nada en su nombre.","Ouvre le système exactement comme elle le voit, en lecture seule. Rien n'est enregistré en son nom.","Öffnet das System genau so, wie diese Person es sieht, nur zum Ansehen. Nichts wird in ihrem Namen gespeichert."],
+  vc_botao:["Ver como","View as","Ver como","Voir comme","Ansehen als"],
+  vc_faixa:[(n,p)=>`Vendo como ${n} (${p}) · só visualização`,(n,p)=>`Viewing as ${n} (${p}) · view only`,(n,p)=>`Viendo como ${n} (${p}) · solo visualización`,(n,p)=>`Vue de ${n} (${p}) · lecture seule`,(n,p)=>`Ansicht als ${n} (${p}) · nur ansehen`],
+  vc_voltar:[n=>`Voltar para ${n}`,n=>`Back to ${n}`,n=>`Volver a ${n}`,n=>`Revenir à ${n}`,n=>`Zurück zu ${n}`],
+  vc_entrou:[n=>`Agora você vê o sistema como ${n}`,n=>`You now see the system as ${n}`,n=>`Ahora ve el sistema como ${n}`,n=>`Vous voyez maintenant le système comme ${n}`,n=>`Sie sehen das System jetzt als ${n}`],
+  vc_voltou:["De volta à sua conta","Back to your account","De vuelta a su cuenta","Retour à votre compte","Zurück in Ihrem Konto"],
+  vc_so_ver:["Só visualização: no modo Ver como nada é gravado","View only: nothing is saved in View as mode","Solo visualización: en el modo Ver como no se guarda nada","Lecture seule : rien n'est enregistré en mode Voir comme","Nur ansehen: im Modus Ansehen als wird nichts gespeichert"],
+  vc_e_maior:["Não dá para ver como um Admin ou alguém com acessos que você não tem","You cannot view as an Admin or someone with access you do not have","No se puede ver como un Admin o alguien con accesos que usted no tiene","Impossible de voir comme un Admin ou quelqu'un ayant des accès que vous n'avez pas","Ansicht als Admin oder als jemand mit Zugängen, die Sie nicht haben, ist nicht möglich"],
+  vc_e_cadastro:["Cadastro desativado ou ainda não chegou ao servidor","Account deactivated or not on the server yet","Registro desactivado o aún no llegó al servidor","Compte désactivé ou pas encore sur le serveur","Konto deaktiviert oder noch nicht auf dem Server"],
+  vc_e_perm:["Só Admin pode ver como outra pessoa","Only Admin can view as another person","Solo Admin puede ver como otra persona","Seul un Admin peut voir comme une autre personne","Nur Admin kann als andere Person ansehen"],
+  vc_e_conexao:["Sem conexão com o servidor","No connection to the server","Sin conexión con el servidor","Pas de connexion au serveur","Keine Verbindung zum Server"],
   us_desativar:["Desativar","Deactivate","Desactivar","Désactiver","Deaktivieren"],
   us_reativar:["Reativar","Reactivate","Reactivar","Réactiver","Reaktivieren"],
   us_conf_excl:["Confirmar exclusão","Confirm deletion","Confirmar eliminación","Confirmer la suppression","Löschen bestätigen"],
@@ -9828,6 +9846,8 @@ const EQ={
   modi_ativvenda_c:["registrar venda","register a sale","registrar venta","enregistrer une vente","Verkauf erfassen"],
   modi_ativvenda_r:["abrir a tela e ver as próprias vendas","open the screen and see one's own sales","abrir la pantalla y ver las propias ventas","ouvrir l'écran et voir ses propres ventes","Bildschirm öffnen und eigene Verkäufe sehen"],
   modi_ativvenda_d:["cancelar venda, enquanto o vídeo não foi entregue","cancel a sale while the video has not been delivered","cancelar venta, mientras el video no fue entregado","annuler une vente tant que la vidéo n'a pas été livrée","Verkauf stornieren, solange das Video nicht geliefert wurde"],
+  pre_snap:["Vendedor Snap Pop","Seller Snap Pop","Vendedor Snap Pop","Vendeur Snap Pop","Verkäufer Snap Pop"],
+  pred_snap:["Venda e Entrega só do Snap Pop: registra a venda, vê as próprias vendas do dia e faz a entrega. Não vende Drone nem Chute a Gol, não cancela e não vê o resto do sistema.","Sale and Delivery of Snap Pop only: records the sale, sees their own sales of the day and does the delivery. Does not sell Drone or Shot on goal, does not cancel and does not see the rest of the system.","Venta y Entrega solo de Snap Pop: registra la venta, ve sus ventas del día y hace la entrega. No vende Dron ni Tiro a puerta, no cancela y no ve el resto del sistema.","Vente et Livraison du Snap Pop uniquement : enregistre la vente, voit ses ventes du jour et fait la livraison. Ne vend ni Drone ni Tir au but, n'annule pas et ne voit pas le reste du système.","Verkauf und Übergabe nur von Snap Pop: erfasst den Verkauf, sieht die eigenen Verkäufe des Tages und übergibt. Verkauft weder Drohne noch Torschuss, storniert nicht und sieht den Rest des Systems nicht."],
   pre_ativ:["Vendedor Drone, Chute a Gol e Snap Pop","Seller Drone, Shot on goal and Snap Pop","Vendedor Dron, Tiro a puerta y Snap Pop","Vendeur Drone, Tir au but et Snap Pop","Verkäufer Drohne, Torschuss und Snap Pop"],
   pred_ativ:["Venda e Entrega dos vídeos: registra a venda, vê as próprias vendas do dia e faz a entrega (voo, cartão com QR, vídeo, medalha e bola). Não cancela e não vê o resto do sistema.","Sales and video delivery: registers sales, sees their own sales of the day and delivers (flight, QR card, video, medal and ball). Cannot cancel and does not see the rest of the system.","Venta y entrega de videos: registra la venta, ve sus propias ventas del día y hace la entrega (vuelo, tarjeta con QR, video, medalla y balón). No cancela y no ve el resto del sistema.","Vente et livraison des vidéos : enregistre la vente, voit ses propres ventes du jour et fait la livraison (vol, carte QR, vidéo, médaille et ballon). N'annule pas et ne voit pas le reste du système.","Verkauf und Videoübergabe: erfasst den Verkauf, sieht die eigenen Verkäufe des Tages und übergibt (Flug, QR-Karte, Video, Medaille und Ball). Kann nicht stornieren und sieht den Rest des Systems nicht."],
   ar_visto_ha:[n=>"Visto há "+n+" min",n=>"Seen "+n+" min ago",n=>"Visto hace "+n+" min",n=>"Vu il y a "+n+" min",n=>"Vor "+n+" Min. gesehen"],
@@ -9959,15 +9979,16 @@ const WRITE_OPS={'posto-parear':'u','posto-revogar':'u','ag-colar-ok':'u','ag-at
 const ACT_MOD={'posto-parear':'configuracao','posto-revogar':'configuracao','ag-atualizar':'escala','ag-colar':'escala','ag-colar-ok':'escala','ag-chave-salvar':'configuracao','ag-chave-testar':'configuracao','ag-chave-trocar':'configuracao','ag-chave-remover':'configuracao','ag-chave-remover-ok':'configuracao','es-ano':'estatisticas','es-dias-csv':'estatisticas','es-importar-totais':'estatisticas','visita-juntar':'venda','visita-separar':'venda','demo-toggle':'usuarios','rolo-troca':'venda','rolo-troca-sim':'venda','stock-swap':'estoque','es-importar':'estatisticas','ag-salvar':'escala','ag-apagar':'escala','ag-apagar-ok':'escala','ag-importar':'escala','ag-feriados':'escala','ag-novo':'escala','ag-editar':'escala','busca-janela':'configuracao','busca-janela-dia':'configuracao','vis-rosto':'configuracao','ia-ligada':'configuracao','ia-cliques':'configuracao','ia-ponto':'configuracao','ia-volante':'configuracao','fotofila-mini':'filafoto','bg-ativar':'configuracao','bg-lab':'configuracao','user-new':'usuarios','user-save':'usuarios','user-active':'usuarios','user-del-ok':'usuarios','perm-save':'permissoes','perm-preset-apply':'permissoes','aj-autotoggle':'set','din-confirm':'venda','din-cancel':'venda','din-cancel-ok':'venda','pend-pos-ok':'venda','pend-pkg':'venda','pend-meio':'venda','imp-print':'venda','imp-ok':'venda','imp-falha':'venda','imp-reprint-ok':'venda','rf-save':'configuracao','perm-copy-ok':'permissoes','fundos-modo':'configuracao','envio-files':'set','envio-escolher':'set','envio-repetir':'set','pend-recomecar':'venda','pend-recomecar-sim':'venda',
   // v94-ux (parte I, risco 3): ações de Preços e Checkout com módulo fixo; bg-on pede Alterar em Configurações do venue em qualquer tela
   'bg-on':'configuracao','cartao-lote':'catalogo','loja-fim':'catalogo',price:'catalogo','price-reset':'catalogo'};
-function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;const m=ACT_MOD[a]||MODULE_OF[state.view];if(!m){toast('Sem permissão nesta tela');return false;}if(can(m,op))return true;toast(`Sem permissão para ${OPS.find(o=>o[0]===op)[1].toLowerCase()} em ${MODULES.find(x=>x[0]===m)[1]}`);return false;}
+function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;if(state.assumido){toast(TE('vc_so_ver'));return false;}const m=ACT_MOD[a]||MODULE_OF[state.view];if(!m){toast('Sem permissão nesta tela');return false;}if(can(m,op))return true;toast(`Sem permissão para ${OPS.find(o=>o[0]===op)[1].toLowerCase()} em ${MODULES.find(x=>x[0]===m)[1]}`);return false;}
 
+state.assumido=null; // 16/11: {por, nome} enquanto um Admin vê como outra pessoa (só olha; o servidor recusa gravações)
 state.user=null;state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};
-function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;if(sessaoVencida(s,u)){try{localStorage.removeItem('eterna.session')}catch(e){}return false;} /* v92 (D2): sessão de fotógrafo de ontem pede login de novo */state.user=u;return true;}catch(e){return false}}
-function login(email){const u=userFor(email);if(!u){state.auth.err='sem_cadastro';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString()}))}catch(e){}
+function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;if(sessaoVencida(s,u)){try{localStorage.removeItem('eterna.session')}catch(e){}return false;} /* v92 (D2): sessão de fotógrafo de ontem pede login de novo */state.user=u;state.assumido=s.assumido&&s.assumido.por?s.assumido:null;return true;}catch(e){return false}}
+function login(email){const u=userFor(email);if(!u){state.auth.err='sem_cadastro';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;if(!state.assumido)loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString(),assumido:state.assumido||undefined}))}catch(e){}
   state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
 function logout(){authApi('/auth/sair',{});camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   demoDesliga(); // revisão (segurança): o modo demonstração não passa para a próxima pessoa
-  state.user=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
+  state.user=null;state.assumido=null;state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
 // e a sessão vale pelo cookie HttpOnly. O site público não fala com o servidor: lá só a galeria e o Checkout abrem.
 const authSite=()=>/^(www\.)?eterna\.photo$/.test(location.hostname); // o site público; posto.eterna.photo é o servidor do ponto (com login)
@@ -9986,7 +10007,17 @@ async function authTrocar(){const a=state.auth;if(a.busy)return;const dentro=!!s
   if(r.status===200&&r.ok&&dentro){state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view=homeView();toast(TE('senha_alterada'));render();return;}
   if(r.status===200&&r.ok){authEntrou(r);return;}if(dentro&&r.status===401){a.senha='';a.err='err_atual';}else a.err=authErro(r);render();}
 // ao abrir: a sessão salva só vale se o servidor ainda reconhecer o cookie. Sem resposta do servidor, ela segue até ele voltar.
-async function authConferir(){if(authSite()||!state.user)return;const r=await authApi('/auth/eu');if(r.status===401&&state.user)logout();}
+async function authConferir(){if(authSite()||!state.user)return;const r=await authApi('/auth/eu');if(r.status===401&&state.user){logout();return;}
+  if(r.status===200&&r.ok){const a=r.assumido_por?{por:r.assumido_por,nome:r.assumido_nome||r.assumido_por}:null;if(JSON.stringify(a)!==JSON.stringify(state.assumido)){state.assumido=a;render();}}}
+// 16/11 (Ronaldo): "ver como". Só Admin, só de quem não é Admin. O servidor guarda a sessão do Admin e devolve no "Voltar".
+async function authAssumir(usuario){const me=state.user;if(!me||state.assumido)return;const r=await authApi('/auth/assumir',{usuario});
+  if(r.status===200&&r.ok){state.assumido={por:r.assumido_por,nome:r.assumido_nome||me.name||me.email};state.users.draft=null;authEntrou(r);toast(TE('vc_entrou',(USERS[usuario]||{}).name||usuario));return;}
+  toast(TE(r.erro==='alvo_maior'?'vc_e_maior':r.erro==='sem_cadastro'?'vc_e_cadastro':r.status===403?'vc_e_perm':'vc_e_conexao'));}
+async function authVoltar(){const r=await authApi('/auth/voltar',{});
+  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;state.assumido=null;state.auth_next='usuarios';authEntrou(r);if(quem)toast(TE('vc_voltou'));return;}
+  if(r.status===401){logout();return;}toast(TE('vc_e_conexao'));}
+function assumidoFaixa(){const a=state.assumido,u=state.user;if(!a||!u)return '';
+  return `<div class="assumido-faixa" role="status"><span>${TE('vc_faixa',esc(u.name||u.email),esc(presetName(u.preset)))}</span><button class="btn" data-act="assumir-voltar">${TE('vc_voltar',esc(a.nome))}</button></div>`;}
 // Senhas de acesso: o servidor confere a permissão do módulo em cada pedido; os botões só escondem o que não vai funcionar.
 async function authSenhasLer(){if(!can('senhas','r'))return;const r=await authApi('/auth/senhas');if(r.status===200&&r.senhas){state.users.senhas=r.senhas;render();}}
 async function authSenhaProvisoria(usuario){saveUsers(usuario);let r;const t0=Date.now();for(let i=0;;i++){r=await authApi('/auth/senha/gerar',{usuario});if(r.status!==404||Date.now()-t0>10000)break;await new Promise(s=>setTimeout(s,Math.min(400*(i+1),2500)));} // o cadastro novo pode ainda estar subindo (até 10 s, espera crescente)
@@ -10048,6 +10079,7 @@ function vUsuarios(){
     <label><span class="eyebrow">${TE('us_fotografo')}</span><select data-act="user-key" ${ro?'disabled':''}><option value="">${TE('us_nenhum')}</option>${humans.map(k=>`<option value="${k}" ${d.key===k?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>
     <div class="user-sec"><div><span class="eyebrow">${TE('us_perfil_acessos')}</span><div><b>${esc(presetName(u.preset))}</b> <span class="note">· ${esc(accSummary(u))}</span></div></div>${canView('permissoes')?`<button class="btn ghost" data-act="perm-open" data-e="${esc(d.email0)}">${TE('us_editar_perm')}</button>`:''}</div>
     ${!self?senhaLinha(d.email0):''}
+    ${!self&&!state.assumido&&me.preset==='admin'&&u.preset!=='admin'&&u.active!==false&&USERS[d.email0]?`<div class="user-sec"><div><span class="eyebrow">${TE('vc_titulo')}</span><div class="note">${TE('vc_nota')}</div></div><button class="btn ghost" data-act="user-assumir" data-e="${esc(d.email0)}">${TE('vc_botao')}</button></div>`:''}
     <div class="row user-acoes"><div class="row">${rwU?`<button class="btn primary" data-act="user-save">${TE('salvar')}</button>`:''}<button class="btn ghost" data-act="user-cancel">${TE('fechar')}</button></div><div class="row">${!self&&rwU?`<button class="btn ghost" data-act="user-active">${u.active!==false?TE('us_desativar'):TE('us_reativar')}</button>`:''}${!self&&rwD?(state.users.delAsk?`<button class="btn ghost" data-act="user-del-ok" style="color:var(--bad)">${TE('us_conf_excl')}</button><button class="btn ghost" data-act="user-del-no">${TE('cancelar')}</button>`:`<button class="btn ghost" data-act="user-del-ask" style="color:var(--bad)">${TE('us_excluir')}</button>`):''}</div></div>
     ${state.users.delAsk&&!self?`<div class="note">${TE('us_excl_nota')}</div>`:''}
     <div class="note">${TE('us_criado_em',u.createdAt?new Date(u.createdAt).toLocaleDateString(localeEq()):'—')}${u.lastLogin?TE('us_ult',new Date(u.lastLogin).toLocaleString(localeEq())):' · '+TE('us_nunca')}${ro?' · '+TE('us_so_leitura'):''}</div></div>`;}
@@ -10773,7 +10805,7 @@ function render(){
   // campos de chave não podem ser apagados pelas atualizações automáticas da tela
   const keep={};let keepFocus=null,keepSel=null;document.querySelectorAll('#main [data-keep][id]').forEach(el=>{if(el.value)keep[el.id]=el.value;if(document.activeElement===el){keepFocus=el.id;try{keepSel=[el.selectionStart,el.selectionEnd]}catch(e){}}});
   const roloAnt=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.rolo-ask')?document.activeElement.dataset.act:null;
-  try{$('#main').innerHTML=(u&&!bare&&demoOn()?`<div class="demo-faixa" role="status">${TE('demo_faixa')}</div>`:'')+fn()+roloAsk()+pendRecAsk();}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>${TE('tela_falhou')}</h2><div class="note">${esc(err.message)}</div><div class="row"><button class="btn ghost" data-act="reset">${TE('zerar_sim')}</button></div></div>`;}
+  try{$('#main').innerHTML=(u&&state.assumido?assumidoFaixa():'')+(u&&!bare&&demoOn()?`<div class="demo-faixa" role="status">${TE('demo_faixa')}</div>`:'')+fn()+roloAsk()+pendRecAsk();}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>${TE('tela_falhou')}</h2><div class="note">${esc(err.message)}</div><div class="row"><button class="btn ghost" data-act="reset">${TE('zerar_sim')}</button></div></div>`;}
   Object.entries(keep).forEach(([id,v])=>{const el=document.getElementById(id);if(el&&!el.value)el.value=v;});if(keepFocus){const el=document.getElementById(keepFocus);if(el){el.focus();if(keepSel)try{el.setSelectionRange(keepSel[0],keepSel[1])}catch(e){}}}
   if(state.view==='caixa'||state.view==='posto')drawQR();
   roloAskFoco(roloAnt); // vale também para a pergunta do Recomeçar (mesma classe rolo-ask)
@@ -10907,6 +10939,8 @@ document.addEventListener('click',e=>{
     case 'user-senha':{const dr=state.users.draft;if(dr&&USERS[dr.email0])authSenhaProvisoria(dr.email0);break;}
     case 'user-senha-cancelar':{const dr=state.users.draft;if(dr&&USERS[dr.email0])authSenhaCancelar(dr.email0);break;}
     case 'user-senha-ok':state.users.senha=null;render();break;
+    case 'user-assumir':{authAssumir(d.e);break;}
+    case 'assumir-voltar':{authVoltar();break;}
     case 'user-active':{const dr=state.users.draft;if(!dr||!USERS[dr.email0]||dr.email0===state.user.email)break;const antes=USERS[dr.email0];const on=antes.active===false;if(userApply(dr.email0,Object.assign({},antes,{active:on}),on?'reativar':'desativar')){toast(on?TE('us_t_reativado'):TE('us_t_desativado'));render();}break;}
     case 'user-del-ask':state.users.delAsk=true;render();break;
     case 'user-del-no':state.users.delAsk=false;render();break;
@@ -11322,7 +11356,7 @@ function dbRecusados(n,lote){const reg={em:now().toISOString(),n,cols:[...new Se
 function agenteDb(){const subs={},dsubs={},revs={};let sobindo=false,descendo=false;
   const fila=()=>{try{const l=JSON.parse(localStorage.getItem(DBQ)||'[]');return Array.isArray(l)?l:[];}catch(e){return [];}};
   const guarda=l=>{try{localStorage.setItem(DBQ,JSON.stringify(l));}catch(e){state.simCheio=Date.now();}};
-  async function sobe(){if(sobindo||!state.agent.on)return;const lote=fila().slice(0,200);if(!lote.length)return;sobindo=true;
+  async function sobe(){if(sobindo||!state.agent.on||state.assumido)return;const lote=fila().slice(0,200);if(!lote.length)return;sobindo=true;
     try{const r=await agFetch(state.agent.url+'/ponto/docs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({docs:lote})});
       if(r.ok){const j=await r.json().catch(()=>({}));guarda(fila().slice(lote.length));if(j.recusados>0){dbRecusados(j.recusados,lote);[...new Set(lote.map(x=>x.col))].forEach(c=>{revs[c]=undefined;});}}}
     catch(e){}finally{sobindo=false;}}
@@ -11337,7 +11371,8 @@ function agenteDb(){const subs={},dsubs={},revs={};let sobindo=false,descendo=fa
         Object.entries(dsubs).forEach(([k,cbs])=>{if(!k.startsWith(col+'/'))return;const v=m.get(k.slice(col.length+1));cbs.forEach(cb=>{try{cb({exists:v!=null,data:()=>v});}catch(e){console.warn('db',k,e);}});});}}
     catch(e){}finally{descendo=false;}}
   const ref=path=>{const i=path.indexOf('/'),col=path.slice(0,i),id=path.slice(i+1);return {
-    set(v){const l=fila();l.push({col,id,valor:v==null?null:JSON.parse(JSON.stringify(v))});guarda(l);setTimeout(sobe,0);return Promise.resolve();},
+    set(v){if(state.assumido)return Promise.resolve(); // "ver como" só olha: nada entra na fila em nome da pessoa
+      const l=fila();l.push({col,id,valor:v==null?null:JSON.parse(JSON.stringify(v))});guarda(l);setTimeout(sobe,0);return Promise.resolve();},
     onSnapshot(cb){(dsubs[path]=dsubs[path]||[]).push(cb);revs[col]=undefined;setTimeout(desce,0);return ()=>{};}};};
   setInterval(()=>{sobe().then(desce);},3000);window.addEventListener('online',()=>sobe().then(desce));
   return {agente:true,doc:ref,collection:col=>({doc:id=>ref(col+'/'+id),onSnapshot(cb){(subs[col]=subs[col]||[]).push(cb);revs[col]=undefined;setTimeout(desce,0);return ()=>{};}})};}
