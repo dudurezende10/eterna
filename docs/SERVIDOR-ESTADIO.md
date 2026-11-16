@@ -73,3 +73,4 @@ Cadastro da equipe por comando (`vendedores.sh`, senha digitada pelo Ronaldo, se
 - Os dados são de clientes (LGPD): ler para investigar, nunca copiar fotos ou bancos para fora do servidor.
 - Nada de senha, chave ou endereço externo da VPN em commit: o repositório é público.
 - Nuvem e backup: `docs/planos/2026-11-14-servidor-definitivo.md` (seção de 15/11).
+- Galeria online (QR do recibo, selfie e vídeo do cartão fora do estádio): `galeria-ligar.sh` grava `ETERNA_GALERIA_API` no `nuvem.env`, confere se a nuvem reconhece o segredo do servidor (se não, mostra o SHA-256 para a stack `eterna-galeria`) e reinicia; as galerias que ficaram para trás sobem sozinhas. Sem ela o celular abre "Galeria não encontrada" (16/11: o servidor novo veio sem essa linha).

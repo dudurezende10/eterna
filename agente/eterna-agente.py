@@ -1813,6 +1813,25 @@ def nuvem_galerias_loop():
         return
     seg = nuvem_segredo()
     print(f"  Galeria na nuvem:  {NUVEM_API}")
+    # 16/11: galeria publicada aqui enquanto a nuvem estava desligada nunca entrou na fila (QR e selfie fora do estádio davam
+    # "não encontrada"). Na partida, toda galeria aberta que a fila não conhece entra uma vez; as já enviadas não se repetem.
+    try:
+        base = getattr(REPO, "base", None)
+        toks = [t for t in (os.listdir(base) if base and os.path.isdir(base) else []) if token_ok(t)]
+        with nuvem_lock:
+            db = nuvem_db()
+            db.execute("CREATE TABLE IF NOT EXISTS galerias (token TEXT PRIMARY KEY, prox REAL, tentativas INTEGER, feito REAL, erro TEXT)")
+            n0 = db.total_changes
+            for t in toks:
+                m = REPO.ler_manifesto(t)
+                if m and not m.get("encerrada"):
+                    db.execute("INSERT OR IGNORE INTO galerias (token, prox, tentativas, feito) VALUES (?, 0, 0, NULL)", (t,))
+            novas = db.total_changes - n0
+            db.commit(); db.close()
+        if novas:
+            print(f"  Galeria na nuvem:  {novas} galeria(s) que não tinham ido entram na fila agora")
+    except Exception as ex:
+        nuvem["galeria_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
     while True:
         try:
             with nuvem_lock:
@@ -13638,6 +13657,9 @@ def main():
     threading.Thread(target=galeria_loop, daemon=True).start()
     print("  Galerias online:   %d publicadas · repositório %s · pagamento %s" % (len(codigos), type(REPO).__name__,
           "de TESTE (aprova sem cobrar)" if compra_online() else "desligado (compra só no balcão)"))
+    if not NUVEM_API:
+        print("  Galeria na nuvem:  DESLIGADA (ETERNA_GALERIA_API vazio): o QR, a selfie e o vídeo do cartão não abrem fora do "
+              "estádio. Ligar: sudo bash /opt/eterna/app/servidor/linux/galeria-ligar.sh")
     print("  FTP do estádio:    " + (("buscando em %s@%s" % ((rftp_cfg() or {}).get("user"), (rftp_cfg() or {}).get("host"))) if rftp_cfg() else "não configurado (Eterna: Upload)"))
     _rok, _rmot = rec_estado()
     print("  Recorte local:     " + ("pronto (BiRefNet + a regra do que encosta na pessoa, num processo à parte; abre na partida)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
