@@ -179,6 +179,16 @@ try:
     tdb.close()
     ok([h[0] for h in hist] == ["supervisora-treino", "admin-treino", "admin-treino"], "histórico só acrescenta: %r" % hist)
     ok({"rotulo", "rotulo_hist", "lote", "medida"} <= tabs, "tabelas do treino.db: %r" % tabs)
+    # o Z da tela grava a marcação vazia: conta como não marcada (volta para a amostra e não soma no dia)
+    vaz = sessoes[0]["fotos"][-2]
+    ok(pede("POST", "/treino/rotulo", dict(bom, pid="ag_" + vaz, ponto="chute"), cookie=adm)[0] == 200, "marca a segunda foto")
+    vazio = {"pid": "ag_" + vaz, "v": 1, "ponto": None, "ia": {"serve": None, "motivos": [], "frente": None},
+             "qual": {"nivel": None, "motivos": [], "ajuste": []}, "duvida": False, "obs": ""}
+    ok(pede("POST", "/treino/rotulo", vazio, cookie=adm)[0] == 200, "desfazer grava a marcação vazia")
+    st, am4 = pede("GET", "/treino/amostra?dia=%s&n=400" % DIA, cookie=so_ver)
+    st, d4 = pede("GET", "/treino/dias", cookie=so_ver)
+    ok(any(x["pid"] == vaz and x["rotulo"] is None for x in am4["itens"]) and d4["dias"][0]["rotuladas"] == 1,
+       "marcação vazia volta para a amostra e não conta no dia: %r" % d4)
     # limite: 120 por minuto por pessoa (a outra pessoa segue)
     seg = sessoes[1]["fotos"][-1]
     n429 = 0

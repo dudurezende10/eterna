@@ -11490,12 +11490,21 @@ def treino_ordem(fotos, dia, modo):
     return out
 
 
+def treino_vazio(doc):
+    """Marcação sem nada (o "desfazer" da tela grava assim a primeira marcação desfeita): conta como não marcada."""
+    if not isinstance(doc, dict):
+        return True
+    ia, qual = doc.get("ia") or {}, doc.get("qual") or {}
+    return not (doc.get("ponto") or doc.get("duvida") or doc.get("obs") or qual.get("nivel") or qual.get("motivos") or qual.get("ajuste")
+                or ia.get("motivos") or ia.get("serve") is not None or ia.get("frente") is not None)
+
+
 def treino_rotulos(dia):
     """{pid: documento} das marcações do dia."""
     with treino_lock:
         db = treino_db()
         try:
-            rows = db.execute("select pid, dados from rotulo where dia = ?", (dia,)).fetchall()
+            rows = db.execute("select pid, dados from rotulo where dia = ?", (dia,)).fetchall()   # vazias vêm também (o desfazer)
         finally:
             db.close()
     out = {}
@@ -11519,6 +11528,8 @@ def treino_amostra(dia, fotografo=None, modo="misto", n=150, marcadas=False):
         if fotografo and f["fotografo"] != fotografo:
             continue
         r = rot.get(f["pid"])
+        if r is not None and treino_vazio(r):
+            r = None
         if r is not None and not marcadas:
             continue
         itens.append(dict(f, rotulo=r))
@@ -11536,7 +11547,13 @@ def treino_dias():
     with treino_lock:
         db = treino_db()
         try:
-            rot = dict(db.execute("select dia, count(*) from rotulo group by dia").fetchall())
+            rot = {}
+            for d_, dados in db.execute("select dia, dados from rotulo"):
+                try:
+                    if not treino_vazio(json.loads(dados)):
+                        rot[d_] = rot.get(d_, 0) + 1
+                except ValueError:
+                    pass
         finally:
             db.close()
     out = []
@@ -11785,7 +11802,7 @@ def treino_status():
                 with treino_lock:
                     db = treino_db()
                     try:
-                        n = db.execute("select count(*) from rotulo").fetchone()[0]
+                        n = sum(1 for (d_,) in db.execute("select dados from rotulo") if not treino_vazio(json.loads(d_)))
                     finally:
                         db.close()
             else:
