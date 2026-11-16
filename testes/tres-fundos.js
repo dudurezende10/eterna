@@ -93,10 +93,10 @@ try{
   // 8: Mirante do Rio
   const mi=await pg.evaluate(async([m1,i2])=>{const o={};for(const [n,id] of [['meio',m1],['inteiro',i2]]){const r=await ETERNA.fiaMontar(id,'mirantedia');if(!r.canvas){o[n]=r;continue;}const L=r.layout;o[n]={w:r.w,h:r.h,modo:L.modo,corte:L.corte,dst:L.dst,fonte:r.fonte};}
     const b=ETERNA.bgOf('mirantedia');o.bg={file:b.file,hi:b.fileHi,pos:b.pos,regra:ETERNA.FIA_REGRAS.mirantedia,velha:ETERNA.FIA_REGRAS.mirante,base:ETERNA.FIA_BASE.mirantedia};return o;},[M1,I2]);
-  ok(mi.bg.file==='img/bg-mirantedia.jpg'&&mi.bg.hi==='img/fundos-5k/mirantedia.jpg'&&J(mi.bg.regra)===J(mi.bg.velha)&&J(mi.bg.regra)===J({meio:{corte:1,alt:.8,larg:.92,cx:.45},inteiro:{corte:.62,alt:.8,larg:.92,cx:.45}})&&mi.bg.base===1,'8: Mirante do Rio com a regra 5 em entrada própria e a 2ª base: '+J(mi.bg));
+  ok(mi.bg.file==='img/bg-mirantedia.jpg'&&mi.bg.hi==='img/fundos-5k/mirantedia.jpg'&&J(mi.bg.regra.meio)===J(mi.bg.velha.meio)&&J(mi.bg.regra.inteiro)===J(mi.bg.velha.inteiro)&&J(mi.bg.regra)===J({meio:{corte:1,alt:.8,larg:.92,cx:.45},inteiro:{corte:.62,alt:.8,larg:.92,cx:.45},estreito:{corte:.74,alt:.8,larg:.92,cx:.45}})&&mi.bg.base===1,'8: Mirante do Rio com a regra 5 em entrada própria (mais o caso estreito da regra 20) e a 2ª base: '+J(mi.bg));
   for(const n of ['meio','inteiro']){const m=mi[n];if(!m||!m.dst){ok(false,'8 '+n+': não montou: '+J(m));continue;}const cx=(m.dst.x+m.dst.w/2)/m.w;
     ok(m.w===2400&&m.h===1711,'8 '+n+': prévia 2400×1711: '+J([m.w,m.h]));
-    ok(m.modo===n&&m.corte===(n==='meio'?1:.62),'8 '+n+': modo e corte: '+J([m.modo,m.corte]));
+    ok(m.modo===n&&(n==='meio'?m.corte>.74&&m.corte<1:m.corte===.62),'8 '+n+': modo e corte (o recorte de teste tem razão 0,85: fica na faixa entre o estreito e o largo da regra 20; os dois extremos estão em proporcao-montagens.js): '+J([m.modo,m.corte]));
     ok(Math.abs(m.dst.y+m.dst.h-m.h)<=1&&m.dst.h<=.8*m.h+1&&m.dst.w<=.92*m.w+1&&Math.abs(cx-.45)<=.01,'8 '+n+': encostado embaixo, até 80% da altura e 92% da largura, centro em 45%: '+J({dst:m.dst,cx}));}
   // impressão: fundo de 5000 px, 1844×1240 sem aviso; o corte 10×15 tira o alto e o Cristo (topo em y=156 de 1711, x=2095, na prévia de 2400 px) fica inteiro no quadro
   const CRISTO={x:2095,y:156};
