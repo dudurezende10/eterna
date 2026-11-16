@@ -101,10 +101,10 @@ APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js", "vendor/jsqr/jsQR
                   "vendor/ort/ort.min.js", "vendor/ort/ort-wasm-simd.wasm", "vendor/ort/ort-wasm.wasm",
                   "vendor/rostos/face_detection_yunet_2023mar.onnx", "vendor/rostos/face_recognition_sface_2021dec.onnx",
                   "vendor/faceapi/indice-exemplos.json"]
-# os fundos de IA ativos no Checkout (BG_DEF do app; 16/11: Mirante do Rio, Maracanã 1950 e Telão): sem eles a família
+# os fundos de IA ativos no Checkout (BG_DEF do app; 16/11: Mirante do Rio, Maracanã 1950, Telão e Saída do túnel v2): sem eles a família
 # fica sem as montagens quando a rede cai. Manter igual ao app; o teste testes/app_offline_agente.py confere com o index.html.
 # Imagem nova entra com nome de arquivo novo (o disco guarda o arquivo e só revê uma vez por partida).
-APP_FUNDOS_ATIVOS = ["img/bg-mirantedia.jpg", "img/bg-maracana1950.jpg", "img/bg-telao-v2.jpg"]
+APP_FUNDOS_ATIVOS = ["img/bg-mirantedia.jpg", "img/bg-maracana1950.jpg", "img/bg-telao-v2.jpg", "img/bg-tunel-v2.jpg"]
 app_disco_lock = threading.Lock()
 APP_FORA_SEG = 45                           # origem fora: por este tempo ninguém tenta a rede de novo (502 ou disco na hora)
 app_fora = {"ate": 0.0}
@@ -3261,13 +3261,13 @@ def multipart(fields, files):
 # para o campeao2 esse arquivo é o fundo antigo, com a taça. Prévia (2400 px) e impressão (5000 px, img/fundos-5k/).
 # Todos os fundos de DATA.backgrounds (os 5 ativos, com o Pódio de campeão da v86, e os do Laboratório, que podem ser ativados), com o mesmo arquivo do app.
 FUNDOS_PREVIA = {"campeao2": "img/bg-campeao-v81.jpg", "mirante": "img/bg-mirantesol.jpg", "mirantedia": "img/bg-mirantedia.jpg",
-                 "arq1950": "img/bg-maracana1950.jpg", "tunel": "img/bg-tunel.jpg", "podio": "img/bg-podio.jpg",
+                 "arq1950": "img/bg-maracana1950.jpg", "tunel": "img/bg-tunel-v2.jpg", "podio": "img/bg-podio.jpg",
                  "imprensa": "img/bg-imprensa.jpg", "noite": "img/bg-noite.jpg", "terraco": "img/bg-terraco.jpg",
                  "campeaoarg": "img/bg-campeaoarg.jpg", "campeaocol": "img/bg-campeaocol.jpg",
                  "gramado1950": "img/bg-gramado1950.jpg", "alto1950": "img/bg-alto1950.jpg",
                  "escanteio1950": "img/bg-escanteio1950.jpg", "asadelta": "img/bg-asadelta.jpg"}
 FUNDOS_IMPRESSAO = {"campeao2": "img/fundos-5k/campeao.jpg", "mirante": "img/fundos-5k/mirantesol.jpg", "mirantedia": "img/fundos-5k/mirantedia.jpg",
-                    "arq1950": "img/fundos-5k/maracana1950.jpg", "tunel": "img/fundos-5k/tunel.jpg",
+                    "arq1950": "img/fundos-5k/maracana1950.jpg", "tunel": "img/fundos-5k/tunel-v2.jpg",
                     "podio": "img/fundos-5k/podio.jpg"}
 PR_LADO_MAX = 5000  # teto de W e H no /photoroom/compose
 
@@ -7825,7 +7825,7 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
            ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("bgOn2", ("configuracao",)), ("fundosModo", ("configuracao",)),
            ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
-           ("bgPodioV86", ("configuracao",)), ("bgTelaoV97", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
+           ("bgPodioV86", ("configuracao",)), ("bgTelaoV97", ("configuracao",)), ("bgTunelV2", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
 
 
 ATIV_VENDA_CAMPOS = ("origem", "id", "tipo", "dia", "criado", "itens", "valor", "pagamento", "vendedor", "vendedor_n", "pessoas", "videos",
