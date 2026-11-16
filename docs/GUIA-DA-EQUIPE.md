@@ -1,6 +1,6 @@
 # Guia da equipe do Eterna
 
-Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v99 (11/11/2026).
+Passo a passo do dia a dia, em linguagem simples. Cada parte diz para quem é. Atualizado na v99 (11/11/2026) e em 16/11/2026 (veja **Novidades de 15 e 16/11/2026**).
 
 Três nomes para guardar:
 
@@ -19,7 +19,8 @@ Se alguém falar o nome antigo, é esta tela:
 | Caixa (tela separada) | Caixa, dentro do Posto de venda | botão amarelo **Caixa** |
 | Upload automático | Minhas fotos | grupo **Fotógrafo** |
 | Biblioteca (para o fotógrafo) | Minhas fotos de hoje | fim da tela **Minhas fotos** |
-| Escala 5×2 | Escala | grupo **Fotógrafo** |
+| Escala, Escala 5×2 | saiu do Eterna em 16/11; a escala da equipe fica com o Maracanã | não existe mais |
+| Arquibancada 1950 (fundo de IA) | Maracanã 1950 | Checkout, nas fotos especiais |
 | Painel de controle, Catálogo e preços | Preços e Checkout | grupo **Configurações** |
 | Vendas e caixa | Vendedores | grupo **Dashboard** |
 | Fundos de IA (em Configurações) | aba **Fundos de IA** de Preços e Checkout | grupo **Configurações** |
@@ -39,7 +40,7 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | Venda | Posto de venda |
 | Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Fotógrafos, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
 | Curadoria | Qualidade, Treino da IA, Alertas |
-| Fotógrafo | Diário do set, Minhas fotos, Fila do fotógrafo, Escala |
+| Fotógrafo | Diário do set, Minhas fotos, Fila do fotógrafo |
 | Configurações | Preços e Checkout, Ajuste automático |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
@@ -99,7 +100,7 @@ O Painel responde em poucos segundos "como foi o período": faturamento, fotos, 
 2. Para outras datas, toque em **Personalizado** ou direto nas datas **De** e **Até**.
 3. **Ponto**: filtra pelo ponto onde a foto foi tirada. Só liga com a Roverpix ao vivo (pelo computador do ponto) ou com a fonte **Eterna**.
 4. **Fonte**: **Tudo** (Roverpix + Eterna), só **Roverpix** ou só **Eterna**. A parte Eterna são as vendas deste computador.
-5. **Exportar CSV** baixa um dia por linha e uma linha de total.
+5. No grupo **Exportar**, o ícone azul **CSV** baixa um dia por linha e uma linha de total. Os ícones PDF e XLS estão na parte 1B.
 
 ### Como ler
 
@@ -119,9 +120,17 @@ Atendimento e venda, Fotógrafo, Validador e Checkout não veem o Painel.
 
 ---
 
-## 1B. Exportar relatório em PDF ou XLS (15/11/2026)
+## 1B. Exportar relatório em PDF, XLS ou CSV (15 e 16/11/2026)
 
-No topo de algumas telas existe o grupo **Exportar**, com dois botões: **PDF** e **XLS**. O arquivo é baixado para o computador, na pasta de downloads. Nada é impresso.
+No topo de algumas telas existe o grupo **Exportar**. Cada formato é um ícone, uma folhinha com a sigla embaixo:
+
+| Ícone | Formato | Para quê |
+| --- | --- | --- |
+| folha com faixa **vermelha** e a sigla PDF | PDF | ler ou mandar para alguém |
+| folha com faixa **verde** e a sigla XLS | XLS | abrir no Excel e fazer contas |
+| folha com faixa **azul** e a sigla CSV | CSV | o arquivo simples que já existia, só no Painel e na Lista de vendas |
+
+Parando o mouse em cima do ícone aparece o nome do formato. O arquivo é baixado para o computador, na pasta de downloads. Nada é impresso.
 
 ### Onde tem
 
@@ -132,13 +141,12 @@ No topo de algumas telas existe o grupo **Exportar**, com dois botões: **PDF** 
 | Bandeiras | O inventário do filtro escolhido (Com estoque, Atenção etc.), a lista de compra e as unidades por ponto |
 | Lista de vendas | Todas as vendas do período e dos filtros, não só as 50 da página |
 | Fotógrafos | A tabela do período. Com um fotógrafo aberto, o dia a dia dele. |
-| Escala | A função de hoje e a semana que a tela mostra |
 | Diário do set | Os registros do filtro escolhido (Hoje, Em aberto ou Todos) |
 
 ### Como usar
 
 1. Deixe a tela como você quer ver no relatório: período, filtros e ordem.
-2. Toque em **PDF** para ler ou mandar para alguém, ou em **XLS** para abrir no Excel e fazer contas.
+2. Toque no ícone **PDF** (vermelho) para ler ou mandar para alguém, ou no ícone **XLS** (verde) para abrir no Excel e fazer contas.
 3. Aparece "Arquivo gerado com N linhas" e o arquivo vai para a pasta de downloads, com o nome da tela e o período.
 
 ### O que saber
@@ -153,36 +161,37 @@ No topo de algumas telas existe o grupo **Exportar**, com dois botões: **PDF** 
 - O arquivo sai no idioma de quem está conectado.
 - Só exporta quem já vê a tela. Quem não tem acesso à tela não vê o botão.
 - Cada exportação fica registrada em **Permissões › Histórico**: quem exportou, de qual tela, em qual formato, o período e os filtros.
-- Os botões **Exportar CSV** do Painel e da Lista de vendas continuam onde estavam.
+- O **CSV** do Painel e da Lista de vendas agora é o terceiro ícone do grupo **Exportar** (azul). O botão separado saiu. O arquivo é o mesmo de antes.
+- Atenção na Lista de vendas: o CSV baixa todas as vendas, sem olhar o período e os filtros da tela. O PDF e o XLS respeitam os filtros. Para um recorte, use o XLS.
+- Em **Estatísticas › Jogos e ano a ano**, o CSV dos dias do ano fica junto da tabela **Mês a mês**, com o mesmo ícone azul.
+- Enquanto um arquivo está sendo gerado, os ícones ficam apagados por um instante. É para um toque duplo não gerar dois arquivos.
+- Bandeiras, Fotógrafos, Estatísticas e Diário do set têm dois ícones (PDF e XLS). Painel e Lista de vendas têm três.
 
 ---
 
-## 2. Fotógrafo (Minhas fotos e Escala)
+## 2. Fotógrafo (Minhas fotos)
 
 ### O que o fotógrafo vê
 
 - Ao entrar, cai direto em **Minhas fotos**.
-- No menu, só o grupo **Fotógrafo**: Diário do set, Minhas fotos, Fila do fotógrafo e Escala.
+- No menu, só o grupo **Fotógrafo**: Diário do set, Minhas fotos e Fila do fotógrafo.
 - Não vê Checkout, vendas, números de outros fotógrafos, Curadoria nem Configurações.
 
-### Seu nome e seu ponto (v97)
+### Seu nome (v97, mudou em 16/11)
 
-No alto de **Minhas fotos** aparecem o seu nome e o seu ponto do dia. O nome vem do seu login. O ponto vem da **Escala**. Não dá para trocar por aqui.
+No alto de **Minhas fotos** aparece o seu nome. Ele vem do seu login. Não dá para trocar por aqui. O ponto do dia não aparece mais, porque a Escala saiu do Eterna.
 
 - Outro fotógrafo vai usar o computador: toque em **Trocar fotógrafo**.
-- O ponto está errado: fale com a supervisora. Ela corrige na Escala.
 
 A supervisora e o Admin continuam com os seletores **Fotógrafo** e **Ponto** no alto da tela.
 
-### Escala: onde eu trabalho hoje (v97)
+### A Escala saiu do Eterna (16/11)
 
-1. Abra **Fotógrafo › Escala**.
-2. Em letra grande aparece **Hoje você está em:** e o nome do ponto. Para o volante aparece **Hoje você está como Volante**, com o modo do dia.
-3. Se for folga, aparece **Hoje é sua folga**.
-4. Se aparecer **Você não está na escala de hoje. Fale com a supervisora.**, fale com ela antes de começar. Sem função do dia, as fotos para os fundos de IA não são separadas.
-5. Embaixo ficam os **Próximos 7 dias**. Eles mostram o seu ponto fixo. A supervisora confirma a função de cada dia.
+A tela **Escala** e a função do dia não existem mais no Eterna. Quem trabalha em qual ponto, as folgas e o 5×2 são combinados com a supervisão do Maracanã, fora do sistema.
 
-A supervisora e o Admin veem a Escala da equipe a partir de hoje: a função de cada fotógrafo e a cobertura dos pontos. Os dias que já passaram ficam em **Ver dias anteriores**.
+- O item **Escala** sumiu do menu. Quem tinha a Escala como primeira tela entra agora na primeira tela do seu perfil.
+- Nada foi apagado. Se um dia a Escala voltar, o que estava lançado volta junto. Quem religa é a TI.
+- O **Calendário de eventos** (jogos, shows, feriados) continua igual, em **Dashboard › Calendário de eventos**.
 
 ### De quem é cada foto
 
@@ -192,6 +201,10 @@ O fotógrafo não faz check-in da câmera. O Eterna sabe de quem é cada foto as
 2. Pelo **nome gravado na câmera** (menu da câmera › Informações de copyright › Nome do autor), se houver.
 
 Foto sem nenhuma dessas pistas cai em **Sem fotógrafo**.
+
+**Sessão sem dono se acerta sozinha (15/11).** Se uma sessão de hoje ou de ontem ficou sem fotógrafo e todas as fotos dela são da mesma pessoa cadastrada (pelo nome gravado na câmera), o Eterna passa a sessão para essa pessoa quando o computador do ponto é ligado ou reiniciado. As vendas daquela sessão passam a contar para ela, e os números do dia são refeitos. Sessão com fotos de duas pessoas, ou com alguma foto sem pista, continua em **Sem fotógrafo**. Sessão que já tem fotógrafo nunca muda.
+
+**Klacius se escreve com C.** O nome aparece em todas as telas como a câmera dele grava: Klacius. Vendas, sessões e histórico antigos continuam no nome dele. O login e o e-mail dele não mudaram.
 
 O FTP do estádio é configurado pela administração em **Configurações › Preços e Checkout**, aba **Avançado**. Só funciona com o Eterna aberto no computador do ponto.
 
@@ -239,6 +252,15 @@ No fim da tela o fotógrafo vê **Minhas fotos de hoje**: só as fotos dele, de 
 - Não tem filtro para escolher. A tela já mostra só o que é seu.
 
 A supervisora e o Admin continuam vendo todas as fotos, com os filtros de dia, hora, fotógrafo e venda.
+
+### Ver a foto inteira e ampliar (15/11)
+
+- **A foto aparece inteira.** Na Biblioteca, em Minhas fotos de hoje, nas Sessões de hoje e na Qualidade, cada foto fica num quadradinho com a foto inteira dentro. A foto em pé aparece em pé, sem cortar a cabeça.
+- **A lupa não corta.** Toque numa foto para ampliar. A foto abre inteira, no formato dela. Primeiro aparece a versão pequena e, se você parar nela, entra a foto em alta.
+- **Setas.** Use as setas da tela, as setas do teclado ou arraste o dedo. No alto aparece **foto 12 de 50** e a hora da foto. Na primeira foto não tem seta para trás e na última não tem seta para a frente.
+- **Entre sessões.** Abrindo pela Biblioteca ou por Minhas fotos de hoje, as setas passam por todas as fotos do filtro, de uma sessão para a outra. Abrindo por um bloco de Sessões de hoje, as setas ficam naquela sessão.
+- **A foto em alta fica pouco tempo no aparelho.** O computador ou tablet de quem abriu a lupa guarda a foto em alta por 5 minutos e depois descarta. Para ver de novo, é só abrir a lupa outra vez.
+- Na tela do cliente (Checkout) nada mudou.
 
 ### O cartão não foi lido: enviar as fotos pela tela (v97)
 
@@ -305,50 +327,42 @@ Na dúvida, o servidor deixa a foto na sessão em que está: foto sem rosto, de 
 
 Se aparecer o aviso **Rostos desligados neste computador**, o servidor está separando as sessões só pela pausa de 1 minuto. Avise a TI.
 
-Clique numa foto para ampliar. As setas passam só pelas fotos daquela sessão.
+Clique numa foto para ampliar. Abrindo por aqui, as setas passam só pelas fotos daquela sessão (veja **Ver a foto inteira e ampliar**).
 
-### Os 2 primeiros cliques são para os fundos de IA (v93)
+### As 2 primeiras fotos da sessão viram as fotos especiais (mudou em 16/11)
 
-Vale nos 4 pontos de campo (Terminal Campo, Foto Campo 2, 3 e 4). Volante e Vestiário ficam de fora.
+As fotos especiais (Edição Maracanã) são montagens da pessoa em três fundos: **Mirante do Rio**, **Maracanã 1950** e **Telão do Maracanã**. Elas são feitas com as **2 primeiras fotos com gente** de cada cliente.
 
 **Fotógrafo: em toda sessão, comece assim**
 
-1. **1º clique: fechado, do joelho para cima.**
-2. **2º clique: fechado, do joelho para cima**, outra pose.
-- **Nunca corpo inteiro nesses 2 cliques.** Corpo inteiro não funciona em nenhum fundo de IA (Ronaldo, 14/11).
+1. **1ª foto: fechada, do joelho para cima.**
+2. **2ª foto: fechada, do joelho para cima**, outra pose.
 3. Depois, faça as fotos normais da sessão.
 
-**O que acontece com essas 2 fotos**
+- **Nunca corpo inteiro nessas 2 fotos.** Corpo inteiro não funciona em nenhum fundo (Ronaldo, 14/11).
+- A 1ª foto vai para o Maracanã 1950. A 2ª vai para o Mirante do Rio e para o Telão do Maracanã.
+- No Maracanã 1950 o título fica no alto da foto. Braço erguido não atrapalha: o sistema desce a pessoa para ninguém cobrir o título.
 
-- Elas não são vendidas como foto. Viram a base das montagens com os fundos de IA.
-- O servidor recorta as pessoas assim que as fotos chegam, com a sessão ainda aberta.
-- Quando o cliente chega ao Checkout, as **5 montagens** já estão prontas, uma para cada fundo: Arquibancada 1950 usa o 1º clique; Noite de campeão, Mirante, Saída do túnel e Telão do Maracanã usam o 2º.
-- **Se você esquecer**, o sistema usa as 2 primeiras fotos assim mesmo. A IA recorta de qualquer jeito. Não existe botão para devolver essas fotos à venda.
-- Sessão com 2 fotos ou menos: nada é separado, as fotos ficam à venda.
+**O que mudou em 16/11**
 
-**Como conferir em Minhas fotos**
+- A regra antiga dependia da Escala para saber em que ponto o fotógrafo estava. A Escala saiu do Eterna, então a regra está parada.
+- **As 2 primeiras fotos não são mais separadas.** Elas ficam à venda como foto normal e também servem de base para as montagens.
+- Vale para qualquer ponto, não só os 4 pontos de campo.
+- Em **Minhas fotos**, as marcas **Fundo IA 1** e **Fundo IA 2** não aparecem mais. O cabeçalho da sessão mostra **Fotos de IA: aguardando reconhecimento do ponto**. É normal, não é erro.
+- Na **Fila do fotógrafo**, os avisos **Fundo IA: falta o 2º clique** e **Fundo IA ✓✓** não aparecem mais.
 
-- As 2 fotos aparecem com a marca **Fundo IA 1** e **Fundo IA 2**. Passe o mouse sobre a marca para ler o texto inteiro: **Fundo IA 1 · do joelho para cima** e **Fundo IA 2 · do joelho para cima**.
-- Com a sessão ainda aberta, a marca aparece como **Fundo IA?**. Ela confirma quando a sessão fecha.
-- A marca **IA** sozinha continua sendo a do ajuste automático. É outra coisa.
-- O cabeçalho da sessão mostra **Fundos de IA: 2 de 2 prontas**. Se a sessão não teve fotos separadas, mostra o motivo: volante, ponto fora da regra, sem função do dia, poucas fotos ou regra desligada.
-- Sem função do dia na Escala, nada é separado. Confira a sua função antes de começar.
+**Administração**
 
-**Na Fila do fotógrafo**
+- Em **Configurações › Preços e Checkout**, aba **Fundos de IA**, o quadro **Fotos para os fundos de IA** ficou só com o liga e desliga e uma nota explicando a mudança. Não dá mais para escolher quantos cliques nem em quais pontos.
+- Na mesma aba ficam os três fundos que o cliente vê. Os outros estão em **Sistema › Laboratório › Fundos em teste**.
 
-- **Fundo IA: falta o 2º clique** enquanto a sessão só tem 1 foto.
-- **Fundo IA ✓✓** quando os 2 recortes estão prontos.
+**O que vem depois (decidido, ainda não está no sistema)**
 
-**Administração: mudar a regra (Admin)**
+- O Eterna vai reconhecer sozinho, pela imagem, quais são as 2 primeiras fotos de cada visitante no ponto do gramado. Vai contar pelo rosto do visitante.
+- Essas 2 fotos vão ser do joelho ou da canela para cima, sem troféu em pedestal. O trofeuzinho na mão vale. Em uma das duas, todos olham para a câmera.
+- Já dá para fotografar assim desde hoje: as montagens ficam melhores.
 
-1. Abra **Configurações › Preços e Checkout** e toque na aba **Fundos de IA**.
-2. Desça até o quadro **Fotos para os fundos de IA**.
-3. Ali dá para ligar ou desligar a regra, escolher **quantos cliques** (de 1 a 3) e **em quais pontos** ela vale, inclusive Vestiário e Volante.
-4. A mudança vale para as sessões que fecharem depois dela. As sessões já fechadas não mudam.
-
-Só quem pode alterar Configurações (Admin e Supervisor, pelos perfis prontos) muda esse quadro. Os outros veem os campos apagados.
-
-**Depois da atualização para a v93:** recarregue todos os navegadores dos caixas. Um navegador antigo ainda mostra essas 2 fotos como fotos à venda.
+**Depois da atualização de 16/11:** feche e abra de novo o Checkout, o Posto de venda e Minhas fotos em todos os computadores. Janela antiga continua mostrando os 5 fundos antigos.
 
 ---
 
@@ -513,7 +527,7 @@ Todas as impressas são 10×15 cm.
 No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 - **Ideal**: o pacote mais barato para as fotos que ele escolheu, já somando as adicionais. Exemplo: 4 fotos saem por Zona Mista + 1 adicional (R$ 145), mais barato que o Gramado (R$ 150).
 - **Fotos com fundo de IA contam dentro do pacote.** Não são mais cobradas à parte no Checkout.
-- **5 fundos de IA por venda (v93)**: uma montagem para cada fundo, feita com os 2 primeiros cliques da sessão. Esses 2 cliques não aparecem como foto normal nem entram na contagem do "Todas".
+- **3 fundos de IA por venda (desde 16/11)**: uma montagem para cada fundo (Mirante do Rio, Maracanã 1950 e Telão do Maracanã), feita com as 2 primeiras fotos com gente do cliente. Essas 2 fotos também ficam à venda como foto normal.
 - **Resumo linha a linha** antes do total: o pacote e as adicionais, cada um com o valor.
 - **Economia**: quanto ele economiza em comparação a comprar avulso (uma Arquibancada e o resto como Foto adicional). Exemplo: 8 fotos avulsas custariam R$ 70 + 7 × R$ 35 = R$ 315. No Pacote Maracanã ele paga R$ 190 e economiza R$ 125. Só aparece quando há economia.
 - "Cabem mais N fotos neste pacote sem pagar mais", quando ele escolheu menos fotos do que o pacote leva.
@@ -742,7 +756,7 @@ A aba **Histórico** em Permissões mostra toda mudança: quando, quem mudou, a 
 | Perfil | Vê | Não vê |
 | --- | --- | --- |
 | Admin | tudo, inclusive Usuários e Permissões; começa no Painel | nada fica de fora |
-| Fotógrafo | Diário do set, Minhas fotos (com a troca de fotógrafo e o envio das fotos do cartão pela tela), Fila do fotógrafo, Escala | Checkout, Dashboard, Curadoria, Configurações |
+| Fotógrafo | Diário do set, Minhas fotos (com a troca de fotógrafo e o envio das fotos do cartão pela tela), Fila do fotógrafo | Checkout, Dashboard, Curadoria, Configurações |
 | Atendimento e venda | Checkout, Posto de venda (com o Caixa e a Venda manual dentro dele), Preços (só para ver), Fila do fotógrafo (só para ver) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
 | Validador | Qualidade, Treino da IA, Diário do set (só para ver) | vendas, Checkout, Configurações |
 | Supervisor | Posto de venda, Dashboard (começa no Painel), Curadoria (só para ver), grupo Fotógrafo (envia as fotos do cartão pela tela em nome de um fotógrafo), Configurações (Preços e Checkout com os Fundos de IA, Ajuste automático) | o grupo Sistema (Usuários, Permissões, Repositório, Identidade, Laboratório); não cancela venda |
@@ -755,7 +769,7 @@ A aba **Perfis prontos** mostra cada perfil em detalhe.
 ## Novidades da v81
 
 - **Checkout no segundo monitor.** "Abrir Checkout" abre uma janela separada. Arraste essa janela para o monitor do cliente. A sua tela continua logada no admin. Se o cliente apertar Esc ou mexer no endereço da janela dele, o Checkout volta ao início e o seu login não cai.
-- **Fundos de IA.** O cliente vê só 5 fundos: Noite de campeão (sem a taça), Mirante ao pôr do sol, Arquibancada 1950 em preto e branco, Saída do túnel e Telão do Maracanã (desde a v97, no lugar do Pódio de campeão). Os outros ficam em Sistema › Laboratório › Fundos em teste, onde o admin pode Ativar ou Mover para o Laboratório.
+- **Fundos de IA.** Desde 16/11 o cliente vê 3 fundos: Mirante do Rio, Maracanã 1950 (a pessoa sai em preto e branco) e Telão do Maracanã. Os outros ficam em Sistema › Laboratório › Fundos em teste, onde o admin pode Ativar ou Mover para o Laboratório.
 - **Bandeiras.** As imagens foram corrigidas. A bandeira que ainda não tem a imagem certa fica sem foto, de propósito, até a imagem certa chegar.
 - **Fotógrafos.** Klacius e Sandessa já estão na lista. O nome do Klacius aparece escrito como na câmera dele (com C); a foto que chega com o autor "Klacius" gravado na câmera entra no nome dele sozinha.
 
@@ -849,7 +863,7 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 
 ## Novidades da v84: fundos de IA montados no próprio computador
 
-As fotos com fundo de IA agora são montadas no computador do ponto, sem internet e sem custo. O computador do ponto recorta a pessoa e o Eterna coloca no fundo com as regras aprovadas (meio corpo encostado embaixo, corpo inteiro do joelho para cima, a Arquibancada 1950 toda em preto e branco). Vale para a prévia, o Checkout, o Posto de venda e a impressão 10×15.
+As fotos com fundo de IA agora são montadas no computador do ponto, sem internet e sem custo. O computador do ponto recorta a pessoa e o Eterna coloca no fundo com as regras aprovadas (meio corpo encostado embaixo, corpo inteiro do joelho para cima, o Maracanã 1950 todo em preto e branco). Vale para a prévia, o Checkout, o Posto de venda e a impressão 10×15.
 
 ### Instalar o recorte (TI do ponto, uma vez por computador)
 
@@ -901,10 +915,10 @@ Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segun
 
 ### O que cada cartão mostra
 
-- O nome do fotógrafo em letra grande e, entre parênteses, de onde ele está fotografando: **(campo · Foto Campo 2)**, **(volante · chute a gol)**, **(set interno · Vestiário)** ou **(sem ponto)**. O ponto vem da **Escala** (função do dia). Trocou a função na Escala, os grupos seguintes já mostram o ponto novo; os que já estavam na tela não mudam.
+- O nome do fotógrafo em letra grande e, entre parênteses, de onde ele está fotografando: **(campo · Foto Campo 2)**, **(volante · chute a gol)**, **(set interno · Vestiário)** ou **(sem ponto)**. **Desde 16/11 o ponto não aparece mais:** a Escala saiu do Eterna e o cartão mostra só o nome do fotógrafo.
 - A hora em que o grupo começou e quantas fotos tem.
 - Nas duas primeiras colunas, as últimas fotos que chegaram, em miniatura (no computador da equipe; na TV, não).
-- **De folga na Escala e mandando fotos**, em vermelho: a pessoa está de folga na Escala e as fotos dela estão chegando. Confira a Escala.
+- O aviso vermelho de folga saiu em 16/11, junto com a Escala.
 - **Sem fotógrafo · câmera ···1234**: o Eterna não sabe de quem é a câmera (veja abaixo). Os 4 números são o final da série do corpo.
 
 ### Na TV do caixa
@@ -1015,7 +1029,7 @@ Bom saber:
 
 ### Cadastrar o calendário (Admin e Supervisora)
 
-1. No menu, abra **Dashboard › Calendário de eventos** (desde a v97; antes ficava no grupo Fotógrafo). O atalho também fica em **Configurações › Preços e Checkout**, aba **Checkout**.
+1. No menu, abra **Dashboard › Calendário de eventos** (desde a v97; antes ficava no grupo Fotógrafo). Em **Permissões**, a linha que libera esta tela se chama **Calendário de eventos** desde 16/11 (antes era Escala). O atalho também fica em **Configurações › Preços e Checkout**, aba **Checkout**.
 2. Use **‹** e **›** para trocar de mês e **Hoje** para voltar ao mês atual.
 3. Toque em **Novo evento**. Preencha a data, a hora, o tipo (jogo, show, feriado, fechado, evento ou outro), o mandante, o visitante, a competição e, se quiser, uma observação.
 4. Toque em **Salvar**.
@@ -1066,7 +1080,7 @@ Resumo do que mudou. Os passos estão nas partes indicadas.
 | Vendedor e caixa | **Recomeçar o Checkout** fica no notebook do caixa. O cliente não tem mais **Voltar ao início** enquanto espera o pagamento. | parte 3, **Recomeçar o Checkout** |
 | Vendedor e caixa | **Pago na maquininha** é o botão principal. **Cancelar compra** virou um link vermelho, afastado. | **Confirmar na maquininha** |
 | Vendedor e caixa | Aviso quando o pedido tem foto Edição Maracanã e o pacote é só digital. | **O que tem no Posto de venda** |
-| Fotógrafo | Nome e ponto vêm do login e da Escala. **Minhas fotos de hoje** por sessão. Escala com **Hoje você está em:**. | parte 2 |
+| Fotógrafo | O nome vem do login. **Minhas fotos de hoje** por sessão. (A Escala com **Hoje você está em:** saiu em 16/11.) | parte 2 |
 | Fotógrafo e supervisora | Envio das fotos pela tela quando o cartão não é lido. | parte 2, **O cartão não foi lido** |
 | Todos | Faixa vermelha com a hora do último dado quando o computador do ponto não responde. | parte 1 |
 | Supervisora e Admin | **Calendário de eventos** foi para o grupo **Dashboard**. | **Cadastrar o calendário** |
@@ -1074,7 +1088,7 @@ Resumo do que mudou. Os passos estão nas partes indicadas.
 
 ### Selo Edição Maracanã
 
-- No Checkout, as fotos com fundo de IA (as montagens) aparecem primeiro, juntas, com a faixa amarela **Edição Maracanã** e o nome do fundo (Noite de campeão, Mirante ao pôr do sol, Arquibancada 1950, Saída do túnel, Telão do Maracanã), nas 5 línguas. Na grade elas vêm com o título "Suas fotos especiais" e, depois delas, "Suas fotos de hoje".
+- No Checkout, as fotos com fundo de IA (as montagens) aparecem primeiro, juntas, com a faixa amarela **Edição Maracanã** e o nome do fundo (desde 16/11: Mirante do Rio, Maracanã 1950 e Telão do Maracanã), nas 5 línguas. Na grade elas vêm com o título "Suas fotos especiais" e, depois delas, "Suas fotos de hoje".
 - O Checkout abre na primeira montagem pronta. Se ela ainda estiver sendo preparada e o cliente não tocar em nada, depois de 8 segundos a tela vai sozinha para a próxima foto pronta.
 - No Posto de venda, as montagens do pedido e a tela do cliente mostram a mesma faixa Edição Maracanã. A montagem continua contando dentro do pacote, igual a qualquer outra foto.
 - A faixa é só da tela: a foto impressa e a do download saem sem ela.
@@ -1083,7 +1097,7 @@ Resumo do que mudou. Os passos estão nas partes indicadas.
 
 ### Fundo novo: Telão do Maracanã
 
-O **Telão do Maracanã** entrou nos 5 fundos do cliente, no lugar do Pódio de campeão. A família aparece dentro do telão do estádio. O Pódio foi para **Sistema › Laboratório › Fundos em teste**.
+O **Telão do Maracanã** entrou nos fundos do cliente, no lugar do Pódio de campeão. A família aparece dentro do telão do estádio. O Pódio foi para **Sistema › Laboratório › Fundos em teste**. Em 16/11 o Telão ganhou imagem nova e os fundos do cliente passaram a ser três (veja **Novidades de 15 e 16/11/2026**).
 
 ### QR maior na tela final
 
@@ -1137,6 +1151,52 @@ O recorte da pessoa ficou mais preciso. O que a pessoa segura, como a bandeira, 
 Em **Sistema › Laboratório › Chute a gol** está a ficha de um produto em teste: a foto do cliente com o goleiro em frente à trave, segurando a placa "Fiz um gol no Maracanã" na língua dele. A tela explica onde fica, quem é o goleiro, quantos cliques e o material. Ainda não é vendido. Só o Admin vê o Laboratório.
 ---
 
+## Novidades de 15 e 16/11/2026
+
+Resumo do que mudou. Os passos estão nas partes indicadas.
+
+| Para quem | O que mudou | Onde ler |
+| --- | --- | --- |
+| Fotógrafo e supervisora | Na Biblioteca e em Minhas fotos a foto em pé aparece inteira. A lupa não corta e as setas passam de uma sessão para a outra. | parte 2, **Ver a foto inteira e ampliar** |
+| Fotógrafo | A **Escala** saiu do Eterna. O ponto do dia não aparece mais em Minhas fotos nem na Fila. | parte 2, **A Escala saiu do Eterna** |
+| Fotógrafo | As 2 primeiras fotos da sessão, do joelho para cima, viram as fotos especiais. Elas não são mais separadas da venda. | parte 2, **As 2 primeiras fotos da sessão** |
+| Fotógrafo | O nome **Klacius** aparece com C. Sessão que ficou sem fotógrafo se acerta sozinha. | parte 2, **De quem é cada foto** |
+| Vendedor e anfitrião | O cliente vê **3 fotos especiais**: Mirante do Rio, Maracanã 1950 e Telão do Maracanã. | abaixo |
+| Supervisora e Admin | **Exportar** com ícones: PDF, XLS e, no Painel e na Lista de vendas, CSV no mesmo grupo. | parte 1B |
+| Admin | Em Permissões, a linha Escala passou a se chamar **Calendário de eventos**. | **Cadastrar o calendário** |
+
+### Os três fundos das fotos especiais
+
+O cliente vê as montagens nesta ordem. A primeira é a que abre na tela cheia.
+
+| Fundo | Como é | Como a pessoa sai |
+| --- | --- | --- |
+| **Mirante do Rio** (novo) | Dia claro, o Cristo no alto e o Maracanã ao lado | Na frente do parapeito. Casal e pessoa sozinha saem maiores, cortados no quadril. |
+| **Maracanã 1950** (fundo novo, no lugar da Arquibancada 1950) | Preto e branco, estádio lotado, o título "Maracanã 1950" escrito no céu | A pessoa também sai em preto e branco. Ninguém cobre o título, nem com o braço erguido. |
+| **Telão do Maracanã** (imagem nova) | O telão do estádio, com a torcida na frente | A família aparece dentro do telão. Casal e pessoa sozinha saem do peito para cima, enchendo a tela. |
+
+- **Grupo, bandeira aberta e braços abertos** saem do mesmo tamanho de antes. Só o casal e a pessoa sozinha ficaram maiores.
+- **Noite de campeão, Mirante ao pôr do sol e Saída do túnel** foram para **Sistema › Laboratório › Fundos em teste**. Quem comprou uma montagem com um deles antes continua com ela: abre e reimprime normalmente.
+- **Reimpressão de Telão vendido antes** sai com a imagem nova do telão.
+- **Impressão do Maracanã 1950:** o papel 10×15 corta um pouco da foto. Neste fundo o corte é embaixo, para o título sair inteiro no alto.
+- **Impressão do Mirante do Rio:** o Cristo fica perto da borda de cima. Confira as primeiras impressões na DNP. Se o topo do Cristo sair cortado, avise a TI.
+- **Para oferecer:** mostre as três. A montagem conta dentro do pacote, como qualquer outra foto.
+- **Para mudar os fundos ligados** (Admin e Supervisor): **Configurações › Preços e Checkout**, aba **Fundos de IA**. Para trazer um fundo de volta: **Sistema › Laboratório › Fundos em teste › Ativar** (Admin).
+
+### Depois desta atualização
+
+1. Feche e abra de novo o Checkout, o Posto de venda e Minhas fotos em todos os computadores.
+2. Janela antiga continua mostrando os 5 fundos antigos até ser reaberta.
+3. Se algum cliente estava no meio da escolha na hora da atualização, peça para ele escolher as fotos especiais de novo.
+
+### O que vem depois (decidido pelo Eduardo, ainda não está no sistema)
+
+- O Eterna reconhece pela imagem as 2 primeiras fotos de cada visitante no gramado, sem depender de escala.
+- A montagem fica pronta no computador do ponto antes de o cliente chegar ao Checkout.
+- A montagem passa a ir também para a galeria do QR.
+- O cliente escolhe quais fotos vão para o papel.
+- O fundo de IA faz parte do pacote.
+
 ## Novidades da v93: servidor do ponto com acesso por pessoa ou aparelho
 
 O servidor do ponto só abre os dados para quem entrou com usuário e senha ou para um aparelho pareado.
@@ -1176,6 +1236,11 @@ Lista de operação no servidor do ponto:
 - "Tire de frente, com boa luz, sem boné e sem óculos escuros."
 - "Se errar 5 vezes, o site pede para esperar 15 minutos."
 
+**Sobre as fotos especiais**
+- "Estas três são as suas fotos especiais: no Mirante do Rio, no Maracanã de 1950 e no Telão do Maracanã."
+- "A do Maracanã 1950 sai toda em preto e branco, como uma foto da época."
+- "Elas entram no seu pacote como qualquer outra foto."
+
 **Sobre o que aparece**
 - "As fotos que você comprou e as cortesias aparecem primeiro, para baixar em alta."
 - "As outras fotos da sua visita aparecem com marca d'água. Dá para comprar cada uma por R$ 39, ou todas pelo preço do pacote."
@@ -1200,6 +1265,8 @@ Lista de operação no servidor do ponto:
 - **Compra feita na galeria da escola** não aparece na galeria da sessão da família, e vice-versa.
 - **"Baixar todas"** baixa as fotos uma por uma (ainda não há arquivo ZIP).
 - **Fotos com fundo de IA (Edição Maracanã)** ainda não aparecem na galeria por QR. No pacote só digital elas não chegam ao cliente: ofereça um pacote com impressão. Isso muda numa próxima versão. A compra de fundo de IA depois da visita, que existia na tela Convidado, volta na galeria online numa próxima fase.
+- **Fotos especiais dependem das 2 primeiras fotos.** Enquanto o reconhecimento pela imagem não entra, as montagens usam as 2 primeiras fotos com gente do cliente, de qualquer ponto. Se essas fotos forem de corpo inteiro ou de longe, a montagem sai pior.
+- **CSV da Lista de vendas** baixa todas as vendas, sem os filtros da tela. Use o XLS para o recorte.
 - **Permissões**: desde a v93, o servidor do ponto confere a permissão de cada pessoa ou aparelho em cada pedido. O que a conta não pode mudar volta com o aviso "alterações não foram aceitas (sem permissão)".
 - **Sessão vencida ao recarregar**: a tela volta à entrada sem o aviso "Sua sessão terminou". Basta entrar de novo.
 - **Painel: a parte Eterna são as vendas deste computador.** Dois computadores podem mostrar totais diferentes até as vendas irem para o servidor.
