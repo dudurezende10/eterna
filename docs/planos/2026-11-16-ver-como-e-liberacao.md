@@ -23,7 +23,7 @@ Perfil `snap`:
 Admin (Ronaldo, Eduardo) abre o sistema exatamente como a pessoa vê, para conferir menu, telas e permissões. É só para olhar.
 
 **Na tela**
-- Em Usuários, o cadastro de quem não é Admin tem "Ver como esta pessoa" → **Ver como**.
+- Em Usuários, o cadastro de quem não é Admin tem o botão **Ver como esta pessoa**.
 - Enquanto vale, todas as telas mostram uma faixa no topo: "Vendo como Fulano (perfil) · só visualização", com o botão **Voltar para <admin>**.
 - O botão volta para a conta do Admin e abre Usuários.
 
