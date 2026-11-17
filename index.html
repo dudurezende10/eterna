@@ -579,10 +579,10 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-lbimg.spr{aspect-ratio:3/2;height:auto;width:auto;max-height:100%;max-width:100%;flex:0 1 auto;min-height:0}
 .lj-lbmid:has(.spr){container-type:size}.lj-lbmid .lj-lbimg.spr{width:min(100cqw,150cqh);height:auto}
 .lj-lbimg.ai{display:flex;align-items:center;justify-content:center}.lj-lbimg.ai>*{max-width:100%;max-height:100%}
-/* 17/11: a marca atravessa a foto e aparece em fundo claro (contorno escuro) e escuro (branco) */
-.lj-lbimg .wm,.lj-gimg .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:min(8.5vw,14vh);letter-spacing:.18em;color:rgba(255,255,255,.34);-webkit-text-stroke:1.5px rgba(0,0,0,.2);text-shadow:0 0 18px rgba(0,0,0,.18);transform:rotate(-24deg);pointer-events:none;white-space:nowrap;z-index:2}
+/* 17/11: marca de prova repetida na diagonal pela foto inteira, branca com contorno escuro (aparece em fundo claro e escuro) */
+.lj-lbimg .wm,.lj-gimg .wm{position:absolute;inset:0;font-size:0;color:transparent;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='300'%3E%3Cg transform='rotate%28-24 260 150%29'%3E%3Ctext x='260' y='165' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-size='46' letter-spacing='6' fill='%23fff' fill-opacity='.42' stroke='%23000' stroke-opacity='.28' stroke-width='1.6' paint-order='stroke'%3EVIVA MARACAN%26%23195%3B%3C/text%3E%3C/g%3E%3C/svg%3E") center/520px 300px repeat;pointer-events:none;z-index:2}
 .lj-lbimg,.lj-gimg{overflow:hidden}
-.lj-gimg .wm{font-size:clamp(13px,2.4vw,30px);letter-spacing:.14em;-webkit-text-stroke:.6px rgba(0,0,0,.22);text-shadow:0 0 6px rgba(0,0,0,.2)}
+.lj-gimg .wm{background-size:210px 121px}
 .lj-ovtl,.lj-ovtr{position:absolute;top:max(12px,env(safe-area-inset-top,0px));z-index:2;display:flex;align-items:center;gap:4px}
 .lj-ovtl{left:max(16px,env(safe-area-inset-left,0px));pointer-events:none}
 .lj-ovlogo{pointer-events:auto;opacity:.45}.lj-ovlogo .vlogo{height:clamp(18px,3vh,28px)!important;width:auto!important}
