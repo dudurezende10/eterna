@@ -103,7 +103,7 @@ Como fica:
 5. **Teste de carga antes de ligar:** 10 mil fotos sintéticas numa janela, 50 responsáveis ao mesmo tempo, e medição do tempo até a primeira foto e do custo. Também simula três escolas na mesma hora.
 
 **A conferir na conta (Ronaldo, CloudShell):**
-- a cota de transações por segundo do Rekognition em us-east-2: `IndexFaces` e `SearchFacesByImage`. Fora das regiões maiores, o padrão pode ser 5 por segundo, o que deixaria 10 mil fotos em 33 minutos. Se estiver abaixo de 50, pedir aumento no Service Quotas;
+- **Cota conferida em 17/11: 5 por segundo** em `IndexFaces` e em `SearchFacesByImage` (us-east-2). Com isso, 10 mil fotos levam 33 minutos, e 5 selfies por segundo na conta inteira travam com muitos pais ao mesmo tempo. **Pedido de aumento para 50 por segundo nas duas** (Service Quotas), feito pelo Ronaldo. Até a resposta da AWS, escola não liga;
 - a conta no plano pago antes da produção (já está em NUVEM.md §7).
 
 ## Pontos de atenção
