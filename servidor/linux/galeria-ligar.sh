@@ -10,7 +10,7 @@
 set -Eeuo pipefail
 ENV=/srv/eterna/Eterna/nuvem.env
 SEG=/srv/eterna/Eterna/nuvem-segredo.txt
-API=${1:-https://whe2hyve2j.execute-api.us-east-2.amazonaws.com}     # 17/11: com o firewall, passar o EnderecoBorda (https://dxxxx.cloudfront.net)
+API=${1:-https://dxsulr2e9z91t.cloudfront.net}     # 17/11: CloudFront com o firewall (stack eterna-galeria-borda); a API direta é https://whe2hyve2j.execute-api.us-east-2.amazonaws.com
 ok()   { printf '   \033[32mok\033[0m %s\n' "$*"; }
 para() { printf '\n\033[1;31mPAROU: %s\033[0m\n' "$*"; exit 1; }
 trap 'para "erro na linha $LINENO: $BASH_COMMAND"' ERR
