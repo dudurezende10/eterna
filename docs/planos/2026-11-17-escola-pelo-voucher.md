@@ -103,7 +103,7 @@ Como fica:
 5. **Teste de carga antes de ligar:** 10 mil fotos sintéticas numa janela, 50 responsáveis ao mesmo tempo, e medição do tempo até a primeira foto e do custo. Também simula três escolas na mesma hora.
 
 **A conferir na conta (Ronaldo, CloudShell):**
-- **Cota conferida em 17/11: 5 por segundo** em `IndexFaces` e em `SearchFacesByImage` (us-east-2). Com isso, 10 mil fotos levam 33 minutos, e 5 selfies por segundo na conta inteira travam com muitos pais ao mesmo tempo. **Pedido de aumento para 50 por segundo nas duas** (Service Quotas), feito pelo Ronaldo. Até a resposta da AWS, escola não liga;
+- **Cota conferida em 17/11: 5 por segundo** em `IndexFaces` e em `SearchFacesByImage` (us-east-2). Com isso, 10 mil fotos levam 33 minutos, e 5 selfies por segundo na conta inteira travam com muitos pais ao mesmo tempo. **Pedido de aumento para 50 por segundo nas duas**, feito pelo Ronaldo em 17/11 às 18h (Service Quotas, us-east-2): `L-43CBEB68` SearchFacesByImage e `L-7C13EBAD` IndexFaces, que abriu caso no suporte. Acompanhar com `aws service-quotas list-requested-service-quota-change-history --service-code rekognition --region us-east-2`. Até a aprovação, escola não liga;
 - a conta no plano pago antes da produção (já está em NUVEM.md §7).
 
 ## Pontos de atenção
