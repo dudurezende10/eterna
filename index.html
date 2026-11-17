@@ -793,6 +793,9 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .gq-fine{font-size:14px;color:#b9cbe6;margin:0;max-width:420px}
 .gq-err{color:#ffd0c8;font-weight:600;margin:0}
 .gq-codein{width:min(360px,100%)}
+/* 17/11: escola pelo voucher, a foto grátis */
+.gq-grtopo{background:rgba(245,183,0,.14);border:1px solid rgba(245,183,0,.5);border-radius:14px;padding:14px 16px;margin-bottom:18px}.gq-grtopo .lj-h2{margin:0 0 4px}
+.gq-grbtn{margin-top:6px;width:100%}.gq-grph{width:min(420px,100%);aspect-ratio:3/2;border-radius:14px;margin:0 auto 14px;position:relative;overflow:hidden;background-size:cover;background-position:center}
 .gq-consent{display:flex;gap:14px;align-items:flex-start;text-align:left;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:16px;font-size:15.5px;line-height:1.5;cursor:pointer}
 .gq-consent strong{display:block;font-weight:600}
 .gq-consent small{display:block;margin-top:8px;font-size:13.5px;line-height:1.45;opacity:.82}
@@ -3160,11 +3163,12 @@ function qrPng(text,size){const d=document.createElement('div');if(!qrDraw(d,tex
 // ---------- Rota pública #g/<token>: consentimento, selfie, galeria, compra e download, sem login ----------
 function pubRead(){const h=location.hash;const m=h.match(/^#g\/(.*)$/);const pv=h.match(/^#g\/pedido\/(ON-[A-Z0-9]{10})$/);
   if(pv){if(!state.pub||state.pub.ref!==pv[1])state.pub={token:null,ref:pv[1],step:'conferindo'};state.lojaRota=false;return true;}
-  if(m){const t=m[1];if(!/^[A-Za-z0-9_-]{22}$/.test(t)){state.pub={token:null,step:t?'nao_existe':'codigo'};}else if(!state.pub||state.pub.token!==t)state.pub={token:t,step:'carregando',modo:null,info:null,acesso:null,gal:null,sel:{},restam:GQ_MAX,err:null};state.lojaRota=false;return true;}
+  if(m){const t=m[1];if(/^[A-Za-z0-9]{6,20}$/.test(t)&&!/^[A-Za-z0-9_-]{22}$/.test(t)){if(!state.pub||state.pub.pre!==t.toUpperCase())state.pub={token:null,step:'codigo',pre:t.toUpperCase(),auto:true};} // 17/11: localizador do voucher de escola
+    else if(!/^[A-Za-z0-9_-]{22}$/.test(t)){state.pub={token:null,step:t?'nao_existe':'codigo'};}else if(!state.pub||state.pub.token!==t)state.pub={token:t,step:'carregando',modo:null,info:null,acesso:null,gal:null,sel:{},restam:GQ_MAX,err:null};state.lojaRota=false;return true;}
   if(h==='#g'){if(!state.pub||state.pub.token||state.pub.step!=='codigo')state.pub={token:null,step:'codigo'};state.lojaRota=false;return true;}
   state.pub=null;state.lojaRota=h==='#loja';return false;}
 function pubRetry(p){clearTimeout(p.rt);p.rt=setTimeout(()=>{if(state.pub===p&&p.step==='chegando')pubLoad();},20000);}
-async function pubLoad(){const p=state.pub;if(p&&p.ref&&!p.token){pubConferir(p);return;}if(!p||!p.token){render();return;}const tok=p.token;let r=null,net=false;
+async function pubLoad(){const p=state.pub;if(p&&p.ref&&!p.token){pubConferir(p);return;}if(!p||!p.token){render();if(p&&p.auto){p.auto=false;pubCodigo();}return;}const tok=p.token;let r=null,net=false;
   try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),2500);r=await fetch(galApi()+'/g/'+tok+'/info',{cache:'no-store',signal:ctl.signal});clearTimeout(t);}catch(e){net=true;}
   if(state.pub!==p)return;let info=null;
   if(r&&r.status===200){try{info=await r.json();}catch(e){info=null;}}
@@ -3272,6 +3276,7 @@ const cpfOk=v=>{const d=String(v||'').replace(/\D/g,'');if(d.length!==11||/^(\d)
 const PED_KEY='eterna.gq.ped';
 function pubPedSalvo(tok){try{const o=JSON.parse(sessionStorage.getItem(PED_KEY)||'null');return o&&o.token===tok&&Date.now()-o.em<3600000?o:null;}catch(e){return null;}}
 async function pubBaixar(pid,i){const p=state.pub;const g=pubGaleria();const f=g.fotos.find(x=>x.pid===pid);if(!f||(f.direito!=='comprada'&&f.direito!=='cortesia'))return;
+  if(p.modo==='agente'&&p.acesso)fetch(galApi()+'/g/'+p.token+'/evento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,tipo:'foto_baixada',foto:pid})}).catch(()=>{});
   const nome=`viva-maracana-${i||1}.jpg`;const salva=href=>{const a=document.createElement('a');a.href=href;a.download=nome;document.body.appendChild(a);a.click();a.remove();};
   if(p.modo==='agente'){
     // links assinados valem 15 min: com mais de 12 min de galeria, ou se o download falhar, pede links novos e tenta de novo uma vez
@@ -3325,10 +3330,22 @@ function pubVoltaLe(tok){try{const o=JSON.parse(sessionStorage.getItem('eterna.g
 function pubAguardar(p){clearTimeout(p.at);p.at=setTimeout(async()=>{if(state.pub!==p||p.step!=='aguardando')return;
   try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});if(r.status===401){pubAcessoVenceu(p);return;}const j=await r.json();if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();const ok=(p.esperando||[]).every(pid=>(j.galeria.fotos||[]).some(f=>f.pid===pid&&f.direito==='comprada'));if(ok){p.step='galeria';render();toast(T('gq_paid'));return;}}}catch(e){}
   pubAguardar(p);},5000);}
-async function pubCodigo(){const p=state.pub;const v=(($('#gq-code')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(v.length!==8&&v.length!==12){p.err=T('gq_notFound');render();return;}const c=v.match(/.{4}/g).join('-'); /* v99.24: cartão com 12 */let tok=null;
-  try{const r=await fetch(galApi()+'/g/codigo/'+c,{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&/^[A-Za-z0-9_-]{22}$/.test(j.token||''))tok=j.token;}}catch(e){}
-  if(!tok){const m=Object.values(SIM.galerias||{}).find(x=>x.codigo===c);if(m)tok=m.token;}
+async function pubCodigo(){const p=state.pub;const v=(($('#gq-code')||{}).value||p.pre||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const cod=(v.length===8||v.length===12)&&/^[A-HJ-NP-Z2-9]+$/.test(v)?v.match(/.{4}/g).join('-'):null; /* v99.24: cartão com 12 */
+  const tenta=[cod,v.length>=6&&v.length<=20?v:null].filter((x,i,a)=>x&&a.indexOf(x)===i); // 17/11: o localizador do voucher de escola entra no mesmo campo
+  if(!tenta.length){p.err=T('gq_notFound');render();return;}let tok=null;
+  for(const c of tenta){try{const r=await fetch(galApi()+'/g/codigo/'+encodeURIComponent(c),{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&/^[A-Za-z0-9_-]{22}$/.test(j.token||'')){tok=j.token;break;}}}catch(e){}}
+  if(!tok&&cod){const m=Object.values(SIM.galerias||{}).find(x=>x.codigo===cod);if(m)tok=m.token;}
   if(!tok){p.err=T('gq_notFound');render();return;}location.hash='#g/'+tok;}
+// 17/11: escola pelo voucher. A criança escolhe uma foto grátis (a nuvem controla uma por criança e o total do voucher).
+async function pubGratis(p){const em=(($('#gq-gr-email')||{}).value||'').trim();if(!/^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$/i.test(em)){p.err=T('gq_emailBad');render();return;}
+  if(p.grBusy)return;p.grBusy=true;p.err=null;render();
+  try{const r=await fetch(galApi()+'/g/'+p.token+'/cortesia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,foto:p.gratis,email:em,idioma:lang(),marketing:!!($('#gq-gr-mkt')||{}).checked,versao:GQ_VERSAO})});
+    if(r.status===401){p.grBusy=false;pubAcessoVenceu(p);return;}const j=await r.json();if(j.galeria){p.gal=j.galeria;p.galAt=Date.now();}
+    if(j.ok){p.gratis=null;p.step='galeria';render();scrollTo(0,0);toast(T(j.repetida?'gq_gratisRep':'gq_gratisOk'));}
+    else if(j.motivo==='esgotada'){p.gratis=null;p.step='galeria';render();toast(T('gq_gratisEsgot'));}
+    else{p.err=T(j.motivo==='email'?'gq_emailBad':'gq_impErr');render();}}
+  catch(e){p.err=T('gq_impErr');render();}finally{p.grBusy=false;}}
 // v99.23: fotos do Tour achadas pela foto da venda, ali mesmo na página do vídeo (sem selfie: a nuvem manda o acesso e as fotos).
 // Comprada sem marca e com Baixar; à venda com marca, e tocar abre a compra na galeria do Tour já com a foto marcada.
 const TOUR_KEY='eterna.gq.tour',GV_TOUR_MOSTRA=8;
@@ -3351,7 +3368,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const box=(h,d,extra)=>`<div class="gq ${p.step==='galeria'?'gq-gal':''}">${deco}${top()}<div class="gq-mid"><h1 class="lj-h2 gq-h">${h}</h1>${d?`<p class="lj-sub">${d}</p>`:''}${extra||''}</div></div>`;
   const help=`<p class="gq-help">${T('gq_help')}</p>`;
   if(p.step==='carregando')return box(T('gq_loading'),'','<div class="gq-spin" aria-hidden="true"></div>');
-  if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button>${help}`);
+  if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX-XXXX" maxlength="24" value="${esc(p.pre||'')}" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button>${help}`);
   if(p.step==='nao_existe')return box(T('gq_notFound'),'',`<button class="lj-ghost" data-act="gq-back" data-to="codigo">${T('gq_codeH')}</button>${help}`);
   if(p.step==='expirada')return box(T('gq_expired'),T('gq_expiredD'),help);
   if(p.step==='chegando')return box(T('gq_arriving'),T('gq_arrivingD'),help);
@@ -3392,16 +3409,23 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
       <button class="lj-cta lj-paybtn" data-act="gq-pay" ${n&&!p.paying?'':'disabled'}>${T(real?'gq_irPagar':'gq_buy',n,fmtR(ces.total))}</button><div class="lj-fine">${T(real?'gq_implyFine':'gq_payTest')}</div></div>
       <button class="lj-ghost" data-act="gq-back" data-to="galeria">${ICO.back} ${T('back')}</button></div></div>`;}
   if(p.step==='aguardando')return box(T('gq_waitPay'),'','<div class="gq-spin" aria-hidden="true"></div>');
+  if(p.step==='gratis'){const f=g.fotos.find(x=>x.pid===p.gratis);if(!f){p.step='galeria';}else
+    return box(T('gq_gratisH'),T('gq_gratisFinal'),`<div class="gq-ph gq-grph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>
+      <label class="gq-campo"><span>${T('gq_email')}</span><input id="gq-gr-email" type="email" autocomplete="email" maxlength="190" value="${esc((p.cli||{}).email||'')}"></label>
+      <label class="gq-consent gq-mkt"><input type="checkbox" id="gq-gr-mkt"><span><small>${T('gq_mkt')}</small></span></label>
+      ${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-gratis-ok" ${p.grBusy?'disabled':''}>${T('gq_gratisConf')} ${ICO.arrow}</button>
+      <button class="lj-ghost" data-act="gq-back" data-to="galeria">${ICO.back} ${T('back')}</button>`);}
   // galeria
   const mine=g.fotos.filter(f=>f.direito==='comprada'||f.direito==='cortesia');const more=g.fotos.filter(f=>f.direito==='venda');
   const compra=g.compra!==false; // o servidor do ponto e a nuvem mandam compra:false quando a compra pelo celular está desligada
+  const esc0=g.escola||null;const podeGr=!!(esc0&&esc0.pode_escolher&&!esc0.cortesia&&p.acesso);
   const nSel=compra?more.filter(f=>p.sel[f.pid]).length:0;const ces=pubCesta(nSel,g);const tot=ces.total;const livre=isFinite(ces.cobre)?Math.min(ces.cobre,more.length)-nSel:0;
   return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`)}
-    <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${T('gq_kidFound',g.fotos.length)}</div>`:''}<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${mine.length?T('gq_yoursD',mine.length):T('gq_none')}</p>
+    <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${esc0&&esc0.nome?esc(esc0.nome)+(esc0.dia?' · '+fmtD(esc0.dia+'T12:00:00'):'')+' · ':''}${T('gq_kidFound',g.fotos.length)}</div>`:''}<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${mine.length?T('gq_yoursD',mine.length):T('gq_none')}</p>
       ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>
       ${mine.length>1?`<button class="lj-cta gq-dlall" data-act="gq-dlall">${ICO.cloud} ${T('gq_dlAll')}</button>`:''}`:''}</section>
-    ${more.length?`<section class="gq-sec"><h2 class="lj-h2">${T('gq_more')}</h2><p class="lj-sub">${T('gq_moreD')} ${pubOferta(g)}</p>
-      <div class="gq-grid">${more.map(f=>{const on=compra&&!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>${compra?`<button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button>`:''}</figure>`;}).join('')}</div>
+    ${more.length?`<section class="gq-sec">${podeGr?`<div class="gq-grtopo"><h2 class="lj-h2">${T('gq_gratisH')}</h2><p class="lj-sub">${T('gq_gratisD')}</p></div>`:''}<h2 class="lj-h2">${T('gq_more')}</h2><p class="lj-sub">${T('gq_moreD')} ${pubOferta(g)}</p>
+      <div class="gq-grid">${more.map(f=>{const on=compra&&!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>${compra?`<button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button>`:''}${podeGr?`<button class="lj-ghost sm gq-grbtn" data-act="gq-gratis" data-pid="${esc(f.pid)}">${T('gq_gratisBtn')}</button>`:''}</figure>`;}).join('')}</div>
       ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(pubTotal(more.length,g)))}</button>`:`<p class="lj-sub gq-buyoff">${T('gq_buyOff')}</p>`}</section>`:''}
     ${pubTourVolta(p)}${g.tipo==='sessao'&&!(p.modo==='agente'?p.acesso:p.match)?`<section class="gq-sec gq-findmore"><p class="lj-sub">${T('gq_findMoreD')}</p><button class="lj-cta" data-act="gq-mais">${ICO.face} ${T('gq_findMore')}</button></section>`:''}
     ${nSel?`<div class="gq-bar"><span><b>${T('nPhotos',nSel)}</b> · ${fmtR(tot)}${livre>0?`<br><small>${T('gq_moreFree',livre)}</small>`:''}</span><button class="lj-cta" data-act="gq-buy">${T('gq_buy',nSel,fmtR(tot))}</button></div>`:''}
@@ -3592,6 +3616,14 @@ const I18N={
  // Loja apartada (#loja) e galeria online por QR (#g/<token>)
  ljBackStart:['Voltar ao início','Back to start','Volver al inicio','Retour au début','Zurück zum Start'],
  ljBackIn:['Voltamos ao início em','Back to the start in','Volvemos al inicio en','Retour à l’accueil dans','Zurück zum Start in'],
+ gq_gratisH:['Escolha sua foto grátis','Choose your free photo','Elige tu foto gratis','Choisissez votre photo offerte','Wähle dein Gratisfoto'],
+ gq_gratisD:['Toque em “Quero esta grátis” na foto que você quer de presente.','Tap “I want this one free” on the photo you want as a gift.','Toca “Quiero esta gratis” en la foto que quieres de regalo.','Touchez « Je veux celle-ci offerte » sur la photo que vous voulez en cadeau.','Tippe bei dem Foto, das du geschenkt haben möchtest, auf „Diese gratis“.'],
+ gq_gratisBtn:['Quero esta grátis','I want this one free','Quiero esta gratis','Je veux celle-ci offerte','Diese gratis'],
+ gq_gratisConf:['Confirmar foto grátis','Confirm free photo','Confirmar foto gratis','Confirmer la photo offerte','Gratisfoto bestätigen'],
+ gq_gratisFinal:['A escolha é final: depois não dá para trocar.','This choice is final and can’t be changed.','La elección es definitiva: no se puede cambiar.','Ce choix est définitif : il ne pourra pas être modifié.','Die Wahl ist endgültig und kann nicht geändert werden.'],
+ gq_gratisOk:['Foto grátis liberada para baixar','Free photo ready to download','Foto gratis lista para descargar','Photo offerte prête à télécharger','Gratisfoto zum Download bereit'],
+ gq_gratisRep:['Esta criança já escolheu a foto grátis.','This child has already chosen the free photo.','Este niño ya eligió la foto gratis.','Cet enfant a déjà choisi sa photo offerte.','Dieses Kind hat sein Gratisfoto schon gewählt.'],
+ gq_gratisEsgot:['As fotos grátis desta escola já foram todas escolhidas.','All free photos for this school have been chosen.','Ya se eligieron todas las fotos gratis de esta escuela.','Toutes les photos offertes de cette école ont été choisies.','Alle Gratisfotos dieser Schule wurden bereits gewählt.'],
  gq_loading:['Abrindo suas fotos','Opening your photos','Abriendo tus fotos','Ouverture de vos photos','Deine Fotos werden geöffnet'],
  gq_consentH:['Antes de começar','Before you start','Antes de empezar','Avant de commencer','Bevor es losgeht'],
  gq_consentSelf:['Autorizo o uso da minha selfie só para encontrar as minhas fotos desta visita.\nEla é comparada na hora e descartada (LGPD).','I authorize the use of my selfie only to find my photos from this visit.\nIt is compared on the spot and discarded (LGPD).','Autorizo el uso de mi selfie solo para encontrar mis fotos de esta visita.\nSe compara en el momento y se descarta (LGPD).','J’autorise l’utilisation de mon selfie uniquement pour retrouver mes photos de cette visite.\nIl est comparé sur place puis supprimé (LGPD).','Ich erlaube die Verwendung meines Selfies nur, um meine Fotos von diesem Besuch zu finden.\nEs wird sofort verglichen und gelöscht (LGPD).'],
@@ -11433,6 +11465,8 @@ document.addEventListener('click',e=>{
     case 'gq-paym':{const p=state.pub;if(!p)break;p.pagM=d.m;render();break;}
     case 'gq-pay':pubPagar();break;
     case 'gq-dl':pubBaixar(d.pid,+d.i||1);break;
+    case 'gq-gratis':{const p=state.pub;if(!p||!p.acesso)break;p.gratis=d.pid;p.err=null;p.step='gratis';render();scrollTo(0,0);break;}
+    case 'gq-gratis-ok':{const p=state.pub;if(p&&p.gratis)pubGratis(p);break;}
     case 'gq-dlall':{const mine=pubGaleria().fotos.filter(f=>f.direito==='comprada'||f.direito==='cortesia');(async()=>{for(let i=0;i<mine.length;i++){await pubBaixar(mine[i].pid,i+1);await new Promise(r=>setTimeout(r,700));}})();break;}
     case 'gq-back':{const p=state.pub;if(!p)break;if(d.to==='codigo'){location.hash='#g';break;}p.step=d.to||'galeria';render();break;}
     // galerias online (administração)
