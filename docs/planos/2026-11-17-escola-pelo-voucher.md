@@ -78,9 +78,36 @@ Painel **Escolas** (estatísticas):
 - **Funil no período:** digitou, autorizou, fez a selfie, achou, escolheu a cortesia, baixou, comprou.
 - **Totais:** taxa de conversão da cortesia em compra e receita por escola.
 
+## Dimensionamento (Ronaldo, 17/11: superdimensionado)
+
+O teto de 600 fotos por galeria (`LIMITE_FOTOS_GALERIA`) não serve para escola. A conta parte do pior caso, não da média.
+
+| | Base | Escola |
+|---|---|---|
+| Fotos por dia | 15 mil (projeto da nuvem) | — |
+| Fotos por hora | ~1.900 de média; pico de 2x ≈ 3.800 | — |
+| Janela de uma visita (2h30) | — | **até 10 mil fotos** (pico o tempo todo, com folga) |
+| Escolas no mesmo dia | — | várias, com janelas que se cruzam |
+
+Como fica:
+
+1. **Uma coleção de rostos por dia de escola, não uma por voucher.** Toda foto de uma janela de escola é lida **uma vez só**, mesmo que caia na janela de 3 escolas. A busca da selfie devolve as fotos daquela coleção, e a galeria do voucher mostra só as que estão na sua janela (`ExternalImageId` = foto).
+2. **Leitura em paralelo.** A primeira autorização de um responsável no dia dispara a leitura. A Lambda se divide em lotes de 100 fotos que rodam ao mesmo tempo, até o limite de transações por segundo da conta. A 50 por segundo, 10 mil fotos levam cerca de 3,5 minutos. Esse primeiro responsável vê "processando" e é avisado por e-mail quando as fotos ficam prontas. Os seguintes entram na hora. Os rostos continuam sendo lidos só depois de uma autorização, nunca antes.
+3. **Tetos próprios da escola**, separados dos da galeria comum:
+   - até 10 mil fotos por janela;
+   - `LimiteLeiturasDia` de 15 mil para 60 mil, contando a galeria comum mais 4 janelas cheias;
+   - `LimiteBuscasDia` de 10 mil para 20 mil.
+
+   Chegar a 80% de qualquer teto manda alerta por e-mail antes de o cliente ver "processando".
+4. **Custo do pior caso:** cerca de US$ 0,001 por foto lida e por selfie. Uma janela cheia custa ~US$ 10, uma vez só, e as selfies dos alunos ficam em centavos. Um dia com 4 escolas no pico custa ~US$ 40. O alerta de orçamento continua.
+5. **Teste de carga antes de ligar:** 10 mil fotos sintéticas numa janela, 50 responsáveis ao mesmo tempo, e medição do tempo até a primeira foto e do custo. Também simula três escolas na mesma hora.
+
+**A conferir na conta (Ronaldo, CloudShell):**
+- a cota de transações por segundo do Rekognition em us-east-2: `IndexFaces` e `SearchFacesByImage`. Fora das regiões maiores, o padrão pode ser 5 por segundo, o que deixaria 10 mil fotos em 33 minutos. Se estiver abaixo de 50, pedir aumento no Service Quotas;
+- a conta no plano pago antes da produção (já está em NUVEM.md §7).
+
 ## Pontos de atenção
 
-- **Teto de leitura:** a nuvem lê até 600 fotos por galeria (`LIMITE_FOTOS_GALERIA`). Uma janela de 2h30 num dia cheio pode passar disso. A janela é medida com dados reais antes de ligar, e o teto pode subir só para galerias de voucher.
 - **Gente de fora na janela:** a janela pega visitantes que não são da escola. Eles nunca aparecem para o responsável, porque a escola só mostra as fotos em que a criança da selfie aparece, com limiar de criança.
 - **Atraso do robô:** o voucher aparece em até 1 hora depois de criado ou confirmado. Como o responsável entra depois da visita, isso não atrapalha.
 - **Risco já registrado do grupo de escola** (DOCUMENTACAO-TECNICA, "IMPORTANTE"): recortar o rosto de outra criança da vitrine. Continuam os limites de 2 crianças por aparelho e 60 acessos por hora.
