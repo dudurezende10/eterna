@@ -31,6 +31,7 @@ for t in testes/sessoes_agente.py testes/selfie_rapidez.py testes/login_agente.p
   conta "$(basename $t)" $RC "$OUT"
 done
 OUT=$(python3 -I testes/backup_originais_envio.py servidor/linux/backup-originais.py 2>&1); conta backup_originais_envio $? "$OUT"
+# os .js entram todos pelo laço abaixo (checkout-barra-escolhidas.js, da barra das escolhidas, incluído)
 for t in testes/*.js; do
   case "$(basename $t)" in _*) continue;; esac
   OUT=$(node "$t" 2>&1); RC=$?

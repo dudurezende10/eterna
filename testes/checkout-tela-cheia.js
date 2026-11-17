@@ -23,6 +23,8 @@ const servidores=[];
 let ult="";const ok=(c,m)=>{n++;ult=String(m).slice(0,90);if(!c)fails.push(m);};
 try{
 const ctx=await b.newContext({locale:'pt-BR',permissions:['camera']});
+// 17/11: o primeiro toque pede a tela cheia do navegador (lojaTelaCheia); com ela o Chromium do teste não aceita trocar o tamanho da janela
+await ctx.addInitScript(()=>{Element.prototype.requestFullscreen=undefined;});
 const nova=async(c,nome,vp)=>{const pg=await c.newPage();await pg.setViewportSize(vp);pg.on('pageerror',e=>errs.push(nome+': '+e.message));return pg;};
 // medição: rolagem do documento, rolagem interna visível, botões fora da tela, alvos de toque pequenos, câmera ligada
 const medir=(pg,umaTela)=>pg.evaluate(umaTela=>{const W=innerWidth,H=innerHeight,d=document.documentElement;
@@ -32,8 +34,8 @@ const medir=(pg,umaTela)=>pg.evaluate(umaTela=>{const W=innerWidth,H=innerHeight
   root.querySelectorAll('button,a,input,.lj-langs').forEach(e=>{if(!vis(e))return;const r=e.getBoundingClientRect();const nome=(e.className||e.tagName)+':'+(e.dataset.act||'')+':'+(e.getAttribute('aria-label')||e.textContent||'').trim().slice(0,18);
     if(r.left<-1||r.right>W+1)fora.push(nome+' x '+Math.round(r.left)+'..'+Math.round(r.right));
     else if(!rolaY(e)&&(r.top<-1||r.bottom>H+1))fora.push(nome+' y '+Math.round(r.top)+'..'+Math.round(r.bottom));
-    if(loja&&e.tagName==='BUTTON'&&(r.width<71.5||r.height<71.5))peq.push(nome+' '+Math.round(r.width)+'×'+Math.round(r.height));});
-  const rolam=[];if(umaTela)root.querySelectorAll('*').forEach(e=>{const s=getComputedStyle(e);if(/auto|scroll/.test(s.overflowY)&&e.scrollHeight>e.clientHeight+1&&vis(e))rolam.push((e.className||e.tagName)+' '+e.scrollHeight+'>'+e.clientHeight);});
+    if(loja&&e.tagName==='BUTTON'&&!e.classList.contains('lj-esc-x')&&(r.width<71.5||r.height<71.5))peq.push(nome+' '+Math.round(r.width)+'×'+Math.round(r.height));});
+  const rolam=[];if(umaTela)root.querySelectorAll('*').forEach(e=>{if(e.classList.contains('lj-esc-l'))return;const s=getComputedStyle(e);if(/auto|scroll/.test(s.overflowY)&&e.scrollHeight>e.clientHeight+1&&vis(e))rolam.push((e.className||e.tagName)+' '+e.scrollHeight+'>'+e.clientHeight);});
   const docY=d.scrollHeight>H+1||document.body.scrollHeight>H+1;
   return {sw:d.scrollWidth,W,H,semX:d.scrollWidth<=W&&document.body.scrollWidth<=W,docY,fora,rolam,peq,cam:!!(window.ETERNA&&ETERNA.state.cam&&ETERNA.state.cam.stream)};},umaTela);
 const tabela={};
@@ -129,12 +131,13 @@ const ctl=await L.evaluate(()=>{const lb=document.querySelector('#lj-lb');const 
     prev:R('.lj-lbnav.prev'),next:R('.lj-lbnav.next'),yes:R('#lj-lb .lj-yes'),no:R('#lj-lb .lj-no'),logo:(()=>{const e=document.querySelector('#lj-lb .lj-ovlogo');return e?{r:e.getBoundingClientRect().toJSON(),op:+getComputedStyle(e).opacity}:null;})(),
     cnt:(document.querySelector('#lj-lb .lj-lbcnt')||{}).textContent||'',cntFs:document.querySelector('#lj-lb .lj-lbcnt')?parseFloat(getComputedStyle(document.querySelector('#lj-lb .lj-lbcnt')).fontSize):0,
     yesBg:document.querySelector('#lj-lb .lj-yes')?getComputedStyle(document.querySelector('#lj-lb .lj-yes')).backgroundColor:'',fundo:getComputedStyle(lb).backgroundColor,
-    cobreTopo:cobre('.lj-top,.lj-title'),W:innerWidth,H:innerHeight};});
+    cobreTopo:cobre('.lj-top,.lj-title'),img,W:innerWidth,H:innerHeight};});
 ok(!ctl.titulo&&!ctl.steps&&!ctl.top&&!ctl.cobreTopo,'sem cabeçalho, título ou barra de etapas sobre a foto: '+JSON.stringify({t:ctl.titulo,s:ctl.steps,top:ctl.top}));
-const previstos=new Set(['loja-logo','kiosk-ver','kiosk-ok','kiosk-no','lang','lj-lg','kiosk-sair','loja-cart','kiosk-fechar']);
+const previstos=new Set(['loja-logo','kiosk-ver','kiosk-ok','kiosk-no','lang','lj-lg','kiosk-sair','loja-cart','kiosk-fechar','kiosk-esc-ir','kiosk-esc-x','kiosk-esc-desf']); // 17/11: + barra das escolhidas
 const extras=ctl.acts.filter(x=>!previstos.has(x.split(':')[0]));ok(!extras.length,'só os controles previstos na escolha: '+extras.join(','));
-ok(ctl.prev&&ctl.next&&ctl.prev.width>=72&&ctl.prev.height>=72&&ctl.next.width>=72&&ctl.prev.left<ctl.W*.15&&ctl.next.right>ctl.W*.85,'setas ‹ › nas laterais com alvo ≥ 72 px: '+JSON.stringify({p:ctl.prev,n:ctl.next}));
-ok(ctl.yes&&ctl.no&&Math.abs((ctl.yes.left+ctl.yes.right)/2-ctl.W/2)<ctl.W*.08&&ctl.yes.bottom>ctl.H*.8&&ctl.yes.width>=80&&/255, 184, 0/.test(ctl.yesBg)&&Math.abs((ctl.no.top+ctl.no.bottom)/2-(ctl.yes.top+ctl.yes.bottom)/2)<20,'✓ amarelo grande no centro embaixo, ✗ ao lado: '+JSON.stringify({y:ctl.yes,n:ctl.no,bg:ctl.yesBg}));
+// 17/11 (regra do Eduardo: a barra das escolhidas não encolhe a foto nem a cobre mais): na tela larga as setas saem da sobra da esquerda para a coluna da barra
+ok(ctl.prev&&ctl.next&&ctl.prev.width>=72&&ctl.prev.height>=72&&ctl.next.width>=72&&ctl.prev.left>=ctl.img.right-1&&ctl.next.left>=ctl.img.right-1&&ctl.prev.right<=ctl.next.left+1&&ctl.next.right<=ctl.W+1,'setas ‹ › fora da foto, na coluna da barra, com alvo ≥ 72 px: '+JSON.stringify({p:ctl.prev,n:ctl.next,img:ctl.img}));
+ok(ctl.yes&&ctl.no&&Math.abs((ctl.yes.left+ctl.yes.right)/2-(ctl.img.left+ctl.img.right)/2)<ctl.W*.08&&ctl.yes.bottom>ctl.H*.8&&ctl.yes.width>=80&&/255, 184, 0/.test(ctl.yesBg)&&Math.abs((ctl.no.top+ctl.no.bottom)/2-(ctl.yes.top+ctl.yes.bottom)/2)<20,'✓ amarelo grande no centro embaixo, ✗ ao lado: '+JSON.stringify({y:ctl.yes,n:ctl.no,bg:ctl.yesBg}));
 ok(ctl.logo&&ctl.logo.op<=.7&&ctl.logo.r.height<=48&&(ctl.logo.r.left<ctl.W*.2||ctl.logo.r.right>ctl.W*.8),'logo pequeno e discreto num canto: '+JSON.stringify(ctl.logo));
 ok(/^\s*1 \/ \d+\s*$/.test(ctl.cnt)&&ctl.cntFs<=16,'contador pequeno "1 / N": '+ctl.cnt+' '+ctl.cntFs);
 ok(/^rgb\((10|11|12|13), (2\d|3\d|4\d|5\d|6\d), (5\d|6\d|7\d)/.test(ctl.fundo),'fundo azul escuro da marca: '+ctl.fundo);
@@ -178,7 +181,8 @@ const pill=await L.evaluate(()=>{const e=document.querySelector('#lj-lb .lj-cart
 ok(pill&&pill.tag==='SPAN'&&!pill.act&&pill.pe==='none'&&pill.t==='2','6: contador do carrinho só mostra o número, sem ação: '+JSON.stringify(pill));
 ok(await L.evaluate(()=>document.querySelectorAll('.lj [data-act="loja-cart"],.lj [data-act="kiosk-done"]').length)===1,'6: um único Continuar na escolha');
 await L.evaluate(()=>{const e=document.querySelector('#lj-lb .lj-cartpill');e.dispatchEvent(new MouseEvent('click',{bubbles:true}));});await L.waitForTimeout(150);ok(await L.evaluate(()=>ETERNA.state.kiosk.step)==='review','6: tocar no contador não faz o pedido');
-ok(await L.evaluate(()=>{const c=document.querySelector('#lj-lb .lj-ovtr');const r=c.getBoundingClientRect();const lb=document.querySelector('#lj-lb [data-act="kiosk-fechar"]');return r.width<=420&&r.height<=80&&!lb.innerText.trim();}),'6: idioma, início, contador e Ver todas pequenos no canto (Ver todas só com o ícone)');
+// 17/11: com a barra das escolhidas, na tela larga o canto fica inteiro dentro da coluna da barra (em até 2 linhas), fora da foto
+ok(await L.evaluate(()=>{const c=document.querySelector('#lj-lb .lj-ovtr');const r=c.getBoundingClientRect();const e=document.querySelector('#lj-esc').getBoundingClientRect();const lb=document.querySelector('#lj-lb [data-act="kiosk-fechar"]');return r.left>=e.left-1&&r.right<=e.right+1&&r.height<=160&&!lb.innerText.trim();}),'6: idioma, início, contador e Ver todas pequenos, inteiros na coluna da barra (Ver todas só com o ícone)');
 await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);
 let st=await L.evaluate(()=>({step:ETERNA.state.kiosk.step,p:ETERNA.state.kiosk.paid,txt:document.querySelector('.lj').innerText.replace(/\s+/g,' ')}));
 ok(st.step==='done'&&st.p&&st.p.escolha&&st.p.wait&&st.p.total==null&&/Pronto!/i.test(st.txt)&&/atendente vai finalizar sua compra/.test(st.txt)&&st.txt.includes(st.p.codigo)&&/2 fotos escolhidas/.test(st.txt),'P2: "Pronto! O atendente vai finalizar sua compra", código e 2 fotos: '+JSON.stringify(st).slice(0,300));
