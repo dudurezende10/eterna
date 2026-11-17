@@ -12776,11 +12776,28 @@ def rota_privada(path):
     return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
+# 17/11 (Ronaldo): cabeçalhos de segurança em toda resposta. Nenhum site de fora embute o Eterna (frame-ancestors e X-Frame-Options),
+# o navegador não adivinha tipo de arquivo (nosniff), o endereço não vaza para outros sites (Referrer-Policy) e câmera só na própria
+# página; microfone, localização e pagamento pelo navegador desligados (o Eterna não usa).
+SEG_CABECALHOS = (
+    ("X-Frame-Options", "SAMEORIGIN"),
+    ("Content-Security-Policy", "frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'"),
+    ("X-Content-Type-Options", "nosniff"),
+    ("Referrer-Policy", "strict-origin-when-cross-origin"),
+    ("Permissions-Policy", "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"),
+)
+
+
 class H(BaseHTTPRequestHandler):
     timeout = 20            # conexão que declara corpo e não manda não prende uma thread para sempre
 
     def log_message(self, *a):
         pass
+
+    def end_headers(self):
+        for k, v in SEG_CABECALHOS:
+            self.send_header(k, v)
+        super().end_headers()
 
     def parse_request(self):
         """Atrás do proxy com certificado (nginx no próprio servidor, servidor/linux/certificado.sh) todo pedido chega do IP do
@@ -14734,7 +14751,6 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "app_indisponivel"}, 502)
         self.send_response(200)
         self.send_header("Content-Type", APP_TIPOS[os.path.splitext(rel)[1].lower()])
-        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache" if rel == "index.html" else "max-age=3600")
         self.end_headers()
