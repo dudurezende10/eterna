@@ -17,6 +17,8 @@ class Tabela:
         k = (Key["pk"], Key["sk"]); it = s.d.setdefault(k, dict(Key)); v = ExpressionAttributeValues or {}; n = ExpressionAttributeNames or {}
         if ConditionExpression and "lk" in it and not it["lk"] < v[":agora"]:
             raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+        if ConditionExpression and "lotes" in ConditionExpression and it.get("lotes", 0) >= v[":agora"]:
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
         if ConditionExpression == "estado <> :p" and it.get("estado") == v[":p"]:
             raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
         if UpdateExpression.startswith("REMOVE"):
@@ -385,4 +387,58 @@ app.EXIGIR_BORDA = True
 ok(chama("GET", "/g/%s/info" % ("K" * 22))[0] == 403, "exigindo a borda, pedido direto à API é recusado")
 ok(chama("GET", "/g/%s/info" % ("K" * 22), cab={"x-eterna-origem": "origem-secreta-com-mais-de-32-letras"})[0] == 200, "exigindo a borda, pela borda abre")
 app.EXIGIR_BORDA = False
+
+# 17/11: escola pelo voucher. O localizador abre a galeria da visita; leitura em lotes paralelos; uma foto grátis por criança,
+# até as pessoas do voucher; registros com voucher e escola.
+tokS = "S" * 22
+manS = {"token": tokS, "codigo": "SSSS-TTTT", "tipo": "evento", "menor": True, "nome": "EE Teste", "expira": exp, "precos": {"dig": 39, "todas": 250},
+        "voucher": {"localizador": "1112abcd1234", "escola": "EE Teste", "dia": "2026-11-12", "horarios": ["09:15"], "pessoas": 2},
+        "fotos": [{"id": "ag_%s%05x" % (k, i), "direito": "venda", "sessao": "LP" + k} for k in "cde" for i in range(10)]}
+ok(chama("POST", "/ponto/galerias", {"manifesto": manS}, {"x-eterna-ponto": seg})[0] == 200, "escola: galeria do voucher publicada")
+ok(app.teto_fotos(app.manifesto(tokS)) == 10000 and app.teto_fotos(man) == app.LIMITE_FOTOS_GALERIA, "escola: teto de 10 mil fotos só na galeria do voucher")
+st, r = chama("GET", "/g/codigo/1112abcd1234")
+ok(st == 200 and r.get("token") == tokS and r["escola"] == {"nome": "EE Teste", "dia": "2026-11-12"}, "escola: o localizador no campo do código abre a galeria e diz a escola")
+ok(chama("GET", "/g/codigo/ZZZZ99999999")[0] == 404, "escola: localizador sem galeria (não é escola) dá não encontrado, sem motivo")
+sel = lambda k: base64.b64encode(("rosto-%s" % k).encode()).decode()
+invocacoes.clear()
+n0 = R.indexadas
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("c"), "consentimento": True}, ip="8.0.0.1")
+lotes = [json.loads(x["Payload"]) for x in invocacoes]
+ok(st == 503 and r["motivo"] == "processando" and len(lotes) == app.ESCOLA_LOTES and R.indexadas == n0, "escola: a 1ª autorização dispara %d leituras em paralelo e responde processando" % app.ESCOLA_LOTES)
+invocacoes.clear()
+chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("c"), "consentimento": True}, ip="8.0.0.1")
+ok(not invocacoes, "escola: outra selfie durante a leitura não dispara de novo")
+for p in lotes:
+    app.handler(p, ctx)
+ok(R.indexadas - n0 == 30 and not app.faltam(tokS, app.manifesto(tokS)), "escola: os lotes leram as 30 fotos, cada uma uma vez só")
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("c"), "consentimento": True}, ip="8.0.0.1")
+ok(st == 200 and len(r["galeria"]["fotos"]) == 10 and r["galeria"]["escola"]["pode_escolher"] and r["galeria"]["escola"]["cortesia"] is None, "escola: a criança vê só as fotos dela e pode escolher a grátis")
+aC = r["acesso"]
+ok(not any(f["original"] for f in r["galeria"]["fotos"]), "escola: antes da escolha nenhuma foto sai sem marca")
+ok(chama("POST", "/g/%s/cortesia" % tokS, {"acesso": aC, "foto": "ag_c00003", "email": "x"})[1].get("motivo") == "email", "escola: e-mail obrigatório")
+ok(chama("POST", "/g/%s/cortesia" % tokS, {"acesso": aC, "foto": "ag_d00000", "email": "pai@x.com"})[1].get("motivo") == "foto", "escola: só foto em que a criança aparece")
+st, r = chama("POST", "/g/%s/cortesia" % tokS, {"acesso": aC, "foto": "ag_c00003", "email": "pai@x.com"}, ip="8.0.0.1")
+fs = {f["pid"]: f for f in r["galeria"]["fotos"]}
+ok(st == 200 and r["foto"] == "ag_c00003" and fs["ag_c00003"]["direito"] == "cortesia" and fs["ag_c00003"]["original"]
+   and not fs["ag_c00004"]["original"] and not r["galeria"]["escola"]["pode_escolher"], "escola: a escolhida sai sem marca; as outras continuam à venda")
+ok(any(k[0].startswith("LEAD#") and v.get("email") == "pai@x.com" for k, v in T.d.items()), "escola: e-mail guardado como lead")
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("c"), "consentimento": True}, ip="8.0.0.9")
+aC2 = r["acesso"]
+ok(r["galeria"]["escola"]["cortesia"] == "ag_c00003", "escola: a mesma criança em outro aparelho já vê a grátis que foi escolhida")
+st, r = chama("POST", "/g/%s/cortesia" % tokS, {"acesso": aC2, "foto": "ag_c00005", "email": "mae@x.com"}, ip="8.0.0.9")
+ok(st == 200 and r.get("repetida") and r["foto"] == "ag_c00003", "escola: outro e-mail com a mesma criança não ganha outra foto")
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("d"), "consentimento": True}, ip="8.0.0.2")
+ok(chama("POST", "/g/%s/cortesia" % tokS, {"acesso": r["acesso"], "foto": "ag_d00001", "email": "d@x.com"}, ip="8.0.0.2")[1].get("foto") == "ag_d00001", "escola: a segunda criança escolhe a dela")
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("e"), "consentimento": True}, ip="8.0.0.3")
+ok(r["galeria"]["escola"]["pode_escolher"] is False, "escola: com as 2 pessoas do voucher atendidas, a terceira não pode escolher")
+st, r2 = chama("POST", "/g/%s/cortesia" % tokS, {"acesso": r["acesso"], "foto": "ag_e00001", "email": "e@x.com"}, ip="8.0.0.3")
+ok(st == 409 and r2["motivo"] == "esgotada", "escola: acabou a cortesia do voucher; o resto fica à venda")
+ok(chama("POST", "/g/%s/evento" % tokS, {"acesso": aC, "tipo": "foto_baixada", "foto": "ag_c00003"})[0] == 200, "escola: download registrado")
+ok(chama("POST", "/g/%s/evento" % tokS, {"acesso": aC, "tipo": "foto_baixada", "foto": "ag_d00001"})[0] == 400, "escola: download de foto de outra criança não é aceito")
+evs = [v for k, v in T.d.items() if k[0] == "EVT#" + tokS]
+tipos = {v["tipo"] for v in evs}
+ok({"voucher_digitado", "selfie_ok", "cortesia_escolhida", "cortesia_repetida", "cortesia_esgotada", "foto_baixada"} <= tipos
+   and all(v.get("voucher") == "1112ABCD1234" and v.get("escola") == "EE Teste" for v in evs if v["tipo"] in ("voucher_digitado", "selfie_ok", "cortesia_escolhida", "cortesia_repetida", "cortesia_esgotada", "foto_baixada")), "escola: cada passo registrado com voucher e escola")
+chama("POST", "/ponto/galerias", {"manifesto": dict(manS, encerrada=True)}, {"x-eterna-ponto": seg})
+ok(not [k for k in T.d if k[0] == "IDX#" + tokS], "escola: encerrar apaga o progresso de todos os lotes")
 print("\ntudo certo")
