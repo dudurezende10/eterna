@@ -757,6 +757,18 @@ Igual no app (`SIM.galerias[token]`) e no agente (`~/Eterna/galerias/<token>/ses
 - Sessão de adulto: o rosto bate quando alguma foto tem semelhança ≥ 0,45 (`LIMITE`) e abre a sessão inteira. A faixa "talvez" (0,38 a 0,45) não abre.
 - Grupo de escola: só as fotos em que o rosto bate com ≥ 0,50 (`LIMITE_MENOR`), nunca a sessão inteira. O limite ainda precisa ser calibrado com fotos de escola (Ronaldo, `/rostos/medir`).
 
+### Escola pelo voucher (17/11, plano `docs/planos/2026-11-17-escola-pelo-voucher.md`)
+
+O responsável digita o localizador do voucher da Imply no mesmo campo do código. O fluxo depois disso é o mesmo de sempre.
+
+- **Origem:** `escola_loop` lê `ETERNA_PARCEIROS_GRUPOS` (padrão `https://parceiros.vivamaracana.com.br/api/painel/grupos`) a cada 10 min, com `Authorization: Bearer $ETERNA_PARCEIROS_TOKEN`. Sem token, fica desligado. O Viva Parceiros lê a tela Vouchers da Imply de hora em hora.
+- **Filtro (`escola_vouchers`):** `status` `confirmado`, etiqueta `[Escola]` na descrição (só ela; corporativo e empresa ficam de fora) e localizador de 6 a 20 letras e números. Grupos do mesmo localizador (um por horário) viram um voucher, com os horários juntos e as pessoas somadas.
+- **Janela (`escola_janelas`):** de 15 min antes até 2h30 depois de cada horário, no fuso do agente. Entram as sessões não removidas cujo `cap0` (sem ele, `aberta_em`) cai na janela, da memória e de `ponto/sessoes/<dia>.json`.
+- **Galeria (`escola_montar`):** depois do fim da última janela, monta uma galeria `evento` com `menor:true`, `nome` = escola, as sessões, as fotos (sem base de IA, até `ESCOLA_MAX_FOTOS` = 10 mil) e o bloco `voucher` (`localizador`, `escola`, `dia`, `horarios`, `pessoas`). Preços e catálogo vêm da galeria de sessão mais recente publicada pelo app. Publica pela fila de sempre (`gal_fila` e `nuvem_galeria_enfileira`).
+- **Atualização:** só republica se o conjunto de sessões mudar (sessão atrasada). Token e código ficam em `galerias/escolas.json` (localizador → `token`, `codigo`, `sessoes`, `fotos`, `em`). Vale para visitas dos últimos 7 dias (`ESCOLA_DIAS`).
+- **Código:** `GET /g/codigo/<x>` aceita o localizador e procura em `escolas.json`.
+- **Teste:** `testes/escola_agente.py`.
+
 ### Adaptadores no agente
 
 | Adaptador | Interface | Fase 1 | Fase 2 |

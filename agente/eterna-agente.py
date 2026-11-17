@@ -4544,10 +4544,12 @@ def gal_validar(m):
             except (TypeError, ValueError):
                 pass
     codigo = m.get("codigo") if isinstance(m.get("codigo"), str) and _re_codigo.match(m.get("codigo")) else None
+    vo = escola_voucher_ok(m.get("voucher")) if m["tipo"] == "evento" else None
     return {"v": 1, "token": m["token"], "codigo": codigo, "tipo": m["tipo"], "venue": str(m.get("venue") or "")[:40],
             "nome": (str(m["nome"])[:120] if m.get("nome") else None), "sessoes": [str(s)[:40] for s in (m.get("sessoes") or [])[:200]],
             "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": gal_expira_ok(m.get("expira")),
-            "precos": precos, "catalogo": catalogo, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
+            "precos": precos, "catalogo": catalogo, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"},
+            **({"voucher": vo} if vo else {})}
 
 
 def gal_mesclar(novo, velho):
@@ -4570,6 +4572,199 @@ def gal_mesclar(novo, velho):
     if velho.get("menor"):
         novo["menor"] = True                     # grupo de menor marcado no servidor não é desmarcado pelo navegador
     return novo
+
+
+# ---------- Escola pelo voucher da Imply (plano docs/planos/2026-11-17-escola-pelo-voucher.md) ----------
+# O Viva Parceiros lê a tela Vouchers da Imply de hora em hora. Daqui, de 10 em 10 min, o agente pega os vouchers confirmados
+# com [Escola] na descrição e, quando acaba a janela da visita, monta a galeria `evento` com as sessões começadas na janela.
+# O responsável digita o localizador no campo do código; a cortesia (uma foto por criança) é da nuvem.
+ESCOLA_URL = os.environ.get("ETERNA_PARCEIROS_GRUPOS", "https://parceiros.vivamaracana.com.br/api/painel/grupos")
+ESCOLA_TOKEN = os.environ.get("ETERNA_PARCEIROS_TOKEN", "")
+ESCOLA_ANTES, ESCOLA_DEPOIS = 15 * 60, 150 * 60          # janela: 15 min antes do horário do voucher até 2h30 depois
+ESCOLA_DIAS = 7                                          # vouchers com visita nos últimos 7 dias
+ESCOLA_MAX_FOTOS = 10000                                 # dimensionamento de 17/11: até 10 mil fotos numa janela
+ESCOLA_INTERVALO = 600
+ESCOLA_ARQ = os.path.join(GALERIAS, "escolas.json")      # localizador -> {token, codigo, sessoes, em}
+_re_escola = re.compile(r"\[\s*escola\s*\]", re.I)
+_re_localizador = re.compile(r"^[A-Za-z0-9]{6,20}$")
+_re_hhmm = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+escola_estado = {"ligado": bool(ESCOLA_TOKEN), "ultima": None, "erro": None, "vouchers": 0, "galerias": 0}
+
+
+def escola_voucher_ok(v):
+    """Bloco `voucher` do manifesto: só campos conhecidos, com tipos e tamanhos checados."""
+    if not isinstance(v, dict) or not _re_localizador.match(str(v.get("localizador") or "")) or not _re_dia.match(str(v.get("dia") or "")):
+        return None
+    try:
+        pessoas = max(0, min(2000, int(v.get("pessoas") or 0)))
+    except (TypeError, ValueError):
+        pessoas = 0
+    return {"localizador": str(v["localizador"]).upper(), "escola": str(v.get("escola") or "")[:120], "dia": v["dia"],
+            "horarios": sorted({h for h in (v.get("horarios") or [])[:12] if isinstance(h, str) and _re_hhmm.match(h)}), "pessoas": pessoas}
+
+
+def escola_vouchers(grupos):
+    """Grupos do Viva Parceiros -> vouchers de escola confirmados, um por localizador (um voucher pode ter vários horários)."""
+    out = {}
+    for g in grupos if isinstance(grupos, list) else []:
+        if not isinstance(g, dict) or g.get("status") != "confirmado" or g.get("teste"):
+            continue
+        if not _re_escola.search(str(g.get("descricao") or "")):
+            continue                                   # só a etiqueta [Escola]: corporativo e empresa ficam de fora
+        loc = str((g.get("voucher") or {}).get("localizador") or "").strip().upper()
+        dia, hora = str(g.get("visitaDia") or ""), str(g.get("visitaHora") or "")
+        if not _re_localizador.match(loc) or not _re_dia.match(dia) or not _re_hhmm.match(hora):
+            continue
+        v = out.setdefault(loc, {"localizador": loc, "escola": str(g.get("instituicao") or "")[:120], "dia": dia, "horarios": [], "pessoas": 0})
+        if hora not in v["horarios"]:
+            v["horarios"].append(hora)
+        try:
+            v["pessoas"] += max(0, int(g.get("pessoas") or 0))
+        except (TypeError, ValueError):
+            pass
+    for v in out.values():
+        v["horarios"].sort()
+    return out
+
+
+def escola_janelas(v):
+    """[(início, fim)] em epoch, no fuso do agente (o do venue), uma por horário do voucher."""
+    js = []
+    for h in v["horarios"]:
+        t = time.mktime(time.strptime(v["dia"] + " " + h, "%Y-%m-%d %H:%M"))
+        js.append((t - ESCOLA_ANTES, t + ESCOLA_DEPOIS))
+    return js
+
+
+def escola_sessoes(v):
+    """Sessões (não removidas) que começaram dentro de uma janela do voucher: da memória (hoje e ontem) e do arquivo do dia."""
+    js = escola_janelas(v)
+    dentro = lambda x: any(a <= (_num(x.get("cap0")) or _num(x.get("aberta_em"))) <= b for a, b in js)
+    achadas = {}
+    try:
+        with open(os.path.join(SESS_DIR, v["dia"] + ".json"), encoding="utf8") as fh:
+            for x in json.load(fh).get("sessoes") or []:
+                if isinstance(x, dict) and x.get("card") and not x.get("removida") and dentro(x):
+                    achadas[x["card"]] = {"card": x["card"], "fotos": list(x.get("fotos") or []), "ia": set(x.get("ia") or [])}
+    except (OSError, ValueError):
+        pass
+    with sess_lock:
+        for x in sess.values():
+            if x.get("dia") == v["dia"] and not x.get("removida") and dentro(x):
+                achadas[x["card"]] = {"card": x["card"], "fotos": list(x.get("fotos") or []), "ia": set(x.get("ia") or [])}
+    return [achadas[c] for c in sorted(achadas)]
+
+
+def escola_precos():
+    """Preços e catálogo online da galeria mais recente publicada pelo app (o agente não guarda o catálogo)."""
+    melhor = None
+    for t in REPO.listar():
+        m = REPO.ler_manifesto(t)
+        if m and m.get("tipo") == "sessao" and isinstance(m.get("precos"), dict) and (melhor is None or str(m.get("criada")) > str(melhor.get("criada"))):
+            melhor = m
+    return (melhor.get("precos"), melhor.get("catalogo") or []) if melhor else (None, [])
+
+
+def escola_codigo(usados):
+    while True:
+        c = "".join(GAL_ALFA[b % 32] for b in os.urandom(8))
+        c = c[:4] + "-" + c[4:]
+        if c not in usados:
+            return c
+
+
+def escola_ler():
+    try:
+        d = json.load(open(ESCOLA_ARQ, encoding="utf8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def escola_gravar(d):
+    os.makedirs(GALERIAS, exist_ok=True)
+    with open(ESCOLA_ARQ + ".tmp", "w", encoding="utf8") as fh:
+        json.dump(d, fh)
+    os.replace(ESCOLA_ARQ + ".tmp", ESCOLA_ARQ)
+
+
+def escola_montar(v, reg, agora=None):
+    """Monta (ou atualiza) a galeria do voucher depois da janela. Devolve o token, ou None se ainda não é hora ou não há foto."""
+    agora = agora or time.time()
+    if agora < max(b for a, b in escola_janelas(v)):
+        return None
+    ses = escola_sessoes(v)
+    cards = [x["card"] for x in ses]
+    if reg and reg.get("sessoes") == cards:
+        return reg.get("token")                        # nada mudou desde a última montagem
+    fotos = []
+    for x in ses:
+        for p in x["fotos"]:
+            if p not in x["ia"] and len(fotos) < ESCOLA_MAX_FOTOS:
+                fotos.append({"id": "ag_" + p, "sessao": x["card"], "direito": "venda", "canal": None})
+    if not fotos:
+        return None
+    precos, catalogo = escola_precos()
+    if not precos:
+        print("  escola: sem preço de galeria publicada ainda; %s espera" % v["localizador"])
+        return None
+    token = (reg or {}).get("token") or base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("=")
+    codigo = (reg or {}).get("codigo") or escola_codigo(set(codigos))
+    novo = gal_validar({"token": token, "codigo": codigo, "tipo": "evento", "venue": "maracana", "nome": v["escola"] or v["localizador"],
+                        "sessoes": cards, "menor": True, "criada": (reg or {}).get("criada") or _iso(agora), "precos": precos, "catalogo": catalogo,
+                        "fotos": fotos, "voucher": v})
+    with gal_lock:
+        m = gal_mesclar(novo, REPO.ler_manifesto(token))
+        REPO.salvar_manifesto(token, m)
+        codigos[m["codigo"]] = token
+    gal_fila.put(token)
+    nuvem_galeria_enfileira(token)
+    vis_protege_manifesto(m)
+    return {"token": token, "codigo": codigo, "sessoes": cards, "criada": novo["criada"], "fotos": len(fotos), "em": _iso(agora)}
+
+
+def escola_tick(grupos, agora=None):
+    agora = agora or time.time()
+    vs = escola_vouchers(grupos)
+    hoje = time.strftime("%Y-%m-%d", time.localtime(agora))
+    desde = time.strftime("%Y-%m-%d", time.localtime(agora - ESCOLA_DIAS * 86400))
+    reg = escola_ler()
+    mudou = 0
+    for loc, v in vs.items():
+        if not (desde <= v["dia"] <= hoje):
+            continue
+        try:
+            r = escola_montar(v, reg.get(loc), agora)
+        except Exception as ex:
+            print("  escola: %s não montou (%s)" % (loc, str(ex)[:80]))
+            continue
+        if isinstance(r, dict):
+            reg[loc] = r
+            mudou += 1
+            print("  escola: galeria de %s (%s) com %d fotos em %d sessões" % (v["escola"] or loc, loc, r["fotos"], len(r["sessoes"])))
+    if mudou:
+        escola_gravar(reg)
+    escola_estado.update(ultima=_iso(agora), erro=None, vouchers=len(vs), galerias=len(reg))
+    return mudou
+
+
+def escola_loop():
+    if not ESCOLA_TOKEN:
+        return
+    print("  Escola pelo voucher: ligada (%s)" % ESCOLA_URL)
+    while True:
+        try:
+            rq = urllib.request.Request(ESCOLA_URL, headers={"Authorization": "Bearer " + ESCOLA_TOKEN, "User-Agent": "eterna-agente"})
+            with urllib.request.urlopen(rq, timeout=30) as r:
+                j = json.loads(r.read().decode("utf8"))
+            if j.get("disponivel") is False:
+                escola_estado.update(erro="sem dados no Viva Parceiros")
+            else:
+                escola_tick(j.get("grupos"))
+        except Exception as ex:
+            escola_estado.update(erro=str(ex)[:120])
+            print("  escola: Viva Parceiros sem resposta (%s)" % str(ex)[:80])
+        time.sleep(ESCOLA_INTERVALO)
 
 
 codigos = {}           # código curto -> token (para quem digita o código quando o QR falha)
@@ -13943,8 +14138,10 @@ class H(BaseHTTPRequestHandler):
         if len(partes) == 4 and partes[2] == "codigo":
             if not limite_ok(ip, "codigo", 30):
                 return self.js({"motivo": "bloqueado"}, 429)
-            c = partes[3].upper()
+            c = urllib.parse.unquote(partes[3]).strip().upper()
             t = codigos.get(c) if _re_codigo.match(c) else None
+            if not t and _re_localizador.match(c):     # 17/11: o localizador do voucher de escola entra no mesmo campo
+                t = (escola_ler().get(c) or {}).get("token")
             m = REPO.ler_manifesto(t) if t and t not in lapides else None
             if not m or gal_expirou(m) or any(v.get("codigo") == c for v in lapides.values()):
                 return self.js({"error": "not found"}, 404)
@@ -14911,6 +15108,7 @@ def main():
     threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=nuvem_loop, daemon=True).start()
     threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
+    threading.Thread(target=escola_loop, daemon=True).start()
     threading.Thread(target=nuvem_videos_loop, daemon=True).start()
     if IMPRESSORA and not os.environ.get("ETERNA_IMPRESSORA_TESTE"):
         imp_retomar()
