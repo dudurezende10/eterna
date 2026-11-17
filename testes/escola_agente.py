@@ -27,9 +27,10 @@ grupos = [
     G("1112ABCD1234", "Voucher [EE THIAGO DELGADO] [12.11 09h15] [4 Inteiras + 46 Meias] [Escola]", hora="09:30", pessoas=10),
     G("1112CORP0001", "Voucher [EMPRESA X LTDA] [12.11 09h15] [30 Inteiras]", inst="Empresa X Ltda"),
     G("1112PEND0001", "Voucher [Colégio Y] [12.11 10h00] [40 Meias] [Escola]", status="reservado", inst="Colégio Y"),
+    G("1112GRAT0001", "Voucher [PROJETO Z] [12.11 13h00] [30 Gratuidades] [Gratuidade]", hora="13:00", pessoas=30, inst="Projeto Z"),
 ]
 vs = m.escola_vouchers(grupos)
-ok(set(vs) == {"1112ABCD1234"}, "só voucher confirmado com [Escola]: %s" % sorted(vs))
+ok(set(vs) == {"1112ABCD1234", "1112GRAT0001"}, "só voucher confirmado com [Escola] ou [Gratuidade]: %s" % sorted(vs))
 v = vs.get("1112ABCD1234") or {}
 ok(v.get("horarios") == ["09:15", "09:30"] and v.get("pessoas") == 60, "dois horários do mesmo voucher somam: %s" % v)
 

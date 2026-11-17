@@ -4,7 +4,7 @@
 
 ## O que vale como escola
 
-- A descrição do voucher traz a etiqueta **`[Escola]`**, como `Voucher [EE Thiago Delgado] [12.11 09h15] [4 Inteiras + 46 Meias] [Escola] - Consumidor - 01 / 01`.
+- A descrição do voucher traz a etiqueta **`[Escola]`** ou, desde 17/11, **`[Gratuidade]`** (mesmo tratamento), como `Voucher [EE Thiago Delgado] [12.11 09h15] [4 Inteiras + 46 Meias] [Escola] - Consumidor - 01 / 01`.
 - Só a etiqueta conta. Corporativo, empresa e agência têm localizador também e ficam de fora. O perfil que o Viva Parceiros deduz pelo nome ("Colégio", "EE"...) não libera cortesia.
 - O voucher tem de estar **confirmado** (linha azul na tela Vouchers), não cancelado, e a visita já ter acontecido.
 
