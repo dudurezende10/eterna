@@ -624,19 +624,27 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj .lj-ovnext{min-height:72px;padding:0 24px}.lj .lj-lbbar .lj-no{width:72px;height:72px}.lj .lj-lgov.open .lj-langs button{width:72px}
 @media (max-width:1100px){.lj .lj-ovtr .lj-lbx{width:72px;padding:0}.lj .lj-ovtr .lj-lbx span{display:none}.lj .lj-ovtr .lj-langs{display:none}.lj .lj-lgbtn{display:inline-flex}
   .lj .lj-lgov.open .lj-langs{display:flex;flex-direction:column;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);padding:4px;border-radius:36px;background:rgba(10,28,51,.88)}}
-/* 17/11: barra das escolhidas na tela cheia (monitor de toque, nada depende de hover). Regra do Eduardo: a foto não encolhe; a barra só usa a sobra ao lado dela.
-   Tela de 3:2 ou mais larga (o monitor 16:9 do balcão): coluna à direita do tamanho da sobra da foto 3:2 (100vw - 150dvh, de 80 a 316 px), e o que ficava na
-   sobra da esquerda (logo, setas e "1 / N") passa para a coluna, para nada cobrir mais da foto do que antes; o canto de cima e o Continuar seguem presos à
-   direita da tela. Mais estreita: faixa embaixo do tamanho da sobra de baixo (100dvh - 66,67vw, de 80 a 112 px), com a miniatura entre 64 e 88 px.
+/* 17/11: barra das escolhidas na tela cheia (monitor de toque, nada depende de hover). Regra do Eduardo: a foto NUNCA encolhe; a barra só usa a sobra
+   ao lado da foto e, sem sobra, quem cede é a barra. O modo vem do ljEscModo (JS, pela tela e pela proporção da foto em exibição), como classe no .lj-fs:
+   esc-col   tela de 3:2 ou mais larga com sobra de 160 px ou mais (o monitor 16:9): coluna à direita com a largura da sobra da foto 3:2 (--escw, até
+             316 px); canto de cima, logo, "N / total", setas e Continuar passam para dentro da coluna, inteiros; só ✓ e ✗ ficam sobre a foto.
+   esc-fina  mesma coluna com sobra de 80 a 159 px (16:10): só as miniaturas na coluna; os controles ficam sobre a foto, como antes da barra.
+   esc-faixa tela mais estreita que 3:2: faixa embaixo com a sobra de baixo da foto 3:2 (--escb, de 80 a 112 px; esc-baixa abaixo de 100 px).
+   esc-off   sobra menor que a miniatura mínima (64 px + 16) para a foto em exibição (tela de 3:2 exato, 4:3 com foto em pé): a barra recolhe e a tela
+             fica igual à de antes, com o contador do topo e o Ver todas.
    A barra é irmã do #lj-lb: deslizar a barra nunca troca a foto */
-.lj.lj-fs{display:grid;padding:0;gap:0;background:#0A1C33;grid-template-columns:minmax(0,1fr);--escb:clamp(80px,calc(100dvh - 66.667vw),112px);--escm:min(88px,calc(var(--escb) - 16px));grid-template-rows:minmax(0,1fr) var(--escb)}
+.lj.lj-fs{display:grid;padding:0;gap:0;background:#0A1C33;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);--escm:min(88px,calc(var(--escb,112px) - 16px))}
 .lj.lj-fs>.lj-lb{position:relative;inset:auto;z-index:1;min-width:0;min-height:0;grid-area:1/1}
+.lj.lj-fs.esc-off>.lj-lb{position:fixed;inset:0}.lj.lj-fs.esc-off>.lj-esc{display:none}
+.lj.lj-fs.esc-faixa{grid-template-rows:minmax(0,1fr) var(--escb)}
+.lj.lj-fs.esc-col,.lj.lj-fs.esc-fina{grid-template-columns:minmax(0,1fr) var(--escw)}
 .lj-esc{grid-area:2/1;min-width:0;min-height:0;display:flex;flex-direction:row;align-items:stretch;background:#0C2340;border-top:1px solid rgba(255,255,255,.14);color:#fff;z-index:2;
   padding:0 max(0px,env(safe-area-inset-right,0px)) max(0px,env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px))}
-.lj-esc-h{flex:none;display:grid;grid-template-columns:auto auto;align-content:center;align-items:center;justify-content:start;gap:4px 10px;padding:4px 12px 4px 0;max-width:300px;font-size:15px;font-weight:700;line-height:1.25}
-.lj-esc-n{grid-column:1/-1}
-.lj-esc-h.vz{display:none}
-.lj-esc-n{color:#fff}.lj-esc-tir{font-size:14px;font-weight:600;color:rgba(255,255,255,.8)}
+/* cabeçalho: o contador (role=status) e, separado, o lugar do Desfazer, sempre reservado (a lista não anda quando ele aparece e some) */
+.lj-esc-h{flex:none;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:4px;padding:4px 12px 4px 0;width:210px;font-size:15px;font-weight:700;line-height:1.25}
+.lj-esc-n{color:#fff;min-height:19px}
+.lj-esc-dz{display:flex;align-items:center;gap:10px;min-height:72px}
+.lj-esc-tir{font-size:14px;font-weight:600;color:rgba(255,255,255,.8)}
 .lj-esc-vz{flex:1;margin:0;display:flex;align-items:center;padding:0 16px;font-size:15px;line-height:1.35;color:rgba(255,255,255,.72)}.lj-esc-vz[hidden]{display:none}
 .lj-esc-l{flex:1;min-width:0;min-height:0;display:flex;flex-direction:row;align-items:center;gap:8px;padding:0 12px 0 4px;overflow-x:auto;overflow-y:hidden;touch-action:pan-x;overscroll-behavior:contain;
   scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-behavior:smooth;--m0:0px;--m1:0px;
@@ -650,7 +658,9 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-esc-img{position:absolute;inset:4px;background:transparent var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp,center);filter:var(--flt,none);pointer-events:none}
 .lj-esc-img.spr{inset:auto;left:4px;right:4px;top:50%;transform:translateY(-50%);aspect-ratio:3/2}
 .lj .lj-esc-img.ai .compimg{position:absolute;inset:0;background-size:contain!important;background-repeat:no-repeat!important;background-position:center!important;background-color:transparent!important}
-.lj-esc-sp{position:absolute;left:2px;bottom:2px;width:22px;height:22px;border-radius:50%;background:rgba(10,28,51,.8);color:#FFB800;display:flex;align-items:center;justify-content:center}.lj-esc-sp svg{width:14px;height:14px}
+/* a mesma marca d'água da foto grande (a miniatura /thumb/ também é foto à venda) */
+.lj-esc-v .wm{position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:11px;letter-spacing:.12em;color:rgba(255,255,255,.5);-webkit-text-stroke:.4px rgba(0,0,0,.25);transform:rotate(-24deg);pointer-events:none;white-space:nowrap}
+.lj-esc-sp{position:absolute;left:2px;bottom:2px;z-index:1;width:22px;height:22px;border-radius:50%;background:rgba(10,28,51,.8);color:#FFB800;display:flex;align-items:center;justify-content:center}.lj-esc-sp svg{width:14px;height:14px}
 .lj-esc-i.cur .lj-esc-v{box-shadow:inset 0 0 0 3px #FFB800}
 /* X: alvo de 48 px que avança 8 px sobre o vão entre as células, para o meio da miniatura continuar sendo dela; o círculo fica no canto */
 .lj-esc-x{position:absolute;top:-8px;right:-8px;z-index:2;width:48px;height:48px;padding:11px;border:0;background:transparent;color:#fff;cursor:pointer;display:flex;align-items:flex-start;justify-content:flex-end;opacity:1;visibility:visible;
@@ -658,42 +668,40 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-esc-xc{width:30px;height:30px;border-radius:50%;background:rgba(10,28,51,.9);box-shadow:0 0 0 2px rgba(255,255,255,.9),0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;transition:transform .12s,background .12s}
 .lj-esc-x svg{width:16px;height:16px}
 .lj-esc-v:active{transform:scale(.94);box-shadow:inset 0 0 0 3px rgba(255,255,255,.85)}.lj-esc-x:active .lj-esc-xc{transform:scale(.88);background:#d64545}
-.lj-esc-desf{display:inline-flex;align-items:center;gap:8px;min-height:72px;min-width:72px;padding:0 18px 0 12px;border-radius:999px;border:0;background:#FFB800;color:#0C2340;font:inherit;font-weight:700;font-size:15px;cursor:pointer;white-space:nowrap;
+.lj-esc-desf{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:72px;min-width:72px;padding:0 18px 0 12px;border-radius:999px;border:0;background:#FFB800;color:#0C2340;font:inherit;font-weight:700;font-size:15px;cursor:pointer;white-space:nowrap;
   touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 .lj-esc-desf svg{width:22px;height:22px}.lj-esc-desf:active{transform:scale(.94);background:#FCE300}
 .lj-esc-v:focus-visible,.lj-esc-x:focus-visible,.lj-esc-desf:focus-visible{outline:3px solid #fff;outline-offset:-3px}.lj-esc-x:focus-visible{outline:0}.lj-esc-x:focus-visible .lj-esc-xc{box-shadow:0 0 0 3px #FFB800}
 @media (prefers-reduced-motion:reduce){.lj-esc-l{scroll-behavior:auto}.lj-esc-v,.lj-esc-xc{transition:none}}
-/* faixa baixa (4:3 deitado): contador, "Foto tirada" e Desfazer numa linha só */
-@media (max-aspect-ratio:3/2) and (min-aspect-ratio:1/1){.lj-esc-h{grid-template-columns:none;grid-auto-flow:column;max-width:none}.lj-esc-n{grid-column:auto}}
-@media (min-aspect-ratio:3/2){
-  .lj.lj-fs{--escw:clamp(80px,calc(100vw - 150dvh),316px);--escbaixo:226px;grid-template-columns:minmax(0,1fr) var(--escw);grid-template-rows:minmax(0,1fr)}
-  /* o #lj-lb deixa de ser a referência dos overlays: eles se posicionam pela tela (.lj-fs), a foto pela área à esquerda da coluna */
-  .lj.lj-fs>.lj-lb{position:static;z-index:auto}
-  .lj.lj-fs .lj-lbmid{inset:0 var(--escw) 0 0}
-  .lj.lj-fs .lj-lbbar{left:calc((100% - var(--escw)) / 2)}
-  .lj.lj-fs .lj-ovtr,.lj.lj-fs .lj-ovnext,.lj.lj-fs .lj-lbnav,.lj.lj-fs .lj-lbcnt,.lj.lj-fs .lj-ovtl{z-index:3}
-  /* o canto de cima (idioma, Sair, contador, Outra pessoa, Ver todas) e o Continuar ficam inteiros dentro da coluna; o contador e o Ver todas só com o
-     ícone (a barra já diz "N fotos escolhidas"); a barra começa abaixo do canto (--esctopo, medido pelo ljEscUpd) */
-  .lj.lj-fs .lj-ovtr{left:calc(100% - var(--escw) + 8px);right:max(8px,env(safe-area-inset-right,0px));top:max(8px,env(safe-area-inset-top,0px));flex-wrap:wrap;justify-content:flex-start;align-content:flex-start;row-gap:4px;border-radius:24px;background:rgba(255,255,255,.06)}
-  .lj.lj-fs .lj-ovtr .lj-lbx span,.lj.lj-fs .lj-ovtr .lj-cplg{display:none!important}.lj.lj-fs .lj-ovtr .lj-lbx{width:72px;min-width:72px;padding:0}
-  .lj.lj-fs .lj-ovtr .lj-maisp{max-width:100%}
-  .lj.lj-fs .lj-ovnext{left:calc(100% - var(--escw) + 8px);right:max(8px,env(safe-area-inset-right,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));transform:none;justify-content:center;white-space:normal;text-align:center;padding:4px 10px;line-height:1.2}
-  .lj.lj-fs .lj-lbnav{top:auto;transform:none;bottom:104px;background:rgba(255,255,255,.1)}
-  .lj.lj-fs .lj-lbnav.prev{left:auto;right:calc(var(--escw) / 2 + 6px)}.lj.lj-fs .lj-lbnav.next{right:calc(var(--escw) / 2 - 78px)}
-  .lj.lj-fs .lj-lbcnt{left:auto;right:max(12px,env(safe-area-inset-right,0px));bottom:186px;white-space:nowrap}
-  .lj.lj-fs .lj-ovtl{top:auto;left:calc(100% - var(--escw) + 12px);right:auto;bottom:186px;height:28px}
-  .lj-esc{grid-area:1/2;flex-direction:column;border-top:0;box-shadow:inset 1px 0 rgba(255,255,255,.14);padding:var(--esctopo,100px) max(0px,env(safe-area-inset-right,0px)) var(--escbaixo) 0}
-  .lj-esc-h{max-width:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:4px 12px 8px;min-height:44px}.lj-esc-n{flex:1 0 100%}.lj-esc-desf{flex:1 1 auto;justify-content:center;padding:0 12px}
-  .lj-esc-vz{flex:none;align-items:flex-start;padding:8px 12px}
-  .lj-esc-l{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(80px,100%),1fr));grid-auto-rows:max-content;align-content:start;align-items:start;padding:8px 8px 16px;overflow-x:hidden;overflow-y:auto;touch-action:pan-y;
-    -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--m0),#000 calc(100% - var(--m1)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 var(--m0),#000 calc(100% - var(--m1)),transparent 100%)}
-  .lj-esc-i{width:auto;height:auto}}
-/* coluna estreita (de 3:2 até quase 16:9, como 16:10): as setas uma em cima da outra */
-@media (min-aspect-ratio:3/2) and (max-aspect-ratio:177/100){
-  .lj.lj-fs{--escbaixo:340px}
-  .lj.lj-fs .lj-lbnav.prev,.lj.lj-fs .lj-lbnav.next{right:calc((var(--escw) - 72px) / 2)}.lj.lj-fs .lj-lbnav.prev{bottom:184px}
-  .lj.lj-fs .lj-lbcnt{bottom:266px;right:auto;left:calc(100% - var(--escw) / 2);transform:translateX(-50%)}.lj.lj-fs .lj-ovtl{bottom:300px;left:calc(100% - var(--escw) + 8px)}.lj.lj-fs .lj-ovlogo .vlogo{height:16px!important;max-width:calc(var(--escw) - 16px)}
-  .lj-esc-h{padding:4px 6px 8px;font-size:14px;overflow-wrap:anywhere}.lj-esc-desf{padding:0 8px;gap:4px}}
+/* faixa baixa (4:3 deitado, menos de 100 px): contador e Desfazer lado a lado, "Foto tirada" só para o leitor de tela */
+.lj-fs.esc-baixa .lj-esc-h{flex-direction:row;align-items:center;width:auto;gap:10px}.lj-fs.esc-baixa .lj-esc-n{width:150px}.lj-fs.esc-baixa .lj-esc-dz{width:132px}
+.lj-fs.esc-baixa .lj-esc-tir{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+/* coluna (esc-col e esc-fina) */
+.lj-fs.esc-col .lj-esc,.lj-fs.esc-fina .lj-esc{grid-area:1/2;flex-direction:column;border-top:0;box-shadow:inset 1px 0 rgba(255,255,255,.14);padding:max(12px,env(safe-area-inset-top,0px)) max(0px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) 0}
+.lj-fs.esc-col .lj-esc-h,.lj-fs.esc-fina .lj-esc-h{width:auto;align-self:stretch;padding:4px 12px 8px}
+.lj-fs.esc-col .lj-esc-dz,.lj-fs.esc-fina .lj-esc-dz{flex-wrap:wrap;gap:4px 10px}
+.lj-fs.esc-col .lj-esc-desf,.lj-fs.esc-fina .lj-esc-desf{flex:1 1 auto;padding:0 12px}
+.lj-fs.esc-col .lj-esc-vz,.lj-fs.esc-fina .lj-esc-vz{flex:none;align-items:flex-start;padding:8px 12px}
+.lj-fs.esc-col .lj-esc-l,.lj-fs.esc-fina .lj-esc-l{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(80px,100%),1fr));grid-auto-rows:max-content;align-content:start;align-items:start;padding:8px 8px 16px;overflow-x:hidden;overflow-y:auto;touch-action:pan-y;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--m0),#000 calc(100% - var(--m1)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 var(--m0),#000 calc(100% - var(--m1)),transparent 100%)}
+.lj-fs.esc-col .lj-esc-i,.lj-fs.esc-fina .lj-esc-i{width:auto;height:auto}
+.lj-fs.esc-fina .lj-esc-h{padding:4px 6px 8px;font-size:14px;overflow-wrap:anywhere}.lj-fs.esc-fina .lj-esc-desf{padding:0 6px;gap:4px}.lj-fs.esc-fina .lj-esc-desf svg{display:none}
+/* esc-col: o #lj-lb deixa de ser a referência dos overlays; eles se posicionam pela tela (.lj-fs) e ficam na coluna. A barra começa abaixo do canto de
+   cima (--esctopo) e termina acima do logo (--escbaixo), os dois medidos pelo ljEscUpd. Embaixo, de baixo para cima: Continuar (12 + 72 px), 20 px de
+   folga, setas (bottom 104 = 12 + 72 + 20; 72 px), 10 px, logo e "N / total" (bottom 186 = 104 + 72 + 10) */
+.lj-fs.esc-col>.lj-lb{position:static;z-index:auto}
+.lj-fs.esc-col .lj-lbmid{inset:0 var(--escw) 0 0}
+.lj-fs.esc-col .lj-lbbar{left:calc((100% - var(--escw)) / 2)}
+.lj-fs.esc-col .lj-esc{padding-top:var(--esctopo,100px);padding-bottom:var(--escbaixo,226px)}
+.lj-fs.esc-col .lj-ovtr,.lj-fs.esc-col .lj-ovnext,.lj-fs.esc-col .lj-lbnav,.lj-fs.esc-col .lj-lbcnt,.lj-fs.esc-col .lj-ovtl{z-index:3}
+.lj.lj-fs.esc-col .lj-ovtr{left:calc(100% - var(--escw) + 8px);right:max(8px,env(safe-area-inset-right,0px));top:max(8px,env(safe-area-inset-top,0px));flex-wrap:wrap;justify-content:flex-start;align-content:flex-start;row-gap:4px;border-radius:24px;background:rgba(255,255,255,.06)}
+.lj.lj-fs.esc-col .lj-ovtr .lj-lbx span,.lj.lj-fs.esc-col .lj-ovtr .lj-cplg{display:none!important}.lj.lj-fs.esc-col .lj-ovtr .lj-lbx{width:72px;min-width:72px;padding:0}
+.lj.lj-fs.esc-col .lj-ovtr .lj-maisp{max-width:100%}
+.lj.lj-fs.esc-col .lj-ovnext{left:calc(100% - var(--escw) + 8px);right:max(8px,env(safe-area-inset-right,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));transform:none;justify-content:center;white-space:normal;text-align:center;padding:4px 10px;line-height:1.2}
+.lj.lj-fs.esc-col .lj-lbnav{top:auto;transform:none;bottom:104px;background:rgba(255,255,255,.1)}
+.lj.lj-fs.esc-col .lj-lbnav.prev{left:auto;right:calc(var(--escw) / 2 + 6px)}.lj.lj-fs.esc-col .lj-lbnav.next{right:calc(var(--escw) / 2 - 78px)}
+.lj.lj-fs.esc-col .lj-lbcnt{left:auto;right:max(12px,env(safe-area-inset-right,0px));bottom:186px;white-space:nowrap}
+.lj.lj-fs.esc-col .lj-ovtl{top:auto;left:calc(100% - var(--escw) + 12px);right:auto;bottom:186px;height:28px}
 .lj-lbon{background:#43B02A!important;color:#fff!important}
 /* montagem do fundo de IA inteira (sem cortar pernas e laterais), como as outras fotos */
 .lj-gimg.ai .compimg,.lj-lbimg.ai .compimg{background-size:contain!important;background-repeat:no-repeat!important;background-position:center!important;background-color:transparent!important}
@@ -3817,7 +3825,7 @@ function vQuiosque(){
         <div class="lj-row"><button class="lj-cta" data-act="kiosk-tv-sim">${ICO.ok} ${T('tvSim')}</button><button class="lj-ghost" data-act="kiosk-tv-nao">${ICO.no} ${T('tvNao')}</button></div></div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${ljLangOv()}<span></span></div><div class="lj-heroin"><h1 class="lj-h1">${T('notFound')}<br>${esc(k.code)}</h1><button class="lj-cta" data-act="kiosk-back">${ICO.back} ${T('back')}</button></div></div>`;
   const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);const nSel=c.ch.length;
-  const cartPill=`<span class="lj-cartpill ${nSel?'on':''}" role="status" aria-label="${T('nPhotos',nSel)}">${ICO.cart}<b>${nSel}</b><span class="lj-cplg">${T('ljEscolhidas')}</span></span>`; // v96: só o contador (sem preço e sem ação); quem faz o pedido é o Continuar
+  const cartPill=ljCartPill(nSel);
   const topR=x=>`<div class="lj-topr">${ljLangOv()}${x}</div>`;
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v96: sem etapa de pacote e pagamento no Checkout
   if(k.prep&&k.prep===k.code&&k.step==='review')return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2">${T('foundYou')}</h1><p class="lj-sub" aria-live="polite">${T('ljSeparando')}</p></div></div>`;
@@ -3845,7 +3853,7 @@ function vQuiosque(){
         <div class="lj-lbbar"><div class="lj-actions"><button class="lj-no ${vs==='no'?'on':''}" data-act="kiosk-no" aria-label="✗">${ICO.no}</button><button class="lj-yes ${vs==='ok'?'on':''}" data-act="kiosk-ok" aria-label="✓">${ICO.ok}</button></div></div>
         ${ljOvNext(nSel)}</div>`:'';
     // 17/11: barra das escolhidas ao lado (tela larga) ou embaixo da foto; aqui só a casca: quem preenche é o ljEscUpd, e o render reaproveita o nó do mesmo atendimento
-    if(vq)return `<div class="lj lj-full lj-review lj-fs">${caixa}<aside class="lj-esc" id="lj-esc" data-card="${esc(k.code)}" data-t0="${esc(String(k.t0||''))}" aria-label="${T('ljEscLista')}"><div class="lj-esc-h" role="status" aria-live="polite"></div><p class="lj-esc-vz"></p><div class="lj-esc-l" role="list"></div></aside>${ljSairAsk(k)}</div>`;
+    if(vq){const md=ljEscModo(vq);return `<div class="lj lj-full lj-review lj-fs ${ljEscModoCls(md)}" style="${ljEscModoSt(md)}">${caixa}<aside class="lj-esc" id="lj-esc" data-card="${esc(k.code)}" data-t0="${esc(String(k.t0||''))}" aria-label="${T('ljEscLista')}"><div class="lj-esc-h"><div class="lj-esc-n" role="status" aria-live="polite"></div><div class="lj-esc-dz"></div></div><p class="lj-esc-vz"></p><div class="lj-esc-l" role="list"></div></aside>${ljSairAsk(k)}</div>`;}
     return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR(`${ljSairBtn('lj-ghost sm')}${cartPill}`)}</div>
       <div class="lj-title"><div class="lj-tnome"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${T('nPhotos',n)}</span></div><div class="lj-tacts">${k.so&&!k.so.visita?`<button class="lj-ghost sm lj-maisp" data-act="kiosk-mais">${ICO.face} ${T('addPerson')}</button>`:''}${n?`<button class="lj-ghost sm lj-telacheia" data-act="kiosk-ver" data-i="${Math.min(k.verUlt||0,n-1)}">${ICO.full} ${T('ljTelaCheia')}</button>`:''}</div></div>
       <div class="lj-grid">${items.map((q,i)=>(q.edIni?`<div class="lj-edh"><span class="lj-edeb">${esc(edSeloTxt())}</span><h3>${T('edTitulo')}</h3></div>`:'')+(q.edFotos?`<div class="lj-blk lj-edfotos">${T('edFotos')}</div>`:'')+(q.blk?`<div class="lj-blk">${esc(q.blk)}</div>`:'')+card(q,i)).join('')}</div>
@@ -3891,18 +3899,31 @@ function bigStyle(id){const st=phStyle(id),th=fotoSrc(id),hi=fotoOriginal(id);re
 function lojaMark(v){const k=state.kiosk;const items=lojaItems(k.code);const x=items[k.i||0];if(!x)return;const pk=lojaPick(k.code);
   const nv=pk[x.k]===v?'':v;delete pk[x.k];if(nv)pk[x.k]=nv;lojaSync(k.code);k.escDesf=null;
   if(nv&&(k.i||0)<items.length-1)k.i++;if(k.ver!=null){const antes=k.ver;k.ver=k.i||0;if(k.ver===antes&&document.getElementById('lj-lb')){ljFsUpd();return;}}render();}
-// "Continuar · N fotos" da tela cheia: o mesmo HTML no desenho (vQuiosque) e na atualização parcial (ljFsUpd)
+// "Continuar · N fotos" e o contador do canto da tela cheia: o mesmo HTML no desenho (vQuiosque) e na atualização parcial (ljFsUpd)
 function ljOvNext(n){return n?`<button class="lj-next lj-ovnext" data-act="loja-cart">${T('cont')} · ${T('nPhotos',n)} ${ICO.arrow}</button>`:'';}
+function ljCartPill(n){return `<span class="lj-cartpill ${n?'on':''}" role="status" aria-label="${T('nPhotos',n)}">${ICO.cart}<b>${n}</b><span class="lj-cplg">${T('ljEscolhidas')}</span></span>`;} // v96: só o contador (sem preço e sem ação); quem faz o pedido é o Continuar
 // ---------- Barra das escolhidas (17/11, plano da barra das escolhidas; Eduardo: monitor de toque 16:9) ----------
-// Fonte única: as escolhidas válidas (lojaCart, regra B2) na ordem em que entraram no pick. Nunca s.selected direto
+// Fonte única: as escolhidas válidas (lojaCart, regra B2) na ordem em que entraram no pick. A ordem vem de Object.keys, que só segue a inserção
+// porque nenhuma chave parece número inteiro (fotos com prefixo ag_ ou uuid, montagens com ai:); uma chave só de dígitos iria para o começo. Nunca s.selected direto
 function ljEscolhidas(card){const ch=lojaCart(card).ch;const m=new Map(ch.map(x=>[x.k,x]));return Object.keys(lojaPick(card)).filter(k=>m.has(k)).map(k=>m.get(k));}
 let LJ_DESF_MS=5000; // D7: Desfazer por 5 s depois de tirar pelo X
-// uma célula da barra: miniatura (sempre /thumb/, contida) e o X; a montagem usa o compHydrate (COMPURL em cache), sem o "Preparando" e sem o selo
+const LJ_ESC_TRAVA=400; // depois de um X, Desfazer ou toque na miniatura, outro toque na barra em 400 ms é ignorado (as células andam e o 2º toque cairia no vizinho)
+// Regra do Eduardo (17/11): a foto nunca encolhe. Modo da barra pela tela e pela proporção da foto em exibição (montagem e foto de exemplo: 3:2 até saber):
+// tela de 3:2 ou mais larga: coluna com a sobra da foto 3:2 (até 316 px); 160 px ou mais = esc-col, de 80 a 159 = esc-fina. Mais estreita: faixa com a
+// sobra de baixo da foto 3:2 (até 112 px). Sobra menor que 80 (miniatura de 64 + 16) ou foto em exibição que não deixa essa sobra (em pé no 4:3): esc-off.
+// As contas usam a mesma régua da foto (contida na área): coluna = arredondada para baixo, então a área da foto nunca fica menor que a foto
+function ljEscModo(x){const W=innerWidth,H=innerHeight;if(!W||!H)return {m:'off'};
+  const ar=x?(x.t==='ai'?LJ_AR['ai:'+x.id+'|'+x.bg]:LJ_AR[x.id])||1.5:1.5;
+  if(W/H>=1.5){const w=Math.min(316,Math.floor(W-1.5*H));if(w<80||W-Math.min(W,H*ar)<w)return {m:'off'};return {m:w>=160?'col':'fina',w};}
+  const b=Math.min(112,Math.floor(H-W/1.5));if(b<80||H-Math.min(H,W/ar)<b)return {m:'off'};return {m:'faixa',b,baixa:b<100};}
+function ljEscModoCls(o){return 'esc-'+o.m+(o.baixa?' esc-baixa':'');}
+function ljEscModoSt(o){return (o.w?`--escw:${o.w}px;`:'')+(o.b?`--escb:${o.b}px;`:'');}
+// uma célula da barra: miniatura (sempre /thumb/, contida, com a marca d'água) e o X; a montagem usa o compHydrate (COMPURL em cache), sem o "Preparando" e sem o selo
 function ljEscItem(x,n){const ai=x.t==='ai';let img;
   if(ai){const b=bgOf(x.bg);const key=x.id+'|'+x.bg;const pr=COMPURL[key];
-    img=`<span class="lj-esc-img ai"><span class="compimg${pr?' ok':''}" data-comp="${esc(x.id)}|${esc(x.bg)}"${pr?` data-done="1" data-url="${esc(pr)}"`:''} style="background-image:url(${esc(pr||(b?b.file:''))})"></span><span class="lj-esc-sp" aria-hidden="true">${ICO.spark}</span></span>`;}
+    img=`<span class="lj-esc-img ai"><span class="compimg${pr?' ok':''}" data-comp="${esc(x.id)}|${esc(x.bg)}"${pr?` data-done="1" data-url="${esc(pr)}"`:''} style="background-image:url(${esc(pr||(b?b.file:''))})"></span></span><span class="lj-esc-sp" aria-hidden="true">${ICO.spark}</span>`;}
   else{const st=String(phStyle(x.id)||'').replace('--bs:cover','--bs:contain');img=`<span class="lj-esc-img${/sprites\//.test(st)?' spr':''}" style="${st}"></span>`;}
-  return `<div class="lj-esc-i" role="listitem" data-k="${esc(x.k)}"><button class="lj-esc-v" data-act="kiosk-esc-ir" data-k="${esc(x.k)}" aria-label="${esc(ljEscRot(x,n))}">${img}</button><button class="lj-esc-x" data-act="kiosk-esc-x" data-k="${esc(x.k)}" aria-label="${esc(T('ljEscTirar',n))}"><span class="lj-esc-xc">${ICO.no}</span></button></div>`;}
+  return `<div class="lj-esc-i" role="listitem" data-k="${esc(x.k)}"><button class="lj-esc-v" data-act="kiosk-esc-ir" data-k="${esc(x.k)}" aria-label="${esc(ljEscRot(x,n))}">${img}<span class="wm" aria-hidden="true">VIVA MARACANÃ</span></button><button class="lj-esc-x" data-act="kiosk-esc-x" data-k="${esc(x.k)}" aria-label="${esc(T('ljEscTirar',n))}"><span class="lj-esc-xc">${ICO.no}</span></button></div>`;}
 function ljEscRot(x,n){return T('ljEscVer',n)+(x.t==='ai'?' · '+edSeloTxt()+' · '+bgNomeCli(bgOf(x.bg)):'');}
 // leva a célula para dentro da vista rolando só a lista (scrollIntoView rolaria também o .lj)
 function ljEscMostra(l,el){const L=l.getBoundingClientRect(),r=el.getBoundingClientRect();
@@ -3911,31 +3932,42 @@ function ljEscMostra(l,el){const L=l.getBoundingClientRect(),r=el.getBoundingCli
 // degradê na ponta que ainda tem miniatura escondida (D8; a barra de rolagem fica escondida)
 function ljEscSombra(l){const v=l.scrollHeight>l.clientHeight+1,h=l.scrollWidth>l.clientWidth+1;const a=v?l.scrollTop>2:h?l.scrollLeft>2:false;
   const z=v?l.scrollTop+l.clientHeight<l.scrollHeight-2:h?l.scrollLeft+l.clientWidth<l.scrollWidth-2:false;const s=(a?'a':'')+(z?'z':'');if(l.dataset.sombra!==s)l.dataset.sombra=s;}
-// o coração da barra: reconcilia as células por data-k (tira as que saíram, põe as novas no lugar delas na ordem, não recria as que ficam)
-// e atualiza contador, Desfazer, textos do idioma, a foto em exibição (.cur) e o estado vazio. Sem #lj-esc na tela, não faz nada
+// Desfazer vale só para o mesmo atendimento (código e t0) e dentro do prazo
+const ljEscDesfVale=k=>{const d=k.escDesf;return d&&d.ate>Date.now()&&d.code===k.code&&d.t0===k.t0?d:null;};
+// o coração da barra: modo (ljEscModo), reconcilia as células por data-k (tira as que saíram, põe as novas no lugar delas na ordem, não recria as que
+// ficam) e atualiza contador, Desfazer, textos do idioma, a foto em exibição (.cur) e o estado vazio. Sem #lj-esc na tela, não faz nada
 function ljEscUpd(){const bar=document.getElementById('lj-esc');if(!bar)return;const k=state.kiosk;const l=bar.querySelector('.lj-esc-l');if(!l)return;
-  const its=lojaItems(k.code);const ch=ljEscolhidas(k.code);const quer=new Set(ch.map(x=>x.k));const tem=new Map();
+  const its=lojaItems(k.code);const ck=k.ver!=null&&its[k.ver]?its[k.ver].k:null;
+  {const fs=bar.parentElement;const o=ljEscModo(ck!=null?its[k.ver]:null);const c=ljEscModoCls(o);if(fs._modo!==c+ljEscModoSt(o)){fs._modo=c+ljEscModoSt(o);fs.classList.remove('esc-col','esc-fina','esc-faixa','esc-off','esc-baixa');c.split(' ').forEach(x=>fs.classList.add(x));
+    fs.style.removeProperty('--escw');fs.style.removeProperty('--escb');if(o.w)fs.style.setProperty('--escw',o.w+'px');if(o.b)fs.style.setProperty('--escb',o.b+'px');}}
+  const ch=ljEscolhidas(k.code);const quer=new Set(ch.map(x=>x.k));const tem=new Map();
   [...l.children].forEach(el=>{const kk=el.dataset.k;if(!quer.has(kk)||tem.has(kk))el.remove();else tem.set(kk,el);});
-  let novo=null,comp=false;
-  ch.forEach((x,i)=>{let el=tem.get(x.k);if(!el){const t=document.createElement('template');t.innerHTML=ljEscItem(x,i+1);el=t.content.firstElementChild;novo=el;if(x.t==='ai'&&!COMPURL[x.id+'|'+x.bg])comp=true;}
+  const novos=[];let comp=false;
+  ch.forEach((x,i)=>{let el=tem.get(x.k);if(!el){const t=document.createElement('template');t.innerHTML=ljEscItem(x,i+1);el=t.content.firstElementChild;novos.push(el);if(x.t==='ai'&&!COMPURL[x.id+'|'+x.bg])comp=true;}
     if(l.children[i]!==el)l.insertBefore(el,l.children[i]||null);
     const v=el.firstElementChild,xb=el.lastElementChild;const rv=ljEscRot(x,i+1),rx=T('ljEscTirar',i+1);if(v.getAttribute('aria-label')!==rv)v.setAttribute('aria-label',rv);if(xb.getAttribute('aria-label')!==rx)xb.setAttribute('aria-label',rx);});
-  const ck=k.ver!=null&&its[k.ver]?its[k.ver].k:null;let cur=null;
+  let cur=null;
   [...l.children].forEach(el=>{const on=el.dataset.k===ck;if(on)cur=el;if(el.classList.contains('cur')!==on)el.classList.toggle('cur',on);const v=el.firstElementChild;if(on&&v.getAttribute('aria-current')!=='true')v.setAttribute('aria-current','true');else if(!on&&v.hasAttribute('aria-current'))v.removeAttribute('aria-current');});
-  const dd=k.escDesf&&k.escDesf.ate>Date.now()&&k.escDesf.code===k.code?k.escDesf:null;
-  const hh=(ch.length?`<span class="lj-esc-n">${T('ljNChosen',ch.length)}</span>`:'')+(dd?`<span class="lj-esc-tir">${T('ljEscTirada')}</span><button class="lj-esc-desf" data-act="kiosk-esc-desf">${ICO.back}<span>${T('ljEscDesfazer')}</span></button>`:'');
-  const h=bar.querySelector('.lj-esc-h');if(h._h!==hh){h._h=hh;h.innerHTML=hh;}h.classList.toggle('vz',!hh);
+  // contador (role=status) e Desfazer em lugares separados; o lugar do Desfazer fica sempre reservado no CSS
+  const hn=ch.length?T('ljNChosen',ch.length):'';const n=bar.querySelector('.lj-esc-n');if(n.textContent!==hn)n.textContent=hn;
+  const dd=ljEscDesfVale(k);const hd=dd?`<span class="lj-esc-tir" role="status">${T('ljEscTirada')}</span><button class="lj-esc-desf" data-act="kiosk-esc-desf">${ICO.back}<span>${T('ljEscDesfazer')}</span></button>`:'';
+  const dz=bar.querySelector('.lj-esc-dz');if(dz._h!==hd){dz._h=hd;dz.innerHTML=hd;}
   const vz=bar.querySelector('.lj-esc-vz');const tv=T('ljEscVazio');if(vz.textContent!==tv)vz.textContent=tv;if(vz.hidden!==!!ch.length)vz.hidden=!!ch.length;
   const al=T('ljEscLista');if(bar.getAttribute('aria-label')!==al)bar.setAttribute('aria-label',al);
   if(!l.dataset.on){l.dataset.on='1';l.addEventListener('scroll',()=>ljEscSombra(l),{passive:true});}
-  {const lb=document.getElementById('lj-lb');const tr=lb&&lb.querySelector('.lj-ovtr');if(tr&&getComputedStyle(lb).position==='static'){const v=Math.ceil(tr.getBoundingClientRect().bottom+8)+'px';if(bar.style.getPropertyValue('--esctopo')!==v)bar.style.setProperty('--esctopo',v);}} // coluna: a barra começa abaixo do canto de cima
-  if(novo)ljEscMostra(l,novo);else if(cur&&bar._cur!==ck)ljEscMostra(l,cur);bar._cur=ck;
+  // esc-col: a barra começa abaixo do canto de cima e termina acima do primeiro controle de baixo (logo, "N / total", setas, Continuar), medidos aqui
+  {const fs=bar.parentElement,lb=document.getElementById('lj-lb');if(lb&&fs.classList.contains('esc-col')){const tr=lb.querySelector('.lj-ovtr');
+    const topo=tr?Math.ceil(tr.getBoundingClientRect().bottom+8)+'px':'';const tops=[...lb.querySelectorAll('.lj-ovtl,.lj-lbcnt,.lj-lbnav')].map(e=>e.getBoundingClientRect().top).filter(t=>t>0);
+    const baixo=tops.length?Math.ceil(innerHeight-Math.min(...tops)+8)+'px':'';
+    if(topo&&bar.style.getPropertyValue('--esctopo')!==topo)bar.style.setProperty('--esctopo',topo);if(baixo&&bar.style.getPropertyValue('--escbaixo')!==baixo)bar.style.setProperty('--escbaixo',baixo);}}
+  // rolagem: na abertura vai até a foto em exibição; depois, só para a que acabou de entrar (exatamente uma) ou para a foto em exibição quando ela muda
+  if(!bar._ini){bar._ini=1;if(cur)ljEscMostra(l,cur);}else if(novos.length===1)ljEscMostra(l,novos[0]);else if(cur&&bar._cur!==ck)ljEscMostra(l,cur);bar._cur=ck;
   ljEscSombra(l);if(comp)compHydrate();}
-addEventListener('resize',()=>{if(state.lojaRota&&document.getElementById('lj-esc'))ljEscUpd();}); // girar ou redimensionar: o canto de cima pode mudar de altura
+addEventListener('resize',()=>{if(state.lojaRota&&document.getElementById('lj-esc'))ljEscUpd();}); // girar ou redimensionar: muda o modo e a altura do canto
 // atualização parcial da tela cheia, sem render(): barra, contador do topo, Continuar e ✓/✗ da foto em exibição (a foto grande e a marca d'água não mudam)
 function ljFsUpd(){const lb=document.getElementById('lj-lb');if(!lb){render();return;}const k=state.kiosk;
   const items=lojaItems(k.code);const n=lojaCart(k.code).ch.length;const x=items[k.ver];const vs=x?lojaPick(k.code)[x.k]||'':'';
-  const pill=lb.querySelector('.lj-cartpill');if(pill){pill.classList.toggle('on',!!n);const b=pill.querySelector('b');if(b)b.textContent=n;pill.setAttribute('aria-label',T('nPhotos',n));}
+  const pill=lb.querySelector('.lj-cartpill');if(pill){const t=document.createElement('template');t.innerHTML=ljCartPill(n);const np=t.content.firstElementChild;if(pill.outerHTML!==np.outerHTML)pill.replaceWith(np);}
   const nx=lb.querySelector('.lj-ovnext');const h=ljOvNext(n);if(!h){if(nx)nx.remove();}else if(!nx)lb.insertAdjacentHTML('beforeend',h);else{const t=document.createElement('template');t.innerHTML=h;const c=t.content.firstElementChild.innerHTML;if(nx.innerHTML!==c)nx.innerHTML=c;}
   const y=lb.querySelector('.lj-lbbar .lj-yes'),no=lb.querySelector('.lj-lbbar .lj-no');if(y)y.classList.toggle('on',vs==='ok');if(no)no.classList.toggle('on',vs==='no');
   ljEscUpd();lojaEco();}
@@ -4314,7 +4346,7 @@ function compMsg(r){return r.pending==='photoroom'?'Conecte o Photoroom em Fundo
 function compHydrate(){if(fundosModo()==='photoroom'&&document.querySelector('[data-comp]:not([data-done])')&&!state.pr)prPoll();document.querySelectorAll('[data-comp]:not([data-done])').forEach(el=>{el.dataset.done='1';const [ph,bg]=el.dataset.comp.split('|');const key=ph+'|'+bg;
   compose(ph,bg).then(r=>{if(r.url){el.style.backgroundImage=`url(${r.url})`;el.classList.add('ok');el.innerHTML='';el.dataset.url=r.url;COMPURL[key]=r.url;COMPLOW[key]=r.low;if(r.low)el.insertAdjacentHTML('beforeend','<span class="compst lowres">miniatura de exemplo</span>');
       // v97 (selo): a caixa da montagem fica com a proporção dela, sem redesenhar a tela; pronta com o cliente olhando para ela = vista (A9)
-      if(r.w>0&&r.h>0){LJ_AR['ai:'+key]=+(r.w/r.h).toFixed(4);const pai=el.parentElement;if(pai&&pai.matches('.lj-lbimg.ai,.lj-gimg.ai,.lj-mimg.ai'))pai.style.setProperty('--ar',LJ_AR['ai:'+key]);}
+      if(r.w>0&&r.h>0){LJ_AR['ai:'+key]=+(r.w/r.h).toFixed(4);const pai=el.parentElement;if(pai&&pai.matches('.lj-lbimg.ai,.lj-gimg.ai,.lj-mimg.ai'))pai.style.setProperty('--ar',LJ_AR['ai:'+key]);if(pai&&pai.matches('.lj-lbimg.ai'))ljEscUpd();}
       if(el.closest('#lj-lb'))edVista('ai:'+key);return;}
     if(r.pending==='fila'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Na fila do recorte...</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},3000);return;}
     // v97 (E5b): 503 do recorte (modelos abrindo, processo de recorte reiniciando) não tira a foto da venda: tenta de novo em 30 s
@@ -10719,7 +10751,7 @@ function lojaAbrirSo(minhas,anc,ext){const k=state.kiosk;const mais=k.mais;
 // proporção da foto real na foto ampliada (para o rótulo ponto · hora ficar dentro da imagem): medida uma vez por foto
 const LJ_AR={};
 function ljAspecto(id){const u=lojaPreUrl(id);if(!u||LJ_AR[id])return;const im=LJ_PRE[u]||new Image();const ok=()=>{if(!im.naturalWidth||!im.naturalHeight)return;LJ_AR[id]=+(im.naturalWidth/im.naturalHeight).toFixed(4);
-    const el=document.querySelector('.lj-lbimg[data-ar="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]');if(el&&!el.classList.contains('spr')){el.style.setProperty('--ar',LJ_AR[id]);el.classList.add('fit');}};
+    const el=document.querySelector('.lj-lbimg[data-ar="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]');if(el&&!el.classList.contains('spr')){el.style.setProperty('--ar',LJ_AR[id]);el.classList.add('fit');ljEscUpd();}};
   if(im.complete&&im.naturalWidth)ok();else{im.addEventListener('load',ok,{once:true});if(!im.src)im.src=u;}}
 // rapidez (pedido 3): a primeira foto grande e as duas seguintes começam a baixar assim que a busca volta
 const LJ_PRE={};
@@ -11492,17 +11524,19 @@ document.addEventListener('click',e=>{
     case 'kiosk-ok':lojaMark('ok');break;
     case 'kiosk-no':lojaMark('no');break;
     // 17/11: barra das escolhidas. X tira sem perguntar (D7): Desfazer por 5 s e, depois de um X, outro X é ignorado por 400 ms (a célula vizinha anda para o lugar)
-    case 'kiosk-esc-x':{const k=state.kiosk;if(Date.now()-(k.escXEm||0)<400)break;const x=lojaItems(k.code).find(q=>q.k===d.k);const pk=lojaPick(k.code);if(!x||!(pk[x.k]==='ok'||pk[x.k]==='fav'))break;
+    case 'kiosk-esc-x':{const k=state.kiosk;if(Date.now()-(k.escXEm||0)<LJ_ESC_TRAVA)break;const x=lojaItems(k.code).find(q=>q.k===d.k);const pk=lojaPick(k.code);if(!x||!(pk[x.k]==='ok'||pk[x.k]==='fav'))break;
       const dd=k.escDesf={k:x.k,v:pk[x.k],pos:Object.keys(pk).indexOf(x.k),ate:Date.now()+LJ_DESF_MS,code:k.code,t0:k.t0};delete pk[x.k];lojaSync(k.code);k.escXEm=Date.now();
       if(document.getElementById('lj-lb'))ljFsUpd();else render();
-      setTimeout(()=>{if(state.kiosk===k&&k.escDesf===dd){k.escDesf=null;ljEscUpd();}},LJ_DESF_MS+50);
+      // o Desfazer vence: se o foco estava nele, vai para o X da foto que ficou no lugar (ou da anterior), nunca para o body
+      setTimeout(()=>{if(state.kiosk!==k||k.escDesf!==dd)return;const ae=document.activeElement;const tinha=!!(ae&&ae.classList&&ae.classList.contains('lj-esc-desf'));k.escDesf=null;ljEscUpd();
+        if(tinha){const cs=document.querySelectorAll('#lj-esc .lj-esc-i');const alvo=cs.length?cs[Math.min(Math.max(0,dd.pos),cs.length-1)].querySelector('.lj-esc-x'):document.querySelector('#lj-lb .lj-yes');if(alvo)alvo.focus({preventScroll:true});}},LJ_DESF_MS+50);
       {const b=document.querySelector('#lj-esc .lj-esc-desf');if(b)b.focus({preventScroll:true});}break;}
-    case 'kiosk-esc-desf':{const k=state.kiosk;const dd=k.escDesf;k.escDesf=null;
-      if(!dd||dd.ate<Date.now()||dd.code!==k.code||dd.t0!==k.t0||!lojaItems(k.code).some(q=>q.k===dd.k)){ljEscUpd();break;}
+    case 'kiosk-esc-desf':{const k=state.kiosk;if(Date.now()-(k.escXEm||0)<LJ_ESC_TRAVA)break;k.escXEm=Date.now();const dd=ljEscDesfVale(k);k.escDesf=null; // a mesma trava do X: toque duplo no Desfazer não tira outra foto
+      if(!dd||!lojaItems(k.code).some(q=>q.k===dd.k)){ljEscUpd();break;}
       const pk=lojaPick(k.code);const ks=Object.keys(pk).filter(x=>x!==dd.k);ks.splice(Math.max(0,Math.min(dd.pos,ks.length)),0,dd.k);const novo={};ks.forEach(x=>{novo[x]=x===dd.k?dd.v:pk[x];});
       simOf(k.code).pick=novo;lojaSync(k.code);if(document.getElementById('lj-lb'))ljFsUpd();else render();
       {const b=document.querySelector(`#lj-esc .lj-esc-i[data-k="${CSS.escape(dd.k)}"] .lj-esc-v`);if(b)b.focus({preventScroll:true});}break;}
-    case 'kiosk-esc-ir':{const k=state.kiosk;const i=lojaItems(k.code).findIndex(x=>x.k===d.k);if(i<0)break;k.ver=k.i=i;render();break;}
+    case 'kiosk-esc-ir':{const k=state.kiosk;if(Date.now()-(k.escXEm||0)<LJ_ESC_TRAVA)break;k.escXEm=Date.now();const i=lojaItems(k.code).findIndex(x=>x.k===d.k);if(i<0)break;k.ver=k.i=i;render();break;}
     case 'kiosk-done':case 'loja-cart':lojaPedir();break; // v96: Continuar manda a escolha ao atendente (sem pacote e sem pagamento no Checkout)
     case 'kiosk-review':state.kiosk.step='review';render();break;
     case 'kiosk-voltar-fotos':lojaVoltarFotos();break;
