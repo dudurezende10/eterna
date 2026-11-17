@@ -2381,3 +2381,41 @@ Decisão do Eduardo (16/11): a Escala é assunto do Maracanã, não do Eterna. �
 - Exportar não cobre Vendedores, Estoque, Qualidade, Galerias online, Calendário de eventos, Alertas nem as seções c, d, f e g das Estatísticas. PDF sem gráficos e sem logo.
 - Corpo inteiro estreito segue com a regra antiga. Deslocar o grupo para livrar o Maracanã e o Cristo no Mirante do Rio não foi decidido.
 - Checkout do cliente e galeria online continuam cortando a miniatura (`cover`); decisão pendente do Eduardo.
+
+## Barra das escolhidas na tela cheia do Checkout (17/11/2026)
+
+Ramo `feat/barra-escolhidas`. Teste: `testes/checkout-barra-escolhidas.js` (agente falso, contexto de toque); `testes/checkout-tela-cheia.js` ajustado.
+
+### O que o cliente vê
+
+Na tela cheia da escolha (`review` com `k.ver!=null`), as fotos escolhidas aparecem em miniatura com o contador "N fotos escolhidas", na ordem em que ele escolheu (a mais nova no fim). Tocar numa miniatura abre aquela foto (a miniatura da foto em exibição tem contorno amarelo). O X de 48 px tira a foto na hora, sem pergunta, e mostra "Foto tirada" com **Desfazer** (72 px) por 5 s, que devolve a foto na mesma posição. Marcar ou tirar atualiza a barra, o contador do canto e o Continuar sem redesenhar a tela: a foto grande não pisca e nenhuma imagem é baixada de novo. A miniatura é a `/thumb/` (nunca `/file/`), inteira (contida) e com a marca d'água; a montagem de IA usa a montagem pronta em memória (`COMPURL`). Nada depende de hover.
+
+### Regra do Eduardo (17/11): a foto nunca encolhe
+
+A barra só usa a sobra ao lado da foto. Sem sobra, quem cede é a barra. O modo sai de `ljEscModo(item)` (tamanho da janela e proporção da foto em exibição; montagem e foto de exemplo contam como 3:2 até a proporção ser conhecida) e vira classe no `.lj-fs`:
+
+| Modo | Quando | Como fica |
+| --- | --- | --- |
+| `esc-col` | tela de 3:2 ou mais larga, sobra da foto 3:2 (`largura - 1,5 × altura`, até 316 px) de 160 px ou mais: o monitor 16:9 do balcão | coluna à direita com essa largura; canto de cima (só ícones no contador e no Ver todas), logo, "N / total", setas e Continuar ficam inteiros dentro da coluna; só ✓ e ✗ ficam sobre a foto. Cobre menos foto que antes |
+| `esc-fina` | a mesma conta, sobra de 80 a 159 px (16:10) | coluna só com as miniaturas; os controles ficam sobre a foto, como antes da barra |
+| `esc-faixa` | tela mais estreita que 3:2, sobra de baixo da foto 3:2 (`altura - largura / 1,5`, até 112 px) de 80 px ou mais | faixa embaixo, miniatura de 64 a 88 px; abaixo de 100 px contador e Desfazer lado a lado (`esc-baixa`) |
+| `esc-off` | sobra menor que 80 px (miniatura de 64 + 16), ou a foto em exibição não deixa essa sobra (em pé no 4:3) | barra recolhida; a tela fica igual à de antes, com o contador do topo e o Ver todas |
+
+No 4:3 deitado a barra aparece nas fotos deitadas e recolhe nas em pé (ela não muda de lugar; só some). A largura e a altura saem arredondadas para baixo, então a área da foto nunca fica menor que a foto. Medidas no teste, com e sem a barra (foto deitada / em pé): 1920×1080 1620×1080 / 720×1080 (`esc-col`), 1366×768 1152×768 / 512×768, 1280×720 1080×720 / 480×720, 1440×900 e 1280×800 (`esc-fina`), 1920×1200 (`esc-fina`), 1024×768 (`esc-faixa` / `esc-off`), 390×844 (`esc-faixa`), 1400×940 e 1620×1080 (`esc-off`): sempre o mesmo tamanho.
+
+### Código
+
+- `ljEscolhidas(card)`: única fonte, `lojaCart(card).ch` na ordem de `Object.keys(pick)` (as chaves têm prefixo, então seguem a inserção). `lojaMark` e `kiosk-tog` apagam a chave antes de marcar, para ela ir para o fim.
+- `vQuiosque` devolve a casca `<aside id="lj-esc" data-card data-t0>` com `.lj-esc-n` (contador, `role=status`), `.lj-esc-dz` (lugar do Desfazer, sempre reservado: a lista não anda), `.lj-esc-vz` (vazio) e `.lj-esc-l` (lista).
+- `ljEscUpd()` aplica o modo, reconcilia as células por `data-k` (não recria as que ficam), atualiza contador, Desfazer, idioma, `.cur`/`aria-current` e vazio, mede no `esc-col` o começo (`--esctopo`, abaixo do canto) e o fim (`--escbaixo`, acima do logo) da lista e rola só a lista: na abertura até a foto em exibição, depois só para a que entrou (exatamente uma) ou para a foto em exibição quando ela muda. Também roda no `resize`, quando a proporção da foto chega (`ljAspecto`) e quando a montagem em exibição fica pronta (`compHydrate`).
+- `ljFsUpd()`: atualização parcial (barra, `ljCartPill`, `ljOvNext`, ✓/✗, `lojaEco`). `lojaMark` usa quando a foto em exibição não muda.
+- `render()` (ramo `lojaRota`) reaproveita o nó `#lj-esc` com o mesmo `data-card` e `data-t0`, devolvendo rolagem e foco, e sempre chama `ljEscUpd` (o cliente seguinte nunca vê a barra do anterior).
+- Ações `kiosk-esc-ir`, `kiosk-esc-x`, `kiosk-esc-desf` com uma trava única de 400 ms (`k.escXEm`, `LJ_ESC_TRAVA`): toque duplo nunca tira outra foto. `k.escDesf` (chave, posição, prazo, código e t0) vale só no mesmo atendimento (`ljEscDesfVale`) e é zerado no `lojaReset`; se o Desfazer vence com o foco nele, o foco vai para o X vizinho. Enter e Espaço dentro de `#lj-esc` são do botão, nunca o ✓.
+- I18N: `ljEscLista`, `ljEscVazio`, `ljEscVer`, `ljEscTirar`, `ljEscTirada`, `ljEscDesfazer` (o contador reaproveita `ljNChosen`).
+- Nada novo no SIM, no `localStorage`, no servidor ou no agente. O eco do Posto não mudou (`lojaEcoMsg`).
+
+### Fora desta entrega
+
+- Barra na grade, em "Ver minhas fotos", na galeria online e no Posto; reordenar por arrasto; zoom por pinça.
+- No 4:3 deitado (faixa) o canto de cima e a fileira de baixo (✓ ✗, Continuar) cobrem mais da foto que antes: os 42 px de margem que eles usavam viraram a faixa.
+- Em 390 px de largura o canto de cima já passava da borda antes da barra (falha antiga do `checkout-tela-cheia.js`).
