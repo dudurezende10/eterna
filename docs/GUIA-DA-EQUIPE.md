@@ -762,6 +762,10 @@ Em **Permissões** › **Perfis** ficam todos os perfis, com o que cada um dá e
 
 Tudo fica no Histórico.
 
+### Marca d'água (17/11)
+
+No Checkout e na galeria do cliente, as fotos não compradas mostram "VIVA MARACANÃ" repetido na diagonal pela foto inteira, inclusive nas escolhidas e nas de fundo de IA. Dá para ver a foto, mas uma foto da tela não serve. A foto comprada sai sem marca.
+
 ### Usuários e foto do perfil (17/11)
 
 - A lista de **Usuários** sai em blocos por perfil, com os nomes em ordem alfabética.

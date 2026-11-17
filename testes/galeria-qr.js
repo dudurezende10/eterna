@@ -195,7 +195,7 @@ try{
   // ---------- 14. sem rolagem horizontal em 3 tamanhos; prints ----------
   dbg('14. sem rolagem horizontal em 3 tamanhos');
   for(const [n,w,h] of [['cel',390,844],['tab',1024,1366],['desk',1440,900]]){await G.setViewportSize({width:w,height:h});await G.waitForTimeout(150);
-    const sw=await G.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth,g:Math.max(...[...document.querySelectorAll('.gq *')].map(e=>e.getBoundingClientRect().right))}));ok(sw.s<=sw.i&&sw.g<=sw.i+1,`14: galeria com rolagem horizontal em ${w}px: `+JSON.stringify(sw));
+    const sw=await G.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth,g:Math.max(...[...document.querySelectorAll('.gq *')].filter(e=>!e.closest('.wm')).map(e=>e.getBoundingClientRect().right))}));ok(sw.s<=sw.i&&sw.g<=sw.i+1,`14: galeria com rolagem horizontal em ${w}px: `+JSON.stringify(sw));
     await G.screenshot({path:`${PR}/galeria-${n}.png`});
     await A.setViewportSize({width:w,height:h});await A.evaluate(()=>{ETERNA.state.gal.tab='sessoes';ETERNA.render();});await A.waitForTimeout(100);
     const sa=await A.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth}));ok(sa.s<=sa.i,`14: view galerias com rolagem horizontal em ${w}px: `+JSON.stringify(sa));await A.screenshot({path:`${PR}/galeria-admin-${n}.png`});}
