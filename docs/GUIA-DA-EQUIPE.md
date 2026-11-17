@@ -520,6 +520,7 @@ Cortesias (sem valor, não são venda):
 | Cortesia | Quando | O que leva |
 | --- | --- | --- |
 | Cortesia SAC | cliente prejudicado pela operação: espera longa, falha de foto, impressão ou sistema, problema no atendimento | as fotos escolhidas, impressas e digitais |
+| Foto cortesia (+1) | cliente descontente numa venda que ele está pagando: o atendente dá uma foto a mais, que o próprio cliente escolheu | 1 foto, digital e impressa |
 | CORTESIA PORTA-RETRATO | entra sozinha, uma para cada Porta-retrato vendido (parada desde a v99.3: o Porta-retrato saiu com a lista da Imply) | 1 foto impressa para pôr no porta-retrato |
 
 Todas as impressas são 10×15 cm.
@@ -546,6 +547,18 @@ Só quem pode dar cortesia (Galerias online, alterar) vê o botão.
 5. Toque em **Registrar cortesia e imprimir**.
 
 A venda fica com valor zero e pagamento "Cortesia", com o motivo, o texto e quem deu. As fotos saem impressas e entram na galeria do cliente com o selo Cortesia.
+
+### Dar uma foto cortesia na venda paga (17/11)
+
+Para o cliente descontente que está comprando. Só quem pode dar cortesia (Galerias online, alterar) vê o botão.
+
+1. Peça ao cliente para escolher, no Checkout, também a foto que ele vai ganhar.
+2. No **Posto de venda**, abra o pedido. No passo **Pacote**, toque em **+1 foto cortesia**.
+3. Escolha o **motivo** e escreva **o que aconteceu** (obrigatório).
+4. Toque em **Dar a foto cortesia**. O pacote passa a ser calculado com uma foto a menos.
+5. Escolha o pacote e o pagamento e confirme como sempre.
+
+É uma foto por venda e só em pedido com 2 fotos ou mais. Antes de confirmar, **Retirar cortesia** desfaz. Na confirmação ficam registrados quem deu, o motivo, o texto, a venda, a hora e quanto a foto valeu (a diferença do que o cliente pagaria). Tudo aparece em **Galerias online › Cortesias**.
 
 ### Sessão que já foi paga
 
