@@ -12776,6 +12776,104 @@ def rota_privada(path):
     return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
+# 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
+# - Excesso: mais de ESCUDO_LIMITE pedidos no mesmo minuto bloqueia o IP por 15 min; repetindo, 1 h, 6 h e 1 dia. Quem está
+#   conectado (sessão) ou é posto pareado não é bloqueado por excesso: a tela da equipe carrega muitas fotos de uma vez.
+# - Varredura: 2 pedidos de endereço que só robô procura (ESCUDO_ISCA: wp-login, .env, .git...) em 1 hora bloqueiam por 1 dia;
+#   repetindo, 3 dias e 1 semana. O nível volta ao começo depois de 7 dias sem bloqueio.
+# O próprio servidor (127.0.0.1) nunca é bloqueado. Bloqueios ficam no banco (tabela escudo) e no login_log, e valem depois de reiniciar.
+ESCUDO_LIMITE = int(os.environ.get("ETERNA_LIMITE_MINUTO", "300"))
+ESCUDO_ESCALA = {"excesso": (15 * 60, 3600, 6 * 3600, 86400), "varredura": (86400, 3 * 86400, 7 * 86400)}
+ESCUDO_ISCA = re.compile(r"(?i)(wp-login|wp-admin|wp-content|wp-includes|xmlrpc\.php|/\.env|/\.git(/|$)|/\.aws|/\.ssh|/\.htaccess|"
+                         r"phpmyadmin|/cgi-bin/|phpunit|\.php(\?|$)|/actuator|/boaform|/hnap1|/server-status|/\.ds_store)")
+escudo_lock = threading.Lock()
+_escudo = {"pronto": False, "conta": {}, "isca": {}, "bloq": {}, "nivel": {}}
+
+
+def escudo_ini():
+    """Lê do banco os bloqueios ainda valendo e os níveis (uma vez por processo)."""
+    if _escudo["pronto"]:
+        return
+    _escudo["pronto"] = True
+    try:
+        with estado_lock:
+            db = auth_db()
+            try:
+                db.execute("create table if not exists escudo (ip text, motivo text, ate real, nivel integer, em real, primary key (ip, motivo))")
+                linhas = db.execute("select ip, motivo, ate, nivel, em from escudo").fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return
+    agora = time.time()
+    with escudo_lock:
+        for ip, motivo, ate, nivel, em in linhas:
+            _escudo["nivel"][(ip, motivo)] = (nivel, em)
+            if ate > agora and ate > _escudo["bloq"].get(ip, (0, ""))[0]:
+                _escudo["bloq"][ip] = (ate, motivo)
+
+
+def escudo_bloqueia(ip, motivo):
+    """Bloqueia o IP pelo tempo do nível atual do motivo e sobe o nível. Devolve os segundos."""
+    agora = time.time()
+    with escudo_lock:
+        nivel, em = _escudo["nivel"].get((ip, motivo), (0, 0))
+        if agora - em > 7 * 86400:
+            nivel = 0
+        esc = ESCUDO_ESCALA[motivo]
+        dur = esc[min(nivel, len(esc) - 1)]
+        _escudo["nivel"][(ip, motivo)] = (nivel + 1, agora)
+        _escudo["bloq"][ip] = (agora + dur, motivo)
+    try:
+        with estado_lock:
+            db = auth_db()
+            try:
+                db.execute("create table if not exists escudo (ip text, motivo text, ate real, nivel integer, em real, primary key (ip, motivo))")
+                db.execute("insert or replace into escudo values (?, ?, ?, ?, ?)", (ip, motivo, agora + dur, nivel + 1, agora))
+                auth_log(db, "ip:" + ip, "ip_bloqueado:%s:%dmin" % (motivo, dur // 60), "", ip)
+                db.commit()
+            finally:
+                db.close()
+    except Exception:
+        pass
+    return dur
+
+
+def escudo_avalia(ip, path, confiavel):
+    """None se o pedido segue; senão (código, segundos até liberar). confiavel() só é chamada quando o IP passa do limite."""
+    if not ip or ip in ("127.0.0.1", "::1"):
+        return None
+    escudo_ini()
+    agora = time.time()
+    with escudo_lock:
+        b = _escudo["bloq"].get(ip)
+        if b and b[0] > agora:
+            return (403 if b[1] == "varredura" else 429, int(b[0] - agora) + 1)
+        isca = bool(ESCUDO_ISCA.search(path or ""))
+        if isca:
+            l = [t for t in _escudo["isca"].get(ip, []) if agora - t < 3600] + [agora]
+            _escudo["isca"][ip] = l
+            if len(_escudo["isca"]) > 5000:
+                _escudo["isca"] = {k: v for k, v in _escudo["isca"].items() if v and agora - v[-1] < 3600}
+        minuto = int(agora // 60)
+        c = _escudo["conta"].get(ip)
+        if not c or c[0] != minuto:
+            if len(_escudo["conta"]) > 5000:
+                _escudo["conta"] = {k: v for k, v in _escudo["conta"].items() if v[0] == minuto}
+            c = _escudo["conta"][ip] = [minuto, 0, False]
+        c[1] += 1
+        passou = c[1] > ESCUDO_LIMITE and not c[2]
+    if isca and len(l) >= 2:
+        return (403, escudo_bloqueia(ip, "varredura"))
+    if passou:
+        if confiavel():
+            with escudo_lock:
+                c[2] = True                 # conectado ou posto: este minuto não conta mais
+            return None
+        return (429, escudo_bloqueia(ip, "excesso"))
+    return None
+
+
 # 17/11 (Ronaldo): cabeçalhos de segurança em toda resposta. Nenhum site de fora embute o Eterna (frame-ancestors e X-Frame-Options),
 # o navegador não adivinha tipo de arquivo (nosniff), o endereço não vaza para outros sites (Referrer-Policy) e câmera só na própria
 # página; microfone, localização e pagamento pelo navegador desligados (o Eterna não usa).
@@ -12812,6 +12910,16 @@ class H(BaseHTTPRequestHandler):
                 self.client_address = (real, self.client_address[1])
             except ValueError:
                 pass
+        if ok:
+            r = escudo_avalia(self.client_address[0] if self.client_address else "", urlparse(self.path).path,
+                              lambda: bool(self.sessao() or self.posto_atual()))
+            if r:
+                self.close_connection = True
+                self.send_response(r[0])
+                self.send_header("Retry-After", str(r[1]))
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return False
         return ok
 
     def origens_ok(self, path):

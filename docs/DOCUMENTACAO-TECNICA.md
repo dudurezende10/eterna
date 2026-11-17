@@ -585,6 +585,13 @@ Números sempre com `font-variant-numeric: tabular-nums`. Tabelas em 13 px.
 
 **Rede e segredos**: API só na VLAN e pela VPN; FTP com usuário por fotógrafo e FTPS quando o CTP permitir; segredos em variáveis de ambiente do Docker, nunca no repositório; chaves de nuvem com permissão mínima por bucket.
 
+**Proteção do servidor do estádio (17/11)**:
+- **Cabeçalhos em toda resposta** (`SEG_CABECALHOS`): sem embutir em outro site, `nosniff`, `Referrer-Policy` e câmera só na própria página.
+- **Excesso** (`escudo_avalia`): mais de 300 pedidos no mesmo minuto bloqueia o IP por 15 min, depois 1 h, 6 h e 1 dia (`ETERNA_LIMITE_MINUTO`). Quem está conectado ou é posto pareado não é bloqueado por excesso.
+- **Varredura:** 2 pedidos de endereço de robô (`ESCUDO_ISCA`: wp-login, .env, .git, .php...) em 1 hora bloqueiam por 1 dia, depois 3 dias e 1 semana.
+- **Regras comuns:** o nível volta ao começo após 7 dias. O próprio servidor nunca é bloqueado. Os bloqueios ficam na tabela `escudo` e no `login_log` (`ip_bloqueado:<motivo>:<min>`) e valem depois de reiniciar.
+- **Teste:** `testes/escudo_agente.py`.
+
 **Backup e continuidade**: NAS a cada hora, S3 à noite; restauração testada por mês; servidor reserva (um PC de ponto) com o mesmo `compose.yml` e o último backup, sobe em 30 minutos; impressão e venda continuam sem internet.
 
 **Observabilidade**: logs estruturados (JSON) por serviço; métricas de fila (tempo por foto em cada etapa), de ingestão (fotos por minuto por ponto, repetidas) e de IA (acerto contra o gabarito do treino); alertas operacionais já definidos no app (fotos por sessão, conversão, estação parada, rolo, bandeira). Ferramenta: Prometheus + Grafana no servidor do ponto, Sentry para erros do app.
