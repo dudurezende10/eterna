@@ -439,6 +439,21 @@ evs = [v for k, v in T.d.items() if k[0] == "EVT#" + tokS]
 tipos = {v["tipo"] for v in evs}
 ok({"voucher_digitado", "selfie_ok", "cortesia_escolhida", "cortesia_repetida", "cortesia_esgotada", "foto_baixada"} <= tipos
    and all(v.get("voucher") == "1112ABCD1234" and v.get("escola") == "EE Teste" for v in evs if v["tipo"] in ("voucher_digitado", "selfie_ok", "cortesia_escolhida", "cortesia_repetida", "cortesia_esgotada", "foto_baixada")), "escola: cada passo registrado com voucher e escola")
+app.TABELA.put_item(Item={"pk": "PED#ESC1", "sk": "M", "token": tokS, "pids": json.dumps(["ag_c00004", "ag_c00005"]), "total": "78", "email": "pai@x.com"})
+app.evento(tokS, "pedido_pago", "", ref="ESC1", total=78.0)
+ok(chama("GET", "/ponto/escolas", None, q={"tokens": tokS})[0] == 401, "escola: números só para o ponto")
+st, r = chama("GET", "/ponto/escolas", None, {"x-eterna-ponto": seg}, q={"tokens": tokS + "," + tok})
+E = (r.get("escolas") or {}).get(tokS) or {}
+F = E.get("funil") or {}
+ok(st == 200 and set(r["escolas"]) == {tokS} and E["voucher"] == "1112ABCD1234" and E["pessoas"] == 2 and E["fotos"] == 30 and E["lidas"] == 30,
+   "escola: números da galeria do voucher (só ela): %s" % {k: E.get(k) for k in ("voucher", "pessoas", "fotos", "lidas")})
+ok(F.get("digitado") == 1 and F.get("criancas") == 2 and F.get("repetidas") == 1 and F.get("esgotadas") == 1 and F.get("baixadas") == 1
+   and F.get("aparelhos") == 4, "escola: funil do voucher: %s" % F)
+C = {c["foto"]: c for c in E.get("criancas") or []}
+ok(C.get("ag_c00003", {}).get("baixou") is True and C.get("ag_d00001", {}).get("baixou") is False and C["ag_c00003"]["fotos"] == 10,
+   "escola: cada criança com a foto grátis e se baixou: %s" % C)
+ok(F.get("compras") == 1 and F.get("fotos_compradas") == 2 and F.get("valor") == 78.0 and C["ag_c00003"]["comprou"] and C["ag_c00003"]["comprador"] == "p***@x.com"
+   and not C["ag_d00001"]["comprou"], "escola: a compra entra no funil e na criança, com o comprador mascarado")
 chama("POST", "/ponto/galerias", {"manifesto": dict(manS, encerrada=True)}, {"x-eterna-ponto": seg})
 ok(not [k for k in T.d if k[0] == "IDX#" + tokS], "escola: encerrar apaga o progresso de todos os lotes")
 print("\ntudo certo")

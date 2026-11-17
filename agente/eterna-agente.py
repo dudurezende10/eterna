@@ -4720,7 +4720,8 @@ def escola_montar(v, reg, agora=None):
     gal_fila.put(token)
     nuvem_galeria_enfileira(token)
     vis_protege_manifesto(m)
-    return {"token": token, "codigo": codigo, "sessoes": cards, "criada": novo["criada"], "fotos": len(fotos), "em": _iso(agora)}
+    return {"token": token, "codigo": codigo, "sessoes": cards, "criada": novo["criada"], "fotos": len(fotos), "em": _iso(agora),
+            "escola": v["escola"], "dia": v["dia"], "horarios": v["horarios"], "pessoas": v["pessoas"]}
 
 
 def escola_tick(grupos, agora=None):
@@ -4748,6 +4749,49 @@ def escola_tick(grupos, agora=None):
     return mudou
 
 
+ESCOLA_NUM_ARQ = os.path.join(GALERIAS, "escolas-numeros.json")
+ESCOLA_NUM_DIAS = 60
+
+
+def escola_numeros_pull(agora=None):
+    """Traz da nuvem o funil de cada galeria de escola dos últimos 60 dias (painel Escolas). Devolve quantas vieram."""
+    if not NUVEM_API:
+        return 0
+    agora = agora or time.time()
+    lim = time.strftime("%Y-%m-%d", time.localtime(agora - ESCOLA_NUM_DIAS * 86400))
+    toks = {r["token"]: loc for loc, r in escola_ler().items() if isinstance(r, dict) and token_ok(str(r.get("token") or ""))
+            and str(r.get("dia") or "9999") >= lim}
+    lista, out = sorted(toks), {}
+    for i in range(0, len(lista), 30):
+        rq = urllib.request.Request(NUVEM_API + "/ponto/escolas?" + urllib.parse.urlencode({"tokens": ",".join(lista[i:i + 30])}),
+                                    headers={"X-Eterna-Ponto": nuvem_segredo(), "User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(rq, timeout=30) as r:
+            j = json.loads(r.read().decode("utf8"))
+        for t, n in (j.get("escolas") or {}).items():
+            if t in toks and isinstance(n, dict):
+                out[toks[t]] = n
+    os.makedirs(GALERIAS, exist_ok=True)
+    with open(ESCOLA_NUM_ARQ + ".tmp", "w", encoding="utf8") as fh:
+        json.dump({"em": _iso(agora), "escolas": out}, fh)
+    os.replace(ESCOLA_NUM_ARQ + ".tmp", ESCOLA_NUM_ARQ)
+    return len(out)
+
+
+def escola_painel():
+    """GET /escolas: cada visita de escola (mais nova em cima) com o funil trazido da nuvem. O token não sai daqui."""
+    try:
+        nd = json.load(open(ESCOLA_NUM_ARQ, encoding="utf8"))
+    except (OSError, ValueError):
+        nd = {}
+    ns = nd.get("escolas") or {}
+    es = [{"localizador": loc, "escola": r.get("escola"), "dia": r.get("dia"), "horarios": r.get("horarios") or [], "pessoas": r.get("pessoas"),
+           "fotos": r.get("fotos"), "criada": r.get("criada"), "numeros": ns.get(loc)}
+          for loc, r in escola_ler().items() if isinstance(r, dict)]
+    es.sort(key=lambda x: (str(x["dia"] or ""), x["localizador"]), reverse=True)
+    return {"ok": True, "ligado": bool(ESCOLA_TOKEN), "ultima": escola_estado.get("ultima"), "erro": escola_estado.get("erro"),
+            "numeros_em": nd.get("em"), "escolas": es[:200]}
+
+
 def escola_loop():
     if not ESCOLA_TOKEN:
         return
@@ -4764,6 +4808,10 @@ def escola_loop():
         except Exception as ex:
             escola_estado.update(erro=str(ex)[:120])
             print("  escola: Viva Parceiros sem resposta (%s)" % str(ex)[:80])
+        try:
+            escola_numeros_pull()
+        except Exception as ex:
+            print("  escola: números da nuvem sem resposta (%s)" % str(ex)[:80])
         time.sleep(ESCOLA_INTERVALO)
 
 
@@ -12182,6 +12230,7 @@ ROTAS = (
     ("GET", "/impressao/fila", "sessao", ("venda.r",)), ("GET", "/impressao/miniatura", "sessao", ("venda.r",)),
     ("POST", "/imprimir", "sessao", ("venda.c", "venda.u")), ("POST", "/impressao/acao", "sessao", ("venda.u",)),
     ("GET", "/galerias/vendas", "sessao", ("galerias.r",)), ("GET", "/galerias/status", "sessao", ("galerias.r",)),
+    ("GET", "/escolas", "sessao", ("estatisticas.r",)),          # 17/11: painel Escolas (funil do voucher)
     ("POST", "/galerias/encerrar", "sessao", ("galerias.d",)),
     ("POST", "/lgpd/excluir", "sessao", ("galerias.d",)),
     ("POST", "/rostos/medir", "sessao", ("qualidade.r",)),
@@ -14527,6 +14576,8 @@ class H(BaseHTTPRequestHandler):
             return None
         if u.path.startswith("/g/") or u.path in ("/galerias/vendas", "/galerias/status"):
             return self.gal_get(u, q)
+        if u.path == "/escolas":
+            return self.js(escola_painel())
         if u.path in ("/auth/eu", "/auth/senhas"):
             return self.auth_get()
         if u.path in ("/postos", "/postos/eu", "/postos/aceitar"):

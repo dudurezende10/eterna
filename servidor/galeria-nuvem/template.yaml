@@ -238,6 +238,12 @@ Resources:
             ApiId: !Ref Api
             Path: /ponto/eventos
             Method: GET
+        EscolasPonto:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/escolas
+            Method: GET
         Acoes:
           Type: HttpApi
           Properties:

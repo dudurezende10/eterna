@@ -117,5 +117,5 @@ Como fica:
 1. Agente: leitura dos grupos `[Escola]` no Viva Parceiros e criação automática da galeria `evento` com o bloco `voucher`.
 2. Nuvem: `VOU#`, `GET /g/voucher/<localizador>`, e-mail, `POST /g/<token>/cortesia` com os dois limites, eventos novos.
 3. App: o campo do código aceita o localizador; na galeria da escola, a escolha da foto grátis. Textos nos 5 idiomas e na lista do chinês.
-4. Estatísticas: painel Escolas.
+4. Estatísticas: painel Escolas. **Feito em 17/11:** Estatísticas › Escolas (visitas dos últimos 60 dias, funil etapa a etapa e, por visita, cada criança com a foto grátis, se baixou, se comprou, o valor e o comprador mascarado). Por enquanto o funil não tem a etapa "autorizou" separada da selfie e não tem filtro de período.
 5. Testes: agente, nuvem (`teste_local.py`) e Playwright do fluxo inteiro, com a cortesia repetida e a esgotada.

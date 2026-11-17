@@ -165,6 +165,7 @@ Mesmo contrato das rotas `/g/*` do agente (`galeria-qr-fase1.md`), para o app n�
 - **Downloads:** `POST /g/<token>/evento {acesso, tipo: "foto_baixada", foto}`.
 - **Galeria:** com voucher, ela traz `escola: {nome, dia, cortesia, pode_escolher}`.
 - **Eventos novos**, com `voucher` e `escola`: `voucher_digitado`, `cortesia_escolhida`, `cortesia_repetida`, `cortesia_esgotada`, `foto_baixada`. `selfie_ok` e `galeria_vista` também levam voucher e escola.
+- **Números para o painel:** `GET /ponto/escolas?tokens=` (até 30, só com `X-Eterna-Ponto`). Para cada galeria com voucher, devolve `voucher`, `escola`, `dia`, `horarios`, `pessoas`, `fotos`, `lidas`, `expira`, `primeiro`/`ultimo` evento e `funil` (`digitado`, `aparelhos` = IPs distintos com `selfie_ok`, `selfies`, `sem_foto`, `criancas`, `repetidas`, `esgotadas`, `baixadas`, `compras`, `fotos_compradas`, `valor`). Também devolve `criancas`, uma linha por `CRT#` com `em`, `foto`, `fotos`, `baixou`, `comprou` (algum `pedido_pago` com foto da seleção dela), `valor` e `comprador`. O comprador é o e-mail do `PED#` mascarado (`p***@dominio`).
 - **Tetos padrão** (template): `LimiteLeiturasDia` 60 mil e `LimiteBuscasDia` 20 mil. Cota do Rekognition na conta: 5/s, com pedido de 50/s aberto em 17/11.
 
 Eventos registrados: `qr_aberto`, `codigo_digitado`, `selfie_ok`, `selfie_nao`, `selfie_sem_rosto`, `selfie_processando`, `selfie_teto`, `galeria_vista`, `compra_tentada`.

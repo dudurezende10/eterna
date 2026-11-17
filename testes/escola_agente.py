@@ -65,7 +65,26 @@ ok(m.escola_tick(grupos, agora=T("12:10") + 9 * 86400) == 0, "voucher de mais de
 # o manifesto recusa voucher malformado
 ok(m.escola_voucher_ok({"localizador": "x;drop", "dia": DIA}) is None, "localizador inválido recusado")
 
+# painel Escolas: o agente traz o funil da nuvem só das galerias de escola e serve sem o token
+import io, urllib.request
+pedidos = []
+class R(io.BytesIO):
+    def __enter__(self): return self
+    def __exit__(self, *e): return False
+def falso(rq, timeout=None):
+    pedidos.append(rq.full_url)
+    tk = reg2["token"]
+    return R(json.dumps({"escolas": {tk: {"voucher": "1112ABCD1234", "funil": {"criancas": 3}}, "B" * 22: {"voucher": "OUTRO"}}}).encode())
+m.NUVEM_API, m.nuvem_segredo, urllib.request.urlopen = "https://nuvem.teste", lambda: "seg", falso
+ok(m.escola_numeros_pull(agora=T("13:00")) == 1 and "/ponto/escolas?tokens=" in pedidos[0], "números da nuvem: só a galeria do registro: %s" % pedidos)
+P = m.escola_painel()
+e = (P.get("escolas") or [{}])[0]
+ok(len(P["escolas"]) == 1 and e["localizador"] == "1112ABCD1234" and e["escola"] == "EE Thiago Delgado" and e["pessoas"] == 60
+   and e["numeros"]["funil"]["criancas"] == 3 and P["numeros_em"], "painel: visita com escola, pessoas e funil: %s" % e)
+ok(reg2["token"] not in json.dumps(P), "painel: o token da galeria não sai")
+ok(m.rota_regra("GET", "/escolas") == ("sessao", ("estatisticas.r",)), "rota /escolas pede Estatísticas")
+
 if falhas:
     print("FALHA escola_agente: " + " | ".join(falhas))
     sys.exit(1)
-print("OK escola_agente: só [Escola] confirmado, janela da visita, sem IA, preços, atualização e prazo de 7 dias")
+print("OK escola_agente: só [Escola] confirmado, janela da visita, sem IA, preços, atualização, prazo de 7 dias e painel Escolas")

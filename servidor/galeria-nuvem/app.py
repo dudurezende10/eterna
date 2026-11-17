@@ -910,6 +910,68 @@ def eventos_ponto(ev):
     return resp({"eventos": out})
 
 
+def todos(pk, n=5000):
+    its, k = [], None
+    while len(its) < n:
+        r = TABELA.query(KeyConditionExpression=Key("pk").eq(pk), **({"ExclusiveStartKey": k} if k else {}))
+        its += r.get("Items", [])
+        k = r.get("LastEvaluatedKey")
+        if not k:
+            break
+    return its[:n]
+
+
+def mascara(email):
+    u, _, d = str(email or "").partition("@")
+    return (u[:1] + "***@" + d) if u and d else None
+
+
+def escola_numeros(t):
+    """O funil de uma galeria de escola: do localizador digitado à compra, e cada criança (sem rosto, IP ou e-mail inteiro)."""
+    m = manifesto(t)
+    v = (m or {}).get("voucher")
+    if not v:
+        return None
+    evs = todos("EVT#" + t)
+    n = lambda tp: sum(1 for x in evs if x.get("tipo") == tp)
+    pagos = []
+    for x in evs:
+        if x.get("tipo") == "pedido_pago" and x.get("ref"):
+            p = item("PED#" + x["ref"]) or {}
+            pagos.append({"pids": set(json.loads(p.get("pids") or "[]")), "total": float(x.get("total") or p.get("total") or 0),
+                          "email": p.get("email"), "em": x["sk"].split("#")[0]})
+    baixadas = {x.get("foto") for x in evs if x.get("tipo") == "foto_baixada"}
+    criancas = []
+    for c in sorted(cortesias(t), key=lambda c: c["sk"]):
+        sel = set(json.loads(c.get("sel") or "[]"))
+        ps = [p for p in pagos if p["pids"] & sel]
+        criancas.append({"em": c["sk"].split("#")[0], "foto": c["foto"], "fotos": len(sel), "baixou": c["foto"] in baixadas,
+                         "comprou": bool(ps), "valor": round(sum(p["total"] for p in ps), 2),
+                         "comprador": next((mascara(p["email"]) for p in ps if p.get("email")), None)})
+    ems = sorted(x["sk"].split("#")[0] for x in evs)
+    return {"voucher": v["localizador"], "escola": v.get("escola"), "dia": v["dia"], "horarios": v.get("horarios") or [],
+            "pessoas": int(v.get("pessoas") or 0), "fotos": len(m["fotos"]), "lidas": len(lidas(t)), "expira": m.get("expira"),
+            "funil": {"digitado": n("voucher_digitado"), "aparelhos": len({x.get("ip") for x in evs if x.get("tipo") == "selfie_ok"}),
+                      "selfies": n("selfie_ok"), "sem_foto": n("selfie_nao") + n("selfie_sem_rosto") + n("selfie_varias_pessoas"),
+                      "criancas": len(criancas), "repetidas": n("cortesia_repetida"), "esgotadas": n("cortesia_esgotada"),
+                      "baixadas": len(baixadas - {None}), "compras": len(pagos), "fotos_compradas": len(set().union(*[p["pids"] for p in pagos])) if pagos else 0,
+                      "valor": round(sum(p["total"] for p in pagos), 2)},
+            "criancas": criancas, "primeiro": ems[0] if ems else None, "ultimo": ems[-1] if ems else None}
+
+
+def escolas_ponto(ev):
+    """GET /ponto/escolas?tokens=: os números das galerias de escola, para o painel Escolas do ponto."""
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    toks = [t for t in str((ev.get("queryStringParameters") or {}).get("tokens") or "").split(",") if _re_token.match(t)][:30]
+    out = {}
+    for t in toks:
+        r = escola_numeros(t)
+        if r:
+            out[t] = r
+    return resp({"escolas": out})
+
+
 def voucher_ok(v):
     if not isinstance(v, dict) or not _re_localizador.match(str(v.get("localizador") or "").upper()) or not _re_dia.match(str(v.get("dia") or "")):
         return None
@@ -1131,6 +1193,8 @@ def handler(ev, ctx):
         return vendas_online(ev)
     if caminho == "/ponto/eventos" and metodo == "GET":
         return eventos_ponto(ev)
+    if caminho == "/ponto/escolas" and metodo == "GET":
+        return escolas_ponto(ev)
     partes = caminho.split("/")                           # ['', 'g', token, ação]
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "codigo" and metodo == "GET":
         if not contar("COD#" + ip_hash(ip), 60, 30):

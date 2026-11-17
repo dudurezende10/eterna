@@ -767,7 +767,8 @@ O responsável digita o localizador do voucher da Imply no mesmo campo do códig
 - **Galeria (`escola_montar`):** depois do fim da última janela, monta uma galeria `evento` com `menor:true`, `nome` = escola, as sessões, as fotos (sem base de IA, até `ESCOLA_MAX_FOTOS` = 10 mil) e o bloco `voucher` (`localizador`, `escola`, `dia`, `horarios`, `pessoas`). Preços e catálogo vêm da galeria de sessão mais recente publicada pelo app. Publica pela fila de sempre (`gal_fila` e `nuvem_galeria_enfileira`).
 - **Atualização:** só republica se o conjunto de sessões mudar (sessão atrasada). Token e código ficam em `galerias/escolas.json` (localizador → `token`, `codigo`, `sessoes`, `fotos`, `em`). Vale para visitas dos últimos 7 dias (`ESCOLA_DIAS`).
 - **Código:** `GET /g/codigo/<x>` aceita o localizador e procura em `escolas.json`.
-- **Teste:** `testes/escola_agente.py`.
+- **Painel Escolas:** no mesmo laço, `escola_numeros_pull` busca na nuvem `GET /ponto/escolas?tokens=` (até 30 por vez, cabeçalho `X-Eterna-Ponto`) os números das galerias de escola dos últimos 60 dias e grava em `galerias/escolas-numeros.json`. `GET /escolas` (pede Estatísticas em Ver) devolve cada visita, a mais nova primeiro, com `localizador`, `escola`, `dia`, `horarios`, `pessoas`, `fotos` e `numeros`; o token não sai. Tela: Estatísticas › Escolas (seção `h`, `esSecH`).
+- **Teste:** `testes/escola_agente.py` e `testes/escola-painel.js`.
 
 ### Adaptadores no agente
 

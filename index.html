@@ -1192,7 +1192,7 @@ details.pn-dd{padding:0}
 .es-hist{display:flex;align-items:flex-end;gap:3px;height:46px}.es-hist i{flex:1;background:#D9D9D6;border-radius:2px 2px 0 0}.es-hist i.med{background:#FFB800}
 .es-hxd td.num{background:rgba(19,64,120,calc(var(--a,0)*.55));font-variant-numeric:tabular-nums}
 .es-fotos th button.es-ord{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;white-space:nowrap}
-.es-fotos tr.sel td{background:var(--warn-bg)}.es-link{background:none;border:0;padding:0;font:inherit;font-weight:600;color:inherit;text-decoration:underline;cursor:pointer;text-align:left}
+.es-fotos tr.sel td{background:var(--warn-bg)}.es-esc-img{width:48px;height:48px;object-fit:cover;border-radius:6px;display:block}.es-link{background:none;border:0;padding:0;font:inherit;font-weight:600;color:inherit;text-decoration:underline;cursor:pointer;text-align:left}
 .es-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:10px 0}
 .es-rec{margin:6px 0 0;padding-left:18px;font-size:13px}.es-h3{font-size:14px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em}
 .es-vazio{font-size:15px;margin:6px 0 12px}
@@ -5182,7 +5182,7 @@ function vChuteAGol(){
 const ES_FAIXAS=['0–30 s','30–60 s','1–2 min','2–5 min','5–10 min','10–20 min','mais de 20 min'];
 const ES_SEMANA=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const ES_LANG={pt:'Português',en:'Inglês',es:'Espanhol',fr:'Francês',de:'Alemão'};
-const ES_SECOES=[['u','Funil'],['a','Vendas e produtos'],['b','Fotógrafos'],['c','Rapidez'],['d','Dias e eventos'],['e','Visitantes'],['f','Movimento'],['g','Jogos e ano a ano']]; // v97: g só para o Admin (esSecoes)
+const ES_SECOES=[['u','Funil'],['a','Vendas e produtos'],['b','Fotógrafos'],['c','Rapidez'],['d','Dias e eventos'],['e','Visitantes'],['f','Movimento'],['g','Jogos e ano a ano'],['h','Escolas']]; // v97: g só para o Admin (esSecoes)
 const esSecoes=()=>ES_SECOES.filter(([s])=>s!=='g'||isAdminUser(state.user));
 // nomes na tela no idioma da equipe (os dados guardados seguem em português)
 const esFx=i=>i==null?null:TE('es_faixas')[i];
@@ -6063,6 +6063,7 @@ const ES_FOTO_COL=['nome','dias_prod','sessoes','fotos','fps','vendas','conversa
 function esFotoOrd(D){const M=state.es;const L=esFotoLinhas(D);const ord=ES_FOTO_COL.includes(M.ord)?M.ord:'faturamento';const dir=M.dir===1?1:-1;
   L.sort((a,b)=>{const x=a[ord],y=b[ord];if(ord==='nome')return dir*String(x).localeCompare(String(y),'pt');return dir*((x==null?-1:x)-(y==null?-1:y));});return {L,ord,dir};}
 function vEstatisticas(){const M=state.es;const on=esOn();if(!esSecoes().some(s=>s[0]===M.sec))M.sec='a';
+  if(M.sec==='h')return `<div class="head pn-head"><div><div class="eyebrow">${TE('g_dashboard')} · ${esc(venueName())}</div><h1>${TE('v_estatisticas')}</h1></div></div>${esChips()}<div class="es-sec">${esSecH()}</div>`; // 17/11: escolas pelo voucher, sem o período
   if(M.sec==='g')return `<div class="head pn-head"><div><div class="eyebrow">${TE('g_dashboard')} · ${esc(venueName())}</div><h1>${TE('v_estatisticas')}</h1></div></div>${esChips()}<div class="es-sec">${esSecG()}</div>`; // v97: g tem chips de ano, sem o período
   if(on){esPull();if(M.sec==='f'||M.sec==='u')esVisPull();}const {p,D}=esTela();const K=D.kpi;
   const aviso=!on||M.erro?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>${TE('sem_conexao_srv')}</b><p>${TE('es_vem_srv')} ${M.rover?TE('es_so_rover'):TE('es_ligue_rover')}</p></div></div>`:(M.busy&&!M.dias?`<div class="note">${TE('es_carregando')}</div>`:'');
@@ -6213,6 +6214,35 @@ const esPctI=v=>Math.round(Math.abs(100*v))+'%';
 function esDiasCSV(L,adm){const q=v=>{let t=String(v==null?'':v);if(/^[=+\-@\t\r]/.test(t))t="'"+t;t=t.replace(/[\r\n]+/g,' ');return /[;"]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
   const h=['dia','tipo','eventos','visitantes','fonte_visitantes','vendas','fotos','sessoes','sessoes_com_venda','fonte_vendas'].concat(adm?['receita']:[]);
   return [h.join(';'),...(L||[]).map(d=>[d.dia,d.tipo,d.eventos.join(' | '),d.entradas,d.entradas_fonte,d.vendas,d.fotos,d.sessoes,d.sessoes_com_venda,d.fonte_vendas].concat(adm?[d.receita]:[]).map(q).join(';'))].join('\n');}
+// 17/11: escola pelo voucher. O servidor do ponto traz da nuvem o funil de cada visita: localizador digitado, selfie, foto grátis, download e compra.
+function esEscPull(forca){const M=state.es;const c=M.esc||(M.esc={lista:null,info:null,em:0,erro:false,errEm:0,busy:false,abre:null});if(c.busy||!esOn())return;
+  if(!forca&&c.lista&&Date.now()-c.em<ES_CACHE_MS)return;if(!forca&&c.erro&&Date.now()-c.errEm<30e3)return;c.busy=true;
+  agFetch(state.agent.url+'/escolas',{cache:'no-store'}).then(async r=>{const j=await r.json();if(!r.ok||!j||!j.ok||!Array.isArray(j.escolas))throw 0;c.lista=j.escolas;c.info=j;c.em=Date.now();c.erro=false;})
+    .catch(()=>{c.erro=true;c.errEm=Date.now();}).finally(()=>{c.busy=false;if(state.view==='estatisticas'&&state.es.sec==='h')render();});}
+const esIso=x=>{const t=Date.parse(x||'');return isFinite(t)?new Date(t).toLocaleString(localeEq(),{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';};
+const esSimNao=v=>v?TE('rel_sim'):TE('nao');
+function esSecH(){const M=state.es;const on=esOn();if(on)esEscPull();const c=M.esc||{};
+  if(!on||(c.erro&&!c.lista))return `<div class="alert warn" id="es-esc-sem"><span class="sev" aria-hidden="true"></span><div><b>${TE('sem_conexao_srv')}</b></div></div>`;
+  if(!c.lista)return `<div class="note">${TE('es_carregando')}</div>`;
+  const L=c.lista;if(!L.length)return `<div class="note" id="es-esc-vazio">${TE('es_esc_nenhuma')}</div>`;
+  const F=e=>(e.numeros&&e.numeros.funil)||{};const z={pessoas:0,digitado:0,selfies:0,criancas:0,baixadas:0,compras:0,valor:0};
+  L.forEach(e=>{z.pessoas+=+e.pessoas||0;['digitado','selfies','criancas','baixadas','compras','valor'].forEach(k=>z[k]+=+F(e)[k]||0);});
+  const kp=`<div class="pn-kpis">${kpiCard({k:'esc',ico:'ses',label:TE('es_esc_visitas'),value:fmtN(L.length),sub:TE('es_esc_n_pessoas',fmtN(z.pessoas))})}
+    ${kpiCard({k:'grat',ico:'cam',label:TE('es_esc_gratis'),value:fmtN(z.criancas),bar:{v:z.criancas,of:z.pessoas,label:TE('es_esc_das_pessoas')}})}
+    ${kpiCard({k:'baix',ico:'tic',label:TE('es_esc_baixadas'),value:fmtN(z.baixadas),sub:z.criancas?esPct(z.baixadas/z.criancas):''})}
+    ${kpiCard({k:'comp',ico:'rev',label:TE('es_esc_compras'),value:fmtN(z.compras),sub:`${fmtR(z.valor)}${z.criancas?' · '+esPct(z.compras/z.criancas):''}`})}</div>`;
+  const et=[['digitado','es_esc_digitado'],['selfies','es_esc_selfies'],['criancas','es_esc_gratis'],['baixadas','es_esc_baixadas'],['compras','es_esc_compras']];
+  const fun=`<section class="panel pn-panel" id="es-esc-funil"><div class="pn-ph"><div><h2>${TE('es_sec_u')}</h2></div></div>${esTab([{t:TE('es_esc_etapa')},{t:TE('total'),n:1},{t:TE('es_esc_da_anterior'),n:1}],
+    et.map(([k,t],i)=>`<tr><td class="name">${TE(t)}</td><td class="num">${fmtN(z[k])}</td><td class="num">${i&&z[et[i-1][0]]?esPct(z[k]/z[et[i-1][0]]):'—'}</td></tr>`))}</section>`;
+  const vis=`<section class="panel pn-panel" id="es-esc-lista"><div class="pn-ph"><div><h2>${TE('es_esc_visitas')}</h2></div></div>${esTab([{t:TE('pn_dia')},{t:TE('es_esc_escola')},{t:TE('es_esc_voucher')},{t:TE('es_esc_pessoas'),n:1},{t:TE('pn_fotos'),n:1},{t:TE('es_esc_digitado'),n:1},{t:TE('es_esc_selfies'),n:1},{t:TE('es_esc_gratis'),n:1},{t:TE('es_esc_baixadas'),n:1},{t:TE('es_esc_compras'),n:1},{t:TE('pn_receita'),n:1}],
+    L.map(e=>{const f=F(e);const n=k=>e.numeros?fmtN(+f[k]||0):'—';return `<tr${e.localizador===c.abre?' class="sel"':''}><td>${e.dia?dBR(e.dia):'—'}</td><td class="name"><button class="es-link" data-act="es-esc" data-k="${esc(e.localizador)}">${esc(e.escola||e.localizador)}</button></td><td>${esc(e.localizador)}</td><td class="num">${fmtN(+e.pessoas||0)}</td><td class="num">${fmtN(+e.fotos||0)}</td><td class="num">${n('digitado')}</td><td class="num">${n('selfies')}</td><td class="num">${n('criancas')}</td><td class="num">${n('baixadas')}</td><td class="num">${n('compras')}</td><td class="num">${e.numeros?fmtR(+f.valor||0):'—'}</td></tr>`;}),'es-fotos')}</section>`;
+  const s=L.find(e=>e.localizador===c.abre);let det='';
+  if(s){const N=s.numeros||{};const f=N.funil||{};const cs=N.criancas||[];const u=state.agent.url;
+    det=`<section class="panel pn-panel" id="es-esc-det"><div class="pn-ph"><div><h2>${esc(s.escola||s.localizador)} · ${s.dia?dBR(s.dia):''}${s.horarios&&s.horarios.length?' · '+esc(s.horarios.join(', ')):''}</h2><p class="pn-take">${esc(s.localizador)}</p></div><button class="chip" data-act="es-esc" data-k="">${TE('fechar')}</button></div>
+      ${N.funil?`<div class="tablewrap"><table><tbody>${[[TE('es_esc_lidas'),`${fmtN(+N.lidas||0)} / ${fmtN(+N.fotos||0)}`],[TE('es_esc_aparelhos'),fmtN(+f.aparelhos||0)],[TE('es_esc_sem_foto'),fmtN(+f.sem_foto||0)],[TE('es_esc_repetidas'),fmtN(+f.repetidas||0)],[TE('es_esc_esgotadas'),fmtN(+f.esgotadas||0)],[TE('es_esc_fotos_compradas'),fmtN(+f.fotos_compradas||0)],[TE('es_esc_primeiro'),esIso(N.primeiro)],[TE('es_esc_ultimo'),esIso(N.ultimo)]].map(([k,v])=>`<tr><td class="name">${k}</td><td class="num">${v}</td></tr>`).join('')}</tbody></table></div>`:`<div class="note">${TE('es_esc_sem_numeros')}</div>`}
+      ${cs.length?esTab([{t:TE('es_esc_quando')},{t:TE('es_esc_foto')},{t:TE('es_esc_fotos_crianca'),n:1},{t:TE('es_esc_baixou')},{t:TE('es_esc_comprou')},{t:TE('pn_receita'),n:1},{t:TE('es_esc_comprador')}],
+        cs.map(x=>`<tr><td>${esIso(x.em)}</td><td><img class="es-esc-img" loading="lazy" alt="" src="${esc(u+'/thumb/'+String(x.foto||'').replace(/^ag_/,''))}"></td><td class="num">${fmtN(+x.fotos||0)}</td><td>${esSimNao(x.baixou)}</td><td>${esSimNao(x.comprou)}</td><td class="num">${x.comprou?fmtR(+x.valor||0):'—'}</td><td>${esc(x.comprador||'—')}</td></tr>`)):''}</section>`;}
+  return kp+fun+vis+det;}
 function esSecG(){const M=state.es;const adm=isAdminUser(state.user);const at=+venueToday().slice(0,4);const ano=esAnoSel();const on=esOn();if(on){esDiasPull(ano);esDiasPull(ano-1);}
   const anos=[];for(let y=ES_ANO_DESDE;y<=at;y++)anos.push(y);
   const topo=`<div class="row es-g-top"><div class="chips" role="group" aria-label="${TE('es_ano')}">${anos.map(y=>`<button class="chip" data-act="es-ano" data-y="${y}" aria-pressed="${y===ano}">${y}</button>`).join('')}</div><span class="note">${TE('es_comparado',ano-1)}</span></div>`;
@@ -9175,6 +9205,36 @@ const EQ={
   es_sec_d:["Dias e eventos","Days and events","Días y eventos","Jours et événements","Tage und Veranstaltungen"],
   es_sec_e:["Visitantes","Visitors","Visitantes","Visiteurs","Besucher"],
   es_sec_f:["Movimento","Traffic","Movimiento","Fréquentation","Besucherstrom"],
+  es_sec_h:["Escolas","Schools","Escuelas","Écoles","Schulen"],
+  es_esc_nenhuma:["Nenhuma visita de escola nos últimos 60 dias.","No school visits in the last 60 days.","Ninguna visita escolar en los últimos 60 días.","Aucune visite scolaire ces 60 derniers jours.","Keine Schulbesuche in den letzten 60 Tagen."],
+  es_esc_visitas:["Visitas de escola","School visits","Visitas escolares","Visites scolaires","Schulbesuche"],
+  es_esc_n_pessoas:[(n)=>`${n} pessoas no voucher`,(n)=>`${n} people on the voucher`,(n)=>`${n} personas en el voucher`,(n)=>`${n} personnes sur le bon`,(n)=>`${n} Personen im Voucher`],
+  es_esc_gratis:["Foto grátis escolhida","Free photo chosen","Foto gratis elegida","Photo gratuite choisie","Gratisfoto gewählt"],
+  es_esc_das_pessoas:["Das pessoas do voucher","Of the people on the voucher","De las personas del voucher","Des personnes du bon","Der Personen im Voucher"],
+  es_esc_baixadas:["Grátis baixada","Free photo downloaded","Gratis descargada","Gratuite téléchargée","Gratisfoto geladen"],
+  es_esc_compras:["Compra paga","Paid purchase","Compra pagada","Achat payé","Bezahlter Kauf"],
+  es_esc_digitado:["Localizador digitado","Locator entered","Localizador ingresado","Localisateur saisi","Buchungscode eingegeben"],
+  es_esc_selfies:["Selfie encontrada","Selfie matched","Selfie encontrada","Selfie retrouvé","Selfie gefunden"],
+  es_esc_etapa:["Etapa","Step","Etapa","Étape","Schritt"],
+  es_esc_da_anterior:["Da etapa anterior","Of the previous step","De la etapa anterior","De l'étape précédente","Vom vorherigen Schritt"],
+  es_esc_escola:["Escola","School","Escuela","École","Schule"],
+  es_esc_voucher:["Voucher","Voucher","Voucher","Bon","Voucher"],
+  es_esc_pessoas:["Pessoas","People","Personas","Personnes","Personen"],
+  es_esc_lidas:["Fotos lidas na nuvem","Photos read in the cloud","Fotos leídas en la nube","Photos lues dans le cloud","In der Cloud gelesene Fotos"],
+  es_esc_aparelhos:["Aparelhos com selfie","Devices with a selfie","Dispositivos con selfie","Appareils avec selfie","Geräte mit Selfie"],
+  es_esc_sem_foto:["Selfie sem foto encontrada","Selfie with no photo found","Selfie sin foto encontrada","Selfie sans photo trouvée","Selfie ohne gefundenes Foto"],
+  es_esc_repetidas:["Mesma criança de novo","Same child again","Mismo niño de nuevo","Même enfant à nouveau","Dasselbe Kind erneut"],
+  es_esc_esgotadas:["Pedido depois de esgotar","Request after running out","Pedido después de agotarse","Demande après épuisement","Anfrage nach Ausschöpfung"],
+  es_esc_fotos_compradas:["Fotos compradas","Photos bought","Fotos compradas","Photos achetées","Gekaufte Fotos"],
+  es_esc_primeiro:["Primeiro acesso","First access","Primer acceso","Premier accès","Erster Zugriff"],
+  es_esc_ultimo:["Último acesso","Last access","Último acceso","Dernier accès","Letzter Zugriff"],
+  es_esc_sem_numeros:["A nuvem ainda não mandou os números desta visita.","The cloud has not sent this visit's numbers yet.","La nube aún no envió los números de esta visita.","Le cloud n'a pas encore envoyé les chiffres de cette visite.","Die Cloud hat die Zahlen dieses Besuchs noch nicht gesendet."],
+  es_esc_quando:["Quando","When","Cuándo","Quand","Wann"],
+  es_esc_foto:["Foto grátis","Free photo","Foto gratis","Photo gratuite","Gratisfoto"],
+  es_esc_fotos_crianca:["Fotos da criança","Child's photos","Fotos del niño","Photos de l'enfant","Fotos des Kindes"],
+  es_esc_baixou:["Baixou","Downloaded","Descargó","Téléchargée","Geladen"],
+  es_esc_comprou:["Comprou","Bought","Compró","Acheté","Gekauft"],
+  es_esc_comprador:["Comprador","Buyer","Comprador","Acheteur","Käufer"],
   es_sec_g:["Jogos e ano a ano","Games and year over year","Partidos y año a año","Matchs et année par année","Spiele und Jahresvergleich"],
   es_td_jogo:["Dia de jogo","Game day","Día de partido","Jour de match","Spieltag"],
   es_td_show:["Dia de show","Show day","Día de show","Jour de spectacle","Showtag"],
@@ -11269,6 +11329,7 @@ document.addEventListener('click',e=>{
     case 'es-sec':if(esSecoes().some(x=>x[0]===d.s)){state.es.sec=d.s;esGuarda();render();}break;
     case 'es-rover':state.es.rover=!state.es.rover;esGuarda();render();break;
     case 'es-ord':{const M=state.es;if(M.ord===d.c)M.dir=-M.dir;else{M.ord=d.c;M.dir=d.c==='nome'?1:-1;}render();break;}
+    case 'es-esc':{const c=state.es.esc;if(c){c.abre=d.k||null;render();if(d.k){const t=document.getElementById('es-esc-det');if(t)t.scrollIntoView({block:'start',behavior:'smooth'});}}break;}
     case 'es-foto':state.es.foto=d.k||null;render();if(d.k){const t=document.getElementById('es-foto-dia');if(t)t.scrollIntoView({block:'start',behavior:'smooth'});}break;
     case 'ag-mes':{const C=state.cal;const dd=+d.d;if(!dd){C.mes=venueToday().slice(0,7);}else{const [y,m]=(C.mes||venueToday().slice(0,7)).split('-').map(Number);const t=new Date(Date.UTC(y,m-1+dd,1));C.mes=t.toISOString().slice(0,7);}render();break;}
     case 'ag-novo':state.cal.form={id:null,data:state.cal.mes&&state.cal.mes!==venueToday().slice(0,7)?state.cal.mes+'-01':venueToday()};state.cal.apagar=null;render();{const el=document.getElementById('ag-form');if(el)el.scrollIntoView({block:'start'});}break;
