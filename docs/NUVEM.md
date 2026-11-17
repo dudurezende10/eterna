@@ -287,7 +287,7 @@ A regra da cópia diária (`backup/<pc>/dia/`, Glacier e 400 dias) depende do no
 - O `README.md` da galeria agora avisa disso e traz o comando certo.
 
 ## 9d. Firewall da galeria (17/11)
-CloudFront com WAF na frente da API (`servidor/galeria-nuvem/borda.yaml`, us-east-1): 300 pedidos por minuto por IP e regras
+CloudFront com WAF na frente da API (firewall `borda-waf.json` por comando em us-east-1, porque a organização bloqueia CloudFormation lá; CloudFront `borda.yaml` em us-east-2): 300 pedidos por minuto por IP e regras
 prontas da AWS, começando só contando. Passo a passo e custo: `servidor/galeria-nuvem/README.md`, seção "Firewall (WAF)".
 
 ## 10. Antes da produção
