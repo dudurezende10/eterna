@@ -984,7 +984,7 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 | `supervisor` | Supervisor | relatorios R, desempenho R, financeiro R, diario tudo, set R, venda C R U, qualidade R U (16/11: marca no Treino da IA), estoque tudo, configuracao R U, escala R U, laboratorio R, catalogo R, galerias C R U | todas as telas desses módulos | Início |
 | `quiosque` | Checkout (tela do cliente) | quiosque C R | quiosque | Checkout |
 
-- Cada perfil tem `desc` em linguagem simples, mostrada na aba Perfis prontos e ao escolher o perfil.
+- Desde 17/11 os perfis não têm descrição e podem ser editados no banco (coleção `perfis`): ver `docs/planos/2026-11-16-ver-como-e-liberacao.md`, seção 3.
 - **Pendente de confirmação do Eduardo**: o Fotógrafo vê só o grupo Fotógrafo. Ficou sem o Índice do fotógrafo e sem o Ajuste automático no menu. O plano de permissões assumia que ele continuaria vendo o próprio índice.
 
 ### Duas camadas: módulo e menu
@@ -1084,7 +1084,7 @@ const ACT_MOD={'user-new':'usuarios','user-save':'usuarios','user-active':'usuar
 
 - `vPermissoes()`, com `state.perm={tab,sel,draft,q,logQ,presetPick}`. Legenda fixa explicando C, R, U e D.
 - **Por usuário**: lista com busca; editor com perfil atual, "Perfil pronto" + "Aplicar perfil", "Tela inicial" e a matriz `permMatrix` (uma linha por módulo, com a descrição e o texto de cada letra; com Ver ligado, a sublinha "Aparece no menu:" com uma caixa por tela). Pill "alterações não salvas", Salvar e Descartar. Até 700 px cada módulo vira um card.
-- **Perfis prontos**: só leitura, um card por perfil.
+- **Perfis**: um card por perfil, com quem está nele; criar, editar, excluir e voltar ao original (17/11).
 - **Histórico**: quando, quem, ação, pessoa e o que mudou.
 - O cadastro (view `usuarios`) ficou só com os dados da pessoa: criar (perfil entre os permitidos, ou "Sem acesso ainda"), alterar nome, e-mail e fotógrafo vinculado, Desativar ou Reativar, e "Excluir acesso" com "Confirmar exclusão". Na própria linha não aparecem Desativar nem Excluir. O botão "Editar permissões" leva à tela Permissões.
 

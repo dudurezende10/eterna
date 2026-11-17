@@ -751,18 +751,16 @@ Na sua própria linha não aparecem Desativar nem Excluir.
 
 A aba **Histórico** em Permissões mostra toda mudança: quando, quem mudou, a ação, a pessoa e o que mudou. Dá para buscar por nome ou mudança. Exclusão também fica registrada, com quem era a pessoa.
 
-### Perfis prontos
+### Perfis (17/11)
 
-| Perfil | Vê | Não vê |
-| --- | --- | --- |
-| Admin | tudo, inclusive Usuários e Permissões; começa no Painel | nada fica de fora |
-| Fotógrafo | Diário do set, Minhas fotos (com a troca de fotógrafo e o envio das fotos do cartão pela tela), Fila do fotógrafo | Checkout, Dashboard, Curadoria, Configurações |
-| Atendimento e venda | Checkout, Posto de venda (com o Caixa e a Venda manual dentro dele), Preços (só para ver), Fila do fotógrafo (só para ver) | Dashboard (vendas, números, fotógrafos), Curadoria, Usuários |
-| Validador | Qualidade, Treino da IA, Diário do set (só para ver) | vendas, Checkout, Configurações |
-| Supervisor | Posto de venda, Dashboard (começa no Painel), Curadoria (vê e, desde 16/11, marca no Treino da IA e na Qualidade), grupo Fotógrafo (envia as fotos do cartão pela tela em nome de um fotógrafo), Configurações (Preços e Checkout com os Fundos de IA, Ajuste automático) | o grupo Sistema (Usuários, Permissões, Repositório, Identidade, Laboratório); não cancela venda |
-| Checkout | só a tela do cliente, em tela cheia | todo o resto |
+Em **Permissões** › **Perfis** ficam todos os perfis, com o que cada um dá e quem está nele. O Admin não muda.
 
-A aba **Perfis prontos** mostra cada perfil em detalhe.
+- **Novo perfil:** dê o nome, marque os módulos e telas, a tela inicial e as pessoas.
+- **Editar:** o que mudar vale na hora para todas as pessoas do perfil. Quem sai da lista fica Personalizado, com o que já tinha.
+- **Pessoa que virou Personalizado:** abra a pessoa em Por usuário e toque em **Criar perfil com estas permissões**.
+- **Excluir** (perfil criado pela equipe, sem ninguém dentro) e **Voltar ao original** (perfil que veio com o sistema e foi editado).
+
+Tudo fica no Histórico.
 
 ---
 

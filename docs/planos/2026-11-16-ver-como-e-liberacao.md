@@ -49,3 +49,13 @@ Admin (Ronaldo, Eduardo) abre o sistema exatamente como a pessoa vê, para confe
 - Se o Admin perde o perfil Admin ou é desativado, o "ver como" cai na hora (`auth_quem`).
 
 **Testes:** `testes/ver_como_agente.py` (servidor) e `testes/ver_como.js` (tela).
+
+## 3. Perfis editáveis (17/11)
+
+Pedido do Ronaldo: o Eduardo ajustou o perfil de uma pessoa e ela virou Personalizado. Agora o perfil é que se edita.
+
+- Coleção `perfis` no servidor (`ESTADO_COLS`, módulo `permissoes`). Doc com o id de um perfil pronto troca o que ele dá; id novo (`p<base36>`) é perfil criado; `{deleted:true}` volta o pronto ao original ou apaga o criado.
+- O servidor (`perfil_recusa`) recusa id `admin`/`custom`, formato errado e acesso que quem grava não tem. `--criar-vendedor` usa o perfil editado.
+- Na tela, `PRESETS_ORIG` guarda os prontos; `perfisAplica` junta o banco. Salvar um perfil regrava o cadastro de quem está nele (`perfilPessoas`, cada um por `permValidate`); quem sai da lista fica `custom`.
+- Os perfis não têm mais descrição: o cartão mostra só o que o perfil dá, que é o que vale.
+- Testes: `testes/perfis.js` e `testes/perfis_agente.py`.

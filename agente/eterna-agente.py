@@ -7451,7 +7451,8 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
 #   POST /ponto/docs {docs:[{col,id,valor}]}  valor null apaga.        -> {ok, rev}
 # O navegador guarda uma cópia e uma fila do que ainda não subiu (sem rede); o servidor é o dono. Backup no S3 com as vendas.
 ESTADO_DB = os.path.join(HOME, "ponto", "estado.db")
-ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda", "ativ")
+ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda", "ativ",
+               "perfis")     # 17/11: perfis criados ou editados pela equipe (Permissões › Perfis)
 ESTADO_MAX = 512 * 1024              # um registro (um usuário, um ajuste de foto) nunca passa disto
 estado_lock = threading.Lock()
 
@@ -7879,7 +7880,19 @@ def auth_cadastro_recusa(quem, id_doc, antes, depois):
 # Quem grava cada coleção de /ponto/docs (fora usuarios, que tem a regra acima): o módulo, com Criar ou Alterar para gravar
 # e Excluir ou Alterar para apagar. Na coleção "sim", pelo começo do id; id desconhecido é recusado.
 DOC_COL_MOD = {"diario": "diario", "treino": "qualidade", "reviews": "qualidade", "bandeiras": "estoque", "funcao": "escala",
-               "agenda": "escala", "config": "configuracao"}
+               "agenda": "escala", "config": "configuracao", "perfis": "permissoes"}
+PERFIL_ID = re.compile(r"^[a-z0-9_-]{1,40}$")
+
+
+def perfil_recusa(ed, id_doc, v):
+    """Gravação em perfis: id válido (o Admin não muda) e nenhum acesso que quem grava não tem."""
+    if not PERFIL_ID.match(id_doc) or id_doc in ("admin", "custom") or not isinstance(v, dict) or v.get("id") != id_doc:
+        return "invalido"
+    if v.get("deleted") is True:
+        return None
+    if not isinstance(v.get("name"), str) or not v["name"].strip() or not isinstance(v.get("perms"), dict) or not isinstance(v.get("menu"), list):
+        return "invalido"
+    return "sem_poder" if auth_acessos({"perms": v["perms"]}) - auth_acessos(ed) else None
 DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("stock|", ("estoque", "venda")),          # o rolo de papel do posto baixa na impressão, feita no caixa
            ("flags|", ("estoque",)), ("flagList", ("estoque",)),
@@ -9517,6 +9530,10 @@ def doc_recusa(db, quem, d):
         return "colecao"
     if col == "ativ" and not apaga and not ativ_valido(id_doc, d.get("valor")):
         return "invalido"
+    if col == "perfis" and not apaga and auth_pode(quem["cadastro"], "permissoes", "u"):
+        motivo = perfil_recusa(quem["cadastro"], id_doc, d.get("valor"))
+        if motivo:
+            return motivo
     existe = db.execute("select 1 from doc where col=? and id=? and valor is not null", (col, id_doc)).fetchone() is not None
     if col == "usuarios_login":
         return None if id_doc == quote(quem["usuario"], safe="-_.!~*'()") else "sem_permissao"
@@ -9630,7 +9647,11 @@ def auth_criar_vendedor(usuario, nome, perfil="ativ"):
     if perfil not in PERFIS_CLI:
         print("Perfil inválido: use " + " ou ".join(PERFIS_CLI))
         return 1
-    pf = PERFIS_CLI[perfil]
+    pf = dict(PERFIS_CLI[perfil])
+    for d in estado_col("perfis")["docs"]:            # 17/11: perfil pronto editado em Permissões › Perfis: vale o do banco
+        v = d.get("valor")
+        if d.get("id") == perfil and isinstance(v, dict) and not v.get("deleted") and isinstance(v.get("perms"), dict):
+            pf.update(perms=v["perms"], menu=v.get("menu") or pf["menu"], inicio=v.get("inicio") or pf["inicio"])
     usuario = usuario.strip().lower()
     if not AUTH_ID.match(usuario):
         print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
