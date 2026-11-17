@@ -36,6 +36,25 @@ REGIAO = os.environ.get("AWS_REGION", "us-east-2")
 TABELA = boto3.resource("dynamodb").Table(os.environ["TABELA"])
 BUCKET = os.environ["BUCKET"]
 SEGREDO_PONTO_SHA256 = os.environ["SEGREDO_PONTO_SHA256"]       # só o hash; o segredo fica no agente
+# 17/11: borda com firewall (borda.yaml). O CloudFront manda x-eterna-origem; aqui fica só o SHA-256. Pedido que veio pela borda
+# usa o IP do celular (CloudFront-Viewer-Address, escrito pelo CloudFront). Com EXIGIR_BORDA=1, pedido direto à API é recusado.
+ORIGEM_SHA256 = os.environ.get("ORIGEM_SHA256", "")
+EXIGIR_BORDA = os.environ.get("EXIGIR_BORDA", "0") == "1"
+
+
+def pela_borda(hs):
+    """True se o pedido passou pelo CloudFront com o firewall."""
+    v = (hs or {}).get("x-eterna-origem", "")
+    return bool(ORIGEM_SHA256 and v) and hmac.compare_digest(hashlib.sha256(v.encode()).hexdigest(), ORIGEM_SHA256)
+
+
+def ip_do_pedido(ev):
+    hs = ev.get("headers") or {}
+    ip = ev.get("requestContext", {}).get("http", {}).get("sourceIp", "")
+    va = hs.get("cloudfront-viewer-address", "")
+    if va and pela_borda(hs):
+        ip = va.rsplit(":", 1)[0].strip("[]")         # "ip:porta" (IPv6 também termina em :porta)
+    return ip
 SEGREDO_TESTE_SHA256 = os.environ.get("SEGREDO_PONTO_TESTE_SHA256", "")   # servidor de teste: publica sem usar o segredo do estádio
 COLECAO_PREFIXO = os.environ.get("COLECAO_PREFIXO", "et-maracana-")
 LIMIAR_ADULTO = float(os.environ.get("LIMIAR_ADULTO", "85"))    # semelhança do Rekognition (0 a 100)
@@ -949,7 +968,9 @@ def handler(ev, ctx):
         return {"leitura": r}
     metodo = ev.get("requestContext", {}).get("http", {}).get("method", "GET")
     caminho = ev.get("rawPath") or "/"
-    ip = ev.get("requestContext", {}).get("http", {}).get("sourceIp", "")
+    if EXIGIR_BORDA and not pela_borda(ev.get("headers")):
+        return resp({"error": "origem"}, 403)
+    ip = ip_do_pedido(ev)
     corpo = {}
     if metodo == "POST":
         raw = ev.get("body") or ""

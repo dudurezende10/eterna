@@ -37,6 +37,15 @@ Parameters:
     Default: json-b64
     AllowedValues: [json-b64, json]
     Description: formato do predefined-cart (a confirmar com a Imply)
+  OrigemSha256:
+    Type: String
+    Default: ""
+    Description: SHA-256 do SegredoOrigem da stack eterna-galeria-borda (vazio = sem borda)
+  ExigirBorda:
+    Type: String
+    Default: "0"
+    AllowedValues: ["0", "1"]
+    Description: 1 recusa pedido que não passou pelo CloudFront com o firewall (ligar depois que app e servidor usarem a borda)
   OrigensApp:
     Type: CommaDelimitedList
     Default: "https://eterna.photo,https://www.eterna.photo,http://127.0.0.1:8765,http://localhost:8765,http://192.168.10.218:8765"
@@ -115,6 +124,8 @@ Resources:
           TABELA: !Ref Banco
           BUCKET: !Ref Bucket
           SEGREDO_PONTO_SHA256: !Ref SegredoPontoSha256
+          ORIGEM_SHA256: !Ref OrigemSha256
+          EXIGIR_BORDA: !Ref ExigirBorda
           SEGREDO_PONTO_TESTE_SHA256: !Ref SegredoPontoTesteSha256
           COMPRA_ONLINE: !Ref CompraOnline
           IMPLY_CHAVE_SSM: !Ref ImplyChaveParametro

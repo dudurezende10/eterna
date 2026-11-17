@@ -286,5 +286,9 @@ A regra da cópia diária (`backup/<pc>/dia/`, Glacier e 400 dias) depende do no
 - O primeiro deploy montou os parâmetros com `describe-stacks`, que devolve `****` nos dois `NoEcho` (`SegredoPontoSha256`, `SegredoPontoTesteSha256`). Os dois foram gravados como `****` e a nuvem recusou os servidores (401) por ~25 min. O deploy seguinte passou os SHA-256 de verdade, calculados dos `nuvem-segredo.txt` (estádio: `~/Eterna` do notebook, o mesmo do kit do Eduardo; teste: `Eterna-servidor-local`). Os dois voltaram a responder 200, e a página do vídeo do cartão H7KY-HWGG publicou sozinha na tentativa 29.
 - O `README.md` da galeria agora avisa disso e traz o comando certo.
 
+## 9d. Firewall da galeria (17/11)
+CloudFront com WAF na frente da API (`servidor/galeria-nuvem/borda.yaml`, us-east-1): 300 pedidos por minuto por IP e regras
+prontas da AWS, começando só contando. Passo a passo e custo: `servidor/galeria-nuvem/README.md`, seção "Firewall (WAF)".
+
 ## 10. Antes da produção
 As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.

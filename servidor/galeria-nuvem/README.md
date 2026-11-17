@@ -48,6 +48,30 @@ No fim, `EnderecoApi` é a URL da API (até existir `api.eterna.photo`).
 
 Teste local, sem AWS: `python teste_local.py .`
 
+## Firewall (WAF) na frente da API (17/11)
+A API HTTP não aceita WAF direto; `borda.yaml` põe um CloudFront com o firewall na frente dela (stack `eterna-galeria-borda`,
+us-east-1). Custo fixo de US$ 8 a 10 por mês.
+- `excesso-por-ip`: mais de 300 pedidos em 1 minuto do mesmo IP recebe 429 enquanto passar do limite.
+- Regras prontas da AWS: IP de má fama, entradas maliciosas e ataques comuns. Começam só contando (`ModoRegras=contar`).
+- As fotos não passam pela API (link assinado do S3), então quem abre a galeria faz poucos pedidos.
+- O CloudFront manda o cabeçalho `x-eterna-origem` com um segredo; a API guarda só o SHA-256 (`OrigemSha256`). Pela borda, o IP
+  do celular vem do `CloudFront-Viewer-Address`. Com `ExigirBorda=1`, pedido direto à API recebe 403.
+
+1. Borda contando (CloudShell). Guardar o segredo só no CloudShell até o passo 2:
+```bash
+cd eterna/servidor/galeria-nuvem
+S=$(openssl rand -hex 24); SHA=$(printf %s "$S" | sha256sum | cut -d' ' -f1)
+aws cloudformation deploy --region us-east-1 --stack-name eterna-galeria-borda --template-file borda.yaml \
+  --parameter-overrides SegredoOrigem=$S ModoRegras=contar --no-fail-on-empty-changeset
+aws cloudformation describe-stacks --region us-east-1 --stack-name eterna-galeria-borda --query "Stacks[0].Outputs" --output text
+```
+2. A API conhecendo a borda, sem exigir ainda: o redeploy de "Instalar ou atualizar" (o comando com `$P` e os dois SHA-256
+   dos servidores), acrescentando `OrigemSha256=$SHA` no fim do `--parameter-overrides`.
+3. Trocar o endereço: `GAL_API` no `index.html` e, no servidor do estádio,
+   `sudo bash /opt/eterna/app/servidor/linux/galeria-ligar.sh <EnderecoBorda>`.
+4. Depois de uns dias olhando as métricas do WAF (console, WAF & Shield › Web ACLs › eterna-galeria, região Global):
+   `ModoRegras=bloquear` na borda e `ExigirBorda=1` na API (mesmo padrão do passo 2, trocando o parâmetro).
+
 ## Ligar a compra pela Imply (v99)
 1. Guardar a chave do usuário de serviço da Imply como parâmetro protegido. Quem tem a chave digita no CloudShell; ela não
    vai em arquivo, template, e-mail ou chat:

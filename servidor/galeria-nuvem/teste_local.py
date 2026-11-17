@@ -372,4 +372,17 @@ ok(chama("GET", "/g/codigo/XXXX-YYYY")[0] == 404, "encerrar o primeiro solta o c
 # v99.24: cartão com código de 12 letras
 ok(chama("POST", "/ponto/galerias", {"manifesto": dict(manV, token="K" * 22, codigo="ABCD-EFGH-JKLM", encerrada=False)}, {"x-eterna-ponto": seg})[0] == 200
    and chama("GET", "/g/codigo/abcd-efgh-jklm")[1].get("token") == "K" * 22, "código de 12 letras do cartão abre o vídeo")
+# 17/11: borda com firewall (borda.yaml)
+import hashlib as _h
+ev0 = {"headers": {"cloudfront-viewer-address": "177.10.20.30:51234"}, "requestContext": {"http": {"sourceIp": "130.176.1.1"}}}
+app.ORIGEM_SHA256 = _h.sha256(b"origem-secreta-com-mais-de-32-letras").hexdigest()
+ok(app.ip_do_pedido(ev0) == "130.176.1.1", "sem o segredo da borda, o IP do celular escrito no pedido não vale")
+ev0["headers"]["x-eterna-origem"] = "origem-secreta-com-mais-de-32-letras"
+ok(app.ip_do_pedido(ev0) == "177.10.20.30", "pela borda, vale o IP do celular")
+ev0["headers"]["cloudfront-viewer-address"] = "2804:14c:1::5:443"
+ok(app.ip_do_pedido(ev0) == "2804:14c:1::5", "IPv6 pela borda")
+app.EXIGIR_BORDA = True
+ok(chama("GET", "/g/%s/info" % ("K" * 22))[0] == 403, "exigindo a borda, pedido direto à API é recusado")
+ok(chama("GET", "/g/%s/info" % ("K" * 22), cab={"x-eterna-origem": "origem-secreta-com-mais-de-32-letras"})[0] == 200, "exigindo a borda, pela borda abre")
+app.EXIGIR_BORDA = False
 print("\ntudo certo")
