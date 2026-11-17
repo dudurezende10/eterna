@@ -2961,10 +2961,17 @@ function lojaTelaCheia(){if(!state.lojaRota||!LOJA_ABA_NOW()||document.fullscree
   try{document.documentElement.requestFullscreen({navigationUI:'hide'}).catch(()=>{});}catch(e){}}
 document.addEventListener('pointerdown',lojaTelaCheia,true);
 function LOJA_ABA_NOW(){try{return sessionStorage.getItem('eterna.lojaTab')==='1';}catch(e){return false;}}
+// 17/11 (Ronaldo): a janela abre do tamanho da tela inteira, no segundo monitor quando o navegador já deixou ver as telas
+// (Window Management: o Chrome pergunta uma vez, no primeiro Abrir Checkout); "fullscreen" abre já em tela cheia onde o Chrome aceita.
+let LOJA_TELAS=null;
+async function lojaTelasLer(pede){try{if(!('getScreenDetails' in window))return;if(!pede){const st=await navigator.permissions.query({name:'window-management'});if(st.state!=='granted')return;}LOJA_TELAS=await window.getScreenDetails();}catch(e){}}
+lojaTelasLer(false);
 function lojaJanela(){const u=state.user;if(u)try{localStorage.setItem('eterna.posto.vendedor',JSON.stringify({email:u.email,nome:u.name}));}catch(e){} // v83: vendedor declarado das vendas deste Checkout
-  let w=null;try{w=window.open(location.pathname+'#loja','eterna-checkout','popup,width=1280,height=800');}catch(e){w=null;}
+  const ts=LOJA_TELAS&&LOJA_TELAS.screens||[];const t=ts.find(x=>LOJA_TELAS.currentScreen&&x!==LOJA_TELAS.currentScreen)||(LOJA_TELAS&&LOJA_TELAS.currentScreen)||screen;
+  const L=t.availLeft||0,Tp=t.availTop||0,W=t.availWidth||1280,H=t.availHeight||800;
+  let w=null;try{w=window.open(location.pathname+'#loja','eterna-checkout',`popup,fullscreen,left=${L},top=${Tp},width=${W},height=${H}`);}catch(e){w=null;}
   if(!w){toast('Libere janelas pop-up deste site para abrir o Checkout no segundo monitor');return null;}
-  try{w.focus();}catch(e){}return w;}
+  try{w.moveTo(L,Tp);w.resizeTo(W,H);w.focus();}catch(e){}if(!LOJA_TELAS)lojaTelasLer(true);return w;}
 // A saída da Loja sempre leva à tela de login (nunca ao app logado de quem estiver no navegador).
 // v79 (D7): qualquer saída do #loja (Esc, painel, endereço, voltar do navegador, #g) passa por aqui e encerra a sessão salva; a única exceção é lojaVoltarApp
 // v81: Esc na aba do Checkout (janela do cliente) sem login só volta ao início do #loja: não apaga o login salvo do admin (mesmo navegador) nem abre o login
@@ -3500,7 +3507,6 @@ const I18N={
  ljUmaPessoa:['Uma pessoa só','Just one person','Solo una persona','Une seule personne','Nur eine Person'],
  ljGrupoAchou:[n=>n+' pessoas na foto',n=>n+' people in the photo',n=>n+' personas en la foto',n=>n+' personnes sur la photo',n=>n+' Personen auf dem Foto'],
  ljStart:['Iniciar','Start','Iniciar','Commencer','Starten'],
- ljStartSub:['Toque para encontrar suas fotos','Tap to find your photos','Toca para encontrar tus fotos','Touchez pour trouver vos photos','Tippe, um deine Fotos zu finden'],
  ljTypeCode:['Digite sua sessão','Enter your session','Escribe tu sesión','Saisissez votre session','Sitzung eingeben'],
  receiptCode:['Seu código','Your code','Tu código','Votre code','Dein Code'], // v96-ux: "Seu código" das ondas (parte F)
  seeMine:['Ver minhas fotos','See my photos','Ver mis fotos','Voir mes photos','Meine Fotos ansehen'],
@@ -3722,8 +3728,7 @@ function vQuiosque(){
           <div class="lj-cam">${camBox()}</div>
           <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-grupo">${ICO.grupo} ${T('ljGrupo')}</button><button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button>${ljVoltar('kiosk-back','lj-alt')}</div>`
         // v96 (Eduardo, 09/11): a câmera não fica ligada direto; o cliente toca em Iniciar
-        :`<p class="lj-sub">${T('ljStartSub')}</p>
-          <button class="lj-start" data-act="kiosk-start">${ICO.face}<span>${T('ljStart')}</span></button>
+        :`<button class="lj-start" data-act="kiosk-start">${ICO.face}<span>${T('ljStart')}</span></button>
           <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-grupo">${ICO.grupo} ${T('ljGrupo')}</button><button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button></div>`}
       </div></div>`;}
   if(k.step==='talvez'&&k.tv&&k.tv.ask[k.tv.i]){const q=k.tv.ask[k.tv.i]; // v91 (B3): confirmação de SESSÃO inteira, com até 3 miniaturas pequenas
