@@ -248,8 +248,8 @@ ok(await L.isVisible('[data-act="kiosk-voltar-fotos"]'),'8: "Voltar às fotos" n
 await L.click('[data-act="kiosk-voltar-fotos"]');await L.waitForTimeout(300);
 let vf=await L.evaluate(id=>{const k=ETERNA.state.kiosk;const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);return {step:k.step,ver:k.ver,lb:!!document.querySelector('#lj-lb'),n:ETERNA.lojaCart(k.code).ch.length,est:r.estado,mot:r.motivo,st:ETERNA.SIM.sessions[k.code].status};},idV);
 ok(vf.step==='review'&&vf.lb&&vf.n===2&&vf.est==='substituida'&&vf.mot==='cliente_voltou'&&vf.st!=='aguardando','8: volta à foto ampliada com as 2 marcadas e o pedido sai do Posto: '+JSON.stringify(vf));
-for(let i=0;i<20;i++){if(await V.evaluate(id=>!document.querySelector(`:not(.pend-row)[data-pend="${id}"]`),idV))break;await sleep(100);}
-const avV=await V.evaluate(id=>({item:!!document.querySelector(`:not(.pend-row)[data-pend="${id}"]`),av:(document.querySelector('.pend-avisos')||{}).innerText||''}),idV);
+for(let i=0;i<20;i++){if(await V.evaluate(id=>!document.querySelector(`[data-pend="${id}"]`),idV))break;await sleep(100);}
+const avV=await V.evaluate(id=>({item:!!document.querySelector(`[data-pend="${id}"]`),av:(document.querySelector('.pend-avisos')||{}).innerText||''}),idV);
 ok(!avV.item&&/voltou às fotos/.test(avV.av),'8: o caixa vê que o cliente voltou: '+JSON.stringify(avV));
 ok(await L.evaluate(id=>!JSON.parse(localStorage.getItem('eterna.ponto.fila.v1')||'[]').some(e=>e.venda===id),idV),'8: nada foi ao servidor pelo pedido retirado');
 await L.click('#lj-lb .lj-next');await L.waitForTimeout(500);const idV2=await pend();ok(idV2&&idV2!==idV&&await L.evaluate(()=>ETERNA.state.kiosk.paid.n===2),'8: Continuar de novo faz um pedido novo com as mesmas fotos');
