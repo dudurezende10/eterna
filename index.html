@@ -334,7 +334,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .pend-row.alvo{outline:3px solid var(--warn,#c98a00);outline-offset:1px}
 .pend-row-cod{font-family:'Big Shoulders Display','Arial Narrow',sans-serif;font-weight:800;font-size:20px;letter-spacing:.08em;line-height:1}
 .pend-row-val{font-weight:800;white-space:nowrap}.pend-row-meta{font-size:12px;color:#5b6b83;min-width:0}.pend-row .pill{justify-self:end;font-size:11px}
-.pend-det .din-item{border:0;padding:0;background:none}.pend-det-vazio{min-height:120px;display:flex;align-items:center;justify-content:center}
+.pend-det .din-item{border:0;padding:0;background:none}
 .pend-cab{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}.pend-cab>div{display:flex;flex-direction:column;gap:4px}
 .pend-det .pend-ths{flex-wrap:nowrap;overflow-x:auto;margin:6px 0}.pend-det .pend-th{width:72px;flex:0 0 auto}
 .pend-passos{display:flex;gap:6px;list-style:none;margin:6px 0 10px;padding:0;counter-reset:p}.pend-passos li{flex:1}
@@ -1904,7 +1904,7 @@ function pendPainel(o){o=o||{};const {din,L,vis}=pendListaDe(o);
     ${L.length?`${`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="${esc(TE('po_busca_ph'))}" aria-label="${esc(TE('po_busca_aria'))}" autocomplete="off">`}${vis.length?`<div class="pend-rows">${vis.map(linha).join('')}</div>`:`<div class="note">${TE('po_nenhum_cod')}</div>`}`:`<div class="note">${din?TE('po_nenhum_din'):TE('po_nenhum_pag')}</div>`}</div>`;}
 // o pedido escolhido, inteiro (lado direito do Posto)
 function pendDetalhe(o){o=o||{};const {vis}=pendListaDe(o);const id=pendSelId(vis);const r=vis.find(x=>x.id===id);
-  if(!r)return `<div class="panel pend-det pend-det-vazio"><div class="note">${TE('po_det_vazio')}</div></div>`;
+  if(!r)return '';
   const alvo=state.eco&&state.eco.m&&state.eco.m.pend;
   const item=r=>{const meio=meioDe(r);const min=dinMin(r);const ph=(r.sessoes||[r.card]).flatMap(c=>{const so=sessionObj(c);return so?so.photos.filter(p=>(r.selected||[]).includes(p.id)):[];}).slice(0,4);
     const conf=state.caixa.dinCancel===r.id;const rw=can('venda','c');const ico=ICO[meio==='pix'?'pix':meio==='cartao'?'card':'cash'];
@@ -2294,7 +2294,7 @@ function lgpdPlano(card){const sim=SIM.sessions[card]||{};const guarda=new Set(v
 function lgpdSelo(sim){const L=sim.lgpd||{};const d=L.em?new Date(L.em):null;const q=`${d?TE('lg_quando',d.toLocaleDateString(localeEq()),hhmm(d)):''}${L.porNome||L.por?TE('lg_por',esc(L.porNome||L.por)):''}${L.posto?` · ${esc(L.posto)}`:''}`;
   if(L.ficaram)return `<div class="panel lgpd-selo"><div class="lgpd-carimbo">${TE('lg_carimbo')}</div><p>${TE('lg_parte',L.n||'',q)}.</p><p class="note">${TE('lg_ficam',L.ficaram)}</p></div>`;
   return `<div class="panel lgpd-selo"><div class="lgpd-carimbo">${TE('lg_carimbo')}</div><p>${TE('lg_todas',L.n||'',q)}.</p><p class="note">${TE('lg_nada')}</p></div>`;}
-function impVendas(cards){return Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'&&s.impressao&&s.impressao.estado!=='nao_se_aplica'&&(cards?cards.includes(c):(s.impressao.estado==='pendente'||isoDia(s.paidAt||0)===todayISO())))
+function impVendas(cards){return Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'&&s.impressao&&s.impressao.estado!=='nao_se_aplica'&&(cards?cards.includes(c):isoDia(s.paidAt||0)===todayISO()))
   .sort((a,b)=>String(b[1].paidAt||'').localeCompare(String(a[1].paidAt||'')));}
 function impThumb(x,on,act,card){const st=x.t==='ph'?phStyle(x.id):'';const b=x.t==='ai'?bgOf(x.bg):null;
   return `<button class="imp-th${on?' on':''}" ${act?`data-act="${act}" data-card="${esc(card)}" data-k="${esc(x.k)}"`:'disabled'} aria-pressed="${!!on}" style="${st}" aria-label="${x.t==='ai'?'Foto com fundo de IA':'Foto'}">${x.t==='ai'?`<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?b.file:''})"></span><span class="imp-ia">IA</span>`:''}${on?'<span class="imp-ok">✓</span>':''}</button>`;}
@@ -2404,7 +2404,7 @@ if(ECO_CH)ECO_CH.onmessage=ev=>{const q=ev.data;
 const ecoOff=()=>{const e=state.eco;return !e||e.fim||!e.m||Date.now()-e.at>15000;};
 function ecoThumb(x,cls){const b=x.t==='ai'?bgOf(x.bg):null;return `<div class="${cls}" style="${x.t==='ph'?phStyle(x.id):''}">${x.t==='ai'?`<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?b.file:''})"></span><span class="lj-ed eco-ed" title="${esc(bgNomeCli(b))}">${esc(edSeloTxt())}</span>`:''}${x.fav?'<span class="eco-fav">♥</span>':''}</div>`;}
 function ecoBody(){const e=state.eco;
-  if(ecoOff())return `<div class="eco-off"><b>${TE('po_ck_fechado')}</b><span class="note">${esc(TE('po_ck_fechado_nota'))}</span></div>`;
+  if(ecoOff())return `<div class="eco-off"><b>${TE('po_ck_fechado')}</b></div>`;
   const m=e.m;const fl=`<span class="eco-flag" title="${esc(TE('po_idioma_cli'))}">${flagSvg(m.lang||'pt')}</span>`;const par=Math.max(0,Math.floor((Date.now()-e.mudouEm)/1000));
   const idade=`<span class="note" id="eco-age">${par>=5?TE('parado_ha',par):TE('agora')}</span>`;
   const duas=state.ecoOutra&&Date.now()-state.ecoOutra<20000?`<div class="pill warn" role="status" style="display:block;white-space:normal;margin-bottom:8px">${esc(TE('po_duas_ck'))}</div>`:'';
@@ -9610,7 +9610,6 @@ const EQ={
   po_tirar_filtro:["Tirar o filtro Dinheiro","Remove the Cash filter","Quitar el filtro Efectivo","Retirer le filtre Espèces","Bargeld-Filter entfernen"],
   po_passo_conf:["Confirmar","Confirm","Confirmar","Confirmer","Bestätigen"],
   po_saiu_curto:["saiu da tela","left the screen","salió de la pantalla","a quitté l'écran","Bildschirm verlassen"],
-  po_det_vazio:["Nenhum pedido aguardando pagamento. Quando o cliente terminar no Checkout, o pedido aparece aqui.","No order awaiting payment. When the customer finishes at Checkout, the order shows up here.","Ningún pedido esperando pago. Cuando el cliente termine en el Checkout, el pedido aparece aquí.","Aucune commande en attente de paiement. Quand le client termine au Checkout, la commande apparaît ici.","Keine Bestellung wartet auf Zahlung. Sobald der Kunde im Checkout fertig ist, erscheint die Bestellung hier."],
   po_aguardando:["Aguardando pagamento","Awaiting payment","Esperando pago","En attente de paiement","Zahlung ausstehend"],
   po_busca_ph:["Seu código (XXXX-XXXX) ou sessão","Your code (XXXX-XXXX) or session","Tu código (XXXX-XXXX) o sesión","Votre code (XXXX-XXXX) ou session","Ihr Code (XXXX-XXXX) oder Sitzung"],
   po_busca_aria:["Buscar pagamento","Search payment","Buscar pago","Rechercher un paiement","Zahlung suchen"],
@@ -9645,7 +9644,6 @@ const EQ={
   po_comprar_mais:[(n)=>`Comprar mais: ${n}, sem pacote.`,(n)=>`Buy more: ${n}, no package.`,(n)=>`Comprar más: ${n}, sin paquete.`,(n)=>`Acheter plus : ${n}, sans forfait.`,(n)=>`Mehr kaufen: ${n}, ohne Paket.`],
   po_forma_pag:["Forma de pagamento","Payment method","Forma de pago","Mode de paiement","Zahlungsart"],
   po_ck_fechado:["Checkout fechado ou parado","Checkout closed or idle","Checkout cerrado o detenido","Checkout fermé ou arrêté","Checkout geschlossen oder angehalten"],
-  po_ck_fechado_nota:["Abra o Checkout pelo botão \"Abrir Checkout\" e arraste a janela para o monitor do cliente. O que o cliente escolhe aparece aqui.","Open the Checkout with the \"Open Checkout\" button and drag the window to the customer screen. What the customer chooses shows up here.","Abre el Checkout con el botón \"Abrir Checkout\" y arrastra la ventana a la pantalla del cliente. Lo que el cliente elige aparece aquí.","Ouvrez le Checkout avec le bouton « Ouvrir le Checkout » et faites glisser la fenêtre vers l'écran du client. Ce que le client choisit apparaît ici.","Öffnen Sie den Checkout mit der Schaltfläche „Checkout öffnen“ und ziehen Sie das Fenster auf den Kundenbildschirm. Was der Kunde auswählt, erscheint hier."],
   po_idioma_cli:["Idioma do cliente","Customer's language","Idioma del cliente","Langue du client","Sprache des Kunden"],
   po_ck_camera:["Checkout na câmera","Checkout on the camera screen","Checkout en la cámara","Checkout sur la caméra","Checkout bei der Kamera"],
   po_esperando_cli:["Esperando o próximo cliente.","Waiting for the next customer.","Esperando al próximo cliente.","En attente du prochain client.","Warten auf den nächsten Kunden."],
