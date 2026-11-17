@@ -1,6 +1,6 @@
 # Escola pelo voucher da Imply: uma foto de cortesia por criança (17/11/2026)
 
-**Decisão (Ronaldo, 17/11):** toda escola chega por voucher da Imply. O responsável digita o localizador do voucher num endereço único do Eterna, o sistema confere que é voucher de escola, a criança faz a selfie, o responsável informa o e-mail e escolhe **uma** foto de cortesia. As outras fotos ficam à venda. Essa é a gratuidade de escola. Tudo é medido para saber se a estratégia funciona.
+**Decisão (Ronaldo, 17/11):** toda escola chega por voucher da Imply. O responsável digita o localizador do voucher no mesmo campo onde hoje se digita o código da sessão, o sistema confere que é voucher de escola, a criança faz a selfie, o responsável informa o e-mail e escolhe **uma** foto de cortesia. As outras fotos ficam à venda. Essa é a gratuidade de escola. Tudo é medido para saber se a estratégia funciona.
 
 ## O que vale como escola
 
@@ -46,8 +46,8 @@ sequenceDiagram
 
 1. **As fotos sobem como qualquer outra** (`nuvem_enfileira` no `ingest_file`): alta e vitrine. Nada muda no envio.
 2. **Galeria da escola, automática.** O agente lê os grupos de hoje do Viva Parceiros. Quando acaba a janela da visita (do horário do voucher até 2h30 depois), ele cria um manifesto `evento` com `nome` = escola, `data` = dia, as sessões começadas na janela, `menor:true` e o bloco `voucher` (`localizador`, `escola`, `pessoas`, `horarios`). Ele publica pela fila que já existe. É o mesmo manifesto da aba "Grupos e escolas", que continua para os casos manuais, e "Editar sessões" serve para corrigir a janela.
-3. **Endereço único:** `eterna.photo/#escola`. O QR e o link que a escola recebe levam o localizador junto (`#escola/<localizador>`) e o campo já aparece preenchido. A página "kids" que encante o pai é uma decisão em aberto. O fluxo e o endereço são os mesmos, só muda a aparência.
-4. **Localizador → galeria.** A nuvem guarda `VOU#<localizador>` → token, como o `COD#` do código curto. A rota `GET /g/voucher/<localizador>` responde `{token, escola, data}` ou "não encontrado", sem dizer o motivo. Tem limite por IP, como o código.
+3. **Mesma tela de hoje (Ronaldo, 17/11):** o campo "Digite seu código" da galeria aceita também o localizador do voucher. Não há tela nova: depois do localizador, o fluxo é o mesmo de hoje (autorização, e-mail, selfie, fotos). O voucher só diz duas coisas: em quais fotos procurar (a galeria da visita) e que a criança tem direito a uma foto grátis. O QR e o link que a escola recebe abrem essa tela com o localizador já digitado. A página "kids" que encante o pai é uma decisão em aberto: o endereço é o mesmo, só muda a aparência.
+4. **Localizador → galeria.** A nuvem guarda `VOU#<localizador>` → token, como o `COD#` do código curto. A busca do código tenta o localizador quando o texto não é um código curto e responde `{token, escola, data}` ou "não encontrado", sem dizer o motivo. Tem limite por IP, como o código.
 5. **O resto é o fluxo de escola que já existe:** autorização do responsável (`gq_consentKidNuvem`, LGPD art. 14), selfie com limiar de criança, só as fotos em que ela aparece, no máximo 2 crianças por aparelho em 24 h e 60 acessos por hora por galeria.
 6. **E-mail obrigatório** antes da selfie, como na compra online.
 7. **Cortesia:** `POST /g/<token>/cortesia {acesso, foto, email}`.
@@ -89,6 +89,6 @@ Painel **Escolas** (estatísticas):
 
 1. Agente: leitura dos grupos `[Escola]` no Viva Parceiros e criação automática da galeria `evento` com o bloco `voucher`.
 2. Nuvem: `VOU#`, `GET /g/voucher/<localizador>`, e-mail, `POST /g/<token>/cortesia` com os dois limites, eventos novos.
-3. App: `#escola` (localizador, escola e dia, autorização, e-mail, selfie, escolha da cortesia), textos nos 5 idiomas e na lista do chinês.
+3. App: o campo do código aceita o localizador; na galeria da escola, a escolha da foto grátis. Textos nos 5 idiomas e na lista do chinês.
 4. Estatísticas: painel Escolas.
 5. Testes: agente, nuvem (`teste_local.py`) e Playwright do fluxo inteiro, com a cortesia repetida e a esgotada.
