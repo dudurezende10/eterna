@@ -7843,6 +7843,7 @@ AUTH_MODULOS_NOVOS = ("ativvenda", "ativentrega")     # v99.17 e v99.23.2 (entre
 AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "contato", "key", "active"), ("perms", "menu", "preset", "inicio")
 AUTH_IDIOMAS = (None, "", "pt", "en", "es", "fr")
 AUTH_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$")
+AUTH_FOTO = re.compile(r"^data:image/jpeg;base64,[A-Za-z0-9+/]{100,60000}={0,2}$")   # 17/11: foto do perfil, 160 px
 
 
 def auth_cadastro_recusa(quem, id_doc, antes, depois):
@@ -7867,6 +7868,10 @@ def auth_cadastro_recusa(quem, id_doc, antes, depois):
             return "sem_permissao"                      # é para onde a senha provisória vai: mudar o e-mail vale tanto quanto gerar outra senha
     if depois is not None and depois.get("idioma") not in AUTH_IDIOMAS:
         return "sem_permissao"
+    if depois is not None and depois.get("foto") is not None and not (isinstance(depois["foto"], str) and AUTH_FOTO.match(depois["foto"])):
+        return "invalido"
+    if antes is not None and depois is not None and antes.get("foto") != depois.get("foto") and antes.get("email") != ed.get("email") and not auth_pode(ed, "usuarios", "u"):
+        return "sem_permissao"                          # a própria foto cada um troca; a de outra pessoa pede Alterar em Cadastro de usuários
     if antes is not None and depois is not None and antes.get("idioma") != depois.get("idioma") and antes.get("email") != ed.get("email") and not auth_pode(ed, "usuarios", "u"):
         return "sem_permissao"                          # o próprio idioma cada um troca; o de outra pessoa pede Alterar em Cadastro de usuários
     novos = auth_acessos(depois) - auth_acessos(antes)

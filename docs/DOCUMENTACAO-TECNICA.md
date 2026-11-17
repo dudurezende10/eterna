@@ -592,6 +592,8 @@ Números sempre com `font-variant-numeric: tabular-nums`. Tabelas em 13 px.
 - **Regras comuns:** o nível volta ao começo após 7 dias. O próprio servidor nunca é bloqueado. Os bloqueios ficam na tabela `escudo` e no `login_log` (`ip_bloqueado:<motivo>:<min>`) e valem depois de reiniciar.
 - **Teste:** `testes/escudo_agente.py`.
 
+**Foto do perfil (17/11).** Campo `foto` no cadastro (`usuarios`): JPEG de 160 px em data URL (corte quadrado, um pouco acima do centro), feito no navegador por `fotoPerfil`. Sem foto, `avatar(u,px)` desenha as iniciais numa cor tirada do nome. O servidor (`auth_cadastro_recusa`) só aceita `data:image/jpeg;base64,` de até 60 mil caracteres; a própria foto cada um troca (rodapé do menu, `minhaFoto`), a de outra pessoa pede Alterar em Cadastro de usuários. No histórico a mudança entra como `foto` com verdadeiro/falso, sem a imagem. Testes: `testes/foto-perfil.js` e `testes/foto_perfil_agente.py`.
+
 **Backup e continuidade**: NAS a cada hora, S3 à noite; restauração testada por mês; servidor reserva (um PC de ponto) com o mesmo `compose.yml` e o último backup, sobe em 30 minutos; impressão e venda continuam sem internet.
 
 **Observabilidade**: logs estruturados (JSON) por serviço; métricas de fila (tempo por foto em cada etapa), de ingestão (fotos por minuto por ponto, repetidas) e de IA (acerto contra o gabarito do treino); alertas operacionais já definidos no app (fotos por sessão, conversão, estação parada, rolo, bandeira). Ferramenta: Prometheus + Grafana no servidor do ponto, Sentry para erros do app.

@@ -762,6 +762,12 @@ Em **Permissões** › **Perfis** ficam todos os perfis, com o que cada um dá e
 
 Tudo fica no Histórico.
 
+### Usuários e foto do perfil (17/11)
+
+- A lista de **Usuários** sai em blocos por perfil, com os nomes em ordem alfabética.
+- Cada pessoa tem uma foto no cadastro (**Colocar foto**, **Trocar foto**, **Remover foto**). Sem foto, aparecem as iniciais.
+- Cada um troca a própria foto tocando na bolinha ao lado do nome, no rodapé do menu.
+
 ---
 
 ## Novidades da v81

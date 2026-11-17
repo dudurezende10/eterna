@@ -27,7 +27,7 @@ try{
   const id=r.id;
   // 2. a lista de usuários mostra o nome do perfil
   await ev(()=>ETERNA.go('usuarios'));await A.waitForTimeout(150);
-  ok((await A.textContent('tr[data-e="sandessa@eterna.photo"]')).includes('Fotógrafo líder'),'2: lista de usuários mostra o perfil');
+  ok(await A.evaluate(()=>{const tr=document.querySelector('tr[data-e="sandessa@eterna.photo"]');const p=tr&&tr.closest('.panel');return !!p&&p.querySelector('h2').textContent==='Fotógrafo líder';}),'2: lista de usuários mostra a pessoa no bloco do perfil');
   // 3. editar o perfil: tirar Galerias leva junto quem está nele
   await ev(()=>ETERNA.go('permissoes'));await A.click('[data-act="perm-tab"][data-t="perfis"]');await A.waitForTimeout(150);
   await A.click(`[data-act="pf-editar"][data-k="${id}"]`);await A.waitForTimeout(150);
