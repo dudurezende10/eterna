@@ -183,7 +183,7 @@ No alto de **Minhas fotos** aparece o seu nome. Ele vem do seu login. Não dá p
 
 - Outro fotógrafo vai usar o computador: toque em **Trocar fotógrafo**.
 
-A supervisora e o Admin continuam com os seletores **Fotógrafo** e **Ponto** no alto da tela.
+A supervisora e o Admin continuam com o seletor **Fotógrafo** no alto da tela. O seletor **Ponto** saiu em 18/11: o ponto não importa mais em Minhas fotos.
 
 ### A Escala saiu do Eterna (16/11)
 
@@ -304,7 +304,7 @@ Bom saber:
 - Cada envio fica registrado com o nome de quem enviou.
 ### Sessões de hoje (v91)
 
-Com o computador do ponto ligado, **Minhas fotos** mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. O fotógrafo vê as sessões dele. A supervisora e o Admin filtram pelos seletores **Fotógrafo** e **Ponto** do alto da tela.
+Com o computador do ponto ligado, **Minhas fotos** mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. O fotógrafo vê as sessões dele. A supervisora e o Admin filtram pelo seletor **Fotógrafo** do alto da tela (o filtro por ponto saiu em 18/11; sessão sem ponto aparece).
 
 Cada sessão tem uma linha com: o código (LP...), o fotógrafo, o ponto, a hora do primeiro e do último clique, o número de fotos e o motivo de ter começado. Quando aparece "chegada" depois da hora, a câmera não mandou a hora do clique e vale a hora em que a foto chegou.
 
