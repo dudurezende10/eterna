@@ -4,7 +4,7 @@
 #    bancos, cópia dos originais) e lista esse bucket: não mexe em mais nada da conta;
 # 2) retenção do bucket por pasta (substitui a regra de teste "apaga tudo com 7 dias", que apagaria o backup):
 #      alta/ e vitrine/ 30 dias (galeria do cliente: 30 dias para ver e baixar) · backup/ 400 dias (bancos e histórico diário)
-#      originais/ 180 dias (cópia das fotos do HD) · video/ 31 dias (vídeo das ativações: a página vale 30, ATIV_VIDEO_DIAS;
+#      originais/ 180 dias (cópia das fotos do HD) · video/ 30 dias (vídeo das ativações, como as fotos; a página vale 30, ATIV_VIDEO_DIAS;
 #      18/11: faltava, os vídeos ficavam sem prazo) · envio pela metade apagado em 1 dia;
 # 3) a chave desse usuário aparece só aqui na tela do CloudShell: digitar no servidor (nuvem-ligar.sh), nunca em chat ou e-mail.
 #   bash nuvem-aws-cloudshell.sh
@@ -20,7 +20,7 @@ cat >/tmp/ciclo.json <<'POL'
 {"Rules": [
   {"ID": "alta-30d",         "Status": "Enabled", "Filter": {"Prefix": "alta/"},      "Expiration": {"Days": 30}},
   {"ID": "vitrine-30d",      "Status": "Enabled", "Filter": {"Prefix": "vitrine/"},   "Expiration": {"Days": 30}},
-  {"ID": "video-31d",        "Status": "Enabled", "Filter": {"Prefix": "video/"},     "Expiration": {"Days": 31}},
+  {"ID": "video-30d",        "Status": "Enabled", "Filter": {"Prefix": "video/"},     "Expiration": {"Days": 30}},
   {"ID": "originais-180d",   "Status": "Enabled", "Filter": {"Prefix": "originais/"}, "Expiration": {"Days": 180}},
   {"ID": "backup-400d",      "Status": "Enabled", "Filter": {"Prefix": "backup/"},    "Expiration": {"Days": 400}},
   {"ID": "envio-incompleto", "Status": "Enabled", "Filter": {"Prefix": ""}, "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}}
