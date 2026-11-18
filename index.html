@@ -1365,7 +1365,14 @@ label>.eyebrow{display:block;margin-bottom:4px}
 .tr-pontos{display:flex;flex-wrap:wrap;gap:8px}.tr-mini{aspect-ratio:auto;min-height:40px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#d8d4cc;border:2px solid}.tr-big{min-height:56px;min-width:56px;font-size:16px;padding:10px 16px}
 .tr-pontos .tr-big[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
 .tr-an .tr-an-l{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0}.tr-an-k{min-width:170px;font-weight:600}
-.tr-an .seg{display:inline-flex;gap:6px;flex-wrap:wrap}.tr-an .chip{min-height:40px}
+.tr-an .seg{display:inline-flex;gap:6px;flex-wrap:wrap}.tr-an .chip{min-height:40px}.tr-an .chip:disabled{opacity:.45;cursor:not-allowed}
+/* 18/11: Treino da IA › Medição (regra 19) */
+.tr-med{gap:10px}.tr-med-tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.tile .v.tr-med-ver{font-size:13px;line-height:1.3;word-break:break-all;font-family:inherit;letter-spacing:0}
+.tr-med-sel{gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0}.tr-med-sel .seg{display:inline-flex;gap:6px}.tr-med-aviso{color:var(--warn)}
+.tr-med-faltas{margin:4px 0 8px 18px;padding:0}.tr-med-faltas li{margin:3px 0}.tr-med-falta{color:var(--bad);font-weight:600}
+.tr-med-mx td.ok{background:color-mix(in srgb,var(--good) 22%,transparent)}.tr-med-mx td.erro{background:color-mix(in srgb,var(--bad) 22%,transparent)}.tr-med-mx th,.tr-med-mx td{text-align:center}
+.tr-med-err{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}.tr-med-e{display:flex;flex-direction:column;gap:6px}
+.tr-med-th{display:block;width:100%;aspect-ratio:3/2;background:#141311;border:0;border-radius:6px;padding:0;cursor:zoom-in;overflow:hidden}.tr-med-th img{width:100%;height:100%;object-fit:contain;display:block}
 .steps{display:flex;gap:6px;flex-wrap:wrap}
 .steps .step{padding:6px 12px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted)}
 .steps .step[data-on="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
@@ -7300,9 +7307,10 @@ function trainSet(){
 // Marcar, com fotos do servidor do ponto (GET /treino/amostra): a foto vem pelo /thumb/ e nunca fica no aparelho; o rótulo vai
 // para o treino.db (POST /treino/rotulo) com gravação otimista e fila só de texto em eterna.treino.fila.v1 (até 500).
 let TRAIN_OUT=null;const trainOut=()=>TRAIN_OUT||(TRAIN_OUT=trainSet());
-const TR_PONTOS=[['gramado','g'],['arquibancada','a'],['trofeu','t'],['chute','c'],['outro','o']],TR_MODOS=['misto','ia','qualidade'],TR_ANALISE=['desligada','medir','ligada'];
+const TR_PONTOS=[['gramado','g'],['arquibancada','a'],['trofeu','t'],['chute','c'],['outro','o']],TR_MODOS=['misto','ia','qualidade','duvidas'],TR_ANALISE=['desligada','medir','ligada'];
 const TR_FILA='eterna.treino.fila.v1',TR_FILA_MAX=500;
-state.train={i:0,labels:{},note:'',aba:'marcar',dia:'',foto:'',modo:'misto',itens:[],j:0,docs:{},rasc:{},desfaz:[],dias:null,diasPedido:false,carregando:false,erro:null};
+state.train={i:0,labels:{},note:'',aba:'marcar',dia:'',foto:'',modo:'misto',itens:[],j:0,docs:{},rasc:{},desfaz:[],dias:null,diasPedido:false,carregando:false,erro:null,
+  med:{metodo:'sessao',j:null,carregando:false,erro:null}}; // 18/11: aba Medição (GET /treino/medida)
 state.iaCfg=null;try{const b=JSON.parse(localStorage.getItem('eterna.ia.v1')||'null');if(b&&typeof b==='object')state.iaCfg=b;}catch(e){} // v93: cópia da regra dos cliques de IA (o servidor do ponto é o dono)
 state.buscaCfg=null;try{const b=JSON.parse(localStorage.getItem('eterna.busca.v1')||'null');if(b&&typeof b==='object')state.buscaCfg=b;}catch(e){} // v91: cópia da janela da selfie (o servidor do ponto é o dono)
 try{const t=localStorage.getItem('eterna.treino.v1');if(t)state.train.labels=JSON.parse(t);}catch(e){}
@@ -7319,12 +7327,13 @@ const trMarcada=pid=>{const d=state.train.docs[pid];return !!d&&(d.pend||!trVazi
 async function trDias(){const u=trAg();if(!u)return;const t=state.train;t.diasPedido=true;
   try{const r=await agFetch(u+'/treino/dias');const j=r.ok?await r.json():null;t.dias=j&&Array.isArray(j.dias)?j.dias:[];if(!t.dia&&t.dias.length)t.dia=t.dias[0].dia;}catch(e){t.dias=[];}
   if(state.view==='treino')render();}
-async function trCarregar(){const u=trAg(),t=state.train;if(!u||!t.dia)return;t.carregando=true;t.erro=null;render();
-  try{const q=new URLSearchParams({dia:t.dia,modo:t.modo,n:'150'});if(t.foto)q.set('fotografo',t.foto);
+async function trCarregar(o){o=o||{};const u=trAg(),t=state.train;if(!u||!t.dia)return;t.carregando=true;t.erro=null;render();
+  try{const q=new URLSearchParams({dia:t.dia,modo:t.modo,n:o.pid?'400':'150'});if(t.foto)q.set('fotografo',t.foto);if(o.marcadas)q.set('marcadas','1');
     const r=await agFetch(u+'/treino/amostra?'+q);const j=r.ok?await r.json():null;
     if(!j||!Array.isArray(j.itens)){t.erro='tr_e_carregar';}
     else{t.itens=j.itens.filter(x=>x&&/^[0-9a-f]{6,40}$/.test(x.pid)).map(x=>({id:'ag_'+x.pid,pid:x.pid,card:x.card,key:x.fotografo,t:x.t,ordem:x.ordem,n_sessao:x.n_sessao,rostos:x.rostos}));
-      j.itens.forEach(x=>{if(x&&x.rotulo)t.docs[x.pid]=x.rotulo;});t.total=j.total_dia;t.j=0;t.desfaz=[];}}
+      j.itens.forEach(x=>{if(x&&x.rotulo)t.docs[x.pid]=x.rotulo;});t.total=j.total_dia;t.j=0;t.desfaz=[];
+      if(o.pid){const k=t.itens.findIndex(x=>x.pid===o.pid);if(k>=0)t.j=k;}}}
   catch(e){t.erro='tr_e_carregar';}
   t.carregando=false;if(state.view==='treino')render();trPrecarga();trEnviar();}
 // pré-carga das 3 próximas pelo /thumb/ (cache do navegador; nada é gravado no aparelho)
@@ -7362,12 +7371,64 @@ function trDesfazer(){if(!can('qualidade','u'))return;const t=state.train;const 
 async function trAnalise(k,v){const u=trAg();if(!u||!can('configuracao','u')||!['ponto','exposicao'].includes(k)||!TR_ANALISE.includes(v))return;
   const de=((state.agent.treino||{}).analise||{})[k];if(de===v)return;
   try{const r=await agFetch(u+'/treino/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[k]:v})});const j=await r.json().catch(()=>null);
-    if(r.ok&&j&&j.analise){state.agent.treino=Object.assign({v:1,modelo_ponto:null,ajuste:null},state.agent.treino||{},{analise:j.analise});auditLog('treino_analise','config/treino',[{campo:'analise.'+k,de:de||null,para:v}]);toast(TE('tr_analise_ok'));}
+    if(r.ok&&j&&j.analise){state.agent.treino=Object.assign({v:1,modelo_ponto:null,ajuste:null},state.agent.treino||{},{analise:j.analise});auditLog('treino_analise','config/treino',[{campo:'analise.'+k,de:de||null,para:v}].concat(j.ponto_versao?[{campo:'ponto_versao',de:null,para:j.ponto_versao}]:[]));toast(TE('tr_analise_ok'));}
+    else if(r.status===409&&j&&j.error==='criterio'){toast(TE(k==='exposicao'?'tr_an_expo_sem':'tr_an_criterio'));if(k==='ponto'){state.train.aba='medida';state.train.med.j=null;trMedida();}} // 18/11: o servidor confere o critério de novo
     else toast(TE('tr_analise_erro'));}catch(e){toast(TE('tr_analise_erro'));}
   render();}
 const trPontoTxt=k=>TEk('tr_p_'+k,k);
+// 18/11 (regra 19): aba Medição. O servidor reconhece o ponto de cada foto (CLIP + vizinhos, só no servidor do ponto) e compara
+// com as marcações; aqui só números e pids (a miniatura vem pelo /thumb/ de sempre). Nada aqui grava.
+const TR_MED_CLS=['gramado','arquibancada','trofeu','chute','outro'],TR_MED_SINAIS=['verde','flash','cadeiras','dourado'];
+async function trMedida(){const u=trAg();const m=state.train.med;if(!u||m.carregando)return;m.carregando=true;m.erro=null;if(state.view==='treino')render();
+  try{const r=await agFetch(u+'/treino/medida?metodo='+encodeURIComponent(m.metodo));const j=r.ok?await r.json().catch(()=>null):null;
+    if(!j||j.v!==1)m.erro='tr_med_erro';else if(j.erro)m.erro=j.erro==='sem_numpy'?'tr_med_erro_modelo':'tr_med_erro';else m.j=j;}
+  catch(e){m.erro='tr_med_erro';}
+  m.carregando=false;if(state.view==='treino')render();}
+const trMedPct=v=>v==null?'—':(100*v).toLocaleString(localeTela(),{maximumFractionDigits:1})+'%';
+const trMedNum=v=>v==null?'—':(+v).toLocaleString(localeTela(),{maximumFractionDigits:2});
+const trMedCls=k=>k==='fora'?TE('tr_med_fora'):trPontoTxt(k);
+function trMedFalta(f){const k=f.k;if(k==='n')return TE('tr_med_falta_n',trMedCls(f.classe),f.tem,f.precisa);
+  if(k==='precisao'||k==='cobertura'||k==='prosp_precisao')return TE(`tr_med_falta_${k}`,trMedPct(f.tem),trMedPct(f.precisa));
+  return EQ['tr_med_falta_'+k]?TE(`tr_med_falta_${k}`,f.tem,f.precisa):esc(k);}
+function vTreinoMedida(){const m=state.train.med;const mp=(state.agent.treino||{}).modelo_ponto||null;const an=((state.agent.treino||{}).analise||{}).ponto||'desligada';
+  if(!trAg())return `<div class="panel"><div class="note">${TE('tr_sem_servidor')}</div></div>`;
+  if(!m.j&&!m.carregando&&!m.erro)setTimeout(trMedida,0);const j=m.j;
+  const aviso=mp&&mp.erro?`<div class="note tr-med-aviso">${mp.erro==='sem_modelo'?TE('tr_med_sem_modelo'):TE('tr_med_erro_modelo')}</div>`:'';
+  const sit=`<div class="panel tr-med"><div class="head"><div><div class="eyebrow">${TE('tr_med_situacao')}</div><h2>${TE('tr_med_h')}</h2><div class="note">${TE('tr_med_nota')}</div></div>
+    <div class="row"><span class="pill ${an==='ligada'?'good':an==='medir'?'neutral':'warn'}">${TEk('tr_an_'+an,an)}</span></div></div>${aviso}
+    <div class="tiles tr-med-tiles"><div class="tile"><span class="eyebrow">${TE('tr_med_versao')}</span><span class="v tr-med-ver">${esc((j&&j.versao)||(mp&&mp.versao)||'—')}</span></div>
+      <div class="tile"><span class="eyebrow">${TE('tr_med_ligada_versao')}</span><span class="v tr-med-ver">${esc((mp&&mp.ligada_versao)||'—')}</span></div>
+      <div class="tile"><span class="eyebrow">${TE('tr_med_provedor')}</span><span class="v">${esc(mp&&mp.provedor?(mp.provedor==='cuda'?'GPU':mp.provedor.toUpperCase()):'—')}</span></div>
+      <div class="tile"><span class="eyebrow">${TE('tr_med_fila')}</span><span class="v">${mp?fmtN(mp.fila||0):'—'}</span></div>
+      <div class="tile"><span class="eyebrow">${TE('tr_med_feitas')}</span><span class="v">${mp?fmtN(mp.feitas_hoje||0):'—'}</span></div></div></div>`;
+  const metodo=`<div class="row tr-med-sel"><span class="seg" role="group">${['sessao','prosp'].map(k=>{const v=k==='prosp'?'prospectivo':'sessao';return `<button class="chip" data-act="tr-med-metodo" data-m="${v}" aria-pressed="${m.metodo===v}">${TE(`tr_med_metodo_${k}`)}</button>`;}).join('')}</span>
+    <button class="btn" data-act="tr-med-calc" ${m.carregando?'disabled':''}>${m.carregando?TE('tr_med_calculando'):TE('tr_med_calc')}</button><span class="note">${TE(m.metodo==='prospectivo'?'tr_med_nota_prosp':'tr_med_nota_sessao')}</span></div>`;
+  if(!j)return sit+metodo+`<div class="panel"><div class="note">${m.erro?TE(m.erro):TE('tr_med_calculando')}</div></div>`;
+  const cr=j.criterio||{passa:false,falta:[]};
+  const rot=`<div class="tablewrap"><table class="tr-med-rot"><thead><tr><th>${TE('tr_med_classe')}</th><th class="num">${TE('tr_med_n')}</th><th class="num">${TE('tr_med_meta')}</th><th class="num">${TE('tr_med_faltam')}</th></tr></thead><tbody>${TR_MED_CLS.map(c=>{const n=(j.rotulos||{})[c]||0,mt=(j.metas||{})[c]||0,f=(j.faltam||{})[c]||0;return `<tr><td>${trMedCls(c)}</td><td class="num">${fmtN(n)}</td><td class="num">${fmtN(mt)}</td><td class="num ${f?'tr-med-falta':''}">${fmtN(f)}</td></tr>`;}).join('')}</tbody></table></div>`;
+  const crit=`<div class="panel tr-med"><h2>${TE('tr_med_criterio_h')}</h2>${cr.passa?`<div class="pill good">${TE('tr_med_criterio_ok')}</div>`:`<div class="note">${TE('tr_med_criterio_falta')}</div><ul class="tr-med-faltas">${(cr.falta||[]).map(f=>`<li data-k="${esc(f.k)}">${trMedFalta(f)}</li>`).join('')}</ul>`}
+    <h3>${TE('tr_med_rotulos')}</h3>${rot}</div>`;
+  const gb=j.gramado_base||{};
+  const base=`<div class="panel tr-med"><h2>${TE('tr_med_base_h')}</h2><div class="note">${TE('tr_med_base_nota')}</div>
+    <div class="tiles tr-med-tiles"><div class="tile"><span class="eyebrow">${TE('tr_med_precisao')}</span><span class="v">${trMedPct(gb.precisao)}</span></div><div class="tile"><span class="eyebrow">${TE('tr_med_cobertura')}</span><span class="v">${trMedPct(gb.cobertura)}</span></div>
+      <div class="tile"><span class="eyebrow">${TE('tr_med_vp')}</span><span class="v">${fmtN(gb.vp||0)}</span></div><div class="tile"><span class="eyebrow">${TE('tr_med_fp')}</span><span class="v ${gb.fp?'tr-med-falta':''}">${fmtN(gb.fp||0)}</span></div>
+      <div class="tile"><span class="eyebrow">${TE('tr_med_fn')}</span><span class="v">${fmtN(gb.fn||0)}</span></div><div class="tile"><span class="eyebrow">${TE('tr_med_outro_g')}</span><span class="v ${gb.outro_como_gramado?'tr-med-falta':''}">${fmtN(gb.outro_como_gramado||0)}</span></div></div></div>`;
+  const cols=[...TR_MED_CLS,'fora'];const mx=j.matriz||{};
+  const tab=`<div class="panel tr-med"><h2>${TE('tr_med_matriz')}</h2><div class="note">${TE('tr_med_mx_nota')}</div>
+    <div class="tablewrap"><table class="tr-med-acerto"><thead><tr><th>${TE('tr_med_classe')}</th><th class="num">${TE('tr_med_n')}</th><th class="num">${TE('tr_med_precisao')}</th><th class="num">${TE('tr_med_cobertura')}</th></tr></thead><tbody>${TR_MED_CLS.map(c=>{const x=(j.classe||{})[c]||{};return `<tr><td>${trMedCls(c)}</td><td class="num">${fmtN(x.n||0)}</td><td class="num">${trMedPct(x.precisao)}</td><td class="num">${trMedPct(x.cobertura)}</td></tr>`;}).join('')}</tbody></table></div>
+    <div class="tablewrap"><table class="tr-med-mx"><thead><tr><th>${TE('tr_med_marcado')} \\ ${TE('tr_med_previsto')}</th>${cols.map(c=>`<th class="num">${trMedCls(c)}</th>`).join('')}</tr></thead><tbody>${TR_MED_CLS.map(a=>`<tr><th>${trMedCls(a)}</th>${cols.map(b=>{const v=(mx[a]||{})[b]||0;return `<td class="num ${v?(a===b?'ok':'erro'):''}">${v||''}</td>`;}).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+  const sn=j.sinais||{};
+  const sinais=`<div class="panel tr-med"><h2>${TE('tr_med_sinais_h')}</h2><div class="note">${TE('tr_med_sinais_nota')}</div><div class="tablewrap"><table class="tr-med-sinais"><thead><tr><th>${TE('tr_med_sinal')}</th><th>${TE('tr_med_separa')}</th><th class="num">AUC</th><th>${TE('tr_med_veto')}</th></tr></thead><tbody>${TR_MED_SINAIS.map(k=>{const x=sn[k]||{};const v=x.veto;
+      return `<tr data-sinal="${k}"><td>${TE(`tr_med_s_${k}`)}</td><td>${x.alvo?trMedCls(x.alvo)+' × '+(x.contra&&x.contra!=='resto'?trMedCls(x.contra):TE('tr_med_resto')):'—'}</td><td class="num">${x.auc==null?'—':trMedNum(x.auc)}</td><td>${v?(v.ligado?TE('tr_med_veto_txt',trMedNum(v.min),v.tira_fp,v.perde_vp):TE('tr_med_veto_off')):'—'}</td></tr>`;}).join('')}</tbody></table></div></div>`;
+  const er=(j.erros||[]).slice(0,60);
+  const erros=`<div class="panel tr-med"><h2>${TE('tr_med_erros_h')}</h2><div class="note">${er.length?TE('tr_med_erros_nota'):TE('tr_med_vazio')}</div><div class="tr-med-err">${er.map(e=>{const id='ag_'+e.pid;const src=/^[0-9a-f]{6,40}$/.test(e.pid)?fotoSrc(id):'';
+      return `<div class="tr-med-e"><button class="tr-med-th" data-act="zoom" data-id="${esc(id)}" aria-label="${esc(TE('tr_lupa'))}">${src?`<img src="${esc(src)}" alt="" loading="lazy" draggable="false">`:''}</button><div class="note">${TE('tr_med_erro_item',trMedCls(e.marcado),trMedCls(e.previsto),trMedPct(e.conf))}</div><button class="chip" data-act="tr-med-ir" data-pid="${esc(e.pid)}" data-dia="${esc(e.dia||'')}">${TE('tr_med_ir')}</button></div>`;}).join('')}</div></div>`;
+  return sit+metodo+(m.erro?`<div class="note">${TE(m.erro)}</div>`:'')+crit+base+tab+sinais+erros;}
 function trAnaliseHtml(){const tr=state.agent.treino;const an=(tr&&tr.analise)||null;const pode=can('configuracao','u')&&!!trAg();
-  const linha=k=>{const v=an?an[k]:null;return `<div class="tr-an-l"><span class="tr-an-k">${TEk('tr_an_'+k,k)}</span>${pode&&an?`<span class="seg" role="group" aria-label="${esc(TEk('tr_an_'+k,k))}">${TR_ANALISE.map(o=>`<button class="chip" data-act="tr-analise" data-k="${k}" data-v="${o}" aria-pressed="${v===o}">${TEk('tr_an_'+o,o)}</button>`).join('')}</span>`:`<span class="pill ${v==='ligada'?'warn':v==='medir'?'neutral':'good'}">${v?TEk('tr_an_'+v,v):TE('tr_an_sem')}</span>`}</div>`;};
+  const mp=(tr&&tr.modelo_ponto)||null;
+  // 18/11 (regra 19): Ligada só abaixo do critério fica travado (o servidor confere de novo e responde 409); a exposição não tem medida ainda
+  const trava=(k,o)=>o!=='ligada'?'':k==='exposicao'?(an&&an.exposicao==='ligada'?'':TE('tr_an_expo_sem')):(mp&&mp.criterio_passa?'':TE('tr_an_criterio'));
+  const linha=k=>{const v=an?an[k]:null;return `<div class="tr-an-l"><span class="tr-an-k">${TEk('tr_an_'+k,k)}</span>${pode&&an?`<span class="seg" role="group" aria-label="${esc(TEk('tr_an_'+k,k))}">${TR_ANALISE.map(o=>{const tv=trava(k,o);return `<button class="chip" data-act="tr-analise" data-k="${k}" data-v="${o}" aria-pressed="${v===o}" ${tv?`disabled title="${esc(tv)}"`:''}>${TEk('tr_an_'+o,o)}</button>`;}).join('')}</span>`:`<span class="pill ${v==='ligada'?'warn':v==='medir'?'neutral':'good'}">${v?TEk('tr_an_'+v,v):TE('tr_an_sem')}</span>`}</div>`;};
   return `<div class="panel tr-an"><div class="head"><div><div class="eyebrow">${TE('tr_an_h')}</div><div class="note">${TE('tr_an_nota')}</div></div></div>${linha('ponto')}${linha('exposicao')}<div class="note">${TE('tr_an_o_que')}</div></div>`;}
 function vTreinoMarcar(){const t=state.train;const ag=trAg();
   if(!ag)return `<div class="panel"><div class="note">${TE('tr_sem_servidor')}</div></div>`;
@@ -7418,11 +7479,11 @@ function vTreinoOutubro(){const L=trainOut();const t=state.train;const n=L.lengt
       <div class="photos" style="grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:4px">${L.map((x,i)=>{const l=t.labels[x.id];return `<button class="ph" style="${phStyle(x.id)};border-color:${l?(l.verdict==='pode'?'var(--good)':l.verdict==='nao'?'var(--bad)':'var(--warn)'):(i===t.i?'var(--accent)':'transparent')}" data-act="train-go" data-i="${i}" aria-label="${TE('rv_foto_n',i+1)}"></button>`}).join('')}</div>
     </div>
   </div>${medida}`;}
-function vTreino(){const t=state.train;const ABAS=['marcar',...(trainOut().length?['outubro']:[])];if(!ABAS.includes(t.aba))t.aba='marcar';setTimeout(trainAssina,0);
+function vTreino(){const t=state.train;const ABAS=['marcar','medida',...(trainOut().length?['outubro']:[])];if(!ABAS.includes(t.aba))t.aba='marcar';setTimeout(trainAssina,0);
   const abas=`<div class="chips tr-abas" role="tablist">${ABAS.map(a=>`<button class="chip" role="tab" data-act="tr-aba" data-a="${a}" aria-pressed="${t.aba===a}" aria-selected="${t.aba===a}">${TEk('tr_aba_'+a,a)}</button>`).join('')}</div>`;
   const tr=state.agent.treino;
   return `<div class="head"><div><div class="eyebrow">${tr&&tr.rotulos!=null?TE('tr_eyebrow2',tr.rotulos):TE('tr_eyebrow0')}</div><h1>${esc(viewLabel('treino'))}</h1><div class="note">${TE('tr_pode_nao')}</div></div><div class="row">${shareBtn()}</div></div>
-  ${trAnaliseHtml()}${abas}${t.aba==='outubro'?vTreinoOutubro():vTreinoMarcar()}`;}
+  ${trAnaliseHtml()}${abas}${t.aba==='outubro'?vTreinoOutubro():t.aba==='medida'?vTreinoMedida():vTreinoMarcar()}`;}
 // ---------- Gestão: bandeiras e material de cena ----------
 const FLAG_STATES=['nova','boa','desgastada','defeito','fora de uso'];
 const FLAG_W={'Brasil':412,'Flamengo':388,'Fluminense':121,'Vasco':97,'Botafogo':64,'Argentina':58,'Colômbia':44,'Chile':39,'Corinthians':31,'Palmeiras':28,'Estados Unidos da América (EUA/USA)':22,'Boca Juniors':19,'River Plate':17,'Portugal':15,'México':14,'Peru':13,'Uruguai':12,'Atlético Mineiro':11,'Grêmio':11,'São Paulo':10,'Santos':9,'Internacional de Porto Alegre':9,'Cruzeiro':8,'França':8,'Espanha':7};
@@ -9140,11 +9201,79 @@ const EQ={
   tr_eyebrow2:[(n)=>`Curadoria · treino da IA · ${n} fotos marcadas no servidor`,(n)=>`Curation · AI training · ${n} photos labeled on the server`,(n)=>`Curaduría · entrenamiento de la IA · ${n} fotos marcadas en el servidor`,(n)=>`Curation · entraînement de l'IA · ${n} photos étiquetées sur le serveur`,(n)=>`Kuratierung · KI-Training · ${n} Fotos auf dem Server gelabelt`],
   tr_eyebrow0:["Curadoria · treino da IA","Curation · AI training","Curaduría · entrenamiento de la IA","Curation · entraînement de l'IA","Kuratierung · KI-Training"],
   tr_aba_marcar:["Marcar","Label","Marcar","Étiqueter","Labeln"],
+  tr_aba_medida:["Medição", "Measurement", "Medición", "Mesure", "Messung"],
+  tr_med_h:["Reconhecer o ponto: quanto o servidor acerta", "Recognise the spot: how often the server is right", "Reconocer el punto: cuánto acierta el servidor", "Reconnaître le point : à quel point le serveur a raison", "Standort erkennen: wie oft der Server richtig liegt"],
+  tr_med_nota:["Compara o que o servidor reconhece com as fotos marcadas na aba Marcar. Só fotos de gramado que passam aqui viram fundo de IA.", "Compares what the server recognises with the photos labelled in the Label tab. Only pitch photos that pass here become AI backgrounds.", "Compara lo que reconoce el servidor con las fotos marcadas en la pestaña Marcar. Solo las fotos de césped que pasan aquí se vuelven fondo de IA.", "Compare ce que le serveur reconnaît avec les photos étiquetées dans l'onglet Étiqueter. Seules les photos de pelouse qui passent ici deviennent des fonds IA.", "Vergleicht, was der Server erkennt, mit den im Tab Labeln markierten Fotos. Nur Rasenfotos, die hier bestehen, werden KI-Hintergründe."],
+  tr_med_metodo_sessao:["Sem a própria sessão", "Without its own session", "Sin la propia sesión", "Sans sa propre séance", "Ohne die eigene Sitzung"],
+  tr_med_metodo_prosp:["Depois de reconhecidas", "After recognition", "Después de reconocidas", "Après reconnaissance", "Nach der Erkennung"],
+  tr_med_nota_sessao:["Cada foto marcada é reconhecida sem usar as fotos da mesma sessão e da mesma visita, como se fosse nova.", "Each labelled photo is recognised without using photos from the same session and visit, as if it were new.", "Cada foto marcada se reconoce sin usar las fotos de la misma sesión y visita, como si fuera nueva.", "Chaque photo étiquetée est reconnue sans utiliser les photos de la même séance et visite, comme si elle était nouvelle.", "Jedes markierte Foto wird ohne Fotos derselben Sitzung und desselben Besuchs erkannt, als wäre es neu."],
+  tr_med_nota_prosp:["Só as fotos marcadas depois de o servidor reconhecê-las: o acerto de verdade, no dia a dia.", "Only photos labelled after the server recognised them: the real day-to-day accuracy.", "Solo las fotos marcadas después de que el servidor las reconoció: el acierto real del día a día.", "Seulement les photos étiquetées après leur reconnaissance : la vraie précision au quotidien.", "Nur Fotos, die nach der Erkennung markiert wurden: die echte Trefferquote im Alltag."],
+  tr_med_calc:["Calcular de novo", "Recalculate", "Calcular de nuevo", "Recalculer", "Neu berechnen"],
+  tr_med_calculando:["Calculando…", "Calculating…", "Calculando…", "Calcul…", "Berechne…"],
+  tr_med_erro:["Não deu para calcular agora. Tente de novo em um minuto.", "Could not calculate now. Try again in a minute.", "No se pudo calcular ahora. Inténtelo en un minuto.", "Calcul impossible pour l'instant. Réessayez dans une minute.", "Jetzt nicht berechenbar. In einer Minute erneut versuchen."],
+  tr_med_vazio:["Ainda não há fotos marcadas com o reconhecimento feito.", "There are no labelled photos with recognition yet.", "Aún no hay fotos marcadas con el reconocimiento hecho.", "Pas encore de photos étiquetées avec reconnaissance.", "Noch keine markierten Fotos mit Erkennung."],
+  tr_med_sem_modelo:["O modelo do reconhecimento ainda não está instalado neste servidor (instalar-recorte). Nada é reconhecido e o Checkout fica sem fundos de IA.", "The recognition model is not installed on this server yet (instalar-recorte). Nothing is recognised and the Checkout has no AI backgrounds.", "El modelo de reconocimiento aún no está instalado en este servidor (instalar-recorte). No se reconoce nada y el Checkout queda sin fondos de IA.", "Le modèle de reconnaissance n'est pas encore installé sur ce serveur (instalar-recorte). Rien n'est reconnu et le Checkout n'a pas de fonds IA.", "Das Erkennungsmodell ist auf diesem Server noch nicht installiert (instalar-recorte). Nichts wird erkannt, der Checkout hat keine KI-Hintergründe."],
+  tr_med_erro_modelo:["O reconhecimento parou neste servidor. Reinicie o Eterna; se continuar, chame o suporte.", "Recognition stopped on this server. Restart Eterna; if it continues, call support.", "El reconocimiento se detuvo en este servidor. Reinicie Eterna; si sigue, llame al soporte.", "La reconnaissance s'est arrêtée sur ce serveur. Redémarrez Eterna ; si cela continue, appelez le support.", "Die Erkennung ist auf diesem Server gestoppt. Eterna neu starten; sonst Support rufen."],
+  tr_med_situacao:["Situação", "Status", "Situación", "Situation", "Status"],
+  tr_med_versao:["Versão medida", "Measured version", "Versión medida", "Version mesurée", "Gemessene Version"],
+  tr_med_ligada_versao:["Versão ligada", "Version in use", "Versión activada", "Version activée", "Aktive Version"],
+  tr_med_provedor:["Processa em", "Runs on", "Procesa en", "Tourne sur", "Läuft auf"],
+  tr_med_fila:["Na fila", "Queued", "En cola", "En file", "In Warteschlange"],
+  tr_med_feitas:["Reconhecidas hoje", "Recognised today", "Reconocidas hoy", "Reconnues aujourd'hui", "Heute erkannt"],
+  tr_med_rotulos:["Fotos marcadas por ponto", "Labelled photos by spot", "Fotos marcadas por punto", "Photos étiquetées par point", "Markierte Fotos je Standort"],
+  tr_med_classe:["Ponto", "Spot", "Punto", "Point", "Standort"],
+  tr_med_n:["Marcadas", "Labelled", "Marcadas", "Étiquetées", "Markiert"],
+  tr_med_meta:["Meta", "Goal", "Meta", "Objectif", "Ziel"],
+  tr_med_faltam:["Faltam", "Missing", "Faltan", "Manquent", "Fehlen"],
+  tr_med_precisao:["Precisão", "Precision", "Precisión", "Précision", "Präzision"],
+  tr_med_cobertura:["Cobertura", "Coverage", "Cobertura", "Couverture", "Abdeckung"],
+  tr_med_matriz:["Marcado × reconhecido", "Labelled × recognised", "Marcado × reconocido", "Étiqueté × reconnu", "Markiert × erkannt"],
+  tr_med_mx_nota:["Linhas: o que foi marcado. Colunas: o que o servidor reconheceu. A diagonal é acerto.", "Rows: what was labelled. Columns: what the server recognised. The diagonal is correct.", "Filas: lo marcado. Columnas: lo que reconoció el servidor. La diagonal es acierto.", "Lignes : l'étiquette. Colonnes : ce que le serveur a reconnu. La diagonale est juste.", "Zeilen: markiert. Spalten: vom Server erkannt. Die Diagonale ist richtig."],
+  tr_med_marcado:["Marcado", "Labelled", "Marcado", "Étiqueté", "Markiert"],
+  tr_med_previsto:["Reconhecido", "Recognised", "Reconocido", "Reconnu", "Erkannt"],
+  tr_med_fora:["Outro lugar", "Elsewhere", "Otro lugar", "Ailleurs", "Anderswo"],
+  tr_med_base_h:["Gramado como fundo de IA", "Pitch as AI background", "Césped como fondo de IA", "Pelouse comme fond IA", "Rasen als KI-Hintergrund"],
+  tr_med_base_nota:["O que importa: nenhuma foto que não é de gramado pode virar montagem. Uma foto de gramado perdida só deixa o visitante sem montagem.", "What matters: no photo that is not from the pitch may become a composite. A missed pitch photo only leaves the visitor without one.", "Lo que importa: ninguna foto que no sea de césped puede volverse montaje. Una foto de césped perdida solo deja al visitante sin montaje.", "Ce qui compte : aucune photo hors pelouse ne doit devenir un montage. Une photo de pelouse manquée laisse seulement le visiteur sans montage.", "Wichtig: Kein Foto, das nicht vom Rasen ist, darf zur Montage werden. Ein verpasstes Rasenfoto lässt den Besucher nur ohne Montage."],
+  tr_med_vp:["Gramado certo", "Correct pitch", "Césped correcto", "Pelouse juste", "Rasen richtig"],
+  tr_med_fp:["Não era gramado", "Not the pitch", "No era césped", "Pas la pelouse", "Kein Rasen"],
+  tr_med_fn:["Gramado perdido", "Pitch missed", "Césped perdido", "Pelouse manquée", "Rasen verpasst"],
+  tr_med_outro_g:["Outro lugar como gramado", "Elsewhere as pitch", "Otro lugar como césped", "Ailleurs comme pelouse", "Anderswo als Rasen"],
+  tr_med_sinais_h:["Pistas da imagem", "Image cues", "Pistas de la imagen", "Indices de l'image", "Bildhinweise"],
+  tr_med_sinais_nota:["Medidas simples ao lado do reconhecimento. Separa: 1,00 separa sempre, 0,50 é acaso. O verde e o flash barram o gramado quando ficam muito abaixo dos gramados marcados (a partir de 30).", "Simple measurements next to recognition. Separates: 1.00 always, 0.50 is chance. Green and flash veto the pitch when far below the labelled pitch photos (from 30 on).", "Medidas simples junto al reconocimiento. Separa: 1,00 siempre, 0,50 es azar. El verde y el flash vetan el césped cuando quedan muy por debajo de los marcados (desde 30).", "Mesures simples à côté de la reconnaissance. Sépare : 1,00 toujours, 0,50 au hasard. Le vert et le flash bloquent la pelouse quand ils sont très en dessous des pelouses étiquetées (dès 30).", "Einfache Messungen neben der Erkennung. Trennt: 1,00 immer, 0,50 Zufall. Grün und Blitz sperren den Rasen, wenn sie weit unter den markierten liegen (ab 30)."],
+  tr_med_sinal:["Pista", "Cue", "Pista", "Indice", "Hinweis"],
+  tr_med_separa:["Separa", "Separates", "Separa", "Sépare", "Trennt"],
+  tr_med_veto:["Barra o gramado", "Vetoes pitch", "Veta el césped", "Bloque la pelouse", "Sperrt Rasen"],
+  tr_med_s_verde:["Campo aberto (verde ao redor)", "Open field (green around)", "Campo abierto (verde alrededor)", "Terrain ouvert (vert autour)", "Offenes Feld (Grün ringsum)"],
+  tr_med_s_flash:["Flash na pessoa", "Flash on the person", "Flash en la persona", "Flash sur la personne", "Blitz auf der Person"],
+  tr_med_s_cadeiras:["Cadeiras logo atrás", "Seats right behind", "Sillas justo detrás", "Sièges juste derrière", "Sitze direkt dahinter"],
+  tr_med_s_dourado:["Troféu grande (dourado)", "Big trophy (gold)", "Trofeo grande (dorado)", "Grand trophée (doré)", "Großer Pokal (gold)"],
+  tr_med_resto:["os outros", "the others", "los otros", "les autres", "die anderen"],
+  tr_med_veto_off:["ainda não (menos de 30 gramados)", "not yet (fewer than 30 pitch photos)", "aún no (menos de 30 céspedes)", "pas encore (moins de 30 pelouses)", "noch nicht (unter 30 Rasenfotos)"],
+  tr_med_veto_txt:[(v,t,p)=>'abaixo de '+v+': tira '+t+' erro(s), perde '+p+' gramado(s)',(v,t,p)=>'below '+v+': removes '+t+' error(s), loses '+p+' pitch',(v,t,p)=>'debajo de '+v+': quita '+t+' error(es), pierde '+p+' césped(es)',(v,t,p)=>'sous '+v+' : retire '+t+' erreur(s), perd '+p+' pelouse(s)',(v,t,p)=>'unter '+v+': entfernt '+t+' Fehler, verliert '+p+' Rasen'],
+  tr_med_erros_h:["Onde o servidor errou", "Where the server was wrong", "Dónde se equivocó el servidor", "Où le serveur s'est trompé", "Wo der Server falsch lag"],
+  tr_med_erros_nota:["As de maior confiança primeiro. Toque na foto para ampliar; se a marcação estiver errada, corrija no Marcar.", "Highest confidence first. Tap the photo to enlarge; if the label is wrong, fix it in Label.", "Las de mayor confianza primero. Toque la foto para ampliar; si la marca está mal, corríjala en Marcar.", "Les plus sûres d'abord. Touchez la photo pour l'agrandir ; si l'étiquette est fausse, corrigez-la dans Étiqueter.", "Höchste Sicherheit zuerst. Foto antippen zum Vergrößern; falsche Markierung im Labeln korrigieren."],
+  tr_med_erro_item:[(m,p,c)=>'Marcado '+m+' · reconhecido '+p+' ('+c+')',(m,p,c)=>'Labelled '+m+' · recognised '+p+' ('+c+')',(m,p,c)=>'Marcado '+m+' · reconocido '+p+' ('+c+')',(m,p,c)=>'Étiqueté '+m+' · reconnu '+p+' ('+c+')',(m,p,c)=>'Markiert '+m+' · erkannt '+p+' ('+c+')'],
+  tr_med_ir:["Abrir no Marcar", "Open in Label", "Abrir en Marcar", "Ouvrir dans Étiqueter", "In Labeln öffnen"],
+  tr_med_criterio_h:["Para poder ligar", "To switch on", "Para poder activar", "Pour pouvoir activer", "Zum Einschalten"],
+  tr_med_criterio_ok:["Passou no critério: o reconhecimento já pode ser Ligado.", "Criterion met: recognition can now be switched On.", "Cumple el criterio: el reconocimiento ya puede Activarse.", "Critère atteint : la reconnaissance peut être Activée.", "Kriterium erfüllt: Die Erkennung kann eingeschaltet werden."],
+  tr_med_criterio_falta:["Ainda falta, para o servidor aceitar Ligada:", "Still missing before the server accepts On:", "Aún falta para que el servidor acepte Activado:", "Il manque encore, pour que le serveur accepte Activée :", "Es fehlt noch, bevor der Server Ein akzeptiert:"],
+  tr_med_falta_n:[(c,t,p)=>c+': '+t+' de '+p+' marcadas',(c,t,p)=>c+': '+t+' of '+p+' labelled',(c,t,p)=>c+': '+t+' de '+p+' marcadas',(c,t,p)=>c+' : '+t+' sur '+p+' étiquetées',(c,t,p)=>c+': '+t+' von '+p+' markiert'],
+  tr_med_falta_dias:[(t,p)=>'dias diferentes: '+t+' de '+p,(t,p)=>'different days: '+t+' of '+p,(t,p)=>'días distintos: '+t+' de '+p,(t,p)=>'jours différents : '+t+' sur '+p,(t,p)=>'verschiedene Tage: '+t+' von '+p],
+  tr_med_falta_fotografos:[(t,p)=>'fotógrafos diferentes: '+t+' de '+p,(t,p)=>'different photographers: '+t+' of '+p,(t,p)=>'fotógrafos distintos: '+t+' de '+p,(t,p)=>'photographes différents : '+t+' sur '+p,(t,p)=>'verschiedene Fotografen: '+t+' von '+p],
+  tr_med_falta_precisao:[(t,p)=>'precisão do gramado: '+t+' (precisa '+p+')',(t,p)=>'pitch precision: '+t+' (needs '+p+')',(t,p)=>'precisión del césped: '+t+' (necesita '+p+')',(t,p)=>'précision pelouse : '+t+' (il faut '+p+')',(t,p)=>'Rasen-Präzision: '+t+' (nötig '+p+')'],
+  tr_med_falta_cobertura:[(t,p)=>'cobertura do gramado: '+t+' (precisa '+p+')',(t,p)=>'pitch coverage: '+t+' (needs '+p+')',(t,p)=>'cobertura del césped: '+t+' (necesita '+p+')',(t,p)=>'couverture pelouse : '+t+' (il faut '+p+')',(t,p)=>'Rasen-Abdeckung: '+t+' (nötig '+p+')'],
+  tr_med_falta_outro_fp:[(t,p)=>'outro lugar reconhecido como gramado: '+t+' (precisa '+p+')',(t,p)=>'elsewhere recognised as pitch: '+t+' (needs '+p+')',(t,p)=>'otro lugar reconocido como césped: '+t+' (necesita '+p+')',(t,p)=>'ailleurs reconnu comme pelouse : '+t+' (il faut '+p+')',(t,p)=>'anderswo als Rasen erkannt: '+t+' (nötig '+p+')'],
+  tr_med_falta_prosp_n:[(t,p)=>'gramados marcados depois de reconhecidos: '+t+' de '+p,(t,p)=>'pitch photos labelled after recognition: '+t+' of '+p,(t,p)=>'céspedes marcados después de reconocidos: '+t+' de '+p,(t,p)=>'pelouses étiquetées après reconnaissance : '+t+' sur '+p,(t,p)=>'Rasenfotos nach Erkennung markiert: '+t+' von '+p],
+  tr_med_falta_prosp_precisao:[(t,p)=>'precisão depois de reconhecidas: '+t+' (precisa '+p+')',(t,p)=>'precision after recognition: '+t+' (needs '+p+')',(t,p)=>'precisión después de reconocidas: '+t+' (necesita '+p+')',(t,p)=>'précision après reconnaissance : '+t+' (il faut '+p+')',(t,p)=>'Präzision nach Erkennung: '+t+' (nötig '+p+')'],
+  tr_med_falta_sem_numpy:["o servidor não tem o numpy para calcular", "the server lacks numpy to calculate", "el servidor no tiene numpy para calcular", "le serveur n'a pas numpy pour calculer", "dem Server fehlt numpy zum Rechnen"],
+  tr_an_criterio:["Só dá para Ligar quando a medição passa no critério (Treino da IA › Medição).", "On is only possible once the measurement meets the criterion (AI training › Measurement).", "Solo se puede Activar cuando la medición cumple el criterio (Entrenamiento de la IA › Medición).", "Activée seulement quand la mesure atteint le critère (Entraînement de l'IA › Mesure).", "Ein erst, wenn die Messung das Kriterium erfüllt (KI-Training › Messung)."],
+  tr_an_expo_sem:["A medida da exposição ainda não existe: fica em Só medir.", "The exposure measurement does not exist yet: it stays in Measure only.", "La medida de exposición aún no existe: queda en Solo medir.", "La mesure de l'exposition n'existe pas encore : elle reste en Mesurer seulement.", "Die Belichtungsmessung gibt es noch nicht: bleibt bei Nur messen."],
+  tr_m_duvidas:["Dúvidas do reconhecimento", "Recognition doubts", "Dudas del reconocimiento", "Doutes de la reconnaissance", "Unsichere Erkennungen"],
   tr_aba_outubro:["Outubro (exemplo)","October (sample)","Octubre (ejemplo)","Octobre (exemple)","Oktober (Beispiel)"],
   tr_out_nota:[(d,n)=>`Fotos de exemplo de outubro, só para consulta: ${d} de ${n} marcadas antes. A marcação de agora é na aba Marcar.`,(d,n)=>`Sample photos from October, read only: ${d} of ${n} labeled before. Labeling now happens in the Label tab.`,(d,n)=>`Fotos de ejemplo de octubre, solo para consulta: ${d} de ${n} marcadas antes. La marcación ahora es en la pestaña Marcar.`,(d,n)=>`Photos d'exemple d'octobre, en lecture seule : ${d} sur ${n} étiquetées avant. L'étiquetage se fait maintenant dans l'onglet Étiqueter.`,(d,n)=>`Beispielfotos aus Oktober, nur zum Ansehen: ${d} von ${n} früher gelabelt. Gelabelt wird jetzt im Tab Labeln.`],
   tr_an_h:["Análise automática do servidor","Automatic analysis on the server","Análisis automático del servidor","Analyse automatique du serveur","Automatische Analyse auf dem Server"],
   tr_an_nota:["Desligada: o servidor não analisa nada. Só medir: analisa e mostra só aqui, no treino. Ligada: aplica o resultado.","Off: the server analyses nothing. Measure only: it analyses and shows the result only here, in training. On: it applies the result.","Apagado: el servidor no analiza nada. Solo medir: analiza y lo muestra solo aquí, en el entrenamiento. Encendido: aplica el resultado.","Désactivée : le serveur n'analyse rien. Mesurer seulement : il analyse et l'affiche seulement ici, dans l'entraînement. Activée : il applique le résultat.","Aus: der Server analysiert nichts. Nur messen: er analysiert und zeigt es nur hier im Training. An: er wendet das Ergebnis an."],
-  tr_an_o_que:["Nesta versão nenhuma análise roda ainda. O interruptor já vale para quando a medida da exposição e o reconhecimento do ponto chegarem.","No analysis runs in this version yet. The switch already applies for when exposure measurement and spot recognition arrive.","En esta versión todavía no corre ningún análisis. El interruptor ya vale para cuando lleguen la medida de exposición y el reconocimiento del punto.","Aucune analyse ne tourne encore dans cette version. L'interrupteur vaudra dès l'arrivée de la mesure d'exposition et de la reconnaissance du point.","In dieser Version läuft noch keine Analyse. Der Schalter gilt schon, wenn Belichtungsmessung und Spot-Erkennung kommen."],
+  tr_an_o_que:["Reconhecer o ponto: Desligada e Só medir deixam o Checkout sem fundos de IA; Ligada monta só com as 2 primeiras fotos do gramado de cada visitante (boa luz, ninguém cortado). Medir a exposição ainda não existe.", "Recognise the spot: Off and Measure only leave the Checkout without AI backgrounds; On builds them only from each visitor's first 2 pitch photos (good light, nobody cut off). Exposure measurement does not exist yet.", "Reconocer el punto: Desactivado y Solo medir dejan el Checkout sin fondos de IA; Activado arma solo con las 2 primeras fotos de césped de cada visitante (buena luz, nadie cortado). La medida de exposición aún no existe.", "Reconnaître le point : Désactivée et Mesurer seulement laissent le Checkout sans fonds IA ; Activée compose seulement avec les 2 premières photos de pelouse de chaque visiteur (bonne lumière, personne coupé). La mesure de l'exposition n'existe pas encore.", "Standort erkennen: Aus und Nur messen lassen den Checkout ohne KI-Hintergründe; Ein nutzt nur die ersten 2 Rasenfotos jedes Besuchers (gutes Licht, niemand abgeschnitten). Die Belichtungsmessung gibt es noch nicht."],
   tr_an_ponto:["Reconhecer o ponto","Recognize the spot","Reconocer el punto","Reconnaître le point","Spot erkennen"],
   tr_an_exposicao:["Medir a exposição","Measure exposure","Medir la exposición","Mesurer l'exposition","Belichtung messen"],
   tr_an_desligada:["Desligada","Off","Apagado","Désactivée","Aus"],
@@ -11830,7 +11959,7 @@ document.addEventListener('click',e=>{
       if(state.view==='importar'){const lb=el.closest('#lib-painel,#lib-minhas');
         if(lb){const ids=libOrdem();if(ids.includes(id)){openGallery(ids.map(i=>({id:i})),id,TE(lb.id==='lib-minhas'?'lb_minhas':'lb_biblioteca'),{});break;}}
         const sx=upSessDe(id);if(sx&&state.agent.sessoes){openGallery(upSessIds(sx).map(i=>({id:i})),id,`${upNome(sx)} · ${sx.card}`,{});break;}const all=[...(state.ing.cur?state.ing.cur.photos:[]),...state.ing.done.flatMap(x=>x.photos)];openGallery(all,id,`${impName()} · ingestão`,{});break;}
-      if(state.view==='treino'){openGallery(trainLista().map(x=>({id:x.id})),id,viewLabel('treino'),{});break;}
+      if(state.view==='treino'){const md=state.train.aba==='medida'&&state.train.med.j;openGallery(md?(md.erros||[]).slice(0,60).map(x=>({id:'ag_'+x.pid})):trainLista().map(x=>({id:x.id})),id,viewLabel('treino'),{});break;} // 18/11: na Medição, a lista dos erros
       if(state.view==='revisao'&&state.session){const ss=revSessions().find(x=>x.card===state.session);openGallery(ss.photos.filter(p=>hasImg(p.id)),id,`${P[ss.key].name} · ${ss.card}`,{review:true});break;}
       const s=demoSessions().find(x=>x.photos.find(p=>p.id===id));if(s)openGallery(s.photos.filter(p=>hasImg(p.id)),id,`${P[s.key]?P[s.key].name:''} · ${s.card}`,(state.posto.manual&&(state.view==='posto'||state.view==='caixa'))?{edit:true,quick:true}:{});else openGallery([{id}],id,'',{});break;}
     case 'm-rate':{e.stopPropagation();const p=curPhoto();const r=draft();const v=+d.v;if(r.photos[p.id]===v)delete r.photos[p.id];else r.photos[p.id]=v;render();renderModalTools();break;}
@@ -11891,7 +12020,10 @@ document.addEventListener('click',e=>{
       const rows=Object.values(state.train.labels).filter(r=>r&&ids.has(r.id)).map(r=>({id:r.id,card:r.card,key:r.key,date:r.date,time:r.time,verdict:r.verdict,reasons:(r.reasons||[]).slice(),at:r.at})); // sem observações
       const blob=new Blob([JSON.stringify({exported:now().toISOString(),total:ids.size,labels:rows},null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='eterna-treino-outubro.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);
       auditLog('treino_exportado','treino/outubro',[{campo:'linhas',de:null,para:rows.length}]);toast(TE('tr_exportados',rows.length));break;}
-    case 'tr-aba':state.train.aba=d.a==='outubro'?'outubro':'marcar';render();if(state.train.aba==='marcar')trEnviar();break;
+    case 'tr-aba':state.train.aba=['outubro','medida'].includes(d.a)?d.a:'marcar';render();if(state.train.aba==='marcar')trEnviar();if(state.train.aba==='medida')trMedida();break;
+    case 'tr-med-metodo':{const m=state.train.med;const v=d.m==='prospectivo'?'prospectivo':'sessao';if(m.metodo!==v){m.metodo=v;m.j=null;trMedida();}render();break;}
+    case 'tr-med-calc':trMedida();break;
+    case 'tr-med-ir':{const t=state.train;const pid=String(d.pid||'');if(!/^[0-9a-f]{6,40}$/.test(pid))break;t.aba='marcar';if(/^\d{4}-\d{2}-\d{2}$/.test(d.dia||''))t.dia=d.dia;render();trCarregar({marcadas:true,pid});break;}
     case 'tr-carregar':trCarregar();break;
     case 'tr-ponto':{const p=trAtual();if(!p)break;const r=trRasc(p.pid);r.ponto=r.ponto===d.p?null:d.p;render();break;}
     case 'tr-q':{const p=trAtual();if(!p)break;const r=trRasc(p.pid);r.nivel=r.nivel===d.v?null:d.v;render();break;}

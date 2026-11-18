@@ -7,6 +7,9 @@ for(const v of vs){await pg.evaluate(v=>{ETERNA.state.view=v;ETERNA.render();},v
 // v97: Estatísticas › Jogos e ano a ano (seção g, só Admin) e o painel da fonte dos jogos em Preços e Checkout › Checkout
 for(const s of ['g']){await pg.evaluate(s=>{ETERNA.state.es.sec=s;ETERNA.state.view='estatisticas';ETERNA.render();},s);await pg.waitForTimeout(150);if(/Algo falhou/.test(await pg.textContent('#main'))||!(await pg.$('[data-act="es-sec"][data-s="g"]')))bad.push('estatisticas/'+s);}
 await pg.evaluate(()=>{ETERNA.state.es.sec='a';ETERNA.state.catTab='checkout';ETERNA.state.view='catalogo';ETERNA.render();});await pg.waitForTimeout(120);if(/Algo falhou/.test(await pg.textContent('#main'))||!(await pg.$('#ag-fontes-bloco')))bad.push('catalogo (fonte dos jogos)');
+// 18/11: Treino da IA › Medição (sem agente: abre com o aviso, sem erro)
+await pg.evaluate(()=>{ETERNA.state.train.aba='medida';ETERNA.state.view='treino';ETERNA.render();});await pg.waitForTimeout(150);if(/Algo falhou/.test(await pg.textContent('#main'))||!(await pg.$('[data-act="tr-aba"][data-a="medida"][aria-pressed="true"]')))bad.push('treino/medida');
+await pg.evaluate(()=>{ETERNA.state.train.aba='marcar';});
 // rota pública da galeria por QR com um token que não existe, sem login: abre sem erro e mostra "não encontrada"
 const pp=await b.newPage();pp.on('pageerror',e=>errs.push('#g: '+e.message));await pp.goto((process.env.U||'http://127.0.0.1:8890/index.html')+'#g/'+'Zz'.repeat(11));await pp.waitForTimeout(1500);
 const gq=await pp.evaluate(()=>({step:ETERNA.pub&&ETERNA.pub.step,h:location.hash,user:!!ETERNA.state.user}));if(gq.step!=='nao_existe'||!/^#g\//.test(gq.h)||gq.user)bad.push('#g/<inexistente> '+JSON.stringify(gq));

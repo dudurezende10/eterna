@@ -64,7 +64,7 @@ try{
       ok(p.lig===1&&p.pts===0&&p.nota===p.esp&&p.nota.length>40,'fundos de IA em '+lg+': liga/desliga e nota, sem pontos nem volante: '+J([p.lig,p.pts,p.nota.slice(0,40)]));}
     await lingua(pg,'pt');
     // etiqueta do Upload para a sessão sem base
-    ok(/rg\.motivo==='sem_funcao'&&!ESCALA_ON\?TE\('up_iam_sem_ponto'\)/.test(fonte)&&await pg.evaluate(()=>ETERNA.TE('up_iam_sem_ponto'))==='Fotos de IA: aguardando reconhecimento do ponto','etiqueta do Upload para sem_funcao com a Escala desligada');
+    ok(/rg\.motivo==='sem_funcao'&&!ESCALA_ON\?TE\('up_iam_sem_ponto'\)/.test(fonte)&&await pg.evaluate(()=>ETERNA.TE('up_iam_sem_ponto'))==='Fotos de IA: só com o reconhecimento do gramado ligado','etiqueta do Upload para sem_funcao com a Escala desligada (texto de 18/11, regra 19)');
 
     // ---------- func-set e função do dia não gravam nem chamam o agente ----------
     const f=await pg.evaluate(()=>{const S=ETERNA.SIM;const antes=J2(S.funcao);function J2(x){return JSON.stringify(x===undefined?null:x);}
