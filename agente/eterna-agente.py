@@ -9991,6 +9991,31 @@ def auth_cli_desativar(usuarios):
         print("ok %s (%s): desativado" % (u, cad.get("name") or u))
     return erro
 
+
+def auth_cli_excluir(usuarios):
+    """python eterna-agente.py --excluir <usuário> [...]: o mesmo que excluir na tela de Usuários (cadastro marcado como apagado,
+    senha e sessões saem). Vendas e registros continuam com o nome. Os postos que a conta pareou continuam (revogar é no Painel)."""
+    erro = 0
+    for u in usuarios:
+        u = u.strip().lower()
+        cad, _ = auth_ler_cadastro(u)
+        if not cad or cad.get("deleted"):
+            print("%s: não existe" % u)
+            erro = 1
+            continue
+        estado_gravar({"docs": [{"col": "usuarios", "id": quote(u, safe="-_.!~*'()"),
+                                 "valor": {"email": u, "deleted": True, "at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())}}]})
+        with estado_lock:
+            db = auth_db()
+            try:
+                for t in ("credencial", "sessao_login", "reset_senha"):
+                    db.execute("delete from %s where usuario=?" % t, (u,))
+                db.commit()
+            finally:
+                db.close()
+        print("ok %s (%s): excluído" % (u, cad.get("name") or u))
+    return erro
+
 # ---------- Postos pareados ----------
 # O Admin pareia cada aparelho uma vez (Painel de controle, ou o link de uso único do comando --parear-posto). O aparelho guarda
 # o cookie eterna_posto (HttpOnly, 400 dias, revogável); o servidor guarda só o hash. O posto abre o Checkout sem pessoa logada.
@@ -15278,6 +15303,8 @@ if __name__ == "__main__":
         sys.exit(auth_cli_usuario(sys.argv[2], " ".join(sys.argv[3:]), os.environ.get("ETERNA_COMO")))
     if len(sys.argv) >= 3 and sys.argv[1] == "--desativar":
         sys.exit(auth_cli_desativar(sys.argv[2:]))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--excluir":
+        sys.exit(auth_cli_excluir(sys.argv[2:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
         sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()

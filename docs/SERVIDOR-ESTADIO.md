@@ -94,4 +94,12 @@ Decisão do Ronaldo: cada pessoa entra com a própria conta; contas genéricas (
   sudo runuser -u eterna -- env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/eterna-agente.py --desativar usuario1 usuario2
   ```
 
-A conta `hello@eterna.photo` do sistema pode ser desativada: o e-mail de nova senha sai pela nuvem (SES, remetente `MailFrom` da stack), sem depender dela.
+- Excluir de vez (o mesmo que excluir na tela de Usuários; vendas e registros continuam com o nome; postos pareados continuam):
+
+  ```
+  sudo runuser -u eterna -- env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/eterna-agente.py --excluir usuario1 usuario2
+  ```
+
+  Excluir a conta Supervisão só depois de cadastrar os supervisores: ela é o modelo.
+
+A conta `hello@eterna.photo` do sistema pode ser excluída: o e-mail de nova senha sai pela nuvem (SES, remetente `MailFrom` da stack), sem depender dela.
