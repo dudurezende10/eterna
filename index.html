@@ -910,7 +910,8 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .gq-dl{color:#134078;border-color:#c9d4e4;justify-content:center;width:100%}
 .gq-gv{display:flex;flex-direction:column;gap:12px;margin:8px 0 18px;align-items:stretch}.gq-gv .gq-spin{align-self:center}.gq-gvdl{justify-content:center;text-decoration:none}.gq-tour{border-top:1px solid rgba(255,255,255,.14);padding-top:16px}.av-tab th,.av-tab td{white-space:normal;padding-left:6px;padding-right:6px;vertical-align:top}.av-tab td:nth-child(4){min-width:130px}.av-tab .pill{white-space:normal;text-align:center} /* v99.24.1: cabe no tablet (800 px) */.gq-tour .gq-grid{gap:8px}.gq-tour a.gq-dl{text-decoration:none;justify-content:center}.gq-tourph{cursor:pointer}
 .gq-sel{position:absolute;right:-8px;top:-8px;width:46px;height:46px;border-radius:50%;border:2px solid #fff;background:rgba(12,35,64,.85);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 16px -6px rgba(0,0,0,.6)}
-.gq-sel svg{width:26px;height:26px}.gq-buyoff{margin-top:14px;font-weight:600}.gq-sel.on{background:#FFB800;color:#0C2340;border-color:#FFB800}
+.gq-sel svg{width:26px;height:26px}.gq-qrimg{display:block;margin-top:10px;color:#d6e2f3;text-decoration:underline;cursor:pointer;font-size:15px;text-align:center}
+.gq-buyoff{margin-top:14px;font-weight:600}.gq-sel.on{background:#FFB800;color:#0C2340;border-color:#FFB800}
 .gq-dlall,.gq-allbtn{align-self:flex-start}
 .gq-gal{padding-bottom:110px}
 .gq-bar{position:fixed;left:0;right:0;bottom:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px clamp(14px,3vw,36px) max(12px,env(safe-area-inset-bottom,0px));background:rgba(12,35,64,.96);border-top:1px solid rgba(255,255,255,.18)}
@@ -3505,7 +3506,12 @@ const GQ_ICO_QR='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" str
 function gqQrNorm(t){t=String(t==null?'':t).trim();const g=t.match(/#g\/([A-Za-z0-9_-]{6,22})/);if(g)return '#g/'+g[1];
   if(/^https?:\/\//i.test(t)){try{const u=new URL(t);const c=[...u.searchParams.values(),...u.pathname.split('/').reverse(),u.hash.replace(/^#\/?/,'')].map(x=>String(x).replace(/[^A-Za-z0-9]/g,'')).find(x=>/^[A-Za-z0-9]{6,20}$/.test(x)&&/\d/.test(x));return c?c.toUpperCase():null;}catch(e){return null;}}
   const x=t.replace(/[\s.\-\/]/g,'');return /^[A-Za-z0-9]{6,22}$/.test(x)?x.toUpperCase():null;}
-function gqQrAbre(){pulCamAbre(n=>{const p=state.pub;if(!p)return;if(n[0]==='#'){location.hash=n;return;}p.pre=n;const el=$('#gq-code');if(el)el.value=n;pubCodigo();},gqQrNorm,null,{aponte:T('gq_qrAponte'),cancelar:T('back'),sem:T('cam_nocam')});}
+function gqQrUsa(n){const p=state.pub;if(!p)return;if(n[0]==='#'){location.hash=n;return;}p.pre=n;const el=$('#gq-code');if(el)el.value=n;pubCodigo();}
+// 18/11 (Ronaldo): "às vezes o cliente está no PC ou no notebook": o QR também pela imagem (o voucher do e-mail, um print)
+async function gqQrImagem(f){if(!f)return;const det=await qrLeitor();if(!det){toast(T('cam_nocam'));return;}const url=URL.createObjectURL(f);
+  try{const im=await loadImg(url);const n=im?(await det.detect(im)).map(gqQrNorm).find(Boolean):null;if(n)gqQrUsa(n);else toast(T('gq_qrNada'));}catch(e){toast(T('gq_qrNada'));}finally{URL.revokeObjectURL(url);}}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='gq-qr-img'){const f=e.target.files&&e.target.files[0];e.target.value='';gqQrImagem(f);}});
+function gqQrAbre(){pulCamAbre(gqQrUsa,gqQrNorm,null,{aponte:T('gq_qrAponte'),cancelar:T('back'),sem:T('cam_nocam')});}
 async function pubCodigo(){const p=state.pub;const v=(($('#gq-code')||{}).value||p.pre||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const cod=(v.length===8||v.length===12)&&/^[A-HJ-NP-Z2-9]+$/.test(v)?v.match(/.{4}/g).join('-'):null; /* v99.24: cartão com 12 */
   const tenta=[cod,v.length>=6&&v.length<=20?v:null].filter((x,i,a)=>x&&a.indexOf(x)===i); // 17/11: o localizador do voucher de escola entra no mesmo campo
@@ -3550,7 +3556,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const box=(h,d,extra)=>`<div class="gq ${p.step==='galeria'?'gq-gal':''}">${deco}${top()}<div class="gq-mid"><h1 class="lj-h2 gq-h">${h}</h1>${d?`<p class="lj-sub">${d}</p>`:''}${extra||''}</div></div>`;
   const help=gqAjuda();
   if(p.step==='carregando')return box(T('gq_loading'),'','<div class="gq-spin" aria-hidden="true"></div>');
-  if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX-XXXX" maxlength="24" value="${esc(p.pre||'')}" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button><button class="lj-ghost" data-act="gq-qr">${GQ_ICO_QR} ${T('gq_qr')}</button>${help}`);
+  if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX-XXXX" maxlength="24" value="${esc(p.pre||'')}" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button><button class="lj-ghost" data-act="gq-qr">${GQ_ICO_QR} ${T('gq_qr')}</button><label class="gq-qrimg">${T('gq_qrImg')}<input type="file" id="gq-qr-img" accept="image/*" hidden></label>${help}`);
   if(p.step==='nao_existe')return box(T('gq_notFound'),'',`<button class="lj-ghost" data-act="gq-back" data-to="codigo">${T('gq_codeH')}</button>${help}`);
   if(p.step==='expirada')return box(T('gq_expired'),T('gq_expiredD'),help);
   if(p.step==='chegando')return box(T('gq_arriving'),T('gq_arrivingD'),help);
@@ -3851,6 +3857,8 @@ const I18N={
  gq_open:['Abrir','Open','Abrir','Ouvrir','Öffnen'],
  gq_qr:['Ler o QR do voucher ou ingresso','Scan the voucher or ticket QR','Leer el QR del voucher o la entrada','Scanner le QR du bon ou du billet','QR des Gutscheins oder Tickets scannen'],
  gq_qrAponte:['Aponte para o QR do voucher ou do ingresso','Point at the QR on the voucher or ticket','Apunta al QR del voucher o de la entrada','Visez le QR du bon ou du billet','Auf den QR des Gutscheins oder Tickets richten'],
+ gq_qrImg:['Está no computador? Envie a imagem do QR','On a computer? Upload the QR image','¿Estás en la computadora? Sube la imagen del QR','Sur ordinateur ? Envoyez l’image du QR','Am Computer? QR-Bild hochladen'],
+ gq_qrNada:['Não achamos um QR nessa imagem. Tente outra ou digite o código.','No QR found in this image. Try another one or type the code.','No encontramos un QR en esta imagen. Prueba otra o escribe el código.','Aucun QR trouvé dans cette image. Essayez-en une autre ou tapez le code.','Kein QR in diesem Bild gefunden. Versuche ein anderes oder gib den Code ein.'],
  gq_until:[d=>`Disponível até ${d}`,d=>`Available until ${d}`,d=>`Disponible hasta el ${d}`,d=>`Disponible jusqu’au ${d}`,d=>`Verfügbar bis ${d}`],
  gq_findMore:['Encontrar mais fotos suas','Find more photos of you','Encontrar más fotos tuyas','Trouver d’autres photos de vous','Weitere Fotos von dir finden'],
  gq_findMoreD:['Faça uma selfie para ver as outras fotos em que você aparece.','Take a selfie to see the other photos you appear in.','Hazte una selfie para ver las otras fotos en las que apareces.','Prenez un selfie pour voir les autres photos où vous apparaissez.','Mach ein Selfie, um die anderen Fotos zu sehen, auf denen du bist.'],
@@ -4082,6 +4090,8 @@ const I18N_ZH={
  gq_open:"打开",
  gq_qr:"扫描代金券或门票上的二维码",
  gq_qrAponte:"请对准代金券或门票上的二维码",
+ gq_qrImg:"在电脑上？上传二维码图片",
+ gq_qrNada:"这张图片中没有找到二维码。请换一张或输入代码。",
  gq_until:(d)=>`有效期至 ${d}`,
  gv_ate:(d)=>`有效期至 ${d}`,
  gq_findMore:"查找更多你的照片",
@@ -6203,7 +6213,7 @@ function jsqrCarrega(){if(window.jsQR)return Promise.resolve(true);
   if(!_jsqrP)_jsqrP=new Promise(r=>{const s=document.createElement('script');s.src='vendor/jsqr/jsQR.js';s.onload=()=>r(!!window.jsQR);s.onerror=()=>{_jsqrP=null;r(false);};document.head.appendChild(s);});return _jsqrP;}
 async function qrLeitor(){if('BarcodeDetector' in window){try{const d=new BarcodeDetector({formats:['qr_code']});return {detect:async v=>(await d.detect(v)).map(c=>c.rawValue)};}catch(e){}}
   if(!await jsqrCarrega())return null;const cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});
-  return {detect:async v=>{const w=v.videoWidth,h=v.videoHeight;if(!w||!h)return [];const k=Math.min(1,960/Math.max(w,h));cv.width=Math.round(w*k);cv.height=Math.round(h*k);
+  return {detect:async v=>{const w=v.videoWidth||v.naturalWidth,h=v.videoHeight||v.naturalHeight;if(!w||!h)return [];const k=Math.min(1,(v.videoWidth?960:1600)/Math.max(w,h));cv.width=Math.round(w*k);cv.height=Math.round(h*k);
     cx.drawImage(v,0,0,cv.width,cv.height);const im=cx.getImageData(0,0,cv.width,cv.height);const r=window.jsQR(im.data,cv.width,cv.height,{inversionAttempts:'attemptBoth'});return r&&r.data?[r.data]:[];}};}
 // 18/11: tx = textos já traduzidos para o cliente (galeria online); sem tx, os da equipe
 async function pulCamAbre(cb,norm,aponte,tx){norm=norm||pulNorm;tx=tx||{};const sem=tx.sem||TE('pul_sem_camera');pulCamFecha();if(!navigator.mediaDevices){toast(sem);return;}const det=await qrLeitor();if(!det){toast(sem);return;}
