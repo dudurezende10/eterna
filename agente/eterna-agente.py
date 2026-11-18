@@ -754,6 +754,19 @@ def jpeg_de_verdade(path, size):
     return jpeg_envio_erro(path, size) is None
 
 
+ENVIO_ORIGEM = "tela:envio"   # 18/11: origem das fotos do envio manual; nunca é um fotógrafo (o dono vem da câmera)
+
+
+def envio_mt(v):
+    """18/11: a data do arquivo no cartão mandada pela tela (lastModified em segundos). Só número entre 2000 e amanhã; o resto
+    é None (a foto entra sem mt)."""
+    try:
+        mt = float(str(v or "")[:20])
+    except ValueError:
+        return None
+    return mt if 946684800 <= mt <= time.time() + 86400 else None
+
+
 def envio_nome(nome):
     """v96-ux: rótulo seguro da foto mandada pela tela. O nome do cliente só passa se casar com a regra (letras, números,
     _ e -, até 80, extensão do cartão); senão o agente dá o nome. Nunca passa por os.path."""
@@ -1983,9 +1996,19 @@ except Exception:
     lgpd_excluidas = set()
 
 
-def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False):
+def _por_campos(por):
+    """{"por": login} ou {"por": login, "por_assumido": quem assumiu}; nada sem por."""
+    usuario, assumido = (por if isinstance(por, tuple) else (por, None))
+    return {**({"por": str(usuario)} if usuario else {}), **({"por_assumido": str(assumido)} if assumido else {})}
+
+
+def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False, sem_mt=False, por=None):
     """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou).
-    v96-ux: quieto=True (envio pela tela) não põe o nome do arquivo no console; o fluxo é o mesmo."""
+    v96-ux: quieto=True (envio pela tela) não põe o nome do arquivo no console; o fluxo é o mesmo.
+    18/11: sem_mt=True (envio pela tela sem a data do arquivo) não grava o mt: a data do temporário é a da chegada.
+    18/11 (segurança): por = login de quem mandou a foto pela tela, ou (login, quem assumiu pelo "ver como"); vai para o
+    meta (por, por_assumido) e para a linha de métrica, só no índice e no backup privado. Nunca sai para os navegadores
+    (/biblioteca e /events montam os campos à mão; /metricas tira o por)."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
     if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo (a câmera recebe "ok" e não reenvia)
@@ -2032,7 +2055,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
     with lock:
         seen[h] = pid
         lib[pid] = {"file": dst, "thumb": thumb}
-        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), "mt": st.st_mtime, **exif_info(dst)}
+        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), **({} if sem_mt else {"mt": st.st_mtime}), **exif_info(dst), **_por_campos(por)}
         mm = dict(meta[pid])
         save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
@@ -2040,7 +2063,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
                        "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
         state["copied"] += 1
         m = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(),
-             "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha}
+             "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha, **_por_campos(por)}
         metricas.append(m); metricas_por_pid[pid] = m
     metrica_grava(m)
     try:                                # v91: sessão montada aqui (fora do lock); a Fila do fotógrafo deriva dela (S12)
@@ -5230,8 +5253,11 @@ def _ff_hoje(t=None):
 
 
 def ff_quem(o, autor, dono, serie, s="", cad=None):
-    """(fotógrafo|None, fonte). Regra D2 da v85: 1) a origem, se cadastrada; 2) o autor ou o dono gravado na câmera, se
-    cadastrado; 3) nenhum, e a fonte diz de onde veio (nunca o nome de subpasta não cadastrada nem a série completa)."""
+    """(fotógrafo|None, fonte). Regra D2 da v85, com a decisão do Eduardo de 18/11 para o cartão:
+    FTP: 1) a origem (login ou subpasta), se cadastrada; 2) o autor ou o dono gravado na câmera, se cadastrado.
+    Cartão (s == "cartao": envio manual pela tela, cartão lido no servidor, leitor do gramado): 1) o autor ou o dono gravado
+    na câmera; 2) a origem (rótulo do cartão), só quando a câmera não identifica ninguém. É a ordem do camWho do app.
+    Nenhum: a fonte diz de onde veio (nunca o nome de subpasta não cadastrada nem a série completa)."""
     return ff_quem_como(o, autor, dono, serie, s, cad)[:2]
 
 
@@ -5240,12 +5266,20 @@ def ff_quem_como(o, autor, dono, serie, s="", cad=None):
     cad = cad if cad is not None else ff_cadastrados()
     via = "cartão" if s == "cartao" else "ftp"
     k = fotografo_chave(o, inteiro=True)              # origem (login, pasta): só o nome inteiro, nunca o primeiro nome
-    if k and k in cad:
-        return k, via, "origem"
+    origem = k if k and k in cad else None
+    if origem and s != "cartao":
+        return origem, via, "origem"
     for nome, como in ((autor, "autor_da_camera"), (dono, "dono_da_camera")):
         k = fotografo_chave(nome)                    # "Klacius", "KLACIUS", "Klacius Ank Guarino" = klassius
-        if k and (k in cad or k.split()[0] in cad):
-            return (k if k in cad else k.split()[0]), via, como
+        if not k:
+            continue
+        p1 = k.split()[0]
+        p2 = "".join(ch for ch in p1 if ch.isalnum())   # 18/11: "Marcio," e "Samuel." = marcio e samuel (o p1 do keyByName do app)
+        for c in (k, p1, p2):
+            if c and c in cad:
+                return c, via, como
+    if origem:                                       # cartão: a câmera não disse quem é
+        return origem, via, "origem"
     serie = re.sub(r"\D", "", str(serie or ""))
     if serie:
         return None, "câmera ···" + serie[-4:], None
@@ -6208,32 +6242,73 @@ def _sess_faces_db(pids):
     return out
 
 
+SESS_DONO_HIST = 5               # correções anteriores guardadas em dono_corrigido.anterior
+
+
+def _sess_de_cartao(x, metas):
+    """A sessão é de cartão: fonte "cartão", ou trilha atrasada com todas as fotos de cartão (s == "cartao")."""
+    if x.get("fonte") == "cartão":
+        return True
+    pids = list(x.get("fotos") or []) + list(x.get("pend") or [])
+    return bool(x.get("atrasada")) and bool(pids) and all((metas.get(p) or {}).get("s") == "cartao" for p in pids)
+
+
+def _sess_vendas_pagas(dias):
+    """Cards com venda paga (criar com o card ou entre as sessões juntadas pela selfie, e pagar), lidos dos eventos dos
+    dias. Falha na leitura: None (não se sabe)."""
+    try:
+        vs = {}
+        for d in dias:
+            for e in _ev_ler(d):
+                v = vs.setdefault(e["venda"], {"cards": set(), "paga": False})
+                dd = e.get("dados") or {}
+                if e["tipo"] == "criar":
+                    if dd.get("card"):
+                        v["cards"].add(dd["card"])
+                    v["cards"].update(c for c in (dd.get("sessoes") or []) if isinstance(c, str))
+                elif e["tipo"] == "pagar":
+                    v["paga"] = True
+        return {c for v in vs.values() if v["paga"] for c in v["cards"]}
+    except Exception as ex:
+        print("  sessões: vendas para a correção do fotógrafo indisponíveis (%s)" % type(ex).__name__)
+        return None
+
+
 def sess_dono_corrigir(agora=None):
     """15/11 (grafia Klacius): sessão fechada SEM fotógrafo cujas fotos resolvem TODAS para o mesmo fotógrafo cadastrado, pela
     regra única (ff_quem: a origem, o autor ou o dono gravado na câmera, tudo por fotografo_chave), recebe a chave dele, com
     rev novo para os navegadores atualizarem a cópia. Fotos de donos diferentes, alguma foto sem dono ou sem registro no
-    índice: fica como está. Sessão que já tem fotógrafo, aberta ou removida nunca é tocada.
+    índice: fica como está.
+    18/11 (Eduardo, "quem manda é a câmera"): também a sessão fechada DE CARTÃO (fonte "cartão", ou atrasada com todas as
+    fotos de cartão) que já tem fotógrafo passa a outro, quando todas as fotos resolvem, pela regra nova do ff_quem (no
+    cartão a câmera vem antes da origem), para um mesmo fotógrafo cadastrado diferente do atual. Caso do envio manual de
+    18/11: fotos da câmera do Márcio que entraram como do Samuel (o seletor da tela). Sessão de FTP com fotógrafo, aberta ou
+    removida nunca é tocada. Sessão com venda paga também é corrigida (a venda passa à estatística do fotógrafo certo, como no
+    caso sem fotógrafo); a marca venda_paga diz que havia venda (None: os eventos não puderam ser lidos).
     Janela: só as sessões em memória, de hoje e de ontem. São os dias que o metricas_loop refaz (o resumo do dia lê o
     arquivo de sessões) e que o /sessoes entrega (hoje sempre; ontem com ?ontem=1, que o app pede uma vez a cada partida do
     agente, srvOntem); dia mais antigo fica como está, porque refazer o resumo dele perderia números que já saíram por prazo
     (rostos). A correção fica registrada na própria sessão (dono_corrigido: quem, quando, de, para e o motivo = o caminho que
-    valeu: origem, autor_da_camera ou dono_da_camera, juntos por "+" quando as fotos resolveram por caminhos diferentes), que
-    vai para o arquivo do dia e para o backup. A fonte nova é a via da primeira foto. Rodar de novo não muda nada. Trabalho
-    de memória: não lê arquivo.
-    As travas são pegas uma de cada vez (sess_lock, lock, sess_lock), nunca uma dentro da outra. Devolve [(card, dia, chave)]."""
+    valeu: origem, autor_da_camera ou dono_da_camera, juntos por "+" quando as fotos resolveram por caminhos diferentes; as
+    correções anteriores ficam na lista "anterior", a mais nova primeiro, até SESS_DONO_HIST), que vai para o arquivo do dia e para o backup. A fonte nova é a via da
+    primeira foto. Rodar de novo não muda nada. Só lê arquivo (eventos das vendas) quando há o que corrigir.
+    As travas são pegas uma de cada vez (sess_lock, lock, sess_lock; o ev_lock do _ev_ler fora delas), nunca uma dentro da
+    outra. Devolve [(card, dia, chave)]."""
     agora = time.time() if agora is None else agora
     with sess_lock:
-        cands = {x["card"]: list(x["fotos"]) + list(x["pend"]) for x in sess.values()
-                 if x.get("status") == "fechada" and not x.get("removida") and not x.get("fotografo")}
-    cands = {c: p for c, p in cands.items() if p}
+        cands = {x["card"]: (list(x["fotos"]) + list(x["pend"]), x.get("fotografo") or None, dict(x)) for x in sess.values()
+                 if x.get("status") == "fechada" and not x.get("removida")}
+    cands = {c: v for c, v in cands.items() if v[0]}
     if not cands:
         return []
-    quer = {p for pids in cands.values() for p in pids}
+    quer = {p for pids, _, _ in cands.values() for p in pids}
     with lock:
         metas = {p: dict(meta[p]) for p in quer if isinstance(meta.get(p), dict)}
     cad = ff_cadastrados()
     acha = {}
-    for card, pids in cands.items():
+    for card, (pids, atual, x) in cands.items():
+        if atual and not _sess_de_cartao(x, metas):
+            continue                                 # sessão de FTP com fotógrafo: a regra de hoje vale
         chaves, comos, via1 = set(), set(), None
         for p in pids:
             mm = metas.get(p)
@@ -6244,20 +6319,53 @@ def sess_dono_corrigir(agora=None):
             if k is None or len(chaves) > 1:
                 break
         if len(chaves) == 1 and None not in chaves:
-            acha[card] = (chaves.pop(), via1, "+".join(sorted(comos)), pids)
-    feitas = []
+            k = chaves.pop()
+            if k != atual:
+                acha[card] = (k, via1, "+".join(sorted(comos)), pids, atual)
+    if not acha:
+        return []
+    pagas = _sess_vendas_pagas(sorted({_ff_hoje(agora - 86400), _ff_hoje(agora)} | {cands[c][2].get("dia") for c in acha if cands[c][2].get("dia")}))
+    feitas, avisos = [], []
     with sess_lock:
-        for card, (k, via, como, pids) in acha.items():
+        for card, (k, via, como, pids, atual) in acha.items():
             x = sess.get(card)
-            if (x is None or x.get("fotografo") or x.get("removida") or x.get("status") != "fechada"
+            if (x is None or (x.get("fotografo") or None) != atual or x.get("removida") or x.get("status") != "fechada"
                     or list(x["fotos"]) + list(x["pend"]) != pids):
                 continue
-            x["dono_corrigido"] = {"em": _iso(agora), "por": "servidor", "de": None, "para": k, "fonte_antes": x.get("fonte"),
-                                   "motivo": como}
+            dc = {"em": _iso(agora), "por": "servidor", "de": atual, "para": k, "fonte_antes": x.get("fonte"), "motivo": como,
+                  "venda_paga": None if pagas is None else card in pagas}
+            ant = x.get("dono_corrigido")
+            if isinstance(ant, dict):                # histórico: a mais nova primeiro, no máximo SESS_DONO_HIST
+                velhas = ant.get("anterior")
+                velhas = [velhas] if isinstance(velhas, dict) else [a for a in (velhas or []) if isinstance(a, dict)]
+                dc["anterior"] = ([{kk: v for kk, v in ant.items() if kk != "anterior"}] + velhas)[:SESS_DONO_HIST]
+            x["dono_corrigido"] = dc
             x["fotografo"], x["fonte"] = k, via
             _sess_toca(x)
             feitas.append((card, x["dia"], k))
+            if dc["venda_paga"]:
+                avisos.append((card, x["dia"], atual, k, dc["em"]))
+    if avisos:                                       # fora do sess_lock: grava no estado.db
+        sess_dono_avisa_venda(avisos)
     return feitas
+
+
+def sess_dono_avisa_venda(avisos):
+    """18/11 (segurança): sessão com venda paga que mudou de fotógrafo vira uma linha no histórico do servidor (usuarios_log,
+    acao "dono_venda_paga": card, dia, de, para), que chega aos navegadores com permissão pelo estado e aparece em Alertas
+    para o Admin. Id fixo por card e hora da correção: gravar de novo não duplica. Falha aqui não impede a correção."""
+    try:
+        docs = []
+        for card, dia, de, para, em in avisos:
+            lid = "Lsrv-dono-" + hashlib.sha256(("%s|%s" % (card, em)).encode("utf8")).hexdigest()[:12]
+            docs.append({"col": "usuarios_log", "id": lid, "valor": {
+                "id": lid, "em": em, "por": "servidor", "alvo": card, "acao": "dono_venda_paga", "card": card, "dia": dia,
+                "mudancas": [{"campo": "fotografo", "de": de, "para": para}],
+                "motivo": "a câmera diz outro fotógrafo; a sessão tinha venda paga", "venue": "maracana", "origem": "agente"}})
+        estado_gravar({"docs": docs}, "servidor")
+        print("  sessões: %d com venda paga mudaram de fotógrafo (registrado em Alertas)" % len(docs))
+    except Exception as ex:
+        print("  sessões: aviso da venda paga não gravado (%s)" % type(ex).__name__)
 
 
 def sess_carregar(agora=None):
@@ -6327,10 +6435,10 @@ def sess_carregar(agora=None):
         vis_idx_boot(agora)
     except Exception as ex:
         print("  visitas: rostos do boot indisponíveis (%s)" % str(ex)[:80])
-    try:                                             # 15/11: sessão fechada sem fotógrafo que é toda de um cadastrado
+    try:                                             # 15/11 e 18/11: sessão fechada que é toda de um cadastrado pela câmera
         feitas = sess_dono_corrigir(agora)           # nunca impede a partida; o metricas_loop refaz o resumo de hoje e ontem
         if feitas:
-            print("  sessões: %d sem fotógrafo passaram ao dono das fotos (autor ou dono da câmera)" % len(feitas))
+            print("  sessões: %d passaram ao dono das fotos (sem fotógrafo, ou de cartão com outro nome)" % len(feitas))
     except Exception as ex:
         print("  sessões: dono das fotos não conferido (%s)" % type(ex).__name__)
     sess_gravar()
@@ -14077,9 +14185,13 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def fotos_enviar_post(self):
-        """v96-ux: POST /fotos/enviar?nome=&quem=: uma foto do cartão (o JPEG é o corpo) mandada pela tela Minhas fotos quando o
+        """v96-ux: POST /fotos/enviar?nome=&mt=: uma foto do cartão (o JPEG é o corpo) mandada pela tela Minhas fotos quando o
         leitor não reconheceu o cartão. Posto + origem local + X-Eterna: 1 e pessoa conectada com Upload (set.c, também em ROTAS).
-        O fotógrafo manda no próprio nome; Admin e Supervisora escolhem no seletor. Entra pelo ingest_file como foto de cartão."""
+        Entra pelo ingest_file como foto de cartão, com a origem fixa ENVIO_ORIGEM.
+        18/11 (Eduardo): ninguém escolhe o fotógrafo. Quem manda é a câmera (ff_quem: autor ou dono gravado nela); sem isso a
+        foto fica sem fotógrafo. O quem que ainda vier (app antigo) é ignorado; a pessoa logada só vale para a permissão.
+        mt = data do arquivo no cartão (lastModified do navegador, em segundos): vira a data do arquivo gravado, como no cartão
+        lido no servidor (copy2). Sem mt válido, a foto entra sem mt, para a sessão não tomar a hora da chegada como clique."""
         q = parse_qs(urlparse(self.path).query)
         tam = self.headers.get("Content-Length")
         ip = self.client_address[0]
@@ -14105,13 +14217,8 @@ class H(BaseHTTPRequestHandler):
             erro = ({"erro": "tamanho"}, 411)
         elif n <= 0 or n > FOTO_ENVIO_MAX:
             erro = ({"erro": "tamanho"}, 413)
-        quem = sem_acento((q.get("quem") or [""])[0]).strip()
-        cad = (eu or {}).get("cadastro") or {}
-        if cad.get("key") and cad.get("preset") not in ("admin", "supervisor"):
-            quem = sem_acento(str(cad["key"])).strip()      # o fotógrafo manda sempre no próprio nome (igual à tela, impPreso)
+        mt = envio_mt((q.get("mt") or [""])[0])
         nome = (q.get("nome") or [""])[0]
-        if not erro and (not quem or quem not in ff_cadastrados()):
-            erro = ({"erro": "quem"}, 400)
         if not erro and not nome.endswith(EXT):
             erro = ({"erro": "formato"}, 415)
         if not erro and not limite_ok(ip, "fotos_enviar", FOTO_ENVIO_TAXA):
@@ -14172,7 +14279,10 @@ class H(BaseHTTPRequestHandler):
             elif erro_jpeg:
                 motivo = ({"erro": "incompleta"}, 400) if erro_jpeg == "incompleta" else ({"erro": "nao_jpeg"}, 415)
             else:
-                r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
+                if mt:
+                    os.utime(tmp, (mt, mt))               # a data do arquivo no cartão, não a da chegada
+                r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), ENVIO_ORIGEM, "cartao", move=True, quieto=True, sem_mt=not mt,
+                                por=(eu["usuario"], eu.get("assumido_por")))   # quem mandou fica no servidor (auditoria); o "ver como" hoje não chega aqui (so_ver)
                 if r == "new":
                     with lock:
                         envio_dia_soma()
@@ -14201,7 +14311,7 @@ class H(BaseHTTPRequestHandler):
         res = r or "recusada"
         with lock:
             state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
-        print("  envio pela tela: %s %s %.1f MB" % (quem, motivo[0]["erro"] if motivo else res, n / 1e6))
+        print("  envio pela tela: %s %.1f MB" % (motivo[0]["erro"] if motivo else res, n / 1e6))
         if motivo:
             return self.js(motivo[0], motivo[1], True)
         return self.js({"ok": bool(r), "resultado": res}, 200, True)
@@ -14793,7 +14903,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/metricas":
             desde = float(q.get("desde", ["0"])[0] or 0)
             with lock:
-                linhas = [dict(m) for m in metricas if m["chegada"] >= desde]
+                linhas = [{k: v for k, v in m.items() if k not in ("por", "por_assumido")} for m in metricas if m["chegada"] >= desde]   # 18/11: quem enviou não sai
             return self.js({"agora": time.time(), "fila_rostos": fila_rostos.qsize(), "maquina": uso_maquina(), "fotos": linhas})
         if u.path == "/roverpix/status":
             c = rover_cfg()
