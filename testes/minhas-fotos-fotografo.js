@@ -43,7 +43,7 @@ try{
     await ctx.close();}
   for(const email of ['eduardo@eduardorezende.com','supervisor@eterna.photo']){const {ctx,pg}=await nova();await entrar(pg,email);
     const n=await pg.evaluate(()=>({k:!!document.querySelector('#main select[data-act="imp-key"]'),p:!!document.querySelector('#main select[data-act="imp-point"]'),f:document.querySelectorAll('#main .imp-fixo').length}));
-    ok(n.k&&n.p&&!n.f,'NP4: '+email+' com os dois seletores: '+J(n));
+    ok(n.k&&!n.p&&!n.f,'NP4: '+email+' com o seletor Fotógrafo e sem o Ponto (18/11: o ponto não importa mais): '+J(n));
     await pg.selectOption('#main select[data-act="imp-key"]','marinara');await pg.waitForTimeout(100);ok(await pg.evaluate(()=>ETERNA.state.imp.key)==='marinara','NP4: '+email+' troca o fotógrafo');
     await ctx.close();}
   // ---------- Biblioteca do fotógrafo: Minhas fotos de hoje, por sessão ----------

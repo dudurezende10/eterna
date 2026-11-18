@@ -335,7 +335,8 @@ for i in range(32):
 st, _, _ = pede("/auth/entrar", {"usuario": "ronaldo", "senha": SENHA})
 ok(st == 429, "muitos erros do mesmo endereço bloqueiam: %s" % st)
 
-# Fotos enviadas pela tela de Upload: só com sessão e permissão; o dono é o fotógrafo do login; arquivo cortado ou repetido não entra
+# Fotos enviadas pela tela de Upload: só com sessão e permissão; arquivo cortado ou repetido não entra. 18/11 (Eduardo): o dono
+# vem da câmera, nunca do login nem do quem do pedido
 def envia(rota, corpo, cookie=None, extra=None):
     c = http.client.HTTPConnection("127.0.0.1", m.PORT, timeout=30)
     h = {"Host": HOST, "X-Eterna": "1", "Content-Type": "image/jpeg"}
@@ -374,7 +375,8 @@ st, j = envia("/fotos/enviar?nome=..%2F..%2Fb.jpg&quem=outro", jpeg(b"b"), ck_fo
 ok(st == 200 and j.get("resultado") == "new", "foto boa entra: %s %s" % (st, j))
 pid = [p for p, e in m.lib.items() if os.path.basename(e["file"]).startswith(p + "_envio_")]   # v97: nome fora do padrão vira envio_<hora>_<hex>.jpg
 ok(len(pid) == 1 and os.path.dirname(os.path.dirname(m.lib[pid[0]]["file"])) == m.INBOX, "nome com caminho fica na pasta de entrada")
-ok(pid and m.meta[pid[0]]["o"] == "carlos", "o dono é o fotógrafo do login, não o que veio no pedido")
+ok(pid and m.meta[pid[0]]["o"] == m.ENVIO_ORIGEM and m.ff_quem(m.meta[pid[0]]["o"], "", "", "", "cartao")[0] is None,
+   "18/11: o dono não é o fotógrafo do login nem o que veio no pedido (câmera sem nome: sem fotógrafo): %s" % (pid and m.meta[pid[0]]))
 st, j = envia("/fotos/enviar?nome=b2.jpg", jpeg(b"b"), ck_fot)
 ok(st == 200 and j.get("resultado") == "dup", "foto repetida não entra de novo: %s" % j)
 ok(not [x for x in os.listdir(m.FTPTMP) if x.startswith("envio-")], "não sobra arquivo temporário")

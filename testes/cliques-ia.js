@@ -88,10 +88,12 @@ try{
   ok(it.items.filter(x=>x.startsWith('ph:')).length===6&&!it.items.includes('ph:'+f1)&&!it.items.includes('ph:'+f2),'2: as bases nunca como foto na revisão: '+J(it.items));
   ok(PEDIDOS.every(p=>p.endsWith('|2400'))&&new Set(PEDIDOS.map(p=>p.split('|')[0])).size===2,'19: só os recortes das 2 bases: '+J(PEDIDOS));
   // 4: base 2 com olhos fechados = tudo na base 1; as duas ruins = jeito antigo (2 fotos normais)
-  const r4=await pg.evaluate(([f1,f2])=>{ETERNA.SIM.invalid[f2]='olhos fechados';const um=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);ETERNA.FIA_RUIM.add(f1);const ant=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);
-    delete ETERNA.SIM.invalid[f2];ETERNA.FIA_RUIM.delete(f1);return {um,ant};},[f1,f2]);
+  const r4=await pg.evaluate(([f1,f2])=>{ETERNA.SIM.invalid[f2]='olhos fechados';const um=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);ETERNA.FIA_RUIM.add(f1);ETERNA.FIA_RUIM.add(f2);const nada=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);ETERNA.FIA_RUIM.delete(f2);
+    ETERNA.FIA_ANTIGO_ON=true;const ant=ETERNA.lojaAI('LPTIACAM1').map(x=>x.id);ETERNA.FIA_ANTIGO_ON=false; // 18/11 (regra 19, D1): sem plano B; o jeito antigo só com a chave
+    delete ETERNA.SIM.invalid[f2];ETERNA.FIA_RUIM.delete(f1);return {um,ant,nada};},[f1,f2]);
   ok(r4.um.length===4&&r4.um.every(x=>x===f1),'4: base ruim usa a outra: '+J(r4.um));
-  ok(r4.ant.length>0&&!r4.ant.includes(f1)&&!r4.ant.includes(f2)&&r4.ant.every(x=>it.fotos.slice(0,2).includes(x)),'4: as duas ruins: jeito antigo com as 2 primeiras fotos normais: '+J(r4.ant));
+  ok(r4.nada.length===0,'4 (regra 19): as duas ruins e sem plano B: nenhuma montagem: '+J(r4.nada));
+  ok(r4.ant.length>0&&!r4.ant.includes(f1)&&!r4.ant.includes(f2)&&r4.ant.every(x=>it.fotos.slice(0,2).includes(x)),'4: as duas ruins com FIA_ANTIGO_ON: jeito antigo com as 2 primeiras fotos normais: '+J(r4.ant));
   // A11: sessão de menor achada pela selfie sem a base em so.ids = sem as bases; D2: âncora sem ia passa para a próxima sessão
   const r11=await pg.evaluate(([f1,f2])=>{const k=ETERNA.state.kiosk;const so0=k.so;const card='LPTIACAM1';const fotos=ETERNA.lojaFotos(card).map(p=>p.id);
     k.so={card,cards:[card],ids:fotos.slice(0,3).concat([f2])};const s1=ETERNA.lojaAIBase(card);

@@ -119,8 +119,8 @@ m.sess_tick(T + 200)
 ok(x1["status"] == "fechada" and x1["ia"] == [pa, pb] and x1["ia_regra"] == {"n": 2, "motivo": None},
    "1: ia = os 2 menores cliques: %r %r" % (x1["ia"], x1["ia_regra"]))
 ok(x1["fotos"][2:] == resto, "1: as outras 6 seguem na sessão")
-ok(m.rec_pre_escolha(x1["fotos"], x1) == [pa, pb] + resto[:2], "A14: recorte antecipado = as bases de IA e as 2 primeiras normais (plano B)")
-ok(m.rec_pre_escolha(["a1", "a2", "a3", "a4"]) == ["a1", "a2"], "A14: sem a regra, só as 2 primeiras")
+ok(m.rec_pre_escolha(x1["fotos"], x1) == [pa, pb], "A14 (18/11, sem plano B): recorte antecipado = só as bases de IA")
+ok(m.rec_pre_escolha(["a1", "a2", "a3", "a4"]) == [], "A14 (18/11, sem plano B): sem bases, nada")
 
 # 8: volante, Vestiário, ponto fora, sem função e sem cadastro
 for quem, mot in (("samuel", "volante"), ("marinara", "ponto_fora"), ("marcio", "ponto_fora"), ("yago", "sem_funcao"),

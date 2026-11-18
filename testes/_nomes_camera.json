@@ -1,0 +1,19 @@
+{
+  "nota": "18/11: nome gravado na câmera (autor, dono) -> fotógrafo. A mesma tabela roda contra o ff_quem_como do agente (testes/sessoes_agente.py, foto de cartão sem origem) e contra o camWho do app (testes/nomes-camera.js); os dois têm de dar o esperado.",
+  "casos": [
+    ["Marcio,", "", "marcio"],
+    ["Marcio, Viva Maracana", "", "marcio"],
+    ["", "Samuel,", "samuel"],
+    ["", "Samuel, Viva Maracana", "samuel"],
+    ["Yago.", "", "yago"],
+    ["MARCIO SILVA", "", "marcio"],
+    ["Marcio", "Samuel", "marcio"],
+    ["Fulano de Tal", "Samuel,", "samuel"],
+    ["Klacius Ank Guarino", "", "klassius"],
+    ["", "Klacius,", "klassius"],
+    ["KLACIUS", "", "klassius"],
+    ["Klaus", "", null],
+    ["Fulano de Tal", "", null],
+    ["", "", null]
+  ]
+}
