@@ -80,6 +80,15 @@ try{
   ok(v1p.comps.length===0&&!p1p.some(x=>/photoroom\/compose|recorte/.test(x)),'6: no modo Photoroom, sem bases nada vai para fora: '+J({v1p,p1p}));
   PED.length=0;const v2=await vm('LPCOMGRA2');const ia2=await pg.evaluate(()=>ETERNA.SIM.sessions.LPCOMGRA2.ia);
   ok(v2.comps.length>0&&v2.comps.every(k=>ia2.includes(k.split('|')[0]))&&PED.every(x=>ia2.some(id=>x==='recorte:'+id.slice(3))),'6: com bases, só as bases do servidor: '+J({v2,PED,ia2}));
+  // 6. a tela da Venda manual (vCheckoutCorpo) de uma sessão sem bases: sem o bloco "Fundo de IA", sem /recorte e sem {id:'fundo'}
+  PED.length=0;
+  const v4=await pg.evaluate(async()=>{const E=ETERNA,st=E.state;const ck0=st.checkout,fs0=st.fila.session;st.checkout={session:'LPSEMGRA1',step:2,code:''};st.fila.session='LPSEMGRA1';
+    const el=document.createElement('div');el.id='vm-corpo-teste';el.innerHTML=E.vCheckoutCorpo();document.body.appendChild(el);E.compHydrate();await new Promise(z=>setTimeout(z,1200));
+    const h3=[...el.querySelectorAll('h3')].map(h=>h.textContent);const r={bloco:h3.includes(E.TE('vm_fundo_ia')),comps:el.querySelectorAll('[data-comp]').length,tiles:el.querySelectorAll('[data-act="fila-bg"]').length,
+      aviso:/Nenhuma foto desta sessão serve/.test(el.textContent)};
+    const bt=document.createElement('button');bt.dataset.act='fila-bg';bt.dataset.bg='mirantedia';document.body.appendChild(bt);bt.click();await new Promise(z=>setTimeout(z,200));bt.remove();
+    const sim=E.SIM.sessions.LPSEMGRA1||{};r.fundo=(sim.cart||[]).some(c=>c.id==='fundo');r.bg=sim.bg||null;el.remove();st.checkout=ck0;st.fila.session=fs0;E.render();return r;});
+  ok(!v4.bloco&&v4.comps===0&&v4.tiles===0&&v4.aviso&&!v4.fundo&&!v4.bg&&PED.length===0,'6: Venda manual sem bases: sem o bloco Fundo de IA, sem /recorte e sem fundo no carrinho (nem com o clique): '+J({v4,PED}));
   const v3=await pg.evaluate(()=>{const a=ETERNA.state.agent.recorte;ETERNA.state.agent.recorte={ok:false};const n=ETERNA.compBases('LPCOMGRA2').length;ETERNA.state.agent.recorte=a;return n;});
   ok(v3===0,'6: sem fiaOferece() (recorte indisponível), nada: '+v3);
   ok(!errs.length,'sem erro de página: '+errs.slice(0,3).join(' | '));
