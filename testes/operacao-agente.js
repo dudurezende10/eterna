@@ -177,9 +177,7 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   await CX.screenshot({path:path.join(PR,'op-caixa-pendencias.png')});
   ok(await espera(CX,c=>{const s=ETERNA.demoSessions().find(x=>x.card===c);return s&&s.photos.length===3;},20000,cardA),'Caixa carrega as sessões do servidor');
   await escolhePosto(CX,pendA[0].id,'cartao');
-  await CX.click(`[data-act="pend-pos"][data-id="${pendA[0].id}"]`);await CX.fill('#pend-ref','4111111111111111');await CX.click(`[data-act="pend-pos-ok"][data-id="${pendA[0].id}"]`);
-  ok(/parece número de cartão/.test(await toastTxt(CX)),'NSU com número de cartão recusado: '+await toastTxt(CX));
-  await CX.fill('#pend-ref','123456');await CX.evaluate(id=>{const b=document.querySelector(`[data-act="pend-pos-ok"][data-id="${id}"]`);b.click();b.click();},pendA[0].id);
+  await CX.evaluate(id=>{const b=document.querySelector(`[data-act="pend-pos-ok"][data-id="${id}"]`);b.click();b.click();},pendA[0].id);
   ok(await espera(CX,c=>ETERNA.SIM.sessions[c].status==='paga',5000,cardA),'venda A paga no Caixa');
   ok(await espera(CX,()=>ETERNA.pvFila().length===0,15000),'evento pagar sobe');
   const evA2=JSON.parse(sql('vendas.db',`select tipo,count(*) from evento where venda='${pendA[0].id}' group by tipo order by tipo`));ok(J(evA2)===J([['criar',1],['pagar',1]]),'servidor: criar e pagar uma vez cada (clique duplo): '+J(evA2));
@@ -211,7 +209,7 @@ except ftplib.error_perm as e: print(str(e))`,String(FTPP),'carlos',JSON.parse(f
   const pendC=await K.evaluate(c=>ETERNA.SIM.caixaDin.find(r=>r.card===c&&r.estado==='escolha'),cC);ok(pendC&&pendC.saleNo.startsWith('P'+numP+'-'),'offline: número de venda com o posto guardado (P'+numP+'-): '+(pendC&&pendC.saleNo));
   // v96: o "criar" e o "pagar" saem na confirmação do caixa, que funciona sem o agente
   await CX.evaluate(()=>{ETERNA.simFresh();ETERNA.render();});ok(await espera(CX,id=>!!document.querySelector(`[data-act="pend-pkg"][data-id="${id}"]`),8000,pendC&&pendC.id),'offline: pedido no Caixa');
-  await escolhePosto(CX,pendC.id,'pix');await CX.click(`[data-act="pend-pos"][data-id="${pendC.id}"]`);await CX.fill('#pend-ref','654321');await CX.click(`[data-act="pend-pos-ok"][data-id="${pendC.id}"]`);
+  await escolhePosto(CX,pendC.id,'pix');await CX.click(`[data-act="pend-pos-ok"][data-id="${pendC.id}"]`);
   ok(await espera(CX,c=>ETERNA.SIM.sessions[c].status==='paga',5000,cC),'offline: venda C confirmada no Caixa sem o agente');
   await sleep(2500);ok(await CX.evaluate(()=>ETERNA.pvFila().length)===2,'offline: criar e pagar ficam na fila: '+await CX.evaluate(()=>ETERNA.pvFila().length));
   await subir();
@@ -336,7 +334,7 @@ s=ThreadingHTTPServer(('127.0.0.1',int(sys.argv[2])),P);x=ssl.SSLContext(ssl.PRO
     ok(await espera(HC,id=>!!document.querySelector(`[data-act="pend-pkg"][data-id="${id}"]`),10000,pY.id),'pendência da venda https no Caixa');
     const carregada=await HC.evaluate(c=>{const x=ETERNA.demoSessions().find(s=>s.card===c);return x?x.photos.length:0;},cY2);
     await escolhePosto(HC,pY.id,'pix');
-    await HC.click(`[data-act="pend-pos"][data-id="${pY.id}"]`);await HC.click(`[data-act="pend-pos-ok"][data-id="${pY.id}"]`);
+    await HC.click(`[data-act="pend-pos-ok"][data-id="${pY.id}"]`);
     ok(await espera(HC,c=>ETERNA.SIM.sessions[c].status==='paga',5000,cY2),'venda https paga');
     ok(await espera(HC,()=>ETERNA.pvFila().length===0,15000),'venda https sobe ao servidor');
     const posY=JSON.parse(sql('vendas.db',`select count(*) from evento where venda='${pY&&pY.id}'`))[0][0];ok(posY===2,'eventos da venda https gravados (criar e pagar): '+posY);

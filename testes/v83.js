@@ -54,7 +54,7 @@ async function injPend(pg,o){return pg.evaluate(o=>{const S=ETERNA.SIM;const car
   const tok=ETERNA.galDaSessao(card,true);const g=S.galerias[tok];
   S.caixaDin.unshift({id:o.id,venue:'maracana',card,token:tok,codigo:g.codigo,criada:o.criada||new Date().toISOString(),total:o.total,prints:o.prints,n:o.sel.length+(o.ai||[]).length,nPh:o.sel.length,nAI:(o.ai||[]).length,cart:o.cart,selected:o.sel.slice(),aiSel:(o.ai||[]).slice(),fav:(o.fav||[]).slice(),meio:o.meio||'pix',prov:'pos-manual',saleNo:o.saleNo||'L0-9'+String(Math.floor(Math.random()*90+10)),vendedor:o.vend||null,posto:'Caixa 1',estado:'aguardando',fechada:null,por:null,porNome:null,motivo:null});
   localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.render();return g.codigo;},o);}
-async function confirmar(A,id,ref){await A.click(`[data-act="pend-pos"][data-id="${id}"]`);await A.waitForTimeout(100);if(ref!=null)await A.fill('#pend-ref',ref);await A.click(`[data-act="pend-pos-ok"][data-id="${id}"]`);await A.waitForTimeout(250);}
+async function confirmar(A,id,ref){await A.click(`[data-act="pend-pos-ok"][data-id="${id}"]`);await A.waitForTimeout(250);}
 async function imprimir(A,card){await A.evaluate(()=>{window.__prints=0;window.print=()=>{window.__prints++;};});await A.click(`[data-act="imp-print"][data-card="${card}"]`);
   await A.waitForSelector(`[data-act="imp-ok"][data-card="${card}"]`,{timeout:20000}).catch(()=>null);}
 const raiz=pg=>pg.evaluate(()=>[...document.querySelectorAll('#print-root .pr-pg')].map(p=>{const i=p.querySelector('img');return {k:p.dataset.k,land:p.classList.contains('land'),src:i.src.slice(0,60),fundo:i.dataset.fundo||'',t:i.dataset.t,w:i.naturalWidth,h:i.naturalHeight};}));
@@ -99,17 +99,15 @@ try{
   await L.screenshot({path:`${P}/v83-checkout-cartao-aguardando.png`});
   await A.waitForTimeout(400);ok(await A.evaluate(id=>!!document.querySelector(`[data-pend="${id}"].alvo`),p14.id),'21: pendência destacada no Posto de venda');
 
-  // ---- 21 (NSU): digitar no campo enquanto o cliente navega não perde o texto
-  await A.click(`[data-act="pend-pos"][data-id="${p14.id}"]`);await A.waitForTimeout(100);await A.click('#pend-ref');await A.keyboard.type('1234');
+  // ---- 21: o cliente navega para outra sessão
   await ljNovo(L);await L.waitForTimeout(200);await L.evaluate(()=>{if(ETERNA.state.cam)ETERNA.state.cam.busy=true;});
   await L.click('[data-act="kiosk-emerg"]');await L.fill('#kcode',cards[1]);await L.click('[data-act="kiosk-go"]');await L.waitForTimeout(500);
   for(const x of ['kiosk-ok','kiosk-no','kiosk-ok'])await L.click(`[data-act="${x}"]`);await L.waitForTimeout(900);
-  await A.keyboard.type('56');ok(await A.evaluate(()=>document.querySelector('#pend-ref')&&document.querySelector('#pend-ref').value)==='123456','21: o NSU digitado se perdeu enquanto o cliente navegava');
   // a pendência segue com o vendedor mesmo com o cliente em outra sessão; o Checkout desta compra já saiu (loja-new) e volta só pelo código
-  // ---- 15: Pago na maquininha com NSU 123456
+  // ---- 15: Pago na maquininha (18/11: um toque, sem NSU)
   await A.click(`[data-act="pend-pos-ok"][data-id="${p14.id}"]`);await A.waitForTimeout(300);
   const s15=await sim(A);const v15=s15.sessions[cards[0]];
-  ok(v15.status==='paga'&&v15.payment==='Cartão (maquininha)'&&v15.pag&&v15.pag.ref==='123456'&&v15.saleNo===p14.saleNo&&v15.impressao&&v15.impressao.estado==='pendente','15: venda paga com NSU: '+J({st:v15.status,pay:v15.payment,pag:v15.pag,no:v15.saleNo,imp:v15.impressao}));
+  ok(v15.status==='paga'&&v15.payment==='Cartão (maquininha)'&&v15.pag&&v15.pag.ref===null&&v15.saleNo===p14.saleNo&&v15.impressao&&v15.impressao.estado==='pendente','15: venda paga com NSU: '+J({st:v15.status,pay:v15.payment,pag:v15.pag,no:v15.saleNo,imp:v15.impressao}));
   ok(s15.stock['Caixa 1']===est0,'15: confirmar não baixa estoque');
   // 15: a janela do Checkout que está esperando passa à tela do QR em até 2 s (nova pendência, Checkout parado no "aguardando")
   await ljSessao(L,cards[2],4);await ljPagar(L,'card');const p15=await pendDe(L,cards[2]);
@@ -118,15 +116,10 @@ try{
   ok(l15&&l15.qr&&l15.volta&&!l15.wait&&l15.timer,'15: Checkout deveria virar a tela do QR com a contagem em até 2 s: '+J(l15));
   await L.screenshot({path:`${P}/v83-checkout-confirmado.png`});
 
-  // ---- 16: NSU com cara de cartão e curto recusados; vazio aceito
+  // ---- 16: confirmar sem NSU
   await ljNovo(L);await ljSessao(L,cards[3],3);await ljPagar(L,'card');const p16=await pendDe(L,cards[3]);await A.waitForTimeout(300);
-  await A.click(`[data-act="pend-pos"][data-id="${p16.id}"]`);await A.fill('#pend-ref','4111111111111111');await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(200);
-  let e16=await A.evaluate(()=>({t:document.querySelector('#toast').textContent,err:(document.querySelector('.pend-err')||{}).innerText||''}));const st16=(await sim(A)).caixaDin.find(x=>x.id===p16.id);
-  ok(/parece número de cartão/.test(e16.t+e16.err)&&st16.estado==='escolha'&&!JSON.stringify(await sim(A)).includes('4111111111111111')&&!JSON.stringify(await A.evaluate(()=>ETERNA.pvFila())).includes('4111111111111111'),'16: número de cartão deveria ser recusado e não gravado: '+J(e16));
-  await A.fill('#pend-ref','12');await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(200);
-  ok(/4 a 12/.test(await toastTxt(A))&&(await sim(A)).caixaDin.find(x=>x.id===p16.id).estado==='escolha','16: "12" deveria ser recusado');
-  await A.fill('#pend-ref','');await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(250);
-  const v16=(await sim(A)).sessions[cards[3]];ok(v16.status==='paga'&&v16.pag&&v16.pag.ref===null,'16: vazio deveria ser aceito: '+J(v16.pag));
+  await A.click(`[data-act="pend-pos-ok"][data-id="${p16.id}"]`);await A.waitForTimeout(250);
+  const v16=(await sim(A)).sessions[cards[3]];ok(v16.status==='paga'&&v16.pag&&v16.pag.ref===null,'16: confirmado sem NSU: '+J(v16.pag));
 
   // ---- 17: PIX mostra ljPosPixH; Dinheiro mantém os textos da v79 e passa à tela do QR na confirmação
   await L.click('[data-act="loja-new"]');await ljSessao(L,cards[4],3);await ljPagar(L,'pix');
@@ -136,7 +129,7 @@ try{
   const l17=await L.evaluate(()=>({t:document.body.innerText.replace(/\s+/g,' '),qr:!!document.querySelector('#lqr')}));
   ok(/Pague em dinheiro ao atendente/i.test(l17.t)&&!/no caixa/i.test(l17.t)&&/R\$ \d/.test(l17.t)&&/3 fotos/.test(l17.t)&&!l17.qr,'17 (v96): dinheiro "Pague em dinheiro ao atendente", valor e "3 fotos", sem QR enquanto espera: '+l17.t.slice(0,200));
   const p17d=await pendDe(L,cards[5]);await A.waitForTimeout(300);
-  ok(!(await A.$(`[data-act="pend-pos"][data-id="${p17d.id}"]`))&&!!(await A.$(`[data-act="din-confirm"][data-id="${p17d.id}"]`)),'17: dinheiro usa "Recebi", não a maquininha');
+  ok(!(await A.$(`[data-act="pend-pos-ok"][data-id="${p17d.id}"]`))&&!!(await A.$(`[data-act="din-confirm"][data-id="${p17d.id}"]`)),'17: dinheiro usa "Recebi", não a maquininha');
   await A.click(`[data-act="din-confirm"][data-id="${p17d.id}"]`);await A.waitForTimeout(300);
   t0=Date.now();let q17=false;while(Date.now()-t0<2000){q17=await L.evaluate(()=>!!document.querySelector('#lqr'));if(q17)break;await sleep(100);}ok(q17,'17: dinheiro confirmado deveria passar à tela do QR');
 
@@ -153,7 +146,7 @@ try{
   const doId=id=>fila.filter(e=>e.venda===id).map(e=>e.tipo+':'+e.seq).join(',');
   ok(idems.size===fila.length&&doId(p14.id)==='criar:1,pagar:2'&&doId(p18.id)==='','G (v96: pedido do Checkout cancelado antes de confirmar não vai ao servidor): fila local: '+J({p14:doId(p14.id),p18:doId(p18.id),n:fila.length}));
   ok(fila.every(e=>!JSON.stringify(e).includes('@')),'G: a fila não pode levar e-mail');
-  const ev14=fila.find(e=>e.venda===p14.id&&e.tipo==='pagar');ok(ev14&&ev14.dados.ref==='123456'&&ev14.dados.prov==='pos-manual','G: pagar com ref e prov: '+J(ev14&&ev14.dados));
+  const ev14=fila.find(e=>e.venda===p14.id&&e.tipo==='pagar');ok(ev14&&ev14.dados.ref==null&&ev14.dados.prov==='pos-manual','G: pagar com prov, sem NSU: '+J(ev14&&ev14.dados));
 
   // ---- 22: fechar a janela do Checkout: "Checkout fechado ou parado" em até 15 s; nada foi para o agente
   await L.close();t0=Date.now();let f22=false;while(Date.now()-t0<15500){f22=/Checkout fechado ou parado/.test(await txt(A,'#eco'));if(f22)break;await sleep(250);}
@@ -164,7 +157,7 @@ try{
   // ---- 19: quem só tem venda.r não vê os botões; forçar pend-pos-ok cai em "Sem permissão"
   await injPend(A,{card:'LPV83R',id:'L00-v83r0000aaaa',sel:['ag_a00000000019'],cart:[{id:'arq',v:70}],total:70,prints:1});
   const r19=await A.evaluate(()=>{const u=ETERNA.state.user;const bk=JSON.stringify(u.perms);u.perms.venda={c:false,r:true,u:false,d:false};ETERNA.state.view='posto';ETERNA.render();
-    const vis=!!document.querySelector('[data-act="pend-pos"],[data-act="din-confirm"],[data-act="imp-print"]');const bt=document.createElement('button');bt.dataset.act='pend-pos-ok';bt.dataset.id='L00-v83r0000aaaa';document.body.appendChild(bt);bt.click();bt.remove();
+    const vis=!!document.querySelector('[data-act="pend-pos-ok"],[data-act="din-confirm"],[data-act="imp-print"]');const bt=document.createElement('button');bt.dataset.act='pend-pos-ok';bt.dataset.id='L00-v83r0000aaaa';document.body.appendChild(bt);bt.click();bt.remove();
     const t=document.querySelector('#toast').textContent;const est=ETERNA.SIM.caixaDin.find(x=>x.id==='L00-v83r0000aaaa').estado;u.perms=JSON.parse(bk);ETERNA.render();return {vis,t,est};});
   ok(!r19.vis&&/Sem permissão/.test(r19.t)&&r19.est==='aguardando','19: só venda.r: '+J(r19));
 

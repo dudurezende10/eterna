@@ -199,7 +199,7 @@ ok(rec&&rec.estado==='escolha'&&rec.total==null&&rec.meio==null&&rec.escolha&&re
 ok(await L.evaluate(id=>!JSON.parse(localStorage.getItem('eterna.ponto.fila.v1')||'[]').some(e=>e.venda===id),id1),'P2: nada vai ao servidor antes do caixa confirmar');
 // Posto (1366×768): fotos escolhidas, pacotes e meios
 await V.evaluate(()=>{ETERNA.simFresh();ETERNA.go('posto');});await V.waitForTimeout(400);
-const pv=await V.evaluate(id=>{const it=document.querySelector(`:not(.pend-row)[data-pend="${id}"]`);return it?{ths:it.querySelectorAll('.pend-th').length,pkgs:[...it.querySelectorAll('[data-act="pend-pkg"]')].map(b=>b.dataset.p),meios:[...it.querySelectorAll('[data-act="pend-meio"]')].map(b=>b.dataset.m),conf:!!it.querySelector('[data-act="pend-pos"],[data-act="din-confirm"]')}:null;},id1);
+const pv=await V.evaluate(id=>{const it=document.querySelector(`:not(.pend-row)[data-pend="${id}"]`);return it?{ths:it.querySelectorAll('.pend-th').length,pkgs:[...it.querySelectorAll('[data-act="pend-pkg"]')].map(b=>b.dataset.p),meios:[...it.querySelectorAll('[data-act="pend-meio"]')].map(b=>b.dataset.m),conf:!!it.querySelector('[data-act="pend-pos-ok"],[data-act="din-confirm"]')}:null;},id1);
 ok(pv&&pv.ths===2&&pv.pkgs.length===9/* v98: os 9 pacotes de fotos da Imply (sem adicional, Figurinha e Porta-retrato) */&&pv.meios.join()==='cartao,pix,dinheiro'&&!pv.conf,'P3: Posto mostra as 2 fotos, os 9 pacotes e os 3 meios, sem confirmar antes da escolha: '+JSON.stringify(pv));
 const ideal=await V.evaluate(()=>ETERNA.lojaIdeal(2).pkg);
 await V.click(`:not(.pend-row)[data-pend="${id1}"] [data-act="pend-pkg"][data-p="${ideal}"]`);await V.waitForTimeout(400);
@@ -233,7 +233,7 @@ await L.click('[data-act="kiosk-minhas-x"]');await L.waitForTimeout(100);ok(awai
 await L.click('[data-act="kiosk-minhas-x"]');await L.waitForTimeout(100);ok(!(await L.$('.lj-minhas')),'P4: fechar volta ao valor');
 // confirmar → QR
 await V.click(`:not(.pend-row)[data-pend="${id1}"] [data-act="pend-meio"][data-m="pix"]`);await V.waitForTimeout(200);
-await V.click(`:not(.pend-row)[data-pend="${id1}"] [data-act="pend-pos"]`);await V.waitForTimeout(100);await V.click(`[data-act="pend-pos-ok"][data-id="${id1}"]`);
+await V.click(`[data-act="pend-pos-ok"][data-id="${id1}"]`);
 for(let i=0;i<30;i++){if(await L.evaluate(()=>!!document.querySelector('#lqr canvas,#lqr img')))break;await sleep(100);}
 ok(await L.evaluate(()=>ETERNA.state.kiosk.step==='done'&&!ETERNA.state.kiosk.paid.wait&&!!document.querySelector('#lqr canvas,#lqr img')),'P4: confirmado no Posto, o cliente vai para a tela final com QR');
 // revisão (10/11): a tela final do QR mostra o valor confirmado no Posto
