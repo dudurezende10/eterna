@@ -133,6 +133,13 @@ try{
     const d3=await pg.evaluate(()=>({on2:ETERNA.SIM.sessions.LPD2N5ON2.key,painel:Object.keys(ETERNA.SRV.sess).filter(c=>/^LPD2N5ON/.test(c)).length,rev:(ETERNA.revSessions().find(x=>x.card==='LPD2N5ONT')||{}).key}));
     ok(r0>=1&&FEED.ontemReqs===r0+1,'dono: um pedido de ontem na carga e um só por partida do agente: '+r0+' -> '+FEED.ontemReqs);
     ok(d3.on2==='sem'&&d3.painel===0&&d3.rev==='klassius','dono: ontem sem a marca não muda, ontem não entra no painel do Upload e a Qualidade segue o servidor: '+JSON.stringify(d3));}
+  // 18/11: sessão de cartão que o servidor passou de um fotógrafo a outro pela câmera (envio manual com o seletor em Samuel e fotos
+  // da câmera do Márcio): a cópia do aparelho troca de Samuel para Márcio
+  {const S_TR=sessao({card:'LPD2N5TRC',fotografo:'samuel',fonte:'cartão',atrasada:true,trilha:'atrasada',n:3,rev:FEED.rev+1});FEED.sessoes.push(S_TR);FEED.rev++;
+    ok(await espera(pg,()=>!!ETERNA.SIM.sessions.LPD2N5TRC&&ETERNA.SIM.sessions.LPD2N5TRC.key==='samuel',15000),'18/11: a sessão de cartão chega ao SIM como do Samuel');
+    Object.assign(S_TR,{fotografo:'marcio',dono_corrigido:{em:new Date().toISOString(),por:'servidor',de:'samuel',para:'marcio',fonte_antes:'cartão',motivo:'autor_da_camera',venda_paga:false},rev:FEED.rev+1});FEED.rev++;
+    ok(await espera(pg,()=>ETERNA.SIM.sessions.LPD2N5TRC.key==='marcio',15000),'18/11: de Samuel para Márcio na cópia do aparelho: '+await pg.evaluate(()=>ETERNA.SIM.sessions.LPD2N5TRC.key));
+    ok(await pg.evaluate(()=>(ETERNA.revSessions().find(x=>x.card==='LPD2N5TRC')||{}).key==='marcio'),'18/11: a Qualidade lista a sessão no nome do Márcio');}
   // celular: cabeçalho quebra a linha sem estourar
   await pg.setViewportSize({width:390,height:844});await pg.waitForTimeout(300);await pg.evaluate(()=>window.scrollTo(0,document.querySelector('#up-sessoes').offsetTop-10));await pg.waitForTimeout(400);
   ok(await pg.evaluate(()=>[...document.querySelectorAll('.up-sess')].every(b=>b.scrollWidth<=b.clientWidth+1)&&document.querySelector('#up-sessoes').scrollWidth<=document.querySelector('#up-sessoes').clientWidth+1),'celular: painel e blocos sem rolagem lateral');

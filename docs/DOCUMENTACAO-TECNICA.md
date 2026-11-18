@@ -1326,7 +1326,7 @@ Plano: `docs/planos/2026-10-28-v83-painel.md` (escrito como v83; publicado como 
 ### Upload sem check-in da câmera
 
 - Saíram o cartão de check-in (`camPanel`), o botão "É a minha" (`cam-mine`), o select de fotógrafo por câmera (`cam-who`) e `camName`.
-- Ficaram: `camDay` e `camWho` (check-ins já gravados em `SIM.camDia` continuam valendo), o nome do autor gravado na câmera (`keyByName`), o palpite pela Roverpix (`camGuess`) e a sessão.
+- Ficaram: `camDay` e `camWho` (check-ins já gravados em `SIM.camDia` continuam valendo; 18/11: `camDay` saiu e o `camWho` passou a ler só o autor e o dono gravados na câmera, a mesma ordem do `ff_quem` do agente), o nome do autor gravado na câmera (`keyByName`), o palpite pela Roverpix (`camGuess`) e a sessão.
 - `libWho` usa primeiro o login do FTP (segurança I1), quando ele bate com um fotógrafo do cadastro; depois a câmera (check-in antigo ou nome gravado), o palpite pela Roverpix e a sessão. FTP com nome desconhecido continua em `ftp:<nome>`.
 
 ### Copiar permissões de… (Permissões)
@@ -2135,14 +2135,14 @@ Grupos de `VIEWS` (4º campo; o 5º campo é a pasta dentro do grupo):
 
 Plano B quando o leitor não reconhece o cartão. A foto entra pelo mesmo caminho do cartão (`ingest_file(..., "cartao")`), então segue para sessões, rostos e Fila do fotógrafo.
 
-App (`index.html`): `envioPainel()` em Minhas fotos, só com `set.c` (Fotógrafo, Supervisora e Admin). `envioQuem()`: o fotógrafo manda no próprio nome; Admin e Supervisora escolhem no seletor, nunca "Todos". `fotosEnviar(lista)`: até 2.000 arquivos por lote, 2 por vez, 3 tentativas por foto, espera crescente quando o servidor responde ocupado. Só envia com o app aberto pela origem do agente (`fotosNoServidor()`) e com `/status.envio` presente. `auditLog('fotos_envio_manual')` sem nome de arquivo.
+App (`index.html`): `envioPainel()` em Minhas fotos, só com `set.c` (Fotógrafo, Supervisora e Admin). 18/11: ninguém escolhe o fotógrafo (saíram `envioQuem` e o aviso "Escolha o fotógrafo acima"); o painel diz que o fotógrafo vem do nome gravado na câmera (`en_camera`) e o seletor Fotógrafo da tela só filtra as sessões. `fotosEnviar(lista)`: até 2.000 arquivos por lote, 2 por vez, 3 tentativas por foto, espera crescente quando o servidor responde ocupado. Só envia com o app aberto pela origem do agente (`fotosNoServidor()`) e com `/status.envio` presente. `auditLog('fotos_envio_manual','cartao')` sem nome de arquivo (o `por` é quem mandou).
 
-`POST /fotos/enviar?nome=<arquivo>&quem=<fotógrafo>` no agente. Corpo: o JPEG. Cabeçalhos: `Content-Type: image/jpeg`, `Content-Length`, `X-Eterna: 1`. Rota privada (posto e origem local, sem CORS aberto).
+`POST /fotos/enviar?nome=<arquivo>&mt=<data do arquivo, s>` no agente. O dono vem da câmera (`ff_quem`, regra do cartão); a origem gravada é `ENVIO_ORIGEM` ("tela:envio"), que nunca é fotógrafo. `quem` que ainda vier de app antigo é ignorado. `mt` (`File.lastModified`) vira a data do arquivo gravado, como no cartão lido no servidor; sem `mt` válido a foto entra sem `mt`. Corpo: o JPEG. Cabeçalhos: `Content-Type: image/jpeg`, `Content-Length`, `X-Eterna: 1`. Rota privada (posto e origem local, sem CORS aberto).
 
 | Resposta | `erro` | Quando |
 | --- | --- | --- |
 | 200 | | `{"ok": true, "resultado": "new" ou "dup"}`: foto nova ou repetida (a repetida não entra de novo); `resultado: "recusada"` com `ok: false` quando a entrada não aceita a foto |
-| 400 | `tamanho`, `quem`, `incompleta` | tamanho inválido, fotógrafo fora do cadastro, corpo cortado |
+| 400 | `tamanho`, `incompleta` | tamanho inválido, corpo cortado (o 400 `quem` saiu em 18/11) |
 | 403 | `origem` | fora do posto ou sem o cabeçalho |
 | 408 | `lenta` | o corpo não chegou em 120 s (`FOTO_ENVIO_PRAZO`) |
 | 411, 413 | `tamanho` | sem `Content-Length` ou acima de 60 MB (`FOTO_ENVIO_MAX`) |
@@ -2281,7 +2281,8 @@ Registro de cada exportação (`relAudita`), gravado pelo `auditLog` e mostrado 
 - Nome de tela: **Klacius** (`DATA.people`, `SEED_USERS`). A chave interna continua `klassius` (login do FTP, e-mail, sessões, vendas, históricos). Não renomear.
 - Regra de apelido, uma só. Agente: `FOTOGRAFO_APELIDO = {"klacius","classius","clacius" → "klassius"}` e `fotografo_chave(nome)`, usada por `ff_quem`, `rftp_origem`, a subpasta do login compartilhado do FTP e `rv_key` da Roverpix. Nome de pasta e origem só pelo nome inteiro (`inteiro=True`); o primeiro nome vale só para autor e dono da câmera e para a Roverpix. App: `KEY_ALIAS` (em `aliasLive` e `keyByName`). Grafia nova de alguém entra nos dois mapas, nunca em chave nova.
 - Cadastro com o nome padrão antigo ("Klassius" ou "Klássius", exatamente): acertado por `usuarios_grafia()` na partida do agente, antes do servidor HTTP, com linha no `usuarios_log` e `updatedBy: "servidor"`. O mapa `NOME_TELA_ANTIGO` existe no agente e no app (`nomeTelaCerto`, no `migrateUser`). Nome editado por alguém fica como está.
-- Sessão fechada sem fotógrafo, de hoje ou de ontem, com todas as fotos do mesmo cadastrado: `sess_dono_corrigir` (no fim do `sess_carregar`, na partida do agente) grava a chave dele. Sessão mista ou com foto sem dono fica. Sessão com fotógrafo nunca muda. O `metricas_loop` refaz o resumo do dia, vendas incluídas.
+- Sessão fechada sem fotógrafo, de hoje ou de ontem, com todas as fotos do mesmo cadastrado: `sess_dono_corrigir` (no fim do `sess_carregar`, na partida do agente) grava a chave dele. Sessão mista ou com foto sem dono fica. O `metricas_loop` refaz o resumo do dia, vendas incluídas.
+- 18/11 (Eduardo, "quem manda é a câmera", plano `docs/planos/2026-11-18-dono-pela-camera.md`): na foto de cartão (`s == "cartao"`) `ff_quem` lê primeiro o autor e o dono gravados na câmera e só depois a origem; no FTP a origem continua primeiro. `sess_dono_corrigir` passa também a sessão fechada de cartão (`fonte` "cartão", ou atrasada com todas as fotos de cartão) que já tem fotógrafo, quando todas as fotos resolvem para um mesmo cadastrado diferente do atual (`de` = o atual; `venda_paga` diz se havia venda paga ligada, `None` se os eventos não puderam ser lidos; a correção anterior fica em `anterior`). Sessão de FTP com fotógrafo nunca muda.
 
 Campo novo na sessão (`~/Eterna/ponto/sessoes/AAAA-MM-DD.json` e `GET /sessoes`):
 
@@ -2302,7 +2303,7 @@ Campo novo na sessão (`~/Eterna/ponto/sessoes/AAAA-MM-DD.json` e `GET /sessoes`
 
 `motivo` é o caminho que valeu (`ff_quem_como`): `origem`, `autor_da_camera` ou `dono_da_camera`, juntos por `+` quando as fotos chegaram por caminhos diferentes. A sessão ganha `rev` novo. Os valores do exemplo são ilustrativos.
 
-No app, `srvDono` (dentro do `srvPull`) leva a correção para `SIM.sessions[card].key` só quando a sessão traz `dono_corrigido` (sessão paga também). O `/sessoes` normal só traz hoje: as de ontem vêm por `srvOntem()` (`GET /sessoes?desde=0&ontem=1`, um pedido por partida do agente e na carga da página).
+No app, `srvDono` (dentro do `srvPull`) leva a correção para `SIM.sessions[card].key` só quando a sessão traz `dono_corrigido` (sessão paga também; de um fotógrafo para outro também, 18/11). O `/sessoes` normal só traz hoje: as de ontem vêm por `srvOntem()` (`GET /sessoes?desde=0&ontem=1`, um pedido por partida do agente e na carga da página).
 
 ### 5. Três fundos de IA
 

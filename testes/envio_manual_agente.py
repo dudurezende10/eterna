@@ -31,14 +31,22 @@ def porta_45():
     raise SystemExit("FALHA envio_manual_agente: sem porta livre em 45xxx")
 
 
-def jpeg(cor=None, horas=2.0, lado=(320, 240)):
-    """JPEG liso com ruído (nunca repetido) e EXIF de captura de `horas` atrás."""
+def jpeg(cor=None, horas=2.0, lado=(320, 240), autor=None, dono=None, serie=None):
+    """JPEG liso com ruído (nunca repetido) e EXIF de captura de `horas` atrás (None: sem a hora do clique). 18/11: autor
+    (Artist), dono (CameraOwnerName) e série (BodySerialNumber) gravados na câmera, quando pedidos."""
     im = Image.new("RGB", lado, cor or tuple(random.randint(30, 220) for _ in range(3)))
     for k in range(40):
         r = os.urandom(4)
         im.putpixel((int.from_bytes(r[:2], "big") % lado[0], int.from_bytes(r[2:], "big") % lado[1]), (r[0], r[1], r[2]))
     ex = Image.Exif()
-    ex.get_ifd(0x8769)[0x9003] = time.strftime("%Y:%m:%d %H:%M:%S", time.localtime(time.time() - horas * 3600))
+    if horas is not None:
+        ex.get_ifd(0x8769)[0x9003] = time.strftime("%Y:%m:%d %H:%M:%S", time.localtime(time.time() - horas * 3600))
+    if autor:
+        ex[0x013B] = autor
+    if dono:
+        ex.get_ifd(0x8769)[0xA430] = dono
+    if serie:
+        ex.get_ifd(0x8769)[0xA431] = serie
     b = io.BytesIO()
     im.save(b, "JPEG", quality=85, exif=ex.tobytes())
     return b.getvalue()
@@ -58,6 +66,7 @@ LOG = {}
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _agente_sessao   # v93: as rotas da equipe pedem sessão (tabela ROTAS); o teste usa um admin no HOME temporário
 COOK = {}
+COOK_FOTO = {}
 
 
 class _ComSessao:
@@ -102,6 +111,7 @@ def subir(nome, porta, ftpp, home, user, piso, extras=()):
         json.dump({"users": usuarios, "compartilhado": ["equipe"]}, f)
     os.chmod(os.path.join(home, "Eterna", "ftp.json"), 0o600)
     COOK[porta] = _agente_sessao.cookie_sub(AG, home)
+    COOK_FOTO[porta] = cookie_fotografo(home, "carlos")
     p = subprocess.Popen([sys.executable, "-I", "-u", LANCA, AG, str(piso), *extras], env=ambiente(porta, ftpp, home, user),
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     LOG[nome] = []
@@ -139,12 +149,43 @@ def req(method, path, body=None, headers=None, porta=None, timeout=30):
         c.close()
 
 
-def enviar(dados, nome="IMG_0001.JPG", quem="carlos", porta=None, extra=None, sem=()):
+def enviar(dados, nome="IMG_0001.JPG", quem=None, porta=None, extra=None, sem=(), mt=None):
+    """18/11: o app não manda mais quem; o teste ainda manda, quando pedido, para ver que o agente ignora."""
     h = {"Content-Type": "image/jpeg", "X-Eterna": "1"}
     h.update(extra or {})
     for k in sem:
         h.pop(k, None)
-    return req("POST", "/fotos/enviar?nome=%s&quem=%s" % (quote(nome, safe=""), quote(quem, safe="")), dados, h, porta=porta)
+    q = "nome=%s" % quote(nome, safe="")
+    if quem is not None:
+        q += "&quem=%s" % quote(quem, safe="")
+    if mt is not None:
+        q += "&mt=%s" % quote(str(mt), safe="")
+    return req("POST", "/fotos/enviar?" + q, dados, h, porta=porta)
+
+
+def cookie_fotografo(home, chave):
+    """Fotógrafo logado (preset foto, cadastro ligado à chave, com Upload): para ver que ele não força o próprio nome."""
+    cod = ("import importlib.util,sys\nsp=importlib.util.spec_from_file_location('ag',sys.argv[1]);m=importlib.util.module_from_spec(sp);sp.loader.exec_module(m)\n"
+           "u=sys.argv[2];v={'v':2,'email':u,'name':u,'active':True,'preset':'foto','key':sys.argv[3],'perms':{'set':{'c':True,'r':True,'u':False,'d':False}}}\n"
+           "m.estado_gravar({'docs':[{'col':'usuarios','id':m.quote(u,safe=\"-_.!~*'()\"),'valor':v}]})\nprint('%s=%s'%(m.AUTH_COOKIE,m.auth_sessao_nova(u)))")
+    env = dict(os.environ, HOME=home, USERPROFILE=home, ETERNA_SEM_OPENCV="1")
+    r = subprocess.run([sys.executable, "-I", "-c", cod, AG, chave + "@teste", chave], env=env, capture_output=True, text=True, timeout=120)
+    return (r.stdout.strip().splitlines() or [""])[-1]
+
+
+def sessao_de(pid, porta=None, tent=40):
+    for _ in range(tent):
+        ss = (req("GET", "/sessoes", porta=porta)[1] or {}).get("sessoes") or []
+        x = [s for s in ss if pid in (s.get("fotos") or []) + (s.get("pend") or [])]
+        if x:
+            return x[0]
+        time.sleep(0.25)
+    return None
+
+
+def pid_de(sufixo):
+    l = [os.path.basename(p)[:12] for p in arquivos(INB) if p.endswith("_" + sufixo)]
+    return l[0] if len(l) == 1 else None
 
 
 def arquivos(pasta):
@@ -172,7 +213,7 @@ try:
     ok(st0.get("envio") == {"v": 1, "max_mb": 60, "novas": 0, "repetidas": 0, "recusadas": 0}, "status.envio: %s" % st0.get("envio"))
     t_log0 = time.time()
 
-    # 16: 6 JPEG com EXIF de 2 h atrás, quem=carlos
+    # 16: 6 JPEG com EXIF de 2 h atrás, sem nome na câmera e sem quem (18/11: ninguém escolhe; a foto fica sem fotógrafo)
     fotos = [jpeg() for _ in range(6)]
     res = [enviar(b, "IMG_%04d.JPG" % (i + 1)) for i, b in enumerate(fotos)]
     ok(all(r[0] == 200 and r[1] == {"ok": True, "resultado": "new"} for r in res), "16: as 6 entram: %s" % [r[:2] for r in res])
@@ -180,8 +221,9 @@ try:
     novos = [p for p in arquivos(os.path.join(INB, hoje)) if re.search(r"_IMG_000[1-6]\.JPG$", p)]
     pids = [os.path.basename(p)[:12] for p in novos]
     ok(len(novos) == 6, "16: 6 arquivos em inbox/%s: %d" % (hoje, len(novos)))
-    ok(all(meta.get(p, {}).get("s") == "cartao" and meta.get(p, {}).get("o") == "carlos" for p in pids),
-       "16: meta s=cartao, o=carlos: %s" % [(meta.get(p, {}).get("s"), meta.get(p, {}).get("o")) for p in pids])
+    ok(all(meta.get(p, {}).get("s") == "cartao" and meta.get(p, {}).get("o") == "tela:envio" for p in pids),
+       "16: meta s=cartao, o=tela:envio: %s" % [(meta.get(p, {}).get("s"), meta.get(p, {}).get("o")) for p in pids])
+    ok(all("mt" not in meta.get(p, {}) for p in pids), "16: sem mt (a tela não mandou a data do arquivo): %s" % [meta.get(p, {}).get("mt") for p in pids])
     ok(all(meta.get(p, {}).get("cap") for p in pids), "16: hora do clique lida do EXIF")
     ses = None
     for _ in range(40):
@@ -190,11 +232,42 @@ try:
         if ses:
             break
         time.sleep(0.25)
-    ok(ses and all(x.get("fotografo") == "carlos" and x.get("trilha") == "atrasada" and x.get("atrasada") and x.get("dia") == hoje for x in ses),
-       "16: sessão na trilha atrasada de hoje do Carlos: %s" % [(x.get("fotografo"), x.get("trilha"), x.get("dia")) for x in (ses or [])])
-    ok(ses and sum(len((x.get("fotos") or []) + (x.get("pend") or [])) for x in ses) == 6, "16: as 6 fotos na sessão")
+    ok(ses and all(x.get("fotografo") is None and x.get("fonte") == "cartão" and x.get("trilha") == "atrasada" and x.get("atrasada") and x.get("dia") == hoje for x in ses),
+       "16: sessão na trilha atrasada de hoje, sem fotógrafo (câmera sem nome): %s" % [(x.get("fotografo"), x.get("fonte"), x.get("trilha"), x.get("dia")) for x in (ses or [])])
+    ok(ses and set(pids) <= {p for x in ses for p in (x.get("fotos") or []) + (x.get("pend") or [])}, "16: as 6 fotos na sessão")
     ff = (req("GET", "/fila-fotografo")[1] or {}).get("grupos") or []
-    ok(any(g.get("fotografo") == "carlos" and g.get("id") in {x["card"] for x in ses or []} for g in ff), "16: sessão na /fila-fotografo: %s" % ff)
+    ok(any(g.get("fotografo") is None and g.get("id") in {x["card"] for x in ses or []} for g in ff), "16: sessão na /fila-fotografo: %s" % ff)
+
+    # 18/11 (Eduardo): quem manda é a câmera. Foto da câmera do Márcio mandada com quem=samuel (o seletor em Samuel) é do Márcio;
+    # (o EXIF da câmera é ASCII: "MARCIO SILVA"); pelo dono da câmera também; câmera com nome de fora do cadastro e série fica sem fotógrafo ("câmera ···1234")
+    rm = [enviar(jpeg(horas=5, autor="MARCIO SILVA"), "MAR_%d.JPG" % i, quem="samuel") for i in range(3)]
+    rd = enviar(jpeg(horas=7, dono="Marcio"), "DON_1.JPG", quem="samuel")
+    rf = enviar(jpeg(horas=9, autor="Fulano de Tal", serie="555500001234"), "FUL_1.JPG", quem="samuel")
+    ok(all(r[0] == 200 and r[1] == {"ok": True, "resultado": "new"} for r in rm + [rd, rf]), "18/11: entram: %s" % [r[:2] for r in rm + [rd, rf]])
+    xm = [sessao_de(pid_de("MAR_%d.JPG" % i)) for i in range(3)]
+    ok(all(x and x.get("fotografo") == "marcio" and x.get("fonte") == "cartão" for x in xm),
+       "18/11: autor da câmera Márcio vence o quem=samuel: %s" % [(x or {}).get("fotografo") for x in xm])
+    xd = sessao_de(pid_de("DON_1.JPG"))
+    ok(xd and xd.get("fotografo") == "marcio", "18/11: dono da câmera Márcio vence o quem=samuel: %s" % ((xd or {}).get("fotografo"),))
+    xf = sessao_de(pid_de("FUL_1.JPG"))
+    ok(xf and xf.get("fotografo") is None and xf.get("fonte") == "câmera ···1234", "18/11: câmera sem nome cadastrado fica sem fotógrafo: %r" % (((xf or {}).get("fotografo"), (xf or {}).get("fonte")),))
+    # o fotógrafo logado também não força o próprio nome
+    rc1 = enviar(jpeg(horas=11, autor="Marcio"), "LOG_1.JPG", extra={"Cookie": COOK_FOTO[PORTA]})
+    rc2 = enviar(jpeg(horas=13), "LOG_2.JPG", quem="carlos", extra={"Cookie": COOK_FOTO[PORTA]})
+    ok(rc1[:2] == (200, {"ok": True, "resultado": "new"}) and rc2[:2] == (200, {"ok": True, "resultado": "new"}), "18/11: fotógrafo logado envia: %s" % [rc1[:2], rc2[:2]])
+    x1, x2 = sessao_de(pid_de("LOG_1.JPG")), sessao_de(pid_de("LOG_2.JPG"))
+    ok(x1 and x1.get("fotografo") == "marcio" and x2 and x2.get("fotografo") is None,
+       "18/11: logado como Carlos, a câmera do Márcio é do Márcio e a sem nome fica sem fotógrafo: %s" % [(x1 or {}).get("fotografo"), (x2 or {}).get("fotografo")])
+    # mt = data do arquivo no cartão (lastModified): vale quando o EXIF não tem a hora; sem mt, a hora da chegada (u), nunca um mt de chegada
+    t3 = int(time.time() - 3 * 3600)
+    r1, r2, r3 = enviar(jpeg(horas=None), "MT_1.JPG", mt=t3), enviar(jpeg(horas=None), "MT_2.JPG"), enviar(jpeg(horas=None), "MT_3.JPG", mt="1e20")
+    meta = json.load(open(os.path.join(ET, "meta.json")))
+    m1, m2, m3 = (meta.get(pid_de(n)) or {} for n in ("MT_1.JPG", "MT_2.JPG", "MT_3.JPG"))
+    ok(all(r[0] == 200 for r in (r1, r2, r3)) and m1.get("mt") == t3 and "mt" not in m2 and "mt" not in m3 and not m1.get("cap"),
+       "18/11: mt da tela vira a data do arquivo; sem mt ou com mt inválido, sem mt: %s" % [m1.get("mt"), m2.get("mt"), m3.get("mt")])
+    s1, s2 = sessao_de(pid_de("MT_1.JPG")), sessao_de(pid_de("MT_2.JPG"))
+    ok(s1 and s1.get("fonte_t") == "mt" and abs((s1.get("cap0") or 0) - t3) < 2 and s2 and s2.get("fonte_t") == "u",
+       "18/11: a sessão usa a data do arquivo (mt) e, sem ela, a chegada (u): %s" % [(s1 or {}).get("fonte_t"), (s2 or {}).get("fonte_t")])
 
     # 16 (comparação): o mesmo tipo de lote lido pelo leitor do cartão (scan_card) vai para a mesma trilha
     cart = [jpeg() for _ in range(3)]
@@ -328,13 +401,13 @@ try:
     ok(all(r[0] == 403 and r[1] == {"erro": "origem"} for r in (r1, r2, r3)), "21: 403 origem: %s" % [r[:2] for r in (r1, r2, r3)])
     ok(set(arquivos(INB)) == antes and tmp_vazio(), "21: nada gravado")
 
-    # 22: quem fora do cadastro e login compartilhado
+    # 22 (18/11): o quem não é mais exigido nem conferido; fora do cadastro, login compartilhado ou vazio, a foto entra
     r1 = enviar(jpeg(), quem="fulano")
     r2 = enviar(jpeg(), quem="equipe")
     r3 = enviar(jpeg(), quem="")
-    ok(all(r[0] == 400 and r[1] == {"erro": "quem"} for r in (r1, r2, r3)), "22: 400 quem: %s" % [r[:2] for r in (r1, r2, r3)])
+    ok(all(r[0] == 200 and r[1] == {"ok": True, "resultado": "new"} for r in (r1, r2, r3)), "22: quem ignorado: %s" % [r[:2] for r in (r1, r2, r3)])
     r4 = enviar(jpeg(), "IMG_9001.JPG", quem="Márcio")
-    ok(r4[0] == 200 and r4[1]["resultado"] == "new", "22: Márcio com acento vira marcio: %s" % (r4[:2],))
+    ok(r4[0] == 200 and r4[1]["resultado"] == "new", "22: com quem=Márcio também entra: %s" % (r4[:2],))
 
     # 25: foto apagada por LGPD mandada de novo
     lg = jpeg()

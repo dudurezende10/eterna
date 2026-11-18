@@ -1,5 +1,6 @@
 // v96-ux: Minhas fotos, envio manual das fotos do cartão (critérios 1 a 15 do plano docs/planos/2026-11-11-minhas-fotos-envio-manual.md,
-// com a decisão do Eduardo de 11/11: a Supervisora também envia, escolhendo o fotógrafo como o Admin).
+// com a decisão do Eduardo de 11/11: a Supervisora também envia). 18/11 (Eduardo): ninguém escolhe o fotógrafo no envio; o POST
+// não leva quem (o agente lê o nome gravado na câmera) e leva mt = data do arquivo (lastModified).
 // Parte A: agente falso por page.route na própria origem (/status com e sem "envio", /fotos/enviar com respostas por nome).
 // Parte B: agente DE VERDADE (testes/_envio_lanca.py, HOME temporário, porta 45xxx) servindo o app: 6 fotos geradas aqui entram
 // e a sessão atrasada do Carlos aparece em Minhas fotos. Nunca foto de cliente: JPEG liso gerado por Pillow.
@@ -23,8 +24,8 @@ async function agente(ctx,M,base){base=base||ORIG;
   await ctx.route(base+'/fila-fotografo',r=>r.fulfill({headers:H,status:200,contentType:'application/json',body:'{"ok":true,"grupos":[]}'}));
   await ctx.route(base+'/sessoes*',r=>r.fulfill({headers:H,status:200,contentType:'application/json',body:J({ok:true,gen:'gE',rev:1,pausa:60,rostos:true,completo:true,sessoes:[]})}));
   await ctx.route(base+'/thumb/**',r=>r.fulfill({headers:H,status:200,contentType:'image/jpeg',body:PX}));
-  await ctx.route(base+'/fotos/enviar*',async r=>{const u=new URL(r.request().url());const nome=u.searchParams.get('nome'),quem=u.searchParams.get('quem');
-    const h=r.request().headers();const n=M.posts.filter(p=>p.nome===nome).length+1;M.posts.push({nome,quem,t:Date.now(),xe:h['x-eterna'],ct:h['content-type']});
+  await ctx.route(base+'/fotos/enviar*',async r=>{const u=new URL(r.request().url());const nome=u.searchParams.get('nome'),quem=u.searchParams.get('quem'),mt=u.searchParams.get('mt');
+    const h=r.request().headers();const n=M.posts.filter(p=>p.nome===nome).length+1;M.posts.push({nome,quem,mt,t:Date.now(),xe:h['x-eterna'],ct:h['content-type']});
     if(M.atraso)await sleep(M.atraso);const x=M.resp?M.resp(nome,n):null;
     if(x==='abort')return r.abort('connectionreset');const st=x&&x.status||200;const body=x&&x.body||{ok:true,resultado:'new'};
     r.fulfill({headers:H,status:st,contentType:'application/json',body:J(body)});});}
@@ -69,11 +70,13 @@ try{
     const fl=await pg.$$eval('#envio-painel .envio-falhas li',x=>x.map(e=>e.textContent));
     ok(fl.length===2&&fl.some(x=>/^e\.png/.test(x))&&fl.some(x=>/^f\.jpg/.test(x)),'6: lista de recusadas: '+J(fl));
     ok(M.posts.length===5&&!M.posts.some(p=>p.nome==='e.png'),'6: só 5 POSTs e sem o .png: '+J(M.posts.map(p=>p.nome)));
-    ok(M.posts.every(p=>p.quem==='carlos'&&p.xe==='1'&&p.ct==='image/jpeg'),'6: POST com quem=carlos, X-Eterna e image/jpeg: '+J(M.posts[0]));
+    ok(M.posts.every(p=>p.quem===null&&/^\d{9,11}$/.test(p.mt||'')&&Math.abs(+p.mt-Date.now()/1000)<3600&&p.xe==='1'&&p.ct==='image/jpeg'),'6 (18/11): POST sem quem, com mt (data do arquivo em segundos), X-Eterna e image/jpeg: '+J(M.posts[0]));
+    const nt=await pg.evaluate(()=>{const x=document.querySelector('#envio-painel .envio-camera');return x?x.textContent:'';});
+    ok(/vem do nome gravado na câmera/.test(nt)&&!/entram como/.test(await pg.evaluate(()=>document.querySelector('#envio-painel').innerText)),'18/11: o painel diz que o fotógrafo vem da câmera: '+nt);
     ok(J(M.posts.map(p=>p.nome).slice(0,2).sort())===J(['a.jpg','b.jpg']),'decisão 10: em ordem de nome');
     // 14: auditLog sem nome de arquivo
     const au=await pg.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='fotos_envio_manual'));
-    ok(au.length===1&&au[0].alvo==='carlos'&&au[0].mudancas[0].para===4&&au[0].total===6&&!/\.jpg|\.png/.test(J(au)),'14: auditLog: '+J(au));
+    ok(au.length===1&&au[0].alvo==='cartao'&&au[0].por==='carlos@eterna.photo'&&au[0].mudancas[0].para===4&&au[0].total===6&&!/\.jpg|\.png/.test(J(au)),'14: auditLog: '+J(au));
     // 7: extensões do cartão
     M.posts.length=0;M.atraso=0;M.resp=null;
     await escolher(pg,[arq('foto.Jpg'),arq('A.JPG'),arq('b.jpeg'),arq('C.JPEG'),arq('d.jpg')]);await fim(pg);
@@ -99,10 +102,10 @@ try{
     for(const w of [390,768,1366]){await pg.setViewportSize({width:w,height:900});await pg.evaluate(()=>ETERNA.render());await pg.waitForTimeout(80);
       const sx=await pg.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);ok(sx<=1&&!!(await pg.$('#envio-painel')),'15: rolagem lateral em '+w+' px: '+sx);}
     await pg.setViewportSize({width:1366,height:900});
-    // 13: Carlos sempre manda quem=carlos, mesmo trocando o seletor
+    // 13 (18/11): o fotógrafo logado também não manda no próprio nome; a troca do seletor disparada por JS não muda nada
     await pg.evaluate(()=>{const x=document.createElement('select');x.dataset.act='imp-key';x.innerHTML='<option value="samuel">samuel</option>';document.body.appendChild(x);x.dispatchEvent(new Event('change',{bubbles:true}));x.remove();});await pg.waitForTimeout(100);M.posts.length=0;
     await escolher(pg,[arq('k1.jpg')]);await fim(pg);
-    ok(M.posts.length===1&&M.posts[0].quem==='carlos','13: Carlos (sem seletor; troca disparada por JS) manda quem=carlos: '+J(M.posts));
+    ok(M.posts.length===1&&M.posts[0].quem===null,'13: Carlos manda sem quem: '+J(M.posts));
     // 12: Parar durante o envio
     M.posts.length=0;M.atraso=400;const muitos=Array.from({length:12},(_,i)=>arq('p'+String(i).padStart(2,'0')+'.jpg'));
     await escolher(pg,muitos);
@@ -150,26 +153,22 @@ try{
     // Fechar
     await pg.click('#envio-painel [data-act="envio-fechar"]');await pg.waitForTimeout(100);ok(!(await pg.$('#envio-painel'))&&!!(await pg.$('#main [data-act="envio-abrir"]')),'Fechar volta ao link');
     await ctx.close();}
-  // ---------- 2, 13: Admin e Supervisora escolhem o fotógrafo; sem set.c, vendedor e caixa sem o link ----------
+  // ---------- 2, 13: Admin e Supervisora enviam sem escolher fotógrafo (18/11); sem set.c, vendedor e caixa sem o link ----------
   for(const email of ['eduardo@eduardorezende.com','supervisor@eterna.photo']){const {ctx,pg}=await nova();const M=novoM();await agente(ctx,M);await entrar(pg,email);
     ok(await abrir(pg),'2: '+email+' vê o link');await espera(pg,()=>!!ETERNA.state.agent.envio);
     await pg.selectOption('#main select[data-act="imp-key"]','todos');await pg.waitForTimeout(120);
     const t=await pg.evaluate(()=>(document.querySelector('#envio-painel')||{}).innerText||'');
-    ok(/Escolha o fotógrafo acima\./.test(t)&&!(await pg.$('#envio-painel input[type=file]'))&&!(await pg.$('#envio-painel [data-act="envio-escolher"]'))&&!(await pg.$('#envio-painel .envio-drop')),'13: '+email+' com Todos: '+t.slice(0,120));
-    await pg.evaluate(()=>ETERNA.fotosEnviar([new File([new Uint8Array([255,216,255,217])],'z.jpg',{type:'image/jpeg'})]));await pg.waitForTimeout(150);
-    ok(M.posts.length===0,'13: '+email+' com Todos: nenhuma foto aceita');
-    await pg.selectOption('#main select[data-act="imp-key"]','samuel');await pg.waitForTimeout(120);
+    ok(!/Escolha o fotógrafo/.test(t)&&!(await pg.$('#envio-painel .envio-quem'))&&!!(await pg.$('#envio-painel [data-act="envio-escolher"]'))&&!!(await pg.$('#envio-painel .envio-drop'))&&await pg.evaluate(()=>ETERNA.envioPode().ok),'13 (18/11): '+email+' com Todos envia, sem escolher fotógrafo: '+t.slice(0,160));
     await escolher(pg,[arq('m1.jpg'),arq('m2.jpg')]);await fim(pg);
-    ok(M.posts.length===2&&M.posts.every(p=>p.quem==='samuel'),'13: '+email+' escolhendo Samuel: '+J(M.posts));
-    const au=await pg.evaluate(()=>ETERNA.auditRead().find(e=>e.acao==='fotos_envio_manual'));ok(au&&au.alvo==='samuel'&&au.por===email&&au.mudancas[0].para===2,'14: auditLog com quem mandou e para quem: '+J(au));
-    // v97: Admin ou Supervisora com fotógrafo vinculado continua escolhendo no seletor: as fotos entram no nome escolhido
-    {M.posts.length=0;await pg.evaluate(()=>{ETERNA.state.user.key='carlos';ETERNA.render();});await pg.waitForTimeout(120);
-      ok(!!(await pg.$('#main select[data-act="imp-key"]'))&&await pg.evaluate(()=>ETERNA.impPreso()===null),'13: '+email+' vinculada ao Carlos continua com o seletor');
-      await pg.selectOption('#main select[data-act="imp-key"]','samuel');await pg.waitForTimeout(120);
+    ok(M.posts.length===2&&M.posts.every(p=>p.quem===null),'13 (18/11): '+email+' manda sem quem: '+J(M.posts));
+    const au=await pg.evaluate(()=>ETERNA.auditRead().find(e=>e.acao==='fotos_envio_manual'));ok(au&&au.alvo==='cartao'&&au.por===email&&au.mudancas[0].para===2,'14: auditLog com quem mandou: '+J(au));
+    // com o seletor em Samuel (o caso de 18/11) ou vinculada ao Carlos, o POST continua sem quem: o dono vem da câmera
+    {M.posts.length=0;await pg.selectOption('#main select[data-act="imp-key"]','samuel');await pg.waitForTimeout(120);
+      await escolher(pg,[arq('v0.jpg')]);await fim(pg);
+      await pg.evaluate(()=>{ETERNA.state.user.key='carlos';ETERNA.render();});await pg.waitForTimeout(120);
+      ok(!!(await pg.$('#main select[data-act="imp-key"]'))&&await pg.evaluate(()=>ETERNA.impPreso()===null),'13: '+email+' vinculada ao Carlos continua com o seletor (filtro)');
       await escolher(pg,[arq('v1.jpg')]);await fim(pg);
-      ok(M.posts.length===1&&M.posts[0].quem==='samuel','13: '+email+' vinculada ao Carlos, escolhendo Samuel, manda como Samuel: '+J(M.posts.map(p=>p.quem)));
-      await pg.selectOption('#main select[data-act="imp-key"]','todos');await pg.waitForTimeout(120);
-      ok(await pg.evaluate(()=>ETERNA.envioPode().motivo)==='quem','13: '+email+' vinculada, com Todos, não manda no próprio nome');
+      ok(M.posts.length===2&&M.posts.every(p=>p.quem===null),'13 (18/11): '+email+' com Samuel no seletor e vinculada ao Carlos manda sem quem: '+J(M.posts.map(p=>p.quem)));
       await pg.evaluate(()=>{delete ETERNA.state.user.key;ETERNA.render();});await pg.waitForTimeout(80);}
     if(/supervisor/.test(email)){
       // sem set.c (usuário personalizado): sem link
@@ -232,7 +231,7 @@ for i in range(6):
     im=Image.new("RGB",(320,240),tuple(random.randint(30,220) for _ in range(3)))
     for k in range(40):
         r=os.urandom(4);im.putpixel((int.from_bytes(r[:2],"big")%320,int.from_bytes(r[2:],"big")%240),(r[0],r[1],r[2]))
-    ex=Image.Exif();ex.get_ifd(0x8769)[0x9003]=time.strftime("%Y:%m:%d %H:%M:%S",time.localtime(time.time()-7200+i))
+    ex=Image.Exif();ex.get_ifd(0x8769)[0x9003]=time.strftime("%Y:%m:%d %H:%M:%S",time.localtime(time.time()-7200+i));ex[0x013B]="Carlos"
     im.save(os.path.join(d,"IMG_%04d.JPG"%(i+1)),"JPEG",quality=85,exif=ex.tobytes())
 `,DIR]);
     const {ctx,pg}=await nova();

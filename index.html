@@ -1788,7 +1788,7 @@ function funcSelect(key,dis){const camp=DATA.points.filter(p=>p.kind!=='chroma'&
   return `<select data-act="func-set" data-k="${key}" ${dis?'disabled':''} aria-label="${esc(TE('esc_func_de',P[key].name))}"><optgroup label="${esc(TE('esc_campo_fixo'))}">${camp.map(p=>`<option value="c:${p.id}" ${v==='c:'+p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</optgroup><optgroup label="${esc(TE('esc_volante'))}">${VOL_MODES.map(m=>`<option value="v:${m[0]}" ${v==='v:'+m[0]?'selected':''}>${esc(volNome(m))}</option>`).join('')}</optgroup><option value="" ${v===''?'selected':''}>${TE('esc_folga')}</option></select>`;}
 // ---------- Troca do fotógrafo no Upload automático ----------
 // v80 (Eduardo, 28/10): saiu o cartão de check-in da câmera. O fotógrafo de cada foto vem do usuário/subpasta do FTP
-// (cada fotógrafo tem o seu login) e do nome do autor gravado na câmera; check-ins já gravados em SIM.camDia continuam valendo (camWho).
+// (cada fotógrafo tem o seu login) e do nome do autor ou do dono gravado na câmera (camWho; 18/11: o SIM.camDia não é mais lido).
 function fotoQuem(){const k=fotoKey();if(!k)return '';const u=state.user;
   return `<div class="setwho"><div><div class="eyebrow">${TE('mf_neste_pc')}</div><b>${esc(P[k].name)}</b><div class="note">${esc(u.email)}</div></div><div class="row"><button class="btn primary" data-act="set-switch">${TE('mf_trocar')}</button><button class="btn ghost" data-act="set-logout">${TE('mf_sair')}</button></div></div>`;}
 
@@ -4810,15 +4810,16 @@ state.libF={day:'hoje',per:'dia',who:'todos',venda:'todas'};
 // v91: foto vendida = escolhida em qualquer venda paga (a venda que juntou sessões fica na primeira, com fotos das outras)
 function vendidasTodas(){if(DS_CACHE.on&&DS_CACHE.vend)return DS_CACHE.vend;const v=new Set();if(DS_CACHE.on)DS_CACHE.vend=v;Object.values(SIM.sessions||{}).forEach(x=>{if(x.status==='paga')(x.selected||[]).forEach(id=>v.add(id));});return v;}
 function libIndex(){const ses={},sold=new Set();const vend=vendidasTodas();Object.values(SIM.sessions||{}).forEach(x=>{(x.photos||[]).forEach(p=>{ses[p.id]=x;if(p.sold||vend.has(p.id))sold.add(p.id);});});return {ses,sold};}
-// Câmera de cada fotógrafo no dia: pelo número de série da câmera (vem sozinho na foto) ou pelo nome do autor gravado na câmera.
-function camDay(day){SIM.camDia=SIM.camDia||{};return SIM.camDia[day]||(SIM.camDia[day]={});}
 const normName=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
 function keyByName(n){n=normName(n);if(!n)return null;const p1=n.split(/\s+/)[0].replace(/[^\p{L}\p{N}]/gu,''); // primeiro nome sem pontuação, como o fotografo_chave do agente ("Klacius," = Klacius)
   const al=(Object.prototype.hasOwnProperty.call(KEY_ALIAS,n)&&KEY_ALIAS[n])||(Object.prototype.hasOwnProperty.call(KEY_ALIAS,p1)&&KEY_ALIAS[p1]);if(al&&humans.includes(al))return al;
   return humans.find(k=>normName(P[k].name)===n||n.split(/\s+/)[0]===normName(P[k].name)||p1===normName(P[k].name)||k===n||k===p1)||null;}
-function camWho(serie,day,autor){if(serie){const k=camDay(day)[serie];if(k)return k;}return keyByName(autor);}
+// 18/11 (Eduardo, "quem manda é a câmera"): o autor e, sem ele, o dono gravado na câmera, na mesma ordem do ff_quem do agente
+// (foto de cartão). O mapa série -> fotógrafo do check-in antigo (SIM.camDia) não é mais lido: ninguém grava nele desde a v80
+// e o agente não o conhece; os dados ficam no SIM.
+function camWho(serie,day,autor,dono){return keyByName(autor)||keyByName(dono);}
 // v80 (segurança I1): o login do FTP (o agente grava sempre o usuário que mandou) vem antes da câmera e do nome gravado nela
-function libWho(f,ix){const o=(f.origem||'').toLowerCase();if(f.via==='ftp'){const kf=Object.keys(P).find(k=>P[k].human&&(k===o||P[k].name.toLowerCase()===o||keyByName(o)===k));if(kf)return kf;}const kc=camWho(f.serie,f.day,f.autor);if(kc)return kc;const kg=camGuess(f);if(kg)return kg;const x=ix.ses['ag_'+f.id];if(x&&x.key&&P[x.key])return x.key;if(f.via==='ftp')return 'ftp:'+o;return 'sem';}
+function libWho(f,ix){const o=(f.origem||'').toLowerCase();if(f.via==='ftp'){const kf=Object.keys(P).find(k=>P[k].human&&(k===o||P[k].name.toLowerCase()===o||keyByName(o)===k));if(kf)return kf;}const kc=camWho(f.serie,f.day,f.autor,f.dono);if(kc)return kc;const kg=camGuess(f);if(kg)return kg;const x=ix.ses['ag_'+f.id];if(x&&x.key&&P[x.key])return x.key;if(f.via==='ftp')return 'ftp:'+o;return 'sem';}
 // v96-ux (Eduardo, 11/11): o fotógrafo vê só "Minhas fotos de hoje", agrupadas por sessão, sem filtros; Admin e Supervisora
 // continuam com a Biblioteca inteira (Dia, Hora, Fotógrafo e Venda)
 function libDoFoto(k,ix,hoje){const todas=state.lib.filter(f=>f.day===hoje&&libWho(f,ix)===k).sort((a,b)=>b.t-a.t);
@@ -4937,10 +4938,12 @@ function srvIaCompleta(x){const s=SIM.sessions[x.card];if(!s||!s.srv||s.status==
     if(x.ia.some(p=>vend.has('ag_'+p)||(SIM.caixaDin||[]).some(r=>aberta(r)&&(r.selected||[]).includes('ag_'+p))))return;}
   const tem=new Set((s.photos||[]).map(p=>p.id));s.ia=x.ia.map(p=>'ag_'+p).filter(id=>tem.has(id));saveSim();}
 // 15/11: o servidor corrigiu o fotógrafo de uma sessão fechada que estava sem (dono_corrigido); a cópia deste aparelho segue o servidor.
+// 18/11: também a sessão de cartão que passou de um fotógrafo a outro pela câmera (de Samuel para Márcio): a regra é a mesma, a marca
+// diz o novo (para) e a cópia troca quando o nome dela é outro.
 // Só sessão do servidor, só com a marca da correção e só para fotógrafo que a tela conhece. Vale também para sessão paga (a venda
 // passa à estatística dele, como no resumo do dia do servidor). O log() já grava o SIM.
 function srvDono(x){const s=SIM.sessions[x.card];const c=x.dono_corrigido;if(!s||!s.srv||!c||typeof c!=='object'||c.para!==x.fotografo||!x.fotografo||!Object.prototype.hasOwnProperty.call(P,x.fotografo)||!P[x.fotografo].human||s.key===x.fotografo)return false;
-  s.key=x.fotografo;log(`Sessão ${x.card}: fotógrafo acertado pelo servidor (${P[x.fotografo].name})`);return true;}
+  const de=s.key&&P[s.key]&&P[s.key].human?P[s.key].name:null;s.key=x.fotografo;log(`Sessão ${x.card}: fotógrafo acertado pelo servidor (${de?de+' para ':''}${P[x.fotografo].name})`);return true;}
 // A correção de ONTEM: o /sessoes só entrega ontem com ?ontem=1 (com ETERNA_BUSCA_DIAS >= 2 o srvPull já recebe). O servidor só corrige
 // na partida, então basta um pedido por partida do agente (gen) e na carga da página; falha tenta de novo depois de 1 min. Só aplica o
 // srvDono nas sessões de ontem: nada de ontem entra no painel do Upload nem é materializado aqui.
@@ -5078,14 +5081,14 @@ const ENVIO_SEM_PERM='Sem permissão para enviar fotos neste computador. Chame a
 const ENVIO_PARA={401:ENVIO_SEM_PERM,403:ENVIO_SEM_PERM,507:'O computador do ponto está sem espaço. Chame a TI.'};
 const ENVIO_MOTIVO={nao_foto:'não era foto',grande:'acima de 60 MB',cortada:'chegou cortada',recusada:'não entrou'};
 const ENVIO_NAO={perm:'Sem permissão para enviar fotos',agente:'O computador do ponto não está respondendo. Chame a TI.',origem:'O computador do ponto não está respondendo. Chame a TI.',
-  antigo:'O computador do ponto precisa ser atualizado para receber fotos por aqui. Chame a TI.',quem:'Escolha o fotógrafo acima.'};
+  antigo:'O computador do ponto precisa ser atualizado para receber fotos por aqui. Chame a TI.'};
 // as mensagens acima seguem em português no estado e no registro; na tela, no idioma da equipe
-const ENVIO_TRK={[ENVIO_TETO_DIA]:'en_teto',[ENVIO_SEM_PERM]:'en_sem_perm',[ENVIO_PARA[507]]:'en_espaco',[ENVIO_NAO.perm]:'en_n_perm',[ENVIO_NAO.agente]:'en_n_agente',[ENVIO_NAO.antigo]:'en_n_antigo',[ENVIO_NAO.quem]:'en_n_quem','Não deu para enviar agora':'en_nao_deu'};Object.entries(ENVIO_MOTIVO).forEach(([k,v])=>{ENVIO_TRK[v]='en_m_'+k;});
+const ENVIO_TRK={[ENVIO_TETO_DIA]:'en_teto',[ENVIO_SEM_PERM]:'en_sem_perm',[ENVIO_PARA[507]]:'en_espaco',[ENVIO_NAO.perm]:'en_n_perm',[ENVIO_NAO.agente]:'en_n_agente',[ENVIO_NAO.antigo]:'en_n_antigo','Não deu para enviar agora':'en_nao_deu'};Object.entries(ENVIO_MOTIVO).forEach(([k,v])=>{ENVIO_TRK[v]='en_m_'+k;});
 const envioTr=s=>ENVIO_TRK[s]?TEk(ENVIO_TRK[s],s):s;
-// dono da foto: o fotógrafo logado, sem escolha; Admin e Supervisora escolhem no seletor (nunca "Todos")
-function envioQuem(){const k=impPreso();if(k)return k; /* só o fotógrafo fica preso ao próprio nome; Admin e Supervisora com fotógrafo vinculado escolhem no seletor */const s=state.imp.key;return s&&s!=='todos'&&P[s]&&P[s].human?s:'';}
+// 18/11 (Eduardo): no envio manual ninguém escolhe o fotógrafo, nem o logado. O agente lê o autor ou o dono gravado na câmera
+// (ff_quem); foto de câmera sem nome fica sem fotógrafo. O seletor Fotógrafo da tela só filtra as sessões.
 function envioPode(){const a=state.agent;if(!can('set','c'))return {ok:false,motivo:'perm'};if(!a.on)return {ok:false,motivo:a.outra?'origem':'agente'}; /* v99.1: agente achado em outro endereço (v93 o deixa indisponível) = fora da origem, com a dica do endereço para o Admin */
-  if(!fotosNoServidor())return {ok:false,motivo:'origem'};if(!a.envio)return {ok:false,motivo:'antigo'};if(!envioQuem())return {ok:false,motivo:'quem'};return {ok:true};}
+  if(!fotosNoServidor())return {ok:false,motivo:'origem'};if(!a.envio)return {ok:false,motivo:'antigo'};return {ok:true};}
 function envioResumo(e){const x=e.erros||{};const pl=(n,s,p)=>n+' '+(n===1?s:p);const out=[];
   if(e.rep)out.push(TE('en_rep',e.rep));
   if(x.nao_foto)out.push(TE('en_nao_foto',x.nao_foto));
@@ -5108,10 +5111,9 @@ function envioPainel(){const im=state.imp,e=im.envio,f=im.envioFim;if(!can('set'
     if(p.motivo==='agente')corpo=faixaConexao({estado:'off',ultimo:a.lastOk});
     else if(p.motivo==='origem')corpo=isAdminUser(state.user)?`<div class="alert warn" role="alert"><span class="sev" aria-hidden="true"></span><div><b>${TE('en_origem_adm')}</b><p>${esc(a.url)}</p></div></div>`:`<div class="conn-off" role="alert">${envioTr(ENVIO_NAO.origem)}</div>`;
     else if(p.motivo==='antigo')corpo=`<div class="conn-off" role="alert">${envioTr(ENVIO_NAO.antigo)}</div>`;
-    else if(p.motivo==='quem')corpo=`<div class="alert warn envio-quem" role="status"><span class="sev" aria-hidden="true"></span><div><b>${envioTr(ENVIO_NAO.quem)}</b></div></div>`;
     corpo+=`<div class="row"><button class="btn ghost" data-act="envio-fechar">${TE('fechar')}</button></div>`;}
-  else{const quem=e?e.quem:envioQuem();
-    corpo=`<div class="note">${TE('en_como',esc(P[quem]?P[quem].name:quem))}</div>
+  else{
+    corpo=`<div class="note envio-camera">${TE('en_camera')}</div>
     <div class="envio-drop" data-act="envio-drop" tabindex="0" role="button" aria-disabled="${e?'true':'false'}">${TE('en_solte')}</div>
     <div class="row">${e?`<button class="btn ghost" data-act="envio-parar" ${e.parar?'disabled':''}>${e.parar?TE('en_parando'):TE('mf_parar')}</button>`:`<button class="btn primary" data-act="envio-escolher">${TE('en_escolher')}</button><button class="btn ghost" data-act="envio-fechar">${TE('fechar')}</button>${f&&f.faltam&&f.faltam.length?`<button class="btn primary" data-act="envio-repetir">${TE('en_repetir',f.faltam.length)}</button>`:''}`}</div>`;}
   const lf=(e||f||{}).falhas||[];
@@ -5122,24 +5124,25 @@ function envioPainel(){const im=state.imp,e=im.envio,f=im.envioFim;if(!can('set'
 function envioInput(){let i=document.getElementById('envio-input');if(i)return i;i=document.createElement('input');
   i.type='file';i.multiple=true;i.accept='.jpg,.jpeg,.JPG,.JPEG,image/jpeg';i.id='envio-input';i.hidden=true;i.dataset.act='envio-files';i.setAttribute('aria-hidden','true');i.tabIndex=-1;
   i.addEventListener('change',()=>{const l=[...(i.files||[])];i.value='';if(l.length&&guardAct('envio-files'))fotosEnviar(l);});document.body.appendChild(i);return i;}
-async function envioUma(f,quem){const a=state.agent;
-  try{const r=await agFetch(`${a.url}/fotos/enviar?nome=${encodeURIComponent(f.name)}&quem=${encodeURIComponent(quem)}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'image/jpeg','X-Eterna':'1'},body:f});
+// mt = data do arquivo no cartão (lastModified), para a sessão usar a hora da foto quando o EXIF não serve, nunca a da chegada
+async function envioUma(f){const a=state.agent;const mt=Number.isFinite(f.lastModified)&&f.lastModified>0?`&mt=${Math.floor(f.lastModified/1000)}`:'';
+  try{const r=await agFetch(`${a.url}/fotos/enviar?nome=${encodeURIComponent(f.name)}${mt}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'image/jpeg','X-Eterna':'1'},body:f});
     let j={};try{j=await r.json()||{};}catch(x){}return {st:r.status,j};}
   catch(x){return {st:0,j:{}};}}
 async function fotosEnviar(lista){const im=state.imp;if(im.envio)return;const p=envioPode();if(!p.ok){toast(envioTr(ENVIO_NAO[p.motivo]||'Não deu para enviar agora'));render();return;}
   let todas=[...(lista||[])].filter(f=>f&&typeof f.name==='string').sort((x,y)=>x.name.localeCompare(y.name));if(!todas.length)return;
   if(todas.length>ENVIO_MAX_N){toast(TE('en_max'));todas=todas.slice(0,ENVIO_MAX_N);}
-  const quem=envioQuem();const maxB=((state.agent.envio&&+state.agent.envio.max_mb)||60)*1024*1024;
-  const e=im.envio={total:todas.length,feitas:0,novas:0,rep:0,erros:{nao_foto:0,grande:0,cortada:0,recusada:0,rede:0},falhas:[],faltam:[],parar:false,parou:false,quem,erro:null};
+  const maxB=((state.agent.envio&&+state.agent.envio.max_mb)||60)*1024*1024;
+  const e=im.envio={total:todas.length,feitas:0,novas:0,rep:0,erros:{nao_foto:0,grande:0,cortada:0,recusada:0,rede:0},falhas:[],faltam:[],parar:false,parou:false,erro:null};
   im.envioFim=null;im.manual=true;
   const tela=()=>{if(state.view==='importar')render();};
   const falha=(f,k)=>{e.erros[k]++;e.falhas.push({nome:f.name,motivo:ENVIO_MOTIVO[k]});e.feitas++;};
   const fila=[];todas.forEach(f=>{if(!ENVIO_RE.test(f.name))falha(f,'nao_foto');else if(f.size>maxB)falha(f,'grande');else fila.push(f);});
   tela();const dorme=ms=>new Promise(r=>setTimeout(r,ms));
   const trab=async()=>{for(;;){if(e.parar||e.parou||e.erro)break;const f=fila.shift();if(!f)break;
-    let r=await envioUma(f,quem);
+    let r=await envioUma(f);
     const teto=x=>x.st===429&&x.j&&x.j.erro==='teto_dia';
-    for(let i=0,k=0;!e.erro&&!e.parar&&!teto(r);){let ms;if(r.st===503){if(k>=ENVIO_ESPERA_OCUPADO.length)break;ms=ENVIO_ESPERA_OCUPADO[k++];}else if(r.st===0||r.st===408||r.st===429){if(i>=ENVIO_ESPERA.length)break;ms=ENVIO_ESPERA[i++];}else break;await dorme(ms);r=await envioUma(f,quem);}
+    for(let i=0,k=0;!e.erro&&!e.parar&&!teto(r);){let ms;if(r.st===503){if(k>=ENVIO_ESPERA_OCUPADO.length)break;ms=ENVIO_ESPERA_OCUPADO[k++];}else if(r.st===0||r.st===408||r.st===429){if(i>=ENVIO_ESPERA.length)break;ms=ENVIO_ESPERA[i++];}else break;await dorme(ms);r=await envioUma(f);}
     const st=r.st,j=r.j;
     if(st===200&&j.resultado==='new'){e.novas++;e.feitas++;}
     else if(st===200&&j.resultado==='dup'){e.rep++;e.feitas++;}
@@ -5155,8 +5158,8 @@ async function fotosEnviar(lista){const im=state.imp;if(im.envio)return;const p=
   const n=e.faltam.length;if(!e.erro&&e.parou)e.erro=TE('en_parou',n);
   im.envio=null;im.envioFim={...e,em:Date.now()};
   const rec=e.erros.nao_foto+e.erros.grande+e.erros.cortada+e.erros.recusada;
-  auditLog('fotos_envio_manual',quem,[{campo:'fotos',de:0,para:e.novas}],{repetidas:e.rep,recusadas:rec,total:e.total,nao_enviadas:n});
-  log(`Fotos do cartão enviadas pela tela (${P[quem]?P[quem].name:quem}): ${e.novas} novas de ${e.total}${e.rep?', '+e.rep+' repetidas':''}${rec?', '+rec+' recusadas':''}${n?', '+n+' não enviadas':''}`);
+  auditLog('fotos_envio_manual','cartao',[{campo:'fotos',de:0,para:e.novas}],{repetidas:e.rep,recusadas:rec,total:e.total,nao_enviadas:n});
+  log(`Fotos do cartão enviadas pela tela (fotógrafo pela câmera): ${e.novas} novas de ${e.total}${e.rep?', '+e.rep+' repetidas':''}${rec?', '+rec+' recusadas':''}${n?', '+n+' não enviadas':''}`);
   tela();setTimeout(tela,ENVIO_FAIXA_MS+200);}
 // ---------- v91: Sessões de hoje no Upload automático (plano docs/planos/2026-10-30-sessoes-por-rosto-e-tempo.md) ----------
 // Tela da equipe (só português, S13). Lê SRV.sess (feed /sessoes do agente): a aberta em destaque, a separada "fechando"
@@ -8793,7 +8796,6 @@ const EQ={
   en_n_perm:["Sem permissão para enviar fotos","No permission to upload photos","Sin permiso para enviar fotos","Pas d'autorisation pour envoyer des photos","Keine Berechtigung, Fotos hochzuladen"],
   en_n_agente:["O computador do ponto não está respondendo. Chame a TI.","The point computer is not responding. Call IT.","La computadora del punto no responde. Llame a TI.","L'ordinateur du point ne répond pas. Appelez l'informatique.","Der Computer des Standorts antwortet nicht. Ruf die IT."],
   en_n_antigo:["O computador do ponto precisa ser atualizado para receber fotos por aqui. Chame a TI.","The point computer needs an update to receive photos here. Call IT.","La computadora del punto necesita actualizarse para recibir fotos por aquí. Llame a TI.","L'ordinateur du point doit être mis à jour pour recevoir des photos ici. Appelez l'informatique.","Der Computer des Standorts muss aktualisiert werden, um hier Fotos zu empfangen. Ruf die IT."],
-  en_n_quem:["Escolha o fotógrafo acima.","Choose the photographer above.","Elija el fotógrafo arriba.","Choisissez le photographe ci-dessus.","Wähle oben den Fotografen."],
   en_nao_deu:["Não deu para enviar agora","Could not upload right now","No se pudo enviar ahora","Impossible d'envoyer pour le moment","Hochladen gerade nicht möglich"],
   en_max:["Mande no máximo 2.000 fotos por vez","Send at most 2,000 photos at a time","Envíe como máximo 2.000 fotos por vez","Envoyez au maximum 2 000 photos à la fois","Höchstens 2.000 Fotos auf einmal senden"],
   en_abrir:["Enviar fotos do cartão manualmente","Upload card photos manually","Enviar fotos de la tarjeta manualmente","Envoyer les photos de la carte manuellement","Kartenfotos manuell hochladen"],
@@ -8886,7 +8888,7 @@ const EQ={
   en_recusada:[(n)=>`${n}${n===1?' não entrou':' não entraram'}`,(n)=>`${n} not accepted`,(n)=>`${n}${n===1?' no entró':' no entraron'}`,(n)=>`${n}${n===1?' non acceptée':' non acceptées'}`,(n)=>`${n} nicht angenommen`],
   en_rede:[(n)=>`${n} ${n===1?'não enviada':'não enviadas'}`,(n)=>`${n} not uploaded`,(n)=>`${n} ${n===1?'no enviada':'no enviadas'}`,(n)=>`${n} ${n===1?'non envoyée':'non envoyées'}`,(n)=>`${n} nicht hochgeladen`],
   en_enviadas:[(a,b)=>`Enviadas ${a} de ${b}`,(a,b)=>`Uploaded ${a} of ${b}`,(a,b)=>`Enviadas ${a} de ${b}`,(a,b)=>`${a} envoyées sur ${b}`,(a,b)=>`${a} von ${b} hochgeladen`],
-  en_como:[(q)=>`As fotos entram como do cartão de <b>${q}</b>.`,(q)=>`The photos come in as from <b>${q}</b>'s card.`,(q)=>`Las fotos entran como de la tarjeta de <b>${q}</b>.`,(q)=>`Les photos arrivent comme venant de la carte de <b>${q}</b>.`,(q)=>`Die Fotos kommen als Fotos von der Karte von <b>${q}</b> herein.`],
+  en_camera:["O fotógrafo de cada foto vem do nome gravado na câmera. Foto de câmera sem nome fica sem fotógrafo.","Each photo's photographer comes from the name saved in the camera. Photos from a camera without a name stay without a photographer.","El fotógrafo de cada foto viene del nombre grabado en la cámara. Las fotos de una cámara sin nombre quedan sin fotógrafo.","Le photographe de chaque photo vient du nom enregistré dans l'appareil. Les photos d'un appareil sans nom restent sans photographe.","Der Fotograf jedes Fotos kommt aus dem in der Kamera gespeicherten Namen. Fotos einer Kamera ohne Namen bleiben ohne Fotograf."],
   en_repetir:[(n)=>`Tentar de novo ${n===1?'a 1 que faltou':'as '+n+' que faltaram'}`,(n)=>`Retry ${n===1?'the 1 missing':'the '+n+' missing'}`,(n)=>`Reintentar ${n===1?'la 1 que faltó':'las '+n+' que faltaron'}`,(n)=>`Réessayer ${n===1?'la photo manquante':'les '+n+' manquantes'}`,(n)=>`${n===1?'Das 1 fehlende':'Die '+n+' fehlenden'} erneut versuchen`],
   en_e_mais:[(n)=>`e mais ${n}`,(n)=>`and ${n} more`,(n)=>`y ${n} más`,(n)=>`et ${n} de plus`,(n)=>`und ${n} weitere`],
   en_parou:[(n)=>`O computador do ponto não está respondendo. ${n===1?'1 foto não foi enviada.':n+' fotos não foram enviadas.'}`,(n)=>`The point computer is not responding. ${n===1?'1 photo was not uploaded.':n+' photos were not uploaded.'}`,(n)=>`La computadora del punto no responde. ${n===1?'1 foto no fue enviada.':n+' fotos no fueron enviadas.'}`,(n)=>`L'ordinateur du point ne répond pas. ${n===1?'1 photo n\'a pas été envoyée.':n+' photos n\'ont pas été envoyées.'}`,(n)=>`Der Computer des Standorts antwortet nicht. ${n===1?'1 Foto wurde nicht hochgeladen.':n+' Fotos wurden nicht hochgeladen.'}`],

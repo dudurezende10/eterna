@@ -449,13 +449,18 @@ ok(m.sess_dono_corrigir(TD + 300) == [] and m.sess_rev[0] == rev_d, "dono: a seg
 reset()
 m.sess_carregar(agora=TD + 400)
 ok(m.sess[cd["toda"]]["fotografo"] == "klassius" and m.sess[cd["toda"]]["rev"] == xt["rev"] and m.sess[cd["toda"]]["dono_corrigido"] == dc, "dono: outra partida não corrige de novo")
-# o motivo gravado é o caminho que valeu (a origem vem antes do autor no ff_quem) e a fonte é a via da primeira foto
-ok(m.ff_quem_como("klacius", "Yago", "", "", "cartao") == ("klassius", "cartão", "origem") and m.ff_quem_como("equipe", "Klacius", "", "", "ftp") == ("klassius", "ftp", "autor_da_camera")
+# o motivo gravado é o caminho que valeu e a fonte é a via da primeira foto. No FTP a origem vem antes do autor; 18/11
+# (Eduardo, "quem manda é a câmera"): no cartão o autor e o dono gravados na câmera vêm antes da origem, que só vale sem eles
+ok(m.ff_quem_como("klacius", "Yago", "", "", "ftp") == ("klassius", "ftp", "origem") and m.ff_quem_como("equipe", "Klacius", "", "", "ftp") == ("klassius", "ftp", "autor_da_camera")
    and m.ff_quem_como("equipe", "", "Klacius Ank", "", "ftp") == ("klassius", "ftp", "dono_da_camera") and m.ff_quem_como("equipe", "Fulano", "", "", "ftp") == (None, "pasta", None)
-   and m.ff_quem("klacius", "Yago", "", "", "cartao") == ("klassius", "cartão"), "dono: ff_quem_como diz o caminho")
+   and m.ff_quem("klacius", "Yago", "", "", "ftp") == ("klassius", "ftp"), "dono: ff_quem_como diz o caminho")
+ok(m.ff_quem_como("samuel", "Márcio Silva", "", "", "cartao") == ("marcio", "cartão", "autor_da_camera") and m.ff_quem_como("samuel", "", "MARCIO", "", "cartao") == ("marcio", "cartão", "dono_da_camera")
+   and m.ff_quem_como("samuel", "Fulano", "", "123456781234", "cartao") == ("samuel", "cartão", "origem") and m.ff_quem_como("samuel", "Márcio", "", "", "ftp") == ("samuel", "ftp", "origem")
+   and m.ff_quem_como("tela:envio", "", "", "123456781234", "cartao") == (None, "câmera ···1234", None) and m.ff_quem_como("tela:envio", "Fulano", "", "", "cartao") == (None, "cartão", None),
+   "18/11: no cartão a câmera vence a origem; sem nome na câmera vale a origem; o envio pela tela sem nome fica sem fotógrafo")
 reset()
 with m.sess_lock:
-    for card_o, metas_o in (("LPORIG001", [{"o": "klacius", "s": "cartao", "autor": "Yago"}, {"o": "klacius", "s": "ftp"}]),
+    for card_o, metas_o in (("LPORIG001", [{"o": "klacius", "s": "cartao", "autor": "Fulano"}, {"o": "klacius", "s": "ftp"}]),
                             ("LPORIG002", [{"o": "equipe", "s": "ftp", "autor": "Klacius"}, {"o": "equipe", "s": "cartao", "autor": "Klacius"}])):
         fotos_o = ["%012x" % (0xc00000000000 + int(card_o[-1]) * 16 + j) for j in range(len(metas_o))]
         for pv, mo in zip(fotos_o, metas_o):
@@ -466,6 +471,56 @@ ok(sorted(c for c, _, _ in m.sess_dono_corrigir(TD + 450)) == ["LPORIG001", "LPO
 ok(m.sess["LPORIG001"]["dono_corrigido"]["motivo"] == "origem" and m.sess["LPORIG001"]["fonte"] == "cartão" and m.sess["LPORIG001"]["fotografo"] == "klassius",
    "dono: resolvida pela origem grava motivo origem (não autor) e a via da primeira foto: %r" % ((m.sess["LPORIG001"]["dono_corrigido"], m.sess["LPORIG001"]["fonte"]),))
 ok(m.sess["LPORIG002"]["dono_corrigido"]["motivo"] == "autor_da_camera" and m.sess["LPORIG002"]["fonte"] == "ftp", "dono: resolvida pelo autor grava autor_da_camera e a via da primeira foto: %r" % (m.sess["LPORIG002"]["dono_corrigido"],))
+# 18/11 (Eduardo): sessão fechada de cartão que ficou com o fotógrafo do seletor (Samuel) e cujas fotos são todas da câmera de
+# outro cadastrado (Márcio) passa a ele na partida, com de/para/motivo e rev novo; mista, de FTP, aberta, removida ou já certa fica
+reset()
+TR = {"LPTROCA01": ("samuel", {"fonte": "cartão", "atrasada": True}, [{"o": "samuel", "s": "cartao", "autor": "Márcio Silva"}] * 3),
+      "LPTROCA02": ("samuel", {"fonte": "cartão", "atrasada": True}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}] * 2 + [{"o": "samuel", "s": "cartao"}]),
+      "LPTROCA03": ("samuel", {"fonte": "ftp"}, [{"o": "samuel", "s": "ftp", "autor": "Marcio"}] * 2),
+      "LPTROCA04": ("samuel", {"fonte": "câmera ···1234", "atrasada": True, "dono_corrigido": {"em": "x", "por": "servidor", "de": None, "para": "samuel", "motivo": "origem"}},
+                    [{"o": "samuel", "s": "cartao", "dono": "MARCIO", "serie": "555500001234"}] * 2),
+      "LPTROCA05": ("samuel", {"fonte": "cartão", "atrasada": True}, [{"o": "samuel", "s": "cartao"}] * 2),
+      "LPTROCA06": ("samuel", {"fonte": "cartão", "atrasada": True}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}] * 2),
+      "LPTROCA07": ("samuel", {"fonte": "cartão", "atrasada": True, "status": "aberta"}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}] * 2),
+      "LPTROCA08": ("samuel", {"fonte": "cartão", "atrasada": True, "removida": True}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}] * 2),
+      "LPTROCA09": ("samuel", {"fonte": "x", "atrasada": True}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}, {"o": "samuel", "s": "ftp", "autor": "Marcio"}]),
+      "LPTROCA10": (None, {"fonte": "cartão", "atrasada": True}, [{"o": "tela:envio", "s": "cartao"}] * 2)}
+with m.sess_lock:
+    for i, (card_t, (f_t, extra_t, metas_t)) in enumerate(TR.items()):
+        fotos_t = ["%012x" % (0xf10000000000 + i * 16 + j) for j in range(len(metas_t))]
+        for pv, mo in zip(fotos_t, metas_t):
+            m.meta[pv] = dict(mo, u=TD)
+        xt_ = m._sess_normaliza(dict({"card": card_t, "dia": diaD, "k": diaD + "|samuel|t", "fotografo": f_t, "status": "fechada", "fotos": fotos_t,
+                                      "aberta_em": TD, "rev": 1}, **extra_t))
+        m.sess[card_t] = xt_
+m.ev_receber({"posto": "Caixa 1", "eventos": [
+    {"tipo": "criar", "idem": "vtroca:1", "venda": "vtroca", "seq": 1, "em": m._iso(TD + 20), "dados": {"card": "LPTROCA06", "total": 80, "nPhotos": 1, "canal": "checkout", "meio": "pix"}},
+    {"tipo": "pagar", "idem": "vtroca:2", "venda": "vtroca", "seq": 2, "em": m._iso(TD + 25), "dados": {}}]})
+rev_t = m.sess_rev[0]
+ft = m.sess_dono_corrigir(TD + 600)
+ok(sorted(c for c, _, _ in ft) == ["LPTROCA01", "LPTROCA04", "LPTROCA06"] and all(k == "marcio" for _, _, k in ft), "18/11: corrigidas só as de cartão toda do Márcio: %r" % ft)
+d1 = m.sess["LPTROCA01"].get("dono_corrigido") or {}
+ok(m.sess["LPTROCA01"]["fotografo"] == "marcio" and m.sess["LPTROCA01"]["fonte"] == "cartão" and m.sess["LPTROCA01"]["rev"] > rev_t
+   and d1.get("de") == "samuel" and d1.get("para") == "marcio" and d1.get("motivo") == "autor_da_camera" and d1.get("por") == "servidor" and d1.get("venda_paga") is False and d1.get("fonte_antes") == "cartão",
+   "18/11: de Samuel para Márcio, com de, para, motivo e rev novo: %r" % d1)
+d4 = m.sess["LPTROCA04"].get("dono_corrigido") or {}
+ok(m.sess["LPTROCA04"]["fotografo"] == "marcio" and d4.get("motivo") == "dono_da_camera" and (d4.get("anterior") or {}).get("para") == "samuel" and d4.get("de") == "samuel",
+   "18/11: atrasada toda de cartão pelo dono da câmera; a correção anterior fica guardada: %r" % d4)
+ok(m.sess["LPTROCA06"]["fotografo"] == "marcio" and (m.sess["LPTROCA06"].get("dono_corrigido") or {}).get("venda_paga") is True, "18/11: sessão com venda paga também passa, com a marca venda_paga")
+ok(all(m.sess[c]["fotografo"] == "samuel" and (c != "LPTROCA02" or "dono_corrigido" not in m.sess[c]) for c in ("LPTROCA02", "LPTROCA03", "LPTROCA05", "LPTROCA07", "LPTROCA08", "LPTROCA09"))
+   and m.sess["LPTROCA10"]["fotografo"] is None,
+   "18/11: mista, de FTP, já certa, aberta, removida, com foto de FTP e envio sem nome ficam: %r" % {c: m.sess[c]["fotografo"] for c in TR})
+rev_t2 = m.sess_rev[0]
+ok(m.sess_dono_corrigir(TD + 700) == [] and m.sess_rev[0] == rev_t2, "18/11: a segunda rodada não muda nada")
+m.sess_gravar()
+jt = {x["card"]: x for x in json.load(open(os.path.join(m.SESS_DIR, diaD + ".json"), encoding="utf8"))["sessoes"]}
+ok(jt["LPTROCA01"]["fotografo"] == "marcio" and jt["LPTROCA01"]["dono_corrigido"]["de"] == "samuel", "18/11: gravado no arquivo do dia")
+mt_ = m.metricas_dia(diaD)["por_fotografo"]
+ok(mt_.get("marcio", {}).get("sessoes") == 3 and mt_["marcio"].get("vendas") == 1, "18/11: o resumo do dia conta as sessões e a venda no Márcio: %r" % mt_.get("marcio"))
+for i in range(len(TR) * 16):
+    m.meta.pop("%012x" % (0xf10000000000 + i), None)
+os.remove(os.path.join(m.SESS_DIR, diaD + ".json"))
+
 # medida: 3.000 sessões sem fotógrafo de 5 fotos (15.000 fotos) não atrasam a partida
 reset()
 with m.sess_lock:
