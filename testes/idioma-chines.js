@@ -1,9 +1,10 @@
 // 18/11: chinês simplificado (zh-CN) para o cliente: Checkout, galeria online e vídeo das ativações. A equipe segue nos 5 idiomas.
+// No Checkout em chinês o português vem pequeno embaixo (.zh-pt) para o atendente orientar; na galeria e no vídeo, só chinês.
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const API='https://api-teste.invalid';const TOK='V'.repeat(22);
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-const HAN=/[一-鿿]/;const PT=/\b(você|seu|suas|fotos|código|Olhe|Digite|Pague|Voltar|Autorizo|vídeo)\b/i;
+const SEM_PT=()=>{const c=document.querySelector('#main').cloneNode(true);c.querySelectorAll('.zh-pt').forEach(x=>x.remove());return c.textContent;};const HAN=/[一-鿿]/;const PT=/\b(você|seu|suas|fotos|código|Olhe|Digite|Pague|Voltar|Autorizo|vídeo)\b/i;
 (async()=>{const b=await chromium.launch();
 try{
   const ctx=await b.newContext({viewport:{width:390,height:844}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
@@ -27,15 +28,20 @@ try{
   ok(await pg.locator('[data-act="lang"][data-l="zh"]').count()>0,'2: botão do chinês no seletor de idiomas do Checkout');
   ok(await pg.evaluate(()=>(document.querySelector('[data-act="lang"][data-l="zh"] svg')||{innerHTML:''}).innerHTML.match(/<polygon/g).length)===5,'2: bandeira com as 5 estrelas');
   await pg.evaluate(()=>{ETERNA.state.lang='zh';ETERNA.render();});await pg.waitForTimeout(200);
-  let t=await pg.evaluate(()=>document.querySelector('#main').innerText);
+  let t=await pg.evaluate(`(${SEM_PT})()`);
   ok(HAN.test(t)&&!PT.test(t),'2: Checkout em chinês: '+t.replace(/\s+/g,' ').slice(0,200));
+  let leg=await pg.evaluate(()=>[...document.querySelectorAll('#main .zh-pt')].map(x=>x.textContent));
+  ok(leg.includes('Viva essa história')&&leg.includes('Suas fotos estão aqui')&&leg.includes('Iniciar'),'2: português pequeno embaixo para o atendente: '+J(leg));
   ok(await pg.evaluate(()=>document.documentElement.lang)==='zh-CN','2: página zh-CN para a letra chinesa');
-  await pg.click('[data-act="kiosk-emerg"]');await pg.waitForTimeout(150);t=await pg.evaluate(()=>document.querySelector('#main').innerText);
+  await pg.click('[data-act="kiosk-emerg"]');await pg.waitForTimeout(150);t=await pg.evaluate(`(${SEM_PT})()`);
   ok(HAN.test(t)&&!PT.test(t),'2: digitar o código em chinês: '+t.replace(/\s+/g,' ').slice(0,200));
+  leg=await pg.evaluate(()=>[...document.querySelectorAll('#main .zh-pt')].map(x=>x.textContent));ok(leg.includes('Digite seu código'),'2: legenda no código: '+J(leg));
+  await pg.evaluate(()=>{ETERNA.state.lang='en';ETERNA.render();});ok(await pg.locator('.zh-pt').count()===0,'2: em inglês não há legenda');
   // 3. galeria online
   const G=await ctx.newPage();G.on('pageerror',e=>errs.push('G: '+e.message));await G.goto(U+'#g/abcdefghijklmnop');await G.waitForTimeout(600);
   t=await G.evaluate(()=>{ETERNA.state.lang='zh';ETERNA.state.pub.step='codigo';ETERNA.render();return document.querySelector('#main').innerText;});
   ok(HAN.test(t)&&!PT.test(t),'3: galeria em chinês: '+t.replace(/\s+/g,' ').slice(0,200));
+  ok(await G.locator('.zh-pt').count()===0,'3: galeria no celular do cliente sem legenda em português');
   ok(await G.evaluate(()=>document.documentElement.lang)==='zh-CN','3: página zh-CN: '+await G.evaluate(()=>document.documentElement.lang));
   ok(/YaHei|PingFang/.test(await G.evaluate(()=>getComputedStyle(document.body).fontFamily)),'3: fonte chinesa na lista');
   // 4. vídeo: quem abriu em chinês volta em chinês

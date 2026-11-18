@@ -1,6 +1,6 @@
 # Eterna — textos do cliente em chinês simplificado (zh-CN)
 
-No ar desde 18/11/2026: o cliente escolhe 中文 no seletor de idiomas do Checkout, da galeria online e da página do vídeo. A equipe segue em português, inglês, espanhol, francês e alemão. No código, as traduções ficam em `I18N_ZH` (index.html); texto do cliente sem chinês ali aparece em inglês. Texto novo do cliente entra também aqui e em `I18N_ZH`.
+No ar desde 18/11/2026: o cliente escolhe 中文 no seletor de idiomas do Checkout, da galeria online e da página do vídeo. A equipe segue em português, inglês, espanhol, francês e alemão. No Checkout, embaixo de cada texto em chinês aparece o português em letra pequena, para o atendente acompanhar e orientar o cliente; na galeria e no vídeo, que o cliente abre no celular, fica só o chinês. No código, as traduções ficam em `I18N_ZH` (index.html); texto do cliente sem chinês ali aparece em inglês. Texto novo do cliente entra também aqui e em `I18N_ZH`.
 
 Textos que o cliente vê no Checkout e na galeria online do Eterna (Tour Maracanã), para tradução em chinês simplificado (mandarim, zh-CN).
 
