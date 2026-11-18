@@ -91,7 +91,7 @@ A Nova venda segue esta ordem (12/11):
    - O tablet copia os vídeos em segundo plano para o IndexedDB (`eterna-ativ`, store `demo`), sem barra e sem espera, e só baixa de novo quando o arquivo muda no servidor. Na venda, o vídeo toca do tablet.
    - Vídeo que ainda não está no tablet toca do servidor do ponto, se houver rede. Sem os dois, a tela diz que o vídeo ainda não está no tablet e a venda segue.
    - Rotas: `GET /ativ/demo/lista` e `GET /ativ/demo/<nome>` (com `ativvenda.r` ou `catalogo.r`).
-3. **Venda (carrinho, v99.18.3):** tudo se escolhe no card antes de **Adicionar**: local, 4K, chuva e o número de pessoas (no Chute a Gol, participantes), de 1 a 5. O preço do card já mostra o valor com essas escolhas.
+3. **Venda (carrinho, v99.18.3):** tudo se escolhe no card antes de **Adicionar**: local, 4K e o número de pessoas (no Chute a Gol, participantes), de 1 a 5. O preço do card já mostra o valor com essas escolhas.
    - A linha da venda não se edita: tem só a **lixeira**. Para mudar, tira e coloca de novo. O mesmo produto com a mesma escolha soma na linha ("2×").
    - O número de pessoas não muda o preço do drone; acréscimo por pessoa só se o admin configurar em Preços.
    - **Preço fixo (decidido 12/11):** vale o preço do catálogo, com os adicionais somados sozinhos. O vendedor não digita valor, diferente do sistema antigo, que aceitava desconto ou acréscimo.
@@ -216,6 +216,8 @@ Igual à Fila de fotos: em cada serviço (Drone, Chute a Gol, Snap Pop) quatro c
 **Cadastro de pilotos, drones e baterias (v99.21.1):** botão **Carga inicial** com a frota do sistema antigo: drones 006, 007, 141, 228, 999, LARANJA e ROSA e baterias 1 a 20 (`POST /ativ/cadastros {carga: [...]}` inclui só o que falta e não religa quem foi desligado). Pilotos são pessoas: entram pelo cadastro na tela (ou direto no banco do servidor do ponto), nunca pelo código.
 
 **Fora de venda no dia (v99.21.1, como "Configuração de experiências" do sistema antigo):** em Catálogo › Ativações, além do "Hoje não vendo" do produto, cada local (ou tema) de um produto com mais de um tem o seu: por exemplo, o Banco de Suplentes sai e Campo e Arquibancada seguem. Produto sem nenhum local à venda sai; serviço sem nenhum produto à venda some da tela de venda. Tudo volta sozinho no dia seguinte. Gravado em `ativ/hoje|<produto>.<local>`.
+
+**Chave liga/desliga e Chovendo hoje (18/11, Ronaldo):** em Catálogo › Ativações, a coluna "Vende hoje" é uma chave por produto e, no produto com mais de um local, uma chave por local na mesma linha do preço (os botões "Hoje não vendo"/"Voltar a vender hoje" saíram). A seção Drone tem a chave do dia **Chovendo hoje** (`ativ/hoje|_chuva`, volta sozinha no dia seguinte, mesma permissão do Vende hoje). Ligada, o drone sem preço de chuva sai da venda (chave travada, preços riscados) e o que tem preço de chuva (Boomerang) passa a custar esse preço em todos os locais. A venda não tem mais a caixinha "Com chuva" por item: o preço já vem do dia, e o item registrado leva `chuva: true`.
 
 ### 4b. Feito na v99.20.0: o vídeo na galeria da nuvem
 

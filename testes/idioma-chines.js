@@ -1,5 +1,5 @@
 // 18/11: chinês simplificado (zh-CN) para o cliente: Checkout, galeria online e vídeo das ativações. A equipe segue nos 5 idiomas.
-// No Checkout em chinês, alemão e francês o português vem pequeno embaixo (.leg-pt) para o atendente orientar; na galeria e no vídeo, só chinês.
+// Em chinês, alemão e francês o português vem pequeno embaixo (.leg-pt), no Checkout e (18/11) também na galeria online.
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const API='https://api-teste.invalid';const TOK='V'.repeat(22);
@@ -42,15 +42,15 @@ try{
   await pg.evaluate(()=>{ETERNA.state.lang='es';ETERNA.render();});ok(await pg.locator('.leg-pt').count()===0,'2: em espanhol não há legenda');
   // 3. galeria online
   const G=await ctx.newPage();G.on('pageerror',e=>errs.push('G: '+e.message));await G.goto(U+'#g/abcdefghijklmnop');await G.waitForTimeout(600);
-  t=await G.evaluate(()=>{ETERNA.state.lang='zh';ETERNA.state.pub.step='codigo';ETERNA.render();return document.querySelector('#main').innerText;});
+  t=await G.evaluate(()=>{ETERNA.state.lang='zh';ETERNA.state.pub.step='codigo';ETERNA.render();const c=document.querySelector('#main').cloneNode(true);c.querySelectorAll('.leg-pt').forEach(x=>x.remove());return c.textContent;});
   ok(HAN.test(t)&&!PT.test(t),'3: galeria em chinês: '+t.replace(/\s+/g,' ').slice(0,200));
-  ok(await G.locator('.leg-pt').count()===0,'3: galeria no celular do cliente sem legenda em português');
+  ok(await G.locator('.leg-pt').count()>0,'3: galeria em chinês com o português pequeno embaixo (18/11, como no Checkout)');
   ok(await G.evaluate(()=>document.documentElement.lang)==='zh-CN','3: página zh-CN: '+await G.evaluate(()=>document.documentElement.lang));
   ok(/YaHei|PingFang/.test(await G.evaluate(()=>getComputedStyle(document.body).fontFamily)),'3: fonte chinesa na lista');
   // 4. vídeo: quem abriu em chinês volta em chinês
   const V=await ctx.newPage();V.on('pageerror',e=>errs.push('V: '+e.message));await V.goto(U);await V.evaluate(()=>localStorage.setItem('eterna.lang','zh'));
   await V.goto(U+'#g/'+TOK);await V.reload();await V.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});
-  t=await V.evaluate(()=>document.querySelector('#main').innerText);
+  t=await V.evaluate(`(${SEM_PT})()`);
   ok(await V.evaluate(()=>ETERNA.pub.step)==='video_aceite'&&HAN.test(t)&&!PT.test(t),'4: vídeo em chinês: '+t.replace(/\s+/g,' ').slice(0,200));
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
