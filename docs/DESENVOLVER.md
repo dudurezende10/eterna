@@ -92,7 +92,7 @@ O login de desenvolvedor lê tudo isso, mas não tem `sudo`: reiniciar serviço,
 
 ## 6. Regras do projeto que valem em todo commit
 
-- Todo texto novo da tela entra nos 5 idiomas (`T()`; pt, en, es, fr, de).
+- Todo texto novo da tela entra nos 5 idiomas (`T()`; pt, en, es, fr, de). Texto do cliente entra também em chinês (`I18N_ZH`, docs/TRADUCAO-CHINES.md).
 - Registro de operação mora no banco do servidor, nunca só no navegador (`CLAUDE.md`, "Onde mora o dado").
 - Nomes das ativações: Drone, Chute a Gol e Snap Pop.
 - Fundo de IA é montado no servidor quando a foto chega, nunca na frente do cliente (`docs/fundos-ia-regras.md`).

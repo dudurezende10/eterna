@@ -41,6 +41,7 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+[lang|=zh]{--display:'Big Shoulders Display','PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif;--body:'Inter','PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',system-ui,sans-serif;font-family:var(--body)}
 a{color:inherit}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
 button:focus-visible,[tabindex]:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -1490,7 +1491,7 @@ const DATA={"paxSource": "Painel Viva Maracanã (catracas), maraca-acessos.onren
 const $=(s,el=document)=>el.querySelector(s);
 // Dois idiomas que nunca se misturam: state.lang é o do CLIENTE (Checkout e galeria, troca a cada venda) e langEq() é o da EQUIPE (cadastro da pessoa ou aparelho).
 // A moeda é da unidade e não muda com o idioma; o idioma só muda como o número é escrito.
-const LOCALES={pt:'pt-BR',en:'en-US',es:'es-ES',fr:'fr-FR',de:'de-DE'};
+const LOCALES={pt:'pt-BR',en:'en-US',es:'es-ES',fr:'fr-FR',de:'de-DE',zh:'zh-CN'};
 const IDIOMAS_EQ=[['pt','Português'],['en','English'],['es','Español'],['fr','Français']]; // mesmo conjunto e ordem de parceiros.vivamaracana.com.br
 const idiomaEqOk=l=>IDIOMAS_EQ.some(x=>x[0]===l);
 const MOEDA={codigo:'BRL',simbolo:'R$'};
@@ -2495,7 +2496,7 @@ const ECO_ID=/^[A-Za-z0-9_|:-]{1,80}$/;
 function ecoNorm(m){if(!m||typeof m!=='object')return null;const tab=typeof m.tab==='string'&&/^[a-z0-9]{1,12}$/.test(m.tab)?m.tab:null;if(m.tipo==='fim')return {tipo:'fim',tab};const n=v=>{v=+v;return isFinite(v)?v:0;};const id=v=>typeof v==='string'&&ECO_ID.test(v)?v:null;
   const foto=x=>x&&typeof x==='object'&&id(x.id)?{t:x.t==='ai'?'ai':'ph',id:id(x.id),bg:id(x.bg),st:['ok','fav','no'].includes(x.st)?x.st:'',fav:!!x.fav}:null;
   const pk=v=>DATA.catalog.some(c=>c.id===v&&c.kind==='pacote')?v:null;
-  const o={tipo:'estado',tab,em:n(m.em),step:['review','cart','done'].includes(m.step)?m.step:'code',lang:LANGS.some(l=>l[0]===m.lang)?m.lang:'pt'};
+  const o={tipo:'estado',tab,em:n(m.em),step:['review','cart','done'].includes(m.step)?m.step:'code',lang:LANGS_CLI.some(l=>l[0]===m.lang)?m.lang:'pt'};
   if(o.step!=='code'&&id(m.card)){o.card=m.card;o.i=Math.max(0,Math.floor(n(m.i)));o.n=Math.max(0,Math.floor(n(m.n)));o.foto=foto(m.foto);o.esc=(Array.isArray(m.esc)?m.esc:[]).slice(0,60).map(foto).filter(Boolean);
     o.pkg=pk(m.pkg);o.ideal=pk(m.ideal);o.lines=(Array.isArray(m.lines)?m.lines:[]).slice(0,4).map(l=>({t:l&&(l.t==='pkg'||l.t==='cort')?l.t:'extra',n:Math.max(0,Math.floor(n(l&&l.n))),v:n(l&&l.v)}));
     o.total=m.total==null?null:n(m.total);o.prints=Math.max(0,Math.floor(n(m.prints)));o.pay=['card','pix','cash'].includes(m.pay)?m.pay:null;}
@@ -2793,7 +2794,7 @@ function lojaFotos(card){const vis=new Set();const so=state.kiosk&&state.kiosk.s
   const vend=sel?vendidasTodas():null;return soCards(card).filter(c=>!sel||!lojaJaPaga(c)).map(c=>({c,s:sessionObj(c)})).filter(x=>x.s).sort((a,b)=>sesHora(a.c)-sesHora(b.c))
   .flatMap(({c,s})=>s.photos.filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]&&lojaDele(card,p.id)&&!(vend&&vend.has(p.id))&&!vis.has(p.id)&&vis.add(p.id)).map(p=>({...p,ses:c})));}
 // rótulo discreto de cada bloco quando as fotos vêm de mais de uma sessão: ponto · hora
-function lojaBloco(c){const s=sessionObj(c)||{};const sim=SIM.sessions[c]||{};const pt=(DATA.points.find(p=>p.id===sim.point)||{}).name||s.pdv||sim.pdv||'';const h=sim.openedAt?new Date(sim.openedAt).toLocaleTimeString(({pt:'pt-BR',en:'en-US',es:'es-ES',fr:'fr-FR',de:'de-DE'})[lang()]||'pt-BR',{hour:'2-digit',minute:'2-digit'}):(s.time||'');return [pt,h].filter(Boolean).join(' · ');}
+function lojaBloco(c){const s=sessionObj(c)||{};const sim=SIM.sessions[c]||{};const pt=(DATA.points.find(p=>p.id===sim.point)||{}).name||s.pdv||sim.pdv||'';const h=sim.openedAt?new Date(sim.openedAt).toLocaleTimeString(LOCALES[lang()]||'pt-BR',{hour:'2-digit',minute:'2-digit'}):(s.time||'');return [pt,h].filter(Boolean).join(' · ');}
 // v93 (Eduardo, 06/11 07:54; plano docs/planos/2026-11-06-dois-cliques-ia.md): os primeiros cliques de cada sessão de ponto de
 // campo (1º corpo inteiro, 2º mais fechado) são só base dos fundos de IA e nunca aparecem como foto à venda. O Checkout monta UM
 // fundo de cada (os 5 de bgOn), cada um com a base indicada em FIA_BASE (0 = corpo inteiro, 1 = fechada; fundo fora do mapa = 1).
@@ -3118,7 +3119,8 @@ const LANG_FLAGS={
   en:'<rect width="30" height="20" fill="#fff"/>'+[0,2,4,6,8,10,12].map(i=>`<rect y="${(i*20/13).toFixed(2)}" width="30" height="${(20/13).toFixed(2)}" fill="#b22234"/>`).join('')+'<rect width="13" height="10.77" fill="#3c3b6e"/>'+[[2,2],[5,2],[8,2],[11,2],[3.5,4.4],[6.5,4.4],[9.5,4.4],[2,6.8],[5,6.8],[8,6.8],[11,6.8],[3.5,9.1],[6.5,9.1],[9.5,9.1]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r=".55" fill="#fff"/>`).join(''),
   es:'<rect width="30" height="20" fill="#aa151b"/><rect y="5" width="30" height="10" fill="#f1bf00"/>',
   fr:'<rect width="30" height="20" fill="#fff"/><rect width="10" height="20" fill="#002395"/><rect x="20" width="10" height="20" fill="#ed2939"/>',
-  de:'<rect width="30" height="20" fill="#000"/><rect y="6.67" width="30" height="6.67" fill="#dd0000"/><rect y="13.33" width="30" height="6.67" fill="#ffce00"/>'};
+  de:'<rect width="30" height="20" fill="#000"/><rect y="6.67" width="30" height="6.67" fill="#dd0000"/><rect y="13.33" width="30" height="6.67" fill="#ffce00"/>',
+  zh:'<rect width="30" height="20" fill="#ee1c25"/>'+[[5,5,3,0],[10,2,1,23],[12,4,1,46],[12,7,1,70],[10,9,1,93]].map(([x,y,r,g])=>`<polygon fill="#ffff00" transform="translate(${x} ${y}) rotate(${g})" points="${[...Array(10)].map((_,i)=>{const a=Math.PI*(i/5-.5),q=i%2?r*.382:r;return (q*Math.cos(a)).toFixed(2)+','+(q*Math.sin(a)).toFixed(2);}).join(' ')}"/>`).join('')};
 const flagSvg=c=>`<svg class="lj-flag" viewBox="0 0 30 20" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${LANG_FLAGS[c]||''}</svg>`;
 // ---------- Galeria online por QR (fase 1): token e código por sessão, manifesto, fila de envio ao agente ----------
 // O QR da Loja aponta para https://eterna.photo/#g/<token>. O token nasce aqui (crypto), então a Loja nunca trava sem internet.
@@ -3614,6 +3616,7 @@ function galEvSalvar(){const e=state.gal.ev;if(!e)return;const nome=(($('#gal-ev
   state.gal.ev=null;galPublicar(m.token);toast(TE('ga_grupo_salvo',nome,m.codigo));render();}
 // ---------- Idiomas da Loja e da galeria do convidado: português, inglês, espanhol, francês e alemão ----------
 const LANGS=[['pt','Português'],['en','English'],['es','Español'],['fr','Français'],['de','Deutsch']];
+const LANGS_CLI=[...LANGS,['zh','中文']]; // idiomas do cliente; os textos da equipe (EQ) seguem só LANGS
 const PL=(n,a,b)=>n===1?a:b;
 const I18N={
  relive:['Viva essa história','Relive the moment','Revive la historia','Revivez l’histoire','Erlebe die Geschichte'],
@@ -3843,13 +3846,233 @@ gq_payCancel:['O pagamento não foi concluído. Suas fotos continuam aqui para c
  ljSaveFail:['Não conseguimos registrar o pedido. Fale com a equipe no balcão.','We couldn’t register your order. Please talk to the team at the counter.','No pudimos registrar tu pedido. Habla con el equipo en el mostrador.','Nous n’avons pas pu enregistrer votre commande. Parlez à l’équipe au comptoir.','Wir konnten deine Bestellung nicht speichern. Bitte sprich mit dem Team an der Theke.'],
  gq_printHow:['Aponte a câmera do celular para o QR e envie uma foto do rosto da criança.','Point your phone camera at the QR and send a photo of the child’s face.','Apunta la cámara del móvil al QR y envía una foto del rostro del niño o la niña.','Pointez l’appareil photo du téléphone vers le QR et envoyez une photo du visage de l’enfant.','Richte die Handykamera auf den QR-Code und schick ein Foto vom Gesicht des Kindes.'],
 };
-function lang(){const l=state.lang;return LANGS.some(x=>x[0]===l)?l:'pt';}
-function T(k,...a){const e=I18N[k];if(!e)return k;const i=Math.max(0,LANGS.findIndex(x=>x[0]===lang()));const v=e[i]!=null?e[i]:e[0];return typeof v==='function'?v(...a):v;}
-function fmtD(d){try{return new Date(d).toLocaleDateString({pt:'pt-BR',en:'en-GB',es:'es-ES',fr:'fr-FR',de:'de-DE'}[lang()]);}catch(e){return String(d);}}
+// 18/11: chinês simplificado (zh-CN) só para o cliente (Checkout, galeria online e vídeo). Tradução em docs/TRADUCAO-CHINES.md;
+// texto do cliente sem chinês aqui cai no inglês. "singular | plural" vira uma forma só.
+const I18N_ZH={
+ relive:"重温这一刻",
+ yourPhotos:"你的照片<br>都在这里",
+ lookCam:"请看向镜头",
+ cam_idle:"请看向镜头",
+ typeCode:"输入你的代码",
+ gq_codeH:"输入你的代码",
+ ljReadyH:"完成！",
+ ljReadySub:"工作人员会帮你完成购买",
+ ljYourCode:"你的代码",
+ receiptCode:"你的代码",
+ ljNChosen:(n)=>`已选 ${n} 张照片`,
+ ljPayValue:"应付金额",
+ ljPayMachine:"请在刷卡机付款",
+ ljPayCash:"请把现金交给工作人员",
+ ljPayAsk:"工作人员会告诉你付款方式",
+ ljSair:"退出",
+ ljSairAsk:"退出并删除已标记的照片？",
+ ljSairSim:"是，退出",
+ ljSairNao:"否，继续选择",
+ ljVoltarTarde:"工作人员正在为你完成购买。",
+ ljPaidValue:(v)=>`已付金额 ${v}`,
+ ljBackPhotos:"返回照片",
+ ljSeeMine:"查看我的照片",
+ seeMine:"查看我的照片",
+ gv_tour_ver:"查看我的照片",
+ ljClose:"关闭",
+ ljGrupo:"合影",
+ ljGrupoSub:"大家一起正对镜头站好。我们会找出每个人的照片和合影",
+ ljGrupoFoto:"拍照",
+ ljUmaPessoa:"只有一个人",
+ ljGrupoAchou:(n)=>`照片中有 ${n} 人`,
+ ljStart:"开始",
+ ljTypeCode:"输入你的会话编号",
+ codeSearching:"正在查找你的照片…",
+ camera:"相机",
+ notFound:"未找到",
+ back:"返回",
+ choose:"选择你的照片",
+ cont:"继续",
+ ljVerTodas:"查看全部",
+ ljTelaCheia:"全屏查看",
+ ljOutraP:"另一个人",
+ ljEscolhidas:"已选",
+ ljPrev:"上一张",
+ ljNext:"下一张",
+ ljLang:"语言",
+ tapCheck:"点击 ✓ 选择你想带走的照片",
+ nPhotos:(n)=>`${n} 张照片`,
+ memories:"你的回忆",
+ bgTelao:"马拉卡纳大屏",
+ bgIA:"AI 背景",
+ edSelo:"马拉卡纳特别版",
+ edTitulo:"你的特别照片",
+ edFotos:"你今天的照片",
+ bgArq1950:"Maracanã 1950",
+ bgMiranteDia:"里约观景台",
+ bgMirante:"日落观景台",
+ bgCampeao:"冠军之夜",
+ bgTunel:"走出隧道",
+ bgPodio:"冠军领奖台",
+ aiMaking:"正在准备你的特别照片…",
+ gallery:"在线相册保存 30 天",
+ payH:"你想怎么付款？",
+ card:"银行卡",
+ pix:"PIX",
+ cash:"现金",
+ total:"合计",
+ save:(x)=>`节省 ${x}`,
+ thanks:"谢谢",
+ storyGoes:"你的故事<br>带着走",
+ printsReady:(n)=>`你的 ${n} 张照片会在这里的柜台打印出来。`,
+ scanQR:"用手机相机扫描，即可下载电子版照片。",
+ qrInst1:"用手机相机对准二维码",
+ qrInst2:"或访问 eterna.photo/g 并输入代码",
+ download:"下载你的照片",
+ nextGuest:"下一位顾客",
+ tvSesH:"这次的会话也是你的吗？",
+ tvSesSub:"这些来自游览其他时刻的照片看起来像你",
+ tvSim:"是的，是我",
+ tvNao:"不是我",
+ foundYou:"找到你了",
+ ljSeparando:"正在整理你的照片…",
+ addPerson:"添加其他人",
+ addPersonSub:"现在请拍对方的自拍：对方的照片会和你的一起添加",
+ backMine:"返回我的照片",
+ addedPerson:"照片已添加",
+ codeBad:"未找到该代码，请检查你的代码。",
+ codeWait:"尝试次数过多。请向工作人员求助，或 1 分钟后再试。",
+ isOne:"是其中一张吗？",
+ cam_pick:"是其中一张吗？",
+ none:"都不是我的",
+ cam_off:"正在开启相机…",
+ cam_present:"请保持静止片刻",
+ cam_searching:"正在查找你的照片…",
+ cam_found:"找到你了！",
+ cam_varias:"每次一人：镜头里只能有你的脸",
+ cam_noface:"没有看到人脸。请看向镜头",
+ cam_nomatch:"没有找到你的照片。请使用你的代码",
+ cam_nocam:"相机不可用。请使用你的代码",
+ cam_sim:"相机不可用 · 演示模式",
+ g_fit:"把脸放进圆圈里，不要戴墨镜或帽子。",
+ g_snap:"拍照",
+ ljBackStart:"返回首页",
+ ljBackIn:"将在以下时间后返回首页",
+ ljPosPixH:"请用 PIX 在刷卡机付款",
+ ljMais:"购买更多照片",
+ ljMaisNada:"你已购买了所有照片。",
+ ljAlreadyPaid:"这些照片已购买。如需购买更多，请联系工作人员。",
+ ljSaveFail:"无法登记订单。请到柜台联系工作人员。",
+ gq_gratisH:"选择你的免费照片",
+ gq_gratisD:"在你想要的免费照片上点击“我要这张免费的”。",
+ gq_gratisBtn:"我要这张免费的",
+ gq_gratisConf:"确认免费照片",
+ gq_gratisFinal:"选择后不可更改。",
+ gq_gratisOk:"免费照片已可下载",
+ gq_gratisRep:"这位小朋友已选择了免费照片。",
+ gq_gratisEsgot:"该学校的免费照片已全部被选完。",
+ gq_loading:"正在打开你的照片",
+ gq_consentH:"开始之前",
+ gq_consentSelf:"我授权仅为查找本次游览中我的照片而使用我的自拍。\n系统会即时比对，之后即删除（LGPD）。",
+ gq_consentKid:"我是该儿童的父亲、母亲或法定监护人，授权仅为查找本次游览中的照片而使用该儿童的面部照片。\n照片将即时比对并删除（LGPD，第 14 条）。",
+ gq_consentSelfNuvem:"我授权仅为查找本次游览中我的照片而使用我的自拍。\n自拍仅与本相册中的照片比对，不会保存。相册到期后，照片中的面部数据将被删除（LGPD）。",
+ gq_consentKidNuvem:"我是该儿童的父亲、母亲或法定监护人，授权仅为查找本次游览中的照片而使用该儿童的面部照片。\n照片仅与本相册中的照片比对，不会保存。相册到期后，照片中的面部数据将被删除（LGPD，第 14 条）。",
+ gq_agree:"同意并继续",
+ gq_selfieH:"拍一张自拍",
+ gq_selfieD:"这样只有你能看到自己的照片。",
+ gq_kidH:"儿童面部照片",
+ gq_kidD:"正对镜头，光线充足，不戴帽子或墨镜。",
+ gq_comparing:"正在你本次游览的照片中查找。",
+ gq_varias:"每次一人",
+ gq_variasD:"镜头里只能有你的脸。每人分别打开自己的照片。",
+ gq_camBloq:"请在浏览器中允许使用相机，然后重试。如仍无法使用，请联系 Tour 工作人员。",
+ gq_looking:"把脸放进圆圈里，照片会自动拍摄",
+ gq_noFace:"照片中未找到人脸。请正对镜头，并在光线充足的地方再试。",
+ gq_noMatch:"本次游览的照片中没有这张脸。",
+ gq_tries:(n)=>`你还可以尝试 ${n} 次。`,
+ gq_lockedDay:"尝试次数过多。请明天再试。",
+ gq_locked:(t)=>`尝试次数过多。请在 ${t} 再试。`,
+ gq_tryAgain:"重试",
+ gq_help:"需要帮助吗？请联系 Tour 工作人员。",
+ gq_arriving:"你的照片即将送达",
+ gq_arrivingD:"请几分钟后再来。",
+ gq_expired:"此相册已过期",
+ gq_expiredD:"照片可保存 30 天。",
+ gq_notFound:"未找到相册",
+ gq_codeIs:(c)=>`你的代码：${c}`,
+ gq_open:"打开",
+ gq_until:(d)=>`有效期至 ${d}`,
+ gv_ate:(d)=>`有效期至 ${d}`,
+ gq_findMore:"查找更多你的照片",
+ gq_findMoreD:"拍一张自拍，查看其他有你的照片。",
+ gq_backMine:"返回你的照片",
+ gq_yours:"你的照片",
+ gq_yoursD:(n)=>`${n} 张高清照片可下载`,
+ gq_none:"暂无可下载的照片。",
+ gq_gift:"赠送",
+ gq_dl:"下载",
+ gq_dlAll:"全部下载",
+ gq_more:"本次游览的更多照片",
+ gq_moreD:"点击 ✓ 选择你想带走的照片。",
+ gq_offer:(n,a,b,c)=>`${n} 张照片 ${a} · 每多一张 ${b} · 全部 ${c}。`,
+ gq_moreFree:(n)=>`可再免费选择 ${n} 张`,
+ gq_dadosH:"你的付款信息",
+ gq_dadosD:"付款在 Imply（Tour 售票处）完成，他们需要这些信息来开具订单。",
+ gq_nome:"全名",
+ gq_email:"电子邮箱（我们会发送照片链接）",
+ gq_cpf:"CPF",
+ gq_passaporte:"护照号码",
+ gq_estrangeiro:"我没有 CPF（使用护照）",
+ gq_brasileiro:"我有 CPF",
+ gq_mkt:"我想通过电子邮件接收 Viva Maracanã 的新闻和优惠（可选）。",
+ gq_irPagar:(n,x)=>`去付款 · ${x}`,
+ gq_implyFine:"你将前往 Imply，用 Pix 或银行卡付款后返回此处。Imply 确认付款后，照片即可下载。",
+ gq_nomeBad:"请输入你的全名。",
+ gq_emailBad:"请检查电子邮箱。",
+ gq_docBad:"请检查证件号码。",
+ gq_impErr:"目前无法打开付款页面，请稍后再试。",
+ gq_conferindo:"正在核对你的付款",
+ gq_conferindoD:"Imply 确认后，你的照片会显示在这里。使用 Pix 可能需要几分钟。",
+ gq_payCancel:"付款未完成。你的照片仍可在此购买。",
+ gq_all:(x)=>`全部 ${x}`,
+ gq_buy:(n,x)=>`购买 ${n} 张照片 · ${x}`,
+ gq_buyOff:"如需购买这些照片，请到柜台联系 Tour 工作人员。",
+ gq_payTest:"测试付款，不会收费。",
+ gq_payFail:"无法完成付款。请重试，或联系 Tour 工作人员。",
+ gq_again:"为了安全，请拍一张新的自拍以继续。",
+ gq_paid:"付款已批准，你的照片已可下载。",
+ gq_waitPay:"等待付款确认。",
+ gq_kidFound:(n)=>`找到了 ${n} 张孩子的照片`,
+ gq_waitCash:"你的现金付款正在等待收银台处理",
+ gq_waitCashD:"工作人员确认后，你的照片会显示在这里。",
+ gq_printHow:"用手机相机对准二维码，并上传儿童的面部照片。",
+ gv_h_drone:"你的 Drone 视频",
+ gv_h_chute:"你的 Chute a Gol 视频",
+ gv_h_snap:"你的 Snap Pop 视频",
+ gv_h_video:"你的 Tour 视频",
+ gv_d:"这张卡片是你视频的钥匙，请妥善保管。",
+ gv_consent:(d)=>`我授权在本段 Tour Maracanã 视频中使用我的形象，仅供我观看和下载。\n电子邮箱将与本视频关联，用于客户服务。视频可保存至 ${d}，之后将被删除（LGPD）。`,
+ gv_email:"你的电子邮箱",
+ gv_ver:"查看我的视频",
+ gv_erro:"目前无法打开，请稍后再试。",
+ gv_chegando:"你的视频即将送达",
+ gv_chegandoD:"几分钟后视频会自动显示在这里。你可以保持此页面打开。",
+ gv_tour_h:(n)=>`找到了 ${n} 张你在 Tour 中的照片`,
+ gv_tour_d:"带走你在体育场没有拿走的照片。拍一张快速自拍即可确认是你本人。",
+ gv_tour_d2:"点击照片即可购买。你已带走的照片可直接下载。",
+ gv_tour_tudo:"全部照片都已属于你，直接下载即可。",
+ gv_tour_comprar:"购买我的照片",
+ gv_tour_volta:"返回视频",
+ gv_baixar:"下载视频",
+ ljEscLista:'已选照片',
+ ljEscVazio:'你选的照片会显示在这里',
+ ljEscVer:(n)=>`查看第 ${n} 张已选照片`,
+ ljEscTirar:(n)=>`将第 ${n} 张照片移出已选`,
+ ljEscTirada:'照片已移除',
+ ljEscDesfazer:'撤销',
+};
+function lang(){const l=state.lang;return LANGS_CLI.some(x=>x[0]===l)?l:'pt';}
+function T(k,...a){const e=I18N[k];if(!e)return k;const l=lang();const i=Math.max(0,LANGS.findIndex(x=>x[0]===l));const v=l==='zh'?(I18N_ZH[k]!=null?I18N_ZH[k]:e[1]):e[i]!=null?e[i]:e[0];return typeof v==='function'?v(...a):v;}
+function fmtD(d){try{return new Date(d).toLocaleDateString({pt:'pt-BR',en:'en-GB',es:'es-ES',fr:'fr-FR',de:'de-DE',zh:'zh-CN'}[lang()]);}catch(e){return String(d);}}
 // v96: idiomas no overlay da foto; em tela estreita recolhem num botão com a bandeira atual (state.kiosk.lgOpen)
 function ljLangOv(){const o=!!state.kiosk.lgOpen;return `<div class="lj-lgov${o?' open':''}"><button class="lj-ovb lj-lgbtn" data-act="lj-lg" aria-expanded="${o}" aria-label="${T('ljLang')}" title="${T('ljLang')}">${flagSvg(lang())}</button>${langPick(true)}</div>`;}
-function langPick(dark){return `<div class="lj-langs ${dark?'dark':''}" role="group" aria-label="Idioma · Language">${LANGS.map(([c,n])=>`<button data-act="lang" data-l="${c}" aria-pressed="${lang()===c}" title="${n}" aria-label="${n}" lang="${c}">${flagSvg(c)}</button>`).join('')}</div>`;}
-(function(){try{const s=localStorage.getItem('eterna.lang');if(s)state.lang=s;else{const n=(navigator.language||'pt').slice(0,2).toLowerCase();state.lang=LANGS.some(x=>x[0]===n)?n:'pt';}}catch(e){state.lang='pt';}})();
+function langPick(dark){return `<div class="lj-langs ${dark?'dark':''}" role="group" aria-label="Idioma · Language">${LANGS_CLI.map(([c,n])=>`<button data-act="lang" data-l="${c}" aria-pressed="${lang()===c}" title="${n}" aria-label="${n}" lang="${c}">${flagSvg(c)}</button>`).join('')}</div>`;}
+(function(){try{const s=localStorage.getItem('eterna.lang');if(s)state.lang=s;else{const n=(navigator.language||'pt').slice(0,2).toLowerCase();state.lang=LANGS_CLI.some(x=>x[0]===n)?n:'pt';}}catch(e){state.lang='pt';}})();
 
 // Checkout em aparelho não pareado (o agente respondeu 401 em /postos/eu): tela da equipe, sem nada do cliente
 function ljNaoPareado(){return `<div class="lj lj-full lj-hero lj-naopar"><div class="lj-naoparin"><div class="lj-eyebrow">Equipe</div><h1 class="lj-h1">Este aparelho ainda não é um posto</h1>
@@ -12064,7 +12287,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='posto'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={vendaCalc,vendaCalcCort,trainLista,trainOut,trFila,trEnviar,trCorpo,trCarregar,trDias,trAtual,migraTreino16,trainAssina,TR_FILA,escalaOn,modNome,iaCfgPanel,diarioLista,salesFiltradas,esTela,esFotoOrd,relAba,relNovo,relOcupado,painelNotas,escCobertura,relExportar,relPode,relBotao,relNome,relCab,REL,xlsxBlob,pdfBlob,pdfTxt,pdfWin,xmlTxt,zipStore,crc32,flagLinhas,auditText,qrLeitor,ingNorm,pubVideoRenova,ativOps,ativLista,impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,priceOf,lojaMaisIds,EQ,TE,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais,pubGaleria,selfieVarias,ynDetect,esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,fiaPB,fiaSemFiltro:v=>{FIA_SEM_FILTRO=!!v;FIA_FILTRO_OK=null;},bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},I18N,T,ecoUpd,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,FIA_ESTREITO_DE,FIA_ESTREITO_ATE,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,lgpdPlano,saveSim,pendMontSemImp,pendRecomecar,ecoEsperaId,fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},ATIV_PADRAO,ativPreco,ativOk,ativForaHoje,ativVendavel,ativLista,idiomaEquipe,asLer,asCarrega,asEnviar,asJunta,avCodigo,avNumero,avDemoCopia,avDemoNome,arEquipe,aePull,aeQrLido,aeSolta,arPeriodo,arGrupo,arServicos,arPull};
+window.ETERNA={I18N_ZH,LANGS_CLI,vendaCalc,vendaCalcCort,trainLista,trainOut,trFila,trEnviar,trCorpo,trCarregar,trDias,trAtual,migraTreino16,trainAssina,TR_FILA,escalaOn,modNome,iaCfgPanel,diarioLista,salesFiltradas,esTela,esFotoOrd,relAba,relNovo,relOcupado,painelNotas,escCobertura,relExportar,relPode,relBotao,relNome,relCab,REL,xlsxBlob,pdfBlob,pdfTxt,pdfWin,xmlTxt,zipStore,crc32,flagLinhas,auditText,qrLeitor,ingNorm,pubVideoRenova,ativOps,ativLista,impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,priceOf,lojaMaisIds,EQ,TE,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais,pubGaleria,selfieVarias,ynDetect,esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,fiaTelao,fiaHomog,fiaPB,fiaSemFiltro:v=>{FIA_SEM_FILTRO=!!v;FIA_FILTRO_OK=null;},bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},I18N,T,ecoUpd,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,refErro,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,FIA_ESTREITO_DE,FIA_ESTREITO_ATE,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,lgpdPlano,saveSim,pendMontSemImp,pendRecomecar,ecoEsperaId,fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},ATIV_PADRAO,ativPreco,ativOk,ativForaHoje,ativVendavel,ativLista,idiomaEquipe,asLer,asCarrega,asEnviar,asJunta,avCodigo,avNumero,avDemoCopia,avDemoNome,arEquipe,aePull,aeQrLido,aeSolta,arPeriodo,arGrupo,arServicos,arPull};
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 Object.assign(window.ETERNA,{ljEscolhidas,ljEscUpd,ljFsUpd,ljDesfMs:v=>{LJ_DESF_MS=v;}}); // 17/11: barra das escolhidas (testes/checkout-barra-escolhidas.js)
 })();
