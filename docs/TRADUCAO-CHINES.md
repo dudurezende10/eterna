@@ -162,7 +162,7 @@ Total: 203 textos.
 | 131 | Muitas tentativas. Tente de novo amanhã. | Too many attempts. Try again tomorrow. | 尝试次数过多。请明天再试。 |
 | 132 | Muitas tentativas. Tente de novo às {t}. | Too many attempts. Try again at {t}. | 尝试次数过多。请在 {t} 再试。 |
 | 133 | Tentar de novo | Try again | 重试 |
-| 134 | Precisa de ajuda? Fale com a equipe do Tour. | Need help? Talk to the Tour team. | 需要帮助吗？请联系 Tour 工作人员。 |
+| 134 | Precisa de ajuda? Escreva para contato@vivamaracana.com.br | Need help? Write to contato@vivamaracana.com.br | 需要帮助吗？请发邮件至 contato@vivamaracana.com.br |
 | 135 | Suas fotos estão chegando | Your photos are on their way | 你的照片即将送达 |
 | 136 | Volte em alguns minutos. | Come back in a few minutes. | 请几分钟后再来。 |
 | 137 | Esta galeria expirou | This gallery has expired | 此相册已过期 |

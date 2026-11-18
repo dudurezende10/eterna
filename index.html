@@ -81,6 +81,11 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--surface2)}
 .name{font-weight:500}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line);white-space:nowrap}
 .pill.good{color:var(--good);background:var(--good-bg);border-color:transparent}
+.tg{flex:none;position:relative;width:44px;height:26px;padding:0;border-radius:999px;border:0;background:var(--line);cursor:pointer;transition:background .15s}
+.tg::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s}
+.tg[aria-checked="true"]{background:var(--good)}.tg[aria-checked="true"]::after{transform:translateX(18px)}
+.tg.sm{width:36px;height:22px}.tg.sm::after{width:16px;height:16px}.tg.sm[aria-checked="true"]::after{transform:translateX(14px)}
+.tg:focus-visible{outline:2px solid var(--good);outline-offset:2px}
 .pill.warn{color:var(--warn);background:var(--warn-bg);border-color:transparent}
 .pill.bad{color:var(--bad);background:var(--bad-bg);border-color:transparent}
 .pill.neutral{color:var(--muted)}
@@ -870,6 +875,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .gq-h,.gq h1,.gq h2{letter-spacing:.1em}
 .gq .lj-h2{overflow-wrap:anywhere}
 .gq-help{font-size:14px;color:#b9cbe6;text-align:center;margin:8px 0 0}
+.gq-help a{color:#FFB800;font-weight:600;text-decoration:underline;white-space:nowrap}
 .gq-fine{font-size:14px;color:#b9cbe6;margin:0;max-width:420px}
 .gq-err{color:#ffd0c8;font-weight:600;margin:0}
 .gq-codein{width:min(360px,100%)}
@@ -3483,11 +3489,14 @@ function pubTourAbre(pid){const p=state.pub;const t=p&&p.vid&&p.vid.tour;if(!t||
   try{sessionStorage.setItem(TOUR_KEY,JSON.stringify({token:t.token,acesso:t.acesso,video:p.token,sel:pid||null,em:Date.now()}));}catch(e){}
   location.hash='#g/'+t.token;}
 function pubTourVolta(p){const o=pubTourSalvo(p.token);return o&&/^[A-Za-z0-9_-]{22}$/.test(o.video||'')?`<section class="gq-sec"><a class="lj-ghost" href="#g/${o.video}" data-gv-volta>${ICO.back} ${T('gv_tour_volta')}</a></section>`:'';}
+// 18/11: ajuda da galeria vai para o e-mail do Tour, que abre chamado no Zendesk
+const GQ_SUPORTE='contato@vivamaracana.com.br';
+const gqAjuda=()=>`<p class="gq-help">${T('gq_help')} <a href="mailto:${GQ_SUPORTE}">${GQ_SUPORTE}</a></p>`;
 function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const deco=`<div class="lj-stripe" aria-hidden="true"></div><div class="lj-dots" aria-hidden="true"></div>`;
   const top=x=>`<div class="lj-top gq-top"><div class="lj-logo">${logo}</div>${langPick(true)}</div>${x||''}`;
   const box=(h,d,extra)=>`<div class="gq ${p.step==='galeria'?'gq-gal':''}">${deco}${top()}<div class="gq-mid"><h1 class="lj-h2 gq-h">${h}</h1>${d?`<p class="lj-sub">${d}</p>`:''}${extra||''}</div></div>`;
-  const help=`<p class="gq-help">${T('gq_help')}</p>`;
+  const help=gqAjuda();
   if(p.step==='carregando')return box(T('gq_loading'),'','<div class="gq-spin" aria-hidden="true"></div>');
   if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX-XXXX" maxlength="24" value="${esc(p.pre||'')}" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button>${help}`);
   if(p.step==='nao_existe')return box(T('gq_notFound'),'',`<button class="lj-ghost" data-act="gq-back" data-to="codigo">${T('gq_codeH')}</button>${help}`);
@@ -3550,7 +3559,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
       ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(pubTotal(more.length,g)))}</button>`:`<p class="lj-sub gq-buyoff">${T('gq_buyOff')}</p>`}</section>`:''}
     ${pubTourVolta(p)}${g.tipo==='sessao'&&!(p.modo==='agente'?p.acesso:p.match)?`<section class="gq-sec gq-findmore"><p class="lj-sub">${T('gq_findMoreD')}</p><button class="lj-cta" data-act="gq-mais">${ICO.face} ${T('gq_findMore')}</button></section>`:''}
     ${nSel?`<div class="gq-bar"><span><b>${T('nPhotos',nSel)}</b> · ${fmtR(tot)}${livre>0?`<br><small>${T('gq_moreFree',livre)}</small>`:''}</span><button class="lj-cta" data-act="gq-buy">${T('gq_buy',nSel,fmtR(tot))}</button></div>`:''}
-    ${compra||!more.length?`<p class="gq-help">${T('gq_help')}</p>`:''}</div>`;}
+    ${compra||!more.length?gqAjuda():''}</div>`;}
 // ---------- Galerias online (administração): direito por foto, cortesias, grupos de escola e fila de envio ----------
 const GAL_EST={sem:['neutral','sem galeria'],local:['neutral','só neste aparelho'],pendente:['warn','pendente'],enviada:['good','enviada'],encerrada:['neutral','encerrada'],erro:['bad','erro']};
 const GAL_MOTIVOS=[['escola','Escola'],['parceiro','Parceiro'],['reclamacao','Reclamação'],['outro','Outro']];
@@ -3776,7 +3785,7 @@ const I18N={
  gq_lockedDay:['Muitas tentativas. Tente de novo amanhã.','Too many attempts. Try again tomorrow.','Demasiados intentos. Vuelve a intentarlo mañana.','Trop d’essais. Réessayez demain.','Zu viele Versuche. Versuch es morgen wieder.'],
  gq_locked:[t=>`Muitas tentativas. Tente de novo às ${t}.`,t=>`Too many attempts. Try again at ${t}.`,t=>`Demasiados intentos. Vuelve a intentarlo a las ${t}.`,t=>`Trop d’essais. Réessayez à ${t}.`,t=>`Zu viele Versuche. Versuch es um ${t} Uhr wieder.`],
  gq_tryAgain:['Tentar de novo','Try again','Intentar de nuevo','Réessayer','Noch einmal'],
- gq_help:['Precisa de ajuda? Fale com a equipe do Tour.','Need help? Talk to the Tour team.','¿Necesitas ayuda? Habla con el equipo del Tour.','Besoin d’aide ? Parlez à l’équipe du Tour.','Brauchst du Hilfe? Sprich mit dem Tour-Team.'],
+ gq_help:['Precisa de ajuda? Escreva para','Need help? Write to','¿Necesitas ayuda? Escribe a','Besoin d’aide ? Écrivez à','Brauchst du Hilfe? Schreib an'],
  gq_arriving:['Suas fotos estão chegando','Your photos are on their way','Tus fotos están llegando','Vos photos arrivent','Deine Fotos sind unterwegs'],
  gq_arrivingD:['Volte em alguns minutos.','Come back in a few minutes.','Vuelve en unos minutos.','Revenez dans quelques minutes.','Schau in ein paar Minuten wieder vorbei.'],
  gq_expired:['Esta galeria expirou','This gallery has expired','Esta galería ha caducado','Cette galerie a expiré','Diese Galerie ist abgelaufen'],
@@ -4004,7 +4013,7 @@ const I18N_ZH={
  gq_lockedDay:"尝试次数过多。请明天再试。",
  gq_locked:(t)=>`尝试次数过多。请在 ${t} 再试。`,
  gq_tryAgain:"重试",
- gq_help:"需要帮助吗？请联系 Tour 工作人员。",
+ gq_help:"需要帮助吗？请发邮件至",
  gq_arriving:"你的照片即将送达",
  gq_arrivingD:"请几分钟后再来。",
  gq_expired:"此相册已过期",
@@ -7010,12 +7019,13 @@ const AT_ICONES={
 const atIcone=c=>AT_ICONES[c]?'<svg class="at-ico" viewBox="0 0 48 48" aria-hidden="true">'+AT_ICONES[c]+'</svg>':'';
 const atCatNome=c=>c==='drone'?TE('at_drone'):c==='chute'?TE('at_chute'):TE('at_snap'),atEntNome=e=>({video:TE('at_e_video'),foto:TE('at_e_foto'),fisico:TE('at_e_fisico'),experiencia:TE('at_e_experiencia')})[e],atPedeNome=e=>({pessoas:TE('at_p_pessoas'),participantes:TE('at_p_participantes'),nada:TE('at_p_nada')})[e],atOpNome=p=>p.cat==='snap'?TE('at_tema'):TE('at_local');
 function catAtivacoes(){const rw=can('catalogo','u'),hj=rw||can('configuracao','u');const ed=state.ativEd;
-  const sit=p=>!p.ativo?`<span class="pill neutral">${TE('at_inativo')}</span>`:ativForaHoje(p.id)?`<span class="pill warn">${TE('at_fora_hoje')}</span>`:`<span class="pill good">${TE('at_ativo')}</span>`;
-  const ops=p=>p.opcoes.map(o=>{const fo=ativOpFora(p.id,o.nome);return `<div style="white-space:nowrap;display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0"${fo?' data-op-fora':''}><span style="${fo?'text-decoration:line-through;opacity:.6':''}">${o.nome?esc(o.nome)+' ':''}${fmtR(o.preco)}</span>${fo?`<span class="pill warn">${TE('at_fora_hoje')}</span>`:''}
-    ${hj&&p.ativo&&p.opcoes.length>1&&!ativForaHoje(p.id)?`<button class="btn ghost" style="padding:2px 8px;min-height:30px;font-size:.8rem" data-act="ativ-hoje" data-id="${esc(ativOpChave(p.id,o.nome))}">${fo?TE('at_hoje_volta'):TE('at_hoje_nao')}</button>`:''}</div>`;}).join('');
+  // 18/11: liga/desliga da venda do dia numa chave, na mesma linha do produto e de cada local
+  const chave=(id,on,nome,sm)=>`<button type="button" class="tg${sm?' sm':''}" role="switch" aria-checked="${on}" aria-label="${esc(TE('at_vende_hoje')+(nome?': '+nome:''))}" data-act="ativ-hoje" data-id="${esc(id)}"></button>`;
+  const sit=p=>!p.ativo?`<span class="pill neutral">${TE('at_inativo')}</span>`:hj?chave(p.id,!ativForaHoje(p.id),p.nome):ativForaHoje(p.id)?`<span class="pill warn">${TE('at_fora_hoje')}</span>`:`<span class="pill good">${TE('at_ativo')}</span>`;
+  const ops=p=>p.opcoes.map(o=>{const fo=ativOpFora(p.id,o.nome);return `<div style="white-space:nowrap;display:flex;gap:8px;align-items:center;margin:3px 0"${fo?' data-op-fora':''}>${hj&&p.ativo&&p.opcoes.length>1&&!ativForaHoje(p.id)?chave(ativOpChave(p.id,o.nome),!fo,p.nome+(o.nome?' · '+o.nome:''),1):''}<span style="${fo?'text-decoration:line-through;opacity:.6':''}">${o.nome?esc(o.nome)+' ':''}${fmtR(o.preco)}</span></div>`;}).join('');
   const tab=c=>{const L=ativLista(c);return `<div class="panel" id="ativ-${c}"><div class="head"><h2>${esc(atCatNome(c))}</h2>${rw?`<button class="btn ghost" data-act="ativ-novo" data-c="${c}">${TE('at_novo')}</button>`:''}</div>
-    ${L.length?`<div class="tablewrap"><table><thead><tr><th>${TE('cf_produto')}</th><th>${TE('at_precos')}</th><th>${TE('at_situacao')}</th></tr></thead><tbody>
-    ${L.map(p=>`<tr data-ativ="${esc(p.id)}"><td><div class="name">${esc(p.nome)}</div><div class="note">${esc(ativRegras(p))}</div></td><td>${ops(p)}</td><td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${sit(p)}${hj&&p.ativo?`<button class="btn ghost" data-act="ativ-hoje" data-id="${esc(p.id)}">${ativForaHoje(p.id)?TE('at_hoje_volta'):TE('at_hoje_nao')}</button>`:''} ${rw?`<button class="btn ghost" data-act="ativ-editar" data-id="${esc(p.id)}">${TE('at_editar')}</button>`:''}</div></td></tr>`).join('')}
+    ${L.length?`<div class="tablewrap"><table><thead><tr><th>${TE('cf_produto')}</th><th>${TE('at_precos')}</th><th>${TE('at_vende_hoje')}</th></tr></thead><tbody>
+    ${L.map(p=>`<tr data-ativ="${esc(p.id)}"><td><div class="name">${esc(p.nome)}</div><div class="note">${esc(ativRegras(p))}</div></td><td>${ops(p)}</td><td><div style="display:flex;gap:10px;align-items:center;white-space:nowrap">${sit(p)}${rw?`<button class="btn ghost" data-act="ativ-editar" data-id="${esc(p.id)}">${TE('at_editar')}</button>`:''}</div></td></tr>`).join('')}
     </tbody></table></div>`:`<div class="note">${TE('at_vazio')}</div>`}</div>`;};
   return `<div class="panel"><div class="note">${TE('at_nota')}</div></div>${ed?ativForm(ed):''}${ATIV_CATS.map(tab).join('')}`;}
 function ativForm(x){const sel=(k,lista,lab)=>`<label><span class="eyebrow">${lab}</span><select data-act="ativ-f" data-k="${k}">${lista.map(([v,t])=>`<option value="${v}" ${x[k]===v?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`;
@@ -8471,15 +8481,13 @@ const EQ={
   at_drone:["Drone","Drone","Dron","Drone","Drohne"],
   at_chute:["Chute a Gol","Shot on goal","Tiro a puerta","Tir au but","Torschuss"],
   at_snap:["Snap Pop","Snap Pop","Snap Pop","Snap Pop","Snap Pop"],
-  at_nota:["Preços, locais e regras de Drone, Chute a Gol e Snap Pop. \"Hoje não vendo\" tira o produto da venda só hoje; amanhã ele volta sozinho.","Prices, locations and rules for Drone, Shot on goal and Snap Pop. \"Not selling today\" removes the product from sale for today only; tomorrow it comes back on its own.","Precios, lugares y reglas de Dron, Tiro a puerta y Snap Pop. \"Hoy no vendo\" quita el producto de la venta solo hoy; mañana vuelve solo.","Prix, lieux et règles du Drone, du Tir au but et du Snap Pop. « Pas de vente aujourd'hui » retire le produit de la vente pour aujourd'hui seulement ; demain il revient tout seul.","Preise, Orte und Regeln für Drohne, Torschuss und Snap Pop. „Heute nicht verkaufen“ nimmt das Produkt nur heute aus dem Verkauf; morgen ist es automatisch wieder da."],
+  at_nota:["Preços, locais e regras de Drone, Chute a Gol e Snap Pop. A chave \"Vende hoje\" desligada tira o produto da venda só hoje; amanhã ele volta sozinho.","Prices, locations and rules for Drone, Shot on goal and Snap Pop. Switching \"Selling today\" off removes the product from sale for today only; tomorrow it comes back on its own.","Precios, lugares y reglas de Dron, Tiro a puerta y Snap Pop. Apagar \"Se vende hoy\" quita el producto de la venta solo hoy; mañana vuelve solo.","Prix, lieux et règles du Drone, du Tir au but et du Snap Pop. Désactiver « En vente aujourd'hui » retire le produit de la vente pour aujourd'hui seulement ; demain il revient tout seul.","Preise, Orte und Regeln für Drohne, Torschuss und Snap Pop. „Heute im Verkauf“ ausgeschaltet nimmt das Produkt nur heute aus dem Verkauf; morgen ist es automatisch wieder da."],
   at_precos:["Opções e preços","Options and prices","Opciones y precios","Options et prix","Optionen und Preise"],
   at_regras:["Regras","Rules","Reglas","Règles","Regeln"],
-  at_situacao:["Situação","Status","Estado","Statut","Status"],
+  at_vende_hoje:["Vende hoje","Selling today","Se vende hoy","En vente aujourd'hui","Heute im Verkauf"],
   at_ativo:["Ativo","Active","Activo","Actif","Aktiv"],
   at_inativo:["Inativo","Inactive","Inactivo","Inactif","Inaktiv"],
   at_fora_hoje:["Fora hoje","Off today","Fuera hoy","Retiré aujourd'hui","Heute aus"],
-  at_hoje_nao:["Hoje não vendo","Not selling today","Hoy no vendo","Pas de vente aujourd'hui","Heute nicht verkaufen"],
-  at_hoje_volta:["Voltar a vender hoje","Sell again today","Volver a vender hoy","Revendre aujourd'hui","Heute wieder verkaufen"],
   at_editar:["Editar","Edit","Editar","Modifier","Bearbeiten"],
   at_novo:["Novo produto","New product","Nuevo producto","Nouveau produit","Neues Produkt"],
   at_salvar:["Salvar","Save","Guardar","Enregistrer","Speichern"],

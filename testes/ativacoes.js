@@ -30,10 +30,12 @@ try{
   const ed=await A.evaluate(()=>({p:ETERNA.state.ativ.produtos.boomerang&&ETERNA.state.ativ.produtos.boomerang.opcoes[0].preco,form:!!document.querySelector('#ativ-form'),log:ETERNA.auditRead().some(e=>e.acao==='ativ_editar'&&e.alvo==='ativ/boomerang')}));
   ok(ed.p===130&&!ed.form&&ed.log,'preço editado, formulário fecha e fica no registro: '+J(ed));
   ok(/Campo R\$\s130/.test(await A.textContent('#ativ-drone tr[data-ativ="boomerang"]')),'tabela mostra o preço novo');
-  // Hoje não vendo
-  await A.click('[data-act="ativ-hoje"][data-id="boomerang"]');await A.waitForTimeout(150);
-  const hj=await A.evaluate(()=>({fora:ETERNA.ativForaHoje('boomerang'),vend:ETERNA.ativVendavel(ETERNA.state.ativ.produtos.boomerang),txt:document.querySelector('#ativ-drone tr[data-ativ="boomerang"]').textContent}));
-  ok(hj.fora&&!hj.vend&&/Fora hoje/.test(hj.txt)&&/Voltar a vender hoje/.test(hj.txt),'Hoje não vendo: '+J(hj));
+  // chave Vende hoje: desligada tira o produto da venda só hoje, na mesma linha
+  const CH='#ativ-drone tr[data-ativ="boomerang"] .tg[role="switch"][data-id="boomerang"]';
+  ok(await A.getAttribute(CH,'aria-checked')==='true','chave começa ligada');
+  await A.click(CH);await A.waitForTimeout(150);
+  const hj=await A.evaluate(c=>{const t=document.querySelector(c),cel=t.parentElement;return {fora:ETERNA.ativForaHoje('boomerang'),vend:ETERNA.ativVendavel(ETERNA.state.ativ.produtos.boomerang),on:t.getAttribute('aria-checked'),linha:cel.getBoundingClientRect().height<48,locais:document.querySelectorAll('#ativ-drone tr[data-ativ="boomerang"] .tg').length};},CH);
+  ok(hj.fora&&!hj.vend&&hj.on==='false'&&hj.linha&&hj.locais===1,'chave desligada: '+J(hj));
   const amanha=await A.evaluate(()=>{const s=ETERNA.state;s.ativ.hoje.boomerang.dia='2000-01-01';return ETERNA.ativVendavel(s.ativ.produtos.boomerang);});
   ok(amanha,'no dia seguinte o produto volta sozinho');
   // um local fora de venda no dia (o Banco de Suplentes oculto do sistema antigo); sem local nenhum, o produto sai
@@ -58,7 +60,7 @@ try{
   ok(await A.evaluate(()=>ETERNA.state.ativ.produtos.bola_oficial.nome)==='Bola Oficial','nome com < não entra');await A.click('[data-act="ativ-cancelar"]');
   // idioma da equipe
   await A.evaluate(()=>ETERNA.idiomaEquipe('en'));await A.waitForTimeout(200);
-  const en=await A.textContent('#main');ok(/Not selling today|Sell again today/.test(en)&&/Shot on goal/.test(en)&&/Options and prices/.test(en),'aba em inglês');
+  const en=await A.textContent('#main');ok(/Selling today/.test(en)&&/Shot on goal/.test(en)&&/Options and prices/.test(en),'aba em inglês');
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}
