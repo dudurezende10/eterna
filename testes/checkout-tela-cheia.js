@@ -22,7 +22,7 @@ const servidores=[];
 (async()=>{const b=await chromium.launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});const errs=[];const fails=[];let n=0;let velho=null;
 let ult="";const ok=(c,m)=>{n++;ult=String(m).slice(0,90);if(!c)fails.push(m);};
 try{
-const ctx=await b.newContext({locale:'pt-BR',permissions:['camera']});
+const ctx=await b.newContext({locale:'pt-BR',permissions:['camera']});await require('./_fia_antigo').contexto(ctx); // 18/11 (regra 19): as sessões de exemplo (sem bases do servidor) montam pelo jeito antigo, para a matriz do P6 (cardsIA)
 // 17/11: o primeiro toque pede a tela cheia do navegador (lojaTelaCheia); com ela o Chromium do teste não aceita trocar o tamanho da janela,
 // então a função só conta o pedido (conferido no P1)
 await ctx.addInitScript(()=>{Element.prototype.requestFullscreen=function(){window.__telaCheia=(window.__telaCheia||0)+1;return Promise.resolve();};});
