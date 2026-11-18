@@ -28,7 +28,9 @@ m.ev_receber({"eventos": [
 f = m.imp_fila_json()
 m.ev_receber({"eventos": [ev("ev-c7", "venda-7", "criar", "Posto 2", saleNo="P2-002", prints=1),
                           ev("ev-i7", "venda-7", "impressao", "Posto 2", resultado="nao_saiu", n=1, dnp={"mqty": 0, "status": 1100, "texto": "sem papel"}),
-                          ev("ev-r7", "rolo-2", "rolo", "Posto 2", dnp={"mqty": 700, "status": 0})]})
+                          ev("ev-r7", "rolo-2", "rolo", "Posto 2", dnp={"mqty": 700, "status": 0}),
+                          ev("ev-c8", "venda-8", "criar", "Posto 5", saleNo="P5-001", prints=3),
+                          ev("ev-i8", "venda-8", "impressao", "Posto 5", resultado="imprimindo")]})
 f = m.imp_fila_json()
 por = {p["venda"]: p for p in f["pedidos"]}
 ok = lambda c, msg: c or falhas.append(msg)
@@ -44,6 +46,8 @@ ok(por.get("P4-002", {}).get("estado") == "na_fila" and por["P4-002"].get("ids")
 f2 = m.imp_fila_postos(time.time() + m.IMP_NAO_SAIU_S + 60)
 ok("P4-002" not in {p["venda"] for p in f2[2]}, "'Não saiu' parado há mais de 15 min sai da fila")
 ok({p["venda"]: p for p in f["pedidos"]}.get("P2-002", {}).get("estado") == "na_fila", "erro da DNP some quando a DNP volta ao normal: %s" % {p["venda"]: p for p in f["pedidos"]}.get("P2-002"))
+ok(por.get("P5-001", {}).get("estado") == "imprimindo" and por["P5-001"].get("inicio"), "18/11: posto avisou o início, fica em Imprimindo agora: %s" % por.get("P5-001"))
+ok([v["venda"] for v in m.vendas_posto_sem_impressao("Posto 5")["vendas"]] == ["venda-8"], "18/11: imprimindo sem ok ainda volta se o posto recarregar")
 ok(all(p.get("local") for p in f["pedidos"]), "pedidos dos postos marcados como locais")
 r = m.vendas_posto_sem_impressao("Posto 1")
 ok([v["venda"] for v in r["vendas"]] == ["venda-1"] and r["vendas"][0]["dados"].get("saleNo") == "P1-001", "posto 1 recupera só a venda sem impressão: %s" % r)

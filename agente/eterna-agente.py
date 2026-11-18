@@ -7497,6 +7497,13 @@ def imp_fila_postos(agora=None):
             dnp_txt = (d.get("dnp") or {}).get("texto") if int((d.get("dnp") or {}).get("status") or 0) >= 1000 else None
             if d.get("resultado") == "ok":
                 j.update(estado="impresso", feitas=j["fotos"], fim=t, inicio=t)
+            elif d.get("resultado") == "imprimindo":
+                # 18/11: o posto avisa quando manda as fotos para a DNP; até o "ok" a venda fica em "Imprimindo agora". Sem resposta
+                # em 10 min (posto desligou no meio), volta a esperar na fila como um "Não saiu".
+                if agora - t < 600:
+                    j.update(estado="imprimindo", inicio=t)
+                elif agora - t >= IMP_NAO_SAIU_S:
+                    continue
             elif dnp_txt and int((dnp.get(v["posto"], (None, {}))[1] or {}).get("status") or 0) >= 1000:
                 # erro da DNP só enquanto a DNP do posto continua parada (a última leitura dela); voltou ao normal, segue a regra abaixo
                 j.update(estado="erro", fim=t, erro="não saiu · " + str(dnp_txt))
@@ -8985,7 +8992,7 @@ def ativ_video_checa(vid, qr):
         return "dados", None
     c = vendas_db()
     try:
-        r = c.execute("select situacao, itens from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+        r = c.execute("select situacao, itens, tipo from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
         if not r:
             return "nao_achou", None
         if (r[0] or "ativa") != "ativa":
@@ -8997,8 +9004,9 @@ def ativ_video_checa(vid, qr):
             return e, None
         prev = ativ_videos_previstos(json.loads(r[1] or "[]"))
         n = c.execute("select count(*) from ativ_entrega where venda=? and apagado_em is null", (vid,)).fetchone()[0]
-        if n >= prev:
-            return "sem_video" if not prev else "completa", None
+        # 18/11 (Ronaldo): no Chute a Gol o vídeo é opcional; mesmo sem vídeo vendido a equipe pode entregar um (não conta como pendente)
+        if n >= max(prev, 1 if r[2] == "chute" else 0):
+            return "sem_video" if not prev and r[2] != "chute" else "completa", None
     finally:
         c.close()
     try:

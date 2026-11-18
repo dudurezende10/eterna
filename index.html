@@ -2313,7 +2313,8 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
     catch(e){job.fase='erro';toast('A impressora do servidor não imprimiu: '+String(e&&e.message||e).slice(0,140));}
     document.getElementById('print-root')?.remove();render();return;}
   if(pontoModo()==='posto'){ // programa de impressão do posto (eterna-impressao.ps1): a foto vai direto para a DNP, sem a prévia do Chrome
-    job.fase='imprimindo';job.local=true;render();const rl=await impLocal(impJpegs(),s.saleNo||card);if(state.impJob!==job)return;job.local=false;
+    job.fase='imprimindo';job.local=true;render();pvEvento('impressao',s.vendaId,{resultado:'imprimindo'}); // 18/11: a Fila de impressão mostra "Imprimindo agora"
+    const rl=await impLocal(impJpegs(),s.saleNo||card);if(state.impJob!==job)return;job.local=false;
     if(rl){document.getElementById('print-root')?.remove();
       if(rl.ok){job.fase='impresso';job.dnp=dnpLimpa(rl.dnp,'impressao');
         // a DNP confirmou que as folhas saíram: o Eterna registra sozinho (sem "Saiu certo")
@@ -2325,8 +2326,14 @@ async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const 
   const fim=()=>{if(job.fase!=='imprimindo')return;job.fase='impresso';document.body.classList.remove('pr-on');render();}; // depois do afterprint, um print() qualquer volta a imprimir a tela
   window.addEventListener('afterprint',fim,{once:true});try{window.print();}catch(e){}setTimeout(fim,0);}
 // fotos montadas em #print-root -> JPEG (10x15 a 300 dpi = 1800 px no lado maior: mais que isso só pesa no envio)
+// 18/11 (Ronaldo): a DNP imprime 15x10 (3:2) preenchendo o papel. Foto em outra proporção (4:3) era cortada pelo meio e a cabeça
+// saía cortada. Aqui a foto já vai na proporção do papel: o que sobra sai de baixo (a cabeça fica), ou dos lados se for larga demais.
+const IMP_PROP=1.5;
 function impJpegs(){const imgs=[];for(const im of document.querySelectorAll('#print-root img')){
-  const k=Math.min(1,1800/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
+  const W=im.naturalWidth,H=im.naturalHeight,dt=W>=H,lo=dt?W:H,cu=dt?H:W;let sx=0,sy=0,sw=W,sh=H;
+  if(lo/cu<IMP_PROP-0.01){if(dt)sh=Math.round(W/IMP_PROP);else sh=Math.round(W*IMP_PROP);if(sh>H){sh=H;if(dt){sw=Math.round(H*IMP_PROP);sx=Math.round((W-sw)/2);}else{sw=Math.round(H/IMP_PROP);sx=Math.round((W-sw)/2);}}}
+  else if(lo/cu>IMP_PROP+0.01){if(dt){sw=Math.round(H*IMP_PROP);sx=Math.round((W-sw)/2);}else{sh=Math.round(W*IMP_PROP);sy=0;}}
+  const k=Math.min(1,1800/Math.max(sw,sh));const c=document.createElement('canvas');c.width=Math.round(sw*k);c.height=Math.round(sh*k);const x=c.getContext('2d');const fl=(im.style&&im.style.filter)||'';if(fl)x.filter=fl;x.imageSmoothingQuality='high';x.drawImage(im,sx,sy,sw,sh,0,0,c.width,c.height);imgs.push(c.toDataURL('image/jpeg',.92));}
   return imgs;}
 // programa de impressão do posto em 127.0.0.1:8790. null = não está rodando (o Eterna imprime pelo Chrome); senão a resposta dele
 async function impLocal(imgs,venda){const u='http://127.0.0.1:8790';
@@ -2344,7 +2351,7 @@ function impDeEv(e){const d=e.dados||e;const p=e.por;return {idem:e.idem,em:e.em
   reimpressao:!!d.reimpressao,motivo:d.motivo||null,fotos:Array.isArray(d.fotos)?d.fotos:[],semFoto:+d.semFoto||0,dnp:d.dnp||null};}
 function impRefaz(s){if(!s||!s.vendaId||!s.impressao||!IMP_SRV[s.vendaId])return false;const im=s.impressao;
   const antes=JSON.stringify([im,s.impressoes||[]]);const loc=new Map((s.impressoes||[]).map(x=>[x.em+'|'+x.resultado,x]));const vis=new Set();const l=[];
-  IMP_SRV[s.vendaId].concat(pvFila().filter(e=>e.tipo==='impressao'&&e.venda===s.vendaId)).forEach(e=>{if(!e||vis.has(e.idem))return;vis.add(e.idem);const r=impDeEv(e);
+  IMP_SRV[s.vendaId].concat(pvFila().filter(e=>e.tipo==='impressao'&&e.venda===s.vendaId)).forEach(e=>{if(!e||vis.has(e.idem)||(e.dados||e).resultado==='imprimindo')return;vis.add(e.idem);const r=impDeEv(e);
     const x=loc.get(r.em+'|'+r.resultado);if(x){r.avisos=x.avisos;r.falhasIA=x.falhasIA;} // aviso de tela da última tentativa (não vai ao banco)
     l.push(r);});
   l.sort((a,b)=>String(a.em).localeCompare(String(b.em)));
@@ -6302,10 +6309,7 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
   const chute=v.tipo==='chute',chutouEm=chute&&p.voo_em?esc(p.voo_em.slice(11,16)):'';
   const voa=v.tipo==='drone'||chute?!!p.voo_em:!!v.recebido_em;
   const btChutou=podeU?`<button class="btn primary" style="width:100%;min-height:64px;font-size:1.2rem;margin-top:8px" data-act="ae-chutou" data-id="${esc(v.id)}">${TE('ae_chutou')}</button>`:'';
-  if(chute&&!(+v.videos)){const falta=(v.fisicos||[]).some(x=>!x.entregue);
-    return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid ${chutouEm&&!falta?'var(--good,#1b7f3b)':'var(--accent,#134078)'}">${topo(!!chutouEm)}
-    ${chutouEm?`<div style="margin-top:14px"><b style="font-size:1.15rem">${TE(falta?'ae_ch_itens':'ae_ch_pronto',chutouEm)}</b></div>`:`<div class="note" style="margin-top:14px">${TE('ae_ch_dica')}</div>${btChutou}`}
-    ${fis}${chutouEm?`<button class="btn primary" style="width:100%;min-height:56px;margin-top:14px" data-act="ae-at-fecha">${TE('ae_proximo_cliente')}</button>`:''}</div>`;}
+  // 18/11 (Ronaldo): Chute a Gol sempre segue para a tela com o vídeo opcional, mesmo sem vídeo vendido
   // v99.29.5: venda sem vídeo (Snap Pop): o atendimento é só liberar (Começar) e dar baixa nos itens; depois, pronto
   if(!(+v.videos)&&v.tipo!=='drone'){const falta=(v.fisicos||[]).some(x=>!x.entregue);
     return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid ${v.recebido_em&&!falta?'var(--good,#1b7f3b)':'var(--accent,#134078)'}">${topo(!!v.recebido_em)}
