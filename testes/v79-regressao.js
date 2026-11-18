@@ -56,6 +56,8 @@ try{
   const ctx=await nova(b,1366,900);
   const A=await pagina(ctx,'A #loja');await A.goto(U+'#loja');await A.evaluate(()=>{localStorage.clear();});await A.reload();await A.waitForTimeout(1200);
   // v84: no modo local o Checkout só oferece fundo de IA com o recorte do agente; as sessões de exemplo usam o modo Photoroom (só a escolha, sem montar)
+  // 16/11 (três fundos): o roteiro compra 4 fundos de IA; a Noite de campeão é ativada à mão (como em Laboratório › Ativar) para a lista ter 4
+  await A.evaluate(()=>{ETERNA.SIM.bgAtivo={...(ETERNA.SIM.bgAtivo||{}),campeao2:true};ETERNA.SIM.bgOn2=['mirantedia','arq1950','telao','campeao'];});
   await A.evaluate(()=>{ETERNA.SIM.fundosModo='photoroom';ETERNA.fundosModoTeste('photoroom');localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));}); // v97: o Photoroom só pelo interruptor dos testes (some ao recarregar)
   const cards=await A.evaluate(()=>ETERNA.demoSessions().filter(s=>s.photos.length>=10&&ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=10&&ETERNA.lojaItems(s.card).filter(x=>x.t==='ai').length>=4).map(s=>s.card).slice(0,6));
   ok(cards.length>=5,'pré: faltam sessões com 10 fotos e 4 fundos de IA: '+J(cards));
@@ -146,9 +148,9 @@ try{
   ok(cx.includes(cod1)&&cx.includes(C1)&&cx.includes('R$ 190')&&/há \d+ min/.test(cx)&&/8 fotos escolhidas · 8 impressas/.test(cx),'1.6: pendência no Caixa sem recarregar: '+cx.slice(0,300));
   ok(await B.evaluate(()=>document.querySelectorAll('.din-item .ph,.din-item .pend-th').length)>=1,'1.6: miniaturas das fotos na pendência');
   ok(await B.evaluate(()=>(document.querySelector('#rail-din')||{}).textContent)==='1','1.6: número de pendências na barra');
-  await B.fill('#din-q',cod1.replace('-','').toLowerCase());await B.waitForTimeout(150);ok((await txt(B,'.din-list')||'').includes(cod1),'1.6: busca sem hífen não achou');
+  await B.fill('#din-q',cod1.replace('-','').toLowerCase());await B.waitForTimeout(150);ok((await txt(B,'#pend-painel')||'').includes(cod1),'1.6: busca sem hífen não achou');
   await B.fill('#din-q','ZZZZ');await B.waitForTimeout(150);ok(/Nenhum pagamento com esse código/.test(await txt(B,'#main')),'1.6: busca errada deveria esvaziar');
-  await B.fill('#din-q',cod1);await B.waitForTimeout(150);ok((await txt(B,'.din-list')||'').includes(cod1),'1.6: busca com hífen não achou');
+  await B.fill('#din-q',cod1);await B.waitForTimeout(150);ok((await txt(B,'#pend-painel')||'').includes(cod1),'1.6: busca com hífen não achou');
   await B.fill('#din-q','');await B.waitForTimeout(100);await B.screenshot({path:`${P}/v79-caixa-aguardando.png`});
 
   // ---- 1.3: a tela final do dinheiro volta sozinha (tempo configurado)
@@ -234,7 +236,7 @@ try{
   fase='1.9';
   await lojaSessao(A,C3,2,0);await pagar(A,'cash');const r9=(await sim(A)).caixaDin[0];await sleep(600);
   await B.click(`[data-act="din-cancel"][data-id="${r9.id}"]`);await B.waitForTimeout(150);
-  ok(/Cancelar esta compra\? Ela não vira venda\./.test(await txt(B,'.din-list')),'1.9: falta a segunda confirmação do cancelar');
+  ok(/Cancelar esta compra\? Ela não vira venda\./.test(await txt(B,'#pend-det')),'1.9: falta a segunda confirmação do cancelar');
   ok((await sim(B)).caixaDin.find(x=>x.id===r9.id).estado==='escolha','1.9: o primeiro toque não pode cancelar');
   await B.click(`[data-act="din-cancel-ok"][data-id="${r9.id}"]`);await B.waitForTimeout(250);
   const d9=await sim(B);const x9=d9.caixaDin.find(x=>x.id===r9.id);

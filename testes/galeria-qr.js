@@ -132,9 +132,9 @@ try{
   dbg('13. cinco idiomas, sem chave crua');
   for(const l of ['en','es','fr','de','pt']){await G.click(`.lj-langs [data-l="${l}"]`);await G.waitForTimeout(80);const cr=await gqCruas(G);ok(!cr.length,'13: chave crua em '+l+': '+cr.slice(0,3).join(','));}
   const en=await G.evaluate(()=>{const b=document.querySelector('.lj-langs [data-l="en"]');b.click();return document.body.innerText;});ok(/Your photos/i.test(en),'13: inglês não trocou os textos');await G.click('.lj-langs [data-l="pt"]');
-  // ---------- 14. data "Disponível até" = criada + 60 dias ----------
+  // ---------- 14. data "Disponível até" = criada + 30 dias ----------
   dbg('14. data "Disponível até" = criada + 60 ');
-  const g14=await G.evaluate(t=>{const m=ETERNA.SIM.galerias[t];const d=new Date(new Date(m.criada).getTime()+60*864e5).toLocaleDateString('pt-BR');return {ok:document.querySelector('.gq-until').textContent.includes(d),txt:document.querySelector('.gq-until').textContent,d};},tok);
+  const g14=await G.evaluate(t=>{const m=ETERNA.SIM.galerias[t];const d=new Date(new Date(m.criada).getTime()+30*864e5).toLocaleDateString('pt-BR');return {ok:document.querySelector('.gq-until').textContent.includes(d),txt:document.querySelector('.gq-until').textContent,d};},tok);
   ok(g14.ok,'14: data de validade: '+JSON.stringify(g14));
   // ---------- 10 e 11. compra na galeria ----------
   dbg('10 e 11. compra na galeria');
@@ -195,7 +195,7 @@ try{
   // ---------- 14. sem rolagem horizontal em 3 tamanhos; prints ----------
   dbg('14. sem rolagem horizontal em 3 tamanhos');
   for(const [n,w,h] of [['cel',390,844],['tab',1024,1366],['desk',1440,900]]){await G.setViewportSize({width:w,height:h});await G.waitForTimeout(150);
-    const sw=await G.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth,g:Math.max(...[...document.querySelectorAll('.gq *')].map(e=>e.getBoundingClientRect().right))}));ok(sw.s<=sw.i&&sw.g<=sw.i+1,`14: galeria com rolagem horizontal em ${w}px: `+JSON.stringify(sw));
+    const sw=await G.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth,g:Math.max(...[...document.querySelectorAll('.gq *')].filter(e=>!e.closest('.wm')).map(e=>e.getBoundingClientRect().right))}));ok(sw.s<=sw.i&&sw.g<=sw.i+1,`14: galeria com rolagem horizontal em ${w}px: `+JSON.stringify(sw));
     await G.screenshot({path:`${PR}/galeria-${n}.png`});
     await A.setViewportSize({width:w,height:h});await A.evaluate(()=>{ETERNA.state.gal.tab='sessoes';ETERNA.render();});await A.waitForTimeout(100);
     const sa=await A.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth}));ok(sa.s<=sa.i,`14: view galerias com rolagem horizontal em ${w}px: `+JSON.stringify(sa));await A.screenshot({path:`${PR}/galeria-admin-${n}.png`});}

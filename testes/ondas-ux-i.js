@@ -19,7 +19,7 @@ try{
     ok(i5.h<=380+64*i5.n,'I5: aba Preços maior que a tabela: '+J({h:i5.h,n:i5.n}));ok(i5.th.includes('Na semana'),'I: cabeçalho "Na semana": '+J(i5.th));
     for(const t of ['precos','checkout','fundos']){await aba(pg,t);const tx=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(!TEC.test(tx),'I3: texto técnico na aba '+t+': '+(tx.match(TEC)||[''])[0]);}
     await aba(pg,'checkout');ok(await pg.$('#busca-janela')&&await pg.$('#loja-fim')&&await pg.$('#main [data-v="calendario"]'),'I: aba Checkout com tempo da tela final, janela da selfie e Calendário');
-    await aba(pg,'fundos');ok((await pg.$$('#cat-fundos [data-act="bg-on"]')).length===5&&await pg.$('#ia-cfg'),'I2: aba Fundos de IA com os 5 fundos e as fotos para os fundos de IA');
+    await aba(pg,'fundos');ok((await pg.$$('#cat-fundos [data-act="bg-on"]')).length===4&&await pg.$('#ia-cfg'),'I2: aba Fundos de IA com os 4 fundos e as fotos para os fundos de IA');
     await aba(pg,'avancado');ok(!(await pg.$('#fundos-modo'))&&await pg.$('[data-act="cartao-lote"]'),'I: aba Avançado com os cartões com QR, sem o painel do modo de montagem (v97: a montagem é sempre local)');
     // ACT_MOD fixo para as ações de Preços e Checkout
     const am=await pg.evaluate(()=>{const A=ETERNA.ACT_MOD;return ['bg-on','cartao-lote','loja-fim','price','price-reset'].map(k=>k+':'+A[k]);});
@@ -50,11 +50,11 @@ try{
   {const {ctx,pg}=await nova(b);ok(await entrar(pg,'supervisor@eterna.photo'),'supervisora não entrou');await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(150);
     ok(J(await abas(pg))===J(['Preços','Checkout','Fundos de IA','Avançado']),'I1: abas da Supervisora: '+J(await abas(pg)));
     ok(await pg.evaluate(()=>[...document.querySelectorAll('[data-act="price"]')].every(i=>i.disabled)),'I1: Supervisora (catalogo só leitura) com preço editável');
-    await aba(pg,'fundos');const b0=await pg.evaluate(()=>ETERNA.SIM.bgOn?ETERNA.SIM.bgOn.slice():null);
+    await aba(pg,'fundos');const b0=await pg.evaluate(()=>ETERNA.SIM.bgOn2?ETERNA.SIM.bgOn2.slice():null);
     const id=await pg.$eval('#cat-fundos [data-act="bg-on"][aria-pressed="true"]',e=>e.dataset.id);await pg.click(`#cat-fundos [data-act="bg-on"][data-id="${id}"]`);await pg.waitForTimeout(150);
-    const b1=await pg.evaluate(()=>ETERNA.SIM.bgOn.slice());ok(!b1.includes(id),'I2: Supervisora não desligou o fundo '+id+': '+J({b0,b1}));
+    const b1=await pg.evaluate(()=>ETERNA.SIM.bgOn2.slice());ok(!b1.includes(id),'I2: Supervisora não desligou o fundo '+id+': '+J({b0,b1}));
     ok(await pg.$eval(`#cat-fundos [data-act="bg-on"][data-id="${id}"]`,e=>/Inativo/.test(e.textContent)),'I2: fundo desligado aparece Inativo');
-    await pg.click(`#cat-fundos [data-act="bg-on"][data-id="${id}"]`);await pg.waitForTimeout(150);ok(await pg.evaluate(id=>ETERNA.SIM.bgOn.includes(id),id),'I2: religar o fundo');
+    await pg.click(`#cat-fundos [data-act="bg-on"][data-id="${id}"]`);await pg.waitForTimeout(150);ok(await pg.evaluate(id=>ETERNA.SIM.bgOn2.includes(id),id),'I2: religar o fundo');
     ok(!(await pg.$('#nav [data-v="chroma"]')),'I: Supervisora sem Fundos de IA (técnico) no menu');
     await ctx.close();}
   // ---- I1: vendedor (só a tabela, título Preços, sem abas, inputs desligados)
@@ -71,9 +71,9 @@ try{
       U['precos@eterna.photo']={v:2,email:'precos@eterna.photo',name:'Preços',preset:'custom',key:null,perms:q,menu:['catalogo'],inicio:null,active:true,createdAt:new Date().toISOString(),lastLogin:null,mv:83,msis94:1};localStorage.setItem('eterna.users.v1',JSON.stringify(U));});
     ok(await entrar(pg,'precos@eterna.photo'),'precos@ não entrou');await pg.evaluate(()=>ETERNA.go('catalogo'));await pg.waitForTimeout(150);
     ok(J(await abas(pg))===J(['Preços','Checkout','Fundos de IA','Avançado']),'I: abas de quem tem catalogo.u e configuracao.r: '+J(await abas(pg)));
-    await aba(pg,'fundos');const b0=await pg.evaluate(()=>JSON.stringify(ETERNA.SIM.bgOn||null));const id=await pg.$eval('#cat-fundos [data-act="bg-on"]',e=>e.dataset.id);
+    await aba(pg,'fundos');const b0=await pg.evaluate(()=>JSON.stringify(ETERNA.SIM.bgOn2||null));const id=await pg.$eval('#cat-fundos [data-act="bg-on"]',e=>e.dataset.id);
     await pg.click(`#cat-fundos [data-act="bg-on"][data-id="${id}"]`);await pg.waitForTimeout(150);
-    ok(await toast(pg)==='Sem permissão para alterar em Configurações do venue'&&await pg.evaluate(()=>JSON.stringify(ETERNA.SIM.bgOn||null))===b0,'I2: catalogo.u sem configuracao.u ligou fundo: '+await toast(pg));
+    ok(await toast(pg)==='Sem permissão para alterar em Configurações do venue'&&await pg.evaluate(()=>JSON.stringify(ETERNA.SIM.bgOn2||null))===b0,'I2: catalogo.u sem configuracao.u ligou fundo: '+await toast(pg));
     await aba(pg,'avancado');const t=await pg.evaluate(()=>document.querySelector('#main').textContent);ok(/Cartões com QR impresso/.test(t)&&!(await pg.$('[data-act="fundos-modo"]:not([disabled])')),'I: Avançado sem configuracao.u: cartões sim, montagem desligada');
     await ctx.close();}
   ok(!errs.length,'erros de página: '+errs.slice(0,3).join(' | '));

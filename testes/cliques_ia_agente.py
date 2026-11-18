@@ -26,6 +26,7 @@ json.dump({"users": {n: "x" * 12 for n in ("carlos", "samuel", "marinara", "yago
 sp = importlib.util.spec_from_file_location("ag", AG)
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
+m.FUNCAO_DIA_ON = True                      # 16/11: a Escala está desligada por padrão; a regra dos cliques é testada com ela ligada
 os.environ["ETERNA_RECORTE_FALSO"] = "1"
 ok(m._rec_falso() is None and "falso" not in m.rec_status(), "S2: a variável de ambiente não liga o recorte falso")
 del os.environ["ETERNA_RECORTE_FALSO"]

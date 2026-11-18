@@ -2,6 +2,8 @@
 
 Como o Eterna funciona hoje, passo a passo, com cada bifurcação. Base: código da v91 (commit `e7833a6`), mapeado por leitura em 04/11/2026, sem rodar o sistema. Onde documento e código divergem, vale o código, e a divergência fica listada no próprio fluxo.
 
+**Revisão de 16/11/2026 (entrega de 15 e 16/11, ramo `fix/correcoes-15-11`):** atualizados só os pontos que a entrega mudou. Fluxo 4: apelido de grafia e sessão sem fotógrafo corrigida na partida. Fluxo 5: função do dia desligada. Fluxo 6: três fundos, uma montagem por fundo, proporção e Maracanã 1950. Fluxo 18: Exportar relatório. Fluxo 19: prazo do original no aparelho da equipe. O resto continua na leitura da v91.
+
 **Quem mudar um fluxo atualiza o diagrama no mesmo commit.** A documentação técnica continua em `DOCUMENTACAO-TECNICA.md`. O login futuro está em `planos/2026-11-04-login-real-e-dominio.md`.
 
 Termos: **servidor** é o agente Eterna no venue; **nuvem** é a API da galeria na AWS; **Checkout** é a tela do cliente; **Posto de venda** e **Caixa** são as telas da equipe.
@@ -444,6 +446,8 @@ flowchart TD
 |---|---|---|
 | Quem é o fotógrafo | 1) origem, se cadastrada; 2) autor ou dono da câmera, inteiro ou primeiro nome, se cadastrado; 3) sem fotógrafo, com a fonte: final da série da câmera, FTP do estádio, cartão ou pasta. Login compartilhado sem subpasta não conta como fotógrafo | `ff_quem`, `ff_cadastrados` |
 | Separação sem fotógrafo | Trilha por série da câmera; sem série, pela fonte | `_sess_add` |
+| Apelido de grafia (15/11) | Antes de procurar no cadastro, o nome passa pelo mapa de apelidos: "Klacius", "Classius" e "Clacius" caem na chave `klassius`. Pasta e origem só pelo nome inteiro; primeiro nome só para autor e dono da câmera. No app, o mesmo mapa em `KEY_ALIAS` | `FOTOGRAFO_APELIDO`, `fotografo_chave`, `KEY_ALIAS` |
+| Sessão fechada sem fotógrafo (15/11) | Na partida do servidor, sessão fechada de hoje ou de ontem, sem fotógrafo, cujas fotos são todas do mesmo cadastrado recebe a chave dele, com `dono_corrigido` (de, para, motivo) e `rev` novo; o resumo do dia é refeito. Mista, com foto sem dono ou já com fotógrafo: não muda. O navegador aplica por `srvDono` e busca as de ontem uma vez por partida | `sess_dono_corrigir`, `ff_quem_como`, `srvDono`, `srvOntem` |
 | Cadastro | Lido com cache de 30 s | `ff_cadastrados` |
 | Hora do clique | Hora da câmera + desvio da série, se estiver entre 48 h antes e 10 min depois da chegada; senão, data do arquivo de origem na mesma janela; senão, a chegada | `sess_clique`, `SESS_CLIQUE_ANTES`, `SESS_CLIQUE_DEPOIS` |
 | Desvio da câmera | Últimas 50 diferenças entre chegada e clique, sem fotos de cartão. Com 3 ou mais, descarta o que está a mais de max(3 x desvio mediano, 30 s) da mediana e usa o menor | `sess_desvio`, `ff_desvio` |
@@ -579,7 +583,7 @@ flowchart TD
 | Já no Checkout | Fechada e sem pendência de rosto. Conta a partir do maior entre fechamento e última leitura | `ff_json` |
 | Saída da coluna final | 15 min depois de pronta; no máximo 24 cartões | `FF_PRONTA_MIN`, `FF_PRONTAS_MAX` |
 | Miniaturas na Fila | Até 6 e só nas duas primeiras colunas. Sem escolha salva no aparelho, só para quem não é do caixa e fora de tela cheia | `FF_PIDS`, `ffMiniOn`, `vFotoFila` |
-| Função do dia | Vem da Escala, é validada e guardada na abertura da sessão; sem ela, usa o ponto padrão do fotógrafo | `ff_funcao_validar`, `_ff_func_snapshot`, `ffPadrao` |
+| Função do dia | **Desligada desde 16/11** (`ESCALA_ON=false` no app, `FUNCAO_DIA_ON` no agente; religa com `ETERNA_FUNCAO_DIA=1`). Sessão nova nasce sem função e sem ponto; o cartão da Fila mostra só o nome ou a origem; `POST /fila-fotografo/funcao` responde 409 `escala_desligada` sem gravar. Com a chave ligada vale o de antes: vem da Escala, é validada e guardada na abertura da sessão; sem ela, usa o ponto padrão do fotógrafo | `FUNCAO_DIA_ON`, `ff_funcao_validar`, `_ff_func_snapshot`, `ffPadrao` |
 | Falta de resposta | Mantém o último dado e mostra "Sem conexão com o servidor"; tempo limite de 4 s | `fotoFilaPoll` |
 
 #### Divergências entre documento e código
@@ -640,7 +644,7 @@ flowchart TD
   U -- "não" --> W{"Há outra foto aprovada do cliente?"}
   W -- "sim" --> X["Troca pela aprovada"]
   W -- "não" --> X1["Tira a foto da lista"]
-  T --> Y["Escolhe até 3 fundos por foto entre os ativos que aceitam o enquadramento"]
+  T --> Y["Uma montagem por fundo ativo (3 desde 16/11): cada fundo usa a 1ª ou a 2ª foto, conforme o fundo; se ela não serve, usa a outra"]
   V --> Y
   X --> Y
   Y --> Z{"Modo de montagem?"}
@@ -709,17 +713,21 @@ flowchart TD
 | Sem pessoa | Máscara em menos de 0,5% da imagem: item sai como "Ninguém encontrado na foto" | `fiaMedir`, `fiaMontar` |
 | Cache | 2 dias; teto de 5 GB por `ETERNA_RECORTES_GB`, apagando os mais antigos; recorte de foto fora da biblioteca sai | `REC_DIAS`, `REC_TETO_GB`, `limpar_recortes` |
 | Oferta no Checkout | Local: servidor conectado, recorte disponível e foto do servidor. Photoroom: sempre oferece | `fiaOferece`, `lojaAI` |
-| Foto no Checkout | Até 2 fotos do próprio cliente. Depois da leitura: nota total de 70 ou mais e borda de 70 ou mais; se reprovar, troca por outra aprovada do cliente | `lojaAI`, `aiOk`, `AI_MIN` |
-| Fundos por foto | Até 3, entre até 5 ativos, se aceitarem o enquadramento, ordenados pela combinação: ângulo 45%, luz 35%, direção 20% | `lojaAI`, `BG_MAX`, `bgOn`, `bgMatch` |
+| Foto no Checkout | Até 2 fotos do próprio cliente, as 2 primeiras. Foto real do servidor não passa pela nota simulada; foto de exemplo passa (nota total e borda de 70 ou mais; se reprovar, troca por outra aprovada do cliente). Desde 16/11 este é o caminho de toda sessão: com a função do dia desligada nenhuma base de IA é separada (`ia_regra.motivo = sem_funcao`) e as 2 fotos continuam à venda | `lojaAI`, `lojaAIAntigo`, `aiOk`, `AI_MIN` |
+| Fundos ativos (16/11) | Três, nesta ordem: Mirante do Rio (`mirantedia`), Maracanã 1950 (`arq1950`) e Telão do Maracanã (`telao`). Lista salva em `SIM.bgOn2` (`sim/bgOn2`); só vale lista de textos, senão o padrão. A lista antiga `bgOn` não é lida. Noite de campeão, Mirante ao pôr do sol e Saída do túnel ficam inativos, no Laboratório, e seguem montando o que já foi vendido | `BG_DEF`, `bgOn`, `DATA.backgrounds` |
+| Montagens por venda | Uma por fundo ativo (não mais até 3 fundos por foto, ordenados pela combinação). Cada fundo usa a foto indicada: Maracanã 1950 a 1ª, Mirante do Rio e Telão a 2ª; se ela não serve, a outra | `lojaAIAntigo`, `FIA_BASE`, `bgOn` |
 | Enquadramento | Pela altura e posição dos rostos: corpo inteiro, meio corpo ou fechada. Sem leitura, usa um valor calculado do código da foto | `aiAnalyze`, `aiScore` |
 | Regras de montagem | Corte, altura, largura e posição por fundo e por tipo de foto. Os valores conferem com `docs/fundos-ia-regras.md` | `FIA_REGRAS`, `fiaLayout` |
-| Impressão do fundo | Usa recorte de 3000 px e fundo de 5000 px; sem o arquivo de 5000 px, usa o de 2400 px com aviso. Espera até 60 s antes de registrar falha | `fiaMontar`, `printMontar` |
+| Proporção (regra 20, 16/11) | Recorte que encosta embaixo e tem largura/altura até 0,70 (casal, pessoa sozinha) usa a entrada `estreito`: corte em 74% no Mirante do Rio e no Maracanã 1950, em 47% no Telão. De 1,20 em diante (grupo, bandeira, braços abertos) vale a entrada de sempre. Entre os dois, os números andam em linha reta | `fiaEstreito`, `FIA_ESTREITO_DE`, `FIA_ESTREITO_ATE` |
+| Maracanã 1950 (regra 21, 16/11) | Pessoa em preto e branco com contraste 1,10; topo do recorte em 34% do alto ou abaixo, para ninguém cobrir o título; até 92% da largura. Sem `filter` no canvas, converte ponto a ponto | `FIA_REGRAS.arq1950`, `fiaPB`, `fiaContraste` |
+| Impressão do fundo | Usa recorte de 3000 px e fundo de 5000 px; sem o arquivo de 5000 px, usa o de 2400 px com aviso. Espera até 60 s antes de registrar falha. Corte 10×15: preso embaixo; no Telão, no meio da altura; no Maracanã 1950, a sobra sai de baixo e o título fica inteiro (`impAlto`) | `fiaMontar`, `compHi`, `printMontar` |
 | Photoroom | Só com o modo ligado também no servidor; senão "photoroom_desligado". Sem chave: "Conecte o Photoroom". Falha da montagem tira o item da venda | `fundos_modo`, `composePR`, `do_POST`, `pr_compose` |
 
 #### Divergências entre documento e código
 
 - A tela de Fundos de IA diz que a IA dá nota a cada foto em quatro critérios. No código, as notas vêm de um cálculo sobre o código da foto (`h32`), sem ler a imagem. Só o enquadramento e a combinação de ângulo e luz usam a imagem.
-- A mesma tela diz que a montagem é feita pelo Photoroom e que o Checkout mostra os 5 fundos com maior combinação. O padrão do código é a montagem local, com até 3 fundos por foto.
+- A mesma tela dizia que a montagem é feita pelo Photoroom e que o Checkout mostra os 5 fundos com maior combinação. O código monta no computador do ponto, uma montagem por fundo ativo. Desde 16/11 as notas da tela (`lab_ate5_nota`, `lab_fundos_nota`) falam dos três fundos.
+- A regra 15 de `docs/fundos-ia-regras.md` (2 primeiros cliques só para IA) está suspensa desde 16/11. O laço das bases (`rec_ia_loop`) e o `FIA_BASE` continuam no código; sem função do dia, nenhuma sessão tem base.
 - O comentário em `REC_PRE` diz que cada sessão fechada é recortada. O código recorta só as escolhidas por `rec_pre_escolha`.
 - O comentário diz que o pedido do Checkout "passa na frente". O código não interrompe o recorte em andamento e a fila atende por ordem de chegada; o antecipado apenas não coloca pedido novo enquanto há fila.
 - A mensagem de início e o painel dizem que o recorte "carrega na primeira foto". Com o antecipado ligado, os modelos abrem cerca de 15 s depois da partida.
@@ -1816,6 +1824,7 @@ flowchart TD
 | Painel, cartões principais | Fonte `tudo`, `roverpix` ou `eterna`; a opção Eterna é rotulada "vendas deste computador" | `vPainel`, `painelFiltro`, `allSalesSim` |
 | Roverpix | A cada 300 s, 30 dias; app recebe totais; etiqueta com mais de 15 min | `rover_loop`, `rover_data`, `applyLive`, `vPainel` |
 | Métricas técnicas | `metricas.jsonl`, relido e podado para 3 dias; rota `/metricas` traz fila de rostos e uso da máquina | `metricas_carrega`, `metrica_grava`, `do_GET` |
+| Exportar relatório (15 e 16/11) | Feito no navegador, com o mesmo dado da tela (período, filtros e ordem), sem rota no servidor e sem impressão. PDF e XLS em Painel, Estatísticas (seções a, b, e), Lista de vendas, Fotógrafos, Bandeiras e Diário do set; o CSV que já existia é o terceiro ícone no Painel e na Lista de vendas. Só exporta quem vê a tela; conferido no botão e no clique. PDF até 2.000 linhas, XLS até 20.000; uma exportação por vez. Cada arquivo gera o registro `relatorio_exportado`, sem o conteúdo | `REL`, `relBotao`, `relPode`, `relExportar`, `relAudita`, `REL_MAX_PDF`, `REL_MAX_XLSX` |
 
 ### 19. Ciclo de vida de uma foto
 
@@ -1897,6 +1906,7 @@ stateDiagram-v2
 | Arquivo na origem | Pasta vigiada: fica onde está, sem prazo. FTP remoto: nada é apagado lá | `pasta_vigiada`, comentário de `rftp_loop` |
 | Original no servidor | `inbox/AAAA-MM-DD/`, sem prazo: as únicas remoções do arquivo estão na exclusão a pedido | `ingest_file`, `lgpd_excluir`, `galeria_loop` |
 | Miniatura | `thumbs/`, sem prazo | `ingest_file`, `lgpd_excluir` |
+| Cópia no aparelho da equipe (16/11) | O original aberto na lupa fica 5 minutos, só no aparelho de quem pediu (`Cache-Control: private, max-age=300`); a miniatura fica 1 dia. A lupa só pede o original depois de 250 ms parada na foto | `H.file`, `zoomOriginal`, `ZOOM_HI_MS` |
 | Rostos locais | 60 dias contados pela pasta do dia; limpa ao ligar a leitura e uma vez por dia | `RETENCAO_DIAS`, `limpar_rostos`, `rostos_thread`, `galeria_loop` |
 | Sessão | 60 s sem clique fecham; espera do rosto de 20 s desde a chegada | `SESS_PAUSA`, `SESS_ROSTO_ESPERA` |
 | Arquivo de sessão | 60 dias | `SESS_RET_DIAS`, `sess_limpar` |

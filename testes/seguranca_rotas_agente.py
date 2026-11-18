@@ -129,16 +129,21 @@ try:
     ok(st == 200 and "calls" in j, "/photoroom/status com só configuracao.r: %s %s" % (st, j))
     # /ftp/contas: Painel de controle (Ver)
     ok(pede("GET", "/ftp/contas", cookie=foto)[0] == 403 and pede("GET", "/ftp/contas", cookie=adm)[0] == 200, "/ftp/contas só com configuracao.r")
+    # 16/11: Treino da IA. Ler com qualidade.r, marcar com qualidade.u (a Supervisora marca), o interruptor com configuracao.u
+    so_ver = S.cookie_sessao(m, "so-ver-rotas", {"qualidade": {"r": True}})
+    ok(pede("GET", "/treino/dias", cookie=so_ver)[0] == 200 and pede("POST", "/treino/rotulo", {"pid": "abc123abc123", "v": 1}, cookie=so_ver)[0] == 403
+       and pede("POST", "/treino/config", {"ponto": "medir"}, cookie=so_ver)[0] == 403, "treino: só ver não marca nem liga a análise")
     # coleção sim por perfil (cópia dos PRESETS do index.html): cada perfil grava o que a tela dele grava
     RW, RO, ALL = {"c": True, "r": True, "u": True}, {"r": True}, {"c": True, "r": True, "u": True, "d": True}
     perfis = {"foto": {"set": RW, "diario": RW, "escala": RO, "filafoto": RO},
               "venda": {"venda": RW, "quiosque": RW, "catalogo": RO, "filafoto": RO},
-              "supervisor": {"relatorios": RO, "desempenho": RO, "financeiro": RO, "diario": ALL, "set": RO, "venda": RW, "qualidade": RO, "estoque": ALL,
+              "supervisor": {"relatorios": RO, "desempenho": RO, "financeiro": RO, "diario": ALL, "set": RO, "venda": RW, "qualidade": {"r": True, "u": True}, "estoque": ALL,
                              "configuracao": RW, "escala": RW, "laboratorio": RO, "catalogo": RO, "galerias": RW, "filafoto": {"r": True, "u": True}}}
     grava = {"foto": ["edits|ag_x1", "discarded|ag_x1", "invalid|ag_x1", "flagUse|br", "autoAj", "autoAjPor", "camDia|2026-11-09"],
              "venda": ["stock|Caixa 1", "ai|ag_x1", "invalid|ag_x2", "flagUse|ar"],
-             "supervisor": ["stock|Caixa 2", "flagUse|pt", "invalid|ag_x3", "bgAtivo|podio", "bgOn", "fundosModo", "cortesiaLog|abc"]}
-    nao = {"foto": ["prices|zona", "lojaFimSeg", "pagProv"], "venda": ["prices|zona", "lojaFimSeg", "edits|ag_x9"], "supervisor": ["prices|zona", "lojaFimSeg", "catalogoV"]}
+             "supervisor": ["stock|Caixa 2", "flagUse|pt", "invalid|ag_x3", "bgAtivo|podio", "bgOn", "bgOn2", "bgTelaoV97", "bgTunelV2", "fundosModo", "cortesiaLog|abc"]}
+    # 16/11: a lista dos fundos (bgOn2) e a marca do túnel v2 (bgTunelV2) são de quem altera Configurações; fotógrafo e vendedor não gravam
+    nao = {"foto": ["prices|zona", "lojaFimSeg", "pagProv", "bgOn2", "bgTunelV2"], "venda": ["prices|zona", "lojaFimSeg", "edits|ag_x9", "bgOn2", "bgTunelV2"], "supervisor": ["prices|zona", "lojaFimSeg", "catalogoV"]}
     for nome, perms in perfis.items():
         ck = S.cookie_sessao(m, "perfil-" + nome, perms)
         st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "sim", "id": i, "valor": 1} for i in grava[nome]]}, cookie=ck)
@@ -146,7 +151,7 @@ try:
         for i in nao[nome]:
             st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "sim", "id": i, "valor": 2}]}, cookie=ck)
             ok(j.get("recusados") == 1, "perfil %s não deveria gravar %s: %s" % (nome, i, j))
-    # galeria publicada pelo posto: cortesia nova vira venda; validade no máximo 60 dias; menor do servidor não é desmarcado
+    # galeria publicada pelo posto: cortesia nova vira venda; validade no máximo 30 dias; menor do servidor não é desmarcado
     import time as _t
     tok = "b" * 22
     man = {"v": 1, "token": tok, "codigo": None, "tipo": "sessao", "venue": "maracana", "sessoes": [], "menor": True, "criada": m._iso(),
@@ -155,7 +160,7 @@ try:
     st, j, _ = pede("POST", "/galerias/publicar", {"manifesto": man}, cookie=posto)
     gm = m.REPO.ler_manifesto(tok) or {}
     ok(st == 200 and [f["direito"] for f in gm.get("fotos", [])] == ["venda", "venda"], "cortesia do posto deveria virar venda: %s %s" % (st, gm.get("fotos")))
-    ok(m._epoch(gm.get("expira")) <= _t.time() + 60 * 86400 + 5, "validade além de 60 dias: %s" % gm.get("expira"))
+    ok(m._epoch(gm.get("expira")) <= _t.time() + 30 * 86400 + 5, "validade além de 30 dias: %s" % gm.get("expira"))
     st, j, _ = pede("POST", "/galerias/publicar", {"manifesto": dict(man, menor=False)}, cookie=adm)
     gm = m.REPO.ler_manifesto(tok) or {}
     ok(gm.get("menor") is True and [f["direito"] for f in gm["fotos"]] == ["cortesia", "venda"], "admin dá cortesia; menor segue marcado: %s" % gm)

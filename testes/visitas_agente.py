@@ -345,6 +345,7 @@ ok(pb[0] not in pids_ar and B not in visita(A) and visita(A) == sorted([A, C]), 
 
 # ---------- D4: bases de IA por visita ----------
 reset()
+m.FUNCAO_DIA_ON = True                      # 16/11: a Escala está desligada por padrão; as bases por visita são testadas com ela ligada
 m.ff_funcao.update(dia=HOJE, map={"carlos": {"tipo": "campo", "point": "campo2"}, "samuel": {"tipo": "campo", "point": "campo3"}})
 fam = P[35]
 A, pa = leva("carlos", T0, [[rosto(fam)]] * 5)

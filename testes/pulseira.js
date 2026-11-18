@@ -22,7 +22,7 @@ try{
   await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;ETERNA.go('ativ-venda');});await A.waitForTimeout(300);
   await A.click('[data-act="av-add"][data-id="asteroid"]');await A.click('[data-act="av-add"][data-id="asteroid"]');await A.waitForTimeout(100);
   ok((await A.$$('[data-act="av-pul"]')).length===2&&/Pulseira 1 de 2/.test(await A.textContent('#av-cart')),'dois vídeos, dois campos de pulseira');
-  await A.click('[data-act="av-pag"][data-p="PIX"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto='data:image/jpeg;base64,/9j/2Q==';});
+  await A.click('[data-act="av-pag"][data-p="PIX"]');await A.fill('[data-act="av-ing"]','1116AB12CD34');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto='data:image/jpeg;base64,/9j/2Q==';});
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(150);
   ok(/Leia a pulseira de cada item/.test(await A.textContent('#av-erro'))&&!enviadas.length,'sem pulseira não registra');
   await A.fill('[data-act="av-pul"][data-k="0"]','00123');await A.press('[data-act="av-pul"][data-k="0"]','Enter');await A.waitForTimeout(100);
@@ -62,6 +62,7 @@ try{
     r.fulfill({status:200,contentType:'application/json',body:J({ok:true,qr:c.qr,codigo:'WXYZ-2345-6789',n:1})});});
   const P=await ctx.newPage();P.on('pageerror',e=>errs.push(e.message));await P.goto(U);await P.waitForTimeout(500);if(await P.$('[data-act="login-usuario"]'))await E(P,adm);
   await P.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;ETERNA.go('ativ-entrega');});await P.waitForTimeout(600);
+  ok(!(await P.$('[data-act="ae-data"]')),'v99.30.8: entrega sem seletor de data');
   P.setDefaultTimeout(3000);const txt=async s=>(await P.textContent(s))||'';
   ok(await P.$('#ae-pul')&&await P.evaluate(()=>document.activeElement.id)==='ae-pul-txt','começa pela pulseira, com o campo pronto para o leitor');
   ok(await P.$('.ae-board')===null&&await P.$('#ae-drop')===null,'sem a fila completa nem escolher venda na tela inicial');

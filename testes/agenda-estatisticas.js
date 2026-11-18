@@ -141,6 +141,7 @@ try{
     ok(P.pt.some(x=>x[0]==='jogo'&&x[1]===3&&x[2]===false),'18: por tipo do dia: '+J(P.pt));ok(P.pou.poucos===true,'18: menos de 14 dias com visitantes = poucos');
     if(SHOTS){await pg.screenshot({path:path.join(SHOTS,'agenda-jogos-ano-a-ano.png'),fullPage:true});}
     // 20: CSV
+    ok(await pg.$('.pn-ph .rel-exp [data-act="es-dias-csv"][aria-label="Baixar dias (CSV)"] svg.rel-ic.csv')&&await pg.evaluate(()=>document.querySelectorAll('[data-act="es-dias-csv"]').length===1&&!document.querySelector('.head .rel-exp')),'20: o CSV dos dias fica junto da tabela, com o ícone do grupo Exportar');
     const [dl]=await Promise.all([pg.waitForEvent('download',{timeout:5000}),pg.click('[data-act="es-dias-csv"]')]);const csv=fs.readFileSync(await dl.path(),'utf8').replace(/^﻿/,'');const L=csv.split('\n');
     ok(L.length===A.length+1&&L[0]==='dia;tipo;eventos;visitantes;fonte_visitantes;vendas;fotos;sessoes;sessoes_com_venda;fonte_vendas;receita','20/19: uma linha por dia, ; e coluna receita para o Admin: '+L[0]+' · '+L.length);
     ok(L.some(l=>l.includes(";'=1+1;")),'20: evento =1+1 sai como \'=1+1');

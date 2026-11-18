@@ -585,6 +585,17 @@ Números sempre com `font-variant-numeric: tabular-nums`. Tabelas em 13 px.
 
 **Rede e segredos**: API só na VLAN e pela VPN; FTP com usuário por fotógrafo e FTPS quando o CTP permitir; segredos em variáveis de ambiente do Docker, nunca no repositório; chaves de nuvem com permissão mínima por bucket.
 
+**Proteção do servidor do estádio (17/11)**:
+- **Cabeçalhos em toda resposta** (`SEG_CABECALHOS`): sem embutir em outro site, `nosniff`, `Referrer-Policy` e câmera só na própria página.
+- **Excesso** (`escudo_avalia`): mais de 300 pedidos no mesmo minuto bloqueia o IP por 15 min, depois 1 h, 6 h e 1 dia (`ETERNA_LIMITE_MINUTO`). Quem está conectado ou é posto pareado não é bloqueado por excesso. A rede interna (10.x, 172.16-31.x, 192.168.x, Tailscale 100.64.x) nunca é bloqueada, nem por excesso nem por varredura: pela VPN todos chegam com o IP do firewall (192.168.10.1), e a operação não pode parar.
+- **Varredura:** 2 pedidos de endereço de robô (`ESCUDO_ISCA`: wp-login, .env, .git, .php...) em 1 hora bloqueiam por 1 dia, depois 3 dias e 1 semana.
+- **Regras comuns:** o nível volta ao começo após 7 dias. O próprio servidor nunca é bloqueado. Os bloqueios ficam na tabela `escudo` e no `login_log` (`ip_bloqueado:<motivo>:<min>`) e valem depois de reiniciar.
+- **Teste:** `testes/escudo_agente.py`.
+
+**Marca d'água de prova (17/11).** Checkout (`.lj-lbimg .wm`, `.lj-gimg .wm`) e galeria do cliente no eterna.photo (`.gq-ph .wm`) usam a mesma marca: SVG em data URL com "VIVA MARACANÃ" em duas linhas intercaladas (bloco de 740×280; 370×140 nas miniaturas e na galeria), branco a 28% com contorno preto a 16%, numa camada `inset:-60%` girada −24° e recortada pela foto (`overflow:hidden`). Fica sempre, também na foto escolhida e na de fundo de IA. Foi calibrada com o Ronaldo: menos que isso some em fundo claro; mais denso, o cliente não vê a foto.
+
+**Foto do perfil (17/11).** Campo `foto` no cadastro (`usuarios`): JPEG de 160 px em data URL (corte quadrado, um pouco acima do centro), feito no navegador por `fotoPerfil`. Sem foto, `avatar(u,px)` desenha as iniciais numa cor tirada do nome. O servidor (`auth_cadastro_recusa`) só aceita `data:image/jpeg;base64,` de até 60 mil caracteres; a própria foto cada um troca (rodapé do menu, `minhaFoto`), a de outra pessoa pede Alterar em Cadastro de usuários. No histórico a mudança entra como `foto` com verdadeiro/falso, sem a imagem. Testes: `testes/foto-perfil.js` e `testes/foto_perfil_agente.py`.
+
 **Backup e continuidade**: NAS a cada hora, S3 à noite; restauração testada por mês; servidor reserva (um PC de ponto) com o mesmo `compose.yml` e o último backup, sobe em 30 minutos; impressão e venda continuam sem internet.
 
 **Observabilidade**: logs estruturados (JSON) por serviço; métricas de fila (tempo por foto em cada etapa), de ingestão (fotos por minuto por ponto, repetidas) e de IA (acerto contra o gabarito do treino); alertas operacionais já definidos no app (fotos por sessão, conversão, estação parada, rolo, bandeira). Ferramenta: Prometheus + Grafana no servidor do ponto, Sentry para erros do app.
@@ -745,6 +756,19 @@ Igual no app (`SIM.galerias[token]`) e no agente (`~/Eterna/galerias/<token>/ses
 - No agente, `gal_mesclar` nunca deixa uma compra regredir, de nenhum canal. Por isso o cancelamento ainda não chega ao agente (pendência da fase 2).
 - Sessão de adulto: o rosto bate quando alguma foto tem semelhança ≥ 0,45 (`LIMITE`) e abre a sessão inteira. A faixa "talvez" (0,38 a 0,45) não abre.
 - Grupo de escola: só as fotos em que o rosto bate com ≥ 0,50 (`LIMITE_MENOR`), nunca a sessão inteira. O limite ainda precisa ser calibrado com fotos de escola (Ronaldo, `/rostos/medir`).
+
+### Escola pelo voucher (17/11, plano `docs/planos/2026-11-17-escola-pelo-voucher.md`)
+
+O responsável digita o localizador do voucher da Imply no mesmo campo do código. O fluxo depois disso é o mesmo de sempre.
+
+- **Origem:** `escola_loop` lê `ETERNA_PARCEIROS_GRUPOS` (padrão `https://parceiros.vivamaracana.com.br/api/painel/grupos`) a cada 10 min, com `Authorization: Bearer $ETERNA_PARCEIROS_TOKEN`. Sem token, fica desligado. O Viva Parceiros lê a tela Vouchers da Imply de hora em hora.
+- **Filtro (`escola_vouchers`):** `status` `confirmado`, etiqueta `[Escola]` ou `[Gratuidade]` na descrição (só elas; corporativo e empresa ficam de fora) e localizador de 6 a 20 letras e números. Grupos do mesmo localizador (um por horário) viram um voucher, com os horários juntos e as pessoas somadas.
+- **Janela (`escola_janelas`):** de 15 min antes até 2h30 depois de cada horário, no fuso do agente. Entram as sessões não removidas cujo `cap0` (sem ele, `aberta_em`) cai na janela, da memória e de `ponto/sessoes/<dia>.json`.
+- **Galeria (`escola_montar`):** depois do fim da última janela, monta uma galeria `evento` com `menor:true`, `nome` = escola, as sessões, as fotos (sem base de IA, até `ESCOLA_MAX_FOTOS` = 10 mil) e o bloco `voucher` (`localizador`, `escola`, `dia`, `horarios`, `pessoas`). Preços e catálogo vêm da galeria de sessão mais recente publicada pelo app. Publica pela fila de sempre (`gal_fila` e `nuvem_galeria_enfileira`).
+- **Atualização:** só republica se o conjunto de sessões mudar (sessão atrasada). Token e código ficam em `galerias/escolas.json` (localizador → `token`, `codigo`, `sessoes`, `fotos`, `em`). Vale para visitas dos últimos 7 dias (`ESCOLA_DIAS`).
+- **Código:** `GET /g/codigo/<x>` aceita o localizador e procura em `escolas.json`.
+- **Painel Escolas:** no mesmo laço, `escola_numeros_pull` busca na nuvem `GET /ponto/escolas?tokens=` (até 30 por vez, cabeçalho `X-Eterna-Ponto`) os números das galerias de escola dos últimos 60 dias e grava em `galerias/escolas-numeros.json`. `GET /escolas` (pede Estatísticas em Ver) devolve cada visita, a mais nova primeiro, com `localizador`, `escola`, `dia`, `horarios`, `pessoas`, `fotos` e `numeros`; o token não sai. Tela: Estatísticas › Escolas (seção `h`, `esSecH`).
+- **Teste:** `testes/escola_agente.py` e `testes/escola-painel.js`.
 
 ### Adaptadores no agente
 
@@ -915,6 +939,8 @@ Catálogo e preços › seção Checkout › "Tempo da tela final com o QR (segu
 
 ## Acesso, permissões e menus (v78, 28/10/2026)
 
+> **Mudou em 16/11/2026.** A tela Escala saiu do menu e do perfil Fotógrafo (chave `ESCALA_ON=false`). O módulo `escala` continua com o mesmo id, só com a tela `calendario`, e na tela se chama "Calendário de eventos". As tabelas abaixo mostram a v78. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
+
 A v78 reorganiza o menu em grupos, cria a área de Permissões em Configurações e tira as telas que a galeria por QR substituiu. Cada pessoa passa a ter duas coisas separadas: o que pode fazer em cada módulo (C, R, U, D) e quais telas vê no menu.
 
 Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) e `docs/planos/2026-10-27-permissoes-v78.md` (com as "Pendências para a v79"). Revisões: `docs/planos/2026-10-28-v78-revisao.md` e `docs/planos/2026-10-28-v78-seguranca.md`.
@@ -979,10 +1005,10 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 | `foto` | Fotógrafo | set C R U, diario C R U, escala R | diario, importar, escala | Upload automático |
 | `venda` | Atendimento e venda | venda C R U, quiosque C R, catalogo R | quiosque, checkout, fila, caixa, catalogo | Início |
 | `valida` | Validador | qualidade (tudo), diario R | revisao, treino, diario | Qualidade |
-| `supervisor` | Supervisor | relatorios R, desempenho R, financeiro R, diario tudo, set R, venda C R U, qualidade R, estoque tudo, configuracao R U, escala R U, laboratorio R, catalogo R, galerias C R U | todas as telas desses módulos | Início |
+| `supervisor` | Supervisor | relatorios R, desempenho R, financeiro R, diario tudo, set R, venda C R U, qualidade R U (16/11: marca no Treino da IA), estoque tudo, configuracao R U, escala R U, laboratorio R, catalogo R, galerias C R U | todas as telas desses módulos | Início |
 | `quiosque` | Checkout (tela do cliente) | quiosque C R | quiosque | Checkout |
 
-- Cada perfil tem `desc` em linguagem simples, mostrada na aba Perfis prontos e ao escolher o perfil.
+- Desde 17/11 os perfis não têm descrição e podem ser editados no banco (coleção `perfis`): ver `docs/planos/2026-11-16-ver-como-e-liberacao.md`, seção 3.
 - **Pendente de confirmação do Eduardo**: o Fotógrafo vê só o grupo Fotógrafo. Ficou sem o Índice do fotógrafo e sem o Ajuste automático no menu. O plano de permissões assumia que ele continuaria vendo o próprio índice.
 
 ### Duas camadas: módulo e menu
@@ -1082,7 +1108,7 @@ const ACT_MOD={'user-new':'usuarios','user-save':'usuarios','user-active':'usuar
 
 - `vPermissoes()`, com `state.perm={tab,sel,draft,q,logQ,presetPick}`. Legenda fixa explicando C, R, U e D.
 - **Por usuário**: lista com busca; editor com perfil atual, "Perfil pronto" + "Aplicar perfil", "Tela inicial" e a matriz `permMatrix` (uma linha por módulo, com a descrição e o texto de cada letra; com Ver ligado, a sublinha "Aparece no menu:" com uma caixa por tela). Pill "alterações não salvas", Salvar e Descartar. Até 700 px cada módulo vira um card.
-- **Perfis prontos**: só leitura, um card por perfil.
+- **Perfis**: um card por perfil, com quem está nele; criar, editar, excluir e voltar ao original (17/11).
 - **Histórico**: quando, quem, ação, pessoa e o que mudou.
 - O cadastro (view `usuarios`) ficou só com os dados da pessoa: criar (perfil entre os permitidos, ou "Sem acesso ainda"), alterar nome, e-mail e fotógrafo vinculado, Desativar ou Reativar, e "Excluir acesso" com "Confirmar exclusão". Na própria linha não aparecem Desativar nem Excluir. O botão "Editar permissões" leva à tela Permissões.
 
@@ -1324,13 +1350,15 @@ Plano: `docs/planos/2026-10-28-v83-painel.md` (escrito como v83; publicado como 
 
 ## Bandeiras, Fundos em teste, Checkout em janela separada e FTP do estádio (v81, 28/10/2026)
 
+> **Mudou em 16/11/2026.** O cliente vê 3 fundos (Mirante do Rio, Maracanã 1950 e Telão do Maracanã), não 5. A lista salva passou para `SIM.bgOn2`. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
+
 Testes: `testes/v81.js` e `testes/agente-seguranca.js`.
 
 - **Checkout em janela separada.** "Abrir Checkout" faz `window.open(location.pathname+'#loja','eterna-checkout','popup,width=1280,height=800')`: a janela vai para o segundo monitor e a aba do admin continua logada. Na janela do cliente (sem login), Esc ou sair do `#loja` só volta ao início do Checkout e não apaga a sessão salva do admin no mesmo navegador; a janela do cliente não fica ligada à do admin (sem `opener`).
 - **Fundos em teste.** Só 5 fundos visíveis ao cliente: Noite de campeão (sem a taça, `img/bg-campeao-v81.jpg`), Mirante ao pôr do sol, Arquibancada 1950 em P&B, Saída do túnel e, desde a v86, Pódio de campeão. `DATA.backgrounds[].inativo` é o padrão; o estado por venue fica em `SIM.bgAtivo[id]`. Os inativos vão para Laboratório › Fundos em teste, com Ativar e Mover para o Laboratório (pedem Alterar em Configurações do venue; registram `fundo_ativado` e `fundo_laboratorio` no histórico). Fundo sem enquadramento aceito não se ativa. Escolha salva só com fundos ocultos volta ao padrão; variação oculta cai na Noite de campeão.
 - **Bandeiras.** As imagens do item 67 em diante estavam desalinhadas. Tabela de correção (arquivo antigo errado para o certo; `""` = sem imagem) com fonte em `docs/bandeiras-correcao-2026-10-28.json`. Migração única na cópia salva (`SIM.flagList`): troca só o arquivo antigo errado pelo certo; item editado com outro arquivo e foto enviada (campo 7) ficam. Registra `v81_bandeiras` no histórico. Bandeira sem imagem certa fica sem foto.
 - **Menu.** Títulos dos grupos em maiúsculo, negrito, 12px, cor no token `--nav-grp`.
-- **Fotógrafos.** Klassius e Sandessa entram em `DATA.people` (lista oficial: Carlos, Klassius, Márcio, Marinara, Samuel, Sandessa, Yago).
+- **Fotógrafos.** Klacius e Sandessa entram em `DATA.people` (lista oficial: Carlos, Klacius, Márcio, Marinara, Samuel, Sandessa, Yago). Desde 15/11 o nome de tela é Klacius, a grafia da câmera; a chave interna continua `klassius` e o autor "Klacius" cai nela por `FOTOGRAFO_APELIDO`/`fotografo_chave` no agente e `KEY_ALIAS` no app (plano `docs/planos/2026-11-15-grafia-klacius.md`).
 - **Agente, FTP do estádio (B1).** `rftp_origem(path, pasta)`: a subpasta logo abaixo da pasta configurada só vira o fotógrafo se estiver cadastrada (comparação `sem_acento`); qualquer outro caso (fora do prefixo, `/outro`, `/../`) fica como `ftp-estadio`. Pasta vazia (450) não é erro; arquivo com tamanho desconhecido não baixa e gera aviso.
 
 ## Bandeiras com imagem da Wikimedia (v82, 28/10/2026)
@@ -1400,6 +1428,8 @@ Plano: `docs/planos/2026-10-29-v83-multiterminal.md` (decisões D1 a D11, notas 
 - Um número de venda (`L0-NNN`) pode ser pulado (por exemplo, quando a gravação falha depois de gerar o número). Não há número repetido, mas a sequência pode ter buracos.
 
 ## Fundos de IA com recorte local, sem Photoroom (v84, 29/10/2026)
+
+> **Mudou em 16/11/2026.** O `arq1950` virou o fundo Maracanã 1950 (regra 21): a linha "Arquibancada 1950" da tabela de regras abaixo não vale mais (sem zoom do fundo e sem modo largo). `FIA_REGRAS` ganhou `mirantedia` e a entrada `estreito` (regra 20). Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
 Decisão do Eduardo (29/10): a montagem dos fundos sai do Photoroom. O agente recorta a pessoa no computador do ponto e o app monta no canvas com as regras de `docs/fundos-ia-regras.md`.
 
 ### Agente (`eterna-agente.py`)
@@ -1444,6 +1474,8 @@ Documento próprio: [NUVEM.md](NUVEM.md) (recursos da AWS, variáveis do agente,
 
 ## Fundo Pódio de campeão (v86, 29/10/2026)
 
+> **Mudou em 16/11/2026.** A migração `bgMigraPodio` saiu do código e `SIM.bgOn` não é mais lido. O Pódio segue no Laboratório. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
+
 Teste: `testes/v86.js`. Regra 14 em [fundos-ia-regras.md](fundos-ia-regras.md).
 
 - **Fundo novo.** 5º fundo de IA, `id:'podio'`, "Pódio de campeão": estádio lotado verde e amarelo, confete, pódio dourado no centro e uma taça num pedestal à direita (de 80% a 94% da largura). Aprovado direto pelo Eduardo (29/10), sem passar pelo Laboratório. Arquivos: `img/bg-podio.jpg` (2400 px, prévia) e `img/fundos-5k/podio.jpg` (5000 px, impressão, `fileHi`). `fit:['meio','close','inteiro']`.
@@ -1455,6 +1487,8 @@ Teste: `testes/v86.js`. Regra 14 em [fundos-ia-regras.md](fundos-ia-regras.md).
 - **IMPORTANTE: trocar a imagem de um fundo exige trocar o nome do arquivo.** O agente guarda o fundo em cache pelo nome do arquivo. Se a imagem nova entrar com o mesmo nome, a prévia e a impressão podem sair com a imagem antiga. Novo nome no `file`/`fileHi` do `DATA.backgrounds` e no mapa do agente (como foi feito com `img/bg-campeao-v81.jpg`).
 
 ## Fila do fotógrafo (v87, 30/10/2026)
+
+> **Mudou em 16/11/2026.** A função do dia está desligada (`FUNCAO_DIA_ON=False`): sessão nova nasce sem função e sem ponto, o cartão mostra só o nome e `POST /fila-fotografo/funcao` responde 409 `escala_desligada` sem gravar. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
 
 Plano: `docs/planos/2026-10-30-fila-do-fotografo.md`. Testes: `testes/fila-fotografo.js` (app, Playwright, `/fila-fotografo` simulado) e `testes/fila_fotografo_agente.py` (agente, chamado pelo .js, critérios 1 a 13).
 
@@ -1594,6 +1628,8 @@ Tudo em `~/Eterna/ponto/vendas.db`.
 `selfie` não guarda imagem, vetor do rosto, sessão nem venda, para não identificar ninguém. A selfie da galeria em eterna.photo fica nos eventos da nuvem (`EVT#<token>`, tipos `selfie_*`) e não entra nessas tabelas.
 
 ## Estatísticas e calendário de eventos (v92, 05/11/2026)
+
+> **Mudou em 16/11/2026.** O módulo `escala`, que guarda o Calendário de eventos, aparece em Permissões com o nome "Calendário de eventos" (`mod_escala_cal`). Id, ações `ag-*` e `escala.u` não mudaram. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
 
 Plano, critérios e decisões: `docs/planos/2026-11-05-estatisticas.md`. Testes: `testes/estatisticas.js`, `testes/estatisticas_agente.py`, `testes/v92-testador.js`, `testes/v92_testador_agente.py` (todos no `rodar.sh`).
 
@@ -1835,6 +1871,8 @@ Testes: `testes/agenda_agente.py` (agente importado, servidor numa thread na por
 
 ## Os 2 primeiros cliques de cada sessão só para os fundos de IA (v93, 06/11/2026)
 
+> **Mudou em 16/11/2026.** **Regra suspensa.** Sem função do dia, toda sessão fecha com `ia=[]` e `ia_regra.motivo="sem_funcao"`; nenhuma base é separada e o Checkout monta os fundos com as 2 primeiras fotos com gente do cliente (`lojaAIAntigo`). O código desta seção continua no arquivo e volta a valer com `ESCALA_ON=true` e `ETERNA_FUNCAO_DIA=1`. São 3 montagens por venda, não 5. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
+
 Pedido do Eduardo (06/11 07:54), regra 15 de [fundos-ia-regras.md](fundos-ia-regras.md). Plano, critérios e respostas do Eduardo: `docs/planos/2026-11-06-dois-cliques-ia.md`. Testes: `testes/cliques_ia_agente.py`, `testes/cliques_ia_e2e_agente.py`, `testes/cliques_ia_fila_limpeza_agente.py`, `testes/cliques-ia.js`, `testes/cliques-ia-e2e.js`.
 
 Em cada sessão de ponto de campo, os N primeiros cliques (padrão 2: o 1º de corpo inteiro, o 2º mais fechado) são só base das montagens com os fundos de IA. Nunca são vendidos como foto normal. O servidor recorta as bases assim que chegam, com a sessão ainda aberta, e o Checkout abre com as 5 montagens. Se o fotógrafo esquecer, os N primeiros viram base do mesmo jeito (sem botão de devolver, D3).
@@ -1987,7 +2025,7 @@ Plano: `docs/planos/2026-11-10-recorte-birefnet-sessoes.md` (com as decisões do
 - `visPull` (pelo rev de `/status.sessoes.visitas`) grava `SIM.visitas = {rev, levas:{card:[levas]}, grande:{card:true}}` (cópia; fora da sincronização do `estado.db`). `visitaDe(card)`: as levas da visita no SIM, sem menor e sem escola (v77).
 - Selfie (`lojaJuntar`): cada leva com foto clara traz a visita inteira (todas as fotos e as bases em `so.ids`); menor ou escola só com as fotos achadas; o "talvez" só para levas fora das visitas. Código LP ou da galeria: `lojaSoVisita`. `so` guarda `base`, `fix` e `visita`; `lojaVisitaAtualiza` (relógio de 5 s e cada `visPull`) refaz a escolha quando o Posto junta ou separa e tira só as marcas de fotos que saíram. Muda a regra da v95 no Checkout (decisão do Eduardo, 10/11); a galeria por QR continua na v95 até a proposta do plano ser implementada (depois da v96.1).
 - Bases (`lojaAI`): base boa; senão o jeito antigo (foto real sem a nota simulada); senão a base barrada pela validação. `compHydrate`: 503 do recorte tenta de novo em 30 s (`FIA_REC_DE_NOVO_MS`) e não marca `FIA_RUIM`.
-- Posto: `pendVisitaHtml` no pedido do Checkout (levas, Separar, Juntar outra leva com as de hoje dos últimos 50 min ou o código LP), `visitaPost` (X-Eterna), `auditLog('visita_juntar'|'visita_separar')`, `pendTiraLeva` (Separar com o pedido aberto tira as fotos daquela leva e o pacote volta a ser escolhido). `visita-juntar` e `visita-separar` com venda u.
+- Posto: `pendVisitaHtml` no pedido do Checkout (levas, Separar, Juntar outra leva com as de hoje dos últimos 50 min ou o código LP), `visitaPost` (X-Eterna), `auditLog('visita_juntar'|'visita_separar')`, `pendTiraLeva` (Separar com o pedido aberto tira as fotos daquela leva e o pacote volta a ser escolhido). `visita-juntar` e `visita-separar` com venda u. **Desde 15/11 fora da tela** (`PEND_LEVAS_TELA=false`, pedido do Ronaldo); as rotas do agente continuam.
 - Testes: `testes/recorte_birefnet_agente.py` (com `ETERNA_RECORTE_FOTOS` e `ETERNA_RECORTE_REF`, as 5 fotos de referência com o BiRefNet de verdade; nunca fotos no repositório), `testes/visitas_agente.py`, `testes/visitas-checkout.js`; `testes/v84.js` com o recorte real só com `ETERNA_RECORTE_REAL=1`.
 
 ### Correções da Segurança e do Revisor (11/11)
@@ -2003,12 +2041,16 @@ Plano: `docs/planos/2026-11-10-recorte-birefnet-sessoes.md` (com as decisões do
 - Testes: `testes/visitas_agente.py` (B1, rota, boot, LGPD, retenção, itens 5 e 6), `testes/recorte_birefnet_agente.py` (item 1, ambiente, órfão), `testes/instalar_recorte.py` (requisitos e .bat), `testes/visitas-config.js` (interruptor), `testes/visitas-separar-pedido.js` (Separar num pedido só, bases reabertas no app).
 
 ### Telão do Maracanã (E8)
+
+> **Mudou em 16/11/2026.** O `telao` usa `img/bg-telao-v2.jpg` (2576×1839) com cantos novos, `BG_DEF = ['mirantedia','arq1950','telao']` e a migração `bgMigraTelao` saiu. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
 Fundo `telao` (`img/bg-telao.jpg`, arte do Eduardo, 2576×1840; `fileHi` = o mesmo arquivo) no lugar do `podio` (agora `inativo:true`, em Laboratório › Fundos em teste). `BG_DEF = ['campeao','mirante','arq1950','tunel','telao']`; `bgMigraTelao` (uma vez, marca `SIM.bgTelaoV97` e `eterna.bgtelao.v`): lista salva com o pódio troca pelo telão na mesma posição; com menos de 5, ganha o telão. Montagem própria em `fiaTelao` (chamada por `fiaMontar` quando o fundo tem `telao.quad`): `fiaHomog` (homografia por 4 pontos) e `fiaWarp` (amostragem bilinear por linha, só na caixa da tela): desentorta o conteúdo da tela em meia resolução, desenha a pessoa pelo `fiaLayout` com `FIA_REGRAS.telao` no quadro da tela, acabamento por `ctx.filter` e entorta de volta. Prévia ~0,4 s por foto com tudo carregado. `FIA_BASE.telao = 1`. Nome do fundo para o cliente em `bgNomeCli` (`T('bgTelao')`). Regra 17 de `docs/fundos-ia-regras.md`. O mapa de fundos do Photoroom no agente (`FUNDOS_PREVIA`) não tem o telão (Photoroom inativo). Teste `testes/telao.js`; `v86.js` e `v81.js` ajustados (o pódio é ligado à mão no teste da v86).
 
 ### Ordem de deploy
 1) `instalar-recorte` (Mac e servidor) com os modelos novos; 2) agente: `eterna-agente.py` e `eterna-recorte.py` juntos (no Mac do Eduardo em `~/Documents/ETERNA/eterna/` e `~/Downloads/Eterna/`); 3) app; 4) recarregar Checkout, Posto e Upload. Agente novo sem o instalador = sem fundos de IA. O servidor do estádio está na `idiomas-base`: o `eterna-recorte.py` precisa entrar no `instalar-servidor.ps1` e no vigia (`eterna-vigia.ps1` só atualiza o `eterna-agente.py`).
 
 ## Selo Edição Maracanã nas montagens de IA (v97, 11/11/2026)
+
+> **Mudou em 16/11/2026.** Nomes para o cliente: `bgMiranteDia` (Mirante do Rio) é novo e `bgArq1950` passou a "Maracanã 1950" nas 5 línguas. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
 Plano `docs/planos/2026-11-11-selo-edicao-maracana.md` (decisões D1 a D8 do Eduardo e a investigação D1). Testes `testes/selo-edicao.js` (Checkout, Posto, Estatísticas) e `testes/montagens_agente.py` (agente).
 
 ### Checkout
@@ -2036,6 +2078,8 @@ Plano `docs/planos/2026-11-11-selo-edicao-maracana.md` (decisões D1 a D8 do Edu
 
 
 ## v97: visão de conjunto (11/11/2026)
+
+> **Mudou em 16/11/2026.** O grupo Fotógrafo não tem mais a Escala; `impPontoDe()` devolve vazio e `vEscalaFoto` fica sem caminho; `APP_FUNDOS_ATIVOS` são os 3 arquivos da trinca nova. Detalhe em "Entrega de 15 e 16/11/2026", no fim deste documento.
 
 Junta o que a `release/v97` mudou e aponta para as seções de cada parte. Planos: `docs/planos/2026-11-09-ondas-ux.md`, `2026-11-10-recorte-birefnet-sessoes.md`, `2026-11-10-agenda-estatisticas.md`, `2026-11-11-posto-unico.md`, `2026-11-11-minhas-fotos-envio-manual.md` e `2026-11-11-selo-edicao-maracana.md`.
 
@@ -2167,3 +2211,211 @@ App (`index.html`): `envioPainel()` em Minhas fotos, só com `set.c` (Fotógrafo
 - Montagens primeiro no pedido do Posto (D7 do plano do selo).
 - Medir o recorte no servidor do estádio com a placa de vídeo (critério 10 do plano do recorte).
 - Deploy: instalar o recorte antes do agente; o agente leva `eterna-agente.py` e `eterna-recorte.py`; depois o app; fechar e reabrir Checkout, Posto e Minhas fotos em todos os balcões. Conferir `/status.app_offline_pronto` com internet antes de testar o ponto sem rede.
+
+## Entrega de 15 e 16/11/2026: foto inteira, Exportar, Klacius, três fundos, proporção, Escala desligada e cache do original
+
+Ramo `fix/correcoes-15-11`. Planos: `docs/planos/2026-11-15-biblioteca-fotos-inteiras.md`, `2026-11-15-exportar-relatorios.md`, `2026-11-15-grafia-klacius.md`, `2026-11-16-tres-fundos-ia.md`, `2026-11-16-maracana-1950.md`, `2026-11-16-proporcao-montagens.md` e `2026-11-16-escala-desligada.md`. Regras de montagem: 20 e 21 de [fundos-ia-regras.md](fundos-ia-regras.md).
+
+Nenhuma rota nova no agente. Mudaram a resposta de `POST /fila-fotografo/funcao`, o cabeçalho de cache de `GET /file/<id>`, um campo na sessão (`dono_corrigido`) e uma chave de configuração (`sim/bgOn2`).
+
+### 1. Foto inteira na Biblioteca e no zoom
+
+Só desenho: os arquivos nunca estiveram cortados. Teste `testes/biblioteca-fotos-inteiras.js`.
+
+- Miniatura de foto real: `photoBtn` marca `data-real` (`fotoSrc`, `fotoReal`). A célula é quadrada e a foto fica contida (`contain`). As fotos de exemplo (sprites) seguem 3:2. Vale na Biblioteca, Minhas fotos de hoje, Sessões de hoje, Qualidade, Posto, Venda manual, Ajustes e na escolha de cortesia.
+- Zoom (`showModal`): abre com a miniatura; a caixa `.big.real` toma a proporção da foto (`--arn`, de `fotoAr`/`FOTO_AR`, um pedido por id). O original só é pedido depois de `ZOOM_HI_MS` (250 ms) parado na foto (`zoomOriginal`, estado por id em `FOTO_HI`). Motivo: o limite de pedidos do `/file/`. Falha deixa a miniatura; reabrir tenta de novo.
+- `fotoOriginal(id)` é a regra única de miniatura para original (também no `bigStyle`). Miniatura com recorte acima de 100% usa a caixa da foto (`recMini`).
+- Setas (`modalIr`, teclado e deslizar): param nas pontas, sem dar a volta. Título com `zm_pos` ("foto 12 de 50") e a hora (`fotoHora`).
+- Aberto pela Biblioteca (`#lib-painel`) ou por Minhas fotos de hoje (`#lib-minhas`), o zoom percorre `libOrdem()`: as fotos do filtro na ordem da tela, atravessando sessões. Aberto por um bloco de Sessões de hoje, fica na sessão.
+- Checkout do cliente e galeria online seguem com `cover` (decisão pendente).
+
+### 2. Cache do original
+
+`GET /file/<id>` responde com `Cache-Control: private, max-age=300`. O original fica 5 minutos, só no aparelho de quem pediu, e nunca em proxy. `GET /thumb/<id>` segue com `max-age=86400`. O método `H.file(path, cache=...)` recebe o cabeçalho; as outras chamadas usam o padrão de 1 dia.
+
+### 3. Exportar relatório (PDF, XLS e CSV)
+
+Tudo no navegador. Sem biblioteca, sem rota no agente e sem `window.print` (os postos abrem o Chrome com `--kiosk-printing`). Teste `testes/relatorios.js`.
+
+| Tela | Ícones | Construtor | Dado (o mesmo da tela) |
+| --- | --- | --- | --- |
+| Painel | PDF, XLS, CSV (`pn-csv`) | `relPainel` | `state.painelUlt` |
+| Lista de vendas | PDF, XLS, CSV (`sales-csv`) | `relVendasLista` | `salesFiltradas()` |
+| Estatísticas (seções a, b, e) | PDF, XLS | `relEstatisticas` | `esTela()`, `esFotoOrd()` |
+| Fotógrafos | PDF, XLS | `relFotografos` | `buildStats(rangeDays())`, seleção de `state.person` |
+| Bandeiras | PDF, XLS | `relBandeiras` | `flagLinhas()` (as 4 colunas de estimativa de `flagStats` ficam fora) |
+| Diário do set | PDF, XLS | `relDiario` | `diarioLista()` |
+| Escala | PDF, XLS | `relEscala` | só entra em `REL` com `ESCALA_ON` (desligada) |
+| Estatísticas › Jogos e ano a ano | CSV (`es-dias-csv`), junto da tabela "Mês a mês" | (função antiga) | `esDiasCSV` |
+
+- Modelo único: `relNovo(id, titulo)`, `relAba(R, nome, titulo, colunas, linhas)`, `relC(rotulo, tipo)`. Tipos de coluna: `data`, `int`, `dec1`, `pct`, `moeda`, `moeda0` (dinheiro sem centavos, do Painel) e texto.
+- `xlsxBlob`: ZIP sem compressão (`zipStore`) com XML mínimo; texto em `inlineStr` (`xmlTxt`). `pdfBlob`: escritor próprio, Helvetica em WinAnsi (`pdfWin`, `pdfTxt`), só cabeçalho e tabelas. `pdfColunas` mantém data, número e texto curto inteiros e só quebra texto longo, entre palavras.
+- Cabeçalho (`relCab`): período ou "Posição em", filtros, "gerado em" no fuso do venue, quem gerou e "Uso interno". Nome do arquivo por `relNome`.
+- Limites: `REL_MAX_PDF` 2.000 linhas e `REL_MAX_XLSX` 20.000. Uma exportação por vez (`relTrava`, `relOcupado`, `REL_TRAVA_MS` 1 s): os ícones ficam desabilitados.
+- Permissão: `relPode(view)` (tela no menu e módulo em Ver) no desenho do botão e de novo no clique (`relExportar`, `data-act="rel-exportar"`, `data-fmt`).
+- Botão: `relBotao(view, csv)`. O segundo argumento `{act, rot}` põe o CSV que a tela já tinha como terceiro ícone, com a mesma ação, a mesma função geradora, o mesmo arquivo e a mesma permissão. `relIcone(fmt)` desenha o ícone em SVG (CSS `.rel-ic`: PDF vermelho, XLS verde, CSV azul; 44 × 40 px). O nome do formato vai no `aria-label` e no `title`, nas 5 línguas (`rel_pdf_t`, `rel_xls_t`, `pn_csv`, `sl_csv`, `es_baixar_csv`).
+- **Tela nova com Exportar:** construtor em `REL[view]`, `relBotao(view)` no `.head` e uma função de dado comum à tela e ao arquivo.
+
+Registro de cada exportação (`relAudita`), gravado pelo `auditLog` e mostrado em Permissões › Histórico. Nunca leva o conteúdo:
+
+```json
+{
+  "id": "L1794760000000-a1b2",
+  "em": "2026-11-16T14:05:00.000Z",
+  "por": "pessoa@exemplo.com",
+  "acao": "relatorio_exportado",
+  "alvo": "relatorio/vendas-lista",
+  "mudancas": [{"campo": "formato", "para": "xlsx"}],
+  "venue": "maracana",
+  "origem": "app-v78",
+  "periodo": {"de": "2026-11-01", "ate": "2026-11-15"},
+  "linhas": 412,
+  "filtros": [["Pagamento", "PIX"]]
+}
+```
+
+É o registro comum do `auditLog` (`eterna.users.log.v1` e `usuarios_log/<id>`), com `periodo`, `linhas` e `filtros` a mais. Os valores do exemplo são ilustrativos. Cada texto de filtro é cortado em 60 caracteres. O CSV antigo não passa por `relAudita`.
+
+### 4. Grafia Klacius e sessão sem fotógrafo
+
+- Nome de tela: **Klacius** (`DATA.people`, `SEED_USERS`). A chave interna continua `klassius` (login do FTP, e-mail, sessões, vendas, históricos). Não renomear.
+- Regra de apelido, uma só. Agente: `FOTOGRAFO_APELIDO = {"klacius","classius","clacius" → "klassius"}` e `fotografo_chave(nome)`, usada por `ff_quem`, `rftp_origem`, a subpasta do login compartilhado do FTP e `rv_key` da Roverpix. Nome de pasta e origem só pelo nome inteiro (`inteiro=True`); o primeiro nome vale só para autor e dono da câmera e para a Roverpix. App: `KEY_ALIAS` (em `aliasLive` e `keyByName`). Grafia nova de alguém entra nos dois mapas, nunca em chave nova.
+- Cadastro com o nome padrão antigo ("Klassius" ou "Klássius", exatamente): acertado por `usuarios_grafia()` na partida do agente, antes do servidor HTTP, com linha no `usuarios_log` e `updatedBy: "servidor"`. O mapa `NOME_TELA_ANTIGO` existe no agente e no app (`nomeTelaCerto`, no `migrateUser`). Nome editado por alguém fica como está.
+- Sessão fechada sem fotógrafo, de hoje ou de ontem, com todas as fotos do mesmo cadastrado: `sess_dono_corrigir` (no fim do `sess_carregar`, na partida do agente) grava a chave dele. Sessão mista ou com foto sem dono fica. Sessão com fotógrafo nunca muda. O `metricas_loop` refaz o resumo do dia, vendas incluídas.
+
+Campo novo na sessão (`~/Eterna/ponto/sessoes/AAAA-MM-DD.json` e `GET /sessoes`):
+
+```json
+{
+  "fotografo": "klassius",
+  "fonte": "autor_da_camera",
+  "dono_corrigido": {
+    "em": "2026-11-16T12:12:40Z",
+    "por": "servidor",
+    "de": null,
+    "para": "klassius",
+    "fonte_antes": "cartao",
+    "motivo": "autor_da_camera"
+  }
+}
+```
+
+`motivo` é o caminho que valeu (`ff_quem_como`): `origem`, `autor_da_camera` ou `dono_da_camera`, juntos por `+` quando as fotos chegaram por caminhos diferentes. A sessão ganha `rev` novo. Os valores do exemplo são ilustrativos.
+
+No app, `srvDono` (dentro do `srvPull`) leva a correção para `SIM.sessions[card].key` só quando a sessão traz `dono_corrigido` (sessão paga também). O `/sessoes` normal só traz hoje: as de ontem vêm por `srvOntem()` (`GET /sessoes?desde=0&ontem=1`, um pedido por partida do agente e na carga da página).
+
+### 5. Três fundos de IA
+
+`BG_DEF = ['mirantedia','arq1950','telao']`. A ordem é a do Checkout; a primeira abre em tela cheia.
+
+| Fundo (id) | Nome para o cliente | Prévia | Impressão (`fileHi`) | Base (`FIA_BASE`) |
+| --- | --- | --- | --- | --- |
+| `mirantedia` (novo) | Mirante do Rio (`bgMiranteDia`) | `img/bg-mirantedia.jpg`, 2400×1711 | `img/fundos-5k/mirantedia.jpg`, 5000×3565 | 2ª foto |
+| `arq1950` (mesmo id, fundo novo) | Maracanã 1950 (`bgArq1950`) | `img/bg-maracana1950.jpg`, 2400×1710 | `img/fundos-5k/maracana1950.jpg`, 5000×3563 | 1ª foto |
+| `telao` (imagem nova) | Telão do Maracanã (`bgTelao`) | `img/bg-telao-v2.jpg`, 2576×1839 | o mesmo arquivo | 2ª foto |
+
+- `campeao2`, `mirante` e `tunel` ficaram com `inativo:true` (Laboratório › Fundos em teste), como o `podio`. Nada foi apagado: pedido e venda antigos com esses fundos abrem, montam e imprimem. As chaves de item e de venda não mudam (`ai:<foto>|<fundo>`).
+- **Lista de ativos: `SIM.bgOn2`**, documento `sim/bgOn2` (módulo `configuracao`, em `DOC_SIM` do agente). Valor: lista de ids, por exemplo `["mirantedia","arq1950","telao"]`. Só vale lista de textos; qualquer outro valor cai no padrão `BG_DEF`. Lista vazia salva de propósito continua vazia. Lista só com fundos ocultos volta ao padrão.
+- A lista antiga `SIM.bgOn` não é migrada, lida nem gravada, mas continua em `SIM_INTEIRO` e em `DOC_SIM` (tirar faria cada aparelho mandar apagar no servidor). Motivo da chave nova: `sim/bgOn` mora no servidor e o servidor vale por cima na primeira leitura, então uma troca feita em cada aparelho seria desfeita. Desfazer o deploy volta sozinho à lista antiga. Saíram `bgMigraPodio` e `bgMigraTelao`. Entrou `bgTelaoV97` em `DOC_SIM` (faltava; cada aparelho tentava gravar a cada carga).
+- Agente: `APP_FUNDOS_ATIVOS` com os 3 arquivos (o `/status.app_offline_pronto` passa a exigir os três), `FUNDOS_PREVIA` e `FUNDOS_IMPRESSAO` com `mirantedia` e com o `arq1950` apontando para os arquivos novos.
+- **Trocar a imagem de um fundo:** arquivo com nome novo (o agente guarda em disco e só revê uma vez por partida; o navegador guarda por 1 hora), `file`/`fileHi` em `DATA.backgrounds` e as três listas do agente.
+- Telão: cantos em `DATA.backgrounds`, medidos no original de 4096×2924, `telao:{w:4096,h:2924,quad:[[884,181],[3485,525],[3582,1931],[848,1681]]}` (sup. esq., sup. dir., inf. dir., inf. esq.). O `fiaTelao` escala por `largura/telao.w`.
+- Preto e branco do Maracanã 1950: prévia e impressão passam pelo mesmo `fiaMontar` → `fiaDesenhar`. `fiaPB` confere uma vez se o `filter` do canvas funciona (`fiaFiltroOk`); sem ele (Safari, iPad, iPhone) converte ponto a ponto (0,2126 R + 0,7152 G + 0,0722 B) e aplica o contraste de 1,10 na pessoa (`fiaContraste`). Gancho de teste: `ETERNA.fiaSemFiltro(true)`.
+- Maracanã 1950 (regra 21): `FIA_REGRAS.arq1950` com altura até 66% do quadro (topo do recorte em 34% ou abaixo; nada acima de 32%, o título é zona proibida), largura até 92%, centro em 50%. Sem zoom do fundo e sem o modo largo da regra 10. `impAlto:true` no fundo: no corte 10×15 (`compHi`) a sobra sai de baixo, não do alto. Para o Telão o corte segue no meio; para os outros, preso embaixo.
+- Testes: `testes/tres-fundos.js` e `testes/proporcao-montagens.js`. Conferência visual do Telão: `TRES_FUNDOS_RENDER=<pasta> node testes/tres-fundos.js`.
+
+### 6. Proporção das montagens (regra 20)
+
+- `FIA_REGRAS.mirantedia`, `.telao` e `.arq1950` ganharam a entrada `estreito`. As entradas `meio` e `inteiro` não mudaram.
+
+| Fundo | `estreito.corte` | Efeito |
+| --- | --- | --- |
+| Mirante do Rio | 0,74 | corte no quadril, topo a 20% do alto, encostado embaixo; a pessoa fica 1,35 vez maior |
+| Telão do Maracanã | 0,47 | do peito para cima, topo a 10% do alto da tela; casal com cerca de 60% da largura da tela |
+| Maracanã 1950 | 0,74 | corte no quadril, topo em 34% |
+
+- `fiaEstreito(R, m)` decide pela razão largura/altura do recorte medido (`fiaMedir`), só quando o recorte encosta na borda de baixo (`m.trunc`): até `FIA_ESTREITO_DE` (0,70) usa `estreito`; de `FIA_ESTREITO_ATE` (1,20) em diante devolve nada e o `fiaLayout` segue com `meio`, igual a antes; entre os dois, corte, altura, largura e centro andam em linha reta.
+- A largura nunca passa do teto do `meio`. A proteção de rosto é a mesma (a linha de corte desce). O `fiaLayout` devolve `estreito` (1, 0 ou um valor entre os dois).
+- Prévia (`fiaMontar`) e impressão (`compHi`) passam pelo mesmo `fiaLayout`. Grupo, bandeira aberta e braços abertos saem idênticos aos de antes.
+
+### 7. Escala desligada
+
+Decisão do Eduardo (16/11): a Escala é assunto do Maracanã, não do Eterna. É a fatia 1 de três; as próximas têm plano próprio (abaixo).
+
+| Chave | Onde | Padrão | Religar |
+| --- | --- | --- | --- |
+| `ESCALA_ON` | constante no `index.html` | `false` | `true` no código |
+| `FUNCAO_DIA_ON` | agente, lida de `ETERNA_FUNCAO_DIA` | desligada | `ETERNA_FUNCAO_DIA=1` no ambiente do agente |
+
+- Nada é apagado: `vEscala`, `relEscala`, `funcSelect`, os textos, `SIM.funcao` (em `SIM_INTEIRO`), `funcao.json`, os documentos `funcao/<dia>` e o backup ficam. O menu gravado de cada pessoa guarda `escala` e só é filtrado na hora de desenhar. Religar devolve tudo com os dados no lugar.
+- App: a Escala sai de `VIEWS` (volta por `escalaAplica` com a chave), das Permissões, do `REL` e do endereço `#escala`. Quem tinha a Escala como tela inicial entra na tela inicial do perfil. Minhas fotos mostra o nome sem ponto (`impPontoDe` devolve vazio). A Fila mostra o nome ou a origem, sem `ffOnde` e sem aviso de folga; `ffFuncaoEnviar` não é chamado. Alertas e Vestiário ficam sem o alerta e o painel da escala.
+- Permissão: o módulo mantém o id `escala`, sem migração, e passa a se chamar "Calendário de eventos" nas 5 línguas (`mod_escala_cal`, `modi_escala_cal_*`). Só tem a tela `calendario`. As ações `ag-*`, o `can('escala','u')` e a rota `/agenda/atualizar` não mudaram. Perfil Fotógrafo: menu sem a Escala e descrição `pred_foto_se`.
+- Agente: sessão nova nasce sem função e sem ponto. No fechamento, `ia=[]` e `ia_regra` com `n: 0` e `motivo: "sem_funcao"`. Nem a função guardada em sessão aberta antes do deploy vale.
+- `POST /fila-fotografo/funcao`: confere origem, limite e permissão como antes e responde **409** `{"error": "escala_desligada"}`, sem tocar no `funcao.json`. Janela antiga aberta durante o deploy não muda nada.
+- **Fundos de IA no intervalo:** a regra 15 (2 primeiros cliques só para IA) fica suspensa. Nenhuma base é separada, todas as fotos ficam à venda e o `lojaAI` cai no `lojaAIAntigo`: as 2 primeiras fotos com gente do cliente (de `lojaFotos`, de qualquer ponto), uma montagem por fundo de `bgOn()`, cada fundo com a foto indicada em `FIA_BASE`. O painel "Fotos para os fundos de IA" (`iaCfgPanel`) fica só com o liga/desliga e a nota `cf_ia_sem_escala`. O Upload mostra `up_iam_sem_ponto` ("Fotos de IA: aguardando reconhecimento do ponto").
+- Testes: `testes/escala-desligada.js` (o app como vai ao ar e, na mesma janela, com a chave ligada) e `testes/fila_fotografo_agente.py` (409 sem tocar no arquivo). `testes/_escala.js` entrega o `index.html` com a chave ligada aos testes que continuam cobrindo a Escala; os testes do agente ligam `FUNCAO_DIA_ON` no módulo ou `ETERNA_FUNCAO_DIA=1` no processo.
+
+### Variáveis de ambiente novas
+
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `ETERNA_FUNCAO_DIA` | vazio (desligada) | `1` religa a função do dia do fotógrafo no agente. Só faz sentido junto com `ESCALA_ON=true` no app |
+
+### Próximos passos decididos pelo Eduardo (16/11, não implementados)
+
+- **Foto de IA reconhecida pela imagem (regra 19, reservada).** As fotos de IA são as 2 primeiras fotos do visitante no ponto do gramado, contadas por reconhecimento facial. Cortadas do joelho ou da canela para cima na origem. Sem troféu em pedestal (trofeuzinho de mão vale). Uma das duas com todos olhando para a câmera.
+- **Montagem feita no servidor antes do Checkout.** É a regra fixa da "v97: visão de conjunto"; o Checkout passa a só mostrar.
+- **Montagem entregue também na galeria** do QR.
+- **O cliente escolhe quais fotos imprimir.** Proposta do Ronaldo em `docs/planos/2026-11-16-escolha-da-impressao.md`, com a barra das escolhidas no Checkout. Ainda há uma decisão de negócio em aberto no plano (quem leva a impressa também leva a digital?).
+- **O Fundo de IA faz parte do pacote.**
+
+### Pendências
+
+- **IMPORTANTE (operação):** depois do deploy, fechar e reabrir Checkout, Posto e Minhas fotos em todos os postos. Janela antiga segue com os 5 fundos e, se for de alguém com Configurações, apaga `sim/bgOn2` (o código antigo apaga chave que não conhece). Sem escolha salva o padrão já é a trinca.
+- **IMPORTANTE (operação):** publicar fora do horário de visita. Cliente no meio da escolha perde as marcas das montagens que saíram.
+- **IMPORTANTE (produto):** até a regra 19 entrar, a qualidade da montagem depende de as 2 primeiras fotos do cliente serem do joelho para cima. Nada no sistema garante isso.
+- **IMPORTANTE (produto):** a chave da Escala vale para todos os venues. Chave por venue no servidor fica para o plano de white label. Os fundos também são lista fixa no app e no agente.
+- Conferir numa impressão de verdade na DNP o Mirante do Rio (o corte 10×15 tira 5,7% do alto e o topo do Cristo fica a 3,6% da borda) e o Maracanã 1950 (título a 5,5% do alto do papel; a margem é a propriedade `impAlto`).
+- `ang`, `luz` e `dir` do `arq1950` ficaram com os valores do fundo anterior (só usados no "Combina %" do caminho antigo).
+- `sales-csv` ignora o período e os filtros da Lista de vendas (defeito conhecido; o XLS respeita).
+- Exportar não cobre Vendedores, Estoque, Qualidade, Galerias online, Calendário de eventos, Alertas nem as seções c, d, f e g das Estatísticas. PDF sem gráficos e sem logo.
+- Corpo inteiro estreito segue com a regra antiga. Deslocar o grupo para livrar o Maracanã e o Cristo no Mirante do Rio não foi decidido.
+- Checkout do cliente e galeria online continuam cortando a miniatura (`cover`); decisão pendente do Eduardo.
+
+## Barra das escolhidas na tela cheia do Checkout (17/11/2026)
+
+Ramo `feat/barra-escolhidas`. Teste: `testes/checkout-barra-escolhidas.js` (agente falso, contexto de toque); `testes/checkout-tela-cheia.js` ajustado.
+
+### O que o cliente vê
+
+Na tela cheia da escolha (`review` com `k.ver!=null`), as fotos escolhidas aparecem em miniatura com o contador "N fotos escolhidas", na ordem em que ele escolheu (a mais nova no fim). Tocar numa miniatura abre aquela foto (a miniatura da foto em exibição tem contorno amarelo). O X de 48 px tira a foto na hora, sem pergunta, e mostra "Foto tirada" com **Desfazer** (72 px) por 5 s, que devolve a foto na mesma posição. Marcar ou tirar atualiza a barra, o contador do canto e o Continuar sem redesenhar a tela: a foto grande não pisca e nenhuma imagem é baixada de novo. A miniatura é a `/thumb/` (nunca `/file/`), inteira (contida) e com a marca d'água; a montagem de IA usa a montagem pronta em memória (`COMPURL`). Nada depende de hover.
+
+### Regra do Eduardo (17/11): a foto nunca encolhe
+
+A barra só usa a sobra ao lado da foto. Sem sobra, quem cede é a barra. O modo sai de `ljEscModo(item)` (tamanho da janela e proporção da foto em exibição; montagem e foto de exemplo contam como 3:2 até a proporção ser conhecida) e vira classe no `.lj-fs`:
+
+| Modo | Quando | Como fica |
+| --- | --- | --- |
+| `esc-col` | tela de 3:2 ou mais larga, sobra da foto 3:2 (`largura - 1,5 × altura`, até 316 px) de 160 px ou mais: o monitor 16:9 do balcão | coluna à direita com essa largura; canto de cima (só ícones no contador e no Ver todas), logo, "N / total", setas e Continuar ficam inteiros dentro da coluna; só ✓ e ✗ ficam sobre a foto. Cobre menos foto que antes |
+| `esc-fina` | a mesma conta, sobra de 80 a 159 px (16:10) | coluna só com as miniaturas; os controles ficam sobre a foto, como antes da barra |
+| `esc-faixa` | tela mais estreita que 3:2, sobra de baixo da foto 3:2 (`altura - largura / 1,5`, até 112 px) de 80 px ou mais | faixa embaixo, miniatura de 64 a 88 px; abaixo de 100 px contador e Desfazer lado a lado (`esc-baixa`) |
+| `esc-off` | sobra menor que 80 px (miniatura de 64 + 16), ou a foto em exibição não deixa essa sobra (em pé no 4:3) | barra recolhida; a tela fica igual à de antes, com o contador do topo e o Ver todas |
+
+No 4:3 deitado a barra aparece nas fotos deitadas e recolhe nas em pé (ela não muda de lugar; só some). A largura e a altura saem arredondadas para baixo, então a área da foto nunca fica menor que a foto. Medidas no teste, com e sem a barra (foto deitada / em pé): 1920×1080 1620×1080 / 720×1080 (`esc-col`), 1366×768 1152×768 / 512×768, 1280×720 1080×720 / 480×720, 1440×900 e 1280×800 (`esc-fina`), 1920×1200 (`esc-fina`), 1024×768 (`esc-faixa` / `esc-off`), 390×844 (`esc-faixa`), 1400×940 e 1620×1080 (`esc-off`): sempre o mesmo tamanho.
+
+### Código
+
+- `ljEscolhidas(card)`: única fonte, `lojaCart(card).ch` na ordem de `Object.keys(pick)` (as chaves têm prefixo, então seguem a inserção). `lojaMark` e `kiosk-tog` apagam a chave antes de marcar, para ela ir para o fim.
+- `vQuiosque` devolve a casca `<aside id="lj-esc" data-card data-t0>` com `.lj-esc-n` (contador, `role=status`), `.lj-esc-dz` (lugar do Desfazer, sempre reservado: a lista não anda), `.lj-esc-vz` (vazio) e `.lj-esc-l` (lista).
+- `ljEscUpd()` aplica o modo, reconcilia as células por `data-k` (não recria as que ficam), atualiza contador, Desfazer, idioma, `.cur`/`aria-current` e vazio, mede no `esc-col` o começo (`--esctopo`, abaixo do canto) e o fim (`--escbaixo`, acima do logo) da lista e rola só a lista: na abertura até a foto em exibição, depois só para a que entrou (exatamente uma) ou para a foto em exibição quando ela muda. Também roda no `resize`, quando a proporção da foto chega (`ljAspecto`) e quando a montagem em exibição fica pronta (`compHydrate`).
+- `ljFsUpd()`: atualização parcial (barra, `ljCartPill`, `ljOvNext`, ✓/✗, `lojaEco`). `lojaMark` usa quando a foto em exibição não muda.
+- `render()` (ramo `lojaRota`) reaproveita o nó `#lj-esc` com o mesmo `data-card` e `data-t0`, devolvendo rolagem e foco, e sempre chama `ljEscUpd` (o cliente seguinte nunca vê a barra do anterior).
+- Ações `kiosk-esc-ir`, `kiosk-esc-x`, `kiosk-esc-desf` com uma trava única de 400 ms (`k.escXEm`, `LJ_ESC_TRAVA`): toque duplo nunca tira outra foto. `k.escDesf` (chave, posição, prazo, código e t0) vale só no mesmo atendimento (`ljEscDesfVale`) e é zerado no `lojaReset`; se o Desfazer vence com o foco nele, o foco vai para o X vizinho. Enter e Espaço dentro de `#lj-esc` são do botão, nunca o ✓.
+- I18N: `ljEscLista`, `ljEscVazio`, `ljEscVer`, `ljEscTirar`, `ljEscTirada`, `ljEscDesfazer` (o contador reaproveita `ljNChosen`).
+- Nada novo no SIM, no `localStorage`, no servidor ou no agente. O eco do Posto não mudou (`lojaEcoMsg`).
+
+### Fora desta entrega
+
+- Barra na grade, em "Ver minhas fotos", na galeria online e no Posto; reordenar por arrasto; zoom por pinça.
+- No 4:3 deitado (faixa) o canto de cima e a fileira de baixo (✓ ✗, Continuar) cobrem mais da foto que antes: os 42 px de margem que eles usavam viraram a faixa.
+- Em 390 px de largura o canto de cima já passava da borda antes da barra (falha antiga do `checkout-tela-cheia.js`).

@@ -17,6 +17,10 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   POST /g/<token>/evento          o cliente deu play (registro com data e hora)
   GET  /g/<token>/baixar?v=&a=    registra o download e manda para o link assinado do arquivo (attachment)
   GET  /ponto/eventos?tokens=     o agente busca quando o cliente abriu, deu play e baixou (segredo do ponto)
+  Escola pelo voucher (17/11, plano docs/planos/2026-11-17-escola-pelo-voucher.md):
+  GET  /g/codigo/<localizador>    o localizador do voucher de escola abre a galeria da visita (mesma rota do código)
+  POST /g/<token>/cortesia        {acesso, foto, email}: a foto grátis da criança (uma por criança, até as pessoas do voucher)
+  POST /g/<token>/evento          {acesso, tipo: foto_baixada, foto}: registro do download
 
 As fotos ficam no S3 (vitrine/<pid>.jpg e alta/<pid>.jpg, enviadas pelo agente) e saem por link assinado de 5 min.
 A selfie é comparada pelo Rekognition só com os rostos da própria galeria (coleção por galeria), nunca com a base inteira.
@@ -24,8 +28,9 @@ Os rostos das fotos só são lidos depois do primeiro consentimento na galeria, 
 vence ou é encerrada (limpeza diária). Tetos diários de leituras e buscas seguram o custo.
 Sem dado pessoal nos eventos: o IP vira hash com sal do dia.
 """
-import base64, hashlib, hmac, json, os, re, secrets, time
+import base64, hashlib, hmac, json, os, re, secrets, time, zlib
 from datetime import datetime, timezone
+import urllib.parse
 import boto3
 import imply
 from boto3.dynamodb.conditions import Key
@@ -36,6 +41,25 @@ REGIAO = os.environ.get("AWS_REGION", "us-east-2")
 TABELA = boto3.resource("dynamodb").Table(os.environ["TABELA"])
 BUCKET = os.environ["BUCKET"]
 SEGREDO_PONTO_SHA256 = os.environ["SEGREDO_PONTO_SHA256"]       # só o hash; o segredo fica no agente
+# 17/11: borda com firewall (borda.yaml). O CloudFront manda x-eterna-origem; aqui fica só o SHA-256. Pedido que veio pela borda
+# usa o IP do celular (CloudFront-Viewer-Address, escrito pelo CloudFront). Com EXIGIR_BORDA=1, pedido direto à API é recusado.
+ORIGEM_SHA256 = os.environ.get("ORIGEM_SHA256", "")
+EXIGIR_BORDA = os.environ.get("EXIGIR_BORDA", "0") == "1"
+
+
+def pela_borda(hs):
+    """True se o pedido passou pelo CloudFront com o firewall."""
+    v = (hs or {}).get("x-eterna-origem", "")
+    return bool(ORIGEM_SHA256 and v) and hmac.compare_digest(hashlib.sha256(v.encode()).hexdigest(), ORIGEM_SHA256)
+
+
+def ip_do_pedido(ev):
+    hs = ev.get("headers") or {}
+    ip = ev.get("requestContext", {}).get("http", {}).get("sourceIp", "")
+    va = hs.get("cloudfront-viewer-address", "")
+    if va and pela_borda(hs):
+        ip = va.rsplit(":", 1)[0].strip("[]")         # "ip:porta" (IPv6 também termina em :porta)
+    return ip
 SEGREDO_TESTE_SHA256 = os.environ.get("SEGREDO_PONTO_TESTE_SHA256", "")   # servidor de teste: publica sem usar o segredo do estádio
 COLECAO_PREFIXO = os.environ.get("COLECAO_PREFIXO", "et-maracana-")
 LIMIAR_ADULTO = float(os.environ.get("LIMIAR_ADULTO", "85"))    # semelhança do Rekognition (0 a 100)
@@ -46,9 +70,13 @@ PED_DIAS = 400                                                     # pedido e ve
 LIMITE_FOTOS_GALERIA = int(os.environ.get("LIMITE_FOTOS_GALERIA", "600"))   # teto de fotos lidas por galeria
 LIMITE_LEITURAS_DIA = int(os.environ.get("LIMITE_LEITURAS_DIA", "15000"))   # IndexFaces por dia (US$ 0,001 cada)
 LIMITE_BUSCAS_DIA = int(os.environ.get("LIMITE_BUSCAS_DIA", "10000"))       # SearchFacesByImage por dia (US$ 0,001 cada)
+# 17/11: galeria de escola pelo voucher, superdimensionada: até 10 mil fotos numa janela, lidas por vários lotes ao mesmo tempo
+LIMITE_FOTOS_ESCOLA = int(os.environ.get("LIMITE_FOTOS_ESCOLA", "10000"))
+ESCOLA_LOTES = int(os.environ.get("ESCOLA_LOTES", "8"))                    # leituras em paralelo (o Rekognition segura o ritmo da conta)
+ESCOLA_MESMA_CRIANCA = 0.6          # fotos em comum / fotos da menor seleção: a partir daqui é a mesma criança
 s3 = boto3.client("s3", region_name=REGIAO, endpoint_url="https://s3.%s.amazonaws.com" % REGIAO,
                   config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}))
-rek = boto3.client("rekognition", region_name=REGIAO)
+rek = boto3.client("rekognition", region_name=REGIAO, config=Config(retries={"max_attempts": 10, "mode": "adaptive"}))
 lam = boto3.client("lambda", region_name=REGIAO)
 
 URL_TTL = 300
@@ -67,6 +95,9 @@ _re_codigo = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4
 _re_ref = re.compile(r"^ON-[A-HJ-NP-Z2-9]{10}$")
 _re_sku = re.compile(r"^[0-9a-f]{40}$")
 _re_passaporte = re.compile(r"^[A-Z0-9]{5,20}$")
+_re_localizador = re.compile(r"^[A-Z0-9]{6,20}$")
+_re_dia = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_re_hhmm = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 # ---------- utilidades ----------
@@ -231,8 +262,28 @@ def livres(m):
     return {f["id"] for f in m["fotos"] if f["direito"] in ("comprada", "cortesia")}
 
 
-def galeria_obj(token, m, pids=()):
+def cortesias(token):
+    return TABELA.query(KeyConditionExpression=Key("pk").eq("CRT#" + token)).get("Items", [])
+
+
+def mesma_crianca(a, b):
+    """Duas seleções de fotos são da mesma criança quando a maior parte da menor está na outra (foto de grupo sozinha não basta)."""
+    a, b = set(a), set(b)
+    return bool(a and b) and len(a & b) / min(len(a), len(b)) >= ESCOLA_MESMA_CRIANCA
+
+
+def cortesia_da_crianca(token, pids, its=None):
+    """A foto grátis que esta criança já escolheu (pela seleção de fotos da selfie), ou None."""
+    for x in its if its is not None else cortesias(token):
+        if mesma_crianca(json.loads(x.get("sel") or "[]"), pids):
+            return x["foto"]
+    return None
+
+
+def galeria_obj(token, m, pids=(), crt=None):
     pids = set(pids) | livres(m)            # compradas e cortesias seguem o manifesto de agora
+    if crt:                                 # escola: a foto grátis escolhida vira cortesia só para a criança dela
+        pids.add(crt)
     fotos, ok, cache = [], False, {}
 
     def tem(chave):                         # um head_object por chave nesta chamada
@@ -245,13 +296,18 @@ def galeria_obj(token, m, pids=()):
         pid = pid_lib(f["id"])
         v = tem("vitrine/%s.jpg" % pid)
         ok = ok or v
-        livre = f["direito"] in ("comprada", "cortesia")
-        fotos.append({"pid": f["id"], "direito": f["direito"],
+        livre = f["direito"] in ("comprada", "cortesia") or f["id"] == crt
+        fotos.append({"pid": f["id"], "direito": "cortesia" if f["id"] == crt and f["direito"] == "venda" else f["direito"],
                       "vitrine": link("vitrine/%s.jpg" % pid) if v else None,
                       "original": link("alta/%s.jpg" % pid, "viva-maracana-%d.jpg" % (i + 1)) if livre and tem("alta/%s.jpg" % pid) else None,
                       "chegando": not v})
-    return {"tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"], "estado": "pronta" if ok else "chegando",
-            "precos": m["precos"], "catalogo": m.get("catalogo") or [], "compra": compra_ligada(m), "fotos": fotos}
+    out = {"tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"], "estado": "pronta" if ok else "chegando",
+           "precos": m["precos"], "catalogo": m.get("catalogo") or [], "compra": compra_ligada(m), "fotos": fotos}
+    if m.get("voucher"):                    # escola: nome e dia da visita e a situação da foto grátis desta criança
+        v = m["voucher"]
+        out["escola"] = {"nome": v.get("escola") or m.get("nome"), "dia": v.get("dia"), "cortesia": crt,
+                         "pode_escolher": crt is None and len(cortesias(token)) < int(v.get("pessoas") or 0)}
+    return out
 
 
 def estado(m):
@@ -272,12 +328,35 @@ def ttl_de(m):
     return int(epoch(m["expira"]) + 7 * 86400) if m.get("expira") else int(time.time() + 70 * 86400)
 
 
-def indexar(token, m, ate):
+def teto_fotos(m):
+    return LIMITE_FOTOS_ESCOLA if m.get("voucher") else LIMITE_FOTOS_GALERIA
+
+
+def lidas(token):
+    """pids já lidos, somando o registro principal (M) e os dos lotes (L0, L1...)."""
+    out = set()
+    for x in TABELA.query(KeyConditionExpression=Key("pk").eq("IDX#" + token)).get("Items", []):
+        out |= set(json.loads(x.get("idx") or "[]"))
+    return out
+
+
+def no_lote(pid, lote, de):
+    return lote is None or zlib.crc32(pid.encode()) % de == lote
+
+
+def faltam(token, m):
+    """Fotos da galeria (até o teto) que ainda não foram lidas."""
+    feitas = lidas(token)
+    return [pid_lib(f["id"]) for f in m["fotos"][:teto_fotos(m)] if pid_lib(f["id"]) not in feitas]
+
+
+def indexar(token, m, ate, lote=None, de=1):
     """Lê os rostos das fotos da galeria que já estão no S3 e ainda não foram lidas, até o instante `ate`.
-    Só depois de um consentimento na galeria. Grava o progresso a cada foto: se o tempo acabar, a próxima chamada
-    continua de onde parou, sem pagar de novo. Devolve ok, tempo, teto (limite do dia), travado ou sem_consentimento."""
-    k = {"pk": "IDX#" + token, "sk": "M"}
-    g = item(k["pk"]) or {}
+    Só depois de um consentimento na galeria. Grava o progresso a cada 20 fotos: se o tempo acabar, a próxima chamada
+    continua de onde parou, sem pagar de novo. Devolve ok, tempo, teto (limite do dia), travado ou sem_consentimento.
+    Galeria de escola: `lote` de `de` lê só a sua parte (crc32 do pid), ao mesmo tempo que os outros lotes."""
+    k = {"pk": "IDX#" + token, "sk": "M" if lote is None else "L%d" % lote}
+    g = item("IDX#" + token) or {}
     if not g.get("cons"):
         return "sem_consentimento"
     try:                                                  # uma leitura por galeria por vez
@@ -287,6 +366,8 @@ def indexar(token, m, ate):
         if ex.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return "travado"
         raise
+    meus = set(json.loads((item(k["pk"], k["sk"]) or {}).get("idx") or "[]"))
+    gravar = lambda: TABELA.update_item(Key=k, UpdateExpression="SET idx = :i", ExpressionAttributeValues={":i": json.dumps(sorted(meus))})
     try:
         col = colecao(token)
         TABELA.put_item(Item={"pk": "COL#" + col, "sk": "M", "token": token, "exp": int(epoch(m["expira"]))})
@@ -294,13 +375,12 @@ def indexar(token, m, ate):
             rek.create_collection(CollectionId=col)
         except rek.exceptions.ResourceAlreadyExistsException:
             pass
-        feitas = set(json.loads(g.get("idx") or "[]"))
-        for f in m["fotos"]:
+        feitas = lidas(token) | meus
+        sujo = 0
+        for f in m["fotos"][:teto_fotos(m)]:
             pid = pid_lib(f["id"])
-            if pid in feitas:
+            if pid in feitas or not no_lote(pid, lote, de):
                 continue
-            if len(feitas) >= LIMITE_FOTOS_GALERIA:
-                break
             if time.time() > ate:
                 return "tempo"
             if not tem_s3("alta/%s.jpg" % pid):
@@ -313,16 +393,37 @@ def indexar(token, m, ate):
             except rek.exceptions.InvalidParameterException:
                 pass                                      # foto sem rosto (de costas, bandeira): não tenta de novo
             feitas.add(pid)
-            TABELA.update_item(Key=k, UpdateExpression="SET idx = :i", ExpressionAttributeValues={":i": json.dumps(sorted(feitas))})
+            meus.add(pid)
+            sujo += 1
+            if sujo >= 20:
+                gravar()
+                sujo = 0
         return "ok"
     finally:
+        if meus:
+            gravar()
         TABELA.update_item(Key=k, UpdateExpression="REMOVE lk")
 
 
-def continuar(token):
+def continuar(token, lote=None, de=1):
     """Continua a leitura em segundo plano (só depois do consentimento)."""
     lam.invoke(FunctionName=os.environ["AWS_LAMBDA_FUNCTION_NAME"], InvocationType="Event",
-               Payload=json.dumps({"indexar": token}).encode())
+               Payload=json.dumps({"indexar": token, **({"lote": lote, "de": de} if lote is not None else {})}).encode())
+
+
+def disparar_lotes(token, m):
+    """Galeria de escola: a primeira autorização dispara ESCOLA_LOTES leituras em paralelo, uma vez (as seguintes só continuam)."""
+    k = {"pk": "IDX#" + token, "sk": "M"}
+    try:
+        TABELA.update_item(Key=k, UpdateExpression="SET lotes = :n", ConditionExpression="attribute_not_exists(lotes) OR lotes < :agora",
+                           ExpressionAttributeValues={":n": int(time.time()) + 600, ":agora": int(time.time())})
+    except ClientError as ex:
+        if ex.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return False                                  # já disparadas há menos de 10 min
+        raise
+    for i in range(ESCOLA_LOTES):
+        continuar(token, i, ESCOLA_LOTES)
+    return True
 
 
 VARIAS_RAZAO = 0.5     # mesma regra do agente (varias_pessoas): o 2º rosto com metade da largura do maior = duas pessoas
@@ -338,10 +439,10 @@ def varias_pessoas(selfie):
     return len(fs) >= 2 and fs[1] >= VARIAS_RAZAO * fs[0]
 
 
-def buscar(token, selfie):
-    """Semelhança (0 a 100) por pid da galeria. None se a selfie não tem rosto."""
+def buscar(token, selfie, muitas=False):
+    """Semelhança (0 a 100) por pid da galeria. None se a selfie não tem rosto. Escola: até 4.096 rostos (o máximo da AWS)."""
     try:
-        r = rek.search_faces_by_image(CollectionId=colecao(token), Image={"Bytes": selfie}, MaxFaces=100, FaceMatchThreshold=60)
+        r = rek.search_faces_by_image(CollectionId=colecao(token), Image={"Bytes": selfie}, MaxFaces=4096 if muitas else 100, FaceMatchThreshold=60)
     except rek.exceptions.InvalidParameterException:
         return None                                      # nenhum rosto na selfie
     except rek.exceptions.ResourceNotFoundException:
@@ -361,7 +462,8 @@ def apagar_rostos(token):
     except rek.exceptions.ResourceNotFoundException:
         pass
     TABELA.delete_item(Key={"pk": "COL#" + col, "sk": "M"})
-    TABELA.delete_item(Key={"pk": "IDX#" + token, "sk": "M"})
+    for x in TABELA.query(KeyConditionExpression=Key("pk").eq("IDX#" + token)).get("Items", []):
+        TABELA.delete_item(Key={"pk": x["pk"], "sk": x["sk"]})
 
 
 def limpeza():
@@ -808,6 +910,79 @@ def eventos_ponto(ev):
     return resp({"eventos": out})
 
 
+def todos(pk, n=5000):
+    its, k = [], None
+    while len(its) < n:
+        r = TABELA.query(KeyConditionExpression=Key("pk").eq(pk), **({"ExclusiveStartKey": k} if k else {}))
+        its += r.get("Items", [])
+        k = r.get("LastEvaluatedKey")
+        if not k:
+            break
+    return its[:n]
+
+
+def mascara(email):
+    u, _, d = str(email or "").partition("@")
+    return (u[:1] + "***@" + d) if u and d else None
+
+
+def escola_numeros(t):
+    """O funil de uma galeria de escola: do localizador digitado à compra, e cada criança (sem rosto, IP ou e-mail inteiro)."""
+    m = manifesto(t)
+    v = (m or {}).get("voucher")
+    if not v:
+        return None
+    evs = todos("EVT#" + t)
+    n = lambda tp: sum(1 for x in evs if x.get("tipo") == tp)
+    pagos = []
+    for x in evs:
+        if x.get("tipo") == "pedido_pago" and x.get("ref"):
+            p = item("PED#" + x["ref"]) or {}
+            pagos.append({"pids": set(json.loads(p.get("pids") or "[]")), "total": float(x.get("total") or p.get("total") or 0),
+                          "email": p.get("email"), "em": x["sk"].split("#")[0]})
+    baixadas = {x.get("foto") for x in evs if x.get("tipo") == "foto_baixada"}
+    criancas = []
+    for c in sorted(cortesias(t), key=lambda c: c["sk"]):
+        sel = set(json.loads(c.get("sel") or "[]"))
+        ps = [p for p in pagos if p["pids"] & sel]
+        criancas.append({"em": c["sk"].split("#")[0], "foto": c["foto"], "fotos": len(sel), "baixou": c["foto"] in baixadas,
+                         "comprou": bool(ps), "valor": round(sum(p["total"] for p in ps), 2),
+                         "comprador": next((mascara(p["email"]) for p in ps if p.get("email")), None)})
+    ems = sorted(x["sk"].split("#")[0] for x in evs)
+    return {"voucher": v["localizador"], "escola": v.get("escola"), "dia": v["dia"], "horarios": v.get("horarios") or [],
+            "pessoas": int(v.get("pessoas") or 0), "fotos": len(m["fotos"]), "lidas": len(lidas(t)), "expira": m.get("expira"),
+            "funil": {"digitado": n("voucher_digitado"), "aparelhos": len({x.get("ip") for x in evs if x.get("tipo") == "selfie_ok"}),
+                      "selfies": n("selfie_ok"), "sem_foto": n("selfie_nao") + n("selfie_sem_rosto") + n("selfie_varias_pessoas"),
+                      "criancas": len(criancas), "repetidas": n("cortesia_repetida"), "esgotadas": n("cortesia_esgotada"),
+                      "baixadas": len(baixadas - {None}), "compras": len(pagos), "fotos_compradas": len(set().union(*[p["pids"] for p in pagos])) if pagos else 0,
+                      "valor": round(sum(p["total"] for p in pagos), 2)},
+            "criancas": criancas, "primeiro": ems[0] if ems else None, "ultimo": ems[-1] if ems else None}
+
+
+def escolas_ponto(ev):
+    """GET /ponto/escolas?tokens=: os números das galerias de escola, para o painel Escolas do ponto."""
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    toks = [t for t in str((ev.get("queryStringParameters") or {}).get("tokens") or "").split(",") if _re_token.match(t)][:30]
+    out = {}
+    for t in toks:
+        r = escola_numeros(t)
+        if r:
+            out[t] = r
+    return resp({"escolas": out})
+
+
+def voucher_ok(v):
+    if not isinstance(v, dict) or not _re_localizador.match(str(v.get("localizador") or "").upper()) or not _re_dia.match(str(v.get("dia") or "")):
+        return None
+    try:
+        pessoas = max(0, min(2000, int(v.get("pessoas") or 0)))
+    except (TypeError, ValueError):
+        pessoas = 0
+    return {"localizador": str(v["localizador"]).upper(), "escola": str(v.get("escola") or "")[:120], "dia": v["dia"], "pessoas": pessoas,
+            "horarios": sorted({h for h in (v.get("horarios") or [])[:12] if isinstance(h, str) and _re_hhmm.match(h)})}
+
+
 def publicar(ev, corpo):
     seg = (ev.get("headers") or {}).get("x-eterna-ponto", "")
     if not ponto_ok(seg):
@@ -817,8 +992,9 @@ def publicar(ev, corpo):
         return resp({"error": "manifesto inválido"}, 400)
     if m["tipo"] == "video":
         return publicar_video(m)
+    vo = voucher_ok(m.get("voucher")) if m["tipo"] == "evento" else None
     fotos = []
-    for f in (m.get("fotos") or [])[:2000]:
+    for f in (m.get("fotos") or [])[:LIMITE_FOTOS_ESCOLA if vo else 2000]:
         if not isinstance(f, dict) or not _re_pid.match(str(f.get("id") or "")):
             return resp({"error": "foto inválida"}, 400)
         d = f.get("direito") if f.get("direito") in ("comprada", "cortesia", "venda") else "venda"
@@ -832,6 +1008,8 @@ def publicar(ev, corpo):
             "catalogo": catalogo_ok(m.get("catalogo")), "fotos": fotos}
     if m.get("origem") == "ativ":                         # v99.23: galeria do Tour montada pela foto da venda de uma ativação
         novo["origem"] = "ativ"
+    if vo:
+        novo["voucher"] = vo
     velho = manifesto(m["token"])
     if velho and velho.get("tipo") == "video":            # cartão já ligado a um vídeo de ativação
         return resp({"error": "token já usado por outra sessão"}, 409)
@@ -866,6 +1044,8 @@ def publicar(ev, corpo):
         apagar_rostos(novo["token"])
     if novo["codigo"]:
         codigo_liga(novo["codigo"], novo["token"], ttl)
+    if vo:                                                # o localizador do voucher abre a galeria da visita
+        TABELA.put_item(Item={"pk": "VOU#" + vo["localizador"], "sk": "M", "token": novo["token"], "ttl": ttl})
     # os rostos não são lidos aqui: só depois do primeiro consentimento na galeria (rota /rosto)
     return resp({"ok": True, "token": novo["token"], "estado": estado(novo)})
 
@@ -892,10 +1072,17 @@ def rosto(token, m, corpo, ip, ctx):
                           "ttl": int(time.time() + 400 * 86400)})
     TABELA.update_item(Key={"pk": "IDX#" + token, "sk": "M"}, UpdateExpression="SET cons = :um, #t = :ttl",
                        ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":um": 1, ":ttl": ttl_de(m)})
-    # lê os rostos que faltam com o tempo que sobra desta chamada (o API Gateway corta em 30 s); o resto, em segundo plano
-    leitura = indexar(token, m, time.time() + max(2, ctx.get_remaining_time_in_millis() / 1000 - 9))
-    if leitura == "tempo":
-        continuar(token)
+    if m.get("voucher"):                                # escola: até 10 mil fotos, lidas em lotes paralelos em segundo plano
+        if faltam(token, m):
+            disparar_lotes(token, m)
+            leitura = "tempo"
+        else:
+            leitura = "ok"
+    else:
+        # lê os rostos que faltam com o tempo que sobra desta chamada (o API Gateway corta em 30 s); o resto, em segundo plano
+        leitura = indexar(token, m, time.time() + max(2, ctx.get_remaining_time_in_millis() / 1000 - 9))
+        if leitura == "tempo":
+            continuar(token)
     if not contar("BUS", 86400, LIMITE_BUSCAS_DIA):
         evento(token, "selfie_teto", ip)
         return resp({"ok": False, "motivo": "processando"}, 503)
@@ -903,7 +1090,7 @@ def rosto(token, m, corpo, ip, ctx):
         selfie = img = None
         evento(token, "selfie_varias_pessoas", ip)
         return resp({"ok": False, "motivo": "varias_pessoas"})
-    sims = buscar(token, selfie)
+    sims = buscar(token, selfie, muitas=bool(m.get("voucher")))
     selfie = img = None
     if sims is None:
         restam, _ = falhas(ip, token, somar=True)
@@ -929,8 +1116,42 @@ def rosto(token, m, corpo, ip, ctx):
     acesso = secrets.token_urlsafe(24)
     exp = int(time.time() + ACESSO_TTL)
     TABELA.put_item(Item={"pk": "ACE#" + acesso, "sk": "M", "token": token, "pids": json.dumps(sorted(pids)), "exp": exp, "ttl": exp})
-    evento(token, "selfie_ok", ip, fotos=len(pids), livres=len(livres(m) - pids))   # livres: compradas e cortesias sem o rosto, abertas junto
-    return resp({"ok": True, "acesso": acesso, "exp": iso(exp), "galeria": galeria_obj(token, m, pids)})
+    evento(token, "selfie_ok", ip, fotos=len(pids), livres=len(livres(m) - pids), **voucher_ev(m))   # livres: compradas e cortesias sem o rosto
+    return resp({"ok": True, "acesso": acesso, "exp": iso(exp), "galeria": galeria_obj(token, m, pids, cortesia_da_crianca(token, pids) if m.get("voucher") else None)})
+
+
+def voucher_ev(m):
+    v = m.get("voucher") or {}
+    return {"voucher": v.get("localizador"), "escola": v.get("escola")} if v else {}
+
+
+def cortesia(token, m, corpo, ip, pids):
+    """Escola: a foto grátis. Uma por criança (outra selfie da mesma criança, de outro e-mail ou aparelho, recebe a mesma) e no
+    máximo as pessoas do voucher. A escolha é final."""
+    v = m.get("voucher")
+    if not v:
+        return resp({"error": "not found"}, 404)
+    email = str(corpo.get("email") or "").strip().lower()
+    if not _re_email.match(email):
+        return resp({"ok": False, "motivo": "email"}, 400)
+    foto = str(corpo.get("foto") or "")
+    if foto not in pids or foto not in {f["id"] for f in m["fotos"]}:
+        return resp({"ok": False, "motivo": "foto"}, 400)
+    if not contar("CRT#" + ip_hash(ip), 3600, 10):
+        return resp({"motivo": "bloqueado"}, 429)
+    its = cortesias(token)
+    ja = cortesia_da_crianca(token, pids, its)
+    if ja:
+        evento(token, "cortesia_repetida", ip, foto=ja, **voucher_ev(m))
+        return resp({"ok": True, "repetida": True, "foto": ja, "galeria": galeria_obj(token, m, pids, ja)})
+    if len(its) >= int(v.get("pessoas") or 0):
+        evento(token, "cortesia_esgotada", ip, **voucher_ev(m))
+        return resp({"ok": False, "motivo": "esgotada", "galeria": galeria_obj(token, m, pids)}, 409)
+    TABELA.put_item(Item={"pk": "CRT#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "foto": foto, "sel": json.dumps(sorted(pids)),
+                          "email": hashlib.sha256(email.encode()).hexdigest()[:32], "ttl": ttl_de(m)})
+    lead(email, str(corpo.get("idioma") or "pt")[:2], token, bool(corpo.get("marketing")), str(corpo.get("versao") or "")[:20])
+    evento(token, "cortesia_escolhida", ip, foto=foto, fotos=len(pids), **voucher_ev(m))
+    return resp({"ok": True, "foto": foto, "galeria": galeria_obj(token, m, pids, foto)})
 
 
 def handler(ev, ctx):
@@ -943,13 +1164,16 @@ def handler(ev, ctx):
         m = manifesto(t)
         if not m or expirou(m):
             return {"leitura": "fora"}
-        r = indexar(t, m, time.time() + ctx.get_remaining_time_in_millis() / 1000 - 5)
+        lote, de = (int(ev["lote"]), max(1, int(ev.get("de") or 1))) if ev.get("lote") is not None else (None, 1)
+        r = indexar(t, m, time.time() + ctx.get_remaining_time_in_millis() / 1000 - 5, lote, de)
         if r == "tempo":
-            continuar(t)
+            continuar(t, lote, de)
         return {"leitura": r}
     metodo = ev.get("requestContext", {}).get("http", {}).get("method", "GET")
     caminho = ev.get("rawPath") or "/"
-    ip = ev.get("requestContext", {}).get("http", {}).get("sourceIp", "")
+    if EXIGIR_BORDA and not pela_borda(ev.get("headers")):
+        return resp({"error": "origem"}, 403)
+    ip = ip_do_pedido(ev)
     corpo = {}
     if metodo == "POST":
         raw = ev.get("body") or ""
@@ -969,17 +1193,24 @@ def handler(ev, ctx):
         return vendas_online(ev)
     if caminho == "/ponto/eventos" and metodo == "GET":
         return eventos_ponto(ev)
+    if caminho == "/ponto/escolas" and metodo == "GET":
+        return escolas_ponto(ev)
     partes = caminho.split("/")                           # ['', 'g', token, ação]
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "codigo" and metodo == "GET":
         if not contar("COD#" + ip_hash(ip), 60, 30):
             return resp({"motivo": "bloqueado"}, 429)
-        c = partes[3].upper()
+        c = urllib.parse.unquote(partes[3]).strip().upper()
         it = item("COD#" + c) if _re_codigo.match(c) else None
+        loc = not it and _re_localizador.match(c)
+        if loc:                                           # 17/11: o localizador do voucher de escola entra no mesmo campo
+            it = item("VOU#" + c)
         m = manifesto(it["token"]) if it else None
         if not m or expirou(m):
+            if loc:
+                print("voucher não encontrado: %s" % c)   # vai para o log: voucher digitado sem galeria (não é escola, sem fotos)
             return resp({"error": "not found"}, 404)
-        evento(it["token"], "codigo_digitado", ip)
-        return resp({"token": it["token"]})
+        evento(it["token"], "voucher_digitado" if loc else "codigo_digitado", ip, **voucher_ev(m))
+        return resp({"token": it["token"], **({"escola": {"nome": m["voucher"].get("escola"), "dia": m["voucher"].get("dia")}} if m.get("voucher") else {})})
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "pedido" and metodo == "GET":
         return pedido_volta(partes[3].upper(), ip)
     if len(partes) != 4 or partes[1] != "g" or not _re_token.match(partes[2]):
@@ -1022,14 +1253,22 @@ def handler(ev, ctx):
         return resp({"galeria": g})
     if acao == "rosto" and metodo == "POST":
         return rosto(token, m, corpo, ip, ctx)
-    if acao in ("galeria", "pagamento", "pedido") and metodo == "POST":
+    if acao in ("galeria", "pagamento", "pedido", "cortesia", "evento") and metodo == "POST":
         a = item("ACE#" + str(corpo.get("acesso") or "")) if corpo.get("acesso") else None
         if not a or a["token"] != token or int(a["exp"]) < time.time():
             return resp({"error": "acesso inválido ou vencido"}, 401)
         pids = set(json.loads(a["pids"]))
         if acao == "galeria":
-            evento(token, "galeria_vista", ip)
-            return resp({"galeria": galeria_obj(token, m, pids)})
+            evento(token, "galeria_vista", ip, **voucher_ev(m))
+            return resp({"galeria": galeria_obj(token, m, pids, cortesia_da_crianca(token, pids) if m.get("voucher") else None)})
+        if acao == "cortesia":
+            return cortesia(token, m, corpo, ip, pids)
+        if acao == "evento":                              # o cliente baixou uma foto
+            f = str(corpo.get("foto") or "")
+            if corpo.get("tipo") != "foto_baixada" or f not in pids | livres(m) or not contar("EVF#" + token, 60, 60):
+                return resp({"ok": False}, 400)
+            evento(token, "foto_baixada", ip, foto=f, **voucher_ev(m))
+            return resp({"ok": True})
         if acao == "pedido":
             return pedido(token, m, corpo, ip, pids)
         # compra online desligada: por ora a venda é só no balcão, na maquininha Imply

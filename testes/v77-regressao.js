@@ -121,15 +121,15 @@ try{
     r=await req(P,'GET','/g/'+TN+'/info');ok(r.s===200,'S2: galeria nova não pode ser afetada pela lápide, info deu '+r.s);
     A2.p.kill('SIGTERM');}
 
-  // =============== S10: limpeza diária agendada (galeria_loop com relógio simulado) e limpar_rostos apaga > 60 dias ===============
+  // =============== S10: limpeza diária agendada (galeria_loop com relógio simulado) e limpar_rostos apaga > 30 dias ===============
   dbg('S10');
   {const H3=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v77-'));homes.push(H3);
     const py=`
 import importlib.util, queue, time, types, json, sys
 spec = importlib.util.spec_from_file_location("ag", ${JSON.stringify(AG)}); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-# 1) limpar_rostos de verdade: apaga leitura com mais de 60 dias, mantém a de 59 dias
+# 1) limpar_rostos de verdade: apaga leitura com mais de 30 dias, mantém a de 29 dias
 db = m.rostos_db(); d = lambda n: time.strftime("%Y-%m-%d", time.localtime(time.time() - n * 86400))
-for pid, n in (("velha", 61), ("nova", 59)):
+for pid, n in (("velha", 31), ("nova", 29)):
     db.execute("insert into foto values (?,?,?,?)", (pid, d(n), 1, 0)); db.execute("insert into rosto values (?,?,?,?)", (pid, d(n), 10, b"x"))
 db.commit(); m.limpar_rostos(db)
 fica = sorted(r[0] for r in db.execute("select pid from rosto")) + sorted(r[0] for r in db.execute("select pid from foto"))
@@ -150,7 +150,7 @@ try: m.galeria_loop()
 except Fim: pass
 print(json.dumps({"fica": fica, "limpezas": len(chamadas), "expiradas": len(exp)}))`;
     let o=null;try{o=JSON.parse(execFileSync('python3',['-c',py],{env:{...process.env,HOME:H3,ETERNA_SEM_OPENCV:'1'},timeout:60000}).toString().trim().split('\n').pop());}catch(e){fails.push('S10: harness falhou: '+String(e.stderr||e).slice(0,300));}
-    if(o){ok(o.fica.join(',')==='nova,nova','S10: limpar_rostos deveria apagar só a leitura com mais de 60 dias: ficou '+o.fica.join(','));
+    if(o){ok(o.fica.join(',')==='nova,nova','S10: limpar_rostos deveria apagar só a leitura com mais de 30 dias: ficou '+o.fica.join(','));
       ok(o.limpezas>=3&&o.limpezas<=4&&o.expiradas>=3,'S10: em 3 dias ligado a limpeza deveria rodar 3 vezes (uma por dia): rostos '+o.limpezas+', galerias '+o.expiradas);}}
 
   // =============== B. app servido pelo agente, com OpenCV: galeria no modo agente, R3, R4, S3 ===============

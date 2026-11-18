@@ -13,12 +13,13 @@ async function A8(pg){
   const ad=await pg.evaluate(()=>{const c=[...document.querySelectorAll('#main .bglab')].find(x=>/Voo de asa-delta/.test(x.innerText));return c?{btn:!!c.querySelector('[data-act="bg-ativar"]'),txt:/precisa de montagem especial/.test(c.innerText)}:null;});
   ok(ad&&!ad.btn&&ad.txt,'8: asa-delta (sem enquadramento) sem Ativar e com aviso: '+J(ad));
   ok(await pg.evaluate(()=>ETERNA.bgOf('campeao2').luz==='sol'&&ETERNA.state&&true),'6: campeao2 com luz de dia');
-  // v86: com os 5 no Checkout, Ativar não passa do limite; com uma vaga, entra
+  // v86: com os 5 no Checkout, Ativar não passa do limite; com uma vaga, entra (16/11: o padrão são 3; o teste enche a lista em SIM.bgOn2)
+  await pg.evaluate(()=>{const S=ETERNA.SIM;S.bgAtivo={campeao2:true,mirante:true};S.bgOn2=['mirantedia','arq1950','telao','campeao','mirante'];localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.render();});
   await pg.click('[data-act="bg-ativar"][data-id="imprensa"]');await pg.waitForTimeout(200);
   const t5=await pg.evaluate(()=>({on:ETERNA.bgOn(),opts:ETERNA.bgOpts().map(o=>o.id)}));
   ok(t5.on.length===5&&!t5.on.includes('imprensa')&&t5.opts.includes('imprensa'),'8: Ativar com 5 no Checkout passou do limite: '+J(t5));
   await pg.click('[data-act="bg-lab"][data-id="imprensa"]');await pg.waitForTimeout(200);
-  await pg.evaluate(()=>{ETERNA.SIM.bgOn=['campeao','mirante','arq1950','tunel'];localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));localStorage.removeItem('eterna.users.log.v1');ETERNA.render();});
+  await pg.evaluate(()=>{ETERNA.SIM.bgOn2=['mirantedia','arq1950','telao','campeao'];localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));localStorage.removeItem('eterna.users.log.v1');ETERNA.render();});
   await pg.click('[data-act="bg-ativar"][data-id="imprensa"]');await pg.waitForTimeout(200);
   const t1=await pg.evaluate(()=>({on:ETERNA.bgOn(),opts:ETERNA.bgOpts().map(o=>o.id),sim:ETERNA.SIM.bgAtivo,log:ETERNA.auditRead().filter(e=>e.acao==='fundo_ativado'&&e.alvo==='fundo:imprensa').length}));
   ok(t1.opts.includes('imprensa')&&t1.on.includes('imprensa')&&t1.sim.imprensa===true&&t1.log===1,'8: Ativar deveria pôr no Checkout e no histórico: '+J(t1));
@@ -67,17 +68,17 @@ try{
   // ---------- 2. Fundos de IA ----------
   {const ctx=await b.newContext({viewport:{width:1440,height:900}});const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push('2: '+e.message));
     await login(pg);
-    const r=await pg.evaluate(()=>{const S=ETERNA.SIM;delete S.bgOn;const at=ETERNA.BGS.filter(b=>!b.inativo);
+    const r=await pg.evaluate(()=>{const S=ETERNA.SIM;delete S.bgOn2;const at=ETERNA.BGS.filter(b=>!b.inativo);
       return {ativos:at.map(b=>b.id),nomes:at.map(b=>b.name),files:at.map(b=>b.file),opts:ETERNA.bgOpts().map(o=>o.name),on:ETERNA.bgOn(),ai:ETERNA.aiBgs().map(b=>b.id),total:ETERNA.BGS.length,
-        pb:ETERNA.bgOf('arq1950').mono,camp:ETERNA.bgOf('campeao2').fit,mir:ETERNA.bgOf('mirante').pos.cx,tun:ETERNA.bgOf('tunel').pos,tunFit:ETERNA.bgOf('tunel').fit,tunMono:ETERNA.bgOf('tunel').mono,arg:ETERNA.bgFor('campeao','x').id};});
-    ok(J(r.ativos.sort())===J(['arq1950','campeao2','mirante','telao','tunel']),'2: ativos deveriam ser 5 (v86: Pódio; v97: Telão no lugar dele): '+J(r.ativos));ok(r.total>=12,'2: fundos apagados em vez de ocultos');
-    ok(J(r.opts.sort())===J(['Arquibancada 1950','Mirante ao pôr do sol','Noite de campeão','Saída do túnel','Telão do Maracanã']),'2: bgOpts (v97: Telão no lugar do Pódio): '+J(r.opts));ok(r.ai.length===5&&r.on.length===5,'2: aiBgs/bgOn: '+J([r.ai,r.on]));
-    ok(r.files.length===5&&r.files.every(f=>/bg-(campeao-v81|mirantesol|pb1950|tunel|telao)\.jpg$/.test(f)),'2: arquivos novos: '+J(r.files));ok(r.pb==='pb','2: 1950 em preto e branco');ok(r.camp.includes('inteiro'),'2 (v84): Campeão aceita corpo inteiro, que vira do joelho para cima (regra 9)');ok(r.mir===.45,'2: Mirante centro 45%');ok(r.tun.cx===.5&&r.tun.top>=.25&&r.tun.base===1&&r.tunFit.includes('inteiro')&&r.tunMono===false,'2: túnel: '+J([r.tun,r.tunFit]));
+        pb:ETERNA.bgOf('arq1950').mono,camp:ETERNA.bgOf('campeao2').fit,mir:ETERNA.bgOf('mirante').pos.cx,mird:ETERNA.bgOf('mirantedia').pos.cx,lab:['campeao2','mirante'].map(i=>ETERNA.bgAtivo(ETERNA.bgOf(i))),tun:ETERNA.bgOf('tunel').pos,tunFit:ETERNA.bgOf('tunel').fit,tunMono:ETERNA.bgOf('tunel').mono,arg:ETERNA.bgFor('campeao','x').id};});
+    ok(J(r.ativos.sort())===J(['arq1950','mirantedia','telao','tunel']),'2: ativos deveriam ser 4 (16/11: Mirante do Rio, 1950, Telão e Saída do túnel v2): '+J(r.ativos));ok(r.total>=16&&J(r.lab)===J([false,false]),'2: fundos apagados em vez de ocultos (Campeão e Mirante ao pôr do sol no Laboratório): '+J([r.total,r.lab]));
+    ok(J(r.opts.sort())===J(['Maracanã 1950','Mirante do Rio','Saída do túnel','Telão do Maracanã']),'2: bgOpts (16/11: quatro fundos): '+J(r.opts));ok(r.ai.length===4&&J(r.on)===J(['mirantedia','arq1950','telao','tunel']),'2: aiBgs/bgOn: '+J([r.ai,r.on]));
+    ok(r.files.length===4&&r.files.every(f=>/bg-(mirantedia|maracana1950|telao-v2|tunel-v2)\.jpg$/.test(f)),'2: arquivos novos: '+J(r.files));ok(r.pb==='pb','2: 1950 em preto e branco');ok(r.camp.includes('inteiro'),'2 (v84): Campeão aceita corpo inteiro, que vira do joelho para cima (regra 9)');ok(r.mir===.45&&r.mird===.45,'2: Mirante centro 45% (o de dia também)');ok(r.tun.cx===.5&&r.tun.top>=.234&&r.tun.base===1&&r.tunFit.includes('inteiro')&&r.tunMono===false,'2: túnel: '+J([r.tun,r.tunFit]));
     ok(r.arg==='campeao2','2: variação Argentina oculta cai na Noite de campeão: '+r.arg);
-    for(const f of ['bg-campeao-v81.jpg','bg-mirantesol.jpg','bg-pb1950.jpg','bg-tunel.jpg','bg-podio.jpg','bg-telao.jpg']){const x=await pg.evaluate(async f=>{const im=new Image();im.src='img/'+f;await im.decode().catch(()=>{});return Math.max(im.naturalWidth,im.naturalHeight);},f);ok(x===(f==='bg-telao.jpg'?2576:2400),'2: '+f+' deveria ter 2400 px (o Telão, 2576, arte do Eduardo): '+x);}
+    for(const f of ['bg-campeao-v81.jpg','bg-mirantesol.jpg','bg-mirantedia.jpg','bg-pb1950.jpg','bg-maracana1950.jpg','bg-tunel.jpg','bg-tunel-v2.jpg','bg-podio.jpg','bg-telao.jpg','bg-telao-v2.jpg']){const x=await pg.evaluate(async f=>{const im=new Image();im.src='img/'+f;await im.decode().catch(()=>{});return Math.max(im.naturalWidth,im.naturalHeight);},f);ok(x===(/^bg-telao/.test(f)?2576:2400),'2: '+f+' deveria ter 2400 px (o Telão, 2576, arte do Eduardo): '+x);}
     await pg.evaluate(()=>{ETERNA.state.view='chroma';ETERNA.render();});await pg.waitForTimeout(300);
     const t=await pg.evaluate(()=>({n:document.querySelectorAll('#main .bgs .bg').length,txt:document.querySelector('#main').innerText,rows:document.querySelectorAll('#main table tbody tr').length}));
-    ok(!/Sala de imprensa|Maracanã à noite|Gramado 1950|Terraço|Colômbia|Argentina/.test(t.txt),'2: tela Fundos de IA mostra fundo oculto');ok(/Mirante ao pôr do sol/.test(t.txt)&&/Arquibancada 1950/.test(t.txt)&&/Saída do túnel/.test(t.txt)&&/Pódio de campeão/.test(t.txt),'2: tela Fundos de IA sem os aprovados');
+    ok(!/Sala de imprensa|Maracanã à noite|Gramado 1950|Terraço|Colômbia|Argentina/.test(t.txt),'2: tela Fundos de IA mostra fundo oculto');ok(/Mirante do Rio/.test(t.txt)&&/Maracanã 1950/.test(t.txt)&&/Telão do Maracanã/.test(t.txt)&&/Saída do túnel/.test(t.txt)&&t.n===8,'2: tela Fundos de IA sem os 4 aprovados (4 no Checkout + 4 na lista): '+t.n);
     // ---------- 8. Fundos em teste (Laboratório): inativo não vai ao Checkout; Ativar põe; Mover tira ----------
     await A8(pg);
     await ctx.close();}
@@ -132,4 +133,4 @@ try{
     await c2.close();}
 }catch(e){fails.push('erro: '+e.message.split('\n')[0]);}
 await b.close();const fe=errs.filter(e=>!ignora(e));const okk=!fails.length&&!fe.length;
-console.log(`${okk?'OK':'FALHA'} v81: bandeiras, 5 fundos de IA (v86: Pódio), Checkout em janela à parte${fails.length?' · '+fails.slice(0,10).join(' | '):''}${fe.length?' · erros: '+fe.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();
+console.log(`${okk?'OK':'FALHA'} v81: bandeiras, 4 fundos de IA (16/11), Checkout em janela à parte${fails.length?' · '+fails.slice(0,10).join(' | '):''}${fe.length?' · erros: '+fe.slice(0,3).join(' | '):''}`);process.exit(okk?0:1);})();

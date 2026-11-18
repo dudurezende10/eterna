@@ -1,5 +1,7 @@
 # Servidor de teste
 
+> Desativado: desde 15/11/2026 o Eterna roda no servidor do estádio, sem Tailscale. Ver `SERVIDOR-ESTADIO.md`.
+
 Enquanto não há acesso ao servidor do estádio (MCTNBADM041), o notebook do Ronaldo faz esse papel: recebe fotos, vende, imprime e sobe para a nuvem de teste.
 
 ## Como se chega nele

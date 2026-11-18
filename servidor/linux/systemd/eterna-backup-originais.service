@@ -1,0 +1,20 @@
+# Eterna · cópia dos originais das fotos para a nuvem (servidor/linux/backup-originais.py). Disparado pelo .timer.
+[Unit]
+Description=Eterna (cópia dos originais para a nuvem)
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/eterna /srv/eterna-midia
+
+[Service]
+Type=oneshot
+User=eterna
+Group=eterna
+Environment=HOME=/srv/eterna TZ=America/Sao_Paulo PYTHONUNBUFFERED=1 LANG=C.UTF-8
+ExecStart=/opt/eterna/venv/bin/python -I -u /opt/eterna/app/servidor/linux/backup-originais.py
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/srv/eterna
+PrivateTmp=yes

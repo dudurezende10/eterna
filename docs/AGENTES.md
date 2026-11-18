@@ -15,7 +15,7 @@ Eduardo → Planejador → Programador → Revisor → Testador → Segurança �
 | Testador | `eterna-testador.md` | testes novos em `testes/`, prints, veredito APROVADO/REPROVADO com falhas detalhadas |
 | Segurança | `eterna-seguranca.md` | achados BLOQUEANTE / IMPORTANTE / NOTA, veredito |
 | Documentador | `eterna-documentador.md` | documentação técnica, contexto dos agentes, guia da equipe, notas da versão |
-| Deploy | `eterna-deploy.md` | commit em `main`, `VERSOES.md`, publicação em eterna.photo, relatório |
+| Deploy | `eterna-deploy.md` | commit e push em `idiomas-base` e `producao` (o servidor do estádio puxa sozinho), `VERSOES.md`, conferência no servidor, relatório; `main` só com o Ronaldo |
 
 Regras da esteira
 - Revisor e testador devolvem ao programador até APROVADO (máximo 3 voltas; na terceira o orquestrador decide com o Eduardo).

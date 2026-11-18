@@ -108,7 +108,7 @@ try{
   // 29: nada de rosto, e-mail, CPF ou ingresso no resumo
   const todo=(await req(porta,'GET',`/metricas/dia?de=${addD(HOJE,-3)}&ate=${HOJE}`)).t;ok(!/@|ING-|\d{3}\.\d{3}\.\d{3}-\d{2}|emb|vetor|selfie/i.test(todo),'29: resumo sem e-mail, CPF, ingresso ou rosto');
   // ---------- sem presença nas telas do Admin ----------
-  const telas=['estatisticas','calendario','escala','catalogo','painel','fotografos','permissoes'];const comPres=[];
+  const telas=['estatisticas','calendario','catalogo','painel','fotografos','permissoes'];/* 16/11: a Escala saiu do app */const comPres=[];
   for(const v of telas){await pa.evaluate(v=>ETERNA.go(v),v);await pa.waitForTimeout(150);if(v==='estatisticas'){for(const s of ['a','b','c','d','e','f']){await pa.click(`[data-act="es-sec"][data-s="${s}"]`);await pa.waitForTimeout(80);const t=await pa.textContent('#main');const m=t.match(PRES);if(m)comPres.push(v+'/'+s+': '+m[0]);}continue;}
     const t=await pa.textContent('#main');const m=t.match(PRES);if(m&&!(v==='escala'&&/^escalad/i.test(m[0])))comPres.push(v+': '+m[0]+' … '+t.slice(Math.max(0,t.search(PRES)-40),t.search(PRES)+40));}
   ok(!comPres.length,'sem presença: nenhum texto de presença, falta, atraso, abono, folga fixa ou turno nas telas: '+J(comPres));

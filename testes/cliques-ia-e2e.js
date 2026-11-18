@@ -22,13 +22,13 @@ const hoje=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth(
 (async()=>{let proc=null,b=null;const H=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-v93-app-'));let LOGA='';
 try{
   const PORTA=await livre(),FTPP=await livre();const AO='http://127.0.0.1:'+PORTA;
-  proc=spawn('python3',['-I','-u',path.join(__dirname,'_cliques_ia_lanca.py'),AG,'0.3'],{env:{...process.env,HOME:H,USERPROFILE:H,ETERNA_PORTA:String(PORTA),ETERNA_FTP_PORTA:String(FTPP),ETERNA_APP_ORIGIN:ORIG,ETERNA_SEM_OPENCV:'1',ETERNA_SESSAO_PAUSA:'5',ETERNA_LEITORES:'1',USER:'eterna-teste-sem-cartao',ETERNA_PRE_RECORTE:'1'},stdio:['ignore','pipe','pipe']});
+  proc=spawn('python3',['-I','-u',path.join(__dirname,'_cliques_ia_lanca.py'),AG,'0.3'],{env:{...process.env,HOME:H,USERPROFILE:H,ETERNA_PORTA:String(PORTA),ETERNA_FTP_PORTA:String(FTPP),ETERNA_APP_ORIGIN:ORIG,ETERNA_SEM_OPENCV:'1',ETERNA_SESSAO_PAUSA:'5',ETERNA_LEITORES:'1',ETERNA_FUNCAO_DIA:'1'/* 16/11: Escala desligada por padrão; este teste roda com ela ligada no agente e no app (testes/_escala.js) */,USER:'eterna-teste-sem-cartao',ETERNA_PRE_RECORTE:'1'},stdio:['ignore','pipe','pipe']});
   proc.stdout.on('data',d=>LOGA+=d);proc.stderr.on('data',d=>LOGA+=d);
   let up=false;for(let i=0;i<80&&!up;i++){await sleep(250);up=(await req(PORTA,'GET','/status')).s===200;}
   if(!up)throw new Error('agente não subiu: '+LOGA.slice(-400));
   CK=SA.sessao(H);
   // dados vazios: agente sem nenhuma foto; Upload, Fila do fotógrafo e Painel de controle abrem sem erro
-  {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await SA.noNavegador(cv,PORTA,[CK]);await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
+  {const bv=await chromium.launch();const cv=await bv.newContext({viewport:{width:1366,height:900}});await SA.noNavegador(cv,PORTA,[CK]);await cv.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await require('./_escala')(cv);const pv=await cv.newPage();const ev=[];pv.on('pageerror',e=>ev.push(e.message));
     await pv.goto(AO+'/index.html');await pv.waitForTimeout(500);await require('./_entrar')(pv,'eduardo@eduardorezende.com');
     for(const v of ['importar','fotofila','catalogo','chroma']){await pv.evaluate(v=>ETERNA.go(v),v);await pv.waitForTimeout(700);}
     const vz=await pv.evaluate(()=>{ETERNA.go('fotofila');return document.querySelector('#main').textContent;});
@@ -53,7 +53,7 @@ try{
   const f1='ag_'+S[0],f2='ag_'+S[1];
 
   b=await chromium.launch();
-  const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await SA.noNavegador(ctx,PORTA,[CK]);
+  const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await SA.noNavegador(ctx,PORTA,[CK]);await require('./_escala')(ctx);
   let SIMS={};await ctx.route(AO+'/rostos/buscar',r=>r.fulfill({status:200,contentType:'application/json',body:J({rosto:true,fotos:Object.entries(SIMS).map(([id,sim])=>({id,sim,principal:true}))})}));
   const RECS=[];ctx.on('request',r=>{if(/\/recorte/.test(r.url()))RECS.push(r.method()+' '+r.url().replace(AO,'')+' '+(r.postData()||''));});
   const errs=[];const pg=await ctx.newPage();
@@ -66,7 +66,7 @@ try{
   await pg.evaluate(()=>{const S=ETERNA.SIM;S.invalid={};Object.values(S.sessions).forEach(s=>(s.photos||[]).forEach(p=>delete p.invalid));});
   const b0=await pg.evaluate(([c,f1,f2])=>{const s=ETERNA.SIM.sessions[c];const o=ETERNA.demoSessions().find(x=>x.card===c);return {ia:s.ia,n:o.photos.length,oia:o.ia,tem:o.photos.some(p=>p.id===f1||p.id===f2),total:o.total};},[xS.card,f1,f2]);
   ok(J(b0.ia)===J([f1,f2])&&b0.n===6&&!b0.tem&&b0.total===6,'2: no Checkout a sessão tem 6 fotos à venda e as 2 bases em ia: '+J(b0));
-  // Checkout pelo código, com cliques repetidos no botão (19: as 5 montagens no COMP em até 4 s)
+  // Checkout pelo código, com cliques repetidos no botão (19: as montagens no COMP; 16/11: quatro fundos em até 4 s)
   num.kiosk_antes=await pg.evaluate(()=>{const k=ETERNA.state.kiosk;return {step:k.step,code:k.code,so:k.so,cam:ETERNA.state.cam&&ETERNA.state.cam.status};});
   for(let i=0;i<20&&!(await pg.$('#kcode'));i++){await pg.evaluate(()=>{const b=document.querySelector('[data-act="kiosk-emerg"]');if(b)b.click();});await pg.waitForTimeout(150);} /* sem câmera, o Checkout já pode estar no código */
   // o código e o clique no mesmo instante (um render do Checkout no meio apaga o que foi digitado: comportamento de antes da v93)
@@ -74,10 +74,10 @@ try{
   const pronto=await pg.evaluate(async c=>{const ks=ETERNA.lojaAI(c).map(x=>x.id+'|'+x.bg);for(let i=0;i<160&&!ks.every(k=>ETERNA.COMP[k]);i++)await new Promise(r=>setTimeout(r,25));
     const rs=await Promise.all(ks.map(k=>ETERNA.COMP[k]?ETERNA.COMP[k]:{err:'sem COMP'}));const a=ETERNA.state.agent;const diag=rs.some(r=>!r||!r.url)?{on:a.on,rec:a.recorte&&a.recorte.ok,modo:ETERNA.fundosModo&&ETERNA.fundosModo(),ai:ETERNA.lojaAI(c).length,step:ETERNA.state.kiosk.step,code:ETERNA.state.kiosk.code,depois:await Promise.all(ks.slice(0,2).map(async k=>{const [i,b]=k.split('|');const r=await ETERNA.compose(i,b);return r&&(r.url?'url':(r.err||r.pending));}))}:null;return {n:ks.length,ok:rs.filter(r=>r&&r.url).length,err:rs.filter(r=>!r||!r.url).map(r=>r&&(r.err||r.pending)),diag};},xS.card);
   num.montagens_ms=Date.now()-t0;
-  ok(pronto.n===5&&pronto.ok===5&&num.montagens_ms<=4000,'19: as 5 montagens prontas em até 4 s (agente de verdade): '+J({...pronto,ms:num.montagens_ms}));
+  ok(pronto.n===4&&pronto.ok===4&&num.montagens_ms<=4000,'19: as 4 montagens prontas em até 4 s (agente de verdade): '+J({...pronto,ms:num.montagens_ms}));
   const it=await pg.evaluate(c=>({ai:ETERNA.lojaAI(c).map(x=>x.bg+'='+x.id),items:ETERNA.lojaItems(c).map(x=>x.t+':'+x.id),fotos:ETERNA.lojaFotos(c).map(p=>p.id),step:ETERNA.state.kiosk.step,nSes:ETERNA.lojaCart(c).nSes}),xS.card);
-  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,tunel:f2,telao:f2};
-  ok(it.ai.length===5&&it.ai.every(x=>{const [bg,id]=x.split('=');return esper[bg]===id;}),'3: 5 montagens: 1950 e Pódio na foto 1, Campeão, Mirante e Túnel na foto 2: '+J(it.ai));
+  const esper={arq1950:f1,podio:f1,campeao2:f2,mirante:f2,mirantedia:f2,tunel:f1,telao:f2}; // 16/11: túnel v2 com a 1ª base, como o 1950
+  ok(it.ai.length===4&&J(it.ai.map(x=>x.split('=')[0]))===J(['mirantedia','arq1950','telao','tunel'])&&it.ai.every(x=>{const [bg,id]=x.split('=');return esper[bg]===id;}),'3: 4 montagens: 1950 e túnel na foto 1, Mirante do Rio e Telão na foto 2: '+J(it.ai));
   ok(it.fotos.length===6&&!it.items.includes('ph:'+f1)&&!it.items.includes('ph:'+f2)&&it.items.filter(x=>x.startsWith('ph:')).length===6,'2: Checkout por código sem as bases como foto: '+J(it.items));
   ok(it.nSes===6,'2: contagem do "Todas" = 6: '+it.nSes);
   ok(RECS.filter(r=>/POST/.test(r)).length<=2,'cliques repetidos: no máximo 1 pedido de recorte por base: '+J(RECS));
@@ -99,13 +99,13 @@ try{
     return pg.evaluate(async c=>{const its=ETERNA.lojaAI(c);const cr={};for(const x of its){const r=await ETERNA.compose(x.id,x.bg);cr[x.id.slice(-4)+'|'+x.bg]=r&&(r.url?'url':(r.err||r.pending));}
       return {ai:ETERNA.lojaAI(c).map(x=>x.id),fotos:ETERNA.lojaFotos(c).map(p=>p.id),ruim:[...ETERNA.FIA_RUIM],cr,dom:[...document.querySelectorAll('[data-comp]')].map(e=>e.dataset.comp.slice(-14)+(e.dataset.done?'*':''))};},c);};
   const a2=await r4(xS2.card);
-  ok(a2.ai.length===5&&a2.ai.every(x=>x==='ag_'+S2[0]),'4: base 2 sem pessoa: os 5 fundos usam a base 1: '+J(a2));
+  ok(a2.ai.length===4&&a2.ai.every(x=>x==='ag_'+S2[0]),'4: base 2 sem pessoa: os 4 fundos usam a base 1: '+J(a2));
   const a3=await r4(xS3.card);
   // o jeito antigo (lojaAIAntigo, v84) troca a foto que a análise do navegador reprova; em desenho sintético ela pode reprovar todas (aí fica sem montagem: limite do teste, não da v93)
   num.antigo_n=a3.ai.length;ok(!a3.ai.includes('ag_'+S3[0])&&!a3.ai.includes('ag_'+S3[1])&&a3.ai.every(x=>a3.fotos.includes(x))&&a3.fotos.length===4,'4: as duas sem pessoa: jeito antigo (fotos normais do cliente, que seguem à venda): '+J(a3));
   // 4: olhos fechados na base 1 da S: tudo na base 2
   const a4=await pg.evaluate(([c,f1])=>{ETERNA.SIM.invalid[f1]='olhos fechados';const r=ETERNA.lojaAI(c).map(x=>x.id);delete ETERNA.SIM.invalid[f1];return r;},[xS.card,f1]);
-  ok(a4.length===5&&a4.every(x=>x===f2),'4: olhos fechados na base 1: os 5 na base 2: '+J(a4));
+  ok(a4.length===4&&a4.every(x=>x===f2),'4: olhos fechados na base 1: os 4 na base 2: '+J(a4));
   // A15 pela selfie: a sessão achada só pela base 2; inteira, sem base como foto; menor: só a base reconhecida
   SIMS={[S[1]]:.72};
   const s15=await pg.evaluate(async c=>{const cv=document.createElement('canvas');cv.width=64;cv.height=64;const k=ETERNA.state.kiosk;ETERNA.lojaReset();ETERNA.state.agent.rostos={ligado:true};
@@ -113,8 +113,8 @@ try{
     ETERNA.lojaReset();ETERNA.SIM.sessions[c].menor=true;ETERNA.state.agent.rostos={ligado:true};r=await ETERNA.faceFind([cv],x=>!x.demo);ETERNA.lojaJuntar(r.res,r.talvez,r.sims);
     const m={code:k.code,fotos:ETERNA.lojaFotos(k.code).map(p=>p.id),ai:ETERNA.lojaAI(k.code).map(x=>x.id)};delete ETERNA.SIM.sessions[c].menor;ETERNA.lojaReset();return {a,m};},xS.card);
   // v99.2 (Ronaldo e Eduardo, 11/11): sai a leva inteira da v97; a selfie abre só o que tem o rosto dela; a base continua fora das fotos
-  ok(s15.a.code===xS.card&&s15.a.fotos.length===0&&s15.a.ai.length===5&&!s15.a.items.includes('ph:'+f2)&&!s15.a.items.includes('ph:'+f1),'A15: selfie pela base: só o que tem o rosto dela, 5 montagens, base nunca como foto: '+J(s15.a));
-  ok(s15.m.code===xS.card&&s15.m.fotos.length===0&&s15.m.ai.length===5&&s15.m.ai.every(x=>x===f2),'A11: menor: só a base reconhecida: '+J(s15.m));
+  ok(s15.a.code===xS.card&&s15.a.fotos.length===0&&s15.a.ai.length===4&&!s15.a.items.includes('ph:'+f2)&&!s15.a.items.includes('ph:'+f1),'A15: selfie pela base: só o que tem o rosto dela, 4 montagens, base nunca como foto: '+J(s15.a));
+  ok(s15.m.code===xS.card&&s15.m.fotos.length===0&&s15.m.ai.length===4&&s15.m.ai.every(x=>x===f2),'A11: menor: só a base reconhecida: '+J(s15.m));
   SIMS={};
   // idiomas: Checkout com as montagens em en, es, fr, de, sem erro e sem texto novo em português
   for(const l of ['en','es','fr','de']){await pg.evaluate(([c,l])=>{ETERNA.state.lang=l;try{localStorage.setItem('eterna.lang',l);}catch(e){}const k=ETERNA.state.kiosk;k.code=c;k.so=null;k.step='review';k.list=false;k.ver=k.i=3;ETERNA.render();},[xS.card,l]);await pg.waitForTimeout(250);}
@@ -186,7 +186,7 @@ try{
   await pe.evaluate(()=>ETERNA.go('chroma'));await pe.waitForTimeout(300);
   ok(await esp2(()=>/Fotos para IA: fila \d+ · p90 \d+ s desde a chegada · \d+ erros?/.test(document.querySelector('#main').textContent),8000),'fiaPanel: linha "Fotos para IA"');
   // sem agente: o app servido pelo rodar.sh (sem servidor do ponto); Painel de controle e Checkout sem erro
-  {const cn=await b.newContext({viewport:{width:1366,height:900}});await cn.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pn=await cn.newPage();const en=[];pn.on('pageerror',e=>en.push(e.message));
+  {const cn=await b.newContext({viewport:{width:1366,height:900}});await cn.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await require('./_escala')(cn);const pn=await cn.newPage();const en=[];pn.on('pageerror',e=>en.push(e.message));
     await pn.goto(U);await pn.waitForTimeout(500);await require('./_entrar')(pn,'eduardo@eduardorezende.com');
     await pn.evaluate(()=>(ETERNA.state.catTab='fundos',ETERNA.go('catalogo')));await pn.waitForTimeout(300);
     await pn.click('#ia-cfg [data-act="ia-volante"]');await pn.waitForTimeout(300);

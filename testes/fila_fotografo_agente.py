@@ -150,7 +150,49 @@ r = m.ingest_file(f7, "IMG_0001.JPG", os.stat(f7), "EOS_DIGITAL", "cartao")
 gs = [g for g in m.ff_json()["grupos"] if g["fonte"] == "cartão"]
 ok(r == "new" and len(gs) == 1 and gs[0]["fotografo"] == "yago" and gs[0]["estado"] == "subindo", "7: cartão com autor Yago: %r %r" % (r, gs))
 
-# 9: a função nova vale só para os grupos novos
+# 7b (15/11): a câmera grava o autor "Klacius" (o nome certo, o da tela); a chave do cadastro segue klassius. Uma regra só
+# de apelido (FOTOGRAFO_APELIDO / fotografo_chave), usada pelo ff_quem, pela subpasta do FTP e pela Roverpix.
+cad7 = m.ff_cadastrados()
+for autor7 in ("Klacius", "KLACIUS", "klácius", " Klacius ", "Klacius Ank Guarino", "Klassius", "Klássius"):
+    ok(m.ff_quem("EOS_DIGITAL", autor7, "", "555500006666", "cartao", cad7) == ("klassius", "cartão"), "7b: autor %r vira klassius: %r" % (autor7, m.ff_quem("EOS_DIGITAL", autor7, "", "555500006666", "cartao", cad7)))
+ok(m.ff_quem("ftp-estadio", "", "Klacius Ank Guarino", "", "", cad7) == ("klassius", "ftp"), "7b: dono da câmera Klacius vira klassius")
+ok(m.ff_quem("equipe", "Fulano de Tal", "", "555500006666", "ftp", cad7) == (None, "câmera ···6666"), "7b: autor desconhecido continua sem fotógrafo: %r" % (m.ff_quem("equipe", "Fulano de Tal", "", "555500006666", "ftp", cad7),))
+ok(m.ff_quem("EOS_DIGITAL", "Klaus", "", "", "cartao", cad7) == (None, "cartão"), "7b: nome parecido que não é apelido não vira fotógrafo")
+ok(m.fotografo_chave("Klacius Ank Guarino") == "klassius" and m.fotografo_chave("Márcio") == "marcio" and m.fotografo_chave("") == "" and m.fotografo_chave(None) == "", "7b: fotografo_chave")
+ok(m.rv_key("Klacius Ank Guarino") == "klassius" and m.rv_key("Samuel Silva") == "samuel", "7b: a Roverpix usa a mesma regra: %r" % m.rv_key("Klacius Ank Guarino"))
+ok(m.rftp_origem("/fotos/klacius/IMG_1.JPG", "/fotos") == "klassius" and m.rftp_origem("/fotos/Klacius qualquer coisa/IMG_1.JPG", "/fotos") == "ftp-estadio"
+   and m.rftp_origem("/fotos/Klacius-2/IMG_1.JPG", "/fotos") == "ftp-estadio", "7b: pasta só pelo nome inteiro (B1): %r" % m.rftp_origem("/fotos/Klacius qualquer coisa/IMG_1.JPG", "/fotos"))
+ok(m.ff_quem("Klacius qualquer coisa", "", "", "", "ftp", cad7)[0] is None and m.ff_quem("klacius", "", "", "", "ftp", cad7) == ("klassius", "ftp"), "7b: origem só pelo nome inteiro")
+ok(m.fotografo_chave("Klacius Ank", inteiro=True) == "klacius ank" and m.fotografo_chave("KLACIUS", inteiro=True) == "klassius", "7b: fotografo_chave inteiro")
+ok(m.rftp_origem("/fotos/Klacius/IMG_1.JPG", "/fotos") == "klassius" and m.rftp_origem("/fotos/fulano/IMG_1.JPG", "/fotos") == "ftp-estadio", "7b: subpasta do FTP do estádio com a grafia da câmera")
+ok("klassius" in m.PHOTOGRAPHERS and "klacius" not in m.PHOTOGRAPHERS, "7b: a chave interna (login do FTP) não mudou")
+# cadastro do servidor: só o nome padrão antigo é acertado; nome editado por alguém e a chave ficam
+m.estado_gravar({"docs": [{"col": "usuarios", "id": "klassius%40eterna.photo", "valor": {"email": "klassius@eterna.photo", "name": "Klássius", "key": "klassius", "preset": "foto", "active": True}},
+                          {"col": "usuarios", "id": "k2%40eterna.photo", "valor": {"email": "k2@eterna.photo", "name": "Klassius Guarino", "key": "klassius", "preset": "foto", "active": True}},
+                          {"col": "usuarios", "id": "outro%40eterna.photo", "valor": {"email": "outro@eterna.photo", "name": "Klassius", "key": "samuel", "preset": "foto", "active": True}}]})
+n7 = m.usuarios_grafia()
+us7 = {d["id"]: d["valor"] for d in m.estado_col("usuarios")["docs"]}
+ok(n7 == 1 and us7["klassius%40eterna.photo"]["name"] == "Klacius" and us7["klassius%40eterna.photo"]["key"] == "klassius" and us7["klassius%40eterna.photo"]["email"] == "klassius@eterna.photo",
+   "7b: nome padrão antigo vira Klacius, chave e e-mail ficam: %r %r" % (n7, us7.get("klassius%40eterna.photo")))
+ok(us7["k2%40eterna.photo"]["name"] == "Klassius Guarino" and us7["outro%40eterna.photo"]["name"] == "Klassius", "7b: nome editado ou de outra chave não muda")
+lg7 = [d["valor"] for d in m.estado_col("usuarios_log")["docs"] if d["valor"].get("por") == "servidor"]
+ok(len(lg7) == 1 and lg7[0]["alvo"] == "klassius@eterna.photo" and lg7[0]["acao"] == "alterar" and lg7[0]["mudancas"] == [{"campo": "name", "de": "Klássius", "para": "Klacius"}] and lg7[0]["em"] and lg7[0]["motivo"]
+   and us7["klassius%40eterna.photo"].get("updatedBy") == "servidor", "7b: a troca fica no histórico do cadastro (quem, quando, de, para, por quê): %r" % lg7)
+ok(m.usuarios_grafia() == 0 and len([d for d in m.estado_col("usuarios_log")["docs"] if d["valor"].get("por") == "servidor"]) == 1, "7b: rodar de novo não muda nada")
+
+# Escala desligada (16/11): por padrão o agente não usa a função do dia; a sessão nasce sem função e sem ponto e a regra
+# dos cliques de IA cai em "sem_funcao", mesmo com função guardada numa sessão aberta antes do deploy
+CFG_IA = {"ligada": True, "cliques": 2, "pontos": ["campo2"], "volante": False}
+X_ANT = {"fotografo": "carlos", "funcao": {"tipo": "campo", "point": "campo2"}}
+with m.ff_lock:
+    m.ff_funcao.update(dia=m._ff_hoje(), map={"carlos": {"tipo": "campo", "point": "campo2"}})
+ok(m.FUNCAO_DIA_ON is False and m._ff_func_snapshot("carlos") is None, "Escala desligada: a chave nasce desligada e a sessão não recebe função")
+ok(m._sess_ia_regra(X_ANT, CFG_IA) == (0, "sem_funcao"), "Escala desligada: regra de IA = sem_funcao: %r" % (m._sess_ia_regra(X_ANT, CFG_IA),))
+m.FUNCAO_DIA_ON = True                      # religar (ETERNA_FUNCAO_DIA=1): tudo volta
+ok(m._ff_func_snapshot("carlos") == {"tipo": "campo", "point": "campo2"} and m._sess_ia_regra(X_ANT, CFG_IA) == (2, None), "Escala religada: função e regra de volta")
+with m.ff_lock:
+    m.ff_funcao.update(dia="", map={})
+# 9: a função nova vale só para os grupos novos (com a função do dia ligada)
 t9 = time.time() + 1000
 with m.ff_lock:
     m.ff_funcao.update(dia=m._ff_hoje(), map={"klassius": {"tipo": "campo", "point": "campo2"}})
@@ -210,7 +252,8 @@ HB = tempfile.mkdtemp()
 FTPP = PORTA + 1000
 ORIG = "http://eterna-tv.local:%d" % PORTA
 env = {**os.environ, "HOME": HB, "ETERNA_PORTA": str(PORTA), "ETERNA_FTP_PORTA": str(FTPP), "ETERNA_APP_ORIGIN": "http://127.0.0.1:9",
-       "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "3", "ETERNA_ORIGENS": ORIG, "ETERNA_LEITORES": "1"}
+       "ETERNA_SEM_OPENCV": "1", "ETERNA_SESSAO_PAUSA": "3", "ETERNA_ORIGENS": ORIG, "ETERNA_LEITORES": "1",
+       "ETERNA_FUNCAO_DIA": "1"}            # a parte B começa com a função do dia ligada; o fim dela desliga (o padrão)
 env.pop("ETERNA_PASTA", None)
 env["USER"] = "eterna-teste-sem-cartao"     # o vigia de cartões procura em /media/<USER>/: nenhum cartão do computador entra
 sys.dont_write_bytecode = True
@@ -365,6 +408,10 @@ try:
     ok(cods[:120].count(200) == 120 and cods[120] == 429, "risco 4: limite de 120 originais por minuto por IP: %r" % cods[115:])
     ok(req("GET", "/file/" + pid, headers={"Host": hostr}, origem="127.0.0.2")[0] == 200, "risco 4: o limite é por IP")
     ok(all(req("GET", "/file/" + pid)[0] == 200 for _ in range(130)), "risco 4: o computador do ponto (loopback) sem limite")
+    # 16/11: o original fica só no aparelho de quem pediu e por 5 min; a miniatura segue como era
+    hf, ht = req("GET", "/file/" + pid)[2], req("GET", "/thumb/" + pid)[2]
+    cc = lambda h: {k.lower(): v for k, v in h.items()}.get("cache-control")
+    ok(cc(hf) == "private, max-age=300" and cc(ht) == "max-age=86400", "cache do original e da miniatura: %r %r" % (cc(hf), cc(ht)))
     ok(req("GET", "/thumb/" + pid, headers={"Host": hostr, "Origin": "https://evil.example"}, origem="127.0.0.2")[0] == 403, "risco 4: miniatura com Origin de fora")
     # contrato: sem série completa, sem nome de arquivo
     txt = json.dumps(fila())
@@ -377,6 +424,30 @@ try:
     depois = sorted((g["id"], g["fotografo"], g["n"]) for g in fila())
     ok(antes == depois and sum(x[2] for x in depois) == 3 + 9 + 4 + 3, "10: depois de reiniciar, os mesmos grupos e n: %r %r" % (antes, depois))
     ok(g_de("samuel")["funcao"] == {"tipo": "volante", "modo": "chute"}, "10: a função do dia volta do funcao.json")
+    # Escala desligada (16/11): o mesmo agente, agora sem ETERNA_FUNCAO_DIA (o padrão). O POST responde 409 e o funcao.json
+    # não muda (conteúdo e data); a permissão continua conferida antes; sessão nova nasce sem função e fecha sem base de IA
+    time.sleep(2.3)
+    A.terminate(); A.wait(10)
+    del env["ETERNA_FUNCAO_DIA"]
+    arq0, st0 = open(fj, "rb").read(), os.stat(fj)
+    A = subir(); procs.append(A)
+    s, j, _ = req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {"yago": {"tipo": "campo", "point": "campo2"}}}, H1)
+    ok(s == 409 and j == {"error": "escala_desligada"}, "desligada: POST da função responde 409: %r %r" % (s, j))
+    st1 = os.stat(fj)
+    ok(open(fj, "rb").read() == arq0 and st1.st_mtime_ns == st0.st_mtime_ns and b"samuel" in arq0, "desligada: funcao.json intocado (conteúdo e data)")
+    ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}}, {"X-Eterna": "1", "Cookie": ""})[0] == 401, "desligada: sem sessão continua 401 (a permissão vem antes do 409)")
+    ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}}, {"X-Eterna": "1", "Cookie": COOKIE_POSTO})[0] == 401, "desligada: posto sem pessoa continua 401")
+    ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}})[0] == 403, "desligada: POST sem X-Eterna continua 403")
+    ftp_envia("yago", [("Y%d.JPG" % i, jpeg(cor())) for i in range(4)])
+    g = g_de("yago")
+    ok(g and g["n"] == 4 and g["funcao"] is None and g["ia"]["n"] == 0 and g["ia"]["motivo"] == "sem_funcao", "desligada: grupo novo sem função e sem base de IA: %r" % g)
+    time.sleep(6)                                # pausa de 3 s fecha a sessão; o arquivo do dia grava a cada 2 s
+    s, sj, _ = req("GET", "/sessoes?desde=0")
+    xs = [x for x in (sj or {}).get("sessoes", []) if x.get("fotografo") == "yago"]
+    ok(len(xs) == 1 and xs[0]["status"] == "fechada" and xs[0]["ia"] == [] and (xs[0].get("ia_regra") or {}).get("motivo") == "sem_funcao"
+       and len(xs[0]["fotos"]) == 4 and xs[0].get("funcao") is None and xs[0].get("ponto") is None,
+       "desligada: sessão nova fecha com ia [], motivo sem_funcao e as 4 fotos à venda: %r" % [(x.get("status"), x.get("ia"), x.get("ia_regra"), len(x.get("fotos") or [])) for x in xs])
+    ok(open(fj, "rb").read() == arq0 and os.stat(fj).st_mtime_ns == st0.st_mtime_ns, "desligada: funcao.json intocado depois da sessão")
 finally:
     for p in procs:
         try:

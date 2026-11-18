@@ -271,3 +271,11 @@ Cinco testes já falham em `origin/main` (conferido em `e7833a6`, 05/11) e conti
 - `testes/v79-regressao.js`: 1.6 (Caixa vazio deveria dizer "Nenhum pagamento esperando.") e as notas de pacote da v83.
 - `testes/v81.js`: 3, Esc na janela do Checkout.
 - `testes/v83.js`: espera pelo `[data-act="kiosk-next"]`, que não aparece.
+
+## 16/11: funil, visitantes ao vivo e pessoas fotografadas (Ronaldo)
+
+- **Visitantes ao vivo.** O servidor do ponto lê a API pública do Maraca Acessos (`/api/stats?de=&ate=`, só totais das catracas, sem código de ingresso) pela rota `GET /visitantes?de=&ate=` (estatisticas.r ou financeiro.r), com 60 s de cache. Endereço em `ETERNA_ACESSOS_API` (padrão `https://maraca-acessos.onrender.com`). A aba **Movimento** passa a mostrar visitantes do período, período anterior, média por dia, canais e visitantes por hora. Sai da tela a importação de CSV de entradas e do total por dia, e o retrato de outubro; as rotas de importação continuam no servidor, sem uso.
+- **Pessoas fotografadas.** `pessoas_dia(dia)` agrupa os rostos do dia com o mesmo limite da busca por selfie (`LIMITE`), do maior rosto para o menor; dois rostos da mesma foto nunca são a mesma pessoa. Vai no resumo do dia como `pessoas` (rostos, fotos com rosto, pessoas, em primeiro plano, numa foto só, em duas ou mais). Só contagens. Os dias anteriores a 16/11 não têm o campo (o resumo de hoje e de ontem é refeito; os mais antigos ficam como estão).
+- **Sessões no balcão.** `balcao_dia(dia)`: sessões de um pedido do Checkout (pago ou não; pedidos no servidor desde 15/11) somadas às de uma venda registrada. Antes de 15/11 fica sem valor.
+- **Aba Funil** (primeira): visitantes do Tour, pessoas fotografadas (com o número de sessões), fotos tiradas, sessões no balcão, sessões que compraram e fotos compradas, com a conversão de cada passo ao lado. Passo sem dado no período aparece com traço.
+- **Conferência dos rostos.** `GET /pessoas/rostos?dia=` (qualidade.r): recorte pequeno do maior rosto de cada pessoa do dia e quantas fotos ela tem, para conferir a contagem. Só leitura.

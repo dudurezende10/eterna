@@ -17,7 +17,7 @@ async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(250);
   await entrarTeste(pg,email);
   await pg.evaluate(()=>ETERNA.go('importar'));const t0=Date.now();while(Date.now()-t0<6000&&!(await pg.evaluate(()=>ETERNA.state.agent.on)))await pg.waitForTimeout(150);await pg.waitForTimeout(200);}
 (async()=>{const b=await chromium.launch();const errs=[];
-const nova=async()=>{const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await agente(ctx);const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));return {ctx,pg};};
+const nova=async()=>{const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await require('./_escala')(ctx);/* 16/11: a Escala está desligada no app; o ponto vindo dela é testado com a chave ligada (o desligado está em escala-desligada.js) */await agente(ctx);const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));return {ctx,pg};};
 try{
   // ---------- nome e ponto do fotógrafo ----------
   {const {ctx,pg}=await nova();await entrar(pg,'carlos@eterna.photo');

@@ -11,10 +11,10 @@
 #   do Windows vazia, para nunca misturar com os dados de uma impressão. restantes = MQTY - 50 (margem que a DNP soma ao rolo).
 # Log: C:\Eterna\impressao.log
 
-param([Parameter(Mandatory = $true)][string]$Endereco)   # endereço do Eterna neste ponto; só ele pode mandar imprimir
+param([Parameter(Mandatory = $true)][string]$Endereco)   # endereço(s) do Eterna neste ponto, separados por vírgula; só eles podem mandar imprimir
 
 $Porta = 8790
-$Origens = @($Endereco.TrimEnd("/"))
+$Origens = @($Endereco -split "," | ForEach-Object { $_.Trim().TrimEnd("/") } | Where-Object { $_ })   # um ou mais endereços, separados por vírgula
 $Log = "C:\Eterna\impressao.log"
 $MaxCorpo = 80MB
 $MaxFotos = 20

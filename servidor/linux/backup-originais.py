@@ -1,0 +1,151 @@
+"""Eterna · cópia dos originais das fotos (HD do servidor) para o bucket do Eterna, em originais/<dia>/<arquivo>.
+Rodado pelo eterna-backup-originais.timer a cada 10 min, como o usuário eterna, com a mesma chave da nuvem (nuvem.env).
+- só sobe o que ainda não subiu (registro em /srv/eterna/Eterna/backup-originais.db), classe STANDARD_IA, conferido por MD5;
+- LGPD: foto apagada pelo Eterna (sessão não vendida excluída) também sai da nuvem; se faltar de uma vez mais de 10%
+  das fotos já copiadas, NÃO apaga nada (HD com defeito ou fora do lugar não pode virar exclusão em massa);
+- a retenção (180 dias) é do próprio bucket (nuvem-aws-cloudshell.sh).
+"""
+import base64, hashlib, json, os, re, socket, sqlite3, sys, time
+
+MIDIA = "/srv/eterna-midia"
+INBOX = MIDIA + "/inbox"
+ATIV = ("ativ-videos", "ativ-clientes")
+E = "/srv/eterna/Eterna"
+DB = os.path.join(E, "backup-originais.db")
+EXT = (".jpg", ".jpeg", ".png", ".heic", ".cr3", ".cr2", ".arw", ".nef", ".dng", ".mp4", ".mov")
+
+
+def env():
+    v = {}
+    try:
+        for ln in open(os.path.join(E, "nuvem.env"), encoding="utf-8"):
+            ln = ln.strip()
+            if ln.startswith("ETERNA_") and "=" in ln:
+                k, x = ln.split("=", 1)
+                v[k] = x.strip()
+    except OSError:
+        pass
+    return v
+
+
+def arquivos():
+    """(caminho, chave): originais das fotos por dia + vídeos e fotos das ativações (Drone, Chute a Gol, Snap Pop, 15/11)."""
+    for dia in sorted(os.listdir(INBOX)):
+        pasta = os.path.join(INBOX, dia)
+        if os.path.isdir(pasta):
+            for nome in sorted(os.listdir(pasta)):
+                if nome.lower().endswith(EXT):
+                    yield os.path.join(pasta, nome), "originais/%s/%s" % (dia, nome)
+    for sub in ATIV:
+        base = os.path.join(MIDIA, sub)
+        for raiz, _d, nomes in os.walk(base):
+            for nome in sorted(nomes):
+                if nome.lower().endswith(EXT):
+                    a = os.path.join(raiz, nome)
+                    yield a, "originais/%s/%s" % (sub, os.path.relpath(a, base).replace(os.sep, "/"))
+
+
+GRANDE = 64 * 1024 * 1024
+
+
+def enviar(s3, bucket, a, chave, tam):
+    """Sobe um arquivo conferido; devolve o MD5 (hex) do arquivo do disco. Levanta erro se a nuvem não ficou igual."""
+    h = hashlib.md5()
+    if tam <= GRANDE:
+        with open(a, "rb") as f:
+            corpo = f.read()
+        h.update(corpo)
+        r = s3.put_object(Bucket=bucket, Key=chave, Body=corpo, StorageClass="STANDARD_IA",
+                          ContentMD5=base64.b64encode(h.digest()).decode())
+        if r.get("ETag", "").strip('"') != h.hexdigest():
+            raise ValueError("ETag diferente")
+    else:
+        from boto3.s3.transfer import TransferConfig
+        s3.upload_file(a, bucket, chave, ExtraArgs={"StorageClass": "STANDARD_IA", "ChecksumAlgorithm": "CRC32"},
+                       Config=TransferConfig(multipart_threshold=GRANDE, multipart_chunksize=16 * 1024 * 1024,
+                                             max_concurrency=4, use_threads=True))
+        with open(a, "rb") as f:
+            for bloco in iter(lambda: f.read(8 * 1024 * 1024), b""):
+                h.update(bloco)
+    n = s3.head_object(Bucket=bucket, Key=chave).get("ContentLength")
+    if n != tam:
+        raise ValueError("tamanho na nuvem %s, no disco %s" % (n, tam))
+    return h.hexdigest()
+
+
+def main():
+    cfg = env()
+    if cfg.get("ETERNA_NUVEM") != "s3" or not cfg.get("ETERNA_BUCKET"):
+        print("nuvem desligada: nada a copiar")
+        return 0
+    if not os.path.ismount("/srv/eterna-midia"):
+        print("HD das fotos não montado: nada feito")
+        return 1
+    import boto3
+    from botocore.config import Config
+    regiao = cfg.get("ETERNA_AWS_REGIAO") or "us-east-2"
+    s3 = boto3.session.Session(profile_name=cfg.get("ETERNA_AWS_PERFIL") or None, region_name=regiao).client(
+        "s3", endpoint_url="https://s3.%s.amazonaws.com" % regiao, config=Config(retries={"max_attempts": 5, "mode": "standard"}))
+    bucket = cfg["ETERNA_BUCKET"]
+    db = sqlite3.connect(DB, timeout=30)
+    db.execute("CREATE TABLE IF NOT EXISTS feito (chave TEXT PRIMARY KEY, tam INTEGER, mtime REAL, md5 TEXT, em REAL)")
+    feitos = {k: (t, m) for k, t, m in db.execute("SELECT chave, tam, mtime FROM feito")}
+    vistos, novos, bytes_, falhas = set(), 0, 0, []
+    agora = time.time()
+    for a, chave in arquivos():
+        if True:
+            try:
+                st = os.stat(a)
+            except OSError:
+                continue
+            vistos.add(chave)
+            if agora - st.st_mtime < 60:                      # ainda chegando
+                continue
+            if feitos.get(chave) == (st.st_size, st.st_mtime):
+                continue
+            # 15/11: a cópia confere cada arquivo. Até 64 MB: envio único com MD5 (a nuvem recusa se chegar diferente).
+            # Acima (vídeos de 230 MB do Drone): envio em partes direto do disco; cada parte conferida pela AWS e reenviada
+            # sozinha se falhar (o MD5 do envio único brigava com a conferência da própria biblioteca e a AWS recusava o
+            # vídeo inteiro: BadDigest). Depois do envio, o tamanho gravado na nuvem tem que bater. Até 3 tentativas; se
+            # ainda falhar, os outros arquivos seguem e ele volta na próxima rodada (sem pulso: o alerta avisa se durar).
+            erro = None
+            for tentativa in range(3):
+                try:
+                    md5 = enviar(s3, bucket, a, chave, st.st_size)
+                    erro = None
+                    break
+                except Exception as ex:
+                    erro = ex
+                    time.sleep(5 * (tentativa + 1))
+            if erro is not None:
+                falhas.append("%s: %s" % (chave, str(erro)[:160]))
+                continue
+            db.execute("INSERT OR REPLACE INTO feito VALUES (?,?,?,?,?)", (chave, st.st_size, st.st_mtime, md5, time.time()))
+            db.commit()
+            novos += 1
+            bytes_ += st.st_size
+    sumiram = [k for k in feitos if k not in vistos]
+    apagadas = 0
+    if sumiram and len(sumiram) > max(20, 0.10 * len(feitos)):
+        print("faltam %d fotos já copiadas de uma vez: nada apagado da nuvem (conferir o HD)" % len(sumiram))
+    else:
+        for k in sumiram:
+            s3.delete_object(Bucket=bucket, Key=k)
+            db.execute("DELETE FROM feito WHERE chave=?", (k,))
+            db.commit()
+            apagadas += 1
+    if falhas:
+        print("originais: %d novos, %d com falha (tentam de novo na próxima rodada):" % (novos, len(falhas)))
+        for x in falhas[:20]:
+            print("  " + x)
+        return 1
+    # pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): rodada completa sem erro
+    pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
+    s3.put_object(Bucket=bucket, Key="backup/%s/pulso-originais.json" % pc, ContentType="application/json",
+                  Body=json.dumps({"em": time.time(), "novos": novos, "total": len(vistos)}).encode())
+    print("originais: %d novos (%.1f MB), %d apagados da nuvem (LGPD), %d no total" % (novos, bytes_ / 1e6, apagadas, len(vistos)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

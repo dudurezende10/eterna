@@ -1,0 +1,14 @@
+# Eterna · vigia: deploy pelo git (branch de /etc/eterna/vigia.env), religa o agente travado, situação na porta 8797.
+[Unit]
+Description=Eterna (vigia: deploy e saúde)
+After=network-online.target eterna.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/python3 -I -u /opt/eterna/vigia/eterna-vigia.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Eterna · borda da galeria (17/11): CloudFront na frente da API da galeria com o firewall (WAF). A API HTTP do API Gateway
+  não aceita WAF direto; por isso o filtro fica no CloudFront. O firewall (borda-waf.json) é criado por comando em us-east-1,
+  porque a organização não deixa usar CloudFormation lá; esta stack fica em us-east-2.
+  Instalação e passos: servidor/galeria-nuvem/README.md, seção "Firewall (WAF)".
+
+Parameters:
+  ApiDominio:
+    Type: String
+    Default: whe2hyve2j.execute-api.us-east-2.amazonaws.com
+    Description: domínio da API da galeria (saída EnderecoApi da stack eterna-galeria, sem https://)
+  SegredoOrigem:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: segredo que o CloudFront manda para a API (cabeçalho x-eterna-origem); a API guarda só o SHA-256
+  FirewallArn:
+    Type: String
+    Description: ARN do firewall eterna-galeria (wafv2 create-web-acl --scope CLOUDFRONT em us-east-1)
+
+Resources:
+  # o que chega à API: só o que ela lê, mais o IP do celular escrito pelo próprio CloudFront (não dá para falsificar)
+  Repasse:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: eterna-galeria-repasse
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers: [Origin, Content-Type, X-Eterna-Ponto, Access-Control-Request-Method, Access-Control-Request-Headers, CloudFront-Viewer-Address]
+        QueryStringsConfig: {QueryStringBehavior: all}
+        CookiesConfig: {CookieBehavior: none}
+
+  Borda:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: eterna-galeria (API da galeria com WAF)
+        HttpVersion: http2and3
+        PriceClass: PriceClass_All
+        WebACLId: !Ref FirewallArn
+        Origins:
+          - Id: api
+            DomainName: !Ref ApiDominio
+            CustomOriginConfig: {OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2]}
+            OriginCustomHeaders:
+              - {HeaderName: x-eterna-origem, HeaderValue: !Ref SegredoOrigem}
+        DefaultCacheBehavior:
+          TargetOriginId: api
+          ViewerProtocolPolicy: https-only
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          CachedMethods: [GET, HEAD]
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad      # CachingDisabled (gerenciada pela AWS)
+          OriginRequestPolicyId: !Ref Repasse
+          Compress: true
+
+Outputs:
+  EnderecoBorda:
+    Description: endereço da galeria com o firewall (vai no GAL_API do app e no ETERNA_GALERIA_API do servidor)
+    Value: !Sub "https://${Borda.DomainName}"

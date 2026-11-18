@@ -57,7 +57,7 @@ try{
   // e o bloco "Agora no Checkout" mostra só o código (ecoPendR exclui escolha:true)
   await ljSessao(L,cards[0],4);await ljPagar(L,'card');const p0=await pendDe(L,cards[0]);ok(!!p0,'E2: pendência do cartão');
   ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${id}"]`),3000,p0&&p0.id),'E2: "Pago na maquininha" em Aguardando pagamento');
-  ok(await espera(A,c=>((document.querySelector('#eco .eco-cod')||{}).textContent||'')===c,3000,p0.codigo),'E2: código no bloco Agora no Checkout');
+  ok(await espera(A,c=>[...document.querySelectorAll('.pend-row-cod')].some(e=>e.textContent===c)&&!document.querySelector('#eco .eco-cod'),3000,p0.codigo),'E2: código em Aguardando pagamento, sem repetir em Agora no Checkout');
   const e2=await A.evaluate(()=>({ecoBtn:document.querySelectorAll('#eco button').length,acoesLista:document.querySelectorAll('#pend-painel [data-act="pend-pos"]').length}));
   ok(e2.ecoBtn===0&&e2.acoesLista===1,'E2: ações só na lista (pedido do Checkout): '+J(e2));
   await A.click(`#pend-painel [data-act="pend-pos"][data-id="${p0.id}"]`);await A.waitForTimeout(150);

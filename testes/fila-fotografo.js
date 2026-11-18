@@ -1,7 +1,7 @@
 // v87: Fila do fotógrafo. Parte 1: o agente (testes/fila_fotografo_agente.py, critérios 1 a 13, HOME temporário).
 // Parte 2: o app no Playwright com o /fila-fotografo simulado (critérios 14 a 22), e os prints de desktop e tela cheia em
 // FOTOFILA_PRINTS (padrão: testes/prints/). Dados e miniaturas simulados (quadrados de cor), nunca foto de convidado.
-const entrarTeste=require('./_entrar');
+const entrarTeste=require('./_entrar');const escalaLigada=require('./_escala'); // 16/11: a Escala está desligada no app; ponto, função e aviso de folga são testados com a chave ligada (o desligado está em escala-desligada.js)
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
@@ -35,7 +35,7 @@ function feed(extra){const a=Date.now()/1000;return {ok:true,agora:a,rev:88,paus
   {id:'G011',estado:'pronta',fotografo:'samuel',fonte:'ftp',funcao:null,inicio:a-400,ultima_chegada:a-300,ultimo_clique:a-305,pronta_em:a-280,n:6,pids:[]},
   ...(extra||[])]};}
 const b=await chromium.launch();const errs=[];
-const novo=async(w,h,cheia)=>{const W=w||1440,H=h||900;const ctx=await b.newContext({viewport:{width:W,height:H},screen:{width:W,height:cheia?H:H+120},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();
+const novo=async(w,h,cheia)=>{const W=w||1440,H=h||900;const ctx=await b.newContext({viewport:{width:W,height:H},screen:{width:W,height:cheia?H:H+120},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());await escalaLigada(ctx);const pg=await ctx.newPage();
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text());});return {ctx,pg};};
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>{localStorage.removeItem('eterna.session');});await pg.goto(U);await pg.waitForTimeout(350);}
   await entrarTeste(pg,email);return pg.evaluate(()=>!!ETERNA.state.user);}
@@ -50,6 +50,17 @@ try{
   await ctx.route('**/fila-fotografo/funcao',r=>{const q=r.request();let body=null;try{body=JSON.parse(q.postData()||'null');}catch(e){}posts.push({h:q.headers(),body});
     const c=body&&body.map&&body.map.carlos;if(c)funcNova=c;r.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'});});
   ok(await entrar(pg,'eduardo@eduardorezende.com'),'login do admin');
+  // 15/11: o nome de tela é Klacius (como na câmera); a chave interna segue klassius e o autor da câmera cai nela (KEY_ALIAS)
+  {const k=await pg.evaluate(()=>{const E=ETERNA,ix={ses:{},sold:new Set()},f=(autor,x)=>E.libWho({id:'zz',via:'cartao',origem:'EOS_DIGITAL',serie:'',day:'2026-11-15',t:1,autor,...(x||{})},ix);
+      const U=E.USERS,e='klassius@eterna.photo',antes=U[e]?U[e].name:null;const r={nome:E.P.klassius&&E.P.klassius.name,semChaveNova:!E.P.klacius,cad:antes,
+        quem:[f('Klacius'),f('KLACIUS'),f('Klácius'),f('Klacius Ank Guarino'),f('Klassius'),f('Klassius Guarino'),f('Klacius, Ank'),f('Klacius.')],ftp:f('',{via:'ftp',origem:'klacius'}),outro:f('Fulano de Tal'),parecido:f('Klaus')};
+      if(U[e]){U[e].name='Klássius';E.migrateUsers(false);r.padrao=U[e].name;U[e].name='Klassius Guarino';E.migrateUsers(false);r.editado=U[e].name;U[e].name=antes;r.chave=U[e].key;}return r;});
+    ok(k.nome==='Klacius'&&k.semChaveNova&&k.cad==='Klacius','grafia: nome de tela Klacius na lista e no cadastro, sem chave nova: '+JSON.stringify(k));
+    ok(k.quem.every(x=>x==='klassius')&&k.ftp==='klassius','grafia: autor da câmera Klacius (qualquer caixa, com sobrenome) e subpasta caem no klassius: '+JSON.stringify(k));
+    ok(k.outro==='sem'&&k.parecido==='sem','grafia: autor desconhecido continua sem fotógrafo: '+JSON.stringify(k));
+    ok(k.padrao==='Klacius'&&k.editado==='Klassius Guarino'&&k.chave==='klassius','grafia: só o nome padrão antigo do cadastro é acertado; nome editado e chave ficam: '+JSON.stringify(k));
+    await pg.evaluate(()=>{ETERNA.state.view='fotografos';ETERNA.render();});await pg.waitForTimeout(150);
+    const tx=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(!/Kl[aá]ssius/.test(tx),'grafia: a tela de Fotógrafos não mostra mais a grafia antiga');}
   // 14: no grupo Fotógrafo, logo abaixo do Upload automático
   await pg.evaluate(()=>{ETERNA.state.view='importar';ETERNA.render();});await pg.waitForTimeout(150);
   const vs=await navVs(pg);ok(vs.indexOf('fotofila')===vs.indexOf('importar')+1,'14: fotofila logo abaixo do Upload automático: '+vs.join(','));
