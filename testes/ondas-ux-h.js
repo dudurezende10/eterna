@@ -9,7 +9,7 @@ const itens=pg=>pg.$$eval('#nav button[data-v]',bs=>bs.map(b=>({v:b.dataset.v,t:
 const RO={c:false,r:true,u:false,d:false},RW={c:true,r:true,u:true,d:false},ALLP={c:true,r:true,u:true,d:true};
 const V93={
   foto:{perms:{set:RW,diario:RW,escala:RO,filafoto:RO},menu:['diario','importar','fotofila','escala']},
-  venda:{perms:{venda:RW,quiosque:RW,catalogo:RO,filafoto:RO},menu:['quiosque','checkout','fila','caixa','posto','catalogo','fotofila']},
+  venda:{perms:{venda:RW,quiosque:RW,catalogo:RO,filafoto:RO},menu:['quiosque','checkout','fila','caixa','posto']},
   valida:{perms:{qualidade:ALLP,diario:RO},menu:['revisao','treino','diario']},
   supervisor:{perms:{relatorios:RO,desempenho:RO,financeiro:RO,diario:ALLP,set:RO,venda:RW,qualidade:RO,estoque:ALLP,configuracao:RW,escala:RW,laboratorio:RO,catalogo:RO,galerias:RW,filafoto:{c:false,r:true,u:true,d:false}},menu:'*'},
   quiosque:{perms:{quiosque:RW},menu:['quiosque']},
@@ -25,7 +25,7 @@ try{
     const dif=[];for(const x of its){await pg.evaluate(v=>ETERNA.go(v),x.v);await pg.waitForTimeout(80);const h1=await pg.evaluate(()=>{const h=document.querySelector('#main h1');return h?h.textContent.trim():'';});if(h1.toLowerCase()!==x.t.toLowerCase())dif.push(x.v+': "'+x.t+'" ≠ "'+h1+'"');}
     ok(!dif.length,'H2 '+k+': menu ≠ título: '+dif.join(' | '));
     const grps=await pg.$$eval('#nav .grp',g=>g.map(x=>x.textContent.trim()));
-    if(k==='venda'){ok(!grps.length&&J(its.map(x=>x.t))===J(['Posto de venda','Fila do fotógrafo','Preços']),'H3 vendedor: '+J({grps,its}));
+    if(k==='venda'){ok(!grps.length&&J(its.map(x=>x.t))===J(['Posto de venda'])/* 18/11: quem opera o caixa vê só o Posto de venda e o Checkout */,'H3 vendedor: '+J({grps,its}));
       ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&!(await pg.$('#rail-ck [data-v="posto"]')),'H4: vendedor com o botão grande Abrir Checkout e sem o botão Posto de venda');}
     if(k==='foto')ok(!grps.length&&its.length<=5&&its.length>0,'H3 fotógrafo: sem grupos e até 5 itens: '+J({grps,n:its.length}));
     if(k==='valida')ok(!grps.length,'H3: validador (3 telas) sem grupos');

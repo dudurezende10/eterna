@@ -9882,7 +9882,7 @@ PERFIS_CLI = {
     "snap": {"perms": {"ativvenda": _P(1, 1, 0, 0), "ativentrega": _P(1, 1, 1, 0)}, "menu": ["ativ-venda", "ativ-entrega"],
              "inicio": "ativ-venda", "rotulo": "vendedor e entrega só do Snap Pop"},
     "venda": {"perms": {"venda": _P(1, 1, 1, 0), "quiosque": _P(1, 1, 1, 0), "catalogo": _P(0, 1, 0, 0), "filafoto": _P(0, 1, 0, 0)},
-              "menu": ["quiosque", "checkout", "fila", "caixa", "posto", "catalogo", "fotofila"], "inicio": "posto",
+              "menu": ["quiosque", "checkout", "fila", "caixa", "posto"], "inicio": "posto",
               "rotulo": "atendimento e venda das fotos (Checkout)"},
 }
 

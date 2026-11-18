@@ -7661,7 +7661,7 @@ const SUP_SEM94=['repo','identidade','chroma','vestiario','chute-a-gol','fundos-
 const PRESETS={
  admin:{name:'Admin',perms:Object.fromEntries(MODULES.map(([m])=>[m,{...ALL}])),menu:'*',inicio:'painel'},
  foto:{name:'Fotógrafo',perms:{set:{...RW},diario:{...RW},escala:{...RO},filafoto:{...RO}},menu:['diario','importar','fotofila','escala'],inicio:'importar'},
- venda:{name:'Atendimento e venda',perms:{venda:{...RW},quiosque:{...RW},catalogo:{...RO},filafoto:{...RO}},menu:['quiosque','checkout','fila','caixa','posto','catalogo','fotofila'],inicio:'posto'},
+ venda:{name:'Atendimento e venda',perms:{venda:{...RW},quiosque:{...RW},catalogo:{...RO},filafoto:{...RO}},menu:['quiosque','checkout','fila','caixa','posto'],inicio:'posto'}, // 18/11 (Ronaldo): quem opera o caixa vê só o Checkout e o Posto de venda (checkout, fila e caixa são atalhos do Posto)
  valida:{name:'Validador',perms:{qualidade:{...ALL},diario:{...RO}},menu:['revisao','treino','diario'],inicio:'revisao'},
  supervisor:{name:'Supervisor',perms:{ativvenda:{...ALL},ativentrega:{...ALL},relatorios:{...RO},desempenho:{...RO},financeiro:{...RO},diario:{...ALL},set:perm(1,1,0,0),venda:{...RW},qualidade:perm(0,1,1,0),estoque:{...ALL},configuracao:{...RW},escala:{...RW},laboratorio:{...RO},catalogo:{...RO},galerias:{...RW},filafoto:perm(0,1,1,0)},menu:ALL_VIEWS.filter(v=>!SUP_SEM94.includes(v)),inicio:'painel'},
  quiosque:{name:'Checkout (tela do cliente)',perms:{quiosque:{...RW}},menu:['quiosque'],inicio:'quiosque'},
