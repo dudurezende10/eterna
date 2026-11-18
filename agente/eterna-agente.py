@@ -1995,10 +1995,19 @@ except Exception:
     lgpd_excluidas = set()
 
 
-def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False, sem_mt=False):
+def _por_campos(por):
+    """{"por": login} ou {"por": login, "por_assumido": quem assumiu}; nada sem por."""
+    usuario, assumido = (por if isinstance(por, tuple) else (por, None))
+    return {**({"por": str(usuario)} if usuario else {}), **({"por_assumido": str(assumido)} if assumido else {})}
+
+
+def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False, sem_mt=False, por=None):
     """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou).
     v96-ux: quieto=True (envio pela tela) não põe o nome do arquivo no console; o fluxo é o mesmo.
-    18/11: sem_mt=True (envio pela tela sem a data do arquivo) não grava o mt: a data do temporário é a da chegada."""
+    18/11: sem_mt=True (envio pela tela sem a data do arquivo) não grava o mt: a data do temporário é a da chegada.
+    18/11 (segurança): por = login de quem mandou a foto pela tela, ou (login, quem assumiu pelo "ver como"); vai para o
+    meta (por, por_assumido) e para a linha de métrica, só no índice e no backup privado. Nunca sai para os navegadores
+    (/biblioteca e /events montam os campos à mão; /metricas tira o por)."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
     if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo (a câmera recebe "ok" e não reenvia)
@@ -2045,7 +2054,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
     with lock:
         seen[h] = pid
         lib[pid] = {"file": dst, "thumb": thumb}
-        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), **({} if sem_mt else {"mt": st.st_mtime}), **exif_info(dst)}
+        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), **({} if sem_mt else {"mt": st.st_mtime}), **exif_info(dst), **_por_campos(por)}
         mm = dict(meta[pid])
         save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
@@ -2053,7 +2062,7 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
                        "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
         state["copied"] += 1
         m = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(),
-             "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha}
+             "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha, **_por_campos(por)}
         metricas.append(m); metricas_por_pid[pid] = m
     metrica_grava(m)
     try:                                # v91: sessão montada aqui (fora do lock); a Fila do fotógrafo deriva dela (S12)
@@ -5261,8 +5270,13 @@ def ff_quem_como(o, autor, dono, serie, s="", cad=None):
         return origem, via, "origem"
     for nome, como in ((autor, "autor_da_camera"), (dono, "dono_da_camera")):
         k = fotografo_chave(nome)                    # "Klacius", "KLACIUS", "Klacius Ank Guarino" = klassius
-        if k and (k in cad or k.split()[0] in cad):
-            return (k if k in cad else k.split()[0]), via, como
+        if not k:
+            continue
+        p1 = k.split()[0]
+        p2 = "".join(ch for ch in p1 if ch.isalnum())   # 18/11: "Marcio," e "Samuel." = marcio e samuel (o p1 do keyByName do app)
+        for c in (k, p1, p2):
+            if c and c in cad:
+                return c, via, como
     if origem:                                       # cartão: a câmera não disse quem é
         return origem, via, "origem"
     serie = re.sub(r"\D", "", str(serie or ""))
@@ -6225,6 +6239,9 @@ def _sess_faces_db(pids):
     return out
 
 
+SESS_DONO_HIST = 5               # correções anteriores guardadas em dono_corrigido.anterior
+
+
 def _sess_de_cartao(x, metas):
     """A sessão é de cartão: fonte "cartão", ou trilha atrasada com todas as fotos de cartão (s == "cartao")."""
     if x.get("fonte") == "cartão":
@@ -6269,8 +6286,8 @@ def sess_dono_corrigir(agora=None):
     arquivo de sessões) e que o /sessoes entrega (hoje sempre; ontem com ?ontem=1, que o app pede uma vez a cada partida do
     agente, srvOntem); dia mais antigo fica como está, porque refazer o resumo dele perderia números que já saíram por prazo
     (rostos). A correção fica registrada na própria sessão (dono_corrigido: quem, quando, de, para e o motivo = o caminho que
-    valeu: origem, autor_da_camera ou dono_da_camera, juntos por "+" quando as fotos resolveram por caminhos diferentes; a
-    correção anterior, se havia, fica em "anterior"), que vai para o arquivo do dia e para o backup. A fonte nova é a via da
+    valeu: origem, autor_da_camera ou dono_da_camera, juntos por "+" quando as fotos resolveram por caminhos diferentes; as
+    correções anteriores ficam na lista "anterior", a mais nova primeiro, até SESS_DONO_HIST), que vai para o arquivo do dia e para o backup. A fonte nova é a via da
     primeira foto. Rodar de novo não muda nada. Só lê arquivo (eventos das vendas) quando há o que corrigir.
     As travas são pegas uma de cada vez (sess_lock, lock, sess_lock; o ev_lock do _ev_ler fora delas), nunca uma dentro da
     outra. Devolve [(card, dia, chave)]."""
@@ -6305,7 +6322,7 @@ def sess_dono_corrigir(agora=None):
     if not acha:
         return []
     pagas = _sess_vendas_pagas(sorted({_ff_hoje(agora - 86400), _ff_hoje(agora)} | {cands[c][2].get("dia") for c in acha if cands[c][2].get("dia")}))
-    feitas = []
+    feitas, avisos = [], []
     with sess_lock:
         for card, (k, via, como, pids, atual) in acha.items():
             x = sess.get(card)
@@ -6314,13 +6331,38 @@ def sess_dono_corrigir(agora=None):
                 continue
             dc = {"em": _iso(agora), "por": "servidor", "de": atual, "para": k, "fonte_antes": x.get("fonte"), "motivo": como,
                   "venda_paga": None if pagas is None else card in pagas}
-            if isinstance(x.get("dono_corrigido"), dict):
-                dc["anterior"] = {kk: v for kk, v in x["dono_corrigido"].items() if kk != "anterior"}
+            ant = x.get("dono_corrigido")
+            if isinstance(ant, dict):                # histórico: a mais nova primeiro, no máximo SESS_DONO_HIST
+                velhas = ant.get("anterior")
+                velhas = [velhas] if isinstance(velhas, dict) else [a for a in (velhas or []) if isinstance(a, dict)]
+                dc["anterior"] = ([{kk: v for kk, v in ant.items() if kk != "anterior"}] + velhas)[:SESS_DONO_HIST]
             x["dono_corrigido"] = dc
             x["fotografo"], x["fonte"] = k, via
             _sess_toca(x)
             feitas.append((card, x["dia"], k))
+            if dc["venda_paga"]:
+                avisos.append((card, x["dia"], atual, k, dc["em"]))
+    if avisos:                                       # fora do sess_lock: grava no estado.db
+        sess_dono_avisa_venda(avisos)
     return feitas
+
+
+def sess_dono_avisa_venda(avisos):
+    """18/11 (segurança): sessão com venda paga que mudou de fotógrafo vira uma linha no histórico do servidor (usuarios_log,
+    acao "dono_venda_paga": card, dia, de, para), que chega aos navegadores com permissão pelo estado e aparece em Alertas
+    para o Admin. Id fixo por card e hora da correção: gravar de novo não duplica. Falha aqui não impede a correção."""
+    try:
+        docs = []
+        for card, dia, de, para, em in avisos:
+            lid = "Lsrv-dono-" + hashlib.sha256(("%s|%s" % (card, em)).encode("utf8")).hexdigest()[:12]
+            docs.append({"col": "usuarios_log", "id": lid, "valor": {
+                "id": lid, "em": em, "por": "servidor", "alvo": card, "acao": "dono_venda_paga", "card": card, "dia": dia,
+                "mudancas": [{"campo": "fotografo", "de": de, "para": para}],
+                "motivo": "a câmera diz outro fotógrafo; a sessão tinha venda paga", "venue": "maracana", "origem": "agente"}})
+        estado_gravar({"docs": docs}, "servidor")
+        print("  sessões: %d com venda paga mudaram de fotógrafo (registrado em Alertas)" % len(docs))
+    except Exception as ex:
+        print("  sessões: aviso da venda paga não gravado (%s)" % type(ex).__name__)
 
 
 def sess_carregar(agora=None):
@@ -14192,7 +14234,8 @@ class H(BaseHTTPRequestHandler):
             else:
                 if mt:
                     os.utime(tmp, (mt, mt))               # a data do arquivo no cartão, não a da chegada
-                r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), ENVIO_ORIGEM, "cartao", move=True, quieto=True, sem_mt=not mt)
+                r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), ENVIO_ORIGEM, "cartao", move=True, quieto=True, sem_mt=not mt,
+                                por=(eu["usuario"], eu.get("assumido_por")))   # quem mandou fica no servidor (auditoria); o "ver como" hoje não chega aqui (so_ver)
                 if r == "new":
                     with lock:
                         envio_dia_soma()
@@ -14813,7 +14856,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/metricas":
             desde = float(q.get("desde", ["0"])[0] or 0)
             with lock:
-                linhas = [dict(m) for m in metricas if m["chegada"] >= desde]
+                linhas = [{k: v for k, v in m.items() if k not in ("por", "por_assumido")} for m in metricas if m["chegada"] >= desde]   # 18/11: quem enviou não sai
             return self.js({"agora": time.time(), "fila_rostos": fila_rostos.qsize(), "maquina": uso_maquina(), "fotos": linhas})
         if u.path == "/roverpix/status":
             c = rover_cfg()

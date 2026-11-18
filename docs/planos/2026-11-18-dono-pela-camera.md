@@ -17,7 +17,7 @@ O Eduardo mandou 70 fotos do cartão da câmera do Márcio por Minhas fotos › 
 
 Agente (`agente/eterna-agente.py`):
 - `ff_quem_como`: no cartão, autor e dono da câmera antes da origem; no FTP, como antes.
-- `sess_dono_corrigir`: além da sessão fechada sem fotógrafo, corrige a sessão fechada de cartão (`fonte` "cartão", ou atrasada com todas as fotos de cartão) que já tem fotógrafo, quando todas as fotos resolvem pela regra nova para um mesmo cadastrado diferente do atual. Grava `dono_corrigido` com `de` (o atual), `para`, `motivo`, `fonte_antes`, `venda_paga` (há venda paga ligada à sessão, lida dos eventos; `None` se não deu para ler) e `anterior` (a correção que já existia). Rev novo, mesma janela (hoje e ontem em memória), mesmas travas, idempotente. Sessão com venda paga também passa, como já acontecia com a sessão sem fotógrafo: a venda vai para a estatística do fotógrafo certo.
+- `sess_dono_corrigir`: além da sessão fechada sem fotógrafo, corrige a sessão fechada de cartão (`fonte` "cartão", ou atrasada com todas as fotos de cartão) que já tem fotógrafo, quando todas as fotos resolvem pela regra nova para um mesmo cadastrado diferente do atual. Grava `dono_corrigido` com `de` (o atual), `para`, `motivo`, `fonte_antes`, `venda_paga` (há venda paga ligada à sessão, lida dos eventos; `None` se não deu para ler) e `anterior` (lista das correções que já existiam, até 5). Rev novo, mesma janela (hoje e ontem em memória), mesmas travas, idempotente. Sessão com venda paga também passa, como já acontecia com a sessão sem fotógrafo: a venda vai para a estatística do fotógrafo certo.
 - `fotos_enviar_post`: sem `quem`; aceita `mt` (data do arquivo, `envio_mt`) e grava essa data no arquivo antes do `ingest_file`, como faz o cartão lido no servidor; sem `mt` válido, a foto entra sem `mt` (`ingest_file(..., sem_mt=True)`).
 
 App (`index.html`):
@@ -25,6 +25,15 @@ App (`index.html`):
 - Envio manual: saíram `envioQuem`, `ENVIO_NAO.quem` ("Escolha o fotógrafo acima") e a frase "As fotos entram como do cartão de X"; entrou "O fotógrafo de cada foto vem do nome gravado na câmera..." (`en_camera`, 5 línguas). O POST leva `mt = lastModified` em segundos. Auditoria: `auditLog('fotos_envio_manual', 'cartao', ...)` com quem mandou em `por`.
 - Minhas fotos: sem o seletor `imp-point`, sem o efeito dele em `upSessLista`, sem o ponto no cabeçalho.
 - `srvDono` já trocava de um fotógrafo para outro (só exige `dono_corrigido.para === fotografo` e nome diferente na cópia); só o comentário e a linha do registro mudaram.
+
+## Ajustes da revisão de segurança (18/11)
+
+- Quem enviou cada foto pela tela fica no servidor: `ingest_file(..., por=...)` grava `por` (login) no `meta` e na linha de métrica; `por_assumido` só se um dia o "ver como" puder enviar (hoje o `do_POST` recusa com `so_ver`). `/biblioteca`, `/events` e `/metricas` não entregam o `por`. O parâmetro novo fica no fim da assinatura, depois do `sem_mt`; o `extra` da `feat/leitor-cartao` entra ao lado na hora de unir.
+- Sessão com venda paga que muda de fotógrafo vira linha `dono_venda_paga` no histórico do servidor (`usuarios_log`), mostrada em Alertas para o Admin. Vale também para a sessão sem fotógrafo com venda paga corrigida pela regra de 15/11.
+- `dono_corrigido.anterior` é uma lista (a mais nova primeiro, até 5).
+- O app não manda `mt` com `lastModified` a menos de 10 s de agora.
+- Guia da equipe: cada fotógrafo grava o próprio nome na câmera; câmera emprestada conta para o dono da câmera.
+- Revisão de código: com pontuação no nome da câmera ("Marcio,", "Marcio, Viva Maracana", "Samuel," no dono) o app achava o fotógrafo e o agente não. O `ff_quem_como` procura também o primeiro nome sem pontuação, como o `keyByName`. Tabela única em `testes/_nomes_camera.json`, rodada contra o `ff_quem_como` (`testes/sessoes_agente.py`) e contra o `camWho` (`testes/nomes-camera.js`, que usa o `camWho` exposto em `window.ETERNA`).
 
 ## As 59 fotos numa sessão só (LPVQPXP92, `fonte_t: "mt"`)
 

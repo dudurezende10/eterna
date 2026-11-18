@@ -458,6 +458,13 @@ ok(m.ff_quem_como("samuel", "Márcio Silva", "", "", "cartao") == ("marcio", "ca
    and m.ff_quem_como("samuel", "Fulano", "", "123456781234", "cartao") == ("samuel", "cartão", "origem") and m.ff_quem_como("samuel", "Márcio", "", "", "ftp") == ("samuel", "ftp", "origem")
    and m.ff_quem_como("tela:envio", "", "", "123456781234", "cartao") == (None, "câmera ···1234", None) and m.ff_quem_como("tela:envio", "Fulano", "", "", "cartao") == (None, "cartão", None),
    "18/11: no cartão a câmera vence a origem; sem nome na câmera vale a origem; o envio pela tela sem nome fica sem fotógrafo")
+# 18/11 (revisão): nome com pontuação no autor e no dono ("Marcio,", "Samuel,"): a mesma tabela do camWho do app (testes/nomes-camera.js)
+NOMES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "_nomes_camera.json"), encoding="utf8"))["casos"]
+cad_n = set(m.PHOTOGRAPHERS)
+dif = [(a_, d_, esp, m.ff_quem_como("tela:envio", a_, d_, "", "cartao", cad_n)[0]) for a_, d_, esp in NOMES]
+ok(all(x[2] == x[3] for x in dif), "18/11: nomes da câmera (tabela comum com o app): %r" % [x for x in dif if x[2] != x[3]])
+ok(m.ff_quem_como("tela:envio", "Marcio,", "", "", "cartao", cad_n)[2] == "autor_da_camera" and m.ff_quem_como("tela:envio", "", "Samuel,", "", "cartao", cad_n)[2] == "dono_da_camera",
+   "18/11: pontuação no autor e no dono acha pelo caminho certo")
 reset()
 with m.sess_lock:
     for card_o, metas_o in (("LPORIG001", [{"o": "klacius", "s": "cartao", "autor": "Fulano"}, {"o": "klacius", "s": "ftp"}]),
@@ -480,7 +487,8 @@ TR = {"LPTROCA01": ("samuel", {"fonte": "cartão", "atrasada": True}, [{"o": "sa
       "LPTROCA04": ("samuel", {"fonte": "câmera ···1234", "atrasada": True, "dono_corrigido": {"em": "x", "por": "servidor", "de": None, "para": "samuel", "motivo": "origem"}},
                     [{"o": "samuel", "s": "cartao", "dono": "MARCIO", "serie": "555500001234"}] * 2),
       "LPTROCA05": ("samuel", {"fonte": "cartão", "atrasada": True}, [{"o": "samuel", "s": "cartao"}] * 2),
-      "LPTROCA06": ("samuel", {"fonte": "cartão", "atrasada": True}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}] * 2),
+      "LPTROCA06": ("samuel", {"fonte": "cartão", "atrasada": True, "dono_corrigido": {"em": "e0", "de": None, "para": "samuel", "motivo": "origem",
+                    "anterior": [{"em": "e%d" % i, "para": "x%d" % i} for i in range(1, 6)]}}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}] * 2),
       "LPTROCA07": ("samuel", {"fonte": "cartão", "atrasada": True, "status": "aberta"}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}] * 2),
       "LPTROCA08": ("samuel", {"fonte": "cartão", "atrasada": True, "removida": True}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}] * 2),
       "LPTROCA09": ("samuel", {"fonte": "x", "atrasada": True}, [{"o": "samuel", "s": "cartao", "autor": "Marcio"}, {"o": "samuel", "s": "ftp", "autor": "Marcio"}]),
@@ -504,14 +512,25 @@ ok(m.sess["LPTROCA01"]["fotografo"] == "marcio" and m.sess["LPTROCA01"]["fonte"]
    and d1.get("de") == "samuel" and d1.get("para") == "marcio" and d1.get("motivo") == "autor_da_camera" and d1.get("por") == "servidor" and d1.get("venda_paga") is False and d1.get("fonte_antes") == "cartão",
    "18/11: de Samuel para Márcio, com de, para, motivo e rev novo: %r" % d1)
 d4 = m.sess["LPTROCA04"].get("dono_corrigido") or {}
-ok(m.sess["LPTROCA04"]["fotografo"] == "marcio" and d4.get("motivo") == "dono_da_camera" and (d4.get("anterior") or {}).get("para") == "samuel" and d4.get("de") == "samuel",
-   "18/11: atrasada toda de cartão pelo dono da câmera; a correção anterior fica guardada: %r" % d4)
+ok(m.sess["LPTROCA04"]["fotografo"] == "marcio" and d4.get("motivo") == "dono_da_camera" and isinstance(d4.get("anterior"), list)
+   and len(d4["anterior"]) == 1 and d4["anterior"][0].get("para") == "samuel" and d4.get("de") == "samuel",
+   "18/11: atrasada toda de cartão pelo dono da câmera; a correção anterior fica na lista anterior: %r" % d4)
+a6 = (m.sess["LPTROCA06"].get("dono_corrigido") or {}).get("anterior")
+ok(isinstance(a6, list) and [x.get("em") for x in a6] == ["e0", "e1", "e2", "e3", "e4"] and all("anterior" not in x for x in a6),
+   "18/11: histórico das correções com teto de 5, a mais nova primeiro: %r" % a6)
+# (a sessão sem fotógrafo com venda paga, do caso de 15/11 acima, também ganha o aviso: a venda saiu de "sem fotógrafo")
+lg = [d.get("valor") or {} for d in m.estado_col("usuarios_log")["docs"] if (d.get("valor") or {}).get("acao") == "dono_venda_paga" and (d.get("valor") or {}).get("card") == "LPTROCA06"]
+ok(len(lg) == 1 and lg[0].get("card") == "LPTROCA06" and lg[0].get("dia") == diaD and lg[0].get("mudancas") == [{"campo": "fotografo", "de": "samuel", "para": "marcio"}]
+   and lg[0].get("por") == "servidor", "18/11: troca de sessão com venda paga gravada no histórico do servidor (Alertas): %r" % lg)
 ok(m.sess["LPTROCA06"]["fotografo"] == "marcio" and (m.sess["LPTROCA06"].get("dono_corrigido") or {}).get("venda_paga") is True, "18/11: sessão com venda paga também passa, com a marca venda_paga")
 ok(all(m.sess[c]["fotografo"] == "samuel" and (c != "LPTROCA02" or "dono_corrigido" not in m.sess[c]) for c in ("LPTROCA02", "LPTROCA03", "LPTROCA05", "LPTROCA07", "LPTROCA08", "LPTROCA09"))
    and m.sess["LPTROCA10"]["fotografo"] is None,
    "18/11: mista, de FTP, já certa, aberta, removida, com foto de FTP e envio sem nome ficam: %r" % {c: m.sess[c]["fotografo"] for c in TR})
 rev_t2 = m.sess_rev[0]
 ok(m.sess_dono_corrigir(TD + 700) == [] and m.sess_rev[0] == rev_t2, "18/11: a segunda rodada não muda nada")
+ok(len([d for d in m.estado_col("usuarios_log")["docs"] if (d.get("valor") or {}).get("card") == "LPTROCA06"]) == 1, "18/11: o aviso da venda paga não se repete")
+ok(m._por_campos(("ana", "adm")) == {"por": "ana", "por_assumido": "adm"} and m._por_campos("ana") == {"por": "ana"} and m._por_campos(None) == {} and m._por_campos(("ana", None)) == {"por": "ana"},
+   "18/11: campos de quem enviou")
 m.sess_gravar()
 jt = {x["card"]: x for x in json.load(open(os.path.join(m.SESS_DIR, diaD + ".json"), encoding="utf8"))["sessoes"]}
 ok(jt["LPTROCA01"]["fotografo"] == "marcio" and jt["LPTROCA01"]["dono_corrigido"]["de"] == "samuel", "18/11: gravado no arquivo do dia")

@@ -139,7 +139,11 @@ try{
     ok(await espera(pg,()=>!!ETERNA.SIM.sessions.LPD2N5TRC&&ETERNA.SIM.sessions.LPD2N5TRC.key==='samuel',15000),'18/11: a sessão de cartão chega ao SIM como do Samuel');
     Object.assign(S_TR,{fotografo:'marcio',dono_corrigido:{em:new Date().toISOString(),por:'servidor',de:'samuel',para:'marcio',fonte_antes:'cartão',motivo:'autor_da_camera',venda_paga:false},rev:FEED.rev+1});FEED.rev++;
     ok(await espera(pg,()=>ETERNA.SIM.sessions.LPD2N5TRC.key==='marcio',15000),'18/11: de Samuel para Márcio na cópia do aparelho: '+await pg.evaluate(()=>ETERNA.SIM.sessions.LPD2N5TRC.key));
-    ok(await pg.evaluate(()=>(ETERNA.revSessions().find(x=>x.card==='LPD2N5TRC')||{}).key==='marcio'),'18/11: a Qualidade lista a sessão no nome do Márcio');}
+    ok(await pg.evaluate(()=>(ETERNA.revSessions().find(x=>x.card==='LPD2N5TRC')||{}).key==='marcio'),'18/11: a Qualidade lista a sessão no nome do Márcio');
+    // a troca com venda paga que o servidor grava no histórico (usuarios_log, acao dono_venda_paga) aparece em Alertas
+    const al=await pg.evaluate(()=>{const k='eterna.users.log.v1';const l=JSON.parse(localStorage.getItem(k)||'[]');l.unshift({id:'Lsrv-dono-teste',em:new Date().toISOString(),por:'servidor',alvo:'LPD2N5TRC',acao:'dono_venda_paga',card:'LPD2N5TRC',dia:'2026-11-18',mudancas:[{campo:'fotografo',de:'samuel',para:'marcio'}]});
+      localStorage.setItem(k,JSON.stringify(l));return ETERNA.alerts().filter(a=>/LPD2N5TRC/.test(a.t)).map(a=>[a.sev,a.t,a.d]);});
+    ok(al.length===1&&al[0][0]==='warn'&&/Samuel para Márcio/.test(al[0][1])&&/venda paga/.test(al[0][1])&&/2026-11-18/.test(al[0][2]),'18/11: alerta da sessão com venda paga que mudou de fotógrafo: '+JSON.stringify(al));}
   // 18/11: o ponto que ficou guardado no estado (o antigo padrão era campo4) não esconde sessão nenhuma; sessão sem ponto aparece
   {await pg.evaluate(()=>{ETERNA.state.imp.key='todos';ETERNA.go('importar');});
     const S_SP=sessao({card:'LPSEMPT01',fotografo:'carlos',ponto:null,n:2,rev:FEED.rev+1});FEED.sessoes.push(S_SP);FEED.rev++;

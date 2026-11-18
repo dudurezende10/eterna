@@ -70,13 +70,18 @@ try{
     const fl=await pg.$$eval('#envio-painel .envio-falhas li',x=>x.map(e=>e.textContent));
     ok(fl.length===2&&fl.some(x=>/^e\.png/.test(x))&&fl.some(x=>/^f\.jpg/.test(x)),'6: lista de recusadas: '+J(fl));
     ok(M.posts.length===5&&!M.posts.some(p=>p.nome==='e.png'),'6: só 5 POSTs e sem o .png: '+J(M.posts.map(p=>p.nome)));
-    ok(M.posts.every(p=>p.quem===null&&/^\d{9,11}$/.test(p.mt||'')&&Math.abs(+p.mt-Date.now()/1000)<3600&&p.xe==='1'&&p.ct==='image/jpeg'),'6 (18/11): POST sem quem, com mt (data do arquivo em segundos), X-Eterna e image/jpeg: '+J(M.posts[0]));
+    ok(M.posts.every(p=>p.quem===null&&p.mt===null&&p.xe==='1'&&p.ct==='image/jpeg'),'6 (18/11): POST sem quem, X-Eterna e image/jpeg; arquivo com a data de agora (seletor) vai sem mt: '+J(M.posts[0]));
     const nt=await pg.evaluate(()=>{const x=document.querySelector('#envio-painel .envio-camera');return x?x.textContent:'';});
     ok(/vem do nome gravado na câmera/.test(nt)&&!/entram como/.test(await pg.evaluate(()=>document.querySelector('#envio-painel').innerText)),'18/11: o painel diz que o fotógrafo vem da câmera: '+nt);
     ok(J(M.posts.map(p=>p.nome).slice(0,2).sort())===J(['a.jpg','b.jpg']),'decisão 10: em ordem de nome');
     // 14: auditLog sem nome de arquivo
     const au=await pg.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='fotos_envio_manual'));
     ok(au.length===1&&au[0].alvo==='cartao'&&au[0].por==='carlos@eterna.photo'&&au[0].mudancas[0].para===4&&au[0].total===6&&!/\.jpg|\.png/.test(J(au)),'14: auditLog: '+J(au));
+    // 18/11: arquivo do cartão com a data de 3 h atrás leva mt (em segundos); a 5 s de agora, não
+    {M.posts.length=0;M.atraso=0;M.resp=null;const t3=Date.now()-3*3600e3;
+      await pg.evaluate(t=>ETERNA.fotosEnviar([new File([new Uint8Array([255,216,255,217])],'mt1.jpg',{type:'image/jpeg',lastModified:t}),new File([new Uint8Array([255,216,255,217])],'mt2.jpg',{type:'image/jpeg',lastModified:Date.now()-5000})]),t3);await fim(pg);
+      const p1=M.posts.find(p=>p.nome==='mt1.jpg'),p2=M.posts.find(p=>p.nome==='mt2.jpg');
+      ok(p1&&p1.mt===String(Math.floor(t3/1000))&&p2&&p2.mt===null,'18/11: mt só com a data do arquivo longe de agora: '+J([p1&&p1.mt,p2&&p2.mt]));}
     // 7: extensões do cartão
     M.posts.length=0;M.atraso=0;M.resp=null;
     await escolher(pg,[arq('foto.Jpg'),arq('A.JPG'),arq('b.jpeg'),arq('C.JPEG'),arq('d.jpg')]);await fim(pg);

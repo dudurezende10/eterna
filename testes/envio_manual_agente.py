@@ -67,6 +67,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _agente_sessao   # v93: as rotas da equipe pedem sessão (tabela ROTAS); o teste usa um admin no HOME temporário
 COOK = {}
 COOK_FOTO = {}
+COOK_VER = {}
 
 
 class _ComSessao:
@@ -112,6 +113,7 @@ def subir(nome, porta, ftpp, home, user, piso, extras=()):
     os.chmod(os.path.join(home, "Eterna", "ftp.json"), 0o600)
     COOK[porta] = _agente_sessao.cookie_sub(AG, home)
     COOK_FOTO[porta] = cookie_fotografo(home, "carlos")
+    COOK_VER[porta] = cookie_fotografo(home, "carlos", "admin-teste")
     p = subprocess.Popen([sys.executable, "-I", "-u", LANCA, AG, str(piso), *extras], env=ambiente(porta, ftpp, home, user),
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     LOG[nome] = []
@@ -163,13 +165,14 @@ def enviar(dados, nome="IMG_0001.JPG", quem=None, porta=None, extra=None, sem=()
     return req("POST", "/fotos/enviar?" + q, dados, h, porta=porta)
 
 
-def cookie_fotografo(home, chave):
-    """Fotógrafo logado (preset foto, cadastro ligado à chave, com Upload): para ver que ele não força o próprio nome."""
+def cookie_fotografo(home, chave, assumido=""):
+    """Fotógrafo logado (preset foto, cadastro ligado à chave, com Upload): para ver que ele não força o próprio nome.
+    assumido = login do Admin que entrou "vendo como" o fotógrafo (sessão com por)."""
     cod = ("import importlib.util,sys\nsp=importlib.util.spec_from_file_location('ag',sys.argv[1]);m=importlib.util.module_from_spec(sp);sp.loader.exec_module(m)\n"
            "u=sys.argv[2];v={'v':2,'email':u,'name':u,'active':True,'preset':'foto','key':sys.argv[3],'perms':{'set':{'c':True,'r':True,'u':False,'d':False}}}\n"
-           "m.estado_gravar({'docs':[{'col':'usuarios','id':m.quote(u,safe=\"-_.!~*'()\"),'valor':v}]})\nprint('%s=%s'%(m.AUTH_COOKIE,m.auth_sessao_nova(u)))")
+           "m.estado_gravar({'docs':[{'col':'usuarios','id':m.quote(u,safe=\"-_.!~*'()\"),'valor':v}]})\nprint('%s=%s'%(m.AUTH_COOKIE,m.auth_sessao_nova(u,por=sys.argv[4] or None)))")
     env = dict(os.environ, HOME=home, USERPROFILE=home, ETERNA_SEM_OPENCV="1")
-    r = subprocess.run([sys.executable, "-I", "-c", cod, AG, chave + "@teste", chave], env=env, capture_output=True, text=True, timeout=120)
+    r = subprocess.run([sys.executable, "-I", "-c", cod, AG, chave + "@teste", chave, assumido], env=env, capture_output=True, text=True, timeout=120)
     return (r.stdout.strip().splitlines() or [""])[-1]
 
 
@@ -224,6 +227,14 @@ try:
     ok(all(meta.get(p, {}).get("s") == "cartao" and meta.get(p, {}).get("o") == "tela:envio" for p in pids),
        "16: meta s=cartao, o=tela:envio: %s" % [(meta.get(p, {}).get("s"), meta.get(p, {}).get("o")) for p in pids])
     ok(all("mt" not in meta.get(p, {}) for p in pids), "16: sem mt (a tela não mandou a data do arquivo): %s" % [meta.get(p, {}).get("mt") for p in pids])
+    # 18/11 (segurança): quem enviou fica no servidor (meta e métrica), nunca nas rotas dos navegadores
+    ok(all(meta.get(p, {}).get("por") == "admin-teste" and "por_assumido" not in meta.get(p, {}) for p in pids),
+       "16: por = login de quem enviou: %s" % [meta.get(p, {}).get("por") for p in pids])
+    mlin = [json.loads(l) for l in open(os.path.join(ET, "metricas.jsonl"), encoding="utf8") if l.strip()]
+    ok(all(any(x.get("pid") == p and x.get("por") == "admin-teste" for x in mlin) for p in pids), "16: por na linha de métrica")
+    rb, rm_ = req("GET", "/biblioteca")[1] or {}, req("GET", "/metricas")[1] or {}
+    ok(rb.get("fotos") and rm_.get("fotos") and '"por"' not in json.dumps(rb) and '"por"' not in json.dumps(rm_) and "admin-teste" not in json.dumps(rb) + json.dumps(rm_),
+       "16: /biblioteca e /metricas sem o por: %s" % [len(rb.get("fotos") or []), len(rm_.get("fotos") or [])])
     ok(all(meta.get(p, {}).get("cap") for p in pids), "16: hora do clique lida do EXIF")
     ses = None
     for _ in range(40):
@@ -255,7 +266,14 @@ try:
     rc1 = enviar(jpeg(horas=11, autor="Marcio"), "LOG_1.JPG", extra={"Cookie": COOK_FOTO[PORTA]})
     rc2 = enviar(jpeg(horas=13), "LOG_2.JPG", quem="carlos", extra={"Cookie": COOK_FOTO[PORTA]})
     ok(rc1[:2] == (200, {"ok": True, "resultado": "new"}) and rc2[:2] == (200, {"ok": True, "resultado": "new"}), "18/11: fotógrafo logado envia: %s" % [rc1[:2], rc2[:2]])
+    rv = enviar(jpeg(horas=15), "VER_1.JPG", extra={"Cookie": COOK_VER[PORTA]})
     x1, x2 = sessao_de(pid_de("LOG_1.JPG")), sessao_de(pid_de("LOG_2.JPG"))
+    meta = json.load(open(os.path.join(ET, "meta.json")))
+    ok((meta.get(pid_de("LOG_1.JPG")) or {}).get("por") == "carlos@teste" and (meta.get(pid_de("LOG_2.JPG")) or {}).get("por") == "carlos@teste",
+       "18/11: por = login do fotógrafo que enviou: %s" % [(meta.get(pid_de(n)) or {}).get("por") for n in ("LOG_1.JPG", "LOG_2.JPG")])
+    # "ver como" só olha (do_POST responde so_ver antes da rota): nenhuma foto entra em nome do fotógrafo. O por_assumido no
+    # ingest_file fica de reserva para se a rota um dia for liberada no ver como (testado em sessoes_agente.py, _por_campos)
+    ok(rv[:2] == (403, {"erro": "so_ver"}) and pid_de("VER_1.JPG") is None, "18/11: com ver como, o envio é recusado: %s" % (rv[:2],))
     ok(x1 and x1.get("fotografo") == "marcio" and x2 and x2.get("fotografo") is None,
        "18/11: logado como Carlos, a câmera do Márcio é do Márcio e a sem nome fica sem fotógrafo: %s" % [(x1 or {}).get("fotografo"), (x2 or {}).get("fotografo")])
     # mt = data do arquivo no cartão (lastModified): vale quando o EXIF não tem a hora; sem mt, a hora da chegada (u), nunca um mt de chegada

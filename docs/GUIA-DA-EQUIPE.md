@@ -202,6 +202,8 @@ O fotógrafo não faz check-in da câmera. O Eterna sabe de quem é cada foto as
 
 Foto de **cartão** (enviada pela tela ou lida no computador do ponto) segue a câmera primeiro (18/11): vale o nome gravado na câmera, mesmo que o seletor da tela ou o nome do cartão diga outro.
 
+**Cada fotógrafo precisa ter o próprio nome gravado na câmera** (autor ou dono da câmera), porque é esse nome que decide de quem é a foto. Câmera emprestada conta para o dono da câmera: quem pegar a câmera de outro colega deve trocar o nome nela antes de fotografar.
+
 Foto sem nenhuma dessas pistas cai em **Sem fotógrafo**.
 
 **Sessão sem dono se acerta sozinha (15/11).** Se uma sessão de hoje ou de ontem ficou sem fotógrafo e todas as fotos dela são da mesma pessoa cadastrada (pelo nome gravado na câmera), o Eterna passa a sessão para essa pessoa quando o computador do ponto é ligado ou reiniciado. As vendas daquela sessão passam a contar para ela, e os números do dia são refeitos. Sessão com fotos de duas pessoas, ou com alguma foto sem pista, continua em **Sem fotógrafo**. Desde 18/11, sessão de cartão que ficou com o nome errado (por exemplo, o seletor estava em Samuel e as fotos são da câmera do Márcio) também passa para quem a câmera diz. Sessão do FTP que já tem fotógrafo nunca muda.
