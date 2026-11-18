@@ -2420,3 +2420,7 @@ No 4:3 deitado a barra aparece nas fotos deitadas e recolhe nas em pé (ela não
 - Barra na grade, em "Ver minhas fotos", na galeria online e no Posto; reordenar por arrasto; zoom por pinça.
 - No 4:3 deitado (faixa) o canto de cima e a fileira de baixo (✓ ✗, Continuar) cobrem mais da foto que antes: os 42 px de margem que eles usavam viraram a faixa.
 - Em 390 px de largura o canto de cima já passava da borda antes da barra (falha antiga do `checkout-tela-cheia.js`).
+
+## Motivos de cortesia (18/11)
+
+Os motivos da cortesia ficam no documento `config/cortesia` (`{motivos:[{id, nome}], por, em}`), editado em Catálogo › Cortesias (um por linha; grava quem tem Alterar em Configurações; vai para a auditoria como `cortesia_motivos`). O `id` é o nome sem acento, minúsculo, com `_`. Sem cadastro, vale a lista de fábrica `CORT_MOTIVOS`. Motivo e "o que houve" são opcionais em toda cortesia (+1 foto no Checkout, Cortesia SAC e ativações); sem motivo, grava `motivo: null`.

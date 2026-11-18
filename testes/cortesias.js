@@ -23,8 +23,7 @@ try{
   await A.click('[data-act="checkout-step"][data-s="3"]');await A.waitForTimeout(150);
   ok(await A.$('#cort-mot')!==null&&await A.$('[data-act="caixa-pay"]')===null,'pagamento vira motivo da cortesia');
   ok(/Registrar cortesia e imprimir/.test(await A.textContent('[data-act="caixa-confirm"]')),'botão Registrar cortesia');
-  await A.click('[data-act="caixa-confirm"]');await A.waitForTimeout(150);
-  ok(await A.evaluate(c=>ETERNA.SIM.sessions[c].status,ds[0])!=='paga','sem o que aconteceu não registra');
+  // 18/11 (Ronaldo): motivo e o que houve são opcionais (antes: sem o que aconteceu não registrava)
   await A.selectOption('#cort-mot','espera');await A.fill('#cort-nota','esperou 40 min pela impressão');await A.click('[data-act="caixa-confirm"]');await A.waitForTimeout(400);
   const r1=await A.evaluate(c=>{const s=ETERNA.SIM.sessions[c];const tok=ETERNA.galDaSessao(c);const g=tok&&ETERNA.SIM.galerias[tok];return {st:s.status,pay:s.payment,total:s.total,prints:s.prints,cort:s.cortesia,dir:g?g.fotos.filter(f=>f.direito!=='venda').map(f=>f.direito):null,rec:(document.querySelector('.receipt')||{}).textContent||''};},ds[0]);
   ok(r1.st==='paga'&&r1.pay==='Cortesia'&&r1.total===0&&r1.prints===3,'Cortesia SAC registrada: '+J(r1));
