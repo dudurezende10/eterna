@@ -4069,25 +4069,13 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT
 
 
 def rec_pre_escolha(fotos, x=None, sem_pessoa=()):
-    """Só as fotos que o Checkout vai mostrar com fundo de IA. v93 (plano dos cliques de IA, A14): as bases de IA da
-    sessão (x["ia"]) quando ela tem; senão as 2 primeiras da sessão. O extra por pessoa (até 10 recortes por sessão) saiu:
-    desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade.
-    v97: com o recorte na CPU (lento: 45 a 75 s por foto), só as bases; sem as 2 normais do plano B (a fila não cresce
-    sem fim). Leva cuja visita já tem as bases (D4): nada (o Checkout monta com as bases da visita). Leva sem bases por
-    outro motivo (poucas fotos, volante): as 2 primeiras, como antes."""
-    if x is not None and (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
+    """Só as fotos que o Checkout vai mostrar com fundo de IA: as bases de IA da leva (x["ia"]). 18/11 (segurança, regra 19,
+    sem plano B): leva sem bases não recorta nada (antes, as 2 primeiras fotos de qualquer ponto) e as 2 fotos normais a mais
+    saíram (eram o plano B do Checkout, lojaAIAntigo). Leva cuja visita já tem as bases (D4): nada. Usada na CPU; na placa de
+    vídeo o rec_pre_loop recorta toda foto com gente, no próprio servidor."""
+    if x is None or (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
         return []
-    with rec_lock:
-        cpu = rec.get("provedor") == "cpu"
-    if x is not None and x.get("ia") and cpu:
-        return list(x["ia"])
-    if x is not None and x.get("ia"):
-        # revisão (A14): as bases e, com a prioridade mais baixa, as 2 primeiras fotos normais, o plano B do Checkout quando as
-        # duas bases são ruins (lojaAIAntigo); só usa a máquina livre
-        ia = list(x["ia"])
-        return ia + [p for p in fotos if p not in ia and p not in sem_pessoa][:2]
-    # 14/11: foto sem pessoa (chão, teste, céu) não conta; segue para a próxima da sessão, que é a que o Checkout vai usar
-    return [p for p in fotos if p not in sem_pessoa][:2]
+    return [p for p in (x.get("ia") or []) if isinstance(p, str)]
 
 
 def rec_pre_loop():
