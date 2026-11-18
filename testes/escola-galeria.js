@@ -36,6 +36,18 @@ try{
   // 3. código errado continua dando "não encontrado"
   await G.goto(U+'#g');await G.waitForTimeout(400);await G.fill('#gq-code','ZZZZ99999999');await G.click('[data-act="gq-code-go"]');await G.waitForTimeout(500);
   ok(/Galeria não encontrada/.test(await G.textContent('#main')),'3: localizador sem galeria: não encontrada');
+  // 3b. 18/11: o e-mail do responsável vem junto com a autorização, antes da selfie
+  await G.goto(U+'#g/'+TOK);await G.reload();await G.waitForFunction(()=>ETERNA.state.pub&&ETERNA.state.pub.step==='consent',null,{timeout:8000}).catch(()=>{});
+  ok(await G.locator('#gq-esc-email').count()===1,'3b: e-mail do responsável na autorização');
+  await G.click('[data-act="gq-consent"]');await G.fill('#gq-esc-email','pai');await G.click('#gq-agree');await G.waitForTimeout(150);
+  ok(/Confira o e-mail/.test(await G.textContent('#main'))&&await G.evaluate(()=>ETERNA.state.pub.step)==='consent','3b: e-mail inválido não passa da autorização');
+  await G.fill('#gq-esc-email','mae@exemplo.com');await G.click('#gq-agree');await G.waitForTimeout(200);
+  ok(await G.evaluate(()=>ETERNA.state.pub.step==='selfie'&&ETERNA.state.pub.cli.email==='mae@exemplo.com'),'3b: com e-mail, segue para a selfie');
+  await G.evaluate(g=>{const p=ETERNA.state.pub;p.modo='agente';p.acesso='ACESSO-ESC';p.gal=g;p.galAt=Date.now();p.step='galeria';ETERNA.render();},gal(null));await G.waitForTimeout(150);
+  let t3=await G.textContent('#main');ok(!/Nenhuma foto liberada/.test(t3)&&!/Toque em ✓/.test(t3),'3b: sem texto repetido na galeria da escola');
+  await G.locator('[data-act="gq-gratis"]').first().click();await G.waitForTimeout(150);
+  ok(await G.locator('#gq-gr-email').count()===0,'3b: na foto grátis o e-mail não é pedido de novo');
+  await G.evaluate(()=>{const p=ETERNA.state.pub;p.cli=null;p.gratis=null;p.step="galeria";});
   // 4. depois da selfie (simulada): escolha da grátis
   await G.goto(U+'#g/'+TOK);await G.waitForTimeout(800);
   await G.evaluate(g=>{const p=ETERNA.state.pub;p.modo='agente';p.acesso='ACESSO-ESC';p.gal=g;p.galAt=Date.now();p.step='galeria';ETERNA.render();},gal(null));await G.waitForTimeout(200);
