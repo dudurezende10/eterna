@@ -536,6 +536,7 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 /* v97 (selo Edição Maracanã, A6): faixa dourada no canto de cima à esquerda da IMAGEM da montagem; nunca quebra linha nem é cortada; só na tela (nada na impressão, no download ou no arquivo) */
 .lj-ed{position:absolute;top:0;left:clamp(10px,2%,22px);z-index:2;padding:5px 12px 6px;border-radius:0 0 8px 8px;background:#FFB800;color:#0C2340;font-family:var(--display);font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:clamp(11px,1.4vw,15px);line-height:1.15;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(12,35,64,.25)}
 .lj-lbimg.ai .lj-ed{font-size:15px}
+.lj-grid .lj-ed{display:none} /* 18/11 (DRY): a grade já tem o título do grupo Edição Maracanã */
 /* a caixa da montagem na tela cheia tem a proporção dela (fit); com a imagem encostada no alto da tela, o selo anda para a direita do logo (lj-ovtl) */
 @container (min-aspect-ratio:4/3){.lj-lbmid .lj-lbimg.ai.fit .lj-ed{left:max(clamp(10px,2%,22px),calc(112px - (100cqw - min(100cqw,var(--ar) * 100cqh)) / 2))}}
 /* grade: o card tem 4/5 e a montagem fica inteira (contain), centrada na altura: o selo desce até a borda de cima da imagem */
@@ -558,7 +559,9 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-foot{display:flex;align-items:center;gap:14px;padding-top:6px}
 .lj-strip{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;padding:6px 2px}
 .lj-grade{display:flex;flex-direction:column;height:100vh;overflow:hidden}
-.lj-tvmini{display:flex;gap:12px;justify-content:center;margin:18px 0 22px}.lj-tvph{width:150px;aspect-ratio:3/2;border-radius:8px;background-image:var(--img);background-size:var(--bs);background-position:var(--bp);background-color:#141311;filter:var(--flt,none)}
+.lj-tvmini{display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:wrap;margin:18px 0 22px}
+/* 18/11: a miniatura mostra a foto inteira, na proporção dela; o cliente precisa ver o rosto para dizer se é ele */
+.lj-tvmini .lj-tvimg{width:auto;height:200px;max-width:300px;aspect-ratio:auto;object-fit:contain;background:none}.lj-tvph{width:150px;aspect-ratio:3/2;border-radius:8px;background-image:var(--img);background-size:var(--bs);background-position:var(--bp);background-color:#141311;filter:var(--flt,none)}
 /* v91: ponto · hora dentro da própria imagem (filho de .lj-lbimg), nunca metade fora; foto real ganha a proporção dela (--ar) */
 .lj-lbmid{position:relative}.lj-lbmid:has(.fit){container-type:size}.lj-lbmid .lj-lbimg.fit{width:min(100cqw,calc(var(--ar) * 100cqh));height:auto;aspect-ratio:var(--ar);max-width:100%;max-height:100%;flex:0 1 auto;min-height:0}
 /* aviso (toast) no Checkout: no alto, abaixo do cabeçalho, nunca em cima do ✗/✓ da barra de baixo */
@@ -704,6 +707,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj.lj-fs.esc-col .lj-ovtr{left:calc(100% - var(--escw) + 8px);right:max(8px,env(safe-area-inset-right,0px));top:max(8px,env(safe-area-inset-top,0px));flex-wrap:wrap;justify-content:flex-start;align-content:flex-start;row-gap:4px;border-radius:24px;background:rgba(255,255,255,.06)}
 .lj.lj-fs.esc-col .lj-ovtr .lj-lbx span,.lj.lj-fs.esc-col .lj-ovtr .lj-cplg{display:none!important}.lj.lj-fs.esc-col .lj-ovtr .lj-lbx{width:72px;min-width:72px;padding:0}
 .lj.lj-fs.esc-col .lj-ovtr .lj-maisp{max-width:100%}
+.lj.lj-fs.esc-col .lj-ovtr>*{order:3}.lj.lj-fs.esc-col .lj-ovtr>.lj-lgov{order:0}.lj.lj-fs.esc-col .lj-ovtr>.lj-lbx{order:1}.lj.lj-fs.esc-col .lj-ovtr>.lj-sairb{order:2} /* 18/11: idioma, grade e Sair na 1ª linha */
 .lj.lj-fs.esc-col .lj-ovnext{left:calc(100% - var(--escw) + 8px);right:max(8px,env(safe-area-inset-right,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));transform:none;justify-content:center;white-space:normal;text-align:center;padding:4px 10px;line-height:1.2}
 .lj.lj-fs.esc-col .lj-lbnav{top:auto;transform:none;bottom:104px;background:rgba(255,255,255,.1)}
 .lj.lj-fs.esc-col .lj-lbnav.prev{left:auto;right:calc(var(--escw) / 2 + 6px)}.lj.lj-fs.esc-col .lj-lbnav.next{right:calc(var(--escw) / 2 - 78px)}
@@ -4143,7 +4147,7 @@ function vQuiosque(){
   if(k.step==='talvez'&&k.tv&&k.tv.ask[k.tv.i]){const q=k.tv.ask[k.tv.i]; // v91 (B3): confirmação de SESSÃO inteira, com até 3 miniaturas pequenas
     return `<div class="lj lj-full lj-hero lj-tv">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div><div class="lj-topr">${ljLangOv()}${ljSairBtn('lj-ghost sm')}</div></div>
       <div class="lj-heroin"><h1 class="lj-h2">${T('tvSesH')}</h1><p class="lj-sub">${T('tvSesSub')}</p>
-        <div class="lj-tvmini">${q.fotos.map(id=>`<div class="lj-tvph" style="${phStyle(id)}"></div>`).join('')}</div>
+        <div class="lj-tvmini">${q.fotos.map(id=>UP[id]?`<img class="lj-tvph lj-tvimg" alt="" src="${esc(UP[id].src)}" style="${phStyle(id)}">`:`<div class="lj-tvph" style="${phStyle(id)}"></div>`).join('')}</div>
         <div class="lj-row"><button class="lj-cta" data-act="kiosk-tv-sim">${ICO.ok} ${T('tvSim')}</button><button class="lj-ghost" data-act="kiosk-tv-nao">${ICO.no} ${T('tvNao')}</button></div></div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${ljLangOv()}<span></span></div><div class="lj-heroin"><h1 class="lj-h1">${T('notFound')}<br>${esc(k.code)}</h1><button class="lj-cta" data-act="kiosk-back">${ICO.back} ${T('back')}</button></div></div>`;
   const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);const nSel=c.ch.length;
@@ -6008,7 +6012,7 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const todas=ATIV_PERFIL_
       <b data-av-preco="${i}" style="white-space:nowrap">${fmtR(avCob(l))}</b><button class="btn ghost" style="min-width:48px;min-height:48px" data-act="av-tirar" data-i="${i}" aria-label="${esc(TE('av_tirar',p.nome))}">${ICO_LIXO}</button></div>${avPulCampos(l,i)}`;};
   return topo+`
   <div class="panel" id="av-prod"><h2>${TE('av_passo_servico')}</h2><div class="chips" role="tablist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${cats.map(c=>`<button class="chip at-chip" style="min-height:64px" role="tab" data-act="av-cat" data-c="${c}" aria-selected="${A.cat===c}" aria-pressed="${A.cat===c}">${atIcone(c)}<span>${esc(atCatNome(c))}</span></button>`).join('')}</div>
-    ${prods.some(p=>p.pede!=='nada')?`<div style="margin-top:14px"><span class="eyebrow">${A.cat==='chute'?TE('at_p_participantes'):TE('av_pessoas_demo')}</span><div class="chips" style="display:grid;grid-template-columns:repeat(${AV_PESSOAS_CHIPS+1},1fr);gap:8px;margin-top:4px">${Array.from({length:AV_PESSOAS_CHIPS},(_,k)=>k+1).map(n=>`<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${n}" aria-pressed="${A.pessoas===n}">${n}</button>`).join('')}<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${Math.max(AV_PESSOAS_CHIPS+1,A.pessoas)}" aria-pressed="${A.pessoas>AV_PESSOAS_CHIPS}">${AV_PESSOAS_CHIPS+1}+</button></div>
+    ${prods.some(p=>p.pede!=='nada')?`<div style="margin-top:14px"><span class="eyebrow">${A.cat==='chute'?TE('at_p_participantes'):TE('av_pessoas_demo')}</span><div class="chips" style="display:grid;grid-template-columns:repeat(${AV_PESSOAS_CHIPS+1},1fr);gap:8px;margin-top:4px">${Array.from({length:AV_PESSOAS_CHIPS},(_,k)=>k+1).map(n=>`<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${n}" aria-pressed="${A.pessoas===n}">${n}</button>`).join('')}<button class="chip" style="min-height:48px;font-size:1.1rem" data-act="av-pessoas" data-v="${Math.max(AV_PESSOAS_CHIPS+1,A.pessoas)}" aria-pressed="${A.pessoas>AV_PESSOAS_CHIPS}">${AV_PESSOAS_CHIPS+1} ou +</button></div>
       ${A.pessoas>AV_PESSOAS_CHIPS?`<div class="row" style="gap:10px;align-items:center;margin-top:8px"><button class="btn ghost" style="min-height:48px;min-width:56px;font-size:1.3rem" data-act="av-pessoas" data-v="${A.pessoas-1}" aria-label="−1">−</button><b style="font-size:1.2rem;min-width:110px;text-align:center" aria-live="polite">${TE('av_n_pessoas',A.pessoas)}</b><button class="btn ghost" style="min-height:48px;min-width:56px;font-size:1.3rem" data-act="av-pessoas" data-v="${A.pessoas+1}" aria-label="+1" ${A.pessoas>=AV_MAX_PESSOAS?'disabled':''}>+</button></div>`:''}</div>`:''}
     ${subTabs}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px">${prods.length?prods.map(card).join(''):`<div class="note">${TE('av_sem_produto')}</div>`}</div></div>
   ${A.cart.length?`<div class="panel" id="av-cart" style="border:2px solid var(--accent,#134078)"><h2>${TE('av_carrinho')}</h2>${A.cart.map(linha).join('')}

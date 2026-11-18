@@ -37,6 +37,7 @@ ssh srv-viva-maracana 'journalctl -u eterna-backup-originais --no-pager -n 20'  
 ssh srv-viva-maracana 'curl -s http://127.0.0.1:8797/; tail -50 /var/log/eterna-vigia.log'  # deploy: commit no ar, erro
 ssh srv-viva-maracana 'nvidia-smi'                                                     # placa de vídeo (recorte)
 ssh srv-viva-maracana 'ls /srv/eterna-midia/inbox/$(date +%F) | wc -l'                 # fotos de hoje
+ssh srv-viva-maracana 'tail -20 /srv/eterna-midia/diagnostico/selfie/$(date +%F).jsonl'  # últimas buscas por selfie
 ```
 
 | Onde | O quê | Leitura sem sudo |
@@ -45,9 +46,25 @@ ssh srv-viva-maracana 'ls /srv/eterna-midia/inbox/$(date +%F) | wc -l'          
 | `/srv/eterna-midia/inbox/<dia>/` | originais das fotos (HD de 4 TB) | sim |
 | `/srv/eterna-midia/ftp/<login>/` | chegada pelo FTP (vsftpd) antes de entrar no Eterna | sim |
 | `/srv/eterna-midia/recortes/` | recortes da IA (placa de vídeo) | sim |
+| `/srv/eterna-midia/diagnostico/selfie/<dia>.jsonl` | uma linha por busca por selfie (Checkout e galeria pelo QR), 30 dias | sim |
 | `/srv/eterna/Eterna/` | bancos, `nuvem.env`, chaves | não (só o serviço `eterna`) |
 | porta 8765 | o Eterna (a tela abre por `https://posto.eterna.photo`) | — |
 | porta 8797 | situação do deploy, só leitura | sim |
+
+### Selfie não achou as fotos (18/11)
+
+Cada busca por selfie grava uma linha em `/srv/eterna-midia/diagnostico/selfie/<dia>.jsonl` (HD de 4 TB, não o disco do sistema). Nunca guarda imagem nem o vetor do rosto: só números e o id das fotos.
+
+| Campo | O que diz |
+|---|---|
+| `em`, `origem` | hora e de onde veio (`checkout` ou `qr`) |
+| `resultado` | `achou`, `nao_achou`, `sem_rosto`, `varias_pessoas` ou `erro` |
+| `claras`, `duvida`, `melhor` | fotos com semelhança de 0,45 para cima, fotos entre 0,38 e 0,45 (o "é você?") e a maior semelhança |
+| `fila` | fotos que ainda esperavam a leitura de rostos naquela hora (recém-chegadas não são achadas até serem lidas) |
+| `janela_min` | janela da selfie (minutos desde o último clique ou a última chegada da sessão; 0 = dia todo) |
+| `top` | até 10 fotos mais parecidas (`id`, `sim`) |
+
+Como ler: `claras` 0 e `fila` alta = as fotos ainda não tinham sido lidas; `claras` 0, `fila` 0 e `melhor` abaixo de 0,38 = rosto da selfie ruim (de lado, contra a luz) ou foto fora da janela; `resultado` `erro` ou busca que nem aparece = a imagem não chegou inteira ao servidor (no registro do `eterna`, "corpo inválido" com `BrokenPipeError`: o Checkout desistiu antes de terminar de enviar, rede lenta). A pasta `diagnostico` é criada uma vez pelo Ronaldo (`sudo install -d -o eterna -g eterna /srv/eterna-midia/diagnostico`); sem ela o registro do `eterna` mostra "selfie: diagnóstico não gravou" uma vez e a busca segue normal.
 
 ## Publicar uma mudança
 

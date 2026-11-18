@@ -140,7 +140,7 @@ try{
       return {iH,iC,iS,i6,eb:(grid.querySelector('.lj-edeb')||{}).textContent,h3:(grid.querySelector('.lj-edh h3')||{}).textContent,sep:(grid.querySelector('.lj-edfotos')||{}).textContent,
         tags:cards.slice(0,4).map(c=>(c.querySelector('.lj-tag')||{}).textContent.trim()),eds:cards.map(c=>!!c.querySelector('.lj-ed')),txt:document.querySelector('.lj').innerText};});
     ok(fs1.ed===SELO[lg]&&fs1.nm===NOMES[lg][0],'8 '+lg+': selo e nome do fundo na tela cheia: '+J(fs1));
-    ok(g.iH===0&&g.iC===1&&g.eb===SELO[lg]&&g.h3===TIT[lg]&&g.sep===SEP[lg]&&g.iS===g.i6-1&&J(g.tags)===J(NOMES[lg])&&J(g.eds)===J([true,true,true,true,false,false,false,false,false,false]),'7/8 '+lg+': grade com o título, o selo nas 4 montagens, o nome do fundo e o separador: '+J({...g,txt:undefined}));
+    ok(g.iH===0&&g.iC===1&&g.eb===SELO[lg]&&g.h3===TIT[lg]&&g.sep===SEP[lg]&&g.iS===g.i6-1&&J(g.tags)===J(NOMES[lg])&&J(g.eds)===J([true,true,true,true,false,false,false,false,false,false])&&await pg.evaluate(()=>[...document.querySelectorAll(".lj-grid .lj-ed")].every(e=>getComputedStyle(e).display==="none")),'7/8 '+lg+': grade com o título, o selo nas 4 montagens, o nome do fundo e o separador: '+J({...g,txt:undefined}));
     ok(!/[—–]/.test(fs1.ed+fs1.nm+g.eb+g.h3+g.sep+g.tags.join(''))&&!/\bed(Selo|Titulo|Fotos)\b|\bbg(Arq1950|Mirante|MiranteDia|Telao|Campeao|Tunel|Podio)\b/.test(g.txt),'8 '+lg+': sem travessão e sem chave crua');}
   await pg.evaluate(()=>{ETERNA.state.lang='pt';ETERNA.render();});
 

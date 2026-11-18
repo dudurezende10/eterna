@@ -1302,7 +1302,8 @@ def buscar_vetor(me, dias=1, janela=None, agora=None):
                 melhor[pid] = (s_, float(L[i]))
     fotos = sorted(({"id": k, "sim": round(v[0], 3), "principal": bool(v[1] >= ROSTO_PRINCIPAL * (mx.get(k) or 0))}
                     for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
-    return {"rosto": True, "fotos": fotos, "limite": LIMITE, "janela_min": jan}
+    # 18/11: fila = fotos ainda esperando a leitura de rostos (recém-chegadas); o Checkout espera e tenta de novo em vez de dizer "não achamos"
+    return {"rosto": True, "fotos": fotos, "limite": LIMITE, "janela_min": jan, "fila": fila_rostos.qsize()}
 
 
 def medir(sessoes):
@@ -5430,8 +5431,10 @@ def _sess_publico(x, disco=False):
 
 
 def sess_pids_janela(desde):
-    """pids das sessões (hoje e ontem em memória) cuja última foto (cap1, hora do clique corrigida; sem ela, a última
-    chegada) é de desde em diante, com as pendentes. None se não há sessão nenhuma em memória (agente sem sessões)."""
+    """pids das sessões (hoje e ontem em memória) cuja última foto é de desde em diante, com as pendentes. None se não há
+    sessão nenhuma em memória (agente sem sessões). 18/11 (selfie da Izabelle, Ronaldo: "a selfie independentemente de tudo
+    tem q trazer as fotos da pessoa"): vale o mais recente entre o clique (cap1) e a chegada ao servidor. Câmera com o relógio
+    atrasado ou cartão descarregado depois punha a sessão recém-chegada fora da janela e a pessoa não achava as próprias fotos."""
     with sess_lock:
         if not sess:
             return None
@@ -5439,7 +5442,7 @@ def sess_pids_janela(desde):
         for x in sess.values():
             if x.get("removida"):
                 continue
-            fim = _num(x.get("cap1")) or _num(x.get("ultima_chegada"))
+            fim = max(_num(x.get("cap1")), _num(x.get("ultima_chegada")))
             if fim >= desde:
                 ok.update(x.get("fotos") or ())
                 ok.update(x.get("pend") or ())
@@ -10487,11 +10490,45 @@ def vendas_db():
     return c
 
 
+# 18/11 (selfie da Izabelle, Ronaldo): diagnóstico de cada busca por selfie, uma linha JSON por busca, no HD de mídia (não no
+# disco do sistema). Arquivo por dia: <pasta>/AAAA-MM-DD.jsonl. Campos: em, origem (checkout, qr), resultado, ms, claras e duvida
+# (fotos acima de LIMITE e entre LIMITE_TALVEZ e LIMITE), melhor (maior semelhança), janela_min, fila (fotos sem leitura de rosto
+# na hora) e top (até 10 {id, sim} das fotos mais parecidas: id da foto, nunca imagem nem vetor do rosto). Fica RETENCAO_DIAS dias.
+# Pasta: ETERNA_SELFIE_LOG ou, sem ela, diagnostico/selfie ao lado da pasta real do inbox (no estádio: /srv/eterna-midia/diagnostico/selfie).
+SELFIE_LOG_DIR = os.environ.get("ETERNA_SELFIE_LOG") or os.path.join(os.path.dirname(os.path.realpath(INBOX)), "diagnostico", "selfie")
+_selfie_log_aviso = [False]
+
+
+def selfie_diagnostico(origem, r, t0, res):
+    try:
+        fotos = r.get("fotos") or []
+        agora = time.time()
+        linha = {"em": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), "origem": origem, "resultado": res,
+                 "ms": int((agora - t0) * 1000), "claras": sum(1 for f in fotos if f.get("sim", 0) >= LIMITE),
+                 "duvida": sum(1 for f in fotos if f.get("sim", 0) < LIMITE), "melhor": max((f.get("sim", 0) for f in fotos), default=None),
+                 "janela_min": r.get("janela_min"), "fila": r.get("fila"), "erro": r.get("error"),
+                 "top": [{"id": f.get("id"), "sim": f.get("sim")} for f in fotos[:10]]}
+        os.makedirs(SELFIE_LOG_DIR, exist_ok=True)
+        with open(os.path.join(SELFIE_LOG_DIR, time.strftime("%Y-%m-%d", time.localtime(agora)) + ".jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(linha, ensure_ascii=False) + "\n")
+        if random.random() < 0.01:
+            limite = time.time() - RETENCAO_DIAS * 86400
+            for fn in os.listdir(SELFIE_LOG_DIR):
+                p = os.path.join(SELFIE_LOG_DIR, fn)
+                if fn.endswith(".jsonl") and os.path.getmtime(p) < limite:
+                    os.remove(p)
+    except Exception as ex:
+        if not _selfie_log_aviso[0]:
+            _selfie_log_aviso[0] = True
+            print("  selfie: diagnóstico não gravou em %s: %s" % (SELFIE_LOG_DIR, str(ex)[:120]))
+
+
 def selfie_registra(origem, r, t0):
     """Conta uma selfie para o BI. Falha aqui nunca atrapalha a busca do cliente."""
     try:
         r = r or {}
         res = "erro" if r.get("error") else "varias_pessoas" if r.get("varias") else "sem_rosto" if not r.get("rosto") else "achou" if r.get("fotos") else "nao_achou"
+        selfie_diagnostico(origem, r, t0, res)
         agora = time.time()
         with ev_lock:
             db = vendas_db()
