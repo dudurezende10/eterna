@@ -2428,3 +2428,9 @@ Os motivos da cortesia ficam no documento `config/cortesia` (`{motivos:[{id, nom
 ## Cancelamento de venda de foto paga (18/11)
 
 Decisões do Ronaldo: o vendedor cancela só as próprias vendas do mesmo dia, em Posto › Minhas vendas de hoje; o Admin (ou quem tem Excluir no Financeiro) cancela qualquer venda, de qualquer dia, em Vendas. Pede confirmação, com motivo opcional. A sessão fica `status:'cancelada'` com `cancelada:{por, porNome, em, motivo}` (não some do histórico e sai dos totais). A impressão que ainda não saiu passa a `cancelada`; o que já imprimiu continua contando no rolo. As compradas voltam a ficar à venda na galeria (republicada); download já feito não impede o cancelamento. O servidor recebe o evento `cancelar` (motivo `venda_cancelada`), que também tira a venda da fila de impressão. Auditoria: `venda_cancelada`. Regra em `vendaPodeCancelar`; teste `testes/venda-cancelar.js`.
+
+## Ajustes de 18/11 (tarde): reimpressão, coluna da tela cheia e vídeo das ativações
+
+- Posto › Imprimir (reimpressão): a foto escolhida fica colorida, com borda verde grossa e bolinha verde cheia com ✓; a não escolhida fica apagada, cinza e com o círculo vazio (`.imp-th`, `.imp-th.on`, `.imp-ok`).
+- Tela cheia do cliente, coluna lateral (`esc-col`): o carrinho do topo sai (o botão "Continuar · N fotos" já mostra quantas); o topo fica em duas linhas: idioma, grade e Sair; depois Outra pessoa.
+- Vídeo das ativações: Drone e Snap Pop sobem o vídeo obrigatoriamente (no mínimo um por unidade vendida, mesmo que o cadastro do produto diga outra entrega; só item físico avulso fica sem vídeo), em `avVideos`. Chute a Gol: o vídeo é opcional; sem vídeo vendido, a Entrega segue para a tela do chute com o vídeo opcional (o atendimento "só liberar" vale apenas para venda de itens físicos avulsos).
