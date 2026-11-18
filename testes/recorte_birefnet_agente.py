@@ -432,8 +432,8 @@ with m.rec_lock:
 ok(m.rec_pre_escolha(["a", "b", "c", "d"], {"ia": ["a", "b"]}) == ["a", "b"], "9: CPU: só as bases")
 with m.rec_lock:
     m.rec["provedor"] = "cuda"
-ok(m.rec_pre_escolha(["a", "b", "c", "d"], {"ia": ["a", "b"]}) == ["a", "b", "c", "d"], "9: GPU: bases e as 2 normais do plano B")
-ok(m.rec_pre_escolha(["a", "b", "c"], {"ia": []}) == ["a", "b"], "9: leva sem bases: as 2 primeiras")
+ok(m.rec_pre_escolha(["a", "b", "c", "d"], {"ia": ["a", "b"]}) == ["a", "b"], "9 (18/11, sem plano B): só as bases, sem as 2 normais")
+ok(m.rec_pre_escolha(["a", "b", "c"], {"ia": []}) == [] and m.rec_pre_escolha(["a", "b", "c"]) == [], "9 (18/11, sem plano B): leva sem bases não recorta nada")
 
 # ---------- critério 4: 5 fotos de referência com o BiRefNet de verdade (só com as variáveis) ----------
 FOTOS, REF = os.environ.get("ETERNA_RECORTE_FOTOS"), os.environ.get("ETERNA_RECORTE_REF")

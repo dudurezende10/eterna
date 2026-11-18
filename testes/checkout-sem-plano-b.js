@@ -4,7 +4,9 @@
 //  2. com ia preenchida: uma montagem por fundo de bgOn(), com a base de FIA_BASE (as mesmas de antes);
 //  3. com FIA_ANTIGO_ON=true, lojaAI devolve o mesmo que o jeito antigo (lojaAIAntigo) para a mesma sessão;
 //  4. venda já paga com montagem continua na impressão (impFotos);
-//  5. cf_ia_sem_escala e up_iam_sem_ponto têm 5 textos e nenhum fala em "duas primeiras fotos do cliente".
+//  5. cf_ia_sem_escala e up_iam_sem_ponto têm 5 textos e nenhum fala em "duas primeiras fotos do cliente";
+//  6. (segurança, 18/11) venda manual (vCheckoutCorpo › compGrid): sem bases, nenhum fundo de IA e nenhum pedido de recorte nem
+//     de Photoroom; com bases, só elas; sem fiaOferece(), nada.
 // Agente falso (page.route). Nenhuma foto de convidado: quadrados de cor e uma silhueta desenhada na hora.
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
@@ -34,7 +36,8 @@ try{
   await ctx.route(ORIG+'/sessoes*',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,gen:'bA',rev:2,pausa:60,rostos:true,completo:true,sessoes:FEED})}));
   await ctx.route(ORIG+'/thumb/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:JPG}));
   await ctx.route(ORIG+'/file/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:JPG}));
-  await ctx.route(ORIG+'/recorte',r=>r.fulfill({status:200,contentType:'image/png',body:SIL}));
+  const PED=[];await ctx.route(ORIG+'/recorte',r=>{let j={};try{j=JSON.parse(r.request().postData()||'{}');}catch(e){}PED.push('recorte:'+j.pid);r.fulfill({status:200,contentType:'image/png',body:SIL});});
+  await ctx.route(ORIG+'/photoroom/**',r=>{PED.push('photoroom:'+new URL(r.request().url()).pathname);r.fulfill({status:409,contentType:'application/json',body:'{}'});});
   const pg=await ctx.newPage();
   pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U+'#loja');
@@ -68,8 +71,19 @@ try{
   // 5. textos
   const r5=await pg.evaluate(()=>['cf_ia_sem_escala','up_iam_sem_ponto'].map(k=>({k,n:(ETERNA.EQ[k]||[]).filter(x=>typeof x==='string'&&x.trim()).length,velho:(ETERNA.EQ[k]||[]).some(x=>/duas primeiras fotos do cliente|first two photos|dos primeras fotos|deux premières photos|ersten zwei Fotos/i.test(x))})));
   ok(r5.every(x=>x.n===5&&!x.velho),'5: textos novos nas 5 línguas, sem as "duas primeiras fotos": '+J(r5));
+  // 6. venda manual
+  const vm=async(card,modo)=>pg.evaluate(async([card,modo])=>{if(modo)ETERNA.fundosModoTeste(modo);const el=document.createElement('div');el.id='vm-teste';el.innerHTML=ETERNA.compGrid(card,null);document.body.appendChild(el);ETERNA.compHydrate();
+    await new Promise(z=>setTimeout(z,1500));const r={comps:[...el.querySelectorAll('[data-comp]')].map(e=>e.dataset.comp),aviso:/Nenhuma foto desta sessão serve/.test(el.textContent)};el.remove();ETERNA.fundosModoTeste(null);return r;},[card,modo||null]);
+  PED.length=0;const v1=await vm('LPSEMGRA1');const p1=PED.slice();
+  ok(v1.comps.length===0&&v1.aviso&&p1.length===0,'6: venda manual sem bases: nenhum fundo de IA e nenhum recorte: '+J({v1,p1}));
+  PED.length=0;const v1p=await vm('LPSEMGRA1','photoroom');const p1p=PED.slice();
+  ok(v1p.comps.length===0&&!p1p.some(x=>/photoroom\/compose|recorte/.test(x)),'6: no modo Photoroom, sem bases nada vai para fora: '+J({v1p,p1p}));
+  PED.length=0;const v2=await vm('LPCOMGRA2');const ia2=await pg.evaluate(()=>ETERNA.SIM.sessions.LPCOMGRA2.ia);
+  ok(v2.comps.length>0&&v2.comps.every(k=>ia2.includes(k.split('|')[0]))&&PED.every(x=>ia2.some(id=>x==='recorte:'+id.slice(3))),'6: com bases, só as bases do servidor: '+J({v2,PED,ia2}));
+  const v3=await pg.evaluate(()=>{const a=ETERNA.state.agent.recorte;ETERNA.state.agent.recorte={ok:false};const n=ETERNA.compBases('LPCOMGRA2').length;ETERNA.state.agent.recorte=a;return n;});
+  ok(v3===0,'6: sem fiaOferece() (recorte indisponível), nada: '+v3);
   ok(!errs.length,'sem erro de página: '+errs.slice(0,3).join(' | '));
 }catch(e){fails.push('exceção: '+(e&&e.stack||e).toString().slice(0,400));}
 await b.close();
-console.log((fails.length?'FALHA':'OK')+' checkout-sem-plano-b: sem bases do servidor, nada de montagem; com bases, as mesmas; FIA_ANTIGO_ON devolve o jeito antigo; venda paga imprime; textos'+(fails.length?' · '+fails.join(' | '):''));
+console.log((fails.length?'FALHA':'OK')+' checkout-sem-plano-b: sem bases do servidor, nada de montagem; com bases, as mesmas; FIA_ANTIGO_ON devolve o jeito antigo; venda paga imprime; textos; venda manual só com as bases'+(fails.length?' · '+fails.join(' | '):''));
 process.exit(fails.length?1:0);})();
