@@ -16,7 +16,7 @@ const J=JSON.stringify;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const PRECO={mais:250,tribuna:220,maracana:190,gramado:150,zona:110,arq:70,extra:35,dig:39};
 let fase='início';
 function vigia(pg,nome){pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(`${nome}: ${e.message}`));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|404/.test(m.text()))errs.push(`${nome}: ${m.text()}`);});return pg;}
-async function nova(b,w,h){const ctx=await b.newContext({viewport:{width:w||1280,height:h||900}});return ctx;}
+async function nova(b,w,h){const ctx=await b.newContext({viewport:{width:w||1280,height:h||900}});await require('./_fia_antigo').contexto(ctx);return ctx;} // 18/11: as sessões de exemplo montam pelo jeito antigo (sem bases do servidor)
 async function pagina(ctx,nome){return vigia(await ctx.newPage(),nome);}
 async function login(pg,email){await pg.goto(U);await pg.waitForTimeout(350);
   if(await pg.evaluate(()=>!!ETERNA.state.user)){await pg.evaluate(()=>localStorage.removeItem('eterna.session'));await pg.reload();await pg.waitForTimeout(350);}

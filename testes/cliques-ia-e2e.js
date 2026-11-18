@@ -100,7 +100,9 @@ try{
       return {ai:ETERNA.lojaAI(c).map(x=>x.id),fotos:ETERNA.lojaFotos(c).map(p=>p.id),ruim:[...ETERNA.FIA_RUIM],cr,dom:[...document.querySelectorAll('[data-comp]')].map(e=>e.dataset.comp.slice(-14)+(e.dataset.done?'*':''))};},c);};
   const a2=await r4(xS2.card);
   ok(a2.ai.length===4&&a2.ai.every(x=>x==='ag_'+S2[0]),'4: base 2 sem pessoa: os 4 fundos usam a base 1: '+J(a2));
+  await require('./_fia_antigo')(pg); // 18/11: o jeito antigo só com a chave FIA_ANTIGO_ON (o resto deste teste é da regra 15)
   const a3=await r4(xS3.card);
+  const a3nada=await pg.evaluate(c=>{ETERNA.FIA_ANTIGO_ON=false;return ETERNA.lojaAI(c).length;},xS3.card);ok(a3nada===0,'4 (regra 19, sem plano B): as duas sem pessoa e a chave desligada: nenhuma montagem: '+a3nada);
   // o jeito antigo (lojaAIAntigo, v84) troca a foto que a análise do navegador reprova; em desenho sintético ela pode reprovar todas (aí fica sem montagem: limite do teste, não da v93)
   num.antigo_n=a3.ai.length;ok(!a3.ai.includes('ag_'+S3[0])&&!a3.ai.includes('ag_'+S3[1])&&a3.ai.every(x=>a3.fotos.includes(x))&&a3.fotos.length===4,'4: as duas sem pessoa: jeito antigo (fotos normais do cliente, que seguem à venda): '+J(a3));
   // 4: olhos fechados na base 1 da S: tudo na base 2
