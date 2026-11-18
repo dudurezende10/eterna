@@ -2424,3 +2424,7 @@ No 4:3 deitado a barra aparece nas fotos deitadas e recolhe nas em pé (ela não
 ## Motivos de cortesia (18/11)
 
 Os motivos da cortesia ficam no documento `config/cortesia` (`{motivos:[{id, nome}], por, em}`), editado em Catálogo › Cortesias (um por linha; grava quem tem Alterar em Configurações; vai para a auditoria como `cortesia_motivos`). O `id` é o nome sem acento, minúsculo, com `_`. Sem cadastro, vale a lista de fábrica `CORT_MOTIVOS`. Motivo e "o que houve" são opcionais em toda cortesia (+1 foto no Checkout, Cortesia SAC e ativações); sem motivo, grava `motivo: null`.
+
+## Cancelamento de venda de foto paga (18/11)
+
+Decisões do Ronaldo: o vendedor cancela só as próprias vendas do mesmo dia, em Posto › Minhas vendas de hoje; o Admin (ou quem tem Excluir no Financeiro) cancela qualquer venda, de qualquer dia, em Vendas. Pede confirmação, com motivo opcional. A sessão fica `status:'cancelada'` com `cancelada:{por, porNome, em, motivo}` (não some do histórico e sai dos totais). A impressão que ainda não saiu passa a `cancelada`; o que já imprimiu continua contando no rolo. As compradas voltam a ficar à venda na galeria (republicada); download já feito não impede o cancelamento. O servidor recebe o evento `cancelar` (motivo `venda_cancelada`), que também tira a venda da fila de impressão. Auditoria: `venda_cancelada`. Regra em `vendaPodeCancelar`; teste `testes/venda-cancelar.js`.

@@ -202,7 +202,7 @@ try{
   // ---------- CORRIGIR 2: venda da Loja cancelada tira o download da galeria ----------
   dbg('CORRIGIR 2: venda da Loja cancelada tira');
   await A.setViewportSize({width:1440,height:900});await A.evaluate(()=>{ETERNA.state.view='vendas-lista';ETERNA.state.sales.canal='all';ETERNA.render();});
-  await A.click(`[data-act="sales-cancel"][data-card="${card}"]`);const r2=await A.evaluate(t=>ETERNA.SIM.galerias[t].fotos.filter(f=>f.direito==='comprada').map(f=>f.canal),tok);
+  await A.click(`[data-act="venda-cancel"][data-card="${card}"]`);await A.fill('#venda-canc-mot','cliente desistiu');await A.click(`[data-act="venda-cancel-ok"][data-card="${card}"]`);await A.waitForTimeout(200);const r2=await A.evaluate(t=>ETERNA.SIM.galerias[t].fotos.filter(f=>f.direito==='comprada').map(f=>f.canal),tok);
   ok(r2.every(c=>c==='online')&&r2.length===1,'R2: depois de cancelar a venda da Loja, só a compra online deveria continuar comprada: '+JSON.stringify(r2));
   // ---------- 22, 25, 26 na Loja ----------
   dbg('22, 25, 26 na Loja');

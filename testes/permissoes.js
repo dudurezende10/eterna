@@ -136,8 +136,8 @@ try{
   // ---------- 8, 16: supervisor ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'supervisor@eterna.photo');const v8=await nav(pg);
     ok(v8.includes('vendas-lista')&&v8.includes('vendas')&&!v8.includes('usuarios')&&!v8.includes('permissoes'),'8: menu do supervisor '+JSON.stringify(v8));
-    await pg.evaluate(()=>{ETERNA.state.view='vendas-lista';ETERNA.render();const b=document.createElement('button');b.dataset.act='sales-cancel';b.id='t8';document.querySelector('#main').appendChild(b);});
-    await pg.evaluate(()=>document.querySelector('#t8').click());await pg.waitForTimeout(80);ok(/Sem permissão/.test(await toastTxt(pg)),'8: Cancelar venda deveria ser barrado: '+await toastTxt(pg));
+    await pg.evaluate(()=>{ETERNA.state.view='vendas-lista';ETERNA.render();const b=document.createElement('button');b.dataset.act='venda-cancel-ok';b.dataset.card='X';b.id='t8';document.querySelector('#main').appendChild(b);});
+    await pg.evaluate(()=>document.querySelector('#t8').click());await pg.waitForTimeout(80);ok(/Sem permissão|Só quem vendeu/.test(await toastTxt(pg)),'8: Cancelar venda deveria ser barrado: '+await toastTxt(pg));
     const r16=await pg.evaluate(()=>{const before=JSON.stringify(ETERNA.state.perm.draft);const i=document.createElement('input');i.type='checkbox';i.dataset.act='perm-op';i.dataset.m='set';i.dataset.op='d';document.querySelector('#main').appendChild(i);i.checked=true;i.dispatchEvent(new Event('change',{bubbles:true}));return {checked:i.checked,same:before===JSON.stringify(ETERNA.state.perm.draft)};});
     ok(!r16.checked&&r16.same,'16: change sem permissoes.u deveria voltar o checkbox '+JSON.stringify(r16));
     await ctx.close();}
