@@ -272,7 +272,7 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 | Pasta | O que é | Regra proposta |
 |---|---|---|
 | `alta/`, `vitrine/` | fotos das galerias | apagar com 61 dias (galeria vale até 60, `GAL_DIAS`) |
-| `video/` | vídeos das ativações | apagar com 31 dias (página vale 30, `ATIV_VIDEO_DIAS`) |
+| `video/` | vídeos das ativações | apagar com 30 dias, como as fotos (aplicada por `servidor/linux/nuvem-aws-cloudshell.sh`, 18/11) |
 | `backup/<pc>/dia/` | cópia diária dos bancos (vendas, estado, operação, lotes de cartões) | Glacier Instant Retrieval com 30 dias; apagar com 400 dias (como os pedidos na nuvem) |
 | `backup/<pc>/<banco>`, `metricas/`, `sessoes/` | cópia mais recente | não expira; versionamento ligado, versão antiga apagada com 30 dias |
 | todas | upload interrompido | `AbortIncompleteMultipartUpload` com 1 dia |
@@ -281,7 +281,7 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 {"Rules":[
  {"ID":"fotos-61d","Filter":{"Prefix":"alta/"},"Status":"Enabled","Expiration":{"Days":61}},
  {"ID":"vitrine-61d","Filter":{"Prefix":"vitrine/"},"Status":"Enabled","Expiration":{"Days":61}},
- {"ID":"video-31d","Filter":{"Prefix":"video/"},"Status":"Enabled","Expiration":{"Days":31}},
+ {"ID":"video-30d","Filter":{"Prefix":"video/"},"Status":"Enabled","Expiration":{"Days":30}},
  {"ID":"backup-dia","Filter":{"Prefix":"backup/"},"Status":"Enabled","NoncurrentVersionExpiration":{"NoncurrentDays":30}},
  {"ID":"multipart","Filter":{"Prefix":""},"Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}
 ]}
