@@ -181,8 +181,8 @@ try{
 await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(80);await L.click('#lj-lb [data-act="kiosk-ok"]');await L.waitForTimeout(80);
 ok(await L.evaluate(()=>ETERNA.lojaCart(ETERNA.state.kiosk.code).ch.length)===2,'duas fotos marcadas');
 // 6: o contador do carrinho não é botão e não finaliza; só um "Continuar"
-const pill=await L.evaluate(()=>{const e=document.querySelector('#lj-lb .lj-cartpill');return e?{tag:e.tagName,act:e.dataset.act||null,pe:getComputedStyle(e).pointerEvents,t:e.innerText.trim()}:null;});
-ok(pill&&pill.tag==='SPAN'&&!pill.act&&pill.pe==='none'&&pill.t==='2','6: contador do carrinho só mostra o número, sem ação: '+JSON.stringify(pill));
+const pill=await L.evaluate(()=>{const e=document.querySelector('#lj-lb .lj-cartpill');return e?{tag:e.tagName,act:e.dataset.act||null,pe:getComputedStyle(e).pointerEvents,t:e.innerText.trim(),oculto:getComputedStyle(e).display==='none'}:null;});
+ok(pill&&pill.tag==='SPAN'&&!pill.act&&pill.pe==='none'&&(pill.t==='2'||pill.oculto),'6: contador do carrinho só mostra o número, sem ação (na coluna lateral nem aparece: o Continuar já diz quantas): '+JSON.stringify(pill));
 ok(await L.evaluate(()=>document.querySelectorAll('.lj [data-act="loja-cart"],.lj [data-act="kiosk-done"]').length)===1,'6: um único Continuar na escolha');
 await L.evaluate(()=>{const e=document.querySelector('#lj-lb .lj-cartpill');e.dispatchEvent(new MouseEvent('click',{bubbles:true}));});await L.waitForTimeout(150);ok(await L.evaluate(()=>ETERNA.state.kiosk.step)==='review','6: tocar no contador não faz o pedido');
 // 17/11: com a barra das escolhidas, na tela larga o canto fica inteiro dentro da coluna da barra (em até 2 linhas), fora da foto
