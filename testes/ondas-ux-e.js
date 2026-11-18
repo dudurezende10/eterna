@@ -56,20 +56,15 @@ try{
   // ---- E2 (v96-ux): o pedido do Checkout (escolha:true) tem pacote e meio escolhidos no Posto; as ações ficam em "Aguardando pagamento"
   // e o bloco "Agora no Checkout" mostra só o código (ecoPendR exclui escolha:true)
   await ljSessao(L,cards[0],4);await ljPagar(L,'card');const p0=await pendDe(L,cards[0]);ok(!!p0,'E2: pendência do cartão');
-  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${id}"]`),3000,p0&&p0.id),'E2: "Pago na maquininha" em Aguardando pagamento');
+  await espera(A,id=>!!document.querySelector(`[data-act="pend-sel"][data-id="${id}"]`),3000,p0&&p0.id);await A.click(`[data-act="pend-sel"][data-id="${p0.id}"]`).catch(()=>{});await A.waitForTimeout(150); // a lista abre o pedido tocado
+  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos-ok"][data-id="${id}"]`),3000,p0&&p0.id),'E2: "Pago na maquininha" em Aguardando pagamento');
   ok(await espera(A,c=>[...document.querySelectorAll('.pend-row-cod')].some(e=>e.textContent===c)&&!document.querySelector('#eco .eco-cod'),3000,p0.codigo),'E2: código em Aguardando pagamento, sem repetir em Agora no Checkout');
-  const e2=await A.evaluate(()=>({ecoBtn:document.querySelectorAll('#eco button').length,acoesLista:document.querySelectorAll('#pend-painel [data-act="pend-pos"]').length}));
+  const e2=await A.evaluate(()=>({ecoBtn:document.querySelectorAll('#eco button').length,acoesLista:document.querySelectorAll('#pend-painel [data-act="pend-pos-ok"]').length}));
   ok(e2.ecoBtn===0&&e2.acoesLista===1,'E2: ações só na lista (pedido do Checkout): '+J(e2));
-  await A.click(`#pend-painel [data-act="pend-pos"][data-id="${p0.id}"]`);await A.waitForTimeout(150);
-  ok(await A.evaluate(()=>document.querySelectorAll('#pend-ref').length===1&&!!document.querySelector('#pend-painel #pend-ref')),'risco 4: um só #pend-ref');
-  // ---- E8: digitando o NSU, a troca de idioma no Checkout não apaga
-  await A.click('#pend-ref');await A.keyboard.type('1234');
-  await L.click('[data-act="lang"][data-l="en"]').catch(()=>L.evaluate(()=>{ETERNA.state.lang='en';ETERNA.render();}));await sleep(1300);
-  await A.keyboard.type('56');ok(await A.evaluate(()=>(document.querySelector('#pend-ref')||{}).value)==='123456','E8: o NSU digitado se perdeu com a troca de idioma');
-  await A.click(`[data-act="pend-pos-ok"][data-id="${p0.id}"]`);await A.waitForTimeout(400);
+  await A.click(`#pend-painel [data-act="pend-pos-ok"][data-id="${p0.id}"]`);await A.waitForTimeout(400); // 18/11: um toque, sem NSU
   ok(await espera(L,()=>!!document.querySelector('#lqr'),2500),'E2: o Checkout vai ao QR');
   const r1=await venda(A,cards[0],p0.id);
-  ok(r1.s.status==='paga'&&r1.r.estado==='confirmada'&&r1.s.pag.ref==='123456','E2: venda paga pelo bloco: '+J(r1));
+  ok(r1.s.status==='paga'&&r1.r.estado==='confirmada'&&r1.s.pag.ref===null,'E2: venda paga pelo bloco: '+J(r1));
   // mesma venda numa segunda sessão, pelo caminho da v93 (pendConfirmar direto)
   await L.click('[data-act="loja-new"]').catch(()=>{});await L.evaluate(()=>{ETERNA.state.lang='pt';});
   await ljSessao(L,cards[1],4);await ljPagar(L,'card');const p1=await pendDe(L,cards[1]);await A.waitForTimeout(400);
@@ -77,10 +72,10 @@ try{
   ok(J(r1)===J(r2),'E2: SIM igual ao caminho da v93: '+J(r1)+' ≠ '+J(r2));
   // ---- E3: com 2 pendências, o bloco de cima não tem botões; as duas aparecem com as ações
   await L.click('[data-act="loja-new"]').catch(()=>{});await ljSessao(L,cards[2],3);await ljPagar(L,'pix');const p2=await pendDe(L,cards[2]);
-  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${id}"]`)&&!document.querySelector('#eco button'),3000,p2.id),'E3 (v96-ux): pedido do Checkout: ações na lista, nenhuma no bloco');
+  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos-ok"][data-id="${id}"]`)&&!document.querySelector('#eco button'),3000,p2.id),'E3 (v96-ux): pedido do Checkout: ações na lista, nenhuma no bloco');
   await A.evaluate(()=>{const S=JSON.parse(localStorage.getItem('eterna.sim.v1'));S.caixaDin.unshift({id:'L00-teste0din01',card:'LPTESTEDIN',codigo:'WXYZ-2345',criada:new Date().toISOString(),total:110,prints:0,n:3,cart:[{id:'zona'}],selected:[],meio:'dinheiro',prov:'dinheiro',estado:'aguardando'});localStorage.setItem('eterna.sim.v1',JSON.stringify(S));ETERNA.simFresh();ETERNA.render();});
   ok(await espera(A,()=>!document.querySelector('#eco [data-act]')||!document.querySelector('#eco button'),3000),'E3: com 2 pendências o bloco de cima não tem botões');
-  const e3=await A.evaluate(([a,b])=>({a:!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${a}"]`),b:!!document.querySelector(`#pend-painel [data-act="din-confirm"][data-id="${b}"]`),ecoBtn:document.querySelectorAll('#eco button').length}),[p2.id,'L00-teste0din01']);
+  const e3=await A.evaluate(([a,b])=>({a:!!document.querySelector(`#pend-painel [data-act="pend-pos-ok"][data-id="${a}"]`),b:!!document.querySelector(`#pend-painel [data-act="din-confirm"][data-id="${b}"]`),ecoBtn:document.querySelectorAll('#eco button').length}),[p2.id,'L00-teste0din01']);
   ok(e3.a&&e3.b&&e3.ecoBtn===0,'E3: as duas na lista com as ações: '+J(e3));
   // ---- E4: Cancelar compra em linha separada, à direita, ≥ 24 px da principal; principal com 56 px; dois toques
   const e4=await A.evaluate(id=>{const it=document.querySelector(`#pend-painel [data-pend="${id}"]`);const m=it.querySelector('.pend-main'),c=it.querySelector('.link-danger');if(!m||!c)return null;const a=m.getBoundingClientRect(),d=c.getBoundingClientRect(),p=it.getBoundingClientRect();

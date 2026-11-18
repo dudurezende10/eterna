@@ -19,7 +19,8 @@ try{const ctx=await b.newContext({viewport:{width:1366,height:900}});await ctx.r
   ok(await pg.locator(`${P}[data-act="pend-cort"][data-id="${A}"]`).count()===1,'1: "+1 foto cortesia" aparece no passo do pacote');
   await pg.click(`${P}[data-act="pend-cort"][data-id="${A}"]`);await pg.waitForTimeout(150);
   await pg.click(`${P}[data-act="pend-cort-ok"][data-id="${A}"]`);await pg.waitForTimeout(150);
-  ok(!(await R(A)).cortFoto,'2: sem escrever o que houve, a cortesia não entra');
+  {const c2=(await R(A)).cortFoto;ok(c2&&c2.motivo==null&&c2.nota==='','2 (18/11): motivo e o que houve são opcionais: '+JSON.stringify(c2));} // 18/11 (Ronaldo): nem toda cortesia precisa de justificativa
+  await pg.click(`${P}[data-act="pend-cort-rm"][data-id="${A}"]`);await pg.waitForTimeout(150);await pg.click(`${P}[data-act="pend-cort"][data-id="${A}"]`);await pg.waitForTimeout(150);
   await pg.selectOption('#pend-cort-mot','espera');await pg.fill('#pend-cort-nota','esperou 40 min pela impressão');
   await pg.click(`${P}[data-act="pend-cort-ok"][data-id="${A}"]`);await pg.waitForTimeout(200);
   let r=await R(A);

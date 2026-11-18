@@ -19,7 +19,7 @@ async function paga(A,L,card){await A.evaluate(()=>{ETERNA.simFresh();ETERNA.go(
   if(pk){await A.click(`[data-act="pend-pkg"][data-id="${p0.id}"][data-p="${pk}"]`);await A.waitForTimeout(150);} // compra extra: o pedido já vem com o valor, sem pacotes
   await A.click(`[data-act="pend-meio"][data-id="${p0.id}"][data-m="cartao"]`);await A.waitForTimeout(150);
   const p=(await sim(L)).caixaDin.find(x=>x.id===p0.id);
-  await A.click(`[data-act="pend-pos"][data-id="${p.id}"]`);await A.waitForTimeout(150);if(await A.$('#pend-ref'))await A.fill('#pend-ref','123456');await A.click(`[data-act="pend-pos-ok"][data-id="${p.id}"]`);
+  await A.click(`[data-act="pend-pos-ok"][data-id="${p.id}"]`);
   await L.waitForSelector('#lqr',{timeout:5000}).catch(()=>null);return p;}
 (async()=>{const b=await chromium.launch();try{
   const ctx=await b.newContext({viewport:{width:1440,height:900}});

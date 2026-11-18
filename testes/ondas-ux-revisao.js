@@ -42,13 +42,8 @@ try{
   const cards=await L.evaluate(()=>ETERNA.demoSessions().filter(s=>ETERNA.lojaItems(s.card).filter(x=>x.t==='ph').length>=8).map(s=>s.card));
   await ljSessao(L,cards[0],4);await ljPagar(L,'card');const p0=await pendDe(L,cards[0]);ok(!!p0,'3: pendência do cartão');
   // v96-ux: pedido do Checkout (escolha:true): as ações ficam em "Aguardando pagamento" (o NSU não fica no bloco #eco)
-  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos"][data-id="${id}"]`),3000,p0&&p0.id),'3: "Pago na maquininha" na lista');
-  await A.click(`#pend-painel [data-act="pend-pos"][data-id="${p0.id}"]`);await A.waitForTimeout(150);
-  await A.click('#pend-ref');await A.keyboard.type('123456');await A.click('#main h1');await A.waitForTimeout(100);
-  await A.evaluate(()=>{ETERNA.ecoUpd(true);ETERNA.render();});await A.waitForTimeout(100);
-  ok(await A.evaluate(()=>(document.querySelector('#pend-ref')||{}).value)==='123456','3: o NSU sumiu quando a tela foi redesenhada com o foco fora');
-  await L.click('[data-act="lang"][data-l="en"]').catch(()=>{});await sleep(1300);
-  ok(await A.evaluate(()=>(document.querySelector('#pend-ref')||{}).value)==='123456','3: o NSU sumiu com uma mudança no Checkout');
+  await espera(A,id=>!!document.querySelector(`[data-act="pend-sel"][data-id="${id}"]`),3000,p0&&p0.id);await A.click(`[data-act="pend-sel"][data-id="${p0.id}"]`).catch(()=>{});await A.waitForTimeout(150); // a lista abre o pedido tocado
+  ok(await espera(A,id=>!!document.querySelector(`#pend-painel [data-act="pend-pos-ok"][data-id="${id}"]`),3000,p0&&p0.id),'3: "Pago na maquininha" na lista');
   await L.close();
   // ---- 7a: sessão criada no modo demonstração
   await A.evaluate(()=>ETERNA.go('identidade'));await A.waitForTimeout(150);await A.click('[data-act="demo-toggle"]');await A.waitForTimeout(150);

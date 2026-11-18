@@ -15,13 +15,14 @@ try{
   const ctx=await b.newContext({viewport:{width:390,height:844}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
   await ctx.addInitScript(a=>{window.ETERNA_AGENTE=a;},API);
   await ctx.route('https://x/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:PX}));
-  const pedidos=[];let corpoCrt=null,baixou=null,codigos=[];
+  const pedidos=[];let corpoCrt=null,baixou=null,codigos=[],rostos=0;
   await ctx.route(API+'/**',async r=>{const u=new URL(r.request().url());const pth=u.pathname;const js=(o,st)=>r.fulfill({status:st||200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:J(o)});
     pedidos.push(pth);
     if(pth.startsWith('/g/codigo/')){const c=decodeURIComponent(pth.slice(10));codigos.push(c);return c===LOC?js({token:TOK,escola:ESC}):js({error:'not found'},404);}
     if(pth===`/g/${TOK}/info`)return js({ok:true,tipo:'evento',menor:true,expira:exp,estado:'pronta',compra:false});
     if(pth===`/g/${TOK}/galeria`)return js({galeria:gal(corpoCrt&&corpoCrt.foto)});
     if(pth===`/g/${TOK}/cortesia`){corpoCrt=JSON.parse(r.request().postData());return js({ok:true,foto:corpoCrt.foto,galeria:gal(corpoCrt.foto)});}
+    if(pth===`/g/${TOK}/rosto`){rostos++;return rostos<3?js({ok:false,motivo:'processando'},503):js({ok:true,acesso:'ACESSO-ESC',galeria:gal(null)});} // 18/11: a nuvem ainda lendo a visita
     if(pth===`/g/${TOK}/evento`){baixou=JSON.parse(r.request().postData());return js({ok:true});}
     return js({error:'not found'},404);});
   const G=await ctx.newPage();G.on('pageerror',e=>errs.push(e.message));
@@ -64,6 +65,20 @@ try{
   // 5. o download da grátis é registrado
   await G.click('[data-act="gq-dl"]');await G.waitForTimeout(500);
   ok(baixou&&baixou.tipo==='foto_baixada'&&baixou.foto==='ag_c00002','5: download registrado na nuvem: '+J(baixou));
+  // 7. (18/11) primeira selfie da visita: a nuvem responde "processando" enquanto lê; o celular repete sozinho e abre a galeria
+  await G.evaluate(()=>{const p=ETERNA.state.pub;p.acesso=null;p.gal=null;p.step='selfie';ETERNA.pubMatch('data:image/jpeg;base64,AAAA');});
+  await G.waitForTimeout(800);ok(await G.evaluate(()=>ETERNA.state.pub.step)==='buscando','7: com "processando" fica na busca, sem mandar voltar depois');
+  await G.waitForFunction(()=>ETERNA.state.pub.step==='galeria',null,{timeout:20000}).catch(()=>{});
+  ok(rostos===3&&await G.evaluate(()=>ETERNA.state.pub.step==='galeria'&&ETERNA.state.pub.acesso==='ACESSO-ESC'),'7: repetiu a selfie e abriu a galeria: '+rostos);
+  // 8. (18/11) Sair: o responsável recomeça (outra criança) pela tela do código
+  ok(await G.locator('.gq-top [data-act="gq-back"][data-to="codigo"]').count()===1,'8: botão Sair no topo da galeria da escola');
+  await G.click('.gq-top [data-act="gq-back"][data-to="codigo"]');await G.waitForTimeout(400);
+  ok(/#g$/.test(G.url())&&await G.evaluate(()=>ETERNA.state.pub.step==='codigo'&&!ETERNA.state.pub.token)&&await G.locator('#gq-code').count()===1,'8: Sair volta ao código, sem a galeria anterior: '+G.url());
+  // 9. (18/11) QR do voucher ou do ingresso na tela do código
+  await G.goto(U+'#g');await G.waitForTimeout(500);
+  ok(await G.locator('[data-act="gq-qr"]').count()===1,'9: botão de ler o QR na tela do código');
+  const qn=await G.evaluate(()=>['09YWANZ6SNMTXVG8','https://eterna.photo/#g/'+'S'.repeat(22),'https://parceiros.vivamaracana.com.br/voucher?localizador=11e4rwzwvxhad7v1','1118-ABCD-1234','oi','https://exemplo.com/sobre'].map(ETERNA.gqQrNorm));
+  ok(JSON.stringify(qn)===JSON.stringify(['09YWANZ6SNMTXVG8','#g/'+'S'.repeat(22),'11E4RWZWVXHAD7V1','1118ABCD1234',null,null]),'9: leitura do QR: '+J(qn));
   // 6. idiomas: os textos novos existem nos 5
   const falta=await G.evaluate(()=>['gq_gratisH','gq_gratisD','gq_gratisBtn','gq_gratisConf','gq_gratisFinal','gq_gratisOk','gq_gratisRep','gq_gratisEsgot'].filter(k=>{const a=ETERNA.I18N?ETERNA.I18N[k]:null;return a&&a.slice(0,5).some(x=>!x);}));
   ok(!falta.length,'6: textos nos 5 idiomas: '+J(falta));

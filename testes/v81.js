@@ -108,7 +108,7 @@ try{
     ok(lp.st==='aguardando'&&lp.step==='done'&&!lp.user,'3: compra na janela do Checkout (v83: PIX aguardando): '+J(lp));
     await A.waitForTimeout(500);const pid=await L.evaluate(()=>ETERNA.state.kiosk.paid.pend);
     await A.evaluate(()=>{ETERNA.simFresh();ETERNA.render();});await A.waitForTimeout(200);await A.click(`[data-pend="${pid}"] [data-act="pend-pkg"][data-p="${await A.evaluate(()=>ETERNA.lojaIdeal(3).pkg)}"]`);await A.click(`[data-pend="${pid}"] [data-act="pend-meio"][data-m="pix"]`);await A.waitForTimeout(200);
-    await A.click(`[data-act="pend-pos"][data-id="${pid}"]`);await A.click(`[data-act="pend-pos-ok"][data-id="${pid}"]`);await A.waitForTimeout(500);
+    await A.click(`[data-act="pend-pos-ok"][data-id="${pid}"]`);await A.waitForTimeout(500);
     ok(await L.evaluate(()=>!!document.querySelector('#lqr')),'3: Checkout deveria mostrar o QR depois do Pago na maquininha');
     const a2=await A.evaluate(c=>({st:(ETERNA.SIM.sessions[c]||{}).status,view:ETERNA.state.view,user:ETERNA.state.user&&ETERNA.state.user.email,txt:document.querySelector('#main').innerText.includes(c)}),card);
     ok(a2.st==='paga','3: admin não recebeu a venda sem recarregar: '+J(a2));ok(a2.view==='posto'&&a2.user===v0.user,'3: admin perdeu a tela ou o login: '+J(a2));ok(a2.txt,'3: venda '+card+' não aparece no Posto de venda do admin');

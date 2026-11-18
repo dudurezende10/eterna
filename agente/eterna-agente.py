@@ -8036,7 +8036,9 @@ def auth_assumir_recusa(eu, usuario):
     cad, _ = auth_ler_cadastro(usuario)
     if not auth_ativo(cad):
         return "sem_cadastro"
-    if cad.get("preset") == "admin" or auth_acessos(cad) - auth_acessos(eu["cadastro"]):
+    # 18/11 (Ronaldo): "Ver como" é só olhar (o servidor recusa toda gravação na sessão), então o Admin vê qualquer pessoa que
+    # não seja Admin, mesmo com acesso que o cadastro dele não marca (vendedores "Atendimento e venda" davam "alvo_maior")
+    if cad.get("preset") == "admin":
         return "alvo_maior"
     return None
 

@@ -40,8 +40,8 @@ async function carrinho(pg){return pg.evaluate(()=>{const q=s=>[...document.quer
     save:T(document.querySelector('.lj-save')),incl:T(document.querySelector('.lj-incl')),fine:q('.lj-order .lj-fine').map(T),btn:T(document.querySelector('.lj-paybtn')),
     sw:document.documentElement.scrollWidth<=innerWidth+1,raw:/\b(sumPkg|sumExtra|roomFor|pkgPlusExtra|payBtnCash|cashNote|ljCash|ljStaff)/.test(document.body.innerText)};});}
 // v83: cartão e PIX ficam aguardando; o vendedor confirma "Pago na maquininha" na outra janela (Caixa)
-async function maquininha(A,B){await sleep(500);const id=await A.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);await B.waitForSelector(`[data-act="pend-pos"][data-id="${id}"]`,{timeout:3000}).catch(()=>null);
-  await B.click(`[data-act="pend-pos"][data-id="${id}"]`);await B.click(`[data-act="pend-pos-ok"][data-id="${id}"]`);await B.waitForTimeout(400);}
+async function maquininha(A,B){await sleep(500);const id=await A.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);await B.waitForSelector(`[data-act="pend-pos-ok"][data-id="${id}"]`,{timeout:3000}).catch(()=>null);
+  await B.click(`[data-act="pend-pos-ok"][data-id="${id}"]`);await B.waitForTimeout(400);}
 // v96: o Checkout não tem pacote nem pagamento. "pagar" = o cliente toca em Continuar e o caixa (janela B, logada) escolhe no Posto o pacote (o já marcado ou o Ideal) e o meio
 let CAIXA=null;
 async function pagar(pg,m){await pg.evaluate(()=>ETERNA.lojaPedir());await pg.waitForTimeout(500);const id=await pg.evaluate(()=>ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend);if(!id||!CAIXA||CAIXA.isClosed()||CAIXA.context()!==pg.context())return;
@@ -94,7 +94,7 @@ try{
   const posto=()=>B.evaluate(id=>{const it=document.querySelector(`[data-pend="${id}"]`);if(!it)return null;const T=e=>e?e.innerText.replace(/\s+/g,' ').trim():'';const q=[...it.querySelectorAll('[data-act="pend-pkg"]')];
     return {on:(q.find(b=>b.classList.contains('on'))||{dataset:{}}).dataset.p||null,ideal:(q.find(b=>b.querySelector('.pill.good'))||{dataset:{}}).dataset.p||null,
       extras:Object.fromEntries(q.map(b=>[b.dataset.p,(/\+ \d+ adiciona(l|is)/.exec(T(b.querySelector('small')))||[''])[0]])),precos:Object.fromEntries(q.map(b=>[b.dataset.p,T(b.querySelector('span'))])),
-      val:T(it.querySelector('.din-val')),ths:it.querySelectorAll('.pend-th').length,ia:it.querySelectorAll('.pend-th.ai').length,confirma:!!it.querySelector('[data-act="din-confirm"],[data-act="pend-pos"]')};},idP);
+      val:T(it.querySelector('.din-val')),ths:it.querySelectorAll('.pend-th').length,ia:it.querySelectorAll('.pend-th.ai').length,confirma:!!it.querySelector('[data-act="din-confirm"],[data-act="pend-pos-ok"]')};},idP);
   const escolhe=o=>B.evaluate(([id,o])=>{ETERNA.simFresh();const ok=ETERNA.pendEscolher(id,o);const r=ETERNA.SIM.caixaDin.find(x=>x.id===id);
     const c=r.pkg?ETERNA.vendaCalc(r.n,r.nSes||r.n,r.pkg):{};return {ok,pkg:r.pkg,total:r.total,prints:r.prints,cart:(r.cart||[]).map(x=>x.id+':'+x.v),meio:r.meio,n:r.n,nAI:r.nAI,nSes:r.nSes,save:c.save,sobra:c.sobra};},[idP,o]);
   const cliente=()=>A.evaluate(()=>document.querySelector('#main').innerText.replace(/\s+/g,' '));
