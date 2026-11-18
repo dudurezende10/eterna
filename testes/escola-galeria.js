@@ -74,6 +74,11 @@ try{
   ok(await G.locator('.gq-top [data-act="gq-back"][data-to="codigo"]').count()===1,'8: botão Sair no topo da galeria da escola');
   await G.click('.gq-top [data-act="gq-back"][data-to="codigo"]');await G.waitForTimeout(400);
   ok(/#g$/.test(G.url())&&await G.evaluate(()=>ETERNA.state.pub.step==='codigo'&&!ETERNA.state.pub.token)&&await G.locator('#gq-code').count()===1,'8: Sair volta ao código, sem a galeria anterior: '+G.url());
+  // 9. (18/11) QR do voucher ou do ingresso na tela do código
+  await G.goto(U+'#g');await G.waitForTimeout(500);
+  ok(await G.locator('[data-act="gq-qr"]').count()===1,'9: botão de ler o QR na tela do código');
+  const qn=await G.evaluate(()=>['09YWANZ6SNMTXVG8','https://eterna.photo/#g/'+'S'.repeat(22),'https://parceiros.vivamaracana.com.br/voucher?localizador=11e4rwzwvxhad7v1','1118-ABCD-1234','oi','https://exemplo.com/sobre'].map(ETERNA.gqQrNorm));
+  ok(JSON.stringify(qn)===JSON.stringify(['09YWANZ6SNMTXVG8','#g/'+'S'.repeat(22),'11E4RWZWVXHAD7V1','1118ABCD1234',null,null]),'9: leitura do QR: '+J(qn));
   // 6. idiomas: os textos novos existem nos 5
   const falta=await G.evaluate(()=>['gq_gratisH','gq_gratisD','gq_gratisBtn','gq_gratisConf','gq_gratisFinal','gq_gratisOk','gq_gratisRep','gq_gratisEsgot'].filter(k=>{const a=ETERNA.I18N?ETERNA.I18N[k]:null;return a&&a.slice(0,5).some(x=>!x);}));
   ok(!falta.length,'6: textos nos 5 idiomas: '+J(falta));
