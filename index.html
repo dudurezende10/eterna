@@ -896,6 +896,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .gq-file{cursor:pointer}
 .gq-spin{width:54px;height:54px;border-radius:50%;border:4px solid rgba(255,255,255,.2);border-top-color:#FFB800;animation:gqspin 1s linear infinite}
 @keyframes gqspin{to{transform:rotate(360deg)}}
+.gq-top .gq-sair{margin-left:auto;margin-right:12px}
 .gq-until{width:100%;font-size:14px;color:#d6e2f3;font-weight:600}
 .gq-sec{display:flex;flex-direction:column;gap:10px;padding:14px 0;max-width:1280px;width:100%;margin:0 auto}
 .gq-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
@@ -3363,6 +3364,7 @@ const pubKid=p=>!!(p.info&&(p.info.tipo==='evento'||p.info.menor));
 // tentativas por galeria neste navegador (sessionStorage): 5 erros bloqueiam por 15 min. Só contador e hora, nada de imagem.
 function pubTries(p){const k='eterna.gq.'+p.token.slice(0,8);let o={n:0,ate:0};try{o=JSON.parse(sessionStorage.getItem(k)||'null')||o;}catch(e){}return {o,save(){try{sessionStorage.setItem(k,JSON.stringify(o))}catch(e){}}};}
 function pubFalhou(p,motivo){const t=pubTries(p);t.o.n=(t.o.n||0)+1;if(t.o.n>=GQ_MAX){t.o.ate=Date.now()+GQ_BLOQ;t.o.n=0;p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;p.restam=0;}else{p.motivo=motivo;p.restam=GQ_MAX-t.o.n;}t.save();p.step='nao';}
+const GQ_PROC_N=12,GQ_PROC_MS=5000;
 function pubSelfieAbrir(p){state.guest.selfie={stream:null,ready:false,shot:null,err:null,facing:pubKid(p)?'environment':'user'};p.step='selfie';}
 async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pubTries(p);
   if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;selfieStop();render();return;}
@@ -3370,8 +3372,10 @@ async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pu
   try{
     try{const im=await loadImg(src);if(im&&await selfieVarias(im)){p.step='nao';p.motivo='varias';return;}}catch(e){} // sem detector: o servidor confere
     if(p.modo==='agente'){const body=JSON.stringify({consentimento:true,versao:GQ_VERSAO+(galNuvem()?'-nuvem3':''),idioma:lang(),imagem:src});src=null;
-      const r=await fetch(galApi()+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});const j=await r.json().catch(()=>({}));
-      if(state.pub!==p)return;
+      // 18/11: na escola a nuvem lê os rostos da visita só na primeira selfie (lotes em segundo plano) e responde "processando":
+      // a mesma selfie vai de novo sozinha a cada 5 s, ainda na tela de busca; o "volte em alguns minutos" só depois de ~1 min
+      let r,j;for(let i=0;;i++){r=await fetch(galApi()+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});j=await r.json().catch(()=>({}));
+        if(state.pub!==p)return;if(r.status!==503||i>=GQ_PROC_N)break;await new Promise(ok=>setTimeout(ok,GQ_PROC_MS));if(state.pub!==p||p.step!=='buscando')return;}
       if(r.status===429){p.step='nao';p.motivo='bloqueado';p.ate=Date.parse(j.ate)||Date.now()+GQ_BLOQ;p.teto=!!j.teto||(p.info&&p.info.tipo==='sessao'&&p.ate-Date.now()>GQ_BLOQ+60e3);} // v96.2: teto do dia diz "amanhã" (nuvem antiga sem o campo: bloqueio maior que o de 15 min)
       else if(r.status===503){p.step='nao';p.motivo='processando';}
       else if(j.ok){p.acesso=j.acesso;p.gal=j.galeria;p.galAt=Date.now();p.aviso=null;p.step='galeria';t.o.n=0;t.save();}
@@ -3510,7 +3514,7 @@ const GQ_SUPORTE='contato@vivamaracana.com.br';
 const gqAjuda=()=>`<p class="gq-help">${T('gq_help')} <a href="mailto:${GQ_SUPORTE}">${GQ_SUPORTE}</a></p>`;
 function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const deco=`<div class="lj-stripe" aria-hidden="true"></div><div class="lj-dots" aria-hidden="true"></div>`;
-  const top=x=>`<div class="lj-top gq-top"><div class="lj-logo">${logo}</div>${langPick(true)}</div>${x||''}`;
+  const top=(x,y)=>`<div class="lj-top gq-top"><div class="lj-logo">${logo}</div>${y||''}${langPick(true)}</div>${x||''}`;
   const box=(h,d,extra)=>`<div class="gq ${p.step==='galeria'?'gq-gal':''}">${deco}${top()}<div class="gq-mid"><h1 class="lj-h2 gq-h">${h}</h1>${d?`<p class="lj-sub">${d}</p>`:''}${extra||''}</div></div>`;
   const help=gqAjuda();
   if(p.step==='carregando')return box(T('gq_loading'),'','<div class="gq-spin" aria-hidden="true"></div>');
@@ -3566,7 +3570,8 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const compra=g.compra!==false; // o servidor do ponto e a nuvem mandam compra:false quando a compra pelo celular está desligada
   const esc0=g.escola||null;const podeGr=!!(esc0&&esc0.pode_escolher&&!esc0.cortesia&&p.acesso);
   const nSel=compra?more.filter(f=>p.sel[f.pid]).length:0;const ces=pubCesta(nSel,g);const tot=ces.total;const livre=isFinite(ces.cobre)?Math.min(ces.cobre,more.length)-nSel:0;
-  return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`)}
+  // 18/11 (Ronaldo): na escola o responsável sai e recomeça (outra criança, outro responsável) pelo Sair, que volta ao código
+  return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`,esc0?`<button class="lj-ghost sm gq-sair" data-act="gq-back" data-to="codigo">${ICO.sair} ${T('ljSair')}</button>`:'')}
     <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${esc0&&esc0.nome?esc(esc0.nome)+(esc0.dia?' · '+fmtD(esc0.dia+'T12:00:00'):'')+' · ':''}${T('gq_kidFound',g.fotos.length)}</div>`:''}${mine.length?`<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${T('gq_yoursD',mine.length)}</p>`:''}
       ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>
       ${mine.length>1?`<button class="lj-cta gq-dlall" data-act="gq-dlall">${ICO.cloud} ${T('gq_dlAll')}</button>`:''}`:''}</section>
