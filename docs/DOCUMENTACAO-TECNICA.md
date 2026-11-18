@@ -2423,6 +2423,8 @@ No 4:3 deitado a barra aparece nas fotos deitadas e recolhe nas em pé (ela não
 
 ## Motivos de cortesia (18/11)
 
+**Onde fica a Cortesia SAC (18/11).** No rodapé do Posto, no lugar do antigo botão da Venda manual, há o botão amarelo **Cortesia** (`data-act="posto-cortesia"`; aparece para quem tem Alterar em Galerias e vê o Checkout). Ele abre o mesmo bloco da venda manual já em modo cortesia (`state.posto.cortesia`, borda amarela, título Cortesia): ao escolher a sessão, `checkoutPick` tira os pacotes do carrinho e põe `cort_sac`, e o pagamento cai direto no motivo da cortesia. Fechar o bloco ou abrir a venda manual comum sai do modo. Teste: `testes/cortesia-sac-posto.js`.
+
 Os motivos da cortesia ficam no documento `config/cortesia` (`{motivos:[{id, nome}], por, em}`), editado em Catálogo › Cortesias (um por linha; grava quem tem Alterar em Configurações; vai para a auditoria como `cortesia_motivos`). O `id` é o nome sem acento, minúsculo, com `_`. Sem cadastro, vale a lista de fábrica `CORT_MOTIVOS`. Motivo e "o que houve" são opcionais em toda cortesia (+1 foto no Checkout, Cortesia SAC e ativações); sem motivo, grava `motivo: null`.
 
 ## Cancelamento de venda de foto paga (18/11)

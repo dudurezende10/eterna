@@ -114,6 +114,7 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 .link-danger{background:none;border:0;color:var(--bad);text-decoration:underline;min-height:44px;margin-left:auto;padding:0 4px;font-weight:600}
 .link-quiet{background:none;border:0;color:var(--muted);text-decoration:underline;min-height:44px;padding:0 4px}
 .posto-rodape{display:flex;justify-content:flex-start;margin-top:14px}
+.posto-manual.posto-cortesia{border:2px solid #FFC20E}.posto-cortesia h2{display:flex;align-items:center;gap:8px}.posto-cortesia h2 svg{width:24px;height:24px}
 .rec-head{gap:10px;align-items:center;flex-wrap:nowrap}
 .qr>div:last-child{flex:1;min-width:260px}
 .rec-acoes{margin-top:12px;gap:8px;flex-wrap:wrap;align-items:stretch}
@@ -2624,7 +2625,8 @@ function vPosto(o){o=o||{};const a=state.agent;const filtro=o.filtro==='dinheiro
   const rc=!man&&state.caixa.session&&state.posto.recibo===state.caixa.session?sessionObj(state.caixa.session):null;const rsim=rc?simOf(rc.card):null;
   // recibo (botão Recibo); a cobrança de quem veio da Fila do balcão (janela antiga) usa o caixaDetalhe
   const recibo=rc&&rsim&&(rsim.status==='paga'||rsim.status==='no caixa')?`<div class="posto-recibo">${rsim.status==='paga'?receiptPanel(rc,rsim,{fechar:true}):caixaDetalhe(rc)+`<div class="row"><button class="btn ghost" data-act="posto-recibo-fechar">${TE('fechar')}</button></div>`}</div>`:'';
-  const manual=man?`<section class="panel posto-manual" id="posto-manual"><div class="head"><div><h2>${TE('vm_titulo')}</h2><div class="note">${TE('vm_nota')}</div></div><button class="link-quiet" data-act="posto-manual-fechar">${TE('vm_fechar')}</button></div>${vCheckoutCorpo()}</section>`:'';
+  const cortM=man&&state.posto.cortesia;
+  const manual=man?`<section class="panel posto-manual${cortM?' posto-cortesia':''}" id="posto-manual"><div class="head"><div>${cortM?`<h2>${CORT_ICO} ${TE('po_cort_sac')}</h2>`:`<h2>${TE('vm_titulo')}</h2><div class="note">${TE('vm_nota')}</div>`}</div><button class="link-quiet" data-act="posto-manual-fechar">${TE('vm_fechar')}</button></div>${vCheckoutCorpo()}</section>`:'';
   const balcao=demoSessions().filter(s=>s.status==='no caixa');
   const filaBalcao=balcao.length?`<div class="panel"><h2>${TE('po_vindas_fila')}</h2><div class="sess">${balcao.map(s=>`<button class="scard" data-act="caixa-open" data-card="${esc(s.card)}"${trava?` disabled title="${esc(TE('po_feche_vm_sess'))}"`:''}><div class="code">${esc(s.card)}</div><div class="meta"><span>${esc(P[s.key]?P[s.key].name:'')}</span><span>${fmtR(cartTotal(simOf(s.card).cart))}</span></div></button>`).join('')}</div></div>`:'';
   return `${roloFaixa()}<div class="head posto-head"><div><div class="eyebrow">${esc(cx?postoTitulo():postoNome())}</div><h1>${esc(viewLabel(cx?'caixa':'posto'))}</h1></div><div class="row">${roloSelo('neutral')}</div></div>
@@ -2632,13 +2634,14 @@ function vPosto(o){o=o||{};const a=state.agent;const filtro=o.filtro==='dinheiro
   <div class="posto-cols"><div class="posto-esq"><div class="panel posto-eco"><div class="head"><h2>${TE('po_agora_ck')}</h2></div><div id="eco">${ecoBody()}</div></div>${pendPainel({filtro,semId:ep?ep.id:null})}${filaBalcao}</div>
     <div class="posto-dir">${pendDetalhe({filtro,semId:ep?ep.id:null})}${impPainel(null,{semRolo:true})}</div></div>
   ${minhasVendas(trava)}
-  `;} // 18/11 (Ronaldo): sem o botão da Venda manual no rodapé por ora; o bloco segue pelos apelidos do Posto
+  ${can('galerias','u')&&canView('checkout')&&!man?`<div class="posto-rodape"><button class="pend-cort-mais" data-act="posto-cortesia">${CORT_ICO} ${TE('po_cort_sac')}</button></div>`:''}`;} // 18/11 (Ronaldo): sem a Venda manual; no lugar dela, a Cortesia SAC
 function drawQR(){const el=$('#qrbox');if(!el)return;const card=state.caixa.session;const tok=card&&galDoRecibo(card);if(!tok){el.innerHTML='';return;}qrDraw(el,galBase()+tok,110,SIM.galerias[tok].codigo);}
 
 // ---------- Venda manual (bloco dentro do Posto, v97-ux; antes a tela Venda manual) ----------
 state.checkout={session:null,step:1,code:''};
 const SELLERS=DATA.sellers.filter(x=>x.total>=100).map(x=>x.name.split(' ')[0].replace(/^THAIN.*/,'Thainá'));
-function checkoutPick(card){state.checkout.session=card;state.checkout.step=2;state.fila.session=card;state.caixa.session=card;state.caixa.tefStatus=null;const sim=simOf(card);if(!sim.seller)sim.seller=SELLERS[0];if(sim.status==='pronta'||sim.status==='fechada'){sim.status='no checkout';}saveSim();render();window.scrollTo({top:0});}
+function checkoutPick(card){state.checkout.session=card;state.checkout.step=2;state.fila.session=card;state.caixa.session=card;state.caixa.tefStatus=null;const sim=simOf(card);if(!sim.seller)sim.seller=SELLERS[0];
+  if(state.posto.cortesia&&sim.status!=='paga'&&!ehCortesia(sim.cart))sim.cart=(sim.cart||[]).filter(x=>{const y=DATA.catalog.find(z=>z.id===x.id);return !y||y.kind!=='pacote';}).concat([{id:'cort_sac'}]);if(sim.status==='pronta'||sim.status==='fechada'){sim.status='no checkout';}saveSim();render();window.scrollTo({top:0});}
 function receiptPanel(s,sim,o){o=o||{};const total=saleTotal(sim);const prints=simPrints(sim);
   return `<div class="panel"><div class="head"><h2>${TE('po_recibo')} · ${esc(s.card)}</h2><div class="row rec-head"><span class="pill good">${TE('po_pago')} · ${esc(pagNome(sim.payment))}</span>${o.fechar?`<button class="btn ghost" data-act="posto-recibo-fechar">${TE('fechar')}</button>`:''}</div></div>
     <div class="qr"><div id="qrbox"></div><div><div class="eyebrow">${TE('po_gal_online')}</div><div class="note">eterna.photo/g · ${TE('seu_codigo')} ${esc(galCod(s.card))}<br>${TE('po_gal_nota',(sim.selected||[]).length)}</div><div class="row rec-acoes">${galDoRecibo(s.card)?`<button class="btn ghost" data-act="gal-abrir" data-t="${esc(galDoRecibo(s.card))}">${TE('po_abrir_gal')}</button><button class="btn" data-act="eco-qr" data-card="${esc(s.card)}">${TE('po_mostrar_cli')}</button>`:''}<button class="btn ghost" data-act="caixa-reprint">${state.caixa.reprint===s.card?TE('po_fechar_imp'):TE('po_imprimir_re')}</button><button class="btn ghost" data-act="view" data-v="vendas-lista">${TE('po_ver_lista')}</button></div>${cartaoCampo(s.card)}</div></div>${state.caixa.reprint===s.card?impPainel([s.card]):''}
@@ -10225,6 +10228,7 @@ const EQ={
   po_cartao_ph:["Leia o QR do cartão com o leitor","Scan the card's QR code with the reader","Lee el QR de la tarjeta con el lector","Scannez le QR code de la carte avec le lecteur","Scannen Sie den QR-Code der Karte mit dem Lesegerät"],
   po_cartao_aria:["Ler o QR do cartão","Scan the card's QR code","Leer el QR de la tarjeta","Scanner le QR code de la carte","QR-Code der Karte scannen"],
   po_cort_mais1:["+1 foto cortesia","+1 complimentary photo","+1 foto de cortesía","+1 photo offerte","+1 Gratisfoto"],
+  po_cort_sac:["Cortesia","Complimentary photos","Cortesía","Offert","Gratisfotos"],
   po_cort_foto:["1 foto cortesia","1 complimentary photo","1 foto de cortesía","1 photo offerte","1 Gratisfoto"],
   po_cort_dar:["Dar a foto cortesia","Give the complimentary photo","Dar la foto de cortesía","Offrir la photo","Gratisfoto geben"],
   po_cort_retirar:["Retirar cortesia","Remove complimentary photo","Quitar cortesía","Retirer l'offre","Gratisfoto entfernen"],
@@ -11974,8 +11978,9 @@ document.addEventListener('click',e=>{
     case 'caixa-open':if(state.posto.manual&&state.checkout.session){toast('Feche a venda manual antes de abrir outro recibo');break;}state.posto.manual=false;state.caixa.session=d.card;state.posto.recibo=d.card;render();if(state.view==='posto'||state.view==='caixa')window.scrollTo({top:0});break;
     case 'posto-recibo-fechar':state.posto.recibo=null;state.caixa.session=null;state.caixa.reprint=null;render();break;
     case 'posto-filtro':go(d.f==='dinheiro'?'caixa':'posto');break; // v97-ux: o filtro é a view (caixa = só dinheiro)
-    case 'posto-manual':if(!canView('checkout')){toast('Sem acesso à Venda manual');break;}postoManualOn();if(state.view==='caixa')go('posto');else render();{const el=document.getElementById('posto-manual');if(el)el.scrollIntoView({block:'start'});}break;
-    case 'posto-manual-fechar':checkoutVoltar();state.posto.manual=false;render();break;
+    case 'posto-manual':if(!canView('checkout')){toast('Sem acesso à Venda manual');break;}postoManualOn();state.posto.cortesia=false;if(state.view==='caixa')go('posto');else render();{const el=document.getElementById('posto-manual');if(el)el.scrollIntoView({block:'start'});}break;
+    case 'posto-manual-fechar':checkoutVoltar();state.posto.manual=false;state.posto.cortesia=false;render();break;
+    case 'posto-cortesia':if(!can('galerias','u')||!canView('checkout')){toast(TE('po_so_cortesia'));break;}postoManualOn();state.posto.cortesia=true;if(state.view==='caixa')go('posto');else render();{const el=document.getElementById('posto-manual');if(el)el.scrollIntoView({block:'start'});}break;
     case 'caixa-pay':state.caixa.pay=d.m;state.caixa.tefStatus=null;render();break;
     case 'checkout-pick':checkoutPick(d.card);break;
     case 'cam-pick':{const c=state.cam;const cd=(c.cands||[]).find(x=>x.card===d.card);c.cands=null;if(!d.card){c.status='idle';render();break;}c.status='found';if(state.view==='quiosque'&&state.kiosk.mais){lojaCliente();lojaAbrirSo({[d.card]:(cd?cd.fotos:[]).slice()},d.card);}else if(state.view==='quiosque'){lojaCliente();lojaPickLimpa(d.card);state.kiosk.code=d.card;state.kiosk.so={card:d.card,ids:cd?cd.fotos:[]};state.kiosk.step='gallery';render();}else checkoutPick(d.card);break;}
