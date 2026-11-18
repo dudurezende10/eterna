@@ -81,6 +81,15 @@ ck = {"eterna_sessao": m.auth_sessao_nova("caixa.um")}
 sts = [pede("/auth/eu", "10.0.0.8", {"eterna_sessao": ck.get("eterna_sessao")})[0] for _ in range(30)]
 ok(429 not in sts, "4: conectado segue: %s" % sts[-3:])
 
+# 4b. IP bloqueado por excesso (ex.: o firewall da VPN, que todos dividem): quem está conectado ainda entra; quem não está, não
+libera("10.0.0.8")
+for _ in range(21):
+    st = pede("/auth/eu", "10.0.0.8")[0]
+ok(st == 429, "4b: anônimo bloqueia o IP: %s" % st)
+ok(pede("/auth/eu", "10.0.0.8", {"eterna_sessao": ck.get("eterna_sessao")})[0] != 429, "4b: conectado no mesmo IP segue")
+ok(pede("/auth/eu", "10.0.0.8")[0] == 429, "4b: anônimo segue barrado")
+ok(pede("/auth/eu", "10.0.0.7", {"eterna_sessao": ck.get("eterna_sessao")})[0] == 403, "4b: varredura barra até conectado")
+
 # 5. o próprio servidor nunca
 ok(all(pede("/auth/eu")[0] != 429 for _ in range(30)), "5: 127.0.0.1 sem limite")
 

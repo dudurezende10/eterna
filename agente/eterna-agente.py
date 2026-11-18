@@ -13182,15 +13182,20 @@ def escudo_bloqueia(ip, motivo):
 
 
 def escudo_avalia(ip, path, confiavel):
-    """None se o pedido segue; senão (código, segundos até liberar). confiavel() só é chamada quando o IP passa do limite."""
+    """None se o pedido segue; senão (código, segundos até liberar). confiavel() só é chamada quando o IP passa do limite ou está bloqueado."""
     if not ip or ip in ("127.0.0.1", "::1"):
         return None
     escudo_ini()
     agora = time.time()
     with escudo_lock:
         b = _escudo["bloq"].get(ip)
-        if b and b[0] > agora:
-            return (403 if b[1] == "varredura" else 429, int(b[0] - agora) + 1)
+    # 18/11: pela VPN todos chegam com o IP do firewall (192.168.10.1). Bloqueio por excesso barra só quem não está conectado
+    # nem é posto: um navegador sem login martelando não tranca a equipe que divide o mesmo IP. Varredura segue barrando tudo.
+    if b and b[0] > agora:
+        if b[1] != "varredura" and confiavel():
+            return None
+        return (403 if b[1] == "varredura" else 429, int(b[0] - agora) + 1)
+    with escudo_lock:
         isca = bool(ESCUDO_ISCA.search(path or ""))
         if isca:
             l = [t for t in _escudo["isca"].get(ip, []) if agora - t < 3600] + [agora]
