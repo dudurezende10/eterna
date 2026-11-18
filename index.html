@@ -1681,7 +1681,7 @@ const cortChips=cart=>can('galerias','u')?`<div class="eyebrow">${TE('po_cortesi
 const pagEscolha=cart=>ehCortesia(cart)?`<div class="row" style="align-items:end"><label><span class="eyebrow">${TE('po_motivo_cort')}</span><select id="cort-mot">${CORT_MOTIVOS.map(([k,l])=>`<option value="${k}">${TEk('cort_'+k,l)}</option>`).join('')}</select></label><label style="flex:1;min-width:200px"><span class="eyebrow">${TE('po_o_que_houve')}</span><input type="text" id="cort-nota" maxlength="200" placeholder="${esc(TE('po_o_que_houve_ph'))}"></label></div>`
   :`<div class="chips">${['PIX','Cartão de crédito','Cartão de débito','Dinheiro'].map(m=>`<button class="chip" data-act="caixa-pay" data-m="${m}" aria-pressed="${state.caixa.pay===m}">${esc(pagNome(m))}</button>`).join('')}</div>`;
 const pagBotao=(cart,total)=>ehCortesia(cart)?TE('po_reg_cortesia'):TE('po_receber_imp',fmtR(total));
-const CORT_MOTIVOS=[['espera','Espera longa'],['operacao','Falha na operação'],['atendimento','Problema no atendimento'],['outro','Outro']];
+const CORT_MOTIVOS=[['espera','Espera longa'],['operacao','Falha na operação'],['atendimento','Problema no atendimento'],['aniversario','Aniversário'],['outro','Outro']]; // 18/11: aniversário do cliente
 
 // Menus da v78 (decisão do Eduardo, 27/10): grupos que abrem e fecham na barra lateral; cada grupo precisa ficar contíguo.
 // Grupo vazio = tela sem item no menu: Início (abre pelo logo) e o Checkout (abre pelo botão "Abrir Checkout", em #loja).
@@ -10166,6 +10166,7 @@ const EQ={
   cort_espera:["Espera longa","Long wait","Espera larga","Longue attente","Lange Wartezeit"],
   cort_operacao:["Falha na operação","Operational failure","Falla en la operación","Défaillance de l'opération","Betriebsfehler"],
   cort_atendimento:["Problema no atendimento","Customer service problem","Problema en la atención","Problème d'accueil","Problem im Service"],
+  cort_aniversario:["Aniversário","Birthday","Cumpleaños","Anniversaire","Geburtstag"],
   cort_outro:["Outro","Other","Otro","Autre","Sonstiges"],
   po_reg_cortesia:["Registrar cortesia e imprimir","Record complimentary and print","Registrar cortesía e imprimir","Enregistrer l'offre et imprimer","Gratisfotos erfassen und drucken"],
   po_receber_imp:[(v)=>`Receber ${v} e imprimir`,(v)=>`Take ${v} and print`,(v)=>`Cobrar ${v} e imprimir`,(v)=>`Encaisser ${v} et imprimer`,(v)=>`${v} kassieren und drucken`],
