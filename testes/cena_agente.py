@@ -3,7 +3,7 @@
 # média; o resto do eterna-recorte.py é o de verdade), cena.db, Só medir, versão, medida sem a própria sessão, piso de
 # semelhança, critério e congelamento do Ligada, LGPD, limpeza, filho morto, teto da fila, modo "duvidas" e a migração do
 # Ligada antigo. Fatia C (26 a 38): as bases de cada leva só com gramado que passa na regra (recorte com gente, sem corte na
-# lateral nem no alto, luz boa): na próxima fatia.
+# lateral nem no alto, luz boa), cena_pendente/cena_indisponivel, Separar, motivos, CPU, limpeza e versão.
 # Miniaturas desenhadas na hora (fundo de uma cor por ponto e uma "pessoa" no meio); nenhuma foto de convidado.
 #   python3 -I testes/cena_agente.py agente/eterna-agente.py      (HOME temporário, como o testes/rodar.sh chama)
 import http.client, importlib.util, json, os, random, sqlite3, sys, threading, time
@@ -315,6 +315,143 @@ try:
     ok(linha(alvo) is None and alvo not in m.cena_mem and alvo not in m.cena_base("ligada")["pids"] and len(m.cena_base("ligada")["pids"]) == nb - 1,
        "18: LGPD tira a linha, a memória e o vizinho do modelo congelado")
 
+    # ---------- C: as bases de cada leva ----------
+    m.REC_FALSO_SEG = 0.02
+    INFO = {}
+    m.REC_FALSO_INFO = lambda pid: INFO.get(pid)
+    threading.Thread(target=m.rec_ia_loop, daemon=True).start()
+    T = time.time() - 600
+    _s = [0]
+
+    def reset():
+        with m.sess_lock:
+            for d in (m.sess, m.sess_pid, m.sess_aberta, m.sess_cand, m.sess_ultima, m.sess_espera, m.sess_info, m.sess_faces_pid, m.sess_rostos_mem):
+                d.clear()
+            m.cena_pend.clear()
+
+    def leva(classes, quem="carlos", info=None, sem_thumb=()):
+        out = []
+        for i, c in enumerate(classes):
+            _s[0] += 1
+            p, f = thumb(c)
+            if i in sem_thumb:
+                os.remove(f)                     # a miniatura sumiu: nunca é classificada
+            md = {"o": quem, "s": "ftp", "u": T + _s[0] * 3 + 1, "cap": T + _s[0] * 3}
+            with m.lock:
+                m.lib[p] = {"file": f, "thumb": f}
+                m.meta[p] = dict(md)
+            if info and info.get(i):
+                INFO[p] = info[i]
+            with m.sess_lock:
+                m._sess_add(p, md, m.ff_cadastrados(), agora=md["u"])
+            m.cena_enfileira(p, f, 0)
+            out.append(p)
+        return out
+
+    def x_de(p):
+        return m.sess.get(m.sess_pid.get(p) or "")
+
+    def fecha(ps):
+        ok(espera(lambda: all(m.cena_mem.get(p, {}).get("v") == LV for p in ps), 10), "classificadas antes de fechar")
+        espera(lambda: all(base_ok(p) is not None for p in ps if m.cena_mem.get(p, {}).get("g")), 10)
+        m.sess_tick(T + _s[0] * 3 + 500)
+        return x_de(ps[0])
+
+    def base_ok(p):
+        return m.base_rec_ok((m.cena_mem.get(p) or {}).get("rec"))
+
+    # 26: arquibancada, 3 gramados, chute, troféu -> a 2ª e a 3ª
+    reset()
+    p26 = leva(["arquibancada", "gramado", "gramado", "gramado", "chute", "trofeu"])
+    x26 = fecha(p26)
+    ok(x26["ia"] == p26[1:3] and x26["ia_regra"]["motivo"] is None, "26: ia = a 2ª e a 3ª (gramado): %r %r" % (x26["ia"], x26["ia_regra"]))
+    ok(p26[3] in x26["fotos"] and p26[0] in x26["fotos"], "26: a 4ª (gramado) e as outras ficam à venda")
+    ok(m.rec_pre_escolha(x26["fotos"], x26) == p26[1:3], "36: recorte antecipado na CPU = só as bases")
+    # 27: só escritório
+    reset()
+    p27 = leva(["outro"] * 4)
+    x27 = fecha(p27)
+    ok(x27["ia"] == [] and x27["ia_regra"]["motivo"] == "sem_gramado", "27: só outro: sem_gramado: %r" % x27["ia_regra"])
+    ok(m.rec_pre_escolha(x27["fotos"], x27) == [], "36: sem bases, nada para recortar (sem plano B)")
+    # 28: gramado cortado na lateral, sem pessoa e escuro são pulados; corpo inteiro (trunc falso) serve (D8 novo)
+    reset()
+    p28 = leva(["gramado"] * 5, info={0: {"trunc": True, "borda": ["esq"], "luz": {"med": 120, "p95": 200}},
+                                      1: {"sem_pessoa": True}, 2: {"trunc": True, "borda": [], "luz": {"med": 20, "p95": 90}},
+                                      3: {"trunc": False, "borda": [], "luz": {"med": 130, "p95": 210}, "joelho": 0.7, "pernas": True}})
+    x28 = fecha(p28)
+    ok(x28["ia"] == p28[3:5], "28: cortada, sem pessoa e escura pulam; corpo inteiro serve: %r %r" % (x28["ia"], [base_ok(p) for p in p28]))
+    # D9: só 1 serve
+    reset()
+    p9b = leva(["gramado", "arquibancada", "outro", "chute"])
+    x9b = fecha(p9b)
+    ok(x9b["ia"] == p9b[:1] and x9b["ia_regra"]["motivo"] is None, "D9: só 1 gramado: 1 base: %r" % x9b["ia"])
+    # 30: pendente -> preenchida com reaberta cena; base vendida não preenche
+    reset()
+    with m.cena_filho_lock:                     # segura o filho: a leva fecha antes de ser classificada
+        p30 = leva(["gramado", "gramado", "chute", "outro"])
+        m.sess_tick(T + _s[0] * 3 + 500)
+        x30 = x_de(p30[0])
+        ok(x30["ia"] == [] and x30["ia_regra"]["motivo"] == "cena_pendente" and x30["card"] in m.cena_pend, "30: fechou pendente: %r" % x30["ia_regra"])
+    ok(espera(lambda: m.cena_mem.get(p30[1], {}).get("v") == LV and base_ok(p30[1]), 10), "30: classificou e recortou depois")
+    ok(espera(lambda: x30["ia"] == p30[:2], 10) and x30["ia_regra"].get("reaberta") == "cena", "30: ia preenchida com reaberta cena: %r %r" % (x30["ia"], x30["ia_regra"]))
+    reset()
+    real_pagas = m.lgpd_vendas_pagas
+    with m.cena_filho_lock:
+        p30b = leva(["gramado", "gramado", "chute", "outro"])
+        m.sess_tick(T + _s[0] * 3 + 500)
+    m.lgpd_vendas_pagas = lambda: {p30b[0]}
+    x30b = x_de(p30b[0])
+    ok(espera(lambda: x30b["ia_regra"]["motivo"] != "cena_pendente", 12), "30: a pendente terminou")
+    ok(x30b["ia"] == [] and x30b["ia_regra"]["motivo"] == "cena_indisponivel", "30: base já vendida: o agente não preenche: %r" % x30b["ia_regra"])
+    m.lgpd_vendas_pagas = real_pagas
+    # 31: pendente por mais de 15 min: cena_indisponivel
+    reset()
+    ps31 = leva(["gramado", "gramado", "chute"], sem_thumb=(0,))
+    p31 = ps31[0]
+    m.sess_tick(T + _s[0] * 3 + 500)
+    x31 = x_de(p31)
+    ok(x31["ia_regra"]["motivo"] == "cena_pendente", "31: pendente: %r" % x31["ia_regra"])
+    m.cena_completa(time.time() + m.CENA_PEND_MAX + 5)
+    ok(x31["ia"] == [] and x31["ia_regra"]["motivo"] == "cena_indisponivel" and x31["card"] not in m.cena_pend, "31: passou do prazo: cena_indisponivel: %r" % x31["ia_regra"])
+    # 32: Separar reabre só com gramado
+    reset()
+    p32 = leva(["chute", "outro", "gramado", "gramado"])
+    x32 = fecha(p32)
+    with m.sess_lock:
+        x32["ia"], x32["ia_regra"] = [], {"n": 2, "motivo": "visita_ja_tem"}
+        r32 = m._vis_ia_reabre([x32["card"]], "separar")
+    ok(r32 == [x32["card"]] and x32["ia"] == p32[2:4] and x32["ia_regra"]["reaberta"] == "separar", "32: Separar reabre com o gramado, não com as 2 primeiras: %r" % x32["ia"])
+    # 29: gramado ainda esperando o rosto (pend) já é candidata
+    reset()
+    p29 = leva(["gramado", "chute", "chute"])
+    x29 = x_de(p29[0])
+    with m.sess_lock:
+        x29["fotos"].remove(p29[0])
+        x29["pend"].append(p29[0])
+        x29["_ia_vistos"] = set()
+        m.sess_ia_novos.clear()
+    espera(lambda: m.cena_mem.get(p29[0], {}).get("v") == LV, 8)
+    m.cena_chegou([p29[0]])
+    ok(p29[0] in x29["_ia_vistos"] and p29[0] in m.sess_ia_hoje(), "29 e 37: gramado em pend vai para o recorte e fica guardado na limpeza")
+    # 38: classificação de outra versão não vale
+    with m.sess_lock:
+        c = m.cena_mem[p29[1]]
+        m.cena_mem[p26[1]] = dict(m.cena_mem[p26[1]], v="c1-outra")
+        b38 = m._sess_ia_bases(x26, 2)
+    ok(b38[1] == "pendente", "38: versão diferente da ligada = pendente: %r" % (b38,))
+    # 33: desligada e medir
+    for modo, mot in (("medir", "cena_medir"), ("desligada", "cena_desligada")):
+        m.treino_cfg_gravar({"ponto": modo}, "adm")
+        reset()
+        ps = leva(["gramado", "gramado", "gramado"])
+        m.sess_tick(T + _s[0] * 3 + 500)
+        x = x_de(ps[0])
+        ok(x["ia"] == [] and x["ia_regra"]["motivo"] == mot, "33: %s: %r" % (modo, x["ia_regra"]))
+    m.FUNCAO_DIA_ON = True
+    with m.sess_lock:
+        ok(m._sess_ia_regra({"fotografo": None, "funcao": None})[1] == "sem_funcao", "33: com a Escala religada vale a regra 15 (D11)")
+    m.FUNCAO_DIA_ON = False
+
     # ---------- migração do Ligada antigo ----------
     with m.estado_lock:
         db = m.estado_db()
@@ -353,7 +490,7 @@ try:
 except Exception:
     import traceback
     falhas.append("exceção: %s" % traceback.format_exc()[-1200:])
-print(("OK" if not falhas else "FALHA") + " cena_agente: reconhecer o ponto (fatia B: 7 a 21, 25) · %s" % json.dumps(num)
+print(("OK" if not falhas else "FALHA") + " cena_agente: reconhecer o ponto (fatia B: 7 a 21, 25; fatia C: 26 a 38) · %s" % json.dumps(num)
       + ("" if not falhas else " · " + " | ".join(falhas[:12])))
 sys.stdout.flush()
 os._exit(1 if falhas else 0)

@@ -229,6 +229,12 @@ p24 = m.rec_fazer("a97000000001", f1, 2400)
 ok(Image.open(p24).size == (2400, 1600) and oct(os.stat(p24).st_mode & 0o777) == "0o600", "6: cópia de 2400 com 600")
 ok(not glob.glob(os.path.join(m.RECORTES, "*.tmp")) and not glob.glob(os.path.join(m.RECORTES, ".rec-*")), "6: nenhum .tmp sobra: %r" % os.listdir(m.RECORTES))
 # 18/11 (regra 19): as medidas do recorte voltam na resposta e ficam no cena.db; o joelho vai no PNG (tEXt "eterna")
+import sqlite3 as _sq
+_db = _sq.connect(m.CENA_DB)
+_rec = json.loads(_db.execute("select rec from cena where pid = ?", ("a97000000001",)).fetchone()[0])
+_db.close()
+ok(_rec.get("trunc") is True and _rec.get("borda") == [] and isinstance((_rec.get("luz") or {}).get("med"), float) and "joelho" in _rec and "pernas" in _rec,
+   "19: trunc, borda, luz, joelho e pernas do recorte no cena.db: %r" % _rec)
 ok(json.loads(Image.open(p1).text.get("eterna") or "{}").get("v") == 1, "D8: o PNG leva o tEXt eterna (joelho e pernas)")
 st = m.rec_status()
 ok(st["provedor"] == "cpu" and st["carregado"] and st["filho"]["vivo"] and st["etapas_ms"] and "regra" in st["etapas_ms"] and st["feitos"] == 1,

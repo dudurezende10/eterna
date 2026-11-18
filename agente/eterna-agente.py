@@ -3474,6 +3474,7 @@ def rec_pose_ok():
 
 
 REC_FALSO_SEG = None     # v93 (segurança S2): só os testes ligam (m.REC_FALSO_SEG = s): o "recorte" copia a foto e demora s
+REC_FALSO_INFO = None    # 18/11: só os testes: pid -> medidas do recorte falso (trunc, borda, luz, sem_pessoa)
 
 
 def _rec_falso():
@@ -3874,11 +3875,16 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
         os.makedirs(RECORTES, exist_ok=True)
         if not os.path.exists(cheio):
             time.sleep(falso)
+            info = REC_FALSO_INFO(pid) if callable(REC_FALSO_INFO) else None
+            if info and info.get("sem_pessoa"):
+                cena_rec(pid, {"sem_pessoa": True})
+                raise ValueError("sem_pessoa")
             shutil.copyfile(origem, cheio + ".f.tmp")
             os.chmod(cheio + ".f.tmp", 0o600)
             os.replace(cheio + ".f.tmp", cheio)
             with rec_lock:
                 rec["feitos"] += 1
+            cena_rec(pid, info or {"trunc": True, "borda": [], "luz": {"med": 120.0, "p95": 200.0, "fonte": "pessoa"}, "joelho": None, "pernas": False})
         if destino != cheio:
             shutil.copyfile(cheio, destino + ".f.tmp")
             os.chmod(destino + ".f.tmp", 0o600)
@@ -3887,7 +3893,13 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
     if not os.path.exists(cheio):
         t0 = time.time()
         os.makedirs(RECORTES, exist_ok=True)
-        rec_filho_recortar(pid, origem, cheio, getattr(_rec_tl, "i", 0))   # MAX_PIXELS, EXIF, 3000 px, RGB zerado fora, 600: no filho
+        try:
+            j = rec_filho_recortar(pid, origem, cheio, getattr(_rec_tl, "i", 0))   # MAX_PIXELS, EXIF, 3000 px, RGB zerado fora, 600: no filho
+        except ValueError as ex:
+            if str(ex) == "sem_pessoa":
+                cena_rec(pid, {"sem_pessoa": True})   # 18/11 (regra 19): a próxima de gramado vira base
+            raise
+        cena_rec(pid, j)                             # 18/11 (regra 19): trunc, borda, luz, joelho e pernas para a escolha da base
         ms = int((time.time() - t0) * 1000)
         with rec_lock:
             rec["feitos"] += 1
@@ -4196,7 +4208,9 @@ def rec_ia_loop():
                     break                                # em ordem de prioridade: as seguintes não têm vaga também
                 del pend[pid]
                 if os.path.exists(rec_arquivo(pid)) and os.path.exists(rec_arquivo(pid, 2400)):
-                    continue
+                    if not (cena_regra19() and cena_rec_falta(pid)):
+                        continue
+                    rec_apagar(pid)                  # 18/11: recorte de antes desta versão, sem as medidas: refaz
                 with lock:
                     e = lib.get(pid)
                     u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
@@ -5514,6 +5528,12 @@ def _sess_ia_regra(x, cfg=None):
     cfg = cfg or ia_cfg_mem()
     if not cfg.get("ligada"):
         return 0, "desligada"
+    if not FUNCAO_DIA_ON:
+        # 18/11 (regra 19): sem a Escala, as bases são as fotos de gramado reconhecidas pela imagem (treino_cfg_mem: sem banco)
+        p = treino_cfg_mem().get("ponto")
+        if p == "ligada":
+            return int(cfg.get("cliques") or 2), None
+        return 0, ("cena_medir" if p == "medir" else "cena_desligada")
     f = x.get("funcao") if FUNCAO_DIA_ON else None   # desligada: nem a função guardada em sessão aberta antes do deploy vale
     if not x.get("fotografo") or not isinstance(f, dict):
         return 0, "sem_funcao"                       # A4: sem função do dia ou sem cadastro, nada some da venda
@@ -5526,9 +5546,60 @@ def _sess_ia_regra(x, cfg=None):
     return int(cfg["cliques"]), None
 
 
+def _sess_ia_base_de(p, lv):
+    """Uma foto como base (regra 19): "base", "pula", "rec" (gramado válido esperando o recorte) ou "pendente" (sem
+    classificação da versão ligada). Só memória (cena_mem)."""
+    c = cena_mem.get(p)
+    if c is None or c.get("v") != lv:
+        return "pendente"
+    if not c.get("g"):
+        return "pula"
+    ok = base_rec_ok(c.get("rec"))
+    return "rec" if ok is None else ("base" if ok else "pula")
+
+
+def _sess_ia_bases(x, n):
+    """18/11 (regra 19): as bases da leva = as N primeiras fotos de gramado que passam na regra (gramado da versão ligada com
+    conf >= CENA_LIMIAR e os vetos, recorte com gente, sem corte na lateral nem no alto e com luz boa), em ordem de clique.
+    -> (bases, "ok" | "pendente" | "sem_gramado"). Para no primeiro "pendente". 1 base sem nada pendente antes = ok (D9).
+    Com o sess_lock; só memória."""
+    lv = treino_cfg_mem().get("ponto_versao")
+    ts = x.get("_t") or {}
+    bases = []
+    for p in sorted(x["fotos"], key=lambda p: ts.get(p, (0, 0))):
+        e = _sess_ia_base_de(p, lv)
+        if e in ("pendente", "rec"):
+            return bases, "pendente"
+        if e == "base":
+            bases.append(p)
+            if len(bases) >= n:
+                break
+    return bases, ("ok" if bases else "sem_gramado")
+
+
+def _sess_ia_pede_rec(x, n):
+    """Leva já fechada esperando (cena_pendente): as fotos de gramado válidas que ainda esperam o recorte vão para a fila de
+    IA (o _sess_ia_cand só olha as abertas). Com o sess_lock."""
+    lv = treino_cfg_mem().get("ponto_versao")
+    ts = x.get("_t") or {}
+    vistos = x.setdefault("_ia_vistos", set())
+    boas = 0
+    for p in sorted(x["fotos"], key=lambda p: ts.get(p, (0, 0))):
+        e = _sess_ia_base_de(p, lv)
+        if e == "rec" and p not in vistos:
+            vistos.add(p)
+            sess_ia_novos.append((p, REC_PRIO_IA))
+        elif e == "base":
+            boas += 1
+            if boas >= n:
+                break
+
+
 def _sess_ia_cand(x):
     """v93: com a sessão ainda não fechada, os N primeiros cliques (fotos + pendentes, pela hora do clique corrigida) que
-    ainda não foram pedidos vão para a fila de recorte de IA. Com o sess_lock."""
+    ainda não foram pedidos vão para a fila de recorte de IA. Com o sess_lock.
+    18/11 (regra 19): as candidatas são as fotos de gramado válidas (fotos + pend, em ordem de clique) ainda não descartadas
+    pelo recorte, até N boas mais as que esperam o recorte."""
     if x.get("status") == "fechada" or x.get("removida"):
         return
     n, _ = _sess_ia_regra(x)
@@ -5537,6 +5608,21 @@ def _sess_ia_cand(x):
     ts = x["_t"]
     vistos = x.setdefault("_ia_vistos", set())
     pr = 2 if x.get("atrasada") else 1
+    if cena_regra19():
+        lv = treino_cfg_mem().get("ponto_versao")
+        boas = 0
+        for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0))):
+            e = _sess_ia_base_de(p, lv)
+            if e not in ("base", "rec"):
+                continue
+            if p not in vistos:
+                vistos.add(p)
+                sess_ia_novos.append((p, pr))
+            if e == "base":
+                boas += 1
+                if boas >= n:
+                    break
+        return
     for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n]:
         if p not in vistos:
             vistos.add(p)
@@ -5552,6 +5638,16 @@ def _sess_ia_fecha(x):
     if n and not mot and len(fs) > n and _vis_ja_tem_ia(x["card"]):
         x["ia"] = []
         x["ia_regra"] = {"n": n, "motivo": "visita_ja_tem"}
+        return
+    if cena_regra19() and n and not mot and len(fs) > n:
+        # 18/11 (regra 19): só as fotos de gramado que passam na regra; sem nenhuma, sem montagem (nunca as 2 primeiras de
+        # qualquer ponto); classificação ou recorte ainda faltando: cena_pendente (o cena_completa termina depois)
+        bases, est = _sess_ia_bases(x, n)
+        x["ia"] = list(bases) if est == "ok" else []
+        x["ia_regra"] = {"n": n, "motivo": None if est == "ok" else ("sem_gramado" if est == "sem_gramado" else "cena_pendente")}
+        if est == "pendente":
+            cena_pend[x["card"]] = time.time()
+            _sess_ia_pede_rec(x, n)
         return
     x["ia"] = list(fs[:n]) if n and len(fs) > n else []
     x["ia_regra"] = {"n": n, "motivo": mot or ("poucas_fotos" if n and len(fs) <= n else None)}
@@ -5581,7 +5677,7 @@ def sess_ia_hoje(agora=None):
             if x.get("status") != "fechada":
                 out.update(x.get("_ia_vistos") or ())
                 n, _ = _sess_ia_regra(x)
-                if n:
+                if n and not cena_regra19():             # 18/11: na regra 19 as candidatas já estão em _ia_vistos
                     ts = x.get("_t") or {}
                     out.update(sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n])
     return out
@@ -6750,7 +6846,19 @@ def _vis_ia_reabre(cards, motivo):
         fs = x["fotos"]
         if not n or len(fs) <= n:
             continue
-        x["ia"] = list(fs[:n])
+        if cena_regra19():
+            # 18/11 (regra 19): Separar reabre só com as fotos de gramado da leva, nunca as 2 primeiras de qualquer ponto
+            bases, est = _sess_ia_bases(x, n)
+            if est != "ok":
+                x["ia_regra"] = {"n": n, "motivo": "sem_gramado" if est == "sem_gramado" else "cena_pendente"}
+                if est == "pendente":
+                    cena_pend[c] = time.time()
+                _sess_toca(x)
+                out.append(c)
+                continue
+            x["ia"] = list(bases)
+        else:
+            x["ia"] = list(fs[:n])
         x["ia_regra"] = {"n": n, "motivo": None, "reaberta": motivo}
         for p in x["ia"]:
             sess_ia_novos.append((p, REC_PRIO_IA))
@@ -12917,8 +13025,18 @@ def cena_rec_falta(pid):
 
 
 def cena_chegou(pids):
-    """Classificação ou recorte novo: as sessões dessas fotos revêem as candidatas (Fatia C)."""
-    return None
+    """Classificação ou recorte novo: as sessões (abertas) dessas fotos revêem as candidatas a base (sess_pid já cobre as
+    fotos que ainda esperam o rosto, em pend)."""
+    if not cena_regra19() or treino_cfg_mem().get("ponto") != "ligada":
+        return
+    with sess_lock:
+        vistos = set()
+        for p in pids:
+            c = sess_pid.get(p)
+            x = sess.get(c or "")
+            if x is not None and c not in vistos:
+                vistos.add(c)
+                _sess_ia_cand(x)
 
 
 def cena_lgpd(pids):
@@ -13272,9 +13390,48 @@ def cena_status():
             "criterio_passa": bool(_cena_crit.get("passa") and base and _cena_crit.get("versao") == base["versao"])}
 
 
-def cena_completa():
-    """Fatia C: sessões fechadas com cena_pendente revêem as bases (stub nesta fatia)."""
-    return 0
+def cena_completa(agora=None):
+    """A cada 5 s (cena_loop): as levas fechadas com cena_pendente revêem as bases. ok, sem base vendida e sem a visita já ter
+    bases: ia = bases (reaberta "cena", o app adota pelo srvIaCompleta); sem_gramado; passou de CENA_PEND_MAX:
+    cena_indisponivel (tudo à venda). As vendas pagas são lidas fora do sess_lock."""
+    with sess_lock:
+        if not cena_pend:
+            return 0
+    agora = agora or time.time()
+    try:
+        pagas = lgpd_vendas_pagas()
+    except Exception:
+        pagas = None                                  # sem ler as vendas: não preenche nada (tenta de novo em 5 s)
+    n = 0
+    with sess_lock:
+        for card, t0 in list(cena_pend.items()):
+            x = sess.get(card)
+            r = (x or {}).get("ia_regra") or {}
+            if x is None or x.get("removida") or x["status"] != "fechada" or x.get("ia") or r.get("motivo") != "cena_pendente":
+                cena_pend.pop(card, None)
+                continue
+            nn = r.get("n") or 0
+            bases, est = _sess_ia_bases(x, nn)
+            if est == "pendente" and agora - t0 <= CENA_PEND_MAX:
+                _sess_ia_pede_rec(x, nn)
+                continue
+            if est == "ok" and pagas is None:
+                continue
+            cena_pend.pop(card, None)
+            if est == "ok" and not (set(bases) & pagas) and not _vis_ja_tem_ia(card):
+                x["ia"] = list(bases)
+                x["ia_regra"] = {"n": nn, "motivo": None, "reaberta": "cena"}
+                for p in bases:
+                    sess_ia_novos.append((p, REC_PRIO_IA))
+            elif est == "ok" and _vis_ja_tem_ia(card):
+                x["ia_regra"] = {"n": nn, "motivo": "visita_ja_tem"}
+            elif est == "sem_gramado":
+                x["ia_regra"] = {"n": nn, "motivo": "sem_gramado"}
+            else:                                     # passou do prazo, ou uma das bases já foi vendida como foto
+                x["ia_regra"] = {"n": nn, "motivo": "cena_indisponivel"}
+            _sess_toca(x)
+            n += 1
+    return n
 
 
 def cena_loop():
