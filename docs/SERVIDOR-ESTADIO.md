@@ -75,3 +75,23 @@ Cadastro da equipe por comando (`vendedores.sh`, senha digitada pelo Ronaldo, se
 - Nuvem e backup: `docs/planos/2026-11-14-servidor-definitivo.md` (seção de 15/11).
 - Galeria online (QR do recibo, selfie e vídeo do cartão fora do estádio): `galeria-ligar.sh` grava `ETERNA_GALERIA_API` no `nuvem.env`, confere se a nuvem reconhece o segredo do servidor (se não, mostra o SHA-256 para a stack `eterna-galeria`) e reinicia; as galerias que ficaram para trás sobem sozinhas. Sem ela o celular abre "Galeria não encontrada" (16/11: o servidor novo veio sem essa linha).
 - Escola pelo voucher: `escola-ligar.sh` pede o token do painel do Viva Parceiros (o mesmo valor de `PARCEIROS_PAINEL_TOKEN` do Render) sem mostrar, confere se o Viva Parceiros aceita, grava `ETERNA_PARCEIROS_TOKEN` no `nuvem.env` e reinicia o Eterna.
+
+## Contas por pessoa, sem conta genérica (18/11)
+
+Decisão do Ronaldo: cada pessoa entra com a própria conta; contas genéricas (Supervisão, Validação, Checkout, Atendimento e venda, testes) são desativadas. Dois comandos no próprio servidor:
+
+- Cadastrar a pessoa, ou mudar o perfil de quem já existe, copiando o perfil de uma conta-modelo (perfil, módulos, menu, tela inicial). A senha vem pela entrada padrão; vazia mantém a senha atual. A conta-modelo pode estar desativada.
+
+  ```
+  printf '%s\n' 'SENHA' | sudo runuser -u eterna -- env HOME=/srv/eterna ETERNA_COMO=supervisor@eterna.photo /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/eterna-agente.py --usuario nome.sobrenome "Nome Sobrenome"
+  ```
+
+  Modelos: `supervisor@eterna.photo` (Supervisão), `ronaldo` (Admin).
+
+- Desativar (não apaga: vendas e registros continuam com o nome; derruba as sessões abertas; postos pareados continuam, revogar é no Painel de controle):
+
+  ```
+  sudo runuser -u eterna -- env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/eterna-agente.py --desativar usuario1 usuario2
+  ```
+
+A conta `hello@eterna.photo` do sistema pode ser desativada: o e-mail de nova senha sai pela nuvem (SES, remetente `MailFrom` da stack), sem depender dela.

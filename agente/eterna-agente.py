@@ -9923,6 +9923,74 @@ def auth_criar_vendedor(usuario, nome, perfil="ativ"):
     return 0
 
 
+
+# 18/11 (Ronaldo): contas por pessoa, sem conta genérica. Dois comandos de linha, iguais no notebook de teste e no servidor do estádio:
+#   ETERNA_COMO=<modelo> python eterna-agente.py --usuario <usuário> "<nome>"   (senha pela entrada padrão; vazia = mantém a atual)
+#     cadastra a pessoa, ou muda quem já existe, para o mesmo perfil do modelo: perfil, módulos, menu, tela inicial e as marcas de
+#     atualização do cadastro. O modelo pode estar desativado (serve a conta genérica antiga como molde).
+#   python eterna-agente.py --desativar <usuário> [<usuário> ...]
+#     desativa (não apaga: o histórico de vendas e registros continua com o nome) e derruba as sessões abertas. Os postos que a
+#     conta pareou continuam pareados: revogar posto é no Painel de controle.
+def _usu_marca(k):
+    return k == "mv" or bool(re.match(r"^m[a-z]+[0-9]+$", k))
+
+
+def auth_cli_usuario(usuario, nome, modelo):
+    usuario, modelo = usuario.strip().lower(), (modelo or "").strip().lower()
+    if not AUTH_ID.match(usuario):
+        print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
+        return 1
+    mod, _ = auth_ler_cadastro(modelo) if modelo else (None, False)
+    if not mod or not isinstance(mod.get("perms"), dict):
+        print("Modelo %r não encontrado: diga em ETERNA_COMO o usuário que já tem o perfil desejado." % modelo)
+        return 1
+    senha = sys.stdin.readline().rstrip(chr(13) + chr(10))
+    atual, tem = auth_ler_cadastro(usuario)
+    if senha and len(senha) < 8:
+        print("Senha curta (mínimo 8).")
+        return 1
+    if not senha and not tem:
+        print("%s ainda não tem senha: informe uma." % usuario)
+        return 1
+    cad = {k: v for k, v in (atual or {}).items() if not _usu_marca(k)}
+    cad.update({k: v for k, v in mod.items() if _usu_marca(k)})
+    cad.update(v=2, email=usuario, name=nome or cad.get("name") or usuario, preset=mod.get("preset") or "custom",
+               perms={k: dict(v) for k, v in mod["perms"].items()}, menu=list(mod.get("menu") or []), inicio=mod.get("inicio") or "painel",
+               active=True, createdBy=cad.get("createdBy") or "servidor", updatedBy="servidor",
+               updatedAt=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()))
+    cad.pop("deleted", None)
+    cad.setdefault("createdAt", cad["updatedAt"])
+    estado_gravar({"docs": [{"col": "usuarios", "id": quote(usuario, safe="-_.!~*'()"), "valor": cad}]})
+    if senha:
+        if not tem:
+            auth_criar(usuario, "servidor")
+        auth_trocar(usuario, senha)
+    print("ok %s (%s): perfil %s, igual a %s%s" % (usuario, cad["name"], cad["preset"], modelo, ", senha nova" if senha else ""))
+    return 0
+
+
+def auth_cli_desativar(usuarios):
+    erro = 0
+    for u in usuarios:
+        u = u.strip().lower()
+        cad, _ = auth_ler_cadastro(u)
+        if not cad:
+            print("%s: não existe" % u)
+            erro = 1
+            continue
+        cad = dict(cad, active=False, updatedBy="servidor", updatedAt=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()))
+        estado_gravar({"docs": [{"col": "usuarios", "id": quote(u, safe="-_.!~*'()"), "valor": cad}]})
+        with estado_lock:
+            db = auth_db()
+            try:
+                db.execute("delete from sessao_login where usuario=?", (u,))
+                db.execute("delete from reset_senha where usuario=?", (u,))
+                db.commit()
+            finally:
+                db.close()
+        print("ok %s (%s): desativado" % (u, cad.get("name") or u))
+    return erro
+
 # ---------- Postos pareados ----------
 # O Admin pareia cada aparelho uma vez (Painel de controle, ou o link de uso único do comando --parear-posto). O aparelho guarda
 # o cookie eterna_posto (HttpOnly, 400 dias, revogável); o servidor guarda só o hash. O posto abre o Checkout sem pessoa logada.
@@ -15206,6 +15274,10 @@ if __name__ == "__main__":
         sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-vendedor":
         sys.exit(auth_criar_vendedor(sys.argv[2], " ".join(sys.argv[3:]), os.environ.get("ETERNA_PERFIL") or "ativ"))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--usuario":
+        sys.exit(auth_cli_usuario(sys.argv[2], " ".join(sys.argv[3:]), os.environ.get("ETERNA_COMO")))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--desativar":
+        sys.exit(auth_cli_desativar(sys.argv[2:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
         sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()
