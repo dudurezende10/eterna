@@ -587,7 +587,7 @@ Números sempre com `font-variant-numeric: tabular-nums`. Tabelas em 13 px.
 
 **Proteção do servidor do estádio (17/11)**:
 - **Cabeçalhos em toda resposta** (`SEG_CABECALHOS`): sem embutir em outro site, `nosniff`, `Referrer-Policy` e câmera só na própria página.
-- **Excesso** (`escudo_avalia`): mais de 300 pedidos no mesmo minuto bloqueia o IP por 15 min, depois 1 h, 6 h e 1 dia (`ETERNA_LIMITE_MINUTO`). Quem está conectado ou é posto pareado não é bloqueado por excesso, nem quando o IP já está bloqueado: pela VPN todos chegam com o IP do firewall (192.168.10.1), e o bloqueio barra só quem não tem login nem posto.
+- **Excesso** (`escudo_avalia`): mais de 300 pedidos no mesmo minuto bloqueia o IP por 15 min, depois 1 h, 6 h e 1 dia (`ETERNA_LIMITE_MINUTO`). Quem está conectado ou é posto pareado não é bloqueado por excesso. A rede interna (10.x, 172.16-31.x, 192.168.x, Tailscale 100.64.x) nunca é bloqueada, nem por excesso nem por varredura: pela VPN todos chegam com o IP do firewall (192.168.10.1), e a operação não pode parar.
 - **Varredura:** 2 pedidos de endereço de robô (`ESCUDO_ISCA`: wp-login, .env, .git, .php...) em 1 hora bloqueiam por 1 dia, depois 3 dias e 1 semana.
 - **Regras comuns:** o nível volta ao começo após 7 dias. O próprio servidor nunca é bloqueado. Os bloqueios ficam na tabela `escudo` e no `login_log` (`ip_bloqueado:<motivo>:<min>`) e valem depois de reiniciar.
 - **Teste:** `testes/escudo_agente.py`.

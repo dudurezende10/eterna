@@ -31,7 +31,7 @@ import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket
 import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
-import unicodedata
+import unicodedata, ipaddress
 import urllib.request, urllib.error, urllib.parse, mimetypes, re, base64
 
 # imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
@@ -13123,11 +13123,13 @@ def rota_privada(path):
 #   conectado (sessão) ou é posto pareado não é bloqueado por excesso: a tela da equipe carrega muitas fotos de uma vez.
 # - Varredura: 2 pedidos de endereço que só robô procura (ESCUDO_ISCA: wp-login, .env, .git...) em 1 hora bloqueiam por 1 dia;
 #   repetindo, 3 dias e 1 semana. O nível volta ao começo depois de 7 dias sem bloqueio.
-# O próprio servidor (127.0.0.1) nunca é bloqueado. Bloqueios ficam no banco (tabela escudo) e no login_log, e valem depois de reiniciar.
+# O próprio servidor (127.0.0.1) e a rede interna nunca são bloqueados (18/11, Ronaldo: a operação não pode parar). Pela VPN todos
+# chegam com o IP do firewall (192.168.10.1): bloquear esse IP trancava a equipe inteira. A proteção vale para endereço de fora. Bloqueios ficam no banco (tabela escudo) e no login_log, e valem depois de reiniciar.
 ESCUDO_LIMITE = int(os.environ.get("ETERNA_LIMITE_MINUTO", "300"))
 ESCUDO_ESCALA = {"excesso": (15 * 60, 3600, 6 * 3600, 86400), "varredura": (86400, 3 * 86400, 7 * 86400)}
 ESCUDO_ISCA = re.compile(r"(?i)(wp-login|wp-admin|wp-content|wp-includes|xmlrpc\.php|/\.env|/\.git(/|$)|/\.aws|/\.ssh|/\.htaccess|"
                          r"phpmyadmin|/cgi-bin/|phpunit|\.php(\?|$)|/actuator|/boaform|/hnap1|/server-status|/\.ds_store)")
+ESCUDO_INTERNA = tuple(ipaddress.ip_network(r) for r in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "127.0.0.0/8", "::1/128", "fc00::/7"))
 escudo_lock = threading.Lock()
 _escudo = {"pronto": False, "conta": {}, "isca": {}, "bloq": {}, "nivel": {}}
 
@@ -13183,14 +13185,16 @@ def escudo_bloqueia(ip, motivo):
 
 def escudo_avalia(ip, path, confiavel):
     """None se o pedido segue; senão (código, segundos até liberar). confiavel() só é chamada quando o IP passa do limite ou está bloqueado."""
-    if not ip or ip in ("127.0.0.1", "::1"):
-        return None
+    try:
+        if not ip or any(ipaddress.ip_address(ip) in r for r in ESCUDO_INTERNA):
+            return None
+    except ValueError:
+        pass
     escudo_ini()
     agora = time.time()
     with escudo_lock:
         b = _escudo["bloq"].get(ip)
-    # 18/11: pela VPN todos chegam com o IP do firewall (192.168.10.1). Bloqueio por excesso barra só quem não está conectado
-    # nem é posto: um navegador sem login martelando não tranca a equipe que divide o mesmo IP. Varredura segue barrando tudo.
+    # Bloqueio por excesso não barra quem está conectado ou é posto. Varredura barra tudo.
     if b and b[0] > agora:
         if b[1] != "varredura" and confiavel():
             return None

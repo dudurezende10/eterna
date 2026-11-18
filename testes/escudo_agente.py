@@ -51,44 +51,49 @@ def libera(ip):
 
 
 # 1. excesso: o 21º pedido no minuto bloqueia 15 min; o vizinho segue
-sts = [pede("/auth/eu", "10.0.0.5")[0] for _ in range(21)]
+sts = [pede("/auth/eu", "203.0.113.5")[0] for _ in range(21)]
 ok(all(x != 429 for x in sts[:20]) and sts[20] == 429, "1: 21º pedido: %s" % sts[-3:])
-st, ra, _ = pede("/auth/eu", "10.0.0.5")
+st, ra, _ = pede("/auth/eu", "203.0.113.5")
 ok(st == 429 and 899 <= int(ra) <= 901, "1: bloqueado por 15 min: %s %s" % (st, ra))
-ok(pede("/auth/eu", "10.0.0.6")[0] != 429, "1: outro IP segue")
+ok(pede("/auth/eu", "203.0.113.6")[0] != 429, "1: outro IP segue")
 
 # 2. repetiu: 1 hora
-libera("10.0.0.5")
+libera("203.0.113.5")
 for _ in range(21):
-    st, ra, _ = pede("/auth/eu", "10.0.0.5")
+    st, ra, _ = pede("/auth/eu", "203.0.113.5")
 ok(st == 429 and 3599 <= int(ra) <= 3601, "2: segunda vez, 1 hora: %s %s" % (st, ra))
 
 # 3. varredura: a 1ª isca passa (404), a 2ª bloqueia 1 dia, e aí nada passa
-st1 = pede("/wp-login.php", "10.0.0.7")[0]
-st2, ra, _ = pede("/.env", "10.0.0.7")
-st3 = pede("/auth/eu", "10.0.0.7")[0]
+st1 = pede("/wp-login.php", "203.0.113.7")[0]
+st2, ra, _ = pede("/.env", "203.0.113.7")
+st3 = pede("/auth/eu", "203.0.113.7")[0]
 ok(st1 != 403 and st2 == 403 and 86399 <= int(ra) <= 86401 and st3 == 403, "3: varredura: %s %s %s %s" % (st1, st2, ra, st3))
-libera("10.0.0.7")
-pede("/.git/config", "10.0.0.7")
-st, ra, _ = pede("/phpmyadmin/", "10.0.0.7")
+libera("203.0.113.7")
+pede("/.git/config", "203.0.113.7")
+st, ra, _ = pede("/phpmyadmin/", "203.0.113.7")
 ok(st == 403 and int(ra) > 2 * 86400, "3: repetiu, 3 dias: %s %s" % (st, ra))
-ok(pede("/vendor/ort/ort.min.js", "10.0.0.9")[0] != 403 and pede("/vendor/ort/ort.min.js", "10.0.0.9")[0] != 403, "3: arquivo do app não é isca")
+ok(pede("/vendor/ort/ort.min.js", "203.0.113.9")[0] != 403 and pede("/vendor/ort/ort.min.js", "203.0.113.9")[0] != 403, "3: arquivo do app não é isca")
 
 # 4. conectado não é bloqueado por excesso
 v = {"v": 2, "email": "caixa.um", "name": "Caixa", "active": True, "preset": "venda", "perms": {"venda": {"c": True, "r": True, "u": True, "d": False}}}
 m.estado_gravar({"docs": [{"col": "usuarios", "id": "caixa.um", "valor": v}]})
 ck = {"eterna_sessao": m.auth_sessao_nova("caixa.um")}
-sts = [pede("/auth/eu", "10.0.0.8", {"eterna_sessao": ck.get("eterna_sessao")})[0] for _ in range(30)]
+sts = [pede("/auth/eu", "203.0.113.8", {"eterna_sessao": ck.get("eterna_sessao")})[0] for _ in range(30)]
 ok(429 not in sts, "4: conectado segue: %s" % sts[-3:])
 
 # 4b. IP bloqueado por excesso (ex.: o firewall da VPN, que todos dividem): quem está conectado ainda entra; quem não está, não
-libera("10.0.0.8")
+libera("203.0.113.8")
 for _ in range(21):
-    st = pede("/auth/eu", "10.0.0.8")[0]
+    st = pede("/auth/eu", "203.0.113.8")[0]
 ok(st == 429, "4b: anônimo bloqueia o IP: %s" % st)
-ok(pede("/auth/eu", "10.0.0.8", {"eterna_sessao": ck.get("eterna_sessao")})[0] != 429, "4b: conectado no mesmo IP segue")
-ok(pede("/auth/eu", "10.0.0.8")[0] == 429, "4b: anônimo segue barrado")
-ok(pede("/auth/eu", "10.0.0.7", {"eterna_sessao": ck.get("eterna_sessao")})[0] == 403, "4b: varredura barra até conectado")
+ok(pede("/auth/eu", "203.0.113.8", {"eterna_sessao": ck.get("eterna_sessao")})[0] != 429, "4b: conectado no mesmo IP segue")
+ok(pede("/auth/eu", "203.0.113.8")[0] == 429, "4b: anônimo segue barrado")
+ok(pede("/auth/eu", "203.0.113.7", {"eterna_sessao": ck.get("eterna_sessao")})[0] == 403, "4b: varredura barra até conectado")
+
+# 4c. rede interna e VPN (192.168.10.1 é o firewall) nunca são bloqueadas, nem por excesso nem por varredura
+sts = [pede("/auth/eu", "192.168.10.1")[0] for _ in range(40)] + [pede("/.env", "192.168.10.1")[0], pede("/.git/config", "192.168.10.1")[0], pede("/auth/eu", "192.168.10.1")[0]]
+ok(429 not in sts and 403 not in sts, "4c: rede interna livre: %s" % sts[-5:])
+ok(pede("/auth/eu", "100.115.186.26")[0] != 429 and pede("/auth/eu", "10.20.0.3")[0] != 429, "4c: Tailscale e 10.x livres")
 
 # 5. o próprio servidor nunca
 ok(all(pede("/auth/eu")[0] != 429 for _ in range(30)), "5: 127.0.0.1 sem limite")
@@ -96,7 +101,7 @@ ok(all(pede("/auth/eu")[0] != 429 for _ in range(30)), "5: 127.0.0.1 sem limite"
 # 6. vale depois de reiniciar, e fica no login_log
 with m.escudo_lock:
     m._escudo.update(pronto=False, conta={}, isca={}, bloq={}, nivel={})
-ok(pede("/auth/eu", "10.0.0.7")[0] == 403, "6: bloqueio lido do banco")
+ok(pede("/auth/eu", "203.0.113.7")[0] == 403, "6: bloqueio lido do banco")
 db = m.auth_db()
 log = [a for (a,) in db.execute("select acao from login_log where acao like 'ip_bloqueado%'")]
 db.close()
