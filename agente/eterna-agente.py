@@ -7901,9 +7901,9 @@ def auth_perms(cad):
     pelo perfil): sem isto, o admin cadastrado antes de um módulo novo não consegue dar esse módulo a ninguém, nem a si mesmo."""
     perms = dict((cad or {}).get("perms") or {})
     if (cad or {}).get("preset") == "admin":
-        for m in AUTH_MODULOS_NOVOS:                    # só os módulos que surgiram depois; módulo antigo fora do cadastro continua sem acesso
-            if not isinstance(perms.get(m), dict):
-                perms[m] = {"c": True, "r": True, "u": True, "d": True}
+        # 18/11 (Ronaldo): "o admin não pode ter menos que o vendedor, tem que ser tudo". Admin tem todos os módulos inteiros,
+        # o que estiver gravado no cadastro dele não tira nada (antes só os módulos novos eram completados).
+        return {m: {"c": True, "r": True, "u": True, "d": True} for m in AUTH_MODULOS}
     return perms
 
 
@@ -10638,7 +10638,7 @@ def _ev_limpo(e):
           "vendedor": txt((d.get("vendedor") or {}).get("nome") if isinstance(d.get("vendedor"), dict) else None),
           "resultado": txt(d.get("resultado"), 12), "n": num(d.get("n")), "reimpressao": bool(d.get("reimpressao")),
           "tempos": {k: txt(v, 30) for k, v in (d.get("tempos") if isinstance(d.get("tempos"), dict) else {}).items() if k in ("inicio", "escolha") and v} or None,
-          "motivo": txt(d.get("motivo"), 40), "semFoto": num(d.get("semFoto")), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
+          "motivo": txt(d.get("motivo"), 40), "obs": txt(d.get("obs"), 200), "semFoto": num(d.get("semFoto")), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
           # impressão: as fotos impressas; impressão e rolo: a leitura da DNP pelo programa de impressão do posto (auditoria do rolo)
           "fotos": lista(d.get("fotos")) if e.get("tipo") == "impressao" else [], "dnp": _ev_dnp(d.get("dnp")),
           "galeria": (txt((d.get("galeria") or {}).get("codigo"), 12) if isinstance(d.get("galeria"), dict) else None)}

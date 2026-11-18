@@ -13,7 +13,7 @@ try{
     const pagar=(c,quem,quando,no)=>{const s=ETERNA.simOf(c);Object.assign(s,{status:'paga',paidAt:quando,saleNo:no,vendaId:'L00-vc'+no,vendedor:{email:quem,nome:quem},total:90,payment:'PIX',cart:[{id:'gramado'}],selected:[],impressao:{estado:'pendente',alvo:2,feitas:[]}});};
     pagar(cards[0],u.email,hoje,'P1-001');pagar(cards[1],u.email,ontem,'P1-002');pagar(cards[2],'outra@exemplo.com',hoje,'P1-003');ETERNA.saveSim();
     const r=cards.map(c=>ETERNA.vendaPodeCancelar(c));
-    ETERNA.state.user=Object.assign({},u,{perms:{venda:{c:true,r:true,u:true,d:false},quiosque:{c:true,r:true,u:true,d:false}}});return r;},cards);
+    ETERNA.state._adm=u;ETERNA.state.user=Object.assign({},u,{preset:'venda',perms:{venda:{c:true,r:true,u:true,d:false},quiosque:{c:true,r:true,u:true,d:false}}});return r;},cards);
   ok(J(adm)===J([true,true,true]),'Admin cancela qualquer venda, de qualquer dia: '+J(adm));
   const ven=await pg.evaluate(cards=>cards.map(c=>ETERNA.vendaPodeCancelar(c)),cards);
   ok(J(ven)===J([true,false,false]),'vendedor: só a própria venda de hoje: '+J(ven));
@@ -25,6 +25,13 @@ try{
   const r=await pg.evaluate(c=>{const s=ETERNA.SIM.sessions[c];return {st:s.status,mot:s.cancelada&&s.cancelada.motivo,imp:s.impressao.estado,ev:ETERNA.pvFila().some(e=>e.tipo==='cancelar'&&e.venda==='L00-vcP1-001'),au:ETERNA.auditRead().some(e=>e.acao==='venda_cancelada'&&e.alvo==='venda/P1-001')};},cards[0]);
   ok(r.st==='cancelada'&&r.mot==='cliente desistiu'&&r.imp==='cancelada'&&r.ev&&r.au,'cancelada, com motivo, impressão parada, servidor avisado e auditoria: '+J(r));
   ok(await pg.locator(`[data-act="venda-cancel"][data-card="${cards[0]}"]`).count()===0,'venda cancelada não oferece cancelar de novo');
+  // quem cancelou, quando e o motivo: guardados na venda, no evento do servidor e mostrados na lista de Vendas
+  const g=await pg.evaluate(c=>{const s=ETERNA.SIM.sessions[c];const ev=ETERNA.pvFila().find(e=>e.tipo==='cancelar'&&e.venda==='L00-vcP1-001');
+    ETERNA.state.user=ETERNA.state._adm;const lin=ETERNA.allSales().find(x=>x.no==='P1-001');
+    return {c:s.cancelada,obs:ev&&ev.dados.obs,por:ev&&ev.por,em:ev&&ev.em,linha:lin?lin.canc:''};},cards[0]);
+  ok(g.c&&g.c.por&&g.c.porNome&&g.c.em&&g.c.motivo==='cliente desistiu','na venda: quem, quando e o motivo: '+J(g.c));
+  ok(g.obs==='cliente desistiu'&&g.em,'no evento do servidor: o motivo e a hora: '+J({obs:g.obs,por:g.por,em:g.em}));
+  ok(/cliente desistiu/.test(g.linha)&&g.linha.includes(g.c.porNome),'na lista de Vendas: quem e o motivo: '+g.linha.replace(/\s+/g,' ').slice(0,200));
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}
