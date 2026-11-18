@@ -10696,6 +10696,29 @@ def ev_fila(job):
             db.close()
 
 
+def ev_dias_refaz(vendas):
+    """18/11: cancelamento de venda de dia antigo: refaz o resumo do dia em que a venda foi feita (o metricas_loop só refaz hoje e ontem)."""
+    if not vendas:
+        return
+    with ev_lock:
+        db = vendas_db()
+        try:
+            dias = {r[0] for r in db.execute("select distinct dia from evento where tipo = 'criar' and venda in (%s)" % ",".join("?" * len(vendas)),
+                                             list(vendas))}
+        finally:
+            db.close()
+    recentes = {_ff_hoje(time.time()), _ff_hoje(time.time() - 86400)}
+    for d in dias - recentes:
+        threading.Thread(target=lambda d=d: _ev_refaz_um(d), daemon=True).start()
+
+
+def _ev_refaz_um(dia):
+    try:
+        metricas_gravar(dia)
+    except Exception as ex:
+        print("  métricas do dia %s (cancelamento):" % dia, str(ex)[:160])
+
+
 def ev_receber(body):
     evs = body.get("eventos") if isinstance(body.get("eventos"), list) else []
     posto = _txt_chave(body.get("posto") or "", 40) or ""
@@ -10708,6 +10731,7 @@ def ev_receber(body):
         if isinstance(d.get("selected"), list):
             sel.update(pid_lib(str(p)[:60]) for p in d["selected"][:200])
     ia_sel = sess_ia_de(sel) if sel else set()
+    canc = set()
     with ev_lock:
         db = vendas_db()
         try:
@@ -10724,9 +10748,15 @@ def ev_receber(body):
                                  (x["idem"], x["venda"], x["seq"], x["tipo"], x["em"], _ev_dia(x["em"]), x["posto"] or posto,
                                   x["por"], json.dumps(x["dados"], ensure_ascii=False), _iso()))
                 res.append({"idem": x["idem"], "s": "ok" if cur.rowcount else "ja"})
+                if cur.rowcount and x["tipo"] == "cancelar":
+                    canc.add(x["venda"])
             db.commit()                                      # só confirma ao caixa depois de gravado no disco
         finally:
             db.close()
+    try:
+        ev_dias_refaz(canc)
+    except Exception as ex:
+        print("  cancelamento: resumo do dia não refeito:", str(ex)[:160])
     return {"ok": True, "resultados": res}
 
 
@@ -10735,7 +10765,8 @@ def metricas_dia(dia):
     (ponto/eventos) e vendas online (galerias/vendas-online.jsonl). Por fotógrafo, vendedor, posto e meio de pagamento."""
     m = {"dia": dia, "gerado": _iso(), "fotos": 0, "fotos_com_rosto": 0, "rostos": 0, "sessoes": 0, "sessoes_com_venda": 0,
          "vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0, "fotos_ia_vendidas": 0, "impressoes": 0, "impressoes_falhas": 0,
-         "canceladas": 0, "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0}, "rolo": {},
+         "canceladas": 0, "estornos": {"vendas": 0, "valor": 0.0, "fotos": 0}, "cancelamentos": [],
+         "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0}, "rolo": {},
          "por_fotografo": {}, "por_vendedor": {}, "por_posto": {}, "por_meio": {}}
     try:
         db = rostos_db()
@@ -10771,11 +10802,12 @@ def metricas_dia(dia):
         v = vendas.setdefault(e["venda"], {"criar": None, "paga": False, "cancelada": False, "posto": e.get("posto")})
         d = e.get("dados") or {}
         if e["tipo"] == "criar":
-            v["criar"] = d
+            v["criar"], v["dia"] = d, _ev_dia(e["em"])
         elif e["tipo"] == "pagar":
             v["paga"] = True
         elif e["tipo"] == "cancelar":
             v["cancelada"] = True
+            v["canc"] = {"em": e.get("em"), "por": e.get("por"), "motivo": d.get("obs") or None, "tipo": d.get("motivo")}
         elif e["tipo"] == "impressao":
             if d.get("resultado") == "ok":
                 m["impressoes"] += int(d.get("n") or 0)
@@ -10807,9 +10839,13 @@ def metricas_dia(dia):
         r["diferenca"] = r["folhas_dnp"] - r["folhas_eterna"]
         r.pop("_vr", None)
     com_venda = set()
-    for v in vendas.values():
+    for vid, v in vendas.items():
         c = v["criar"]
         if not c:
+            continue
+        # 18/11 (Ronaldo): a venda conta no dia em que foi feita. Antes, um evento em outro dia (o pagar depois da meia-noite,
+        # um cancelamento dias depois) fazia a venda contar também naquele dia.
+        if v.get("dia") and v["dia"] != dia:
             continue
         if v["cancelada"] and not v["paga"]:
             m["canceladas"] += 1
@@ -10817,6 +10853,17 @@ def metricas_dia(dia):
         if not v["paga"]:
             continue
         tot, nph, nai = float(c.get("total") or 0), int(c.get("nPh") or 0), int(c.get("nAI") or 0)
+        # 18/11 (Ronaldo): venda paga e depois cancelada sai do faturamento e entra nos estornos e no relatório de cancelamentos
+        if v["cancelada"]:
+            m["canceladas"] += 1
+            m["estornos"]["vendas"] += 1
+            m["estornos"]["valor"] += tot
+            m["estornos"]["fotos"] += nph
+            k = v.get("canc") or {}
+            m["cancelamentos"].append({"venda": vid, "no": c.get("saleNo"), "valor": tot, "fotos": nph,
+                                       "vendedor": c.get("vendedor"), "posto": v.get("posto"), "meio": c.get("meio"),
+                                       "em": k.get("em"), "por": k.get("por"), "motivo": k.get("motivo")})
+            continue
         m["vendas"] += 1
         m["faturamento"] += tot
         m["fotos_vendidas"] += nph
@@ -10848,6 +10895,7 @@ def metricas_dia(dia):
     m["conversao_sessoes"] = round(m["sessoes_com_venda"] / m["sessoes"], 4) if m["sessoes"] else None
     m["conversao_fotos"] = round(m["fotos_vendidas"] / m["fotos"], 4) if m["fotos"] else None
     m["ticket_medio"] = round(m["faturamento"] / m["vendas"], 2) if m["vendas"] else None
+    m["cancelamentos"].sort(key=lambda x: str(x.get("em") or ""))
     for pf in m["por_fotografo"].values():
         pf["conversao"] = round(pf["sessoes_com_venda"] / pf["sessoes"], 4) if pf["sessoes"] else None
     return met_v2_junta(m, met_v2(dia, ss, evs))

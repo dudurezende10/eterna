@@ -5479,13 +5479,20 @@ async function srvMetPull(){const M=state.srvMet,r=state.range;if(M.busy||!state
   if(M.chave===chave&&Date.now()-M.em<60e3)return;M.busy=true;
   try{const j=await (await agFetch(state.agent.url+'/metricas/dia?de='+r.from+'&ate='+r.to,{cache:'no-store'})).json();if(!j.ok)throw 0;M.dias=j.dias||[];M.chave=chave;M.em=Date.now();M.erro=null;}
   catch(e){M.erro=1;}finally{M.busy=false;if(state.view==='painel')render();}}
-function srvMetSoma(ds){const T={fotos:0,fotos_com_rosto:0,rostos:0,sessoes:0,sessoes_com_venda:0,vendas:0,faturamento:0,fotos_vendidas:0,fotos_ia_vendidas:0,impressoes:0,impressoes_falhas:0,canceladas:0,online:{vendas:0,faturamento:0,fotos:0},por_fotografo:Object.create(null),por_vendedor:Object.create(null),por_posto:Object.create(null),por_meio:Object.create(null)};
+function srvMetSoma(ds){const T={fotos:0,fotos_com_rosto:0,rostos:0,sessoes:0,sessoes_com_venda:0,vendas:0,faturamento:0,fotos_vendidas:0,fotos_ia_vendidas:0,impressoes:0,impressoes_falhas:0,canceladas:0,estornos:{vendas:0,valor:0,fotos:0},cancelamentos:[],online:{vendas:0,faturamento:0,fotos:0},por_fotografo:Object.create(null),por_vendedor:Object.create(null),por_posto:Object.create(null),por_meio:Object.create(null)};
   for(const d of ds){for(const k of ['fotos','fotos_com_rosto','rostos','sessoes','sessoes_com_venda','vendas','faturamento','fotos_vendidas','fotos_ia_vendidas','impressoes','impressoes_falhas','canceladas'])T[k]+=d[k]||0;
     for(const k of ['vendas','faturamento','fotos'])T.online[k]+=(d.online||{})[k]||0;
+    for(const k of ['vendas','valor','fotos'])T.estornos[k]+=(d.estornos||{})[k]||0;if(Array.isArray(d.cancelamentos))T.cancelamentos.push(...d.cancelamentos.filter(x=>x&&typeof x==='object'));
     for(const g of ['por_fotografo','por_vendedor','por_posto','por_meio'])for(const [n,v] of Object.entries(d[g]||{})){
       // v92 (R4): só entra linha com contagem da v1 (sessões, fotos ou vendas); campo só da v2 (1ª foto, tempos) nunca cria linha fantasma nem é somado
       if(!v||typeof v!=='object'||ES_PROIBIDO.has(n)||!['vendas','sessoes','fotos'].some(k=>typeof v[k]==='number'))continue;const a=T[g][n]||(T[g][n]={});for(const [k,x] of Object.entries(v))if(typeof x==='number'&&k!=='conversao'&&k!=='primeira_foto')a[k]=(a[k]||0)+x;}}
   return T;}
+// 18/11 (Ronaldo): cancelamentos de venda paga no período (o servidor guarda quem, quando e o motivo; o valor sai do faturamento)
+const cancLinhas=L=>L.slice().sort((a,b)=>String(b.em||'').localeCompare(String(a.em||''))).map(x=>({em:x.em,no:x.no||x.venda,valor:+x.valor||0,fotos:+x.fotos||0,vendedor:x.vendedor||'',posto:x.posto||'',por:x.por||'',motivo:x.motivo||''}));
+const cancQuando=t=>{const d=t?new Date(t):null;return d&&!isNaN(d)?dlabel(isoDia(d))+' '+hhmm(d):'';};
+function cancRelHtml(L){if(!L||!L.length||!can('financeiro','r'))return '';const ls=cancLinhas(L);
+  return `<section class="panel pn-panel" id="pn-cancelamentos"><div class="pn-ph"><div><h2>${TE('pn_cancelamentos')}</h2></div></div><div class="tablewrap"><table><thead><tr><th>${TE('pn_canc_em')}</th><th>${TE('pn_venda')}</th><th class="num">${TE('pn_valor')}</th><th>${TE('vm_vendedor')}</th><th>${TE('pn_canc_por')}</th><th>${TE('pn_motivo')}</th></tr></thead>
+    <tbody>${ls.map(x=>`<tr><td>${esc(cancQuando(x.em))}</td><td>${esc(x.no)}</td><td class="num">${fmtR(x.valor)}</td><td>${esc(x.vendedor)}</td><td>${esc(x.por)}</td><td>${esc(x.motivo)}</td></tr>`).join('')}</tbody></table></div></section>`;}
 function srvMetPainel(){if(!state.agent||!state.agent.on)return '';srvMetPull();const M=state.srvMet;
   if(!M.dias)return M.erro?`<p class="pn-notas">${esc(TE('sem_conexao_srv'))}</p>`:'';const T=srvMetSoma(M.dias);const pc=(a,b)=>b?Math.round(100*a/b)+'%':'—';
   const fat=T.faturamento+T.online.faturamento;const mm={pix:'Pix',cartao:TE('meio_cartao'),dinheiro:TE('meio_dinheiro')};
@@ -5499,8 +5506,8 @@ function srvMetPainel(){if(!state.agent||!state.agent.on)return '';srvMetPull();
       <tr><td>${TE('pn_vendas_balcao')}</td><td class="num">${fmtN(T.vendas)} · ${fmtR(T.faturamento)}</td><td>${TE('pn_ticket')}</td><td class="num">${T.vendas?fmtR(T.faturamento/T.vendas):'—'}</td></tr>
       <tr><td>${TE('pn_fotos_vendidas')}</td><td class="num">${fmtN(T.fotos_vendidas)} · ${TE('pn_das_tiradas',pc(T.fotos_vendidas,T.fotos))}</td><td>${TE('pn_com_ia')}</td><td class="num">${fmtN(T.fotos_ia_vendidas)}</td></tr>
       <tr><td>${TE('pn_vendas_online')}</td><td class="num">${fmtN(T.online.vendas)} · ${fmtR(T.online.faturamento)}</td><td>${TE('pn_impressoes')}</td><td class="num">${fmtN(T.impressoes)}${T.impressoes_falhas?TE('pn_nao_sairam',fmtN(T.impressoes_falhas)):''}</td></tr>
-      ${T.canceladas?`<tr><td>${TE('pn_canceladas')}</td><td class="num">${fmtN(T.canceladas)}</td><td></td><td></td></tr>`:''}
-    </tbody></table></div></section>
+      ${T.canceladas?`<tr><td>${TE('pn_canceladas')}</td><td class="num">${fmtN(T.canceladas)}</td><td>${T.estornos.vendas?TE('pn_estornado'):''}</td><td class="num">${T.estornos.vendas?fmtN(T.estornos.vendas)+' · '+fmtR(T.estornos.valor):''}</td></tr>`:''}
+    </tbody></table></div></section>${cancRelHtml(T.cancelamentos)}
     <div class="pn-bottom">${tab(TE('pn_por_fotografo'),T.por_fotografo,[['sessoes',TE('pn_sessoes'),v=>fmtN(v.sessoes||0)],['fotos',TE('pn_fotos'),v=>fmtN(v.fotos||0)],['conv',TE('pn_conversao'),v=>pc(v.sessoes_com_venda||0,v.sessoes||0)],...venda],TE('pn_fotografo'))}${tab(TE('pn_por_vendedor'),T.por_vendedor,venda,TE('vm_vendedor'))}</div>
     <div class="pn-bottom">${tab(TE('pn_por_ponto'),T.por_posto,venda,TE('pn_ponto'))}${tab(TE('pn_por_meio'),T.por_meio,venda,TE('pagamento'))}</div>`;}
 // notas do topo do Painel: a tela e o arquivo exportado (relPainel) leem a mesma lista
@@ -10034,6 +10041,13 @@ const EQ={
   pn_impressoes:["Impressões","Prints","Impresiones","Impressions","Drucke"],
   pn_nao_sairam:[(n)=>` · ${n} não saíram`,(n)=>` · ${n} failed`,(n)=>` · ${n} no salieron`,(n)=>` · ${n} non sorties`,(n)=>` · ${n} fehlgeschlagen`],
   pn_canceladas:["Canceladas","Cancelled","Canceladas","Annulées","Storniert"],
+  pn_estornado:["Pagas e canceladas (saíram do faturamento)","Paid then cancelled (removed from revenue)","Pagadas y canceladas (salieron de la facturación)","Payées puis annulées (retirées du chiffre)","Bezahlt und storniert (aus dem Umsatz genommen)"],
+  pn_cancelamentos:["Cancelamentos","Cancellations","Cancelaciones","Annulations","Stornierungen"],
+  pn_canc_em:["Cancelada em","Cancelled at","Cancelada el","Annulée le","Storniert am"],
+  pn_canc_por:["Quem cancelou","Cancelled by","Quién canceló","Annulée par","Storniert von"],
+  pn_venda:["Venda","Sale","Venta","Vente","Verkauf"],
+  pn_valor:["Valor","Amount","Valor","Montant","Betrag"],
+  pn_motivo:["Motivo","Reason","Motivo","Motif","Grund"],
   pn_por_fotografo:["Por fotógrafo","By photographer","Por fotógrafo","Par photographe","Nach Fotograf"],
   pn_fotos:["Fotos","Photos","Fotos","Photos","Fotos"],
   pn_conversao:["Conversão","Conversion","Conversión","Conversion","Konversion"],
@@ -11580,6 +11594,8 @@ function relPainel(){const D=state.painelUlt;const R=relNovo('painel',viewLabel(
     D.produtos.map(p=>[p.id==='outros'&&p.origem.length?p.nome+' ('+p.origem.join(', ')+')':p.nome,p.pacotes,p.adicional?null:p.fotos,p.receita,numF(p.share)/100]),[TE('total'),null,null,D.produtos.reduce((a,p)=>a+p.receita,0),null]);
   const pg=D.pagamentos;relAba(R,TE('pn_pagamentos'),TE('pn_pagamentos'),[relC(TE('pn_modalidade')),relC(TE('pn_transacoes'),'int'),relC(TE('pn_recebido'),'moeda0'),relC(TE('es_parte'),'pct')],
     pg.map(p=>[pagNome(p.nome),p.transacoes,p.recebido,numF(p.share)/100]),[TE('total'),pg.reduce((a,p)=>a+p.transacoes,0),pg.reduce((a,p)=>a+p.recebido,0),null]);
+  {const M=state.srvMet;const T=M&&M.dias?srvMetSoma(M.dias):null;if(T&&T.cancelamentos.length&&can('financeiro','r'))relAba(R,TE('pn_cancelamentos'),TE('pn_cancelamentos'),[relC(TE('pn_canc_em')),relC(TE('pn_venda')),relC(TE('pn_valor'),'moeda'),relC(TE('pn_fotos'),'int'),relC(TE('vm_vendedor')),relC(TE('pn_ponto')),relC(TE('pn_canc_por')),relC(TE('pn_motivo'))],
+    cancLinhas(T.cancelamentos).map(x=>[cancQuando(x.em),x.no,x.valor,x.fotos,x.vendedor,x.posto,x.por,x.motivo]),[TE('total'),null,T.estornos.valor,T.estornos.fotos,null,null,null,null]);}
   relAba(R,TE('pn_atendimentos'),TE('pn_atendimentos'),[relC(TE('pn_atendimentos')),relC(TE('cf_quantidade'),'int')],
     [[TE('pn_finalizadas'),S.finalizadas],[TE('pn_descartadas'),S.descartadas],[TE('pn_canceladas'),S.canceladas],[TE('di_f_abertos'),S.abertas||null],[TE('pn_brindes'),S.brindes]].filter(l=>l[1]!=null));
   if(D.vazio)R.abas.forEach(a=>{a.linhas=[];});return R;}
