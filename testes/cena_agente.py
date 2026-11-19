@@ -217,6 +217,8 @@ try:
     cfg = S.cookie_sessao(m, "cfg-cena", {"qualidade": {"r": True}, "configuracao": {"c": True, "r": True, "u": True}})
 
     def pede(metodo, rota, corpo=None, cookie=None):
+        if metodo == "POST" and rota == "/treino/config":
+            m._janelas.clear()                   # o interruptor tem limite de 6 por minuto por pessoa (testado no treino_agente)
         c = http.client.HTTPConnection("127.0.0.1", m.PORT, timeout=60)
         h = {"Host": HOST}
         if metodo == "POST":
@@ -329,6 +331,7 @@ try:
     stf = m.cena_status()
     mdf = m.cena_medida("sessao")
     ok(stf["abaixo"]["por"] == "cfg-cena" and stf["ligada_versao"] == FV and stf["aviso"] is None and mdf["ligada_abaixo"]["por"] == "cfg-cena"
+       and stf["congelados"] == len(bf["y"]) and mdf["congelados"] == len(bf["y"])
        and mdf["modelo_ok"] is True and mdf["criterio"]["passa"] is False, "/status e Medição: ligado abaixo da meta e o que falta: %r" % stf)
     # D10: rótulo novo não muda o Ligada forçado; mudar só a exposição mantém o selo
     xf, fxf = thumb("outro")
@@ -345,14 +348,28 @@ try:
     FV2 = (rr or {}).get("ponto_versao")
     ok(st == 200 and FV2 and FV2 != FV and m.treino_cfg()["ponto_versao"] == FV2 and xf in m.cena_base("ligada")["pids"] and modelos() == sorted([FV, FV2])
        and len(liga_log()) == 2, "religar com forcar congela as marcações novas: %s %r" % (st, rr))
-    # sem o modelo instalado: grava Ligada, mas /status e Medição dizem que nada é reconhecido
+    # sem o modelo instalado: /status e Medição dizem que nada é reconhecido; Ligada igual (mesma versão) não grava de novo
     real_ok = m.cena_modelo_ok
     m.cena_modelo_ok = lambda: (False, "sem_modelo")
     st, rs = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
     sts, mds = m.cena_status(), m.cena_medida("sessao")
     m.cena_modelo_ok = real_ok
-    ok(st == 200 and rs.get("aviso") == "sem_modelo" and sts["erro"] == "sem_modelo" and sts["aviso"] == "modelo não instalado: nada é reconhecido"
-       and mds["modelo_ok"] is False and json.loads(liga_log()[-1][4])["modelo_ok"] is False, "forcar sem modelo: grava e avisa: %s %r %r" % (st, rs, sts))
+    ok(st == 200 and rs.get("aviso") == "sem_modelo" and rs.get("igual") is True and rs.get("ponto_versao") == FV2 and len(liga_log()) == 2
+       and sts["erro"] == "sem_modelo" and sts["aviso"] == "sem_modelo" and mds["modelo_ok"] is False,
+       "sem modelo: avisa; Ligada igual: 200 sem nova linha no liga_log: %s %r %r" % (st, rs, sts))
+    # revisão: sem a linha de auditoria o Ligada não fica (o interruptor volta ao que era)
+    real_log = m.cena_liga_log
+    m.cena_liga_log = lambda *a, **k: (_ for _ in ()).throw(OSError("teste"))
+    xa, fxa = thumb("chute")
+    biblioteca(xa, fxa, HOJE)
+    rotula(xa, "chute", "LPFORCA2", HOJE)
+    espera(lambda: (m._cena_base_t.__setitem__(0, time.time()) or True) and m.cena_base("medir")["sem_vetor"] == 0 and m.cena_base("medir")["versao"] != FV2, 10)
+    st, ra = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
+    m.cena_liga_log = real_log
+    cfa = m.treino_cfg_mem()
+    m._treino_cfg["t"] = 0.0
+    ok(st == 500 and ra.get("error") == "auditoria" and cfa["ponto_versao"] == FV2 and m.treino_cfg()["ponto_versao"] == FV2 and len(liga_log()) == 2,
+       "sem a linha no liga_log o Ligada volta ao que era: %s %r %r" % (st, ra, m.treino_cfg()))
     # exposição muda sozinha: o selo do ponto fica; Só medir tira o selo
     m.treino_cfg_gravar({"exposicao": "medir"}, "adm")
     m._treino_cfg["t"] = 0.0
@@ -630,11 +647,11 @@ try:
     with m.estado_lock:                              # Ligada com uma versão congelada que existe
         db = m.estado_db()
         db.execute("update doc set valor = ? where col = 'config' and id = 'treino'",
-                   (json.dumps({"ponto": "ligada", "exposicao": "desligada", "ponto_versao": v_lig}),))
+                   (json.dumps({"ponto": "ligada", "exposicao": "desligada", "ponto_versao": v_lig, "abaixo": {"por": "cfg-cena", "em": "2026-11-18T22:00:00Z"}}),))
         db.commit()
         db.close()
     m._treino_cfg["t"] = 0.0
-    ok(v_lig and m.treino_cfg()["ponto"] == "ligada", "5: antes da troca, Ligada com a versão congelada %r" % v_lig)
+    ok(v_lig and m.treino_cfg()["ponto"] == "ligada" and (m.treino_cfg()["abaixo"] or {}).get("por") == "cfg-cena", "5: antes da troca, Ligada (abaixo da meta) com a versão congelada %r" % v_lig)
     ok(m.cena_sha_confere("b" * 64) is True, "5: SHA novo apaga")
     db = sqlite3.connect(m.CENA_DB)
     n_vet = db.execute("select count(*) from cena where vet is not null").fetchone()[0]
@@ -643,7 +660,7 @@ try:
     ok(n_vet == 0 and not m.cena_mem, "5: modelo trocado: nenhum vetor nem classificação antiga: %d" % n_vet)
     m._treino_cfg["t"] = 0.0
     cf5 = m.treino_cfg()
-    ok(n_mod == 0 and cf5["ponto"] == "medir" and not cf5.get("ponto_versao"), "5: modelo trocado: nada em modelo e Ligada vira Só medir: %r %r" % (n_mod, cf5))
+    ok(n_mod == 0 and cf5["ponto"] == "medir" and not cf5.get("ponto_versao") and cf5.get("abaixo") is None, "5: modelo trocado: nada em modelo e Ligada vira Só medir: %r %r" % (n_mod, cf5))
 
     # ---------- 20: filho morto reabre e para na 3ª morte, sem tocar no recorte ----------
     m.treino_cfg_gravar({"ponto": "medir"}, "adm")
