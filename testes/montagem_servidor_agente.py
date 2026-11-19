@@ -1,6 +1,7 @@
-# Montagem no servidor, E1 (plano docs/planos/2026-11-16-montagem-no-servidor.md): chave desligada | sombra, fila com
+# Montagem no servidor, E1 e E2 (plano docs/planos/2026-11-16-montagem-no-servidor.md): chave desligada | sombra, fila com
 # prioridade, arquivos com versão, as duas rotas, /status.montagem, linhas do journal, limpeza, disco, LGPD, processo que
-# morre e reinício. Critérios 1, 2, 13 a 18 e 20.
+# morre e reinício. Critérios 1, 2, 13 a 18 e 20. Desde a regra 19 as bases são só as do servidor (x["ia"], fotos de
+# gramado): sessão sem bases não é montada (sem plano B) e foto de sessão que não é base não vira montagem nova (E2).
 # Roda com HOME temporário:  HOME=$(mktemp -d) python3 -I testes/montagem_servidor_agente.py agente/eterna-agente.py
 # O agente é carregado neste processo (sem main: o teste dá as voltas do mtg_loop à mão); o processo de montagem é o de
 # verdade (agente/eterna-montagem.py) e, para segurar uma montagem no meio, o testes/_montagem_filho_falso.py. Os fundos
@@ -110,11 +111,13 @@ def nova_foto(com_recorte=True, vazio=False):
     return pid
 
 
-def nova_sessao(card, n_bases=2, extras=1):
+def nova_sessao(card, n_bases=2, extras=1, ia=True):
+    """Leva fechada; ia=True: as n_bases primeiras são as bases de IA que o servidor reconheceu (regra 19, x["ia"])."""
     fotos = [nova_foto() for _ in range(n_bases)] + [nova_foto(False) for _ in range(extras)]
     with m.sess_lock:
         m.sess[card] = {"card": card, "dia": HOJE, "status": "fechada", "fotos": list(fotos), "pend": [], "dec": {}, "removida": False,
-                        "ia": [], "ia_regra": {"n": 0, "motivo": "sem_funcao"}, "_t": {}, "ultima_chegada": time.time()}
+                        "ia": list(fotos[:n_bases]) if ia else [], "ia_regra": {"n": 2, "motivo": None} if ia else {"n": 2, "motivo": "sem_gramado"},
+                        "_t": {}, "ultima_chegada": time.time(), "fechada_em": time.time()}
         for p in fotos:
             m.sess_pid[p] = card
     return fotos[:n_bases]
@@ -221,19 +224,38 @@ try:
     s, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "config", "id": "montagem", "valor": {"modo": "ligada"}}]}, cookie=posto)
     ok(s == 200 and j.get("recusados") == 1 and m.mtg_cfg()["modo"] == "sombra", "1: o posto não muda a chave: %s %r" % (s, j))
 
+    # D8: a cópia de 2400 do recorte (a prévia do navegador) leva o joelho (tEXt "eterna") como a de 3000
+    from PIL.PngImagePlugin import PngInfo
+    J1 = nova_foto(False)
+    pi = PngInfo()
+    pi.add_text("eterna", json.dumps({"v": 1, "joelho": .74, "pernas": True}))
+    Image.new("RGBA", (3000, 2000), (0, 0, 0, 0)).save(m.rec_arquivo(J1), "PNG", pnginfo=pi)
+    p24 = m.rec_fazer(J1, m.lib[J1]["file"], 2400)
+    with Image.open(p24) as im:
+        ok(im.size == (2400, 1600) and json.loads(im.info.get("eterna") or "{}") == {"v": 1, "joelho": .74, "pernas": True},
+           "D8: a cópia de 2400 mantém o joelho do recorte: %r %r" % (im.size, im.info.get("eterna")))
+    with m.lock:
+        m.lib.pop(J1, None)
+
     # ---- critério 2: sombra. A volta da partida (prioridade 4) pega a sessão que já existia; a sessão nova entra por 1, 2 e 3
     ok(roda(), "2: a sessão que já existia é montada na partida")
-    ok(len(arqs(A0)) + len(arqs(B0)) == 9, "2: sessão anterior com 9 arquivos: %r %r" % (arqs(A0), arqs(B0)))
+    NF = len(m.MTG_ATIVOS)
+    ok(NF == 4 and m.MTG_ATIVOS == ("mirantedia", "arq1950", "telao", "tunel"), "2: os 4 fundos ativos de hoje, com o túnel: %r" % (m.MTG_ATIVOS,))
+    ok(len(arqs(A0)) + len(arqs(B0)) == 3 * NF, "2: sessão anterior com %d arquivos: %r %r" % (3 * NF, arqs(A0), arqs(B0)))
+    # regra 19, sem plano B: leva sem bases do servidor não é montada (nunca as 2 primeiras fotos de qualquer ponto)
+    SB = nova_sessao("LP-MTG-SB", ia=False)
+    ok(m.mtg_candidatas({"fotos": SB, "ia": [], "ia_regra": {"motivo": "sem_gramado"}}) == [] and m.mtg_candidatas({"fotos": SB, "ia": SB[:1], "ia_regra": {}}) == SB[:1]
+       and m.mtg_candidatas({"fotos": SB, "ia": SB, "ia_regra": {"motivo": "visita_ja_tem"}}) == [], "regra 19: as candidatas são só x[\"ia\"]")
     A, B = nova_sessao("LP-MTG-1")
     feitas0 = m.mtg_status()["feitas"]
     ok(roda(), "2: a sessão nova fica toda montada")
     V = {f: m.mtg_versao(f) for f in m.MTG_ATIVOS}
-    ok(all(v and re.match(r"^[0-9a-f]{8}$", v) for v in V.values()) and len(set(V.values())) == 3, "2: uma versão de 8 hex por fundo: %r" % V)
-    pref = {"arq1950": A, "mirantedia": B, "telao": B}            # FIA_BASE: 1950 = 1ª base; Mirante e Telão = 2ª
+    ok(all(v and re.match(r"^[0-9a-f]{8}$", v) for v in V.values()) and len(set(V.values())) == NF, "2: uma versão de 8 hex por fundo: %r" % V)
+    pref = {"arq1950": A, "mirantedia": B, "telao": B, "tunel": A}   # FIA_BASE: 1950 e túnel = 1ª base; Mirante e Telão = 2ª
     outra = {f: (B if p == A else A) for f, p in pref.items()}
     esperado = sorted([arq(pref[f], f, "p") for f in pref] + [arq(outra[f], f, "p") for f in pref] + [arq(pref[f], f, "i") for f in pref])
     tem = sorted(os.path.join(m.MONTAGENS, p, x) for p in (A, B) for x in arqs(p))
-    ok(tem == esperado, "2: 3 prévias preferidas + 3 da outra base + 3 impressões das preferidas: %r" % [os.path.relpath(x, m.MONTAGENS) for x in tem])
+    ok(tem == esperado, "2: 4 prévias preferidas + 4 da outra base + 4 impressões das preferidas: %r" % [os.path.relpath(x, m.MONTAGENS) for x in tem])
     if tem == esperado:
         t = lambda p: os.stat(p).st_mtime_ns
         g1, g2, g3 = [t(arq(pref[f], f, "p")) for f in pref], [t(arq(outra[f], f, "p")) for f in pref], [t(arq(pref[f], f, "i")) for f in pref]
@@ -253,9 +275,11 @@ try:
     ok(info.get("v") == "m2" and info.get("trunc") is True and isinstance(info.get("q"), float) and "frente" in info and isinstance(info.get("em"), int)
        and set(info) == {"v", "frente", "trunc", "q", "em"}, "2: info-m2.json da foto: %r" % info)
     st = m.mtg_status()
-    ok(st["modo"] == "sombra" and st["ok"] is True and st["fundos"] == V and st["filho"]["vivo"] and st["feitas"] - feitas0 == 9 and st["fila"] == 0 and st["erros"] == 0
+    ok(st["modo"] == "sombra" and st["ok"] is True and st["fundos"] == V and st["filho"]["vivo"] and st["feitas"] - feitas0 == 3 * NF and st["fila"] == 0 and st["erros"] == 0
        and st["ms_medio"] and st["atraso_p50_s"] is not None and st["atraso_p90_s"] is not None and st["guardado_gb"] >= 0 and st["piso_gb"] == m.REC_PISO_GB
-       and st["pausa_disco"] is False and st["no_hd"] is False and st["versao"] == "m2" and st["parado"] is None, "2: /status.montagem em sombra: %r" % st)
+       and st["pausa_disco"] is False and st["no_hd"] is False and st["versao"] == "m2" and st["parado"] is None
+       and st["imprime"] is True and st["montaveis"] == sorted(m.MTG_FUNDOS) and st["ativos"] == list(m.MTG_ATIVOS), "2: /status.montagem em sombra: %r" % st)
+    ok(not arqs(SB[0]) and not arqs(SB[1]), "regra 19: a leva sem bases do servidor não tem montagem: %r" % (arqs(SB[0]) + arqs(SB[1])))
     notas["ms_medio"] = st["ms_medio"]
     ls = linhas_srv()
     ok(any("modo=sombra versao=m2" in x and "no_hd=nao" in x and all("%s:%s" % (f, V[f]) in x for f in V) for x in ls), "2: linha de partida no registro: %r" % ls[:3])
@@ -266,19 +290,19 @@ try:
         m.mtg["log_em"] = 0.0
     m._mtg_linha_5min(time.time())
     ok(any(re.search(r"feitas=\d+ fila=\d+ erros=0 ms_medio=\d+ atraso p50/p90=", x) for x in linhas_srv()), "2: linha de movimento no registro: %r" % linhas_srv()[-1:])
-    # nenhuma tela lê na E1: o app não conhece as rotas e o compose segue no canvas
+    # E2: o app só lê a montagem do servidor com a chave em "ligada"; em sombra e desligada o compose segue no fiaMontar
     html = open(os.path.join(RAIZ, "index.html"), encoding="utf8").read()
     comp = html[html.index("async function compose(photoId,bgId)"):]
-    ok("/montagem/" not in html and "/montagens/pedir" not in html and "fiaMontar(photoId,bgId)" in comp[:900] and "fiaMontagens" not in html,
-       "2: na E1 o app não lê a montagem do servidor (compose continua no fiaMontar)")
+    ok("if(mtgSrv())return mtgCompose(photoId,bgId);" in comp[:900] and "fiaMontar(photoId,bgId)" in comp[:1100] and "m.modo==='ligada'&&m.imprime===true" in html
+       and "if(mtgSrv())return mtgHi(photoId,bgId);" in html, "2: compose e compHi leem o servidor só com a chave ligada")
     # sessão com uma base só: os 3 fundos usam essa; recorte sem ninguém: sem_pessoa, sem tentar de novo
     (U1,) = nova_sessao("LP-MTG-2", n_bases=1, extras=0)
     SP = nova_foto(vazio=True)
     with m.sess_lock:
-        m.sess["LP-MTG-3"] = {"card": "LP-MTG-3", "dia": HOJE, "status": "fechada", "fotos": [SP], "pend": [], "dec": {}, "removida": False, "ia": [], "ia_regra": {}, "_t": {}}
+        m.sess["LP-MTG-3"] = {"card": "LP-MTG-3", "dia": HOJE, "status": "fechada", "fotos": [SP], "pend": [], "dec": {}, "removida": False, "ia": [SP], "ia_regra": {}, "_t": {}}
         m.sess_pid[SP] = "LP-MTG-3"
     ok(roda(), "2: sessões de uma base e sem pessoa terminam")
-    ok(len(arqs(U1)) == 6 and not arqs(SP) and SP in m.mtg_sem_pessoa and m.mtg_status()["erros"] == 0, "2: uma base = 3 prévias e 3 impressões; sem pessoa não conta erro: %r %r" % (arqs(U1), arqs(SP)))
+    ok(len(arqs(U1)) == 2 * NF and not arqs(SP) and SP in m.mtg_sem_pessoa and m.mtg_status()["erros"] == 0, "2: uma base = 4 prévias e 4 impressões; sem pessoa não conta erro: %r %r" % (arqs(U1), arqs(SP)))
 
     # ---- critério 15: as duas rotas
     rota_p = "/montagem/ag_%s/telao.jpg?t=p" % B
@@ -322,9 +346,15 @@ try:
         ok(x == {"pid": "ag_" + B, "fundo": "telao", "versao": V["telao"], "estado": "pronta", "p": True, "i": True, "w": 2576, "h": 1839}, "15: item pronto: %r" % x)
         x = it[("ag_" + A, "telao")]
         ok(x["estado"] == "fila" and x["p"] is True and x["i"] is False, "15: a impressão que faltava vai para a fila: %r" % x)
-        ok(all(it[("ag_" + SP, f)]["estado"] == "sem_pessoa" for f in V), "15: foto sem pessoa: %r" % it[("ag_" + SP, "telao")])
+        ok(all(it[("ag_" + SP, f)]["estado"] == "sem_pessoa" for f in ("mirantedia", "arq1950", "telao")), "15: foto sem pessoa: %r" % it[("ag_" + SP, "telao")])
     ok(espera(lambda: os.path.isfile(arq(A, "telao", "i")) and os.path.isfile(arq(B, "arq1950", "i")) and fila_vazia()), "15: o pedido é montado (impressão da outra base)")
-    # foto fora da sessão (o servidor não previu): 202, sobe para a prioridade 0 e aparece
+    # E2 (regra 19): foto de uma leva de hoje que não é base não vira montagem nova (404 igual, pedir diz nao_base)
+    NB = SB[0]
+    s, j, _ = pede("GET", "/montagem/ag_%s/mirantedia.jpg?t=p" % NB, cookie=posto)
+    s2, j2, _ = pede("POST", "/montagens/pedir", {"pids": ["ag_" + NB], "fundos": ["mirantedia"], "tipos": ["p"]}, cookie=posto)
+    ok(s == 404 and j == {"error": "not found"} and s2 == 200 and j2["itens"][0]["estado"] == "nao_base" and fila_vazia() and not arqs(NB),
+       "E2: foto que não é base não é montada: %s %r %s %r" % (s, j, s2, j2))
+    # foto fora das levas carregadas (reimpressão de venda antiga, o servidor não previu): 202, sobe para a prioridade 0 e aparece
     X = nova_foto()
     s, j, _ = pede("GET", "/montagem/ag_%s/mirantedia.jpg?t=p" % X, cookie=posto)
     ok(s == 202 and j == {"estado": "fila"}, "15: montagem ainda não feita: 202: %s %r" % (s, j))
@@ -394,7 +424,7 @@ try:
     ok(espera(lambda: pego(lote[0], "mirantedia"), 60), "14: o primeiro trabalho fica preso na trava")
     k = 0
     for pid in lote[1:]:
-        for f in m.MTG_ATIVOS:
+        for f in m.MTG_ATIVOS[:3]:
             m.mtg_enfileirar(pid, f, ("p",), m.MTG_P_IMPRESSAO if k % 2 else m.MTG_P_REFAZER)
             k += 1
     PED = nova_foto()

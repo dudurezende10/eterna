@@ -14,6 +14,9 @@
 //   10 Mirante do Rio: impressão presa embaixo, com o Cristo dentro do corte
 //   11 proteção de rosto igual à do navegador; sem o modelo de rostos, monta e registra rostos nulo
 //   12 halo: nenhum ponto da borda mais escuro que a pessoa e que o fundo branco de teste
+//   D8 corte do joelho (v99.35.0): o tEXt "eterna" do PNG do recorte (joelho, pernas) corta o corpo inteiro na linha dos
+//      joelhos, igual ao fiaPngInfo + fiaJoelho do navegador, na prévia e na impressão; sem pernas inteiras ou com chão
+//      abaixo dos pés, não corta. Os 4 fundos ativos de hoje (com a Saída do túnel v2, corte 10x15 preso no alto).
 // MONTAGEM_SAIDA=<pasta> guarda as imagens e o resumo.json. MONTAGEM_RAPIDO=1 roda só a prévia.
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');const fs=require('fs');const path=require('path');const os=require('os');
 const login=require('./_login.js');
@@ -25,7 +28,7 @@ const PY=path.join(RAIZ,'agente','eterna-montagem.py'),AJ=path.join(__dirname,'_
 const py=(args,input)=>execFileSync('python3',args,{input:input||'',maxBuffer:1<<28}).toString();
 const pyLinhas=(args,input)=>py(args,input).trim().split('\n').map(l=>JSON.parse(l));
 const LIM={mae:2.0,frac16:.015,caixa:3,layout:1e-6,halo:-12,cinza:2,fora:2};
-const ATIVOS=['mirantedia','arq1950','telao'];const FUNDOS=['mirantedia','arq1950','telao','campeao2','mirante','tunel','podio'];
+const ATIVOS=['mirantedia','arq1950','telao','tunel'];const FUNDOS=['mirantedia','arq1950','telao','campeao2','mirante','tunel','podio'];
 const igual=(a,b)=>{if(typeof a==='number'&&typeof b==='number')return a===b;if(a===null||b===null||typeof a!=='object'||typeof b!=='object')return a===b;
   if(Array.isArray(a)!==Array.isArray(b))return false;const ka=Object.keys(a).sort(),kb=Object.keys(b).sort();return J(ka)===J(kb)&&ka.every(k=>igual(a[k],b[k]));};
 (async()=>{const notas={};
@@ -37,13 +40,13 @@ ok(!/\bsocket\b|urllib|http\.|subprocess|\beval\(|\bexec\(/.test(fonte),'o proce
 const req=fs.readFileSync(path.join(RAIZ,'servidor','linux','requisitos.txt'),'utf8');
 ok(/^numpy==/m.test(req)&&/^pillow==/m.test(req)&&/^opencv-python-headless==/m.test(req),'numpy, pillow e opencv-python-headless estão nos requisitos do servidor (nenhum pacote novo)');
 // ---- figuras
-const CASOS=JSON.parse(py([AJ,'figuras',path.join(TMP,'recortes')]));const HALO=CASOS.halo;delete CASOS.halo;const ASPEROS={};Object.keys(CASOS).filter(n=>CASOS[n].so_medida).forEach(n=>{ASPEROS[n]=CASOS[n];delete CASOS[n];});const NOMES=Object.keys(CASOS);
+const CASOS=JSON.parse(py([AJ,'figuras',path.join(TMP,'recortes')]));const HALO=CASOS.halo;delete CASOS.halo;const ASPEROS={};Object.keys(CASOS).filter(n=>CASOS[n].so_medida).forEach(n=>{ASPEROS[n]=CASOS[n];delete CASOS[n];});const JOELHOS={};Object.keys(CASOS).filter(n=>CASOS[n].joelho).forEach(n=>{JOELHOS[n]=CASOS[n];delete CASOS[n];});const NOMES=Object.keys(CASOS);
 ok(NOMES.length===8,'8 recortes sintéticos: '+NOMES.length);
 const REGRAS=pyLinhas([PY,'--regras'])[0];const arqFundo=(bg,hi)=>path.join(RAIZ,REGRAS.fundos[bg][hi?'hi':'previa']);
 const b=await chromium.launch();const errs=[];
 try{
   const ctx=await b.newContext({viewport:{width:1280,height:800},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
-  const pidDe=n=>'9b00000000'+(n==='halo'?'ff':ASPEROS[n]?'e'+Object.keys(ASPEROS).indexOf(n):('0'+NOMES.indexOf(n).toString(16)).slice(-2));const casoDe={};NOMES.forEach(n=>{casoDe[pidDe(n)]=CASOS[n];});casoDe[pidDe('halo')]=HALO;Object.keys(ASPEROS).forEach(n=>{casoDe[pidDe(n)]=ASPEROS[n];});
+  const pidDe=n=>'9b00000000'+(n==='halo'?'ff':ASPEROS[n]?'e'+Object.keys(ASPEROS).indexOf(n):JOELHOS[n]?'d'+Object.keys(JOELHOS).indexOf(n):('0'+NOMES.indexOf(n).toString(16)).slice(-2));const casoDe={};NOMES.forEach(n=>{casoDe[pidDe(n)]=CASOS[n];});casoDe[pidDe('halo')]=HALO;Object.keys(ASPEROS).forEach(n=>{casoDe[pidDe(n)]=ASPEROS[n];});Object.keys(JOELHOS).forEach(n=>{casoDe[pidDe(n)]=JOELHOS[n];});
   const recorte=r=>{let q={};try{q=JSON.parse(r.request().postData()||'{}');}catch(e){}const c=casoDe[q.pid];if(!c)return r.fulfill({status:404,body:'{}'});
     r.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(q.lado===3000?c.hi:c.previa)});};
   await ctx.route(ORIG+'/recorte',recorte);
@@ -61,6 +64,7 @@ try{
   ok(!igual(REGRAS.regras,mexe(app.regras,c=>{c.telao.estreito.corte+=.01;}))&&!igual(REGRAS.fundos.telao,mexe(app.fundos.telao,c=>{c.telao.quad[2][1]+=1;}))
     &&!igual(REGRAS.estreito,[.71,1.2])&&!igual(REGRAS.base,mexe(app.base,c=>{c.telao=0;}))&&!igual(REGRAS.fundos.arq1950,mexe(app.fundos.arq1950,c=>{c.impAlto=false;})),'3: um número mudado num dos lados precisa quebrar a comparação');
   // regras que o plano fixa (o fundo novo do 1950 sem "largo" e sem zoom; o estreito nos 3 ativos)
+  ok(J(REGRAS.joelho)===J([.35,.97])&&REGRAS.regras.tunel.meio.alt===.766&&REGRAS.regras.tunel.estreito.corte===.74&&REGRAS.base.tunel===0&&REGRAS.fundos.tunel.impAlto===true&&/tunel-v2/.test(REGRAS.fundos.tunel.previa),'3: túnel v2 (regra 22, 1ª base, impressão presa no alto) e limites do joelho: '+J([REGRAS.regras.tunel,REGRAS.joelho]));
   ok(!REGRAS.regras.arq1950.largo&&REGRAS.regras.arq1950.meio.alt===.66&&REGRAS.regras.arq1950.estreito.corte===.74&&REGRAS.regras.telao.estreito.corte===.47&&REGRAS.regras.mirantedia.estreito.corte===.74
     &&!Object.values(REGRAS.regras).some(r=>Object.values(r).some(x=>x&&x.zoom)),'3: regras de hoje (1950 novo, estreito nos 3 ativos, sem zoom)');
   // os fundos como o navegador os decodifica (para a caixa da pessoa e o "nada mexido fora da tela") e o tamanho de cada um
@@ -96,7 +100,7 @@ try{
     if(!RAPIDO){const h=await pg.evaluate(async([pid,bg])=>{window.__hi=null;const r=await ETERNA.compHi('ag_'+pid,bg);if(!r.url)return {err:r.err||r.pending||'?'};return {png:window.__hi,w:r.w,h:r.h,layout:r.layout,avisos:r.avisos};},[pidDe(n),bg]);
       if(h.err||!h.png){ok(false,'canvas hi '+c.id+': '+(h.err||'sem imagem'));continue;}ok(!(h.avisos||[]).length,'canvas hi '+c.id+': impressão com o fundo de 5000 px (avisos '+J(h.avisos)+')');
       c.canvasHi=path.join(TMP,'canvas-hi-'+c.id+'.png');salvaPng(c.canvasHi,h.png);c.LHi=h.layout;c.hiW=h.w;c.hiH=h.h;}}
-  const vivos=C.filter(c=>c.canvas);ok(vivos.length===24&&tela,'24 montagens do canvas (8 recortes x 3 fundos): '+vivos.length);
+  const vivos=C.filter(c=>c.canvas);ok(vivos.length===8*ATIVOS.length&&tela,(8*ATIVOS.length)+' montagens do canvas (8 recortes x '+ATIVOS.length+' fundos): '+vivos.length);
   // ---- critério 4 (P1): layout puro, 8 recortes x 7 fundos, com a medida e os rostos do navegador
   dims.telao=tela?[tela.w,tela.h]:null;
   const LB=await pg.evaluate(([NOMES,FUNDOS,medidas,dims,ROS])=>{const E=ETERNA;const o={};for(const n of NOMES)for(const bg of FUNDOS){const m=medidas[n+'|2400'];const [W,H]=dims[bg];let L=E.fiaLayout(m,bg,W,H);const ro=ROS[n];
@@ -129,7 +133,7 @@ try{
   // critério 8: preto e branco de verdade no 1950, prévia e impressão, dos dois lados
   vivos.filter(c=>c.bg==='arq1950').forEach(c=>{if(c.pa&&c.pa.ok){jobs.push({id:'cinza|py|'+c.id,a:c.py,cinza:true});jobs.push({id:'cinza|canvas|'+c.id,a:c.canvas,cinza:true});}if(c.pb&&c.pb.ok)jobs.push({id:'cinza|pyhi|'+c.id,a:c.pyHi,cinza:true});});
   // critérios 8, 9 e 10: onde o 10x15 corta (uma faixa sem pessoa da impressão igual ao fundo cortado no alto, no meio ou embaixo)
-  const CORTE={arq1950:{pos:'alto',faixa:[0,0,1,.28],cinza:true},telao:{pos:'meio',faixa:[0,0,.14,1]},mirantedia:{pos:'baixo',faixa:[0,0,1,.12]}};
+  const CORTE={arq1950:{pos:'alto',faixa:[0,0,1,.28],cinza:true},telao:{pos:'meio',faixa:[0,0,.14,1]},mirantedia:{pos:'baixo',faixa:[0,0,1,.12]},tunel:{pos:'alto',faixa:[0,0,1,.2],semCorte:true}};
   comHi.forEach(c=>{if(c.pb&&c.pb.ok){jobs.push({id:'corte|py|'+c.id,a:c.pyHi,corte:{fundo:arqFundo(c.bg,true),...CORTE[c.bg]}});jobs.push({id:'corte|canvas|'+c.id,a:c.canvasHi,corte:{fundo:arqFundo(c.bg,true),...CORTE[c.bg]}});}});
   const res=JSON.parse(py([AJ,'compara'],J(jobs)));const R={};res.forEach(r=>{R[r.id]=r;});
   const por={};ATIVOS.forEach(bg=>{por[bg]={previa:{caixa_px:0,mae:0,frac16:0},impressao:{mae:0,frac16:0}};});
@@ -148,7 +152,8 @@ try{
       ok(q.mae<=LIM.mae,'P3 impressão '+c.id+': erro médio '+q.mae+' (limite '+LIM.mae+')');ok(q.frac16<=LIM.frac16,'P3 impressão '+c.id+': '+(q.frac16*100).toFixed(2)+'% dos pontos com diferença > 16 (limite 1,5%)');
       ok(q.w===1844&&q.h===1240&&c.hiW===1844&&c.hiH===1240,'6: corte de impressão em 1844x1240: '+q.w+'x'+q.h);}}
     for(const l of ['py','canvas']){const k=R['corte|'+l+'|'+c.id];if(!k)continue;const pos=CORTE[c.bg].pos;const outras=['alto','meio','baixo'].filter(x=>x!==pos).map(x=>k['corte_'+x]);
-      ok(!k.erro&&k['corte_'+pos]<=LIM.mae&&outras.every(v=>v>k['corte_'+pos]*3+2),(c.bg==='arq1950'?'8: 1950 com o título inteiro (corte tira de baixo)':c.bg==='telao'?'9: Telão cortado no meio da altura':'10: Mirante do Rio preso embaixo')+' na impressão ('+l+') '+c.id+': '+J(k));}}
+      const semCorte=CORTE[c.bg].semCorte; // fundo já na proporção 3:2 (túnel v2, 5000x3333): o 10x15 não corta nada; vale só ser igual ao fundo
+      ok(!k.erro&&k['corte_'+pos]<=LIM.mae&&(semCorte?outras.every(v=>Math.abs(v-k['corte_'+pos])<1e-9):outras.every(v=>v>k['corte_'+pos]*3+2)),(c.bg==='arq1950'?'8: 1950 com o título inteiro (corte tira de baixo)':c.bg==='tunel'?'túnel com a faixa inteira (fundo já em 3:2, o 10x15 não corta)':c.bg==='telao'?'9: Telão cortado no meio da altura':'10: Mirante do Rio preso embaixo')+' na impressão ('+l+') '+c.id+': '+J(k));}}
   notas.por_fundo=por;notas.casos=vivos.length;
   // ---- critério 7: os casos obrigatórios caem onde o plano diz
   const Lde=(n,bg)=>(vivos.find(c=>c.n===n&&c.bg===bg)||{L:{}}).L;const q=n=>{const m=medidas[n+'|2400'];return m.box.w/m.box.h;};
@@ -180,6 +185,28 @@ try{
   ok(rr[2].ok&&rr[2].layout.rostos===null&&Math.abs(rr[2].layout.corteFinal-.62)<.01,'11: sem o modelo monta sem rostos (corte da regra) e registra rostos nulo: '+J(rr[2].layout&&[rr[2].layout.rostos,rr[2].layout.corteFinal]));
   // frente (só medida na E1): rosto principal = largura >= 50% do maior; de frente = nariz a até 0,35 da distância entre os olhos
   ok(igual(rr[3].frente,{rostos:2,frontais:2,ok:true})&&igual(rr[4].frente,{rostos:2,frontais:1,ok:false})&&igual(rr[5].frente,{rostos:0,frontais:0,ok:false})&&rr[6].frente===null,'frente: critério do agente: '+J([rr[3].frente,rr[4].frente,rr[5].frente,rr[6].frente]));
+  // ---- D8: corte do joelho. Medida (fiaPngInfo + fiaJoelho no navegador x png_info + joelho no Python), layout e imagem nos
+  // 4 fundos ativos, prévia (o Python reduz o de 3000 em memória e mantém o tEXt) e impressão
+  for(const n of Object.keys(JOELHOS)){const c=JOELHOS[n];
+    const a=await pg.evaluate(async([pid])=>{const out={};for(const lado of [2400,3000]){const r=await fetch(location.origin+'/recorte',{method:'POST',body:JSON.stringify({pid,lado})});const bl=await r.blob();const info=await ETERNA.fiaPngInfo(bl);
+      const u=URL.createObjectURL(bl);const im=new Image();im.src=u;await im.decode();const m0=ETERNA.fiaMedir(im);const m=ETERNA.fiaJoelho(m0,info);URL.revokeObjectURL(u);out[lado]={info,box0:m0.box,box:m.box,trunc:m.trunc,joelho:m.joelho||null};}return out;},[pidDe(n)]);
+    const p=pyLinhas([PY,'--teste'],J([{recorte:c.hi,reduzir:true,so_medir:true,joelho:true},{recorte:c.hi,reduzir:true,so_medir:true},{recorte:c.hi,so_medir:true,joelho:true}]));
+    ok(igual(a[2400].info,c.joelho)&&igual(p[0].info,c.joelho),'D8 '+n+': o joelho do PNG chega aos dois lados (também na cópia de 2400): '+J([a[2400].info,p[0].info]));
+    for(const [lado,k] of [[2400,0],[3000,2]]){const d=Math.max(...['x','y','w','h'].map(q=>Math.abs(a[lado].box[q]-p[k].m.box[q])));
+      ok(d<=1&&a[lado].trunc===p[k].m.trunc,'D8 '+n+' '+lado+': medida com o joelho igual à do navegador: '+J(a[lado].box)+' x '+J(p[k].m.box));}
+    const cortou=a[2400].box.h<a[2400].box0.h*.85&&p[0].m.box.h<p[1].m.box.h*.85;
+    ok(c.corta?cortou:igual(a[2400].box,a[2400].box0)&&igual(p[0].m.box,p[1].m.box),'D8 '+n+': '+(c.corta?'corta na linha dos joelhos':'não corta')+': '+J([a[2400].box0.h,a[2400].box.h,p[1].m.box.h,p[0].m.box.h]));
+    for(const bg of ATIVOS){const id=n+'-'+bg;
+      const r=await pg.evaluate(async([pid,bg])=>{const E=ETERNA;E.FIA_ROSTOS['ag_'+pid]=Promise.resolve([]);const r=await E.fiaMontar('ag_'+pid,bg);if(!r.canvas)return {err:r.err||r.pending||'?'};
+        window.__hi=null;const h=await E.compHi('ag_'+pid,bg);return {png:r.canvas.toDataURL('image/png'),layout:r.layout,hi:window.__hi,hiLayout:h.layout};},[pidDe(n),bg]);
+      if(!ok(!r.err&&r.png,'D8 canvas '+id+': '+r.err))continue;const ca=path.join(TMP,'canvas-'+id+'.png'),cah=path.join(TMP,'canvas-hi-'+id+'.png'),pp=path.join(TMP,'py-'+id+'.png'),pph=path.join(TMP,'py-hi-'+id+'.png');salvaPng(ca,r.png);if(r.hi)salvaPng(cah,r.hi);
+      const [pa,pb]=pyLinhas([PY,'--teste'],J([{recorte:c.hi,reduzir:true,fundo:arqFundo(bg),bg,rostos:[],saida:pp},{recorte:c.hi,fundo:arqFundo(bg,true),bg,rostos:[],impressao:pph}]));
+      if(!ok(pa.ok&&pb.ok,'D8 Python '+id+': '+J([pa,pb]).slice(0,160)))continue;
+      ok(pa.layout.modo===r.layout.modo&&Math.abs(pa.layout.corteFinal-r.layout.corteFinal)<=.01&&Math.abs(pa.layout.dst.h-r.layout.dst.h)<=3&&Math.abs(pa.layout.dst.w-r.layout.dst.w)<=3,'D8 '+id+': layout igual ao do navegador: '+J([r.layout.modo,r.layout.corteFinal,r.layout.dst])+' x '+J([pa.layout.modo,pa.layout.corteFinal,pa.layout.dst]));
+      const cmp=JSON.parse(py([AJ,'compara'],J([{id:'p',a:ca,b:pp,fundo_a:fundoCanvas[bg],fundo_b:arqFundo(bg),quad:quadDe({bg,w:pa.w})}].concat(r.hi?[{id:'i',a:cah,b:pph}]:[]))));
+      ok(!cmp[0].erro&&cmp[0].mae<=LIM.mae&&cmp[0].frac16<=LIM.frac16&&cmp[0].caixa_px!=null&&cmp[0].caixa_px<=LIM.caixa,'D8 '+id+': prévia igual à do navegador: '+J(cmp[0]).slice(0,200));
+      if(r.hi)ok(!cmp[1].erro&&cmp[1].mae<=LIM.mae&&cmp[1].frac16<=LIM.frac16,'D8 '+id+': impressão igual à do navegador: '+J(cmp[1]).slice(0,200));else ok(false,'D8 '+id+': sem a impressão do canvas');
+      notas['joelho_'+id]=[+cmp[0].mae.toFixed(2),cmp[1]?+cmp[1].mae.toFixed(2):null];}}
   // ---- critério 12: halo no fundo branco de teste (outra página: o fundo do Túnel trocado por branco)
   const pg2=await ctx.newPage();pg2.setDefaultTimeout(120000);pg2.on('pageerror',e=>errs.push(e.message));const branco=path.join(TMP,'recortes','branco_2400.png');
   await pg2.route('**/'+REGRAS.fundos.tunel.previa,r=>r.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(branco)}));

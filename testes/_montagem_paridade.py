@@ -50,14 +50,20 @@ def acabar(im):
     return Image.fromarray(a, "RGBA")
 
 
-def grava_par(im, pasta, nome):
-    """O recorte de 3000 px e a cópia de 2400 do agente (rec_fazer: thumbnail com LANCZOS), que é o PNG do navegador."""
+def grava_par(im, pasta, nome, eterna=None):
+    """O recorte de 3000 px e a cópia de 2400 do agente (rec_fazer: thumbnail com LANCZOS), que é o PNG do navegador.
+    eterna: o tEXt que o processo de recorte grava (joelho e pernas, D8), nos dois arquivos como o agente faz."""
+    from PIL.PngImagePlugin import PngInfo
+    pinfo = None
+    if eterna is not None:
+        pinfo = PngInfo()
+        pinfo.add_text("eterna", json.dumps(eterna))
     p3 = os.path.join(pasta, nome + "_3000.png")
-    im.save(p3, "PNG", compress_level=3)
+    im.save(p3, "PNG", compress_level=3, pnginfo=pinfo)
     pq = im.copy()
     pq.thumbnail((2400, 2400), Image.LANCZOS)
     p2 = os.path.join(pasta, nome + "_2400.png")
-    pq.save(p2, "PNG", compress_level=3)
+    pq.save(p2, "PNG", compress_level=3, pnginfo=pinfo)
     return p3, p2
 
 
@@ -117,6 +123,21 @@ def figuras(pasta):
         rgb[al == 0] = 0
         p3, p2 = grava_par(Image.fromarray(np.dstack([rgb, al]), "RGBA"), pasta, nome)
         casos[nome] = {"hi": p3, "previa": p2, "rostos": [], "so_medida": True, "nota": "borda áspera"}
+
+    # corte do joelho (D8): casal de corpo inteiro com os pés na borda de baixo e o joelho do recorte no PNG; o mesmo casal
+    # sem as pernas inteiras (não corta) e com chão abaixo dos pés (não encosta: não corta)
+    def casal_ci(chao):
+        def f(d):
+            pessoa(d, 1300, 160, 1840 - (2000 - chao), 300, 3, chao=chao)
+            pessoa(d, 1700, 200, 1800 - (2000 - chao), 290, 1, chao=chao)
+        return f
+    for nome, chao, info, corta in (("joelho", 2000, {"v": 1, "joelho": .74, "pernas": True}, True),
+                                    ("joelho_sem_pernas", 2000, {"v": 1, "joelho": .74, "pernas": False}, False),
+                                    ("joelho_chao", 1880, {"v": 1, "joelho": .70, "pernas": True}, False)):
+        im = Image.new("RGBA", (3000, 2000), (0, 0, 0, 0))
+        casal_ci(chao)(ImageDraw.Draw(im))
+        p3, p2 = grava_par(acabar(im), pasta, nome, info)
+        casos[nome] = {"hi": p3, "previa": p2, "rostos": [], "joelho": info, "corta": corta, "nota": "corpo inteiro (D8)"}
 
     # prova do halo: uma figura de uma cor só (clara), para o fundo branco de teste
     cor = (200, 170, 140)
