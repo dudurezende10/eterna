@@ -4309,8 +4309,8 @@ try:
 except ValueError:
     MTG_TETO_GB = 20.0
 MTG_FILA_MAX = 500
-MTG_P0_MAX = 40          # pedidos do Checkout esperando; acima disso 429 (o posto cai na reserva do navegador)
-MTG_TAXA = 240           # pedidos por minuto por IP em cada uma das duas rotas
+MTG_P0_MAX = 40          # pedidos do Checkout esperando; acima disso 429 (o item fica em "Preparando" e o app tenta de novo; o navegador não monta)
+MTG_TAXA = 240           # pedidos por minuto por IP em cada uma das duas rotas; a impressão (t=i) tem a conta dela (as prévias não a barram)
 MTG_ESPERA_FILHO = 60    # s numa montagem; acima disso o filho é reiniciado
 MTG_CARGA_SEG = 60       # s para o filho abrir (numpy, Pillow, OpenCV)
 MTG_ERRO_SEG = 60
@@ -4357,6 +4357,8 @@ _mtg_cfg = {"t": 0.0, "v": None}
 _mtg_sha = {}                      # caminho -> (tamanho, mtime, sha256)
 _mtg_dims = {}                     # caminho -> (tamanho, mtime, (w, h))
 _mtg_motor = {"m": None, "chave": None}
+_mtg_baixa_falhou = {}             # caminho do fundo -> (até quando não tenta de novo, espera atual em s)
+MTG_BAIXA_ESPERA, MTG_BAIXA_TETO = 30, 300   # fundo que a origem não entregou: 30 s, dobrando até 5 min
 
 
 def montagem_valida(j):
@@ -4426,14 +4428,18 @@ def mtg_fundo_arquivo(fundo, hi, baixar=True):
         return p
     if not baixar:
         raise ValueError("fundo")
+    falha = _mtg_baixa_falhou.get(rel)
+    if falha and time.time() < falha[0]:
+        raise ValueError("fundo")                    # a origem acabou de falhar: espera crescente (não baixa a cada volta de 2 s)
     try:
         data = app_baixar(rel)
         if not data or not app_disco_gravar(rel, data) or not os.path.isfile(p):
             raise ValueError("fundo")
-    except ValueError:
-        raise
     except Exception:
+        espera = min(MTG_BAIXA_TETO, (falha[1] * 2) if falha else MTG_BAIXA_ESPERA)
+        _mtg_baixa_falhou[rel] = (time.time() + espera, espera)
         raise ValueError("fundo")
+    _mtg_baixa_falhou.pop(rel, None)
     return p
 
 
@@ -4497,17 +4503,54 @@ def mtg_candidatas(x):
     return [p for p in (x.get("ia") or []) if isinstance(p, str)][:2]
 
 
-def mtg_base_ok(pid):
-    """Montagem nova só sai de base de IA (regra 19). Foto de sessão carregada (ontem e hoje) que não é base de nenhuma
-    leva: não. Foto de dia mais antigo (reimpressão de venda antiga): sim, a venda já foi feita com ela."""
+_mtg_pagas = {"chave": None, "v": frozenset()}
+
+
+def mtg_pagas():
+    """(pid, fundo) das montagens de vendas pagas no vendas.db (aiSel 'ai:<id>|<fundo>' do evento criar de venda com
+    pagar). Relido só quando o banco muda. Erro de leitura sobe para quem chama."""
+    if not os.path.exists(VENDAS_DB):
+        return frozenset()
+    chave = tuple(os.stat(p).st_mtime_ns if os.path.exists(p) else 0 for p in (VENDAS_DB, VENDAS_DB + "-wal"))
+    if _mtg_pagas["chave"] == chave:
+        return _mtg_pagas["v"]
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rs = db.execute("select dados from evento where tipo = 'criar' and venda in"
+                            " (select venda from evento where tipo = 'pagar')").fetchall()
+        finally:
+            db.close()
+    out = set()
+    for (dados,) in rs:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            continue
+        for k in d.get("aiSel") or []:
+            a, _, f = re.sub(r"^ai:", "", str(k)).partition("|")
+            if pid_ok(a) and f:
+                out.add((pid_lib(a), f))
+    _mtg_pagas.update(chave=chave, v=frozenset(out))
+    return _mtg_pagas["v"]
+
+
+def mtg_base_ok(pid, fundo=None):
+    """Montagem nova só sai de base de IA (regra 19). Foto de leva carregada (ontem e hoje): só se é base de alguma leva.
+    Foto fora das levas carregadas: só a reimpressão de montagem vendida (venda paga no vendas.db com aquela base naquele
+    fundo). Sem como ler as vendas: não."""
     with sess_lock:
         c = sess_pid.get(pid)
         x = sess.get(c) if c else None
-        if x is None:
-            return True
-        if pid in (x.get("ia") or ()):
-            return True
-        return any(pid in (y.get("ia") or ()) for y in sess.values())
+        if x is not None:
+            if pid in (x.get("ia") or ()):
+                return True
+            return any(pid in (y.get("ia") or ()) for y in sess.values())
+    try:
+        pagas = mtg_pagas()
+    except Exception:
+        return False
+    return any(p == pid and (fundo is None or f == fundo) for p, f in pagas)
 
 
 def mtg_preferida(fundo, n):
@@ -4737,8 +4780,14 @@ def mtg_fechar_filho():
 
 
 def _mtg_limita(d, n):
-    while len(d) > n:
-        d.pop(next(iter(d)))
+    """Tira os mais antigos até sobrar n. Outras linhas mexem no mesmo dicionário (rotas, trabalhador, laço): sem quebrar
+    se ele mudar no meio."""
+    erros = 0
+    while len(d) > n and erros < 1000:
+        try:
+            d.pop(next(iter(d)), None)
+        except (RuntimeError, StopIteration):
+            erros += 1
 
 
 def _mtg_info_gravar(pid, j):
@@ -4925,8 +4974,11 @@ def mtg_apagar(pid):
             return False
     except OSError:
         return False
-    for k in [k for k in mtg_completas if k[0] == pid]:
-        mtg_completas.discard(k)
+    try:                                               # cópia: o mtg_loop pode estar anotando ao mesmo tempo
+        for k in [k for k in mtg_completas.copy() if k[0] == pid]:
+            mtg_completas.discard(k)
+    except Exception:
+        mtg_completas.clear()                          # só memória (o laço confere o disco de novo); a pasta já saiu
     return True
 
 
@@ -17282,7 +17334,7 @@ class H(BaseHTTPRequestHandler):
         v = q.get("v", [""])[0]
         if not m or t not in ("p", "i") or m.group(3) not in MTG_FUNDOS or (v and not re.match(r"^[0-9a-f]{8}$", v)):
             return self.js(nf, 404, True)
-        if not limite_ok(self.client_address[0], "montagem", MTG_TAXA):
+        if not limite_ok(self.client_address[0], "montagem-i" if t == "i" else "montagem", MTG_TAXA):
             return self.js({"error": "muitos pedidos"}, 429, True)
         pid, fundo = m.group(2), m.group(3)
         with lock:
@@ -17314,8 +17366,11 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
-        if not mtg_base_ok(pid):                       # regra 19: montagem nova só de base de IA (mesmo 404 de foto desconhecida)
+        if not mtg_base_ok(pid, fundo):                # regra 19: montagem nova só de base de IA (mesmo 404 de foto desconhecida)
             return self.js(nf, 404, True)
+        ruim = mtg_ruins.get((pid, fundo))
+        if ruim and ruim[0] == versao and time.time() - ruim[2] < MTG_ERRO_DE_NOVO:
+            return self.js({"estado": "erro"}, 422, True)  # a montagem desta versão acabou de falhar no motor: estado final, sem fila
         job, erro = mtg_enfileirar(pid, fundo, (t,), MTG_P_PEDIDO)
         if erro == "fila_cheia":
             return self.js({"error": "muitos pedidos"}, 429, True)
@@ -17328,12 +17383,12 @@ class H(BaseHTTPRequestHandler):
         as que faltam, um pedido com a prioridade 0 (passa na frente de tudo que o servidor monta sozinho)."""
         if mtg_cfg()["modo"] == "desligada":
             return self.js({"error": "montagem_desligada"}, 503, True)
-        if not limite_ok(self.client_address[0], "montagens-pedir", MTG_TAXA):
-            return self.js({"error": "muitos pedidos"}, 429, True)
         body, err = self.corpo(2048)
         if err:
             return self.js({"error": "corpo inválido"}, err, True)
         pids, fundos, tipos = body.get("pids"), body.get("fundos"), body.get("tipos", ["p"])
+        if not limite_ok(self.client_address[0], "montagens-pedir-i" if tipos == ["p", "i"] else "montagens-pedir", MTG_TAXA):
+            return self.js({"error": "muitos pedidos"}, 429, True)   # a impressão tem a conta dela: as prévias não a barram
         if not isinstance(pids, list) or not 1 <= len(pids) <= 4 or not all(isinstance(p, str) and _re_pid.match(p) for p in pids) \
                 or not isinstance(fundos, list) or not 1 <= len(fundos) <= 5 or not all(isinstance(f, str) and f in MTG_FUNDOS for f in fundos) \
                 or tipos not in (["p"], ["p", "i"]) or set(body) - {"pids", "fundos", "tipos"}:
@@ -17348,8 +17403,8 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "foto não encontrada no agente"}, 404, True)
         itens = []
         for pid in pids:
-            base = mtg_base_ok(pid)
             for fundo in fundos:
+                base = mtg_base_ok(pid, fundo)
                 versao = mtg_versao(fundo)
                 w, h = mtg_dims(fundo)
                 tem = {t: bool(versao) and os.path.isfile(mtg_arquivo(pid, fundo, t, versao)) for t in ("p", "i")}

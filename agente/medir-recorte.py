@@ -26,7 +26,7 @@ def p90(v):
 
 def medir_montagem():
     """--montagem: mede o processo de montagem (agente/eterna-montagem.py) com um recorte desenhado aqui (nenhuma foto):
-    tempo por montagem e pico de memória, na prévia e na impressão dos 3 fundos ativos. Os fundos vêm da pasta img/ do
+    tempo por montagem e pico de memória, na prévia e na impressão dos 4 fundos ativos. Os fundos vêm da pasta img/ do
     repositório. Uso: python3 -I agente/medir-recorte.py --montagem [--voltas 3]"""
     raiz = os.path.dirname(AQUI)
     try:
