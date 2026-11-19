@@ -14,6 +14,7 @@ class Falso:
     carga_ms = 1
 
     def __init__(self, modelos_dir, gpu):
+        self.provedor = os.environ.get("RECORTE_FALSO_PROVEDOR") or "cpu"      # 19/11: teste da placa obrigatória
         if os.environ.get("RECORTE_FALSO_NAO_ABRE"):
             raise RuntimeError("modelos falsos não abriram")
 

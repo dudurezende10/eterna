@@ -3446,6 +3446,12 @@ REC_CARGA_SEG = 300      # s: abrir os 4 modelos
 REC_LADO_MAX = 3000      # maior lado do PNG da impressão
 REC_LADOS = (2400, 3000) # 2400 = prévia (cópia reduzida do de 3000, sem rodar os modelos de novo)
 REC_TRAB = 1600          # maior lado da imagem entregue aos modelos; a máscara volta ao tamanho final
+# 19/11 (Ronaldo, inegociável): no servidor do estádio o recorte roda só na placa de vídeo, toda foto recortada assim que chega,
+# antes do Checkout. ETERNA_RECORTE_GPU=obrigatoria (o instalar.sh grava quando há placa NVIDIA): se o modelo abrir fora da placa
+# (driver caído, CUDA faltando; o ORT cai no processador sem avisar), o processo é fechado, o recorte fica indisponível com o
+# motivo em /status.recorte (o Checkout não oferece fundo de IA, nunca prepara na frente do cliente) e tenta a placa de novo.
+REC_GPU_OBRIG = (os.environ.get("ETERNA_RECORTE_GPU") or "").strip().lower() == "obrigatoria"
+REC_MSG_PLACA = "recorte fora da placa de vídeo"
 REC_CONC = 2 if os.environ.get("ETERNA_RECORTE_CONC") == "2" else 1   # 2 só vale com a placa de vídeo (CUDA): cada filho ocupa memória
 REC_FILA_MAX = 24
 REC_TAXA = 60            # recortes novos por minuto por IP (o cache não conta)
@@ -3680,6 +3686,10 @@ def rec_livre_gb():
 
 def rec_status():
     ok, motivo = rec_estado()
+    with rec_lock:
+        fora = REC_GPU_OBRIG and REC_MSG_PLACA in (rec["erro"] or "")
+    if ok and fora:
+        ok, motivo = False, rec["erro"]
     livre = rec_livre_gb()
     lig = bool(ia_cfg().get("ligada"))     # fora do sess_lock (lê o estado.db)
     with rec_filhos_lock:
@@ -3696,6 +3706,7 @@ def rec_status():
                 "antecipado": {"ligado": REC_PRE, "escolhidas": rec.get("pre_escolhidas", 0), "feitos": rec["pre_feitos"], "faltam": rec["pre_falta"]},
                 "feitos": n, "ms_medio": int(rec["ms_total"] / n) if n else None, "ms_ultimo": rec["ms_ultimo"],
                 "simultaneos": 2 if REC_CONC == 2 and rec.get("provedor") == "cuda" else 1,
+                "placa_obrigatoria": REC_GPU_OBRIG,
                 **({"falso": True} if _rec_falso() is not None else {}),
                 "ia": {"ligada": lig, "fila": ia["fila"], "feitos": ia["feitos"], "erros": ia["erros"],
                        "pausa_disco": bool(rec.get("ia_pausa_disco")), "livre_gb": round(livre, 1) if livre is not None else None,
@@ -3820,6 +3831,13 @@ def _rec_abrir(f):
         _rec_erro("erro ao abrir os modelos: %s" % str(j.get("erro") or "")[:160])
         raise RuntimeError(rec["erro"])
     prov = j.get("provedor") if j.get("provedor") in ("cuda", "cpu", "directml") else "cpu"
+    if REC_GPU_OBRIG and prov != "cuda":
+        _rec_filho_matar(f)
+        _rec_erro("%s: o modelo abriu em %s; conferir nvidia-smi e rodar o instalador do recorte com a placa" % (REC_MSG_PLACA, prov))
+        with rec_lock:
+            rec["provedor"] = prov
+        print("  " + rec["erro"])
+        raise RuntimeError(rec["erro"])
     with rec_lock:
         if rec["carregado"] is False and rec.get("_abriu"):
             rec["reinicios"] += 1
