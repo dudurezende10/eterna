@@ -226,6 +226,38 @@ try:
     ok(st == 409 and r.get("error") == "criterio" and r.get("falta") and m.treino_cfg()["ponto"] == "medir", "Ligada abaixo do critério: 409: %s %r" % (st, r))
     st, r = pede("GET", "/treino/amostra?dia=%s&modo=duvidas&n=10" % DIA, cookie=so_ver)
     ok(st == 200 and len(r.get("itens") or []) == 10, "modo duvidas em Só medir: %s" % st)
+    # 18/11 (Eduardo, ligar já): forcar liga abaixo do critério. Aqui sem o modelo instalado e sem vetor: contam as marcações.
+    for c in ({"ponto": "medir", "forcar": True}, {"ponto": "ligada", "forcar": "sim"}, {"exposicao": "medir", "forcar": True}, {"forcar": True}):
+        ok(pede("POST", "/treino/config", c, cookie=sup)[0] == 400, "forcar recusa %r" % c)
+    ok(pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=val)[0] == 403
+       and pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=so_ver)[0] == 403, "forcar sem configuracao.u: 403")
+    real_rot = m.cena_rotulos
+    m.cena_rotulos = lambda: [x for x in real_rot() if x[1] != "gramado"]
+    m._cena_base_t[0] = time.time()
+    st, r = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup)
+    m.cena_rotulos = real_rot
+    m._cena_base_t[0] = time.time()
+    m._treino_cfg["t"] = 0.0
+    ok(st == 409 and r.get("error") == "rotulos" and [f["k"] for f in r.get("falta") or []] == ["rot_gramado"] and m.treino_cfg()["ponto"] == "medir",
+       "forcar sem foto de gramado marcada: 409 rotulos: %s %r" % (st, r))
+    st, r = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup)
+    m._treino_cfg["t"] = 0.0
+    cf = m.treino_cfg()
+    ok(st == 200 and r.get("abaixo", {}).get("por") == "supervisora-treino" and r.get("aviso") == "sem_modelo" and r.get("ponto_versao")
+       and cf["ponto"] == "ligada" and cf["ponto_versao"] == r["ponto_versao"] and cf["abaixo"]["por"] == "supervisora-treino",
+       "forcar sem modelo grava Ligada (nada é reconhecido): %s %r %r" % (st, r, cf))
+    st, s3 = pede("GET", "/status", cookie=adm)
+    mp3 = (s3.get("treino") or {}).get("modelo_ponto") or {}
+    ok(mp3.get("erro") == "sem_modelo" and mp3.get("aviso") == "modelo não instalado: nada é reconhecido" and (mp3.get("abaixo") or {}).get("por") == "supervisora-treino"
+       and mp3.get("ligada_versao") == r.get("ponto_versao"), "/status: modelo não instalado, nada é reconhecido, e quem ligou abaixo da meta: %r" % mp3)
+    tdb = sqlite3.connect(m.TREINO_DB)
+    ll = tdb.execute("select por, abaixo, versao, dados from liga_log").fetchall()
+    tdb.close()
+    d0 = json.loads(ll[0][3]) if ll else {}
+    ok(len(ll) == 1 and ll[0][:3] == ("supervisora-treino", 1, r.get("ponto_versao")) and d0.get("modelo_ok") is False and d0.get("congelados") == 0
+       and d0.get("faltam", {}).get("gramado") == 150 and d0.get("criterio_passa") is False, "liga_log com quem, quando e quanto faltava: %r" % (ll,))
+    m._treino_cfg["t"] = 0.0
+    ok(m.treino_cfg()["ponto"] == "ligada", "Ligada forçado com a versão congelada (vazia) não é rebaixado pela migração")
     st, s2 = pede("GET", "/status")
     ok("treino" not in s2, "/status anônimo sem o treino")
 

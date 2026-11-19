@@ -274,6 +274,93 @@ try:
     st, r16c = pede("POST", "/treino/config", {"exposicao": "ligada"}, cookie=cfg)
     ok(st == 409 and r16c.get("error") == "criterio", "exposição ainda sem medida: Ligada recusada: %s %r" % (st, r16c))
 
+    # ---------- 18/11 (Eduardo, ligar já): Ligar mesmo assim (forcar) abaixo do critério ----------
+    def liga_log():
+        db_ = sqlite3.connect(m.TREINO_DB)
+        try:
+            return db_.execute("select em, por, abaixo, versao, dados from liga_log order by rowid").fetchall()
+        finally:
+            db_.close()
+
+    def modelos():
+        db_ = sqlite3.connect(m.CENA_DB)
+        try:
+            return sorted(r_[0] for r_ in db_.execute("select versao from modelo"))
+        finally:
+            db_.close()
+
+    ok(pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=ver)[0] == 403
+       and pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=nada)[0] == 403
+       and pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True})[0] == 401, "forcar sem configuracao.u: 403 (sem sessão 401)")
+    ok(pede("POST", "/treino/config", {"ponto": "medir", "forcar": True}, cookie=cfg)[0] == 400, "forcar só com ponto ligada")
+    real_rot = m.cena_rotulos
+    for so, falta_k in (({"gramado"}, ["rot_outra_lidas"]), (set(), ["rot_gramado_lidas", "rot_outra_lidas"])):
+        m.cena_rotulos = lambda so=so: [x for x in real_rot() if x[1] in so]
+        m._cena_base_t[0] = time.time()
+        st, rf = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
+        m._treino_cfg["t"] = 0.0
+        ok(st == 409 and rf.get("error") == "rotulos" and [f["k"] for f in rf.get("falta") or []] == falta_k and m.treino_cfg()["ponto"] == "medir",
+           "forcar sem gramado e outra classe para comparar: 409 rotulos %r: %s %r" % (sorted(so), st, rf))
+    m.cena_rotulos = real_rot
+    m._cena_base_t[0] = time.time()
+    ok(not liga_log() and not modelos(), "409: nada congelado e nada no liga_log")
+    real_cong = m.cena_congelar
+    m.cena_congelar = lambda *a, **k: None          # rótulo chegou entre a medida e o congelamento
+    st, rf = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
+    m.cena_congelar = real_cong
+    m._treino_cfg["t"] = 0.0
+    ok(st == 409 and (rf.get("falta") or [{}])[0].get("k") == "versao_mudou" and m.treino_cfg()["ponto"] == "medir" and not liga_log(),
+       "forcar com rótulo novo no meio: 409 versao_mudou: %s %r" % (st, rf))
+    bf = m.cena_base("medir")
+    st, rf = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
+    m._treino_cfg["t"] = 0.0
+    cf = m.treino_cfg()
+    FV = (rf or {}).get("ponto_versao")
+    ok(st == 200 and FV == bf["versao"] and (rf.get("abaixo") or {}).get("por") == "cfg-cena" and "aviso" not in rf
+       and cf["ponto"] == "ligada" and cf["ponto_versao"] == FV and (cf["abaixo"] or {}).get("por") == "cfg-cena",
+       "forcar com configuracao.u liga e congela as marcações de agora: %s %r" % (st, rf))
+    ok(modelos() == [FV] and m.cena_base("ligada")["pids"] == bf["pids"], "forcar: o conjunto congelado é o medido")
+    ll = liga_log()
+    dl = json.loads(ll[0][4]) if ll else {}
+    ok(len(ll) == 1 and ll[0][1:4] == ("cfg-cena", 1, FV) and ll[0][0] == rf.get("abaixo", {}).get("em") and dl.get("criterio_passa") is False
+       and dl.get("faltam", {}).get("gramado") == 150 - dl.get("rotulos", {}).get("gramado", -1) and set(dl.get("acerto") or {}) == set(m.CENA_CLASSES)
+       and any(f.get("k") == "n" for f in dl.get("falta") or []) and dl.get("modelo_ok") is True and dl.get("congelados") == len(bf["y"]),
+       "liga_log: quem, quando, versão, acerto e falta por classe: %r" % (ll[0][:4] if ll else None,))
+    stf = m.cena_status()
+    mdf = m.cena_medida("sessao")
+    ok(stf["abaixo"]["por"] == "cfg-cena" and stf["ligada_versao"] == FV and stf["aviso"] is None and mdf["ligada_abaixo"]["por"] == "cfg-cena"
+       and mdf["modelo_ok"] is True and mdf["criterio"]["passa"] is False, "/status e Medição: ligado abaixo da meta e o que falta: %r" % stf)
+    # D10: rótulo novo não muda o Ligada forçado; mudar só a exposição mantém o selo
+    xf, fxf = thumb("outro")
+    biblioteca(xf, fxf, HOJE)
+    rotula(xf, "outro", "LPFORCA1", HOJE)
+    m._cena_base_t[0] = time.time()
+    ok(espera(lambda: (m._cena_base_t.__setitem__(0, time.time()) or True) and m.cena_base("medir")["versao"] != FV, 10)
+       and m.cena_base("ligada")["versao"] == FV and xf not in m.cena_base("ligada")["pids"], "forcar: rótulo novo não entra no Ligada (D10)")
+    m._treino_cfg["t"] = 0.0
+    ok(m.treino_cfg()["ponto_versao"] == FV, "forcar: o Ligada fica na versão congelada")
+    # religar com forcar: congela as marcações novas e guarda a anterior
+    st, rr = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
+    m._treino_cfg["t"] = 0.0
+    FV2 = (rr or {}).get("ponto_versao")
+    ok(st == 200 and FV2 and FV2 != FV and m.treino_cfg()["ponto_versao"] == FV2 and xf in m.cena_base("ligada")["pids"] and modelos() == sorted([FV, FV2])
+       and len(liga_log()) == 2, "religar com forcar congela as marcações novas: %s %r" % (st, rr))
+    # sem o modelo instalado: grava Ligada, mas /status e Medição dizem que nada é reconhecido
+    real_ok = m.cena_modelo_ok
+    m.cena_modelo_ok = lambda: (False, "sem_modelo")
+    st, rs = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
+    sts, mds = m.cena_status(), m.cena_medida("sessao")
+    m.cena_modelo_ok = real_ok
+    ok(st == 200 and rs.get("aviso") == "sem_modelo" and sts["erro"] == "sem_modelo" and sts["aviso"] == "modelo não instalado: nada é reconhecido"
+       and mds["modelo_ok"] is False and json.loads(liga_log()[-1][4])["modelo_ok"] is False, "forcar sem modelo: grava e avisa: %s %r %r" % (st, rs, sts))
+    # exposição muda sozinha: o selo do ponto fica; Só medir tira o selo
+    m.treino_cfg_gravar({"exposicao": "medir"}, "adm")
+    m._treino_cfg["t"] = 0.0
+    ok((m.treino_cfg()["abaixo"] or {}).get("por") == "cfg-cena", "mudar a exposição não apaga quem ligou abaixo da meta")
+    m.treino_cfg_gravar({"ponto": "medir", "exposicao": "desligada"}, "adm")
+    m._treino_cfg["t"] = 0.0
+    ok(m.treino_cfg()["abaixo"] is None and m.cena_status()["abaixo"] is None, "Só medir tira o selo")
+
     # ---------- 25: modo dúvidas ----------
     sessoes = [{"card": "LPDUV%03d" % i, "dia": HOJE, "fotografo": "carlos", "status": "fechada", "fotos": [p], "removida": False}
                for i, p in enumerate([p9, p15, pf, pn] + [p for p, c in ROT.items() if c in ("gramado", "chute")][:6])]
