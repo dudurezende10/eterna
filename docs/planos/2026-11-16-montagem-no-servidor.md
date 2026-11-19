@@ -205,17 +205,17 @@ Regra do Eduardo (18/11): com a chave em Ligada o navegador nunca recorta nem mo
 
 ## Como decide (`index.html`)
 - `mtgSrv()`: o último modo do servidor que o aparelho conhece (`mtgConhecido`: o `/status` de agora ou, com o agente fora, o guardado no aparelho) é `ligada`, com `montagem.v >= 1` e `montagem.imprime`. Um `/status` que falha não muda o modo.
-- `mtgCanvasOk()`: o navegador só monta no canvas com o modo conhecido nesta página e diferente de Ligada. Até o primeiro `/status` da página, nada é montado e nenhum `POST /recorte` sai (`fiaRecorte` confere).
-- `compose` → `mtgCompose` (prévia do servidor, `blob:`); `compHi` → `mtgHi` (10x15 do servidor, `data:`, a versão da prévia). Tentativas com espera crescente: 700 ms dobrando até 8 s, com acaso. 404: o item sai da venda. 422 (falhou no servidor): estado final, sai da venda. Depois de `MTG_FALHAS_MAX` (12) tentativas seguidas sem a montagem, com o agente respondendo, o item sai da venda (`fiaFalhou`) com "Montagem indisponível".
+- `mtgCanvasOk()`: o navegador só monta no canvas com o modo lido de um `/status` nesta página (`MTG_MEM`, gravado só no `mtgVisto`) e diferente de Ligada. Até o primeiro `/status` da página, nada é montado e nenhum `POST /recorte` sai (`fiaRecorte` confere antes do cache de recortes). Agente sem `montagem` (antigo) ou com a chave Desligada ou Sombra: canvas.
+- `compose` → `mtgCompose` (prévia do servidor, `blob:`); `compHi` → `mtgHi` (10x15 do servidor, `data:`, a versão da prévia). Tentativas com espera crescente: 700 ms dobrando até 8 s, com acaso. 404: o item sai da venda. 422 (falhou no servidor): estado final, sai da venda. Depois de `MTG_FALHAS_MAX` (12) tentativas seguidas sem a montagem, com o agente respondendo, o item sai da venda (`fiaFalhou`); na tela da equipe com "Montagem indisponível", na do cliente sem texto da equipe (`aiIndisp` na língua do cliente quando o servidor diz erro).
 - Item de IA que ainda não está pronto (`fiaPronta`) não pode ser marcado com a chave ligada: Checkout (`kiosk-tog` e Quero) com o aviso `aiAguarde` (5 línguas e chinês) e Venda manual (`fila-bg`) com `mtg_aguarde`.
-- Troca da chave (no `/status` ou no aparelho de quem trocou, `mtgModoSalva`): `mtgTroca` revoga os `blob:`, sobe a geração (`MTG_GER`: trabalho em voo não vale mais), limpa `COMP`, `COMPOK` e `COMPURL` e refaz a tela. Montagem de canvas antiga não volta a valer em Ligada.
+- Troca da chave (no `/status` ou no aparelho de quem trocou, `mtgModoSalva`): `mtgTroca` (no `agentPoll`, depois de todas as atribuições do `/status`) revoga os `blob:`, sobe a geração (`MTG_GER`: trabalho em voo não vale mais), limpa `COMP`, `COMPOK`, `COMPURL` e os recortes do canvas (`RECS`), menos as montagens do Photoroom (`pr|`, já pagas), e refaz a tela. Montagem de canvas antiga não volta a valer em Ligada.
 - `ETERNA.fiaMontagens = {servidor, canvas}`: o canvas só conta montagem feita de verdade.
 
 ## No agente
 - `/status.montagem` com `imprime`, `montaveis` e `ativos`. `GET /montagem/…?t=i` de montagem que só tem `-p` gera a impressão com prioridade 0.
-- `GET /montagem/` com erro recente da versão atual no motor (`mtg_ruins`, até `MTG_ERRO_DE_NOVO`): 422 `{"estado":"erro"}`, sem fila.
-- A impressão (`t=i`, e o `pedir` com `["p","i"]`) tem a conta dela no limite por minuto: as prévias não a barram.
-- Montagem nova só de base (`mtg_base_ok`): foto de leva carregada só se é base; foto fora das levas carregadas só com a montagem vendida naquele fundo (venda paga no `vendas.db`, a reimpressão). Senão `nao_base`.
+- Erro recente da versão atual no motor (`mtg_ruins`, até `MTG_ERRO_RECENTE` = 30 s, a mesma janela no `GET /montagem/` e no `POST /montagens/pedir`): o `GET` responde 422 `{"estado":"erro"}` e o `pedir` `erro`, sem pôr na fila. Com trabalho já na fila para aquela foto e fundo, 202. Passada a janela, tenta de novo (um erro passageiro não segura a impressão).
+- A impressão (`t=i`, e o `pedir` com `["p","i"]`) tem a conta dela no limite por minuto: as prévias não a barram. O `pedir` confere também uma conta geral por minuto antes de ler o corpo.
+- Montagem nova só de base (`mtg_base_ok`): foto de leva carregada só se é base; foto fora das levas carregadas só com a montagem vendida naquele fundo (venda paga no `vendas.db`, a reimpressão). Senão `nao_base`. As vendas pagas são lidas por uma conexão só de leitura, sem o `ev_lock` (o WAL deixa ler junto com a gravação), e relidas só quando o banco muda.
 - Fundo que a origem não entregou: espera crescente de 30 s até 5 min antes de baixar de novo.
 
 ## Critérios de aceite (E2)
