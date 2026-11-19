@@ -257,9 +257,18 @@ try:
     SB = nova_sessao("LP-MTG-SB", ia=False)
     ok(m.mtg_candidatas({"fotos": SB, "ia": [], "ia_regra": {"motivo": "sem_gramado"}}) == [] and m.mtg_candidatas({"fotos": SB, "ia": SB[:1], "ia_regra": {}}) == SB[:1]
        and m.mtg_candidatas({"fotos": SB, "ia": SB, "ia_regra": {"motivo": "visita_ja_tem"}}) == [], "regra 19: as candidatas são só x[\"ia\"]")
+    ordem = []                                         # ordem em que o trabalhador terminou cada trabalho (não o mtime dos arquivos)
+    _faz0 = m._mtg_fazer
+
+    def _faz(job):
+        r = _faz0(job)
+        ordem.append((job["pid"], job["fundo"], tuple(sorted(job["tipos"])), r))
+        return r
+    m._mtg_fazer = _faz
     A, B = nova_sessao("LP-MTG-1")
     feitas0 = m.mtg_status()["feitas"]
     ok(roda(), "2: a sessão nova fica toda montada")
+    m._mtg_fazer = _faz0
     V = {f: m.mtg_versao(f) for f in m.MTG_ATIVOS}
     ok(all(v and re.match(r"^[0-9a-f]{8}$", v) for v in V.values()) and len(set(V.values())) == NF, "2: uma versão de 8 hex por fundo: %r" % V)
     pref = {"arq1950": A, "mirantedia": B, "telao": B, "tunel": A}   # FIA_BASE: 1950 e túnel = 1ª base; Mirante e Telão = 2ª
@@ -268,9 +277,8 @@ try:
     tem = sorted(os.path.join(m.MONTAGENS, p, x) for p in (A, B) for x in arqs(p))
     ok(tem == esperado, "2: 4 prévias preferidas + 4 da outra base + 4 impressões das preferidas: %r" % [os.path.relpath(x, m.MONTAGENS) for x in tem])
     if tem == esperado:
-        t = lambda p: os.stat(p).st_mtime_ns
-        g1, g2, g3 = [t(arq(pref[f], f, "p")) for f in pref], [t(arq(outra[f], f, "p")) for f in pref], [t(arq(pref[f], f, "i")) for f in pref]
-        ok(max(g1) <= min(g2) and max(g2) <= min(g3), "2: ordem: preferidas, depois a outra base, depois as impressões")
+        cls = [(1 if pref[f] == pid else 2) if tipos == ("p",) else 3 for pid, f, tipos, r in ordem if pid in (A, B) and r is None]
+        ok(len(cls) == 3 * NF and cls == sorted(cls), "2: ordem: preferidas, depois a outra base, depois as impressões: %r" % cls)
         for f in pref:
             with Image.open(arq(pref[f], f, "p")) as im:
                 ok(im.size == tuple(m.mtg_dims(f)) and im.format == "JPEG", "2: prévia de %s no tamanho do fundo: %r x %r" % (f, im.size, m.mtg_dims(f)))
@@ -395,6 +403,23 @@ try:
         th2.start()
         th2.join(5)
     ok(not th2.is_alive() and (X0 := res.get("v")) is not None and any(p == Y for p, f in X0), "7 (revisão): mtg_pagas lê com o ev_lock ocupado: %r" % (res,))
+    # venda cancelada não vale para a reimpressão; durante uma leitura, quem chega usa o último valor; sem valor e sem ler: 503
+    Z = nova_foto()
+    vendida(Z, ["telao"])
+    ok(m.mtg_base_ok(Z, "telao") is True, "6 (segurança): venda paga vale")
+    vz = "vmtg%04d" % vendida.__defaults__[0][0]
+    m.ev_receber({"posto": "Caixa 1", "eventos": [{"tipo": "cancelar", "idem": vz + ":3", "venda": vz, "seq": 3,
+                                                    "em": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "dados": {"motivo": "teste"}}]})
+    ok(m.mtg_base_ok(Z, "telao") is False, "6 (segurança): venda cancelada não vale para a reimpressão")
+    with m._mtg_pagas_lock:
+        antes_v = m.mtg_pagas()
+        m._mtg_pagas.update(chave=None, v=frozenset())
+        ok(m.mtg_base_ok(Z, "telao") is None, "1 (segurança): sem valor lido e com a leitura ocupada: None (as rotas respondem 503)")
+        s, j, _ = pede("GET", "/montagem/ag_%s/telao.jpg?t=p" % Y, cookie=posto)
+        ok(s == 503 and j == {"error": "vendas_indisponivel"}, "6 (segurança): sem ler as vendas o GET responde 503 (o item não sai da venda): %s %r" % (s, j))
+        m._mtg_pagas.update(chave=("velha",), v=antes_v)
+        ok(m.mtg_pagas() == antes_v, "1 (segurança): com a leitura ocupada vale o último valor lido")
+    m._mtg_pagas.update(chave=None)
     m.mtg_ruins.pop((Q, "telao"), None)
     with m.sess_lock:                                  # a leva de teste sai (as voltas seguintes não a montam)
         m.sess.pop("LP-MTG-Q", None)
@@ -426,6 +451,10 @@ try:
     for i in range(30000):
         lim[i] = 1
     m._mtg_limita(lim, 100)
+    m.mtg_sem_pessoa[Q] = time.time()
+    m.mtg_ruins[(Q, "arq1950")] = ("x", "interno", time.time())
+    m.mtg_apagar(Q)
+    ok(Q not in m.mtg_sem_pessoa and (Q, "arq1950") not in m.mtg_ruins, "7 (segurança): mtg_apagar limpa a foto do sem_pessoa e do mtg_ruins")
     ok(not erros_lgpd and len(lim) == 100, "4 (revisão): mtg_apagar e _mtg_limita sem erro com outra linha mexendo: %r %d" % (erros_lgpd[:3], len(lim)))
     # foto fora das levas carregadas com a montagem vendida (reimpressão de venda antiga): 202, sobe para a prioridade 0 e aparece
     X = nova_foto()
@@ -565,13 +594,22 @@ try:
     # ---- critério 17: disco. Abaixo do piso só a prioridade 0 monta; acima do teto os mais antigos saem; recortes intactos
     D1, D2 = nova_foto(), nova_foto()
     piso = m.REC_PISO_GB
-    m.REC_PISO_GB = 10 ** 7
+    livre = m.mtg_livre_gb()
+    m.REC_PISO_GB = livre * 1.5                        # abaixo do piso, acima do piso duro (metade do piso)
     ok(m.mtg_enfileirar(D1, "mirantedia", ("p",), m.MTG_P_VIVO) == (None, "disco") and m.mtg_enfileirar(D1, "mirantedia", ("p",), m.MTG_P_REFAZER)[1] == "disco",
        "17: abaixo do piso o que o servidor monta sozinho espera")
     ok(m.mtg_status()["pausa_disco"] is True and any("em pausa" in x for x in linhas_srv()), "17: pausa_disco no status e no registro")
     jd, e = m.mtg_enfileirar(D2, "mirantedia", ("p",), m.MTG_P_PEDIDO)
     ok(jd is not None and e is None and espera(lambda: os.path.isfile(arq(D2, "mirantedia", "p")), 60), "17: o pedido do Checkout monta mesmo abaixo do piso")
     ok(not arqs(D1), "17: nada do que esperava foi montado")
+    # abaixo do piso duro nem o pedido do Checkout grava: 503 disco
+    D3 = nova_foto()
+    vendida(D3, ["mirantedia"])
+    m.REC_PISO_GB = livre * 3
+    s1, j1, _ = pede("GET", "/montagem/ag_%s/mirantedia.jpg?t=p" % D3, cookie=posto)
+    s2, j2, _ = pede("POST", "/montagens/pedir", {"pids": ["ag_" + D3], "fundos": ["mirantedia"], "tipos": ["p"]}, cookie=posto)
+    ok(s1 == 503 and j1 == {"error": "disco"} and s2 == 503 and j2 == {"error": "disco"} and m.mtg_enfileirar(D3, "mirantedia", ("p",), m.MTG_P_PEDIDO) == (None, "disco")
+       and fila_vazia() and not arqs(D3), "3 (segurança): abaixo do piso duro nada é montado, nem o pedido do Checkout: %s %r %s %r" % (s1, j1, s2, j2))
     m.REC_PISO_GB = piso
     m.mtg_enfileirar(D1, "mirantedia", ("p",), m.MTG_P_VIVO)
     ok(m.mtg_status()["pausa_disco"] is False and espera(lambda: os.path.isfile(arq(D1, "mirantedia", "p")), 60), "17: com disco de novo, volta a montar")
@@ -646,31 +684,43 @@ try:
 
     # ---- critério 16: processo morto no meio. O trabalho dá erro, o status avisa, reabre com espera; recorte segue
     K1, K2 = nova_foto(), nova_foto()
+    vendida(K1, ["mirantedia"])
+    with m.mtg_lock:
+        m.mtg.update(mortes_mem=0, morte_chave=None, erro=None, espera_s=m.MTG_ERRO_SEG)
     open(TRAVA, "w").close()
     jk, _ = m.mtg_enfileirar(K1, "mirantedia", ("p",), 0)
     ok(espera(lambda: pego(K1, "mirantedia") and m.mtg_filho["p"] is not None, 60), "16: montagem em andamento")
     time.sleep(0.3)
     reinicios0 = m.mtg_status()["filho"]["reinicios"]
-    m.mtg_filho["p"].kill()
+    m.mtg_filho["p"].terminate()                       # SIGTERM: o encerramento do próprio teste não conta como falta de memória
     ok(espera(lambda: jk["ev"].is_set(), 30) and jk["err"] == "processo", "16: o trabalho do processo morto dá erro: %r" % jk.get("err"))
     os.remove(TRAVA)
+    ok(m.mtg["mortes_mem"] == 0 and (m.mtg_ruins.get((K1, "mirantedia")) or (0, ""))[1] == "processo" and m.mtg["espera_s"] <= m.MTG_ERRO_FOTO_SEG,
+       "2 (segurança): a foto em que o processo parou espera fora da fila e a espera para as outras é curta: %r %r" % (m.mtg_ruins.get((K1, "mirantedia")), m.mtg["espera_s"]))
     st = m.mtg_status()
     ok(st["ok"] is False and st["motivo"] and "parou" in st["motivo"] and st["filho"]["vivo"] is False and st["erros"] >= 1 and st["parado"] is None,
        "16: /status.montagem avisa: %r" % {k: st[k] for k in ("ok", "motivo", "filho", "erros")})
     ok(any("processo parou" in x for x in linhas_srv()), "16: morte do processo no registro")
     ok(m.rec_estado()[1] != st["motivo"] and pede("GET", "/status", cookie=posto)[0] == 200, "16: o resto do agente segue respondendo")
+    s, j, _ = pede("GET", "/montagem/ag_%s/mirantedia.jpg?t=p" % K1, cookie=posto)
+    ok(s == 422 and j == {"estado": "erro"} and not ((K1, "mirantedia") in m.mtg_jobs), "2 (segurança): a foto em que o processo parou não volta à fila pelo Checkout: %s %r" % (s, j))
     jk2, _ = m.mtg_enfileirar(K2, "mirantedia", ("p",), 0)
-    ok(espera(lambda: jk2["ev"].is_set(), 30) and jk2["err"] == "processo" and not arqs(K2), "16: dentro do prazo de espera o processo não reabre: %r" % jk2.get("err"))
-    volta()
-    ok(fila_vazia(), "16: com o processo em espera o laço não enche a fila")
-    with m.mtg_lock:
-        m.mtg["erro_em"] -= m.MTG_ERRO_SEG + 1
-    jk3, _ = m.mtg_enfileirar(K2, "mirantedia", ("p",), 0)
-    ok(espera(lambda: os.path.isfile(arq(K2, "mirantedia", "p")), 60), "16: passado o prazo, o processo reabre e monta")
+    ok(espera(lambda: jk2["ev"].is_set(), 60) and jk2["err"] is None and os.path.isfile(arq(K2, "mirantedia", "p")),
+       "2 (segurança): a outra foto espera o processo reabrir e é montada (não falha): %r" % jk2.get("err"))
     st = m.mtg_status()
     ok(st["ok"] is True and st["filho"]["vivo"] and st["filho"]["reinicios"] == reinicios0 + 1, "16: reaberto: %r" % st["filho"])
     ok(not [x for p in os.listdir(m.MONTAGENS) if os.path.isdir(os.path.join(m.MONTAGENS, p)) for x in os.listdir(os.path.join(m.MONTAGENS, p)) if x.endswith(".tmp")],
        "16: nenhum .tmp sobrou")
+    # morte por memória repetida na mesma foto não conta de novo para a parada; em outra foto, conta
+    with m.mtg_lock:
+        m.mtg.update(mortes_mem=0, morte_chave=None)
+    for ch in (("aa11", "telao"), ("aa11", "telao"), ("aa11", "telao")):
+        m._mtg_erro("a montagem parou: memória insuficiente (código -9)", ch)
+    n_mesma = m.mtg["mortes_mem"]
+    m._mtg_erro("a montagem parou: memória insuficiente (código -9)", ("bb22", "telao"))
+    ok(n_mesma == 1 and m.mtg["mortes_mem"] == 2 and not m.mtg["parado"], "2 (segurança): morte repetida na mesma foto conta uma vez: %r %r" % (n_mesma, m.mtg["mortes_mem"]))
+    with m.mtg_lock:
+        m.mtg.update(parado=None, erro=None, mortes_mem=0, morte_chave=None, espera_s=m.MTG_ERRO_SEG)
     # morte por memória: a espera dobra e, na 3ª seguida, a montagem para até reiniciar o agente
     esperas = []
     for _ in range(3):
