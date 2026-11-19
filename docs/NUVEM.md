@@ -272,7 +272,7 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 | Pasta | O que é | Regra proposta |
 |---|---|---|
 | `alta/`, `vitrine/` | fotos das galerias | apagar com 61 dias (galeria vale até 60, `GAL_DIAS`) |
-| `video/` | vídeos das ativações | apagar com 30 dias, como as fotos (aplicada por `servidor/linux/nuvem-aws-cloudshell.sh`, 18/11) |
+| `video/` | vídeos das ativações | apagar com 30 dias, como as fotos (`servidor/linux/nuvem-aws-cloudshell.sh --so-retencao`, aplicada pelo Ronaldo no CloudShell em 18/11 ~21h; no mesmo dia, `eterna-galeria` atualizada com o contrato da Imply de 18/11 por `aws cloudformation deploy`, que mantém os parâmetros da stack) |
 | `backup/<pc>/dia/` | cópia diária dos bancos (vendas, estado, operação, lotes de cartões) | Glacier Instant Retrieval com 30 dias; apagar com 400 dias (como os pedidos na nuvem) |
 | `backup/<pc>/<banco>`, `metricas/`, `sessoes/` | cópia mais recente | não expira; versionamento ligado, versão antiga apagada com 30 dias |
 | todas | upload interrompido | `AbortIncompleteMultipartUpload` com 1 dia |
