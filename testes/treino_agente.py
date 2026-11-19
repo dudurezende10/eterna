@@ -217,8 +217,15 @@ try:
     ok(m.treino_cfg()["ponto"] == "desligada", "nem pelo /ponto/docs: %r" % m.treino_cfg())
     st, r = pede("POST", "/treino/config", {"ponto": "medir", "exposicao": "desligada"}, cookie=adm)
     st, s1 = pede("GET", "/status", cookie=adm)
-    ok((s1.get("treino") or {}).get("analise") == {"ponto": "medir", "exposicao": "desligada"} and (s1.get("treino") or {}).get("modelo_ponto") is None,
-       "/status.treino acompanha: %r" % s1.get("treino"))
+    mp_ = (s1.get("treino") or {}).get("modelo_ponto") or {}
+    ok((s1.get("treino") or {}).get("analise") == {"ponto": "medir", "exposicao": "desligada"} and mp_.get("pronto") is False and mp_.get("erro") == "sem_modelo",
+       "/status.treino acompanha (18/11: modelo_ponto sem o arquivo do modelo = sem_modelo): %r" % s1.get("treino"))
+    # 18/11 (regra 19): Ligada só acima do critério (409 com o que falta); o modo duvidas existe em Só medir
+    st, r = pede("POST", "/treino/config", {"ponto": "ligada"}, cookie=adm)
+    m._treino_cfg["t"] = 0.0
+    ok(st == 409 and r.get("error") == "criterio" and r.get("falta") and m.treino_cfg()["ponto"] == "medir", "Ligada abaixo do critério: 409: %s %r" % (st, r))
+    st, r = pede("GET", "/treino/amostra?dia=%s&modo=duvidas&n=10" % DIA, cookie=so_ver)
+    ok(st == 200 and len(r.get("itens") or []) == 10, "modo duvidas em Só medir: %s" % st)
     st, s2 = pede("GET", "/status")
     ok("treino" not in s2, "/status anônimo sem o treino")
 

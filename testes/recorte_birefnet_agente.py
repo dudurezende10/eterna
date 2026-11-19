@@ -228,6 +228,14 @@ ok(oct(os.stat(p1).st_mode & 0o777) == "0o600", "6: permissão 600: %s" % oct(os
 p24 = m.rec_fazer("a97000000001", f1, 2400)
 ok(Image.open(p24).size == (2400, 1600) and oct(os.stat(p24).st_mode & 0o777) == "0o600", "6: cópia de 2400 com 600")
 ok(not glob.glob(os.path.join(m.RECORTES, "*.tmp")) and not glob.glob(os.path.join(m.RECORTES, ".rec-*")), "6: nenhum .tmp sobra: %r" % os.listdir(m.RECORTES))
+# 18/11 (regra 19): as medidas do recorte voltam na resposta e ficam no cena.db; o joelho vai no PNG (tEXt "eterna")
+import sqlite3 as _sq
+_db = _sq.connect(m.CENA_DB)
+_rec = json.loads(_db.execute("select rec from cena where pid = ?", ("a97000000001",)).fetchone()[0])
+_db.close()
+ok(_rec.get("trunc") is True and _rec.get("borda") == [] and isinstance((_rec.get("luz") or {}).get("med"), float) and "joelho" in _rec and "pernas" in _rec,
+   "19: trunc, borda, luz, joelho e pernas do recorte no cena.db: %r" % _rec)
+ok(json.loads(Image.open(p1).text.get("eterna") or "{}").get("v") == 1, "D8: o PNG leva o tEXt eterna (joelho e pernas)")
 st = m.rec_status()
 ok(st["provedor"] == "cpu" and st["carregado"] and st["filho"]["vivo"] and st["etapas_ms"] and "regra" in st["etapas_ms"] and st["feitos"] == 1,
    "3: provedor e etapas depois da primeira foto: %r" % st)
@@ -253,6 +261,20 @@ try:
     ok(False, "contrato: imagem acima de 40 MP deveria ser recusada")
 except ValueError as e_:
     ok("imagem_grande" in str(e_), "contrato: imagem grande: %r" % e_)
+# 18/11 (critério 10): o filho de cena (--modo cena, CLIP falso) recusa origem fora de --inbox/--thumbs e imagem acima de 40 MP
+_cf = _sp_c = __import__("subprocess").Popen([sys.executable, os.path.join(AQUI, "_cena_filho_falso.py"), "--modo", "cena", "--inbox", m.INBOX,
+                                              "--thumbs", m.THUMBS, "--modelos", m.MODELOS], stdin=-1, stdout=-1, stderr=-3, text=True)
+_pr = json.loads(_cf.stdout.readline())
+_cf.stdin.write(json.dumps({"id": "c.1", "tipo": "cena", "itens": [{"pid": "a97000000003", "origem": fora}, {"pid": "a97000000004", "origem": fg_},
+                                                                   {"pid": "a97000000001", "origem": f1}]}) + "\n")
+_cf.stdin.flush()
+_rr = json.loads(_cf.stdout.readline())
+_cf.kill()
+_er = {x["pid"]: x.get("erro") for x in _rr.get("res", [])}
+_ve = [x for x in _rr.get("res", []) if x.get("vet")]
+ok(_pr.get("pronto") and _pr.get("modo") == "cena" and _er.get("a97000000003") == "caminho_recusado" and _er.get("a97000000004") == "imagem_grande"
+   and len(_ve) == 1 and len(__import__("base64").b64decode(_ve[0]["vet"])) == 1024 and "flash" in _ve[0].get("sinais", {}),
+   "10: filho de cena: caminho_recusado, imagem_grande e o vetor de 512 float16: %r" % ({"pronto": _pr, "erros": _er},))
 # foto sem ninguém: sem_pessoa (o filho segue vivo)
 fv_ = os.path.join(ib, "a97000000005_IMG.jpg")
 Image.new("RGB", (600, 400), (10, 10, 200)).save(fv_)

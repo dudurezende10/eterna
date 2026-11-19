@@ -2075,6 +2075,10 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
     except Exception as ex:
         print("  fila do fotógrafo (rostos): %s" % str(ex)[:80])
     rostos_enfileira(pid, dst, 0, time.time())   # S11: foto nova na frente do atraso do boot
+    try:
+        cena_enfileira(pid, thumb, 0)            # 18/11 (regra 19): reconhecer o ponto (nada com o interruptor desligado)
+    except Exception as ex:
+        print("  cena: %s" % str(ex)[:80])
     nuvem_enfileira(pid, dst)
     if not quieto:
         print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
@@ -3494,6 +3498,7 @@ def rec_pose_ok():
 
 
 REC_FALSO_SEG = None     # v93 (segurança S2): só os testes ligam (m.REC_FALSO_SEG = s): o "recorte" copia a foto e demora s
+REC_FALSO_INFO = None    # 18/11: só os testes: pid -> medidas do recorte falso (trunc, borda, luz, sem_pessoa)
 
 
 def _rec_falso():
@@ -3576,7 +3581,7 @@ def _rec_pids_ler():
 
 def _rec_pids_gravar():
     with rec_filhos_lock:
-        lst = [{"pid": f["p"].pid, "agente": os.getpid(), "criado": f.get("criado")} for f in rec_filhos.values()
+        lst = [{"pid": f["p"].pid, "agente": os.getpid(), "criado": f.get("criado")} for f in list(rec_filhos.values()) + [cena_filho]
                if f.get("p") is not None and f["p"].poll() is None]
     try:
         os.makedirs(os.path.dirname(REC_PIDS), exist_ok=True)
@@ -3894,11 +3899,16 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
         os.makedirs(RECORTES, exist_ok=True)
         if not os.path.exists(cheio):
             time.sleep(falso)
+            info = REC_FALSO_INFO(pid) if callable(REC_FALSO_INFO) else None
+            if info and info.get("sem_pessoa"):
+                cena_rec(pid, {"sem_pessoa": True})
+                raise ValueError("sem_pessoa")
             shutil.copyfile(origem, cheio + ".f.tmp")
             os.chmod(cheio + ".f.tmp", 0o600)
             os.replace(cheio + ".f.tmp", cheio)
             with rec_lock:
                 rec["feitos"] += 1
+            cena_rec(pid, info or {"trunc": True, "borda": [], "luz": {"med": 120.0, "p95": 200.0, "fonte": "pessoa"}, "joelho": None, "pernas": False})
         if destino != cheio:
             shutil.copyfile(cheio, destino + ".f.tmp")
             os.chmod(destino + ".f.tmp", 0o600)
@@ -3907,7 +3917,13 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
     if not os.path.exists(cheio):
         t0 = time.time()
         os.makedirs(RECORTES, exist_ok=True)
-        rec_filho_recortar(pid, origem, cheio, getattr(_rec_tl, "i", 0))   # MAX_PIXELS, EXIF, 3000 px, RGB zerado fora, 600: no filho
+        try:
+            j = rec_filho_recortar(pid, origem, cheio, getattr(_rec_tl, "i", 0))   # MAX_PIXELS, EXIF, 3000 px, RGB zerado fora, 600: no filho
+        except ValueError as ex:
+            if str(ex) == "sem_pessoa":
+                cena_rec(pid, {"sem_pessoa": True})   # 18/11 (regra 19): a próxima de gramado vira base
+            raise
+        cena_rec(pid, j)                             # 18/11 (regra 19): trunc, borda, luz, joelho e pernas para a escolha da base
         ms = int((time.time() - t0) * 1000)
         with rec_lock:
             rec["feitos"] += 1
@@ -4216,7 +4232,9 @@ def rec_ia_loop():
                     break                                # em ordem de prioridade: as seguintes não têm vaga também
                 del pend[pid]
                 if os.path.exists(rec_arquivo(pid)) and os.path.exists(rec_arquivo(pid, 2400)):
-                    continue
+                    if not (cena_regra19() and cena_rec_falta(pid)):
+                        continue
+                    rec_apagar(pid)                  # 18/11: recorte de antes desta versão, sem as medidas: refaz
                 with lock:
                     e = lib.get(pid)
                     u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
@@ -5547,6 +5565,12 @@ def _sess_ia_regra(x, cfg=None):
     cfg = cfg or ia_cfg_mem()
     if not cfg.get("ligada"):
         return 0, "desligada"
+    if not FUNCAO_DIA_ON:
+        # 18/11 (regra 19): sem a Escala, as bases são as fotos de gramado reconhecidas pela imagem (treino_cfg_mem: sem banco)
+        p = treino_cfg_mem().get("ponto")
+        if p == "ligada":
+            return int(cfg.get("cliques") or 2), None
+        return 0, ("cena_medir" if p == "medir" else "cena_desligada")
     f = x.get("funcao") if FUNCAO_DIA_ON else None   # desligada: nem a função guardada em sessão aberta antes do deploy vale
     if not x.get("fotografo") or not isinstance(f, dict):
         return 0, "sem_funcao"                       # A4: sem função do dia ou sem cadastro, nada some da venda
@@ -5559,9 +5583,62 @@ def _sess_ia_regra(x, cfg=None):
     return int(cfg["cliques"]), None
 
 
+def _sess_ia_base_de(p, lv):
+    """Uma foto como base (regra 19): "base", "pula", "rec" (gramado válido esperando o recorte) ou "pendente" (sem
+    classificação da versão ligada). Só memória (cena_mem)."""
+    c = cena_mem.get(p)
+    if c is not None and c.get("r") == CENA_NAO:
+        return "pula"                                # recusada pelo processo de cena: nunca base, não trava
+    if c is None or c.get("v") != lv:
+        return "pendente"
+    if not c.get("g"):
+        return "pula"
+    ok = base_rec_ok(c.get("rec"))
+    return "rec" if ok is None else ("base" if ok else "pula")
+
+
+def _sess_ia_bases(x, n):
+    """18/11 (regra 19): as bases da leva = as N primeiras fotos de gramado que passam na regra (gramado da versão ligada com
+    conf >= CENA_LIMIAR e os vetos, recorte com gente, sem corte na lateral nem no alto e com luz boa), em ordem de clique.
+    -> (bases, "ok" | "pendente" | "sem_gramado"). Para no primeiro "pendente". 1 base sem nada pendente antes = ok (D9).
+    Com o sess_lock; só memória."""
+    lv = treino_cfg_mem().get("ponto_versao")
+    ts = x.get("_t") or {}
+    bases = []
+    for p in sorted(x["fotos"], key=lambda p: ts.get(p, (0, 0))):
+        e = _sess_ia_base_de(p, lv)
+        if e in ("pendente", "rec"):
+            return bases, "pendente"
+        if e == "base":
+            bases.append(p)
+            if len(bases) >= n:
+                break
+    return bases, ("ok" if bases else "sem_gramado")
+
+
+def _sess_ia_pede_rec(x, n):
+    """Leva já fechada esperando (cena_pendente): as fotos de gramado válidas que ainda esperam o recorte vão para a fila de
+    IA (o _sess_ia_cand só olha as abertas). Com o sess_lock."""
+    lv = treino_cfg_mem().get("ponto_versao")
+    ts = x.get("_t") or {}
+    vistos = x.setdefault("_ia_vistos", set())
+    boas = 0
+    for p in sorted(x["fotos"], key=lambda p: ts.get(p, (0, 0))):
+        e = _sess_ia_base_de(p, lv)
+        if e == "rec" and p not in vistos:
+            vistos.add(p)
+            sess_ia_novos.append((p, REC_PRIO_IA))
+        elif e == "base":
+            boas += 1
+            if boas >= n:
+                break
+
+
 def _sess_ia_cand(x):
     """v93: com a sessão ainda não fechada, os N primeiros cliques (fotos + pendentes, pela hora do clique corrigida) que
-    ainda não foram pedidos vão para a fila de recorte de IA. Com o sess_lock."""
+    ainda não foram pedidos vão para a fila de recorte de IA. Com o sess_lock.
+    18/11 (regra 19): as candidatas são as fotos de gramado válidas (fotos + pend, em ordem de clique) ainda não descartadas
+    pelo recorte, até N boas mais as que esperam o recorte."""
     if x.get("status") == "fechada" or x.get("removida"):
         return
     n, _ = _sess_ia_regra(x)
@@ -5570,6 +5647,21 @@ def _sess_ia_cand(x):
     ts = x["_t"]
     vistos = x.setdefault("_ia_vistos", set())
     pr = 2 if x.get("atrasada") else 1
+    if cena_regra19():
+        lv = treino_cfg_mem().get("ponto_versao")
+        boas = 0
+        for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0))):
+            e = _sess_ia_base_de(p, lv)
+            if e not in ("base", "rec"):
+                continue
+            if p not in vistos:
+                vistos.add(p)
+                sess_ia_novos.append((p, pr))
+            if e == "base":
+                boas += 1
+                if boas >= n:
+                    break
+        return
     for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n]:
         if p not in vistos:
             vistos.add(p)
@@ -5585,6 +5677,16 @@ def _sess_ia_fecha(x):
     if n and not mot and len(fs) > n and _vis_ja_tem_ia(x["card"]):
         x["ia"] = []
         x["ia_regra"] = {"n": n, "motivo": "visita_ja_tem"}
+        return
+    if cena_regra19() and n and not mot and len(fs) > n:
+        # 18/11 (regra 19): só as fotos de gramado que passam na regra; sem nenhuma, sem montagem (nunca as 2 primeiras de
+        # qualquer ponto); classificação ou recorte ainda faltando: cena_pendente (o cena_completa termina depois)
+        bases, est = _sess_ia_bases(x, n)
+        x["ia"] = list(bases) if est == "ok" else []
+        x["ia_regra"] = {"n": n, "motivo": None if est == "ok" else ("sem_gramado" if est == "sem_gramado" else "cena_pendente")}
+        if est == "pendente":
+            cena_pend[x["card"]] = time.time()
+            _sess_ia_pede_rec(x, n)
         return
     x["ia"] = list(fs[:n]) if n and len(fs) > n else []
     x["ia_regra"] = {"n": n, "motivo": mot or ("poucas_fotos" if n and len(fs) <= n else None)}
@@ -5614,7 +5716,7 @@ def sess_ia_hoje(agora=None):
             if x.get("status") != "fechada":
                 out.update(x.get("_ia_vistos") or ())
                 n, _ = _sess_ia_regra(x)
-                if n:
+                if n and not cena_regra19():             # 18/11: na regra 19 as candidatas já estão em _ia_vistos
                     ts = x.get("_t") or {}
                     out.update(sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n])
     return out
@@ -6416,6 +6518,12 @@ def sess_carregar(agora=None):
             if x["status"] != "fechada":
                 _sess_fecha_uma(x, agora, "reinicio")
         hoje = sum(1 for x in sess.values() if x["dia"] == dias[1] and not x.get("removida"))
+        # 18/11 (revisão, regra 19): a leva de hoje que fechou esperando o reconhecimento (cena_pendente) antes de o agente
+        # reiniciar volta para o cena_completa, com o prazo contado de quando fechou (nunca fica presa sem bases nem motivo final)
+        for x in sess.values():
+            if x["dia"] == dias[1] and x.get("status") == "fechada" and not x.get("removida") and not x.get("ia") \
+                    and (x.get("ia_regra") or {}).get("motivo") == "cena_pendente":
+                cena_pend[x["card"]] = _num(x.get("fechada_em")) or agora
         _vis_carregar(dias, agora)                   # v97: arestas relidas, visitas refeitas (critério 31)
         for d in dias:
             _vis_recalc(d)
@@ -6857,7 +6965,19 @@ def _vis_ia_reabre(cards, motivo):
         fs = x["fotos"]
         if not n or len(fs) <= n:
             continue
-        x["ia"] = list(fs[:n])
+        if cena_regra19():
+            # 18/11 (regra 19): Separar reabre só com as fotos de gramado da leva, nunca as 2 primeiras de qualquer ponto
+            bases, est = _sess_ia_bases(x, n)
+            if est != "ok":
+                x["ia_regra"] = {"n": n, "motivo": "sem_gramado" if est == "sem_gramado" else "cena_pendente"}
+                if est == "pendente":
+                    cena_pend[c] = time.time()
+                _sess_toca(x)
+                out.append(c)
+                continue
+            x["ia"] = list(bases)
+        else:
+            x["ia"] = list(fs[:n])
         x["ia_regra"] = {"n": n, "motivo": None, "reaberta": motivo}
         for p in x["ia"]:
             sess_ia_novos.append((p, REC_PRIO_IA))
@@ -11953,7 +12073,7 @@ TREINO_NIVEIS = ("boa", "ajustar", "fraca", "nao_vai")
 TREINO_QUAL_MOTIVOS = ("desfocada", "olhos", "cortada", "semrosto", "estourada", "escura", "chuva", "expressao", "torta",
                        "repetida", "fundo", "outro")
 TREINO_CAMPOS = frozenset(("pid", "v", "ponto", "ia", "qual", "duvida", "obs", "base_em"))
-TREINO_MODOS = ("misto", "ia", "qualidade")
+TREINO_MODOS = ("misto", "ia", "qualidade", "duvidas")   # 18/11: duvidas = as mais perto do limiar do reconhecimento
 TREINO_ANALISE = ("desligada", "medir", "ligada")
 TREINO_CFG_PADRAO = {"ponto": "desligada", "exposicao": "desligada"}
 TREINO_DIAS = 60
@@ -12116,6 +12236,30 @@ def treino_ordem(fotos, dia, modo):
     return out
 
 
+def treino_ordem_duvidas(fotos):
+    """18/11: modo "duvidas": as fotos classificadas com a confiança mais perto de CENA_LIMIAR, as previstas gramado ou
+    chute primeiro; as sem classificação no fim (na ordem de clique)."""
+    pids = [f["pid"] for f in fotos]
+    cl = {}
+    if pids and os.path.exists(CENA_DB):
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                for i in range(0, len(pids), 500):
+                    b = pids[i:i + 500]
+                    cl.update({p: (r, c) for p, r, c in db.execute("select pid, rotulo, conf from cena where rotulo is not null and pid in (%s)"
+                                                                     % ",".join("?" * len(b)), b)})
+            finally:
+                db.close()
+
+    def chave(f):
+        x = cl.get(f["pid"])
+        if not x:
+            return (2, 9.0, f["pid"])
+        return (0 if x[0] in ("gramado", "chute") else 1, abs(float(x[1] or 0) - CENA_LIMIAR), f["pid"])
+    return sorted(fotos, key=chave)
+
+
 def treino_vazio(doc):
     """Marcação sem nada (o "desfazer" da tela grava assim a primeira marcação desfeita): conta como não marcada."""
     if not isinstance(doc, dict):
@@ -12150,7 +12294,7 @@ def treino_amostra(dia, fotografo=None, modo="misto", n=150, marcadas=False):
         fotos = [f for f in c["fotos"] if f["pid"] in lib]
     rot = treino_rotulos(dia)
     itens = []
-    for f in treino_ordem(fotos, dia, modo):
+    for f in (treino_ordem_duvidas(fotos) if modo == "duvidas" else treino_ordem(fotos, dia, modo)):
         if fotografo and f["fotografo"] != fotografo:
             continue
         r = rot.get(f["pid"])
@@ -12314,6 +12458,7 @@ def treino_gravar(quem, corpo):
         finally:
             db.close()
     _treino_n["t"] = 0.0
+    _cena_base_t[0] = time.time()          # 18/11: rótulo novo muda a versão do Só medir (o Ligada usa o congelado)
     return 200, {"ok": True, "doc": doc}
 
 
@@ -12335,6 +12480,7 @@ def treino_lgpd(pids):
             finally:
                 db.close()
         _treino_n["t"] = 0.0
+        cena_lgpd(pids)                    # 18/11: vetor e classificação da foto (cena.db, memória e fila)
         with treino_lock:
             for c in _treino_cache.values():
                 c["idx"] = {k: x for k, x in c["idx"].items() if k not in set(pids)}
@@ -12363,10 +12509,30 @@ def treino_lgpd(pids):
 
 
 def treino_cfg_valida(j):
-    """config/treino: {ponto, exposicao}, cada um desligada | medir | ligada (por e em são de auditoria). Outro formato = None."""
+    """config/treino: {ponto, exposicao}, cada um desligada | medir | ligada (por e em são de auditoria). Outro formato = None.
+    18/11: ponto_versao (a versão congelada do reconhecimento, ^c1-[a-z0-9-]{1,80}$) só existe no documento gravado pelo
+    servidor (cena_congelar); o POST /treino/config não aceita o campo e o estado_gravar recusa config/treino inteiro."""
     if not isinstance(j, dict) or j.get("ponto") not in TREINO_ANALISE or j.get("exposicao") not in TREINO_ANALISE:
         return None
-    return {"ponto": j["ponto"], "exposicao": j["exposicao"]}
+    pv = j.get("ponto_versao")
+    if pv is not None and not (isinstance(pv, str) and _re_cena_versao.match(pv)):
+        return None
+    return {"ponto": j["ponto"], "exposicao": j["exposicao"], "ponto_versao": pv if j["ponto"] == "ligada" else None}
+
+
+_re_cena_versao = re.compile(r"^c1-[a-z0-9-]{1,80}$")
+
+
+def _treino_cfg_escreve(v):
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "treino", json.dumps(v, ensure_ascii=False), rev, _iso()))
+            db.commit()
+        finally:
+            db.close()
 
 
 def treino_cfg():
@@ -12390,7 +12556,25 @@ def treino_cfg():
                     v = {**v, "por": j.get("por"), "em": j.get("em")}
     except Exception:
         v = _treino_cfg["v"]
-    v = v or dict(TREINO_CFG_PADRAO, por=None, em=None)
+    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None)
+    # 18/11 (Eduardo): o "Ligada" gravado antes desta versão não comandava nada. Sem um modelo congelado que passou no critério,
+    # Ligada vira Só medir sozinho (e fica no log); a exposição ainda não tem medida: Ligada vira Só medir também.
+    mig = []
+    if v["ponto"] == "ligada" and cena_modelo_existe(v.get("ponto_versao")) is False:
+        mig.append(("ponto", v.get("ponto_versao")))
+        v = dict(v, ponto="medir", ponto_versao=None)
+    if v["exposicao"] == "ligada":
+        mig.append(("exposicao", None))
+        v = dict(v, exposicao="medir")
+    if mig:
+        v = dict(v, por="servidor", em=_iso())
+        try:
+            _treino_cfg_escreve(v)
+            for k, ver in mig:
+                print("  treino: %s Ligada sem modelo que passou no critério%s -> Só medir (migração da regra 19)"
+                      % ("reconhecer o ponto" if k == "ponto" else "medir a exposição", " (%s)" % ver if ver else ""))
+        except Exception as ex:
+            print("  treino: migração do interruptor não gravou (%s)" % str(ex)[:80])
     _treino_cfg.update(t=agora, v=v)
     return v
 
@@ -12403,19 +12587,27 @@ def treino_cfg_gravar(corpo, quem):
     novo = {"ponto": corpo.get("ponto", de["ponto"]), "exposicao": corpo.get("exposicao", de["exposicao"])}
     if treino_cfg_valida(novo) is None:
         return 400, {"ok": False, "error": "valor"}
-    v = {**novo, "por": str(quem or "")[:100] or None, "em": _iso()}
-    with estado_lock:
-        db = estado_db()
-        try:
-            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
-            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
-                       ("config", "treino", json.dumps(v, ensure_ascii=False), rev, _iso()))
-            db.commit()
-        finally:
-            db.close()
+    if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 18/11: ainda não existe a medida da exposição
+        return 409, {"ok": False, "error": "criterio", "falta": [{"k": "exposicao_sem_modelo", "tem": 0, "precisa": 1}]}
+    pv = de.get("ponto_versao") if novo["ponto"] == "ligada" else None
+    if corpo.get("ponto") == "ligada":
+        # 18/11 (D4, D10): Ligada só acima do critério, com os rótulos de agora congelados (ligada -> ligada = recongelar)
+        crit, base_ok = cena_criterio_agora()
+        if not crit.get("passa"):
+            return 409, {"ok": False, "error": "criterio", "falta": crit.get("falta") or []}
+        pv = cena_congelar(quem, base_ok, de.get("ponto_versao") if de["ponto"] == "ligada" else None)
+        if not pv:                                    # rótulo novo entre a medida e o congelamento: mede de novo
+            return 409, {"ok": False, "error": "criterio", "falta": [{"k": "versao_mudou", "tem": 0, "precisa": 1}]}
+    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": _iso()}
+    _treino_cfg_escreve(v)
     _treino_cfg.update(t=time.time(), v=dict(v))
-    print("  treino: análise do ponto %s -> %s, da exposição %s -> %s · por %s" % (de["ponto"], v["ponto"], de["exposicao"], v["exposicao"], v["por"] or "?"))
-    return 200, {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"]}
+    _cena_base_t[0] = time.time()
+    print("  treino: análise do ponto %s -> %s%s, da exposição %s -> %s · por %s" % (de["ponto"], v["ponto"], " (%s)" % pv if pv else "",
+                                                                                    de["exposicao"], v["exposicao"], v["por"] or "?"))
+    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"]}
+    if pv:
+        r["ponto_versao"] = pv
+    return 200, r
 
 
 def treino_status():
@@ -12437,7 +12629,1199 @@ def treino_status():
             pass
         _treino_n.update(t=agora, n=n)
     c = treino_cfg()
-    return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": None, "ajuste": None}
+    return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": cena_status(), "ajuste": None}
+
+
+# ---------- Cena: reconhecer o ponto pela imagem (regra 19, 18/11; plano "bases dos fundos de IA só com foto do gramado") ----------
+# Um processo filho (o mesmo eterna-recorte.py com --modo cena) tira de cada miniatura um vetor do CLIP ViT-B/32 (512 números,
+# L2) e 4 medidas baratas (verde fora da coluna central, flash na pessoa, cadeiras atrás, dourado do troféu). O agente decide
+# por vizinhos (k = CENA_K, voto pesado pela semelhança de cosseno) contra as fotos marcadas no Treino da IA. Tudo local:
+# nada sai do servidor, nenhum serviço externo classifica. O cena.db fica FORA do backup (tudo nele se refaz das fotos); o
+# vetor de foto sem rótulo some em CENA_VET_DIAS e a linha em CENA_DIAS. Interruptor: config/treino.ponto
+#   desligada  nada roda (o filho nem abre); o Checkout fica sem fundos de IA (D1)
+#   medir      classifica e mostra na aba Medição; o Checkout fica sem fundos de IA
+#   ligada     só com o critério (cena_criterio) e com os rótulos CONGELADOS no momento de ligar (D10, tabela modelo)
+# Locks: cena_lock nunca junto do sess_lock; quem está com o sess_lock só lê cena_mem (dict trocado por item) e cena_pend
+# (mexido só com o sess_lock). treino_cfg_mem() nunca abre banco.
+CENA_DB = os.path.join(HOME, "ponto", "cena.db")
+CENA_NOME = "clip-b32"
+CENA_ARQ = "clip-vit-b32-visao.onnx"      # em ~/Eterna/modelos (MODELOS); baixado pelo instalar-recorte-modelos.py
+# SHA-256 do arquivo (página do arquivo no Hugging Face, commit 6ef1ebc, licença MIT; conferido em 18/11), o mesmo do
+# CENA_SHA do instalar-recorte-modelos.py. Vazio = sem modelo
+# (falha fechada: nada é reconhecido e o Checkout fica sem fundos de IA). Ver docs/fundos-ia-regras.md, regra 19.
+CENA_SHA = "fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40"
+CENA_FALSO = None          # só os testes: caminho de um filho falso (testes/_cena_filho_falso.py); pula a conferência do SHA
+CENA_K = 7
+CENA_LIMIAR = 0.70
+CENA_SIM_PISO = 0.80       # provisório: o valor certo vem da medição
+CENA_FILA_MAX = 5000
+CENA_LOTE = 16
+CENA_VET_DIAS = 2
+CENA_DIAS = 60
+CENA_PEND_MAX = 900        # s: sessão fechada esperando a classificação; depois disso, cena_indisponivel (tudo à venda)
+CENA_MEM_MIN_GB = 1.5
+CENA_VETO_N = 30           # gramados marcados para calibrar os vetos (verde, flash); abaixo disso ficam em 0 (desligados)
+CENA_ERRO_SEG = 60         # o filho de cena morto reabre depois disto; para na CENA_MORTES_MAX-ésima morte seguida
+CENA_MORTES_MAX = 3
+CENA_ESPERA_SEG = 120      # prazo de uma mensagem (lote) no filho
+CENA_CARGA_SEG = 180
+CENA_MEDIDA_MAX = 20000    # teto de rótulos no cálculo da medida (matriz em blocos)
+CENA_MEDIDA_SEG = 10       # no máximo 1 cálculo da medida a cada 10 s (por versão e método)
+CENA_CLASSES = TREINO_PONTOS
+# Critério para Ligada (D4, seção 10 do plano): mínimos de rótulos por classe, 3 dias, 3 fotógrafos, precisão e cobertura do
+# gramado como base na validação sem a própria sessão, nenhum "outro" como gramado e o prospectivo
+CENA_META = {"gramado": 150, "arquibancada": 40, "trofeu": 40, "chute": 60, "outro": 40}
+CENA_CRIT = {"dias": 3, "fotografos": 3, "precisao": 0.98, "cobertura": 0.85, "outro_fp": 0, "prosp_n": 100, "prosp_precisao": 0.97}
+# Base boa (Eduardo, 18/11): gramado reconhecido, pessoa sem corte na lateral nem no alto e luz boa. Limites a calibrar no estádio.
+BASE_LUZ_MED_MIN = 40.0    # mediana da luminância (0 a 255) na pessoa abaixo disto: escura demais
+BASE_LUZ_P95_MAX = 254.0   # p95 da luminância no rosto (sem rosto, na pessoa) a partir disto: estourada
+CENA_SINAIS = ("verde", "flash", "cadeiras", "dourado")
+CENA_SINAL_ALVO = {"verde": ("gramado", None), "flash": ("gramado", "chute"), "cadeiras": ("arquibancada", None), "dourado": ("trofeu", None)}
+
+cena_lock = threading.Lock()               # estado, fila e contadores
+cena_db_lock = threading.Lock()
+cena_filho_lock = threading.Lock()
+cena = {"erro": None, "erro_em": 0.0, "espera_s": CENA_ERRO_SEG, "mortes": 0, "parado": None, "provedor": None, "carregado": False,
+        "carga_ms": None, "reinicios": 0, "abriu": False, "feitas_dia": "", "feitas_hoje": 0, "ms_total": 0, "ms_n": 0, "ultimo": None}
+cena_filho = {"p": None, "fila": None, "seq": 0, "criado": None}
+cena_q = collections.OrderedDict()         # pid -> (prio, seq, thumb, dia); a mais antiga sai acima de CENA_FILA_MAX
+_cena_seq = itertools.count()
+cena_mem = {}                              # pid -> {"r", "c", "v", "g", "rec", "dia"} de hoje e ontem
+cena_pend = {}                             # card -> hora em que fechou com cena_pendente (só com o sess_lock)
+cena_parar = threading.Event()             # só os testes ligam: o cena_loop termina
+_cena_base = {}                            # chave -> {"t", "base"}
+_cena_base_t = [0.0]                       # o treino_gravar zera o cache da base de medir
+_cena_med = {}                             # (versao, metodo) -> {"t", "r"}
+_cena_crit = {"versao": None, "passa": False, "t": 0.0}
+_cena_ok = {}                              # (caminho, tamanho, mtime) -> SHA confere
+_cena_cache_lock = threading.Lock()        # 18/11 (revisão): _cena_base e _cena_med trocados por mais de uma thread
+_cena_vendas = {"chave": None, "v": frozenset()}   # bases vendidas de hoje e ontem, relidas só quando o vendas.db muda
+_cena_rec_mem = collections.OrderedDict()  # pid -> medidas do recorte (corrida entre cena_rec e cena_gravar)
+CENA_NAO = "nao_classificavel"             # foto que o processo de cena recusou (caminho, imagem grande, ilegível): pula
+
+
+def cena_db():
+    """Conexão ao cena.db (chamar com o cena_db_lock)."""
+    os.makedirs(os.path.dirname(CENA_DB), exist_ok=True)
+    c = sqlite3.connect(CENA_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("create table if not exists cena (pid text primary key, dia text, vet blob, verde real, sinais text, rec text, prev0 text,"
+              " rotulo text, conf real, g integer, versao text, em text)")
+    c.execute("create index if not exists cena_dia on cena(dia)")
+    c.execute("create table if not exists modelo (versao text primary key, rotulos text, params text, por text, em text)")
+    c.execute("create table if not exists meta (k text primary key, v text)")
+    return c
+
+
+def cena_sha_confere(sha):
+    """18/11 (revisão de segurança): o SHA do modelo que gerou os vetores fica no cena.db. Modelo trocado = todos os vetores
+    (e as classificações feitas com eles) saem, e as versões congeladas (tabela modelo) também: o Ligada vira Só medir pela
+    migração do treino_cfg e só volta passando no critério. As medidas do recorte e o prev0 ficam. A varredura refaz as de hoje."""
+    if not isinstance(sha, str) or not sha:
+        return False
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            r = db.execute("select v from meta where k = 'sha'").fetchone()
+            if r and r[0] == sha:
+                return False
+            mudou = r is not None
+            if mudou:
+                db.execute("update cena set vet = null, rotulo = null, conf = null, g = 0, versao = null")
+                db.execute("delete from modelo")      # revisão: o conjunto congelado era do modelo velho; Ligada passa pelo critério de novo
+            db.execute("insert into meta values ('sha', ?) on conflict(k) do update set v = excluded.v", (sha,))
+            db.commit()
+        finally:
+            db.close()
+    if mudou:
+        cena_mem.clear()
+        with _cena_cache_lock:
+            _cena_base.clear()
+            _cena_med.clear()
+        _cena_base_t[0] = time.time()
+        print("  cena: o modelo mudou (SHA novo): vetores, classificações e versões congeladas apagados; as fotos de hoje são refeitas")
+        _treino_cfg["t"] = 0.0
+        try:
+            treino_cfg()                              # sem modelo congelado, Ligada vira Só medir na hora (migração, com linha no log)
+        except Exception as ex:
+            print("  cena: interruptor não relido depois da troca do modelo (%s)" % str(ex)[:80])
+    return mudou
+
+
+def treino_cfg_mem():
+    """O último interruptor lido (sem abrir o banco): para quem está com o sess_lock na mão. Atualizado a cada 3 s pelo
+    treino_cfg_loop."""
+    v = _treino_cfg["v"]
+    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None)
+
+
+def treino_cfg_loop():
+    """Mantém treino_cfg_mem e ia_cfg_mem frescos (3 s) fora de qualquer lock de sessão."""
+    while True:
+        try:
+            treino_cfg()
+            ia_cfg()
+        except Exception as ex:
+            print("  treino: interruptor %s" % str(ex)[:80])
+        time.sleep(3)
+
+
+def cena_regra19():
+    """A regra 19 (bases só de gramado) vale: Escala desligada (a regra 15 volta com ETERNA_FUNCAO_DIA=1, D11)."""
+    return not FUNCAO_DIA_ON
+
+
+def cena_modelo_ok():
+    """(ok, erro) do arquivo do modelo de cena: presente e com o SHA-256 fixado (cache por tamanho e data). Teste: CENA_FALSO."""
+    if CENA_FALSO:
+        return True, None
+    if not re.fullmatch(r"[0-9a-f]{64}", CENA_SHA or ""):
+        return False, "sem_modelo"
+    p = os.path.join(MODELOS, CENA_ARQ)
+    try:
+        st = os.stat(p)
+    except OSError:
+        return False, "sem_modelo"
+    k = (p, st.st_size, st.st_mtime)
+    v = _cena_ok.get(k)
+    if v is None:
+        try:
+            h = hashlib.sha256()
+            with open(p, "rb") as f:
+                for b in iter(lambda: f.read(1 << 20), b""):
+                    h.update(b)
+            v = h.hexdigest() == CENA_SHA
+        except OSError:
+            v = False
+        _cena_ok.clear()
+        _cena_ok[k] = v
+    return (True, None) if v else (False, "sem_modelo")
+
+
+def cena_enfileira(pid, thumb, prio=1, dia=None):
+    """Põe a miniatura na fila de cena (0 = foto nova, 1 = varredura, 2 = rótulo sem vetor). Nada com o ponto desligado.
+    Acima de CENA_FILA_MAX sai o mais antigo (a varredura recoloca as de hoje)."""
+    if treino_cfg_mem().get("ponto") == "desligada" or not pid_ok(pid) or not thumb:
+        return False
+    if dia and dia < _ff_hoje(time.time() - CENA_DIAS * 86400):
+        return False                                  # revisão: foto mais velha que o corte do cena_limpa não volta à fila
+    with cena_lock:
+        ant = cena_q.get(pid)
+        if ant is not None and ant[0] <= prio:
+            return True
+        cena_q[pid] = (prio, next(_cena_seq), thumb, dia or _ff_hoje())
+        while len(cena_q) > CENA_FILA_MAX:
+            cena_q.popitem(last=False)
+    return True
+
+
+def _cena_pegar(n):
+    with cena_lock:
+        if not cena_q:
+            return []
+        esc = sorted(cena_q.items(), key=lambda kv: (kv[1][0], kv[1][1]))[:n]
+        for p, _ in esc:
+            cena_q.pop(p, None)
+    return [(p, v[2], v[3]) for p, v in esc]
+
+
+def _cena_espera():
+    with cena_lock:
+        if cena["parado"]:
+            return False, "parado"
+        if cena["erro"] and time.time() - cena["erro_em"] < cena["espera_s"]:
+            return False, cena["erro"]
+    return True, None
+
+
+def _cena_erro(motivo, morte=False):
+    with cena_lock:
+        cena.update(erro=motivo, erro_em=time.time(), carregado=False, espera_s=CENA_ERRO_SEG)
+        if morte:
+            cena["mortes"] += 1
+            if cena["mortes"] >= CENA_MORTES_MAX:
+                cena["parado"] = "parado"
+                print("  cena: o processo do reconhecimento do ponto parou %d vezes seguidas; fica parado até reiniciar o agente" % cena["mortes"])
+
+
+def _cena_matar():
+    p = cena_filho.get("p")
+    cena_filho["p"] = None
+    if p is not None:
+        try:
+            p.kill()
+        except Exception:
+            pass
+        try:
+            p.wait(timeout=5)
+        except Exception:
+            pass
+
+
+def _cena_abrir():
+    """Com o cena_filho_lock: o filho vivo, ou abre um novo. Exceção com o motivo se não deu."""
+    f = cena_filho
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:                           # morreu entre um lote e outro
+        f["p"] = None
+        _cena_erro("filho", morte=True)
+        raise RuntimeError("filho")
+    ok, mot = _cena_espera()
+    if not ok:
+        raise RuntimeError(mot)
+    ok, mot = cena_modelo_ok()
+    if not ok:
+        _cena_erro(mot)
+        raise RuntimeError(mot)
+    if _vis_np() is None:
+        _cena_erro("sem_numpy")
+        raise RuntimeError("sem_numpy")
+    livre = rec_mem_livre_gb()
+    if livre is not None and livre < CENA_MEM_MIN_GB:
+        _cena_erro("memoria")
+        raise RuntimeError("memoria")
+    script = CENA_FALSO or REC_FILHO
+    try:
+        p = subprocess.Popen([sys.executable, script, "--modo", "cena", "--inbox", INBOX, "--thumbs", THUMBS, "--modelos", MODELOS,
+                              "--cena-arq", CENA_ARQ, "--cena-sha", CENA_SHA or "-"],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1, encoding="utf-8",
+                             env=rec_env(), close_fds=True)
+    except Exception as ex:
+        _cena_erro("filho")
+        raise RuntimeError("filho: %s" % str(ex)[:80])
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila, criado=time.time())
+    _rec_pids_gravar()
+    try:
+        j = fila.get(timeout=CENA_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "filho"}
+    if j is None or not j.get("pronto"):
+        erro = (j or {}).get("erro") if j else None
+        _cena_matar()
+        if erro == "sem_modelo":
+            _cena_erro("sem_modelo")
+        elif erro and "memória" in str(erro):
+            _cena_erro("memoria", morte=True)
+        else:
+            _cena_erro("filho", morte=True)
+        raise RuntimeError(cena["erro"] or "filho")
+    prov = j.get("provedor") if j.get("provedor") in ("cuda", "cpu", "directml") else "cpu"
+    try:
+        if cena_sha_confere(j.get("sha") or CENA_SHA or None):
+            cena_varre()
+    except Exception as ex:
+        print("  cena: SHA do modelo não conferido no cena.db (%s)" % str(ex)[:80])
+    with cena_lock:
+        if cena["abriu"]:
+            cena["reinicios"] += 1
+        cena.update(carregado=True, erro=None, provedor=prov, carga_ms=j.get("carga_ms"), abriu=True)
+    print("  cena: modelo do reconhecimento do ponto aberto em %.1f s (%s)" % ((j.get("carga_ms") or 0) / 1000.0, "placa de vídeo" if prov == "cuda" else prov))
+    return f
+
+
+def cena_fechar():
+    """Ponto desligado: o filho de cena sai da memória (e da placa)."""
+    with cena_filho_lock:
+        if cena_filho.get("p") is not None:
+            _cena_matar()
+            with cena_lock:
+                cena["carregado"] = False
+            _rec_pids_gravar()
+
+
+def cena_mandar(itens):
+    """[(pid, origem)] -> lista res do filho. Exceção se o filho morreu, demorou ou não abriu."""
+    with cena_filho_lock:
+        f = _cena_abrir()
+        f["seq"] += 1
+        mid = "c.%d" % f["seq"]
+        try:
+            f["p"].stdin.write(json.dumps({"id": mid, "tipo": "cena", "itens": [{"pid": p, "origem": o} for p, o in itens]}) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            _cena_matar()
+            _cena_erro("filho", morte=True)
+            raise RuntimeError("filho")
+        fim = time.time() + CENA_ESPERA_SEG
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _cena_matar()
+                _cena_erro("filho", morte=True)
+                raise RuntimeError("tempo")
+            if j is None:
+                f["p"] = None
+                _cena_erro("filho", morte=True)
+                raise RuntimeError("filho")
+            if j.get("id") == mid:
+                break
+    if not j.get("ok"):
+        raise RuntimeError(str(j.get("erro") or "erro")[:80])
+    with cena_lock:
+        cena["mortes"] = 0
+        ms = (j.get("ms") or {}).get("total")
+        if isinstance(ms, (int, float)) and itens:
+            cena["ms_total"] += int(ms)
+            cena["ms_n"] += len(itens)
+    return [r for r in (j.get("res") or []) if isinstance(r, dict)]
+
+
+def _cena_vet(blob):
+    np = _vis_np()
+    v = np.frombuffer(blob, dtype="<f2").astype(np.float32)
+    n = float(np.linalg.norm(v))
+    return v / n if n > 0 else v
+
+
+def cena_rotulos():
+    """Os rótulos que valem para o reconhecimento: com ponto, sem dúvida e não vazios. -> [(pid, ponto, card, dia, fotografo, em)]"""
+    if not os.path.exists(TREINO_DB):
+        return []
+    with treino_lock:
+        db = treino_db()
+        try:
+            rows = db.execute("select pid, dados, card, dia, fotografo, em from rotulo").fetchall()
+        finally:
+            db.close()
+    out = []
+    for pid, dados, card, dia, quem, em in rows:
+        try:
+            d = json.loads(dados)
+        except ValueError:
+            continue
+        if treino_vazio(d) or d.get("duvida") or d.get("ponto") not in CENA_CLASSES:
+            continue
+        out.append((pid, d["ponto"], card or "", dia or "", quem or "", em or ""))
+    return out
+
+
+def _cena_vetores(pids):
+    """{pid: (vet, verde, sinais, prev0, dia)} das linhas com vetor."""
+    out = {}
+    if not pids or not os.path.exists(CENA_DB):
+        return out
+    pids = list(pids)
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            for i in range(0, len(pids), 500):
+                bloco = pids[i:i + 500]
+                for pid, vet, verde, sinais, prev0, dia in db.execute(
+                        "select pid, vet, verde, sinais, prev0, dia from cena where vet is not null and pid in (%s)" % ",".join("?" * len(bloco)), bloco):
+                    out[pid] = (vet, verde, sinais, prev0, dia)
+        finally:
+            db.close()
+    return out
+
+
+def _cena_versao(pares):
+    h = hashlib.sha256("\n".join(sorted("%s:%s" % pp for pp in pares)).encode()).hexdigest()[:8]
+    return "c1-%s-k%d-l%03d-p%03d-%s" % (CENA_NOME, CENA_K, round(CENA_LIMIAR * 100), round(CENA_SIM_PISO * 100), h)
+
+
+def _cena_sinais(txt):
+    try:
+        s = json.loads(txt or "{}")
+        return s if isinstance(s, dict) else {}
+    except ValueError:
+        return {}
+
+
+def _cena_vetos(verdes, flashes):
+    """Vetos do gramado como base: metade do menor valor entre os gramados marcados; 0 (desligado) com menos de CENA_VETO_N."""
+    if len(verdes) < CENA_VETO_N:
+        return {"verde": 0.0, "flash": 0.0}
+    return {"verde": round(0.5 * min(verdes), 4), "flash": round(0.5 * min(flashes), 4) if flashes else 0.0}
+
+
+def cena_base(modo="medir"):
+    """A matriz de rótulos com vetor. medir: os rótulos de agora (cache até o próximo treino_gravar, até 60 s); ligada: os
+    congelados na tabela modelo (ligada_versao). Rótulo sem vetor vai para a fila (prioridade baixa) ou conta em sem_vetor."""
+    np = _vis_np()
+    if np is None:
+        return None
+    lv = treino_cfg_mem().get("ponto_versao") if modo == "ligada" else None
+    chave = ("ligada", lv) if modo == "ligada" else ("medir",)
+    agora = time.time()
+    with _cena_cache_lock:
+        c = _cena_base.get(chave)
+    if c and c["t"] >= _cena_base_t[0] and agora - c["t"] < 60:
+        return c["base"]
+    if modo == "ligada":
+        if not lv:
+            return None
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                r = db.execute("select rotulos from modelo where versao = ?", (lv,)).fetchone()
+            finally:
+                db.close()
+        if not r:
+            return None
+        rot = [tuple(x) for x in json.loads(r[0])]
+    else:
+        corte = _ff_hoje(agora - CENA_DIAS * 86400)   # revisão: o mesmo corte do cena_limpa (senão a foto volta à fila de hora em hora)
+        rot = [r for r in cena_rotulos() if (r[3] or "") >= corte]
+    vs = _cena_vetores([x[0] for x in rot])
+    sem, X, y, ps, cards, dias, quem, verde, sinais, ems, prev0 = 0, [], [], [], [], [], [], [], [], [], []
+    for pid, ponto, card, dia, fot, em in rot[:CENA_MEDIDA_MAX]:
+        v = vs.get(pid)
+        if v is None:
+            with lock:
+                e = lib.get(pid)
+            if e and modo != "ligada":
+                th = e.get("thumb") or e.get("file")
+                if th and os.path.exists(th):
+                    cena_enfileira(pid, th, 2, dia)
+            sem += 1
+            continue
+        X.append(_cena_vet(v[0]))
+        y.append(CENA_CLASSES.index(ponto))
+        ps.append(pid)
+        cards.append(card)
+        dias.append(dia)
+        quem.append(fot)
+        verde.append(float(v[1] or 0))
+        sinais.append(_cena_sinais(v[2]))
+        ems.append(em)
+        prev0.append(v[3])
+    gi = [i for i, k in enumerate(y) if CENA_CLASSES[k] == "gramado"]
+    vetos = _cena_vetos([verde[i] for i in gi], [float(sinais[i].get("flash") or 0) for i in gi if sinais[i].get("flash") is not None])
+    base = {"versao": lv if modo == "ligada" else _cena_versao([(p, CENA_CLASSES[k]) for p, k in zip(ps, y)]), "modo": modo,
+            "X": np.stack(X).astype(np.float32) if X else np.zeros((0, 512), np.float32), "y": np.array(y, dtype=np.int32),
+            "pids": ps, "cards": cards, "dias": dias, "fotografos": quem, "verde": verde, "sinais": sinais, "em": ems, "prev0": prev0,
+            "vetos": vetos, "sem_vetor": sem, "total": len(rot)}
+    with _cena_cache_lock:
+        _cena_base[chave] = {"t": agora, "base": base}
+        if len(_cena_base) > 6:
+            for k in sorted(_cena_base, key=lambda k: _cena_base[k]["t"])[:-6]:
+                _cena_base.pop(k, None)
+    return base
+
+
+def _cena_voto(sims, ys):
+    """sims e ys dos k vizinhos -> (rótulo, conf). Vizinho mais parecido abaixo do piso = "fora" (outro lugar, nunca gramado)."""
+    np = _vis_np()
+    if not len(sims):
+        return None, 0.0
+    if float(sims.max()) < CENA_SIM_PISO:
+        return "fora", 0.0
+    w = np.maximum(sims, 0.0)
+    votos = np.bincount(ys, weights=w, minlength=len(CENA_CLASSES))
+    tot = float(votos.sum())
+    k = int(np.argmax(votos))
+    return CENA_CLASSES[k], (round(float(votos[k]) / tot, 4) if tot > 0 else 0.0)
+
+
+def cena_base_ok(r, c, verde, sinais, vetos):
+    """Gramado como base: previsto gramado, conf >= CENA_LIMIAR e os vetos calibrados (verde e flash)."""
+    return r == "gramado" and c >= CENA_LIMIAR and float(verde or 0) >= vetos.get("verde", 0) and float((sinais or {}).get("flash") or 0) >= vetos.get("flash", 0)
+
+
+def cena_classificar(V, verdes, sinais, base):
+    """V: m x 512 (L2). -> [(rotulo, conf, g)] (None, 0, False sem base)."""
+    np = _vis_np()
+    if base is None or not len(base["y"]) or not len(V):
+        return [(None, 0.0, False)] * len(V)
+    S = V @ base["X"].T
+    k = min(CENA_K, S.shape[1])
+    idx = np.argpartition(-S, k - 1, axis=1)[:, :k]
+    out = []
+    for i in range(len(V)):
+        r, c = _cena_voto(S[i, idx[i]], base["y"][idx[i]])
+        out.append((r, c, cena_base_ok(r, c, verdes[i], sinais[i], base["vetos"])))
+    return out
+
+
+def _cena_modo_ativo():
+    p = treino_cfg_mem().get("ponto")
+    return p if p in ("medir", "ligada") else None
+
+
+def cena_gravar(res, dias):
+    """Grava o que o filho devolveu (vet, verde, sinais), classifica com a base do modo ativo e atualiza cena_mem.
+    -> pids gravados."""
+    np = _vis_np()
+    with lock:
+        vivas = {r.get("pid") for r in res if r.get("pid") in lib}
+    res = [r for r in res if r.get("pid") in vivas]          # LGPD no meio do lote: a foto que saiu não volta ao cena.db
+    recusadas = [r["pid"] for r in res if r.get("erro") and pid_ok(r.get("pid"))]
+    if recusadas:
+        cena_nao_classificavel(recusadas, dias)
+    ok = [r for r in res if r.get("vet") and pid_ok(r.get("pid"))]
+    if not ok or np is None:
+        return recusadas
+    modo = _cena_modo_ativo() or "medir"
+    base = cena_base(modo)
+    V = np.stack([_cena_vet(base64.b64decode(r["vet"])) for r in ok])
+    verdes = [float(r.get("verde") or 0) for r in ok]
+    sinais = [r.get("sinais") if isinstance(r.get("sinais"), dict) else {} for r in ok]
+    cl = cena_classificar(V, verdes, sinais, base)
+    em = _iso()
+    versao = base["versao"] if base else None
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            for r, (rot, conf, g), v in zip(ok, cl, V):
+                p = r["pid"]
+                prev0 = json.dumps({"r": rot, "c": conf, "g": g, "v": versao, "em": em}) if rot else None
+                db.execute("insert into cena (pid, dia, vet, verde, sinais, prev0, rotulo, conf, g, versao, em) values (?,?,?,?,?,?,?,?,?,?,?)"
+                           " on conflict(pid) do update set vet = excluded.vet, verde = excluded.verde, sinais = excluded.sinais,"
+                           " prev0 = coalesce(cena.prev0, excluded.prev0), rotulo = excluded.rotulo, conf = excluded.conf, g = excluded.g,"
+                           " versao = excluded.versao, em = excluded.em",
+                           (p, dias.get(p) or _ff_hoje(), v.astype("<f2").tobytes(), verdes[ok.index(r)], json.dumps(r.get("sinais") or {}),
+                            prev0, rot, conf, int(bool(g)), versao if rot else None, em))
+            db.commit()
+            recs = dict(db.execute("select pid, rec from cena where pid in (%s)" % ",".join("?" * len(ok)), [r["pid"] for r in ok]).fetchall())
+        finally:
+            db.close()
+    hoje = _ff_hoje()
+    for r, (rot, conf, g) in zip(ok, cl):
+        p = r["pid"]
+        if rot:
+            rec_ = _cena_rec_json(recs.get(p)) or _cena_rec_mem.get(p) or (cena_mem.get(p) or {}).get("rec")
+            cena_mem[p] = {"r": rot, "c": conf, "v": versao, "g": bool(g), "rec": rec_, "dia": dias.get(p) or hoje}
+    with cena_lock:
+        if cena["feitas_dia"] != hoje:
+            cena.update(feitas_dia=hoje, feitas_hoje=0)
+        cena["feitas_hoje"] += len(ok)
+        cena["ultimo"] = time.time()
+    return [r["pid"] for r in ok] + recusadas
+
+
+def cena_nao_classificavel(pids, dias=None):
+    """18/11 (revisão): foto que o processo de cena recusou (caminho, imagem grande, ilegível) fica como "não classificável":
+    nunca é base e não trava a leva (o _sess_ia_bases pula)."""
+    dias = dias or {}
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            for p in pids:
+                db.execute("insert into cena (pid, dia, rotulo, conf, g, em) values (?,?,?,0,0,?) on conflict(pid) do update set"
+                           " rotulo = excluded.rotulo, conf = 0, g = 0, versao = null", (p, dias.get(p) or _ff_hoje(), CENA_NAO, _iso()))
+            db.commit()
+        finally:
+            db.close()
+    for p in pids:
+        cena_mem[p] = {"r": CENA_NAO, "c": 0.0, "v": "*", "g": False, "rec": None, "dia": dias.get(p) or _ff_hoje()}
+
+
+def _cena_rec_json(txt):
+    if not txt:
+        return None
+    try:
+        j = json.loads(txt)
+        return j if isinstance(j, dict) else None
+    except ValueError:
+        return None
+
+
+def cena_reclassifica(base):
+    """Fotos de hoje e de ontem com vetor e de outra versão: classificadas de novo com a base (sem GPU). prev0 fica."""
+    np = _vis_np()
+    if base is None or np is None or not os.path.exists(CENA_DB):
+        return 0
+    dias = (_ff_hoje(), _ff_hoje(time.time() - 86400))
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            rows = db.execute("select pid, vet, verde, sinais, rec, dia, prev0 from cena where vet is not null and dia in (?, ?)"
+                              " and (versao is null or versao != ?)", dias + (base["versao"],)).fetchall()
+        finally:
+            db.close()
+    if not rows:
+        return 0
+    em = _iso()
+    for i in range(0, len(rows), 512):
+        bl = rows[i:i + 512]
+        V = np.stack([_cena_vet(r[1]) for r in bl])
+        cl = cena_classificar(V, [float(r[2] or 0) for r in bl], [_cena_sinais(r[3]) for r in bl], base)
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                for r, (rot, conf, g) in zip(bl, cl):
+                    prev0 = r[6] or (json.dumps({"r": rot, "c": conf, "g": g, "v": base["versao"], "em": em}) if rot else None)
+                    db.execute("update cena set rotulo = ?, conf = ?, g = ?, versao = ?, prev0 = ? where pid = ?",
+                               (rot, conf, int(bool(g)), base["versao"] if rot else None, prev0, r[0]))
+                db.commit()
+            finally:
+                db.close()
+        for r, (rot, conf, g) in zip(bl, cl):
+            if rot:
+                cena_mem[r[0]] = {"r": rot, "c": conf, "v": base["versao"], "g": bool(g), "rec": _cena_rec_json(r[4]), "dia": r[5]}
+    return len(rows)
+
+
+def base_rec_ok(rec):
+    """Recorte que serve de base (Eduardo, 18/11): com gente, sem corte na lateral nem no alto e com luz boa. Corpo inteiro
+    serve (D8 novo): a montagem corta do joelho para cima (fiaJoelho no app). None = ainda não recortada."""
+    if not isinstance(rec, dict):
+        return None
+    if rec.get("sem_pessoa"):
+        return False
+    if rec.get("borda"):
+        return False
+    luz = rec.get("luz") or {}
+    med, p95 = luz.get("med"), luz.get("p95")
+    if isinstance(med, (int, float)) and med < BASE_LUZ_MED_MIN:
+        return False
+    if isinstance(p95, (int, float)) and p95 >= BASE_LUZ_P95_MAX:
+        return False
+    return True
+
+
+def cena_rec(pid, info):
+    """O recorte terminou (rec_fazer): guarda trunc, borda, luz, joelho e pernas (ou sem_pessoa) para a escolha da base. Fora
+    dos locks de sessão."""
+    if not pid_ok(pid) or not isinstance(info, dict):
+        return
+    info = {k: info.get(k) for k in ("trunc", "borda", "luz", "joelho", "pernas", "sem_pessoa") if k in info}
+    txt = json.dumps(info)
+    try:
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                db.execute("insert into cena (pid, dia, rec) values (?,?,?) on conflict(pid) do update set rec = excluded.rec",
+                           (pid, _ff_hoje(), txt))
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  cena: recorte %s" % str(ex)[:80])
+        return
+    _cena_rec_mem[pid] = info
+    while len(_cena_rec_mem) > 5000:
+        _cena_rec_mem.popitem(last=False)
+    c = cena_mem.get(pid)
+    if c is not None:
+        cena_mem[pid] = dict(c, rec=info)
+    cena_chegou([pid])
+
+
+def cena_rec_falta(pid):
+    """Candidata de gramado sem as medidas do recorte (recorte feito antes desta versão)."""
+    c = cena_mem.get(pid)
+    return c is not None and c.get("g") and c.get("rec") is None
+
+
+def cena_chegou(pids):
+    """Classificação ou recorte novo: as sessões (abertas) dessas fotos revêem as candidatas a base (sess_pid já cobre as
+    fotos que ainda esperam o rosto, em pend)."""
+    if not cena_regra19() or treino_cfg_mem().get("ponto") != "ligada":
+        return
+    with sess_lock:
+        vistos = set()
+        for p in pids:
+            c = sess_pid.get(p)
+            x = sess.get(c or "")
+            if x is not None and c not in vistos:
+                vistos.add(c)
+                _sess_ia_cand(x)
+
+
+def cena_lgpd(pids):
+    """LGPD: a linha da foto sai do cena.db, de cena_mem e da fila (o modelo congelado guarda só pids: o vizinho apagado
+    some da próxima classificação)."""
+    pids = [p for p in pids if pid_ok(p)]
+    if not pids:
+        return
+    with cena_lock:
+        for p in pids:
+            cena_q.pop(p, None)
+    for p in pids:
+        cena_mem.pop(p, None)
+    if os.path.exists(CENA_DB):
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                for p in pids:
+                    db.execute("delete from cena where pid = ?", (p,))
+                db.commit()
+            finally:
+                db.close()
+    _cena_base_t[0] = time.time()
+    with _cena_cache_lock:
+        _cena_base.clear()
+        _cena_med.clear()
+
+
+def cena_varre():
+    """A cada 5 min e na partida: as fotos de hoje sem vetor voltam para a fila (a fila tem teto)."""
+    if treino_cfg_mem().get("ponto") == "desligada":
+        return 0
+    hoje = _ff_hoje()
+    with lock:
+        cand = [(p, e.get("thumb") or e.get("file")) for p, e in lib.items()
+                if isinstance(meta.get(p), dict) and _ff_hoje(_num(meta[p].get("u"))) == hoje]
+    if not cand:
+        return 0
+    feitos = set(_cena_vetores([p for p, _ in cand]))
+    n = 0
+    for p, th in cand:
+        if p not in feitos and th and cena_enfileira(p, th, 1, hoje):
+            n += 1
+    return n
+
+
+def cena_limpa(agora=None):
+    """De hora em hora: vetor de foto sem rótulo (e fora do modelo congelado) com mais de CENA_VET_DIAS some; a linha com
+    mais de CENA_DIAS some; foto fora da biblioteca: a linha some. Nunca toca no vetor de foto rotulada nem do modelo."""
+    if not os.path.exists(CENA_DB):
+        return 0
+    agora = agora or time.time()
+    lim_vet = _ff_hoje(agora - CENA_VET_DIAS * 86400)
+    lim_lin = _ff_hoje(agora - CENA_DIAS * 86400)
+    # 18/11 (revisão, retenção): o vetor de foto rotulada fica enquanto o rótulo é dos últimos CENA_DIAS ou a foto está numa
+    # das versões guardadas em modelo (a ligada e a anterior); fora disso a linha sai como as outras
+    guardar = {r[0] for r in cena_rotulos() if (r[3] or "") >= lim_lin}
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            for (rot,) in db.execute("select rotulos from modelo"):
+                try:
+                    guardar.update(x[0] for x in json.loads(rot))
+                except (ValueError, TypeError, IndexError):
+                    pass
+            rows = db.execute("select pid, dia, vet is not null from cena").fetchall()
+            with lock:
+                vivas = {p for p, _, _ in rows if p in lib}
+            n = 0
+            for p, dia, tem in rows:
+                if p not in vivas:
+                    db.execute("delete from cena where pid = ?", (p,))
+                    n += 1
+                elif p in guardar:
+                    continue
+                elif (dia or "") < lim_lin:
+                    db.execute("delete from cena where pid = ?", (p,))
+                    n += 1
+                elif tem and (dia or "") < lim_vet:
+                    db.execute("update cena set vet = null where pid = ?", (p,))
+                    n += 1
+            db.commit()
+        finally:
+            db.close()
+    ontem = _ff_hoje(agora - 86400)
+    for p in [p for p, c in list(cena_mem.items()) if (c.get("dia") or "") < ontem]:
+        cena_mem.pop(p, None)
+    return n
+
+
+def cena_carregar():
+    """Na partida (antes das sessões): cena_mem de hoje e de ontem, do cena.db."""
+    if not os.path.exists(CENA_DB):
+        return 0
+    dias = (_ff_hoje(), _ff_hoje(time.time() - 86400))
+    try:
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                rows = db.execute("select pid, rotulo, conf, versao, g, rec, dia from cena where dia in (?, ?) and rotulo is not null", dias).fetchall()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  cena: não li o cena.db (%s)" % str(ex)[:80])
+        return 0
+    for pid, r, c, v, g, rec, dia in rows:
+        cena_mem[pid] = {"r": r, "c": float(c or 0), "v": "*" if r == CENA_NAO else v, "g": bool(g) and r != CENA_NAO, "rec": _cena_rec_json(rec), "dia": dia}
+    return len(rows)
+
+
+def _cena_auc(pos, neg):
+    """Área sob a curva (Mann-Whitney) de um sinal separando pos de neg; None sem os dois lados."""
+    if not pos or not neg:
+        return None
+    todos = sorted([(v, 1) for v in pos] + [(v, 0) for v in neg])
+    soma, i = 0.0, 0
+    while i < len(todos):
+        j = i
+        while j < len(todos) and todos[j][0] == todos[i][0]:
+            j += 1
+        rank = (i + j + 1) / 2.0
+        soma += rank * sum(1 for x in todos[i:j] if x[1])
+        i = j
+    return round((soma - len(pos) * (len(pos) + 1) / 2.0) / (len(pos) * len(neg)), 3)
+
+
+def _cena_tabelas(marc, prev, conf, g):
+    """Matriz (marcado x previsto, com a coluna "fora"), acerto por classe e o gramado como base."""
+    cols = list(CENA_CLASSES) + ["fora"]
+    mx = {a: {b: 0 for b in cols} for a in CENA_CLASSES}
+    for a, b in zip(marc, prev):
+        if a in mx and b in mx[a]:
+            mx[a][b] += 1
+    classe = {}
+    for c in CENA_CLASSES:
+        n = sum(mx[c].values())
+        prev_n = sum(mx[a][c] for a in CENA_CLASSES)
+        classe[c] = {"n": n, "precisao": round(mx[c][c] / prev_n, 4) if prev_n else None, "cobertura": round(mx[c][c] / n, 4) if n else None}
+    vp = sum(1 for a, gg in zip(marc, g) if gg and a == "gramado")
+    fp = sum(1 for a, gg in zip(marc, g) if gg and a != "gramado")
+    fn = sum(1 for a, gg in zip(marc, g) if not gg and a == "gramado")
+    gb = {"vp": vp, "fp": fp, "fn": fn, "precisao": round(vp / (vp + fp), 4) if vp + fp else None,
+          "cobertura": round(vp / (vp + fn), 4) if vp + fn else None, "outro_como_gramado": sum(1 for a, gg in zip(marc, g) if gg and a == "outro")}
+    return mx, classe, gb
+
+
+def _cena_sessao(base):
+    """Validação deixando de fora os vizinhos da mesma sessão e da mesma visita. -> (prev, conf, g, g_sem_veto)."""
+    np = _vis_np()
+    X, y = base["X"], base["y"]
+    n = len(y)
+    with sess_lock:
+        grp = [vis_de.get(c) or c for c in base["cards"]]
+    gid = {}
+    gi = np.array([gid.setdefault(x, len(gid)) for x in grp], dtype=np.int64)
+    prev, conf, g, g0 = [], [], [], []
+    for i0 in range(0, n, 256):
+        S = X[i0:i0 + 256] @ X.T
+        S[gi[i0:i0 + 256][:, None] == gi[None, :]] = -np.inf
+        k = min(CENA_K, n)
+        idx = np.argpartition(-S, k - 1, axis=1)[:, :k]
+        for j in range(S.shape[0]):
+            ii = idx[j][np.isfinite(S[j, idx[j]])]
+            r, c = _cena_voto(S[j, ii], y[ii]) if len(ii) else ("fora", 0.0)
+            i = i0 + j
+            prev.append(r)
+            conf.append(c)
+            g.append(cena_base_ok(r, c, base["verde"][i], base["sinais"][i], base["vetos"]))
+            g0.append(r == "gramado" and c >= CENA_LIMIAR)
+    return prev, conf, g, g0
+
+
+def cena_medida(metodo="sessao", forcar=False):
+    """GET /treino/medida: a medida do contrato (seção 6 do plano), com o critério. Nunca traz vetor nem caminho. Cache por
+    versão e método; fora o forcar (POST /treino/config), no máximo 1 cálculo a cada CENA_MEDIDA_SEG."""
+    if _vis_np() is None:
+        return {"v": 1, "metodo": metodo, "erro": "sem_numpy"}
+    base = cena_base("medir")
+    with _cena_cache_lock:
+        c = _cena_med.get((base["versao"], metodo))
+        if c is None and not forcar:
+            velho = [x for k, x in _cena_med.items() if k[1] == metodo]
+            if velho and time.time() - max(x["t"] for x in velho) < CENA_MEDIDA_SEG:
+                c = max(velho, key=lambda x: x["t"])
+        falta = [m_ for m_ in ("sessao", "prospectivo") if (base["versao"], m_) not in _cena_med] if c is None else []
+    if c is None:
+        for m_ in falta:                              # o critério usa as duas (calculadas fora do lock)
+            _cena_medida_calc(m_, base)
+        _cena_crit_atualiza(base)
+        with _cena_cache_lock:
+            c = _cena_med[(base["versao"], metodo)]
+    r = dict(c["r"])
+    r["criterio"] = _cena_crit["r"] if _cena_crit.get("versao") == r.get("versao") and _cena_crit.get("r") else {"passa": False, "falta": []}
+    r["ligada_versao"] = treino_cfg_mem().get("ponto_versao") if treino_cfg_mem().get("ponto") == "ligada" else None
+    return r
+
+
+def _cena_medida_calc(metodo, base):
+    t0 = time.time()
+    cfg = treino_cfg_mem()
+    marc = [CENA_CLASSES[k] for k in base["y"]]
+    if metodo == "prospectivo":
+        prev, conf, g = [], [], []
+        idx = []
+        for i, p0 in enumerate(base["prev0"]):
+            try:
+                j = json.loads(p0) if p0 else None
+            except ValueError:
+                j = None
+            if j and j.get("r") and str(j.get("em") or "") < str(base["em"][i] or ""):
+                idx.append(i)
+                prev.append(j["r"])
+                conf.append(float(j.get("c") or 0))
+                g.append(bool(j.get("g")))
+        marc_m = [marc[i] for i in idx]
+        g0 = g
+    else:
+        idx = list(range(len(marc)))
+        prev, conf, g, g0 = _cena_sessao(base) if marc else ([], [], [], [])
+        marc_m = marc
+    mx, classe, gb = _cena_tabelas(marc_m, prev, conf, g)
+    erros = []
+    for k, i in enumerate(idx):
+        if marc_m[k] != prev[k]:
+            erros.append({"pid": base["pids"][i], "dia": base["dias"][i], "card": base["cards"][i], "marcado": marc_m[k], "previsto": prev[k], "conf": conf[k]})
+    erros.sort(key=lambda e: -e["conf"])
+    rot = {c_: 0 for c_ in CENA_CLASSES}
+    for m_ in marc:
+        rot[m_] += 1
+    sinais = {}
+    for s in CENA_SINAIS:
+        val = [float(base["verde"][i] if s == "verde" else (base["sinais"][i].get(s) or 0)) for i in range(len(marc))]
+        alvo, contra = CENA_SINAL_ALVO[s]
+        pos = [v for v, m_ in zip(val, marc) if m_ == alvo]
+        neg = [v for v, m_ in zip(val, marc) if (m_ == contra if contra else m_ != alvo)]
+        media = {c_: (round(sum(v for v, m_ in zip(val, marc) if m_ == c_) / rot[c_], 4) if rot[c_] else None) for c_ in CENA_CLASSES}
+        o = {"alvo": alvo, "contra": contra or "resto", "auc": _cena_auc(pos, neg), "media": media, "veto": None}
+        if s in ("verde", "flash") and metodo == "sessao":
+            lim = base["vetos"].get(s, 0)
+            fora = [v < lim for v in val]
+            o["veto"] = {"min": lim, "ligado": lim > 0,
+                         "tira_fp": sum(1 for i in range(len(marc)) if g0[i] and marc[i] != "gramado" and fora[i]),
+                         "perde_vp": sum(1 for i in range(len(marc)) if g0[i] and marc[i] == "gramado" and fora[i])}
+        sinais[s] = o
+    r = {"v": 1, "metodo": metodo, "versao": base["versao"], "ligada_versao": cfg.get("ponto_versao") if cfg.get("ponto") == "ligada" else None,
+         "classes": list(CENA_CLASSES), "rotulos": rot, "sem_vetor": base["sem_vetor"], "metas": dict(CENA_META),
+         "faltam": {c_: max(0, CENA_META[c_] - rot[c_]) for c_ in CENA_CLASSES},
+         "params": {"k": CENA_K, "limiar": CENA_LIMIAR, "sim_piso": CENA_SIM_PISO, "verde_min": base["vetos"]["verde"], "flash_min": base["vetos"]["flash"]},
+         "n": len(prev), "matriz": mx, "classe": classe, "gramado_base": gb, "sinais": sinais, "erros": erros[:200],
+         "em": _iso(), "ms": int((time.time() - t0) * 1000)}
+    with _cena_cache_lock:
+        _cena_med[(base["versao"], metodo)] = {"t": time.time(), "r": r}
+        if len(_cena_med) > 8:
+            for k in sorted(_cena_med, key=lambda k: _cena_med[k]["t"])[:-8]:
+                _cena_med.pop(k, None)
+    return r
+
+
+def cena_criterio(ms, mp):
+    """{passa, falta:[{k, classe?, tem, precisa}]} com os números do plano (seção 10)."""
+    falta = []
+    for c in CENA_CLASSES:
+        tem = (ms.get("rotulos") or {}).get(c, 0)
+        if tem < CENA_META[c]:
+            falta.append({"k": "n", "classe": c, "tem": tem, "precisa": CENA_META[c]})
+    base = cena_base("medir")
+    nd, nf = len({d for d in base["dias"] if d}), len({f for f in base["fotografos"] if f})
+    if nd < CENA_CRIT["dias"]:
+        falta.append({"k": "dias", "tem": nd, "precisa": CENA_CRIT["dias"]})
+    if nf < CENA_CRIT["fotografos"]:
+        falta.append({"k": "fotografos", "tem": nf, "precisa": CENA_CRIT["fotografos"]})
+    gb = ms.get("gramado_base") or {}
+    if (gb.get("precisao") or 0) < CENA_CRIT["precisao"]:
+        falta.append({"k": "precisao", "tem": gb.get("precisao") or 0, "precisa": CENA_CRIT["precisao"]})
+    if (gb.get("cobertura") or 0) < CENA_CRIT["cobertura"]:
+        falta.append({"k": "cobertura", "tem": gb.get("cobertura") or 0, "precisa": CENA_CRIT["cobertura"]})
+    if (gb.get("outro_como_gramado") or 0) > CENA_CRIT["outro_fp"]:
+        falta.append({"k": "outro_fp", "tem": gb.get("outro_como_gramado"), "precisa": CENA_CRIT["outro_fp"]})
+    gp = mp.get("gramado_base") or {}
+    pn = (gp.get("vp") or 0) + (gp.get("fp") or 0)
+    if pn < CENA_CRIT["prosp_n"]:
+        falta.append({"k": "prosp_n", "tem": pn, "precisa": CENA_CRIT["prosp_n"]})
+    if (gp.get("precisao") or 0) < CENA_CRIT["prosp_precisao"]:
+        falta.append({"k": "prosp_precisao", "tem": gp.get("precisao") or 0, "precisa": CENA_CRIT["prosp_precisao"]})
+    return {"passa": not falta, "falta": falta}
+
+
+def _cena_crit_atualiza(base):
+    """Critério da versão de agora, com as duas medidas em cache (sem recalcular a que já existe)."""
+    with _cena_cache_lock:
+        ms = (_cena_med.get((base["versao"], "sessao")) or {}).get("r")
+        mp = (_cena_med.get((base["versao"], "prospectivo")) or {}).get("r")
+    if ms is None or mp is None:
+        return
+    r = cena_criterio(ms, mp)
+    _cena_crit.update(versao=base["versao"], passa=r["passa"], r=r, t=time.time())
+
+
+def cena_criterio_agora():
+    """As duas medidas da versão de agora (calcula o que falta) e o critério. Para o POST /treino/config e o cena_loop."""
+    base = cena_base("medir")
+    if base is None:
+        return {"passa": False, "falta": [{"k": "sem_numpy", "tem": 0, "precisa": 1}]}, None
+    cena_medida("sessao", forcar=True)
+    _cena_crit_atualiza(base)                         # com os números de agora (as medidas da versão ficam em cache)
+    return (_cena_crit.get("r") if _cena_crit.get("versao") == base["versao"] else None) or {"passa": False, "falta": []}, base
+
+
+def cena_congelar(quem, base=None, anterior=None):
+    """Liga: grava os rótulos (pid, ponto, card, dia, fotógrafo, em) da base que passou no critério (a mesma que foi medida) na
+    tabela modelo. 18/11 (revisão de segurança): se os rótulos mudaram entre a medida e o congelamento, None (o POST responde
+    409). Retenção: ficam só a versão ligada agora e a anterior (anterior). -> versão ou None."""
+    atual = cena_base("medir")
+    base = base or atual
+    if base is None or atual is None or atual["versao"] != base["versao"]:
+        return None
+    rot = [[p, CENA_CLASSES[k], c, d, f, e] for p, k, c, d, f, e in zip(base["pids"], base["y"], base["cards"], base["dias"], base["fotografos"], base["em"])]
+    params = {"k": CENA_K, "limiar": CENA_LIMIAR, "sim_piso": CENA_SIM_PISO, "vetos": base["vetos"], "modelo": CENA_NOME, "sha": CENA_SHA or None}
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            db.execute("insert into modelo values (?,?,?,?,?) on conflict(versao) do update set por = excluded.por, em = excluded.em",
+                       (base["versao"], json.dumps(rot), json.dumps(params), str(quem or "")[:100] or None, _iso()))
+            fica = [base["versao"]] + ([anterior] if anterior and anterior != base["versao"] else [])
+            db.execute("delete from modelo where versao not in (%s)" % ",".join("?" * len(fica)), fica)
+            db.commit()
+        finally:
+            db.close()
+    return base["versao"]
+
+
+def cena_modelo_existe(versao):
+    """True/False; None quando não deu para ler o cena.db (erro passageiro: quem chama não rebaixa nada)."""
+    if not versao or not os.path.exists(CENA_DB):
+        return False
+    try:
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                return db.execute("select 1 from modelo where versao = ?", (versao,)).fetchone() is not None
+            finally:
+                db.close()
+    except Exception:
+        return None
+
+
+def cena_status():
+    """/status.treino.modelo_ponto (contrato da seção 6)."""
+    cfg = treino_cfg_mem()
+    ok, erro_mod = cena_modelo_ok()
+    with cena_lock:
+        c = dict(cena)
+        fila = len(cena_q)
+    p = cena_filho.get("p")
+    vivo = p is not None and p.poll() is None
+    erro = "parado" if c["parado"] else (None if cfg.get("ponto") == "desligada" else (erro_mod if not ok else c["erro"]))
+    if erro is None and cfg.get("ponto") != "desligada" and _vis_np() is None:
+        erro = "sem_numpy"
+    hoje = _ff_hoje()
+    with _cena_cache_lock:
+        base = (_cena_base.get(("medir",)) or {}).get("base")
+    return {"v": 1, "pronto": bool(vivo and c["carregado"] and not erro), "erro": erro, "provedor": c["provedor"], "modelo": CENA_NOME,
+            "versao": base["versao"] if base else None,
+            "ligada_versao": cfg.get("ponto_versao") if cfg.get("ponto") == "ligada" else None,
+            "fila": fila, "feitas_hoje": c["feitas_hoje"] if c["feitas_dia"] == hoje else 0,
+            "ms_medio": int(c["ms_total"] / c["ms_n"]) if c["ms_n"] else None,
+            "criterio_passa": bool(_cena_crit.get("passa") and base and _cena_crit.get("versao") == base["versao"])}
+
+
+def cena_vendas_pagas():
+    """Bases e fotos das vendas pagas de hoje e de ontem (as levas em cena_pendente são de hoje). 18/11 (revisão): o
+    cena_completa roda a cada 5 s; o vendas.db só é relido quando muda (data do banco e do -wal) e o ev_lock fica só na
+    consulta, que usa o índice do dia. Erro de leitura sobe para quem chama (nada é preenchido)."""
+    if not os.path.exists(VENDAS_DB):
+        return frozenset()
+    hoje, ontem = _ff_hoje(), _ff_hoje(time.time() - 86400)
+    chave = (hoje,) + tuple(os.stat(p).st_mtime_ns if os.path.exists(p) else 0 for p in (VENDAS_DB, VENDAS_DB + "-wal"))
+    if _cena_vendas["chave"] == chave:
+        return _cena_vendas["v"]
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rs = db.execute("select dados from evento where tipo = 'criar' and dia in (?, ?) and venda in"
+                            " (select venda from evento where tipo = 'pagar' and dia in (?, ?))", (hoje, ontem, hoje, ontem)).fetchall()
+        finally:
+            db.close()
+    out = set()
+    for (dados,) in rs:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            continue
+        ids = [str(x) for x in d.get("selected") or []] + [re.sub(r"^ai:", "", str(k)).split("|")[0] for k in d.get("aiSel") or []]
+        out.update(pid_lib(i) for i in ids if pid_ok(i))
+    _cena_vendas.update(chave=chave, v=frozenset(out))
+    return _cena_vendas["v"]
+
+
+def cena_completa(agora=None):
+    """A cada 5 s (cena_loop): as levas fechadas com cena_pendente revêem as bases. ok, sem base vendida e sem a visita já ter
+    bases: ia = bases (reaberta "cena", o app adota pelo srvIaCompleta); sem_gramado; passou de CENA_PEND_MAX:
+    cena_indisponivel (tudo à venda). As vendas pagas são lidas fora do sess_lock."""
+    with sess_lock:
+        if not cena_pend:
+            return 0
+    agora = agora or time.time()
+    try:
+        pagas = cena_vendas_pagas()
+    except Exception:
+        pagas = None                                  # sem ler as vendas: não preenche nada (tenta de novo em 5 s)
+    n = 0
+    with sess_lock:
+        for card, t0 in list(cena_pend.items()):
+            x = sess.get(card)
+            r = (x or {}).get("ia_regra") or {}
+            if x is None or x.get("removida") or x["status"] != "fechada" or x.get("ia") or r.get("motivo") != "cena_pendente":
+                cena_pend.pop(card, None)
+                continue
+            nn = r.get("n") or 0
+            bases, est = _sess_ia_bases(x, nn)
+            if est == "pendente" and agora - t0 <= CENA_PEND_MAX:
+                _sess_ia_pede_rec(x, nn)
+                continue
+            if est == "ok" and pagas is None:
+                continue
+            cena_pend.pop(card, None)
+            if est == "ok" and not (set(bases) & pagas) and not _vis_ja_tem_ia(card):
+                x["ia"] = list(bases)
+                x["ia_regra"] = {"n": nn, "motivo": None, "reaberta": "cena"}
+                for p in bases:
+                    sess_ia_novos.append((p, REC_PRIO_IA))
+            elif est == "ok" and _vis_ja_tem_ia(card):
+                x["ia_regra"] = {"n": nn, "motivo": "visita_ja_tem"}
+            elif est == "sem_gramado":
+                x["ia_regra"] = {"n": nn, "motivo": "sem_gramado"}
+            else:                                     # passou do prazo, ou uma das bases já foi vendida como foto
+                x["ia_regra"] = {"n": nn, "motivo": "cena_indisponivel"}
+            _sess_toca(x)
+            n += 1
+    return n
+
+
+def cena_loop():
+    """A thread do reconhecimento do ponto: junta até CENA_LOTE, manda ao filho, grava e classifica. Desligada: dorme sem
+    consumir (e fecha o filho). Varredura a cada 5 min, limpeza de hora em hora, reclassificação quando a versão muda."""
+    t_varre, t_limpa, t_comp, t_crit, ver = 0.0, time.time(), 0.0, 0.0, None
+    while not cena_parar.is_set():                    # só os testes param (antes de apagar o HOME temporário)
+        try:
+            agora = time.time()
+            modo = treino_cfg_mem().get("ponto")
+            if agora - t_comp >= 5:
+                t_comp = agora
+                cena_completa()
+            if agora - t_limpa >= 3600:
+                t_limpa = agora
+                cena_limpa()
+            if modo not in ("medir", "ligada"):
+                cena_fechar()
+                time.sleep(1)
+                continue
+            if agora - t_varre >= 300:
+                t_varre = agora
+                cena_varre()
+            base = cena_base(modo)
+            if base is not None and base["versao"] != ver:
+                n = cena_reclassifica(base)
+                if n:
+                    print("  cena: %d foto(s) de hoje e ontem reclassificadas (%s)" % (n, base["versao"]))
+                    cena_chegou([p for p, c in list(cena_mem.items()) if c.get("v") == base["versao"]])
+                ver = base["versao"]
+            if agora - t_crit >= 60:
+                t_crit = agora
+                cena_criterio_agora()
+            ok, _ = _cena_espera()
+            okm, _ = cena_modelo_ok()
+            if not ok or not okm:
+                if not okm:
+                    _cena_erro("sem_modelo")
+                time.sleep(2)
+                continue
+            lote = _cena_pegar(CENA_LOTE)
+            if not lote:
+                time.sleep(0.5)
+                continue
+            dias = {p: d for p, _, d in lote}
+            try:
+                res = cena_mandar([(p, th) for p, th, _ in lote])
+            except Exception:
+                for p, th, d in lote:                    # volta para a fila (a varredura também recoloca)
+                    cena_enfileira(p, th, 1, d)
+                time.sleep(1)
+                continue
+            feitos = cena_gravar(res, dias)
+            if feitos:
+                rotulados = {p for p in feitos} & set(base["pids"] if base else [])
+                if rotulados or (base and base["sem_vetor"]):
+                    _cena_base_t[0] = time.time()        # rótulo ganhou vetor: a base muda
+                cena_chegou(feitos)
+        except Exception as ex:
+            print("  cena: %s" % str(ex)[:160])
+            time.sleep(2)
 
 
 # Quem pode cada rota do agente. Nada abre sem estar aqui: rota fora da tabela responde 404 sem tocar o disco.
@@ -12523,6 +13907,7 @@ ROTAS = (
     ("GET", "/treino/dias", "sessao", ("qualidade.r",)), ("GET", "/treino/amostra", "sessao", ("qualidade.r",)),
     ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
+    ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -14020,6 +15405,14 @@ class H(BaseHTTPRequestHandler):
         try:
             if u.path == "/treino/dias":
                 return self.js(treino_dias(), nostore=True)
+            if u.path == "/treino/medida":
+                quem_ = (self.sessao() or {}).get("usuario") or ""
+                if not limite_ok("u:" + quem_, "treino_medida", 10):
+                    return self.js({"error": "limite"}, 429)
+                metodo = um("metodo") or "sessao"
+                if metodo not in ("sessao", "prospectivo"):
+                    return self.js({"error": "metodo"}, 400)
+                return self.js(cena_medida(metodo), nostore=True)
             dia = um("dia")
             if not _re_dia.match(dia):
                 return self.js({"error": "dia"}, 400)
@@ -14028,7 +15421,7 @@ class H(BaseHTTPRequestHandler):
             modo = um("modo") or "misto"
             quem = um("fotografo")
             n = um("n") or "150"
-            if modo not in TREINO_MODOS:
+            if modo not in TREINO_MODOS or (modo == "duvidas" and treino_cfg_mem().get("ponto") == "desligada"):
                 return self.js({"error": "modo"}, 400)
             if quem and not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,39}", quem):
                 return self.js({"error": "fotografo"}, 400)
@@ -15091,7 +16484,7 @@ class H(BaseHTTPRequestHandler):
             de, ate = (q.get("de") or [""])[0], (q.get("ate") or [""])[0]
             r = ativ_vendas(de, ate)
             return self.js({"ok": True, "vendas": r, "envio": nuvem_envio_medido(de, ate)}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
-        if u.path in ("/treino/dias", "/treino/amostra", "/treino/rotulos"):
+        if u.path in ("/treino/dias", "/treino/amostra", "/treino/rotulos", "/treino/medida"):
             return self.treino_get(u)
         if u.path == "/pessoas/rostos":
             if not self.origem_local():
@@ -15439,6 +16832,8 @@ def main():
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta
     try:
+        treino_cfg()                                 # 18/11: interruptor do treino (e a migração do Ligada antigo) antes das sessões
+        cena_carregar()                              # 18/11: classificações de hoje e ontem antes das sessões
         lidas, novas, hoje = sess_carregar()
         print(f"  Sessões: {hoje} hoje (montadas aqui, pausa de {SESS_PAUSA} s e rostos; {novas} fotos agrupadas agora)")
     except Exception as ex:
@@ -15464,6 +16859,8 @@ def main():
     rec_versao_cache()                  # v97: recorte de versão anterior sai antes do recorte antecipado
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
+    threading.Thread(target=treino_cfg_loop, daemon=True).start()  # 18/11: interruptor do treino em memória (treino_cfg_mem)
+    threading.Thread(target=cena_loop, daemon=True).start()        # 18/11 (regra 19): reconhecer o ponto pela imagem
     threading.Thread(target=metricas_loop, daemon=True).start()
     # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
     # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.

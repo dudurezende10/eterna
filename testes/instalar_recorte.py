@@ -64,6 +64,28 @@ ok("--require-hashes" in cmd and 'REQ="recorte-requisitos.txt"' in cmd and "--up
    "command: hashes e sem pip sem versão")
 ck = open(os.path.join(AG, "..", "docs", "CHECKLIST-SERVIDOR.md"), encoding="utf-8").read()
 ok("--require-hashes" in ck and "Administradores" in ck and "SYSTEM" in ck and "icacls" in ck, "CHECKLIST: venv do serviço com ACL e hashes")
+# 18/11 (regra 19): modelo de cena com o mesmo nome e SHA do agente; SHA pendente não baixa; SHA errado apaga o arquivo
+import importlib.util, tempfile
+_sp = importlib.util.spec_from_file_location("inst", os.path.join(AG, "instalar-recorte-modelos.py"))
+inst = importlib.util.module_from_spec(_sp)
+_sp.loader.exec_module(inst)
+cena_arq = re.search(r'^CENA_ARQ = "([^"]+)"', ag, re.M).group(1)
+cena_sha = re.search(r'^CENA_SHA = "([^"]*)"', ag, re.M).group(1)
+ok(inst.CENA_ARQ == cena_arq and inst.CENA_SHA == cena_sha, "cena: CENA_ARQ e CENA_SHA iguais no instalador e no agente")
+ok(inst.CENA_URL.startswith("https://") and inst.CENA_URL.endswith(".onnx"), "cena: URL fixa de um .onnx (nunca pickle)")
+_tmp = tempfile.mkdtemp()
+inst.PASTA = _tmp
+baixados = []
+inst.baixar = lambda url, destino: baixados.append(url) or (open(destino + ".tmp", "wb").write(b"modelo falso") and destino + ".tmp")
+inst.CENA_SHA = ""
+ok(inst.cena() is True and not baixados, "cena: SHA pendente não baixa nada e não derruba o instalador")
+inst.CENA_SHA = "0" * 64
+open(os.path.join(_tmp, cena_arq), "wb").write(b"arquivo antigo")
+r = inst.cena()
+ok(r is False and not os.path.exists(os.path.join(_tmp, cena_arq)) and not os.listdir(_tmp), "cena: SHA errado apaga o arquivo e o temporário: %r" % os.listdir(_tmp))
+import hashlib
+inst.CENA_SHA = hashlib.sha256(b"modelo falso").hexdigest()
+ok(inst.cena() is True and os.path.isfile(os.path.join(_tmp, cena_arq)), "cena: SHA certo instala com os.replace")
 if falhas:
     print("FALHA instalar_recorte: " + " | ".join(falhas))
     sys.exit(1)
