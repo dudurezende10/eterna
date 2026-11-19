@@ -31,9 +31,23 @@ try{
   ok(m.f114===WEB['114']&&m.f113===WEB['113']&&m.f43===WEB['43']&&!m.faltam.length,'2: migração deveria pôr as URLs: '+J(m));
   ok(m.f116[0]===''&&m.f116[1]==='data:image/png;base64,FOTOUSUARIO','2: migração não pode mexer em item com foto enviada (imgData): '+J(m.f116));
   ok(m.f118==='meu-arquivo.jpg','2: item editado com outro arquivo não pode mudar: '+m.f118);
-  ok(m.log===1&&m.mv==='82','2: histórico migracao_v82_bandeiras uma vez e chave 82: '+J({log:m.log,mv:m.mv}));
+  ok(m.log===1&&m.mv==='83','2: histórico migracao_v82_bandeiras uma vez e chave 83 (a v83 roda logo depois): '+J({log:m.log,mv:m.mv}));
   await pg.reload();await pg.waitForTimeout(300);
   ok(await pg.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='migracao_v82_bandeiras').length)===1,'2: migração rodou duas vezes');
+  // 2b (v99.37). migração v83: os 5 escudos da Venezuela com URL quebrada passam para a URL certa; foto enviada e arquivo editado ficam; uma vez só
+  await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));const by=n=>s.flagList.find(x=>x[0]===n);const F=ETERNA.FLAG_FIX_V83;
+    Object.keys(F).forEach(n=>{by(+n)[6]=F[n][0];by(+n)[7]=undefined;});by(146)[7]='data:image/png;base64,FOTOUSUARIO';by(151)[6]='meu-escudo.png';
+    localStorage.setItem('eterna.sim.v1',JSON.stringify(s));localStorage.setItem('eterna.flags.v','82');});
+  await pg.reload();await pg.waitForTimeout(400);
+  const m3=await pg.evaluate(()=>{const L=JSON.parse(localStorage.getItem('eterna.sim.v1')).flagList;const by=n=>L.find(x=>x[0]===n);const F=ETERNA.FLAG_FIX_V83;
+    return {ok:[144,148,153].every(n=>by(n)[6]===F[n][1]),f146:by(146)[6],f151:by(151)[6],semente:Object.keys(F).every(n=>ETERNA.FLAGS.find(x=>x[0]===+n)[6]===F[n][1]&&ETERNA.FLAG_WEB_V82[n]===F[n][1]),
+      host:Object.values(F).every(([a,b])=>ETERNA.flagSrc(b)===b),log:ETERNA.auditRead().filter(e=>e.acao==='migracao_v83_bandeiras').length,mv:localStorage.getItem('eterna.flags.v')};});
+  ok(m3.ok&&m3.semente&&m3.host,'2b: v83 deveria pôr as URLs certas na lista salva e na semente: '+J(m3));
+  ok(m3.f146.includes('Deportivo_La_Guaira_logo'),'2b: item com foto enviada não pode mudar: '+m3.f146);
+  ok(m3.f151==='meu-escudo.png','2b: item editado com outro arquivo não pode mudar: '+m3.f151);
+  ok(m3.log===1&&m3.mv==='83','2b: histórico migracao_v83_bandeiras uma vez e chave 83: '+J({log:m3.log,mv:m3.mv}));
+  await pg.reload();await pg.waitForTimeout(300);
+  ok(await pg.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='migracao_v83_bandeiras').length)===1,'2b: migração v83 rodou duas vezes');
   // 3. tela de estoque: src de domínio estranho não aparece; imagem que falha some sem mudar o tamanho
   await login(pg);
   await pg.evaluate(()=>{const s=ETERNA.SIM;s.flagList.find(x=>x[0]===118)[6]='https://evil.example/x.png';});
@@ -41,7 +55,7 @@ try{
   const t=await pg.evaluate(()=>{const im=[...document.querySelectorAll('#main img')];return {evil:im.filter(i=>/evil\.example/.test(i.getAttribute('src'))&&!i.getAttribute('src').startsWith('https://maracafly.com.br/')).length,
     wiki:im.filter(i=>i.src.startsWith('https://upload.wikimedia.org/')&&i.complete).map(i=>({vis:getComputedStyle(i).visibility,w:i.getBoundingClientRect().width,h:i.getBoundingClientRect().height})),sw:document.documentElement.scrollWidth<=innerWidth};});
   ok(t.evil===0,'3: src com domínio estranho na tela: '+t.evil);
-  ok(t.wiki.length>0&&t.wiki.every(x=>x.vis==='hidden'&&x.w===36&&x.h===24)&&t.sw,'3: imagem que não carrega deveria sumir mantendo 36x24: '+J(t).slice(0,300));
+  ok(t.wiki.length>0&&t.wiki.every(x=>x.vis==='hidden'&&x.w===60&&x.h===40)&&t.sw,'3: imagem que não carrega deveria sumir mantendo 60x40 (v99.37): '+J(t).slice(0,300));
   await ctx.close();
 }catch(e){fails.push('erro: '+e.stack);}
 await b.close();
