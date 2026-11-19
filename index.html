@@ -3793,6 +3793,7 @@ const I18N={
  bgCampeao:['Noite de campeão',"Champions' night",'Noche de campeón','Nuit de champion','Meisternacht'],
  bgTunel:['Saída do túnel','Out of the tunnel','Salida del túnel','Sortie du tunnel','Aus dem Spielertunnel'],
  bgPodio:['Pódio de campeão',"Champions' podium",'Podio de campeón','Podium du champion','Siegerpodest'],
+ aiIndisp:['Foto especial indisponível','Special photo unavailable','Foto especial no disponible','Photo spéciale indisponible','Spezialfoto nicht verfügbar'],
  aiAguarde:['Ainda preparando, aguarde um instante','Still preparing, one moment please','Todavía preparando, espera un momento','Encore en préparation, un instant','Wird noch vorbereitet, einen Moment bitte'],
  aiMaking:['Preparando sua foto especial...','Preparing your special photo...','Preparando tu foto especial...','Nous préparons votre photo spéciale...','Ihr besonderes Foto wird vorbereitet...'],
  gallery:['Galeria online por 30 dias','Online gallery for 30 days','Galería online por 30 días','Galerie en ligne pendant 30 jours','Online-Galerie für 30 Tage'],
@@ -4026,6 +4027,7 @@ const I18N_ZH={
  bgCampeao:"冠军之夜",
  bgTunel:"走出隧道",
  bgPodio:"冠军领奖台",
+ aiIndisp:"特别照片暂不可用",
  aiAguarde:"还在准备中，请稍候",
  aiMaking:"正在准备你的特别照片…",
  gallery:"在线相册保存 30 天",
@@ -4648,9 +4650,9 @@ const fundosModo=()=>FUNDOS_TESTE==='photoroom'?'photoroom':'local';
 const RECS=new Map(); // chave id|lado; até 8 recortes na memória (o PNG tem até 3000 px)
 const FIA_LADO_PREVIA=2400,FIA_LADO_HI=3000;
 function fiaRecorte(photoId,lado){lado=lado===FIA_LADO_HI?FIA_LADO_HI:FIA_LADO_PREVIA;const key=photoId+'|'+lado;
+  if(/^ag_/.test(photoId)&&!mtgCanvasOk())return Promise.resolve({pending:'servidor'}); // antes do cache: com a chave ligada (ou o modo ainda não conhecido) nem o recorte guardado vale
   if(RECS.has(key)){const p=RECS.get(key);RECS.delete(key);RECS.set(key,p);return p;}
   if(!/^ag_/.test(photoId))return Promise.resolve({pending:'exemplo'});
-  if(!mtgCanvasOk())return Promise.resolve({pending:'servidor'}); // chave ligada (mesmo com o agente fora) ou modo ainda não conhecido: o navegador não recorta nem monta
   const p=(async()=>{let r;try{r=await agFetch(state.agent.url+'/recorte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid:photoId.slice(3),lado})});}catch(e){return {pending:'agente'};}
     if(r.status===503){let j={};try{j=await r.json();}catch(e){}return {pending:'recorte',motivo:j.motivo||null};}
     if(r.status===429||r.status===504)return {pending:'fila'};
@@ -4812,9 +4814,9 @@ let MTG_MEM=null; // o modo visto nesta página com o agente respondendo (até l
 function mtgVisto(st){const m=st&&st.montagem&&typeof st.montagem==='object'?st.montagem:null;
   const v=m?{v:+m.v||0,modo:String(m.modo||''),imprime:m.imprime===true,montaveis:Array.isArray(m.montaveis)?m.montaveis.filter(x=>typeof x==='string').slice(0,40):[]}:{antigo:true,v:0,modo:'',imprime:false,montaveis:[]};
   MTG_MEM=v;const t=JSON.stringify(v);if(MTG_VISTO&&JSON.stringify(MTG_VISTO)===t)return;MTG_VISTO=v;try{localStorage.setItem(MTG_VISTO_K,t);}catch(e){}}
-function mtgConhecido(){const a=state.agent||{};if(a.on)return MTG_MEM=a.montagem||{antigo:true};return MTG_MEM||MTG_VISTO;}
+function mtgConhecido(){const a=state.agent||{};if(a.on&&MTG_MEM)return a.montagem||MTG_MEM;return MTG_MEM||MTG_VISTO;} // o MTG_MEM só muda no mtgVisto (ler não grava)
 function mtgSrv(){const m=mtgConhecido();return !!(m&&+m.v>=1&&m.modo==='ligada'&&m.imprime===true);}
-function mtgCanvasOk(){const k=mtgConhecido();return !!MTG_MEM&&!!k&&!mtgSrv();} // o navegador só monta com o modo conhecido nesta página e diferente de ligada
+function mtgCanvasOk(){return !!MTG_MEM&&!mtgSrv();} // o navegador só monta com o modo conhecido nesta página e diferente de ligada
 function mtgFundo(bgId){const m=mtgConhecido();return !!(m&&Array.isArray(m.montaveis)&&m.montaveis.includes(bgId));}
 const mtgFundoOk=bgId=>!mtgSrv()||mtgFundo(bgId); // ligada: só os fundos que o servidor sabe montar entram na venda
 const mtgBlob=u=>{if(typeof u==='string'&&u.startsWith('blob:'))try{URL.revokeObjectURL(u);}catch(e){}};
@@ -4823,8 +4825,9 @@ function mtgGuarda(key,job,srv){job.ger=MTG_GER;job.srv=srv;COMP[key]=job;
   job.then(r=>{if(job.ger!==MTG_GER){mtgBlob(r&&r.url);if(COMP[key]===job)delete COMP[key];return;}if(r.pending||r.err){if(COMP[key]===job)delete COMP[key];}else if(r.url)COMPOK.add(key);});}
 // chave trocada (ligada <-> sombra/desligada), aqui ou em outro aparelho: o que foi montado pelo outro caminho sai da memória
 // (blob: revogados), o trabalho em voo deixa de valer (MTG_GER) e a tela é refeita (as montagens são pedidas de novo)
-function mtgTroca(){MTG_GER++;Object.keys(COMP).forEach(k=>{const j=COMP[k];delete COMP[k];if(j&&j.then)j.then(r=>mtgBlob(r&&r.url),()=>{});});
-  Object.keys(COMPURL).forEach(k=>{mtgBlob(COMPURL[k]);delete COMPURL[k];});COMPOK.clear();MTG.clear();MTG_FALHAS.clear();
+function mtgTroca(){MTG_GER++;Object.keys(COMP).forEach(k=>{if(k.startsWith('pr|'))return;const j=COMP[k];delete COMP[k];if(j&&j.then)j.then(r=>mtgBlob(r&&r.url),()=>{});}); // pr|: montagens do Photoroom (já pagas), ficam
+  Object.keys(COMPURL).forEach(k=>{if(k.startsWith('pr|'))return;mtgBlob(COMPURL[k]);delete COMPURL[k];});[...COMPOK].forEach(k=>{if(!k.startsWith('pr|'))COMPOK.delete(k);});
+  RECS.forEach(p=>p.then(x=>{if(x&&x.url)mtgBlob(x.url);},()=>{}));RECS.clear(); // recortes do canvas: saem tambémMTG.clear();MTG_FALHAS.clear();
   document.querySelectorAll('[data-comp][data-done]').forEach(el=>{delete el.dataset.done;});render();}
 const MTG=new Map(); // foto|fundo -> {estado, versao, p, i, w, h, t} da última resposta do /montagens/pedir
 const MTG_FALHAS=new Map(); // foto|fundo -> tentativas seguidas sem a montagem (espera crescente; depois de MTG_FALHAS_MAX, sai da venda)
@@ -4864,7 +4867,7 @@ async function mtgHi(photoId,bgId){if(!/^ag_/.test(photoId)||!mtgFundo(bgId))ret
 const mtgMarcavel=x=>!x||x.t!=='ai'||!mtgSrv()||fiaPronta(x);
 function compTile(photoId,b,sel,act){const a=ANAV[photoId];const m=bgMatch(a,b);return `<button class="bg comp" data-act="${act||'fila-bg'}" data-bg="${b.id}" aria-pressed="${sel}"><span class="compimg" data-comp="${photoId}|${b.id}" style="background-image:url(${b.file})"><span class="compst">${fundosModo()==='photoroom'?'Montando no Photoroom...':'Montando...'}</span></span><span class="czoom" data-act="comp-zoom" data-k="${photoId}|${b.id}" data-cap="${esc(b.name)}" role="button" aria-label="Ver grande"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"></path></svg></span>${m!=null?`<span class="cmatch ${m>=85?'hi':m>=70?'mid':'lo'}">Combina ${m}%</span>`:''}<span class="n"><span>${esc(b.name)}</span><span class="note">${esc(matchWhy(a,b)||FRAMING[aiScore(photoId).f])} · ${fmtR(priceOf('fundo'))}</span></span></button>`;}
 state.pr=null;function prPoll(force){if(prPoll.t&&!force&&Date.now()-prPoll.t<15000)return;prPoll.t=Date.now();agFetch(state.agent.url+'/photoroom/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{const ch=!state.pr||state.pr.configured!==j.configured||state.pr.calls!==j.calls||state.pr.last_error!==j.last_error;state.pr=j;if(ch)render();}).catch(()=>{if(state.pr!==null){state.pr=null;render();}});}
-function compMsg(r){return r.pending==='photoroom'?'Conecte o Photoroom em Fundos de IA':r.pending==='agente'?'Abra o Eterna pelo agente do ponto':r.pending==='recorte'?recMotivo(r.motivo):r.pending==='exemplo'?'Foto de exemplo: o recorte é só para fotos do agente':r.err==='sem_pessoa'?'Ninguém encontrado na foto':r.err==='montagem_erro'?TE('mtg_indisp'):r.err==='photoroom_desligado'?'Photoroom desligado no servidor do ponto':esc(r.err||'não deu');}
+function compMsg(r){return r.pending==='photoroom'?'Conecte o Photoroom em Fundos de IA':r.pending==='agente'?'Abra o Eterna pelo agente do ponto':r.pending==='recorte'?recMotivo(r.motivo):r.pending==='exemplo'?'Foto de exemplo: o recorte é só para fotos do agente':r.err==='sem_pessoa'?'Ninguém encontrado na foto':r.err==='montagem_erro'?(state.lojaRota||state.view==='quiosque'?T('aiIndisp'):TE('mtg_indisp')):r.err==='photoroom_desligado'?'Photoroom desligado no servidor do ponto':esc(r.err||'não deu');}
 function compHydrate(){if(fundosModo()==='photoroom'&&document.querySelector('[data-comp]:not([data-done])')&&!state.pr)prPoll();document.querySelectorAll('[data-comp]:not([data-done])').forEach(el=>{el.dataset.done='1';const [ph,bg]=el.dataset.comp.split('|');const key=ph+'|'+bg;
   const ger=MTG_GER;compose(ph,bg).then(r=>{if(ger!==MTG_GER){mtgBlob(r&&r.url);if(el.isConnected){delete el.dataset.done;setTimeout(compHydrate,0);}return;}if(r.url){MTG_FALHAS.delete(key);el.style.backgroundImage=`url(${r.url})`;el.classList.add('ok');el.innerHTML='';el.dataset.url=r.url;COMPURL[key]=r.url;COMPLOW[key]=r.low;if(r.low)el.insertAdjacentHTML('beforeend','<span class="compst lowres">miniatura de exemplo</span>');
       // v97 (selo): a caixa da montagem fica com a proporção dela, sem redesenhar a tela; pronta com o cliente olhando para ela = vista (A9)
@@ -4873,7 +4876,7 @@ function compHydrate(){if(fundosModo()==='photoroom'&&document.querySelector('[d
     if(r.pending==='fila'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Na fila do recorte...</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},3000);return;}
     // E2: a montagem do servidor ainda não ficou pronta (fila, processo reabrindo): o item fica em "Preparando" e tenta de novo; nunca monta aqui
     if(r.pending==='servidor'){const n=(MTG_FALHAS.get(key)||0)+(state.agent&&state.agent.on?1:0);MTG_FALHAS.set(key,n); // só conta com o agente respondendo
-      if(n>=MTG_FALHAS_MAX){MTG_FALHAS.delete(key);el.classList.add('pend');el.innerHTML=`<span class="compst">${TE('mtg_indisp')}</span>`;fiaFalhou(key);return;}
+      if(n>=MTG_FALHAS_MAX){MTG_FALHAS.delete(key);el.classList.add('pend');el.innerHTML=state.lojaRota||state.view==='quiosque'?'':`<span class="compst">${TE('mtg_indisp')}</span>`;fiaFalhou(key);return;} // tela do cliente: nada escrito, o fiaFalhou redesenha sem o item
       if(!el.querySelector('.lj-aimk'))el.innerHTML=`<span class="compst">${TE('mtg_preparando')}</span>`;setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},mtgJitter(Math.min(MTG_PASSO_TETO_MS,MTG_DE_NOVO_MS*2**Math.max(0,n-1))));return;}
     // v97 (E5b): 503 do recorte (modelos abrindo, processo de recorte reiniciando) não tira a foto da venda: tenta de novo em 30 s
     if(r.pending==='recorte'){if(!el.querySelector('.lj-aimk'))el.innerHTML='<span class="compst">Recorte local indisponível</span>';setTimeout(()=>{if(el.isConnected){delete el.dataset.done;compHydrate();}},FIA_REC_DE_NOVO_MS);return;}
@@ -5135,7 +5138,7 @@ async function agentPoll(){const a=state.agent;await a.sonda;if(!AGENT_VIEWS.inc
   try{const st=await (await agFetch(a.url+'/status',{cache:'no-store',signal:agLimite(8000)})).json();if(!st.ok)throw new Error('x');
     // agente em outro endereço (página aberta pelo site ou por outro endereço): sem sessão nem posto lá, fica indisponível
     if(a.url!==location.origin){const era=a.on||!a.outra;a.on=false;a.outra=true;a.tried=true;if(!a.outraAviso&&!state.pub&&!state.lojaRota){a.outraAviso=1;toast('Servidor do ponto encontrado: abra o Eterna pelo endereço do servidor do ponto');}if(era)render();return;}
-    a.outra=false;const was=a.on;a.on=true;a.lastOk=Date.now();a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;const mtgAntes=mtgSrv();a.montagem=st.montagem||null;mtgVisto(st);if(mtgAntes!==mtgSrv())mtgTroca();a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;a.treino=st.treino&&typeof st.treino==='object'?st.treino:null;/* 16/11: Treino da IA (contagem e interruptor da análise) */a.envio=st.envio&&typeof st.envio==='object'?st.envio:null;if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;postoCarregar();let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(ESCALA_ON&&can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
+    a.outra=false;const mtgAntes=mtgSrv();const was=a.on;a.on=true;a.lastOk=Date.now();a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.montagem=st.montagem||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;a.treino=st.treino&&typeof st.treino==='object'?st.treino:null;/* 16/11: Treino da IA (contagem e interruptor da análise) */a.envio=st.envio&&typeof st.envio==='object'?st.envio:null;mtgVisto(st);if(mtgAntes!==mtgSrv())mtgTroca(); /* montagem no servidor: depois de todas as atribuições do /status */if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;postoCarregar();let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(ESCALA_ON&&can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
     const evr=await agFetch(a.url+'/events?since='+a.cursor,{cache:'no-store',signal:agLimite(8000)});const ev=evr.ok?await evr.json():{events:[]}; // sem Upload/Estoque (ou só o posto): sem a lista de chegadas
     if(ev.events.length){const items=[];let dups=0;const known=photosInSessions();ev.events.forEach(e=>{const id='ag_'+e.id;if(e.type==='photo'){const was=!!UP[id];UP[id]={src:a.url+e.thumb,name:e.name};if(!state.lib.find(x=>x.id===e.id)&&e.src!=='inbox'){const nt=Date.now()/1000;state.lib.push({id:e.id,name:e.name,day:localDay(nt),t:nt,cap:e.cap||0,size:e.size,origem:e.card||'',via:e.src||'',serie:e.serie||'',autor:e.autor||'',dono:e.dono||''});}
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
