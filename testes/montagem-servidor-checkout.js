@@ -10,11 +10,17 @@
 //     #print-root do printMontar tem a imagem 1844x1240; servidor fora na impressão: a foto de IA falha (não vai canvas)
 //  6. fundo que o servidor não sabe montar (fora de montagem.montaveis) não entra na venda com a chave ligada
 //  7. foto de exemplo (sem ag_): não pede nada ao servidor
+//  9. (revisão) /status que falha com a chave ligada: o aparelho segue o último modo conhecido; nada de canvas nem de
+//     POST /recorte, a prévia fica pendente e a impressão da foto de IA falha. Antes do primeiro /status: nada no canvas
+// 10. (revisão) 422 do servidor (montagem desta versão falhou) e N tentativas seguidas sem a montagem: o item sai da venda
+// 11. (revisão) item de IA ainda em "Preparando" não pode ser marcado (Checkout e Venda manual), com aviso
+// 12. (revisão) a troca da chave revoga os blob:, descarta o trabalho em voo (geração) e vale no aparelho de quem trocou
 //  8. chave trocada para "sombra" no /status: em até 2 leituras o app volta ao canvas (fiaMontar) sem recarregar;
 //     agente antigo (sem montagem.imprime) com "ligada": canvas, como sempre
 // Nenhuma foto de convidado: quadrados de cor desenhados na hora.
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
+const login=require('./_login.js');
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);return c;};const J=JSON.stringify;
 const [JPG,PV,HI]=execFileSync('python3',['-c',`
 import io,base64
@@ -26,8 +32,9 @@ const hoje=(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth
 const a=Date.now()/1000;
 const ids=(p,n)=>Array.from({length:n},(_,i)=>p+String(i+1).padStart(9,'0'));
 const ses=(card,fotos,t0,rev,x)=>({card,dia:hoje,fotografo:'yago',fonte:'ftp',ponto:null,funcao:null,trilha:'vivo',atrasada:false,status:'fechada',motivo:'pausa',aberta_em:t0,ultima_chegada:t0+50,cap0:t0-2,cap1:t0+48,fonte_t:'cap',fechada_em:t0+110,fechada_por:'pausa',fotos,pend:[],dec:{},sim_abertura:null,fundida_em:null,removida:false,rev,ia:[],ia_regra:null,...x});
-const COM=ids('c3c',6),OUT=ids('d4d',5);
-const FEED=[ses('LPMTGSRV1',COM,a-600,1,{ia:COM.slice(0,2),ia_regra:{n:2,motivo:null}}),ses('LPMTGSRV2',OUT,a-300,2,{ia:OUT.slice(0,2),ia_regra:{n:2,motivo:null}})];
+const COM=ids('c3c',6),OUT=ids('d4d',5),TRE=ids('e5e',4);
+const FEED=[ses('LPMTGSRV1',COM,a-600,1,{ia:COM.slice(0,2),ia_regra:{n:2,motivo:null}}),ses('LPMTGSRV2',OUT,a-300,2,{ia:OUT.slice(0,2),ia_regra:{n:2,motivo:null}}),
+  ses('LPMTGSRV3',TRE,a-200,3,{ia:TRE.slice(0,2),ia_regra:{n:2,motivo:null}})];
 const ATIVOS=['mirantedia','arq1950','telao','tunel'],TODOS=['arq1950','campeao2','mirante','mirantedia','podio','telao','tunel'];
 // o que o servidor falso responde (o teste muda no meio)
 const SRV={modo:'ligada',imprime:true,montaveis:TODOS,versao:'1a2b3c4d',p:{},i:{},pedir:[],get:[],recorte:0,statusN:0};
@@ -36,7 +43,7 @@ const estado=(k,t)=>(SRV[t][k]!==undefined?SRV[t][k]:SRV[t]['*']!==undefined?SRV
 const b=await chromium.launch();const errs=[];
 try{
   const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
-  await ctx.route(ORIG+'/status',r=>{SRV.statusN++;const mt={v:1,modo:SRV.modo,ok:true,motivo:null,versao:'m2',fundos:Object.fromEntries(ATIVOS.map(f=>[f,SRV.versao])),filho:{vivo:true,reinicios:0},parado:null,fila:0,feitas:0,erros:0,ms_medio:400,atraso_p50_s:3,atraso_p90_s:6,guardado_gb:0,livre_gb:100,piso_gb:10,pausa_disco:false,no_hd:true};
+  await ctx.route(ORIG+'/status',r=>{SRV.statusN++;if(SRV.abort)return r.abort();const mt={v:1,modo:SRV.modo,ok:true,motivo:null,versao:'m2',fundos:Object.fromEntries(ATIVOS.map(f=>[f,SRV.versao])),filho:{vivo:true,reinicios:0},parado:null,fila:0,feitas:0,erros:0,ms_medio:400,atraso_p50_s:3,atraso_p90_s:6,guardado_gb:0,livre_gb:100,piso_gb:10,pausa_disco:false,no_hd:true};
     if(SRV.imprime)Object.assign(mt,{imprime:true,montaveis:SRV.montaveis,ativos:ATIVOS});
     r.fulfill({status:200,contentType:'application/json',body:J({ok:true,agent:'eterna-agente',version:3,boot:'bM',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:true},
     sessoes:{v:2,pausa:60,rostos:true,rev:2,gen:'bM',hoje:2,abertas:0,dias:1},recorte:{ok:true,carregado:true,feitos:4,ms_medio:900,fila:0,ia:{ligada:true,fila:0,feitos:4,erros:0}},montagem:mt,fundos_modo:'local'})});});
@@ -54,7 +61,14 @@ try{
     if(typeof st==='object'&&st.n!=null){st.n--;st=st.n>=0?202:200;}
     if(st===200&&v&&v!==SRV.versao)st=409;
     if(st===200)return r.fulfill({status:200,headers:{'Content-Type':'image/jpeg','X-Eterna-Montagem':SRV.versao,'Cache-Control':'private, no-store'},body:t==='i'?HI:PV});
-    r.fulfill({status:st,contentType:'application/json',body:J(st===202?{estado:'fila'}:st===409?{error:'versao'}:st===404?{error:'not found'}:{error:'montagem_parada'})});});
+    r.fulfill({status:st,contentType:'application/json',body:J(st===202?{estado:'fila'}:st===409?{error:'versao'}:st===404?{error:'not found'}:st===422?{estado:'erro'}:{error:'montagem_parada'})});});
+  // ---- 9b. antes do primeiro /status (contexto novo, nada guardado, o /status não responde): nada no canvas, nenhum recorte
+  {const c0=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await c0.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());let rec0=0;
+    await c0.route(ORIG+'/status',()=>{});await c0.route(ORIG+'/recorte',r=>{rec0++;r.fulfill({status:503,body:'{}'});});await c0.route(ORIG+'/montagem/**',r=>r.fulfill({status:503,body:'{}'}));
+    const p0=await c0.newPage();p0.on('pageerror',e=>errs.push(e.message));await p0.goto(U+'#loja');await p0.waitForFunction(()=>window.ETERNA&&ETERNA.compose,null,{timeout:20000});
+    const r0=await p0.evaluate(async()=>{const a=await ETERNA.compose('ag_e5e000000001','mirantedia');const h=await ETERNA.compHi('ag_e5e000000001','mirantedia');return {a,h:{err:h.err,url:!!h.url},c:{...ETERNA.fiaMontagens},ok:ETERNA.mtgCanvasOk(),srv:ETERNA.mtgSrv()};});
+    ok(r0.a.pending==='servidor'&&r0.h.err&&!r0.h.url&&r0.c.canvas===0&&rec0===0&&!r0.ok,'9b: antes do primeiro /status nada é montado no canvas e não sai POST /recorte: '+J([r0,rec0]));
+    await c0.close();}
   const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U+'#loja');
   const espera=async(fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await pg.evaluate(fn,arg))return true;await pg.waitForTimeout(150);}return false;};
@@ -126,17 +140,62 @@ try{
   // ---- 7. foto de exemplo: nada pedido
   const g7=SRV.get.length;const r7=await pg.evaluate(async()=>ETERNA.compose('ex_123','mirantedia'));
   ok(r7.pending==='exemplo'&&SRV.get.length===g7,'7: foto de exemplo não pede nada ao servidor: '+J(r7));
+  // ---- 9. /status falhando com a chave ligada: segue o último modo conhecido (sem canvas, sem recorte)
+  {const [c9a,c9b]=await pg.evaluate(()=>ETERNA.SIM.sessions.LPMTGSRV3.ia.map(x=>x.replace(/^ag_/,'')));
+    SRV.abort=true;SRV.p[c9a+'|telao']=503;SRV.i[c9a+'|telao']=503;const rec9=SRV.recorte,c9=await conta();
+    ok(await espera(()=>!ETERNA.state.agent.on,10000),'9: o /status abortado põe o agente fora');
+    const r9=await pg.evaluate(async id=>{const a=await ETERNA.compose('ag_'+id,'telao');const res=await ETERNA.printMontar([{t:'ai',id:'ag_'+id,bg:'telao',k:'ai:ag_'+id+'|telao'}]);document.getElementById('print-root')?.remove();
+      return {a,falhas:res.falhasIA,srv:ETERNA.mtgSrv(),canvasOk:ETERNA.mtgCanvasOk()};},c9a);
+    const c9f=await conta();
+    ok(r9.srv&&!r9.canvasOk&&r9.a.pending==='servidor'&&r9.falhas.length===1&&c9f.canvas===c9.canvas&&c9f.canvas===0&&SRV.recorte===rec9,'9: agente fora com a chave ligada: prévia pendente, impressão da IA falha, canvas 0, nenhum POST /recorte: '+J([r9,c9f,SRV.recorte-rec9]));
+    SRV.abort=false;ok(await espera(()=>ETERNA.state.agent.on,10000),'9: o agente volta');
+    // ---- 11. marcar item de IA ainda em "Preparando": recusado, com aviso
+    SRV.p[c9b+'|telao']=503;SRV.p[c9a+'|tunel']=503;SRV.p[c9a+'|arq1950']=422;SRV.p[c9b+'|mirantedia']=503;
+    await pg.evaluate(()=>{ETERNA.mtgTempos(300,50,100,3000,400,100);const k=ETERNA.state.kiosk;k.code='LPMTGSRV3';k.so=null;k.step='review';k.i=0;ETERNA.render();});await pg.waitForTimeout(800);
+    const r11=await pg.evaluate(async id=>{const E=ETERNA;const k=E.state.kiosk;const its=E.lojaItems('LPMTGSRV3');const i=its.findIndex(x=>x.k==='ai:ag_'+id+'|telao');
+      const pronta=E.fiaPronta(its[i]);const bt=document.createElement('button');bt.dataset.act='kiosk-tog';bt.dataset.i=String(i);document.body.appendChild(bt);bt.click();bt.remove();
+      const pk=(E.SIM.sessions.LPMTGSRV3||{}).pick||{};const t1=document.getElementById('toast').textContent;
+      k.i=i;const bt2=document.createElement('button');bt2.dataset.act='kiosk-ok';document.body.appendChild(bt2);bt2.click();bt2.remove();
+      return {i,pronta,marcado:pk['ai:ag_'+id+'|telao']||null,marcado2:((E.SIM.sessions.LPMTGSRV3||{}).pick||{})['ai:ag_'+id+'|telao']||null,toast:t1,aviso:E.T('aiAguarde')};},c9b);
+    ok(r11.i>=0&&!r11.pronta&&!r11.marcado&&!r11.marcado2&&r11.toast===r11.aviso,'11: item de IA em Preparando não é marcado (tocar e Quero), com o aviso: '+J(r11));
+    const r11b=await pg.evaluate(async()=>{const E=ETERNA;const its=E.lojaItems('LPMTGSRV1');const x=its.find(y=>y.t==='ai');const i=its.indexOf(x);E.state.kiosk.code='LPMTGSRV1';
+      const bt=document.createElement('button');bt.dataset.act='kiosk-tog';bt.dataset.i=String(i);document.body.appendChild(bt);bt.click();bt.remove();return {pronta:E.fiaPronta(x),marcado:(E.SIM.sessions.LPMTGSRV1.pick||{})[x.k]||null};});
+    ok(r11b.pronta&&r11b.marcado==='ok','11: item de IA pronto continua marcável: '+J(r11b));
+    // ---- 10. 422 (falhou no servidor): estado final, o item sai da venda; N tentativas seguidas sem montagem: sai também
+    await pg.evaluate(()=>{ETERNA.mtgTempos(300,50,100,3000,400,3);const k=ETERNA.state.kiosk;k.code='LPMTGSRV3';k.so=null;k.step='review';k.i=0;ETERNA.render();});
+    ok(await espera(id=>!ETERNA.lojaItems('LPMTGSRV3').some(x=>x.k==='ai:ag_'+id+'|arq1950'),15000,c9a),'10: 422 do servidor tira o item da venda (não fica em Preparando)');
+    ok(await espera(id=>!ETERNA.lojaItems('LPMTGSRV3').some(x=>x.k==='ai:ag_'+id+'|mirantedia'),20000,c9b),'10: depois de 3 tentativas seguidas sem a montagem o item sai da venda');
+    const g10=SRV.get.filter(g=>g.pid===c9a&&g.f==='arq1950').length;ok(g10===1,'10: o estado final não é pedido de novo: '+g10);
+    const H=require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');const n5=k=>{const m=new RegExp('\\b'+k+':\\[(.*?)\\],\\n').exec(H);return m?(m[1].match(/(^|,)\s*["']/g)||[]).length:0;};
+    ok(n5('aiAguarde')===5&&/ aiAguarde:"/.test(H)&&n5('mtg_aguarde')===5&&n5('mtg_preparando')===5&&n5('mtg_indisp')===5,'11: avisos nas 5 línguas (e em chinês no Checkout): '+J([n5('aiAguarde'),n5('mtg_aguarde'),n5('mtg_preparando'),n5('mtg_indisp')]));}
+  // ---- 12. troca da chave: blob: revogados, geração nova, tela refeita; e no aparelho de quem trocou (mtgModoSalva)
+  {const u12=await pg.evaluate(()=>Object.values(ETERNA.COMPURL).find(u=>/^blob:/.test(u)));const g0=await pg.evaluate(()=>ETERNA.mtgGer());
+    SRV.modo='sombra';ok(await espera(()=>!ETERNA.mtgSrv(),8000),'12: a chave em sombra chegou');
+    const r12=await pg.evaluate(async u=>{let vivo=true;try{await (await fetch(u)).blob();}catch(e){vivo=false;}return {vivo,ger:ETERNA.mtgGer(),n:Object.keys(ETERNA.COMPURL).length};},u12);
+    ok(u12&&!r12.vivo&&r12.ger===g0+1&&r12.n===0,'12: a troca revoga os blob: e sobe a geração: '+J([u12,r12,g0]));
+    SRV.modo='ligada';ok(await espera(()=>ETERNA.mtgSrv(),8000),'12: de volta a ligada');}
   // ---- 8. chave em sombra: volta ao canvas em até 2 leituras do /status; agente antigo: canvas
   const n8=SRV.statusN;SRV.modo='sombra';
   ok(await espera(()=>!ETERNA.mtgSrv(),8000)&&SRV.statusN-n8<=3,'8: em sombra o app deixa de ler o servidor em até 2 leituras: '+(SRV.statusN-n8));
   ok(await pg.evaluate(()=>!ETERNA.COMPURL[Object.keys(ETERNA.COMPURL)[0]]||Object.keys(ETERNA.COMPURL).length===0),'8: a troca da chave limpa as montagens guardadas');
-  const c8=await conta();const g8=SRV.get.length;await pg.evaluate(async id=>ETERNA.compose('ag_'+id,'telao'),b1);
-  ok((await conta()).canvas===c8.canvas+1&&SRV.get.length===g8,'8: em sombra o compose volta ao fiaMontar (canvas)');
+  const r8=SRV.recorte;const g8=SRV.get.length;await pg.evaluate(async id=>ETERNA.compose('ag_'+id,'telao'),b1);
+  ok(SRV.recorte===r8+1&&SRV.get.length===g8&&await pg.evaluate(()=>ETERNA.mtgCanvasOk()),'8: em sombra o compose volta ao fiaMontar (o navegador pede o recorte e monta)');
   SRV.modo='ligada';SRV.imprime=false;await pg.waitForTimeout(3000);
   ok(await pg.evaluate(()=>!ETERNA.mtgSrv()),'8: agente sem montagem.imprime (antigo) com "ligada": canvas, como sempre');
+  SRV.imprime=true;SRV.modo='ligada';
+  {const pa=await ctx.newPage();pa.on('pageerror',e=>errs.push(e.message));await login(pa);await pa.waitForFunction(()=>window.ETERNA&&ETERNA.mtgModoSalva,null,{timeout:20000});
+    // 11 (Venda manual): fundo cuja montagem do servidor ainda está em preparo não é escolhido
+    ok(await pa.waitForFunction(()=>ETERNA.state.agent.on&&ETERNA.mtgSrv()&&ETERNA.SIM.sessions.LPMTGSRV3&&(ETERNA.state.agent.recorte={ok:true,carregado:true})&&ETERNA.compBases('LPMTGSRV3').length>0,null,{timeout:20000}).then(()=>true,()=>false),'11: página da equipe com a chave ligada');
+    const r11c=await pa.evaluate(async()=>{const E=ETERNA;const S=E.SIM;S.invalid={};S.bgOn2=['mirantedia','arq1950','telao','tunel'];S.bgTunelV2=true;E.state.agent.recorte={ok:true,carregado:true};
+      E.state.view='posto';E.state.fila.session='LPMTGSRV3';const s=S.sessions.LPMTGSRV3;s.bg=null;const cb=E.compBases?E.compBases('LPMTGSRV3').map(x=>x.b.id):null;
+      const bt=document.createElement('button');bt.dataset.act='fila-bg';bt.dataset.bg='telao';document.body.appendChild(bt);bt.click();bt.remove();return {cb,bg:s.bg||null,toast:document.getElementById('toast').textContent,aviso:E.TE('mtg_aguarde')};});
+    ok(!r11c.bg&&r11c.toast===r11c.aviso,'11: Venda manual também não escolhe o fundo em preparo: '+J(r11c));
+    const r=await pa.evaluate(async()=>{const E=ETERNA;const a=E.state.agent;a.on=true;a.montagem={v:1,modo:'ligada',imprime:true,montaveis:['telao'],ok:true};E.state.db=E.state.db||{doc:()=>({set(){}})};
+      const g0=E.mtgGer();const srv0=E.mtgSrv();const okS=E.mtgModoSalva('sombra');return {srv0,okS,srv1:E.mtgSrv(),g:E.mtgGer()-g0};});
+    ok(r.srv0&&r.okS&&!r.srv1&&r.g===1,'12: quem troca a chave no Painel também limpa e refaz (mtgTroca): '+J(r));await pa.close();}
   ok(!errs.length,'erros de página: '+errs.join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e.message).slice(0,600));}
 finally{await b.close();}
 if(fails.length){console.log('FALHA montagem-servidor-checkout: '+fails.length+' · '+fails.slice(0,10).join(' · '));process.exit(1);}
-console.log('OK montagem-servidor-checkout (ligada: Checkout com as montagens do servidor, fila, servidor fora sem canvas, 404, impressão 10x15 com a versão, fundo fora do servidor, exemplo, sombra e agente antigo voltam ao canvas)');
+console.log('OK montagem-servidor-checkout (ligada: Checkout com as montagens do servidor, fila, servidor fora sem canvas, 404 e 422, tentativas seguidas, item em preparo não marcável, /status falhando e antes do primeiro /status sem canvas nem recorte, troca da chave com blob: revogados, impressão 10x15 com a versão, fundo fora do servidor, exemplo, sombra e agente antigo voltam ao canvas)');
 })();

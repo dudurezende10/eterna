@@ -50,9 +50,14 @@ try{
   const recorte=r=>{let q={};try{q=JSON.parse(r.request().postData()||'{}');}catch(e){}const c=casoDe[q.pid];if(!c)return r.fulfill({status:404,body:'{}'});
     r.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(q.lado===3000?c.hi:c.previa)});};
   await ctx.route(ORIG+'/recorte',recorte);
+  // o agente responde o /status sem `montagem` (agente que não monta): o navegador monta no canvas (desde a revisão da E2, só
+  // com o modo do servidor conhecido; sem nenhum /status o canvas não monta)
+  await ctx.route(ORIG+'/status',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,agent:'eterna-agente',version:3,boot:'bP',card:null,copied:0,dups:0,events:0,recorte:{ok:true,carregado:true},fundos_modo:'local'})}));
+  await ctx.route(ORIG+'/events*',r=>r.fulfill({status:200,contentType:'application/json',body:'{"events":[],"next":0,"total":0}'}));
   const pg=await ctx.newPage();pg.setDefaultTimeout(120000);pg.on('pageerror',e=>errs.push(e.message));await login(pg);
   await pg.waitForFunction(()=>window.ETERNA&&ETERNA.fiaMontar&&ETERNA.FIA_ROSTOS&&ETERNA.FIA_PADRAO,null,{timeout:20000});
   await pg.evaluate(()=>{ETERNA.state.agent.on=true;ETERNA.state.agent.recorte={ok:true};});
+  await pg.waitForFunction(()=>ETERNA.mtgCanvasOk(),null,{timeout:20000});
   // ---- critério 3: tabelas do Python iguais às do app
   const app=await pg.evaluate(()=>{const E=ETERNA;const fundos={};E.BGS.forEach(b=>{fundos[b.id]={previa:b.file,hi:b.fileHi||b.file,mono:!!b.mono,impAlto:!!b.impAlto,telao:b.telao||null};});
     return {regras:E.FIA_REGRAS,padrao:E.FIA_PADRAO,estreito:[E.FIA_ESTREITO_DE,E.FIA_ESTREITO_ATE],base:E.FIA_BASE,imp:E.IMP_PX,fundos,ativos:E.BG_DEF,lados:[2400,3000]};});

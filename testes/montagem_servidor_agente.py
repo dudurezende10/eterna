@@ -123,6 +123,17 @@ def nova_sessao(card, n_bases=2, extras=1, ia=True):
     return fotos[:n_bases]
 
 
+def vendida(pid, fundos, n=[0]):
+    """Uma venda paga no vendas.db com as montagens da base pid nos fundos (a reimpressão de venda antiga)."""
+    n[0] += 1
+    v = "vmtg%04d" % n[0]
+    em = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    m.ev_receber({"posto": "Caixa 1", "eventos": [
+        {"tipo": "criar", "idem": v + ":1", "venda": v, "seq": 1, "em": em, "por": {"nome": "Vendedor Teste"},
+         "dados": {"card": "LPMTGV%04d" % n[0], "saleNo": "P1-%03d" % n[0], "total": 90, "nPh": 0, "meio": "pix", "aiSel": ["ag_%s|%s" % (pid, f) for f in fundos]}},
+        {"tipo": "pagar", "idem": v + ":2", "venda": v, "seq": 2, "em": em, "dados": {}}]})
+
+
 def espera(fn, seg=120, passo=0.05):
     t0 = time.time()
     while time.time() - t0 < seg:
@@ -354,8 +365,52 @@ try:
     s2, j2, _ = pede("POST", "/montagens/pedir", {"pids": ["ag_" + NB], "fundos": ["mirantedia"], "tipos": ["p"]}, cookie=posto)
     ok(s == 404 and j == {"error": "not found"} and s2 == 200 and j2["itens"][0]["estado"] == "nao_base" and fila_vazia() and not arqs(NB),
        "E2: foto que não é base não é montada: %s %r %s %r" % (s, j, s2, j2))
-    # foto fora das levas carregadas (reimpressão de venda antiga, o servidor não previu): 202, sobe para a prioridade 0 e aparece
+    # foto fora das levas carregadas sem venda paga: não é montada (nao_base); com a montagem vendida naquele fundo, sim
+    Y = nova_foto()
+    vendida(Y, ["telao"])
+    s, j, _ = pede("GET", "/montagem/ag_%s/mirantedia.jpg?t=p" % Y, cookie=posto)
+    s2, j2, _ = pede("POST", "/montagens/pedir", {"pids": ["ag_" + Y], "fundos": ["mirantedia"], "tipos": ["p"]}, cookie=posto)
+    ok(s == 404 and s2 == 200 and j2["itens"][0]["estado"] == "nao_base" and fila_vazia(), "8: foto fora das levas sem a montagem vendida naquele fundo: nao_base: %s %r" % (s, j2))
+    # 422: a montagem desta versão acabou de falhar no motor: estado final, sem fila
+    (Q,) = nova_sessao("LP-MTG-Q", n_bases=1, extras=0)
+    m.mtg_ruins[(Q, "telao")] = (m.mtg_versao("telao"), "interno", time.time())
+    s, j, _ = pede("GET", "/montagem/ag_%s/telao.jpg?t=p" % Q, cookie=posto)
+    ok(s == 422 and j == {"estado": "erro"} and fila_vazia(), "2 (revisão): GET com erro recente da versão atual: 422 e nada na fila: %s %r" % (s, j))
+    m.mtg_ruins.pop((Q, "telao"), None)
+    with m.sess_lock:                                  # a leva de teste sai (as voltas seguintes não a montam)
+        m.sess.pop("LP-MTG-Q", None)
+        m.sess_pid.pop(Q, None)
+    with m.lock:
+        m.lib.pop(Q, None)
+    # LGPD: mtg_apagar com o laço anotando ao mesmo tempo não para no meio
+    para = threading.Event()
+
+    def anota():
+        i = 0
+        while not para.is_set():
+            m.mtg_completas.add(("ffff%08x" % i, "telao", "x", True))
+            i += 1
+            if i % 5000 == 0:
+                m.mtg_completas.clear()
+    th = threading.Thread(target=anota, daemon=True)
+    th.start()
+    erros_lgpd = []
+    for _ in range(200):
+        try:
+            m.mtg_apagar(Q)
+        except Exception as ex:
+            erros_lgpd.append(type(ex).__name__)
+    para.set()
+    th.join(5)
+    m.mtg_completas.clear()
+    lim = {}
+    for i in range(30000):
+        lim[i] = 1
+    m._mtg_limita(lim, 100)
+    ok(not erros_lgpd and len(lim) == 100, "4 (revisão): mtg_apagar e _mtg_limita sem erro com outra linha mexendo: %r %d" % (erros_lgpd[:3], len(lim)))
+    # foto fora das levas carregadas com a montagem vendida (reimpressão de venda antiga): 202, sobe para a prioridade 0 e aparece
     X = nova_foto()
+    vendida(X, ["mirantedia"])
     s, j, _ = pede("GET", "/montagem/ag_%s/mirantedia.jpg?t=p" % X, cookie=posto)
     ok(s == 202 and j == {"estado": "fila"}, "15: montagem ainda não feita: 202: %s %r" % (s, j))
     ok(espera(lambda: pede("GET", "/montagem/ag_%s/mirantedia.jpg?t=p" % X, cookie=posto, cru=True)[0] == 200, 60, 0.2), "15: depois do 202 a montagem aparece")
@@ -428,6 +483,7 @@ try:
             m.mtg_enfileirar(pid, f, ("p",), m.MTG_P_IMPRESSAO if k % 2 else m.MTG_P_REFAZER)
             k += 1
     PED = nova_foto()
+    vendida(PED, ["telao"])
     ok(m.mtg_status()["fila"] == 30, "14: 30 trabalhos esperando: %s" % m.mtg_status()["fila"])
     s, j, _ = pede("POST", "/montagens/pedir", {"pids": ["ag_" + PED], "fundos": ["telao"], "tipos": ["p"]}, cookie=posto)
     ok(s == 200 and j["itens"][0]["estado"] == "fila", "14: pedido aceito: %s %r" % (s, j))
@@ -608,6 +664,27 @@ try:
     ok(s1 == 503 and s2 == 503 and j1 == {"error": "montagem_parada"} and j2 == {"error": "montagem_parada"}, "16: parada: rotas 503 montagem_parada: %s %s" % (s1, s2))
     with m.mtg_lock:
         m.mtg.update(parado=None, erro=None, mortes_mem=0, espera_s=m.MTG_ERRO_SEG)
+
+    # ---- 7 (revisão): fundo que a origem não entrega não é baixado a cada volta (espera crescente até 5 min)
+    chamadas = []
+    baixar0 = m.app_baixar
+    m.app_baixar = lambda rel: chamadas.append(rel)
+    try:
+        for _ in range(3):
+            try:
+                m.mtg_fundo_arquivo("podio", True)
+            except ValueError:
+                pass
+        esp1 = m._mtg_baixa_falhou.get(m.MTG_FUNDOS["podio"]["hi"])
+        m._mtg_baixa_falhou[m.MTG_FUNDOS["podio"]["hi"]] = (0, esp1[1])
+        try:
+            m.mtg_fundo_arquivo("podio", True)
+        except ValueError:
+            pass
+        esp2 = m._mtg_baixa_falhou.get(m.MTG_FUNDOS["podio"]["hi"])
+    finally:
+        m.app_baixar = baixar0
+    ok(len(chamadas) == 2 and esp1 and esp1[1] == m.MTG_BAIXA_ESPERA and esp2[1] == 2 * m.MTG_BAIXA_ESPERA, "7 (revisão): download do fundo com espera crescente: %r %r %r" % (chamadas, esp1, esp2))
 
     # ---- de volta a desligada: o processo sai da memória e nada mais é montado
     cfg({"modo": "desligada"})
