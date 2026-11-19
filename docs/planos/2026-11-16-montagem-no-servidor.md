@@ -376,7 +376,7 @@ Depois de uma venda de teste com montagem: uma linha `vendida` (sem id de foto),
 
 ## E1: como ficou (16/11/2026)
 
-Entregue: `agente/eterna-montagem.py` (motor), integração `mtg_*` no `agente/eterna-agente.py`, chave e linha de saúde em Laboratório › Fundos de IA (`mtgPanel`, dentro do `fiaPanel`), `montagens` em `MIDIA_PASTAS`, testes `testes/montagem-paridade.js`, `testes/montagem_servidor_agente.py`, casos novos em `testes/seguranca_rotas_agente.py` e `testes/app_offline_agente.py`, `agente/medir-recorte.py --montagem`.
+Entregue: `agente/eterna-montagem.py` (motor), integração `mtg_*` no `agente/eterna-agente.py`, chave e linha de saúde em Sistema › Fundos de IA (técnico) (`mtgPanel`, dentro do `fiaPanel`), `montagens` em `MIDIA_PASTAS`, testes `testes/montagem-paridade.js`, `testes/montagem_servidor_agente.py`, casos novos em `testes/seguranca_rotas_agente.py` e `testes/app_offline_agente.py`, `agente/medir-recorte.py --montagem`.
 
 Diferenças em relação ao texto acima:
 
@@ -418,7 +418,7 @@ Ficou de fora desta entrega: o comparador lado a lado para o Admin (`mtg-compara
 ### Como ligar (Eduardo ou Admin, na tela)
 
 1. Antes, o Ronaldo roda o `servidor/linux/instalar.sh` (cria `/srv/eterna-midia/montagens` no HD e o link em `~/Eterna/montagens`) e confere com `ls -ld /srv/eterna-midia/montagens`.
-2. Laboratório › Fundos de IA › Montagem no servidor: **Sombra**. Fazer 2 ou 3 sessões de teste no gramado e conferir no registro (`journalctl -u eterna | grep montagem-srv`): `modo=sombra`, `no_hd=sim`, `erros=0`, `feitas` subindo, `atraso p90` dentro do alvo.
+2. Sistema › Fundos de IA (técnico) › Montagem no servidor: **Sombra**. Fazer 2 ou 3 sessões de teste no gramado e conferir no registro (`journalctl -u eterna | grep montagem-srv`): `modo=sombra`, `no_hd=sim`, `erros=0`, `feitas` subindo, `atraso p90` dentro do alvo.
 3. Mesma tela: **Ligada**. Em até 2,5 s todos os Checkouts e Postos passam a mostrar e imprimir o que o servidor montou (sem recarregar). Conferir uma venda de teste: as 4 montagens aparecem e a impressão sai.
 4. Para voltar: **Sombra** ou **Desligada** na mesma tela (o navegador volta a montar). Desligamento à força no servidor: `ETERNA_MONTAGEM=0` no `nuvem.env` e reiniciar o serviço.
 

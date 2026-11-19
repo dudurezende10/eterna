@@ -1281,6 +1281,50 @@ Lista de operação no servidor do ponto:
 8. **Configurações inválidas são ignoradas.** `ftp-remoto.json` com servidor fora da rede do ponto ou porta diferente de 21/990, e `roverpix.json` com endereço que não é o oficial, agora são ignorados. Confira o log do agente depois de reiniciar e, se preciso, refaça a configuração pelo Painel de controle. Servidor FTP do estádio com nome (ou IP fora da rede interna): um por linha em `~/Eterna/ftp-remoto-hosts.txt`.
 9. **Status.** Sem login, o `/status` mostra só que o Eterna está no ar. Impressora, nuvem e rostos se conferem no app, com login de administrador.
 
+## Novidades da v99.37 (19/11/2026): fotos especiais montadas no servidor
+
+Duas mudanças nas fotos especiais (os fundos de IA):
+
+- O Eterna pode reconhecer as fotos do gramado mesmo antes de atingir a meta de acerto. Quem liga é quem pode alterar a Configuração, e fica registrado.
+- A montagem da foto com o fundo passa a ser feita no servidor do estádio, não mais no computador do Checkout.
+
+### Depois desta atualização
+
+1. Feche e abra de novo todos os Postos de venda e todos os Checkouts.
+2. Só depois siga a ordem abaixo para ligar.
+
+### Ordem para ligar (Admin ou técnico, uma vez)
+
+1. **Modelo instalado.** O TI confirma que o reconhecimento do gramado está instalado no servidor.
+2. **Só medir.** Em **Curadoria › Treino da IA › Medição**, deixe o reconhecimento em **Só medir** até não sobrar foto marcada esperando leitura ("Na fila" em 0 e nada faltando em "já lidas pelo reconhecimento").
+3. **Ligar mesmo assim.** Na mesma tela, toque em **Ligar mesmo assim** e confirme. A Medição passa a mostrar "Ligado abaixo da meta por (seu nome) em (data)".
+4. **Montagem em Sombra.** Em **Sistema › Fundos de IA (técnico)**, quadro Recorte local, parte **Montagem no servidor**, escolha **Sombra**. Faça 2 ou 3 sessões de teste no gramado. O TI confere no registro do servidor: modo sombra, pasta no HD e nenhum erro.
+5. **Montagem Ligada.** Na mesma tela, escolha **Ligada**. Faça uma venda de teste: as fotos especiais aparecem e a impressão sai.
+
+Para voltar atrás: **Sombra** ou **Desligada** na mesma tela. O Checkout volta a funcionar como antes.
+
+### Selos da Medição
+
+| Selo | O que fazer |
+| --- | --- |
+| Ligado abaixo da meta por (nome) em (data) | Nada. Mostra quem ligou. A lista do que falta continua aparecendo. |
+| Modelo não instalado: nada é reconhecido | Avise o TI. Depois de instalado, toque em Ligar mesmo assim de novo. |
+| Ligado com 0 fotos: ligue de novo | Toque em Ligar mesmo assim de novo. |
+
+- **Marcou fotos novas no Treino?** Elas só passam a valer quando alguém tocar em **Ligar de novo com as marcações de agora**.
+- **O botão não aparece?** Só quem pode alterar a Configuração vê o botão.
+- **Não ligou?** A Medição mostra o que falta. O servidor precisa de fotos marcadas do gramado e de pelo menos outro ponto.
+
+### Para o vendedor e o anfitrião
+
+- Com a montagem Ligada, uma foto especial que ainda não ficou pronta aparece como **Preparando no servidor...** e não pode ser escolhida. Espere um instante. Se o cliente tocar nela, aparece "Ainda preparando, aguarde um instante".
+- Se o servidor não conseguir montar uma foto especial, ela sai da venda. As outras fotos seguem normais.
+- Reimpressão de foto especial de um dia antigo só sai se ela já foi vendida.
+
+### Detalhe conhecido
+
+No celular (tela estreita), com o reconhecimento ligado, o texto "Versão ligada" na Medição sai do cartão e a página rola para o lado. Use a Medição no computador ou no tablet.
+
 ---
 
 ## 6. O que dizer ao cliente

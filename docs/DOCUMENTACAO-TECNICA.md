@@ -2447,3 +2447,64 @@ Pedido do Ronaldo: "importante ter relatório de cancelamento, eles estarem nas 
 - o cancelamento de venda de dia antigo refaz o resumo daquele dia (`ev_dias_refaz` em `ev_receber`), porque o `metricas_loop` só refaz hoje e ontem.
 
 No Painel, o quadro do servidor mostra "Pagas e canceladas (saíram do faturamento)" com quantidade e valor. Abaixo dele fica a tabela Cancelamentos (data e hora, venda, valor, vendedor, quem cancelou, motivo), só para quem vê o Financeiro. O arquivo exportado do Painel ganha a aba Cancelamentos. Teste: `testes/cancelamentos_agente.py`.
+
+## v99.37.0 (19/11/2026): Ligar mesmo assim e montagem no servidor
+
+Duas entregas juntas. Detalhes de código em `docs/CONTEXTO-ETERNA.md` (seção 4) e regras em `docs/fundos-ia-regras.md` (regra 19). Plano da montagem: `docs/planos/2026-11-16-montagem-no-servidor.md`.
+
+### 1. Ligar mesmo assim (regra 19)
+
+Quem tem `configuracao.u` liga o reconhecimento do gramado abaixo do critério da Medição.
+
+| Rota | Corpo | Respostas |
+| --- | --- | --- |
+| `POST /treino/config` | `{"ponto":"ligada","forcar":true}` (`forcar` só com `ponto: "ligada"`, senão 400) | 200 `{ok, analise:{ponto, exposicao}, por, em, abaixo:{por, em}, congelados, ponto_versao[, aviso:"sem_modelo"]}`; 200 com `igual: true` quando nada mudou; 409 `criterio`, `rotulos` (`falta:[{k, tem, precisa}]`) ou `versao_mudou`; 429 (6 por minuto por pessoa); 500 `auditoria` |
+
+- Fluxo: confere o critério; abaixo dele, exige gramado e outra classe no conjunto que vai ser congelado; congela as marcações (`cena_congelar`); grava `config/treino` com `abaixo`; grava a linha de auditoria. Sem a linha, desfaz tudo e responde 500.
+- Auditoria: tabela `liga_log` do `treino.db` (vai no backup, só acrescenta): `em`, `por`, `abaixo` (0/1), `versao`, `dados` (JSON com `criterio_passa`, `falta`, `rotulos`, `metas`, `faltam`, `acerto`, `gramado_base`, `prospectivo`, `congelados`, `sem_vetor`, `modelo_ok`). Todo Ligada entra, normal ou forçado. Nenhuma foto, só números.
+- `/status.treino.modelo_ponto` ganhou `abaixo`, `congelados` e `aviso`; `GET /treino/medida` ganhou `ligada_abaixo`, `congelados` e `modelo_ok`.
+- Sem modelo instalado, o Ligada fica gravado com `aviso: "sem_modelo"` e nada é reconhecido (falha fechada). Na primeira instalação do modelo, a versão ligada sem modelo ou com 0 fotos sai e o ponto volta para Só medir.
+- Tela: botão na caixa "Para poder ligar" da aba Medição (`trForcar`, ação `tr-forcar`), selos `.tr-med-abaixo`, `.tr-med-sem-modelo` e `.tr-med-zero`.
+
+### 2. Montagem dos fundos de IA no servidor (E2)
+
+O recorte roda na placa de vídeo do servidor e a montagem (processador) também. O Checkout nunca monta com a chave em Ligada.
+
+```mermaid
+sequenceDiagram
+  participant AG as Agente (servidor)
+  participant MT as eterna-montagem.py
+  participant CK as Checkout / Posto
+  AG->>AG: leva fecha, bases da regra 19 (x["ia"])
+  AG->>MT: recorte pronto: monta os 4 fundos (prévia e 10x15)
+  MT-->>AG: ~/Eterna/montagens/<pid>/<fundo>-<versao>-<p|i>.jpg
+  CK->>AG: POST /montagens/pedir (prioridade 0)
+  CK->>AG: GET /montagem/<pid>/<fundo>.jpg?t=p
+  AG-->>CK: 200 JPEG, ou 202 (na fila), 404, 422
+```
+
+| Rota | Quem | Formato |
+| --- | --- | --- |
+| `GET /montagem/<pid>/<fundo>.jpg?t=p\|i[&v=<8 hex>]` | posto pareado ou pessoa com módulo de venda | 200 JPEG (`X-Eterna-Montagem: <versao>`, sem cache); 202 `{estado:"fila"}`; 404 para tudo que não existe ou não é base; 409 `versao`; 422 `{estado:"erro"}`; 429; 503 `montagem_desligada`, `montagem_parada`, `disco` ou `vendas_indisponivel` |
+| `POST /montagens/pedir` | idem | corpo `{pids (1 a 4), fundos (1 a 5), tipos:["p"] ou ["p","i"]}`; resposta `{ok, v:1, itens:[{pid, fundo, versao, estado, p, i, w, h}]}`, `estado` = `pronta`, `fila`, `nao_base`, `sem_pessoa` ou `erro` |
+| `/status.montagem` | app | `{v, modo, ok, motivo, versao, fundos, filho, parado, fila, feitas, erros, ms_medio, atraso_p50_s, atraso_p90_s, guardado_gb, livre_gb, piso_gb, pausa_disco, no_hd, imprime, montaveis, ativos}` |
+
+- Chave: documento `config/montagem` no `estado.db`, `{modo: "desligada"|"sombra"|"ligada", por, em}`, gravado pela tela Sistema › Fundos de IA (técnico) (`configuracao.u`, auditoria `montagem_modo`). `ETERNA_MONTAGEM=0` força desligada.
+- Desligada: nada roda e nenhuma pasta é criada; o navegador monta como antes. Sombra: o servidor monta e guarda; o navegador ainda monta. Ligada: Checkout, Venda manual e Posto só mostram e imprimem o que o servidor montou.
+- Montagem nova só de base da leva. Foto fora das levas carregadas (hoje e ontem) só com venda paga e não cancelada daquela montagem.
+- Registro: linhas `montagem-srv:` no journal (sem id de foto): partida com `modo`, `versao`, fundos e `no_hd`; a cada 5 min `feitas`, `fila`, `erros`, `ms_medio`, `atraso p50/p90` e disco.
+- A pasta `~/Eterna/montagens` precisa ser link para o HD de mídia antes de ligar a chave (`instalar.sh`).
+
+### Operação depois do deploy
+
+1. Fechar e abrir todos os Postos e Checkouts.
+2. Modelo do reconhecimento instalado.
+3. Reconhecimento em Só medir até a Medição não ter foto marcada sem leitura.
+4. "Ligar mesmo assim".
+5. Montagem em Sombra; conferir no registro `modo=sombra`, `no_hd=sim`, `erros=0`.
+6. Montagem Ligada.
+
+### Pendências
+
+- A 390 px, com o reconhecimento Ligado, o texto de "Versão ligada" na Medição (`.tr-med-ver`) sai do cartão e a página rola para o lado. Não bloqueia.
+- Fora desta entrega: comparador lado a lado para o Admin, montagem na galeria (E4) e a E3.
