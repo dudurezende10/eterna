@@ -194,6 +194,7 @@ svg text{font-family:var(--body);fill:var(--muted);font-size:12px}
 .scard .meta{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
 .photos.small{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+.bd-thumb{width:60px;height:40px;max-width:none;min-width:60px;object-fit:cover;border-radius:3px;background:var(--surface2);display:block;box-shadow:0 0 0 1px var(--line)}
 .ph{position:relative;aspect-ratio:3/2;max-width:100%;border-radius:4px;overflow:hidden;background:#1a1917;border:2px solid transparent;cursor:pointer;display:block;width:100%;padding:0}
 .ph::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
 .ph[data-real]{aspect-ratio:1/1}.ph[data-real]::before{inset:var(--ri,0);background-size:var(--rbs,contain);background-position:var(--rbp,center)}
@@ -7863,7 +7864,7 @@ function vBandeiras(){
   const {f,rows,act,units,attn,single,noStock,list,compra:buy,porPonto:byPoint}=flagLinhas();
   const top=act.slice().sort((a,b)=>b.s.sessions-a.s.sessions).slice(0,10);
   const totalSess=act.reduce((a,r)=>a+r.s.sessions,0);
-  const thumb=r=>r.f[7]?`<img src="${r.f[7]}" alt="" width="36" height="24" style="object-fit:cover;border-radius:2px;display:block">`:r.f[6]?`<img src="${esc(flagSrc(r.f[6]))}" alt="" width="36" height="24" loading="lazy" style="object-fit:cover;border-radius:2px;background:var(--surface2);display:block" onerror="this.style.visibility='hidden'">`:`<span class="note">${TE('bd_sem_img')}</span>`;
+  const thumb=r=>r.f[7]?`<img class="bd-thumb" src="${r.f[7]}" alt="" width="60" height="40">`:r.f[6]?`<img class="bd-thumb" src="${esc(flagSrc(r.f[6]))}" alt="" width="60" height="40" loading="lazy" onerror="this.style.visibility='hidden'">`:`<span class="note">${TE('bd_sem_img')}</span>`;
   const chip=(id,l,n)=>`<button class="chip" data-act="flag-filter" data-f="${id}" aria-pressed="${f===id}">${l} <span class="note">${n}</span></button>`;
   const stSel=r=>`<select data-act="flag-state" data-n="${esc(r.f[1])}">${FLAG_STATES.map(s=>`<option value="${s}" ${s===r.st.state?'selected':''}>${esc(flagEst(s))}</option>`).join('')}</select>`;
   const ptSel=r=>`<select data-act="flag-point" data-n="${esc(r.f[1])}">${DATA.points.filter(p=>p.kind!=='chroma').map(p=>`<option value="${p.id}" ${p.id===r.st.point?'selected':''}>${p.name}</option>`).join('')}</select>`;
