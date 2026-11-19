@@ -12436,6 +12436,8 @@ def treino_db():
     c.execute("create index if not exists rotulo_hist_pid on rotulo_hist(pid)")
     c.execute("create table if not exists lote (id text primary key, dados text, por text, em text)")
     c.execute("create table if not exists medida (pid text, tipo text, valor text, em text, primary key (pid, tipo))")
+    # 18/11 (ligar já): auditoria de cada Ligada do reconhecimento do ponto (só acrescenta; números, nenhuma foto)
+    c.execute("create table if not exists liga_log (em text, por text, abaixo integer, versao text, dados text)")
     return c
 
 
@@ -12860,6 +12862,15 @@ def treino_cfg_valida(j):
 _re_cena_versao = re.compile(r"^c1-[a-z0-9-]{1,80}$")
 
 
+def _treino_abaixo(j):
+    """18/11 (Eduardo, ligar já): {por, em} de quem ligou o reconhecimento abaixo da meta (forcar), ou None. Só o servidor grava
+    (treino_cfg_gravar); outro formato = None."""
+    a = j.get("abaixo") if isinstance(j, dict) else None
+    if not isinstance(a, dict) or not isinstance(a.get("em"), str) or not isinstance(a.get("por"), (str, type(None))):
+        return None
+    return {"por": (a.get("por") or "")[:100] or None, "em": a["em"][:40]}
+
+
 def _treino_cfg_escreve(v):
     with estado_lock:
         db = estado_db()
@@ -12890,16 +12901,16 @@ def treino_cfg():
                 j = json.loads(r[0])
                 v = treino_cfg_valida(j)
                 if v is not None:
-                    v = {**v, "por": j.get("por"), "em": j.get("em")}
+                    v = {**v, "por": j.get("por"), "em": j.get("em"), "abaixo": _treino_abaixo(j) if v["ponto"] == "ligada" else None}
     except Exception:
         v = _treino_cfg["v"]
-    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None)
+    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None)
     # 18/11 (Eduardo): o "Ligada" gravado antes desta versão não comandava nada. Sem um modelo congelado que passou no critério,
     # Ligada vira Só medir sozinho (e fica no log); a exposição ainda não tem medida: Ligada vira Só medir também.
     mig = []
     if v["ponto"] == "ligada" and cena_modelo_existe(v.get("ponto_versao")) is False:
         mig.append(("ponto", v.get("ponto_versao")))
-        v = dict(v, ponto="medir", ponto_versao=None)
+        v = dict(v, ponto="medir", ponto_versao=None, abaixo=None)
     if v["exposicao"] == "ligada":
         mig.append(("exposicao", None))
         v = dict(v, exposicao="medir")
@@ -12917,9 +12928,14 @@ def treino_cfg():
 
 
 def treino_cfg_gravar(corpo, quem):
-    """POST /treino/config {ponto?, exposicao?}: muda uma das análises (ou as duas). por = usuário da sessão. -> (status, resposta)"""
-    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"ponto", "exposicao"}:
+    """POST /treino/config {ponto?, exposicao?, forcar?}: muda uma das análises (ou as duas). por = usuário da sessão (a rota
+    exige configuracao.u). forcar (só com ponto "ligada"): liga o reconhecimento mesmo abaixo do critério (Eduardo, 18/11),
+    com a linha no liga_log. -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"ponto", "exposicao", "forcar"}:
         return 400, {"ok": False, "error": "campo"}
+    forcar = corpo.get("forcar", False)
+    if not isinstance(forcar, bool) or (forcar and corpo.get("ponto") != "ligada"):
+        return 400, {"ok": False, "error": "valor"}
     de = treino_cfg()
     novo = {"ponto": corpo.get("ponto", de["ponto"]), "exposicao": corpo.get("exposicao", de["exposicao"])}
     if treino_cfg_valida(novo) is None:
@@ -12927,24 +12943,90 @@ def treino_cfg_gravar(corpo, quem):
     if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 18/11: ainda não existe a medida da exposição
         return 409, {"ok": False, "error": "criterio", "falta": [{"k": "exposicao_sem_modelo", "tem": 0, "precisa": 1}]}
     pv = de.get("ponto_versao") if novo["ponto"] == "ligada" else None
+    abaixo = de.get("abaixo") if novo["ponto"] == "ligada" else None
     if corpo.get("ponto") == "ligada":
-        # 18/11 (D4, D10): Ligada só acima do critério, com os rótulos de agora congelados (ligada -> ligada = recongelar)
+        # 18/11 (D4, D10): Ligada acima do critério, com os rótulos de agora congelados (ligada -> ligada = recongelar).
+        # 18/11 (Eduardo, ligar já): com forcar, liga abaixo do critério, desde que haja gramado e outra classe para comparar.
         crit, base_ok = cena_criterio_agora()
-        if not crit.get("passa"):
+        passa = bool(crit.get("passa"))
+        if not passa and not forcar:
             return 409, {"ok": False, "error": "criterio", "falta": crit.get("falta") or []}
-        pv = cena_congelar(quem, base_ok, de.get("ponto_versao") if de["ponto"] == "ligada" else None)
+        if not passa:
+            if base_ok is None:                       # sem numpy: não há como medir nem classificar
+                return 409, {"ok": False, "error": "criterio", "falta": crit.get("falta") or []}
+            falta_rot = cena_forcar_falta(base_ok)
+            if falta_rot:
+                return 409, {"ok": False, "error": "rotulos", "falta": falta_rot}
+        if (de["ponto"] == "ligada" and base_ok is not None and base_ok["versao"] == de.get("ponto_versao")
+                and bool(de.get("abaixo")) == (not passa) and novo["exposicao"] == de["exposicao"]):
+            # revisão de segurança: Ligada de novo com a mesma versão congelada e a mesma situação: nada muda, nada no liga_log
+            r = {"ok": True, "analise": {"ponto": de["ponto"], "exposicao": de["exposicao"]}, "por": de.get("por"), "em": de.get("em"),
+                 "abaixo": de.get("abaixo"), "ponto_versao": de.get("ponto_versao"), "igual": True,
+                 "congelados": cena_congelados(de.get("ponto_versao"))}
+            if not cena_modelo_ok()[0]:
+                r["aviso"] = "sem_modelo"
+            return 200, r
+        antes = {}
+        pv = cena_congelar(quem, base_ok, de.get("ponto_versao") if de["ponto"] == "ligada" else None, limpar=False, antes=antes)
         if not pv:                                    # rótulo novo entre a medida e o congelamento: mede de novo
             return 409, {"ok": False, "error": "criterio", "falta": [{"k": "versao_mudou", "tem": 0, "precisa": 1}]}
-    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": _iso()}
-    _treino_cfg_escreve(v)
+    em_v = _iso()
+    if corpo.get("ponto") == "ligada":
+        abaixo = None if passa else {"por": str(quem or "")[:100] or None, "em": em_v}
+    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": em_v, "abaixo": abaixo}
+    liga = corpo.get("ponto") == "ligada"
+    try:
+        _treino_cfg_escreve(v)
+    except Exception:
+        if liga:
+            _treino_desfaz(None, pv, antes)           # o config/treino não mudou: só a versão congelada volta
+        raise
+    if liga:
+        # revisão: a linha de auditoria só depois do Ligada gravado; sem a linha, o interruptor e a tabela modelo voltam ao que
+        # eram (sem log, não liga). A retenção (apagar as outras versões) só depois da linha gravada.
+        try:
+            cena_liga_log(quem, v["em"], pv, crit, base_ok, not passa)
+        except Exception as ex:
+            print("  treino: liga_log não gravou (%s); o interruptor volta ao que era" % type(ex).__name__)
+            _treino_desfaz(de, pv, antes)
+            return 500, {"ok": False, "error": "auditoria"}
+        try:
+            cena_modelo_limpa(pv, de.get("ponto_versao") if de["ponto"] == "ligada" else None)
+        except Exception as ex:                       # retenção atrasada: a próxima vez que ligar limpa
+            print("  treino: versões antigas do reconhecimento não apagadas agora (%s)" % type(ex).__name__)
     _treino_cfg.update(t=time.time(), v=dict(v))
     _cena_base_t[0] = time.time()
-    print("  treino: análise do ponto %s -> %s%s, da exposição %s -> %s · por %s" % (de["ponto"], v["ponto"], " (%s)" % pv if pv else "",
-                                                                                    de["exposicao"], v["exposicao"], v["por"] or "?"))
-    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"]}
+    print("  treino: análise do ponto %s -> %s%s%s, da exposição %s -> %s · por %s" % (
+        de["ponto"], v["ponto"], " (%s)" % pv if pv else "", " ABAIXO DA META" if abaixo and corpo.get("ponto") == "ligada" else "",
+        de["exposicao"], v["exposicao"], v["por"] or "?"))
+    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"], "abaixo": abaixo,
+         "congelados": cena_congelados(pv) if v["ponto"] == "ligada" else None}
     if pv:
         r["ponto_versao"] = pv
+    if v["ponto"] == "ligada" and not cena_modelo_ok()[0]:
+        r["aviso"] = "sem_modelo"                     # gravou, mas nada é reconhecido até o modelo ser instalado (falha fechada)
     return 200, r
+
+
+def _treino_desfaz(de, pv, antes):
+    """Desfaz um Ligada que não ficou: o config/treino volta ao de antes (de; None = não chegou a mudar) e a versão congelada
+    volta como estava (antes["linha"]). Se o próprio desfazer falhar, um aviso claro no console (sem dado de visitante)."""
+    falhou = []
+    if de is not None:
+        try:
+            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo")})
+            _treino_cfg.update(t=time.time(), v=dict(de))
+        except Exception as ex:
+            _treino_cfg.update(t=0.0)
+            falhou.append("interruptor (%s)" % type(ex).__name__)
+    try:
+        cena_modelo_desfaz(pv, (antes or {}).get("linha"))
+        _cena_congelados.clear()
+    except Exception as ex:
+        falhou.append("versão congelada %s (%s)" % (pv, type(ex).__name__))
+    if falhou:
+        print("  ATENÇÃO treino: o Ligada sem auditoria NÃO foi desfeito por completo: %s. Confira Treino da IA › Medição e "
+              "ponha o reconhecimento em Só medir" % "; ".join(falhou))
 
 
 def treino_status():
@@ -12977,7 +13059,8 @@ def treino_status():
 # vetor de foto sem rótulo some em CENA_VET_DIAS e a linha em CENA_DIAS. Interruptor: config/treino.ponto
 #   desligada  nada roda (o filho nem abre); o Checkout fica sem fundos de IA (D1)
 #   medir      classifica e mostra na aba Medição; o Checkout fica sem fundos de IA
-#   ligada     só com o critério (cena_criterio) e com os rótulos CONGELADOS no momento de ligar (D10, tabela modelo)
+#   ligada     com o critério (cena_criterio) ou abaixo dele com forcar (configuracao.u, liga_log), sempre com os rótulos
+#              CONGELADOS no momento de ligar (D10, tabela modelo)
 # Locks: cena_lock nunca junto do sess_lock; quem está com o sess_lock só lê cena_mem (dict trocado por item) e cena_pend
 # (mexido só com o sess_lock). treino_cfg_mem() nunca abre banco.
 CENA_DB = os.path.join(HOME, "ponto", "cena.db")
@@ -13063,9 +13146,22 @@ def cena_sha_confere(sha):
             if r and r[0] == sha:
                 return False
             mudou = r is not None
+            vazias = []
             if mudou:
                 db.execute("update cena set vet = null, rotulo = null, conf = null, g = 0, versao = null")
                 db.execute("delete from modelo")      # revisão: o conjunto congelado era do modelo velho; Ligada passa pelo critério de novo
+            else:
+                # 18/11 (revisão do ligar já): primeiro modelo instalado. Versão congelada sem modelo (params.sha vazio) ou sem
+                # nenhuma foto não reconhece nada: sai, e o Ligada dela vira Só medir pela migração do treino_cfg (religar)
+                for ver, rot, par in db.execute("select versao, rotulos, params from modelo").fetchall():
+                    try:
+                        vazia = not json.loads(rot or "[]") or not (json.loads(par or "{}") or {}).get("sha")
+                    except ValueError:
+                        vazia = True
+                    if vazia:
+                        vazias.append(ver)
+                for ver in vazias:
+                    db.execute("delete from modelo where versao = ?", (ver,))
             db.execute("insert into meta values ('sha', ?) on conflict(k) do update set v = excluded.v", (sha,))
             db.commit()
         finally:
@@ -13082,6 +13178,16 @@ def cena_sha_confere(sha):
             treino_cfg()                              # sem modelo congelado, Ligada vira Só medir na hora (migração, com linha no log)
         except Exception as ex:
             print("  cena: interruptor não relido depois da troca do modelo (%s)" % str(ex)[:80])
+    elif vazias:
+        with _cena_cache_lock:
+            _cena_base.clear()
+        _cena_congelados.clear()
+        print("  cena: primeiro modelo instalado; %d versão(ões) congelada(s) sem modelo ou sem fotos apagada(s): ligue de novo" % len(vazias))
+        _treino_cfg["t"] = 0.0
+        try:
+            treino_cfg()                              # o Ligada dela vira Só medir (migração, com linha no log; o abaixo sai)
+        except Exception as ex:
+            print("  cena: interruptor não relido depois do primeiro modelo (%s)" % str(ex)[:80])
     return mudou
 
 
@@ -13089,7 +13195,7 @@ def treino_cfg_mem():
     """O último interruptor lido (sem abrir o banco): para quem está com o sess_lock na mão. Atualizado a cada 3 s pelo
     treino_cfg_loop."""
     v = _treino_cfg["v"]
-    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None)
+    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None)
 
 
 def treino_cfg_loop():
@@ -13431,7 +13537,8 @@ def cena_base(modo="medir"):
     base = {"versao": lv if modo == "ligada" else _cena_versao([(p, CENA_CLASSES[k]) for p, k in zip(ps, y)]), "modo": modo,
             "X": np.stack(X).astype(np.float32) if X else np.zeros((0, 512), np.float32), "y": np.array(y, dtype=np.int32),
             "pids": ps, "cards": cards, "dias": dias, "fotografos": quem, "verde": verde, "sinais": sinais, "em": ems, "prev0": prev0,
-            "vetos": vetos, "sem_vetor": sem, "total": len(rot)}
+            "vetos": vetos, "sem_vetor": sem, "total": len(rot),
+            "rot_n": dict(collections.Counter(x[1] for x in rot[:CENA_MEDIDA_MAX]))}   # marcados por classe, com ou sem vetor
     with _cena_cache_lock:
         _cena_base[chave] = {"t": agora, "base": base}
         if len(_cena_base) > 6:
@@ -13851,7 +13958,11 @@ def cena_medida(metodo="sessao", forcar=False):
             c = _cena_med[(base["versao"], metodo)]
     r = dict(c["r"])
     r["criterio"] = _cena_crit["r"] if _cena_crit.get("versao") == r.get("versao") and _cena_crit.get("r") else {"passa": False, "falta": []}
-    r["ligada_versao"] = treino_cfg_mem().get("ponto_versao") if treino_cfg_mem().get("ponto") == "ligada" else None
+    cfg = treino_cfg_mem()
+    r["ligada_versao"] = cfg.get("ponto_versao") if cfg.get("ponto") == "ligada" else None
+    r["ligada_abaixo"] = cfg.get("abaixo") if cfg.get("ponto") == "ligada" else None   # 18/11: ligado abaixo da meta {por, em}
+    r["modelo_ok"] = bool(cena_modelo_ok()[0])          # False: modelo não instalado, nada é reconhecido
+    r["congelados"] = cena_congelados(r["ligada_versao"]) if r["ligada_versao"] else None
     return r
 
 
@@ -13966,10 +14077,12 @@ def cena_criterio_agora():
     return (_cena_crit.get("r") if _cena_crit.get("versao") == base["versao"] else None) or {"passa": False, "falta": []}, base
 
 
-def cena_congelar(quem, base=None, anterior=None):
+def cena_congelar(quem, base=None, anterior=None, limpar=True, antes=None):
     """Liga: grava os rótulos (pid, ponto, card, dia, fotógrafo, em) da base que passou no critério (a mesma que foi medida) na
     tabela modelo. 18/11 (revisão de segurança): se os rótulos mudaram entre a medida e o congelamento, None (o POST responde
-    409). Retenção: ficam só a versão ligada agora e a anterior (anterior). -> versão ou None."""
+    409). Retenção: ficam só a versão ligada agora e a anterior (anterior). -> versão ou None.
+    18/11 (revisão do ligar já): limpar=False deixa a retenção para depois da auditoria (cena_modelo_limpa); antes (dict)
+    recebe em "linha" o (por, em) que a versão já tinha, ou None se ela não existia (para cena_modelo_desfaz)."""
     atual = cena_base("medir")
     base = base or atual
     if base is None or atual is None or atual["versao"] != base["versao"]:
@@ -13979,14 +14092,114 @@ def cena_congelar(quem, base=None, anterior=None):
     with cena_db_lock:
         db = cena_db()
         try:
+            if isinstance(antes, dict):
+                antes["linha"] = db.execute("select por, em from modelo where versao = ?", (base["versao"],)).fetchone()
             db.execute("insert into modelo values (?,?,?,?,?) on conflict(versao) do update set por = excluded.por, em = excluded.em",
                        (base["versao"], json.dumps(rot), json.dumps(params), str(quem or "")[:100] or None, _iso()))
-            fica = [base["versao"]] + ([anterior] if anterior and anterior != base["versao"] else [])
+            db.commit()
+        finally:
+            db.close()
+    if limpar:
+        cena_modelo_limpa(base["versao"], anterior)
+    return base["versao"]
+
+
+def cena_modelo_limpa(versao, anterior=None):
+    """Retenção da tabela modelo: ficam só a versão ligada agora e a anterior."""
+    fica = [versao] + ([anterior] if anterior and anterior != versao else [])
+    with cena_db_lock:
+        db = cena_db()
+        try:
             db.execute("delete from modelo where versao not in (%s)" % ",".join("?" * len(fica)), fica)
             db.commit()
         finally:
             db.close()
-    return base["versao"]
+
+
+def cena_modelo_desfaz(versao, linha):
+    """Desfaz o cena_congelar(limpar=False) de um Ligada que não ficou: versão nova sai; versão que já existia volta ao por/em."""
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            if linha is None:
+                db.execute("delete from modelo where versao = ?", (versao,))
+            else:
+                db.execute("update modelo set por = ?, em = ? where versao = ?", (linha[0], linha[1], versao))
+            db.commit()
+        finally:
+            db.close()
+
+
+def cena_forcar_falta(base):
+    """18/11 (Eduardo, ligar já): ligar abaixo do critério exige com o que comparar: fotos de gramado e de pelo menos uma outra
+    classe no conjunto que vai ser congelado (rótulos com vetor; só gramado faria tudo virar gramado). Sem o modelo instalado e
+    sem nenhum vetor, contam os rótulos marcados: grava, mas nada é reconhecido (falha fechada) até instalar e religar.
+    -> [] ou [{k, tem, precisa}]"""
+    lidas = cena_modelo_ok()[0] or len(base["y"]) > 0
+    n = collections.Counter(CENA_CLASSES[k] for k in base["y"]) if lidas else collections.Counter(base.get("rot_n") or {})
+    g = n.get("gramado", 0)
+    o = sum(v for c, v in n.items() if c != "gramado")
+    suf = "_lidas" if lidas else ""
+    falta = []
+    if g < 1:
+        falta.append({"k": "rot_gramado" + suf, "tem": g, "precisa": 1})
+    if o < 1:
+        falta.append({"k": "rot_outra" + suf, "tem": o, "precisa": 1})
+    return falta
+
+
+def cena_liga_log(quem, em, versao, crit, base, abaixo):
+    """Auditoria de cada Ligada do ponto (no critério ou abaixo dele, forcar): quem, quando, a versão congelada, o acerto e o
+    que faltava por classe naquele momento. treino.db (vai no backup), tabela liga_log, só acrescenta; nenhuma foto, só números.
+    Uma linha no console também (sem dado de cliente)."""
+    with _cena_cache_lock:
+        ms = (_cena_med.get((base["versao"], "sessao")) or {}).get("r") or {}
+        mp = (_cena_med.get((base["versao"], "prospectivo")) or {}).get("r") or {}
+    okm = bool(cena_modelo_ok()[0])
+    d = {"criterio_passa": not abaixo, "falta": crit.get("falta") or [], "rotulos": ms.get("rotulos"), "metas": dict(CENA_META),
+         "faltam": ms.get("faltam"), "acerto": ms.get("classe"), "gramado_base": ms.get("gramado_base"),
+         "prospectivo": mp.get("gramado_base"), "congelados": len(base["y"]), "sem_vetor": base.get("sem_vetor", 0), "modelo_ok": okm}
+    with treino_lock:
+        db = treino_db()
+        try:
+            db.execute("insert into liga_log values (?,?,?,?,?)", (em, str(quem or "")[:100] or None, 1 if abaixo else 0, versao,
+                                                                   json.dumps(d, ensure_ascii=False)))
+            db.commit()
+        finally:
+            db.close()
+    gb = ms.get("gramado_base") or {}
+    pct = lambda x: "-" if x is None else "%.1f%%" % (100 * x)
+    print("  treino: reconhecer o ponto LIGADO%s por %s (%s) · gramado: precisão %s, cobertura %s · faltam %s%s" % (
+        " ABAIXO DA META" if abaixo else "", str(quem or "?")[:100], versao, pct(gb.get("precisao")), pct(gb.get("cobertura")),
+        ", ".join("%s %d" % (c, f) for c, f in (ms.get("faltam") or {}).items() if f) or "nada",
+        "" if okm else " · modelo não instalado: nada é reconhecido"))
+
+
+_cena_congelados = {}                      # versão -> (t, quantas fotos congeladas)
+
+
+def cena_congelados(versao):
+    """Quantas fotos estão no conjunto congelado da versão ligada (None sem versão ou sem leitura). Cache de 30 s."""
+    if not versao:
+        return None
+    c = _cena_congelados.get(versao)
+    if c and time.time() - c[0] < 30:
+        return c[1]
+    n = None
+    try:
+        if os.path.exists(CENA_DB):
+            with cena_db_lock:
+                db = cena_db()
+                try:
+                    r = db.execute("select rotulos from modelo where versao = ?", (versao,)).fetchone()
+                finally:
+                    db.close()
+            n = len(json.loads(r[0] or "[]")) if r else 0
+    except Exception:
+        return None
+    _cena_congelados.clear()
+    _cena_congelados[versao] = (time.time(), n)
+    return n
 
 
 def cena_modelo_existe(versao):
@@ -14022,6 +14235,9 @@ def cena_status():
     return {"v": 1, "pronto": bool(vivo and c["carregado"] and not erro), "erro": erro, "provedor": c["provedor"], "modelo": CENA_NOME,
             "versao": base["versao"] if base else None,
             "ligada_versao": cfg.get("ponto_versao") if cfg.get("ponto") == "ligada" else None,
+            "abaixo": cfg.get("abaixo") if cfg.get("ponto") == "ligada" else None,     # 18/11: ligado abaixo da meta {por, em}
+            "congelados": cena_congelados(cfg.get("ponto_versao")) if cfg.get("ponto") == "ligada" else None,   # 0 = nada reconhecido
+            "aviso": "sem_modelo" if erro == "sem_modelo" else None,      # código; o texto é da tela
             "fila": fila, "feitas_hoje": c["feitas_hoje"] if c["feitas_dia"] == hoje else 0,
             "ms_medio": int(c["ms_total"] / c["ms_n"]) if c["ms_n"] else None,
             "criterio_passa": bool(_cena_crit.get("passa") and base and _cena_crit.get("versao") == base["versao"])}
@@ -15827,12 +16043,13 @@ class H(BaseHTTPRequestHandler):
 
     def treino_post(self, path):
         """16/11: POST /treino/rotulo (qualidade.u) e /treino/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
-        (conferido no autoriza), 120 por minuto por pessoa e corpo até 4 KB. O console nunca imprime o corpo."""
+        (conferido no autoriza), 120 por minuto por pessoa nas marcações e 6 no interruptor, corpo até 4 KB. O console nunca imprime o corpo."""
         if not self.origem_local():
             return self.js({"ok": False, "error": "origem"}, 403)
         eu = self.sessao() or {}
         quem = eu.get("usuario") or ""
-        if not limite_ok("u:" + quem, "treino", 120):
+        # 18/11 (revisão de segurança): o interruptor tem limite próprio (6 por minuto por pessoa), separado das marcações
+        if not (limite_ok("u:" + quem, "treino", 120) if path == "/treino/rotulo" else limite_ok("u:" + quem, "treino_cfg", 6)):
             return self.js({"ok": False, "error": "limite"}, 429)
         body, err = self.corpo(4096)
         if err:

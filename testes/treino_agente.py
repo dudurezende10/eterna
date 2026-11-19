@@ -226,6 +226,61 @@ try:
     ok(st == 409 and r.get("error") == "criterio" and r.get("falta") and m.treino_cfg()["ponto"] == "medir", "Ligada abaixo do critério: 409: %s %r" % (st, r))
     st, r = pede("GET", "/treino/amostra?dia=%s&modo=duvidas&n=10" % DIA, cookie=so_ver)
     ok(st == 200 and len(r.get("itens") or []) == 10, "modo duvidas em Só medir: %s" % st)
+    # 18/11 (Eduardo, ligar já): forcar liga abaixo do critério. Aqui sem o modelo instalado e sem vetor: contam as marcações.
+    # Revisão de segurança: o interruptor tem limite próprio de 6 por minuto por pessoa (o 7º é 429, antes de olhar o corpo)
+    m._janelas.clear()
+    lim = [pede("POST", "/treino/config", {"ponto": "medir", "forcar": True}, cookie=sup)[0] for _ in range(7)]
+    ok(lim == [400] * 6 + [429], "interruptor: 6 por minuto por pessoa: %r" % lim)
+    ok(pede("POST", "/treino/rotulo", dict(bom, pid="ag_" + "f" * 12), cookie=sup)[0] == 404, "o limite do interruptor não trava as marcações")
+    m._janelas.clear()
+    for c in ({"ponto": "medir", "forcar": True}, {"ponto": "ligada", "forcar": "sim"}, {"exposicao": "medir", "forcar": True}, {"forcar": True}):
+        ok(pede("POST", "/treino/config", c, cookie=sup)[0] == 400, "forcar recusa %r" % c)
+    ok(pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=val)[0] == 403
+       and pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=so_ver)[0] == 403, "forcar sem configuracao.u: 403")
+    m._janelas.clear()
+    real_rot = m.cena_rotulos
+    m.cena_rotulos = lambda: [x for x in real_rot() if x[1] != "gramado"]
+    m._cena_base_t[0] = time.time()
+    st, r = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup)
+    m.cena_rotulos = real_rot
+    m._cena_base_t[0] = time.time()
+    m._treino_cfg["t"] = 0.0
+    ok(st == 409 and r.get("error") == "rotulos" and [f["k"] for f in r.get("falta") or []] == ["rot_gramado"] and m.treino_cfg()["ponto"] == "medir",
+       "forcar sem foto de gramado marcada: 409 rotulos: %s %r" % (st, r))
+    st, r = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup)
+    m._treino_cfg["t"] = 0.0
+    cf = m.treino_cfg()
+    ok(st == 200 and r.get("abaixo", {}).get("por") == "supervisora-treino" and r.get("aviso") == "sem_modelo" and r.get("ponto_versao")
+       and cf["ponto"] == "ligada" and cf["ponto_versao"] == r["ponto_versao"] and cf["abaixo"]["por"] == "supervisora-treino",
+       "forcar sem modelo grava Ligada (nada é reconhecido): %s %r %r" % (st, r, cf))
+    st, s3 = pede("GET", "/status", cookie=adm)
+    mp3 = (s3.get("treino") or {}).get("modelo_ponto") or {}
+    ok(mp3.get("erro") == "sem_modelo" and mp3.get("aviso") == "sem_modelo" and mp3.get("congelados") == 0 and (mp3.get("abaixo") or {}).get("por") == "supervisora-treino"
+       and mp3.get("ligada_versao") == r.get("ponto_versao"), "/status: modelo não instalado, nada é reconhecido, e quem ligou abaixo da meta: %r" % mp3)
+    tdb = sqlite3.connect(m.TREINO_DB)
+    ll = tdb.execute("select por, abaixo, versao, dados from liga_log").fetchall()
+    tdb.close()
+    d0 = json.loads(ll[0][3]) if ll else {}
+    ok(len(ll) == 1 and ll[0][:3] == ("supervisora-treino", 1, r.get("ponto_versao")) and d0.get("modelo_ok") is False and d0.get("congelados") == 0
+       and d0.get("faltam", {}).get("gramado") == 150 and d0.get("criterio_passa") is False, "liga_log com quem, quando e quanto faltava: %r" % (ll,))
+    m._treino_cfg["t"] = 0.0
+    ok(m.treino_cfg()["ponto"] == "ligada", "Ligada forçado com a versão congelada (vazia) não é rebaixado pela migração")
+    # revisão de segurança: Ligada de novo com a mesma versão e a mesma situação não muda nada nem grava no liga_log
+    st, rg = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup)
+    tdb = sqlite3.connect(m.TREINO_DB)
+    n_ll = tdb.execute("select count(*) from liga_log").fetchone()[0]
+    tdb.close()
+    m._treino_cfg["t"] = 0.0
+    ok(st == 200 and rg.get("igual") is True and n_ll == 1 and m.treino_cfg()["em"] == cf["em"], "religar igual: 200 sem nova linha: %s %r %d" % (st, rg, n_ll))
+    # revisão: o primeiro modelo instalado (primeiro SHA) tira a versão congelada sem modelo: Ligada vira Só medir, sem o selo
+    ok(m.cena_sha_confere("a" * 64) is False, "primeiro SHA: nada a apagar dos vetores")
+    m._treino_cfg["t"] = 0.0
+    cf2 = m.treino_cfg()
+    cdb = sqlite3.connect(m.CENA_DB)
+    n_mod = cdb.execute("select count(*) from modelo").fetchone()[0]
+    cdb.close()
+    ok(cf2["ponto"] == "medir" and cf2["abaixo"] is None and cf2["por"] == "servidor" and n_mod == 0 and m.cena_status()["congelados"] is None,
+       "primeiro modelo instalado: o Ligada de 0 fotos volta para Só medir sem o abaixo: %r %d" % (cf2, n_mod))
     st, s2 = pede("GET", "/status")
     ok("treino" not in s2, "/status anônimo sem o treino")
 
