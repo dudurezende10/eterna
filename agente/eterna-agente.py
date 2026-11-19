@@ -12961,38 +12961,72 @@ def treino_cfg_gravar(corpo, quem):
                 and bool(de.get("abaixo")) == (not passa) and novo["exposicao"] == de["exposicao"]):
             # revisão de segurança: Ligada de novo com a mesma versão congelada e a mesma situação: nada muda, nada no liga_log
             r = {"ok": True, "analise": {"ponto": de["ponto"], "exposicao": de["exposicao"]}, "por": de.get("por"), "em": de.get("em"),
-                 "abaixo": de.get("abaixo"), "ponto_versao": de.get("ponto_versao"), "igual": True}
+                 "abaixo": de.get("abaixo"), "ponto_versao": de.get("ponto_versao"), "igual": True,
+                 "congelados": cena_congelados(de.get("ponto_versao"))}
             if not cena_modelo_ok()[0]:
                 r["aviso"] = "sem_modelo"
             return 200, r
-        pv = cena_congelar(quem, base_ok, de.get("ponto_versao") if de["ponto"] == "ligada" else None)
+        antes = {}
+        pv = cena_congelar(quem, base_ok, de.get("ponto_versao") if de["ponto"] == "ligada" else None, limpar=False, antes=antes)
         if not pv:                                    # rótulo novo entre a medida e o congelamento: mede de novo
             return 409, {"ok": False, "error": "criterio", "falta": [{"k": "versao_mudou", "tem": 0, "precisa": 1}]}
     em_v = _iso()
     if corpo.get("ponto") == "ligada":
         abaixo = None if passa else {"por": str(quem or "")[:100] or None, "em": em_v}
     v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": em_v, "abaixo": abaixo}
-    _treino_cfg_escreve(v)
-    if corpo.get("ponto") == "ligada":
-        # revisão: a linha de auditoria só depois do Ligada gravado; sem a linha, o interruptor volta ao que era (sem log, não liga)
+    liga = corpo.get("ponto") == "ligada"
+    try:
+        _treino_cfg_escreve(v)
+    except Exception:
+        if liga:
+            _treino_desfaz(None, pv, antes)           # o config/treino não mudou: só a versão congelada volta
+        raise
+    if liga:
+        # revisão: a linha de auditoria só depois do Ligada gravado; sem a linha, o interruptor e a tabela modelo voltam ao que
+        # eram (sem log, não liga). A retenção (apagar as outras versões) só depois da linha gravada.
         try:
             cena_liga_log(quem, v["em"], pv, crit, base_ok, not passa)
         except Exception as ex:
             print("  treino: liga_log não gravou (%s); o interruptor volta ao que era" % type(ex).__name__)
-            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo")})
-            _treino_cfg.update(t=time.time(), v=dict(de))
+            _treino_desfaz(de, pv, antes)
             return 500, {"ok": False, "error": "auditoria"}
+        try:
+            cena_modelo_limpa(pv, de.get("ponto_versao") if de["ponto"] == "ligada" else None)
+        except Exception as ex:                       # retenção atrasada: a próxima vez que ligar limpa
+            print("  treino: versões antigas do reconhecimento não apagadas agora (%s)" % type(ex).__name__)
     _treino_cfg.update(t=time.time(), v=dict(v))
     _cena_base_t[0] = time.time()
     print("  treino: análise do ponto %s -> %s%s%s, da exposição %s -> %s · por %s" % (
         de["ponto"], v["ponto"], " (%s)" % pv if pv else "", " ABAIXO DA META" if abaixo and corpo.get("ponto") == "ligada" else "",
         de["exposicao"], v["exposicao"], v["por"] or "?"))
-    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"], "abaixo": abaixo}
+    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"], "abaixo": abaixo,
+         "congelados": cena_congelados(pv) if v["ponto"] == "ligada" else None}
     if pv:
         r["ponto_versao"] = pv
     if v["ponto"] == "ligada" and not cena_modelo_ok()[0]:
         r["aviso"] = "sem_modelo"                     # gravou, mas nada é reconhecido até o modelo ser instalado (falha fechada)
     return 200, r
+
+
+def _treino_desfaz(de, pv, antes):
+    """Desfaz um Ligada que não ficou: o config/treino volta ao de antes (de; None = não chegou a mudar) e a versão congelada
+    volta como estava (antes["linha"]). Se o próprio desfazer falhar, um aviso claro no console (sem dado de visitante)."""
+    falhou = []
+    if de is not None:
+        try:
+            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo")})
+            _treino_cfg.update(t=time.time(), v=dict(de))
+        except Exception as ex:
+            _treino_cfg.update(t=0.0)
+            falhou.append("interruptor (%s)" % type(ex).__name__)
+    try:
+        cena_modelo_desfaz(pv, (antes or {}).get("linha"))
+        _cena_congelados.clear()
+    except Exception as ex:
+        falhou.append("versão congelada %s (%s)" % (pv, type(ex).__name__))
+    if falhou:
+        print("  ATENÇÃO treino: o Ligada sem auditoria NÃO foi desfeito por completo: %s. Confira Treino da IA › Medição e "
+              "ponha o reconhecimento em Só medir" % "; ".join(falhou))
 
 
 def treino_status():
@@ -14043,10 +14077,12 @@ def cena_criterio_agora():
     return (_cena_crit.get("r") if _cena_crit.get("versao") == base["versao"] else None) or {"passa": False, "falta": []}, base
 
 
-def cena_congelar(quem, base=None, anterior=None):
+def cena_congelar(quem, base=None, anterior=None, limpar=True, antes=None):
     """Liga: grava os rótulos (pid, ponto, card, dia, fotógrafo, em) da base que passou no critério (a mesma que foi medida) na
     tabela modelo. 18/11 (revisão de segurança): se os rótulos mudaram entre a medida e o congelamento, None (o POST responde
-    409). Retenção: ficam só a versão ligada agora e a anterior (anterior). -> versão ou None."""
+    409). Retenção: ficam só a versão ligada agora e a anterior (anterior). -> versão ou None.
+    18/11 (revisão do ligar já): limpar=False deixa a retenção para depois da auditoria (cena_modelo_limpa); antes (dict)
+    recebe em "linha" o (por, em) que a versão já tinha, ou None se ela não existia (para cena_modelo_desfaz)."""
     atual = cena_base("medir")
     base = base or atual
     if base is None or atual is None or atual["versao"] != base["versao"]:
@@ -14056,14 +14092,42 @@ def cena_congelar(quem, base=None, anterior=None):
     with cena_db_lock:
         db = cena_db()
         try:
+            if isinstance(antes, dict):
+                antes["linha"] = db.execute("select por, em from modelo where versao = ?", (base["versao"],)).fetchone()
             db.execute("insert into modelo values (?,?,?,?,?) on conflict(versao) do update set por = excluded.por, em = excluded.em",
                        (base["versao"], json.dumps(rot), json.dumps(params), str(quem or "")[:100] or None, _iso()))
-            fica = [base["versao"]] + ([anterior] if anterior and anterior != base["versao"] else [])
+            db.commit()
+        finally:
+            db.close()
+    if limpar:
+        cena_modelo_limpa(base["versao"], anterior)
+    return base["versao"]
+
+
+def cena_modelo_limpa(versao, anterior=None):
+    """Retenção da tabela modelo: ficam só a versão ligada agora e a anterior."""
+    fica = [versao] + ([anterior] if anterior and anterior != versao else [])
+    with cena_db_lock:
+        db = cena_db()
+        try:
             db.execute("delete from modelo where versao not in (%s)" % ",".join("?" * len(fica)), fica)
             db.commit()
         finally:
             db.close()
-    return base["versao"]
+
+
+def cena_modelo_desfaz(versao, linha):
+    """Desfaz o cena_congelar(limpar=False) de um Ligada que não ficou: versão nova sai; versão que já existia volta ao por/em."""
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            if linha is None:
+                db.execute("delete from modelo where versao = ?", (versao,))
+            else:
+                db.execute("update modelo set por = ?, em = ? where versao = ?", (linha[0], linha[1], versao))
+            db.commit()
+        finally:
+            db.close()
 
 
 def cena_forcar_falta(base):

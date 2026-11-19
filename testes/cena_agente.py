@@ -364,12 +364,44 @@ try:
     biblioteca(xa, fxa, HOJE)
     rotula(xa, "chute", "LPFORCA2", HOJE)
     espera(lambda: (m._cena_base_t.__setitem__(0, time.time()) or True) and m.cena_base("medir")["sem_vetor"] == 0 and m.cena_base("medir")["versao"] != FV2, 10)
+    def modelos_pe():
+        db_ = sqlite3.connect(m.CENA_DB)
+        try:
+            return sorted(db_.execute("select versao, por, em from modelo").fetchall())
+        finally:
+            db_.close()
+
+    mod_antes = modelos_pe()
     st, ra = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
     m.cena_liga_log = real_log
     cfa = m.treino_cfg_mem()
     m._treino_cfg["t"] = 0.0
     ok(st == 500 and ra.get("error") == "auditoria" and cfa["ponto_versao"] == FV2 and m.treino_cfg()["ponto_versao"] == FV2 and len(liga_log()) == 2,
        "sem a linha no liga_log o Ligada volta ao que era: %s %r %r" % (st, ra, m.treino_cfg()))
+    ok(modelos_pe() == mod_antes and len(mod_antes) == 2, "sem a linha no liga_log a tabela modelo fica idêntica (versão nova sai, a anterior fica): %r %r" % (mod_antes, modelos_pe()))
+    # versão que já existia: o desfazer devolve o por e o em dela
+    with m.cena_db_lock:
+        db_ = m.cena_db()
+        por0, em0 = db_.execute("select por, em from modelo where versao = ?", (FV2,)).fetchone()
+        db_.close()
+    db_ = sqlite3.connect(m.CENA_DB)
+    db_.execute("update modelo set por = 'outro', em = '2099-01-01' where versao = ?", (FV2,))
+    db_.commit()
+    db_.close()
+    m.cena_modelo_desfaz(FV2, (por0, em0))
+    ok([x for x in modelos_pe() if x[0] == FV2] == [(FV2, por0, em0)], "desfazer de versão que já existia volta o por e o em")
+    # se o próprio desfazer falhar: aviso no console e 500 auditoria do mesmo jeito
+    real_desf = m.cena_modelo_desfaz
+    m.cena_liga_log = lambda *a, **k: (_ for _ in ()).throw(OSError("teste"))
+    m.cena_modelo_desfaz = lambda *a, **k: (_ for _ in ()).throw(OSError("teste"))
+    st, rd = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfg)
+    m.cena_liga_log, m.cena_modelo_desfaz = real_log, real_desf
+    m._treino_cfg["t"] = 0.0
+    ok(st == 500 and rd.get("error") == "auditoria" and m.treino_cfg()["ponto_versao"] == FV2 and len(liga_log()) == 2,
+       "desfazer que falha: 500 auditoria e o interruptor de antes: %s %r" % (st, rd))
+    for v_, *_ in modelos_pe():
+        if v_ not in (FV, FV2):
+            real_desf(v_, None)
     # exposição muda sozinha: o selo do ponto fica; Só medir tira o selo
     m.treino_cfg_gravar({"exposicao": "medir"}, "adm")
     m._treino_cfg["t"] = 0.0

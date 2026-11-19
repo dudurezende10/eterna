@@ -1385,7 +1385,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
 .tr-med{gap:10px}.tr-med-tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.tile .v.tr-med-ver{font-size:13px;line-height:1.3;word-break:break-all;font-family:inherit;letter-spacing:0}
 .tr-med-sel{gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0}.tr-med-sel .seg{display:inline-flex;gap:6px}.tr-med-aviso{color:var(--warn)}
 .tr-med-faltas{margin:4px 0 8px 18px;padding:0}.tr-med-faltas li{margin:3px 0}.tr-med-falta{color:var(--bad);font-weight:600}
-.tr-med-forcar{gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}.tr-med-abaixo,.tr-med-sem-modelo{white-space:normal;margin:6px 0}
+.tr-med-forcar{gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}.tr-med-abaixo,.tr-med-sem-modelo,.tr-med-zero{white-space:normal;margin:6px 0}
 .tr-med-mx td.ok{background:color-mix(in srgb,var(--good) 22%,transparent)}.tr-med-mx td.erro{background:color-mix(in srgb,var(--bad) 22%,transparent)}.tr-med-mx th,.tr-med-mx td{text-align:center}
 .tr-med-err{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}.tr-med-e{display:flex;flex-direction:column;gap:6px}
 .tr-med-th{display:block;width:100%;aspect-ratio:3/2;background:#141311;border:0;border-radius:6px;padding:0;cursor:zoom-in;overflow:hidden}.tr-med-th img{width:100%;height:100%;object-fit:contain;display:block}
@@ -7540,30 +7540,37 @@ function trDesfazer(){if(!can('qualidade','u'))return;const t=state.train;const 
   const a=u.ant,q=(a&&a.qual)||{};const r={ponto:a&&a.ponto||null,nivel:q.nivel||null,motivos:(q.motivos||[]).slice(),duvida:!!(a&&a.duvida),obs:(a&&a.obs)||'',base:(t.docs[u.pid]||{}).em||null};
   trGravar(u.pid,trCorpo(u.pid,r));if(!a)t.docs[u.pid]=null;t.rasc[u.pid]=Object.assign({},r);t.j=u.j;toast(TE('tr_desfeito'));render();}
 // POST /treino/config (o interruptor e o Ligar mesmo assim) -> {r, j}
-async function trCfgPost(u,corpo){const r=await agFetch(u+'/treino/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpo)});return {r,j:await r.json().catch(()=>null)};}
+async function trCfgPost(u,corpo){const r=await agFetch(u+'/treino/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpo)});
+  if(r.status===429)toast(TE('tr_med_cfg_limite'));return {r,j:await r.json().catch(()=>null)};}
+// a resposta do POST traz a situação do ponto (versão ligada, abaixo da meta, fotos congeladas): o modelo_ponto segue sem esperar o /status
+function trCfgAplica(j){const tr=state.agent.treino||{};const lig=j.analise.ponto==='ligada';
+  const mp=Object.assign({},tr.modelo_ponto||{},{ligada_versao:lig?(j.ponto_versao||null):null,abaixo:lig?(j.abaixo||null):null,congelados:lig&&j.congelados!=null?j.congelados:null});
+  if(j.aviso==='sem_modelo')mp.erro='sem_modelo';
+  state.agent.treino=Object.assign({v:1,modelo_ponto:null,ajuste:null},tr,{analise:j.analise,modelo_ponto:mp});}
 async function trAnalise(k,v){const u=trAg();if(!u||!can('configuracao','u')||!['ponto','exposicao'].includes(k)||!TR_ANALISE.includes(v))return;
   const de=((state.agent.treino||{}).analise||{})[k];if(de===v)return;
   try{const {r,j}=await trCfgPost(u,{[k]:v});
-    if(r.ok&&j&&j.analise){state.agent.treino=Object.assign({v:1,modelo_ponto:null,ajuste:null},state.agent.treino||{},{analise:j.analise});auditLog('treino_analise','config/treino',[{campo:'analise.'+k,de:de||null,para:v}].concat(j.ponto_versao?[{campo:'ponto_versao',de:null,para:j.ponto_versao}]:[]));toast(TE('tr_analise_ok'));}
+    if(r.ok&&j&&j.analise){trCfgAplica(j);if(j.igual)toast(TE('tr_med_cfg_igual'));else{auditLog('treino_analise','config/treino',[{campo:'analise.'+k,de:de||null,para:v}].concat(j.ponto_versao?[{campo:'ponto_versao',de:null,para:j.ponto_versao}]:[]));toast(TE('tr_analise_ok'));}}
     else if(r.status===409&&j&&j.error==='criterio'){toast(TE(k==='exposicao'?'tr_an_expo_sem':'tr_an_criterio'));if(k==='ponto'){state.train.aba='medida';state.train.med.j=null;trMedida();}} // 18/11: o servidor confere o critério de novo
-    else toast(TE('tr_analise_erro'));}catch(e){toast(TE('tr_analise_erro'));}
+    else if(r.status!==429)toast(TE('tr_analise_erro'));}catch(e){toast(TE('tr_analise_erro'));}
   render();}
 const trPontoTxt=k=>TEk('tr_p_'+k,k);
 // 18/11 (Eduardo, ligar já): "Ligar mesmo assim" na Medição. Abaixo do critério, quem tem configuracao.u liga o reconhecimento
 // com forcar; o servidor congela as marcações de agora, grava quem ligou e o acerto daquele momento (liga_log) e responde 409
 // sem fotos de gramado e de outro ponto para comparar. Ligada -> ligada de novo = congelar as marcações novas (religar).
 async function trForcar(){const u=trAg();const m=state.train.med;if(!u||m.forcando)return;if(!can('configuracao','u')){toast(TE('tr_med_forcar_sem_perm'));return;}
-  if(!confirm(TE('tr_med_forcar_conf')))return;const tr=state.agent.treino||{};const de=(tr.analise||{}).ponto||null;
+  if(!confirm(TE('tr_med_forcar_conf')))return;const de=((state.agent.treino||{}).analise||{}).ponto||null;
   m.forcando=true;m.forcarAviso=null;render(); // o botão fica travado até a resposta
   try{const {r,j}=await trCfgPost(u,{ponto:'ligada',forcar:true});
-    if(r.ok&&j&&j.analise){const mp=Object.assign({},tr.modelo_ponto||{},{ligada_versao:j.ponto_versao||null,abaixo:j.abaixo||null});
-      state.agent.treino=Object.assign({v:1,modelo_ponto:null,ajuste:null},tr,{analise:j.analise,modelo_ponto:mp});
-      auditLog('treino_analise','config/treino',[{campo:'analise.ponto',de,para:'ligada'},{campo:'abaixo_da_meta',de:null,para:!!j.abaixo}].concat(j.ponto_versao?[{campo:'ponto_versao',de:null,para:j.ponto_versao}]:[]));
-      if(j.aviso==='sem_modelo')mp.erro='sem_modelo';toast(TE(j.aviso==='sem_modelo'?'tr_med_sem_modelo_selo':j.abaixo?'tr_med_forcar_ok':'tr_analise_ok'));state.train.med.j=null;trMedida();}
+    if(r.ok&&j&&j.analise){trCfgAplica(j);
+      if(j.igual)toast(TE('tr_med_cfg_igual')); // nada mudou no servidor: nada no auditLog
+      else{auditLog('treino_analise','config/treino',[{campo:'analise.ponto',de,para:'ligada'},{campo:'abaixo_da_meta',de:null,para:!!j.abaixo}].concat(j.ponto_versao?[{campo:'ponto_versao',de:null,para:j.ponto_versao}]:[]));
+        toast(TE(j.aviso==='sem_modelo'?'tr_med_sem_modelo_lig':j.abaixo?'tr_med_forcar_ok':'tr_analise_ok'));}
+      m.j=null;trMedida();}
     else if(r.status===403)toast(TE('tr_med_forcar_sem_perm'));
     else if(r.status===409&&j&&(j.error==='rotulos'||j.error==='criterio')){ // o que falta fica na própria Medição (texto puro)
-      m.forcarAviso={rotulos:j.error==='rotulos',itens:(Array.isArray(j.falta)?j.falta:[]).slice(0,20).map(trMedFaltaTxt)};toast(TE('tr_med_forcar_nao'));m.j=null;trMedida();}
-    else if(r.status===429)toast(TE('tr_med_forcar_limite'));
+      m.forcarAviso={rotulos:j.error==='rotulos',versao:m.j&&m.j.versao||null,itens:(Array.isArray(j.falta)?j.falta:[]).slice(0,20).map(trMedFaltaTxt)};toast(TE('tr_med_forcar_nao'));m.j=null;trMedida();}
+    else if(r.status===429){}
     else toast(TE('tr_analise_erro'));}catch(e){toast(TE('tr_analise_erro'));}
   m.forcando=false;render();}
 // 18/11 (regra 19): aba Medição. O servidor reconhece o ponto de cada foto (CLIP + vizinhos, só no servidor do ponto) e compara
@@ -7571,7 +7578,7 @@ async function trForcar(){const u=trAg();const m=state.train.med;if(!u||m.forcan
 const TR_MED_CLS=['gramado','arquibancada','trofeu','chute','outro'],TR_MED_SINAIS=['verde','flash','cadeiras','dourado'];
 async function trMedida(){const u=trAg();const m=state.train.med;if(!u||m.carregando)return;m.carregando=true;m.erro=null;if(state.view==='treino')render();
   try{const r=await agFetch(u+'/treino/medida?metodo='+encodeURIComponent(m.metodo));const j=r.ok?await r.json().catch(()=>null):null;
-    if(!j||j.v!==1)m.erro='tr_med_erro';else if(j.erro)m.erro=j.erro==='sem_numpy'?'tr_med_erro_modelo':'tr_med_erro';else m.j=j;}
+    if(!j||j.v!==1)m.erro='tr_med_erro';else if(j.erro)m.erro=j.erro==='sem_numpy'?'tr_med_erro_modelo':'tr_med_erro';else{if(m.forcarAviso&&m.forcarAviso.versao&&m.forcarAviso.versao!==j.versao)m.forcarAviso=null;m.j=j;}}
   catch(e){m.erro='tr_med_erro';}
   m.carregando=false;if(state.view==='treino')render();}
 const trMedPct=v=>v==null?'—':(100*v).toLocaleString(localeTela(),{maximumFractionDigits:1})+'%';
@@ -7589,10 +7596,11 @@ function vTreinoMedida(){const m=state.train.med;const mp=(state.agent.treino||{
   if(!trAg())return `<div class="panel"><div class="note">${TE('tr_sem_servidor')}</div></div>`;
   if(!m.j&&!m.carregando&&!m.erro)setTimeout(trMedida,0);const j=m.j;
   const semMod=(mp&&mp.erro==='sem_modelo')||(j&&j.modelo_ok===false);
-  const aviso=semMod?`<div class="row"><span class="pill bad tr-med-sem-modelo">${TE('tr_med_sem_modelo_selo')}</span></div><div class="note tr-med-aviso">${TE('tr_med_sem_modelo')}</div>`:mp&&mp.erro?`<div class="note tr-med-aviso">${TE('tr_med_erro_modelo')}</div>`:'';
+  const aviso=semMod&&an==='ligada'?`<div class="row"><span class="pill bad tr-med-sem-modelo">${TE('tr_med_sem_modelo_lig')}</span></div>`
+    :semMod?`<div class="row"><span class="pill bad tr-med-sem-modelo">${TE('tr_med_sem_modelo_selo')}</span></div><div class="note tr-med-aviso">${TE('tr_med_sem_modelo')}</div>`:mp&&mp.erro?`<div class="note tr-med-aviso">${TE('tr_med_erro_modelo')}</div>`:'';
   const ab=an==='ligada'?((mp?mp.abaixo:(j&&j.ligada_abaixo))||null):null; // 18/11: ligado abaixo da meta {por, em}; o /status vale quando existe
   const cong=an==='ligada'?(mp?mp.congelados:(j&&j.congelados)):null;
-  const zero=cong===0?`<div class="row"><span class="pill bad tr-med-zero">${TE('tr_med_zero')}</span></div>`:'';
+  const zero=cong===0&&!semMod?`<div class="row"><span class="pill bad tr-med-zero">${TE('tr_med_zero')}</span></div>`:'';
   const selo=ab?`<div class="row"><span class="pill warn tr-med-abaixo">${TE('tr_med_abaixo',esc(trMedQuem(ab.por)),esc(trMedQuando(ab.em)))}</span></div><div class="note">${TE('tr_med_abaixo_nota')}</div>`:'';
   const sit=`<div class="panel tr-med"><div class="head"><div><div class="eyebrow">${TE('tr_med_situacao')}</div><h2>${TE('tr_med_h')}</h2><div class="note">${TE('tr_med_nota')}</div></div>
     <div class="row"><span class="pill ${an==='ligada'?'good':an==='medir'?'neutral':'warn'}">${TEk('tr_an_'+an,an)}</span></div></div>${zero}${selo}${aviso}
@@ -7606,7 +7614,7 @@ function vTreinoMedida(){const m=state.train.med;const mp=(state.agent.treino||{
   if(!j)return sit+metodo+`<div class="panel"><div class="note">${m.erro?TE(m.erro):TE('tr_med_calculando')}</div></div>`;
   const cr=j.criterio||{passa:false,falta:[]};
   const lv=(mp?mp.ligada_versao:j.ligada_versao)||null;const fa=m.forcarAviso;
-  const forca=(!cr.passa&&can('configuracao','u')&&(an!=='ligada'||!lv||cong===0||(j.versao&&j.versao!==lv))?`<div class="row tr-med-forcar"><button class="btn danger" data-act="tr-forcar" ${m.forcando?'disabled':''}>${TE(an==='ligada'?'tr_med_religar_forcar':'tr_med_forcar')}</button><span class="note">${TE('tr_med_forcar_nota')}</span></div>`:'')
+  const forca=(!cr.passa&&can('configuracao','u')&&(an!=='ligada'||!lv||(cong===0&&!semMod)||(j.versao&&j.versao!==lv))?`<div class="row tr-med-forcar"><button class="btn danger" data-act="tr-forcar" ${m.forcando?'disabled':''}>${TE(an==='ligada'?'tr_med_religar_forcar':'tr_med_forcar')}</button><span class="note">${TE('tr_med_forcar_nota')}</span></div>`:'')
     +(fa?`<div class="note tr-med-aviso tr-med-forcar-aviso" role="alert">${fa.rotulos?esc(TE('tr_med_rotulos_falta')):esc(TE('tr_med_forcar_nao'))}<ul class="tr-med-faltas">${fa.itens.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'');
   const rot=`<div class="tablewrap"><table class="tr-med-rot"><thead><tr><th>${TE('tr_med_classe')}</th><th class="num">${TE('tr_med_n')}</th><th class="num">${TE('tr_med_meta')}</th><th class="num">${TE('tr_med_faltam')}</th></tr></thead><tbody>${TR_MED_CLS.map(c=>{const n=(j.rotulos||{})[c]||0,mt=(j.metas||{})[c]||0,f=(j.faltam||{})[c]||0;return `<tr><td>${trMedCls(c)}</td><td class="num">${fmtN(n)}</td><td class="num">${fmtN(mt)}</td><td class="num ${f?'tr-med-falta':''}">${fmtN(f)}</td></tr>`;}).join('')}</tbody></table></div>`;
   const crit=`<div class="panel tr-med"><h2>${TE('tr_med_criterio_h')}</h2>${cr.passa?`<div class="pill good">${TE('tr_med_criterio_ok')}</div>`:`<div class="note">${TE('tr_med_criterio_falta')}</div><ul class="tr-med-faltas">${(cr.falta||[]).map(f=>`<li data-k="${esc(f.k)}">${trMedFalta(f)}</li>`).join('')}</ul>${forca}`}
@@ -9537,7 +9545,9 @@ const EQ={
   tr_med_abaixo_nota:["Continua faltando o que está abaixo. Marcações novas só entram quando alguém ligar de novo.", "What is listed below is still missing. New labels only count after someone switches on again.", "Sigue faltando lo de abajo. Las marcas nuevas solo cuentan cuando alguien vuelva a activar.", "Ce qui est listé ci-dessous manque toujours. Les nouvelles étiquettes ne comptent qu'après une nouvelle activation.", "Was unten steht, fehlt weiterhin. Neue Markierungen zählen erst nach erneutem Einschalten."],
   tr_med_zero:["Ligado com 0 fotos: ligue de novo", "Switched on with 0 photos: switch on again", "Activado con 0 fotos: active de nuevo", "Activé avec 0 photo : réactivez", "Mit 0 Fotos eingeschaltet: erneut einschalten"],
   tr_med_forcar_nao:["Não ligou. Veja o que falta na Medição.", "Not switched on. See what is missing in Measurement.", "No se activó. Vea lo que falta en Medición.", "Non activé. Voyez ce qui manque dans Mesure.", "Nicht eingeschaltet. Was fehlt, steht unter Messung."],
-  tr_med_forcar_limite:["Muitas tentativas seguidas. Espere um minuto e tente de novo.", "Too many attempts in a row. Wait a minute and try again.", "Demasiados intentos seguidos. Espere un minuto e inténtelo de nuevo.", "Trop de tentatives d'affilée. Attendez une minute et réessayez.", "Zu viele Versuche hintereinander. Eine Minute warten und erneut versuchen."],
+  tr_med_cfg_limite:["Muitas mudanças seguidas, espere um minuto", "Too many changes in a row, wait a minute", "Demasiados cambios seguidos, espere un minuto", "Trop de changements d'affilée, attendez une minute", "Zu viele Änderungen hintereinander, eine Minute warten"],
+  tr_med_cfg_igual:["Nada mudou: já estava assim.", "Nothing changed: it was already like this.", "Nada cambió: ya estaba así.", "Rien n'a changé : c'était déjà ainsi.", "Nichts geändert: war schon so."],
+  tr_med_sem_modelo_lig:["Modelo não instalado: nada é reconhecido. Depois de instalar, ligue de novo", "Model not installed: nothing is recognised. After installing it, switch on again", "Modelo no instalado: no se reconoce nada. Después de instalarlo, active de nuevo", "Modèle non installé : rien n'est reconnu. Après l'installation, réactivez", "Modell nicht installiert: nichts wird erkannt. Nach der Installation erneut einschalten"],
   tr_med_sem_modelo_selo:["Modelo não instalado: nada é reconhecido", "Model not installed: nothing is recognised", "Modelo no instalado: no se reconoce nada", "Modèle non installé : rien n'est reconnu", "Modell nicht installiert: nichts wird erkannt"],
   tr_med_rotulos_falta:["Para ligar, o servidor precisa de fotos marcadas de gramado e de pelo menos um outro ponto:", "To switch on, the server needs labelled photos of the pitch and of at least one other spot:", "Para activar, el servidor necesita fotos marcadas de césped y de al menos otro punto:", "Pour activer, le serveur a besoin de photos étiquetées de la pelouse et d'au moins un autre point :", "Zum Einschalten braucht der Server markierte Fotos vom Rasen und von mindestens einem anderen Standort:"],
   tr_med_falta_rot_gramado:[(t,p)=>'fotos de gramado marcadas: '+t+' (precisa '+p+')',(t,p)=>'labelled pitch photos: '+t+' (needs '+p+')',(t,p)=>'fotos de césped marcadas: '+t+' (necesita '+p+')',(t,p)=>'photos de pelouse étiquetées : '+t+' (il en faut '+p+')',(t,p)=>'markierte Rasenfotos: '+t+' (braucht '+p+')'],
@@ -12316,7 +12326,7 @@ document.addEventListener('click',e=>{
       auditLog('treino_exportado','treino/outubro',[{campo:'linhas',de:null,para:rows.length}]);toast(TE('tr_exportados',rows.length));break;}
     case 'tr-aba':state.train.aba=['outubro','medida'].includes(d.a)?d.a:'marcar';render();if(state.train.aba==='marcar')trEnviar();if(state.train.aba==='medida')trMedida();break;
     case 'tr-med-metodo':{const m=state.train.med;const v=d.m==='prospectivo'?'prospectivo':'sessao';if(m.metodo!==v){m.metodo=v;m.j=null;trMedida();}render();break;}
-    case 'tr-med-calc':trMedida();break;
+    case 'tr-med-calc':state.train.med.forcarAviso=null;trMedida();break;
     case 'tr-med-ir':{const t=state.train;const pid=String(d.pid||'');if(!/^[0-9a-f]{6,40}$/.test(pid))break;t.aba='marcar';if(/^\d{4}-\d{2}-\d{2}$/.test(d.dia||''))t.dia=d.dia;render();trCarregar({marcadas:true,pid});break;}
     case 'tr-carregar':trCarregar();break;
     case 'tr-ponto':{const p=trAtual();if(!p)break;const r=trRasc(p.pid);r.ponto=r.ponto===d.p?null:d.p;render();break;}
