@@ -1,6 +1,6 @@
 # Plano final: montagem de IA feita no servidor (16/11/2026)
 
-Base lida: commit `2191342` (index.html, agente, docs, servidor/). Tempos e tamanhos abaixo são alvo ou estimativa, não medida, salvo quando digo de onde vêm. O que foi entregue na E1 e as diferenças em relação a este texto estão no fim ("E1: como ficou").
+Base lida: commit `2191342` (index.html, agente, docs, servidor/). Tempos e tamanhos abaixo são alvo ou estimativa, não medida, salvo quando digo de onde vêm. O que foi entregue na E1 e na E2 e as diferenças em relação a este texto estão no fim ("E1: como ficou" e "E2: como ficou"). Desde 18/11 vale a regra do Eduardo sem exceção: com a chave em Ligada o navegador nunca monta (a "reserva no navegador" da E2 abaixo saiu).
 
 ## Achados que mudam o plano (ler antes)
 
@@ -388,3 +388,34 @@ Diferenças em relação ao texto acima:
 - `frente` é medida e guardada em `info-m2.json`; nada decide com ela (E3).
 
 Não medido nesta entrega: critério 19 (carga de 200 fotos em 5 min com `sombra` contra `desligada`) e a paridade com foto de cliente no servidor (comparador da E2).
+
+---
+
+## E2: como ficou (19/11/2026)
+
+Regra do Eduardo (18/11, antiga e reafirmada): o recorte e a montagem dos fundos de IA são feitos e guardados no servidor do estádio, nunca no Checkout. O Checkout, a Venda manual e o Posto só mostram e imprimem. Operação com fundos de IA a partir de 21/11.
+
+O que mudou desde a E1 (junto com o `idiomas-base` v99.36.0):
+
+- **Bases só do servidor (regra 19).** `mtg_candidatas(x)` devolve só `x["ia"]` (fotos de gramado reconhecidas). Sem bases, a leva não é montada; o jeito antigo (as 2 primeiras fotos de qualquer ponto) não existe no servidor. Montagem nova pelas rotas também só de base: foto de leva carregada (ontem e hoje) que não é base responde 404 no `GET /montagem/` e `nao_base` no `POST /montagens/pedir` (`mtg_base_ok`). Foto de dia mais antigo (reimpressão de venda antiga) continua aceita.
+- **Quatro fundos ativos.** `MTG_ATIVOS` ganhou a Saída do túnel v2 (`img/bg-tunel-v2.jpg`, `img/fundos-5k/tunel-v2.jpg`, impressão presa no alto como o 1950, regra 22: `alt .766` e `estreito`). `MTG_BASE.tunel = 0` (1ª base, como o `FIA_BASE`).
+- **Corte do joelho (D8) no motor.** `png_info` lê o tEXt `eterna` do PNG do recorte e `joelho` é a porta do `fiaJoelho` (mesmos limites `.35` e `.97`, mesma condição: silhueta encostada embaixo e pernas inteiras). Vale na prévia e na impressão. O agente passou a copiar o tEXt para a cópia de 2400 do recorte (`_grava_png`): antes a prévia do navegador perdia o joelho e só a impressão cortava.
+- **Checkout, Venda manual e Posto (E2).** Com `mtgSrv()` (agente ligado, `montagem.modo === 'ligada'` e `montagem.imprime`):
+  - `compose` → `mtgCompose`: baixa a prévia do servidor (`GET /montagem/<pid>/<fundo>.jpg?t=p`) e mostra como `blob:`; 202, 503, 429 ou rede esperam em passos de 700 ms até 6 s; depois disso o item fica em "Preparando" e o `compHydrate` tenta de novo a cada 3 s; 404 (sem pessoa, não é base) tira o item da venda pelo `fiaFalhou` de sempre.
+  - `iaAquecer` faz um `POST /montagens/pedir` só (prioridade 0 para o que faltar) e baixa as prévias juntas.
+  - `compHi` → `mtgHi`: o 10x15 do servidor (`?t=i`) com a versão da prévia mostrada; 409 (versão trocada) pede a atual; até 50 s. Sem o arquivo, a foto de IA falha na impressão (vai para `falhasIA`), sem montar no navegador.
+  - `lojaAI` deixa de fora o fundo que o servidor não sabe montar (`montagem.montaveis`, ex.: as variações da Noite de campeão).
+  - Trocar a chave (ligada ↔ sombra/desligada) limpa as montagens guardadas no aparelho (`mtgTroca`) e vale na próxima leitura do `/status` (2,5 s).
+  - Com Desligada, Sombra ou agente antigo (sem `montagem.imprime`): o `fiaMontar` de sempre. `ETERNA.fiaMontagens = {servidor, canvas}` conta de onde veio cada montagem.
+- **Agente:** `/status.montagem` ganhou `imprime: true`, `montaveis` (os 7 fundos do motor) e `ativos`. O atraso do registro (`atraso p50/p90`) conta de quando a base passou a existir (chegada da foto ou fechamento da leva, o maior), porque desde a regra 19 as bases só saem no fechamento (60 s sem clique) ou quando o reconhecimento termina.
+- **Tempo-alvo.** Medido nesta máquina de teste (2 núcleos): cerca de 0,4 a 0,6 s por montagem no `montagem_servidor_agente.py`. Com 4 fundos são 4 prévias preferidas por leva, então o alvo "p50 até 8 s e p90 até 15 s da base pronta às prévias preferidas" continua com folga no servidor (6 núcleos), contado a partir do fechamento da leva. O visitante leva minutos até o Checkout; o pedido do Checkout passa na frente (prioridade 0). O número real sai no registro `montagem-srv:` com a chave em Sombra.
+
+Ficou de fora desta entrega: o comparador lado a lado para o Admin (`mtg-comparar`), a E3 (frente ou livre) e a E4 (galeria). Sem reserva no navegador por decisão do Eduardo: com a chave em Ligada, se o servidor não montar, o item fica em "Preparando" (ou sai da venda) e a impressão daquela foto falha com aviso.
+
+### Como ligar (Eduardo ou Admin, na tela)
+
+1. Antes, o Ronaldo roda o `servidor/linux/instalar.sh` (cria `/srv/eterna-midia/montagens` no HD e o link em `~/Eterna/montagens`) e confere com `ls -ld /srv/eterna-midia/montagens`.
+2. Laboratório › Fundos de IA › Montagem no servidor: **Sombra**. Fazer 2 ou 3 sessões de teste no gramado e conferir no registro (`journalctl -u eterna | grep montagem-srv`): `modo=sombra`, `no_hd=sim`, `erros=0`, `feitas` subindo, `atraso p90` dentro do alvo.
+3. Mesma tela: **Ligada**. Em até 2,5 s todos os Checkouts e Postos passam a mostrar e imprimir o que o servidor montou (sem recarregar). Conferir uma venda de teste: as 4 montagens aparecem e a impressão sai.
+4. Para voltar: **Sombra** ou **Desligada** na mesma tela (o navegador volta a montar). Desligamento à força no servidor: `ETERNA_MONTAGEM=0` no `nuvem.env` e reiniciar o serviço.
+
