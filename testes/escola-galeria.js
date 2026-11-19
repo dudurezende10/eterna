@@ -79,6 +79,11 @@ try{
   ok(await G.locator('[data-act="gq-qr"]').count()===1,'9: botão de ler o QR na tela do código');
   const qn=await G.evaluate(()=>['09YWANZ6SNMTXVG8','https://eterna.photo/#g/'+'S'.repeat(22),'https://parceiros.vivamaracana.com.br/voucher?localizador=11e4rwzwvxhad7v1','1118-ABCD-1234','oi','https://exemplo.com/sobre'].map(ETERNA.gqQrNorm));
   ok(JSON.stringify(qn)===JSON.stringify(['09YWANZ6SNMTXVG8','#g/'+'S'.repeat(22),'11E4RWZWVXHAD7V1','1118ABCD1234',null,null]),'9: leitura do QR: '+J(qn));
+  // 10. (18/11) no computador: a imagem do QR (voucher do e-mail) abre a galeria pelo localizador
+  const png=await G.evaluate(loc=>{const d=document.createElement('div');new QRCode(d,{text:'https://parceiros.vivamaracana.com.br/v?localizador='+loc,width:400,height:400});return (d.querySelector('canvas')).toDataURL('image/png').split(',')[1];},LOC);
+  codigos=[];await G.setInputFiles('#gq-qr-img',{name:'voucher.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+  await G.waitForURL(new RegExp('#g/'+TOK+'$'),{timeout:8000}).catch(()=>{});
+  ok(new RegExp('#g/'+TOK+'$').test(G.url())&&codigos.includes(LOC),'10: a imagem do QR abre a galeria da escola: '+G.url()+' '+J(codigos));
   // 6. idiomas: os textos novos existem nos 5
   const falta=await G.evaluate(()=>['gq_gratisH','gq_gratisD','gq_gratisBtn','gq_gratisConf','gq_gratisFinal','gq_gratisOk','gq_gratisRep','gq_gratisEsgot'].filter(k=>{const a=ETERNA.I18N?ETERNA.I18N[k]:null;return a&&a.slice(0,5).some(x=>!x);}));
   ok(!falta.length,'6: textos nos 5 idiomas: '+J(falta));

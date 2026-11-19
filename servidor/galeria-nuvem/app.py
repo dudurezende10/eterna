@@ -637,8 +637,8 @@ def pedido(token, m, corpo, ip, pids_acesso):
                           "idioma": idioma, "criado": iso(agora), "consultas": 0, "ttl": int(agora + PED_DIAS * 86400)})
     lead(email, idioma, token, marketing, str(corpo.get("versao") or "")[:20], ref)
     try:
-        tk = imply.set_pessoa(pessoa, nome, email, cpf=cpf or None, passaporte=None if cpf else passaporte)
-        url = imply.checkout(tk, ref, itens, VOLTA_URL)
+        tk = imply.set_pessoa(pessoa, nome, email, cpf=cpf or None, passaporte=None if cpf else passaporte, ref=ref, itens=itens)
+        url = imply.checkout(tk, ref, VOLTA_URL)
     except Exception as ex:                               # a Imply fora ou recusou: o pedido fica registrado com o erro
         print("pedido %s: Imply falhou: %s" % (ref, str(ex)[:200]))
         TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e, erro = :x",

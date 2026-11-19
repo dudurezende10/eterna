@@ -26,17 +26,17 @@ Parameters:
     Description: nome do parâmetro SecureString do SSM com a chave do usuário de serviço da Imply (ex. /eterna/imply-chave); a chave nunca vai no template
   ImplyTipoPessoa:
     Type: String
-    Default: ""
-    Description: "código tipo_pessoa de AGÊNCIA da Eleven, informado pela Imply (11/11, o cliente online entra como agência, sem tipo pessoa física)"
+    Default: "100001"
+    Description: "código tipo_pessoa da Eleven; comprador de fotos = Público Geral (PG) 100001 (documentação da Imply de 18/11)"
   ImplyConsulta:
     Type: String
     Default: ""
     Description: endereço da consulta do pedido na Imply, com {ref} no lugar do nosso código (vazio = só conferência manual)
-  ImplyCarrinho:
+  ImplyProdutoCampo:
     Type: String
-    Default: json-b64
-    AllowedValues: [json-b64, json]
-    Description: formato do predefined-cart (a confirmar com a Imply)
+    Default: idproduto
+    AllowedValues: [idproduto, depara]
+    Description: como o produto vai no predefined-cart (o SKU do catálogo é o idproduto da Imply)
   OrigemSha256:
     Type: String
     Default: ""
@@ -139,7 +139,7 @@ Resources:
           IMPLY_CHAVE_SSM: !Ref ImplyChaveParametro
           IMPLY_TIPO_PESSOA: !Ref ImplyTipoPessoa
           IMPLY_CONSULTA: !Ref ImplyConsulta
-          IMPLY_CARRINHO: !Ref ImplyCarrinho
+          IMPLY_PRODUTO_CAMPO: !Ref ImplyProdutoCampo
           VOLTA_URL: https://eterna.photo/g/
           LIMIAR_ADULTO: "85"
           LIMIAR_CRIANCA: "95"

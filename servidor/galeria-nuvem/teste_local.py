@@ -239,6 +239,20 @@ app.COMPRA_ONLINE = True
 imply.CHAVE_SSM, imply.TIPO_PESSOA = "/eterna/imply-chave", "99"
 imply._chave["v"] = "chave-de-teste"
 pessoas, respostas = [], {}
+# corpo real do setPessoa (doc. da Imply 18/11): array de 3 posições, PG 100001, carrinho em informacoes_extras.predefined-cart
+_http0, enviados = imply._http, []
+imply._http = lambda metodo, url, corpo=None: enviados.append((metodo, url, corpo)) or {"id": None, "error": None, "result": "tk-real"}
+tipo0 = imply.TIPO_PESSOA
+imply.TIPO_PESSOA = "100001"
+tk_ = imply.set_pessoa("EP-x", "Cliente Teste", "c@exemplo.com", cpf="529.982.247-25", ref="ON-ABC", itens=[{"sku": SKU["zona"], "qtd": 2}])
+m_, u_, c_ = enviados[-1]
+ok(tk_ == "tk-real" and m_ == "POST" and u_.endswith("/api/OAuth2/v01/setPessoa/") and c_[1] is False and c_[2] == ["de_para"]
+   and c_[0]["tipo_pessoa"] == "100001" and c_[0]["cpf"] == "52998224725"
+   and c_[0]["informacoes_extras"] == {"predefined-cart": {"idreferencia": "ON-ABC", "itens": [{"idproduto": SKU["zona"], "quantidade": 2}]}},
+   "setPessoa: [pessoa, false, [de_para]], PG 100001, carrinho com idreferencia e idproduto: %r" % (c_,))
+imply.set_pessoa("EP-x", "Cliente Teste", "c@exemplo.com", passaporte="AB123456")
+ok("informacoes_extras" not in enviados[-1][2][0] and enviados[-1][2][0]["passaporte"] == "AB123456", "sem carrinho, informacoes_extras não vai (vazio invalida a chamada)")
+imply._http, imply.TIPO_PESSOA = _http0, tipo0
 imply.set_pessoa = lambda *a, **k: pessoas.append((a, k)) or "tk-pessoa"
 imply.situacao = lambda ref: respostas.get(ref, ("pendente", {"bruto": "aguardando"}))
 st, r = chama("POST", "/g/%s/rosto" % tokP, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="5.0.0.1")
@@ -257,11 +271,12 @@ ref = r["ref"]
 q = urllib.parse.parse_qs(urllib.parse.urlparse(r["url"]).query)
 destino = base64.b64decode(q["url"][0]).decode()
 dq = urllib.parse.parse_qs(urllib.parse.urlparse(destino).query)
-carr = json.loads(base64.b64decode(dq["predefined-cart"][0]))
 ok(r["url"].startswith("https://maracanatouradmin.eleventickets.com/OAuth2/external?") and q["token"] == ["tk-pessoa"] and destino.startswith("https://maracanatour.eleventickets.com/pt/checkout?"),
    "endereço: login automático da Imply que cai no checkout")
-ok(carr == {"referencia": ref, "itens": [{"idproduto": SKU["zona"], "quantidade": 1}, {"idproduto": SKU["extra"], "quantidade": 1}]} and dq["urlreturn"] == ["https://eterna.photo/g/"],
-   "predefined-cart com SKU, quantidade e o nosso código; volta para eterna.photo/g/")
+ok(dq["urlreturncheckout"] == ["https://eterna.photo/g/?idpedido=" + ref] and "%3Fidpedido%3D" in destino and q["url"][0] == base64.b64encode(destino.encode()).decode(),
+   "checkout com urlreturncheckout (URL-encode) voltando com o nosso código; o checkout inteiro em Base64 (doc. da Imply 18/11)")
+ok(pessoas[-1][1].get("ref") == ref and [(i["sku"], i["qtd"]) for i in pessoas[-1][1].get("itens") or []] == [(SKU["zona"], 1), (SKU["extra"], 1)],
+   "setPessoa leva o carrinho do pedido (referência e itens)")
 (pa, pk_) = pessoas[-1]
 ok(pa[0].startswith("EP-") and pa[1:3] == ("Cliente Teste", "cliente@exemplo.com") and pk_["cpf"] == "52998224725", "setPessoa com de_para, nome, e-mail e CPF")
 ok("cpf" not in json.dumps(T.d[("PED#" + ref, "M")]).lower() and "52998224725" not in json.dumps({k[0]: v for k, v in T.d.items()}), "CPF não fica guardado na Nuvem")

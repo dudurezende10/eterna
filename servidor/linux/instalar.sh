@@ -55,7 +55,9 @@ apt-get install -y -q $APT_PACOTES >>"$LOGI" 2>&1
 ok "$APT_PACOTES"
 
 passo "2. Driver da placa NVIDIA"
+RECORTE_GPU=auto
 if [[ "$(lspci)" == *NVIDIA* ]]; then   # sem "| grep -q": com pipefail o SIGPIPE do lspci dava falso (14/11)
+  RECORTE_GPU=obrigatoria   # 19/11 (Ronaldo, inegociável): com placa NVIDIA o recorte nunca cai no processador
   if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1; then
     ok "driver no ar: $(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader)"
   else
@@ -219,7 +221,7 @@ ETERNA_POSTO_REDE=$REDE_ESTADIO
 ETERNA_TZ=America/Sao_Paulo
 ETERNA_APP_ORIGIN=http://127.0.0.1:8798
 ETERNA_IMPRESSORA_POSTOS=*=local
-ETERNA_RECORTE_GPU=auto
+ETERNA_RECORTE_GPU=$RECORTE_GPU
 # Nuvem (S3, galeria, backup): preencher quem tem o acesso, direto no servidor. Nunca por chat ou e-mail. Ver docs/NUVEM.md.
 # ETERNA_NUVEM=
 # ETERNA_BUCKET=
@@ -229,6 +231,11 @@ EOF
   ok "criado $ENV"
 else
   ok "$ENV já existe (não mexo)"
+  # 19/11: única exceção, a placa obrigatória no servidor com NVIDIA (antes ficava auto e caía no processador sem avisar)
+  if [ "$RECORTE_GPU" = obrigatoria ] && ! grep -q '^ETERNA_RECORTE_GPU=obrigatoria$' "$ENV"; then
+    sed -i '/^ETERNA_RECORTE_GPU=/d' "$ENV" && echo "ETERNA_RECORTE_GPU=obrigatoria" >>"$ENV"
+    ok "ETERNA_RECORTE_GPU=obrigatoria em $ENV (recorte só na placa de vídeo)"
+  fi
 fi
 chown eterna:eterna "$ENV"; chmod 600 "$ENV"
 

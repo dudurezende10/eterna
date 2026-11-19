@@ -129,11 +129,12 @@ try{
 
   // ---------- E5b: bases de IA ----------
   const ia=await pg.evaluate(()=>{ETERNA.fiaRecDeNovoMs(1500);ETERNA.state.agent.on=true;ETERNA.state.agent.recorte={ok:true};return true;});
-  // 16: leva ag_ de 1 foto (sem bases, poucas_fotos), com recorte pronto: montagens em 10 de 10 ids (sem a nota simulada)
-  const c16=await pg.evaluate(()=>{const S=ETERNA.SIM;let n=0;const r=[];for(let i=0;i<10;i++){const pid='ag_f16'+String(i).padStart(9,'0');const card='LPF16'+String(i).padStart(4,'0');ETERNA.UP[pid]={src:location.origin+'/thumb/'+pid.slice(3),name:pid};
+  // 16: leva ag_ de 1 foto (sem bases, poucas_fotos), com recorte pronto. 18/11 (regra 19, sem plano B): nenhuma montagem em 10 de 10
+  // (antes eram montagens em 10 de 10 pelo jeito antigo; com FIA_ANTIGO_ON continua assim)
+  const c16=await pg.evaluate(()=>{const S=ETERNA.SIM;let n=0,ant=0;const r=[];for(let i=0;i<10;i++){const pid='ag_f16'+String(i).padStart(9,'0');const card='LPF16'+String(i).padStart(4,'0');ETERNA.UP[pid]={src:location.origin+'/thumb/'+pid.slice(3),name:pid};
       S.sessions[card]={key:'carlos',pdv:'Terminal Campo',point:'terminal',time:'10:00',date:'hoje',srv:true,status:'fechada',selected:[],cart:[],photos:[{id:pid,sold:0}],ia:[],iaRegra:{n:2,motivo:'poucas_fotos'}};
-      const it=ETERNA.lojaAI(card);r.push(it.length);if(it.length)n++;}return {n,r};});
-  ok(c16.n===10,'16: leva de 1 foto real com montagens em 10 de 10: '+J(c16));
+      const it=ETERNA.lojaAI(card);r.push(it.length);if(it.length)n++;ETERNA.FIA_ANTIGO_ON=true;if(ETERNA.lojaAI(card).length)ant++;ETERNA.FIA_ANTIGO_ON=false;}return {n,r,ant};});
+  ok(c16.n===0&&c16.ant===10,'16 (regra 19): leva de 1 foto real sem bases: nenhuma montagem (com a chave do jeito antigo, 10 de 10): '+J(c16));
   // 17: as 2 bases barradas pela validação e o jeito antigo vazio: montagens com a base barrada; com uma base boa, ela na frente
   const c17=await pg.evaluate(()=>{const S=ETERNA.SIM;const card='LPF17BASE';const b1='ag_f17000000001',b2='ag_f17000000002',ph='ag_f17000000003';[b1,b2,ph].forEach(id=>{ETERNA.UP[id]={src:location.origin+'/thumb/'+id.slice(3),name:id};});
     S.sessions[card]={key:'carlos',pdv:'Terminal Campo',point:'terminal',time:'10:00',date:'hoje',srv:true,status:'fechada',selected:[],cart:[],photos:[{id:ph,sold:0}],ia:[b1,b2],iaRegra:{n:2,motivo:null}};

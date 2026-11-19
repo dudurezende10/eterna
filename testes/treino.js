@@ -40,7 +40,7 @@ try{
   {const {ctx,pg,R}=await nova();await entrar(pg,null,true);
     await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
     const abas=await pg.$$eval('[data-act="tr-aba"]',x=>x.map(b=>b.dataset.a));
-    ok(J(abas)===J(['marcar','outubro']),'abas Marcar e Outubro (sem abas vazias): '+J(abas));
+    ok(J(abas)===J(['marcar','medida','outubro']),'abas Marcar, Medição (18/11) e Outubro (sem abas vazias): '+J(abas));
     const an=await pg.evaluate(()=>[...document.querySelectorAll('.tr-an [data-act="tr-analise"]')].map(b=>b.dataset.k+':'+b.dataset.v+':'+b.getAttribute('aria-pressed')));
     ok(an.length===6&&an.includes('exposicao:desligada:true')&&an.includes('ponto:desligada:true'),'interruptor no topo, desligado, com os 3 estados para cada análise: '+J(an));
     ok(/Desligada: o servidor não analisa nada/.test(await pg.textContent('.tr-an')),'texto claro do interruptor');

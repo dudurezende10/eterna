@@ -98,7 +98,7 @@ function Imprime($fotos) {
             [IO.File]::WriteAllBytes((Join-Path $dir "f$i.jpg"), $fotos[$i].bytes)
             $pgs += '<div class="pg' + $(if ($fotos[$i].deitada) { " land" } else { "" }) + '"><div class="box"><img src="f' + $i + '.jpg"></div></div>'
         }
-        $html = '<!doctype html><meta charset="utf-8"><style>@page{margin:0}html,body{margin:0;padding:0;background:#fff}' +
+        $html = '<!doctype html><meta charset="utf-8"><style>@page{size:4in 6in;margin:0}html,body{margin:0;padding:0;background:#fff}' +
             '.pg{width:100vw;height:100vh;position:relative;overflow:hidden;break-after:page;page-break-after:always}.pg:last-child{break-after:auto;page-break-after:auto}' +
             '.box{position:absolute;left:0;top:0;width:100vw;height:100vh;overflow:hidden}.pg.land .box{width:100vh;height:100vw;left:50%;top:50%;transform:translate(-50%,-50%) rotate(90deg)}' +
             'img{display:block;width:100%;height:100%;object-fit:cover}</style>' + $pgs +

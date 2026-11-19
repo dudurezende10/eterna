@@ -1327,7 +1327,7 @@ Plano: `docs/planos/2026-10-28-v83-painel.md` (escrito como v83; publicado como 
 ### Upload sem check-in da câmera
 
 - Saíram o cartão de check-in (`camPanel`), o botão "É a minha" (`cam-mine`), o select de fotógrafo por câmera (`cam-who`) e `camName`.
-- Ficaram: `camDay` e `camWho` (check-ins já gravados em `SIM.camDia` continuam valendo), o nome do autor gravado na câmera (`keyByName`), o palpite pela Roverpix (`camGuess`) e a sessão.
+- Ficaram: `camDay` e `camWho` (check-ins já gravados em `SIM.camDia` continuam valendo; 18/11: `camDay` saiu e o `camWho` passou a ler só o autor e o dono gravados na câmera, a mesma ordem do `ff_quem` do agente), o nome do autor gravado na câmera (`keyByName`), o palpite pela Roverpix (`camGuess`) e a sessão.
 - `libWho` usa primeiro o login do FTP (segurança I1), quando ele bate com um fotógrafo do cadastro; depois a câmera (check-in antigo ou nome gravado), o palpite pela Roverpix e a sessão. FTP com nome desconhecido continua em `ftp:<nome>`.
 
 ### Copiar permissões de… (Permissões)
@@ -1568,7 +1568,7 @@ Decisões do Eduardo (30/10 18:10): pausa de 1 minuto; regra do rosto S5 a S7; s
 
 - `SRV.sess` (card → sessão de hoje, aberta, separada e fechada; removida sai). `srvPull` compara com o dia local (`localDay`; o `todayKey` é UTC e pulava as sessões depois das 21 h). Fechada nova entra em `SRV.mat` e vira sessão do SIM em `srvMaterializa` (até 12 por ciclo). Fechada que já está no SIM só muda pela LGPD (`srvLgpd`: sem venda paga, as fotos saem da sessão do SIM; com venda paga, só uma linha no `log`). Redesenha só em `importar` e `fotofila`.
 - `ingClose(how, srv)` (revisão 6): `point`/`pdv` de `srv.ponto`, `closedAt` de `fechada_em`, `source` = `cartao` na atrasada ou `srv.fonte`, `key` = `srv.fotografo` quando é chave de `P`, senão `impWho`; campo novo `motivo`. A validação de IA (`validateReal`) roda uma por vez no navegador (`VAL_FILA`).
-- `upSessoes()` no `vImportarCore` quando o agente está ligado e manda `st.sessoes` (senão continuam "Sessão em formação" e "Sessões criadas nesta leva"): filtro por `state.imp.key` e `state.imp.point`, mais nova primeiro (por `aberta_em`), 30 por vez (`up-sess-mais`, `state.upSessN`), até 48 miniaturas (`<img loading="lazy">` dentro do `photoBtn`, `--img:none`) com "+N" (`up-sess-tudo`, `state.upSessAll`). Cabeçalho: LP, fotógrafo (`P[k].name` ou `Sem fotógrafo · fonte`), ponto, `cap0–cap1` (com "chegada" quando `fonte_t:"u"`), nº de fotos, motivo (`UP_MOTIVO`), "atrasada", estado (`up-sess on` com borda #FFB800 e "aberta · recebendo"; "fechando"; fechada com `UP_FECHADA` e "Abrir sessão" quando já está no SIM e `canView('revisao')`). Pendentes com "lendo rostos" e opacidade .6. `zoom` no Upload abre a galeria só com as fotos da sessão. Aviso quando `st.sessoes.rostos === false`. `up-sess-*` são só leitura (fora do `WRITE_OPS`). Sem `T()` (tela da equipe).
+- `upSessoes()` no `vImportarCore` quando o agente está ligado e manda `st.sessoes` (senão continuam "Sessão em formação" e "Sessões criadas nesta leva"): filtro por `state.imp.key` (18/11: o filtro por `state.imp.point`, o seletor `imp-point` e o ponto do cabeçalho saíram; sessão sem ponto aparece), mais nova primeiro (por `aberta_em`), 30 por vez (`up-sess-mais`, `state.upSessN`), até 48 miniaturas (`<img loading="lazy">` dentro do `photoBtn`, `--img:none`) com "+N" (`up-sess-tudo`, `state.upSessAll`). Cabeçalho: LP, fotógrafo (`P[k].name` ou `Sem fotógrafo · fonte`), ponto, `cap0–cap1` (com "chegada" quando `fonte_t:"u"`), nº de fotos, motivo (`UP_MOTIVO`), "atrasada", estado (`up-sess on` com borda #FFB800 e "aberta · recebendo"; "fechando"; fechada com `UP_FECHADA` e "Abrir sessão" quando já está no SIM e `canView('revisao')`). Pendentes com "lendo rostos" e opacidade .6. `zoom` no Upload abre a galeria só com as fotos da sessão. Aviso quando `st.sessoes.rostos === false`. `up-sess-*` são só leitura (fora do `WRITE_OPS`). Sem `T()` (tela da equipe).
 
 ### Riscos (para o revisor)
 
@@ -2136,14 +2136,14 @@ Grupos de `VIEWS` (4º campo; o 5º campo é a pasta dentro do grupo):
 
 Plano B quando o leitor não reconhece o cartão. A foto entra pelo mesmo caminho do cartão (`ingest_file(..., "cartao")`), então segue para sessões, rostos e Fila do fotógrafo.
 
-App (`index.html`): `envioPainel()` em Minhas fotos, só com `set.c` (Fotógrafo, Supervisora e Admin). `envioQuem()`: o fotógrafo manda no próprio nome; Admin e Supervisora escolhem no seletor, nunca "Todos". `fotosEnviar(lista)`: até 2.000 arquivos por lote, 2 por vez, 3 tentativas por foto, espera crescente quando o servidor responde ocupado. Só envia com o app aberto pela origem do agente (`fotosNoServidor()`) e com `/status.envio` presente. `auditLog('fotos_envio_manual')` sem nome de arquivo.
+App (`index.html`): `envioPainel()` em Minhas fotos, só com `set.c` (Fotógrafo, Supervisora e Admin). 18/11: ninguém escolhe o fotógrafo (saíram `envioQuem` e o aviso "Escolha o fotógrafo acima"); o painel diz que o fotógrafo vem do nome gravado na câmera (`en_camera`) e o seletor Fotógrafo da tela só filtra as sessões. `fotosEnviar(lista)`: até 2.000 arquivos por lote, 2 por vez, 3 tentativas por foto, espera crescente quando o servidor responde ocupado. Só envia com o app aberto pela origem do agente (`fotosNoServidor()`) e com `/status.envio` presente. `auditLog('fotos_envio_manual','cartao')` sem nome de arquivo (o `por` é quem mandou).
 
-`POST /fotos/enviar?nome=<arquivo>&quem=<fotógrafo>` no agente. Corpo: o JPEG. Cabeçalhos: `Content-Type: image/jpeg`, `Content-Length`, `X-Eterna: 1`. Rota privada (posto e origem local, sem CORS aberto).
+`POST /fotos/enviar?nome=<arquivo>&mt=<data do arquivo, s>` no agente. O dono vem da câmera (`ff_quem`, regra do cartão); a origem gravada é `ENVIO_ORIGEM` ("tela:envio"), que nunca é fotógrafo. `quem` que ainda vier de app antigo é ignorado. `mt` (`File.lastModified`) vira a data do arquivo gravado, como no cartão lido no servidor; sem `mt` válido a foto entra sem `mt`. O app não manda `mt` quando a data está a menos de 10 s de agora (`ENVIO_MT_AGORA`: seletor de celular ou pasta na nuvem dão a hora da escolha). Quem enviou fica no `meta` da foto (`por`). Corpo: o JPEG. Cabeçalhos: `Content-Type: image/jpeg`, `Content-Length`, `X-Eterna: 1`. Rota privada (posto e origem local, sem CORS aberto).
 
 | Resposta | `erro` | Quando |
 | --- | --- | --- |
 | 200 | | `{"ok": true, "resultado": "new" ou "dup"}`: foto nova ou repetida (a repetida não entra de novo); `resultado: "recusada"` com `ok: false` quando a entrada não aceita a foto |
-| 400 | `tamanho`, `quem`, `incompleta` | tamanho inválido, fotógrafo fora do cadastro, corpo cortado |
+| 400 | `tamanho`, `incompleta` | tamanho inválido, corpo cortado (o 400 `quem` saiu em 18/11) |
 | 403 | `origem` | fora do posto ou sem o cabeçalho |
 | 408 | `lenta` | o corpo não chegou em 120 s (`FOTO_ENVIO_PRAZO`) |
 | 411, 413 | `tamanho` | sem `Content-Length` ou acima de 60 MB (`FOTO_ENVIO_MAX`) |
@@ -2282,7 +2282,9 @@ Registro de cada exportação (`relAudita`), gravado pelo `auditLog` e mostrado 
 - Nome de tela: **Klacius** (`DATA.people`, `SEED_USERS`). A chave interna continua `klassius` (login do FTP, e-mail, sessões, vendas, históricos). Não renomear.
 - Regra de apelido, uma só. Agente: `FOTOGRAFO_APELIDO = {"klacius","classius","clacius" → "klassius"}` e `fotografo_chave(nome)`, usada por `ff_quem`, `rftp_origem`, a subpasta do login compartilhado do FTP e `rv_key` da Roverpix. Nome de pasta e origem só pelo nome inteiro (`inteiro=True`); o primeiro nome vale só para autor e dono da câmera e para a Roverpix. App: `KEY_ALIAS` (em `aliasLive` e `keyByName`). Grafia nova de alguém entra nos dois mapas, nunca em chave nova.
 - Cadastro com o nome padrão antigo ("Klassius" ou "Klássius", exatamente): acertado por `usuarios_grafia()` na partida do agente, antes do servidor HTTP, com linha no `usuarios_log` e `updatedBy: "servidor"`. O mapa `NOME_TELA_ANTIGO` existe no agente e no app (`nomeTelaCerto`, no `migrateUser`). Nome editado por alguém fica como está.
-- Sessão fechada sem fotógrafo, de hoje ou de ontem, com todas as fotos do mesmo cadastrado: `sess_dono_corrigir` (no fim do `sess_carregar`, na partida do agente) grava a chave dele. Sessão mista ou com foto sem dono fica. Sessão com fotógrafo nunca muda. O `metricas_loop` refaz o resumo do dia, vendas incluídas.
+- Sessão fechada sem fotógrafo, de hoje ou de ontem, com todas as fotos do mesmo cadastrado: `sess_dono_corrigir` (no fim do `sess_carregar`, na partida do agente) grava a chave dele. Sessão mista ou com foto sem dono fica. O `metricas_loop` refaz o resumo do dia, vendas incluídas.
+- 18/11 (Eduardo, "quem manda é a câmera", plano `docs/planos/2026-11-18-dono-pela-camera.md`): na foto de cartão (`s == "cartao"`) `ff_quem` lê primeiro o autor e o dono gravados na câmera e só depois a origem; no FTP a origem continua primeiro. O primeiro nome do autor e do dono vale também sem pontuação ("Marcio," = marcio), igual ao `keyByName` do app; a tabela `testes/_nomes_camera.json` roda nos dois. `sess_dono_corrigir` passa também a sessão fechada de cartão (`fonte` "cartão", ou atrasada com todas as fotos de cartão) que já tem fotógrafo, quando todas as fotos resolvem para um mesmo cadastrado diferente do atual (`de` = o atual; `venda_paga` diz se havia venda paga ligada, `None` se os eventos não puderam ser lidos; a correção anterior fica em `anterior`). Sessão de FTP com fotógrafo nunca muda. O histórico das correções fica na lista `anterior` (a mais nova primeiro, até `SESS_DONO_HIST` = 5). Sessão com venda paga que muda de fotógrafo grava uma linha no histórico do servidor (`usuarios_log`, `acao: "dono_venda_paga"`, `card`, `dia`, `mudancas: [{campo: "fotografo", de, para}]`, id fixo `Lsrv-dono-<hash>`), que chega pela sincronização a quem lê o histórico e aparece em Alertas (`alerts()`, hoje e ontem, `al_dono_t`/`al_dono_d`).
+- Quem enviou cada foto pela tela (18/11, segurança): `ingest_file(..., por=(login, assumido_por))` grava `por` (e `por_assumido`, se houver) no `meta` da foto e na linha de `metricas.jsonl` (que vai para o backup privado). Não sai para os navegadores: `/biblioteca` e `/events` montam os campos à mão e `/metricas` tira `por` e `por_assumido`. O "ver como" não envia foto (o `do_POST` responde `so_ver`); o `por_assumido` fica de reserva.
 
 Campo novo na sessão (`~/Eterna/ponto/sessoes/AAAA-MM-DD.json` e `GET /sessoes`):
 
@@ -2303,7 +2305,7 @@ Campo novo na sessão (`~/Eterna/ponto/sessoes/AAAA-MM-DD.json` e `GET /sessoes`
 
 `motivo` é o caminho que valeu (`ff_quem_como`): `origem`, `autor_da_camera` ou `dono_da_camera`, juntos por `+` quando as fotos chegaram por caminhos diferentes. A sessão ganha `rev` novo. Os valores do exemplo são ilustrativos.
 
-No app, `srvDono` (dentro do `srvPull`) leva a correção para `SIM.sessions[card].key` só quando a sessão traz `dono_corrigido` (sessão paga também). O `/sessoes` normal só traz hoje: as de ontem vêm por `srvOntem()` (`GET /sessoes?desde=0&ontem=1`, um pedido por partida do agente e na carga da página).
+No app, `srvDono` (dentro do `srvPull`) leva a correção para `SIM.sessions[card].key` só quando a sessão traz `dono_corrigido` (sessão paga também; de um fotógrafo para outro também, 18/11). O `/sessoes` normal só traz hoje: as de ontem vêm por `srvOntem()` (`GET /sessoes?desde=0&ontem=1`, um pedido por partida do agente e na carga da página).
 
 ### 5. Três fundos de IA
 
@@ -2423,8 +2425,25 @@ No 4:3 deitado a barra aparece nas fotos deitadas e recolhe nas em pé (ela não
 
 ## Motivos de cortesia (18/11)
 
+**Onde fica a Cortesia SAC (18/11).** No rodapé do Posto, no lugar do antigo botão da Venda manual, há o botão amarelo **Cortesia** (`data-act="posto-cortesia"`; aparece para quem tem Alterar em Galerias e vê o Checkout). Ele abre o mesmo bloco da venda manual já em modo cortesia (`state.posto.cortesia`, borda amarela, título Cortesia): ao escolher a sessão, `checkoutPick` tira os pacotes do carrinho e põe `cort_sac`, e o pagamento cai direto no motivo da cortesia. Fechar o bloco ou abrir a venda manual comum sai do modo. Teste: `testes/cortesia-sac-posto.js`.
+
 Os motivos da cortesia ficam no documento `config/cortesia` (`{motivos:[{id, nome}], por, em}`), editado em Catálogo › Cortesias (um por linha; grava quem tem Alterar em Configurações; vai para a auditoria como `cortesia_motivos`). O `id` é o nome sem acento, minúsculo, com `_`. Sem cadastro, vale a lista de fábrica `CORT_MOTIVOS`. Motivo e "o que houve" são opcionais em toda cortesia (+1 foto no Checkout, Cortesia SAC e ativações); sem motivo, grava `motivo: null`.
 
 ## Cancelamento de venda de foto paga (18/11)
 
 Decisões do Ronaldo: o vendedor cancela só as próprias vendas do mesmo dia, em Posto › Minhas vendas de hoje; o Admin (ou quem tem Excluir no Financeiro) cancela qualquer venda, de qualquer dia, em Vendas. Pede confirmação, com motivo opcional. A sessão fica `status:'cancelada'` com `cancelada:{por, porNome, em, motivo}` (não some do histórico e sai dos totais). A impressão que ainda não saiu passa a `cancelada`; o que já imprimiu continua contando no rolo. As compradas voltam a ficar à venda na galeria (republicada); download já feito não impede o cancelamento. O servidor recebe o evento `cancelar` (motivo `venda_cancelada`), que também tira a venda da fila de impressão. Auditoria: `venda_cancelada`. Regra em `vendaPodeCancelar`; teste `testes/venda-cancelar.js`.
+
+## Ajustes de 18/11 (tarde): reimpressão, coluna da tela cheia e vídeo das ativações
+
+- Posto › Imprimir (reimpressão): a foto escolhida fica colorida, com borda verde grossa e bolinha verde cheia com ✓; a não escolhida fica apagada, cinza e com o círculo vazio (`.imp-th`, `.imp-th.on`, `.imp-ok`).
+- Tela cheia do cliente, coluna lateral (`esc-col`): o carrinho do topo sai (o botão "Continuar · N fotos" já mostra quantas); o topo fica em duas linhas: idioma, grade e Sair; depois Outra pessoa.
+- Vídeo das ativações: Drone e Snap Pop sobem o vídeo obrigatoriamente (no mínimo um por unidade vendida, mesmo que o cadastro do produto diga outra entrega; só item físico avulso fica sem vídeo), em `avVideos`. Chute a Gol: o vídeo é opcional; sem vídeo vendido, a Entrega segue para a tela do chute com o vídeo opcional (o atendimento "só liberar" vale apenas para venda de itens físicos avulsos).
+
+### Cancelamentos nas estatísticas e relatório (18/11)
+
+Pedido do Ronaldo: "importante ter relatório de cancelamento, eles estarem nas estatísticas". Em `metricas_dia`:
+- a venda conta só no dia em que foi feita (o dia do evento `criar`). Antes, um evento em outro dia fazia a venda contar também nele: o `pagar` depois da meia-noite ou um cancelamento dias depois.
+- a venda paga e depois cancelada sai de vendas, faturamento e por vendedor/posto/meio/fotógrafo. Ela entra em `canceladas`, em `estornos {vendas, valor, fotos}` e em `cancelamentos[]`, com `{venda, no, valor, fotos, vendedor, posto, meio, em, por, motivo}`; o motivo é o `obs` do evento `cancelar`.
+- o cancelamento de venda de dia antigo refaz o resumo daquele dia (`ev_dias_refaz` em `ev_receber`), porque o `metricas_loop` só refaz hoje e ontem.
+
+No Painel, o quadro do servidor mostra "Pagas e canceladas (saíram do faturamento)" com quantidade e valor. Abaixo dele fica a tabela Cancelamentos (data e hora, venda, valor, vendedor, quem cancelou, motivo), só para quem vê o Financeiro. O arquivo exportado do Painel ganha a aba Cancelamentos. Teste: `testes/cancelamentos_agente.py`.

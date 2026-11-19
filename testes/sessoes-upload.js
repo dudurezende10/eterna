@@ -79,13 +79,13 @@ try{
   await pg.keyboard.press('ArrowRight');await pg.waitForTimeout(80);caps.push(await pg.textContent('#modal-cap'));
   ok(caps.every(c=>/LPH3D8W2R/.test(c))&&/foto 3 de 5/.test(caps[0])&&/foto 5 de 5/.test(caps[2])&&/foto 5 de 5/.test(caps[3])&&await pg.evaluate(()=>document.querySelector('#modal-next').hidden&&!document.querySelector('#modal-prev').hidden),'22: as setas percorrem só a sessão e param na última: '+caps.join(' | '));
   await pg.keyboard.press('Escape');await pg.waitForTimeout(200);
-  // 23: filtros Fotógrafo e Ponto
+  // 23: filtro Fotógrafo. 18/11 (Eduardo): o ponto não importa mais; sem o seletor Ponto, sem o ponto no cabeçalho, e o ponto
+  // que ficou guardado no estado (o antigo padrão era campo4) não esconde sessão nenhuma
   await pg.selectOption('select[data-act="imp-key"]','samuel');await pg.waitForTimeout(300);
   ok((await pg.$$eval('.up-sess',bs=>bs.map(b=>b.dataset.card))).join()==='LPN4T6Y8B','23: filtro Fotógrafo');
+  ok(!(await pg.$('select[data-act="imp-point"]')),'18/11: sem o seletor Ponto em Minhas fotos');
+  const eb=await pg.evaluate(()=>(document.querySelector('#main .head .eyebrow')||{}).textContent||'');ok(/^Fotógrafo · Samuel$/i.test(eb.trim()),'18/11: cabeçalho só com o fotógrafo: '+eb);
   await pg.selectOption('select[data-act="imp-key"]','todos');await pg.waitForTimeout(200);
-  await pg.selectOption('select[data-act="imp-point"]','terminal');await pg.waitForTimeout(300);
-  ok((await pg.$$eval('.up-sess',bs=>bs.map(b=>b.dataset.card))).join()==='LPK7Q2M9X,LPH3D8W2R','23: filtro Ponto');
-  await pg.selectOption('select[data-act="imp-point"]','todos');await pg.waitForTimeout(300);
   // Abrir sessão (só leitura) leva à sessão na Qualidade
   await pg.click('[data-act="up-sess-abrir"][data-card="LPN4T6Y8B"]');await pg.waitForTimeout(400);
   ok(await pg.evaluate(()=>ETERNA.state.view==='revisao'&&ETERNA.state.session==='LPN4T6Y8B'),'Abrir sessão leva à sessão: '+await pg.evaluate(()=>ETERNA.state.view+' '+ETERNA.state.session));
@@ -133,6 +133,24 @@ try{
     const d3=await pg.evaluate(()=>({on2:ETERNA.SIM.sessions.LPD2N5ON2.key,painel:Object.keys(ETERNA.SRV.sess).filter(c=>/^LPD2N5ON/.test(c)).length,rev:(ETERNA.revSessions().find(x=>x.card==='LPD2N5ONT')||{}).key}));
     ok(r0>=1&&FEED.ontemReqs===r0+1,'dono: um pedido de ontem na carga e um só por partida do agente: '+r0+' -> '+FEED.ontemReqs);
     ok(d3.on2==='sem'&&d3.painel===0&&d3.rev==='klassius','dono: ontem sem a marca não muda, ontem não entra no painel do Upload e a Qualidade segue o servidor: '+JSON.stringify(d3));}
+  // 18/11: sessão de cartão que o servidor passou de um fotógrafo a outro pela câmera (envio manual com o seletor em Samuel e fotos
+  // da câmera do Márcio): a cópia do aparelho troca de Samuel para Márcio
+  {const S_TR=sessao({card:'LPD2N5TRC',fotografo:'samuel',fonte:'cartão',atrasada:true,trilha:'atrasada',n:3,rev:FEED.rev+1});FEED.sessoes.push(S_TR);FEED.rev++;
+    ok(await espera(pg,()=>!!ETERNA.SIM.sessions.LPD2N5TRC&&ETERNA.SIM.sessions.LPD2N5TRC.key==='samuel',15000),'18/11: a sessão de cartão chega ao SIM como do Samuel');
+    Object.assign(S_TR,{fotografo:'marcio',dono_corrigido:{em:new Date().toISOString(),por:'servidor',de:'samuel',para:'marcio',fonte_antes:'cartão',motivo:'autor_da_camera',venda_paga:false},rev:FEED.rev+1});FEED.rev++;
+    ok(await espera(pg,()=>ETERNA.SIM.sessions.LPD2N5TRC.key==='marcio',15000),'18/11: de Samuel para Márcio na cópia do aparelho: '+await pg.evaluate(()=>ETERNA.SIM.sessions.LPD2N5TRC.key));
+    ok(await pg.evaluate(()=>(ETERNA.revSessions().find(x=>x.card==='LPD2N5TRC')||{}).key==='marcio'),'18/11: a Qualidade lista a sessão no nome do Márcio');
+    // a troca com venda paga que o servidor grava no histórico (usuarios_log, acao dono_venda_paga) aparece em Alertas
+    const al=await pg.evaluate(()=>{const k='eterna.users.log.v1';const l=JSON.parse(localStorage.getItem(k)||'[]');l.unshift({id:'Lsrv-dono-teste',em:new Date().toISOString(),por:'servidor',alvo:'LPD2N5TRC',acao:'dono_venda_paga',card:'LPD2N5TRC',dia:'2026-11-18',mudancas:[{campo:'fotografo',de:'samuel',para:'marcio'}]});
+      localStorage.setItem(k,JSON.stringify(l));return ETERNA.alerts().filter(a=>/LPD2N5TRC/.test(a.t)).map(a=>[a.sev,a.t,a.d]);});
+    ok(al.length===1&&al[0][0]==='warn'&&/Samuel para Márcio/.test(al[0][1])&&/venda paga/.test(al[0][1])&&/2026-11-18/.test(al[0][2]),'18/11: alerta da sessão com venda paga que mudou de fotógrafo: '+JSON.stringify(al));}
+  // 18/11: o ponto que ficou guardado no estado (o antigo padrão era campo4) não esconde sessão nenhuma; sessão sem ponto aparece
+  {await pg.evaluate(()=>{ETERNA.state.imp.key='todos';ETERNA.go('importar');});
+    const S_SP=sessao({card:'LPSEMPT01',fotografo:'carlos',ponto:null,n:2,rev:FEED.rev+1});FEED.sessoes.push(S_SP);FEED.rev++;
+    await pg.evaluate(()=>{ETERNA.state.imp.point='terminal';ETERNA.render();});
+    ok(await espera(pg,()=>!!document.querySelector('.up-sess[data-card="LPSEMPT01"]'),15000)&&(await pg.$$eval('.up-sess',bs=>bs.map(b=>b.dataset.card))).includes('LPN4T6Y8B'),
+       '18/11: sessão sem ponto e sessão de outro ponto aparecem com um ponto guardado no estado: '+(await pg.$$eval('.up-sess',bs=>bs.map(b=>b.dataset.card))).join());
+    await pg.evaluate(()=>{ETERNA.state.imp.point='todos';ETERNA.render();});}
   // celular: cabeçalho quebra a linha sem estourar
   await pg.setViewportSize({width:390,height:844});await pg.waitForTimeout(300);await pg.evaluate(()=>window.scrollTo(0,document.querySelector('#up-sessoes').offsetTop-10));await pg.waitForTimeout(400);
   ok(await pg.evaluate(()=>[...document.querySelectorAll('.up-sess')].every(b=>b.scrollWidth<=b.clientWidth+1)&&document.querySelector('#up-sessoes').scrollWidth<=document.querySelector('#up-sessoes').clientWidth+1),'celular: painel e blocos sem rolagem lateral');
