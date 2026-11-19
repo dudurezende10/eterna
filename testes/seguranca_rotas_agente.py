@@ -204,6 +204,19 @@ try:
     ok(set(j) == {"ok", "agent", "version", "boot"}, "/status com Host de fora: mínimo")
     st, j, _ = pede("GET", "/photoroom/status", cookie=posto)
     ok(st == 200 and set(j) == {"configured", "fundos_modo"}, "/photoroom/status do posto: %s" % j)
+    # montagem feita no servidor (E1): as duas rotas são do Checkout (posto pareado ou módulo de venda), sem CORS aberto, e
+    # com a chave desligada (padrão) respondem 503 sem criar pasta; sem credencial, a resposta não depende da foto
+    ok(m.rota_regra("GET", "/montagem/ag_abcdef/telao.jpg") == ("posto_ou_sessao", m.VENDER) and m.rota_regra("POST", "/montagens/pedir") == ("posto_ou_sessao", m.VENDER),
+       "rotas da montagem na tabela com o módulo de venda")
+    ok(m.rota_privada("/montagem/ag_abcdef/telao.jpg") and m.rota_privada("/montagens/pedir") and m.rota_regra("GET", "/montagens/pedir") is None, "rotas da montagem privadas")
+    st, j, _ = pede("GET", "/montagem/ag_abcdef/telao.jpg?t=p", cookie=posto)
+    st2, j2, _ = pede("POST", "/montagens/pedir", {"pids": ["ag_abcdef"], "fundos": ["telao"], "tipos": ["p"]}, cookie=posto)
+    ok(st == 503 and st2 == 503 and j == j2 == {"error": "montagem_desligada"} and not os.path.exists(m.MONTAGENS), "montagem desligada: 503 nas duas rotas, sem pasta: %s %s" % (st, st2))
+    ok(pede("GET", "/montagem/ag_abcdef/telao.jpg?t=p")[:2] == pede("GET", "/montagem/../x?t=p")[:2] == (401, {"erro": "sem_sessao"}), "montagem sem credencial: a mesma resposta para qualquer foto")
+    ok(pede("GET", "/montagem/ag_abcdef/telao.jpg?t=p", cookie=foto)[0] == 403 and pede("POST", "/montagens/pedir", {}, cookie=foto)[0] == 403, "montagem para quem não tem módulo de venda: 403")
+    _, _, hs = pede("GET", "/status", cookie=posto)
+    st, j, _ = pede("GET", "/status", cookie=posto)
+    ok(j.get("montagem", {}).get("v") == 1 and j["montagem"].get("modo") == "desligada" and "pasta" not in j["montagem"], "/status.montagem para o posto: %s" % j.get("montagem"))
     # CORS: * só na galeria do cliente
     _, _, hs = pede("GET", "/g/" + "a" * 22 + "/info", extra={"Origin": "https://qualquer.example"})
     ok(hs.get("access-control-allow-origin") == "*", "galeria /g/ com CORS aberto")

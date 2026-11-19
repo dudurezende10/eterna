@@ -226,6 +226,26 @@ ok(m.app_disco_gravar("img/c.jpg", b"z" * 1000), "d: gravar c")
 ok(m.app_disco_ler("img/a.jpg") is None and m.app_disco_ler("img/b.jpg") and m.app_disco_ler("img/c.jpg"),
    "d: a poda deveria apagar só o mais antigo: %r" % os.listdir(m.APP_CACHE_DIR))
 ok(sorted(m.APP_FUNDOS_ATIVOS) == FUNDOS, "d: fundos ativos do agente iguais aos do app: %r x %r" % (sorted(m.APP_FUNDOS_ATIVOS), FUNDOS))
+# montagem no servidor (E1): MTG_FUNDOS, MTG_BASE e MTG_ATIVOS do agente iguais ao index.html (file, fileHi, mono, impAlto,
+# telao de DATA.backgrounds; FIA_BASE; BG_DEF) e ao motor (FUNDOS e BASE do eterna-montagem.py)
+_bgs = {}
+for _mm in re.finditer(r"\{id:'([a-z0-9]+)',name:'(?:[^{}]|\{[^{}]*\})*\}", _html[_html.index("DATA.backgrounds=["):_html.index("const angN=")]):
+    _t = _mm.group(0)
+    _f = re.search(r"file:'([^']+)'", _t)
+    _h = re.search(r"fileHi:'([^']+)'", _t)
+    _tl = re.search(r"telao:\{w:(\d+),h:(\d+),quad:(\[\[[\d,\[\]]+\]\])\}", _t)
+    _bgs[_mm.group(1)] = {"previa": _f.group(1), "hi": (_h or _f).group(1), "mono": bool(re.search(r"mono:'", _t)), "impAlto": "impAlto:true" in _t,
+                          "telao": {"w": int(_tl.group(1)), "h": int(_tl.group(2)), "quad": json.loads(_tl.group(3))} if _tl else None}
+ok(len(_bgs) >= 10 and all(f in _bgs for f in m.MTG_FUNDOS), "d: os fundos da montagem existem no app: %r" % sorted(_bgs))
+for _f in m.MTG_FUNDOS:
+    ok(m.MTG_FUNDOS[_f] == _bgs.get(_f), "d: MTG_FUNDOS[%s] diferente do index.html: %r x %r" % (_f, m.MTG_FUNDOS[_f], _bgs.get(_f)))
+_base = dict((k, int(v)) for k, v in re.findall(r"([a-z0-9]+):(\d)", re.search(r"const FIA_BASE=\{([^}]*)\}", _html).group(1)))
+ok(m.MTG_BASE == _base, "d: MTG_BASE igual ao FIA_BASE do app: %r x %r" % (m.MTG_BASE, _base))
+ok(list(m.MTG_ATIVOS) == re.findall(r"'([a-z0-9]+)'", re.search(r"const BG_DEF=\[([^\]]*)\]", _html).group(1)), "d: MTG_ATIVOS igual ao BG_DEF do app: %r" % (m.MTG_ATIVOS,))
+ok(sorted(m.MTG_FUNDOS[f]["previa"] for f in m.MTG_ATIVOS) == sorted(m.APP_FUNDOS_ATIVOS), "d: as prévias dos fundos ativos da montagem estão no app offline")
+_motor = m.mtg_motor()
+ok(_motor is not None and _motor.FUNDOS == m.MTG_FUNDOS and _motor.BASE == m.MTG_BASE and _motor.VERSAO == m.MTG_VERSAO,
+   "d: FUNDOS, BASE e VERSAO do eterna-montagem.py iguais aos do agente")
 # origem: só https, ou http neste computador
 ok(all(m.app_origem_ok(o) for o in ("https://eterna.photo", "https://previa.exemplo.com/x", "http://127.0.0.1:9", "http://localhost:8890")), "d: origens aceitas")
 ok(not any(m.app_origem_ok(o) for o in ("http://exemplo.com", "http://127.0.0.1.exemplo.com", "ftp://eterna.photo", "file:///etc", "eterna.photo",

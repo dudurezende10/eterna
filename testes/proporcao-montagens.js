@@ -1,3 +1,4 @@
+const statusSemMontagem=require('./_status_agente.js');
 // Regra 20 (Eduardo, 16/11/2026; docs/planos/2026-11-16-proporcao-montagens.md): proporção da pessoa nas montagens.
 // Recorte LARGO (grupo, bandeira aberta, braços abertos): a largura limita e nada muda no Mirante do Rio nem no Telão: o
 // resultado tem que ser igual, número a número, à conta de antes (refeita aqui com os números antigos). Recorte ESTREITO
@@ -21,6 +22,7 @@ try{
   const png=await pg.evaluate(()=>{const c=document.createElement('canvas');c.width=2400;c.height=1600;const x=c.getContext('2d');x.fillStyle='#f0f';x.fillRect(878,520,644,1080);return c.toDataURL('image/png').split(',')[1];});
   await ctx.route(ORIG+'/recorte',r=>r.fulfill({status:200,contentType:'image/png',body:Buffer.from(png,'base64')}));
   await pg.evaluate(()=>{ETERNA.state.agent.on=true;ETERNA.state.agent.recorte={ok:true};});
+  await statusSemMontagem(ctx,ORIG,pg); // o agente responde sem `montagem` (modo conhecido): o navegador monta no canvas
   const r=await pg.evaluate(async([ANTES])=>{const E=ETERNA;const o={regras:{},casos:{},faixa:{},rosto:{},montar:{}};
     // recorte sintético: caixa bw×bh encostada na borda de baixo de um quadro 2400×1600; "t" = braços abertos (barra no alto e tronco estreito)
     const rec=(bw,bh,forma)=>{const c=document.createElement('canvas');c.width=2400;c.height=1600;const x=c.getContext('2d');x.fillStyle='#f0f';const x0=Math.round((2400-bw)/2),y0=1600-bh;
