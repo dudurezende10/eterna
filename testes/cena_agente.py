@@ -518,6 +518,19 @@ try:
     fonte = open(sys.argv[1], encoding="utf8").read()
     ok("CENA_DB" not in fonte.split("bancos = [b for b in (")[1].split(")")[0], "19: cena.db fora do backup")
 
+    # ---------- revisão: rótulo com mais de 60 dias não volta para a fila nem entra na medida ----------
+    DIA61 = m._ff_hoje(time.time() - 61 * 86400)
+    p61, f61 = thumb("gramado")
+    biblioteca(p61, f61, DIA61)
+    rotula(p61, "gramado", "LPVELHA61", DIA61)
+    m._cena_base_t[0] = time.time()
+    b61 = m.cena_base("medir")
+    time.sleep(1.0)
+    ok(p61 not in m.cena_q and p61 not in b61["pids"] and m.cena_enfileira(p61, f61, 2, DIA61) is False and linha(p61) is None,
+       "rótulo com 61 dias: fora da fila e da medida: %r" % (linha(p61),))
+    ok(p61 not in {e["pid"] for e in m.cena_medida("sessao", forcar=True)["erros"]} and m.cena_medida("sessao")["n"] == len(b61["y"]),
+       "rótulo com 61 dias: fora da medida")
+
     # ---------- revisão de segurança 5: modelo trocado (SHA novo) apaga os vetores ----------
     db = sqlite3.connect(m.CENA_DB)
     sha0 = (db.execute("select v from meta where k = 'sha'").fetchone() or [None])[0]
@@ -563,5 +576,12 @@ except Exception:
     falhas.append("exceção: %s" % traceback.format_exc()[-1200:])
 print(("OK" if not falhas else "FALHA") + " cena_agente: reconhecer o ponto (fatia B: 7 a 21, 25; fatia C: 26 a 38) · %s" % json.dumps(num)
       + ("" if not falhas else " · " + " | ".join(falhas[:12])))
+# revisão: o cena_loop e o processo de cena param antes de o HOME temporário ser apagado (sem FileNotFoundError no fim)
+m.cena_parar.set()
+try:
+    m.cena_fechar()
+except Exception:
+    pass
+time.sleep(2.5)
 sys.stdout.flush()
 os._exit(1 if falhas else 0)

@@ -12492,6 +12492,7 @@ cena_q = collections.OrderedDict()         # pid -> (prio, seq, thumb, dia); a m
 _cena_seq = itertools.count()
 cena_mem = {}                              # pid -> {"r", "c", "v", "g", "rec", "dia"} de hoje e ontem
 cena_pend = {}                             # card -> hora em que fechou com cena_pendente (só com o sess_lock)
+cena_parar = threading.Event()             # só os testes ligam: o cena_loop termina
 _cena_base = {}                            # chave -> {"t", "base"}
 _cena_base_t = [0.0]                       # o treino_gravar zera o cache da base de medir
 _cena_med = {}                             # (versao, metodo) -> {"t", "r"}
@@ -12606,6 +12607,8 @@ def cena_enfileira(pid, thumb, prio=1, dia=None):
     Acima de CENA_FILA_MAX sai o mais antigo (a varredura recoloca as de hoje)."""
     if treino_cfg_mem().get("ponto") == "desligada" or not pid_ok(pid) or not thumb:
         return False
+    if dia and dia < _ff_hoje(time.time() - CENA_DIAS * 86400):
+        return False                                  # revisão: foto mais velha que o corte do cena_limpa não volta à fila
     with cena_lock:
         ant = cena_q.get(pid)
         if ant is not None and ant[0] <= prio:
@@ -12865,7 +12868,8 @@ def cena_base(modo="medir"):
             return None
         rot = [tuple(x) for x in json.loads(r[0])]
     else:
-        rot = cena_rotulos()
+        corte = _ff_hoje(agora - CENA_DIAS * 86400)   # revisão: o mesmo corte do cena_limpa (senão a foto volta à fila de hora em hora)
+        rot = [r for r in cena_rotulos() if (r[3] or "") >= corte]
     vs = _cena_vetores([x[0] for x in rot])
     sem, X, y, ps, cards, dias, quem, verde, sinais, ems, prev0 = 0, [], [], [], [], [], [], [], [], [], []
     for pid, ponto, card, dia, fot, em in rot[:CENA_MEDIDA_MAX]:
@@ -13567,7 +13571,7 @@ def cena_loop():
     """A thread do reconhecimento do ponto: junta até CENA_LOTE, manda ao filho, grava e classifica. Desligada: dorme sem
     consumir (e fecha o filho). Varredura a cada 5 min, limpeza de hora em hora, reclassificação quando a versão muda."""
     t_varre, t_limpa, t_comp, t_crit, ver = 0.0, time.time(), 0.0, 0.0, None
-    while True:
+    while not cena_parar.is_set():                    # só os testes param (antes de apagar o HOME temporário)
         try:
             agora = time.time()
             modo = treino_cfg_mem().get("ponto")
