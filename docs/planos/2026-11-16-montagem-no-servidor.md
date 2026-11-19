@@ -11,7 +11,7 @@ Base lida: commit `2191342` (index.html, agente, docs, servidor/). Tempos e tama
 5. **`FUNDOS_PREVIA`/`FUNDOS_IMPRESSAO` do agente não têm o `telao`** (são o mapa do Photoroom). A montagem precisa de mapa próprio.
 6. **Nomes já usados no agente:** `MONT_TERMINAIS_MAX`, `mont_recusadas`, `montagens_dia/validar/gravar`, rota `POST /ponto/montagens`, teste `testes/montagens_agente.py` (contagem de montagens vistas, selo). O código novo usa o prefixo `mtg_`/`MTG_` e as rotas `/montagem/` e `/montagens/pedir`.
 7. **Pacotes: nada novo.** `servidor/linux/requisitos.txt` já fixa `numpy==2.5.4`, `opencv-python-headless==4.10.0.84`, `pillow==13.0.0` (e `scipy`, `pymatting`, `numba`, fora de uso aqui). O YuNet já está em `~/Eterna/modelos/face_detection_yunet_2023mar.onnx` (`MOD_DET`).
-8. **Servidor:** `HOME=/srv/eterna`, então `~/Eterna/montagens` nasce no NVMe, onde o login `eduardo` não lê. `recortes` é link para o HD (`/srv/eterna-midia/recortes`, `MIDIA_PASTAS` do `instalar.sh`). O instalador PARA se a pasta já tiver arquivo no NVMe. Processador com só 6 núcleos visíveis, sem SMT (`2026-11-14-servidor-definitivo.md`).
+8. **Servidor:** `HOME=/srv/eterna`, então `~/Eterna/montagens` nasce no NVMe, onde só o usuário do serviço lê. `recortes` é link para o HD (`/srv/eterna-midia/recortes`, `MIDIA_PASTAS` do `instalar.sh`). O instalador PARA se a pasta já tiver arquivo no NVMe. Processador com só 6 núcleos visíveis, sem SMT (`2026-11-14-servidor-definitivo.md`).
 9. **`/status` completo exige sessão ou posto pareado.** Por SSH o Eduardo só vê o mínimo. A conferência de leitura tem de sair do journal e do `ls`: o agente imprime linhas `montagem-srv:` no registro.
 10. O agente já mede "rosto de frente" (`ler_rostos(detalhe=True)`: nariz a até `SESS_Q_FRONTAL` = 0,35 da distância entre os olhos). A E3 usa o mesmo critério.
 
@@ -26,7 +26,7 @@ Base lida: commit `2191342` (index.html, agente, docs, servidor/). Tempos e tama
 **Ronaldo (4)**
 1. Antes de ligar: rodar o `instalar.sh` já com `montagens` em `MIDIA_PASTAS` (vai no commit da E1), para a pasta nascer no HD. Quanto há livre em `/srv/eterna-midia` e no NVMe? Enquanto isso não for feito a chave fica em "desligada" e nada é criado.
 2. Sessões por dia e pico de fotos por minuto num dia cheio; `ETERNA_RECORTE_CONC=2` está ligado? Os outros 6 núcleos vão ser ligados na BIOS? (A montagem é processador.)
-3. Nuvem: o `CLAUDE.md` proíbe publicar a nuvem a partir de `idiomas-base`; o `servidor/galeria-nuvem/README.md` manda clonar `idiomas-base`. Este plano não mexe na nuvem. Qual dos dois vale? E o bucket tem regra de expiração para `alta/` e `vitrine/`? (A montagem vendida entra lá.)
+3. Nuvem: as orientações do repositório sobre de qual ramo publicar a nuvem não batem entre si (o `servidor/galeria-nuvem/README.md` manda clonar `idiomas-base`). Este plano não mexe na nuvem. Qual vale? E o bucket tem regra de expiração para `alta/` e `vitrine/`? (A montagem vendida entra lá.)
 4. Pode deixar combinado `ETERNA_MONTAGEM=0` no `nuvem.env` como desligamento à força (precisa de `sudo` e reinício), e incluir `agente/eterna-montagem.py` na lista do `compila()` do vigia na próxima vez que rodar o instalador? (O vigia não se atualiza pelo git.)
 
 ## Objetivo
@@ -185,7 +185,7 @@ Com `sombra`: uma linha de partida com `modo=sombra versao=m2 no_hd=sim` e os 3 
 ```bash
 ssh srv-viva-maracana 'ls /srv/eterna-midia/montagens | wc -l; d=$(ls -t /srv/eterna-midia/montagens | head -1); ls -l /srv/eterna-midia/montagens/$d; du -sh /srv/eterna-midia/montagens'
 ```
-Na pasta mais nova: `mirantedia-xxxxxxxx-p.jpg`, `arq1950-…-p.jpg`, `telao-…-p.jpg` (e os `-i.jpg`), todos `-rw-------`, de 0,3 a 1,5 MB. Não conferi se o login `eduardo` lista essa pasta; se negar, fica só o journal.
+Na pasta mais nova: `mirantedia-xxxxxxxx-p.jpg`, `arq1950-…-p.jpg`, `telao-…-p.jpg` (e os `-i.jpg`), todos `-rw-------`, de 0,3 a 1,5 MB. Não conferi se o login do TI lista essa pasta; se negar, fica só o journal.
 ```bash
 ssh srv-viva-maracana 'ps -u eterna -o pid,ni,rss,etime,args | grep -E "eterna-(montagem|recorte)" | grep -v grep; nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader; uptime'
 ```
@@ -217,6 +217,9 @@ Regra do Eduardo (18/11): com a chave em Ligada o navegador nunca recorta nem mo
 - A impressão (`t=i`, e o `pedir` com `["p","i"]`) tem a conta dela no limite por minuto: as prévias não a barram. O `pedir` confere também uma conta geral por minuto antes de ler o corpo.
 - Montagem nova só de base (`mtg_base_ok`): foto de leva carregada só se é base; foto fora das levas carregadas só com a montagem vendida naquele fundo (venda paga no `vendas.db`, a reimpressão). Senão `nao_base`. As vendas pagas são lidas por uma conexão só de leitura, sem o `ev_lock` (o WAL deixa ler junto com a gravação), e relidas só quando o banco muda.
 - Fundo que a origem não entregou: espera crescente de 30 s até 5 min antes de baixar de novo.
+- Processo de montagem que parou ou passou do tempo numa foto: a foto vai para `mtg_ruins` com `MTG_ERRO_DE_NOVO` (10 min; o `GET` responde 422 nesse prazo), o processo reabre em `MTG_ERRO_FOTO_SEG` (5 s) e os trabalhos das outras fotos esperam a reabertura em vez de falhar. Uma morte repetida na mesma foto conta uma vez só para a parada.
+- Piso duro de disco: abaixo de metade do `REC_PISO_GB` nada é montado, nem o pedido do Checkout (`GET` e `pedir` respondem 503 `disco`).
+- Vendas pagas para a reimpressão: só as dos últimos `MTG_PAGAS_DIAS` (o prazo da biblioteca, pelo índice do dia), sem as canceladas, uma leitura por vez (quem chega durante a leitura usa o último valor). Sem como ler: 503 `vendas_indisponivel` (o item não sai da venda).
 
 ## Critérios de aceite (E2)
 1. Ligada, montagens prontas: o Checkout mostra as 4 sem "Preparando", `fiaMontagens.canvas === 0`, nenhum `POST /recorte`.
