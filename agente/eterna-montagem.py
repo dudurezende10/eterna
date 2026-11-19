@@ -20,6 +20,8 @@
 #   6) rostos: a mesma leitura do ynDetect (640x640, foto inteira + 4 quadrantes de 60%, limiar 0,6, NMS 0,3)
 #   8) redução de imagem: o canvas do Chromium diminui por nível de mip (média de 2x2) + bilinear de ponto fixo, não por
 #      um filtro largo: a pessoa menor que o recorte e o corte 10x15 seguem essa conta (reduzir); ampliação é cúbica
+#   9) corte do joelho (D8, fiaJoelho): o tEXt "eterna" do PNG do recorte (joelho, pernas) corta o corpo inteiro na linha
+#      dos joelhos, na prévia e na impressão
 #   7) prévia: o recorte de 3000 px é reduzido a 2400 em memória pelo mesmo thumbnail(LANCZOS) do agente (rec_fazer), que
 #      é o PNG que o navegador recebe em lado:2400; a impressão usa o de 3000 e o fundo de 5000 px
 #
@@ -67,7 +69,9 @@ REGRAS = {
     "arq1950": {"mono": {"contraste": 1.10}, "meio": {"corte": 1, "alt": .66, "larg": .92, "cx": .5},
                 "inteiro": {"corte": .62, "alt": .66, "larg": .92, "cx": .5},
                 "estreito": {"corte": .74, "alt": .66, "larg": .92, "cx": .5}},
-    "tunel": {"meio": {"corte": 1, "alt": .75, "larg": .92, "cx": .5}, "inteiro": {"corte": .62, "alt": .75, "larg": .92, "cx": .5}},
+    # regra 22 (túnel v2): nada acima de 23,4% da altura (a faixa "Born to Score"); estreito no quadril, como a regra 20
+    "tunel": {"meio": {"corte": 1, "alt": .766, "larg": .92, "cx": .5}, "inteiro": {"corte": .62, "alt": .766, "larg": .92, "cx": .5},
+              "estreito": {"corte": .74, "alt": .766, "larg": .92, "cx": .5}},
     "podio": {"meio": {"corte": 1, "alt": .80, "larg": .62, "cx": .45}, "inteiro": {"corte": .62, "alt": .80, "larg": .62, "cx": .45}},
     "telao": {"meio": {"corte": .80, "alt": .90, "larg": .90, "cx": .5}, "inteiro": {"corte": .50, "alt": .90, "larg": .90, "cx": .5},
               "estreito": {"corte": .47, "alt": .90, "larg": .90, "cx": .5}},
@@ -75,8 +79,8 @@ REGRAS = {
 PADRAO = {"meio": {"corte": 1, "alt": .80, "larg": .92, "cx": .5}, "inteiro": {"corte": .62, "alt": .80, "larg": .92, "cx": .5}}
 # regra 20 (fiaEstreito): razão largura/altura do recorte medido; até DE é estreito, de ATE em diante é a regra de sempre
 ESTREITO_DE, ESTREITO_ATE = .70, 1.20
-# qual base de IA (0 = 1ª, corpo inteiro; 1 = 2ª, fechada) cada fundo prefere
-BASE = {"arq1950": 0, "podio": 0, "telao": 1, "mirantedia": 1, "campeao2": 1, "campeaoarg": 1, "campeaocol": 1, "mirante": 1, "tunel": 1}
+# qual base de IA (0 = 1ª, 1 = 2ª) cada fundo prefere (FIA_BASE; o túnel v2 usa a 1ª, como o 1950)
+BASE = {"arq1950": 0, "podio": 0, "telao": 1, "mirantedia": 1, "campeao2": 1, "campeaoarg": 1, "campeaocol": 1, "mirante": 1, "tunel": 0}
 # fundos com montagem local: arquivo da prévia e da impressão (caminhos do app), preto e branco na foto inteira (bg.mono),
 # corte 10x15 preso no alto (impAlto) e a tela do Telão (regra 17: cantos da área de imagem em px do arquivo de w x h)
 FUNDOS = {
@@ -86,9 +90,11 @@ FUNDOS = {
               "telao": {"w": 4096, "h": 2924, "quad": [[884, 181], [3485, 525], [3582, 1931], [848, 1681]]}},
     "campeao2": {"previa": "img/bg-campeao-v81.jpg", "hi": "img/fundos-5k/campeao.jpg", "mono": False, "impAlto": False, "telao": None},
     "mirante": {"previa": "img/bg-mirantesol.jpg", "hi": "img/fundos-5k/mirantesol.jpg", "mono": False, "impAlto": False, "telao": None},
-    "tunel": {"previa": "img/bg-tunel.jpg", "hi": "img/fundos-5k/tunel.jpg", "mono": False, "impAlto": False, "telao": None},
+    "tunel": {"previa": "img/bg-tunel-v2.jpg", "hi": "img/fundos-5k/tunel-v2.jpg", "mono": False, "impAlto": True, "telao": None},
     "podio": {"previa": "img/bg-podio.jpg", "hi": "img/fundos-5k/podio.jpg", "mono": False, "impAlto": False, "telao": None},
 }
+# corte do joelho (D8, fiaJoelho): só com a linha dos joelhos entre estas frações da altura do recorte
+JOELHO_MIN, JOELHO_MAX = .35, .97
 # acabamento de tela do Telão (fiaTelao), na ordem do canvas
 TELAO_FILTRO = {"brilho": 1.04, "contraste": 1.05, "saturacao": 1.06, "blur_min": .3, "blur_div": 2400}
 
@@ -96,14 +102,14 @@ TELAO_FILTRO = {"brilho": 1.04, "contraste": 1.05, "saturacao": 1.06, "blur_min"
 def regras_json():
     return {"versao": VERSAO, "regras": REGRAS, "padrao": PADRAO, "estreito": [ESTREITO_DE, ESTREITO_ATE], "base": BASE,
             "fundos": FUNDOS, "telao_filtro": TELAO_FILTRO, "imp": list(IMP_PX), "medida": LADO_MEDIDA, "alfa": ALFA_CORTE,
-            "lado_previa": LADO_PREVIA}
+            "lado_previa": LADO_PREVIA, "joelho": [JOELHO_MIN, JOELHO_MAX]}
 
 
 def regra_do_fundo(bg):
     """O que decide a montagem deste fundo (entra na versão da montagem: regra nova = montagem nova)."""
     F = FUNDOS.get(bg) or {}
     return {"r": REGRAS.get(bg) or PADRAO, "e": [ESTREITO_DE, ESTREITO_ATE], "g": F, "f": TELAO_FILTRO if F.get("telao") else None,
-            "imp": list(IMP_PX), "q": [Q_PREVIA, Q_IMPRESSAO], "lado": LADO_PREVIA}
+            "imp": list(IMP_PX), "q": [Q_PREVIA, Q_IMPRESSAO], "lado": LADO_PREVIA, "j": [JOELHO_MIN, JOELHO_MAX]}
 
 
 def jsround(v):
@@ -258,6 +264,41 @@ def medir(alfa):
             base = max(base, rows[y][1] - rows[y][0] + 1)
     return {"W": W0, "H": H0, "w": w, "h": h, "k": k, "rows": rows,
             "box": {"x": x0, "y": y0, "w": x1 - x0 + 1, "h": y1 - y0 + 1}, "trunc": base > w * .005}
+
+
+# ---------------------------------------------------------------- corte do joelho (fiaPngInfo, fiaJoelho)
+def png_info(cut):
+    """O tEXt "eterna" que o processo de recorte grava no PNG ({"v":1,"joelho":fração|null,"pernas":bool}); None sem ele
+    (recorte antigo) ou ilegível, como o fiaPngInfo."""
+    try:
+        j = json.loads((getattr(cut, "info", None) or {}).get("eterna") or "null")
+    except (TypeError, ValueError):
+        return None
+    return j if isinstance(j, dict) else None
+
+
+def joelho(m, info):
+    """D8 (fiaJoelho): corpo inteiro serve de base e a montagem mostra a pessoa do joelho para cima. Só quando a silhueta
+    encosta embaixo (trunc) com as pernas inteiras na foto: corta na linha dos joelhos do recorte e a borda cortada passa a
+    encostar embaixo. Fora disso (ou sem o joelho no PNG) a medida volta como veio."""
+    if not m or not m["trunc"] or not info or not info.get("pernas"):
+        return m
+    jj = info.get("joelho")
+    if isinstance(jj, bool) or not isinstance(jj, (int, float)):
+        return m
+    box = m["box"]
+    yk = jsround(jj * m["h"])
+    if not (JOELHO_MIN <= jj <= JOELHO_MAX) or yk <= box["y"] + box["h"] * .3 or yk >= box["y"] + box["h"]:
+        return m
+    rows = [r if y < yk else None for y, r in enumerate(m["rows"])]
+    x0, x1 = m["w"], -1
+    for y in range(box["y"], yk):
+        r = rows[y]
+        if r:
+            x0, x1 = min(x0, r[0]), max(x1, r[1])
+    if x1 < 0:
+        return m
+    return dict(m, rows=rows, box={"x": x0, "y": box["y"], "w": x1 - x0 + 1, "h": yk - box["y"]}, trunc=True, joelho=yk)
 
 
 # ---------------------------------------------------------------- estreito e layout (fiaEstreito, fiaLayout)
@@ -697,7 +738,9 @@ def abrir_recorte(caminho):
     with Image.open(caminho) as im:
         if im.size[0] * im.size[1] > MAX_PIXELS:
             raise ValueError("imagem_grande")
-        return im.convert("RGBA")
+        out = im.convert("RGBA")
+        out.info = dict(im.info)                    # o tEXt "eterna" (joelho) segue junto
+        return out
 
 
 def previa_de(cut):
@@ -707,6 +750,7 @@ def previa_de(cut):
         return cut
     pv = cut.copy()
     pv.thumbnail((LADO_PREVIA, LADO_PREVIA), Image.LANCZOS)
+    pv.info = dict(cut.info)
     return pv
 
 
@@ -717,6 +761,7 @@ class Recorte:
 
     def __init__(self, cut):
         self.im = {"hi": cut}
+        self.info = png_info(cut)                   # o joelho vale para a prévia e para a impressão (fração da altura)
         self.pm, self.m, self._det, self._lido = {}, {}, None, False
 
     def cut(self, t):
@@ -732,7 +777,7 @@ class Recorte:
     def medida(self, t):
         import numpy as np
         if t not in self.m:
-            self.m[t] = medir(np.asarray(self.cut(t).getchannel("A")))
+            self.m[t] = joelho(medir(np.asarray(self.cut(t).getchannel("A"))), self.info)
         return self.m[t]
 
     def detectados(self, yunet):
@@ -782,7 +827,7 @@ def montar(cut, plate, bg, yunet=None, m=None, rostos_dados=None, ms=None, rosto
     ms = ms if ms is not None else {}
     t = time.time()
     if m is None:
-        m = medir(np.asarray(cut.getchannel("A")))
+        m = joelho(medir(np.asarray(cut.getchannel("A"))), png_info(cut))
     ms["medir"] = ms.get("medir", 0) + int((time.time() - t) * 1000)
     if not m:
         raise ValueError("sem_pessoa")
@@ -1078,8 +1123,10 @@ def teste(manda):
                 manda({"ok": True, "frente": frente(detectar(cut, j.get("yunet")) if "detectados" not in j else j["detectados"])})
                 continue
             m = medir(np.asarray(cut.getchannel("A")))
+            if j.get("joelho"):
+                m = joelho(m, png_info(cut))
             if j.get("so_medir"):
-                manda({"ok": True, "m": m and {k: m[k] for k in ("W", "H", "w", "h", "k", "box", "trunc") + (("rows",) if j.get("linhas") else ())}})
+                manda({"ok": True, "m": m and {k: m[k] for k in ("W", "H", "w", "h", "k", "box", "trunc") + (("rows",) if j.get("linhas") else ())}, "info": png_info(cut)})
                 continue
             plate = abrir_fundo(j["fundo"])
             if j.get("so_layout"):                 # P1: a função pura com a medida e os rostos do navegador

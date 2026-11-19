@@ -60,7 +60,7 @@ def medir_montagem():
         voltas = int(arg("--voltas") or 3)
         tempos, pico, n = {}, 0, 0
         for v in range(voltas):
-            for fundo in ("mirantedia", "arq1950", "telao"):
+            for fundo in ("mirantedia", "arq1950", "telao", "tunel"):
                 for tipo in ("p", "i"):
                     n += 1
                     dest = os.path.join(mont, "aaaaaaaaaaaa", "%s-%08x-%s.jpg" % (fundo, v, tipo))
@@ -79,7 +79,7 @@ def medir_montagem():
         p.stdin.close()
         p.wait(timeout=10)
         print("montagem (ms, mediana de %d; a 1ª de cada recorte e de cada fundo inclui abrir os arquivos):" % voltas)
-        for fundo in ("mirantedia", "arq1950", "telao"):
+        for fundo in ("mirantedia", "arq1950", "telao", "tunel"):
             print("  %-11s prévia %5d · impressão %5d" % (fundo, statistics.median(tempos[(fundo, "p")]), statistics.median(tempos[(fundo, "i")])))
         print("pico de memória do processo: %d MB" % pico)
         return 0

@@ -3908,12 +3908,19 @@ def rec_arquivo(pid, lado=REC_LADO_MAX):
     return os.path.join(RECORTES, pid + (".png" if lado >= REC_LADO_MAX else "_%d.png" % lado))
 
 
-def _grava_png(im, destino):
+def _grava_png(im, destino, eterna=None):
+    """eterna: o tEXt do recorte de 3000 (joelho e pernas, D8) vai junto na cópia de 2400: a prévia corta no joelho como a
+    impressão (sem ele, o fiaJoelho do app não achava o joelho na prévia)."""
     os.makedirs(RECORTES, exist_ok=True)
     tmp = destino + ".%d.tmp" % threading.get_ident()
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    pinfo = None
+    if isinstance(eterna, str) and len(eterna) < 2000:
+        from PIL.PngImagePlugin import PngInfo
+        pinfo = PngInfo()
+        pinfo.add_text("eterna", eterna)
     with os.fdopen(fd, "wb") as f:
-        im.save(f, "PNG", compress_level=3)
+        im.save(f, "PNG", compress_level=3, pnginfo=pinfo)
     os.replace(tmp, destino)
 
 
@@ -3963,9 +3970,10 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
             rec["ms_ultimo"] = ms
     if destino != cheio:
         with Image.open(cheio) as im:
+            info = im.info.get("eterna")
             im = im.copy()
         im.thumbnail((lado, lado), Image.LANCZOS)
-        _grava_png(im, destino)
+        _grava_png(im, destino, info)
     return destino
 
 
@@ -4319,12 +4327,12 @@ MTG_FUNDOS = {
               "telao": {"w": 4096, "h": 2924, "quad": [[884, 181], [3485, 525], [3582, 1931], [848, 1681]]}},
     "campeao2": {"previa": "img/bg-campeao-v81.jpg", "hi": "img/fundos-5k/campeao.jpg", "mono": False, "impAlto": False, "telao": None},
     "mirante": {"previa": "img/bg-mirantesol.jpg", "hi": "img/fundos-5k/mirantesol.jpg", "mono": False, "impAlto": False, "telao": None},
-    "tunel": {"previa": "img/bg-tunel.jpg", "hi": "img/fundos-5k/tunel.jpg", "mono": False, "impAlto": False, "telao": None},
+    "tunel": {"previa": "img/bg-tunel-v2.jpg", "hi": "img/fundos-5k/tunel-v2.jpg", "mono": False, "impAlto": True, "telao": None},
     "podio": {"previa": "img/bg-podio.jpg", "hi": "img/fundos-5k/podio.jpg", "mono": False, "impAlto": False, "telao": None},
 }
-MTG_ATIVOS = ("mirantedia", "arq1950", "telao")     # os que o servidor monta sozinho (BG_DEF do app); os outros, só sob pedido
+MTG_ATIVOS = ("mirantedia", "arq1950", "telao", "tunel")   # os que o servidor monta sozinho (BG_DEF do app); os outros, só sob pedido
 # qual base (0 = 1ª, 1 = 2ª) cada fundo prefere: cópia de FIA_BASE do app, conferida por teste
-MTG_BASE = {"arq1950": 0, "podio": 0, "telao": 1, "mirantedia": 1, "campeao2": 1, "campeaoarg": 1, "campeaocol": 1, "mirante": 1, "tunel": 1}
+MTG_BASE = {"arq1950": 0, "podio": 0, "telao": 1, "mirantedia": 1, "campeao2": 1, "campeaoarg": 1, "campeaocol": 1, "mirante": 1, "tunel": 0}
 MTG_PIDS = os.path.join(HOME, "ponto", "montagem-filhos.json")
 _re_mtg = re.compile(r"^(ag_)?([0-9a-f]{6,40})/([a-z0-9]{2,40})\.jpg$")
 _re_mtg_arq = re.compile(r"^([a-z0-9]{2,40})-([0-9a-f]{8})-([pif])\.jpg$")
@@ -4481,15 +4489,25 @@ def mtg_info(pid):
 
 
 def mtg_candidatas(x):
-    """As bases de IA da sessão x ({"fotos", "ia", "ia_regra"}), na ordem (1ª, 2ª). Hoje: as bases dos cliques de IA
-    (x["ia"]) quando há; senão as 2 primeiras fotos da sessão que não deram sem_pessoa (a mesma escolha do
-    rec_pre_escolha e do lojaAIAntigo do app); leva cuja visita já tem as bases: nenhuma.
-    É AQUI que a fatia 2 (reconhecer a foto da bandeira) encaixa: só esta função muda."""
+    """As bases de IA da sessão x ({"fotos", "ia", "ia_regra"}), na ordem (1ª, 2ª): só x["ia"], as fotos de gramado que o
+    servidor reconheceu (regra 19, o mesmo que o rec_pre_escolha recorta e o lojaAIBase do app lê). Sem bases, nada
+    (não existe plano B: nunca as 2 primeiras fotos de qualquer ponto); leva cuja visita já tem as bases: nada."""
     if (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
         return []
-    if x.get("ia"):
-        return list(x["ia"])[:2]
-    return [p for p in (x.get("fotos") or []) if p not in mtg_sem_pessoa][:2]
+    return [p for p in (x.get("ia") or []) if isinstance(p, str)][:2]
+
+
+def mtg_base_ok(pid):
+    """Montagem nova só sai de base de IA (regra 19). Foto de sessão carregada (ontem e hoje) que não é base de nenhuma
+    leva: não. Foto de dia mais antigo (reimpressão de venda antiga): sim, a venda já foi feita com ela."""
+    with sess_lock:
+        c = sess_pid.get(pid)
+        x = sess.get(c) if c else None
+        if x is None:
+            return True
+        if pid in (x.get("ia") or ()):
+            return True
+        return any(pid in (y.get("ia") or ()) for y in sess.values())
 
 
 def mtg_preferida(fundo, n):
@@ -5006,7 +5024,8 @@ def mtg_status():
                 "ms_medio": int(mtg["ms_total"] / n) if n else None,
                 "atraso_p50_s": _pct(mtg["atrasos"], 0.5), "atraso_p90_s": _pct(mtg["atrasos"], 0.9),
                 "guardado_gb": round((mtg["bytes"] or 0) / 1024 ** 3, 2), "livre_gb": round(livre, 1) if livre is not None else None,
-                "piso_gb": REC_PISO_GB, "pausa_disco": bool(mtg["pausa_disco"]), "no_hd": mtg_no_hd()}
+                "piso_gb": REC_PISO_GB, "pausa_disco": bool(mtg["pausa_disco"]), "no_hd": mtg_no_hd(),
+                "imprime": True, "montaveis": sorted(MTG_FUNDOS), "ativos": list(MTG_ATIVOS)}   # E2: Checkout e Posto leem e imprimem (modo ligada)
 
 
 def _mtg_linha_partida(modo, versoes):
@@ -5039,7 +5058,8 @@ def mtg_passada(refazer=False):
     with sess_lock:
         ss = sorted((x for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
                     key=lambda x: -(x.get("ultima_chegada") or x.get("fechada_em") or 0))
-        ss = [{"fotos": list(x["fotos"]), "ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {})} for x in ss]
+        ss = [{"fotos": list(x["fotos"]), "ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {}),
+               "fechada_em": _num(x.get("fechada_em"))} for x in ss]
     n = 0
     for x in ss:
         cands = mtg_candidatas(x)
@@ -5068,6 +5088,9 @@ def mtg_passada(refazer=False):
                 if not tem_p:
                     with lock:
                         u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
+                    # o atraso conta de quando a base passou a existir: chegada da foto ou fechamento da leva (regra 19: as
+                    # bases saem no fechamento, 60 s sem clique, ou depois, quando o reconhecimento do gramado termina)
+                    u = max(u, x.get("fechada_em") or 0.0)
                     job, _ = mtg_enfileirar(pid, fundo, ("p",), MTG_P_REFAZER if velha else MTG_P_VIVO if e_pref else MTG_P_RESERVA,
                                             u=None if velha else u or None, pref=e_pref,
                                             grupo=[f for f in MTG_ATIVOS if pref[f] == pid and versoes.get(f)])
@@ -17291,6 +17314,8 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if not mtg_base_ok(pid):                       # regra 19: montagem nova só de base de IA (mesmo 404 de foto desconhecida)
+            return self.js(nf, 404, True)
         job, erro = mtg_enfileirar(pid, fundo, (t,), MTG_P_PEDIDO)
         if erro == "fila_cheia":
             return self.js({"error": "muitos pedidos"}, 429, True)
@@ -17323,6 +17348,7 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "foto não encontrada no agente"}, 404, True)
         itens = []
         for pid in pids:
+            base = mtg_base_ok(pid)
             for fundo in fundos:
                 versao = mtg_versao(fundo)
                 w, h = mtg_dims(fundo)
@@ -17332,6 +17358,8 @@ class H(BaseHTTPRequestHandler):
                     estado = "pronta"
                 elif pid in mtg_sem_pessoa:
                     estado = "sem_pessoa"
+                elif not base:
+                    estado = "nao_base"                      # regra 19: só as bases de IA viram montagem
                 elif ruim and ruim[0] == versao and time.time() - ruim[2] < 30:
                     estado = "erro"                          # acabou de falhar: o pedido seguinte (30 s) tenta de novo
                 else:
