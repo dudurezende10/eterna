@@ -524,11 +524,26 @@ try:
     db.close()
     ok(sha0 == "0" * 64, "5: o SHA do modelo fica no cena.db: %r" % sha0)
     ok(m.cena_sha_confere(sha0) is False, "5: mesmo SHA não apaga nada")
+    db = sqlite3.connect(m.CENA_DB)
+    v_lig = (db.execute("select versao from modelo order by em desc").fetchone() or [None])[0]
+    db.close()
+    with m.estado_lock:                              # Ligada com uma versão congelada que existe
+        db = m.estado_db()
+        db.execute("update doc set valor = ? where col = 'config' and id = 'treino'",
+                   (json.dumps({"ponto": "ligada", "exposicao": "desligada", "ponto_versao": v_lig}),))
+        db.commit()
+        db.close()
+    m._treino_cfg["t"] = 0.0
+    ok(v_lig and m.treino_cfg()["ponto"] == "ligada", "5: antes da troca, Ligada com a versão congelada %r" % v_lig)
     ok(m.cena_sha_confere("b" * 64) is True, "5: SHA novo apaga")
     db = sqlite3.connect(m.CENA_DB)
     n_vet = db.execute("select count(*) from cena where vet is not null").fetchone()[0]
+    n_mod = db.execute("select count(*) from modelo").fetchone()[0]
     db.close()
     ok(n_vet == 0 and not m.cena_mem, "5: modelo trocado: nenhum vetor nem classificação antiga: %d" % n_vet)
+    m._treino_cfg["t"] = 0.0
+    cf5 = m.treino_cfg()
+    ok(n_mod == 0 and cf5["ponto"] == "medir" and not cf5.get("ponto_versao"), "5: modelo trocado: nada em modelo e Ligada vira Só medir: %r %r" % (n_mod, cf5))
 
     # ---------- 20: filho morto reabre e para na 3ª morte, sem tocar no recorte ----------
     m.treino_cfg_gravar({"ponto": "medir"}, "adm")

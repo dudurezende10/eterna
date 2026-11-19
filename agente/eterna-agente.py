@@ -12518,7 +12518,8 @@ def cena_db():
 
 def cena_sha_confere(sha):
     """18/11 (revisão de segurança): o SHA do modelo que gerou os vetores fica no cena.db. Modelo trocado = todos os vetores
-    (e as classificações feitas com eles) saem; as medidas do recorte e o prev0 ficam. A varredura refaz as fotos de hoje."""
+    (e as classificações feitas com eles) saem, e as versões congeladas (tabela modelo) também: o Ligada vira Só medir pela
+    migração do treino_cfg e só volta passando no critério. As medidas do recorte e o prev0 ficam. A varredura refaz as de hoje."""
     if not isinstance(sha, str) or not sha:
         return False
     with cena_db_lock:
@@ -12530,6 +12531,7 @@ def cena_sha_confere(sha):
             mudou = r is not None
             if mudou:
                 db.execute("update cena set vet = null, rotulo = null, conf = null, g = 0, versao = null")
+                db.execute("delete from modelo")      # revisão: o conjunto congelado era do modelo velho; Ligada passa pelo critério de novo
             db.execute("insert into meta values ('sha', ?) on conflict(k) do update set v = excluded.v", (sha,))
             db.commit()
         finally:
@@ -12540,7 +12542,12 @@ def cena_sha_confere(sha):
             _cena_base.clear()
             _cena_med.clear()
         _cena_base_t[0] = time.time()
-        print("  cena: o modelo mudou (SHA novo): vetores e classificações antigas apagados; as fotos de hoje são refeitas")
+        print("  cena: o modelo mudou (SHA novo): vetores, classificações e versões congeladas apagados; as fotos de hoje são refeitas")
+        _treino_cfg["t"] = 0.0
+        try:
+            treino_cfg()                              # sem modelo congelado, Ligada vira Só medir na hora (migração, com linha no log)
+        except Exception as ex:
+            print("  cena: interruptor não relido depois da troca do modelo (%s)" % str(ex)[:80])
     return mudou
 
 
