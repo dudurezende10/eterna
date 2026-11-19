@@ -12451,9 +12451,10 @@ def treino_status():
 CENA_DB = os.path.join(HOME, "ponto", "cena.db")
 CENA_NOME = "clip-b32"
 CENA_ARQ = "clip-vit-b32-visao.onnx"      # em ~/Eterna/modelos (MODELOS); baixado pelo instalar-recorte-modelos.py
-# PENDENTE (Ronaldo): o SHA-256 do arquivo, o mesmo do CENA_SHA do instalar-recorte-modelos.py. Vazio = sem modelo
+# SHA-256 do arquivo (página do arquivo no Hugging Face, commit 6ef1ebc, licença MIT; conferido em 18/11), o mesmo do
+# CENA_SHA do instalar-recorte-modelos.py. Vazio = sem modelo
 # (falha fechada: nada é reconhecido e o Checkout fica sem fundos de IA). Ver docs/fundos-ia-regras.md, regra 19.
-CENA_SHA = ""
+CENA_SHA = "fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40"
 CENA_FALSO = None          # só os testes: caminho de um filho falso (testes/_cena_filho_falso.py); pula a conferência do SHA
 CENA_K = 7
 CENA_LIMIAR = 0.70

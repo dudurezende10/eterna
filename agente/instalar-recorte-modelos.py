@@ -6,9 +6,8 @@
 #   SHA-256 conferido; diferente, o arquivo é apagado e o instalador para. Baixa num temporário e troca no fim.
 #   18/11 (regra 19): o modelo de cena (CLIP ViT-B/32, só a torre de imagem, em ONNX fp32; conversão pública do
 #   Transformers.js, Xenova/clip-vit-base-patch32, arquivo onnx/vision_model.onnx; o CLIP original da OpenAI é MIT) em
-#   ~/Eterna/modelos/clip-vit-b32-visao.onnx, com o SHA-256 conferido do mesmo jeito. Enquanto o CENA_SHA estiver vazio
-#   (pendente: o Ronaldo confere nome, licença e SHA na página do arquivo e preenche aqui e no CENA_SHA do agente), o
-#   instalador NÃO baixa nada dele e avisa; o resto do recorte instala normalmente.
+#   ~/Eterna/modelos/clip-vit-b32-visao.onnx, com o SHA-256 conferido do mesmo jeito. SHA conferido em 18/11 na página do arquivo
+#   (commit 6ef1ebc do repositório, licença MIT). Se o CENA_SHA ficar vazio, o instalador NÃO baixa nada dele e avisa.
 # --provedor: só mostra se a placa de vídeo (CUDA) abre com o onnxruntime instalado (servidor com NVIDIA), para o recorte
 # e, se já estiver instalado, para o modelo de cena.
 import hashlib, os, re, sys, tempfile
@@ -16,9 +15,9 @@ import hashlib, os, re, sys, tempfile
 MOVENET_URL = "https://github.com/Kazuhito00/MoveNet-Python-Example/raw/main/onnx/movenet_multipose_lightning_1.onnx"
 MOVENET_SHA = "61c25a6fc887b0e8d14517c3d66fdaf36c0e7a7ec0d50f74ed41a32ca1485184"
 MODELOS = ("birefnet-general", "u2net_human_seg", "isnet-general-use")
-CENA_URL = "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model.onnx"
+CENA_URL = "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/6ef1ebc8b0766a7a8d11b146462c99cdf74dd22d/onnx/vision_model.onnx"
 CENA_ARQ = "clip-vit-b32-visao.onnx"          # o mesmo CENA_ARQ do eterna-agente.py
-CENA_SHA = ""                                 # PENDENTE (Ronaldo): o mesmo CENA_SHA do eterna-agente.py
+CENA_SHA = "fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40"  # o mesmo CENA_SHA do eterna-agente.py
 PASTA = os.path.join(os.path.expanduser("~"), "Eterna", "modelos")
 
 
