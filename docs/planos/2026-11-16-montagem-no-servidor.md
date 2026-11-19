@@ -196,58 +196,56 @@ Alvo: **p50 até 8 s e p90 até 15 s** da chegada da foto no agente até as 3 pr
 
 ---
 
-# E2. Checkout e Posto exibem e imprimem a montagem do servidor, com reserva no navegador
+# E2. Checkout, Venda manual e Posto exibem e imprimem a montagem do servidor (sem montar no navegador)
+
+Regra do Eduardo (18/11): com a chave em Ligada o navegador nunca recorta nem monta. A "reserva no navegador" do texto original saiu; o que foi feito está em "E2: como ficou", no fim.
 
 ## Escopo
-`compose`, `compHi`, `iaAquecer`/`ljPrepara`, `printMontar`, comparador para o Admin. Fora: escolha frente/livre, galeria, apagar o canvas.
+`compose`, `compHi`, `iaAquecer`/`ljPrepara`, `printMontar`, marcação dos itens de IA (Checkout e Venda manual). Fora: comparador para o Admin, escolha frente/livre, galeria, apagar o canvas.
 
-## Mudanças em `index.html`
-- `mtgSrv()`: agente ligado, `state.agent.montagem.v >= 1`, `modo === 'ligada'`, `ok`. `mtgFundo(bgId)`: o fundo está em `montagem.fundos`.
-- `MTG = new Map()` (chave `foto|fundo` → `{versao, estado, p, i, w, h, t}`), `mtgPedir(ids, fundos, tipos)` (POST `/montagens/pedir`, junta pedidos do mesmo instante), `mtgUrl(id, bg, t, versao)`.
-- `ETERNA.fiaMontagens = {servidor:0, reserva:0, canvas:0}` (contador para teste e para o Painel).
-- `compose(photoId, bgId)`: com `mtgSrv()`, foto `ag_` e `mtgFundo(bgId)`: pede a prévia (`agFetch` do `GET /montagem/…?t=p&v=…`, vira `blob:` como o `fiaRecorte` faz) e devolve `{url, w, h, srv:true}`; 202 → tenta de novo a cada 700 ms até 6 s; `sem_pessoa` → `{err:'sem_pessoa'}` como hoje (sem reserva: o canvas daria o mesmo); 404 de versão → pede de novo uma vez; qualquer outra falha, tempo esgotado ou `mtgSrv()` falso → `fiaMontar` de hoje e `reserva++`. `COMP`, `COMPOK`, `COMPURL`, `LJ_AR`, `fiaPronta`, `compHydrate` não mudam de contrato.
-- `iaAquecer(card)`: com `mtgSrv()`, um `mtgPedir` com as bases de `lojaAI(card)` e os fundos de `bgOn()` (prioridade 0), depois os `compose` em paralelo. `ljPrepara` e `LJ_PREP_MS` ficam como estão.
-- `compHi(photoId, bgId)`: com `mtgSrv()`, devolve `{url: mtgUrl(...,'i'), w:1844, h:1240, fonte:'servidor', avisos:[]}` depois de um `mtgPedir(..., ['i'])` com espera de até 20 s; falhou → `fiaMontar(...,{hi:true})` com aviso `montagem_reserva` (entra em `res.avisos` do `printMontar`, que já vai no evento `impressao`).
-- `printMontar`: sem mudança de estrutura; o `<img>` da montagem recebe a URL do agente como já recebe `/file/` nas fotos. `impJpegs()` (impressão pelo servidor): conferir que a URL do agente não suja o canvas quando o app e o agente estão em origens diferentes; se sujar, usar `agFetch` + `blob:`.
-- Comparador (Admin, Painel › Fundos de IA): `data-act="mtg-comparar"` abre, para a última sessão com montagens, servidor e navegador lado a lado nos 3 fundos, com o desvio da caixa em px e o erro médio. É como o Eduardo aprova a paridade com foto real sem tirar foto do servidor. Textos `TE`: `mtg_cmp_h`, `mtg_cmp_srv`, `mtg_cmp_nav`, `mtg_cmp_dif`.
-- Sem texto novo para o cliente.
+## Como decide (`index.html`)
+- `mtgSrv()`: o último modo do servidor que o aparelho conhece (`mtgConhecido`: o `/status` de agora ou, com o agente fora, o guardado no aparelho) é `ligada`, com `montagem.v >= 1` e `montagem.imprime`. Um `/status` que falha não muda o modo.
+- `mtgCanvasOk()`: o navegador só monta no canvas com o modo conhecido nesta página e diferente de Ligada. Até o primeiro `/status` da página, nada é montado e nenhum `POST /recorte` sai (`fiaRecorte` confere).
+- `compose` → `mtgCompose` (prévia do servidor, `blob:`); `compHi` → `mtgHi` (10x15 do servidor, `data:`, a versão da prévia). Tentativas com espera crescente: 700 ms dobrando até 8 s, com acaso. 404: o item sai da venda. 422 (falhou no servidor): estado final, sai da venda. Depois de `MTG_FALHAS_MAX` (12) tentativas seguidas sem a montagem, com o agente respondendo, o item sai da venda (`fiaFalhou`) com "Montagem indisponível".
+- Item de IA que ainda não está pronto (`fiaPronta`) não pode ser marcado com a chave ligada: Checkout (`kiosk-tog` e Quero) com o aviso `aiAguarde` (5 línguas e chinês) e Venda manual (`fila-bg`) com `mtg_aguarde`.
+- Troca da chave (no `/status` ou no aparelho de quem trocou, `mtgModoSalva`): `mtgTroca` revoga os `blob:`, sobe a geração (`MTG_GER`: trabalho em voo não vale mais), limpa `COMP`, `COMPOK` e `COMPURL` e refaz a tela. Montagem de canvas antiga não volta a valer em Ligada.
+- `ETERNA.fiaMontagens = {servidor, canvas}`: o canvas só conta montagem feita de verdade.
 
-## Mudanças no agente
-- Nenhuma rota nova. `/status.montagem` ganha `imprime: true`. `GET /montagem/…?t=i` de montagem que só tem `-p` gera a impressão com prioridade 0.
+## No agente
+- `/status.montagem` com `imprime`, `montaveis` e `ativos`. `GET /montagem/…?t=i` de montagem que só tem `-p` gera a impressão com prioridade 0.
+- `GET /montagem/` com erro recente da versão atual no motor (`mtg_ruins`, até `MTG_ERRO_DE_NOVO`): 422 `{"estado":"erro"}`, sem fila.
+- A impressão (`t=i`, e o `pedir` com `["p","i"]`) tem a conta dela no limite por minuto: as prévias não a barram.
+- Montagem nova só de base (`mtg_base_ok`): foto de leva carregada só se é base; foto fora das levas carregadas só com a montagem vendida naquele fundo (venda paga no `vendas.db`, a reimpressão). Senão `nao_base`.
+- Fundo que a origem não entregou: espera crescente de 30 s até 5 min antes de baixar de novo.
 
 ## Critérios de aceite (E2)
-1. `modo=ligada`, sessão com montagens prontas: o Checkout mostra as 3 sem "Preparando", `ETERNA.fiaMontagens.servidor === 3`, `reserva === 0`, `canvas === 0`, e nenhuma chamada a `POST /recorte`.
-2. Montagem ainda não feita (base que o servidor não previu): aparece em até 3 s em máquina de teste com filho falso; o pedido sobe para prioridade 0.
-3. Filho de montagem morto, rota respondendo 503 ou demorando mais de 6 s: as 3 montagens aparecem pelo canvas, `reserva === 3`, nenhum item sai da venda.
-4. Trocar a chave para `sombra` no Painel: em até 2 leituras do `/status` todos os postos voltam ao canvas, sem recarregar.
-5. `sem_pessoa` do servidor: o item sai como hoje (`fiaFalhou`), sem tentar o canvas.
-6. Impressão: `#print-root` tem o `<img>` da montagem com `src` em `/montagem/…?t=i`, `naturalWidth` 1844 e `naturalHeight` 1240; o evento `impressao` segue com as mesmas chaves `ai:<foto>|<fundo>`.
-7. Impressão com o servidor fora: sai pelo `fiaMontar` e o evento leva o aviso `montagem_reserva`.
-8. A prévia mostrada e o arquivo impresso da mesma venda têm a mesma `versao` (o `v` vai na URL; versão trocada no meio → 409 → pede de novo).
-9. Foto de exemplo (sem `ag_`), agente antigo (sem `montagem` no `/status`) e fundo fora de `montagem.fundos`: canvas, como hoje.
-10. Janela antiga aberta no Posto com Checkout novo: a venda fecha e imprime (pelo canvas), com a mesma chave de item.
-11. Proporção da caixa (`LJ_AR`) e o selo Edição Maracanã iguais aos de hoje; `edVista` continua contando.
-12. Comparador: mostra 3 pares; com o motor em paridade, desvio de caixa até 3 px e erro médio até 2,0 em recorte sintético.
-13. Reimpressão de venda de 3 dias atrás (recorte já limpo): o servidor refaz recorte e montagem sob pedido, ou cai na reserva; a foto sai.
-14. `FALHAS: 0`.
+1. Ligada, montagens prontas: o Checkout mostra as 4 sem "Preparando", `fiaMontagens.canvas === 0`, nenhum `POST /recorte`.
+2. Montagem na fila (202): aparece quando o servidor termina.
+3. Servidor fora (503) ou `/status` falhando com Ligada: prévia em "Preparando", impressão da foto de IA falha (as outras saem), canvas 0, nenhum `POST /recorte`. Antes do primeiro `/status`: o mesmo.
+4. 404 ou 422: o item sai da venda. Tentativas seguidas sem montagem: sai depois de `MTG_FALHAS_MAX`.
+5. Item em "Preparando" não é marcado (Checkout e Venda manual), com aviso.
+6. Impressão: `#print-root` com a imagem do servidor em 1844x1240; versão trocada (409) pede a atual.
+7. Trocar para Sombra: em até 2 leituras do `/status` o aparelho volta ao canvas; quem trocou também limpa; `blob:` revogados.
+8. Foto de exemplo e agente antigo (sem `montagem.imprime`): como antes.
+9. `FALHAS: 0` nos testes afetados.
 
 ## Testes
-`testes/montagem-checkout.js` (critérios 1 a 5, 9 a 11), `testes/montagem-impressao.js` (6 a 8, 13), ajuste em `tres-fundos.js`, `proporcao-montagens.js`, `posto-montagem.js`, `telao.js`, `selo-edicao.js` (rodam com `mtgSrv()` falso; um caso de cada com verdadeiro).
+`testes/montagem-servidor-checkout.js` (1 a 8), `testes/montagem_servidor_agente.py` (agente), `testes/montagem-paridade.js` (enquadramento).
 
 ## Depende do Ronaldo
 Nada novo. Deploy fora do horário de visita e recarregar os postos.
 
 ## Riscos (E2)
-- **Prévia do servidor e impressão do canvas na mesma venda** (reserva só num dos dois): a paridade segura o enquadramento; o aviso `montagem_reserva` deixa rastro.
-- **Imagem de visitante em `blob:` no aparelho do Checkout:** revogar as URLs ao trocar de cliente, como o `RECS` já faz (o revisor confere o reaproveitamento de nó entre clientes).
+- **Servidor sem montar com a chave ligada:** o item fica em "Preparando" e, depois das tentativas, sai da venda; a impressão daquela foto falha. É a regra (sem canvas); o registro `montagem-srv:` e o Painel mostram a causa.
+- **Imagem de visitante em `blob:` no aparelho:** revogada na troca da chave; o resto como o canvas já fazia.
 - **Chave errada no Painel:** só `configuracao.u` grava, validado no agente, com `auditLog`.
-- **Fila com muitos postos:** `MTG_P0_MAX` protege; acima disso 429 e o posto cai na reserva (nunca tela vazia).
+- **Fila com muitos postos:** `MTG_P0_MAX` protege; acima disso 429 e o item segue em "Preparando" com espera crescente.
 
 ## Conferência no servidor
 ```bash
 ssh srv-viva-maracana 'journalctl -u eterna --no-pager --since "-30 min" | grep "montagem-srv" | tail -5'
 ```
-`modo=ligada`, `erros=0`, `atraso p90` dentro do alvo. No Painel (login de Admin): linha da montagem verde e, depois de um atendimento de teste, o comparador com os 3 pares.
+`modo=ligada`, `erros=0`, `atraso p90` dentro do alvo.
 
 ---
 
@@ -367,7 +365,7 @@ Depois de uma venda de teste com montagem: uma linha `vendida` (sem id de foto),
 
 ## Ordem e o que sobe primeiro
 1. **E1 em `desligada`** sobe hoje sem risco (nada roda). Ronaldo roda o instalador (pasta no HD). Eduardo põe em `sombra` no Painel e confere pelos comandos acima. **É a primeira que dá para testar na placa do servidor**, com fotos de teste, sem visita.
-2. E2 depois de o comparador mostrar paridade com foto real e o `atraso p90` dentro do alvo.
+2. E2 (Ligada) depois de a Sombra mostrar, no registro `montagem-srv:`, `erros=0` e o `atraso p90` dentro do alvo com fotos de teste no gramado.
 3. E3 em `sombra` junto ou logo depois da E2; liga com o número de um dia.
 4. E4 por último (depende de E1; não depende de E3). Amarra com a F1 do plano da impressão (`impFixa`).
 
@@ -397,11 +395,11 @@ Regra do Eduardo (18/11, antiga e reafirmada): o recorte e a montagem dos fundos
 
 O que mudou desde a E1 (junto com o `idiomas-base` v99.36.0):
 
-- **Bases só do servidor (regra 19).** `mtg_candidatas(x)` devolve só `x["ia"]` (fotos de gramado reconhecidas). Sem bases, a leva não é montada; o jeito antigo (as 2 primeiras fotos de qualquer ponto) não existe no servidor. Montagem nova pelas rotas também só de base: foto de leva carregada (ontem e hoje) que não é base responde 404 no `GET /montagem/` e `nao_base` no `POST /montagens/pedir` (`mtg_base_ok`). Foto de dia mais antigo (reimpressão de venda antiga) continua aceita.
+- **Bases só do servidor (regra 19).** `mtg_candidatas(x)` devolve só `x["ia"]` (fotos de gramado reconhecidas). Sem bases, a leva não é montada; o jeito antigo (as 2 primeiras fotos de qualquer ponto) não existe no servidor. Montagem nova pelas rotas também só de base: foto de leva carregada (ontem e hoje) que não é base responde 404 no `GET /montagem/` e `nao_base` no `POST /montagens/pedir` (`mtg_base_ok`). Foto fora das levas carregadas só com a montagem vendida naquele fundo (reimpressão).
 - **Quatro fundos ativos.** `MTG_ATIVOS` ganhou a Saída do túnel v2 (`img/bg-tunel-v2.jpg`, `img/fundos-5k/tunel-v2.jpg`, impressão presa no alto como o 1950, regra 22: `alt .766` e `estreito`). `MTG_BASE.tunel = 0` (1ª base, como o `FIA_BASE`).
 - **Corte do joelho (D8) no motor.** `png_info` lê o tEXt `eterna` do PNG do recorte e `joelho` é a porta do `fiaJoelho` (mesmos limites `.35` e `.97`, mesma condição: silhueta encostada embaixo e pernas inteiras). Vale na prévia e na impressão. O agente passou a copiar o tEXt para a cópia de 2400 do recorte (`_grava_png`): antes a prévia do navegador perdia o joelho e só a impressão cortava.
 - **Checkout, Venda manual e Posto (E2).** Com `mtgSrv()` (agente ligado, `montagem.modo === 'ligada'` e `montagem.imprime`):
-  - `compose` → `mtgCompose`: baixa a prévia do servidor (`GET /montagem/<pid>/<fundo>.jpg?t=p`) e mostra como `blob:`; 202, 503, 429 ou rede esperam em passos de 700 ms até 6 s; depois disso o item fica em "Preparando" e o `compHydrate` tenta de novo a cada 3 s; 404 (sem pessoa, não é base) tira o item da venda pelo `fiaFalhou` de sempre.
+  - `compose` → `mtgCompose`: baixa a prévia do servidor (`GET /montagem/<pid>/<fundo>.jpg?t=p`) e mostra como `blob:`; 202, 503, 429 ou rede esperam com espera crescente (700 ms dobrando até 8 s) até 6 s; depois disso o item fica em "Preparando" e o `compHydrate` tenta de novo, também com espera crescente; 404 (sem pessoa, não é base) e 422 (falhou no servidor) tiram o item da venda pelo `fiaFalhou` de sempre.
   - `iaAquecer` faz um `POST /montagens/pedir` só (prioridade 0 para o que faltar) e baixa as prévias juntas.
   - `compHi` → `mtgHi`: o 10x15 do servidor (`?t=i`) com a versão da prévia mostrada; 409 (versão trocada) pede a atual; até 50 s. Sem o arquivo, a foto de IA falha na impressão (vai para `falhasIA`), sem montar no navegador.
   - `lojaAI` deixa de fora o fundo que o servidor não sabe montar (`montagem.montaveis`, ex.: as variações da Noite de campeão).
@@ -410,7 +408,9 @@ O que mudou desde a E1 (junto com o `idiomas-base` v99.36.0):
 - **Agente:** `/status.montagem` ganhou `imprime: true`, `montaveis` (os 7 fundos do motor) e `ativos`. O atraso do registro (`atraso p50/p90`) conta de quando a base passou a existir (chegada da foto ou fechamento da leva, o maior), porque desde a regra 19 as bases só saem no fechamento (60 s sem clique) ou quando o reconhecimento termina.
 - **Tempo-alvo.** Medido nesta máquina de teste (2 núcleos): cerca de 0,4 a 0,6 s por montagem no `montagem_servidor_agente.py`. Com 4 fundos são 4 prévias preferidas por leva, então o alvo "p50 até 8 s e p90 até 15 s da base pronta às prévias preferidas" continua com folga no servidor (6 núcleos), contado a partir do fechamento da leva. O visitante leva minutos até o Checkout; o pedido do Checkout passa na frente (prioridade 0). O número real sai no registro `montagem-srv:` com a chave em Sombra.
 
-Ficou de fora desta entrega: o comparador lado a lado para o Admin (`mtg-comparar`), a E3 (frente ou livre) e a E4 (galeria). Sem reserva no navegador por decisão do Eduardo: com a chave em Ligada, se o servidor não montar, o item fica em "Preparando" (ou sai da venda) e a impressão daquela foto falha com aviso.
+Revisão (19/11): o aparelho decide pelo último modo conhecido do servidor (um `/status` que falha não faz voltar ao canvas; até o primeiro `/status` da página nada é montado); 422 do servidor e tentativas seguidas sem montagem tiram o item da venda; item em "Preparando" não pode ser marcado; a troca da chave revoga os `blob:` e descarta o trabalho em voo também no aparelho de quem trocou; espera crescente nas tentativas; impressão com limite próprio; foto fora das levas carregadas só com a montagem vendida; download do fundo com espera crescente.
+
+Ficou de fora desta entrega: o comparador lado a lado para o Admin (`mtg-comparar`), a E3 (frente ou livre) e a E4 (galeria). Sem reserva no navegador por decisão do Eduardo: com a chave em Ligada, se o servidor não montar, o item fica em "Preparando" e, depois das tentativas, sai da venda; a impressão daquela foto falha.
 
 ### Como ligar (Eduardo ou Admin, na tela)
 
