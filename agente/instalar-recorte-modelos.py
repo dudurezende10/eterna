@@ -77,8 +77,11 @@ def movenet():
 def cena():
     """18/11 (regra 19): o modelo de cena, igual ao movenet(): URL fixa, SHA-256 fixo, temporário + os.replace, apaga se não bater."""
     if not re.fullmatch(r"[0-9a-f]{64}", CENA_SHA or ""):
-        print("AVISO: o SHA-256 do modelo de cena (%s) ainda não foi fixado neste instalador: nada baixado. O reconhecimento do"
-              " gramado fica desligado até alguém preencher CENA_SHA aqui e no eterna-agente.py." % CENA_ARQ)
+        print("AVISO: o SHA-256 do modelo de cena (%s) ainda não foi fixado: nada baixado e o reconhecimento do gramado fica"
+              " desligado. Para ligar: (1) confira na página do arquivo (%s) o nome, a licença e o SHA-256; (2) ponha o MESMO"
+              " valor em CENA_SHA neste instalador e no agente/eterna-agente.py, num commit em idiomas-base; (3) depois que o"
+              " servidor atualizar, rode instalar-recorte de novo e reinicie o Eterna; (4) confira em /status.treino.modelo_ponto"
+              " que pronto é true e provedor é cuda." % (CENA_ARQ, CENA_URL))
         return True
     destino = os.path.join(PASTA, CENA_ARQ)
     if os.path.isfile(destino):

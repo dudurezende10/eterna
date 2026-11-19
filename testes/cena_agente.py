@@ -307,6 +307,24 @@ try:
     m._cena_base_t[0] = time.time()
     ok(m.cena_base("ligada")["versao"] == LV and x17 not in m.cena_base("ligada")["pids"], "17: rótulo gravado depois não entra no Ligada")
     ok(espera(lambda: m.cena_mem.get(p9, {}).get("v") == LV, 8), "38: as de hoje reclassificadas com a versão ligada")
+    # revisão de segurança 2: o conjunto congelado é o que foi medido (rótulo novo no meio = None e o POST dá 409)
+    b_velha = m.cena_base("medir")
+    x17b, fxb = thumb("chute")
+    biblioteca(x17b, fxb, HOJE)
+    rotula(x17b, "chute", "LPDEPOIS2", HOJE)
+    espera(lambda: (m._cena_base_t.__setitem__(0, time.time()) or True) and m.cena_base("medir")["versao"] != b_velha["versao"], 10)
+    ok(m.cena_congelar("teste", b_velha) is None, "2 (revisão): rótulos mudaram depois da medida: não congela")
+    # revisão de segurança 4: em modelo ficam só a versão ligada e a anterior
+    db = sqlite3.connect(m.CENA_DB)
+    for v_ in ("c1-velha-1", "c1-velha-2"):
+        db.execute("insert into modelo values (?, '[]', '{}', 'x', '2026-01-01')", (v_,))
+    db.commit()
+    db.close()
+    ret_v = m.cena_congelar("teste", None, LV)
+    db = sqlite3.connect(m.CENA_DB)
+    vs_ = sorted(r[0] for r in db.execute("select versao from modelo"))
+    db.close()
+    ok(ret_v and vs_ == sorted({ret_v, LV}), "4 (revisão): só a versão nova e a anterior ficam em modelo: %r" % vs_)
 
     # ---------- 18: LGPD ----------
     alvo = next(p for p, c in ROT.items() if c == "gramado")
@@ -329,13 +347,13 @@ try:
                 d.clear()
             m.cena_pend.clear()
 
-    def leva(classes, quem="carlos", info=None, sem_thumb=()):
+    def leva(classes, quem="carlos", info=None, sem_thumb=(), recusada=()):
         out = []
         for i, c in enumerate(classes):
             _s[0] += 1
             p, f = thumb(c)
-            if i in sem_thumb:
-                os.remove(f)                     # a miniatura sumiu: nunca é classificada
+            if i in sem_thumb or i in recusada:
+                os.remove(f)                     # a miniatura sumiu (sem_thumb: nem vai para a fila; recusada: o processo recusa)
             md = {"o": quem, "s": "ftp", "u": T + _s[0] * 3 + 1, "cap": T + _s[0] * 3}
             with m.lock:
                 m.lib[p] = {"file": f, "thumb": f}
@@ -344,7 +362,8 @@ try:
                 INFO[p] = info[i]
             with m.sess_lock:
                 m._sess_add(p, md, m.ff_cadastrados(), agora=md["u"])
-            m.cena_enfileira(p, f, 0)
+            if i not in sem_thumb:
+                m.cena_enfileira(p, f, 0)
             out.append(p)
         return out
 
@@ -395,15 +414,40 @@ try:
     ok(espera(lambda: m.cena_mem.get(p30[1], {}).get("v") == LV and base_ok(p30[1]), 10), "30: classificou e recortou depois")
     ok(espera(lambda: x30["ia"] == p30[:2], 10) and x30["ia_regra"].get("reaberta") == "cena", "30: ia preenchida com reaberta cena: %r %r" % (x30["ia"], x30["ia_regra"]))
     reset()
-    real_pagas = m.lgpd_vendas_pagas
+    real_pagas = m.cena_vendas_pagas
     with m.cena_filho_lock:
         p30b = leva(["gramado", "gramado", "chute", "outro"])
         m.sess_tick(T + _s[0] * 3 + 500)
-    m.lgpd_vendas_pagas = lambda: {p30b[0]}
+    m.cena_vendas_pagas = lambda: {p30b[0]}
     x30b = x_de(p30b[0])
     ok(espera(lambda: x30b["ia_regra"]["motivo"] != "cena_pendente", 12), "30: a pendente terminou")
     ok(x30b["ia"] == [] and x30b["ia_regra"]["motivo"] == "cena_indisponivel", "30: base já vendida: o agente não preenche: %r" % x30b["ia_regra"])
-    m.lgpd_vendas_pagas = real_pagas
+    m.cena_vendas_pagas = real_pagas
+    ok(isinstance(m.cena_vendas_pagas(), frozenset), "3 (revisão): vendas pagas de hoje e ontem (sem vendas.db: vazio)")
+    # revisão (obrigatório): leva em cena_pendente que estava fechada quando o agente reiniciou termina depois da partida
+    reset()
+    with m.cena_filho_lock:
+        p_re = leva(["gramado", "gramado", "chute", "outro"])
+        m.sess_tick(T + _s[0] * 3 + 500)
+        card_re = m.sess_pid[p_re[0]]
+        ok((m.sess[card_re].get("ia_regra") or {}).get("motivo") == "cena_pendente", "reinício: a leva fechou pendente")
+        m.sess_gravar()
+        with m.sess_lock:
+            for d in (m.sess, m.sess_pid, m.sess_aberta, m.sess_cand, m.sess_ultima):
+                d.clear()
+            m.cena_pend.clear()
+        m.sess_carregar()
+        ok(card_re in m.cena_pend, "reinício: a leva pendente volta para o cena_pend na partida")
+    x_re = m.sess.get(card_re)
+    ok(x_re is not None and espera(lambda: (x_re.get("ia_regra") or {}).get("motivo") != "cena_pendente", 15)
+       and (x_re["ia"] == p_re[:2] or x_re["ia_regra"]["motivo"] == "cena_indisponivel"),
+       "reinício: a leva termina (com as bases ou cena_indisponivel): %r %r" % ((x_re or {}).get("ia"), (x_re or {}).get("ia_regra")))
+    # revisão: foto que o processo de cena recusa fica "não classificável" e não trava a leva
+    reset()
+    p_nc = leva(["gramado", "gramado", "gramado", "chute"], recusada=(0,))
+    ok(espera(lambda: m.cena_mem.get(p_nc[0], {}).get("r") == m.CENA_NAO, 8), "recusada vira não classificável: %r" % m.cena_mem.get(p_nc[0]))
+    x_nc = fecha(p_nc[1:])
+    ok(x_nc["ia"] == p_nc[1:3], "recusada pula e a leva não trava: %r %r" % (x_nc["ia"], x_nc["ia_regra"]))
     # 31: pendente por mais de 15 min: cena_indisponivel
     reset()
     ps31 = leva(["gramado", "gramado", "chute"], sem_thumb=(0,))
@@ -473,6 +517,18 @@ try:
     ok(linha(pl) is None and linha(ISO[0]) is not None, "19: a linha some com 60 dias (a rotulada fica)")
     fonte = open(sys.argv[1], encoding="utf8").read()
     ok("CENA_DB" not in fonte.split("bancos = [b for b in (")[1].split(")")[0], "19: cena.db fora do backup")
+
+    # ---------- revisão de segurança 5: modelo trocado (SHA novo) apaga os vetores ----------
+    db = sqlite3.connect(m.CENA_DB)
+    sha0 = (db.execute("select v from meta where k = 'sha'").fetchone() or [None])[0]
+    db.close()
+    ok(sha0 == "0" * 64, "5: o SHA do modelo fica no cena.db: %r" % sha0)
+    ok(m.cena_sha_confere(sha0) is False, "5: mesmo SHA não apaga nada")
+    ok(m.cena_sha_confere("b" * 64) is True, "5: SHA novo apaga")
+    db = sqlite3.connect(m.CENA_DB)
+    n_vet = db.execute("select count(*) from cena where vet is not null").fetchone()[0]
+    db.close()
+    ok(n_vet == 0 and not m.cena_mem, "5: modelo trocado: nenhum vetor nem classificação antiga: %d" % n_vet)
 
     # ---------- 20: filho morto reabre e para na 3ª morte, sem tocar no recorte ----------
     m.treino_cfg_gravar({"ponto": "medir"}, "adm")
