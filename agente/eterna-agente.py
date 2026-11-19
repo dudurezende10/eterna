@@ -4316,6 +4316,9 @@ MTG_CARGA_SEG = 60       # s para o filho abrir (numpy, Pillow, OpenCV)
 MTG_ERRO_SEG = 60
 MTG_MORTES_MAX = 3
 MTG_ERRO_DE_NOVO = 600   # s: montagem que deu erro só volta sozinha depois disto (o pedido do Checkout tenta antes, ver MTG_ERRO_RECENTE)
+MTG_PISO_DURO = 0.5      # fração do REC_PISO_GB abaixo da qual nada é montado, nem o pedido do Checkout (503 disco)
+MTG_ERRO_FOTO_SEG = 5    # s: espera para reabrir depois que o processo parou numa foto (ela vai para mtg_ruins; as outras seguem)
+MTG_PAGAS_DIAS = RETENCAO_DIAS   # vendas pagas lidas para a reimpressão: o prazo da biblioteca (galeria e selfie)
 MTG_ERRO_RECENTE = 30    # s: erro do motor tão recente que as rotas respondem "erro" sem pôr na fila (a mesma janela no GET e no pedir)
 MTG_P_PEDIDO, MTG_P_VIVO, MTG_P_RESERVA, MTG_P_IMPRESSAO, MTG_P_REFAZER = 0, 1, 2, 3, 4
 MTG_MODOS = ("desligada", "sombra", "ligada")
@@ -4507,21 +4510,38 @@ def mtg_candidatas(x):
 _mtg_pagas = {"chave": None, "v": frozenset()}
 
 
+_mtg_pagas_lock = threading.Lock()
+
+
 def mtg_pagas():
-    """(pid, fundo) das montagens de vendas pagas no vendas.db (aiSel 'ai:<id>|<fundo>' do evento criar de venda com
-    pagar). Relido só quando o banco muda. Erro de leitura sobe para quem chama."""
+    """(pid, fundo) das montagens de vendas pagas e não canceladas nos últimos MTG_PAGAS_DIAS (aiSel 'ai:<id>|<fundo>' do
+    evento criar de venda com pagar e sem cancelar). Relido só quando o banco muda, uma leitura por vez: quem chega durante
+    a leitura usa o último valor lido. Sem nenhum valor lido ainda (ou erro de leitura): a exceção sobe para quem chama."""
     if not os.path.exists(VENDAS_DB):
         return frozenset()
-    chave = tuple(os.stat(p).st_mtime_ns if os.path.exists(p) else 0 for p in (VENDAS_DB, VENDAS_DB + "-wal"))
+    chave = (_ff_hoje(),) + tuple(os.stat(p).st_mtime_ns if os.path.exists(p) else 0 for p in (VENDAS_DB, VENDAS_DB + "-wal"))
     if _mtg_pagas["chave"] == chave:
         return _mtg_pagas["v"]
+    if not _mtg_pagas_lock.acquire(blocking=False):
+        if _mtg_pagas["chave"] is None:
+            raise RuntimeError("vendas em leitura")
+        return _mtg_pagas["v"]
+    try:
+        return _mtg_pagas_ler(chave)
+    finally:
+        _mtg_pagas_lock.release()
+
+
+def _mtg_pagas_ler(chave):
+    desde = _ff_hoje(time.time() - MTG_PAGAS_DIAS * 86400)
     # conexão própria, só de leitura e sem o ev_lock: o WAL deixa ler junto com a gravação, então o registro de vendas
-    # nunca espera por esta leitura (o pior caso é ler a fotografia de um instante antes)
+    # nunca espera por esta leitura (o pior caso é ler a fotografia de um instante antes); só os dias do prazo (índice evento_dia)
     db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=2, check_same_thread=False)
     try:
         db.execute("pragma query_only=1")
-        rs = db.execute("select dados from evento where tipo = 'criar' and venda in"
-                        " (select venda from evento where tipo = 'pagar')").fetchall()
+        rs = db.execute("select dados from evento where tipo = 'criar' and dia >= ?"
+                        " and venda in (select venda from evento where tipo = 'pagar' and dia >= ?)"
+                        " and venda not in (select venda from evento where tipo = 'cancelar' and dia >= ?)", (desde, desde, desde)).fetchall()
     finally:
         db.close()
     out = set()
@@ -4541,7 +4561,7 @@ def mtg_pagas():
 def mtg_base_ok(pid, fundo=None):
     """Montagem nova só sai de base de IA (regra 19). Foto de leva carregada (ontem e hoje): só se é base de alguma leva.
     Foto fora das levas carregadas: só a reimpressão de montagem vendida (venda paga no vendas.db com aquela base naquele
-    fundo). Sem como ler as vendas: não."""
+    fundo). Sem como ler as vendas: None (as rotas respondem 503)."""
     with sess_lock:
         c = sess_pid.get(pid)
         x = sess.get(c) if c else None
@@ -4552,7 +4572,7 @@ def mtg_base_ok(pid, fundo=None):
     try:
         pagas = mtg_pagas()
     except Exception:
-        return False
+        return None                                    # sem como ler as vendas agora: quem chama responde 503 (o item não sai da venda)
     return any(p == pid and (fundo is None or f == fundo) for p, f in pagas)
 
 
@@ -4669,19 +4689,27 @@ def _mtg_filho_fim(p, padrao):
     return "%s (código %s)" % (padrao, rc)
 
 
-def _mtg_erro(motivo):
-    """Erro do processo: espera MTG_ERRO_SEG; morte por memória dobra a espera a cada vez e para na MTG_MORTES_MAX-ésima."""
+def _mtg_erro(motivo, chave=None):
+    """Erro do processo: espera MTG_ERRO_SEG; morte por memória dobra a espera a cada vez e para na MTG_MORTES_MAX-ésima.
+    chave = (pid, fundo) quando o processo parou no meio de uma montagem: a foto vai para mtg_ruins (quem chama), a espera
+    para reabrir é curta (MTG_ERRO_FOTO_SEG, as outras fotos seguem) e uma morte repetida na mesma foto não conta de novo
+    para a parada."""
     with mtg_lock:
         mtg["erro"] = motivo[:200]
         mtg["erro_em"] = time.time()
         if "memória insuficiente (código" in motivo:
-            mtg["mortes_mem"] += 1
-            mtg["espera_s"] = MTG_ERRO_SEG * 2 ** (mtg["mortes_mem"] - 1)
+            if not (chave and chave == mtg.get("morte_chave")):
+                mtg["mortes_mem"] += 1
+            mtg["espera_s"] = MTG_ERRO_SEG * 2 ** (max(1, mtg["mortes_mem"]) - 1)
             if mtg["mortes_mem"] >= MTG_MORTES_MAX:
                 mtg["parado"] = ("montagem parada: o processo foi encerrado por falta de memória %d vezes seguidas. Reinicie o agente"
                                  % mtg["mortes_mem"])
         else:
             mtg["espera_s"] = MTG_ERRO_SEG
+        if chave:
+            mtg["morte_chave"] = chave
+            if not mtg["parado"]:
+                mtg["espera_s"] = min(mtg["espera_s"], MTG_ERRO_FOTO_SEG)
         parado = mtg["parado"]
     print("  montagem-srv: processo parou: %s" % (parado or motivo)[:160])
 
@@ -4735,7 +4763,11 @@ def _mtg_abrir():
     return f
 
 
-def mtg_filho_montar(req):
+class MtgMorte(RuntimeError):
+    """O processo parou (ou passou do tempo) no meio desta montagem."""
+
+
+def mtg_filho_montar(req, chave=None):
     """Manda uma montagem ao processo e espera (até MTG_ESPERA_FILHO). Devolve a resposta {"ok": True, ...}. Resposta de
     erro do motor: ValueError(código). Processo que morre ou demora: RuntimeError (reabre depois, com espera crescente)."""
     f = mtg_filho
@@ -4749,21 +4781,21 @@ def mtg_filho_montar(req):
         except Exception:
             motivo = _mtg_filho_fim(f["p"], "a montagem parou")
             _rec_filho_matar(f)
-            _mtg_erro(motivo)
-            raise RuntimeError(motivo)
+            _mtg_erro(motivo, chave)
+            raise MtgMorte(motivo)
         fim = time.time() + MTG_ESPERA_FILHO
         while True:
             try:
                 j = f["fila"].get(timeout=max(0.1, fim - time.time()))
             except queue.Empty:
                 _rec_filho_matar(f)
-                _mtg_erro("montagem demorou mais de %d s: reiniciada" % MTG_ESPERA_FILHO)
-                raise RuntimeError("tempo")
+                _mtg_erro("montagem demorou mais de %d s: reiniciada" % MTG_ESPERA_FILHO, chave)
+                raise MtgMorte("tempo")
             if j is None:
                 motivo = _mtg_filho_fim(f["p"], "a montagem parou no meio de uma foto")
                 f["p"] = None
-                _mtg_erro(motivo)
-                raise RuntimeError(motivo)
+                _mtg_erro(motivo, chave)
+                raise MtgMorte(motivo)
             if j.get("id") == rid:
                 break
     if not j.get("ok"):
@@ -4834,7 +4866,7 @@ def _mtg_fazer(job):
             rec_enfileirar(pid, e["file"], REC_LADO_MAX, REC_PRIO_CHECKOUT if job["prio"] == MTG_P_PEDIDO else REC_PRIO_ANTECIPADO)
         return "recorte_espera"
     livre = mtg_livre_gb()
-    if job["prio"] != MTG_P_PEDIDO and livre is not None and livre < REC_PISO_GB:
+    if livre is not None and (livre < REC_PISO_GB * MTG_PISO_DURO or (job["prio"] != MTG_P_PEDIDO and livre < REC_PISO_GB)):
         return "disco"
     yunet = os.path.join(MODELOS, MOD_DET)
     req = {"recorte": rec_p, "fundo": fundo, "yunet": yunet if os.path.isfile(yunet) else None,
@@ -4843,7 +4875,12 @@ def _mtg_fazer(job):
            "i": mtg_arquivo(pid, fundo, "i", versao) if "i" in tipos else None}
     t0 = time.time()
     try:
-        j = mtg_filho_montar(req)
+        j = mtg_filho_montar(req, (pid, fundo))
+    except MtgMorte:
+        # o processo parou ou passou do tempo nesta foto: ela espera MTG_ERRO_DE_NOVO antes de voltar à fila (não derruba as outras)
+        mtg_ruins[(pid, fundo)] = (versao, "processo", time.time())
+        _mtg_limita(mtg_ruins, 20000)
+        return "processo"
     except ValueError as ex:
         erro = str(ex) if str(ex) in ("sem_pessoa", "fundo", "recorte", "imagem_grande", "caminho_recusado") else "interno"
         if erro == "sem_pessoa":
@@ -4891,6 +4928,11 @@ def mtg_trabalho():
             if job["p0"]:
                 mtg["fila0"] = max(0, mtg["fila0"] - 1)
         erro = "interno"
+        for _ in range(int(MTG_ERRO_SEG * 2 ** MTG_MORTES_MAX / 0.5)):   # processo em espera depois de um erro: o trabalho espera (não falha)
+            okp, _m = mtg_espera()
+            if okp or mtg["parado"] or job.get("cancel"):
+                break
+            time.sleep(0.5)
         try:
             erro = _mtg_fazer(job)
         except Exception as ex:
@@ -4913,6 +4955,10 @@ def mtg_enfileirar(pid, fundo, tipos, prio, u=None, pref=False, grupo=()):
         return None, "desligada"
     livre = mtg_livre_gb()
     pausa = livre is not None and livre < REC_PISO_GB
+    if livre is not None and livre < REC_PISO_GB * MTG_PISO_DURO:
+        with mtg_lock:
+            mtg["pausa_disco"] = True
+        return None, "disco"                         # piso duro: nem o pedido do Checkout grava
     with mtg_lock:
         if pausa and not mtg["pausa_disco"]:
             print("  montagem-srv: em pausa: %.1f GB livres (piso %.0f GB); só os pedidos do Checkout montam" % (livre, REC_PISO_GB))
@@ -4954,6 +5000,14 @@ def mtg_recorte_pronto(pid, erro=None):
     mtg_acorda.set()
 
 
+def mtg_ruim_recente(pid, fundo, versao):
+    """Erro recente desta versão no motor: MTG_ERRO_RECENTE; o processo parou nesta foto: MTG_ERRO_DE_NOVO."""
+    ruim = mtg_ruins.get((pid, fundo))
+    if not ruim or ruim[0] != versao:
+        return False
+    return time.time() - ruim[2] < (MTG_ERRO_DE_NOVO if ruim[1] == "processo" else MTG_ERRO_RECENTE)
+
+
 def mtg_cancelar(pid):
     """LGPD: o que há do pid na fila ou em andamento não deixa arquivo."""
     with mtg_lock:
@@ -4964,25 +5018,30 @@ def mtg_cancelar(pid):
 
 
 def mtg_apagar(pid):
-    """LGPD e limpeza: apaga ~/Eterna/montagens/<pid>/ inteira, sem seguir link (um link no lugar da pasta é só desfeito)."""
+    """LGPD e limpeza: apaga ~/Eterna/montagens/<pid>/ inteira, sem seguir link (um link no lugar da pasta é só desfeito), e
+    tira a foto do que fica na memória (completas, sem pessoa, erros). Devolve True se havia pasta."""
     if not isinstance(pid, str) or not _re_mtg_pid.match(pid):
         return False
     p = os.path.join(MONTAGENS, pid)
+    havia = False
     try:
         if os.path.islink(p):
             os.remove(p)
+            havia = True
         elif os.path.isdir(p):
             shutil.rmtree(p)                           # o rmtree não segue links de dentro da pasta
-        else:
-            return False
+            havia = True
     except OSError:
-        return False
+        havia = False
     try:                                               # cópia: o mtg_loop pode estar anotando ao mesmo tempo
         for k in [k for k in mtg_completas.copy() if k[0] == pid]:
             mtg_completas.discard(k)
+        mtg_sem_pessoa.pop(pid, None)
+        for k in [k for k in list(mtg_ruins) if k[0] == pid]:
+            mtg_ruins.pop(k, None)
     except Exception:
         mtg_completas.clear()                          # só memória (o laço confere o disco de novo); a pasta já saiu
-    return True
+    return havia
 
 
 def limpar_montagens(agora=None):
@@ -17369,18 +17428,20 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
-        if not mtg_base_ok(pid, fundo):                # regra 19: montagem nova só de base de IA (mesmo 404 de foto desconhecida)
+        base = mtg_base_ok(pid, fundo)
+        if base is None:
+            return self.js({"error": "vendas_indisponivel"}, 503, True)   # sem ler as vendas agora: o app tenta de novo
+        if not base:                                   # regra 19: montagem nova só de base de IA (mesmo 404 de foto desconhecida)
             return self.js(nf, 404, True)
-        ruim = mtg_ruins.get((pid, fundo))
         with mtg_lock:
             na_fila = (pid, fundo) in mtg_jobs
-        if ruim and ruim[0] == versao and time.time() - ruim[2] < MTG_ERRO_RECENTE and not na_fila:
-            return self.js({"estado": "erro"}, 422, True)  # acabou de falhar no motor: estado final, sem fila (depois da janela, tenta de novo)
+        if mtg_ruim_recente(pid, fundo, versao) and not na_fila:
+            return self.js({"estado": "erro"}, 422, True)  # acabou de falhar: estado final, sem fila (depois da janela, tenta de novo)
         job, erro = mtg_enfileirar(pid, fundo, (t,), MTG_P_PEDIDO)
         if erro == "fila_cheia":
             return self.js({"error": "muitos pedidos"}, 429, True)
         if erro:
-            return self.js({"error": "montagem_desligada"}, 503, True)
+            return self.js({"error": erro if erro in ("disco", "desligada") else "montagem_desligada"}, 503, True)
         return self.js({"estado": "fila"}, 202, True)
 
     def montagens_pedir_post(self):
@@ -17412,6 +17473,8 @@ class H(BaseHTTPRequestHandler):
         for pid in pids:
             for fundo in fundos:
                 base = mtg_base_ok(pid, fundo)
+                if base is None:
+                    return self.js({"error": "vendas_indisponivel"}, 503, True)
                 versao = mtg_versao(fundo)
                 w, h = mtg_dims(fundo)
                 tem = {t: bool(versao) and os.path.isfile(mtg_arquivo(pid, fundo, t, versao)) for t in ("p", "i")}
@@ -17422,12 +17485,14 @@ class H(BaseHTTPRequestHandler):
                     estado = "sem_pessoa"
                 elif not base:
                     estado = "nao_base"                      # regra 19: só as bases de IA viram montagem
-                elif ruim and ruim[0] == versao and time.time() - ruim[2] < MTG_ERRO_RECENTE and (pid, fundo) not in mtg_jobs:
+                elif mtg_ruim_recente(pid, fundo, versao) and (pid, fundo) not in mtg_jobs:
                     estado = "erro"                          # acabou de falhar: depois da janela o pedido seguinte tenta de novo
                 else:
                     job, erro = mtg_enfileirar(pid, fundo, [t for t in tipos if not tem[t]], MTG_P_PEDIDO)
                     if erro == "fila_cheia":
                         return self.js({"error": "muitos pedidos"}, 429, True)
+                    if erro == "disco":
+                        return self.js({"error": "disco"}, 503, True)
                     estado = "fila" if job is not None else "erro"
                 itens.append({"pid": "ag_" + pid, "fundo": fundo, "versao": versao, "estado": estado, "p": tem["p"], "i": tem["i"], "w": w, "h": h})
         return self.js({"ok": True, "v": 1, "itens": itens}, nostore=True)
